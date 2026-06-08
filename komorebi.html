@@ -110,7 +110,8 @@ const params = {
   sway_height_gain: 0.0,           // >0 = higher layers sway more (0 = pure translation)
   limb_count: 8,                   // major limbs; each clump pivots about its nearest limb's anchor (§5)
   limb_flex: 0.25,                 // limb bend amplitude (rad) — whole regions swing through arcs
-  twig_flex: 0.35,                 // twig bend amplitude (rad) — each clump spins about its own centre
+  twig_flex: 0.35,                 // twig bend amplitude (rad) — clump swings about its stem joint
+  stem_length: 0.5,                // twig stem (m): pivot offset toward limb. 0 = spin (swirl); >spread = swing
   leaf_swing: 0.7,                 // how far leaves rock as the wind blows (footprint breathes -> blobs morph)
   flutter_freq: 1.4,               // leaf flutter rate (Hz)
 
@@ -194,6 +195,7 @@ uniform float uWindLevel;             // signed sway fraction u(t) — drives le
 uniform float uWindTime;              // seconds, for leaf flutter
 uniform float uLeafSwing;             // master: how far leaves rock as wind blows
 uniform float uFlutterFreq;           // leaf flutter rate (Hz)
+uniform float uStemLen;               // twig stem length: pivot offset toward the limb (swing, not spin)
 out vec2 vLocal;
 out vec3 vTau;
 void main(){
@@ -212,11 +214,17 @@ void main(){
   // about its own centre; the limb swings the whole clump as a rigid arc about its anchor. A leaf
   // inherits both, so clumps PIVOT and their leaves sweep arcs — not the patch sliding as a slab. ----
   int cid = int(iC.w + 0.5);
-  vec4 geom = texelFetch(uClusterGeom, ivec2(cid,0), 0);   // clump centre .xy, limb anchor .zw
-  vec2 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0).xy; // limb bend, twig bend (radians)
+  vec4 geom = texelFetch(uClusterGeom, ivec2(cid,0), 0);    // clump centre .xy, limb anchor .zw
+  vec3 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0).xyz; // limb bend, twig bend, stem-angle seed
   vec2 C = geom.xy, BL = geom.zw; float thL = bend.x, thT = bend.y;
+  // twig STEM: a base joint offset from the clump TOWARD its limb. The twig now SWINGS about a real
+  // joint instead of spinning about its own centre — which is what removes the vortex/swirl. (§5.1)
+  vec2 d = C - BL; float Lr = max(length(d), 1e-3); vec2 radial = d/Lr;
+  float sa = bend.z*0.6;                                    // per-twig spread so they don't lockstep
+  float ca=cos(sa), sna=sin(sa);
+  vec2 Jtwig = C - (mat2(ca,-sna,sna,ca)*radial) * min(uStemLen, Lr*0.9);  // joint between clump & anchor
   float ct=cos(thT), st=sin(thT);
-  vec2 p    = C  + mat2(ct,-st,st,ct)*(leafRest - C);      // twig spins clump about its centre
+  vec2 p    = Jtwig + mat2(ct,-st,st,ct)*(leafRest - Jtwig); // twig swings clump about its base joint
   float cl=cos(thL), sl=sin(thL);
   vec2 base = BL + mat2(cl,-sl,sl,cl)*(p - BL);            // limb swings clump about its anchor
   float ang = angle + thL + thT + 0.2*swing;               // leaf orientation rotates with the branch
@@ -365,7 +373,7 @@ function loc(prog, name){ return gl.getUniformLocation(prog, name); }
 U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
            morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'),
            windLevel:loc(progBake,'uWindLevel'), windTime:loc(progBake,'uWindTime'),
-           leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'),
+           leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
            clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom') };
 U.tp = {
   samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
@@ -475,15 +483,16 @@ function regenCanopy(){
       const gauss = makeGauss(rng);
       const cx=(rng()-0.5)*E*0.94, cy=(rng()-0.5)*E*0.94;
       // rng2 draws kept identical to before so swingGain/swingPhase (leaf swing) don't shift
-      const swayRand = rng2()*2-1; rng2();
+      const swayRand = rng2()*2-1; const stemRand = rng2()*2-1;
       // register this clump in the hierarchy and bind it to the nearest limb
       hier.clusterPlan[2*ci]=cx; hier.clusterPlan[2*ci+1]=cy; hier.clusterPhase[ci]=swayRand*Math.PI;
       let best=0, bd=1e18;
       for(let i=0;i<nLimb;i++){ const dx=cx-limbPlan[2*i], dy=cy-limbPlan[2*i+1], d=dx*dx+dy*dy; if(d<bd){bd=d;best=i;} }
       hier.clusterLimb[ci]=best;
-      // static geometry for the shader: clump pivots about its own centre, limb swings it about its anchor
+      // static geometry for the shader: clump centre + its limb's anchor (the two pivots)
       hier.clusterGeom[4*ci]=cx; hier.clusterGeom[4*ci+1]=cy;
       hier.clusterGeom[4*ci+2]=limbPlan[2*best]; hier.clusterGeom[4*ci+3]=limbPlan[2*best+1];
+      hier.clusterData[4*ci+2]=stemRand;   // static stem-angle seed (.z); tick only writes .x/.y
       for(let k=0;k<nLeaf;k++){
         // primary stream draws kept in the SAME order as before -> rest arrangement unchanged
         const cov = (k===pcInt) ? frac : 1.0;
@@ -550,6 +559,7 @@ function bake(){
   gl.uniform1f(U.bake.windTime, motion.time);
   gl.uniform1f(U.bake.leafSwing, params.leaf_swing);
   gl.uniform1f(U.bake.flutterFreq, params.flutter_freq);
+  gl.uniform1f(U.bake.stemLen, params.stem_length);
   gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, clusterTex);     gl.uniform1i(U.bake.clusterTex, 4);
   gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, clusterGeomTex); gl.uniform1i(U.bake.clusterGeom, 5);
   gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);
@@ -857,6 +867,7 @@ const PANEL = [
   ['s','limb_count','limbs',1,24,1,'canopy'],
   ['s','limb_flex','limb bend',0,1,0.01,''],
   ['s','twig_flex','twig bend',0,1,0.01,''],
+  ['s','stem_length','stem (m)',0,1.5,0.01,''],
   ['s','leaf_swing','leaf swing',0,2,0.01,''],
   ['s','flutter_freq','flutter Hz',0,5,0.05,''],
 
