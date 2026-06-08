@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Komorebi — static optics slice</title>
+<style>
+  :root { color-scheme: dark; }
+  html,body { margin:0; height:100%; background:#0a0d0a; overflow:hidden; }
+  #gl { display:block; width:100vw; height:100vh; cursor:crosshair; }
+  #hud {
+    position:fixed; left:10px; bottom:10px; font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;
+    color:#9fb89f; background:rgba(0,0,0,.35); padding:6px 8px; border-radius:6px;
+    pointer-events:none; white-space:pre;
+  }
+  #hint {
+    position:fixed; right:10px; bottom:10px; font:11px ui-monospace,monospace;
+    color:#6b7d6b; background:rgba(0,0,0,.3); padding:4px 7px; border-radius:6px; pointer-events:none;
+  }
+  #dev {
+    position:fixed; top:0; left:0; height:100vh; width:280px; box-sizing:border-box;
+    overflow-y:auto; padding:8px 10px 40px; background:rgba(8,12,8,.82);
+    backdrop-filter:blur(6px); border-right:1px solid #1c2a1c;
+    font:11px/1.3 ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
+  }
+  #dev.hidden { display:none; }
+  #dev h2 { font-size:11px; margin:14px 0 4px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
+  #dev h2:first-child { margin-top:2px; }
+  .ctl { display:flex; align-items:center; gap:6px; margin:3px 0; }
+  .ctl label { flex:0 0 96px; color:#9fb89f; }
+  .ctl input[type=range] { flex:1; min-width:0; height:14px; accent-color:#c99; }
+  .ctl .val { flex:0 0 46px; text-align:right; color:#e8d9a8; }
+  .ctl.toggle label, .ctl.select label { flex:0 0 96px; }
+  .ctl select { flex:1; background:#10180f; color:#cfe0cf; border:1px solid #243; }
+  .ctl button { background:#1a2a1a; color:#cfe0cf; border:1px solid #2c452c; border-radius:4px; padding:3px 8px; cursor:pointer; }
+  .ctl button:hover { background:#243c24; }
+  .err { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+         color:#e88; font:14px ui-monospace,monospace; text-align:center; padding:40px; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="dev"></div>
+<div id="hud"></div>
+<div id="hint">press <b>D</b> for dev · drag = move sun</div>
+
+<script>
+// ============================================================================
+// Komorebi — static optics slice.
+// Pipeline: Source (point-sun cloud) -> Canopy (leaves baked to optical-depth
+// layers) -> Transport (shift-multiply-sum) -> Look (tonemap). No wind yet.
+// The governing intent (per spec): model the optics, let the look emerge.
+// ============================================================================
+
+const DEG = Math.PI / 180;
+const MAX_SAMPLES = 48;
+const MAX_LAYERS = 4;
+const clamp = (x,a,b) => Math.min(b, Math.max(a, x));
+const lerp = (a,b,t) => a + (b-a)*t;
+
+// ---- All tunable parameters (the dev panel edits this object) --------------
+const params = {
+  // Source
+  sample_count: 32,
+  core_angular_radius_deg: 0.27,   // the sun's half-angle (~0.5deg disk)
+  halo_angular_radius_deg: 6.0,    // cloud aureole size at full cloud
+  core_weight_fraction: 0.95,      // fraction of energy in the core when clear
+  cloud_thickness: 0.15,           // MASTER breathing knob: drains core->halo, spreads halo
+  eclipse: false,                  // proof test: dapples should turn crescent
+  eclipse_amount: 0.55,
+
+  // Canopy
+  layer_count: 2,
+  canopy_base_height_m: 8.0,
+  canopy_thickness_m: 3.0,         // layers spread base .. base+thickness
+  foliage_density: 1.0,            // scales leaves per cluster
+  clusters_per_layer: 60,
+  leaves_per_cluster: 22,
+  cluster_spread_m: 0.13,
+  leaf_size_m: 0.09,
+  leaf_aspect: 1.6,
+  max_tilt: 0.8,                   // orientation foreshortening amount
+  edge_softness: 0.25,
+  trans_r: 0.04, trans_g: 0.35, trans_b: 0.06,   // per-channel transmittance (green passes)
+  canopy_extent_m: 12.0,           // world size of baked layers (>= view + 2*max shift)
+  tex_resolution: 2048,
+  seed: 1234,
+
+  // Transport
+  sun_elevation_deg: 55,
+  sun_azimuth_deg: 30,
+
+  // Look
+  view_extent_m: 4.0,              // vertical span of the visible ground (zoom)
+  exposure: 1.3,
+  contrast: 1.0,
+  ambient_skylight: 0.5,
+  tone_map: 2,                     // 0 none, 1 reinhard, 2 aces
+
+  // Debug
+  show_source: true,
+  show_layer: false,
+  show_layer_index: 0,
+};
+
+// ---------------------------------------------------------------------------
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias:false, alpha:false, premultipliedAlpha:false });
+if (!gl) fail('WebGL2 is required and not available in this browser.');
+const extCBF = gl.getExtension('EXT_color_buffer_float');     // renderable half/float
+gl.getExtension('EXT_float_blend');                            // float-target blending (harmless if absent)
+if (!extCBF) fail('EXT_color_buffer_float is required (float render targets).');
+
+function fail(msg){
+  document.body.innerHTML = '<div class="err">'+msg+'</div>';
+  throw new Error(msg);
+}
+
+// ---- deterministic RNG so canopy is frame-stable & reproducible ------------
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function makeGauss(rng){ return ()=>{ let u=0,v=0; while(u===0)u=rng(); while(v===0)v=rng();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }; }
+
+// ===========================================================================
+// Shaders
+// ===========================================================================
+const VS_BAKE = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aCorner;   // [-1,1] quad corner
+layout(location=1) in vec2 iCenter;   // leaf center, world meters
+layout(location=2) in vec2 iHalf;     // footprint half-size (world m, already foreshortened)
+layout(location=3) in float iAngle;
+layout(location=4) in vec3 iTau;      // optical depth (rgb) at full coverage
+uniform vec2 uCanopyOrigin;           // -extent/2
+uniform vec2 uCanopyExtent;           // (extent, extent)
+out vec2 vLocal;
+out vec3 vTau;
+void main(){
+  float c=cos(iAngle), s=sin(iAngle);
+  mat2 R=mat2(c,-s,s,c);
+  vec2 world = iCenter + R*(aCorner*iHalf);
+  vec2 uv = (world - uCanopyOrigin)/uCanopyExtent;
+  gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
+  vLocal = aCorner;
+  vTau = iTau;
+}`;
+
+const FS_BAKE = `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in vec3 vTau;
+uniform float uEdge;
+out vec4 frag;
+void main(){
+  // soft elliptical leaf mask -> partial coverage at edges (honest area-averaging)
+  float r = length(vLocal);
+  float cov = 1.0 - smoothstep(1.0-uEdge, 1.0, r);
+  if (cov <= 0.0) discard;
+  // additive: optical depth ADDS across overlaps (order-independent), unlike transmittance
+  frag = vec4(vTau*cov, cov);
+}`;
+
+const VS_FULL = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2((gl_VertexID==1)?3.0:-1.0, (gl_VertexID==2)?3.0:-1.0);
+  vUv = p*0.5+0.5;
+  gl_Position = vec4(p,0.0,1.0);
+}`;
+
+const FS_TRANSPORT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 frag;
+#define MAX_SAMPLES ${MAX_SAMPLES}
+uniform vec3  uSamples[MAX_SAMPLES];   // xy = angular offset (rad), z = weight (sum=1)
+uniform int   uSampleCount;
+uniform highp sampler2D uLayer[${MAX_LAYERS}];   // highp: optical depth exceeds lowp's ~[-2,2]
+uniform float uLayerHeight[${MAX_LAYERS}];
+uniform int   uLayerCount;
+uniform mat2  uProj;                    // angular->ground per unit height (ellipse + shear)
+uniform float uViewExtent;
+uniform float uAspect;
+uniform vec2  uCanopyOrigin;
+uniform vec2  uCanopyExtent;
+uniform vec3  uSunColor;
+uniform vec3  uAmbient;
+uniform float uExposure;
+uniform float uContrast;
+uniform int   uToneMap;
+
+vec3 reinhard(vec3 c){ return c/(1.0+c); }
+vec3 aces(vec3 x){ float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+vec3 tap(highp sampler2D t, vec2 world){
+  vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
+  return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
+}
+void main(){
+  vec2 world = vec2((vUv.x-0.5)*uViewExtent*uAspect, (vUv.y-0.5)*uViewExtent);
+  vec3 acc = vec3(0.0);
+  for(int i=0;i<MAX_SAMPLES;i++){
+    if(i>=uSampleCount) break;
+    vec2 g = uProj * uSamples[i].xy;        // ground displacement per unit height
+    float w = uSamples[i].z;
+    // light must clear EVERY layer -> multiply transmittance; shift grows with height
+    vec3 T = vec3(1.0);
+    if(uLayerCount>0) T *= tap(uLayer[0], world + uLayerHeight[0]*g);
+    if(uLayerCount>1) T *= tap(uLayer[1], world + uLayerHeight[1]*g);
+    if(uLayerCount>2) T *= tap(uLayer[2], world + uLayerHeight[2]*g);
+    if(uLayerCount>3) T *= tap(uLayer[3], world + uLayerHeight[3]*g);
+    acc += w*T;                              // sum of shifted sharp shadows == soft shadow
+  }
+  vec3 col = acc*uSunColor + uAmbient;
+  col *= uExposure;
+  if(uToneMap==1) col=reinhard(col);
+  else if(uToneMap==2) col=aces(col);
+  else col=clamp(col,0.0,1.0);
+  col = clamp((col-0.5)*uContrast+0.5, 0.0, 1.0);
+  col = pow(col, vec3(1.0/2.2));
+  frag = vec4(col,1.0);
+}`;
+
+const FS_BLIT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform highp sampler2D uTex;
+out vec4 frag;
+void main(){
+  vec3 T = exp(-texture(uTex, vUv).rgb);   // show transmittance of the baked layer
+  frag = vec4(pow(T, vec3(1.0/2.2)), 1.0);
+}`;
+
+const VS_POINTS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aOff;     // radians
+layout(location=1) in float aW;
+uniform float uScale;
+uniform float uMaxW;
+out float vB;
+void main(){
+  gl_Position = vec4(aOff*uScale, 0.0, 1.0);
+  float n = aW/uMaxW;
+  gl_PointSize = 2.0 + 16.0*sqrt(n);
+  vB = 0.25 + 0.75*n;
+}`;
+
+const FS_POINTS = `#version 300 es
+precision highp float;
+in float vB;
+out vec4 frag;
+void main(){
+  vec2 d = gl_PointCoord*2.0-1.0;
+  if(dot(d,d)>1.0) discard;
+  frag = vec4(vec3(1.0,0.95,0.85)*vB, 1.0);
+}`;
+
+function compile(type, src){
+  const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) fail('Shader: '+gl.getShaderInfoLog(s)+'\n'+src);
+  return s;
+}
+function program(vs,fs){
+  const p=gl.createProgram();
+  gl.attachShader(p,compile(gl.VERTEX_SHADER,vs));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail('Link: '+gl.getProgramInfoLog(p));
+  return p;
+}
+const progBake = program(VS_BAKE, FS_BAKE);
+const progTransport = program(VS_FULL, FS_TRANSPORT);
+const progBlit = program(VS_FULL, FS_BLIT);
+const progPoints = program(VS_POINTS, FS_POINTS);
+
+// cache uniform locations
+const U = {};
+function loc(prog, name){ return gl.getUniformLocation(prog, name); }
+U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge') };
+U.tp = {
+  samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
+  heights:loc(progTransport,'uLayerHeight[0]'), layerCount:loc(progTransport,'uLayerCount'),
+  proj:loc(progTransport,'uProj'), viewExtent:loc(progTransport,'uViewExtent'), aspect:loc(progTransport,'uAspect'),
+  origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
+  sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'),
+  exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
+  layers:[0,1,2,3].map(i=>loc(progTransport,'uLayer['+i+']')),
+};
+U.blit = { tex:loc(progBlit,'uTex') };
+U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
+
+// ===========================================================================
+// Geometry / GPU buffers
+// ===========================================================================
+const emptyVAO = gl.createVertexArray();           // required to issue attrib-less draws
+
+// shared unit quad (triangle strip) for leaf instances
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+
+const srcDbgBuf = gl.createBuffer();
+const srcDbgVAO = gl.createVertexArray();
+gl.bindVertexArray(srcDbgVAO);
+gl.bindBuffer(gl.ARRAY_BUFFER, srcDbgBuf);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,12,0);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.FLOAT,false,12,8);
+gl.bindVertexArray(null);
+
+const bakeFBO = gl.createFramebuffer();
+let layerTex = [];           // MAX_LAYERS textures (active sized, inactive 1x1)
+let layerVAO = [];           // per-layer instance VAOs {vao,count,buf}
+const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01 };
+
+function makeLayerTexture(size){
+  const t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,size,size,0,gl.RGBA,gl.HALF_FLOAT,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  return t;
+}
+function rebuildTextures(){
+  layerTex.forEach(t=>gl.deleteTexture(t));
+  layerTex = [];
+  const res = params.tex_resolution|0;
+  for(let i=0;i<MAX_LAYERS;i++){
+    layerTex.push(makeLayerTexture(i < params.layer_count ? res : 1));
+  }
+}
+
+// ---- canopy generation: clustered leaf fields per layer --------------------
+function regenCanopy(){
+  layerVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
+  layerVAO = [];
+  const rng = mulberry32(params.seed);
+  const gauss = makeGauss(rng);
+  const E = params.canopy_extent_m;
+  const tau = [
+    -Math.log(clamp(params.trans_r,1e-4,0.999)),
+    -Math.log(clamp(params.trans_g,1e-4,0.999)),
+    -Math.log(clamp(params.trans_b,1e-4,0.999)),
+  ];
+  const perCluster = Math.max(1, Math.round(params.leaves_per_cluster*params.foliage_density));
+
+  for(let l=0;l<params.layer_count;l++){
+    const nClusters = Math.max(1, params.clusters_per_layer|0);
+    const data = [];   // 8 floats per leaf: cx,cy,hw,hh,angle,taur,taug,taub
+    for(let c=0;c<nClusters;c++){
+      const cx=(rng()-0.5)*E*0.94, cy=(rng()-0.5)*E*0.94;
+      for(let k=0;k<perCluster;k++){
+        const x = cx + gauss()*params.cluster_spread_m;
+        const y = cy + gauss()*params.cluster_spread_m;
+        const size = params.leaf_size_m*(0.6+0.8*rng());
+        const hw = size*0.5;
+        let hh = size*0.5/params.leaf_aspect;
+        // orientation foreshortening: edge-on leaves block almost nothing
+        const tilt = rng()*params.max_tilt*(Math.PI*0.5);
+        hh *= Math.max(0.05, Math.abs(Math.cos(tilt)));
+        const angle = rng()*Math.PI;
+        data.push(x,y,hw,hh,angle, tau[0],tau[1],tau[2]);
+      }
+    }
+    const arr=new Float32Array(data);
+    const buf=gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
+    const vao=gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+    const S=32;
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,2,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,2,gl.FLOAT,false,S,8);  gl.vertexAttribDivisor(2,1);
+    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(3,1);
+    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,3,gl.FLOAT,false,S,20); gl.vertexAttribDivisor(4,1);
+    gl.bindVertexArray(null);
+    layerVAO.push({ vao, count: arr.length/8, buf });
+  }
+}
+
+// ---- bake leaves into per-layer optical-depth textures ---------------------
+function bake(){
+  const res = params.tex_resolution|0;
+  const E = params.canopy_extent_m;
+  gl.useProgram(progBake);
+  gl.uniform2f(U.bake.origin, -E/2, -E/2);
+  gl.uniform2f(U.bake.extent, E, E);
+  gl.uniform1f(U.bake.edge, params.edge_softness);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);
+  gl.viewport(0,0,res,res);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE);          // optical depth accumulates additively
+  for(let l=0;l<params.layer_count;l++){
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layerTex[l], 0);
+    gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1
+    const L=layerVAO[l];
+    gl.bindVertexArray(L.vao);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, L.count);
+  }
+  gl.bindVertexArray(null);
+  gl.disable(gl.BLEND);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
+// ---- source: Vogel-spiral cloud of weighted point-suns ---------------------
+function regenSource(){
+  const N = clamp(Math.round(params.sample_count), 3, MAX_SAMPLES);
+  const coreR = params.core_angular_radius_deg*DEG;
+  const t = params.cloud_thickness;
+  const haloR = lerp(coreR*2.0, params.halo_angular_radius_deg*DEG, t);
+  const Wcore = params.core_weight_fraction*(1.0-t);     // energy drains core->halo with cloud
+  const Whalo = 1.0 - Wcore;
+  const nCore = Math.max(3, Math.round(N*0.5));
+  const nHalo = Math.max(0, N - nCore);
+  const golden = Math.PI*(3 - Math.sqrt(5));
+  const pts = [];
+  for(let i=0;i<nCore;i++){
+    const r = coreR*Math.sqrt((i+0.5)/nCore), a=i*golden;
+    pts.push([r*Math.cos(a), r*Math.sin(a), Wcore/nCore]);
+  }
+  for(let i=0;i<nHalo;i++){
+    const f=(i+0.5)/nHalo;
+    const r=Math.sqrt(coreR*coreR + f*(haloR*haloR-coreR*coreR));  // area-uniform annulus
+    const a=i*golden+0.5;
+    pts.push([r*Math.cos(a), r*Math.sin(a), nHalo>0?Whalo/nHalo:0]);
+  }
+  // eclipse: occlude a moon-disk over the sun -> remaining samples form a crescent
+  if(params.eclipse){
+    const rm=coreR*1.0, d=coreR*(1.3-params.eclipse_amount);
+    for(const p of pts){ if(Math.hypot(p[0]-d, p[1])<rm) p[2]=0; }
+    let s=0; for(const p of pts) s+=p[2];
+    if(s>0) for(const p of pts) p[2]/=s;     // renormalize (keep shape visible)
+  }
+  const flat=new Float32Array(pts.length*3);
+  let mr=1e-9, mw=1e-9;
+  pts.forEach((p,i)=>{ flat[i*3]=p[0]; flat[i*3+1]=p[1]; flat[i*3+2]=p[2];
+    mr=Math.max(mr,Math.hypot(p[0],p[1])); mw=Math.max(mw,p[2]); });
+  src.flat=flat; src.count=pts.length; src.maxR=mr; src.maxW=mw; src.haloR=haloR;
+  gl.bindBuffer(gl.ARRAY_BUFFER, srcDbgBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
+}
+
+// ---- the ellipse: angular offset -> ground displacement per unit height ----
+function projMatrix(){
+  const el=Math.max(params.sun_elevation_deg,4)*DEG, az=params.sun_azimuth_deg*DEG;
+  const se=Math.sin(el);
+  const major=1/(se*se), minor=1/se;          // stretch along azimuth grows as sun lowers
+  const ca=Math.cos(az), sa=Math.sin(az);
+  const M00=major*ca*ca+minor*sa*sa;
+  const M01=(major-minor)*ca*sa;
+  const M11=major*sa*sa+minor*ca*ca;
+  return [M00,M01,M01,M11];                    // column-major (symmetric)
+}
+function layerHeights(){
+  const h=new Float32Array(MAX_LAYERS);
+  const n=params.layer_count, base=params.canopy_base_height_m, thick=params.canopy_thickness_m;
+  for(let i=0;i<MAX_LAYERS;i++) h[i]= n>1 ? base+(i/(n-1))*thick : base;
+  return h;
+}
+
+// ===========================================================================
+// Render
+// ===========================================================================
+function resize(){
+  const dpr=Math.min(2, window.devicePixelRatio||1);
+  const w=Math.round(canvas.clientWidth*dpr), h=Math.round(canvas.clientHeight*dpr);
+  if(canvas.width!==w||canvas.height!==h){ canvas.width=w; canvas.height=h; }
+}
+
+function drawTransport(){
+  const E=params.canopy_extent_m;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.disable(gl.BLEND);
+  gl.useProgram(progTransport);
+  gl.uniform3fv(U.tp.samples, src.flat.subarray(0, src.count*3));
+  gl.uniform1i(U.tp.count, src.count);
+  gl.uniform1fv(U.tp.heights, layerHeights());
+  gl.uniform1i(U.tp.layerCount, params.layer_count);
+  gl.uniformMatrix2fv(U.tp.proj, false, projMatrix());
+  gl.uniform1f(U.tp.viewExtent, params.view_extent_m);
+  gl.uniform1f(U.tp.aspect, canvas.width/canvas.height);
+  gl.uniform2f(U.tp.origin, -E/2, -E/2);
+  gl.uniform2f(U.tp.extent, E, E);
+  gl.uniform3f(U.tp.sun, 1.0, 0.96, 0.88);
+  const amb=params.ambient_skylight;
+  gl.uniform3f(U.tp.ambient, 0.05*amb, 0.08*amb, 0.07*amb);
+  gl.uniform1f(U.tp.exposure, params.exposure);
+  gl.uniform1f(U.tp.contrast, params.contrast);
+  gl.uniform1i(U.tp.tone, params.tone_map);
+  for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, layerTex[i]); gl.uniform1i(U.tp.layers[i], i); }
+  gl.bindVertexArray(emptyVAO);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+function drawLayerBlit(){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.disable(gl.BLEND);
+  gl.useProgram(progBlit);
+  const idx=clamp(params.show_layer_index|0,0,params.layer_count-1);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, layerTex[idx]);
+  gl.uniform1i(U.blit.tex,0);
+  gl.bindVertexArray(emptyVAO);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+
+function drawSourceInset(){
+  const s=Math.round(Math.min(170, canvas.width*0.22));
+  const x=canvas.width-s-8, y=canvas.height-s-8;
+  gl.enable(gl.SCISSOR_TEST);
+  gl.scissor(x,y,s,s); gl.viewport(x,y,s,s);
+  gl.clearColor(0.03,0.04,0.06,1.0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.useProgram(progPoints);
+  gl.uniform1f(U.pts.scale, 0.92/src.maxR);
+  gl.uniform1f(U.pts.maxW, src.maxW);
+  gl.bindVertexArray(srcDbgVAO);
+  gl.drawArrays(gl.POINTS, 0, src.count);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+
+// ---- frame loop ------------------------------------------------------------
+const hud=document.getElementById('hud');
+let last=performance.now(), fps=60;
+function frame(now){
+  const dt=now-last; last=now; fps += ((1000/Math.max(dt,1))-fps)*0.1;
+  resize();
+  if(params.show_layer) drawLayerBlit(); else drawTransport();
+  if(params.show_source && !dev.classList.contains('hidden')) drawSourceInset();
+  const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
+  hud.textContent =
+    `${fps.toFixed(0)} fps   ${src.count} suns × ${params.layer_count} layers = ${src.count*params.layer_count} taps/px\n`+
+    `blur scale h·θ ≈ ${blur} cm   cloud ${params.cloud_thickness.toFixed(2)}   sun ${params.sun_elevation_deg.toFixed(0)}°/${params.sun_azimuth_deg.toFixed(0)}°`;
+  requestAnimationFrame(frame);
+}
+
+// ===========================================================================
+// Dev panel
+// ===========================================================================
+const dev=document.getElementById('dev');
+const controlEls={};   // key -> {input, valEl}
+
+// scope: 'source' rebuilds the light; 'canopy' rebuilds+rebakes leaves;
+// 'textures' reallocates layer textures too; '' just re-reads each frame.
+const PANEL = [
+  ['h','Source'],
+  ['s','sample_count','samples',16,48,1,'source'],
+  ['s','core_angular_radius_deg','core °',0.05,2,0.01,'source'],
+  ['s','halo_angular_radius_deg','halo °',1,30,0.1,'source'],
+  ['s','core_weight_fraction','core wt',0,1,0.01,'source'],
+  ['s','cloud_thickness','CLOUD',0,1,0.01,'source'],
+  ['t','eclipse','eclipse','source'],
+  ['s','eclipse_amount','ecl amt',0,1,0.01,'source'],
+
+  ['h','Canopy'],
+  ['s','layer_count','layers',1,MAX_LAYERS,1,'textures'],
+  ['s','canopy_base_height_m','base h (m)',2,20,0.1,''],
+  ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
+  ['s','foliage_density','density',0.1,3,0.05,'canopy'],
+  ['s','clusters_per_layer','clusters',5,300,1,'canopy'],
+  ['s','leaves_per_cluster','leaves/cl',1,80,1,'canopy'],
+  ['s','cluster_spread_m','spread (m)',0.02,1,0.01,'canopy'],
+  ['s','leaf_size_m','leaf (m)',0.01,0.4,0.005,'canopy'],
+  ['s','leaf_aspect','aspect',1,4,0.05,'canopy'],
+  ['s','max_tilt','tilt',0,1,0.01,'canopy'],
+  ['s','edge_softness','edge',0.01,1,0.01,'canopy'],
+  ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
+  ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
+  ['s','trans_b','trans B',0.001,0.6,0.001,'canopy'],
+  ['s','canopy_extent_m','extent (m)',6,24,0.5,'textures'],
+  ['sel','tex_resolution','res',[['1024',1024],['2048',2048],['4096',4096]],'textures'],
+  ['btn','reseed', ()=>{ params.seed=Math.floor(Math.random()*1e9); regenCanopy(); bake(); }],
+
+  ['h','Transport'],
+  ['s','sun_elevation_deg','elev °',4,90,0.5,''],
+  ['s','sun_azimuth_deg','azim °',0,360,1,''],
+
+  ['h','Look'],
+  ['s','view_extent_m','view (m)',0.5,16,0.1,''],
+  ['s','exposure','exposure',0,4,0.01,''],
+  ['s','contrast','contrast',0.3,2,0.01,''],
+  ['s','ambient_skylight','ambient',0,3,0.01,''],
+  ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
+
+  ['h','Debug'],
+  ['t','show_source','show source',''],
+  ['t','show_layer','show layer','' ],
+  ['s','show_layer_index','layer #',0,MAX_LAYERS-1,1,''],
+];
+
+function applyScope(scope){
+  if(scope==='source') regenSource();
+  else if(scope==='canopy'){ regenCanopy(); bake(); }
+  else if(scope==='textures'){ rebuildTextures(); regenCanopy(); bake(); }
+}
+
+function buildPanel(){
+  for(const item of PANEL){
+    if(item[0]==='h'){ const h=document.createElement('h2'); h.textContent=item[1]; dev.appendChild(h); continue; }
+    const row=document.createElement('div'); row.className='ctl';
+    if(item[0]==='s'){
+      const [,key,label,min,max,step,scope]=item;
+      const lab=document.createElement('label'); lab.textContent=label;
+      const inp=document.createElement('input'); inp.type='range'; inp.min=min; inp.max=max; inp.step=step; inp.value=params[key];
+      const val=document.createElement('span'); val.className='val'; val.textContent=fmt(params[key]);
+      inp.addEventListener('input',()=>{ params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]); applyScope(scope); });
+      row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val};
+    } else if(item[0]==='t'){
+      const [,key,label,scope]=item; row.classList.add('toggle');
+      const lab=document.createElement('label'); lab.textContent=label;
+      const inp=document.createElement('input'); inp.type='checkbox'; inp.checked=params[key];
+      inp.addEventListener('change',()=>{ params[key]=inp.checked; applyScope(scope); });
+      row.append(lab,inp); controlEls[key]={input:inp};
+    } else if(item[0]==='sel'){
+      const [,key,label,opts,scope]=item; row.classList.add('select');
+      const lab=document.createElement('label'); lab.textContent=label;
+      const sel=document.createElement('select');
+      for(const [t,v] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; if(v==params[key]) o.selected=true; sel.appendChild(o); }
+      sel.addEventListener('change',()=>{ params[key]=parseInt(sel.value,10); applyScope(scope); });
+      row.append(lab,sel); controlEls[key]={input:sel};
+    } else if(item[0]==='btn'){
+      const [,label,fn]=item;
+      const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn);
+      row.appendChild(b);
+    }
+    dev.appendChild(row);
+  }
+}
+function fmt(v){ return (Math.abs(v)>=100||Number.isInteger(v))?String(v):(+v).toFixed(2); }
+function syncControl(key){ const c=controlEls[key]; if(!c)return; c.input.value=params[key]; if(c.valEl) c.valEl.textContent=fmt(params[key]); }
+
+// drag on canvas = move the sun (azimuth from x, elevation from y)
+let dragging=false, px=0, py=0;
+canvas.addEventListener('pointerdown',e=>{ dragging=true; px=e.clientX; py=e.clientY; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup',  ()=>{ dragging=false; });
+canvas.addEventListener('pointermove',e=>{
+  if(!dragging) return;
+  params.sun_azimuth_deg = (params.sun_azimuth_deg + (e.clientX-px)*0.3 + 360)%360;
+  params.sun_elevation_deg = clamp(params.sun_elevation_deg - (e.clientY-py)*0.3, 4, 90);
+  px=e.clientX; py=e.clientY; syncControl('sun_azimuth_deg'); syncControl('sun_elevation_deg');
+});
+window.addEventListener('keydown',e=>{ if(e.key==='d'||e.key==='D') dev.classList.toggle('hidden'); });
+
+// ===========================================================================
+// Boot
+// ===========================================================================
+buildPanel();
+rebuildTextures();
+regenCanopy();
+bake();
+regenSource();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
