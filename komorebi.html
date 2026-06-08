@@ -108,7 +108,9 @@ const params = {
   damping_ratio: 0.25,             // <1 underdamped -> overshoot
   backlash_gain: 1.0,              // extra whip-back on release (asymmetric damping)
   sway_height_gain: 0.0,           // >0 = higher layers sway more (0 = pure translation)
-  sway_variation: 0.3,             // per-clump spread in sway amount + direction (twigs flex differently)
+  limb_count: 8,                   // major limbs; each clump pivots about its nearest limb's anchor (§5)
+  limb_flex: 0.25,                 // limb bend amplitude (rad) — whole regions swing through arcs
+  twig_flex: 0.35,                 // twig bend amplitude (rad) — each clump spins about its own centre
   leaf_swing: 0.7,                 // how far leaves rock as the wind blows (footprint breathes -> blobs morph)
   flutter_freq: 1.4,               // leaf flutter rate (Hz)
 
@@ -137,6 +139,18 @@ const BUILTIN_PRESETS = {
     leaf_aspect:2, max_tilt:0.54, edge_softness:0.20, trans_r:0.30, trans_g:0.61, trans_b:0.50,
     canopy_extent_m:6, sun_elevation_deg:18.87, sun_azimuth_deg:162,
     view_extent_m:6.2, exposure:1.44, contrast:1.22, ambient_skylight:0.80, tone_map:2,
+  }),
+  'Midday shimmer': Object.assign({}, DEFAULTS, {
+    sample_count:21, core_angular_radius_deg:0.18, halo_angular_radius_deg:4.3, core_weight_fraction:1,
+    cloud_thickness:0.27, layer_count:4, canopy_base_height_m:3.2, canopy_thickness_m:2.6,
+    foliage_density:1.65, clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28,
+    leaf_size_m:0.1, leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26,
+    trans_r:0.29, trans_g:0.61, trans_b:0.466, canopy_extent_m:7, seed:290626672,
+    sun_elevation_deg:90, sun_azimuth_deg:360, view_extent_m:6.2, exposure:1.44, contrast:1.22,
+    ambient_skylight:1.33, tone_map:2,
+    wind_strength:1.34, wind_direction_deg:30, gust_frequency:0.04, sway_stiffness:1.2,
+    sway_ceiling:0.42, backlash_gain:1.8, sway_height_gain:1.6, leaf_swing:0.7, flutter_freq:1.4,
+    drift_amount:0.145, drift_phase:5.759, drift_auto:true, drift_speed:0.08,
   }),
 };
 
@@ -167,47 +181,49 @@ precision highp float;
 layout(location=0) in vec2 aCorner;   // [-1,1] quad corner
 layout(location=1) in vec4 iA;        // center.xy, A (long half), B0 (face-on short half)
 layout(location=2) in vec4 iB;        // angle, restTilt, swingGain, swingPhase
-layout(location=3) in vec4 iC;        // tau.rgb, swayRand (per-clump, signed)
+layout(location=3) in vec4 iC;        // tau.rgb, clusterId (which twig — hierarchy lookup)
 layout(location=4) in vec4 iD;        // orbit: ampX, ampY, orientation, phase (incoherent drift)
-layout(location=5) in float iE;       // swayAngleRand (per-clump, signed)
 uniform vec2  uCanopyOrigin;          // -extent/2
 uniform vec2  uCanopyExtent;          // (extent, extent)
 uniform float uMorph;                 // drift phase (incoherent band, §5.2)
 uniform float uMorphAmount;           // orbit radius scale (m)
-uniform vec2  uSway;                  // coherent-band sway for this layer (§5.1)
+uniform vec2  uSway;                  // trunk (coherent) translation for this layer (§5.1)
+uniform highp sampler2D uClusterTex;  // per-clump dynamic bend angles (limb, twig) — radians
+uniform highp sampler2D uClusterGeom; // per-clump static geometry: clump centre + limb anchor
 uniform float uWindLevel;             // signed sway fraction u(t) — drives leaf swing intensity
 uniform float uWindTime;              // seconds, for leaf flutter
 uniform float uLeafSwing;             // master: how far leaves rock as wind blows
 uniform float uFlutterFreq;           // leaf flutter rate (Hz)
-uniform float uSwayVar;               // per-clump spread of sway amount + direction
 out vec2 vLocal;
 out vec3 vTau;
 void main(){
-  vec2 center = iA.xy; float A = iA.z, B0 = iA.w;
+  vec2 leafRest = iA.xy; float A = iA.z, B0 = iA.w;
   float angle = iB.x, restTilt = iB.y, swingGain = iB.z, swingPhase = iB.w;
-  // ---- leaf swings with the wind: flags with u, flutters with |u| (decorrelated phase) ----
-  // §4.5: the footprint foreshortens as the leaf tilts, so the dapple CHANGES SHAPE, not just
-  // position — and returns to rest when the gust passes (u -> 0).
+  // ---- leaf rocks with the wind: footprint foreshortens -> dapple changes SHAPE (§4.5) ----
   float wm = abs(uWindLevel);
   float swing = uLeafSwing*swingGain*(0.5*uWindLevel + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
-  float tilt = restTilt + swing;
-  float B = B0 * max(0.05, abs(cos(tilt)));   // winks small gaps open/shut
-  float ang = angle + 0.2*swing;              // slight in-plane rock as well
-  // ---- incoherent drift orbit (unchanged, periodic) ----
+  float B = B0 * max(0.05, abs(cos(restTilt + swing)));
+  // ---- incoherent drift orbit (fast, periodic) ----
   float th = uMorph + iD.w;
   vec2 lp = vec2(iD.x*cos(th), iD.y*sin(th));
   float co=cos(iD.z), so=sin(iD.z);
   vec2 drift = uMorphAmount * mat2(co,-so,so,co) * lp;
-  // ---- coherent sway, varied PER CLUMP in amount AND direction (§5.4 medium band) ----
-  // twigs flex differently, so the field shears/morphs instead of translating as one rigid slab.
-  float swayGain = 1.0 + iC.w*uSwayVar;
-  float ao = iE*uSwayVar*0.6;
-  float cg=cos(ao), sg=sin(ao);
-  vec2 sway = swayGain * mat2(cg,-sg,sg,cg) * uSway;
+  // ---- branch hierarchy (§5): ROTATION about joints, not translation. The twig spins the clump
+  // about its own centre; the limb swings the whole clump as a rigid arc about its anchor. A leaf
+  // inherits both, so clumps PIVOT and their leaves sweep arcs — not the patch sliding as a slab. ----
+  int cid = int(iC.w + 0.5);
+  vec4 geom = texelFetch(uClusterGeom, ivec2(cid,0), 0);   // clump centre .xy, limb anchor .zw
+  vec2 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0).xy; // limb bend, twig bend (radians)
+  vec2 C = geom.xy, BL = geom.zw; float thL = bend.x, thT = bend.y;
+  float ct=cos(thT), st=sin(thT);
+  vec2 p    = C  + mat2(ct,-st,st,ct)*(leafRest - C);      // twig spins clump about its centre
+  float cl=cos(thL), sl=sin(thL);
+  vec2 base = BL + mat2(cl,-sl,sl,cl)*(p - BL);            // limb swings clump about its anchor
+  float ang = angle + thL + thT + 0.2*swing;               // leaf orientation rotates with the branch
   // ---- place the (foreshortened, rocked) leaf quad ----
   float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
-  vec2 world = center + sway + drift + R*(aCorner*vec2(A,B));
+  vec2 world = base + uSway + drift + R*(aCorner*vec2(A,B));
   vec2 uv = (world - uCanopyOrigin)/uCanopyExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = aCorner;
@@ -349,7 +365,8 @@ function loc(prog, name){ return gl.getUniformLocation(prog, name); }
 U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
            morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'),
            windLevel:loc(progBake,'uWindLevel'), windTime:loc(progBake,'uWindTime'),
-           leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), swayVar:loc(progBake,'uSwayVar') };
+           leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'),
+           clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom') };
 U.tp = {
   samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
   heights:loc(progTransport,'uLayerHeight[0]'), layerCount:loc(progTransport,'uLayerCount'),
@@ -383,6 +400,9 @@ gl.bindVertexArray(null);
 const bakeFBO = gl.createFramebuffer();
 let layerTex = [];           // MAX_LAYERS textures (active sized, inactive 1x1)
 let layerVAO = [];           // per-layer instance VAOs {vao,count,buf}
+let hier = null;             // branch hierarchy: limb + twig spring state (built in regenCanopy)
+let clusterTex = null;       // per-clump dynamic bend angles (limb, twig), updated each frame
+let clusterGeomTex = null;   // per-clump static geometry (clump centre + limb anchor)
 const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01 };
 
 function makeLayerTexture(size){
@@ -428,15 +448,42 @@ function regenCanopy(){
   const nClusters = Math.max(1, params.clusters_per_layer|0);
   const TAU2 = Math.PI*2;
 
+  // ---- branch hierarchy: a few limbs in plan; each clump (twig) hangs off its nearest limb ----
+  const nLimb = Math.max(1, params.limb_count|0);
+  const nClusterTotal = params.layer_count * nClusters;
+  const lr = mulberry32(hash3(params.seed>>>0, 1009, 7));   // limb layout (own stream)
+  const limbPlan = new Float32Array(nLimb*2);
+  for(let i=0;i<nLimb;i++){ limbPlan[2*i]=(lr()-0.5)*E*0.9; limbPlan[2*i+1]=(lr()-0.5)*E*0.9; }
+  hier = {
+    nLimb, limbPlan,
+    limbAngle:new Float32Array(nLimb), limbVel:new Float32Array(nLimb),   // scalar bend (radians)
+    nClusterTotal,
+    clusterPlan:new Float32Array(nClusterTotal*2), clusterLimb:new Int32Array(nClusterTotal),
+    clusterPhase:new Float32Array(nClusterTotal),
+    twigAngle:new Float32Array(nClusterTotal), twigVel:new Float32Array(nClusterTotal),
+    clusterData:new Float32Array(nClusterTotal*4),   // dynamic: (limb bend, twig bend) per clump
+    clusterGeom:new Float32Array(nClusterTotal*4),   // static: (clump centre.xy, limb anchor.xy)
+    maxV:0,
+  };
+
   for(let l=0;l<params.layer_count;l++){
-    const data = [];   // 17 floats/leaf — see attribute layout below
+    const data = [];   // 16 floats/leaf — see attribute layout below
     for(let c=0;c<nClusters;c++){
+      const ci = l*nClusters + c;                                          // global twig id
       const rng  = mulberry32(hash3(params.seed>>>0, l, c));               // arrangement stream
       const rng2 = mulberry32(hash3((params.seed>>>0)^0x5bd1e995, l, c));  // wind-identity stream (separate)
       const gauss = makeGauss(rng);
       const cx=(rng()-0.5)*E*0.94, cy=(rng()-0.5)*E*0.94;
-      // per-clump (twig) sway response: rigid within a clump, different between clumps
-      const swayRand = rng2()*2-1, swayAngleRand = rng2()*2-1;
+      // rng2 draws kept identical to before so swingGain/swingPhase (leaf swing) don't shift
+      const swayRand = rng2()*2-1; rng2();
+      // register this clump in the hierarchy and bind it to the nearest limb
+      hier.clusterPlan[2*ci]=cx; hier.clusterPlan[2*ci+1]=cy; hier.clusterPhase[ci]=swayRand*Math.PI;
+      let best=0, bd=1e18;
+      for(let i=0;i<nLimb;i++){ const dx=cx-limbPlan[2*i], dy=cy-limbPlan[2*i+1], d=dx*dx+dy*dy; if(d<bd){bd=d;best=i;} }
+      hier.clusterLimb[ci]=best;
+      // static geometry for the shader: clump pivots about its own centre, limb swings it about its anchor
+      hier.clusterGeom[4*ci]=cx; hier.clusterGeom[4*ci+1]=cy;
+      hier.clusterGeom[4*ci+2]=limbPlan[2*best]; hier.clusterGeom[4*ci+3]=limbPlan[2*best+1];
       for(let k=0;k<nLeaf;k++){
         // primary stream draws kept in the SAME order as before -> rest arrangement unchanged
         const cov = (k===pcInt) ? frac : 1.0;
@@ -449,10 +496,9 @@ function regenCanopy(){
         const angle = rng()*Math.PI;
         const ax = 0.4+0.6*rng(), ay = 0.4+0.6*rng();    // incoherent orbit
         const orient = rng()*TAU2, phase = rng()*TAU2;
-        // wind-identity stream (does not perturb the arrangement)
         const swingGain = 0.6+0.8*rng2(), swingPhase = rng2()*TAU2;
         data.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                  tau[0]*cov,tau[1]*cov,tau[2]*cov,swayRand, ax,ay,orient,phase, swayAngleRand);
+                  tau[0]*cov,tau[1]*cov,tau[2]*cov, ci, ax,ay,orient,phase);
       }
     }
     const arr=new Float32Array(data);
@@ -464,15 +510,30 @@ function regenCanopy(){
     gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
     gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-    const S=68;   // 17 floats/leaf: [c.xy,A,B0][angle,tilt,swingGain,swingPhase][tau.rgb,swayRand][orbit.xyzw][swayAngleRand]
+    const S=64;   // 16 floats/leaf: [c.xy,A,B0][angle,tilt,swingGain,swingPhase][tau.rgb,clusterId][orbit.xyzw]
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
     gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
     gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,4,gl.FLOAT,false,S,48); gl.vertexAttribDivisor(4,1);
-    gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,1,gl.FLOAT,false,S,64); gl.vertexAttribDivisor(5,1);
+    gl.disableVertexAttribArray(5);   // location 5 no longer used
     gl.bindVertexArray(null);
-    layerVAO.push({ vao, count: arr.length/17, buf });
+    layerVAO.push({ vao, count: arr.length/16, buf });
   }
+
+  // ---- (re)build the per-clump data textures sampled by the bake VS ----
+  const makeDataTex = (old, data) => {
+    if(old) gl.deleteTexture(old);
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, Math.max(1,nClusterTotal), 1, 0, gl.RGBA, gl.FLOAT, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  };
+  clusterTex     = makeDataTex(clusterTex, hier.clusterData);      // dynamic bend angles
+  clusterGeomTex = makeDataTex(clusterGeomTex, hier.clusterGeom);  // static geometry
 }
 
 // ---- bake leaves into per-layer optical-depth textures ---------------------
@@ -489,7 +550,8 @@ function bake(){
   gl.uniform1f(U.bake.windTime, motion.time);
   gl.uniform1f(U.bake.leafSwing, params.leaf_swing);
   gl.uniform1f(U.bake.flutterFreq, params.flutter_freq);
-  gl.uniform1f(U.bake.swayVar, params.sway_variation);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, clusterTex);     gl.uniform1i(U.bake.clusterTex, 4);
+  gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, clusterGeomTex); gl.uniform1i(U.bake.clusterGeom, 5);
   gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);
   gl.viewport(0,0,res,res);
   gl.enable(gl.BLEND);
@@ -579,9 +641,48 @@ function gustShape(t, f){
   s = 0.5 + 0.5*s;
   return clamp(s*s, 0, 1);          // square -> spend more time low, peak in gusts
 }
+// a smooth, spatially-varying, slowly-evolving wind force — sampled at each node's position.
+// k sets spatial frequency: small (limbs) -> neighbours share a gust; large (twigs) -> finer detail.
+function windNoise(x, y, t, k){
+  const fx = Math.sin(x*k + t*0.9) + 0.5*Math.sin(y*k*1.3 - t*1.4 + 1.7);
+  const fy = Math.sin(y*k - t*1.1) + 0.5*Math.sin(x*k*1.3 + t*1.2 + 2.3);
+  return [fx*0.7, fy*0.7];
+}
+// integrate the limb and twig springs; children inherit parents (twig offset += its limb offset).
+function tickHierarchy(steps, h){
+  if(!hier) return;
+  const t = motion.time;
+  const eb = 0.25 + 0.75*motion.env;       // differential bend breathes with the gust
+  const u = motion.u;                       // coherent gust sense (signed, stiffened/backlashed)
+  const dz = params.damping_ratio;
+  const wL = Math.max(0.3, params.sway_stiffness*0.5), wT = Math.max(0.3, params.sway_stiffness*2.0);
+  const kL=wL*wL, kT=wT*wT, cL=2*dz*wL, cT=2*dz*wT, lf=params.limb_flex, tf=params.twig_flex;
+  let maxv=0;
+  for(let i=0;i<hier.nLimb;i++){             // limbs: bend coherently with the gust + slow spatial drift
+    const n = windNoise(hier.limbPlan[2*i], hier.limbPlan[2*i+1], t, 0.4)[0];
+    const target = lf*(0.8*u + 0.6*eb*n);
+    for(let s=0;s<steps;s++){ const a = kL*(target - hier.limbAngle[i]) - cL*hier.limbVel[i];
+      hier.limbVel[i]+=a*h; hier.limbAngle[i]+=hier.limbVel[i]*h; }
+    maxv=Math.max(maxv, Math.abs(hier.limbVel[i]));
+  }
+  for(let j=0;j<hier.nClusterTotal;j++){     // twigs: stiffer, faster, mostly decorrelated
+    const n = windNoise(hier.clusterPlan[2*j], hier.clusterPlan[2*j+1], t+hier.clusterPhase[j], 1.5)[0];
+    const target = tf*(0.4*u + eb*n);
+    for(let s=0;s<steps;s++){ const a = kT*(target - hier.twigAngle[j]) - cT*hier.twigVel[j];
+      hier.twigVel[j]+=a*h; hier.twigAngle[j]+=hier.twigVel[j]*h; }
+    hier.clusterData[4*j]   = hier.limbAngle[hier.clusterLimb[j]];   // limb bend this clump inherits
+    hier.clusterData[4*j+1] = hier.twigAngle[j];                     // its own twig bend
+    maxv=Math.max(maxv, Math.abs(hier.twigVel[j]));
+  }
+  hier.maxV = maxv;
+  gl.activeTexture(gl.TEXTURE4);
+  gl.bindTexture(gl.TEXTURE_2D, clusterTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, hier.nClusterTotal, 1, gl.RGBA, gl.FLOAT, hier.clusterData);
+}
 function motionActive(){
   return params.wind_strength>0 || (params.drift_auto && params.drift_amount>0)
-      || Math.abs(motion.u)>1e-3 || Math.abs(motion.v)>1e-3;   // keep simulating until settled
+      || Math.abs(motion.u)>1e-3 || Math.abs(motion.v)>1e-3   // keep simulating until settled
+      || (hier && hier.maxV>2e-4);
 }
 function tick(dt){
   dt = clamp(dt, 0, 1/15);                                  // guard tab-switch spikes
@@ -605,6 +706,7 @@ function tick(dt){
   motion.u = clamp(motion.u, -1.5, 1.5);                    // safety; stiffening keeps it near ±1
   const dir = params.wind_direction_deg*DEG;
   motion.sway = [Math.cos(dir)*motion.u*params.sway_ceiling, Math.sin(dir)*motion.u*params.sway_ceiling];
+  tickHierarchy(steps, h);                                  // limb + twig springs (medium band)
   motion.time += dt;
   // incoherent band: advance the drift phase (periodic in 2π)
   if(params.drift_auto && params.drift_amount>0){
@@ -752,7 +854,9 @@ const PANEL = [
   ['s','damping_ratio','damping ζ',0.02,1,0.01,''],
   ['s','backlash_gain','backlash',0,4,0.05,''],
   ['s','sway_height_gain','height gain',0,2,0.05,''],
-  ['s','sway_variation','clump var',0,1,0.01,''],
+  ['s','limb_count','limbs',1,24,1,'canopy'],
+  ['s','limb_flex','limb bend',0,1,0.01,''],
+  ['s','twig_flex','twig bend',0,1,0.01,''],
   ['s','leaf_swing','leaf swing',0,2,0.01,''],
   ['s','flutter_freq','flutter Hz',0,5,0.05,''],
 
