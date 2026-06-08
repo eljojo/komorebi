@@ -97,6 +97,21 @@ const params = {
   ambient_skylight: 0.5,
   tone_map: 2,                     // 0 none, 1 reinhard, 2 aces
 
+  // Wind — coherent band: directional gust -> spring -> canopy translation (spec §5.1)
+  wind_strength: 0.0,              // master: 0 = calm; ~1 is the onset of stiffening
+  wind_direction_deg: 30,
+  gust_frequency: 0.12,            // gust rate (the breathing)
+  gust_attack: 1.2,                // ease-in time constant (s)
+  gust_decay: 2.5,                 // ease-out time constant (s) — gusts swell then subside
+  sway_stiffness: 5.0,             // spring natural frequency ω (rad/s)
+  sway_ceiling: 0.4,               // nonlinear stiffening limit (m) — a branch can only bend so far
+  damping_ratio: 0.25,             // <1 underdamped -> overshoot
+  backlash_gain: 1.0,              // extra whip-back on release (asymmetric damping)
+  sway_height_gain: 0.0,           // >0 = higher layers sway more (0 = pure translation)
+  sway_variation: 0.3,             // per-clump spread in sway amount + direction (twigs flex differently)
+  leaf_swing: 0.7,                 // how far leaves rock as the wind blows (footprint breathes -> blobs morph)
+  flutter_freq: 1.4,               // leaf flutter rate (Hz)
+
   // Leaf drift — manual preview of the incoherent band (spec §5.2)
   drift_amount: 0.0,               // orbit radius (m): 0 = static, small = twinkle, large = reorganization
   drift_phase: 0.0,                // the continuous sweep axis; periodic in 2π -> leaves return
@@ -150,31 +165,53 @@ function makeGauss(rng){ return ()=>{ let u=0,v=0; while(u===0)u=rng(); while(v=
 const VS_BAKE = `#version 300 es
 precision highp float;
 layout(location=0) in vec2 aCorner;   // [-1,1] quad corner
-layout(location=1) in vec2 iCenter;   // leaf center, world meters
-layout(location=2) in vec2 iHalf;     // footprint half-size (world m, already foreshortened)
-layout(location=3) in float iAngle;
-layout(location=4) in vec3 iTau;      // optical depth (rgb) at full coverage
-layout(location=5) in vec4 iWobble;   // per-leaf orbit: (ampX, ampY, orientation, phase) — decorrelated
-uniform vec2 uCanopyOrigin;           // -extent/2
-uniform vec2 uCanopyExtent;           // (extent, extent)
+layout(location=1) in vec4 iA;        // center.xy, A (long half), B0 (face-on short half)
+layout(location=2) in vec4 iB;        // angle, restTilt, swingGain, swingPhase
+layout(location=3) in vec4 iC;        // tau.rgb, swayRand (per-clump, signed)
+layout(location=4) in vec4 iD;        // orbit: ampX, ampY, orientation, phase (incoherent drift)
+layout(location=5) in float iE;       // swayAngleRand (per-clump, signed)
+uniform vec2  uCanopyOrigin;          // -extent/2
+uniform vec2  uCanopyExtent;          // (extent, extent)
 uniform float uMorph;                 // drift phase (incoherent band, §5.2)
 uniform float uMorphAmount;           // orbit radius scale (m)
+uniform vec2  uSway;                  // coherent-band sway for this layer (§5.1)
+uniform float uWindLevel;             // signed sway fraction u(t) — drives leaf swing intensity
+uniform float uWindTime;              // seconds, for leaf flutter
+uniform float uLeafSwing;             // master: how far leaves rock as wind blows
+uniform float uFlutterFreq;           // leaf flutter rate (Hz)
+uniform float uSwayVar;               // per-clump spread of sway amount + direction
 out vec2 vLocal;
 out vec3 vTau;
 void main(){
-  // each leaf walks its own small bounded orbit; same phase rate, decorrelated phase/shape
-  // -> neighbours move independently (gaps reorganize), periodic in 2π (exact return).
-  float th = uMorph + iWobble.w;
-  vec2 lp = vec2(iWobble.x*cos(th), iWobble.y*sin(th));
-  float c2=cos(iWobble.z), s2=sin(iWobble.z);
-  vec2 drift = uMorphAmount * mat2(c2,-s2,s2,c2) * lp;
-  float c=cos(iAngle), s=sin(iAngle);
+  vec2 center = iA.xy; float A = iA.z, B0 = iA.w;
+  float angle = iB.x, restTilt = iB.y, swingGain = iB.z, swingPhase = iB.w;
+  // ---- leaf swings with the wind: flags with u, flutters with |u| (decorrelated phase) ----
+  // §4.5: the footprint foreshortens as the leaf tilts, so the dapple CHANGES SHAPE, not just
+  // position — and returns to rest when the gust passes (u -> 0).
+  float wm = abs(uWindLevel);
+  float swing = uLeafSwing*swingGain*(0.5*uWindLevel + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
+  float tilt = restTilt + swing;
+  float B = B0 * max(0.05, abs(cos(tilt)));   // winks small gaps open/shut
+  float ang = angle + 0.2*swing;              // slight in-plane rock as well
+  // ---- incoherent drift orbit (unchanged, periodic) ----
+  float th = uMorph + iD.w;
+  vec2 lp = vec2(iD.x*cos(th), iD.y*sin(th));
+  float co=cos(iD.z), so=sin(iD.z);
+  vec2 drift = uMorphAmount * mat2(co,-so,so,co) * lp;
+  // ---- coherent sway, varied PER CLUMP in amount AND direction (§5.4 medium band) ----
+  // twigs flex differently, so the field shears/morphs instead of translating as one rigid slab.
+  float swayGain = 1.0 + iC.w*uSwayVar;
+  float ao = iE*uSwayVar*0.6;
+  float cg=cos(ao), sg=sin(ao);
+  vec2 sway = swayGain * mat2(cg,-sg,sg,cg) * uSway;
+  // ---- place the (foreshortened, rocked) leaf quad ----
+  float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
-  vec2 world = (iCenter + drift) + R*(aCorner*iHalf);
+  vec2 world = center + sway + drift + R*(aCorner*vec2(A,B));
   vec2 uv = (world - uCanopyOrigin)/uCanopyExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = aCorner;
-  vTau = iTau;
+  vTau = iC.xyz;
 }`;
 
 const FS_BAKE = `#version 300 es
@@ -310,7 +347,9 @@ const progPoints = program(VS_POINTS, FS_POINTS);
 const U = {};
 function loc(prog, name){ return gl.getUniformLocation(prog, name); }
 U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
-           morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount') };
+           morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'),
+           windLevel:loc(progBake,'uWindLevel'), windTime:loc(progBake,'uWindTime'),
+           leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), swayVar:loc(progBake,'uSwayVar') };
 U.tp = {
   samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
   heights:loc(progTransport,'uLayerHeight[0]'), layerCount:loc(progTransport,'uLayerCount'),
@@ -387,29 +426,33 @@ function regenCanopy(){
   const frac = pcF - pcInt;                         // marginal leaf fades in by this
   const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
   const nClusters = Math.max(1, params.clusters_per_layer|0);
+  const TAU2 = Math.PI*2;
 
   for(let l=0;l<params.layer_count;l++){
-    const data = [];   // 12 floats/leaf: cx,cy,hw,hh,angle, taurgb, ax,ay,orient,phase
+    const data = [];   // 17 floats/leaf — see attribute layout below
     for(let c=0;c<nClusters;c++){
-      const rng = mulberry32(hash3(params.seed>>>0, l, c));   // stable per (layer,cluster)
+      const rng  = mulberry32(hash3(params.seed>>>0, l, c));               // arrangement stream
+      const rng2 = mulberry32(hash3((params.seed>>>0)^0x5bd1e995, l, c));  // wind-identity stream (separate)
       const gauss = makeGauss(rng);
       const cx=(rng()-0.5)*E*0.94, cy=(rng()-0.5)*E*0.94;
+      // per-clump (twig) sway response: rigid within a clump, different between clumps
+      const swayRand = rng2()*2-1, swayAngleRand = rng2()*2-1;
       for(let k=0;k<nLeaf;k++){
-        // identical rng draws whether full or marginal -> position never jumps with density
+        // primary stream draws kept in the SAME order as before -> rest arrangement unchanged
         const cov = (k===pcInt) ? frac : 1.0;
         const x = cx + gauss()*params.cluster_spread_m;
         const y = cy + gauss()*params.cluster_spread_m;
         const size = params.leaf_size_m*(0.6+0.8*rng());
-        const hw = size*0.5;
-        let hh = size*0.5/params.leaf_aspect;
-        // orientation foreshortening: edge-on leaves block almost nothing
-        const tilt = rng()*params.max_tilt*(Math.PI*0.5);
-        hh *= Math.max(0.05, Math.abs(Math.cos(tilt)));
+        const A = size*0.5;                              // long half-axis
+        const B0 = size*0.5/params.leaf_aspect;          // face-on short half (shader foreshortens)
+        const restTilt = rng()*params.max_tilt*(Math.PI*0.5);
         const angle = rng()*Math.PI;
-        // per-leaf orbit for the incoherent band: elliptical, decorrelated orient+phase
-        const ax = 0.4+0.6*rng(), ay = 0.4+0.6*rng();
-        const orient = rng()*Math.PI*2.0, phase = rng()*Math.PI*2.0;
-        data.push(x,y,hw,hh,angle, tau[0]*cov,tau[1]*cov,tau[2]*cov, ax,ay,orient,phase);
+        const ax = 0.4+0.6*rng(), ay = 0.4+0.6*rng();    // incoherent orbit
+        const orient = rng()*TAU2, phase = rng()*TAU2;
+        // wind-identity stream (does not perturb the arrangement)
+        const swingGain = 0.6+0.8*rng2(), swingPhase = rng2()*TAU2;
+        data.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
+                  tau[0]*cov,tau[1]*cov,tau[2]*cov,swayRand, ax,ay,orient,phase, swayAngleRand);
       }
     }
     const arr=new Float32Array(data);
@@ -421,14 +464,14 @@ function regenCanopy(){
     gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
     gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-    const S=48;
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,2,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
-    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,2,gl.FLOAT,false,S,8);  gl.vertexAttribDivisor(2,1);
-    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(3,1);
-    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,3,gl.FLOAT,false,S,20); gl.vertexAttribDivisor(4,1);
-    gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(5,1);
+    const S=68;   // 17 floats/leaf: [c.xy,A,B0][angle,tilt,swingGain,swingPhase][tau.rgb,swayRand][orbit.xyzw][swayAngleRand]
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
+    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
+    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,4,gl.FLOAT,false,S,48); gl.vertexAttribDivisor(4,1);
+    gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,1,gl.FLOAT,false,S,64); gl.vertexAttribDivisor(5,1);
     gl.bindVertexArray(null);
-    layerVAO.push({ vao, count: arr.length/12, buf });
+    layerVAO.push({ vao, count: arr.length/17, buf });
   }
 }
 
@@ -442,11 +485,20 @@ function bake(){
   gl.uniform1f(U.bake.edge, params.edge_softness);
   gl.uniform1f(U.bake.morph, params.drift_phase);
   gl.uniform1f(U.bake.morphAmount, params.drift_amount);
+  gl.uniform1f(U.bake.windLevel, motion.u);
+  gl.uniform1f(U.bake.windTime, motion.time);
+  gl.uniform1f(U.bake.leafSwing, params.leaf_swing);
+  gl.uniform1f(U.bake.flutterFreq, params.flutter_freq);
+  gl.uniform1f(U.bake.swayVar, params.sway_variation);
   gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);
   gl.viewport(0,0,res,res);
   gl.enable(gl.BLEND);
   gl.blendFunc(gl.ONE, gl.ONE);          // optical depth accumulates additively
+  const H=layerHeights(), base=params.canopy_base_height_m;
   for(let l=0;l<params.layer_count;l++){
+    // higher layers ride longer levers -> sway more when height gain > 0 (else pure translation)
+    const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
+    gl.uniform2f(U.bake.sway, motion.sway[0]*f, motion.sway[1]*f);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layerTex[l], 0);
     gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1
     const L=layerVAO[l];
@@ -515,6 +567,53 @@ function layerHeights(){
 }
 
 // ===========================================================================
+// Motion — one time-driven state, two bands (spec §5). Coherent: gust -> spring
+// -> near-uniform canopy translation. Incoherent: advance the drift phase (§5.2).
+// ===========================================================================
+const TAU = Math.PI*2;
+const motion = { time:0, u:0, v:0, env:0, sway:[0,0] };   // u = sway as a fraction of ceiling
+
+// smooth, deterministic gust signal in [0,1] — mostly calm with occasional swells
+function gustShape(t, f){
+  let s = Math.sin(t*f*TAU)*0.6 + Math.sin(t*f*TAU*2.3+1.7)*0.3 + Math.sin(t*f*TAU*5.1+4.2)*0.1;
+  s = 0.5 + 0.5*s;
+  return clamp(s*s, 0, 1);          // square -> spend more time low, peak in gusts
+}
+function motionActive(){
+  return params.wind_strength>0 || (params.drift_auto && params.drift_amount>0)
+      || Math.abs(motion.u)>1e-3 || Math.abs(motion.v)>1e-3;   // keep simulating until settled
+}
+function tick(dt){
+  dt = clamp(dt, 0, 1/15);                                  // guard tab-switch spikes
+  // breathing: asymmetric one-pole envelope (attack ≠ decay) on the raw gust
+  const raw = gustShape(motion.time, params.gust_frequency);
+  const tc = (raw>motion.env) ? params.gust_attack : params.gust_decay;
+  motion.env += (raw - motion.env) * (1 - Math.exp(-dt/Math.max(tc,1e-3)));
+  const drive = params.wind_strength * motion.env;          // dimensionless; 1 ≈ stiffening onset
+  // underdamped nonlinear spring; rest is 0 (exact relaxation), wind is a force, not a target.
+  const w = params.sway_stiffness;
+  const steps = Math.max(1, Math.ceil(dt/(1/120)));         // substep for stability across ω
+  const h = dt/steps;
+  for(let i=0;i<steps;i++){
+    const denom = Math.max(0.02, 1 - motion.u*motion.u);    // stiffening: restoring -> ∞ at ceiling
+    let damp = params.damping_ratio;
+    if(motion.u*motion.v < 0) damp /= (1 + params.backlash_gain);  // whip-back: under-damp the return
+    const a = w*w*(drive - motion.u/denom) - 2*damp*w*motion.v;
+    motion.v += a*h;
+    motion.u += motion.v*h;
+  }
+  motion.u = clamp(motion.u, -1.5, 1.5);                    // safety; stiffening keeps it near ±1
+  const dir = params.wind_direction_deg*DEG;
+  motion.sway = [Math.cos(dir)*motion.u*params.sway_ceiling, Math.sin(dir)*motion.u*params.sway_ceiling];
+  motion.time += dt;
+  // incoherent band: advance the drift phase (periodic in 2π)
+  if(params.drift_auto && params.drift_amount>0){
+    params.drift_phase = (params.drift_phase + params.drift_speed*dt) % TAU;
+    syncControl('drift_phase');
+  }
+}
+
+// ===========================================================================
 // Render
 // ===========================================================================
 function resize(){
@@ -580,20 +679,17 @@ function drawSourceInset(){
 const hud=document.getElementById('hud');
 let last=performance.now(), fps=60;
 function frame(now){
-  const dt=now-last; last=now; fps += ((1000/Math.max(dt,1))-fps)*0.1;
+  const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1;
   resize();
-  // incoherent band: advance drift phase and re-bake the moving leaves each frame
-  if(params.drift_auto && params.drift_amount>0){
-    params.drift_phase = (params.drift_phase + params.drift_speed*dt/1000) % (Math.PI*2);
-    syncControl('drift_phase');
-    bake();
-  }
+  // when anything moves, advance the motion state and re-bake the canopy this frame
+  if(motionActive()){ tick(dtms/1000); bake(); }
   if(params.show_layer) drawLayerBlit(); else drawTransport();
   if(params.show_source && !dev.classList.contains('hidden')) drawSourceInset();
   const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
+  const sway=(Math.hypot(motion.sway[0],motion.sway[1])*100).toFixed(0);
   hud.textContent =
     `${fps.toFixed(0)} fps   ${src.count} suns × ${params.layer_count} layers = ${src.count*params.layer_count} taps/px\n`+
-    `blur scale h·θ ≈ ${blur} cm   cloud ${params.cloud_thickness.toFixed(2)}   sun ${params.sun_elevation_deg.toFixed(0)}°/${params.sun_azimuth_deg.toFixed(0)}°`;
+    `blur h·θ ≈ ${blur} cm   cloud ${params.cloud_thickness.toFixed(2)}   sun ${params.sun_elevation_deg.toFixed(0)}°/${params.sun_azimuth_deg.toFixed(0)}°   wind ${params.wind_strength.toFixed(2)} → sway ${sway} cm`;
   requestAnimationFrame(frame);
 }
 
@@ -644,6 +740,21 @@ const PANEL = [
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
   ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
+
+  ['h','Wind — coherent band'],
+  ['s','wind_strength','strength',0,2,0.01,''],
+  ['s','wind_direction_deg','dir °',0,360,1,''],
+  ['s','gust_frequency','gust freq',0.01,1,0.005,''],
+  ['s','gust_attack','attack (s)',0.05,5,0.05,''],
+  ['s','gust_decay','decay (s)',0.05,8,0.05,''],
+  ['s','sway_stiffness','stiffness ω',0.5,15,0.1,''],
+  ['s','sway_ceiling','ceiling (m)',0.05,1.5,0.01,''],
+  ['s','damping_ratio','damping ζ',0.02,1,0.01,''],
+  ['s','backlash_gain','backlash',0,4,0.05,''],
+  ['s','sway_height_gain','height gain',0,2,0.05,''],
+  ['s','sway_variation','clump var',0,1,0.01,''],
+  ['s','leaf_swing','leaf swing',0,2,0.01,''],
+  ['s','flutter_freq','flutter Hz',0,5,0.05,''],
 
   ['h','Leaf drift (incoherent band)'],
   ['s','drift_amount','amount (m)',0,0.4,0.005,'bake'],

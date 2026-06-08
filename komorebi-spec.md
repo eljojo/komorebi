@@ -199,6 +199,22 @@ Three specifics, each a required piece of the model:
 - **Backlash at the stiffening.** A branch bent hard against its ceiling has stored a lot of elastic energy. When it wins or the gust eases, it does **not** glide home — it **recoils past rest and oscillates back down.** The snap-back is **underdamped**, and the overshoot grows with how hard the branch was pushed into the ceiling. So this band is not *load → relax*; it is **load → clip against stiffening → whip-back → settle.**
 - **Exact relaxation.** It returns to a **stored, honest equilibrium** — the original starting point.
 
+**Realizing it (first concrete model).** Before a full branch hierarchy exists, the whole-tree node is collapsed into a **single 1-D spring** along the wind direction, and its displacement is applied as a **near-uniform translation of the canopy plane at bake time** — every leaf shifts by the same vector, so the dapple field slides bodily, which is exactly "translates nearly intact." A `height_gain` optionally lets higher layers ride longer levers and sway a touch more; at zero it is pure translation. The spring is the four specifics above, made literal:
+
+- The wind is a **force**, not a target; the spring's rest is **0**, so relaxation is exact for free.
+- **Stiffening** is a restoring force that *diverges at a ceiling* — `restoring ∝ u/(1−u²)` with `u` the sway as a fraction of the ceiling — so no finite gust can push past it, and the resistance climbs as it nears the limit (the "fighting").
+- **Backlash** is the same underdamped spring with **asymmetric damping**: damping is cut on the *return* stroke (when velocity opposes displacement), so a branch released from near the ceiling whips back *past* rest and rings down, and the overshoot grows with how hard it was loaded — no separate mechanism.
+- **Breathing** is an **asymmetric one-pole envelope** (independent attack and decay constants) on a smooth low-frequency gust signal, so gusts ease in and out rather than switching.
+
+This is deliberately the *reduced* form of the §5 hierarchy (one node, not a tree); it is faithful to the felt behavior and is the seam the real spring graph will later plug into.
+
+**Correction from feel-testing: translation alone is not wind.** A single rigid translation — every leaf shifted by the identical vector — does *not* read as wind, even with correct breathing and backlash. Two things were missing, and both are already in the spec elsewhere; the coherent band must carry them:
+
+- **Leaves change angle as the wind blows.** The wind rocks each leaf, and by §4.5 a tilting leaf's footprint **foreshortens** — so the dapple *changes shape*, not just position, and returns to rest when the gust passes. Without this every blob keeps its exact silhouette and merely slides, which is the tell that betrays it as a translation. The rock has a quasi-static part (the leaf *flags* with the wind, ∝ the signed sway) and a fluttering part whose amplitude grows with wind strength (∝ |sway|), decorrelated in phase per leaf. At zero wind it vanishes, so the rest image is untouched.
+- **The sway is not uniform.** Wind "is never only in one axis": clumps (twigs) must flex by **different amounts and in slightly different directions**, so the field shears and gaps morph rather than the whole sheet marching in lockstep. This is precisely the §5.4 *medium band* ("mid-branches & twigs flex differently → gaps morph and rearrange, then recover"), reached here as a per-clump variation on the single coherent sway rather than as its own hierarchy level — leaves are rigid within a clump, clumps differ from one another.
+
+The lesson generalizes: **motion that only moves leaf *positions* will always look like a slide.** A real chunk of "wind" lives in leaf *orientation* driving the footprint (§4.5), and in *decorrelation* between neighbors (§5.2/§5.4). Position is the least of it.
+
 ### 5.2 The incoherent band (bottom of the hierarchy)
 
 A **fast, spatially incoherent** forcing — "faint, in all directions" — that kicks **individual leaves and petioles** slightly differently, with almost no correlation between neighbors. That **decorrelation is the entire difference** from the coherent band: there, neighbors move together and shape is preserved; here, neighbors move independently, so gaps **reorganize** rather than translate.
