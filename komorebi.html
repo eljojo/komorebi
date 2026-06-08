@@ -97,10 +97,32 @@ const params = {
   ambient_skylight: 0.5,
   tone_map: 2,                     // 0 none, 1 reinhard, 2 aces
 
+  // Leaf drift — manual preview of the incoherent band (spec §5.2)
+  drift_amount: 0.0,               // orbit radius (m): 0 = static, small = twinkle, large = reorganization
+  drift_phase: 0.0,                // the continuous sweep axis; periodic in 2π -> leaves return
+  drift_auto: false,               // advance phase over time (hands-free)
+  drift_speed: 0.4,                // phase units/sec when auto
+
   // Debug
   show_source: true,
   show_layer: false,
   show_layer_index: 0,
+};
+
+// Snapshot the defaults BEFORE anything mutates params; presets merge over this
+// so old/partial JSON stays forward-compatible as new knobs are added.
+const DEFAULTS = JSON.parse(JSON.stringify(params));
+const BUILTIN_PRESETS = {
+  'Default': JSON.parse(JSON.stringify(DEFAULTS)),
+  'Afternoon (low sun)': Object.assign({}, DEFAULTS, {
+    sample_count:16, core_angular_radius_deg:0.27, halo_angular_radius_deg:6,
+    core_weight_fraction:1, cloud_thickness:0, eclipse:false, eclipse_amount:0.55,
+    layer_count:4, canopy_base_height_m:3.2, canopy_thickness_m:2.6, foliage_density:1.75,
+    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.15, leaf_size_m:0.10,
+    leaf_aspect:2, max_tilt:0.54, edge_softness:0.20, trans_r:0.30, trans_g:0.61, trans_b:0.50,
+    canopy_extent_m:6, sun_elevation_deg:18.87, sun_azimuth_deg:162,
+    view_extent_m:6.2, exposure:1.44, contrast:1.22, ambient_skylight:0.80, tone_map:2,
+  }),
 };
 
 // ---------------------------------------------------------------------------
@@ -132,14 +154,23 @@ layout(location=1) in vec2 iCenter;   // leaf center, world meters
 layout(location=2) in vec2 iHalf;     // footprint half-size (world m, already foreshortened)
 layout(location=3) in float iAngle;
 layout(location=4) in vec3 iTau;      // optical depth (rgb) at full coverage
+layout(location=5) in vec4 iWobble;   // per-leaf orbit: (ampX, ampY, orientation, phase) — decorrelated
 uniform vec2 uCanopyOrigin;           // -extent/2
 uniform vec2 uCanopyExtent;           // (extent, extent)
+uniform float uMorph;                 // drift phase (incoherent band, §5.2)
+uniform float uMorphAmount;           // orbit radius scale (m)
 out vec2 vLocal;
 out vec3 vTau;
 void main(){
+  // each leaf walks its own small bounded orbit; same phase rate, decorrelated phase/shape
+  // -> neighbours move independently (gaps reorganize), periodic in 2π (exact return).
+  float th = uMorph + iWobble.w;
+  vec2 lp = vec2(iWobble.x*cos(th), iWobble.y*sin(th));
+  float c2=cos(iWobble.z), s2=sin(iWobble.z);
+  vec2 drift = uMorphAmount * mat2(c2,-s2,s2,c2) * lp;
   float c=cos(iAngle), s=sin(iAngle);
   mat2 R=mat2(c,-s,s,c);
-  vec2 world = iCenter + R*(aCorner*iHalf);
+  vec2 world = (iCenter + drift) + R*(aCorner*iHalf);
   vec2 uv = (world - uCanopyOrigin)/uCanopyExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = aCorner;
@@ -278,7 +309,8 @@ const progPoints = program(VS_POINTS, FS_POINTS);
 // cache uniform locations
 const U = {};
 function loc(prog, name){ return gl.getUniformLocation(prog, name); }
-U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge') };
+U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
+           morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount') };
 U.tp = {
   samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
   heights:loc(progTransport,'uLayerHeight[0]'), layerCount:loc(progTransport,'uLayerCount'),
@@ -333,26 +365,38 @@ function rebuildTextures(){
   }
 }
 
-// ---- canopy generation: clustered leaf fields per layer --------------------
+// ---- canopy generation: clustered leaf fields, per-clump stable seeding -----
+// Each clump gets its own RNG seeded by (layer,cluster), so changing one knob
+// never reshuffles unrelated clumps — leaf k is fixed by k regardless of how many
+// leaves exist. The fractional marginal leaf fades in by coverage, so density is
+// continuous: 1.75 and 1.76 differ by a sliver of opacity, not a whole new set.
+function hash3(a,b,c){ let h=(a^0x9E3779B1)>>>0;
+  h=Math.imul(h^b,0x85EBCA6B)>>>0; h=Math.imul(h^c,0xC2B2AE35)>>>0;
+  return (h^(h>>>15))>>>0; }
 function regenCanopy(){
   layerVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
   layerVAO = [];
-  const rng = mulberry32(params.seed);
-  const gauss = makeGauss(rng);
   const E = params.canopy_extent_m;
   const tau = [
     -Math.log(clamp(params.trans_r,1e-4,0.999)),
     -Math.log(clamp(params.trans_g,1e-4,0.999)),
     -Math.log(clamp(params.trans_b,1e-4,0.999)),
   ];
-  const perCluster = Math.max(1, Math.round(params.leaves_per_cluster*params.foliage_density));
+  const pcF = Math.max(0, params.leaves_per_cluster*params.foliage_density);
+  const pcInt = Math.floor(pcF);
+  const frac = pcF - pcInt;                         // marginal leaf fades in by this
+  const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
+  const nClusters = Math.max(1, params.clusters_per_layer|0);
 
   for(let l=0;l<params.layer_count;l++){
-    const nClusters = Math.max(1, params.clusters_per_layer|0);
-    const data = [];   // 8 floats per leaf: cx,cy,hw,hh,angle,taur,taug,taub
+    const data = [];   // 12 floats/leaf: cx,cy,hw,hh,angle, taurgb, ax,ay,orient,phase
     for(let c=0;c<nClusters;c++){
+      const rng = mulberry32(hash3(params.seed>>>0, l, c));   // stable per (layer,cluster)
+      const gauss = makeGauss(rng);
       const cx=(rng()-0.5)*E*0.94, cy=(rng()-0.5)*E*0.94;
-      for(let k=0;k<perCluster;k++){
+      for(let k=0;k<nLeaf;k++){
+        // identical rng draws whether full or marginal -> position never jumps with density
+        const cov = (k===pcInt) ? frac : 1.0;
         const x = cx + gauss()*params.cluster_spread_m;
         const y = cy + gauss()*params.cluster_spread_m;
         const size = params.leaf_size_m*(0.6+0.8*rng());
@@ -362,7 +406,10 @@ function regenCanopy(){
         const tilt = rng()*params.max_tilt*(Math.PI*0.5);
         hh *= Math.max(0.05, Math.abs(Math.cos(tilt)));
         const angle = rng()*Math.PI;
-        data.push(x,y,hw,hh,angle, tau[0],tau[1],tau[2]);
+        // per-leaf orbit for the incoherent band: elliptical, decorrelated orient+phase
+        const ax = 0.4+0.6*rng(), ay = 0.4+0.6*rng();
+        const orient = rng()*Math.PI*2.0, phase = rng()*Math.PI*2.0;
+        data.push(x,y,hw,hh,angle, tau[0]*cov,tau[1]*cov,tau[2]*cov, ax,ay,orient,phase);
       }
     }
     const arr=new Float32Array(data);
@@ -374,13 +421,14 @@ function regenCanopy(){
     gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
     gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-    const S=32;
+    const S=48;
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,2,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,2,gl.FLOAT,false,S,8);  gl.vertexAttribDivisor(2,1);
     gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(3,1);
     gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,3,gl.FLOAT,false,S,20); gl.vertexAttribDivisor(4,1);
+    gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(5,1);
     gl.bindVertexArray(null);
-    layerVAO.push({ vao, count: arr.length/8, buf });
+    layerVAO.push({ vao, count: arr.length/12, buf });
   }
 }
 
@@ -392,6 +440,8 @@ function bake(){
   gl.uniform2f(U.bake.origin, -E/2, -E/2);
   gl.uniform2f(U.bake.extent, E, E);
   gl.uniform1f(U.bake.edge, params.edge_softness);
+  gl.uniform1f(U.bake.morph, params.drift_phase);
+  gl.uniform1f(U.bake.morphAmount, params.drift_amount);
   gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);
   gl.viewport(0,0,res,res);
   gl.enable(gl.BLEND);
@@ -532,6 +582,12 @@ let last=performance.now(), fps=60;
 function frame(now){
   const dt=now-last; last=now; fps += ((1000/Math.max(dt,1))-fps)*0.1;
   resize();
+  // incoherent band: advance drift phase and re-bake the moving leaves each frame
+  if(params.drift_auto && params.drift_amount>0){
+    params.drift_phase = (params.drift_phase + params.drift_speed*dt/1000) % (Math.PI*2);
+    syncControl('drift_phase');
+    bake();
+  }
   if(params.show_layer) drawLayerBlit(); else drawTransport();
   if(params.show_source && !dev.classList.contains('hidden')) drawSourceInset();
   const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
@@ -589,6 +645,12 @@ const PANEL = [
   ['s','ambient_skylight','ambient',0,3,0.01,''],
   ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
 
+  ['h','Leaf drift (incoherent band)'],
+  ['s','drift_amount','amount (m)',0,0.4,0.005,'bake'],
+  ['s','drift_phase','phase',0,6.2832,0.01,'bake'],
+  ['t','drift_auto','auto',''],
+  ['s','drift_speed','speed',0,2,0.01,''],
+
   ['h','Debug'],
   ['t','show_source','show source',''],
   ['t','show_layer','show layer','' ],
@@ -597,6 +659,7 @@ const PANEL = [
 
 function applyScope(scope){
   if(scope==='source') regenSource();
+  else if(scope==='bake') bake();                  // drift moves leaves at bake time only
   else if(scope==='canopy'){ regenCanopy(); bake(); }
   else if(scope==='textures'){ rebuildTextures(); regenCanopy(); bake(); }
 }
@@ -634,7 +697,59 @@ function buildPanel(){
   }
 }
 function fmt(v){ return (Math.abs(v)>=100||Number.isInteger(v))?String(v):(+v).toFixed(2); }
-function syncControl(key){ const c=controlEls[key]; if(!c)return; c.input.value=params[key]; if(c.valEl) c.valEl.textContent=fmt(params[key]); }
+function syncControl(key){ const c=controlEls[key]; if(!c)return;
+  if(c.input.type==='checkbox') c.input.checked=!!params[key]; else c.input.value=params[key];
+  if(c.valEl) c.valEl.textContent=fmt(params[key]); }
+function syncAllControls(){ for(const k in controlEls) syncControl(k); }
+function rebuildAll(){ rebuildTextures(); regenCanopy(); bake(); regenSource(); }
+function applyParams(obj){
+  if(!obj || typeof obj!=='object') return;
+  const merged = Object.assign({}, DEFAULTS, obj);   // missing keys -> defaults (forward-compat)
+  for(const k in DEFAULTS) params[k] = merged[k];
+  rebuildAll(); syncAllControls();
+}
+
+// ---- presets: built-ins + localStorage, plus JSON copy/paste ---------------
+const LS_KEY='komorebi.presets';
+function getStored(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(e){ return {}; } }
+function setStored(o){ try{ localStorage.setItem(LS_KEY, JSON.stringify(o)); }catch(e){} }
+function getPreset(name){ const s=getStored(); return (name in s) ? s[name] : BUILTIN_PRESETS[name]; }
+let presetSel;
+function refreshPresetSelect(selected){
+  presetSel.innerHTML='';
+  const stored=getStored();
+  const mk=(name,mark)=>{ const o=document.createElement('option'); o.value=name; o.textContent=mark+name;
+    if(name===selected) o.selected=true; presetSel.appendChild(o); };
+  for(const n of Object.keys(BUILTIN_PRESETS)) mk(n,'• ');     // built-in
+  for(const n of Object.keys(stored)) mk(n,'★ ');             // saved
+}
+function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
+function buildPresetUI(){
+  const h=document.createElement('h2'); h.textContent='Presets'; dev.appendChild(h);
+  const r1=document.createElement('div'); r1.className='ctl select';
+  presetSel=document.createElement('select');
+  presetSel.addEventListener('change',()=>applyParams(getPreset(presetSel.value)));
+  r1.appendChild(presetSel); dev.appendChild(r1);
+
+  const r2=document.createElement('div'); r2.className='ctl';
+  r2.append(
+    mkBtn('save',()=>{ const n=(prompt('Save preset as:')||'').trim(); if(!n) return;
+      const s=getStored(); s[n]=JSON.parse(JSON.stringify(params)); setStored(s); refreshPresetSelect(n); }),
+    mkBtn('delete',()=>{ const n=presetSel.value, s=getStored();
+      if(!(n in s)){ alert("Built-in presets can't be deleted."); return; }
+      delete s[n]; setStored(s); refreshPresetSelect('Default'); }));
+  dev.appendChild(r2);
+
+  const r3=document.createElement('div'); r3.className='ctl';
+  r3.append(
+    mkBtn('copy JSON',()=>{ const txt=JSON.stringify(params,null,2);
+      if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).catch(()=>prompt('Copy JSON:',txt));
+      else prompt('Copy JSON:',txt); }),
+    mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
+      try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(e){ alert('Invalid JSON'); } }));
+  dev.appendChild(r3);
+  refreshPresetSelect('Default');
+}
 
 // drag on canvas = move the sun (azimuth from x, elevation from y)
 let dragging=false, px=0, py=0;
@@ -651,6 +766,7 @@ window.addEventListener('keydown',e=>{ if(e.key==='d'||e.key==='D') dev.classLis
 // ===========================================================================
 // Boot
 // ===========================================================================
+buildPresetUI();
 buildPanel();
 rebuildTextures();
 regenCanopy();

@@ -207,12 +207,16 @@ Its visible effect scales from a faint **glisten** all the way up to full **caus
 
 **The caustics reference is physics, not just a vibe, and belongs in the model.** Pool caustics are bright features that move by **merging, splitting, and collapsing** rather than sliding. What reorganizes here is the same *visual grammar*: small gaps drifting in and out of the pinhole regime, neighboring sun-images overlapping and separating, brightness gathering and dispersing as apertures breathe. It is **not** literal optical focusing the way water is — but the felt behavior (smooth birth, merge, and collapse of bright shapes) is shared, and it tells an implementer what the second motion should *feel* like in a way no equation does.
 
+**Driving it directly (a single continuous phase).** The band can be exercised without any wind by exposing one continuous **drift phase** φ. Each leaf is given a fixed rest position and a small, bounded **orbit** — amplitude, orientation, and starting phase all *decorrelated* between neighbors — and advancing φ walks every leaf around its own orbit. Because the orbits are bounded and share a rate, the canopy is **periodic in φ and returns exactly to its starting configuration each cycle** — this is the remembered "the gaps change, then go back to what they were." The neighbor-decorrelation is, again, the whole point: it makes gaps *reorganize* (merge, split, collapse) rather than translate. The one hard requirement is **continuity of the driver**: φ and φ+ε must differ only infinitesimally, so the eye reads a *morph*, not a cut. Any control that instead reshuffles a random *set* — most obviously changing an integer leaf **count** — steps discontinuously and reads as a jump-cut, which is exactly why density is the wrong knob for this. When the incoherent wind band (§5.4) is built, it simply *becomes* the driver of φ; exposing φ as a manual slider is the same mechanism with time replaced by a hand.
+
 ### 5.3 Density is a first-class knob
 
 Whether independent leaf motion **restructures** the gaps or merely **twinkles** them is set by foliage density:
 
 - **Low density** (the early-spring condition — sparse, immature leaves): individual leaves still matter; moving one opens or closes a real gap → the **caustic-like reorganization** is possible. *Low density is the enabling condition for the second motion, and the spec should say so plainly.*
 - **High density** (summer canopy): every gap is backed by ten more leaves; the topology is saturated; the same flutter barely changes the cast pattern → flutter only **twinkles.**
+
+Note that density is a *count*, and a count is a poor axis to *sweep*: nudging it regenerates a different random set, so the pattern jumps rather than morphs (see §5.2). Two non-physical harness measures make density pleasant to explore without changing the model: generate **each clump from its own stable seed** (so changing one knob never reshuffles unrelated clumps), and **fade the fractional marginal leaf in by coverage** (so crossing an integer count is continuous rather than a pop). These are about smoothing the *parameter space*, not the physics; the actual gap *reorganization* is the drift phase of §5.2, not density.
 
 ### 5.4 The unifying mapping
 
@@ -286,11 +290,23 @@ Grouped by subsystem; the knobs an implementer will actually expose.
 - `strength`
 - `spatial_correlation_length` (small → decorrelated per-leaf)
 - `temporal_frequency` (flutter rate)
+- `drift_phase` *(the continuous sweep axis of §5.2; periodic in 2π → exact return. Driven by hand now, by the wind band later)*
+- `drift_amount` *(per-leaf orbit radius: 0 = static, small = twinkle, large = caustic-like reorganization)*
 
 **Look**
 - `exposure`, `contrast` (coupled to `cloud_thickness`)
 - `tone_map_curve`
 - `ambient_skylight` (lifts the green shadow wash)
+
+---
+
+## 9. Harness notes (non-physical)
+
+These belong to the authoring tool, not the model, but they shape how the model is *explored* and so are worth recording.
+
+- **Presets.** The full parameter set is saveable to the browser's local storage by name, and any state can be exported/imported as JSON for sharing across machines. Two presets ship built in: *Default*, and *Afternoon (low sun)* — a low-elevation, warm, sparse-spring look found by hand.
+- **Stable per-clump seeding & fractional-leaf fade.** As in §5.3, so the parameter space is smooth to sweep.
+- **Manual drift phase.** The §5.2 mechanism, exposed as a slider (`drift_phase`) with an `auto` option that advances it over time — a preview of the incoherent band before any real wind field exists.
 
 ---
 
