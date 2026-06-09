@@ -37,7 +37,7 @@ const lerpAngle = (a,b,t,period) => { const d=((b-a)%period + period*1.5)%period
 const MORPH_KEYS = [
   'core_angular_radius_deg','halo_angular_radius_deg','core_weight_fraction','cloud_thickness','eclipse_amount',
   'canopy_base_height_m','canopy_thickness_m',                          // layer heights — read live, no rebuild
-  'sun_elevation_deg','sun_azimuth_deg','view_extent_m','exposure','contrast',
+  'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength',
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'wind_strength','wind_direction_deg','gust_frequency','gust_attack','gust_decay',
@@ -134,7 +134,9 @@ const DEFAULTS = {
   sun_elevation_deg: 55,
   sun_azimuth_deg: 30,
   // Look
-  view_extent_m: 4.0,              // vertical span of the visible ground (zoom)
+  view_extent_m: 4.0,              // vertical span of the visible ground (zoom = on-axis span, any tilt)
+  view_pitch_deg: 16,              // camera tilt from straight-down (0 = top-down); gentle under-the-tree default
+  view_fov_deg: 50,                // vertical FOV — perspective strength / lens
   exposure: 1.3,
   contrast: 1.0,
   ambient_skylight: 0.5,
@@ -375,6 +377,7 @@ const BUILTIN_PRESETS = {
     "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
+    "view_pitch_deg": 24, "view_fov_deg": 64,
   }),
   // 'the void' — a dense 16-tree grove pulled wide (view 6.8 m), deep-green and low-sun.
   'the void': Object.assign({}, DEFAULTS, {
@@ -386,7 +389,7 @@ const BUILTIN_PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "tex_resolution": 1024,
     "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
-    "view_extent_m": 6.8, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2,
+    "view_extent_m": 6.8, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2, "view_pitch_deg": 0,
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
@@ -405,7 +408,7 @@ const BUILTIN_PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.376, "trans_g": 0.247, "trans_b": 0.113, "canopy_extent_m": 7, "tex_resolution": 1024,
     "seed": 290626672, "sun_elevation_deg": 35.964062500001056, "sun_azimuth_deg": 355.9855468749904,
-    "view_extent_m": 3.1, "exposure": 3.01, "contrast": 1.23, "ambient_skylight": 0.93, "sky_turbidity": 0.05, "tone_map": 2,
+    "view_extent_m": 3.1, "exposure": 3.01, "contrast": 1.23, "ambient_skylight": 0.93, "sky_turbidity": 0.05, "tone_map": 2, "view_pitch_deg": 24,
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
@@ -551,6 +554,9 @@ uniform int   uLayerCount;
 uniform mat2  uProj;                    // angular->ground per unit height (ellipse + shear)
 uniform float uViewExtent;
 uniform float uAspect;
+uniform float uPitch;            // camera tilt from straight-down (rad); 0 = top-down (reduces to the old ortho map)
+uniform float uFov;              // vertical full FOV (rad) — perspective strength / lens
+uniform vec3  uHazeColor;        // linear-HDR distance haze the far floor dissolves into (§4.7)
 uniform vec2  uCanopyOrigin;
 uniform vec2  uCanopyExtent;
 uniform vec3  uSunColor;
@@ -570,7 +576,25 @@ vec3 tap(highp sampler2D t, vec2 world){
   return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
 }
 void main(){
-  vec2 world = vec2((vUv.x-0.5)*uViewExtent*uAspect, (vUv.y-0.5)*uViewExtent);
+  // ---- tilted pinhole camera (spec §4.7): fragment -> ground point on z=0, plus a far-field haze factor.
+  // At uPitch=0 this reduces EXACTLY to the old orthographic map (vUv-0.5)*uViewExtent*[aspect,1] for any
+  // fov (a flat plane seen straight-on is linear), so presets are untouched until tilted. ----
+  float cp=cos(uPitch), sp=sin(uPitch);
+  float kf=max(tan(0.5*uFov), 1e-4);                 // image-plane half-extent (guard fov->0)
+  float sxc=(vUv.x-0.5)*uAspect, tyc=(vUv.y-0.5);
+  vec3 d = vec3(2.0*kf*sxc, 2.0*kf*tyc*cp + sp, 2.0*kf*tyc*sp - cp);   // ray = fwd + 2k*(sx*right + ty*up)
+  // camera height is degenerate for a flat floor (it only scales the view, which the uViewExtent hold
+  // below cancels exactly), so it's fixed at 1 rather than exposed — eye height would have no effect.
+  float scale = uViewExtent*cp*cp / max(2.0*kf, 1e-4);               // hold the on-axis vertical span = uViewExtent
+  float targetY = sp/max(cp,1e-4);                                    // recenter: screen centre -> world (0,0)
+  vec2 world; float fog;
+  if (d.z >= -1e-4){ world=vec2(0.0); fog=1.0; }                       // ray at/over the horizon -> all haze
+  else {
+    float lam = -1.0/d.z;                                             // ray .. ground-plane (z=0) intersection
+    world = vec2(scale*lam*d.x, scale*(lam*d.y - targetY));
+    float halfExtent = 0.5*uViewExtent*max(length(vec2(uAspect,1.0)),1e-4);
+    fog = smoothstep(1.15*halfExtent, 3.0*halfExtent, length(world));  // 0 across the whole frame at pitch 0
+  }
   vec3 acc = vec3(0.0);
   for(int i=0;i<MAX_SAMPLES;i++){
     if(i>=uSampleCount) break;
@@ -593,6 +617,7 @@ void main(){
   const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
   float rod = (1.0 - smoothstep(0.15, 0.6, dot(acc, LUMA))) * uTwilight * uMesopic;  // 1 deep shade, 0 dapples
   col = mix(col, dot(col, LUMA)*ROD_BLUE, rod*0.6);     // cap 0.6 so the deepest shade keeps a hint of green
+  col = mix(col, uHazeColor, fog);                       // far floor dissolves into atmospheric haze (§4.7); fog==0 at pitch 0
   col *= uExposure;
   if(uToneMap==1) col=reinhard(col);
   else if(uToneMap==2) col=aces(col);
@@ -711,6 +736,7 @@ function create(canvas, opts){
     samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
     heights:loc(progTransport,'uLayerHeight[0]'), layerCount:loc(progTransport,'uLayerCount'),
     proj:loc(progTransport,'uProj'), viewExtent:loc(progTransport,'uViewExtent'), aspect:loc(progTransport,'uAspect'),
+    pitch:loc(progTransport,'uPitch'), fov:loc(progTransport,'uFov'), haze:loc(progTransport,'uHazeColor'),
     origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
     sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'), ground:loc(progTransport,'uGround'),
     twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'),
@@ -1254,12 +1280,18 @@ function create(canvas, opts){
     gl.uniformMatrix2fv(U.tp.proj, false, projMatrix());
     gl.uniform1f(U.tp.viewExtent, params.view_extent_m);
     gl.uniform1f(U.tp.aspect, canvas.width/canvas.height);
+    gl.uniform1f(U.tp.pitch, clamp(params.view_pitch_deg,0,80)*DEG);     // camera tilt (rad); 0 = top-down
+    gl.uniform1f(U.tp.fov, clamp(params.view_fov_deg,5,140)*DEG);        // vertical full FOV (rad)
     gl.uniform2f(U.tp.origin, -E/2, -E/2);
     gl.uniform2f(U.tp.extent, E, E);
     // physical sun + sky colour from solar elevation (spec §3.5): warm/red low sun, ozone-blue shadows
     const atm = atmosphere(params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);
     gl.uniform3f(U.tp.sun, atm.sun[0], atm.sun[1], atm.sun[2]);
     gl.uniform3f(U.tp.ambient, atm.ambient[0], atm.ambient[1], atm.ambient[2]);
+    // distance haze: the sky/ambient HUE at a steady brightness, so the far floor fades into a time-of-day-
+    // consistent atmosphere (only visible once tilt blooms the fog; invisible at pitch 0).
+    { const a=atm.ambient, m=Math.max(a[0],a[1],a[2],1e-4), hb=0.6;
+      gl.uniform3f(U.tp.haze, a[0]/m*hb, a[1]/m*hb, a[2]/m*hb); }
     gl.uniform3f(U.tp.ground, params.ground_r, params.ground_g, params.ground_b);   // dirt-floor albedo (spec §4.7)
     // Purkinje (§3.5): rods take over the dim shade as the sun lowers. The global weight rides the same
     // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.

@@ -182,7 +182,7 @@ One equation:
 
 ### 4.7 Look
 
-Elliptical projection (from transport), the green wash (from the canopy), the **physical sun & sky colour** (`uSunColor`/`uAmbient` from the §3.5 atmosphere, driven by `sun_elevation` + `sky_turbidity`), the **ground albedo** the floor reflects with (`ground_rgb` — the irradiance that lands is reflected off a surface reflectance rather than an implicit white one; `(1,1,1)`, the default, is the plain white floor, and a few looks set a warm Mount-Royal dirt so their deep shade reads as dark earth while only the hottest dapples burn back toward white), exposure and contrast tied to source width, and a final tone-map — all **downstream** of the physics, accumulated in linear HDR.
+Elliptical projection (from transport), the green wash (from the canopy), the **physical sun & sky colour** (`uSunColor`/`uAmbient` from the §3.5 atmosphere, driven by `sun_elevation` + `sky_turbidity`), the **ground albedo** the floor reflects with (`ground_rgb` — the irradiance that lands is reflected off a surface reflectance rather than an implicit white one; `(1,1,1)`, the default, is the plain white floor, and a few looks set a warm Mount-Royal dirt so their deep shade reads as dark earth while only the hottest dapples burn back toward white), a **tilted perspective camera** (`view_pitch_deg` / `view_fov_deg` — a pinhole that casts each pixel onto the floor; at pitch 0 it reduces exactly to the original orthographic top-down map, and tilting drops the near floor to the bottom of frame, recedes the far floor, and dissolves it into atmospheric haze; `view_extent_m` stays the zoom = the on-axis ground span. Camera height is omitted — for a flat floor it only rescales the view, which the zoom hold cancels, so it has no independent effect), exposure and contrast tied to source width, and a final tone-map — all **downstream** of the physics, accumulated in linear HDR.
 
 ---
 
@@ -336,6 +336,7 @@ Grouped by subsystem; the knobs an implementer will actually expose.
 
 **Look**
 - `exposure`, `contrast` (coupled to `cloud_thickness`)
+- camera: `view_extent_m` (zoom = on-axis ground span), `view_pitch_deg` *(tilt from straight-down; 0 = the original top-down view, so it's opt-in per look)*, `view_fov_deg` *(lens / perspective strength)* — the far floor fades to atmospheric haze *(camera height is degenerate for a flat floor, so it isn't a control)*
 - `ground_albedo_rgb` *(the floor's reflectance the dapples reflect off; `(1,1,1)` = white floor (the default), with a warm dirt-brown on the looks that opt in so their shade reads as earth and only the hottest dapples burn back toward white)*
 - `tone_map_curve`
 - `ambient_skylight` (scales the physical sky fill — ozone-blue by day, warming toward dusk)

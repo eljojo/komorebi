@@ -146,6 +146,8 @@ const PANEL = [
 
   ['h','Look'],
   ['s','view_extent_m','view (m)',0.5,16,0.1,''],
+  ['s','view_pitch_deg','tilt °',0,70,1,''],
+  ['s','view_fov_deg','fov °',10,110,1,''],
   ['s','exposure','exposure',0,4,0.01,''],
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
@@ -286,7 +288,9 @@ const TIPS = {
   sun_elevation_deg:"<b>How high the sun is — drag it down for sunset.</b> A low sun stretches the dapples into long ellipses, turns the light warm and orange, and lets the shade go cool blue. The most scene-changing knob. (Or just drag on the picture.)",
   sun_azimuth_deg:"<b>Which compass direction the sun is in.</b> Turns the direction the dapples stretch and lean.",
   // Look
-  view_extent_m:"<b>Zoom — how much ground you see.</b> Small = a close-up of a few big dapples; large = a wide field of many small ones.",
+  view_extent_m:"<b>Zoom — how much ground you see.</b> Small = a close-up of a few big dapples; large = a wide field of many small ones. (It's the span at screen centre, so it holds as you tilt.)",
+  view_pitch_deg:"<b>Tilt — straight down vs. out along the floor.</b> 0° is the old top-down map; raise it and you're sitting under the tree — the near floor drops to the bottom of frame, the far floor recedes and dissolves into haze.",
+  view_fov_deg:"<b>Lens — how strong the perspective is.</b> Narrow is flat and telephoto; wide throws the near floor big and rushes the far floor away. Only bites once you've tilted.",
   exposure:"<b>Brightness.</b> How bright the floor is. Pure look — it never changes the light simulation, just where it lands on screen.",
   contrast:"<b>Punch.</b> Higher = bold, snappy dapples; lower = the flat, milky look of haze.",
   ambient_skylight:"<b>How much the sky fills the shadows.</b> The light that isn't direct sun — now coloured for real (blue by day, warmer at dusk). Up = softer, lifted shade; down = deep, moody shadows.",
