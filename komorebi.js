@@ -98,9 +98,25 @@ const DEFAULTS = {
 };
 
 const BUILTIN_PRESETS = {
-  // 'afternoon 7' is the boot default — a calm, warm, near-overhead spring grove, auto-quality on.
-  // 'afternoon 2'..'6' are earlier looks kept built in; any saved (★) look is the user's own in
+  // 'morning 1' is the boot default — a low-sun spring-morning grove (elongated dapples), auto-quality
+  // on. 'afternoon 2'..'7' are earlier looks kept built in; any saved (★) look is the user's own in
   // local storage. DEFAULTS stays the merge base so old/partial preset JSON is forward-compatible.
+  'morning 1': Object.assign({}, DEFAULTS, {
+    "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.195, "canopy_extent_m": 7, "tex_resolution": 1024,
+    "seed": 290626672, "sun_elevation_deg": 29.5, "sun_azimuth_deg": 83,
+    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.8099656994860664, "drift_auto": true, "drift_speed": 0.04,
+    "auto_quality": true,
+  }),
   'afternoon 2': Object.assign({}, DEFAULTS, {
     "sample_count": 21, "core_angular_radius_deg": 0.18, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 1, "cloud_thickness": 0.27, "eclipse": false, "eclipse_amount": 0.55,
