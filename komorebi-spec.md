@@ -271,6 +271,7 @@ The two bands **coexist and sum.** On the spring afternoon, a gentle directional
 - **Transport** is the shift-multiply-sum over **~16–48 source samples**, read in the fragment shader; target 60 fps.
 - **The spring graph** lives in the canopy objects; the two wind bands drive it.
 - **Render linear HDR, tone-map last.**
+- **One shared engine, two consumers.** The whole renderer is a standalone module — `komorebi.js`, exposing `Komorebi.create(canvas, { params })` → a handle (`apply(scope)`, `setParams`, live `params`/`perf`/`motion`/`src`, an `onFrame` hook). It runs its own rAF loop on whatever canvas it's handed and carries no UI. Two pages consume it: the **editor** (`komorebi.html` — the dev panel, HUD, source inset, preset management, sun-drag) and a **viewer** (the `index.html` page background — one preset, no UI). `create()` throws on missing WebGL2/float targets so the viewer can degrade to a static page.
 
 ---
 
@@ -343,6 +344,7 @@ These belong to the authoring tool, not the model, but they shape how the model 
 - **Manual drift phase.** The §5.2 mechanism, exposed as a slider (`drift_phase`) with an `auto` option that advances it over time — a preview of the incoherent band before any real wind field exists.
 - **Auto-quality (debug toggle).** A checkbox — **on** in the default scene (*afternoon 5*), though the underlying param defaults off — that watches frame rate and eases toward the highest quality that still holds ~60 fps. It spends the *cheapest* quality first — render resolution (nearly free for so soft a piece), then source-sample count — and leaves the physical and artistic params untouched. It chases a smooth 60 — dropping quality (debounced against lone spikes) whenever frames slip below it — and is deliberately **reluctant to climb back**: each forced downsize doubles the wait before it will probe upward again, so it ratchets to a stable level and parks there rather than hunting. Full quality is re-probed only on an explicit re-tune (toggling it, or loading a preset).
 - **Dev panel hidden by default.** The whole authoring panel is hidden on load; press **D** to reveal it. The visualization stands alone until then.
+- **Page-background viewer.** The engine doubles as an ambient background for the homepage (`index.html`): a fixed full-bleed canvas with the page content on top, viewer-only (one preset, no panel, no input). It degrades to a static page if WebGL2 is unavailable. The editor (`komorebi.html`) and the viewer share the one engine (`komorebi.js`); see §6.
 
 ---
 

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>José Albornoz</title>
+    <meta content="human being." name="description" />
+    <meta name="keywords" content="jojo, eljojo, ajipirijou, tomasphere, ottawabybike" />
+    <link rel="canonical" href="https://eljojo.net/" />
+    <meta property="og:title" content="José Albornoz"/>
+    <meta property="og:description" content="human being" />
+    <meta property="og:type" content="public_figure"/>
+    <meta property="og:url" content="https://eljojo.net/"/>
+    <meta property="og:image" content="https://eljojo.net/square_thumb.jpg?v2"/>
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:site" content="@eljojo" />
+    <meta name="twitter:title" content="José Albornoz" />
+    <meta name="twitter:description" content="human being" />
+    <meta name="twitter:image" content="https://eljojo.net/square_thumb.jpg?v2" />
+    <meta name="viewport" content = "width=device-width, initial-scale=1.0" />
+    <link href="style.css?v=2025-03-20" media="screen" rel="stylesheet" type="text/css" />
+    <style>
+      /* komorebi as a full-bleed ambient background, page content on top */
+      body { background: transparent; }
+      #komorebi-bg { position: fixed; inset: 0; width: 100%; height: 100%; display: block;
+                     z-index: 0; pointer-events: none; background: #f9f9f9; }
+      .container { position: relative; z-index: 2; }
+    </style>
+    <link rel="shortcut icon" href="/favico.png" />
+    <script defer data-domain="eljojo.net" src="https://plausible.io/js/script.outbound-links.js"></script>
+  </head>
+  <body>
+    <canvas id="komorebi-bg"></canvas>
+    <div class="container">
+      <section class="main">
+        <header>
+          <h1 title="eljojo">José Albornoz</h1>
+        </header>
+        <ul>
+          <li><span>cycling</span> <a class="always-underline" href="https://whereto.bike" style="font-weight: bold;">whereto.bike</a>, <a href="https://ottawabybike.ca">ottawa by bike</a>, <a href="https://eljojo.bike">eljojo.bike</a>, <a href="https://www.strava.com/athletes/5988240">strava</a></li>
+          <li><span>music</span> <a class="always-underline" href="https://tomasphere.com" style="font-weight: bold;">tomasphere</a>, <a href="https://bahn.club">bahn club radio</a>, <a href="https://last.fm/user/eljojo_net">last.fm</a></li>
+          <li><span>photography</span> <a class="always-underline" style="font-weight: bold;" href="https://eljojo.life">eljojo.life</a></li>
+          <li><span>blog</span> <a class="always-underline" rel="me" href="https://ruby.social/@eljojo">mastodon</a>, <a href="https://ajipirijou.com">ajipirijou.com</a>, <a href="https://bsky.app/profile/eljojo.ruby.social.ap.brid.gy">bluesky</a></li>
+          <li><span>code</span> <a class="always-underline" href="https://github.com/eljojo">github</a>, <a href="https://eljojo.github.io/rememory/">rememory</a></li>
+          <li><span>email</span> <a class="always-underline" href="&#x6D;&#x61;&#x69;&#x6C;&#x74;&#x6F;&#x3A;&#x6A;&#x6F;&#x6A;&#x6F;&#x40;&#x65;&#x6C;&#x6A;&#x6F;&#x6A;&#x6F;&#x2E;&#x6E;&#x65;&#x74;">&#x6A;&#x6F;&#x6A;&#x6F;&#x40;&#x65;&#x6C;&#x6A;&#x6F;&#x6A;&#x6F;&#x2E;&#x6E;&#x65;&#x74;</a></li>
+        </ul>
+      </section>
+      <section class="image">
+        <img src="backgrounds/2024.jpg" title="José Albornoz" alt="José Albornoz">
+      </section>
+      </div>
+    <script src="komorebi.js"></script>
+    <script>
+      // Ambient komorebi background, viewer-only (single preset, no UI). Degrades to nothing
+      // if WebGL2 is unavailable — the page stays fully usable without it.
+      try {
+        if (window.Komorebi) Komorebi.create(document.getElementById('komorebi-bg'),
+          { params: Komorebi.PRESETS['afternoon 5'] });
+      } catch (e) { /* no WebGL2 / float targets: leave the static page as-is */ }
+    </script>
+  </body>
+</html>
