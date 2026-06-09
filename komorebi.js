@@ -39,6 +39,7 @@ const MORPH_KEYS = [
   'canopy_base_height_m','canopy_thickness_m',                          // layer heights — read live, no rebuild
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength',
+  'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'wind_strength','wind_direction_deg','gust_frequency','gust_attack','gust_decay',
   'sway_stiffness','sway_ceiling','damping_ratio','backlash_gain','sway_height_gain',
   'limb_flex','twig_flex','stem_length','leaf_swing','flutter_freq',
@@ -140,6 +141,7 @@ const DEFAULTS = {
   sky_turbidity: 0.05,             // atmospheric haze β (Ångström); reddens low sun, desaturates dusk
   mesopic_strength: 0.6,           // Purkinje: how far rods cool the deep shade at dusk (0 off; gated to low sun)
   tone_map: 2,                     // 0 none, 1 reinhard, 2 aces
+  ground_r: 1.0, ground_g: 1.0, ground_b: 1.0,   // ground albedo (floor reflectance, spec §4.7): white floor by default — a few looks set a warm dirt
   // Wind — coherent band (spec §5.1)
   wind_strength: 0.0,
   wind_direction_deg: 30,
@@ -305,6 +307,7 @@ const BUILTIN_PRESETS = {
     sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.65, backlash_gain:1, sway_height_gain:0.75,
     limb_count:11, limb_flex:0.25, twig_flex:0.18, stem_length:0.18, leaf_swing:1.35, flutter_freq:1.4,
     drift_amount:0.145, drift_phase:1.403, drift_auto:true, drift_speed:0.04, auto_quality:true,
+    ground_r:0.33, ground_g:0.21, ground_b:0.12,   // warm Mount-Royal dirt floor
   }),
   // 'afternoon 5b' — afternoon 5 dropped to a low (23°) sun swung round to the west.
   'afternoon 5b': Object.assign({}, DEFAULTS, {
@@ -371,6 +374,7 @@ const BUILTIN_PRESETS = {
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
   }),
   // 'the void' — a dense 16-tree grove pulled wide (view 6.8 m), deep-green and low-sun.
   'the void': Object.assign({}, DEFAULTS, {
@@ -388,6 +392,7 @@ const BUILTIN_PRESETS = {
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 1.2709150851268554, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
+    "ground_r": 0.12, "ground_g": 0.16, "ground_b": 0.19,   // cool stone-grey floor
   }),
   // 'memories' — the §1 north-star look: a sparse early-spring grove (foliage 0.45, so individual leaves
   // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
@@ -550,6 +555,7 @@ uniform vec2  uCanopyOrigin;
 uniform vec2  uCanopyExtent;
 uniform vec3  uSunColor;
 uniform vec3  uAmbient;
+uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)
 uniform float uExposure;
 uniform float uContrast;
 uniform int   uToneMap;
@@ -578,7 +584,7 @@ void main(){
     if(uLayerCount>3) T *= tap(uLayer[3], world + uLayerHeight[3]*g);
     acc += w*T;                              // sum of shifted sharp shadows == soft shadow
   }
-  vec3 col = acc*uSunColor + uAmbient;
+  vec3 col = (acc*uSunColor + uAmbient) * uGround;   // reflect the floor irradiance off the ground albedo (dirt); white == old look
   // ---- Purkinje / mesopic dusk shift (§3.5): as the sun sets the eye's rods take over the dim shade —
   // colour desaturates toward a blue-green grey and saturated reds darken first, while the bright dapples
   // stay photopic and warm. Two REAL cues drive it (no absolute luminance exists here): global duskness
@@ -704,7 +710,7 @@ function create(canvas, opts){
     heights:loc(progTransport,'uLayerHeight[0]'), layerCount:loc(progTransport,'uLayerCount'),
     proj:loc(progTransport,'uProj'), viewExtent:loc(progTransport,'uViewExtent'), aspect:loc(progTransport,'uAspect'),
     origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
-    sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'),
+    sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'), ground:loc(progTransport,'uGround'),
     twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'),
     exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
     layers:[0,1,2,3].map(i=>loc(progTransport,'uLayer['+i+']')),
@@ -1252,6 +1258,7 @@ function create(canvas, opts){
     const atm = atmosphere(params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);
     gl.uniform3f(U.tp.sun, atm.sun[0], atm.sun[1], atm.sun[2]);
     gl.uniform3f(U.tp.ambient, atm.ambient[0], atm.ambient[1], atm.ambient[2]);
+    gl.uniform3f(U.tp.ground, params.ground_r, params.ground_g, params.ground_b);   // dirt-floor albedo (spec §4.7)
     // Purkinje (§3.5): rods take over the dim shade as the sun lowers. The global weight rides the same
     // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
     gl.uniform1f(U.tp.twilight, smoothstep(30, 4, params.sun_elevation_deg));

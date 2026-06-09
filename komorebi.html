@@ -142,6 +142,11 @@ const PANEL = [
   ['s','mesopic_strength','dusk rods',0,1,0.01,''],
   ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
 
+  ['h','Background'],
+  ['s','ground_r','ground R',0,1,0.01,''],
+  ['s','ground_g','ground G',0,1,0.01,''],
+  ['s','ground_b','ground B',0,1,0.01,''],
+
   ['h','Wind — coherent band'],
   ['s','wind_strength','strength',0,2,0.01,''],
   ['s','wind_direction_deg','dir °',0,360,1,''],
@@ -268,6 +273,11 @@ const TIPS = {
   sky_turbidity:"<b>Haze in the air.</b> Clean air = low; dust or humidity = higher, which makes a low sun redder and a sunset more washed-out orange.",
   mesopic_strength:"<b>How blue the shadows go at dusk.</b> As light fades your eye quietly switches to night vision, which is colour-blind and blue-ish — so the dim shade cools toward grey-blue while the bright dapples stay warm. Only kicks in at low sun. 0 = off.",
   tone_map:"<b>How over-bright light is squeezed onto the screen.</b> ACES is the soft, filmy default; Reinhard is simpler; None just clips the brightest bits.",
+  // Background
+  'Background':"<b>The floor the light lands on.</b> Plain white by default; tint it and it reads like real ground. The dapples reflect off it — deep shade goes dark earth, midtones warm brown, and only the hottest spots still burn toward white. (A couple of the afternoon looks carry a warm Mount-Royal dirt; all three at 1 = white floor.)",
+  ground_r:"<b>How much RED the ground reflects.</b> Earth is warm, so red leads — it's what makes the floor read as soil rather than concrete. 1 = pure white on this channel.",
+  ground_g:"<b>How much GREEN the ground reflects.</b> Mid for brown dirt; raise it toward mossy or grassy ground, drop it for redder clay.",
+  ground_b:"<b>How much BLUE the ground reflects.</b> Low for warm dirt; raise it toward grey gravel or cool stone.",
   // Wind — coherent
   wind_strength:"<b>How hard the breeze blows.</b> 0 = still. Turn it up and the branches bend, fight at the peak of a gust, then snap back.",
   wind_direction_deg:"<b>Which way the wind blows.</b> The whole dapple pattern drifts and leans this way.",

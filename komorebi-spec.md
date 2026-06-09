@@ -182,7 +182,7 @@ One equation:
 
 ### 4.7 Look
 
-Elliptical projection (from transport), the green wash (from the canopy), the **physical sun & sky colour** (`uSunColor`/`uAmbient` from the §3.5 atmosphere, driven by `sun_elevation` + `sky_turbidity`), exposure and contrast tied to source width, and a final tone-map — all **downstream** of the physics, accumulated in linear HDR.
+Elliptical projection (from transport), the green wash (from the canopy), the **physical sun & sky colour** (`uSunColor`/`uAmbient` from the §3.5 atmosphere, driven by `sun_elevation` + `sky_turbidity`), the **ground albedo** the floor reflects with (`ground_rgb` — the irradiance that lands is reflected off a surface reflectance rather than an implicit white one; `(1,1,1)`, the default, is the plain white floor, and a few looks set a warm Mount-Royal dirt so their deep shade reads as dark earth while only the hottest dapples burn back toward white), exposure and contrast tied to source width, and a final tone-map — all **downstream** of the physics, accumulated in linear HDR.
 
 ---
 
@@ -336,6 +336,7 @@ Grouped by subsystem; the knobs an implementer will actually expose.
 
 **Look**
 - `exposure`, `contrast` (coupled to `cloud_thickness`)
+- `ground_albedo_rgb` *(the floor's reflectance the dapples reflect off; `(1,1,1)` = white floor (the default), with a warm dirt-brown on the looks that opt in so their shade reads as earth and only the hottest dapples burn back toward white)*
 - `tone_map_curve`
 - `ambient_skylight` (scales the physical sky fill — ozone-blue by day, warming toward dusk)
 - `sky_turbidity` *(atmospheric haze β; with `sun_elevation` drives the physical sun/sky colour — reddens the low sun, blue-shifts the shadow fill, desaturates a hazy dusk)*
