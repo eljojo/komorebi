@@ -67,7 +67,7 @@ function getPreset(name){ const s=getStored(); return (name in s) ? s[name] : Ko
 
 // ---- boot the engine on the canvas ------------------------------------------
 let eng;
-try { eng = Komorebi.create(canvas, { params: getPreset('afternoon 5') }); }
+try { eng = Komorebi.create(canvas, { params: getPreset('afternoon 7') }); }
 catch(e){ document.body.innerHTML = '<div class="err">'+e.message+'</div>'; throw e; }
 const params = eng.params;   // live params the panel edits in place
 const perf = eng.perf;
@@ -95,9 +95,14 @@ const PANEL = [
   ['s','layer_count','layers',1,MAX_LAYERS,1,'textures'],
   ['s','canopy_base_height_m','base h (m)',2,20,0.1,''],
   ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
+  ['s','tree_count','trees',1,16,1,'canopy'],
+  ['s','branch_levels','levels',1,4,1,'canopy'],
+  ['s','branch_children','children',1,6,1,'canopy'],
+  ['s','branch_angle_deg','branch °',5,80,1,'canopy'],
+  ['s','branch_length_ratio','len ratio',0.3,0.92,0.01,'canopy'],
+  ['s','branch_pitch_deg','pitch °',0,80,1,'canopy'],
   ['s','foliage_density','density',0.1,3,0.05,'canopy'],
-  ['s','clusters_per_layer','clusters',5,300,1,'canopy'],
-  ['s','leaves_per_cluster','leaves/cl',1,80,1,'canopy'],
+  ['s','leaves_per_cluster','leaves/twig',1,80,1,'canopy'],
   ['s','cluster_spread_m','spread (m)',0.02,1,0.01,'canopy'],
   ['s','leaf_size_m','leaf (m)',0.01,0.4,0.005,'canopy'],
   ['s','leaf_aspect','aspect',1,4,0.05,'canopy'],
@@ -213,7 +218,7 @@ function buildPresetUI(){
       const s=getStored(); s[n]=JSON.parse(JSON.stringify(params)); setStored(s); refreshPresetSelect(n); }),
     mkBtn('delete',()=>{ const n=presetSel.value, s=getStored();
       if(!(n in s)){ alert("Built-in presets can't be deleted."); return; }
-      delete s[n]; setStored(s); refreshPresetSelect('afternoon 5'); }));
+      delete s[n]; setStored(s); refreshPresetSelect('afternoon 7'); }));
   dev.appendChild(r2);
 
   const r3=document.createElement('div'); r3.className='ctl';
@@ -224,7 +229,7 @@ function buildPresetUI(){
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
       try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(e){ alert('Invalid JSON'); } }));
   dev.appendChild(r3);
-  refreshPresetSelect('afternoon 5');
+  refreshPresetSelect('afternoon 7');
 }
 
 // drag on canvas = move the sun (azimuth from x, elevation from y)

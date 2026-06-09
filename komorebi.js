@@ -40,8 +40,16 @@ const DEFAULTS = {
   canopy_base_height_m: 8.0,
   canopy_thickness_m: 3.0,         // layers spread base .. base+thickness
   foliage_density: 1.0,
-  clusters_per_layer: 60,
-  leaves_per_cluster: 22,
+  // grown skeleton (spec §4.5): a GROVE of tree_count trees, each trunk -> limb_count arms ->
+  // branch_children sub-branches, branch_levels deep -> twigs. Overlapping crowns fill the frame.
+  tree_count: 5,                   // trees in the grove (>1 so crowns overlap and fill the centre)
+  branch_levels: 3,                // recursion depth (1 = limbs are the twigs)
+  branch_children: 3,              // sub-branches per node
+  branch_angle_deg: 34,            // cone half-angle children fan from their parent
+  branch_length_ratio: 0.62,       // child length / parent length
+  branch_pitch_deg: 26,            // how steeply limbs rise from horizontal (sets the height spread)
+  clusters_per_layer: 60,          // legacy (pre-skeleton); unused by the grown canopy, kept for preset compat
+  leaves_per_cluster: 22,          // leaves per terminal twig
   cluster_spread_m: 0.13,
   leaf_size_m: 0.09,
   leaf_aspect: 1.6,
@@ -90,12 +98,63 @@ const DEFAULTS = {
 };
 
 const BUILTIN_PRESETS = {
-  // 'afternoon 5' is the boot default — a calm, warm, near-overhead spring scene, auto-quality on.
-  // Any other look is the user's own, saved (★) to local storage via the editor.
+  // 'afternoon 7' is the boot default — a calm, warm, near-overhead spring grove, auto-quality on.
+  // 'afternoon 2'..'6' are earlier looks kept built in; any saved (★) look is the user's own in
+  // local storage. DEFAULTS stays the merge base so old/partial preset JSON is forward-compatible.
+  'afternoon 2': Object.assign({}, DEFAULTS, {
+    "sample_count": 21, "core_angular_radius_deg": 0.18, "halo_angular_radius_deg": 4.3,
+    "core_weight_fraction": 1, "cloud_thickness": 0.27, "eclipse": false, "eclipse_amount": 0.55,
+    "layer_count": 4, "canopy_base_height_m": 3.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.3, "trans_g": 0.61, "trans_b": 0.5, "canopy_extent_m": 7, "tex_resolution": 2048,
+    "seed": 290626672, "sun_elevation_deg": 57.61406249999991, "sun_azimuth_deg": 151.38398437500064,
+    "view_extent_m": 6.2, "exposure": 1.44, "contrast": 1.22, "ambient_skylight": 1.33, "tone_map": 2,
+    "wind_strength": 0, "wind_direction_deg": 30, "gust_frequency": 0.12, "gust_attack": 1.2, "gust_decay": 2.5,
+    "sway_stiffness": 5, "sway_ceiling": 0.4, "damping_ratio": 0.25, "backlash_gain": 1, "sway_height_gain": 0,
+    "limb_count": 8, "limb_flex": 0.25, "twig_flex": 0.35, "stem_length": 0.5, "leaf_swing": 0.7, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.6079756994865377, "drift_auto": true, "drift_speed": 0.08,
+    "auto_quality": false,
+  }),
+  'afternoon 3': Object.assign({}, DEFAULTS, {
+    "sample_count": 21, "core_angular_radius_deg": 0.18, "halo_angular_radius_deg": 4.3,
+    "core_weight_fraction": 1, "cloud_thickness": 0.27, "eclipse": false, "eclipse_amount": 0.55,
+    "layer_count": 4, "canopy_base_height_m": 3.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.29, "trans_g": 0.61, "trans_b": 0.466, "canopy_extent_m": 7, "tex_resolution": 2048,
+    "seed": 290626672, "sun_elevation_deg": 90, "sun_azimuth_deg": 360,
+    "view_extent_m": 6.2, "exposure": 1.44, "contrast": 1.22, "ambient_skylight": 1.33, "tone_map": 2,
+    "wind_strength": 1.34, "wind_direction_deg": 30, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 2.5,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.25, "backlash_gain": 1, "sway_height_gain": 1.6,
+    "limb_count": 8, "limb_flex": 0.25, "twig_flex": 0.35, "stem_length": 0.5, "leaf_swing": 0.7, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.0914450851278223, "drift_auto": true, "drift_speed": 0.08,
+    "auto_quality": false,
+  }),
+  // 'afternoon 4' — windy predecessor; now a 3-tree grove with wider (52°) branching.
+  'afternoon 4': Object.assign({}, DEFAULTS, {
+    sample_count:32, core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
+    core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
+    layer_count:4, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
+    tree_count:3, branch_angle_deg:52,
+    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
+    leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
+    canopy_extent_m:6, tex_resolution:1024, seed:290626672,
+    sun_elevation_deg:84.5, sun_azimuth_deg:201,
+    view_extent_m:3.1, exposure:2.44, contrast:0.98, ambient_skylight:0.97, tone_map:2,
+    wind_strength:1.34, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:2.5,
+    sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.25, backlash_gain:1, sway_height_gain:1.6,
+    limb_count:11, limb_flex:0.25, twig_flex:0.35, stem_length:0.14, leaf_swing:1.35, flutter_freq:1.4,
+    drift_amount:0.145, drift_phase:2.876, drift_auto:true, drift_speed:0.04,
+  }),
+  // 'afternoon 5' — calm near-overhead spring scene, now a 3-tree grove.
   'afternoon 5': Object.assign({}, DEFAULTS, {
     sample_count:32, core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
     core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
     layer_count:4, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
+    tree_count:3,
     clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
     leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
     canopy_extent_m:6, tex_resolution:1024, seed:290626672,
@@ -106,20 +165,38 @@ const BUILTIN_PRESETS = {
     limb_count:11, limb_flex:0.25, twig_flex:0.18, stem_length:0.18, leaf_swing:1.35, flutter_freq:1.4,
     drift_amount:0.145, drift_phase:1.403, drift_auto:true, drift_speed:0.04, auto_quality:true,
   }),
-  // 'afternoon 4' — the windier predecessor, kept as-is.
-  'afternoon 4': Object.assign({}, DEFAULTS, {
-    sample_count:32, core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
-    core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
-    layer_count:4, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
-    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
-    leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
-    canopy_extent_m:6, tex_resolution:1024, seed:290626672,
-    sun_elevation_deg:84.5, sun_azimuth_deg:201,
-    view_extent_m:3.1, exposure:2.44, contrast:0.98, ambient_skylight:0.97, tone_map:2,
-    wind_strength:1.34, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:2.5,
-    sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.25, backlash_gain:1, sway_height_gain:1.6,
-    limb_count:11, limb_flex:0.25, twig_flex:0.35, stem_length:0.14, leaf_swing:1.35, flutter_freq:1.4,
-    drift_amount:0.145, drift_phase:2.876, drift_auto:true, drift_speed:0.04,
+  'afternoon 6': Object.assign({}, DEFAULTS, {
+    "sample_count": 32, "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 4, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
+    "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.1025121046151725, "drift_auto": true, "drift_speed": 0.04,
+    "auto_quality": true,
+  }),
+  // boot default:
+  'afternoon 7': Object.assign({}, DEFAULTS, {
+    "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "tex_resolution": 1024,
+    "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
+    "auto_quality": true,
   }),
 };
 
@@ -143,6 +220,20 @@ function windNoise(x, y, t, k){
   const fx = Math.sin(x*k + t*0.9) + 0.5*Math.sin(y*k*1.3 - t*1.4 + 1.7);
   const fy = Math.sin(y*k - t*1.1) + 0.5*Math.sin(x*k*1.3 + t*1.2 + 2.3);
   return [fx*0.7, fy*0.7];
+}
+
+// ---- skeleton growth (spec §4.5): grow real 3D branch segments from a seed ----
+function normalize3(v){ const m=Math.hypot(v[0],v[1],v[2])||1e-9; return [v[0]/m, v[1]/m, v[2]/m]; }
+// a child direction deviating from unit parent dir `d` by `spread` radians, at azimuth `az`
+// around d (in the plane perpendicular to it). Builds an orthonormal basis around d.
+function coneDir(d, az, spread){
+  const up = Math.abs(d[2])>0.9 ? [1,0,0] : [0,0,1];
+  const s = normalize3([ d[1]*up[2]-d[2]*up[1], d[2]*up[0]-d[0]*up[2], d[0]*up[1]-d[1]*up[0] ]); // ⟂ d
+  const u = [ d[1]*s[2]-d[2]*s[1], d[2]*s[0]-d[0]*s[2], d[0]*s[1]-d[1]*s[0] ];                   // ⟂ d,s
+  const cs=Math.cos(spread), sn=Math.sin(spread), ca=Math.cos(az), sa=Math.sin(az);
+  return normalize3([ cs*d[0]+sn*(ca*s[0]+sa*u[0]),
+                      cs*d[1]+sn*(ca*s[1]+sa*u[1]),
+                      cs*d[2]+sn*(ca*s[2]+sa*u[2]) ]);
 }
 
 // ===========================================================================
@@ -331,6 +422,7 @@ function create(canvas, opts){
   const extCBF = gl.getExtension('EXT_color_buffer_float');     // renderable half/float
   gl.getExtension('EXT_float_blend');                            // float-target blending (harmless if absent)
   if (!extCBF) fail('EXT_color_buffer_float is required (float render targets).');
+  const MAX_TEX = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;  // caps the per-clump data-texture width
 
   const params = Object.assign({}, DEFAULTS, opts.params || {});
   // Auto-quality runtime throttle (driven by the params.auto_quality toggle). Holds the live
@@ -417,7 +509,8 @@ function create(canvas, opts){
     }
   }
 
-  // ---- canopy generation: clustered leaf fields, per-clump stable seeding -----
+  // ---- canopy generation: grow a real recursive skeleton, hang one leaf cluster on each
+  // terminal twig, and bin them into depth layers by the height they grew to (spec §4.5) ----
   function regenCanopy(){
     layerVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
     layerVAO = [];
@@ -431,80 +524,133 @@ function create(canvas, opts){
     const pcInt = Math.floor(pcF);
     const frac = pcF - pcInt;                         // marginal leaf fades in by this
     const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
-    const nClusters = Math.max(1, params.clusters_per_layer|0);
     const TAU2 = Math.PI*2;
 
-    // ---- branch hierarchy: limbs are ARMS radiating from a trunk at the canopy centre (0,0).
-    // A clump attaches to the limb whose direction points toward it, so it hangs off that limb's FAR
-    // end — every clump sits outward from the trunk pivot, all on one side, so a limb bend reads as a
-    // coherent downwind sweep instead of an in-place spin. limbPlan is an outboard wind-sample point.
-    const nLimb = Math.max(1, params.limb_count|0);
-    const nClusterTotal = params.layer_count * nClusters;
-    const lr = mulberry32(hash3(params.seed>>>0, 1009, 7));   // limb layout (own stream)
-    const limbDir = new Float32Array(nLimb*2);   // unit trunk->tip direction
-    const limbAng = new Float32Array(nLimb);     // its angle, for angular clump assignment
-    const limbPlan = new Float32Array(nLimb*2);  // an outboard sample point for the wind-noise field
-    for(let i=0;i<nLimb;i++){
-      const a = (i+0.5)/nLimb*TAU2 + (lr()-0.5)*(TAU2/nLimb)*0.6;   // fan around the circle, modest jitter
-      const len = E*0.5*(0.6+0.4*lr());
-      limbAng[i]=a; limbDir[2*i]=Math.cos(a); limbDir[2*i+1]=Math.sin(a);
-      limbPlan[2*i]=Math.cos(a)*len*0.6; limbPlan[2*i+1]=Math.sin(a)*len*0.6;
+    // ---- grow a GROVE: tree_count trees whose trunks spread across the view region with overlapping
+    // crowns. Each tree is a trunk -> limb_count arms (rising by branch_pitch, fanned around the
+    // circle) -> branch_children sub-branches per node (cone-fanned, shrunk by branch_length_ratio)
+    // recursing branch_levels deep; TERMINAL branches are twigs, each carrying one leaf cluster. Big
+    // gaps fall between limbs, small gaps between leaves — multi-scale, for free (spec §4.5). A grove
+    // (not one centred tree) fills the centre and matches the park: several trees, the smaller ones
+    // reading denser (the same cluster packed into a smaller crown). ----
+    const nTree  = Math.max(1, params.tree_count|0);
+    const lpt    = Math.max(1, params.limb_count|0);   // limbs per tree
+    const levels = Math.max(1, params.branch_levels|0);
+    const kids   = Math.max(1, params.branch_children|0);
+    const lenRatio = clamp(params.branch_length_ratio, 0.2, 0.95);
+    const coneA  = params.branch_angle_deg*DEG;
+    const limbEl = params.branch_pitch_deg*DEG;        // how steeply limbs rise from horizontal
+    const nLimb  = nTree*lpt;                           // global limb count
+    const gr = mulberry32(hash3(params.seed>>>0, 0x5EED, 7));   // growth stream (own RNG)
+    const segments = [];     // {a,b,level} world-space skeleton, kept for the 3D view ([3])
+    const twigs = [];        // terminal nodes: {x,y,z, limb, tx,ty} — plan x,y, height z, global limb, tree trunk
+    const limbDir  = new Float32Array(nLimb*2);         // plan unit direction (drives wind torque)
+    const limbPlan = new Float32Array(nLimb*2);         // an outboard wind-sample point near each limb
+
+    // crowns overlap so the canopy fills the VIEW (not just the baked extent): the fill radius is tied
+    // to view_extent (so the grove fills the frame regardless of zoom), capped to fit inside the bake.
+    const golden = Math.PI*(3 - Math.sqrt(5));
+    const Rfill = Math.min(E*0.46, Math.max(0.5, params.view_extent_m));
+    const crown0 = (Rfill/Math.sqrt(nTree))*1.7;        // base crown radius — ~1.7x spacing -> overlap
+
+    function grow(out, base, dir, len, level, limb){
+      const tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
+      out.seg.push({ a:base, b:tip, level });
+      if(level >= levels){ out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb }); return; }
+      for(let c=0;c<kids;c++){
+        const az = (c+0.5)/kids*TAU2 + (gr()-0.5)*1.2;       // fan children around the parent
+        const spread = coneA*(0.55+0.9*gr());
+        grow(out, tip, coneDir(dir, az, spread), len*lenRatio*(0.8+0.4*gr()), level+1, limb);
+      }
     }
+
+    for(let tt=0;tt<nTree;tt++){
+      // trunk placement: Vogel disk so trees spread evenly; the first tree sits at the centre so the
+      // middle of the frame is always covered (a single tree would leave a bare-bright hole there).
+      const rr = Rfill*Math.sqrt(tt/Math.max(1,nTree));
+      const aa = tt*golden + (gr()-0.5)*0.6;
+      const tx = rr*Math.cos(aa), ty = rr*Math.sin(aa);
+      const crown = crown0*(0.7+0.6*gr());               // per-tree size variation (smaller -> denser)
+      const out = { seg:[], tw:[] };
+      const limbBase = tt*lpt, limbRaw = new Float32Array(lpt*2);
+      for(let i=0;i<lpt;i++){
+        const gi = limbBase+i;
+        const azL = (i+0.5)/lpt*TAU2 + (gr()-0.5)*(TAU2/lpt)*0.6;   // fan around the circle, modest jitter
+        const ce = Math.cos(limbEl), se = Math.sin(limbEl);
+        const dir = [ce*Math.cos(azL), ce*Math.sin(azL), se];
+        const len = 0.7+0.5*gr();                        // relative length; per-tree scaled to `crown` below
+        limbDir[2*gi]=Math.cos(azL); limbDir[2*gi+1]=Math.sin(azL);
+        limbRaw[2*i]=dir[0]*len; limbRaw[2*i+1]=dir[1]*len;
+        grow(out, [0,0,0], dir, len, 1, gi);
+      }
+      // normalise this tree's crown to `crown`, then translate it to its trunk (tx,ty)
+      let mr=1e-3; for(const w of out.tw) mr=Math.max(mr, Math.hypot(w.x,w.y));
+      const s = crown/mr;
+      for(const w of out.tw){ w.x=w.x*s+tx; w.y=w.y*s+ty; w.z*=s; w.tx=tx; w.ty=ty; twigs.push(w); }
+      for(const sg of out.seg) segments.push({ a:[sg.a[0]*s+tx, sg.a[1]*s+ty, sg.a[2]*s],
+                                               b:[sg.b[0]*s+tx, sg.b[1]*s+ty, sg.b[2]*s], level:sg.level });
+      for(let i=0;i<lpt;i++){ const gi=limbBase+i;
+        limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty; }
+    }
+    if(twigs.length > MAX_TEX) twigs.length = MAX_TEX;   // cap the per-clump data-texture width to the GPU limit
+
+    // ---- map grown heights into the layer band: bin each twig to a layer by its height ----
+    let zMin=1e18, zMax=-1e18;
+    for(const t of twigs){ zMin=Math.min(zMin,t.z); zMax=Math.max(zMax,t.z); }
+    const dz = (zMax-zMin) > 1e-4 ? (zMax-zMin) : 1;
+    const nLayer = Math.max(1, params.layer_count|0);
+    for(const t of twigs){
+      t.layer = nLayer>1 ? clamp(Math.round((t.z-zMin)/dz*(nLayer-1)), 0, nLayer-1) : 0;   // higher foliage -> higher layer -> blurs more
+    }
+
+    const nClusterTotal = twigs.length;
     hier = {
-      nLimb, limbPlan, limbDir,
+      nLimb, limbDir, limbPlan,
       limbAngle:new Float32Array(nLimb), limbVel:new Float32Array(nLimb),   // scalar bend (radians)
       nClusterTotal,
       clusterPlan:new Float32Array(nClusterTotal*2), clusterLimb:new Int32Array(nClusterTotal),
       clusterPhase:new Float32Array(nClusterTotal),
       twigAngle:new Float32Array(nClusterTotal), twigVel:new Float32Array(nClusterTotal),
-      clusterData:new Float32Array(nClusterTotal*4),   // dynamic: (limb bend, twig bend) per clump
-      clusterGeom:new Float32Array(nClusterTotal*4),   // static: (clump centre.xy, trunk pivot.xy)
-      maxV:0,
+      clusterData:new Float32Array(nClusterTotal*4),   // dynamic: (limb bend, twig bend, stem seed, _)
+      clusterGeom:new Float32Array(nClusterTotal*4),   // static: (twig tip.xy, tree trunk pivot.xy)
+      segments, maxV:0,
     };
 
-    for(let l=0;l<params.layer_count;l++){
-      const data = [];   // 16 floats/leaf — see attribute layout below
-      for(let c=0;c<nClusters;c++){
-        const ci = l*nClusters + c;                                          // global twig id
-        const rng  = mulberry32(hash3(params.seed>>>0, l, c));               // arrangement stream
-        const rng2 = mulberry32(hash3((params.seed>>>0)^0x5bd1e995, l, c));  // wind-identity stream (separate)
-        const gauss = makeGauss(rng);
-        const cx=(rng()-0.5)*E*0.94, cy=(rng()-0.5)*E*0.94;
-        // rng2 draws kept identical so swingGain/swingPhase (leaf swing) don't shift
-        const swayRand = rng2()*2-1; const stemRand = rng2()*2-1;
-        hier.clusterPlan[2*ci]=cx; hier.clusterPlan[2*ci+1]=cy; hier.clusterPhase[ci]=swayRand*Math.PI;
-        // attach to the limb whose direction points most toward this clump (angular nearest), so the
-        // clump hangs off that limb's far end — radially outward from the trunk, never straddling it.
-        const bearing = Math.atan2(cy, cx);
-        let best=0, bd=1e18;
-        for(let i=0;i<nLimb;i++){
-          let dA = bearing - limbAng[i];
-          dA = Math.abs(Math.atan2(Math.sin(dA), Math.cos(dA)));   // wrapped |Δangle|
-          if(dA<bd){ bd=dA; best=i; }
-        }
-        hier.clusterLimb[ci]=best;
-        // the pivot is the TRUNK (canopy centre, 0,0); the clump is radially outward from it.
-        hier.clusterGeom[4*ci]=cx; hier.clusterGeom[4*ci+1]=cy;
-        hier.clusterGeom[4*ci+2]=0; hier.clusterGeom[4*ci+3]=0;
-        hier.clusterData[4*ci+2]=stemRand;   // static stem-angle seed (.z); tick only writes .x/.y
-        for(let k=0;k<nLeaf;k++){
-          // primary stream draws kept in the SAME order as before -> rest arrangement unchanged
-          const cov = (k===pcInt) ? frac : 1.0;
-          const x = cx + gauss()*params.cluster_spread_m;
-          const y = cy + gauss()*params.cluster_spread_m;
-          const size = params.leaf_size_m*(0.6+0.8*rng());
-          const A = size*0.5;                              // long half-axis
-          const B0 = size*0.5/params.leaf_aspect;          // face-on short half (shader foreshortens)
-          const restTilt = rng()*params.max_tilt*(Math.PI*0.5);
-          const angle = rng()*Math.PI;
-          const ax = 0.4+0.6*rng(), ay = 0.4+0.6*rng();    // incoherent orbit
-          const orient = rng()*TAU2, phase = rng()*TAU2;
-          const swingGain = 0.6+0.8*rng2(), swingPhase = rng2()*TAU2;
-          data.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                    tau[0]*cov,tau[1]*cov,tau[2]*cov, ci, ax,ay,orient,phase);
-        }
+    // ---- hang a leaf cluster on each twig, accumulating one instance buffer per depth layer ----
+    const layerData = [];
+    for(let l=0;l<nLayer;l++) layerData.push([]);   // 16 floats/leaf — see attribute layout below
+    for(let j=0;j<nClusterTotal;j++){
+      const t = twigs[j];
+      const rng  = mulberry32(hash3(params.seed>>>0, j, 101));               // arrangement stream
+      const rng2 = mulberry32(hash3((params.seed>>>0)^0x5bd1e995, j, 101));  // wind-identity stream (separate)
+      const gauss = makeGauss(rng);
+      const cx=t.x, cy=t.y;
+      const swayRand = rng2()*2-1; const stemRand = rng2()*2-1;
+      hier.clusterPlan[2*j]=cx; hier.clusterPlan[2*j+1]=cy; hier.clusterPhase[j]=swayRand*Math.PI;
+      hier.clusterLimb[j]=t.limb;                                    // grown level-1 ancestor (no search needed)
+      hier.clusterGeom[4*j]=cx; hier.clusterGeom[4*j+1]=cy;          // twig tip = the cluster centre
+      hier.clusterGeom[4*j+2]=t.tx; hier.clusterGeom[4*j+3]=t.ty;    // limb pivot = this tree's trunk
+      hier.clusterData[4*j+2]=stemRand;                             // static stem-angle seed (.z); tick writes .x/.y
+      const data = layerData[t.layer];
+      for(let k=0;k<nLeaf;k++){
+        const cov = (k===pcInt) ? frac : 1.0;
+        const x = cx + gauss()*params.cluster_spread_m;
+        const y = cy + gauss()*params.cluster_spread_m;
+        const size = params.leaf_size_m*(0.6+0.8*rng());
+        const A = size*0.5;                              // long half-axis
+        const B0 = size*0.5/params.leaf_aspect;          // face-on short half (shader foreshortens)
+        const restTilt = rng()*params.max_tilt*(Math.PI*0.5);
+        const angle = rng()*Math.PI;
+        const ax = 0.4+0.6*rng(), ay = 0.4+0.6*rng();    // incoherent orbit
+        const orient = rng()*TAU2, phase = rng()*TAU2;
+        const swingGain = 0.6+0.8*rng2(), swingPhase = rng2()*TAU2;
+        data.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
+                  tau[0]*cov,tau[1]*cov,tau[2]*cov, j, ax,ay,orient,phase);
       }
-      const arr=new Float32Array(data);
+    }
+
+    // ---- build one instanced VAO per depth layer from its accumulated leaves ----
+    const buildLayerVAO = (arr) => {
       const buf=gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER,buf);
       gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
@@ -518,22 +664,22 @@ function create(canvas, opts){
       gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
       gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
       gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,4,gl.FLOAT,false,S,48); gl.vertexAttribDivisor(4,1);
-      gl.disableVertexAttribArray(5);   // location 5 no longer used
       gl.bindVertexArray(null);
-      layerVAO.push({ vao, count: arr.length/16, buf });
-    }
+      return { vao, count: arr.length/16, buf };
+    };
+    for(let l=0;l<nLayer;l++) layerVAO.push(buildLayerVAO(new Float32Array(layerData[l])));
 
     // ---- (re)build the per-clump data textures sampled by the bake VS ----
     const makeDataTex = (old, data) => {
       if(old) gl.deleteTexture(old);
-      const t = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, t);
+      const tx = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tx);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, Math.max(1,nClusterTotal), 1, 0, gl.RGBA, gl.FLOAT, data);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      return t;
+      return tx;
     };
     clusterTex     = makeDataTex(clusterTex, hier.clusterData);      // dynamic bend angles
     clusterGeomTex = makeDataTex(clusterGeomTex, hier.clusterGeom);  // static geometry
@@ -654,8 +800,9 @@ function create(canvas, opts){
       maxv=Math.max(maxv, Math.abs(hier.limbVel[i]));
     }
     for(let j=0;j<hier.nClusterTotal;j++){     // twigs: stiffer, faster, mostly decorrelated
-      const cxj=hier.clusterPlan[2*j], cyj=hier.clusterPlan[2*j+1], cl=Math.hypot(cxj,cyj)||1e-3;
-      const tq=(cxj*wy - cyj*wx)/cl;           // downwind torque about the stem (same lean sense as the limb)
+      const cxj=hier.clusterPlan[2*j], cyj=hier.clusterPlan[2*j+1];
+      const rx=cxj-hier.clusterGeom[4*j+2], ry=cyj-hier.clusterGeom[4*j+3], cl=Math.hypot(rx,ry)||1e-3;  // offset from THIS tree's trunk
+      const tq=(rx*wy - ry*wx)/cl;             // downwind torque about the twig's own tree trunk (same lean sense as the limb)
       const n = windNoise(cxj, cyj, t+hier.clusterPhase[j], 1.5)[0];
       const target = tf*(0.4*u*tq + eb*n);
       for(let s=0;s<steps;s++){ const a = kT*(target - hier.twigAngle[j]) - cT*hier.twigVel[j];
