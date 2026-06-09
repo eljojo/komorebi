@@ -174,9 +174,9 @@ const DEFAULTS = {
 };
 
 const BUILTIN_PRESETS = {
-  // 'morning 3' is the boot default — a near-clear, sharp-dappled morning grove (30° sun), auto-quality
-  // on. 'morning 1'–'2', 'test 1'–'2', 'afternoon 4'–'7' (4/5/6 each have a 'b' variation), 'the void' and
-  // 'memories' are the other built-in looks; any saved (★) look is the user's own in local storage.
+  // The built-in looks: 'afternoon 4'–'7' (4/5/6 each have a 'b' variation), 'morning 1'–'3', 'test 1'–'2'
+  // (hidden), 'the void' and 'memories'. The editor boots into 'afternoon 7'; PRESET_ORDER (below) sets the
+  // dropdown / ← → order. Any saved (★) look is the user's own in local storage.
   // DEFAULTS stays the merge base so old/partial JSON stays compatible.
   'morning 1': Object.assign({}, DEFAULTS, {
     "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
@@ -210,7 +210,6 @@ const BUILTIN_PRESETS = {
     "drift_amount": 0.145, "drift_phase": 4.97071372563982, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
   }),
-  // boot default:
   'morning 3': Object.assign({}, DEFAULTS, {
     "sample_count": 32, "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.72, "cloud_thickness": 0.18, "eclipse": false, "eclipse_amount": 0.42,
@@ -416,6 +415,13 @@ const BUILTIN_PRESETS = {
     "auto_quality": true,
   }),
 };
+
+// Display / ← → stepping order: afternoons, then memories, mornings, the void. Explicit so it's independent
+// of definition order; any preset not listed falls to the end. This is what the editor's dropdown shows.
+const PRESET_ORDER = ['afternoon 4','afternoon 4b','afternoon 5','afternoon 5b','afternoon 6','afternoon 6b','afternoon 7','memories','morning 1','morning 2','morning 3','the void'];
+const ORDERED_PRESETS = {};
+for(const n of PRESET_ORDER) if(n in BUILTIN_PRESETS) ORDERED_PRESETS[n]=BUILTIN_PRESETS[n];
+for(const n in BUILTIN_PRESETS) if(!(n in ORDERED_PRESETS)) ORDERED_PRESETS[n]=BUILTIN_PRESETS[n];
 
 // ---- deterministic RNG so canopy is frame-stable & reproducible ------------
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
@@ -1494,5 +1500,5 @@ function create(canvas, opts){
   return eng;
 }
 
-return { create, PRESETS: BUILTIN_PRESETS, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG };
+return { create, PRESETS: ORDERED_PRESETS, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG };
 })();

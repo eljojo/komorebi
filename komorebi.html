@@ -84,7 +84,7 @@ function getPreset(name){ const s=getStored(); return (name in s) ? s[name] : Ko
 
 // ---- boot the engine on the canvas ------------------------------------------
 let eng;
-try { eng = Komorebi.create(canvas, { params: getPreset('morning 3') }); }
+try { eng = Komorebi.create(canvas, { params: getPreset('afternoon 7') }); }
 catch(e){ document.body.innerHTML = '<div class="err">'+e.message+'</div>'; throw e; }
 const params = eng.params;   // live params the panel edits in place
 const perf = eng.perf;
@@ -378,7 +378,7 @@ function buildPresetUI(){
       const s=getStored(); s[n]=JSON.parse(JSON.stringify(params)); setStored(s); refreshPresetSelect(n); }),
     mkBtn('delete',()=>{ const n=presetSel.value, s=getStored();
       if(!(n in s)){ alert("Built-in presets can't be deleted."); return; }
-      delete s[n]; setStored(s); refreshPresetSelect('morning 3'); }));
+      delete s[n]; setStored(s); refreshPresetSelect('afternoon 7'); }));
   dev.appendChild(r2);
 
   const r3=document.createElement('div'); r3.className='ctl';
@@ -389,7 +389,7 @@ function buildPresetUI(){
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
       try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(e){ alert('Invalid JSON'); } }));
   dev.appendChild(r3);
-  refreshPresetSelect('morning 3');
+  refreshPresetSelect('afternoon 7');
 }
 
 // Canvas pointer input. A MOUSE drags the sun (azimuth from x, elevation from y). A finger can't do that
