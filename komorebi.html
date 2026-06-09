@@ -7,7 +7,7 @@
 <style>
   :root { color-scheme: dark; }
   html,body { margin:0; height:100%; background:#0a0d0a; overflow:hidden; }
-  #gl { display:block; width:100vw; height:100vh; cursor:crosshair; }
+  #gl { display:block; width:100vw; height:100vh; cursor:crosshair; touch-action:none; }   /* none: let swipe gestures through, no scroll/pull-to-refresh */
   #hud {
     position:fixed; left:10px; bottom:10px; font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;
     color:#9fb89f; background:rgba(0,0,0,.35); padding:6px 8px; border-radius:6px;
@@ -26,6 +26,13 @@
   #dev.hidden { display:none; }
   #dev h2 { font-size:11px; margin:14px 0 4px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
   #dev h2:first-child { margin-top:2px; }
+  #dev details { margin:0; }
+  #dev summary { list-style:none; cursor:pointer; }
+  #dev summary::-webkit-details-marker { display:none; }
+  #dev summary::before { content:'▸ '; color:#5a7a5a; }
+  #dev details[open] > summary::before { content:'▾ '; }
+  #dev summary.sec { font-size:11px; margin:14px 0 4px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
+  #dev summary.adv { font-size:11px; margin:8px 0 3px; color:#6f8a6f; }
   .ctl { display:flex; align-items:center; gap:6px; margin:3px 0; }
   .ctl label { flex:0 0 96px; color:#9fb89f; }
   .ctl input[type=range] { flex:1; min-width:0; height:14px; accent-color:#c99; }
@@ -65,7 +72,9 @@ const hud = document.getElementById('hud');
 const DEG = Komorebi.DEG;
 const MAX_LAYERS = Komorebi.MAX_LAYERS;
 const clamp = (x,a,b) => Math.min(b, Math.max(a, x));
-const fmt = (v) => (Math.abs(v)>=100||Number.isInteger(v)) ? String(v) : (+v).toFixed(2);
+const fmt = (v) => Number.isInteger(v) ? String(v)
+  : Math.abs(v)>=100 ? String(Math.round(v))   // big non-integers (azimuth / wind dir, step 1°) round to whole, not a 17-digit float
+  : (+v).toFixed(2);
 
 // ---- presets: engine built-ins + localStorage, plus JSON copy/paste ---------
 const LS_KEY='komorebi.presets';
@@ -95,37 +104,39 @@ const controlEls={};   // key -> {input, valEl}
 // 'textures' reallocates layer textures too; 'perf' resets auto-quality; '' just re-reads each frame.
 const PANEL = [
   ['h','Source'],
-  ['s','sample_count','samples',16,48,1,'source'],
-  ['s','core_angular_radius_deg','core °',0.05,2,0.01,'source'],
-  ['s','halo_angular_radius_deg','halo °',1,30,0.1,'source'],
-  ['s','core_weight_fraction','core wt',0,1,0.01,'source'],
   ['s','cloud_thickness','CLOUD',0,1,0.01,'source'],
+  ['s','core_weight_fraction','core wt',0,1,0.01,'source'],
+  ['s','core_angular_radius_deg','core °',0.05,2,0.01,'source'],
+  ['adv','advanced'],
+  ['s','halo_angular_radius_deg','halo °',1,30,0.1,'source'],
+  ['s','sample_count','samples',16,48,1,'source'],
   ['t','eclipse','eclipse','source'],
   ['s','eclipse_amount','ecl amt',0,1,0.01,'source'],
 
   ['h','Canopy'],
+  ['s','tree_count','trees',1,16,1,'canopy'],
   ['s','layer_count','layers',1,MAX_LAYERS,1,'textures'],
   ['s','canopy_base_height_m','base h (m)',2,20,0.1,''],
-  ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
-  ['s','tree_count','trees',1,16,1,'canopy'],
-  ['s','branch_levels','levels',1,4,1,'canopy'],
+  ['s','canopy_extent_m','extent (m)',6,24,0.5,'textures'],
+  ['s','foliage_density','density',0.1,3,0.05,'canopy'],
   ['s','branch_children','children',1,6,1,'canopy'],
   ['s','branch_angle_deg','branch °',5,80,1,'canopy'],
   ['s','branch_length_ratio','len ratio',0.3,0.92,0.01,'canopy'],
   ['s','branch_pitch_deg','pitch °',0,80,1,'canopy'],
-  ['s','foliage_density','density',0.1,3,0.05,'canopy'],
+  ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
+  ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
+  ['s','trans_b','trans B',0.001,0.6,0.001,'canopy'],
+  ['btn','reseed', ()=>{ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }],
+  ['adv','fine geometry'],
+  ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
+  ['s','branch_levels','levels',1,4,1,'canopy'],
   ['s','leaves_per_cluster','leaves/twig',1,80,1,'canopy'],
   ['s','cluster_spread_m','spread (m)',0.02,1,0.01,'canopy'],
   ['s','leaf_size_m','leaf (m)',0.01,0.4,0.005,'canopy'],
   ['s','leaf_aspect','aspect',1,4,0.05,'canopy'],
   ['s','max_tilt','tilt',0,1,0.01,'canopy'],
   ['s','edge_softness','edge',0.01,1,0.01,'canopy'],
-  ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
-  ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
-  ['s','trans_b','trans B',0.001,0.6,0.001,'canopy'],
-  ['s','canopy_extent_m','extent (m)',6,24,0.5,'textures'],
   ['sel','tex_resolution','res',[['1024',1024],['2048',2048],['4096',4096]],'textures'],
-  ['btn','reseed', ()=>{ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }],
 
   ['h','Transport'],
   ['s','time_of_day','time (h)',5,19,0.25,'suntime'],
@@ -151,8 +162,9 @@ const PANEL = [
   ['s','wind_strength','strength',0,2,0.01,''],
   ['s','wind_direction_deg','dir °',0,360,1,''],
   ['s','gust_frequency','gust freq',0.01,1,0.005,''],
-  ['s','gust_attack','attack (s)',0.05,5,0.05,''],
   ['s','gust_decay','decay (s)',0.05,8,0.05,''],
+  ['adv','spring mechanics'],
+  ['s','gust_attack','attack (s)',0.05,5,0.05,''],
   ['s','sway_stiffness','stiffness ω',0.5,15,0.1,''],
   ['s','sway_ceiling','ceiling (m)',0.05,1.5,0.01,''],
   ['s','damping_ratio','damping ζ',0.02,1,0.01,''],
@@ -165,13 +177,13 @@ const PANEL = [
   ['s','leaf_swing','leaf swing',0,2,0.01,''],
   ['s','flutter_freq','flutter Hz',0,5,0.05,''],
 
-  ['h','Leaf drift (incoherent band)'],
+  ['hc','Leaf drift (incoherent band)'],
   ['s','drift_amount','amount (m)',0,0.4,0.005,'bake'],
   ['s','drift_phase','phase',0,6.2832,0.01,'bake'],
   ['t','drift_auto','auto',''],
   ['s','drift_speed','speed',0,2,0.01,''],
 
-  ['h','Debug'],
+  ['hc','Debug'],
   ['t','auto_quality','auto 60fps','perf'],
   ['t','show_source','show source',''],
   ['t','show_layer','show layer','' ],
@@ -179,8 +191,13 @@ const PANEL = [
 ];
 
 function buildPanel(){
+  let container = dev;                                        // rows append here; an 'adv'/'hc' group redirects them into a <details>
+  const group=(text,cls)=>{ const d=document.createElement('details'); const s=document.createElement('summary');
+    s.textContent=text; s.dataset.tipKey=text; s.className=cls; d.appendChild(s); dev.appendChild(d); return d; };
   for(const item of PANEL){
-    if(item[0]==='h'){ const h=document.createElement('h2'); h.textContent=item[1]; h.dataset.tipKey=item[1]; dev.appendChild(h); continue; }
+    if(item[0]==='h'){ const h=document.createElement('h2'); h.textContent=item[1]; h.dataset.tipKey=item[1]; dev.appendChild(h); container=dev; continue; }
+    if(item[0]==='hc'){ container=group(item[1],'sec'); continue; }    // a whole collapsible section (closed by default)
+    if(item[0]==='adv'){ container=group(item[1],'adv'); continue; }   // a collapsible 'advanced' sub-group inside the current section
     const row=document.createElement('div'); row.className='ctl';
     if(item[0]==='s'){
       const [,key,label,min,max,step,scope]=item;
@@ -208,7 +225,7 @@ function buildPanel(){
       const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn);
       row.appendChild(b); row.dataset.tipKey=label;
     }
-    dev.appendChild(row);
+    container.appendChild(row);
   }
 }
 function syncControl(key){ const c=controlEls[key]; if(!c)return;
@@ -220,6 +237,9 @@ function syncAllControls(){ for(const k in controlEls) syncControl(k); }
 // heading. Different people think differently, so each starts simple and goes deeper underneath. ----
 const TIPS = {
   // section headings
+  'advanced':"<b>The cloud's finer dials — set once, rarely touched.</b> Halo size, sample count (smoothness vs. speed), and the eclipse demo. Folded away so the everyday CLOUD and sharpness knobs sit up top.",
+  'fine geometry':"<b>The canopy's set-and-forget shape.</b> Leaf size, aspect and rest-tilt, cluster spread, recursion depth, texture detail — dialled in once for the whole piece, not per look. (Your presets never change them.)",
+  'spring mechanics':"<b>How the branches feel in the wind — tuned once.</b> The gust envelope, spring stiffness / ceiling / damping / backlash, and the per-level limb &amp; twig flex. Per scene you really only change strength and direction above.",
   'Source':"<b>The light itself.</b> The sun here isn't a single dot — it's a little cloud of sample-suns covering the sun's real size (plus any haze around it). That finite size is the reason every shadow edge is soft. These knobs shape the light.",
   'Canopy':"<b>The trees.</b> A small grove, grown branch by branch, with leaves on the twig-tips. You never actually see the tree — only the shadow it throws on the ground — so we only bother modelling what changes that shadow.",
   'Transport':"<b>Where the sun sits in the sky.</b> Sets how the dapples stretch on the tilted ground — and now also the colour of the light and how cool the shadows go at dusk.",
@@ -368,20 +388,42 @@ function buildPresetUI(){
   refreshPresetSelect('morning 3');
 }
 
-// drag on canvas = move the sun (azimuth from x, elevation from y)
+// Canvas pointer input. A MOUSE drags the sun (azimuth from x, elevation from y). A finger can't do that
+// and swipe, so TOUCH is swipe-nav instead: a vertical swipe steps presets (like ↑/↓), a horizontal drag
+// scrubs time-of-day live (the sun arcs across the day). Axis locks once the gesture clears a deadzone.
+const SWIPE_DEAD=12, SWIPE_STEP=45;                            // px: ignore taps; min vertical throw to count as a preset step
 let dragging=false, px=0, py=0;
+let swipe=null;                                                // touch gesture in progress: {sx, sy, axis:null|'x'|'y'}
 canvas.addEventListener('pointerdown',e=>{
-  // click the tree preview to PIN it big (click again to unpin); otherwise begin a sun-drag
+  // tap the tree preview to PIN it big (tap again to unpin); otherwise begin a gesture
   if(showTree){ const r=canvas.getBoundingClientRect();
     if(eng.treeInsetHit({ x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height })){ treePinned=!treePinned; return; } }
-  dragging=true; px=e.clientX; py=e.clientY; canvas.setPointerCapture(e.pointerId); });
-canvas.addEventListener('pointerup',  ()=>{ dragging=false; });
+  if(e.pointerType==='touch') swipe={ sx:e.clientX, sy:e.clientY, axis:null }; else dragging=true;
+  px=e.clientX; py=e.clientY; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerup',e=>{
+  if(swipe){                                                   // a decisive vertical swipe = one preset step (up = next)
+    if(swipe.axis==='y'){ const dy=e.clientY-swipe.sy; if(Math.abs(dy)>SWIPE_STEP) stepPreset(dy<0 ? 1 : -1); }
+    swipe=null;
+  }
+  dragging=false; });
 canvas.addEventListener('pointermove',e=>{
+  if(swipe){
+    const dx=e.clientX-swipe.sx, dy=e.clientY-swipe.sy;
+    if(!swipe.axis){ if(Math.hypot(dx,dy)<SWIPE_DEAD) return; swipe.axis = Math.abs(dx)>Math.abs(dy) ? 'x' : 'y'; }
+    if(swipe.axis==='x'){                                      // scrub time of day live (~70% of the screen = a full day)
+      params.time_of_day = clamp(params.time_of_day + (e.clientX-px)*((19-5)/(window.innerWidth*0.7)), 5, 19);
+      updateSunFromTime(); syncControl('time_of_day');
+    }
+    px=e.clientX; py=e.clientY; return;                        // vertical is committed on release
+  }
   if(!dragging) return;
   params.sun_azimuth_deg = (params.sun_azimuth_deg + (e.clientX-px)*0.3 + 360)%360;
   params.sun_elevation_deg = clamp(params.sun_elevation_deg - (e.clientY-py)*0.3, 4, 90);
   px=e.clientX; py=e.clientY; syncControl('sun_azimuth_deg'); syncControl('sun_elevation_deg');
 });
+// on a touch device the keyboard / drag hints don't apply — show the swipe gestures instead
+if(window.matchMedia && matchMedia('(pointer: coarse)').matches)
+  document.getElementById('hint').innerHTML = 'swipe <b>↕</b> presets · <b>↔</b> time of day';
 // ---- arrow-key scene stepping: prev/next preset with a cloud-bloom transition (spec §9). The dropdown
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
