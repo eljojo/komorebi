@@ -410,6 +410,10 @@ eng.onFrame = function(){
   if(params.drift_auto) syncControl('drift_phase');
   if(params.show_source && !dev.classList.contains('hidden')) eng.drawSourceInset();
   if(showTree) eng.drawTreeInset(treePointer, treePinned);
+  // HUD (fps + stats) is debug info: only show it while the dev panel (D) is open
+  const devOpen = !dev.classList.contains('hidden');
+  hud.style.display = devOpen ? '' : 'none';
+  if(!devOpen) return;
   const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
   const sway=(Math.hypot(eng.motion.sway[0],eng.motion.sway[1])*100).toFixed(0);
   hud.textContent =
