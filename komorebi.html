@@ -36,13 +36,21 @@
   .ctl button:hover { background:#243c24; }
   .err { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
          color:#e88; font:14px ui-monospace,monospace; text-align:center; padding:40px; }
+  #tip {
+    position:fixed; max-width:300px; z-index:10; pointer-events:none; display:none;
+    font:11px/1.55 ui-monospace,Menlo,Consolas,monospace; color:#dfe9df;
+    background:rgba(10,16,10,.97); border:1px solid #2c452c; border-radius:6px;
+    padding:8px 10px; box-shadow:0 8px 28px rgba(0,0,0,.55);
+  }
+  #tip b { color:#cbe6a8; font-weight:600; }
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
 <div id="dev" class="hidden"></div>
 <div id="hud"></div>
-<div id="hint">press <b>D</b> for dev · drag = move sun</div>
+<div id="hint">press <b>D</b> for dev · drag = move sun · hover a knob for help</div>
+<div id="tip"></div>
 
 <script src="komorebi.js"></script>
 <script>
@@ -71,6 +79,9 @@ try { eng = Komorebi.create(canvas, { params: getPreset('morning 2') }); }
 catch(e){ document.body.innerHTML = '<div class="err">'+e.message+'</div>'; throw e; }
 const params = eng.params;   // live params the panel edits in place
 const perf = eng.perf;
+// time-of-day is an editor-only INPUT method (it writes sun elevation/azimuth); not an engine param.
+if(params.time_of_day===undefined) params.time_of_day = 9;
+if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
 function applyScope(scope){ eng.apply(scope); }                      // slider/toggle rebuild
 function applyParams(obj){ eng.setParams(obj); syncAllControls(); }  // load a whole preset
 
@@ -116,6 +127,8 @@ const PANEL = [
   ['btn','reseed', ()=>{ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }],
 
   ['h','Transport'],
+  ['s','time_of_day','time (h)',5,19,0.25,'suntime'],
+  ['s','latitude','latitude °',0,66,1,'suntime'],
   ['s','sun_elevation_deg','elev °',4,90,0.5,''],
   ['s','sun_azimuth_deg','azim °',0,360,1,''],
 
@@ -161,32 +174,33 @@ const PANEL = [
 
 function buildPanel(){
   for(const item of PANEL){
-    if(item[0]==='h'){ const h=document.createElement('h2'); h.textContent=item[1]; dev.appendChild(h); continue; }
+    if(item[0]==='h'){ const h=document.createElement('h2'); h.textContent=item[1]; h.dataset.tipKey=item[1]; dev.appendChild(h); continue; }
     const row=document.createElement('div'); row.className='ctl';
     if(item[0]==='s'){
       const [,key,label,min,max,step,scope]=item;
       const lab=document.createElement('label'); lab.textContent=label;
       const inp=document.createElement('input'); inp.type='range'; inp.min=min; inp.max=max; inp.step=step; inp.value=params[key];
       const val=document.createElement('span'); val.className='val'; val.textContent=fmt(params[key]);
-      inp.addEventListener('input',()=>{ params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]); applyScope(scope); });
-      row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val};
+      inp.addEventListener('input',()=>{ params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]);
+        if(scope==='suntime') updateSunFromTime(); else applyScope(scope); });
+      row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val}; row.dataset.tipKey=key;
     } else if(item[0]==='t'){
       const [,key,label,scope]=item; row.classList.add('toggle');
       const lab=document.createElement('label'); lab.textContent=label;
       const inp=document.createElement('input'); inp.type='checkbox'; inp.checked=params[key];
       inp.addEventListener('change',()=>{ params[key]=inp.checked; applyScope(scope); });
-      row.append(lab,inp); controlEls[key]={input:inp};
+      row.append(lab,inp); controlEls[key]={input:inp}; row.dataset.tipKey=key;
     } else if(item[0]==='sel'){
       const [,key,label,opts,scope]=item; row.classList.add('select');
       const lab=document.createElement('label'); lab.textContent=label;
       const sel=document.createElement('select');
       for(const [t,v] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; if(v==params[key]) o.selected=true; sel.appendChild(o); }
       sel.addEventListener('change',()=>{ params[key]=parseInt(sel.value,10); applyScope(scope); });
-      row.append(lab,sel); controlEls[key]={input:sel};
+      row.append(lab,sel); controlEls[key]={input:sel}; row.dataset.tipKey=key;
     } else if(item[0]==='btn'){
       const [,label,fn]=item;
       const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn);
-      row.appendChild(b);
+      row.appendChild(b); row.dataset.tipKey=label;
     }
     dev.appendChild(row);
   }
@@ -195,6 +209,114 @@ function syncControl(key){ const c=controlEls[key]; if(!c)return;
   if(c.input.type==='checkbox') c.input.checked=!!params[key]; else c.input.value=params[key];
   if(c.valEl) c.valEl.textContent=fmt(params[key]); }
 function syncAllControls(){ for(const k in controlEls) syncControl(k); }
+
+// ---- tooltips: lead with a plain "this does that", then build up to the why. Hover any knob or
+// heading. Different people think differently, so each starts simple and goes deeper underneath. ----
+const TIPS = {
+  // section headings
+  'Source':"<b>The light itself.</b> The sun here isn't a single dot — it's a little cloud of sample-suns covering the sun's real size (plus any haze around it). That finite size is the reason every shadow edge is soft. These knobs shape the light.",
+  'Canopy':"<b>The trees.</b> A small grove, grown branch by branch, with leaves on the twig-tips. You never actually see the tree — only the shadow it throws on the ground — so we only bother modelling what changes that shadow.",
+  'Transport':"<b>Where the sun sits in the sky.</b> Sets how the dapples stretch on the tilted ground — and now also the colour of the light and how cool the shadows go at dusk.",
+  'Look':"<b>The finishing touches — brightness, contrast, colour.</b> Everything here is about how the picture is shown, never the simulation underneath.",
+  'Wind — coherent band':"<b>The steady breeze that pushes everything one way.</b> The trunk slides the whole pattern sideways; limbs and twigs lean downwind and spring back. The shapes slide along nearly intact.",
+  'Leaf drift (incoherent band)':"<b>The faint, fidgety wind from all sides at once.</b> Each leaf jiggles on its own, so gaps reshuffle — merging and splitting like light on the floor of a pool — instead of sliding. (A preview of the second kind of wind.)",
+  'Debug':"<b>Tools for peeking under the hood.</b> These don't change the art.",
+  'Presets':"<b>Saved looks.</b> Built-in ones are marked •, your own ★ (saved in this browser). Copy/paste JSON to share a look with someone.",
+  // Source
+  sample_count:"<b>Smoothness of the light, traded against speed.</b> More samples = silkier dapples; fewer = faster. It's how many tiny suns we spread across the sun's disk. Auto-quality trims it when the frame rate dips.",
+  core_angular_radius_deg:"<b>How big the sun looks — the master softness of every dapple.</b> A bigger sun blurs the shadows more. Tiny gaps stop showing their own shape and instead cast little pictures of the sun — that's what a dapple is. (Real sun ≈ 0.27°; presets often nudge it bigger for a dreamier feel.)",
+  halo_angular_radius_deg:"<b>How wide the cloudy glow around the sun spreads.</b> Thin cloud smears the sun into a big halo; this is its size, and it shows up as the CLOUD knob goes up.",
+  core_weight_fraction:"<b>Crisp vs. hazy on a clear day.</b> How much of the light sits in the sharp centre vs. the soft glow around it. The CLOUD knob drains the centre into the glow over time; this is the clear-sky starting point.",
+  cloud_thickness:"<b>The master 'cloudiness' dial — turn it up and everything melts soft.</b> Drifting cloud simply makes the sun look bigger and blurrier, so the dapples bloom, dim and lose contrast all together. The single most expressive control in here.",
+  eclipse:"<b>A little science demo, not weather.</b> Slides a moon across the sun so it becomes a crescent — and watch every dapple on the ground turn into a crescent too. That's the proof the dapples are pictures of the sun, not the shapes of the gaps.",
+  eclipse_amount:"<b>How far the moon covers the sun</b> — i.e. how thin the crescent gets. Only matters with 'eclipse' on.",
+  // Canopy
+  layer_count:"<b>How many depth-slices the tree is flattened into (3–4).</b> The one spot where we cheat. Higher slices shift more as the sun moves, so taller leaves blur more — some dapples crisp, some soft, for free. The eye can't count the slices.",
+  canopy_base_height_m:"<b>How high the lowest leaves are.</b> A taller canopy gives bigger, softer dapples (a 10 m tree casts ~10 cm-soft edges). It also gives the branches a longer lever to sway on.",
+  canopy_thickness_m:"<b>How deep the leafy layer is, top to bottom.</b> More depth = a wider mix of sharp (low) and soft (high) dapples.",
+  tree_count:"<b>How many trees in the grove.</b> Their crowns overlap to fill the frame — a single tree would leave a bright bald spot over its trunk. More trees = fuller, more even cover.",
+  branch_levels:"<b>How many times the branches split (trunk → limb → twig …).</b> More levels = finer, more natural branching, so gaps show up at every scale. Leaf count climbs fast with this.",
+  branch_children:"<b>How bushy each branch is — how many shoots come off it.</b> The main 'how full is the tree' knob. More = a denser canopy and many more twigs.",
+  branch_angle_deg:"<b>How wide the branches fan out.</b> Narrow = tight, broom-like trees; wide = open, spreading crowns with bigger gaps.",
+  branch_length_ratio:"<b>How fast branches shrink as they split.</b> Low = stubby and compact; high = long, reaching, sparser.",
+  branch_pitch_deg:"<b>How steeply the limbs tilt upward.</b> This spreads the leaves out in height — and height is what sorts them into the sharp vs. soft slices.",
+  foliage_density:"<b>How full the canopy is — sparse spring vs. thick summer.</b> The big mood knob. Sparse: every leaf matters, so the faint wind can totally reshuffle the gaps. Thick: the same flutter only makes them twinkle.",
+  leaves_per_cluster:"<b>How many leaves on each twig-tip.</b> Sets the overall leaf count (and how heavy it is to draw). Crossing whole numbers fades in smoothly, so you can sweep it without it jumping.",
+  cluster_spread_m:"<b>How tightly leaves bunch on a twig.</b> Tight = distinct clumps with clear gaps between them; loose = a more even leaf carpet.",
+  leaf_size_m:"<b>How big each leaf is.</b> Bigger leaves block more and leave smaller gaps — and small gaps are exactly what make those soft, round sun-pictures.",
+  leaf_aspect:"<b>Leaf shape — round vs. long and narrow.</b> Higher = skinnier leaves. Changes the shape each leaf blocks as it rocks in the wind.",
+  max_tilt:"<b>How tilted the leaves sit at rest.</b> A tilted leaf is seen more edge-on, so it blocks less — this thins the canopy and gives the wind something to foreshorten.",
+  edge_softness:"<b>How fuzzy each leaf's own edge is.</b> Small = crisp, detailed leaves; large = softer blobs. (It's honest blur from a leaf only half-covering a pixel.)",
+  trans_r:"<b>How much RED light leaks through a leaf.</b> Keep it low — leaves drink red, which is why shade isn't black. It's the main lever on how warm the shadow-green looks. Stacked leaves multiply, so overlaps go darker.",
+  trans_g:"<b>How much GREEN light leaks through a leaf.</b> High — leaves pass green, so the shade beneath them glows green instead of going black. The signature komorebi colour.",
+  trans_b:"<b>How much BLUE light leaks through a leaf.</b> Low, like red. A small nudge on how cool the shade reads.",
+  canopy_extent_m:"<b>How big the simulated patch of ground is.</b> It has to be bigger than what you're viewing (with room for the sun to shift things), or dapples run off the edge. The grove auto-fits inside it.",
+  tex_resolution:"<b>Detail of the leaf-shadow map.</b> Higher resolves the tiniest gaps (the sharpest dapples) but costs more. 1024 is usually plenty for something this soft.",
+  reseed:"<b>Roll a new random tree layout.</b> Same kind of grove, freshly grown — a different arrangement of trees, branches and leaves.",
+  // Transport / time of day
+  time_of_day:"<b>Set the sun by clock time instead of by angle.</b> Drag from dawn through noon to dusk and the sun rises, arcs over, and sets — warming the light and stretching the dapples as it goes. It works out the real sun position for a spring day at your latitude, and writes the elevation/azimuth below.",
+  latitude:"<b>Where on Earth you are — it sets how high the noon sun climbs.</b> Near the equator the midday sun is nearly overhead; far north it stays low and raking all day. (45° ≈ Montreal, where this all began.)",
+  sun_elevation_deg:"<b>How high the sun is — drag it down for sunset.</b> A low sun stretches the dapples into long ellipses, turns the light warm and orange, and lets the shade go cool blue. The most scene-changing knob. (Or just drag on the picture.)",
+  sun_azimuth_deg:"<b>Which compass direction the sun is in.</b> Turns the direction the dapples stretch and lean.",
+  // Look
+  view_extent_m:"<b>Zoom — how much ground you see.</b> Small = a close-up of a few big dapples; large = a wide field of many small ones.",
+  exposure:"<b>Brightness.</b> How bright the floor is. Pure look — it never changes the light simulation, just where it lands on screen.",
+  contrast:"<b>Punch.</b> Higher = bold, snappy dapples; lower = the flat, milky look of haze.",
+  ambient_skylight:"<b>How much the sky fills the shadows.</b> The light that isn't direct sun — now coloured for real (blue by day, warmer at dusk). Up = softer, lifted shade; down = deep, moody shadows.",
+  sky_turbidity:"<b>Haze in the air.</b> Clean air = low; dust or humidity = higher, which makes a low sun redder and a sunset more washed-out orange.",
+  mesopic_strength:"<b>How blue the shadows go at dusk.</b> As light fades your eye quietly switches to night vision, which is colour-blind and blue-ish — so the dim shade cools toward grey-blue while the bright dapples stay warm. Only kicks in at low sun. 0 = off.",
+  tone_map:"<b>How over-bright light is squeezed onto the screen.</b> ACES is the soft, filmy default; Reinhard is simpler; None just clips the brightest bits.",
+  // Wind — coherent
+  wind_strength:"<b>How hard the breeze blows.</b> 0 = still. Turn it up and the branches bend, fight at the peak of a gust, then snap back.",
+  wind_direction_deg:"<b>Which way the wind blows.</b> The whole dapple pattern drifts and leans this way.",
+  gust_frequency:"<b>How often gusts come.</b> Low = long, slow swells; high = busy, choppy air.",
+  gust_attack:"<b>How quickly a gust builds up.</b> Short = a sudden shove; long = a gentle rise.",
+  gust_decay:"<b>How quickly a gust fades away.</b> Usually slower than it built — that lingering release.",
+  sway_stiffness:"<b>Springiness of the sway.</b> Stiff = quick, tight, twitchy motion; soft = slow, lazy, big swings.",
+  sway_ceiling:"<b>How far the branches can bend.</b> They hit a limit and clip there — that's the feeling of them fighting the wind at a gust's peak.",
+  damping_ratio:"<b>How quickly the swaying settles down.</b> Low = springy and ringing; high = sluggish and dead.",
+  backlash_gain:"<b>The snap-back when a gust lets go.</b> Branches recoil past their resting point and ring down, instead of gliding gently home. 0 = no snap.",
+  sway_height_gain:"<b>Do taller branches sway more than low ones?</b> 0 = the whole canopy slides as one rigid sheet; turn it up and it shears with height, so gaps morph as well as slide.",
+  limb_count:"<b>How many big arms each tree has.</b> More = the crown splits into finer wedges that can each lean on their own.",
+  limb_flex:"<b>How much the big limbs bend.</b> The slow, broad sway — a whole wedge of the crown swinging together.",
+  twig_flex:"<b>How much the little twigs bend.</b> The faster, finer motion one level down — each clump of leaves swinging a bit differently, so gaps shear and morph.",
+  stem_length:"<b>Where a twig bends from.</b> Pivoting a clump from its own middle makes it spin in place (an ugly little whirlpool); offsetting the pivot toward the branch makes it swing like a real twig. Set it to 0 and the whirlpools come back.",
+  leaf_swing:"<b>How much each leaf rocks in the wind.</b> A rocking leaf turns edge-on and back, so dapples change shape and blink — not just slide. This is a big part of what makes it read as wind at all.",
+  flutter_freq:"<b>How fast the leaves flutter.</b> The quick trembling on top of the slow sway — the glisten.",
+  // Leaf drift
+  drift_amount:"<b>How much the leaves jiggle in place.</b> 0 = frozen; a little = a faint twinkle; a lot = the gaps fully reshuffle, merging and splitting like light on the bottom of a pool.",
+  drift_phase:"<b>Scrub the jiggle by hand.</b> Slides every leaf around its little loop. Because it's a loop, the pattern comes right back to where it started each cycle.",
+  drift_auto:"<b>Let the jiggle run on its own.</b> A hands-free preview of that faint, all-directions wind.",
+  drift_speed:"<b>How fast the jiggle runs</b> when 'auto' is on.",
+  // Debug
+  auto_quality:"<b>Auto-tunes quality to hold ~60 fps.</b> Drops the cheapest quality first (resolution, then sample count) when things get heavy, and is slow to crank back up. Never touches the look — only the sharpness.",
+  show_source:"<b>Show a little map of the sun</b> you're sampling (centre + glow) in the corner. Watch it change as you move CLOUD or eclipse.",
+  show_layer:"<b>Peek at one raw depth-slice</b> of leaf shadows, instead of the finished picture.",
+  show_layer_index:"<b>Which slice to peek at</b> when 'show layer' is on (0 = lowest).",
+};
+const tip = document.getElementById('tip');
+function showTip(html, el){
+  tip.innerHTML = html; tip.style.display = 'block';
+  const r = el.getBoundingClientRect();
+  tip.style.left = (dev.getBoundingClientRect().right + 8) + 'px';
+  tip.style.top  = Math.min(Math.max(8, r.top), window.innerHeight - tip.offsetHeight - 8) + 'px';
+}
+dev.addEventListener('mouseover', e=>{ const el=e.target.closest('[data-tip-key]'); if(!el) return;
+  const t=TIPS[el.dataset.tipKey]; if(t) showTip(t, el); });
+dev.addEventListener('mouseout', e=>{ const el=e.target.closest('[data-tip-key]'), to=e.relatedTarget;
+  if(el && (!to || !el.contains(to))) tip.style.display='none'; });
+dev.addEventListener('scroll', ()=>{ tip.style.display='none'; });
+
+// ---- time of day: an alternative to the raw sun angle. Works out the sun's elevation & azimuth for a
+// SPRING day (equinox, so declination ≈ 0) at the chosen latitude, and writes them to the sun knobs. --
+function updateSunFromTime(){
+  const lat=(params.latitude||0)*DEG, H=(params.time_of_day-12)*15*DEG;   // hour angle: 15°/hr, 0 at solar noon
+  const el = Math.asin(clamp(Math.cos(lat)*Math.cos(H), -1, 1))/DEG;      // equinox: elevation = asin(cos lat · cos H)
+  const az = (180 + Math.atan2(Math.sin(H), Math.cos(H)*Math.sin(lat))/DEG + 360) % 360;  // east → south → west
+  params.sun_elevation_deg = clamp(el, 4, 90);                            // the engine floors elevation at 4°
+  params.sun_azimuth_deg = az;
+  syncControl('sun_elevation_deg'); syncControl('sun_azimuth_deg');       // colour + ellipse re-read next frame
+}
 
 // ---- presets UI: dropdown + save/delete + copy/paste JSON -------------------
 let presetSel;
@@ -208,7 +330,7 @@ function refreshPresetSelect(selected){
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
 function buildPresetUI(){
-  const h=document.createElement('h2'); h.textContent='Presets'; dev.appendChild(h);
+  const h=document.createElement('h2'); h.textContent='Presets'; h.dataset.tipKey='Presets'; dev.appendChild(h);
   const r1=document.createElement('div'); r1.className='ctl select';
   presetSel=document.createElement('select');
   presetSel.addEventListener('change',()=>applyParams(getPreset(presetSel.value)));
