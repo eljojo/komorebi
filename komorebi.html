@@ -49,7 +49,7 @@
 <canvas id="gl"></canvas>
 <div id="dev" class="hidden"></div>
 <div id="hud"></div>
-<div id="hint">press <b>D</b> for dev · <b>T</b> for tree view · drag = move sun · hover a knob for help</div>
+<div id="hint"><b>← →</b> change scene · <b>D</b> dev · <b>T</b> tree view · drag = move sun</div>
 <div id="tip"></div>
 
 <script src="komorebi.js"></script>
@@ -83,7 +83,8 @@ const perf = eng.perf;
 if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
 function applyScope(scope){ eng.apply(scope); }                      // slider/toggle rebuild
-function applyParams(obj){ eng.setParams(obj); syncAllControls(); }  // load a whole preset
+function applyParams(obj){ eng.setParams(obj); syncAllControls(); }  // load a whole preset (instant)
+let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
 
 // ===========================================================================
 // Dev panel
@@ -221,7 +222,8 @@ const TIPS = {
   'Wind — coherent band':"<b>The steady breeze that pushes everything one way.</b> The trunk slides the whole pattern sideways; limbs and twigs lean downwind and spring back. The shapes slide along nearly intact.",
   'Leaf drift (incoherent band)':"<b>The faint, fidgety wind from all sides at once.</b> Each leaf jiggles on its own, so gaps reshuffle — merging and splitting like light on the floor of a pool — instead of sliding. (A preview of the second kind of wind.)",
   'Debug':"<b>Tools for peeking under the hood.</b> These don't change the art.",
-  'Presets':"<b>Saved looks.</b> Built-in ones are marked •, your own ★ (saved in this browser). Copy/paste JSON to share a look with someone.",
+  'Presets':"<b>Saved looks.</b> Built-in ones are marked •, your own ★ (saved in this browser). Copy/paste JSON to share a look with someone. Step between them live with the <b>← →</b> arrow keys.",
+  'fade':"<b>How long a scene change takes.</b> Stepping presets with ← → cross-dissolves over this many seconds: the look morphs while a soft cloud drifts over to hide the trees and branches regrowing behind it. 0 = instant cut.",
   // Source
   sample_count:"<b>Smoothness of the light, traded against speed.</b> More samples = silkier dapples; fewer = faster. It's how many tiny suns we spread across the sun's disk. Auto-quality trims it when the frame rate dips.",
   core_angular_radius_deg:"<b>How big the sun looks — the master softness of every dapple.</b> A bigger sun blurs the shadows more. Tiny gaps stop showing their own shape and instead cast little pictures of the sun — that's what a dapple is. (Real sun ≈ 0.27°; presets often nudge it bigger for a dreamier feel.)",
@@ -370,11 +372,31 @@ canvas.addEventListener('pointermove',e=>{
   params.sun_elevation_deg = clamp(params.sun_elevation_deg - (e.clientY-py)*0.3, 4, 90);
   px=e.clientX; py=e.clientY; syncControl('sun_azimuth_deg'); syncControl('sun_elevation_deg');
 });
+// ---- arrow-key scene stepping: prev/next preset with a cloud-bloom transition (spec §9). The dropdown
+// selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
+// change all keep it current — so the arrows always step from the look the dropdown shows. ----
+function presetNames(){ return [...Object.keys(Komorebi.PRESETS), ...Object.keys(getStored())]; }   // dropdown order
+function stepPreset(dir){
+  const names=presetNames(); if(!names.length) return;
+  let i=names.indexOf(presetSel.value); if(i<0) i=0;
+  const name = names[(i+dir+names.length)%names.length];                    // wrap at the ends
+  eng.transitionTo(getPreset(name), { duration:transDur,
+    onEnd:()=>{ refreshPresetSelect(name); syncAllControls(); } });         // morph from the current live look to the target
+  refreshPresetSelect(name);                                               // reflect target in the dropdown = next step's origin
+}
+
 // T = toggle the 3D tree-grove preview inset (independent of the dev panel)
 let showTree=false;
 window.addEventListener('keydown',e=>{
-  if(e.key==='d'||e.key==='D') dev.classList.toggle('hidden');
-  else if(e.key==='t'||e.key==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; }
+  const k=e.key;
+  if(k==='d'||k==='D'){ dev.classList.toggle('hidden'); return; }
+  if(k==='t'||k==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; return; }
+  if(k==='ArrowLeft'||k==='ArrowRight'||k==='ArrowUp'||k==='ArrowDown'){
+    const tag=(document.activeElement&&document.activeElement.tagName)||'';
+    if(tag==='INPUT'||tag==='SELECT') return;                               // let a focused panel control use the arrows
+    e.preventDefault();
+    stepPreset((k==='ArrowRight'||k==='ArrowDown') ? 1 : -1);
+  }
 });
 // track the pointer (normalised canvas coords) so the tree preview can grow when hovered
 let treePointer=null, treePinned=false;
@@ -398,6 +420,17 @@ eng.onFrame = function(){
 // ---- boot the panel UI (the engine is already running) ----
 buildPresetUI();
 buildPanel();
+
+// ---- transition fade: its own row at the very bottom of the panel ----
+(function(){
+  const h=document.createElement('h2'); h.textContent='Transition'; h.dataset.tipKey='fade'; dev.appendChild(h);
+  const r=document.createElement('div'); r.className='ctl'; r.dataset.tipKey='fade';
+  const lab=document.createElement('label'); lab.textContent='fade (s)';
+  const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=6; inp.step=0.1; inp.value=transDur;
+  const val=document.createElement('span'); val.className='val'; val.textContent=transDur.toFixed(1);
+  inp.addEventListener('input',()=>{ transDur=parseFloat(inp.value); val.textContent=transDur.toFixed(1); });
+  r.append(lab,inp,val); dev.appendChild(r);
+})();
 </script>
 </body>
 </html>

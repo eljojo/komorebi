@@ -12,6 +12,8 @@
 //   eng.params / .perf / .motion / .src / .fps   live state (read for a HUD)
 //   eng.apply(scope)        re-run a rebuild: 'source'|'canopy'|'textures'|'bake'|'perf'|''
 //   eng.setParams(obj)      merge a full param set and rebuild (no UI side effects)
+//   eng.transitionTo(obj, {duration, onEnd})  cloud-bloom crossfade to a look (spec §9 "Scene transitions")
+//   eng.trans               live transition state (active, t) — read for a HUD
 //   eng.drawSourceInset()   debug overlay: the source point-sun cloud (editor only)
 //   eng.drawTreeInset()     debug overlay: a 3D preview of the grown grove, swaying (editor only)
 //   eng.onFrame             optional callback invoked after each rendered frame
@@ -25,6 +27,43 @@ const MAX_LAYERS = 4;
 const clamp = (x,a,b) => Math.min(b, Math.max(a, x));
 const lerp = (a,b,t) => a + (b-a)*t;
 const smoothstep = (a,b,x) => { const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); };
+// shortest-arc interpolation for a periodic value (degrees->360, radians->TAU): 350°->10° goes +20°.
+const lerpAngle = (a,b,t,period) => { const d=((b-a)%period + period*1.5)%period - period*0.5; return a + d*t; };
+
+// ---- preset transitions (spec §9 "Scene transitions"). Params split two ways: MORPH ones are
+// continuous and read live (or rebuild cheaply), so they tween frame-by-frame; everything else is
+// STRUCTURAL — it regrows the grove or reallocates textures, so it can't interpolate and is instead
+// snapped once at the transition's bloom peak, hidden under a transient widening of the source. ----
+const MORPH_KEYS = [
+  'core_angular_radius_deg','halo_angular_radius_deg','core_weight_fraction','cloud_thickness','eclipse_amount',
+  'canopy_base_height_m','canopy_thickness_m',                          // layer heights — read live, no rebuild
+  'sun_elevation_deg','sun_azimuth_deg','view_extent_m','exposure','contrast',
+  'ambient_skylight','sky_turbidity','mesopic_strength',
+  'wind_strength','wind_direction_deg','gust_frequency','gust_attack','gust_decay',
+  'sway_stiffness','sway_ceiling','damping_ratio','backlash_gain','sway_height_gain',
+  'limb_flex','twig_flex','stem_length','leaf_swing','flutter_freq',
+  'drift_amount','drift_phase','drift_speed',
+];
+const MORPH_SET = new Set(MORPH_KEYS);
+const ANGLE_SET = new Set(['sun_azimuth_deg','wind_direction_deg','drift_phase']);   // interpolate the short way
+
+// ---- canopy morph (the middle tier). With the SAME topology (counts + seed) the grove's RNG draws are
+// identical frame-to-frame, so interpolating these continuous canopy knobs deforms the *same* grove
+// smoothly (branches fan, leaves recolour/resize) — a true morph, no dissolve. It costs a per-frame
+// regrow, so it only runs when the grove is small enough (CANOPY_MORPH_MAX leaves); else it falls back
+// to the cloud dissolve. A change to any TOPO_KEY genuinely rearranges the grove (a new tree/layer/seed)
+// and *can't* morph leaf-for-leaf, so it always dissolves. ----
+const CANOPY_KEYS = [
+  'tree_count',                                                       // continuous (spec §4.5): a fractional count grows a marginal tree in, so a tree-count transition MORPHS instead of dissolving
+  'canopy_extent_m',                                                  // baked world size — only a regrow + re-bake (NO texture realloc), so it morphs continuously
+  'branch_angle_deg','branch_length_ratio','branch_pitch_deg','foliage_density','leaves_per_cluster',
+  'cluster_spread_m','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b',
+];
+const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
+  'branch_levels','branch_children','limb_count','layer_count',
+  'tex_resolution','seed','sample_count','eclipse',   // eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
+];   // (tone_map is a live uniform: it just snaps — under the bloom if one's already running, else at the end — never forces one)
+const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back to the cloud dissolve (don't regrow per frame)
 
 // ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
 // 3-band (R=620, G=555, B=470 nm) Beer's-law model. As the sun lowers, air mass grows and Rayleigh
@@ -184,6 +223,7 @@ const BUILTIN_PRESETS = {
     "drift_amount": 0.145, "drift_phase": 0.18025113743438262, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
   }),
+  /* 'test 1' / 'test 2' — hidden for now, kept for the future. Uncomment this block to restore them to the preset list.
   'test 1': Object.assign({}, DEFAULTS, {
     "sample_count": 21, "core_angular_radius_deg": 0.18, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 1, "cloud_thickness": 0.27, "eclipse": false, "eclipse_amount": 0.55,
@@ -216,6 +256,7 @@ const BUILTIN_PRESETS = {
     "drift_amount": 0.145, "drift_phase": 3.0914450851278223, "drift_auto": true, "drift_speed": 0.08,
     "auto_quality": false,
   }),
+  */
   // 'afternoon 4' — windy predecessor; now a 3-tree grove with wider (52°) branching.
   'afternoon 4': Object.assign({}, DEFAULTS, {
     sample_count:32, core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
@@ -318,7 +359,7 @@ const BUILTIN_PRESETS = {
   'afternoon 7': Object.assign({}, DEFAULTS, {
     "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
@@ -627,6 +668,10 @@ function create(canvas, opts){
   const perf = { auto:false, quality:1, resScale:1, sampleCount:params.sample_count, acc:0, lowCount:0, hiCount:0, upWait:20 };
   // Motion — one time-driven state, two bands (spec §5). u = sway as a fraction of ceiling.
   const motion = { time:0, u:0, v:0, env:0, sway:[0,0] };
+  // Transition — cloud-bloom crossfade between looks (spec §9). t walks 0->1 over dur: the continuous
+  // params morph, the grove swaps once at the bloom peak, and `bloom` is a transient overcast that hides it.
+  const trans = { active:false, t:0, dur:1.5, from:null, to:null, swapped:false, structDiff:false, canopyMorph:false, bloom:0, onEnd:null };
+  const effCloud = () => clamp(lerp(params.cloud_thickness, 1, trans.bloom), 0, 1);  // cloud, swollen toward overcast mid-transition
 
   function compile(type, src){
     const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
@@ -722,6 +767,7 @@ function create(canvas, opts){
   // ---- canopy generation: grow a real recursive skeleton, hang one leaf cluster on each
   // terminal twig, and bin them into depth layers by the height they grew to (spec §4.5) ----
   function regenCanopy(){
+    const prevHier = hier;   // keep the old hierarchy so a same-topology regrow can carry the in-flight sway across
     layerVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
     layerVAO = [];
     const E = params.canopy_extent_m;
@@ -743,7 +789,12 @@ function create(canvas, opts){
     // gaps fall between limbs, small gaps between leaves — multi-scale, for free (spec §4.5). A grove
     // (not one centred tree) fills the centre and matches the park: several trees, the smaller ones
     // reading denser (the same cluster packed into a smaller crown). ----
-    const nTree  = Math.max(1, params.tree_count|0);
+    // tree_count is CONTINUOUS so a tree-count transition can morph (spec §4.5/§9): floor(count) full trees
+    // plus a marginal tree faded in by the fraction. At an integer count it's exactly floor trees, no partial.
+    const treeCountF = Math.max(1, params.tree_count);
+    const nFull  = Math.floor(treeCountF);
+    const tFrac  = treeCountF - nFull;                  // marginal-tree coverage; 0 at integer counts
+    const nTree  = nFull + (tFrac>1e-4 ? 1 : 0);        // trees actually built this frame
     const lpt    = Math.max(1, params.limb_count|0);   // limbs per tree
     const levels = Math.max(1, params.branch_levels|0);
     const kids   = Math.max(1, params.branch_children|0);
@@ -761,7 +812,7 @@ function create(canvas, opts){
     // to view_extent (so the grove fills the frame regardless of zoom), capped to fit inside the bake.
     const golden = Math.PI*(3 - Math.sqrt(5));
     const Rfill = Math.min(E*0.46, Math.max(0.5, params.view_extent_m));
-    const crown0 = (Rfill/Math.sqrt(nTree))*1.7;        // base crown radius — ~1.7x spacing -> overlap
+    const crown0 = (Rfill/Math.sqrt(treeCountF))*1.7;   // base crown radius, normalised by the continuous count so it shrinks smoothly as trees are added
     const trunkH = crown0*0.6;                          // a real trunk lifts each crown off the ground.
     // It's a CONSTANT (same for every tree), so it only offsets z uniformly — the relative layer-binding
     // below is unchanged, i.e. the cast dapples are untouched; only the 3D structure/preview gains height.
@@ -780,7 +831,8 @@ function create(canvas, opts){
     for(let tt=0;tt<nTree;tt++){
       // trunk placement: Vogel disk so trees spread evenly; the first tree sits at the centre so the
       // middle of the frame is always covered (a single tree would leave a bare-bright hole there).
-      const rr = Rfill*Math.sqrt(tt/Math.max(1,nTree));
+      const treeCov = (tt===nFull) ? tFrac : 1.0;        // the marginal tree fades in by coverage (1 for full trees)
+      const rr = Rfill*Math.sqrt(tt/treeCountF);         // normalise by the continuous count -> trees re-space smoothly as it morphs
       const aa = tt*golden + (gr()-0.5)*0.6;
       const tx = rr*Math.cos(aa), ty = rr*Math.sin(aa);
       const crown = crown0*(0.7+0.6*gr());               // per-tree size variation (smaller -> denser)
@@ -799,10 +851,10 @@ function create(canvas, opts){
       // normalise this tree's crown to `crown`, then translate it to its trunk (tx,ty)
       let mr=1e-3; for(const w of out.tw) mr=Math.max(mr, Math.hypot(w.x,w.y));
       const s = crown/mr;
-      for(const w of out.tw){ w.x=w.x*s+tx; w.y=w.y*s+ty; w.z=w.z*s+trunkH; w.tx=tx; w.ty=ty; twigs.push(w); }
+      for(const w of out.tw){ w.x=w.x*s+tx; w.y=w.y*s+ty; w.z=w.z*s+trunkH; w.tx=tx; w.ty=ty; w.tcov=treeCov; twigs.push(w); }
       for(const sg of out.seg) segments.push({ a:[sg.a[0]*s+tx, sg.a[1]*s+ty, sg.a[2]*s+trunkH],
-                                               b:[sg.b[0]*s+tx, sg.b[1]*s+ty, sg.b[2]*s+trunkH], level:sg.level });
-      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkH], level:0 });   // the major trunk: ground -> crown base
+                                               b:[sg.b[0]*s+tx, sg.b[1]*s+ty, sg.b[2]*s+trunkH], level:sg.level, cov:treeCov });
+      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkH], level:0, cov:treeCov });   // the major trunk: ground -> crown base
       for(let i=0;i<lpt;i++){ const gi=limbBase+i;
         limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty; }
     }
@@ -829,6 +881,14 @@ function create(canvas, opts){
       clusterGeom:new Float32Array(nClusterTotal*4),   // static: (twig tip.xy, tree trunk pivot.xy)
       segments, maxV:0,
     };
+    // carry the in-flight sway across a regrow so the wind doesn't reset (an editor tweak or a grove-morph
+    // transition). Trees/limbs are appended at the end, so indices 0..min are the same twig: copy the common
+    // PREFIX — existing trees keep their sway, a newly-grown tree starts at rest. (§9)
+    if(prevHier){
+      const nL=Math.min(prevHier.nLimb,nLimb), nC=Math.min(prevHier.nClusterTotal,nClusterTotal);
+      hier.limbAngle.set(prevHier.limbAngle.subarray(0,nL)); hier.limbVel.set(prevHier.limbVel.subarray(0,nL));
+      hier.twigAngle.set(prevHier.twigAngle.subarray(0,nC)); hier.twigVel.set(prevHier.twigVel.subarray(0,nC));
+    }
 
     // ---- hang a leaf cluster on each twig, accumulating one instance buffer per depth layer ----
     const layerData = [];
@@ -847,7 +907,7 @@ function create(canvas, opts){
       hier.clusterData[4*j+2]=stemRand;                             // static stem-angle seed (.z); tick writes .x/.y
       const data = layerData[t.layer];
       for(let k=0;k<nLeaf;k++){
-        const cov = (k===pcInt) ? frac : 1.0;
+        const cov = ((k===pcInt) ? frac : 1.0) * t.tcov;   // marginal-leaf fade × marginal-tree fade (§4.5)
         const x = cx + gauss()*params.cluster_spread_m;
         const y = cy + gauss()*params.cluster_spread_m;
         const size = params.leaf_size_m*(0.6+0.8*rng());
@@ -897,6 +957,7 @@ function create(canvas, opts){
     };
     clusterTex     = makeDataTex(clusterTex, hier.clusterData);      // dynamic bend angles
     clusterGeomTex = makeDataTex(clusterGeomTex, hier.clusterGeom);  // static geometry
+    publishBend();   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
   }
 
   // ---- bake leaves into per-layer optical-depth textures ---------------------
@@ -940,8 +1001,9 @@ function create(canvas, opts){
   function regenSource(){
     const N = clamp(Math.round(perf.auto ? perf.sampleCount : params.sample_count), 3, MAX_SAMPLES);
     const coreR = params.core_angular_radius_deg*DEG;
-    const t = params.cloud_thickness;
-    const haloR = lerp(coreR*2.0, params.halo_angular_radius_deg*DEG, t);
+    const t = effCloud();                                  // cloud_thickness, pushed to overcast during a transition
+    const haloDeg = lerp(params.halo_angular_radius_deg, 30, trans.bloom);  // the bloom also fattens the halo to wash out the grove swap
+    const haloR = lerp(coreR*2.0, haloDeg*DEG, t);
     const Wcore = params.core_weight_fraction*(1.0-t);     // energy drains core->halo with cloud
     const Whalo = 1.0 - Wcore;
     const nCore = Math.max(3, Math.round(N*0.5));
@@ -1021,11 +1083,19 @@ function create(canvas, opts){
       const target = tf*(0.4*u*tq + eb*n);
       for(let s=0;s<steps;s++){ const a = kT*(target - hier.twigAngle[j]) - cT*hier.twigVel[j];
         hier.twigVel[j]+=a*h; hier.twigAngle[j]+=hier.twigVel[j]*h; }
-      hier.clusterData[4*j]   = hier.limbAngle[hier.clusterLimb[j]];   // limb bend this clump inherits
-      hier.clusterData[4*j+1] = hier.twigAngle[j];                     // its own twig bend
-      maxv=Math.max(maxv, Math.abs(hier.twigVel[j]));
+      maxv=Math.max(maxv, Math.abs(hier.twigVel[j]));   // (clusterData is written by publishBend, below)
     }
     hier.maxV = maxv;
+    publishBend();
+  }
+  // write the current limb/twig bend into the per-clump texture the bake VS samples. Called at the end of a
+  // hierarchy tick, and again after a grove-morph regrow (which hands us a fresh, zeroed texture). ----
+  function publishBend(){
+    if(!hier) return;
+    for(let j=0;j<hier.nClusterTotal;j++){
+      hier.clusterData[4*j]   = hier.limbAngle[hier.clusterLimb[j]];   // limb bend this clump inherits
+      hier.clusterData[4*j+1] = hier.twigAngle[j];                     // its own twig bend
+    }
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, clusterTex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, hier.nClusterTotal, 1, gl.RGBA, gl.FLOAT, hier.clusterData);
@@ -1062,6 +1132,60 @@ function create(canvas, opts){
     // incoherent band: advance the drift phase (periodic in 2π). The editor reflects it in its slider.
     if(params.drift_auto && params.drift_amount>0){
       params.drift_phase = (params.drift_phase + params.drift_speed*dt) % TAU;
+    }
+  }
+
+  // ---- preset transitions (spec §9): morph the continuous look, dissolve the structural rebuild behind
+  // a transient cloud-bloom. One entry point — the future MIDI/event layer drives this same method. ----
+  function transitionTo(target, opts){
+    opts = opts || {};
+    if(!target || typeof target!=='object') return;
+    const to = Object.assign({}, DEFAULTS, target);        // missing keys -> defaults (forward-compat, like setParams)
+    const from = {};
+    for(const k of MORPH_KEYS)  from[k] = params[k];       // continuous look — always morphs live
+    for(const k of CANOPY_KEYS) from[k] = params[k];       // continuous canopy — morphs live IF the topology matches
+    const topoDiff   = TOPO_KEYS.some(k => to[k]!==params[k]);     // a new tree/layer/seed: can't morph leaf-for-leaf
+    const canopyDiff = CANOPY_KEYS.some(k => to[k]!==params[k]);   // branch/leaf knobs differ
+    const leafCount  = layerVAO.reduce((s,L)=>s+L.count, 0);       // current grove size
+    // a grove morph scales the leaf count by tree_count AND per-twig density (leaves_per_cluster*foliage_density);
+    // budget against the busier (more-leaves) end so a dense/many-tree target falls back to the cheap dissolve.
+    const densFrom   = Math.max(1e-6, params.leaves_per_cluster*params.foliage_density);
+    const densTo     = Math.max(0,    to.leaves_per_cluster*to.foliage_density);
+    const morphScale = (Math.max(1, to.tree_count)/Math.max(1, params.tree_count)) * (densTo/densFrom);
+    const morphCost  = leafCount * Math.max(1, morphScale);
+    const morphGrove = canopyDiff && !topoDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching, small enough -> morph it
+    trans.canopyMorph = morphGrove;
+    trans.structDiff  = topoDiff || (canopyDiff && !morphGrove);   // dissolve on topology change, or a grove too big to morph
+    trans.from = from; trans.to = to;
+    trans.dur = Math.max(1e-3, opts.duration!=null ? opts.duration : trans.dur);
+    trans.t = 0; trans.swapped = false; trans.bloom = 0; trans.active = true;
+    trans.onEnd = opts.onEnd || null;
+  }
+  function tickTransition(dt){
+    if(!trans.active) return;
+    trans.t = Math.min(1, trans.t + Math.min(dt,1/15)/trans.dur);   // clamp the step like tick(): a tab-switch spike must not skip the bloom peak
+    const t = trans.t, e = smoothstep(0,1,t);              // ease-in-out for the morph; raw t for the bloom hump
+    trans.bloom = trans.structDiff ? Math.sin(Math.PI*t) : 0;   // 0 at the ends, full overcast at the midpoint
+    for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
+      params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,e, k==='drift_phase'?TAU:360) : lerp(a,b,e); }
+    if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove
+    let rebuilt = false;
+    if(!trans.swapped && t>=0.5){                          // swap the grove once, hidden under the bloom peak
+      trans.swapped = true;
+      if(trans.structDiff){
+        for(const k in DEFAULTS) if(!MORPH_SET.has(k)) params[k] = trans.to[k];
+        rebuildAll(); rebuilt = true;                      // regrow grove + textures + source + bake, all at once
+      }
+    }
+    if(!rebuilt){
+      if(trans.canopyMorph) regenCanopy();   // regrow the morphing grove (regenCanopy republishes the carried-over sway)
+      regenSource(); bake();                 // morphed cloud + leaf/drift -> source + layers
+    }
+    if(t>=1){                                              // land exactly on the target; clear the bloom
+      trans.active = false; trans.bloom = 0;
+      for(const k in DEFAULTS) params[k] = trans.to[k];
+      regenSource(); resetPerf();                          // bloom now 0; re-probe quality for the new look (it may carry auto-quality)
+      const cb = trans.onEnd; trans.onEnd = null; if(cb) cb();
     }
   }
 
@@ -1216,13 +1340,14 @@ function create(canvas, opts){
       const h1=rot(2.6), h2=rot(-2.6);
       pushLine([tx,ty,0],[tx+h1[0]*hb,ty+h1[1]*hb,0], 0.5,0.6,0.78);
       pushLine([tx,ty,0],[tx+h2[0]*hb,ty+h2[1]*hb,0], 0.5,0.6,0.78); }
-    // branches: trunk/limb (brown, level<=1 -> f=0) -> twig (tan)
-    for(const s of segs){ const f=Math.max(0, Math.min(1,(s.level-1)/Math.max(1,levels-1)));
-      pushLine(s.a, s.b, 0.30+0.20*f, 0.22+0.16*f, 0.12+0.06*f); }
+    // branches: trunk/limb (brown, level<=1 -> f=0) -> twig (tan). cov<1 (a marginal tree growing in mid-morph)
+    // fades the colour toward the sky bg, matching how the baked canopy fades that tree in.
+    for(const s of segs){ const f=Math.max(0, Math.min(1,(s.level-1)/Math.max(1,levels-1))), cv=(s.cov===undefined?1:s.cov);
+      pushLine(s.a, s.b, lerp(0.05,0.30+0.20*f,cv), lerp(0.07,0.22+0.16*f,cv), lerp(0.09,0.12+0.06*f,cv)); }
     // leaf blobs at the terminal twig tips
     const Lf=[], lsz=S*0.05;
-    for(const s of segs){ if(s.level>=levels){ const A=P(s.b), f=s.b[2]/maxZ;
-      Lf.push(A[0],A[1], 0.18+0.12*f, 0.42+0.18*f, 0.16+0.10*f, lsz); } }
+    for(const s of segs){ if(s.level>=levels){ const A=P(s.b), f=s.b[2]/maxZ, cv=(s.cov===undefined?1:s.cov);
+      Lf.push(A[0],A[1], lerp(0.05,0.18+0.12*f,cv), lerp(0.07,0.42+0.18*f,cv), lerp(0.09,0.16+0.10*f,cv), lsz); } }
     // ---- draw: a framed sky, then ground+branches (opaque lines), then leaves (soft blended points) ----
     gl.disable(gl.BLEND);
     gl.enable(gl.SCISSOR_TEST);
@@ -1267,12 +1392,16 @@ function create(canvas, opts){
   rebuildAll();
   resetPerf();
   let last=performance.now(), fps=60;
-  const eng = { canvas, gl, params, perf, motion, src, fps:60, apply, setParams, drawSourceInset, drawTreeInset, treeInsetHit, onFrame:opts.onFrame||null };
+  const eng = { canvas, gl, params, perf, motion, src, trans, fps:60, apply, setParams, transitionTo, drawSourceInset, drawTreeInset, treeInsetHit, onFrame:opts.onFrame||null };
   function frame(now){
     const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1; eng.fps=fps;
     if(perf.auto) tunePerf(dtms, fps);               // auto-quality: nudge resolution/samples toward 60 fps
     resize();
-    if(motionActive()){ tick(dtms/1000); bake(); }   // advance + re-bake only when something moves
+    const dt = dtms/1000;
+    if(trans.active){                                // a running transition owns the re-source/re-bake each frame
+      if(motionActive()) tick(dt);                   // keep wind alive; the morph re-asserts drift_phase right after
+      tickTransition(dt);
+    } else if(motionActive()){ tick(dt); bake(); }   // advance + re-bake only when something moves
     if(params.show_layer) drawLayerBlit(); else drawTransport();
     if(eng.onFrame) eng.onFrame(dtms);               // editor draws HUD + source inset here
     requestAnimationFrame(frame);
