@@ -96,6 +96,7 @@ Two felt qualities come *for free* from the same mechanism, which is why it read
 
 - **The dapples are elliptical, not circular**, because the ground is tilted relative to the sun. The lower the sun, the more they stretch — elongated along the sun's direction, sheared toward its azimuth.
 - **The "dark" areas are not black; they are a dim green.** That light passed *through* thin leaves, and chlorophyll transmits green while absorbing red and blue. The real scene is bright white-gold suns floating on a soft green-grey wash — never white-on-black.
+- **The sunlight itself reddens as the sun lowers — and the shade goes blue.** At low elevation the beam crosses far more atmosphere (air mass by Kasten–Young, *not* `1/sin` — that diverges at the horizon); Rayleigh scattering (∝ λ⁻⁴) strips its blue/green, so the disk warms white → gold → orange → red. Meanwhile the ozone **Chappuis band** absorbs red from the *scattered* light, so the skylight that fills the shadows stays **blue** (the "blue hour") — which is why a low sun reads as *warm light on cool shade*. Both are modelled from `sun_elevation` by a cheap 3-band (R/G/B) Beer's-law atmosphere (`uSunColor` = the beam, `uAmbient` = the sky), with a `sky_turbidity` haze knob; the green wash above is the *transmitted* beam, the blue is the *skylight* — distinct mechanisms that compose. Computed in linear HDR, upstream of exposure and tone-map.
 
 ---
 
@@ -180,7 +181,7 @@ One equation:
 
 ### 4.7 Look
 
-Elliptical projection (from transport), the green wash (from the canopy), exposure and contrast tied to source width, and a final tone-map — all **downstream** of the physics.
+Elliptical projection (from transport), the green wash (from the canopy), the **physical sun & sky colour** (`uSunColor`/`uAmbient` from the §3.5 atmosphere, driven by `sun_elevation` + `sky_turbidity`), exposure and contrast tied to source width, and a final tone-map — all **downstream** of the physics, accumulated in linear HDR.
 
 ---
 
@@ -335,7 +336,8 @@ Grouped by subsystem; the knobs an implementer will actually expose.
 **Look**
 - `exposure`, `contrast` (coupled to `cloud_thickness`)
 - `tone_map_curve`
-- `ambient_skylight` (lifts the green shadow wash)
+- `ambient_skylight` (scales the physical sky fill — ozone-blue by day, warming toward dusk)
+- `sky_turbidity` *(atmospheric haze β; with `sun_elevation` drives the physical sun/sky colour — reddens the low sun, blue-shifts the shadow fill, desaturates a hazy dusk)*
 
 ---
 
@@ -343,10 +345,10 @@ Grouped by subsystem; the knobs an implementer will actually expose.
 
 These belong to the authoring tool, not the model, but they shape how the model is *explored* and so are worth recording.
 
-- **Presets.** The full parameter set is saveable to the browser's local storage by name, and any state can be exported/imported as JSON for sharing across machines. Seven looks ship built in (*morning 1* and *afternoon 2*–*7*, all grown groves); the boot default is *morning 1* — a low-sun spring-morning grove (elongated dapples) with auto-quality on. Every other look is the user's own, saved (★) to local storage. The bare neutral config still lives in code as the merge base (`DEFAULTS`) but is not exposed as a preset.
+- **Presets.** The full parameter set is saveable to the browser's local storage by name, and any state can be exported/imported as JSON for sharing across machines. Eight looks ship built in (*morning 1*–*2* and *afternoon 2*–*7*, all grown groves); the boot default is *morning 2* — a low golden-hour grove (23° sun) with auto-quality on. Every other look is the user's own, saved (★) to local storage. The bare neutral config still lives in code as the merge base (`DEFAULTS`) but is not exposed as a preset.
 - **Stable per-clump seeding & fractional-leaf fade.** As in §5.3, so the parameter space is smooth to sweep.
 - **Manual drift phase.** The §5.2 mechanism, exposed as a slider (`drift_phase`) with an `auto` option that advances it over time — a preview of the incoherent band before any real wind field exists.
-- **Auto-quality (debug toggle).** A checkbox — **on** in the default scene (*morning 1*), though the underlying param defaults off — that watches frame rate and eases toward the highest quality that still holds ~60 fps. It spends the *cheapest* quality first — render resolution (nearly free for so soft a piece), then source-sample count — and leaves the physical and artistic params untouched. It chases a smooth 60 — dropping quality (debounced against lone spikes) whenever frames slip below it — and is deliberately **reluctant to climb back**: each forced downsize doubles the wait before it will probe upward again, so it ratchets to a stable level and parks there rather than hunting. Full quality is re-probed only on an explicit re-tune (toggling it, or loading a preset).
+- **Auto-quality (debug toggle).** A checkbox — **on** in the default scene (*morning 2*), though the underlying param defaults off — that watches frame rate and eases toward the highest quality that still holds ~60 fps. It spends the *cheapest* quality first — render resolution (nearly free for so soft a piece), then source-sample count — and leaves the physical and artistic params untouched. It chases a smooth 60 — dropping quality (debounced against lone spikes) whenever frames slip below it — and is deliberately **reluctant to climb back**: each forced downsize doubles the wait before it will probe upward again, so it ratchets to a stable level and parks there rather than hunting. Full quality is re-probed only on an explicit re-tune (toggling it, or loading a preset).
 - **Dev panel hidden by default.** The whole authoring panel is hidden on load; press **D** to reveal it. The visualization stands alone until then.
 - **Page-background viewer.** The engine doubles as an ambient background for the homepage (`index.html`): a fixed full-bleed canvas with the page content on top, viewer-only (one preset, no panel, no input). It degrades to a static page if WebGL2 is unavailable. The editor (`komorebi.html`) and the viewer share the one engine (`komorebi.js`); see §6.
 

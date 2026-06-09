@@ -23,6 +23,36 @@ const MAX_SAMPLES = 48;
 const MAX_LAYERS = 4;
 const clamp = (x,a,b) => Math.min(b, Math.max(a, x));
 const lerp = (a,b,t) => a + (b-a)*t;
+const smoothstep = (a,b,x) => { const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); };
+
+// ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
+// 3-band (R=620, G=555, B=470 nm) Beer's-law model. As the sun lowers, air mass grows and Rayleigh
+// (∝ λ⁻⁴) reddens the direct beam; the ozone Chappuis band absorbs red, so the SCATTERED sky stays
+// blue (the "blue hour"). Returns LINEAR RGB — the renderer's exposure/ACES/gamma stay downstream. --
+const TAU_RAY = [0.0597, 0.0938, 0.1851];   // Rayleigh vertical optical depth per band (sea level)
+const TAU_OZ  = [0.0403, 0.0258, 0.0040];   // ozone Chappuis (300 DU) — absorbs red, not blue
+const TAU_AER = [1.861, 2.151, 2.670];      // aerosol per unit turbidity β (Ångström λ^-1.3)
+function airMass(hDeg){                       // Kasten-Young 1989 — finite at the horizon (1/sin diverges)
+  const h = Math.max(hDeg, 0);
+  return 1/(Math.sin(h*DEG) + 0.50572*Math.pow(h+6.07995, -1.6364));
+}
+function atmosphere(hDeg, beta, ambientSky){
+  const m = airMass(hDeg);
+  const T=[0,0,0], sky=[0,0,0]; let tmax=1e-9, smax=1e-9;
+  for(let i=0;i<3;i++){
+    const ext = TAU_OZ[i] + beta*TAU_AER[i];
+    T[i]   = Math.exp(-m*(TAU_RAY[i] + ext));   // direct-beam transmittance -> sun disk
+    sky[i] = TAU_RAY[i]*Math.exp(-m*ext);       // Rayleigh single-scatter through ozone/aerosol -> sky
+    tmax=Math.max(tmax,T[i]); smax=Math.max(smax,sky[i]);
+  }
+  const sun=[T[0]/tmax, T[1]/tmax, T[2]/tmax]; // normalize to HUE; exposure carries brightness
+  const kA = 0.08*ambientSky;
+  const dusk = smoothstep(15,0,hDeg)*0.5;       // belt-of-Venus: warm beam bleeds into the sky near sunset
+  return { sun, ambient:[
+    (sky[0]/smax + dusk*sun[0])*kA,
+    (sky[1]/smax + dusk*sun[1])*kA,
+    (sky[2]/smax + dusk*sun[2])*kA ] };
+}
 
 // ---- default parameters. The editor edits a live copy; presets merge over this
 // so old/partial JSON stays forward-compatible as new knobs are added. ----------
@@ -67,6 +97,7 @@ const DEFAULTS = {
   exposure: 1.3,
   contrast: 1.0,
   ambient_skylight: 0.5,
+  sky_turbidity: 0.05,             // atmospheric haze β (Ångström); reddens low sun, desaturates dusk
   tone_map: 2,                     // 0 none, 1 reinhard, 2 aces
   // Wind — coherent band (spec §5.1)
   wind_strength: 0.0,
@@ -98,8 +129,8 @@ const DEFAULTS = {
 };
 
 const BUILTIN_PRESETS = {
-  // 'morning 1' is the boot default — a low-sun spring-morning grove (elongated dapples), auto-quality
-  // on. 'afternoon 2'..'7' are earlier looks kept built in; any saved (★) look is the user's own in
+  // 'morning 2' is the boot default — a low golden-hour grove (23° sun), auto-quality on. 'morning 1'
+  // and 'afternoon 2'..'7' are earlier looks kept built in; any saved (★) look is the user's own in
   // local storage. DEFAULTS stays the merge base so old/partial preset JSON is forward-compatible.
   'morning 1': Object.assign({}, DEFAULTS, {
     "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
@@ -115,6 +146,23 @@ const BUILTIN_PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.8099656994860664, "drift_auto": true, "drift_speed": 0.04,
+    "auto_quality": true,
+  }),
+  // boot default:
+  'morning 2': Object.assign({}, DEFAULTS, {
+    "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "tex_resolution": 1024,
+    "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
+    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "tone_map": 2,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.97071372563982, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
   }),
   'afternoon 2': Object.assign({}, DEFAULTS, {
@@ -926,9 +974,10 @@ function create(canvas, opts){
     gl.uniform1f(U.tp.aspect, canvas.width/canvas.height);
     gl.uniform2f(U.tp.origin, -E/2, -E/2);
     gl.uniform2f(U.tp.extent, E, E);
-    gl.uniform3f(U.tp.sun, 1.0, 0.96, 0.88);
-    const amb=params.ambient_skylight;
-    gl.uniform3f(U.tp.ambient, 0.05*amb, 0.08*amb, 0.07*amb);
+    // physical sun + sky colour from solar elevation (spec §3.5): warm/red low sun, ozone-blue shadows
+    const atm = atmosphere(params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);
+    gl.uniform3f(U.tp.sun, atm.sun[0], atm.sun[1], atm.sun[2]);
+    gl.uniform3f(U.tp.ambient, atm.ambient[0], atm.ambient[1], atm.ambient[2]);
     gl.uniform1f(U.tp.exposure, params.exposure);
     gl.uniform1f(U.tp.contrast, params.contrast);
     gl.uniform1i(U.tp.tone, params.tone_map);

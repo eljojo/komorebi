@@ -67,7 +67,7 @@ function getPreset(name){ const s=getStored(); return (name in s) ? s[name] : Ko
 
 // ---- boot the engine on the canvas ------------------------------------------
 let eng;
-try { eng = Komorebi.create(canvas, { params: getPreset('morning 1') }); }
+try { eng = Komorebi.create(canvas, { params: getPreset('morning 2') }); }
 catch(e){ document.body.innerHTML = '<div class="err">'+e.message+'</div>'; throw e; }
 const params = eng.params;   // live params the panel edits in place
 const perf = eng.perf;
@@ -124,6 +124,7 @@ const PANEL = [
   ['s','exposure','exposure',0,4,0.01,''],
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
+  ['s','sky_turbidity','haze β',0,0.5,0.01,''],
   ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
 
   ['h','Wind — coherent band'],
@@ -218,7 +219,7 @@ function buildPresetUI(){
       const s=getStored(); s[n]=JSON.parse(JSON.stringify(params)); setStored(s); refreshPresetSelect(n); }),
     mkBtn('delete',()=>{ const n=presetSel.value, s=getStored();
       if(!(n in s)){ alert("Built-in presets can't be deleted."); return; }
-      delete s[n]; setStored(s); refreshPresetSelect('morning 1'); }));
+      delete s[n]; setStored(s); refreshPresetSelect('morning 2'); }));
   dev.appendChild(r2);
 
   const r3=document.createElement('div'); r3.className='ctl';
@@ -229,7 +230,7 @@ function buildPresetUI(){
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
       try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(e){ alert('Invalid JSON'); } }));
   dev.appendChild(r3);
-  refreshPresetSelect('morning 1');
+  refreshPresetSelect('morning 2');
 }
 
 // drag on canvas = move the sun (azimuth from x, elevation from y)
