@@ -132,3 +132,10 @@ li span {
   object-fit: cover;
   aspect-ratio: 1;
 }
+
+@media screen and (max-width: 799px) {
+  .image img {
+    -webkit-mask-image: radial-gradient(circle at 58% 51%, black 22%, transparent 72%);
+    radial-gradient(circle at 58% 51%, black 22%, transparent 72%);
+  }
+}
