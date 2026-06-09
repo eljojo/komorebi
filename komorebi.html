@@ -40,7 +40,7 @@
 </head>
 <body>
 <canvas id="gl"></canvas>
-<div id="dev"></div>
+<div id="dev" class="hidden"></div>
 <div id="hud"></div>
 <div id="hint">press <b>D</b> for dev · drag = move sun</div>
 
@@ -122,6 +122,7 @@ const params = {
   drift_speed: 0.4,                // phase units/sec when auto
 
   // Debug
+  auto_quality: false,             // watch fps; trim render resolution then samples to hold ~60 fps (best bang for buck)
   show_source: true,
   show_layer: false,
   show_layer_index: 0,
@@ -130,8 +131,27 @@ const params = {
 // Snapshot the defaults BEFORE anything mutates params; presets merge over this
 // so old/partial JSON stays forward-compatible as new knobs are added.
 const DEFAULTS = JSON.parse(JSON.stringify(params));
+// Auto-quality runtime throttle (the debug "auto 60fps" toggle drives this). The toggle lives in
+// params; this holds the live resolution / sample-count it trims to. Never touches the artistic params.
+const perf = { auto:false, quality:1, resScale:1, sampleCount:params.sample_count, acc:0, lowCount:0, hiCount:0, upWait:20 };
 const BUILTIN_PRESETS = {
-  // 'afternoon 4' is the boot default — warm, near-overhead spring scene, a touch of cloud haze and windy.
+  // 'afternoon 5' is the boot default — a calm, warm, near-overhead spring scene, auto-quality on.
+  // Any other look is the user's own, saved (★) to local storage via the preset UI.
+  'afternoon 5': Object.assign({}, DEFAULTS, {
+    sample_count:32, core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
+    core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
+    layer_count:4, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
+    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
+    leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
+    canopy_extent_m:6, tex_resolution:1024, seed:290626672,
+    sun_elevation_deg:84.5, sun_azimuth_deg:201,
+    view_extent_m:3.1, exposure:2.44, contrast:0.98, ambient_skylight:0.97, tone_map:2,
+    wind_strength:0.07, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:1.3,
+    sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.65, backlash_gain:1, sway_height_gain:0.75,
+    limb_count:11, limb_flex:0.25, twig_flex:0.18, stem_length:0.18, leaf_swing:1.35, flutter_freq:1.4,
+    drift_amount:0.145, drift_phase:1.403, drift_auto:true, drift_speed:0.04, auto_quality:true,
+  }),
+  // 'afternoon 4' — the windier predecessor, kept as-is.
   'afternoon 4': Object.assign({}, DEFAULTS, {
     sample_count:32, core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
     core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
@@ -145,44 +165,6 @@ const BUILTIN_PRESETS = {
     sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.25, backlash_gain:1, sway_height_gain:1.6,
     limb_count:11, limb_flex:0.25, twig_flex:0.35, stem_length:0.14, leaf_swing:1.35, flutter_freq:1.4,
     drift_amount:0.145, drift_phase:2.876, drift_auto:true, drift_speed:0.04,
-  }),
-  // 'afternoon 2' — calm (no coherent wind), mid sun; gaps reorganize only via the drift preview.
-  'afternoon 2': Object.assign({}, DEFAULTS, {
-    sample_count:21, core_angular_radius_deg:0.18, halo_angular_radius_deg:4.3,
-    core_weight_fraction:1, cloud_thickness:0.27, eclipse:false, eclipse_amount:0.55,
-    layer_count:4, canopy_base_height_m:3.2, canopy_thickness_m:2.6, foliage_density:1.65,
-    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
-    leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.3, trans_g:0.61, trans_b:0.5,
-    canopy_extent_m:7, tex_resolution:2048, seed:290626672,
-    sun_elevation_deg:57.61, sun_azimuth_deg:151.38,
-    view_extent_m:6.2, exposure:1.44, contrast:1.22, ambient_skylight:1.33, tone_map:2,
-    wind_strength:0, wind_direction_deg:30, gust_frequency:0.12, gust_attack:1.2, gust_decay:2.5,
-    sway_stiffness:5, sway_ceiling:0.4, damping_ratio:0.25, backlash_gain:1, sway_height_gain:0,
-    limb_count:8, limb_flex:0.25, twig_flex:0.35, stem_length:0.5, leaf_swing:0.7, flutter_freq:1.4,
-    drift_amount:0.145, drift_phase:3.334, drift_auto:true, drift_speed:0.08,
-  }),
-  // the bare engineering baseline (formerly 'Default') — a neutral starting point for tuning
-  'Baseline': JSON.parse(JSON.stringify(DEFAULTS)),
-  'Afternoon (low sun)': Object.assign({}, DEFAULTS, {
-    sample_count:16, core_angular_radius_deg:0.27, halo_angular_radius_deg:6,
-    core_weight_fraction:1, cloud_thickness:0, eclipse:false, eclipse_amount:0.55,
-    layer_count:4, canopy_base_height_m:3.2, canopy_thickness_m:2.6, foliage_density:1.75,
-    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.15, leaf_size_m:0.10,
-    leaf_aspect:2, max_tilt:0.54, edge_softness:0.20, trans_r:0.30, trans_g:0.61, trans_b:0.50,
-    canopy_extent_m:6, sun_elevation_deg:18.87, sun_azimuth_deg:162,
-    view_extent_m:6.2, exposure:1.44, contrast:1.22, ambient_skylight:0.80, tone_map:2,
-  }),
-  'Midday shimmer': Object.assign({}, DEFAULTS, {
-    sample_count:21, core_angular_radius_deg:0.18, halo_angular_radius_deg:4.3, core_weight_fraction:1,
-    cloud_thickness:0.27, layer_count:4, canopy_base_height_m:3.2, canopy_thickness_m:2.6,
-    foliage_density:1.65, clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28,
-    leaf_size_m:0.1, leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26,
-    trans_r:0.29, trans_g:0.61, trans_b:0.466, canopy_extent_m:7, seed:290626672,
-    sun_elevation_deg:90, sun_azimuth_deg:360, view_extent_m:6.2, exposure:1.44, contrast:1.22,
-    ambient_skylight:1.33, tone_map:2,
-    wind_strength:1.34, wind_direction_deg:30, gust_frequency:0.04, sway_stiffness:1.2,
-    sway_ceiling:0.42, backlash_gain:1.8, sway_height_gain:1.6, leaf_swing:0.7, flutter_freq:1.4,
-    drift_amount:0.145, drift_phase:5.759, drift_auto:true, drift_speed:0.08,
   }),
 };
 
@@ -633,7 +615,7 @@ function bake(){
 
 // ---- source: Vogel-spiral cloud of weighted point-suns ---------------------
 function regenSource(){
-  const N = clamp(Math.round(params.sample_count), 3, MAX_SAMPLES);
+  const N = clamp(Math.round(perf.auto ? perf.sampleCount : params.sample_count), 3, MAX_SAMPLES);
   const coreR = params.core_angular_radius_deg*DEG;
   const t = params.cloud_thickness;
   const haloR = lerp(coreR*2.0, params.halo_angular_radius_deg*DEG, t);
@@ -784,9 +766,47 @@ function tick(dt){
 // Render
 // ===========================================================================
 function resize(){
-  const dpr=Math.min(2, window.devicePixelRatio||1);
-  const w=Math.round(canvas.clientWidth*dpr), h=Math.round(canvas.clientHeight*dpr);
+  const dpr=Math.min(2, window.devicePixelRatio||1)*perf.resScale;   // auto-quality scales the backing store
+  const w=Math.max(1,Math.round(canvas.clientWidth*dpr)), h=Math.max(1,Math.round(canvas.clientHeight*dpr));
   if(canvas.width!==w||canvas.height!==h){ canvas.width=w; canvas.height=h; }
+}
+
+// ---- auto-quality: hold ~60 fps by spending the cheapest quality first. For so soft a piece render
+// resolution is nearly free, so trim it first; source samples next. Drives perf.*, never the user's art.
+function applyQuality(){
+  if(!perf.auto){                                   // off -> restore the user's full quality
+    perf.resScale = 1;
+    if(perf.sampleCount !== params.sample_count){ perf.sampleCount = params.sample_count; regenSource(); }
+    return;
+  }
+  const q = perf.quality, KNEE = 0.5, RES_MIN = 0.5, SAMP_MIN = 6;
+  let res, samp;
+  if(q >= KNEE){ res = lerp(RES_MIN, 1, (q-KNEE)/(1-KNEE)); samp = params.sample_count; }   // resolution first
+  else         { res = RES_MIN; samp = Math.round(lerp(SAMP_MIN, params.sample_count, q/KNEE)); } // then samples
+  perf.resScale = res;
+  samp = clamp(samp, 3, Math.max(3, params.sample_count));
+  if(samp !== perf.sampleCount){ perf.sampleCount = samp; regenSource(); }
+}
+function tunePerf(dtms){
+  perf.acc += dtms;
+  if(perf.acc < 450) return;                        // re-evaluate the smoothed fps about twice a second
+  perf.acc = 0;
+  if(fps < 58){                                     // not holding 60 -> chase it down (1-tick debounce, so a
+    perf.hiCount = 0;                               // lone hitch is ignored but a real shortfall is pursued)
+    if(++perf.lowCount >= 2 && perf.quality > 0){
+      perf.lowCount = 0;
+      perf.quality = clamp(perf.quality - 0.08, 0, 1);
+      perf.upWait = Math.min(240, perf.upWait * 2); // having had to drop, get MUCH less eager to climb back
+      applyQuality();
+    }
+    return;
+  }
+  perf.lowCount = 0;                                // at/above the target
+  // Climbing is deliberately grudging: only after a long unbroken run *pinned at the cap* (genuine
+  // headroom), one small step — and that wait doubled every time we were forced down. [58,59.5): hold.
+  if(fps > 59.5 && perf.quality < 1){
+    if(++perf.hiCount >= perf.upWait){ perf.hiCount = 0; perf.quality = clamp(perf.quality + 0.04, 0, 1); applyQuality(); }
+  } else perf.hiCount = 0;
 }
 
 function drawTransport(){
@@ -847,6 +867,7 @@ const hud=document.getElementById('hud');
 let last=performance.now(), fps=60;
 function frame(now){
   const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1;
+  if(perf.auto) tunePerf(dtms);                    // auto-quality: nudge resolution/samples toward 60 fps
   resize();
   // when anything moves, advance the motion state and re-bake the canopy this frame
   if(motionActive()){ tick(dtms/1000); bake(); }
@@ -855,7 +876,7 @@ function frame(now){
   const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
   const sway=(Math.hypot(motion.sway[0],motion.sway[1])*100).toFixed(0);
   hud.textContent =
-    `${fps.toFixed(0)} fps   ${src.count} suns × ${params.layer_count} layers = ${src.count*params.layer_count} taps/px\n`+
+    `${fps.toFixed(0)} fps   ${src.count} suns × ${params.layer_count} layers = ${src.count*params.layer_count} taps/px${perf.auto?`   AUTO res ${perf.resScale.toFixed(2)}×`:''}\n`+
     `blur h·θ ≈ ${blur} cm   cloud ${params.cloud_thickness.toFixed(2)}   sun ${params.sun_elevation_deg.toFixed(0)}°/${params.sun_azimuth_deg.toFixed(0)}°   wind ${params.wind_strength.toFixed(2)} → sway ${sway} cm`;
   requestAnimationFrame(frame);
 }
@@ -933,6 +954,7 @@ const PANEL = [
   ['s','drift_speed','speed',0,2,0.01,''],
 
   ['h','Debug'],
+  ['t','auto_quality','auto 60fps','perf'],
   ['t','show_source','show source',''],
   ['t','show_layer','show layer','' ],
   ['s','show_layer_index','layer #',0,MAX_LAYERS-1,1,''],
@@ -943,6 +965,7 @@ function applyScope(scope){
   else if(scope==='bake') bake();                  // drift moves leaves at bake time only
   else if(scope==='canopy'){ regenCanopy(); bake(); }
   else if(scope==='textures'){ rebuildTextures(); regenCanopy(); bake(); }
+  else if(scope==='perf'){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
 }
 
 function buildPanel(){
@@ -988,6 +1011,7 @@ function applyParams(obj){
   const merged = Object.assign({}, DEFAULTS, obj);   // missing keys -> defaults (forward-compat)
   for(const k in DEFAULTS) params[k] = merged[k];
   rebuildAll(); syncAllControls();
+  perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality();   // a preset may carry auto-quality
 }
 
 // ---- presets: built-ins + localStorage, plus JSON copy/paste ---------------
@@ -1018,7 +1042,7 @@ function buildPresetUI(){
       const s=getStored(); s[n]=JSON.parse(JSON.stringify(params)); setStored(s); refreshPresetSelect(n); }),
     mkBtn('delete',()=>{ const n=presetSel.value, s=getStored();
       if(!(n in s)){ alert("Built-in presets can't be deleted."); return; }
-      delete s[n]; setStored(s); refreshPresetSelect('afternoon 4'); }));
+      delete s[n]; setStored(s); refreshPresetSelect('afternoon 5'); }));
   dev.appendChild(r2);
 
   const r3=document.createElement('div'); r3.className='ctl';
@@ -1029,7 +1053,7 @@ function buildPresetUI(){
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
       try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(e){ alert('Invalid JSON'); } }));
   dev.appendChild(r3);
-  refreshPresetSelect('afternoon 4');
+  refreshPresetSelect('afternoon 5');
 }
 
 // drag on canvas = move the sun (azimuth from x, elevation from y)
@@ -1049,7 +1073,7 @@ window.addEventListener('keydown',e=>{ if(e.key==='d'||e.key==='D') dev.classLis
 // ===========================================================================
 buildPresetUI();
 buildPanel();
-applyParams(getPreset('afternoon 4'));   // boot into the default scene (rebuilds textures, canopy, source)
+applyParams(getPreset('afternoon 5'));   // boot into the default scene (rebuilds textures, canopy, source)
 requestAnimationFrame(frame);
 </script>
 </body>

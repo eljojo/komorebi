@@ -338,9 +338,11 @@ Grouped by subsystem; the knobs an implementer will actually expose.
 
 These belong to the authoring tool, not the model, but they shape how the model is *explored* and so are worth recording.
 
-- **Presets.** The full parameter set is saveable to the browser's local storage by name, and any state can be exported/imported as JSON for sharing across machines. Built-in presets: *afternoon 4* (the boot default — a warm, near-overhead spring scene, lightly hazed and windy), *afternoon 2* (a calm mid-sun companion with no coherent wind, whose gaps reorganize only through the drift preview of §5.2), *Baseline* (the bare neutral reference for tuning, formerly *Default*), *Afternoon (low sun)*, and *Midday shimmer*.
+- **Presets.** The full parameter set is saveable to the browser's local storage by name, and any state can be exported/imported as JSON for sharing across machines. Two presets ship built in: *afternoon 5* (the boot default — a calm, warm, near-overhead spring scene with auto-quality on) and *afternoon 4* (its windier predecessor); every other look is the user's own, saved (★) to local storage. The bare neutral config still lives in code as the merge base (`DEFAULTS`) but is no longer exposed as a preset.
 - **Stable per-clump seeding & fractional-leaf fade.** As in §5.3, so the parameter space is smooth to sweep.
 - **Manual drift phase.** The §5.2 mechanism, exposed as a slider (`drift_phase`) with an `auto` option that advances it over time — a preview of the incoherent band before any real wind field exists.
+- **Auto-quality (debug toggle).** A checkbox — **on** in the default scene (*afternoon 5*), though the underlying param defaults off — that watches frame rate and eases toward the highest quality that still holds ~60 fps. It spends the *cheapest* quality first — render resolution (nearly free for so soft a piece), then source-sample count — and leaves the physical and artistic params untouched. It chases a smooth 60 — dropping quality (debounced against lone spikes) whenever frames slip below it — and is deliberately **reluctant to climb back**: each forced downsize doubles the wait before it will probe upward again, so it ratchets to a stable level and parks there rather than hunting. Full quality is re-probed only on an explicit re-tune (toggling it, or loading a preset).
+- **Dev panel hidden by default.** The whole authoring panel is hidden on load; press **D** to reveal it. The visualization stands alone until then.
 
 ---
 
