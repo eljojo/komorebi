@@ -649,10 +649,12 @@ const FS_VIZ = `#version 300 es
 precision highp float;
 in vec3 vCol;
 uniform float uPoint;                 // 1 = soft round leaf, 0 = opaque branch/ground line
+uniform float uPointAlpha;            // leaf opacity — eased down as foliage density climbs (haze, not a wall)
+uniform float uLineAlpha;             // branch/line opacity — 1 solid, <1 for the faint skeleton over the foliage
 out vec4 frag;
 void main(){
-  if(uPoint>0.5){ vec2 d=gl_PointCoord*2.0-1.0; float r2=dot(d,d); if(r2>1.0) discard; frag=vec4(vCol,(1.0-r2)*0.9); }
-  else frag=vec4(vCol,1.0);
+  if(uPoint>0.5){ vec2 d=gl_PointCoord*2.0-1.0; float r2=dot(d,d); if(r2>1.0) discard; frag=vec4(vCol,(1.0-r2)*uPointAlpha); }
+  else frag=vec4(vCol, uLineAlpha);
 }`;
 
 // ===========================================================================
@@ -717,7 +719,7 @@ function create(canvas, opts){
   };
   U.blit = { tex:loc(progBlit,'uTex') };
   U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
-  U.viz = { point:loc(progViz,'uPoint') };
+  U.viz = { point:loc(progViz,'uPoint'), pointAlpha:loc(progViz,'uPointAlpha'), lineAlpha:loc(progViz,'uLineAlpha') };
 
   // ---- geometry / GPU buffers ----
   const emptyVAO = gl.createVertexArray();           // required to issue attrib-less draws
@@ -859,8 +861,8 @@ function create(canvas, opts){
       const s = crown/mr;
       for(const w of out.tw){ w.x=w.x*s+tx; w.y=w.y*s+ty; w.z=w.z*s+trunkH; w.tx=tx; w.ty=ty; w.tcov=treeCov; twigs.push(w); }
       for(const sg of out.seg) segments.push({ a:[sg.a[0]*s+tx, sg.a[1]*s+ty, sg.a[2]*s+trunkH],
-                                               b:[sg.b[0]*s+tx, sg.b[1]*s+ty, sg.b[2]*s+trunkH], level:sg.level, cov:treeCov });
-      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkH], level:0, cov:treeCov });   // the major trunk: ground -> crown base
+                                               b:[sg.b[0]*s+tx, sg.b[1]*s+ty, sg.b[2]*s+trunkH], level:sg.level, cov:treeCov, tree:tt });
+      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkH], level:0, cov:treeCov, tree:tt });   // the major trunk: ground -> crown base
       for(let i=0;i<lpt;i++){ const gi=limbBase+i;
         limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty; }
     }
@@ -1300,6 +1302,25 @@ function create(canvas, opts){
   // turning 3/4 view that sways with the wind. Optional editor inset ('T'); the geometry is CPU-
   // projected into a scissored corner, so it costs nothing unless shown. ----
   let treeGrow = 0;   // 0 = parked small in the corner, 1 = grown; eases toward the hover/pinned target
+  // inset leaf scatter: one blob per LEAF (count = leaves_per_cluster × foliage_density) so the density
+  // slider visibly fills/thins the preview. Base positions are scattered once per regrow (keyed on `hier`
+  // identity — every canopy knob makes a new hier) and reprojected each frame; the proj buffer is reused.
+  let treeLeafHier=null, treeLeafBase=null, treeLeafProj=null;
+  function buildTreeLeaves(){
+    const segs=hier.segments, levels=Math.max(1,params.branch_levels|0);
+    const nLeaf=Math.max(1, Math.round(Math.max(0, params.leaves_per_cluster*params.foliage_density)));
+    const base=[]; let j=0;
+    for(const s of segs){ if(s.level>=levels){
+      const cx=s.b[0], cy=s.b[1], cz=s.b[2], cov=(s.cov===undefined?1:s.cov);
+      const ti=(s.tree===undefined?0:s.tree), tnt=((ti*0.61803398875)%1)*2-1;   // per-tree warmth [-1,1], golden-spread so neighbours differ
+      const gauss=makeGauss(mulberry32(hash3(params.seed>>>0, j, 101)));   // deterministic per-twig scatter (same count & spread as the bake, not bit-identical)
+      for(let k=0;k<nLeaf;k++) base.push(cx+gauss()*params.cluster_spread_m, cy+gauss()*params.cluster_spread_m, cz, cov, tnt);
+      j++;
+    }}
+    treeLeafBase=new Float32Array(base);
+    treeLeafProj=new Float32Array(base.length/5*6);   // base: x,y,z,cov,tint (5) -> proj: x,y,r,g,b,size (6)
+    treeLeafHier=hier;
+  }
   function treeInsetGeom(){
     const base = Math.min(300, canvas.width*0.32, canvas.height*0.42);
     const big  = Math.min(canvas.width*0.62, canvas.height*0.72);
@@ -1347,15 +1368,34 @@ function create(canvas, opts){
       const h1=rot(2.6), h2=rot(-2.6);
       pushLine([tx,ty,0],[tx+h1[0]*hb,ty+h1[1]*hb,0], 0.5,0.6,0.78);
       pushLine([tx,ty,0],[tx+h2[0]*hb,ty+h2[1]*hb,0], 0.5,0.6,0.78); }
-    // branches: trunk/limb (brown, level<=1 -> f=0) -> twig (tan). cov<1 (a marginal tree growing in mid-morph)
-    // fades the colour toward the sky bg, matching how the baked canopy fades that tree in.
+    // branches as tapered quads (real width, not 1-px GL lines): trunk thickest -> twig thin. Built into a
+    // triangles buffer Q, drawn solid behind the foliage and again faintly OVER it so the skeleton ghosts
+    // through (level<=1 brown -> twig tan; cov<1 fades a marginal morphing-in tree toward the sky bg).
+    const Q=[]; const pushQuad=(p,q,wpx,r,g,b)=>{
+      const A=P(p),B=P(q); let dxn=B[0]-A[0],dyn=B[1]-A[1]; const dl=Math.hypot(dxn,dyn)||1e-6; dxn/=dl; dyn/=dl;
+      const hw=wpx/S, nx=-dyn*hw, ny=dxn*hw;                  // perpendicular half-width in NDC (square S×S viewport)
+      Q.push(A[0]+nx,A[1]+ny,r,g,b,0, A[0]-nx,A[1]-ny,r,g,b,0, B[0]+nx,B[1]+ny,r,g,b,0,
+             A[0]-nx,A[1]-ny,r,g,b,0, B[0]-nx,B[1]-ny,r,g,b,0, B[0]+nx,B[1]+ny,r,g,b,0); };
     for(const s of segs){ const f=Math.max(0, Math.min(1,(s.level-1)/Math.max(1,levels-1))), cv=(s.cov===undefined?1:s.cov);
-      pushLine(s.a, s.b, lerp(0.05,0.30+0.20*f,cv), lerp(0.07,0.22+0.16*f,cv), lerp(0.09,0.12+0.06*f,cv)); }
-    // leaf blobs at the terminal twig tips
-    const Lf=[], lsz=S*0.05;
-    for(const s of segs){ if(s.level>=levels){ const A=P(s.b), f=s.b[2]/maxZ, cv=(s.cov===undefined?1:s.cov);
-      Lf.push(A[0],A[1], lerp(0.05,0.18+0.12*f,cv), lerp(0.07,0.42+0.18*f,cv), lerp(0.09,0.16+0.10*f,cv), lsz); } }
-    // ---- draw: a framed sky, then ground+branches (opaque lines), then leaves (soft blended points) ----
+      const wpx=lerp(3.4, 1.0, clamp(s.level/Math.max(1,levels),0,1));   // trunk (level 0) thick -> twig thin
+      pushQuad(s.a, s.b, wpx, lerp(0.05,0.30+0.20*f,cv), lerp(0.07,0.22+0.16*f,cv), lerp(0.09,0.12+0.06*f,cv)); }
+    // leaf blobs: the scatter on every terminal twig, so the density slider fills/thins the preview.
+    if(treeLeafHier!==hier) buildTreeLeaves();
+    const lsz=S*0.04, nLf=treeLeafBase.length/5;
+    // per-leaf opacity falls as the per-twig count climbs, so a dense canopy reads as a translucent haze the
+    // branches show through (option 3) instead of an opaque green wall — density stays legible as coverage.
+    const leafAlpha=clamp(1.8/Math.sqrt(Math.max(1,Math.round(params.leaves_per_cluster*params.foliage_density))),0.12,0.6);
+    for(let i=0;i<nLf;i++){                                  // inline P() — no per-leaf array alloc (there can be tens of thousands)
+      const b5=5*i, bx=treeLeafBase[b5], by=treeLeafBase[b5+1], bz=treeLeafBase[b5+2], cv=treeLeafBase[b5+3], w=treeLeafBase[b5+4];
+      const lf=lean*(bz/maxZ), ax=bx+wx*lf+sx0, ay=by+wy*lf+sy0, az=bz*1.4;
+      const u=ax*cyw-ay*syw, depth=ax*syw+ay*cyw, f=bz/maxZ, o=6*i, vv=1.0+w*0.10;   // w: per-tree warmth -> hue + value shift
+      treeLeafProj[o]=u*fit; treeLeafProj[o+1]=(az*hk-depth*dk)*fit+offY;
+      treeLeafProj[o+2]=lerp(0.05,0.18+0.12*f,cv)*(1.0+w*0.28)*vv;   // warm trees redder...
+      treeLeafProj[o+3]=lerp(0.07,0.42+0.18*f,cv)*(1.0+w*0.05)*vv;
+      treeLeafProj[o+4]=lerp(0.09,0.16+0.10*f,cv)*(1.0-w*0.28)*vv;   // ...and cooler trees bluer
+      treeLeafProj[o+5]=lsz;
+    }
+    // ---- draw: framed sky, ground+arrow lines, branches (solid), leaf haze, branches again (faint, over) ----
     gl.disable(gl.BLEND);
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(ix-1,iy-1,S+2,S+2); gl.clearColor(0.16,0.20,0.16,1.0); gl.clear(gl.COLOR_BUFFER_BIT);   // frame
@@ -1364,13 +1404,18 @@ function create(canvas, opts){
     gl.useProgram(progViz);
     gl.bindVertexArray(vizVAO);
     gl.bindBuffer(gl.ARRAY_BUFFER, vizBuf);
-    gl.uniform1f(U.viz.point, 0.0);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(L), gl.DYNAMIC_DRAW);
+    gl.uniform1f(U.viz.point, 0.0); gl.uniform1f(U.viz.lineAlpha, 1.0);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(L), gl.DYNAMIC_DRAW);     // ground grid + wind arrow
     gl.drawArrays(gl.LINES, 0, L.length/6);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Q), gl.DYNAMIC_DRAW);     // branches, solid (behind the foliage)
+    gl.drawArrays(gl.TRIANGLES, 0, Q.length/6);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    gl.uniform1f(U.viz.point, 1.0);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Lf), gl.DYNAMIC_DRAW);
-    gl.drawArrays(gl.POINTS, 0, Lf.length/6);
+    gl.uniform1f(U.viz.point, 1.0); gl.uniform1f(U.viz.pointAlpha, leafAlpha);
+    gl.bufferData(gl.ARRAY_BUFFER, treeLeafProj, gl.DYNAMIC_DRAW);            // leaf haze
+    gl.drawArrays(gl.POINTS, 0, treeLeafProj.length/6);
+    gl.uniform1f(U.viz.point, 0.0); gl.uniform1f(U.viz.lineAlpha, 0.4);       // faint skeleton ghosting through the foliage
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Q), gl.DYNAMIC_DRAW);
+    gl.drawArrays(gl.TRIANGLES, 0, Q.length/6);
     gl.disable(gl.BLEND);
     gl.bindVertexArray(null);
     gl.disable(gl.SCISSOR_TEST);
