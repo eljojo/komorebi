@@ -12,7 +12,8 @@
 //   eng.params / .perf / .motion / .src / .fps   live state (read for a HUD)
 //   eng.apply(scope)        re-run a rebuild: 'source'|'canopy'|'textures'|'bake'|'perf'|''
 //   eng.setParams(obj)      merge a full param set and rebuild (no UI side effects)
-//   eng.drawSourceInset()   debug overlay (editor only)
+//   eng.drawSourceInset()   debug overlay: the source point-sun cloud (editor only)
+//   eng.drawTreeInset()     debug overlay: a 3D preview of the grown grove, swaying (editor only)
 //   eng.onFrame             optional callback invoked after each rendered frame
 // ============================================================================
 window.Komorebi = (function(){
@@ -130,9 +131,9 @@ const DEFAULTS = {
 };
 
 const BUILTIN_PRESETS = {
-  // 'morning 2' is the boot default — a low golden-hour grove (23° sun), auto-quality on. 'morning 1'
-  // and 'afternoon 2'..'7' are earlier looks kept built in; any saved (★) look is the user's own in
-  // local storage. DEFAULTS stays the merge base so old/partial preset JSON is forward-compatible.
+  // 'morning 3' is the boot default — a near-clear, sharp-dappled morning grove (30° sun), auto-quality
+  // on. 'morning 1'–'2', 'afternoon 2'–'7' and 'the void' are other built-in looks; any saved (★) look
+  // is the user's own in local storage. DEFAULTS stays the merge base so old/partial JSON stays compatible.
   'morning 1': Object.assign({}, DEFAULTS, {
     "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
@@ -149,7 +150,6 @@ const BUILTIN_PRESETS = {
     "drift_amount": 0.145, "drift_phase": 4.8099656994860664, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
   }),
-  // boot default:
   'morning 2': Object.assign({}, DEFAULTS, {
     "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
@@ -164,6 +164,23 @@ const BUILTIN_PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.97071372563982, "drift_auto": true, "drift_speed": 0.04,
+    "auto_quality": true,
+  }),
+  // boot default:
+  'morning 3': Object.assign({}, DEFAULTS, {
+    "sample_count": 32, "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.72, "cloud_thickness": 0.18, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.336, "canopy_extent_m": 7, "tex_resolution": 1024,
+    "seed": 290626672, "sun_elevation_deg": 30, "sun_azimuth_deg": 125.26438968275465,
+    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 0.18025113743438262, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
   }),
   'afternoon 2': Object.assign({}, DEFAULTS, {
@@ -246,7 +263,6 @@ const BUILTIN_PRESETS = {
     "drift_amount": 0.145, "drift_phase": 4.1025121046151725, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
   }),
-  // boot default:
   'afternoon 7': Object.assign({}, DEFAULTS, {
     "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
@@ -261,6 +277,23 @@ const BUILTIN_PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
+    "auto_quality": true,
+  }),
+  // 'the void' — a dense 16-tree grove pulled wide (view 6.8 m), deep-green and low-sun.
+  'the void': Object.assign({}, DEFAULTS, {
+    "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.61, "cloud_thickness": 0.27, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 16, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "tex_resolution": 1024,
+    "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
+    "view_extent_m": 6.8, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 1.2709150851268554, "drift_auto": true, "drift_speed": 0.04,
     "auto_quality": true,
   }),
 };
@@ -486,6 +519,25 @@ void main(){
   frag = vec4(vec3(1.0,0.95,0.85)*vB, 1.0);
 }`;
 
+// ---- tree-preview inset: positions are CPU-projected to the inset's NDC, so the VS is trivial. ----
+const VS_VIZ = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aPos;      // already projected to inset NDC
+layout(location=1) in vec3 aCol;
+layout(location=2) in float aSize;    // leaf point size (px); 0 for lines
+out vec3 vCol;
+void main(){ vCol=aCol; gl_PointSize=aSize; gl_Position=vec4(aPos,0.0,1.0); }`;
+
+const FS_VIZ = `#version 300 es
+precision highp float;
+in vec3 vCol;
+uniform float uPoint;                 // 1 = soft round leaf, 0 = opaque branch/ground line
+out vec4 frag;
+void main(){
+  if(uPoint>0.5){ vec2 d=gl_PointCoord*2.0-1.0; float r2=dot(d,d); if(r2>1.0) discard; frag=vec4(vCol,(1.0-r2)*0.9); }
+  else frag=vec4(vCol,1.0);
+}`;
+
 // ===========================================================================
 // create(canvas, opts) — one self-contained engine instance on a canvas.
 // ===========================================================================
@@ -523,6 +575,7 @@ function create(canvas, opts){
   const progTransport = program(VS_FULL, FS_TRANSPORT);
   const progBlit = program(VS_FULL, FS_BLIT);
   const progPoints = program(VS_POINTS, FS_POINTS);
+  const progViz = program(VS_VIZ, FS_VIZ);
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -543,6 +596,7 @@ function create(canvas, opts){
   };
   U.blit = { tex:loc(progBlit,'uTex') };
   U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
+  U.viz = { point:loc(progViz,'uPoint') };
 
   // ---- geometry / GPU buffers ----
   const emptyVAO = gl.createVertexArray();           // required to issue attrib-less draws
@@ -556,6 +610,16 @@ function create(canvas, opts){
   gl.bindBuffer(gl.ARRAY_BUFFER, srcDbgBuf);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,12,0);
   gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.FLOAT,false,12,8);
+  gl.bindVertexArray(null);
+
+  // tree-preview inset buffer: interleaved (pos.xy, col.rgb, size) — 6 floats/vertex, refilled per frame
+  const vizBuf = gl.createBuffer();
+  const vizVAO = gl.createVertexArray();
+  gl.bindVertexArray(vizVAO);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vizBuf);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,8);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,24,20);
   gl.bindVertexArray(null);
 
   const bakeFBO = gl.createFramebuffer();
@@ -628,6 +692,9 @@ function create(canvas, opts){
     const golden = Math.PI*(3 - Math.sqrt(5));
     const Rfill = Math.min(E*0.46, Math.max(0.5, params.view_extent_m));
     const crown0 = (Rfill/Math.sqrt(nTree))*1.7;        // base crown radius — ~1.7x spacing -> overlap
+    const trunkH = crown0*0.6;                          // a real trunk lifts each crown off the ground.
+    // It's a CONSTANT (same for every tree), so it only offsets z uniformly — the relative layer-binding
+    // below is unchanged, i.e. the cast dapples are untouched; only the 3D structure/preview gains height.
 
     function grow(out, base, dir, len, level, limb){
       const tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
@@ -662,9 +729,10 @@ function create(canvas, opts){
       // normalise this tree's crown to `crown`, then translate it to its trunk (tx,ty)
       let mr=1e-3; for(const w of out.tw) mr=Math.max(mr, Math.hypot(w.x,w.y));
       const s = crown/mr;
-      for(const w of out.tw){ w.x=w.x*s+tx; w.y=w.y*s+ty; w.z*=s; w.tx=tx; w.ty=ty; twigs.push(w); }
-      for(const sg of out.seg) segments.push({ a:[sg.a[0]*s+tx, sg.a[1]*s+ty, sg.a[2]*s],
-                                               b:[sg.b[0]*s+tx, sg.b[1]*s+ty, sg.b[2]*s], level:sg.level });
+      for(const w of out.tw){ w.x=w.x*s+tx; w.y=w.y*s+ty; w.z=w.z*s+trunkH; w.tx=tx; w.ty=ty; twigs.push(w); }
+      for(const sg of out.seg) segments.push({ a:[sg.a[0]*s+tx, sg.a[1]*s+ty, sg.a[2]*s+trunkH],
+                                               b:[sg.b[0]*s+tx, sg.b[1]*s+ty, sg.b[2]*s+trunkH], level:sg.level });
+      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkH], level:0 });   // the major trunk: ground -> crown base
       for(let i=0;i<lpt;i++){ const gi=limbBase+i;
         limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty; }
     }
@@ -1027,6 +1095,86 @@ function create(canvas, opts){
     gl.viewport(0,0,canvas.width,canvas.height);
   }
 
+  // ---- 3D preview of the ACTUAL grove (todo [3]): the grown skeleton + leaf blobs, in a slowly
+  // turning 3/4 view that sways with the wind. Optional editor inset ('T'); the geometry is CPU-
+  // projected into a scissored corner, so it costs nothing unless shown. ----
+  let treeGrow = 0;   // 0 = parked small in the corner, 1 = grown; eases toward the hover/pinned target
+  function treeInsetGeom(){
+    const base = Math.min(300, canvas.width*0.32, canvas.height*0.42);
+    const big  = Math.min(canvas.width*0.62, canvas.height*0.72);
+    const S = Math.round(base + (big-base)*treeGrow);
+    return { S, ix: canvas.width-S-8, iy: 8 };        // anchored bottom-right; grows up-left
+  }
+  function treeInsetHit(ptr){                          // is the normalised pointer over the current inset?
+    if(!ptr) return false;
+    const {S,ix,iy}=treeInsetGeom();
+    const l=ix/canvas.width, r=(ix+S)/canvas.width, tp=1-(iy+S)/canvas.height, bt=1-iy/canvas.height;
+    return ptr.x>=l && ptr.x<=r && ptr.y>=tp && ptr.y<=bt;
+  }
+  // grow while hovered; a CLICK pins it big (pinned) until clicked again. ptr = normalised coords or null.
+  function drawTreeInset(ptr, pinned){
+    if(!hier || !hier.segments || !hier.segments.length) return;
+    const segs = hier.segments, levels = Math.max(1, params.branch_levels|0);
+    treeGrow = clamp(treeGrow + (((pinned||treeInsetHit(ptr))?1:0)-treeGrow)*0.18, 0, 1);   // smooth ease
+    const { S, ix, iy } = treeInsetGeom();
+    // grove bounds for the fit scale
+    let R=1e-3, maxZ=1e-3;
+    for(const s of segs){ R=Math.max(R, Math.hypot(s.a[0],s.a[1]), Math.hypot(s.b[0],s.b[1])); maxZ=Math.max(maxZ, s.a[2], s.b[2]); }
+    const fit = 0.72/Math.max(R, maxZ*1.4);
+    const tt = performance.now()/1000;
+    const yaw = tt*0.25, cyw=Math.cos(yaw), syw=Math.sin(yaw);     // slow turntable so it reads as 3D
+    const pitch = 24*DEG, hk=Math.cos(pitch), dk=Math.sin(pitch);
+    const wd=params.wind_direction_deg*DEG, wx=Math.cos(wd), wy=Math.sin(wd);
+    const lean = motion.u*0.9, sx0=motion.sway[0], sy0=motion.sway[1];   // wind: lean + trunk drift
+    const offY = -0.4;
+    const P = (p) => {                                   // 3D world (+wind) -> inset NDC
+      const lf = lean*(p[2]/maxZ);                       // taller points lean more downwind
+      const ax=p[0]+wx*lf+sx0, ay=p[1]+wy*lf+sy0, az=p[2]*1.4;
+      const u=ax*cyw-ay*syw, depth=ax*syw+ay*cyw;
+      return [ u*fit, (az*hk - depth*dk)*fit + offY ];
+    };
+    const L=[]; const pushLine=(p,q,r,g,b)=>{ const A=P(p),B=P(q); L.push(A[0],A[1],r,g,b,0, B[0],B[1],r,g,b,0); };
+    // ground grid (z=0)
+    const gExt=R*1.05, gN=4;
+    for(let i=-gN;i<=gN;i++){ const f=i/gN*gExt;
+      pushLine([f,-gExt,0],[f,gExt,0], 0.15,0.17,0.15);
+      pushLine([-gExt,f,0],[gExt,f,0], 0.15,0.17,0.15); }
+    // wind-direction arrow on the ground (only when the wind is blowing)
+    if(params.wind_strength>0){ const aL=gExt*0.85, tx=wx*aL, ty=wy*aL, hb=gExt*0.16;
+      const rot=(a)=>[wx*Math.cos(a)-wy*Math.sin(a), wx*Math.sin(a)+wy*Math.cos(a)];
+      pushLine([0,0,0],[tx,ty,0], 0.5,0.6,0.78);
+      const h1=rot(2.6), h2=rot(-2.6);
+      pushLine([tx,ty,0],[tx+h1[0]*hb,ty+h1[1]*hb,0], 0.5,0.6,0.78);
+      pushLine([tx,ty,0],[tx+h2[0]*hb,ty+h2[1]*hb,0], 0.5,0.6,0.78); }
+    // branches: trunk/limb (brown, level<=1 -> f=0) -> twig (tan)
+    for(const s of segs){ const f=Math.max(0, Math.min(1,(s.level-1)/Math.max(1,levels-1)));
+      pushLine(s.a, s.b, 0.30+0.20*f, 0.22+0.16*f, 0.12+0.06*f); }
+    // leaf blobs at the terminal twig tips
+    const Lf=[], lsz=S*0.05;
+    for(const s of segs){ if(s.level>=levels){ const A=P(s.b), f=s.b[2]/maxZ;
+      Lf.push(A[0],A[1], 0.18+0.12*f, 0.42+0.18*f, 0.16+0.10*f, lsz); } }
+    // ---- draw: a framed sky, then ground+branches (opaque lines), then leaves (soft blended points) ----
+    gl.disable(gl.BLEND);
+    gl.enable(gl.SCISSOR_TEST);
+    gl.scissor(ix-1,iy-1,S+2,S+2); gl.clearColor(0.16,0.20,0.16,1.0); gl.clear(gl.COLOR_BUFFER_BIT);   // frame
+    gl.scissor(ix,iy,S,S); gl.viewport(ix,iy,S,S);
+    gl.clearColor(0.05,0.07,0.09,1.0); gl.clear(gl.COLOR_BUFFER_BIT);                                    // sky
+    gl.useProgram(progViz);
+    gl.bindVertexArray(vizVAO);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vizBuf);
+    gl.uniform1f(U.viz.point, 0.0);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(L), gl.DYNAMIC_DRAW);
+    gl.drawArrays(gl.LINES, 0, L.length/6);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform1f(U.viz.point, 1.0);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(Lf), gl.DYNAMIC_DRAW);
+    gl.drawArrays(gl.POINTS, 0, Lf.length/6);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(null);
+    gl.disable(gl.SCISSOR_TEST);
+    gl.viewport(0,0,canvas.width,canvas.height);
+  }
+
   // ---- the rebuild scopes the editor drives, plus a full param swap ----
   function rebuildAll(){ rebuildTextures(); regenCanopy(); bake(); regenSource(); }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
@@ -1049,7 +1197,7 @@ function create(canvas, opts){
   rebuildAll();
   resetPerf();
   let last=performance.now(), fps=60;
-  const eng = { canvas, gl, params, perf, motion, src, fps:60, apply, setParams, drawSourceInset, onFrame:opts.onFrame||null };
+  const eng = { canvas, gl, params, perf, motion, src, fps:60, apply, setParams, drawSourceInset, drawTreeInset, treeInsetHit, onFrame:opts.onFrame||null };
   function frame(now){
     const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1; eng.fps=fps;
     if(perf.auto) tunePerf(dtms, fps);               // auto-quality: nudge resolution/samples toward 60 fps

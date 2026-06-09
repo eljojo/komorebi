@@ -49,7 +49,7 @@
 <canvas id="gl"></canvas>
 <div id="dev" class="hidden"></div>
 <div id="hud"></div>
-<div id="hint">press <b>D</b> for dev · drag = move sun · hover a knob for help</div>
+<div id="hint">press <b>D</b> for dev · <b>T</b> for tree view · drag = move sun · hover a knob for help</div>
 <div id="tip"></div>
 
 <script src="komorebi.js"></script>
@@ -75,7 +75,7 @@ function getPreset(name){ const s=getStored(); return (name in s) ? s[name] : Ko
 
 // ---- boot the engine on the canvas ------------------------------------------
 let eng;
-try { eng = Komorebi.create(canvas, { params: getPreset('morning 2') }); }
+try { eng = Komorebi.create(canvas, { params: getPreset('morning 3') }); }
 catch(e){ document.body.innerHTML = '<div class="err">'+e.message+'</div>'; throw e; }
 const params = eng.params;   // live params the panel edits in place
 const perf = eng.perf;
@@ -342,7 +342,7 @@ function buildPresetUI(){
       const s=getStored(); s[n]=JSON.parse(JSON.stringify(params)); setStored(s); refreshPresetSelect(n); }),
     mkBtn('delete',()=>{ const n=presetSel.value, s=getStored();
       if(!(n in s)){ alert("Built-in presets can't be deleted."); return; }
-      delete s[n]; setStored(s); refreshPresetSelect('morning 2'); }));
+      delete s[n]; setStored(s); refreshPresetSelect('morning 3'); }));
   dev.appendChild(r2);
 
   const r3=document.createElement('div'); r3.className='ctl';
@@ -353,12 +353,16 @@ function buildPresetUI(){
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
       try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(e){ alert('Invalid JSON'); } }));
   dev.appendChild(r3);
-  refreshPresetSelect('morning 2');
+  refreshPresetSelect('morning 3');
 }
 
 // drag on canvas = move the sun (azimuth from x, elevation from y)
 let dragging=false, px=0, py=0;
-canvas.addEventListener('pointerdown',e=>{ dragging=true; px=e.clientX; py=e.clientY; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerdown',e=>{
+  // click the tree preview to PIN it big (click again to unpin); otherwise begin a sun-drag
+  if(showTree){ const r=canvas.getBoundingClientRect();
+    if(eng.treeInsetHit({ x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height })){ treePinned=!treePinned; return; } }
+  dragging=true; px=e.clientX; py=e.clientY; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointerup',  ()=>{ dragging=false; });
 canvas.addEventListener('pointermove',e=>{
   if(!dragging) return;
@@ -366,13 +370,24 @@ canvas.addEventListener('pointermove',e=>{
   params.sun_elevation_deg = clamp(params.sun_elevation_deg - (e.clientY-py)*0.3, 4, 90);
   px=e.clientX; py=e.clientY; syncControl('sun_azimuth_deg'); syncControl('sun_elevation_deg');
 });
-window.addEventListener('keydown',e=>{ if(e.key==='d'||e.key==='D') dev.classList.toggle('hidden'); });
+// T = toggle the 3D tree-grove preview inset (independent of the dev panel)
+let showTree=false;
+window.addEventListener('keydown',e=>{
+  if(e.key==='d'||e.key==='D') dev.classList.toggle('hidden');
+  else if(e.key==='t'||e.key==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; }
+});
+// track the pointer (normalised canvas coords) so the tree preview can grow when hovered
+let treePointer=null, treePinned=false;
+window.addEventListener('pointermove',e=>{ const r=canvas.getBoundingClientRect();
+  treePointer={ x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height }; });
+document.addEventListener('mouseleave',()=>{ treePointer=null; });
 
 // ---- per-frame overlays: reflect the engine's drift phase, draw the source
 // inset (when the panel is open), and update the HUD. ------------------------
 eng.onFrame = function(){
   if(params.drift_auto) syncControl('drift_phase');
   if(params.show_source && !dev.classList.contains('hidden')) eng.drawSourceInset();
+  if(showTree) eng.drawTreeInset(treePointer, treePinned);
   const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
   const sway=(Math.hypot(eng.motion.sway[0],eng.motion.sway[1])*100).toFixed(0);
   hud.textContent =
