@@ -98,6 +98,7 @@ const DEFAULTS = {
   contrast: 1.0,
   ambient_skylight: 0.5,
   sky_turbidity: 0.05,             // atmospheric haze β (Ångström); reddens low sun, desaturates dusk
+  mesopic_strength: 0.6,           // Purkinje: how far rods cool the deep shade at dusk (0 off; gated to low sun)
   tone_map: 2,                     // 0 none, 1 reinhard, 2 aces
   // Wind — coherent band (spec §5.1)
   wind_strength: 0.0,
@@ -158,7 +159,7 @@ const BUILTIN_PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "tex_resolution": 1024,
     "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
-    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "tone_map": 2,
+    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.2, "mesopic_strength": 1, "tone_map": 2,
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
@@ -408,6 +409,8 @@ uniform vec3  uAmbient;
 uniform float uExposure;
 uniform float uContrast;
 uniform int   uToneMap;
+uniform float uTwilight;          // global "sun is low" rod weight (from elevation, §3.5)
+uniform float uMesopic;           // Purkinje strength (the mesopic_strength knob)
 
 vec3 reinhard(vec3 c){ return c/(1.0+c); }
 vec3 aces(vec3 x){ float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
@@ -432,6 +435,14 @@ void main(){
     acc += w*T;                              // sum of shifted sharp shadows == soft shadow
   }
   vec3 col = acc*uSunColor + uAmbient;
+  // ---- Purkinje / mesopic dusk shift (§3.5): as the sun sets the eye's rods take over the dim shade —
+  // colour desaturates toward a blue-green grey and saturated reds darken first, while the bright dapples
+  // stay photopic and warm. Two REAL cues drive it (no absolute luminance exists here): global duskness
+  // from elevation (uTwilight) × the local shade darkness (acc — exposure-independent). Linear HDR. ----
+  const vec3 ROD_BLUE = vec3(0.92, 1.0, 1.30);          // rods peak ~505nm -> blue-green, not pure blue
+  const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+  float rod = (1.0 - smoothstep(0.15, 0.6, dot(acc, LUMA))) * uTwilight * uMesopic;  // 1 deep shade, 0 dapples
+  col = mix(col, dot(col, LUMA)*ROD_BLUE, rod*0.6);     // cap 0.6 so the deepest shade keeps a hint of green
   col *= uExposure;
   if(uToneMap==1) col=reinhard(col);
   else if(uToneMap==2) col=aces(col);
@@ -526,6 +537,7 @@ function create(canvas, opts){
     proj:loc(progTransport,'uProj'), viewExtent:loc(progTransport,'uViewExtent'), aspect:loc(progTransport,'uAspect'),
     origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
     sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'),
+    twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'),
     exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
     layers:[0,1,2,3].map(i=>loc(progTransport,'uLayer['+i+']')),
   };
@@ -978,6 +990,10 @@ function create(canvas, opts){
     const atm = atmosphere(params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);
     gl.uniform3f(U.tp.sun, atm.sun[0], atm.sun[1], atm.sun[2]);
     gl.uniform3f(U.tp.ambient, atm.ambient[0], atm.ambient[1], atm.ambient[2]);
+    // Purkinje (§3.5): rods take over the dim shade as the sun lowers. The global weight rides the same
+    // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
+    gl.uniform1f(U.tp.twilight, smoothstep(30, 4, params.sun_elevation_deg));
+    gl.uniform1f(U.tp.mesopic, params.mesopic_strength);
     gl.uniform1f(U.tp.exposure, params.exposure);
     gl.uniform1f(U.tp.contrast, params.contrast);
     gl.uniform1i(U.tp.tone, params.tone_map);

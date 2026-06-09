@@ -97,6 +97,7 @@ Two felt qualities come *for free* from the same mechanism, which is why it read
 - **The dapples are elliptical, not circular**, because the ground is tilted relative to the sun. The lower the sun, the more they stretch — elongated along the sun's direction, sheared toward its azimuth.
 - **The "dark" areas are not black; they are a dim green.** That light passed *through* thin leaves, and chlorophyll transmits green while absorbing red and blue. The real scene is bright white-gold suns floating on a soft green-grey wash — never white-on-black.
 - **The sunlight itself reddens as the sun lowers — and the shade goes blue.** At low elevation the beam crosses far more atmosphere (air mass by Kasten–Young, *not* `1/sin` — that diverges at the horizon); Rayleigh scattering (∝ λ⁻⁴) strips its blue/green, so the disk warms white → gold → orange → red. Meanwhile the ozone **Chappuis band** absorbs red from the *scattered* light, so the skylight that fills the shadows stays **blue** (the "blue hour") — which is why a low sun reads as *warm light on cool shade*. Both are modelled from `sun_elevation` by a cheap 3-band (R/G/B) Beer's-law atmosphere (`uSunColor` = the beam, `uAmbient` = the sky), with a `sky_turbidity` haze knob; the green wash above is the *transmitted* beam, the blue is the *skylight* — distinct mechanisms that compose. Computed in linear HDR, upstream of exposure and tone-map.
+- **At dusk the eye itself cools the shade — the Purkinje shift.** As the light fails the retina's rods take over from the cones (mesopic vision): rods are colour-blind and peak in the blue-green (~505 nm), so the dim areas **desaturate toward a blue-grey** and **saturated reds darken first**, while anything still bright (the dapples) stays in cone vision, warm and coloured. It is a fact of *perception*, not of the light — but it is real and modelable, so it earns its place over a hand-grade. komorebi has no absolute luminance, so it is driven by two *honest* cues: a global "duskness" ramped from `sun_elevation` (a low sun is dim) **times** the *local* shade darkness (`acc`, the exposure-independent transmittance). Only the deep shade between the suns goes cool; the suns themselves are untouched. A `mesopic_strength` knob sets how far, and it hard-gates off for a daytime sun — the perception-honest route to the journal's "twilight is cool and soft," modelled rather than painted.
 
 ---
 
@@ -338,6 +339,7 @@ Grouped by subsystem; the knobs an implementer will actually expose.
 - `tone_map_curve`
 - `ambient_skylight` (scales the physical sky fill — ozone-blue by day, warming toward dusk)
 - `sky_turbidity` *(atmospheric haze β; with `sun_elevation` drives the physical sun/sky colour — reddens the low sun, blue-shifts the shadow fill, desaturates a hazy dusk)*
+- `mesopic_strength` *(Purkinje/rod dusk shift: cools & desaturates the deep shade as the sun lowers, reds darkening first; gated to low elevation, 0 = off — the dapples stay warm)*
 
 ---
 
