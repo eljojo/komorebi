@@ -56,7 +56,7 @@
 <canvas id="gl"></canvas>
 <div id="dev" class="hidden"></div>
 <div id="hud"></div>
-<div id="hint"><b>← →</b> change scene · <b>D</b> dev · <b>T</b> tree view · drag = move sun</div>
+<div id="hint"><b>← →</b> change scene · <b>D</b> dev · <b>T</b> tree view · <b>F</b> full · drag = move sun</div>
 <div id="tip"></div>
 
 <script src="komorebi.js"></script>
@@ -443,6 +443,12 @@ window.addEventListener('keydown',e=>{
   const k=e.key;
   if(k==='d'||k==='D'){ dev.classList.toggle('hidden'); return; }
   if(k==='t'||k==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; return; }
+  if(k==='f'||k==='F'){                                                     // toggle browser fullscreen (webkit fallback for Safari)
+    const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;
+    if(fsEl){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
+    else { const p=(el.requestFullscreen||el.webkitRequestFullscreen).call(el); if(p&&p.catch) p.catch(()=>{}); }
+    return;
+  }
   if(k==='ArrowLeft'||k==='ArrowRight'||k==='ArrowUp'||k==='ArrowDown'){
     const tag=(document.activeElement&&document.activeElement.tagName)||'';
     if(tag==='INPUT'||tag==='SELECT') return;                               // let a focused panel control use the arrows
