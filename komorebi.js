@@ -855,7 +855,7 @@ function create(canvas, opts){
     return t;
   }
   function rebuildTextures(){
-    layerTex.forEach(t=>gl.deleteTexture(t));
+    layerTex.forEach(t=>{ gl.deleteTexture(t); });
     layerTex = [];
     const res = params.tex_resolution|0;
     for(let i=0;i<MAX_LAYERS;i++){
