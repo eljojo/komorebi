@@ -76,7 +76,7 @@ const TAU_OZ  = [0.0403, 0.0258, 0.0040];   // ozone Chappuis (300 DU) — absor
 const TAU_AER = [1.861, 2.151, 2.670];      // aerosol per unit turbidity β (Ångström λ^-1.3)
 function airMass(hDeg){                       // Kasten-Young 1989 — finite at the horizon (1/sin diverges)
   const h = Math.max(hDeg, 0);
-  return 1/(Math.sin(h*DEG) + 0.50572*(h+6.07995) ** -1.6364);
+  return 1/(Math.sin(h*DEG) + 0.50572*Math.pow(h+6.07995, -1.6364));
 }
 function atmosphere(hDeg, beta, ambientSky){
   const m = airMass(hDeg);
@@ -468,7 +468,7 @@ function vnoise1(x){                       // smooth 1-D value noise -> [-1,1]
 // var(sum)=Σ amp²·var(vnoise); dividing by √(Σamp²)·VNOISE_STD gives σ≈1). Unit std is what makes the
 // gustiness knob mean turbulence-intensity (σ/U) honestly — without it, gustiness was nearly inert.
 function fbm1(t, freq, octaves, H){
-  const G=2 ** -H; let sum=0, amp=1, a2=0, fr=freq;
+  const G=Math.pow(2,-H); let sum=0, amp=1, a2=0, fr=freq;
   for(let i=0;i<octaves;i++){ sum+=amp*vnoise1(t*fr + i*19.7); a2+=amp*amp; amp*=G; fr*=2; }
   return a2>0 ? sum/(Math.sqrt(a2)*VNOISE_STD) : 0;
 }
@@ -750,7 +750,7 @@ void main(){
 function create(canvas, opts){
   opts = opts || {};
   const gl = canvas.getContext('webgl2', { antialias:false, alpha:false, premultipliedAlpha:false });
-  function fail(msg){ throw new Error('komorebi: '+msg); }
+  function fail(msg){ throw new Error(`komorebi: ${msg}`); }
   if (!gl) fail('WebGL2 is required and not available in this browser.');
   const extCBF = gl.getExtension('EXT_color_buffer_float');     // renderable half/float
   gl.getExtension('EXT_float_blend');                            // float-target blending (harmless if absent)
@@ -773,7 +773,7 @@ function create(canvas, opts){
 
   function compile(type, src){
     const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
-    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) fail('Shader: '+gl.getShaderInfoLog(s)+'\n'+src);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) fail(`Shader: ${gl.getShaderInfoLog(s)}\n${src}`);
     return s;
   }
   function program(vs,fs){
@@ -781,7 +781,7 @@ function create(canvas, opts){
     gl.attachShader(p,compile(gl.VERTEX_SHADER,vs));
     gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
     gl.linkProgram(p);
-    if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail('Link: '+gl.getProgramInfoLog(p));
+    if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail(`Link: ${gl.getProgramInfoLog(p)}`);
     return p;
   }
   const progBake = program(VS_BAKE, FS_BAKE);
@@ -807,7 +807,7 @@ function create(canvas, opts){
     sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'), ground:loc(progTransport,'uGround'),
     twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'),
     exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
-    layers:[0,1,2,3].map(i=>loc(progTransport,'uLayer['+i+']')),
+    layers:[0,1,2,3].map(i=>loc(progTransport,`uLayer[${i}]`)),
   };
   U.blit = { tex:loc(progBlit,'uTex') };
   U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
@@ -1228,7 +1228,7 @@ function create(canvas, opts){
     let gL = fbm1(t, rate, pat.octaves, pat.H);
     let gT = fbm1(t+101.7, rate, pat.octaves, pat.H);         // decorrelated lateral stream
     if(pat.burst>0){ const e=1+pat.burst*2;                   // spike peaks, deepen lulls (intermittency)
-      gL=Math.sign(gL)*Math.abs(gL) ** e; gT=Math.sign(gT)*Math.abs(gT) ** e; }
+      gL=Math.sign(gL)*Math.pow(Math.abs(gL),e); gT=Math.sign(gT)*Math.pow(Math.abs(gT),e); }
     const ti = params.wind_gustiness;                         // turbulence intensity σ/U (gL,gT are unit-std)
     const rawL = effStrength*(pat.lean + ti*gL);              // mean lean + fluctuation; <0 in strong lulls → springback through rest
     const driveT = effStrength*(ti*pat.lat*gT);               // zero-mean crosswind
@@ -1465,7 +1465,7 @@ function create(canvas, opts){
   }
   // grow while hovered; a CLICK pins it big (pinned) until clicked again. ptr = normalised coords or null.
   function drawTreeInset(ptr, pinned){
-    if(!hier || !hier.segments || !hier.segments.length) return;
+    if(!hier?.segments?.length) return;
     const segs = hier.segments, levels = Math.max(1, params.branch_levels|0);
     treeGrow = clamp(treeGrow + (((pinned||treeInsetHit(ptr))?1:0)-treeGrow)*0.18, 0, 1);   // smooth ease
     const { S, ix, iy } = treeInsetGeom();

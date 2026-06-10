@@ -1,0 +1,14 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        // Math.pow reads clearer than ** here: explicit argument grouping, and **
+        // is right-associative and forbids a unary left operand. Keep Math.pow.
+        "useExponentiationOperator": "off"
+      }
+    }
+  }
+}
