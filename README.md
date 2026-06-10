@@ -7,7 +7,7 @@ A standalone WebGL2 engine that renders komorebi from physics rather than painti
 ## Files
 
 - **`komorebi.js`** — the engine. The whole renderer, no UI: `Komorebi.create(canvas, opts)`.
-- **`editor.html`** — the authoring tool: dev panel, HUD, presets, sun‑drag. Open in a browser (needs WebGL2).
+- **`index.html`** — the editor / landing page (opens on a welcome screen): dev panel, HUD, presets, sun‑drag. Open in a browser (needs WebGL2).
 - **`player.html`** — minimal viewer‑only reference: a full‑bleed canvas cycling through presets, no UI.
 - **`komorebi-spec.md`** — the living spec (vision, physics, model). Kept in sync as the engine evolves.
 

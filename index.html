@@ -50,14 +50,56 @@
     padding:8px 10px; box-shadow:0 8px 28px rgba(0,0,0,.55);
   }
   #tip b { color:#cbe6a8; font-weight:600; }
+
+  /* ---- welcome gate: a faint 'memories' background under an intro overlay ---- */
+  #gl { transition: opacity 1.6s ease; }
+  body.intro #gl { opacity: .33; }                  /* super-faint teaser of the look */
+  #welcome {
+    position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+    padding: 24px; text-align: center;
+    background: radial-gradient(ellipse at center, rgba(8,12,8,.5) 0%, rgba(8,12,8,.12) 58%, rgba(8,12,8,0) 100%);
+    transition: opacity .9s ease, filter .9s ease, transform .9s ease;
+  }
+  #welcome.out { opacity: 0; filter: blur(10px); transform: scale(1.04); pointer-events: none; }
+  #welcome .w { max-width: 560px; display: flex; flex-direction: column; align-items: center; gap: 22px;
+    animation: welcome-in 1.4s ease both; }
+  @keyframes welcome-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  #welcome h1 { margin: 0; font: 300 clamp(42px, 9vw, 78px)/1 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    letter-spacing: .03em; color: #f2f6ee; text-shadow: 0 2px 30px rgba(0,0,0,.5); }
+  #welcome h1 .jp { display: block; margin-top: .38em; font-size: .3em; letter-spacing: .5em;
+    color: #9fb89f; font-weight: 400; text-indent: .5em; }   /* indent balances the trailing letter-space */
+  #welcome p { margin: 0; max-width: 30em; color: #cedcc5; text-shadow: 0 1px 16px rgba(0,0,0,.55);
+    font: 400 clamp(15px,2.2vw,19px)/1.65 ui-serif,Georgia,"Times New Roman",serif; }
+  #welcome .feel { margin-top: 8px; cursor: pointer; color: #f1e7cf;            /* warm sunlight, not terminal green */
+    font: italic 400 clamp(19px,2.7vw,23px)/1 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    letter-spacing: .015em; padding: 10px 32px; border-radius: 40px;
+    background: rgba(240,224,168,.05); border: 1px solid rgba(232,217,168,.30);
+    box-shadow: 0 0 0 rgba(240,224,168,0);
+    transition: color .45s ease, background .45s ease, border-color .45s ease, box-shadow .55s ease, transform .35s ease; }
+  #welcome .feel:hover { color: #fff8e6; background: rgba(240,224,168,.11); border-color: rgba(240,224,168,.6);
+    box-shadow: 0 0 34px rgba(240,224,168,.28); transform: translateY(-1px); }   /* light blooming through */
+  #welcome .feel:active { transform: translateY(0); }
+  /* dev panel slides in from the left on first reveal; afterwards D just toggles it */
+  #dev { transition: transform .6s cubic-bezier(.22,.61,.36,1); }
+  #dev.offscreen { transform: translateX(-100%); }
+  /* key hints fade in once the editor arrives */
+  #hint { transition: opacity .8s ease; }
+  #hint.gone { opacity: 0; pointer-events: none; }
 </style>
 </head>
-<body>
+<body class="intro">
 <canvas id="gl"></canvas>
 <div id="dev" class="hidden"></div>
 <div id="hud"></div>
-<div id="hint"><b>← →</b> change scene · <b>D</b> dev · <b>T</b> tree view · <b>F</b> full · drag = move sun</div>
+<div id="hint" class="gone"><b>← →</b> change scene · <b>D</b> dev · <b>T</b> tree view · <b>F</b> full · drag = move sun</div>
 <div id="tip"></div>
+<div id="welcome">
+  <div class="w">
+    <h1>Komorebi<span class="jp">木漏れ日</span></h1>
+    <p>Sunlight that leaks through the leaves of trees — and the soft, shifting dapples it scatters on the ground.</p>
+    <button id="feel" class="feel" type="button">feel</button>
+  </div>
+</div>
 
 <script src="komorebi.js"></script>
 <script>
@@ -82,11 +124,12 @@ const LS_KEY='komorebi.presets';
 function getStored(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(e){ return {}; } }
 function setStored(o){ try{ localStorage.setItem(LS_KEY, JSON.stringify(o)); }catch(e){} }
 function getPreset(name){ const s=getStored(); return (name in s) ? s[name] : Komorebi.PRESETS[name]; }
-const DEFAULT_PRESET = 'afternoon 7';   // the editor's boot + fallback look, named once (preset DATA lives in komorebi.js)
+const DEFAULT_PRESET = 'afternoon 7';   // the editor's working default + fallback look (preset DATA lives in komorebi.js)
+const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro, until "feel"
 
 // ---- boot the engine on the canvas ------------------------------------------
 let eng;
-try { eng = Komorebi.create(canvas, { params: getPreset(DEFAULT_PRESET) }); }
+try { eng = Komorebi.create(canvas, { params: getPreset(WELCOME_PRESET) }); }
 catch(e){ document.body.innerHTML = '<div class="err">'+e.message+'</div>'; throw e; }
 const params = eng.params;   // live params the panel edits in place
 const perf = eng.perf;
@@ -515,6 +558,35 @@ buildPanel();
   const val=document.createElement('span'); val.className='val'; val.textContent=transDur.toFixed(1);
   inp.addEventListener('input',()=>{ transDur=parseFloat(inp.value); val.textContent=transDur.toFixed(1); });
   r.append(lab,inp,val); dev.appendChild(r);
+})();
+
+// ===========================================================================
+// Welcome gate — the page opens on a faint 'memories' background (the §1 north-
+// star look) under an intro overlay. "feel" un-dims the canvas, cloud-bloom
+// crossfades to the editor's default look, then slides the dev panel in. After
+// that it's the normal editor (D toggles the panel as usual).
+// ===========================================================================
+(function(){
+  const welcome=document.getElementById('welcome'), feel=document.getElementById('feel');
+  const hint=document.getElementById('hint');
+  let started=false;
+  function slideInPanel(){
+    if(!dev.classList.contains('hidden')) return;   // first reveal only (idempotent vs. the fallback timer)
+    dev.classList.add('offscreen');                 // park it off the left edge...
+    dev.classList.remove('hidden');                 // ...reveal it there...
+    void dev.offsetWidth;                            // ...reflow so the next change animates...
+    dev.classList.remove('offscreen');              // ...and slide it in
+    hint.classList.remove('gone');                  // bring the key hints up with it
+  }
+  feel.addEventListener('click',()=>{
+    if(started) return; started=true;
+    document.body.classList.remove('intro');        // un-dim the canvas to full strength
+    welcome.classList.add('out');                   // dissolve the intro text
+    setTimeout(()=>{ welcome.style.display='none'; }, 1000);
+    eng.transitionTo(getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec §9)
+      onEnd:()=>{ refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); setTimeout(slideInPanel,300); } });
+    setTimeout(()=>{ refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); slideInPanel(); }, 5500);  // fallback if onEnd never fires
+  });
 })();
 </script>
 </body>
