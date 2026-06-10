@@ -18,7 +18,8 @@
 //   eng.drawTreeInset()     debug overlay: a 3D preview of the grown grove, swaying (editor only)
 //   eng.onFrame             optional callback invoked after each rendered frame
 // ============================================================================
-window.Komorebi = (function(){
+window.Komorebi = (()=>{
+// biome-ignore lint/suspicious/noRedundantUseStrict: komorebi.js loads as a classic <script>, not a module — strict mode is not automatic here
 'use strict';
 
 const DEG = Math.PI / 180, TAU = Math.PI*2;
@@ -75,7 +76,7 @@ const TAU_OZ  = [0.0403, 0.0258, 0.0040];   // ozone Chappuis (300 DU) — absor
 const TAU_AER = [1.861, 2.151, 2.670];      // aerosol per unit turbidity β (Ångström λ^-1.3)
 function airMass(hDeg){                       // Kasten-Young 1989 — finite at the horizon (1/sin diverges)
   const h = Math.max(hDeg, 0);
-  return 1/(Math.sin(h*DEG) + 0.50572*Math.pow(h+6.07995, -1.6364));
+  return 1/(Math.sin(h*DEG) + 0.50572*(h+6.07995) ** -1.6364);
 }
 function atmosphere(hDeg, beta, ambientSky){
   const m = airMass(hDeg);
@@ -442,7 +443,7 @@ const BUILTIN_PRESETS = {
 };
 
 // ---- deterministic RNG so canopy is frame-stable & reproducible ------------
-function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
+function mulberry32(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 function makeGauss(rng){ return ()=>{ let u=0,v=0; while(u===0)u=rng(); while(v===0)v=rng();
   return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }; }
@@ -467,7 +468,7 @@ function vnoise1(x){                       // smooth 1-D value noise -> [-1,1]
 // var(sum)=Σ amp²·var(vnoise); dividing by √(Σamp²)·VNOISE_STD gives σ≈1). Unit std is what makes the
 // gustiness knob mean turbulence-intensity (σ/U) honestly — without it, gustiness was nearly inert.
 function fbm1(t, freq, octaves, H){
-  const G=Math.pow(2,-H); let sum=0, amp=1, a2=0, fr=freq;
+  const G=2 ** -H; let sum=0, amp=1, a2=0, fr=freq;
   for(let i=0;i<octaves;i++){ sum+=amp*vnoise1(t*fr + i*19.7); a2+=amp*amp; amp*=G; fr*=2; }
   return a2>0 ? sum/(Math.sqrt(a2)*VNOISE_STD) : 0;
 }
@@ -1227,7 +1228,7 @@ function create(canvas, opts){
     let gL = fbm1(t, rate, pat.octaves, pat.H);
     let gT = fbm1(t+101.7, rate, pat.octaves, pat.H);         // decorrelated lateral stream
     if(pat.burst>0){ const e=1+pat.burst*2;                   // spike peaks, deepen lulls (intermittency)
-      gL=Math.sign(gL)*Math.pow(Math.abs(gL),e); gT=Math.sign(gT)*Math.pow(Math.abs(gT),e); }
+      gL=Math.sign(gL)*Math.abs(gL) ** e; gT=Math.sign(gT)*Math.abs(gT) ** e; }
     const ti = params.wind_gustiness;                         // turbulence intensity σ/U (gL,gT are unit-std)
     const rawL = effStrength*(pat.lean + ti*gL);              // mean lean + fluctuation; <0 in strong lulls → springback through rest
     const driveT = effStrength*(ti*pat.lat*gT);               // zero-mean crosswind
