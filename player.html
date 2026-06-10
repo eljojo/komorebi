@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Komorebi — player</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0a0d0a; overflow: hidden; }
+      #komorebi-bg { display: block; width: 100vw; height: 100vh; }
+    </style>
+  </head>
+  <body>
+    <canvas id="komorebi-bg"></canvas>
+    <script src="komorebi.js"></script>
+    <script>
+      // Minimal reference player: the viewer-only consumer of the engine, no UI.
+      // Boots Komorebi on a full-bleed canvas and cycles between presets every 30s,
+      // morphing live via transitionTo. Degrades to a blank background if WebGL2 is
+      // unavailable. The eljojo.net homepage embeds this same pattern with page
+      // content layered on top.
+      try {
+        if (window.Komorebi) {
+          const cycle = ['morning 2', 'afternoon 5b', 'morning 3'];
+          const eng = Komorebi.create(document.getElementById('komorebi-bg'),
+            { params: Komorebi.PRESETS[cycle[0]] });
+          let i = 0;
+          setInterval(() => {
+            i = (i + 1) % cycle.length;
+            eng.transitionTo(Komorebi.PRESETS[cycle[i]], { duration: 5 });
+          }, 30000);
+        }
+      } catch (e) { /* no WebGL2 / float targets: leave the background blank */ }
+    </script>
+  </body>
+</html>

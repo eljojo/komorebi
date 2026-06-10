@@ -64,7 +64,8 @@
 // ============================================================================
 // Komorebi editor — the authoring shell around the shared engine (komorebi.js).
 // The engine renders; this file is only the dev panel, HUD, source inset, preset
-// management, and sun-drag input. The viewer-only background lives in index.html.
+// management, and sun-drag input. The viewer-only player (player.html) is a
+// separate, UI-less consumer of the same engine.
 // ============================================================================
 const canvas = document.getElementById('gl');
 const dev = document.getElementById('dev');

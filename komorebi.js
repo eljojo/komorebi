@@ -4,9 +4,9 @@
 // layers) -> Transport (shift-multiply-sum) -> Look (tonemap). Motion: two wind
 // bands over a trunk/limb/twig spring hierarchy. See komorebi-spec.md.
 //
-// The editor (komorebi.html) and the viewer-only page background (index.html)
-// both build on this. create() THROWS on missing WebGL2/float targets so callers
-// can degrade: the editor shows the error, the viewer leaves its page static.
+// The editor (editor.html) and the reference player (player.html) both build
+// on this. create() THROWS on missing WebGL2/float targets so callers can
+// degrade: the editor shows the error, the player leaves its background blank.
 //
 //   const eng = Komorebi.create(canvas, { params, onFrame });
 //   eng.params / .perf / .motion / .src / .fps   live state (read for a HUD)
