@@ -81,10 +81,11 @@ const LS_KEY='komorebi.presets';
 function getStored(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(e){ return {}; } }
 function setStored(o){ try{ localStorage.setItem(LS_KEY, JSON.stringify(o)); }catch(e){} }
 function getPreset(name){ const s=getStored(); return (name in s) ? s[name] : Komorebi.PRESETS[name]; }
+const DEFAULT_PRESET = 'afternoon 7';   // the editor's boot + fallback look, named once (preset DATA lives in komorebi.js)
 
 // ---- boot the engine on the canvas ------------------------------------------
 let eng;
-try { eng = Komorebi.create(canvas, { params: getPreset('afternoon 7') }); }
+try { eng = Komorebi.create(canvas, { params: getPreset(DEFAULT_PRESET) }); }
 catch(e){ document.body.innerHTML = '<div class="err">'+e.message+'</div>'; throw e; }
 const params = eng.params;   // live params the panel edits in place
 const perf = eng.perf;
@@ -148,6 +149,7 @@ const PANEL = [
   ['s','view_extent_m','view (m)',0.5,16,0.1,''],
   ['s','view_pitch_deg','tilt °',0,70,1,''],
   ['s','view_fov_deg','fov °',10,110,1,''],
+  ['s','far_smear','far smear',0,8,0.25,''],
   ['s','exposure','exposure',0,4,0.01,''],
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
@@ -161,12 +163,16 @@ const PANEL = [
   ['s','ground_b','ground B',0,1,0.01,''],
 
   ['h','Wind — coherent band'],
+  ['sels','wind_pattern','pattern',[['steady','steady'],['gusty','gusty'],['squally','squally'],['choppy','choppy'],['lazy','lazy']],''],
   ['s','wind_strength','strength',0,2,0.01,''],
+  ['s','wind_gustiness','gustiness',0,0.6,0.01,''],
+  ['s','gust_frequency','gust rate',0.01,1,0.005,''],
   ['s','wind_direction_deg','dir °',0,360,1,''],
-  ['s','gust_frequency','gust freq',0.01,1,0.005,''],
-  ['s','gust_decay','decay (s)',0.05,8,0.05,''],
+  ['s','weather_variability','weather',0,1,0.01,''],
+  ['s','weather_speed','weather spd',0.1,4,0.1,''],
   ['adv','spring mechanics'],
   ['s','gust_attack','attack (s)',0.05,5,0.05,''],
+  ['s','gust_decay','decay (s)',0.05,8,0.05,''],
   ['s','sway_stiffness','stiffness ω',0.5,15,0.1,''],
   ['s','sway_ceiling','ceiling (m)',0.05,1.5,0.01,''],
   ['s','damping_ratio','damping ζ',0.02,1,0.01,''],
@@ -215,12 +221,13 @@ function buildPanel(){
       const inp=document.createElement('input'); inp.type='checkbox'; inp.checked=params[key];
       inp.addEventListener('change',()=>{ params[key]=inp.checked; applyScope(scope); });
       row.append(lab,inp); controlEls[key]={input:inp}; row.dataset.tipKey=key;
-    } else if(item[0]==='sel'){
+    } else if(item[0]==='sel' || item[0]==='sels'){    // 'sel' = integer value, 'sels' = string value (e.g. wind_pattern)
+      const str=item[0]==='sels';
       const [,key,label,opts,scope]=item; row.classList.add('select');
       const lab=document.createElement('label'); lab.textContent=label;
       const sel=document.createElement('select');
       for(const [t,v] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; if(v==params[key]) o.selected=true; sel.appendChild(o); }
-      sel.addEventListener('change',()=>{ params[key]=parseInt(sel.value,10); applyScope(scope); });
+      sel.addEventListener('change',()=>{ params[key]=str?sel.value:parseInt(sel.value,10); applyScope(scope); });
       row.append(lab,sel); controlEls[key]={input:sel}; row.dataset.tipKey=key;
     } else if(item[0]==='btn'){
       const [,label,fn]=item;
@@ -246,7 +253,7 @@ const TIPS = {
   'Canopy':"<b>The trees.</b> A small grove, grown branch by branch, with leaves on the twig-tips. You never actually see the tree — only the shadow it throws on the ground — so we only bother modelling what changes that shadow.",
   'Transport':"<b>Where the sun sits in the sky.</b> Sets how the dapples stretch on the tilted ground — and now also the colour of the light and how cool the shadows go at dusk.",
   'Look':"<b>The finishing touches — brightness, contrast, colour.</b> Everything here is about how the picture is shown, never the simulation underneath.",
-  'Wind — coherent band':"<b>The steady breeze that pushes everything one way.</b> The trunk slides the whole pattern sideways; limbs and twigs lean downwind and spring back. The shapes slide along nearly intact.",
+  'Wind — coherent band':"<b>The breeze that moves the whole canopy together.</b> Pick a <b>pattern</b> for its character, then dial how much, how gusty, how frequent, and which way. The trunk slides the pattern sideways while limbs and twigs lean and spring back; deep lulls let it swing back through rest, and a crosswind keeps it from being a dead-straight slide.",
   'Leaf drift (incoherent band)':"<b>The faint, fidgety wind from all sides at once.</b> Each leaf jiggles on its own, so gaps reshuffle — merging and splitting like light on the floor of a pool — instead of sliding. (A preview of the second kind of wind.)",
   'Debug':"<b>Tools for peeking under the hood.</b> These don't change the art.",
   'Presets':"<b>Saved looks.</b> Built-in ones are marked •, your own ★ (saved in this browser). Copy/paste JSON to share a look with someone. Step between them live with the <b>← →</b> arrow keys.",
@@ -291,6 +298,7 @@ const TIPS = {
   view_extent_m:"<b>Zoom — how much ground you see.</b> Small = a close-up of a few big dapples; large = a wide field of many small ones. (It's the span at screen centre, so it holds as you tilt.)",
   view_pitch_deg:"<b>Tilt — straight down vs. out along the floor.</b> 0° is the old top-down map; raise it and you're sitting under the tree — the near floor drops to the bottom of frame, the far floor recedes and dissolves into haze.",
   view_fov_deg:"<b>Lens — how strong the perspective is.</b> Narrow is flat and telephoto; wide throws the near floor big and rushes the far floor away. Only bites once you've tilted.",
+  far_smear:"<b>Far-field smear — distance softening.</b> A far pixel covers a big patch of ground, so its dapples should melt into soft down-sun streaks while the near floor stays crisp. Higher = more melt (and less far-field shimmer). Has no effect top-down — it grows with the tilt.",
   exposure:"<b>Brightness.</b> How bright the floor is. Pure look — it never changes the light simulation, just where it lands on screen.",
   contrast:"<b>Punch.</b> Higher = bold, snappy dapples; lower = the flat, milky look of haze.",
   ambient_skylight:"<b>How much the sky fills the shadows.</b> The light that isn't direct sun — now coloured for real (blue by day, warmer at dusk). Up = softer, lifted shade; down = deep, moody shadows.",
@@ -303,9 +311,13 @@ const TIPS = {
   ground_g:"<b>How much GREEN the ground reflects.</b> Mid for brown dirt; raise it toward mossy or grassy ground, drop it for redder clay.",
   ground_b:"<b>How much BLUE the ground reflects.</b> Low for warm dirt; raise it toward grey gravel or cool stone.",
   // Wind — coherent
-  wind_strength:"<b>How hard the breeze blows.</b> 0 = still. Turn it up and the branches bend, fight at the peak of a gust, then snap back.",
-  wind_direction_deg:"<b>Which way the wind blows.</b> The whole dapple pattern drifts and leans this way.",
-  gust_frequency:"<b>How often gusts come.</b> Low = long, slow swells; high = busy, choppy air.",
+  wind_pattern:"<b>The character of the wind.</b> Real wind isn't one frequency — it's a whole spread of them at once, and these are different recipes for that spread. <b>steady</b>: smooth rolling breeze. <b>gusty</b>: the natural default. <b>squally</b>: bursty, comes in clustered shoves with deep lulls. <b>choppy</b>: nervous, fine, cold-front edge. <b>lazy</b>: a very slow faint stir. All five read the same knobs below — they just shape them differently.",
+  wind_strength:"<b>How much wind — how hard it blows.</b> 0 = still. Turn it up and the branches bend, fight at the peak of a gust, then snap back.",
+  wind_gustiness:"<b>How alive vs. steady the wind is.</b> Low = a smooth, near-constant lean; high = it surges and drops, and the deep lulls let the branches swing all the way back through rest (and even past it). This is the 'is it gusty' knob — real open-air wind sits around 0.1–0.25.",
+  wind_direction_deg:"<b>Which way the wind blows.</b> The whole dapple pattern drifts and leans this way (slowly wandering off it if 'weather' is up).",
+  gust_frequency:"<b>How frequent the gusts are — their rhythm.</b> It sets the slowest, biggest swell; faster gusts and fine flutter layer on top automatically. Low = long, slow swells; high = busier air.",
+  weather_variability:"<b>Does the wind have a day of its own?</b> 0 = it stays exactly as you set it. Turn it up and a slow 'weather' drifts over minutes — calm spells and gusty spells come and go, and the direction slowly veers — so it's never quite the same twice. (A calm day = low; a gusty Montreal-spring day = high, with strength up too.)",
+  weather_speed:"<b>How fast the weather changes</b> when 'weather' is up — how quickly it drifts between calm and gusty and swings direction.",
   gust_attack:"<b>How quickly a gust builds up.</b> Short = a sudden shove; long = a gentle rise.",
   gust_decay:"<b>How quickly a gust fades away.</b> Usually slower than it built — that lingering release.",
   sway_stiffness:"<b>Springiness of the sway.</b> Stiff = quick, tight, twitchy motion; soft = slow, lazy, big swings.",
@@ -378,7 +390,7 @@ function buildPresetUI(){
       const s=getStored(); s[n]=JSON.parse(JSON.stringify(params)); setStored(s); refreshPresetSelect(n); }),
     mkBtn('delete',()=>{ const n=presetSel.value, s=getStored();
       if(!(n in s)){ alert("Built-in presets can't be deleted."); return; }
-      delete s[n]; setStored(s); refreshPresetSelect('afternoon 7'); }));
+      delete s[n]; setStored(s); refreshPresetSelect(DEFAULT_PRESET); }));
   dev.appendChild(r2);
 
   const r3=document.createElement('div'); r3.className='ctl';
@@ -389,7 +401,7 @@ function buildPresetUI(){
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
       try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(e){ alert('Invalid JSON'); } }));
   dev.appendChild(r3);
-  refreshPresetSelect('afternoon 7');
+  refreshPresetSelect(DEFAULT_PRESET);
 }
 
 // Canvas pointer input. A MOUSE drags the sun (azimuth from x, elevation from y). A finger can't do that
@@ -477,10 +489,16 @@ eng.onFrame = function(){
   hud.style.display = devOpen ? '' : 'none';
   if(!devOpen) return;
   const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
-  const sway=(Math.hypot(eng.motion.sway[0],eng.motion.sway[1])*100).toFixed(0);
+  const m=eng.motion;
+  const sway=(Math.hypot(m.sway[0],m.sway[1])*100).toFixed(0);
+  // live weather readout — only meaningful while the day is evolving: strength multiplier + how far it has veered
+  const veer=(((Math.atan2(m.windY,m.windX)/DEG - params.wind_direction_deg + 540)%360)-180);
+  const weather = params.weather_variability>0
+    ? `   weather ×${m.weatherS.toFixed(2)} ${veer>=0?'+':''}${veer.toFixed(0)}°` : '';
   hud.textContent =
     `${eng.fps.toFixed(0)} fps   ${eng.src.count} suns × ${params.layer_count} layers = ${eng.src.count*params.layer_count} taps/px${perf.auto?`   AUTO res ${perf.resScale.toFixed(2)}×`:''}\n`+
-    `blur h·θ ≈ ${blur} cm   cloud ${params.cloud_thickness.toFixed(2)}   sun ${params.sun_elevation_deg.toFixed(0)}°/${params.sun_azimuth_deg.toFixed(0)}°   wind ${params.wind_strength.toFixed(2)} → sway ${sway} cm`;
+    `blur h·θ ≈ ${blur} cm   cloud ${params.cloud_thickness.toFixed(2)}   sun ${params.sun_elevation_deg.toFixed(0)}°/${params.sun_azimuth_deg.toFixed(0)}°\n`+
+    `wind: ${params.wind_pattern}  str ${params.wind_strength.toFixed(2)}  gust ${params.wind_gustiness.toFixed(2)}${weather}  → sway ${sway} cm`;
 };
 
 // ---- boot the panel UI (the engine is already running) ----
