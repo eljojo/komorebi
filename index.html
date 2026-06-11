@@ -9,8 +9,8 @@
   html,body { margin:0; height:100%; background:#0a0d0a; overflow:hidden; }
   #gl { display:block; width:100vw; height:100vh; cursor:crosshair; touch-action:none;   /* none: let swipe gestures through, no scroll/pull-to-refresh */
         -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }   /* and no iOS text-selection callout on the press-and-hold peek */
-  #hud {
-    position:fixed; left:10px; bottom:10px; font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;
+  #hud {                                              /* bottom-right, above #hint — clear of the left dev panel */
+    position:fixed; right:10px; bottom:38px; text-align:right; font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;
     color:#9fb89f; background:rgba(0,0,0,.35); padding:6px 8px; border-radius:6px;
     pointer-events:none; white-space:pre;
   }
@@ -576,21 +576,27 @@ eng.onFrame = function(){
   if(params.drift_auto) syncControl('drift_phase');
   if(params.show_source && !dev.classList.contains('hidden')) eng.drawSourceInset();
   if(showTree) eng.drawTreeInset(treePointer, treePinned);
-  // HUD (fps + stats) is debug info: only show it while the dev panel (D) is open
+  // HUD is debug info: only while the dev panel (D) is open. Signal-only — it shows what is LIVE and
+  // computed (and can't be read off a slider sitting in the panel right here), never echoes of the controls.
   const devOpen = !dev.classList.contains('hidden');
   hud.style.display = devOpen ? '' : 'none';
   if(!devOpen) return;
-  const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
   const m=eng.motion;
-  const sway=(Math.hypot(m.sway[0],m.sway[1])*100).toFixed(0);
-  // live weather readout — only meaningful while the day is evolving: strength multiplier + how far it has veered
-  const veer=(((Math.atan2(m.windY,m.windX)/DEG - params.wind_direction_deg + 540)%360)-180);
-  const weather = params.weather_variability>0
-    ? `   weather ×${m.weatherS.toFixed(2)} ${veer>=0?'+':''}${veer.toFixed(0)}°` : '';
-  hud.textContent =
-    `${eng.fps.toFixed(0)} fps   ${eng.src.count} suns × ${params.layer_count} layers = ${eng.src.count*params.layer_count} taps/px${perf.auto?`   AUTO res ${perf.resScale.toFixed(2)}×`:''}\n`+
-    `blur h·θ ≈ ${blur} cm   cloud ${params.cloud_thickness.toFixed(2)}   sun ${params.sun_elevation_deg.toFixed(0)}°/${params.sun_azimuth_deg.toFixed(0)}°\n`+
-    `wind: ${params.wind_pattern}  str ${params.wind_strength.toFixed(2)}  gust ${params.wind_gustiness.toFixed(2)}${weather}  → sway ${sway} cm`;
+  // perf is a WARNING line, absent when nominal: fps only once it slips below 60 (<55), and AUTO res only
+  // while it's compensating below full — so you always know when auto-quality is buying speed with resolution.
+  const lowFps = eng.fps>0 && eng.fps<55, downRes = perf.resScale<0.999;
+  const perfLine = (lowFps||downRes)
+    ? `${lowFps?`${eng.fps.toFixed(0)} fps`:''}${lowFps&&downRes?'   ':''}${downRes?`res ${perf.resScale.toFixed(2)}×`:''}\n`
+    : '';
+  // blur h·θ — the §3.2 softness scale (canopy height × the sun's angular size); a derived number, kept.
+  const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
+  // wind score — one LIVE number that breathes with the gusts (driveEnv folds in base strength × the weather
+  // spell × the broadband gust force), plus a slow character word. Subsumes the old str/gust/weather/sway.
+  // The word reads off EFFECTIVE strength (base × weather) — the only wind axis that varies across looks
+  // (pattern & gustiness are fixed in every preset), so it discriminates and drifts calm↔strong over a day.
+  const windNow=Math.max(0,m.driveEnv), eff=params.wind_strength*m.weatherS;
+  const windWord = eff<0.12 ? 'calm' : eff<0.6 ? 'light' : eff<1.2 ? 'breezy' : eff<2.0 ? 'windy' : 'strong';
+  hud.textContent = `${perfLine}blur h·θ ≈ ${blur} cm    wind ≈ ${windNow.toFixed(1)}  ${windWord}`;
 };
 
 // ---- boot the panel UI (the engine is already running) ----
