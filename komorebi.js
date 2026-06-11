@@ -25,6 +25,9 @@ window.Komorebi = (()=>{
 const DEG = Math.PI / 180, TAU = Math.PI*2;
 const MAX_SAMPLES = 48;
 const MAX_LAYERS = 4;
+// Build flag. This source (loaded raw by the editor) keeps EDITOR=true; the player build flips it to
+// false (terser dead-code-eliminates the editor-only debug overlays — their shaders, buffers, draw fns).
+const EDITOR = true;
 const clamp = (x,a,b) => Math.min(b, Math.max(a, x));
 const lerp = (a,b,t) => a + (b-a)*t;
 const smoothstep = (a,b,x) => { const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); };
@@ -787,8 +790,8 @@ function create(canvas, opts){
   const progBake = program(VS_BAKE, FS_BAKE);
   const progTransport = program(VS_FULL, FS_TRANSPORT);
   const progBlit = program(VS_FULL, FS_BLIT);
-  const progPoints = program(VS_POINTS, FS_POINTS);
-  const progViz = program(VS_VIZ, FS_VIZ);
+  const progPoints = EDITOR ? program(VS_POINTS, FS_POINTS) : null;   // editor-only debug-overlay programs
+  const progViz = EDITOR ? program(VS_VIZ, FS_VIZ) : null;
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -810,8 +813,10 @@ function create(canvas, opts){
     layers:[0,1,2,3].map(i=>loc(progTransport,`uLayer[${i}]`)),
   };
   U.blit = { tex:loc(progBlit,'uTex') };
-  U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
-  U.viz = { point:loc(progViz,'uPoint'), pointAlpha:loc(progViz,'uPointAlpha'), lineAlpha:loc(progViz,'uLineAlpha') };
+  if(EDITOR){   // editor-only debug-overlay uniforms
+    U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
+    U.viz = { point:loc(progViz,'uPoint'), pointAlpha:loc(progViz,'uPointAlpha'), lineAlpha:loc(progViz,'uLineAlpha') };
+  }
 
   // ---- geometry / GPU buffers ----
   const emptyVAO = gl.createVertexArray();           // required to issue attrib-less draws
@@ -819,23 +824,27 @@ function create(canvas, opts){
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
 
-  const srcDbgBuf = gl.createBuffer();
-  const srcDbgVAO = gl.createVertexArray();
-  gl.bindVertexArray(srcDbgVAO);
-  gl.bindBuffer(gl.ARRAY_BUFFER, srcDbgBuf);
-  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,12,0);
-  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.FLOAT,false,12,8);
-  gl.bindVertexArray(null);
+  // editor-only debug-overlay buffers (source point cloud + tree-preview inset); skipped in the player build
+  let srcDbgBuf=null, srcDbgVAO=null, vizBuf=null, vizVAO=null;
+  if(EDITOR){
+    srcDbgBuf = gl.createBuffer();
+    srcDbgVAO = gl.createVertexArray();
+    gl.bindVertexArray(srcDbgVAO);
+    gl.bindBuffer(gl.ARRAY_BUFFER, srcDbgBuf);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,12,0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,1,gl.FLOAT,false,12,8);
+    gl.bindVertexArray(null);
 
-  // tree-preview inset buffer: interleaved (pos.xy, col.rgb, size) — 6 floats/vertex, refilled per frame
-  const vizBuf = gl.createBuffer();
-  const vizVAO = gl.createVertexArray();
-  gl.bindVertexArray(vizVAO);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vizBuf);
-  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,24,0);
-  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,8);
-  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,24,20);
-  gl.bindVertexArray(null);
+    // tree-preview inset buffer: interleaved (pos.xy, col.rgb, size) — 6 floats/vertex, refilled per frame
+    vizBuf = gl.createBuffer();
+    vizVAO = gl.createVertexArray();
+    gl.bindVertexArray(vizVAO);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vizBuf);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,24,0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,8);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,24,20);
+    gl.bindVertexArray(null);
+  }
 
   const bakeFBO = gl.createFramebuffer();
   let layerTex = [];           // MAX_LAYERS textures (active sized, inactive 1x1)
@@ -1132,8 +1141,10 @@ function create(canvas, opts){
     pts.forEach((p,i)=>{ flat[i*3]=p[0]; flat[i*3+1]=p[1]; flat[i*3+2]=p[2];
       mr=Math.max(mr,Math.hypot(p[0],p[1])); mw=Math.max(mw,p[2]); });
     src.flat=flat; src.count=pts.length; src.maxR=mr; src.maxW=mw; src.haloR=haloR;
-    gl.bindBuffer(gl.ARRAY_BUFFER, srcDbgBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
+    if(EDITOR){   // push the cloud into the editor's source-inset buffer (player build has none)
+      gl.bindBuffer(gl.ARRAY_BUFFER, srcDbgBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
+    }
   }
 
   // ---- the ellipse: angular offset -> ground displacement per unit height ----
@@ -1413,7 +1424,10 @@ function create(canvas, opts){
     gl.bindVertexArray(emptyVAO);
     gl.drawArrays(gl.TRIANGLES,0,3);
   }
-  function drawSourceInset(){
+  // ---- editor-only debug overlays (source + tree-preview insets); EDITOR=false strips this whole block ----
+  let drawSourceInset, drawTreeInset, treeInsetHit;
+  if(EDITOR){
+  drawSourceInset = () => {
     const s=Math.round(Math.min(170, canvas.width*0.22));
     const x=canvas.width-s-8, y=canvas.height-s-8;
     gl.enable(gl.SCISSOR_TEST);
@@ -1426,7 +1440,7 @@ function create(canvas, opts){
     gl.drawArrays(gl.POINTS, 0, src.count);
     gl.disable(gl.SCISSOR_TEST);
     gl.viewport(0,0,canvas.width,canvas.height);
-  }
+  };
 
   // ---- 3D preview of the ACTUAL grove (todo [3]): the grown skeleton + leaf blobs, in a slowly
   // turning 3/4 view that sways with the wind. Optional editor inset ('T'); the geometry is CPU-
@@ -1457,14 +1471,14 @@ function create(canvas, opts){
     const S = Math.round(base + (big-base)*treeGrow);
     return { S, ix: canvas.width-S-8, iy: 8 };        // anchored bottom-right; grows up-left
   }
-  function treeInsetHit(ptr){                          // is the normalised pointer over the current inset?
+  treeInsetHit = (ptr) => {                          // is the normalised pointer over the current inset?
     if(!ptr) return false;
     const {S,ix,iy}=treeInsetGeom();
     const l=ix/canvas.width, r=(ix+S)/canvas.width, tp=1-(iy+S)/canvas.height, bt=1-iy/canvas.height;
     return ptr.x>=l && ptr.x<=r && ptr.y>=tp && ptr.y<=bt;
-  }
+  };
   // grow while hovered; a CLICK pins it big (pinned) until clicked again. ptr = normalised coords or null.
-  function drawTreeInset(ptr, pinned){
+  drawTreeInset = (ptr, pinned) => {
     if(!hier?.segments?.length) return;
     const segs = hier.segments, levels = Math.max(1, params.branch_levels|0);
     treeGrow = clamp(treeGrow + (((pinned||treeInsetHit(ptr))?1:0)-treeGrow)*0.18, 0, 1);   // smooth ease
@@ -1550,7 +1564,8 @@ function create(canvas, opts){
     gl.bindVertexArray(null);
     gl.disable(gl.SCISSOR_TEST);
     gl.viewport(0,0,canvas.width,canvas.height);
-  }
+  };
+  }   // end if(EDITOR) — editor-only inset overlays
 
   // ---- the rebuild scopes the editor drives, plus a full param swap ----
   function rebuildAll(){ rebuildTextures(); regenCanopy(); bake(); regenSource(); }
@@ -1574,7 +1589,8 @@ function create(canvas, opts){
   rebuildAll();
   resetPerf();
   let last=performance.now(), fps=60;
-  const eng = { canvas, gl, params, perf, motion, src, trans, fps:60, apply, setParams, transitionTo, drawSourceInset, drawTreeInset, treeInsetHit, onFrame:opts.onFrame||null };
+  const eng = { canvas, gl, params, perf, motion, src, trans, fps:60, apply, setParams, transitionTo, onFrame:opts.onFrame||null,
+    ...(EDITOR ? { drawSourceInset, drawTreeInset, treeInsetHit } : {}) };   // editor-only handles, stripped from the player build
   function frame(now){
     const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1; eng.fps=fps;
     if(perf.auto) tunePerf(dtms, fps);               // auto-quality: nudge resolution/samples toward 60 fps
