@@ -6,16 +6,32 @@ A standalone WebGL2 engine that renders komorebi from physics rather than painti
 
 ## Files
 
-- **`komorebi.js`** — the engine. The whole renderer, no UI: `Komorebi.create(canvas, opts)`.
-- **`index.html`** — the editor / landing page (opens on a welcome screen): dev panel, HUD, presets, sun‑drag. Open in a browser (needs WebGL2).
+- **`komorebi.js`** — the engine, an ES module. The whole renderer, no UI: `export { create, DEFAULTS, … }`.
+- **`presets.js`** — the built‑in looks, an ES module: `export const PRESETS`. Split out of the engine (data, not renderer); imported by the pages.
+- **`index.html`** — the editor / landing page (opens on a welcome screen): dev panel, HUD, presets, sun‑drag. Imports the modules, so it must be **served** (`nix run .#dev`), not opened off the filesystem.
 - **`player.html`** — minimal viewer‑only reference: a full‑bleed canvas cycling through presets, no UI.
+- **`komorebi.global.js`** — deploy shim: bundles the engine + presets into a classic `window.Komorebi` global for no‑build embeds (the eljojo.net homepage).
+- **`dev-server.js`** — bun static server + live‑reload for development (`nix run .#dev`).
 - **`komorebi-spec.md`** — the living spec (vision, physics, model). Kept in sync as the engine evolves.
+
+## Develop
+
+ES‑module dev needs http (not `file://`). With Nix:
+
+```
+nix run .#dev      # serve + live‑reload at http://localhost:8000
+nix run .#lint     # biome
+nix run .#build    # bundle dist/komorebi.player.min.js (the global, editor stripped)
+```
 
 ## Using the engine
 
 ```js
-const eng = Komorebi.create(canvas, { params: Komorebi.PRESETS['morning 2'] });
-eng.transitionTo(Komorebi.PRESETS['afternoon 5b'], { duration: 5 });
+import { create, PRESETS } from './komorebi.js' /* + './presets.js' */;
+const eng = create(canvas, { params: PRESETS['morning 2'] });
+eng.transitionTo(PRESETS['afternoon 5b'], { duration: 5 });
 ```
 
-`Komorebi.create()` throws if WebGL2 / float render targets are unavailable, so callers can degrade gracefully — the editor shows the error; `player.html` leaves the background blank.
+Or, for a no‑build page, load the bundle and use the global: `<script src="komorebi.player.min.js"></script>` then `Komorebi.create(…)` / `Komorebi.PRESETS`.
+
+`create()` throws if WebGL2 / float render targets are unavailable, so callers can degrade gracefully — the editor shows the error; `player.html` leaves the background blank.

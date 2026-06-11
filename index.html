@@ -102,19 +102,20 @@
   </div>
 </div>
 
-<script src="komorebi.js"></script>
-<script>
+<script type="module">
+import { create, DEG, MAX_LAYERS } from './komorebi.js';
+import { PRESETS } from './presets.js';
 // ============================================================================
 // Komorebi editor — the authoring shell around the shared engine (komorebi.js).
 // The engine renders; this file is only the dev panel, HUD, source inset, preset
 // management, and sun-drag input. The viewer-only player (player.html) is a
-// separate, UI-less consumer of the same engine.
+// separate, UI-less consumer of the same engine. Engine + presets load as ES
+// modules, so this page must be SERVED over http(s) (e.g. `nix run .#dev`), not
+// opened straight off the filesystem.
 // ============================================================================
 const canvas = document.getElementById('gl');
 const dev = document.getElementById('dev');
 const hud = document.getElementById('hud');
-const DEG = Komorebi.DEG;
-const MAX_LAYERS = Komorebi.MAX_LAYERS;
 const clamp = (x,a,b) => Math.min(b, Math.max(a, x));
 const fmt = (v) => Number.isInteger(v) ? String(v)
   : Math.abs(v)>=100 ? String(Math.round(v))   // big non-integers (azimuth / wind dir, step 1°) round to whole, not a 17-digit float
@@ -124,13 +125,13 @@ const fmt = (v) => Number.isInteger(v) ? String(v)
 const LS_KEY='komorebi.presets';
 function getStored(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||'{}'); }catch(e){ return {}; } }
 function setStored(o){ try{ localStorage.setItem(LS_KEY, JSON.stringify(o)); }catch(e){} }
-function getPreset(name){ const s=getStored(); return (name in s) ? s[name] : Komorebi.PRESETS[name]; }
-const DEFAULT_PRESET = 'afternoon 7';   // the editor's working default + fallback look (preset DATA lives in komorebi.js)
+function getPreset(name){ const s=getStored(); return (name in s) ? s[name] : PRESETS[name]; }
+const DEFAULT_PRESET = 'afternoon 7';   // the editor's working default + fallback look (preset DATA lives in presets.js)
 const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro, until "feel"
 
 // ---- boot the engine on the canvas ------------------------------------------
 let eng;
-try { eng = Komorebi.create(canvas, { params: getPreset(WELCOME_PRESET) }); }
+try { eng = create(canvas, { params: getPreset(WELCOME_PRESET) }); }
 catch(e){ document.body.innerHTML = '<div class="err">'+e.message+'</div>'; throw e; }
 const params = eng.params;   // live params the panel edits in place
 const perf = eng.perf;
@@ -418,7 +419,7 @@ function refreshPresetSelect(selected){
   const stored=getStored();
   const mk=(name,mark)=>{ const o=document.createElement('option'); o.value=name; o.textContent=mark+name;
     if(name===selected) o.selected=true; presetSel.appendChild(o); };
-  for(const n of Object.keys(Komorebi.PRESETS)) mk(n,'• ');     // built-in
+  for(const n of Object.keys(PRESETS)) mk(n,'• ');     // built-in
   for(const n of Object.keys(stored)) mk(n,'★ ');               // saved
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
@@ -534,7 +535,7 @@ if(coarse)
 // ---- arrow-key scene stepping: prev/next preset with a cloud-bloom transition (spec §9). The dropdown
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
-function presetNames(){ return [...Object.keys(Komorebi.PRESETS), ...Object.keys(getStored())]; }   // dropdown order
+function presetNames(){ return [...Object.keys(PRESETS), ...Object.keys(getStored())]; }   // dropdown order
 function stepPreset(dir){
   const names=presetNames(); if(!names.length) return;
   let i=names.indexOf(presetSel.value); if(i<0) i=0;
