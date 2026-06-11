@@ -7,7 +7,8 @@
 <style>
   :root { color-scheme: dark; }
   html,body { margin:0; height:100%; background:#0a0d0a; overflow:hidden; }
-  #gl { display:block; width:100vw; height:100vh; cursor:crosshair; touch-action:none; }   /* none: let swipe gestures through, no scroll/pull-to-refresh */
+  #gl { display:block; width:100vw; height:100vh; cursor:crosshair; touch-action:none;   /* none: let swipe gestures through, no scroll/pull-to-refresh */
+        -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }   /* and no iOS text-selection callout on the press-and-hold peek */
   #hud {
     position:fixed; left:10px; bottom:10px; font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;
     color:#9fb89f; background:rgba(0,0,0,.35); padding:6px 8px; border-radius:6px;
@@ -448,28 +449,74 @@ function buildPresetUI(){
   refreshPresetSelect(DEFAULT_PRESET);
 }
 
+// ---- dev panel reveal / dismiss / transient peek ---------------------------
+// On desktop the panel slides in after "feel" and D toggles it. On TOUCH there's no keyboard, so it
+// arrives hidden (the art stands alone) and is driven by canvas gestures: a double-tap toggles it, and a
+// press-and-hold "peeks" it away to glance at the art, sliding back on release. The slide reuses the
+// #dev.offscreen transform transition; the peek never sets `hidden`, so the panel's shown/dismissed
+// state survives a peek.
+const coarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);   // touch / phone
+const hint = document.getElementById('hint');
+let peeking=false, panelTimer=0;
+function slideInPanel(){
+  if(!dev.classList.contains('hidden')) return;   // first reveal only (idempotent vs. the welcome fallback timer)
+  clearTimeout(panelTimer);
+  dev.classList.add('offscreen');                 // park it off the left edge...
+  dev.classList.remove('hidden');                 // ...reveal it there...
+  void dev.offsetWidth;                            // ...reflow so the next change animates...
+  dev.classList.remove('offscreen');              // ...and slide it in
+  hint.classList.remove('gone');                  // bring the key hints up with it
+}
+function slideOutPanel(){
+  if(dev.classList.contains('hidden')) return;
+  dev.classList.add('offscreen');                                    // slide it out...
+  panelTimer=setTimeout(()=>{ dev.classList.add('hidden'); }, 600);  // ...then drop it once the .6s slide ends
+}
+function togglePanel(){ dev.classList.contains('hidden') ? slideInPanel() : slideOutPanel(); }
+function peekPanel(on){                            // transient: slide away to glance at the art, restore on release
+  if(on){ if(dev.classList.contains('hidden')) return;   // nothing to peek away when already dismissed
+          peeking=true; dev.classList.add('offscreen'); }
+  else if(peeking){ peeking=false; dev.classList.remove('offscreen'); }
+}
+
 // Canvas pointer input. A MOUSE drags the sun (azimuth from x, elevation from y). A finger can't do that
 // and swipe, so TOUCH is swipe-nav instead: a vertical swipe steps presets (like ↑/↓), a horizontal drag
 // scrubs time-of-day live (the sun arcs across the day). Axis locks once the gesture clears a deadzone.
+// On TOUCH the panel is also gesture-driven: double-tap toggles it, press-and-hold peeks it away (above).
 const SWIPE_DEAD=12, SWIPE_STEP=45;                            // px: ignore taps; min vertical throw to count as a preset step
+const HOLD_MS=350, DOUBLE_MS=300;                              // ms: press-and-hold = peek; two taps within this = toggle
 let dragging=false, px=0, py=0;
 let swipe=null;                                                // touch gesture in progress: {sx, sy, axis:null|'x'|'y'}
+let holdTimer=0, holdFired=false, lastTap=0;                   // touch panel gestures: peek timer + double-tap clock
 canvas.addEventListener('pointerdown',e=>{
   // tap the tree preview to PIN it big (tap again to unpin); otherwise begin a gesture
   if(showTree){ const r=canvas.getBoundingClientRect();
     if(eng.treeInsetHit({ x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height })){ treePinned=!treePinned; return; } }
-  if(e.pointerType==='touch') swipe={ sx:e.clientX, sy:e.clientY, axis:null }; else dragging=true;
+  if(e.pointerType==='touch'){
+    swipe={ sx:e.clientX, sy:e.clientY, axis:null }; holdFired=false;
+    holdTimer=setTimeout(()=>{ holdFired=true; if(swipe&&!swipe.axis) peekPanel(true); }, HOLD_MS);   // held still = peek
+  } else dragging=true;
   px=e.clientX; py=e.clientY; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointerup',e=>{
-  if(swipe){                                                   // a decisive vertical swipe = one preset step (up = next)
-    if(swipe.axis==='y'){ const dy=e.clientY-swipe.sy; if(Math.abs(dy)>SWIPE_STEP) stepPreset(dy<0 ? 1 : -1); }
+  if(swipe){
+    clearTimeout(holdTimer); holdTimer=0;
+    if(peeking) peekPanel(false);                              // end a peek: slide the panel back
+    else if(swipe.axis==='y'){ const dy=e.clientY-swipe.sy; if(Math.abs(dy)>SWIPE_STEP) stepPreset(dy<0 ? 1 : -1); }  // vertical swipe = preset step
+    else if(!swipe.axis && !holdFired) handleTap();            // a clean quick tap → double-tap candidate (toggles the panel)
     swipe=null;
   }
   dragging=false; });
+canvas.addEventListener('pointercancel',()=>{ clearTimeout(holdTimer); holdTimer=0; if(peeking) peekPanel(false); swipe=null; dragging=false; });
+function handleTap(){                                           // two taps within DOUBLE_MS toggle the panel (touch)
+  const now=Date.now();
+  if(now-lastTap < DOUBLE_MS){ lastTap=0; togglePanel(); } else lastTap=now;
+}
 canvas.addEventListener('pointermove',e=>{
   if(swipe){
+    if(peeking) return;                                        // mid-peek: hold still to look, ignore motion
     const dx=e.clientX-swipe.sx, dy=e.clientY-swipe.sy;
-    if(!swipe.axis){ if(Math.hypot(dx,dy)<SWIPE_DEAD) return; swipe.axis = Math.abs(dx)>Math.abs(dy) ? 'x' : 'y'; }
+    if(!swipe.axis){ if(Math.hypot(dx,dy)<SWIPE_DEAD) return;
+      swipe.axis = Math.abs(dx)>Math.abs(dy) ? 'x' : 'y'; clearTimeout(holdTimer); holdTimer=0; }   // a swipe, not a hold
     if(swipe.axis==='x'){                                      // scrub time of day live (~70% of the screen = a full day)
       params.time_of_day = clamp(params.time_of_day + (e.clientX-px)*((19-5)/(window.innerWidth*0.7)), 5, 19);
       updateSunFromTime(); syncControl('time_of_day');
@@ -481,9 +528,9 @@ canvas.addEventListener('pointermove',e=>{
   params.sun_elevation_deg = clamp(params.sun_elevation_deg - (e.clientY-py)*0.3, 4, 90);
   px=e.clientX; py=e.clientY; syncControl('sun_azimuth_deg'); syncControl('sun_elevation_deg');
 });
-// on a touch device the keyboard / drag hints don't apply — show the swipe gestures instead
-if(window.matchMedia && matchMedia('(pointer: coarse)').matches)
-  document.getElementById('hint').innerHTML = 'swipe <b>↕</b> presets · <b>↔</b> time of day';
+// on a touch device the keyboard / drag hints don't apply — show the swipe + panel gestures instead
+if(coarse)
+  hint.innerHTML = 'swipe <b>↕</b> scenes · <b>↔</b> time · <b>double-tap</b> panel · <b>hold</b> peek';
 // ---- arrow-key scene stepping: prev/next preset with a cloud-bloom transition (spec §9). The dropdown
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
@@ -562,30 +609,23 @@ buildPanel();
 
 // ===========================================================================
 // Welcome gate — the page opens on a faint 'memories' background (the §1 north-
-// star look) under an intro overlay. "feel" un-dims the canvas, cloud-bloom
-// crossfades to the editor's default look, then slides the dev panel in. After
-// that it's the normal editor (D toggles the panel as usual).
+// star look) under an intro overlay. "feel" un-dims the canvas and cloud-bloom
+// crossfades to the editor's default look. On desktop the dev panel then slides
+// in (D toggles it thereafter); on TOUCH it stays hidden — the art stands alone
+// until a double-tap brings it up (press-and-hold peeks; spec §9).
 // ===========================================================================
 (function(){
   const welcome=document.getElementById('welcome'), feel=document.getElementById('feel');
-  const hint=document.getElementById('hint');
   let started=false;
-  function slideInPanel(){
-    if(!dev.classList.contains('hidden')) return;   // first reveal only (idempotent vs. the fallback timer)
-    dev.classList.add('offscreen');                 // park it off the left edge...
-    dev.classList.remove('hidden');                 // ...reveal it there...
-    void dev.offsetWidth;                            // ...reflow so the next change animates...
-    dev.classList.remove('offscreen');              // ...and slide it in
-    hint.classList.remove('gone');                  // bring the key hints up with it
-  }
+  function arrive(){ if(coarse) hint.classList.remove('gone'); else slideInPanel(); }  // touch waits for a double-tap
   feel.addEventListener('click',()=>{
     if(started) return; started=true;
     document.body.classList.remove('intro');        // un-dim the canvas to full strength
     welcome.classList.add('out');                   // dissolve the intro text
     setTimeout(()=>{ welcome.style.display='none'; }, 1000);
     eng.transitionTo(getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec §9)
-      onEnd:()=>{ refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); setTimeout(slideInPanel,300); } });
-    setTimeout(()=>{ refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); slideInPanel(); }, 5500);  // fallback if onEnd never fires
+      onEnd:()=>{ refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); setTimeout(arrive,300); } });
+    setTimeout(()=>{ refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); arrive(); }, 5500);  // fallback if onEnd never fires
   });
 })();
 </script>
