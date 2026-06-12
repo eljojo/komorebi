@@ -1,6 +1,6 @@
 // Tests for profiler.js — the pure auto-profiler logic. Run: `bun test profiler.test.js`.
 import { test, expect } from "bun:test";
-import { AXES, axisValue, proposeVariants } from "./profiler.js";
+import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from "./profiler.js";
 
 test("AXES carries the audit-classified taxonomy", () => {
   const by = Object.fromEntries(AXES.map(a => [a.key, a]));
@@ -17,12 +17,94 @@ test("AXES carries the audit-classified taxonomy", () => {
   expect(by.chromatic_aberration.proposable).toBe(false);
   // render resolution is the auto-scaler's runtime lever — not a stylistic axis, so it isn't here at all
   expect(by.res).toBeUndefined();
+  // opt-in 'tune' optimizations: measured + auto-proposed, may change the look (off by default in the engine)
+  expect(by.bake_resolution.cls).toBe("tune");
+  expect(by.bake_resolution.proposable).toBe(true);
+  expect(by.bake_resolution.pass).toBe("bake");
+  expect(by.adaptive_motion.cls).toBe("tune");
+  expect(by.adaptive_motion.proposable).toBe(true);
+  expect(by.adaptive_motion.measure).toBe("skipfrac");   // special: cost is a frame-skip fraction, not a per-pass ablation
   // every axis has a label, a class, and a valid affected pass
   for (const a of AXES) {
     expect(typeof a.label).toBe("string");
-    expect(["safe", "risky", "style"]).toContain(a.cls);
+    expect(["safe", "risky", "style", "tune"]).toContain(a.cls);
     expect(["transport", "bake", "both"]).toContain(a.pass);
   }
+});
+
+test("FRAME_BUDGET_MS is one 60fps frame", () => {
+  expect(FRAME_BUDGET_MS).toBeCloseTo(1000 / 60, 6);
+});
+
+test("quality axes carry an up-level + gain priority; upValue lifts toward it or null at the ceiling", () => {
+  const a = Object.fromEntries(AXES.map(x => [x.key, x]));
+  // each safe quality axis can be pushed richer
+  expect(upValue(a.sample_count, { sample_count: 32 })).toBe(48);
+  expect(upValue(a.tex_resolution, { tex_resolution: 1024 })).toBe(2048);
+  expect(upValue(a.layer_count, { layer_count: 3 })).toBe(4);          // MAX_LAYERS
+  // already at/above the ceiling -> nothing to add
+  expect(upValue(a.sample_count, { sample_count: 48 })).toBe(null);
+  expect(upValue(a.layer_count, { layer_count: 4 })).toBe(null);
+  // visual-priority order: samples (softer penumbra) > tex res (sharper leaf) > layers (more depth tiers)
+  expect(a.sample_count.gain).toBeGreaterThan(a.tex_resolution.gain);
+  expect(a.tex_resolution.gain).toBeGreaterThan(a.layer_count.gain);
+  // axes with no up-level (cut-only / non-quality) yield null
+  expect(upValue(a.bake_resolution, { bake_resolution: 0, tex_resolution: 1024 })).toBe(null);
+  expect(upValue(a.foliage_density, { foliage_density: 1.0 })).toBe(null);
+});
+
+test("axisValue resolves bake_resolution's effective base (0 follows tex_resolution) and toggles adaptive on", () => {
+  const a = Object.fromEntries(AXES.map(x => [x.key, x]));
+  // bake_resolution 0 means 'follow tex_resolution' -> a cut toward 768 is real against the followed 1024
+  expect(axisValue(a.bake_resolution, { bake_resolution: 0, tex_resolution: 1024 })).toBe(768);
+  // already lower than the cut level -> nothing to cut
+  expect(axisValue(a.bake_resolution, { bake_resolution: 768, tex_resolution: 1024 })).toBe(null);
+  // adaptive is a toggle: the 'cut' is enabling it; once on there's nothing left to propose
+  expect(axisValue(a.adaptive_motion, { adaptive_motion: false })).toBe(true);
+  expect(axisValue(a.adaptive_motion, { adaptive_motion: true })).toBe(null);
+});
+
+const IMPROVE_BASE = { sample_count: 24, tex_resolution: 1024, layer_count: 2 };
+
+test("proposeImprove returns one variant of the highest-value upgrades that fit the spare budget", () => {
+  // spare 4ms, 0.7 safety -> 2.8ms to spend. costs(ms): samples 1.5, tex 3.0, layers 1.0
+  const costs = { sample_count: 1.5, tex_resolution: 3.0, layer_count: 1.0 };
+  const v = proposeImprove(IMPROVE_BASE, costs, 4);
+  expect(v).not.toBeNull();
+  expect(v.name).toBe("improve");
+  // greedy by priority: samples(1.5) fits, tex(+3.0=4.5) overflows -> skipped, layers(+1.0=2.5) fits
+  expect(v.applied.map(s => s.key)).toEqual(["sample_count", "layer_count"]);
+  expect(v.params.sample_count).toBe(48);
+  expect(v.params.layer_count).toBe(4);
+  expect(v.params.tex_resolution).toBe(1024);          // untouched — it didn't fit
+  expect(v.estAddedCost).toBeCloseTo(2.5, 6);
+});
+
+test("proposeImprove makes no recommendation when there's no room or nothing fits", () => {
+  const costs = { sample_count: 1.5, tex_resolution: 3.0, layer_count: 1.0 };
+  expect(proposeImprove(IMPROVE_BASE, costs, 0)).toBeNull();        // no spare
+  expect(proposeImprove(IMPROVE_BASE, costs, -2)).toBeNull();       // over budget already
+  expect(proposeImprove(IMPROVE_BASE, costs, 1)).toBeNull();        // 0.7ms budget — even the cheapest (1.0) doesn't fit
+});
+
+test("proposeImprove makes no recommendation when every quality axis is already maxed", () => {
+  const maxed = { sample_count: 48, tex_resolution: 2048, layer_count: 4 };
+  const costs = { sample_count: 1.0, tex_resolution: 1.0, layer_count: 1.0 };
+  expect(proposeImprove(maxed, costs, 100)).toBeNull();              // huge budget, but nothing left to improve
+});
+
+test("proposeVariants folds tune cuts into the most aggressive rung", () => {
+  const base = { sample_count: 32, tex_resolution: 1024, layer_count: 3, foliage_density: 1.65,
+                 chromatic_aberration: 0, bake_resolution: 0, adaptive_motion: false };
+  const costs = { sample_count: 0.25, foliage_density: 0.30, bake_resolution: 0.20, adaptive_motion: 0.15 };
+  const v = proposeVariants(base, costs);
+  const min = v[v.length - 1];                                       // the aggressive rung
+  expect(min.applied.some(s => s.key === "bake_resolution")).toBe(true);
+  expect(min.applied.some(s => s.key === "adaptive_motion")).toBe(true);
+  expect(min.params.bake_resolution).toBe(768);
+  expect(min.params.adaptive_motion).toBe(true);
+  // the lite rung stays a single safe cut — tune opts only ride the aggressive rung
+  expect(v[0].applied.every(s => s.cls === "safe")).toBe(true);
 });
 
 test("axisValue returns the lightest degraded value, or null when nothing to cut", () => {

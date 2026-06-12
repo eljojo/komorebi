@@ -9,7 +9,7 @@ import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS } from "./komorebi.js";
 // tone-map + wind-pattern (live uniforms / a table swap, snapped not tweened), and the legacy clusters_per_layer.
 const KNOWN_EXCLUDED = [
   "clusters_per_layer", "tone_map", "wind_pattern",
-  "drift_auto", "auto_quality", "show_source", "show_layer", "show_layer_index",
+  "drift_auto", "auto_quality", "adaptive_motion", "adaptive_idle_fps", "show_source", "show_layer", "show_layer_index",
 ];
 
 test("the three transition classes are pairwise disjoint", () => {

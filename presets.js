@@ -129,7 +129,7 @@ export const PRESETS = {
     "auto_quality": true,
   }),
   'afternoon 7': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,

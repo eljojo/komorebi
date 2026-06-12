@@ -21,6 +21,7 @@
 
 const DEG = Math.PI / 180, TAU = Math.PI*2;
 const MAX_SAMPLES = 48;
+const BAKE_MIN = 768;   // floor auto_quality trims bake_resolution to below the knee (§9)
 const MAX_LAYERS = 4;
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
@@ -64,7 +65,7 @@ const CANOPY_KEYS = [
 ];
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
   'branch_levels','branch_children','limb_count','layer_count',
-  'tex_resolution','seed','sample_count','eclipse',   // eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
+  'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
 ];   // (tone_map is a live uniform: it just snaps — under the bloom if one's already running, else at the end — never forces one)
 const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back to the cloud dissolve (don't regrow per frame)
 
@@ -133,6 +134,7 @@ const DEFAULTS = {
   trans_r: 0.04, trans_g: 0.35, trans_b: 0.06,   // per-channel transmittance (green passes)
   canopy_extent_m: 12.0,           // world size of baked layers (>= view + 2*max shift)
   tex_resolution: 2048,
+  bake_resolution: 1536,           // TUNE (§9): bake-pass / layer-texture size; 0 = follow tex_resolution. Ships at 1536 (cheaper-bake baseline). auto_quality trims it below the knee like samples; set 0 (follow) per look for a full-res bake.
   seed: 1234,
   // Transport
   sun_elevation_deg: 55,
@@ -178,6 +180,8 @@ const DEFAULTS = {
   drift_speed: 0.4,
   // Debug / runtime
   auto_quality: false,             // watch fps; trim render resolution then samples to hold ~60 fps
+  adaptive_motion: true,           // TUNE (§9): while motion is low, render the heavy passes at adaptive_idle_fps and re-present the rest. Ships on; set false for the unchanged direct-to-screen path.
+  adaptive_idle_fps: 30,           // the reduced cadence adaptive_motion falls to in low-motion frames
   show_source: true,
   show_layer: false,
   show_layer_index: 0,
@@ -459,6 +463,16 @@ void main(){
   frag = vec4(pow(T, vec3(1.0/2.2)), 1.0);
 }`;
 
+// plain present blit (TUNE §9 adaptive frame-rate): copy the offscreen-rendered frame straight to screen.
+// transport already wrote final display-encoded colour into the target, so this is a verbatim 1:1 copy
+// (NEAREST, identical size) — the re-presented frame is byte-identical to the one transport drew.
+const FS_PRESENT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+out vec4 frag;
+void main(){ frag = texture(uTex, vUv); }`;
+
 const VS_POINTS = `#version 300 es
 precision highp float;
 layout(location=0) in vec2 aOff;     // radians
@@ -524,7 +538,7 @@ function create(canvas, opts){
   const params = Object.assign({}, DEFAULTS, opts.params || {});
   // Auto-quality runtime throttle (driven by the params.auto_quality toggle). Holds the live
   // resolution / sample-count it trims to. Never touches the artistic params.
-  const perf = { auto:false, quality:1, resScale:1, sampleCount:params.sample_count, acc:0, lowCount:0, hiCount:0, upWait:20 };
+  const perf = { auto:false, quality:1, resScale:1, sampleCount:params.sample_count, bres:0, acc:0, lowCount:0, hiCount:0, upWait:20 };  // bres = size the layer textures are currently built at (so applyQuality knows when to reallocate)
   // Motion — one time-driven state, two bands (spec §5). u = longitudinal sway fraction (signed, along the
   // effective wind), uLat = lateral (crosswind) sway fraction; each its own spring. windX/Y = the effective
   // wind direction after the weather veer; weatherS = the live weather strength multiplier (read by the HUD);
@@ -534,6 +548,15 @@ function create(canvas, opts){
   // params morph, the grove swaps once at the bloom peak, and `bloom` is a transient overcast that hides it.
   const trans = { active:false, t:0, dur:1.5, from:null, to:null, swapped:false, structDiff:false, canopyMorph:false, bloom:0, onEnd:null };
   const effCloud = () => clamp(lerp(params.cloud_thickness, 1, trans.bloom), 0, 1);  // cloud, swollen toward overcast mid-transition
+  const bakeBaseline = () => (params.bake_resolution > 0 ? params.bake_resolution|0 : params.tex_resolution|0);  // TUNE §9: decoupled bake size; 0 follows tex_resolution.
+  // Live bake / layer-texture size. Pure function of quality + params: when auto_quality is engaged it trims the
+  // bake below the knee (q<0.5) alongside samples, snapped to 256 so the textures only reallocate at a level
+  // boundary — not on every fps nudge. rebuildTextures/bake both read this (transport samples by UV → smaller = softer).
+  const bakeRes = () => {
+    const full = bakeBaseline();
+    if(!perf.auto || perf.quality >= 0.5) return full;
+    return clamp(Math.round(lerp(BAKE_MIN, full, perf.quality/0.5)/256)*256, BAKE_MIN, full);
+  };
 
   function compile(type, src){
     const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
@@ -551,6 +574,7 @@ function create(canvas, opts){
   const progBake = program(VS_BAKE, FS_BAKE);
   const progTransport = program(VS_FULL, FS_TRANSPORT);
   const progBlit = program(VS_FULL, FS_BLIT);
+  const progPresent = program(VS_FULL, FS_PRESENT);                   // adaptive frame-rate: offscreen frame -> screen
   const progPoints = EDITOR ? program(VS_POINTS, FS_POINTS) : null;   // editor-only debug-overlay programs
   const progViz = EDITOR ? program(VS_VIZ, FS_VIZ) : null;
 
@@ -574,6 +598,7 @@ function create(canvas, opts){
     layers:[0,1,2,3].map(i=>loc(progTransport,`uLayer[${i}]`)),
   };
   U.blit = { tex:loc(progBlit,'uTex') };
+  U.present = { tex:loc(progPresent,'uTex') };
   if(EDITOR){   // editor-only debug-overlay uniforms
     U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
     U.viz = { point:loc(progViz,'uPoint'), pointAlpha:loc(progViz,'uPointAlpha'), lineAlpha:loc(progViz,'uLineAlpha') };
@@ -614,6 +639,10 @@ function create(canvas, opts){
   let clusterTex = null;       // per-clump dynamic bend angles (limb, twig), updated each frame
   let clusterGeomTex = null;   // per-clump static geometry (clump centre + trunk pivot)
   let benchFBO=null, benchTex=null, benchW=0, benchH=0;   // profiler stress-burst target (EDITOR; hoisted here so dispose() can free it)
+  // adaptive frame-rate (TUNE §9): offscreen present target + cadence state. presentFBO/presentTex are canvas-sized
+  // and allocated lazily on first use (so a look that never enables adaptive_motion pays nothing).
+  let presentFBO=null, presentTex=null, presentW=0, presentH=0, adaptiveLastRender=0, adaptiveHot=true;
+  const ADAPT_HI=0.05, ADAPT_LO=0.02;   // hysteresis on the motion magnitude: above HI render every frame, below LO drop to idle_fps
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01 };
 
   function makeLayerTexture(size){
@@ -629,7 +658,8 @@ function create(canvas, opts){
   function rebuildTextures(){
     layerTex.forEach(t=>{ gl.deleteTexture(t); });
     layerTex = [];
-    const res = params.tex_resolution|0;
+    const res = bakeRes();
+    perf.bres = res;                                 // remember the built size; applyQuality reallocates when bakeRes() crosses it
     for(let i=0;i<MAX_LAYERS;i++){
       layerTex.push(makeLayerTexture(i < params.layer_count ? res : 1));
     }
@@ -833,7 +863,7 @@ function create(canvas, opts){
 
   // ---- bake leaves into per-layer optical-depth textures ---------------------
   function bake(){
-    const res = params.tex_resolution|0;
+    const res = bakeRes();
     const E = params.canopy_extent_m;
     gl.useProgram(progBake);
     gl.uniform2f(U.bake.origin, -E/2, -E/2);
@@ -1114,15 +1144,17 @@ function create(canvas, opts){
     if(!perf.auto){                                   // off -> restore the user's full quality
       perf.resScale = 1;
       if(perf.sampleCount !== params.sample_count){ perf.sampleCount = params.sample_count; regenSource(); }
+      if(bakeRes() !== perf.bres){ rebuildTextures(); bake(); }   // bake back to baseline if a prior auto session trimmed it
       return;
     }
     const q = perf.quality, KNEE = 0.5, RES_MIN = 0.5, SAMP_MIN = 6;
     let res, samp;
     if(q >= KNEE){ res = lerp(RES_MIN, 1, (q-KNEE)/(1-KNEE)); samp = params.sample_count; }   // resolution first
-    else         { res = RES_MIN; samp = Math.round(lerp(SAMP_MIN, params.sample_count, q/KNEE)); } // then samples
+    else         { res = RES_MIN; samp = Math.round(lerp(SAMP_MIN, params.sample_count, q/KNEE)); } // then samples (and bake, below)
     perf.resScale = res;
     samp = clamp(samp, 3, Math.max(3, params.sample_count));
     if(samp !== perf.sampleCount){ perf.sampleCount = samp; regenSource(); }
+    if(bakeRes() !== perf.bres){ rebuildTextures(); bake(); }     // bake_resolution trims with quality below the knee (§9); realloc only at a snapped boundary
   }
   function tunePerf(dtms, fps){
     perf.acc += dtms;
@@ -1473,22 +1505,86 @@ function create(canvas, opts){
     // picker, created per-comparison) leaves zero GPU residue when closed. A disposed engine must not be reused.
     dispose(){
       alive = false;
-      [progBake, progTransport, progBlit, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
+      [progBake, progTransport, progBlit, progPresent, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
       layerTex.forEach(t => { gl.deleteTexture(t); });
-      [clusterTex, clusterGeomTex, benchTex].forEach(t => { if(t) gl.deleteTexture(t); });
-      [bakeFBO, benchFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
+      [clusterTex, clusterGeomTex, benchTex, presentTex].forEach(t => { if(t) gl.deleteTexture(t); });
+      [bakeFBO, benchFBO, presentFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       [emptyVAO, srcDbgVAO, vizVAO].forEach(v => { if(v) gl.deleteVertexArray(v); });
       [quadBuf, srcDbgBuf, vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });
       if(EDITOR) setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     },
-    ...(EDITOR ? { drawSourceInset, drawTreeInset, treeInsetHit, profiler, snapshotMotion, applyMotion, setMotionSource } : {}) };   // editor-only handles, stripped from the player build
+    ...(EDITOR ? { drawSourceInset, drawTreeInset, treeInsetHit, profiler, snapshotMotion, applyMotion, setMotionSource,
+                   isLowMotion: () => motionMagnitude() < ADAPT_LO } : {}) };   // editor-only handles, stripped from the player build
+  // ---- adaptive frame-rate helpers (TUNE §9) ----
+  function ensureFrameTarget(){                       // lazy canvas-sized RGBA8 present target; reallocated on resize
+    const w=canvas.width, h=canvas.height;
+    if(presentFBO && presentW===w && presentH===h) return;
+    if(presentTex) gl.deleteTexture(presentTex);
+    if(!presentFBO) presentFBO=gl.createFramebuffer();
+    presentTex=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, presentTex);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);   // 1:1 same-size copy -> NEAREST is exact, no softening
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, presentFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, presentTex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    presentW=w; presentH=h;
+  }
+  function presentFrame(){                            // blit the last rendered frame to screen (cheap; runs every rAF under adaptive)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0,0,canvas.width,canvas.height);
+    gl.disable(gl.BLEND);
+    gl.useProgram(progPresent);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, presentTex); gl.uniform1i(U.present.tex, 0);
+    gl.bindVertexArray(emptyVAO);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+  }
+  // motion magnitude: how fast the rendered image is changing. Driven by the wind springs (a steady lean still
+  // flutters the leaves every frame, so |u| counts) — NOT by slow auto-drift, which is meant to run at idle_fps.
+  // Hysteresis between LO/HI so it doesn't flap at the boundary. Returns true if this frame is due to render heavy.
+  function motionMagnitude(){   // also read by the editor's profiler to estimate adaptive's skip fraction
+    return Math.max(Math.abs(motion.u), Math.abs(motion.uLat),
+                    Math.abs(motion.v)*0.5, Math.abs(motion.vLat)*0.5,
+                    hier ? hier.maxV*0.5 : 0);
+  }
+  function adaptiveDue(now){
+    const m = motionMagnitude();
+    if(adaptiveHot){ if(m < ADAPT_LO) adaptiveHot=false; }
+    else if(m > ADAPT_HI) adaptiveHot=true;
+    if(adaptiveHot) return true;                                       // moving -> every frame (no judder on real wind)
+    return (now - adaptiveLastRender) >= 1000/Math.max(1, params.adaptive_idle_fps);   // low -> idle cadence
+  }
   function frame(now){
     if(!alive || paused) return;                     // dispose() halts permanently; setPaused(true) halts until resumed
     const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1; eng.fps=fps;
     if(perf.auto) tunePerf(dtms, fps);               // auto-quality: nudge resolution/samples toward 60 fps
     resize();
+    // adaptive frame-rate (opt-in): only off-transition, non-debug. While motion is low, render the heavy passes
+    // at adaptive_idle_fps into presentTex and re-present it the rest of the time; off -> the unchanged path below.
+    if(params.adaptive_motion && !trans.active && !params.show_layer){
+      if(!adaptiveDue(now)){                          // skip: re-present the last rendered frame (byte-identical), no bake/transport
+        presentFrame();
+        if(eng.onFrame) eng.onFrame(dtms);
+        requestAnimationFrame(frame);
+        return;
+      }
+      const dt = clamp((now - adaptiveLastRender)/1000, 0, 1/15);   // elapsed since last HEAVY render (skipped frames fold in)
+      adaptiveLastRender = now;
+      if(motionActive()){ motionTick(dt); timed('bake', bake); }
+      ensureFrameTarget();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, presentFBO);
+      gl.viewport(0,0,presentW,presentH);
+      timed('transport', drawTransportInto);          // heavy transport -> offscreen
+      presentFrame();                                 // offscreen -> screen
+      if(eng.onFrame) eng.onFrame(dtms);
+      requestAnimationFrame(frame);
+      return;
+    }
     const dt = dtms/1000;
     if(trans.active){                                // a running transition owns the re-source/re-bake each frame
       if(motionActive()) tick(dt);                   // keep wind alive; the morph re-asserts drift_phase right after

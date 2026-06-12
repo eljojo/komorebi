@@ -1,5 +1,10 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  // Lint all hand-written JS. Exclude the generated bundle (dist/, *.min.js) and the HTML pages (their
+  // embedded CSS isn't what we're linting here — this is a JS lint).
+  "files": {
+    "includes": ["**", "!dist", "!**/*.min.js", "!**/*.html"]
+  },
   "linter": {
     "enabled": true,
     "rules": {
