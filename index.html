@@ -201,6 +201,7 @@ const PANEL = [
   ['s','ambient_skylight','ambient',0,3,0.01,''],
   ['s','sky_turbidity','haze β',0,0.5,0.01,''],
   ['s','mesopic_strength','dusk rods',0,1,0.01,''],
+  ['s','chromatic_aberration','diffraction',0,6,0.1,''],
   ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
 
   ['h','Background'],
@@ -350,6 +351,7 @@ const TIPS = {
   ambient_skylight:"<b>How much the sky fills the shadows.</b> The light that isn't direct sun — now coloured for real (blue by day, warmer at dusk). Up = softer, lifted shade; down = deep, moody shadows.",
   sky_turbidity:"<b>Haze in the air.</b> Clean air = low; dust or humidity = higher, which makes a low sun redder and a sunset more washed-out orange.",
   mesopic_strength:"<b>How blue the shadows go at dusk.</b> As light fades your eye quietly switches to night vision, which is colour-blind and blue-ish — so the dim shade cools toward grey-blue while the bright dapples stay warm. Only kicks in at low sun. 0 = off.",
+  chromatic_aberration:"<b>Prism fringe — red and blue split at the leaf edges.</b> Light bends round each leaf edge by an angle that grows with its wavelength (diffraction, θ∝λ), so red spreads a touch wider than blue and every dapple gains a warm outer rim and a cool core. Rides the same shift as the dapples, so it grows with canopy height and the low-sun stretch for free. 0 = off; ~1 is the true wavelength spread, higher exaggerates.",
   tone_map:"<b>How over-bright light is squeezed onto the screen.</b> ACES is the soft, filmy default; Reinhard is simpler; None just clips the brightest bits.",
   // Background
   'Background':"<b>The floor the light lands on.</b> Plain white by default; tint it and it reads like real ground. The dapples reflect off it — deep shade goes dark earth, midtones warm brown, and only the hottest spots still burn toward white. (A couple of the afternoon looks carry a warm Mount-Royal dirt; all three at 1 = white floor.)",

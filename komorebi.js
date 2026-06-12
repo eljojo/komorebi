@@ -40,7 +40,7 @@ const MORPH_KEYS = [
   'core_angular_radius_deg','halo_angular_radius_deg','core_weight_fraction','cloud_thickness','eclipse_amount',
   'canopy_base_height_m','canopy_thickness_m',                          // layer heights — read live, no rebuild
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','far_smear','exposure','contrast',
-  'ambient_skylight','sky_turbidity','mesopic_strength',
+  'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'wind_strength','wind_gustiness','wind_direction_deg','gust_frequency','weather_variability','weather_speed','gust_attack','gust_decay',
   'sway_stiffness','sway_ceiling','damping_ratio','backlash_gain','sway_height_gain',
@@ -145,6 +145,7 @@ const DEFAULTS = {
   ambient_skylight: 0.5,
   sky_turbidity: 0.05,             // atmospheric haze β (Ångström); reddens low sun, desaturates dusk
   mesopic_strength: 0.6,           // Purkinje: how far rods cool the deep shade at dusk (0 off; gated to low sun)
+  chromatic_aberration: 0.0,       // leaf-edge diffraction (θ∝λ): per-channel red/blue spread of the dapples (0 = off, presets untouched)
   tone_map: 2,                     // 0 none, 1 reinhard, 2 aces
   ground_r: 1.0, ground_g: 1.0, ground_b: 1.0,   // ground albedo (floor reflectance, spec §4.7): white floor by default — a few looks set a warm dirt
   // Wind — coherent band (spec §5.1)
@@ -358,6 +359,7 @@ uniform float uContrast;
 uniform int   uToneMap;
 uniform float uTwilight;          // global "sun is low" rod weight (from elevation, §3.5)
 uniform float uMesopic;           // Purkinje strength (the mesopic_strength knob)
+uniform vec3  uChroma;            // per-channel diffraction spread of the transport shift (θ∝λ); (1,1,1) = off
 
 vec3 reinhard(vec3 c){ return c/(1.0+c); }
 vec3 aces(vec3 x){ float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
@@ -365,6 +367,16 @@ vec3 aces(vec3 x){ float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
 vec3 tap(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
   return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
+}
+// edge diffraction (spec §3.6): light bends round each leaf edge by an angle ∝ λ, so red spreads wider than
+// blue — each channel reads its sun-image at a shift scaled by its own wavelength (cs = per-channel scale,
+// green=1). The colour fringe lands at every leaf/dapple edge and rides the same H*g shift, so it grows with
+// canopy height and the low-sun ellipse for free. Three single-channel taps; only taken when diffraction is on.
+vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
+  float aR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent).r;
+  float aG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent).g;
+  float aB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent).b;
+  return exp(-vec3(aR,aG,aB));      // per-channel optical depth -> transmittance, each at its dispersed path
 }
 void main(){
   // ---- tilted pinhole camera (spec §4.7): fragment -> ground point on z=0, plus a far-field haze factor.
@@ -396,16 +408,24 @@ void main(){
     extraThrow = uFarSmear * fore;                                     // extra throw -> wider, softer down-sun penumbra far off
   }
   vec3 acc = vec3(0.0);
+  bool ca = (uChroma.r!=1.0 || uChroma.g!=1.0 || uChroma.b!=1.0);   // diffraction on? else the byte-identical single-tap path
   for(int i=0;i<MAX_SAMPLES;i++){
     if(i>=uSampleCount) break;
     vec2 g = uProj * uSamples[i].xy;        // ground displacement per unit height
     float w = uSamples[i].z;
     // light must clear EVERY layer -> multiply transmittance; shift grows with height
     vec3 T = vec3(1.0);
-    if(uLayerCount>0) T *= tap(uLayer[0], world + (uLayerHeight[0]+extraThrow)*g);
-    if(uLayerCount>1) T *= tap(uLayer[1], world + (uLayerHeight[1]+extraThrow)*g);
-    if(uLayerCount>2) T *= tap(uLayer[2], world + (uLayerHeight[2]+extraThrow)*g);
-    if(uLayerCount>3) T *= tap(uLayer[3], world + (uLayerHeight[3]+extraThrow)*g);
+    if(ca){   // diffraction: read each channel at its own λ-scaled shift (red spreads more) -> colour fringe at every leaf edge
+      if(uLayerCount>0) T *= tapCA(uLayer[0], world, g, uLayerHeight[0]+extraThrow, uChroma);
+      if(uLayerCount>1) T *= tapCA(uLayer[1], world, g, uLayerHeight[1]+extraThrow, uChroma);
+      if(uLayerCount>2) T *= tapCA(uLayer[2], world, g, uLayerHeight[2]+extraThrow, uChroma);
+      if(uLayerCount>3) T *= tapCA(uLayer[3], world, g, uLayerHeight[3]+extraThrow, uChroma);
+    } else {
+      if(uLayerCount>0) T *= tap(uLayer[0], world + (uLayerHeight[0]+extraThrow)*g);
+      if(uLayerCount>1) T *= tap(uLayer[1], world + (uLayerHeight[1]+extraThrow)*g);
+      if(uLayerCount>2) T *= tap(uLayer[2], world + (uLayerHeight[2]+extraThrow)*g);
+      if(uLayerCount>3) T *= tap(uLayer[3], world + (uLayerHeight[3]+extraThrow)*g);
+    }
     acc += w*T;                              // sum of shifted sharp shadows == soft shadow
   }
   vec3 col = (acc*uSunColor + uAmbient) * uGround;   // reflect the floor irradiance off the ground albedo (dirt); white == old look
@@ -543,7 +563,7 @@ function create(canvas, opts){
     farSmear:loc(progTransport,'uFarSmear'),
     origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
     sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'), ground:loc(progTransport,'uGround'),
-    twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'),
+    twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'), chroma:loc(progTransport,'uChroma'),
     exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
     layers:[0,1,2,3].map(i=>loc(progTransport,`uLayer[${i}]`)),
   };
@@ -1141,6 +1161,10 @@ function create(canvas, opts){
     // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
     gl.uniform1f(U.tp.twilight, smoothstep(30, 4, params.sun_elevation_deg));
     gl.uniform1f(U.tp.mesopic, params.mesopic_strength);
+    // edge diffraction (§3.6): per-channel λ-proportional spread of the transport shift. Green (555nm) is the
+    // reference; red(620) spreads more, blue(470) less. 0 -> (1,1,1), the byte-identical single-tap path.
+    { const d=Math.max(0, params.chromatic_aberration), LR=620/555, LB=470/555;
+      gl.uniform3f(U.tp.chroma, 1+d*(LR-1), 1, Math.max(0, 1+d*(LB-1))); }   // floor blue ≥0: diffraction shrinks the spread to zero, never reverses it
     gl.uniform1f(U.tp.exposure, params.exposure);
     gl.uniform1f(U.tp.contrast, params.contrast);
     gl.uniform1i(U.tp.tone, params.tone_map);
