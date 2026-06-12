@@ -79,22 +79,24 @@ function airMass(hDeg){                       // Kasten-Young 1989 — finite at
   const h = Math.max(hDeg, 0);
   return 1/(Math.sin(h*DEG) + 0.50572*Math.pow(h+6.07995, -1.6364));
 }
-function atmosphere(hDeg, beta, ambientSky){
+const _atmT=[0,0,0], _atmSky=[0,0,0];   // module scratch for the 3-band intermediates (written + read within one synchronous call)
+// Fills the caller's `out` ({sun:[3], ambient:[3]}) in place rather than allocating, so a static frame makes no garbage.
+function atmosphere(out, hDeg, beta, ambientSky){
   const m = airMass(hDeg);
-  const T=[0,0,0], sky=[0,0,0]; let tmax=1e-9, smax=1e-9;
+  let tmax=1e-9, smax=1e-9;
   for(let i=0;i<3;i++){
     const ext = TAU_OZ[i] + beta*TAU_AER[i];
-    T[i]   = Math.exp(-m*(TAU_RAY[i] + ext));   // direct-beam transmittance -> sun disk
-    sky[i] = TAU_RAY[i]*Math.exp(-m*ext);       // Rayleigh single-scatter through ozone/aerosol -> sky
-    tmax=Math.max(tmax,T[i]); smax=Math.max(smax,sky[i]);
+    _atmT[i]   = Math.exp(-m*(TAU_RAY[i] + ext));   // direct-beam transmittance -> sun disk
+    _atmSky[i] = TAU_RAY[i]*Math.exp(-m*ext);       // Rayleigh single-scatter through ozone/aerosol -> sky
+    tmax=Math.max(tmax,_atmT[i]); smax=Math.max(smax,_atmSky[i]);
   }
-  const sun=[T[0]/tmax, T[1]/tmax, T[2]/tmax]; // normalize to HUE; exposure carries brightness
-  const kA = 0.08*ambientSky;
-  const dusk = smoothstep(15,0,hDeg)*0.5;       // belt-of-Venus: warm beam bleeds into the sky near sunset
-  return { sun, ambient:[
-    (sky[0]/smax + dusk*sun[0])*kA,
-    (sky[1]/smax + dusk*sun[1])*kA,
-    (sky[2]/smax + dusk*sun[2])*kA ] };
+  const su=out.sun, am=out.ambient;
+  su[0]=_atmT[0]/tmax; su[1]=_atmT[1]/tmax; su[2]=_atmT[2]/tmax;   // normalize to HUE; exposure carries brightness
+  const kA = 0.08*ambientSky, dusk = smoothstep(15,0,hDeg)*0.5;    // belt-of-Venus: warm beam bleeds into the sky near sunset
+  am[0]=(_atmSky[0]/smax + dusk*su[0])*kA;
+  am[1]=(_atmSky[1]/smax + dusk*su[1])*kA;
+  am[2]=(_atmSky[2]/smax + dusk*su[2])*kA;
+  return out;
 }
 
 // ---- default parameters. The editor edits a live copy; presets merge over this
@@ -223,14 +225,11 @@ const WIND_PATTERNS = {
   choppy:  { H:0.12, octaves:6, lean:0.30, lat:0.80, burst:0.25 },  // nervous fine high-freq, cold-front edge
   lazy:    { H:0.88, octaves:3, lean:0.62, lat:0.40, burst:0.0 },   // very slow faint stir (pairs with glisten)
 };
-// a smooth, spatially-varying, slowly-evolving wind force — sampled at each node's position.
-// perf todo — both call sites (the limb + twig loops in tickHierarchy) read only [0], so fy (2 sin) is dead
-// compute, and the returned 2-element array is allocated-then-discarded per node per tick (~500–2000/frame —
-// the top motion-path GC source). Return the scalar fx*0.7: halves the trig and drops the allocation, no visual change.
+// a smooth, spatially-varying, slowly-evolving wind force — sampled at each node's position. Returns the scalar
+// downwind component (the only one the limb/twig loops ever read); the crosswind term it used to also compute
+// and box into an array was always discarded, so this is the same number with half the trig and no per-node alloc.
 function windNoise(x, y, t, k){
-  const fx = Math.sin(x*k + t*0.9) + 0.5*Math.sin(y*k*1.3 - t*1.4 + 1.7);
-  const fy = Math.sin(y*k - t*1.1) + 0.5*Math.sin(x*k*1.3 + t*1.2 + 2.3);
-  return [fx*0.7, fy*0.7];
+  return 0.7*(Math.sin(x*k + t*0.9) + 0.5*Math.sin(y*k*1.3 - t*1.4 + 1.7));
 }
 
 // ---- skeleton growth (spec §4.5): grow real 3D branch segments from a seed ----
@@ -910,22 +909,25 @@ function create(canvas, opts){
     }
   }
 
+  // per-frame scratch reused by the look uniforms (projMatrix/layerHeights/atmosphere) so a static frame allocates
+  // nothing — they recompute fresh into these each call (no stale-cache risk: the sun-drag path mutates params
+  // without an apply(), which a dirty-flag cache would miss; the recompute itself is sub-microsecond).
+  const _proj = [0,0,0,0], _lh = new Float32Array(MAX_LAYERS), _atm = { sun:[0,0,0], ambient:[0,0,0] };
   // ---- the ellipse: angular offset -> ground displacement per unit height ----
   function projMatrix(){
     const el=Math.max(params.sun_elevation_deg,4)*DEG, az=params.sun_azimuth_deg*DEG;
     const se=Math.sin(el);
     const major=1/(se*se), minor=1/se;          // stretch along azimuth grows as sun lowers
     const ca=Math.cos(az), sa=Math.sin(az);
-    const M00=major*ca*ca+minor*sa*sa;
-    const M01=(major-minor)*ca*sa;
-    const M11=major*sa*sa+minor*ca*ca;
-    return [M00,M01,M01,M11];                    // column-major (symmetric)
+    _proj[0]=major*ca*ca+minor*sa*sa;
+    _proj[1]=_proj[2]=(major-minor)*ca*sa;
+    _proj[3]=major*sa*sa+minor*ca*ca;
+    return _proj;                                // column-major (symmetric)
   }
   function layerHeights(){
-    const h=new Float32Array(MAX_LAYERS);
     const n=params.layer_count, base=params.canopy_base_height_m, thick=params.canopy_thickness_m;
-    for(let i=0;i<MAX_LAYERS;i++) h[i]= n>1 ? base+(i/(n-1))*thick : base;
-    return h;
+    for(let i=0;i<MAX_LAYERS;i++) _lh[i]= n>1 ? base+(i/(n-1))*thick : base;
+    return _lh;
   }
 
   // ---- motion: integrate the limb and twig springs (children inherit parents) ----
@@ -943,7 +945,7 @@ function create(canvas, opts){
       const dx=hier.limbDir[2*i], dy=hier.limbDir[2*i+1];
       const torque = dx*wy - dy*wx;            // cross(limbDir,wind): tip swings downwind, sign by side —
                                                // so a uniform gust LEANS the whole canopy, never spins it
-      const n = windNoise(hier.limbPlan[2*i], hier.limbPlan[2*i+1], t, 0.4)[0];
+      const n = windNoise(hier.limbPlan[2*i], hier.limbPlan[2*i+1], t, 0.4);
       const target = lf*(u*torque + 0.6*eb*n);
       for(let s=0;s<steps;s++){ const a = kL*(target - hier.limbAngle[i]) - cL*hier.limbVel[i];
         hier.limbVel[i]+=a*h; hier.limbAngle[i]+=hier.limbVel[i]*h; }
@@ -953,7 +955,7 @@ function create(canvas, opts){
       const cxj=hier.clusterPlan[2*j], cyj=hier.clusterPlan[2*j+1];
       const rx=cxj-hier.clusterGeom[4*j+2], ry=cyj-hier.clusterGeom[4*j+3], cl=Math.hypot(rx,ry)||1e-3;  // offset from THIS tree's trunk
       const tq=(rx*wy - ry*wx)/cl;             // downwind torque about the twig's own tree trunk (same lean sense as the limb)
-      const n = windNoise(cxj, cyj, t+hier.clusterPhase[j], 1.5)[0];
+      const n = windNoise(cxj, cyj, t+hier.clusterPhase[j], 1.5);
       const target = tf*(0.4*u*tq + eb*n);
       for(let s=0;s<steps;s++){ const a = kT*(target - hier.twigAngle[j]) - cT*hier.twigVel[j];
         hier.twigVel[j]+=a*h; hier.twigAngle[j]+=hier.twigVel[j]*h; }
@@ -1087,10 +1089,11 @@ function create(canvas, opts){
     }
     if(!rebuilt){
       if(trans.canopyMorph) regenCanopy();   // regrow the morphing grove (regenCanopy republishes the carried-over sway)
-      // perf todo — bake() here is unconditional, so a plain look-crossfade (all MORPH_KEYS, same topology) over a
-      // SETTLED canopy re-rasterizes tens of thousands of leaves into an identical texture every frame for ~1.5s.
-      // Gate the bake on (trans.canopyMorph || motionActive() || drift advancing); bake once otherwise.
-      regenSource(); bake();                 // morphed cloud + leaf/drift -> source + layers
+      regenSource();                         // morphed cloud -> source (always; transport re-reads it every frame)
+      // re-bake only when the leaves actually move this frame — a grove morph, or live motion (wind/auto-drift,
+      // both of which make motionActive() true). A settled-canopy look-crossfade keeps last frame's identical bake
+      // (the tweening leaf_swing/flutter/stem knobs have no effect with motion.u≈0), so it's not re-rasterized.
+      if(trans.canopyMorph || motionActive()) bake();
     }
     if(t>=1){                                              // land exactly on the target; clear the bloom
       trans.active = false; trans.bloom = 0;
@@ -1155,9 +1158,6 @@ function create(canvas, opts){
     const E=params.canopy_extent_m;
     gl.disable(gl.BLEND);
     gl.useProgram(progTransport);
-    // perf todo — layerHeights()/projMatrix()/atmosphere() below each recompute AND allocate a fresh array/object
-    // every frame, though their inputs (canopy heights, sun angle, turbidity) change only on edit/transition. On a
-    // static look this is pure idle GC feed; cache each behind a dirty flag set when those params change.
     gl.uniform3fv(U.tp.samples, src.flat.subarray(0, src.count*3));
     gl.uniform1i(U.tp.count, src.count);
     gl.uniform1fv(U.tp.heights, layerHeights());
@@ -1171,7 +1171,7 @@ function create(canvas, opts){
     gl.uniform2f(U.tp.origin, -E/2, -E/2);
     gl.uniform2f(U.tp.extent, E, E);
     // physical sun + sky colour from solar elevation (spec §3.5): warm/red low sun, ozone-blue shadows
-    const atm = atmosphere(params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);
+    const atm = atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);
     gl.uniform3f(U.tp.sun, atm.sun[0], atm.sun[1], atm.sun[2]);
     gl.uniform3f(U.tp.ambient, atm.ambient[0], atm.ambient[1], atm.ambient[2]);
     // distance haze: the sky/ambient HUE at a steady brightness, so the far floor fades into a time-of-day-
