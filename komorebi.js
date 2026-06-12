@@ -134,7 +134,7 @@ const DEFAULTS = {
   trans_r: 0.04, trans_g: 0.35, trans_b: 0.06,   // per-channel transmittance (green passes)
   canopy_extent_m: 12.0,           // world size of baked layers (>= view + 2*max shift)
   tex_resolution: 2048,
-  bake_resolution: 1536,           // TUNE (§9): bake-pass / layer-texture size; 0 = follow tex_resolution. Ships at 1536 (cheaper-bake baseline). auto_quality trims it below the knee like samples; set 0 (follow) per look for a full-res bake.
+  bake_resolution: 1024,           // TUNE (§9): bake-pass / layer-texture size; 0 = follow tex_resolution. Ships at 1024 (cheaper-bake baseline). auto_quality trims it below the knee like samples; set 0 (follow) per look for a full-res bake.
   seed: 1234,
   // Transport
   sun_elevation_deg: 55,
