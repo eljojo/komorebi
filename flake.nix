@@ -27,13 +27,14 @@
             runtimeInputs = [ pkgs.bun ];
             text = ''exec bun dev-server.js "''${1:-8000}"'';
           };
-          # `nix run .#lint [files...]` — lint the hand-written JS (defaults to engine + presets).
+          # `nix run .#lint [files...]` — lint the hand-written JS (defaults to the engine + the pure modules;
+          # editor.js is relocated legacy and not yet biome-clean, so it's opt-in via an explicit arg).
           lint = pkgs.writeShellApplication {
             name = "lint";
             runtimeInputs = [ pkgs.biome ];
             text = ''
               if [ "$#" -eq 0 ]; then
-                exec biome lint komorebi.js presets.js
+                exec biome lint komorebi.js presets.js profiler.js presets-store.js
               else
                 exec biome lint "$@"
               fi

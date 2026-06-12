@@ -517,6 +517,10 @@ function create(canvas, opts){
   gl.getExtension('EXT_float_blend');                            // float-target blending (harmless if absent)
   if (!extCBF) fail('EXT_color_buffer_float is required (float render targets).');
   const MAX_TEX = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;  // caps the per-clump data-texture width
+  // profiling (EDITOR only): GPU timer queries for absolute per-pass ms. The extension is often absent or
+  // coarsened by browsers for privacy — callers must tolerate null (the editor falls back to the stress
+  // burst). EXT_disjoint_timer_query_webgl2 measures TIME_ELAPSED over a range of GL commands.
+  const extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
 
   const params = Object.assign({}, DEFAULTS, opts.params || {});
   // Auto-quality runtime throttle (driven by the params.auto_quality toggle). Holds the live
@@ -610,6 +614,7 @@ function create(canvas, opts){
   let hier = null;             // branch hierarchy: limb + twig spring state (built in regenCanopy)
   let clusterTex = null;       // per-clump dynamic bend angles (limb, twig), updated each frame
   let clusterGeomTex = null;   // per-clump static geometry (clump centre + trunk pivot)
+  let benchFBO=null, benchTex=null, benchW=0, benchH=0;   // profiler stress-burst target (EDITOR; hoisted here so dispose() can free it)
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01 };
 
   function makeLayerTexture(size){
@@ -1140,9 +1145,14 @@ function create(canvas, opts){
 
   // ---- render ----
   function drawTransport(){
-    const E=params.canopy_extent_m;
     gl.bindFramebuffer(gl.FRAMEBUFFER,null);
     gl.viewport(0,0,canvas.width,canvas.height);
+    drawTransportInto();
+  }
+  // the transport draw, assuming a framebuffer + viewport are already bound — so the profiler's stress burst
+  // (eng.profiler.bench) can aim it at an offscreen target without flipping to screen. On-screen path above.
+  function drawTransportInto(){
+    const E=params.canopy_extent_m;
     gl.disable(gl.BLEND);
     gl.useProgram(progTransport);
     // perf todo — layerHeights()/projMatrix()/atmosphere() below each recompute AND allocate a fresh array/object
@@ -1356,13 +1366,126 @@ function create(canvas, opts){
     resetPerf();                                       // a preset may carry auto-quality
   }
 
+  // ---- profiling primitive (EDITOR only, spec §9). The engine owns measurement because it owns the GL passes;
+  // the editor's profiler.js + UI orchestrate. `timed` defaults to a passthrough (so frame() is unaffected in
+  // the player build, where this whole block dead-strips); the editor swaps in real GPU timer queries. ----
+  let timed = (_pass, draw) => draw();
+  let motionTick = tick;   // default: this engine runs its own physics. EDITOR can swap it to mirror another instance.
+  let profiler = null;
+  if(EDITOR){
+    // timer queries: a 2-deep ring per pass, so frame N reads frame N-1's result (it isn't ready same-frame).
+    // Disjoint frames are discarded; off or unsupported -> just draw (byte-identical to the un-instrumented path).
+    let instrumenting = false;
+    const TIME_ELAPSED = 0x88BF, GPU_DISJOINT = 0x8FBB;   // EXT_disjoint_timer_query_webgl2 enums
+    const tq = { bake:{q:[null,null], i:0}, transport:{q:[null,null], i:0} };
+    timed = (pass, draw) => {
+      if(!instrumenting || !extTimer){ draw(); return; }
+      const r = tq[pass], cur = r.q[r.i&1];               // this slot's query, issued 2 frames ago (ready now)
+      if(cur){
+        if(gl.getQueryParameter(cur, gl.QUERY_RESULT_AVAILABLE) && !gl.getParameter(GPU_DISJOINT))
+          profiler[pass==='bake'?'bakeMs':'transportMs'] = gl.getQueryParameter(cur, gl.QUERY_RESULT)/1e6;
+        gl.deleteQuery(cur);
+      }
+      const q = gl.createQuery();
+      gl.beginQuery(TIME_ELAPSED, q); draw(); gl.endQuery(TIME_ELAPSED);
+      r.q[r.i&1] = q; r.i++;                               // self-advance: each pass flips its own ring per frame
+    };
+    // offscreen stress burst: render a pass n times into an off-screen RGBA8 target at the live backing size,
+    // then readPixels one texel to fence — so wall-clock spans real GPU work uncapped by vsync (one synchronous
+    // burst, not one-per-rAF). headroom = a 60fps frame budget / per-render ms. Works even where timer queries don't.
+    function ensureBenchTarget(){
+      // measure transport at MAX resolution (resScale=1), NOT the live auto-quality-trimmed backing — the
+      // profiler exists to show the cost of each stylistic decision at full quality (spec §9), and on a weak
+      // device the live canvas may already be downscaled, which would understate the true cost.
+      const dpr=Math.min(2, window.devicePixelRatio||1);
+      const w=Math.max(1,Math.round(canvas.clientWidth*dpr)), h=Math.max(1,Math.round(canvas.clientHeight*dpr));
+      if(benchFBO && benchW===w && benchH===h) return;
+      if(benchTex) gl.deleteTexture(benchTex);
+      if(!benchFBO) benchFBO=gl.createFramebuffer();
+      benchTex=gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, benchTex);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, benchFBO);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, benchTex, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      benchW=w; benchH=h;
+    }
+    function bench(pass, n){
+      n = Math.max(1, n|0);
+      const px = new Uint8Array(4);
+      if(pass==='transport'){
+        ensureBenchTarget();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, benchFBO);
+        gl.viewport(0,0,benchW,benchH);
+        const t0=performance.now();
+        for(let i=0;i<n;i++) drawTransportInto();
+        gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);     // flush/fence the burst
+        const ms=(performance.now()-t0)/n;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        return { ms, headroom: 16.67/Math.max(ms,1e-3) };
+      }
+      if(pass==='bake'){
+        const t0=performance.now();
+        for(let i=0;i<n;i++) bake();                            // bake targets its own layer FBOs
+        gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);             // fence on layer 0
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layerTex[0], 0);
+        gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+        const ms=(performance.now()-t0)/n;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        return { ms, headroom: 16.67/Math.max(ms,1e-3) };
+      }
+      return { ms:0, headroom:Infinity };
+    }
+    profiler = { hasTimer: !!extTimer, bakeMs:0, transportMs:0, setInstrument(on){ instrumenting=!!on; }, bench };
+  }
+
+  // ---- motion mirror (EDITOR only): drive this engine's wind EXACTLY from another instance instead of its own
+  // physics, so the A/B picker's two engines animate in lockstep. Safe because the profiler's variants never
+  // change the grove skeleton (tree/limb/branch/seed), so the spring arrays line up 1:1. snapshotMotion exposes
+  // live refs (read-only); applyMotion copies them in + re-uploads the bend texture; setMotionSource swaps the
+  // per-frame tick for a copy-from-source. The bake only reads angles + sway + time, so velocities aren't needed. ----
+  let snapshotMotion, applyMotion, setMotionSource;
+  if(EDITOR){
+    snapshotMotion = () => ({ m:motion, dphase:params.drift_phase, lA:hier?.limbAngle, tA:hier?.twigAngle });
+    applyMotion = (s) => {
+      if(!s) return;
+      const sm=s.m;
+      motion.time=sm.time; motion.u=sm.u; motion.v=sm.v; motion.uLat=sm.uLat; motion.vLat=sm.vLat;
+      motion.env=sm.env; motion.driveEnv=sm.driveEnv; motion.windX=sm.windX; motion.windY=sm.windY; motion.weatherS=sm.weatherS;
+      motion.sway[0]=sm.sway[0]; motion.sway[1]=sm.sway[1];
+      params.drift_phase = s.dphase;                       // incoherent band rides a param the source advances
+      if(hier && s.lA && hier.limbAngle.length===s.lA.length){
+        hier.limbAngle.set(s.lA); hier.twigAngle.set(s.tA);
+        publishBend();                                     // push the mirrored bend into the texture the bake reads
+      }
+    };
+    setMotionSource = (src) => { motionTick = src ? () => applyMotion(src.snapshotMotion()) : tick; };
+  }
+
   // ---- init + frame loop ----
   rebuildAll();
   resetPerf();
-  let last=performance.now(), fps=60;
+  let last=performance.now(), fps=60, paused=false, alive=true;
   const eng = { canvas, gl, params, perf, motion, src, trans, fps:60, apply, setParams, transitionTo, onFrame:opts.onFrame||null,
-    ...(EDITOR ? { drawSourceInset, drawTreeInset, treeInsetHit } : {}) };   // editor-only handles, stripped from the player build
+    // pause the rAF loop so a second engine instance idles at zero GPU when off-screen (the editor's A/B picker)
+    setPaused(on){ on=!!on; if(on===paused) return; paused=on; if(!on){ last=performance.now(); requestAnimationFrame(frame); } },
+    // dispose: stop the loop and free EVERY GL object + the context, so a disposable second instance (the A/B
+    // picker, created per-comparison) leaves zero GPU residue when closed. A disposed engine must not be reused.
+    dispose(){
+      alive = false;
+      [progBake, progTransport, progBlit, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
+      layerTex.forEach(t => { gl.deleteTexture(t); });
+      [clusterTex, clusterGeomTex, benchTex].forEach(t => { if(t) gl.deleteTexture(t); });
+      [bakeFBO, benchFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
+      layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
+      [emptyVAO, srcDbgVAO, vizVAO].forEach(v => { if(v) gl.deleteVertexArray(v); });
+      [quadBuf, srcDbgBuf, vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });
+      if(EDITOR) setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
+      gl.getExtension('WEBGL_lose_context')?.loseContext();
+    },
+    ...(EDITOR ? { drawSourceInset, drawTreeInset, treeInsetHit, profiler, snapshotMotion, applyMotion, setMotionSource } : {}) };   // editor-only handles, stripped from the player build
   function frame(now){
+    if(!alive || paused) return;                     // dispose() halts permanently; setPaused(true) halts until resumed
     const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1; eng.fps=fps;
     if(perf.auto) tunePerf(dtms, fps);               // auto-quality: nudge resolution/samples toward 60 fps
     resize();
@@ -1370,8 +1493,8 @@ function create(canvas, opts){
     if(trans.active){                                // a running transition owns the re-source/re-bake each frame
       if(motionActive()) tick(dt);                   // keep wind alive; the morph re-asserts drift_phase right after
       tickTransition(dt);
-    } else if(motionActive()){ tick(dt); bake(); }   // advance + re-bake only when something moves
-    if(params.show_layer) drawLayerBlit(); else drawTransport();
+    } else if(motionActive()){ motionTick(dt); timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
+    if(params.show_layer) drawLayerBlit(); else timed('transport', drawTransport);
     if(eng.onFrame) eng.onFrame(dtms);               // editor draws HUD + source inset here
     requestAnimationFrame(frame);
   }
@@ -1379,4 +1502,4 @@ function create(canvas, opts){
   return eng;
 }
 
-export { create, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG };
+export { create, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS };
