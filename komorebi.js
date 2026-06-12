@@ -224,6 +224,9 @@ const WIND_PATTERNS = {
   lazy:    { H:0.88, octaves:3, lean:0.62, lat:0.40, burst:0.0 },   // very slow faint stir (pairs with glisten)
 };
 // a smooth, spatially-varying, slowly-evolving wind force — sampled at each node's position.
+// perf todo — both call sites (the limb + twig loops in tickHierarchy) read only [0], so fy (2 sin) is dead
+// compute, and the returned 2-element array is allocated-then-discarded per node per tick (~500–2000/frame —
+// the top motion-path GC source). Return the scalar fx*0.7: halves the trig and drops the allocation, no visual change.
 function windNoise(x, y, t, k){
   const fx = Math.sin(x*k + t*0.9) + 0.5*Math.sin(y*k*1.3 - t*1.4 + 1.7);
   const fy = Math.sin(y*k - t*1.1) + 0.5*Math.sin(x*k*1.3 + t*1.2 + 2.3);
@@ -964,6 +967,9 @@ function create(canvas, opts){
     }
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, clusterTex);
+    // perf todo — clusterTex is single-buffered: this rewrites the whole row, then bake()'s VS texelFetches the
+    // SAME texture the same frame, so next frame's upload can stall on the prior bake still draining it (a
+    // per-frame GPU sync bubble). Ping-pong a 2-deep ring of cluster textures to break the write-after-read.
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, hier.nClusterTotal, 1, gl.RGBA, gl.FLOAT, hier.clusterData);
   }
   function motionActive(){
@@ -1076,6 +1082,9 @@ function create(canvas, opts){
     }
     if(!rebuilt){
       if(trans.canopyMorph) regenCanopy();   // regrow the morphing grove (regenCanopy republishes the carried-over sway)
+      // perf todo — bake() here is unconditional, so a plain look-crossfade (all MORPH_KEYS, same topology) over a
+      // SETTLED canopy re-rasterizes tens of thousands of leaves into an identical texture every frame for ~1.5s.
+      // Gate the bake on (trans.canopyMorph || motionActive() || drift advancing); bake once otherwise.
       regenSource(); bake();                 // morphed cloud + leaf/drift -> source + layers
     }
     if(t>=1){                                              // land exactly on the target; clear the bloom
@@ -1136,6 +1145,9 @@ function create(canvas, opts){
     gl.viewport(0,0,canvas.width,canvas.height);
     gl.disable(gl.BLEND);
     gl.useProgram(progTransport);
+    // perf todo — layerHeights()/projMatrix()/atmosphere() below each recompute AND allocate a fresh array/object
+    // every frame, though their inputs (canopy heights, sun angle, turbidity) change only on edit/transition. On a
+    // static look this is pure idle GC feed; cache each behind a dirty flag set when those params change.
     gl.uniform3fv(U.tp.samples, src.flat.subarray(0, src.count*3));
     gl.uniform1i(U.tp.count, src.count);
     gl.uniform1fv(U.tp.heights, layerHeights());
