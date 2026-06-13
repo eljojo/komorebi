@@ -1124,7 +1124,7 @@ function create(canvas, opts){
       // either (same indices, just bent differently — carrying their sway is the desired no-reset). But seed / depth /
       // children / limb_count / phyllotaxis / the leader↔hub azimuth flip re-mean every index, so the carry is invalid.
       topoSig: `${params.seed>>>0}|${levels}|${kids}|${lpt}|${phyllo}|${L>0?1:0}`,
-      segments, maxV:0,
+      segments, twigs, maxV:0,   // twigs (one per leaf cluster) for the 3D preview — so it scatters per twig like the bake, not per terminal segment (droop sub-segments)
     };
     // carry the in-flight sway across a regrow so the wind doesn't reset (an editor tweak or a grove-morph
     // transition). Trees/limbs are appended at the end, so indices 0..min are the same twig: copy the common
@@ -1893,23 +1893,29 @@ function create(canvas, opts){
   // identity — every canopy knob makes a new hier) and reprojected each frame; the proj buffer is reused.
   let treeLeafHier=null, treeLeafBase=null, treeLeafProj=null;
   function buildTreeLeaves(){
-    const segs=hier.segments, levels=Math.max(1,params.branch_levels|0);
-    const nLeaf=Math.max(1, Math.round(Math.max(0, params.leaves_per_cluster*params.foliage_density)));
-    const base=[]; let j=0;
-    for(const s of segs){ if(s.level>=levels){
-      const cx=s.b[0], cy=s.b[1], cz=s.b[2], cov=(s.cov===undefined?1:s.cov);
-      const ti=(s.tree===undefined?0:s.tree), tnt=((ti*0.61803398875)%1)*2-1;   // per-tree warmth [-1,1], golden-spread so neighbours differ
-      let tdx=s.b[0]-s.a[0], tdy=s.b[1]-s.a[1]; const tdl=Math.hypot(tdx,tdy), tHasDir=tdl>1e-4; if(tHasDir){ tdx/=tdl; tdy/=tdl; }   // twig heading = terminal segment a→b (matches the bake's stored t.dx,t.dy)
-      const gauss=makeGauss(mulberry32(hash3(params.seed>>>0, j, 101)));   // deterministic per-twig scatter (same count & spread as the bake, not bit-identical)
+    // Drive the preview off the grove's TWIGS (one cluster per leaf-bearing node) — NOT terminal segments. With droop,
+    // a twig is split into sub-segments all tagged level≥levels, so the old segment-filter over-drew nSub×nLeaf clusters
+    // at mid-twig joints and mis-keyed the per-twig seed by segment index. Iterating twigs[] matches the bake's count,
+    // per-twig seed (hash3(seed,j,101)), hug heading (t.dx/t.dy) and marginal-leaf fade. (spec §9 — preview ≈ bake)
+    const tws = hier.twigs || [];
+    const pcF = Math.max(0, params.leaves_per_cluster*params.foliage_density);
+    const pcInt = Math.floor(pcF), frac = pcF - pcInt;
+    const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
+    const base=[];
+    for(let j=0;j<tws.length;j++){
+      const t=tws[j], cx=t.x, cy=t.y, cz=t.z, tcov=(t.tcov===undefined?1:t.tcov);
+      const ti=(t.tree===undefined?0:t.tree), tnt=((ti*0.61803398875)%1)*2-1;   // per-tree warmth [-1,1], golden-spread so neighbours differ
+      let tdx=t.dx||0, tdy=t.dy||0; const tdl=Math.hypot(tdx,tdy), tHasDir=tdl>1e-4; if(tHasDir){ tdx/=tdl; tdy/=tdl; }   // grown twig heading (the bake's stored t.dx,t.dy), so the hug matches even on a drooped twig
+      const gauss=makeGauss(mulberry32(hash3(params.seed>>>0, j, 101)));   // per-twig scatter, j = twig index == the bake's seed (same count & spread, not bit-identical)
       for(let k=0;k<nLeaf;k++){
         const g1=gauss(), g2=gauss();   // leaves hug the twig — must match the bake (§4.5)
+        const cov = ((k===pcInt) ? frac : 1.0) * tcov;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast
         const hug = params.faithful_canopy && tHasDir;
         const x = hug ? cx - Math.abs(g1)*params.cluster_spread_m*1.5*tdx - g2*params.cluster_spread_m*0.4*tdy : cx + g1*params.cluster_spread_m;
         const y = hug ? cy - Math.abs(g1)*params.cluster_spread_m*1.5*tdy + g2*params.cluster_spread_m*0.4*tdx : cy + g2*params.cluster_spread_m;
         base.push(x, y, cz, cov, tnt);
       }
-      j++;
-    }}
+    }
     treeLeafBase=new Float32Array(base);
     treeLeafProj=new Float32Array(base.length/5*6);   // base: x,y,z,cov,tint (5) -> proj: x,y,r,g,b,size (6)
     treeLeafHier=hier;
@@ -1941,6 +1947,9 @@ function create(canvas, opts){
     const pitch = 24*DEG, hk=Math.cos(pitch), dk=Math.sin(pitch);
     const wx=motion.windX, wy=motion.windY;   // EFFECTIVE wind dir (weather-veered) — matches the bake & trunk drift
     const lean = motion.u*0.9, sx0=motion.sway[0], sy0=motion.sway[1];   // wind: lean + trunk drift (drift carries the lateral channel)
+    // NOTE: motion.u is intentionally applied TWICE here — as the height-weighted `lean` (a cheap proxy for the bake's
+    // per-joint limb/twig rotation, which the preview doesn't re-derive) and again inside motion.sway (the trunk drift).
+    // So the preview leans a touch harder than the bake translates; that's by design (spec §9 — preview ≈ bake, not =).
     const offY = -0.4;
     const P = (p) => {                                   // 3D world (+wind) -> inset NDC
       const lf = lean*(p[2]/maxZ);                       // taller points lean more downwind
@@ -2083,26 +2092,25 @@ function create(canvas, opts){
     }
     function bench(pass, n){
       n = Math.max(1, n|0);
-      const px = new Uint8Array(4);
+      // fence the burst with gl.finish() (drains ALL queued GL work). The old readPixels fence was a RGBA/UNSIGNED_BYTE
+      // read of an RGBA16F target (layerTex[0]) — an invalid combo that errors instead of flushing, and in faithful
+      // mode bake() writes faithTex (layerTex[0] is a 1×1 dummy), so the fence read the wrong/unwritten texture. (E#35)
       if(pass==='transport'){
         ensureBenchTarget();
         gl.bindFramebuffer(gl.FRAMEBUFFER, benchFBO);
         gl.viewport(0,0,benchW,benchH);
         const t0=performance.now();
         for(let i=0;i<n;i++) drawTransportInto();
-        gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);     // flush/fence the burst
+        gl.finish();
         const ms=(performance.now()-t0)/n;
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         return { ms, headroom: 16.67/Math.max(ms,1e-3) };
       }
       if(pass==='bake'){
         const t0=performance.now();
-        for(let i=0;i<n;i++) bake();                            // bake targets its own layer FBOs
-        gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);             // fence on layer 0
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layerTex[0], 0);
-        gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+        for(let i=0;i<n;i++) bake();                            // bake targets its own layer/faith FBOs
+        gl.finish();                                            // fence: drains the bake passes (layer or faithful)
         const ms=(performance.now()-t0)/n;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         return { ms, headroom: 16.67/Math.max(ms,1e-3) };
       }
       return { ms:0, headroom:Infinity };

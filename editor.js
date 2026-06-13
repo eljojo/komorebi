@@ -338,7 +338,7 @@ const TIPS = {
   // Debug
   auto_quality:"<b>Auto-tunes quality to hold ~60 fps.</b> Drops the cheapest quality first (resolution, then sample count) when things get heavy, and is slow to crank back up. Never touches the look — only the sharpness.",
   show_source:"<b>Show a little map of the sun</b> you're sampling (centre + glow) in the corner. Watch it change as you move CLOUD or eclipse.",
-  show_layer:"<b>Peek at one raw depth-slice</b> of leaf shadows, instead of the finished picture.",
+  show_layer:"<b>Peek at one raw depth-slice</b> of leaf shadows, instead of the finished picture. <i>(Inert in faithful-tree mode — there the canopy isn't baked into depth slices.)</i>",
   show_layer_index:"<b>Which slice to peek at</b> when 'show layer' is on (0 = lowest).",
 };
 const tip = document.getElementById('tip');
