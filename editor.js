@@ -40,6 +40,16 @@ let transDur=1.5;                // scene-transition seconds (editor-only — a 
 // ===========================================================================
 const controlEls={};   // key -> {input, valEl}
 let dragSun=false;     // desktop canvas-drag mode: false = orbit the camera (the default — "make sense of things"), true = drag the sun (the novelty). Toggled by the Look-section button.
+// shape knobs the TREE_SPECIES bundles set — editing one means you've diverged from the picked species, so the
+// dropdown drops back to "— custom" (the tree_species label clears). Scene knobs (light/camera/wind) aren't here:
+// species is shape-only, so tweaking those keeps the species name (§4.5).
+const SHAPE_KEYS = new Set(Object.values(TREE_SPECIES).flatMap(b => Object.keys(b)));
+function maybeClearSpecies(key){
+  if(SHAPE_KEYS.has(key) && params.tree_species){
+    params.tree_species='';
+    if(controlEls.tree_species) controlEls.tree_species.input.value='';   // select the empty "— custom" option
+  }
+}
 
 // scope: 'source' rebuilds the light; 'canopy' rebuilds+rebakes leaves;
 // 'textures' reallocates layer textures too; 'perf' resets auto-quality; '' just re-reads each frame.
@@ -66,6 +76,8 @@ const PANEL = [
   ['s','leader_strength','leader',0,1,0.01,'canopy'],
   ['s','droop','droop',-1,1,0.01,'canopy'],
   ['s','taper_delta','taper',1.2,3.5,0.05,'canopy'],
+  ['s','crown_aspect','crown',0.4,3,0.05,'canopy'],
+  ['sels','phyllotaxis','phyllo',[['spiral','spiral'],['whorled','whorled'],['opposite','opposite']],'canopy'],
   ['s','branch_tau','branches',0,5,0.05,'bake'],
   ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
   ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
@@ -97,7 +109,8 @@ const PANEL = [
   ['s','far_smear','far smear',0,8,0.25,''],
   ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
   ['t','standing_scene','standing scene',''],
-  ['s','trunk_radius_m','trunk r',0,0.5,0.01,''],
+  ['t','faithful_canopy','faithful tree','textures'],
+  ['s','trunk_radius_m','trunk r',0,0.5,0.01,'canopy'],
   ['s','exposure','exposure',0,4,0.01,''],
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
@@ -170,7 +183,7 @@ function buildPanel(){
       const lab=document.createElement('label'); lab.textContent=label;
       const inp=document.createElement('input'); inp.type='range'; inp.min=min; inp.max=max; inp.step=step; inp.value=params[key];
       const val=document.createElement('span'); val.className='val'; val.textContent=fmt(params[key]);
-      inp.addEventListener('input',()=>{ params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]);
+      inp.addEventListener('input',()=>{ params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]); maybeClearSpecies(key);
         if(scope==='suntime') updateSunFromTime(); else applyScope(scope); });
       row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val}; row.dataset.tipKey=key;
     } else if(item[0]==='t'){
@@ -185,7 +198,7 @@ function buildPanel(){
       const lab=document.createElement('label'); lab.textContent=label;
       const sel=document.createElement('select');
       for(const [t,v] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; if(v===params[key]) o.selected=true; sel.appendChild(o); }
-      sel.addEventListener('change',()=>{ params[key]=str?sel.value:parseInt(sel.value,10); applyScope(scope); });
+      sel.addEventListener('change',()=>{ params[key]=str?sel.value:parseInt(sel.value,10); maybeClearSpecies(key); applyScope(scope); });
       row.append(lab,sel); controlEls[key]={input:sel}; row.dataset.tipKey=key;
     } else if(item[0]==='species'){    // TREE_SPECIES: merge the chosen shape bundle OVER the current look (shape ⟂ scene), stamp the label, rebuild
       const [,label]=item; row.classList.add('select');
@@ -254,7 +267,8 @@ const TIPS = {
   crown_aspect:"<b>Crown shape — tall &amp; narrow vs. low &amp; broad.</b> Stretches the crown vertically (a silhouette knob: it shapes the tree's outline and the 3D preview, not the top-down dapples). &gt;1 = a spire (conifer, columnar); &lt;1 = a wide dome (oak, cedar).",
   phyllotaxis:"<b>How branches arrange around their parent.</b> <i>Spiral</i> (golden angle) — most trees, an even non-repeating fill. <i>Whorled</i> — branches in rings at intervals up the trunk (conifer tiers). <i>Opposite</i> — paired branches 180° apart, each level rotated 90° (the maple/ash candelabra of stacked Y-forks).",
   tree_species:"<b>One-click tree shape — oak, spruce, birch, willow, maple, columnar, palm.</b> Loads a bundle of shape knobs (leader, droop, taper, crown, branching) over your current scene; the lighting, camera and wind stay put. A starting point — tweak any knob afterward (it then reads 'custom').",
-  branch_tau:"<b>Whether the tree shows its own branches &amp; trunk — not just its leaf-gaps.</b> Stamps the woody skeleton as a dark, opaque shadow into the same layers as the leaves, swaying with them. 0 = off (just dapples, exactly as before); turn it up and the limbs cast their silhouette through the canopy. Wood blocks every colour, so the branch shadow is dark and neutral, never green.",
+  branch_tau:"<b>Whether the tree shows its own branches &amp; trunk — not just its leaf-gaps.</b> The trunk and main limbs cast one connected shadow — a continuous-height analytic occluder, not stamped into the leaf layers — swaying with the canopy. 0 = off (just dapples, byte-identical); turn it up for denser, darker wood. Wood blocks every colour, so the branch shadow is dark and neutral, never green.",
+  faithful_canopy:"<b>Cast the real tree, not the depth-layer shortcut.</b> Off: leaves are binned to a few flat height-slices (cheap, and invisible for the overhead park — you never see the tree itself there). On: every leaf casts from its OWN grown height, so the shadow you see IS the tree in the preview — leaves sit on their twigs, lined up with the trunk. Costs more (a per-sample bake); meant for the standing / curtain looks, not the park.",
   foliage_density:"<b>How full the canopy is — sparse spring vs. thick summer.</b> The big mood knob. Sparse: every leaf matters, so the faint wind can totally reshuffle the gaps. Thick: the same flutter only makes them twinkle.",
   leaves_per_cluster:"<b>How many leaves on each twig-tip.</b> Sets the overall leaf count (and how heavy it is to draw). Crossing whole numbers fades in smoothly, so you can sweep it without it jumping.",
   cluster_spread_m:"<b>How tightly leaves bunch on a twig.</b> Tight = distinct clumps with clear gaps between them; loose = a more even leaf carpet.",
