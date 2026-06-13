@@ -742,7 +742,13 @@ function create(canvas, opts){
   function fail(msg){ throw new Error(`komorebi: ${msg}`); }
   if (!gl) fail('WebGL2 is required and not available in this browser.');
   const extCBF = gl.getExtension('EXT_color_buffer_float');     // renderable half/float
-  gl.getExtension('EXT_float_blend');                            // float-target blending (harmless if absent)
+  gl.getExtension('EXT_float_blend');                            // genuinely OPTIONAL: it only governs blending into *32-bit* float
+                                                                 // targets. Every blend target here is RGBA16F (makeLayerTexture: the
+                                                                 // layers, faithTex, faithScratch), which is color-renderable AND
+                                                                 // blendable in core WebGL2 once EXT_color_buffer_float is present.
+                                                                 // The only RGBA32F textures (clusterTex/clusterGeomTex) are data
+                                                                 // textures, texelFetch-sampled, never blended — so do NOT promote this
+                                                                 // to a hard requirement (it would reject capable 16F-blend devices).
   if (!extCBF) fail('EXT_color_buffer_float is required (float render targets).');
   const MAX_TEX = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;  // caps the per-clump data-texture width
   // profiling (EDITOR only): GPU timer queries for absolute per-pass ms. The extension is often absent or
