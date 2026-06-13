@@ -69,6 +69,11 @@ const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branchi
   'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis',
   'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
 ];   // (tone_map is a live uniform: it just snaps — under the bloom if one's already running, else at the end — never forces one)
+// ---- scene-MODE flags. Not continuous (never tween) but NOT inert either: flipping one changes regen-time state
+// (faithful_canopy reallocates faithTex + switches the bake path; standing_scene reshapes the bake's crown sizing),
+// so a transition landing on a differing flag must force a structural rebuild under the bloom — see transitionTo's
+// modeDiff. Kept out of TOPO_KEYS (they don't change the grove RNG/topology) but treated like one for the rebuild. ----
+const MODE_KEYS = ['standing_scene','faithful_canopy'];
 const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back to the cloud dissolve (don't regrow per frame)
 
 // ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
@@ -1592,6 +1597,7 @@ function create(canvas, opts){
     for(const k of MORPH_KEYS)  from[k] = params[k];       // continuous look — always morphs live
     for(const k of CANOPY_KEYS) from[k] = params[k];       // continuous canopy — morphs live IF the topology matches
     const topoDiff   = TOPO_KEYS.some(k => to[k]!==params[k]);     // a new tree/layer/seed: can't morph leaf-for-leaf
+    const modeDiff   = MODE_KEYS.some(k => to[k]!==params[k]);     // a scene-MODE flag flips (faithful_canopy/standing_scene): needs a rebuild, NOT a snap-with-stale-state
     const canopyDiff = CANOPY_KEYS.some(k => to[k]!==params[k]);   // branch/leaf knobs differ
     const leafCount  = layerVAO.reduce((s,L)=>s+L.count, 0);       // current grove size
     // a grove morph scales the leaf count by tree_count AND per-twig density (leaves_per_cluster*foliage_density);
@@ -1600,9 +1606,11 @@ function create(canvas, opts){
     const densTo     = Math.max(0,    to.leaves_per_cluster*to.foliage_density);
     const morphScale = (Math.max(1, to.tree_count)/Math.max(1, params.tree_count)) * (densTo/densFrom);
     const morphCost  = leafCount * Math.max(1, morphScale);
-    const morphGrove = canopyDiff && !topoDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching, small enough -> morph it
+    // a mode flip can't morph leaf-for-leaf (the bake path / faithTex size / crown sizing change), so it forces a
+    // dissolve+rebuild just like a topology change — never a live grove morph (which only regrows, no realloc).
+    const morphGrove = canopyDiff && !topoDiff && !modeDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching+mode, small enough -> morph it
     trans.canopyMorph = morphGrove;
-    trans.structDiff  = topoDiff || (canopyDiff && !morphGrove);   // dissolve on topology change, or a grove too big to morph
+    trans.structDiff  = topoDiff || modeDiff || (canopyDiff && !morphGrove);   // dissolve+rebuild on topology OR mode change, or a grove too big to morph
     trans.from = from; trans.to = to;
     trans.dur = Math.max(1e-3, opts.duration!=null ? opts.duration : trans.dur);
     trans.t = 0; trans.swapped = false; trans.bloom = 0; trans.active = true;
@@ -1630,12 +1638,18 @@ function create(canvas, opts){
       // re-bake only when the leaves actually move this frame — a grove morph, or live motion (wind/auto-drift,
       // both of which make motionActive() true). A settled-canopy look-crossfade keeps last frame's identical bake
       // (the tweening leaf_swing/flutter/stem knobs have no effect with motion.u≈0), so it's not re-rasterized.
-      if(trans.canopyMorph || motionActive()) bake();
+      // EXCEPT in faithful mode the whole faith texture is sun-projected (its cast frame + per-leaf throw depend on
+      // sun_elevation/azimuth), so a still-air time-of-day crossfade MUST re-bake or the dapple freezes at the start
+      // angle for the whole morph (the layer path is immune — transport reprojects each frame from uProj/uBulkShift).
+      const faithSunMorph = params.faithful_canopy &&
+        (trans.from.sun_elevation_deg!==trans.to.sun_elevation_deg || trans.from.sun_azimuth_deg!==trans.to.sun_azimuth_deg);
+      if(trans.canopyMorph || motionActive() || faithSunMorph) bake();
     }
     if(t>=1){                                              // land exactly on the target; clear the bloom
       trans.active = false; trans.bloom = 0;
       for(const k in DEFAULTS) params[k] = trans.to[k];
       regenSource(); resetPerf();                          // bloom now 0; re-probe quality for the new look (it may carry auto-quality)
+      if(params.faithful_canopy) bake();                   // land the faith texture on the exact target sun (resetPerf only re-bakes on a bake-res change)
       const cb = trans.onEnd; trans.onEnd = null; if(cb) cb();
     }
   }
@@ -2162,4 +2176,4 @@ function create(canvas, opts){
   return eng;
 }
 
-export { create, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS };
+export { create, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS };

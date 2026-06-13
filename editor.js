@@ -108,7 +108,7 @@ const PANEL = [
   ['s','view_fov_deg','fov °',10,110,1,''],
   ['s','far_smear','far smear',0,8,0.25,''],
   ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
-  ['t','standing_scene','standing scene',''],
+  ['t','standing_scene','standing scene','canopy'],   // changes crown sizing (crown0 in regenCanopy) — needs a regrow, not just the live bulk-offset read
   ['t','faithful_canopy','faithful tree','textures'],
   ['s','trunk_radius_m','trunk r',0,0.5,0.01,'canopy'],
   ['s','exposure','exposure',0,4,0.01,''],
