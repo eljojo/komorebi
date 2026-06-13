@@ -323,7 +323,7 @@ const TIPS = {
   sway_ceiling:"<b>How far the branches can bend.</b> They hit a limit and clip there — that's the feeling of them fighting the wind at a gust's peak.",
   damping_ratio:"<b>How quickly the swaying settles down.</b> Low = springy and ringing; high = sluggish and dead.",
   backlash_gain:"<b>The snap-back when a gust lets go.</b> Branches recoil past their resting point and ring down, instead of gliding gently home. 0 = no snap.",
-  sway_height_gain:"<b>Do taller branches sway more than low ones?</b> 0 = the whole canopy slides as one rigid sheet; turn it up and it shears with height, so gaps morph as well as slide.",
+  sway_height_gain:"<b>Do taller branches sway more than low ones?</b> 0 = the whole canopy slides as one rigid sheet; turn it up and it shears with height, so gaps morph as well as slide. <i>(No effect in faithful-tree mode — there the sway is always anchored at the foot and grows to the crown.)</i>",
   limb_count:"<b>How many big arms each tree has.</b> More = the crown splits into finer wedges that can each lean on their own.",
   limb_flex:"<b>How much the big limbs bend.</b> The slow, broad sway — a whole wedge of the crown swinging together.",
   twig_flex:"<b>How much the little twigs bend.</b> The faster, finer motion one level down — each clump of leaves swinging a bit differently, so gaps shear and morph.",

@@ -42,6 +42,10 @@ const lerpAngle = (a,b,t,period) => { const d=((b-a)%period + period*1.5)%period
 const MORPH_KEYS = [
   'core_angular_radius_deg','halo_angular_radius_deg','core_weight_fraction','cloud_thickness','eclipse_amount',
   'canopy_base_height_m','canopy_thickness_m','branch_tau',             // layer heights + branch-shadow darkness — read live, no rebuild
+  // NOTE: canopy_base/thickness + trunk_radius_m tween live for the LEAF layers (layerHeights() is live), but the
+  // analytic woody occluder's per-segment heights/radius (occ.ht) are baked in regenCanopy and only refresh on a
+  // canopy regrow — so in a tier-1-only transition the wood lags the leaves until the next regen. (Off every shipped
+  // look: branch_tau>0 only in park 1, which is faithful → analytic occluder gated off. Live occ.ht recompute = TODO.)
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
@@ -518,6 +522,7 @@ uniform vec4  uOccHt[${MAX_OCC}];    // a-height, b-height (above floor), radius
 uniform int   uOccCount;             // 0 = off (no wood / park model), byte-identical
 uniform float uOccTau;               // wood optical depth (= branch_tau); 0 = off
 uniform vec2  uOccSway;              // whole-tree drift, matching the leaf bake
+uniform float uOccHRef;              // reference height: the drift scales by H/uOccHRef so the trunk FOOT (H=0) stays planted and the crown sways — matches the faithful wood, not a bodily slide
 uniform float uOccPenumbra;          // soft-edge growth per unit height (fakes the area-light penumbra for the once-per-pixel eval)
 uniform highp sampler2D uLayer[${MAX_LAYERS}];   // highp: optical depth exceeds lowp's ~[-2,2]
 uniform float uLayerHeight[${MAX_LAYERS}];
@@ -638,8 +643,8 @@ void main(){
     for(int k=0;k<${MAX_OCC};k++){
       if(k>=uOccCount) break;
       vec4 P = uOccSeg[k]; vec4 H = uOccHt[k];
-      vec2 A = P.xy + uOccSway - H.x*uBulkShift;   // a's shadow at its own height; b's below — segment shadow runs a→b, connecting neighbours
-      vec2 B = P.zw + uOccSway - H.y*uBulkShift;
+      vec2 A = P.xy + uOccSway*(H.x/uOccHRef) - H.x*uBulkShift;   // a's shadow at its own height; drift scaled by height → foot planted, crown sways (matches faithful)
+      vec2 B = P.zw + uOccSway*(H.y/uOccHRef) - H.y*uBulkShift;   // b's below — segment shadow runs a→b, connecting neighbours
       vec2 ab = B - A, ap = world - A;
       float seg = clamp(dot(ap,ab)/max(dot(ab,ab),1e-7), 0.0, 1.0);
       float dist = length(ap - seg*ab);
@@ -818,7 +823,7 @@ function create(canvas, opts){
   U.facc = { tex:loc(progFAcc,'uFAccTex'), weight:loc(progFAcc,'uFAccWeight') };
   U.tp = {
     samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
-    occSeg:loc(progTransport,'uOccSeg[0]'), occHt:loc(progTransport,'uOccHt[0]'), occCount:loc(progTransport,'uOccCount'), occTau:loc(progTransport,'uOccTau'), occSway:loc(progTransport,'uOccSway'), occPenumbra:loc(progTransport,'uOccPenumbra'),
+    occSeg:loc(progTransport,'uOccSeg[0]'), occHt:loc(progTransport,'uOccHt[0]'), occCount:loc(progTransport,'uOccCount'), occTau:loc(progTransport,'uOccTau'), occSway:loc(progTransport,'uOccSway'), occHRef:loc(progTransport,'uOccHRef'), occPenumbra:loc(progTransport,'uOccPenumbra'),
     heights:loc(progTransport,'uLayerHeight[0]'), layerCount:loc(progTransport,'uLayerCount'),
     proj:loc(progTransport,'uProj'), bulkShift:loc(progTransport,'uBulkShift'), viewExtent:loc(progTransport,'uViewExtent'), aspect:loc(progTransport,'uAspect'),
     pitch:loc(progTransport,'uPitch'), fov:loc(progTransport,'uFov'), yaw:loc(progTransport,'uViewYaw'), viewCenter:loc(progTransport,'uViewCenter'), haze:loc(progTransport,'uHazeColor'),
@@ -881,7 +886,7 @@ function create(canvas, opts){
   let presentFBO=null, presentTex=null, presentW=0, presentH=0, adaptiveLastRender=0, adaptiveHot=true;
   const ADAPT_HI=0.05, ADAPT_LO=0.02;   // hysteresis on the motion magnitude: above HI render every frame, below LO drop to idle_fps
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01 };
-  const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend (spec §4.5)
+  const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0, hRef:1 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend, `hRef` = tallest floor height for the drift's height-scale (spec §4.5)
   const faith = { vao:null, buf:null, count:0, hMin:0, hMax:1, ox:0, oy:0, ext:1,   // FAITHFUL leaf geometry (all leaves, continuous height) + the cast-region frame, computed in bakeFaithful (§4.5)
                   pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
                   gx:new Float32Array(MAX_SAMPLES), gy:new Float32Array(MAX_SAMPLES),// per-sample ground-shift scratch (hoisted; no per-bake alloc)
@@ -1070,12 +1075,15 @@ function create(canvas, opts){
       // trunk top scales with leader_strength (§4.5): a weak leader (decurrent) ends DOWN in the crown at the highest
       // limb attach; a strong leader (excurrent) reaches the foliage apex. Always ≥ limbTop so every limb meets the trunk.
       if(L>0) leaderTop = limbTop + (mz - limbTop)*L;
-      const zLift = (L>0) ? 0 : trunkH;
       const aspect = clamp(params.crown_aspect, 0.4, 3);   // crown height factor (§4.5): scales crown height (narrow trees capped via sV above). Drives the faithful cast + 3D preview; the LAYER cast normalises height away (invariant).
+      // scale the legacy-hub lift by aspect too, so an L=0 tree is a TRUE uniform z-scale: otherwise crown_aspect
+      // leaks into the layer-mode wood (floorH's bole division assumes a pure scale), breaking the "invisible to the
+      // layer cast" invariant for hub trees. aspect=1 (the default and every shipped look) → byte-identical. (§4.5)
+      const zLift = (L>0) ? 0 : trunkH*aspect;
       const sc = (p) => [ p[0]*s+tx, p[1]*s+ty, p[2]*sV*aspect+zLift ];
       for(const w of out.tw){ const q=sc([w.x,w.y,w.z]); w.x=q[0]; w.y=q[1]; w.z=q[2]; w.tx=tx; w.ty=ty; w.tcov=treeCov; w.tree=tt; twigs.push(w); }
       for(const sg of out.seg){ segments.push({ a:sc(sg.a), b:sc(sg.b), level:sg.level, cov:treeCov, tree:tt, limb:sg.limb, px:tx, py:ty, f0:sg.f0||0, f1:(sg.f1!=null?sg.f1:1) }); }
-      const trunkTop = (L>0) ? leaderTop*sV*aspect : trunkH;
+      const trunkTop = (L>0) ? leaderTop*sV*aspect : trunkH*aspect;
       segments.push({ a:[tx,ty,0], b:[tx,ty,trunkTop], level:0, cov:treeCov, tree:tt, limb:-1, px:tx, py:ty, f0:0, f1:1 });   // the continuing trunk axis
       for(let i=0;i<lpt;i++){ const gi=limbBase+i;
         limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty; }
@@ -1111,12 +1119,18 @@ function create(canvas, opts){
       twigAngle:new Float32Array(nClusterTotal), twigVel:new Float32Array(nClusterTotal),
       clusterData:new Float32Array(nClusterTotal*4),   // dynamic: (limb bend, twig bend, stem seed, _)
       clusterGeom:new Float32Array(nClusterTotal*4),   // static: (twig tip.xy, tree trunk pivot.xy)
+      // topology signature: what makes limb/cluster index i mean the SAME branch across a regrow. tree_count is NOT
+      // here (trees append, so the prefix still lines up — that's the morph); branch_angle/length/pitch/droop aren't
+      // either (same indices, just bent differently — carrying their sway is the desired no-reset). But seed / depth /
+      // children / limb_count / phyllotaxis / the leader↔hub azimuth flip re-mean every index, so the carry is invalid.
+      topoSig: `${params.seed>>>0}|${levels}|${kids}|${lpt}|${phyllo}|${L>0?1:0}`,
       segments, maxV:0,
     };
     // carry the in-flight sway across a regrow so the wind doesn't reset (an editor tweak or a grove-morph
     // transition). Trees/limbs are appended at the end, so indices 0..min are the same twig: copy the common
-    // PREFIX — existing trees keep their sway, a newly-grown tree starts at rest. (§9)
-    if(prevHier){
+    // PREFIX — existing trees keep their sway, a newly-grown tree starts at rest. ONLY when the topology signature
+    // matches; a leader/phyllotaxis/depth edit re-means the indices, so we start at rest there (no wrong-twig bend). (§9)
+    if(prevHier && prevHier.topoSig === hier.topoSig){
       const nL=Math.min(prevHier.nLimb,nLimb), nC=Math.min(prevHier.nClusterTotal,nClusterTotal);
       hier.limbAngle.set(prevHier.limbAngle.subarray(0,nL)); hier.limbVel.set(prevHier.limbVel.subarray(0,nL));
       hier.twigAngle.set(prevHier.twigAngle.subarray(0,nC)); hier.twigVel.set(prevHier.twigVel.subarray(0,nC));
@@ -1239,6 +1253,8 @@ function create(canvas, opts){
         segH.push(floorH(sg.a[2]), floorH(sg.b[2]), r, 0);
       }
       occ.rest = rest; occ.ht = new Float32Array(segH); occ.count = rest.length;
+      let hRef = 1e-3; for(let i=0;i<segH.length;i+=4) hRef = Math.max(hRef, segH[i], segH[i+1]);   // tallest floor-height → the drift's height-scale reference (foot planted, crown sways)
+      occ.hRef = hRef;
     }
     // ---- FAITHFUL skeleton (§4.5): EVERY segment (trunk + branches + TWIGS) as a tapered capsule at continuous
     // heights (the same floorH). Unlike the analytic occluder (level<=1, capped at MAX_OCC), this is a vertex buffer
@@ -1341,11 +1357,7 @@ function create(canvas, opts){
     // and squared. (Only the g-EXTREMES matter, so track those in the sample loop instead of an O(8N) corner sweep.)
     const proj = projMatrix();
     const gx=faith.gx, gy=faith.gy;
-    let bulkX=0, bulkY=0;
-    if(params.standing_scene){
-      const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=Math.cos(el)/Math.sin(el);
-      bulkX=k*Math.cos(az); bulkY=k*Math.sin(az);
-    }
+    const _b=bulkShift(), bulkX=_b[0], bulkY=_b[1];   // standing-scene lateral throw (shared helper; 0 when off)
     const woodOn = params.branch_tau > 0 && faith.segCount > 0;
     let gminx=1e18,gmaxx=-1e18,gminy=1e18,gmaxy=-1e18;
     for(let i=0;i<N;i++){
@@ -1490,6 +1502,17 @@ function create(canvas, opts){
   // nothing — they recompute fresh into these each call (no stale-cache risk: the sun-drag path mutates params
   // without an apply(), which a dirty-flag cache would miss; the recompute itself is sub-microsecond).
   const _proj = [0,0,0,0], _lh = new Float32Array(MAX_LAYERS), _atm = { sun:[0,0,0], ambient:[0,0,0] };
+  const _bulk = [0,0];
+  // STANDING-SCENE bulk shadow offset (§4.8): cot(elev)·(anti-sun direction) per unit height — the lateral throw the
+  // park model omits. ONE helper, shared by transport's analytic occluder AND the faithful bake, so the two throws
+  // can't silently drift apart. Floored at 6° — deliberately HIGHER than projMatrix's 4° ellipse floor: cot(elev)
+  // diverges faster than the ellipse's 1/sin² as the sun nears the horizon, so the throw wants the tighter clamp.
+  // Returns the shared scratch [0,0] when standing_scene is off (park model, byte-identical).
+  function bulkShift(){
+    if(!params.standing_scene){ _bulk[0]=0; _bulk[1]=0; return _bulk; }
+    const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=Math.cos(el)/Math.sin(el);
+    _bulk[0]=k*Math.cos(az); _bulk[1]=k*Math.sin(az); return _bulk;
+  }
   // ---- the ellipse: angular offset -> ground displacement per unit height ----
   function projMatrix(){
     const el=Math.max(params.sun_elevation_deg,4)*DEG, az=params.sun_azimuth_deg*DEG;
@@ -1587,8 +1610,11 @@ function create(canvas, opts){
       gL=Math.sign(gL)*Math.pow(Math.abs(gL),e); gT=Math.sign(gT)*Math.pow(Math.abs(gT),e); }
     const ti = params.wind_gustiness;                         // turbulence intensity σ/U (gL,gT are unit-std)
     const rawL = effStrength*(pat.lean + ti*gL);              // mean lean + fluctuation; <0 in strong lulls → springback through rest
-    const driveT = effStrength*(ti*pat.lat*gT);               // zero-mean crosswind
-    // gust-edge asymmetry: rise sharper than decay (validated). Reuses gust_attack/gust_decay as the slew. -
+    const driveT = effStrength*(ti*pat.lat*gT);               // zero-mean crosswind — deliberately NOT slewed: the
+                                                              // rise-sharp/decay-soft gust-EDGE envelope below is a
+                                                              // longitudinal (lean) phenomenon; crosswind has no preferred
+                                                              // sign, so an asymmetric slew would bias a zero-mean channel.
+    // gust-edge asymmetry: rise sharper than decay (validated). Reuses gust_attack/gust_decay as the slew (LONGITUDINAL only). -
     const tc = (rawL>motion.driveEnv) ? params.gust_attack : params.gust_decay;
     motion.driveEnv += (rawL - motion.driveEnv) * (1 - Math.exp(-dt/Math.max(tc,1e-3)));
     const driveL = motion.driveEnv;
@@ -1762,12 +1788,7 @@ function create(canvas, opts){
     // (trunk, branches, leaves) via g, so the whole tree shadow stays one connected thing and sweeps together as
     // the sun moves — real physics, no camera tricks. Framing the tree off-frame is the camera's job (a fixed
     // pan, view_center), NOT an auto-centre on the crown (that decouples trunk from crown). Gated → 0 = park.
-    let bulkX=0, bulkY=0;
-    if(params.standing_scene){
-      const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=Math.cos(el)/Math.sin(el);
-      bulkX=k*Math.cos(az); bulkY=k*Math.sin(az);
-    }
-    gl.uniform2f(U.tp.bulkShift, bulkX, bulkY);
+    { const b=bulkShift(); gl.uniform2f(U.tp.bulkShift, b[0], b[1]); }   // shared helper (matches the faithful bake; 0 when off)
     gl.uniform1f(U.tp.viewExtent, params.view_extent_m);
     gl.uniform1f(U.tp.aspect, canvas.width/canvas.height);
     gl.uniform1f(U.tp.pitch, clamp(params.view_pitch_deg,0,80)*DEG);     // camera tilt (rad); 0 = top-down
@@ -1794,6 +1815,7 @@ function create(canvas, opts){
       gl.uniform1i(U.tp.occCount, occ.count);
       gl.uniform1f(U.tp.occTau, params.branch_tau);
       gl.uniform2f(U.tp.occSway, motion.sway[0], motion.sway[1]);    // wood drifts with the whole-tree sway
+      gl.uniform1f(U.tp.occHRef, Math.max(occ.hRef, 1e-3));          // height-scale ref → trunk foot planted, crown sways
       const el=Math.max(params.sun_elevation_deg,6)*DEG;            // penumbra/height: source angular core projected to ground (~/sin elev), widened by cloud
       gl.uniform1f(U.tp.occPenumbra, (params.core_angular_radius_deg*DEG)/Math.sin(el)*(1.0+3.0*params.cloud_thickness));
     } else gl.uniform1i(U.tp.occCount, 0);
