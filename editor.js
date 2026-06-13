@@ -1,5 +1,5 @@
 import { create, DEG, MAX_LAYERS } from './komorebi.js';
-import { PRESETS } from './presets.js';
+import { PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
 // ============================================================================
@@ -54,6 +54,7 @@ const PANEL = [
   ['s','eclipse_amount','ecl amt',0,1,0.01,'source'],
 
   ['h','Canopy'],
+  ['species','species'],
   ['s','tree_count','trees',1,16,1,'canopy'],
   ['s','canopy_base_height_m','base h (m)',2,20,0.1,''],
   ['s','canopy_extent_m','extent (m)',6,24,0.5,'textures'],
@@ -64,6 +65,7 @@ const PANEL = [
   ['s','branch_pitch_deg','pitch °',0,80,1,'canopy'],
   ['s','leader_strength','leader',0,1,0.01,'canopy'],
   ['s','droop','droop',-1,1,0.01,'canopy'],
+  ['s','taper_delta','taper',1.2,3.5,0.05,'canopy'],
   ['s','branch_tau','branches',0,5,0.05,'bake'],
   ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
   ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
@@ -185,6 +187,16 @@ function buildPanel(){
       for(const [t,v] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; if(v===params[key]) o.selected=true; sel.appendChild(o); }
       sel.addEventListener('change',()=>{ params[key]=str?sel.value:parseInt(sel.value,10); applyScope(scope); });
       row.append(lab,sel); controlEls[key]={input:sel}; row.dataset.tipKey=key;
+    } else if(item[0]==='species'){    // TREE_SPECIES: merge the chosen shape bundle OVER the current look (shape ⟂ scene), stamp the label, rebuild
+      const [,label]=item; row.classList.add('select');
+      const lab=document.createElement('label'); lab.textContent=label;
+      const sel=document.createElement('select');
+      const o0=document.createElement('option'); o0.value=''; o0.textContent='— custom'; sel.appendChild(o0);
+      for(const name of Object.keys(TREE_SPECIES)){ const o=document.createElement('option'); o.value=name; o.textContent=name; if(name===params.tree_species) o.selected=true; sel.appendChild(o); }
+      sel.addEventListener('change',()=>{ const b=TREE_SPECIES[sel.value];
+        if(b) applyParams(Object.assign({}, params, b, { tree_species:sel.value }));   // bundle over the live params, keep the scene
+        else params.tree_species=''; });
+      row.append(lab,sel); controlEls.tree_species={input:sel}; row.dataset.tipKey='tree_species';
     } else if(item[0]==='btn'){
       const [,label,fn]=item;
       const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn);
@@ -238,6 +250,10 @@ const TIPS = {
   branch_pitch_deg:"<b>How steeply the limbs tilt upward.</b> This spreads the leaves out in height — and height is what sorts them into the sharp vs. soft slices.",
   leader_strength:"<b>Does the tree have one main trunk going up (conifer) or fork low into a spreading crown (oak)?</b> The big shape knob. 0 = legacy single-point hub (a palm/lollipop). High = limbs attach all the way up a continuing trunk and shorten toward the top — a Christmas-tree cone. Low-but-nonzero = a few low forks, a broad rounded dome. This is what makes branches actually meet the trunk.",
   droop:"<b>Do the branches curve as they grow — sagging down or sweeping up?</b> Branches bend along their length (a smooth arc, not straight sticks), more toward the fine outer twigs. Positive = sag DOWN (the trailing twigs of a willow or birch); negative = sweep UP (a conifer or elm vase). 0 = straight rays.",
+  taper_delta:"<b>How fast branches thin as they fork — thick trunk to fine twigs.</b> Real wood conserves cross-section at each split (Leonardo's rule), which is what makes a skeleton read as a tree and not a wireframe. Low = fast-thinning, lacy twigs (birch); high = stout limbs that stay thick (oak). Only affects the drawn branch shadow, not the dapples.",
+  crown_aspect:"<b>Crown shape — tall &amp; narrow vs. low &amp; broad.</b> Stretches the crown vertically (a silhouette knob: it shapes the tree's outline and the 3D preview, not the top-down dapples). &gt;1 = a spire (conifer, columnar); &lt;1 = a wide dome (oak, cedar).",
+  phyllotaxis:"<b>How branches arrange around their parent.</b> <i>Spiral</i> (golden angle) — most trees, an even non-repeating fill. <i>Whorled</i> — branches in rings at intervals up the trunk (conifer tiers). <i>Opposite</i> — paired branches 180° apart, each level rotated 90° (the maple/ash candelabra of stacked Y-forks).",
+  tree_species:"<b>One-click tree shape — oak, spruce, birch, willow, maple, columnar, palm.</b> Loads a bundle of shape knobs (leader, droop, taper, crown, branching) over your current scene; the lighting, camera and wind stay put. A starting point — tweak any knob afterward (it then reads 'custom').",
   branch_tau:"<b>Whether the tree shows its own branches &amp; trunk — not just its leaf-gaps.</b> Stamps the woody skeleton as a dark, opaque shadow into the same layers as the leaves, swaying with them. 0 = off (just dapples, exactly as before); turn it up and the limbs cast their silhouette through the canopy. Wood blocks every colour, so the branch shadow is dark and neutral, never green.",
   foliage_density:"<b>How full the canopy is — sparse spring vs. thick summer.</b> The big mood knob. Sparse: every leaf matters, so the faint wind can totally reshuffle the gaps. Thick: the same flutter only makes them twinkle.",
   leaves_per_cluster:"<b>How many leaves on each twig-tip.</b> Sets the overall leaf count (and how heavy it is to draw). Crossing whole numbers fades in smoothly, so you can sweep it without it jumping.",

@@ -328,3 +328,34 @@ export const PRESETS = {
   }),
   */
 };
+
+// ---- TREE_SPECIES (spec §4.5): named SHAPE bundles, the inverse of WIND_PATTERNS — each a partial set of the
+// growth/shape knobs (leader, droop, taper, crown_aspect, phyllotaxis + the structural knobs). The editor merges
+// the chosen bundle OVER the current look's params (shape ⟂ scene: lighting/camera/wind are untouched), stamps
+// `tree_species` as an inert label, and rebuilds. So one click turns the standing tree into an oak / spruce /
+// willow on whatever scene you're in. Values are starting points to tune; built from the tree-architecture
+// research (apical control, gravitropic droop, pipe-model taper, phyllotaxis). ----
+export const TREE_SPECIES = {
+  // decurrent dome: low leader → forks low into a few heavy arms, broad rounded, stout slow-thinning wood
+  'oak':      { leader_strength:0.12, droop:-0.04, taper_delta:2.4, crown_aspect:0.8, phyllotaxis:'spiral',
+                branch_levels:4, branch_children:3, limb_count:5, branch_angle_deg:48, branch_pitch_deg:30, branch_length_ratio:0.62, foliage_density:1.7, leaf_size_m:0.12 },
+  // excurrent cone: strong central leader, near-horizontal whorled tiers shortening to the apex, secondary droop
+  'spruce':   { leader_strength:0.92, droop:0.22, taper_delta:2.0, crown_aspect:1.9, phyllotaxis:'whorled',
+                branch_levels:3, branch_children:3, limb_count:9, branch_angle_deg:22, branch_pitch_deg:12, branch_length_ratio:0.6, foliage_density:1.8, leaf_size_m:0.07 },
+  // slender monopodial, lacy fast-thinning periphery, fine outer twigs trailing down
+  'birch':    { leader_strength:0.85, droop:0.5, taper_delta:2.7, crown_aspect:1.4, phyllotaxis:'spiral',
+                branch_levels:4, branch_children:2, limb_count:7, branch_angle_deg:34, branch_pitch_deg:46, branch_length_ratio:0.64, foliage_density:0.85, leaf_size_m:0.09 },
+  // weeping fountain: low leader, scaffolds rise then long whips cascade down
+  'willow':   { leader_strength:0.2, droop:0.9, taper_delta:2.4, crown_aspect:0.95, phyllotaxis:'spiral',
+                branch_levels:4, branch_children:3, limb_count:7, branch_angle_deg:30, branch_pitch_deg:32, branch_length_ratio:0.78, foliage_density:1.4, leaf_size_m:0.08 },
+  // opposite/decussate: a leader carrying stacked symmetric Y-forks (the maple/ash candelabra)
+  'maple':    { leader_strength:0.45, droop:-0.05, taper_delta:2.2, crown_aspect:1.0, phyllotaxis:'opposite',
+                branch_levels:4, branch_children:3, limb_count:3, branch_angle_deg:26, branch_pitch_deg:52, branch_length_ratio:0.72, foliage_density:1.5, leaf_size_m:0.13 },
+  // fastigiate column (Lombardy poplar / Italian cypress): strong leader, steep near-parallel branches, very tall-narrow
+  'columnar': { leader_strength:0.9, droop:-0.1, taper_delta:2.0, crown_aspect:2.6, phyllotaxis:'spiral',
+                branch_levels:3, branch_children:2, limb_count:12, branch_angle_deg:14, branch_pitch_deg:78, branch_length_ratio:0.6, foliage_density:1.6, leaf_size_m:0.08 },
+  // a tall bare stipe with a crown of arching fronds up top — a strong leader (so it gets a real TRUNK, not the
+  // legacy single-hub stub), fronds (level-1, terminal) attaching high and arching down, constant-thickness stipe
+  'palm':     { leader_strength:0.85, droop:0.55, taper_delta:1.3, crown_aspect:1.6, phyllotaxis:'spiral',
+                branch_levels:1, branch_children:1, limb_count:14, branch_angle_deg:18, branch_pitch_deg:60, branch_length_ratio:1.0, foliage_density:1.0, leaf_size_m:0.16 },
+};
