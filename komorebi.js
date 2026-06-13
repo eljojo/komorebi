@@ -51,7 +51,7 @@ const MORPH_KEYS = [
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'wind_strength','wind_gustiness','wind_direction_deg','gust_frequency','weather_variability','weather_speed','gust_attack','gust_decay',
   'sway_stiffness','sway_ceiling','damping_ratio','backlash_gain','sway_height_gain',
-  'limb_flex','twig_flex','stem_length','leaf_swing','flutter_freq',
+  'limb_flex','twig_flex','stem_length','sway_pitch','leaf_swing','flutter_freq',
   'drift_amount','drift_phase','drift_speed',
 ];
 const MORPH_SET = new Set(MORPH_KEYS);
@@ -197,6 +197,7 @@ const DEFAULTS = {
   damping_ratio: 0.25,
   backlash_gain: 1.0,
   sway_height_gain: 0.0,
+  sway_pitch: 0.0,                 // 3-D lean (spec §5/§4.5): a wind-bent limb also pitches DOWN in depth, lowering its leaves+wood so they cast a SHORTER shadow (foreshorten). FAITHFUL-mode only (needs real heights); 0 = off, byte-identical (no height change). First cut — the motion's depth dimension, the spec's named next step past 2-D yaw.
   limb_count: 8,
   limb_flex: 0.25,
   twig_flex: 0.35,
@@ -409,8 +410,9 @@ void main(){
   vec2 drift = uMorphAmount * mat2(co,-so,so,co) * lp;
   int cid = int(iC.w + 0.5);
   vec4 geom = texelFetch(uClusterGeom, ivec2(cid,0), 0);
-  vec3 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0).xyz;
+  vec4 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0);   // .x limb bend, .z stem seed (unused here), .w 3-D pitch foreshorten factor (sway_pitch; 1 = off)
   vec2 BL = geom.zw; float thL = bend.x;   // C (geom.xy, the twig tip) unused now that twig-swing is dropped
+  float hEff = iHeight * bend.w;            // 3-D lean (§5): a wind-pitched limb lowers its leaves' height → shorter cast + less drift. bend.w=1 when sway_pitch off → hEff=iHeight, byte-identical.
   // FAITHFUL twig-swing is DROPPED (thT≡0): the baked wood twigs (bakeFaithful) rotate only about the limb, and
   // the leaf model pivots about a synthetic stem joint Jtwig ≠ the wood twig's real base, so a per-twig bend would
   // slide the leaves off their (visible, opaque) wood. With thT=0 leaves & wood both move by limb-swing + the
@@ -422,8 +424,8 @@ void main(){
   float ang = angle + thL + 0.2*swing;
   float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
-  vec2 world = base + uSway*(iHeight/uHRef) + drift + R*(aCorner*vec2(A,B));   // coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
-  world -= uG * iHeight;                 // sun-projected DOWN to the floor (h→0) at this leaf's OWN height; transport's layer loop adds +h·g to look UP, so the shift is antipodal — leaves land where the woody occluder (P − h·uBulkShift) casts, so they align
+  vec2 world = base + uSway*(hEff/uHRef) + drift + R*(aCorner*vec2(A,B));   // coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
+  world -= uG * hEff;                    // sun-projected DOWN to the floor (h→0) at this leaf's (foreshortened) height; transport's layer loop adds +h·g to look UP, so the shift is antipodal — leaves land where the woody occluder casts, so they align
 
   vec2 uv = (world - uFaithOrigin)/uFaithExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
@@ -1409,16 +1411,19 @@ function create(canvas, opts){
     if(woodOn){
       const la = hier ? hier.limbAngle : null, sa = faith.segArr, R = faith.segRest;
       const swx = motion.sway[0], swy = motion.sway[1], hRef = Math.max(faith.hMax, 1e-3);
+      const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): foreshorten the wood heights by the SAME factor the leaves use, so leaf-on-wood registration holds
       for(let k=0;k<faith.segCount;k++){
         const s = R[k];
         const th = (la && s.limb>=0 && s.limb<la.length) ? la[s.limb] : 0;
         const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*8;
-        const kA = s.ha/hRef, kB = s.hb/hRef;   // sway grows with height: 0 at the ground → the trunk base stays PLANTED, the crown sways; same fraction for a limb & the trunk at its height, so they stay joined
+        const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(th)), 0.1, 1) : 1;   // limb pitches with its bend → tip lowers (matches publishBend's per-cluster .w)
+        const ha = s.ha*fore, hb = s.hb*fore;
+        const kA = ha/hRef, kB = hb/hRef;   // sway grows with height: 0 at the ground → the trunk base stays PLANTED, the crown sways; same fraction for a limb & the trunk at its height, so they stay joined
         sa[o]   = px + c*(s.ax-px) - sn*(s.ay-py) + swx*kA;
         sa[o+1] = py + sn*(s.ax-px) + c*(s.ay-py) + swy*kA;
         sa[o+2] = px + c*(s.bx-px) - sn*(s.by-py) + swx*kB;
         sa[o+3] = py + sn*(s.bx-px) + c*(s.by-py) + swy*kB;
-        sa[o+4]=s.ha; sa[o+5]=s.hb; sa[o+6]=s.ra; sa[o+7]=s.rb;
+        sa[o+4]=ha; sa[o+5]=hb; sa[o+6]=s.ra; sa[o+7]=s.rb;
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, faith.segBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, sa);
@@ -1568,9 +1573,12 @@ function create(canvas, opts){
   // hierarchy tick, and again after a grove-morph regrow (which hands us a fresh, zeroed texture). ----
   function publishBend(){
     if(!hier) return;
+    const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): a bent limb pitches down → foreshorten factor in .w (faithful only); 0 → factor 1, byte-identical
     for(let j=0;j<hier.nClusterTotal;j++){
-      hier.clusterData[4*j]   = hier.limbAngle[hier.clusterLimb[j]];   // limb bend this clump inherits
+      const lb = hier.limbAngle[hier.clusterLimb[j]];
+      hier.clusterData[4*j]   = lb;                                    // limb bend this clump inherits
       hier.clusterData[4*j+1] = hier.twigAngle[j];                     // its own twig bend
+      hier.clusterData[4*j+3] = sp>0 ? clamp(1 - sp*(1-Math.cos(lb)), 0.1, 1) : 1;   // height foreshorten: tip drops as the limb pitches with its bend
     }
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, clusterTex);
