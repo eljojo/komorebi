@@ -406,16 +406,16 @@ void main(){
   int cid = int(iC.w + 0.5);
   vec4 geom = texelFetch(uClusterGeom, ivec2(cid,0), 0);
   vec3 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0).xyz;
-  vec2 C = geom.xy, BL = geom.zw; float thL = bend.x, thT = bend.y;
-  vec2 d = C - BL; float Lr = max(length(d), 1e-3); vec2 radial = d/Lr;
-  float sa = bend.z*0.6;
-  float ca=cos(sa), sna=sin(sa);
-  vec2 Jtwig = C - (mat2(ca,-sna,sna,ca)*radial) * min(uStemLen, Lr*0.9);
-  float ct=cos(thT), st=sin(thT);
-  vec2 p    = Jtwig + mat2(ct,-st,st,ct)*(leafRest - Jtwig);
+  vec2 BL = geom.zw; float thL = bend.x;   // C (geom.xy, the twig tip) unused now that twig-swing is dropped
+  // FAITHFUL twig-swing is DROPPED (thT≡0): the baked wood twigs (bakeFaithful) rotate only about the limb, and
+  // the leaf model pivots about a synthetic stem joint Jtwig ≠ the wood twig's real base, so a per-twig bend would
+  // slide the leaves off their (visible, opaque) wood. With thT=0 leaves & wood both move by limb-swing + the
+  // per-leaf flutter below, so leaves stay glued to their twigs (spec §4.5). The layer/park path (VS_BAKE) keeps
+  // the twig swing — there's no wood there to detach from. (Restoring faithful twig liveliness needs the leaf pivot
+  // unified with the wood twig's real base — future work; see spec §4.5.)
   float cl=cos(thL), sl=sin(thL);
-  vec2 base = BL + mat2(cl,-sl,sl,cl)*(p - BL);
-  float ang = angle + thL + thT + 0.2*swing;
+  vec2 base = BL + mat2(cl,-sl,sl,cl)*(leafRest - BL);   // limb swings the clump about the trunk; twig swing dropped (thT=0)
+  float ang = angle + thL + 0.2*swing;
   float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
   vec2 world = base + uSway*(iHeight/uHRef) + drift + R*(aCorner*vec2(A,B));   // coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
@@ -867,6 +867,7 @@ function create(canvas, opts){
   }
 
   const bakeFBO = gl.createFramebuffer();
+  const faithFBO = gl.createFramebuffer();   // FAITHFUL scratch target (§4.5): faithScratch attached here once per bake so the per-sample loop swaps FBOs instead of re-attaching (was 2N framebufferTexture2D/frame)
   let layerTex = [];           // MAX_LAYERS textures (active sized, inactive 1x1)
   let layerVAO = [];           // per-layer leaf instance VAOs {vao,count,buf}
   let faithTex = null;         // FAITHFUL path (§4.5): pre-integrated soft shadow (RGBA16F); 1×1 when faithful_canopy off
@@ -882,6 +883,8 @@ function create(canvas, opts){
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01 };
   const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend (spec §4.5)
   const faith = { vao:null, buf:null, count:0, hMin:0, hMax:1, ox:0, oy:0, ext:1,   // FAITHFUL leaf geometry (all leaves, continuous height) + the cast-region frame, computed in bakeFaithful (§4.5)
+                  pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
+                  gx:new Float32Array(MAX_SAMPLES), gy:new Float32Array(MAX_SAMPLES),// per-sample ground-shift scratch (hoisted; no per-bake alloc)
                   segVAO:null, segBuf:null, segRest:[], segArr:null, segCount:0 };   // + the woody skeleton (trunk+branches+twigs): rest segments, the per-bake swayed instance array, its VAO
 
   function makeLayerTexture(size){
@@ -900,7 +903,9 @@ function create(canvas, opts){
     const res = bakeRes();
     perf.bres = res;                                 // remember the built size; applyQuality reallocates when bakeRes() crosses it
     for(let i=0;i<MAX_LAYERS;i++){
-      layerTex.push(makeLayerTexture(i < params.layer_count ? res : 1));
+      // faithful mode never bakes or samples the layer textures (transport taps faithTex once), so size them 1×1
+      // there too — saves ~layer_count·res²·8 bytes of dead VRAM (≈16 MB at defaults). Reallocated full when faithful off.
+      layerTex.push(makeLayerTexture((i < params.layer_count && !params.faithful_canopy) ? res : 1));
     }
     // FAITHFUL path (§4.5): the soft-shadow accumulator + per-sample scratch. 1×1 when off, so the park / layer
     // path allocates nothing extra; full bake-res when faithful_canopy is on.
@@ -984,13 +989,15 @@ function create(canvas, opts){
         for(let sx=0;sx<nSub;sx++){
           d = bendDown(d, dth);                            // tilt the heading toward −z (down) in its own vertical plane
           const np = [ p[0]+d[0]*dl, p[1]+d[1]*dl, p[2]+d[2]*dl ];
-          out.seg.push({ a:p, b:np, level, limb });
+          // f0/f1 = this sub-segment's fractional span of the ONE level→level+1 taper step, so the faithful skeleton
+          // thins SMOOTHLY along a drooping branch instead of resetting the full step per sub-segment (a sawtooth).
+          out.seg.push({ a:p, b:np, level, limb, f0:sx/nSub, f1:(sx+1)/nSub });
           p = np;
         }
         tip = p; endDir = d;
       } else {
         tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
-        out.seg.push({ a:base, b:tip, level, limb });
+        out.seg.push({ a:base, b:tip, level, limb, f0:0, f1:1 });   // straight branch: full step (byte-identical)
       }
       if(level >= levels){ out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb, dx:endDir[0], dy:endDir[1] }); return; }   // dx,dy = twig heading (plan) so leaves can hug the twig, not scatter as a blob
       // phyllotaxis (§4.5): how children fan around the parent. opposite forces PAIRED forks; whorled an even ring; spiral the golden angle.
@@ -1067,9 +1074,9 @@ function create(canvas, opts){
       const aspect = clamp(params.crown_aspect, 0.4, 3);   // crown height factor (§4.5): scales crown height (narrow trees capped via sV above). Drives the faithful cast + 3D preview; the LAYER cast normalises height away (invariant).
       const sc = (p) => [ p[0]*s+tx, p[1]*s+ty, p[2]*sV*aspect+zLift ];
       for(const w of out.tw){ const q=sc([w.x,w.y,w.z]); w.x=q[0]; w.y=q[1]; w.z=q[2]; w.tx=tx; w.ty=ty; w.tcov=treeCov; w.tree=tt; twigs.push(w); }
-      for(const sg of out.seg){ segments.push({ a:sc(sg.a), b:sc(sg.b), level:sg.level, cov:treeCov, tree:tt, limb:sg.limb, px:tx, py:ty }); }
+      for(const sg of out.seg){ segments.push({ a:sc(sg.a), b:sc(sg.b), level:sg.level, cov:treeCov, tree:tt, limb:sg.limb, px:tx, py:ty, f0:sg.f0||0, f1:(sg.f1!=null?sg.f1:1) }); }
       const trunkTop = (L>0) ? leaderTop*sV*aspect : trunkH;
-      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkTop], level:0, cov:treeCov, tree:tt, limb:-1, px:tx, py:ty });   // the continuing trunk axis
+      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkTop], level:0, cov:treeCov, tree:tt, limb:-1, px:tx, py:ty, f0:0, f1:1 });   // the continuing trunk axis
       for(let i=0;i<lpt;i++){ const gi=limbBase+i;
         limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty; }
     }
@@ -1240,8 +1247,10 @@ function create(canvas, opts){
       const tf = Math.pow(Math.max(1.001, kids), -1/clamp(params.taper_delta,1,4));   // pipe-model taper
       const segRest = [];
       for(const sg of segments){
-        const ra = Math.max(0.012, params.trunk_radius_m*Math.pow(tf, sg.level));      // thick at the base of the segment (min keeps twigs visible)
-        const rb = Math.max(0.008, params.trunk_radius_m*Math.pow(tf, sg.level+1));    // thinner at the tip (its children's radius) — tapers the trunk too
+        // taper by FRACTIONAL level (sg.f0/f1) so a drooping branch's sub-segments thin smoothly across the one
+        // level→level+1 step rather than each repeating the whole step (the old sawtooth). Straight branches: f0=0,f1=1 → unchanged.
+        const ra = Math.max(0.012, params.trunk_radius_m*Math.pow(tf, sg.level + (sg.f0||0)));     // thick at the base of the segment (min keeps twigs visible)
+        const rb = Math.max(0.008, params.trunk_radius_m*Math.pow(tf, sg.level + (sg.f1!=null?sg.f1:1)));  // thinner toward the tip — continuous with the next sub-segment
         segRest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], ha:sg.a[2], hb:sg.b[2], ra, rb, limb:sg.limb, px:sg.px, py:sg.py });   // REAL grown heights (cast == preview)
       }
       faith.segRest = segRest; faith.segCount = segRest.length;
@@ -1260,6 +1269,19 @@ function create(canvas, opts){
       gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
       gl.bindVertexArray(null);
       faith.segVAO=vao; faith.segBuf=buf;
+    }
+    // FAITHFUL cast-frame plan AABB (spec §4.5 / A5): the REAL plan extent of every leaf (faithData x,y) + every wood
+    // endpoint, so bakeFaithful's cast frame covers a wide grove's OUTER crown. (Was bounded by ±canopy_extent/2, which
+    // clipped it — park 1's crown reaches ~4.3 m vs half=3.25 m.) Rest positions; the per-bake pad covers sway+drift.
+    {
+      let px0=1e18,py0=1e18,px1=-1e18,py1=-1e18;
+      for(let i=0;i<faithData.length;i+=17){ const x=faithData[i],y=faithData[i+1]; if(x<px0)px0=x; if(x>px1)px1=x; if(y<py0)py0=y; if(y>py1)py1=y; }
+      for(const s of faith.segRest){
+        if(s.ax<px0)px0=s.ax; if(s.ax>px1)px1=s.ax; if(s.ay<py0)py0=s.ay; if(s.ay>py1)py1=s.ay;
+        if(s.bx<px0)px0=s.bx; if(s.bx>px1)px1=s.bx; if(s.by<py0)py0=s.by; if(s.by>py1)py1=s.by;
+      }
+      if(px0>px1){ const h=params.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
+      faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
     }
     publishBend();   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
   }
@@ -1314,30 +1336,33 @@ function create(canvas, opts){
     if(faith.count===0){ gl.bindFramebuffer(gl.FRAMEBUFFER, null); return; }
     const res = bakeRes(), N = src.count;
     // cast-region frame: the shadow lands OFFSET from the canopy by the bulk throw (standing scene), so the faith
-    // texture must cover where it FALLS, not the canopy plan. Bound the projected canopy box over all samples & the
-    // leaf height range, then make it square (isotropic texel density).
-    const E = params.canopy_extent_m, half = E/2, proj = projMatrix();
+    // texture must cover where it FALLS, not the canopy plan. world = planPoint − g·h, so the cast box is the REAL
+    // plan AABB (faith.p*, leaves+wood) swept over the height range [hLo,hMax] and the per-sample g-range — then padded
+    // and squared. (Only the g-EXTREMES matter, so track those in the sample loop instead of an O(8N) corner sweep.)
+    const proj = projMatrix();
+    const gx=faith.gx, gy=faith.gy;
     let bulkX=0, bulkY=0;
     if(params.standing_scene){
       const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=Math.cos(el)/Math.sin(el);
       bulkX=k*Math.cos(az); bulkY=k*Math.sin(az);
     }
-    const gx=new Float32Array(N), gy=new Float32Array(N);
-    let minx=1e18,miny=1e18,maxx=-1e18,maxy=-1e18;
     const woodOn = params.branch_tau > 0 && faith.segCount > 0;
-    const hs=[ woodOn ? 0 : faith.hMin, faith.hMax ];   // wood reaches the ground (trunk base, h=0) → include it so the trunk streak isn't clipped by the frame
+    let gminx=1e18,gmaxx=-1e18,gminy=1e18,gmaxy=-1e18;
     for(let i=0;i<N;i++){
       const sx=src.flat[3*i], sy=src.flat[3*i+1];
       const gxi = proj[0]*sx + proj[2]*sy + bulkX;   // g = uProj·sample + bulk  (mat2 column-major: [0,1]=col0, [2,3]=col1)
       const gyi = proj[1]*sx + proj[3]*sy + bulkY;
       gx[i]=gxi; gy[i]=gyi;
-      for(const h of hs) for(const cx of [-half,half]) for(const cy of [-half,half]){
-        const wx=cx - gxi*h, wy=cy - gyi*h;          // leaf at plan (cx,cy), height h → shadow at plan - h·g
-        if(wx<minx)minx=wx; if(wx>maxx)maxx=wx; if(wy<miny)miny=wy; if(wy>maxy)maxy=wy;
-      }
+      if(gxi<gminx)gminx=gxi; if(gxi>gmaxx)gmaxx=gxi; if(gyi<gminy)gminy=gyi; if(gyi>gmaxy)gmaxy=gyi;
     }
-    const pad = Math.max(params.leaf_size_m, params.cluster_spread_m) + 0.2;
-    minx-=pad; miny-=pad; maxx+=pad; maxy+=pad;
+    const hLo = woodOn ? 0 : faith.hMin, hHi = faith.hMax;   // wood reaches the ground (trunk base h=0) → include it so the trunk streak isn't clipped
+    // −g·h extremes (g and h both ≥0 or signed): the four products bracket the shift the box can take.
+    const ghx0=Math.min(gminx*hLo,gminx*hHi,gmaxx*hLo,gmaxx*hHi), ghx1=Math.max(gminx*hLo,gminx*hHi,gmaxx*hLo,gmaxx*hHi);
+    const ghy0=Math.min(gminy*hLo,gminy*hHi,gmaxy*hLo,gmaxy*hHi), ghy1=Math.max(gminy*hLo,gminy*hHi,gmaxy*hLo,gmaxy*hHi);
+    // pad: the leaf quad half-extent, the incoherent drift orbit, and the live coherent sway (leaves+wood translate
+    // by up to |sway| at the crown) — none of which are in the rest plan AABB. (The twig-hug trail-back already is.)
+    const pad = params.leaf_size_m + params.drift_amount + Math.hypot(motion.sway[0],motion.sway[1]) + 0.05;
+    const minx=faith.pminx-ghx1-pad, maxx=faith.pmaxx-ghx0+pad, miny=faith.pminy-ghy1-pad, maxy=faith.pmaxy-ghy0+pad;
     const side = Math.max(maxx-minx, maxy-miny, 1e-3);
     faith.ox = (minx+maxx)/2 - side/2; faith.oy = (miny+maxy)/2 - side/2; faith.ext = side;
 
@@ -1345,6 +1370,10 @@ function create(canvas, opts){
     gl.viewport(0,0,res,res);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, faithTex, 0);
     gl.disable(gl.BLEND); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // accumulator starts at 0 (Σ w·T)
+    // attach the two persistent targets ONCE: faithTex→bakeFBO (above) and faithScratch→faithFBO (here). The
+    // per-sample loop then just binds whichever FBO it wants — no per-sample framebufferTexture2D (2N → 2/bake).
+    gl.bindFramebuffer(gl.FRAMEBUFFER, faithFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, faithScratch, 0);
 
     // static faith-VS uniforms (wind / flutter — match the preview & the layer bake); only uG changes per sample
     gl.useProgram(progFaith);
@@ -1389,7 +1418,7 @@ function create(canvas, opts){
 
     for(let i=0;i<N;i++){
       // PASS 1: transmittance_i into scratch (clear to 1 = fully lit; each leaf MULTIPLIES it down by exp(-τ))
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, faithScratch, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, faithFBO);   // faithScratch (attached once above)
       gl.disable(gl.BLEND); gl.clearColor(1,1,1,1); gl.clear(gl.COLOR_BUFFER_BIT);
       gl.enable(gl.BLEND); gl.blendFunc(gl.ZERO, gl.SRC_COLOR);   // dst *= src → Π exp(-τ)
       gl.useProgram(progFaith);
@@ -1403,7 +1432,7 @@ function create(canvas, opts){
         gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, faith.segCount);
       }
       // PASS 2: acc += w_i · transmittance_i  (additive, fullscreen)
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, faithTex, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);    // faithTex accumulator (attached once above)
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.useProgram(progFAcc);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, faithScratch); gl.uniform1i(U.facc.tex, 0);
@@ -2090,7 +2119,7 @@ function create(canvas, opts){
       [progBake, progFaith, progFaithSeg, progFAcc, progTransport, progBlit, progPresent, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
       layerTex.forEach(t => { gl.deleteTexture(t); });
       [clusterTex, clusterGeomTex, faithTex, faithScratch, benchTex, presentTex].forEach(t => { if(t) gl.deleteTexture(t); });
-      [bakeFBO, benchFBO, presentFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
+      [bakeFBO, faithFBO, benchFBO, presentFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
       if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
