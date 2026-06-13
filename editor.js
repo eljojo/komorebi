@@ -39,6 +39,7 @@ let transDur=1.5;                // scene-transition seconds (editor-only — a 
 // Dev panel
 // ===========================================================================
 const controlEls={};   // key -> {input, valEl}
+let dragSun=false;     // desktop canvas-drag mode: false = orbit the camera (the default — "make sense of things"), true = drag the sun (the novelty). Toggled by the Look-section button.
 
 // scope: 'source' rebuilds the light; 'canopy' rebuilds+rebakes leaves;
 // 'textures' reallocates layer textures too; 'perf' resets auto-quality; '' just re-reads each frame.
@@ -61,6 +62,8 @@ const PANEL = [
   ['s','branch_angle_deg','branch °',5,80,1,'canopy'],
   ['s','branch_length_ratio','len ratio',0.3,0.92,0.01,'canopy'],
   ['s','branch_pitch_deg','pitch °',0,80,1,'canopy'],
+  ['s','leader_strength','leader',0,1,0.01,'canopy'],
+  ['s','branch_tau','branches',0,5,0.05,'bake'],
   ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
   ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
   ['s','trans_b','trans B',0.001,0.6,0.001,'canopy'],
@@ -82,10 +85,16 @@ const PANEL = [
   ['s','sun_azimuth_deg','azim °',0,360,1,''],
 
   ['h','Look'],
-  ['s','view_extent_m','view (m)',0.5,16,0.1,''],
-  ['s','view_pitch_deg','tilt °',0,70,1,''],
+  ['s','view_extent_m','view (m)',0.5,40,0.1,''],
+  ['s','view_pitch_deg','tilt °',0,80,1,''],
+  ['s','view_yaw_deg','orbit °',-180,180,1,''],
+  ['s','view_center_x','pan x',-25,25,0.1,''],
+  ['s','view_center_y','pan y',-25,25,0.1,''],
   ['s','view_fov_deg','fov °',10,110,1,''],
   ['s','far_smear','far smear',0,8,0.25,''],
+  ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
+  ['t','standing_scene','standing scene',''],
+  ['s','trunk_radius_m','trunk r',0,0.5,0.01,''],
   ['s','exposure','exposure',0,4,0.01,''],
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
@@ -226,6 +235,8 @@ const TIPS = {
   branch_angle_deg:"<b>How wide the branches fan out.</b> Narrow = tight, broom-like trees; wide = open, spreading crowns with bigger gaps.",
   branch_length_ratio:"<b>How fast branches shrink as they split.</b> Low = stubby and compact; high = long, reaching, sparser.",
   branch_pitch_deg:"<b>How steeply the limbs tilt upward.</b> This spreads the leaves out in height — and height is what sorts them into the sharp vs. soft slices.",
+  leader_strength:"<b>Does the tree have one main trunk going up (conifer) or fork low into a spreading crown (oak)?</b> The big shape knob. 0 = legacy single-point hub (a palm/lollipop). High = limbs attach all the way up a continuing trunk and shorten toward the top — a Christmas-tree cone. Low-but-nonzero = a few low forks, a broad rounded dome. This is what makes branches actually meet the trunk.",
+  branch_tau:"<b>Whether the tree shows its own branches &amp; trunk — not just its leaf-gaps.</b> Stamps the woody skeleton as a dark, opaque shadow into the same layers as the leaves, swaying with them. 0 = off (just dapples, exactly as before); turn it up and the limbs cast their silhouette through the canopy. Wood blocks every colour, so the branch shadow is dark and neutral, never green.",
   foliage_density:"<b>How full the canopy is — sparse spring vs. thick summer.</b> The big mood knob. Sparse: every leaf matters, so the faint wind can totally reshuffle the gaps. Thick: the same flutter only makes them twinkle.",
   leaves_per_cluster:"<b>How many leaves on each twig-tip.</b> Sets the overall leaf count (and how heavy it is to draw). Crossing whole numbers fades in smoothly, so you can sweep it without it jumping.",
   cluster_spread_m:"<b>How tightly leaves bunch on a twig.</b> Tight = distinct clumps with clear gaps between them; loose = a more even leaf carpet.",
@@ -246,7 +257,12 @@ const TIPS = {
   sun_azimuth_deg:"<b>Which compass direction the sun is in.</b> Turns the direction the dapples stretch and lean.",
   // Look
   view_extent_m:"<b>Zoom — how much ground you see.</b> Small = a close-up of a few big dapples; large = a wide field of many small ones. (It's the span at screen centre, so it holds as you tilt.)",
-  view_pitch_deg:"<b>Tilt — straight down vs. out along the floor.</b> 0° is the old top-down map; raise it and you're sitting under the tree — the near floor drops to the bottom of frame, the far floor recedes and dissolves into haze.",
+  view_pitch_deg:"<b>Tilt — straight down vs. out along the floor.</b> 0° is the old top-down map; raise it and you're sitting under the tree — the near floor drops to the bottom of frame, the far floor recedes and dissolves into haze. (Or just drag up/down on the picture.)",
+  view_yaw_deg:"<b>Orbit — spin the view around.</b> Rotates which compass direction is 'up the screen' on the floor, so you can walk around the structure and make sense of it from any side. (Or just drag left/right on the picture.) Doesn't move the sun, so the shadows stay physically cast as you turn.",
+  view_center_x:"<b>Pan — slide the view across the floor.</b> Moves the patch of ground you're centred on, so you can walk over to the shadow or push the tree out of frame and watch only what it casts. (Or shift-drag on the picture.) Pair with zoom (wheel) to back away.",
+  view_center_y:"<b>Pan — slide the view across the floor.</b> Moves the patch of ground you're centred on, so you can walk over to the shadow or push the tree out of frame and watch only what it casts. (Or shift-drag on the picture.) Pair with zoom (wheel) to back away.",
+  standing_scene:"<b>Treat the trees as objects STANDING in the scene, not a canopy hovering overhead.</b> Turns on the TRUNK shadow — a vertical trunk has no flat footprint, so the normal layered model can't cast it; this draws its real swept shadow streak. Best with a low, raking sun so the streak stretches across the floor. (Rooting the trees off to the side with a lit floor is coming next.)",
+  trunk_radius_m:"<b>How thick the trunk is</b> — i.e. how wide its shadow streak. The streak softens and widens toward its far end on its own, because the higher part of the trunk is blurred more by the sun's size. 0 = no trunk shadow.",
   view_fov_deg:"<b>Lens — how strong the perspective is.</b> Narrow is flat and telephoto; wide throws the near floor big and rushes the far floor away. Only bites once you've tilted.",
   far_smear:"<b>Far-field smear — distance softening.</b> A far pixel covers a big patch of ground, so its dapples should melt into soft down-sun streaks while the near floor stays crisp. Higher = more melt (and less far-field shimmer). Has no effect top-down — it grows with the tilt.",
   exposure:"<b>Brightness.</b> How bright the floor is. Pure look — it never changes the light simulation, just where it lands on screen.",
@@ -430,10 +446,28 @@ canvas.addEventListener('pointermove',e=>{
     px=e.clientX; py=e.clientY; return;                        // vertical is committed on release
   }
   if(!dragging) return;
-  params.sun_azimuth_deg = (params.sun_azimuth_deg + (e.clientX-px)*0.3 + 360)%360;
-  params.sun_elevation_deg = clamp(params.sun_elevation_deg - (e.clientY-py)*0.3, 4, 90);
-  px=e.clientX; py=e.clientY; syncControl('sun_azimuth_deg'); syncControl('sun_elevation_deg');
+  if(dragSun){                                                   // novelty mode: drag positions the sun (as before)
+    params.sun_azimuth_deg = (params.sun_azimuth_deg + (e.clientX-px)*0.3 + 360)%360;
+    params.sun_elevation_deg = clamp(params.sun_elevation_deg - (e.clientY-py)*0.3, 4, 90);
+    syncControl('sun_azimuth_deg'); syncControl('sun_elevation_deg');
+  } else if(e.shiftKey){                                         // SHIFT-drag = pan (walk the view across the floor)
+    const k = params.view_extent_m / Math.max(1, canvas.clientHeight);
+    params.view_center_x -= (e.clientX-px)*k;
+    params.view_center_y += (e.clientY-py)*k;
+    syncControl('view_center_x'); syncControl('view_center_y');
+  } else {                                                       // default: orbit the camera — drag ↔ to spin, ↕ to tilt
+    params.view_yaw_deg = ((params.view_yaw_deg + (e.clientX-px)*0.3 + 180)%360+360)%360 - 180;   // wrap to [-180,180]
+    params.view_pitch_deg = clamp(params.view_pitch_deg + (py-e.clientY)*0.3, 0, 80);             // drag up = more side-on
+    syncControl('view_yaw_deg'); syncControl('view_pitch_deg');
+  }
+  px=e.clientX; py=e.clientY;
 });
+// mouse wheel = zoom the camera (view extent), in both drag modes; preventDefault so the page doesn't scroll
+canvas.addEventListener('wheel', e=>{
+  e.preventDefault();
+  params.view_extent_m = clamp(params.view_extent_m * Math.exp(e.deltaY*0.0015), 0.5, 40);
+  syncControl('view_extent_m');
+}, { passive:false });
 // on a touch device the keyboard / drag hints don't apply — show the swipe + panel gestures instead
 if(coarse)
   hint.innerHTML = 'swipe <b>↕</b> scenes · <b>↔</b> time · <b>double-tap</b> panel · <b>hold</b> peek';

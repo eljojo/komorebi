@@ -146,6 +146,30 @@ export const PRESETS = {
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
     "view_pitch_deg": 24, "view_fov_deg": 64,
   }),
+  // 'park 1' — (was 'afternoon 8') the first STANDING-SCENE look (spec §4.8): the tree STANDS in the scene and
+  // its whole SHADOW (trunk streak → branches → crown dapples) is thrown ACROSS a lit floor — not an infinite
+  // canopy hovering overhead (the park model). Two things make it: standing_scene adds the bulk lateral shadow
+  // offset the park model omits (so a LOW sun casts the shadow to the side); and a wide view_extent over a small
+  // canopy_extent leaves the grove a finite blob with lit floor around it. Orient via sun azimuth / camera orbit.
+  'park 1': Object.assign({}, DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 1, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 38, "branch_tau": 2.75, "leader_strength": 0.15, "clusters_per_layer": 60, "leaves_per_cluster": 12,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.175, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "view_extent_m": 12, "view_pitch_deg": 36.65000000000006, "view_fov_deg": 60, "view_yaw_deg": -4.499999999999659,
+    "view_center_x": 0, "view_center_y": -7, "standing_scene": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 5.854454000000409, "drift_auto": true, "drift_speed": 0.02,
+  }),
   // 'memories' — the §1 north-star look: a sparse early-spring grove (foliage 0.45, so individual leaves
   // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
   'memories': Object.assign({}, DEFAULTS, {

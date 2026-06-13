@@ -8,7 +8,7 @@ import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS } from "./komorebi.js";
 // the DEFAULTS knobs that deliberately do NOT participate in transitions: runtime/debug flags, the look's
 // tone-map + wind-pattern (live uniforms / a table swap, snapped not tweened), and the legacy clusters_per_layer.
 const KNOWN_EXCLUDED = [
-  "clusters_per_layer", "tone_map", "wind_pattern",
+  "clusters_per_layer", "tone_map", "wind_pattern", "standing_scene",   // standing_scene: a scene-MODE flag (gates the trunk occluder), snapped not tweened
   "drift_auto", "auto_quality", "adaptive_motion", "adaptive_idle_fps", "show_source", "show_layer", "show_layer_index",
 ];
 

@@ -23,6 +23,7 @@ const DEG = Math.PI / 180, TAU = Math.PI*2;
 const MAX_SAMPLES = 48;
 const BAKE_MIN = 768;   // floor auto_quality trims bake_resolution to below the knee (§9)
 const MAX_LAYERS = 4;
+const MAX_TRUNKS = 16;   // standing-scene trunk occluders (one per tree); analytic per-sample shadow in transport
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
 // overlays (their shaders, buffers, draw fns). typeof keeps an undefined-global load safe (= true).
@@ -39,8 +40,8 @@ const lerpAngle = (a,b,t,period) => { const d=((b-a)%period + period*1.5)%period
 // snapped once at the transition's bloom peak, hidden under a transient widening of the source. ----
 const MORPH_KEYS = [
   'core_angular_radius_deg','halo_angular_radius_deg','core_weight_fraction','cloud_thickness','eclipse_amount',
-  'canopy_base_height_m','canopy_thickness_m',                          // layer heights — read live, no rebuild
-  'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','far_smear','exposure','contrast',
+  'canopy_base_height_m','canopy_thickness_m','branch_tau',             // layer heights + branch-shadow darkness — read live, no rebuild
+  'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'wind_strength','wind_gustiness','wind_direction_deg','gust_frequency','weather_variability','weather_speed','gust_attack','gust_decay',
@@ -64,7 +65,7 @@ const CANOPY_KEYS = [
   'cluster_spread_m','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b',
 ];
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
-  'branch_levels','branch_children','limb_count','layer_count',
+  'branch_levels','branch_children','limb_count','layer_count','leader_strength',
   'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
 ];   // (tone_map is a live uniform: it just snaps — under the bloom if one's already running, else at the end — never forces one)
 const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back to the cloud dissolve (don't regrow per frame)
@@ -124,6 +125,8 @@ const DEFAULTS = {
   branch_angle_deg: 34,            // cone half-angle children fan from their parent
   branch_length_ratio: 0.62,       // child length / parent length
   branch_pitch_deg: 26,            // how steeply limbs rise from horizontal (sets the height spread)
+  branch_tau: 0.0,                 // trunk+branch shadow (spec §4.5): per-channel optical depth stamped for the woody skeleton. 0 = OFF — leaves-only, byte-identical to the pre-branch looks (no geometry drawn); >0 = the tree casts its own silhouette. Wood is ~opaque & neutral, so one scalar covers RGB.
+  leader_strength: 0.0,            // monopodial growth (spec §4.5): 0 = legacy single-hub (all limbs from one point — a palm/lollipop); >0 = limbs attach ALONG a continuing trunk, shorter toward the top → excurrent cone (high) vs decurrent dome (low). The excurrent↔decurrent axis (apical control).
   clusters_per_layer: 60,          // legacy (pre-skeleton); unused by the grown canopy, kept for preset compat
   leaves_per_cluster: 22,          // leaves per terminal twig
   cluster_spread_m: 0.13,
@@ -143,6 +146,14 @@ const DEFAULTS = {
   view_extent_m: 4.0,              // vertical span of the visible ground (zoom = on-axis span, any tilt)
   view_pitch_deg: 16,              // camera tilt from straight-down (0 = top-down); gentle under-the-tree default
   view_fov_deg: 50,                // vertical FOV — perspective strength / lens
+  view_yaw_deg: 0,                 // camera orbit about the vertical axis through frame centre (0 = unchanged); rotates which compass direction is "up the screen" on the floor — for making sense of the structure from the side
+  view_center_x: 0, view_center_y: 0,   // camera PAN: world point the screen centre looks at (0,0 = frame centre) — walk the view around the floor (shift-drag), e.g. to put the tree out of frame and watch only its shadow
+  // Standing-scene mode (spec §4.8): treat the trees as objects STANDING in a scene casting shadows on the floor,
+  // rather than an infinite canopy hovering overhead (the park model). v1 adds the TRUNK shadow — a vertical
+  // occluder the layered slab model can't cast (a vertical trunk has no horizontal footprint). Off = the park
+  // model, byte-identical. Rooting the trees off to the side + an un-tiled lit floor is the next step.
+  standing_scene: false,           // opt-in: render the trunk as a real vertical occluder (its swept shadow streak)
+  trunk_radius_m: 0.1,             // trunk thickness (m) → width of its shadow streak; the area light softens it along its length
   far_smear: 3.0,                  // far-field dapple smear: extra throw (m) per unit foreshortening; 0 = off, no effect top-down
   exposure: 1.3,
   contrast: 1.0,
@@ -329,6 +340,65 @@ void main(){
   frag = vec4(vTau*cov, cov);
 }`;
 
+// ---- branch/trunk occluder (spec §4.5): the woody skeleton stamped as an OPAQUE, neutral occluder into the
+// SAME depth layers as the leaves, so the tree casts its own silhouette — not just its leaf-gaps. (For the
+// overhead park looks this was skipped; a backlit tree seen from the side — the bedroom scene — needs it.)
+// A segment is drawn as an oriented quad between its two plan endpoints, inheriting the SAME limb/twig swing
+// the leaves on it inherit: mode 2 = terminal twig (twig-swing ∘ limb-swing), mode 1 = limb/mid (limb-swing),
+// mode 0 = trunk (drift only — a vertical trunk plan-projects to ~a point, so it casts almost nothing top-down,
+// correctly; it becomes a real column only under a side view). ----
+const VS_BRANCH = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aCorner;   // unit quad: x = along length [-1,1], y = across width [-1,1]
+layout(location=1) in vec4 iSeg;      // rest endpoints: a.xy, b.xy (plan, world metres)
+layout(location=2) in vec4 iMeta;     // halfWidth, clusterId, mode, _
+uniform vec2  uCanopyOrigin;
+uniform vec2  uCanopyExtent;
+uniform vec2  uSway;                  // trunk (coherent) translation for this layer (§5.1)
+uniform highp sampler2D uClusterTex;  // per-clump dynamic bend: limb .x, twig .y, stem seed .z
+uniform highp sampler2D uClusterGeom; // per-clump static geom: clump centre .xy, trunk pivot .zw
+uniform float uStemLen;               // twig stem length (pivot offset toward the limb)
+out float vAcross;
+void main(){
+  int cid = int(iMeta.y + 0.5);
+  float mode = iMeta.z;
+  vec4 geom = texelFetch(uClusterGeom, ivec2(cid,0), 0);     // C.xy (clump centre), BL.zw (trunk pivot)
+  vec3 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0).xyz; // limb thL, twig thT, stem seed
+  vec2 C = geom.xy, BL = geom.zw;
+  vec2 a = iSeg.xy, b = iSeg.zw;
+  if(mode > 1.5){   // terminal twig: swing the segment about its stem joint (limb-ward), exactly like its leaves
+    vec2 d = C - BL; float Lr = max(length(d), 1e-3); vec2 radial = d/Lr;
+    float sa = bend.z*0.6, ca=cos(sa), sna=sin(sa);
+    vec2 Jt = C - (mat2(ca,-sna,sna,ca)*radial) * min(uStemLen, Lr*0.9);
+    float ct=cos(bend.y), st=sin(bend.y); mat2 Rt=mat2(ct,-st,st,ct);
+    a = Jt + Rt*(a - Jt); b = Jt + Rt*(b - Jt);
+  }
+  if(mode > 0.5){   // limb/mid: swing the segment about the tree's trunk
+    float cl=cos(bend.x), sl=sin(bend.x); mat2 Rl=mat2(cl,-sl,sl,cl);
+    a = BL + Rl*(a - BL); b = BL + Rl*(b - BL);
+  }
+  a += uSway; b += uSway;
+  vec2 ab = b - a; float L = length(ab);
+  vec2 dir = (L > 1e-5) ? ab/L : vec2(1.0, 0.0);   // a vertical trunk has a==b in plan → harmless degenerate dot
+  vec2 perp = vec2(-dir.y, dir.x);
+  vec2 world = mix(a, b, aCorner.x*0.5+0.5) + perp*(aCorner.y*iMeta.x);
+  vec2 uv = (world - uCanopyOrigin)/uCanopyExtent;
+  gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
+  vAcross = aCorner.y;
+}`;
+
+const FS_BRANCH = `#version 300 es
+precision highp float;
+in float vAcross;
+uniform float uBranchTau;   // optical depth of wood — neutral (same R/G/B), so the branch shadow is dark, not green
+uniform float uEdge;
+out vec4 frag;
+void main(){
+  float cov = 1.0 - smoothstep(1.0-uEdge, 1.0, abs(vAcross));   // soft across-width edge (honest area-average)
+  if(cov <= 0.0) discard;
+  frag = vec4(vec3(uBranchTau)*cov, cov);   // additive optical depth, same as the leaf bake
+}`;
+
 const VS_FULL = `#version 300 es
 precision highp float;
 out vec2 vUv;
@@ -345,14 +415,23 @@ out vec4 frag;
 #define MAX_SAMPLES ${MAX_SAMPLES}
 uniform vec3  uSamples[MAX_SAMPLES];   // xy = angular offset (rad), z = weight (sum=1)
 uniform int   uSampleCount;
+uniform vec4  uTrunks[${MAX_TRUNKS}];   // standing-scene trunk occluders: base.xy (ground anchor), height in .z (.w unused)
+uniform int   uTrunkCount;              // 0 = off (park model), byte-identical
+uniform float uTrunkRadius;             // trunk shadow half-width (m), shared — a live knob, so it tweens without a regrow
+uniform vec2  uTrunkSway;               // whole-tree drift applied to the trunk base (standing scene), matching the leaf bake
 uniform highp sampler2D uLayer[${MAX_LAYERS}];   // highp: optical depth exceeds lowp's ~[-2,2]
 uniform float uLayerHeight[${MAX_LAYERS}];
 uniform int   uLayerCount;
 uniform mat2  uProj;                    // angular->ground per unit height (ellipse + shear)
+uniform vec2  uBulkShift;               // STANDING SCENE (§4.8): bulk lateral shadow offset per unit height = cot(elev)·(anti-sun dir).
+                                        // The park model omits this (shadows sit directly under the canopy, only stretched) — invisible for
+                                        // an infinite canopy, but a discrete tree needs its shadow CAST to the side. 0 = park model, unchanged.
 uniform float uViewExtent;
 uniform float uAspect;
 uniform float uPitch;            // camera tilt from straight-down (rad); 0 = top-down (reduces to the old ortho map)
 uniform float uFov;              // vertical full FOV (rad) — perspective strength / lens
+uniform float uViewYaw;          // camera orbit about vertical (rad); rotates the sampled floor about frame centre. 0 = unchanged
+uniform vec2  uViewCenter;        // camera PAN: world point the screen centre looks at (0 = frame centre). Lets you walk the view around the floor.
 uniform float uFarSmear;         // far-field dapple smear (m of extra throw per unit foreshortening, §4.7)
 uniform vec3  uHazeColor;        // linear-HDR distance haze the far floor dissolves into (§4.7)
 uniform vec2  uCanopyOrigin;
@@ -413,11 +492,16 @@ void main(){
     float fore = clamp(pow(Dref/max(-d.z,1e-4), 1.5) - 1.0, 0.0, 4.0); // 0 at pitch 0 & frame bottom; up toward horizon
     extraThrow = uFarSmear * fore;                                     // extra throw -> wider, softer down-sun penumbra far off
   }
+  // camera orbit (uViewYaw): rotate the sampled floor about frame centre — a true orbit for a flat floor (the
+  // tilt/foreshortening axis stays put, the world spins under it). The sun-shift g stays in WORLD space below,
+  // so shadows remain physically cast as the gaze turns. 0 → identity, byte-identical to the pre-yaw look.
+  if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); world = mat2(cy,-sy,sy,cy)*world; }
+  world += uViewCenter;            // camera pan: shift the looked-at floor point (0 = unchanged)
   vec3 acc = vec3(0.0);
   bool ca = (uChroma.r!=1.0 || uChroma.g!=1.0 || uChroma.b!=1.0);   // diffraction on? else the byte-identical single-tap path
   for(int i=0;i<MAX_SAMPLES;i++){
     if(i>=uSampleCount) break;
-    vec2 g = uProj * uSamples[i].xy;        // ground displacement per unit height
+    vec2 g = uProj * uSamples[i].xy + uBulkShift;   // ground displacement per unit height: ellipse/shear of the sample + the bulk sun-angle offset (§4.8)
     float w = uSamples[i].z;
     // light must clear EVERY layer -> multiply transmittance; shift grows with height
     vec3 T = vec3(1.0);
@@ -431,6 +515,26 @@ void main(){
       if(uLayerCount>1) T *= tap(uLayer[1], world + (uLayerHeight[1]+extraThrow)*g);
       if(uLayerCount>2) T *= tap(uLayer[2], world + (uLayerHeight[2]+extraThrow)*g);
       if(uLayerCount>3) T *= tap(uLayer[3], world + (uLayerHeight[3]+extraThrow)*g);
+    }
+    // standing-scene TRUNK occluder (spec §4.8): a vertical trunk has NO horizontal footprint, so the layered
+    // slab can't cast it. Instead, for THIS sun-sample the trunk's shadow is the segment swept from its foot
+    // (height 0, no shift) to its top (height H, shifted by H*g) — width = the trunk radius. Occlude the floor
+    // point if it falls within that capsule. Summed over samples (below) the hard capsules blur into a soft streak that
+    // WIDENS toward the far end (higher slices spread more) — the penumbra emerges from the area light, honestly.
+    if(uTrunkCount>0){
+      float occ = 1.0;
+      for(int k=0;k<${MAX_TRUNKS};k++){
+        if(k>=uTrunkCount) break;
+        vec4 tk = uTrunks[k];
+        vec2 base = tk.xy + uTrunkSway;        // trunk drifts with the whole-tree sway, so it's not a rigid post among moving leaves
+        vec2 ab = -tk.z * g;                   // foot→top shadow vector for this sample (top = base - H*g)
+        vec2 ap = world - base;
+        float seg = clamp(dot(ap,ab)/max(dot(ab,ab),1e-7), 0.0, 1.0);
+        float dist = length(ap - seg*ab);      // distance from the floor point to the shadow segment
+        float rad = uTrunkRadius*(1.0 - 0.25*seg);   // gentle taper: a touch thinner toward the crown (a trunk, not a pylon) without pinching off before it meets the crown
+        occ *= smoothstep(rad*0.7, rad*1.25, dist);  // 0 inside (opaque wood), 1 outside; the sample-sum gives the soft penumbra
+      }
+      T *= occ;
     }
     acc += w*T;                              // sum of shifted sharp shadows == soft shadow
   }
@@ -572,6 +676,7 @@ function create(canvas, opts){
     return p;
   }
   const progBake = program(VS_BAKE, FS_BAKE);
+  const progBranch = program(VS_BRANCH, FS_BRANCH);   // branch/trunk occluder stamp (spec §4.5); drawn only when branch_tau>0
   const progTransport = program(VS_FULL, FS_TRANSPORT);
   const progBlit = program(VS_FULL, FS_BLIT);
   const progPresent = program(VS_FULL, FS_PRESENT);                   // adaptive frame-rate: offscreen frame -> screen
@@ -585,11 +690,15 @@ function create(canvas, opts){
              windLevel:loc(progBake,'uWindLevel'), windTime:loc(progBake,'uWindTime'),
              leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
              clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom') };
+  U.branch = { origin:loc(progBranch,'uCanopyOrigin'), extent:loc(progBranch,'uCanopyExtent'), sway:loc(progBranch,'uSway'),
+               stemLen:loc(progBranch,'uStemLen'), branchTau:loc(progBranch,'uBranchTau'), edge:loc(progBranch,'uEdge'),
+               clusterTex:loc(progBranch,'uClusterTex'), clusterGeom:loc(progBranch,'uClusterGeom') };
   U.tp = {
     samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
+    trunks:loc(progTransport,'uTrunks[0]'), trunkCount:loc(progTransport,'uTrunkCount'), trunkRadius:loc(progTransport,'uTrunkRadius'),
     heights:loc(progTransport,'uLayerHeight[0]'), layerCount:loc(progTransport,'uLayerCount'),
-    proj:loc(progTransport,'uProj'), viewExtent:loc(progTransport,'uViewExtent'), aspect:loc(progTransport,'uAspect'),
-    pitch:loc(progTransport,'uPitch'), fov:loc(progTransport,'uFov'), haze:loc(progTransport,'uHazeColor'),
+    proj:loc(progTransport,'uProj'), bulkShift:loc(progTransport,'uBulkShift'), viewExtent:loc(progTransport,'uViewExtent'), aspect:loc(progTransport,'uAspect'),
+    pitch:loc(progTransport,'uPitch'), fov:loc(progTransport,'uFov'), yaw:loc(progTransport,'uViewYaw'), viewCenter:loc(progTransport,'uViewCenter'), trunkSway:loc(progTransport,'uTrunkSway'), haze:loc(progTransport,'uHazeColor'),
     farSmear:loc(progTransport,'uFarSmear'),
     origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
     sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'), ground:loc(progTransport,'uGround'),
@@ -634,7 +743,8 @@ function create(canvas, opts){
 
   const bakeFBO = gl.createFramebuffer();
   let layerTex = [];           // MAX_LAYERS textures (active sized, inactive 1x1)
-  let layerVAO = [];           // per-layer instance VAOs {vao,count,buf}
+  let layerVAO = [];           // per-layer leaf instance VAOs {vao,count,buf}
+  let branchVAO = [];          // per-layer branch/trunk occluder VAOs (spec §4.5); built every regrow, drawn only when branch_tau>0
   let hier = null;             // branch hierarchy: limb + twig spring state (built in regenCanopy)
   let clusterTex = null;       // per-clump dynamic bend angles (limb, twig), updated each frame
   let clusterGeomTex = null;   // per-clump static geometry (clump centre + trunk pivot)
@@ -644,6 +754,7 @@ function create(canvas, opts){
   let presentFBO=null, presentTex=null, presentW=0, presentH=0, adaptiveLastRender=0, adaptiveHot=true;
   const ADAPT_HI=0.05, ADAPT_LO=0.02;   // hysteresis on the motion magnitude: above HI render every frame, below LO drop to idle_fps
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01 };
+  const trunks = { flat:new Float32Array(0), count:0 };   // standing-scene trunk occluders (base.xy, height, radius) per tree, filled by regenCanopy
 
   function makeLayerTexture(size){
     const t=gl.createTexture();
@@ -671,6 +782,8 @@ function create(canvas, opts){
     const prevHier = hier;   // keep the old hierarchy so a same-topology regrow can carry the in-flight sway across
     layerVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
     layerVAO = [];
+    branchVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
+    branchVAO = [];
     const E = params.canopy_extent_m;
     const tau = [
       -Math.log(clamp(params.trans_r,1e-4,0.999)),
@@ -706,6 +819,7 @@ function create(canvas, opts){
     const gr = mulberry32(hash3(params.seed>>>0, 0x5EED, 7));   // growth stream (own RNG)
     const segments = [];     // {a,b,level} world-space skeleton, kept for the 3D view ([3])
     const twigs = [];        // terminal nodes: {x,y,z, limb, tx,ty} — plan x,y, height z, global limb, tree trunk
+    const trunkList = [];    // standing-scene (§4.8): one trunk occluder per tree — base.xy, height, radius
     const limbDir  = new Float32Array(nLimb*2);         // plan unit direction (drives wind torque)
     const limbPlan = new Float32Array(nLimb*2);         // an outboard wind-sample point near each limb
 
@@ -713,25 +827,30 @@ function create(canvas, opts){
     // to view_extent (so the grove fills the frame regardless of zoom), capped to fit inside the bake.
     const golden = Math.PI*(3 - Math.sqrt(5));
     const Rfill = Math.min(E*0.46, Math.max(0.5, params.view_extent_m));
-    const crown0 = (Rfill/Math.sqrt(treeCountF))*1.7;   // base crown radius, normalised by the continuous count so it shrinks smoothly as trees are added
+    // crown radius. PARK model: tied to the view so crowns fill the frame. STANDING scene (§4.8): a natural,
+    // fixed fraction of the bake extent instead — so a single tree's crown fits the texture (the view-tied size
+    // overflows and clips it) and the tree reads as a discrete object, not a frame-filling canopy.
+    const crown0 = params.standing_scene ? E*0.26 : (Rfill/Math.sqrt(treeCountF))*1.7;
     const trunkH = crown0*0.6;                          // a real trunk lifts each crown off the ground.
     // It's a CONSTANT (same for every tree), so it only offsets z uniformly — the relative layer-binding
     // below is unchanged, i.e. the cast dapples are untouched; only the 3D structure/preview gains height.
+
+    const L = clamp(params.leader_strength, 0, 1);   // 0 = legacy single-hub; >0 = monopodial leader (limbs ALONG a trunk)
 
     function grow(out, base, dir, len, level, limb){
       const tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
       out.seg.push({ a:base, b:tip, level });
       if(level >= levels){ out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb }); return; }
       for(let c=0;c<kids;c++){
-        const az = (c+0.5)/kids*TAU2 + (gr()-0.5)*1.2;       // fan children around the parent
+        // phyllotaxis: a golden-angle SPIRAL when a leader is set (children never stack into even spokes), else the legacy even fan
+        const az = L>0 ? (c*golden + (gr()-0.5)*0.4) : ((c+0.5)/kids*TAU2 + (gr()-0.5)*1.2);
         const spread = coneA*(0.55+0.9*gr());
         grow(out, tip, coneDir(dir, az, spread), len*lenRatio*(0.8+0.4*gr()), level+1, limb);
       }
     }
 
     for(let tt=0;tt<nTree;tt++){
-      // trunk placement: Vogel disk so trees spread evenly; the first tree sits at the centre so the
-      // middle of the frame is always covered (a single tree would leave a bare-bright hole there).
+      // trunk placement: Vogel disk so trees spread evenly; the first tree sits at the centre.
       const treeCov = (tt===nFull) ? tFrac : 1.0;        // the marginal tree fades in by coverage (1 for full trees)
       const rr = Rfill*Math.sqrt(tt/treeCountF);         // normalise by the continuous count -> trees re-space smoothly as it morphs
       const aa = tt*golden + (gr()-0.5)*0.6;
@@ -739,23 +858,55 @@ function create(canvas, opts){
       const crown = crown0*(0.7+0.6*gr());               // per-tree size variation (smaller -> denser)
       const out = { seg:[], tw:[] };
       const limbBase = tt*lpt, limbRaw = new Float32Array(lpt*2);
-      for(let i=0;i<lpt;i++){
-        const gi = limbBase+i;
-        const azL = (i+0.5)/lpt*TAU2 + (gr()-0.5)*(TAU2/lpt)*0.6;   // fan around the circle, modest jitter
-        const ce = Math.cos(limbEl), se = Math.sin(limbEl);
-        const dir = [ce*Math.cos(azL), ce*Math.sin(azL), se];
-        const len = 0.7+0.5*gr();                        // relative length; per-tree scaled to `crown` below
-        limbDir[2*gi]=Math.cos(azL); limbDir[2*gi+1]=Math.sin(azL);
-        limbRaw[2*i]=dir[0]*len; limbRaw[2*i+1]=dir[1]*len;
-        grow(out, [0,0,0], dir, len, 1, gi);
+      let leaderTop = 0;
+      if(L>0){
+        // MONOPODIAL (spec §4.5): limbs attach at staggered heights ALONG a continuing trunk axis (plan-centre),
+        // so the branches actually MEET the trunk. leader_strength sends the origins UP the bole and shortens
+        // limbs toward the top (acrotony → excurrent cone); low values keep them low (a few near-base forks →
+        // decurrent dome). This replaces the single-origin hub AND the de-dandelion hack with the real mechanism.
+        const boleH = 0.8;                               // BARE BOLE below the crown (local units) — a real trunk, so the tree isn't foliage-to-the-ground (a bush)
+        const hLo = boleH, hHi = boleH + (1.0 + 0.6*L);  // crown band sits ABOVE the bole; taller for a stronger leader
+        for(let i=0;i<lpt;i++){
+          const gi = limbBase+i;
+          const f = (i+0.5)/lpt;                         // 0..1 up the limb set
+          const h = hLo + (hHi-hLo)*f;                   // attach height ON the trunk axis, above the bole
+          const azGeo = i*golden + (gr()-0.5)*0.3;       // phyllotaxis spiral (geometry)
+          const pitch = limbEl*(1 + 0.4*L*f);            // steeper toward the apex → a tighter cone
+          const ce = Math.cos(pitch), se = Math.sin(pitch);
+          const len = (0.4+0.2*gr())*(1 - 0.45*L*f);     // limbs SHORTER than the crown is tall → narrow crown on a tall trunk, not a bush; acrotony shortens toward the apex
+          const dir = [ce*Math.cos(azGeo), ce*Math.sin(azGeo), se];
+          // wind torque rides a BALANCED fan (decoupled from the spiral) so a gust still LEANS, never spins (§5.1)
+          const azBal = (i+0.5)/lpt*TAU2 + (gr()-0.5)*(TAU2/lpt)*0.6;
+          limbDir[2*gi]=Math.cos(azBal); limbDir[2*gi+1]=Math.sin(azBal);
+          limbRaw[2*i]=Math.cos(azGeo)*len; limbRaw[2*i+1]=Math.sin(azGeo)*len;
+          grow(out, [0,0,h], dir, len, 1, gi);
+        }
+      } else {
+        // legacy single-hub: every limb from one point (the palm/lollipop) — kept as the leader_strength=0 case
+        for(let i=0;i<lpt;i++){
+          const gi = limbBase+i;
+          const azL = (i+0.5)/lpt*TAU2 + (gr()-0.5)*(TAU2/lpt)*0.6;
+          const ce = Math.cos(limbEl), se = Math.sin(limbEl);
+          const dir = [ce*Math.cos(azL), ce*Math.sin(azL), se];
+          const len = 0.7+0.5*gr();
+          limbDir[2*gi]=Math.cos(azL); limbDir[2*gi+1]=Math.sin(azL);
+          limbRaw[2*i]=dir[0]*len; limbRaw[2*i+1]=dir[1]*len;
+          grow(out, [0,0,0], dir, len, 1, gi);
+        }
       }
-      // normalise this tree's crown to `crown`, then translate it to its trunk (tx,ty)
-      let mr=1e-3; for(const w of out.tw) mr=Math.max(mr, Math.hypot(w.x,w.y));
+      // normalise the crown's PLAN extent to `crown` and lift onto the trunk. A monopodial tree carries its own
+      // height (limbs are up the bole), so it scales z with the plan and stands on the ground; the legacy hub
+      // lifts its whole crown by trunkH.
+      let mr=1e-3, mz=1e-3; for(const w of out.tw){ mr=Math.max(mr, Math.hypot(w.x,w.y)); mz=Math.max(mz, w.z); }
       const s = crown/mr;
-      for(const w of out.tw){ w.x=w.x*s+tx; w.y=w.y*s+ty; w.z=w.z*s+trunkH; w.tx=tx; w.ty=ty; w.tcov=treeCov; twigs.push(w); }
-      for(const sg of out.seg) segments.push({ a:[sg.a[0]*s+tx, sg.a[1]*s+ty, sg.a[2]*s+trunkH],
-                                               b:[sg.b[0]*s+tx, sg.b[1]*s+ty, sg.b[2]*s+trunkH], level:sg.level, cov:treeCov, tree:tt });
-      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkH], level:0, cov:treeCov, tree:tt });   // the major trunk: ground -> crown base
+      if(L>0) leaderTop = mz*1.03;                       // the trunk/leader reaches the top of the foliage (pokes just above)
+      const zLift = (L>0) ? 0 : trunkH;
+      const sc = (p) => [ p[0]*s+tx, p[1]*s+ty, p[2]*s+zLift ];
+      for(const w of out.tw){ const q=sc([w.x,w.y,w.z]); w.x=q[0]; w.y=q[1]; w.z=q[2]; w.tx=tx; w.ty=ty; w.tcov=treeCov; w.tree=tt; twigs.push(w); }
+      for(const sg of out.seg){ segments.push({ a:sc(sg.a), b:sc(sg.b), level:sg.level, cov:treeCov, tree:tt }); }
+      const trunkTop = (L>0) ? leaderTop*s : trunkH;
+      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkTop], level:0, cov:treeCov, tree:tt });   // the continuing trunk axis
+      if(trunkList.length < MAX_TRUNKS*4) trunkList.push(tx, ty, params.canopy_base_height_m, 0);   // standing-scene trunk occluder (§4.8): rises to the CROWN BASE so its streak meets the crown dapples
       for(let i=0;i<lpt;i++){ const gi=limbBase+i;
         limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty; }
     }
@@ -844,6 +995,47 @@ function create(canvas, opts){
     };
     for(let l=0;l<nLayer;l++) layerVAO.push(buildLayerVAO(new Float32Array(layerData[l])));
 
+    // ---- branch/trunk occluders (spec §4.5): stamp the woody skeleton into the SAME depth layers as the
+    // leaves. Each segment carries the cluster whose swing it rides (so a branch sweeps with the leaves on
+    // it) and its depth layer. Always built (cheap, ~one quad per segment); the bake only DRAWS them when
+    // branch_tau>0, so a leaves-only look pays nothing per frame and stays byte-identical. ----
+    const branchData = [];
+    for(let l=0;l<nLayer;l++) branchData.push([]);
+    const bw = params.leaf_size_m*1.2;                  // base half-width; tapers by level (trunk thick → twig thin)
+    for(const sg of segments){
+      // representative cluster = nearest twig of the SAME tree to this segment's tip: the limb/twig swing it
+      // inherits AND its depth layer. A terminal twig finds its own cluster (distance ~0). (§5.1)
+      let best=0, bestD=1e30;
+      for(let j=0;j<nClusterTotal;j++){
+        if(twigs[j].tree!==sg.tree) continue;
+        const dx=twigs[j].x-sg.b[0], dy=twigs[j].y-sg.b[1], d=dx*dx+dy*dy;
+        if(d<bestD){ bestD=d; best=j; }
+      }
+      const mode  = sg.level<=0 ? 0 : (sg.level>=levels ? 2 : 1);   // 0 trunk, 1 limb/mid, 2 terminal twig
+      // bin by the segment's OWN height, not its far twig's — so a limb's low base shadows down near the trunk
+      // (layer 0 = the crown base = the trunk-occluder top) and the branch shadow CONNECTS to the trunk, no gap.
+      const sz = 0.5*(sg.a[2]+sg.b[2]);
+      const layer = (sg.level<=0 || nLayer<=1) ? 0 : clamp(Math.round((sz-zMin)/dz*(nLayer-1)), 0, nLayer-1);
+      const halfW = Math.max(0.01, bw*Math.pow(0.62, sg.level));    // taper with depth in the tree
+      branchData[layer].push(sg.a[0],sg.a[1],sg.b[0],sg.b[1], halfW, best, mode, 0);
+    }
+    const buildBranchVAO = (arr) => {
+      const buf=gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+      gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
+      const vao=gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+      gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+      const S=32;   // 8 floats/segment: [a.xy, b.xy][halfWidth, clusterId, mode, _]
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
+      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
+      gl.bindVertexArray(null);
+      return { vao, count: arr.length/8, buf };
+    };
+    for(let l=0;l<nLayer;l++) branchVAO.push(buildBranchVAO(new Float32Array(branchData[l])));
+
     // ---- (re)build the per-clump data textures sampled by the bake VS ----
     const makeDataTex = (old, data) => {
       if(old) gl.deleteTexture(old);
@@ -858,6 +1050,7 @@ function create(canvas, opts){
     };
     clusterTex     = makeDataTex(clusterTex, hier.clusterData);      // dynamic bend angles
     clusterGeomTex = makeDataTex(clusterGeomTex, hier.clusterGeom);  // static geometry
+    trunks.flat = new Float32Array(trunkList); trunks.count = trunkList.length/4;   // standing-scene trunk occluders (§4.8); transport gates on standing_scene
     publishBend();   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
   }
 
@@ -892,6 +1085,28 @@ function create(canvas, opts){
       const L=layerVAO[l];
       gl.bindVertexArray(L.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, L.count);
+    }
+    // ---- branch/trunk occluders (spec §4.5): stamp the woody skeleton ADDITIVELY over the leaves in each
+    // layer (no clear), with the same per-layer trunk drift. Skipped entirely when branch_tau==0 — the
+    // leaves-only look draws no branch geometry and is byte-identical. ----
+    if(params.branch_tau > 0){
+      gl.useProgram(progBranch);
+      gl.uniform2f(U.branch.origin, -E/2, -E/2);
+      gl.uniform2f(U.branch.extent, E, E);
+      gl.uniform1f(U.branch.stemLen, params.stem_length);
+      gl.uniform1f(U.branch.branchTau, params.branch_tau);
+      gl.uniform1f(U.branch.edge, params.edge_softness);
+      gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, clusterTex);     gl.uniform1i(U.branch.clusterTex, 4);
+      gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, clusterGeomTex); gl.uniform1i(U.branch.clusterGeom, 5);
+      for(let l=0;l<params.layer_count;l++){
+        const B=branchVAO[l];
+        if(!B?.count) continue;
+        const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
+        gl.uniform2f(U.branch.sway, motion.sway[0]*f, motion.sway[1]*f);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layerTex[l], 0);
+        gl.bindVertexArray(B.vao);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, B.count);
+      }
     }
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
@@ -1195,9 +1410,29 @@ function create(canvas, opts){
     gl.uniform1fv(U.tp.heights, layerHeights());
     gl.uniform1i(U.tp.layerCount, params.layer_count);
     gl.uniformMatrix2fv(U.tp.proj, false, projMatrix());
+    // standing-scene bulk shadow offset (§4.8): cast the shadow to the SIDE by cot(elev) per unit height (the
+    // park model omits this — fine for an infinite canopy, wrong for a standing tree). Applied to EVERY occluder
+    // (trunk, branches, leaves) via g, so the whole tree shadow stays one connected thing and sweeps together as
+    // the sun moves — real physics, no camera tricks. Framing the tree off-frame is the camera's job (a fixed
+    // pan, view_center), NOT an auto-centre on the crown (that decouples trunk from crown). Gated → 0 = park.
+    let bulkX=0, bulkY=0;
+    if(params.standing_scene){
+      const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=Math.cos(el)/Math.sin(el);
+      bulkX=k*Math.cos(az); bulkY=k*Math.sin(az);
+    }
+    gl.uniform2f(U.tp.bulkShift, bulkX, bulkY);
     gl.uniform1f(U.tp.viewExtent, params.view_extent_m);
     gl.uniform1f(U.tp.aspect, canvas.width/canvas.height);
     gl.uniform1f(U.tp.pitch, clamp(params.view_pitch_deg,0,80)*DEG);     // camera tilt (rad); 0 = top-down
+    gl.uniform1f(U.tp.yaw, params.view_yaw_deg*DEG);                     // camera orbit (rad); 0 = unchanged
+    gl.uniform2f(U.tp.viewCenter, params.view_center_x, params.view_center_y);   // camera pan (world m) — frames the off-frame tree; no auto-centre (§4.8)
+    // standing-scene trunk occluders (§4.8): upload when the mode is on AND the trunk has width; else 0 = park model, byte-identical
+    if(params.standing_scene && params.trunk_radius_m > 0 && trunks.count > 0){
+      gl.uniform4fv(U.tp.trunks, trunks.flat.subarray(0, trunks.count*4));
+      gl.uniform1i(U.tp.trunkCount, trunks.count);
+      gl.uniform1f(U.tp.trunkRadius, params.trunk_radius_m);
+      gl.uniform2f(U.tp.trunkSway, motion.sway[0], motion.sway[1]);    // trunk drifts with the whole-tree sway
+    } else gl.uniform1i(U.tp.trunkCount, 0);
     gl.uniform1f(U.tp.fov, clamp(params.view_fov_deg,5,140)*DEG);        // vertical full FOV (rad)
     gl.uniform1f(U.tp.farSmear, Math.max(0, params.far_smear));          // far-field dapple smear (§4.7); 0 at pitch 0 regardless
     gl.uniform2f(U.tp.origin, -E/2, -E/2);
@@ -1505,11 +1740,12 @@ function create(canvas, opts){
     // picker, created per-comparison) leaves zero GPU residue when closed. A disposed engine must not be reused.
     dispose(){
       alive = false;
-      [progBake, progTransport, progBlit, progPresent, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
+      [progBake, progBranch, progTransport, progBlit, progPresent, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
       layerTex.forEach(t => { gl.deleteTexture(t); });
       [clusterTex, clusterGeomTex, benchTex, presentTex].forEach(t => { if(t) gl.deleteTexture(t); });
       [bakeFBO, benchFBO, presentFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
+      branchVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       [emptyVAO, srcDbgVAO, vizVAO].forEach(v => { if(v) gl.deleteVertexArray(v); });
       [quadBuf, srcDbgBuf, vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });
       if(EDITOR) setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
