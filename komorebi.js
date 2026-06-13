@@ -1705,8 +1705,14 @@ function create(canvas, opts){
     }
     const q = perf.quality, KNEE = 0.5, RES_MIN = 0.5, SAMP_MIN = 6;
     let res, samp;
-    if(q >= KNEE){ res = lerp(RES_MIN, 1, (q-KNEE)/(1-KNEE)); samp = params.sample_count; }   // resolution first
-    else         { res = RES_MIN; samp = Math.round(lerp(SAMP_MIN, params.sample_count, q/KNEE)); } // then samples (and bake, below)
+    if(params.faithful_canopy){
+      // FAITHFUL: transport is a single tap (resolution ~free), the per-SAMPLE geometry bake dominates and scales
+      // linearly in the sample count — so trim SAMPLES across the whole range (relieving the bake immediately as q
+      // drops) and let resolution ride along. bakeRes() still trims below the knee. q=1 → full, look unchanged.
+      res  = lerp(RES_MIN, 1, q);
+      samp = Math.round(lerp(SAMP_MIN, params.sample_count, q));
+    } else if(q >= KNEE){ res = lerp(RES_MIN, 1, (q-KNEE)/(1-KNEE)); samp = params.sample_count; }   // layer mode: resolution first (the per-pixel transport sample loop IS the cost)
+    else                { res = RES_MIN; samp = Math.round(lerp(SAMP_MIN, params.sample_count, q/KNEE)); } // then samples (and bake, below)
     perf.resScale = res;
     samp = clamp(samp, 3, Math.max(3, params.sample_count));
     if(samp !== perf.sampleCount){ perf.sampleCount = samp; regenSource(); }
