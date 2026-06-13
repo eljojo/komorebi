@@ -50,6 +50,23 @@ function maybeClearSpecies(key){
     if(controlEls.tree_species) controlEls.tree_species.input.value='';   // select the empty "— custom" option
   }
 }
+// frame shadow (spec §4.8 / #56): one-time camera move that centres the view on where the tree's CROWN shadow lands,
+// so the trunk foot sits up-sun (toward / off the frame edge) and the cast shadow fills the view — the "shadow-only"
+// composition. Derived from params (the standing-scene bulk throw cot(elev)·anti-sun, × a representative crown height),
+// NOT a per-frame auto-track (the spec records auto-centring on the crown as a dead end — the trunk foot doesn't
+// shift while the crown does, so it tears the shadow). It's a STARTING frame to nudge, not the final composition.
+function frameShadow(){
+  if(!params.standing_scene){ params.standing_scene = true; applyScope('canopy'); syncControl('standing_scene'); }   // shadow framing only means anything with the bulk throw on
+  const el=Math.max(params.sun_elevation_deg,6)*Math.PI/180, az=params.sun_azimuth_deg*Math.PI/180, k=Math.cos(el)/Math.sin(el);
+  const hCrown = params.canopy_base_height_m + 0.5*params.canopy_thickness_m;   // representative crown height the shadow throws from
+  // crown shadow lands at world = -hCrown·bulk (the occluder at height h casts at plan − h·bulk); centre the view there.
+  params.view_center_x = -k*Math.cos(az)*hCrown;
+  params.view_center_y = -k*Math.sin(az)*hCrown;
+  params.view_extent_m = clamp(params.canopy_extent_m*2.2, 0.5, 40);            // show the whole cast + a margin of lit floor
+  if(params.view_pitch_deg < 40) params.view_pitch_deg = 55;                    // a raking gaze reads the streak; keep an already-steeper tilt
+  for(const key of ['view_center_x','view_center_y','view_extent_m','view_pitch_deg']) syncControl(key);
+  applyScope('');
+}
 
 // scope: 'source' rebuilds the light; 'canopy' rebuilds+rebakes leaves;
 // 'textures' reallocates layer textures too; 'perf' resets auto-quality; '' just re-reads each frame.
@@ -111,6 +128,7 @@ const PANEL = [
   ['t','standing_scene','standing scene','canopy'],   // changes crown sizing (crown0 in regenCanopy) — needs a regrow, not just the live bulk-offset read
   ['t','faithful_canopy','faithful tree','textures'],
   ['s','trunk_radius_m','trunk r',0,0.5,0.01,'canopy'],
+  ['btn','frame shadow', ()=>frameShadow()],   // one-time camera framing onto the cast shadow (the off-frame-tree / shadow-only composition, spec §4.8) — a starting point to nudge, NOT an auto-track
   ['s','exposure','exposure',0,4,0.01,''],
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
