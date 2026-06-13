@@ -156,7 +156,7 @@ export const PRESETS = {
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
     "tree_count": 1, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
-    "branch_length_ratio": 0.68, "branch_pitch_deg": 38, "branch_tau": 2.75, "leader_strength": 0.15, "clusters_per_layer": 60, "leaves_per_cluster": 12,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 12,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.175, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,

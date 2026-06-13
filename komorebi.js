@@ -62,7 +62,7 @@ const CANOPY_KEYS = [
   'tree_count',                                                       // continuous (spec §4.5): a fractional count grows a marginal tree in, so a tree-count transition MORPHS instead of dissolving
   'canopy_extent_m',                                                  // baked world size — only a regrow + re-bake (NO texture realloc), so it morphs continuously
   'branch_angle_deg','branch_length_ratio','branch_pitch_deg','foliage_density','leaves_per_cluster',
-  'cluster_spread_m','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b',
+  'cluster_spread_m','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b','droop',
 ];
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
   'branch_levels','branch_children','limb_count','layer_count','leader_strength',
@@ -127,6 +127,7 @@ const DEFAULTS = {
   branch_pitch_deg: 26,            // how steeply limbs rise from horizontal (sets the height spread)
   branch_tau: 0.0,                 // trunk+branch shadow (spec §4.5): per-channel optical depth stamped for the woody skeleton. 0 = OFF — leaves-only, byte-identical to the pre-branch looks (no geometry drawn); >0 = the tree casts its own silhouette. Wood is ~opaque & neutral, so one scalar covers RGB.
   leader_strength: 0.0,            // monopodial growth (spec §4.5): 0 = legacy single-hub (all limbs from one point — a palm/lollipop); >0 = limbs attach ALONG a continuing trunk, shorter toward the top → excurrent cone (high) vs decurrent dome (low). The excurrent↔decurrent axis (apical control).
+  droop: 0.0,                      // gravitropic curve (spec §4.5): branches bend over sub-segments along their length. >0 = sag DOWN (willow/birch trailing twigs), <0 = upsweep (conifer/elm); stronger on outer orders, compounding toward the tips. 0 = straight rays (byte-identical).
   clusters_per_layer: 60,          // legacy (pre-skeleton); unused by the grown canopy, kept for preset compat
   leaves_per_cluster: 22,          // leaves per terminal twig
   cluster_spread_m: 0.13,
@@ -259,6 +260,15 @@ function coneDir(d, az, spread){
   return normalize3([ cs*d[0]+sn*(ca*s[0]+sa*u[0]),
                       cs*d[1]+sn*(ca*s[1]+sa*u[1]),
                       cs*d[2]+sn*(ca*s[2]+sa*u[2]) ]);
+}
+// tilt a unit direction toward straight-down (−z) by `dth` rad, IN ITS OWN VERTICAL PLANE (azimuth fixed) — the
+// gravitropic droop of a branch (spec §4.5). dth<0 lifts it (upsweep). Guards a ~vertical heading (no plane to droop in).
+function bendDown(dir, dth){
+  const horiz = Math.hypot(dir[0], dir[1]);
+  if(horiz < 1e-4) return dir;
+  const a = clamp(Math.atan2(dir[2], horiz) - dth, -Math.PI*0.5, Math.PI*0.5);
+  const ca = Math.cos(a);
+  return [ ca*dir[0]/horiz, ca*dir[1]/horiz, Math.sin(a) ];
 }
 
 // ===========================================================================
@@ -836,16 +846,35 @@ function create(canvas, opts){
     // below is unchanged, i.e. the cast dapples are untouched; only the 3D structure/preview gains height.
 
     const L = clamp(params.leader_strength, 0, 1);   // 0 = legacy single-hub; >0 = monopodial leader (limbs ALONG a trunk)
+    const droop = clamp(params.droop, -1, 1);        // signed gravitropic curve: >0 sag down (willow/birch), <0 upsweep (conifer); 0 = straight rays
 
     function grow(out, base, dir, len, level, limb){
-      const tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
-      out.seg.push({ a:base, b:tip, level });
+      // droop/upsweep (spec §4.5): curve the branch toward gravity over a few SUB-SEGMENTS — a smooth arc, not a
+      // straight ray and not a single kink. Stronger on outer orders (level/levels), and children inherit the
+      // curved END-TANGENT, so the sag compounds toward the tips (the willow cascade / birch trail). 0 = straight.
+      const dLevel = droop * (level/levels);
+      let tip, endDir = dir;
+      if(Math.abs(dLevel) > 1e-3){
+        const nSub = Math.min(6, 1 + Math.round(Math.abs(dLevel)*5));
+        const dl = len/nSub, dth = dLevel*1.9/nSub;        // total curve ≈ dLevel·1.9 rad over the branch length
+        let p = base, d = dir;
+        for(let sx=0;sx<nSub;sx++){
+          d = bendDown(d, dth);                            // tilt the heading toward −z (down) in its own vertical plane
+          const np = [ p[0]+d[0]*dl, p[1]+d[1]*dl, p[2]+d[2]*dl ];
+          out.seg.push({ a:p, b:np, level });
+          p = np;
+        }
+        tip = p; endDir = d;
+      } else {
+        tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
+        out.seg.push({ a:base, b:tip, level });
+      }
       if(level >= levels){ out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb }); return; }
       for(let c=0;c<kids;c++){
         // phyllotaxis: a golden-angle SPIRAL when a leader is set (children never stack into even spokes), else the legacy even fan
         const az = L>0 ? (c*golden + (gr()-0.5)*0.4) : ((c+0.5)/kids*TAU2 + (gr()-0.5)*1.2);
         const spread = coneA*(0.55+0.9*gr());
-        grow(out, tip, coneDir(dir, az, spread), len*lenRatio*(0.8+0.4*gr()), level+1, limb);
+        grow(out, tip, coneDir(endDir, az, spread), len*lenRatio*(0.8+0.4*gr()), level+1, limb);
       }
     }
 
