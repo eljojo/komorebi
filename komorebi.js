@@ -395,7 +395,6 @@ uniform float uWindLevel;
 uniform float uWindTime;
 uniform float uLeafSwing;
 uniform float uFlutterFreq;
-uniform float uStemLen;
 out vec2 vLocal;
 out vec3 vTau;
 void main(){
@@ -819,7 +818,7 @@ function create(canvas, opts){
   U.faith = { origin:loc(progFaith,'uFaithOrigin'), extent:loc(progFaith,'uFaithExtent'), g:loc(progFaith,'uG'), edge:loc(progFaith,'uEdge'),
               morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
               windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
-              leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'), stemLen:loc(progFaith,'uStemLen'),
+              leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
               clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom') };
   U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau') };
   U.facc = { tex:loc(progFAcc,'uFAccTex'), weight:loc(progFAcc,'uFAccWeight') };
@@ -1369,7 +1368,10 @@ function create(canvas, opts){
       gx[i]=gxi; gy[i]=gyi;
       if(gxi<gminx)gminx=gxi; if(gxi>gmaxx)gmaxx=gxi; if(gyi<gminy)gminy=gyi; if(gyi>gmaxy)gmaxy=gyi;
     }
-    const hLo = woodOn ? 0 : faith.hMin, hHi = faith.hMax;   // wood reaches the ground (trunk base h=0) → include it so the trunk streak isn't clipped
+    // wood reaches the ground (trunk base h=0); without wood, leaves start at hMin — BUT sway_pitch foreshortens
+    // heights down to ~0.1× (publishBend's clamp floor), so widen the low bound there so a foreshortened leaf's
+    // (closer-in) cast isn't clipped out of the frame.
+    const hLo = woodOn ? 0 : faith.hMin*(params.sway_pitch>0 ? 0.1 : 1), hHi = faith.hMax;
     // −g·h extremes (g and h both ≥0 or signed): the four products bracket the shift the box can take.
     const ghx0=Math.min(gminx*hLo,gminx*hHi,gmaxx*hLo,gmaxx*hHi), ghx1=Math.max(gminx*hLo,gminx*hHi,gmaxx*hLo,gmaxx*hHi);
     const ghy0=Math.min(gminy*hLo,gminy*hHi,gmaxy*hLo,gmaxy*hHi), ghy1=Math.max(gminy*hLo,gminy*hHi,gmaxy*hLo,gmaxy*hHi);
@@ -1400,7 +1402,6 @@ function create(canvas, opts){
     gl.uniform1f(U.faith.windTime, motion.time);
     gl.uniform1f(U.faith.leafSwing, params.leaf_swing);
     gl.uniform1f(U.faith.flutterFreq, params.flutter_freq);
-    gl.uniform1f(U.faith.stemLen, params.stem_length);
     gl.uniform2f(U.faith.sway, motion.sway[0], motion.sway[1]);
     gl.uniform1f(U.faith.hRef, Math.max(faith.hMax, 1e-3));   // height-scale the coherent sway → base anchored, crown sways (matches the wood)
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, clusterTex);     gl.uniform1i(U.faith.clusterTex, 4);

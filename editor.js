@@ -60,8 +60,8 @@ function frameShadow(){
   const el=Math.max(params.sun_elevation_deg,6)*Math.PI/180, az=params.sun_azimuth_deg*Math.PI/180, k=Math.cos(el)/Math.sin(el);
   const hCrown = params.canopy_base_height_m + 0.5*params.canopy_thickness_m;   // representative crown height the shadow throws from
   // crown shadow lands at world = -hCrown·bulk (the occluder at height h casts at plan − h·bulk); centre the view there.
-  params.view_center_x = -k*Math.cos(az)*hCrown;
-  params.view_center_y = -k*Math.sin(az)*hCrown;
+  params.view_center_x = clamp(-k*Math.cos(az)*hCrown, -25, 25);   // clamp to the pan slider range so the thumb stays in sync
+  params.view_center_y = clamp(-k*Math.sin(az)*hCrown, -25, 25);
   params.view_extent_m = clamp(params.canopy_extent_m*2.2, 0.5, 40);            // show the whole cast + a margin of lit floor
   if(params.view_pitch_deg < 40) params.view_pitch_deg = 55;                    // a raking gaze reads the streak; keep an already-steeper tilt
   for(const key of ['view_center_x','view_center_y','view_extent_m','view_pitch_deg']) syncControl(key);
