@@ -49,6 +49,8 @@ const MORPH_KEYS = [
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
+  'curtain_tt','curtain_tint_r','curtain_tint_g','curtain_tint_b',      // curtain receiver (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself snaps; see KNOWN_EXCLUDED)
+  'curtain_distance_m','fold_depth','fold_scale','fold_coarsen','velvet_sheen',   // curtain plane position + drape/velvet — continuous live look uniforms (only read in curtain mode)
   'wind_strength','wind_gustiness','wind_direction_deg','gust_frequency','weather_variability','weather_speed','gust_attack','gust_decay',
   'sway_stiffness','sway_ceiling','damping_ratio','backlash_gain','sway_height_gain',
   'limb_flex','twig_flex','stem_length','sway_pitch','leaf_swing','flutter_freq',
@@ -173,6 +175,18 @@ const DEFAULTS = {
                                    // few flat slabs (the park fast path, byte-identical). On = each leaf casts from its OWN continuous
                                    // grown height (a per-sample geometry bake), so the cast shadow IS the preview tree — leaves sit on
                                    // their twigs, aligned with the woody occluder. Costs more; for the standing / curtain looks, not the park.
+  // Receiver (curtain handoff / spec §4.x): the surface the LANDED IRRADIANCE answers. 0 = opaque diffuse FLOOR
+  // (the park default — reflect off uGround; byte-identical). 1 = translucent woven CURTAIN — TRANSMIT the
+  // irradiance through moss-velvet: Tt carries brightness, the dye only hue, so a dark velvet reads dim (not a
+  // bright tinted gel). Only read when receiver≠0; the floor stays the cheap fast path. Off → every look unchanged.
+  receiver: 0,
+  curtain_tt: 0.5,                 // curtain total throughput Tt∈[0,1] = BRIGHTNESS (sheer→~0.6, dark terciopelo→~0.1); hue is separate
+  curtain_tint_r: 0.35, curtain_tint_g: 1.0, curtain_tint_b: 0.30,   // moss dye HUE (unit-peak; passes green ~550nm, absorbs red/blue — the chlorophyll-twin)
+  curtain_distance_m: 0.0,         // curtain plane world-Y (its distance behind the tree); with the sun angle, sets where the tree's shadow lands on the cloth (§4.9)
+  fold_depth: 0.0,                 // curtain drape: pleat darkness/depth (0 = flat cloth, up = deep velvet pleats)
+  fold_scale: 2.5,                 // curtain drape: pleat frequency (how many pleats across the cloth)
+  fold_coarsen: 0.25,              // curtain drape: how much the pleats widen toward the hem (heavy fabric, λ∝√depth)
+  velvet_sheen: 0.0,               // velvet grazing sheen on the fold ridges (0 = off; the cut-pile glow that reads as terciopelo)
   far_smear: 3.0,                  // far-field dapple smear: extra throw (m) per unit foreshortening; 0 = off, no effect top-down
   exposure: 1.3,
   contrast: 1.0,
@@ -385,6 +399,8 @@ layout(location=5) in float iHeight;  // FAITHFUL: this leaf's continuous floor-
 uniform vec2  uFaithOrigin;           // cast-frame origin (floor space)
 uniform vec2  uFaithExtent;           // cast-frame extent (floor space)
 uniform vec2  uG;                     // this source sample's ground shift g_i = uProj*sample + uBulkShift
+uniform int   uCurtainBake;           // 1 = project onto the VERTICAL curtain plane (§4.9); 0 = the floor (byte-identical)
+uniform float uCurtainY;              // curtain plane world-Y (cy) when uCurtainBake
 uniform float uMorph;
 uniform float uMorphAmount;
 uniform vec2  uSway;
@@ -424,9 +440,19 @@ void main(){
   float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
   vec2 world = base + uSway*(hEff/uHRef) + drift + R*(aCorner*vec2(A,B));   // coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
-  world -= uG * hEff;                    // sun-projected DOWN to the floor (h→0) at this leaf's (foreshortened) height; transport's layer loop adds +h·g to look UP, so the shift is antipodal — leaves land where the woody occluder casts, so they align
-
-  vec2 uv = (world - uFaithOrigin)/uFaithExtent;
+  // project this leaf onto the RECEIVER along the sun-sample direction (uG.x, uG.y, 1). FLOOR (z=0): world - uG·h
+  // (h→0; transport's layer loop adds +h·g to look UP — antipodal, so leaves land where the wood casts). CURTAIN
+  // (vertical plane Y=uCurtainY, §4.9): drop onto the cloth → u = px - r·gx, v = h - r with r=(py-cy)/gy, so a
+  // vertical trunk (constant py) casts a vertical line and the whole tree STANDS UP the cloth. Floor byte-identical.
+  vec2 recvPt;
+  if(uCurtainBake != 0){
+    float gy = abs(uG.y) < 1e-3 ? (uG.y < 0.0 ? -1e-3 : 1e-3) : uG.y;   // guard: the sun must FACE the cloth (azimuth not ∥ to it)
+    float rr = (world.y - uCurtainY) / gy;
+    recvPt = vec2(world.x - rr*uG.x, hEff - rr);
+  } else {
+    recvPt = world - uG * hEff;
+  }
+  vec2 uv = (recvPt - uFaithOrigin)/uFaithExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = aCorner;
   vTau = iC.xyz;
@@ -471,14 +497,23 @@ layout(location=2) in vec4 iSegH;     // a-height, b-height, a-radius, b-radius
 uniform vec2 uFaithOrigin;
 uniform vec2 uFaithExtent;
 uniform vec2 uG;
+uniform int  uCurtainBake;            // 1 = project onto the VERTICAL curtain plane (§4.9); 0 = floor
+uniform float uCurtainY;              // curtain plane world-Y (cy) when uCurtainBake
 out float vAcross;
 void main(){
   float t = aCorner.x*0.5 + 0.5;                 // 0 at a, 1 at b
-  // project BOTH endpoints to the floor at their OWN heights FIRST, then build the capsule around that SHADOW spine.
-  // The width is ⊥ the streak (the sun's ground direction), so a vertical trunk (no plan extent) still casts a round
-  // streak at every azimuth — not a flat ribbon that goes edge-on when the sun lines up with its fixed plan axis.
-  vec2 Ap = iSeg.xy - uG*iSegH.x;
-  vec2 Bp = iSeg.zw - uG*iSegH.y;
+  // project BOTH endpoints to the receiver at their OWN heights FIRST, then build the capsule around that SHADOW spine.
+  // The width is ⊥ the streak, so a vertical trunk (no plan extent) still casts a round streak at every azimuth.
+  // FLOOR: endpoint - uG·h. CURTAIN (§4.9): onto the vertical cloth → (px - r·gx, h - r), r=(py-cy)/gy.
+  vec2 Ap, Bp;
+  if(uCurtainBake != 0){
+    float gy = abs(uG.y) < 1e-3 ? (uG.y < 0.0 ? -1e-3 : 1e-3) : uG.y;
+    float rA = (iSeg.y - uCurtainY)/gy;  Ap = vec2(iSeg.x - rA*uG.x, iSegH.x - rA);
+    float rB = (iSeg.w - uCurtainY)/gy;  Bp = vec2(iSeg.z - rB*uG.x, iSegH.y - rB);
+  } else {
+    Ap = iSeg.xy - uG*iSegH.x;
+    Bp = iSeg.zw - uG*iSegH.y;
+  }
   vec2 spine = Bp - Ap;
   vec2 dir = (dot(spine,spine) > 1e-8) ? normalize(spine) : vec2(1.0, 0.0);
   vec2 perp = vec2(-dir.y, dir.x);
@@ -552,6 +587,14 @@ uniform vec2  uCanopyExtent;
 uniform vec3  uSunColor;
 uniform vec3  uAmbient;
 uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)
+uniform int   uReceiver;          // 0 = opaque floor (byte-identical), 1 = translucent moss-velvet curtain (curtain handoff / spec §4.x)
+uniform float uTt;                // curtain total throughput Tt∈[0,1] — carries BRIGHTNESS (hue is uCurtainTint)
+uniform vec3  uCurtainTint;       // moss dye — HUE only; normalized to unit peak in-shader so it can't smuggle brightness past Tt
+uniform float uCurtainY;          // curtain receiver: the cloth plane's world-Y (its distance behind the tree) — where on the occluder field the shadow lands
+uniform float uFoldDepth;         // curtain drape: pleat darkness/depth (0 = flat cloth, no folds)
+uniform float uFoldScale;         // curtain drape: pleat frequency (pleats per metre near the top)
+uniform float uFoldCoarsen;       // curtain drape: how much the pleats widen toward the hem (heavy fabric)
+uniform float uSheen;             // velvet grazing sheen strength on the fold ridges (the cut-pile glow)
 uniform float uExposure;
 uniform float uContrast;
 uniform int   uToneMap;
@@ -577,45 +620,76 @@ vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
   float aB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent).b;
   return exp(-vec3(aR,aG,aB));      // per-channel optical depth -> transmittance, each at its dispersed path
 }
+// curtain drape + velvet (spec §4.9). A real curtain is not flat — it hangs in vertical PLEATS that coarsen toward
+// the hem (heavy fabric: wavelength ∝ √depth). v1 is shading-only (the cast shadow doesn't bend across the folds
+// yet — that's v2 geometry). The pleats do two things that read as thick velvet rather than a thin woven grid:
+//  • backlit THICKNESS — the edge-on fold flanks present more cut-pile, so they transmit LESS → dark vertical bands;
+//  • a grazing SHEEN — the face-on ridges catch a soft pale glow, the signature of a standing-fibre pile.
+// body is the transmitted moss; sheenCol the pale glow tint. Keyed to the cloth's own (u,v) so it stays on the cloth.
+vec3 velvetCloth(vec2 cloth, vec3 body, vec3 sheenCol){
+  float k = uFoldScale / sqrt(1.0 + uFoldCoarsen * max(cloth.y, 0.0));   // pleat frequency; λ grows down the drape
+  float facing = abs(cos(cloth.x * k * 6.2831853));                      // 1 = edge-on flank, 0 = face-on ridge/valley
+  float band = exp(-uFoldDepth * facing);                                // flanks thicker → darker pleat bands (backlit)
+  float ridge = 1.0 - facing;                                            // bright where the cloth faces us
+  float nap = 0.9 + 0.1*sin(cloth.y * k * 12.566370);                    // fine vertical pile grain (nap), tied to pleat scale
+  vec3 sheen = sheenCol * (uSheen * ridge * ridge);                      // soft pale glow on the ridges only
+  return body * band * nap + sheen;
+}
 void main(){
-  // ---- tilted pinhole camera (spec §4.7): fragment -> ground point on z=0, plus a far-field haze factor.
-  // At uPitch=0 this reduces EXACTLY to the old orthographic map (vUv-0.5)*uViewExtent*[aspect,1] for any
-  // fov (a flat plane seen straight-on is linear), so presets are untouched until tilted. ----
-  float cp=cos(uPitch), sp=sin(uPitch);
-  float kf=max(tan(0.5*uFov), 1e-4);                 // image-plane half-extent (guard fov->0)
-  float sxc=(vUv.x-0.5)*uAspect, tyc=(vUv.y-0.5);
-  vec3 d = vec3(2.0*kf*sxc, 2.0*kf*tyc*cp + sp, 2.0*kf*tyc*sp - cp);   // ray = fwd + 2k*(sx*right + ty*up)
-  // camera height is degenerate for a flat floor (it only scales the view, which the uViewExtent hold
-  // below cancels exactly), so it's fixed at 1 rather than exposed — eye height would have no effect.
-  float scale = uViewExtent*cp*cp / max(2.0*kf, 1e-4);               // hold the on-axis vertical span = uViewExtent
-  float targetY = sp/max(cp,1e-4);                                    // recenter: screen centre -> world (0,0)
-  vec2 world; float fog;
-  // far-field smear (spec §4.7): under a tilted gaze a pixel covers a growing patch of ground toward the
-  // horizon; point-sampling it aliases the dapple, so we widen the soft-shadow throw by that ground footprint.
-  // det(dworld/dvUv) = uViewExtent^2 * cp^4 * aspect / D^3 with D=-d.z, so the footprint's linear size goes as
-  // 1/D^1.5; referenced to the nearest row (D_ref=cp+kf*sp) it is exactly 0 at pitch 0 (uniform footprint, so
-  // top-down presets are untouched) and grows toward the horizon. Reusing uProj's g keeps the smear down-sun.
-  float extraThrow = 0.0;
-  if (d.z >= -1e-4){ world=vec2(0.0); fog=1.0; }                       // ray at/over the horizon -> all haze
-  else {
-    float lam = -1.0/d.z;                                             // ray .. ground-plane (z=0) intersection
-    world = vec2(scale*lam*d.x, scale*(lam*d.y - targetY));
-    float halfExtent = 0.5*uViewExtent*max(length(vec2(uAspect,1.0)),1e-4);
-    fog = smoothstep(1.15*halfExtent, 3.0*halfExtent, length(world));  // 0 across the whole frame at pitch 0
-    float Dref = cp + kf*sp;                                          // footprint of the nearest visible row
-    float fore = clamp(pow(Dref/max(-d.z,1e-4), 1.5) - 1.0, 0.0, 4.0); // 0 at pitch 0 & frame bottom; up toward horizon
-    extraThrow = uFarSmear * fore;                                     // extra throw -> wider, softer down-sun penumbra far off
+  vec2 world; float fog = 0.0; float extraThrow = 0.0; float recvZ = 0.0; vec2 clothUV = vec2(0.0);
+  if(uReceiver != 0){
+    // ---- CURTAIN receiver (spec §4.9): the receiver is a VERTICAL plane viewed head-on, NOT the floor. Screen
+    // maps straight to the cloth's own coords — u across, v up. The tree's shadow is then projected onto the plane
+    // by the (layerHeight - recvZ) height factor in the sample loop below: an occluder a height (h-v) ABOVE this
+    // cloth point throws its shadow here, so the pattern stands UP the curtain instead of lying flat on the floor.
+    // recvZ = 0 is the floor and leaves that loop byte-identical. (Folds that corrugate the plane are still v2.) ----
+    vec2 cuv = (vUv-0.5)*uViewExtent*vec2(uAspect,1.0) + uViewCenter;  // pan/zoom frame the cloth (view_center, view_extent)
+    world = vec2(cuv.x, uCurtainY);     // the cloth plane spans world-X; its world-Y (distance behind the tree) is uCurtainY
+    recvZ = cuv.y;                       // height up the cloth (layer-path fallback; the faithful curtain uses clothUV)
+    clothUV = cuv;                       // cloth (u across, v up) — the faithTex is baked in THESE coords (§4.9), tapped once below
+  } else {
+    // ---- tilted pinhole camera (spec §4.7): fragment -> ground point on z=0, plus a far-field haze factor.
+    // At uPitch=0 this reduces EXACTLY to the old orthographic map (vUv-0.5)*uViewExtent*[aspect,1] for any
+    // fov (a flat plane seen straight-on is linear), so presets are untouched until tilted. ----
+    float cp=cos(uPitch), sp=sin(uPitch);
+    float kf=max(tan(0.5*uFov), 1e-4);                 // image-plane half-extent (guard fov->0)
+    float sxc=(vUv.x-0.5)*uAspect, tyc=(vUv.y-0.5);
+    vec3 d = vec3(2.0*kf*sxc, 2.0*kf*tyc*cp + sp, 2.0*kf*tyc*sp - cp);   // ray = fwd + 2k*(sx*right + ty*up)
+    // camera height is degenerate for a flat floor (it only scales the view, which the uViewExtent hold
+    // below cancels exactly), so it's fixed at 1 rather than exposed — eye height would have no effect.
+    float scale = uViewExtent*cp*cp / max(2.0*kf, 1e-4);               // hold the on-axis vertical span = uViewExtent
+    float targetY = sp/max(cp,1e-4);                                    // recenter: screen centre -> world (0,0)
+    // far-field smear (spec §4.7): under a tilted gaze a pixel covers a growing patch of ground toward the
+    // horizon; point-sampling it aliases the dapple, so we widen the soft-shadow throw by that ground footprint.
+    // det(dworld/dvUv) = uViewExtent^2 * cp^4 * aspect / D^3 with D=-d.z, so the footprint's linear size goes as
+    // 1/D^1.5; referenced to the nearest row (D_ref=cp+kf*sp) it is exactly 0 at pitch 0 (uniform footprint, so
+    // top-down presets are untouched) and grows toward the horizon. Reusing uProj's g keeps the smear down-sun.
+    if (d.z >= -1e-4){ world=vec2(0.0); fog=1.0; }                       // ray at/over the horizon -> all haze
+    else {
+      float lam = -1.0/d.z;                                             // ray .. ground-plane (z=0) intersection
+      world = vec2(scale*lam*d.x, scale*(lam*d.y - targetY));
+      float halfExtent = 0.5*uViewExtent*max(length(vec2(uAspect,1.0)),1e-4);
+      fog = smoothstep(1.15*halfExtent, 3.0*halfExtent, length(world));  // 0 across the whole frame at pitch 0
+      float Dref = cp + kf*sp;                                          // footprint of the nearest visible row
+      float fore = clamp(pow(Dref/max(-d.z,1e-4), 1.5) - 1.0, 0.0, 4.0); // 0 at pitch 0 & frame bottom; up toward horizon
+      extraThrow = uFarSmear * fore;                                     // extra throw -> wider, softer down-sun penumbra far off
+    }
+    // camera orbit (uViewYaw): rotate the sampled floor about frame centre — a true orbit for a flat floor (the
+    // tilt/foreshortening axis stays put, the world spins under it). The sun-shift g stays in WORLD space below,
+    // so shadows remain physically cast as the gaze turns. 0 → identity, byte-identical to the pre-yaw look.
+    if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); world = mat2(cy,-sy,sy,cy)*world; }
+    world += uViewCenter;            // camera pan: shift the looked-at floor point (0 = unchanged)
   }
-  // camera orbit (uViewYaw): rotate the sampled floor about frame centre — a true orbit for a flat floor (the
-  // tilt/foreshortening axis stays put, the world spins under it). The sun-shift g stays in WORLD space below,
-  // so shadows remain physically cast as the gaze turns. 0 → identity, byte-identical to the pre-yaw look.
-  if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); world = mat2(cy,-sy,sy,cy)*world; }
-  world += uViewCenter;            // camera pan: shift the looked-at floor point (0 = unchanged)
   vec3 acc = vec3(0.0);
   bool ca = (uChroma.r!=1.0 || uChroma.g!=1.0 || uChroma.b!=1.0);   // diffraction on? else the byte-identical single-tap path
   if(uFaithful != 0){
-    acc = tapFaith(world);   // FAITHFUL (§4.5): the disk convolution at continuous per-leaf heights was pre-integrated as geometry at bake time, so one tap replaces the sample loop.
+    // FAITHFUL (§4.5/§4.9): the disk convolution at continuous per-leaf heights, pre-integrated as geometry at bake
+    // time → one tap. FLOOR: cast in floor (x,y), tap at world. CURTAIN: cast onto the vertical cloth (u,v), tap at clothUV.
+    acc = tapFaith(uReceiver != 0 ? clothUV : world);
   } else {
+  // the per-layer shift uses the occluder's height RELATIVE TO THE RECEIVER point, (uLayerHeight - recvZ): on the
+  // floor recvZ=0 so this is the plain layer height (byte-identical); on the vertical curtain recvZ is the height
+  // up the cloth, so an occluder above the cloth point projects its shadow onto it — the pattern stands up (§4.9).
   for(int i=0;i<MAX_SAMPLES;i++){
     if(i>=uSampleCount) break;
     vec2 g = uProj * uSamples[i].xy + uBulkShift;   // ground displacement per unit height: ellipse/shear of the sample + the bulk sun-angle offset (§4.8)
@@ -623,19 +697,19 @@ void main(){
     // light must clear EVERY layer -> multiply transmittance; shift grows with height
     vec3 T = vec3(1.0);
     if(ca){   // diffraction: read each channel at its own λ-scaled shift (red spreads more) -> colour fringe at every leaf edge
-      if(uLayerCount>0) T *= tapCA(uLayer[0], world, g, uLayerHeight[0]+extraThrow, uChroma);
-      if(uLayerCount>1) T *= tapCA(uLayer[1], world, g, uLayerHeight[1]+extraThrow, uChroma);
-      if(uLayerCount>2) T *= tapCA(uLayer[2], world, g, uLayerHeight[2]+extraThrow, uChroma);
-      if(uLayerCount>3) T *= tapCA(uLayer[3], world, g, uLayerHeight[3]+extraThrow, uChroma);
+      if(uLayerCount>0) T *= tapCA(uLayer[0], world, g, uLayerHeight[0]-recvZ+extraThrow, uChroma);
+      if(uLayerCount>1) T *= tapCA(uLayer[1], world, g, uLayerHeight[1]-recvZ+extraThrow, uChroma);
+      if(uLayerCount>2) T *= tapCA(uLayer[2], world, g, uLayerHeight[2]-recvZ+extraThrow, uChroma);
+      if(uLayerCount>3) T *= tapCA(uLayer[3], world, g, uLayerHeight[3]-recvZ+extraThrow, uChroma);
     } else {
-      if(uLayerCount>0) T *= tap(uLayer[0], world + (uLayerHeight[0]+extraThrow)*g);
-      if(uLayerCount>1) T *= tap(uLayer[1], world + (uLayerHeight[1]+extraThrow)*g);
-      if(uLayerCount>2) T *= tap(uLayer[2], world + (uLayerHeight[2]+extraThrow)*g);
-      if(uLayerCount>3) T *= tap(uLayer[3], world + (uLayerHeight[3]+extraThrow)*g);
+      if(uLayerCount>0) T *= tap(uLayer[0], world + (uLayerHeight[0]-recvZ+extraThrow)*g);
+      if(uLayerCount>1) T *= tap(uLayer[1], world + (uLayerHeight[1]-recvZ+extraThrow)*g);
+      if(uLayerCount>2) T *= tap(uLayer[2], world + (uLayerHeight[2]-recvZ+extraThrow)*g);
+      if(uLayerCount>3) T *= tap(uLayer[3], world + (uLayerHeight[3]-recvZ+extraThrow)*g);
     }
     acc += w*T;                              // sum of shifted sharp shadows == soft shadow
   }
-  }   // end layer path (uFaithful==0)
+  }   // end layer path
   // woody occluder (spec §4.5), evaluated ONCE per pixel (NOT per sample — that stalled). The trunk + main limbs
   // cast one CONNECTED shadow using the central sun direction (uBulkShift), with a soft edge that GROWS with height
   // to fake the area-light penumbra. Multiplies the SUN term only (wood blocks the beam, not the ambient sky).
@@ -644,8 +718,8 @@ void main(){
     for(int k=0;k<${MAX_OCC};k++){
       if(k>=uOccCount) break;
       vec4 P = uOccSeg[k]; vec4 H = uOccHt[k];
-      vec2 A = P.xy + uOccSway*(H.x/uOccHRef) - H.x*uBulkShift;   // a's shadow at its own height; drift scaled by height → foot planted, crown sways (matches faithful)
-      vec2 B = P.zw + uOccSway*(H.y/uOccHRef) - H.y*uBulkShift;   // b's below — segment shadow runs a→b, connecting neighbours
+      vec2 A = P.xy + uOccSway*(H.x/uOccHRef) - (H.x-recvZ)*uBulkShift;   // a's shadow at its height RELATIVE to the receiver (recvZ=0 floor → unchanged; curtain → projected up the cloth, §4.9)
+      vec2 B = P.zw + uOccSway*(H.y/uOccHRef) - (H.y-recvZ)*uBulkShift;   // b's below — segment shadow runs a→b, connecting neighbours
       vec2 ab = B - A, ap = world - A;
       float seg = clamp(dot(ap,ab)/max(dot(ab,ab),1e-7), 0.0, 1.0);
       float dist = length(ap - seg*ab);
@@ -655,7 +729,22 @@ void main(){
     }
     acc *= woodT;
   }
-  vec3 col = (acc*uSunColor + uAmbient) * uGround;   // reflect the floor irradiance off the ground albedo (dirt); white == old look
+  // ---- Receiver (curtain handoff / spec §4.x). The landed irradiance (acc·uSunColor + uAmbient, linear HDR) is
+  // answered by the surface. FLOOR: reflect off the albedo — the literal old line, byte-identical. CURTAIN: TRANSMIT
+  // through woven moss-velvet — Tt carries brightness, the dye only hue (a dark velvet reads dim, not a bright gel),
+  // energy-bounded since Tt·tint̂ ≤ 1. One gated branch; receiver default 0 skips the fabric as dead code. ----
+  vec3 col;
+  if(uReceiver == 0){
+    col = (acc*uSunColor + uAmbient) * uGround;            // OPAQUE FLOOR — literal old expression, byte-identical
+  } else {
+    vec3 E = acc*uSunColor + uAmbient;                     // landed irradiance the fabric answers
+    vec3 tintHat = uCurtainTint / max(max(uCurtainTint.r, uCurtainTint.g), max(uCurtainTint.b, 1e-4));   // unit-peak HUE
+    vec3 body = E * (uTt * tintHat);                       // transmitted moss: brightness × hue; ambient rides through Tt·tint̂ (gated, not free)
+    // drape + velvet (§4.9): pleats + grazing sheen on the cloth's own (u=clothUV.x, v=clothUV.y) coords. The sheen
+    // is a pale warm tint of the dye (two-tone velvet), brightened a touch where the backlight is hot.
+    vec3 sheenCol = mix(tintHat, vec3(1.0,0.96,0.88), 0.7) * (0.4 + 0.6*dot(body, vec3(0.33)));
+    col = velvetCloth(clothUV, body, sheenCol);
+  }
   // ---- Purkinje / mesopic dusk shift (§3.5): as the sun sets the eye's rods take over the dim shade —
   // colour desaturates toward a blue-green grey and saturated reds darken first, while the bright dapples
   // stay photopic and warm. Two REAL cues drive it (no absolute luminance exists here): global duskness
@@ -816,11 +905,13 @@ function create(canvas, opts){
              leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
              clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom') };
   U.faith = { origin:loc(progFaith,'uFaithOrigin'), extent:loc(progFaith,'uFaithExtent'), g:loc(progFaith,'uG'), edge:loc(progFaith,'uEdge'),
+              curtainBake:loc(progFaith,'uCurtainBake'), curtainY:loc(progFaith,'uCurtainY'),
               morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
               windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
               leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
               clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom') };
-  U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau') };
+  U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
+                 curtainBake:loc(progFaithSeg,'uCurtainBake'), curtainY:loc(progFaithSeg,'uCurtainY') };
   U.facc = { tex:loc(progFAcc,'uFAccTex'), weight:loc(progFAcc,'uFAccWeight') };
   U.tp = {
     samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
@@ -831,6 +922,8 @@ function create(canvas, opts){
     farSmear:loc(progTransport,'uFarSmear'),
     origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
     sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'), ground:loc(progTransport,'uGround'),
+    receiver:loc(progTransport,'uReceiver'), tt:loc(progTransport,'uTt'), curtainTint:loc(progTransport,'uCurtainTint'),
+    curtainY:loc(progTransport,'uCurtainY'), foldDepth:loc(progTransport,'uFoldDepth'), foldScale:loc(progTransport,'uFoldScale'), foldCoarsen:loc(progTransport,'uFoldCoarsen'), sheen:loc(progTransport,'uSheen'),
     twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'), chroma:loc(progTransport,'uChroma'),
     exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
     layers:[0,1,2,3].map(i=>loc(progTransport,`uLayer[${i}]`)),
@@ -1372,13 +1465,32 @@ function create(canvas, opts){
     // heights down to ~0.1× (publishBend's clamp floor), so widen the low bound there so a foreshortened leaf's
     // (closer-in) cast isn't clipped out of the frame.
     const hLo = woodOn ? 0 : faith.hMin*(params.sway_pitch>0 ? 0.1 : 1), hHi = faith.hMax;
-    // −g·h extremes (g and h both ≥0 or signed): the four products bracket the shift the box can take.
-    const ghx0=Math.min(gminx*hLo,gminx*hHi,gmaxx*hLo,gmaxx*hHi), ghx1=Math.max(gminx*hLo,gminx*hHi,gmaxx*hLo,gmaxx*hHi);
-    const ghy0=Math.min(gminy*hLo,gminy*hHi,gmaxy*hLo,gmaxy*hHi), ghy1=Math.max(gminy*hLo,gminy*hHi,gmaxy*hLo,gmaxy*hHi);
     // pad: the leaf quad half-extent, the incoherent drift orbit, and the live coherent sway (leaves+wood translate
     // by up to |sway| at the crown) — none of which are in the rest plan AABB. (The twig-hug trail-back already is.)
     const pad = params.leaf_size_m + params.drift_amount + Math.hypot(motion.sway[0],motion.sway[1]) + 0.05;
-    const minx=faith.pminx-ghx1-pad, maxx=faith.pmaxx-ghx0+pad, miny=faith.pminy-ghy1-pad, maxy=faith.pmaxy-ghy0+pad;
+    let minx,maxx,miny,maxy;
+    if(params.receiver){
+      // CURTAIN cast frame (§4.9): occluders project onto the VERTICAL cloth (Y=cy), not the floor — the projection is
+      // nonlinear in g (÷gy), so sweep the plan-AABB corners × the height range through each sample's cloth map
+      // (u = px − r·gx, v = h − r; r = (py−cy)/gy) and bound the (u,v) span. (8 corners × N samples — cheap.)
+      const cy = params.curtain_distance_m;
+      let uMin=1e18,uMax=-1e18,vMin=1e18,vMax=-1e18;
+      const pxs=[faith.pminx,faith.pmaxx], pys=[faith.pminy,faith.pmaxy], hs=[hLo,hHi];
+      for(let i=0;i<N;i++){
+        let gyi=gy[i]; if(Math.abs(gyi)<1e-3) gyi = gyi<0?-1e-3:1e-3;
+        for(const py of pys){ const r=(py-cy)/gyi;
+          for(const px of pxs){ const u=px - r*gx[i]; if(u<uMin)uMin=u; if(u>uMax)uMax=u; }
+          for(const h of hs){ const v=h - r; if(v<vMin)vMin=v; if(v>vMax)vMax=v; }
+        }
+      }
+      minx=uMin-pad; maxx=uMax+pad; miny=vMin-pad; maxy=vMax+pad;
+    } else {
+      // FLOOR cast frame: world = planPoint − g·h, so the box is the plan AABB swept over the −g·h extremes
+      // (only the g-EXTREMES matter, so the per-sample loop tracked those instead of an O(8N) corner sweep).
+      const ghx0=Math.min(gminx*hLo,gminx*hHi,gmaxx*hLo,gmaxx*hHi), ghx1=Math.max(gminx*hLo,gminx*hHi,gmaxx*hLo,gmaxx*hHi);
+      const ghy0=Math.min(gminy*hLo,gminy*hHi,gmaxy*hLo,gmaxy*hHi), ghy1=Math.max(gminy*hLo,gminy*hHi,gmaxy*hLo,gmaxy*hHi);
+      minx=faith.pminx-ghx1-pad; maxx=faith.pmaxx-ghx0+pad; miny=faith.pminy-ghy1-pad; maxy=faith.pmaxy-ghy0+pad;
+    }
     const side = Math.max(maxx-minx, maxy-miny, 1e-3);
     faith.ox = (minx+maxx)/2 - side/2; faith.oy = (miny+maxy)/2 - side/2; faith.ext = side;
 
@@ -1396,6 +1508,8 @@ function create(canvas, opts){
     gl.uniform2f(U.faith.origin, faith.ox, faith.oy);
     gl.uniform2f(U.faith.extent, faith.ext, faith.ext);
     gl.uniform1f(U.faith.edge, params.edge_softness);   // soft leaf rim (same as the layer bake); 0 here = hard ellipses
+    gl.uniform1i(U.faith.curtainBake, params.receiver ? 1 : 0);   // §4.9: project onto the vertical cloth (curtain) vs the floor
+    gl.uniform1f(U.faith.curtainY, params.curtain_distance_m);
     gl.uniform1f(U.faith.morph, params.drift_phase);
     gl.uniform1f(U.faith.morphAmount, params.drift_amount);
     gl.uniform1f(U.faith.windLevel, motion.u);
@@ -1432,6 +1546,8 @@ function create(canvas, opts){
       gl.uniform2f(U.faithSeg.origin, faith.ox, faith.oy);
       gl.uniform2f(U.faithSeg.extent, faith.ext, faith.ext);
       gl.uniform1f(U.faithSeg.woodTau, params.branch_tau);
+      gl.uniform1i(U.faithSeg.curtainBake, params.receiver ? 1 : 0);   // §4.9: cloth vs floor projection (matches the leaves)
+      gl.uniform1f(U.faithSeg.curtainY, params.curtain_distance_m);
     }
 
     for(let i=0;i<N;i++){
@@ -1515,7 +1631,10 @@ function create(canvas, opts){
   // diverges faster than the ellipse's 1/sin² as the sun nears the horizon, so the throw wants the tighter clamp.
   // Returns the shared scratch [0,0] when standing_scene is off (park model, byte-identical).
   function bulkShift(){
-    if(!params.standing_scene){ _bulk[0]=0; _bulk[1]=0; return _bulk; }
+    // the bulk sun-angle throw is needed for BOTH the standing-scene floor AND the curtain receiver (it's what
+    // projects the tree's shadow off to the side / onto the cloth). Off for the overhead park (receiver 0 + no
+    // standing scene) → 0, byte-identical.
+    if(!params.standing_scene && !params.receiver){ _bulk[0]=0; _bulk[1]=0; return _bulk; }
     const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=Math.cos(el)/Math.sin(el);
     _bulk[0]=k*Math.cos(az); _bulk[1]=k*Math.sin(az); return _bulk;
   }
@@ -1849,6 +1968,16 @@ function create(canvas, opts){
     { const a=atm.ambient, m=Math.max(a[0],a[1],a[2],1e-4), hb=0.6;
       gl.uniform3f(U.tp.haze, a[0]/m*hb, a[1]/m*hb, a[2]/m*hb); }
     gl.uniform3f(U.tp.ground, params.ground_r, params.ground_g, params.ground_b);   // dirt-floor albedo (spec §4.7)
+    // Receiver (curtain handoff): 0 = opaque floor (byte-identical), 1 = translucent moss-velvet curtain — Tt
+    // brightness × dye hue. Only consulted in the shader when receiver≠0, so the floor path costs nothing.
+    gl.uniform1i(U.tp.receiver, params.receiver|0);
+    gl.uniform1f(U.tp.tt, params.curtain_tt);
+    gl.uniform3f(U.tp.curtainTint, params.curtain_tint_r, params.curtain_tint_g, params.curtain_tint_b);
+    gl.uniform1f(U.tp.curtainY, params.curtain_distance_m);
+    gl.uniform1f(U.tp.foldDepth, params.fold_depth);
+    gl.uniform1f(U.tp.foldScale, params.fold_scale);
+    gl.uniform1f(U.tp.foldCoarsen, params.fold_coarsen);
+    gl.uniform1f(U.tp.sheen, params.velvet_sheen);
     // Purkinje (§3.5): rods take over the dim shade as the sun lowers. The global weight rides the same
     // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
     gl.uniform1f(U.tp.twilight, smoothstep(30, 4, params.sun_elevation_deg));

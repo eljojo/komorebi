@@ -171,6 +171,37 @@ export const PRESETS = {
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "auto_quality": true,   // park 1 is faithful_canopy (the heaviest path) — without the governor a weak device has no recovery; matches every sibling look
   }),
+  // 'curtain 1' — the first CURTAIN look (spec §4.9): the tree's shadow is cast onto a STANDING moss-velvet
+  // curtain (a vertical receiver plane), lit from behind by a low sun, seen head-on from the bed. The shadow
+  // stands UP the cloth (projected via height - recvZ) instead of lying on the floor. The tree itself sits off
+  // the cloth (at world-Y 0); the curtain is `curtain_distance_m` behind it, so only the cast shadow is in view.
+  // FRAMING IS NUDGEABLE: curtain dist + sun azimuth/elevation + the pan place the shadow; tune to taste.
+  // Uses the FAITHFUL cast (§4.9) re-aimed at the vertical cloth — real per-leaf geometry, no layer banding;
+  // the sun azimuth (90°, facing the cloth) must give the projection a Y-component, or the cast degenerates.
+  'curtain 1': Object.assign({}, DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.28, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.4,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.4, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.16, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 22, "sun_azimuth_deg": 90,
+    // CURTAIN receiver: a vertical plane 2.5 m behind the tree, viewed head-on. view_center.y lifts the visible
+    // span so heights ~0..5 m of cloth are in frame; pitch is irrelevant in curtain mode (head-on map).
+    "receiver": 1, "standing_scene": true, "faithful_canopy": true,
+    "curtain_distance_m": -2.5, "curtain_tt": 0.38, "curtain_tint_r": 0.34, "curtain_tint_g": 1.0, "curtain_tint_b": 0.28,
+    "fold_depth": 0.85, "fold_scale": 2.2, "fold_coarsen": 0.3, "velvet_sheen": 0.45,   // draped, thick-velvet read
+    "view_extent_m": 5.2, "view_pitch_deg": 0, "view_fov_deg": 60, "view_yaw_deg": 0,
+    "view_center_x": 0, "view_center_y": 2.6, "trunk_radius_m": 0.1, "far_smear": 0,
+    "exposure": 2.1, "contrast": 1.0, "ambient_skylight": 0.9, "sky_turbidity": 0.06, "mesopic_strength": 0.5, "chromatic_aberration": 0, "tone_map": 2,
+    "wind_pattern": "squally", "wind_strength": 1.2, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    "auto_quality": true,   // faithful is the heavy path (per-sample geometry bake) — the governor keeps a weak device at 60, like park 1
+  }),
   // 'memories' — the §1 north-star look: a sparse early-spring grove (foliage 0.45, so individual leaves
   // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
   'memories': Object.assign({}, DEFAULTS, {
