@@ -2,6 +2,7 @@ import { create, DEG, MAX_LAYERS } from './komorebi.js';
 import { PRESETS } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
+import { createMidi } from './midi.js';
 // ============================================================================
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
 // (komorebi.js). The engine renders; this file is the dev panel, HUD, insets, preset management, sun-drag
@@ -144,6 +145,21 @@ const PANEL = [
   ['btn','profile · measure & lighten', ()=>runProfile()],
 ];
 
+// ---- MIDI: map each slider's [min,max,step] so a 0..1 CC value can drive it ----
+const SLIDER_SPEC = {};   // key -> {min,max,step,scope}, sliders only (CC maps to these)
+for (const it of PANEL) if (it[0] === 's') { const [,k,,min,max,step,scope] = it; SLIDER_SPEC[k] = { min, max, step, scope }; }
+let midi;                 // assigned at init (after buildPanel); referenced by the slider input handler
+
+function getControlNorm(key){ const s = SLIDER_SPEC[key]; if(!s) return 0;
+  return clamp((params[key] - s.min) / (s.max - s.min), 0, 1); }
+function setControlNorm(key, n){ const s = SLIDER_SPEC[key]; if(!s) return;
+  let v = s.min + clamp(n, 0, 1) * (s.max - s.min);
+  v = clamp(Math.round((v - s.min) / s.step) * s.step + s.min, s.min, s.max);   // snap to the slider's step
+  params[key] = v;
+  if (s.scope === 'suntime') updateSunFromTime(); else applyScope(s.scope);      // same path a drag takes
+  syncControl(key);
+}
+
 function buildPanel(){
   let container = dev;                                        // rows append here; an 'adv'/'hc' group redirects them into a <details>
   const group=(text,cls)=>{ const d=document.createElement('details'); const s=document.createElement('summary');
@@ -159,7 +175,8 @@ function buildPanel(){
       const inp=document.createElement('input'); inp.type='range'; inp.min=min; inp.max=max; inp.step=step; inp.value=params[key];
       const val=document.createElement('span'); val.className='val'; val.textContent=fmt(params[key]);
       inp.addEventListener('input',()=>{ params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]);
-        if(scope==='suntime') updateSunFromTime(); else applyScope(scope); });
+        if(scope==='suntime') updateSunFromTime(); else applyScope(scope);
+        if(midi) midi.recapture(key); });   // a manual edit forces the knob to re-catch (soft takeover)
       row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val}; row.dataset.tipKey=key;
     } else if(item[0]==='t'){
       const [,key,label,scope]=item; row.classList.add('toggle');
@@ -511,6 +528,52 @@ eng.onFrame = ()=> {
 // ---- boot the panel UI (the engine is already running) ----
 buildPresetUI();
 buildPanel();
+
+// ===========================================================================
+// MIDI: a hardware controller drives the sliders. A global 'learn' toggle; while on,
+// click a slider to arm it, then wiggle a knob to bind (soft takeover, session-only).
+// ===========================================================================
+midi = createMidi({
+  setNorm: (key, n) => setControlNorm(key, n),
+  getNorm: (key) => getControlNorm(key),
+  onBind: (key, label) => setMidiTag(key, label),
+});
+midi.start();
+
+let midiLearn = false, midiArmedKey = null;
+function midiRow(key){ const c = controlEls[key]; return c?.input.closest('.ctl'); }
+function setMidiTag(key, text){ const row = midiRow(key); if(!row) return;   // text=null clears
+  let t = row.querySelector('.midi-tag');
+  if(!text){ if(t) t.remove(); return; }
+  if(!t){ t = document.createElement('span'); t.className = 'midi-tag'; row.appendChild(t); }
+  t.textContent = text;
+}
+(function buildMidiUI(){
+  const h = document.createElement('h2'); h.textContent = 'MIDI'; h.dataset.tipKey = 'MIDI'; dev.appendChild(h);
+  const row = document.createElement('div'); row.className = 'ctl toggle';
+  const lab = document.createElement('label'); lab.textContent = 'learn';
+  const inp = document.createElement('input'); inp.type = 'checkbox';
+  inp.addEventListener('change', ()=>{ midiLearn = inp.checked;
+    if(!midiLearn && midiArmedKey && !midi.bound(midiArmedKey)){ setMidiTag(midiArmedKey, null); midiArmedKey = null; } });
+  row.append(lab, inp); dev.appendChild(row);
+  const stat = document.createElement('div'); stat.className = 'ctl'; stat.style.color = '#9fb89f';
+  const sync = (s)=>{ stat.textContent = s; inp.disabled = (s === 'unsupported' || s === 'permission denied'); };
+  sync(midi.status); midi.onStatusChange(sync);
+  dev.appendChild(stat);
+})();
+
+// While learn is on, a pointerdown on a slider row arms it (or unbinds it) instead of
+// dragging — capture phase + preventDefault so the range input doesn't start a drag.
+dev.addEventListener('pointerdown', (e)=>{
+  if(!midiLearn) return;
+  const row = e.target.closest('.ctl'); if(!row) return;
+  const key = row.dataset.tipKey;
+  if(!SLIDER_SPEC[key]) return;                       // sliders only
+  e.preventDefault(); e.stopPropagation();
+  if(midiArmedKey && midiArmedKey !== key && !midi.bound(midiArmedKey)) setMidiTag(midiArmedKey, null);
+  if(midi.bound(key)){ midi.unbind(key); setMidiTag(key, null); midiArmedKey = null; }   // bound → unbind
+  else { midi.arm(key); midiArmedKey = key; setMidiTag(key, '◌'); }                      // free → arm
+}, true);
 
 // ===========================================================================
 // Auto-profiler (spec §9). Measure the look's cost from REAL on-screen frames — GPU timer queries averaged over
