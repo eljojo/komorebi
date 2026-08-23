@@ -426,18 +426,22 @@ void main(){
   vec2 drift = uMorphAmount * mat2(co,-so,so,co) * lp;
   int cid = int(iC.w + 0.5);
   vec4 geom = texelFetch(uClusterGeom, ivec2(cid,0), 0);
-  vec4 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0);   // .x limb bend, .z stem seed (unused here), .w 3-D pitch foreshorten factor (sway_pitch; 1 = off)
-  vec2 BL = geom.zw; float thL = bend.x;   // C (geom.xy, the twig tip) unused now that twig-swing is dropped
+  vec4 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0);   // .x limb bend, .y twig bend, .z stem seed (layer-path only), .w 3-D pitch foreshorten factor (sway_pitch; 1 = off)
+  vec2 TB = geom.xy, BL = geom.zw;                         // TB = this twig's REAL grown base (faithful packs it where the layer path packs the tip)
+  float thL = bend.x, thT = bend.y;
   float hEff = iHeight * bend.w;            // 3-D lean (§5): a wind-pitched limb lowers its leaves' height → shorter cast + less drift. bend.w=1 when sway_pitch off → hEff=iHeight, byte-identical.
-  // FAITHFUL twig-swing is DROPPED (thT≡0): the baked wood twigs (bakeFaithful) rotate only about the limb, and
-  // the leaf model pivots about a synthetic stem joint Jtwig ≠ the wood twig's real base, so a per-twig bend would
-  // slide the leaves off their (visible, opaque) wood. With thT=0 leaves & wood both move by limb-swing + the
-  // per-leaf flutter below, so leaves stay glued to their twigs (spec §4.5). The layer/park path (VS_BAKE) keeps
-  // the twig swing — there's no wood there to detach from. (Restoring faithful twig liveliness needs the leaf pivot
-  // unified with the wood twig's real base — future work; see spec §4.5.)
+  // MEDIUM band (§5.4, "gaps morph and rearrange"): the twig swings its clump about TB — the SAME joint, by the
+  // same angle and in the same order, that bakeFaithful's refill turns this twig's wood about. So leaf-on-wood
+  // registration holds by construction, not by luck; that slip is why the band was dropped here before (§4.5).
+  // TB is offset from the clump toward the parent by GROWTH, so it is a real stem joint and §5.1's anti-vortex
+  // property comes for free — no uStemLen (the synthetic joint) and no bend.z spread: there is no made-up radial
+  // direction left to decorrelate, the grown twig headings already differ. thT rides twig_flex → 0 = rest = byte-identical.
+  // sway_pitch composes orthogonally: it only foreshortens iHeight (bend.w) and this is a plan-plane yaw.
+  float ct=cos(thT), st=sin(thT);
+  vec2 p = TB + mat2(ct,-st,st,ct)*(leafRest - TB);      // twig swings the clump about its own grown base
   float cl=cos(thL), sl=sin(thL);
-  vec2 base = BL + mat2(cl,-sl,sl,cl)*(leafRest - BL);   // limb swings the clump about the trunk; twig swing dropped (thT=0)
-  float ang = angle + thL + 0.2*swing;
+  vec2 base = BL + mat2(cl,-sl,sl,cl)*(p - BL);          // the limb then swings that twig joint AND its clump about the trunk
+  float ang = angle + thL + thT + 0.2*swing;             // orientation rotates with the branch → the footprint presents differently as it turns (§5)
   float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
   vec2 world = base + uSway*(hEff/uHRef) + drift + R*(aCorner*vec2(A,B));   // coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
@@ -1077,6 +1081,9 @@ function create(canvas, opts){
     const phyllo = params.phyllotaxis==='opposite' ? 2 : params.phyllotaxis==='whorled' ? 1 : 0;   // child-azimuth rule (§4.5)
 
     function grow(out, base, dir, len, level, limb){
+      // index the twig this call will bear, if it is a terminal one — the segments pushed below are that twig's
+      // OWN wood, and the faithful bake must swing them about the same joint, by the same angle, as its leaves (§5.4).
+      const twIdx = (level >= levels) ? out.tw.length : -1;
       // droop/upsweep (spec §4.5): curve the branch toward gravity over a few SUB-SEGMENTS — a smooth arc, not a
       // straight ray and not a single kink. Stronger on outer orders (level/levels), and children inherit the
       // curved END-TANGENT, so the sag compounds toward the tips (the willow cascade / birch trail). 0 = straight.
@@ -1091,15 +1098,18 @@ function create(canvas, opts){
           const np = [ p[0]+d[0]*dl, p[1]+d[1]*dl, p[2]+d[2]*dl ];
           // f0/f1 = this sub-segment's fractional span of the ONE level→level+1 taper step, so the faithful skeleton
           // thins SMOOTHLY along a drooping branch instead of resetting the full step per sub-segment (a sawtooth).
-          out.seg.push({ a:p, b:np, level, limb, f0:sx/nSub, f1:(sx+1)/nSub });
+          out.seg.push({ a:p, b:np, level, limb, f0:sx/nSub, f1:(sx+1)/nSub, tw:twIdx });
           p = np;
         }
         tip = p; endDir = d;
       } else {
         tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
-        out.seg.push({ a:base, b:tip, level, limb, f0:0, f1:1 });   // straight branch: full step (byte-identical)
+        out.seg.push({ a:base, b:tip, level, limb, f0:0, f1:1, tw:twIdx });   // straight branch: full step (byte-identical)
       }
-      if(level >= levels){ out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb, dx:endDir[0], dy:endDir[1] }); return; }   // dx,dy = twig heading (plan) so leaves can hug the twig, not scatter as a blob
+      // bx,by = the twig's REAL base: where this terminal branch attaches to its parent. It is the joint the whole
+      // twig (wood + the leaves on it) turns about under the medium band, and — being offset from the clump toward
+      // the parent by GROWTH — it is a genuine stem joint, so §5.1's anti-vortex property holds without uStemLen.
+      if(level >= levels){ out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb, dx:endDir[0], dy:endDir[1], bx:base[0], by:base[1] }); return; }   // dx,dy = twig heading (plan) so leaves can hug the twig, not scatter as a blob
       // phyllotaxis (§4.5): how children fan around the parent. opposite forces PAIRED forks; whorled an even ring; spiral the golden angle.
       const nKids = (phyllo===2) ? 2 : kids;
       for(let c=0;c<nKids;c++){
@@ -1176,10 +1186,13 @@ function create(canvas, opts){
       // layer cast" invariant for hub trees. aspect=1 (the default and every shipped look) → byte-identical. (§4.5)
       const zLift = (L>0) ? 0 : trunkH*aspect;
       const sc = (p) => [ p[0]*s+tx, p[1]*s+ty, p[2]*sV*aspect+zLift ];
-      for(const w of out.tw){ const q=sc([w.x,w.y,w.z]); w.x=q[0]; w.y=q[1]; w.z=q[2]; w.tx=tx; w.ty=ty; w.tcov=treeCov; w.tree=tt; twigs.push(w); }
-      for(const sg of out.seg){ segments.push({ a:sc(sg.a), b:sc(sg.b), level:sg.level, cov:treeCov, tree:tt, limb:sg.limb, px:tx, py:ty, f0:sg.f0||0, f1:(sg.f1!=null?sg.f1:1) }); }
+      const twBase = twigs.length;   // this tree's first global twig index — turns grow()'s per-tree tw into the global clump id
+      // the twig BASE must ride the very same plan transform as the tip (sc's x,y half), or the shared pivot lands
+      // off the wood; it is plan-only because the bend is 2-D yaw, so no z scale is needed.
+      for(const w of out.tw){ const q=sc([w.x,w.y,w.z]); w.x=q[0]; w.y=q[1]; w.z=q[2]; w.bx=w.bx*s+tx; w.by=w.by*s+ty; w.tx=tx; w.ty=ty; w.tcov=treeCov; w.tree=tt; twigs.push(w); }
+      for(const sg of out.seg){ segments.push({ a:sc(sg.a), b:sc(sg.b), level:sg.level, cov:treeCov, tree:tt, limb:sg.limb, px:tx, py:ty, f0:sg.f0||0, f1:(sg.f1!=null?sg.f1:1), clump:(sg.tw>=0 ? twBase+sg.tw : -1) }); }
       const trunkTop = (L>0) ? leaderTop*sV*aspect : trunkH*aspect;
-      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkTop], level:0, cov:treeCov, tree:tt, limb:-1, px:tx, py:ty, f0:0, f1:1 });   // the continuing trunk axis
+      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkTop], level:0, cov:treeCov, tree:tt, limb:-1, px:tx, py:ty, f0:0, f1:1, clump:-1 });   // the continuing trunk axis
       for(let i=0;i<lpt;i++){ const gi=limbBase+i;
         limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty; }
     }
@@ -1213,7 +1226,7 @@ function create(canvas, opts){
       clusterPhase:new Float32Array(nClusterTotal),
       twigAngle:new Float32Array(nClusterTotal), twigVel:new Float32Array(nClusterTotal),
       clusterData:new Float32Array(nClusterTotal*4),   // dynamic: (limb bend, twig bend, stem seed, _)
-      clusterGeom:new Float32Array(nClusterTotal*4),   // static: (twig tip.xy, tree trunk pivot.xy)
+      clusterGeom:new Float32Array(nClusterTotal*4),   // static: (leaf pivot anchor.xy — twig tip on the layer path, real twig base in faithful; tree trunk pivot.xy)
       // topology signature: what makes limb/cluster index i mean the SAME branch across a regrow. tree_count is NOT
       // here (trees append, so the prefix still lines up — that's the morph); branch_angle/length/pitch/droop aren't
       // either (same indices, just bent differently — carrying their sway is the desired no-reset). But seed / depth /
@@ -1245,7 +1258,11 @@ function create(canvas, opts){
       const swayRand = rng2()*2-1; const stemRand = rng2()*2-1;
       hier.clusterPlan[2*j]=cx; hier.clusterPlan[2*j+1]=cy; hier.clusterPhase[j]=swayRand*Math.PI;
       hier.clusterLimb[j]=t.limb;                                    // grown level-1 ancestor (no search needed)
-      hier.clusterGeom[4*j]=cx; hier.clusterGeom[4*j+1]=cy;          // twig tip = the cluster centre
+      // .xy is the LEAF PIVOT ANCHOR, and it means different things per path. LAYER/park: the twig tip (= the clump
+      // centre), from which VS_BAKE offsets a SYNTHETIC stem joint by uStemLen — no wood is drawn there, so a made-up
+      // joint costs nothing. FAITHFUL: the twig's REAL grown base, which is also what the wood twig turns about in
+      // bakeFaithful's refill — one shared joint, so the medium band can't slide leaves off their visible twigs (§4.5).
+      hier.clusterGeom[4*j]=params.faithful_canopy?t.bx:cx; hier.clusterGeom[4*j+1]=params.faithful_canopy?t.by:cy;
       hier.clusterGeom[4*j+2]=t.tx; hier.clusterGeom[4*j+3]=t.ty;    // limb pivot = this tree's trunk
       hier.clusterData[4*j+2]=stemRand;                             // static stem-angle seed (.z); tick writes .x/.y
       const data = layerData[t.layer];
@@ -1362,7 +1379,13 @@ function create(canvas, opts){
         // level→level+1 step rather than each repeating the whole step (the old sawtooth). Straight branches: f0=0,f1=1 → unchanged.
         const ra = Math.max(0.012, params.trunk_radius_m*Math.pow(tf, sg.level + (sg.f0||0)));     // thick at the base of the segment (min keeps twigs visible)
         const rb = Math.max(0.008, params.trunk_radius_m*Math.pow(tf, sg.level + (sg.f1!=null?sg.f1:1)));  // thinner toward the tip — continuous with the next sub-segment
-        segRest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], ha:sg.a[2], hb:sg.b[2], ra, rb, limb:sg.limb, px:sg.px, py:sg.py });   // REAL grown heights (cast == preview)
+        // segment→clump linkage: a TERMINAL (twig-order) segment names the clump hanging off it, and carries that
+        // twig's real grown base — the pivot its leaves use in VS_FAITH — so the refill can swing wood and leaves
+        // as one. -1 = trunk/limb/interior wood (no clump), and also any twig past the MAX_TEX cluster cap, which
+        // bears no leaves at all. (twigs[] is already capped and scaled by here.)
+        const cj = (sg.clump>=0 && sg.clump<twigs.length) ? sg.clump : -1;
+        segRest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], ha:sg.a[2], hb:sg.b[2], ra, rb, limb:sg.limb, px:sg.px, py:sg.py,
+                       clump:cj, tbx:(cj>=0?twigs[cj].bx:0), tby:(cj>=0?twigs[cj].by:0) });   // REAL grown heights (cast == preview)
       }
       faith.segRest = segRest; faith.segCount = segRest.length;
       faith.segArr = new Float32Array(segRest.length*8);   // 8 floats/seg: iSeg(ax,ay,bx,by) + iSegH(ha,hb,ra,rb); positions refilled per bake with the sway
@@ -1525,20 +1548,32 @@ function create(canvas, opts){
     // FAITHFUL skeleton (§4.5): refill the instance array with the live limb SWING (rotate each segment about its tree
     // pivot by the limb bend) + whole-tree drift, so the wood sways WITH the leaves; then upload + set its statics once.
     if(woodOn){
-      const la = hier ? hier.limbAngle : null, sa = faith.segArr, R = faith.segRest;
+      const la = hier ? hier.limbAngle : null, ta = hier ? hier.twigAngle : null, sa = faith.segArr, R = faith.segRest;
       const swx = motion.sway[0], swy = motion.sway[1], hRef = Math.max(faith.hMax, 1e-3);
       const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): foreshorten the wood heights by the SAME factor the leaves use, so leaf-on-wood registration holds
       for(let k=0;k<faith.segCount;k++){
         const s = R[k];
         const th = (la && s.limb>=0 && s.limb<la.length) ? la[s.limb] : 0;
+        // MEDIUM band (§5.4): terminal wood first swings about its OWN twig base by that clump's twig bend, before
+        // the limb rotation — the same pivot, angle and order VS_FAITH gives the leaves hanging on it, so they ride
+        // the twig instead of sliding off it. Interior wood (clump<0) is untouched. sway_pitch meets the band here
+        // and stays orthogonal: `fore` scales HEIGHTS off the limb bend, this is a plan-plane yaw. tf=0 → tt=0 → rest.
+        const tt = (ta && s.clump>=0) ? ta[s.clump] : 0;
+        let ax=s.ax, ay=s.ay, bx=s.bx, by=s.by;
+        if(tt!==0){
+          const ctw=Math.cos(tt), stw=Math.sin(tt), tbx=s.tbx, tby=s.tby;
+          const dax=ax-tbx, day=ay-tby, dbx=bx-tbx, dby=by-tby;
+          ax = tbx + ctw*dax - stw*day; ay = tby + stw*dax + ctw*day;
+          bx = tbx + ctw*dbx - stw*dby; by = tby + stw*dbx + ctw*dby;
+        }
         const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*8;
         const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(th)), 0.1, 1) : 1;   // limb pitches with its bend → tip lowers (matches publishBend's per-cluster .w)
         const ha = s.ha*fore, hb = s.hb*fore;
         const kA = ha/hRef, kB = hb/hRef;   // sway grows with height: 0 at the ground → the trunk base stays PLANTED, the crown sways; same fraction for a limb & the trunk at its height, so they stay joined
-        sa[o]   = px + c*(s.ax-px) - sn*(s.ay-py) + swx*kA;
-        sa[o+1] = py + sn*(s.ax-px) + c*(s.ay-py) + swy*kA;
-        sa[o+2] = px + c*(s.bx-px) - sn*(s.by-py) + swx*kB;
-        sa[o+3] = py + sn*(s.bx-px) + c*(s.by-py) + swy*kB;
+        sa[o]   = px + c*(ax-px) - sn*(ay-py) + swx*kA;
+        sa[o+1] = py + sn*(ax-px) + c*(ay-py) + swy*kA;
+        sa[o+2] = px + c*(bx-px) - sn*(by-py) + swx*kB;
+        sa[o+3] = py + sn*(bx-px) + c*(by-py) + swy*kB;
         sa[o+4]=ha; sa[o+5]=hb; sa[o+6]=s.ra; sa[o+7]=s.rb;
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, faith.segBuf);
