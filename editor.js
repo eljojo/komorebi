@@ -375,7 +375,7 @@ const TIPS = {
   damping_ratio:"<b>How quickly the swaying settles down.</b> Low = springy and ringing; high = sluggish and dead.",
   backlash_gain:"<b>The snap-back when a gust lets go.</b> Branches recoil past their resting point and ring down, instead of gliding gently home. 0 = no snap.",
   sway_height_gain:"<b>Do taller branches sway more than low ones?</b> 0 = the whole canopy slides as one rigid sheet; turn it up and it shears with height, so gaps morph as well as slide. <i>(No effect in faithful-tree mode — there the sway is always anchored at the foot and grows to the crown.)</i>",
-  sway_pitch:"<b>Do branches lean in DEPTH as the wind blows, not just sideways?</b> A bent limb also pitches down, lowering its leaves so they cast a shorter shadow — the first bit of 3-D in the motion (until now it was flat yaw). <i>Faithful-tree mode only; 0 = off.</i> First cut — tune by eye.",
+  sway_pitch:"<b>Do branches lean in DEPTH as the wind blows, not just sideways?</b> Each limb carries a real pitch spring driven by the wind blowing ALONG it — so a broadside limb yaws downwind first, then flattens as it comes into the wind's line (streamlining), lowering its leaves so they cast a shorter, foreshortened shadow. <i>Faithful-tree mode only; 0 = off.</i>",
   limb_count:"<b>How many big arms each tree has.</b> More = the crown splits into finer wedges that can each lean on their own.",
   limb_flex:"<b>How much the big limbs bend.</b> The slow, broad sway — a whole wedge of the crown swinging together.",
   twig_flex:"<b>How much the little twigs bend.</b> The faster, finer motion one level down — each clump of leaves swinging a bit differently, so gaps shear and morph.",

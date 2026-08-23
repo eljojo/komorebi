@@ -225,7 +225,7 @@ const DEFAULTS = {
   damping_ratio: 0.25,
   backlash_gain: 1.0,
   sway_height_gain: 0.0,
-  sway_pitch: 0.0,                 // 3-D lean (spec §5/§4.5): a wind-bent limb also pitches DOWN in depth, lowering its leaves+wood so they cast a SHORTER shadow (foreshorten). FAITHFUL-mode only (needs real heights); 0 = off, byte-identical (no height change). First cut — the motion's depth dimension, the spec's named next step past 2-D yaw.
+  sway_pitch: 0.0,                 // 3-D lean (spec §5/§4.5): how far a limb's own PITCH spring — the second DOF, forced by the drag along the limb — foreshortens the heights of the leaves+wood on it, so they cast a SHORTER shadow. FAITHFUL-mode only (needs real heights); 0 = off, byte-identical (no height change, and the pitch DOF never integrates).
   limb_count: 8,
   limb_flex: 0.25,
   twig_flex: 0.35,
@@ -1337,7 +1337,8 @@ function create(canvas, opts){
     const nClusterTotal = twigs.length;
     hier = {
       nLimb, limbDir, limbPlan, limbAttach,
-      limbAngle:new Float32Array(nLimb), limbVel:new Float32Array(nLimb),   // scalar bend (radians)
+      limbAngle:new Float32Array(nLimb), limbVel:new Float32Array(nLimb),   // scalar YAW bend (radians): rotation about the vertical
+      limbPitch:new Float32Array(nLimb), limbPitchVel:new Float32Array(nLimb),   // second DOF (§5.1): ELEVATION bend in the limb's own vertical plane — what sway_pitch foreshortens by. Same spring constants as the yaw.
       nClusterTotal,
       clusterPlan:new Float32Array(nClusterTotal*2), clusterLimb:new Int32Array(nClusterTotal),
       clusterPhase:new Float32Array(nClusterTotal),
@@ -1358,6 +1359,7 @@ function create(canvas, opts){
     if(prevHier && prevHier.topoSig === hier.topoSig){
       const nL=Math.min(prevHier.nLimb,nLimb), nC=Math.min(prevHier.nClusterTotal,nClusterTotal);
       hier.limbAngle.set(prevHier.limbAngle.subarray(0,nL)); hier.limbVel.set(prevHier.limbVel.subarray(0,nL));
+      hier.limbPitch.set(prevHier.limbPitch.subarray(0,nL)); hier.limbPitchVel.set(prevHier.limbPitchVel.subarray(0,nL));
       hier.twigAngle.set(prevHier.twigAngle.subarray(0,nC)); hier.twigVel.set(prevHier.twigVel.subarray(0,nC));
     }
 
@@ -1670,6 +1672,7 @@ function create(canvas, opts){
     if(woodOn){
       const la = hier ? hier.limbAngle : null, ta = hier ? hier.twigAngle : null, sa = faith.segArr, R = faith.segRest;
       const lat = hier ? hier.limbAttach : null;   // per-limb attach height: where the sway_pitch foreshorten is anchored (§5.1)
+      const lp = hier ? hier.limbPitch : null;     // per-limb pitch DOF: the angle the foreshorten is taken from (§5.1)
       const swx = motion.sway[0], swy = motion.sway[1], hRef = Math.max(faith.hMax, 1e-3);
       const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): foreshorten the wood heights by the SAME factor the leaves use, so leaf-on-wood registration holds
       for(let k=0;k<faith.segCount;k++){
@@ -1688,7 +1691,11 @@ function create(canvas, opts){
           bx = tbx + ctw*dbx - stw*dby; by = tby + stw*dbx + ctw*dby;
         }
         const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*8;
-        const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(th)), 0.1, 1) : 1;   // limb pitches with its bend → tip lowers (matches publishBend's per-cluster .w)
+        // the SAME expression publishBend gives this limb's clumps, off the SAME pitch DOF — leaf-on-wood
+        // registration is only kept by the two staying literally in lockstep (§5.1). The plan rotation above
+        // is the yaw DOF; this is the elevation one, and the two compose orthogonally.
+        const ph = (sp>0 && lp && s.limb>=0 && s.limb<lp.length) ? lp[s.limb] : 0;
+        const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(ph)), 0.1, 1) : 1;
         // ANCHOR the foreshorten at the limb's attach height (§5.1): h' = at + (h−at)·fore, so at the join h' = at
         // exactly and the pitching limb cannot part from the trunk axis, which does not pitch. Same sign for a droop
         // tip hanging BELOW the attach — rotating a limb down about its joint moves every point toward the attach
@@ -1828,6 +1835,7 @@ function create(canvas, opts){
     const kL=wL*wL, kT=wT*wT, cL=2*dz*wL, cT=2*dz*wT, lf=params.limb_flex, tf=params.twig_flex;
     let maxv=0;
     const wx=motion.windX, wy=motion.windY;   // effective downwind direction (after the weather veer, §5.1)
+    const sp = Math.max(0, params.sway_pitch);   // gate on the second DOF: off → it never integrates and its state is held at rest
     for(let i=0;i<hier.nLimb;i++){             // limbs pivot about the trunk; bend = wind TORQUE about it
       const dx=hier.limbDir[2*i], dy=hier.limbDir[2*i+1];
       const torque = dx*wy - dy*wx;            // cross(limbDir,wind): tip swings downwind, sign by side —
@@ -1837,6 +1845,24 @@ function create(canvas, opts){
       for(let s=0;s<steps;s++){ const a = kL*(target - hier.limbAngle[i]) - cL*hier.limbVel[i];
         hier.limbVel[i]+=a*h; hier.limbAngle[i]+=hier.limbVel[i]*h; }
       maxv=Math.max(maxv, Math.abs(hier.limbVel[i]));
+      // ---- the SECOND rotational DOF (sway_pitch, §5.1): elevation, in the limb's own vertical plane ----
+      // One wind force, resolved two ways about the same joint. The drag PERPENDICULAR to the limb's plan
+      // direction has a moment arm about the vertical and yaws it (the cross above); the drag PARALLEL to it
+      // has none — it cannot yaw the limb at all, so it loads it end-on and pitches it. Hence dot where the
+      // yaw takes cross, on the same balanced mechanical fan (limbDir, decoupled from the drawn azimuth §4.5)
+      // — but rotated by the limb's LIVE yaw bend, which is what makes STREAMLINING emergent: a broadside limb
+      // is all cross and no dot, so it swings downwind first; that swing turns its live direction INTO the
+      // wind's line, the dot grows, and only then does it pitch flat. No alignment special case anywhere.
+      // An upwind limb (dot<0) takes negative torque and pitches UP. Same spring as the yaw (no new knobs).
+      if(sp>0){
+        const ca=Math.cos(hier.limbAngle[i]), sa=Math.sin(hier.limbAngle[i]);
+        const lx=ca*dx - sa*dy, ly=sa*dx + ca*dy;      // live plan direction = mechanical fan turned by the yaw bend
+        const pTorque = lx*wx + ly*wy;                 // dot(liveDir, wind)
+        const pTarget = lf*u*pTorque;
+        for(let s=0;s<steps;s++){ const a = kL*(pTarget - hier.limbPitch[i]) - cL*hier.limbPitchVel[i];
+          hier.limbPitchVel[i]+=a*h; hier.limbPitch[i]+=hier.limbPitchVel[i]*h; }
+        maxv=Math.max(maxv, Math.abs(hier.limbPitchVel[i]));   // the pitch must also hold motionActive open until it settles
+      } else { hier.limbPitch[i]=0; hier.limbPitchVel[i]=0; }   // zeroed while off so re-enabling the knob starts from rest
     }
     for(let j=0;j<hier.nClusterTotal;j++){     // twigs: stiffer, faster, mostly decorrelated
       const cxj=hier.clusterPlan[2*j], cyj=hier.clusterPlan[2*j+1];
@@ -1855,14 +1881,17 @@ function create(canvas, opts){
   // hierarchy tick, and again after a grove-morph regrow (which hands us a fresh, zeroed texture). ----
   function publishBend(){
     if(!hier) return;
-    const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): a bent limb pitches down → foreshorten factor in .w (faithful only); 0 → factor 1, byte-identical
+    const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): the limb's PITCH DOF → foreshorten factor in .w (faithful only); 0 → factor 1, byte-identical
     const faithful = params.faithful_canopy;
     for(let j=0;j<hier.nClusterTotal;j++){
       const li = hier.clusterLimb[j];
       const lb = hier.limbAngle[li];
-      hier.clusterData[4*j]   = lb;                                    // limb bend this clump inherits
+      hier.clusterData[4*j]   = lb;                                    // limb YAW bend this clump inherits (the plan rotation)
       hier.clusterData[4*j+1] = hier.twigAngle[j];                     // its own twig bend
-      const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(lb)), 0.1, 1) : 1;  // height foreshorten: the limb pitches down with its bend
+      // foreshorten from the PITCH DOF, not the yaw: a limb pitched by θ carries its points to cos θ of their
+      // elevation. 1−cos is EVEN, so an upwind limb pitched UP foreshortens too instead of lifting its cast —
+      // the approximation named in §5.1; a signed model needs each limb's rest elevation in the motion state.
+      const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(hier.limbPitch[li])), 0.1, 1) : 1;
       hier.clusterData[4*j+3] = fore;
       // GOTCHA — .z is packed per MODE and the shader that unpacks it must agree (VS_FAITH vs VS_BAKE; neither
       // side can see the other's convention). LAYER: .z keeps the static stem-angle seed regen wrote, untouched
@@ -2455,7 +2484,7 @@ function create(canvas, opts){
   // per-frame tick for a copy-from-source. The bake only reads angles + sway + time, so velocities aren't needed. ----
   let snapshotMotion, applyMotion, setMotionSource;
   if(EDITOR){
-    snapshotMotion = () => ({ m:motion, dphase:params.drift_phase, lA:hier?.limbAngle, tA:hier?.twigAngle });
+    snapshotMotion = () => ({ m:motion, dphase:params.drift_phase, lA:hier?.limbAngle, lP:hier?.limbPitch, tA:hier?.twigAngle });
     applyMotion = (s) => {
       if(!s) return;
       const sm=s.m;
@@ -2464,7 +2493,7 @@ function create(canvas, opts){
       motion.sway[0]=sm.sway[0]; motion.sway[1]=sm.sway[1];
       params.drift_phase = s.dphase;                       // incoherent band rides a param the source advances
       if(hier && s.lA && hier.limbAngle.length===s.lA.length){
-        hier.limbAngle.set(s.lA); hier.twigAngle.set(s.tA);
+        hier.limbAngle.set(s.lA); hier.limbPitch.set(s.lP); hier.twigAngle.set(s.tA);   // BOTH limb DOFs, or the wipe's two engines foreshorten differently
         publishBend();                                     // push the mirrored bend into the texture the bake reads
       }
     };
