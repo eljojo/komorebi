@@ -9,20 +9,20 @@ import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komor
 // tone-map + wind-pattern (live uniforms / a table swap, snapped not tweened), and the legacy clusters_per_layer.
 const KNOWN_EXCLUDED = [
   "clusters_per_layer", "tone_map", "wind_pattern",
-  "receiver",   // curtain receiver gate (0=floor, 1=curtain): SNAPS to target, not tweened — transition handling (hard flip vs bloom vs result-blend) is an open decision in the curtain handoff
   "tree_species",   // inert label: the editor expands a TREE_SPECIES bundle into the shape knobs; the engine never reads it
   "drift_auto", "auto_quality", "adaptive_motion", "adaptive_idle_fps", "show_source", "show_layer", "show_layer_index",
 ];
-// standing_scene / faithful_canopy used to sit in KNOWN_EXCLUDED — but they are NOT inert: flipping one needs a
-// structural rebuild. They moved to MODE_KEYS, which transitionTo folds into structDiff. (See the mode-flag test.)
+// standing_scene / faithful_canopy / receiver used to sit in KNOWN_EXCLUDED — but they are NOT inert: flipping one
+// needs a structural rebuild. They moved to MODE_KEYS, which transitionTo folds into structDiff. (See the mode-flag test.)
 
-// Scene-MODE flags (standing_scene, faithful_canopy) are NOT inert: flipping one changes regen-time state
-// (crown sizing, faithTex allocation, the bake path), so a transition that lands on a differing flag must
-// force a structural rebuild — not silently snap the flag with the old geometry/textures still in place.
+// Scene-MODE flags (standing_scene, faithful_canopy, receiver) are NOT inert: flipping one changes regen-time state
+// (crown sizing, faithTex allocation, the bake path, the camera mapping), so a transition that lands on a differing
+// flag must force a structural rebuild — not silently snap the flag with the old geometry/textures still in place.
 test("scene-mode flags are classified as rebuild-forcing (MODE_KEYS), not inert", () => {
   expect(Array.isArray(MODE_KEYS)).toBe(true);
   expect(MODE_KEYS).toContain("standing_scene");
   expect(MODE_KEYS).toContain("faithful_canopy");
+  expect(MODE_KEYS).toContain("receiver");
 });
 
 test("the transition classes are pairwise disjoint", () => {

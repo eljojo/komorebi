@@ -49,7 +49,7 @@ const MORPH_KEYS = [
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
-  'curtain_tt','curtain_tint_r','curtain_tint_g','curtain_tint_b',      // curtain receiver (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself snaps; see KNOWN_EXCLUDED)
+  'curtain_tt','curtain_tint_r','curtain_tint_g','curtain_tint_b',      // curtain receiver (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
   'curtain_distance_m','fold_depth','fold_scale','fold_coarsen','velvet_sheen',   // curtain plane position + drape/velvet — continuous live look uniforms (only read in curtain mode)
   'wind_strength','wind_gustiness','wind_direction_deg','gust_frequency','weather_variability','weather_speed','gust_attack','gust_decay',
   'sway_stiffness','sway_ceiling','damping_ratio','backlash_gain','sway_height_gain',
@@ -76,10 +76,11 @@ const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branchi
   'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
 ];   // (tone_map is a live uniform: it just snaps — under the bloom if one's already running, else at the end — never forces one)
 // ---- scene-MODE flags. Not continuous (never tween) but NOT inert either: flipping one changes regen-time state
-// (faithful_canopy reallocates faithTex + switches the bake path; standing_scene reshapes the bake's crown sizing),
+// (faithful_canopy reallocates faithTex + switches the bake path; standing_scene reshapes the bake's crown sizing;
+// receiver swaps the whole camera mapping — floor ray-cast ↔ head-on cloth map — and re-aims the faithful cast frame),
 // so a transition landing on a differing flag must force a structural rebuild under the bloom — see transitionTo's
 // modeDiff. Kept out of TOPO_KEYS (they don't change the grove RNG/topology) but treated like one for the rebuild. ----
-const MODE_KEYS = ['standing_scene','faithful_canopy'];
+const MODE_KEYS = ['standing_scene','faithful_canopy','receiver'];
 const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back to the cloud dissolve (don't regrow per frame)
 
 // ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
@@ -1786,7 +1787,7 @@ function create(canvas, opts){
     for(const k of MORPH_KEYS)  from[k] = params[k];       // continuous look — always morphs live
     for(const k of CANOPY_KEYS) from[k] = params[k];       // continuous canopy — morphs live IF the topology matches
     const topoDiff   = TOPO_KEYS.some(k => to[k]!==params[k]);     // a new tree/layer/seed: can't morph leaf-for-leaf
-    const modeDiff   = MODE_KEYS.some(k => to[k]!==params[k]);     // a scene-MODE flag flips (faithful_canopy/standing_scene): needs a rebuild, NOT a snap-with-stale-state
+    const modeDiff   = MODE_KEYS.some(k => to[k]!==params[k]);     // a scene-MODE flag flips (faithful_canopy/standing_scene/receiver): needs a rebuild, NOT a snap-with-stale-state
     const canopyDiff = CANOPY_KEYS.some(k => to[k]!==params[k]);   // branch/leaf knobs differ
     const leafCount  = layerVAO.reduce((s,L)=>s+L.count, 0);       // current grove size
     // a grove morph scales the leaf count by tree_count AND per-twig density (leaves_per_cluster*foliage_density);
