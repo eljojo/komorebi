@@ -52,6 +52,7 @@ const MORPH_KEYS = [
   'curtain_tt','curtain_tint_r','curtain_tint_g','curtain_tint_b',      // curtain receiver (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
   'curtain_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','curtain_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
   'mullion_tau','mullion_pitch_m','mullion_bar_m','mullion_depth_m',    // window mullion grid (§4.9): analytic cloth-space occluder — continuous live uniforms, tau 0 = off
+  'window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall',  // the window APERTURE (§4.9): the finite lit rectangle + its wall leak — continuous live uniforms, w·h = 0 = infinite light
   'wind_strength','wind_gustiness','wind_direction_deg','gust_frequency','weather_variability','weather_speed','gust_attack','gust_decay',
   'sway_stiffness','sway_ceiling','damping_ratio','backlash_gain','sway_height_gain',
   'limb_flex','twig_flex','stem_length','sway_pitch','leaf_swing','flutter_freq',
@@ -201,6 +202,14 @@ const DEFAULTS = {
   mullion_pitch_m: 0.35,           // pane size: bar-to-bar spacing on the cloth (a sash window's 30–40 cm panes)
   mullion_bar_m: 0.025,            // glazing-bar width (m)
   mullion_depth_m: 0.04,           // how far the bars stand IN FRONT of the cloth (sun side) — sets BOTH the throw and the penumbra
+  // THE WINDOW APERTURE (§4.9): the light has an EDGE. A finite bright rectangle of sky at the bar plane, opaque
+  // wall around it — the macro contrast the §1 scene is built on, and the window FRAME the mullion grid was missing.
+  window_w_m: 0.0,                 // aperture width (m) on the cloth — THE GATE with the height: w·h = 0 = infinite light, byte-identical
+  window_h_m: 0.0,                 // aperture height (m)
+  window_cx_m: 0.0,                // aperture centre across the cloth
+  window_cy_m: 1.3,                // aperture centre up the cloth (a sill about waist-high)
+  window_wall: 0.03,               // light landing OUTSIDE the aperture: the wall is opaque, so this stands in for the room's own dim
+                                   // front-side light — without it the surround is a void rather than dark cloth
   far_smear: 3.0,                  // far-field dapple smear: extra throw (m) per unit foreshortening; 0 = off, no effect top-down
   exposure: 1.3,
   contrast: 1.0,
@@ -624,6 +633,8 @@ uniform float uSheen;             // velvet grazing sheen strength on the fold r
 uniform float uScatter;           // fraction of the transmitted light that FORWARD-SCATTERS through the pile (0 = all ballistic, today's look)
 uniform vec4  uMullion;           // window mullion grid (§4.9): pitch, bar width, depth in FRONT of the cloth (m), tau. .w = 0 = off
 uniform float uMullPenumbra;      // mullion soft edge (m on the cloth) = depth × the source's angular width, CPU-side
+uniform vec4  uWindow;            // window aperture (§4.9): HALF width, HALF height, centre x, centre y — cloth metres. .x*.y = 0 = infinite light, off
+uniform float uWindowWall;        // light landing outside the aperture (the room's own dim front-side leak; the wall itself is opaque)
 uniform float uExposure;
 uniform float uContrast;
 uniform int   uToneMap;
@@ -653,39 +664,61 @@ vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
 // (mullion bars, fold warp) diverges; the clamp keeps the sign so the throw still rakes the right way. Shared so
 // the two consumers can't clamp differently.
 float clothGy(){ return abs(uBulkShift.y) < 1e-3 ? (uBulkShift.y < 0.0 ? -1e-3 : 1e-3) : uBulkShift.y; }
-// THE PLEAT PHASE, in one place (§4.9). Both the shading (which flank is edge-on) and the geometry (where the
-// flank actually sits in depth) must read the SAME corrugation or the bend lands off the folds it is bending on.
-float foldK(vec2 cloth){ return uFoldScale / sqrt(1.0 + uFoldCoarsen * max(cloth.y, 0.0)); }   // pleat frequency; λ grows down the drape
+// THE PLEAT FIELD, in one place (§4.9) — one displacement, one derivative, one function. Both the shading (which
+// flank is edge-on) and the geometry (where that flank sits in depth) read the SAME values here, so the shared-phase
+// invariant is structural rather than a convention two call sites have to keep: the warp bends the cast around
+// exactly the flanks the velvet shades.
+// GRAVITY IS THE CONSTRAINT: hanging cloth has VERTICAL ridges at every height. Each harmonic's phase is therefore a
+// function of x ALONE. Coarsening cannot be a frequency chirp (see §4.9's recorded dead end — a k(y) tilts the
+// constant-phase ridges into a diagonal fan, x ∝ √(1+c·y), the literal pool-caustic look); it is a spectral
+// REWEIGHTING, an octave crossfade — fine gathers at the rod fading out into broad waves at the hem.
+// Three harmonics at pairwise irrational ratios: the sum is almost-periodic, so no pleat ever repeats and there is no
+// wallpaper tile — aperiodicity with no hash, no RNG, C∞ smooth (which the warp derivative and the incidence both need).
+const vec3 FOLD_R = vec3(1.0, 0.6180340, 0.4142136);   // frequency ratios ×uFoldScale: 1 : 1/φ : 1/(1+√2)
+const vec3 FOLD_A = vec3(0.4142136, 0.6702134, 1.0);   // amplitude ∝ 1/k, so every harmonic contributes the SAME peak slope; displacement is broad-dominated, slope is not
+const vec3 FOLD_P = vec3(0.7, 2.4, 5.1);               // fixed phase offsets — no distinguished point where all three crest together
+const float FOLD_NAP = 33.798990;                      // pile-grain frequency ×uFoldScale: 14·(1+√2), irrational against all three harmonics, so the grain never locks onto a fold
+// Returns the UNIT pleat shape: (ŝ, dŝ/dx, max|dŝ/dx|), with |ŝ| ≤ 1. uFoldWarp scales it to metres at the consumers
+// rather than here, so the shading's facing term keeps its 0..1 meaning on a cloth with no displacement at all.
+vec3 foldField(vec2 cloth){
+  float f = 1.0/(1.0 + uFoldCoarsen*max(cloth.y, 0.0));                    // 1 at the rod → 0 at the hem: the octave crossfade's mixer
+  vec3 w = vec3(f, 1.0, 2.0 - f);                                          // finest dies down the drape, broadest grows to take its place (coarsen 0 ⇒ all 1, even top to bottom)
+  vec3 k = uFoldScale * FOLD_R;
+  vec3 wa = w * FOLD_A;
+  float N = max(wa.x + wa.y + wa.z, 1e-6);                                 // normalize Σwa so the peak displacement stays uFoldWarp metres at EVERY height
+  vec3 ph = 6.2831853*k*cloth.x + FOLD_P;
+  return vec3(dot(wa, sin(ph))/N,
+              6.2831853*dot(wa*k, cos(ph))/N,
+              max(6.2831853*dot(wa, k)/N, 1e-6));                          // the sup the almost-periodic derivative approaches (every |cos| → 1 together)
+}
 // FOLD WARP (spec §4.9) — pleat displacement bends the arriving cast. The whole light field (faithful tap, layer
 // reads, mullion) is baked/derived against a FLAT cloth at Y=cy. A pleated point sits Δy out of that plane, so it
 // intercepts a different ray: the flat-cast plane is then Δy of DEPTH away from it, and the throw is literally
 // mullionT's — cloth + (depth/gy)·(gx,1), one central ray up-sun, with Δy standing in for the bar depth. Sign
 // convention that makes that identity exact: Δy > 0 bulges the pleat toward the ROOM (away from the sun side), so
-// the flat plane sits in FRONT of it exactly as the bars do. |cos| in velvetCloth peaks where this sin is steepest,
-// so the S-bend lands on the fold FLANKS — that is the shared-phase requirement paying off, not a coincidence.
-vec2 foldThrow(vec2 cloth){
+// the flat plane sits in FRONT of it exactly as the bars do.
+vec2 foldThrow(float shape){
   if(uFoldWarp == 0.0) return vec2(0.0);                                   // flat cloth: no displacement, byte-identical
-  float dy = uFoldWarp * sin(cloth.x * foldK(cloth) * 6.2831853);          // Δy: the pleat's bulge out of the plane
+  float dy = uFoldWarp * shape;                                            // Δy: the pleat's bulge out of the plane
   return (dy / clothGy()) * vec2(uBulkShift.x, 1.0);
 }
 // FOLD INCIDENCE (spec §4.9) — the lit/dark banding on a tilted flank is an incidence COSINE, so it takes the real
 // sun direction and NOT uProj/uBulkShift: those carry 1/sin(elevation) and blow up at a low sun, where incidence on
-// a vertical cloth does the opposite — it PEAKS as the sun lowers head-on toward the window. Same corrugation as
-// the warp: Δy ∝ sin(k·u·2π) ⇒ dΔy/du = uFoldWarp·k·2π·cos(k·u·2π), and with Δy measured toward the room the two
-// unit normals of the surface (u, cy−Δy, v) are ±(dΔy/du, 1, 0)/‖·‖ — the sun-facing one is the sign of the sun's
+// a vertical cloth does the opposite — it PEAKS as the sun lowers head-on toward the window. The slope handed in is
+// foldField's own dΔy/du (the one field, scaled to metres), and with Δy measured toward the room the two unit
+// normals of the surface (u, cy−Δy, v) are ±(dΔy/du, 1, 0)/‖·‖ — the sun-facing one is the sign of the sun's
 // own cloth-facing component. Normalized by the FLAT cloth's incidence so uFoldWarp = 0 returns exactly 1.0: the
 // warp geometry is the gate, no separate knob. The ratio exceeds 1 on a flank turned INTO the sun — real (that
 // flank truly collects more than the flat plane), and it diverges as the sun rakes parallel to the cloth, the same
 // degenerate pose clothGy already guards, where the whole cloth-space cast is meaningless anyway.
-float foldIncidence(float k, float ph){
+float foldIncidence(float slope){
   if(uFoldWarp == 0.0) return 1.0;                                         // flat cloth: no tilt, so nothing to vary — byte-identical
-  float slope = uFoldWarp * k * 6.2831853 * ph;                            // dΔy/du: the flank's tilt in the (x, Y) plane
   float sgn = uBulkShift.y < 0.0 ? -1.0 : 1.0;                             // which side of the cloth the sun stands on
   float sx = sgn*uSunDir.x, sy = sgn*uSunDir.y;                            // sun, in the frame where the cloth's sun-facing normal is +Y
   return max(slope*sx + sy, 0.0) / (max(sy, 1e-3) * sqrt(1.0 + slope*slope));
 }
 // curtain drape + velvet (spec §4.9). A real curtain is not flat — it hangs in vertical PLEATS that coarsen toward
-// the hem (heavy fabric: wavelength ∝ √depth). This is the SHADING half — uFoldDepth is authored pile thickness on
+// the hem (foldField above: fine octaves fading out, ridges vertical throughout). This is the SHADING half — uFoldDepth is authored pile thickness on
 // a flat plane, NOT the displacement (that is uFoldWarp above, and it deliberately does not enter here: the pleats
 // are attached to the cloth, so only the ARRIVING pattern warps). The pleats do two things that read as thick
 // velvet rather than a thin woven grid:
@@ -703,18 +736,16 @@ float foldIncidence(float k, float ph){
 // scattered light too (it crossed the same pile), so the hue stays tint̂ — no second tint. s=0 collapses to band.
 // LIMIT of this per-pixel tier: it redistributes light ANGULARLY at one point, so it wraps the glow around the FOLDS
 // but cannot bleed a dapple's glow across a CAST-SHADOW edge — that is the lateral 2-D diffusion tier (§4.9), staged.
-vec3 velvetCloth(vec2 cloth, vec3 body, vec3 sheenCol){
-  float k = foldK(cloth);                                                // the shared pleat phase (also drives the warp)
-  float ph = cos(cloth.x * k * 6.2831853);                               // the pleat profile's derivative factor; |ph| is the edge-on facing
-  float facing = abs(ph);                                                // 1 = edge-on flank, 0 = face-on ridge/valley
-  float inc = foldIncidence(k, ph);                                      // true sun-geometry lit/dark on the flanks (1.0 on flat cloth)
+vec3 velvetCloth(vec2 cloth, vec3 fold, vec3 body, vec3 sheenCol){
+  float facing = clamp(abs(fold.y)/fold.z, 0.0, 1.0);                    // slope against the field's own peak slope: 1 = edge-on flank, 0 = face-on ridge/valley. Unit shape, so fold_depth's banding is there on an undisplaced cloth too
+  float inc = foldIncidence(uFoldWarp * fold.y);                         // true sun-geometry lit/dark on the flanks (1.0 on flat cloth)
   float band = exp(-uFoldDepth * facing) * inc;                          // ballistic: flanks thicker → darker pleat bands (backlit), × how squarely each flank meets the sun
   // the scattered lobe walks the same Beer path at a quarter weight: it still dims edge-on (more pile to cross) but
   // never goes black. 0.25 is an authored "mostly, not wholly, orientation-blind" call — 0 would flatten the glow
   // completely, 1 would collapse it back onto the ballistic band and the wrap would do nothing.
   float bandSoft = exp(-uFoldDepth * facing * 0.25);
   float ridge = 1.0 - facing;                                            // bright where the cloth faces us
-  float nap = 0.9 + 0.1*sin(cloth.y * k * 12.566370);                    // fine vertical pile grain (nap), tied to pleat scale
+  float nap = 0.96 + 0.04*sin(6.2831853 * FOLD_NAP*uFoldScale * cloth.x); // fine pile grain: TRUE-vertical, so it varies across x like the pleats do — a grain, ±4% (deeper reads as etched lines, not fibre)
   vec3 sheen = sheenCol * (uSheen * ridge * ridge);                      // soft pale glow on the ridges only
   return body * mix(band, bandSoft, uScatter) * nap + sheen;
 }
@@ -722,7 +753,8 @@ vec3 velvetCloth(vec2 cloth, vec3 body, vec3 sheenCol){
 // standing uMullion.z metres in FRONT of the cloth (sun side), evaluated analytically per pixel in cloth (u,v).
 // It is §4.5's woody occluder at centimetre range instead of metres, which is the whole point: at this d the
 // aperture beats d·θ by orders of magnitude, so the grid lands in the SHAPE regime — sharp bars — inside the same
-// frame where the leaf-gaps metres away are pinhole sun-images. Infinite grid (a window FRAME/border is future work).
+// frame where the leaf-gaps metres away are pinhole sun-images. The grid is bounded by the window APERTURE below
+// (conf), because the bars are part of the window: past its frame there is wall, and a wall carries no glazing bars.
 // THROW: the bar plane sits at world-Y cy+d, so along the central ray it drops r = d/gy to reach the cloth — the
 // same projection VS_FAITH's curtain branch casts with (u = px − r·gx, v = h − r), inverted here to ask which bar
 // point shadows THIS cloth point: (u,v) + r·(gx,1). One vector, so the grid rakes with the sun exactly as the
@@ -730,16 +762,33 @@ vec3 velvetCloth(vec2 cloth, vec3 body, vec3 sheenCol){
 // spread across the source disk is sub-millimetre on the cloth, which the penumbra below already stands in for.
 // PENUMBRA: depth × the source's angular width — deliberately WITHOUT the woody occluder's 1/sin(elevation)
 // obliquity factor: the cloth is viewed head-on, so a bar's shadow is never smeared along a receding plane.
-float mullionT(vec2 cloth){
+float mullionT(vec2 cloth, float conf){
   vec2 bar = cloth + (uMullion.z/clothGy()) * vec2(uBulkShift.x, 1.0);   // the bar-plane point whose shadow lands here
   float p = max(uMullion.x, 1e-3), hw = 0.5*uMullion.y;
   vec2 d = abs(mod(bar + 0.5*p, p) - 0.5*p);                             // distance to the nearest bar centre, per axis
   float pen = max(uMullPenumbra, 1e-3*p);   // a bar AT the cloth casts a geometrically hard edge; keep a hairline so smoothstep stays well-defined and the edge doesn't crawl. Well under the physical penumbra at any real depth, so it never softens the look.
   vec2 cov = 1.0 - smoothstep(vec2(hw), vec2(hw + pen), d);              // soft edge grows OUTWARD, like the wood's
-  return exp(-uMullion.w * max(cov.x, cov.y));                           // union of the two bar sets: a crossing is still one bar deep
+  return exp(-uMullion.w * max(cov.x, cov.y) * conf);                    // union of the two bar sets: a crossing is still one bar deep. conf = 1 with no aperture, so the infinite grid is byte-identical
+}
+// THE WINDOW APERTURE (spec §4.9) — the light gets an EDGE. Behind the cloth is not an infinite lit field but a
+// finite bright rectangle of sky in an opaque wall, and that macro contrast is most of the §1 composition. Evaluated
+// at the SAME warped cast coordinate and the SAME bar-plane throw the mullion uses, because the aperture IS the
+// window's outermost frame member: its edge S-bends across the pleats exactly as the glazing bars do, and that
+// consistency is what makes the wall read as being behind the same cloth. Soft edge = the mullion penumbra, the same
+// depth × the same source, so frame and bars blur together as cloud thickens.
+// Returns (mask, inside): mask scales the landed irradiance — leak outside, full light within; inside confines the
+// bar grid to the glazing so no fishnet crawls across the wall.
+vec2 windowMask(vec2 cloth){
+  vec2 ap = cloth + (uMullion.z/clothGy()) * vec2(uBulkShift.x, 1.0);    // the aperture-plane point whose shadow lands here
+  vec2 d = abs(ap - uWindow.zw) - uWindow.xy;                            // per-axis signed distance to the rect edge (<0 = inside)
+  float pen = max(uMullPenumbra, 1e-4);                                  // bars AT the cloth give a hard edge; a hairline keeps smoothstep well-defined
+  vec2 t = 1.0 - smoothstep(vec2(-pen), vec2(0.0), d);                   // the wall's coverage grows OUTWARD from the geometric edge, like the bars' and the wood's
+  float inside = t.x*t.y;
+  return vec2(uWindowWall + (1.0 - uWindowWall)*inside, inside);
 }
 void main(){
   vec2 world; float fog = 0.0; float extraThrow = 0.0; float recvZ = 0.0; vec2 clothUV = vec2(0.0), castUV = vec2(0.0);
+  vec3 foldF = vec3(0.0);   // the pleat field at this cloth point, evaluated ONCE: the warp below and the velvet shading later read the very same (ŝ, dŝ/dx, peak) — that is the shared-phase invariant, structural
   if(uReceiver != 0){
     // ---- CURTAIN receiver (spec §4.9): the receiver is a VERTICAL plane viewed head-on, NOT the floor. Screen
     // maps straight to the cloth's own coords — u across, v up. The tree's shadow is then projected onto the plane
@@ -750,7 +799,8 @@ void main(){
     // pleat's displacement makes the incoming light field arrive from (§4.9's fold warp — every occluder read). ----
     vec2 cuv = (vUv-0.5)*uViewExtent*vec2(uAspect,1.0) + uViewCenter;  // pan/zoom frame the cloth (view_center, view_extent)
     clothUV = cuv;                       // cloth (u across, v up) — the faithTex is baked in THESE coords (§4.9), tapped once below
-    castUV = cuv + foldThrow(cuv);       // fold warp: the same point's read into the FLAT-baked cast (== cuv when fold_warp 0)
+    foldF = foldField(cuv);              // the drape, once (§4.9)
+    castUV = cuv + foldThrow(foldF.x);   // fold warp: the same point's read into the FLAT-baked cast (== cuv when fold_warp 0)
     // the layer path is a PLAN-space read, so carrying the warp in (world.x, recvZ) is exact rather than a stand-in:
     // sliding the receiver point along its own ray lands the occluder lookup world.xy + (h-recvZ)·g on the identical
     // plan point the displaced cloth point sees. The analytic wood then follows for free (it reads world/recvZ too).
@@ -853,14 +903,22 @@ void main(){
     // skylight both — so it scales E. That distinction is the physics of a near-contact occluder, not a shortcut.
     // castUV, not clothUV: the bars are one more plane in FRONT of the cloth, so a displaced pleat sees them at
     // depth (bar depth + Δy) — which is exactly what mullionT's own throw adds on top of the warped coord. The
-    // grid's straight lines S-bending across the pleats is the fold warp's defining image.
-    if(uMullion.w > 0.0) E *= mullionT(castUV);
+    // grid's straight lines S-bending across the pleats is the fold warp's defining image. The APERTURE takes E for
+    // the same near-contact hemisphere reason the bars do — a wall centimetres off the cloth shuts out beam and sky
+    // alike — and it bounds the grid, since the bars are the window's and the wall has none.
+    float barConf = 1.0;                                   // 1 = infinite window, the grid runs edge to edge (byte-identical)
+    if(uWindow.x*uWindow.y > 0.0){
+      vec2 win = windowMask(castUV);
+      barConf = win.y;
+      E *= win.x;
+    }
+    if(uMullion.w > 0.0) E *= mullionT(castUV, barConf);
     vec3 tintHat = uCurtainTint / max(max(uCurtainTint.r, uCurtainTint.g), max(uCurtainTint.b, 1e-4));   // unit-peak HUE
     vec3 body = E * (uTt * tintHat);                       // transmitted moss: brightness × hue; ambient rides through Tt·tint̂ (gated, not free)
     // drape + velvet (§4.9): pleats + grazing sheen on the cloth's own (u=clothUV.x, v=clothUV.y) coords. The sheen
     // is a pale warm tint of the dye (two-tone velvet), brightened a touch where the backlight is hot.
     vec3 sheenCol = mix(tintHat, vec3(1.0,0.96,0.88), 0.7) * (0.4 + 0.6*dot(body, vec3(0.33)));
-    col = velvetCloth(clothUV, body, sheenCol);
+    col = velvetCloth(clothUV, foldF, body, sheenCol);
   }
   // ---- Purkinje / mesopic dusk shift (§3.5): as the sun sets the eye's rods take over the dim shade —
   // colour desaturates toward a blue-green grey and saturated reds darken first, while the bright dapples
@@ -1042,6 +1100,7 @@ function create(canvas, opts){
     receiver:loc(progTransport,'uReceiver'), tt:loc(progTransport,'uTt'), curtainTint:loc(progTransport,'uCurtainTint'),
     curtainY:loc(progTransport,'uCurtainY'), foldDepth:loc(progTransport,'uFoldDepth'), foldScale:loc(progTransport,'uFoldScale'), foldCoarsen:loc(progTransport,'uFoldCoarsen'), foldWarp:loc(progTransport,'uFoldWarp'), sunDir:loc(progTransport,'uSunDir'), sheen:loc(progTransport,'uSheen'), scatter:loc(progTransport,'uScatter'),
     mullion:loc(progTransport,'uMullion'), mullPenumbra:loc(progTransport,'uMullPenumbra'),
+    window:loc(progTransport,'uWindow'), windowWall:loc(progTransport,'uWindowWall'),
     twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'), chroma:loc(progTransport,'uChroma'),
     exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
     layers:[0,1,2,3].map(i=>loc(progTransport,`uLayer[${i}]`)),
@@ -2197,6 +2256,11 @@ function create(canvas, opts){
     // just depth × the source's angular width, cloud widening the source exactly as it does for the wood (§3.4).
     gl.uniform4f(U.tp.mullion, params.mullion_pitch_m, params.mullion_bar_m, params.mullion_depth_m, Math.max(0, params.mullion_tau));
     gl.uniform1f(U.tp.mullPenumbra, params.mullion_depth_m * (params.core_angular_radius_deg*DEG) * (1.0+3.0*params.cloud_thickness));
+    // the window APERTURE (§4.9): half-extents, so the shader's rect test is one abs()-minus-half. w·h = 0 is the gate
+    // (an infinite lit field — every look before this one, byte-identical); the aperture shares the bars' plane and
+    // penumbra above because it IS the window's outermost frame member.
+    gl.uniform4f(U.tp.window, 0.5*Math.max(0, params.window_w_m), 0.5*Math.max(0, params.window_h_m), params.window_cx_m, params.window_cy_m);
+    gl.uniform1f(U.tp.windowWall, clamp(params.window_wall, 0, 1));
     // Purkinje (§3.5): rods take over the dim shade as the sun lowers. The global weight rides the same
     // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
     gl.uniform1f(U.tp.twilight, smoothstep(30, 4, params.sun_elevation_deg));

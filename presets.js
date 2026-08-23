@@ -186,20 +186,29 @@ export const PRESETS = {
     "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.4, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.16, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
-    "seed": 290626672, "sun_elevation_deg": 22, "sun_azimuth_deg": 90,
-    // CURTAIN receiver: a vertical plane 2.5 m behind the tree, viewed head-on. view_center.y lifts the visible
-    // span so heights ~0..5 m of cloth are in frame; pitch is irrelevant in curtain mode (head-on map).
+    // a low raking sun, well off the cloth's normal: elevation gives the shadow its climb up the drape, and the
+    // off-axis azimuth is what makes the fold incidence band one flank lit and the other dark (head-on, az 90°,
+    // both flanks only foreshorten — see §4.9).
+    "seed": 290626672, "sun_elevation_deg": 13, "sun_azimuth_deg": 62,
+    // CURTAIN receiver: a vertical plane 2.5 m behind the tree, viewed head-on. view_center.y sits on the aperture
+    // centre so the window is what the frame is about; pitch is irrelevant in curtain mode (head-on map).
     "receiver": 1, "standing_scene": true, "faithful_canopy": true,
-    "curtain_distance_m": -2.5, "curtain_tt": 0.38, "curtain_tint_r": 0.34, "curtain_tint_g": 1.0, "curtain_tint_b": 0.28,
-    "fold_depth": 0.85, "fold_scale": 2.2, "fold_coarsen": 0.3, "velvet_sheen": 0.45,   // draped, thick-velvet read
-    "fold_warp": 0.06,   // the pleats stand 6 cm out of the plane, so the cast dapples and the window bars S-bend across them (taste call; the visual pass owns the amplitude)
-    "curtain_scatter": 0.35,   // a third of the transmit diffuses through the pile — the body glow wraps into the fold flanks instead of leaving them black (taste call; the visual pass owns it)
+    "curtain_distance_m": -2.5, "curtain_tt": 0.22, "curtain_tint_r": 0.45, "curtain_tint_g": 1.0, "curtain_tint_b": 0.28,
+    "fold_depth": 0.6, "fold_scale": 0.9, "fold_coarsen": 0.6, "velvet_sheen": 0.15,   // few broad pleats gathering at the rod, gently shaded — the aperture carries the contrast now, not the folds
+    "fold_warp": 0.10,   // the pleats stand 10 cm out of the plane, so the cast dapples and the window bars S-bend across them (taste call; the visual pass owns the amplitude)
+    "curtain_scatter": 0.4,   // two fifths of the transmit diffuses through the pile — the body glow wraps into the fold flanks instead of leaving them black (taste call; the visual pass owns it)
     // the window: 4 cm off the cloth, so its bars land sharp in the same frame the leaf-gaps stay soft (§4.9's
     // two-regimes image). Values are a taste call — the visual pass owns them.
     "mullion_tau": 2.5, "mullion_pitch_m": 0.35, "mullion_bar_m": 0.025, "mullion_depth_m": 0.04,
-    "view_extent_m": 5.2, "view_pitch_deg": 0, "view_fov_deg": 60, "view_yaw_deg": 0,
-    "view_center_x": 0, "view_center_y": 2.6, "trunk_radius_m": 0.1, "far_smear": 0,
-    "exposure": 2.1, "contrast": 1.0, "ambient_skylight": 0.9, "sky_turbidity": 0.06, "mesopic_strength": 0.5, "chromatic_aberration": 0, "tone_map": 2,
+    // the APERTURE (§4.9): a 1.5 × 2.1 m sash centred just above waist height. Everything outside it is wall, lit
+    // only by the room's own 3% front-side leak — the macro contrast the whole composition rests on, and the frame
+    // that confines the bars. Also a taste call.
+    "window_w_m": 1.5, "window_h_m": 2.1, "window_cx_m": 0, "window_cy_m": 1.3, "window_wall": 0.03,
+    "view_extent_m": 3.2, "view_pitch_deg": 0, "view_fov_deg": 60, "view_yaw_deg": 0,
+    "view_center_x": 0, "view_center_y": 1.3, "trunk_radius_m": 0.1, "far_smear": 0,
+    // dimmer and less ambient than a floor look wants: the wall must go dark, so the exposure is set by the
+    // aperture rather than by the average frame.
+    "exposure": 1.4, "contrast": 1.0, "ambient_skylight": 0.5, "sky_turbidity": 0.06, "mesopic_strength": 0.5, "chromatic_aberration": 0, "tone_map": 2,
     "wind_pattern": "squally", "wind_strength": 1.2, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
