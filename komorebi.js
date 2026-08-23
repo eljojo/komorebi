@@ -51,6 +51,7 @@ const MORPH_KEYS = [
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'curtain_tt','curtain_tint_r','curtain_tint_g','curtain_tint_b',      // curtain receiver (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
   'curtain_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','curtain_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
+  'curtain_diffuse','curtain_diffuse_m',                                // lateral-diffusion glow (§4.9): the sharp/blurred split + its cloth-metre radius. Continuous, so they tween — but the split crossing 0 adds/drops the HDR passes mid-tween, which is a pass-count change, not a look pop
   'mullion_tau','mullion_pitch_m','mullion_bar_m','mullion_depth_m',    // window mullion grid (§4.9): analytic cloth-space occluder — continuous live uniforms, tau 0 = off
   'window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall',  // the window APERTURE (§4.9): the finite lit rectangle + its wall leak — continuous live uniforms, w·h = 0 = infinite light
   'wind_strength','wind_gustiness','wind_direction_deg','gust_frequency','weather_variability','weather_speed','gust_attack','gust_decay',
@@ -194,6 +195,12 @@ const DEFAULTS = {
                                    // authored pile-thickness SHADING band on a flat plane — depth shades, warp displaces. 0 = flat cloth.
   velvet_sheen: 0.0,               // velvet grazing sheen on the fold ridges (0 = off; the cut-pile glow that reads as terciopelo)
   curtain_scatter: 0.0,            // forward-scatter share of the transmit: how much of the light DIFFUSES through the pile instead of threading it (0 = all ballistic, byte-identical; up = the glow wraps into the dark fold flanks)
+  // LATERAL DIFFUSION (§4.9): the neighbour-reading half of the same physics — light spreading sideways THROUGH the
+  // weave, which is the only thing that bleeds a hot dapple's glow across its own cast-shadow edge. THE GATE, and an
+  // expensive one: >0 routes the frame through a linear-HDR target + two blur passes + a compositing tone-map tail.
+  // 0 = the direct-to-screen draw, bit-identical, no extra passes allocated or run.
+  curtain_diffuse: 0.0,            // the SPLIT: out = mix(sharp, blurred, d) — energy-conserving, never an add (the forward-scatter wrap's discipline, one scale up)
+  curtain_diffuse_m: 0.08,         // how far the weave carries light, in cloth METRES (weave-scale: ~0.03–0.15); converted to a pixel radius through the cloth mapping, so a zoom doesn't change the physics
   // WINDOW MULLION GRID (§4.9): the AUTHORED occluder, the inverse of the grown canopy — a rigid bar grid standing
   // centimetres off the cloth, so it sits deep in the SHAPE regime (you see the grid, sharp) while the tree's leaf-gaps
   // metres away stay pinhole (soft sun-images). Same sun, one frame, opposite regimes — set purely by occluder distance.
@@ -575,6 +582,27 @@ void main(){
   gl_Position = vec4(p,0.0,1.0);
 }`;
 
+// ---- THE LOOK'S TAIL (§4.7), as one shared string. Exposure -> tone curve -> contrast -> gamma: the last thing
+// that happens to a pixel, and the step the lateral-diffusion tier (§4.9) has to RELOCATE, because a 2-D spread of
+// light must happen in linear HDR, before any of this. Two shaders now run it — transport when it draws straight to
+// screen, the diffusion composite when it doesn't — so it lives here rather than twice: the two paths CANNOT drift
+// into two different Looks, which is the only way the gate's off state stays bit-identical over time. ----
+const GLSL_TONE_TAIL = `
+uniform float uExposure;
+uniform float uContrast;
+uniform int   uToneMap;
+vec3 reinhard(vec3 c){ return c/(1.0+c); }
+vec3 aces(vec3 x){ float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+vec3 toneTail(vec3 col){
+  col *= uExposure;
+  if(uToneMap==1) col=reinhard(col);
+  else if(uToneMap==2) col=aces(col);
+  else col=clamp(col,0.0,1.0);
+  col = clamp((col-0.5)*uContrast+0.5, 0.0, 1.0);
+  return pow(col, vec3(1.0/2.2));
+}`;
+
 const FS_TRANSPORT = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -635,16 +663,12 @@ uniform vec4  uMullion;           // window mullion grid (§4.9): pitch, bar wid
 uniform float uMullPenumbra;      // mullion soft edge (m on the cloth) = depth × the source's angular width, CPU-side
 uniform vec4  uWindow;            // window aperture (§4.9): HALF width, HALF height, centre x, centre y — cloth metres. .x*.y = 0 = infinite light, off
 uniform float uWindowWall;        // light landing outside the aperture (the room's own dim front-side leak; the wall itself is opaque)
-uniform float uExposure;
-uniform float uContrast;
-uniform int   uToneMap;
 uniform float uTwilight;          // global "sun is low" rod weight (from elevation, §3.5)
 uniform float uMesopic;           // Purkinje strength (the mesopic_strength knob)
 uniform vec3  uChroma;            // per-channel diffraction spread of the transport shift (θ∝λ); (1,1,1) = off
-
-vec3 reinhard(vec3 c){ return c/(1.0+c); }
-vec3 aces(vec3 x){ float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
-  return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
+uniform int   uLinearOut;         // 0 = end the Look here and write display-encoded colour (every look, unchanged). 1 = write LINEAR HDR
+                                  // instead: the lateral-diffusion tier (§4.9) must spread light BEFORE the curve, so it runs toneTail itself after the blur.
+${GLSL_TONE_TAIL}
 vec3 tap(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
   return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
@@ -929,12 +953,10 @@ void main(){
   float rod = (1.0 - smoothstep(0.15, 0.6, dot(acc, LUMA))) * uTwilight * uMesopic;  // 1 deep shade, 0 dapples
   col = mix(col, dot(col, LUMA)*ROD_BLUE, rod*0.6);     // cap 0.6 so the deepest shade keeps a hint of green
   col = mix(col, uHazeColor, fog);                       // far floor dissolves into atmospheric haze (§4.7); fog==0 at pitch 0
-  col *= uExposure;
-  if(uToneMap==1) col=reinhard(col);
-  else if(uToneMap==2) col=aces(col);
-  else col=clamp(col,0.0,1.0);
-  col = clamp((col-0.5)*uContrast+0.5, 0.0, 1.0);
-  col = pow(col, vec3(1.0/2.2));
+  // The Look's tail (exposure/curve/contrast/gamma) is toneTail() — shared verbatim with the diffusion composite.
+  // Skipping it is the ONLY thing uLinearOut changes: what leaves here is then the same linear HDR radiance the
+  // fabric produced, which is the space a lateral spread has to happen in (§4.9).
+  if(uLinearOut == 0) col = toneTail(col);
   frag = vec4(col,1.0);
 }`;
 
@@ -949,14 +971,57 @@ void main(){
 }`;
 
 // plain present blit (TUNE §9 adaptive frame-rate): copy the offscreen-rendered frame straight to screen.
-// transport already wrote final display-encoded colour into the target, so this is a verbatim 1:1 copy
-// (NEAREST, identical size) — the re-presented frame is byte-identical to the one transport drew.
+// whatever drew the frame (transport, or the diffusion composite) already wrote final display-encoded colour into
+// the target, so this is a verbatim 1:1 copy (NEAREST, identical size) — the re-presented frame is byte-identical.
 const FS_PRESENT = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform sampler2D uTex;
 out vec4 frag;
 void main(){ frag = texture(uTex, vUv); }`;
+
+// ---- LATERAL DIFFUSION (spec §4.9), pass 1+2: one axis of a separable Gaussian over the LINEAR-HDR frame.
+// σ = radius/3, so the 13 taps span exactly ±3σ and the weights below are CONSTANT (exp(−k²/8), normalized): the
+// physical radius rides entirely in uStep, the tap SPACING. Separability is what makes a real 2-D neighbourhood
+// affordable at all — 13+13 taps instead of 169.
+// THE KERNEL'S HONEST LIMIT: 13 taps cannot cover an arbitrarily large radius, so past a cap (GLOW_STEP_MAX) the
+// spacing stops growing and the reach falls short of the metres asked for. That is the deliberate trade — spacing the
+// taps further apart samples the frame too sparsely, and a hard cast edge then comes out as 13 shifted copies of
+// itself instead of a ramp. A glow that stops short reads as a glow; a combed one reads as a bug.
+const FS_GLOW_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform highp sampler2D uTex;     // linear HDR — highp: this is radiance, not display-encoded colour
+uniform vec2 uStep;               // ONE tap's offset in UV: (step/w, 0) horizontal, (0, step/h) vertical
+out vec4 frag;
+const float W[7] = float[7](0.19967567, 0.17621390, 0.12110863, 0.06482489, 0.02702306, 0.00877318, 0.00221816);
+void main(){
+  vec3 s = texture(uTex, vUv).rgb * W[0];
+  for(int k=1; k<=6; k++){
+    vec2 o = uStep*float(k);
+    s += (texture(uTex, vUv+o).rgb + texture(uTex, vUv-o).rgb) * W[k];   // symmetric pair, one weight
+  }
+  frag = vec4(s, 1.0);
+}`;
+
+// ---- LATERAL DIFFUSION, pass 3 (the composite): the SPLIT, then the relocated tail. uDiffuse is a share of one
+// fixed quantity of light, never an addition to it — the same discipline as the per-pixel forward-scatter wrap, one
+// scale up: what the hot dapple loses is exactly what its surround gains, so the frame's total light is unchanged
+// and no pixel can out-glow what landed on the cloth. Then toneTail — the SAME string transport runs when it draws
+// straight to screen — turns the result into display colour.
+const FS_GLOW_MIX = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform highp sampler2D uSharp;   // transport's linear HDR frame
+uniform highp sampler2D uBlur;    // the same frame, spread laterally through the weave
+uniform float uDiffuse;           // d: the share of the transmitted light that took the lateral route
+${GLSL_TONE_TAIL}
+out vec4 frag;
+void main(){
+  vec3 sharp = texture(uSharp, vUv).rgb;
+  vec3 blur  = texture(uBlur,  vUv).rgb;
+  frag = vec4(toneTail(mix(sharp, blur, uDiffuse)), 1.0);
+}`;
 
 const VS_POINTS = `#version 300 es
 precision highp float;
@@ -1029,7 +1094,7 @@ function create(canvas, opts){
   const params = Object.assign({}, DEFAULTS, opts.params || {});
   // Auto-quality runtime throttle (driven by the params.auto_quality toggle). Holds the live
   // resolution / sample-count it trims to. Never touches the artistic params.
-  const perf = { auto:false, quality:1, resScale:1, sampleCount:params.sample_count, bres:0, acc:0, lowCount:0, hiCount:0, upWait:20 };  // bres = size the layer textures are currently built at (so applyQuality knows when to reallocate)
+  const perf = { auto:false, quality:1, resScale:1, sampleCount:params.sample_count, bres:0, acc:0, lowCount:0, hiCount:0, upWait:20, glow:false };  // bres = size the layer textures are currently built at (so applyQuality knows when to reallocate); glow = the lateral-diffusion tier actually ran this frame (false when gated off OR when its 16F targets came back incomplete)
   // Motion — one time-driven state, two bands (spec §5). u = longitudinal sway fraction (signed, along the
   // effective wind), uLat = lateral (crosswind) sway fraction; each its own spring. windX/Y = the effective
   // wind direction after the weather veer; weatherS = the live weather strength multiplier (read by the HUD);
@@ -1069,6 +1134,8 @@ function create(canvas, opts){
   const progTransport = program(VS_FULL, FS_TRANSPORT);
   const progBlit = program(VS_FULL, FS_BLIT);
   const progPresent = program(VS_FULL, FS_PRESENT);                   // adaptive frame-rate: offscreen frame -> screen
+  const progGlowBlur = program(VS_FULL, FS_GLOW_BLUR);                // lateral diffusion (§4.9): one axis of the separable spread
+  const progGlowMix = program(VS_FULL, FS_GLOW_MIX);                  // lateral diffusion: the sharp/blurred split + the relocated tone-map tail
   const progPoints = EDITOR ? program(VS_POINTS, FS_POINTS) : null;   // editor-only debug-overlay programs
   const progViz = EDITOR ? program(VS_VIZ, FS_VIZ) : null;
 
@@ -1103,12 +1170,16 @@ function create(canvas, opts){
     window:loc(progTransport,'uWindow'), windowWall:loc(progTransport,'uWindowWall'),
     twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'), chroma:loc(progTransport,'uChroma'),
     exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
+    linearOut:loc(progTransport,'uLinearOut'),   // 1 = hand the linear HDR to the diffusion tier instead of tone-mapping here (§4.9)
     layers:[0,1,2,3].map(i=>loc(progTransport,`uLayer[${i}]`)),
     faithful:loc(progTransport,'uFaithful'), faithTex:loc(progTransport,'uFaithTex'),
     faithOrigin:loc(progTransport,'uFaithOrigin'), faithExtent:loc(progTransport,'uFaithExtent'),
   };
   U.blit = { tex:loc(progBlit,'uTex') };
   U.present = { tex:loc(progPresent,'uTex') };
+  U.glowBlur = { tex:loc(progGlowBlur,'uTex'), step:loc(progGlowBlur,'uStep') };
+  U.glowMix = { sharp:loc(progGlowMix,'uSharp'), blur:loc(progGlowMix,'uBlur'), diffuse:loc(progGlowMix,'uDiffuse'),
+                exposure:loc(progGlowMix,'uExposure'), contrast:loc(progGlowMix,'uContrast'), tone:loc(progGlowMix,'uToneMap') };
   if(EDITOR){   // editor-only debug-overlay uniforms
     U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
     U.viz = { point:loc(progViz,'uPoint'), pointAlpha:loc(progViz,'uPointAlpha'), lineAlpha:loc(progViz,'uLineAlpha') };
@@ -1156,6 +1227,13 @@ function create(canvas, opts){
   // and allocated lazily on first use (so a look that never enables adaptive_motion pays nothing).
   let presentFBO=null, presentTex=null, presentW=0, presentH=0, adaptiveLastRender=0, adaptiveHot=true;
   const ADAPT_HI=0.05, ADAPT_LO=0.02;   // hysteresis on the motion magnitude: above HI render every frame, below LO drop to idle_fps
+  // lateral diffusion (§4.9): [0] = transport's LINEAR-HDR frame (the sharp one), [1]/[2] = the separable blur's
+  // ping/pong. RGBA16F at the render size, one FBO each (attached once at allocation, so no per-frame re-attach),
+  // allocated lazily on first use and reallocated on resize — a look that never opens the gate holds no VRAM.
+  const glowFBO=[null,null,null], glowTex=[null,null,null];
+  let glowW=0, glowH=0, glowFail=false;   // glowFail LATCHES an incomplete FBO: the tier then silently stops being offered (perf.glow stays false) and every frame takes the direct path
+  const GLOW_TAPS = 6;                    // 13 taps: centre + this many each side. NOT independently tunable — FS_GLOW_BLUR's weight table is computed for exactly this count; change one and recompute the other
+  const GLOW_STEP_MAX = 6.0;              // px between taps — the cap that trades reach for a clean kernel (see FS_GLOW_BLUR)
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01 };
   const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0, hRef:1 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend, `hRef` = tallest floor height for the drift's height-scale (spec §4.5)
   const faith = { vao:null, buf:null, count:0, hMin:0, hMax:1, ox:0, oy:0, ext:1,   // FAITHFUL leaf geometry (all leaves, continuous height) + the cast-region frame, computed in bakeFaithful (§4.5)
@@ -2154,14 +2232,85 @@ function create(canvas, opts){
   }
 
   // ---- render ----
-  function drawTransport(){
-    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-    gl.viewport(0,0,canvas.width,canvas.height);
-    drawTransportInto();
+  // ONE whole rendered frame into `fbo` at w×h — the only entry the frame loop (and the profiler's burst) uses, so
+  // the diffusion decision is made in exactly one place. Gate OFF (floor, or curtain_diffuse 0, or the 16F targets
+  // came back incomplete): bind the caller's target and draw transport into it — the literal old path, one extra
+  // uniform and an untaken shader branch. Gate ON: transport writes LINEAR HDR into the sharp target instead, and
+  // drawDiffusion spreads it and composites into the caller's target (§4.9).
+  function drawFrameInto(fbo, w, h){
+    const glow = params.receiver !== 0 && params.curtain_diffuse > 0 && ensureGlowTargets(w, h);
+    perf.glow = glow;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glow ? glowFBO[0] : fbo);
+    gl.viewport(0,0,w,h);
+    drawTransportInto(glow);
+    if(glow) drawDiffusion(fbo, w, h);
+  }
+  function drawTransport(){ drawFrameInto(null, canvas.width, canvas.height); }                 // to screen
+  function drawTransportPresent(){ drawFrameInto(presentFBO, presentW, presentH); }             // adaptive frame-rate: to the offscreen frame
+  // LATERAL DIFFUSION targets (§4.9). Returns false — silently, one frame at a time — if the driver won't give us a
+  // complete RGBA16F target, and the caller then takes the direct path. That should not happen (create() already
+  // fails without EXT_color_buffer_float, and every blend target in the engine is 16F), but the fallback costs three
+  // lines and the alternative is a black screen on the one device that disagrees.
+  function ensureGlowTargets(w, h){
+    if(glowFail) return false;
+    if(glowTex[0] && glowW===w && glowH===h) return true;
+    for(let i=0;i<3;i++){
+      if(glowTex[i]) gl.deleteTexture(glowTex[i]);
+      if(!glowFBO[i]) glowFBO[i]=gl.createFramebuffer();
+      glowTex[i]=gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, glowTex[i]);
+      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,w,h,0,gl.RGBA,gl.HALF_FLOAT,null);   // LINEAR HDR: 8-bit would quantize the radiance the blur is about to redistribute
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);              // the blur's taps land between texels
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);           // a tap past the frame edge repeats the edge pixel — the glow leans inward there rather than wrapping light in from the far side
+      gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, glowFBO[i]);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, glowTex[i], 0);
+      if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) glowFail = true;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    glowW=w; glowH=h;
+    if(glowFail) freeGlowTargets();          // don't sit on three full-res 16F buffers we've just proven unusable
+    return !glowFail;
+  }
+  function freeGlowTargets(){
+    for(let i=0;i<3;i++){ if(glowTex[i]) gl.deleteTexture(glowTex[i]); glowTex[i]=null; }
+    glowW=0; glowH=0;
+  }
+  // The spread itself: H then V over the linear-HDR frame, then the split + the relocated tail into `fbo`.
+  // The pixel radius is PHYSICS, not a look-at-this-resolution number: the curtain map lays view_extent_m across the
+  // target's HEIGHT and carries the aspect in x, so px/m is one isotropic number and curtain_diffuse_m stays the same
+  // centimetres of cloth whatever the zoom or the backing store does. Spacing = radius/6 (13 taps over ±3σ), capped.
+  // All three passes share the viewport drawFrameInto set — the ping/pong are the same size as the sharp frame.
+  function drawDiffusion(fbo, w, h){
+    const rPx = params.curtain_diffuse_m * h / Math.max(params.view_extent_m, 1e-3);
+    const step = Math.min(rPx/GLOW_TAPS, GLOW_STEP_MAX);
+    gl.useProgram(progGlowBlur);
+    gl.bindVertexArray(emptyVAO);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(U.glowBlur.tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glowFBO[1]);                  // H: sharp -> ping
+    gl.bindTexture(gl.TEXTURE_2D, glowTex[0]);
+    gl.uniform2f(U.glowBlur.step, step/w, 0);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glowFBO[2]);                  // V: ping -> pong
+    gl.bindTexture(gl.TEXTURE_2D, glowTex[1]);
+    gl.uniform2f(U.glowBlur.step, 0, step/h);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);                         // the split + the Look's tail, into the real target
+    gl.useProgram(progGlowMix);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, glowTex[0]); gl.uniform1i(U.glowMix.sharp, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, glowTex[2]); gl.uniform1i(U.glowMix.blur, 1);
+    gl.uniform1f(U.glowMix.diffuse, clamp(params.curtain_diffuse, 0, 1));
+    gl.uniform1f(U.glowMix.exposure, params.exposure);
+    gl.uniform1f(U.glowMix.contrast, params.contrast);
+    gl.uniform1i(U.glowMix.tone, params.tone_map);
+    gl.drawArrays(gl.TRIANGLES,0,3);
   }
   // the transport draw, assuming a framebuffer + viewport are already bound — so the profiler's stress burst
-  // (eng.profiler.bench) can aim it at an offscreen target without flipping to screen. On-screen path above.
-  function drawTransportInto(){
+  // (eng.profiler.bench) can aim it at an offscreen target without flipping to screen. drawFrameInto above owns
+  // both callers. linearOut: skip the tone-map tail and write linear HDR for the diffusion tier to spread (§4.9).
+  function drawTransportInto(linearOut){
     const E=params.canopy_extent_m;
     gl.disable(gl.BLEND);
     gl.useProgram(progTransport);
@@ -2272,6 +2421,7 @@ function create(canvas, opts){
     gl.uniform1f(U.tp.exposure, params.exposure);
     gl.uniform1f(U.tp.contrast, params.contrast);
     gl.uniform1i(U.tp.tone, params.tone_map);
+    gl.uniform1i(U.tp.linearOut, linearOut ? 1 : 0);   // 0 = end the Look here (every look); 1 = hand linear HDR to the diffusion passes (§4.9)
     for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, layerTex[i]); gl.uniform1i(U.tp.layers[i], i); }
     gl.bindVertexArray(emptyVAO);
     gl.drawArrays(gl.TRIANGLES,0,3);
@@ -2518,10 +2668,8 @@ function create(canvas, opts){
       // mode bake() writes faithTex (layerTex[0] is a 1×1 dummy), so the fence read the wrong/unwritten texture. (E#35)
       if(pass==='transport'){
         ensureBenchTarget();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, benchFBO);
-        gl.viewport(0,0,benchW,benchH);
         const t0=performance.now();
-        for(let i=0;i<n;i++) drawTransportInto();
+        for(let i=0;i<n;i++) drawFrameInto(benchFBO, benchW, benchH);   // the whole frame, diffusion included — the tier's cost is the thing the axis measures
         gl.finish();
         const ms=(performance.now()-t0)/n;
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -2575,10 +2723,11 @@ function create(canvas, opts){
     // picker, created per-comparison) leaves zero GPU residue when closed. A disposed engine must not be reused.
     dispose(){
       alive = false;
-      [progBake, progFaith, progFaithSeg, progFAcc, progTransport, progBlit, progPresent, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
+      [progBake, progFaith, progFaithSeg, progFAcc, progTransport, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
       layerTex.forEach(t => { gl.deleteTexture(t); });
       [clusterTex, clusterGeomTex, faithTex, faithScratch, benchTex, presentTex].forEach(t => { if(t) gl.deleteTexture(t); });
-      [bakeFBO, faithFBO, benchFBO, presentFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
+      freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
+      [bakeFBO, faithFBO, benchFBO, presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
       if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
@@ -2649,9 +2798,7 @@ function create(canvas, opts){
       adaptiveLastRender = now;
       if(motionActive()){ motionTick(dt); timed('bake', bake); }
       ensureFrameTarget();
-      gl.bindFramebuffer(gl.FRAMEBUFFER, presentFBO);
-      gl.viewport(0,0,presentW,presentH);
-      timed('transport', drawTransportInto);          // heavy transport -> offscreen
+      timed('transport', drawTransportPresent);       // heavy transport (+ the diffusion passes, if the gate is open) -> offscreen
       presentFrame();                                 // offscreen -> screen
       if(eng.onFrame) eng.onFrame(dtms);
       requestAnimationFrame(frame);

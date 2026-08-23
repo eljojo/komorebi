@@ -15,6 +15,11 @@ test("AXES carries the audit-classified taxonomy", () => {
   // style-locked: diffraction is measured, never cut
   expect(by.chromatic_aberration.cls).toBe("style");
   expect(by.chromatic_aberration.proposable).toBe(false);
+  // style-locked too: the receiver's lateral-diffusion tier (§4.9) — expensive, deliberate, ablated to its 0 gate
+  expect(by.curtain_diffuse.cls).toBe("style");
+  expect(by.curtain_diffuse.proposable).toBe(false);
+  expect(by.curtain_diffuse.measureLevel).toBe(0);
+  expect(by.curtain_diffuse.pass).toBe("transport");
   // render resolution is the auto-scaler's runtime lever — not a stylistic axis, so it isn't here at all
   expect(by.res).toBeUndefined();
   // opt-in 'tune' optimizations: measured + auto-proposed, may change the look (off by default in the engine)
@@ -162,8 +167,9 @@ test("axisValue returns the lightest degraded value, or null when nothing to cut
   // relative axis (foliage): lightest multiplier of the base, always a reduction for base>0
   expect(axisValue(a.foliage_density, { foliage_density: 1.0 })).toBeCloseTo(0.5, 6);
   expect(axisValue(a.foliage_density, { foliage_density: 1.65 })).toBeCloseTo(0.825, 6);
-  // non-proposable axes (diffraction) -> null (never produce a saved cut)
+  // non-proposable axes (diffraction, the diffusion tier) -> null (never produce a saved cut)
   expect(axisValue(a.chromatic_aberration, { chromatic_aberration: 3 })).toBe(null);
+  expect(axisValue(a.curtain_diffuse, { curtain_diffuse: 0.4 })).toBe(null);
 });
 
 const BASE = { sample_count: 32, tex_resolution: 2048, layer_count: 3,

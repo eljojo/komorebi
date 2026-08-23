@@ -250,6 +250,10 @@ export const PRESETS = {
     "curtain_distance_m": -0.8, "curtain_tt": 0.55, "curtain_tint_r": 0.92, "curtain_tint_g": 0.9, "curtain_tint_b": 0.82,
     "velvet_sheen": 0,   // MATTE — nylon has no pile, and the satin ridge glow is the one curtain cue that would break the read
     "curtain_scatter": 0.55,   // over half the transmit diffuses in the weave: the glowy-haze half of the reference, opposite the spotlights
+    // LATERAL DIFFUSION (§4.9), the tier this look motivates: the wrap above softens each pixel's own fold, but only
+    // this bleeds a hot dapple's glow ACROSS its cast-shadow edge — the reference's spotlight-versus-haze contrast.
+    // The one look that opts into the expensive rung; 8 cm of bleed is about right for thin nylon. Both taste calls.
+    "curtain_diffuse": 0.4, "curtain_diffuse_m": 0.08,
     // wrinkles, not pleats: broad panel-scale undulations (low fold_scale), barely coarsening, standing 5 cm out of
     // the plane, and only gently shaded because the fabric is thin. All four are taste calls for the visual pass.
     "fold_scale": 0.45, "fold_coarsen": 0.2, "fold_warp": 0.05, "fold_depth": 0.3,
