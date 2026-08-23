@@ -5,6 +5,7 @@
 // of the editor.js decomposition) so it unit-tests under `bun test` the way
 // profiler.js does, with a localStorage shim. (spec §9)
 // ============================================================================
+import { migrateLegacy } from "./komorebi.js";
 import { PRESETS } from "./presets.js";
 
 export const LS_KEY = "komorebi.presets";
@@ -21,7 +22,9 @@ export function setStored(o) {
 }
 
 // resolve a look by name: a saved ★ look shadows a built-in of the same name; otherwise the built-in.
+// A ★ look saved before a knob was renamed still carries the old key, so it comes back through the
+// engine's alias map — the caller only ever sees current names (spec §9).
 export function getPreset(name) {
   const s = getStored();
-  return name in s ? s[name] : PRESETS[name];
+  return migrateLegacy(name in s ? s[name] : PRESETS[name]);
 }

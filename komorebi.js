@@ -312,6 +312,34 @@ const DEFAULTS = {
   show_layer_index: 0,
 };
 
+// ---- legacy parameter names (spec §9). A ★ look saved to local storage, or a JSON exported from any
+// earlier build, is data the engine does not get to re-author — so a renamed knob has to keep loading
+// forever. One map, applied at every door external params come through (create / setParams / transitionTo,
+// and the editor's preset store). Engine-side there is exactly ONE spelling of each knob: nothing below
+// reads an old name, and nothing ever writes one back out. ----
+const LEGACY_KEYS = {
+  curtain_tt: 'fabric_tt',   // the receiver's material family, renamed once the same cloth started serving three receivers
+  curtain_tint_r: 'fabric_tint_r', curtain_tint_g: 'fabric_tint_g', curtain_tint_b: 'fabric_tint_b',
+  curtain_scatter: 'fabric_scatter',
+  curtain_diffuse: 'glow_bleed', curtain_diffuse_m: 'glow_bleed_m',
+  curtain_distance_m: 'cloth_distance_m',
+};
+// Old key -> new key on a COPY, leaving the caller's object untouched (a preset object is shared: PRESETS
+// entries are handed out by reference). Returns the argument itself when there is nothing to migrate, so the
+// ordinary current-names case allocates nothing. A new key already present WINS — the old one is only dropped.
+function migrateLegacy(obj){
+  if(!obj || typeof obj!=='object') return obj;
+  let out = obj;
+  for(const old in LEGACY_KEYS){
+    if(!(old in obj)) continue;
+    if(out === obj) out = Object.assign({}, obj);
+    const now = LEGACY_KEYS[old];
+    if(!(now in obj)) out[now] = obj[old];
+    delete out[old];
+  }
+  return out;
+}
+
 // ---- deterministic RNG so canopy is frame-stable & reproducible ------------
 function mulberry32(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
@@ -1584,7 +1612,7 @@ function create(canvas, opts){
   // burst). EXT_disjoint_timer_query_webgl2 measures TIME_ELAPSED over a range of GL commands.
   const extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
 
-  const params = Object.assign({}, DEFAULTS, opts.params || {});
+  const params = Object.assign({}, DEFAULTS, migrateLegacy(opts.params) || {});
   // Auto-quality runtime throttle (driven by the params.auto_quality toggle). Holds the live
   // resolution / sample-count it trims to. Never touches the artistic params.
   const perf = { auto:false, quality:1, resScale:1, sampleCount:params.sample_count, bres:0, acc:0, lowCount:0, hiCount:0, upWait:20, glow:false };  // bres = size the layer textures are currently built at (so applyQuality knows when to reallocate); glow = the lateral-diffusion tier actually ran this frame (false when gated off OR when its 16F targets came back incomplete)
@@ -2736,7 +2764,7 @@ function create(canvas, opts){
   function transitionTo(target, opts){
     opts = opts || {};
     if(!target || typeof target!=='object') return;
-    const to = Object.assign({}, DEFAULTS, target);        // missing keys -> defaults (forward-compat, like setParams)
+    const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
     const from = {};
     for(const k of MORPH_KEYS)  from[k] = params[k];       // continuous look — always morphs live
     for(const k of CANOPY_KEYS) from[k] = params[k];       // continuous canopy — morphs live IF the topology matches
@@ -3301,7 +3329,7 @@ function create(canvas, opts){
   }
   function setParams(obj){
     if(!obj || typeof obj!=='object') return;
-    const merged = Object.assign({}, DEFAULTS, obj);   // missing keys -> defaults (forward-compat)
+    const merged = Object.assign({}, DEFAULTS, migrateLegacy(obj));   // legacy names -> current; missing keys -> defaults (forward-compat)
     for(const k in DEFAULTS) params[k] = merged[k];
     rebuildAll();
     resetPerf();                                       // a preset may carry auto-quality
@@ -3508,4 +3536,4 @@ function create(canvas, opts){
   return eng;
 }
 
-export { create, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS };
+export { create, DEFAULTS, LEGACY_KEYS, migrateLegacy, MAX_LAYERS, MAX_SAMPLES, DEG, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS };
