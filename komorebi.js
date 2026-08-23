@@ -626,7 +626,12 @@ uniform int uSegTau;   // 0 = TRANSMITTANCE, for the cast's multiplicative scrat
 out vec4 frag;
 void main(){
   float cov = 1.0 - smoothstep(0.9, 1.0, abs(vAcross));    // tight anti-alias rim — keep THIN twigs opaque (the soft penumbra comes from the per-sample integration, not this edge)
-  if(uSegTau != 0){ frag = vec4(vec3(uWoodTau*cov), cov); return; }
+  // THE LAYER STAMP WRITES ALPHA ONLY, and the zero in rgb is the whole fix rather than a tidiness: the layer
+  // texture's rgb is the FOLIAGE's optical depth, and the sky view's scatter term reads its scattering density and
+  // its hue from exactly that. Neutral wood dropped into rgb normalizes to a near-white hue at near-full density, so
+  // the twig web lights up as cream filaments brighter than the sky it stands against. Wood occludes; it does not
+  // glow. (Additive blend, so a zero in rgb leaves the leaves alone.)
+  if(uSegTau != 0){ frag = vec4(0.0, 0.0, 0.0, uWoodTau*cov); return; }
   frag = vec4(vec3(exp(-uWoodTau*cov)), 1.0);              // wood blocks every colour equally → dark, neutral
 }`;
 
@@ -753,10 +758,16 @@ vec3 tapFaith(vec2 world){ return texture(uFaithTex, (world-uFaithOrigin)/uFaith
 // there is no canopy, so the ray sees open sky. The floor path never needs this (its frame lives inside the box),
 // but an upward ray leaves the box within a few metres of height, and CLAMP_TO_EDGE would smear the border texel
 // across the whole periphery of the frame instead of opening onto blue.
-vec3 tapUp(highp sampler2D t, vec2 world){
+// SKY VIEW's layer tap, and it comes apart into two quantities on purpose (§4.9). .rgb is the FOLIAGE's
+// per-channel transmittance; .a is the WOOD's, neutral because wood blocks every colour equally. They are stored in
+// different channels of the same texel because they are different KINDS of occluder to the scatter term below: a
+// leaf takes light out of the ray and puts some of it back, wood only takes it out. Outside the baked box both are
+// 1 — beyond the grove there is open sky, and an upward frame leaves that box within metres.
+vec4 tapUpLW(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
-  if(any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec3(1.0);
-  return exp(-texture(t,uv).rgb);
+  if(any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec4(1.0);
+  vec4 d = texture(t,uv);
+  return vec4(exp(-d.rgb), exp(-d.a));
 }
 // Closest approach between the upward view ray (origin O, UNIT direction U, t ≥ 0) and the wood segment Pa→Pb.
 // Returns (distance, distance along the ray to the closest point) — the second feeds the angular soft edge, since an
@@ -1005,12 +1016,16 @@ void main(){
       vec2 pL1 = eye.xy + dir.xy*(uLayerHeight[1]/dir.z);
       vec2 pL2 = eye.xy + dir.xy*(uLayerHeight[2]/dir.z);
       vec2 pL3 = eye.xy + dir.xy*(uLayerHeight[3]/dir.z);
-      vec3 tL0 = uLayerCount>0 ? tapUp(uLayer[0], pL0) : vec3(1.0);
-      vec3 tL1 = uLayerCount>1 ? tapUp(uLayer[1], pL1) : vec3(1.0);
-      vec3 tL2 = uLayerCount>2 ? tapUp(uLayer[2], pL2) : vec3(1.0);
-      vec3 tL3 = uLayerCount>3 ? tapUp(uLayer[3], pL3) : vec3(1.0);
+      vec4 qL0 = uLayerCount>0 ? tapUpLW(uLayer[0], pL0) : vec4(1.0);
+      vec4 qL1 = uLayerCount>1 ? tapUpLW(uLayer[1], pL1) : vec4(1.0);
+      vec4 qL2 = uLayerCount>2 ? tapUpLW(uLayer[2], pL2) : vec4(1.0);
+      vec4 qL3 = uLayerCount>3 ? tapUpLW(uLayer[3], pL3) : vec4(1.0);
+      // tL = what the FOLIAGE does (this layer's leaves alone) — the only thing the scatter term may read.
+      // xL = what the RAY loses (leaves × wood) — the only thing transmittance may read.
+      vec3 tL0 = qL0.rgb, tL1 = qL1.rgb, tL2 = qL2.rgb, tL3 = qL3.rgb;
+      vec3 xL0 = qL0.rgb*qL0.a, xL1 = qL1.rgb*qL1.a, xL2 = qL2.rgb*qL2.a, xL3 = qL3.rgb*qL3.a;
       vec3 T = vec3(1.0);
-      T *= tL0; T *= tL1; T *= tL2; T *= tL3;
+      T *= xL0; T *= xL1; T *= xL2; T *= xL3;
       // ---- SINGLE-SCATTER FOLIAGE RADIANCE (§4.9). Transmission alone can only DARKEN: every ray is the sky
       // attenuated, so a leaf is at best a dim filter and a deep crown is black. Foliage in daylight is LIT — light
       // reaches a leaf, scatters inside it and leaves in every direction, so a sunlit crown is brighter than a shaded
@@ -1030,16 +1045,21 @@ void main(){
       if(uSkyScatter > 0.0){
         vec2 gS = uSunDir.xy / max(uSunDir.z, 0.05);
         vec3 A0 = vec3(1.0), A1 = vec3(1.0), A2 = vec3(1.0);
-        if(uLayerCount>1) A0 *= tapUp(uLayer[1], pL0 + gS*(uLayerHeight[1]-uLayerHeight[0]));
-        if(uLayerCount>2) A0 *= tapUp(uLayer[2], pL0 + gS*(uLayerHeight[2]-uLayerHeight[0]));
-        if(uLayerCount>3) A0 *= tapUp(uLayer[3], pL0 + gS*(uLayerHeight[3]-uLayerHeight[0]));
-        if(uLayerCount>2) A1 *= tapUp(uLayer[2], pL1 + gS*(uLayerHeight[2]-uLayerHeight[1]));
-        if(uLayerCount>3) A1 *= tapUp(uLayer[3], pL1 + gS*(uLayerHeight[3]-uLayerHeight[1]));
-        if(uLayerCount>3) A2 *= tapUp(uLayer[3], pL2 + gS*(uLayerHeight[3]-uLayerHeight[2]));
+        // the SUN's path takes the FULL transmittance — a twig shadows a leaf exactly as another leaf does; it is
+        // only as a SOURCE that wood must not participate.
+        vec4 a01, a02, a03, a12, a13, a23;
+        if(uLayerCount>1){ a01 = tapUpLW(uLayer[1], pL0 + gS*(uLayerHeight[1]-uLayerHeight[0])); A0 *= a01.rgb*a01.a; }
+        if(uLayerCount>2){ a02 = tapUpLW(uLayer[2], pL0 + gS*(uLayerHeight[2]-uLayerHeight[0])); A0 *= a02.rgb*a02.a; }
+        if(uLayerCount>3){ a03 = tapUpLW(uLayer[3], pL0 + gS*(uLayerHeight[3]-uLayerHeight[0])); A0 *= a03.rgb*a03.a; }
+        if(uLayerCount>2){ a12 = tapUpLW(uLayer[2], pL1 + gS*(uLayerHeight[2]-uLayerHeight[1])); A1 *= a12.rgb*a12.a; }
+        if(uLayerCount>3){ a13 = tapUpLW(uLayer[3], pL1 + gS*(uLayerHeight[3]-uLayerHeight[1])); A1 *= a13.rgb*a13.a; }
+        if(uLayerCount>3){ a23 = tapUpLW(uLayer[3], pL2 + gS*(uLayerHeight[3]-uLayerHeight[2])); A2 *= a23.rgb*a23.a; }
+        // THE SOURCE TERM READS FOLIAGE ONLY. Wood appears in the throughput, which can only take light away, and
+        // nowhere in the emission — so a ray that meets nothing but wood scatters exactly nothing.
         vec3 thr = vec3(1.0);
-        Lsc += thr*(1.0-tL0)*leafHue(tL0)*(uSunColor*A0 + uAmbient); thr *= tL0;
-        Lsc += thr*(1.0-tL1)*leafHue(tL1)*(uSunColor*A1 + uAmbient); thr *= tL1;
-        Lsc += thr*(1.0-tL2)*leafHue(tL2)*(uSunColor*A2 + uAmbient); thr *= tL2;
+        Lsc += thr*(1.0-tL0)*leafHue(tL0)*(uSunColor*A0 + uAmbient); thr *= xL0;
+        Lsc += thr*(1.0-tL1)*leafHue(tL1)*(uSunColor*A1 + uAmbient); thr *= xL1;
+        Lsc += thr*(1.0-tL2)*leafHue(tL2)*(uSunColor*A2 + uAmbient); thr *= xL2;
         Lsc += thr*(1.0-tL3)*leafHue(tL3)*(uSunColor    + uAmbient);   // nothing is stacked above the top layer
         Lsc *= uSkyScatter;
       }
@@ -2226,15 +2246,22 @@ function create(canvas, opts){
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);          // optical depth accumulates additively
     const H=layerHeights(), base=params.canopy_base_height_m;
+    // ALPHA IS THE WOOD'S CHANNEL IN SKY MODE (§4.9). The layer texture's rgb is the foliage's per-channel optical
+    // depth and its alpha has never been read by anything — tap/tapUp/tapCA and the debug blit all take .rgb — so the
+    // look-up camera claims it for the skeleton, and the leaves must stop writing their coverage there or the two
+    // would sum into one meaningless number. A colour mask does it without touching the leaf shader, which keeps
+    // every other look's bake bit-for-bit what it was.
     for(let l=0;l<params.layer_count;l++){
       // higher layers ride longer levers -> sway more when height gain > 0 (else pure translation)
       const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
       gl.uniform2f(U.bake.sway, motion.sway[0]*f, motion.sway[1]*f);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layerTex[l], 0);
-      gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1
+      gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1. UNMASKED: alpha is the wood's channel in sky mode and must be cleared too, or it accumulates across bakes
+      if(params.sky_view) gl.colorMask(true, true, true, false);
       const L=layerVAO[l];
       gl.bindVertexArray(L.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, L.count);
+      if(params.sky_view) gl.colorMask(true, true, true, true);   // back to full before the next layer's clear
     }
     // The woody TRUNK and MAIN LIMBS are never stamped here — they are the continuous-height analytic occluder in
     // transport (§4.5), because a long segment cut into layer bands casts a shadow that shatters into a staircase.
