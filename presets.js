@@ -223,45 +223,52 @@ export const PRESETS = {
   // NO window and NO mullion grid (both left at their 0 gates): the tent stands UNDER the canopy, so the whole
   // cloth is lit and the field is continuous dapples — the aperture contrast 'curtain 1' rests on has nothing to do
   // with this scene, and the punch comes from exposure + a hot low-cloud sun instead.
-  // WHY THE CLOTH SITS 0.8 m BEHIND THE TREE: the dapple blur is (h − recvZ)·θ, so branches nearly grazing the
-  // fabric cast hard-edged shapes while the canopy metres above casts soft plates. That is §4.9's "both regimes in
-  // one frame" produced by the TREE's own height spread rather than by a near-contact window — the sharp/soft split
-  // is the thing the reference photo is about, so the sun's core radius is kept near the real disk to let it read.
+  // WHY THE CLOTH SITS 4.5 m FROM THE GROVE: the dapple blur is (h − recvZ)·θ, and the reference lives almost
+  // entirely in the PINHOLE regime — soft overlapping sun-images, no leaf resolves. A first cut at 0.8 m put the
+  // whole crown in the shape regime (blur ~4 mm ≪ leaf gaps): a hard-edged contact print of every leaf, the
+  // reviewed "acid dream". At ~4.5 m the blur scale is ~5 cm, so the canopy melts into blobs and only the grove's
+  // NEAREST limbs (crown depth brings them metres closer) read as soft shapes — the sharp/soft split of the photo
+  // comes from the tree's own depth spread, at the correct absolute scale.
   // FRAMING IS NUDGEABLE as on 'curtain 1': curtain distance + sun azimuth/elevation + the pan place the cast.
   'tent 1': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.32, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.9, "cloud_thickness": 0.12, "eclipse": false, "eclipse_amount": 0.42,
+    "sample_count": 32, "core_angular_radius_deg": 0.5, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.9, "cloud_thickness": 0.16, "eclipse": false, "eclipse_amount": 0.42,
     // a low crown running well up: the band the analytic (layer-tier) woody occluder normalises against, written to
     // say what the faithful grove already is — limbs starting near tent height, foliage stacked metres over it.
-    "layer_count": 4, "canopy_base_height_m": 1.8, "canopy_thickness_m": 2.4, "foliage_density": 1.5,
+    "layer_count": 4, "canopy_base_height_m": 2.6, "canopy_thickness_m": 3.6, "foliage_density": 2.0,
     // mid-density broadleaf with LOW limbs: shallow branch pitch spreads the arms out near the fabric instead of
     // sending them up, and a slightly positive droop trails the outer twigs back down toward it.
-    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 46,
-    "branch_length_ratio": 0.66, "branch_pitch_deg": 14, "branch_tau": 2.6, "leader_strength": 0.15, "droop": 0.14, "leaves_per_cluster": 24,
+    // a WIDE grove: the reference has no naked-sun fabric anywhere — the canopy's cast must tile the whole cloth view, so
+    // several overlapping crowns spread across a broad extent rather than one tree posing for a portrait.
+    "tree_count": 6, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 46,
+    "branch_length_ratio": 0.66, "branch_pitch_deg": 14, "branch_tau": 1.8, "leader_strength": 0.15, "droop": 0.14, "leaves_per_cluster": 28,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.14, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.24, "trans_g": 0.4, "trans_b": 0.05,   // the scene's GREEN lives here, not in the cloth: near-white nylon barely dyes what the leaves already tinted
-    "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "trans_r": 0.3, "trans_g": 0.38, "trans_b": 0.2,   // MUTED gray-green: the reference's shade is pale neutral, not saturated leaf-green — on white nylon the mixing of many soft layers washes the hue out
+    "canopy_extent_m": 10, "tex_resolution": 1024, "bake_resolution": 768,
     // midday: a high sun for the near-vertical drop down the cloth, held off the cloth's normal so the cast still
     // rakes a little and the fold flanks band (head-on, az 90°, incidence only foreshortens them — §4.9).
-    "seed": 290626672, "sun_elevation_deg": 48, "sun_azimuth_deg": 62,
-    // TENT receiver: the same vertical cloth as 'curtain 1', 0.8 m behind the tree instead of 2.5 — close enough
-    // that the lowest branches are near-contact occluders.
+    "seed": 290626672, "sun_elevation_deg": 32, "sun_azimuth_deg": 62,
+    // TENT receiver: the same vertical cloth as 'curtain 1', 4.5 m from the grove — pinhole regime for the
+    // canopy, with only the crown-depth nearest limbs reading as soft shapes (see the distance note above).
     "receiver": 1, "standing_scene": true, "faithful_canopy": true,
-    "curtain_distance_m": -0.8, "curtain_tt": 0.55, "curtain_tint_r": 0.92, "curtain_tint_g": 0.9, "curtain_tint_b": 0.82,
+    "curtain_distance_m": -4.5, "curtain_tt": 0.6, "curtain_tint_r": 0.92, "curtain_tint_g": 0.9, "curtain_tint_b": 0.82,
     "velvet_sheen": 0,   // MATTE — nylon has no pile, and the satin ridge glow is the one curtain cue that would break the read
-    "curtain_scatter": 0.55,   // over half the transmit diffuses in the weave: the glowy-haze half of the reference, opposite the spotlights
+    "curtain_scatter": 0.7,   // most of the transmit diffuses in the weave: shade lifts toward pale gray (never black), the glowy-haze half of the reference
     // LATERAL DIFFUSION (§4.9), the tier this look motivates: the wrap above softens each pixel's own fold, but only
     // this bleeds a hot dapple's glow ACROSS its cast-shadow edge — the reference's spotlight-versus-haze contrast.
     // The one look that opts into the expensive rung; 8 cm of bleed is about right for thin nylon. Both taste calls.
-    "curtain_diffuse": 0.4, "curtain_diffuse_m": 0.08,
-    // wrinkles, not pleats: broad panel-scale undulations (low fold_scale), barely coarsening, standing 5 cm out of
-    // the plane, and only gently shaded because the fabric is thin. All four are taste calls for the visual pass.
-    "fold_scale": 0.45, "fold_coarsen": 0.2, "fold_warp": 0.05, "fold_depth": 0.3,
+    "curtain_diffuse": 0.45, "curtain_diffuse_m": 0.07,
+    // TAUT MEMBRANE — no folds at all. A pitched tent is stretched on poles: unlike the hanging curtain its surface
+    // carries NO drape, and every bit of visible variation must come from the LIGHT (dapples, shade masses, bloom),
+    // never from a fabric pattern (the reviewed failure: any periodic surface modulation on bright nylon reads as
+    // printed wallpaper). fold_depth 0 also zeroes the pile-grain nap — thin nylon has no pile. Panel structure
+    // (seams, poles, per-panel tilt) is the enclosure-geometry step, not a texture.
+    "fold_scale": 0.45, "fold_coarsen": 0, "fold_warp": 0, "fold_depth": 0,
     "view_extent_m": 3.0, "view_pitch_deg": 0, "view_fov_deg": 60, "view_yaw_deg": 0,
-    "view_center_x": 0, "view_center_y": 1.4, "trunk_radius_m": 0.1, "far_smear": 0,
+    "view_center_x": 0, "view_center_y": 1.4, "trunk_radius_m": 0.06, "far_smear": 0,
     // brighter and more ambient than 'curtain 1': there is no dark wall to expose for, and the contrast lift is what
     // pushes the hot patches apart from the haze.
-    "exposure": 1.6, "contrast": 1.15, "ambient_skylight": 0.7, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 1.35, "contrast": 1.3, "ambient_skylight": 0.9, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
     "wind_pattern": "gusty", "wind_strength": 0.9, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,

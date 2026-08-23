@@ -769,7 +769,11 @@ vec3 velvetCloth(vec2 cloth, vec3 fold, vec3 body, vec3 sheenCol){
   // completely, 1 would collapse it back onto the ballistic band and the wrap would do nothing.
   float bandSoft = exp(-uFoldDepth * facing * 0.25);
   float ridge = 1.0 - facing;                                            // bright where the cloth faces us
-  float nap = 0.96 + 0.04*sin(6.2831853 * FOLD_NAP*uFoldScale * cloth.x); // fine pile grain: TRUE-vertical, so it varies across x like the pleats do — a grain, ±4% (deeper reads as etched lines, not fibre)
+  // fine pile grain, TRUE-vertical (varies across x like the pleats). Amplitude rides the pile thickness knob:
+  // grain is a property of PILE, so a thin taut fabric (tent nylon, fold_depth→0) is perfectly smooth — any fixed
+  // grain on a bright near-white cloth reads as printed pinstripes, not fibre. ±4% at full pile.
+  float napAmp = 0.04 * min(uFoldDepth, 1.0);
+  float nap = (1.0 - napAmp) + napAmp*sin(6.2831853 * FOLD_NAP*uFoldScale * cloth.x);
   vec3 sheen = sheenCol * (uSheen * ridge * ridge);                      // soft pale glow on the ridges only
   return body * mix(band, bandSoft, uScatter) * nap + sheen;
 }
