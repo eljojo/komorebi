@@ -1,0 +1,13 @@
+{
+  "name": "komorebi-test-gl",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Real-WebGL2 pixel harness for komorebi — headless Chromium via Playwright. Optional local tooling; not part of the nix flow.",
+  "type": "module",
+  "scripts": {
+    "test": "node run.js"
+  },
+  "dependencies": {
+    "playwright": "1.62.1"
+  }
+}

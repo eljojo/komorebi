@@ -1,0 +1,181 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>komorebi — real-WebGL2 pixel harness</title>
+<!--
+  The page half of the pixel harness (driven by run.js). It loads the raw engine + preset modules off the
+  served repo root — no build, same files the editor and the player load — and exposes four functions the
+  node runner calls through Playwright:
+
+    __glinfo()                          the WebGL2 / EXT_color_buffer_float preflight
+    __presets()                         the built-in look names, read from PRESETS (never hardcoded)
+    __run(preset, overrides, frames)    one engine, captured at the given rAF tick counts
+    __diff(idA, idB) / __png(id)        exact byte comparison + the PNG artifact
+
+  WHY THE CAPTURE HAPPENS INSIDE onFrame: the context is created without preserveDrawingBuffer, so the
+  drawing buffer is undefined once the frame is composited. readPixels is only meaningful from inside the
+  rAF callback that drew it — onFrame is the engine's hook at exactly that point.
+-->
+<style>
+  html, body { margin: 0; background: #000; }
+  /* The engine sizes its backing store from clientWidth/Height × dpr — so a fixed CSS box (with the runner
+     pinning deviceScaleFactor to 1) is what makes the capture resolution reproducible. */
+  canvas.stage { position: absolute; top: 0; left: 0; width: 320px; height: 180px; }
+</style>
+<body></body>
+<script type="module">
+import { create } from '/komorebi.js';
+import { PRESETS } from '/presets.js';
+
+const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
+// The freeze set. Wind is deterministic noise-of-TIME (no RNG), so the only way to get a reproducible frame
+// is to stop time advancing at all: no wind force, no weather spell, no auto-drift — then motionActive() is
+// false from the first frame and the springs never leave rest. auto_quality has to go too: it trims
+// resolution and sample count off wall-clock fps, which under software rendering is pure noise.
+const FREEZE = { wind_strength: 0, weather_variability: 0, drift_auto: false, auto_quality: false };
+
+const caps = new Map();           // id -> { w, h, bytes } — kept so __diff compares raw bytes, not re-encoded PNGs
+let nextId = 0;
+
+window.__presets = () => Object.keys(PRESETS);
+
+// Preflight on a throwaway context: report what the browser actually gave us, so a missing WebGL2 or a
+// missing float-render-target extension is named by the runner instead of surfacing as `create()` threw.
+window.__glinfo = () => {
+  const c = document.createElement('canvas');
+  const gl = c.getContext('webgl2', { antialias: false, alpha: false });
+  if (!gl) return { webgl2: false };
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  const info = {
+    webgl2: true,
+    colorBufferFloat: !!gl.getExtension('EXT_color_buffer_float'),
+    floatBlend: !!gl.getExtension('EXT_float_blend'),
+    version: gl.getParameter(gl.VERSION),
+    glsl: gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
+    renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+    maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+    dpr: window.devicePixelRatio,
+  };
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return info;
+};
+
+function fnv1a(bytes) {                       // 32-bit FNV-1a: a cheap identity for the log table (__diff is the real check)
+  let h = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 0x01000193);
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+// Degeneracy stats: a frame that is uniformly black, uniformly white, or flat is a rendered nothing, and a
+// hash alone would happily call two of those "identical". Variance is over the RGB bytes of the whole frame.
+function stats(bytes) {
+  let sum = 0, sumSq = 0, black = 0, white = 0, opaque = true;
+  const px = bytes.length / 4;
+  for (let i = 0; i < bytes.length; i += 4) {
+    const r = bytes[i], g = bytes[i + 1], b = bytes[i + 2];
+    sum += r + g + b; sumSq += r * r + g * g + b * b;
+    if (r === 0 && g === 0 && b === 0) black++;
+    if (r === 255 && g === 255 && b === 255) white++;
+    if (bytes[i + 3] !== 255) opaque = false;
+  }
+  const n = px * 3, mean = sum / n;
+  return { mean, variance: sumSq / n - mean * mean, blackFrac: black / px, whiteFrac: white / px, opaque };
+}
+
+window.__png = (id) => {
+  const cap = caps.get(id);
+  if (!cap) throw new Error(`no capture ${id}`);
+  return encodePNG(cap.bytes, cap.w, cap.h);
+};
+
+// readPixels hands back rows bottom-up; a 2-D canvas wants them top-down. Alpha is forced opaque before
+// putImageData so the 2-D context's premultiply round-trip cannot perturb the colour bytes (the engine's
+// context is alpha:false, so the readback alpha is 255 anyway — stats().opaque asserts that).
+function encodePNG(bytes, w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) img.data.set(bytes.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+  for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
+  ctx.putImageData(img, 0, 0);
+  return c.toDataURL('image/png');
+}
+
+window.__diff = (idA, idB) => {
+  const a = caps.get(idA), b = caps.get(idB);
+  if (!a || !b) throw new Error(`no capture ${idA}/${idB}`);
+  if (a.w !== b.w || a.h !== b.h) return { equal: false, reason: 'size', a: [a.w, a.h], b: [b.w, b.h] };
+  let diffPixels = 0, maxDelta = 0, firstAt = null;
+  const mask = new Uint8Array(a.w * a.h);
+  for (let p = 0; p < mask.length; p++) {
+    const i = p * 4;
+    let d = 0;
+    for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(a.bytes[i + k] - b.bytes[i + k]));
+    if (d > 0) {
+      diffPixels++; mask[p] = Math.min(255, d * 16);
+      if (maxDelta < d) maxDelta = d;
+      if (!firstAt) firstAt = [p % a.w, a.h - 1 - Math.floor(p / a.w)];   // report in top-down image coords
+    }
+  }
+  if (!diffPixels) return { equal: true, diffPixels: 0, maxDelta: 0 };
+  const vis = new Uint8Array(a.bytes.length);                             // 16× amplified magenta-on-grey diff
+  for (let p = 0; p < mask.length; p++) {
+    const i = p * 4, grey = (a.bytes[i] + a.bytes[i + 1] + a.bytes[i + 2]) / 6;
+    vis[i] = mask[p] ? 255 : grey; vis[i + 1] = mask[p] ? 255 - mask[p] : grey;
+    vis[i + 2] = mask[p] ? 255 : grey; vis[i + 3] = 255;
+  }
+  return { equal: false, diffPixels, maxDelta, firstAt, total: mask.length, png: encodePNG(vis, a.w, a.h) };
+};
+
+// One engine, one look, captured at each of `frames` (ascending rAF tick counts). The engine is paused and
+// disposed before resolving, so twenty-odd of these in a row never hold twenty live GL contexts.
+window.__run = (presetName, overrides, frames) => new Promise((resolve, reject) => {
+  const base = PRESETS[presetName];
+  if (!base) return reject(new Error(`unknown preset '${presetName}'`));
+  for (const k of Object.keys(overrides || {})) {
+    if (k in FREEZE) return reject(new Error(`override '${k}' collides with the motion freeze — the run would not be reproducible`));
+  }
+  const params = Object.assign({}, base, overrides || {}, FREEZE);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage';
+  canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  document.body.appendChild(canvas);
+
+  const t0 = performance.now();
+  const want = frames.slice();
+  const out = [];
+  let eng = null, ticks = 0, glError = 0, done = false;
+  const finish = (err) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    try { eng?.setPaused(true); eng?.dispose(); } catch { /* a disposed/failed engine has nothing to stop */ }
+    canvas.remove();
+    if (err) reject(err); else resolve({ captures: out, glError, ms: Math.round(performance.now() - t0) });
+  };
+  const timer = setTimeout(() => finish(new Error(`'${presetName}' did not reach frame ${want[0]} within 120 s`)), 120000);
+
+  try {
+    eng = create(canvas, { params });
+  } catch (e) { return finish(e); }
+
+  const gl = eng.gl;
+  eng.onFrame = () => {
+    ticks++;
+    if (done || ticks < want[0]) return;
+    want.shift();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const w = canvas.width, h = canvas.height;
+    const bytes = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+    const e = gl.getError();
+    if (e !== 0) glError = e;
+    const id = `c${nextId++}`;
+    caps.set(id, { w, h, bytes });
+    out.push({ id, frame: ticks, w, h, hash: fnv1a(bytes), stats: stats(bytes) });
+    if (!want.length) finish(null);
+  };
+});
+
+window.__ready = true;
+</script>
