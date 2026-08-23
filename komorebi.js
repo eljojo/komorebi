@@ -69,7 +69,7 @@ const MORPH_KEYS = [
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'curtain_tt','curtain_tint_r','curtain_tint_g','curtain_tint_b',      // curtain receiver (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
   'curtain_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','curtain_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
-  'tent_ridge_h_m','tent_half_w_m','tent_crown_w_m','tent_shoulder_h_m','tent_shoulder_w_m','tent_len_m','tent_end_lean','tent_gable_bevel','tent_eye_h_m','tent_fade','tent_seam',   // the ENCLOSURE receiver's polytope (§4.9): every one is a live shader uniform read per pixel, so they tween — reshaping the tent around the viewer needs no rebuild (the `receiver` gate that selects it is the scene-mode flag)
+  'tent_ridge_h_m','tent_half_w_m','tent_crown_w_m','tent_shoulder_h_m','tent_shoulder_w_m','tent_len_m','tent_end_lean','tent_end_apex_h_m','tent_hip_rake','tent_eye_h_m','tent_fade','tent_seam','tent_mesh',   // the ENCLOSURE receiver's polytope (§4.9): every one is a live shader uniform read per pixel, so they tween — reshaping the tent around the viewer needs no rebuild (the `receiver` gate that selects it is the scene-mode flag)
   'curtain_diffuse','curtain_diffuse_m',                                // lateral-diffusion glow (§4.9): the sharp/blurred split + its cloth-metre radius. Continuous, so they tween — but the split crossing 0 adds/drops the HDR passes mid-tween, which is a pass-count change, not a look pop
   'mullion_tau','mullion_pitch_m','mullion_bar_m','mullion_depth_m',    // window mullion grid (§4.9): analytic cloth-space occluder — continuous live uniforms, tau 0 = off
   'window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall',  // the window APERTURE (§4.9): the finite lit rectangle + its wall leak — continuous live uniforms, w·h = 0 = infinite light
@@ -247,22 +247,24 @@ const DEFAULTS = {
   window_cy_m: 1.3,                // aperture centre up the cloth (a sill about waist-high)
   window_wall: 0.03,               // light landing OUTSIDE the aperture: the wall is opaque, so this stands in for the room's own dim
                                    // front-side light — without it the surround is a void rather than dark cloth
-  // THE ENCLOSURE (§4.9), receiver 2: the same fabric as a CLOSED hip/brow tent stood AROUND the viewer — a flat
-  // rectangular crown along the top, a BELL cross-section per side (wide skirt → bulged shoulder → upper wall
-  // leaning in), and a BEVELLED two-panel gable closing each end. These eleven shape it; the fabric itself is the
-  // curtain family above (same cloth physics, same transmission law). Only read when receiver == 2 — the floor and
-  // the curtain never touch them.
+  // THE ENCLOSURE (§4.9), receiver 2: the same fabric as a CLOSED tent stood AROUND the viewer — a flat rectangular
+  // crown along the top, a rounded ARCH per side (a convex profile curve sampled as tangent strips), a HIP CAP at the
+  // far end (a small upright foot-vent triangle with two hips converging on its apex) and a plain leaning wall behind.
+  // These twelve shape it; the fabric itself is the curtain family above (same cloth physics, same transmission law).
+  // Only read when receiver == 2 — the floor and the curtain never touch them.
   tent_ridge_h_m: 1.15,            // crown height (m): the flat top panel's plane, and what the upper walls lean in to
   tent_half_w_m: 1.1,              // half the floor width (m): the skirts reach the ground at x = ±this
   tent_crown_w_m: 0.35,            // HALF the crown panel's width (m) — the brow pole's flat. 0 collapses it to a ridge line (the v1 A-frame)
-  tent_shoulder_h_m: 0.62,         // height (m) of the longitudinal shoulder crease, where skirt hands over to upper wall — about half the crown height
-  tent_shoulder_w_m: 0.92,         // half-width (m) AT that crease. BULGED past the straight base→crown line (0.70 m here) is what makes the section a bell instead of a wedge; on the line exactly = the v2 single-slope tent
-  tent_len_m: 2.3,                 // tent length (m): the far gable's base, and what closes the space instead of a vanishing point. The eye rides at 30 % of it
-  tent_end_lean: 0.6,              // metres a gable leans OUT per metre of height (0 = a vertical end wall); large values push the gables away and degenerate toward the A-frame
-  tent_gable_bevel: 0.35,          // yaw (rad) of each gable half-plane about the centreline: the end becomes a shallow prow with a vertical centre crease. 0 = one flat gable, bit-exactly
+  tent_shoulder_h_m: 0.62,         // height (m) of the ARCH's waypoint — where the vault bulges widest. Held inside [0.30, 0.70]·crown height, outside which the profile doubles back on itself
+  tent_shoulder_w_m: 0.92,         // half-width (m) AT that height. BULGED past the straight base→crown line (0.70 m here) is what curves the side out into an arch; on the line exactly the arc flattens to one straight slope
+  tent_len_m: 2.3,                 // tent length (m): the far cap's base, and what closes the space instead of a vanishing point. The eye rides at 30 % of it
+  tent_end_lean: 0.6,              // metres an end wall leans OUT per metre of height (0 = a vertical end wall); large values push the ends away and degenerate toward the A-frame
+  tent_end_apex_h_m: 0.55,         // height (m) of the far end's VENT APEX: the foot triangle stands from the floor up to here, and the two hips converge on it
+  tent_hip_rake: 0.45,             // how much MORE steeply the far hips rake back than the end wall (m per metre of height). 0 puts all three far planes on one — the single leaning slab this replaced — so it is floored just above that
   tent_eye_h_m: 0.5,               // eye height (m) inside — sitting up in a sleeping bag; clamped strictly inside every panel, or the viewer is outside their own tent
-  tent_fade: 0.06,                 // interior depth fade (1/m): a gentle depth cue down a metres-deep tent — the far gable is what closes the space
-  tent_seam: 0.0,                  // panel-junction seam optical depth (0 = none): the dark taped lines at the crown's long edges and the gable rims
+  tent_fade: 0.06,                 // interior depth fade (1/m): a gentle depth cue down a metres-deep tent — the far cap is what closes the space
+  tent_seam: 0.0,                  // panel-junction seam optical depth (0 = none): the dark taped lines at the crown's long edges, the ceiling's centreline spine at the foot, and the cap rims
+  tent_mesh: 0.0,                  // how much the side panels ABOVE the shoulder hem are MESH rather than nylon: they pass less light and diffuse almost none of it (0 = one fabric all the way up, byte-identical)
   far_smear: 3.0,                  // far-field dapple smear: extra throw (m) per unit foreshortening; 0 = off, no effect top-down
   exposure: 1.3,
   contrast: 1.0,
@@ -716,14 +718,16 @@ uniform float uWindowWall;        // light landing outside the aperture (the roo
 uniform float uTentRidge;         // ENCLOSURE (§4.9): crown height (m) — the flat top panel's plane; the slopes rise to its long edges
 uniform float uTentHalfW;         // ENCLOSURE: half the floor width (m); with the crown height and width it IS the slope pitch
 uniform float uTentCrownW;        // ENCLOSURE: half the CROWN panel's width (m) — 0 collapses it to a ridge line and the shape degenerates to an A-frame
-uniform float uTentShoulderH;     // ENCLOSURE: height (m) of the longitudinal shoulder crease — where the skirt hands over to the upper wall
-uniform float uTentShoulderW;     // ENCLOSURE: half-width (m) AT that crease; bulged past the straight base→crown line is what makes the section a bell
-uniform float uTentLen;           // ENCLOSURE: tent length (m) — the far gable's base; the eye rides at 30 % of it
-uniform float uTentEndLean;       // ENCLOSURE: how far a gable leans out per metre of height (0 = a vertical end wall)
-uniform float uTentGableBevel;    // ENCLOSURE: yaw (rad) of each gable half-plane about the centreline — 0 = one flat gable, bit-exactly
+uniform float uTentShoulderH;     // ENCLOSURE: height (m) of the arch profile's WAYPOINT — the Bézier's mid control point, where the vault bulges widest
+uniform float uTentShoulderW;     // ENCLOSURE: half-width (m) at that height; bulged past the straight base→crown line is what curves the side into an arch rather than a slope
+uniform float uTentLen;           // ENCLOSURE: tent length (m) — the far cap's base; the eye rides at 30 % of it
+uniform float uTentEndLean;       // ENCLOSURE: how far an end wall leans out per metre of height (0 = a vertical end wall)
+uniform float uTentEndApex;       // ENCLOSURE: height (m) of the far end's VENT APEX — the point the two hips converge on, and the top of the foot triangle
+uniform float uTentHipRake;       // ENCLOSURE: how much MORE steeply the hips rake back than the end wall (m per metre of height). 0 collapses all three far planes onto one, bit-exactly
 uniform float uTentEye;           // ENCLOSURE: eye height (m), clamped strictly inside every half-space CPU-side (an eye on or past one leaves the viewer outside their own tent)
 uniform float uTentFade;          // ENCLOSURE: interior depth fade (1/m) — the ridge is infinite, so distance is the only thing that closes it off
 uniform float uTentSeam;          // ENCLOSURE: ridge-seam optical depth (0 = no seam)
+uniform float uTentMesh;          // ENCLOSURE: how much the panels ABOVE the shoulder hem are mesh rather than nylon (0 = one fabric everywhere, byte-identical)
 uniform float uTwilight;          // global "sun is low" rod weight (from elevation, §3.5)
 uniform float uMesopic;           // Purkinje strength (the mesopic_strength knob)
 uniform vec3  uChroma;            // per-channel diffraction spread of the transport shift (θ∝λ); (1,1,1) = off
@@ -850,7 +854,10 @@ float foldIncidence(float slope){
 // scattered light too (it crossed the same pile), so the hue stays tint̂ — no second tint. s=0 collapses to band.
 // LIMIT of this per-pixel tier: it redistributes light ANGULARLY at one point, so it wraps the glow around the FOLDS
 // but cannot bleed a dapple's glow across a CAST-SHADOW edge — that is the lateral 2-D diffusion tier (§4.9), staged.
-vec3 velvetCloth(vec2 cloth, vec3 fold, vec3 body, vec3 sheenCol){
+// The scatter argument is the forward-scatter share at THIS pixel rather than the uniform, because the mesh band
+// (§4.9) is a per-panel MATERIAL: mesh barely diffuses what passes it, so its share drops toward 0 while the nylon
+// below the hem keeps the whole knob. Every other receiver passes uScatter straight through, byte-identically.
+vec3 velvetCloth(vec2 cloth, vec3 fold, vec3 body, vec3 sheenCol, float scatter){
   float facing = clamp(abs(fold.y)/fold.z, 0.0, 1.0);                    // slope against the field's own peak slope: 1 = edge-on flank, 0 = face-on ridge/valley. Unit shape, so fold_depth's banding is there on an undisplaced cloth too
   float inc = foldIncidence(uFoldWarp * fold.y);                         // true sun-geometry lit/dark on the flanks (1.0 on flat cloth)
   float band = exp(-uFoldDepth * facing) * inc;                          // ballistic: flanks thicker → darker pleat bands (backlit), × how squarely each flank meets the sun
@@ -865,7 +872,7 @@ vec3 velvetCloth(vec2 cloth, vec3 fold, vec3 body, vec3 sheenCol){
   float napAmp = 0.04 * min(uFoldDepth, 1.0);
   float nap = (1.0 - napAmp) + napAmp*sin(6.2831853 * FOLD_NAP*uFoldScale * cloth.x);
   vec3 sheen = sheenCol * (uSheen * ridge * ridge);                      // soft pale glow on the ridges only
-  return body * mix(band, bandSoft, uScatter) * nap + sheen;
+  return body * mix(band, bandSoft, scatter) * nap + sheen;
 }
 // window MULLION GRID (spec §4.9): the authored near-cloth occluder — a rigid grid of vertical + horizontal bars
 // standing uMullion.z metres in FRONT of the cloth (sun side), evaluated analytically per pixel in cloth (u,v).
@@ -917,20 +924,45 @@ const float TENT_SEAM_HW = 0.012;
 // the conversion is authored; ambient_skylight still steers it, and 6 puts a default sky at a photographic mid-tone.
 const float SKY_AA = 0.004;
 const float SKY_SKY_GAIN = 6.0;
-// One longitudinal wall of the ENCLOSURE's bell cross-section, from two profile points (x, z) on the +x side, given
-// bottom-first: returns (n.x, n.z, c) with n the OUTWARD unit normal. Walking up the profile the run goes inward and
-// the rise upward, so (dz, −dx) is the outward-and-up perpendicular — and it stays correct for a skirt that FLARES
-// (shoulder wider than the base), where it tips below horizontal, which is what an overhanging fly really does. The
-// −x wall is the same offset with n.x negated. Guarded by the CPU clamp on shoulder height, which keeps dz ≠ 0.
-vec3 tentWall(vec2 a, vec2 b){
-  vec2 d = b - a;
-  vec2 n = normalize(vec2(d.y, -d.x));
-  return vec3(n, dot(n, a));
+// ---- THE ENCLOSURE's side profile (spec §4.9): ONE ARC, not two facets. The reference tent is tensioned fabric on
+// PRE-BENT pole arcs, so its cross-section is a rounded vault; two flat panels per side read as a barn. The curve is
+// a quadratic Bézier through the three authored control points — base (halfW, 0), shoulder (shoulderW, shoulderH),
+// crown edge (crownW, ridge) — with the middle one hit exactly at t = 0.5, which pins the control point at
+// C = 2·P1 − (P0+P2)/2. A quadratic Bézier is a parabola arc: its curvature cannot change sign, so the curve is
+// convex BY CONSTRUCTION and every tangent plane of it bounds one convex region. That is the whole reason the shape
+// can round without the exit math being touched. The shoulder params stop naming a crease and start naming the
+// arc's waypoint — how far out, and at what height, the vault bulges.
+vec2 tentCtrl(){ return 2.0*vec2(uTentShoulderW, uTentShoulderH) - 0.5*(vec2(uTentHalfW, 0.0) + vec2(uTentCrownW, uTentRidge)); }
+vec2 tentTangent(vec2 C, float t){ return 2.0*(1.0-t)*(C - vec2(uTentHalfW, 0.0)) + 2.0*t*(vec2(uTentCrownW, uTentRidge) - C); }
+vec2 tentProfile(vec2 C, float t){ float u = 1.0-t; return u*u*vec2(uTentHalfW, 0.0) + 2.0*t*u*C + t*t*vec2(uTentCrownW, uTentRidge); }
+// The outward unit normal at t, in (x, z), for the +x side; the −x side is the same offset with n.x negated.
+// Walking UP the profile the rise is strictly positive — the CPU clamp holds 0 < C.z < ridge, which makes the
+// tangent's z-component 2[(1−t)·C.z + t·(ridge − C.z)] > 0 everywhere, so this normalize can never see a zero
+// vector and the profile can never double back in height. (dz, −dx) is then the outward-and-up perpendicular, and
+// it correctly tips BELOW horizontal wherever the arc flares outward, which is what an overhanging fly does.
+vec2 tentNormal(vec2 C, float t){ vec2 d = tentTangent(C, t); return normalize(vec2(d.y, -d.x)); }
+// Invert the profile's HEIGHT — the t whose point sits at height h — for the SMOOTH shading normal below.
+// B.z(t) = a·t² + b·t with a = ridge − 2·C.z and b = 2·C.z, monotone on [0,1] by the same clamp.
+float tentTAtHeight(vec2 C, float h){
+  float a = uTentRidge - 2.0*C.y, b = 2.0*C.y, hc = clamp(h, 0.0, uTentRidge);
+  if(abs(a) < 1e-6) return clamp(hc/max(b, 1e-6), 0.0, 1.0);           // C.z at half the ridge: the height map is linear
+  return clamp((-b + sqrt(max(b*b + 4.0*a*hc, 0.0)))/(2.0*a), 0.0, 1.0);
 }
+// Which PANEL GROUP a plane belongs to: 0 crown, 1/2 side +x below/above the hem, 3/4 side −x below/above,
+// 5 far END WALL (the foot vent), 6/7 the two far HIPS, 8 near cap. The seam pass reads this and nothing else: a
+// junction between two planes of the SAME group is an artefact of faceting the arc, not a pole line, and drawing it
+// is what turned the vault into masonry ribbing (§4.9's recorded dead end). The far cap's three planes are three
+// SEPARATE groups precisely because their junctions ARE edges — the spine where the hips meet, and the vent
+// triangle's two rising sides. Each arch splits at its middle strip boundary for the same reason: that junction is
+// the real MESH↔FABRIC hem, so it is the one intra-arch boundary that must draw.
+int tentGroup(int i){ return i == 0 ? 0 : i < 3 ? 1 : i < 5 ? 2 : i < 7 ? 3 : i < 9 ? 4 : i - 4; }
+// Is this an UPPER (mesh) side panel? The two strips tangent at t = ⅔ and 1 — everything above the hem.
+bool tentMeshPanel(int i){ return (i >= 3 && i <= 4) || (i >= 7 && i <= 8); }
 void main(){
   vec2 world; float fog = 0.0; float extraThrow = 0.0; float recvZ = 0.0; vec2 clothUV = vec2(0.0), castUV = vec2(0.0);
   vec3 foldF = vec3(0.0);   // the pleat field at this cloth point, evaluated ONCE: the warp below and the velvet shading later read the very same (ŝ, dŝ/dx, peak) — that is the shared-phase invariant, structural
   float beamF = 1.0, skyF = 1.0, recvAtten = 1.0;   // the ENCLOSURE's per-panel light: beam incidence, sky-hemisphere view, depth fade × ridge seam. All 1 on the floor and the curtain, so their irradiance line below is the old one exactly
+  float meshF = 0.0;         // the ENCLOSURE's per-panel MATERIAL: 1 on a side panel ABOVE the shoulder hem, where the cloth is mesh rather than nylon. 0 everywhere else and on every other receiver
   vec3 skyRad = vec3(0.0);   // SKY VIEW's finished radiance — this branch answers with light directly, having no surface to hand it to
   vec3 acc = vec3(0.0);      // "how much of the light got through here" — hoisted above the camera branch so the sky view can fill it with its own transmittance (see there)
   if(uSkyView != 0){
@@ -1012,11 +1044,11 @@ void main(){
     }
   } else if(uReceiver == 2){
     // ---- ENCLOSURE receiver (spec §4.9): the receiver stops being a plane the camera stares AT and becomes a
-    // CLOSED TENT stood around the eye, ray-cast per pixel. It is the hip/brow shape the reference actually is,
-    // decomposed off an annotated photo of the real one: a flat rectangular CROWN along the top; per side a BELL
-    // cross-section — a wide SKIRT rising from the base to a bulged shoulder at about half height, then an UPPER
-    // WALL leaning back IN to the crown; and at each end a GABLE split into two BEVELLED halves meeting at a
-    // vertical centre crease. TENT SPACE: the long axis is +Y, the crown sits at z = uTentRidge, the skirts reach
+    // CLOSED TENT stood around the eye, ray-cast per pixel. It is the hip/brow shape the reference actually is: a
+    // flat rectangular CROWN along the top; per side a rounded ARCH — tensioned fabric on a pre-bent pole, sampled
+    // as four tangent strips of one convex profile curve and shaded off the SMOOTH normal, so the light rounds
+    // continuously across it; and at each end a GABLE (one panel, or two bevelled halves meeting at a vertical
+    // centre crease). TENT SPACE: the long axis is +Y, the crown sits at z = uTentRidge, the arches reach
     // the ground at x = ±uTentHalfW, the eye sits 30 % down the tent at uTentEye, gazing along +Y pitched UP by
     // uPitch (in THIS branch the pitch uniform means elevation above horizontal, not the floor camera's tilt from
     // straight-down). What happens downstream is the point of the whole thing: the hit's plan point and height go
@@ -1029,48 +1061,61 @@ void main(){
     // ray = fwd + 2k*(sx*right + ty*up), with fwd=(0,cp,sp), right=(1,0,0), up=(0,-sp,cp). NORMALIZED, unlike the
     // floor's: t below is metres of fabric distance and both the depth fade and TENT_TMAX are quoted in metres.
     vec3 dir = normalize(vec3(2.0*kf*sxc, cp - 2.0*kf*tyc*sp, sp + 2.0*kf*tyc*cp));
-    vec3 eye = vec3(0.0, 0.3*uTentLen, uTentEye);      // DERIVED, not a knob: 30 % down the tent puts the far gable ~1.6 m off and the near one just behind you, which is where you lie in a 2P
-    // THE NINE HALF-SPACES, outward unit normal n and offset c (inside is dot(n,X) < c). The tent is the CONVEX
+    vec3 eye = vec3(0.0, 0.3*uTentLen, uTentEye);      // DERIVED, not a knob: 30 % down the tent puts the far cap ~1.6 m off and the near one just behind you, which is where you lie in a 2P
+    // THE THIRTEEN HALF-SPACES, outward unit normal n and offset c (inside is dot(n,X) < c). The tent is the CONVEX
     // intersection of them, and convexity is what makes this cheap and exact at once: a ray from a point strictly
     // inside leaves through exactly one panel, the min over the planes it is advancing into, so there are NO
     // per-panel bounds tests at all. A plane the ray meets outside the tent is always beaten by the one that
-    // actually bounds it there. That is the whole intersection routine, and it did not change when the shape went
-    // from two panels to five to nine — panel count is data here, not structure.
-    // THE BELL CROSS-SECTION: two planes per side, not one. The reference's end-on profile is a wide skirt rising to
-    // a bulged shoulder at about half height, then upper walls leaning back in to a narrow crown — the bulge is what
-    // makes a modern tent feel like a room rather than a wedge, and it is the difference between the profile polygon
-    // (base → shoulder → crown) and the straight line the old single slope drew between its ends.
-    vec3 skirt = tentWall(vec2(uTentHalfW, 0.0), vec2(uTentShoulderW, uTentShoulderH));       // base edge → shoulder crease
-    vec3 upper = tentWall(vec2(uTentShoulderW, uTentShoulderH), vec2(uTentCrownW, uTentRidge)); // shoulder crease → crown long edge
-    // THE GABLES ARE BEVELLED: each end is two half-planes yawed by ±uTentGableBevel about the vertical axis through
-    // the tent's centreline, so they meet at a vertical CENTRE CREASE and the end reads as a shallow prow instead of
-    // a flat backdrop. Keeping BOTH halves on the parent plane's offset is what puts that crease exactly at x = 0
-    // (subtract the two plane equations: only the ±sin term survives, so their intersection is x = 0), and it is also
-    // what makes bevel 0 collapse the pair back onto one plane bit-exactly. Under the bevel the gables still lean OUT
-    // as they descend: at bevel 0 the far one is y + lean·z = uTentLen, from the crown's far edge down to the base.
+    // actually bounds it there. That is the whole intersection routine, and it has not changed a character while the
+    // shape went from two panels to five to nine to thirteen — panel count is data here, not structure. Which is
+    // exactly what let the sides ROUND: a convex profile curve's tangent planes are a convex half-space set, so
+    // sampling four of them per side buys an arch for nothing but four more entries in this table.
+    vec2 C = tentCtrl();
     float gn = inversesqrt(1.0 + uTentEndLean*uTentEndLean);
-    float cb = cos(uTentGableBevel)*gn, sb = sin(uTentGableBevel)*gn, lz = uTentEndLean*gn;
-    vec3 pn[9]; float pc[9];
+    // THE FAR CAP is ONE PLANE FAMILY with three members, and writing it that way is what makes it collapse:
+    //   (a·x ± y + k·z < len + rake·apex),  a = apex·rake/halfW,  k = endLean + rake
+    // rake 0 gives a = 0, k = endLean, offset = len — the single leaning end wall, bit-exactly — and the far cap is
+    // the tent as it shipped. Turning rake up rakes the two ±a members back FASTER than the wall, so they start
+    // binding above the vent apex and the end wall survives only BELOW the line from the apex to each floor corner.
+    // The three anchor points are all hull features already, which is why nothing else has to move: the apex
+    // A = (0, len − endLean·apex, apex) sits on the end wall at the vent's height, the floor corners (±halfW, len, 0)
+    // are the tent's own far corners, and the two hips meet each other along the vertical plane x = 0 — the SPINE.
+    float hk = uTentEndLean + uTentHipRake;
+    float ha = uTentEndApex*uTentHipRake/max(uTentHalfW, 1e-3);
+    float hn = inversesqrt(1.0 + ha*ha + hk*hk);
+    float hc = (uTentLen + uTentHipRake*uTentEndApex)*hn;
+    vec3 pn[13]; float pc[13];
     pn[0] = vec3(0.0, 0.0, 1.0);                  pc[0] = uTentRidge;        // CROWN — the flat rectangular panel along the top
-    pn[1] = vec3( upper.x, 0.0, upper.y);         pc[1] = upper.z;           // RIGHT upper wall: shoulder crease → crown long edge
-    pn[2] = vec3(-upper.x, 0.0, upper.y);         pc[2] = upper.z;           // LEFT upper wall (mirrored: negate n.x, the offset is symmetric)
-    pn[3] = vec3( skirt.x, 0.0, skirt.y);         pc[3] = skirt.z;           // RIGHT skirt: base → shoulder crease
-    pn[4] = vec3(-skirt.x, 0.0, skirt.y);         pc[4] = skirt.z;           // LEFT skirt
-    pn[5] = vec3( sb,  cb, lz);                   pc[5] = uTentLen*gn;       // FAR gable, right half — the panels the space converges ONTO
-    pn[6] = vec3(-sb,  cb, lz);                   pc[6] = pc[5];             // FAR gable, left half
-    pn[7] = vec3( sb, -cb, lz);                   pc[7] = 0.5*gn;            // NEAR gable, right half — behind the eye, so turning to look back closes too
-    pn[8] = vec3(-sb, -cb, lz);                   pc[8] = pc[7];             // NEAR gable, left half
-    // THE HUBS ARE NOT MODELLED, and that is the argument for doing this as a polytope at all. The pyramid-apex
-    // corners the reference reads as hardware are simply VERTICES — where an upper wall, the crown and a gable half
-    // all three planes meet — so they appear at the right place for free, and the seam pass below (a min over the
-    // non-winning planes) draws the crease lines radiating out of them without any of it being enumerated.
-    // DEGENERACIES, and they are the regression anchors: a shoulder placed exactly on the straight base→crown line
-    // makes skirt and upper wall the SAME plane and gives back the v2 five-panel tent; on top of that, crown_w → 0
-    // collapses the crown onto the line where the slopes already meet and a large tent_len pushes both gables away,
-    // giving back the v1 infinite A-frame.
-    int win = dir.x >= 0.0 ? 3 : 4;                    // fallback panel for the one exitless direction (straight down, which no sane pitch puts in frame): the skirt it is heading toward
+    for(int j=0;j<4;j++){
+      // tangency at t = 0, 1/3, 2/3, 1 — the ends INCLUDED, so the hull touches the authored base and crown edge
+      // exactly and only bulges (by ~1.5 cm at these dimensions) between them. Tangent planes circumscribe a convex
+      // curve, so the hull is a superset of the true arch, which is also what keeps the eye-inside proof below free.
+      float tj = float(j)/3.0;
+      vec2 nz = tentNormal(C, tj);
+      float cj = dot(nz, tentProfile(C, tj));
+      pn[1+j] = vec3( nz.x, 0.0, nz.y);           pc[1+j] = cj;              // +x ARCH strips, base → crown edge
+      pn[5+j] = vec3(-nz.x, 0.0, nz.y);           pc[5+j] = cj;              // −x arch (mirrored: negate n.x, the offset is symmetric)
+    }
+    // THE FAR CAP — a HIP, not a wall. The end wall survives only as the small upright triangle at the foot (the
+    // vent): the hips cut it away above the line from the apex to each floor corner, which is exactly the line the
+    // hip and the wall share, so that boundary is the triangle's own rising side and needs no separate authoring.
+    // What the eye gets is the reference's shape rather than a slab: a seam down the ceiling's centreline (the two
+    // hips meeting), splitting at the apex into the triangle's two sides.
+    pn[9]  = vec3(0.0,  gn, uTentEndLean*gn);     pc[9]  = uTentLen*gn;      // FAR END WALL — now only the foot triangle
+    pn[10] = vec3( ha*hn,  hn, hk*hn);            pc[10] = hc;               // FAR HIP +x
+    pn[11] = vec3(-ha*hn,  hn, hk*hn);            pc[11] = hc;               // FAR HIP −x (mirrored: negate n.x, the offset is symmetric — so they meet on x = 0)
+    pn[12] = vec3(0.0, -gn, uTentEndLean*gn);     pc[12] = 0.5*gn;           // NEAR cap — behind the eye, so turning to look back closes too; a plain leaning wall, no hip
+    // THE HUBS ARE NOT MODELLED, and that is the argument for doing this as a polytope at all. The corners the
+    // reference reads as hardware are simply VERTICES — where an arch strip, the crown and a cap plane all meet — so
+    // they appear at the right place for free, and the seam pass below draws the pole lines radiating out of them
+    // without any of it being enumerated. The vent apex is the newest of them: hip, hip and end wall, three planes,
+    // one point, no authoring.
+    // DEGENERACY, the regression anchor: a shoulder placed exactly on the straight base→crown line makes all three
+    // Bézier control points collinear, so the curve IS that line, all four tangent planes coincide, and the shape
+    // gives back the v2 single-slope tent — and with crown_w → 0 and a large tent_len on top of it, the v1 A-frame.
+    int win = dir.x >= 0.0 ? 1 : 5;                    // fallback panel for the one exitless direction (straight down, which no sane pitch puts in frame): the lowest arch strip it is heading toward
     float t = 1e6;
-    for(int i=0;i<9;i++){
+    for(int i=0;i<13;i++){
       float den = dot(pn[i], dir);
       if(den <= 1e-6) continue;                        // the ray recedes from this plane (or runs parallel): it cannot leave through it
       float ti = (pc[i] - dot(pn[i], eye)) / den;      // strictly > 0, because the eye is clamped strictly inside every half-space CPU-side
@@ -1079,24 +1124,41 @@ void main(){
     t = min(t, TENT_TMAX);
     vec3 hit = eye + t*dir;
     vec3 n = pn[win];                                  // the winning panel's OUTWARD normal — the first receiver in this engine whose orientation varies across the frame
-    // EVERY PANEL JUNCTION, from one measurement: the inside-distance to each NON-winning plane. Standing on the
-    // crown near its long edge, the distance to the upper wall's plane is small; standing mid-panel, every other
-    // plane is far. So min over the losers is the distance to the nearest junction, and it draws the crown's two long
-    // edges, the two longitudinal SHOULDER creases, both gable rims, each gable's vertical CENTRE crease and every
-    // corner where they meet — all of it, without a single edge being enumerated. That is the same free-lunch the
-    // hubs get above, and it is why the crease families the reference shows cost three uniforms and no new code.
-    // (It is measured perpendicular to the NEIGHBOURING plane rather than to the edge itself, so a shallow dihedral
-    // reads a slightly wider band — the correct shape, scaled. abs() because a TMAX-clamped hit sits outside.)
+    // SMOOTH NORMALS OVER A COARSE HULL. On the arch the shading normal is the PROFILE's own, evaluated at the hit's
+    // height, not the facet's — so the light rounds continuously across the side exactly the way it rounds on
+    // tensioned fabric, while the exit math keeps the cheap four-plane hull. This is the classic smooth-shaded coarse
+    // hull, and it is the honest cheap road here: the silhouette stays subtly faceted, but a true curved-surface ray
+    // intersection would buy sub-centimetre silhouette accuracy on a 64 cm half-width tent — nobody can see it, and
+    // it would cost the closed-form single min() that this whole receiver is built on.
+    if(win >= 1 && win <= 8){
+      vec2 ns = tentNormal(C, tentTAtHeight(C, hit.z));
+      n = vec3(win < 5 ? ns.x : -ns.x, 0.0, ns.y);
+    }
+    // THE MESH BAND — the first PER-PANEL MATERIAL in this receiver, and deliberately not per-panel shading. The
+    // Dragonfly's sides are solid nylon to the shoulder and dark mesh above it, and that hard hem is what the eye
+    // reads as structure. The bell's shoulder CREASE used to stand in for it by accident; rounding the side into an
+    // arc removed the crease and took the hem with it, which is the regression this answers. The normal stays the
+    // smooth arc's straight across the hem — the fabric does not kink there, it changes material.
+    meshF = tentMeshPanel(win) ? uTentMesh : 0.0;
+    // THE POLE LINES, from one measurement: the inside-distance to each non-winning plane of a DIFFERENT PANEL GROUP.
+    // The group filter is the whole point. A junction between two strips of the same arch is an artefact of faceting
+    // a curve — there is no seam there on a real tent, and drawing one is exactly what turned the vault into
+    // masonry ribbing (§4.9's recorded dead end: the user's word was "church"). What survives the filter is the set
+    // of real pole lines: the crown's two long edges, the SPINE down the ceiling's centreline where the two hips
+    // meet, the foot triangle's two rising sides, and the rims where a cap meets the arches and the crown.
+    // (Measured perpendicular to the NEIGHBOURING plane rather than to the edge itself, so a shallow dihedral reads a
+    // slightly wider band: the correct shape, scaled. abs() because a TMAX-clamped hit sits outside.)
     float dSeam = 1e6;
-    for(int j=0;j<9;j++){
-      if(j == win) continue;
+    int wg = tentGroup(win);
+    for(int j=0;j<13;j++){
+      if(tentGroup(j) == wg) continue;
       dSeam = min(dSeam, abs(pc[j] - dot(pn[j], hit)));
     }
     // the fabric's OWN coords, generalized off the crown: v is the drop BELOW the crown plane, so the pleat field's
     // rod sits on the tent's own pinned top on every panel at once (a tent is pinned at its crown and free at the
     // hem exactly as a curtain is at its rod, so fold_coarsen's octave crossfade broadens the ripples downward the
     // right way round); u runs along the panel's horizontal tangent — down the tent on the slopes, across it on the
-    // gables, and across it on the crown, whose plan normal is degenerate and needs the explicit fallback.
+    // cap panels, and across it on the crown, whose plan normal is degenerate and needs the explicit fallback.
     vec2 tang = (abs(n.x) + abs(n.y) > 1e-4) ? normalize(vec2(-n.y, n.x)) : vec2(1.0, 0.0);
     clothUV = vec2(dot(hit.xy, tang), uTentRidge - hit.z);
     castUV = clothUV;              // nothing to warp: there is no flat-plane cast here, the read IS the real geometry, so fold_warp is inert in this branch (§4.9)
@@ -1114,12 +1176,12 @@ void main(){
     // exactly 1: the floor and curtain conventions already absorb sin(elevation) into their irradiance (acc is the
     // fraction of the disk that cleared, landing on a surface those models never tilt), so 1 is precisely what "as
     // bright as the old receivers" has to mean. THE CROWN IS THAT ANCHOR — it is horizontal, so it lands at exactly
-    // 1 and the slopes and gables read as departures from it. The 0.15 floor (≈8.6° elevation) keeps a horizon sun
+    // 1 and the slopes and cap panels read as departures from it. The 0.15 floor (≈8.6° elevation) keeps a horizon sun
     // from dividing by nothing. The sky is a hemisphere rather than a direction, so it takes how much of that
     // hemisphere the panel can see instead — 1 on the crown, and less the more steeply a panel stands up.
     beamF = clamp(dot(n, uSunDir) / max(uSunDir.z, 0.15), 0.0, 2.0);
     skyF  = 0.5 + 0.5*n.z;
-    recvAtten = exp(-t*uTentFade);   // a gentle depth cue now rather than the thing that closes the space: the far gable does that, and the tent is metres deep, not infinite
+    recvAtten = exp(-t*uTentFade);   // a gentle depth cue now rather than the thing that closes the space: the far cap does that, and the tent is metres deep, not infinite
     // THE SEAMS — near-contact occluders in the strictest sense, since they are ON the cloth, so they take beam and
     // sky alike exactly as the mullion bars do. The soft edge is the tape's own near to, then the PIXEL FOOTPRINT
     // far off: 0.004 rad ≈ 3 px on a 78°, 1080-tall frame, so a junction running away from the eye holds a roughly
@@ -1268,11 +1330,16 @@ void main(){
       if(uMullion.w > 0.0) E *= mullionT(castUV, barConf);
     }
     vec3 tintHat = uCurtainTint / max(max(uCurtainTint.r, uCurtainTint.g), max(uCurtainTint.b, 1e-4));   // unit-peak HUE
-    vec3 body = E * (uTt * tintHat);                       // transmitted moss: brightness × hue; ambient rides through Tt·tint̂ (gated, not free)
+    // MESH vs NYLON, and it is one material split rather than a painted band. A mesh passes less of what lands on it
+    // and DIFFUSES almost none of what it does pass, so it takes both halves of the transmission: the throughput
+    // drops toward 0.55, and the forward-scatter share — the thing that turns a cast into a glow — drops toward
+    // nothing, which is what makes the band read DARKER and its dapples CRISPER at the same time. meshF is 0 on every
+    // other panel and every other receiver, so both lines collapse to the old ones exactly.
+    vec3 body = E * (uTt * tintHat) * mix(1.0, 0.55, meshF);   // transmitted moss: brightness × hue; ambient rides through Tt·tint̂ (gated, not free)
     // drape + velvet (§4.9): pleats + grazing sheen on the cloth's own (u=clothUV.x, v=clothUV.y) coords. The sheen
     // is a pale warm tint of the dye (two-tone velvet), brightened a touch where the backlight is hot.
     vec3 sheenCol = mix(tintHat, vec3(1.0,0.96,0.88), 0.7) * (0.4 + 0.6*dot(body, vec3(0.33)));
-    col = velvetCloth(clothUV, foldF, body, sheenCol);
+    col = velvetCloth(clothUV, foldF, body, sheenCol, uScatter * (1.0 - meshF));
   }
   // ---- Purkinje / mesopic dusk shift (§3.5): as the sun sets the eye's rods take over the dim shade —
   // colour desaturates toward a blue-green grey and saturated reds darken first, while the bright dapples
@@ -1515,8 +1582,9 @@ function create(canvas, opts){
     mullion:loc(progTransport,'uMullion'), mullPenumbra:loc(progTransport,'uMullPenumbra'),
     window:loc(progTransport,'uWindow'), windowWall:loc(progTransport,'uWindowWall'),
     tentRidge:loc(progTransport,'uTentRidge'), tentHalfW:loc(progTransport,'uTentHalfW'), tentCrownW:loc(progTransport,'uTentCrownW'), tentLen:loc(progTransport,'uTentLen'), tentEndLean:loc(progTransport,'uTentEndLean'),
-    tentShoulderH:loc(progTransport,'uTentShoulderH'), tentShoulderW:loc(progTransport,'uTentShoulderW'), tentGableBevel:loc(progTransport,'uTentGableBevel'),
-    tentEye:loc(progTransport,'uTentEye'), tentFade:loc(progTransport,'uTentFade'), tentSeam:loc(progTransport,'uTentSeam'),
+    tentShoulderH:loc(progTransport,'uTentShoulderH'), tentShoulderW:loc(progTransport,'uTentShoulderW'),
+    tentEndApex:loc(progTransport,'uTentEndApex'), tentHipRake:loc(progTransport,'uTentHipRake'),
+    tentEye:loc(progTransport,'uTentEye'), tentFade:loc(progTransport,'uTentFade'), tentSeam:loc(progTransport,'uTentSeam'), tentMesh:loc(progTransport,'uTentMesh'),
     twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'), chroma:loc(progTransport,'uChroma'),
     exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
     linearOut:loc(progTransport,'uLinearOut'),   // 1 = hand the linear HDR to the diffusion tier instead of tone-mapping here (§4.9)
@@ -2798,26 +2866,43 @@ function create(canvas, opts){
     // THE ENCLOSURE's polytope (§4.9), read only when receiver == 2. TWO INVARIANTS THE SHADER RELIES ON, both
     // enforced here and nowhere else.
     // (1) THE EYE SITS STRICTLY INSIDE every half-space, which is what makes every exit distance positive and lets
-    // the intersection be a bare min() with no sign handling. Three constraints bind it — the crown overhead
-    // (z < ridge) and each gable, which the eye approaches as lean·eye grows toward the clearance the gable leaves
-    // at the eye's own y (0.7·len ahead; 0.5 + 0.3·len·cos(bevel) behind, the bevel tilting the near one in).
-    // The side walls never bind at x = 0.
-    // (2) THE PROFILE BULGES OUTWARD at the shoulder. Note what this is NOT protecting: an intersection of
-    // half-spaces is convex whatever the planes do, so the min-exit is never wrong. What breaks is the SHAPE. Put
-    // the shoulder INSIDE the straight base→crown line and the skirt's half-space stops containing the crown edge —
-    // the skirt plane then slices the crown clean off, the tent is no longer the tent that was specified, and pushed
-    // far enough the eye itself ends up outside, which is invariant (1). So the shoulder half-width is floored at
-    // that straight line (where skirt and upper wall become the same plane: the v2 tent, exactly) and capped at a
-    // sane flare. Everything else is floored off its degenerate value: a tent with no interior has nothing to cast.
+    // the intersection be a bare min() with no sign handling. Four constraints bind it — the crown overhead
+    // (z < ridge), each end wall, which the eye approaches as lean·eye grows toward the clearance the wall leaves at
+    // the eye's own y (0.7·len ahead, 0.5 + 0.3·len behind), and the far HIP, which rakes back faster than the wall
+    // does and therefore overtakes it above the vent apex. The side walls never bind at x = 0, and neither hip's x
+    // term does either. All four are taken as a min rather than resolved case-by-case: over-tightening the eye costs
+    // nothing, letting it out of the tent costs the whole routine.
+    // (2) THE ARCH BULGES OUTWARD at the shoulder, and its profile stays a FUNCTION OF HEIGHT. Note what the first
+    // half is NOT protecting: an intersection of half-spaces is convex whatever the planes do, so the min-exit is
+    // never wrong. What breaks is the SHAPE. Put the shoulder INSIDE the straight base→crown line and the arc bends
+    // the wrong way — the lower tangent planes stop containing the crown edge, so they slice it off, and pushed far
+    // enough the eye itself ends up outside, which is invariant (1). So the shoulder half-width is floored at that
+    // straight line (where all three Bézier control points go collinear, every tangent plane coincides, and the
+    // shape degenerates exactly to the v2 single-slope tent) and capped at a sane flare.
+    // The SECOND half is new with the arc and it is what keeps the geometry single-valued: the profile's height
+    // sweep is monotone iff the Bézier control point sits strictly between the ends in z, i.e. 0 < 2·shoulderH −
+    // ridge/2 < ridge, i.e. shoulderH ∈ (0.25, 0.75)·ridge. Outside that the curve doubles back in height — the
+    // tangent's z-component changes sign, the smooth normal's height inversion has two answers, and normalize()
+    // gets handed a zero vector. [0.30, 0.70] keeps a margin inside it. Everything else is floored off its
+    // degenerate value: a tent with no interior has nothing to cast.
     { const ridge = Math.max(params.tent_ridge_h_m, 1e-2);
       const halfW = Math.max(params.tent_half_w_m, 1e-2);
       const crownW = clamp(params.tent_crown_w_m, 0, 0.9*halfW);   // 0.9 keeps a real horizontal run in the profile even when the crown is asked to be the whole roof
       const len   = Math.max(params.tent_len_m, 0.5);
       const lean  = clamp(params.tent_end_lean, 0, 4);
-      const bevel = clamp(params.tent_gable_bevel, 0, 1.2);        // past ~70° the two halves fold into a spike rather than a prow
-      const shH   = clamp(params.tent_shoulder_h_m, 0.15*ridge, 0.9*ridge);   // keeps both profile segments a real segment, so tentWall's normalize() never sees a zero vector
+      const shH   = clamp(params.tent_shoulder_h_m, 0.30*ridge, 0.70*ridge);   // the height-monotonicity window (see above); outside it the arc doubles back
       const shLine = halfW + (crownW - halfW)*(shH/ridge);         // the STRAIGHT base→crown profile at that height — the convexity floor
-      const gap   = Math.min(0.7*len, 0.5 + 0.3*len*Math.cos(bevel));   // the nearer gable's clearance at the eye's own y
+      // (3) THE HIPS MUST RAKE BACK FASTER THAN THE END WALL, or they never bind and the far cap silently stays the
+      // slab it was; and they must stay far enough OFF the wall that the seam pass reads three panels rather than
+      // three coincident planes it paints dark end to end. 0.15 is that floor (≈ 4 cm of setback at the shipped
+      // dimensions, three times the 12 mm seam core). The apex stays strictly between the floor and the crown: at 0
+      // the triangle has no height and at the ridge it swallows the whole end.
+      const apex  = clamp(params.tent_end_apex_h_m, 0.10*ridge, 0.90*ridge);
+      const rake  = clamp(params.tent_hip_rake, 0.15, 3);
+      const gap   = Math.min(                                      // the tightest far/near clearance at the eye's own y, per metre of eye height
+        (0.7*len)/Math.max(lean, 1e-3),                            // far end wall
+        (0.7*len + rake*apex)/(lean + rake),                       // far hip — tighter than the wall wherever the eye rides above the apex
+        (0.5 + 0.3*len)/Math.max(lean, 1e-3));                     // near cap
       gl.uniform1f(U.tp.tentRidge, ridge);
       gl.uniform1f(U.tp.tentHalfW, halfW);
       gl.uniform1f(U.tp.tentCrownW, crownW);
@@ -2825,10 +2910,12 @@ function create(canvas, opts){
       gl.uniform1f(U.tp.tentShoulderW, clamp(params.tent_shoulder_w_m, shLine, 1.4*halfW));
       gl.uniform1f(U.tp.tentLen, len);
       gl.uniform1f(U.tp.tentEndLean, lean);
-      gl.uniform1f(U.tp.tentGableBevel, bevel);
-      gl.uniform1f(U.tp.tentEye, Math.min(Math.max(params.tent_eye_h_m, 0), 0.95*ridge, 0.95*gap/Math.max(lean, 1e-3))); }
+      gl.uniform1f(U.tp.tentEndApex, apex);
+      gl.uniform1f(U.tp.tentHipRake, rake);
+      gl.uniform1f(U.tp.tentEye, Math.min(Math.max(params.tent_eye_h_m, 0), 0.95*ridge, 0.95*gap)); }
     gl.uniform1f(U.tp.tentFade, Math.max(0, params.tent_fade));
     gl.uniform1f(U.tp.tentSeam, Math.max(0, params.tent_seam));
+    gl.uniform1f(U.tp.tentMesh, clamp(params.tent_mesh, 0, 1));
     // Purkinje (§3.5): rods take over the dim shade as the sun lowers. The global weight rides the same
     // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
     gl.uniform1f(U.tp.twilight, smoothstep(30, 4, params.sun_elevation_deg));

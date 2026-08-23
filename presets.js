@@ -276,11 +276,13 @@ export const PRESETS = {
   // whole structure is one panel bright while the next is dim. Then it spent one on an infinite A-frame, which was
   // rejected as "inside an infinite triangle looking toward the infinite — an old-school boy-scout tent". The
   // diagnosis was not the silhouette: an infinite ridge converges to a VANISHING POINT and a real tent converges to
-  // FLATNESS, a wall at a finite distance with an edge you can see. So the shape is now what the eye actually reports
-  // from inside — a flat rectangular CROWN overhead; per side a BELL section, a flaring skirt rising to a bulged
-  // shoulder crease then an upper wall leaning back in; and each end a two-panel BEVELLED gable meeting at a vertical
-  // centre crease. Nine planes. At this framing the frame comes out ~24 % / 24 % upper walls, 16 % crown, 15 % / 14 %
-  // gable halves, 3 % / 3 % skirts — see the framing note below, since that skirt share is small on purpose or not.
+  // FLATNESS, a wall at a finite distance with an edge you can see. Then the bell version, at real dimensions, drew
+  // the third: "it feels like a church / a barn — the roof is too flat; the real tent is much more rounded". Flat
+  // facets plus a dark rib at every junction is how a stone vault is built, and the Dragonfly is neither — it is
+  // tensioned fabric on PRE-BENT pole arcs. So each side is now one smooth ARCH (a convex profile curve sampled as
+  // four tangent strips, shaded off the profile's own normal so the light rolls off it continuously), the seams draw
+  // only at real POLE LINES, and the far end is ONE triangle. At this framing the frame comes out ~35 % / 35 % the
+  // two arches, 17 % crown, 13 % the far triangle — the verdict's own description of the shape.
   // Same cloth as 'curtain 1' at the opposite corner of material space: thin near-white nylon (high Tt, near-neutral
   // dye, matte, heavy forward scatter) where the velvet is dark, saturated, pile-sheened. NO window and NO mullion
   // grid — both are curtain-only and the engine gates them off here anyway; the tent stands UNDER the canopy, so
@@ -289,12 +291,12 @@ export const PRESETS = {
   // 2.6–6.2 m up, so the dapple blur (h − recvZ)·θ runs ~2–5 cm — pinhole, soft overlapping sun-images — while the
   // grove's lowest limbs, metres nearer, keep soft shape. The crossover is set purely by occluder distance.
   // EVERY NUMBER BELOW IS A STARTING POINT for a pass on the real thing — none of it has been seen on a GPU.
-  // Four specific things to look at first: (a) at view_pitch_deg 32 the gaze is high enough that the SKIRTS hold only
-  // ~3 % of frame each and the shoulder creases sit right at the bottom edge — so the bell's bulge, the newest thing
-  // in the shape, is the least visible thing in the picture. Dropping the pitch trades crown for skirt and is the
-  // first thing to try if the section does not read; (b) the +x side is deeply shaded at this sun (upper wall beamF
-  // 0.30, skirt 0.00), so it carries little dapple — real for a sun this far off to one side, but sun_azimuth_deg is
-  // the knob that trades that evenness back for dapple on both sides; (c) the floor-of-shade block below;
+  // Three specific things to look at first: (a) the arch's roundness now lives entirely in the SHADING — the
+  // silhouette is still four tangent strips per side, standing at most ~1 cm outside the true curve at these
+  // dimensions — so if a side still reads flat it is the light, not the geometry: tent_shoulder_w_m is the bulge
+  // knob and sun_azimuth_deg decides how much of the roll-off you can see; (b) the far side is deeply shaded at
+  // this sun and carries little dapple — real for a sun this far off to one side, but sun_azimuth_deg trades that
+  // evenness back for dapple on both sides; (c) the floor-of-shade block below;
   // (d) the cast read stays inside the 10 m baked canopy, with only the far bottom corner grazing its edge —
   // canopy_extent_m is the lever if that corner shows.
   'tent 1': Object.assign({}, DEFAULTS, {
@@ -328,6 +330,11 @@ export const PRESETS = {
     "curtain_tt": 0.6, "curtain_tint_r": 0.92, "curtain_tint_g": 0.9, "curtain_tint_b": 0.82,
     "velvet_sheen": 0,   // MATTE — nylon has no pile, and the satin ridge glow is the one curtain cue that would break the read
     "curtain_scatter": 0.7,   // most of the transmit diffuses in the weave: shade lifts toward pale gray (never black), the glowy-haze half of the reference
+    // THE MESH BAND (§4.9), the first per-panel material: solid nylon to the shoulder, no-see-um mesh above it. At
+    // 0.6 the upper band passes ~73 % of what the nylon does and keeps only 40 % of the scatter above, so it reads
+    // darker AND crisper — which is the delineation the smooth arch shading took away when the shoulder crease went.
+    // The hem line itself is drawn by the seam knob, because the two bands are now separate panel groups.
+    "tent_mesh": 0.6,
     // LATERAL DIFFUSION (§4.9), the tier this look motivates: the wrap above softens each pixel's own fold, but only
     // this bleeds a hot dapple's glow ACROSS its cast-shadow edge — the reference's spotlight-versus-haze contrast.
     // The one look that opts into the expensive rung; 8 cm of bleed is about right for thin nylon. Both taste calls.
@@ -341,23 +348,26 @@ export const PRESETS = {
     // THE TENT, at its defaults, written out because they ARE the scene: a 1.15 m crown over a 2.2 m floor with a
     // 70 cm flat top and 2.3 m of length is a real two-person tent, and the eye at 0.5 m is sitting up in a sleeping
     // bag with the ceiling just overhead. The eye's position DOWN the tent is derived (30 % of the length), so the
-    // far gable stands about 1.6 m off — close enough to read as a wall, far enough to hold the crown's perspective.
-    // THE BELL: the shoulder crease at 0.62 m carries a half-width of 0.92 m, which is 0.22 m OUTSIDE the straight
-    // floor-to-ceiling line (0.70 m there) — that bulge is the difference between a room and a wedge, and it is what
-    // splits each side wall into a flaring skirt below and a wall leaning back in above. THE PROW: 0.35 rad of gable
-    // bevel folds each end into two halves meeting at a vertical centre crease.
-    // The seam is the one knob off its default, and it now has six crease families to draw rather than one: the
-    // crown's long edges, the two shoulder lines running away from you, the gable rims and their centre creases.
+    // far cap stands about 1.6 m off — close enough to read as a wall, far enough to hold the crown's perspective.
+    // THE ARCHES: each side is one smooth vault, not two facets. Its widest point sits 0.55 m up carrying a 0.60 m
+    // half-width — 0.14 m OUTSIDE the straight floor-to-ceiling line (0.46 m there), and that bulge IS the
+    // roundness: it is the arc's middle control point, and pulling it back to the line would flatten the side to a
+    // plain slope. THE FAR END IS A HIP CAP: a 0.55 m foot-vent triangle standing on the floor, and two hips raking
+    // back 0.45 m per metre faster than the wall to converge on its apex — which pulls the ceiling's far edge back
+    // from 1.62 m to 1.40 m on the centreline and 1.28 m at its corners, and draws the centreline seam.
+    // The seam is the one knob off its default, and it draws the POLE LINES only — the crown's two long edges, the
+    // ceiling's centreline at the foot, the vent triangle's two rising sides, and the cap rims. The arch's own facet
+    // boundaries are filtered out by panel group; drawing them is what once made this read as a church.
     "tent_ridge_h_m": 1.04, "tent_half_w_m": 0.64, "tent_crown_w_m": 0.3,
     "tent_shoulder_h_m": 0.55, "tent_shoulder_w_m": 0.6,
-    "tent_len_m": 2.24, "tent_end_lean": 0.6, "tent_gable_bevel": 0.35,
+    "tent_len_m": 2.24, "tent_end_lean": 0.6, "tent_end_apex_h_m": 0.55, "tent_hip_rake": 0.45,
     "tent_eye_h_m": 0.42, "tent_fade": 0.06, "tent_seam": 2.0,
     // the camera is the eye INSIDE: pitch is elevation ABOVE horizontal in this branch, so 32° looks up the tent with
-    // the far gable's rim at ~35° and the crown sweeping overhead out of the top of frame; 78° is a wide enough lens
+    // the far cap's rim at ~35° and the crown sweeping overhead out of the top of frame; 78° is a wide enough lens
     // to hold both slopes and the crown at once, which is the whole composition. view_extent_m no longer frames
     // anything here (the fov and the tent do) — it survives only as the lateral-diffusion tier's px/m reference,
     // which is approximate on a receding panel (§4.9).
-    "view_extent_m": 3.0, "view_pitch_deg": 26, "view_fov_deg": 88, "view_yaw_deg": 0,
+    "view_extent_m": 4.9, "view_pitch_deg": 42.5, "view_fov_deg": 88, "view_yaw_deg": -115.34,   // the user's hand-tuned framing: the yawed gaze re-aims the sun across the panels — most of what un-churched the look
     "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.06, "far_smear": 0,
     // ---- THE FLOOR OF SHADE IS LOAD-BEARING. Do not "restore contrast" here without re-deriving it. ----
     // The reviewed failure was a frame of vast pitch-BLACK canopy shade; in every reference photo the deepest shade
