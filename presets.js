@@ -489,9 +489,13 @@ export const PRESETS = {
     // THE ARCHES: each side is one smooth vault, not two facets. Its widest point sits 0.55 m up carrying a 0.60 m
     // half-width — 0.14 m OUTSIDE the straight floor-to-ceiling line (0.46 m there), and that bulge IS the
     // roundness: it is the arc's middle control point, and pulling it back to the line would flatten the side to a
-    // plain slope. THE FAR END IS A HIP CAP: a 0.55 m foot-vent triangle standing on the floor, and two hips raking
-    // back 0.45 m per metre faster than the wall to converge on its apex — which pulls the ceiling's far edge back
-    // from 1.62 m to 1.40 m on the centreline and 1.28 m at its corners, and draws the centreline seam.
+    // plain slope. BOTH ENDS ARE HIP CAPS: a 0.55 m vent triangle standing on the floor, and two hips raking back
+    // 0.45 m per metre faster than the wall to converge on its apex — which pulls the ceiling's far edge back from
+    // 1.62 m to 1.40 m on the centreline and 1.28 m at its corners, and draws the ceiling's centreline seam from one
+    // end of the tent to the other. THE VENT TRIANGLES ARE NOT IN THIS FRAME: a vent sits on its end wall's
+    // centreline, the gaze below points 64.7° off the near end against a 59.8° half-width, so what shows is the two
+    // near hips (40 % of frame) and the spine between them. view_yaw_deg −130 or view_fov_deg 100 brings the near
+    // triangle in; raising the apex also would, but by an amount that depends on the canvas aspect.
     // The seam is the one knob off its default, and it draws the POLE LINES only — the crown's two long edges, the
     // ceiling's centreline at the foot, the vent triangle's two rising sides, and the cap rims. The arch's own facet
     // boundaries are filtered out by panel group; drawing them is what once made this read as a church.

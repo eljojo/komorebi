@@ -962,13 +962,14 @@ float tentTAtHeight(vec2 C, float h){
   return clamp((-b + sqrt(max(b*b + 4.0*a*hc, 0.0)))/(2.0*a), 0.0, 1.0);
 }
 // Which PANEL GROUP a plane belongs to: 0 crown, 1/2 side +x below/above the hem, 3/4 side −x below/above,
-// 5 far END WALL (the foot vent), 6/7 the two far HIPS, 8 near cap. The seam pass reads this and nothing else: a
+// 5 far END WALL (the foot vent), 6/7 the two far HIPS, 8 near END WALL (the head vent), 9/10 the two near HIPS. The seam pass reads this and nothing else: a
 // junction between two planes of the SAME group is an artefact of faceting the arc, not a pole line, and drawing it
 // is what turned the vault into masonry ribbing (§4.9's recorded dead end). The far cap's three planes are three
 // SEPARATE groups precisely because their junctions ARE edges — the spine where the hips meet, and the vent
-// triangle's two rising sides. Each arch splits at its middle strip boundary for the same reason: that junction is
+// triangle's two rising sides. Both caps carry that, so the spine runs the ceiling's whole centreline: it comes in
+// over your head from behind, crosses the crown, and forks again at the far vent. Each arch splits at its middle strip boundary for the same reason: that junction is
 // the real MESH↔FABRIC hem, so it is the one intra-arch boundary that must draw.
-int tentGroup(int i){ return i == 0 ? 0 : i < 3 ? 1 : i < 5 ? 2 : i < 7 ? 3 : i < 9 ? 4 : i - 4; }
+int tentGroup(int i){ return i == 0 ? 0 : i < 3 ? 1 : i < 5 ? 2 : i < 7 ? 3 : i < 9 ? 4 : i - 4; }   // 9..14 -> 5..10
 // Is this an UPPER (mesh) side panel? The two strips tangent at t = ⅔ and 1 — everything above the hem.
 bool tentMeshPanel(int i){ return (i >= 3 && i <= 4) || (i >= 7 && i <= 8); }
 void main(){
@@ -1135,8 +1136,9 @@ void main(){
     float hk = uTentEndLean + uTentHipRake;
     float ha = uTentEndApex*uTentHipRake/max(uTentHalfW, 1e-3);
     float hn = inversesqrt(1.0 + ha*ha + hk*hk);
-    float hc = (uTentLen + uTentHipRake*uTentEndApex)*hn;
-    vec3 pn[13]; float pc[13];
+    float hcF = (uTentLen + uTentHipRake*uTentEndApex)*hn;   // far cap, base line at y = uTentLen
+    float hcN = (0.5      + uTentHipRake*uTentEndApex)*hn;   // near cap, base line at y = −0.5 — the SAME family with y negated
+    vec3 pn[15]; float pc[15];
     pn[0] = vec3(0.0, 0.0, 1.0);                  pc[0] = uTentRidge;        // CROWN — the flat rectangular panel along the top
     for(int j=0;j<4;j++){
       // tangency at t = 0, 1/3, 2/3, 1 — the ends INCLUDED, so the hull touches the authored base and crown edge
@@ -1153,10 +1155,12 @@ void main(){
     // hip and the wall share, so that boundary is the triangle's own rising side and needs no separate authoring.
     // What the eye gets is the reference's shape rather than a slab: a seam down the ceiling's centreline (the two
     // hips meeting), splitting at the apex into the triangle's two sides.
-    pn[9]  = vec3(0.0,  gn, uTentEndLean*gn);     pc[9]  = uTentLen*gn;      // FAR END WALL — now only the foot triangle
-    pn[10] = vec3( ha*hn,  hn, hk*hn);            pc[10] = hc;               // FAR HIP +x
-    pn[11] = vec3(-ha*hn,  hn, hk*hn);            pc[11] = hc;               // FAR HIP −x (mirrored: negate n.x, the offset is symmetric — so they meet on x = 0)
-    pn[12] = vec3(0.0, -gn, uTentEndLean*gn);     pc[12] = 0.5*gn;           // NEAR cap — behind the eye, so turning to look back closes too; a plain leaning wall, no hip
+    pn[9]  = vec3(0.0,  gn, uTentEndLean*gn);     pc[9]  = uTentLen*gn;      // FAR END WALL — the foot vent
+    pn[10] = vec3( ha*hn,  hn, hk*hn);            pc[10] = hcF;              // FAR HIP +x
+    pn[11] = vec3(-ha*hn,  hn, hk*hn);            pc[11] = hcF;              // FAR HIP −x (mirrored: negate n.x, the offset is symmetric — so they meet on x = 0)
+    pn[12] = vec3(0.0, -gn, uTentEndLean*gn);     pc[12] = 0.5*gn;           // NEAR END WALL — the head vent
+    pn[13] = vec3( ha*hn, -hn, hk*hn);            pc[13] = hcN;              // NEAR HIP +x
+    pn[14] = vec3(-ha*hn, -hn, hk*hn);            pc[14] = hcN;              // NEAR HIP −x
     // THE HUBS ARE NOT MODELLED, and that is the argument for doing this as a polytope at all. The corners the
     // reference reads as hardware are simply VERTICES — where an arch strip, the crown and a cap plane all meet — so
     // they appear at the right place for free, and the seam pass below draws the pole lines radiating out of them
@@ -1167,7 +1171,7 @@ void main(){
     // gives back the v2 single-slope tent — and with crown_w → 0 and a large tent_len on top of it, the v1 A-frame.
     int win = dir.x >= 0.0 ? 1 : 5;                    // fallback panel for the one exitless direction (straight down, which no sane pitch puts in frame): the lowest arch strip it is heading toward
     float t = 1e6;
-    for(int i=0;i<13;i++){
+    for(int i=0;i<15;i++){
       float den = dot(pn[i], dir);
       if(den <= 1e-6) continue;                        // the ray recedes from this plane (or runs parallel): it cannot leave through it
       float ti = (pc[i] - dot(pn[i], eye)) / den;      // strictly > 0, because the eye is clamped strictly inside every half-space CPU-side
@@ -1202,7 +1206,7 @@ void main(){
     // slightly wider band: the correct shape, scaled. abs() because a TMAX-clamped hit sits outside.)
     float dSeam = 1e6;
     int wg = tentGroup(win);
-    for(int j=0;j<13;j++){
+    for(int j=0;j<15;j++){
       if(tentGroup(j) == wg) continue;
       dSeam = min(dSeam, abs(pc[j] - dot(pn[j], hit)));
     }
@@ -2997,12 +3001,12 @@ function create(canvas, opts){
     // THE ENCLOSURE's polytope (§4.9), read only when receiver == 2. TWO INVARIANTS THE SHADER RELIES ON, both
     // enforced here and nowhere else.
     // (1) THE EYE SITS STRICTLY INSIDE every half-space, which is what makes every exit distance positive and lets
-    // the intersection be a bare min() with no sign handling. Four constraints bind it — the crown overhead
+    // the intersection be a bare min() with no sign handling. Five constraints bind it — the crown overhead
     // (z < ridge), each end wall, which the eye approaches as lean·eye grows toward the clearance the wall leaves at
-    // the eye's own y (0.7·len ahead, 0.5 + 0.3·len behind), and the far HIP, which rakes back faster than the wall
-    // does and therefore overtakes it above the vent apex. The side walls never bind at x = 0, and neither hip's x
-    // term does either. All four are taken as a min rather than resolved case-by-case: over-tightening the eye costs
-    // nothing, letting it out of the tent costs the whole routine.
+    // the eye's own y (0.7·len ahead, 0.5 + 0.3·len behind), and each HIP, which rakes back faster than its own wall
+    // does and therefore overtakes it above the vent apex. The near pair binds first, being the closer cap. The side
+    // walls never bind at x = 0, and no hip's x term does either. All five are taken as a min rather than resolved
+    // case-by-case: over-tightening the eye costs nothing, letting it out of the tent costs the whole routine.
     // (2) THE ARCH BULGES OUTWARD at the shoulder, and its profile stays a FUNCTION OF HEIGHT. Note what the first
     // half is NOT protecting: an intersection of half-spaces is convex whatever the planes do, so the min-exit is
     // never wrong. What breaks is the SHAPE. Put the shoulder INSIDE the straight base→crown line and the arc bends
@@ -3030,10 +3034,11 @@ function create(canvas, opts){
       // the triangle has no height and at the ridge it swallows the whole end.
       const apex  = clamp(params.tent_end_apex_h_m, 0.10*ridge, 0.90*ridge);
       const rake  = clamp(params.tent_hip_rake, 0.15, 3);
-      const gap   = Math.min(                                      // the tightest far/near clearance at the eye's own y, per metre of eye height
+      const gap   = Math.min(                                      // the tightest cap clearance at the eye's own y, per metre of eye height
         (0.7*len)/Math.max(lean, 1e-3),                            // far end wall
         (0.7*len + rake*apex)/(lean + rake),                       // far hip — tighter than the wall wherever the eye rides above the apex
-        (0.5 + 0.3*len)/Math.max(lean, 1e-3));                     // near cap
+        (0.5 + 0.3*len)/Math.max(lean, 1e-3),                      // near end wall
+        (0.5 + 0.3*len + rake*apex)/(lean + rake));                // near hip. The near cap is the CLOSER of the two, so it binds first
       gl.uniform1f(U.tp.tentRidge, ridge);
       gl.uniform1f(U.tp.tentHalfW, halfW);
       gl.uniform1f(U.tp.tentCrownW, crownW);
