@@ -426,10 +426,16 @@ void main(){
   vec2 drift = uMorphAmount * mat2(co,-so,so,co) * lp;
   int cid = int(iC.w + 0.5);
   vec4 geom = texelFetch(uClusterGeom, ivec2(cid,0), 0);
-  vec4 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0);   // .x limb bend, .y twig bend, .z stem seed (layer-path only), .w 3-D pitch foreshorten factor (sway_pitch; 1 = off)
+  vec4 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0);   // .x limb bend, .y twig bend, .zw the sway_pitch height affine (see hEff)
   vec2 TB = geom.xy, BL = geom.zw;                         // TB = this twig's REAL grown base (faithful packs it where the layer path packs the tip)
   float thL = bend.x, thT = bend.y;
-  float hEff = iHeight * bend.w;            // 3-D lean (§5): a wind-pitched limb lowers its leaves' height → shorter cast + less drift. bend.w=1 when sway_pitch off → hEff=iHeight, byte-identical.
+  // 3-D lean (§5.1): a wind-pitched limb lowers its leaves' height → shorter cast + less drift. The foreshorten is
+  // ANCHORED at the limb's attach height: h' = attachH + (h−attachH)·fore, packed as the affine (.z, .w) =
+  // (attachH·(1−fore), fore) so the shader is one madd. At the join h' = attachH exactly, so the pitching limb never
+  // parts from the trunk axis (which does not pitch). GOTCHA — .z is MODE-dependent: publishBend writes this offset
+  // only in faithful mode; on the layer path .z is the synthetic joint's stem seed and VS_BAKE reads it as such. The
+  // two must agree per mode, and do because faithful_canopy is a MODE_KEYS flag (a flip rebuilds and republishes).
+  float hEff = bend.z + iHeight * bend.w;   // sway_pitch off → (0, 1) → hEff = iHeight, byte-identical.
   // MEDIUM band (§5.4, "gaps morph and rearrange"): the twig swings its clump about TB — the SAME joint, by the
   // same angle and in the same order, that bakeFaithful's refill turns this twig's wood about. So leaf-on-wood
   // registration holds by construction, not by luck; that slip is why the band was dropped here before (§4.5).
@@ -1063,6 +1069,7 @@ function create(canvas, opts){
     const twigs = [];        // terminal nodes: {x,y,z, limb, tx,ty} — plan x,y, height z, global limb, tree trunk
     const limbDir  = new Float32Array(nLimb*2);         // plan unit direction (drives wind torque)
     const limbPlan = new Float32Array(nLimb*2);         // an outboard wind-sample point near each limb
+    const limbAttach = new Float32Array(nLimb);         // the height at which each limb MEETS its trunk — sway_pitch anchors its depth-foreshorten here so the join can't open (§5.1). Filled LOCAL in the growth loops, then scaled into world height units with the rest of the tree.
 
     // crowns overlap so the canopy fills the VIEW (not just the baked extent): the fill radius is tied
     // to view_extent (so the grove fills the frame regardless of zoom), capped to fit inside the bake.
@@ -1143,6 +1150,7 @@ function create(canvas, opts){
           const gi = limbBase+i;
           const f = (i+0.5)/lpt;                         // 0..1 up the limb set
           const h = hLo + (hHi-hLo)*f;                   // attach height ON the trunk axis, above the bole
+          limbAttach[gi] = h;                            // (local; scaled below)
           const azGeo = i*golden + (gr()-0.5)*0.3;       // phyllotaxis spiral (geometry)
           const pitch = limbEl*(1 + 0.4*L*f);            // steeper toward the apex → a tighter cone
           const ce = Math.cos(pitch), se = Math.sin(pitch);
@@ -1164,6 +1172,7 @@ function create(canvas, opts){
           const len = 0.7+0.5*gr();
           limbDir[2*gi]=Math.cos(azL); limbDir[2*gi+1]=Math.sin(azL);
           limbRaw[2*i]=dir[0]*len; limbRaw[2*i+1]=dir[1]*len;
+          limbAttach[gi] = 0;                            // the hub IS the attach point (local 0); zLift below puts it at the trunk top
           grow(out, [0,0,0], dir, len, 1, gi);
         }
       }
@@ -1194,7 +1203,8 @@ function create(canvas, opts){
       const trunkTop = (L>0) ? leaderTop*sV*aspect : trunkH*aspect;
       segments.push({ a:[tx,ty,0], b:[tx,ty,trunkTop], level:0, cov:treeCov, tree:tt, limb:-1, px:tx, py:ty, f0:0, f1:1, clump:-1 });   // the continuing trunk axis
       for(let i=0;i<lpt;i++){ const gi=limbBase+i;
-        limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty; }
+        limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty;
+        limbAttach[gi]=limbAttach[gi]*sV*aspect+zLift; }   // the attach height must ride the IDENTICAL z transform sc() gives every twig/segment, or the anchor sits off the wood it is meant to hold onto
     }
     if(twigs.length > MAX_TEX) twigs.length = MAX_TEX;   // cap the per-clump data-texture width to the GPU limit
 
@@ -1219,13 +1229,13 @@ function create(canvas, opts){
 
     const nClusterTotal = twigs.length;
     hier = {
-      nLimb, limbDir, limbPlan,
+      nLimb, limbDir, limbPlan, limbAttach,
       limbAngle:new Float32Array(nLimb), limbVel:new Float32Array(nLimb),   // scalar bend (radians)
       nClusterTotal,
       clusterPlan:new Float32Array(nClusterTotal*2), clusterLimb:new Int32Array(nClusterTotal),
       clusterPhase:new Float32Array(nClusterTotal),
       twigAngle:new Float32Array(nClusterTotal), twigVel:new Float32Array(nClusterTotal),
-      clusterData:new Float32Array(nClusterTotal*4),   // dynamic: (limb bend, twig bend, stem seed, _)
+      clusterData:new Float32Array(nClusterTotal*4),   // dynamic: (limb bend, twig bend, .z per MODE — layer's stem seed / faithful's sway_pitch anchor offset, sway_pitch foreshorten factor) — see publishBend
       clusterGeom:new Float32Array(nClusterTotal*4),   // static: (leaf pivot anchor.xy — twig tip on the layer path, real twig base in faithful; tree trunk pivot.xy)
       // topology signature: what makes limb/cluster index i mean the SAME branch across a regrow. tree_count is NOT
       // here (trees append, so the prefix still lines up — that's the morph); branch_angle/length/pitch/droop aren't
@@ -1486,8 +1496,11 @@ function create(canvas, opts){
       if(gxi<gminx)gminx=gxi; if(gxi>gmaxx)gmaxx=gxi; if(gyi<gminy)gminy=gyi; if(gyi>gmaxy)gmaxy=gyi;
     }
     // wood reaches the ground (trunk base h=0); without wood, leaves start at hMin — BUT sway_pitch foreshortens
-    // heights down to ~0.1× (publishBend's clamp floor), so widen the low bound there so a foreshortened leaf's
-    // (closer-in) cast isn't clipped out of the frame.
+    // heights, so widen the low bound there so a foreshortened leaf's (closer-in) cast isn't clipped out of the
+    // frame. 0.1× is publishBend's clamp floor applied from the GROUND, which is now merely CONSERVATIVE padding:
+    // the foreshorten is anchored at the limb's attach height (§5.1), so h' = 0.1·h + 0.9·attachH ≥ 0.1·h with
+    // attachH ≥ 0. Kept as-is — the slack costs frame padding, nothing else. (A leaf hanging BELOW its attach rises
+    // instead, but only toward attachH, a height the trunk wood already occupies — so hHi needs no matching widening.)
     const hLo = woodOn ? 0 : faith.hMin*(params.sway_pitch>0 ? 0.1 : 1), hHi = faith.hMax;
     // pad: the leaf quad half-extent, the incoherent drift orbit, and the live coherent sway (leaves+wood translate
     // by up to |sway| at the crown) — none of which are in the rest plan AABB. (The twig-hug trail-back already is.)
@@ -1549,6 +1562,7 @@ function create(canvas, opts){
     // pivot by the limb bend) + whole-tree drift, so the wood sways WITH the leaves; then upload + set its statics once.
     if(woodOn){
       const la = hier ? hier.limbAngle : null, ta = hier ? hier.twigAngle : null, sa = faith.segArr, R = faith.segRest;
+      const lat = hier ? hier.limbAttach : null;   // per-limb attach height: where the sway_pitch foreshorten is anchored (§5.1)
       const swx = motion.sway[0], swy = motion.sway[1], hRef = Math.max(faith.hMax, 1e-3);
       const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): foreshorten the wood heights by the SAME factor the leaves use, so leaf-on-wood registration holds
       for(let k=0;k<faith.segCount;k++){
@@ -1568,7 +1582,12 @@ function create(canvas, opts){
         }
         const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*8;
         const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(th)), 0.1, 1) : 1;   // limb pitches with its bend → tip lowers (matches publishBend's per-cluster .w)
-        const ha = s.ha*fore, hb = s.hb*fore;
+        // ANCHOR the foreshorten at the limb's attach height (§5.1): h' = at + (h−at)·fore, so at the join h' = at
+        // exactly and the pitching limb cannot part from the trunk axis, which does not pitch. Same sign for a droop
+        // tip hanging BELOW the attach — rotating a limb down about its joint moves every point toward the attach
+        // plane. Trunk wood (limb<0) never pitches, and at=0 with fore=1 reproduces h' = h exactly (byte-identical).
+        const at = (sp>0 && lat && s.limb>=0 && s.limb<lat.length) ? lat[s.limb] : 0;
+        const ha = at + (s.ha-at)*fore, hb = at + (s.hb-at)*fore;
         const kA = ha/hRef, kB = hb/hRef;   // sway grows with height: 0 at the ground → the trunk base stays PLANTED, the crown sways; same fraction for a limb & the trunk at its height, so they stay joined
         sa[o]   = px + c*(ax-px) - sn*(ay-py) + swx*kA;
         sa[o+1] = py + sn*(ax-px) + c*(ay-py) + swy*kA;
@@ -1730,11 +1749,20 @@ function create(canvas, opts){
   function publishBend(){
     if(!hier) return;
     const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): a bent limb pitches down → foreshorten factor in .w (faithful only); 0 → factor 1, byte-identical
+    const faithful = params.faithful_canopy;
     for(let j=0;j<hier.nClusterTotal;j++){
-      const lb = hier.limbAngle[hier.clusterLimb[j]];
+      const li = hier.clusterLimb[j];
+      const lb = hier.limbAngle[li];
       hier.clusterData[4*j]   = lb;                                    // limb bend this clump inherits
       hier.clusterData[4*j+1] = hier.twigAngle[j];                     // its own twig bend
-      hier.clusterData[4*j+3] = sp>0 ? clamp(1 - sp*(1-Math.cos(lb)), 0.1, 1) : 1;   // height foreshorten: tip drops as the limb pitches with its bend
+      const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(lb)), 0.1, 1) : 1;  // height foreshorten: the limb pitches down with its bend
+      hier.clusterData[4*j+3] = fore;
+      // GOTCHA — .z is packed per MODE and the shader that unpacks it must agree (VS_FAITH vs VS_BAKE; neither
+      // side can see the other's convention). LAYER: .z keeps the static stem-angle seed regen wrote, untouched
+      // here. FAITHFUL: .z is the OFFSET half of the anchored foreshorten (§5.1) — hEff = attachH·(1−fore) +
+      // h·fore, i.e. heights shrink toward the limb's ATTACH height, not toward the ground, so the limb↔trunk
+      // join stays closed. Safe because faithful_canopy is a MODE_KEYS flag: a flip rebuilds and republishes both.
+      if(faithful) hier.clusterData[4*j+2] = hier.limbAttach[li]*(1-fore);   // sp=0 → fore=1 → exactly 0 → hEff = iHeight, byte-identical
     }
     gl.activeTexture(gl.TEXTURE4);
     gl.bindTexture(gl.TEXTURE_2D, clusterTex);
