@@ -1179,7 +1179,8 @@ void main(){
     }
     t = min(t, TENT_TMAX);
     vec3 hit = eye + t*dir;
-    vec3 n = pn[win];                                  // the winning panel's OUTWARD normal — the first receiver in this engine whose orientation varies across the frame
+    vec3 n0 = pn[win];                                 // the winning panel's HULL normal: the seam's edge geometry is the polytope's, not the smooth shading normal's
+    vec3 n = n0;                                       // the shading normal, which the arch replaces below — the first receiver in this engine whose orientation varies across the frame
     // SMOOTH NORMALS OVER A COARSE HULL. On the arch the shading normal is the PROFILE's own, evaluated at the hit's
     // height, not the facet's — so the light rounds continuously across the side exactly the way it rounds on
     // tensioned fabric, while the exit math keeps the cheap four-plane hull. This is the classic smooth-shaded coarse
@@ -1202,13 +1203,23 @@ void main(){
     // masonry ribbing (§4.9's recorded dead end: the user's word was "church"). What survives the filter is the set
     // of real pole lines: the crown's two long edges, the SPINE down the ceiling's centreline where the two hips
     // meet, the foot triangle's two rising sides, and the rims where a cap meets the arches and the crown.
-    // (Measured perpendicular to the NEIGHBOURING plane rather than to the edge itself, so a shallow dihedral reads a
-    // slightly wider band: the correct shape, scaled. abs() because a TMAX-clamped hit sits outside.)
+    // MEASURED TO THE EDGE LINE, not to the neighbouring plane, and the difference is a real one. The perpendicular
+    // distance to a plane is the distance to the edge FORESHORTENED by the dihedral: walking across the winning panel
+    // toward the junction closes that gap at a rate sin(dihedral), so a plane-distance seam paints a band
+    // 1/sin(dihedral) wide in fabric and the shallowest junction in the tent draws the fattest tape. Undoing it is
+    // one identity — split the neighbour's normal into its component along ours and the rest, and only the rest
+    // moves us toward the line:
+    //   dEdge = |c_j − n̂_j·hit| / ‖n̂_j − (n̂_j·n̂_w)·n̂_w‖ = |c_j − n̂_j·hit| · inversesqrt(1 − (n̂_j·n̂_w)²)
+    // One dot and one inversesqrt per plane, and it makes the tape a fixed width of fabric everywhere. The 1e-6 floor
+    // is not a numerical nicety: two PARALLEL panels have no edge, so the distance to it is infinite and no seam is
+    // drawn — which is exactly right, and is what keeps a degenerate cap (hip rake → 0, three planes on one) from
+    // painting itself dark. abs() because a TMAX-clamped hit sits outside.
     float dSeam = 1e6;
     int wg = tentGroup(win);
     for(int j=0;j<15;j++){
       if(tentGroup(j) == wg) continue;
-      dSeam = min(dSeam, abs(pc[j] - dot(pn[j], hit)));
+      float cw = dot(pn[j], n0);                                            // cos of the angle between the two panels' normals
+      dSeam = min(dSeam, abs(pc[j] - dot(pn[j], hit)) * inversesqrt(max(1.0 - cw*cw, 1e-6)));
     }
     // the fabric's OWN coords, generalized off the crown: v is the drop BELOW the crown plane, so the pleat field's
     // rod sits on the tent's own pinned top on every panel at once (a tent is pinned at its crown and free at the

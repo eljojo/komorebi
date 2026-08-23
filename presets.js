@@ -525,7 +525,7 @@ export const PRESETS = {
     // to hold both slopes and the crown at once, which is the whole composition. view_extent_m no longer frames
     // anything here (the fov and the tent do) — it survives only as the lateral-diffusion tier's px/m reference,
     // which is approximate on a receding panel (§4.9).
-    "view_extent_m": 4.9, "view_pitch_deg": 42.5, "view_fov_deg": 88, "view_yaw_deg": -115.34,   // the user's hand-tuned framing: the yawed gaze re-aims the sun across the panels — most of what un-churched the look
+    "view_extent_m": 4.9, "view_pitch_deg": 42.5, "view_fov_deg": 88, "view_yaw_deg": -130,   // -115.34 was the hand-tuned light; -130 keeps that character AND brings the near vent triangle into frame (measured: 2.6% of frame, upright) — pull it back if the light mattered more   // the user's hand-tuned framing: the yawed gaze re-aims the sun across the panels — most of what un-churched the look
     "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.06, "far_smear": 0,
     // ---- THE FLOOR OF SHADE IS LOAD-BEARING. Do not "restore contrast" here without re-deriving it. ----
     // The reviewed failure was a frame of vast pitch-BLACK canopy shade; in every reference photo the deepest shade
@@ -546,7 +546,11 @@ export const PRESETS = {
     "wind_pattern": "gusty", "wind_strength": 0.9, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    // limb_count 9 is the WOOD BUDGET, not a shape call. The enclosure runs the layer tier, so the analytic woody
+    // occluder is live here, and it holds 64 segments — one bole per tree plus one per level-1 limb. Six trees at
+    // eleven limbs asks for 72, and the eight over the cap are dropped in grow order: the last tree loses its trunk
+    // and most of its arms, so one sixth of the grove casts no branch shadow at all. Nine puts it at 60.
+    "limb_count": 9, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 1.0472, "drift_auto": true, "drift_speed": 0.02,
     // the governor matters LESS here than on its faithful siblings: the enclosure runs the layer tier, which is the
     // cheap path (a per-pixel sample loop over four small textures, no per-sample geometry bake). Left on because
