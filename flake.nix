@@ -11,7 +11,10 @@
       # `nix develop` — bun (dev server + bundler) + biome (lint) on PATH.
       devShells = forAll (pkgs: {
         default = pkgs.mkShell {
-          packages = [ pkgs.bun pkgs.biome ];
+          # python3 + a bare-`python` alias: node-gyp native builds (headless-gl's vendored ANGLE
+          # shells out to plain `python`) need both on PATH — nixpkgs ships only `python3`.
+          packages = [ pkgs.bun pkgs.biome pkgs.python3
+            (pkgs.writeShellScriptBin "python" ''exec ${pkgs.python3}/bin/python3 "$@"'') ];
           shellHook = ''
             echo "komorebi dev shell — dev: nix run .#dev | lint: nix run .#lint | bundle: nix run .#build"
           '';
