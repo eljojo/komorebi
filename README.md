@@ -12,6 +12,7 @@ A standalone WebGL2 engine that renders komorebi from physics rather than painti
 - **`player.html`** — minimal viewer‑only reference: a full‑bleed canvas cycling through presets, no UI.
 - **`komorebi.global.js`** — deploy shim: bundles the engine + presets into a classic `window.Komorebi` global for no‑build embeds (the eljojo.net homepage).
 - **`dev-server.js`** — bun static server + live‑reload for development (`nix run .#dev`).
+- **`glslcheck.mjs`** — offline shader validation: assembles every GLSL template literal in the engine and compiles it with `glslangValidator`, so a shader typo fails here instead of on a black canvas.
 - **`komorebi-spec.md`** — the living spec (vision, physics, model). Kept in sync as the engine evolves.
 
 ## Develop
@@ -22,6 +23,7 @@ ES‑module dev needs http (not `file://`). With Nix:
 nix run .#dev      # serve + live‑reload at http://localhost:8000
 nix run .#lint     # biome
 nix run .#build    # bundle dist/komorebi.player.min.js (the global, editor stripped)
+node glslcheck.mjs # offline shader validation — compiles every GLSL literal in komorebi.js (glslangValidator, no GPU)
 ```
 
 ## Using the engine

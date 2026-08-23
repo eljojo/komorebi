@@ -51,6 +51,7 @@ const MORPH_KEYS = [
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'curtain_tt','curtain_tint_r','curtain_tint_g','curtain_tint_b',      // curtain receiver (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
   'curtain_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','curtain_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
+  'tent_ridge_h_m','tent_half_w_m','tent_crown_w_m','tent_shoulder_h_m','tent_shoulder_w_m','tent_len_m','tent_end_lean','tent_gable_bevel','tent_eye_h_m','tent_fade','tent_seam',   // the ENCLOSURE receiver's polytope (§4.9): every one is a live shader uniform read per pixel, so they tween — reshaping the tent around the viewer needs no rebuild (the `receiver` gate that selects it is the scene-mode flag)
   'curtain_diffuse','curtain_diffuse_m',                                // lateral-diffusion glow (§4.9): the sharp/blurred split + its cloth-metre radius. Continuous, so they tween — but the split crossing 0 adds/drops the HDR passes mid-tween, which is a pass-count change, not a look pop
   'mullion_tau','mullion_pitch_m','mullion_bar_m','mullion_depth_m',    // window mullion grid (§4.9): analytic cloth-space occluder — continuous live uniforms, tau 0 = off
   'window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall',  // the window APERTURE (§4.9): the finite lit rectangle + its wall leak — continuous live uniforms, w·h = 0 = infinite light
@@ -80,7 +81,8 @@ const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branchi
 ];   // (tone_map is a live uniform: it just snaps — under the bloom if one's already running, else at the end — never forces one)
 // ---- scene-MODE flags. Not continuous (never tween) but NOT inert either: flipping one changes regen-time state
 // (faithful_canopy reallocates faithTex + switches the bake path; standing_scene reshapes the bake's crown sizing;
-// receiver swaps the whole camera mapping — floor ray-cast ↔ head-on cloth map — and re-aims the faithful cast frame),
+// receiver swaps the whole camera mapping — floor ray-cast ↔ head-on cloth map ↔ enclosure ray-cast — and both re-aims
+// the faithful cast frame and, at receiver 2, forces the layer tier, which reallocates the layer textures too),
 // so a transition landing on a differing flag must force a structural rebuild under the bloom — see transitionTo's
 // modeDiff. Kept out of TOPO_KEYS (they don't change the grove RNG/topology) but treated like one for the rebuild. ----
 const MODE_KEYS = ['standing_scene','faithful_canopy','receiver'];
@@ -182,7 +184,9 @@ const DEFAULTS = {
   // Receiver (curtain handoff / spec §4.x): the surface the LANDED IRRADIANCE answers. 0 = opaque diffuse FLOOR
   // (the park default — reflect off uGround; byte-identical). 1 = translucent woven CURTAIN — TRANSMIT the
   // irradiance through moss-velvet: Tt carries brightness, the dye only hue, so a dark velvet reads dim (not a
-  // bright tinted gel). Only read when receiver≠0; the floor stays the cheap fast path. Off → every look unchanged.
+  // bright tinted gel). 2 = the ENCLOSURE (§4.9): the same fabric, but an A-frame stood AROUND the viewer — sloped
+  // panels ray-cast per pixel, each lit by its own incidence on the sun. Only read when receiver≠0; the floor
+  // stays the cheap fast path. Off → every look unchanged.
   receiver: 0,
   curtain_tt: 0.5,                 // curtain total throughput Tt∈[0,1] = BRIGHTNESS (sheer→~0.6, dark terciopelo→~0.1); hue is separate
   curtain_tint_r: 0.35, curtain_tint_g: 1.0, curtain_tint_b: 0.30,   // moss dye HUE (unit-peak; passes green ~550nm, absorbs red/blue — the chlorophyll-twin)
@@ -217,6 +221,22 @@ const DEFAULTS = {
   window_cy_m: 1.3,                // aperture centre up the cloth (a sill about waist-high)
   window_wall: 0.03,               // light landing OUTSIDE the aperture: the wall is opaque, so this stands in for the room's own dim
                                    // front-side light — without it the surround is a void rather than dark cloth
+  // THE ENCLOSURE (§4.9), receiver 2: the same fabric as a CLOSED hip/brow tent stood AROUND the viewer — a flat
+  // rectangular crown along the top, a BELL cross-section per side (wide skirt → bulged shoulder → upper wall
+  // leaning in), and a BEVELLED two-panel gable closing each end. These eleven shape it; the fabric itself is the
+  // curtain family above (same cloth physics, same transmission law). Only read when receiver == 2 — the floor and
+  // the curtain never touch them.
+  tent_ridge_h_m: 1.15,            // crown height (m): the flat top panel's plane, and what the upper walls lean in to
+  tent_half_w_m: 1.1,              // half the floor width (m): the skirts reach the ground at x = ±this
+  tent_crown_w_m: 0.35,            // HALF the crown panel's width (m) — the brow pole's flat. 0 collapses it to a ridge line (the v1 A-frame)
+  tent_shoulder_h_m: 0.62,         // height (m) of the longitudinal shoulder crease, where skirt hands over to upper wall — about half the crown height
+  tent_shoulder_w_m: 0.92,         // half-width (m) AT that crease. BULGED past the straight base→crown line (0.70 m here) is what makes the section a bell instead of a wedge; on the line exactly = the v2 single-slope tent
+  tent_len_m: 2.3,                 // tent length (m): the far gable's base, and what closes the space instead of a vanishing point. The eye rides at 30 % of it
+  tent_end_lean: 0.6,              // metres a gable leans OUT per metre of height (0 = a vertical end wall); large values push the gables away and degenerate toward the A-frame
+  tent_gable_bevel: 0.35,          // yaw (rad) of each gable half-plane about the centreline: the end becomes a shallow prow with a vertical centre crease. 0 = one flat gable, bit-exactly
+  tent_eye_h_m: 0.5,               // eye height (m) inside — sitting up in a sleeping bag; clamped strictly inside every panel, or the viewer is outside their own tent
+  tent_fade: 0.06,                 // interior depth fade (1/m): a gentle depth cue down a metres-deep tent — the far gable is what closes the space
+  tent_seam: 0.0,                  // panel-junction seam optical depth (0 = none): the dark taped lines at the crown's long edges and the gable rims
   far_smear: 3.0,                  // far-field dapple smear: extra throw (m) per unit foreshortening; 0 = off, no effect top-down
   exposure: 1.3,
   contrast: 1.0,
@@ -648,7 +668,7 @@ uniform vec2  uCanopyExtent;
 uniform vec3  uSunColor;
 uniform vec3  uAmbient;
 uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)
-uniform int   uReceiver;          // 0 = opaque floor (byte-identical), 1 = translucent moss-velvet curtain (curtain handoff / spec §4.x)
+uniform int   uReceiver;          // 0 = opaque floor (byte-identical), 1 = translucent moss-velvet curtain, 2 = the ENCLOSURE — the same fabric as an A-frame stood around the viewer (curtain handoff / spec §4.x, §4.9)
 uniform float uTt;                // curtain total throughput Tt∈[0,1] — carries BRIGHTNESS (hue is uCurtainTint)
 uniform vec3  uCurtainTint;       // moss dye — HUE only; normalized to unit peak in-shader so it can't smuggle brightness past Tt
 uniform float uCurtainY;          // curtain receiver: the cloth plane's world-Y (its distance behind the tree) — where on the occluder field the shadow lands
@@ -663,6 +683,17 @@ uniform vec4  uMullion;           // window mullion grid (§4.9): pitch, bar wid
 uniform float uMullPenumbra;      // mullion soft edge (m on the cloth) = depth × the source's angular width, CPU-side
 uniform vec4  uWindow;            // window aperture (§4.9): HALF width, HALF height, centre x, centre y — cloth metres. .x*.y = 0 = infinite light, off
 uniform float uWindowWall;        // light landing outside the aperture (the room's own dim front-side leak; the wall itself is opaque)
+uniform float uTentRidge;         // ENCLOSURE (§4.9): crown height (m) — the flat top panel's plane; the slopes rise to its long edges
+uniform float uTentHalfW;         // ENCLOSURE: half the floor width (m); with the crown height and width it IS the slope pitch
+uniform float uTentCrownW;        // ENCLOSURE: half the CROWN panel's width (m) — 0 collapses it to a ridge line and the shape degenerates to an A-frame
+uniform float uTentShoulderH;     // ENCLOSURE: height (m) of the longitudinal shoulder crease — where the skirt hands over to the upper wall
+uniform float uTentShoulderW;     // ENCLOSURE: half-width (m) AT that crease; bulged past the straight base→crown line is what makes the section a bell
+uniform float uTentLen;           // ENCLOSURE: tent length (m) — the far gable's base; the eye rides at 30 % of it
+uniform float uTentEndLean;       // ENCLOSURE: how far a gable leans out per metre of height (0 = a vertical end wall)
+uniform float uTentGableBevel;    // ENCLOSURE: yaw (rad) of each gable half-plane about the centreline — 0 = one flat gable, bit-exactly
+uniform float uTentEye;           // ENCLOSURE: eye height (m), clamped strictly inside every half-space CPU-side (an eye on or past one leaves the viewer outside their own tent)
+uniform float uTentFade;          // ENCLOSURE: interior depth fade (1/m) — the ridge is infinite, so distance is the only thing that closes it off
+uniform float uTentSeam;          // ENCLOSURE: ridge-seam optical depth (0 = no seam)
 uniform float uTwilight;          // global "sun is low" rod weight (from elevation, §3.5)
 uniform float uMesopic;           // Purkinje strength (the mesopic_strength knob)
 uniform vec3  uChroma;            // per-channel diffraction spread of the transport shift (θ∝λ); (1,1,1) = off
@@ -814,10 +845,145 @@ vec2 windowMask(vec2 cloth){
   float inside = t.x*t.y;
   return vec2(uWindowWall + (1.0 - uWindowWall)*inside, inside);
 }
+// THE ENCLOSURE's two hard numbers (§4.9). The tent is a CLOSED convex polytope, so every ray inside it leaves
+// through some panel and TENT_TMAX is a safety clamp, not a horizon: the one direction with no exit is straight
+// down (the polytope is open below the floor plane the model does not have), which no frame at a sane pitch
+// contains. TENT_SEAM_HW is the panel-junction seam's half-width — 24 mm of taped, doubled fabric.
+const float TENT_TMAX = 12.0;
+const float TENT_SEAM_HW = 0.012;
+// One longitudinal wall of the ENCLOSURE's bell cross-section, from two profile points (x, z) on the +x side, given
+// bottom-first: returns (n.x, n.z, c) with n the OUTWARD unit normal. Walking up the profile the run goes inward and
+// the rise upward, so (dz, −dx) is the outward-and-up perpendicular — and it stays correct for a skirt that FLARES
+// (shoulder wider than the base), where it tips below horizontal, which is what an overhanging fly really does. The
+// −x wall is the same offset with n.x negated. Guarded by the CPU clamp on shoulder height, which keeps dz ≠ 0.
+vec3 tentWall(vec2 a, vec2 b){
+  vec2 d = b - a;
+  vec2 n = normalize(vec2(d.y, -d.x));
+  return vec3(n, dot(n, a));
+}
 void main(){
   vec2 world; float fog = 0.0; float extraThrow = 0.0; float recvZ = 0.0; vec2 clothUV = vec2(0.0), castUV = vec2(0.0);
   vec3 foldF = vec3(0.0);   // the pleat field at this cloth point, evaluated ONCE: the warp below and the velvet shading later read the very same (ŝ, dŝ/dx, peak) — that is the shared-phase invariant, structural
-  if(uReceiver != 0){
+  float beamF = 1.0, skyF = 1.0, recvAtten = 1.0;   // the ENCLOSURE's per-panel light: beam incidence, sky-hemisphere view, depth fade × ridge seam. All 1 on the floor and the curtain, so their irradiance line below is the old one exactly
+  if(uReceiver == 2){
+    // ---- ENCLOSURE receiver (spec §4.9): the receiver stops being a plane the camera stares AT and becomes a
+    // CLOSED TENT stood around the eye, ray-cast per pixel. It is the hip/brow shape the reference actually is,
+    // decomposed off an annotated photo of the real one: a flat rectangular CROWN along the top; per side a BELL
+    // cross-section — a wide SKIRT rising from the base to a bulged shoulder at about half height, then an UPPER
+    // WALL leaning back IN to the crown; and at each end a GABLE split into two BEVELLED halves meeting at a
+    // vertical centre crease. TENT SPACE: the long axis is +Y, the crown sits at z = uTentRidge, the skirts reach
+    // the ground at x = ±uTentHalfW, the eye sits 30 % down the tent at uTentEye, gazing along +Y pitched UP by
+    // uPitch (in THIS branch the pitch uniform means elevation above horizontal, not the floor camera's tilt from
+    // straight-down). What happens downstream is the point of the whole thing: the hit's plan point and height go
+    // into (world, recvZ) and §4.9's height-minus-recvZ read casts the canopy onto whichever panel this pixel
+    // landed on with ZERO further changes — that generalization was written for a flat cloth and turns out to have
+    // been geometry-free all along. ----
+    float cp=cos(uPitch), sp=sin(uPitch);
+    float kf=max(tan(0.5*uFov), 1e-4);                 // image-plane half-extent (guard fov->0) — the floor camera's 2k·tan convention, verbatim
+    float sxc=(vUv.x-0.5)*uAspect, tyc=(vUv.y-0.5);
+    // ray = fwd + 2k*(sx*right + ty*up), with fwd=(0,cp,sp), right=(1,0,0), up=(0,-sp,cp). NORMALIZED, unlike the
+    // floor's: t below is metres of fabric distance and both the depth fade and TENT_TMAX are quoted in metres.
+    vec3 dir = normalize(vec3(2.0*kf*sxc, cp - 2.0*kf*tyc*sp, sp + 2.0*kf*tyc*cp));
+    vec3 eye = vec3(0.0, 0.3*uTentLen, uTentEye);      // DERIVED, not a knob: 30 % down the tent puts the far gable ~1.6 m off and the near one just behind you, which is where you lie in a 2P
+    // THE NINE HALF-SPACES, outward unit normal n and offset c (inside is dot(n,X) < c). The tent is the CONVEX
+    // intersection of them, and convexity is what makes this cheap and exact at once: a ray from a point strictly
+    // inside leaves through exactly one panel, the min over the planes it is advancing into, so there are NO
+    // per-panel bounds tests at all. A plane the ray meets outside the tent is always beaten by the one that
+    // actually bounds it there. That is the whole intersection routine, and it did not change when the shape went
+    // from two panels to five to nine — panel count is data here, not structure.
+    // THE BELL CROSS-SECTION: two planes per side, not one. The reference's end-on profile is a wide skirt rising to
+    // a bulged shoulder at about half height, then upper walls leaning back in to a narrow crown — the bulge is what
+    // makes a modern tent feel like a room rather than a wedge, and it is the difference between the profile polygon
+    // (base → shoulder → crown) and the straight line the old single slope drew between its ends.
+    vec3 skirt = tentWall(vec2(uTentHalfW, 0.0), vec2(uTentShoulderW, uTentShoulderH));       // base edge → shoulder crease
+    vec3 upper = tentWall(vec2(uTentShoulderW, uTentShoulderH), vec2(uTentCrownW, uTentRidge)); // shoulder crease → crown long edge
+    // THE GABLES ARE BEVELLED: each end is two half-planes yawed by ±uTentGableBevel about the vertical axis through
+    // the tent's centreline, so they meet at a vertical CENTRE CREASE and the end reads as a shallow prow instead of
+    // a flat backdrop. Keeping BOTH halves on the parent plane's offset is what puts that crease exactly at x = 0
+    // (subtract the two plane equations: only the ±sin term survives, so their intersection is x = 0), and it is also
+    // what makes bevel 0 collapse the pair back onto one plane bit-exactly. Under the bevel the gables still lean OUT
+    // as they descend: at bevel 0 the far one is y + lean·z = uTentLen, from the crown's far edge down to the base.
+    float gn = inversesqrt(1.0 + uTentEndLean*uTentEndLean);
+    float cb = cos(uTentGableBevel)*gn, sb = sin(uTentGableBevel)*gn, lz = uTentEndLean*gn;
+    vec3 pn[9]; float pc[9];
+    pn[0] = vec3(0.0, 0.0, 1.0);                  pc[0] = uTentRidge;        // CROWN — the flat rectangular panel along the top
+    pn[1] = vec3( upper.x, 0.0, upper.y);         pc[1] = upper.z;           // RIGHT upper wall: shoulder crease → crown long edge
+    pn[2] = vec3(-upper.x, 0.0, upper.y);         pc[2] = upper.z;           // LEFT upper wall (mirrored: negate n.x, the offset is symmetric)
+    pn[3] = vec3( skirt.x, 0.0, skirt.y);         pc[3] = skirt.z;           // RIGHT skirt: base → shoulder crease
+    pn[4] = vec3(-skirt.x, 0.0, skirt.y);         pc[4] = skirt.z;           // LEFT skirt
+    pn[5] = vec3( sb,  cb, lz);                   pc[5] = uTentLen*gn;       // FAR gable, right half — the panels the space converges ONTO
+    pn[6] = vec3(-sb,  cb, lz);                   pc[6] = pc[5];             // FAR gable, left half
+    pn[7] = vec3( sb, -cb, lz);                   pc[7] = 0.5*gn;            // NEAR gable, right half — behind the eye, so turning to look back closes too
+    pn[8] = vec3(-sb, -cb, lz);                   pc[8] = pc[7];             // NEAR gable, left half
+    // THE HUBS ARE NOT MODELLED, and that is the argument for doing this as a polytope at all. The pyramid-apex
+    // corners the reference reads as hardware are simply VERTICES — where an upper wall, the crown and a gable half
+    // all three planes meet — so they appear at the right place for free, and the seam pass below (a min over the
+    // non-winning planes) draws the crease lines radiating out of them without any of it being enumerated.
+    // DEGENERACIES, and they are the regression anchors: a shoulder placed exactly on the straight base→crown line
+    // makes skirt and upper wall the SAME plane and gives back the v2 five-panel tent; on top of that, crown_w → 0
+    // collapses the crown onto the line where the slopes already meet and a large tent_len pushes both gables away,
+    // giving back the v1 infinite A-frame.
+    int win = dir.x >= 0.0 ? 3 : 4;                    // fallback panel for the one exitless direction (straight down, which no sane pitch puts in frame): the skirt it is heading toward
+    float t = 1e6;
+    for(int i=0;i<9;i++){
+      float den = dot(pn[i], dir);
+      if(den <= 1e-6) continue;                        // the ray recedes from this plane (or runs parallel): it cannot leave through it
+      float ti = (pc[i] - dot(pn[i], eye)) / den;      // strictly > 0, because the eye is clamped strictly inside every half-space CPU-side
+      if(ti < t){ t = ti; win = i; }
+    }
+    t = min(t, TENT_TMAX);
+    vec3 hit = eye + t*dir;
+    vec3 n = pn[win];                                  // the winning panel's OUTWARD normal — the first receiver in this engine whose orientation varies across the frame
+    // EVERY PANEL JUNCTION, from one measurement: the inside-distance to each NON-winning plane. Standing on the
+    // crown near its long edge, the distance to the upper wall's plane is small; standing mid-panel, every other
+    // plane is far. So min over the losers is the distance to the nearest junction, and it draws the crown's two long
+    // edges, the two longitudinal SHOULDER creases, both gable rims, each gable's vertical CENTRE crease and every
+    // corner where they meet — all of it, without a single edge being enumerated. That is the same free-lunch the
+    // hubs get above, and it is why the crease families the reference shows cost three uniforms and no new code.
+    // (It is measured perpendicular to the NEIGHBOURING plane rather than to the edge itself, so a shallow dihedral
+    // reads a slightly wider band — the correct shape, scaled. abs() because a TMAX-clamped hit sits outside.)
+    float dSeam = 1e6;
+    for(int j=0;j<9;j++){
+      if(j == win) continue;
+      dSeam = min(dSeam, abs(pc[j] - dot(pn[j], hit)));
+    }
+    // the fabric's OWN coords, generalized off the crown: v is the drop BELOW the crown plane, so the pleat field's
+    // rod sits on the tent's own pinned top on every panel at once (a tent is pinned at its crown and free at the
+    // hem exactly as a curtain is at its rod, so fold_coarsen's octave crossfade broadens the ripples downward the
+    // right way round); u runs along the panel's horizontal tangent — down the tent on the slopes, across it on the
+    // gables, and across it on the crown, whose plan normal is degenerate and needs the explicit fallback.
+    vec2 tang = (abs(n.x) + abs(n.y) > 1e-4) ? normalize(vec2(-n.y, n.x)) : vec2(1.0, 0.0);
+    clothUV = vec2(dot(hit.xy, tang), uTentRidge - hit.z);
+    castUV = clothUV;              // nothing to warp: there is no flat-plane cast here, the read IS the real geometry, so fold_warp is inert in this branch (§4.9)
+    foldF = foldField(clothUV);    // the drape, once — velvetCloth needs the field's peak-slope divisor even on a taut tent
+    // the tent stands wherever the look places it: uViewYaw turns it about the eye (the floor camera's own orbit
+    // matrix, so the two cameras agree on which way is round), uViewCenter walks it across the grove. The canopy and
+    // the sun stay in WORLD plan, so the normal is rotated with the hit and the incidence below is a real world angle.
+    vec2 plan = hit.xy, nxy = n.xy;
+    if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); mat2 rot=mat2(cy,-sy,sy,cy); plan=rot*plan; nxy=rot*nxy; }
+    world = plan + uViewCenter;
+    recvZ = hit.z;
+    n = vec3(nxy, n.z);
+    // PER-PANEL LIGHT — the thing a flat wall cannot do, and the reason this receiver exists. beamF is the beam's
+    // incidence on THIS panel, normalized by the sun's own vertical component so a HORIZONTAL panel comes out
+    // exactly 1: the floor and curtain conventions already absorb sin(elevation) into their irradiance (acc is the
+    // fraction of the disk that cleared, landing on a surface those models never tilt), so 1 is precisely what "as
+    // bright as the old receivers" has to mean. THE CROWN IS THAT ANCHOR — it is horizontal, so it lands at exactly
+    // 1 and the slopes and gables read as departures from it. The 0.15 floor (≈8.6° elevation) keeps a horizon sun
+    // from dividing by nothing. The sky is a hemisphere rather than a direction, so it takes how much of that
+    // hemisphere the panel can see instead — 1 on the crown, and less the more steeply a panel stands up.
+    beamF = clamp(dot(n, uSunDir) / max(uSunDir.z, 0.15), 0.0, 2.0);
+    skyF  = 0.5 + 0.5*n.z;
+    recvAtten = exp(-t*uTentFade);   // a gentle depth cue now rather than the thing that closes the space: the far gable does that, and the tent is metres deep, not infinite
+    // THE SEAMS — near-contact occluders in the strictest sense, since they are ON the cloth, so they take beam and
+    // sky alike exactly as the mullion bars do. The soft edge is the tape's own near to, then the PIXEL FOOTPRINT
+    // far off: 0.004 rad ≈ 3 px on a 78°, 1080-tall frame, so a junction running away from the eye holds a roughly
+    // constant screen width instead of thinning to a sub-pixel line that crawls.
+    if(uTentSeam > 0.0){
+      float pen = max(TENT_SEAM_HW, 0.004*t);
+      recvAtten *= exp(-uTentSeam * (1.0 - smoothstep(TENT_SEAM_HW, TENT_SEAM_HW + pen, dSeam)));
+    }
+  } else if(uReceiver != 0){
     // ---- CURTAIN receiver (spec §4.9): the receiver is a VERTICAL plane viewed head-on, NOT the floor. Screen
     // maps straight to the cloth's own coords — u across, v up. The tree's shadow is then projected onto the plane
     // by the (layerHeight - recvZ) height factor in the sample loop below: an occluder a height (h-v) ABOVE this
@@ -869,9 +1035,12 @@ void main(){
   }
   vec3 acc = vec3(0.0);
   bool ca = (uChroma.r!=1.0 || uChroma.g!=1.0 || uChroma.b!=1.0);   // diffraction on? else the byte-identical single-tap path
-  if(uFaithful != 0){
+  if(uFaithful != 0 && uReceiver != 2){
     // FAITHFUL (§4.5/§4.9): the disk convolution at continuous per-leaf heights, pre-integrated as geometry at bake
     // time → one tap. FLOOR: cast in floor (x,y), tap at world. CURTAIN: cast onto the vertical cloth (u,v), tap at castUV.
+    // The ENCLOSURE is excluded because the pre-bake is a FLAT-PLANE tier — it has one cast frame, in floor or cloth
+    // coords, and the tent's panels are neither. The CPU never bakes it there either (see faithfulOn); the guard here
+    // keeps the branch structurally safe rather than merely unreached.
     acc = tapFaith(uReceiver != 0 ? castUV : world);
   } else {
   // the per-layer shift uses the occluder's height RELATIVE TO THE RECEIVER point, (uLayerHeight - recvZ): on the
@@ -924,7 +1093,12 @@ void main(){
   if(uReceiver == 0){
     col = (acc*uSunColor + uAmbient) * uGround;            // OPAQUE FLOOR — literal old expression, byte-identical
   } else {
-    vec3 E = acc*uSunColor + uAmbient;                     // landed irradiance the fabric answers
+    // The landed irradiance the fabric answers. On the ENCLOSURE the beam and the sky are resolved SEPARATELY
+    // against this panel's own normal (§4.9): a directional beam takes an incidence cosine, a hemisphere of sky
+    // takes how much of the hemisphere the panel sees. beamF/skyF/recvAtten are all 1 on the floor and the curtain,
+    // so what those two evaluate is the old expression exactly.
+    vec3 E = acc*uSunColor*beamF + uAmbient*skyF;
+    E *= recvAtten;                                        // enclosure only: interior depth fade × the ridge seam
     // The window grid attenuates the WHOLE landed irradiance, not just the beam. A bar metres away (the wood, §4.5)
     // blocks only the sun's small disk, so it multiplies acc alone and the skylight still reaches around it. A bar
     // CENTIMETRES off the cloth subtends nearly the entire hemisphere seen from the point behind it — beam and
@@ -934,13 +1108,18 @@ void main(){
     // grid's straight lines S-bending across the pleats is the fold warp's defining image. The APERTURE takes E for
     // the same near-contact hemisphere reason the bars do — a wall centimetres off the cloth shuts out beam and sky
     // alike — and it bounds the grid, since the bars are the window's and the wall has none.
-    float barConf = 1.0;                                   // 1 = infinite window, the grid runs edge to edge (byte-identical)
-    if(uWindow.x*uWindow.y > 0.0){
-      vec2 win = windowMask(castUV);
-      barConf = win.y;
-      E *= win.x;
+    // BOTH ARE CURTAIN-ONLY. They are cast by a central-ray throw in cloth (u,v) against a plane at world-Y cy — the
+    // enclosure has no such plane (its world-Y comes out of the ray cast) and no head-on map to read the throw in,
+    // so a window in a tent would be drawn in coordinates that mean nothing there.
+    if(uReceiver == 1){
+      float barConf = 1.0;                                 // 1 = infinite window, the grid runs edge to edge (byte-identical)
+      if(uWindow.x*uWindow.y > 0.0){
+        vec2 win = windowMask(castUV);
+        barConf = win.y;
+        E *= win.x;
+      }
+      if(uMullion.w > 0.0) E *= mullionT(castUV, barConf);
     }
-    if(uMullion.w > 0.0) E *= mullionT(castUV, barConf);
     vec3 tintHat = uCurtainTint / max(max(uCurtainTint.r, uCurtainTint.g), max(uCurtainTint.b, 1e-4));   // unit-peak HUE
     vec3 body = E * (uTt * tintHat);                       // transmitted moss: brightness × hue; ambient rides through Tt·tint̂ (gated, not free)
     // drape + velvet (§4.9): pleats + grazing sheen on the cloth's own (u=clothUV.x, v=clothUV.y) coords. The sheen
@@ -1117,6 +1296,18 @@ function create(canvas, opts){
     if(!perf.auto || perf.quality >= 0.5) return full;
     return clamp(Math.round(lerp(BAKE_MIN, full, perf.quality/0.5)/256)*256, BAKE_MIN, full);
   };
+  // IS THE FAITHFUL TIER ACTUALLY RUNNING? The flag alone no longer answers it, so nothing reads the flag directly:
+  // the faithful bake pre-integrates the whole cast into ONE texture in ONE frame — floor (x,y) or cloth (u,v) — and
+  // the ENCLOSURE's receiver is neither, it is a per-pixel ray cast onto sloped panels. So receiver 2 forces the
+  // LAYER path, which is the general-geometry tier: it re-projects per pixel from (world, recvZ) and therefore works
+  // on any receiver at all. That is not a downgrade here — at enclosure distances the cast is deep in the pinhole
+  // regime (metres of occluder height against a fabric a metre or two off), where the layer tier's height
+  // quantization is invisible under the disk blur. The cheap path is the correct path in this branch.
+  // ONE predicate, read by every path decision (bake dispatch, texture sizing, the .z packing convention, the
+  // twig-hug, auto-quality's cost model, show_layer, and the uFaithful uniform), because those must agree per frame
+  // or the layer bake reads faithful-packed cluster data and the leaves slide off their twigs. Safe to be a derived
+  // value rather than state because `receiver` is a MODE_KEYS flag: a 1↔2 flip forces the full rebuild.
+  const faithfulOn = () => params.faithful_canopy && (params.receiver|0) !== 2;
 
   function compile(type, src){
     const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
@@ -1172,6 +1363,9 @@ function create(canvas, opts){
     curtainY:loc(progTransport,'uCurtainY'), foldDepth:loc(progTransport,'uFoldDepth'), foldScale:loc(progTransport,'uFoldScale'), foldCoarsen:loc(progTransport,'uFoldCoarsen'), foldWarp:loc(progTransport,'uFoldWarp'), sunDir:loc(progTransport,'uSunDir'), sheen:loc(progTransport,'uSheen'), scatter:loc(progTransport,'uScatter'),
     mullion:loc(progTransport,'uMullion'), mullPenumbra:loc(progTransport,'uMullPenumbra'),
     window:loc(progTransport,'uWindow'), windowWall:loc(progTransport,'uWindowWall'),
+    tentRidge:loc(progTransport,'uTentRidge'), tentHalfW:loc(progTransport,'uTentHalfW'), tentCrownW:loc(progTransport,'uTentCrownW'), tentLen:loc(progTransport,'uTentLen'), tentEndLean:loc(progTransport,'uTentEndLean'),
+    tentShoulderH:loc(progTransport,'uTentShoulderH'), tentShoulderW:loc(progTransport,'uTentShoulderW'), tentGableBevel:loc(progTransport,'uTentGableBevel'),
+    tentEye:loc(progTransport,'uTentEye'), tentFade:loc(progTransport,'uTentFade'), tentSeam:loc(progTransport,'uTentSeam'),
     twilight:loc(progTransport,'uTwilight'), mesopic:loc(progTransport,'uMesopic'), chroma:loc(progTransport,'uChroma'),
     exposure:loc(progTransport,'uExposure'), contrast:loc(progTransport,'uContrast'), tone:loc(progTransport,'uToneMap'),
     linearOut:loc(progTransport,'uLinearOut'),   // 1 = hand the linear HDR to the diffusion tier instead of tone-mapping here (§4.9)
@@ -1263,13 +1457,13 @@ function create(canvas, opts){
     for(let i=0;i<MAX_LAYERS;i++){
       // faithful mode never bakes or samples the layer textures (transport taps faithTex once), so size them 1×1
       // there too — saves ~layer_count·res²·8 bytes of dead VRAM (≈16 MB at defaults). Reallocated full when faithful off.
-      layerTex.push(makeLayerTexture((i < params.layer_count && !params.faithful_canopy) ? res : 1));
+      layerTex.push(makeLayerTexture((i < params.layer_count && !faithfulOn()) ? res : 1));
     }
     // FAITHFUL path (§4.5): the soft-shadow accumulator + per-sample scratch. 1×1 when off, so the park / layer
     // path allocates nothing extra; full bake-res when faithful_canopy is on.
     if(faithTex) gl.deleteTexture(faithTex);
     if(faithScratch) gl.deleteTexture(faithScratch);
-    const fres = params.faithful_canopy ? res : 1;
+    const fres = faithfulOn() ? res : 1;
     faithTex = makeLayerTexture(fres);
     faithScratch = makeLayerTexture(fres);
   }
@@ -1508,6 +1702,7 @@ function create(canvas, opts){
     const layerData = [];
     for(let l=0;l<nLayer;l++) layerData.push([]);   // 16 floats/leaf — see attribute layout below
     const faithData = [];                           // FAITHFUL: ALL leaves in one buffer + a 17th float = continuous height (§4.5)
+    const faithful = faithfulOn();                  // hoisted: the packing convention below must be ONE decision for the whole grove, not re-asked per leaf
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const rng  = mulberry32(hash3(params.seed>>>0, j, 101));               // arrangement stream
@@ -1522,7 +1717,7 @@ function create(canvas, opts){
       // centre), from which VS_BAKE offsets a SYNTHETIC stem joint by uStemLen — no wood is drawn there, so a made-up
       // joint costs nothing. FAITHFUL: the twig's REAL grown base, which is also what the wood twig turns about in
       // bakeFaithful's refill — one shared joint, so the medium band can't slide leaves off their visible twigs (§4.5).
-      hier.clusterGeom[4*j]=params.faithful_canopy?t.bx:cx; hier.clusterGeom[4*j+1]=params.faithful_canopy?t.by:cy;
+      hier.clusterGeom[4*j]=faithful?t.bx:cx; hier.clusterGeom[4*j+1]=faithful?t.by:cy;
       hier.clusterGeom[4*j+2]=t.tx; hier.clusterGeom[4*j+3]=t.ty;    // limb pivot = this tree's trunk
       hier.clusterData[4*j+2]=stemRand;                             // static stem-angle seed (.z); tick writes .x/.y
       const data = layerData[t.layer];
@@ -1531,7 +1726,7 @@ function create(canvas, opts){
         // leaves HUG the twig (§4.5): trail back from the tip ALONG the twig heading (1.5×spread) with a tight
         // perpendicular jitter (0.4×spread), instead of an isotropic blob. Same two draws → other attributes unchanged.
         const g1 = gauss(), g2 = gauss();
-        const hug = params.faithful_canopy && tHasDir;   // twig-hug only in faithful mode; the layer/park scatter stays byte-identical
+        const hug = faithful && tHasDir;   // twig-hug only in faithful mode; the layer/park scatter stays byte-identical
         const x = hug ? cx - Math.abs(g1)*params.cluster_spread_m*1.5*tdx - g2*params.cluster_spread_m*0.4*tdy : cx + g1*params.cluster_spread_m;
         const y = hug ? cy - Math.abs(g1)*params.cluster_spread_m*1.5*tdy + g2*params.cluster_spread_m*0.4*tdx : cy + g2*params.cluster_spread_m;
         const size = params.leaf_size_m*(0.6+0.8*rng());
@@ -1682,7 +1877,7 @@ function create(canvas, opts){
 
   // ---- bake leaves into per-layer optical-depth textures ---------------------
   function bake(){
-    if(params.faithful_canopy){ bakeFaithful(); return; }   // FAITHFUL path (§4.5): cast the real tree, not the layer slabs
+    if(faithfulOn()){ bakeFaithful(); return; }   // FAITHFUL path (§4.5): cast the real tree, not the layer slabs
     const res = bakeRes();
     const E = params.canopy_extent_m;
     gl.useProgram(progBake);
@@ -2023,7 +2218,7 @@ function create(canvas, opts){
   function publishBend(){
     if(!hier) return;
     const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): the limb's PITCH DOF → foreshorten factor in .w (faithful only); 0 → factor 1, byte-identical
-    const faithful = params.faithful_canopy;
+    const faithful = faithfulOn();
     for(let j=0;j<hier.nClusterTotal;j++){
       const li = hier.clusterLimb[j];
       const lb = hier.limbAngle[li];
@@ -2171,7 +2366,7 @@ function create(canvas, opts){
       // EXCEPT in faithful mode the whole faith texture is sun-projected (its cast frame + per-leaf throw depend on
       // sun_elevation/azimuth), so a still-air time-of-day crossfade MUST re-bake or the dapple freezes at the start
       // angle for the whole morph (the layer path is immune — transport reprojects each frame from uProj/uBulkShift).
-      const faithSunMorph = params.faithful_canopy &&
+      const faithSunMorph = faithfulOn() &&
         (trans.from.sun_elevation_deg!==trans.to.sun_elevation_deg || trans.from.sun_azimuth_deg!==trans.to.sun_azimuth_deg);
       if(trans.canopyMorph || motionActive() || faithSunMorph) bake();
     }
@@ -2179,7 +2374,7 @@ function create(canvas, opts){
       trans.active = false; trans.bloom = 0;
       for(const k in DEFAULTS) params[k] = trans.to[k];
       regenSource(); resetPerf();                          // bloom now 0; re-probe quality for the new look (it may carry auto-quality)
-      if(params.faithful_canopy) bake();                   // land the faith texture on the exact target sun (resetPerf only re-bakes on a bake-res change)
+      if(faithfulOn()) bake();                   // land the faith texture on the exact target sun (resetPerf only re-bakes on a bake-res change)
       const cb = trans.onEnd; trans.onEnd = null; if(cb) cb();
     }
   }
@@ -2200,7 +2395,7 @@ function create(canvas, opts){
     }
     const q = perf.quality, KNEE = 0.5, RES_MIN = 0.5, SAMP_MIN = 6;
     let res, samp;
-    if(params.faithful_canopy){
+    if(faithfulOn()){
       // FAITHFUL: transport is a single tap (resolution ~free), the per-SAMPLE geometry bake dominates and scales
       // linearly in the sample count — so trim SAMPLES across the whole range (relieving the bake immediately as q
       // drops) and let resolution ride along. bakeRes() still trims below the knee. q=1 → full, look unchanged.
@@ -2337,7 +2532,7 @@ function create(canvas, opts){
     // woody occluder (§4.5): trunk + main limbs, continuous heights → connected shadow. Gated by branch_tau (the wood
     // knob): 0 = no wood, byte-identical. The bulk sun-offset (standing scene) rides in `g`, so it casts to the side too.
     // In FAITHFUL mode the whole skeleton (incl. twigs) is baked into the leaf shadow instead, so the analytic occluder is off.
-    if(!params.faithful_canopy && params.branch_tau > 0 && occ.count > 0){
+    if(!faithfulOn() && params.branch_tau > 0 && occ.count > 0){
       // refill segBuf with the live limb SWING (rotate each segment about its tree's trunk by limbAngle) so the wood
       // sways WITH the leaves; the trunk (limb -1) doesn't rotate. Drift (uOccSway) + sun-shift are added in the shader.
       const buf = occ.segBuf, la = hier ? hier.limbAngle : null;
@@ -2365,8 +2560,9 @@ function create(canvas, opts){
     gl.uniform2f(U.tp.extent, E, E);
     // FAITHFUL path (§4.5): tap the pre-integrated soft shadow ONCE instead of the sample loop. The faith texture
     // lives in the cast frame (computed in bakeFaithful, this frame). Off → uFaithful 0 → the layer path, byte-identical.
-    gl.uniform1i(U.tp.faithful, params.faithful_canopy ? 1 : 0);
-    if(params.faithful_canopy){
+    // faithfulOn(), not the flag: the enclosure forces the layer tier and never bakes one (§4.9).
+    gl.uniform1i(U.tp.faithful, faithfulOn() ? 1 : 0);
+    if(faithfulOn()){
       gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, faithTex); gl.uniform1i(U.tp.faithTex, 4);   // unit 4 free in transport (layers use 0-3)
       gl.uniform2f(U.tp.faithOrigin, faith.ox, faith.oy);
       gl.uniform2f(U.tp.faithExtent, faith.ext, faith.ext);
@@ -2414,6 +2610,40 @@ function create(canvas, opts){
     // penumbra above because it IS the window's outermost frame member.
     gl.uniform4f(U.tp.window, 0.5*Math.max(0, params.window_w_m), 0.5*Math.max(0, params.window_h_m), params.window_cx_m, params.window_cy_m);
     gl.uniform1f(U.tp.windowWall, clamp(params.window_wall, 0, 1));
+    // THE ENCLOSURE's polytope (§4.9), read only when receiver == 2. TWO INVARIANTS THE SHADER RELIES ON, both
+    // enforced here and nowhere else.
+    // (1) THE EYE SITS STRICTLY INSIDE every half-space, which is what makes every exit distance positive and lets
+    // the intersection be a bare min() with no sign handling. Three constraints bind it — the crown overhead
+    // (z < ridge) and each gable, which the eye approaches as lean·eye grows toward the clearance the gable leaves
+    // at the eye's own y (0.7·len ahead; 0.5 + 0.3·len·cos(bevel) behind, the bevel tilting the near one in).
+    // The side walls never bind at x = 0.
+    // (2) THE PROFILE BULGES OUTWARD at the shoulder. Note what this is NOT protecting: an intersection of
+    // half-spaces is convex whatever the planes do, so the min-exit is never wrong. What breaks is the SHAPE. Put
+    // the shoulder INSIDE the straight base→crown line and the skirt's half-space stops containing the crown edge —
+    // the skirt plane then slices the crown clean off, the tent is no longer the tent that was specified, and pushed
+    // far enough the eye itself ends up outside, which is invariant (1). So the shoulder half-width is floored at
+    // that straight line (where skirt and upper wall become the same plane: the v2 tent, exactly) and capped at a
+    // sane flare. Everything else is floored off its degenerate value: a tent with no interior has nothing to cast.
+    { const ridge = Math.max(params.tent_ridge_h_m, 1e-2);
+      const halfW = Math.max(params.tent_half_w_m, 1e-2);
+      const crownW = clamp(params.tent_crown_w_m, 0, 0.9*halfW);   // 0.9 keeps a real horizontal run in the profile even when the crown is asked to be the whole roof
+      const len   = Math.max(params.tent_len_m, 0.5);
+      const lean  = clamp(params.tent_end_lean, 0, 4);
+      const bevel = clamp(params.tent_gable_bevel, 0, 1.2);        // past ~70° the two halves fold into a spike rather than a prow
+      const shH   = clamp(params.tent_shoulder_h_m, 0.15*ridge, 0.9*ridge);   // keeps both profile segments a real segment, so tentWall's normalize() never sees a zero vector
+      const shLine = halfW + (crownW - halfW)*(shH/ridge);         // the STRAIGHT base→crown profile at that height — the convexity floor
+      const gap   = Math.min(0.7*len, 0.5 + 0.3*len*Math.cos(bevel));   // the nearer gable's clearance at the eye's own y
+      gl.uniform1f(U.tp.tentRidge, ridge);
+      gl.uniform1f(U.tp.tentHalfW, halfW);
+      gl.uniform1f(U.tp.tentCrownW, crownW);
+      gl.uniform1f(U.tp.tentShoulderH, shH);
+      gl.uniform1f(U.tp.tentShoulderW, clamp(params.tent_shoulder_w_m, shLine, 1.4*halfW));
+      gl.uniform1f(U.tp.tentLen, len);
+      gl.uniform1f(U.tp.tentEndLean, lean);
+      gl.uniform1f(U.tp.tentGableBevel, bevel);
+      gl.uniform1f(U.tp.tentEye, Math.min(Math.max(params.tent_eye_h_m, 0), 0.95*ridge, 0.95*gap/Math.max(lean, 1e-3))); }
+    gl.uniform1f(U.tp.tentFade, Math.max(0, params.tent_fade));
+    gl.uniform1f(U.tp.tentSeam, Math.max(0, params.tent_seam));
     // Purkinje (§3.5): rods take over the dim shade as the sun lowers. The global weight rides the same
     // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
     gl.uniform1f(U.tp.twilight, smoothstep(30, 4, params.sun_elevation_deg));
@@ -2477,6 +2707,7 @@ function create(canvas, opts){
     const pcInt = Math.floor(pcF), frac = pcF - pcInt;
     const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
     const base=[];
+    const faithful = faithfulOn();   // hoisted, and it must be the SAME answer regenCanopy packed the bake with
     for(let j=0;j<tws.length;j++){
       const t=tws[j], cx=t.x, cy=t.y, cz=t.z, tcov=(t.tcov===undefined?1:t.tcov);
       const ti=(t.tree===undefined?0:t.tree), tnt=((ti*0.61803398875)%1)*2-1;   // per-tree warmth [-1,1], golden-spread so neighbours differ
@@ -2485,7 +2716,7 @@ function create(canvas, opts){
       for(let k=0;k<nLeaf;k++){
         const g1=gauss(), g2=gauss();   // leaves hug the twig — must match the bake (§4.5)
         const cov = ((k===pcInt) ? frac : 1.0) * tcov;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast
-        const hug = params.faithful_canopy && tHasDir;
+        const hug = faithful && tHasDir;
         const x = hug ? cx - Math.abs(g1)*params.cluster_spread_m*1.5*tdx - g2*params.cluster_spread_m*0.4*tdy : cx + g1*params.cluster_spread_m;
         const y = hug ? cy - Math.abs(g1)*params.cluster_spread_m*1.5*tdy + g2*params.cluster_spread_m*0.4*tdx : cy + g2*params.cluster_spread_m;
         base.push(x, y, cz, cov, tnt);
@@ -2813,7 +3044,7 @@ function create(canvas, opts){
       if(motionActive()) tick(dt);                   // keep wind alive; the morph re-asserts drift_phase right after
       tickTransition(dt);
     } else if(motionActive()){ motionTick(dt); timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
-    if(params.show_layer && !params.faithful_canopy) drawLayerBlit(); else timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
+    if(params.show_layer && !faithfulOn()) drawLayerBlit(); else timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
     if(eng.onFrame) eng.onFrame(dtms);               // editor draws HUD + source inset here
     requestAnimationFrame(frame);
   }
