@@ -181,11 +181,16 @@ export const PRESETS = {
   // EVERY NUMBER IS A STARTING POINT: none of this has been seen on a GPU.
   // WHAT EACH LOAD-BEARING CHOICE SERVES:
   //  • sky_scatter 0.5 is what makes a crown a light source instead of a filter (§4.9). Derived against the Look's
-  //    tail rather than dialled: at ambient 1.5 / exposure 1.3 it puts open sky at sRGB (176,202,229), a crown one
-  //    leaf-layer thick at (183,211,179), two layers at (108,190,83) and four at (45,155,41) — luminous all the way
-  //    down, green-gold in the middle depths, and never black. At sky_scatter 0 under the SAME light those fall to
-  //    (85,160,127), (33,111,36) and (7,43,4): a stencil. A trunk over open sky reads (46,64,102), which is what
-  //    "silhouette is the exception" has to mean.
+  //    tail rather than dialled — and through the VEIL, because the glare mixes in linear HDR before the tone curve,
+  //    so it is part of what ships. At ambient 1.5 / exposure 1.3 / diffuse 0.15: open sky (184,208,232), a crown one
+  //    leaf-layer thick (177,206,173), two layers (125,195,91), four (42,148,38), a trunk against sky (43,60,95).
+  //    Luminous all the way down, green-gold in the middle depths, never black, and the SKY is the brightest surface
+  //    in the frame (luminance 205 against the thinnest crown's 197). A sunlit crown reads 1.7x a shaded one at the
+  //    same eye-ray depth, which is the whole point of the scatter term.
+  //  • THE VEIL IS A LIGHT KNOB, not a decoration. curtain_diffuse mixes a blurred copy of the frame in LINEAR HDR
+  //    before the tone tail, so a wide one drags open sky down toward the canopy's own mean: at 0.35 it cost this
+  //    sky 13 sRGB levels, and under the old dark preset it took (81,109,157) to (68,93,138). 0.15 at a 0.04 m radius
+  //    halos the sun and leaves the rest of the frame alone.
   //  • the LEAF TRANSMITTANCE carries the colour, not the scatter knob: (0.26, 0.50, 0.16) is a chlorophyll green
   //    where the old muted gray-green had nothing for the glow to be made of. The scatter term normalizes it to unit
   //    peak (§3.5), so this sets the HUE of the glow and sky_scatter sets its level.
@@ -235,7 +240,7 @@ export const PRESETS = {
     "view_extent_m": 9, "view_pitch_deg": 90, "view_fov_deg": 60, "view_yaw_deg": 0,
     "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.14, "far_smear": 0,
     "exposure": 1.3, "contrast": 1.0, "ambient_skylight": 1.5, "sky_turbidity": 0.05, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
-    "curtain_diffuse": 0.35, "curtain_diffuse_m": 0.1,   // the eye's veiling glare around the sun, through the gaps (§4.9)
+    "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,   // the eye's veiling glare (§4.9), tight enough to halo the SUN and not veil the frame: the mix is linear-HDR, so a wide one drags the sky down toward the canopy's own mean
     "wind_pattern": "gusty", "wind_strength": 1.3, "wind_gustiness": 0.3, "wind_direction_deg": 0, "gust_frequency": 0.11,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 1.6,
@@ -284,7 +289,7 @@ export const PRESETS = {
     "view_extent_m": 8, "view_pitch_deg": 58, "view_fov_deg": 52, "view_yaw_deg": 0,
     "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.04, "far_smear": 0,
     "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 2.0, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
-    "curtain_diffuse": 0.2, "curtain_diffuse_m": 0.08,
+    "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,
     "wind_pattern": "gusty", "wind_strength": 1.1, "wind_gustiness": 0.35, "wind_direction_deg": 0, "gust_frequency": 0.16,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 2.2, "sway_ceiling": 0.4, "damping_ratio": 0.5, "backlash_gain": 1, "sway_height_gain": 1.6,
@@ -317,7 +322,7 @@ export const PRESETS = {
     "view_extent_m": 11, "view_pitch_deg": 62, "view_fov_deg": 60, "view_yaw_deg": 35,
     "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.22, "far_smear": 0,
     "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 1.6, "sky_turbidity": 0.06, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
-    "curtain_diffuse": 0.3, "curtain_diffuse_m": 0.1,
+    "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,
     "wind_pattern": "squally", "wind_strength": 1.2, "wind_gustiness": 0.28, "wind_direction_deg": 0, "gust_frequency": 0.1,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.4,
     "sway_stiffness": 1.0, "sway_ceiling": 0.4, "damping_ratio": 0.6, "backlash_gain": 1, "sway_height_gain": 1.6,
@@ -352,8 +357,8 @@ export const PRESETS = {
     "seed": 290626672, "sun_elevation_deg": 70, "sun_azimuth_deg": 120,
     "view_extent_m": 14, "view_pitch_deg": 90, "view_fov_deg": 68, "view_yaw_deg": 0,
     "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.3, "far_smear": 0,
-    "exposure": 1.3, "contrast": 1.0, "ambient_skylight": 3, "sky_turbidity": 0.45, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
-    "curtain_diffuse": 0.3, "curtain_diffuse_m": 0.12,
+    "exposure": 1.3, "contrast": 1.0, "ambient_skylight": 2.5, "sky_turbidity": 0.45, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
+    "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.05,
     "wind_pattern": "lazy", "wind_strength": 0.7, "wind_gustiness": 0.2, "wind_direction_deg": 0, "gust_frequency": 0.07,
     "weather_variability": 0.2, "weather_speed": 1, "gust_attack": 1.6, "gust_decay": 2.4,
     "sway_stiffness": 0.8, "sway_ceiling": 0.4, "damping_ratio": 0.7, "backlash_gain": 1, "sway_height_gain": 1.6,

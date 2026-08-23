@@ -942,9 +942,12 @@ const float TENT_SEAM_HW = 0.012;
 // footprint (≈3 px on an 85° frame ~1000 tall) and the penumbra a silhouette really has against the sun's disk.
 // SKY_SKY_GAIN converts uAmbient — an authored IRRADIANCE, what the sky delivers ONTO a surface — into the RADIANCE
 // you get when you look straight at it. Those are different quantities and the engine only ever had the first, so
-// the conversion is authored; ambient_skylight still steers it, and 6 puts a default sky at a photographic mid-tone.
+// the conversion is authored; ambient_skylight still steers it. It is also the ONE knob that lifts the sky WITHOUT
+// lifting the canopy: it multiplies the radiance you see looking at the sky and never the irradiance that lands on a
+// leaf, so raising it moves open sky above the brightest crown instead of taking both up together. 7.5 is where a
+// daylight look puts open sky near sRGB (184,208,232) and keeps it clear of the thinnest sunlit crown.
 const float SKY_AA = 0.004;
-const float SKY_SKY_GAIN = 6.0;
+const float SKY_SKY_GAIN = 7.5;
 // A transmittance normalized to unit peak: the spectrum with its brightness divided out (§3.5's idiom, and the same
 // one the curtain's dye uses). What survives is chlorophyll's green-gold; the knob that reads it carries the level.
 vec3 leafHue(vec3 t){ return t / max(max(t.r, t.g), max(t.b, 1e-4)); }
