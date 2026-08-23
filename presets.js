@@ -216,6 +216,55 @@ export const PRESETS = {
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "auto_quality": true,   // faithful is the heavy path (per-sample geometry bake) — the governor keeps a weak device at 60, like park 1
   }),
+  // 'tent 1' — komorebi on TENT NYLON (spec §4.9): the receiver's SECOND material instance. Same receiver, same
+  // transmission law, same pleat field as 'curtain 1', aimed at the opposite corner of material space — thin
+  // near-white nylon (high Tt, near-neutral dye, matte, heavy forward scatter) where the velvet is dark, saturated,
+  // pile-sheened. Reference: photographed from inside a tent pitched under trees at a midday festival.
+  // NO window and NO mullion grid (both left at their 0 gates): the tent stands UNDER the canopy, so the whole
+  // cloth is lit and the field is continuous dapples — the aperture contrast 'curtain 1' rests on has nothing to do
+  // with this scene, and the punch comes from exposure + a hot low-cloud sun instead.
+  // WHY THE CLOTH SITS 0.8 m BEHIND THE TREE: the dapple blur is (h − recvZ)·θ, so branches nearly grazing the
+  // fabric cast hard-edged shapes while the canopy metres above casts soft plates. That is §4.9's "both regimes in
+  // one frame" produced by the TREE's own height spread rather than by a near-contact window — the sharp/soft split
+  // is the thing the reference photo is about, so the sun's core radius is kept near the real disk to let it read.
+  // FRAMING IS NUDGEABLE as on 'curtain 1': curtain distance + sun azimuth/elevation + the pan place the cast.
+  'tent 1': Object.assign({}, DEFAULTS, {
+    "sample_count": 32, "core_angular_radius_deg": 0.32, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.9, "cloud_thickness": 0.12, "eclipse": false, "eclipse_amount": 0.42,
+    // a low crown running well up: the band the analytic (layer-tier) woody occluder normalises against, written to
+    // say what the faithful grove already is — limbs starting near tent height, foliage stacked metres over it.
+    "layer_count": 4, "canopy_base_height_m": 1.8, "canopy_thickness_m": 2.4, "foliage_density": 1.5,
+    // mid-density broadleaf with LOW limbs: shallow branch pitch spreads the arms out near the fabric instead of
+    // sending them up, and a slightly positive droop trails the outer twigs back down toward it.
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 46,
+    "branch_length_ratio": 0.66, "branch_pitch_deg": 14, "branch_tau": 2.6, "leader_strength": 0.15, "droop": 0.14, "leaves_per_cluster": 24,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.14, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.24, "trans_g": 0.4, "trans_b": 0.05,   // the scene's GREEN lives here, not in the cloth: near-white nylon barely dyes what the leaves already tinted
+    "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    // midday: a high sun for the near-vertical drop down the cloth, held off the cloth's normal so the cast still
+    // rakes a little and the fold flanks band (head-on, az 90°, incidence only foreshortens them — §4.9).
+    "seed": 290626672, "sun_elevation_deg": 48, "sun_azimuth_deg": 62,
+    // TENT receiver: the same vertical cloth as 'curtain 1', 0.8 m behind the tree instead of 2.5 — close enough
+    // that the lowest branches are near-contact occluders.
+    "receiver": 1, "standing_scene": true, "faithful_canopy": true,
+    "curtain_distance_m": -0.8, "curtain_tt": 0.55, "curtain_tint_r": 0.92, "curtain_tint_g": 0.9, "curtain_tint_b": 0.82,
+    "velvet_sheen": 0,   // MATTE — nylon has no pile, and the satin ridge glow is the one curtain cue that would break the read
+    "curtain_scatter": 0.55,   // over half the transmit diffuses in the weave: the glowy-haze half of the reference, opposite the spotlights
+    // wrinkles, not pleats: broad panel-scale undulations (low fold_scale), barely coarsening, standing 5 cm out of
+    // the plane, and only gently shaded because the fabric is thin. All four are taste calls for the visual pass.
+    "fold_scale": 0.45, "fold_coarsen": 0.2, "fold_warp": 0.05, "fold_depth": 0.3,
+    "view_extent_m": 3.0, "view_pitch_deg": 0, "view_fov_deg": 60, "view_yaw_deg": 0,
+    "view_center_x": 0, "view_center_y": 1.4, "trunk_radius_m": 0.1, "far_smear": 0,
+    // brighter and more ambient than 'curtain 1': there is no dark wall to expose for, and the contrast lift is what
+    // pushes the hot patches apart from the haze.
+    "exposure": 1.6, "contrast": 1.15, "ambient_skylight": 0.7, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
+    "wind_pattern": "gusty", "wind_strength": 0.9, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 1.0472, "drift_auto": true, "drift_speed": 0.02,
+    "auto_quality": true,   // faithful is the heavy path (per-sample geometry bake) — the governor keeps a weak device at 60, like park 1 and curtain 1
+  }),
   // 'memories' — the §1 north-star look: a sparse early-spring grove (foliage 0.45, so individual leaves
   // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
   'memories': Object.assign({}, DEFAULTS, {
