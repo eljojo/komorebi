@@ -2259,7 +2259,9 @@ function create(canvas, opts){
 
   // ---- motion mirror (EDITOR only): drive this engine's wind EXACTLY from another instance instead of its own
   // physics, so the A/B picker's two engines animate in lockstep. Safe because the profiler's variants never
-  // change the grove skeleton (tree/limb/branch/seed), so the spring arrays line up 1:1. snapshotMotion exposes
+  // change the grove skeleton (tree/limb/branch/seed), so the spring arrays line up 1:1. Holds for faithful_canopy
+  // too: flipping it keeps the same grown grove and spring arrays — only the cast path (layer vs per-sample bake)
+  // changes — so the mirror stays sound for that axis as well. snapshotMotion exposes
   // live refs (read-only); applyMotion copies them in + re-uploads the bend texture; setMotionSource swaps the
   // per-frame tick for a copy-from-source. The bake only reads angles + sway + time, so velocities aren't needed. ----
   let snapshotMotion, applyMotion, setMotionSource;

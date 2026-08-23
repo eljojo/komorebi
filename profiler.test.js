@@ -24,6 +24,10 @@ test("AXES carries the audit-classified taxonomy", () => {
   expect(by.adaptive_motion.cls).toBe("tune");
   expect(by.adaptive_motion.proposable).toBe(true);
   expect(by.adaptive_motion.measure).toBe("skipfrac");   // special: cost is a frame-skip fraction, not a per-pass ablation
+  // faithful_canopy: risky like foliage — the biggest quality fork, cut-only (never auto-enabled)
+  expect(by.faithful_canopy.cls).toBe("risky");
+  expect(by.faithful_canopy.proposable).toBe(true);
+  expect(by.faithful_canopy.up).toBeUndefined();
   // every axis has a label, a class, and a valid affected pass
   for (const a of AXES) {
     expect(typeof a.label).toBe("string");
@@ -64,6 +68,16 @@ test("axisValue resolves bake_resolution's effective base (0 follows tex_resolut
   expect(axisValue(a.adaptive_motion, { adaptive_motion: true })).toBe(null);
 });
 
+test("axisValue's cutTo generalizes the toggle cut direction: faithful_canopy cuts to OFF, adaptive_motion still cuts to ON", () => {
+  const a = Object.fromEntries(AXES.map(x => [x.key, x]));
+  // faithful_canopy: cutTo:false means the cut is turning it OFF (the layer-path fallback) — opposite of adaptive_motion
+  expect(axisValue(a.faithful_canopy, { faithful_canopy: true })).toBe(false);
+  expect(axisValue(a.faithful_canopy, { faithful_canopy: false })).toBe(null);
+  // regression-pin: adaptive_motion's behavior is byte-identical after the generalization
+  expect(axisValue(a.adaptive_motion, { adaptive_motion: false })).toBe(true);
+  expect(axisValue(a.adaptive_motion, { adaptive_motion: true })).toBe(null);
+});
+
 const IMPROVE_BASE = { sample_count: 24, tex_resolution: 1024, layer_count: 2 };
 
 test("proposeImprove returns one variant of the highest-value upgrades that fit the spare budget", () => {
@@ -93,6 +107,12 @@ test("proposeImprove makes no recommendation when every quality axis is already 
   expect(proposeImprove(maxed, costs, 100)).toBeNull();              // huge budget, but nothing left to improve
 });
 
+test("proposeImprove never proposes enabling faithful_canopy — no up/gain excludes it regardless of budget", () => {
+  const costs = { sample_count: 1.5, tex_resolution: 3.0, layer_count: 1.0, faithful_canopy: 0.1 };
+  const v = proposeImprove(IMPROVE_BASE, costs, 1000);   // absurdly large spare budget
+  expect(v.applied.some(s => s.key === "faithful_canopy")).toBe(false);
+});
+
 test("proposeVariants folds tune cuts into the most aggressive rung", () => {
   const base = { sample_count: 32, tex_resolution: 1024, layer_count: 3, foliage_density: 1.65,
                  chromatic_aberration: 0, bake_resolution: 0, adaptive_motion: false };
@@ -105,6 +125,28 @@ test("proposeVariants folds tune cuts into the most aggressive rung", () => {
   expect(min.params.adaptive_motion).toBe(true);
   // the lite rung stays a single safe cut — tune opts only ride the aggressive rung
   expect(v[0].applied.every(s => s.cls === "safe")).toBe(true);
+});
+
+test("proposeVariants proposes faithful_canopy only on the aggressive rung, and only when the base has it on", () => {
+  const base = { sample_count: 32, tex_resolution: 1024, layer_count: 3, foliage_density: 1.0,
+                 chromatic_aberration: 0, faithful_canopy: true };
+  const costs = { sample_count: 0.20, foliage_density: 0.15, faithful_canopy: 0.45 };
+  const v = proposeVariants(base, costs);
+  // safe rungs never touch a risky axis
+  expect(v[0].applied.every(s => s.cls === "safe")).toBe(true);
+  expect(v[0].applied.some(s => s.key === "faithful_canopy")).toBe(false);
+  // the aggressive (last) rung DOES cut it — to the layer-path fallback (false)
+  const min = v[v.length - 1];
+  expect(min.applied.some(s => s.key === "faithful_canopy")).toBe(true);
+  expect(min.params.faithful_canopy).toBe(false);
+});
+
+test("proposeVariants never touches faithful_canopy on an already-layer-mode base", () => {
+  const base = { sample_count: 32, tex_resolution: 1024, layer_count: 3, foliage_density: 1.0,
+                 chromatic_aberration: 0, faithful_canopy: false };
+  const costs = { sample_count: 0.20, foliage_density: 0.15, faithful_canopy: 0.45 };   // cost irrelevant — nothing to cut
+  const v = proposeVariants(base, costs);
+  for (const x of v) expect(x.applied.some(s => s.key === "faithful_canopy")).toBe(false);
 });
 
 test("axisValue returns the lightest degraded value, or null when nothing to cut", () => {

@@ -32,6 +32,9 @@ export const AXES = [
     proposable: true, levels: [2], up: 4, gain: 1, note: "depth-blur cheat (§2) — A/B it" },   // up = MAX_LAYERS
   { key: "foliage_density", label: "foliage density", scope: "canopy", pass: "bake", cls: "risky",
     proposable: true, rel: [0.7, 0.5] },
+  { key: "faithful_canopy", label: "faithful tree", scope: "textures", pass: "both", cls: "risky",
+    proposable: true, toggle: true, cutTo: false,
+    note: "the biggest quality fork (§4.5) — risky like foliage_density: cutting it brings back the layer-path fast fallback, a structural change (layer banding returns), so only the aggressive variant proposes it and the A/B wipe arbitrates, never a silent auto-cut. No up/gain: turning faithful ON is an authorial look decision (a scene-mode flip), not a budget spend — proposeImprove must never propose it." },
   { key: "chromatic_aberration", label: "diffraction", scope: "", pass: "transport", cls: "style",
     proposable: false, measureLevel: 0,
     note: "a deliberate look — measured for its price, never cut" },
@@ -49,7 +52,12 @@ export const AXES = [
 // diffraction). `levels` are absolute (lightest last); `rel` are multipliers of the base.
 export function axisValue(axis, base) {
   if (!axis.proposable) return null;
-  if (axis.toggle) return base[axis.key] ? null : axis.on;   // a flag opt: enabling it IS the 'cut'; nothing left once on
+  if (axis.toggle) {
+    // the cut target defaults to `on` (adaptive_motion: enabling it IS the cut) but a `cutTo` override lets an
+    // axis cut the OPPOSITE way (faithful_canopy: the cut is turning it OFF, back to the layer-path fallback).
+    const cutTo = ('cutTo' in axis) ? axis.cutTo : axis.on;
+    return !!base[axis.key] !== !!cutTo ? cutTo : null;      // nothing to cut once base already matches the cut target
+  }
   // `follows` axes (bake_resolution) read 0 as "follow another axis" — resolve the effective base before comparing
   const cur = (axis.follows && !base[axis.key]) ? base[axis.follows] : base[axis.key];
   const v = axis.rel
