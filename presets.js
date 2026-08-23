@@ -192,6 +192,11 @@ export const PRESETS = {
     "receiver": 1, "standing_scene": true, "faithful_canopy": true,
     "curtain_distance_m": -2.5, "curtain_tt": 0.38, "curtain_tint_r": 0.34, "curtain_tint_g": 1.0, "curtain_tint_b": 0.28,
     "fold_depth": 0.85, "fold_scale": 2.2, "fold_coarsen": 0.3, "velvet_sheen": 0.45,   // draped, thick-velvet read
+    "fold_warp": 0.06,   // the pleats stand 6 cm out of the plane, so the cast dapples and the window bars S-bend across them (taste call; the visual pass owns the amplitude)
+    "curtain_scatter": 0.35,   // a third of the transmit diffuses through the pile — the body glow wraps into the fold flanks instead of leaving them black (taste call; the visual pass owns it)
+    // the window: 4 cm off the cloth, so its bars land sharp in the same frame the leaf-gaps stay soft (§4.9's
+    // two-regimes image). Values are a taste call — the visual pass owns them.
+    "mullion_tau": 2.5, "mullion_pitch_m": 0.35, "mullion_bar_m": 0.025, "mullion_depth_m": 0.04,
     "view_extent_m": 5.2, "view_pitch_deg": 0, "view_fov_deg": 60, "view_yaw_deg": 0,
     "view_center_x": 0, "view_center_y": 2.6, "trunk_radius_m": 0.1, "far_smear": 0,
     "exposure": 2.1, "contrast": 1.0, "ambient_skylight": 0.9, "sky_turbidity": 0.06, "mesopic_strength": 0.5, "chromatic_aberration": 0, "tone_map": 2,
