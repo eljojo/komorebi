@@ -136,7 +136,12 @@ async function main() {
     log(`        renderer: ${info.renderer}   EXT_color_buffer_float: yes   EXT_float_blend: ${info.floatBlend ? 'yes' : 'no'}   dpr: ${info.dpr}`);
 
     // ---- suite 1: smoke ----
-    const presets = await page.evaluate(() => window.__presets());
+    // Optional CLI filter (substring match on preset names, case-insensitive): renders only the matching
+    // looks and SKIPS the gate/determinism suites — the fast authoring loop. No args = the full run.
+    const filters = process.argv.slice(2).map((s) => s.toLowerCase());
+    const allPresets = await page.evaluate(() => window.__presets());
+    const presets = filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
+    if (filters.length && presets.length === 0) { log(`no preset matches: ${filters.join(', ')}`); await browser.close(); server.close(); process.exit(1); }
     log(`\nSMOKE — ${presets.length} presets @ ${SMOKE_FRAMES} frames`);
     for (const name of presets) {
       let r;
@@ -161,6 +166,9 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(14)} var ${s.variance.toFixed(0).padStart(5)}  mean ${s.mean.toFixed(1).padStart(5)}  ${String(r.ms).padStart(6)} ms  ${bad.join('; ')}`);
     }
 
+    // A filtered run is the fast authoring loop: the smoke renders above are its whole point,
+    // and the stillness/determinism/gate suites only run on a full sweep.
+    if (!filters.length) {
     // ---- suite 3a: stillness — the proof that the capture road and the motion freeze are actually stable.
     // Two captures forty ticks apart out of ONE engine. If wind, weather, drift, the auto-quality governor
     // or the adaptive-fps present path were still moving anything, this is where it shows.
@@ -200,6 +208,7 @@ async function main() {
         d.equal ? `identical (${a.captures[0].hash})` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}, first at ${d.firstAt}${inv.known ? ` — known: ${inv.known}` : ''}`);
       log(`  ${d.equal ? 'ok  ' : tag}  [${inv.preset}] ${inv.name}`);
       if (!d.equal) log(`        ${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}, first at (${d.firstAt}) — see out/diff-${slug(inv.name)}.png`);
+    }
     }
   } finally {
     await browser.close();
