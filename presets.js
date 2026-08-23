@@ -171,58 +171,195 @@ export const PRESETS = {
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "auto_quality": true,   // park 1 is faithful_canopy (the heaviest path) — without the governor a weak device has no recovery; matches every sibling look
   }),
-  // 'park 2' — THE HAMMOCK (spec §4.9, sky view). Lying on your back at a festival: tall trunks converging
+  // 'canopy 1' — THE HAMMOCK (spec §4.9, sky view). Lying on your back at a festival: tall trunks converging
   // overhead, crowns lit from behind against a bright sky, the whole grove leaning together on the gusts. It is
   // 'park 1's afternoon with the eyes turned the other way — same physics, read along the eye's rays instead of the
   // sun's — so there is no receiver at all here and the whole fabric/ground family switches itself off.
+  // THE FRAME MUST BE MOSTLY LUMINOUS. Look up through a grove in daylight and almost nothing is black: bright sky
+  // between the crowns, and the crowns with sun on them GLOWING green-gold, brighter than the shaded ones beside
+  // them. Silhouette is the exception — the trunks, and the deepest stacks. Every number below serves that.
   // EVERY NUMBER IS A STARTING POINT: none of this has been seen on a GPU.
   // WHAT EACH LOAD-BEARING CHOICE SERVES:
+  //  • sky_scatter 0.5 is what makes a crown a light source instead of a filter (§4.9). Derived against the Look's
+  //    tail rather than dialled: at ambient 1.5 / exposure 1.3 it puts open sky at sRGB (176,202,229), a crown one
+  //    leaf-layer thick at (183,211,179), two layers at (108,190,83) and four at (45,155,41) — luminous all the way
+  //    down, green-gold in the middle depths, and never black. At sky_scatter 0 under the SAME light those fall to
+  //    (85,160,127), (33,111,36) and (7,43,4): a stencil. A trunk over open sky reads (46,64,102), which is what
+  //    "silhouette is the exception" has to mean.
+  //  • the LEAF TRANSMITTANCE carries the colour, not the scatter knob: (0.26, 0.50, 0.16) is a chlorophyll green
+  //    where the old muted gray-green had nothing for the glow to be made of. The scatter term normalizes it to unit
+  //    peak (§3.5), so this sets the HUE of the glow and sky_scatter sets its level.
   //  • the GROVE is a near-conifer: leader 0.85 sends limbs up a continuing bole (the tall bare trunks that converge
   //    are the reference's whole structure), crown_aspect 1.6 stretches them, droop −0.2 upsweeps the branches and
   //    branch_pitch 30 keeps them climbing rather than reaching out. branch_tau 2.2 with a 0.14 m trunk makes that
-  //    wood actually read — in this view the analytic occluder is not a shadow, it IS the columns.
-  //  • ANGULAR COVERAGE is the one thing this view adds to the arithmetic, and it caught the first draft out. A
-  //    canopy of half-extent R at height h only fills the sky above elevation atan(h/R); below that the ray leaves
-  //    the baked box and the engine honestly answers OPEN SKY. At the brief's 12 m extent and a 10 m top layer that
-  //    is atan(10/6) = 59° — a 62°-wide cone at best, with a 85° lens looking mostly at bare sky. So the extent goes
-  //    to 22 m (covers above 42°) and the lens to 60° (its corners reach 40°): canopy nearly frame-filling, with the
-  //    grove's own edge just showing at the corners. tree_count rises to 12 so a grove twice as wide is still a
-  //    grove. If the edges read too open, extent and fov are the two levers, in that order.
-  //  • view_extent_m FRAMES NOTHING here (the fov and the geometry do) but it is NOT inert: it feeds Rfill, which
-  //    sets both the tree-placement radius and the crown size (crown0 = Rfill/√trees × 1.7). At 9 it puts trees out
-  //    to a 9 m radius with ~4.4 m crowns — heavy overlap, so the canopy tiles instead of showing gaps between
-  //    individual trees. It also divides the glare radius below.
+  //    wood actually read — in this view the analytic occluder is not a shadow, it IS the columns. The FINE wood
+  //    (level ≥ 2) now stamps into the seen layers too, so the leaves hang on visible twigs (§4.9).
+  //  • ANGULAR COVERAGE is the arithmetic this view adds, and it is about the GROVE's reach, not the box's. A grove
+  //    of plan reach R is FULL above elevation atan(h_top/R) and thins from there down to atan(h_base/R), below
+  //    which it is open sky. Here Rfill = 9 m (view_extent_m, since it is under canopy_extent·0.46) and
+  //    crown0 = 1.7·Rfill/√trees = 5.78 m, so R = 14.8 m: full above 34.1°, thinning from 15.1°. A zenith gaze
+  //    through a 60° lens on 16:9 reaches 40.3° at its corners, so the WHOLE frame sits in the full band with ~6° to
+  //    spare and no baked-box edge can show. canopy_extent_m 34 is then just the box that has to CONTAIN that grove
+  //    (the widest crowns reach 16.5 m).
+  //  • limb_count 8 is not a shape choice, it is the OCCLUDER BUDGET. In this camera the trunks are not a shadow,
+  //    they ARE the structure, and the analytic occluder holds 64 segments — one per level-1 limb plus one bole per
+  //    tree. Seven trees at 11 limbs is 84, so five trees would have drawn wood and two would have had none; at 8 it
+  //    is 63 and every tree keeps its trunk. (|droop| under 0.3 matters here too: past it a limb splits into
+  //    sub-segments and spends more than one.)
+  //  • tree_count 7 is what opens real sky BETWEEN the crowns. Total crown area over covered area is
+  //    2.89/(1+1.7/√n)²: 1.30 at twelve trees — solidly tiled — against 1.07 at seven, which is barely covering, so
+  //    the gaps are the grove's own and not the edge of the model.
   //  • the SUN is off-centre by design (az 140 against yaw 0): the disk should sit away from the middle of the frame
   //    so the composition is canopy-with-a-sun-in-it, not a lens-flare portrait. cloud 0.2 gives it a small aureole
   //    without draining the disk. Elevation 55 keeps it well inside a 60° lens pointed at the zenith.
   //  • the WIND is the soul: sway_height_gain 1.6 puts the crowns on long levers so a gust leans the whole grove
   //    together — §5.1's coherent band, watched directly for the first time instead of read off a floor pattern.
   //  • curtain_diffuse is the eye's VEILING GLARE here, not a weave (§4.9). With view_extent_m 9 the pair below is
-  //    about an 11 px radius on a 1000-tall frame — a screen-space number, so re-judge it if either knob moves.
-  //  • exposure 0.95 / contrast 1.0: the sun clips to white and must, the sky wants a photographic mid-tone, and any
-  //    contrast above 1 clips the backlit leaves to black (the 'tent 1' finding — the tail stretches about 0.5).
-  'park 2': Object.assign({}, DEFAULTS, {
+  //    about an 11 px radius on a 1000-tall frame — a screen-space number, so re-judge it if either knob moves, and
+  //    re-judge it against the twigs, which are the finest thing in the frame for it to smear.
+  //  • exposure 1.3 / contrast 1.0: the sun clips to white and must, and any contrast above 1 clips the backlit
+  //    leaves to black (the 'tent 1' finding — the tail stretches about 0.5).
+  'canopy 1': Object.assign({}, DEFAULTS, {
     "sky_view": true, "standing_scene": false, "faithful_canopy": false,   // sky view forces the layer tier anyway (no cast frame to pre-bake into) — written false to say so
+    "sky_scatter": 0.5,
     "sample_count": 32, "core_angular_radius_deg": 0.27, "halo_angular_radius_deg": 6,
     "core_weight_fraction": 0.95, "cloud_thickness": 0.2, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 4, "canopy_thickness_m": 6, "foliage_density": 1.4,
-    "tree_count": 12, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 38,
+    "tree_count": 7, "limb_count": 8, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 38,
     "branch_length_ratio": 0.66, "branch_pitch_deg": 30, "branch_tau": 2.2, "leader_strength": 0.85, "droop": -0.2,
     "crown_aspect": 1.6, "leaves_per_cluster": 26, "cluster_spread_m": 0.28, "leaf_size_m": 0.13, "leaf_aspect": 1.75,
     "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.3, "trans_g": 0.38, "trans_b": 0.2,   // muted gray-green: backlit leaves at this density mix to a washed hue, not a saturated one
-    "canopy_extent_m": 22, "tex_resolution": 1024, "bake_resolution": 1024,   // a wide box needs the resolution back: 22 m over 1024 is ~2 cm/texel, and leaf silhouettes ARE the picture here
+    "trans_r": 0.26, "trans_g": 0.5, "trans_b": 0.16,   // chlorophyll: the glow's hue comes from here, normalized to unit peak by the scatter term
+    "canopy_extent_m": 34, "tex_resolution": 1024, "bake_resolution": 1536,   // 34 m over 1536 is 2.2 cm/texel — a 0.13 m leaf is 6 texels across, and leaf silhouettes ARE the picture here
     "seed": 290626672, "sun_elevation_deg": 55, "sun_azimuth_deg": 140,
     "view_extent_m": 9, "view_pitch_deg": 90, "view_fov_deg": 60, "view_yaw_deg": 0,
     "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.14, "far_smear": 0,
-    "exposure": 0.95, "contrast": 1.0, "ambient_skylight": 0.5, "sky_turbidity": 0.05, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 1.3, "contrast": 1.0, "ambient_skylight": 1.5, "sky_turbidity": 0.05, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
     "curtain_diffuse": 0.35, "curtain_diffuse_m": 0.1,   // the eye's veiling glare around the sun, through the gaps (§4.9)
     "wind_pattern": "gusty", "wind_strength": 1.3, "wind_gustiness": 0.3, "wind_direction_deg": 0, "gust_frequency": 0.11,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 1.6,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 2.1, "drift_auto": true, "drift_speed": 0.02,
-    "auto_quality": true,   // the layer tier is the cheap path, but 12 trees over a 1024 bake plus the three glare passes is real work
+    "auto_quality": true,   // the layer tier is the cheap path, but seven trees over a 1536 bake plus the three glare passes is real work
+  }),
+  // ---- THE CANOPIES, 2-4. Three siblings of 'canopy 1', each keyed to ONE look-up photograph's structural
+  // identity. The GEOMETRY and the SPECIES are authored to the reference; the LIGHT is coarse and every level in it
+  // is a TASTE CALL for the slider pass. NONE of these has been seen on a GPU.
+  // Three pieces of arithmetic bind all of them, and they are the reason the numbers look odd next to a floor look:
+  //  (1) COVERAGE. A grove of plan reach R is a FULL canopy above elevation atan(h_top/R), thins from there down to
+  //      atan(h_base/R) as the upper layers fall outside it, and is open sky below that. R = Rfill + crown0, with
+  //      Rfill = min(canopy_extent·0.46, view_extent_m) and crown0 = 1.7·Rfill/√trees. A tall canopy therefore needs
+  //      a WIDE grove, and view_extent_m — which frames nothing in this camera — is the knob that sets it.
+  //  (2) THE BOX MUST CONTAIN THE GROVE. The widest crowns reach Rfill + 1.3·crown0 (the per-tree size jitter), and
+  //      canopy_extent_m has to be at least twice that or the outer crowns are clipped by the bake's own edge.
+  //  (3) THE ANALYTIC OCCLUDER HOLDS 64 SEGMENTS. In this camera the trunks are not a shadow, they ARE the picture,
+  //      and each tree spends limb_count + 1 of those 64 (one per level-1 limb, one for the bole; keep |droop| under
+  //      0.3 or a limb splits into sub-segments and spends more). Past 64 the later trees lose their wood entirely.
+  //      So a look whose subject is trunks must trade limbs for trees: 14 culms cost 3 limbs each, and no more.
+  // 'canopy 2' — BAMBOO. Standing in a grove of it looking up the culms: dozens of thin pale verticals, close enough
+  // to touch, running up out of frame against a brilliant sky, with the leaves only in a thin layer far overhead.
+  // The TRUNKS are the subject here, which is the whole reason for the numbers: 14 trees at 3 limbs each is 56 of
+  // the occluder's 64 segments, so every culm draws. branch_tau 3.2 makes them read as solid wood (transmittance
+  // 0.04) rather than as haze, and a 0.04 m radius keeps them thin. leader_strength 1 runs the bole all the way to
+  // the foliage apex — a culm, not a trunk with a crown on it — and crown_aspect 3 with a 62° branch pitch keeps
+  // what little foliage there is climbing rather than reaching out. The camera is pitched 58° rather than at the
+  // zenith on purpose: near the zenith the culms converge on a point like spokes, and this look wants them PARALLEL.
+  // Coverage: Rfill 8 m and crown0 3.63 give a reach of 11.6 m, so the canopy is full above 50°, thins from 43°, and
+  // is open below it — and the frame runs 13° to 90°. Most of the picture is therefore honest open sky between the
+  // culms, which is the composition.
+  'canopy 2': Object.assign({}, DEFAULTS, {
+    "sky_view": true, "standing_scene": false, "faithful_canopy": false,
+    "sky_scatter": 0.45,
+    "sample_count": 32, "core_angular_radius_deg": 0.27, "halo_angular_radius_deg": 5,
+    "core_weight_fraction": 0.95, "cloud_thickness": 0.08, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 11, "canopy_thickness_m": 3, "foliage_density": 0.55,
+    "tree_count": 14, "limb_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 18,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 62, "branch_tau": 3.2, "leader_strength": 1, "droop": 0,
+    "crown_aspect": 3, "leaves_per_cluster": 18, "cluster_spread_m": 0.22, "leaf_size_m": 0.09, "leaf_aspect": 3.4,
+    "max_tilt": 0.5, "edge_softness": 0.26,
+    "trans_r": 0.34, "trans_g": 0.52, "trans_b": 0.14,   // bamboo is a YELLOW-green: more red than a pine, and the glow takes its hue from here
+    "canopy_extent_m": 26, "tex_resolution": 1024, "bake_resolution": 1536,   // 1.7 cm/texel
+    "seed": 290626672, "sun_elevation_deg": 78, "sun_azimuth_deg": 150,
+    "view_extent_m": 8, "view_pitch_deg": 58, "view_fov_deg": 52, "view_yaw_deg": 0,
+    "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.04, "far_smear": 0,
+    "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 2.0, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
+    "curtain_diffuse": 0.2, "curtain_diffuse_m": 0.08,
+    "wind_pattern": "gusty", "wind_strength": 1.1, "wind_gustiness": 0.35, "wind_direction_deg": 0, "gust_frequency": 0.16,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 2.2, "sway_ceiling": 0.4, "damping_ratio": 0.5, "backlash_gain": 1, "sway_height_gain": 1.6,
+    "limb_flex": 0.35, "twig_flex": 0.3, "stem_length": 0.14, "leaf_swing": 1.5, "flutter_freq": 1.8,
+    "drift_amount": 0.12, "drift_phase": 0.7, "drift_auto": true, "drift_speed": 0.03,
+    "auto_quality": true,
+  }),
+  // 'canopy 3' — THE RED-PINE COLONNADE. Walking a lane of old pines and tipping your head back: long bare boles
+  // going up like columns, the crowns only in the top third, and the lane itself running off across the frame.
+  // The gaze is pitched 62° rather than at the zenith so the boles keep their length and the lane keeps its depth;
+  // the yaw runs the colonnade across frame rather than straight away from you (a taste call — it is the one knob
+  // here that is pure composition). canopy_base_height_m 14 against a 5 m crown band is what confines the foliage
+  // to the top: the analytic occluder's boles run 0 to 14 m of bare wood under it. Six trees at 6 limbs is 42 of the
+  // 64 occluder segments. Coverage: reach 18.6 m gives a full canopy above 46°, thinning from 37°, against a frame
+  // that runs 12° to 90° — so the bottom of the picture is open sky down the lane, which is the depth cue the
+  // reference is built on, and the crowns close over only near the top.
+  'canopy 3': Object.assign({}, DEFAULTS, {
+    "sky_view": true, "standing_scene": false, "faithful_canopy": false,
+    "sky_scatter": 0.55,
+    "sample_count": 32, "core_angular_radius_deg": 0.3, "halo_angular_radius_deg": 6,
+    "core_weight_fraction": 0.92, "cloud_thickness": 0.25, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 14, "canopy_thickness_m": 5, "foliage_density": 1.6,
+    "tree_count": 6, "limb_count": 6, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 55,
+    "branch_length_ratio": 0.7, "branch_pitch_deg": 8, "branch_tau": 2.6, "leader_strength": 0.75, "droop": 0.15,
+    "crown_aspect": 0.8, "leaves_per_cluster": 30, "cluster_spread_m": 0.3, "leaf_size_m": 0.16, "leaf_aspect": 2.6,
+    "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.2, "trans_g": 0.42, "trans_b": 0.14,   // pine needles: darker and bluer than a broadleaf
+    "canopy_extent_m": 42, "tex_resolution": 1024, "bake_resolution": 1536,   // 2.7 cm/texel
+    "seed": 290626672, "sun_elevation_deg": 40, "sun_azimuth_deg": 200,
+    "view_extent_m": 11, "view_pitch_deg": 62, "view_fov_deg": 60, "view_yaw_deg": 35,
+    "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.22, "far_smear": 0,
+    "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 1.6, "sky_turbidity": 0.06, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
+    "curtain_diffuse": 0.3, "curtain_diffuse_m": 0.1,
+    "wind_pattern": "squally", "wind_strength": 1.2, "wind_gustiness": 0.28, "wind_direction_deg": 0, "gust_frequency": 0.1,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.4,
+    "sway_stiffness": 1.0, "sway_ceiling": 0.4, "damping_ratio": 0.6, "backlash_gain": 1, "sway_height_gain": 1.6,
+    "limb_flex": 0.22, "twig_flex": 0.2, "stem_length": 0.2, "leaf_swing": 1.2, "flutter_freq": 1.2,
+    "drift_amount": 0.12, "drift_phase": 1.8, "drift_auto": true, "drift_speed": 0.02,
+    "auto_quality": true,
+  }),
+  // 'canopy 4' — THE RAINFOREST ZENITH. Flat on your back on the forest floor, looking straight up: enormous dark
+  // trunks running in from every side and meeting overhead like spokes, dense crowns closing over them, and a sky
+  // so bright and so hazy it has no colour left. Everything in frame is a silhouette against it.
+  // This is the one look in the series where sky_scatter is DELIBERATELY LOW (0.12). The glow term exists to keep a
+  // canopy from being a stencil, and here the picture IS a stencil — a crown against a near-white sky reads as a
+  // dark mass, and turning the glow up would drain the contrast the whole composition is made of.
+  // The sky is whitened by TURBIDITY, not by exposure: sky_turbidity 0.45 desaturates the Rayleigh spectrum toward
+  // white and warms the beam to (1.00, 0.85, 0.62), where raising exposure alone would only clip the blue.
+  // Coverage is the tightest in the series, because a tall canopy under a wide lens is the hardest case: a reach of
+  // 23.7 m puts the full canopy above 44° and the thinning edge at 34°, against frame corners at 36° — so the crowns
+  // close over the middle of the frame and thin at its very corners, which is what a real canopy does. That is why
+  // view_extent_m is 14 and the box is 54 m: neither frames anything, both exist to make the grove wide enough.
+  'canopy 4': Object.assign({}, DEFAULTS, {
+    "sky_view": true, "standing_scene": false, "faithful_canopy": false,
+    "sky_scatter": 0.12,
+    "sample_count": 32, "core_angular_radius_deg": 0.4, "halo_angular_radius_deg": 8,
+    "core_weight_fraction": 0.7, "cloud_thickness": 0.55, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 16, "canopy_thickness_m": 7, "foliage_density": 2.2,
+    "tree_count": 6, "limb_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 48,
+    "branch_length_ratio": 0.72, "branch_pitch_deg": 18, "branch_tau": 3, "leader_strength": 0.6, "droop": 0.25,
+    "crown_aspect": 1, "leaves_per_cluster": 34, "cluster_spread_m": 0.34, "leaf_size_m": 0.22, "leaf_aspect": 1.6,
+    "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.16, "trans_g": 0.3, "trans_b": 0.12,   // thick tropical leaves pass little: the crowns are meant to go dark
+    "canopy_extent_m": 54, "tex_resolution": 1024, "bake_resolution": 2048,   // 2.6 cm/texel over the widest box in the set
+    "seed": 290626672, "sun_elevation_deg": 70, "sun_azimuth_deg": 120,
+    "view_extent_m": 14, "view_pitch_deg": 90, "view_fov_deg": 68, "view_yaw_deg": 0,
+    "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.3, "far_smear": 0,
+    "exposure": 1.3, "contrast": 1.0, "ambient_skylight": 3, "sky_turbidity": 0.45, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
+    "curtain_diffuse": 0.3, "curtain_diffuse_m": 0.12,
+    "wind_pattern": "lazy", "wind_strength": 0.7, "wind_gustiness": 0.2, "wind_direction_deg": 0, "gust_frequency": 0.07,
+    "weather_variability": 0.2, "weather_speed": 1, "gust_attack": 1.6, "gust_decay": 2.4,
+    "sway_stiffness": 0.8, "sway_ceiling": 0.4, "damping_ratio": 0.7, "backlash_gain": 1, "sway_height_gain": 1.6,
+    "limb_flex": 0.2, "twig_flex": 0.18, "stem_length": 0.22, "leaf_swing": 1.0, "flutter_freq": 0.9,
+    "drift_amount": 0.1, "drift_phase": 2.6, "drift_auto": true, "drift_speed": 0.015,
+    "auto_quality": true,
   }),
   // 'curtain 1' — the first CURTAIN look (spec §4.9): the tree's shadow is cast onto a STANDING moss-velvet
   // curtain (a vertical receiver plane), lit from behind by a low sun, seen head-on from the bed. The shadow

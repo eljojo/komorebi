@@ -84,7 +84,7 @@ const PANEL = [
   ['species','species'],
   ['s','tree_count','trees',1,16,1,'canopy'],
   ['s','canopy_base_height_m','base h (m)',2,20,0.1,''],
-  ['s','canopy_extent_m','extent (m)',6,24,0.5,'textures'],
+  ['s','canopy_extent_m','extent (m)',6,80,0.5,'textures'],   // the sky view needs boxes a floor look never did: the grove must reach far enough sideways to fill an upward frame
   ['s','foliage_density','density',0.1,3,0.05,'canopy'],
   ['s','branch_children','children',1,6,1,'canopy'],
   ['s','branch_angle_deg','branch °',5,80,1,'canopy'],
@@ -118,7 +118,7 @@ const PANEL = [
 
   ['h','Look'],
   ['s','view_extent_m','view (m)',0.5,40,0.1,''],
-  ['s','view_pitch_deg','tilt °',0,80,1,''],
+  ['s','view_pitch_deg','tilt °',0,90,1,''],   // 90 is the zenith, which the sky view's looks sit at
   ['s','view_yaw_deg','orbit °',-180,180,1,''],
   ['s','view_center_x','pan x',-25,25,0.1,''],
   ['s','view_center_y','pan y',-25,25,0.1,''],
@@ -126,6 +126,7 @@ const PANEL = [
   ['s','far_smear','far smear',0,8,0.25,''],
   ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
   ['t','sky_view','look up','textures'],   // the third camera (§4.9): forces the layer tier, so it reallocates like faithful_canopy does
+  ['s','sky_scatter','foliage glow',0,1,0.01,''],   // §4.9: single-scatter radiance — the sunlit crown lights up instead of only filtering
   ['t','standing_scene','standing scene','canopy'],   // changes crown sizing (crown0 in regenCanopy) — needs a regrow, not just the live bulk-offset read
   ['t','faithful_canopy','faithful tree','textures'],
   ['s','trunk_radius_m','trunk r',0,0.5,0.01,'canopy'],
@@ -324,6 +325,7 @@ const TIPS = {
   phyllotaxis:"<b>How branches arrange around their parent.</b> <i>Spiral</i> (golden angle) — most trees, an even non-repeating fill. <i>Whorled</i> — branches in rings at intervals up the trunk (conifer tiers). <i>Opposite</i> — paired branches 180° apart, each level rotated 90° (the maple/ash candelabra of stacked Y-forks).",
   tree_species:"<b>One-click tree shape — oak, spruce, birch, willow, maple, columnar, palm.</b> Loads a bundle of shape knobs (leader, droop, taper, crown, branching) over your current scene; the lighting, camera and wind stay put. A starting point — tweak any knob afterward (it then reads 'custom').",
   branch_tau:"<b>Whether the tree shows its own branches &amp; trunk — not just its leaf-gaps.</b> The trunk and main limbs cast one connected shadow — a continuous-height analytic occluder, not stamped into the leaf layers — swaying with the canopy. 0 = off (just dapples, byte-identical); turn it up for denser, darker wood. Wood blocks every colour, so the branch shadow is dark and neutral, never green.",
+  sky_scatter:"<b>How much the leaves GLOW rather than just filter.</b> With this at 0 every leaf can only take light away: the canopy is the sky seen through a dim green filter, and a thick crown goes black. Real foliage in daylight does the opposite — sunlight gets into a leaf, bounces around inside it and comes back out in all directions, so a crown with the sun on it is <i>brighter</i> than a shaded one against the same sky, and it glows green-gold. Turn this up for a canopy lit from within. The colour comes from the leaves themselves, not from this knob — this only sets how strong the glow is, and it can never make a crown brighter than the light landing on it. Deep stacks of leaves still go dark, because little light reaches down there in the first place.",
   sky_view:"<b>Turn over and look UP.</b> Instead of the light landing on something — a floor, a curtain, a tent — you are lying on your back under the trees looking at the canopy itself: trunks converging overhead, leaves lit from behind, the sun burning through the gaps. It is the same physics read the other way round, so everything about the grove and the weather still applies; what changes is that there is no surface any more, so the receiver, its fabric and the ground all switch themselves off. <i>Tilt</i> is now how high you're looking (90° = straight up) and <i>fov</i> is how much sky you take in. Turn up <i>glow bleed</i> for the wash your eye really makes around a bright sun.",
   faithful_canopy:"<b>Cast the real tree, not the depth-layer shortcut.</b> Off: leaves are binned to a few flat height-slices (cheap, and invisible for the overhead park — you never see the tree itself there). On: every leaf casts from its OWN grown height, so the shadow you see IS the tree in the preview — leaves sit on their twigs, lined up with the trunk. Costs more (a per-sample bake); meant for the standing / curtain looks, not the park.",
   receiver:"<b>What surface the light lands on.</b> <i>Floor</i> — the light reflects off the ground (every existing look; unchanged). <i>Curtain</i> — the light passes THROUGH a translucent woven moss-velvet curtain, lit from behind, the way sunset glows through a bedroom drape. (Shipped: transmission, the standing-plane projection, the aperiodic drape folds with their warp of the cast pattern, the velvet sheen, the forward-scatter glow, and the window — mullion grid + aperture with dark wall beyond. Still to come: the lateral glow blur and the directional nap.) <i>Tent</i> — the same cloth, but stood AROUND you: a pitched A-frame with its ridge overhead, seen from inside, sloped panels running off into the distance. Each panel catches the sun at its own angle, so one side is bright and the other dim — the thing a flat wall can never do. The tent knobs below shape it; the window and the mullion bars are curtain-only and switch themselves off here.",

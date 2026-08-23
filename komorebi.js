@@ -59,7 +59,7 @@ const lerpAngle = (a,b,t,period) => { const d=((b-a)%period + period*1.5)%period
 // snapped once at the transition's bloom peak, hidden under a transient widening of the source. ----
 const MORPH_KEYS = [
   'core_angular_radius_deg','halo_angular_radius_deg','core_weight_fraction','cloud_thickness','eclipse_amount',
-  'canopy_base_height_m','canopy_thickness_m','branch_tau',             // layer heights + branch-shadow darkness — read live, no rebuild
+  'canopy_base_height_m','canopy_thickness_m','branch_tau','sky_scatter',   // layer heights + branch-shadow darkness + the sky view's foliage glow — read live, no rebuild
   // NOTE: canopy_base/thickness + trunk_radius_m tween live for the LEAF layers (layerHeights() is live), but the
   // analytic woody occluder's per-segment heights/radius (occ.ht) are baked in regenCanopy and only refresh on a
   // canopy regrow — so in a tier-1-only transition the wood lags the leaves until the next regen. (Off every shipped
@@ -201,6 +201,8 @@ const DEFAULTS = {
   // and it overrides the receiver entirely (there is no surface, so no fabric, no ground, no seams). Off = every
   // look unchanged.
   sky_view: false,
+  sky_scatter: 0.0,                // SKY VIEW (§4.9): how brightly the foliage GLOWS in its own right — single-scatter radiance from the light
+                                   // reaching each layer from above, on top of the transmitted sky. 0 = pure transmission, byte-identical (a crown can only darken)
   standing_scene: false,           // opt-in: render the trunk as a real vertical occluder (its swept shadow streak)
   trunk_radius_m: 0.1,             // trunk thickness (m) → width of its shadow streak; the area light softens it along its length
   faithful_canopy: false,          // FAITHFUL TREE (spec §4.5): opt out of the depth-layer leaf cheat. Off = leaves binned to a
@@ -587,6 +589,10 @@ uniform vec2 uFaithExtent;
 uniform vec2 uG;
 uniform int  uCurtainBake;            // 1 = project onto the VERTICAL curtain plane (§4.9); 0 = floor
 uniform float uCurtainY;              // curtain plane world-Y (cy) when uCurtainBake
+uniform vec2 uSegSway;                // rigid plan sway added to both endpoints. The CAST path bakes its own
+                                      // height-scaled sway into the instance data and leaves this at 0; the SKY
+                                      // view's layer stamp needs the LEAF bake's per-layer sway instead, or the
+                                      // twigs and the leaves hanging on them drift apart under wind (§4.9).
 out float vAcross;
 void main(){
   float t = aCorner.x*0.5 + 0.5;                 // 0 at a, 1 at b
@@ -599,8 +605,8 @@ void main(){
     float rA = (iSeg.y - uCurtainY)/gy;  Ap = vec2(iSeg.x - rA*uG.x, iSegH.x - rA);
     float rB = (iSeg.w - uCurtainY)/gy;  Bp = vec2(iSeg.z - rB*uG.x, iSegH.y - rB);
   } else {
-    Ap = iSeg.xy - uG*iSegH.x;
-    Bp = iSeg.zw - uG*iSegH.y;
+    Ap = iSeg.xy + uSegSway - uG*iSegH.x;
+    Bp = iSeg.zw + uSegSway - uG*iSegH.y;
   }
   vec2 spine = Bp - Ap;
   vec2 dir = (dot(spine,spine) > 1e-8) ? normalize(spine) : vec2(1.0, 0.0);
@@ -615,9 +621,12 @@ const FS_FAITH_SEG = `#version 300 es
 precision highp float;
 in float vAcross;
 uniform float uWoodTau;
+uniform int uSegTau;   // 0 = TRANSMITTANCE, for the cast's multiplicative scratch. 1 = OPTICAL DEPTH, for the layer
+                       // textures, which accumulate additively and exponentiate at the tap — the leaves' own convention
 out vec4 frag;
 void main(){
   float cov = 1.0 - smoothstep(0.9, 1.0, abs(vAcross));    // tight anti-alias rim — keep THIN twigs opaque (the soft penumbra comes from the per-sample integration, not this edge)
+  if(uSegTau != 0){ frag = vec4(vec3(uWoodTau*cov), cov); return; }
   frag = vec4(vec3(exp(-uWoodTau*cov)), 1.0);              // wood blocks every colour equally → dark, neutral
 }`;
 
@@ -696,6 +705,7 @@ uniform vec2  uCanopyExtent;
 uniform vec3  uSunColor;
 uniform vec3  uAmbient;
 uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)
+uniform float uSkyScatter;        // SKY VIEW (§4.9): single-scatter foliage radiance — how brightly a lit crown glows in its own right (0 = pure transmission, byte-identical)
 uniform int   uSkyView;           // SKY VIEW (§4.9): 1 = look UP. The receiver becomes the RETINA — no surface at all, so uReceiver and the whole fabric family are inert here
 uniform vec2  uSrcAngR;           // the SEEN source's angular radii (core, halo) — the very two the sampler draws its offsets from
 uniform vec2  uSrcAngL;           // its radiance in each region (core, halo). CPU-derived from the sampler's own post-cloud weight split, so the sun you look at and the dapples it throws cannot drift apart
@@ -924,6 +934,9 @@ const float TENT_SEAM_HW = 0.012;
 // the conversion is authored; ambient_skylight still steers it, and 6 puts a default sky at a photographic mid-tone.
 const float SKY_AA = 0.004;
 const float SKY_SKY_GAIN = 6.0;
+// A transmittance normalized to unit peak: the spectrum with its brightness divided out (§3.5's idiom, and the same
+// one the curtain's dye uses). What survives is chlorophyll's green-gold; the knob that reads it carries the level.
+vec3 leafHue(vec3 t){ return t / max(max(t.r, t.g), max(t.b, 1e-4)); }
 // ---- THE ENCLOSURE's side profile (spec §4.9): ONE ARC, not two facets. The reference tent is tensioned fabric on
 // PRE-BENT pole arcs, so its cross-section is a rounded vault; two flat panels per side read as a barn. The curve is
 // a quadratic Bézier through the three authored control points — base (halfW, 0), shoulder (shoulderW, shoulderH),
@@ -987,11 +1000,48 @@ void main(){
       // comes along for free, because tap() exponentiates a per-channel optical depth: a leaf between us and the sun
       // passes its own green-gold and the canopy GLOWS instead of silhouetting flat. That is the §4.5 leaf
       // transmittance finally seen head-on rather than inferred from a dapple's colour.
+      vec2 pL0 = eye.xy + dir.xy*(uLayerHeight[0]/dir.z);
+      vec2 pL1 = eye.xy + dir.xy*(uLayerHeight[1]/dir.z);
+      vec2 pL2 = eye.xy + dir.xy*(uLayerHeight[2]/dir.z);
+      vec2 pL3 = eye.xy + dir.xy*(uLayerHeight[3]/dir.z);
+      vec3 tL0 = uLayerCount>0 ? tapUp(uLayer[0], pL0) : vec3(1.0);
+      vec3 tL1 = uLayerCount>1 ? tapUp(uLayer[1], pL1) : vec3(1.0);
+      vec3 tL2 = uLayerCount>2 ? tapUp(uLayer[2], pL2) : vec3(1.0);
+      vec3 tL3 = uLayerCount>3 ? tapUp(uLayer[3], pL3) : vec3(1.0);
       vec3 T = vec3(1.0);
-      if(uLayerCount>0) T *= tapUp(uLayer[0], eye.xy + dir.xy*(uLayerHeight[0]/dir.z));
-      if(uLayerCount>1) T *= tapUp(uLayer[1], eye.xy + dir.xy*(uLayerHeight[1]/dir.z));
-      if(uLayerCount>2) T *= tapUp(uLayer[2], eye.xy + dir.xy*(uLayerHeight[2]/dir.z));
-      if(uLayerCount>3) T *= tapUp(uLayer[3], eye.xy + dir.xy*(uLayerHeight[3]/dir.z));
+      T *= tL0; T *= tL1; T *= tL2; T *= tL3;
+      // ---- SINGLE-SCATTER FOLIAGE RADIANCE (§4.9). Transmission alone can only DARKEN: every ray is the sky
+      // attenuated, so a leaf is at best a dim filter and a deep crown is black. Foliage in daylight is LIT — light
+      // reaches a leaf, scatters inside it and leaves in every direction, so a sunlit crown is brighter than a shaded
+      // one against the same sky. That is a source term along the ray, and over a layered field it is a sum, not an
+      // integral: L += throughput·(1 − t_L)·ŝ_L·S_L, throughput *= t_L, accumulated eye → sky.
+      //  • (1 − t_L) is the share of the beam this layer takes OUT of the ray — the scattering density, measured from
+      //    the same tap the silhouette uses, not authored.
+      //  • S_L is the irradiance arriving at that layer FROM ABOVE: the sun attenuated by the layers over it along
+      //    the SUN's ray (offset +g per metre of rise, since that is where the light comes from), plus the skylight.
+      //    Those are extra taps and nothing else — the field already holds everything they need.
+      //  • ŝ_L is the layer's own transmittance normalized to unit peak: HUE only (§3.5), so the knob carries
+      //    brightness and the chlorophyll spectrum carries colour. Taking the LAYER's rather than one leaf's also
+      //    accounts to first order for the scattered light filtering back out through the layer that made it.
+      // The bound is structural: Σ throughput·(1 − t_L) telescopes to 1 − Π t_L ≤ 1 per channel, ŝ ≤ 1 and
+      // uSkyScatter ≤ 1, so a crown can never radiate more than the light falling on it.
+      vec3 Lsc = vec3(0.0);
+      if(uSkyScatter > 0.0){
+        vec2 gS = uSunDir.xy / max(uSunDir.z, 0.05);
+        vec3 A0 = vec3(1.0), A1 = vec3(1.0), A2 = vec3(1.0);
+        if(uLayerCount>1) A0 *= tapUp(uLayer[1], pL0 + gS*(uLayerHeight[1]-uLayerHeight[0]));
+        if(uLayerCount>2) A0 *= tapUp(uLayer[2], pL0 + gS*(uLayerHeight[2]-uLayerHeight[0]));
+        if(uLayerCount>3) A0 *= tapUp(uLayer[3], pL0 + gS*(uLayerHeight[3]-uLayerHeight[0]));
+        if(uLayerCount>2) A1 *= tapUp(uLayer[2], pL1 + gS*(uLayerHeight[2]-uLayerHeight[1]));
+        if(uLayerCount>3) A1 *= tapUp(uLayer[3], pL1 + gS*(uLayerHeight[3]-uLayerHeight[1]));
+        if(uLayerCount>3) A2 *= tapUp(uLayer[3], pL2 + gS*(uLayerHeight[3]-uLayerHeight[2]));
+        vec3 thr = vec3(1.0);
+        Lsc += thr*(1.0-tL0)*leafHue(tL0)*(uSunColor*A0 + uAmbient); thr *= tL0;
+        Lsc += thr*(1.0-tL1)*leafHue(tL1)*(uSunColor*A1 + uAmbient); thr *= tL1;
+        Lsc += thr*(1.0-tL2)*leafHue(tL2)*(uSunColor*A2 + uAmbient); thr *= tL2;
+        Lsc += thr*(1.0-tL3)*leafHue(tL3)*(uSunColor    + uAmbient);   // nothing is stacked above the top layer
+        Lsc *= uSkyScatter;
+      }
       // WOOD AS SILHOUETTE. The same segments the floor casts shadows with (§4.5), read as GEOMETRY this time: no
       // uBulkShift term anywhere here, because that vector is where the wood's shadow FALLS and we are looking at the
       // wood itself. The sway is kept, each endpoint drifting by its own height fraction exactly as the cast does, so
@@ -1009,7 +1059,9 @@ void main(){
           // against blue sky, and one constant angle cannot know which — it is small either way, and the alternative
           // needs the source's angular coverage at the wood's own position, which is a second ray march.
           float pen = ds.y * max(SKY_AA, uSrcAngR.x);
-          T *= exp(-uOccTau * (1.0 - smoothstep(H.z, H.z + pen, ds.x)));   // Beer's law, same as the cast: overlaps add optical depth
+          float e = exp(-uOccTau * (1.0 - smoothstep(H.z, H.z + pen, ds.x)));   // Beer's law, same as the cast: overlaps add optical depth
+          T *= e;
+          Lsc *= e;   // wood stands BELOW the crowns on an upward ray, so it occludes the canopy's own glow as it occludes the sky behind it
         }
       }
       acc = T;   // the SAME quantity acc has always been — "how much of the light got through here" — so the mesopic hook at the tail reads it unchanged, now cued by canopy density instead of shade depth
@@ -1040,7 +1092,7 @@ void main(){
       // COMPOSITION: T·(sky + source). No receiver material of any kind — no Tt, no dye, no folds, no seams, no
       // ground albedo — because there is no surface between the canopy and the eye. The sky is attenuated by the
       // same T the sun is: leaves dim the blue behind them exactly as they dim the disk.
-      skyRad = (uAmbient*SKY_SKY_GAIN + uSunColor*L) * T;
+      skyRad = (uAmbient*SKY_SKY_GAIN + uSunColor*L) * T + Lsc;   // transmitted source + sky, plus what the leaves themselves radiate. At sky_scatter 0, Lsc is exactly 0.
     }
   } else if(uReceiver == 2){
     // ---- ENCLOSURE receiver (spec §4.9): the receiver stops being a plane the camera stares AT and becomes a
@@ -1565,7 +1617,8 @@ function create(canvas, opts){
               leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
               clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom') };
   U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
-                 curtainBake:loc(progFaithSeg,'uCurtainBake'), curtainY:loc(progFaithSeg,'uCurtainY') };
+                 curtainBake:loc(progFaithSeg,'uCurtainBake'), curtainY:loc(progFaithSeg,'uCurtainY'),
+                 segSway:loc(progFaithSeg,'uSegSway'), segTau:loc(progFaithSeg,'uSegTau') };
   U.facc = { tex:loc(progFAcc,'uFAccTex'), weight:loc(progFAcc,'uFAccWeight') };
   U.tp = {
     samples:loc(progTransport,'uSamples[0]'), count:loc(progTransport,'uSampleCount'),
@@ -1576,7 +1629,7 @@ function create(canvas, opts){
     farSmear:loc(progTransport,'uFarSmear'),
     origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
     sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'), ground:loc(progTransport,'uGround'),
-    skyView:loc(progTransport,'uSkyView'), srcAngR:loc(progTransport,'uSrcAngR'), srcAngL:loc(progTransport,'uSrcAngL'), srcMoon:loc(progTransport,'uSrcMoon'),
+    skyView:loc(progTransport,'uSkyView'), skyScatter:loc(progTransport,'uSkyScatter'), srcAngR:loc(progTransport,'uSrcAngR'), srcAngL:loc(progTransport,'uSrcAngL'), srcMoon:loc(progTransport,'uSrcMoon'),
     receiver:loc(progTransport,'uReceiver'), tt:loc(progTransport,'uTt'), curtainTint:loc(progTransport,'uCurtainTint'),
     curtainY:loc(progTransport,'uCurtainY'), foldDepth:loc(progTransport,'uFoldDepth'), foldScale:loc(progTransport,'uFoldScale'), foldCoarsen:loc(progTransport,'uFoldCoarsen'), foldWarp:loc(progTransport,'uFoldWarp'), sunDir:loc(progTransport,'uSunDir'), sheen:loc(progTransport,'uSheen'), scatter:loc(progTransport,'uScatter'),
     mullion:loc(progTransport,'uMullion'), mullPenumbra:loc(progTransport,'uMullPenumbra'),
@@ -1658,6 +1711,10 @@ function create(canvas, opts){
                   pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
                   gx:new Float32Array(MAX_SAMPLES), gy:new Float32Array(MAX_SAMPLES),// per-sample ground-shift scratch (hoisted; no per-bake alloc)
                   segVAO:null, segBuf:null, segRest:[], segArr:null, segCount:0 };   // + the woody skeleton (trunk+branches+twigs): rest segments, the per-bake swayed instance array, its VAO
+  // SKY VIEW's share of that skeleton (§4.9): the FINE wood (level > 1) the analytic occluder never carries, sorted
+  // into the leaves' own depth layers so a twig and the leaves hanging on it stamp into the SAME texture. Built
+  // only when the look-up camera is on; empty otherwise, and the layer bake then draws nothing extra.
+  const sky = { segVAO:null, segBuf:null, segRest:[], segArr:null, start:[], count:[] };
 
   function makeLayerTexture(size){
     const t=gl.createTexture();
@@ -2060,7 +2117,8 @@ function create(canvas, opts){
         // bears no leaves at all. (twigs[] is already capped and scaled by here.)
         const cj = (sg.clump>=0 && sg.clump<twigs.length) ? sg.clump : -1;
         segRest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], ha:sg.a[2], hb:sg.b[2], ra, rb, limb:sg.limb, px:sg.px, py:sg.py,
-                       clump:cj, tbx:(cj>=0?twigs[cj].bx:0), tby:(cj>=0?twigs[cj].by:0) });   // REAL grown heights (cast == preview)
+                       clump:cj, tbx:(cj>=0?twigs[cj].bx:0), tby:(cj>=0?twigs[cj].by:0),
+                       level:sg.level, mz:0.5*(sg.a[2]+sg.b[2]) });   // REAL grown heights (cast == preview); level + midpoint height pick the SKY view's layer bin below
       }
       faith.segRest = segRest; faith.segCount = segRest.length;
       faith.segArr = new Float32Array(segRest.length*8);   // 8 floats/seg: iSeg(ax,ay,bx,by) + iSegH(ha,hb,ra,rb); positions refilled per bake with the sway
@@ -2078,6 +2136,41 @@ function create(canvas, opts){
       gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
       gl.bindVertexArray(null);
       faith.segVAO=vao; faith.segBuf=buf;
+    }
+    // ---- SKY VIEW's layer-stamped wood (§4.9). The look-up camera reads the layer textures as ANGULAR SILHOUETTES,
+    // so wood binned into a layer is drawn at that layer's plan and read at the ray's crossing of that layer's height
+    // — which is exactly where the leaves in the same bin are drawn and read. Registration therefore holds by
+    // CONSTRUCTION for a terminal segment: it takes its own clump's layer, the very bin its leaves went into.
+    // ONLY the fine wood goes in. Level 0 and 1 are the trunk and main limbs, which the analytic occluder already
+    // draws as real 3-D capsules; binning those would both double them and shatter them, because a segment that
+    // spans several layer bands is cut into pieces read at different plan points. Fine wood is short by construction
+    // (measured well under one band at every shipped look), so it cannot come apart. ----
+    {
+      const segRest = [], nL = Math.max(1, params.layer_count|0);
+      if(params.sky_view){
+        const binOf = (s0) => s0.clump >= 0 ? twigs[s0.clump].layer
+                            : (nL > 1 ? clamp(Math.round((s0.mz - zMin)/dz*(nL-1)), 0, nL-1) : 0);   // the twigs' own binning rule, applied to interior wood by its midpoint
+        const byLayer = [];
+        for(let l=0;l<nL;l++) byLayer.push([]);
+        for(const s0 of faith.segRest) if(s0.level > 1) byLayer[binOf(s0)].push(s0);
+        for(let l=0;l<nL;l++){ sky.start[l] = segRest.length; sky.count[l] = byLayer[l].length; for(const s0 of byLayer[l]) segRest.push(s0); }
+      } else { sky.start.length = 0; sky.count.length = 0; }
+      sky.segRest = segRest;
+      sky.segArr = new Float32Array(segRest.length*8);
+      if(sky.segVAO){ gl.deleteVertexArray(sky.segVAO); gl.deleteBuffer(sky.segBuf); sky.segVAO=null; sky.segBuf=null; }
+      if(segRest.length){
+        sky.segBuf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, sky.segArr, gl.DYNAMIC_DRAW);
+        sky.segVAO = gl.createVertexArray();
+        gl.bindVertexArray(sky.segVAO);
+        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
+        gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,32,0);  gl.vertexAttribDivisor(1,1);
+        gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,32,16); gl.vertexAttribDivisor(2,1);
+        gl.bindVertexArray(null);
+      }
     }
     // FAITHFUL cast-frame plan AABB (spec §4.5 / A5): the REAL plan extent of every leaf (faithData x,y) + every wood
     // endpoint, so bakeFaithful's cast frame covers a wide grove's OUTER crown. (Was bounded by ±canopy_extent/2, which
@@ -2128,8 +2221,34 @@ function create(canvas, opts){
       gl.bindVertexArray(L.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, L.count);
     }
-    // (woody branches are no longer stamped into the leaf layers — they're the continuous-height analytic
-    // occluder in transport now, §4.5; only leaves are baked here.)
+    // The woody TRUNK and MAIN LIMBS are never stamped here — they are the continuous-height analytic occluder in
+    // transport (§4.5), because a long segment cut into layer bands casts a shadow that shatters into a staircase.
+    // The SKY VIEW adds back the FINE wood only (§4.9): it is read along the eye's ray rather than cast, it is short
+    // enough to sit inside one band, and it carries the same per-layer sway the leaves in that band get — so the
+    // leaves have visible twigs to hang on instead of floating in clouds around bare limb tips.
+    if(params.sky_view && params.branch_tau > 0 && sky.segRest.length > 0){
+      fillSwayedSegs(sky.segRest, sky.segArr, 0, 0);   // the coherent translation arrives per LAYER below, exactly as the leaves take it
+      gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, sky.segArr);
+      gl.useProgram(progFaithSeg);
+      gl.uniform2f(U.faithSeg.origin, -E/2, -E/2);
+      gl.uniform2f(U.faithSeg.extent, E, E);          // the CANOPY plan frame, the leaves' own — no sun projection here
+      gl.uniform2f(U.faithSeg.g, 0.0, 0.0);           // g is where a shadow FALLS; nothing here is a shadow
+      gl.uniform1i(U.faithSeg.curtainBake, 0);
+      gl.uniform1f(U.faithSeg.woodTau, params.branch_tau);
+      gl.uniform1i(U.faithSeg.segTau, 1);             // layer textures accumulate OPTICAL DEPTH additively
+      gl.bindVertexArray(sky.segVAO);
+      for(let l=0;l<params.layer_count;l++){
+        if(!sky.count[l]) continue;
+        const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
+        gl.uniform2f(U.faithSeg.segSway, motion.sway[0]*f, motion.sway[1]*f);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layerTex[l], 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);   // draw this layer's slice: no baseInstance in WebGL2, so the attribute origin moves instead
+        gl.vertexAttribPointer(1,4,gl.FLOAT,false,32,sky.start[l]*32);
+        gl.vertexAttribPointer(2,4,gl.FLOAT,false,32,sky.start[l]*32+16);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, sky.count[l]);
+      }
+    }
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -2141,6 +2260,53 @@ function create(canvas, opts){
   // landing (world - height·g_i) with MULTIPLICATIVE blend → transmittance_i in a scratch buffer, then add
   // w_i·transmittance_i into the accumulator. The result is one soft-shadow texture transport taps ONCE. Cost moves
   // from the per-pixel sample loop to per-sample bake passes — gated, so the park / layer path pays nothing. ----
+  // ---- the swayed skeleton, filled ONCE and read by two bakes (§4.5/§4.9). Each segment is rotated by its limb's
+  // bend about its tree pivot, and a TERMINAL segment first swings about its own twig base by that clump's twig bend —
+  // the same pivot, angle and order VS_FAITH gives the leaves hanging on it, so they ride the twig instead of sliding
+  // off it. `swx/swy` is the coherent whole-tree translation: the CAST wants it height-scaled and folded in here; the
+  // SKY view's layer stamp wants the leaf bake's own per-layer factor instead and passes 0, taking it as a uniform. ----
+  function fillSwayedSegs(R, sa, swx, swy){
+    const la = hier ? hier.limbAngle : null, ta = hier ? hier.twigAngle : null;
+    const lat = hier ? hier.limbAttach : null;   // per-limb attach height: where the sway_pitch foreshorten is anchored (§5.1)
+    const lp = hier ? hier.limbPitch : null;     // per-limb pitch DOF: the angle the foreshorten is taken from (§5.1)
+    const hRef = Math.max(faith.hMax, 1e-3);
+    const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): foreshorten the wood heights by the SAME factor the leaves use, so leaf-on-wood registration holds
+    for(let k=0;k<R.length;k++){
+      const s = R[k];
+      const th = (la && s.limb>=0 && s.limb<la.length) ? la[s.limb] : 0;
+      // MEDIUM band (§5.4): terminal wood first swings about its OWN twig base by that clump's twig bend, before
+      // the limb rotation — the same pivot, angle and order VS_FAITH gives the leaves hanging on it, so they ride
+      // the twig instead of sliding off it. Interior wood (clump<0) is untouched. sway_pitch meets the band here
+      // and stays orthogonal: `fore` scales HEIGHTS off the limb bend, this is a plan-plane yaw. tf=0 → tt=0 → rest.
+      const tt = (ta && s.clump>=0) ? ta[s.clump] : 0;
+      let ax=s.ax, ay=s.ay, bx=s.bx, by=s.by;
+      if(tt!==0){
+        const ctw=Math.cos(tt), stw=Math.sin(tt), tbx=s.tbx, tby=s.tby;
+        const dax=ax-tbx, day=ay-tby, dbx=bx-tbx, dby=by-tby;
+        ax = tbx + ctw*dax - stw*day; ay = tby + stw*dax + ctw*day;
+        bx = tbx + ctw*dbx - stw*dby; by = tby + stw*dbx + ctw*dby;
+      }
+      const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*8;
+      // the SAME expression publishBend gives this limb's clumps, off the SAME pitch DOF — leaf-on-wood
+      // registration is only kept by the two staying literally in lockstep (§5.1). The plan rotation above
+      // is the yaw DOF; this is the elevation one, and the two compose orthogonally.
+      const ph = (sp>0 && lp && s.limb>=0 && s.limb<lp.length) ? lp[s.limb] : 0;
+      const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(ph)), 0.1, 1) : 1;
+      // ANCHOR the foreshorten at the limb's attach height (§5.1): h' = at + (h−at)·fore, so at the join h' = at
+      // exactly and the pitching limb cannot part from the trunk axis, which does not pitch. Same sign for a droop
+      // tip hanging BELOW the attach — rotating a limb down about its joint moves every point toward the attach
+      // plane. Trunk wood (limb<0) never pitches, and at=0 with fore=1 reproduces h' = h exactly (byte-identical).
+      const at = (sp>0 && lat && s.limb>=0 && s.limb<lat.length) ? lat[s.limb] : 0;
+      const ha = at + (s.ha-at)*fore, hb = at + (s.hb-at)*fore;
+      const kA = ha/hRef, kB = hb/hRef;   // sway grows with height: 0 at the ground → the trunk base stays PLANTED, the crown sways; same fraction for a limb & the trunk at its height, so they stay joined
+      sa[o]   = px + c*(ax-px) - sn*(ay-py) + swx*kA;
+      sa[o+1] = py + sn*(ax-px) + c*(ay-py) + swy*kA;
+      sa[o+2] = px + c*(bx-px) - sn*(by-py) + swx*kB;
+      sa[o+3] = py + sn*(bx-px) + c*(by-py) + swy*kB;
+      sa[o+4]=ha; sa[o+5]=hb; sa[o+6]=s.ra; sa[o+7]=s.rb;
+    }
+  }
+
   function bakeFaithful(){
     if(faith.count===0){ gl.bindFramebuffer(gl.FRAMEBUFFER, null); return; }
     const res = bakeRes(), N = src.count;
@@ -2223,51 +2389,15 @@ function create(canvas, opts){
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, clusterTex);     gl.uniform1i(U.faith.clusterTex, 4);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, clusterGeomTex); gl.uniform1i(U.faith.clusterGeom, 5);
 
-    // FAITHFUL skeleton (§4.5): refill the instance array with the live limb SWING (rotate each segment about its tree
-    // pivot by the limb bend) + whole-tree drift, so the wood sways WITH the leaves; then upload + set its statics once.
+    // FAITHFUL skeleton (§4.5): refill the instance array with the live limb SWING + whole-tree drift, so the wood
+    // sways WITH the leaves; then upload + set its statics once.
     if(woodOn){
-      const la = hier ? hier.limbAngle : null, ta = hier ? hier.twigAngle : null, sa = faith.segArr, R = faith.segRest;
-      const lat = hier ? hier.limbAttach : null;   // per-limb attach height: where the sway_pitch foreshorten is anchored (§5.1)
-      const lp = hier ? hier.limbPitch : null;     // per-limb pitch DOF: the angle the foreshorten is taken from (§5.1)
-      const swx = motion.sway[0], swy = motion.sway[1], hRef = Math.max(faith.hMax, 1e-3);
-      const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): foreshorten the wood heights by the SAME factor the leaves use, so leaf-on-wood registration holds
-      for(let k=0;k<faith.segCount;k++){
-        const s = R[k];
-        const th = (la && s.limb>=0 && s.limb<la.length) ? la[s.limb] : 0;
-        // MEDIUM band (§5.4): terminal wood first swings about its OWN twig base by that clump's twig bend, before
-        // the limb rotation — the same pivot, angle and order VS_FAITH gives the leaves hanging on it, so they ride
-        // the twig instead of sliding off it. Interior wood (clump<0) is untouched. sway_pitch meets the band here
-        // and stays orthogonal: `fore` scales HEIGHTS off the limb bend, this is a plan-plane yaw. tf=0 → tt=0 → rest.
-        const tt = (ta && s.clump>=0) ? ta[s.clump] : 0;
-        let ax=s.ax, ay=s.ay, bx=s.bx, by=s.by;
-        if(tt!==0){
-          const ctw=Math.cos(tt), stw=Math.sin(tt), tbx=s.tbx, tby=s.tby;
-          const dax=ax-tbx, day=ay-tby, dbx=bx-tbx, dby=by-tby;
-          ax = tbx + ctw*dax - stw*day; ay = tby + stw*dax + ctw*day;
-          bx = tbx + ctw*dbx - stw*dby; by = tby + stw*dbx + ctw*dby;
-        }
-        const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*8;
-        // the SAME expression publishBend gives this limb's clumps, off the SAME pitch DOF — leaf-on-wood
-        // registration is only kept by the two staying literally in lockstep (§5.1). The plan rotation above
-        // is the yaw DOF; this is the elevation one, and the two compose orthogonally.
-        const ph = (sp>0 && lp && s.limb>=0 && s.limb<lp.length) ? lp[s.limb] : 0;
-        const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(ph)), 0.1, 1) : 1;
-        // ANCHOR the foreshorten at the limb's attach height (§5.1): h' = at + (h−at)·fore, so at the join h' = at
-        // exactly and the pitching limb cannot part from the trunk axis, which does not pitch. Same sign for a droop
-        // tip hanging BELOW the attach — rotating a limb down about its joint moves every point toward the attach
-        // plane. Trunk wood (limb<0) never pitches, and at=0 with fore=1 reproduces h' = h exactly (byte-identical).
-        const at = (sp>0 && lat && s.limb>=0 && s.limb<lat.length) ? lat[s.limb] : 0;
-        const ha = at + (s.ha-at)*fore, hb = at + (s.hb-at)*fore;
-        const kA = ha/hRef, kB = hb/hRef;   // sway grows with height: 0 at the ground → the trunk base stays PLANTED, the crown sways; same fraction for a limb & the trunk at its height, so they stay joined
-        sa[o]   = px + c*(ax-px) - sn*(ay-py) + swx*kA;
-        sa[o+1] = py + sn*(ax-px) + c*(ay-py) + swy*kA;
-        sa[o+2] = px + c*(bx-px) - sn*(by-py) + swx*kB;
-        sa[o+3] = py + sn*(bx-px) + c*(by-py) + swy*kB;
-        sa[o+4]=ha; sa[o+5]=hb; sa[o+6]=s.ra; sa[o+7]=s.rb;
-      }
+      fillSwayedSegs(faith.segRest, faith.segArr, motion.sway[0], motion.sway[1]);
       gl.bindBuffer(gl.ARRAY_BUFFER, faith.segBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, sa);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, faith.segArr);
       gl.useProgram(progFaithSeg);
+      gl.uniform2f(U.faithSeg.segSway, 0.0, 0.0);   // the cast's sway is height-scaled and already in the instance data
+      gl.uniform1i(U.faithSeg.segTau, 0);           // the cast's scratch is multiplicative: emit transmittance
       gl.uniform2f(U.faithSeg.origin, faith.ox, faith.oy);
       gl.uniform2f(U.faithSeg.extent, faith.ext, faith.ext);
       gl.uniform1f(U.faithSeg.woodTau, params.branch_tau);
@@ -2828,6 +2958,7 @@ function create(canvas, opts){
     // when it is on. The three source uniforms are regenSource's own numbers, so the sun in frame and the dapples it
     // throws are drawn from one distribution; they cost nothing when sky_view is off (an untaken shader branch).
     gl.uniform1i(U.tp.skyView, params.sky_view ? 1 : 0);
+    gl.uniform1f(U.tp.skyScatter, clamp(params.sky_scatter, 0, 1));
     gl.uniform2f(U.tp.srcAngR, src.coreR, src.haloR);
     gl.uniform2f(U.tp.srcAngL, src.Lcore, src.Lhalo);
     gl.uniform2f(U.tp.srcMoon, src.moonD, src.moonR);
@@ -3238,6 +3369,7 @@ function create(canvas, opts){
       layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
       if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
+      if(sky.segVAO){ gl.deleteVertexArray(sky.segVAO); gl.deleteBuffer(sky.segBuf); }
       [emptyVAO, srcDbgVAO, vizVAO].forEach(v => { if(v) gl.deleteVertexArray(v); });
       [quadBuf, srcDbgBuf, vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });
       if(EDITOR) setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
