@@ -1083,7 +1083,13 @@ void main(){
           // against blue sky, and one constant angle cannot know which — it is small either way, and the alternative
           // needs the source's angular coverage at the wood's own position, which is a second ray march.
           float pen = ds.y * max(SKY_AA, uSrcAngR.x);
-          float e = exp(-uOccTau * (1.0 - smoothstep(H.z, H.z + pen, ds.x)));   // Beer's law, same as the cast: overlaps add optical depth
+          // wood occludes only where it stands IN FRONT of the eye (closest approach out along the ray, ds.y > 0).
+          // At ds.y = 0 the nearest wood point is AT or behind the eye — an eye beside (or planted on the axis of)
+          // a trunk must not be shadowed by it in every direction: that darkens the ENTIRE frame by exp(-tau), sky
+          // and sun included. A 5-20 cm ramp keeps the gate C1; wood genuinely crossed by the gaze (ds.y large,
+          // ds.x < radius) still blocks fully.
+          float infront = smoothstep(0.05, 0.2, ds.y);
+          float e = exp(-uOccTau * infront * (1.0 - smoothstep(H.z, H.z + pen, ds.x)));   // Beer's law, same as the cast: overlaps add optical depth
           T *= e;
           Lsc *= e;   // wood stands BELOW the crowns on an upward ray, so it occludes the canopy's own glow as it occludes the sky behind it
         }

@@ -238,7 +238,7 @@ export const PRESETS = {
     "canopy_extent_m": 34, "tex_resolution": 1024, "bake_resolution": 1536,   // 34 m over 1536 is 2.2 cm/texel — a 0.13 m leaf is 6 texels across, and leaf silhouettes ARE the picture here
     "seed": 290626672, "sun_elevation_deg": 55, "sun_azimuth_deg": 140,
     "view_extent_m": 9, "view_pitch_deg": 90, "view_fov_deg": 60, "view_yaw_deg": 0,
-    "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.14, "far_smear": 0,
+    "view_center_x": 1.6, "view_center_y": 1.1, "trunk_radius_m": 0.14, "far_smear": 0,
     "exposure": 1.3, "contrast": 1.0, "ambient_skylight": 1.5, "sky_turbidity": 0.05, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
     "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,   // the eye's veiling glare (§4.9), tight enough to halo the SUN and not veil the frame: the mix is linear-HDR, so a wide one drags the sky down toward the canopy's own mean
     "wind_pattern": "gusty", "wind_strength": 1.3, "wind_gustiness": 0.3, "wind_direction_deg": 0, "gust_frequency": 0.11,
@@ -287,7 +287,7 @@ export const PRESETS = {
     "canopy_extent_m": 26, "tex_resolution": 1024, "bake_resolution": 1536,   // 1.7 cm/texel
     "seed": 290626672, "sun_elevation_deg": 78, "sun_azimuth_deg": 150,
     "view_extent_m": 8, "view_pitch_deg": 58, "view_fov_deg": 52, "view_yaw_deg": 0,
-    "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.04, "far_smear": 0,
+    "view_center_x": 0.9, "view_center_y": 0.7, "trunk_radius_m": 0.04, "far_smear": 0,
     "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 2.0, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
     "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,
     "wind_pattern": "gusty", "wind_strength": 1.1, "wind_gustiness": 0.35, "wind_direction_deg": 0, "gust_frequency": 0.16,
@@ -320,7 +320,7 @@ export const PRESETS = {
     "canopy_extent_m": 42, "tex_resolution": 1024, "bake_resolution": 1536,   // 2.7 cm/texel
     "seed": 290626672, "sun_elevation_deg": 40, "sun_azimuth_deg": 200,
     "view_extent_m": 11, "view_pitch_deg": 62, "view_fov_deg": 60, "view_yaw_deg": 35,
-    "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.22, "far_smear": 0,
+    "view_center_x": 1.4, "view_center_y": 1.0, "trunk_radius_m": 0.22, "far_smear": 0,
     "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 1.6, "sky_turbidity": 0.06, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
     "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,
     "wind_pattern": "squally", "wind_strength": 1.2, "wind_gustiness": 0.28, "wind_direction_deg": 0, "gust_frequency": 0.1,
@@ -356,7 +356,7 @@ export const PRESETS = {
     "canopy_extent_m": 54, "tex_resolution": 1024, "bake_resolution": 2048,   // 2.6 cm/texel over the widest box in the set
     "seed": 290626672, "sun_elevation_deg": 70, "sun_azimuth_deg": 120,
     "view_extent_m": 14, "view_pitch_deg": 90, "view_fov_deg": 68, "view_yaw_deg": 0,
-    "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.3, "far_smear": 0,
+    "view_center_x": 1.8, "view_center_y": 1.3, "trunk_radius_m": 0.3, "far_smear": 0,
     "exposure": 1.3, "contrast": 1.0, "ambient_skylight": 2.5, "sky_turbidity": 0.45, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
     "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.05,
     "wind_pattern": "lazy", "wind_strength": 0.7, "wind_gustiness": 0.2, "wind_direction_deg": 0, "gust_frequency": 0.07,
