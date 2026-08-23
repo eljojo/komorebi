@@ -38,9 +38,9 @@ export const AXES = [
   { key: "chromatic_aberration", label: "diffraction", scope: "", pass: "transport", cls: "style",
     proposable: false, measureLevel: 0,
     note: "a deliberate look — measured for its price, never cut" },
-  { key: "curtain_diffuse", label: "glow diffusion", scope: "", pass: "transport", cls: "style",
+  { key: "glow_bleed", label: "glow diffusion", scope: "", pass: "transport", cls: "style",
     proposable: false, measureLevel: 0,
-    note: "the receiver's lateral-diffusion tier (§4.9) — the curtain's one genuinely expensive step: a linear-HDR target plus two blur passes plus a compositing tone-map. Classified like diffraction and for the same reason: it is a deliberate look, measured for its price, never auto-cut. Its declared fallback rung is the per-pixel forward-scatter wrap (curtain_scatter), which the author chooses — the governor never crosses this one." },
+    note: "the receiver's lateral-diffusion tier (§4.9) — the curtain's one genuinely expensive step: a linear-HDR target plus two blur passes plus a compositing tone-map. Classified like diffraction and for the same reason: it is a deliberate look, measured for its price, never auto-cut. Its declared fallback rung is the per-pixel forward-scatter wrap (fabric_scatter), which the author chooses — the governor never crosses this one." },
   // opt-in 'tune' optimizations (budget-freeing cuts; off in the engine's DEFAULTS).
   { key: "bake_resolution", label: "bake res", scope: "textures", pass: "bake", cls: "tune",
     proposable: true, follows: "tex_resolution", levels: [768],

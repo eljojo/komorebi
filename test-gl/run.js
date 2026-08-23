@@ -36,9 +36,9 @@ const STILL_FRAMES = [20, 60];   // the stillness proof: one engine, two capture
 // Adding an invariant is adding a line.
 // ---------------------------------------------------------------------------
 const FABRIC_FAMILY = {
-  curtain_tt: 0.9, curtain_tint_r: 0.9, curtain_tint_g: 0.2, curtain_tint_b: 0.7,
+  fabric_tt: 0.9, fabric_tint_r: 0.9, fabric_tint_g: 0.2, fabric_tint_b: 0.7,
   fold_depth: 0.9, fold_scale: 1.4, fold_coarsen: 0.9, fold_warp: 0.3,
-  velvet_sheen: 1, curtain_scatter: 0.9, curtain_diffuse: 0.5, curtain_diffuse_m: 0.2,
+  velvet_sheen: 1, fabric_scatter: 0.9, glow_bleed: 0.5, glow_bleed_m: 0.2,
   mullion_tau: 3, mullion_pitch_m: 0.2, mullion_bar_m: 0.04, mullion_depth_m: 0.1,
   window_w_m: 2, window_h_m: 2, window_cx_m: 0.3, window_cy_m: 1.2, window_wall: 0.4,
 };
@@ -49,8 +49,8 @@ const INVARIANTS = [
     a: { receiver: 0 }, b: { receiver: 0, ...FABRIC_FAMILY } },
   // The lateral-diffusion tier alone: its gate adds/drops two HDR passes, which is the kind of thing that
   // leaks a rounding difference even when the mix weight is dead.
-  { name: 'glow tier off-path: receiver 0 + curtain_diffuse 0.4', preset: 'park 1',
-    a: { receiver: 0 }, b: { receiver: 0, curtain_diffuse: 0.4, curtain_diffuse_m: 0.08 } },
+  { name: 'glow tier off-path: receiver 0 + glow_bleed 0.4', preset: 'park 1',
+    a: { receiver: 0 }, b: { receiver: 0, glow_bleed: 0.4, glow_bleed_m: 0.08 } },
   // On the cloth itself, with the two authored-occluder gates shut: their geometry knobs must be dead code.
   { name: 'curtain with mullion_tau 0 / window_w_m 0 ignores their geometry', preset: 'curtain 1',
     a: { mullion_tau: 0, window_w_m: 0, fold_warp: 0 },

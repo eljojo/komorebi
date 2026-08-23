@@ -187,7 +187,7 @@ export const PRESETS = {
   //    Luminous all the way down, green-gold in the middle depths, never black, and the SKY is the brightest surface
   //    in the frame (luminance 205 against the thinnest crown's 197). A sunlit crown reads 1.7x a shaded one at the
   //    same eye-ray depth, which is the whole point of the scatter term.
-  //  • THE VEIL IS A LIGHT KNOB, not a decoration. curtain_diffuse mixes a blurred copy of the frame in LINEAR HDR
+  //  • THE VEIL IS A LIGHT KNOB, not a decoration. glow_bleed mixes a blurred copy of the frame in LINEAR HDR
   //    before the tone tail, so a wide one drags open sky down toward the canopy's own mean: at 0.35 it cost this
   //    sky 13 sRGB levels, and under the old dark preset it took (81,109,157) to (68,93,138). 0.15 at a 0.04 m radius
   //    halos the sun and leaves the rest of the frame alone.
@@ -219,7 +219,7 @@ export const PRESETS = {
   //    without draining the disk. Elevation 55 keeps it well inside a 60° lens pointed at the zenith.
   //  • the WIND is the soul: sway_height_gain 1.6 puts the crowns on long levers so a gust leans the whole grove
   //    together — §5.1's coherent band, watched directly for the first time instead of read off a floor pattern.
-  //  • curtain_diffuse is the eye's VEILING GLARE here, not a weave (§4.9). With view_extent_m 9 the pair below is
+  //  • glow_bleed is the eye's VEILING GLARE here, not a weave (§4.9). With view_extent_m 9 the pair below is
   //    about an 11 px radius on a 1000-tall frame — a screen-space number, so re-judge it if either knob moves, and
   //    re-judge it against the twigs, which are the finest thing in the frame for it to smear.
   //  • exposure 1.3 / contrast 1.0: the sun clips to white and must, and any contrast above 1 clips the backlit
@@ -240,7 +240,7 @@ export const PRESETS = {
     "view_extent_m": 9, "view_pitch_deg": 90, "view_fov_deg": 60, "view_yaw_deg": 0,
     "view_center_x": 1.6, "view_center_y": 1.1, "trunk_radius_m": 0.14, "far_smear": 0,
     "exposure": 1.3, "contrast": 1.0, "ambient_skylight": 1.5, "sky_turbidity": 0.05, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
-    "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,   // the eye's veiling glare (§4.9), tight enough to halo the SUN and not veil the frame: the mix is linear-HDR, so a wide one drags the sky down toward the canopy's own mean
+    "glow_bleed": 0.15, "glow_bleed_m": 0.04,   // the eye's veiling glare (§4.9), tight enough to halo the SUN and not veil the frame: the mix is linear-HDR, so a wide one drags the sky down toward the canopy's own mean
     "wind_pattern": "gusty", "wind_strength": 1.3, "wind_gustiness": 0.3, "wind_direction_deg": 0, "gust_frequency": 0.11,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 1.6,
@@ -289,7 +289,7 @@ export const PRESETS = {
     "view_extent_m": 8, "view_pitch_deg": 58, "view_fov_deg": 70, "view_yaw_deg": 0,
     "view_center_x": 0.9, "view_center_y": 0.7, "trunk_radius_m": 0.04, "far_smear": 0,
     "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 2.0, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
-    "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,
+    "glow_bleed": 0.15, "glow_bleed_m": 0.04,
     "wind_pattern": "gusty", "wind_strength": 1.1, "wind_gustiness": 0.35, "wind_direction_deg": 0, "gust_frequency": 0.16,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 2.2, "sway_ceiling": 0.4, "damping_ratio": 0.5, "backlash_gain": 1, "sway_height_gain": 1.6,
@@ -322,7 +322,7 @@ export const PRESETS = {
     "view_extent_m": 11, "view_pitch_deg": 62, "view_fov_deg": 60, "view_yaw_deg": 35,
     "view_center_x": 1.4, "view_center_y": 1.0, "trunk_radius_m": 0.17, "far_smear": 0,
     "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 1.6, "sky_turbidity": 0.06, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
-    "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,
+    "glow_bleed": 0.15, "glow_bleed_m": 0.04,
     "wind_pattern": "squally", "wind_strength": 1.2, "wind_gustiness": 0.28, "wind_direction_deg": 0, "gust_frequency": 0.1,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.4,
     "sway_stiffness": 1.0, "sway_ceiling": 0.4, "damping_ratio": 0.6, "backlash_gain": 1, "sway_height_gain": 1.6,
@@ -358,7 +358,7 @@ export const PRESETS = {
     "view_extent_m": 14, "view_pitch_deg": 90, "view_fov_deg": 68, "view_yaw_deg": 0,
     "view_center_x": 1.8, "view_center_y": 1.3, "trunk_radius_m": 0.3, "far_smear": 0,
     "exposure": 1.3, "contrast": 1.0, "ambient_skylight": 2.5, "sky_turbidity": 0.45, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
-    "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.05,
+    "glow_bleed": 0.15, "glow_bleed_m": 0.05,
     "wind_pattern": "lazy", "wind_strength": 0.7, "wind_gustiness": 0.2, "wind_direction_deg": 0, "gust_frequency": 0.07,
     "weather_variability": 0.2, "weather_speed": 1, "gust_attack": 1.6, "gust_decay": 2.4,
     "sway_stiffness": 0.8, "sway_ceiling": 0.4, "damping_ratio": 0.7, "backlash_gain": 1, "sway_height_gain": 1.6,
@@ -382,9 +382,9 @@ export const PRESETS = {
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
     "seed": 938460877, "sun_elevation_deg": 13, "sun_azimuth_deg": 62,
     "receiver": 1, "standing_scene": true, "faithful_canopy": true,
-    "curtain_distance_m": 0.6, "curtain_tt": 0.78, "curtain_tint_r": 0.45, "curtain_tint_g": 1, "curtain_tint_b": 0.28,
+    "cloth_distance_m": 0.6, "fabric_tt": 0.78, "fabric_tint_r": 0.45, "fabric_tint_g": 1, "fabric_tint_b": 0.28,
     "fold_depth": 0.38, "fold_scale": 0.6, "fold_coarsen": 0.22, "fold_warp": 0.28, "velvet_sheen": 0.02,
-    "curtain_scatter": 0.42, "curtain_diffuse": 0.74, "curtain_diffuse_m": 0.035,
+    "fabric_scatter": 0.42, "glow_bleed": 0.74, "glow_bleed_m": 0.035,
     "mullion_tau": 0.7, "mullion_pitch_m": 0.44, "mullion_bar_m": 0.032, "mullion_depth_m": 0.04,
     "window_w_m": 4.5, "window_h_m": 3.05, "window_cx_m": 0, "window_cy_m": 1.3, "window_wall": 0,
     "view_extent_m": 4.69, "view_pitch_deg": 19, "view_fov_deg": 60, "view_yaw_deg": -118.85,
@@ -413,9 +413,9 @@ export const PRESETS = {
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
     "seed": 938460877, "sun_elevation_deg": 7, "sun_azimuth_deg": 55,
     "receiver": 1, "standing_scene": true, "faithful_canopy": true,
-    "curtain_distance_m": 1.8, "curtain_tt": 0.85, "curtain_tint_r": 0.95, "curtain_tint_g": 0.97, "curtain_tint_b": 1,
+    "cloth_distance_m": 1.8, "fabric_tt": 0.85, "fabric_tint_r": 0.95, "fabric_tint_g": 0.97, "fabric_tint_b": 1,
     "fold_depth": 0.3, "fold_scale": 0.5, "fold_coarsen": 0.22, "fold_warp": 0.34, "velvet_sheen": 0,
-    "curtain_scatter": 0.5, "curtain_diffuse": 0.8, "curtain_diffuse_m": 0.05,
+    "fabric_scatter": 0.5, "glow_bleed": 0.8, "glow_bleed_m": 0.05,
     "mullion_tau": 0.55, "mullion_pitch_m": 0.44, "mullion_bar_m": 0.032, "mullion_depth_m": 0.04,
     "window_w_m": 4.5, "window_h_m": 3.05, "window_cx_m": 0, "window_cy_m": 1.3, "window_wall": 0,
     "view_extent_m": 4.69, "view_pitch_deg": 19, "view_fov_deg": 60, "view_yaw_deg": -118.85,
@@ -484,11 +484,11 @@ export const PRESETS = {
     // THE ENCLOSURE. faithful_canopy OFF is not a budget cut: the faithful pre-bake fixes one flat receiver frame
     // and the enclosure has none, so receiver 2 forces the layer tier regardless — written false to say so. At these
     // distances the cast is deep pinhole, where the layer tier's height quantization vanishes under the disk blur.
-    // (curtain_distance_m is gone with it: the cloth's world-Y comes out of the ray cast now.)
+    // (cloth_distance_m is gone with it: the cloth's world-Y comes out of the ray cast now.)
     "receiver": 2, "standing_scene": true, "faithful_canopy": false,
-    "curtain_tt": 0.6, "curtain_tint_r": 0.92, "curtain_tint_g": 0.9, "curtain_tint_b": 0.82,
+    "fabric_tt": 0.6, "fabric_tint_r": 0.92, "fabric_tint_g": 0.9, "fabric_tint_b": 0.82,
     "velvet_sheen": 0,   // MATTE — nylon has no pile, and the satin ridge glow is the one curtain cue that would break the read
-    "curtain_scatter": 0.7,   // most of the transmit diffuses in the weave: shade lifts toward pale gray (never black), the glowy-haze half of the reference
+    "fabric_scatter": 0.7,   // most of the transmit diffuses in the weave: shade lifts toward pale gray (never black), the glowy-haze half of the reference
     // THE MESH BAND (§4.9), the first per-panel material: solid nylon to the shoulder, no-see-um mesh above it. At
     // 0.6 the upper band passes ~73 % of what the nylon does and keeps only 40 % of the scatter above, so it reads
     // darker AND crisper — which is the delineation the smooth arch shading took away when the shoulder crease went.
@@ -497,7 +497,7 @@ export const PRESETS = {
     // LATERAL DIFFUSION (§4.9), the tier this look motivates: the wrap above softens each pixel's own fold, but only
     // this bleeds a hot dapple's glow ACROSS its cast-shadow edge — the reference's spotlight-versus-haze contrast.
     // The one look that opts into the expensive rung; 8 cm of bleed is about right for thin nylon. Both taste calls.
-    "curtain_diffuse": 0.45, "curtain_diffuse_m": 0.07,
+    "glow_bleed": 0.45, "glow_bleed_m": 0.07,
     // TAUT MEMBRANE — no folds at all. A pitched tent is stretched on poles: unlike the hanging curtain its surface
     // carries NO drape, and every bit of visible variation must come from the LIGHT (dapples, shade masses, bloom),
     // never from a fabric pattern (the reviewed failure: any periodic surface modulation on bright nylon reads as

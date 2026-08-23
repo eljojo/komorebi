@@ -67,10 +67,10 @@ const MORPH_KEYS = [
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
-  'curtain_tt','curtain_tint_r','curtain_tint_g','curtain_tint_b',      // curtain receiver (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
-  'curtain_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','curtain_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
+  'fabric_tt','fabric_tint_r','fabric_tint_g','fabric_tint_b',          // the receiver's fabric (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
+  'cloth_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','fabric_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
   'tent_ridge_h_m','tent_half_w_m','tent_crown_w_m','tent_shoulder_h_m','tent_shoulder_w_m','tent_len_m','tent_end_lean','tent_end_apex_h_m','tent_hip_rake','tent_eye_h_m','tent_fade','tent_seam','tent_mesh',   // the ENCLOSURE receiver's polytope (§4.9): every one is a live shader uniform read per pixel, so they tween — reshaping the tent around the viewer needs no rebuild (the `receiver` gate that selects it is the scene-mode flag)
-  'curtain_diffuse','curtain_diffuse_m',                                // lateral-diffusion glow (§4.9): the sharp/blurred split + its cloth-metre radius. Continuous, so they tween — but the split crossing 0 adds/drops the HDR passes mid-tween, which is a pass-count change, not a look pop
+  'glow_bleed','glow_bleed_m',                                          // lateral-diffusion glow (§4.9): the sharp/blurred split + its cloth-metre radius. Continuous, so they tween — but the split crossing 0 adds/drops the HDR passes mid-tween, which is a pass-count change, not a look pop
   'mullion_tau','mullion_pitch_m','mullion_bar_m','mullion_depth_m',    // window mullion grid (§4.9): analytic cloth-space occluder — continuous live uniforms, tau 0 = off
   'window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall',  // the window APERTURE (§4.9): the finite lit rectangle + its wall leak — continuous live uniforms, w·h = 0 = infinite light
   'wind_strength','wind_gustiness','wind_direction_deg','gust_frequency','weather_variability','weather_speed','gust_attack','gust_decay',
@@ -216,9 +216,9 @@ const DEFAULTS = {
   // panels ray-cast per pixel, each lit by its own incidence on the sun. Only read when receiver≠0; the floor
   // stays the cheap fast path. Off → every look unchanged.
   receiver: 0,
-  curtain_tt: 0.5,                 // curtain total throughput Tt∈[0,1] = BRIGHTNESS (sheer→~0.6, dark terciopelo→~0.1); hue is separate
-  curtain_tint_r: 0.35, curtain_tint_g: 1.0, curtain_tint_b: 0.30,   // moss dye HUE (unit-peak; passes green ~550nm, absorbs red/blue — the chlorophyll-twin)
-  curtain_distance_m: 0.0,         // curtain plane world-Y (its distance behind the tree); with the sun angle, sets where the tree's shadow lands on the cloth (§4.9)
+  fabric_tt: 0.5,                  // fabric total throughput Tt∈[0,1] = BRIGHTNESS (sheer→~0.6, dark terciopelo→~0.1); hue is separate
+  fabric_tint_r: 0.35, fabric_tint_g: 1.0, fabric_tint_b: 0.30,      // moss dye HUE (unit-peak; passes green ~550nm, absorbs red/blue — the chlorophyll-twin)
+  cloth_distance_m: 0.0,           // curtain plane world-Y (its distance behind the tree); with the sun angle, sets where the tree's shadow lands on the cloth (§4.9)
   fold_depth: 0.0,                 // curtain drape: pleat SHADING — authored pile thickness on a flat plane (0 = flat cloth, up = deep velvet pleats); the geometry is fold_warp
   fold_scale: 2.5,                 // curtain drape: pleat frequency (how many pleats across the cloth)
   fold_coarsen: 0.25,              // curtain drape: how much the pleats widen toward the hem (heavy fabric, λ∝√depth)
@@ -226,13 +226,13 @@ const DEFAULTS = {
                                    // cast (dapples + mullion lines S-bend across the folds). Distinct from fold_depth, which is the
                                    // authored pile-thickness SHADING band on a flat plane — depth shades, warp displaces. 0 = flat cloth.
   velvet_sheen: 0.0,               // velvet grazing sheen on the fold ridges (0 = off; the cut-pile glow that reads as terciopelo)
-  curtain_scatter: 0.0,            // forward-scatter share of the transmit: how much of the light DIFFUSES through the pile instead of threading it (0 = all ballistic, byte-identical; up = the glow wraps into the dark fold flanks)
+  fabric_scatter: 0.0,             // forward-scatter share of the transmit: how much of the light DIFFUSES through the pile instead of threading it (0 = all ballistic, byte-identical; up = the glow wraps into the dark fold flanks)
   // LATERAL DIFFUSION (§4.9): the neighbour-reading half of the same physics — light spreading sideways THROUGH the
   // weave, which is the only thing that bleeds a hot dapple's glow across its own cast-shadow edge. THE GATE, and an
   // expensive one: >0 routes the frame through a linear-HDR target + two blur passes + a compositing tone-map tail.
   // 0 = the direct-to-screen draw, bit-identical, no extra passes allocated or run.
-  curtain_diffuse: 0.0,            // the SPLIT: out = mix(sharp, blurred, d) — energy-conserving, never an add (the forward-scatter wrap's discipline, one scale up)
-  curtain_diffuse_m: 0.08,         // how far the weave carries light, in cloth METRES (weave-scale: ~0.03–0.15); converted to a pixel radius through the cloth mapping, so a zoom doesn't change the physics
+  glow_bleed: 0.0,                 // the SPLIT: out = mix(sharp, blurred, d) — energy-conserving, never an add (the forward-scatter wrap's discipline, one scale up)
+  glow_bleed_m: 0.08,              // how far the weave carries light, in cloth METRES (weave-scale: ~0.03–0.15); converted to a pixel radius through the cloth mapping, so a zoom doesn't change the physics
   // WINDOW MULLION GRID (§4.9): the AUTHORED occluder, the inverse of the grown canopy — a rigid bar grid standing
   // centimetres off the cloth, so it sits deep in the SHAPE regime (you see the grid, sharp) while the tree's leaf-gaps
   // metres away stay pinhole (soft sun-images). Same sun, one frame, opposite regimes — set purely by occluder distance.
@@ -480,7 +480,7 @@ uniform vec2  uFaithOrigin;           // cast-frame origin (floor space)
 uniform vec2  uFaithExtent;           // cast-frame extent (floor space)
 uniform vec2  uG;                     // this source sample's ground shift g_i = uProj*sample + uBulkShift
 uniform int   uCurtainBake;           // 1 = project onto the VERTICAL curtain plane (§4.9); 0 = the floor (byte-identical)
-uniform float uCurtainY;              // curtain plane world-Y (cy) when uCurtainBake
+uniform float uClothY;                // curtain plane world-Y (cy) when uCurtainBake
 uniform float uMorph;
 uniform float uMorphAmount;
 uniform vec2  uSway;
@@ -532,12 +532,12 @@ void main(){
   vec2 world = base + uSway*(hEff/uHRef) + drift + R*(aCorner*vec2(A,B));   // coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
   // project this leaf onto the RECEIVER along the sun-sample direction (uG.x, uG.y, 1). FLOOR (z=0): world - uG·h
   // (h→0; transport's layer loop adds +h·g to look UP — antipodal, so leaves land where the wood casts). CURTAIN
-  // (vertical plane Y=uCurtainY, §4.9): drop onto the cloth → u = px - r·gx, v = h - r with r=(py-cy)/gy, so a
+  // (vertical plane Y=uClothY, §4.9): drop onto the cloth → u = px - r·gx, v = h - r with r=(py-cy)/gy, so a
   // vertical trunk (constant py) casts a vertical line and the whole tree STANDS UP the cloth. Floor byte-identical.
   vec2 recvPt;
   if(uCurtainBake != 0){
     float gy = abs(uG.y) < 1e-3 ? (uG.y < 0.0 ? -1e-3 : 1e-3) : uG.y;   // guard: the sun must FACE the cloth (azimuth not ∥ to it)
-    float rr = (world.y - uCurtainY) / gy;
+    float rr = (world.y - uClothY) / gy;
     recvPt = vec2(world.x - rr*uG.x, hEff - rr);
   } else {
     recvPt = world - uG * hEff;
@@ -588,7 +588,7 @@ uniform vec2 uFaithOrigin;
 uniform vec2 uFaithExtent;
 uniform vec2 uG;
 uniform int  uCurtainBake;            // 1 = project onto the VERTICAL curtain plane (§4.9); 0 = floor
-uniform float uCurtainY;              // curtain plane world-Y (cy) when uCurtainBake
+uniform float uClothY;                // curtain plane world-Y (cy) when uCurtainBake
 uniform vec2 uSegSway;                // rigid plan sway added to both endpoints. The CAST path bakes its own
                                       // height-scaled sway into the instance data and leaves this at 0; the SKY
                                       // view's layer stamp needs the LEAF bake's per-layer sway instead, or the
@@ -602,8 +602,8 @@ void main(){
   vec2 Ap, Bp;
   if(uCurtainBake != 0){
     float gy = abs(uG.y) < 1e-3 ? (uG.y < 0.0 ? -1e-3 : 1e-3) : uG.y;
-    float rA = (iSeg.y - uCurtainY)/gy;  Ap = vec2(iSeg.x - rA*uG.x, iSegH.x - rA);
-    float rB = (iSeg.w - uCurtainY)/gy;  Bp = vec2(iSeg.z - rB*uG.x, iSegH.y - rB);
+    float rA = (iSeg.y - uClothY)/gy;  Ap = vec2(iSeg.x - rA*uG.x, iSegH.x - rA);
+    float rB = (iSeg.w - uClothY)/gy;  Bp = vec2(iSeg.z - rB*uG.x, iSegH.y - rB);
   } else {
     Ap = iSeg.xy + uSegSway - uG*iSegH.x;
     Bp = iSeg.zw + uSegSway - uG*iSegH.y;
@@ -716,9 +716,9 @@ uniform vec2  uSrcAngR;           // the SEEN source's angular radii (core, halo
 uniform vec2  uSrcAngL;           // its radiance in each region (core, halo). CPU-derived from the sampler's own post-cloud weight split, so the sun you look at and the dapples it throws cannot drift apart
 uniform vec2  uSrcMoon;           // eclipse: the moon disk's (centre offset, radius) in the sampler's own source plane; .y = 0 = no eclipse
 uniform int   uReceiver;          // 0 = opaque floor (byte-identical), 1 = translucent moss-velvet curtain, 2 = the ENCLOSURE — the same fabric as an A-frame stood around the viewer (curtain handoff / spec §4.x, §4.9)
-uniform float uTt;                // curtain total throughput Tt∈[0,1] — carries BRIGHTNESS (hue is uCurtainTint)
-uniform vec3  uCurtainTint;       // moss dye — HUE only; normalized to unit peak in-shader so it can't smuggle brightness past Tt
-uniform float uCurtainY;          // curtain receiver: the cloth plane's world-Y (its distance behind the tree) — where on the occluder field the shadow lands
+uniform float uTt;                // curtain total throughput Tt∈[0,1] — carries BRIGHTNESS (hue is uFabricTint)
+uniform vec3  uFabricTint;        // moss dye — HUE only; normalized to unit peak in-shader so it can't smuggle brightness past Tt
+uniform float uClothY;            // curtain receiver: the cloth plane's world-Y (its distance behind the tree) — where on the occluder field the shadow lands
 uniform float uFoldDepth;         // curtain drape: pleat SHADING — authored pile thickness on a flat plane (0 = flat cloth, no folds); displacement is uFoldWarp
 uniform float uFoldScale;         // curtain drape: pleat frequency (pleats per metre near the top)
 uniform float uFoldCoarsen;       // curtain drape: how much the pleats widen toward the hem (heavy fabric)
@@ -1301,7 +1301,7 @@ void main(){
     // the layer path is a PLAN-space read, so carrying the warp in (world.x, recvZ) is exact rather than a stand-in:
     // sliding the receiver point along its own ray lands the occluder lookup world.xy + (h-recvZ)·g on the identical
     // plan point the displaced cloth point sees. The analytic wood then follows for free (it reads world/recvZ too).
-    world = vec2(castUV.x, uCurtainY);   // the cloth plane spans world-X; its world-Y (distance behind the tree) is uCurtainY
+    world = vec2(castUV.x, uClothY);   // the cloth plane spans world-X; its world-Y (distance behind the tree) is uClothY
     recvZ = castUV.y;                    // height up the cloth (layer-path fallback; the faithful curtain uses castUV)
   } else {
     // ---- tilted pinhole camera (spec §4.7): fragment -> ground point on z=0, plus a far-field haze factor.
@@ -1425,7 +1425,7 @@ void main(){
       }
       if(uMullion.w > 0.0) E *= mullionT(castUV, barConf);
     }
-    vec3 tintHat = uCurtainTint / max(max(uCurtainTint.r, uCurtainTint.g), max(uCurtainTint.b, 1e-4));   // unit-peak HUE
+    vec3 tintHat = uFabricTint / max(max(uFabricTint.r, uFabricTint.g), max(uFabricTint.b, 1e-4));   // unit-peak HUE
     // MESH vs NYLON, and it is one material split rather than a painted band. A mesh passes less of what lands on it
     // and DIFFUSES almost none of what it does pass, so it takes both halves of the transmission: the throughput
     // drops toward 0.55, and the forward-scatter share — the thing that turns a cast into a glow — drops toward
@@ -1655,13 +1655,13 @@ function create(canvas, opts){
              leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
              clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom') };
   U.faith = { origin:loc(progFaith,'uFaithOrigin'), extent:loc(progFaith,'uFaithExtent'), g:loc(progFaith,'uG'), edge:loc(progFaith,'uEdge'),
-              curtainBake:loc(progFaith,'uCurtainBake'), curtainY:loc(progFaith,'uCurtainY'),
+              curtainBake:loc(progFaith,'uCurtainBake'), clothY:loc(progFaith,'uClothY'),
               morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
               windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
               leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
               clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom') };
   U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
-                 curtainBake:loc(progFaithSeg,'uCurtainBake'), curtainY:loc(progFaithSeg,'uCurtainY'),
+                 curtainBake:loc(progFaithSeg,'uCurtainBake'), clothY:loc(progFaithSeg,'uClothY'),
                  segSway:loc(progFaithSeg,'uSegSway'), segTau:loc(progFaithSeg,'uSegTau') };
   U.facc = { tex:loc(progFAcc,'uFAccTex'), weight:loc(progFAcc,'uFAccWeight') };
   U.tp = {
@@ -1674,8 +1674,8 @@ function create(canvas, opts){
     origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
     sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'), ground:loc(progTransport,'uGround'),
     skyView:loc(progTransport,'uSkyView'), skyScatter:loc(progTransport,'uSkyScatter'), srcAngR:loc(progTransport,'uSrcAngR'), srcAngL:loc(progTransport,'uSrcAngL'), srcMoon:loc(progTransport,'uSrcMoon'),
-    receiver:loc(progTransport,'uReceiver'), tt:loc(progTransport,'uTt'), curtainTint:loc(progTransport,'uCurtainTint'),
-    curtainY:loc(progTransport,'uCurtainY'), foldDepth:loc(progTransport,'uFoldDepth'), foldScale:loc(progTransport,'uFoldScale'), foldCoarsen:loc(progTransport,'uFoldCoarsen'), foldWarp:loc(progTransport,'uFoldWarp'), sunDir:loc(progTransport,'uSunDir'), sheen:loc(progTransport,'uSheen'), scatter:loc(progTransport,'uScatter'),
+    receiver:loc(progTransport,'uReceiver'), tt:loc(progTransport,'uTt'), fabricTint:loc(progTransport,'uFabricTint'),
+    clothY:loc(progTransport,'uClothY'), foldDepth:loc(progTransport,'uFoldDepth'), foldScale:loc(progTransport,'uFoldScale'), foldCoarsen:loc(progTransport,'uFoldCoarsen'), foldWarp:loc(progTransport,'uFoldWarp'), sunDir:loc(progTransport,'uSunDir'), sheen:loc(progTransport,'uSheen'), scatter:loc(progTransport,'uScatter'),
     mullion:loc(progTransport,'uMullion'), mullPenumbra:loc(progTransport,'uMullPenumbra'),
     window:loc(progTransport,'uWindow'), windowWall:loc(progTransport,'uWindowWall'),
     tentRidge:loc(progTransport,'uTentRidge'), tentHalfW:loc(progTransport,'uTentHalfW'), tentCrownW:loc(progTransport,'uTentCrownW'), tentLen:loc(progTransport,'uTentLen'), tentEndLean:loc(progTransport,'uTentEndLean'),
@@ -2392,7 +2392,7 @@ function create(canvas, opts){
       // CURTAIN cast frame (§4.9): occluders project onto the VERTICAL cloth (Y=cy), not the floor — the projection is
       // nonlinear in g (÷gy), so sweep the plan-AABB corners × the height range through each sample's cloth map
       // (u = px − r·gx, v = h − r; r = (py−cy)/gy) and bound the (u,v) span. (8 corners × N samples — cheap.)
-      const cy = params.curtain_distance_m;
+      const cy = params.cloth_distance_m;
       let uMin=1e18,uMax=-1e18,vMin=1e18,vMax=-1e18;
       const pxs=[faith.pminx,faith.pmaxx], pys=[faith.pminy,faith.pmaxy], hs=[hLo,hHi];
       for(let i=0;i<N;i++){
@@ -2428,7 +2428,7 @@ function create(canvas, opts){
     gl.uniform2f(U.faith.extent, faith.ext, faith.ext);
     gl.uniform1f(U.faith.edge, params.edge_softness);   // soft leaf rim (same as the layer bake); 0 here = hard ellipses
     gl.uniform1i(U.faith.curtainBake, params.receiver ? 1 : 0);   // §4.9: project onto the vertical cloth (curtain) vs the floor
-    gl.uniform1f(U.faith.curtainY, params.curtain_distance_m);
+    gl.uniform1f(U.faith.clothY, params.cloth_distance_m);
     gl.uniform1f(U.faith.morph, params.drift_phase);
     gl.uniform1f(U.faith.morphAmount, params.drift_amount);
     gl.uniform1f(U.faith.windLevel, motion.u);
@@ -2453,7 +2453,7 @@ function create(canvas, opts){
       gl.uniform2f(U.faithSeg.extent, faith.ext, faith.ext);
       gl.uniform1f(U.faithSeg.woodTau, params.branch_tau);
       gl.uniform1i(U.faithSeg.curtainBake, params.receiver ? 1 : 0);   // §4.9: cloth vs floor projection (matches the leaves)
-      gl.uniform1f(U.faithSeg.curtainY, params.curtain_distance_m);
+      gl.uniform1f(U.faithSeg.clothY, params.cloth_distance_m);
     }
 
     for(let i=0;i<N;i++){
@@ -2851,7 +2851,7 @@ function create(canvas, opts){
 
   // ---- render ----
   // ONE whole rendered frame into `fbo` at w×h — the only entry the frame loop (and the profiler's burst) uses, so
-  // the diffusion decision is made in exactly one place. Gate OFF (floor, or curtain_diffuse 0, or the 16F targets
+  // the diffusion decision is made in exactly one place. Gate OFF (floor, or glow_bleed 0, or the 16F targets
   // came back incomplete): bind the caller's target and draw transport into it — the literal old path, one extra
   // uniform and an untaken shader branch. Gate ON: transport writes LINEAR HDR into the sharp target instead, and
   // drawDiffusion spreads it and composites into the caller's target (§4.9).
@@ -2860,7 +2860,7 @@ function create(canvas, opts){
     // VEILING GLARE — the wash around a bright source seen through gaps, which is scatter in the eye rather than in
     // a weave, but the same operator on the same quantity. A perception-tier reading of a transport pass, the same
     // honesty class as the mesopic shift below.
-    const glow = (params.receiver !== 0 || params.sky_view) && params.curtain_diffuse > 0 && ensureGlowTargets(w, h);
+    const glow = (params.receiver !== 0 || params.sky_view) && params.glow_bleed > 0 && ensureGlowTargets(w, h);
     perf.glow = glow;
     gl.bindFramebuffer(gl.FRAMEBUFFER, glow ? glowFBO[0] : fbo);
     gl.viewport(0,0,w,h);
@@ -2901,7 +2901,7 @@ function create(canvas, opts){
   }
   // The spread itself: H then V over the linear-HDR frame, then the split + the relocated tail into `fbo`.
   // The pixel radius is PHYSICS, not a look-at-this-resolution number: the curtain map lays view_extent_m across the
-  // target's HEIGHT and carries the aspect in x, so px/m is one isotropic number and curtain_diffuse_m stays the same
+  // target's HEIGHT and carries the aspect in x, so px/m is one isotropic number and glow_bleed_m stays the same
   // centimetres of cloth whatever the zoom or the backing store does. Spacing = radius/6 (13 taps over ±3σ), capped.
   // All three passes share the viewport drawFrameInto set — the ping/pong are the same size as the sharp frame.
   // (In the SKY VIEW there is no cloth and no view_extent framing, so the metres-of-fabric reading does not apply:
@@ -2909,7 +2909,7 @@ function create(canvas, opts){
   // as an arbitrary divisor. Named rather than special-cased — a second scale rule would be a second thing to keep
   // in sync for a knob an author sets by eye anyway.)
   function drawDiffusion(fbo, w, h){
-    const rPx = params.curtain_diffuse_m * h / Math.max(params.view_extent_m, 1e-3);
+    const rPx = params.glow_bleed_m * h / Math.max(params.view_extent_m, 1e-3);
     const step = Math.min(rPx/GLOW_TAPS, GLOW_STEP_MAX);
     gl.useProgram(progGlowBlur);
     gl.bindVertexArray(emptyVAO);
@@ -2927,7 +2927,7 @@ function create(canvas, opts){
     gl.useProgram(progGlowMix);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, glowTex[0]); gl.uniform1i(U.glowMix.sharp, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, glowTex[2]); gl.uniform1i(U.glowMix.blur, 1);
-    gl.uniform1f(U.glowMix.diffuse, clamp(params.curtain_diffuse, 0, 1));
+    gl.uniform1f(U.glowMix.diffuse, clamp(params.glow_bleed, 0, 1));
     gl.uniform1f(U.glowMix.exposure, params.exposure);
     gl.uniform1f(U.glowMix.contrast, params.contrast);
     gl.uniform1i(U.glowMix.tone, params.tone_map);
@@ -3014,9 +3014,9 @@ function create(canvas, opts){
     gl.uniform2f(U.tp.srcAngL, src.Lcore, src.Lhalo);
     gl.uniform2f(U.tp.srcMoon, src.moonD, src.moonR);
     gl.uniform1i(U.tp.receiver, params.receiver|0);
-    gl.uniform1f(U.tp.tt, params.curtain_tt);
-    gl.uniform3f(U.tp.curtainTint, params.curtain_tint_r, params.curtain_tint_g, params.curtain_tint_b);
-    gl.uniform1f(U.tp.curtainY, params.curtain_distance_m);
+    gl.uniform1f(U.tp.tt, params.fabric_tt);
+    gl.uniform3f(U.tp.fabricTint, params.fabric_tint_r, params.fabric_tint_g, params.fabric_tint_b);
+    gl.uniform1f(U.tp.clothY, params.cloth_distance_m);
     gl.uniform1f(U.tp.foldDepth, params.fold_depth);
     gl.uniform1f(U.tp.foldScale, params.fold_scale);
     gl.uniform1f(U.tp.foldCoarsen, params.fold_coarsen);
@@ -3033,7 +3033,7 @@ function create(canvas, opts){
     gl.uniform1f(U.tp.sheen, params.velvet_sheen);
     // forward-scatter wrap (§4.9): the ballistic/scattered SPLIT of the transmit, not an extra term — energy-bounded
     // by construction, and 0 leaves the pleat shading exactly as it was.
-    gl.uniform1f(U.tp.scatter, params.curtain_scatter);
+    gl.uniform1f(U.tp.scatter, params.fabric_scatter);
     // window mullion grid (§4.9): the near-cloth authored occluder, analytic in cloth space. tau 0 = off (the shader
     // skips it), and the whole block is inside the curtain branch, so the floor path never pays. The penumbra is the
     // woody occluder's idiom MINUS its 1/sin(elevation) ground-obliquity term — the cloth is seen head-on — so it is
