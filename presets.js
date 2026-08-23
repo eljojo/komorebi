@@ -171,6 +171,59 @@ export const PRESETS = {
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "auto_quality": true,   // park 1 is faithful_canopy (the heaviest path) — without the governor a weak device has no recovery; matches every sibling look
   }),
+  // 'park 2' — THE HAMMOCK (spec §4.9, sky view). Lying on your back at a festival: tall trunks converging
+  // overhead, crowns lit from behind against a bright sky, the whole grove leaning together on the gusts. It is
+  // 'park 1's afternoon with the eyes turned the other way — same physics, read along the eye's rays instead of the
+  // sun's — so there is no receiver at all here and the whole fabric/ground family switches itself off.
+  // EVERY NUMBER IS A STARTING POINT: none of this has been seen on a GPU.
+  // WHAT EACH LOAD-BEARING CHOICE SERVES:
+  //  • the GROVE is a near-conifer: leader 0.85 sends limbs up a continuing bole (the tall bare trunks that converge
+  //    are the reference's whole structure), crown_aspect 1.6 stretches them, droop −0.2 upsweeps the branches and
+  //    branch_pitch 30 keeps them climbing rather than reaching out. branch_tau 2.2 with a 0.14 m trunk makes that
+  //    wood actually read — in this view the analytic occluder is not a shadow, it IS the columns.
+  //  • ANGULAR COVERAGE is the one thing this view adds to the arithmetic, and it caught the first draft out. A
+  //    canopy of half-extent R at height h only fills the sky above elevation atan(h/R); below that the ray leaves
+  //    the baked box and the engine honestly answers OPEN SKY. At the brief's 12 m extent and a 10 m top layer that
+  //    is atan(10/6) = 59° — a 62°-wide cone at best, with a 85° lens looking mostly at bare sky. So the extent goes
+  //    to 22 m (covers above 42°) and the lens to 60° (its corners reach 40°): canopy nearly frame-filling, with the
+  //    grove's own edge just showing at the corners. tree_count rises to 12 so a grove twice as wide is still a
+  //    grove. If the edges read too open, extent and fov are the two levers, in that order.
+  //  • view_extent_m FRAMES NOTHING here (the fov and the geometry do) but it is NOT inert: it feeds Rfill, which
+  //    sets both the tree-placement radius and the crown size (crown0 = Rfill/√trees × 1.7). At 9 it puts trees out
+  //    to a 9 m radius with ~4.4 m crowns — heavy overlap, so the canopy tiles instead of showing gaps between
+  //    individual trees. It also divides the glare radius below.
+  //  • the SUN is off-centre by design (az 140 against yaw 0): the disk should sit away from the middle of the frame
+  //    so the composition is canopy-with-a-sun-in-it, not a lens-flare portrait. cloud 0.2 gives it a small aureole
+  //    without draining the disk. Elevation 55 keeps it well inside a 60° lens pointed at the zenith.
+  //  • the WIND is the soul: sway_height_gain 1.6 puts the crowns on long levers so a gust leans the whole grove
+  //    together — §5.1's coherent band, watched directly for the first time instead of read off a floor pattern.
+  //  • curtain_diffuse is the eye's VEILING GLARE here, not a weave (§4.9). With view_extent_m 9 the pair below is
+  //    about an 11 px radius on a 1000-tall frame — a screen-space number, so re-judge it if either knob moves.
+  //  • exposure 0.95 / contrast 1.0: the sun clips to white and must, the sky wants a photographic mid-tone, and any
+  //    contrast above 1 clips the backlit leaves to black (the 'tent 1' finding — the tail stretches about 0.5).
+  'park 2': Object.assign({}, DEFAULTS, {
+    "sky_view": true, "standing_scene": false, "faithful_canopy": false,   // sky view forces the layer tier anyway (no cast frame to pre-bake into) — written false to say so
+    "sample_count": 32, "core_angular_radius_deg": 0.27, "halo_angular_radius_deg": 6,
+    "core_weight_fraction": 0.95, "cloud_thickness": 0.2, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 4, "canopy_thickness_m": 6, "foliage_density": 1.4,
+    "tree_count": 12, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 38,
+    "branch_length_ratio": 0.66, "branch_pitch_deg": 30, "branch_tau": 2.2, "leader_strength": 0.85, "droop": -0.2,
+    "crown_aspect": 1.6, "leaves_per_cluster": 26, "cluster_spread_m": 0.28, "leaf_size_m": 0.13, "leaf_aspect": 1.75,
+    "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.3, "trans_g": 0.38, "trans_b": 0.2,   // muted gray-green: backlit leaves at this density mix to a washed hue, not a saturated one
+    "canopy_extent_m": 22, "tex_resolution": 1024, "bake_resolution": 1024,   // a wide box needs the resolution back: 22 m over 1024 is ~2 cm/texel, and leaf silhouettes ARE the picture here
+    "seed": 290626672, "sun_elevation_deg": 55, "sun_azimuth_deg": 140,
+    "view_extent_m": 9, "view_pitch_deg": 90, "view_fov_deg": 60, "view_yaw_deg": 0,
+    "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.14, "far_smear": 0,
+    "exposure": 0.95, "contrast": 1.0, "ambient_skylight": 0.5, "sky_turbidity": 0.05, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
+    "curtain_diffuse": 0.35, "curtain_diffuse_m": 0.1,   // the eye's veiling glare around the sun, through the gaps (§4.9)
+    "wind_pattern": "gusty", "wind_strength": 1.3, "wind_gustiness": 0.3, "wind_direction_deg": 0, "gust_frequency": 0.11,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 1.6,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 2.1, "drift_auto": true, "drift_speed": 0.02,
+    "auto_quality": true,   // the layer tier is the cheap path, but 12 trees over a 1024 bake plus the three glare passes is real work
+  }),
   // 'curtain 1' — the first CURTAIN look (spec §4.9): the tree's shadow is cast onto a STANDING moss-velvet
   // curtain (a vertical receiver plane), lit from behind by a low sun, seen head-on from the bed. The shadow
   // stands UP the cloth (projected via height - recvZ) instead of lying on the floor. The tree itself sits off

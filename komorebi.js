@@ -24,6 +24,24 @@ const MAX_SAMPLES = 48;
 const BAKE_MIN = 768;   // floor auto_quality trims bake_resolution to below the knee (§9)
 const MAX_LAYERS = 4;
 const MAX_OCC = 64;   // woody occluder segments (trunk + main limbs incl. droop sub-segments); continuous-height analytic shadow, evaluated once per pixel (spec §4.5)
+// SKY VIEW (§4.9): the authored radiance scale for the SEEN source. The physical contrast between a sun disk and a
+// blue sky is ~10^6, which neither an ACES tail nor a 13-tap glare kernel can carry — so what ships is a compressed
+// stand-in, and this is the compression, stated once. It multiplies the sampler's own angular density (weight over
+// solid angle), so the CORE:HALO ratio stays exactly the sampler's post-cloud energy split; only the absolute moves.
+// 6e-3 puts the default 0.27° clear-sky disk a few stops over the ACES shoulder at exposure ~1 — unmistakably the
+// sun, and bright enough to drive the veiling glare, without whiting out the frame when that pass spreads it.
+const SKY_SUN_GAIN = 6.0e-3;
+// Area shared by two circles, radii r1/r2, centres d apart — the eclipse's moon against the source's core disk and
+// against its whole extent. Used only to renormalize the SEEN source's radiance (§4.9); the cast's own crescent comes
+// from zeroing sample weights, which is a discrete estimate of this same area.
+function lensArea(r1, r2, d){
+  if(r2 <= 0 || r1 <= 0) return 0;
+  if(d >= r1 + r2) return 0;                                  // disjoint
+  if(d <= Math.abs(r1 - r2)) return Math.PI*Math.min(r1, r2)*Math.min(r1, r2);   // one contains the other
+  const a1 = Math.acos(clamp((d*d + r1*r1 - r2*r2)/(2*d*r1), -1, 1));
+  const a2 = Math.acos(clamp((d*d + r2*r2 - r1*r1)/(2*d*r2), -1, 1));
+  return r1*r1*(a1 - Math.sin(2*a1)/2) + r2*r2*(a2 - Math.sin(2*a2)/2);
+}
 const FAITH_MAX_RATIO = 1.7;   // faithful-tree height cap (spec §4.5): max crown height:radius before crown_aspect. A broad tree (mr above mz/RATIO) keeps its natural height untouched; a NARROW tree (steep branches → tiny mr → runaway plan-fill scale → tens of metres tall) gets its height clamped to crown·RATIO·aspect. Lower = shorter narrow trees.
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
@@ -82,10 +100,12 @@ const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branchi
 // ---- scene-MODE flags. Not continuous (never tween) but NOT inert either: flipping one changes regen-time state
 // (faithful_canopy reallocates faithTex + switches the bake path; standing_scene reshapes the bake's crown sizing;
 // receiver swaps the whole camera mapping — floor ray-cast ↔ head-on cloth map ↔ enclosure ray-cast — and both re-aims
-// the faithful cast frame and, at receiver 2, forces the layer tier, which reallocates the layer textures too),
+// the faithful cast frame and, at receiver 2, forces the layer tier, which reallocates the layer textures too;
+// sky_view turns the camera over to look UP, which overrides the receiver outright and forces the layer tier for the
+// same reason receiver 2 does — so it reallocates the layer textures and re-packs the grove's per-mode cluster data),
 // so a transition landing on a differing flag must force a structural rebuild under the bloom — see transitionTo's
 // modeDiff. Kept out of TOPO_KEYS (they don't change the grove RNG/topology) but treated like one for the rebuild. ----
-const MODE_KEYS = ['standing_scene','faithful_canopy','receiver'];
+const MODE_KEYS = ['standing_scene','faithful_canopy','receiver','sky_view'];
 const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back to the cloud dissolve (don't regrow per frame)
 
 // ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
@@ -175,6 +195,12 @@ const DEFAULTS = {
   // rather than an infinite canopy hovering overhead (the park model). v1 adds the TRUNK shadow — a vertical
   // occluder the layered slab model can't cast (a vertical trunk has no horizontal footprint). Off = the park
   // model, byte-identical. Rooting the trees off to the side + an un-tiled lit floor is the next step.
+  // SKY VIEW (spec §4.9): stop looking at what the light LANDS on and look at where it comes FROM. The eye lies on
+  // the ground and gazes up: trunks converging overhead, crowns against the sky, the source itself visible through
+  // the gaps. It is still pure transmission — the same occluder field, read along upward rays instead of sun rays —
+  // and it overrides the receiver entirely (there is no surface, so no fabric, no ground, no seams). Off = every
+  // look unchanged.
+  sky_view: false,
   standing_scene: false,           // opt-in: render the trunk as a real vertical occluder (its swept shadow streak)
   trunk_radius_m: 0.1,             // trunk thickness (m) → width of its shadow streak; the area light softens it along its length
   faithful_canopy: false,          // FAITHFUL TREE (spec §4.5): opt out of the depth-layer leaf cheat. Off = leaves binned to a
@@ -668,6 +694,10 @@ uniform vec2  uCanopyExtent;
 uniform vec3  uSunColor;
 uniform vec3  uAmbient;
 uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)
+uniform int   uSkyView;           // SKY VIEW (§4.9): 1 = look UP. The receiver becomes the RETINA — no surface at all, so uReceiver and the whole fabric family are inert here
+uniform vec2  uSrcAngR;           // the SEEN source's angular radii (core, halo) — the very two the sampler draws its offsets from
+uniform vec2  uSrcAngL;           // its radiance in each region (core, halo). CPU-derived from the sampler's own post-cloud weight split, so the sun you look at and the dapples it throws cannot drift apart
+uniform vec2  uSrcMoon;           // eclipse: the moon disk's (centre offset, radius) in the sampler's own source plane; .y = 0 = no eclipse
 uniform int   uReceiver;          // 0 = opaque floor (byte-identical), 1 = translucent moss-velvet curtain, 2 = the ENCLOSURE — the same fabric as an A-frame stood around the viewer (curtain handoff / spec §4.x, §4.9)
 uniform float uTt;                // curtain total throughput Tt∈[0,1] — carries BRIGHTNESS (hue is uCurtainTint)
 uniform vec3  uCurtainTint;       // moss dye — HUE only; normalized to unit peak in-shader so it can't smuggle brightness past Tt
@@ -705,6 +735,35 @@ vec3 tap(highp sampler2D t, vec2 world){
   return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
 }
 vec3 tapFaith(vec2 world){ return texture(uFaithTex, (world-uFaithOrigin)/uFaithExtent).rgb; }   // already transmittance (pre-integrated over the disk), no exp
+// A layer read for the SKY VIEW (§4.9). Same texture, same Beer's law, one difference: OUTSIDE the baked canopy box
+// there is no canopy, so the ray sees open sky. The floor path never needs this (its frame lives inside the box),
+// but an upward ray leaves the box within a few metres of height, and CLAMP_TO_EDGE would smear the border texel
+// across the whole periphery of the frame instead of opening onto blue.
+vec3 tapUp(highp sampler2D t, vec2 world){
+  vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
+  if(any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec3(1.0);
+  return exp(-texture(t,uv).rgb);
+}
+// Closest approach between the upward view ray (origin O, UNIT direction U, t ≥ 0) and the wood segment Pa→Pb.
+// Returns (distance, distance along the ray to the closest point) — the second feeds the angular soft edge, since an
+// angle times a distance is a length. The floor path measures the wood in PLAN because a shadow is a plan object;
+// looking at the wood itself asks for the real 3-D distance to the capsule axis, which is this. Standard clamped
+// segment/ray minimisation: solve the unconstrained system, clamp the segment parameter, then re-solve the ray's.
+vec2 raySegDist(vec3 O, vec3 U, vec3 Pa, vec3 Pb){
+  vec3 V = Pb - Pa, W = O - Pa;
+  float b = dot(U,V), c = dot(V,V), d = dot(U,W), e = dot(V,W);
+  float den = c - b*b;                                   // |U|²|V|² − (U·V)², with |U| = 1; 0 when the ray runs along the segment
+  float s, tt;
+  if(den > 1e-9){
+    tt = clamp((e - b*d)/den, 0.0, 1.0);
+    s  = tt*b - d;
+    if(s < 0.0){ s = 0.0; tt = clamp(e/max(c,1e-9), 0.0, 1.0); }   // the closest point fell BEHIND the eye: pin the ray at its origin and re-minimise over the segment
+  } else {
+    tt = clamp(e/max(c,1e-9), 0.0, 1.0);                 // parallel: any segment point will do, take the foot of W
+    s  = max(tt*b - d, 0.0);
+  }
+  return vec2(length(W + s*U - tt*V), s);
+}
 // edge diffraction (spec §3.6): light bends round each leaf edge by an angle ∝ λ, so red spreads wider than
 // blue — each channel reads its sun-image at a shift scaled by its own wavelength (cs = per-channel scale,
 // green=1). The colour fringe lands at every leaf/dapple edge and rides the same H*g shift, so it grows with
@@ -851,6 +910,13 @@ vec2 windowMask(vec2 cloth){
 // contains. TENT_SEAM_HW is the panel-junction seam's half-width — 24 mm of taped, doubled fabric.
 const float TENT_TMAX = 12.0;
 const float TENT_SEAM_HW = 0.012;
+// SKY VIEW's two constants (§4.9). SKY_AA is one angular soft edge, standing in for both a pixel's own angular
+// footprint (≈3 px on an 85° frame ~1000 tall) and the penumbra a silhouette really has against the sun's disk.
+// SKY_SKY_GAIN converts uAmbient — an authored IRRADIANCE, what the sky delivers ONTO a surface — into the RADIANCE
+// you get when you look straight at it. Those are different quantities and the engine only ever had the first, so
+// the conversion is authored; ambient_skylight still steers it, and 6 puts a default sky at a photographic mid-tone.
+const float SKY_AA = 0.004;
+const float SKY_SKY_GAIN = 6.0;
 // One longitudinal wall of the ENCLOSURE's bell cross-section, from two profile points (x, z) on the +x side, given
 // bottom-first: returns (n.x, n.z, c) with n the OUTWARD unit normal. Walking up the profile the run goes inward and
 // the rise upward, so (dz, −dx) is the outward-and-up perpendicular — and it stays correct for a skirt that FLARES
@@ -865,7 +931,86 @@ void main(){
   vec2 world; float fog = 0.0; float extraThrow = 0.0; float recvZ = 0.0; vec2 clothUV = vec2(0.0), castUV = vec2(0.0);
   vec3 foldF = vec3(0.0);   // the pleat field at this cloth point, evaluated ONCE: the warp below and the velvet shading later read the very same (ŝ, dŝ/dx, peak) — that is the shared-phase invariant, structural
   float beamF = 1.0, skyF = 1.0, recvAtten = 1.0;   // the ENCLOSURE's per-panel light: beam incidence, sky-hemisphere view, depth fade × ridge seam. All 1 on the floor and the curtain, so their irradiance line below is the old one exactly
-  if(uReceiver == 2){
+  vec3 skyRad = vec3(0.0);   // SKY VIEW's finished radiance — this branch answers with light directly, having no surface to hand it to
+  vec3 acc = vec3(0.0);      // "how much of the light got through here" — hoisted above the camera branch so the sky view can fill it with its own transmittance (see there)
+  if(uSkyView != 0){
+    // ---- SKY VIEW (spec §4.9): the THIRD camera, and the amendment to "we never see the tree, only what it casts".
+    // The eye lies on the ground at uViewCenter and looks UP; the surface the light reaches is the RETINA. Nothing
+    // new is invented — it is the same occluder field against the same source, read along upward rays instead of
+    // sun rays, which is why the whole thing is one branch and no new physics. uPitch here is gaze ELEVATION (90° =
+    // zenith); the ray basis is the enclosure's, character for character, so the two upward cameras agree. ----
+    float cp=cos(uPitch), sp=sin(uPitch);
+    float kf=max(tan(0.5*uFov), 1e-4);
+    float sxc=(vUv.x-0.5)*uAspect, tyc=(vUv.y-0.5);
+    vec3 dir = normalize(vec3(2.0*kf*sxc, cp - 2.0*kf*tyc*sp, sp + 2.0*kf*tyc*cp));
+    if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); dir.xy = mat2(cy,-sy,sy,cy)*dir.xy; }   // the grove spins under the gaze, the floor camera's own orbit matrix
+    vec3 eye = vec3(uViewCenter, 0.0);
+    world = uViewCenter;             // the plan read below is per-layer, not per-pixel; this only keeps world defined
+    if(dir.z <= 1e-3){
+      fog = 1.0;                     // at or under the horizon there is no canopy and no sky model: hand it to the same distance haze the floor path uses over its horizon (§4.7). One behaviour, one colour.
+    } else {
+      // LAYERS AS ANGULAR SILHOUETTE. The ray crosses layer L's plane at plan eye + dir.xy·(h_L/dir.z) — the same
+      // texture, the same tap, and deliberately NO shift by g: g is where the SUN's rays land, and this is the EYE's
+      // ray. No recvZ either — these are absolute heights over an eye on the ground. Per-channel Beer's law then
+      // comes along for free, because tap() exponentiates a per-channel optical depth: a leaf between us and the sun
+      // passes its own green-gold and the canopy GLOWS instead of silhouetting flat. That is the §4.5 leaf
+      // transmittance finally seen head-on rather than inferred from a dapple's colour.
+      vec3 T = vec3(1.0);
+      if(uLayerCount>0) T *= tapUp(uLayer[0], eye.xy + dir.xy*(uLayerHeight[0]/dir.z));
+      if(uLayerCount>1) T *= tapUp(uLayer[1], eye.xy + dir.xy*(uLayerHeight[1]/dir.z));
+      if(uLayerCount>2) T *= tapUp(uLayer[2], eye.xy + dir.xy*(uLayerHeight[2]/dir.z));
+      if(uLayerCount>3) T *= tapUp(uLayer[3], eye.xy + dir.xy*(uLayerHeight[3]/dir.z));
+      // WOOD AS SILHOUETTE. The same segments the floor casts shadows with (§4.5), read as GEOMETRY this time: no
+      // uBulkShift term anywhere here, because that vector is where the wood's shadow FALLS and we are looking at the
+      // wood itself. The sway is kept, each endpoint drifting by its own height fraction exactly as the cast does, so
+      // the trunks lean in unison with the crowns — §5.1's coherent band watched directly instead of read off a floor.
+      // Perspective alone converges them on the zenith; nothing draws a column.
+      if(uOccCount>0){
+        for(int k=0;k<${MAX_OCC};k++){
+          if(k>=uOccCount) break;
+          vec4 P = uOccSeg[k]; vec4 H = uOccHt[k];
+          vec3 Pa = vec3(P.xy + uOccSway*(H.x/uOccHRef), H.x);
+          vec3 Pb = vec3(P.zw + uOccSway*(H.y/uOccHRef), H.y);
+          vec2 ds = raySegDist(eye, dir, Pa, Pb);
+          // soft edge = the greater of a pixel's angular footprint and the source's core radius, carried out along
+          // the ray. HONEST v1: a silhouette is θ-soft only where it stands against the SOURCE and knife-sharp
+          // against blue sky, and one constant angle cannot know which — it is small either way, and the alternative
+          // needs the source's angular coverage at the wood's own position, which is a second ray march.
+          float pen = ds.y * max(SKY_AA, uSrcAngR.x);
+          T *= exp(-uOccTau * (1.0 - smoothstep(H.z, H.z + pen, ds.x)));   // Beer's law, same as the cast: overlaps add optical depth
+        }
+      }
+      acc = T;   // the SAME quantity acc has always been — "how much of the light got through here" — so the mesopic hook at the tail reads it unchanged, now cued by canopy density instead of shade depth
+      // THE SOURCE, SEEN. §3.1 said the sun is not a point and §3.2 said every dapple is its image; this is the
+      // first time the thing being imaged is in frame. Both regions come straight from the sampler: a core disk of
+      // uSrcAngR.x and a halo annulus out to uSrcAngR.y, each at the radiance its own post-cloud weight spread over
+      // its own solid angle gives — so raising cloud_thickness drains the disk into the aureole HERE by exactly the
+      // amount it softens the dapples THERE. The annulus is flat rather than a falloff because the sampler's is
+      // flat: a smooth glow would look better and would no longer be the source the cast is drawn from.
+      float aa = min(SKY_AA, 0.35*max(uSrcAngR.x, 1e-5));
+      float ang = acos(clamp(dot(dir, uSunDir), -1.0, 1.0));
+      float inCore = 1.0 - smoothstep(uSrcAngR.x - aa, uSrcAngR.x + aa, ang);
+      float inSrc  = 1.0 - smoothstep(uSrcAngR.y - aa, uSrcAngR.y + aa, ang);
+      float L = mix(uSrcAngL.y, uSrcAngL.x, inCore) * inSrc;
+      if(uSrcMoon.y > 0.0){
+        // ECLIPSE (§3.4): the same moon disk the sampler punches out of its weights, applied angularly in the SAME
+        // source plane — so the crescent you look at is the crescent the dapples image. Reconstructing that plane is
+        // what makes it the same: uProj's eigenvectors say the sampler's offsets run along the sun's own AZIMUTH
+        // direction (an ELEVATION offset in the sky, stretched 1/sin²) and perpendicular to it (a horizontal
+        // cross-sun offset, stretched 1/sin), so the two axes below are that basis, lifted back into angle.
+        float ce = length(uSunDir.xy);
+        vec3 sHor = ce > 1e-4 ? vec3(-uSunDir.y, uSunDir.x, 0.0)/ce : vec3(0.0, 1.0, 0.0);   // a sun at the exact zenith has no azimuth; any horizontal axis is then as good as another
+        vec3 sUp  = cross(uSunDir, sHor);                     // in the sun's vertical plane, toward the zenith
+        float ca = ce > 1e-4 ? uSunDir.x/ce : 1.0, sa = ce > 1e-4 ? uSunDir.y/ce : 0.0;
+        vec2 q = vec2(dot(dir, ca*sUp - sa*sHor), dot(dir, sa*sUp + ca*sHor));   // the ray's offset in the sampler's own (x,y)
+        L *= smoothstep(uSrcMoon.y - aa, uSrcMoon.y + aa, length(q - vec2(uSrcMoon.x, 0.0)));
+      }
+      // COMPOSITION: T·(sky + source). No receiver material of any kind — no Tt, no dye, no folds, no seams, no
+      // ground albedo — because there is no surface between the canopy and the eye. The sky is attenuated by the
+      // same T the sun is: leaves dim the blue behind them exactly as they dim the disk.
+      skyRad = (uAmbient*SKY_SKY_GAIN + uSunColor*L) * T;
+    }
+  } else if(uReceiver == 2){
     // ---- ENCLOSURE receiver (spec §4.9): the receiver stops being a plane the camera stares AT and becomes a
     // CLOSED TENT stood around the eye, ray-cast per pixel. It is the hip/brow shape the reference actually is,
     // decomposed off an annotated photo of the real one: a flat rectangular CROWN along the top; per side a BELL
@@ -1033,16 +1178,15 @@ void main(){
     if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); world = mat2(cy,-sy,sy,cy)*world; }
     world += uViewCenter;            // camera pan: shift the looked-at floor point (0 = unchanged)
   }
-  vec3 acc = vec3(0.0);
   bool ca = (uChroma.r!=1.0 || uChroma.g!=1.0 || uChroma.b!=1.0);   // diffraction on? else the byte-identical single-tap path
-  if(uFaithful != 0 && uReceiver != 2){
+  if(uFaithful != 0 && uReceiver != 2 && uSkyView == 0){
     // FAITHFUL (§4.5/§4.9): the disk convolution at continuous per-leaf heights, pre-integrated as geometry at bake
     // time → one tap. FLOOR: cast in floor (x,y), tap at world. CURTAIN: cast onto the vertical cloth (u,v), tap at castUV.
     // The ENCLOSURE is excluded because the pre-bake is a FLAT-PLANE tier — it has one cast frame, in floor or cloth
     // coords, and the tent's panels are neither. The CPU never bakes it there either (see faithfulOn); the guard here
     // keeps the branch structurally safe rather than merely unreached.
     acc = tapFaith(uReceiver != 0 ? castUV : world);
-  } else {
+  } else if(uSkyView == 0){
   // the per-layer shift uses the occluder's height RELATIVE TO THE RECEIVER point, (uLayerHeight - recvZ): on the
   // floor recvZ=0 so this is the plain layer height (byte-identical); on the vertical curtain recvZ is the height
   // up the cloth, so an occluder above the cloth point projects its shadow onto it — the pattern stands up (§4.9).
@@ -1065,11 +1209,12 @@ void main(){
     }
     acc += w*T;                              // sum of shifted sharp shadows == soft shadow
   }
-  }   // end layer path
+  }   // end layer path (the sky view took neither: it filled acc with its own upward transmittance)
   // woody occluder (spec §4.5), evaluated ONCE per pixel (NOT per sample — that stalled). The trunk + main limbs
   // cast one CONNECTED shadow using the central sun direction (uBulkShift), with a soft edge that GROWS with height
   // to fake the area-light penumbra. Multiplies the SUN term only (wood blocks the beam, not the ambient sky).
-  if(uOccCount>0){
+  // Skipped in the SKY VIEW: the same segments are read there as GEOMETRY rather than as a cast (§4.9).
+  if(uOccCount>0 && uSkyView == 0){
     float woodT = 1.0;
     for(int k=0;k<${MAX_OCC};k++){
       if(k>=uOccCount) break;
@@ -1090,7 +1235,9 @@ void main(){
   // through woven moss-velvet — Tt carries brightness, the dye only hue (a dark velvet reads dim, not a bright gel),
   // energy-bounded since Tt·tint̂ ≤ 1. One gated branch; receiver default 0 skips the fabric as dead code. ----
   vec3 col;
-  if(uReceiver == 0){
+  if(uSkyView != 0){
+    col = skyRad;                                          // SKY VIEW: no receiver at all — the branch above already answered with radiance (§4.9)
+  } else if(uReceiver == 0){
     col = (acc*uSunColor + uAmbient) * uGround;            // OPAQUE FLOOR — literal old expression, byte-identical
   } else {
     // The landed irradiance the fabric answers. On the ENCLOSURE the beam and the sky are resolved SEPARATELY
@@ -1303,11 +1450,14 @@ function create(canvas, opts){
   // on any receiver at all. That is not a downgrade here — at enclosure distances the cast is deep in the pinhole
   // regime (metres of occluder height against a fabric a metre or two off), where the layer tier's height
   // quantization is invisible under the disk blur. The cheap path is the correct path in this branch.
+  // THE SKY VIEW is out for the same reason, one step further: it has no cast frame at all — it reads the occluder
+  // field along the EYE's rays, and the faithful texture is a pre-integration along the SUN's. There is nothing for
+  // a single tap to be a tap of.
   // ONE predicate, read by every path decision (bake dispatch, texture sizing, the .z packing convention, the
   // twig-hug, auto-quality's cost model, show_layer, and the uFaithful uniform), because those must agree per frame
   // or the layer bake reads faithful-packed cluster data and the leaves slide off their twigs. Safe to be a derived
-  // value rather than state because `receiver` is a MODE_KEYS flag: a 1↔2 flip forces the full rebuild.
-  const faithfulOn = () => params.faithful_canopy && (params.receiver|0) !== 2;
+  // value rather than state because both `receiver` and `sky_view` are MODE_KEYS flags: a flip forces the full rebuild.
+  const faithfulOn = () => params.faithful_canopy && (params.receiver|0) !== 2 && !params.sky_view;
 
   function compile(type, src){
     const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
@@ -1359,6 +1509,7 @@ function create(canvas, opts){
     farSmear:loc(progTransport,'uFarSmear'),
     origin:loc(progTransport,'uCanopyOrigin'), extent:loc(progTransport,'uCanopyExtent'),
     sun:loc(progTransport,'uSunColor'), ambient:loc(progTransport,'uAmbient'), ground:loc(progTransport,'uGround'),
+    skyView:loc(progTransport,'uSkyView'), srcAngR:loc(progTransport,'uSrcAngR'), srcAngL:loc(progTransport,'uSrcAngL'), srcMoon:loc(progTransport,'uSrcMoon'),
     receiver:loc(progTransport,'uReceiver'), tt:loc(progTransport,'uTt'), curtainTint:loc(progTransport,'uCurtainTint'),
     curtainY:loc(progTransport,'uCurtainY'), foldDepth:loc(progTransport,'uFoldDepth'), foldScale:loc(progTransport,'uFoldScale'), foldCoarsen:loc(progTransport,'uFoldCoarsen'), foldWarp:loc(progTransport,'uFoldWarp'), sunDir:loc(progTransport,'uSunDir'), sheen:loc(progTransport,'uSheen'), scatter:loc(progTransport,'uScatter'),
     mullion:loc(progTransport,'uMullion'), mullPenumbra:loc(progTransport,'uMullPenumbra'),
@@ -1432,7 +1583,8 @@ function create(canvas, opts){
   let glowW=0, glowH=0, glowFail=false;   // glowFail LATCHES an incomplete FBO: the tier then silently stops being offered (perf.glow stays false) and every frame takes the direct path
   const GLOW_TAPS = 6;                    // 13 taps: centre + this many each side. NOT independently tunable — FS_GLOW_BLUR's weight table is computed for exactly this count; change one and recompute the other
   const GLOW_STEP_MAX = 6.0;              // px between taps — the cap that trades reach for a clean kernel (see FS_GLOW_BLUR)
-  const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01 };
+  const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01,
+                coreR:0.005, moonD:0, moonR:0, Lcore:0, Lhalo:0 };   // + the SEEN source (§4.9 sky view): angular radii, the eclipse moon, and the radiance in each region — all filled by regenSource from the sampler's own numbers
   const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0, hRef:1 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend, `hRef` = tallest floor height for the drift's height-scale (spec §4.5)
   const faith = { vao:null, buf:null, count:0, hMin:0, hMax:1, ox:0, oy:0, ext:1,   // FAITHFUL leaf geometry (all leaves, continuous height) + the cast-region frame, computed in bakeFaithful (§4.5)
                   pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
@@ -2108,12 +2260,30 @@ function create(canvas, opts){
       pts.push([r*Math.cos(a), r*Math.sin(a), nHalo>0?Whalo/nHalo:0]);
     }
     // eclipse: occlude a moon-disk over the sun -> remaining samples form a crescent
+    const moonR = params.eclipse ? coreR*1.0 : 0, moonD = params.eclipse ? coreR*(1.3-params.eclipse_amount) : 0;
     if(params.eclipse){
-      const rm=coreR*1.0, d=coreR*(1.3-params.eclipse_amount);
-      for(const p of pts){ if(Math.hypot(p[0]-d, p[1])<rm) p[2]=0; }
+      for(const p of pts){ if(Math.hypot(p[0]-moonD, p[1])<moonR) p[2]=0; }
       let s=0; for(const p of pts) s+=p[2];
       if(s>0) for(const p of pts) p[2]/=s;     // renormalize (keep shape visible)
     }
+    // THE SEEN SOURCE (§4.9, sky view): the same distribution these samples approximate, expressed as RADIANCE — the
+    // core disk and the halo annulus, each carrying its post-cloud weight over its own solid angle. Derived HERE, from
+    // the very numbers the sampler just used, so the sun you look at and the dapples it throws cannot drift apart:
+    // raise cloud_thickness and the disk drains into the aureole by exactly the amount the dapples soften. Absolute
+    // scale is authored — see SKY_SUN_GAIN.
+    // The eclipse renormalization is ANALYTIC (circle-circle overlap) rather than the discrete sum just used above,
+    // and deliberately so: the loop's sum is a 32-sample ESTIMATE of the energy the moon removes, and reusing it
+    // would bake that estimate's error into the visible source. Integrating the field below against the true
+    // overlap areas gives back exactly 1 — the same total the renormalized weights carry. What is left over, the gap
+    // between the two core:halo splits, is the SAMPLER's own discretization and belongs to the sampler.
+    const aCore = Math.PI*coreR*coreR, aHalo = Math.max(Math.PI*(haloR*haloR - coreR*coreR), 1e-12);
+    const eatCore = lensArea(coreR, moonR, moonD);                     // moon ∩ core disk
+    const eatHalo = lensArea(haloR, moonR, moonD) - eatCore;           // moon ∩ halo annulus = (moon ∩ whole source) − (moon ∩ core)
+    const liveCore = Wcore*(1 - eatCore/aCore), liveHalo = Whalo*(1 - eatHalo/aHalo);
+    const live = Math.max(liveCore + liveHalo, 1e-9);                  // 1 with no eclipse, so this whole block is inert then
+    src.coreR = coreR; src.haloR = haloR; src.moonD = moonD; src.moonR = moonR;
+    src.Lcore = SKY_SUN_GAIN * (Wcore/live) / aCore;
+    src.Lhalo = SKY_SUN_GAIN * (Whalo/live) / aHalo;
     const flat=new Float32Array(pts.length*3);
     let mr=1e-9, mw=1e-9;
     pts.forEach((p,i)=>{ flat[i*3]=p[0]; flat[i*3+1]=p[1]; flat[i*3+2]=p[2];
@@ -2437,7 +2607,11 @@ function create(canvas, opts){
   // uniform and an untaken shader branch. Gate ON: transport writes LINEAR HDR into the sharp target instead, and
   // drawDiffusion spreads it and composites into the caller's target (§4.9).
   function drawFrameInto(fbo, w, h){
-    const glow = params.receiver !== 0 && params.curtain_diffuse > 0 && ensureGlowTargets(w, h);
+    // the SKY VIEW joins the diffusion gate (§4.9): the very same linear-HDR spread reads there as the eye's own
+    // VEILING GLARE — the wash around a bright source seen through gaps, which is scatter in the eye rather than in
+    // a weave, but the same operator on the same quantity. A perception-tier reading of a transport pass, the same
+    // honesty class as the mesopic shift below.
+    const glow = (params.receiver !== 0 || params.sky_view) && params.curtain_diffuse > 0 && ensureGlowTargets(w, h);
     perf.glow = glow;
     gl.bindFramebuffer(gl.FRAMEBUFFER, glow ? glowFBO[0] : fbo);
     gl.viewport(0,0,w,h);
@@ -2481,6 +2655,10 @@ function create(canvas, opts){
   // target's HEIGHT and carries the aspect in x, so px/m is one isotropic number and curtain_diffuse_m stays the same
   // centimetres of cloth whatever the zoom or the backing store does. Spacing = radius/6 (13 taps over ±3σ), capped.
   // All three passes share the viewport drawFrameInto set — the ping/pong are the same size as the sharp frame.
+  // (In the SKY VIEW there is no cloth and no view_extent framing, so the metres-of-fabric reading does not apply:
+  // the same two knobs there set a plain screen-space glare radius through the same arithmetic, view_extent_m acting
+  // as an arbitrary divisor. Named rather than special-cased — a second scale rule would be a second thing to keep
+  // in sync for a knob an author sets by eye anyway.)
   function drawDiffusion(fbo, w, h){
     const rPx = params.curtain_diffuse_m * h / Math.max(params.view_extent_m, 1e-3);
     const step = Math.min(rPx/GLOW_TAPS, GLOW_STEP_MAX);
@@ -2578,6 +2756,13 @@ function create(canvas, opts){
     gl.uniform3f(U.tp.ground, params.ground_r, params.ground_g, params.ground_b);   // dirt-floor albedo (spec §4.7)
     // Receiver (curtain handoff): 0 = opaque floor (byte-identical), 1 = translucent moss-velvet curtain — Tt
     // brightness × dye hue. Only consulted in the shader when receiver≠0, so the floor path costs nothing.
+    // SKY VIEW (§4.9): the third camera, and it overrides the receiver outright — nothing below this line is read
+    // when it is on. The three source uniforms are regenSource's own numbers, so the sun in frame and the dapples it
+    // throws are drawn from one distribution; they cost nothing when sky_view is off (an untaken shader branch).
+    gl.uniform1i(U.tp.skyView, params.sky_view ? 1 : 0);
+    gl.uniform2f(U.tp.srcAngR, src.coreR, src.haloR);
+    gl.uniform2f(U.tp.srcAngL, src.Lcore, src.Lhalo);
+    gl.uniform2f(U.tp.srcMoon, src.moonD, src.moonR);
     gl.uniform1i(U.tp.receiver, params.receiver|0);
     gl.uniform1f(U.tp.tt, params.curtain_tt);
     gl.uniform3f(U.tp.curtainTint, params.curtain_tint_r, params.curtain_tint_g, params.curtain_tint_b);

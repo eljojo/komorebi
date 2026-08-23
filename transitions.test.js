@@ -15,14 +15,16 @@ const KNOWN_EXCLUDED = [
 // standing_scene / faithful_canopy / receiver used to sit in KNOWN_EXCLUDED — but they are NOT inert: flipping one
 // needs a structural rebuild. They moved to MODE_KEYS, which transitionTo folds into structDiff. (See the mode-flag test.)
 
-// Scene-MODE flags (standing_scene, faithful_canopy, receiver) are NOT inert: flipping one changes regen-time state
-// (crown sizing, faithTex allocation, the bake path, the camera mapping), so a transition that lands on a differing
-// flag must force a structural rebuild — not silently snap the flag with the old geometry/textures still in place.
+// Scene-MODE flags (standing_scene, faithful_canopy, receiver, sky_view) are NOT inert: flipping one changes
+// regen-time state (crown sizing, faithTex allocation, the bake path, the camera mapping), so a transition that lands
+// on a differing flag must force a structural rebuild — not silently snap the flag with the old geometry/textures
+// still in place. sky_view is the same class: it turns the camera over AND forces the layer tier, which reallocates.
 test("scene-mode flags are classified as rebuild-forcing (MODE_KEYS), not inert", () => {
   expect(Array.isArray(MODE_KEYS)).toBe(true);
   expect(MODE_KEYS).toContain("standing_scene");
   expect(MODE_KEYS).toContain("faithful_canopy");
   expect(MODE_KEYS).toContain("receiver");
+  expect(MODE_KEYS).toContain("sky_view");
 });
 
 test("the transition classes are pairwise disjoint", () => {
