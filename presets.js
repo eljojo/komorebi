@@ -361,50 +361,67 @@ export const PRESETS = {
     "drift_amount": 0.1, "drift_phase": 2.6, "drift_auto": true, "drift_speed": 0.015,
     "auto_quality": true,
   }),
-  // 'curtain 1' — the first CURTAIN look (spec §4.9): the tree's shadow is cast onto a STANDING moss-velvet
-  // curtain (a vertical receiver plane), lit from behind by a low sun, seen head-on from the bed. The shadow
-  // stands UP the cloth (projected via height - recvZ) instead of lying on the floor. The tree itself sits off
-  // the cloth (at world-Y 0); the curtain is `curtain_distance_m` behind it, so only the cast shadow is in view.
-  // FRAMING IS NUDGEABLE: curtain dist + sun azimuth/elevation + the pan place the shadow; tune to taste.
-  // Uses the FAITHFUL cast (§4.9) re-aimed at the vertical cloth — real per-leaf geometry, no layer banding;
-  // the sun azimuth (90°, facing the cloth) must give the projection a Y-component, or the cast degenerates.
+  // 'curtain 1' — sunlit sheer cotton, the plant at the glass (spec §4.9). A thin bright curtain (high Tt,
+  // warm dye) in a dark room: one huge window (4.5 x 3.05 m, wall 0 = black surround), a faint translucent
+  // mullion grid, and the grove nearly TOUCHING the cloth (0.6 m) so the cast is crisp botanical shadow-play —
+  // the near-contact shape regime, wanted here: leaves print as leaves and the deep fold warp S-bends them.
+  // Matte broad pleats (sheen ~0), tight strong glow, low warm sun far off-axis so the flanks split lit/dark.
+  // Hand-tuned by the author; the grove seed is its own (938460877, 4 trees).
   'curtain 1': Object.assign({}, DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.28, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.4,
-    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
-    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.4, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "tree_count": 4, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.15, "leader_strength": 0.15, "droop": -0.23, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.16, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
-    // a low raking sun, well off the cloth's normal: elevation gives the shadow its climb up the drape, and the
-    // off-axis azimuth is what makes the fold incidence band one flank lit and the other dark (head-on, az 90°,
-    // both flanks only foreshorten — see §4.9).
-    "seed": 290626672, "sun_elevation_deg": 13, "sun_azimuth_deg": 62,
-    // CURTAIN receiver: a vertical plane 2.5 m behind the tree, viewed head-on. view_center.y sits on the aperture
-    // centre so the window is what the frame is about; pitch is irrelevant in curtain mode (head-on map).
+    "seed": 938460877, "sun_elevation_deg": 13, "sun_azimuth_deg": 62,
     "receiver": 1, "standing_scene": true, "faithful_canopy": true,
-    "curtain_distance_m": -2.5, "curtain_tt": 0.22, "curtain_tint_r": 0.45, "curtain_tint_g": 1.0, "curtain_tint_b": 0.28,
-    "fold_depth": 0.6, "fold_scale": 0.9, "fold_coarsen": 0.6, "velvet_sheen": 0.15,   // few broad pleats gathering at the rod, gently shaded — the aperture carries the contrast now, not the folds
-    "fold_warp": 0.10,   // the pleats stand 10 cm out of the plane, so the cast dapples and the window bars S-bend across them (taste call; the visual pass owns the amplitude)
-    "curtain_scatter": 0.4,   // two fifths of the transmit diffuses through the pile — the body glow wraps into the fold flanks instead of leaving them black (taste call; the visual pass owns it)
-    // the window: 4 cm off the cloth, so its bars land sharp in the same frame the leaf-gaps stay soft (§4.9's
-    // two-regimes image). Values are a taste call — the visual pass owns them.
-    "mullion_tau": 2.5, "mullion_pitch_m": 0.35, "mullion_bar_m": 0.025, "mullion_depth_m": 0.04,
-    // the APERTURE (§4.9): a 1.5 × 2.1 m sash centred just above waist height. Everything outside it is wall, lit
-    // only by the room's own 3% front-side leak — the macro contrast the whole composition rests on, and the frame
-    // that confines the bars. Also a taste call.
-    "window_w_m": 1.5, "window_h_m": 2.1, "window_cx_m": 0, "window_cy_m": 1.3, "window_wall": 0.03,
-    "view_extent_m": 3.2, "view_pitch_deg": 0, "view_fov_deg": 60, "view_yaw_deg": 0,
+    "curtain_distance_m": 0.6, "curtain_tt": 0.78, "curtain_tint_r": 0.45, "curtain_tint_g": 1, "curtain_tint_b": 0.28,
+    "fold_depth": 0.38, "fold_scale": 0.6, "fold_coarsen": 0.22, "fold_warp": 0.28, "velvet_sheen": 0.02,
+    "curtain_scatter": 0.42, "curtain_diffuse": 0.74, "curtain_diffuse_m": 0.035,
+    "mullion_tau": 0.7, "mullion_pitch_m": 0.44, "mullion_bar_m": 0.032, "mullion_depth_m": 0.04,
+    "window_w_m": 4.5, "window_h_m": 3.05, "window_cx_m": 0, "window_cy_m": 1.3, "window_wall": 0,
+    "view_extent_m": 4.69, "view_pitch_deg": 19, "view_fov_deg": 60, "view_yaw_deg": -118.85,
     "view_center_x": 0, "view_center_y": 1.3, "trunk_radius_m": 0.1, "far_smear": 0,
-    // dimmer and less ambient than a floor look wants: the wall must go dark, so the exposure is set by the
-    // aperture rather than by the average frame.
-    "exposure": 1.4, "contrast": 1.0, "ambient_skylight": 0.5, "sky_turbidity": 0.06, "mesopic_strength": 0.5, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 1.4, "contrast": 1, "ambient_skylight": 0.5, "sky_turbidity": 0.06, "mesopic_strength": 0.5, "chromatic_aberration": 0, "tone_map": 2,
     "wind_pattern": "squally", "wind_strength": 1.2, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "auto_quality": true,   // faithful is the heavy path (per-sample geometry bake) — the governor keeps a weak device at 60, like park 1
+    "drift_amount": 0.145, "drift_phase": 2.43, "drift_auto": true, "drift_speed": 0.02,
+    "auto_quality": true,
+  }),
+  // 'curtain 2' — the same room at BLUE HOUR. curtain 1's grove, seed and window, so the pair live-morphs;
+  // what changes is the hour and the cloth. The sun sinks to 7 deg and reddens through haze; the fabric is
+  // near-white VOILE (Tt 0.85, neutral tint — at dusk the LIGHT carries the colour); the grove steps back to
+  // 1.8 m so BOTH regimes share the frame (near limbs crisp, crown melted soft — §3.2); the glow widens into
+  // bloom and the Purkinje shift runs deep: hot gold sun-blobs floating on rod-blue dim cloth. Lazy last-light
+  // wind. Authored as the direction's next step; every number is a starting point.
+  'curtain 2': Object.assign({}, DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.22, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.4,
+    "tree_count": 4, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.15, "leader_strength": 0.15, "droop": -0.23, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.16, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "seed": 938460877, "sun_elevation_deg": 7, "sun_azimuth_deg": 55,
+    "receiver": 1, "standing_scene": true, "faithful_canopy": true,
+    "curtain_distance_m": 1.8, "curtain_tt": 0.85, "curtain_tint_r": 0.95, "curtain_tint_g": 0.97, "curtain_tint_b": 1,
+    "fold_depth": 0.3, "fold_scale": 0.5, "fold_coarsen": 0.22, "fold_warp": 0.34, "velvet_sheen": 0,
+    "curtain_scatter": 0.5, "curtain_diffuse": 0.8, "curtain_diffuse_m": 0.05,
+    "mullion_tau": 0.55, "mullion_pitch_m": 0.44, "mullion_bar_m": 0.032, "mullion_depth_m": 0.04,
+    "window_w_m": 4.5, "window_h_m": 3.05, "window_cx_m": 0, "window_cy_m": 1.3, "window_wall": 0,
+    "view_extent_m": 4.69, "view_pitch_deg": 19, "view_fov_deg": 60, "view_yaw_deg": -118.85,
+    "view_center_x": 0, "view_center_y": 1.3, "trunk_radius_m": 0.1, "far_smear": 0,
+    "exposure": 1.5, "contrast": 1, "ambient_skylight": 0.42, "sky_turbidity": 0.12, "mesopic_strength": 0.85, "chromatic_aberration": 0, "tone_map": 2,
+    "wind_pattern": "lazy", "wind_strength": 0.85, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 2.43, "drift_auto": true, "drift_speed": 0.02,
+    "auto_quality": true,
   }),
   // 'tent 1' — komorebi from INSIDE a tent (spec §4.9): the ENCLOSURE receiver, receiver 2, now a CLOSED tent.
   // Reference: a NEMO Dragonfly 2P pitched under trees, photographed from inside lying down.
