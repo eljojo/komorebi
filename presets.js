@@ -275,18 +275,18 @@ export const PRESETS = {
   // culms, which is the composition.
   'canopy 2': Object.assign({}, DEFAULTS, {
     "sky_view": true, "standing_scene": false, "faithful_canopy": false,
-    "sky_scatter": 0.45,
+    "sky_scatter": 0.6,
     "sample_count": 32, "core_angular_radius_deg": 0.27, "halo_angular_radius_deg": 5,
     "core_weight_fraction": 0.95, "cloud_thickness": 0.08, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 4, "canopy_base_height_m": 11, "canopy_thickness_m": 3, "foliage_density": 0.55,
-    "tree_count": 14, "limb_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 18,
+    "layer_count": 4, "canopy_base_height_m": 10, "canopy_thickness_m": 6.5, "foliage_density": 3.4,
+    "tree_count": 16, "limb_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 18,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 62, "branch_tau": 3.2, "leader_strength": 1, "droop": 0,
-    "crown_aspect": 3, "leaves_per_cluster": 18, "cluster_spread_m": 0.22, "leaf_size_m": 0.09, "leaf_aspect": 3.4,
+    "crown_aspect": 3, "leaves_per_cluster": 60, "cluster_spread_m": 0.35, "leaf_size_m": 0.14, "leaf_aspect": 3.4,
     "max_tilt": 0.5, "edge_softness": 0.26,
     "trans_r": 0.34, "trans_g": 0.52, "trans_b": 0.14,   // bamboo is a YELLOW-green: more red than a pine, and the glow takes its hue from here
-    "canopy_extent_m": 26, "tex_resolution": 1024, "bake_resolution": 1536,   // 1.7 cm/texel
+    "canopy_extent_m": 22, "tex_resolution": 1024, "bake_resolution": 1536,   // 1.7 cm/texel
     "seed": 290626672, "sun_elevation_deg": 78, "sun_azimuth_deg": 150,
-    "view_extent_m": 8, "view_pitch_deg": 58, "view_fov_deg": 52, "view_yaw_deg": 0,
+    "view_extent_m": 8, "view_pitch_deg": 58, "view_fov_deg": 70, "view_yaw_deg": 0,
     "view_center_x": 0.9, "view_center_y": 0.7, "trunk_radius_m": 0.04, "far_smear": 0,
     "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 2.0, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
     "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,
@@ -311,16 +311,16 @@ export const PRESETS = {
     "sky_scatter": 0.55,
     "sample_count": 32, "core_angular_radius_deg": 0.3, "halo_angular_radius_deg": 6,
     "core_weight_fraction": 0.92, "cloud_thickness": 0.25, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 4, "canopy_base_height_m": 14, "canopy_thickness_m": 5, "foliage_density": 1.6,
-    "tree_count": 6, "limb_count": 6, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 55,
+    "layer_count": 4, "canopy_base_height_m": 14, "canopy_thickness_m": 7, "foliage_density": 2.4,
+    "tree_count": 15, "limb_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 55,
     "branch_length_ratio": 0.7, "branch_pitch_deg": 8, "branch_tau": 2.6, "leader_strength": 0.75, "droop": 0.15,
-    "crown_aspect": 0.8, "leaves_per_cluster": 30, "cluster_spread_m": 0.3, "leaf_size_m": 0.16, "leaf_aspect": 2.6,
+    "crown_aspect": 0.8, "leaves_per_cluster": 56, "cluster_spread_m": 0.4, "leaf_size_m": 0.22, "leaf_aspect": 2.6,
     "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.2, "trans_g": 0.42, "trans_b": 0.14,   // pine needles: darker and bluer than a broadleaf
-    "canopy_extent_m": 42, "tex_resolution": 1024, "bake_resolution": 1536,   // 2.7 cm/texel
+    "canopy_extent_m": 30, "tex_resolution": 1024, "bake_resolution": 1536,   // 2.7 cm/texel
     "seed": 290626672, "sun_elevation_deg": 40, "sun_azimuth_deg": 200,
     "view_extent_m": 11, "view_pitch_deg": 62, "view_fov_deg": 60, "view_yaw_deg": 35,
-    "view_center_x": 1.4, "view_center_y": 1.0, "trunk_radius_m": 0.22, "far_smear": 0,
+    "view_center_x": 1.4, "view_center_y": 1.0, "trunk_radius_m": 0.17, "far_smear": 0,
     "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 1.6, "sky_turbidity": 0.06, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
     "curtain_diffuse": 0.15, "curtain_diffuse_m": 0.04,
     "wind_pattern": "squally", "wind_strength": 1.2, "wind_gustiness": 0.28, "wind_direction_deg": 0, "gust_frequency": 0.1,
