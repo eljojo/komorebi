@@ -21,15 +21,16 @@
 // glslangValidator is taken from PATH, else run through `nix shell nixpkgs#glslang`.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 // The engine's source modules, scanned as text for shader literals and the numeric-constant substitution
-// table. komorebi.js itself is the barrel: no literals, but it stays the module door imported below.
-const SOURCES = ["komorebi-params.js", "komorebi-math.js", "komorebi-shaders.js", "komorebi-transport.js", "komorebi-engine.js"];
+// table. Structural, not a hand-kept list: every komorebi*.js at the root is scanned (the barrel and the
+// global shim carry no literals today, but a literal added to ANY of them is found rather than skipped).
+const SOURCES = readdirSync(ROOT).filter((f) => /^komorebi.*\.js$/.test(f)).sort();
 
 // ---- pull one backtick-delimited literal out of the source, given the index just past its opening backtick.
 // The shaders contain no nested template expressions and no escaped backticks; the escape check is there so a
@@ -45,21 +46,27 @@ function literalAt(text, start) {
   }
 }
 
-const text = SOURCES.map((f) => readFileSync(join(ROOT, f), "utf8")).join("\n");
-
-// ---- the substitution table, derived from the source rather than hard-coded, so a new MAX_* cap or a new
-// shared GLSL_* snippet is picked up without touching this file.
+// ---- scan per file (an unterminated literal is then reported against ITS file instead of silently
+// swallowing the next file's source): the substitution table — derived from the source rather than
+// hard-coded, so a new MAX_* cap or a new shared GLSL_* snippet is picked up without touching this file —
+// then every shader-ish literal, in source order. A name defined twice across modules fails loudly: the
+// table is flat, so a silent clobber would resolve some shader against the wrong value.
 const subs = new Map();
-for (const m of text.matchAll(/^const ([A-Z][A-Z0-9_]*) = (-?\d+(?:\.\d+)?);/gm)) subs.set(m[1], m[2]);
-
-// ---- every shader-ish literal, in source order.
+const setSub = (name, value, file) => {
+  if (subs.has(name) && subs.get(name) !== value) { console.error(`substitution '${name}' redefined with a different value in ${file}`); process.exit(2); }
+  subs.set(name, value);
+};
 const shaders = [];
-for (const m of text.matchAll(/^const ((?:VS|FS|GLSL)_[A-Z0-9_]*) = `/gm)) {
-  const body = literalAt(text, m.index + m[0].length);
-  if (body === null) { console.error(`unterminated template literal: ${m[1]}`); process.exit(2); }
-  const name = m[1];
-  if (name.startsWith("GLSL_")) subs.set(name, body);
-  else shaders.push({ name, body, stage: name.startsWith("VS_") ? "vert" : "frag" });
+for (const file of SOURCES) {
+  const text = readFileSync(join(ROOT, file), "utf8");
+  for (const m of text.matchAll(/^const ([A-Z][A-Z0-9_]*) = (-?\d+(?:\.\d+)?);/gm)) setSub(m[1], m[2], file);
+  for (const m of text.matchAll(/^const ((?:VS|FS|GLSL)_[A-Z0-9_]*) = `/gm)) {
+    const body = literalAt(text, m.index + m[0].length);
+    if (body === null) { console.error(`unterminated template literal: ${m[1]} in ${file}`); process.exit(2); }
+    const name = m[1];
+    if (name.startsWith("GLSL_")) setSub(name, body, file);
+    else shaders.push({ name, body, stage: name.startsWith("VS_") ? "vert" : "frag" });
+  }
 }
 if (shaders.length === 0) { console.error(`no shaders found in ${SOURCES.join(", ")}`); process.exit(2); }
 const literalCount = shaders.length;

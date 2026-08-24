@@ -7,7 +7,14 @@ A standalone WebGL2 engine that renders komorebi from physics rather than painti
 ## Files
 
 - **`komorebi.js`** — the engine's public door, an ES module: `export { create, DEFAULTS, … }`, re-exported from the modules below. The whole renderer, no UI.
-  - **`komorebi-engine.js`** — `create()`: one self-contained engine instance on a canvas (GL state, bake, motion, transitions, render loop).
+  - **`komorebi-engine.js`** — `create()` itself: GL plumbing, the shared-internals hub the subsystem factories close over, the rebuild coordinators, auto-quality, and the frame loop.
+  - **`komorebi-grove.js`** — `buildGrove`: the grown canopy — trees, leaves binned to depth layers, the woody occluder, the faithful-path geometry.
+  - **`komorebi-bake.js`** — the per-frame bakes: leaves to per-layer optical depth, and the faithful path's pre-integrated soft shadow.
+  - **`komorebi-source.js`** — the Vogel-spiral point-sun cloud and the shared cast geometry (bulk shift, ellipse projection, layer heights).
+  - **`komorebi-motion.js`** — the broadband wind signal and the trunk/limb/twig spring hierarchy.
+  - **`komorebi-transitions.js`** — the cloud-bloom crossfade between looks.
+  - **`komorebi-render.js`** — one frame onto a target: the transport draw, the per-group uniform upload, the glow tier.
+  - **`komorebi-editor-tools.js`** — EDITOR-only: debug overlays, the profiling primitive, the motion mirror.
   - **`komorebi-transport.js`** — the transport master + camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.
   - **`komorebi-shaders.js`** — the bake / faithful-bake / display shaders and the shared tone tail.
   - **`komorebi-params.js`** — `DEFAULTS`, the legacy-name migration, the transition key classification, the engine caps.
