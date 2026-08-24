@@ -66,7 +66,7 @@
     border-radius:12px; padding:4px 12px; cursor:pointer; font:11px ui-monospace,monospace; }
   #play .modes button:hover { color:#e8d9a8; background:#243c24; }
   #play .preset { display:flex; align-items:center; gap:8px; margin:6px 0 2px; }
-  #play .preset .name { flex:1; text-align:center; color:#e8d9a8; font-size:13px; overflow:hidden;
+  #play .preset .name { flex:1; text-align:left; color:#e8d9a8; font-size:13px; overflow:hidden;
     text-overflow:ellipsis; white-space:nowrap; }
   #play .preset button { flex:0 0 auto; font-size:14px; padding:4px 12px; }
   /* the wind pad: x = gust character, y = strength */
@@ -86,17 +86,17 @@
     font:12px ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
     transition: opacity .3s ease, transform .6s cubic-bezier(.22,.61,.36,1);   /* appears quickly... */
   }
-  #strip.hidden { display:none; }
   #strip.offscreen { transform:translate(-50%, 200%); }
   #strip.faded { opacity:0; pointer-events:none; transition: opacity .9s ease, transform .6s cubic-bezier(.22,.61,.36,1); }   /* ...retires gently */
   /* desktop (fine pointer): one horizontal bar, shown by cursor PROXIMITY rather than a timer */
   #strip.wide { width:min(880px, calc(100vw - 24px)); display:flex; align-items:center; gap:16px; padding:10px 16px; }
+  #strip.hidden { display:none; }   /* AFTER .wide in the cascade — equal specificity, and hidden must always win */
   #strip.wide .preset { flex:0 0 auto; margin:0; gap:6px; }
   #strip.wide .preset .name { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #strip.wide .ctl { flex:1 1 0; margin:0; min-width:0; }
   #strip.wide .ctl label { flex:0 0 auto; }
   #strip .preset { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-  #strip .preset .name { flex:1; text-align:center; color:#e8d9a8; font-size:13px; }
+  #strip .preset .name { flex:1; text-align:left; color:#e8d9a8; font-size:13px; }
   #strip .ctl { display:flex; align-items:center; gap:8px; margin:5px 0; }
   #strip .ctl label { flex:0 0 56px; color:#9fb89f; }
   #strip .ctl input[type=range] { flex:1; min-width:0; height:20px; accent-color:#c99; }

@@ -343,11 +343,11 @@ function timeSlider(){
 function presetRow(){
   const row=document.createElement('div'); row.className='preset';
   const prev=document.createElement('button'); prev.textContent='‹';
-  const name=document.createElement('span'); name.className='name';
   const next=document.createElement('button'); next.textContent='›';
+  const name=document.createElement('span'); name.className='name';
   prev.addEventListener('click', ()=>stepPreset(-1));
   next.addEventListener('click', ()=>stepPreset(1));
-  row.append(prev,name,next);
+  row.append(prev,next,name);   // both arrows together, title after — the buttons stay put however long the name runs
   presetNameEls.push(name);
   return row;
 }
@@ -484,14 +484,28 @@ function buildStrip(){
   window.addEventListener('pointerup',()=>{ stripDragging=false; });
   strip.addEventListener('input',stripWake);
   canvas.addEventListener('pointerdown',stripWake);   // a tap on the art summons the strip back (touch)
-  if(!coarse) window.addEventListener('pointermove',(e)=>{
-    if(settings.mode!=='min' || strip.classList.contains('hidden')) return;
-    if(stripDragging || performance.now()<stripHoldUntil){ strip.classList.remove('faded'); return; }
-    const r=strip.getBoundingClientRect();
-    const near = e.clientX > r.left-STRIP_NEAR_PX && e.clientX < r.right+STRIP_NEAR_PX
-              && e.clientY > r.top-STRIP_NEAR_PX && e.clientY < r.bottom+STRIP_NEAR_PX;
-    strip.classList.toggle('faded', !near);
-  });
+  if(!coarse){
+    let lastMove=performance.now(), lastPos=null;
+    window.addEventListener('pointermove',(e)=>{
+      lastMove=performance.now(); lastPos={ x:e.clientX, y:e.clientY };
+      if(settings.mode!=='min' || strip.classList.contains('hidden')) return;
+      if(stripDragging || lastMove<stripHoldUntil){ strip.classList.remove('faded'); return; }
+      const r=strip.getBoundingClientRect();
+      const near = e.clientX > r.left-STRIP_NEAR_PX && e.clientX < r.right+STRIP_NEAR_PX
+                && e.clientY > r.top-STRIP_NEAR_PX && e.clientY < r.bottom+STRIP_NEAR_PX;
+      strip.classList.toggle('faded', !near);
+    });
+    // a STILL cursor is also a dismissal: parked anywhere off the strip itself (even inside the proximity
+    // margin) for a few seconds, the strip retires. Resting ON it keeps it — that is just hovering.
+    setInterval(()=>{
+      if(settings.mode!=='min' || strip.classList.contains('hidden') || stripDragging) return;
+      const now=performance.now();
+      if(now<stripHoldUntil || now-lastMove<4000) return;
+      const r=strip.getBoundingClientRect();
+      const onIt = lastPos && lastPos.x>=r.left && lastPos.x<=r.right && lastPos.y>=r.top && lastPos.y<=r.bottom;
+      if(!onIt) strip.classList.add('faded');
+    }, 1000);
+  }
 }
 
 // ---- tooltips: lead with a plain "this does that", then build up to the why. Hover any knob or
@@ -746,6 +760,7 @@ const MODE_ELS = { adv: dev, play, min: strip };
 function panelEl(){ return MODE_ELS[settings.mode] || play; }
 let peeking=false, panelTimer=0;
 function slideInPanel(){
+  if(document.body.classList.contains('intro')) return;   // the welcome owns the screen — no surface (D key included) until "feel"
   const el = panelEl();
   if(!el.classList.contains('hidden')) return;    // first reveal only (idempotent vs. the welcome fallback timer)
   clearTimeout(panelTimer);
@@ -880,8 +895,15 @@ function stepPreset(dir){
 let showTree=false;
 window.addEventListener('keydown',e=>{
   const k=e.key;
-  if(k==='d'||k==='D'){ togglePanel(); return; }   // toggles whichever mode surface is active
-  if(k==='h'||k==='H'){ showHint(); return; }      // resurface the key hints after they retire
+  if(k==='d'||k==='D'){
+    // in zen the strip lives by proximity, so D speaks that language: show = wake (as if hovered, with the
+    // same short hold), hide = fade. Toggling `hidden` here would gate out the proximity/tap machinery and
+    // leave the strip unreachable by pointer.
+    if(settings.mode==='min' && !strip.classList.contains('hidden')){
+      if(strip.classList.contains('faded')) stripWake(); else strip.classList.add('faded');
+    } else togglePanel();
+    return;
+  }
   if(k==='t'||k==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; return; }
   if(k==='f'||k==='F'){                                                     // toggle browser fullscreen (webkit fallback for Safari)
     const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;
@@ -894,6 +916,12 @@ window.addEventListener('keydown',e=>{
     if(tag==='INPUT'||tag==='SELECT') return;                               // let a focused panel control use the arrows
     e.preventDefault();
     stepPreset((k==='ArrowRight'||k==='ArrowDown') ? 1 : -1);
+    return;
+  }
+  // any OTHER bare key — H included, but also whatever someone tries when lost — surfaces the key hints
+  if(k.length===1 && !e.metaKey && !e.ctrlKey && !e.altKey){
+    const tag=(document.activeElement?.tagName)||'';
+    if(tag!=='INPUT' && tag!=='SELECT') showHint();
   }
 });
 // track the pointer (normalised canvas coords) so the tree preview can grow when hovered
@@ -1167,7 +1195,11 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
 (()=> {
   const welcome=document.getElementById('welcome'), feel=document.getElementById('feel');
   let started=false;
-  function arrive(){ slideInPanel(); stripWake(); }   // reveal the mode's surface (the strip then fades on its own)
+  const arriveBy = performance.now()+20000;          // ...but a machine slow enough to stretch the crossfade still gets its UI
+  function arrive(){                                 // reveal the mode's surface — only once the welcome crossfade has SETTLED
+    if(eng.trans.active && performance.now()<arriveBy){ setTimeout(arrive, 500); return; }   // the tier clock is frame-clamped, so wall time can stretch; wait it out, don't guess it
+    slideInPanel(); stripWake();
+  }
   feel.addEventListener('click',()=>{
     if(started) return; started=true;
     document.body.classList.remove('intro');        // un-dim the canvas to full strength
