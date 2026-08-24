@@ -1663,6 +1663,12 @@ const CAMERAS = {
   },
 };
 const TRANSPORT_CAMERAS = Object.keys(CAMERAS);
+// The groups that carry a per-frame UPLOAD, named at module level because that is the only half of the upload
+// registry anything outside an engine can see: the functions themselves live in create()'s GROUP_UPLOAD, since
+// they need engine state (the GL objects, params, the grove) a module-level table cannot reach. This list is the
+// seam between the two — create() checks its table against it on construction, and registry.test.js checks it
+// against TRANSPORT_GROUPS and CAMERAS. Neither half can drift without one of those saying so.
+const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','ca','faith','sunDir','floor','cloth','fabric','window','tent','sky','post'];
 
 // The assembler. Every conditional it used to carry is now a lookup: the decls are the entry's groups in order,
 // the body is the entry's own snippets, and the only branch left is the one real structural fork — whether this
@@ -3401,6 +3407,10 @@ function create(canvas, opts){
       gl.uniform1i(u.linearOut, f.linearOut);   // 0 = end the Look here (every look); 1 = hand linear HDR to the diffusion passes (§4.9)
     },
   };
+  // The seam, closed from this side: GROUP_UPLOAD_KEYS is what the coherence test reads, this is what the engine
+  // actually dispatches, and a name in one and not the other would otherwise be an upload that silently never runs.
+  for(const k of GROUP_UPLOAD_KEYS) if(!GROUP_UPLOAD[k]) fail(`transport group "${k}" is declared to upload and has no uploader`);
+  for(const k in GROUP_UPLOAD) if(!GROUP_UPLOAD_KEYS.includes(k)) fail(`transport group "${k}" uploads but is missing from GROUP_UPLOAD_KEYS`);
   function drawTransportInto(linearOut){
     gl.disable(gl.BLEND);
     // THE CAMERA IS THE PROGRAM (§4.6/§4.9), and the registry is what says so once. Which variant runs is a MODE
@@ -3816,4 +3826,10 @@ function create(canvas, opts){
   return eng;
 }
 
-export { create, DEFAULTS, LEGACY_KEYS, migrateLegacy, MAX_LAYERS, MAX_SAMPLES, MAX_OCC, DEG, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, TRANSPORT_CAMERAS, buildTransport };
+// The export surface, and why each group is on it. `create` + `DEFAULTS` are the engine; LEGACY_KEYS/migrateLegacy
+// are the params contract (§9); the MAX_* caps and DEG are shared constants consumers size buffers against.
+// MORPH/CANOPY/TOPO/MODE_KEYS and CAMERAS/TRANSPORT_GROUPS/GROUP_UPLOAD_KEYS are exported for the SAME reason and
+// only that reason: they are couplings that would otherwise fail silently, so a `bun test` reads them and fails
+// loudly instead (transitions.test.js classifies every knob, registry.test.js keeps the camera registry's three
+// halves in agreement). TRANSPORT_CAMERAS/buildTransport are glslcheck's door onto the assembled variants.
+export { create, DEFAULTS, LEGACY_KEYS, migrateLegacy, MAX_LAYERS, MAX_SAMPLES, MAX_OCC, DEG, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, TRANSPORT_CAMERAS, TRANSPORT_GROUPS, CAMERAS, GROUP_UPLOAD_KEYS, buildTransport };
