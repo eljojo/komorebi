@@ -148,20 +148,29 @@ async function main() {
       const f = r.frames;
       log(`\nTRANSITION — ${from} -> ${to}   ${r.info.structDiff ? 'STRUCTURAL (dissolve + rebuild under the bloom)' : 'live morph, no bloom'}${r.info.canopyMorph ? ' + grove morph' : ''}`);
       log(`  ${f.length} frames over ${r.ms} ms   (mean luminance is Rec.709 over the whole frame, 0-255)\n`);
-      log('   #      t   bloom  swap    luma     Δ');
-      let maxD = 0, maxAt = -1, swapAt = -1, swapD = 0;
+      // Absolute churn is CONTRAST-BLIND, and the bloom spends contrast: at its peak the frame is pale, so a
+      // wholesale rearrangement moves few grey levels. The normalized column divides by the frame's own spread
+      // (√variance), which is the closer stand-in for what an eye adapted to that pale frame actually sees.
+      log('   #      t   bloom  swap    luma     Δ   churn   /σ');
+      let maxD = 0, maxAt = -1, swapAt = -1, swapD = 0, maxC = 0, maxCAt = -1, swapC = 0, maxN = 0, maxNAt = -1, swapN = 0;
       for (let i = 0; i < f.length; i++) {
         const d = i ? f[i].luma - f[i - 1].luma : 0;
         // trans.swapped flips at t>=0.5 on EVERY route; only a structural one actually swaps anything there.
         const justSwapped = r.info.structDiff && i > 0 && f[i].swapped && !f[i - 1].swapped;
-        if (justSwapped) { swapAt = i; swapD = d; }
+        if (justSwapped) { swapAt = i; swapD = d; swapC = f[i].churn; }
         if (i && Math.abs(d) > Math.abs(maxD)) { maxD = d; maxAt = i; }
-        log(`  ${String(i).padStart(2)}  ${f[i].t.toFixed(3)}  ${f[i].bloom.toFixed(3)}  ${justSwapped ? ' <<' : (f[i].swapped ? '  •' : '   ')}  ${f[i].luma.toFixed(2).padStart(7)}  ${(i ? (d >= 0 ? '+' : '') + d.toFixed(2) : '').padStart(7)}`);
+        if (i && f[i].churn > maxC) { maxC = f[i].churn; maxCAt = i; }
+        const nrm = i ? f[i].churn / Math.max(1, Math.sqrt(f[i].variance)) : 0;
+        if (i && nrm > maxN) { maxN = nrm; maxNAt = i; }
+        if (justSwapped) swapN = nrm;
+        log(`  ${String(i).padStart(2)}  ${f[i].t.toFixed(3)}  ${f[i].bloom.toFixed(3)}  ${justSwapped ? ' <<' : (f[i].swapped ? '  •' : '   ')}  ${f[i].luma.toFixed(2).padStart(7)}  ${(i ? (d >= 0 ? '+' : '') + d.toFixed(2) : '').padStart(7)}  ${(i ? f[i].churn.toFixed(2) : '').padStart(6)}  ${(i ? nrm.toFixed(3) : '').padStart(6)}`);
       }
       const file = join(OUT, `trans-${slug(from)}-${slug(to)}.png`);
       await writeFile(file, Buffer.from((await page.evaluate(([ids, c]) => window.__strip(ids, c), [f.map((x) => x.id), 8])).split(',')[1], 'base64'));
       log(`\n  max |ΔL| per frame   ${Math.abs(maxD).toFixed(2)}   at frame ${maxAt} (t=${f[maxAt] ? f[maxAt].t.toFixed(3) : '-'})`);
-      if (swapAt >= 0) log(`  the swap frame       ${swapAt}: t=${f[swapAt].t.toFixed(3)}  bloom=${f[swapAt].bloom.toFixed(3)}  ΔL=${(swapD >= 0 ? '+' : '') + swapD.toFixed(2)}`);
+      log(`  max CHURN per frame  ${maxC.toFixed(2)}   at frame ${maxCAt} (t=${f[maxCAt] ? f[maxCAt].t.toFixed(3) : '-'})`);
+      log(`  max CHURN/σ          ${maxN.toFixed(3)}   at frame ${maxNAt} (t=${f[maxNAt] ? f[maxNAt].t.toFixed(3) : '-'})`);
+      if (swapAt >= 0) log(`  the swap frame       ${swapAt}: t=${f[swapAt].t.toFixed(3)}  bloom=${f[swapAt].bloom.toFixed(3)}  ΔL=${(swapD >= 0 ? '+' : '') + swapD.toFixed(2)}  churn=${swapC.toFixed(2)}  churn/σ=${swapN.toFixed(3)}`);
       else log('  the swap frame       none — this route morphs live, nothing is swapped');
       log(`  strip                ${file}`);
       await browser.close(); server.close();

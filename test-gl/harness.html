@@ -196,6 +196,23 @@ window.__run = (presetName, overrides, frames) => new Promise((resolve, reject) 
 // The engine bypasses its adaptive frame-rate saver while trans.active, so every frame here is a real render
 // and every capture is a distinct one.
 // ---------------------------------------------------------------------------
+// STRUCTURAL CHURN: the mean per-pixel grayscale change between consecutive frames. The luminance series above
+// is blind to REORGANIZATION — a frame that swaps every dapple for a different dapple of the same brightness
+// moves the mean not at all, and that is exactly what a midpoint grove swap does. This sees it: a dissolve that
+// keeps the arrangement and only softens it churns a little, and a cut churns enormously. Live wind churns too,
+// which is the point of baselining it on a route that only morphs — that natural churn is the standard a
+// structural change has to stay near.
+function churn(prev, bytes) {
+  if (!prev) return 0;
+  let acc = 0;
+  const px = bytes.length / 4;
+  for (let i = 0; i < bytes.length; i += 4) {
+    const a = (prev[i] + prev[i + 1] + prev[i + 2]) / 3, b = (bytes[i] + bytes[i + 1] + bytes[i + 2]) / 3;
+    acc += Math.abs(a - b);
+  }
+  return acc / px;
+}
+
 window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) => {
   const o = Object.assign({ duration: 1.5, warm: 12, tail: 6, cap: 200 }, opts || {});
   const A = PRESETS[fromName], B = PRESETS[toName];
@@ -209,7 +226,7 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
 
   const t0 = performance.now();
   const out = [];
-  let eng = null, ticks = 0, started = false, endedAt = -1, done = false;
+  let eng = null, ticks = 0, started = false, endedAt = -1, done = false, prev = null;
   const finish = (err) => {
     if (done) return;
     done = true;
@@ -244,7 +261,8 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
     // trans.* is read AFTER the frame drew, so each row is the state that frame was rendered with — which is
     // what makes "the swap landed on the frame where bloom was X" a claim about the picture and not about the clock.
     out.push({ id, t: eng.trans.t, bloom: eng.trans.bloom, swapped: eng.trans.swapped,
-               active: eng.trans.active, luma: s.luma, variance: s.variance });
+               active: eng.trans.active, luma: s.luma, variance: s.variance, churn: churn(prev, bytes) });
+    prev = bytes;
     if (!eng.trans.active) {
       if (endedAt < 0) endedAt = out.length;
       if (out.length - endedAt >= o.tail) return finish(null);
