@@ -2009,6 +2009,7 @@ function create(canvas, opts){
   let faithTex = null;         // FAITHFUL path (§4.5): pre-integrated soft shadow (RGBA16F); 1×1 when faithful_canopy off
   let faithScratch = null;     // FAITHFUL path: per-sample transmittance scratch (RGBA16F); 1×1 when off
   let hier = null;             // branch hierarchy: limb + twig spring state (built in regenCanopy)
+  let grove = null;            // the ACTIVE grove value (hier + layerVAO + its two data textures); the views above point into it
   let clusterTex = null;       // per-clump dynamic bend angles (limb, twig), updated each frame
   let clusterGeomTex = null;   // per-clump static geometry (clump centre + trunk pivot)
   let benchFBO=null, benchTex=null, benchW=0, benchH=0;   // profiler stress-burst target (EDITOR; hoisted here so dispose() can free it)
@@ -2077,10 +2078,14 @@ function create(canvas, opts){
 
   // ---- canopy generation: grow a real recursive skeleton, hang one leaf cluster on each
   // terminal twig, and bin them into depth layers by the height they grew to (spec §4.5) ----
-  function regenCanopy(){
-    const prevHier = hier;   // keep the old hierarchy so a same-topology regrow can carry the in-flight sway across
-    layerVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
-    layerVAO = [];
+  // ---- BUILD A GROVE (spec §4.5/§9). Pure in the sense that matters: it allocates and returns a grove, it does
+  // not install one. That is what lets a transition hold TWO — the outgoing one still drawing while the incoming
+  // one is grown — instead of the midpoint swap being the only way a topology change can happen.
+  // (occ and faith are still written straight to engine state below. They belong to the ACTIVE grove, and the
+  // crossfade's gate excludes both of their consumers — wood needs branch_tau > 0, faith needs faithfulOn() —
+  // so a second grove never needs its own copy of either. If that gate ever widens, they move in here too.)
+  function buildGrove(prevHier){
+    const layerVAO = [];   // this grove's own; the OUTGOING grove's GL objects are freed by installGrove, not here
     const E = params.canopy_extent_m;
     const tau = [
       -Math.log(clamp(params.trans_r,1e-4,0.999)),
@@ -2277,7 +2282,7 @@ function create(canvas, opts){
     faith.hMin = hMin<=hMax ? hMin : 0; faith.hMax = hMax>hMin ? hMax : (faith.hMin+1);
 
     const nClusterTotal = twigs.length;
-    hier = {
+    const hier = {
       nLimb, limbDir, limbPlan, limbAttach,
       limbAngle:new Float32Array(nLimb), limbVel:new Float32Array(nLimb),   // scalar YAW bend (radians): rotation about the vertical
       limbPitch:new Float32Array(nLimb), limbPitchVel:new Float32Array(nLimb),   // second DOF (§5.1): ELEVATION bend in the limb's own vertical plane — what sway_pitch foreshortens by. Same spring constants as the yaw.
@@ -2409,8 +2414,8 @@ function create(canvas, opts){
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       return tx;
     };
-    clusterTex     = makeDataTex(clusterTex, hier.clusterData);      // dynamic bend angles
-    clusterGeomTex = makeDataTex(clusterGeomTex, hier.clusterGeom);  // static geometry
+    const clusterTex     = makeDataTex(null, hier.clusterData);      // dynamic bend angles — a NEW texture per grove (the old one is freed at install)
+    const clusterGeomTex = makeDataTex(null, hier.clusterGeom);      // static geometry
     // ---- woody occluder (spec §4.5): trunk + MAIN LIMBS (level<=1) as CONTINUOUS-height analytic segments. Map
     // each grown z to a floor height with the SAME crown mapping the leaves bin by (zMin->canopy_base,
     // zMax->base+thickness), and the bole linearly to 0 — so a limb's base lands at the trunk's height and the
@@ -2520,8 +2525,26 @@ function create(canvas, opts){
       if(px0>px1){ const h=params.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
       faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
     }
+    return { hier, layerVAO, clusterTex, clusterGeomTex };
+  }
+
+  // ---- INSTALL a grove as the active one: free whatever it replaces, then re-point the engine's views at it.
+  // hier / layerVAO / clusterTex / clusterGeomTex stay plain engine variables on purpose — some fifty readers
+  // across motion, the bake and the debug overlays mean the ACTIVE grove, and rewriting every one of them to
+  // say so would be churn without a reader. What the grove VALUE buys is that a second one can exist at all.
+  function freeGrove(g){
+    if(!g) return;
+    g.layerVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
+    if(g.clusterTex) gl.deleteTexture(g.clusterTex);
+    if(g.clusterGeomTex) gl.deleteTexture(g.clusterGeomTex);
+  }
+  function installGrove(g){
+    if(grove && grove !== g) freeGrove(grove);
+    grove = g;
+    hier = g.hier; layerVAO = g.layerVAO; clusterTex = g.clusterTex; clusterGeomTex = g.clusterGeomTex;
     publishBend();   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
   }
+  function regenCanopy(){ installGrove(buildGrove(hier)); }   // the old shape: grow one, make it the one
 
   // ---- bake leaves into per-layer optical-depth textures ---------------------
   function bake(){
