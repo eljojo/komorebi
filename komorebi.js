@@ -29,7 +29,7 @@ const MAX_LAYERS = 4;
 // IT STAYS AT 64 UNTIL SOMEONE CHOOSES OTHERWISE, and the reason is a measurement, not caution: 'the void' grows
 // 192 level-≤1 segments and has been silently truncated to 64 for its whole life. Raising the cap does not free
 // that look, it REPAINTS it — three times the wood it currently shows. That is a look decision, not a refactor's.
-const MAX_OCC = 64;
+const MAX_OCC = 256;
 // SKY VIEW (§4.9): the authored radiance scale for the SEEN source. The physical contrast between a sun disk and a
 // blue sky is ~10^6, which neither an ACES tail nor a 13-tap glare kernel can carry — so what ships is a compressed
 // stand-in, and this is the compression, stated once. It multiplies the sampler's own angular density (weight over
