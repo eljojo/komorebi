@@ -2,7 +2,7 @@ import { create, DEG, MAX_LAYERS } from './komorebi.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
-import { MACROS, createBus } from './macros.js';
+import { MACROS, createBus, macroUsable } from './macros.js';
 // ============================================================================
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
@@ -313,6 +313,7 @@ const bus = createBus(() => params, (dict, scope, _live) => {
 });
 const macroEls = {};      // bus key -> range input (play + strip surfaces; pad handled separately)
 let padDot=null, padEl=null;
+let padDown=false;        // module-level so a panel slide/mode switch can end an in-flight pad drag
 
 function macroSlider(busKey, label){
   const m = MACROS[busKey];
@@ -355,7 +356,13 @@ function syncPlayPreset(){ if(presetSel) for(const el of presetNameEls) el.textC
 function syncMacroControls(){
   for(const key in macroEls){
     const t = key==='time' ? params.time_of_day : bus.get(key);
-    for(const inp of macroEls[key]) inp.value = t;
+    const usable = key==='time' ? true : macroUsable(key, params);
+    for(const inp of macroEls[key]){
+      inp.value = t;
+      inp.disabled = !usable;                       // a gated macro greys out rather than trampling a hand-tuned look
+      inp.parentElement.classList.toggle('off', !usable);
+      inp.parentElement.title = usable ? '' : 'tuned for the floor looks — no honest effect on this one';
+    }
   }
   if(padDot && padEl){
     const x=bus.get('wind_x'), y=bus.get('wind_y');
@@ -372,12 +379,6 @@ function buildPlayPanel(){
   modes.append(modeButton('min','· zen'), modeButton('adv','⚙ advanced'));
   play.appendChild(modes);
   play.appendChild(presetRow());
-  // the full list too — the stepper flicks, the dropdown jumps (◦ marks an experimental look)
-  const pr=document.createElement('div'); pr.className='ctl select';
-  const psel=document.createElement('select');
-  psel.addEventListener('change',()=>{ applyParams(getPreset(psel.value)); refreshPresetSelect(psel.value); });
-  presetSelects.push(psel);
-  pr.appendChild(psel); play.appendChild(pr);
 
   const h=(t)=>{ const e=document.createElement('h2'); e.textContent=t; play.appendChild(e); };
   h('light');
@@ -397,7 +398,6 @@ function buildPlayPanel(){
     bus.set('wind_x',x); bus.set('wind_y',y);
     padDot.style.left=`${x*100}%`; padDot.style.top=`${(1-y)*100}%`;
   };
-  let padDown=false;
   padEl.addEventListener('pointerdown',(e)=>{ padDown=true; padWrite(e);
     try{ padEl.setPointerCapture(e.pointerId); }catch{ /* synthetic pointers (tests) have no active id — the write above already landed */ } });
   padEl.addEventListener('pointermove',(e)=>{ if(padDown) padWrite(e); });
@@ -427,6 +427,14 @@ function buildPlayPanel(){
   h('look');
   play.appendChild(macroSlider('palette'));
   play.appendChild(macroSlider('prism'));
+
+  // the full list, down here by the toggle that grows it — the stepper above flicks, this jumps
+  // (◦ marks an experimental look)
+  const pr=document.createElement('div'); pr.className='ctl select';
+  const psel=document.createElement('select');
+  psel.addEventListener('change',()=>{ applyParams(getPreset(psel.value)); refreshPresetSelect(psel.value); });
+  presetSelects.push(psel);
+  pr.appendChild(psel); play.appendChild(pr);
 
   const beta=document.createElement('div'); beta.className='ctl toggle';
   const blab=document.createElement('label'); blab.textContent=`experimental looks (+${EXPERIMENTAL.length})`;   // says what it unlocks
@@ -732,19 +740,20 @@ function slideInPanel(){
   el.classList.remove('hidden');                  // ...reveal it there...
   void el.offsetWidth;                             // ...reflow so the next change animates...
   el.classList.remove('offscreen');               // ...and slide it in
-  showHint();                                     // bring the key hints up with it (they retire on their own)
   if(el===strip) stripWake();                     // the strip starts its fade clock the moment it arrives
 }
-// the key hints retire after half a minute — the canvas is the point, not the legend. H brings them back.
+// the key hints stay HIDDEN unless summoned — the canvas is the point, not the legend. H (mapped to
+// nothing else) shows them for ten seconds.
 let hintTimer=0;
 function showHint(){
   hint.classList.remove('gone');
   clearTimeout(hintTimer);
-  hintTimer=setTimeout(()=>hint.classList.add('gone'), 30000);
+  hintTimer=setTimeout(()=>hint.classList.add('gone'), 10000);
 }
 function slideOutPanel(){
   const el = panelEl();
   if(el.classList.contains('hidden')) return;
+  padDown=false;                                                    // a wind-pad drag must not keep writing off a sliding panel's rect
   el.classList.add('offscreen');                                    // slide it out...
   panelTimer=setTimeout(()=>{ el.classList.add('hidden'); }, 600);  // ...then drop it once the .6s slide ends
 }
@@ -758,6 +767,11 @@ function peekPanel(on){                            // transient: slide away to g
 // step the ladder: hide whatever is up, swap the mode, slide the new surface in
 function setMode(mode){
   if(!(mode in MODE_ELS) || mode === settings.mode) return;
+  if(settings.mode==='adv'){                       // the profiler + A/B wipe belong to the advanced surface — don't orphan them
+    if(prof.classList.contains('show')) closeProfile();
+    if(cmp.classList.contains('show')) closeCmp();
+  }
+  padDown=false;                                   // a drag can't outlive the surface it started on
   const from = panelEl();
   clearTimeout(panelTimer);
   from.classList.add('hidden'); from.classList.remove('offscreen');
@@ -879,7 +893,8 @@ document.addEventListener('mouseleave',()=>{ treePointer=null; });
 // inset (when the panel is open), and update the HUD. ------------------------
 eng.onFrame = ()=> {
   if(params.drift_auto) syncControl('drift_phase');
-  if(params.show_source && !dev.classList.contains('hidden')) eng.drawSourceInset();
+  const devUp = !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');   // a sliding-out panel counts as gone
+  if(params.show_source && devUp) eng.drawSourceInset();
   if(showTree) eng.drawTreeInset(treePointer, treePinned);
   const cmpOpen = cmp.classList.contains('show');
   // profiler breakdown: the live whole-frame fps at full quality — the honest 'is it holding 60' number the
@@ -887,7 +902,7 @@ eng.onFrame = ()=> {
   if(profFpsEl) profFpsEl.textContent = fpsLabel(eng.fps);
   if(cmpOpen) updateCmpFps();
   // HUD: debug info, shown only while the dev panel is open AND not in the A/B (which has its own per-engine fps).
-  const devOpen = !dev.classList.contains('hidden');
+  const devOpen = devUp;
   hud.style.display = (devOpen && !cmpOpen) ? '' : 'none';
   if(!devOpen || cmpOpen) return;
   const m=eng.motion;

@@ -26,7 +26,10 @@ const lerp = (a, b, t) => a + (b - a) * t;
 // Each macro: label for the UI; scope — the engine rebuild apply() needs after a write ('' = live uniforms);
 // probe — the monotone primary param macroValue() inverts to place a thumb on the current look; stops — the
 // anchor points, every stop carrying the SAME param set (numbers interpolate piecewise-linearly between
-// stops; strings/booleans snap to the nearest stop).
+// stops; strings/booleans snap to the nearest stop); gate — where the macro is honest: 'floor' macros carry
+// floor-look recipes (the receiver/sky looks run their own exposure regimes and coverage arithmetic — an
+// absolute write there tramples hand-derived numbers), 'cast' macros ride the cast cameras and are dead in
+// the sky view. macroUsable() answers for the current look; ungated macros work everywhere.
 export const MACROS = {
   // clear sky → veiled → overcast. cloud_thickness is the spec's "single most expressive parameter" (§3.4)
   // and the source model does the physics (energy drains core → halo on its own); the halo widens with it the
@@ -42,9 +45,11 @@ export const MACROS = {
     ],
   },
   // the afternoon 4 → 4b delta, verbatim, as an axis: turbid sky, and the author DROPS exposure under haze
-  // while ambient falls and contrast firms. One authored recipe, one knob.
+  // while ambient falls and contrast firms. One authored recipe, one knob. FLOOR-gated: the exposure numbers
+  // are the floor regime's — the sky/curtain/tent looks each derive their own (canopy 1's comment calls its
+  // 1.3/1.5 load-bearing) and a first touch here would blow them out.
   haze: {
-    label: 'haze', scope: '', live: true, probe: 'sky_turbidity',
+    label: 'haze', scope: '', live: true, probe: 'sky_turbidity', gate: 'floor',
     stops: [
       { t: 0.0, set: { sky_turbidity: 0.05, exposure: 2.44, ambient_skylight: 0.97, contrast: 0.98 } },  // afternoon 4
       { t: 1.0, set: { sky_turbidity: 0.23, exposure: 1.29, ambient_skylight: 0.83, contrast: 1.11 } },  // afternoon 4b
@@ -62,18 +67,19 @@ export const MACROS = {
       { t: 1.0, set: { core_angular_radius_deg: 0.77, core_weight_fraction: 0.61 } },  // the dreamy afternoons
     ],
   },
-  // wind INTENSITY (the pad's y). The afternoon 5 → 4 delta is the calm→windy recipe: strength up, springs
-  // looser (damping 0.65 → 0.25), crowns on long levers (height gain 0.75 → 1.6), twigs livelier. The bottom
-  // quarter is NOT stillness — it is afternoon 5's drift-dominant glisten (§1's faint wind), and true rest
-  // (eclipse: leaf_swing 0.5, drift low) only at the very floor. Partitioned against wind_x: y owns force and
-  // springs, x owns the gust signal's character — no shared targets.
+  // wind INTENSITY (the pad's y): force + the drift-glisten floor, nothing else. The springs (damping,
+  // height gain, twig/leaf response) deliberately STAY the look's own — the panel's own guidance ("spring
+  // mechanics — tuned once. Per scene you really only change strength and direction") and the sky looks'
+  // hand-tuned levers (canopy 1's sway_height_gain 1.6 is called its soul) both say a wind knob must not
+  // touch them. The bottom quarter is NOT stillness — it is afternoon 5's drift-dominant glisten (§1's
+  // faint wind). scope 'bake': drift_amount stamps into the leaves, so a still frame re-bakes to show it.
   wind_y: {
-    label: 'wind', scope: '', live: true, probe: 'wind_strength',
+    label: 'wind', scope: 'bake', live: true, probe: 'wind_strength',
     stops: [
-      { t: 0.0, set: { wind_strength: 0.0, drift_amount: 0.06, leaf_swing: 0.5, twig_flex: 0.18, damping_ratio: 0.65, sway_height_gain: 0.75 } },   // eclipse-still
-      { t: 0.25, set: { wind_strength: 0.07, drift_amount: 0.145, leaf_swing: 1.35, twig_flex: 0.18, damping_ratio: 0.65, sway_height_gain: 0.75 } }, // afternoon 5: the glisten
-      { t: 0.6, set: { wind_strength: 1.29, drift_amount: 0.145, leaf_swing: 1.35, twig_flex: 0.18, damping_ratio: 0.65, sway_height_gain: 0.75 } },  // the standard breeze
-      { t: 1.0, set: { wind_strength: 1.7, drift_amount: 0.145, leaf_swing: 1.35, twig_flex: 0.35, damping_ratio: 0.25, sway_height_gain: 1.6 } },    // afternoon 4 pushed: springy, whole-crown lean
+      { t: 0.0, set: { wind_strength: 0.0, drift_amount: 0.06 } },     // near-rest (eclipse's barely-there stir)
+      { t: 0.25, set: { wind_strength: 0.07, drift_amount: 0.145 } },  // afternoon 5: the glisten
+      { t: 0.6, set: { wind_strength: 1.29, drift_amount: 0.145 } },   // the standard breeze
+      { t: 1.0, set: { wind_strength: 1.7, drift_amount: 0.145 } },    // afternoon 4 pushed
     ],
   },
   // wind CHARACTER (the pad's x): lazy → steady → gusty → squally, riding the broadband signal's own knobs.
@@ -89,8 +95,9 @@ export const MACROS = {
     ],
   },
   // the floor's palette: bare white → warm Mount-Royal dirt (the afternoons' floor) → the void's cool stone.
+  // FLOOR-gated: only the floor camera reads a ground albedo — on cloth/sky looks this write is dead.
   palette: {
-    label: 'ground', scope: '', live: true, probe: 'ground_r',
+    label: 'ground', scope: '', live: true, probe: 'ground_r', gate: 'floor',
     stops: [
       { t: 0.0, set: { ground_r: 1.0, ground_g: 1.0, ground_b: 1.0 } },      // bare white (DEFAULTS)
       { t: 0.5, set: { ground_r: 0.33, ground_g: 0.21, ground_b: 0.12 } },   // warm Mount-Royal dirt
@@ -98,8 +105,9 @@ export const MACROS = {
     ],
   },
   // leaf-edge diffraction (§3.6): 0 is byte-identical off, 3 is 'prism', 6 is 'morning 3b'. Pure sparkle.
+  // CAST-gated: diffraction rides the cast cameras (floor/curtain/tent); the sky view never reads it.
   prism: {
-    label: 'prism', scope: '', live: true, probe: 'chromatic_aberration',
+    label: 'prism', scope: '', live: true, probe: 'chromatic_aberration', gate: 'cast',
     stops: [
       { t: 0.0, set: { chromatic_aberration: 0.0 } },
       { t: 1.0, set: { chromatic_aberration: 6.0 } },
@@ -108,19 +116,22 @@ export const MACROS = {
   // sparse early spring → full summer, the morning 1 ↔ memories delta made continuous: density is the master,
   // with the open long-limbed branching and the gold-brown leaf coming in as it thins. (memories' other trick,
   // branch_children 6, is a TOPO key — a rebuild-with-dissolve — and deliberately NOT here; this macro stays
-  // inside the CANOPY morph class.) Regrows the grove: written on release, not per-move.
+  // inside the CANOPY morph class.) Regrows the grove: written on release, not per-move. FLOOR-gated: the
+  // sky/cloth looks author their leaf hue per species (canopy 1's chlorophyll green carries its glow).
   season: {
-    label: 'season', scope: 'canopy', live: false, probe: 'foliage_density',
+    label: 'season', scope: 'canopy', live: false, probe: 'foliage_density', gate: 'floor',
     stops: [
-      { t: 0.0, set: { foliage_density: 0.45, branch_length_ratio: 0.91, branch_pitch_deg: 45, leaves_per_cluster: 39, trans_r: 0.376, trans_g: 0.247, trans_b: 0.113 } },  // memories: sparse gold spring
-      { t: 0.55, set: { foliage_density: 1.65, branch_length_ratio: 0.62, branch_pitch_deg: 26, leaves_per_cluster: 39, trans_r: 0.26, trans_g: 0.356, trans_b: 0.195 } },  // morning 1: full canopy
-      { t: 1.0, set: { foliage_density: 2.2, branch_length_ratio: 0.62, branch_pitch_deg: 26, leaves_per_cluster: 50, trans_r: 0.21, trans_g: 0.356, trans_b: 0.113 } },    // deep green high summer
+      { t: 0.0, set: { foliage_density: 0.45, branch_length_ratio: 0.91, branch_pitch_deg: 45, trans_r: 0.376, trans_g: 0.247, trans_b: 0.113 } },  // memories: sparse gold spring
+      { t: 0.55, set: { foliage_density: 1.65, branch_length_ratio: 0.62, branch_pitch_deg: 26, trans_r: 0.26, trans_g: 0.356, trans_b: 0.195 } },  // morning 1: full canopy
+      { t: 1.0, set: { foliage_density: 2.2, branch_length_ratio: 0.62, branch_pitch_deg: 26, trans_r: 0.21, trans_g: 0.356, trans_b: 0.113 } },    // deep green high summer
     ],
   },
   // one tree → a deep grove, the 'the void' recipe: tree_count with the view widening alongside so the frame
-  // stays filled (the void raised view 3.1 → 6.8 with its 16 trees). Regrows: written on release.
+  // stays filled (the void raised view 3.1 → 6.8 with its 16 trees). Regrows: written on release. FLOOR-gated:
+  // in the sky view view_extent_m is not zoom at all — it sets the grove's plan reach in canopy 1's coverage
+  // arithmetic, and this pairing would silently rewrite it.
   grove: {
-    label: 'grove', scope: 'canopy', live: false, probe: 'tree_count',
+    label: 'grove', scope: 'canopy', live: false, probe: 'tree_count', gate: 'floor',
     stops: [
       { t: 0.0, set: { tree_count: 1, view_extent_m: 4.2 } },    // eclipse: a single tree
       { t: 0.4, set: { tree_count: 4, view_extent_m: 3.1 } },    // the intimate afternoons
@@ -129,6 +140,15 @@ export const MACROS = {
     ],
   },
 };
+
+// is this macro honest on the given look? 'floor' recipes need the floor camera; 'cast' ones any cast
+// camera (everything but the sky view); ungated macros work everywhere.
+export function macroUsable(key, params) {
+  const gate = MACROS[key].gate;
+  if (gate === 'floor') return (params.receiver | 0) === 0 && !params.sky_view;
+  if (gate === 'cast') return !params.sky_view;
+  return true;
+}
 
 // the params a macro writes: piecewise-linear between the two straddling stops (numbers); strings/booleans
 // snap to the nearest stop.

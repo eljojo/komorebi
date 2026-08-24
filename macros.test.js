@@ -6,7 +6,7 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
-import { MACROS, createBus, macroParams, macroValue } from "./macros.js";
+import { MACROS, createBus, macroParams, macroUsable, macroValue } from "./macros.js";
 import { PRESETS } from "./presets.js";
 
 const MORPH = new Set(MORPH_KEYS), CANOPY = new Set(CANOPY_KEYS);
@@ -85,6 +85,20 @@ test("macroValue clamps out-of-range looks to the ends and reads real presets sa
       const t = macroValue(key, PRESETS[name]);
       expect(t >= 0 && t <= 1, `${key} on '${name}' out of range: ${t}`).toBe(true);
     }
+});
+
+test("the dishonest-elsewhere recipes are gated, and macroUsable answers per look", () => {
+  // floor recipes: exposure regime (haze), floor albedo (palette), authored leaf hue (season), sky-view
+  // coverage arithmetic (grove). Cast-only: diffraction (prism). The rest work everywhere.
+  for (const k of ["haze", "palette", "season", "grove"]) expect(MACROS[k].gate).toBe("floor");
+  expect(MACROS.prism.gate).toBe("cast");
+  for (const k of ["weather", "focus", "wind_x", "wind_y"]) expect(MACROS[k].gate).toBe(undefined);
+  expect(macroUsable("haze", PRESETS["afternoon 5"])).toBe(true);
+  expect(macroUsable("haze", PRESETS["canopy 1"])).toBe(false);
+  expect(macroUsable("haze", PRESETS["curtain 1"])).toBe(false);
+  expect(macroUsable("prism", PRESETS["curtain 1"])).toBe(true);
+  expect(macroUsable("prism", PRESETS["canopy 1"])).toBe(false);
+  expect(macroUsable("weather", PRESETS["canopy 1"])).toBe(true);
 });
 
 test("the bus routes set() through the mapping and the applier", () => {
