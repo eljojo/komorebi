@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Komorebi — a hero panel</title>
+    <style>
+      body { margin: 0; background: #14170f; color: #e7e9df; font: 300 18px/1.6 'Helvetica Neue', Helvetica, sans-serif; }
+      main { max-width: 44em; margin: 0 auto; padding: 6vh 24px; }
+      h1 { font: 400 2em/1.1 Georgia, serif; margin: 0 0 .8em; }
+      p { margin: 0 0 1em; color: #b9c0ad; }
+
+      /* THE POINT OF THIS EXAMPLE: komorebi does not have to own the viewport. The canvas takes its size from
+         whatever box you put it in — here a rounded panel — and re-reads that size every frame, so it survives
+         a responsive layout without a resize handler. */
+      .hero { position: relative; height: 46vh; min-height: 260px; border-radius: 14px; overflow: hidden;
+              background: #0d100a; margin-bottom: 2.5em; }
+      .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .hero .caption { position: absolute; left: 22px; bottom: 18px; margin: 0;
+                       font: 400 1.5em/1.2 Georgia, serif; color: #10140c; }
+      button { font: inherit; font-size: .85em; color: #e7e9df; background: #2a3320; border: 1px solid #46512f;
+               border-radius: 999px; padding: 6px 14px; cursor: pointer; margin-right: 6px; }
+      button:hover { background: #3a4529; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <canvas id="komorebi"></canvas>
+        <p class="caption">a patch of afternoon</p>
+      </section>
+
+      <h1>A panel, not a page</h1>
+      <p>Same engine, same one script tag — it just lives inside a 46vh box with rounded corners instead of behind
+        the whole document. Resize the window: the canvas re-reads its own size every frame.</p>
+      <p>The buttons crossfade between looks, which is the same call a timer would make.</p>
+      <p>
+        <button data-look="afternoon 5b">afternoon</button>
+        <button data-look="morning 3">morning</button>
+        <button data-look="park 1">park</button>
+        <button data-look="memories">memories</button>
+      </p>
+    </main>
+
+    <!-- On your own site: <script src="https://komorebi.eljojo.net/dist/komorebi.player.min.js"></script> -->
+    <script src="../dist/komorebi.player.min.js"></script>
+    <script>
+      if (window.Komorebi) {
+        try {
+          const eng = Komorebi.create(document.getElementById('komorebi'), { params: Komorebi.PRESETS['afternoon 5b'] });
+          for (const b of document.querySelectorAll('button[data-look]')) {
+            b.addEventListener('click', () => eng.transitionTo(Komorebi.PRESETS[b.dataset.look], { duration: 3 }));
+          }
+        } catch (e) { /* no WebGL2: the panel stays its flat background colour */ }
+      }
+    </script>
+  </body>
+</html>

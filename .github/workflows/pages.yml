@@ -1,0 +1,52 @@
+# Publish the site — the editor, the examples, and the BUNDLE other people's pages load.
+#
+# dist/ is gitignored on purpose (a build artifact is not source), so it does not exist in a checkout and cannot
+# be served from a branch. This builds it here and publishes the result, which is what turns
+# https://komorebi.eljojo.net/dist/komorebi.player.min.js into a URL anyone can point a <script> at.
+#
+# The build runs `nix run .#build` — the SAME command the README documents and a contributor runs locally, rather
+# than a second copy of the bun line that could drift from it.
+#
+# ONE-TIME SETUP: Settings -> Pages -> Build and deployment -> Source must be "GitHub Actions". Until it is, the
+# deploy step fails with a clear error and the previous branch-based deploy keeps serving.
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false     # let a running publish finish rather than half-replacing a live site
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Build the bundle
+        run: nix run .#build      # -> dist/komorebi.player.min.js, and prints the size table into the log
+
+      # The site is the repo, minus what is not site: git internals, this workflow, and the pixel harness
+      # (playwright + its renders). Inclusive by default, so a new module or example ships without touching this.
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'test-gl' --exclude 'flake.*' ./ _site/
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v5

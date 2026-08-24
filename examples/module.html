@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Komorebi — as ES modules</title>
+    <style>
+      body { margin: 0; background: #f9f9f9; color: #333; font: 300 20px/1.5 'Helvetica Neue', Helvetica, sans-serif; }
+      #komorebi { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: -1; background: #f9f9f9; }
+      main { max-width: 34em; padding: 12vh 24px; }
+      h1 { font: 400 2.2em/1 Georgia, serif; margin: 0 0 .6em; }
+      code { background: rgba(0,0,0,.06); padding: 0 .3em; border-radius: 3px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="komorebi"></canvas>
+    <main>
+      <h1>No bundle, no global</h1>
+      <p>The engine is authored as ES modules; the <code>window.Komorebi</code> bundle is a convenience wrapper
+        around exactly this. If you already have a bundler — or you are happy shipping the module files as they
+        are — import them and skip the global entirely.</p>
+      <p>One rule: ES modules must be <strong>served over http(s)</strong>. A page opened off <code>file://</code>
+        cannot import anything.</p>
+    </main>
+
+    <script type="module">
+      // Same API as the bundle, minus the global. Paths here are relative to this file; on your own site they
+      // point at wherever you copied komorebi.js, presets.js and the komorebi-*.js modules beside them.
+      import { create } from '../komorebi.js';
+      import { PRESETS } from '../presets.js';
+
+      try {
+        const eng = create(document.getElementById('komorebi'), {
+          // A look is a plain object, so spreading one and overriding a knob is the whole customisation story.
+          params: { ...PRESETS['morning 3'], wind_strength: 0.8 },
+          // onFrame runs after each rendered frame — handy for a HUD, or for driving something else off the wind.
+          onFrame: () => { /* eng.fps, eng.motion, eng.params are all live here */ },
+        });
+        document.addEventListener('visibilitychange', () => eng.setPaused(document.hidden));
+      } catch (e) { /* no WebGL2 / float targets */ }
+    </script>
+  </body>
+</html>
