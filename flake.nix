@@ -55,7 +55,7 @@
               bun build ./komorebi.global.js --minify --format=iife \
                 --define KOMOREBI_EDITOR=false --outfile=dist/komorebi.player.min.js
               printf '%-32s %9s %9s\n' file raw gzip
-              for f in komorebi.js presets.js dist/komorebi.player.min.js; do
+              for f in komorebi.js komorebi-*.js presets.js dist/komorebi.player.min.js; do
                 printf '%-32s %9d %9d\n' "$f" "$(wc -c <"$f")" "$(gzip -c "$f" | wc -c)"
               done
             '';

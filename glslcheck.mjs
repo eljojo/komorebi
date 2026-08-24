@@ -1,4 +1,4 @@
-// glslcheck.mjs — compile every GLSL shader in komorebi.js, offline, with no GPU and no browser.
+// glslcheck.mjs — compile every GLSL shader in the engine modules, offline, with no GPU and no browser.
 //
 //   node glslcheck.mjs        (from the repo root; exits non-zero if any shader fails to compile)
 //
@@ -27,12 +27,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const SOURCE = join(ROOT, "komorebi.js");
+// The engine's source modules, scanned as text for shader literals and the numeric-constant substitution
+// table. komorebi.js itself is the barrel: no literals, but it stays the module door imported below.
+const SOURCES = ["komorebi-params.js", "komorebi-math.js", "komorebi-shaders.js", "komorebi-transport.js", "komorebi-engine.js"];
 
 // ---- pull one backtick-delimited literal out of the source, given the index just past its opening backtick.
 // The shaders contain no nested template expressions and no escaped backticks; the escape check is there so a
 // future GLSL comment mentioning one can't silently truncate a shader (the same hazard that terminates the
-// template literal in komorebi.js itself).
+// template literal in the engine source itself).
 function literalAt(text, start) {
   let j = start;
   for (;;) {
@@ -43,7 +45,7 @@ function literalAt(text, start) {
   }
 }
 
-const text = readFileSync(SOURCE, "utf8");
+const text = SOURCES.map((f) => readFileSync(join(ROOT, f), "utf8")).join("\n");
 
 // ---- the substitution table, derived from the source rather than hard-coded, so a new MAX_* cap or a new
 // shared GLSL_* snippet is picked up without touching this file.
@@ -59,12 +61,12 @@ for (const m of text.matchAll(/^const ((?:VS|FS|GLSL)_[A-Z0-9_]*) = `/gm)) {
   if (name.startsWith("GLSL_")) subs.set(name, body);
   else shaders.push({ name, body, stage: name.startsWith("VS_") ? "vert" : "frag" });
 }
-if (shaders.length === 0) { console.error(`no shaders found in ${SOURCE}`); process.exit(2); }
+if (shaders.length === 0) { console.error(`no shaders found in ${SOURCES.join(", ")}`); process.exit(2); }
 const literalCount = shaders.length;
 
 // ---- the transport variants, from the module itself (see the header). One entry per camera; the assembled
 // source arrives with its interpolations already resolved, so it drops straight into the same loop below.
-const { TRANSPORT_CAMERAS, buildTransport } = await import(pathToFileURL(SOURCE).href);
+const { TRANSPORT_CAMERAS, buildTransport } = await import(pathToFileURL(join(ROOT, "komorebi.js")).href);
 for (const cam of TRANSPORT_CAMERAS) shaders.push({ name: `FS_TRANSPORT_${cam}`, body: buildTransport(cam), stage: "frag" });
 
 // ---- resolve interpolations. Repeated passes because a snippet may itself interpolate; bounded so a cycle

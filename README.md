@@ -6,7 +6,12 @@ A standalone WebGL2 engine that renders komorebi from physics rather than painti
 
 ## Files
 
-- **`komorebi.js`** — the engine, an ES module. The whole renderer, no UI: `export { create, DEFAULTS, … }`.
+- **`komorebi.js`** — the engine's public door, an ES module: `export { create, DEFAULTS, … }`, re-exported from the modules below. The whole renderer, no UI.
+  - **`komorebi-engine.js`** — `create()`: one self-contained engine instance on a canvas (GL state, bake, motion, transitions, render loop).
+  - **`komorebi-transport.js`** — the transport master + camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.
+  - **`komorebi-shaders.js`** — the bake / faithful-bake / display shaders and the shared tone tail.
+  - **`komorebi-params.js`** — `DEFAULTS`, the legacy-name migration, the transition key classification, the engine caps.
+  - **`komorebi-math.js`** — CPU math: the atmosphere model, deterministic RNG, wind noise, skeleton-growth helpers.
 - **`presets.js`** — the built‑in looks, an ES module: `export const PRESETS`. Split out of the engine (data, not renderer); imported by the pages.
 - **`index.html`** — the editor / landing page (opens on a welcome screen): dev panel, HUD, presets, sun‑drag. Imports the modules, so it must be **served** (`nix run .#dev`), not opened off the filesystem.
 - **`player.html`** — minimal viewer‑only reference: a full‑bleed canvas cycling through presets, no UI.
@@ -24,7 +29,7 @@ ES‑module dev needs http (not `file://`). With Nix:
 nix run .#dev      # serve + live‑reload at http://localhost:8000
 nix run .#lint     # biome
 nix run .#build    # bundle dist/komorebi.player.min.js (the global, editor stripped)
-node glslcheck.mjs # offline shader validation — compiles every GLSL literal in komorebi.js (glslangValidator, no GPU)
+node glslcheck.mjs # offline shader validation — compiles every GLSL literal in the engine modules (glslangValidator, no GPU)
 nix run .#pixels   # the pixel harness — render every look + pixel suites (first run: cd test-gl && npm install && npx playwright install chromium)
 ```
 
