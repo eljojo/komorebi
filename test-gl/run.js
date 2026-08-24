@@ -135,6 +135,39 @@ async function main() {
     log(`        ${info.glsl}`);
     log(`        renderer: ${info.renderer}   EXT_color_buffer_float: yes   EXT_float_blend: ${info.floatBlend ? 'yes' : 'no'}   dpr: ${info.dpr}`);
 
+    // ---- suite 4 (opt-in): TRANSITIONS ----
+    // `node run.js --transition "afternoon 7" "canopy 1"` — deliberately NOT part of the default run, because
+    // unlike everything else here it is not byte-stable: the wind is live (a frozen transition is not a
+    // transition) so two runs differ pixel for pixel. What it produces instead is a NUMBER — the largest
+    // frame-to-frame step in mean luminance — and a contact sheet to look at. Repeat the route to see the
+    // metric's own spread before reading much into a small change in it.
+    if (process.argv[2] === '--transition') {
+      const [from, to] = process.argv.slice(3);
+      if (!from || !to) { log('usage: node run.js --transition "<from look>" "<to look>"'); await browser.close(); server.close(); process.exit(2); }
+      const r = await page.evaluate(([a, b]) => window.__transition(a, b, {}), [from, to]);
+      const f = r.frames;
+      log(`\nTRANSITION — ${from} -> ${to}   ${r.info.structDiff ? 'STRUCTURAL (dissolve + rebuild under the bloom)' : 'live morph, no bloom'}${r.info.canopyMorph ? ' + grove morph' : ''}`);
+      log(`  ${f.length} frames over ${r.ms} ms   (mean luminance is Rec.709 over the whole frame, 0-255)\n`);
+      log('   #      t   bloom  swap    luma     Δ');
+      let maxD = 0, maxAt = -1, swapAt = -1, swapD = 0;
+      for (let i = 0; i < f.length; i++) {
+        const d = i ? f[i].luma - f[i - 1].luma : 0;
+        // trans.swapped flips at t>=0.5 on EVERY route; only a structural one actually swaps anything there.
+        const justSwapped = r.info.structDiff && i > 0 && f[i].swapped && !f[i - 1].swapped;
+        if (justSwapped) { swapAt = i; swapD = d; }
+        if (i && Math.abs(d) > Math.abs(maxD)) { maxD = d; maxAt = i; }
+        log(`  ${String(i).padStart(2)}  ${f[i].t.toFixed(3)}  ${f[i].bloom.toFixed(3)}  ${justSwapped ? ' <<' : (f[i].swapped ? '  •' : '   ')}  ${f[i].luma.toFixed(2).padStart(7)}  ${(i ? (d >= 0 ? '+' : '') + d.toFixed(2) : '').padStart(7)}`);
+      }
+      const file = join(OUT, `trans-${slug(from)}-${slug(to)}.png`);
+      await writeFile(file, Buffer.from((await page.evaluate(([ids, c]) => window.__strip(ids, c), [f.map((x) => x.id), 8])).split(',')[1], 'base64'));
+      log(`\n  max |ΔL| per frame   ${Math.abs(maxD).toFixed(2)}   at frame ${maxAt} (t=${f[maxAt] ? f[maxAt].t.toFixed(3) : '-'})`);
+      if (swapAt >= 0) log(`  the swap frame       ${swapAt}: t=${f[swapAt].t.toFixed(3)}  bloom=${f[swapAt].bloom.toFixed(3)}  ΔL=${(swapD >= 0 ? '+' : '') + swapD.toFixed(2)}`);
+      else log('  the swap frame       none — this route morphs live, nothing is swapped');
+      log(`  strip                ${file}`);
+      await browser.close(); server.close();
+      process.exit(0);
+    }
+
     // ---- suite 1: smoke ----
     // Optional CLI filter (substring match on preset names, case-insensitive): renders only the matching
     // looks and SKIPS the gate/determinism suites — the fast authoring loop. No args = the full run.

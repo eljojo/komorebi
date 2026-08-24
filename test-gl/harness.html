@@ -68,17 +68,18 @@ function fnv1a(bytes) {                       // 32-bit FNV-1a: a cheap identity
 // Degeneracy stats: a frame that is uniformly black, uniformly white, or flat is a rendered nothing, and a
 // hash alone would happily call two of those "identical". Variance is over the RGB bytes of the whole frame.
 function stats(bytes) {
-  let sum = 0, sumSq = 0, black = 0, white = 0, opaque = true;
+  let sum = 0, sumSq = 0, luma = 0, black = 0, white = 0, opaque = true;
   const px = bytes.length / 4;
   for (let i = 0; i < bytes.length; i += 4) {
     const r = bytes[i], g = bytes[i + 1], b = bytes[i + 2];
     sum += r + g + b; sumSq += r * r + g * g + b * b;
+    luma += 0.2126 * r + 0.7152 * g + 0.0722 * b;   // Rec.709 — the transition metric reads THIS, not the flat channel mean
     if (r === 0 && g === 0 && b === 0) black++;
     if (r === 255 && g === 255 && b === 255) white++;
     if (bytes[i + 3] !== 255) opaque = false;
   }
   const n = px * 3, mean = sum / n;
-  return { mean, variance: sumSq / n - mean * mean, blackFrac: black / px, whiteFrac: white / px, opaque };
+  return { mean, luma: luma / px, variance: sumSq / n - mean * mean, blackFrac: black / px, whiteFrac: white / px, opaque };
 }
 
 window.__png = (id) => {
@@ -180,6 +181,95 @@ window.__run = (presetName, overrides, frames) => new Promise((resolve, reject) 
     if (!want.length) finish(null);
   };
 });
+
+// ---------------------------------------------------------------------------
+// A TRANSITION, WATCHED (spec §9). Everything above this line is byte-stable by construction — motion frozen,
+// same bytes every run. This is not, and cannot be: a transition's whole point MOVES, and the bloom rides the
+// same clock the wind does, so two runs of the same route differ pixel for pixel. What is stable enough to
+// judge is the SHAPE of the mean luminance over the transition — so the metric below is statistical (per-frame
+// luma, and the largest frame-to-frame step in it) and the strip is for eyes.
+//
+// auto_quality is the ONE thing still forced off, at both ends: it is a runtime governor rather than part of
+// the look, and under a software rasteriser it would trim resolution mid-transition and land in the table as a
+// luminance step that has nothing to do with the transition being measured.
+//
+// The engine bypasses its adaptive frame-rate saver while trans.active, so every frame here is a real render
+// and every capture is a distinct one.
+// ---------------------------------------------------------------------------
+window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) => {
+  const o = Object.assign({ duration: 1.5, warm: 12, tail: 6, cap: 200 }, opts || {});
+  const A = PRESETS[fromName], B = PRESETS[toName];
+  if (!A) return reject(new Error(`unknown preset '${fromName}'`));
+  if (!B) return reject(new Error(`unknown preset '${toName}'`));
+  const NO_AUTO = { auto_quality: false };
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage';
+  canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  document.body.appendChild(canvas);
+
+  const t0 = performance.now();
+  const out = [];
+  let eng = null, ticks = 0, started = false, endedAt = -1, done = false;
+  const finish = (err) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    const info = eng ? { structDiff: eng.trans.structDiff, canopyMorph: eng.trans.canopyMorph } : null;
+    try { eng?.setPaused(true); eng?.dispose(); } catch { /* a disposed/failed engine has nothing to stop */ }
+    canvas.remove();
+    if (err) reject(err); else resolve({ frames: out, info, ms: Math.round(performance.now() - t0) });
+  };
+  const timer = setTimeout(() => finish(new Error(`'${fromName}' -> '${toName}' did not finish within 240 s`)), 240000);
+
+  try { eng = create(canvas, { params: Object.assign({}, A, NO_AUTO) }); }
+  catch (e) { return finish(e); }
+
+  const gl = eng.gl;
+  eng.onFrame = () => {
+    ticks++;
+    if (done) return;
+    if (!started) {                                  // let the bake warm and the springs settle on look A first
+      if (ticks < o.warm) return;
+      started = true;
+      eng.transitionTo(Object.assign({}, B, NO_AUTO), { duration: o.duration });
+      return;                                        // the transition's first tick is the next frame
+    }
+    const w = canvas.width, h = canvas.height;
+    const bytes = new Uint8Array(w * h * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+    const id = `c${nextId++}`;
+    caps.set(id, { w, h, bytes });
+    const s = stats(bytes);
+    // trans.* is read AFTER the frame drew, so each row is the state that frame was rendered with — which is
+    // what makes "the swap landed on the frame where bloom was X" a claim about the picture and not about the clock.
+    out.push({ id, t: eng.trans.t, bloom: eng.trans.bloom, swapped: eng.trans.swapped,
+               active: eng.trans.active, luma: s.luma, variance: s.variance });
+    if (!eng.trans.active) {
+      if (endedAt < 0) endedAt = out.length;
+      if (out.length - endedAt >= o.tail) return finish(null);
+    }
+    if (out.length >= o.cap) finish(null);
+  };
+});
+
+// A contact sheet of captures, in order, for eyes rather than for a metric.
+window.__strip = (ids, cols) => {
+  const caps0 = ids.map((id) => { const c = caps.get(id); if (!c) throw new Error(`no capture ${id}`); return c; });
+  const w = caps0[0].w, h = caps0[0].h, PAD = 2;
+  const rows = Math.ceil(caps0.length / cols);
+  const c = document.createElement('canvas');
+  c.width = cols * (w + PAD) + PAD; c.height = rows * (h + PAD) + PAD;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#101010'; ctx.fillRect(0, 0, c.width, c.height);
+  caps0.forEach((cap, i) => {
+    const img = ctx.createImageData(w, h);
+    for (let y = 0; y < h; y++) img.data.set(cap.bytes.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+    for (let k = 3; k < img.data.length; k += 4) img.data[k] = 255;
+    ctx.putImageData(img, PAD + (i % cols) * (w + PAD), PAD + Math.floor(i / cols) * (h + PAD));
+  });
+  return c.toDataURL('image/png');
+};
 
 window.__ready = true;
 </script>
