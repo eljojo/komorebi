@@ -143,6 +143,7 @@ async function main() {
     const presets = filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
     if (filters.length && presets.length === 0) { log(`no preset matches: ${filters.join(', ')}`); await browser.close(); server.close(); process.exit(1); }
     log(`\nSMOKE — ${presets.length} presets @ ${SMOKE_FRAMES} frames`);
+    const truncated = [];   // groves that outgrew the woody-occluder table (§4.5) — see the note under the loop
     for (const name of presets) {
       let r;
       try {
@@ -160,11 +161,21 @@ async function main() {
       if (s.blackFrac === 1) bad.push('all-black frame');
       if (s.whiteFrac === 1) bad.push('all-white frame');
       if (!s.opaque) bad.push('non-opaque readback (alpha:false context should read 255)');
+      // THE OCCLUDER CAP (§4.5). A grove that grows more level-≤1 segments than the table holds loses the tail of
+      // the grow order — whole later trees render with no bole and no limbs. Nothing looks broken; there is just
+      // less wood than the parameters asked for, which is why it went unnoticed for as long as it did. A pixel
+      // cannot report it, so the engine does: `want` is what grew, `count` is what fits.
+      const cut = r.occ ? r.occ.want - r.occ.count : 0;
+      if (cut > 0) truncated.push(`${name} grew ${r.occ.want}, cap ${r.occ.cap} — ${cut} segments of wood dropped`);
       await writePNG(slug(name), await page.evaluate((id) => window.__png(id), c.id));   // out/<preset>.png — the look itself, the artifact this suite exists to produce
       record('smoke', name, bad.length === 0, bad.length ? bad.join('; ')
-        : `${c.w}×${c.h} var ${s.variance.toFixed(0)} mean ${s.mean.toFixed(1)} ${r.ms} ms`);
-      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(14)} var ${s.variance.toFixed(0).padStart(5)}  mean ${s.mean.toFixed(1).padStart(5)}  ${String(r.ms).padStart(6)} ms  ${bad.join('; ')}`);
+        : `${c.w}×${c.h} var ${s.variance.toFixed(0)} mean ${s.mean.toFixed(1)} ${r.ms} ms${cut > 0 ? `  WOOD TRUNCATED ${r.occ.want}>${r.occ.cap}` : ''}`);
+      log(`  ${bad.length ? 'FAIL' : cut > 0 ? 'WARN' : 'ok  '}  ${name.padEnd(14)} var ${s.variance.toFixed(0).padStart(5)}  mean ${s.mean.toFixed(1).padStart(5)}  ${String(r.ms).padStart(6)} ms  ${bad.join('; ')}`);
     }
+    // Loud, but deliberately not a FAILURE: the looks that hit the cap were authored against the truncation, so
+    // what ships is what their author saw. Raising MAX_OCC would repaint them, which is a look decision. What this
+    // guarantees is that the NEXT grove to outgrow the table says so on the first run instead of never.
+    if (truncated.length) { log(`\n  WOOD TRUNCATED — the occluder table is full for these looks:`); for (const t of truncated) log(`    ${t}`); }
 
     // A filtered run is the fast authoring loop: the smoke renders above are its whole point,
     // and the stillness/determinism/gate suites only run on a full sweep.

@@ -23,7 +23,7 @@
 </style>
 <body></body>
 <script type="module">
-import { create } from '/komorebi.js';
+import { create, MAX_OCC } from '/komorebi.js';
 import { PRESETS } from '/presets.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
@@ -149,9 +149,13 @@ window.__run = (presetName, overrides, frames) => new Promise((resolve, reject) 
     if (done) return;
     done = true;
     clearTimeout(timer);
+    // The woody occluder's cap (§4.5) is read BEFORE dispose, while the grove is still standing: `want` is what
+    // this grove grew, `count` what the table could hold. They differ silently — a truncated grove renders with
+    // its later trees simply having no wood — so the runner is handed both and says so.
+    const occ = eng ? { count: eng.occ.count, want: eng.occ.want, cap: MAX_OCC } : null;
     try { eng?.setPaused(true); eng?.dispose(); } catch { /* a disposed/failed engine has nothing to stop */ }
     canvas.remove();
-    if (err) reject(err); else resolve({ captures: out, glError, ms: Math.round(performance.now() - t0) });
+    if (err) reject(err); else resolve({ captures: out, glError, occ, ms: Math.round(performance.now() - t0) });
   };
   const timer = setTimeout(() => finish(new Error(`'${presetName}' did not reach frame ${want[0]} within 120 s`)), 120000);
 

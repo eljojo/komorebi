@@ -1945,7 +1945,7 @@ function create(canvas, opts){
   const GLOW_STEP_MAX = 6.0;              // px between taps — the cap that trades reach for a clean kernel (see FS_GLOW_BLUR)
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01,
                 coreR:0.005, moonD:0, moonR:0, Lcore:0, Lhalo:0 };   // + the SEEN source (§4.9 sky view): angular radii, the eclipse moon, and the radiance in each region — all filled by regenSource from the sampler's own numbers
-  const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0, hRef:1 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend, `hRef` = tallest floor height for the drift's height-scale (spec §4.5)
+  const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0, want:0, hRef:1 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend, `hRef` = tallest floor height for the drift's height-scale (spec §4.5)
   // ...and the GPU side of that table (§4.5/§6): one RGBA32F, MAX_OCC wide and 2 tall — row 0 the swung plan
   // endpoints, row 1 the static heights + radius. Allocated once at the cap and never resized, because the cap is a
   // compile-time constant on both sides of the wire. This is the clusterTex idiom, for the same reason: a per-frame
@@ -2339,14 +2339,19 @@ function create(canvas, opts){
     {
       const tf = Math.pow(Math.max(1.001, kids), -1/clamp(params.taper_delta,1,4));   // pipe-model taper for the radius (floorH hoisted above)
       const rest=[], segH=[];
+      let want=0;                                      // what the grove ASKED for, before the cap — see occ.want below
       for(const sg of segments){
         if(sg.level>1) continue;                       // trunk + main limbs only; fine sub-branches carried by the leaf dapples
-        if(rest.length >= MAX_OCC) break;
+        want++;
+        if(rest.length >= MAX_OCC) continue;           // table full: keep counting rather than break, so the shortfall is a number instead of nothing
         const r = Math.max(0.01, params.trunk_radius_m*Math.pow(tf, sg.level));
         rest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], limb:sg.limb, px:sg.px, py:sg.py });   // limb+pivot for the per-frame swing
         segH.push(floorH(sg.a[2]), floorH(sg.b[2]), r, 0);
       }
-      occ.rest = rest; occ.ht = new Float32Array(segH); occ.count = rest.length;
+      // want > count means this grove is TRUNCATED: the tail of the grow order — whole later trees' boles and limbs —
+      // casts no wood at all. It is invisible in a single frame (nothing is missing, there is just less), which is
+      // exactly why it needs a number: the pixel harness reads these two and says so out loud.
+      occ.rest = rest; occ.ht = new Float32Array(segH); occ.count = rest.length; occ.want = want;
       let hRef = 1e-3; for(let i=0;i<segH.length;i+=4) hRef = Math.max(hRef, segH[i], segH[i+1]);   // tallest floor-height → the drift's height-scale reference (foot planted, crown sways)
       occ.hRef = hRef;
     }
