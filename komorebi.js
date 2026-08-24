@@ -464,6 +464,12 @@ uniform float uWindTime;              // seconds, for leaf flutter
 uniform float uLeafSwing;             // master: how far leaves rock as wind blows
 uniform float uFlutterFreq;           // leaf flutter rate (Hz)
 uniform float uStemLen;               // twig stem length: pivot offset toward the limb (swing, not spin)
+// GROVE-WIDE COVERAGE (§9). The per-leaf 'cov' the CPU folds into iC.xyz is the fractional-leaf fade — a marginal
+// leaf or a marginal tree is faded in by SCALING ITS OPTICAL DEPTH, which the additive bake makes exact: at 0 the
+// leaf contributes no depth and is simply not there. This is that same lever with the grove as its subject, so two
+// groves can be baked into one layer texture at complementary coverage and the arrangement dissolves between them
+// rather than cutting. 1.0 is the identity and the only value any non-transitioning frame ever sees.
+uniform float uCoverage;
 out vec2 vLocal;
 out vec3 vTau;
 void main(){
@@ -503,7 +509,7 @@ void main(){
   vec2 uv = (world - uCanopyOrigin)/uCanopyExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = aCorner;
-  vTau = iC.xyz;
+  vTau = iC.xyz * uCoverage;   // x 1.0 is the identity in IEEE, so every non-transitioning frame bakes the bytes it always did
 }`;
 
 const FS_BAKE = `#version 300 es
@@ -1911,7 +1917,8 @@ function create(canvas, opts){
              morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'),
              windLevel:loc(progBake,'uWindLevel'), windTime:loc(progBake,'uWindTime'),
              leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
-             clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom') };
+             clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
+             coverage:loc(progBake,'uCoverage') };
   U.faith = { origin:loc(progFaith,'uFaithOrigin'), extent:loc(progFaith,'uFaithExtent'), g:loc(progFaith,'uG'), edge:loc(progFaith,'uEdge'),
               curtainBake:loc(progFaith,'uCurtainBake'), clothY:loc(progFaith,'uClothY'),
               morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
@@ -2532,6 +2539,7 @@ function create(canvas, opts){
     gl.uniform1f(U.bake.leafSwing, params.leaf_swing);
     gl.uniform1f(U.bake.flutterFreq, params.flutter_freq);
     gl.uniform1f(U.bake.stemLen, params.stem_length);
+    gl.uniform1f(U.bake.coverage, 1.0);   // the single-grove bake is full coverage; the crossfade is the only thing that ever moves it
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, clusterTex);     gl.uniform1i(U.bake.clusterTex, 4);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, clusterGeomTex); gl.uniform1i(U.bake.clusterGeom, 5);
     gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);
