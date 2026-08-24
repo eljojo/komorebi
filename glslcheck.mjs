@@ -12,13 +12,19 @@
 // (spliced into other shaders through an interpolation), not standalone units, so they are resolved but not
 // compiled on their own. Both conventions are the engine's existing ones — nothing here needs registering.
 //
+// TRANSPORT is the exception, and it is why this file also IMPORTS the engine. Transport is no longer a single
+// literal: it is a set of snippets that buildTransport() assembles into one straight-line program per camera
+// (§4.6/§4.9), so the text alone holds no compilable transport shader at all. Asking the module for each
+// variant's assembled source is the only honest check — and it is the check that matters, because a snippet
+// that lands in a variant missing the uniform it reads fails HERE rather than as a black canvas.
+//
 // glslangValidator is taken from PATH, else run through `nix shell nixpkgs#glslang`.
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const SOURCE = join(ROOT, "komorebi.js");
@@ -54,6 +60,12 @@ for (const m of text.matchAll(/^const ((?:VS|FS|GLSL)_[A-Z0-9_]*) = `/gm)) {
   else shaders.push({ name, body, stage: name.startsWith("VS_") ? "vert" : "frag" });
 }
 if (shaders.length === 0) { console.error(`no shaders found in ${SOURCE}`); process.exit(2); }
+const literalCount = shaders.length;
+
+// ---- the transport variants, from the module itself (see the header). One entry per camera; the assembled
+// source arrives with its interpolations already resolved, so it drops straight into the same loop below.
+const { TRANSPORT_CAMERAS, buildTransport } = await import(pathToFileURL(SOURCE).href);
+for (const cam of TRANSPORT_CAMERAS) shaders.push({ name: `FS_TRANSPORT_${cam}`, body: buildTransport(cam), stage: "frag" });
 
 // ---- resolve interpolations. Repeated passes because a snippet may itself interpolate; bounded so a cycle
 // reports instead of hanging.
@@ -80,6 +92,7 @@ if (!onPath) {
 }
 
 const outDir = mkdtempSync(join(tmpdir(), "komorebi-glsl-"));
+const pad = Math.max(...shaders.map((s) => s.name.length));
 let failed = 0;
 for (const s of shaders) {
   const src = resolve(s.body);
@@ -87,18 +100,18 @@ for (const s of shaders) {
   const file = join(outDir, `${s.name}.${s.stage}`);
   writeFileSync(file, src);
   if (left) {
-    console.log(`FAIL  ${s.name.padEnd(14)} ${s.stage}  unresolved interpolation(s): ${[...new Set(left)].join(" ")}`);
+    console.log(`FAIL  ${s.name.padEnd(pad)} ${s.stage}  unresolved interpolation(s): ${[...new Set(left)].join(" ")}`);
     failed++;
     continue;
   }
   const r = runner(["-S", s.stage, file]);
   if (r.status === 0) {
-    console.log(`ok    ${s.name.padEnd(14)} ${s.stage}  ${src.split("\n").length} lines`);
+    console.log(`ok    ${s.name.padEnd(pad)} ${s.stage}  ${src.split("\n").length} lines`);
   } else {
-    console.log(`FAIL  ${s.name.padEnd(14)} ${s.stage}`);
+    console.log(`FAIL  ${s.name.padEnd(pad)} ${s.stage}`);
     console.log(`${(r.stdout || "").trim()}\n${(r.stderr || "").trim()}`.trim());
     failed++;
   }
 }
-console.log(`\n${shaders.length - failed}/${shaders.length} shaders compiled   (assembled sources: ${outDir})`);
+console.log(`\n${shaders.length - failed}/${shaders.length} shaders compiled   (${literalCount} literals + ${shaders.length - literalCount} transport variants; assembled sources: ${outDir})`);
 process.exit(failed ? 1 : 0);
