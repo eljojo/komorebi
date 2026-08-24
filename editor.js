@@ -29,12 +29,11 @@ const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro
 
 // ---- editor settings (mode ladder + experimental filter), persisted beside the ★ store. The three modes are
 // three DEPTHS of one control tree — min (the strip: 3 macros) ⊂ play (the sidebar: the macro bus) ⊂ adv (every
-// knob) — so "mode" is just which surface is showing. First run boots playful on a desktop and minimalist on
-// touch (the calm surface where the calm matters most); the choice sticks thereafter. ----
+// knob) — so "mode" is just which surface is showing. First run boots the MINIMALIST strip everywhere (the art
+// stands alone; ＋ climbs the ladder when you want more); the choice sticks thereafter. ----
 const SETTINGS_KEY = 'komorebi.editor';
 const settings = (() => {
-  const coarse0 = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
-  const base = { mode: coarse0 ? 'min' : 'play', showBeta: false };
+  const base = { mode: 'min', showBeta: false };
   try { return Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch { return base; }
 })();

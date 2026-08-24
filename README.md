@@ -21,12 +21,12 @@ A standalone WebGL2 engine that renders komorebi from physics rather than painti
   - **`komorebi-math.js`** — CPU math: the atmosphere model, deterministic RNG, wind noise, skeleton-growth helpers.
 - **`presets.js`** — the built‑in looks, an ES module: `export const PRESETS` (+ `EXPERIMENTAL`, the looks the editor hides behind its toggle). Split out of the engine (data, not renderer); imported by the pages.
 - **`macros.js`** — the control bus: high‑level macros (weather, haze, focus, the wind pad, season, grove, palette, prism), each one input driving an authored multi‑param recipe lifted from the shipped looks. The editor's playful/minimalist modes are its first source; MIDI/audio can drive the same bus later.
-- **`index.html`** — the editor / landing page (opens on a welcome screen): three modes — a minimalist auto‑fading strip, a playful macro sidebar (the default), and the full dev panel — plus HUD, presets, sun‑drag. Imports the modules, so it must be **served** (`nix run .#dev`), not opened off the filesystem.
+- **`index.html`** — the editor / landing page (opens on a welcome screen): three modes — a minimalist auto‑fading strip (the default), a playful macro sidebar, and the full dev panel — plus HUD, presets, sun‑drag. Imports the modules, so it must be **served** (`nix run .#dev`), not opened off the filesystem.
 - **`player.html`** — minimal viewer‑only reference: a full‑bleed canvas cycling through presets, no UI.
 - **`komorebi.global.js`** — deploy shim: bundles the engine + presets into a classic `window.Komorebi` global for no‑build embeds (the eljojo.net homepage).
 - **`dev-server.js`** — bun static server + live‑reload for development (`nix run .#dev`).
 - **`glslcheck.mjs`** — offline shader validation: assembles every GLSL template literal in the engine and compiles it with `glslangValidator`, so a shader typo fails here instead of on a black canvas.
-- **`test-gl/`** — the pixel harness: real renders of every look in headless Chromium (WebGL2 via SwiftShader) — a PNG per preset under `test-gl/out/`, plus smoke, gate-invariant (byte-identical off states, in pixels), determinism, and transition-routing (each tier driven to completion; logic-only) suites. `nix run .#pixels`; first run needs `cd test-gl && npm install && npx playwright install chromium`. PNGs and `node_modules/` stay untracked.
+- **`test-gl/`** — the pixel harness: real renders of every look in headless Chromium (WebGL2 via SwiftShader) — a PNG per preset under `test-gl/out/`, plus smoke, gate-invariant (byte-identical off states, in pixels), determinism, and transition-routing (each tier driven to completion; logic-only) suites. `test-gl/editor.mjs` (`nix run .#editor`) is the editor smoke: it drives index.html's mode ladder + macro bus and asserts the observable DOM effects — the UI-only regressions the pixel suites can't see. `nix run .#pixels`; first run needs `cd test-gl && npm install && npx playwright install chromium`. PNGs and `node_modules/` stay untracked.
 - **`komorebi-spec.md`** — the living spec (vision, physics, model). Kept in sync as the engine evolves.
 
 ## Develop
@@ -39,6 +39,7 @@ nix run .#lint     # biome
 nix run .#build    # bundle dist/komorebi.player.min.js (the global, editor stripped)
 node glslcheck.mjs # offline shader validation — compiles every GLSL literal in the engine modules (glslangValidator, no GPU)
 nix run .#pixels   # the pixel harness — render every look + pixel suites (first run: cd test-gl && npm install && npx playwright install chromium)
+nix run .#editor   # the editor smoke — mode ladder + macro bus driven in headless Chromium (same first-run setup)
 ```
 
 ## Using the engine

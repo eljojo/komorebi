@@ -77,11 +77,27 @@
               exec node run.js "$@"
             '';
           };
+          # `nix run .#editor` — the editor smoke: drives index.html's mode ladder + macro bus in headless
+          # Chromium and asserts the observable DOM effects (UI-only regressions the pixel suites can't see).
+          # Same first-run setup as pixels: cd test-gl && npm install && npx playwright install chromium.
+          editor = pkgs.writeShellApplication {
+            name = "editor";
+            runtimeInputs = [ pkgs.nodejs_22 ];
+            text = ''
+              cd test-gl
+              if [ ! -d node_modules ]; then
+                echo "first run: cd test-gl && npm install && npx playwright install chromium" >&2
+                exit 1
+              fi
+              exec node editor.mjs "$@"
+            '';
+          };
         in {
           dev = { type = "app"; program = "${dev}/bin/dev"; };
           lint = { type = "app"; program = "${lint}/bin/lint"; };
           build = { type = "app"; program = "${build}/bin/build"; };
           pixels = { type = "app"; program = "${pixels}/bin/pixels"; };
+          editor = { type = "app"; program = "${editor}/bin/editor"; };
           default = self.apps.${pkgs.system}.dev;
         });
     };
