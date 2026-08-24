@@ -135,8 +135,15 @@ const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back t
 // The swap itself is already invisible on that route (ΔL 0.29 at the peak), which is what makes the depth safe to
 // spend: the bloom was buying cover it no longer needed and paying for it in white. So a dissolve is capped too —
 // less hard than a mode flip's, because a topology dissolve has real structure to hide and wants the cover.
-const BLOOM_MAX = { mode: 0.35, dissolve: 0.55 };   // the bloom's peak depth by tier — the mode flip's measured in the packet before this one
-const DUR_SCALE = { mode: 2.0,  dissolve: 2.0 };    // ...and how much longer than the caller's duration each tier takes to get there
+// TIER 2.5, THE GROVE CROSSFADE (§9). A topology change could only ever be a CUT: one grove is replaced by
+// another at the midpoint, and no amount of bloom makes a cut a dissolve — measured, the swap frame's churn
+// against the frame's own contrast is 0.800 where a live morph's whole transition peaks at 0.223. The fix is not
+// more cover, it is to stop cutting: grow the incoming grove early and bake BOTH into the same layer textures at
+// complementary coverage across a window. Leaves never jump; gaps merge, split and collapse into the new
+// arrangement, which is §5.2's own grammar covering the change.
+const CROSS_HALF_W = 0.25;   // the window's half-width in t: [0.25, 0.75], centred where the cut used to be
+const BLOOM_MAX = { mode: 0.35, dissolve: 0.55, cross: 0.55 };   // the bloom's peak depth by tier — the mode flip's measured in the packet before this one
+const DUR_SCALE = { mode: 2.0,  dissolve: 2.0, cross: 2.0 };    // ...and how much longer than the caller's duration each tier takes to get there
 
 // ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
 // 3-band (R=620, G=555, B=470 nm) Beer's-law model. As the sun lowers, air mass grows and Rayleigh
@@ -1860,7 +1867,7 @@ function create(canvas, opts){
   const motion = { time:0, u:0, v:0, uLat:0, vLat:0, env:0, driveEnv:0, sway:[0,0], windX:1, windY:0, weatherS:1 };
   // Transition — cloud-bloom crossfade between looks (spec §9). t walks 0->1 over dur: the continuous
   // params morph, the grove swaps once at the bloom peak, and `bloom` is a transient overcast that hides it.
-  const trans = { active:false, t:0, dur:1.5, durScale:1, bloomMax:1, from:null, to:null, swapped:false, structDiff:false, canopyMorph:false, bloom:0, onEnd:null };
+  const trans = { active:false, t:0, dur:1.5, durScale:1, bloomMax:1, crossfade:false, from:null, to:null, swapped:false, structDiff:false, canopyMorph:false, bloom:0, onEnd:null };
   const effCloud = () => clamp(lerp(params.cloud_thickness, 1, trans.bloom), 0, 1);  // cloud, swollen toward overcast mid-transition
   const bakeBaseline = () => (params.bake_resolution > 0 ? params.bake_resolution|0 : params.tex_resolution|0);  // TUNE §9: decoupled bake size; 0 follows tex_resolution.
   // Live bake / layer-texture size. Pure function of quality + params: when auto_quality is engaged it trims the
@@ -2009,6 +2016,8 @@ function create(canvas, opts){
   let faithTex = null;         // FAITHFUL path (§4.5): pre-integrated soft shadow (RGBA16F); 1×1 when faithful_canopy off
   let faithScratch = null;     // FAITHFUL path: per-sample transmittance scratch (RGBA16F); 1×1 when off
   let hier = null;             // branch hierarchy: limb + twig spring state (built in regenCanopy)
+  let groveIn = null;          // the INCOMING grove during a crossfade (§9): grown early, baked alongside the active one, installed when the window closes
+  let crossW = 0;              // its coverage share, 0 -> 1 across the window
   let grove = null;            // the ACTIVE grove value (hier + layerVAO + its two data textures); the views above point into it
   let clusterTex = null;       // per-clump dynamic bend angles (limb, twig), updated each frame
   let clusterGeomTex = null;   // per-clump static geometry (clump centre + trunk pivot)
@@ -2542,9 +2551,19 @@ function create(canvas, opts){
     if(grove && grove !== g) freeGrove(grove);
     grove = g;
     hier = g.hier; layerVAO = g.layerVAO; clusterTex = g.clusterTex; clusterGeomTex = g.clusterGeomTex;
-    publishBend();   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
+    publishBend(g);   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
   }
   function regenCanopy(){ installGrove(buildGrove(hier)); }   // the old shape: grow one, make it the one
+  // Grow the grove the TARGET look describes, without becoming it: the grove knobs are swapped in for the length
+  // of the build and put straight back, so nothing else in the frame notices. No prevHier — the incoming springs
+  // start at rest, which is what a newly grown tree has always done.
+  function buildTargetGrove(to){
+    const keys = [...TOPO_KEYS, ...CANOPY_KEYS], saved = {};
+    for(const k of keys){ saved[k] = params[k]; params[k] = to[k]; }
+    const g = buildGrove(null);
+    for(const k of keys) params[k] = saved[k];
+    return g;
+  }
 
   // ---- bake leaves into per-layer optical-depth textures ---------------------
   function bake(){
@@ -2562,9 +2581,11 @@ function create(canvas, opts){
     gl.uniform1f(U.bake.leafSwing, params.leaf_swing);
     gl.uniform1f(U.bake.flutterFreq, params.flutter_freq);
     gl.uniform1f(U.bake.stemLen, params.stem_length);
-    gl.uniform1f(U.bake.coverage, 1.0);   // the single-grove bake is full coverage; the crossfade is the only thing that ever moves it
-    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, clusterTex);     gl.uniform1i(U.bake.clusterTex, 4);
-    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, clusterGeomTex); gl.uniform1i(U.bake.clusterGeom, 5);
+    // WHICH GROVES ARE IN THIS BAKE. Normally one, at full coverage. During a crossfade (§9) two, at
+    // complementary coverage into the SAME layer texture — which the additive optical-depth bake makes exact:
+    // the depths sum, so at w the picture is (1-w) of the old arrangement plus w of the new, and no leaf ever
+    // jumps. Their cluster textures are per-grove, so the binds move inside the loop with them.
+    const baking = groveIn ? [[grove, 1-crossW], [groveIn, crossW]] : [[grove, 1]];
     gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);
     gl.viewport(0,0,res,res);
     gl.enable(gl.BLEND);
@@ -2582,9 +2603,15 @@ function create(canvas, opts){
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layerTex[l], 0);
       gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1. UNMASKED: alpha is the wood's channel in sky mode and must be cleared too, or it accumulates across bakes
       if(params.sky_view) gl.colorMask(true, true, true, false);
-      const L=layerVAO[l];
-      gl.bindVertexArray(L.vao);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, L.count);
+      for(const [g, cov] of baking){
+        if(!(cov > 0)) continue;                               // a grove at zero coverage contributes no optical depth; skip the draw rather than issue it
+        gl.uniform1f(U.bake.coverage, cov);
+        gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, g.clusterTex);     gl.uniform1i(U.bake.clusterTex, 4);
+        gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, g.clusterGeomTex); gl.uniform1i(U.bake.clusterGeom, 5);
+        const L=g.layerVAO[l];
+        gl.bindVertexArray(L.vao);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, L.count);
+      }
       if(params.sky_view) gl.colorMask(true, true, true, true);   // back to full before the next layer's clear
     }
     // The woody TRUNK and MAIN LIMBS are never stamped here — they are the continuous-height analytic occluder in
@@ -2895,7 +2922,12 @@ function create(canvas, opts){
   }
 
   // ---- motion: integrate the limb and twig springs (children inherit parents) ----
-  function tickHierarchy(steps, h){
+  // Both take the GROVE they drive rather than reading the active one, because during a crossfade there are two
+  // and each carries its own springs: the outgoing one keeps the state it has been living in, the incoming one
+  // starts at rest (the tier-2 precedent — a newly grown tree does too). They share the global sway/drift clocks,
+  // which are noise-of-time and belong to the weather, not to a grove.
+  function tickHierarchy(steps, h, g){
+    const hier = g?.hier;
     if(!hier) return;
     const t = motion.time;
     const eb = 0.25 + 0.75*motion.env;       // differential bend breathes with the gust
@@ -2945,11 +2977,12 @@ function create(canvas, opts){
       maxv=Math.max(maxv, Math.abs(hier.twigVel[j]));   // (clusterData is written by publishBend, below)
     }
     hier.maxV = maxv;
-    publishBend();
+    publishBend(g);
   }
   // write the current limb/twig bend into the per-clump texture the bake VS samples. Called at the end of a
   // hierarchy tick, and again after a grove-morph regrow (which hands us a fresh, zeroed texture). ----
-  function publishBend(){
+  function publishBend(g){
+    const hier = g?.hier;
     if(!hier) return;
     const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): the limb's PITCH DOF → foreshorten factor in .w (faithful only); 0 → factor 1, byte-identical
     const faithful = faithfulOn();
@@ -2971,7 +3004,7 @@ function create(canvas, opts){
       if(faithful) hier.clusterData[4*j+2] = hier.limbAttach[li]*(1-fore);   // sp=0 → fore=1 → exactly 0 → hEff = iHeight, byte-identical
     }
     gl.activeTexture(gl.TEXTURE4);
-    gl.bindTexture(gl.TEXTURE_2D, clusterTex);
+    gl.bindTexture(gl.TEXTURE_2D, g.clusterTex);
     // perf todo — clusterTex is single-buffered: this rewrites the whole row, then bake()'s VS texelFetches the
     // SAME texture the same frame, so next frame's upload can stall on the prior bake still draining it (a
     // per-frame GPU sync bubble). Ping-pong a 2-deep ring of cluster textures to break the write-after-read.
@@ -3038,7 +3071,8 @@ function create(canvas, opts){
     // compose world sway: u along the (veered) wind, uLat across it, scaled by the ceiling
     const cx = motion.windX, cy = motion.windY, ceil = params.sway_ceiling;
     motion.sway = [ (cx*motion.u - cy*motion.uLat)*ceil, (cy*motion.u + cx*motion.uLat)*ceil ];
-    tickHierarchy(steps, h);                                  // limb + twig springs (medium band)
+    tickHierarchy(steps, h, grove);                           // limb + twig springs (medium band)
+    if(groveIn) tickHierarchy(steps, h, groveIn);             // ...and the incoming grove during a crossfade, on the same clocks
     motion.time += dt;
     // incoherent band: advance the drift phase (periodic in 2π). The editor reflects it in its slider.
     if(params.drift_auto && params.drift_amount>0){
@@ -3077,9 +3111,28 @@ function create(canvas, opts){
     // cost being paid for — lengthening an ordinary look-to-look step would change the feel of every arrow press
     // for nothing. (Caught by measurement: applying the stretch to every non-mode route took the tier-1 reference
     // route from 4.9 to 2.6, which is not an improvement, it is a different transition.)
-    const tier = modeDiff ? 'mode' : 'dissolve';
+    // THE CROSSFADE GATE (§9), v1 and deliberately narrow — every condition is something the crossfade cannot
+    // yet do, not something it does badly:
+    //  • a TOPOLOGY change and not a MODE flip — a camera swap has no second grove to blend, it has a second SCENE;
+    //  • neither end faithful — that tier pre-integrates one grove into one texture, with nothing to blend against;
+    //  • no WOOD at either end — the analytic occluder is one segment table, and this v1 crossfades LEAVES only.
+    //    (The table is a texture since the packet before last and can hold two sets, so the wood crossfade is a
+    //    real next step rather than a wish; until it exists, branch_tau > 0 keeps the honest cut.)
+    //  • the two groves must share one set of layer textures, so the knobs that SIZE those textures have to match.
+    // Anything outside the gate takes the paths it already took.
+    const layersShared = to.layer_count===params.layer_count && to.tex_resolution===params.tex_resolution
+                      && to.bake_resolution===params.bake_resolution;
+    const crossOK = topoDiff && !modeDiff && !morphGrove
+                 && !faithfulOn() && !to.faithful_canopy
+                 && !(params.branch_tau > 0) && !(to.branch_tau > 0)
+                 && layersShared;
+    const tier = modeDiff ? 'mode' : crossOK ? 'cross' : 'dissolve';
+    trans.crossfade = crossOK;
     trans.bloomMax = BLOOM_MAX[tier];
     trans.durScale = trans.structDiff ? DUR_SCALE[tier] : 1;
+    if(groveIn){ freeGrove(groveIn); groveIn = null; }   // a transition interrupting a transition drops the half-faded grove
+    crossW = 0;
+    if(crossOK) groveIn = buildTargetGrove(to);          // grow it NOW, at rest, while it is still invisible
     trans.from = from; trans.to = to;
     trans.dur = Math.max(1e-3, opts.duration!=null ? opts.duration : trans.dur);   // stays the CALLER's number: it is also the sticky default for a later duration-less call, so the mode-flip stretch is applied at the clock (tickTransition) and never compounded into it
     trans.t = 0; trans.swapped = false; trans.bloom = 0; trans.active = true;
@@ -3097,7 +3150,19 @@ function create(canvas, opts){
       params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,e, k==='drift_phase'?TAU:360) : lerp(a,b,e); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove
     let rebuilt = false;
-    if(!trans.swapped && t>=0.5){                          // swap the grove once, hidden under the bloom peak
+    // THE CROSSFADE WINDOW replaces the cut where it is gated on: coverage eases 0 -> 1 across [0.5-HW, 0.5+HW],
+    // and the arrangement reorganizes instead of being replaced. The incoming grove is installed as the engine's
+    // own once it carries the whole picture, which is also when the structural params can safely snap: nothing
+    // reads them again until the next regrow.
+    if(trans.crossfade){
+      crossW = clamp((t - (0.5 - CROSS_HALF_W)) / (2*CROSS_HALF_W), 0, 1);
+      crossW = smoothstep(0, 1, crossW);                   // ease it, so the fade has no corners at either end
+      if(!trans.swapped && crossW >= 1){
+        trans.swapped = true;
+        for(const k in DEFAULTS) if(!MORPH_SET.has(k)) params[k] = trans.to[k];
+        installGrove(groveIn); groveIn = null; crossW = 0;   // it IS the grove now; nothing is faded any more
+      }
+    } else if(!trans.swapped && t>=0.5){                   // swap the grove once, hidden under the bloom peak
       trans.swapped = true;
       if(trans.structDiff){
         for(const k in DEFAULTS) if(!MORPH_SET.has(k)) params[k] = trans.to[k];
@@ -3115,7 +3180,8 @@ function create(canvas, opts){
       // angle for the whole morph (the layer path is immune — transport reprojects each frame from uProj/uBulkShift).
       const faithSunMorph = faithfulOn() &&
         (trans.from.sun_elevation_deg!==trans.to.sun_elevation_deg || trans.from.sun_azimuth_deg!==trans.to.sun_azimuth_deg);
-      if(trans.canopyMorph || motionActive() || faithSunMorph) bake();
+      // ...and every frame the crossfade window is open, because the coverage split itself is what changed.
+      if(trans.canopyMorph || motionActive() || faithSunMorph || (trans.crossfade && trans.active)) bake();
     }
     if(t>=1){                                              // land exactly on the target; clear the bloom
       trans.active = false; trans.bloom = 0;
@@ -3789,7 +3855,7 @@ function create(canvas, opts){
       params.drift_phase = s.dphase;                       // incoherent band rides a param the source advances
       if(hier && s.lA && hier.limbAngle.length===s.lA.length){
         hier.limbAngle.set(s.lA); hier.limbPitch.set(s.lP); hier.twigAngle.set(s.tA);   // BOTH limb DOFs, or the wipe's two engines foreshorten differently
-        publishBend();                                     // push the mirrored bend into the texture the bake reads
+        publishBend(grove);                                // push the mirrored bend into the texture the bake reads
       }
     };
     setMotionSource = (src) => { motionTick = src ? () => applyMotion(src.snapshotMotion()) : tick; };
