@@ -1,7 +1,7 @@
 import { clamp, lerp } from './komorebi-math.js';
 import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, CANOPY_KEYS, TOPO_KEYS, DEFAULTS, migrateLegacy } from './komorebi-params.js';
 import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
-import { TRANSPORT_GROUPS, CAMERAS, buildTransport } from './komorebi-transport.js';
+import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi-transport.js';
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
@@ -126,9 +126,9 @@ function create(canvas, opts){
   // never recurs. Nothing is shared across engines: an A/B wipe's second instance has its own GL context and builds
   // its own cache, because a program belongs to the context that linked it. ----
   const transportCache = new Map();
-  // Which variant this draw runs. The same order the old mega-shader's branch chain read, and it can only change
+  // Which variant this draw runs — the registry's own selector (§4.9), bound to these params. It can only change
   // across a structural rebuild: sky_view and receiver are both MODE_KEYS.
-  const transportCamera = () => params.sky_view ? 'sky' : (params.receiver|0) === 2 ? 'enclosure' : (params.receiver|0) !== 0 ? 'cloth' : 'floor';
+  const transportCamera = () => cameraFor(params);
   // The per-variant location table, read straight off the registry: a variant's table holds exactly the keys its
   // groups declare, and nothing else. That is what lets the upload skip by GROUP rather than by null-checking a
   // location — a uniform that genuinely goes missing surfaces as a missing one instead of hiding among a dozen

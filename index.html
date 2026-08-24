@@ -35,6 +35,9 @@
   #dev summary.sec { font-size:11px; margin:14px 0 4px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
   #dev summary.adv { font-size:11px; margin:8px 0 3px; color:#6f8a6f; }
   .ctl { display:flex; align-items:center; gap:6px; margin:3px 0; }
+  /* an INERT row (one this look's camera never reads) hides itself; .ctl's display:flex would otherwise
+     out-rank the UA's [hidden] rule, and an empty section takes its heading with it */
+  #dev .ctl[hidden], #dev h2[hidden], #dev details[hidden] { display:none; }
   .ctl label { flex:0 0 96px; color:#9fb89f; }
   .ctl input[type=range] { flex:1; min-width:0; height:14px; accent-color:#c99; }
   .ctl .val { flex:0 0 46px; text-align:right; color:#e8d9a8; }

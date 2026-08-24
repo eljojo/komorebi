@@ -965,6 +965,11 @@ const CAMERAS = {
   },
 };
 const TRANSPORT_CAMERAS = Object.keys(CAMERAS);
+// WHICH entry a look selects. The chain lived in create(), where it was the engine's private business; it moved
+// here the moment a second reader wanted it (the editor hides the knobs a camera's groups never read), because two
+// copies of a four-way mode chain is exactly the drift this registry exists to stop. sky_view overrides the
+// receiver outright — there is no surface, so the receiver has nothing to select (§4.9).
+const cameraFor = (p) => p.sky_view ? 'sky' : (p.receiver|0) === 2 ? 'enclosure' : (p.receiver|0) !== 0 ? 'cloth' : 'floor';
 // The groups that carry a per-frame UPLOAD, named at module level because that is the only half of the upload
 // registry anything outside an engine can see: the functions themselves live in create()'s GROUP_UPLOAD, since
 // they need engine state (the GL objects, params, the grove) a module-level table cannot reach. This list is the
@@ -991,4 +996,4 @@ function buildTransport(camera){
 }
 
 
-export { TRANSPORT_GROUPS, CAMERAS, TRANSPORT_CAMERAS, GROUP_UPLOAD_KEYS, buildTransport };
+export { TRANSPORT_GROUPS, CAMERAS, TRANSPORT_CAMERAS, GROUP_UPLOAD_KEYS, cameraFor, buildTransport };

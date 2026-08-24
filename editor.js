@@ -1,4 +1,4 @@
-import { create, DEG, MAX_LAYERS } from './komorebi.js';
+import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor } from './komorebi.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
@@ -260,13 +260,13 @@ function buildPanel(){
       const val=document.createElement('span'); val.className='val'; val.textContent=fmt(params[key]);
       inp.addEventListener('input',()=>{ params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]); maybeClearSpecies(key);
         if(scope==='suntime') updateSunFromTime(); else applyScope(scope); });
-      row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val}; row.dataset.tipKey=key;
+      row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val,row}; row.dataset.tipKey=key;
     } else if(item[0]==='t'){
       const [,key,label,scope]=item; row.classList.add('toggle');
       const lab=document.createElement('label'); lab.textContent=label;
       const inp=document.createElement('input'); inp.type='checkbox'; inp.checked=params[key];
       inp.addEventListener('change',()=>{ params[key]=inp.checked; applyScope(scope); });
-      row.append(lab,inp); controlEls[key]={input:inp}; row.dataset.tipKey=key;
+      row.append(lab,inp); controlEls[key]={input:inp,row}; row.dataset.tipKey=key;
     } else if(item[0]==='sel' || item[0]==='sels'){    // 'sel' = integer value, 'sels' = string value (e.g. wind_pattern)
       const str=item[0]==='sels';
       const [,key,label,opts,scope]=item; row.classList.add('select');
@@ -274,7 +274,7 @@ function buildPanel(){
       const sel=document.createElement('select');
       for(const [t,v] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; if(v===params[key]) o.selected=true; sel.appendChild(o); }
       sel.addEventListener('change',()=>{ params[key]=str?sel.value:parseInt(sel.value,10); maybeClearSpecies(key); applyScope(scope); });
-      row.append(lab,sel); controlEls[key]={input:sel}; row.dataset.tipKey=key;
+      row.append(lab,sel); controlEls[key]={input:sel,row}; row.dataset.tipKey=key;
     } else if(item[0]==='species'){    // TREE_SPECIES: merge the chosen shape bundle OVER the current look (shape ⟂ scene), stamp the label, rebuild
       const [,label]=item; row.classList.add('select');
       const lab=document.createElement('label'); lab.textContent=label;
@@ -284,7 +284,7 @@ function buildPanel(){
       sel.addEventListener('change',()=>{ const b=TREE_SPECIES[sel.value];
         if(b) applyParams(Object.assign({}, params, b, { tree_species:sel.value }));   // bundle over the live params, keep the scene
         else params.tree_species=''; });
-      row.append(lab,sel); controlEls.tree_species={input:sel}; row.dataset.tipKey='tree_species';
+      row.append(lab,sel); controlEls.tree_species={input:sel,row}; row.dataset.tipKey='tree_species';
     } else if(item[0]==='btn'){
       const [,label,fn]=item;
       const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn);
@@ -293,6 +293,85 @@ function buildPanel(){
     container.appendChild(row);
   }
 }
+// ===========================================================================
+// INERT ROWS (§4.9). A knob the current look never reads is a slider that lies: you drag it and the frame does
+// not move. Those rows go away instead. Two kinds of gate, and they compose.
+//
+// THE CAMERA GATE asks the transport registry rather than restating it. A camera speaks a fixed list of uniform
+// GROUPS (CAMERAS[cam].groups); a knob whose group is not on that list is never uploaded, never declared, and
+// cannot reach the frame — so the table below only has to say which group carries each knob, which is the same
+// pairing GROUP_UPLOAD's bodies make. A camera that gains or loses a group re-gates the panel with it.
+//
+// THE LOCAL GATE is the handful of knobs a toggle or a zero switches off INSIDE a camera that does read them —
+// the "gate" the params/GLSL comments already name (window w·h = 0, mullion tau 0, glow_bleed 0, eclipse off).
+// Nothing here changes a param: hiding a row leaves its value in the look, exactly where a preset put it.
+// ===========================================================================
+const CAM_GROUP = {   // knob -> the transport uniform group that carries it to the shader
+  view_pitch_deg:'rayView', view_yaw_deg:'rayView', view_fov_deg:'rayView',   // the curtain is seen head-on: no ray camera, so no tilt/orbit/lens
+  far_smear:'floor', ground_r:'floor', ground_g:'floor', ground_b:'floor',    // an albedo needs a floor to reflect off
+  cloth_distance_m:'cloth',
+  fabric_tt:'fabric', fabric_tint_r:'fabric', fabric_tint_g:'fabric', fabric_tint_b:'fabric',
+  fold_depth:'fabric', fold_scale:'fabric', fold_coarsen:'fabric', fold_warp:'fabric',
+  velvet_sheen:'fabric', fabric_scatter:'fabric',
+  mullion_tau:'window', mullion_pitch_m:'window', mullion_bar_m:'window', mullion_depth_m:'window',
+  window_w_m:'window', window_h_m:'window', window_cx_m:'window', window_cy_m:'window', window_wall:'window',
+  tent_ridge_h_m:'tent', tent_half_w_m:'tent', tent_crown_w_m:'tent', tent_shoulder_h_m:'tent', tent_shoulder_w_m:'tent',
+  tent_len_m:'tent', tent_end_lean:'tent', tent_end_apex_h_m:'tent', tent_hip_rake:'tent', tent_eye_h_m:'tent',
+  tent_fade:'tent', tent_seam:'tent', tent_mesh:'tent',
+  sky_scatter:'sky',
+  chromatic_aberration:'ca',       // the sky view runs no cast, so there is no transport shift to split by wavelength
+  faithful_canopy:'faith',         // the enclosure and the sky view force the layer tier and bake no faith texture
+};
+const faithLive = (cam) => params.faithful_canopy && !!CAMERAS[cam].faith;   // faithfulOn(), read off the registry
+const apertureOn = () => params.window_w_m*params.window_h_m > 0;
+const glowOn = (cam) => cam !== 'floor' && params.glow_bleed > 0;            // the diffusion tier's own gate (render.js drawFrameInto)
+const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that does carry it
+  receiver: () => !params.sky_view,                       // looking up overrides the receiver outright — there is no surface to pick
+  eclipse_amount: () => params.eclipse,
+  far_smear: () => params.view_pitch_deg > 0,             // the far-field footprint is exactly 0 at pitch 0 (§4.7)
+  view_extent_m: (cam) => CAMERAS[cam].groups.includes('floor') || CAMERAS[cam].groups.includes('cloth') || glowOn(cam),   // elsewhere it survives only as the glare radius' divisor
+  glow_bleed: (cam) => cam !== 'floor',
+  glow_bleed_m: (cam) => glowOn(cam),
+  mullion_pitch_m: () => params.mullion_tau > 0,
+  mullion_bar_m: () => params.mullion_tau > 0,
+  mullion_depth_m: () => params.mullion_tau > 0 || apertureOn(),   // the aperture is the window's outermost bar: it throws from the same plane
+  window_cx_m: apertureOn, window_cy_m: apertureOn, window_wall: apertureOn,
+  drift_speed: () => params.drift_auto && params.drift_amount > 0,
+  adaptive_idle_fps: () => params.adaptive_motion,
+  show_layer: (cam) => !faithLive(cam),                   // faithful mode taps one texture; the layer slices aren't baked
+  show_layer_index: (cam) => params.show_layer && !faithLive(cam),
+};
+const GATED_KEYS = [...new Set([...Object.keys(CAM_GROUP), ...Object.keys(LOCAL_GATE)])];
+function rowLive(key, cam){
+  const g = CAM_GROUP[key];
+  if(g && !CAMERAS[cam].groups.includes(g)) return false;
+  const gate = LOCAL_GATE[key];
+  return gate ? !!gate(cam) : true;
+}
+// Everything the predicates above read, in one string — so the DOM pass below runs on a CHANGE and not on a
+// frame. It is called per frame (params move under transitions and macros too, not just under these rows).
+function gateSig(){
+  const cam = cameraFor(params);
+  return [cam, params.eclipse, params.view_pitch_deg>0, params.glow_bleed>0, params.mullion_tau>0, apertureOn(),
+          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam)].join('|');
+}
+let gateSigLast = null;
+function refreshGates(){
+  const sig = gateSig(); if(sig === gateSigLast) return;
+  gateSigLast = sig;
+  const cam = cameraFor(params);
+  for(const key of GATED_KEYS) if(controlEls[key]) controlEls[key].row.hidden = !rowLive(key, cam);
+  // a group or a heading with nothing left under it would dangle (the whole Background section, in every look
+  // that isn't a floor), so they follow their rows.
+  for(const d of dev.querySelectorAll('details')) d.hidden = ![...d.querySelectorAll('.ctl')].some(r => !r.hidden);
+  let head=null, any=false;
+  for(const el of dev.children){
+    if(el.tagName === 'H2'){ if(head) head.hidden = !any; head = el; any = false; continue; }
+    if(!el.hidden) any = true;
+  }
+  if(head) head.hidden = !any;
+}
+
 function syncControl(key){ const c=controlEls[key]; if(!c)return;
   if(c.input.type==='checkbox') c.input.checked=!!params[key]; else c.input.value=params[key];
   if(c.valEl) c.valEl.textContent=fmt(params[key]); }
@@ -933,6 +1012,7 @@ document.addEventListener('mouseleave',()=>{ treePointer=null; });
 // inset (when the panel is open), and update the HUD. ------------------------
 eng.onFrame = ()=> {
   if(params.drift_auto) syncControl('drift_phase');
+  refreshGates();               // a transition, a macro or a preset can flip a mode as readily as the row itself; the signature check makes the miss cheap
   const devUp = !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');   // a sliding-out panel counts as gone
   if(params.show_source && devUp) eng.drawSourceInset();
   if(showTree) eng.drawTreeInset(treePointer, treePinned);
@@ -966,6 +1046,7 @@ eng.onFrame = ()=> {
 // ---- boot the panel UI (the engine is already running) ----
 buildPresetUI();
 buildPanel();
+refreshGates();
 buildPlayPanel();
 buildStrip();
 syncMacroControls();

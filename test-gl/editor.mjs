@@ -163,6 +163,31 @@ try {
   await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('advanced')).click());
   await page.waitForSelector('#dev:not(.hidden)');
   check('ladder: playful -> advanced', await page.$eval('#play', (e) => e.classList.contains('hidden')));
+
+  // INERT ROWS: the advanced panel hides the knobs the current camera never reads (§4.9), and an emptied
+  // section takes its heading with it. Computed style, not the property — the point is that the CSS lands.
+  const rowShown = (lbl) => page.evaluate((l) => {
+    const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === l);
+    return r ? getComputedStyle(r).display !== 'none' : null;
+  }, lbl);
+  const setReceiver = (v) => page.evaluate((val) => {
+    const r = [...document.querySelectorAll('#dev .ctl.select')].find((q) => q.querySelector('label')?.textContent === 'receiver');
+    const s = r.querySelector('select'); s.value = String(val); s.dispatchEvent(new Event('change', { bubbles: true }));
+  }, v);
+  const headShown = (txt) => page.evaluate((t) => {
+    const h = [...document.querySelectorAll('#dev h2')].find((q) => q.textContent === t);
+    return h ? getComputedStyle(h).display !== 'none' : null;
+  }, txt);
+  check('the floor look shows the ground and hides the cloth', (await rowShown('ground R')) && !(await rowShown('fabric Tt')));
+  await setReceiver(1);                                             // curtain: no floor albedo, no ray camera, but a fabric
+  let curtain = false;                                              // the gate pass rides onFrame — SwiftShader frames are long, and the camera swap compiles a new program
+  for (let i = 0; i < 30 && !curtain; i++) { await page.waitForTimeout(400); curtain = !(await rowShown('ground R')) && !(await rowShown('tilt \u00b0')) && (await rowShown('fabric Tt')); }
+  check('curtain hides the floor-only knobs and shows the fabric', curtain);
+  check('an emptied section takes its heading with it', (await headShown('Background')) === false);
+  await setReceiver(0);
+  let floor = false;
+  for (let i = 0; i < 30 && !floor; i++) { await page.waitForTimeout(400); floor = (await rowShown('ground R')) && !(await rowShown('fabric Tt')); }
+  check('back on the floor the ground returns and the cloth goes', floor);
   await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('playful')).click());
   await page.waitForSelector('#play:not(.hidden)');
   check('ladder: advanced -> playful', await page.$eval('#dev', (e) => e.classList.contains('hidden')));
