@@ -128,8 +128,15 @@ const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back t
 //    is 2.2 against afternoon 7's 0.97, so arriving early at the destination's Look made the pre-swap frame
 //    brighter, not darker. The bloom's own depth is the term that matters.)
 //  • Everything then happens under a hump only half the transition wide, so a mode flip is given more frames.
-const MODE_BLOOM_MAX = 0.35;   // a mode flip's bloom peak: enough overcast to dissolve the dapples, short of blowing the frame to white
-const MODE_DUR_SCALE = 2.0;    // ...and a mode flip gets that much longer than a topology dissolve to do it in
+// THE SAME LESSON, ONE TIER DOWN. The cap above was scoped to mode flips because that is where it was measured;
+// a plain TOPOLOGY dissolve still bloomed to full depth, and on a bright look that is worse, not better. Measured:
+// memories→morning 1 (tier 3 by a single key — branch_children 6→3) peaks at luma 249.9 of 255 and holds there for
+// eight frames. The picture does not dissolve, it DISAPPEARS, and the new grove fades back in from white.
+// The swap itself is already invisible on that route (ΔL 0.29 at the peak), which is what makes the depth safe to
+// spend: the bloom was buying cover it no longer needed and paying for it in white. So a dissolve is capped too —
+// less hard than a mode flip's, because a topology dissolve has real structure to hide and wants the cover.
+const BLOOM_MAX = { mode: 0.35, dissolve: 0.55 };   // the bloom's peak depth by tier — the mode flip's measured in the packet before this one
+const DUR_SCALE = { mode: 2.0,  dissolve: 2.0 };    // ...and how much longer than the caller's duration each tier takes to get there
 
 // ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
 // 3-band (R=620, G=555, B=470 nm) Beer's-law model. As the sun lowers, air mass grows and Rayleigh
@@ -1847,7 +1854,7 @@ function create(canvas, opts){
   const motion = { time:0, u:0, v:0, uLat:0, vLat:0, env:0, driveEnv:0, sway:[0,0], windX:1, windY:0, weatherS:1 };
   // Transition — cloud-bloom crossfade between looks (spec §9). t walks 0->1 over dur: the continuous
   // params morph, the grove swaps once at the bloom peak, and `bloom` is a transient overcast that hides it.
-  const trans = { active:false, t:0, dur:1.5, from:null, to:null, swapped:false, structDiff:false, modeFlip:false, canopyMorph:false, bloom:0, onEnd:null };
+  const trans = { active:false, t:0, dur:1.5, durScale:1, bloomMax:1, from:null, to:null, swapped:false, structDiff:false, canopyMorph:false, bloom:0, onEnd:null };
   const effCloud = () => clamp(lerp(params.cloud_thickness, 1, trans.bloom), 0, 1);  // cloud, swollen toward overcast mid-transition
   const bakeBaseline = () => (params.bake_resolution > 0 ? params.bake_resolution|0 : params.tex_resolution|0);  // TUNE §9: decoupled bake size; 0 follows tex_resolution.
   // Live bake / layer-texture size. Pure function of quality + params: when auto_quality is engaged it trims the
@@ -3032,7 +3039,16 @@ function create(canvas, opts){
     const morphGrove = canopyDiff && !topoDiff && !modeDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching+mode, small enough -> morph it
     trans.canopyMorph = morphGrove;
     trans.structDiff  = topoDiff || modeDiff || (canopyDiff && !morphGrove);   // dissolve+rebuild on topology OR mode change, or a grove too big to morph
-    trans.modeFlip    = modeDiff;   // the camera itself changes: the Look is re-phased and the bloom lengthened (see MODE_LOOK_PEAK)
+    // WHICH TIER'S BLOOM this is, decided once here rather than re-derived per frame: a mode flip's shallower hump
+    // (the camera changes, so cover buys nothing and depth only blows the frame out) or a topology dissolve's
+    // deeper one (there is a real grove swap under there that wants hiding). See BLOOM_MAX.
+    // Both are STRUCTURAL-only. A tier-1/2 live morph has no bloom to cap, and the longer clock is the bloom's
+    // cost being paid for — lengthening an ordinary look-to-look step would change the feel of every arrow press
+    // for nothing. (Caught by measurement: applying the stretch to every non-mode route took the tier-1 reference
+    // route from 4.9 to 2.6, which is not an improvement, it is a different transition.)
+    const tier = modeDiff ? 'mode' : 'dissolve';
+    trans.bloomMax = BLOOM_MAX[tier];
+    trans.durScale = trans.structDiff ? DUR_SCALE[tier] : 1;
     trans.from = from; trans.to = to;
     trans.dur = Math.max(1e-3, opts.duration!=null ? opts.duration : trans.dur);   // stays the CALLER's number: it is also the sticky default for a later duration-less call, so the mode-flip stretch is applied at the clock (tickTransition) and never compounded into it
     trans.t = 0; trans.swapped = false; trans.bloom = 0; trans.active = true;
@@ -3040,12 +3056,12 @@ function create(canvas, opts){
   }
   function tickTransition(dt){
     if(!trans.active) return;
-    const dur = trans.dur * (trans.modeFlip ? MODE_DUR_SCALE : 1);   // a mode flip gets the longer clock (see MODE_DUR_SCALE); scaled here, never into trans.dur
+    const dur = trans.dur * trans.durScale;   // the tier's longer clock (see DUR_SCALE); scaled here, never into trans.dur, which stays the caller's sticky default
     trans.t = Math.min(1, trans.t + Math.min(dt,1/15)/dur);   // clamp the step like tick(): a tab-switch spike must not skip the bloom peak
     const t = trans.t, e = smoothstep(0,1,t);              // ease-in-out for the morph; raw t for the bloom hump
-    // 0 at the ends, deepest at the midpoint — where the swap fires. A MODE flip stops short of full overcast
-    // (MODE_BLOOM_MAX): past that depth the bloom stops dissolving anything and only blows the frame out.
-    trans.bloom = trans.structDiff ? Math.sin(Math.PI*t) * (trans.modeFlip ? MODE_BLOOM_MAX : 1) : 0;
+    // 0 at the ends, deepest at the midpoint — where the swap fires. Both structural tiers stop short of full
+    // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
+    trans.bloom = trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0;
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
       params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,e, k==='drift_phase'?TAU:360) : lerp(a,b,e); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove
