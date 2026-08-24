@@ -25,8 +25,9 @@ A standalone WebGL2 engine that renders komorebi from physics rather than painti
 - **`player.html`** — minimal viewer‑only reference: a full‑bleed canvas cycling through presets, no UI.
 - **`komorebi.global.js`** — deploy shim: bundles the engine + presets into a classic `window.Komorebi` global for no‑build embeds (the eljojo.net homepage).
 - **`dev-server.js`** — bun static server + live‑reload for development (`nix run .#dev`).
+- **`embed-build.mjs`** — the specialized deploy bundle for ONE page: `nix run .#embed -- '<look>'...` keeps only the named looks, asks the camera registry which cameras those looks select and prunes the rest (their GLSL, uniform groups and per-frame uploads with them), strips the design prose out of the shader literals and hard-folds the editor tier off — `dist/komorebi.embed.min.js`, the same `window.Komorebi` door. Prove it with `nix run .#embed-check` before shipping it.
 - **`glslcheck.mjs`** — offline shader validation: assembles every GLSL template literal in the engine and compiles it with `glslangValidator`, so a shader typo fails here instead of on a black canvas.
-- **`test-gl/`** — the pixel harness: real renders of every look in headless Chromium (WebGL2 via SwiftShader) — a PNG per preset under `test-gl/out/`, plus smoke, gate-invariant (byte-identical off states, in pixels), determinism, and transition-routing (each tier driven to completion; logic-only) suites. `test-gl/editor.mjs` (`nix run .#editor`) is the editor smoke: it drives index.html's mode ladder + macro bus and asserts the observable DOM effects — the UI-only regressions the pixel suites can't see. `nix run .#pixels`; first run needs `cd test-gl && npm install && npx playwright install chromium`. PNGs and `node_modules/` stay untracked.
+- **`test-gl/`** — the pixel harness: real renders of every look in headless Chromium (WebGL2 via SwiftShader) — a PNG per preset under `test-gl/out/`, plus smoke, gate-invariant (byte-identical off states, in pixels), determinism, and transition-routing (each tier driven to completion; logic-only) suites. `test-gl/editor.mjs` (`nix run .#editor`) is the editor smoke: it drives index.html's mode ladder + macro bus and asserts the observable DOM effects — the UI-only regressions the pixel suites can't see. `test-gl/embed.mjs` (`nix run .#embed-check`) is the embed bundle's proof: it renders each kept look through the embed bundle AND through the raw ES modules in one page and requires the frames to be byte-identical (`--against <bundle.js>` also diffs an older deploy, with a contact sheet). `nix run .#pixels`; first run needs `cd test-gl && npm install && npx playwright install chromium`. PNGs and `node_modules/` stay untracked.
 - **`komorebi-spec.md`** — the living spec (vision, physics, model). Kept in sync as the engine evolves.
 
 ## Develop
@@ -36,10 +37,12 @@ ES‑module dev needs http (not `file://`). With Nix:
 ```
 nix run .#dev      # serve + live‑reload at http://localhost:8000
 nix run .#lint     # biome
-nix run .#build    # bundle dist/komorebi.player.min.js (the global, editor stripped)
+nix run .#build    # bundle dist/komorebi.player.min.js (the whole engine: every look, every camera)
 node glslcheck.mjs # offline shader validation — compiles every GLSL literal in the engine modules (glslangValidator, no GPU)
 nix run .#pixels   # the pixel harness — render every look + pixel suites (first run: cd test-gl && npm install && npx playwright install chromium)
 nix run .#editor   # the editor smoke — mode ladder + macro bus driven in headless Chromium (same first-run setup)
+nix run .#embed -- 'morning 2' 'afternoon 5b' 'morning 3'   # a one-page bundle: only those looks, only the cameras they use
+nix run .#embed-check -- 'morning 2' 'afternoon 5b' 'morning 3'   # ...and prove it renders them byte-identically
 ```
 
 ## Using the engine

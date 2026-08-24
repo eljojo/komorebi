@@ -44,8 +44,11 @@
             '';
           };
           # `nix run .#build` — bundle the deploy artifact for external no-build embeds (eljojo.net):
-          #   dist/komorebi.player.min.js  IIFE global (window.Komorebi), editor overlays dead-stripped
-          # via --define:KOMOREBI_EDITOR=false. The editor + player.html in this repo import the ES
+          #   dist/komorebi.player.min.js  IIFE global (window.Komorebi), the WHOLE engine
+          # --define:KOMOREBI_EDITOR=false is passed and does not do what it looks like: neither bun nor
+          # esbuild inlines this file's `const EDITOR = <ternary>` into its use sites, so the overlays ship
+          # anyway (7.6 kB raw / 3.1 kB gzip, measured). `nix run .#embed` folds the flag by hand and is the
+          # build to reach for when the bytes matter. The editor + player.html in this repo import the ES
           # modules directly and need no bundle.
           build = pkgs.writeShellApplication {
             name = "build";
@@ -77,6 +80,31 @@
               exec node run.js "$@"
             '';
           };
+          # `nix run .#embed -- '<look>'...` — the SPECIALIZED deploy bundle for one page: only the named
+          # looks, only the cameras they select, editor tier and GLSL prose gone.
+          #   dist/komorebi.embed.min.js   IIFE global (window.Komorebi), same door as the player build
+          # Verify it with `nix run .#embed-check -- '<look>'...` before shipping it anywhere.
+          embed = pkgs.writeShellApplication {
+            name = "embed";
+            runtimeInputs = [ pkgs.bun pkgs.gzip pkgs.nodejs_22 ];
+            text = ''exec node embed-build.mjs "$@"'';
+          };
+          # `nix run .#embed-check -- '<look>'...` — the embed bundle's proof: every kept look rendered
+          # through dist/komorebi.embed.min.js AND through the raw ES modules, in one page, compared byte
+          # for byte. `--against <bundle.js>` also diffs an older deploy and writes a contact sheet.
+          # Same first-run setup as pixels: cd test-gl && npm install && npx playwright install chromium.
+          embed-check = pkgs.writeShellApplication {
+            name = "embed-check";
+            runtimeInputs = [ pkgs.nodejs_22 ];
+            text = ''
+              cd test-gl
+              if [ ! -d node_modules ]; then
+                echo "first run: cd test-gl && npm install && npx playwright install chromium" >&2
+                exit 1
+              fi
+              exec node embed.mjs "$@"
+            '';
+          };
           # `nix run .#editor` — the editor smoke: drives index.html's mode ladder + macro bus in headless
           # Chromium and asserts the observable DOM effects (UI-only regressions the pixel suites can't see).
           # Same first-run setup as pixels: cd test-gl && npm install && npx playwright install chromium.
@@ -98,6 +126,8 @@
           build = { type = "app"; program = "${build}/bin/build"; };
           pixels = { type = "app"; program = "${pixels}/bin/pixels"; };
           editor = { type = "app"; program = "${editor}/bin/editor"; };
+          embed = { type = "app"; program = "${embed}/bin/embed"; };
+          embed-check = { type = "app"; program = "${embed-check}/bin/embed-check"; };
           default = self.apps.${pkgs.system}.dev;
         });
     };
