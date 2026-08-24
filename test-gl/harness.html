@@ -280,6 +280,9 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
 // onEnd actually fired, and a clean gl.getError() — so a crash or a mis-routed tier on any of these paths
 // fails here instead of only in a hand-run `--transition`. FREEZE is merged over BOTH ends so the route's
 // own diff is exactly `over` (wind knobs never leak in as an accidental second diff).
+// opts.interrupt = { at, with }: once t reaches `at`, call eng.setParams(PRESETS[with]) — the hard param
+// swap MUST abort the transition cleanly (a mid-crossfade swap once left the incoming grove baking against
+// replaced layer state), and the engine must keep rendering; the run then reports interrupted:true.
 window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolve, reject) => {
   const o = Object.assign({ duration: 0.3, warm: 8, cap: 600 }, opts || {});
   const A = PRESETS[fromName], B = PRESETS[toName];
@@ -292,6 +295,7 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
 
   const t0 = performance.now();
   let eng = null, ticks = 0, started = false, onEndFired = false, route = null, done = false;
+  let interrupted = false, tailLeft = -1;
   const finish = (err) => {
     if (done) return;
     done = true;
@@ -300,7 +304,7 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
     try { eng?.setPaused(true); eng?.dispose(); } catch { /* a disposed/failed engine has nothing to stop */ }
     canvas.remove();
     if (err) reject(err);
-    else resolve({ ...route, onEndFired, glError, ticks, ms: Math.round(performance.now() - t0) });
+    else resolve({ ...route, onEndFired, interrupted, glError, ticks, ms: Math.round(performance.now() - t0) });
   };
   const timer = setTimeout(() => finish(new Error(`route did not finish within 120 s (tick ${ticks})`)), 120000);
 
@@ -319,7 +323,14 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
         route = { crossfade: eng.trans.crossfade, structDiff: eng.trans.structDiff, canopyMorph: eng.trans.canopyMorph };
         return;
       }
-      if (!eng.trans.active) return finish(null);
+      if (o.interrupt && !interrupted && eng.trans.t >= o.interrupt.at) {
+        interrupted = true;
+        eng.setParams(Object.assign({}, PRESETS[o.interrupt.with], FREEZE));
+        tailLeft = 10;                             // the abort must leave a live, cleanly rendering engine
+        return;
+      }
+      if (tailLeft > 0 && --tailLeft === 0) return finish(null);
+      if (tailLeft < 0 && !eng.trans.active) return finish(null);
       if (ticks >= o.cap) finish(new Error(`transition still active after ${o.cap} ticks`));
     } catch (e) { finish(e); }
   };

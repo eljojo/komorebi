@@ -389,6 +389,15 @@ function create(canvas, opts){
   }
   function setParams(obj){
     if(!obj || typeof obj!=='object') return;
+    // an in-flight transition must not outlive the swap: its morph would keep writing params over the new
+    // look, and mid-CROSSFADE the incoming grove would keep baking against layer state rebuildAll is about
+    // to replace (the observed crash: bake reading a dangling grove's VAOs). Abort it cleanly first —
+    // transitionTo already does this for its own interruptions; a hard param swap deserves the same.
+    if(trans.active){
+      trans.active=false; trans.onEnd=null; trans.swapped=false;
+      if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
+      hub.crossW=0;
+    }
     const merged = Object.assign({}, DEFAULTS, migrateLegacy(obj));   // legacy names -> current; missing keys -> defaults (forward-compat)
     for(const k in DEFAULTS) params[k] = merged[k];
     rebuildAll();

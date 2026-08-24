@@ -87,6 +87,12 @@ const TRANSITION_ROUTES = [
   { name: 'camera flip routes as a mode transition', from: 'memories', to: 'canopy 1',
     over: {},
     expect: { crossfade: false, structDiff: true } },
+  // a hard param swap landing MID-crossfade must abort it cleanly (the observed failure: the incoming grove
+  // kept baking against layer state the swap's rebuild had replaced — a dangling-VAO crash). onEnd must NOT
+  // fire (the route was abandoned, not completed) and the engine must keep rendering after.
+  { name: 'setParams mid-crossfade aborts it cleanly', from: 'memories', to: 'memories',
+    over: { seed: 1234567 }, interrupt: { at: 0.35, with: 'morning 1' },
+    expect: { crossfade: true, structDiff: true } },
 ];
 
 // Suite 3: two independently created engines on the same frozen look must land on the same bytes.
@@ -293,14 +299,17 @@ async function main() {
     for (const route of TRANSITION_ROUTES) {
       let r;
       try {
-        r = await page.evaluate(([from, to, over]) => window.__transitionSmoke(from, to, over), [route.from, route.to, route.over]);
+        r = await page.evaluate(([from, to, over, opts]) => window.__transitionSmoke(from, to, over, opts), [route.from, route.to, route.over, route.interrupt ? { interrupt: route.interrupt } : {}]);
       } catch (e) {
         record('transition', route.name, false, e.message.split('\n')[0]);
         log(`  FAIL  ${route.name} — ${e.message.split('\n')[0]}`);
         continue;
       }
       const bad = [];
-      if (!r.onEndFired) bad.push('onEnd never fired');
+      if (route.interrupt) {                     // an aborted route must not pretend it completed
+        if (!r.interrupted) bad.push('interrupt never fired');
+        if (r.onEndFired) bad.push('onEnd fired despite the abort');
+      } else if (!r.onEndFired) bad.push('onEnd never fired');
       if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
       for (const [k, v] of Object.entries(route.expect)) if (r[k] !== v) bad.push(`${k}=${r[k]} (want ${v})`);
       record('transition', route.name, bad.length === 0, bad.length ? bad.join('; ')
