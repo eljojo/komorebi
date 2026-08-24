@@ -372,6 +372,12 @@ function buildPlayPanel(){
   modes.append(modeButton('min','· zen'), modeButton('adv','⚙ advanced'));
   play.appendChild(modes);
   play.appendChild(presetRow());
+  // the full list too — the stepper flicks, the dropdown jumps (◦ marks an experimental look)
+  const pr=document.createElement('div'); pr.className='ctl select';
+  const psel=document.createElement('select');
+  psel.addEventListener('change',()=>{ applyParams(getPreset(psel.value)); refreshPresetSelect(psel.value); });
+  presetSelects.push(psel);
+  pr.appendChild(psel); play.appendChild(pr);
 
   const h=(t)=>{ const e=document.createElement('h2'); e.textContent=t; play.appendChild(e); };
   h('light');
@@ -423,11 +429,12 @@ function buildPlayPanel(){
   play.appendChild(macroSlider('prism'));
 
   const beta=document.createElement('div'); beta.className='ctl toggle';
-  const blab=document.createElement('label'); blab.textContent='experimental looks';
+  const blab=document.createElement('label'); blab.textContent=`experimental looks (+${EXPERIMENTAL.length})`;   // says what it unlocks
   const binp=document.createElement('input'); binp.type='checkbox'; binp.checked=settings.showBeta;
   binp.addEventListener('change',()=>setShowBeta(binp.checked));
   beta.append(blab,binp); play.appendChild(beta);
   betaToggles.push(binp);
+  refreshPresetSelect(presetSel.value);              // fill this surface's dropdown (it was born after the first refresh)
 }
 // one handler for every surface's experimental toggle, kept in step with each other
 function setShowBeta(on){
@@ -438,25 +445,31 @@ function setShowBeta(on){
 let playSpeciesSel=null;
 const betaToggles=[];
 
-// the minimalist strip: the three highest-level macros, fading out of the way after a few still seconds
-let stripFadeTimer=0;
+// the minimalist strip: the three highest-level macros, fading out of the way after a few still seconds —
+// but never out from under the pointer: hovering it holds it up, and the clock restarts on leave.
+let stripFadeTimer=0, stripHover=false;
 function stripWake(){
   if(settings.mode!=='min' || strip.classList.contains('hidden')) return;
   strip.classList.remove('faded');
   clearTimeout(stripFadeTimer);
-  stripFadeTimer=setTimeout(()=>strip.classList.add('faded'), 5000);
+  stripFadeTimer=setTimeout(()=>{ if(stripHover) stripWake(); else strip.classList.add('faded'); }, 5000);
 }
 function buildStrip(){
+  const pr=presetRow();
   const more=document.createElement('button'); more.className='more'; more.textContent='＋';
   more.title='playful editor';
   more.addEventListener('click',()=>setMode('play'));
-  strip.appendChild(more);
-  strip.appendChild(presetRow());
+  pr.appendChild(more);                               // rides the preset row's end, clear of the ‹ › stepper
+  strip.appendChild(pr);
   strip.appendChild(timeSlider());
   strip.appendChild(macroSlider('weather'));
   strip.appendChild(macroSlider('wind_y','wind'));
   strip.addEventListener('pointerdown',stripWake);
   strip.addEventListener('input',stripWake);
+  if(!coarse){                                        // fine pointers only — a touch tap's enter/leave pair is unreliable
+    strip.addEventListener('pointerenter',()=>{ stripHover=true; if(settings.mode==='min' && !strip.classList.contains('hidden')){ strip.classList.remove('faded'); clearTimeout(stripFadeTimer); } });
+    strip.addEventListener('pointerleave',()=>{ stripHover=false; stripWake(); });
+  }
   canvas.addEventListener('pointerdown',stripWake);   // a tap on the art summons the strip back
 }
 
@@ -648,14 +661,18 @@ let presetSel;
 function visibleBuiltins(keep){
   return Object.keys(PRESETS).filter(n => settings.showBeta || !EXPERIMENTAL.includes(n) || n === keep);
 }
+const presetSelects=[];                            // every surface's preset dropdown; presetSel (the dev one) is the canonical value
 function refreshPresetSelect(selected){
-  presetSel.innerHTML='';
   const stored=getStored();
-  const mk=(name,mark)=>{ const o=document.createElement('option'); o.value=name; o.textContent=mark+name;
-    if(name===selected) o.selected=true; presetSel.appendChild(o); };
-  for(const n of visibleBuiltins(selected ?? presetSel.value)) mk(n,'• ');     // built-in (beta-filtered)
-  for(const n of Object.keys(stored)) mk(n,'★ ');               // saved
-  syncPlayPreset();                                             // the playful/minimal surfaces mirror the name
+  const keep=selected ?? presetSel.value;
+  for(const sel of presetSelects){
+    sel.innerHTML='';
+    const mk=(name,mark)=>{ const o=document.createElement('option'); o.value=name; o.textContent=mark+name; sel.appendChild(o); };
+    for(const n of visibleBuiltins(keep)) mk(n, EXPERIMENTAL.includes(n)?'◦ ':'• ');   // ◦ marks an experimental look
+    for(const n of Object.keys(stored)) mk(n,'★ ');             // saved
+    sel.value=keep;                                             // every surface shows the same selection
+  }
+  syncPlayPreset();                                             // the stepper labels mirror the name
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
 function buildPresetUI(){
@@ -671,7 +688,8 @@ function buildPresetUI(){
   beta.append(blab,binp); dev.appendChild(beta); betaToggles.push(binp);
   const r1=document.createElement('div'); r1.className='ctl select';
   presetSel=document.createElement('select');
-  presetSel.addEventListener('change',()=>applyParams(getPreset(presetSel.value)));
+  presetSel.addEventListener('change',()=>{ applyParams(getPreset(presetSel.value)); refreshPresetSelect(presetSel.value); });
+  presetSelects.push(presetSel);
   r1.appendChild(presetSel); dev.appendChild(r1);
 
   const r2=document.createElement('div'); r2.className='ctl';
@@ -714,8 +732,15 @@ function slideInPanel(){
   el.classList.remove('hidden');                  // ...reveal it there...
   void el.offsetWidth;                             // ...reflow so the next change animates...
   el.classList.remove('offscreen');               // ...and slide it in
-  hint.classList.remove('gone');                  // bring the key hints up with it
+  showHint();                                     // bring the key hints up with it (they retire on their own)
   if(el===strip) stripWake();                     // the strip starts its fade clock the moment it arrives
+}
+// the key hints retire after half a minute — the canvas is the point, not the legend. H brings them back.
+let hintTimer=0;
+function showHint(){
+  hint.classList.remove('gone');
+  clearTimeout(hintTimer);
+  hintTimer=setTimeout(()=>hint.classList.add('gone'), 30000);
 }
 function slideOutPanel(){
   const el = panelEl();
@@ -829,6 +854,7 @@ let showTree=false;
 window.addEventListener('keydown',e=>{
   const k=e.key;
   if(k==='d'||k==='D'){ togglePanel(); return; }   // toggles whichever mode surface is active
+  if(k==='h'||k==='H'){ showHint(); return; }      // resurface the key hints after they retire
   if(k==='t'||k==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; return; }
   if(k==='f'||k==='F'){                                                     // toggle browser fullscreen (webkit fallback for Safari)
     const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;
