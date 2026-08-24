@@ -41,6 +41,9 @@ export const AXES = [
   { key: "glow_bleed", label: "glow diffusion", scope: "", pass: "transport", cls: "style",
     proposable: false, measureLevel: 0,
     note: "the receiver's lateral-diffusion tier (§4.9) — the curtain's one genuinely expensive step: a linear-HDR target plus two blur passes plus a compositing tone-map. Classified like diffraction and for the same reason: it is a deliberate look, measured for its price, never auto-cut. Its declared fallback rung is the per-pixel forward-scatter wrap (fabric_scatter), which the author chooses — the governor never crosses this one." },
+  { key: "sky_scatter", label: "foliage glow", scope: "", pass: "transport", cls: "style",
+    proposable: false, measureLevel: 0,
+    note: "the SKY VIEW's single-scatter foliage radiance (§4.9) — up to six extra sun-path taps per pixel on top of the silhouette read, and the only term in that camera that costs per LAYER rather than per pixel. Style for the same reason as diffraction and the diffusion tier, and more bluntly than either: at 0 the crowns stop being lit and become a dim filter, which is not a cheaper version of the canopy looks, it is a different picture. Its declared fallback rung IS 0 — pure transmission, byte-identical — and only an author may take it. n/a on every camera but the sky, where the knob is already 0." },
   // opt-in 'tune' optimizations (budget-freeing cuts; off in the engine's DEFAULTS).
   { key: "bake_resolution", label: "bake res", scope: "textures", pass: "bake", cls: "tune",
     proposable: true, follows: "tex_resolution", levels: [768],

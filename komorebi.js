@@ -3080,7 +3080,16 @@ function create(canvas, opts){
       // drops) and let resolution ride along. bakeRes() still trims below the knee. q=1 → full, look unchanged.
       res  = lerp(RES_MIN, 1, q);
       samp = Math.round(lerp(SAMP_MIN, params.sample_count, q));
-    } else if(q >= KNEE){ res = lerp(RES_MIN, 1, (q-KNEE)/(1-KNEE)); samp = params.sample_count; }   // layer mode: resolution first (the per-pixel transport sample loop IS the cost)
+    // LAYER MODE, and the two NEW cameras land here by construction: faithfulOn() is false for the enclosure
+    // (receiver 2 forces the layer tier) and false for the sky view (no cast frame to pre-bake), so neither can
+    // reach the faithful branch above. That is the right branch for both, for the branch's own reason — the cost
+    // is per PIXEL, so resolution is the cheapest thing to spend first. What differs is what the second lever
+    // buys: the enclosure runs the sample loop, so trimming samples below the knee relieves it exactly as it does
+    // the floor; the SKY camera declares no sample loop at all (§4.6), so samples are inert there and its
+    // below-knee relief comes entirely from bakeRes() shrinking the layer textures it reads. Harmless either way —
+    // a lever with no effect costs nothing — and the seen source is derived analytically, not from the sample
+    // sums, so trimming them cannot shift the sun the sky camera is looking at.
+    } else if(q >= KNEE){ res = lerp(RES_MIN, 1, (q-KNEE)/(1-KNEE)); samp = params.sample_count; }   // resolution first (on the floor and the enclosure the per-pixel transport sample loop IS the cost)
     else                { res = RES_MIN; samp = Math.round(lerp(SAMP_MIN, params.sample_count, q/KNEE)); } // then samples (and bake, below)
     perf.resScale = res;
     samp = clamp(samp, 3, Math.max(3, params.sample_count));

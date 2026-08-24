@@ -20,6 +20,11 @@ test("AXES carries the audit-classified taxonomy", () => {
   expect(by.glow_bleed.proposable).toBe(false);
   expect(by.glow_bleed.measureLevel).toBe(0);
   expect(by.glow_bleed.pass).toBe("transport");
+  // and the sky view's foliage glow (§4.9): the cheap rung is 0, which is a different picture rather than a lighter one
+  expect(by.sky_scatter.cls).toBe("style");
+  expect(by.sky_scatter.proposable).toBe(false);
+  expect(by.sky_scatter.measureLevel).toBe(0);
+  expect(by.sky_scatter.pass).toBe("transport");
   // render resolution is the auto-scaler's runtime lever — not a stylistic axis, so it isn't here at all
   expect(by.res).toBeUndefined();
   // opt-in 'tune' optimizations: measured + auto-proposed, may change the look (off by default in the engine)
