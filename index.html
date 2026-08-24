@@ -84,11 +84,17 @@
     background:rgba(8,12,8,.55); backdrop-filter:blur(8px);
     border:1px solid rgba(28,42,28,.8); border-radius:14px;
     font:12px ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
-    transition: opacity 1.2s ease, transform .6s cubic-bezier(.22,.61,.36,1);
+    transition: opacity .3s ease, transform .6s cubic-bezier(.22,.61,.36,1);   /* appears quickly... */
   }
   #strip.hidden { display:none; }
   #strip.offscreen { transform:translate(-50%, 200%); }
-  #strip.faded { opacity:0; pointer-events:none; }
+  #strip.faded { opacity:0; pointer-events:none; transition: opacity .9s ease, transform .6s cubic-bezier(.22,.61,.36,1); }   /* ...retires gently */
+  /* desktop (fine pointer): one horizontal bar, shown by cursor PROXIMITY rather than a timer */
+  #strip.wide { width:min(880px, calc(100vw - 24px)); display:flex; align-items:center; gap:16px; padding:10px 16px; }
+  #strip.wide .preset { flex:0 0 auto; margin:0; gap:6px; }
+  #strip.wide .preset .name { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #strip.wide .ctl { flex:1 1 0; margin:0; min-width:0; }
+  #strip.wide .ctl label { flex:0 0 auto; }
   #strip .preset { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
   #strip .preset .name { flex:1; text-align:center; color:#e8d9a8; font-size:13px; }
   #strip .ctl { display:flex; align-items:center; gap:8px; margin:5px 0; }

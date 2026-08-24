@@ -453,16 +453,24 @@ function setShowBeta(on){
 let playSpeciesSel=null;
 const betaToggles=[];
 
-// the minimalist strip: the three highest-level macros, fading out of the way after a few still seconds —
-// but never out from under the pointer: hovering it holds it up, and the clock restarts on leave.
-let stripFadeTimer=0, stripHover=false;
+// the minimalist strip. Two visibility models by pointer kind:
+//  • fine (desktop): PROXIMITY — the strip is there when the cursor is near its patch of screen and gone
+//    when it isn't. No timers to outwait; walking the cursor away IS the dismissal. A short hold after it
+//    first arrives (or the mode lands) keeps it from vanishing before you've seen where it lives, and an
+//    in-flight slider drag pins it even if the pointer strays.
+//  • coarse (touch): no cursor to be near — the tap-to-wake / fade-after-stillness clock stays.
+const STRIP_NEAR_PX=110, STRIP_HOLD_MS=2500;
+let stripFadeTimer=0, stripHoldUntil=0, stripDragging=false;
 function stripWake(){
   if(settings.mode!=='min' || strip.classList.contains('hidden')) return;
   strip.classList.remove('faded');
-  clearTimeout(stripFadeTimer);
-  stripFadeTimer=setTimeout(()=>{ if(stripHover) stripWake(); else strip.classList.add('faded'); }, 5000);
+  if(coarse){
+    clearTimeout(stripFadeTimer);
+    stripFadeTimer=setTimeout(()=>strip.classList.add('faded'), 5000);
+  } else stripHoldUntil=performance.now()+STRIP_HOLD_MS;
 }
 function buildStrip(){
+  if(!coarse) strip.classList.add('wide');            // desktop: one horizontal bar
   const pr=presetRow();
   const more=document.createElement('button'); more.className='more'; more.textContent='＋';
   more.title='playful editor';
@@ -472,13 +480,18 @@ function buildStrip(){
   strip.appendChild(timeSlider());
   strip.appendChild(macroSlider('weather'));
   strip.appendChild(macroSlider('wind_y','wind'));
-  strip.addEventListener('pointerdown',stripWake);
+  strip.addEventListener('pointerdown',()=>{ stripDragging=true; stripWake(); });
+  window.addEventListener('pointerup',()=>{ stripDragging=false; });
   strip.addEventListener('input',stripWake);
-  if(!coarse){                                        // fine pointers only — a touch tap's enter/leave pair is unreliable
-    strip.addEventListener('pointerenter',()=>{ stripHover=true; if(settings.mode==='min' && !strip.classList.contains('hidden')){ strip.classList.remove('faded'); clearTimeout(stripFadeTimer); } });
-    strip.addEventListener('pointerleave',()=>{ stripHover=false; stripWake(); });
-  }
-  canvas.addEventListener('pointerdown',stripWake);   // a tap on the art summons the strip back
+  canvas.addEventListener('pointerdown',stripWake);   // a tap on the art summons the strip back (touch)
+  if(!coarse) window.addEventListener('pointermove',(e)=>{
+    if(settings.mode!=='min' || strip.classList.contains('hidden')) return;
+    if(stripDragging || performance.now()<stripHoldUntil){ strip.classList.remove('faded'); return; }
+    const r=strip.getBoundingClientRect();
+    const near = e.clientX > r.left-STRIP_NEAR_PX && e.clientX < r.right+STRIP_NEAR_PX
+              && e.clientY > r.top-STRIP_NEAR_PX && e.clientY < r.bottom+STRIP_NEAR_PX;
+    strip.classList.toggle('faded', !near);
+  });
 }
 
 // ---- tooltips: lead with a plain "this does that", then build up to the why. Hover any knob or
