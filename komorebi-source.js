@@ -71,8 +71,8 @@ export function makeSource(hub){
     }
   }
 
-  // per-call scratch (see the engine's _atm note): recomputed fresh into these each call, so a static frame
-  // allocates nothing and there is no stale-cache risk.
+  // per-call scratch (see the render module's _atm note): recomputed fresh into these each call, so a static
+  // frame allocates nothing and there is no stale-cache risk.
   const _proj = [0,0,0,0], _lh = new Float32Array(MAX_LAYERS);
   const _bulk = [0,0];
 

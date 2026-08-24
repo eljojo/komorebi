@@ -1,5 +1,5 @@
 import { clamp, lerp } from './komorebi-math.js';
-import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, CANOPY_KEYS, DEFAULTS, migrateLegacy } from './komorebi-params.js';
+import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, CANOPY_KEYS, TOPO_KEYS, DEFAULTS, migrateLegacy } from './komorebi-params.js';
 import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
 import { TRANSPORT_GROUPS, CAMERAS, buildTransport } from './komorebi-transport.js';
 import { makeSource } from './komorebi-source.js';
