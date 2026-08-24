@@ -23,7 +23,13 @@ const DEG = Math.PI / 180, TAU = Math.PI*2;
 const MAX_SAMPLES = 48;
 const BAKE_MIN = 768;   // floor auto_quality trims bake_resolution to below the knee (§9)
 const MAX_LAYERS = 4;
-const MAX_OCC = 64;   // woody occluder segments (trunk + main limbs incl. droop sub-segments); continuous-height analytic shadow, evaluated once per pixel (spec §4.5)
+// Woody occluder segments (trunk + main limbs incl. droop sub-segments); continuous-height analytic shadow,
+// evaluated once per pixel (spec §4.5). The table is a TEXTURE now, not a uniform array, so this number costs
+// texels rather than fragment uniform rows (§6) — it is no longer a budget constraint, it is an authored ceiling.
+// IT STAYS AT 64 UNTIL SOMEONE CHOOSES OTHERWISE, and the reason is a measurement, not caution: 'the void' grows
+// 192 level-≤1 segments and has been silently truncated to 64 for its whole life. Raising the cap does not free
+// that look, it REPAINTS it — three times the wood it currently shows. That is a look decision, not a refactor's.
+const MAX_OCC = 64;
 // SKY VIEW (§4.9): the authored radiance scale for the SEEN source. The physical contrast between a sun disk and a
 // blue sky is ~10^6, which neither an ACES tail nor a 13-tap glare kernel can carry — so what ships is a compressed
 // stand-in, and this is the compression, stated once. It multiplies the sampler's own angular density (weight over
@@ -757,8 +763,13 @@ const GLSL_T_OCC_DECLS = `// WOODY OCCLUDER (spec §4.5): the trunk + main limbs
 // endpoints' plan positions and their HEIGHTS above the floor; the per-sample shadow runs from a's projection to b's,
 // so a limb's base meets the trunk at a shared height and the whole skeleton shadow stays CONNECTED — unlike the
 // layer-stamped branches (now retired), whose discrete-height quantization shattered continuous lines at a low sun.
-uniform vec4  uOccSeg[${MAX_OCC}];   // plan endpoints: a.xy, b.xy
-uniform vec4  uOccHt[${MAX_OCC}];    // a-height, b-height (above floor), radius, _
+// THE TABLE IS DATA, NOT UNIFORMS. Two vec4[${MAX_OCC}] arrays would be ${MAX_OCC * 2} vec4 rows of the fragment budget in EVERY
+// variant — the segment table was over half of WebGL2's guaranteed 224 all by itself, and it is what kept the
+// enclosure over that floor. It is one RGBA32F texture instead: row 0 = the plan endpoints (refilled per frame with
+// the limb swing), row 1 = the static heights + radius. texelFetch on RGBA32F is exact — no filtering, no format
+// conversion — so the shader reads the identical float32s the uniform upload used to carry, and the cap becomes a
+// number the budget no longer has an opinion about.
+uniform highp sampler2D uOccTex;     // (k,0) = plan endpoints a.xy, b.xy;  (k,1) = a-height, b-height (above floor), radius, _
 uniform int   uOccCount;             // 0 = off (no wood / park model), byte-identical
 uniform float uOccTau;               // wood optical depth (= branch_tau); 0 = off
 uniform vec2  uOccSway;              // whole-tree drift, matching the leaf bake
@@ -1409,7 +1420,7 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
       if(uOccCount>0){
         for(int k=0;k<${MAX_OCC};k++){
           if(k>=uOccCount) break;
-          vec4 P = uOccSeg[k]; vec4 H = uOccHt[k];
+          vec4 P = texelFetch(uOccTex, ivec2(k,0), 0); vec4 H = texelFetch(uOccTex, ivec2(k,1), 0);
           vec3 Pa = vec3(P.xy + uOccSway*(H.x/uOccHRef), H.x);
           vec3 Pb = vec3(P.zw + uOccSway*(H.y/uOccHRef), H.y);
           vec2 ds = raySegDist(eye, dir, Pa, Pb);
@@ -1497,7 +1508,7 @@ const GLSL_T_WOOD_CAST = `  // woody occluder (spec §4.5), evaluated ONCE per p
     float woodT = 1.0;
     for(int k=0;k<${MAX_OCC};k++){
       if(k>=uOccCount) break;
-      vec4 P = uOccSeg[k]; vec4 H = uOccHt[k];
+      vec4 P = texelFetch(uOccTex, ivec2(k,0), 0); vec4 H = texelFetch(uOccTex, ivec2(k,1), 0);
       vec2 A = P.xy + uOccSway*(H.x/uOccHRef) - (H.x-recvZ)*uBulkShift;   // a's shadow at its height RELATIVE to the receiver (recvZ=0 floor → unchanged; curtain → projected up the cloth, §4.9)
       vec2 B = P.zw + uOccSway*(H.y/uOccHRef) - (H.y-recvZ)*uBulkShift;   // b's below — segment shadow runs a→b, connecting neighbours
       vec2 ab = B - A, ap = world - A;
@@ -1845,7 +1856,7 @@ function create(canvas, opts){
       aspect:g('uAspect'), viewCenter:g('uViewCenter'), origin:g('uCanopyOrigin'), extent:g('uCanopyExtent'),
       sun:g('uSunColor'), ambient:g('uAmbient'),
       heights:g('uLayerHeight[0]'), layerCount:g('uLayerCount'), layers:[0,1,2,3].map(i=>g(`uLayer[${i}]`)),
-      occSeg:g('uOccSeg[0]'), occHt:g('uOccHt[0]'), occCount:g('uOccCount'), occTau:g('uOccTau'), occSway:g('uOccSway'), occHRef:g('uOccHRef'),
+      occTex:g('uOccTex'), occCount:g('uOccCount'), occTau:g('uOccTau'), occSway:g('uOccSway'), occHRef:g('uOccHRef'),
       haze:g('uHazeColor'), twilight:g('uTwilight'), mesopic:g('uMesopic'), linearOut:g('uLinearOut'),
       exposure:g('uExposure'), contrast:g('uContrast'), tone:g('uToneMap'),
     },
@@ -1935,6 +1946,17 @@ function create(canvas, opts){
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01,
                 coreR:0.005, moonD:0, moonR:0, Lcore:0, Lhalo:0 };   // + the SEEN source (§4.9 sky view): angular radii, the eclipse moon, and the radiance in each region — all filled by regenSource from the sampler's own numbers
   const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0, hRef:1 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend, `hRef` = tallest floor height for the drift's height-scale (spec §4.5)
+  // ...and the GPU side of that table (§4.5/§6): one RGBA32F, MAX_OCC wide and 2 tall — row 0 the swung plan
+  // endpoints, row 1 the static heights + radius. Allocated once at the cap and never resized, because the cap is a
+  // compile-time constant on both sides of the wire. This is the clusterTex idiom, for the same reason: a per-frame
+  // table that every transport variant reads has no business sitting in the fragment uniform budget.
+  const occTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, occTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, MAX_OCC, 2, 0, gl.RGBA, gl.FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);   // texelFetch ignores filtering, but an unfilterable float texture must still declare NEAREST to be complete
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   const faith = { vao:null, buf:null, count:0, hMin:0, hMax:1, ox:0, oy:0, ext:1,   // FAITHFUL leaf geometry (all leaves, continuous height) + the cast-region frame, computed in bakeFaithful (§4.5)
                   pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
                   gx:new Float32Array(MAX_SAMPLES), gy:new Float32Array(MAX_SAMPLES),// per-sample ground-shift scratch (hoisted; no per-bake alloc)
@@ -3153,6 +3175,9 @@ function create(canvas, opts){
     // woody occluder (§4.5): trunk + main limbs, continuous heights → connected shadow. Gated by branch_tau (the wood
     // knob): 0 = no wood, byte-identical. The bulk sun-offset (standing scene) rides in `g`, so it casts to the side too.
     // In FAITHFUL mode the whole skeleton (incl. twigs) is baked into the leaf shadow instead, so the analytic occluder is off.
+    // The table's texture is bound for every variant (all four cameras read it); its rows are only rewritten when
+    // there is wood to write, and with uOccCount 0 the shader never fetches from it.
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, occTex); gl.uniform1i(tp.occTex, 5);   // unit 5: 0-3 are the layers, 4 the faith texture
     if(!faithfulOn() && params.branch_tau > 0 && occ.count > 0){
       // refill segBuf with the live limb SWING (rotate each segment about its tree's trunk by limbAngle) so the wood
       // sways WITH the leaves; the trunk (limb -1) doesn't rotate. Drift (uOccSway) + sun-shift are added in the shader.
@@ -3166,8 +3191,11 @@ function create(canvas, opts){
         buf[o+2] = px + c*(s.bx-px) - sn*(s.by-py);
         buf[o+3] = py + sn*(s.bx-px) + c*(s.by-py);
       }
-      gl.uniform4fv(tp.occSeg, buf.subarray(0, occ.count*4));
-      gl.uniform4fv(tp.occHt, occ.ht.subarray(0, occ.count*4));
+      // perf todo — occTex is single-buffered, the same tradeoff clusterTex carries and for the same reason: these
+      // two rows are rewritten and then fetched by the draw below in the SAME frame, so next frame's upload can
+      // stall on this one still draining. A 2-deep ring would break the write-after-read.
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, occ.count, 1, gl.RGBA, gl.FLOAT, buf);        // row 0: plan endpoints, carrying this frame's limb swing
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 1, occ.count, 1, gl.RGBA, gl.FLOAT, occ.ht);     // row 1: heights + radius, static since the last regrow
       gl.uniform1i(tp.occCount, occ.count);
       gl.uniform1f(tp.occTau, params.branch_tau);
       gl.uniform2f(tp.occSway, motion.sway[0], motion.sway[1]);    // wood drifts with the whole-tree sway
@@ -3619,7 +3647,7 @@ function create(canvas, opts){
   rebuildAll();
   resetPerf();
   let last=performance.now(), fps=60, paused=false, alive=true;
-  const eng = { canvas, gl, params, perf, motion, src, trans, fps:60, apply, setParams, transitionTo, onFrame:opts.onFrame||null,
+  const eng = { canvas, gl, params, perf, motion, src, trans, occ, fps:60, apply, setParams, transitionTo, onFrame:opts.onFrame||null,
     // pause the rAF loop so a second engine instance idles at zero GPU when off-screen (the editor's A/B picker)
     setPaused(on){ on=!!on; if(on===paused) return; paused=on; if(!on){ last=performance.now(); requestAnimationFrame(frame); } },
     // dispose: stop the loop and free EVERY GL object + the context, so a disposable second instance (the A/B
@@ -3630,7 +3658,7 @@ function create(canvas, opts){
       transportCache.forEach(v => { gl.deleteProgram(v.prog); });   // however many cameras this engine actually visited
       transportCache.clear();
       layerTex.forEach(t => { gl.deleteTexture(t); });
-      [clusterTex, clusterGeomTex, faithTex, faithScratch, benchTex, presentTex].forEach(t => { if(t) gl.deleteTexture(t); });
+      [clusterTex, clusterGeomTex, occTex, faithTex, faithScratch, benchTex, presentTex].forEach(t => { if(t) gl.deleteTexture(t); });
       freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
       [bakeFBO, faithFBO, benchFBO, presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
@@ -3723,4 +3751,4 @@ function create(canvas, opts){
   return eng;
 }
 
-export { create, DEFAULTS, LEGACY_KEYS, migrateLegacy, MAX_LAYERS, MAX_SAMPLES, DEG, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, TRANSPORT_CAMERAS, buildTransport };
+export { create, DEFAULTS, LEGACY_KEYS, migrateLegacy, MAX_LAYERS, MAX_SAMPLES, MAX_OCC, DEG, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, TRANSPORT_CAMERAS, buildTransport };
