@@ -142,7 +142,7 @@ const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back t
 // complementary coverage across a window. Leaves never jump; gaps merge, split and collapse into the new
 // arrangement, which is §5.2's own grammar covering the change.
 const CROSS_HALF_W = 0.25;   // the window's half-width in t: [0.25, 0.75], centred where the cut used to be
-const BLOOM_MAX = { mode: 0.35, dissolve: 0.55, cross: 0.55 };   // the bloom's peak depth by tier — the mode flip's measured in the packet before this one
+const BLOOM_MAX = { mode: 0.35, dissolve: 0.55, cross: 0.20 };   // the bloom's peak depth by tier — the mode flip's measured in the packet before this one
 const DUR_SCALE = { mode: 2.0,  dissolve: 2.0, cross: 2.0 };    // ...and how much longer than the caller's duration each tier takes to get there
 
 // ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
