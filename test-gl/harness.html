@@ -271,6 +271,60 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
   };
 });
 
+// A TRANSITION ROUTE, DRIVEN TO COMPLETION (spec §9) — the smoke half of the transition story, and unlike
+// __transition above it IS part of the default run. No pixels and no metrics: a transition isn't byte-stable
+// by design, but its ROUTING is pure logic — transitionTo classifies the diff into a tier (live morph /
+// grove crossfade / dissolve / mode flip) and each tier drives different code (the crossfade grows a second
+// grove via buildTargetGrove; the mode flip swaps the camera). This drives one route on a frozen-motion
+// engine and reports what the engine claims about it (trans.crossfade / structDiff / canopyMorph), whether
+// onEnd actually fired, and a clean gl.getError() — so a crash or a mis-routed tier on any of these paths
+// fails here instead of only in a hand-run `--transition`. FREEZE is merged over BOTH ends so the route's
+// own diff is exactly `over` (wind knobs never leak in as an accidental second diff).
+window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolve, reject) => {
+  const o = Object.assign({ duration: 0.3, warm: 8, cap: 600 }, opts || {});
+  const A = PRESETS[fromName], B = PRESETS[toName];
+  if (!A) return reject(new Error(`unknown preset '${fromName}'`));
+  if (!B) return reject(new Error(`unknown preset '${toName}'`));
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage';
+  canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  document.body.appendChild(canvas);
+
+  const t0 = performance.now();
+  let eng = null, ticks = 0, started = false, onEndFired = false, route = null, done = false;
+  const finish = (err) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    const glError = eng ? eng.gl.getError() : 0;
+    try { eng?.setPaused(true); eng?.dispose(); } catch { /* a disposed/failed engine has nothing to stop */ }
+    canvas.remove();
+    if (err) reject(err);
+    else resolve({ ...route, onEndFired, glError, ticks, ms: Math.round(performance.now() - t0) });
+  };
+  const timer = setTimeout(() => finish(new Error(`route did not finish within 120 s (tick ${ticks})`)), 120000);
+
+  try { eng = create(canvas, { params: Object.assign({}, A, FREEZE) }); }
+  catch (e) { return finish(e); }
+
+  eng.onFrame = () => {
+    if (done) return;
+    ticks++;
+    try {
+      if (!started) {
+        if (ticks < o.warm) return;
+        started = true;
+        eng.transitionTo(Object.assign({}, B, over || {}, FREEZE), { duration: o.duration, onEnd: () => { onEndFired = true; } });
+        // trans.* is set synchronously by transitionTo — read the routing verdict now, before it runs
+        route = { crossfade: eng.trans.crossfade, structDiff: eng.trans.structDiff, canopyMorph: eng.trans.canopyMorph };
+        return;
+      }
+      if (!eng.trans.active) return finish(null);
+      if (ticks >= o.cap) finish(new Error(`transition still active after ${o.cap} ticks`));
+    } catch (e) { finish(e); }
+  };
+});
+
 // A contact sheet of captures, in order, for eyes rather than for a metric.
 window.__strip = (ids, cols) => {
   const caps0 = ids.map((id) => { const c = caps.get(id); if (!c) throw new Error(`no capture ${id}`); return c; });

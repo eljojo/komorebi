@@ -62,7 +62,7 @@
           };
           # `nix run .#pixels [preset...]` — the pixel harness: renders every look in headless Chromium
           # (real WebGL2 / SwiftShader), writes PNGs to test-gl/out/, and runs the smoke + gate-invariant +
-          # determinism suites. First run needs its browsers: cd test-gl && npm install && npx playwright
+          # determinism + transition-routing suites. First run needs its browsers: cd test-gl && npm install && npx playwright
           # install chromium (cached under ~/.cache thereafter; deliberately outside nix — Playwright pins
           # its own Chromium build).
           pixels = pkgs.writeShellApplication {

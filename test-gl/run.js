@@ -16,6 +16,8 @@
 // Suites: SMOKE (every preset renders, non-degenerate, GL-clean, one PNG each into out/)
 //         GATE  (the byte-identical off-path claims)
 //         DETERMINISM (two independent engines agree; and a single engine holds still)
+//         TRANSITIONS (each routing tier — morph / crossfade / dissolve / mode — driven to completion;
+//                      logic-only, no pixels: transitions aren't byte-stable by design)
 // ============================================================================
 import { createReadStream } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
@@ -62,6 +64,29 @@ const INVARIANTS = [
   { name: 'sway_pitch 0 == absent (layer path)', preset: 'memories', a: {}, b: { sway_pitch: 0 } },
   { name: 'chromatic_aberration 0 == absent (layer path)', preset: 'memories', a: {}, b: { chromatic_aberration: 0 } },
   { name: 'branch_tau 0 == absent (layer path)', preset: 'memories', a: {}, b: { branch_tau: 0 } },
+];
+
+// Suite 4 as data: one row per transition ROUTING tier. transitionTo classifies the from->to diff into a
+// tier, and each tier drives different code — the grove crossfade grows a SECOND grove (buildTargetGrove),
+// the mode flip swaps the camera — so a crash or a mis-routed tier is invisible to every frozen-frame suite
+// above (none of them ever call transitionTo; a missing-import crash on exactly the crossfade path once
+// survived all of them). `over` merges over the `to` preset; the assertion is the engine's own routing
+// verdict (trans.crossfade/structDiff, read right after transitionTo) plus onEnd fired and GL stayed clean.
+// 'memories' is the base because the crossfade gate needs branch_tau 0 + non-faithful at both ends.
+// ---------------------------------------------------------------------------
+const TRANSITION_ROUTES = [
+  { name: 'live morph stays non-structural', from: 'memories', to: 'memories',
+    over: { sun_azimuth_deg: 123, sun_elevation_deg: 47 },
+    expect: { crossfade: false, structDiff: false } },
+  { name: 'seed-only topology diff takes the grove crossfade', from: 'memories', to: 'memories',
+    over: { seed: 1234567 },
+    expect: { crossfade: true, structDiff: true } },
+  { name: 'wood at the target end closes the crossfade gate', from: 'memories', to: 'memories',
+    over: { seed: 7654321, branch_tau: 0.5 },
+    expect: { crossfade: false, structDiff: true } },
+  { name: 'camera flip routes as a mode transition', from: 'memories', to: 'canopy 1',
+    over: {},
+    expect: { crossfade: false, structDiff: true } },
 ];
 
 // Suite 3: two independently created engines on the same frozen look must land on the same bytes.
@@ -261,6 +286,26 @@ async function main() {
         d.equal ? `identical (${a.captures[0].hash})` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}, first at ${d.firstAt}${inv.known ? ` — known: ${inv.known}` : ''}`);
       log(`  ${d.equal ? 'ok  ' : tag}  [${inv.preset}] ${inv.name}`);
       if (!d.equal) log(`        ${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}, first at (${d.firstAt}) — see out/diff-${slug(inv.name)}.png`);
+    }
+
+    // ---- suite 4: transition routing ----
+    log('\nTRANSITIONS — each routing tier driven to completion (logic-only; no pixels)');
+    for (const route of TRANSITION_ROUTES) {
+      let r;
+      try {
+        r = await page.evaluate(([from, to, over]) => window.__transitionSmoke(from, to, over), [route.from, route.to, route.over]);
+      } catch (e) {
+        record('transition', route.name, false, e.message.split('\n')[0]);
+        log(`  FAIL  ${route.name} — ${e.message.split('\n')[0]}`);
+        continue;
+      }
+      const bad = [];
+      if (!r.onEndFired) bad.push('onEnd never fired');
+      if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
+      for (const [k, v] of Object.entries(route.expect)) if (r[k] !== v) bad.push(`${k}=${r[k]} (want ${v})`);
+      record('transition', route.name, bad.length === 0, bad.length ? bad.join('; ')
+        : `crossfade ${r.crossfade} structDiff ${r.structDiff}  ${r.ticks} ticks ${r.ms} ms`);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${route.name.padEnd(50)} ${bad.join('; ') || `${r.ticks} ticks ${r.ms} ms`}`);
     }
     }
   } finally {
