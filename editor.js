@@ -1,17 +1,22 @@
 import { create, DEG, MAX_LAYERS } from './komorebi.js';
-import { PRESETS, TREE_SPECIES } from './presets.js';
+import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
+import { MACROS, createBus } from './macros.js';
 // ============================================================================
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
-// (komorebi.js). The engine renders; this file is the dev panel, HUD, insets, preset management, sun-drag
-// input, scene-transition stepping, and the auto-profiler UI. Pure sub-concerns are split into siblings:
-// presets-store.js (★ localStorage I/O) and profiler.js (the cost taxonomy + variant algorithm). The
+// (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
+// the playful macro sidebar, and the advanced dev panel (three depths of one control tree) — plus the HUD,
+// insets, preset management, sun-drag input, scene-transition stepping, and the auto-profiler UI. Pure
+// sub-concerns are split into siblings: presets-store.js (★ localStorage I/O), macros.js (the control-bus
+// macro mappings the upper rungs drive) and profiler.js (the cost taxonomy + variant algorithm). The
 // viewer-only player (player.html) is a separate, UI-less consumer of the same engine. ES modules — must be
 // SERVED over http(s) (`nix run .#dev`), not opened off the filesystem.
 // ============================================================================
 const canvas = document.getElementById('gl');
 const dev = document.getElementById('dev');
+const play = document.getElementById('play');
+const strip = document.getElementById('strip');
 const hud = document.getElementById('hud');
 const clamp = (x,a,b) => Math.min(b, Math.max(a, x));
 const fmt = (v) => Number.isInteger(v) ? String(v)
@@ -21,6 +26,19 @@ const fmt = (v) => Number.isInteger(v) ? String(v)
 // ---- presets: getStored/setStored/getPreset are imported from presets-store.js (built-ins + ★ localStorage) ----
 const DEFAULT_PRESET = 'afternoon 7';   // the editor's working default + fallback look (preset DATA lives in presets.js)
 const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro, until "feel"
+
+// ---- editor settings (mode ladder + experimental filter), persisted beside the ★ store. The three modes are
+// three DEPTHS of one control tree — min (the strip: 3 macros) ⊂ play (the sidebar: the macro bus) ⊂ adv (every
+// knob) — so "mode" is just which surface is showing. First run boots playful on a desktop and minimalist on
+// touch (the calm surface where the calm matters most); the choice sticks thereafter. ----
+const SETTINGS_KEY = 'komorebi.editor';
+const settings = (() => {
+  const coarse0 = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  const base = { mode: coarse0 ? 'min' : 'play', showBeta: false };
+  try { return Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
+  catch { return base; }
+})();
+function saveSettings(){ try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* storage disabled — the mode just doesn't stick */ } }
 
 // ---- boot the engine on the canvas ------------------------------------------
 let eng;
@@ -48,6 +66,7 @@ function maybeClearSpecies(key){
   if(SHAPE_KEYS.has(key) && params.tree_species){
     params.tree_species='';
     if(controlEls.tree_species) controlEls.tree_species.input.value='';   // select the empty "— custom" option
+    if(playSpeciesSel) playSpeciesSel.value='';                           // ...and the playful surface's copy
   }
 }
 // frame shadow (spec §4.8 / #56): one-time camera move that centres the view on where the tree's CROWN shadow lands,
@@ -278,7 +297,168 @@ function buildPanel(){
 function syncControl(key){ const c=controlEls[key]; if(!c)return;
   if(c.input.type==='checkbox') c.input.checked=!!params[key]; else c.input.value=params[key];
   if(c.valEl) c.valEl.textContent=fmt(params[key]); }
-function syncAllControls(){ for(const k in controlEls) syncControl(k); }
+function syncAllControls(){ for(const k in controlEls) syncControl(k); syncMacroControls(); }
+
+// ===========================================================================
+// The playful + minimalist surfaces (the mode ladder's upper rungs) and the
+// CONTROL BUS they drive. Every high-level control writes bus keys; the bus
+// (macros.js) turns one t into the authored param recipe and this applier
+// lands it on the live engine. A future MIDI/audio source calls the same
+// bus.set and needs nothing from this file.
+// ===========================================================================
+const bus = createBus(() => params, (dict, scope, _live) => {
+  Object.assign(params, dict);
+  for(const k in dict){ maybeClearSpecies(k); syncControl(k); }   // the advanced sliders track the macro underneath
+  if(scope !== null) applyScope(scope);
+});
+const macroEls = {};      // bus key -> range input (play + strip surfaces; pad handled separately)
+let padDot=null, padEl=null;
+
+function macroSlider(busKey, label){
+  const m = MACROS[busKey];
+  const row=document.createElement('div'); row.className='ctl';
+  const lab=document.createElement('label'); lab.textContent=label ?? m.label;
+  const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=1; inp.step=0.005;
+  inp.value=bus.get(busKey);
+  if(m.live) inp.addEventListener('input', ()=>bus.set(busKey, parseFloat(inp.value)));
+  else inp.addEventListener('change', ()=>bus.set(busKey, parseFloat(inp.value)));   // regrows the grove: on release only
+  row.append(lab,inp);
+  if(!macroEls[busKey]) macroEls[busKey]=[];
+  macroEls[busKey].push(inp);
+  return row;
+}
+// time is on the bus in spirit but routed through the editor's own sun model (the original macro)
+function timeSlider(){
+  const row=document.createElement('div'); row.className='ctl';
+  const lab=document.createElement('label'); lab.textContent='time';
+  const inp=document.createElement('input'); inp.type='range'; inp.min=5; inp.max=19; inp.step=0.25;
+  inp.value=params.time_of_day;
+  inp.addEventListener('input', ()=>{ params.time_of_day=parseFloat(inp.value); updateSunFromTime(); syncControl('time_of_day'); });
+  row.append(lab,inp);
+  if(!macroEls.time) macroEls.time=[];
+  macroEls.time.push(inp);
+  return row;
+}
+function presetRow(){
+  const row=document.createElement('div'); row.className='preset';
+  const prev=document.createElement('button'); prev.textContent='‹';
+  const name=document.createElement('span'); name.className='name';
+  const next=document.createElement('button'); next.textContent='›';
+  prev.addEventListener('click', ()=>stepPreset(-1));
+  next.addEventListener('click', ()=>stepPreset(1));
+  row.append(prev,name,next);
+  presetNameEls.push(name);
+  return row;
+}
+const presetNameEls=[];
+function syncPlayPreset(){ if(presetSel) for(const el of presetNameEls) el.textContent = presetSel.value; }
+function syncMacroControls(){
+  for(const key in macroEls){
+    const t = key==='time' ? params.time_of_day : bus.get(key);
+    for(const inp of macroEls[key]) inp.value = t;
+  }
+  if(padDot && padEl){
+    const x=bus.get('wind_x'), y=bus.get('wind_y');
+    padDot.style.left=`${x*100}%`; padDot.style.top=`${(1-y)*100}%`;
+  }
+}
+function modeButton(mode, label){
+  const b=document.createElement('button'); b.textContent=label;
+  b.addEventListener('click', ()=>setMode(mode));
+  return b;
+}
+function buildPlayPanel(){
+  const modes=document.createElement('div'); modes.className='modes';
+  modes.append(modeButton('min','· zen'), modeButton('adv','⚙ advanced'));
+  play.appendChild(modes);
+  play.appendChild(presetRow());
+
+  const h=(t)=>{ const e=document.createElement('h2'); e.textContent=t; play.appendChild(e); };
+  h('light');
+  play.appendChild(timeSlider());
+  play.appendChild(macroSlider('weather'));
+  play.appendChild(macroSlider('haze'));
+  play.appendChild(macroSlider('focus'));
+
+  h('wind');
+  padEl=document.createElement('div'); padEl.className='pad';
+  padDot=document.createElement('div'); padDot.className='dot';
+  const padlab=document.createElement('span'); padlab.className='padlab'; padlab.textContent='calm ⌁ squally · still ↑ strong';
+  padEl.append(padDot,padlab);
+  const padWrite=(e)=>{
+    const r=padEl.getBoundingClientRect();
+    const x=clamp((e.clientX-r.left)/r.width,0,1), y=clamp(1-(e.clientY-r.top)/r.height,0,1);
+    bus.set('wind_x',x); bus.set('wind_y',y);
+    padDot.style.left=`${x*100}%`; padDot.style.top=`${(1-y)*100}%`;
+  };
+  let padDown=false;
+  padEl.addEventListener('pointerdown',(e)=>{ padDown=true; padWrite(e);
+    try{ padEl.setPointerCapture(e.pointerId); }catch{ /* synthetic pointers (tests) have no active id — the write above already landed */ } });
+  padEl.addEventListener('pointermove',(e)=>{ if(padDown) padWrite(e); });
+  padEl.addEventListener('pointerup',()=>{ padDown=false; });
+  padEl.addEventListener('pointercancel',()=>{ padDown=false; });
+  play.appendChild(padEl);
+
+  h('grove');
+  play.appendChild(macroSlider('season'));
+  play.appendChild(macroSlider('grove'));
+  // species: the same bundle-merge the advanced select does, on its own element
+  const sr=document.createElement('div'); sr.className='ctl select';
+  const slab=document.createElement('label'); slab.textContent='species';
+  const ssel=document.createElement('select');
+  const o0=document.createElement('option'); o0.value=''; o0.textContent='— custom'; ssel.appendChild(o0);
+  for(const n of Object.keys(TREE_SPECIES)){ const o=document.createElement('option'); o.value=n; o.textContent=n; ssel.appendChild(o); }
+  ssel.addEventListener('change',()=>{ const b=TREE_SPECIES[ssel.value];
+    if(b) applyParams(Object.assign({}, params, b, { tree_species:ssel.value }));
+    else params.tree_species=''; });
+  sr.append(slab,ssel); play.appendChild(sr);
+  playSpeciesSel=ssel;
+  const dice=document.createElement('div'); dice.className='ctl';
+  const db=document.createElement('button'); db.textContent='⚄ new arrangement';
+  db.addEventListener('click',()=>{ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); });
+  dice.appendChild(db); play.appendChild(dice);
+
+  h('look');
+  play.appendChild(macroSlider('palette'));
+  play.appendChild(macroSlider('prism'));
+
+  const beta=document.createElement('div'); beta.className='ctl toggle';
+  const blab=document.createElement('label'); blab.textContent='experimental looks';
+  const binp=document.createElement('input'); binp.type='checkbox'; binp.checked=settings.showBeta;
+  binp.addEventListener('change',()=>setShowBeta(binp.checked));
+  beta.append(blab,binp); play.appendChild(beta);
+  betaToggles.push(binp);
+}
+// one handler for every surface's experimental toggle, kept in step with each other
+function setShowBeta(on){
+  settings.showBeta=on; saveSettings();
+  for(const t of betaToggles) t.checked=on;
+  refreshPresetSelect(presetSel.value);
+}
+let playSpeciesSel=null;
+const betaToggles=[];
+
+// the minimalist strip: the three highest-level macros, fading out of the way after a few still seconds
+let stripFadeTimer=0;
+function stripWake(){
+  if(settings.mode!=='min' || strip.classList.contains('hidden')) return;
+  strip.classList.remove('faded');
+  clearTimeout(stripFadeTimer);
+  stripFadeTimer=setTimeout(()=>strip.classList.add('faded'), 5000);
+}
+function buildStrip(){
+  const more=document.createElement('button'); more.className='more'; more.textContent='＋';
+  more.title='playful editor';
+  more.addEventListener('click',()=>setMode('play'));
+  strip.appendChild(more);
+  strip.appendChild(presetRow());
+  strip.appendChild(timeSlider());
+  strip.appendChild(macroSlider('weather'));
+  strip.appendChild(macroSlider('wind_y','wind'));
+  strip.addEventListener('pointerdown',stripWake);
+  strip.addEventListener('input',stripWake);
+  canvas.addEventListener('pointerdown',stripWake);   // a tap on the art summons the strip back
+}
 
 // ---- tooltips: lead with a plain "this does that", then build up to the why. Hover any knob or
 // heading. Different people think differently, so each starts simple and goes deeper underneath. ----
@@ -462,18 +642,33 @@ function updateSunFromTime(){
 }
 
 // ---- presets UI: dropdown + save/delete + copy/paste JSON -------------------
+// The EXPERIMENTAL looks are hidden from the dropdown and the stepping unless the settings toggle shows
+// them — but the one you're ON always stays listed (flipping the toggle mid-look must not strand you).
 let presetSel;
+function visibleBuiltins(keep){
+  return Object.keys(PRESETS).filter(n => settings.showBeta || !EXPERIMENTAL.includes(n) || n === keep);
+}
 function refreshPresetSelect(selected){
   presetSel.innerHTML='';
   const stored=getStored();
   const mk=(name,mark)=>{ const o=document.createElement('option'); o.value=name; o.textContent=mark+name;
     if(name===selected) o.selected=true; presetSel.appendChild(o); };
-  for(const n of Object.keys(PRESETS)) mk(n,'• ');     // built-in
+  for(const n of visibleBuiltins(selected ?? presetSel.value)) mk(n,'• ');     // built-in (beta-filtered)
   for(const n of Object.keys(stored)) mk(n,'★ ');               // saved
+  syncPlayPreset();                                             // the playful/minimal surfaces mirror the name
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
 function buildPresetUI(){
+  const modes=document.createElement('div'); modes.className='ctl';
+  const back=document.createElement('button'); back.textContent='◂ playful';
+  back.addEventListener('click',()=>setMode('play'));
+  modes.appendChild(back); dev.appendChild(modes);
   const h=document.createElement('h2'); h.textContent='Presets'; h.dataset.tipKey='Presets'; dev.appendChild(h);
+  const beta=document.createElement('div'); beta.className='ctl toggle';
+  const blab=document.createElement('label'); blab.textContent='experimental';
+  const binp=document.createElement('input'); binp.type='checkbox'; binp.checked=settings.showBeta;
+  binp.addEventListener('change',()=>setShowBeta(binp.checked));
+  beta.append(blab,binp); dev.appendChild(beta); betaToggles.push(binp);
   const r1=document.createElement('div'); r1.className='ctl select';
   presetSel=document.createElement('select');
   presetSel.addEventListener('change',()=>applyParams(getPreset(presetSel.value)));
@@ -507,26 +702,43 @@ function buildPresetUI(){
 // state survives a peek.
 const coarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);   // touch / phone
 const hint = document.getElementById('hint');
+// the mode ladder's three surfaces; everything below drives whichever one the mode says is active
+const MODE_ELS = { adv: dev, play, min: strip };
+function panelEl(){ return MODE_ELS[settings.mode] || play; }
 let peeking=false, panelTimer=0;
 function slideInPanel(){
-  if(!dev.classList.contains('hidden')) return;   // first reveal only (idempotent vs. the welcome fallback timer)
+  const el = panelEl();
+  if(!el.classList.contains('hidden')) return;    // first reveal only (idempotent vs. the welcome fallback timer)
   clearTimeout(panelTimer);
-  dev.classList.add('offscreen');                 // park it off the left edge...
-  dev.classList.remove('hidden');                 // ...reveal it there...
-  void dev.offsetWidth;                            // ...reflow so the next change animates...
-  dev.classList.remove('offscreen');              // ...and slide it in
+  el.classList.add('offscreen');                  // park it off its edge (left for the sidebars, below for the strip)...
+  el.classList.remove('hidden');                  // ...reveal it there...
+  void el.offsetWidth;                             // ...reflow so the next change animates...
+  el.classList.remove('offscreen');               // ...and slide it in
   hint.classList.remove('gone');                  // bring the key hints up with it
+  if(el===strip) stripWake();                     // the strip starts its fade clock the moment it arrives
 }
 function slideOutPanel(){
-  if(dev.classList.contains('hidden')) return;
-  dev.classList.add('offscreen');                                    // slide it out...
-  panelTimer=setTimeout(()=>{ dev.classList.add('hidden'); }, 600);  // ...then drop it once the .6s slide ends
+  const el = panelEl();
+  if(el.classList.contains('hidden')) return;
+  el.classList.add('offscreen');                                    // slide it out...
+  panelTimer=setTimeout(()=>{ el.classList.add('hidden'); }, 600);  // ...then drop it once the .6s slide ends
 }
-function togglePanel(){ dev.classList.contains('hidden') ? slideInPanel() : slideOutPanel(); }
+function togglePanel(){ panelEl().classList.contains('hidden') ? slideInPanel() : slideOutPanel(); }
 function peekPanel(on){                            // transient: slide away to glance at the art, restore on release
-  if(on){ if(dev.classList.contains('hidden')) return;   // nothing to peek away when already dismissed
-          peeking=true; dev.classList.add('offscreen'); }
-  else if(peeking){ peeking=false; dev.classList.remove('offscreen'); }
+  const el = panelEl();
+  if(on){ if(el.classList.contains('hidden')) return;   // nothing to peek away when already dismissed
+          peeking=true; el.classList.add('offscreen'); }
+  else if(peeking){ peeking=false; el.classList.remove('offscreen'); }
+}
+// step the ladder: hide whatever is up, swap the mode, slide the new surface in
+function setMode(mode){
+  if(!(mode in MODE_ELS) || mode === settings.mode) return;
+  const from = panelEl();
+  clearTimeout(panelTimer);
+  from.classList.add('hidden'); from.classList.remove('offscreen');
+  settings.mode = mode; saveSettings();
+  syncMacroControls(); syncPlayPreset();
+  slideInPanel();
 }
 
 // Canvas pointer input. A MOUSE drags the sun (azimuth from x, elevation from y). A finger can't do that
@@ -602,7 +814,7 @@ if(coarse)
 // ---- arrow-key scene stepping: prev/next preset with a cloud-bloom transition (spec §9). The dropdown
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
-function presetNames(){ return [...Object.keys(PRESETS), ...Object.keys(getStored())]; }   // dropdown order
+function presetNames(){ return [...visibleBuiltins(presetSel.value), ...Object.keys(getStored())]; }   // dropdown order (beta-filtered)
 function stepPreset(dir){
   const names=presetNames(); if(!names.length) return;
   let i=names.indexOf(presetSel.value); if(i<0) i=0;
@@ -616,7 +828,7 @@ function stepPreset(dir){
 let showTree=false;
 window.addEventListener('keydown',e=>{
   const k=e.key;
-  if(k==='d'||k==='D'){ dev.classList.toggle('hidden'); return; }
+  if(k==='d'||k==='D'){ togglePanel(); return; }   // toggles whichever mode surface is active
   if(k==='t'||k==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; return; }
   if(k==='f'||k==='F'){                                                     // toggle browser fullscreen (webkit fallback for Safari)
     const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;
@@ -673,6 +885,9 @@ eng.onFrame = ()=> {
 // ---- boot the panel UI (the engine is already running) ----
 buildPresetUI();
 buildPanel();
+buildPlayPanel();
+buildStrip();
+syncMacroControls();
 
 // ===========================================================================
 // Auto-profiler (spec §9). Measure the look's cost from REAL on-screen frames — GPU timer queries averaged over
@@ -898,7 +1113,7 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
 (()=> {
   const welcome=document.getElementById('welcome'), feel=document.getElementById('feel');
   let started=false;
-  function arrive(){ if(coarse) hint.classList.remove('gone'); else slideInPanel(); }  // touch waits for a double-tap
+  function arrive(){ slideInPanel(); stripWake(); }   // reveal the mode's surface (the strip then fades on its own)
   feel.addEventListener('click',()=>{
     if(started) return; started=true;
     document.body.classList.remove('intro');        // un-dim the canvas to full strength

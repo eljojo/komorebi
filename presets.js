@@ -721,6 +721,14 @@ export const PRESETS = {
   */
 };
 
+// ---- EXPERIMENTAL looks: shipped but still finding their feet (most say so in their own comments — "none of
+// this has been seen on a GPU", "every number is a starting point"). The editor hides them from the dropdown
+// and the ←/→ / swipe stepping unless its "experimental looks" toggle is on; the player, the pixel harness and
+// the tests all ignore this list and keep covering every look. UI curation, not engine data — which is why it
+// is a list beside PRESETS and never a key inside one (a look's params travel through JSON export / ★ saves,
+// and a visibility flag doesn't belong in them). ----
+export const EXPERIMENTAL = ['canopy 1', 'canopy 2', 'canopy 3', 'canopy 4', 'curtain 1', 'curtain 2', 'tent 1', 'the void'];
+
 // ---- TREE_SPECIES (spec §4.5): named SHAPE bundles, the inverse of WIND_PATTERNS — each a partial set of the
 // growth/shape knobs (leader, droop, taper, crown_aspect, phyllotaxis + the structural knobs). The editor merges
 // the chosen bundle OVER the current look's params (shape ⟂ scene: lighting/camera/wind are untouched), stamps

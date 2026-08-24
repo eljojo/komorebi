@@ -44,6 +44,55 @@
   .ctl button:hover { background:#243c24; }
   .err { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
          color:#e88; font:14px ui-monospace,monospace; text-align:center; padding:40px; }
+
+  /* ---- PLAYFUL editor (the default mode): the same sidebar language as #dev, fewer and larger controls ---- */
+  #play {
+    position:fixed; top:0; left:0; height:100vh; width:264px; box-sizing:border-box;
+    overflow-y:auto; padding:12px 14px 40px; background:rgba(8,12,8,.78);
+    backdrop-filter:blur(6px); border-right:1px solid #1c2a1c;
+    font:12px ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
+    transition: transform .6s cubic-bezier(.22,.61,.36,1);
+  }
+  #play.hidden { display:none; }
+  #play.offscreen { transform:translateX(-100%); }
+  #play h2 { font-size:11px; margin:16px 0 6px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
+  #play .ctl { margin:8px 0; }
+  #play .ctl label { flex:0 0 64px; }
+  #play input[type=range] { height:22px; }        /* finger-sized */
+  #play .modes { display:flex; gap:6px; margin-bottom:4px; }
+  #play .modes button, #strip button { background:rgba(26,42,26,.7); color:#9fb89f; border:1px solid #2c452c;
+    border-radius:12px; padding:4px 12px; cursor:pointer; font:11px ui-monospace,monospace; }
+  #play .modes button:hover { color:#e8d9a8; background:#243c24; }
+  #play .preset { display:flex; align-items:center; gap:8px; margin:6px 0 2px; }
+  #play .preset .name { flex:1; text-align:center; color:#e8d9a8; font-size:13px; overflow:hidden;
+    text-overflow:ellipsis; white-space:nowrap; }
+  #play .preset button { flex:0 0 auto; font-size:14px; padding:4px 12px; }
+  /* the wind pad: x = gust character, y = strength */
+  #play .pad { position:relative; height:120px; margin:6px 0; border-radius:8px;
+    background:linear-gradient(to top, rgba(28,42,28,.7), rgba(16,24,15,.7)); border:1px solid #243;
+    cursor:crosshair; touch-action:none; }
+  #play .pad .dot { position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%;
+    background:#e8d9a8; box-shadow:0 0 10px rgba(232,217,168,.5); pointer-events:none; }
+  #play .pad .padlab { position:absolute; right:6px; bottom:4px; color:#5a7a5a; font-size:10px; pointer-events:none; }
+
+  /* ---- MINIMALIST editor: one translucent strip along the bottom, auto-fading ---- */
+  #strip {
+    position:fixed; left:50%; bottom:14px; transform:translateX(-50%); z-index:8;
+    width:min(520px, calc(100vw - 24px)); box-sizing:border-box; padding:10px 14px;
+    background:rgba(8,12,8,.55); backdrop-filter:blur(8px);
+    border:1px solid rgba(28,42,28,.8); border-radius:14px;
+    font:12px ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
+    transition: opacity 1.2s ease, transform .6s cubic-bezier(.22,.61,.36,1);
+  }
+  #strip.hidden { display:none; }
+  #strip.offscreen { transform:translate(-50%, 200%); }
+  #strip.faded { opacity:0; pointer-events:none; }
+  #strip .preset { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  #strip .preset .name { flex:1; text-align:center; color:#e8d9a8; font-size:13px; }
+  #strip .ctl { display:flex; align-items:center; gap:8px; margin:5px 0; }
+  #strip .ctl label { flex:0 0 56px; color:#9fb89f; }
+  #strip .ctl input[type=range] { flex:1; min-width:0; height:20px; accent-color:#c99; }
+  #strip .more { position:absolute; right:8px; top:8px; padding:2px 8px; }
   #tip {
     position:fixed; max-width:300px; z-index:10; pointer-events:none; display:none;
     font:11px/1.55 ui-monospace,Menlo,Consolas,monospace; color:#dfe9df;
@@ -125,6 +174,8 @@
 <body class="intro">
 <canvas id="gl"></canvas>
 <div id="dev" class="hidden"></div>
+<div id="play" class="hidden"></div>
+<div id="strip" class="hidden"></div>
 <div id="hud"></div>
 <div id="hint" class="gone"><b>← →</b> change scene · <b>D</b> dev · <b>T</b> tree view · <b>F</b> full · drag = orbit · shift-drag = pan · wheel = zoom</div>
 <div id="tip"></div>

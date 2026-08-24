@@ -19,8 +19,9 @@ A standalone WebGL2 engine that renders komorebi from physics rather than painti
   - **`komorebi-shaders.js`** — the bake / faithful-bake / display shaders and the shared tone tail.
   - **`komorebi-params.js`** — `DEFAULTS`, the legacy-name migration, the transition key classification, the engine caps.
   - **`komorebi-math.js`** — CPU math: the atmosphere model, deterministic RNG, wind noise, skeleton-growth helpers.
-- **`presets.js`** — the built‑in looks, an ES module: `export const PRESETS`. Split out of the engine (data, not renderer); imported by the pages.
-- **`index.html`** — the editor / landing page (opens on a welcome screen): dev panel, HUD, presets, sun‑drag. Imports the modules, so it must be **served** (`nix run .#dev`), not opened off the filesystem.
+- **`presets.js`** — the built‑in looks, an ES module: `export const PRESETS` (+ `EXPERIMENTAL`, the looks the editor hides behind its toggle). Split out of the engine (data, not renderer); imported by the pages.
+- **`macros.js`** — the control bus: high‑level macros (weather, haze, focus, the wind pad, season, grove, palette, prism), each one input driving an authored multi‑param recipe lifted from the shipped looks. The editor's playful/minimalist modes are its first source; MIDI/audio can drive the same bus later.
+- **`index.html`** — the editor / landing page (opens on a welcome screen): three modes — a minimalist auto‑fading strip, a playful macro sidebar (the default), and the full dev panel — plus HUD, presets, sun‑drag. Imports the modules, so it must be **served** (`nix run .#dev`), not opened off the filesystem.
 - **`player.html`** — minimal viewer‑only reference: a full‑bleed canvas cycling through presets, no UI.
 - **`komorebi.global.js`** — deploy shim: bundles the engine + presets into a classic `window.Komorebi` global for no‑build embeds (the eljojo.net homepage).
 - **`dev-server.js`** — bun static server + live‑reload for development (`nix run .#dev`).
