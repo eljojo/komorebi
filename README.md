@@ -4,7 +4,23 @@
 
 A standalone WebGL2 engine that renders komorebi from physics rather than painting it: a point-sun source seen through canopy layers (shift‑multiply‑summed into dappled light), with two wind bands driving a trunk/limb/twig spring hierarchy. See [`komorebi-spec.md`](komorebi-spec.md) for the full vision, physics, and model.
 
-Editor: [komorebi.eljojo.net](https://komorebi.eljojo.net). Examples: [`examples/`](examples/).
+Editor: [komorebi.eljojo.net](https://komorebi.eljojo.net). Examples: [`examples/`](examples/) ([see live](https://komorebi.eljojo.net/examples/)).
+
+
+
+<img width="1582" height="986" alt="Screenshot 2026-08-24 at 19 54 46" src="https://github.com/user-attachments/assets/4372c83f-e158-4683-b78d-956957c8950f" />
+<img width="1582" height="986" alt="Screenshot 2026-08-24 at 19 54 57" src="https://github.com/user-attachments/assets/68e7bb36-f279-4567-b994-9d51a113a6f0" />
+<img width="1582" height="986" alt="Screenshot 2026-08-24 at 19 55 29" src="https://github.com/user-attachments/assets/e6635ba9-e129-4c3c-bbdb-d5c5c99eca05" />
+
+<details>
+  <summary>see more photos</summary>
+<img width="1582" height="986" alt="Screenshot 2026-08-24 at 19 56 40" src="https://github.com/user-attachments/assets/050fcf0d-ebce-4def-809f-d3474faf88d5" />  
+<img width="1582" height="986" alt="Screenshot 2026-08-24 at 19 55 07" src="https://github.com/user-attachments/assets/c1e201f3-7001-4920-a531-a6b44419bdc7" />
+<img width="1582" height="986" alt="Screenshot 2026-08-24 at 19 55 47" src="https://github.com/user-attachments/assets/8bfab69d-6c79-427f-ac3c-5bc62dc4e574" />
+<img width="1582" height="986" alt="Screenshot 2026-08-24 at 19 57 04" src="https://github.com/user-attachments/assets/85718e34-b496-41a9-a918-2b1ccc22955e" />
+  
+</details>
+
 
 ## Add it to your page
 
