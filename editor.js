@@ -49,6 +49,7 @@ const perf = eng.perf;
 if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
 function applyScope(scope){ eng.apply(scope); }                      // slider/toggle rebuild
+function reseed(){ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }   // same grove, grown again
 function applyParams(obj){ eng.setParams(obj); syncAllControls(); }  // load a whole preset (instant)
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
 
@@ -117,7 +118,7 @@ const PANEL = [
   ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
   ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
   ['s','trans_b','trans B',0.001,0.6,0.001,'canopy'],
-  ['btn','reseed', ()=>{ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }],
+  ['btn','reseed', reseed],
   ['adv','fine geometry'],
   ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
   ['s','branch_levels','levels',1,4,1,'canopy'],
@@ -499,7 +500,7 @@ function buildPlayPanel(){
   playSpeciesSel=ssel;
   const dice=document.createElement('div'); dice.className='ctl';
   const db=document.createElement('button'); db.textContent='⚄ new arrangement';
-  db.addEventListener('click',()=>{ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); });
+  db.addEventListener('click',reseed);
   dice.appendChild(db); play.appendChild(dice);
 
   h('look');
@@ -982,6 +983,7 @@ window.addEventListener('keydown',e=>{
     } else togglePanel();
     return;
   }
+  if(k==='r'||k==='R'){ reseed(); return; }
   if(k==='t'||k==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; return; }
   if(k==='f'||k==='F'){                                                     // toggle browser fullscreen (webkit fallback for Safari)
     const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;
