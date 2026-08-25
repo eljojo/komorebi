@@ -9,10 +9,10 @@
       main { max-width: 44em; margin: 0 auto; padding: 6vh 24px; }
       h1 { font: 400 2em/1.1 Georgia, serif; margin: 0 0 .8em; }
       p { margin: 0 0 1em; color: #b9c0ad; }
+      code { background: rgba(255,255,255,.08); padding: 0 .3em; border-radius: 3px; }
 
-      /* THE POINT OF THIS EXAMPLE: komorebi does not have to own the viewport. The canvas takes its size from
-         whatever box you put it in — here a rounded panel — and re-reads that size every frame, so it survives
-         a responsive layout without a resize handler. */
+      /* The canvas is in a panel, not in the window. It has a size in CSS, and the engine reads that size
+         each frame. A responsive layout needs no resize handler. */
       .hero { position: relative; height: 46vh; min-height: 260px; border-radius: 14px; overflow: hidden;
               background: #0d100a; margin-bottom: 2.5em; }
       .hero canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -42,7 +42,7 @@
       </p>
     </main>
 
-    <!-- On your own site: <script src="https://komorebi.eljojo.net/dist/komorebi.player.min.js"></script> -->
+    <!-- On your own site, serve this file yourself. -->
     <script src="../dist/komorebi.player.min.js"></script>
     <script>
       if (window.Komorebi) {
@@ -51,7 +51,7 @@
           for (const b of document.querySelectorAll('button[data-look]')) {
             b.addEventListener('click', () => eng.transitionTo(Komorebi.PRESETS[b.dataset.look], { duration: 3 }));
           }
-        } catch (e) { /* no WebGL2: the panel stays its flat background colour */ }
+        } catch (e) { /* no WebGL2: the panel keeps its background colour */ }
       }
     </script>
   </body>

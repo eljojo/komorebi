@@ -15,6 +15,7 @@
       a { color: #333; }
       li a { font-weight: 500; }
       li p { margin: .2em 0 0; font-size: .8em; color: #5c6355; }
+      p.note { font-size: .8em; color: #5c6355; }
       pre { overflow-x: auto; background: rgba(255,255,255,.72); border: 1px solid rgba(0,0,0,.08);
             border-radius: 8px; padding: 14px 16px; font: 400 13px/1.6 ui-monospace, Menlo, Consolas, monospace; }
     </style>
@@ -23,42 +24,42 @@
     <canvas id="komorebi"></canvas>
 
     <main>
-      <h1>Komorebi<small>木漏れ日 — put it on your own site</small></h1>
+      <h1>Komorebi<small>木漏れ日 — examples</small></h1>
 
-      <p>The background of this page is the engine, running the whole recipe: one canvas, one script tag.</p>
+      <p>The background of this page is the engine. This is the code:</p>
 
 <pre>&lt;canvas id="komorebi" style="position:fixed; inset:0; width:100%; height:100%; z-index:-1"&gt;&lt;/canvas&gt;
-&lt;script src="https://komorebi.eljojo.net/dist/komorebi.player.min.js"&gt;&lt;/script&gt;
+&lt;script src="/komorebi.player.min.js"&gt;&lt;/script&gt;
 &lt;script&gt;
   Komorebi.create(document.getElementById('komorebi'),
     { params: Komorebi.PRESETS['morning 2'] });
 &lt;/script&gt;</pre>
 
+      <p class="note">Download
+        <a href="../dist/komorebi.player.min.js">komorebi.player.min.js</a> and serve it from your own site.
+        Do not link to the copy here.</p>
+
       <ul>
         <li>
           <a href="background.html">A page background</a>
-          <p>Full-bleed behind your content, cycling looks on a timer. Adds the two guards worth having (no
-            WebGL2, blocked script) and pauses itself in a hidden tab.</p>
+          <p>Full width behind the content. Changes look on a timer, and stops in a hidden tab.</p>
         </li>
         <li>
-          <a href="hero.html">A hero panel</a>
-          <p>The same engine inside a rounded box instead of the viewport — it takes its size from whatever
-            element you give it — with buttons that crossfade between looks.</p>
+          <a href="hero.html">A panel</a>
+          <p>The canvas in a box instead of the window. Buttons change the look.</p>
         </li>
         <li>
-          <a href="module.html">As ES modules</a>
-          <p>No bundle and no global: import <code>komorebi.js</code> and <code>presets.js</code> directly, and
-            tweak a look by spreading it.</p>
+          <a href="module.html">ES modules</a>
+          <p>Import the modules instead of the bundle, and change one parameter.</p>
         </li>
         <li>
           <a href="../">The editor</a>
-          <p>Every knob, live, with tooltips explaining what each one does to the light. The fastest way to find
-            the look you want, then copy its name.</p>
+          <p>Every parameter, with a tooltip for each. Use it to choose a look.</p>
         </li>
       </ul>
 
-      <p style="font-size:.8em; color:#5c6355">Full instructions in the
-        <a href="https://github.com/eljojo/komorebi#put-it-on-your-site">README</a>.</p>
+      <p class="note">Instructions:
+        <a href="https://github.com/eljojo/komorebi#add-it-to-your-page">README</a>.</p>
     </main>
 
     <script src="../dist/komorebi.player.min.js"></script>
@@ -66,7 +67,7 @@
       if (window.Komorebi) {
         try {
           Komorebi.create(document.getElementById('komorebi'), { params: Komorebi.PRESETS['morning 2'] });
-        } catch (e) { /* no WebGL2: the flat background stands in */ }
+        } catch (e) { /* no WebGL2 */ }
       }
     </script>
   </body>

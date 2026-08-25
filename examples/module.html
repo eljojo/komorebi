@@ -15,26 +15,24 @@
   <body>
     <canvas id="komorebi"></canvas>
     <main>
-      <h1>No bundle, no global</h1>
-      <p>The engine is authored as ES modules; the <code>window.Komorebi</code> bundle is a convenience wrapper
-        around exactly this. If you already have a bundler — or you are happy shipping the module files as they
-        are — import them and skip the global entirely.</p>
-      <p>One rule: ES modules must be <strong>served over http(s)</strong>. A page opened off <code>file://</code>
-        cannot import anything.</p>
+      <h1>ES modules</h1>
+      <p>The engine is a set of ES modules. The <code>window.Komorebi</code> bundle is a wrapper around them.
+        Import the modules if you have a bundler, or if you serve the files as they are.</p>
+      <p>Serve ES modules over http(s). A page on <code>file://</code> cannot import them.</p>
     </main>
 
     <script type="module">
-      // Same API as the bundle, minus the global. Paths here are relative to this file; on your own site they
-      // point at wherever you copied komorebi.js, presets.js and the komorebi-*.js modules beside them.
+      // The same API as the bundle, without the global. These paths are relative to this file. On your own
+      // site they point to your copies of komorebi.js, presets.js and the komorebi-*.js modules.
       import { create } from '../komorebi.js';
       import { PRESETS } from '../presets.js';
 
       try {
         const eng = create(document.getElementById('komorebi'), {
-          // A look is a plain object, so spreading one and overriding a knob is the whole customisation story.
+          // A look is a plain object. Copy one and set the parameters you want.
           params: { ...PRESETS['morning 3'], wind_strength: 0.8 },
-          // onFrame runs after each rendered frame — handy for a HUD, or for driving something else off the wind.
-          onFrame: () => { /* eng.fps, eng.motion, eng.params are all live here */ },
+          // onFrame runs after each frame. eng.fps, eng.motion and eng.params are current here.
+          onFrame: () => {},
         });
         document.addEventListener('visibilitychange', () => eng.setPaused(document.hidden));
       } catch (e) { /* no WebGL2 / float targets */ }

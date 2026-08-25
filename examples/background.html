@@ -5,57 +5,51 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Komorebi — page background</title>
     <style>
-      /* THE CANVAS IS THE WHOLE INTEGRATION: fixed behind everything, sized in CSS. The engine matches its
-         backing store to this element every frame, so a resize or a rotate needs nothing from you. */
+      /* The canvas is fixed behind the content and has a size in CSS. The engine reads that size each frame. */
       #komorebi {
         position: fixed; inset: 0; width: 100%; height: 100%;
         display: block; z-index: -1; pointer-events: none;
-        background: #f9f9f9;                /* what the visitor sees if WebGL2 never arrives */
+        background: #f9f9f9;                /* shown when the browser has no WebGL2 */
       }
       body { margin: 0; background: #f9f9f9; color: #333; font: 300 20px/1.5 'Helvetica Neue', Helvetica, sans-serif; }
       main { max-width: 34em; padding: 12vh 24px; }
       h1 { font: 400 2.2em/1 Georgia, serif; margin: 0 0 .6em; }
       p { margin: 0 0 1em; }
-      a { color: inherit; }
+      code { background: rgba(0,0,0,.06); padding: 0 .3em; border-radius: 3px; }
     </style>
   </head>
   <body>
     <canvas id="komorebi"></canvas>
 
     <main>
-      <h1>Sunlight, behind the words</h1>
-      <p>The dapples move because the wind does — a real gust rising and falling through a spring hierarchy, not a
-        looping video. Nothing here is a texture.</p>
-      <p>This page is the whole recipe: a fixed full-bleed canvas at <code>z-index: -1</code>, one script tag, and
-        four lines of JavaScript. Look at the source — it is shorter than this paragraph.</p>
-      <p>Text stays readable because the bright looks are, well, bright. If you pick a dark one
-        (<code>memories</code>, <code>eclipse</code>), light your text accordingly.</p>
+      <h1>A page background</h1>
+      <p>The canvas is fixed at <code>z-index: -1</code>, behind the text. The look changes every 30 seconds.</p>
+      <p>The dapples move with the wind. The engine calculates the light and the motion; there is no video and
+        no texture.</p>
+      <p>Dark text is readable on the bright looks. With <code>memories</code> or <code>eclipse</code>, use
+        light text.</p>
     </main>
 
-    <!-- On your own site, point this at the published bundle:
-         <script src="https://komorebi.eljojo.net/dist/komorebi.player.min.js"></script> -->
+    <!-- On your own site, serve this file yourself. -->
     <script src="../dist/komorebi.player.min.js"></script>
     <script>
-      // Two guards, both load-bearing: window.Komorebi covers a blocked or failed script, and the try/catch
-      // covers create() throwing on a device with no WebGL2 or no float render targets. Either way the page
-      // stays a page — this is decoration, and decoration must never be a dependency.
+      // Two tests keep the page safe: window.Komorebi for a script that did not load, and try/catch for a
+      // browser without WebGL2. The background is decoration, so it must not stop the page.
       if (window.Komorebi) {
         try {
           const cycle = ['morning 2', 'afternoon 5b', 'morning 3'];
           let i = 0;
           const eng = Komorebi.create(document.getElementById('komorebi'), { params: Komorebi.PRESETS[cycle[i]] });
 
-          // A look every 30 s, crossfading over 5. transitionTo picks its own route between two looks —
-          // morph the canopy live, dissolve the grove, or swap under a bloom — from how far apart they are.
           setInterval(() => {
             i = (i + 1) % cycle.length;
             eng.transitionTo(Komorebi.PRESETS[cycle[i]], { duration: 5 });
           }, 30000);
 
-          // Be a good guest: stop rendering while the tab is hidden, and respect reduced-motion.
+          // Stop the frame loop in a hidden tab, and stop the motion if the visitor asked for less of it.
           document.addEventListener('visibilitychange', () => eng.setPaused(document.hidden));
           if (matchMedia('(prefers-reduced-motion: reduce)').matches) eng.setParams({ ...eng.params, wind_strength: 0, drift_auto: false });
-        } catch (e) { /* no WebGL2 / float targets: leave the flat background in place */ }
+        } catch (e) { /* no WebGL2: the flat background stays */ }
       }
     </script>
   </body>

@@ -4,82 +4,72 @@
 
 A standalone WebGL2 engine that renders komorebi from physics rather than painting it: a point-sun source seen through canopy layers (shift‑multiply‑summed into dappled light), with two wind bands driving a trunk/limb/twig spring hierarchy. See [`komorebi-spec.md`](komorebi-spec.md) for the full vision, physics, and model.
 
-**Try it:** [komorebi.eljojo.net](https://komorebi.eljojo.net) — the editor, every knob live.
-**See it embedded:** [the examples](https://komorebi.eljojo.net/examples/), whose source is in [`examples/`](examples/).
+Editor: [komorebi.eljojo.net](https://komorebi.eljojo.net). Examples: [`examples/`](examples/).
 
-## Put it on your site
+## Add it to your page
 
-One script tag and one canvas. No build step, no dependencies, nothing to install:
+Download [`komorebi.player.min.js`](https://komorebi.eljojo.net/dist/komorebi.player.min.js) (191 kB, 60 kB gzipped) and put it on your own server. **Do not link to the copy on komorebi.eljojo.net.** That copy is for the editor and the examples. It changes without notice, and it is not a CDN.
 
 ```html
 <canvas id="komorebi" style="position:fixed; inset:0; width:100%; height:100%; z-index:-1"></canvas>
-<script src="https://komorebi.eljojo.net/dist/komorebi.player.min.js"></script>
+<script src="/komorebi.player.min.js"></script>
 <script>
   if (window.Komorebi) {
     try {
       Komorebi.create(document.getElementById('komorebi'), { params: Komorebi.PRESETS['morning 2'] });
-    } catch (e) { /* no WebGL2: the page is just a page */ }
+    } catch (e) { /* no WebGL2 */ }
   }
 </script>
 ```
 
-That is the whole integration. The canvas needs a **CSS size** — the engine matches its backing store to `clientWidth`/`clientHeight` every frame (device pixel ratio capped at 2), so it follows a resize, a rotate or a layout change on its own. It runs its own `requestAnimationFrame` loop and draws nothing else on your page.
+Give the canvas a size in CSS. The engine reads that size each frame, so a resize needs no code.
 
-**Pin the version you tested against** if you care about stability: that URL always serves the newest build. Copy the file into your own site (it is ~190 kB, 60 kB gzipped) and you control when it changes.
+`create()` throws when the browser has no WebGL2 or no float render targets. Catch it, and the page keeps its
+background. Test `window.Komorebi` too, in case the script did not load.
 
-### Pick a look
+### Looks
 
-`Komorebi.PRESETS` is an object of named looks — pass one as `params`:
+`Komorebi.PRESETS` holds the looks:
 
 `morning 1` · `morning 2` · `morning 3` · `morning 3b` · `afternoon 4` · `afternoon 4b` · `afternoon 5` · `afternoon 5b` · `afternoon 6` · `afternoon 6b` · `afternoon 7` · `park 1` · `prism` · `memories` · `eclipse`
 
-Most are bright dappled floors that sit happily under dark page text. `park 1` is a raking view across a sunlit dirt floor with the trees in frame; `memories` and `eclipse` are darker and want light text over them. The fastest way to choose is to open [the editor](https://komorebi.eljojo.net), step through with ← → until something feels right, and copy the name.
+Most looks are bright, and dark text stays readable on them. `memories` and `eclipse` are dark. `park 1` shows the
+trees. Open the editor and step with ← → to compare them.
 
-### Move between looks
-
-`transitionTo` crossfades to another look over `duration` seconds — the engine picks its own route (morph the canopy live, dissolve the grove, or swap modes under a bloom) based on how far apart the two looks are:
-
-```js
-const cycle = ['morning 2', 'afternoon 5b', 'morning 3'];
-let i = 0;
-setInterval(() => {
-  i = (i + 1) % cycle.length;
-  eng.transitionTo(Komorebi.PRESETS[cycle[i]], { duration: 5 });
-}, 30000);
-```
-
-### Tweak a look
-
-A look is a plain object of parameters, so you can spread one and override:
+### Change the look
 
 ```js
-Komorebi.create(canvas, {
-  params: { ...Komorebi.PRESETS['morning 2'], wind_strength: 0.4, view_extent_m: 5 },
-});
+eng.transitionTo(Komorebi.PRESETS['afternoon 5b'], { duration: 5 });
 ```
 
-`Komorebi.DEFAULTS` is the full parameter set with every knob at its default — the editor's advanced panel is a view onto exactly these names, and the tooltip on each one says what it does.
+The engine selects the transition itself, from the difference between the two looks.
 
-### Degrade gracefully
+### Change a parameter
 
-`create()` **throws** if WebGL2 or float render targets are missing, which is your cue to leave the page as it was. Guard on `window.Komorebi` too — a blocked or failed script should not take your page's JS down with it. Both guards are in the snippet above, and in every example.
+A look is a plain object. Copy one and set the parameters you want:
 
-### The handle
+```js
+Komorebi.create(canvas, { params: { ...Komorebi.PRESETS['morning 2'], wind_strength: 0.4 } });
+```
+
+`Komorebi.DEFAULTS` holds every parameter at its default value. The editor has a tooltip for each one.
+
+### The engine handle
 
 ```js
 const eng = Komorebi.create(canvas, { params, onFrame });
-eng.transitionTo(params, { duration, onEnd })   // crossfade to another look
-eng.setParams(params)                           // hard swap, no transition
-eng.params                                      // the live parameters (mutate + eng.apply(scope) to re-read)
-eng.setPaused(true)                             // stop the rAF loop (off-screen, hidden tab, reduced motion)
-eng.dispose()                                   // free every GL object and the context; do this on unmount
+eng.transitionTo(params, { duration, onEnd })   // fade to another look
+eng.setParams(params)                           // change look immediately
+eng.params                                      // the live parameters
+eng.setPaused(true)                             // stop the frame loop
+eng.dispose()                                   // free the GL objects and the context
 ```
 
-`eng.dispose()` matters in a single-page app: an engine you drop without disposing keeps its context and its textures. Pair it with `setPaused` when the canvas scrolls out of view.
+Call `eng.dispose()` when you remove the canvas. An engine that you drop keeps its context.
 
-### With a bundler, or as ES modules
+### ES modules
 
-The engine is authored as ES modules and the bundle is just a convenience wrapper:
+The bundle wraps ES modules. Import them if you have a bundler:
 
 ```js
 import { create } from './komorebi.js';
@@ -87,11 +77,13 @@ import { PRESETS } from './presets.js';
 const eng = create(canvas, { params: PRESETS['morning 2'] });
 ```
 
-Same API, no global. ES modules must be **served over http(s)** — a page opened off `file://` cannot import them.
+Serve ES modules over http(s). A page on `file://` cannot import them.
 
 ### A smaller bundle
 
-The published bundle carries the whole engine: 23 looks, four cameras, both canopy tiers. If your page shows two or three looks, `nix run .#embed` builds one that carries only those — and only the cameras they actually select — typically around a third of the size. See `embed-build.mjs`, and `nix run .#embed-check` to prove your build still renders those looks byte-identically.
+The bundle contains 23 looks, four cameras and both canopy tiers. If your page uses two or three looks,
+`nix run .#embed` builds a bundle with only those looks and the cameras they use. It is approximately one third
+of the size. `nix run .#embed-check` shows that the smaller bundle renders those looks byte-identically.
 
 ## Develop
 
@@ -108,4 +100,4 @@ nix run .#embed -- 'morning 2' 'afternoon 5b' 'morning 3'   # a one-page bundle:
 nix run .#embed-check -- 'morning 2' 'afternoon 5b' 'morning 3'   # ...and prove it renders them byte-identically
 ```
 
-[`CLAUDE.md`](CLAUDE.md) is the repo map — what each file is and what it owns. Every push to `main` builds `dist/` and publishes the site (editor, examples and bundle) to GitHub Pages.
+[`CLAUDE.md`](CLAUDE.md) is the repo map. A push to `main` builds `dist/` and publishes the site.
