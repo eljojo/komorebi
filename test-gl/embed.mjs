@@ -5,9 +5,11 @@
 // and "unreachable" is a claim about pixels. So this loads BOTH engines into ONE page — same browser, same
 // GL stack, same context settings, frozen motion — and compares the frames byte for byte.
 //
-//   cd test-gl && node embed.mjs 'morning 2' 'afternoon 5b' 'morning 3'     (or: nix run .#embed-check -- <look>...)
-//   --against <file.js>   also render a SECOND bundle (an older deploy) and report how far the look moved,
-//                         with a contact sheet in test-gl/out/ — a look diff, not a pass/fail.
+//   cd test-gl && node embed.mjs                    (or: nix run .#embed-check [-- <option>...])
+//   --bundle <file.js>    which bundle to check. Default: dist/komorebi.embed.min.js.
+//   <look>...             check only these looks. Default: every look the bundle carries.
+//   --against <file.js>   also render a second bundle (an older deploy) and report how far the look moved,
+//                         with a contact sheet in test-gl/out/. This is a look diff, not a pass or a fail.
 //
 // The bundles are classic scripts that assign window.Komorebi, so each is loaded in turn and its create /
 // PRESETS captured before the next overwrites the global. Motion is frozen exactly as harness.html freezes
@@ -25,9 +27,10 @@ const require = createRequire(join(ROOT, 'test-gl', 'package.json'));
 const { chromium } = require('playwright');
 
 const argv = process.argv.slice(2);
-const againstAt = argv.indexOf('--against');
-const against = againstAt >= 0 ? argv.splice(againstAt, 2)[1] : null;
-const looks = argv.length ? argv : ['morning 2', 'afternoon 5b', 'morning 3'];
+const arg = (name, fallback) => { const i = argv.indexOf(name); return i >= 0 ? argv.splice(i, 2)[1] : fallback; };
+const against = arg('--against', null);
+const bundle = arg('--bundle', '/dist/komorebi.embed.min.js').replace(/^\.?\/?/, '/');
+const named = argv;                                // no names: check every look the bundle carries
 const FRAME = 30;                                  // deep enough that the bake, the grove and the first draw have all happened
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript' };
@@ -158,12 +161,13 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
-let failed = 0;
+let failed = 0, looks = named;
 try {
   await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__ready);
-  const inEmbed = await page.evaluate(() => window.__load('embed', '/dist/komorebi.embed.min.js'));
-  console.log(`embed bundle carries ${inEmbed.length} look(s): ${inEmbed.join(', ')}`);
+  const inBundle = await page.evaluate((u) => window.__load('embed', u), bundle);
+  console.log(`${basename(bundle)} carries ${inBundle.length} look(s): ${inBundle.join(', ')}`);
+  if (!looks.length) looks = inBundle;
   if (against) {
     const inOld = await page.evaluate(() => window.__load('against', '/against.js'));
     console.log(`${basename(against)} carries ${inOld.length} look(s)`);

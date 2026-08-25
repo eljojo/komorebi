@@ -8,7 +8,7 @@ Editor: [komorebi.eljojo.net](https://komorebi.eljojo.net). Examples: [`examples
 
 ## Add it to your page
 
-Download [`komorebi.player.min.js`](https://komorebi.eljojo.net/dist/komorebi.player.min.js) (191 kB, 60 kB gzipped) and put it on your own server. **Do not link to the copy on komorebi.eljojo.net.** That copy is for the editor and the examples. It changes without notice, and it is not a CDN.
+Download [`komorebi.player.min.js`](https://komorebi.eljojo.net/dist/komorebi.player.min.js) (87 kB, 25 kB gzipped) and put it on your own server. **Do not link to the copy on komorebi.eljojo.net.** That copy is for the editor and the examples. It changes without notice, and it is not a CDN.
 
 ```html
 <canvas id="komorebi" style="position:fixed; inset:0; width:100%; height:100%; z-index:-1"></canvas>
@@ -81,9 +81,12 @@ Serve ES modules over http(s). A page on `file://` cannot import them.
 
 ### A smaller bundle
 
-The bundle contains 23 looks, four cameras and both canopy tiers. If your page uses two or three looks,
-`nix run .#embed` builds a bundle with only those looks and the cameras they use. It is approximately one third
-of the size. `nix run .#embed-check` shows that the smaller bundle renders those looks byte-identically.
+The bundle contains the 15 shipped looks. The experimental looks are not in it: they are the receiver, enclosure
+and sky-view work, and they are the only looks that use a camera other than the floor.
+
+If your page uses two or three looks, `nix run .#embed -- '<look>'...` builds a bundle with only those looks and
+the cameras they use. Four looks come to 74 kB, or 24 kB gzipped. `nix run .#embed-check` renders each look
+through the bundle and through the raw modules, and requires the frames to be identical.
 
 ## Develop
 
@@ -92,12 +95,12 @@ ES‑module dev needs http (not `file://`). With Nix:
 ```
 nix run .#dev      # serve + live‑reload at http://localhost:8000
 nix run .#lint     # biome
-nix run .#build    # bundle dist/komorebi.player.min.js (the whole engine: every look, every camera)
+nix run .#build    # bundle dist/komorebi.player.min.js (every shipped look, no experimental ones)
 node glslcheck.mjs # offline shader validation — compiles every GLSL literal in the engine modules (glslangValidator, no GPU)
 nix run .#pixels   # the pixel harness — render every look + pixel suites (first run: cd test-gl && npm install && npx playwright install chromium)
 nix run .#editor   # the editor smoke — mode ladder + macro bus driven in headless Chromium (same first-run setup)
 nix run .#embed -- 'morning 2' 'afternoon 5b' 'morning 3'   # a one-page bundle: only those looks, only the cameras they use
-nix run .#embed-check -- 'morning 2' 'afternoon 5b' 'morning 3'   # ...and prove it renders them byte-identically
+nix run .#embed-check                                       # ...and check it renders them byte-identically
 ```
 
 [`CLAUDE.md`](CLAUDE.md) is the repo map. A push to `main` builds `dist/` and publishes the site.

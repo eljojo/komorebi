@@ -1,46 +1,47 @@
 // ============================================================================
-// embed-build.mjs — the SPECIALIZED deploy bundle: one page, a named set of looks, and nothing else.
+// embed-build.mjs — the deploy bundles. Both come from here, so there is one definition of a build.
 //
-//   node embed-build.mjs 'morning 2' 'afternoon 5b' 'morning 3'      (or: nix run .#embed -- <look>...)
-//   -> dist/komorebi.embed.min.js   IIFE global (window.Komorebi), same door as the player bundle
+//   node embed-build.mjs                            -> dist/komorebi.player.min.js   every shipped look
+//   node embed-build.mjs 'morning 2' 'park 1' ...    -> dist/komorebi.embed.min.js    only these looks
 //
-// WHY THIS EXISTS. `nix run .#build` ships the whole engine: 23 looks, four cameras, both canopy tiers.
-// An ambient background on one page uses a handful of looks on ONE camera, and pays for the rest in bytes
-// it will never execute. This build asks the looks what they need and drops the rest.
+// (or: nix run .#build / nix run .#embed -- <look>...). Both are IIFE globals: window.Komorebi.
 //
-// WHAT IT CUTS, and why each cut is answerable from data rather than from judgement:
-//   • LOOKS — presets.js keeps only the named ones. Everything else in that file is data nobody reads.
-//   • CAMERAS — cameraFor() (the transport registry's own selector) reads the kept looks and returns the
-//     cameras they actually select; CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS and render.js's
-//     GROUP_UPLOAD are pruned to that set, in the same three-halves agreement registry.test.js guards —
-//     so an unreachable camera takes its GLSL, its uniform groups and its per-frame upload with it. The
-//     bundler then drops the orphaned GLSL_T_* strings on its own: they are pure literals nobody names.
-//   • GLSL PROSE — the shader sources carry the engine's design notes, and a template literal is opaque
-//     to a minifier, so every one of those bytes ships. They are stripped here (comments only, outside
-//     `${}`), which is most of the raw-size win and none of the meaning: the source keeps its notes.
-//   • THE EDITOR TIER — `--define KOMOREBI_EDITOR=false` does NOT actually fold: bun and esbuild both
-//     refuse to inline this file's `const EDITOR = <ternary>` into its use sites, so the overlays, the
-//     timer-query extension and the inset shaders ship in the player bundle today (measured: 7.6 kB raw,
-//     3.1 kB gzip). Substituting the constant textually is what makes the dead branches actually die.
+// The bundle contains only what its looks can reach. A look that no bundle carries cannot run, so its
+// camera, its GLSL and its uniform uploads are dead weight.
 //
-// WHAT IT DOES NOT CUT, deliberately: the faithful canopy tier, the glow tier and the woody occluder are
-// unreachable for a look that leaves their gates at zero, but they are interleaved CODE, not table data —
-// removing them means editing the engine, not reading it. They stay, and stay gated off at runtime.
+// WHAT IT CUTS. Each cut comes from a table, not from a decision:
+//   • LOOKS — presets.js keeps the named looks. The default set is PRESETS minus EXPERIMENTAL, which is
+//     the line the editor already draws: the experimental looks are the receiver, enclosure and sky-view
+//     work, and they are the only looks that select a camera other than the floor.
+//   • CAMERAS — cameraFor() reads the kept looks and returns the cameras they select. CAMERAS,
+//     TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS and render.js's GROUP_UPLOAD are pruned to that set, in the
+//     same agreement registry.test.js guards. The bundler then drops the orphaned GLSL_T_* strings.
+//   • GLSL PROSE — a template literal is opaque to a minifier, so the shader design notes ship as bytes.
+//     Comments outside `${}` are removed here. The source keeps its notes.
+//   • THE EDITOR TIER — `--define KOMOREBI_EDITOR=false` does not fold: bun and esbuild both refuse to
+//     inline `const EDITOR = <ternary>` into its use sites, so the overlays, the timer-query extension and
+//     the inset shaders shipped in every bundle before this (7.6 kB raw, 3.1 kB gzip, measured). This
+//     substitutes the constant, and the dead branches then go.
 //
-// The output is verified, not assumed: test-gl/embed.mjs renders every kept look through this bundle and
-// through the raw ES modules and requires the frames to be byte-identical.
+// WHAT IT DOES NOT CUT: the faithful canopy tier, the glow tier and the woody occluder. A look can turn
+// each of them on, and they are code, not table data. They stay, and stay off at runtime.
+//
+// Verify a bundle with `nix run .#embed-check`. It renders each look through the bundle and through the
+// raw ES modules and requires the frames to be byte-identical.
 // ============================================================================
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PRESETS } from './presets.js';
+import { EXPERIMENTAL, PRESETS } from './presets.js';
 import { cameraFor, CAMERAS, GROUP_UPLOAD_KEYS } from './komorebi.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const looks = process.argv.slice(2);
-if (!looks.length) { console.error("usage: node embed-build.mjs 'morning 2' 'afternoon 5b' ..."); process.exit(2); }
+// No arguments: every shipped look, into the general bundle. Named looks: those looks, into the one-page one.
+const named = process.argv.slice(2);
+const looks = named.length ? named : Object.keys(PRESETS).filter((n) => !EXPERIMENTAL.includes(n));
+const outFile = named.length ? 'komorebi.embed.min.js' : 'komorebi.player.min.js';
 for (const n of looks) if (!PRESETS[n]) { console.error(`unknown look '${n}' — see presets.js`); process.exit(2); }
 
 // ---- WHAT THE LOOKS NEED. The camera set is derived, never declared: cameraFor is the same selector the
@@ -91,7 +92,7 @@ function pruneObject(src, header, indent, keep) {
   const key = new RegExp(`^ {${indent}}('[^']+'|[\\w]+):`);
   const close = new RegExp(`^ {0,${indent - 2}}\\}`);
   const out = [], dropped = [], seen = [];
-  let cur = null;
+  let cur = null, inBlock = false;   // presets.js keeps retired looks inside a /* ... */ block: a key in there is not an entry
   const flush = () => {
     if (!cur) return;
     seen.push(cur.name);
@@ -100,12 +101,20 @@ function pruneObject(src, header, indent, keep) {
   };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const commented = inBlock;
+    const opens = line.indexOf('/*'), closes = line.indexOf('*/');
+    if (inBlock) { if (closes >= 0) inBlock = false; }
+    else if (opens >= 0 && (closes < 0 || closes < opens)) inBlock = true;
+    if (commented) { if (cur) cur.lines.push(line); else out.push(line); continue; }
     if (close.test(line)) {
       flush();
       out.push(...lines.slice(i));
       const missing = keep.filter((k) => !seen.includes(k));
       if (missing.length) throw new Error(`embed: "${header.trim()}" has no entry ${missing.join(', ')}`);
-      return { src: src.slice(0, body) + out.join('\n'), dropped };
+      const kept = src.slice(0, body) + out.join('\n');
+      const count = (re) => (kept.match(re) || []).length;
+      if (count(/\/\*/g) !== count(/\*\//g)) throw new Error(`embed: pruning "${header.trim()}" split a /* */ comment`);
+      return { src: kept, dropped };
     }
     const m = line.match(key);
     if (m) { flush(); cur = { name: m[1].replace(/'/g, ''), lines: [line] }; }
@@ -144,7 +153,7 @@ for (const f of ['komorebi-engine.js', 'komorebi-source.js']) write(f, hardcodeE
 
 // ---- bundle (the player build's own line, minus the define that never worked) ----
 mkdirSync(join(ROOT, 'dist'), { recursive: true });
-const out = join(ROOT, 'dist', 'komorebi.embed.min.js');
+const out = join(ROOT, 'dist', outFile);
 execFileSync('bun', ['build', join(work, 'komorebi.global.js'), '--minify', '--format=iife', `--outfile=${out}`], { stdio: 'inherit' });
 rmSync(work, { recursive: true, force: true });
 
@@ -154,4 +163,4 @@ console.log(`\nlooks     ${looks.join(', ')}`);
 console.log(`cameras   ${cameras.join(', ')}   (dropped: ${c.dropped.join(', ') || 'none'})`);
 console.log(`groups    ${groups.join(', ')}   (dropped: ${g.dropped.join(', ') || 'none'})`);
 console.log(`presets   kept ${looks.length}, dropped ${p.dropped.length}`);
-console.log(`\ndist/komorebi.embed.min.js   ${bytes.length} raw   ${gz} gzip`);
+console.log(`\ndist/${outFile}   ${bytes.length} raw   ${gz} gzip`);

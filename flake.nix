@@ -43,25 +43,15 @@
               fi
             '';
           };
-          # `nix run .#build` — bundle the deploy artifact for external no-build embeds (eljojo.net):
-          #   dist/komorebi.player.min.js  IIFE global (window.Komorebi), the WHOLE engine
-          # --define:KOMOREBI_EDITOR=false is passed and does not do what it looks like: neither bun nor
-          # esbuild inlines this file's `const EDITOR = <ternary>` into its use sites, so the overlays ship
-          # anyway (7.6 kB raw / 3.1 kB gzip, measured). `nix run .#embed` folds the flag by hand and is the
-          # build to reach for when the bytes matter. The editor + player.html in this repo import the ES
-          # modules directly and need no bundle.
+          # `nix run .#build` — the general deploy bundle for no-build embeds:
+          #   dist/komorebi.player.min.js  IIFE global (window.Komorebi), every SHIPPED look
+          # The experimental looks are not in it, and they are the only looks that use a camera other than
+          # the floor, so their cameras go too. embed-build.mjs holds the definition of both bundles.
+          # The editor and player.html in this repo import the ES modules directly and need no bundle.
           build = pkgs.writeShellApplication {
             name = "build";
-            runtimeInputs = [ pkgs.bun pkgs.gzip pkgs.coreutils ];
-            text = ''
-              mkdir -p dist
-              bun build ./komorebi.global.js --minify --format=iife \
-                --define KOMOREBI_EDITOR=false --outfile=dist/komorebi.player.min.js
-              printf '%-32s %9s %9s\n' file raw gzip
-              for f in komorebi.js komorebi-*.js presets.js dist/komorebi.player.min.js; do
-                printf '%-32s %9d %9d\n' "$f" "$(wc -c <"$f")" "$(gzip -c "$f" | wc -c)"
-              done
-            '';
+            runtimeInputs = [ pkgs.bun pkgs.gzip pkgs.nodejs_22 ];
+            text = ''exec node embed-build.mjs'';
           };
           # `nix run .#pixels [preset...]` — the pixel harness: renders every look in headless Chromium
           # (real WebGL2 / SwiftShader), writes PNGs to test-gl/out/, and runs the smoke + gate-invariant +
@@ -80,10 +70,8 @@
               exec node run.js "$@"
             '';
           };
-          # `nix run .#embed -- '<look>'...` — the SPECIALIZED deploy bundle for one page: only the named
-          # looks, only the cameras they select, editor tier and GLSL prose gone.
-          #   dist/komorebi.embed.min.js   IIFE global (window.Komorebi), same door as the player build
-          # Verify it with `nix run .#embed-check -- '<look>'...` before shipping it anywhere.
+          # `nix run .#embed -- '<look>'...` — the one-page bundle: only the named looks, only the cameras
+          # they select. Writes dist/komorebi.embed.min.js. Verify it with `nix run .#embed-check`.
           embed = pkgs.writeShellApplication {
             name = "embed";
             runtimeInputs = [ pkgs.bun pkgs.gzip pkgs.nodejs_22 ];
