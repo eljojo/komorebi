@@ -20,6 +20,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EXPERIMENTAL, PRESETS } from '../presets.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served
 const require = createRequire(join(ROOT, 'test-gl', 'package.json'));
@@ -77,10 +78,10 @@ try {
     return row.querySelector('input').value;
   });
 
-  // preset filter: default hides the 8 experimental looks (23 built-ins -> 15)
+  // preset filter: default hides every experimental look
   const optCount = () => page.$eval('#dev select', (s) => [...s.options].filter((o) => !o.textContent.startsWith('★ ')).length);
   const n0 = await optCount();
-  check('experimental looks hidden by default', n0 === 15, `built-ins listed: ${n0}`);
+  check('experimental looks hidden by default', n0 === Object.keys(PRESETS).length - EXPERIMENTAL.length, `built-ins listed: ${n0}`);
 
   // the playful weather macro drives cloud_thickness (visible in the advanced slider)
   await page.$eval('#play', (el) => {
@@ -125,18 +126,18 @@ try {
   });
   check('season macro (release) regrows to sparse spring', Math.abs(parseFloat(dens) - 0.45) < 1e-6, `density ${dens}`);
 
-  // experimental toggle doubles the list
+  // experimental toggle reveals every built-in look
   await page.$eval('#play', (el) => {
     const rows = [...el.querySelectorAll('.ctl.toggle')];
     const row = rows.find((r) => r.querySelector('label')?.textContent.startsWith('experimental looks'));
     row.querySelector('input').click();
   });
   const n1 = await optCount();
-  check('experimental toggle reveals all looks', n1 === 23, `built-ins listed: ${n1}`);
+  check('experimental toggle reveals all looks', n1 === Object.keys(PRESETS).length, `built-ins listed: ${n1}`);
 
   // the playful dropdown jumps straight to a look and marks beta ones with a distinct glyph
   const betaMarks = await page.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); return [...s.options].filter((o) => o.textContent.startsWith('\u25e6 ')).length; });
-  check('beta looks carry their own marker in the list', betaMarks === 8, `\u25e6 options: ${betaMarks}`);
+  check('beta looks carry their own marker in the list', betaMarks === EXPERIMENTAL.length, `\u25e6 options: ${betaMarks}`);
   await page.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); s.value = 'memories'; s.dispatchEvent(new Event('change', { bubbles: true })); });
   const devSync = await page.$eval('#dev select', (s) => s.value);
   check('playful dropdown jumps and the dev select follows', devSync === 'memories', `dev shows ${devSync}`);
