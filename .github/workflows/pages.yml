@@ -29,6 +29,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
+
+      # The cheap gates: no browser, seconds each. A red one stops the publish. The Chromium suites
+      # (pixels, editor, embed-check) stay local — they need Playwright's own browser, outside nix.
+      - name: Unit tests
+        run: nix develop -c bun test *.test.js
+      - name: Lint
+        run: nix run .#lint
+      - name: Shaders
+        run: nix shell nixpkgs#nodejs_22 nixpkgs#glslang -c node glslcheck.mjs
+
       - name: Build the bundle
         run: nix run .#build      # writes dist/komorebi.player.min.js and prints the size table
 
