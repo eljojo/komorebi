@@ -63,6 +63,55 @@ function hash3(a,b,c){ let h=(a^0x9E3779B1)>>>0;
   h=Math.imul(h^b,0x85EBCA6B)>>>0; h=Math.imul(h^c,0xC2B2AE35)>>>0;
   return (h^(h>>>15))>>>0; }
 
+// ---- autumn senescence (spec §4.5): a leaf's pigment state, per leaf. Chlorophyll is dismantled and the carotenoid
+// that was always there shows; anthocyanin is synthesised (red); tannin browns. Optical depth is ADDITIVE, so each
+// pigment is a basis vector of per-channel tau (R,G,B), and a leaf is its summer tau faded out plus these faded in.
+// PROVISIONAL until backlit measurements (tau = -ln(leaf / diffuser), one leaf per pigment state) replace them;
+// what is held honest meanwhile is their ORDERING (leaf.test.js), and the shape of the story they tell:
+const TAU_CAROTENOID  = [0.30, 0.55, 2.8];   // absorbs blue, passes red+green -> gold (T .74/.58/.06). Always present, hidden by chlorophyll until it goes
+const TAU_ANTHOCYANIN = [0.10, 2.8, 1.0];    // absorbs green, a little blue: on top of the gold it turns orange -> red -> maroon as a rises (T_g .33 / .06 / .02 at a = .2 / .8 / 1.2)
+const TAU_TANNIN      = [0.8, 1.2, 1.9];     // broad, warm-leaning (b > g > r): the russet of beech and oak (T .33/.17/.01 at b = 1, over the gold)
+// A leaf's identity is its OWN stream, seeded from (seed, cluster, leaf) and never the growth RNG, so drawing from it
+// cannot move one twig or one leaf of any shipped grove. The salt keeps it independent of the arrangement stream
+// (hash3(seed, j, 101), made from the same ingredients).
+const LEAF_SALT = 0x51ED270B;
+const _leafCell=[0,0,0], _leafWall=[0,0,0];   // scratch for leafTau, written and read within one synchronous call
+// s_j: how far leaf (stream value phi in [0,1)) has turned. smoothstep from its own start to the common finish; the
+// spread is clamped under the span so the transition keeps a floor of width and the smoothstep a positive one.
+function senescence(P, phi){
+  const span = Math.max(P.turn_span, 1e-4), spread = clamp(P.turn_spread, 0, span*0.95);
+  return smoothstep(P.turn_start + phi*spread, P.turn_start + span, P.phenology);
+}
+// The sieve effect (Beer's law is convex): a leaf is bright vein walls (tau_wall) beside dark cells (tau_cell), and
+// light through the whole leaf is the MEAN OF TRANSMITTANCES, not of tau — so a small clear fraction lifts a deep
+// leaf far more than the mean tau suggests, and tau_j <= f_w*tau_wall + (1-f_w)*tau_cell (Jensen). f_w = 0 is the
+// cell, bit for bit, via its own branch (no exp/log round trip) — that is what keeps the off state exact.
+function mixtureTau(tauWall, tauCell, fw, out = [0,0,0]){
+  if(!(fw > 0)){ out[0]=tauCell[0]; out[1]=tauCell[1]; out[2]=tauCell[2]; return out; }
+  const f = Math.min(fw, 1);
+  for(let c=0;c<3;c++) out[c] = -Math.log(f*Math.exp(-tauWall[c]) + (1-f)*Math.exp(-tauCell[c]));
+  return out;
+}
+// One leaf's tau (R,G,B): summer*(1-s) + s*(carotenoid + a*anthocyanin + b*tannin), the cells; the walls the same
+// without the anthocyanin (vein tissue makes none); then the sieve mixture. j,k = the leaf's cluster and its place in
+// it — stable under tree_count / density morphs, which a flat running index is not. Fills `out` (no garbage per leaf).
+// GATE: s_j = 0 (not yet turning — every leaf at phenology <= turn_start) returns tauSummer's own numbers with no
+// arithmetic on them. At s = 0 wall and cell are the same tissue, so the mixture would be the identity in exact
+// arithmetic; the branch makes it the identity in float too, for any f_w.
+function leafTau(tauSummer, P, seed, j, k, out = [0,0,0]){
+  const r = mulberry32(hash3((seed>>>0)^LEAF_SALT, j, k));
+  const s = senescence(P, r());
+  if(s === 0){ out[0]=tauSummer[0]; out[1]=tauSummer[1]; out[2]=tauSummer[2]; return out; }
+  const a = P.anthocyanin*(0.5 + r()), b = P.tannin*(0.5 + r());
+  const cell = _leafCell, wall = _leafWall;
+  for(let c=0;c<3;c++){
+    const base = tauSummer[c]*(1-s), pig = TAU_CAROTENOID[c] + b*TAU_TANNIN[c];
+    wall[c] = base + s*pig;
+    cell[c] = base + s*(pig + a*TAU_ANTHOCYANIN[c]);
+  }
+  return mixtureTau(wall, cell, P.wall_fraction, out);
+}
+
 // ---- broadband wind signal (spec §5.1). Real wind is BROADBAND, not a single frequency — a single sine
 // reads as a machine because all its energy sits at one period. A frame-stable fractal sum of octaves over
 // TIME with per-octave amplitude gain G=2^(-H) gives a power spectrum ∝ f^-(2H+1): the Kolmogorov inertial
@@ -127,4 +176,4 @@ function bendDown(dir, dth){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, mulberry32, makeGauss, hash3, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };

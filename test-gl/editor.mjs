@@ -189,6 +189,24 @@ try {
   let floor = false;
   for (let i = 0; i < 30 && !floor; i++) { await page.waitForTimeout(400); floor = (await rowShown('ground R')) && !(await rowShown('fabric Tt')); }
   check('back on the floor the ground returns and the cloth goes', floor);
+  // SENESCENCE ROWS (§4.5): the season row is always there; the pigment rows hang off it. At summer (phenology under
+  // turn_start) no leaf has begun to turn, so capacity, vein share and the turn clock are sliders that lie — hidden
+  // until the season passes the threshold, and gone again when it returns.
+  const setSeason = (v) => page.evaluate((val) => {
+    const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === 'phenology');
+    const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
+  }, v);
+  const PIGMENT_ROWS = ['anthocyanin', 'tannin', 'vein share'];
+  const pigmentShown = async () => (await Promise.all(PIGMENT_ROWS.map(rowShown)));
+  check('the season row is there and the pigment rows hide at summer', (await rowShown('phenology')) === true && (await pigmentShown()).every((v) => v === false), `${await rowShown('phenology')} ${await pigmentShown()}`);
+  await setSeason(0.8);
+  let turning = false;
+  for (let i = 0; i < 30 && !turning; i++) { await page.waitForTimeout(400); turning = (await pigmentShown()).every((v) => v === true); }
+  check('past turn_start the pigment rows appear', turning, `${await pigmentShown()}`);
+  await setSeason(0.5);
+  let summer = false;
+  for (let i = 0; i < 30 && !summer; i++) { await page.waitForTimeout(400); summer = (await pigmentShown()).every((v) => v === false); }
+  check('and go again when the season comes back', summer, `${await pigmentShown()}`);
   await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('playful')).click());
   await page.waitForSelector('#play:not(.hidden)');
   check('ladder: advanced -> playful', await page.$eval('#dev', (e) => e.classList.contains('hidden')));

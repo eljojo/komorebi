@@ -6,7 +6,7 @@
 // grove value (installGrove, in the engine, makes one active). A factory over
 // the engine's shared internals (hub).
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, bendDown, clamp, coneDir, hash3, makeGauss, mulberry32 } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, bendDown, clamp, coneDir, hash3, leafTau, makeGauss, mulberry32 } from './komorebi-math.js';
 import { MAX_OCC } from './komorebi-params.js';
 
 export function makeGrove(hub){
@@ -251,6 +251,9 @@ export function makeGrove(hub){
     for(let l=0;l<nLayer;l++) layerData.push([]);   // 16 floats/leaf — see attribute layout below
     const faithData = [];                           // FAITHFUL: ALL leaves in one buffer + a 17th float = continuous height (§4.5)
     const faithful = faithfulOn();                  // hoisted: the packing convention below must be ONE decision for the whole grove, not re-asked per leaf
+    // Autumn senescence (§4.5): per-leaf pigment state. Every s_j is exactly 0 until phenology passes turn_start, so
+    // below it the authored `tau` goes through untouched — the gate that keeps every shipped look byte-identical.
+    const senescing = params.phenology > params.turn_start, leafT = [0,0,0];
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const rng  = mulberry32(hash3(params.seed>>>0, j, 101));               // arrangement stream
@@ -285,10 +288,14 @@ export function makeGrove(hub){
         const ax = 0.4+0.6*rng(), ay = 0.4+0.6*rng();    // incoherent orbit
         const orient = rng()*TAU2, phase = rng()*TAU2;
         const swingGain = 0.6+0.8*rng2(), swingPhase = rng2()*TAU2;
+        // this leaf's own tau: a leaf not yet turning gets `tau` itself (leafTau's s=0 branch copies it, no arithmetic).
+        // The hashes inside leafTau are pure functions of (seed, j, k) — they must never draw from rng/rng2/gr above,
+        // or every shipped grove reshuffles.
+        const lt = senescing ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
         data.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                  tau[0]*cov,tau[1]*cov,tau[2]*cov, j, ax,ay,orient,phase);
+                  lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase);
         faithData.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                  tau[0]*cov,tau[1]*cov,tau[2]*cov, j, ax,ay,orient,phase, t.z);   // + REAL grown height (attr 5) — cast == preview
+                  lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, t.z);   // + REAL grown height (attr 5) — cast == preview
       }
     }
 

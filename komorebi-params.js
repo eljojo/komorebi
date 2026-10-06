@@ -61,6 +61,7 @@ const CANOPY_KEYS = [
   'canopy_extent_m',                                                  // baked world size — only a regrow + re-bake (NO texture realloc), so it morphs continuously
   'branch_angle_deg','branch_length_ratio','branch_pitch_deg','foliage_density','leaves_per_cluster',
   'cluster_spread_m','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b','droop','taper_delta','crown_aspect',
+  'phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction',   // leaf colour, like trans_rgb: each is a per-leaf tau read at regrow, so it morphs the SAME grove (spec §4.5)
 ];
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
   'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis',
@@ -147,6 +148,18 @@ const DEFAULTS = {
   max_tilt: 0.8,                   // orientation foreshortening amount
   edge_softness: 0.25,
   trans_r: 0.04, trans_g: 0.35, trans_b: 0.06,   // per-channel transmittance (green passes)
+  // AUTUMN SENESCENCE (spec §4.5): each leaf runs its own clock and carries its own pigment capacity. `phenology`
+  // is the season (0 spring bud · 0.5 summer · 1 leaf-off); a leaf starts turning at turn_start + φ·turn_spread
+  // (φ a per-leaf hash) and has finished by turn_start + turn_span. trans_rgb stays the authored SUMMER hue.
+  // GATE: a leaf that has not begun to turn (every leaf, at phenology <= turn_start) keeps trans_rgb literally —
+  // the shipped looks sit at 0.5, so they render byte-identically whatever the pigment knobs below say.
+  phenology: 0.5,
+  turn_start: 0.6,                 // phenology at which the EARLIEST leaf begins to turn
+  turn_span: 0.3,                  // ...and by turn_start + turn_span every leaf has finished
+  turn_spread: 0.18,               // how far the leaves' start times scatter (phenology units, clamped under the span): 0.6 of the default span, so mid-turn is a mosaic (green · gold · red on one tree) and the last leaf still finishes at 0.9
+  anthocyanin: 0.0,                // red capacity (maple, sumac): synthesised as the leaf turns, ×(0.5..1.5) per leaf — the ~3:1 range in red depth across one tree. 0 = a plain gold turn
+  tannin: 0.0,                     // brown (beech, oak): a broad warm absorber, ×(0.5..1.5) per leaf
+  wall_fraction: 0.0,              // share of the leaf that is bright vein walls rather than dark cells (the sieve effect, §4.5): the mean is of transmittances, so a few clear walls lift a deep leaf. 0 = one uniform tissue
   canopy_extent_m: 12.0,           // world size of baked layers (>= view + 2*max shift)
   tex_resolution: 2048,
   bake_resolution: 1024,           // TUNE (§9): bake-pass / layer-texture size; 0 = follow tex_resolution. Ships at 1024 (cheaper-bake baseline). auto_quality trims it below the knee like samples; set 0 (follow) per look for a full-res bake.

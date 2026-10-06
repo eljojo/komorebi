@@ -118,6 +118,10 @@ const PANEL = [
   ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
   ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
   ['s','trans_b','trans B',0.001,0.6,0.001,'canopy'],
+  ['s','phenology','phenology',0,1,0.01,'canopy'],            // §4.5: the season — 0.5 is summer, where the three below (and the turn clock) are inert and hidden
+  ['s','anthocyanin','anthocyanin',0,1.5,0.01,'canopy'],
+  ['s','tannin','tannin',0,1.5,0.01,'canopy'],
+  ['s','wall_fraction','vein share',0,0.6,0.01,'canopy'],
   ['btn','reseed', reseed],
   ['adv','fine geometry'],
   ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
@@ -128,6 +132,9 @@ const PANEL = [
   ['s','leaf_aspect','aspect',1,4,0.05,'canopy'],
   ['s','max_tilt','tilt',0,1,0.01,'canopy'],
   ['s','edge_softness','edge',0.01,1,0.01,'canopy'],
+  ['s','turn_start','turn start',0,1,0.01,'canopy'],
+  ['s','turn_span','turn span',0.02,0.6,0.01,'canopy'],
+  ['s','turn_spread','turn spread',0,0.6,0.01,'canopy'],
 
   ['h','Transport'],
   ['s','time_of_day','time (h)',5,19,0.25,'suntime'],
@@ -325,6 +332,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
 };
 const faithLive = (cam) => params.faithful_canopy && !!CAMERAS[cam].faith;   // faithfulOn(), read off the registry
 const apertureOn = () => params.window_w_m*params.window_h_m > 0;
+const turning = () => params.phenology > params.turn_start;                  // the grove's own senescing gate (komorebi-grove.js)
 const glowOn = (cam) => cam !== 'floor' && params.glow_bleed > 0;            // the diffusion tier's own gate (render.js drawFrameInto)
 const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that does carry it
   receiver: () => !params.sky_view,                       // looking up overrides the receiver outright — there is no surface to pick
@@ -339,6 +347,8 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   window_cx_m: apertureOn, window_cy_m: apertureOn, window_wall: apertureOn,
   drift_speed: () => params.drift_auto && params.drift_amount > 0,
   adaptive_idle_fps: () => params.adaptive_motion,
+  anthocyanin: turning, tannin: turning, wall_fraction: turning,   // senescence (§4.5): until a leaf has begun to turn (phenology past turn_start) its tau is the authored summer one, whatever these say
+  turn_span: turning, turn_spread: turning,
   show_layer: (cam) => !faithLive(cam),                   // faithful mode taps one texture; the layer slices aren't baked
   show_layer_index: (cam) => params.show_layer && !faithLive(cam),
 };
@@ -354,7 +364,7 @@ function rowLive(key, cam){
 function gateSig(){
   const cam = cameraFor(params);
   return [cam, params.eclipse, params.view_pitch_deg>0, params.glow_bleed>0, params.mullion_tau>0, apertureOn(),
-          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam)].join('|');
+          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam), turning()].join('|');
 }
 let gateSigLast = null;
 function refreshGates(){
@@ -681,6 +691,13 @@ const TIPS = {
   trans_r:"<b>How much RED light leaks through a leaf.</b> Keep it low — leaves drink red, which is why shade isn't black. It's the main lever on how warm the shadow-green looks. Stacked leaves multiply, so overlaps go darker.",
   trans_g:"<b>How much GREEN light leaks through a leaf.</b> High — leaves pass green, so the shade beneath them glows green instead of going black. The signature komorebi colour.",
   trans_b:"<b>How much BLUE light leaks through a leaf.</b> Low, like red. A small nudge on how cool the shade reads.",
+  phenology:"<b>The season — spring bud, summer, leaf-off.</b> 0.5 is summer and the leaves are exactly the look's own colour. Past the turn the leaves change, each on its own clock: the green is dismantled, the yellow that was always there shows, red is made. On the ground it's the <i>shade</i> that goes warm — the suns stay white-gold. (It colours the leaves; it doesn't drop them yet.)",
+  anthocyanin:"<b>How much red each leaf can make.</b> 0 = a plain gold turn; up = orange, then deep red, then maroon. Every leaf gets between half and one-and-a-half times this, so one tree carries pale and deep reds side by side — about a three-to-one range, as in the photographs. Maples and sumac have a lot; birch has none. Only shows once the season has passed the turn.",
+  tannin:"<b>How brown the leaves go.</b> A broad, warm absorber — the russet of beech and oak, dull under the gold. Same per-leaf spread as the red. Only shows once the season has passed the turn.",
+  wall_fraction:"<b>How much of each leaf is bright vein, not dark cell.</b> Light through a leaf is the average of what its veins and cells <i>transmit</i>, not of how dark they are — so a few clear veins lift a deep red leaf into a glowing orange, more than their share of the area suggests (the sieve effect). The veins make no red. 0 = one uniform tissue.",
+  turn_start:"<b>The season at which the first leaf starts to turn.</b> Below it every leaf is summer; this is the threshold the phenology slider has to pass.",
+  turn_span:"<b>How long the turn takes, in seasons.</b> By turn start plus this, every leaf has finished.",
+  turn_spread:"<b>How scattered the leaves' start times are.</b> 0 = the whole tree turns together; up = leaves start at different moments, so mid-turn is a mosaic of green, gold and red on one tree. Held under the span so each leaf's own turn still takes time.",
   canopy_extent_m:"<b>How big the simulated patch of ground is.</b> It has to be bigger than what you're viewing (with room for the sun to shift things), or dapples run off the edge. The grove auto-fits inside it.",
   tex_resolution:"<b>Detail of the leaf-shadow map.</b> Higher resolves the tiniest gaps (the sharpest dapples) but costs more. 1024 is usually plenty for something this soft.",
   reseed:"<b>Roll a new random tree layout.</b> Same kind of grove, freshly grown — a different arrangement of trees, branches and leaves.",

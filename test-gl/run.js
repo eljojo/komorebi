@@ -20,6 +20,8 @@
 //                      logic-only, no pixels: transitions aren't byte-stable by design)
 //         ROBUSTNESS (a throwing onFrame keeps the loop alive; WebGL context loss + restore recovers
 //                     the same frame, one loop, paused state kept; `node run.js --robust` runs only this)
+// Opt-in, not suites: `--transition <from> <to>` (a watched transition) and `--look <preset> key=value ...`
+// (a look with overrides, for eyes).
 // ============================================================================
 import { createReadStream } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
@@ -37,7 +39,7 @@ const STILL_FRAMES = [20, 60];   // the stillness proof: one engine, two capture
 // ---------------------------------------------------------------------------
 // Suite 2 as data: one row per invariant. `a` and `b` are param overrides merged over the preset (and then
 // over the harness's motion freeze); the assertion is always "these two frames are byte-identical".
-// Adding an invariant is adding a line.
+// Adding an invariant is adding a line. (`rebake: true` re-bakes before the capture — only a faithful look needs it.)
 // ---------------------------------------------------------------------------
 const FABRIC_FAMILY = {
   fabric_tt: 0.9, fabric_tint_r: 0.9, fabric_tint_g: 0.2, fabric_tint_b: 0.7,
@@ -66,6 +68,19 @@ const INVARIANTS = [
   { name: 'sway_pitch 0 == absent (layer path)', preset: 'memories', a: {}, b: { sway_pitch: 0 } },
   { name: 'chromatic_aberration 0 == absent (layer path)', preset: 'memories', a: {}, b: { chromatic_aberration: 0 } },
   { name: 'branch_tau 0 == absent (layer path)', preset: 'memories', a: {}, b: { branch_tau: 0 } },
+  // Autumn senescence (§4.5). The shipped looks sit at phenology 0.5, below turn_start, so no leaf has begun to turn
+  // and the whole pigment family — capacity, clock, vein share — has to be dead code: not "close", the same bytes.
+  { name: 'pigment family inert at summer (layer path)', preset: 'memories',
+    a: {}, b: { phenology: 0.5, anthocyanin: 1, tannin: 1, turn_span: 0.3, wall_fraction: 0 } },
+  { name: 'phenology 0.5 == absent (layer path)', preset: 'memories', a: {}, b: { phenology: 0.5 } },
+  // The sieve tier is not gated by wall_fraction alone: at s_j = 0 wall and cell are one tissue, so a vein share
+  // must still change nothing (it is what lets a species bundle carry one without touching a summer look)...
+  { name: 'wall_fraction at summer == absent (layer path)', preset: 'memories', a: {}, b: { wall_fraction: 0.3, anthocyanin: 0.8 } },
+  // ...and park 1 is faithful: its leaves ride faithData, a second write of the same tau. `rebake` because a faithful
+  // look's first frame is baked against an empty sun cloud (rebuildAll bakes before regenSource) and shows no leaf
+  // colour at all, so without it this row would compare two dark frames and could never fail.
+  { name: 'pigment family inert at summer (faithful path)', preset: 'park 1', rebake: true,
+    a: {}, b: { phenology: 0.5, anthocyanin: 1, tannin: 1, turn_span: 0.3, wall_fraction: 0.3 } },
 ];
 
 // Suite 4 as data: one row per transition ROUTING tier. transitionTo classifies the from->to diff into a
@@ -271,6 +286,27 @@ async function main() {
       process.exit(0);
     }
 
+    // ---- opt-in: LOOKS — `node run.js --look "<preset>" [--as <name>] key=value ... [--look ...]` (repeatable) ----
+    // For eyes, not proof: one PNG per spec, the preset with the overrides merged on (values are JSON, so
+    // phenology=0.75 and faithful_canopy=true both work), written to out/<name>.png. Unlike the suites it
+    // re-bakes first (`rebake`), so a faithful look's frame is the real one and not the empty-sun-cloud first bake.
+    if (process.argv[2] === '--look') {
+      const specs = [];
+      for (let i = 2; i < process.argv.length; i++) {
+        const a = process.argv[i];
+        if (a === '--look') specs.push({ preset: process.argv[++i], name: null, over: {} });
+        else if (a === '--as') specs[specs.length - 1].name = process.argv[++i];
+        else { const [k, ...v] = a.split('='); specs[specs.length - 1].over[k] = JSON.parse(v.join('=')); }
+      }
+      for (const s of specs) {
+        const name = s.name || slug(`${s.preset} ${Object.entries(s.over).map(([k, v]) => `${k} ${v}`).join(' ')}`);
+        const r = await page.evaluate(([p, o, f]) => window.__run(p, o, [f], { rebake: true }), [s.preset, s.over, SMOKE_FRAMES]);
+        log(`  ${await writePNG(name, await page.evaluate((id) => window.__png(id), r.captures[0].id))}   ${r.captures[0].hash}${r.glError ? `  gl.getError 0x${r.glError.toString(16)}` : ''}`);
+      }
+      await browser.close(); server.close();
+      process.exit(0);
+    }
+
     // ---- suite 1: smoke ----
     // Optional CLI filter (substring match on preset names, case-insensitive): renders only the matching
     // looks and SKIPS the gate/determinism suites — the fast authoring loop. No args = the full run.
@@ -343,8 +379,9 @@ async function main() {
     // ---- suite 2: the gate invariants ----
     log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
     for (const inv of INVARIANTS) {
-      const a = await page.evaluate(([p, o, f]) => window.__run(p, o, [f]), [inv.preset, inv.a, GATE_FRAMES]);
-      const b = await page.evaluate(([p, o, f]) => window.__run(p, o, [f]), [inv.preset, inv.b, GATE_FRAMES]);
+      const opts = inv.rebake ? { rebake: true } : undefined;
+      const a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.a, GATE_FRAMES, opts]);
+      const b = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.b, GATE_FRAMES, opts]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.captures[0].id]);
       const tag = inv.known ? 'KNOWN-FAIL' : 'FAIL';
       if (!d.equal) {

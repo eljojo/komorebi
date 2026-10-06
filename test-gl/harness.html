@@ -8,7 +8,7 @@
 
     __glinfo()                          the WebGL2 / EXT_color_buffer_float preflight
     __presets()                         the built-in look names, read from PRESETS (never hardcoded)
-    __run(preset, overrides, frames)    one engine, captured at the given rAF tick counts
+    __run(preset, overrides, frames, opts)  one engine, captured at the given rAF tick counts (opts.rebake: see below)
     __diff(idA, idB) / __png(id)        exact byte comparison + the PNG artifact
 
   WHY THE CAPTURE HAPPENS INSIDE onFrame: the context is created without preserveDrawingBuffer, so the
@@ -130,7 +130,10 @@ window.__diff = (idA, idB) => {
 
 // One engine, one look, captured at each of `frames` (ascending rAF tick counts). The engine is paused and
 // disposed before resolving, so twenty-odd of these in a row never hold twenty live GL contexts.
-window.__run = (presetName, overrides, frames) => new Promise((resolve, reject) => {
+// opts.rebake: re-bake at tick 4 (what the robustness suite does) — a faithful look otherwise captures the first
+// bake, made against an empty sun cloud (rebuildAll bakes before regenSource). Off for every suite: their hashes
+// are of what the engine shows by itself.
+window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, reject) => {
   const base = PRESETS[presetName];
   if (!base) return reject(new Error(`unknown preset '${presetName}'`));
   for (const k of Object.keys(overrides || {})) {
@@ -167,6 +170,7 @@ window.__run = (presetName, overrides, frames) => new Promise((resolve, reject) 
   const gl = eng.gl;
   eng.onFrame = () => {
     ticks++;
+    if (opts && opts.rebake && ticks === 4) eng.apply('bake');
     if (done || ticks < want[0]) return;
     want.shift();
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
