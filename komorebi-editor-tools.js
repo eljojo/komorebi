@@ -8,9 +8,11 @@
 import { DEG, clamp, hash3, lerp, makeGauss, mulberry32 } from './komorebi-math.js';
 
 export function makeEditorTools(hub){
-  const { gl, canvas, params, motion, src, U, extTimer, faithfulOn, progPoints, progViz } = hub;
+  const { gl, canvas, params, motion, src, U, faithfulOn } = hub;   // the GL handles (programs, extTimer) are read as hub.x: initGPU() replaces them on a context restore
   let benchW = 0, benchH = 0;      // profiler stress-burst size (the FBO/texture live on hub so dispose() can free them)
 
+  // the debug overlays' buffers + the profiler's GPU objects: created here, and again by initGPU() after a context restore
+  function initEditorGL(){
     hub.srcDbgBuf = gl.createBuffer();
     hub.srcDbgVAO = gl.createVertexArray();
     gl.bindVertexArray(hub.srcDbgVAO);
@@ -28,6 +30,9 @@ export function makeEditorTools(hub){
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,8);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,24,20);
     gl.bindVertexArray(null);
+    hub.benchFBO = null; hub.benchTex = null; benchW = benchH = 0;   // dead after a loss; ensureBenchTarget() rebuilds on demand
+    tq.bake.q = [null,null]; tq.transport.q = [null,null];           // dead timer queries must not be polled
+  }
 
   hub.drawSourceInset = () => {
     const s=Math.round(Math.min(170, canvas.width*0.22));
@@ -35,7 +40,7 @@ export function makeEditorTools(hub){
     gl.enable(gl.SCISSOR_TEST);
     gl.scissor(x,y,s,s); gl.viewport(x,y,s,s);
     gl.clearColor(0.03,0.04,0.06,1.0); gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(progPoints);
+    gl.useProgram(hub.progPoints);
     gl.uniform1f(U.pts.scale, 0.92/src.maxR);
     gl.uniform1f(U.pts.maxW, src.maxW);
     gl.bindVertexArray(hub.srcDbgVAO);
@@ -167,7 +172,7 @@ export function makeEditorTools(hub){
     gl.scissor(ix-1,iy-1,S+2,S+2); gl.clearColor(0.16,0.20,0.16,1.0); gl.clear(gl.COLOR_BUFFER_BIT);   // frame
     gl.scissor(ix,iy,S,S); gl.viewport(ix,iy,S,S);
     gl.clearColor(0.05,0.07,0.09,1.0); gl.clear(gl.COLOR_BUFFER_BIT);                                    // sky
-    gl.useProgram(progViz);
+    gl.useProgram(hub.progViz);
     gl.bindVertexArray(hub.vizVAO);
     gl.bindBuffer(gl.ARRAY_BUFFER, hub.vizBuf);
     gl.uniform1f(U.viz.point, 0.0); gl.uniform1f(U.viz.lineAlpha, 1.0);
@@ -195,7 +200,7 @@ export function makeEditorTools(hub){
     const TIME_ELAPSED = 0x88BF, GPU_DISJOINT = 0x8FBB;   // EXT_disjoint_timer_query_webgl2 enums
     const tq = { bake:{q:[null,null], i:0}, transport:{q:[null,null], i:0} };
     hub.timed = (pass, draw) => {
-      if(!instrumenting || !extTimer){ draw(); return; }
+      if(!instrumenting || !hub.extTimer){ draw(); return; }
       const r = tq[pass], cur = r.q[r.i&1];               // this slot's query, issued 2 frames ago (ready now)
       if(cur){
         if(gl.getQueryParameter(cur, gl.QUERY_RESULT_AVAILABLE) && !gl.getParameter(GPU_DISJOINT))
@@ -249,7 +254,7 @@ export function makeEditorTools(hub){
       }
       return { ms:0, headroom:Infinity };
     }
-    hub.profiler = { hasTimer: !!extTimer, bakeMs:0, transportMs:0, setInstrument(on){ instrumenting=!!on; }, bench };
+    hub.profiler = { hasTimer: !!hub.extTimer, bakeMs:0, transportMs:0, setInstrument(on){ instrumenting=!!on; }, bench };
 
   // ---- motion mirror: drive this engine's wind EXACTLY from another instance instead of its own
   // physics, so the A/B picker's two engines animate in lockstep. Safe because the profiler's variants never
@@ -272,4 +277,7 @@ export function makeEditorTools(hub){
       }
     };
     hub.setMotionSource = (src) => { hub.motionTick = src ? () => hub.applyMotion(src.snapshotMotion()) : hub.tick; };
+
+  hub.initEditorGL = initEditorGL;
+  initEditorGL();
 }

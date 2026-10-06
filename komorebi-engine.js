@@ -37,7 +37,7 @@ function create(canvas, opts){
   // profiling (EDITOR only): GPU timer queries for absolute per-pass ms. The extension is often absent or
   // coarsened by browsers for privacy — callers must tolerate null (the editor falls back to the stress
   // burst). EXT_disjoint_timer_query_webgl2 measures TIME_ELAPSED over a range of GL commands.
-  const extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
+  let extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;   // mutable: extensions are per-context-incarnation, re-fetched by initGPU() after a context restore
 
   const params = Object.assign({}, DEFAULTS, migrateLegacy(opts.params) || {});
   // Auto-quality runtime throttle (driven by the params.auto_quality toggle). Holds the live
@@ -90,35 +90,14 @@ function create(canvas, opts){
     if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail(`Link: ${gl.getProgramInfoLog(p)}`);
     return p;
   }
-  const progBake = program(VS_BAKE, FS_BAKE);
-  const progFaith = program(VS_FAITH, FS_FAITH);   // FAITHFUL leaf bake (§4.5): per-sample transmittance at continuous heights
-  const progFaithSeg = program(VS_FAITH_SEG, FS_FAITH_SEG);   // FAITHFUL skeleton bake (§4.5): trunk+branches+twigs as geometry
-  const progFAcc = program(VS_FULL, FS_FACC);      // FAITHFUL accumulate: Σ w_i·transmittance_i
-  const progBlit = program(VS_FULL, FS_BLIT);
-  const progPresent = program(VS_FULL, FS_PRESENT);                   // adaptive frame-rate: offscreen frame -> screen
-  const progGlowBlur = program(VS_FULL, FS_GLOW_BLUR);                // lateral diffusion (§4.9): one axis of the separable spread
-  const progGlowMix = program(VS_FULL, FS_GLOW_MIX);                  // lateral diffusion: the sharp/blurred split + the relocated tone-map tail
-  const progPoints = EDITOR ? program(VS_POINTS, FS_POINTS) : null;   // editor-only debug-overlay programs
-  const progViz = EDITOR ? program(VS_VIZ, FS_VIZ) : null;
+  // EVERY handle the engine holds on the GL context is created by initGPU() — create() calls it once, and a
+  // webglcontextrestored calls it again, because a lost context kills all of them. Hence `let`, not `const`.
+  let progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
+  let emptyVAO, quadBuf, bakeFBO, faithFBO, occTex;
+  let bake, bakeFaithful, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
-  U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
-             morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'),
-             windLevel:loc(progBake,'uWindLevel'), windTime:loc(progBake,'uWindTime'),
-             leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
-             clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
-             coverage:loc(progBake,'uCoverage') };
-  U.faith = { origin:loc(progFaith,'uFaithOrigin'), extent:loc(progFaith,'uFaithExtent'), g:loc(progFaith,'uG'), edge:loc(progFaith,'uEdge'),
-              curtainBake:loc(progFaith,'uCurtainBake'), clothY:loc(progFaith,'uClothY'),
-              morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
-              windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
-              leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
-              clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom') };
-  U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
-                 curtainBake:loc(progFaithSeg,'uCurtainBake'), clothY:loc(progFaithSeg,'uClothY'),
-                 segSway:loc(progFaithSeg,'uSegSway'), segTau:loc(progFaithSeg,'uSegTau') };
-  U.facc = { tex:loc(progFAcc,'uFAccTex'), weight:loc(progFAcc,'uFAccWeight') };
   // ---- THE TRANSPORT PROGRAM CACHE (spec §4.6/§4.9). One program per camera, built by buildTransport, compiled on
   // FIRST USE and then kept for the engine's life. Four is the whole space, and the build key only moves on a MODE
   // flip (sky_view / receiver), which already tears the grove down and rebuilds it under the transition bloom — so
@@ -154,24 +133,6 @@ function create(canvas, opts){
     }
     return e;
   }
-  U.blit = { tex:loc(progBlit,'uTex') };
-  U.present = { tex:loc(progPresent,'uTex') };
-  U.glowBlur = { tex:loc(progGlowBlur,'uTex'), step:loc(progGlowBlur,'uStep') };
-  U.glowMix = { sharp:loc(progGlowMix,'uSharp'), blur:loc(progGlowMix,'uBlur'), diffuse:loc(progGlowMix,'uDiffuse'),
-                exposure:loc(progGlowMix,'uExposure'), contrast:loc(progGlowMix,'uContrast'), tone:loc(progGlowMix,'uToneMap') };
-  if(EDITOR){   // editor-only debug-overlay uniforms
-    U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
-    U.viz = { point:loc(progViz,'uPoint'), pointAlpha:loc(progViz,'uPointAlpha'), lineAlpha:loc(progViz,'uLineAlpha') };
-  }
-
-  // ---- geometry / GPU buffers ----
-  const emptyVAO = gl.createVertexArray();           // required to issue attrib-less draws
-  const quadBuf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
-
-  const bakeFBO = gl.createFramebuffer();
-  const faithFBO = gl.createFramebuffer();   // FAITHFUL scratch target (§4.5): faithScratch attached here once per bake so the per-sample loop swaps FBOs instead of re-attaching (was 2N framebufferTexture2D/frame)
   // adaptive frame-rate (TUNE §9): offscreen present target + cadence state. presentFBO/presentTex are canvas-sized
   // and allocated lazily on first use (so a look that never enables adaptive_motion pays nothing).
   let presentTex=null, adaptiveLastRender=0, adaptiveHot=true;
@@ -182,17 +143,6 @@ function create(canvas, opts){
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01,
                 coreR:0.005, moonD:0, moonR:0, Lcore:0, Lhalo:0 };   // + the SEEN source (§4.9 sky view): angular radii, the eclipse moon, and the radiance in each region — all filled by regenSource from the sampler's own numbers
   const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0, want:0, hRef:1 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend, `hRef` = tallest floor height for the drift's height-scale (spec §4.5)
-  // ...and the GPU side of that table (§4.5/§6): one RGBA32F, MAX_OCC wide and 2 tall — row 0 the swung plan
-  // endpoints, row 1 the static heights + radius. Allocated once at the cap and never resized, because the cap is a
-  // compile-time constant on both sides of the wire. This is the clusterTex idiom, for the same reason: a per-frame
-  // table that every transport variant reads has no business sitting in the fragment uniform budget.
-  const occTex = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, occTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, MAX_OCC, 2, 0, gl.RGBA, gl.FLOAT, null);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);   // texelFetch ignores filtering, but an unfilterable float texture must still declare NEAREST to be complete
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   const faith = { vao:null, buf:null, count:0, hMin:0, hMax:1, ox:0, oy:0, ext:1,   // FAITHFUL leaf geometry (all leaves, continuous height) + the cast-region frame, computed in bakeFaithful (§4.5)
                   pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
                   gx:new Float32Array(MAX_SAMPLES), gy:new Float32Array(MAX_SAMPLES),// per-sample ground-shift scratch (hoisted; no per-bake alloc)
@@ -210,9 +160,8 @@ function create(canvas, opts){
   // how cross-subsystem calls resolve without import cycles. ----
   Object.assign(hub, {
     // stable plumbing (never reassigned)
-    gl, canvas, fail, MAX_TEX, extTimer, params, perf, motion, trans, src, occ, occTex, faith, sky, U,
-    quadBuf, emptyVAO, bakeFBO, faithFBO,
-    progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz,
+    gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, U,
+    // (the GL handles — programs, buffers, FBOs, occTex, extTimer — and the subsystems over them are set by initGPU())
     effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
@@ -235,6 +184,76 @@ function create(canvas, opts){
     drawSourceInset: null, drawTreeInset: null, treeInsetHit: null,   // editor debug overlays (EDITOR)
   });
 
+
+  function initGPU(){
+    // a restored context starts with its extensions off again
+    gl.getExtension('EXT_color_buffer_float'); gl.getExtension('EXT_float_blend');
+    extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
+    progBake = program(VS_BAKE, FS_BAKE);
+    progFaith = program(VS_FAITH, FS_FAITH);   // FAITHFUL leaf bake (§4.5): per-sample transmittance at continuous heights
+    progFaithSeg = program(VS_FAITH_SEG, FS_FAITH_SEG);   // FAITHFUL skeleton bake (§4.5): trunk+branches+twigs as geometry
+    progFAcc = program(VS_FULL, FS_FACC);      // FAITHFUL accumulate: Σ w_i·transmittance_i
+    progBlit = program(VS_FULL, FS_BLIT);
+    progPresent = program(VS_FULL, FS_PRESENT);                   // adaptive frame-rate: offscreen frame -> screen
+    progGlowBlur = program(VS_FULL, FS_GLOW_BLUR);                // lateral diffusion (§4.9): one axis of the separable spread
+    progGlowMix = program(VS_FULL, FS_GLOW_MIX);                  // lateral diffusion: the sharp/blurred split + the relocated tone-map tail
+    progPoints = EDITOR ? program(VS_POINTS, FS_POINTS) : null;   // editor-only debug-overlay programs
+    progViz = EDITOR ? program(VS_VIZ, FS_VIZ) : null;
+    U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
+               morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'),
+               windLevel:loc(progBake,'uWindLevel'), windTime:loc(progBake,'uWindTime'),
+               leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
+               clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
+               coverage:loc(progBake,'uCoverage') };
+    U.faith = { origin:loc(progFaith,'uFaithOrigin'), extent:loc(progFaith,'uFaithExtent'), g:loc(progFaith,'uG'), edge:loc(progFaith,'uEdge'),
+                curtainBake:loc(progFaith,'uCurtainBake'), clothY:loc(progFaith,'uClothY'),
+                morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
+                windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
+                leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
+                clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom') };
+    U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
+                   curtainBake:loc(progFaithSeg,'uCurtainBake'), clothY:loc(progFaithSeg,'uClothY'),
+                   segSway:loc(progFaithSeg,'uSegSway'), segTau:loc(progFaithSeg,'uSegTau') };
+    U.facc = { tex:loc(progFAcc,'uFAccTex'), weight:loc(progFAcc,'uFAccWeight') };
+    U.blit = { tex:loc(progBlit,'uTex') };
+    U.present = { tex:loc(progPresent,'uTex') };
+    U.glowBlur = { tex:loc(progGlowBlur,'uTex'), step:loc(progGlowBlur,'uStep') };
+    U.glowMix = { sharp:loc(progGlowMix,'uSharp'), blur:loc(progGlowMix,'uBlur'), diffuse:loc(progGlowMix,'uDiffuse'),
+                  exposure:loc(progGlowMix,'uExposure'), contrast:loc(progGlowMix,'uContrast'), tone:loc(progGlowMix,'uToneMap') };
+    if(EDITOR){   // editor-only debug-overlay uniforms
+      U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
+      U.viz = { point:loc(progViz,'uPoint'), pointAlpha:loc(progViz,'uPointAlpha'), lineAlpha:loc(progViz,'uLineAlpha') };
+    }
+
+    // ---- geometry / GPU buffers ----
+    emptyVAO = gl.createVertexArray();           // required to issue attrib-less draws
+    quadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+
+    bakeFBO = gl.createFramebuffer();
+    faithFBO = gl.createFramebuffer();   // FAITHFUL scratch target (§4.5): faithScratch attached here once per bake so the per-sample loop swaps FBOs instead of re-attaching (was 2N framebufferTexture2D/frame)
+
+    // ...and the GPU side of that table (§4.5/§6): one RGBA32F, MAX_OCC wide and 2 tall — row 0 the swung plan
+    // endpoints, row 1 the static heights + radius. Allocated once at the cap and never resized, because the cap is a
+    // compile-time constant on both sides of the wire. This is the clusterTex idiom, for the same reason: a per-frame
+    // table that every transport variant reads has no business sitting in the fragment uniform budget.
+    occTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, occTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, MAX_OCC, 2, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);   // texelFetch ignores filtering, but an unfilterable float texture must still declare NEAREST to be complete
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    Object.assign(hub, { extTimer, progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz,
+                         quadBuf, emptyVAO, bakeFBO, faithFBO, occTex });
+    // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
+    ({ buildGrove } = makeGrove(hub)); hub.buildGrove = buildGrove;
+    ({ bake, bakeFaithful } = makeBake(hub)); Object.assign(hub, { bake, bakeFaithful });
+    ({ drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));
+    Object.assign(hub, { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit });
+    if(EDITOR) hub.initEditorGL?.();   // the debug overlays' buffers (absent on the very first call: makeEditorTools runs later and calls it itself)
+  }
 
   function makeLayerTexture(size){
     const t=gl.createTexture();
@@ -265,8 +284,7 @@ function create(canvas, opts){
     hub.faithScratch = makeLayerTexture(fres);
   }
 
-  const { buildGrove } = makeGrove(hub);
-  Object.assign(hub, { buildGrove });
+  initGPU();   // programs, buffers, FBOs, occTex + the subsystems over them (makeGrove / makeBake / makeRender)
 
   // ---- INSTALL a grove as the active one: free whatever it replaces, then re-point the engine's views at it.
   // hier / layerVAO / clusterTex / clusterGeomTex stay plain engine variables on purpose — some fifty readers
@@ -296,8 +314,6 @@ function create(canvas, opts){
     return g;
   }
 
-  const { bake, bakeFaithful } = makeBake(hub);
-  Object.assign(hub, { bake, bakeFaithful });
 
 
 
@@ -373,14 +389,13 @@ function create(canvas, opts){
     } else perf.hiCount = 0;
   }
 
-  const { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub);
-  Object.assign(hub, { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit });
   if(EDITOR) makeEditorTools(hub);   // debug overlays + profiler + motion mirror; EDITOR=false strips the call (and its module with it)
 
   // ---- the rebuild scopes the editor drives, plus a full param swap ----
   function rebuildAll(){ rebuildTextures(); regenCanopy(); bake(); regenSource(); }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
   function apply(scope){
+    if(lost) return;                                  // see setParams
     if(scope==='source') regenSource();
     else if(scope==='bake') bake();                  // drift moves leaves at bake time only
     else if(scope==='canopy'){ regenCanopy(); bake(); }
@@ -398,6 +413,7 @@ function create(canvas, opts){
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
     }
+    if(lost){ Object.assign(params, DEFAULTS, migrateLegacy(obj)); return; }   // no GPU to rebuild on: the live params are what restoreGPU() rebuilds from
     const merged = Object.assign({}, DEFAULTS, migrateLegacy(obj));   // legacy names -> current; missing keys -> defaults (forward-compat)
     for(const k in DEFAULTS) params[k] = merged[k];
     rebuildAll();
@@ -409,14 +425,23 @@ function create(canvas, opts){
   // ---- init + frame loop ----
   rebuildAll();
   resetPerf();
-  let last=performance.now(), fps=60, paused=false, alive=true;
-  const eng = { canvas, gl, params, perf, motion, src, trans, occ, fps:60, apply, setParams, transitionTo, onFrame:opts.onFrame||null,
+  let last=performance.now(), fps=60, paused=false, alive=true, lost=false;
+  // THE LOOP. `loop` is a generation: every start/stop bumps it, so a callback already queued with rAF by an
+  // older loop is dropped when it fires — pause+resume, or a loss+restore inside one frame, can never leave two
+  // loops running.
+  let loop = 0;
+  const schedule = () => { const id = loop; requestAnimationFrame(now => { if(id === loop) frame(now); }); };
+  const startLoop = () => { loop++; last = performance.now(); schedule(); };
+  const eng = { canvas, gl, params, perf, motion, src, trans, occ, fps:60, apply, setParams, onFrame:opts.onFrame||null,
+    transitionTo: (target, o) => { if(!lost) return transitionTo(target, o); setParams(target); if(o?.onEnd) o.onEnd(); },   // nothing to animate on a lost context: land on the target
     // pause the rAF loop so a second engine instance idles at zero GPU when off-screen (the editor's A/B picker)
-    setPaused(on){ on=!!on; if(on===paused) return; paused=on; if(!on){ last=performance.now(); requestAnimationFrame(frame); } },
+    setPaused(on){ on=!!on; if(on===paused) return; paused=on; loop++; if(!on && !lost) startLoop(); },   // a loss in progress leaves the restart to the restore
     // dispose: stop the loop and free EVERY GL object + the context, so a disposable second instance (the A/B
     // picker, created per-comparison) leaves zero GPU residue when closed. A disposed engine must not be reused.
     dispose(){
-      alive = false;
+      alive = false; loop++;
+      canvas.removeEventListener('webglcontextlost', onContextLost);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
       [progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
       transportCache.forEach(v => { gl.deleteProgram(v.prog); });   // however many cameras this engine actually visited
       transportCache.clear();
@@ -478,7 +503,7 @@ function create(canvas, opts){
     return (now - adaptiveLastRender) >= 1000/Math.max(1, params.adaptive_idle_fps);   // low -> idle cadence
   }
   function frame(now){
-    if(!alive || paused) return;                     // dispose() halts permanently; setPaused(true) halts until resumed
+    if(!alive || paused || lost) return;             // dispose() halts permanently; setPaused(true) / a lost context halt until resumed
     const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1; eng.fps=fps;
     if(perf.auto) tunePerf(dtms, fps);               // auto-quality: nudge resolution/samples toward 60 fps
     resize();
@@ -487,8 +512,8 @@ function create(canvas, opts){
     if(params.adaptive_motion && !trans.active && !params.show_layer){
       if(!adaptiveDue(now)){                          // skip: re-present the last rendered frame (byte-identical), no bake/transport
         presentFrame();
+        schedule();                                   // BEFORE onFrame: a throwing host callback must not end the animation (its error still surfaces)
         if(eng.onFrame) eng.onFrame(dtms);
-        requestAnimationFrame(frame);
         return;
       }
       const dt = clamp((now - adaptiveLastRender)/1000, 0, 1/15);   // elapsed since last HEAVY render (skipped frames fold in)
@@ -497,8 +522,8 @@ function create(canvas, opts){
       ensureFrameTarget();
       hub.timed('transport', drawTransportPresent);       // heavy transport (+ the diffusion passes, if the gate is open) -> offscreen
       presentFrame();                                 // offscreen -> screen
+      schedule();
       if(eng.onFrame) eng.onFrame(dtms);
-      requestAnimationFrame(frame);
       return;
     }
     const dt = dtms/1000;
@@ -507,10 +532,38 @@ function create(canvas, opts){
       tickTransition(dt);
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
     if(params.show_layer && !faithfulOn()) drawLayerBlit(); else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
+    schedule();
     if(eng.onFrame) eng.onFrame(dtms);               // editor draws HUD + source inset here
-    requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+
+  // ---- CONTEXT LOSS (automatic recovery). preventDefault on the loss is what lets the browser restore at all.
+  // On restore every handle from before is dead, so initGPU() recreates them all and the ordinary rebuild path
+  // regrows the grove/bake/source from the CURRENT params (the springs in hub.hier survive: they are CPU state).
+  function onContextLost(e){
+    if(!alive) return;
+    e.preventDefault();
+    lost = true; loop++;                               // stop the loop; setParams/apply only touch params until the restore
+  }
+  function onContextRestored(){
+    if(!alive) return;
+    lost = false;
+    transportCache.clear(); presentTex = null;         // dead handles: forgotten, never deleted
+    Object.assign(hub, { layerTex:[], layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
+                         clusterTex:null, clusterGeomTex:null, presentFBO:null, presentW:0, presentH:0 });
+    faith.vao = faith.buf = faith.segVAO = faith.segBuf = null;
+    sky.segVAO = sky.segBuf = null;
+    initGPU();
+    // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
+    const cb = trans.active ? trans.onEnd : null;
+    if(trans.active){ trans.active=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
+    rebuildAll(); resetPerf();
+    adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
+    if(cb) cb();
+    if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)
+  }
+  canvas.addEventListener('webglcontextlost', onContextLost);
+  canvas.addEventListener('webglcontextrestored', onContextRestored);
+  startLoop();
   return eng;
 }
 

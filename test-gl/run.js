@@ -18,6 +18,8 @@
 //         DETERMINISM (two independent engines agree; and a single engine holds still)
 //         TRANSITIONS (each routing tier — morph / crossfade / dissolve / mode — driven to completion;
 //                      logic-only, no pixels: transitions aren't byte-stable by design)
+//         ROBUSTNESS (a throwing onFrame keeps the loop alive; WebGL context loss + restore recovers
+//                     the same frame, one loop, paused state kept; `node run.js --robust` runs only this)
 // ============================================================================
 import { createReadStream } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
@@ -132,6 +134,67 @@ async function writePNG(name, dataURL) {
   return file;
 }
 
+// ---- suite 5: host failure + context loss (the --robust flag runs just this) ----
+async function robustness(page) {
+  log('\nROBUSTNESS — a throwing onFrame keeps the loop alive; context loss recovers on its own');
+  for (const [label, over] of [['plain path', { adaptive_motion: false }], ['adaptive skip path', { adaptive_motion: true, adaptive_idle_fps: 1 }], ['adaptive heavy path', { adaptive_motion: true, adaptive_idle_fps: 1000 }]]) {
+    const name = `onFrame throw does not stop the loop (${label})`;
+    try {
+      const r = await page.evaluate(([o]) => window.__onFrameThrows('park 1', o, 6), [over]);
+      const bad = [];
+      if (r.calls < 6) bad.push(`loop stopped after ${r.calls} onFrame call(s)`);
+      if (r.surfaced < Math.min(r.calls, 2)) bad.push(`host error swallowed (${r.surfaced} surfaced / ${r.calls} calls)`);
+      record('robustness', name, bad.length === 0, bad.join('; ') || `${r.calls} calls, ${r.surfaced} errors surfaced`);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(58)} ${bad.join('; ') || `${r.calls} calls, ${r.surfaced} surfaced`}`);
+    } catch (e) { record('robustness', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); }
+  }
+  const LOSS = [
+    ...DETERMINISM.map((p) => ({ name: `${p} recovers byte-identical`, preset: p, opts: {} })),
+    { name: 'recovers from the CURRENT params, not the create-time ones', preset: 'park 1', opts: { retarget: 'memories' } },
+    { name: 'paused stays paused across loss + restore', preset: 'memories', opts: { pause: true } },
+    { name: 'loss mid-transition recovers and the route settles', preset: 'memories', opts: { transition: true } },
+  ];
+  for (const c of LOSS) {
+    const name = `context loss: ${c.name}`;
+    try {
+      const r = await page.evaluate(([p, o]) => window.__contextLoss(p, o), [c.preset, c.opts]);
+      const bad = [];
+      if (!r.lostPrevented) bad.push('webglcontextlost not preventDefault()ed');
+      if (r.ticksWhileLost > 1) bad.push(`${r.ticksWhileLost} frames ran while the context was lost`);
+      if (r.isLostAfter) bad.push('context still lost after restore');
+      if (r.after.glError || r.glErrorEnd) bad.push(`gl.getError 0x${(r.after.glError || r.glErrorEnd).toString(16)}`);
+      const s = r.after.stats;
+      if (!(s.variance > 1)) bad.push(`flat frame after restore (variance ${s.variance.toFixed(3)})`);
+      if (!s.opaque) bad.push('non-opaque frame after restore');
+      if (r.diff && !r.diff.equal) bad.push(`${r.diff.diffPixels}/${r.diff.total} px differ from the pre-loss frame (max Δ${r.diff.maxDelta})`);
+      if (c.opts.pause && r.ticksWhilePaused > 0) bad.push(`${r.ticksWhilePaused} frames ran while paused after restore`);
+      if (r.rateAfter.calls > r.rateAfter.rafs + 1) bad.push(`duplicate loop: ${r.rateAfter.calls} onFrame calls in ${r.rateAfter.rafs} rAFs (was ${r.rateBefore.calls})`);
+      if (r.rateAfter.calls < 1) bad.push('loop did not resume');
+      if (r.diff && !r.diff.equal) {
+        await writePNG(`diff-loss-${slug(c.name)}`, r.diff.png);
+        await writePNG(`loss-${slug(c.name)}-before`, await page.evaluate((id) => window.__png(id), r.before.id));
+        await writePNG(`loss-${slug(c.name)}-after`, await page.evaluate((id) => window.__png(id), r.after.id));
+      }
+      record('robustness', name, bad.length === 0, bad.join('; ') || `identical, 1 loop (${r.rateAfter.calls} calls / ${r.rateAfter.rafs} rAFs), events ${r.events.join(',')}`);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(70)} ${bad.join('; ') || `${r.rateAfter.calls}/${r.rateAfter.rafs} calls per rAF`}`);
+    } catch (e) { record('robustness', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); }
+  }
+  {
+    const name = 'dispose() is not a loss: no recovery, no frames, listeners removed';
+    try {
+      const r = await page.evaluate(() => window.__disposeNoRecovery());
+      const bad = [];
+      if (!r.listenersAdded.includes('webglcontextlost') || !r.listenersAdded.includes('webglcontextrestored')) bad.push(`context listeners not registered (${r.listenersAdded.join(',') || 'none'})`);
+      if (r.unremoved.length) bad.push(`listeners left after dispose: ${r.unremoved.join(',')}`);
+      if (r.lostPrevented) bad.push('dispose-triggered loss was preventDefault()ed (would be restored)');
+      if (r.restored || !r.stillLost) bad.push('context came back after dispose');
+      if (r.ticksAfterDispose) bad.push(`${r.ticksAfterDispose} frames after dispose`);
+      record('robustness', name, bad.length === 0, bad.join('; ') || `listeners ${r.listenersAdded.join(',')} removed`);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(70)} ${bad.join('; ')}`);
+    } catch (e) { record('robustness', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); }
+  }
+}
+
 async function main() {
   await mkdir(OUT, { recursive: true });
   const { server, port } = await serveRoot();
@@ -143,7 +206,7 @@ async function main() {
   });
   const page = await browser.newPage({ deviceScaleFactor: 1, viewport: { width: 640, height: 400 } });
   page.setDefaultTimeout(300000);
-  page.on('pageerror', (e) => log(`  [page error] ${e.message}`));
+  page.on('pageerror', (e) => { if (!e.message.includes('komorebi-test-')) log(`  [page error] ${e.message}`); });   // komorebi-test-* = a deliberate host throw
   page.on('console', (m) => { if (m.type() === 'error') log(`  [console] ${m.text()}`); });
 
   let failures = 0;
@@ -211,11 +274,12 @@ async function main() {
     // ---- suite 1: smoke ----
     // Optional CLI filter (substring match on preset names, case-insensitive): renders only the matching
     // looks and SKIPS the gate/determinism suites — the fast authoring loop. No args = the full run.
-    const filters = process.argv.slice(2).map((s) => s.toLowerCase());
+    const robustOnly = process.argv[2] === '--robust';
+    const filters = process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
     const allPresets = await page.evaluate(() => window.__presets());
-    const presets = filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
+    const presets = robustOnly ? [] : filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
     if (filters.length && presets.length === 0) { log(`no preset matches: ${filters.join(', ')}`); await browser.close(); server.close(); process.exit(1); }
-    log(`\nSMOKE — ${presets.length} presets @ ${SMOKE_FRAMES} frames`);
+    if (!robustOnly) log(`\nSMOKE — ${presets.length} presets @ ${SMOKE_FRAMES} frames`);
     const truncated = [];   // groves that outgrew the woody-occluder table (§4.5) — see the note under the loop
     for (const name of presets) {
       let r;
@@ -252,7 +316,7 @@ async function main() {
 
     // A filtered run is the fast authoring loop: the smoke renders above are its whole point,
     // and the stillness/determinism/gate suites only run on a full sweep.
-    if (!filters.length) {
+    if (!filters.length && !robustOnly) {
     // ---- suite 3a: stillness — the proof that the capture road and the motion freeze are actually stable.
     // Two captures forty ticks apart out of ONE engine. If wind, weather, drift, the auto-quality governor
     // or the adaptive-fps present path were still moving anything, this is where it shows.
@@ -317,6 +381,7 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${route.name.padEnd(50)} ${bad.join('; ') || `${r.ticks} ticks ${r.ms} ms`}`);
     }
     }
+    if (!filters.length) await robustness(page);
   } finally {
     await browser.close();
     server.close();

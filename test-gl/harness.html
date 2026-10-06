@@ -336,6 +336,158 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
   };
 });
 
+// ---------------------------------------------------------------------------
+// HOST FAILURE POLICY: a throwing onFrame must not freeze the canvas. The engine keeps animating and the
+// error still surfaces (window 'error'), so the host sees its own bug. The three frame-loop exits (plain,
+// adaptive-skip, adaptive-heavy) each reschedule on their own, so each is driven separately.
+// ---------------------------------------------------------------------------
+window.__onFrameThrows = (presetName, overrides, want) => new Promise((resolve, reject) => {
+  const MARK = 'komorebi-test-onFrame';
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage';
+  document.body.appendChild(canvas);
+  let calls = 0, surfaced = 0, done = false;
+  const onErr = (e) => { if (String(e.message).includes(MARK)) { surfaced++; e.preventDefault(); } };
+  window.addEventListener('error', onErr);
+  let eng = null;
+  const finish = (err) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer); clearInterval(poll);
+    window.removeEventListener('error', onErr);
+    try { eng?.setPaused(true); eng?.dispose(); } catch { /* nothing to stop */ }
+    canvas.remove();
+    if (err) reject(err); else resolve({ calls, surfaced });
+  };
+  const timer = setTimeout(() => finish(null), 20000);   // frames stalled: report what we saw
+  try { eng = create(canvas, { params: Object.assign({}, PRESETS[presetName], overrides || {}, FREEZE),
+                               onFrame: () => { calls++; throw new Error(MARK); } }); }
+  catch (e) { return finish(e); }
+  const poll = setInterval(() => { if (calls >= want) setTimeout(() => finish(null), 50); }, 20);
+});
+
+// ---------------------------------------------------------------------------
+// CONTEXT LOSS (automatic recovery). A look is rendered, the context is lost and restored with
+// WEBGL_lose_context, and the frame afterwards must be the frame before: same bytes under frozen motion,
+// GL-clean, ONE loop (onFrame calls per rAF tick do not double), and paused state honoured across the gap.
+// opts: pause (lose+restore while paused), retarget (setParams to another look first — the recovery must
+// rebuild from the CURRENT params, not the create-time ones), transition (lose mid-transition).
+// ---------------------------------------------------------------------------
+window.__contextLoss = async (presetName, opts) => {
+  const o = Object.assign({ pause: false, retarget: null, transition: null }, opts || {});
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`timed out waiting for ${what}`)), ms))]);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage';
+  canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  document.body.appendChild(canvas);
+
+  let ticks = 0, waiter = null;
+  const grab = (gl) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const w = canvas.width, h = canvas.height, bytes = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+    const glError = gl.getError();
+    const id = `c${nextId++}`;
+    caps.set(id, { w, h, bytes });
+    return { id, glError, stats: stats(bytes) };
+  };
+  // resolves from INSIDE onFrame (the drawing buffer is only readable there), n ticks from now
+  const capture = (n) => new Promise((res) => { waiter = { left: n, res }; });
+  const params = Object.assign({}, PRESETS[presetName], FREEZE);
+  const eng = create(canvas, { params });
+  const gl = eng.gl;
+  eng.onFrame = () => {
+    ticks++;
+    if (waiter && --waiter.left <= 0) { const w = waiter; waiter = null; w.res(grab(gl)); }
+  };
+  const lose = gl.getExtension('WEBGL_lose_context');
+  const events = [];
+  let lostPrevented = null;
+  canvas.addEventListener('webglcontextlost', (e) => { lostPrevented = e.defaultPrevented; events.push('lost'); });   // registered after the engine's, so defaultPrevented reflects its handler
+  canvas.addEventListener('webglcontextrestored', () => events.push('restored'));
+  const waitEvent = (name) => new Promise((res) => canvas.addEventListener(name, res, { once: true }));
+  // rAF ticks vs onFrame calls over a window: a second loop shows up as ~2 calls per rAF
+  const rate = (rafs) => new Promise((res) => {
+    const t0 = ticks; let n = 0;
+    const step = () => { if (++n >= rafs) res({ calls: ticks - t0, rafs }); else requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+  const out = {};
+  try {
+    await withTimeout(capture(8), 60000, 'warm-up frames');
+    // rebuildAll() bakes BEFORE regenSource(), so with motion frozen the faithful path's first frame stays baked against an
+    // empty sun cloud (nothing re-bakes it). Settle that here, so the pre-loss frame is the real look and the comparison means something.
+    eng.apply('bake');
+    if (o.retarget) eng.setParams(Object.assign({}, PRESETS[o.retarget], FREEZE));
+    if (o.transition) eng.transitionTo(Object.assign({}, PRESETS[presetName], { seed: 1234567 }, FREEZE), { duration: 0.6 });
+    out.before = await withTimeout(capture(12), 60000, 'pre-loss capture');
+    out.rateBefore = await rate(30);
+    if (o.pause) eng.setPaused(true);
+
+    const lostP = waitEvent('webglcontextlost');
+    lose.loseContext();
+    await withTimeout(lostP, 5000, 'webglcontextlost');
+    out.lostPrevented = lostPrevented;
+    out.isLost = gl.isContextLost();
+    const t0 = ticks;
+    await rate(8);
+    out.ticksWhileLost = ticks - t0;
+
+    const restoredP = waitEvent('webglcontextrestored');
+    lose.restoreContext();
+    await withTimeout(restoredP, 10000, 'webglcontextrestored');
+    out.isLostAfter = gl.isContextLost();
+    if (o.pause) {
+      const t1 = ticks;
+      await rate(8);
+      out.ticksWhilePaused = ticks - t1;
+      eng.setPaused(false);
+    }
+    if (o.transition) { while (eng.trans.active) await withTimeout(capture(1), 60000, 'transition end'); }   // the route must still be finishable (or already aborted)
+    out.after = await withTimeout(capture(o.transition ? 12 : 4), 60000, 'post-restore capture');
+    out.rateAfter = await rate(30);
+    out.glErrorEnd = gl.getError();
+    out.events = events.slice();
+    if (!o.transition) out.diff = window.__diff(out.before.id, out.after.id);
+  } finally {
+    try { eng.setPaused(true); eng.dispose(); } catch { /* a disposed/failed engine has nothing to stop */ }
+    canvas.remove();
+  }
+  return out;
+};
+
+// dispose() deliberately loses the context: it must NOT be treated as a loss to recover from (no
+// preventDefault, no restore, no frames), and every listener the engine added must be gone.
+window.__disposeNoRecovery = async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage';
+  document.body.appendChild(canvas);
+  const added = [], removed = [];
+  const add = canvas.addEventListener.bind(canvas), rem = canvas.removeEventListener.bind(canvas);
+  canvas.addEventListener = (t, f, ...r) => { added.push([t, f]); return add(t, f, ...r); };
+  canvas.removeEventListener = (t, f, ...r) => { removed.push([t, f]); return rem(t, f, ...r); };
+  let ticks = 0;
+  const eng = create(canvas, { params: Object.assign({}, PRESETS['park 1'], FREEZE), onFrame: () => { ticks++; } });
+  const gl = eng.gl;
+  const ctxListeners = added.filter(([t]) => t.startsWith('webglcontext'));
+  const lost = new Promise((res) => add('webglcontextlost', res, { once: true }));
+  let restored = false, prevented = null;
+  add('webglcontextrestored', () => { restored = true; });
+  while (ticks < 3) await sleep(20);
+  eng.dispose();
+  const ev = await Promise.race([lost, sleep(3000).then(() => null)]);
+  prevented = ev ? ev.defaultPrevented : null;
+  const t1 = ticks;
+  await sleep(500);
+  return {
+    listenersAdded: ctxListeners.map(([t]) => t),
+    unremoved: ctxListeners.filter(([t, f]) => !removed.some(([rt, rf]) => rt === t && rf === f)).map(([t]) => t),
+    lostFired: !!ev, lostPrevented: prevented, restored, ticksAfterDispose: ticks - t1, stillLost: gl.isContextLost(),
+  };
+};
+
 // A contact sheet of captures, in order, for eyes rather than for a metric.
 window.__strip = (ids, cols) => {
   const caps0 = ids.map((id) => { const c = caps.get(id); if (!c) throw new Error(`no capture ${id}`); return c; });
