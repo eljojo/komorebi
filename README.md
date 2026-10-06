@@ -24,7 +24,7 @@ Editor: [komorebi.eljojo.net](https://komorebi.eljojo.net). Examples: [`examples
 
 ## Add it to your page
 
-Download [`komorebi.player.min.js`](https://komorebi.eljojo.net/dist/komorebi.player.min.js) (87 kB, 25 kB gzipped) and put it on your own server. **Do not link to the copy on komorebi.eljojo.net.** That copy is for the editor and the examples. It changes without notice, and it is not a CDN.
+Download [`komorebi.player.min.js`](https://komorebi.eljojo.net/dist/komorebi.player.min.js) (about 25 kB gzipped; `nix run .#build` prints the current size) and put it on your own server. **Do not link to the copy on komorebi.eljojo.net.** That copy is for the editor and the examples. It changes without notice, and it is not a CDN.
 
 ```html
 <canvas id="komorebi" style="position:fixed; inset:0; width:100%; height:100%; z-index:-1"></canvas>
@@ -97,7 +97,7 @@ Serve ES modules over http(s). A page on `file://` cannot import them.
 
 ### A smaller bundle
 
-The bundle contains the 15 shipped looks. The experimental looks are not in it: they are the receiver, enclosure
+The bundle contains every shipped look. The experimental looks are not in it: they are the receiver, enclosure
 and sky-view work, and they are the only looks that use a camera other than the floor.
 
 If your page uses two or three looks, `nix run .#embed -- '<look>'...` builds a bundle with only those looks and
