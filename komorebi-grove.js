@@ -305,8 +305,9 @@ export function makeGrove(hub){
         // The hashes inside leafTau are pure functions of (seed, j, k) — they must never draw from rng/rng2/gr above,
         // or every shipped grove reshuffles.
         const lt = senescing ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
-        // iFade: the very `cov` folded into tau above. The bake writes it into alpha (coverage) so the leaf's BALLISTIC shadow (§4.5,
-        // k·alpha) fades out with its tau instead of keeping full weight on a leaf that is not there yet — alpha has no other reader.
+        // iFade: the very `cov` folded into tau above. The bake writes it into alpha (coverage) so the leaf's BALLISTIC shadow (§4.5) fades out
+        // with its tau — the mixture reads (tau·cov, cov·fade) as the same leaf over fade·cov of the area — instead of keeping its full footprint
+        // on a leaf that is not there yet; alpha has no other reader.
         data.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
                   lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, cov);
         faithData.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,

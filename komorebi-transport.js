@@ -1,5 +1,5 @@
 import { MAX_SAMPLES, MAX_OCC } from './komorebi-params.js';
-import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY } from './komorebi-shaders.js';
+import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_TEXEL_MIX } from './komorebi-shaders.js';
 
 // ============================================================================
 // THE TRANSPORT MASTER (spec §4.6 / §4.9) — ONE source, FOUR straight-line programs.
@@ -37,14 +37,19 @@ uniform float uViewYaw;          // camera orbit about vertical (rad); rotates t
 
 // ---- the layer read every CAST camera makes (floor, cloth, enclosure): optical depth -> transmittance. A LEAF IS NOT A
 // WINDOW (§4.5): a texel holds the leaves' true depth in rgb and their COVERAGE in alpha, and the BEAM is only the ballistic
-// share, e^(-τ - k·alpha): neutral depth k per unit coverage (k = −ln(1−leaf_diffuse)), the diffuse rest being what the fill
-// hands the shade. k tweens, so the gate is a uniform branch whose else is the read the engine has always made. ----
-const GLSL_T_TAP = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per unit coverage (alpha). 0 = the old leaf, byte-identical
+// share. The texel is a MIXTURE of leaf and gap, not a slab (GLSL_TEXEL_MIX, one text, shared with the sky ray and the faithful stamp):
+// the beam passes the gap whole and a leaf at e^(-τ̄ - k) of it, where k = −ln(1−leaf_diffuse) is neutral depth per leaf and τ̄ the
+// leaf's own depth, so an edge texel no longer reads as a thin dark leaf and every ballistic shadow loses its halo. k tweens, so the
+// gate is a uniform branch whose else is the read the engine has always made. ----
+const GLSL_T_TAP = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per leaf. 0 = the old leaf, byte-identical
+${GLSL_TEXEL_MIX}
 vec3 tap(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
   if(uBeamK > 0.0){
     vec4 d = texture(t,uv);
-    return exp(-(d.rgb + uBeamK*d.a));   // optical depth + the beam's neutral share -> the ballistic transmittance
+    vec3 T, Tb;
+    texelMix(d.rgb, d.a, uBeamK, T, Tb);   // the texel's mixture: what is left of the beam, the gap passing it whole
+    return Tb;
   } else {
     return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
   }
@@ -89,11 +94,15 @@ const GLSL_T_CA_DECLS = `uniform vec3  uChroma;            // per-channel diffra
 // green=1). The colour fringe lands at every leaf/dapple edge and rides the same H*g shift, so it grows with
 // canopy height and the low-sun ellipse for free. Three single-channel taps; only taken when diffraction is on.
 vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
-  if(uBeamK > 0.0){   // the beam's k·coverage rides each channel's own dispersed read (§4.5)
+  if(uBeamK > 0.0){   // the beam's mixture rides each channel's own dispersed read (§4.5)
     vec4 qR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent);
     vec4 qG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent);
     vec4 qB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent);
-    return exp(-vec3(qR.r + uBeamK*qR.a, qG.g + uBeamK*qG.a, qB.b + uBeamK*qB.a));
+    vec3 T, Tb, bR, bG, bB;
+    texelMix(qR.rgb, qR.a, uBeamK, T, bR);
+    texelMix(qG.rgb, qG.a, uBeamK, T, bG);
+    texelMix(qB.rgb, qB.a, uBeamK, T, bB);
+    return vec3(bR.r, bG.g, bB.b);
   } else {
     float aR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent).r;
     float aG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent).g;

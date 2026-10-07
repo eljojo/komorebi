@@ -23,7 +23,7 @@
 // Opt-in, not suites: `--transition <from> <to>` (a watched transition), `--look <preset> key=value ...`
 // (a look with overrides, for eyes), `--gate [substring ...]` (only the gate invariants — the rows whose
 // name matches, if any are given — the fast loop for a gate you are adding), `--fill` (only the sky fill's
-// shader-vs-reference check) and `--sky` (only the look-up ray's).
+// shader-vs-reference check), `--sky` (only the look-up ray's) and `--edge` (only the soft-edge rows: rim, halo, stamp).
 // ============================================================================
 import { createReadStream } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
@@ -204,8 +204,11 @@ const INVARIANTS = [
   { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', pin: '7cad5bb5' },
   { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'bdcffc3c' },
   { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', pin: '13525cdd' },
-  { name: 'memories with the split and the fill open is the frame it was (the shared ray changed its signature)', preset: 'memories',
-    a: { canopy_fill: 1, leaf_diffuse: 0.95 }, pin: 'eb960892' },
+  // The ONE pin that moved, on purpose: it is a leaf_diffuse > 0 frame, and P0c-edge reads every texel there as a mixture of leaf and gap (§4.5), so the
+  // frame P0c-sky pinned (eb960892: the shared ray's new signature, the slab) is not this one. Re-recorded from the engine after the change; what says it moved
+  // the right way is not this hash but the soft-edge rows (SOFT EDGES), the fill and look-up checks, and the energy rows.
+  { name: 'memories with the split and the fill open is the frame P0c-edge made (was eb960892, the slab)', preset: 'memories',
+    a: { canopy_fill: 1, leaf_diffuse: 0.95 }, pin: '143e4d01' },
   // The gate, on the camera that grew a branch: leaf_diffuse 0 is beamK 0 is the literal old composition in the else...
   { name: 'canopy 1 with leaf_diffuse 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { leaf_diffuse: 0 } },
   // ...with the whole P0c family armed behind it: the fill the sky view never reads, and sky_scatter, a live knob at 0 and the same
@@ -310,6 +313,27 @@ const FILL_TOL = 2e-3;
 // the wood is in the way of, and wood in the texture at all.
 const SKY_CHECKS = ['canopy 1', 'canopy 2', 'canopy 3', 'canopy 4'].flatMap((preset) => [0, 0.5, 0.95].map((d) => ({ name: `${preset}, leaf_diffuse ${d}`, preset, over: { leaf_diffuse: d } })));
 const SKY_TOL = 1e-3;
+
+// A TEXEL IS A MIXTURE, NOT A SLAB (§4.5, P0c-edge). The bake stores Σ τ·cov and Σ cov; read as a slab of depth τ the pair is Jensen-dark at a soft edge, and
+// nearly half of every leaf's area is soft edge (edge_softness 0.26 → 44%). It showed in two places, and each has a row that is a MEASUREMENT of the shader the
+// engine compiles, on the layers it baked, never a restatement of the formula:
+//   THE RIM (the lantern, sky view): a leaf's edge glowed up to x2.3 (blue) of its own interior — a cream outline round every leaf on canopy 1 at leaf_diffuse
+//     0.95. Measured on rays that see ONE leaf's glow alone (the top layer covers, everything under it is clear: thr = 1, A = 1), classified by the readback's
+//     coverage: the peak of (soft-edge glow / mean interior glow), the worst channel. A mixture's edge glow is its area share of the interior's, so it cannot
+//     pass 1; the row allows 1.1 for the storage and the c = 0.98 end of "interior".
+//   THE HALO (the floor, cast taps): the beam through an edge texel was e^(−τ − k·c) of a texel that is mostly open sky — 0.18 where the mixture gives 0.70
+//     (c 0.3, blue) — a dark ring round every ballistic leaf shadow. `tap` and `tapCA` exactly as the cast cameras carry them, at every texel centre of every baked
+//     layer (and the diffraction read at a dispersed position, where the bilinear weights are real): no darker than the mixture of the same texel, and in the soft-edge
+//     band the shader's mean equals the mixture's. `slab` is the old answer, reported as the depth of the halo the row would have seen.
+//   THE FAITHFUL STAMP (park 1, curtain 1): FS_FAITH drawn for one leaf, every pixel held to (1 − cf) + cf·e^(−τ_leaf − k), cf = cov·fade — whole, half faded, and
+//     too faint to exist (exactly clear, and finite: vTau/vFade is never formed).
+const RIM_CHECKS = [{ name: 'canopy 1, leaf_diffuse 0.95', preset: 'canopy 1', over: { leaf_diffuse: 0.95 } }];
+const RIM_MAX = 1.1, RIM_MIN_TEXELS = 300;
+const HALO_CHECKS = [
+  { name: 'afternoon 7, leaf_diffuse 0.95 (the layer floor, blue τ 6.9)', preset: 'afternoon 7', over: { leaf_diffuse: 0.95 } },
+  { name: 'memories, leaf_diffuse 0.95 (the layer floor)', preset: 'memories', over: { leaf_diffuse: 0.95 } },
+];
+const HALO_TOL = 2e-3, HALO_BAND = [0.99, 1.01], HALO_MIN_TEXELS = 500, STAMP_TOL = 2e-5;
 
 // Suite 4 as data: one row per transition ROUTING tier. transitionTo classifies the from->to diff into a
 // tier, and each tier drives different code — the grove crossfade grows a SECOND grove (buildTargetGrove),
@@ -548,9 +572,10 @@ async function main() {
     const gateOnly = process.argv[2] === '--gate';
     const fillOnly = process.argv[2] === '--fill';
     const skyOnly = process.argv[2] === '--sky';
-    const solo = robustOnly || gateOnly || fillOnly || skyOnly;   // one suite, nothing else
+    const edgeOnly = process.argv[2] === '--edge';
+    const solo = robustOnly || gateOnly || fillOnly || skyOnly || edgeOnly;   // one suite, nothing else
     const gateFilters = gateOnly ? process.argv.slice(3).map((s) => s.toLowerCase()) : [];
-    const filters = (gateOnly || fillOnly || skyOnly) ? [] : process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
+    const filters = (gateOnly || fillOnly || skyOnly || edgeOnly) ? [] : process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
     const allPresets = await page.evaluate(() => window.__presets());
     const presets = solo ? [] : filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
     if (filters.length && presets.length === 0) { log(`no preset matches: ${filters.join(', ')}`); await browser.close(); server.close(); process.exit(1); }
@@ -616,8 +641,8 @@ async function main() {
     }
 
     // ---- suite 2: the gate invariants ----
-    if (!fillOnly && !skyOnly) log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
-    for (const inv of (fillOnly || skyOnly) ? [] : INVARIANTS.filter((r) => !gateFilters.length || gateFilters.some((f) => r.name.toLowerCase().includes(f)))) {
+    if (!fillOnly && !skyOnly && !edgeOnly) log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
+    for (const inv of (fillOnly || skyOnly || edgeOnly) ? [] : INVARIANTS.filter((r) => !gateFilters.length || gateFilters.some((f) => r.name.toLowerCase().includes(f)))) {
       const opts = inv.rebake ? { rebake: true } : undefined;
       const a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.a || {}, GATE_FRAMES, opts]);
       if (inv.pin) {   // a PIN row: one frame, one number written down before the change (see INVARIANTS)
@@ -663,8 +688,8 @@ async function main() {
     }
 
     // ---- suite 2b: the sky fill's shader against its reference ----
-    if (!gateOnly && !robustOnly && !skyOnly) log('\nSKY FILL — the shader against komorebi-fill.js, on the layers the engine baked');
-    for (const c of (gateOnly || robustOnly || skyOnly) ? [] : FILL_CHECKS) {
+    if (!gateOnly && !robustOnly && !skyOnly && !edgeOnly) log('\nSKY FILL — the shader against komorebi-fill.js, on the layers the engine baked');
+    for (const c of (gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : FILL_CHECKS) {
       let r;
       try {
         r = await page.evaluate(([p, o, q]) => window.__fillCheck(p, o, q), [c.preset, c.over, { rebake: !!c.rebake }]);
@@ -679,8 +704,8 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(62)} ${bad.join('; ') || detail}`);
     }
 
-    if (!gateOnly && !robustOnly && !fillOnly) log('\nLOOK-UP RAY — the lantern\'s shared ray (wood read) against komorebi-fill.js, on the layers and wood the engine baked');
-    for (const c of (gateOnly || robustOnly || fillOnly) ? [] : SKY_CHECKS) {
+    if (!gateOnly && !robustOnly && !fillOnly && !edgeOnly) log('\nLOOK-UP RAY — the lantern\'s shared ray (wood read) against komorebi-fill.js, on the layers and wood the engine baked');
+    for (const c of (gateOnly || robustOnly || fillOnly || edgeOnly) ? [] : SKY_CHECKS) {
       let r;
       try { r = await page.evaluate(([p, o]) => window.__skyCheck(p, o), [c.preset, c.over]); }
       catch (e) { record('sky', c.name, false, e.message.split('\n')[0]); log(`  FAIL  ${c.name} — ${e.message.split('\n')[0]}`); continue; }
@@ -696,8 +721,60 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(32)} ${bad.join('; ') || detail}`);
     }
 
-    if (!gateOnly && !robustOnly && !skyOnly) log('\nSKY FILL — the bookkeeping: what the engine\'s fill holds against what the leaves emitted and the beam gave up');
-    for (const c of (gateOnly || robustOnly || skyOnly) ? [] : FILL_ENERGY) {
+    if (!gateOnly && !robustOnly && !fillOnly && !skyOnly) log('\nSOFT EDGES — a texel is a mixture, not a slab: the lantern\'s rim, the beam\'s halo, the faithful stamp (§4.5)');
+    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : RIM_CHECKS) {
+      const name = `rim: ${c.name}`;
+      let r;
+      try { r = await page.evaluate(([p, o]) => window.__rimCheck(p, o), [c.preset, c.over]); }
+      catch (e) { record('edge', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); continue; }
+      const bad = [], peak = Math.max(...r.rimMax), f2 = (a) => a.map((v) => v.toFixed(2)).join('/');
+      if (!(peak <= RIM_MAX)) bad.push(`the rim is x${peak.toFixed(2)} of the interior (R/G/B ${f2(r.rimMax)}, at coverage ${f2(r.rimAt)}), over x${RIM_MAX}`);
+      if (!(r.nIn >= RIM_MIN_TEXELS && r.nRim >= RIM_MIN_TEXELS)) bad.push(`nothing measured: ${r.nIn} interior and ${r.nRim} rim texels (need ${RIM_MIN_TEXELS})`);
+      if (!(r.interiorGlow > 0.01)) bad.push(`the interior does not glow (${r.interiorGlow.toExponential(1)}): nothing to compare the rim with`);
+      if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
+      const bins = Object.entries(r.byC).sort((a, b) => a[0] - b[0]).map(([b, v]) => `${b}:${v.mean.map((x) => x.toFixed(2)).join('/')}`).join(' ');
+      const detail = `k ${r.k.toFixed(2)}  rim peak x${peak.toFixed(2)} (R/G/B ${f2(r.rimMax)})  ${r.nIn} interior / ${r.nRim} rim texels @ ${r.crop}² of ${r.n}px  mean rim/interior by coverage ${bins}`;
+      record('edge', name, bad.length === 0, bad.join('; ') || detail);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(48)} ${bad.join('; ') || detail}`);
+    }
+    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : HALO_CHECKS) {
+      const name = `halo: ${c.name}`;
+      let r;
+      try { r = await page.evaluate(([p, o]) => window.__haloCheck(p, o), [c.preset, c.over]); }
+      catch (e) { record('edge', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); continue; }
+      const bad = [];
+      if (r.errTap > HALO_TOL) bad.push(`tap off the mixture by ${r.errTap.toExponential(2)}`);
+      if (r.errCA > HALO_TOL) bad.push(`tapCA off the mixture by ${r.errCA.toExponential(2)}`);
+      if (!(r.shaderOverMix >= HALO_BAND[0] && r.shaderOverMix <= HALO_BAND[1])) bad.push(`the soft-edge band's mean beam is x${r.shaderOverMix.toFixed(3)} of the mixture's (want ${HALO_BAND.join('..')}; the old slab read x${r.slabOverMix.toFixed(2)}): a dark halo`);
+      if (!(r.nBand >= HALO_MIN_TEXELS)) bad.push(`nothing measured: ${r.nBand} soft-edge texels (need ${HALO_MIN_TEXELS})`);
+      if (!(r.slabOverMix < 0.95)) bad.push(`the slab is not darker than the mixture here (x${r.slabOverMix.toFixed(2)}): this look cannot show a halo`);
+      if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
+      const detail = `k ${r.k.toFixed(2)}  errTap ${r.errTap.toExponential(1)} errTapCA ${r.errCA.toExponential(1)}  soft-edge band ${r.nBand} texels: shader ${(r.bandShader / r.nBand).toFixed(3)} mixture ${(r.bandMix / r.nBand).toFixed(3)} (x${r.shaderOverMix.toFixed(3)}), the slab ${(r.bandSlab / r.nBand).toFixed(3)} (x${r.slabOverMix.toFixed(2)}), worst texel x${r.worstRatio.toFixed(2)}  ${r.crop}² of ${r.n}px, ${r.byLayer.length} layers`;
+      record('edge', name, bad.length === 0, bad.join('; ') || detail);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(48)} ${bad.join('; ') || detail}`);
+    }
+    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : [{ name: 'FS_FAITH, one leaf at leaf_diffuse 0.95 (the faithful floor and cloth)', opts: { d: 0.95 } }]) {
+      const name = `stamp: ${c.name}`;
+      let r;
+      try { r = await page.evaluate((o) => window.__stampCheck(o), c.opts); }
+      catch (e) { record('edge', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); continue; }
+      const bad = [], f3 = (a) => a.map((v) => v.toFixed(3)).join('/');
+      for (const row of r.rows) {
+        if (row.err > STAMP_TOL) bad.push(`${row.name}: off the per-leaf mixture by ${row.err.toExponential(2)}`);
+        if (!row.finite) bad.push(`${row.name}: a non-finite pixel`);
+        if (row.glError) bad.push(`${row.name}: gl.getError 0x${row.glError.toString(16)}`);
+        if (row.name === 'fade 1') {
+          if (!(row.nBand >= 100)) bad.push(`${row.name}: nothing measured (${row.nBand} edge-band pixels)`);
+          if (!row.bandOverMix.every((v) => v >= 0.999)) bad.push(`${row.name}: the edge band's mean is x${f3(row.bandOverMix)} of the mixture's (the slab's x${f3(row.slabOverMix)})`);
+        }
+      }
+      const detail = `k ${r.k.toFixed(2)}  ${r.rows.map((x) => `${x.name} err ${x.err.toExponential(1)}`).join(', ')}  edge band x${f3(r.rows[0].bandOverMix)} of the mixture (the slab: x${f3(r.rows[0].slabOverMix)}), ${r.rows[0].nBand} px`;
+      record('edge', name, bad.length === 0, bad.join('; ') || detail);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(72)} ${bad.join('; ') || detail}`);
+    }
+
+    if (!gateOnly && !robustOnly && !skyOnly && !edgeOnly) log('\nSKY FILL — the bookkeeping: what the engine\'s fill holds against what the leaves emitted and the beam gave up');
+    for (const c of (gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : FILL_ENERGY) {
       let r;
       try { r = await page.evaluate(([p, o, q]) => window.__fillCheck(p, o, q), [c.preset, c.over, { rebake: !!c.rebake, energy: true, samples: 8 }]); }
       catch (e) { record('fill', c.name, false, e.message.split('\n')[0]); log(`  FAIL  ${c.name} — ${e.message.split('\n')[0]}`); continue; }
@@ -722,8 +799,8 @@ async function main() {
       if (bad.length) log(`        ${detail}`);
     }
 
-    if (!gateOnly && !robustOnly && !skyOnly) log('\nSKY FILL — canopy_fill opened and shut on a running engine');
-    for (const c of (gateOnly || robustOnly || skyOnly) ? [] : FILL_TOGGLES) {
+    if (!gateOnly && !robustOnly && !skyOnly && !edgeOnly) log('\nSKY FILL — canopy_fill opened and shut on a running engine');
+    for (const c of (gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : FILL_TOGGLES) {
       const name = `${c.name}: ${c.sky ? 'opening it allocates nothing and moves nothing' : 'shut costs nothing, open bakes, shut again is the old frame'}`;
       let r;
       try { r = await page.evaluate(([p, o, q]) => window.__fillToggle(p, o, q), [c.preset, c.over, { rebake: !!c.rebake }]); }
@@ -745,8 +822,8 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || detail}`);
     }
 
-    if (!gateOnly && !robustOnly && !skyOnly) log('\nLEAF DIFFUSE — changed on a running engine, nothing rebuilt');
-    for (const c of (gateOnly || robustOnly || skyOnly) ? [] : LIVE_CHANGES) {
+    if (!gateOnly && !robustOnly && !skyOnly && !edgeOnly) log('\nLEAF DIFFUSE — changed on a running engine, nothing rebuilt');
+    for (const c of (gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : LIVE_CHANGES) {
       const name = `leaf_diffuse live: ${c.name}`;
       let a, b;
       try {
@@ -788,7 +865,7 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${route.name.padEnd(50)} ${bad.join('; ') || `${r.ticks} ticks ${r.ms} ms`}`);
     }
     }
-    if (!filters.length && !gateOnly && !fillOnly && !skyOnly) await robustness(page);
+    if (!filters.length && !gateOnly && !fillOnly && !skyOnly && !edgeOnly) await robustness(page);
   } finally {
     await browser.close();
     server.close();

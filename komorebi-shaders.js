@@ -3,6 +3,26 @@ import { MAX_LAYERS, MAX_FILL_DIRS } from './komorebi-params.js';
 // ===========================================================================
 // Shaders
 // ===========================================================================
+
+// ---- A TEXEL IS A MIXTURE, NOT A SLAB (§4.5): ONE snippet, carried by every program that reads a baked texel above leaf_diffuse 0 — the cast taps
+// (tap, tapCA), the faithful stamp (FS_FAITH) and the shared ray (GLSL_SKY_RAY: the sky camera and the fill). The bake ADDS: rgb = τ = Σ τ_i·cov_i, alpha
+// c = Σ cov_i. That is exact for leaves that fill the texel and stack, and Jensen-dark at an edge when read as a slab of depth τ: a texel 30% under a leaf of
+// depth 2.8 is 70% open sky and 30% dark leaf (T 0.72), not a thin bright leaf of depth 0.84 (t 0.43) — a cream rim in the glow, a dark halo round every beam.
+// With a = min(c, 1) the leaf AREA, τ̄ = τ/a the representative leaf's depth (fade-invariant, and bilinear-safe: it interpolates as a coverage-weighted
+// mean of the leaves' depths) and κ = k·c/a (k per leaf, c/a leaves deep where they stack):
+//   T  = (1 − a) + a·e^−τ̄          what the texel truly passes (hue, skylight, the light a leaf sends on downward)
+//   Tb = (1 − a) + a·e^(−τ̄ − κ)    its BALLISTIC share, what still travels as a beam
+//   emit = T − Tb                   the diffuse light the leaf sends on; the gap emits nothing
+// Exact for one leaf at any c ≤ 1 and for leaves stacked over the whole texel (c = 2); between, a bounded slab residue. emit ≡ T − Tb by construction, so
+// every telescoping sum closes. c < 1e-4 is an empty texel. At c ≥ 1 it is the old slab to the bit. Callers gate on k > 0: at d = 0 it is never called.
+const GLSL_TEXEL_MIX = `void texelMix(vec3 tau, float c, float k, out vec3 T, out vec3 Tb){
+  if(c < 1e-4){ T = vec3(1.0); Tb = T; return; }   // an empty texel (a leaf not there yet, a bake's rounding dust): nothing to pass, nothing to kill
+  float a = min(c, 1.0);                           // the leaf AREA of the texel
+  vec3 tbar = tau / a;                             // the representative leaf's depth
+  T  = vec3(1.0 - a) + a*exp(-tbar);
+  Tb = vec3(1.0 - a) + a*exp(-tbar - k*c/a);
+}`;
+
 const VS_BAKE = `#version 300 es
 precision highp float;
 layout(location=0) in vec2 aCorner;   // [-1,1] quad corner
@@ -181,8 +201,10 @@ void main(){
 // FAITHFUL pass 1 (per sample): each leaf outputs its TRANSMITTANCE exp(-τ); drawn with multiplicative blend
 // (dst *= src) so the scratch buffer ends at Π exp(-τ) = exp(-Σ τ) = the transmittance through the canopy for
 // this one sun-sample. Soft edge → 1 at the rim (×1, no darkening), order-independent (multiply commutes).
-// A LEAF IS NOT A WINDOW (§4.5): the beam is only the BALLISTIC share, exp(-(τ + k·fade)·cov) — the multiplicative scratch
-// takes the neutral depth k per unit coverage inside the same exponent, the fade standing where the layer path's alpha does.
+// A LEAF IS NOT A WINDOW (§4.5): the beam is only the BALLISTIC share. A stamp is ONE leaf over cov·fade of its pixel, at the depth vTau/vFade the grove
+// folded the fade out of — its mixture (GLSL_TEXEL_MIX: the pair (vTau·cov, cov·fade) is exactly that leaf), (1 − cf) + cf·e^(−vTau/vFade − k), which
+// the multiplicative scratch then stacks leaf by leaf. A stamp with cov·fade under 1e-4 (a leaf not there yet) is exactly clear: texelMix's own
+// guard is what keeps vTau/vFade from dividing by 0. The else is the literal old line.
 const FS_FAITH = `#version 300 es
 precision highp float;
 in vec2 vLocal;
@@ -191,11 +213,16 @@ in float vFade;
 uniform float uEdge;
 uniform float uBeamK;   // k = −ln(1−leaf_diffuse), 0 = the old leaf — a uniform branch, because leaf_diffuse tweens
 out vec4 frag;
+${GLSL_TEXEL_MIX}
 void main(){
   float r = length(vLocal);
   float cov = 1.0 - smoothstep(1.0-uEdge, 1.0, r);
   if (cov <= 0.0) discard;
-  if(uBeamK > 0.0) frag = vec4(exp(-(vTau + uBeamK*vFade)*cov), 1.0);
+  if(uBeamK > 0.0){
+    vec3 T, Tb;
+    texelMix(vTau*cov, cov*vFade, uBeamK, T, Tb);
+    frag = vec4(Tb, 1.0);
+  }
   else frag = vec4(exp(-vTau*cov), 1.0);
 }`;
 
@@ -347,20 +374,22 @@ const GLSL_SUN_DIR_DECLS = `uniform vec3  uSunDir;            // UNIT sun direct
 const GLSL_SKY_RAY = `// A transmittance normalized to unit peak: the spectrum with its brightness divided out (§3.5's idiom, and the same
 // one the curtain's dye uses). What survives is chlorophyll's green-gold; the knob that reads it carries the level.
 vec3 leafHue(vec3 t){ return t / max(max(t.r, t.g), max(t.b, 1e-4)); }
-// One tap of a layer: the foliage's transmittance t, its COVERAGE c (alpha — the one bake writes it on every camera, §4.5) and, where
-// readWood, the layer's wood transmittance w from its own texture. Open sky outside the box: no leaves, nothing to cover, no wood.
-void tapSky(highp sampler2D layer, highp sampler2D wood, vec2 world, bool openOutside, bool readWood, out vec3 t, out float c, out float w){
+${GLSL_TEXEL_MIX}
+// One tap of a layer: the foliage's transmittance t, its BALLISTIC share tb and, where readWood, the layer's wood transmittance w from its own texture.
+// The texel holds the depth in rgb and the COVERAGE in alpha (the one bake writes both on every camera, §4.5). At beamK 0 the texel is the slab and tb is t
+// (the else is the read the engine has always made); above it the texel is a MIXTURE of leaf and gap (texelMix): t = what it truly passes, tb what is
+// left of the beam, and t − tb the diffuse light it sends on. Open sky outside the box: no leaves, nothing to cover, no wood.
+void tapSky(highp sampler2D layer, highp sampler2D wood, vec2 world, bool openOutside, bool readWood, float beamK, out vec3 t, out vec3 tb, out float w){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
-  if(openOutside && (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))){ t = vec3(1.0); c = 0.0; w = 1.0; return; }
+  if(openOutside && (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))){ t = vec3(1.0); tb = t; w = 1.0; return; }
   vec4 d = texture(layer, uv);
-  t = exp(-d.rgb); c = d.a; w = readWood ? exp(-texture(wood, uv).r) : 1.0;
+  if(beamK > 0.0) texelMix(d.rgb, d.a, beamK, t, tb);
+  else { t = exp(-d.rgb); tb = t; }
+  w = readWood ? exp(-texture(wood, uv).r) : 1.0;
 }
-// What a tap takes out of the SUN's path: the leaf's BALLISTIC share tb = t·e^(-k·coverage) (the diffuse share has left the beam, §4.5,
-// and arrives as the emission below), × the wood where it is read — a twig shadows a leaf exactly as another leaf does.
-vec3 sunPass(vec3 t, float c, float w, bool readWood, float beamK){
-  vec3 tb = beamK > 0.0 ? t*exp(-beamK*c) : t;
-  return readWood ? tb*w : tb;
-}
+// What a tap takes out of the SUN's path: the leaf's BALLISTIC share tb (the diffuse share has left the beam, §4.5, and arrives as the emission below),
+// × the wood where it is read — a twig shadows a leaf exactly as another leaf does.
+vec3 sunPass(vec3 tb, float w, bool readWood){ return readWood ? tb*w : tb; }
 // pL_i is where the ray crosses layer i's plane — the caller's own geometry, so the eye's perspective and the
 // hemisphere's fixed directions both fit. Returns T (what the ray passes: leaves × wood, per channel), Tb (what the BEAM passes along it,
 // Π tb·w: the sun's disk seen through the canopy — a leaf kills it; = T at beamK 0) and Lsc (the foliage's single-scatter radiance along
@@ -384,51 +413,55 @@ vec3 sunPass(vec3 t, float c, float w, bool readWood, float beamK){
 //    accounts to first order for the scattered light filtering back out through the layer that made it.
 // The bound is structural: Σ throughput·(1 − t_L) telescopes to 1 − Π t_L ≤ 1 per channel, ŝ ≤ 1 and the albedo
 // ≤ 1, so a crown can never radiate more than the sunlight falling on it.
-// ---- A LEAF IS NOT A WINDOW (§4.5): beamK > 0 replaces that proxy by what it stood in for. A leaf passes t = e^-τ in all, but only
-// tb = e^(-τ - k·coverage) of it keeps travelling as a beam; the rest, t − tb = t·(1 − e^(-k·coverage)), is diffuse light the leaf
-// sends on, in its own hue (k is neutral) and at the level d·T — no ŝ, no albedo, so nothing authored is left in it. It is lit by the
+// ---- A LEAF IS NOT A WINDOW (§4.5): beamK > 0 replaces that proxy by what it stood in for. Every texel is a MIXTURE of leaf and gap (texelMix, above): it
+// passes t in all, but only tb of it keeps travelling as a beam; the rest, t − tb, is diffuse light the leaf sends on, in its own hue (k is neutral) and
+// at the level d·T of the leaf's own area — the gap emits nothing, no ŝ, no albedo, so nothing authored is left in it. It is lit by the
 // sun's BALLISTIC path to it (A_L = Π_{M>L} tb_M·w_M) and falls through the layers below on their TRUE t (thr), which telescopes:
 //   Π tb + Σ_L thr_L·(t_L − tb_L)·A_L = Π t   (Q_L = Π_{M≤L} t · Π_{M>L} tb steps from the first to the second)
 // when the eye ray IS the sun's ray (every A_L then reads the very taps the ray passes): beam + emitted is the total transmitted for
 // any d, and at d = 0 the new term is identically zero. Off that line it is not an identity and no inequality either (a lit leaf is
 // seen through a leaf beside the sun's path): the bound is per layer, a leaf glows no more than its diffuse share of the sunlight
-// landing on it. T is untouched: for a uniform sky, diffuse transmission through Lambertian leaves equals the ballistic one to first
+// landing on it. T is untouched by k: for a uniform sky, diffuse transmission through Lambertian leaves equals the ballistic one to first
 // order, so the skylight needs no split — only the sun does. WOOD (readWood, the sky camera) is a pure attenuator: it is in T, Tb, the
 // sun's path and thr, and never in the emission, so a ray that meets nothing but wood scatters exactly nothing.
 void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, vec2 gS, bool scatter, bool openOutside, bool readWood, float beamK, out vec3 T, out vec3 Tb, out vec3 Lsc){
   // a layer that is not there: transmits everything, covers nothing, holds no wood
   vec3 tL0 = vec3(1.0), tL1 = vec3(1.0), tL2 = vec3(1.0), tL3 = vec3(1.0);
-  float cL0 = 0.0, cL1 = 0.0, cL2 = 0.0, cL3 = 0.0, wL0 = 1.0, wL1 = 1.0, wL2 = 1.0, wL3 = 1.0;
-  if(uLayerCount>0) tapSky(uLayer[0], uWood[0], pL0, openOutside, readWood, tL0, cL0, wL0);
-  if(uLayerCount>1) tapSky(uLayer[1], uWood[1], pL1, openOutside, readWood, tL1, cL1, wL1);
-  if(uLayerCount>2) tapSky(uLayer[2], uWood[2], pL2, openOutside, readWood, tL2, cL2, wL2);
-  if(uLayerCount>3) tapSky(uLayer[3], uWood[3], pL3, openOutside, readWood, tL3, cL3, wL3);
+  vec3 tbL0 = vec3(1.0), tbL1 = vec3(1.0), tbL2 = vec3(1.0), tbL3 = vec3(1.0);
+  float wL0 = 1.0, wL1 = 1.0, wL2 = 1.0, wL3 = 1.0;
+  if(uLayerCount>0) tapSky(uLayer[0], uWood[0], pL0, openOutside, readWood, beamK, tL0, tbL0, wL0);
+  if(uLayerCount>1) tapSky(uLayer[1], uWood[1], pL1, openOutside, readWood, beamK, tL1, tbL1, wL1);
+  if(uLayerCount>2) tapSky(uLayer[2], uWood[2], pL2, openOutside, readWood, beamK, tL2, tbL2, wL2);
+  if(uLayerCount>3) tapSky(uLayer[3], uWood[3], pL3, openOutside, readWood, beamK, tL3, tbL3, wL3);
   // tL = what the FOLIAGE does (this layer's leaves alone) — the only thing the scatter term may read.
   // xL = what the RAY loses (leaves × wood) — the only thing transmittance may read.
   vec3 xL0 = readWood ? tL0*wL0 : tL0, xL1 = readWood ? tL1*wL1 : tL1, xL2 = readWood ? tL2*wL2 : tL2, xL3 = readWood ? tL3*wL3 : tL3;
   T = vec3(1.0);
   T *= xL0; T *= xL1; T *= xL2; T *= xL3;
-  Tb = beamK > 0.0 ? T*exp(-beamK*(cL0 + cL1 + cL2 + cL3)) : T;   // Π tb·w: the beam's own transmittance along the ray, in the leaves' hue
+  if(beamK > 0.0){   // Π tb·w: the beam's own transmittance along the ray, in the leaves' hue
+    Tb = vec3(1.0);
+    Tb *= readWood ? tbL0*wL0 : tbL0; Tb *= readWood ? tbL1*wL1 : tbL1; Tb *= readWood ? tbL2*wL2 : tbL2; Tb *= readWood ? tbL3*wL3 : tbL3;
+  } else Tb = T;
   Lsc = vec3(0.0);
   if(scatter){
     vec3 A0 = vec3(1.0), A1 = vec3(1.0), A2 = vec3(1.0);
     // the SUN's path takes the FULL transmittance — a twig shadows a leaf exactly as another leaf does; it is
     // only as a SOURCE that wood must not participate.
-    vec3 sT; float sC, sW;
-    if(uLayerCount>1){ tapSky(uLayer[1], uWood[1], pL0 + gS*(uLayerHeight[1]-uLayerHeight[0]), openOutside, readWood, sT, sC, sW); A0 *= sunPass(sT, sC, sW, readWood, beamK); }
-    if(uLayerCount>2){ tapSky(uLayer[2], uWood[2], pL0 + gS*(uLayerHeight[2]-uLayerHeight[0]), openOutside, readWood, sT, sC, sW); A0 *= sunPass(sT, sC, sW, readWood, beamK); }
-    if(uLayerCount>3){ tapSky(uLayer[3], uWood[3], pL0 + gS*(uLayerHeight[3]-uLayerHeight[0]), openOutside, readWood, sT, sC, sW); A0 *= sunPass(sT, sC, sW, readWood, beamK); }
-    if(uLayerCount>2){ tapSky(uLayer[2], uWood[2], pL1 + gS*(uLayerHeight[2]-uLayerHeight[1]), openOutside, readWood, sT, sC, sW); A1 *= sunPass(sT, sC, sW, readWood, beamK); }
-    if(uLayerCount>3){ tapSky(uLayer[3], uWood[3], pL1 + gS*(uLayerHeight[3]-uLayerHeight[1]), openOutside, readWood, sT, sC, sW); A1 *= sunPass(sT, sC, sW, readWood, beamK); }
-    if(uLayerCount>3){ tapSky(uLayer[3], uWood[3], pL2 + gS*(uLayerHeight[3]-uLayerHeight[2]), openOutside, readWood, sT, sC, sW); A2 *= sunPass(sT, sC, sW, readWood, beamK); }
+    vec3 sT, sTb; float sW;
+    if(uLayerCount>1){ tapSky(uLayer[1], uWood[1], pL0 + gS*(uLayerHeight[1]-uLayerHeight[0]), openOutside, readWood, beamK, sT, sTb, sW); A0 *= sunPass(sTb, sW, readWood); }
+    if(uLayerCount>2){ tapSky(uLayer[2], uWood[2], pL0 + gS*(uLayerHeight[2]-uLayerHeight[0]), openOutside, readWood, beamK, sT, sTb, sW); A0 *= sunPass(sTb, sW, readWood); }
+    if(uLayerCount>3){ tapSky(uLayer[3], uWood[3], pL0 + gS*(uLayerHeight[3]-uLayerHeight[0]), openOutside, readWood, beamK, sT, sTb, sW); A0 *= sunPass(sTb, sW, readWood); }
+    if(uLayerCount>2){ tapSky(uLayer[2], uWood[2], pL1 + gS*(uLayerHeight[2]-uLayerHeight[1]), openOutside, readWood, beamK, sT, sTb, sW); A1 *= sunPass(sTb, sW, readWood); }
+    if(uLayerCount>3){ tapSky(uLayer[3], uWood[3], pL1 + gS*(uLayerHeight[3]-uLayerHeight[1]), openOutside, readWood, beamK, sT, sTb, sW); A1 *= sunPass(sTb, sW, readWood); }
+    if(uLayerCount>3){ tapSky(uLayer[3], uWood[3], pL2 + gS*(uLayerHeight[3]-uLayerHeight[2]), openOutside, readWood, beamK, sT, sTb, sW); A2 *= sunPass(sTb, sW, readWood); }
     // THE SOURCE TERM READS FOLIAGE ONLY. Wood appears in the throughput, which can only take light away, and
     // nowhere in the emission — so a ray that meets nothing but wood scatters exactly nothing.
     vec3 thr = vec3(1.0);
     if(beamK > 0.0){
-      Lsc += thr*tL0*(1.0-exp(-beamK*cL0))*uSunColor*A0; thr *= xL0;
-      Lsc += thr*tL1*(1.0-exp(-beamK*cL1))*uSunColor*A1; thr *= xL1;
-      Lsc += thr*tL2*(1.0-exp(-beamK*cL2))*uSunColor*A2; thr *= xL2;
-      Lsc += thr*tL3*(1.0-exp(-beamK*cL3))*uSunColor;   // nothing is stacked above the top layer
+      Lsc += thr*(tL0 - tbL0)*uSunColor*A0; thr *= xL0;
+      Lsc += thr*(tL1 - tbL1)*uSunColor*A1; thr *= xL1;
+      Lsc += thr*(tL2 - tbL2)*uSunColor*A2; thr *= xL2;
+      Lsc += thr*(tL3 - tbL3)*uSunColor;   // nothing is stacked above the top layer
     } else {
       Lsc += thr*(1.0-tL0)*leafHue(tL0)*uSunColor*A0; thr *= xL0;
       Lsc += thr*(1.0-tL1)*leafHue(tL1)*uSunColor*A1; thr *= xL1;
@@ -611,4 +644,4 @@ void main(){
 }`;
 
 
-export { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };

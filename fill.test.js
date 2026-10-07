@@ -375,12 +375,19 @@ const P = 6, FRAME = { ox: -P / 2, oy: -P / 2, ext: P };
 // a field periodic over the frame: integer wavenumbers, so the torus is exactly the field's own period and an analytic sum over a grid is exact
 const wave = (x, y, a, b, ph) => Math.cos((2 * Math.PI * (a * (x + P / 2) + b * (y + P / 2))) / P + ph);
 const tFor = (L) => (x, y) => [0, 1, 2].map((c) => 0.5 + 0.2 * wave(x, y, 1 + (L % 2), c - 1, 0.9 * L + c) + 0.1 * wave(x, y, 2, 1 - c, 0.4 * L - c));
-const cFor = (L) => (x, y) => 0.9 + 0.35 * wave(x, y, 1, 1 + L, 0.5 * L) + 0.2 * wave(x, y, 2, -1, 1.3 * L);
+const cFor = (L) => (x, y) => 0.65 + 0.2 * wave(x, y, 1, 1 + L, 0.5 * L) + 0.1 * wave(x, y, 2, -1, 1.3 * L);   // 0.35..0.95: one leaf over most of a texel, never past 1 — the mixture's a = min(c, 1) has a kink there, and the sums below are exact only for a field smooth enough that a lattice shift moves nothing
 const K_BEAM = M_BALLISTIC(0.95);
 function M_BALLISTIC(d) { return -Math.log(1 - d); }   // ballisticK without the import: the cap is not what these stacks are about
 const H3 = [2, 3.5, 5];
 const SUN3 = [1.2, 1.0, 0.7];
-const torus = (stackSpec, mode) => stackSpec.map((s, L) => FILL.fillDomain({ h: H3[L], t: s.t, c: s.c }, FRAME, mode));
+// A texel carries depth AND coverage (the bake writes both from one mask), so a layer that only SHADES — takes light out of the ray and the sun and puts none back — is
+// WOOD, not a leaf with its coverage left at 0: at d > 0 a depth without coverage is an empty texel. `w` is that neutral transmittance, wrapped through the domain with the layer.
+const woodOf = (L) => (x, y) => tFor(L)(x, y)[1];
+const shadeSpec = () => [{ t: tFor(0), c: cFor(0) }, { t: () => [1, 1, 1], c: () => 0, w: woodOf(1) }, { t: () => [1, 1, 1], c: () => 0, w: woodOf(2) }];
+const torus = (stackSpec, mode) => stackSpec.map((s, L) => {
+  const dom = FILL.fillDomain({ h: H3[L], t: s.t, c: s.c }, FRAME, mode);
+  return s.w ? { ...dom, w: (x, y) => FILL.fillDomain({ h: H3[L], t: (px, py) => [s.w(px, py), 1, 1] }, FRAME, mode).t(x, y)[0] } : dom;
+});
 const NG = 40, PITCH = P / NG;
 const gridPts = Array.from({ length: NG * NG }, (_, q) => [-P / 2 + ((q % NG) + 0.5) * PITCH, -P / 2 + (Math.floor(q / NG) + 0.5) * PITCH]);
 // Σ_x S(x) over the grid. `tiled` gives each texel its own slot of the 4x4 interleave, as the shader does; the plain set (every texel the same K
@@ -426,17 +433,17 @@ test("the translation identity on the torus: the bottom layer's received light I
   // every ray's light from it arrives undimmed. A ray from floor point x crosses the layer at x + s·h, so the sum over the
   // floor of what it receives is the sum over the layer of what it emits shifted by s·h — and on a torus a shift moves nothing.
   // Held for ANY sun path, any K, any tile: that is what makes it a bookkeeping law and not a coincidence of one stack.
-  const spec = [{ t: tFor(0), c: cFor(0) }, { t: tFor(1), c: () => 0 }, { t: tFor(2), c: () => 0 }];
+  const spec = shadeSpec();
   for (const gS of [[0, 0], [0.9, -0.4], [-1.7, 2.2]]) {
     const layers = torus(spec, "wrap");
     const got = fillSum(layers, { gS, sun: SUN3, scatter: 0, k: K_BEAM });
     const want = [0, 0, 0];
-    for (const y of gridPts) {                                         // M_0(y) = (t0 − tb0)·sun·A_0, A_0 along the sun's path through the layers above
-      const t0 = spec[0].t(y[0], y[1]), e = 1 - Math.exp(-K_BEAM * spec[0].c(y[0], y[1]));
+    for (const y of gridPts) {                                         // M_0(y) = (T0 − Tb0)·sun·A_0, A_0 along the sun's path through the layers above (wood: it only takes light away)
+      const m0 = FILL.texelMix(spec[0].t(y[0], y[1]).map((v) => -Math.log(v)), spec[0].c(y[0], y[1]), K_BEAM);
       for (let c = 0; c < 3; c++) {
         let A = 1;
-        for (let m = 1; m < 3; m++) A *= spec[m].t(y[0] + gS[0] * (H3[m] - H3[0]), y[1] + gS[1] * (H3[m] - H3[0]))[c];
-        want[c] += t0[c] * e * SUN3[c] * A;
+        for (let m = 1; m < 3; m++) A *= spec[m].w(y[0] + gS[0] * (H3[m] - H3[0]), y[1] + gS[1] * (H3[m] - H3[0]));
+        want[c] += (m0.T[c] - m0.Tb[c]) * SUN3[c] * A;
       }
     }
     for (let c = 0; c < 3; c++) { expect(want[c]).toBeGreaterThan(1); expect(Math.abs(got[c] / want[c] - 1), `gS ${gS} channel ${c}`).toBeLessThan(1e-9); }
@@ -447,7 +454,7 @@ test("the translation identity on the torus: the bottom layer's received light I
 });
 
 test("...and the box not wrapped does not close it: clamped it repeats the border, open it sees open sky past the sides", () => {
-  const spec = [{ t: tFor(0), c: cFor(0) }, { t: tFor(1), c: () => 0 }, { t: tFor(2), c: () => 0 }];
+  const spec = shadeSpec();
   const gS = [0.9, -0.4], run = (mode) => fillSum(torus(spec, mode), { gS, sun: SUN3, scatter: 0, k: K_BEAM })[1];
   const wrapped = run("wrap");
   expect(Math.abs(run("clamp") / wrapped - 1)).toBeGreaterThan(0.005);  // the border texel is not the neighbouring period (a smooth field: 1%, against the wrap's 1e-9)
@@ -456,17 +463,17 @@ test("...and the box not wrapped does not close it: clamped it repeats the borde
 
 test("one sun per camera: Σ S equals the beam's deficit Σ D when the fill walks the BEAM's path, and not when it walks another", () => {
   // L0 is uniform (every ray's descent through it is the same number), L1 emits, L2 only shades L1's sun. The beam reads layer L
-  // at x + g·h_L, so its deficit at x is t0·t2(x+g·h2)·[t1(1 − e^(−k·c1))](x+g·h1): the same terms as the emission with the sun
+  // at x + g·h_L, so its deficit at x is w0·w2(x+g·h2)·[T1 − Tb1](x+g·h1): the same terms as the emission with the sun
   // path A_1 read along that very g. Summed over the torus they are one number — if g is the same g.
   const U = 0.55;
-  const spec = [{ t: () => [U, U, U], c: () => 0 }, { t: tFor(1), c: cFor(1) }, { t: tFor(2), c: () => 0 }];
+  const spec = [{ t: () => [1, 1, 1], c: () => 0, w: () => U }, { t: tFor(1), c: cFor(1) }, { t: () => [1, 1, 1], c: () => 0, w: woodOf(2) }];   // L0 and L2 only shade (wood), so L1 alone emits
   const gBeam = [0.9, -0.4], gReal = [0.35, 0.8];
   const beamDeficit = (g) => {
     const D = [0, 0, 0];
     for (const x of gridPts) for (let c = 0; c < 3; c++) {
       const q = [1, 2].map((m) => [x[0] + g[0] * H3[m], x[1] + g[1] * H3[m]]);
-      const t1 = spec[1].t(...q[0])[c], c1 = spec[1].c(...q[0]), t2 = spec[2].t(...q[1])[c];
-      D[c] += (U * t1 * t2 - U * t1 * Math.exp(-K_BEAM * c1) * t2) * SUN3[c];
+      const m1 = FILL.texelMix(spec[1].t(...q[0]).map((v) => -Math.log(v)), spec[1].c(...q[0]), K_BEAM), w2 = spec[2].w(...q[1]);
+      D[c] += (U * m1.T[c] * w2 - U * m1.Tb[c] * w2) * SUN3[c];   // what the beam gave up: Π T − Π Tb down this column
     }
     return D;
   };
@@ -486,16 +493,17 @@ test("the endless park's sun path is vertical: gS = 0 lights layer i from the la
   for (let seed = 0; seed < 300; seed++) {
     const nL = 2 + (seed % 2), k = M_BALLISTIC([0.5, 0.95][seed % 2]);
     const layers = [0, 1, 2].slice(0, nL).map((L) => ({ h: H3[L], t: (x, y) => randomField(seed)(x, y, L), c: (x, y) => 2 * randomField(seed + 1)(x, y, L)[0] }));
+    const mix = (L, x, y) => FILL.texelMix(layers[L].t(x, y).map((v) => -Math.log(v)), layers[L].c(x, y), k);   // the texel's mixture: T for what the leaf passes, Tb for the beam
     const x = [(hash3(seed, 5, 0) % 4000) / 1000 - 2, (hash3(seed, 5, 1) % 4000) / 1000 - 2], s = fillDirections(7)[seed % 7].shift;
     const p = layers.map((l) => [x[0] + s[0] * l.h, x[1] + s[1] * l.h]);
     const want = [0, 0, 0], thr = [1, 1, 1];
     for (let i = 0; i < nL; i++) {
-      const t = layers[i].t(...p[i]), e = 1 - Math.exp(-k * layers[i].c(...p[i]));
+      const mi = mix(i, ...p[i]);
       for (let c = 0; c < 3; c++) {
         let A = 1;
-        for (let m = i + 1; m < nL; m++) A *= layers[m].t(...p[i])[c] * Math.exp(-k * layers[m].c(...p[i]));   // layer m read AT p_i: nothing travels sideways per metre of rise
-        want[c] += thr[c] * t[c] * e * SUN3[c] * A;
-        thr[c] *= t[c];
+        for (let m = i + 1; m < nL; m++) A *= mix(m, ...p[i]).Tb[c];   // layer m read AT p_i: nothing travels sideways per metre of rise
+        want[c] += thr[c] * (mi.T[c] - mi.Tb[c]) * SUN3[c] * A;
+        thr[c] *= mi.T[c];
       }
     }
     const got = FILL.skyRayRef(layers, x, s, [0, 0], SUN3, k).L;

@@ -51,8 +51,8 @@ export function makeBake(hub){
     gl.blendFunc(gl.ONE, gl.ONE);          // optical depth accumulates additively
     const base=params.canopy_base_height_m;
     // ALPHA IS THE LEAVES' COVERAGE, ON EVERY CAMERA (§4.5/§4.9). The layer texture's rgb is the foliage's per-channel optical depth;
-    // its alpha is Σ of the leaf masks over the texel, fade included, which is what turns leaf_diffuse's k into the beam's neutral
-    // depth (k·alpha) and into the fill's emission and the sky camera's glow. At k = 0 nothing reads it. The sky view's fine wood used
+    // its alpha is Σ of the leaf masks over the texel, fade included: with the depth beside it, the pair texelMix reads a texel as a MIXTURE of
+    // leaf and gap by (§4.5), and so the beam's neutral depth, the fill's emission and the sky camera's glow. At k = 0 nothing reads it. The sky view's fine wood used
     // to claim that channel (a colour mask kept the leaves from writing their coverage there); it has a texture of its own now (woodTex,
     // below), so this bake is the same bake on every camera.
     for(let l=0;l<params.layer_count;l++){

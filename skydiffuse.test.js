@@ -67,9 +67,9 @@ test("off the sun's ray the glow is bounded by the light the leaves took out of 
   for (let seed = 0; seed < 4000; seed++) {
     const k = kOf(seed) || 2, layers = stack(seed, 2 + (seed % 3)), p = pt(seed, 19), s = dir(seed, 21), g = dir(seed, 23);
     const r = F.skyRayRef(layers, p, s, g, SUN, k);
-    const at = layers.map((l) => [p[0] + s[0] * l.h, p[1] + s[1] * l.h]), t = layers.map((l, L) => l.t(...at[L])), cov = layers.map((l, L) => l.c(...at[L]));
+    const at = layers.map((l) => [p[0] + s[0] * l.h, p[1] + s[1] * l.h]), m = layers.map((l, L) => F.texelMix(l.t(...at[L]).map((v) => -Math.log(v)), l.c(...at[L]), k));   // a texel is a mixture, not a slab (§4.5)
     const thr = [1, 1, 1], cap = [0, 0, 0];
-    layers.forEach((_l, L) => { for (let c = 0; c < 3; c++) { cap[c] += thr[c] * t[L][c] * (1 - Math.exp(-k * cov[L])) * SUN[c]; thr[c] *= t[L][c]; } });
+    layers.forEach((_l, L) => { for (let c = 0; c < 3; c++) { cap[c] += thr[c] * (m[L].T[c] - m[L].Tb[c]) * SUN[c]; thr[c] *= m[L].T[c]; } });
     for (let c = 0; c < 3; c++) {
       expect(r.L[c], `seed ${seed}`).toBeGreaterThanOrEqual(0);
       expect(r.L[c], `seed ${seed}`).toBeLessThanOrEqual(cap[c] + 1e-12);
@@ -151,6 +151,39 @@ test("at d = 0 the composition IS the old one, bit for bit: (ambient + sun·L)·
   }
 });
 
+// The d = 0 ray WITH WOOD, FROZEN at 679c748 (before P0c-edge): the P0b sum the sky camera ran, wood in the throughput and the sun's path and never in the source.
+// skyRayRef at k = 0 has to reproduce it to the last bit — a mixture that crept into the d = 0 branch, or a wood that fell out of `thr`, moves this row and no other.
+const P0B_SKY = (() => {
+  const hue = (t) => { const m = Math.max(t[0], t[1], t[2], 1e-4); return [t[0] / m, t[1] / m, t[2] / m]; };
+  return function skyRayRef(layers, p, shift, gS, sun) {
+    const n = layers.length, wood = (l, x, y) => (l.w ? l.w(x, y) : 1);
+    const at = layers.map((l) => [p[0] + shift[0] * l.h, p[1] + shift[1] * l.h]), t = layers.map((l, L) => l.t(at[L][0], at[L][1])), w = layers.map((l, L) => wood(l, at[L][0], at[L][1]));
+    const x = layers.map((l, L) => (l.w ? [t[L][0] * w[L], t[L][1] * w[L], t[L][2] * w[L]] : t[L]));
+    const T = [1, 1, 1], L = [0, 0, 0], thr = [1, 1, 1], Tb = [1, 1, 1];
+    for (let i = 0; i < n; i++) for (let c = 0; c < 3; c++) T[c] *= x[i][c];
+    for (let c = 0; c < 3; c++) Tb[c] = T[c];
+    if (gS == null) return { T, Tb, L };
+    for (let i = 0; i < n; i++) {
+      const A = [1, 1, 1];
+      for (let m = i + 1; m < n; m++) {
+        const dh = layers[m].h - layers[i].h, px = at[i][0] + gS[0] * dh, py = at[i][1] + gS[1] * dh, a = layers[m].t(px, py), wm = wood(layers[m], px, py);
+        for (let c = 0; c < 3; c++) A[c] *= layers[m].w ? a[c] * wm : a[c];
+      }
+      const s = hue(t[i]);
+      for (let c = 0; c < 3; c++) { L[c] += thr[c] * (1 - t[i][c]) * s[c] * (sun[c] * A[c]); thr[c] *= x[i][c]; }
+    }
+    return { T, Tb, L };
+  };
+})();
+
+test("skyRayRef at k = 0 IS the d = 0 ray of 679c748, bit for bit — wood in the throughput and the sun's path, none in the source", () => {
+  for (let seed = 0; seed < 600; seed++) {
+    const layers = stack(seed, 1 + (seed % 4), seed % 3 !== 0), p = pt(seed, 3), s = dir(seed, 5), g = dir(seed, 7);
+    expect(F.skyRayRef(layers, p, s, g, SUN, 0), `seed ${seed}`).toEqual(P0B_SKY(layers, p, s, g, SUN));
+    expect(F.skyRayRef(layers, p, s, null, SUN, 0), `seed ${seed}, no albedo asked`).toEqual(P0B_SKY(layers, p, s, null, SUN));
+  }
+});
+
 test("at d > 0 sky_scatter is retired: the frame is one frame whatever it says — and at d = 0 it is a live knob (the control)", () => {
   const AMB = [2.3, 2.8, 3.9], k = M.ballisticK(0.9);
   for (let seed = 0; seed < 300; seed++) {
@@ -164,31 +197,51 @@ test("at d > 0 sky_scatter is retired: the frame is one frame whatever it says �
   expect(live(0.5)).not.toEqual(live(0));
 });
 
-test("the mesopic cue keeps its meaning: acc is the sky's transmittance and does not move with d", () => {
+test("the mesopic cue keeps its meaning: acc is the sky's transmittance, and no d > 0 moves it — the sky needs no split", () => {
   for (let seed = 0; seed < 300; seed++) {
     const layers = stack(seed, 1 + (seed % 4), true), p = pt(seed, 3), s = dir(seed, 5), g = dir(seed, 7);
     const at = (kk) => F.skySeenRef(layers, p, s, g, { sun: SUN, ambient: [1, 1, 1], disk: 9, k: kk, skyScatter: 0, wood: 0.6 });
-    expect(at(M.ballisticK(0.95)).acc, `seed ${seed}`).toEqual(at(0).acc);
-    expect(at(M.ballisticK(0.95)).T, `seed ${seed}`).toEqual(at(0).T);       // the uniform-sky identity: the sky needs no split
+    expect(at(M.ballisticK(0.95)).acc, `seed ${seed}`).toEqual(at(M.ballisticK(0.4)).acc);   // the uniform-sky identity: T never reads k
+    expect(at(M.ballisticK(0.95)).T, `seed ${seed}`).toEqual(at(M.ballisticK(0.4)).T);
   }
 });
 
-test("monotone in d along the sun's ray: T_src falls, the glow rises, and their sum stays Π t", () => {
+test("...and between d = 0 and d > 0 the sky moves only where a texel has a GAP: full texels (c ≥ 1) are the d = 0 sky, partial ones the mixture, lighter than the slab", () => {
+  // d = 0 keeps the slab (soft edges depth-averaged: the named approximation, kept for byte-identity); d > 0 reconstructs the mixture, which Jensen
+  // says is never darker. A stack of full texels cannot tell the two apart.
+  const k = M.ballisticK(0.95);
+  const fullStack = (seed, nL) => stack(seed, nL, true).map((l, L) => ({ ...l, c: (x, y) => 1 + u01(seed, 3, Math.floor(x * 7), Math.floor(y * 7), L) }));
+  let lighter = 0;
+  for (let seed = 0; seed < 400; seed++) {
+    const nL = 1 + (seed % 4), p = pt(seed, 3), s = dir(seed, 5), g = dir(seed, 7);
+    const f = fullStack(seed, nL);
+    const a = F.skyRayRef(f, p, s, g, SUN, k).T, b = F.skyRayRef(f, p, s, g, SUN, 0).T;   // (the reference takes t and reads τ back as −ln t: a ulp, which the shader, reading τ itself, does not have)
+    for (let c = 0; c < 3; c++) expect(a[c], `seed ${seed}: full texels`).toBeCloseTo(b[c], 14);
+    const part = stack(seed, nL, true), slab = F.skyRayRef(part, p, s, g, SUN, 0).T, mix = F.skyRayRef(part, p, s, g, SUN, k).T;
+    for (let c = 0; c < 3; c++) { expect(mix[c], `seed ${seed}`).toBeGreaterThanOrEqual(slab[c] - 1e-15); if (mix[c] > slab[c] * 1.01) lighter++; }
+  }
+  expect(lighter).toBeGreaterThan(100);                                       // the sweep really crosses partial texels: this is not the full-texel identity in disguise
+});
+
+test("monotone in d along the sun's ray: T_src falls, the glow rises, and their sum stays Π t (the mixture's, which no d moves)", () => {
   let moved = 0;
   for (let seed = 0; seed < 300; seed++) {
     const layers = stack(seed, 1 + (seed % 4)), p = pt(seed, 3), s = dir(seed, 5);
-    const start = F.skyRayRef(layers, p, s, s, [1, 1, 1], 0);                  // d = 0: tb is t, and the lantern has nothing to say (its L is the P0b proxy, a different term)
-    let prevB = start.Tb, prevL = [0, 0, 0];
+    let prevB = null, prevL = null, first = null;
     for (let i = 1; i <= 40; i++) {
       const r = F.skyRayRef(layers, p, s, s, [1, 1, 1], M.ballisticK(i / 41));
+      first ||= r;
       for (let c = 0; c < 3; c++) {
         expect(r.Tb[c] + r.L[c], `seed ${seed} d ${i / 41}`).toBeCloseTo(r.T[c], 12);
-        expect(r.Tb[c], `seed ${seed} d ${i / 41}`).toBeLessThanOrEqual(prevB[c] + 1e-15);
-        expect(r.L[c], `seed ${seed} d ${i / 41}`).toBeGreaterThanOrEqual(prevL[c] - 1e-15);
+        expect(r.T[c], `seed ${seed} d ${i / 41}`).toBe(first.T[c]);           // Π t is the one number every d shares: the sky needs no split
+        if (prevB) {
+          expect(r.Tb[c], `seed ${seed} d ${i / 41}`).toBeLessThanOrEqual(prevB[c] + 1e-15);
+          expect(r.L[c], `seed ${seed} d ${i / 41}`).toBeGreaterThanOrEqual(prevL[c] - 1e-15);
+        }
       }
       prevB = r.Tb; prevL = r.L;
     }
-    if (prevL[1] > 1e-3 && prevB[1] < start.Tb[1]) moved++;
+    if (prevL[1] > 1e-3 && prevB[1] < first.Tb[1]) moved++;
   }
   expect(moved).toBeGreaterThan(250);                                         // the sweep really moves something: it is not a monotone constant
 });
@@ -244,8 +297,8 @@ test("srcSeen is its own named variable and is composed LAST — never folded in
 test("the fill passes readWood = false and the sky camera true; the wood is its own texture (tapSky), never alpha", () => {
   expect(FS_FILL.includes("uFillG, scatter, uFillOpen, false, uFillBeamK, T, Tb, Lsc);")).toBe(true);
   expect(sky.includes("uSkyScatter > 0.0 || uBeamK > 0.0, true, true, uBeamK, T, Tsrc, Lsc);")).toBe(true);
-  expect(GLSL_SKY_RAY.includes("void tapSky(highp sampler2D layer, highp sampler2D wood, vec2 world, bool openOutside, bool readWood, out vec3 t, out float c, out float w){")).toBe(true);
-  expect(GLSL_SKY_RAY.includes("tapSky(uLayer[0], uWood[0], pL0, openOutside, readWood,")).toBe(true);
+  expect(GLSL_SKY_RAY.includes("void tapSky(highp sampler2D layer, highp sampler2D wood, vec2 world, bool openOutside, bool readWood, float beamK, out vec3 t, out vec3 tb, out float w){")).toBe(true);
+  expect(GLSL_SKY_RAY.includes("tapSky(uLayer[0], uWood[0], pL0, openOutside, readWood, beamK,")).toBe(true);
   expect(code(GLSL_SKY_RAY).includes("exp(-d.a)")).toBe(false);               // alpha is coverage everywhere now
   for (const dead of ["tapUpLW", "woodInAlpha"]) { expect(GLSL_SKY_RAY.includes(dead), dead).toBe(false); expect(sky.includes(dead), dead).toBe(false); expect(FS_FILL.includes(dead), dead).toBe(false); }
 });

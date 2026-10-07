@@ -258,7 +258,7 @@ function exposureBlend(rank, ex, w, out = new Float64Array(rank.length)){
 
 // A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
 // diffuse share (d = leaf_diffuse) is scattered by the mesophyll and leaves in every direction. The beam sees (1−d)·T, which
-// is NEUTRAL depth on top of the leaf's own: k = −ln(1−d) per unit coverage, the same in every channel because the split is
+// is NEUTRAL depth on top of the leaf's own: k = −ln(1−d) per leaf (a texel is a mixture of one, §4.5, texelMix), the same in every channel because the split is
 // set by the leaf's scattering structure and not by its pigments (so the beam keeps the leaf's hue and the diffuse share
 // is simply t − tb). d → 1 is −ln 0, so k is capped where the beam is already dark (e^−6 = 0.25 %). d = 0 is exactly 0 —
 // the gate, no log round trip — and so is anything that is not a positive number.

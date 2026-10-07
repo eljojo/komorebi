@@ -118,16 +118,36 @@ export function texelTap(data, n, frame, mode, x, y){
 // leafHue: a transmittance normalized to unit peak — the spectrum with its brightness divided out (§3.5's idiom).
 export const leafHue = (t) => { const m = Math.max(t[0], t[1], t[2], 1e-4); return [t[0] / m, t[1] / m, t[2] / m]; };
 
-// A LEAF IS NOT A WINDOW (§4.5). A layer texel holds the leaf's true optical depth τ in rgb and its COVERAGE c in alpha (Σ of
-// the leaf masks over it), so the one texel carries both transmittances. t = e^−τ is all the light the leaf passes — hue,
-// skylight, the light it sends on downward. The BALLISTIC share, the part that still travels as a beam, is tb = e^(−τ − k·c): k
-// is neutral depth per unit coverage (math.js ballisticK), identical in every channel, so tb is t scaled by one number and
-// has t's own hue. What is left, t − tb = t·(1 − e^(−k·c)), is the diffuse light the leaf emits; it is never negative and
-// never more than t. k = 0 hands the input back (the gate: the same array, no arithmetic), like leafTau's s = 0.
+// A TEXEL IS A MIXTURE, NOT A SLAB (§4.5). A layer texel holds Σ τ_i·cov_i in rgb and Σ cov_i in alpha: the bake ADDS, which is exact for leaves
+// that fill the texel and stack, and at an edge Jensen-dark if the pair is read as a slab of depth τ (t = e^−τ): a texel 30% under a leaf of
+// depth 2.8 is 70% open sky and 30% dark leaf (T 0.72), not a thin bright leaf of depth 0.84 (t 0.43). At d > 0 every reader reconstructs the
+// mixture from the same two numbers, with a = min(c, 1) the leaf AREA of the texel:
+//     τ̄ = τ/a        the representative leaf's depth: exact for one leaf, fade-invariant (a leaf at fade f is the same leaf over f of the area),
+//                    and bilinear-safe (the pair interpolates as a coverage-weighted mean of the leaves' depths, never a blend toward 0)
+//     κ = k·c/a      k per leaf; c/a leaves deep where leaves stack (a = 1: κ = k·c)
+//     T  = (1 − a) + a·e^−τ̄          what the texel truly passes: the hue, the skylight, the light a leaf sends on downward
+//     Tb = (1 − a) + a·e^(−τ̄ − κ)    the BALLISTIC share, the part that still travels as a beam (k is neutral depth, math.js ballisticK)
+//     emit = T − Tb                  the diffuse light the leaf sends on, per unit of its own area × a: the gap emits nothing
+// Exact for one leaf at any c ≤ 1, and for any number of leaves stacked over the whole texel (c = 2: T = T1·T2, Tb = T1·T2·(1−d)²); between, where a
+// second leaf only partly overlaps, it is a bounded slab residue (luminance of the emission within 15% where one leaf covers the texel and another's
+// edge crosses it; two edges inside ONE texel are outside it). Emit ≡ T − Tb by construction, so the telescoping sums close exactly. A texel with
+// c < 1e-4 is empty: T = Tb = 1. k ≤ 0 is no split: Tb IS T (the same array) and nothing is emitted. At c ≥ 1, T and Tb are the old slab to the bit.
+// d = 0 never calls this: its soft edges stay depth-averaged, a named approximation kept for byte-identity (§4.5).
+// `tau` is the texel's rgb depth as the bake wrote it (Σ τ·cov), the same numbers GLSL_TEXEL_MIX is handed.
+export function texelMix(tau, c, k){
+  if(!(c >= 1e-4)){ const T = [1, 1, 1]; return { T, Tb: T }; }
+  const a = Math.min(c, 1), T = [0, 1, 2].map((ch) => (1 - a) + a * Math.exp(-tau[ch] / a));
+  if(!(k > 0)) return { T, Tb: T };
+  const kappa = k * c / a;
+  return { T, Tb: [0, 1, 2].map((ch) => (1 - a) + a * Math.exp(-tau[ch] / a - kappa)) };
+}
+
+// The BEAM through one texel (§4.5): Tb of the mixture, from the transmittance t a layer closure hands (the texture holds τ = −ln t). k = 0 hands
+// the input back (the gate: the same array, no arithmetic), like leafTau's s = 0. NOT t·e^(−k·c): that slab is the Jensen-dark halo; and
+// t − ballistic(t, c, k) is not the emission either, because the sky a partial texel passes is its mixture T, not t.
 export function ballistic(t, c, k){
   if(!(k > 0)) return t;
-  const f = Math.exp(-k * c);
-  return [t[0] * f, t[1] * f, t[2] * f];
+  return texelMix(t.map((v) => -Math.log(v)), c, k).Tb;
 }
 
 // What ONE leaf leaves in a layer texel, as the bake writes it (VS_BAKE/FS_BAKE): rgb = its depth, which the grove has already
@@ -139,29 +159,32 @@ export const leafTexel = (tau, fade, edge = 1, grove = 1) => ({ rgb: tau.map((v)
 
 // ONE ray through the layer stack — the sky view's per-ray formula (§4.9), line for line with GLSL_SKY_RAY.
 //   layers: [{ h, t(x, y) -> [r,g,b], c(x, y) -> coverage, w?(x, y) -> wood }], lowest first; t is the layer's FOLIAGE transmittance at
-//   a plan point, c its coverage (read only when k > 0), w the layer-stamped WOOD's transmittance there (neutral: one number for all
+//   a plan point (the texture's e^−τ), c its coverage (read only when k > 0), w the layer-stamped WOOD's transmittance there (neutral: one number for all
 //   three channels). A layer with no w is read with no wood — what the fill does (readWood false: its hemisphere ignores wood by
 //   design); the sky camera's layers carry it.
 //   p: where the ray starts (plan); shift: its plan travel per metre of rise; gS: the SUN PATH's, the same per-metre travel — the BEAM's
 //   (the bulk shift: [0, 0] in the endless park) for the fill, the real sun's for the sky view, which has no beam (§4.7, one sun per camera)
-//   k: the beam's neutral depth (ballisticK). 0 runs the P0b sum, ŝ-weighted. k > 0 is the split (§4.5): each layer emits the light its
-//   beam lost, t − tb, in its own hue (no ŝ, no albedo), lit by the sun's BALLISTIC path to it, A_L = Π_{M>L} tb_M·w_M, and
-//   carried down through the layers below by their TRUE t (and the wood: wood blocks the glow, it never makes any).
-//   The ray itself still passes the true t: the skylight needs no split.
-//   returns { T: Π t_L·w_L (what the ray passes), Tb: Π tb_L·w_L (what the BEAM passes — the sun's disk, seen: a leaf kills it; = T at k = 0),
-//             L: P0b: Σ thr_L (1 − t_L) ŝ_L (sun·A_L) — BEFORE the albedo; split: the glow Σ thr_L (t_L − tb_L) (sun·A_L) }
+//   k: the beam's neutral depth (ballisticK). 0 runs the P0b sum, ŝ-weighted, on the slab t. k > 0 is the split (§4.5), and every texel is read as a
+//   MIXTURE of leaf and gap (texelMix): the layer passes T (the sky, the hue, what the glow descends through), its beam only Tb, and it emits the light
+//   its beam lost, T − Tb, in its own hue (no ŝ, no albedo), lit by the sun's BALLISTIC path to it, A_L = Π_{M>L} Tb_M·w_M, and
+//   carried down through the layers below by their TRUE T (and the wood: wood blocks the glow, it never makes any).
+//   The ray itself still passes the true T: the skylight needs no split — and no k moves it.
+//   returns { T: Π T_L·w_L (what the ray passes), Tb: Π Tb_L·w_L (what the BEAM passes — the sun's disk, seen: a leaf kills it; = T at k = 0),
+//             L: P0b: Σ thr_L (1 − t_L) ŝ_L (sun·A_L) — BEFORE the albedo; split: the glow Σ thr_L (T_L − Tb_L) (sun·A_L) }
 //   No skylight in L either way: its passage is T
 export function skyRayRef(layers, p, shift, gS, sun, k = 0){
   const n = layers.length, split = k > 0;
   const wood = (l, x, y) => (l.w ? l.w(x, y) : 1);   // a layer with no wood texture reads as clear
   const at = layers.map((l) => [p[0] + shift[0] * l.h, p[1] + shift[1] * l.h]);
-  const t = layers.map((l, L) => l.t(at[L][0], at[L][1]));
+  const mixAt = (l, px, py) => texelMix(l.t(px, py).map((v) => -Math.log(v)), l.c(px, py), k);   // the texture holds τ and the closure hands t: τ back, ulp for ulp
+  const mix = split ? layers.map((l, L) => mixAt(l, at[L][0], at[L][1])) : null;
+  const t = split ? mix.map((m) => m.T) : layers.map((l, L) => l.t(at[L][0], at[L][1]));
   const w = layers.map((l, L) => wood(l, at[L][0], at[L][1]));
   const x = layers.map((l, L) => (l.w ? [t[L][0] * w[L], t[L][1] * w[L], t[L][2] * w[L]] : t[L]));   // what the RAY loses: leaves × wood
   const T = [1, 1, 1], L = [0, 0, 0], thr = [1, 1, 1], Tb = [1, 1, 1];
   for(let i = 0; i < n; i++) for(let c = 0; c < 3; c++) T[c] *= x[i][c];
   if(split) for(let i = 0; i < n; i++){
-    const tb = ballistic(t[i], layers[i].c(at[i][0], at[i][1]), k);   // the beam through this layer, in the leaf's own hue
+    const tb = mix[i].Tb;   // the beam through this layer's mixture, in the leaf's own hue
     for(let c = 0; c < 3; c++) Tb[c] *= layers[i].w ? tb[c] * w[i] : tb[c];
   } else for(let c = 0; c < 3; c++) Tb[c] = T[c];
   if(gS == null) return { T, Tb, L };   // no albedo asked: the scatter branch is skipped, as the shader skips it
@@ -169,15 +192,14 @@ export function skyRayRef(layers, p, shift, gS, sun, k = 0){
     // the sun's path down to layer i: what the layers above it let through, read along g from where THIS ray crosses i
     const A = [1, 1, 1];
     for(let m = i + 1; m < n; m++){
-      const dh = layers[m].h - layers[i].h, px = at[i][0] + gS[0] * dh, py = at[i][1] + gS[1] * dh, tm = layers[m].t(px, py);
-      const a = split ? ballistic(tm, layers[m].c(px, py), k) : tm;   // the beam only: a leaf's diffuse light does not travel on as one
-      const wm = wood(layers[m], px, py);                              // ...and a twig shadows a leaf exactly as another leaf does
+      const dh = layers[m].h - layers[i].h, px = at[i][0] + gS[0] * dh, py = at[i][1] + gS[1] * dh;
+      const a = split ? mixAt(layers[m], px, py).Tb : layers[m].t(px, py);   // the beam only: a leaf's diffuse light does not travel on as one
+      const wm = wood(layers[m], px, py);                                      // ...and a twig shadows a leaf exactly as another leaf does
       for(let c = 0; c < 3; c++) A[c] *= layers[m].w ? a[c] * wm : a[c];
     }
     if(split){
-      const e = 1 - Math.exp(-k * layers[i].c(at[i][0], at[i][1]));
       for(let c = 0; c < 3; c++){
-        L[c] += thr[c] * t[i][c] * e * (sun[c] * A[c]);   // the leaf's foliage alone: wood is in thr and A, never in the emission
+        L[c] += thr[c] * (mix[i].T[c] - mix[i].Tb[c]) * (sun[c] * A[c]);   // the leaf's foliage alone: wood is in thr and A, never in the emission
         thr[c] *= x[i][c];
       }
       continue;

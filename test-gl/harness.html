@@ -11,6 +11,9 @@
     __run(preset, overrides, frames, opts)  one engine, captured at the given rAF tick counts (opts.rebake: see below)
     __fillCheck(preset, overrides)      the sky fill's shader against komorebi-fill.js, on the layers the engine really baked
     __skyCheck(preset, overrides)       the sky view's shared ray (the lantern, wood read) against komorebi-fill.js's skyRayRef, on the layers and wood textures the engine really baked
+    __rimCheck(preset, overrides)       the lantern's RIM: leaf glow at a soft edge against the same leaf's interior, through the shared ray, on the layers the engine baked (§4.5, a texel is a mixture)
+    __haloCheck(preset, overrides)      the cast tap's HALO: the beam through a soft-edge texel (tap and tapCA, as the engine compiles them) against the mixture, on the layers the engine baked
+    __stampCheck(opts)                  the faithful stamp's edge band: FS_FAITH, as the engine compiles it, drawn for one leaf and held to the per-leaf mixture
     __fillToggle(preset, overrides)     canopy_fill opened and shut on a RUNNING engine: what it allocates, frees, and the frames either side
     __liveChange(preset, over, key, value)  one param changed on a RUNNING engine (nothing rebuilt), the frame after it — for knobs that tween
     __diff(idA, idB) / __png(id)        exact byte comparison + the PNG artifact
@@ -27,10 +30,10 @@
 </style>
 <body></body>
 <script type="module">
-import { create, MAX_OCC } from '/komorebi.js';
-import { VS_FULL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/komorebi-shaders.js';
+import { create, MAX_OCC, TRANSPORT_GROUPS } from '/komorebi.js';
+import { VS_FULL, FS_FAITH, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/komorebi-shaders.js';
 import { PRESETS } from '/presets.js';
-import { fillDirections, fillRef, fillTile, texelTap, skyRayRef } from '/komorebi-fill.js';
+import { fillDirections, fillRef, fillTile, texelTap, skyRayRef, texelMix } from '/komorebi-fill.js';
 import { atmosphere, ballisticK, sunDirection } from '/komorebi-math.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
@@ -309,22 +312,22 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
           const px = canopy.ox + (i + 0.5) * cell, py = canopy.oy + (j + 0.5) * cell;
           if (!bulkOn && beamK > 0) {                                 // the park's columns ARE the box and its sun path is vertical: the beam's deficit at a column is Π t − Π tb
             const Pt = [1, 1, 1], Pb = [1, 1, 1];
-            for (let L = 0; L < nL; L++) { const r = at4(L, px, py), fb = Math.exp(-beamK * r[3]); for (let c = 0; c < 3; c++) { const t = Math.exp(-r[c]); Pt[c] *= t; Pb[c] *= t * fb; } }
+            for (let L = 0; L < nL; L++) { const r = at4(L, px, py), m = texelMix(r, r[3], beamK); for (let c = 0; c < 3; c++) { Pt[c] *= m.T[c]; Pb[c] *= m.Tb[c]; } }   // every texel a mixture of leaf and gap (§4.5), through the engine's own interpolation
             for (let c = 0; c < 3; c++) Dbeam[c] += (Pt[c] - Pb[c]) * sun[c] * w;
           }
           for (let L = 0; L < nL; L++) {
             const q = at4(L, px, py);
             if (!(q[3] > 0) || !(beamK > 0)) continue;
-            const em = 1 - Math.exp(-beamK * q[3]), A = [1, 1, 1];   // the sun's ballistic path to this leaf: the layers above it, read along the beam's g
+            const mq = texelMix(q, q[3], beamK), A = [1, 1, 1];   // the sun's ballistic path to this leaf: the layers above it, read along the beam's g
             for (let M = L + 1; M < nL; M++) {
-              const d = heights[M] - heights[L], r = at4(M, px + gS[0] * d, py + gS[1] * d), fb = Math.exp(-beamK * r[3]);
-              for (let c = 0; c < 3; c++) A[c] *= Math.exp(-r[c]) * fb;
+              const d = heights[M] - heights[L], r = at4(M, px + gS[0] * d, py + gS[1] * d), mr = texelMix(r, r[3], beamK);
+              for (let c = 0; c < 3; c++) A[c] *= mr.Tb[c];
             }
-            const Mv = [0, 1, 2].map((c) => Math.exp(-q[c]) * em * sun[c] * A[c]);
+            const Mv = [0, 1, 2].map((c) => (mq.T[c] - mq.Tb[c]) * sun[c] * A[c]);   // emit = T − Tb: the gap emits nothing
             for (let c = 0; c < 3; c++) per[L][c] += Mv[c] * w;
-            for (const s of dirs) {                                   // what reaches the floor: down ray k through the layers below on their TRUE t, landing at p − s·h_L
+            for (const s of dirs) {                                   // what reaches the floor: down ray k through the layers below on their TRUE T, landing at p − s·h_L
               const thr = [1, 1, 1];
-              for (let M = 0; M < L; M++) { const r = at4(M, px - s[0] * (heights[L] - heights[M]), py - s[1] * (heights[L] - heights[M])); for (let c = 0; c < 3; c++) thr[c] *= Math.exp(-r[c]); }
+              for (let M = 0; M < L; M++) { const r = at4(M, px - s[0] * (heights[L] - heights[M]), py - s[1] * (heights[L] - heights[M])), mr = texelMix(r, r[3], beamK); for (let c = 0; c < 3; c++) thr[c] *= mr.T[c]; }
               const inside = !bulkOn || inFrame(px - s[0] * heights[L], py - s[1] * heights[L]);   // the endless park lands every ray (the box repeats)
               for (let c = 0; c < 3; c++) { const v = Mv[c] * thr[c] * w / K2; Ropen[c] += v; if (inside) Rin[c] += v; }
             }
@@ -475,6 +478,243 @@ void main(){
       finish(null, { k, err, scale, N, n, killed, glowing, woodHit, woodGlow, woodTexels, covTexels, glError });
     } catch (e) { finish(e); }
   };
+});
+
+// ---------------------------------------------------------------------------
+// A texel is a MIXTURE, not a slab (§4.5): the three probes below hold the three places the slab showed. Each compiles a program out of exactly
+// the engine's own snippets (never a copy: a probe that restated the shader would pass whatever the shader did), runs it over the layers the
+// engine really baked, and reads the result back as float32. `probe` is the one runner: a fullscreen draw into `targets` RGBA32F textures.
+// ---------------------------------------------------------------------------
+function probe(gl, { vs = VS_FULL, fs, w, h, targets = 1, setup, clear = null }) {
+  const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(`probe shader: ${gl.getShaderInfoLog(sh)}`); return sh; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(`probe link: ${gl.getProgramInfoLog(prog)}`);
+  gl.useProgram(prog);
+  gl.getError();                                   // whatever the engine left is not the probe's
+  setup(prog, (nm) => gl.getUniformLocation(prog, nm));
+  gl.activeTexture(gl.TEXTURE13);                  // the targets are made on a unit the program never samples (else one is read while attached)
+  const tex = Array.from({ length: targets }, () => {
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    return t;
+  });
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  tex.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+  gl.drawBuffers(tex.map((_t, i) => gl.COLOR_ATTACHMENT0 + i));
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error("the probe's float targets are incomplete");
+  gl.viewport(0, 0, w, h); gl.disable(gl.BLEND);
+  if (clear != null) { gl.clearColor(clear, clear, clear, clear); gl.clear(gl.COLOR_BUFFER_BIT); }   // a sentinel a discarded fragment leaves behind
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const out = tex.map((_t, i) => { gl.readBuffer(gl.COLOR_ATTACHMENT0 + i); const a = new Float32Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.FLOAT, a); return a; });
+  const glError = gl.getError();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb); tex.forEach((t) => gl.deleteTexture(t)); gl.deleteVertexArray(vao); gl.deleteProgram(prog);
+  return { out, glError };
+}
+// readback of an RGBA16F layer (level 0) as float32; and the run-an-engine-for-N-frames-then-call wrapper every probe shares
+const readLayer = (gl, tex, n) => {
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const out = new Float32Array(n * n * 4); gl.readPixels(0, 0, n, n, gl.RGBA, gl.FLOAT, out);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb);
+  return out;
+};
+const withEngine = (presetName, overrides, frames, body) => new Promise((resolve, reject) => {
+  const base = PRESETS[presetName];
+  if (!base) return reject(new Error(`unknown preset '${presetName}'`));
+  const params = Object.assign({}, base, overrides || {}, FREEZE);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage'; canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  document.body.appendChild(canvas);
+  let eng = null, ticks = 0, done = false;
+  const finish = (err, out) => {
+    if (done) return; done = true; clearTimeout(timer);
+    try { eng?.setPaused(true); eng?.dispose(); } catch { /* nothing to stop */ }
+    canvas.remove();
+    if (err) reject(err); else resolve(out);
+  };
+  const timer = setTimeout(() => finish(new Error('probe did not reach its frame within 120 s')), 120000);
+  try { eng = create(canvas, { params }); } catch (e) { return finish(e); }
+  eng.onFrame = () => {
+    ticks++;
+    if (done || ticks < frames) return;
+    try { finish(null, body(eng, eng.gl)); } catch (e) { finish(e); }
+  };
+});
+
+// THE LANTERN'S RIM (§4.5 / §4.9). A leaf's soft edge used to glow brighter than its own interior (up to x2.3 in blue on canopy 1: a cream outline round every
+// leaf), because the bake's averaged depth over a partly covered texel read as a thin bright leaf. This runs the shared ray (readWood false: the rim is
+// the foliage's, wood only multiplies it) straight up from every texel centre of a window of the baked layers, and measures only rays whose glow is ONE
+// leaf's alone: the top layer carries coverage and every layer under it carries none, so thr = 1 and the sun path A = 1 (nothing stacks above the top), and
+// glow = sun·(T − Tb) of that one texel. Classified from the readback by the top layer's coverage c: INTERIOR = one leaf filling the texel (|c − 1| ≤ 0.02),
+// RIM = the soft edge (0.05 ≤ c ≤ 0.95). The ratio is each rim texel's glow over the mean interior glow, per channel; the peak is the number.
+window.__rimCheck = (presetName, overrides, opts) => withEngine(presetName, overrides, 24, (eng, gl) => {
+  const o = Object.assign({ crop: 512 }, opts || {});
+  const p = eng.params, E = p.canopy_extent_m, nL = p.layer_count, n = eng.perf.bres, k = ballisticK(p.leaf_diffuse);
+  if (!p.sky_view) throw new Error(`'${presetName}' is not a sky view: no look-up ray to measure`);
+  const lt = eng.layers(), wt = eng.woods(), dat = lt.slice(0, nL).map((t) => readLayer(gl, t, n));
+  const atm = atmosphere({ sun: [0, 0, 0], ambient: [0, 0, 0] }, p.sun_elevation_deg, p.sky_turbidity, p.ambient_skylight);
+  const sd = [0, 0, 0]; sunDirection(sd, p.sun_elevation_deg, p.sun_azimuth_deg);
+  const crop = Math.min(o.crop, n), i0 = Math.floor((n - crop) / 2), texel = E / n, ox = -E / 2;
+  const heights = Array.from({ length: nL }, (_, i) => (nL > 1 ? p.canopy_base_height_m + (i / (nL - 1)) * p.canopy_thickness_m : p.canopy_base_height_m));
+  const fs = `#version 300 es
+precision highp float;
+layout(location=0) out vec4 oL;
+${GLSL_LAYER_FIELD}
+${GLSL_WOOD_FIELD}
+${GLSL_SKY_RAY}
+uniform float uBeamK;
+uniform vec2 uGS, uCrop0;
+uniform float uTexel;
+void main(){
+  vec2 p = uCrop0 + gl_FragCoord.xy*uTexel;                  // the texel centre this fragment IS: straight up, every layer read at one plan point
+  vec3 T, Tb, L;
+  skyRay(p, p, p, p, uGS, true, true, false, uBeamK, T, Tb, L);
+  oL = vec4(L, 1.0);
+}`;
+  const { out, glError } = probe(gl, { fs, w: crop, h: crop, setup: (prog, U) => {
+    gl.uniform2f(U('uCanopyOrigin'), ox, ox); gl.uniform2f(U('uCanopyExtent'), E, E);
+    gl.uniform3f(U('uSunColor'), atm.sun[0], atm.sun[1], atm.sun[2]); gl.uniform3f(U('uAmbient'), atm.ambient[0], atm.ambient[1], atm.ambient[2]);
+    gl.uniform1fv(U('uLayerHeight[0]'), heights.concat([0, 0, 0, 0]).slice(0, 4)); gl.uniform1i(U('uLayerCount'), nL); gl.uniform1f(U('uBeamK'), k);
+    gl.uniform2f(U('uGS'), sd[0] / Math.max(sd[2], 0.05), sd[1] / Math.max(sd[2], 0.05));
+    gl.uniform2f(U('uCrop0'), ox + i0 * texel, ox + i0 * texel); gl.uniform1f(U('uTexel'), texel);
+    for (let i = 0; i < 4; i++) {
+      gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, lt[i]); gl.uniform1i(U(`uLayer[${i}]`), i);
+      gl.activeTexture(gl.TEXTURE8 + i); gl.bindTexture(gl.TEXTURE_2D, wt[i]); gl.uniform1i(U(`uWood[${i}]`), 8 + i);
+    }
+  } });
+  const top = nL - 1, interior = [0, 0, 0], rimMax = [0, 0, 0], rimAt = [0, 0, 0], bins = {};
+  let nIn = 0, nRim = 0;
+  const glow = (cj, ci, ch) => out[0][(cj * crop + ci) * 4 + ch];
+  const iso = (cj, ci) => { const idx = (i0 + cj) * n + (i0 + ci); for (let L = 0; L < top; L++) if (dat[L][idx * 4 + 3] >= 1e-3) return -1; return dat[top][idx * 4 + 3]; };
+  for (let cj = 0; cj < crop; cj++) for (let ci = 0; ci < crop; ci++) { const c = iso(cj, ci); if (Math.abs(c - 1) <= 0.02) { nIn++; for (let ch = 0; ch < 3; ch++) interior[ch] += glow(cj, ci, ch); } }
+  for (let ch = 0; ch < 3; ch++) interior[ch] /= Math.max(nIn, 1);
+  for (let cj = 0; cj < crop; cj++) for (let ci = 0; ci < crop; ci++) {
+    const c = iso(cj, ci);
+    if (!(c >= 0.05 && c <= 0.95)) continue;
+    nRim++;
+    const b = Math.floor(c * 10) / 10;
+    for (let ch = 0; ch < 3; ch++) {
+      const r = glow(cj, ci, ch) / interior[ch];
+      if (r > rimMax[ch]) { rimMax[ch] = r; rimAt[ch] = c; }
+      (bins[b] ||= [0, 0, 0, 0])[ch] += r; if (ch === 0) bins[b][3]++;
+    }
+  }
+  const byC = Object.fromEntries(Object.entries(bins).map(([b, v]) => [b, { n: v[3], mean: [v[0] / v[3], v[1] / v[3], v[2] / v[3]] }]));
+  let interiorGlow = 0; for (let ch = 0; ch < 3; ch++) interiorGlow = Math.max(interiorGlow, interior[ch]);
+  return { k, n, crop, nIn, nRim, interior, rimMax, rimAt, byC, interiorGlow, glError };
+});
+
+// THE CAST TAP'S HALO (§4.5). The beam through a leaf's soft edge used to be e^(−τ − k·c) of a texel that is 70% open sky at c = 0.3: a dark halo round every
+// ballistic shadow (0.18 against the mixture's 0.70 in blue on a deep leaf). This compiles `tap` and `tapCA` exactly as the cast cameras carry them (the
+// tap group's own declarations, then the diffraction group's), reads them at the texel centres of the layers the engine baked, and holds them to the mixture
+// the readback gives (texelMix at k, Tb). Band = the soft edge, 0.05 ≤ c ≤ 0.95 by the readback's own coverage. `slab` is the answer the old read gave
+// (e^(−τ − k·c)), kept as the measured size of what the mixture removes: the ratio of its mean to the mixture's in the band is the halo's depth.
+// The diffraction read is checked at a dispersed position, where the bilinear weights are real.
+window.__haloCheck = (presetName, overrides, opts) => withEngine(presetName, overrides, 24, (eng, gl) => {
+  const o = Object.assign({ crop: 384, H: 5, gx: 0.013, gy: -0.007, cs: [1.03, 1.0, 0.97] }, opts || {});
+  const p = eng.params, E = p.canopy_extent_m, nL = p.layer_count, n = eng.perf.bres, k = ballisticK(p.leaf_diffuse);
+  if (!(k > 0)) throw new Error('the halo is a leaf_diffuse > 0 effect: nothing to measure at 0');
+  const lt = eng.layers(), dat = lt.slice(0, nL).map((t) => readLayer(gl, t, n)), ox = -E / 2, texel = E / n;
+  const crop = Math.min(o.crop, n), i0 = Math.floor((n - crop) / 2), canopy = { ox, oy: ox, ext: E };
+  const fs = `#version 300 es
+precision highp float;
+layout(location=0) out vec4 oTap;
+layout(location=1) out vec4 oCA;
+${GLSL_LAYER_FIELD}
+${TRANSPORT_GROUPS.tap.decls}
+${TRANSPORT_GROUPS.ca.decls}
+uniform vec2 uCrop0, uG;
+uniform float uTexel, uH;
+uniform int uWhich;
+void main(){
+  vec2 p = uCrop0 + gl_FragCoord.xy*uTexel;
+  vec3 a = vec3(1.0), b = vec3(1.0);
+  if(uWhich == 0){ a = tap(uLayer[0], p); b = tapCA(uLayer[0], p, uG, uH, uChroma); }
+  else if(uWhich == 1){ a = tap(uLayer[1], p); b = tapCA(uLayer[1], p, uG, uH, uChroma); }
+  else if(uWhich == 2){ a = tap(uLayer[2], p); b = tapCA(uLayer[2], p, uG, uH, uChroma); }
+  else { a = tap(uLayer[3], p); b = tapCA(uLayer[3], p, uG, uH, uChroma); }
+  oTap = vec4(a, 1.0); oCA = vec4(b, 1.0);
+}`;
+  const lum = (v) => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+  const res = { k, n, crop, errTap: 0, errCA: 0, band: 0, bandMix: 0, bandSlab: 0, bandShader: 0, worstRatio: 1, darkest: 1, nBand: 0, byLayer: [], glError: 0 };
+  for (let L = 0; L < nL; L++) {
+    const { out, glError } = probe(gl, { fs, w: crop, h: crop, targets: 2, setup: (prog, U) => {
+      gl.uniform2f(U('uCanopyOrigin'), ox, ox); gl.uniform2f(U('uCanopyExtent'), E, E);
+      gl.uniform3f(U('uSunColor'), 1, 1, 1); gl.uniform3f(U('uAmbient'), 1, 1, 1);
+      gl.uniform1fv(U('uLayerHeight[0]'), [0, 0, 0, 0]); gl.uniform1i(U('uLayerCount'), nL); gl.uniform1f(U('uBeamK'), k);
+      gl.uniform2f(U('uCrop0'), ox + i0 * texel, ox + i0 * texel); gl.uniform1f(U('uTexel'), texel);
+      gl.uniform2f(U('uG'), o.gx, o.gy); gl.uniform1f(U('uH'), o.H); gl.uniform3f(U('uChroma'), o.cs[0], o.cs[1], o.cs[2]); gl.uniform1i(U('uWhich'), L);
+      for (let i = 0; i < 4; i++) { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, lt[i]); gl.uniform1i(U(`uLayer[${i}]`), i); }
+    } });
+    if (glError) res.glError = glError;
+    let nb = 0, mixSum = 0, slabSum = 0, shSum = 0, worst = 1, e1 = 0, e2 = 0;
+    for (let cj = 0; cj < crop; cj++) for (let ci = 0; ci < crop; ci++) {
+      const idx = (i0 + cj) * n + (i0 + ci), tex = dat[L].subarray(idx * 4, idx * 4 + 4), c = tex[3];
+      const m = texelMix(tex, c, k), got = out[0].subarray((cj * crop + ci) * 4, (cj * crop + ci) * 4 + 3);
+      for (let ch = 0; ch < 3; ch++) e1 = Math.max(e1, Math.abs(got[ch] - m.Tb[ch]));
+      // the dispersed read: each channel's own bilinear tap at its own position, through the very interpolation the GPU does (clamped box)
+      const x = ox + (i0 + ci + 0.5) * texel, y = ox + (i0 + cj + 0.5) * texel, ca = out[1].subarray((cj * crop + ci) * 4, (cj * crop + ci) * 4 + 3);
+      for (let ch = 0; ch < 3; ch++) {
+        const q = texelTap(dat[L], n, canopy, 'clamp', x + o.H * o.gx * o.cs[ch], y + o.H * o.gy * o.cs[ch]);
+        e2 = Math.max(e2, Math.abs(ca[ch] - texelMix(q, q[3], k).Tb[ch]));
+      }
+      if (c >= 0.05 && c <= 0.95) {
+        nb++; mixSum += lum(m.Tb); shSum += lum(got);
+        slabSum += lum([0, 1, 2].map((ch) => Math.exp(-tex[ch] - k * c)));
+        worst = Math.min(worst, lum(got) / lum(m.Tb));
+      }
+    }
+    res.byLayer.push({ L, nBand: nb, shader: shSum / Math.max(nb, 1), mix: mixSum / Math.max(nb, 1), slab: slabSum / Math.max(nb, 1) });
+    res.errTap = Math.max(res.errTap, e1); res.errCA = Math.max(res.errCA, e2);
+    res.nBand += nb; res.bandMix += mixSum; res.bandSlab += slabSum; res.bandShader += shSum; res.worstRatio = Math.min(res.worstRatio, worst);
+  }
+  res.shaderOverMix = res.bandShader / Math.max(res.bandMix, 1e-12); res.slabOverMix = res.bandSlab / Math.max(res.bandMix, 1e-12);
+  return res;
+});
+
+// THE FAITHFUL STAMP'S EDGE BAND (§4.5). FS_FAITH draws ONE leaf per quad into the multiplicative scratch; at leaf_diffuse > 0 its pixel is the leaf's mixture,
+// (1 − cf) + cf·e^(−τ_leaf − k) with cf = cov·fade, where it used to be e^(−(τ + k·fade)·cov): a dark halo ring round every faithful leaf (0.18 against 0.70
+// at cov 0.3 in blue). This compiles FS_FAITH as the engine ships it behind a trivial vertex shader (vLocal over [-1.2, 1.2]², vTau and vFade constants), draws
+// one leaf, and holds every pixel to the mixture computed here from the mask's own formula. The leaf is the grove's: vTau is τ_leaf·fade (the fade folded in)
+// and vFade the fade, so three fades are drawn — whole, half, and one too faint to exist (cov·fade < 1e-4: exactly clear, and finite: vTau/vFade is never formed).
+window.__stampCheck = (opts) => withEngine('memories', {}, 2, (eng, gl) => {
+  const edge = (opts && opts.edge) || 0.26, k = ballisticK((opts && opts.d) ?? 0.95), W2 = 241;
+  const tauLeaf = [1.35, 0.69, 1.83];
+  const vs = `#version 300 es
+precision highp float;
+out vec2 vLocal; out vec3 vTau; out float vFade;
+uniform vec3 uTau; uniform float uFade;
+void main(){
+  vec2 p = vec2((gl_VertexID==1)?3.0:-1.0, (gl_VertexID==2)?3.0:-1.0);
+  vLocal = p*1.2; vTau = uTau; vFade = uFade;
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+  const smooth = (e0, e1, x) => { const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1); return t * t * (3 - 2 * t); };
+  const cases = [{ name: 'fade 1', fade: 1 }, { name: 'fade 0.5', fade: 0.5 }, { name: 'fade 3e-5 (not there yet)', fade: 3e-5 }];
+  const rows = [];
+  for (const cs of cases) {
+    const { out, glError } = probe(gl, { vs, fs: FS_FAITH, w: W2, h: W2, clear: -7, setup: (prog, U) => {
+      gl.uniform1f(U('uEdge'), edge); gl.uniform1f(U('uBeamK'), k);
+      gl.uniform3f(U('uTau'), tauLeaf[0] * cs.fade, tauLeaf[1] * cs.fade, tauLeaf[2] * cs.fade); gl.uniform1f(U('uFade'), cs.fade);
+    } });
+    let err = 0, nBand = 0, nIn = 0, nOut = 0, bandMin = [9, 9, 9], bandMean = [0, 0, 0], slabMean = [0, 0, 0], mixMean = [0, 0, 0], finite = true;
+    for (let j = 0; j < W2; j++) for (let i = 0; i < W2; i++) {
+      const x = ((i + 0.5) / W2 * 2 - 1) * 1.2, y = ((j + 0.5) / W2 * 2 - 1) * 1.2, r = Math.hypot(x, y), cov = 1 - smooth(1 - edge, 1, r), px = out[0].subarray((j * W2 + i) * 4, (j * W2 + i) * 4 + 3);
+      if (!px.every(Number.isFinite)) finite = false;
+      if (!(cov > 0)) { if (px[0] !== -7) err = Math.max(err, 1); nOut++; continue; }   // discarded: the sentinel is still there
+      const cf = cov * cs.fade, want = tauLeaf.map((t) => (cf < 1e-4 ? 1 : (1 - cf) + cf * Math.exp(-t - k)));
+      for (let ch = 0; ch < 3; ch++) err = Math.max(err, Math.abs(px[ch] - want[ch]));
+      nIn++;
+      if (cov >= 0.05 && cov <= 0.95 && cs.fade === 1) {
+        nBand++;
+        for (let ch = 0; ch < 3; ch++) { bandMin[ch] = Math.min(bandMin[ch], px[ch] / want[ch]); bandMean[ch] += px[ch]; mixMean[ch] += want[ch]; slabMean[ch] += Math.exp(-(tauLeaf[ch] + k * cs.fade) * cov); }
+      }
+    }
+    rows.push({ name: cs.name, err, nBand, nIn, nOut, finite, glError, bandOverMix: bandMean.map((v, ch) => v / Math.max(mixMean[ch], 1e-12)), slabOverMix: slabMean.map((v, ch) => v / Math.max(mixMean[ch], 1e-12)) });
+  }
+  return { k, edge, rows };
 });
 
 // ---------------------------------------------------------------------------

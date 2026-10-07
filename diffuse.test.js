@@ -6,7 +6,8 @@
 // black: the mid-fall "mud"). The split is T = T_b + T_d, ballistic (1−d)·T and diffuse d·T, and it enters as
 // NEUTRAL depth: k = −ln(1−d), τ_ball = τ + k·coverage. These tests hold the laws that would otherwise fail
 // SILENTLY: a ballistic share that is not the same hue as the leaf, a conservation that leaks, a gate that is not
-// the old frame, a marginal leaf whose shadow pops. (The sky view's own half of the split — the lantern — is skydiffuse.test.js.)
+// the old frame, a marginal leaf whose shadow pops, a soft edge read as a slab (P0c-edge: a texel is a mixture, the "edge" block).
+// (The sky view's own half of the split — the lantern — is skydiffuse.test.js.)
 // komorebi-fill.js is the reference the pixel harness holds the shader to; bun holds the reference to the laws.
 // ============================================================================
 import { test, expect } from "bun:test";
@@ -14,6 +15,7 @@ import { DEFAULTS, MORPH_KEYS, CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, bui
 import * as M from "./komorebi-math.js";
 import * as F from "./komorebi-fill.js";
 import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FILL, GLSL_SKY_RAY } from "./komorebi-shaders.js";
+import * as SH from "./komorebi-shaders.js";
 import { makeGrove } from "./komorebi-grove.js";
 
 const sum = (a) => a.reduce((s, v) => s + v, 0);
@@ -65,28 +67,36 @@ test("tb is t BY IDENTITY at k = 0: the input comes back, not a copy that happen
   expect(F.ballistic(t, 1.7, 3)).not.toBe(t);
 });
 
-test("neutral depth preserves hue: leafHue(tb) = leafHue(t), for any k and any coverage", () => {
-  // k is the same in all three channels because the split is set by the leaf's scattering structure, not its pigments.
+test("neutral depth preserves hue where the texel is full: leafHue(Tb) = leafHue(T) for c ≥ 1 — a partial texel's gap only whitens it", () => {
+  // k is the same in all three channels because the split is set by the leaf's scattering structure, not its pigments, so a FULL texel
+  // (a = 1: the mixture IS the slab) keeps the leaf's hue through the split. A PARTIAL one has a gap, which passes the beam whole in every
+  // channel alike: the residue is paler than the leaf, never darker than the leaf's own e^−κ share (Tb ≥ T·e^−κ).
   // (leafHue floors its peak at 1e-4, so the claim is for a beam still above that — a leaf darker than the floor has no hue to keep.)
-  let kept = 0;
+  let kept = 0, pale = 0;
   for (let seed = 0; seed < 2000; seed++) {
-    const t = [0, 1, 2].map((c) => 0.2 + 0.8 * u01(seed, c, 1, 2, 0)), c = 2 * u01(seed, 3, 1, 2, 0), k = kOf(seed);
-    const tb = F.ballistic(t, c, k);
-    if (Math.max(...tb) < 1e-3) continue;
-    const a = F.leafHue(tb), b = F.leafHue(t);
-    for (let i = 0; i < 3; i++) expect(a[i], `seed ${seed}`).toBeCloseTo(b[i], 12);
-    kept++;
+    const tau = [0, 1, 2].map((c) => -Math.log(0.2 + 0.8 * u01(seed, c, 1, 2, 0))), k = kOf(seed);
+    const full = F.texelMix(tau, 1 + u01(seed, 3, 1, 2, 0), k);
+    if (Math.max(...full.Tb) >= 1e-3) {
+      const a = F.leafHue(full.Tb), b = F.leafHue(full.T);
+      for (let i = 0; i < 3; i++) expect(a[i], `seed ${seed}`).toBeCloseTo(b[i], 12);
+      kept++;
+    }
+    const c = 0.05 + 0.9 * u01(seed, 4, 1, 2, 0), part = F.texelMix(tau, c, k);
+    for (let i = 0; i < 3; i++) expect(part.Tb[i], `seed ${seed}`).toBeGreaterThanOrEqual(part.T[i] * Math.exp(-k) - 1e-15);
+    if (k > 1) { const a = F.leafHue(part.Tb), b = F.leafHue(part.T); if (a[0] !== b[0] || a[2] !== b[2]) pale++; }
   }
   expect(kept).toBeGreaterThan(1500);
+  expect(pale).toBeGreaterThan(500);                                      // ...and the gap really does move the hue: this is not the full-texel identity in disguise
 });
 
-test("emitted light is real and bounded: 0 ≤ t − tb ≤ t, per channel", () => {
+test("emitted light is real and bounded: 0 ≤ T − Tb ≤ T ≤ 1, per channel, at any coverage", () => {
   for (let seed = 0; seed < 10000; seed++) {
-    const t = [0, 1, 2].map((c) => u01(seed, c, 3, 4, 0)), c = 4 * u01(seed, 3, 3, 4, 0), k = kOf(seed);
-    const tb = F.ballistic(t, c, k);
+    const tau = [0, 1, 2].map((c) => 3 * u01(seed, c, 3, 4, 0)), c = 4 * u01(seed, 3, 3, 4, 0), k = kOf(seed);
+    const { T, Tb } = F.texelMix(tau, c, k);
     for (let i = 0; i < 3; i++) {
-      expect(t[i] - tb[i], `seed ${seed}`).toBeGreaterThanOrEqual(0);       // a leaf's beam is never brighter than the light it passes in all
-      expect(t[i] - tb[i]).toBeLessThanOrEqual(t[i]);
+      expect(T[i] - Tb[i], `seed ${seed}`).toBeGreaterThanOrEqual(0);       // a leaf's beam is never brighter than the light it passes in all
+      expect(T[i] - Tb[i]).toBeLessThanOrEqual(T[i]);
+      expect(T[i]).toBeLessThanOrEqual(1);
     }
   }
 });
@@ -182,8 +192,9 @@ test("the P0b proxy is OFF once d > 0: the albedo knob is inert and the light is
   expect(sum(a.S)).toBeGreaterThan(0);
   // with the proxy's own gate shut (scatter 0 and no k) there is no S at all — the split is what opened it
   expect(F.fillRef(layers, x, 16, { gS: [0.5, -0.3], sun: SUN, scatter: 0, tile: 3 }).S).toEqual([0, 0, 0]);
-  // and Tsky never reads k: the uniform-sky identity says the skylight needs no split, only the sun does
-  expect(a.T).toEqual(F.fillRef(layers, x, 16, { ...base, k: 0, scatter: 0 }).T);
+  // and Tsky never reads k: the uniform-sky identity says the skylight needs no split, only the sun does — any two k > 0 hand the same sky
+  expect(a.T).toEqual(F.fillRef(layers, x, 16, { ...base, k: 2 * k, scatter: 0 }).T);
+  expect(a.T).not.toEqual(F.fillRef(layers, x, 16, { ...base, k: 0, scatter: 0 }).T);   // (and at k = 0 the sky is the d = 0 slab: soft edges depth-averaged, the named approximation kept for byte-identity)
 });
 
 test("the sun off: the split has nothing to scatter either, exactly 0", () => {
@@ -206,7 +217,7 @@ test("floor-average conservation: with the sun at zenith, beam + the fill's emit
     for (let j = 0; j < WIDE; j++) for (let i = 0; i < WIDE; i++) {
       const x = -15 + i * PITCH, y = -15 + j * PITCH;
       let tb = 1, t = 1;
-      for (const l of layers) { const tt = l.t(x, y)[1], cc = l.c(x, y); t *= tt; tb *= tt * Math.exp(-k * cc); }
+      for (const l of layers) { const m = F.texelMix(l.t(x, y).map((v) => -Math.log(v)), l.c(x, y), k); t *= m.T[1]; tb *= m.Tb[1]; }
       beam += tb; total += t;
     }
     let emit = 0;
@@ -219,22 +230,201 @@ test("floor-average conservation: with the sun at zenith, beam + the fill's emit
   }
 });
 
+// ---- P0c-edge: a texel is a MIXTURE, not a slab (spec §4.5) --------------------------------------------------------------------
+// The bake stores Σ τ_i·cov_i (rgb) and Σ cov_i (alpha). Every reader used to take that pair for a SLAB of depth τ (t = e^−τ), which is exact for
+// leaves that fill the texel and stack, and Jensen-dark at an edge: a texel 30% under a leaf of depth 2.8 read as a thin bright leaf (t 0.43), not
+// 70% gap and 30% dark leaf (T 0.72). The mixture, from the same two numbers, with a = min(c, 1) the leaf area of the texel:
+//   τ̄ = τ/a (the representative leaf's depth)   κ = k·c/a   T = (1 − a) + a·e^−τ̄   Tb = (1 − a) + a·e^(−τ̄ − κ)   emit = T − Tb
+// The truth it is held to is the texel SUPERSAMPLED n×n: each subsample lies under some leaves or none, and its transmittance is the product of theirs.
+const lum = (v) => 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+const leafDepth = (seed, a) => [0, 1, 2].map((c) => 0.1 + 3.2 * u01(seed, c, a, 7, 1));   // one leaf's own optical depth, RGB, from clear to deep blue
+function supersample(n, leaves, k) {   // leaves: [{ tau, mask: boolean[n*n] }]
+  const T = [0, 0, 0], Tb = [0, 0, 0];
+  for (let i = 0; i < n * n; i++) {
+    const depth = [0, 0, 0]; let stacked = 0;
+    for (const l of leaves) if (l.mask[i]) { stacked++; for (let c = 0; c < 3; c++) depth[c] += l.tau[c]; }
+    for (let c = 0; c < 3; c++) { T[c] += Math.exp(-depth[c]) / (n * n); Tb[c] += Math.exp(-depth[c] - k * stacked) / (n * n); }
+  }
+  return { T, Tb, emit: T.map((v, c) => v - Tb[c]) };
+}
+function bakePair(n, leaves) {   // what the bake writes for the same texel: each leaf adds its depth × its area share to rgb and the share to alpha
+  const tau = [0, 0, 0]; let c = 0;
+  for (const l of leaves) { const cov = l.mask.filter(Boolean).length / (n * n); c += cov; for (let ch = 0; ch < 3; ch++) tau[ch] += l.tau[ch] * cov; }
+  return { tau, c };
+}
+const firstM = (n, m) => Array.from({ length: n * n }, (_, i) => i < m);   // a single leaf's mixture does not depend on WHERE in the texel it lies
+
+test("edge: one leaf over a fraction c of the texel — the bake's pair through texelMix is the supersample's mean T, Tb and emit, to 1e-12, for every c in (0, 1]", () => {
+  let worst = 0, n_c = 0;
+  for (const n of [4, 7, 12]) for (let m = 1; m <= n * n; m++) for (let rep = 0; rep < 3; rep++) {
+    const seed = n * 1000 + m * 3 + rep, k = kOf(seed) || M.ballisticK(0.95), leaf = { tau: leafDepth(seed, 1), mask: firstM(n, m) };
+    const truth = supersample(n, [leaf], k), { tau, c } = bakePair(n, [leaf]), got = F.texelMix(tau, c, k);
+    for (let ch = 0; ch < 3; ch++) {
+      worst = Math.max(worst, Math.abs(got.T[ch] - truth.T[ch]), Math.abs(got.Tb[ch] - truth.Tb[ch]), Math.abs(got.T[ch] - got.Tb[ch] - truth.emit[ch]));
+    }
+    n_c++;
+  }
+  expect(n_c).toBeGreaterThan(200);
+  expect(worst).toBeLessThan(1e-12);
+});
+
+test("edge: two leaves stacked over the WHOLE texel (c = 2) — exact: T = T1·T2, Tb = T1·T2·(1−d)², emit = T1·T2·(1 − (1−d)²)", () => {
+  let worst = 0;
+  for (let seed = 0; seed < 400; seed++) {
+    const d = [0.5, 0.9, 0.95, 0.99][seed % 4], k = M.ballisticK(d), n = 6, t1 = leafDepth(seed, 1), t2 = leafDepth(seed, 2);
+    const full = Array.from({ length: n * n }, () => true), leaves = [{ tau: t1, mask: full }, { tau: t2, mask: full }];
+    const { tau, c } = bakePair(n, leaves), got = F.texelMix(tau, c, k), truth = supersample(n, leaves, k);
+    expect(c).toBe(2);
+    for (let ch = 0; ch < 3; ch++) {
+      const T12 = Math.exp(-t1[ch] - t2[ch]);
+      worst = Math.max(worst, Math.abs(got.T[ch] - T12), Math.abs(got.Tb[ch] - T12 * (1 - d) ** 2), Math.abs(got.T[ch] - got.Tb[ch] - T12 * (1 - (1 - d) ** 2)),
+        Math.abs(got.Tb[ch] - truth.Tb[ch]));
+    }
+  }
+  expect(worst).toBeLessThan(1e-12);
+});
+
+// Where the model is NOT exact: a second leaf overlapping the first inside one texel at c between 1 and 2 reads as a bounded slab residue. The common case in
+// the bake is a texel that lies wholly inside one leaf with the EDGE of another crossing it (a is 1, the second leaf's share is the fraction beyond 1): held
+// against the supersample over random edge orientations, as luminance (the glow's level; the blue channel alone is worse, and said so below).
+function halfPlane(n, seed) {   // a leaf edge through the texel at a random angle and offset: a compact leaf, not salt and pepper
+  const th = (2 * Math.PI * (hash(seed, 31, 0) % 100000)) / 100000, off = ((hash(seed, 31, 1) % 100000) / 100000 - 0.5) * 1.4, nx = Math.cos(th), ny = Math.sin(th);
+  return Array.from({ length: n * n }, (_, i) => ((((i % n) + 0.5) / n - 0.5) * nx + ((Math.floor(i / n) + 0.5) / n - 0.5) * ny) > off);
+}
+test("edge: a texel inside one leaf with another's EDGE across it (c in 1..2) — the emission's luminance within 15%, blue alone within 45%: the bounded residue", () => {
+  const n = 24, full = Array.from({ length: n * n }, () => true), k = M.ballisticK(0.95);
+  let worstLum = 0, worstBlue = 0, tested = 0;
+  for (let seed = 0; seed < 600; seed++) {
+    const a = { tau: [1.35, 0.69, 1.83].map((v, c) => v * (0.8 + 0.4 * u01(seed, c, 1, 1, 1))), mask: full }, b = { tau: [1.35, 0.69, 1.83].map((v, c) => v * (0.8 + 0.4 * u01(seed, c, 2, 2, 2))), mask: halfPlane(n, seed) };
+    const { tau, c } = bakePair(n, [a, b]);
+    if (!(c > 1.02)) continue;
+    const got = F.texelMix(tau, c, k), truth = supersample(n, [a, b], k), emit = got.T.map((v, ch) => v - got.Tb[ch]);
+    worstLum = Math.max(worstLum, Math.abs(lum(emit) / lum(truth.emit) - 1));
+    worstBlue = Math.max(worstBlue, Math.abs(emit[2] / truth.emit[2] - 1));
+    tested++;
+  }
+  expect(tested).toBeGreaterThan(400);
+  expect(worstLum).toBeLessThan(0.15);
+  expect(worstLum, "not exact: this is the residue, not the identity in disguise").toBeGreaterThan(0.01);
+  expect(worstBlue).toBeLessThan(0.45);
+});
+
+test("edge: the slab's error, pinned as the dead end — at c = 0.3 on a blue leaf (τ 2.8, d 0.95) the slab emits ≥ 5× the mixture, and its beam is 4× too dark", () => {
+  // The numbers P0c-sky wrote down for the rim and the halo. A leaf of depth τ over 30% of the texel is the pair (0.3·τ, 0.3): the slab took it for a leaf
+  // of depth 0.84 over ALL of it (t = 0.43, Jensen), so its glow t·(1 − e^−kc) is the cream rim (0.256 against the true 0.0173), and its beam e^(−τ − kc) the
+  // dark halo (0.176 against the true 0.701: 70% of the texel is open sky).
+  const tau = 2.8, c = 0.3, k = M.ballisticK(0.95);
+  const slabT = Math.exp(-tau * c), slabEmit = slabT * (1 - Math.exp(-k * c)), slabBeam = Math.exp(-tau * c - k * c);
+  const leaf = { tau: [tau, tau, tau], mask: firstM(10, 30) }, truth = supersample(10, [leaf], k), { tau: pair, c: cc } = bakePair(10, [leaf]), got = F.texelMix(pair, cc, k);
+  expect(cc).toBeCloseTo(0.3, 14);
+  expect(truth.T[2]).toBeCloseTo(0.7 + 0.3 * Math.exp(-tau), 14);
+  expect(got.T[2]).toBeCloseTo(truth.T[2], 12);
+  expect(got.T[2] - got.Tb[2]).toBeCloseTo(truth.emit[2], 12);
+  expect(slabEmit).toBeCloseTo(0.256, 3);
+  expect(slabEmit / truth.emit[2]).toBeGreaterThanOrEqual(5);              // ×14.8: the rim
+  expect(slabT).toBeCloseTo(0.43, 2);
+  expect(truth.T[2] / slabT).toBeGreaterThan(1.6);                          // the slab read the texel 40% too dark
+  expect(slabBeam).toBeCloseTo(0.176, 3);
+  expect(truth.Tb[2]).toBeCloseTo(0.701, 3);
+  expect(truth.Tb[2] / slabBeam).toBeGreaterThan(3.9);                      // the halo
+});
+
+test("edge: k = 0 is not a split — Tb IS T (the same array) and the emission is exactly 0, at any coverage", () => {
+  for (let seed = 0; seed < 500; seed++) {
+    const m = F.texelMix(leafDepth(seed, 3), 3 * u01(seed, 9, 1, 1, 1), 0);
+    expect(m.Tb).toBe(m.T);
+    expect(m.T.map((v, c) => v - m.Tb[c])).toEqual([0, 0, 0]);
+  }
+  const neg = F.texelMix([1, 2, 3], 0.5, -1);                                 // a negative k is no split either
+  expect(neg.Tb).toBe(neg.T);
+});
+
+test("edge: an empty texel (c < 1e-4) is exactly clear — T = Tb = 1, whatever depth sits beside it", () => {
+  for (const c of [0, 1e-9, 5e-5, 9.99e-5]) for (const k of [0, 3]) {
+    const m = F.texelMix([4, 0.2, 9], c, k);
+    expect(m.T, `c ${c} k ${k}`).toEqual([1, 1, 1]);
+    expect(m.Tb, `c ${c} k ${k}`).toEqual([1, 1, 1]);
+  }
+  const live = F.texelMix([0.3, 0.3, 0.3], 1e-4, 3);                          // ...and the guard is the guard, not a dead zone: at 1e-4 there is a texel
+  expect(live.T[0]).toBeLessThan(1);
+});
+
+test("edge: a FULL texel (c ≥ 1) is the old slab, to the bit — the mixture changes only what a gap changes", () => {
+  for (let seed = 0; seed < 2000; seed++) {
+    const tau = leafDepth(seed, 4), c = 1 + 2 * u01(seed, 8, 1, 1, 1), k = kOf(seed) || 2.5, m = F.texelMix(tau, c, k);
+    for (let ch = 0; ch < 3; ch++) {
+      expect(m.T[ch], `seed ${seed}`).toBe(Math.exp(-tau[ch]));
+      expect(m.Tb[ch], `seed ${seed}`).toBe(Math.exp(-(tau[ch] + k * c)));
+    }
+  }
+});
+
+test("edge: τ/c is fade-invariant — a leaf at fade f is the same leaf over f of the area, so emission per unit leaf area never moves, and it vanishes with f", () => {
+  const tau = [0.9, 0.5, 1.4], k = M.ballisticK(0.95);
+  for (const edge of [0.15, 0.6, 1]) {
+    for (let i = 200; i >= 1; i--) {
+      const f = i / 200, s = F.leafTexel(tau, f, edge), m = F.texelMix(s.rgb, s.a, k);
+      for (let ch = 0; ch < 3; ch++) {
+        expect((m.T[ch] - m.Tb[ch]) / s.a, `edge ${edge} f ${f}`).toBeCloseTo(Math.exp(-tau[ch]) * (1 - Math.exp(-k)), 12);   // the leaf's own glow per unit of its area, whatever its fade
+      }
+      expect(m.T[1], `edge ${edge} f ${f}`).toBeGreaterThanOrEqual(Math.exp(-tau[1]) - 1e-15);   // fading only ever lightens the texel: the gap it leaves is open sky...
+      expect(m.T[1]).toBeLessThanOrEqual(1);
+    }
+    const faint = F.leafTexel(tau, 1e-5, edge);
+    expect(F.texelMix(faint.rgb, faint.a, k).T).toEqual([1, 1, 1]);            // ...down to nothing at f -> 0
+  }
+});
+
+test("edge: a bilinear read of one leaf's own edge never changes the leaf — τ̄ stays the leaf's depth at any weight, where a depth alone would blend toward 0", () => {
+  const tau = [2.8, 1.2, 0.6], k = M.ballisticK(0.9);
+  for (let seed = 0; seed < 300; seed++) {
+    const c1 = 0.05 + 0.9 * u01(seed, 1, 1, 1, 1), c2 = 0.05 + 0.9 * u01(seed, 2, 1, 1, 1), w = u01(seed, 3, 1, 1, 1);
+    const pair = (c) => ({ tau: tau.map((v) => v * c), c });
+    const A = pair(c1), B = pair(c2), mix = { tau: tau.map((_, ch) => w * A.tau[ch] + (1 - w) * B.tau[ch]), c: w * c1 + (1 - w) * c2 };
+    const got = F.texelMix(mix.tau, mix.c, k), want = F.texelMix(tau.map((v) => v * mix.c), mix.c, k);
+    for (let ch = 0; ch < 3; ch++) { expect(got.T[ch], `seed ${seed}`).toBeCloseTo(want.T[ch], 12); expect(got.Tb[ch]).toBeCloseTo(want.Tb[ch], 12); }
+  }
+});
+
+test("edge: the telescoping identity on the mixture — Π Tb + Σ thr·(T − Tb)·A = Π T, to 1e-12, over 10^4 random stacks and any d, with every term from texelMix", () => {
+  // The identity is by construction (emit ≡ T − Tb), and this holds it so: every term spelled out here from texelMix alone, against skyRayRef's own sums.
+  let worst = 0, glowed = 0;
+  for (let seed = 0; seed < 10000; seed++) {
+    const nL = 1 + (seed % 4), k = kOf(seed) || M.ballisticK(0.95), layers = covStack(seed, nL), p = [(hash(seed, 19, 0) % 4000) / 1000 - 2, (hash(seed, 19, 1) % 4000) / 1000 - 2];
+    const m = layers.map((l) => F.texelMix(l.t(p[0], p[1]).map((v) => -Math.log(v)), l.c(p[0], p[1]), k));
+    const T = [1, 1, 1], Tb = [1, 1, 1], glow = [0, 0, 0], thr = [1, 1, 1];
+    for (let L = 0; L < nL; L++) for (let c = 0; c < 3; c++) {
+      let A = 1; for (let M2 = L + 1; M2 < nL; M2++) A *= m[M2].Tb[c];
+      glow[c] += thr[c] * (m[L].T[c] - m[L].Tb[c]) * A; thr[c] *= m[L].T[c]; T[c] *= m[L].T[c]; Tb[c] *= m[L].Tb[c];
+    }
+    const r = F.skyRayRef(layers, p, [0, 0], [0, 0], [1, 1, 1], k);
+    for (let c = 0; c < 3; c++) {
+      worst = Math.max(worst, Math.abs(Tb[c] + glow[c] - T[c]), Math.abs(r.T[c] - T[c]), Math.abs(r.Tb[c] - Tb[c]), Math.abs(r.L[c] - glow[c]));
+      glowed += glow[c];
+    }
+  }
+  expect(worst).toBeLessThan(1e-12);
+  expect(glowed).toBeGreaterThan(100);
+});
+
 // ---- the marginal leaf -------------------------------------------------------------------------------------------
-test("a leaf fading in (§5.3) fades its BALLISTIC shadow with it: tb is continuous in the fade f, and 1 at f = 0", () => {
-  // The grove folds the fade into τ on the CPU, so alpha has to carry it too (iFade) or the beam's k·coverage would
-  // keep its full weight on a leaf that is not there yet and pop the instant it starts to appear.
+test("a leaf fading in (§5.3) fades its BALLISTIC shadow with it: Tb is continuous in the fade f, and 1 at f = 0", () => {
+  // The grove folds the fade into τ on the CPU, so alpha has to carry it too (iFade): the texel's pair is (τ·f·edge, edge·f), which
+  // the mixture reads as a leaf of its own depth over edge·f of the area. Without the fade in alpha it would read the same τ as a
+  // leaf over `edge` of it, the full footprint at depth τ·f, and its beam's k would keep full weight on a leaf that is not there yet.
   const tau = [0.9, 0.5, 1.4], k = M.ballisticK(0.95), edge = 0.8;
-  const depth = (f, withFade) => { const s = F.leafTexel(tau, f, edge); return [0, 1, 2].map((c) => s.rgb[c] + k * (withFade ? s.a : edge)); };
-  expect(depth(0, true)).toEqual([0, 0, 0]);                                // f = 0: no depth at all, tb = 1 in every channel
-  let prev = depth(0, true).map((d) => Math.exp(-d));
+  const beam = (f, withFade) => { const s = F.leafTexel(tau, f, edge); return F.texelMix(s.rgb, withFade ? s.a : edge, k).Tb; };
+  expect(beam(0, true)).toEqual([1, 1, 1]);                                  // f = 0: no coverage at all, the texel is empty
+  let prev = beam(0, true);
   for (let i = 1; i <= 200; i++) {
-    const tb = depth(i / 200, true).map((d) => Math.exp(-d));
+    const tb = beam(i / 200, true);
     for (let c = 0; c < 3; c++) expect(Math.abs(tb[c] - prev[c]), `f=${i / 200}`).toBeLessThan(0.05);   // no step anywhere along the fade
     prev = tb;
   }
-  for (let c = 0; c < 3; c++) expect(prev[c]).toBeCloseTo(Math.exp(-(tau[c] + k) * edge), 14);   // and f = 1 is the full leaf
-  // the failure this prevents: alpha that is coverage alone is e^(−k·edge) at f = 0, a pop of 1 − e^(−k·edge)
-  expect(Math.exp(-depth(0, false)[0])).toBeLessThan(0.1);
+  for (let c = 0; c < 3; c++) expect(prev[c]).toBeCloseTo(1 - edge + edge * Math.exp(-tau[c] - k), 14);   // and f = 1 is the full leaf over its edge's share of the texel
+  // the failure this prevents: alpha that is coverage alone puts the leaf's whole footprint under k at f = 0, a pop from 1 to 1 − edge·(1 − e^−k)
+  expect(beam(0, false)[0]).toBeCloseTo(1 - edge + edge * Math.exp(-k), 14);
+  expect(beam(0, false)[0]).toBeLessThan(0.3);
 });
 
 test("the grove hands the bake each leaf's fade (iFade) — the very factor it folded into its tau, in the layer and the faithful buffer", () => {
@@ -280,24 +470,45 @@ test("the bake stamps coverage in alpha, fade included: a = cov·iFade·uCoverag
   expect(VS_FAITH.includes("vFade = iFade;")).toBe(true);
 });
 
-test("every cast camera taps the BEAM as tau + k·alpha, and a shut gate is the literal old read in the else", () => {
+test("every cast camera taps the BEAM through the texel's mixture, and a shut gate is the literal old read in the else", () => {
   for (const cam of ["floor", "cloth", "enclosure"]) {
     const src = buildTransport(cam);
     expect(src.includes("uniform float uBeamK;"), `${cam} declares uBeamK`).toBe(true);
-    expect(src.includes("exp(-(d.rgb + uBeamK*d.a))"), `${cam} tap`).toBe(true);
+    expect(src.includes("texelMix(d.rgb, d.a, uBeamK, T, Tb);"), `${cam} tap reads the mixture`).toBe(true);
+    expect(/texelMix\(d\.rgb, d\.a, uBeamK, T, Tb\);\s*return Tb;/.test(code(src)), `${cam} tap returns the ballistic share`).toBe(true);
+    expect(code(src).includes("exp(-(d.rgb + uBeamK*d.a))"), `${cam}: the slab form is gone`).toBe(false);
     // the else of the uniform branch is the line the engine has always run
     expect(/if\(uBeamK > 0\.0\)\{[^}]*\}\s*else\s*\{\s*return exp\(-texture\(t,uv\)\.rgb\);/.test(src), `${cam} tap else`).toBe(true);
-    // ...and diffraction's per-channel taps ride the same k, at each channel's own dispersed position
-    expect(/if\(uBeamK > 0\.0\)\{[^}]*qR\.a[^}]*qG\.a[^}]*qB\.a[^}]*\}\s*else\s*\{\s*float aR = texture\(t, \(world \+ H\*g\*cs\.r - uCanopyOrigin\)\/uCanopyExtent\)\.r;/.test(src), `${cam} tapCA`).toBe(true);
+    // ...and diffraction's per-channel taps ride the same mixture, at each channel's own dispersed position
+    expect(/if\(uBeamK > 0\.0\)\{[^}]*texelMix\(qR\.rgb, qR\.a, uBeamK[^}]*texelMix\(qG\.rgb, qG\.a, uBeamK[^}]*texelMix\(qB\.rgb, qB\.a, uBeamK[^}]*\}\s*else\s*\{\s*float aR = texture\(t, \(world \+ H\*g\*cs\.r - uCanopyOrigin\)\/uCanopyExtent\)\.r;/.test(src), `${cam} tapCA`).toBe(true);
     expect(src.includes("return exp(-vec3(aR,aG,aB));"), `${cam} tapCA else`).toBe(true);
   }
 });
 
-test("the faithful cast takes k at the bake: exp(−(τ + k·fade)·cov), and the else is the literal old line", () => {
+test("the faithful cast takes k at the bake, per stamp: the leaf's mixture over cov·fade, and the else is the literal old line", () => {
   expect(FS_FAITH.includes("uniform float uBeamK;")).toBe(true);
   expect(FS_FAITH.includes("in float vFade;")).toBe(true);
-  expect(FS_FAITH.includes("frag = vec4(exp(-(vTau + uBeamK*vFade)*cov), 1.0);")).toBe(true);
+  // one stamp is one leaf over cf = cov·fade of the pixel at depth vTau/vFade: (1 − cf) + cf·e^(−vTau/vFade − k), which multiplicative blending then stacks leaf by leaf
+  expect(code(FS_FAITH).includes("texelMix(vTau*cov, cov*vFade, uBeamK, T, Tb);")).toBe(true);
+  expect(/frag = vec4\(Tb, 1\.0\);/.test(code(FS_FAITH))).toBe(true);
+  expect(code(FS_FAITH).includes("exp(-(vTau + uBeamK*vFade)*cov)")).toBe(false);   // the slab form is gone
   expect(/else\s*frag = vec4\(exp\(-vTau\*cov\), 1\.0\);/.test(FS_FAITH)).toBe(true);
+});
+
+test("ONE texelMix text: the sky ray, the fill, the cast tap and the faithful stamp carry the very same snippet, once each", () => {
+  const mix = SH.GLSL_TEXEL_MIX;
+  expect(typeof mix).toBe("string");
+  expect(mix.includes("void texelMix(vec3 tau, float c, float k, out vec3 T, out vec3 Tb)")).toBe(true);
+  expect(GLSL_SKY_RAY.includes(mix)).toBe(true);                            // the sky camera and the fill both take it through the shared ray...
+  const programs = { fill: FS_FILL, faith: FS_FAITH, sky: buildTransport("sky"), floor: buildTransport("floor"), cloth: buildTransport("cloth"), enclosure: buildTransport("enclosure") };
+  for (const [name, src] of Object.entries(programs)) {
+    expect(src.includes(mix), `${name} carries it`).toBe(true);
+    expect(src.split("void texelMix(").length - 1, `${name} defines it once`).toBe(1);
+  }
+  // the d = 0 side is nothing's business: the snippet declares no uniform and reads no k of its own
+  expect(code(mix).includes("uniform")).toBe(false);
+  // the guard: an empty texel is exactly clear, and k = 0 is not a split
+  expect(code(mix).includes("c < 1e-4")).toBe(true);
 });
 
 test("the sky camera passes the beam's k to the shared ray from its OWN group; the fill passes its own, and reads no wood", () => {
@@ -309,11 +520,14 @@ test("the sky camera passes the beam's k to the shared ray from its OWN group; t
   expect(FS_FILL.includes("skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], uFillG, scatter, uFillOpen, false, uFillBeamK, T, Tb, Lsc);")).toBe(true);
 });
 
-test("the shared per-ray snippet: alpha is COVERAGE on every camera, the wood is its own texture, and the emission is the leaf's own hue, no albedo", () => {
-  expect(GLSL_SKY_RAY.includes("c = d.a; w = readWood ? exp(-texture(wood, uv).r) : 1.0;")).toBe(true);
+test("the shared per-ray snippet: alpha is COVERAGE on every camera, the wood is its own texture, and the emission is the leaf's own hue T − Tb, no albedo", () => {
+  expect(GLSL_SKY_RAY.includes("w = readWood ? exp(-texture(wood, uv).r) : 1.0;")).toBe(true);
   const src = code(GLSL_SKY_RAY);
+  expect(src.includes("if(beamK > 0.0) texelMix(d.rgb, d.a, beamK, t, tb);")).toBe(true);   // the tap reconstructs the mixture from the pair, once per tap...
+  expect(src.includes("else { t = exp(-d.rgb); tb = t; }")).toBe(true);                       // ...and its else is the d = 0 read, the slab, character for character
   expect(/if\(beamK > 0\.0\)\{/.test(src)).toBe(true);                       // the split wherever k is up: the fill's and, now, the sky camera's
-  expect(src.includes("thr*tL0*(1.0-exp(-beamK*cL0))*uSunColor*A0")).toBe(true);
+  expect(src.includes("Lsc += thr*(tL0 - tbL0)*uSunColor*A0;")).toBe(true);   // emit = T − Tb, the very terms the beam and the sky took out
+  expect(src.includes("exp(-beamK")).toBe(false);                             // no slab form anywhere in the ray: k only ever reaches a texel through texelMix
   expect(src.includes("uAmbient")).toBe(false);                               // the skylight is Tsky's, and its passage needs no split (the uniform-sky identity)
   expect(src.includes("thr*(1.0-tL0)*leafHue(tL0)*uSunColor*A0")).toBe(true);  // the P0b term, still there as the else
   // the fill's own gain: the albedo at d = 0 (the literal old product), 1 above it
