@@ -8,9 +8,9 @@
 // is the swayed skeleton both cast bakes share. A factory over the engine's
 // shared internals (hub).
 // ============================================================================
-import { atmosphere, ballisticK, clamp, sunDirection } from './komorebi-math.js';
+import { atmosphere, ballisticK, clamp } from './komorebi-math.js';
 import { MAX_FILL_DIRS, MAX_LAYERS } from './komorebi-params.js';
-import { fillRays, fillTurns } from './komorebi-fill.js';
+import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
 
 export function makeBake(hub){
@@ -294,8 +294,12 @@ export function makeBake(hub){
   // THE SKY FILL (spec §4.7, "What the shade is lit by"). The floor is lit by the beam through the gaps, by the
   // skylight that ALSO had to come through the canopy, and by sunlight the lit leaves scatter downward; the cast
   // filtered only the first. This bakes the other two: Tsky(x) and S(x), the cosine-weighted hemisphere of the layer
-  // field, into two low-res textures over the canopy box (komorebi-shaders.js, FS_FILL, runs the very ray the sky
-  // view runs). Off (canopy_fill 0, or a camera with no surface to light) nothing is allocated and nothing runs.
+  // field, into two low-res textures (komorebi-shaders.js, FS_FILL, runs the very ray the sky view runs). Off (canopy_fill
+  // 0, or a camera with no surface to light) nothing is allocated and nothing runs.
+  // TWO THINGS KEEP ITS BOOKS CLOSED. ONE SUN PER CAMERA: the sun a leaf is lit by is the BEAM's path (the bulk shift, none in
+  // the endless park), because the light the fill hands out is the light the beam gave up. And THE BOX IS NOT THE WORLD: the
+  // endless park (no bulk shift) repeats its box, a finite tree has open sky outside it and is baked over a frame padded to
+  // hold the glow that spreads past the box (fillFrame). One question — hub.bulkOn() — answers both.
   // ============================================================================
   // Does this look need the fill? The registry answers: a camera that does not speak the fill group cannot read it.
   const fillWanted = () => params.canopy_fill > 0 && CAMERAS[cameraFor(params)].groups.includes('fill');
@@ -308,8 +312,8 @@ export function makeBake(hub){
   // Only the floor reads S (the cloth and the tent take Tsky alone), so the others are handed albedo 0 and the
   // scatter branch is skipped in the shader outright.
   const fillAlbedo = () => CAMERAS[cameraFor(params)].groups.includes('floor') ? clamp(params.fill_scatter, 0, 1) : 0;
-  const _atm = { sun:[0,0,0], ambient:[0,0,0] }, _sd = [0,0,0], FILL_TURNS = fillTurns();   // the 16 slot rotations never change
-  const _sig = new Float64Array(12);
+  const _atm = { sun:[0,0,0], ambient:[0,0,0] }, FILL_TURNS = fillTurns();   // the 16 slot rotations never change
+  const _sig = new Float64Array(13);
 
   // Everything the fill depends on besides the layers themselves (which rebake it eagerly, from bake()). The sun can
   // move without any bake — a time-of-day morph, the editor's sun drag — and S reads the sun's colour and its path
@@ -321,6 +325,7 @@ export function makeBake(hub){
     o[3]=fillAlbedo(); o[4]=fillK(); o[5]=fillRes(); o[6]=params.layer_count; o[7]=params.canopy_base_height_m;
     o[8]=params.canopy_thickness_m; o[9]=params.canopy_extent_m; o[10]=faithfulOn() ? 1 : 0;
     o[11]=ballisticK(params.leaf_diffuse);   // the split changes what S is made of, and no bake moves when it tweens
+    o[12]=hub.bulkOn() ? 1 : 0;              // wrap vs open + padded frame (the beam's bulk shift itself rides the sun elevation and azimuth above)
   }
   function fillStale(){
     if(!fill.ready) return true;
@@ -341,6 +346,15 @@ export function makeBake(hub){
     fill.res = res; fill.ready = false;
   }
 
+  // The layer textures are bound to units 0.. (bakeFill binds them): set the wrap of the active ones.
+  function setLayerWrap(n, mode){
+    for(let i=0;i<n;i++){
+      gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, mode);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, mode);
+    }
+  }
+
   // layersToo: bake the low-res layer set first (faithful path only — the layer path's own bake just ran, or is
   // current). Called eagerly from bake(), and from refreshFill when something the layers do not carry moved.
   function bakeFill(layersToo){
@@ -353,17 +367,28 @@ export function makeBake(hub){
       if(layersToo) bakeLayers(lres, faith.binH, true);
       H = faith.binH.subarray(0, MAX_LAYERS);   // where the faithful tree's twigs REALLY grew, not the park band
     } else H = hub.layerHeights();
+    // THE FRAME this pass covers, and what the layer textures do outside their box. Both follow one flag: a finite tree (bulkOn) is
+    // open sky past its box and is baked over the box padded by 3·h_max; the endless park has no edge, so its box REPEATS and the
+    // frame is the box. REPEAT is on the layer textures for this pass only — transport reads the same textures CLAMPed.
+    const bulk = hub.bulkOn(), wrap = !bulk, nL = params.layer_count;
+    let hMax = 0;
+    for(let i=0;i<nL;i++) hMax = Math.max(hMax, H[i]);
+    const fr = fillFrame(E, hMax, bulk);
+    fill.ox = fr.ox; fill.oy = fr.oy; fill.ext = fr.ext;   // what every receiver reads the textures by
     const e = hub.fillFor(), u = e.U;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fillFBO);
     gl.viewport(0,0,res,res);
     gl.disable(gl.BLEND);
     gl.useProgram(e.prog);
     atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);   // the same atmosphere transport lights the frame with
-    sunDirection(_sd, params.sun_elevation_deg, params.sun_azimuth_deg);
     gl.uniform2f(u.origin, -E/2, -E/2);
     gl.uniform2f(u.extent, E, E);
+    gl.uniform2f(u.frameOrigin, fr.ox, fr.oy);
+    gl.uniform2f(u.frameExtent, fr.ext, fr.ext);
+    const g = hub.bulkShift();
+    gl.uniform2f(u.sunPath, g[0], g[1]);                   // ONE SUN PER CAMERA: the beam's path, not the sun's direction
+    gl.uniform1i(u.open, wrap ? 0 : 1);
     gl.uniform3f(u.sun, _atm.sun[0], _atm.sun[1], _atm.sun[2]);
-    gl.uniform3f(u.sunDir, _sd[0], _sd[1], _sd[2]);
     gl.uniform1fv(u.heights, H);
     gl.uniform1i(u.layerCount, params.layer_count);
     if(fill.K !== K){ fill.rays = fillRays(K); fill.K = K; }   // cached: the plain set is a function of K alone (each texel rotates it itself)
@@ -373,8 +398,10 @@ export function makeBake(hub){
     gl.uniform1f(u.scatter, fillAlbedo());
     gl.uniform1f(u.beamK, ballisticK(params.leaf_diffuse));   // above 0 the albedo is off and every surface camera reads S (the shader says so)
     for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]); gl.uniform1i(u.layers[i], i); }
+    if(wrap) setLayerWrap(nL, gl.REPEAT);
     gl.bindVertexArray(emptyVAO);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if(wrap) setLayerWrap(nL, gl.CLAMP_TO_EDGE);           // put back: every other reader of these textures clamps, and canopy_fill 0 must stay the bytes it was
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     for(const t of fill.tex){ gl.bindTexture(gl.TEXTURE_2D, t); gl.generateMipmap(gl.TEXTURE_2D); }   // RGBA16F is renderable and filterable, which is all generateMipmap asks
     fillSig(fill.sig);

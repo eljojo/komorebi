@@ -140,9 +140,10 @@ function create(canvas, opts){
   function fillFor(){
     if(!fillEntry){
       const prog = program(VS_FULL, FS_FILL);
-      fillEntry = { prog, U: { origin:loc(prog,'uCanopyOrigin'), extent:loc(prog,'uCanopyExtent'), sun:loc(prog,'uSunColor'),
+      fillEntry = { prog, U: { origin:loc(prog,'uCanopyOrigin'), extent:loc(prog,'uCanopyExtent'), sun:loc(prog,'uSunColor'),   // origin/extent: the box the LAYERS were baked over; frameOrigin/frameExtent: the plan square the FILL is baked over
         layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'].map(n => loc(prog,n)), heights:loc(prog,'uLayerHeight[0]'), layerCount:loc(prog,'uLayerCount'),
-        sunDir:loc(prog,'uSunDir'), ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter'), beamK:loc(prog,'uFillBeamK') } };
+        frameOrigin:loc(prog,'uFillOrigin'), frameExtent:loc(prog,'uFillExtent'), sunPath:loc(prog,'uFillG'), open:loc(prog,'uFillOpen'),
+        ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter'), beamK:loc(prog,'uFillBeamK') } };
     }
     return fillEntry;
   }
@@ -165,9 +166,9 @@ function create(canvas, opts){
   // into the leaves' own depth layers so a twig and the leaves hanging on it stamp into the SAME texture. Built
   // only when the look-up camera is on; empty otherwise, and the layer bake then draws nothing extra.
   const sky = { segVAO:null, segBuf:null, segRest:[], segArr:null, start:[], count:[] };
-  // THE SKY FILL's state (§4.7): Tsky and S over the canopy box, allocated lazily when canopy_fill opens and freed when
+  // THE SKY FILL's state (§4.7): Tsky and S over the fill's frame, allocated lazily when canopy_fill opens and freed when
   // it shuts. `ready` = the textures hold a bake of what `sig` records, so the receiver may believe them.
-  const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(12), K:0, rays:null };   // sig: what the bake was made of, sized by komorebi-bake.js's fillSig — a slot it writes past this is silently dropped, and the fill then re-bakes every frame
+  const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(13), K:0, rays:null, ox:0, oy:0, ext:1 };   // sig: what the bake was made of, sized by komorebi-bake.js's fillSig — a slot it writes past this is silently dropped, and the fill then re-bakes every frame. ox/oy/ext: the plan square the textures cover (the box, or the padded frame of a finite tree), which every receiver reads them by
 
   // ---- THE SHARED INTERNALS (hub), continued: the stable plumbing and the shared mutable state. The engine's
   // subsystems live in sibling modules (grove, bake, source,
@@ -340,8 +341,8 @@ function create(canvas, opts){
 
 
 
-  const { regenSource, bulkShift, projMatrix, layerHeights } = makeSource(hub);
-  Object.assign(hub, { regenSource, bulkShift, projMatrix, layerHeights });
+  const { regenSource, bulkShift, bulkOn, projMatrix, layerHeights } = makeSource(hub);
+  Object.assign(hub, { regenSource, bulkShift, bulkOn, projMatrix, layerHeights });
 
 
   const { tickHierarchy, publishBend, motionActive, tick } = makeMotion(hub);

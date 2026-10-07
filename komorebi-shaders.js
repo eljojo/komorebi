@@ -313,7 +313,8 @@ uniform float uLayerHeight[${MAX_LAYERS}];
 uniform int   uLayerCount;`;
 
 // ---- the raw unit sun vector. The floor never needs it (its throw rides uProj/uBulkShift); the fabric's fold
-// incidence, the enclosure's per-panel beam, the sky view's seen source and the sky fill's sun path all do. ----
+// incidence, the enclosure's per-panel beam and the sky view's seen source and sun path all do. (The sky fill does NOT: it lights its
+// leaves along the BEAM's path, uFillG, so the shade and the beam it balances share one sun.) ----
 const GLSL_SUN_DIR_DECLS = `uniform vec3  uSunDir;            // UNIT sun direction (cos el·cos az, cos el·sin az, sin el) — the fold flanks' incidence basis (§4.9); NOT a 1/sin E throw`;
 
 // ---- ONE UPWARD RAY THROUGH THE LAYER FIELD (§4.9 / §4.7). Everything that reads the canopy ALONG A RAY runs this one
@@ -325,8 +326,12 @@ const GLSL_SUN_DIR_DECLS = `uniform vec3  uSunDir;            // UNIT sun direct
 //   openOutside — outside the baked canopy box there is no canopy, so the eye sees open sky. (The floor's own taps
 //                 never need this — a frame lives inside the box — but an upward ray leaves the box within a few
 //                 metres of height, and CLAMP_TO_EDGE would smear the border texel across the whole periphery of the
-//                 frame instead of opening onto blue.) The fill's hemisphere says false: it reads the border like every
-//                 other tap in the engine does.
+//                 frame instead of opening onto blue.) The fill's hemisphere says it per look (§4.7: the finite tree is
+//                 open outside its box; the endless park says false and its layer textures are set to REPEAT for that
+//                 pass, so the box is one period of a field without an edge).
+//   gS          — the plan travel per metre of rise of the SUN's path to a leaf: where the light that reaches a leaf comes
+//                 from. The sky view looks at the real sun, so it passes the sun's own direction. The fill balances the
+//                 beam, whose path is the bulk shift (none at all in the endless park), so it passes that: one sun per camera.
 //   woodInAlpha — a layer texel comes apart into two quantities on purpose (§4.9). .rgb is the FOLIAGE's per-channel
 //                 transmittance; .a is the WOOD's, neutral because wood blocks every colour equally. They live in
 //                 different channels because they are different KINDS of occluder to the scatter term: a leaf takes
@@ -381,7 +386,7 @@ vec3 sunPass(vec4 q, bool woodInAlpha, float beamK){
 // a uniform sky, diffuse transmission through Lambertian leaves equals the ballistic one to first order, so the skylight
 // needs no split — only the sun does. The sky view passes the literal 0.0, and woodInAlpha with it, so this branch is
 // dead code there (§4.9 stays unsplit until P0c-sky).
-void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, bool scatter, bool openOutside, bool woodInAlpha, float beamK, out vec3 T, out vec3 Lsc){
+void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, vec2 gS, bool scatter, bool openOutside, bool woodInAlpha, float beamK, out vec3 T, out vec3 Lsc){
   vec4 noLeaf = vec4(1.0, 1.0, 1.0, woodInAlpha ? 1.0 : 0.0);   // a layer that is not there: transmits everything, covers nothing
   vec4 qL0 = uLayerCount>0 ? tapUpLW(uLayer[0], pL0, openOutside, woodInAlpha) : noLeaf;
   vec4 qL1 = uLayerCount>1 ? tapUpLW(uLayer[1], pL1, openOutside, woodInAlpha) : noLeaf;
@@ -395,7 +400,6 @@ void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, bool scatter, bool openOutsi
   T *= xL0; T *= xL1; T *= xL2; T *= xL3;
   Lsc = vec3(0.0);
   if(scatter){
-    vec2 gS = uSunDir.xy / max(uSunDir.z, 0.05);
     vec3 A0 = vec3(1.0), A1 = vec3(1.0), A2 = vec3(1.0);
     // the SUN's path takes the FULL transmittance — a twig shadows a leaf exactly as another leaf does; it is
     // only as a SOURCE that wood must not participate.
@@ -439,13 +443,21 @@ void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, bool scatter, bool openOutsi
 // ENERGY: Tsky ≤ 1 by construction, and S ≤ fill_scatter·(1 − Tsky)·sun per channel by the sky view's
 // telescoping bound — structural, no clamp. Wood is not read (woodInAlpha false): the analytic occluder takes the
 // beam only, and a limb's share of the hemisphere is thin.
+// THE BOOKS CLOSE (§4.7). Over a floor of unbounded extent every ray's light from a leaf lands somewhere, so the fill holds exactly
+// what the leaves send down — IF the leaves are lit by the beam's own sun (uFillG, not the real one) and the box is not the world:
+// the texel's frame (uFillOrigin/Extent) is the canopy box with the layer textures REPEATing for this pass (the endless park), or the
+// box padded by 3·h_max with open sky outside it (a finite tree). The sum of S over the frame is then Σ over the layers of what they
+// emit, descended through the layers below — held on the real baked layers by the pixel harness's bookkeeping rows.
 const FS_FILL = `#version 300 es
 precision highp float;
 in vec2 vUv;
 layout(location=0) out vec4 fillT;
 layout(location=1) out vec4 fillS;
 ${GLSL_LAYER_FIELD}
-${GLSL_SUN_DIR_DECLS}
+uniform vec2  uFillOrigin;                  // the plan square this pass bakes over: the canopy box (the endless park, which wraps it) or the box padded by 3·h_max (a finite tree, open sky outside it) — komorebi-fill.js fillFrame. uCanopyOrigin/Extent stay the box the LAYERS were baked over
+uniform vec2  uFillExtent;
+uniform vec2  uFillG;                       // the BEAM's sun path, the bulk shift (§4.8): 0 in the endless park, the real throw for a standing tree / the cloth. One sun per camera: the light a leaf scatters is the light the beam gave up
+uniform bool  uFillOpen;                    // outside the canopy box: open sky (a finite tree) — or, false, the layer textures repeat (the park; the bake sets REPEAT on them for this pass only)
 uniform vec3  uFillRay[${MAX_FILL_DIRS}];   // per ray of the PLAIN set: (cos²θ_k, cosφ_k, sinφ_k) — komorebi-fill.js fillRays
 uniform vec2  uFillTurn[16];                // per tile slot: (cos, sin) of its azimuth rotation 2π·b/16 — fillTurns. No sin/cos in this shader: GLSL ES only promises ~2⁻¹¹ of them, and a shift is tens of metres long
 uniform int   uFillCount;                   // K
@@ -454,7 +466,7 @@ uniform float uFillScatter;                 // the leaves' albedo (the P0b proxy
 uniform float uFillBeamK;                   // k = −ln(1−leaf_diffuse) (§4.5): above 0 the leaf's diffuse share is the emission, the albedo is off, and every surface camera reads S
 ${GLSL_SKY_RAY}
 void main(){
-  vec2 x = uCanopyOrigin + vUv*uCanopyExtent;   // the floor point this texel is (recvZ = 0)
+  vec2 x = uFillOrigin + vUv*uFillExtent;       // the floor point this texel is (recvZ = 0)
   bool scatter = uFillScatter > 0.0 || uFillBeamK > 0.0;
   float K = float(uFillCount);
   ivec2 q = ivec2(gl_FragCoord.xy) & ivec2(3);      // this texel's place in its 4x4 tile
@@ -469,7 +481,7 @@ void main(){
     vec2 u = vec2(r.y*turn.x - r.z*turn.y, r.z*turn.x + r.y*turn.y);   // (cosφ, sinφ) turned by the slot
     vec2 s = sqrt((1.0 - c2)/c2)*u;                  // tanθ·(cosφ, sinφ)
     vec3 T, Lsc;
-    skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], scatter, false, false, uFillBeamK, T, Lsc);
+    skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], uFillG, scatter, uFillOpen, false, uFillBeamK, T, Lsc);
     Tsum += T; Lsum += Lsc;
   }
   fillT = vec4(Tsum/K, 1.0);

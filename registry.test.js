@@ -61,7 +61,7 @@ test("an unknown camera is refused rather than silently assembled empty", () => 
 // the sky view must never read what it has no surface to light, and the per-ray physics the fill integrates must be
 // the SAME source the sky view runs, so the two cannot drift into two answers to "what does this ray see".
 test("the sky fill is a registry group: declared, uploaded, spoken by the cameras that light a surface and not by the sky view", () => {
-  expect(Object.keys(TRANSPORT_GROUPS.fill.locs).sort()).toEqual(["canopyFill", "fillS", "fillT"]);
+  expect(Object.keys(TRANSPORT_GROUPS.fill.locs).sort()).toEqual(["canopyFill", "fillExtent", "fillOrigin", "fillS", "fillT"]);
   expect(GROUP_UPLOAD_KEYS).toContain("fill");
   for (const cam of ["floor", "cloth", "enclosure"]) expect(CAMERAS[cam].groups, cam).toContain("fill");
   expect(CAMERAS.sky.groups).not.toContain("fill");
@@ -83,7 +83,7 @@ test("a shut canopy_fill runs the OLD expression verbatim, on the floor and on b
     expect(src.includes("if(uCanopyFill > 0.0){"), cam).toBe(true);
     // every read of the fill textures sits behind that gate: the only mentions before it are the uniform declarations
     const before = src.slice(0, src.indexOf("if(uCanopyFill > 0.0){"));
-    expect(before.replace(/uniform highp sampler2D uFill[TS];/g, "").includes("uFill"), cam).toBe(false);
+    expect(before.replace(/uniform highp sampler2D uFill[TS];/g, "").replace(/uniform vec2 {2}uFill(Origin|Extent);/g, "").includes("uFill"), cam).toBe(false);
   }
 });
 
@@ -112,7 +112,7 @@ test("both programs declare every uniform the shared per-ray snippet reads", () 
   // ...as the SAME lines the transport head and the sunDir group declare them with, not look-alikes
   for (const cam of TRANSPORT_CAMERAS) expect(buildTransport(cam).includes(GLSL_LAYER_FIELD), cam).toBe(true);
   expect(FS_FILL.includes(GLSL_LAYER_FIELD)).toBe(true);
-  expect(FS_FILL.includes(GLSL_SUN_DIR_DECLS)).toBe(true);
+  expect(FS_FILL.includes(GLSL_SUN_DIR_DECLS)).toBe(false);   // the fill walks the beam's sun path (uFillG), so it has no sun direction to declare
   expect(buildTransport("sky").includes(GLSL_SUN_DIR_DECLS)).toBe(true);
 });
 

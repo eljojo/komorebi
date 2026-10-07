@@ -271,7 +271,7 @@ const DEFAULTS = {
   // It needs canopy_fill to land anywhere: with the fill shut the diffuse share just leaves the beam.
   leaf_diffuse: 0.0,
   fill_directions: 16,             // TUNE: the K cosine-weighted rays the fill integrates (stratified in cos²θ, no noise)
-  fill_resolution: 256,            // TUNE: the fill texture's size over the canopy box — it varies at the scale of crown gaps, not dapples
+  fill_resolution: 256,            // TUNE: the fill texture's size over its frame — the canopy box in the endless park (which wraps it), the box PADDED by 3·h_max on a finite look (standing_scene or a receiver: the glow decays across the floor, §4.7), so the texel is coarser there. It varies at the scale of crown gaps, not dapples
   sky_turbidity: 0.05,             // atmospheric haze β (Ångström); reddens low sun, desaturates dusk
   mesopic_strength: 0.6,           // Purkinje: how far rods cool the deep shade at dusk (0 off; gated to low sun)
   chromatic_aberration: 0.0,       // leaf-edge diffraction (θ∝λ): per-channel red/blue spread of the dapples (0 = off, presets untouched)

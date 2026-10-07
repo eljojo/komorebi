@@ -165,13 +165,14 @@ const INVARIANTS = [
   { name: 'leaf_diffuse darkens the beam (faithful path)', preset: 'park 1', rebake: true, differ: true, a: {}, b: { leaf_diffuse: 0.95 } },
   // ...and with it open, the energy has to go somewhere. d·T leaves the beam and the fill hands it to the shade, so a frame whose
   // diffuse light was thrown away (S never written, never read) sits BELOW the one that still carries it: memories 0.70 against its
-  // 1.22, the tent 0.70 against 1.04, and the curtain — a dim look, where the leaf light is as bright as its whole sky — 1.00 against
-  // 2.03. The bounds below sit between the two, so they are floors under a loss, not a fit to a number. (park 1 is not here: its leaves
-  // pass so little of the sun that the frame cannot tell; the faithful S is held by the fill check's energy balance instead.)
+  // 1.49, the tent 0.70 against 0.99, and the curtain — a dim look, where its beam is nearly dark and S is the whole change: ×1.00
+  // with S thrown away — 1.00 against 1.53 (S read at the vertical plane's view factor, 0.5; read at 1 it was 2.0, double). The bounds
+  // below sit between the two, so they are floors under a loss, not a fit to a number. (park 1 is not here: its leaves pass so little
+  // of the sun that the frame cannot tell; the faithful S is held by the fill check's bookkeeping rows instead.)
   { name: 'the diffuse light lands in the shade (layer path)', preset: 'memories', lit: [1.0, 1.6],
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   // the cloth and the tent used to read Tsky alone; with the beam gone dark they have to read S too, or the energy leaks
-  { name: 'the diffuse light lands on the cloth (curtain)', preset: 'curtain 1', lit: [1.5, 3],
+  { name: 'the diffuse light lands on the cloth (curtain)', preset: 'curtain 1', lit: [1.05, 1.6],
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'the diffuse light lands on the cloth (tent)', preset: 'tent 1', lit: [0.9, 1.3],
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
@@ -199,6 +200,39 @@ const FILL_CHECKS = [
   { name: 'curtain 1, leaf_diffuse 0.95 — S is computed for the cloth too', preset: 'curtain 1', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'tent 1, leaf_diffuse 0.95 — and for the tent', preset: 'tent 1', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
 ];
+// THE FILL'S BOOKKEEPING (§4.7), measured on the layers the engine really baked (__fillCheck's `energy`). No light is made or lost
+// globally — what a frame shows is DISPLACEMENT (glow under the crown, shadow down-sun) — but the fill had two real breaks, and these
+// rows are what they looked like: the fill lit its leaves along the REAL sun while the beam it balances has no bulk shift in the park
+// (it emitted ~14% more than the beam gave up at a 36° sun), and it read its hemisphere through a box with CLAMP_TO_EDGE (it lost a
+// large share of the glow that spreads past the box, and repeated the border texel to the horizon). Four numbers per look, all on one
+// midpoint grid of emitters over the box and through the engine's own interpolation:
+//   E      what the leaves emit, per layer and summed, BEFORE it descends through the layers below
+//   R      what reaches the floor of it, the K hemisphere rays descending on the layers' true t — in an open world (Ropen), and the share of
+//          it that lands inside the fill frame (Rin)
+//   D_beam what the beam gives up, per floor column (the endless park: its columns are the box, its sun path vertical)
+//   Reng   what the ENGINE's fill texture holds, Σ S · texel area over its whole frame
+//   park   the endless park wraps its box: everything lands, so Reng = R whatever the stack (the closure row). ONE LAYER has nothing below
+//          it, so R = E and that is the bottom layer's received light equal to its emitted light. Against the beam's deficit D_beam it
+//          differs by the canopy's clumping alone — the hemisphere descends through the layers below by other paths than the sun's ray — so
+//          that is a physics band (−5%…+15%, both ways), not an identity.
+//   tree   a finite tree has open sky around it and a padded frame: nearly all of R lands inside the frame (a cosine kernel's tail past 3 h
+//          is ~10% of a leaf's light at the very edge of the box, far less in all), and the glow has DECAYED by the frame's edge instead of
+//          plateauing at a clamped border.
+// The engine's S is a POINT-SAMPLED estimate (K rays per texel of a leaf-scale field), so against the forward integral it carries a floor:
+// measured 0.15–0.4% on the bottom-layer rows and ≤ 1.2% on the finite looks' wide, coarse frames, with the shader equal to
+// komorebi-fill.js's reference over the whole frame to 7 digits and the scatter and gather forms of one ray equal to 1e-13. (The forward
+// side's emitter grid is a PRIME count over the box — a grid commensurate with the layer texture samples every cell at the same sub-texel
+// phase, where the interpolated field is not its average, and read 2–25% off; stable under refinement, so it looked like a leak.)
+const FILL_ENERGY = [
+  { name: 'memories, one layer — the bottom layer received what it emitted (wrap)', preset: 'memories', kind: 'bottom', over: { canopy_fill: 1, leaf_diffuse: 0.95, layer_count: 1 } },
+  { name: 'afternoon 7, one layer — the bottom layer received what it emitted (wrap)', preset: 'afternoon 7', kind: 'bottom', over: { canopy_fill: 1, leaf_diffuse: 0.95, layer_count: 1 } },
+  { name: 'memories — the fill holds what the leaves sent down, and what the beam gave up (park, one sun)', preset: 'memories', kind: 'park', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  { name: 'afternoon 7 — the fill holds what the leaves sent down, and what the beam gave up (park, one sun)', preset: 'afternoon 7', kind: 'park', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  { name: 'park 1 — a finite tree: what it sends down lands inside the padded frame, and decays', preset: 'park 1', kind: 'tree', rebake: true, over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  { name: 'tent 1 — a finite tree: what it sends down lands inside the padded frame, and decays', preset: 'tent 1', kind: 'tree', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  { name: 'curtain 1 — a finite tree: what it sends down lands inside the padded frame, and decays', preset: 'curtain 1', kind: 'tree', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+];
+const ENERGY_BOTTOM = 0.01, ENERGY_CLOSE = 0.015, ENERGY_BEAM = [0.95, 1.15], ENERGY_IN_FRAME = 0.9, ENERGY_TREE_NOISE = 0.02, ENERGY_DECAY = 0.1;
 // leaf_diffuse (and with it k) changed on a RUNNING engine, nothing rebuilt (it tweens, so a transition and a slider both do this):
 // the frame must be the one an engine made with the knob already there shows. The fill's signature carries k so S re-bakes, and on
 // the faithful path the cast has k baked in, so a frame that kept the old cast would look like the knob did nothing.
@@ -573,10 +607,36 @@ async function main() {
       if (r.errT > FILL_TOL) bad.push(`Tsky off by ${r.errT.toExponential(2)}`);
       if (r.errS > FILL_TOL) bad.push(`S off by ${r.errS.toExponential(2)}`);
       if (!(r.maxT > r.minT + 1e-3)) bad.push(`Tsky is flat (${r.minT.toFixed(4)}..${r.maxT.toFixed(4)}): nothing was measured`);
-      if (c.over.leaf_diffuse > 0 && !(r.meanS > 0.01)) bad.push(`S is empty (mean ${r.meanS.toFixed(4)}) with the split on: nothing was measured`);
+      if (c.over.leaf_diffuse > 0 && !(r.maxS > 0.01)) bad.push(`S is empty (max ${r.maxS.toFixed(4)}) with the split on: nothing was measured`);
       const detail = `${r.beamK > 0 ? `k ${r.beamK.toFixed(2)}  ` : ''}errT ${r.errT.toExponential(1)} errS ${r.errS.toExponential(1)}  Tsky ${r.minT.toFixed(2)}..${r.maxT.toFixed(2)} mean ${r.meanT.toFixed(3)}  S mean ${r.meanS.toFixed(3)}  texel-to-texel rms by mip ${r.rough.map((v) => v.toFixed(3)).join('/')}  ${r.res}px K${r.K}${r.faithful ? `  layers ${r.layerRes}px @ ${r.heights.map((h) => h.toFixed(2)).join('/')} m` : ''}`;
       record('fill', c.name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(62)} ${bad.join('; ') || detail}`);
+    }
+
+    if (!gateOnly && !robustOnly) log('\nSKY FILL — the bookkeeping: what the engine\'s fill holds against what the leaves emitted and the beam gave up');
+    for (const c of (gateOnly || robustOnly) ? [] : FILL_ENERGY) {
+      let r;
+      try { r = await page.evaluate(([p, o, q]) => window.__fillCheck(p, o, q), [c.preset, c.over, { rebake: !!c.rebake, energy: true, samples: 8 }]); }
+      catch (e) { record('fill', c.name, false, e.message.split('\n')[0]); log(`  FAIL  ${c.name} — ${e.message.split('\n')[0]}`); continue; }
+      const en = r.energy, bad = [], f3 = (a) => a.map((v) => v.toFixed(3)).join(' '), ratio = (a, b) => a.map((v, i) => (b[i] > 1e-9 ? v / b[i] : NaN));
+      const vsE = ratio(en.Reng, en.Etot), vsR = ratio(en.Reng, en.Ropen), vsIn = ratio(en.Reng, en.Rin), vsD = ratio(en.Reng, en.Dbeam), inShare = ratio(en.Rin, en.Ropen);
+      const lit = en.Etot.map((e) => e >= 0.1 * Math.max(...en.Etot));   // a channel carrying under a tenth of the light (afternoon 7's blue) is all noise floor: reported, not judged
+      const within = (v, tol, what) => v.forEach((x, ch) => { if (lit[ch] && !(Math.abs(x - 1) <= tol)) bad.push(`channel ${ch}: ${what} ${Number.isFinite(x) ? x.toFixed(4) : x} is not 1 ± ${tol}`); });
+      if (!(en.Etot[1] > 0)) bad.push('nothing was emitted: nothing was measured');
+      if (c.kind === 'bottom') within(vsE, ENERGY_BOTTOM, 'Reng/E_L0');
+      if (c.kind === 'park') {
+        within(vsR, ENERGY_CLOSE, 'Reng/R');
+        vsD.forEach((x, ch) => { if (lit[ch] && !(x >= ENERGY_BEAM[0] && x <= ENERGY_BEAM[1])) bad.push(`channel ${ch}: Reng/D_beam ${Number.isFinite(x) ? x.toFixed(3) : x} is outside ${ENERGY_BEAM[0]}..${ENERGY_BEAM[1]}`); });
+      }
+      if (c.kind === 'tree') {
+        inShare.forEach((x, ch) => { if (lit[ch] && !(x >= ENERGY_IN_FRAME)) bad.push(`channel ${ch}: the frame holds ${Number.isFinite(x) ? x.toFixed(3) : x} of what the leaves send down (< ${ENERGY_IN_FRAME})`); });
+        within(vsIn, ENERGY_TREE_NOISE, 'Reng/R_in');
+        if (!(en.edge <= ENERGY_DECAY * en.crown)) bad.push(`S at the frame's edge ${en.edge.toFixed(4)} is above ${ENERGY_DECAY}× the crown's ${en.crown.toFixed(4)}`);
+      }
+      const detail = `E/layer ${en.E.map((e) => e[1].toFixed(2)).join(' ')}  E ${f3(en.Etot)}  R_open ${f3(en.Ropen)}  D_beam ${f3(en.Dbeam)}  Reng ${f3(en.Reng)}  Reng/E ${f3(vsE)}  Reng/R ${f3(vsR)}${c.kind === 'tree' ? `  in-frame share ${f3(inShare)}  Reng/R_in ${f3(vsIn)}` : `  Reng/D ${f3(vsD)}`}  edge/crown ${(en.edge / en.crown).toFixed(3)}  frame ${en.frame.ext.toFixed(1)} m ${en.mode}  gS ${en.gS.map((v) => v.toFixed(2))}`;
+      record('fill', c.name, bad.length === 0, bad.join('; ') || detail);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(86)} ${bad.join('; ') || detail}`);
+      if (bad.length) log(`        ${detail}`);
     }
 
     if (!gateOnly && !robustOnly) log('\nSKY FILL — canopy_fill opened and shut on a running engine');

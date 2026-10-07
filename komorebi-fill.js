@@ -59,6 +59,62 @@ export function fillTurns(){
   return out;
 }
 
+// THE BOX IS NOT THE WORLD (§4.7). The layers are baked over the canopy box, and a hemisphere ray from a floor point leaves it
+// within a few metres of height — an 8 m layer at 60° is 14 m sideways. What a tap outside the box reads is the question the
+// first fill answered with CLAMP_TO_EDGE: the border texel, repeated to the horizon, which lost about half of the glow spreading
+// past the box. Two honest answers, chosen by whether the look has a beam bulk shift (bulkOn: standing_scene or a receiver):
+//   'wrap'  the ENDLESS PARK. The beam has no bulk shift because the canopy is a field without an edge (§4.8), so the box is one
+//           period of it: light leaving one side enters from the other (REPEAT on the layer textures for the fill pass).
+//   'open'  the FINITE TREE. Outside the box is open sky (t = 1, nothing to glow), over a frame PADDED so the glow can decay across
+//           the floor instead of being cut at the box: 3·h_max on every side, since a cosine-weighted ray travels beyond 3 h
+//           with probability P(cos²θ < 1/10) = 10%, and that is the tail the padding still gives up.
+//   'clamp' what it was; kept so the reference can say what the old box did.
+// The frame is the plan square the fill is BAKED over (and every receiver reads it by): origin (ox, oy), side ext.
+export const FILL_PAD = 3;
+export function fillFrame(E, hMax, bulkOn){
+  const pad = bulkOn ? FILL_PAD * hMax : 0;
+  return { ox: -E / 2 - pad, oy: -E / 2 - pad, ext: E + 2 * pad };
+}
+
+// A layer read through a domain: the layer's t / c closures are defined inside `frame` (the canopy box); outside it a tap reads
+// by `mode`. Returns a layer of the same shape (c only if it had one), so skyRayRef / fillRef run on it unchanged.
+const wrapInto = (v, o, ext) => { const r = (v - o) % ext; return o + (r < 0 ? r + ext : r); };
+export function fillDomain(layer, frame, mode){
+  const { ox, oy, ext } = frame, ex = ox + ext, ey = oy + ext;
+  const outside = (x, y) => x < ox || x > ex || y < oy || y > ey;
+  const at = (f, none) => (x, y) => {
+    if(mode === 'wrap') return f(wrapInto(x, ox, ext), wrapInto(y, oy, ext));
+    if(mode === 'clamp') return f(Math.min(Math.max(x, ox), ex), Math.min(Math.max(y, oy), ey));
+    return outside(x, y) ? none : f(x, y);   // 'open'
+  };
+  const out = { ...layer, t: at(layer.t, [1, 1, 1]) };
+  if(layer.c) out.c = at(layer.c, 0);
+  return out;
+}
+
+// A bilinear tap of a baked layer texture (n×n RGBA, texel centres at (i+½)/n over `frame`) through the same domain, as the GPU
+// does it: CLAMP_TO_EDGE inside the box ('clamp', and 'open' within half a texel of its edge), REPEAT ('wrap'), or nothing at all
+// outside ('open': rgb depth 0, coverage 0). Returns [r, g, b, a] = depth and coverage, still in the texture's own units.
+export function texelTap(data, n, frame, mode, x, y){
+  let u = (x - frame.ox) / frame.ext, v = (y - frame.oy) / frame.ext;
+  if(mode === 'open' && (u < 0 || u > 1 || v < 0 || v > 1)) return [0, 0, 0, 0];
+  let fx, fy, x0, y0, x1, y1;
+  if(mode === 'wrap'){
+    u -= Math.floor(u); v -= Math.floor(v);
+    fx = u * n - 0.5; fy = v * n - 0.5;
+    x0 = Math.floor(fx); y0 = Math.floor(fy);
+    x1 = (x0 + 1 + n) % n; y1 = (y0 + 1 + n) % n; x0 = (x0 + n) % n; y0 = (y0 + n) % n;
+    fx -= Math.floor(fx); fy -= Math.floor(fy);
+  } else {
+    fx = Math.min(Math.max(u * n - 0.5, 0), n - 1); fy = Math.min(Math.max(v * n - 0.5, 0), n - 1);
+    x0 = Math.floor(fx); y0 = Math.floor(fy); x1 = Math.min(x0 + 1, n - 1); y1 = Math.min(y0 + 1, n - 1);
+    fx -= x0; fy -= y0;
+  }
+  const a = (y0 * n + x0) * 4, b = (y0 * n + x1) * 4, c = (y1 * n + x0) * 4, d = (y1 * n + x1) * 4, w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+  return [data[a] * w00 + data[b] * w10 + data[c] * w01 + data[d] * w11, data[a + 1] * w00 + data[b + 1] * w10 + data[c + 1] * w01 + data[d + 1] * w11,
+    data[a + 2] * w00 + data[b + 2] * w10 + data[c + 2] * w01 + data[d + 2] * w11, data[a + 3] * w00 + data[b + 3] * w10 + data[c + 3] * w01 + data[d + 3] * w11];
+}
+
 // leafHue: a transmittance normalized to unit peak — the spectrum with its brightness divided out (§3.5's idiom).
 export const leafHue = (t) => { const m = Math.max(t[0], t[1], t[2], 1e-4); return [t[0] / m, t[1] / m, t[2] / m]; };
 
@@ -84,7 +140,8 @@ export const leafTexel = (tau, fade, edge = 1, grove = 1) => ({ rgb: tau.map((v)
 // ONE ray through the layer stack — the sky view's per-ray formula (§4.9), line for line with GLSL_SKY_RAY.
 //   layers: [{ h, t(x, y) -> [r,g,b], c(x, y) -> coverage }], lowest first; t is the layer's FOLIAGE transmittance at a plan
 //   point, c its coverage (read only when k > 0)
-//   p: where the ray starts (plan); shift: its plan travel per metre of rise; gS: the sun's, the same
+//   p: where the ray starts (plan); shift: its plan travel per metre of rise; gS: the SUN PATH's, the same per-metre travel — the BEAM's
+//   (the bulk shift: [0, 0] in the endless park) for the fill, the real sun's for the sky view, which has no beam (§4.7, one sun per camera)
 //   k: the beam's neutral depth (ballisticK). 0 runs the P0b sum, ŝ-weighted. k > 0 is the split (§4.5): each layer emits the light its
 //   beam lost, t − tb, in its own hue (no ŝ, no albedo), lit by the sun's BALLISTIC path to it, A_L = Π_{M>L} tb_M, and
 //   carried down through the layers below by their TRUE t. The ray itself still passes the true t: the skylight needs no split.

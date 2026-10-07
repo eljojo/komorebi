@@ -28,8 +28,8 @@
 <script type="module">
 import { create, MAX_OCC } from '/komorebi.js';
 import { PRESETS } from '/presets.js';
-import { fillRef, fillTile } from '/komorebi-fill.js';
-import { atmosphere, ballisticK, sunDirection } from '/komorebi-math.js';
+import { fillDirections, fillRef, fillTile, texelTap } from '/komorebi-fill.js';
+import { atmosphere, ballisticK } from '/komorebi-math.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
 // The freeze set. Wind is deterministic noise-of-TIME (no RNG), so the only way to get a reproducible frame
@@ -196,15 +196,22 @@ window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, re
 // THE SKY FILL, SHADER vs REFERENCE (spec §4.7). komorebi-fill.js holds the quadrature's laws under `bun test`, but a
 // law about a JS function says nothing about the GLSL that ships. So: let the engine bake a real fill (frozen motion),
 // read back the layer textures it read and the Tsky / S it wrote, rebuild the SAME quantity at sampled texels in JS from
-// the readback — bilinear taps with CLAMP_TO_EDGE, the layers' own heights, the atmosphere and sun the bake used — and
-// compare. Level 0 is read (the mip the receiver samples is a box average of it, tested by eye and by the gate rows).
+// the readback — bilinear taps through the fill's own domain (REPEAT in the endless park, open sky past the box of a finite
+// tree), the layers' own heights, the atmosphere and the BEAM's sun path the bake used — and compare. Level 0 is read (the
+// mip the receiver samples is a box average of it, tested by eye and by the gate rows).
 // Returns the worst absolute error on each of Tsky and S over the sampled texels, and the scale of each, so the runner
 // can say how big the error is against the thing it measures.
+//
+// opts.energy adds the BOOKKEEPING (§4.7), on the very layers the engine baked, in the units of one fill-frame area:
+//   E[L]   what layer L emits, summed over its own texels:  Σ (t − tb)·sun·A_L   (A_L = the beam's sun path through the layers above)
+//   Dbeam  what the beam gives up, summed over the floor's columns (the endless park only: its columns are the box, sun path vertical)
+//   Reng   what the ENGINE's fill texture holds, Σ S·texel area over the whole fill frame
+//   edge / crown  S at the fill frame's outermost ring against its brightest 16-texel block: how far the glow decays before the frame ends
 // ---------------------------------------------------------------------------
 window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reject) => {
   const base = PRESETS[presetName];
   if (!base) return reject(new Error(`unknown preset '${presetName}'`));
-  const o = Object.assign({ frames: 24, rebake: false, samples: 96 }, opts || {});
+  const o = Object.assign({ frames: 24, rebake: false, samples: 96, grid: 331 }, opts || {});
   const params = Object.assign({}, base, overrides || {}, FREEZE);
   const canvas = document.createElement('canvas');
   canvas.className = 'stage'; canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
@@ -228,13 +235,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
     gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb);
     return out;
   };
-  // a bilinear tap, CLAMP_TO_EDGE: texel centres at (i + 0.5)/n, the coordinate clamped to the outermost centres
-  const tap = (data, n, u, v) => {
-    const fx = Math.min(Math.max(u * n - 0.5, 0), n - 1), fy = Math.min(Math.max(v * n - 0.5, 0), n - 1);
-    const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(x0 + 1, n - 1), y1 = Math.min(y0 + 1, n - 1), ax = fx - x0, ay = fy - y0;
-    const at = (x, y, c) => data[(y * n + x) * 4 + c];
-    return [0, 1, 2, 3].map((c) => (at(x0, y0, c) * (1 - ax) + at(x1, y0, c) * ax) * (1 - ay) + (at(x0, y1, c) * (1 - ax) + at(x1, y1, c) * ax) * ay);   // rgb = true depth, a = coverage (§4.5)
-  };
+  // (the bilinear tap through the fill's domain is komorebi-fill.js texelTap — the reference's own, so the harness cannot read a box differently from the bun tests)
   eng.onFrame = () => {
     ticks++;
     if (o.rebake && ticks === 4) eng.apply('bake');
@@ -248,25 +249,32 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
       const heights = faithful ? Array.from(eng.faith.binH).slice(0, nL)
         : Array.from({ length: nL }, (_, i) => (nL > 1 ? p.canopy_base_height_m + (i / (nL - 1)) * p.canopy_thickness_m : p.canopy_base_height_m));
       const data = lt.slice(0, nL).map((t) => read(t, lres));
-      const at4 = (L, x, y) => tap(data[L], lres, (x + E / 2) / E, (y + E / 2) / E);
+      const canopy = { ox: -E / 2, oy: -E / 2, ext: E };   // the box the layers were baked over
+      const bulkOn = !!p.standing_scene || (p.receiver | 0) !== 0;   // a beam with a bulk shift = a finite tree (§4.8); none = the endless park
+      const mode = bulkOn ? 'open' : 'wrap';               // the fill's domain: open sky past a tree's box, the box repeating for the park
+      const fr = fill.ext ? { ox: fill.ox, oy: fill.oy, ext: fill.ext } : canopy;   // the plan square the fill texture covers (an engine without a fill frame bakes over the box)
+      const at4 = (L, x, y) => texelTap(data[L], lres, canopy, mode, x, y);
       const layers = heights.map((h, L) => ({ h, t: (x, y) => at4(L, x, y).slice(0, 3).map((tau) => Math.exp(-tau)), c: (x, y) => at4(L, x, y)[3] }));
       const beamK = ballisticK(p.leaf_diffuse);   // the split (§4.5): above 0 the reference emits t − tb from coverage, with the albedo off
       const atm = atmosphere({ sun: [0, 0, 0], ambient: [0, 0, 0] }, p.sun_elevation_deg, p.sky_turbidity, p.ambient_skylight);
-      const sd = sunDirection([0, 0, 0], p.sun_elevation_deg, p.sun_azimuth_deg);
-      const gS = [sd[0] / Math.max(sd[2], 0.05), sd[1] / Math.max(sd[2], 0.05)];
+      // ONE SUN PER CAMERA (§4.7): the fill lights its leaves along the BEAM's path — the bulk shift, 0 in the endless park — never along the real sun
+      const elB = Math.max(p.sun_elevation_deg, 6) * Math.PI / 180, azB = p.sun_azimuth_deg * Math.PI / 180, cotB = Math.cos(elB) / Math.sin(elB);
+      const gS = bulkOn ? [cotB * Math.cos(azB), cotB * Math.sin(azB)] : [0, 0];
       const floorCam = (p.receiver | 0) === 0 && !p.sky_view;
       const n = fill.res, K = Math.min(Math.max(p.fill_directions | 0, 1), 64);
       const T = read(fill.tex[0], n), S = read(fill.tex[1], n);
-      let eT = 0, eS = 0, sT = 0, sS = 0, minT = 1, maxT = 0, k = 0;
+      let eT = 0, eS = 0, sT = 0, sS = 0, minT = 1, maxT = 0, maxS = 0, k = 0;
       for (let q = 0; q < o.samples; q++) {              // a fixed scatter of texels, interior and border alike
-        const i = Math.floor(((q * 0.6180339887) % 1) * n), j = Math.floor(((q * 0.7548776662 + 0.3) % 1) * n);
-        const x = [-E / 2 + ((i + 0.5) / n) * E, -E / 2 + ((j + 0.5) / n) * E];
+        const u0 = (q * 0.6180339887) % 1, v0 = (q * 0.7548776662 + 0.3) % 1;
+        const box = q % 2 === 1 && fr.ext > E;                // a finite tree's frame is mostly empty floor: every other sample is drawn from the canopy box instead
+        const i = Math.min(n - 1, Math.floor((box ? ((canopy.ox - fr.ox) + u0 * E) / fr.ext : u0) * n)), j = Math.min(n - 1, Math.floor((box ? ((canopy.oy - fr.oy) + v0 * E) / fr.ext : v0) * n));
+        const x = [fr.ox + ((i + 0.5) / n) * fr.ext, fr.oy + ((j + 0.5) / n) * fr.ext];
         const ref = fillRef(layers, x, K, { gS, sun: atm.sun, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j), k: beamK });   // the proxy's albedo is the floor's alone (the cloth and the tent are handed 0) and is off above k = 0; each texel carries its own slot of the 4x4 interleaving tile
         for (let c = 0; c < 3; c++) {
           const gT = T[(j * n + i) * 4 + c], gSv = S[(j * n + i) * 4 + c];
           eT = Math.max(eT, Math.abs(gT - ref.T[c])); eS = Math.max(eS, Math.abs(gSv - ref.S[c]));
           sT += ref.T[c]; sS += ref.S[c]; k++;
-          minT = Math.min(minT, gT); maxT = Math.max(maxT, gT);
+          minT = Math.min(minT, gT); maxT = Math.max(maxT, gT); maxS = Math.max(maxS, gSv);
         }
       }
       // how rough is Tsky (green) at TEXEL scale, and what the mip's box average does to it: the RMS difference between
@@ -282,7 +290,53 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
         for (let y = 0; y < m / 2; y++) for (let x = 0; x < m / 2; x++) nx[y * (m / 2) + x] = (lvl[2 * y * m + 2 * x] + lvl[2 * y * m + 2 * x + 1] + lvl[(2 * y + 1) * m + 2 * x] + lvl[(2 * y + 1) * m + 2 * x + 1]) / 4;
         lvl = nx; m /= 2;
       }
-      finish(null, { errT: eT, errS: eS, meanT: sT / k, meanS: sS / k, minT, maxT, res: n, K, layerRes: lres, faithful, heights, rough, beamK });
+      let energy = null;
+      if (o.energy) {
+        // Every quantity here is the INTEGRAL of what the engine reads: the layer taps interpolate optical depth and coverage bilinearly and
+        // only then apply the exponential, so an emission read between two texels is not the average of the two texels' emissions (a leaf's edge
+        // texel holds depth AND coverage, and half of each is far more light than half of the light) — summing texel values would not be
+        // the field the fill integrates. The emitters are a G×G midpoint grid over the canopy box, read through the same domain as the bake.
+        // the rays are the ones the ENGINE's texels together hold: each of the 16 tile slots has its own rotation of the K, so a floor point's
+        // neighbourhood sees 16·K distinct directions, and the far tail of the hemisphere (where a ray leaves the frame) is only in the union
+        const sun = atm.sun, G = o.grid, cell = E / G, w = cell * cell, dirs = [];
+        for (let b = 0; b < 16; b++) for (const d of fillDirections(K, b)) dirs.push(d.shift);
+        const K2 = dirs.length;
+        const per = Array.from({ length: nL }, () => [0, 0, 0]), Dbeam = [0, 0, 0], Ropen = [0, 0, 0], Rin = [0, 0, 0];
+        const inFrame = (x, y) => x >= fr.ox && x <= fr.ox + fr.ext && y >= fr.oy && y <= fr.oy + fr.ext;
+        for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) {
+          const px = canopy.ox + (i + 0.5) * cell, py = canopy.oy + (j + 0.5) * cell;
+          if (!bulkOn && beamK > 0) {                                 // the park's columns ARE the box and its sun path is vertical: the beam's deficit at a column is Π t − Π tb
+            const Pt = [1, 1, 1], Pb = [1, 1, 1];
+            for (let L = 0; L < nL; L++) { const r = at4(L, px, py), fb = Math.exp(-beamK * r[3]); for (let c = 0; c < 3; c++) { const t = Math.exp(-r[c]); Pt[c] *= t; Pb[c] *= t * fb; } }
+            for (let c = 0; c < 3; c++) Dbeam[c] += (Pt[c] - Pb[c]) * sun[c] * w;
+          }
+          for (let L = 0; L < nL; L++) {
+            const q = at4(L, px, py);
+            if (!(q[3] > 0) || !(beamK > 0)) continue;
+            const em = 1 - Math.exp(-beamK * q[3]), A = [1, 1, 1];   // the sun's ballistic path to this leaf: the layers above it, read along the beam's g
+            for (let M = L + 1; M < nL; M++) {
+              const d = heights[M] - heights[L], r = at4(M, px + gS[0] * d, py + gS[1] * d), fb = Math.exp(-beamK * r[3]);
+              for (let c = 0; c < 3; c++) A[c] *= Math.exp(-r[c]) * fb;
+            }
+            const Mv = [0, 1, 2].map((c) => Math.exp(-q[c]) * em * sun[c] * A[c]);
+            for (let c = 0; c < 3; c++) per[L][c] += Mv[c] * w;
+            for (const s of dirs) {                                   // what reaches the floor: down ray k through the layers below on their TRUE t, landing at p − s·h_L
+              const thr = [1, 1, 1];
+              for (let M = 0; M < L; M++) { const r = at4(M, px - s[0] * (heights[L] - heights[M]), py - s[1] * (heights[L] - heights[M])); for (let c = 0; c < 3; c++) thr[c] *= Math.exp(-r[c]); }
+              const inside = !bulkOn || inFrame(px - s[0] * heights[L], py - s[1] * heights[L]);   // the endless park lands every ray (the box repeats)
+              for (let c = 0; c < 3; c++) { const v = Mv[c] * thr[c] * w / K2; Ropen[c] += v; if (inside) Rin[c] += v; }
+            }
+          }
+        }
+        const areaF = (fr.ext / n) ** 2, Reng = [0, 0, 0], g = new Float64Array(n * n);
+        for (let i = 0; i < n * n; i++) { for (let c = 0; c < 3; c++) Reng[c] += S[i * 4 + c] * areaF; g[i] = S[i * 4 + 1]; }
+        const ringW = Math.max(2, Math.round(n / 64)), B = 16;      // the outermost ring, and the brightest 16-texel block
+        let ringSum = 0, ringN = 0, crown = 0;
+        for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (x < ringW || y < ringW || x >= n - ringW || y >= n - ringW) { ringSum += g[y * n + x]; ringN++; }
+        for (let by = 0; by + B <= n; by += B) for (let bx = 0; bx + B <= n; bx += B) { let m = 0; for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) m += g[(by + y) * n + bx + x]; crown = Math.max(crown, m / (B * B)); }
+        energy = { E: per, Etot: per.reduce((a, v) => a.map((x, c) => x + v[c]), [0, 0, 0]), Ropen, Rin, Dbeam, Reng, edge: ringSum / Math.max(ringN, 1), crown, frame: fr, bulkOn, gS, mode, lres, nL };
+      }
+      finish(null, { errT: eT, errS: eS, meanT: sT / k, meanS: sS / k, minT, maxT, maxS, res: n, K, layerRes: lres, faithful, heights, rough, beamK, energy });
     } catch (e) { finish(e); }
   };
 });

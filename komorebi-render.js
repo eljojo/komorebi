@@ -317,6 +317,8 @@ export function makeRender(hub){
       gl.uniform1i(u.fillT, 6);
       gl.uniform1i(u.fillS, 7);
       if(!(on > 0)) return;
+      gl.uniform2f(u.fillOrigin, hub.fill.ox, hub.fill.oy);     // the textures cover the fill's own frame (the box, or a finite tree's padded one), which is not the canopy's
+      gl.uniform2f(u.fillExtent, hub.fill.ext, hub.fill.ext);
       gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[0]);
       gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[1]);
     },

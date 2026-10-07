@@ -116,7 +116,7 @@ vec3 tapFaith(vec2 world){ return texture(uFaithTex, (world-uFaithOrigin)/uFaith
 
 // ---- the raw unit sun vector. The floor never needs it (its throw rides uProj/uBulkShift); the fabric's fold
 // incidence, the enclosure's per-panel beam and the sky view's seen source all do. The line itself is shared with the
-// sky fill's bake (shaders.js), whose rays walk the same sun path the sky view's do. ----
+// sky fill's bake (shaders.js), which walks the BEAM's path instead (uFillG) and so declares none. ----
 const GLSL_T_SUN_DIR_DECLS = GLSL_SUN_DIR_DECLS;
 
 // ---- the tail every variant shares: the mesopic shift, the distance haze, and the Look (§4.7). ----
@@ -132,7 +132,9 @@ ${GLSL_TONE_TAIL}`;
 // gate that says how much of them to believe. The sky view has no surface to light and does not speak this group. ----
 const GLSL_T_FILL_DECLS = `uniform float uCanopyFill;      // canopy_fill: the share of the shade that is lit THROUGH the canopy. 0 = the old unfiltered sky, byte-identical (every shipped look)
 uniform highp sampler2D uFillT;   // Tsky(x): the skylight's transmittance through the canopy over the point's hemisphere, per channel (1 = open sky)
-uniform highp sampler2D uFillS;   // S(x): the irradiance the lit leaves scatter DOWN onto it, linear HDR (the floor alone reads it)
+uniform highp sampler2D uFillS;   // S(x): the irradiance the lit leaves scatter DOWN onto it, linear HDR (read by the floor, and by the cloth and the tent once a leaf is not a window)
+uniform vec2  uFillOrigin;        // the plan square the two textures cover: the canopy box in the endless park, the box PADDED by 3·h_max for a finite tree (komorebi-fill.js fillFrame). A fill read is by THIS frame, never the canopy's
+uniform vec2  uFillExtent;
 // WHY A MIP LEVEL. The bake is K rays per texel, a point estimate of a field that is smooth at the scale of crown gaps
 // but is a leaf-scale pattern ray by ray: K = 16 leaves leaf-scale speckle in every texel, and a bilinear read of
 // that is a visible lattice. The remedy is to AVERAGE the estimate, not to veil the canopy: Tsky is already a
@@ -186,14 +188,14 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fra
 // that ALSO had to come through the canopy (Tsky, forestry's diffuse gap fraction), and by the sunlight the lit leaves
 // scatter downward (S). Only the beam used to be filtered; under a red fall canopy that is a red beam on a blue-lit
 // floor, and the shade goes magenta. Both fill reads sit at the floor's own world point — the point the beam is read
-// at, CLAMP_TO_EDGE like every other tap. canopy_fill is a SHARE of one fixed quantity (mix), never an addition: 1 is
+// at — over the fill's own frame (uFillOrigin/Extent), CLAMP_TO_EDGE past it. canopy_fill is a SHARE of one fixed quantity (mix), never an addition: 1 is
 // the physical shade, 0 the old unfiltered sky.
 // THE GATE is a uniform branch whose else IS the old expression, character for character, so a look that never asks
 // for the fill is the bytes it always was. A branch rather than a separate program because canopy_fill TWEENS in a
 // transition, and a program is selected by MODE flags only (§4.6): the one first-compile a camera costs must land
 // inside a bloom, not on a slider.
 const GLSL_T_FLOOR_MATERIAL = `    if(uCanopyFill > 0.0){
-      vec2 fuv = (world-uCanopyOrigin)/uCanopyExtent;
+      vec2 fuv = (world-uFillOrigin)/uFillExtent;
       vec3 amb = mix(uAmbient, uAmbient*textureLod(uFillT, fuv, FILL_LOD).rgb + textureLod(uFillS, fuv, FILL_LOD).rgb, uCanopyFill);
       col = (acc*uSunColor + amb) * uGround;
     } else {
@@ -405,13 +407,15 @@ const GLSL_T_FABRIC_MATERIAL = `    // The landed irradiance the fabric answers.
     // engine has no term for, and the fill is baked at floor height, so a point high up the cloth reads the hemisphere
     // a floor point under it would see. The scattered light S is read only once a leaf is not a window (§4.5): the P0b
     // proxy was the floor's alone, but the diffuse light a leaf passes is the other half of what the beam no longer carries,
-    // so with leaf_diffuse up the cloth and the tent take it too — through the same view of the hemisphere as the sky (skyF),
-    // since it is hemispherical light — or the energy leaks the moment the beam goes dark. Shut gate = the old line, verbatim.
+    // so with leaf_diffuse up the cloth and the tent take it too — through the view of the hemisphere THEIR panel has (skyS), since
+    // it is hemispherical light — or the energy leaks the moment the beam goes dark. skyS is the tent's skyF; the curtain, a vertical
+    // plane, sees half the hemisphere (0.5) — its sky term keeps the floor's skyF 1, so S gets a factor of its own: read at 1 the
+    // cloth doubled when the split opened. Shut gate = the old line, verbatim.
     vec3 E;
     if(uCanopyFill > 0.0){
-      vec3 skyT = mix(vec3(1.0), textureLod(uFillT, (world-uCanopyOrigin)/uCanopyExtent, FILL_LOD).rgb, uCanopyFill);
+      vec3 skyT = mix(vec3(1.0), textureLod(uFillT, (world-uFillOrigin)/uFillExtent, FILL_LOD).rgb, uCanopyFill);
       E = acc*uSunColor*beamF + uAmbient*skyF*skyT;
-      if(uBeamK > 0.0) E += textureLod(uFillS, (world-uCanopyOrigin)/uCanopyExtent, FILL_LOD).rgb*skyF*uCanopyFill;   // mix(a, b + S, w) = mix(a, b, w) + S·w: the floor's own share
+      if(uBeamK > 0.0) E += textureLod(uFillS, (world-uFillOrigin)/uFillExtent, FILL_LOD).rgb*skyS*uCanopyFill;   // mix(a, b + S, w) = mix(a, b, w) + S·w: the floor's own share
     } else {
       E = acc*uSunColor*beamF + uAmbient*skyF;
     }
@@ -637,6 +641,7 @@ const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec §4.9): the rec
     // hemisphere the panel can see instead — 1 on the crown, and less the more steeply a panel stands up.
     beamF = clamp(dot(n, uSunDir) / max(uSunDir.z, 0.15), 0.0, 2.0);
     skyF  = 0.5 + 0.5*n.z;
+    skyS = skyF;                     // S is hemispherical light too: the same view of the hemisphere as the sky
     recvAtten = exp(-t*uTentFade);   // a gentle depth cue now rather than the thing that closes the space: the far cap does that, and the tent is metres deep, not infinite
     // THE SEAMS — near-contact occluders in the strictest sense, since they are ON the cloth, so they take beam and
     // sky alike exactly as the mullion bars do. The soft edge is the tape's own near to, then the PIXEL FOOTPRINT
@@ -717,7 +722,7 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
       // runs along its own hemisphere rays. Here the eye's rays leave the box onto open sky and the layer texture's
       // alpha is the wood's optical depth.
       vec3 T, Lsc;
-      skyRay(pL0, pL1, pL2, pL3, uSkyScatter > 0.0, true, true, 0.0, T, Lsc);   // the literal 0.0: the sky view is still unsplit (§4.5, P0c-sky) and declares no uBeamK
+      skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0, true, true, 0.0, T, Lsc);   // the sun it looks at is the sun that lights what it sees: it has no beam to share one with. The literal 0.0: the sky view is still unsplit (§4.5, P0c-sky) and declares no uBeamK
       if(uSkyScatter > 0.0) Lsc *= uSkyScatter;
       // WOOD AS SILHOUETTE. The same segments the floor casts shadows with (§4.5), read as GEOMETRY this time: no
       // uBulkShift term anywhere here, because that vector is where the wood's shadow FALLS and we are looking at the
@@ -852,12 +857,14 @@ const GLSL_T_PRO_FLOOR = `  vec2 world; float fog = 0.0; float extraThrow = 0.0;
 const GLSL_T_PRO_CLOTH = `  vec2 world; float fog = 0.0; float extraThrow = 0.0; float recvZ = 0.0; vec2 clothUV = vec2(0.0), castUV = vec2(0.0);
   vec3 foldF = vec3(0.0);   // the pleat field at this cloth point, evaluated ONCE: the warp below and the velvet shading later read the very same (ŝ, dŝ/dx, peak) — that is the shared-phase invariant, structural
   float beamF = 1.0, skyF = 1.0, recvAtten = 1.0;   // the ENCLOSURE's per-panel light, which a flat cloth never varies — constants here, so the shared irradiance line folds to the curtain's old one exactly
+  float skyS = 0.5;          // the view of the hemisphere the fill's scattered light S arrives through: a vertical plane sees half of it. Only S takes it — skyF stays the sky term's own floor convention (1), so the shut gate and d = 0 are the old lines
   float meshF = 0.0;         // the ENCLOSURE's per-panel MATERIAL; a curtain is one fabric top to bottom, so both mix() terms below fold away
   vec3 acc = vec3(0.0);      // "how much of the light got through here"`;
 
 const GLSL_T_PRO_TENT = `  vec2 world; float fog = 0.0; float extraThrow = 0.0; float recvZ = 0.0; vec2 clothUV = vec2(0.0), castUV = vec2(0.0);
   vec3 foldF = vec3(0.0);   // the pleat field at this cloth point, evaluated ONCE: the warp below and the velvet shading later read the very same (ŝ, dŝ/dx, peak) — that is the shared-phase invariant, structural
   float beamF = 1.0, skyF = 1.0, recvAtten = 1.0;   // the ENCLOSURE's per-panel light: beam incidence, sky-hemisphere view, depth fade × ridge seam. All 1 on the floor and the curtain, so their irradiance line below is the old one exactly
+  float skyS = 1.0;          // the view of the hemisphere S arrives through: this panel's skyF, set with it
   float meshF = 0.0;         // the ENCLOSURE's per-panel MATERIAL: 1 on a side panel ABOVE the shoulder hem, where the cloth is mesh rather than nylon. 0 everywhere else and on every other receiver
   vec3 acc = vec3(0.0);      // "how much of the light got through here"`;
 
@@ -929,7 +936,7 @@ const TRANSPORT_GROUPS = {
                                                       tentEndLean:'uTentEndLean', tentShoulderH:'uTentShoulderH', tentShoulderW:'uTentShoulderW',
                                                       tentEndApex:'uTentEndApex', tentHipRake:'uTentHipRake', tentEye:'uTentEye',
                                                       tentFade:'uTentFade', tentSeam:'uTentSeam', tentMesh:'uTentMesh' } },
-  fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillT:'uFillT', fillS:'uFillS' } },
+  fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillT:'uFillT', fillS:'uFillS', fillOrigin:'uFillOrigin', fillExtent:'uFillExtent' } },
   sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
                                                       exposure:'uExposure', contrast:'uContrast', tone:'uToneMap' } },

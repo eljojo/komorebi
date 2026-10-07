@@ -76,6 +76,10 @@ export function makeSource(hub){
   const _proj = [0,0,0,0], _lh = new Float32Array(MAX_LAYERS);
   const _bulk = [0,0];
 
+  // Is the canopy a finite OBJECT with a bulk throw (a standing tree, the curtain, the tent) rather than the endless park? The one
+  // question the beam's bulk shift and the sky fill's domain (§4.7: wrap the box, or open sky over a padded frame) both ask.
+  const bulkOn = () => !!(params.standing_scene || params.receiver);
+
   // STANDING-SCENE bulk shadow offset (§4.8): cot(elev)·(anti-sun direction) per unit height — the lateral throw the
   // park model omits. ONE helper, shared by transport's analytic occluder AND the faithful bake, so the two throws
   // can't silently drift apart. Floored at 6° — deliberately HIGHER than projMatrix's 4° ellipse floor: cot(elev)
@@ -85,7 +89,7 @@ export function makeSource(hub){
     // the bulk sun-angle throw is needed for BOTH the standing-scene floor AND the curtain receiver (it's what
     // projects the tree's shadow off to the side / onto the cloth). Off for the overhead park (receiver 0 + no
     // standing scene) → 0, byte-identical.
-    if(!params.standing_scene && !params.receiver){ _bulk[0]=0; _bulk[1]=0; return _bulk; }
+    if(!bulkOn()){ _bulk[0]=0; _bulk[1]=0; return _bulk; }
     const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=Math.cos(el)/Math.sin(el);
     _bulk[0]=k*Math.cos(az); _bulk[1]=k*Math.sin(az); return _bulk;
   }
@@ -108,5 +112,5 @@ export function makeSource(hub){
     return _lh;
   }
 
-  return { regenSource, bulkShift, projMatrix, layerHeights };
+  return { regenSource, bulkShift, bulkOn, projMatrix, layerHeights };
 }
