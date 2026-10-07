@@ -89,6 +89,22 @@ const INVARIANTS = [
   // colour at all, so without it this row would compare two dark frames and could never fail.
   { name: 'pigment family inert at summer (faithful path)', preset: 'park 1', rebake: true,
     a: {}, b: { phenology: 0.5, anthocyanin: 1, tannin: 1, turn_span: 0.3, wall_fraction: 0.3 } },
+  // LIGHT DECIDES WHO TURNS FIRST (§4.5). turn_exposure 0 is P0's per-leaf hash and nothing else: the same bytes as a look that
+  // never heard of the knob — at the shipped summer, and in a FALL frame, where the pass would have something to move (phenology 1,
+  // anthocyanin 0.8, the frame P0 shipped), on the layer path and on the faithful path (rebake: see above)...
+  { name: 'turn_exposure 0 == absent (layer path)', preset: 'memories', a: {}, b: { turn_exposure: 0 } },
+  { name: 'turn_exposure 0 keeps the P0 fall frame (layer path)', preset: 'memories',
+    a: { phenology: 1, anthocyanin: 0.8 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 0 } },
+  { name: 'turn_exposure 0 keeps the P0 fall frame (faithful path)', preset: 'park 1', rebake: true,
+    a: { phenology: 1, anthocyanin: 0.8 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 0 } },
+  // ...armed at summer it still changes nothing (no leaf has begun, so none has an order to be put in)...
+  { name: 'turn_exposure at summer == absent (layer path)', preset: 'memories', a: {}, b: { turn_exposure: 1, anthocyanin: 0.8 } },
+  // ...and the other half: above 0 it is a real switch on a frame that is turning, on both paths — without these a pass that never
+  // reached the leaves would satisfy every row above. Mid-turn (phenology 0.8), where the order shows as which leaves have gone.
+  { name: 'turn_exposure 1 changes a fall frame (layer path)', preset: 'memories', differ: true,
+    a: { phenology: 0.8, anthocyanin: 0.8 }, b: { phenology: 0.8, anthocyanin: 0.8, turn_exposure: 1 } },
+  { name: 'turn_exposure 1 changes a fall frame (faithful path)', preset: 'park 1', rebake: true, differ: true,
+    a: { phenology: 0.8, anthocyanin: 0.8 }, b: { phenology: 0.8, anthocyanin: 0.8, turn_exposure: 1 } },
   // THE SKY FILL (§4.7): the shade lit through the canopy. canopy_fill 0 is the old floor, so the whole family behind it —
   // the leaf albedo, the ray count, the texture size — has to be dead code on every camera that could read it...
   { name: 'sky fill family inert at canopy_fill 0 (layer path)', preset: 'memories',

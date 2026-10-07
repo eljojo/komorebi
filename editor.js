@@ -122,6 +122,7 @@ const PANEL = [
   ['s','anthocyanin','anthocyanin',0,1.5,0.01,'canopy'],
   ['s','tannin','tannin',0,1.5,0.01,'canopy'],
   ['s','wall_fraction','vein share',0,0.6,0.01,'canopy'],
+  ['s','turn_exposure','sun first',0,1,0.01,'canopy'],         // §4.5: light orders the turn — the sunlit crown first and reddest
   ['btn','reseed', reseed],
   ['adv','fine geometry'],
   ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
@@ -356,7 +357,7 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   window_cx_m: apertureOn, window_cy_m: apertureOn, window_wall: apertureOn,
   drift_speed: () => params.drift_auto && params.drift_amount > 0,
   adaptive_idle_fps: () => params.adaptive_motion,
-  anthocyanin: turning, tannin: turning, wall_fraction: turning,   // senescence (§4.5): until a leaf has begun to turn (phenology past turn_start) its tau is the authored summer one, whatever these say
+  anthocyanin: turning, tannin: turning, wall_fraction: turning, turn_exposure: turning,   // senescence (§4.5): until a leaf has begun to turn (phenology past turn_start) its tau is the authored summer one, whatever these say
   turn_span: turning, turn_spread: turning,
   fill_scatter: (cam) => fillOpen() && !splitOn() && CAMERAS[cam].groups.includes('floor'),   // the floor alone reads the proxy's scattered light; the cloth and the tent take the skylight through the canopy and nothing else. Above leaf_diffuse 0 the measured diffuse light replaces it, so the slider would lie
   fill_directions: fillOpen, fill_resolution: fillOpen,   // sliders on a bake that does not run while canopy_fill is 0
@@ -706,6 +707,7 @@ const TIPS = {
   anthocyanin:"<b>How much red each leaf can make.</b> 0 = a plain gold turn; up = orange, then deep red, then maroon. Every leaf gets between half and one-and-a-half times this, so one tree carries pale and deep reds side by side — about a three-to-one range, as in the photographs. Maples and sumac have a lot; birch has none. Only shows once the season has passed the turn.",
   tannin:"<b>How brown the leaves go.</b> A broad, warm absorber — the russet of beech and oak, dull under the gold. Same per-leaf spread as the red. Only shows once the season has passed the turn.",
   wall_fraction:"<b>How much of each leaf is bright vein, not dark cell.</b> Light through a leaf is the average of what its veins and cells <i>transmit</i>, not of how dark they are — so a few clear veins lift a deep red leaf into a glowing orange, more than their share of the area suggests (the sieve effect). The veins make no red. 0 = one uniform tissue.",
+  turn_exposure:"<b>Let the light decide who turns first.</b> Anthocyanin is made in light, so the leaves that see the sun — the top of the crown, its sunny side, the outer shell, a tree with no neighbour shading it — turn earlier and go redder, while the shaded inside and underside turn later and stay yellower. Exposure is worked out from where every leaf sits among the others, under a fixed mid-season sun (not the look's own sun), so it follows the shape of the grove, and a tree standing in another's shade turns after one in the open. The season's pace and the average red stay the look's own — light only decides who goes first and moves red from the shade to the sun. 0 = every leaf turns on its own clock regardless of light. Only shows once the season has passed the turn.",
   turn_start:"<b>The season at which the first leaf starts to turn.</b> Below it every leaf is summer; this is the threshold the phenology slider has to pass.",
   turn_span:"<b>How long the turn takes, in seasons.</b> By turn start plus this, every leaf has finished.",
   turn_spread:"<b>How scattered the leaves' start times are.</b> 0 = the whole tree turns together; up = leaves start at different moments, so mid-turn is a mosaic of green, gold and red on one tree. Held under the span so each leaf's own turn still takes time.",

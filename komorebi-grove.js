@@ -6,7 +6,7 @@
 // grove value (installGrove, in the engine, makes one active). A factory over
 // the engine's shared internals (hub).
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, bendDown, clamp, coneDir, hash3, leafTau, makeGauss, mulberry32 } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, bendDown, clamp, coneDir, exposureGrid, exposureRank, hash3, leafTau, makeGauss, mulberry32, redGain, turnOrder } from './komorebi-math.js';
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
 
 export function makeGrove(hub){
@@ -262,6 +262,11 @@ export function makeGrove(hub){
     // Autumn senescence (§4.5): per-leaf pigment state. Every s_j is exactly 0 until phenology passes turn_start, so
     // below it the authored `tau` goes through untouched — the gate that keeps every shipped look byte-identical.
     const senescing = params.phenology > params.turn_start, leafT = [0,0,0];
+    // Light decides who turns first (§4.5): exposure is a property of the STAND, not of the leaf — it needs every leaf's place
+    // and height — so with turn_exposure up each leaf notes where its tau went (rec: x, y, z, area, j, k, fade, layer,
+    // slot in its layer buffer, slot in the faithful one) and the loop below rewrites them once the grove is laid out.
+    // Off (the default, and every look that never asks) rec is never made and the loop is P0's, bit for bit.
+    const lit = senescing && params.turn_exposure > 0, rec = lit ? [] : null;
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const rng  = mulberry32(hash3(params.seed>>>0, j, 101));               // arrangement stream
@@ -306,6 +311,17 @@ export function makeGrove(hub){
                   lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, cov);
         faithData.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
                   lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, t.z, cov);   // + REAL grown height (attr 5) — cast == preview — then the fade (attr 6)
+        if(lit) rec.push(x, y, t.z, Math.PI*A*B0*cov, j, k, cov, t.layer, data.length-9, faithData.length-10);   // flat area (the ellipse), orientation ignored; the two slots are where this leaf's tau starts
+      }
+    }
+    if(lit && rec.length){
+      const REC = 10, n = rec.length/REC, X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n);
+      for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; }
+      const u = exposureRank(exposureGrid(X, Y, Z, Ar, E));   // each leaf's place in the grove's order of light: what the two maps in math.js take
+      for(let i=0;i<n;i++){
+        const o = REC*i, cov = rec[o+6], lt = leafTau(tau, params, params.seed, rec[o+4], rec[o+5], leafT, turnOrder(u[i]), redGain(u[i]));
+        const d = layerData[rec[o+7]], li = rec[o+8], fi = rec[o+9];
+        for(let c=0;c<3;c++){ d[li+c] = lt[c]*cov; faithData[fi+c] = lt[c]*cov; }
       }
     }
 

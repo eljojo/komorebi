@@ -107,11 +107,19 @@ function mixtureTau(tauWall, tauCell, fw, out = [0,0,0]){
 // GATE: s_j = 0 (not yet turning — every leaf at phenology <= turn_start) returns tauSummer's own numbers with no
 // arithmetic on them. At s = 0 wall and cell are the same tissue, so the mixture would be the identity in exact
 // arithmetic; the branch makes it the identity in float too, for any f_w.
-function leafTau(tauSummer, P, seed, j, k, out = [0,0,0]){
+// LIGHT (below): `phiE` and `gainE` = this leaf's turn order and red gain by exposure, given only by a grove that has
+// laid itself out. Absent `phiE`, or turn_exposure 0, no arithmetic touches phi or a: P0's leaf, to the bit. The draws
+// keep their order either way (phi, then a, then b), so the hash never moves.
+function leafTau(tauSummer, P, seed, j, k, out = [0,0,0], phiE, gainE){
   const r = mulberry32(hash3((seed>>>0)^LEAF_SALT, j, k));
-  const s = senescence(P, r());
+  const w = phiE === undefined ? 0 : P.turn_exposure;
+  let phi = r();
+  if(w > 0) phi += (phiE - phi)*w;                            // mix(phi, f(1 - exposure), w)
+  const s = senescence(P, phi);
   if(s === 0){ out[0]=tauSummer[0]; out[1]=tauSummer[1]; out[2]=tauSummer[2]; return out; }
-  const a = P.anthocyanin*(0.5 + r()), b = P.tannin*(0.5 + r());
+  let a = P.anthocyanin*(0.5 + r());
+  const b = P.tannin*(0.5 + r());
+  if(w > 0) a *= 1 + (gainE - 1)*w;                           // a * mix(1, g(exposure), w)
   const cell = _leafCell, wall = _leafWall;
   for(let c=0;c<3;c++){
     const base = tauSummer[c]*(1-s), pig = TAU_CAROTENOID[c] + b*TAU_TANNIN[c];
@@ -120,6 +128,118 @@ function leafTau(tauSummer, P, seed, j, k, out = [0,0,0]){
   }
   return mixtureTau(wall, cell, P.wall_fraction, out);
 }
+
+// ---- LIGHT DECIDES WHO TURNS FIRST (spec §4.5, P1). Anthocyanin is made in light, so the leaves that see the sun —
+// the crown's top, its sun side, its outer shell, a tree with no shading neighbour — turn first and turn reddest,
+// while the shaded interior and underside go later and stay yellow. A leaf's exposure is the fraction of a sun ray
+// that reaches it through the leaves in the way: Beer-Lambert up a representative sun ray over a plan grid of leaf
+// area per height band, the CPU twin of the layer bake. Pure arithmetic over positions — no GL, and no RNG, so a
+// grove laid out for it is the same grove (the growth stream is never drawn from).
+// THE SEASON'S SUN, not the look's. Pigment integrates over weeks, and the live sun (time_of_day, a look's authored
+// angle) is not a canopy parameter: a look that sweeps the sun must not repaint its leaves. 45 degrees is the mid-
+// latitude daytime mean; azimuth 180 is SOUTH here — updateSunFromTime puts solar noon at 180 (east 90, west 270) and
+// sunDirection measures azimuth from +x toward +y, so the ray climbs toward -x.
+const SEASON_SUN = { el: 45, az: 180 };
+// kx: Beer-Lambert's extinction per unit leaf-area index, I = I0 exp(-kx . LAI / sin el). 0.5 is the projection
+// function G of a canopy whose leaves face every way at random (a spherical leaf-angle distribution, the textbook
+// default for broadleaf stands; k_eff ~ 0.5-0.8 measured across them); the 1/sin(el) is the longer slant path, taken
+// below in the slab. Orientation is otherwise ignored (leaves are counted by their flat area), and so is clumping.
+const EXPOSURE_K = 0.5;
+const EXPOSURE_RES = 48, EXPOSURE_BANDS = 24;   // plan cells across the canopy extent / height bands across the grown crown
+// What the valley's terrain will say about the leaf at plan position (x, y): a hill's shadow, a slope that faces away
+// from the sun, the building across the way. 1 until it exists — a named seam, not a feature (hence the unused
+// arguments). Multiplied into every exposure, before the rank.
+function groundShade(_x, _y){ return 1; }
+// Each leaf's exposure in (0, 1]: exp(-kx . leaf area the ray passes through / sin el) . groundShade. x, y, z = the
+// leaf's plan position and grown height, area = its flat area (times its fade), E = the canopy extent. The grid is
+// ANCHORED to the world (cell edges at multiples of E/48), so a morph that nudges leaves does not slide the lattice;
+// it widens only for a grove more than twice the extent. Leaf area is binned per cell and height band; the ray is
+// walked cell by cell from the leaf (2-D DDA) and, in each cell, takes the area whose height lies in the slab the ray
+// climbs through there — not "everything above", which would count leaves that are nowhere near the ray. Within a band
+// area is spread evenly (so the leaf's own cluster shades it by half) and the leaf's own area is taken back out,
+// so a lone leaf is fully lit: exactly 1, not 1 minus dust. The topmost leaf has nothing above it and is exactly 1.
+function exposureGrid(x, y, z, area, E, out = new Float64Array(x.length)){
+  const n = x.length, B = EXPOSURE_BANDS;
+  if(!n) return out;
+  let x0=Infinity, x1=-Infinity, y0=Infinity, y1=-Infinity, zMin=Infinity, zMax=-Infinity;
+  for(let i=0;i<n;i++){
+    if(x[i]<x0)x0=x[i]; if(x[i]>x1)x1=x[i]; if(y[i]<y0)y0=y[i]; if(y[i]>y1)y1=y[i]; if(z[i]<zMin)zMin=z[i]; if(z[i]>zMax)zMax=z[i];
+  }
+  const cs = Math.max(E/EXPOSURE_RES, Math.max(x1-x0, y1-y0)/(2*EXPOSURE_RES - 1));
+  const ox = Math.floor(x0/cs)*cs, oy = Math.floor(y0/cs)*cs;
+  const nx = Math.floor((x1-ox)/cs) + 1, ny = Math.floor((y1-oy)/cs) + 1;
+  const dzB = zMax > zMin ? (zMax - zMin)/B : 1, W = B + 1;
+  const above = new Float64Array(nx*ny*W);                    // above[c*W + b] = leaf area in cell c in bands >= b (the last slot stays 0)
+  const band = (zz) => Math.min(B-1, Math.floor((zz - zMin)/dzB));
+  for(let i=0;i<n;i++) above[(Math.floor((y[i]-oy)/cs)*nx + Math.floor((x[i]-ox)/cs))*W + band(z[i])] += area[i];
+  for(let c=0;c<nx*ny;c++) for(let b=B-1;b>=0;b--) above[c*W+b] += above[c*W+b+1];
+  const aboveAt = (c, h) => {                                 // leaf area in cell c above height h, area spread evenly through each band
+    const u = (h - zMin)/dzB;
+    if(u >= B) return 0;
+    if(u <= 0) return above[c*W];
+    const b = Math.floor(u), o = c*W + b;
+    return above[o] - (u - b)*(above[o] - above[o+1]);
+  };
+  const el = SEASON_SUN.el*DEG, az = SEASON_SUN.az*DEG, tanEl = Math.tan(el), sinEl = Math.sin(el);
+  const dx = Math.cos(az), dy = Math.sin(az), adx = Math.abs(dx), ady = Math.abs(dy);
+  const sx = dx > 0 ? 1 : -1, sy = dy > 0 ? 1 : -1;
+  const tDX = adx > 0 ? cs/adx : Infinity, tDY = ady > 0 ? cs/ady : Infinity;   // horizontal distance across one cell, per axis
+  const k = EXPOSURE_K/(cs*cs*sinEl);
+  for(let i=0;i<n;i++){
+    const px = x[i] - ox, py = y[i] - oy;
+    let cx = Math.floor(px/cs), cy = Math.floor(py/cs);
+    let tMX = adx > 0 ? ((dx > 0 ? (cx+1)*cs - px : px - cx*cs)/adx) : Infinity;
+    let tMY = ady > 0 ? ((dy > 0 ? (cy+1)*cs - py : py - cy*cs)/ady) : Infinity;
+    const zi = z[i], bi = band(zi);
+    let t = 0, sum = 0;
+    for(let first=true, steps=nx+ny;steps-- > 0;first=false){     // a ray crosses at most nx+ny cells: termination does not lean on the data
+      const tOut = Math.min(tMX, tMY), zlo = zi + t*tanEl, zhi = zi + tOut*tanEl;
+      if(zlo >= zMax) break;                                  // the ray has climbed out of the crown
+      const c = cy*nx + cx;
+      let a = aboveAt(c, zlo) - aboveAt(c, zhi);
+      if(first) a -= area[i]*Math.max(0, Math.min(zhi, zMin + (bi+1)*dzB) - zlo)/dzB;   // the leaf is not its own shade
+      if(a > 1e-9) sum += a;                                  // under a thousandth of a mm^2 is rounding, not leaf
+      t = tOut;
+      if(tMX < tMY){ cx += sx; tMX += tDX; } else { cy += sy; tMY += tDY; }
+      if(cx < 0 || cx >= nx || cy < 0 || cy >= ny) break;     // off the grid: nothing grows there
+    }
+    out[i] = Math.exp(-k*sum)*groundShade(x[i], y[i]);
+  }
+  return out;
+}
+// HOW EXPOSURE ACTS. Both maps take the leaf's exposure RANK u in its own grove (0 buried .. 1 most exposed — its
+// percentile, below), not the raw exposure. Raw exposure is a property of how dense a look is (a crowded grove's mean
+// is ~0.3, an open one's ~0.7), so mapping it directly would repaint a look every time its density moved: a dense look
+// would turn greener and a sparse one earlier. The rank is uniform on (0,1) whatever the density, exactly like the
+// hash it blends with, so the look's own turn schedule and its mean red are untouched BY CONSTRUCTION and exposure
+// only decides WHO. Between-tree differences survive (the rank is the grove's, not the tree's): a shaded tree ranks
+// below a sunlit one. What is lost is absolute light — a wholly open canopy is still ordered, top to underside, over
+// its whole span, which amplifies differences a stand that sunny would barely have.
+function exposureRank(ex, out = new Float64Array(ex.length)){
+  const n = ex.length;
+  if(!n) return out;
+  const sorted = Float64Array.from(ex).sort();                // typed arrays sort numerically
+  for(let i=0;i<n;i++){
+    const v = ex[i];
+    let lo = 0, hi = n;                                        // lo -> first index with sorted >= v, hi -> first with sorted > v
+    while(lo < hi){ const m = (lo + hi) >> 1; if(sorted[m] < v) lo = m + 1; else hi = m; }
+    let up = lo, top = n;
+    while(up < top){ const m = (up + top) >> 1; if(sorted[m] <= v) up = m + 1; else top = m; }
+    out[i] = (lo + up)/(2*n);                                  // leaves below it + half of those equal to it (mid-rank: ties alike, mean exactly 1/2)
+  }
+  return out;
+}
+// TIMING: phi' = 1 - u. The most exposed leaf is phi' ~ 0 and starts at turn_start, the earliest any leaf can; the most
+// buried is ~1 and starts with the last, at turn_start + spread. (0,1) like the hash, so the gate that no leaf has
+// begun by turn_start survives. Light orders the turn because chlorophyll breakdown and anthocyanin synthesis are
+// light-gated, and a leaf that sits in the shade of its neighbours is the last to be told.
+function turnOrder(u){ return Math.min(1 - u, 1 - 2**-24); }
+// CAPACITY: anthocyanin is made from light, so the red a leaf can make rises with the light it gets. gain = 0.5 + u:
+// half the capacity buried, one-and-a-half most exposed, linear between — the same +-50% as the hash's own spread, so
+// the product still spans a physical 3:1 per factor. MEAN: u averages exactly 1/2 over a grove (exposureRank), so the
+// gain averages exactly 1 and the grove's mean capacity is the look's own `anthocyanin`; exposure moves red from the
+// shade to the sun and does not mint any. (What is left is the sample covariance with each leaf's independent hash.)
+function redGain(u){ return 0.5 + u; }
 
 // A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
 // diffuse share (d = leaf_diffuse) is scattered by the mesophyll and leaves in every direction. The beam sees (1−d)·T, which
@@ -194,4 +314,4 @@ function bendDown(dir, dth){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, groundShade, turnOrder, redGain, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };

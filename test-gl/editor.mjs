@@ -196,7 +196,7 @@ try {
     const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === 'phenology');
     const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
   }, v);
-  const PIGMENT_ROWS = ['anthocyanin', 'tannin', 'vein share'];
+  const PIGMENT_ROWS = ['anthocyanin', 'tannin', 'vein share', 'sun first'];
   const pigmentShown = async () => (await Promise.all(PIGMENT_ROWS.map(rowShown)));
   check('the season row is there and the pigment rows hide at summer', (await rowShown('phenology')) === true && (await pigmentShown()).every((v) => v === false), `${await rowShown('phenology')} ${await pigmentShown()}`);
   await setSeason(0.8);
