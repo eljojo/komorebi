@@ -472,8 +472,12 @@ function create(canvas, opts){
     // look, and mid-CROSSFADE the incoming grove would keep baking against layer state rebuildAll is about
     // to replace (the observed crash: bake reading a dangling grove's VAOs). Abort it cleanly first —
     // transitionTo already does this for its own interruptions; a hard param swap deserves the same.
+    // The bloom goes too: effCloud and regenSource read it whether or not a transition runs, so a mid-route value would
+    // swell the new look's cloud and halo (softer dapples, a wrong source) until the next transitionTo reset it. It is the
+    // only trans field read while inactive; the rest are rewritten by transitionTo before anything reads them. Zeroed here,
+    // ahead of the `lost` return, because onContextRestored zeroes it only for a transition still active.
     if(trans.active){
-      trans.active=false; trans.onEnd=null; trans.swapped=false;
+      trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0;
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
     }

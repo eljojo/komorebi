@@ -1048,6 +1048,9 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
 // opts.interrupt = { at, with }: once t reaches `at`, call eng.setParams(PRESETS[with]) — the hard param
 // swap MUST abort the transition cleanly (a mid-crossfade swap once left the incoming grove baking against
 // replaced layer state), and the engine must keep rendering; the run then reports interrupted:true.
+// The abort must also leave NOTHING of the route behind: bloomAtInterrupt is the bloom the route had reached (the row
+// is only a test while it is > 0), bloomAfter what setParams left in trans.bloom, and afterId the settled frame the
+// aborted engine then shows — which run.js holds, byte for byte, to an engine born as the interrupting look.
 window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolve, reject) => {
   const o = Object.assign({ duration: 0.3, warm: 8, cap: 600 }, opts || {});
   const A = PRESETS[fromName], B = PRESETS[toName];
@@ -1060,7 +1063,7 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
 
   const t0 = performance.now();
   let eng = null, ticks = 0, started = false, onEndFired = false, route = null, done = false;
-  let interrupted = false, tailLeft = -1;
+  let interrupted = false, tailLeft = -1, bloomAtInterrupt = -1, bloomAfter = -1, afterId = null;
   const finish = (err) => {
     if (done) return;
     done = true;
@@ -1069,7 +1072,7 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
     try { eng?.setPaused(true); eng?.dispose(); } catch { /* a disposed/failed engine has nothing to stop */ }
     canvas.remove();
     if (err) reject(err);
-    else resolve({ ...route, onEndFired, interrupted, glError, ticks, ms: Math.round(performance.now() - t0) });
+    else resolve({ ...route, onEndFired, interrupted, bloomAtInterrupt, bloomAfter, afterId, glError, ticks, ms: Math.round(performance.now() - t0) });
   };
   const timer = setTimeout(() => finish(new Error(`route did not finish within 120 s (tick ${ticks})`)), 120000);
 
@@ -1090,11 +1093,20 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
       }
       if (o.interrupt && !interrupted && eng.trans.t >= o.interrupt.at) {
         interrupted = true;
+        bloomAtInterrupt = eng.trans.bloom;
         eng.setParams(Object.assign({}, PRESETS[o.interrupt.with], FREEZE));
+        bloomAfter = eng.trans.bloom;
         tailLeft = 10;                             // the abort must leave a live, cleanly rendering engine
         return;
       }
-      if (tailLeft > 0 && --tailLeft === 0) return finish(null);
+      if (tailLeft > 0 && --tailLeft === 0) {      // settled: the frame this engine shows now is the frame of the look it was swapped to
+        const gl = eng.gl, w = canvas.width, h = canvas.height, bytes = new Uint8Array(w * h * 4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+        afterId = `c${nextId++}`;
+        caps.set(afterId, { w, h, bytes });
+        return finish(null);
+      }
       if (tailLeft < 0 && !eng.trans.active) return finish(null);
       if (ticks >= o.cap) finish(new Error(`transition still active after ${o.cap} ticks`));
     } catch (e) { finish(e); }

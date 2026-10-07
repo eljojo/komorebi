@@ -481,7 +481,11 @@ const TRANSITION_ROUTES = [
     expect: { crossfade: false, structDiff: true } },
   // a hard param swap landing MID-crossfade must abort it cleanly (the observed failure: the incoming grove
   // kept baking against layer state the swap's rebuild had replaced — a dangling-VAO crash). onEnd must NOT
-  // fire (the route was abandoned, not completed) and the engine must keep rendering after.
+  // fire (the route was abandoned, not completed) and the engine must keep rendering after. And the abort must
+  // leave nothing of the route in the engine: the bloom the route had reached swells the cloud and the halo
+  // (effCloud, regenSource) for as long as trans.bloom stays up, so the settled frame has to be an engine
+  // born as the look it was swapped to — bloom 0, the same bytes. (The crossfade tier peaks at BLOOM_MAX.cross
+  // = 0.20, not nothing; the row refuses to pass if the route had not reached a bloom by the interrupt.)
   { name: 'setParams mid-crossfade aborts it cleanly', from: 'memories', to: 'memories',
     over: { seed: 1234567 }, interrupt: { at: 0.35, with: 'morning 1' },
     expect: { crossfade: true, structDiff: true } },
@@ -1052,15 +1056,27 @@ async function main() {
         continue;
       }
       const bad = [];
+      let abortNote = '';
       if (route.interrupt) {                     // an aborted route must not pretend it completed
         if (!r.interrupted) bad.push('interrupt never fired');
         if (r.onEndFired) bad.push('onEnd fired despite the abort');
+        if (r.interrupted) {
+          if (!(r.bloomAtInterrupt > 0)) bad.push(`the route had no bloom (${r.bloomAtInterrupt}) when it was interrupted — nothing to leave behind, the row proves nothing`);
+          if (r.bloomAfter !== 0) bad.push(`trans.bloom=${r.bloomAfter} after the abort (want 0; the route had reached ${r.bloomAtInterrupt.toFixed(3)})`);
+          const born = await page.evaluate(([look, f]) => window.__run(look, {}, [f]), [route.interrupt.with, GATE_FRAMES]);   // an engine BORN as the look the route was swapped to
+          const d = await page.evaluate(([x, y]) => window.__diff(x, y), [r.afterId, born.captures[0].id]);
+          if (!d.equal) {
+            bad.push(`the settled frame after the abort is not a born '${route.interrupt.with}': ${d.diffPixels}/${d.total} px differ (max Δ${d.maxDelta})`);
+            if (d.png) await writePNG(`diff-abort-${slug(route.name)}`, d.png);
+          }
+          abortNote = `  bloom ${r.bloomAtInterrupt.toFixed(3)} -> ${r.bloomAfter}, settled frame == born '${route.interrupt.with}' (${born.captures[0].hash})`;
+        }
       } else if (!r.onEndFired) bad.push('onEnd never fired');
       if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
       for (const [k, v] of Object.entries(route.expect)) if (r[k] !== v) bad.push(`${k}=${r[k]} (want ${v})`);
       record('transition', route.name, bad.length === 0, bad.length ? bad.join('; ')
-        : `crossfade ${r.crossfade} structDiff ${r.structDiff}  ${r.ticks} ticks ${r.ms} ms`);
-      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${route.name.padEnd(50)} ${bad.join('; ') || `${r.ticks} ticks ${r.ms} ms`}`);
+        : `crossfade ${r.crossfade} structDiff ${r.structDiff}  ${r.ticks} ticks ${r.ms} ms${abortNote}`);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${route.name.padEnd(50)} ${bad.join('; ') || `${r.ticks} ticks ${r.ms} ms${abortNote}`}`);
     }
     }
     if (!filters.length && !gateOnly && !fillOnly && !skyOnly && !edgeOnly) await robustness(page);
