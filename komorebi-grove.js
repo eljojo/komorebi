@@ -6,7 +6,7 @@
 // grove value (installGrove, in the engine, makes one active). A factory over
 // the engine's shared internals (hub).
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, bendDown, clamp, coneDir, exposureGrid, exposureRank, hash3, leafTau, makeGauss, mulberry32, redGain, turnOrder } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, bendDown, clamp, coneDir, exposureBlend, exposureGrid, exposureRank, hash3, leafTau, makeGauss, mulberry32, redGain, turnOrder } from './komorebi-math.js';
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
 
 export function makeGrove(hub){
@@ -317,7 +317,8 @@ export function makeGrove(hub){
     if(lit && rec.length){
       const REC = 10, n = rec.length/REC, X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n);
       for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; }
-      const u = exposureRank(exposureGrid(X, Y, Z, Ar, E));   // each leaf's place in the grove's order of light: what the two maps in math.js take
+      const ex = exposureGrid(X, Y, Z, Ar, E);
+      const u = exposureBlend(exposureRank(ex), ex, params.exposure_absolute);   // each leaf's place in the grove's order of light — and, as far as exposure_absolute says, its raw light — what the two maps in math.js take
       for(let i=0;i<n;i++){
         const o = REC*i, cov = rec[o+6], lt = leafTau(tau, params, params.seed, rec[o+4], rec[o+5], leafT, turnOrder(u[i]), redGain(u[i]));
         const d = layerData[rec[o+7]], li = rec[o+8], fi = rec[o+9];

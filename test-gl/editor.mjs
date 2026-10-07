@@ -207,6 +207,25 @@ try {
   let summer = false;
   for (let i = 0; i < 30 && !summer; i++) { await page.waitForTimeout(400); summer = (await pigmentShown()).every((v) => v === false); }
   check('and go again when the season comes back', summer, `${await pigmentShown()}`);
+  // ABSOLUTE LIGHT (§4.5) rides on sun first: it only chooses what that order is made of, so it needs the season past the turn AND
+  // turn_exposure up — turning alone (every look ships sun first at 0) leaves no order for it to change.
+  const setSunFirst = (val) => page.evaluate((v) => {
+    const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === 'sun first');
+    const i = r.querySelector('input'); i.value = String(v); i.dispatchEvent(new Event('input', { bubbles: true }));
+  }, val);
+  await setSeason(0.8);
+  let sunRow = false;
+  for (let i = 0; i < 30 && !sunRow; i++) { await page.waitForTimeout(400); sunRow = (await rowShown('sun first')) === true; }
+  check('turning with sun first at 0: sun first is there, absolute light is not', sunRow && (await rowShown('absolute light')) === false, `${await rowShown('sun first')} ${await rowShown('absolute light')}`);
+  await setSunFirst(0.5);
+  let absRow = false;
+  for (let i = 0; i < 30 && !absRow; i++) { await page.waitForTimeout(400); absRow = (await rowShown('absolute light')) === true; }
+  check('raise sun first and absolute light appears', absRow, `${await rowShown('absolute light')}`);
+  await setSeason(0.5);
+  let absGone = false;
+  for (let i = 0; i < 30 && !absGone; i++) { await page.waitForTimeout(400); absGone = (await rowShown('absolute light')) === false; }
+  check('back at summer it goes again, whatever sun first says', absGone && (await rowShown('sun first')) === false, `${await rowShown('absolute light')} ${await rowShown('sun first')}`);
+  await setSunFirst(0);
   // THE SKY FILL ROWS (§4.7): canopy_fill is the gate and sits on every camera that lights a surface; its three followers
   // (the leaf albedo, the ray count, the texture size) are sliders that lie while it is shut — nothing bakes — so they hide
   // until it opens. The albedo is the floor's alone (the cloth and the tent take Tsky only), and the sky view, which has

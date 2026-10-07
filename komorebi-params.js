@@ -64,7 +64,7 @@ const CANOPY_KEYS = [
   'canopy_extent_m',                                                  // baked world size — only a regrow + re-bake (NO texture realloc), so it morphs continuously
   'branch_angle_deg','branch_length_ratio','branch_pitch_deg','foliage_density','leaves_per_cluster',
   'cluster_spread_m','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b','droop','taper_delta','crown_aspect',
-  'phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction','turn_exposure',   // leaf colour, like trans_rgb: each is a per-leaf tau read at regrow, so it morphs the SAME grove (spec §4.5)
+  'phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction','turn_exposure','exposure_absolute',   // leaf colour, like trans_rgb: each is a per-leaf tau read at regrow, so it morphs the SAME grove (spec §4.5)
 ];
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
   'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis',
@@ -165,6 +165,7 @@ const DEFAULTS = {
   tannin: 0.0,                     // brown (beech, oak): a broad warm absorber, ×(0.5..1.5) per leaf
   wall_fraction: 0.0,              // share of the leaf that is bright vein walls rather than dark cells (the sieve effect, §4.5): the mean is of transmittances, so a few clear walls lift a deep leaf. 0 = one uniform tissue
   turn_exposure: 0.0,              // light decides who turns first (§4.5, P1): 0..1, how far a leaf's turn is ordered by its exposure to the season's sun (the crown's top, its sun side, a tree with no shading neighbour turn EARLIER and make MORE red; the shaded interior later and yellower). 0 = P0's per-leaf hash alone, bit for bit, at any phenology — every experimental behaviour is a toggle
+  exposure_absolute: 0.0,          // ranked vs absolute light (§4.5, P1b): 0..1, how far a leaf's place in the turn follows its RAW exposure instead of its rank in the grove's exposure order — u = mix(rank, exposure, this). 0 = the rank (P1: the look's own schedule and mean red, bit for bit); 1 = the raw light, so a grove in deep shade turns later and paler. Reads through turn_exposure, which is the one that has to be up
   canopy_extent_m: 12.0,           // world size of baked layers (>= view + 2*max shift)
   tex_resolution: 2048,
   bake_resolution: 1024,           // TUNE (§9): bake-pass / layer-texture size; 0 = follow tex_resolution. Ships at 1024 (cheaper-bake baseline). auto_quality trims it below the knee like samples; set 0 (follow) per look for a full-res bake.

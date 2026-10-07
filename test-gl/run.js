@@ -105,6 +105,17 @@ const INVARIANTS = [
     a: { phenology: 0.8, anthocyanin: 0.8 }, b: { phenology: 0.8, anthocyanin: 0.8, turn_exposure: 1 } },
   { name: 'turn_exposure 1 changes a fall frame (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { phenology: 0.8, anthocyanin: 0.8 }, b: { phenology: 0.8, anthocyanin: 0.8, turn_exposure: 1 } },
+  // RANKED VS ABSOLUTE, AS A BLEND (§4.5). exposure_absolute 0 is the rank and nothing else: the P1 frame, byte for byte, on both paths —
+  // a leaf-off frame (phenology 1: every leaf fully turned, so the red gain the blend moves is all that shows) under turn_exposure 1...
+  { name: 'exposure_absolute 0 keeps the P1 frame (layer path)', preset: 'memories',
+    a: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1, exposure_absolute: 0 } },
+  { name: 'exposure_absolute 0 keeps the P1 frame (faithful path)', preset: 'park 1', rebake: true,
+    a: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1, exposure_absolute: 0 } },
+  // ...and the other half: at 1 it is a real switch on that very frame, on both paths (else a blend that never reached the leaves would pass above)
+  { name: 'exposure_absolute 1 changes the P1 frame (layer path)', preset: 'memories', differ: true,
+    a: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1, exposure_absolute: 1 } },
+  { name: 'exposure_absolute 1 changes the P1 frame (faithful path)', preset: 'park 1', rebake: true, differ: true,
+    a: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1, exposure_absolute: 1 } },
   // THE SKY FILL (§4.7): the shade lit through the canopy. canopy_fill 0 is the old floor, so the whole family behind it —
   // the leaf albedo, the ray count, the texture size — has to be dead code on every camera that could read it...
   { name: 'sky fill family inert at canopy_fill 0 (layer path)', preset: 'memories',

@@ -214,7 +214,8 @@ function exposureGrid(x, y, z, area, E, out = new Float64Array(x.length)){
 // hash it blends with, so the look's own turn schedule and its mean red are untouched BY CONSTRUCTION and exposure
 // only decides WHO. Between-tree differences survive (the rank is the grove's, not the tree's): a shaded tree ranks
 // below a sunlit one. What is lost is absolute light — a wholly open canopy is still ordered, top to underside, over
-// its whole span, which amplifies differences a stand that sunny would barely have.
+// its whole span, which amplifies differences a stand that sunny would barely have, and a grove wholly in shade still
+// has a red, early half. exposureBlend (below) gives absolute light back, as far as exposure_absolute says.
 function exposureRank(ex, out = new Float64Array(ex.length)){
   const n = ex.length;
   if(!n) return out;
@@ -232,14 +233,28 @@ function exposureRank(ex, out = new Float64Array(ex.length)){
 // TIMING: phi' = 1 - u. The most exposed leaf is phi' ~ 0 and starts at turn_start, the earliest any leaf can; the most
 // buried is ~1 and starts with the last, at turn_start + spread. (0,1) like the hash, so the gate that no leaf has
 // begun by turn_start survives. Light orders the turn because chlorophyll breakdown and anthocyanin synthesis are
-// light-gated, and a leaf that sits in the shade of its neighbours is the last to be told.
+// light-gated, and a leaf that sits in the shade of its neighbours is the last to be told. Nothing here assumes u is
+// uniform: with exposure_absolute up u is the raw exposure's share, a crowded grove's piled near 0.3, and phi' simply
+// piles near 0.7 (later) — the clamp only catches a raw exposure that underflowed to 0, so phi' stays under 1.
 function turnOrder(u){ return Math.min(1 - u, 1 - 2**-24); }
 // CAPACITY: anthocyanin is made from light, so the red a leaf can make rises with the light it gets. gain = 0.5 + u:
 // half the capacity buried, one-and-a-half most exposed, linear between — the same +-50% as the hash's own spread, so
-// the product still spans a physical 3:1 per factor. MEAN: u averages exactly 1/2 over a grove (exposureRank), so the
-// gain averages exactly 1 and the grove's mean capacity is the look's own `anthocyanin`; exposure moves red from the
-// shade to the sun and does not mint any. (What is left is the sample covariance with each leaf's independent hash.)
+// the product still spans a physical 3:1 per factor. MEAN: at exposure_absolute 0 u averages exactly 1/2 over a grove
+// (exposureRank), so the gain averages exactly 1 and the grove's mean capacity is the look's own `anthocyanin`; exposure
+// moves red from the shade to the sun and does not mint any. (What is left is the sample covariance with each leaf's
+// independent hash.) Above 0 the mean follows the light: 0.5 + mean exposure, ~0.8 for a crowded grove — less red overall.
 function redGain(u){ return 0.5 + u; }
+// ABSOLUTE LIGHT, AS A BLEND (exposure_absolute w, 0..1). The rank keeps a look's schedule and mean red by construction
+// and is blind to how much light there is; raw exposure sees it (a grove in deep shade turns late and pale, one in the
+// open early and deep) but repaints a look whenever its density moves. Asked to choose, José: "Both, as a blend" —
+// u = mix(rank, exposure, w) into the same two maps. GATE: w <= 0 hands back the rank itself, no arithmetic: P1's u to the
+// bit. w = 1 is rank*0 + exposure*1, the raw exposure exactly. Both inputs are in (0, 1], and so is any blend of them.
+function exposureBlend(rank, ex, w, out = new Float64Array(rank.length)){
+  if(!(w > 0)) return rank;
+  const v = Math.min(w, 1), r = 1 - v;
+  for(let i=0;i<rank.length;i++) out[i] = rank[i]*r + ex[i]*v;
+  return out;
+}
 
 // A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
 // diffuse share (d = leaf_diffuse) is scattered by the mesophyll and leaves in every direction. The beam sees (1−d)·T, which
@@ -314,4 +329,4 @@ function bendDown(dir, dth){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, groundShade, turnOrder, redGain, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };
