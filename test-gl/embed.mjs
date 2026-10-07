@@ -8,6 +8,9 @@
 //   cd test-gl && node embed.mjs                    (or: nix run .#embed-check [-- <option>...])
 //   --bundle <file.js>    which bundle to check. Default: dist/komorebi.embed.min.js.
 //   <look>...             check only these looks. Default: every look the bundle carries.
+//   --over <json>         merge these params over every look, in BOTH engines — for the tiers no shipped look opens
+//                         (e.g. --over '{"canopy_fill":1,"fill_scatter":0.3}': the sky fill's code ships in the bundle
+//                         and stays off at runtime, so its minified copy is only exercised by asking for it).
 //   --against <file.js>   also render a second bundle (an older deploy) and report how far the look moved,
 //                         with a contact sheet in test-gl/out/. This is a look diff, not a pass or a fail.
 //
@@ -30,7 +33,9 @@ const argv = process.argv.slice(2);
 const arg = (name, fallback) => { const i = argv.indexOf(name); return i >= 0 ? argv.splice(i, 2)[1] : fallback; };
 const against = arg('--against', null);
 const bundle = arg('--bundle', '/dist/komorebi.embed.min.js').replace(/^\.?\/?/, '/');
+const over = JSON.parse(arg('--over', '{}'));
 const named = argv;                                // no names: check every look the bundle carries
+const OVER = JSON.stringify(over);
 const FRAME = 30;                                  // deep enough that the bake, the grove and the first draw have all happened
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript' };
@@ -62,6 +67,7 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>komorebi — embed che
 // a classic-script bundle that assigns window.Komorebi (captured immediately, since the next one overwrites it).
 const W = 320, H = 180;
 const FREEZE = { wind_strength: 0, weather_variability: 0, drift_auto: false, auto_quality: false };
+const OVER = ${OVER};   // --over: params merged over every look, below the freeze
 const engines = {}, caps = new Map();
 let nextId = 0;
 const mod = await import('/komorebi.js');
@@ -102,7 +108,7 @@ window.__capture = (engine, look, frame) => new Promise((resolve, reject) => {
   };
   const timer = setTimeout(() => finish(new Error(engine + '/' + look + ' never reached frame ' + frame)), 120000);
   const t0 = performance.now();
-  try { eng = E.create(canvas, { params: Object.assign({}, base, FREEZE) }); }
+  try { eng = E.create(canvas, { params: Object.assign({}, base, OVER, FREEZE) }); }
   catch (e) { return finish(e); }
   const gl = eng.gl;
   eng.onFrame = () => {
@@ -166,7 +172,7 @@ try {
   await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__ready);
   const inBundle = await page.evaluate((u) => window.__load('embed', u), bundle);
-  console.log(`${basename(bundle)} carries ${inBundle.length} look(s): ${inBundle.join(', ')}`);
+  console.log(`${basename(bundle)} carries ${inBundle.length} look(s): ${inBundle.join(', ')}${OVER === '{}' ? '' : `   (over ${OVER})`}`);
   if (!looks.length) looks = inBundle;
   if (against) {
     const inOld = await page.evaluate(() => window.__load('against', '/against.js'));

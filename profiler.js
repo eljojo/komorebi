@@ -19,6 +19,8 @@
 //       pass and reuses the baseline for the other, so an unchanged pass's measurement noise can't leak in.
 // scope: the eng.apply() rebuild a change needs. levels: absolute degraded settings (lightest last);
 //       rel: multipliers of the base value instead.
+// needs: another param that must be > 0 for this axis to mean anything (the sky fill's two TUNE knobs only cost
+//       anything while canopy_fill is open); with it shut there is nothing to cut and nothing worth measuring.
 // up/gain: the SAFE axes also run the other way — `up` is the richer value the two-way profiler can spend
 // spare budget toward, `gain` its visual-priority rank (higher proposed first; samples soften the penumbra,
 // tex res sharpens the leaf, layers add a depth tier). See proposeImprove. cls 'tune': opt-in optimizations
@@ -44,6 +46,15 @@ export const AXES = [
   { key: "sky_scatter", label: "foliage glow", scope: "", pass: "transport", cls: "style",
     proposable: false, measureLevel: 0,
     note: "the SKY VIEW's single-scatter foliage radiance (§4.9) — up to six extra sun-path taps per pixel on top of the silhouette read, and the only term in that camera that costs per LAYER rather than per pixel. Style for the same reason as diffraction and the diffusion tier, and more bluntly than either: at 0 the crowns stop being lit and become a dim filter, which is not a cheaper version of the canopy looks, it is a different picture. Its declared fallback rung IS 0 — pure transmission, byte-identical — and only an author may take it. n/a on every camera but the sky, where the knob is already 0." },
+  { key: "canopy_fill", label: "canopy fill", scope: "", pass: "both", cls: "style",
+    proposable: false, measureLevel: 0,
+    note: "the sky fill (§4.7): the shade lit by the skylight that came THROUGH the canopy plus the sunlight the leaves scatter down — a low-res bake of K rays per fill texel (rides the bake) and two extra reads on the floor (rides transport). A deliberate look, measured to its 0 gate and never auto-cut: at 0 the shade is the old unfiltered sky, which is a different picture, not a lighter one. Its declared cheaper rungs are the two TUNE knobs below." },
+  { key: "fill_directions", label: "fill rays", scope: "", pass: "bake", cls: "safe",
+    proposable: true, levels: [8], needs: "canopy_fill",
+    note: "K cosine-weighted rays per fill texel (§4.7). Cut-only — no up-level, so proposeImprove can never offer a look that is not using the fill a free upgrade to it. A diffuse quantity: halving K trades a little residual speckle for the cost." },
+  { key: "fill_resolution", label: "fill res", scope: "", pass: "bake", cls: "safe",
+    proposable: true, levels: [128], needs: "canopy_fill",
+    note: "the fill texture's size over the canopy box (§4.7); it varies at the scale of crown gaps, not dapples, so it is cheap to cut. On the faithful path it also sizes the low-res layer bake the fill reads." },
   // opt-in 'tune' optimizations (budget-freeing cuts; off in the engine's DEFAULTS).
   { key: "bake_resolution", label: "bake res", scope: "textures", pass: "bake", cls: "tune",
     proposable: true, follows: "tex_resolution", levels: [768],
@@ -58,6 +69,7 @@ export const AXES = [
 // diffraction). `levels` are absolute (lightest last); `rel` are multipliers of the base.
 export function axisValue(axis, base) {
   if (!axis.proposable) return null;
+  if (axis.needs && !(base[axis.needs] > 0)) return null;   // its gate is shut: nothing runs, nothing to cut
   if (axis.toggle) {
     // the cut target defaults to `on` (adaptive_motion: enabling it IS the cut) but a `cutTo` override lets an
     // axis cut the OPPOSITE way (faithful_canopy: the cut is turning it OFF, back to the layer-path fallback).

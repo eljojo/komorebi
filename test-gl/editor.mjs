@@ -48,7 +48,7 @@ page.on('pageerror', (e) => errors.push(`[after check ${results.length}] ${e.mes
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`[after check ${results.length}] console: ${m.text()}`); });
 
 const results = [];
-const check = (name, ok, detail = '') => { results.push([name, ok, detail]); console.log(`    `); };
+const check = (name, ok, detail = '') => { results.push([name, ok, detail]); console.log(`  ${ok ? 'ok  ' : 'FAIL'}  ${name}${detail && !ok ? ` — ${detail}` : ''}`); };
 
 try {
   await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'load' });
@@ -207,6 +207,43 @@ try {
   let summer = false;
   for (let i = 0; i < 30 && !summer; i++) { await page.waitForTimeout(400); summer = (await pigmentShown()).every((v) => v === false); }
   check('and go again when the season comes back', summer, `${await pigmentShown()}`);
+  // THE SKY FILL ROWS (§4.7): canopy_fill is the gate and sits on every camera that lights a surface; its three followers
+  // (the leaf albedo, the ray count, the texture size) are sliders that lie while it is shut — nothing bakes — so they hide
+  // until it opens. The albedo is the floor's alone (the cloth and the tent take Tsky only), and the sky view, which has
+  // no surface to light, has none of the four.
+  const setFill = (v) => page.evaluate((val) => {
+    const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === 'canopy fill');
+    const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
+  }, v);
+  // A LIVE TRANSITION OWNS THE MORPH KEYS: the stepper above started one (SwiftShader stretches it), and every frame of it
+  // writes params.canopy_fill back to the look's own value. The pigment rows never noticed — their knobs are canopy keys,
+  // morphed only on a grove morph — so settle first, the way the top of this file does: a hard preset apply aborts it.
+  await page.$eval('#dev select', (sel) => { sel.value = 'afternoon 7'; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(1500);
+  const FILL_ROWS = ['leaf scatter', 'fill rays', 'fill res'];
+  const fillShown = async () => (await Promise.all(FILL_ROWS.map(rowShown)));
+  check('the fill gate is there and its three followers hide while it is shut', (await rowShown('canopy fill')) === true && (await fillShown()).every((v) => v === false), `${await rowShown('canopy fill')} ${await fillShown()}`);
+  await setFill(0.6);
+  let fillOpen = false;
+  for (let i = 0; i < 30 && !fillOpen; i++) { await page.waitForTimeout(400); fillOpen = (await fillShown()).every((v) => v === true); }
+  check('opening canopy_fill brings its followers', fillOpen, `${await fillShown()}`);
+  await setReceiver(1);                                             // the curtain takes Tsky alone: the albedo is a slider that lies there
+  let clothFill = false;
+  for (let i = 0; i < 30 && !clothFill; i++) { await page.waitForTimeout(400); clothFill = !(await rowShown('leaf scatter')) && (await rowShown('fill rays')) && (await rowShown('canopy fill')); }
+  check('on the curtain the leaf albedo goes but the gate and the fill itself stay', clothFill, `${await rowShown('leaf scatter')} ${await rowShown('fill rays')} ${await rowShown('canopy fill')}`);
+  await setReceiver(0);
+  await page.evaluate(() => { const r = [...document.querySelectorAll('#dev .ctl.toggle')].find((q) => q.querySelector('label')?.textContent === 'look up'); r.querySelector('input').click(); });
+  let skyFill = false;                                              // the sky camera speaks no fill group: all four rows go
+  for (let i = 0; i < 40 && !skyFill; i++) { await page.waitForTimeout(400); skyFill = !(await rowShown('canopy fill')) && (await fillShown()).every((v) => v === false); }
+  check('the sky view has none of the four fill rows', skyFill, `${await rowShown('canopy fill')} ${await fillShown()}`);
+  await page.evaluate(() => { const r = [...document.querySelectorAll('#dev .ctl.toggle')].find((q) => q.querySelector('label')?.textContent === 'look up'); r.querySelector('input').click(); });
+  let backFloor = false;
+  for (let i = 0; i < 40 && !backFloor; i++) { await page.waitForTimeout(400); backFloor = (await rowShown('canopy fill')) === true && (await fillShown()).every((v) => v === true); }
+  check('back on the floor the four return', backFloor, `${await rowShown('canopy fill')} ${await fillShown()}`);
+  await setFill(0);
+  let fillShut = false;
+  for (let i = 0; i < 30 && !fillShut; i++) { await page.waitForTimeout(400); fillShut = (await fillShown()).every((v) => v === false); }
+  check('and shutting it hides them again', fillShut, `${await fillShown()}`);
   await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('playful')).click());
   await page.waitForSelector('#play:not(.hidden)');
   check('ladder: advanced -> playful', await page.$eval('#dev', (e) => e.classList.contains('hidden')));

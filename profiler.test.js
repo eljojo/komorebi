@@ -88,6 +88,30 @@ test("axisValue's cutTo generalizes the toggle cut direction: faithful_canopy cu
   expect(axisValue(a.adaptive_motion, { adaptive_motion: true })).toBe(null);
 });
 
+test("the sky fill's axes (§4.7): canopy_fill is a measured look, its two TUNE knobs are safe cuts that only exist while it is open", () => {
+  const a = Object.fromEntries(AXES.map(x => [x.key, x]));
+  // the fill as a whole: a deliberate look, measured to its 0 gate (the old floor), never cut by the governor or a lite variant
+  expect(a.canopy_fill.cls).toBe("style");
+  expect(a.canopy_fill.proposable).toBe(false);
+  expect(a.canopy_fill.measureLevel).toBe(0);
+  expect(a.canopy_fill.pass).toBe("both");           // the fill pass rides the bake, the receiver's two reads ride transport
+  // its cheaper rungs: fewer rays, a smaller texture — safe, because the fill is a diffuse quantity
+  for (const k of ["fill_directions", "fill_resolution"]) {
+    expect(a[k].cls).toBe("safe");
+    expect(a[k].proposable).toBe(true);
+    expect(a[k].pass).toBe("bake");
+    expect(a[k].up).toBeUndefined();                 // cut-only: with no up-level proposeImprove can never hand a look that doesn't use the fill a free "upgrade" it would not notice
+    expect(upValue(a[k], { canopy_fill: 1, [k]: 16 })).toBe(null);
+  }
+  expect(axisValue(a.fill_directions, { canopy_fill: 1, fill_directions: 16 })).toBe(8);
+  expect(axisValue(a.fill_directions, { canopy_fill: 1, fill_directions: 8 })).toBe(null);
+  expect(axisValue(a.fill_resolution, { canopy_fill: 0.4, fill_resolution: 256 })).toBe(128);
+  expect(axisValue(a.fill_resolution, { canopy_fill: 0.4, fill_resolution: 128 })).toBe(null);
+  // shut gate: nothing runs, so there is nothing to cut and nothing to measure — every shipped look is here
+  expect(axisValue(a.fill_directions, { canopy_fill: 0, fill_directions: 16 })).toBe(null);
+  expect(axisValue(a.fill_resolution, { canopy_fill: 0, fill_resolution: 256 })).toBe(null);
+});
+
 const IMPROVE_BASE = { sample_count: 24, tex_resolution: 1024, layer_count: 2 };
 
 test("proposeImprove returns one variant of the highest-value upgrades that fit the spare budget", () => {

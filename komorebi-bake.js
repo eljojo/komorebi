@@ -3,18 +3,31 @@
 // form transport reads fast: leaves stamped as per-layer optical depth
 // (additive, order-independent), and the FAITHFUL path's per-sample geometry
 // bake into one pre-integrated soft-shadow texture (the opt-out from the
-// depth-layer cheat). fillSwayedSegs is the swayed skeleton both bakes share.
-// A factory over the engine's shared internals (hub).
+// depth-layer cheat). Then the SKY FILL (§4.7): the hemisphere integral of
+// those layers that lights the shade the beam does not reach. fillSwayedSegs
+// is the swayed skeleton both cast bakes share. A factory over the engine's
+// shared internals (hub).
 // ============================================================================
-import { clamp } from './komorebi-math.js';
+import { atmosphere, clamp, sunDirection } from './komorebi-math.js';
+import { MAX_FILL_DIRS, MAX_LAYERS } from './komorebi-params.js';
+import { fillRays, fillTurns } from './komorebi-fill.js';
+import { CAMERAS, cameraFor } from './komorebi-transport.js';
 
 export function makeBake(hub){
-  const { gl, params, motion, src, faith, sky, U, bakeFBO, faithFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
+  const { gl, params, motion, src, faith, sky, U, fill, bakeFBO, faithFBO, fillFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
+
+  // ---- one bake: the cast the camera reads, then (if the shade is lit through the canopy) the fill ----------------
+  function bake(){
+    if(faithfulOn()) bakeFaithful();   // FAITHFUL path (§4.5): cast the real tree, not the layer slabs
+    else bakeLayers(bakeRes(), hub.layerHeights(), false);
+    if(fillWanted()) bakeFill(true);   // true: on the faithful path the layers are not otherwise baked, so the fill bakes its own low-res set
+  }
 
   // ---- bake leaves into per-layer optical-depth textures ---------------------
-  function bake(){
-    if(faithfulOn()){ bakeFaithful(); return; }   // FAITHFUL path (§4.5): cast the real tree, not the layer slabs
-    const res = bakeRes();
+  // `H` is the heights the layers sit at and `faithfulSway` says which sway rule rides them: the layer path's
+  // sway_height_gain lever, or the faithful path's own (coherent sway grows with the real height / hMax — the
+  // rule VS_FAITH gives the leaves, §5.1), which the sky fill's low-res layers follow so the two stay registered.
+  function bakeLayers(res, H, faithfulSway){
     const E = params.canopy_extent_m;
     gl.useProgram(progBake);
     gl.uniform2f(U.bake.origin, -E/2, -E/2);
@@ -36,7 +49,7 @@ export function makeBake(hub){
     gl.viewport(0,0,res,res);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);          // optical depth accumulates additively
-    const H=hub.layerHeights(), base=params.canopy_base_height_m;
+    const base=params.canopy_base_height_m;
     // ALPHA IS THE WOOD'S CHANNEL IN SKY MODE (§4.9). The layer texture's rgb is the foliage's per-channel optical
     // depth and its alpha has never been read by anything — tap/tapUp/tapCA and the debug blit all take .rgb — so the
     // look-up camera claims it for the skeleton, and the leaves must stop writing their coverage there or the two
@@ -44,7 +57,7 @@ export function makeBake(hub){
     // every other look's bake bit-for-bit what it was.
     for(let l=0;l<params.layer_count;l++){
       // higher layers ride longer levers -> sway more when height gain > 0 (else pure translation)
-      const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
+      const f = faithfulSway ? H[l]/Math.max(faith.hMax,1e-3) : 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
       gl.uniform2f(U.bake.sway, motion.sway[0]*f, motion.sway[1]*f);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.layerTex[l], 0);
       gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1. UNMASKED: alpha is the wood's channel in sky mode and must be cleared too, or it accumulates across bakes
@@ -273,5 +286,107 @@ export function makeBake(hub){
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  return { bake, bakeFaithful };
+  // ============================================================================
+  // THE SKY FILL (spec §4.7, "What the shade is lit by"). The floor is lit by the beam through the gaps, by the
+  // skylight that ALSO had to come through the canopy, and by sunlight the lit leaves scatter downward; the cast
+  // filtered only the first. This bakes the other two: Tsky(x) and S(x), the cosine-weighted hemisphere of the layer
+  // field, into two low-res textures over the canopy box (komorebi-shaders.js, FS_FILL, runs the very ray the sky
+  // view runs). Off (canopy_fill 0, or a camera with no surface to light) nothing is allocated and nothing runs.
+  // ============================================================================
+  // Does this look need the fill? The registry answers: a camera that does not speak the fill group cannot read it.
+  const fillWanted = () => params.canopy_fill > 0 && CAMERAS[cameraFor(params)].groups.includes('fill');
+  const fillK = () => clamp(params.fill_directions|0, 1, MAX_FILL_DIRS);
+  const fillRes = () => clamp(params.fill_resolution|0, 32, 1024);
+  // The faithful path's layers are 1×1 (it taps one pre-integrated texture), so with the fill open it keeps a LOW-RES
+  // set alive for the fill to read. Depth layers are the right tool for a DIFFUSE quantity — the opt-out from the
+  // layer cheat is about sharp structure — so this does not reopen it. Sized by the fill, capped by the bake size.
+  const fillLayerRes = () => Math.min(fillRes(), bakeRes());
+  // Only the floor reads S (the cloth and the tent take Tsky alone), so the others are handed albedo 0 and the
+  // scatter branch is skipped in the shader outright.
+  const fillAlbedo = () => CAMERAS[cameraFor(params)].groups.includes('floor') ? clamp(params.fill_scatter, 0, 1) : 0;
+  const _atm = { sun:[0,0,0], ambient:[0,0,0] }, _sd = [0,0,0], FILL_TURNS = fillTurns();   // the 16 slot rotations never change
+  const _sig = new Float64Array(12);
+
+  // Everything the fill depends on besides the layers themselves (which rebake it eagerly, from bake()). The sun can
+  // move without any bake — a time-of-day morph, the editor's sun drag — and S reads the sun's colour, its path
+  // through the layers and the sky, so a draw compares this against what the fill was baked with and re-runs just the
+  // pass. (The layer path reprojects the cast per frame for the same reason; the fill has to follow it.)
+  function fillSig(o){
+    o[0]=params.sun_elevation_deg; o[1]=params.sun_azimuth_deg; o[2]=params.sky_turbidity; o[3]=params.ambient_skylight;
+    o[4]=fillAlbedo(); o[5]=fillK(); o[6]=fillRes(); o[7]=params.layer_count; o[8]=params.canopy_base_height_m;
+    o[9]=params.canopy_thickness_m; o[10]=params.canopy_extent_m; o[11]=faithfulOn() ? 1 : 0;
+  }
+  function fillStale(){
+    if(!fill.ready) return true;
+    fillSig(_sig);
+    for(let i=0;i<_sig.length;i++) if(_sig[i] !== fill.sig[i]) return true;
+    return false;
+  }
+
+  function allocFill(res){
+    for(const t of fill.tex) if(t) gl.deleteTexture(t);
+    fill.tex = [hub.makeLayerTexture(res), hub.makeLayerTexture(res)];
+    for(const t of fill.tex){ gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); }   // the receiver reads a mip level (GLSL_T_FILL_DECLS says why)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fillFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fill.tex[0], 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, fill.tex[1], 0);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);   // MRT: Tsky and S in one pass, so the K·L layer taps are read once
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) hub.fail("the sky fill's float targets are incomplete");
+    fill.res = res; fill.ready = false;
+  }
+
+  // layersToo: bake the low-res layer set first (faithful path only — the layer path's own bake just ran, or is
+  // current). Called eagerly from bake(), and from refreshFill when something the layers do not carry moved.
+  function bakeFill(layersToo){
+    const res = fillRes(), K = fillK(), E = params.canopy_extent_m, faithful = faithfulOn();
+    if(!fill.tex[0] || fill.res !== res) allocFill(res);
+    let H;
+    if(faithful){
+      const lres = fillLayerRes();
+      if(hub.layerSize !== lres){ hub.allocLayers(lres); layersToo = true; }   // the fill was opened on a running faithful look: its layers do not exist yet
+      if(layersToo) bakeLayers(lres, faith.binH, true);
+      H = faith.binH.subarray(0, MAX_LAYERS);   // where the faithful tree's twigs REALLY grew, not the park band
+    } else H = hub.layerHeights();
+    const e = hub.fillFor(), u = e.U;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fillFBO);
+    gl.viewport(0,0,res,res);
+    gl.disable(gl.BLEND);
+    gl.useProgram(e.prog);
+    atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);   // the same atmosphere transport lights the frame with
+    sunDirection(_sd, params.sun_elevation_deg, params.sun_azimuth_deg);
+    gl.uniform2f(u.origin, -E/2, -E/2);
+    gl.uniform2f(u.extent, E, E);
+    gl.uniform3f(u.sun, _atm.sun[0], _atm.sun[1], _atm.sun[2]);
+    gl.uniform3f(u.ambient, _atm.ambient[0], _atm.ambient[1], _atm.ambient[2]);
+    gl.uniform3f(u.sunDir, _sd[0], _sd[1], _sd[2]);
+    gl.uniform1fv(u.heights, H);
+    gl.uniform1i(u.layerCount, params.layer_count);
+    if(fill.K !== K){ fill.rays = fillRays(K); fill.K = K; }   // cached: the plain set is a function of K alone (each texel rotates it itself)
+    gl.uniform3fv(u.ray, fill.rays);
+    gl.uniform2fv(u.turn, FILL_TURNS);
+    gl.uniform1i(u.count, K);
+    gl.uniform1f(u.scatter, fillAlbedo());
+    for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]); gl.uniform1i(u.layers[i], i); }
+    gl.bindVertexArray(emptyVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    for(const t of fill.tex){ gl.bindTexture(gl.TEXTURE_2D, t); gl.generateMipmap(gl.TEXTURE_2D); }   // RGBA16F is renderable and filterable, which is all generateMipmap asks
+    fillSig(fill.sig);
+    fill.ready = true;
+  }
+
+  // Free what a shut gate no longer needs: the look pays nothing for a fill it has switched off.
+  function releaseFill(){
+    for(const t of fill.tex) if(t) gl.deleteTexture(t);
+    fill.tex = [null, null]; fill.res = 0; fill.ready = false;
+    if(faithfulOn() && hub.layerSize > 1) hub.allocLayers(1);   // the faithful layers go back to the 1×1 they are without the fill
+  }
+
+  // Once per frame, before transport draws: the fill is current, or it is not wanted and holds nothing.
+  function refreshFill(){
+    if(!fillWanted()){ if(fill.tex[0]) releaseFill(); return; }
+    if(fillStale()) bakeFill(false);
+  }
+
+  return { bake, bakeFaithful, bakeFill, refreshFill, fillWanted, fillLayerRes };
 }

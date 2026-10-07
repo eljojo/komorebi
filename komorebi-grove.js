@@ -7,7 +7,7 @@
 // the engine's shared internals (hub).
 // ============================================================================
 import { DEG, FAITH_MAX_RATIO, bendDown, clamp, coneDir, hash3, leafTau, makeGauss, mulberry32 } from './komorebi-math.js';
-import { MAX_OCC } from './komorebi-params.js';
+import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
 
 export function makeGrove(hub){
   const { gl, params, MAX_TEX, quadBuf, faithfulOn, occ, faith, sky } = hub;
@@ -216,6 +216,14 @@ export function makeGrove(hub){
     let hMin=1e18, hMax=-1e18;
     for(const t of twigs){ if(t.z<hMin)hMin=t.z; if(t.z>hMax)hMax=t.z; }
     faith.hMin = hMin<=hMax ? hMin : 0; faith.hMax = hMax>hMin ? hMax : (faith.hMin+1);
+    // Where each depth bin REALLY grew (the mean grown z of its twigs). The faithful cast ignores the park band, but the
+    // sky fill's low-res layers (§4.7) are depth bins on that path too, and a hemisphere read at the park band's heights
+    // would be the wrong tree's. An empty bin falls back to its even share of the grown range.
+    {
+      const nb = Math.max(nLayer, MAX_LAYERS), sumZ = new Float64Array(nb), cnt = new Float64Array(nb);
+      for(const t of twigs){ sumZ[t.layer] += t.z; cnt[t.layer]++; }
+      faith.binH = Float32Array.from(sumZ, (z, l) => cnt[l] ? z/cnt[l] : faith.hMin + (faith.hMax-faith.hMin)*(nLayer>1 ? Math.min(l,nLayer-1)/(nLayer-1) : 0.5));
+    }
 
     const nClusterTotal = twigs.length;
     const hier = {

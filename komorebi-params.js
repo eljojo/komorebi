@@ -7,6 +7,7 @@
 const MAX_SAMPLES = 48;
 const BAKE_MIN = 768;   // floor auto_quality trims bake_resolution to below the knee (§9)
 const MAX_LAYERS = 4;
+const MAX_FILL_DIRS = 64;   // the sky fill's ray cap (§4.7): fill_directions is clamped to it, and it sizes the fill shader's uniform array
 // Woody occluder segments (trunk + main limbs incl. droop sub-segments); continuous-height analytic shadow,
 // evaluated once per pixel (spec §4.5). The table is a TEXTURE now, not a uniform array, so this number costs
 // texels rather than fragment uniform rows (§6) — it is no longer a budget constraint, it is an authored ceiling.
@@ -35,6 +36,7 @@ const MORPH_KEYS = [
   // look: branch_tau>0 only in park 1, which is faithful → analytic occluder gated off. Live occ.ht recompute = TODO.)
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
+  'canopy_fill','fill_scatter',                                         // the sky fill (§4.7): two live shader uniforms — the receiver's mix and the leaf albedo the fill pass reads — so they tween; the canopy_fill gate crossing 0 allocates the fill lazily, mid-tween, which is not a look pop
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'fabric_tt','fabric_tint_r','fabric_tint_g','fabric_tint_b',          // the receiver's fabric (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
   'cloth_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','fabric_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
@@ -66,6 +68,7 @@ const CANOPY_KEYS = [
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
   'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis',
   'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
+  'fill_directions','fill_resolution',                                  // the sky fill's TUNE pair (§4.7): a ray count and a texture size are integers that cannot interpolate, and the size reallocates
 ];   // (tone_map is a live uniform: it just snaps — under the bloom if one's already running, else at the end — never forces one)
 // ---- scene-MODE flags. Not continuous (never tween) but NOT inert either: flipping one changes regen-time state
 // (faithful_canopy reallocates faithTex + switches the bake path; standing_scene reshapes the bake's crown sizing;
@@ -253,6 +256,14 @@ const DEFAULTS = {
   exposure: 1.3,
   contrast: 1.0,
   ambient_skylight: 0.5,
+  // THE SKY FILL (spec §4.7, "What the shade is lit by"): the shade between the dapples is lit by the skylight that
+  // came THROUGH the canopy and by the sunlight the lit leaves scatter downward, not by an unfiltered sky. 0 = the
+  // old floor, literally `(acc·sun + ambient)·ground` — the quality-rung gate, ships shut because presets merge over
+  // these defaults (a 1 here would relight every shipped look); a look opts in. 1 = the physical shade.
+  canopy_fill: 0.0,
+  fill_scatter: 0.0,               // the leaf's single-scattering albedo: the floor's twin of sky_scatter (§4.9), read only on the floor. 0 = the shade is filtered skylight and nothing else
+  fill_directions: 16,             // TUNE: the K cosine-weighted rays the fill integrates (stratified in cos²θ, no noise)
+  fill_resolution: 256,            // TUNE: the fill texture's size over the canopy box — it varies at the scale of crown gaps, not dapples
   sky_turbidity: 0.05,             // atmospheric haze β (Ångström); reddens low sun, desaturates dusk
   mesopic_strength: 0.6,           // Purkinje: how far rods cool the deep shade at dusk (0 off; gated to low sun)
   chromatic_aberration: 0.0,       // leaf-edge diffraction (θ∝λ): per-channel red/blue spread of the dapples (0 = off, presets untouched)
@@ -322,4 +333,4 @@ function migrateLegacy(obj){
   return out;
 }
 
-export { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, LEGACY_KEYS, migrateLegacy };
+export { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, LEGACY_KEYS, migrateLegacy };

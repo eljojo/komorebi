@@ -54,6 +54,15 @@ function atmosphere(out, hDeg, beta, ambientSky){
   return out;
 }
 
+// The sun's UNIT direction (cos el·cos az, cos el·sin az, sin el), written into `out`. Deliberately unclamped in
+// elevation (§4.9): incidence on a vertical cloth peaks as the sun lowers, where the 1/sin(el) throws diverge. ONE
+// helper because two readers need the same vector — transport's uSunDir upload and the sky fill's sun path (§4.7).
+function sunDirection(out, elevDeg, azDeg){
+  const el=elevDeg*DEG, az=azDeg*DEG;
+  out[0]=Math.cos(el)*Math.cos(az); out[1]=Math.cos(el)*Math.sin(az); out[2]=Math.sin(el);
+  return out;
+}
+
 // ---- deterministic RNG so canopy is frame-stable & reproducible ------------
 function mulberry32(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
@@ -176,4 +185,4 @@ function bendDown(dir, dth){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };

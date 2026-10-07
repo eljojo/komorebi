@@ -9,6 +9,8 @@
     __glinfo()                          the WebGL2 / EXT_color_buffer_float preflight
     __presets()                         the built-in look names, read from PRESETS (never hardcoded)
     __run(preset, overrides, frames, opts)  one engine, captured at the given rAF tick counts (opts.rebake: see below)
+    __fillCheck(preset, overrides)      the sky fill's shader against komorebi-fill.js, on the layers the engine really baked
+    __fillToggle(preset, overrides)     canopy_fill opened and shut on a RUNNING engine: what it allocates, frees, and the frames either side
     __diff(idA, idB) / __png(id)        exact byte comparison + the PNG artifact
 
   WHY THE CAPTURE HAPPENS INSIDE onFrame: the context is created without preserveDrawingBuffer, so the
@@ -25,6 +27,8 @@
 <script type="module">
 import { create, MAX_OCC } from '/komorebi.js';
 import { PRESETS } from '/presets.js';
+import { fillRef, fillTile } from '/komorebi-fill.js';
+import { atmosphere, sunDirection } from '/komorebi-math.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
 // The freeze set. Wind is deterministic noise-of-TIME (no RNG), so the only way to get a reproducible frame
@@ -132,7 +136,8 @@ window.__diff = (idA, idB) => {
 // disposed before resolving, so twenty-odd of these in a row never hold twenty live GL contexts.
 // opts.rebake: re-bake at tick 4 (what the robustness suite does) — a faithful look otherwise captures the first
 // bake, made against an empty sun cloud (rebuildAll bakes before regenSource). Off for every suite: their hashes
-// are of what the engine shows by itself.
+// are of what the engine shows by itself. opts.size = [w, h]: the canvas in CSS px (the `--look` eyeball mode only —
+// a soft artefact such as a mip's facets wants a frame bigger than the 320x180 every hash is taken at).
 window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, reject) => {
   const base = PRESETS[presetName];
   if (!base) return reject(new Error(`unknown preset '${presetName}'`));
@@ -142,7 +147,7 @@ window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, re
   const params = Object.assign({}, base, overrides || {}, FREEZE);
   const canvas = document.createElement('canvas');
   canvas.className = 'stage';
-  canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  canvas.style.width = `${opts && opts.size ? opts.size[0] : W}px`; canvas.style.height = `${opts && opts.size ? opts.size[1] : H}px`;
   document.body.appendChild(canvas);
 
   const t0 = performance.now();
@@ -183,6 +188,147 @@ window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, re
     caps.set(id, { w, h, bytes });
     out.push({ id, frame: ticks, w, h, hash: fnv1a(bytes), stats: stats(bytes) });
     if (!want.length) finish(null);
+  };
+});
+
+// ---------------------------------------------------------------------------
+// THE SKY FILL, SHADER vs REFERENCE (spec §4.7). komorebi-fill.js holds the quadrature's laws under `bun test`, but a
+// law about a JS function says nothing about the GLSL that ships. So: let the engine bake a real fill (frozen motion),
+// read back the layer textures it read and the Tsky / S it wrote, rebuild the SAME quantity at sampled texels in JS from
+// the readback — bilinear taps with CLAMP_TO_EDGE, the layers' own heights, the atmosphere and sun the bake used — and
+// compare. Level 0 is read (the mip the receiver samples is a box average of it, tested by eye and by the gate rows).
+// Returns the worst absolute error on each of Tsky and S over the sampled texels, and the scale of each, so the runner
+// can say how big the error is against the thing it measures.
+// ---------------------------------------------------------------------------
+window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reject) => {
+  const base = PRESETS[presetName];
+  if (!base) return reject(new Error(`unknown preset '${presetName}'`));
+  const o = Object.assign({ frames: 24, rebake: false, samples: 96 }, opts || {});
+  const params = Object.assign({}, base, overrides || {}, FREEZE);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage'; canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  document.body.appendChild(canvas);
+  let eng = null, ticks = 0, done = false;
+  const finish = (err, out) => {
+    if (done) return; done = true; clearTimeout(timer);
+    try { eng?.setPaused(true); eng?.dispose(); } catch { /* nothing to stop */ }
+    canvas.remove();
+    if (err) reject(err); else resolve(out);
+  };
+  const timer = setTimeout(() => finish(new Error('fill check did not reach its frame within 120 s')), 120000);
+  try { eng = create(canvas, { params }); } catch (e) { return finish(e); }
+  const gl = eng.gl;
+  const read = (tex, n) => {                           // an RGBA16F texture, level 0, as float32 (EXT_color_buffer_float makes it readable)
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const out = new Float32Array(n * n * 4);
+    gl.readPixels(0, 0, n, n, gl.RGBA, gl.FLOAT, out);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb);
+    return out;
+  };
+  // a bilinear tap, CLAMP_TO_EDGE: texel centres at (i + 0.5)/n, the coordinate clamped to the outermost centres
+  const tap = (data, n, u, v) => {
+    const fx = Math.min(Math.max(u * n - 0.5, 0), n - 1), fy = Math.min(Math.max(v * n - 0.5, 0), n - 1);
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(x0 + 1, n - 1), y1 = Math.min(y0 + 1, n - 1), ax = fx - x0, ay = fy - y0;
+    const at = (x, y, c) => data[(y * n + x) * 4 + c];
+    return [0, 1, 2].map((c) => (at(x0, y0, c) * (1 - ax) + at(x1, y0, c) * ax) * (1 - ay) + (at(x0, y1, c) * (1 - ax) + at(x1, y1, c) * ax) * ay);
+  };
+  eng.onFrame = () => {
+    ticks++;
+    if (o.rebake && ticks === 4) eng.apply('bake');
+    if (done || ticks < o.frames) return;
+    try {
+      const p = eng.params, E = p.canopy_extent_m, fill = eng.fill;
+      if (!fill.ready || !fill.tex[0]) return finish(new Error(`the fill never became ready (canopy_fill ${p.canopy_fill})`));
+      const faithful = p.faithful_canopy && (p.receiver | 0) !== 2 && !p.sky_view;
+      const nL = p.layer_count, lt = eng.layers();
+      const lres = faithful ? Math.min(Math.max(p.fill_resolution | 0, 32), 1024) : eng.perf.bres;   // the layers' own size: the faithful set is sized by the fill
+      const heights = faithful ? Array.from(eng.faith.binH).slice(0, nL)
+        : Array.from({ length: nL }, (_, i) => (nL > 1 ? p.canopy_base_height_m + (i / (nL - 1)) * p.canopy_thickness_m : p.canopy_base_height_m));
+      const data = lt.slice(0, nL).map((t) => read(t, lres));
+      const layers = heights.map((h, L) => ({ h, t: (x, y) => tap(data[L], lres, (x + E / 2) / E, (y + E / 2) / E).map((tau) => Math.exp(-tau)) }));
+      const atm = atmosphere({ sun: [0, 0, 0], ambient: [0, 0, 0] }, p.sun_elevation_deg, p.sky_turbidity, p.ambient_skylight);
+      const sd = sunDirection([0, 0, 0], p.sun_elevation_deg, p.sun_azimuth_deg);
+      const gS = [sd[0] / Math.max(sd[2], 0.05), sd[1] / Math.max(sd[2], 0.05)];
+      const floorCam = (p.receiver | 0) === 0 && !p.sky_view;
+      const n = fill.res, K = Math.min(Math.max(p.fill_directions | 0, 1), 64);
+      const T = read(fill.tex[0], n), S = read(fill.tex[1], n);
+      let eT = 0, eS = 0, sT = 0, sS = 0, minT = 1, maxT = 0, k = 0;
+      for (let q = 0; q < o.samples; q++) {              // a fixed scatter of texels, interior and border alike
+        const i = Math.floor(((q * 0.6180339887) % 1) * n), j = Math.floor(((q * 0.7548776662 + 0.3) % 1) * n);
+        const x = [-E / 2 + ((i + 0.5) / n) * E, -E / 2 + ((j + 0.5) / n) * E];
+        const ref = fillRef(layers, x, K, { gS, sun: atm.sun, amb: atm.ambient, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j) });   // only the floor reads S (the cloth and the tent are handed albedo 0); each texel carries its own slot of the 4x4 interleaving tile
+        for (let c = 0; c < 3; c++) {
+          const gT = T[(j * n + i) * 4 + c], gSv = S[(j * n + i) * 4 + c];
+          eT = Math.max(eT, Math.abs(gT - ref.T[c])); eS = Math.max(eS, Math.abs(gSv - ref.S[c]));
+          sT += ref.T[c]; sS += ref.S[c]; k++;
+          minT = Math.min(minT, gT); maxT = Math.max(maxT, gT);
+        }
+      }
+      // how rough is Tsky (green) at TEXEL scale, and what the mip's box average does to it: the RMS difference between
+      // neighbouring texels at mip levels 0..3 (a 2x2 box each step, the very chain generateMipmap builds). The receiver
+      // reads one of these levels; this is the evidence for which (komorebi-transport.js, FILL_LOD).
+      let lvl = Float32Array.from({ length: n * n }, (_, i) => T[i * 4 + 1]), m = n;
+      const rough = [];
+      for (let L = 0; L < 4 && m > 2; L++) {
+        let ss = 0, cc = 0;
+        for (let y = 0; y < m; y++) for (let x = 0; x < m - 1; x++) { const d = lvl[y * m + x + 1] - lvl[y * m + x]; ss += d * d; cc++; }
+        rough.push(Math.sqrt(ss / cc));
+        const nx = new Float32Array((m / 2) * (m / 2));
+        for (let y = 0; y < m / 2; y++) for (let x = 0; x < m / 2; x++) nx[y * (m / 2) + x] = (lvl[2 * y * m + 2 * x] + lvl[2 * y * m + 2 * x + 1] + lvl[(2 * y + 1) * m + 2 * x] + lvl[(2 * y + 1) * m + 2 * x + 1]) / 4;
+        lvl = nx; m /= 2;
+      }
+      finish(null, { errT: eT, errS: eS, meanT: sT / k, meanS: sS / k, minT, maxT, res: n, K, layerRes: lres, faithful, heights, rough });
+    } catch (e) { finish(e); }
+  };
+});
+
+// ---------------------------------------------------------------------------
+// THE SKY FILL, OPENED AND SHUT ON A RUNNING ENGINE (§4.7). canopy_fill is a MORPH key: it tweens, so it crosses 0 in the
+// middle of a transition or a slider drag, and nothing rebuilds when it does. The fill therefore allocates lazily on the
+// first draw that wants it (on the faithful path, a low-res layer set with it) and frees on the first that does not.
+// This runs that crossing: a frame with the gate shut, a frame with it open, a frame shut again — and reports what was
+// allocated at each, so "shut costs nothing", "open really bakes" and "shut again is the old frame, byte for byte" are
+// each a measurement. The sky view must stay unallocated throughout: it has no surface to light.
+// ---------------------------------------------------------------------------
+window.__fillToggle = (presetName, overrides, opts) => new Promise((resolve, reject) => {
+  const base = PRESETS[presetName];
+  if (!base) return reject(new Error(`unknown preset '${presetName}'`));
+  const o = Object.assign({ rebake: false }, opts || {});
+  const params = Object.assign({}, base, overrides || {}, { canopy_fill: 0 }, FREEZE);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage'; canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  document.body.appendChild(canvas);
+  let eng = null, ticks = 0, done = false, glError = 0;
+  const stages = [];
+  const finish = (err) => {
+    if (done) return; done = true; clearTimeout(timer);
+    try { eng?.setPaused(true); eng?.dispose(); } catch { /* nothing to stop */ }
+    canvas.remove();
+    if (err) reject(err);
+    else resolve({ stages, glError, diff: { openVsShut0: window.__diff(stages[0].id, stages[1].id), shutAgain: window.__diff(stages[0].id, stages[2].id) } });
+  };
+  const timer = setTimeout(() => finish(new Error('fill toggle did not finish within 120 s')), 120000);
+  try { eng = create(canvas, { params }); } catch (e) { return finish(e); }
+  const gl = eng.gl;
+  const grab = (label) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const w = canvas.width, h = canvas.height, bytes = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+    const e = gl.getError(); if (e) glError = e;
+    const id = `c${nextId++}`;
+    caps.set(id, { w, h, bytes });
+    stages.push({ label, id, hash: fnv1a(bytes), allocated: !!eng.fill.tex[0], ready: eng.fill.ready });
+  };
+  eng.onFrame = () => {
+    ticks++;
+    if (o.rebake && ticks === 4) eng.apply('bake');
+    if (done) return;
+    if (ticks === 14) grab('shut');
+    if (ticks === 15) eng.params.canopy_fill = 1;
+    if (ticks === 36) { grab('open'); eng.params.canopy_fill = 0; }
+    if (ticks === 58) { grab('shut again'); finish(null); }
   };
 });
 
@@ -375,10 +521,11 @@ window.__onFrameThrows = (presetName, overrides, want) => new Promise((resolve, 
 // WEBGL_lose_context, and the frame afterwards must be the frame before: same bytes under frozen motion,
 // GL-clean, ONE loop (onFrame calls per rAF tick do not double), and paused state honoured across the gap.
 // opts: pause (lose+restore while paused), retarget (setParams to another look first — the recovery must
-// rebuild from the CURRENT params, not the create-time ones), transition (lose mid-transition).
+// rebuild from the CURRENT params, not the create-time ones), transition (lose mid-transition), over (param
+// overrides over the look: the sky fill's GL objects only exist when a look opens it).
 // ---------------------------------------------------------------------------
 window.__contextLoss = async (presetName, opts) => {
-  const o = Object.assign({ pause: false, retarget: null, transition: null }, opts || {});
+  const o = Object.assign({ pause: false, retarget: null, transition: null, over: null }, opts || {});
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`timed out waiting for ${what}`)), ms))]);
   const canvas = document.createElement('canvas');
@@ -398,7 +545,7 @@ window.__contextLoss = async (presetName, opts) => {
   };
   // resolves from INSIDE onFrame (the drawing buffer is only readable there), n ticks from now
   const capture = (n) => new Promise((res) => { waiter = { left: n, res }; });
-  const params = Object.assign({}, PRESETS[presetName], FREEZE);
+  const params = Object.assign({}, PRESETS[presetName], o.over || {}, FREEZE);
   const eng = create(canvas, { params });
   const gl = eng.gl;
   eng.onFrame = () => {

@@ -1,6 +1,6 @@
 import { clamp, lerp } from './komorebi-math.js';
 import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, CANOPY_KEYS, TOPO_KEYS, DEFAULTS, migrateLegacy } from './komorebi-params.js';
-import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
+import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
 import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi-transport.js';
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
@@ -93,8 +93,8 @@ function create(canvas, opts){
   // EVERY handle the engine holds on the GL context is created by initGPU() — create() calls it once, and a
   // webglcontextrestored calls it again, because a lost context kills all of them. Hence `let`, not `const`.
   let progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
-  let emptyVAO, quadBuf, bakeFBO, faithFBO, occTex;
-  let bake, bakeFaithful, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
+  let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
+  let bake, bakeFaithful, bakeFill, refreshFill, fillWanted, fillLayerRes, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -133,6 +133,19 @@ function create(canvas, opts){
     }
     return e;
   }
+  // THE SKY FILL's bake program (§4.7): compiled on first use like a transport variant, so a look that never opens
+  // canopy_fill (every shipped one) pays neither the compile nor the textures. A program belongs to the context that
+  // linked it, so a restore forgets it (see onContextRestored) and the next fill compiles afresh.
+  let fillEntry = null;
+  function fillFor(){
+    if(!fillEntry){
+      const prog = program(VS_FULL, FS_FILL);
+      fillEntry = { prog, U: { origin:loc(prog,'uCanopyOrigin'), extent:loc(prog,'uCanopyExtent'), sun:loc(prog,'uSunColor'), ambient:loc(prog,'uAmbient'),
+        layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'].map(n => loc(prog,n)), heights:loc(prog,'uLayerHeight[0]'), layerCount:loc(prog,'uLayerCount'),
+        sunDir:loc(prog,'uSunDir'), ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter') } };
+    }
+    return fillEntry;
+  }
   // adaptive frame-rate (TUNE §9): offscreen present target + cadence state. presentFBO/presentTex are canvas-sized
   // and allocated lazily on first use (so a look that never enables adaptive_motion pays nothing).
   let presentTex=null, adaptiveLastRender=0, adaptiveHot=true;
@@ -151,6 +164,9 @@ function create(canvas, opts){
   // into the leaves' own depth layers so a twig and the leaves hanging on it stamp into the SAME texture. Built
   // only when the look-up camera is on; empty otherwise, and the layer bake then draws nothing extra.
   const sky = { segVAO:null, segBuf:null, segRest:[], segArr:null, start:[], count:[] };
+  // THE SKY FILL's state (§4.7): Tsky and S over the canopy box, allocated lazily when canopy_fill opens and freed when
+  // it shuts. `ready` = the textures hold a bake of what `sig` records, so the receiver may believe them.
+  const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(12), K:0, rays:null };
 
   // ---- THE SHARED INTERNALS (hub), continued: the stable plumbing and the shared mutable state. The engine's
   // subsystems live in sibling modules (grove, bake, source,
@@ -160,11 +176,12 @@ function create(canvas, opts){
   // how cross-subsystem calls resolve without import cycles. ----
   Object.assign(hub, {
     // stable plumbing (never reassigned)
-    gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, U,
+    gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, fill, U,
     // (the GL handles — programs, buffers, FBOs, occTex, extTimer — and the subsystems over them are set by initGPU())
-    effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera,
+    effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera, fillFor,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
+    layerSize: 0,           // the size the active layer textures were last allocated at (allocLayers) — the faithful path's sky fill resizes them in place
     layerVAO: [],           // per-layer leaf instance VAOs {vao,count,buf}
     faithTex: null,         // FAITHFUL path (§4.5): pre-integrated soft shadow (RGBA16F); 1×1 when faithful_canopy off
     faithScratch: null,     // FAITHFUL path: per-sample transmittance scratch (RGBA16F); 1×1 when off
@@ -232,6 +249,7 @@ function create(canvas, opts){
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
 
     bakeFBO = gl.createFramebuffer();
+    fillFBO = gl.createFramebuffer();    // the sky fill's two-target pass (§4.7): the textures are attached when the fill allocates them
     faithFBO = gl.createFramebuffer();   // FAITHFUL scratch target (§4.5): faithScratch attached here once per bake so the per-sample loop swaps FBOs instead of re-attaching (was 2N framebufferTexture2D/frame)
 
     // ...and the GPU side of that table (§4.5/§6): one RGBA32F, MAX_OCC wide and 2 tall — row 0 the swung plan
@@ -246,10 +264,10 @@ function create(canvas, opts){
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     Object.assign(hub, { extTimer, progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz,
-                         quadBuf, emptyVAO, bakeFBO, faithFBO, occTex });
+                         quadBuf, emptyVAO, bakeFBO, faithFBO, fillFBO, occTex });
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
     ({ buildGrove } = makeGrove(hub)); hub.buildGrove = buildGrove;
-    ({ bake, bakeFaithful } = makeBake(hub)); Object.assign(hub, { bake, bakeFaithful });
+    ({ bake, bakeFaithful, bakeFill, refreshFill, fillWanted, fillLayerRes } = makeBake(hub)); Object.assign(hub, { bake, bakeFaithful, bakeFill, refreshFill, fillWanted, fillLayerRes });
     ({ drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));
     Object.assign(hub, { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit });
     if(EDITOR) hub.initEditorGL?.();   // the debug overlays' buffers (absent on the very first call: makeEditorTools runs later and calls it itself)
@@ -265,16 +283,20 @@ function create(canvas, opts){
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
     return t;
   }
-  function rebuildTextures(){
+  // the active layers at `size`, the rest 1×1 (an inactive layer is never read). The one place layer textures are made.
+  function allocLayers(size){
     hub.layerTex.forEach(t=>{ gl.deleteTexture(t); });
     hub.layerTex = [];
+    hub.layerSize = size;
+    for(let i=0;i<MAX_LAYERS;i++) hub.layerTex.push(makeLayerTexture(i < params.layer_count ? size : 1));
+  }
+  function rebuildTextures(){
     const res = bakeRes();
     perf.bres = res;                                 // remember the built size; applyQuality reallocates when bakeRes() crosses it
-    for(let i=0;i<MAX_LAYERS;i++){
-      // faithful mode never bakes or samples the layer textures (transport taps faithTex once), so size them 1×1
-      // there too — saves ~layer_count·res²·8 bytes of dead VRAM (≈16 MB at defaults). Reallocated full when faithful off.
-      hub.layerTex.push(makeLayerTexture((i < params.layer_count && !faithfulOn()) ? res : 1));
-    }
+    // faithful mode never bakes or samples the layer textures (transport taps faithTex once), so size them 1×1
+    // there too — saves ~layer_count·res²·8 bytes of dead VRAM (≈16 MB at defaults). Reallocated full when faithful off.
+    // The one exception is the sky fill (§4.7): with canopy_fill open it reads a LOW-RES layer bake on that path too.
+    allocLayers(!faithfulOn() ? res : hub.fillWanted() ? hub.fillLayerRes() : 1);
     // FAITHFUL path (§4.5): the soft-shadow accumulator + per-sample scratch. 1×1 when off, so the park / layer
     // path allocates nothing extra; full bake-res when faithful_canopy is on.
     if(hub.faithTex) gl.deleteTexture(hub.faithTex);
@@ -325,7 +347,7 @@ function create(canvas, opts){
   Object.assign(hub, { tickHierarchy, publishBend, motionActive, tick });
 
   // the engine-resident coordinators the transition route drives (hoisted function declarations)
-  Object.assign(hub, { freeGrove, installGrove, regenCanopy, buildTargetGrove, rebuildAll, resetPerf });
+  Object.assign(hub, { freeGrove, installGrove, regenCanopy, buildTargetGrove, rebuildAll, resetPerf, allocLayers, makeLayerTexture });
   const { transitionTo, tickTransition } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
 
@@ -445,10 +467,11 @@ function create(canvas, opts){
       [progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
       transportCache.forEach(v => { gl.deleteProgram(v.prog); });   // however many cameras this engine actually visited
       transportCache.clear();
+      if(fillEntry){ gl.deleteProgram(fillEntry.prog); fillEntry = null; }   // the sky fill's bake, if a look ever opened it
       hub.layerTex.forEach(t => { gl.deleteTexture(t); });
-      [hub.clusterTex, hub.clusterGeomTex, occTex, hub.faithTex, hub.faithScratch, hub.benchTex, presentTex].forEach(t => { if(t) gl.deleteTexture(t); });
+      [hub.clusterTex, hub.clusterGeomTex, occTex, hub.faithTex, hub.faithScratch, hub.benchTex, presentTex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
       freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
-      [bakeFBO, faithFBO, hub.benchFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
+      [bakeFBO, faithFBO, fillFBO, hub.benchFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       hub.layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
       if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
@@ -458,7 +481,8 @@ function create(canvas, opts){
       if(EDITOR) hub.setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     },
-    ...(EDITOR ? { drawSourceInset: hub.drawSourceInset, drawTreeInset: hub.drawTreeInset, treeInsetHit: hub.treeInsetHit, profiler: hub.profiler, snapshotMotion: hub.snapshotMotion, applyMotion: hub.applyMotion, setMotionSource: hub.setMotionSource,
+    ...(EDITOR ? { fill, faith, layers: () => hub.layerTex,   // the sky fill's state + the layers it reads, for the pixel harness's shader-vs-reference check (test-gl/); stripped from the player build
+                   drawSourceInset: hub.drawSourceInset, drawTreeInset: hub.drawTreeInset, treeInsetHit: hub.treeInsetHit, profiler: hub.profiler, snapshotMotion: hub.snapshotMotion, applyMotion: hub.applyMotion, setMotionSource: hub.setMotionSource,
                    isLowMotion: () => motionMagnitude() < ADAPT_LO } : {}) };   // editor-only handles, stripped from the player build
   // ---- adaptive frame-rate helpers (TUNE §9) ----
   function ensureFrameTarget(){                       // lazy canvas-sized RGBA8 present target; reallocated on resize
@@ -548,7 +572,8 @@ function create(canvas, opts){
     if(!alive) return;
     lost = false;
     transportCache.clear(); presentTex = null;         // dead handles: forgotten, never deleted
-    Object.assign(hub, { layerTex:[], layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
+    fillEntry = null; fill.tex = [null, null]; fill.res = 0; fill.ready = false;   // the sky fill's program and textures died with the context; the first draw that wants it rebuilds both
+    Object.assign(hub, { layerTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
                          clusterTex:null, clusterGeomTex:null, presentFBO:null, presentW:0, presentH:0 });
     faith.vao = faith.buf = faith.segVAO = faith.segBuf = null;
     sky.segVAO = sky.segBuf = null;

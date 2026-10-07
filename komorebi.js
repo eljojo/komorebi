@@ -5,7 +5,7 @@
 // the rebuild coordinators, auto-quality and the frame loop — and each subsystem
 // is a factory module over that hub:
 //   komorebi-grove.js         buildGrove — the grown canopy (spec §4.5)
-//   komorebi-bake.js          the layer + faithful bakes (spec §4.5)
+//   komorebi-bake.js          the layer + faithful bakes, and the sky fill that lights the shade (spec §4.5/§4.7)
 //   komorebi-source.js        the point-sun cloud + shared cast geometry (spec §4.4)
 //   komorebi-motion.js        wind + the spring hierarchy (spec §5)
 //   komorebi-transitions.js   the cloud-bloom crossfade between looks (spec §9)
@@ -16,6 +16,7 @@
 //   komorebi-shaders.js       the bake / faithful / display shaders + the tone tail
 //   komorebi-params.js        DEFAULTS, legacy migration, transition keys, engine caps
 //   komorebi-math.js          CPU math: atmosphere, RNG, wind noise, growth helpers
+//   komorebi-fill.js          the sky fill's quadrature as pure functions (spec §4.7)
 // Pipeline: Source (point-sun cloud) -> Canopy (leaves baked to optical-depth
 // layers) -> Transport (shift-multiply-sum) -> Look (tonemap). Motion: two wind
 // bands over a trunk/limb/twig spring hierarchy. See komorebi-spec.md.

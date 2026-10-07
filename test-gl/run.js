@@ -20,8 +20,10 @@
 //                      logic-only, no pixels: transitions aren't byte-stable by design)
 //         ROBUSTNESS (a throwing onFrame keeps the loop alive; WebGL context loss + restore recovers
 //                     the same frame, one loop, paused state kept; `node run.js --robust` runs only this)
-// Opt-in, not suites: `--transition <from> <to>` (a watched transition) and `--look <preset> key=value ...`
-// (a look with overrides, for eyes).
+// Opt-in, not suites: `--transition <from> <to>` (a watched transition), `--look <preset> key=value ...`
+// (a look with overrides, for eyes), `--gate [substring ...]` (only the gate invariants — the rows whose
+// name matches, if any are given — the fast loop for a gate you are adding) and `--fill` (only the sky fill's
+// shader-vs-reference check).
 // ============================================================================
 import { createReadStream } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
@@ -40,6 +42,8 @@ const STILL_FRAMES = [20, 60];   // the stillness proof: one engine, two capture
 // Suite 2 as data: one row per invariant. `a` and `b` are param overrides merged over the preset (and then
 // over the harness's motion freeze); the assertion is always "these two frames are byte-identical".
 // Adding an invariant is adding a line. (`rebake: true` re-bakes before the capture — only a faithful look needs it.)
+// (`differ: true` inverts the assertion — the two frames must NOT match, and GL must stay clean: the row proves a gate
+// is a real switch, so the byte-identical rows beside it cannot be passing only because the feature is dead.)
 // ---------------------------------------------------------------------------
 const FABRIC_FAMILY = {
   fabric_tt: 0.9, fabric_tint_r: 0.9, fabric_tint_g: 0.2, fabric_tint_b: 0.7,
@@ -81,7 +85,57 @@ const INVARIANTS = [
   // colour at all, so without it this row would compare two dark frames and could never fail.
   { name: 'pigment family inert at summer (faithful path)', preset: 'park 1', rebake: true,
     a: {}, b: { phenology: 0.5, anthocyanin: 1, tannin: 1, turn_span: 0.3, wall_fraction: 0.3 } },
+  // THE SKY FILL (§4.7): the shade lit through the canopy. canopy_fill 0 is the old floor, so the whole family behind it —
+  // the leaf albedo, the ray count, the texture size — has to be dead code on every camera that could read it...
+  { name: 'sky fill family inert at canopy_fill 0 (layer path)', preset: 'memories',
+    a: {}, b: { canopy_fill: 0, fill_scatter: 0.8, fill_directions: 32, fill_resolution: 128 } },
+  { name: 'canopy_fill 0 == absent (layer path)', preset: 'memories', a: {}, b: { canopy_fill: 0 } },
+  // ...on the faithful path, whose layers are 1x1 unless the fill asks for a low-res set (rebake: see above)...
+  { name: 'sky fill family inert at canopy_fill 0 (faithful path)', preset: 'park 1', rebake: true,
+    a: {}, b: { canopy_fill: 0, fill_scatter: 0.8, fill_directions: 32, fill_resolution: 128 } },
+  // ...on the cloth, which reads Tsky through a different line of the shader...
+  { name: 'sky fill family inert at canopy_fill 0 (curtain)', preset: 'curtain 1',
+    a: {}, b: { canopy_fill: 0, fill_scatter: 0.8, fill_directions: 32, fill_resolution: 128 } },
+  // ...on the tent, the other cloth receiver, whose per-panel light is its own program...
+  { name: 'sky fill family inert at canopy_fill 0 (tent)', preset: 'tent 1',
+    a: {}, b: { canopy_fill: 0, fill_scatter: 0.8, fill_directions: 32, fill_resolution: 128 } },
+  // ...and the sky view has no surface to light: it must not read the fill AT ALL, whatever is asked of it.
+  { name: 'the sky view ignores the fill (canopy_fill 1 == 0)', preset: 'canopy 1',
+    a: { canopy_fill: 0 }, b: { canopy_fill: 1, fill_scatter: 0.8, fill_directions: 32, fill_resolution: 128 } },
+  // The other half of every row above: the gate really is a switch. Without these, a fill that never reaches the screen
+  // would pass them all.
+  { name: 'canopy_fill 1 changes the shade (layer path)', preset: 'memories', differ: true, a: { canopy_fill: 0 }, b: { canopy_fill: 1 } },
+  { name: 'canopy_fill 1 changes the shade (faithful path)', preset: 'park 1', rebake: true, differ: true, a: { canopy_fill: 0 }, b: { canopy_fill: 1 } },
+  { name: 'canopy_fill 1 changes the cloth (curtain)', preset: 'curtain 1', differ: true, a: { canopy_fill: 0 }, b: { canopy_fill: 1 } },
+  { name: 'canopy_fill 1 changes the cloth (tent)', preset: 'tent 1', differ: true, a: { canopy_fill: 0 }, b: { canopy_fill: 1 } },
+  { name: 'fill_scatter is live at canopy_fill 1 (layer path)', preset: 'memories', differ: true,
+    a: { canopy_fill: 1, fill_scatter: 0 }, b: { canopy_fill: 1, fill_scatter: 0.8 } },
 ];
+
+// THE SKY FILL vs ITS REFERENCE (§4.7). The bun tests hold komorebi-fill.js's laws; this holds the GLSL to it. Each row
+// lets the engine bake a real fill, reads back the layers it read and the Tsky / S it wrote, rebuilds both at a scatter
+// of texels in JS (bilinear taps, the bake's own heights, atmosphere and sun) and compares. The tolerance is the
+// storage, not the algorithm: both targets are RGBA16F, whose rounding is ~2.4e-4 near 1 (half a ulp, and what is
+// observed), so 2e-3 leaves headroom for fixed-point bilinear weights; a wrong ray, height, weight or sun path
+// is one to two orders larger (each is mutation-tested: 0.02–0.4 off).
+const FILL_CHECKS = [
+  { name: 'memories — the layer path, K 16', preset: 'memories', over: { canopy_fill: 1, fill_scatter: 0.5 } },
+  { name: 'memories — K 7 at 128 px (nothing here is a power of two)', preset: 'memories', over: { canopy_fill: 1, fill_scatter: 0.3, fill_directions: 7, fill_resolution: 128 } },
+  { name: 'memories in autumn — a red canopy, per-channel', preset: 'memories', over: { canopy_fill: 1, fill_scatter: 0.5, phenology: 1, anthocyanin: 0.8 } },
+  { name: 'park 1 — faithful: a low-res layer set at the grown heights', preset: 'park 1', rebake: true, over: { canopy_fill: 1, fill_scatter: 0.5 } },
+  { name: 'curtain 1 — Tsky only, S handed albedo 0', preset: 'curtain 1', over: { canopy_fill: 1, fill_scatter: 0.5 } },
+  { name: 'tent 1 — the enclosure forces the layer tier; Tsky only', preset: 'tent 1', over: { canopy_fill: 1, fill_scatter: 0.5 } },
+];
+// canopy_fill crossed on a RUNNING engine (it tweens, so nothing rebuilds when it does). `sky: true` = the camera has no
+// surface to light, so the fill must stay unallocated and the frame must not move.
+const FILL_TOGGLES = [
+  { name: 'memories', preset: 'memories', over: { fill_scatter: 0.3 } },
+  { name: 'park 1 (faithful: the low-res layers come and go with it)', preset: 'park 1', rebake: true, over: { fill_scatter: 0.3 } },
+  { name: 'curtain 1', preset: 'curtain 1', over: {} },
+  { name: 'tent 1', preset: 'tent 1', over: {} },
+  { name: 'canopy 1 (the sky view: never allocates)', preset: 'canopy 1', sky: true, over: { fill_scatter: 0.3 } },
+];
+const FILL_TOL = 2e-3;
 
 // Suite 4 as data: one row per transition ROUTING tier. transitionTo classifies the from->to diff into a
 // tier, and each tier drives different code — the grove crossfade grows a SECOND grove (buildTargetGrove),
@@ -165,6 +219,10 @@ async function robustness(page) {
   }
   const LOSS = [
     ...DETERMINISM.map((p) => ({ name: `${p} recovers byte-identical`, preset: p, opts: {} })),
+    // the sky fill (§4.7) owns GL objects no shipped look ever creates — a program, two textures, an FBO, and on the
+    // faithful path a resized layer set — so a restore that forgot them would pass every row above
+    { name: 'memories with the sky fill open recovers byte-identical', preset: 'memories', opts: { over: { canopy_fill: 1, fill_scatter: 0.5 } } },
+    { name: 'park 1 (faithful) with the sky fill open recovers byte-identical', preset: 'park 1', opts: { over: { canopy_fill: 1, fill_scatter: 0.5 } } },
     { name: 'recovers from the CURRENT params, not the create-time ones', preset: 'park 1', opts: { retarget: 'memories' } },
     { name: 'paused stays paused across loss + restore', preset: 'memories', opts: { pause: true } },
     { name: 'loss mid-transition recovers and the route settles', preset: 'memories', opts: { transition: true } },
@@ -290,17 +348,19 @@ async function main() {
     // For eyes, not proof: one PNG per spec, the preset with the overrides merged on (values are JSON, so
     // phenology=0.75 and faithful_canopy=true both work), written to out/<name>.png. Unlike the suites it
     // re-bakes first (`rebake`), so a faithful look's frame is the real one and not the empty-sun-cloud first bake.
+    // `--size 960x540` after a --look renders that one at that size (default 320x180, what every hash is taken at).
     if (process.argv[2] === '--look') {
       const specs = [];
       for (let i = 2; i < process.argv.length; i++) {
         const a = process.argv[i];
-        if (a === '--look') specs.push({ preset: process.argv[++i], name: null, over: {} });
+        if (a === '--look') specs.push({ preset: process.argv[++i], name: null, over: {}, size: null });
         else if (a === '--as') specs[specs.length - 1].name = process.argv[++i];
+        else if (a === '--size') specs[specs.length - 1].size = process.argv[++i].split('x').map(Number);
         else { const [k, ...v] = a.split('='); specs[specs.length - 1].over[k] = JSON.parse(v.join('=')); }
       }
       for (const s of specs) {
         const name = s.name || slug(`${s.preset} ${Object.entries(s.over).map(([k, v]) => `${k} ${v}`).join(' ')}`);
-        const r = await page.evaluate(([p, o, f]) => window.__run(p, o, [f], { rebake: true }), [s.preset, s.over, SMOKE_FRAMES]);
+        const r = await page.evaluate(([p, o, f, z]) => window.__run(p, o, [f], { rebake: true, size: z }), [s.preset, s.over, SMOKE_FRAMES, s.size || null]);
         log(`  ${await writePNG(name, await page.evaluate((id) => window.__png(id), r.captures[0].id))}   ${r.captures[0].hash}${r.glError ? `  gl.getError 0x${r.glError.toString(16)}` : ''}`);
       }
       await browser.close(); server.close();
@@ -311,11 +371,15 @@ async function main() {
     // Optional CLI filter (substring match on preset names, case-insensitive): renders only the matching
     // looks and SKIPS the gate/determinism suites — the fast authoring loop. No args = the full run.
     const robustOnly = process.argv[2] === '--robust';
-    const filters = process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
+    const gateOnly = process.argv[2] === '--gate';
+    const fillOnly = process.argv[2] === '--fill';
+    const solo = robustOnly || gateOnly || fillOnly;   // one suite, nothing else
+    const gateFilters = gateOnly ? process.argv.slice(3).map((s) => s.toLowerCase()) : [];
+    const filters = (gateOnly || fillOnly) ? [] : process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
     const allPresets = await page.evaluate(() => window.__presets());
-    const presets = robustOnly ? [] : filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
+    const presets = solo ? [] : filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
     if (filters.length && presets.length === 0) { log(`no preset matches: ${filters.join(', ')}`); await browser.close(); server.close(); process.exit(1); }
-    if (!robustOnly) log(`\nSMOKE — ${presets.length} presets @ ${SMOKE_FRAMES} frames`);
+    if (!solo) log(`\nSMOKE — ${presets.length} presets @ ${SMOKE_FRAMES} frames`);
     const truncated = [];   // groves that outgrew the woody-occluder table (§4.5) — see the note under the loop
     for (const name of presets) {
       let r;
@@ -356,8 +420,8 @@ async function main() {
     // ---- suite 3a: stillness — the proof that the capture road and the motion freeze are actually stable.
     // Two captures forty ticks apart out of ONE engine. If wind, weather, drift, the auto-quality governor
     // or the adaptive-fps present path were still moving anything, this is where it shows.
-    log(`\nDETERMINISM — stillness (one engine, captures at ${STILL_FRAMES.join(' and ')})`);
-    for (const name of DETERMINISM) {
+    if (!solo) log(`\nDETERMINISM — stillness (one engine, captures at ${STILL_FRAMES.join(' and ')})`);
+    for (const name of solo ? [] : DETERMINISM) {
       const r = await page.evaluate(([p, f]) => window.__run(p, {}, f), [name, STILL_FRAMES]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [r.captures[0].id, r.captures[1].id]);
       record('determinism', `${name} holds still`, d.equal, d.equal ? `hash ${r.captures[0].hash}` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}`);
@@ -366,8 +430,8 @@ async function main() {
     }
 
     // ---- suite 3b: two independent engines ----
-    log('\nDETERMINISM — two independent engines, same look');
-    for (const name of DETERMINISM) {
+    if (!solo) log('\nDETERMINISM — two independent engines, same look');
+    for (const name of solo ? [] : DETERMINISM) {
       const a = await page.evaluate(([p, f]) => window.__run(p, {}, [f]), [name, GATE_FRAMES]);
       const b = await page.evaluate(([p, f]) => window.__run(p, {}, [f]), [name, GATE_FRAMES]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.captures[0].id]);
@@ -377,13 +441,21 @@ async function main() {
     }
 
     // ---- suite 2: the gate invariants ----
-    log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
-    for (const inv of INVARIANTS) {
+    if (!fillOnly) log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
+    for (const inv of fillOnly ? [] : INVARIANTS.filter((r) => !gateFilters.length || gateFilters.some((f) => r.name.toLowerCase().includes(f)))) {
       const opts = inv.rebake ? { rebake: true } : undefined;
       const a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.a, GATE_FRAMES, opts]);
       const b = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.b, GATE_FRAMES, opts]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.captures[0].id]);
       const tag = inv.known ? 'KNOWN-FAIL' : 'FAIL';
+      if (inv.differ) {   // a LIVE row: the frames must differ, and the engine must have stayed GL-clean doing it
+        const gl = a.glError || b.glError;
+        const ok = !d.equal && !gl;
+        record('gate', inv.name, ok, ok ? `differ (${a.captures[0].hash} vs ${b.captures[0].hash}), ${d.diffPixels}/${d.total} px, max Δ${d.maxDelta}`
+          : gl ? `gl.getError 0x${gl.toString(16)}` : `frames IDENTICAL (${a.captures[0].hash}) — the gate is not a switch`);
+        log(`  ${ok ? 'ok  ' : 'FAIL'}  [${inv.preset}] ${inv.name}${ok ? '' : gl ? `   gl.getError 0x${gl.toString(16)}` : '   frames identical — the gate does nothing'}`);
+        continue;
+      }
       if (!d.equal) {
         await writePNG(`gate-${slug(inv.name)}-a`, await page.evaluate((id) => window.__png(id), a.captures[0].id));
         await writePNG(`gate-${slug(inv.name)}-b`, await page.evaluate((id) => window.__png(id), b.captures[0].id));
@@ -395,9 +467,48 @@ async function main() {
       if (!d.equal) log(`        ${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}, first at (${d.firstAt}) — see out/diff-${slug(inv.name)}.png`);
     }
 
+    // ---- suite 2b: the sky fill's shader against its reference ----
+    if (!gateOnly && !robustOnly) log('\nSKY FILL — the shader against komorebi-fill.js, on the layers the engine baked');
+    for (const c of (gateOnly || robustOnly) ? [] : FILL_CHECKS) {
+      let r;
+      try {
+        r = await page.evaluate(([p, o, q]) => window.__fillCheck(p, o, q), [c.preset, c.over, { rebake: !!c.rebake }]);
+      } catch (e) { record('fill', c.name, false, e.message.split('\n')[0]); log(`  FAIL  ${c.name} — ${e.message.split('\n')[0]}`); continue; }
+      const bad = [];
+      if (r.errT > FILL_TOL) bad.push(`Tsky off by ${r.errT.toExponential(2)}`);
+      if (r.errS > FILL_TOL) bad.push(`S off by ${r.errS.toExponential(2)}`);
+      if (!(r.maxT > r.minT + 1e-3)) bad.push(`Tsky is flat (${r.minT.toFixed(4)}..${r.maxT.toFixed(4)}): nothing was measured`);
+      const detail = `errT ${r.errT.toExponential(1)} errS ${r.errS.toExponential(1)}  Tsky ${r.minT.toFixed(2)}..${r.maxT.toFixed(2)} mean ${r.meanT.toFixed(3)}  S mean ${r.meanS.toFixed(3)}  texel-to-texel rms by mip ${r.rough.map((v) => v.toFixed(3)).join('/')}  ${r.res}px K${r.K}${r.faithful ? `  layers ${r.layerRes}px @ ${r.heights.map((h) => h.toFixed(2)).join('/')} m` : ''}`;
+      record('fill', c.name, bad.length === 0, bad.join('; ') || detail);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(62)} ${bad.join('; ') || detail}`);
+    }
+
+    if (!gateOnly && !robustOnly) log('\nSKY FILL — canopy_fill opened and shut on a running engine');
+    for (const c of (gateOnly || robustOnly) ? [] : FILL_TOGGLES) {
+      const name = `${c.name}: ${c.sky ? 'opening it allocates nothing and moves nothing' : 'shut costs nothing, open bakes, shut again is the old frame'}`;
+      let r;
+      try { r = await page.evaluate(([p, o, q]) => window.__fillToggle(p, o, q), [c.preset, c.over, { rebake: !!c.rebake }]); }
+      catch (e) { record('fill', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); continue; }
+      const [shut, open, again] = r.stages, bad = [];
+      if (shut.allocated || shut.ready) bad.push('the shut gate allocated or baked a fill');
+      if (c.sky) {
+        if (open.allocated || open.ready) bad.push('the sky view allocated a fill');
+        if (!r.diff.openVsShut0.equal) bad.push('the sky frame moved when canopy_fill opened');
+      } else {
+        if (!open.allocated || !open.ready) bad.push('opening canopy_fill did not bake a fill');
+        if (r.diff.openVsShut0.equal) bad.push('the open frame equals the shut one');
+      }
+      if (again.allocated || again.ready) bad.push('shutting canopy_fill did not free the fill');
+      if (!r.diff.shutAgain.equal) bad.push(`shut again is not the old frame (${r.diff.shutAgain.diffPixels}/${r.diff.shutAgain.total} px differ)`);
+      if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
+      const detail = `${shut.hash} -> ${open.hash} -> ${again.hash}   allocated ${[shut, open, again].map((x) => (x.allocated ? 'yes' : 'no')).join('/')}`;
+      record('fill', name, bad.length === 0, bad.join('; ') || detail);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || detail}`);
+    }
+
     // ---- suite 4: transition routing ----
-    log('\nTRANSITIONS — each routing tier driven to completion (logic-only; no pixels)');
-    for (const route of TRANSITION_ROUTES) {
+    if (!solo) log('\nTRANSITIONS — each routing tier driven to completion (logic-only; no pixels)');
+    for (const route of solo ? [] : TRANSITION_ROUTES) {
       let r;
       try {
         r = await page.evaluate(([from, to, over, opts]) => window.__transitionSmoke(from, to, over, opts), [route.from, route.to, route.over, route.interrupt ? { interrupt: route.interrupt } : {}]);
@@ -418,7 +529,7 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${route.name.padEnd(50)} ${bad.join('; ') || `${r.ticks} ticks ${r.ms} ms`}`);
     }
     }
-    if (!filters.length) await robustness(page);
+    if (!filters.length && !gateOnly && !fillOnly) await robustness(page);
   } finally {
     await browser.close();
     server.close();

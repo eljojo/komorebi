@@ -1,5 +1,5 @@
-import { MAX_SAMPLES, MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
-import { GLSL_TONE_TAIL } from './komorebi-shaders.js';
+import { MAX_SAMPLES, MAX_OCC } from './komorebi-params.js';
+import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY } from './komorebi-shaders.js';
 
 // ============================================================================
 // THE TRANSPORT MASTER (spec §4.6 / §4.9) — ONE source, FOUR straight-line programs.
@@ -27,13 +27,7 @@ in vec2 vUv;
 out vec4 frag;
 uniform float uAspect;
 uniform vec2  uViewCenter;        // camera PAN: world point the screen centre looks at (0 = frame centre). Lets you walk the view around the floor.
-uniform vec2  uCanopyOrigin;
-uniform vec2  uCanopyExtent;
-uniform vec3  uSunColor;
-uniform vec3  uAmbient;
-uniform highp sampler2D uLayer[${MAX_LAYERS}];   // highp: optical depth exceeds lowp's ~[-2,2]
-uniform float uLayerHeight[${MAX_LAYERS}];
-uniform int   uLayerCount;`;
+${GLSL_LAYER_FIELD}`;
 
 // ---- the three RAY cameras (floor, enclosure, sky) build a direction from pitch/fov and spin it by yaw.
 // The cloth is seen head-on and builds no ray at all, so it declares none of them. ----
@@ -105,8 +99,9 @@ uniform vec2  uFaithExtent;
 vec3 tapFaith(vec2 world){ return texture(uFaithTex, (world-uFaithOrigin)/uFaithExtent).rgb; }   // already transmittance (pre-integrated over the disk), no exp`;
 
 // ---- the raw unit sun vector. The floor never needs it (its throw rides uProj/uBulkShift); the fabric's fold
-// incidence, the enclosure's per-panel beam and the sky view's seen source all do. ----
-const GLSL_T_SUN_DIR_DECLS = `uniform vec3  uSunDir;            // UNIT sun direction (cos el·cos az, cos el·sin az, sin el) — the fold flanks' incidence basis (§4.9); NOT a 1/sin E throw`;
+// incidence, the enclosure's per-panel beam and the sky view's seen source all do. The line itself is shared with the
+// sky fill's bake (shaders.js), whose rays walk the same sun path the sky view's do. ----
+const GLSL_T_SUN_DIR_DECLS = GLSL_SUN_DIR_DECLS;
 
 // ---- the tail every variant shares: the mesopic shift, the distance haze, and the Look (§4.7). ----
 const GLSL_T_POST_DECLS = `uniform float uTwilight;          // global "sun is low" rod weight (from elevation, §3.5)
@@ -115,6 +110,24 @@ uniform vec3  uHazeColor;        // linear-HDR distance haze the far floor disso
 uniform int   uLinearOut;         // 0 = end the Look here and write display-encoded colour (every look, unchanged). 1 = write LINEAR HDR
                                   // instead: the lateral-diffusion tier (§4.9) must spread light BEFORE the curve, so it runs toneTail itself after the blur.
 ${GLSL_TONE_TAIL}`;
+
+// ---- THE SKY FILL's receiver half (§4.7): what the three surface cameras read. The bake (FS_FILL, run per bake by
+// komorebi-bake.js) integrates the canopy's hemisphere over the floor; this is only the two textures it leaves and the
+// gate that says how much of them to believe. The sky view has no surface to light and does not speak this group. ----
+const GLSL_T_FILL_DECLS = `uniform float uCanopyFill;      // canopy_fill: the share of the shade that is lit THROUGH the canopy. 0 = the old unfiltered sky, byte-identical (every shipped look)
+uniform highp sampler2D uFillT;   // Tsky(x): the skylight's transmittance through the canopy over the point's hemisphere, per channel (1 = open sky)
+uniform highp sampler2D uFillS;   // S(x): the irradiance the lit leaves scatter DOWN onto it, linear HDR (the floor alone reads it)
+// WHY A MIP LEVEL. The bake is K rays per texel, a point estimate of a field that is smooth at the scale of crown gaps
+// but is a leaf-scale pattern ray by ray: K = 16 leaves leaf-scale speckle in every texel, and a bilinear read of
+// that is a visible lattice. The remedy is to AVERAGE the estimate, not to veil the canopy: Tsky is already a
+// transmittance and S a radiance, so the box average of a mip level is just more rays' worth of the same mean (the
+// fill's own output — Jensen forbids a blur of the layers' optical depth, which this is not).
+// WHICH LEVEL. The bake interleaves its directions over a 4x4 tile of texels (FS_FILL), so a level-2 box holds 16·K
+// distinct directions. What is left at level 2 is independent noise per box, reconstructed bilinearly at the box pitch
+// (decimetres): faint blotches. Level 3, an 8x8 box (four tiles), measures 30% lower error against a K=64 bake of the
+// same read for the same cost, and below a 4-tap smoothing of level 2, which costs four times the reads. What it
+// blurs away is small (crown gaps are metres), and it scales with the texel: fill_resolution is the spatial knob.
+const float FILL_LOD = 3.0;`;
 
 // ---- FLOOR camera (§4.7) ----
 const GLSL_T_FLOOR_DECLS = `uniform float uViewExtent;
@@ -153,7 +166,23 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fra
     if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); world = mat2(cy,-sy,sy,cy)*world; }
     world += uViewCenter;            // camera pan: shift the looked-at floor point (0 = unchanged)`;
 
-const GLSL_T_FLOOR_MATERIAL = `    col = (acc*uSunColor + uAmbient) * uGround;            // OPAQUE FLOOR — literal old expression, byte-identical`;
+// THE SHADE IS LIT THROUGH THE CANOPY (§4.7). The floor is lit by the sun's beam through the gaps (acc), by the skylight
+// that ALSO had to come through the canopy (Tsky, forestry's diffuse gap fraction), and by the sunlight the lit leaves
+// scatter downward (S). Only the beam used to be filtered; under a red fall canopy that is a red beam on a blue-lit
+// floor, and the shade goes magenta. Both fill reads sit at the floor's own world point — the point the beam is read
+// at, CLAMP_TO_EDGE like every other tap. canopy_fill is a SHARE of one fixed quantity (mix), never an addition: 1 is
+// the physical shade, 0 the old unfiltered sky.
+// THE GATE is a uniform branch whose else IS the old expression, character for character, so a look that never asks
+// for the fill is the bytes it always was. A branch rather than a separate program because canopy_fill TWEENS in a
+// transition, and a program is selected by MODE flags only (§4.6): the one first-compile a camera costs must land
+// inside a bloom, not on a slider.
+const GLSL_T_FLOOR_MATERIAL = `    if(uCanopyFill > 0.0){
+      vec2 fuv = (world-uCanopyOrigin)/uCanopyExtent;
+      vec3 amb = mix(uAmbient, uAmbient*textureLod(uFillT, fuv, FILL_LOD).rgb + textureLod(uFillS, fuv, FILL_LOD).rgb, uCanopyFill);
+      col = (acc*uSunColor + amb) * uGround;
+    } else {
+      col = (acc*uSunColor + uAmbient) * uGround;            // OPAQUE FLOOR — literal old expression, byte-identical
+    }`;
 
 // ---- CLOTH camera (§4.9): the curtain, seen head-on ----
 const GLSL_T_CLOTH_DECLS = `uniform float uViewExtent;
@@ -354,7 +383,18 @@ const GLSL_T_FABRIC_MATERIAL = `    // The landed irradiance the fabric answers.
     // against this panel's own normal (§4.9): a directional beam takes an incidence cosine, a hemisphere of sky
     // takes how much of the hemisphere the panel sees. beamF/skyF/recvAtten are all 1 on the floor and the curtain,
     // so what those two evaluate is the old expression exactly.
-    vec3 E = acc*uSunColor*beamF + uAmbient*skyF;
+    // THE SKY FILL's cloth half (§4.7): the skylight that reaches this point also came through the canopy, so the sky
+    // term takes Tsky at the point's plan position (world, which both receivers set above) — read from the floor's
+    // hemisphere. A NAMED APPROXIMATION on both counts: a vertical cloth's hemisphere is half ground-bounce, which the
+    // engine has no term for, and the fill is baked at floor height, so a point high up the cloth reads the hemisphere
+    // a floor point under it would see. The scattered light S is not read here at all. Shut gate = the old line, verbatim.
+    vec3 E;
+    if(uCanopyFill > 0.0){
+      vec3 skyT = mix(vec3(1.0), textureLod(uFillT, (world-uCanopyOrigin)/uCanopyExtent, FILL_LOD).rgb, uCanopyFill);
+      E = acc*uSunColor*beamF + uAmbient*skyF*skyT;
+    } else {
+      E = acc*uSunColor*beamF + uAmbient*skyF;
+    }
     E *= recvAtten;                                        // enclosure only: interior depth fade × the ridge seam`;
 
 const GLSL_T_FABRIC_TAIL = `    vec3 tintHat = uFabricTint / max(max(uFabricTint.r, uFabricTint.g), max(uFabricTint.b, 1e-4));   // unit-peak HUE
@@ -602,24 +642,9 @@ uniform vec2  uSrcMoon;           // eclipse: the moon disk's (centre offset, ra
 // daylight look puts open sky near sRGB (184,208,232) and keeps it clear of the thinnest sunlit crown.
 const float SKY_AA = 0.004;
 const float SKY_SKY_GAIN = 7.5;
-// A transmittance normalized to unit peak: the spectrum with its brightness divided out (§3.5's idiom, and the same
-// one the curtain's dye uses). What survives is chlorophyll's green-gold; the knob that reads it carries the level.
-vec3 leafHue(vec3 t){ return t / max(max(t.r, t.g), max(t.b, 1e-4)); }
-// A layer read for the SKY VIEW (§4.9). Same texture, same Beer's law, one difference: OUTSIDE the baked canopy box
-// there is no canopy, so the ray sees open sky. The floor path never needs this (its frame lives inside the box),
-// but an upward ray leaves the box within a few metres of height, and CLAMP_TO_EDGE would smear the border texel
-// across the whole periphery of the frame instead of opening onto blue.
-// SKY VIEW's layer tap, and it comes apart into two quantities on purpose (§4.9). .rgb is the FOLIAGE's
-// per-channel transmittance; .a is the WOOD's, neutral because wood blocks every colour equally. They are stored in
-// different channels of the same texel because they are different KINDS of occluder to the scatter term below: a
-// leaf takes light out of the ray and puts some of it back, wood only takes it out. Outside the baked box both are
-// 1 — beyond the grove there is open sky, and an upward frame leaves that box within metres.
-vec4 tapUpLW(highp sampler2D t, vec2 world){
-  vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
-  if(any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return vec4(1.0);
-  vec4 d = texture(t,uv);
-  return vec4(exp(-d.rgb), exp(-d.a));
-}
+// leafHue, the layer tap along a ray, and skyRay itself — the single-scatter sum — live in ONE shared snippet
+// (shaders.js), because the sky fill's bake (§4.7) integrates the very same ray over the floor's hemisphere.
+${GLSL_SKY_RAY}
 // Closest approach between the upward view ray (origin O, UNIT direction U, t ≥ 0) and the wood segment Pa→Pb.
 // Returns (distance, distance along the ray to the closest point) — the second feeds the angular soft edge, since an
 // angle times a distance is a length. The floor path measures the wood in PLAN because a shadow is a plan object;
@@ -667,53 +692,13 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
       vec2 pL1 = eye.xy + dir.xy*(uLayerHeight[1]/dir.z);
       vec2 pL2 = eye.xy + dir.xy*(uLayerHeight[2]/dir.z);
       vec2 pL3 = eye.xy + dir.xy*(uLayerHeight[3]/dir.z);
-      vec4 qL0 = uLayerCount>0 ? tapUpLW(uLayer[0], pL0) : vec4(1.0);
-      vec4 qL1 = uLayerCount>1 ? tapUpLW(uLayer[1], pL1) : vec4(1.0);
-      vec4 qL2 = uLayerCount>2 ? tapUpLW(uLayer[2], pL2) : vec4(1.0);
-      vec4 qL3 = uLayerCount>3 ? tapUpLW(uLayer[3], pL3) : vec4(1.0);
-      // tL = what the FOLIAGE does (this layer's leaves alone) — the only thing the scatter term may read.
-      // xL = what the RAY loses (leaves × wood) — the only thing transmittance may read.
-      vec3 tL0 = qL0.rgb, tL1 = qL1.rgb, tL2 = qL2.rgb, tL3 = qL3.rgb;
-      vec3 xL0 = qL0.rgb*qL0.a, xL1 = qL1.rgb*qL1.a, xL2 = qL2.rgb*qL2.a, xL3 = qL3.rgb*qL3.a;
-      vec3 T = vec3(1.0);
-      T *= xL0; T *= xL1; T *= xL2; T *= xL3;
-      // ---- SINGLE-SCATTER FOLIAGE RADIANCE (§4.9). Transmission alone can only DARKEN: every ray is the sky
-      // attenuated, so a leaf is at best a dim filter and a deep crown is black. Foliage in daylight is LIT — light
-      // reaches a leaf, scatters inside it and leaves in every direction, so a sunlit crown is brighter than a shaded
-      // one against the same sky. That is a source term along the ray, and over a layered field it is a sum, not an
-      // integral: L += throughput·(1 − t_L)·ŝ_L·S_L, throughput *= t_L, accumulated eye → sky.
-      //  • (1 − t_L) is the share of the beam this layer takes OUT of the ray — the scattering density, measured from
-      //    the same tap the silhouette uses, not authored.
-      //  • S_L is the irradiance arriving at that layer FROM ABOVE: the sun attenuated by the layers over it along
-      //    the SUN's ray (offset +g per metre of rise, since that is where the light comes from), plus the skylight.
-      //    Those are extra taps and nothing else — the field already holds everything they need.
-      //  • ŝ_L is the layer's own transmittance normalized to unit peak: HUE only (§3.5), so the knob carries
-      //    brightness and the chlorophyll spectrum carries colour. Taking the LAYER's rather than one leaf's also
-      //    accounts to first order for the scattered light filtering back out through the layer that made it.
-      // The bound is structural: Σ throughput·(1 − t_L) telescopes to 1 − Π t_L ≤ 1 per channel, ŝ ≤ 1 and
-      // uSkyScatter ≤ 1, so a crown can never radiate more than the light falling on it.
-      vec3 Lsc = vec3(0.0);
-      if(uSkyScatter > 0.0){
-        vec2 gS = uSunDir.xy / max(uSunDir.z, 0.05);
-        vec3 A0 = vec3(1.0), A1 = vec3(1.0), A2 = vec3(1.0);
-        // the SUN's path takes the FULL transmittance — a twig shadows a leaf exactly as another leaf does; it is
-        // only as a SOURCE that wood must not participate.
-        vec4 a01, a02, a03, a12, a13, a23;
-        if(uLayerCount>1){ a01 = tapUpLW(uLayer[1], pL0 + gS*(uLayerHeight[1]-uLayerHeight[0])); A0 *= a01.rgb*a01.a; }
-        if(uLayerCount>2){ a02 = tapUpLW(uLayer[2], pL0 + gS*(uLayerHeight[2]-uLayerHeight[0])); A0 *= a02.rgb*a02.a; }
-        if(uLayerCount>3){ a03 = tapUpLW(uLayer[3], pL0 + gS*(uLayerHeight[3]-uLayerHeight[0])); A0 *= a03.rgb*a03.a; }
-        if(uLayerCount>2){ a12 = tapUpLW(uLayer[2], pL1 + gS*(uLayerHeight[2]-uLayerHeight[1])); A1 *= a12.rgb*a12.a; }
-        if(uLayerCount>3){ a13 = tapUpLW(uLayer[3], pL1 + gS*(uLayerHeight[3]-uLayerHeight[1])); A1 *= a13.rgb*a13.a; }
-        if(uLayerCount>3){ a23 = tapUpLW(uLayer[3], pL2 + gS*(uLayerHeight[3]-uLayerHeight[2])); A2 *= a23.rgb*a23.a; }
-        // THE SOURCE TERM READS FOLIAGE ONLY. Wood appears in the throughput, which can only take light away, and
-        // nowhere in the emission — so a ray that meets nothing but wood scatters exactly nothing.
-        vec3 thr = vec3(1.0);
-        Lsc += thr*(1.0-tL0)*leafHue(tL0)*(uSunColor*A0 + uAmbient); thr *= xL0;
-        Lsc += thr*(1.0-tL1)*leafHue(tL1)*(uSunColor*A1 + uAmbient); thr *= xL1;
-        Lsc += thr*(1.0-tL2)*leafHue(tL2)*(uSunColor*A2 + uAmbient); thr *= xL2;
-        Lsc += thr*(1.0-tL3)*leafHue(tL3)*(uSunColor    + uAmbient);   // nothing is stacked above the top layer
-        Lsc *= uSkyScatter;
-      }
+      // The whole read — the four layer taps, the transmittance, and (when sky_scatter is up) the single-scatter
+      // foliage radiance of §4.9 — is skyRay (shaders.js, GLSL_SKY_RAY): one source, which the sky fill's bake (§4.7)
+      // runs along its own hemisphere rays. Here the eye's rays leave the box onto open sky and the layer texture's
+      // alpha is the wood's optical depth.
+      vec3 T, Lsc;
+      skyRay(pL0, pL1, pL2, pL3, uSkyScatter > 0.0, true, true, T, Lsc);
+      if(uSkyScatter > 0.0) Lsc *= uSkyScatter;
       // WOOD AS SILHOUETTE. The same segments the floor casts shadows with (§4.5), read as GEOMETRY this time: no
       // uBulkShift term anywhere here, because that vector is where the wood's shadow FALLS and we are looking at the
       // wood itself. The sway is kept, each endpoint drifting by its own height fraction exactly as the cast does, so
@@ -924,6 +909,7 @@ const TRANSPORT_GROUPS = {
                                                       tentEndLean:'uTentEndLean', tentShoulderH:'uTentShoulderH', tentShoulderW:'uTentShoulderW',
                                                       tentEndApex:'uTentEndApex', tentHipRake:'uTentHipRake', tentEye:'uTentEye',
                                                       tentFade:'uTentFade', tentSeam:'uTentSeam', tentMesh:'uTentMesh' } },
+  fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillT:'uFillT', fillS:'uFillS' } },
   sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
                                                       exposure:'uExposure', contrast:'uContrast', tone:'uToneMap' } },
@@ -936,24 +922,24 @@ const TRANSPORT_GROUPS = {
 // the knob families an entry answers for, so a reader can find the other end of a receiver from here. ----
 const CAMERAS = {
   floor: {
-    groups: ['head','rayView','occ','transport','woodCast','tap','ca','faith','floor','post'],
+    groups: ['head','rayView','occ','transport','woodCast','tap','ca','faith','floor','fill','post'],
     prologue: GLSL_T_PRO_FLOOR, camera: GLSL_T_FLOOR_CAMERA, faith: GLSL_T_FAITH_FLOOR,
     material: [GLSL_T_FLOOR_MATERIAL],
-    params: ['ground_*', 'far_smear', 'view_*'],
+    params: ['ground_*', 'far_smear', 'view_*', 'canopy_fill', 'fill_*'],
     note: 'the light lands on the ground and REFLECTS (§4.7) — the park default, and the only camera with an albedo',
   },
   cloth: {
-    groups: ['head','occ','transport','woodCast','tap','ca','faith','sunDir','cloth','fabric','fold','warp','window','post'],
+    groups: ['head','occ','transport','woodCast','tap','ca','faith','sunDir','cloth','fabric','fold','warp','window','fill','post'],
     prologue: GLSL_T_PRO_CLOTH, camera: GLSL_T_CLOTH_CAMERA, faith: GLSL_T_FAITH_CLOTH,
     material: [GLSL_T_FABRIC_MATERIAL, GLSL_T_WINDOW_APPLY, GLSL_T_FABRIC_TAIL],
-    params: ['fabric_*', 'fold_*', 'velvet_sheen', 'cloth_distance_m', 'mullion_*', 'window_*', 'view_extent_m', 'view_center_*'],
+    params: ['fabric_*', 'fold_*', 'velvet_sheen', 'cloth_distance_m', 'mullion_*', 'window_*', 'view_extent_m', 'view_center_*', 'canopy_fill'],
     note: 'a standing curtain seen head-on, TRANSMITTING (§4.9); the only camera with a flat plane behind it, so the window and the pleat warp are its alone',
   },
   enclosure: {
-    groups: ['head','rayView','occ','transport','woodCast','tap','ca','sunDir','fabric','fold','tent','post'],
+    groups: ['head','rayView','occ','transport','woodCast','tap','ca','sunDir','fabric','fold','tent','fill','post'],
     prologue: GLSL_T_PRO_TENT, camera: GLSL_T_TENT_CAMERA, faith: null,
     material: [GLSL_T_FABRIC_MATERIAL, GLSL_T_FABRIC_TAIL],
-    params: ['fabric_*', 'fold_*', 'velvet_sheen', 'tent_*', 'view_*'],
+    params: ['fabric_*', 'fold_*', 'velvet_sheen', 'tent_*', 'view_*', 'canopy_fill'],
     note: 'the same fabric as a closed tent stood AROUND the viewer, ray-cast per pixel (§4.9). No faithful tier: the pre-bake needs one flat cast frame and a polytope has none',
   },
   sky: {
@@ -975,7 +961,7 @@ const cameraFor = (p) => p.sky_view ? 'sky' : (p.receiver|0) === 2 ? 'enclosure'
 // they need engine state (the GL objects, params, the grove) a module-level table cannot reach. This list is the
 // seam between the two — create() checks its table against it on construction, and registry.test.js checks it
 // against TRANSPORT_GROUPS and CAMERAS. Neither half can drift without one of those saying so.
-const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','ca','faith','sunDir','floor','cloth','fabric','window','tent','sky','post'];
+const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','sky','post'];
 
 // The assembler. Every conditional it used to carry is now a lookup: the decls are the entry's groups in order,
 // the body is the entry's own snippets, and the only branch left is the one real structural fork — whether this

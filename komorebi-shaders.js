@@ -1,3 +1,5 @@
+import { MAX_LAYERS, MAX_FILL_DIRS } from './komorebi-params.js';
+
 // ===========================================================================
 // Shaders
 // ===========================================================================
@@ -286,6 +288,152 @@ vec3 toneTail(vec3 col){
 }`;
 
 
+// ---- THE LAYER FIELD, as every program that reads it declares it. The transport head carries these seven lines and
+// the sky fill's bake carries the same seven: one string, so a snippet that reads a layer uniform can never find it
+// spelled differently (or missing) in one of its two homes. ----
+const GLSL_LAYER_FIELD = `uniform vec2  uCanopyOrigin;
+uniform vec2  uCanopyExtent;
+uniform vec3  uSunColor;
+uniform vec3  uAmbient;
+uniform highp sampler2D uLayer[${MAX_LAYERS}];   // highp: optical depth exceeds lowp's ~[-2,2]
+uniform float uLayerHeight[${MAX_LAYERS}];
+uniform int   uLayerCount;`;
+
+// ---- the raw unit sun vector. The floor never needs it (its throw rides uProj/uBulkShift); the fabric's fold
+// incidence, the enclosure's per-panel beam, the sky view's seen source and the sky fill's sun path all do. ----
+const GLSL_SUN_DIR_DECLS = `uniform vec3  uSunDir;            // UNIT sun direction (cos el·cos az, cos el·sin az, sin el) — the fold flanks' incidence basis (§4.9); NOT a 1/sin E throw`;
+
+// ---- ONE UPWARD RAY THROUGH THE LAYER FIELD (§4.9 / §4.7). Everything that reads the canopy ALONG A RAY runs this one
+// source: the sky view's eye ray and each of the sky fill's hemisphere rays. The fill's integrand IS the sky view's
+// radiance (§4.7), so it is the same GLSL rather than a second copy that agrees today — registry.test.js holds both
+// programs to this exact text, and the shared bound below (the telescoping sum) is therefore one bound, not two.
+// What differs between the two readers is only HOW a ray reads a texel, and that is said at the call as an argument,
+// never as a second function:
+//   openOutside — outside the baked canopy box there is no canopy, so the eye sees open sky. (The floor's own taps
+//                 never need this — a frame lives inside the box — but an upward ray leaves the box within a few
+//                 metres of height, and CLAMP_TO_EDGE would smear the border texel across the whole periphery of the
+//                 frame instead of opening onto blue.) The fill's hemisphere says false: it reads the border like every
+//                 other tap in the engine does.
+//   woodInAlpha — a layer texel comes apart into two quantities on purpose (§4.9). .rgb is the FOLIAGE's per-channel
+//                 transmittance; .a is the WOOD's, neutral because wood blocks every colour equally. They live in
+//                 different channels because they are different KINDS of occluder to the scatter term: a leaf takes
+//                 light out of the ray and puts some of it back, wood only takes it out. Only the sky view's bake
+//                 puts wood there; everywhere else alpha is leaf coverage, which must never be read as an optical
+//                 depth — so the fill says false and gets 1.
+const GLSL_SKY_RAY = `// A transmittance normalized to unit peak: the spectrum with its brightness divided out (§3.5's idiom, and the same
+// one the curtain's dye uses). What survives is chlorophyll's green-gold; the knob that reads it carries the level.
+vec3 leafHue(vec3 t){ return t / max(max(t.r, t.g), max(t.b, 1e-4)); }
+vec4 tapUpLW(highp sampler2D t, vec2 world, bool openOutside, bool woodInAlpha){
+  vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
+  if(openOutside && (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))) return vec4(1.0);
+  vec4 d = texture(t,uv);
+  return vec4(exp(-d.rgb), woodInAlpha ? exp(-d.a) : 1.0);
+}
+// pL_i is where the ray crosses layer i's plane — the caller's own geometry, so the eye's perspective and the
+// hemisphere's fixed directions both fit. Returns T (what the ray passes: leaves × wood, per channel) and Lsc (the
+// foliage's single-scatter radiance along it, BEFORE the albedo: the caller multiplies uSkyScatter / fill_scatter).
+// ---- SINGLE-SCATTER FOLIAGE RADIANCE (§4.9). Transmission alone can only DARKEN: every ray is the sky attenuated, so
+// a leaf is at best a dim filter and a deep crown is black. Foliage in daylight is LIT — light reaches a leaf,
+// scatters inside it and leaves in every direction, so a sunlit crown is brighter than a shaded one against the same
+// sky. That is a source term along the ray, and over a layered field it is a sum, not an integral:
+// L += throughput·(1 − t_L)·ŝ_L·S_L, throughput *= t_L, accumulated eye → sky.
+//  • (1 − t_L) is the share of the beam this layer takes OUT of the ray — the scattering density, measured from
+//    the same tap the silhouette uses, not authored.
+//  • S_L is the irradiance arriving at that layer FROM ABOVE: the sun attenuated by the layers over it along
+//    the SUN's ray (offset +g per metre of rise, since that is where the light comes from), plus the skylight.
+//    Those are extra taps and nothing else — the field already holds everything they need.
+//  • ŝ_L is the layer's own transmittance normalized to unit peak: HUE only (§3.5), so the knob carries
+//    brightness and the chlorophyll spectrum carries colour. Taking the LAYER's rather than one leaf's also
+//    accounts to first order for the scattered light filtering back out through the layer that made it.
+// The bound is structural: Σ throughput·(1 − t_L) telescopes to 1 − Π t_L ≤ 1 per channel, ŝ ≤ 1 and the albedo
+// ≤ 1, so a crown can never radiate more than the light falling on it.
+void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, bool scatter, bool openOutside, bool woodInAlpha, out vec3 T, out vec3 Lsc){
+  vec4 qL0 = uLayerCount>0 ? tapUpLW(uLayer[0], pL0, openOutside, woodInAlpha) : vec4(1.0);
+  vec4 qL1 = uLayerCount>1 ? tapUpLW(uLayer[1], pL1, openOutside, woodInAlpha) : vec4(1.0);
+  vec4 qL2 = uLayerCount>2 ? tapUpLW(uLayer[2], pL2, openOutside, woodInAlpha) : vec4(1.0);
+  vec4 qL3 = uLayerCount>3 ? tapUpLW(uLayer[3], pL3, openOutside, woodInAlpha) : vec4(1.0);
+  // tL = what the FOLIAGE does (this layer's leaves alone) — the only thing the scatter term may read.
+  // xL = what the RAY loses (leaves × wood) — the only thing transmittance may read.
+  vec3 tL0 = qL0.rgb, tL1 = qL1.rgb, tL2 = qL2.rgb, tL3 = qL3.rgb;
+  vec3 xL0 = qL0.rgb*qL0.a, xL1 = qL1.rgb*qL1.a, xL2 = qL2.rgb*qL2.a, xL3 = qL3.rgb*qL3.a;
+  T = vec3(1.0);
+  T *= xL0; T *= xL1; T *= xL2; T *= xL3;
+  Lsc = vec3(0.0);
+  if(scatter){
+    vec2 gS = uSunDir.xy / max(uSunDir.z, 0.05);
+    vec3 A0 = vec3(1.0), A1 = vec3(1.0), A2 = vec3(1.0);
+    // the SUN's path takes the FULL transmittance — a twig shadows a leaf exactly as another leaf does; it is
+    // only as a SOURCE that wood must not participate.
+    vec4 a01, a02, a03, a12, a13, a23;
+    if(uLayerCount>1){ a01 = tapUpLW(uLayer[1], pL0 + gS*(uLayerHeight[1]-uLayerHeight[0]), openOutside, woodInAlpha); A0 *= a01.rgb*a01.a; }
+    if(uLayerCount>2){ a02 = tapUpLW(uLayer[2], pL0 + gS*(uLayerHeight[2]-uLayerHeight[0]), openOutside, woodInAlpha); A0 *= a02.rgb*a02.a; }
+    if(uLayerCount>3){ a03 = tapUpLW(uLayer[3], pL0 + gS*(uLayerHeight[3]-uLayerHeight[0]), openOutside, woodInAlpha); A0 *= a03.rgb*a03.a; }
+    if(uLayerCount>2){ a12 = tapUpLW(uLayer[2], pL1 + gS*(uLayerHeight[2]-uLayerHeight[1]), openOutside, woodInAlpha); A1 *= a12.rgb*a12.a; }
+    if(uLayerCount>3){ a13 = tapUpLW(uLayer[3], pL1 + gS*(uLayerHeight[3]-uLayerHeight[1]), openOutside, woodInAlpha); A1 *= a13.rgb*a13.a; }
+    if(uLayerCount>3){ a23 = tapUpLW(uLayer[3], pL2 + gS*(uLayerHeight[3]-uLayerHeight[2]), openOutside, woodInAlpha); A2 *= a23.rgb*a23.a; }
+    // THE SOURCE TERM READS FOLIAGE ONLY. Wood appears in the throughput, which can only take light away, and
+    // nowhere in the emission — so a ray that meets nothing but wood scatters exactly nothing.
+    vec3 thr = vec3(1.0);
+    Lsc += thr*(1.0-tL0)*leafHue(tL0)*(uSunColor*A0 + uAmbient); thr *= xL0;
+    Lsc += thr*(1.0-tL1)*leafHue(tL1)*(uSunColor*A1 + uAmbient); thr *= xL1;
+    Lsc += thr*(1.0-tL2)*leafHue(tL2)*(uSunColor*A2 + uAmbient); thr *= xL2;
+    Lsc += thr*(1.0-tL3)*leafHue(tL3)*(uSunColor    + uAmbient);   // nothing is stacked above the top layer
+  }
+}`;
+
+// ---- THE SKY FILL's bake (spec §4.7, "What the shade is lit by"). One fragment per fill texel x (a plan point on the
+// floor, over the canopy box), K fixed cosine-weighted rays each, and the two quantities the shade is made of:
+//   Tsky(x) = (1/K) Σ_k Π_L T_L(x + h_L·s_k)       the skylight's transmittance through the canopy — forestry's diffuse gap fraction
+//   S(x)    = fill_scatter · (1/K) Σ_k Lsc_k        the sunlight the lit leaves scatter down onto it — the sky view's radiance, integrated
+// where s_k = tanθ_k·(cosφ_k, sinφ_k) is ray k's plan travel per metre of rise. The K directions are the plain set of
+// komorebi-fill.js (uFillRay: cos²θ_k and φ_k per ray), and each TEXEL rotates it by its slot in a fixed 4x4 Bayer tile
+// (INTERLEAVED SAMPLING): azimuth by 2π·b/16 and cos²θ by a sub-stratum, so the 16 texels of a tile (a mip-2 box) hold
+// 16·K distinct directions instead of the same K sixteen times. Without it neighbouring texels hit
+// correlated leaves and the mip shows facets. The slot is a pure function of the texel: nothing moves, nothing is random.
+// JENSEN IS A LAW OF THIS PASS: the sum is over TRANSMITTANCE. Each ray's product is taken at the ray's own taps and
+// the K products are what get averaged — never a mip or a blur of the optical depth, which would turn a gappy canopy
+// into a uniform veil and underestimate the fill. The sum is DIVIDED by K (not scaled by 1/K), so K rays of exactly
+// 1 sum to exactly K and give exactly 1: no canopy is exactly bright, for any K.
+// ENERGY: Tsky ≤ 1 by construction, and S ≤ fill_scatter·(1 − Tsky)·(sun + ambient) per channel by the sky view's
+// telescoping bound — structural, no clamp. Wood is not read (woodInAlpha false): the analytic occluder takes the
+// beam only, and a limb's share of the hemisphere is thin.
+const FS_FILL = `#version 300 es
+precision highp float;
+in vec2 vUv;
+layout(location=0) out vec4 fillT;
+layout(location=1) out vec4 fillS;
+${GLSL_LAYER_FIELD}
+${GLSL_SUN_DIR_DECLS}
+uniform vec3  uFillRay[${MAX_FILL_DIRS}];   // per ray of the PLAIN set: (cos²θ_k, cosφ_k, sinφ_k) — komorebi-fill.js fillRays
+uniform vec2  uFillTurn[16];                // per tile slot: (cos, sin) of its azimuth rotation 2π·b/16 — fillTurns. No sin/cos in this shader: GLSL ES only promises ~2⁻¹¹ of them, and a shift is tens of metres long
+uniform int   uFillCount;                   // K
+const int TILE[16] = int[16](0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5);   // the texel's Bayer slot at (i&3) + 4·(j&3): komorebi-fill.js FILL_TILE, character for character (a test holds them)
+uniform float uFillScatter;                 // the leaves' albedo; 0 skips the whole scatter branch (the cloth and the tent never read S, and are handed 0)
+${GLSL_SKY_RAY}
+void main(){
+  vec2 x = uCanopyOrigin + vUv*uCanopyExtent;   // the floor point this texel is (recvZ = 0)
+  bool scatter = uFillScatter > 0.0;
+  float K = float(uFillCount);
+  ivec2 q = ivec2(gl_FragCoord.xy) & ivec2(3);      // this texel's place in its 4x4 tile
+  int b = TILE[q.x + 4*q.y];
+  vec2 turn = uFillTurn[b];                         // the slot's azimuth rotation, and its sub-stratum in cos²θ (in strata, always inside one: θ stays under 90°)
+  float sub = (float(15 - b) + 0.5)/16.0 - 0.5;
+  vec3 Tsum = vec3(0.0), Lsum = vec3(0.0);
+  for(int k=0;k<${MAX_FILL_DIRS};k++){
+    if(k>=uFillCount) break;
+    vec3 r = uFillRay[k];
+    float c2 = r.x - sub/K;                          // cos²θ = 1 − (k + ½ + sub)/K
+    vec2 u = vec2(r.y*turn.x - r.z*turn.y, r.z*turn.x + r.y*turn.y);   // (cosφ, sinφ) turned by the slot
+    vec2 s = sqrt((1.0 - c2)/c2)*u;                  // tanθ·(cosφ, sinφ)
+    vec3 T, Lsc;
+    skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], scatter, false, false, T, Lsc);
+    Tsum += T; Lsum += Lsc;
+  }
+  fillT = vec4(Tsum/K, 1.0);
+  fillS = vec4(Lsum/K*uFillScatter, 1.0);
+}`;
+
+
 // ---- the small display passes: blit, adaptive present, glow, editor overlays ----
 const FS_BLIT = `#version 300 es
 precision highp float;
@@ -396,4 +544,4 @@ void main(){
 }`;
 
 
-export { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, GLSL_TONE_TAIL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };

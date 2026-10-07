@@ -4,7 +4,7 @@
 // camera registry), the lateral-diffusion glow tier, and the layer-debug blit.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, atmosphere, clamp, smoothstep } from './komorebi-math.js';
+import { DEG, atmosphere, clamp, smoothstep, sunDirection } from './komorebi-math.js';
 import { MAX_LAYERS } from './komorebi-params.js';
 import { CAMERAS, GROUP_UPLOAD_KEYS } from './komorebi-transport.js';
 
@@ -18,7 +18,7 @@ export function makeRender(hub){
   // per-frame scratch for the atmosphere's two colour vectors (§3.5), recomputed fresh each call so a static
   // frame allocates nothing (no stale-cache risk: the sun-drag path mutates params without an apply(), which
   // a dirty-flag cache would miss; the recompute itself is sub-microsecond).
-  const _atm = { sun:[0,0,0], ambient:[0,0,0] };
+  const _atm = { sun:[0,0,0], ambient:[0,0,0] }, _sd = [0,0,0];
 
   // ---- render ----
   // ONE whole rendered frame into `fbo` at w×h — the only entry the frame loop (and the profiler's burst) uses, so
@@ -27,6 +27,7 @@ export function makeRender(hub){
   // uniform and an untaken shader branch. Gate ON: transport writes LINEAR HDR into the sharp target instead, and
   // drawDiffusion spreads it and composites into the caller's target (§4.9).
   function drawFrameInto(fbo, w, h){
+    hub.refreshFill();   // the sky fill (§4.7) is current for THIS frame's sun and sky, or not wanted — before any target is bound, because a re-bake binds its own
     // the SKY VIEW joins the diffusion gate (§4.9): the very same linear-HDR spread reads there as the eye's own
     // VEILING GLARE — the wash around a bright source seen through gaps, which is scatter in the eye rather than in
     // a weave, but the same operator on the same quantity. A perception-tier reading of a transport pass, the same
@@ -206,8 +207,8 @@ export function makeRender(hub){
     // cloth does the opposite: cos(el)·|sin(az)| PEAKS as the sun lowers head-on toward the window. So this is the
     // raw unit vector, deliberately unclamped in elevation.
     sunDir: (u) => {
-      const el = params.sun_elevation_deg*DEG, az = params.sun_azimuth_deg*DEG;
-      gl.uniform3f(u.sunDir, Math.cos(el)*Math.cos(az), Math.cos(el)*Math.sin(az), Math.sin(el));
+      sunDirection(_sd, params.sun_elevation_deg, params.sun_azimuth_deg);
+      gl.uniform3f(u.sunDir, _sd[0], _sd[1], _sd[2]);
     },
     floor: (u) => {
       gl.uniform1f(u.viewExtent, params.view_extent_m);
@@ -300,6 +301,19 @@ export function makeRender(hub){
       gl.uniform1f(u.tentFade, Math.max(0, params.tent_fade));
       gl.uniform1f(u.tentSeam, Math.max(0, params.tent_seam));
       gl.uniform1f(u.tentMesh, clamp(params.tent_mesh, 0, 1));
+    },
+    // THE SKY FILL (§4.7): the receiver half — the two textures the bake leaves, and the share of the shade that is
+    // lit through the canopy. Units 6 and 7 (0-3 the layers, 4 the faith texture, 5 the wood table). `ready` is the
+    // bake's own say-so that the textures hold what the current sun and layers imply; without it the gate reads shut
+    // for the frame, which is the old expression, never an empty or stale texture. Shut = nothing is bound at all.
+    fill: (u) => {
+      const on = hub.fill.ready ? clamp(params.canopy_fill, 0, 1) : 0;
+      gl.uniform1f(u.canopyFill, on);
+      gl.uniform1i(u.fillT, 6);
+      gl.uniform1i(u.fillS, 7);
+      if(!(on > 0)) return;
+      gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[0]);
+      gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[1]);
     },
     // THE SKY VIEW's own three: regenSource's numbers, so the sun you look at and the dapples it throws are drawn
     // from one distribution. No other camera declares them — there is no seen source anywhere else.

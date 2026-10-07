@@ -10,6 +10,7 @@
 // functions close over engine state. create() checks that pair itself, on construction.)
 import { test, expect } from "bun:test";
 import { CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, TRANSPORT_CAMERAS, buildTransport } from "./komorebi.js";
+import { FS_FILL, GLSL_SKY_RAY, GLSL_LAYER_FIELD, GLSL_SUN_DIR_DECLS } from "./komorebi-shaders.js";
 
 const ALL_GROUPS = Object.keys(TRANSPORT_GROUPS);
 const SPOKEN = new Set(Object.values(CAMERAS).flatMap((c) => c.groups));
@@ -54,4 +55,69 @@ test("every camera entry assembles into a whole program", () => {
 
 test("an unknown camera is refused rather than silently assembled empty", () => {
   expect(() => buildTransport("periscope")).toThrow();
+});
+
+// ---- THE SKY FILL (§4.7). A uniform group like any other, plus two couplings that would otherwise fail silently:
+// the sky view must never read what it has no surface to light, and the per-ray physics the fill integrates must be
+// the SAME source the sky view runs, so the two cannot drift into two answers to "what does this ray see".
+test("the sky fill is a registry group: declared, uploaded, spoken by the cameras that light a surface and not by the sky view", () => {
+  expect(Object.keys(TRANSPORT_GROUPS.fill.locs).sort()).toEqual(["canopyFill", "fillS", "fillT"]);
+  expect(GROUP_UPLOAD_KEYS).toContain("fill");
+  for (const cam of ["floor", "cloth", "enclosure"]) expect(CAMERAS[cam].groups, cam).toContain("fill");
+  expect(CAMERAS.sky.groups).not.toContain("fill");
+});
+
+test("the sky view never reads the fill: no uniform, no tap, no branch in its program", () => {
+  const sky = buildTransport("sky");
+  for (const name of ["uCanopyFill", "uFillT", "uFillS"]) expect(sky.includes(name), name).toBe(false);
+});
+
+test("a shut canopy_fill runs the OLD expression verbatim, on the floor and on both cloth receivers", () => {
+  // the gate's whole claim is that off is the bytes it always was; the pixel harness executes it, this pins that
+  // the literal line is still in the source (as the else of a uniform branch — canopy_fill tweens, so a program
+  // cannot be selected by it: programs are chosen by MODE flags only, §4.6)
+  expect(buildTransport("floor")).toContain("col = (acc*uSunColor + uAmbient) * uGround;");
+  for (const cam of ["cloth", "enclosure"]) expect(buildTransport(cam), cam).toContain("E = acc*uSunColor*beamF + uAmbient*skyF;");
+  for (const cam of ["floor", "cloth", "enclosure"]) {
+    const src = buildTransport(cam);
+    expect(src.includes("if(uCanopyFill > 0.0){"), cam).toBe(true);
+    // every read of the fill textures sits behind that gate: the only mentions before it are the uniform declarations
+    const before = src.slice(0, src.indexOf("if(uCanopyFill > 0.0){"));
+    expect(before.replace(/uniform highp sampler2D uFill[TS];/g, "").includes("uFill"), cam).toBe(false);
+  }
+});
+
+test("the per-ray physics is ONE source: the sky view and the fill both carry GLSL_SKY_RAY and neither restates its sum", () => {
+  const sky = buildTransport("sky");
+  expect(sky.includes(GLSL_SKY_RAY)).toBe(true);
+  expect(FS_FILL.includes(GLSL_SKY_RAY)).toBe(true);
+  // the telescoping source term lives in the snippet and nowhere else in either program
+  const term = "thr*(1.0-tL";
+  expect(GLSL_SKY_RAY.includes(term)).toBe(true);
+  expect(sky.split(GLSL_SKY_RAY).join("").includes(term)).toBe(false);
+  expect(FS_FILL.split(GLSL_SKY_RAY).join("").includes(term)).toBe(false);
+});
+
+test("both programs declare every uniform the shared per-ray snippet reads", () => {
+  const needs = new Set(GLSL_SKY_RAY.replace(/\/\/.*$/gm, "").match(/\bu[A-Z]\w*/g));   // identifiers in the code, not in the prose
+  expect(needs.size).toBeGreaterThan(5);
+  for (const [name, src] of [["sky", buildTransport("sky")], ["fill", FS_FILL]])
+    for (const u of needs) expect(new RegExp(`uniform[^;]*\\b${u}\\b`).test(src), `${name} declares ${u}`).toBe(true);
+  // ...as the SAME lines the transport head and the sunDir group declare them with, not look-alikes
+  for (const cam of TRANSPORT_CAMERAS) expect(buildTransport(cam).includes(GLSL_LAYER_FIELD), cam).toBe(true);
+  expect(FS_FILL.includes(GLSL_LAYER_FIELD)).toBe(true);
+  expect(FS_FILL.includes(GLSL_SUN_DIR_DECLS)).toBe(true);
+  expect(buildTransport("sky").includes(GLSL_SUN_DIR_DECLS)).toBe(true);
+});
+
+test("the fill is READ from a coarser mip: K rays point-sampled per texel are an estimate with leaf-scale speckle, and a bilinear read of it is a lattice", () => {
+  // averaging the fill's own output (T and S are already transmittance and radiance) is more rays' worth of the same
+  // estimator — the box average of the mip — and is NOT the forbidden blur of tau, which would veil a gappy canopy
+  for (const cam of ["floor", "cloth", "enclosure"]) {
+    const src = buildTransport(cam);
+    expect(src.includes("textureLod(uFillT"), `${cam} reads Tsky through textureLod`).toBe(true);
+    expect(/texture\(uFill[TS]/.test(src), `${cam} has no plain bilinear fill read`).toBe(false);
+  }
+  expect(buildTransport("floor").includes("textureLod(uFillS")).toBe(true);
+  expect(buildTransport("floor").includes("const float FILL_LOD")).toBe(true);
 });

@@ -196,6 +196,8 @@ const PANEL = [
   ['s','exposure','exposure',0,4,0.01,''],
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
+  ['s','canopy_fill','canopy fill',0,1,0.01,''],       // §4.7: the shade lit THROUGH the canopy — the gate; 0 is the old floor, byte for byte
+  ['s','fill_scatter','leaf scatter',0,1,0.01,''],     // the leaf's albedo: the floor's twin of 'foliage glow'; the floor alone reads it
   ['s','sky_turbidity','haze β',0,0.5,0.01,''],
   ['s','mesopic_strength','dusk rods',0,1,0.01,''],
   ['s','chromatic_aberration','diffraction',0,6,0.1,''],
@@ -241,6 +243,8 @@ const PANEL = [
   ['sel','tex_resolution','res',[['1024',1024],['2048',2048],['4096',4096]],'textures'],
   ['s','layer_count','layers',1,MAX_LAYERS,1,'textures'],
   ['sel','bake_resolution','bake res',[['follow tex',0],['768',768],['1024',1024],['1536',1536],['2048',2048]],'textures'],
+  ['s','fill_directions','fill rays',4,64,1,''],                                  // the sky fill's two TUNE knobs (§4.7): read live at the next bake, no rebuild
+  ['sel','fill_resolution','fill res',[['128',128],['256',256],['512',512]],''],
   ['t','adaptive_motion','adaptive fps',''],
   ['sel','adaptive_idle_fps','idle fps',[['24',24],['30',30],['48',48]],''],
   ['t','auto_quality','auto 60fps','perf'],
@@ -327,6 +331,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
   tent_len_m:'tent', tent_end_lean:'tent', tent_end_apex_h_m:'tent', tent_hip_rake:'tent', tent_eye_h_m:'tent',
   tent_fade:'tent', tent_seam:'tent', tent_mesh:'tent',
   sky_scatter:'sky',
+  canopy_fill:'fill', fill_scatter:'fill', fill_directions:'fill', fill_resolution:'fill',   // the sky view lights no surface, so it speaks no fill group (§4.7)
   chromatic_aberration:'ca',       // the sky view runs no cast, so there is no transport shift to split by wavelength
   faithful_canopy:'faith',         // the enclosure and the sky view force the layer tier and bake no faith texture
 };
@@ -334,6 +339,7 @@ const faithLive = (cam) => params.faithful_canopy && !!CAMERAS[cam].faith;   // 
 const apertureOn = () => params.window_w_m*params.window_h_m > 0;
 const turning = () => params.phenology > params.turn_start;                  // the grove's own senescing gate (komorebi-grove.js)
 const glowOn = (cam) => cam !== 'floor' && params.glow_bleed > 0;            // the diffusion tier's own gate (render.js drawFrameInto)
+const fillOpen = () => params.canopy_fill > 0;                               // the sky fill's own gate (§4.7): until it opens nothing bakes
 const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that does carry it
   receiver: () => !params.sky_view,                       // looking up overrides the receiver outright — there is no surface to pick
   eclipse_amount: () => params.eclipse,
@@ -349,6 +355,8 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   adaptive_idle_fps: () => params.adaptive_motion,
   anthocyanin: turning, tannin: turning, wall_fraction: turning,   // senescence (§4.5): until a leaf has begun to turn (phenology past turn_start) its tau is the authored summer one, whatever these say
   turn_span: turning, turn_spread: turning,
+  fill_scatter: (cam) => fillOpen() && CAMERAS[cam].groups.includes('floor'),   // the floor alone reads the scattered light; the cloth and the tent take the skylight through the canopy and nothing else
+  fill_directions: fillOpen, fill_resolution: fillOpen,   // sliders on a bake that does not run while canopy_fill is 0
   show_layer: (cam) => !faithLive(cam),                   // faithful mode taps one texture; the layer slices aren't baked
   show_layer_index: (cam) => params.show_layer && !faithLive(cam),
 };
@@ -364,7 +372,7 @@ function rowLive(key, cam){
 function gateSig(){
   const cam = cameraFor(params);
   return [cam, params.eclipse, params.view_pitch_deg>0, params.glow_bleed>0, params.mullion_tau>0, apertureOn(),
-          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam), turning()].join('|');
+          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam), turning(), fillOpen()].join('|');
 }
 let gateSigLast = null;
 function refreshGates(){
@@ -718,6 +726,10 @@ const TIPS = {
   far_smear:"<b>Far-field smear — distance softening.</b> A far pixel covers a big patch of ground, so its dapples should melt into soft down-sun streaks while the near floor stays crisp. Higher = more melt (and less far-field shimmer). Has no effect top-down — it grows with the tilt.",
   exposure:"<b>Brightness.</b> How bright the floor is. Pure look — it never changes the light simulation, just where it lands on screen.",
   contrast:"<b>Punch.</b> Higher = bold, snappy dapples; lower = the flat, milky look of haze.",
+  canopy_fill:"<b>Light the shade THROUGH the leaves, not around them.</b> The sky that fills the shadows has to come through the canopy too — and the leaves the sun is on scatter some of it down. With this at 0 the shade is lit by an open sky: under a red autumn canopy that is a red beam on a blue-lit floor, and the shade goes magenta. At 1 the sky is filtered by the same leaves, so the shade takes their colour (green in summer, red in fall) and is dimmer — raise <i>ambient</i> or exposure about half a stop to sit a look back where it was. The curtain and the tent take the filtered skylight too (not the scattered part).",
+  fill_scatter:"<b>How much sunlight a leaf bounces back down — its albedo.</b> Real leaves are dark in daylight, so keep this low: 0.1–0.25 reads right. The shade is coloured by what the leaves <i>pass</i>, not by how bright they are. 0 = the shade is the filtered sky and nothing else. Only the floor reads it; it can never lift the shade past the light that landed on the leaves. Shown while canopy fill is up.",
+  fill_directions:"<b>How many directions of sky each shade point averages.</b> A fixed, evenly spread fan (no noise, no shimmer). More = a smoother, truer fill; fewer = cheaper — it is a bake cost, paid again whenever the leaves move. 16 is plenty for most looks. Shown while canopy fill is up. A/B it in the profiler.",
+  fill_resolution:"<b>Resolution of the shade-light map.</b> It varies at the scale of crown gaps, not dapples, so a coarse map is enough, and halving it makes the bake ~4× cheaper. Shown while canopy fill is up. A/B it in the profiler.",
   ambient_skylight:"<b>How much the sky fills the shadows.</b> The light that isn't direct sun — now coloured for real (blue by day, warmer at dusk). Up = softer, lifted shade; down = deep, moody shadows.",
   sky_turbidity:"<b>Haze in the air.</b> Clean air = low; dust or humidity = higher, which makes a low sun redder and a sunset more washed-out orange.",
   mesopic_strength:"<b>How blue the shadows go at dusk.</b> As light fades your eye quietly switches to night vision, which is colour-blind and blue-ish — so the dim shade cools toward grey-blue while the bright dapples stay warm. Only kicks in at low sun. 0 = off.",
