@@ -302,10 +302,10 @@ test("the faithful cast takes k at the bake: exp(−(τ + k·fade)·cov), and th
 
 test("the sky camera is compiled with the literal 0.0 and never declares the knob: this phase leaves the sky view alone", () => {
   const sky = buildTransport("sky");
-  expect(sky.includes("skyRay(pL0, pL1, pL2, pL3, uSkyScatter > 0.0, true, true, 0.0, T, Lsc);")).toBe(true);
+  expect(sky.includes("skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0, true, true, 0.0, T, Lsc);")).toBe(true);
   expect(code(sky).includes("uBeamK")).toBe(false);                          // (the comment on that very line names it; the code never does)
   expect(CAMERAS.sky.groups).not.toContain("tap");
-  expect(FS_FILL.includes("skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], scatter, false, false, uFillBeamK, T, Lsc);")).toBe(true);
+  expect(FS_FILL.includes("skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], uFillG, scatter, uFillOpen, false, uFillBeamK, T, Lsc);")).toBe(true);
 });
 
 test("the shared per-ray snippet: alpha is COVERAGE where the wood is not in it, and the emission is the leaf's own hue, no albedo", () => {
@@ -327,7 +327,23 @@ test("the receivers: the floor is unchanged, the cloth and the tent now read S, 
     const src = buildTransport(cam);
     expect(src, cam).toContain("E = acc*uSunColor*beamF + uAmbient*skyF*skyT;");   // the P0b line, kept verbatim
     expect(src, cam).toContain("E = acc*uSunColor*beamF + uAmbient*skyF;");        // and the shut-gate one
-    expect(/if\(uBeamK > 0\.0\) E \+= textureLod\(uFillS, \(world-uCanopyOrigin\)\/uCanopyExtent, FILL_LOD\)\.rgb\*skyF\*uCanopyFill;/.test(src), `${cam} reads S behind both gates`).toBe(true);
+    expect(/if\(uBeamK > 0\.0\) E \+= textureLod\(uFillS, \(world-uFillOrigin\)\/uFillExtent, FILL_LOD\)\.rgb\*skyS\*uCanopyFill;/.test(src), `${cam} reads S behind both gates`).toBe(true);
+  }
+});
+
+test("the curtain reads S at the vertical plane's view factor, 0.5 — the tent's own skyF gives its panels theirs", () => {
+  // The skyline term keeps its floor convention (skyF 1 on the cloth: it is the sky the curtain was authored under), so the S read
+  // gets a factor of its own. A vertical plane sees half the hemisphere, which is what skyF is for the tent's wall panels; read at 1
+  // the curtain doubled when the split opened (×2.03 on curtain 1).
+  const cloth = buildTransport("cloth"), tent = buildTransport("enclosure");
+  expect(cloth.includes("float skyS = 0.5;")).toBe(true);
+  expect(tent.includes("float skyS = 1.0;")).toBe(true);
+  expect(tent.includes("skyS = skyF;")).toBe(true);                       // the tent: S through the same view of the hemisphere as the sky
+  expect(cloth.includes("skyS = skyF;")).toBe(false);
+  for (const src of [cloth, tent]) {
+    expect(src).toContain("E = acc*uSunColor*beamF + uAmbient*skyF*skyT;");   // the P0b sky term untouched: only the S read moved
+    expect(src).toContain("E = acc*uSunColor*beamF + uAmbient*skyF;");
+    expect(src.includes("FILL_LOD).rgb*skyF*uCanopyFill")).toBe(false);
   }
 });
 
