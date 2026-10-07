@@ -8,7 +8,7 @@
 // the one place that applies them, then the wiring over a stub GL.)
 // ============================================================================
 import { test, expect } from "bun:test";
-import { CANOPY_KEYS, DEFAULTS, TOPO_KEYS } from "./komorebi.js";
+import { CANOPY_KEYS, DEFAULTS, MORPH_KEYS, TOPO_KEYS } from "./komorebi.js";
 import * as math from "./komorebi-math.js";
 import { fillFrame, leafHue } from "./komorebi-fill.js";
 import { makeGrove } from "./komorebi-grove.js";
@@ -172,7 +172,7 @@ test("an instance is one leaf's stamp: where, how big, which way, how much of it
     expect(inst.data[o + 5], "sin").toBeCloseTo(Math.sin(land.rot), 6);
     expect(Math.hypot(inst.data[o + 4], inst.data[o + 5])).toBeCloseTo(1, 6);                  // the rotation arrives as a unit vector: no trig on the GPU
     expect(inst.data[o + 6], "alpha is the leaf's fade").toBeCloseTo(l.fade, 6);
-    const rgb = L.litterAlbedo(l.tau, L.litterAge(params, l.D));
+    const rgb = L.litterAlbedo(l.tau, L.litterAge(params, l.D), params.leaf_wetness);
     for (let c = 0; c < 3; c++) expect(inst.data[o + 8 + c], `albedo ${c}`).toBeCloseTo(rgb[c], 6);
   }
 });
@@ -226,7 +226,7 @@ test("litterAlbedo at age ≥ 1 is ALBEDO_BROWN to the bit — whatever the leaf
 
 test("litterAlbedo(tau, age) is the ONE colour law: a pure function of its two arguments, filling `out` — P4b's browning replaces it behind this signature", () => {
   expect(L.litterAlbedo.length).toBeGreaterThanOrEqual(2);
-  const out = [9, 9, 9], r = L.litterAlbedo(TAUS.gold, 0.3, out);
+  const out = [9, 9, 9], r = L.litterAlbedo(TAUS.gold, 0.3, 0, out);
   expect(r).toBe(out);
   expect(L.litterAlbedo(TAUS.gold, 0.3)).toEqual(r);
   // the bake colours every instance through it and through nothing else: the buffer is the function's output, whatever the function is
@@ -234,7 +234,7 @@ test("litterAlbedo(tau, age) is the ONE colour law: a pure function of its two a
   const inst = L.litterInstances(litter.slice(0, 50), params, { ox: -50, oy: -50, ext: 100 }, false);
   const ord = L.litterOrder(litter.slice(0, 50));
   for (let i = 0; i < ord.length; i++) {
-    const want = L.litterAlbedo(ord[i].tau, L.litterAge(params, ord[i].D));
+    const want = L.litterAlbedo(ord[i].tau, L.litterAge(params, ord[i].D), params.leaf_wetness);
     for (let c = 0; c < 3; c++) expect(inst.data[i * L.INSTANCE_FLOATS + 8 + c]).toBeCloseTo(want[c], 6);
   }
 });
@@ -253,7 +253,7 @@ test("age = (phenology − D) / litter_age: 0 the day it falls, 1 when litter_ag
 test("the carpet ages red → copper → brown: the earlier a leaf fell, the browner it lies", () => {
   const { litter, params } = fallen();
   const ord = L.litterOrder(litter), n = ord.length;
-  const lum = (l) => { const a = L.litterAlbedo(l.tau, L.litterAge(params, l.D)); return a[0] - a[2]; };   // red minus blue: how far from brown's own 0.07
+  const lum = (l) => { const a = L.litterAlbedo(l.tau, L.litterAge(params, l.D), params.leaf_wetness); return a[0] - a[2]; };   // red minus blue: how far from brown's own 0.07
   const old = ord.slice(0, n >> 2), young = ord.slice(-(n >> 2)), oldest = ord.slice(0, n >> 3);
   const mean = (xs) => sum(xs.map(lum)) / xs.length;
   expect(mean(old), "the first to fall have gone brown").toBeLessThan(mean(young));
@@ -455,6 +455,7 @@ test("…and re-bakes exactly when what it is a function of moves: the grove, th
   moved("the authored wind direction", () => { r.params.wind_direction_deg += 40; });
   moved("litter_age", () => { r.params.litter_age = 0.3; });
   moved("litter_drift_m", () => { r.params.litter_drift_m = 1.2; });
+  moved("leaf_wetness: rain on the carpet re-tints it, and nothing else of it", () => { r.params.leaf_wetness = 0.5; });
   moved("phenology", () => { r.params.phenology = 0.95; });
   moved("the seed", () => { r.params.seed = 99; });
   moved("litter_resolution (and it reallocates)", () => { r.params.litter_resolution = 2048; });
@@ -567,4 +568,125 @@ test("the engine frees the carpet on dispose and forgets it on a lost context, l
   const render = readFileSync(new URL("./komorebi-render.js", import.meta.url), "utf8");
   expect(render).toMatch(/^\s*hub\.refreshLitter\(\);/m);                                           // once per frame (a statement, not the words in a comment), before any target is bound (a re-bake binds its own)
   expect(render.search(/^\s*hub\.refreshLitter\(\);/m)).toBeLessThan(render.indexOf("gl.bindFramebuffer(gl.FRAMEBUFFER, glow ? glowFBO[0] : fbo);"));
+});
+
+// ---- the rain day (spec §4.7, "Wet litter"): a dead leaf on the ground soaks, scattering falls as Δn², the leaf darkens and saturates. It is
+// applied LAST, to the dry law's output, so the honest reflectance that replaces the dry law later is untouched. 0 is no arithmetic at all.
+test("the rain day: WET_RHO is the share of scattering water leaves standing, ((n_wall − n_water)/(n_wall − 1))²", () => {
+  expect(L.N_WALL).toBe(1.47); expect(L.N_WATER).toBe(1.333);
+  expect(L.WET_RHO).toBeCloseTo(0.085, 3);
+  expect(L.WET_RHO).toBeCloseTo(((1.47 - 1.333) / (1.47 - 1)) ** 2, 15);
+});
+
+test("the Kubelka–Munk pair round-trips on a log grid, and its ends are exact (no ∞−∞, no NaN)", () => {
+  for (let e = -9; e <= -0.0001; e += 0.05) {
+    const R = Math.min(10 ** e, 1 - 1e-9);
+    expect(Math.abs(L.kmReflect(L.kmInvert(R)) - R) / R, `R ${R}`).toBeLessThan(1e-12);
+  }
+  expect(L.kmReflect(Infinity)).toBe(0);
+  expect(L.kmInvert(1)).toBe(0);
+  expect(L.kmReflect(0)).toBe(1);
+  expect(L.kmInvert(0)).toBe(Infinity);
+});
+
+test("wetten: w ≤ 0 is the identity to the bit; white and black stay put", () => {
+  const rnd = math.mulberry32(7);
+  for (let i = 0; i < 500; i++) { const R = rnd(); expect(Object.is(L.wetten(R, 0), R)).toBe(true); expect(Object.is(L.wetten(R, -0.3), R)).toBe(true); expect(Object.is(L.wetten(R, undefined), R)).toBe(true); }
+  expect(L.wetten(0, 0.5)).toBe(0);
+  expect(L.wetten(1, 0.5)).toBe(1);
+  expect(L.wetten(1.2, 0.5)).toBe(1);
+  expect(L.wetten(0, 1)).toBe(0);
+});
+
+test("wetness only darkens: monotone non-increasing in w for every leaf at every age, strictly for 0 < R < 1", () => {
+  for (const [name, tau] of Object.entries(TAUS)) for (const age of [0, 0.5, 1]) {
+    let prev = L.litterAlbedo(tau, age, 0);
+    for (let i = 1; i <= 200; i++) {
+      const a = L.litterAlbedo(tau, age, i / 200);
+      for (let c = 0; c < 3; c++) {
+        expect(a[c] <= prev[c], `${name} age ${age} ch ${c} w ${i / 200}`).toBe(true);
+        if (prev[c] > 0 && prev[c] < 1) expect(a[c] < prev[c], `${name} age ${age} ch ${c} w ${i / 200} strict`).toBe(true);
+      }
+      prev = a;
+    }
+  }
+});
+
+test("wet litter saturates as it darkens: the strongly absorbed channel drops most, so min/max falls", () => {
+  const ratio = (a) => Math.min(...a) / Math.max(...a);
+  for (const name of ["red", "maroon"]) expect(ratio(L.litterAlbedo(TAUS[name], 0, 0.5)), name).toBeLessThan(ratio(L.litterAlbedo(TAUS[name], 0, 0)));
+  const r = L.wetten(0.35, 0.5);                                                                  // sanity of the spec's red leaf
+  const wr = [0.35, 0.035, 0.02].map((v) => L.wetten(v, 0.5));
+  expect(wr[0]).toBeCloseTo(0.252, 3); expect(wr[1]).toBeCloseTo(0.0196, 4); expect(wr[2]).toBeCloseTo(0.0110, 4);
+  expect(r).toBeCloseTo(wr[0], 15);
+});
+
+test("the design's numbers: fresh ×0.719 at w 0.5, the browns ×0.567–0.603, fresh ×0.177 at w 1", () => {
+  expect(L.wetten(0.35, 0.5) / 0.35).toBeCloseTo(0.719, 2);
+  expect(Math.abs(L.wetten(0.35, 0.5) / 0.35 - 0.719)).toBeLessThan(0.005);
+  const ratios = L.ALBEDO_BROWN.map((v) => L.wetten(v, 0.5) / v);
+  for (const q of ratios) { expect(q).toBeGreaterThanOrEqual(0.567 - 0.002); expect(q).toBeLessThanOrEqual(0.603 + 0.002); }
+  expect(ratios[0]).toBeCloseTo(0.603, 2); expect(ratios[1]).toBeCloseTo(0.583, 2); expect(ratios[2]).toBeCloseTo(0.567, 2);
+  expect(Math.abs(L.wetten(0.35, 1) / 0.35 - 0.177)).toBeLessThan(0.005);
+  expect(L.wetten(0.35, 5)).toBe(L.wetten(0.35, 1));                                              // w is clamped at full soaking
+});
+
+test("the gate is bit-identical: litterAlbedo(tau, age, 0) is the dry law, and the K–M pair is only reachable inside `if (wet > 0)`", () => {
+  const dry = (tau, age) => {                                                                     // a frozen copy of the dry law as it stood before wetness
+    const hue = leafHue([Math.exp(-tau[0]), Math.exp(-tau[1]), Math.exp(-tau[2])]), s = math.smoothstep(0, 1, age);
+    return [0, 1, 2].map((c) => L.LITTER_PEAK * hue[c] * (1 - s) + L.ALBEDO_BROWN[c] * s);
+  };
+  const rnd = math.mulberry32(11);
+  for (let i = 0; i < 200; i++) {
+    const tau = [rnd() * 3, rnd() * 5, rnd() * 5], age = rnd() * 1.4, want = dry(tau, age);
+    const a = L.litterAlbedo(tau, age, 0), b = L.litterAlbedo(tau, age);
+    for (let c = 0; c < 3; c++) { expect(Object.is(a[c], want[c])).toBe(true); expect(Object.is(b[c], want[c])).toBe(true); }
+  }
+  const src = readFileSync(new URL("./komorebi-litter.js", import.meta.url), "utf8").replace(/\/\/.*$/gm, "");
+  const body = src.slice(src.indexOf("function litterAlbedo"), src.indexOf("function litterAge"));
+  expect(body).toMatch(/if\(wet > 0\)[^\n]*wetten\(/);
+  expect(body.replace(/if\(wet > 0\)[^\n]*\n/, "")).not.toContain("wetten(");
+});
+
+test("the buffer carries the wet albedo: leaf_wetness 0.5 → litterAlbedo(tau, age, 0.5); 0 → the dry value", () => {
+  const { litter, params } = fallen(), ord = L.litterOrder(litter);
+  for (const wet of [0, 0.5]) {
+    const P = { ...params, leaf_wetness: wet }, inst = L.litterInstances(litter, P, { ox: -50, oy: -50, ext: 100 }, false);
+    for (let i = 0; i < ord.length; i += 29) {
+      const want = L.litterAlbedo(ord[i].tau, L.litterAge(P, ord[i].D), wet);
+      for (let c = 0; c < 3; c++) expect(inst.data[i * L.INSTANCE_FLOATS + 8 + c], `wet ${wet} #${i} ch ${c}`).toBeCloseTo(want[c], 6);
+    }
+  }
+  const a = L.litterInstances(litter, { ...params, leaf_wetness: 0 }, { ox: -50, oy: -50, ext: 100 }, false).data;
+  const b = L.litterInstances(litter, { ...params, leaf_wetness: 0.5 }, { ox: -50, oy: -50, ext: 100 }, false).data;
+  expect(a).not.toEqual(b);
+});
+
+test("leaf_wetness ships 0 and is MORPH-class: the carpet bake alone reads it, so it never regrows the grove", () => {
+  expect(DEFAULTS.leaf_wetness).toBe(0);
+  expect(MORPH_KEYS).toContain("leaf_wetness");
+  expect(CANOPY_KEYS).not.toContain("leaf_wetness");
+  expect(TOPO_KEYS).not.toContain("leaf_wetness");
+});
+
+test("the re-bake signature holds the wetness (the last slot of a Float64Array is not silently dropped), and holds nothing unrelated", () => {
+  expect(L.newLitterState().sig.length).toBe(12);
+  const r = litterRig({ litter: 1 });
+  r.lit.refreshLitter();
+  expect(r.litter.sig[11]).toBe(0);
+  r.params.leaf_wetness = 0.5; r.lit.refreshLitter();
+  expect(r.litter.sig[11]).toBe(0.5);
+  expect(r.litter.passes).toBe(2);
+  r.params.exposure = 3; r.lit.refreshLitter();
+  expect(r.litter.passes, "an unrelated key does not re-bake").toBe(2);
+});
+
+test("the stub-GL rig: rain between two refreshes re-bakes the carpet once, and the same wetness again does not", () => {
+  const r = litterRig({ litter: 1, leaf_wetness: 0 });
+  r.lit.refreshLitter();
+  expect(r.litter.passes).toBe(1);
+  r.params.leaf_wetness = 0.5; r.lit.refreshLitter();
+  expect(r.litter.passes).toBe(2);
+  r.params.leaf_wetness = 0.5; r.lit.refreshLitter(); r.lit.refreshLitter();
+  expect(r.litter.passes).toBe(2);
 });

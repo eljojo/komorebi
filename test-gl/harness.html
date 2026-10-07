@@ -856,7 +856,7 @@ window.__litterCheck = (presetName, overrides) => withEngine(presetName, overrid
   }
   let sparseArea = 0, wsum = 0, meanCpu = [0, 0, 0], lx = 0, ly = 0, cx = 0, cy = 0;
   for (const l of list) {
-    const w = Math.PI * l.size[0] * l.size[1] * l.fade, a = litterAlbedo(l.tau, litterAge(p, l.D)), d = l.h * p.litter_drift_m, ang = p.wind_direction_deg * Math.PI / 180;
+    const w = Math.PI * l.size[0] * l.size[1] * l.fade, a = litterAlbedo(l.tau, litterAge(p, l.D), p.leaf_wetness), d = l.h * p.litter_drift_m, ang = p.wind_direction_deg * Math.PI / 180;
     sparseArea += w; wsum += w; for (let c = 0; c < 3; c++) meanCpu[c] += w * a[c];
     lx += w * l.x; ly += w * l.y; cx += w * (l.x + d * Math.cos(ang)); cy += w * (l.y + d * Math.sin(ang));
   }

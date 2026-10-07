@@ -259,7 +259,7 @@ try {
     const r = [...document.querySelectorAll('#dev .ctl.select')].find((q) => q.querySelector('label')?.textContent === lab);
     const sel = r.querySelector('select'); sel.value = String(val); sel.dispatchEvent(new Event('change', { bubbles: true }));
   }, [label, v]);
-  const LITTER_FOLLOWERS = ['browns over', 'carried', 'litter res'];
+  const LITTER_FOLLOWERS = ['browns over', 'carried', 'wet', 'litter res'];
   const litterFollowers = async () => Promise.all(LITTER_FOLLOWERS.map(rowShown));
   const poll = async (f) => { let ok = false; for (let i = 0; i < 30 && !ok; i++) { await page.waitForTimeout(400); ok = await f(); } return ok; };
   check('at summer litter and its followers are hidden', (await rowShown('litter')) === false && (await litterFollowers()).every((v) => v === false), `${await rowShown('litter')} ${await litterFollowers()}`);

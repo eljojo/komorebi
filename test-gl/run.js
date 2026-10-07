@@ -185,6 +185,28 @@ const INVARIANTS = [
     a: { leaf_drop: 1, phenology: 0.9, litter: 1, litter_drift_m: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, litter_drift_m: 2 } },
   { name: 'the authored wind direction carries the litter (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { leaf_drop: 1, phenology: 0.9, litter: 1, wind_direction_deg: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, wind_direction_deg: 180 } },
+  // THE RAIN DAY (§4.7, `leaf_wetness`): the carpet's wetness is MORPH-class and gated by the carpet itself. 0 is the dry law with no arithmetic, taken in a frame the carpet
+  // would bite (a default of 0.5 would show here and nowhere else)...
+  { name: 'leaf_wetness 0 == absent (layer path)', preset: 'afternoon 7',
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_wetness: 0 } },
+  // ...behind a shut litter gate it is dead code, on both floor paths (nothing reads it but the carpet bake)...
+  { name: 'leaf_wetness inert behind a shut litter gate (layer path)', preset: 'afternoon 7',
+    a: { leaf_drop: 1, phenology: 0.9, litter: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 0, leaf_wetness: 0.8 } },
+  { name: 'leaf_wetness inert behind a shut litter gate (faithful path)', preset: 'park 1', rebake: true,
+    a: { leaf_drop: 1, phenology: 0.9, litter: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 0, leaf_wetness: 0.8 } },
+  // ...and the other half: with the gate open, wet leaves are another carpet (or a wetness that never reached the bake would satisfy every row above)
+  { name: 'wet litter darkens the carpet (layer path)', preset: 'afternoon 7', differ: true,
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_wetness: 0.5 } },
+  { name: 'wet litter darkens the carpet (faithful path)', preset: 'park 1', rebake: true, differ: true,
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_wetness: 0.5 } },
+  // wet leaves absorb: the frame gets darker, and by a bounded amount (it is the carpet only, the dirt stays dry)
+  { name: 'wet litter takes light, it does not invent it (layer path, lit shade)', preset: 'afternoon 7', lit: [0.77, 0.995],
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1, canopy_fill: 1, leaf_diffuse: 0.5 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, canopy_fill: 1, leaf_diffuse: 0.5, leaf_wetness: 0.5 } },
+  // the curtain and the sky view never declare the carpet, so they never read its wetness either
+  { name: 'the curtain does not read the wetness', preset: 'curtain 1',
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_wetness: 0.8 } },
+  { name: 'the sky view does not read the wetness', preset: 'canopy 1',
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_wetness: 0.8 } },
   // UNREAD ELSEWHERE: the curtain and the tent transmit through fabric and the sky view has no surface, so none of them reads the carpet — and none of them
   // bakes it: the same look with the gate open is the same frame, to the byte. (These looks are not dropping, so give them a fall to be unmoved by.)
   { name: 'the curtain does not read the litter', preset: 'curtain 1',
@@ -416,6 +438,8 @@ const LIVE_CHANGES = [
   // frame an engine born with it shows, and the authored wind direction — a MORPH key, tweened in a transition — must carry it there too
   { name: 'afternoon 7 (the carpet bakes when the gate opens)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9 }, key: 'litter', value: 1, litter: true },
   { name: 'park 1 (faithful: the carpet bakes when the gate opens)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, phenology: 0.9 }, key: 'litter', value: 1, litter: true },
+  // rain on a running engine: wetness is MORPH-class, so nothing regrows; the carpet's signature alone has to notice it
+  { name: 'afternoon 7 (rain on the carpet: a wetness change re-bakes it)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9, litter: 1 }, key: 'leaf_wetness', value: 0.5, litter: true },
   { name: 'park 1 (the season turns its wind: the carpet is carried again)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, phenology: 0.9, litter: 1, wind_direction_deg: 20 }, key: 'wind_direction_deg', value: 200, litter: true },
   { name: 'afternoon 7 (the season moves and the grove regrows: the carpet follows it, fresher and more of it)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.8, litter: 1 }, key: 'phenology', value: 0.95, apply: 'canopy', litter: true },
   // (the same leaves, fallen on the same days, in another colour: nothing the carpet's signature holds has moved but the grove itself, which a regrow makes anew)
@@ -441,6 +465,8 @@ const FILL_TOL = 2e-3;
 const FALL_LOOK = { leaf_drop: 1, phenology: 0.9, anthocyanin: 0.8, turn_exposure: 1, canopy_fill: 1, litter: 1 };
 const LITTER_CHECKS = [
   { name: 'afternoon 7 at 0.9 — the endless park: the box, wrapped, a dense carpet', preset: 'afternoon 7', over: { ...FALL_LOOK } },
+  { name: 'afternoon 7 at 0.9, wet (0.5) — the rain day: the raster and the closed forms hold the wet albedo', preset: 'afternoon 7', over: { ...FALL_LOOK, leaf_wetness: 0.5 } },
+  { name: 'afternoon 7 on the first day of the fall, wet (0.5) — a sparse carpet: the mean colour is the wet one', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71, leaf_wetness: 0.5 }, sparse: true },
   { name: 'afternoon 7 at 0.9, 512 px, the fill shut (the carpet is read whether or not canopy_fill is open)', preset: 'afternoon 7', over: { ...FALL_LOOK, canopy_fill: 0, litter_resolution: 512 } },
   { name: 'afternoon 7 on the first day of the fall — a sparse carpet: the closed forms', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71 }, sparse: true },
   { name: 'park 1 at 0.9 — a finite tree: the padded frame, clamped, and the drift down-wind', preset: 'park 1', over: { ...FALL_LOOK }, drift: true },

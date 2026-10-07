@@ -145,6 +145,7 @@ const PANEL = [
   ['s','drop_span','fall span',0.02,0.6,0.01,'canopy'],
   ['s','litter_age','browns over',0.01,0.6,0.01,''],           // §4.7: how long a fallen leaf takes to go from its own hue to brown, in seasons (read at the next bake, which the carpet notices by itself)
   ['s','litter_drift_m','carried',0,2,0.01,''],                // §4.7: metres a falling leaf is carried per metre of height, along the season's wind
+  ['s','leaf_wetness','wet',0,1,0.01,''],                      // §4.7: the rain day — fallen leaves darker and more saturated; an effective number, about 0.5 after rain
 
   ['h','Transport'],
   ['s','time_of_day','time (h)',5,19,0.25,'suntime'],
@@ -344,7 +345,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
   tent_fade:'tent', tent_seam:'tent', tent_mesh:'tent',
   sky_scatter:'sky',
   canopy_fill:'fill', fill_scatter:'fill', fill_directions:'fill', fill_resolution:'fill',   // the sky view lights no surface, so it speaks no fill group (§4.7)
-  litter:'litter', litter_age:'litter', litter_drift_m:'litter', litter_resolution:'litter',   // only the floor reflects, so only the floor has fallen leaves to reflect off (§4.7): the cloth transmits and the sky view has no surface
+  litter:'litter', litter_age:'litter', litter_drift_m:'litter', leaf_wetness:'litter', litter_resolution:'litter',   // only the floor reflects, so only the floor has fallen leaves to reflect off (§4.7): the cloth transmits and the sky view has no surface
   leaf_diffuse:['tap','sky'],      // the beam's k is read at the cast cameras' tap and, as the lantern's disk and glow (§4.9), by the sky view's own group — any one of them
   chromatic_aberration:'ca',       // the sky view runs no cast, so there is no transport shift to split by wavelength
   faithful_canopy:'faith',         // the enclosure and the sky view force the layer tier and bake no faith texture
@@ -375,7 +376,7 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   leaf_drop: turning,                                     // abscission (§4.5): the same season gate the pigments sit behind — before a leaf can be turning, no leaf is about to fall
   drop_exposure: dropping, drop_start: dropping, drop_span: dropping,   // ride on leaf fall: with it at 0 nothing drops, so when and in what order are moot
   litter: dropping,                                       // the carpet (§4.7): the leaves it lays are the ones leaf fall lets go of
-  litter_age: carpeted, litter_drift_m: carpeted, litter_resolution: carpeted,   // sliders on a bake that does not run until the gate is open and a leaf can have fallen
+  litter_age: carpeted, litter_drift_m: carpeted, leaf_wetness: carpeted, litter_resolution: carpeted,   // sliders on a bake that does not run until the gate is open and a leaf can have fallen
   exposure_absolute: () => turning() && params.turn_exposure > 0,   // rides on sun first: it only chooses what that order is made of, so with turn_exposure 0 there is no order for it to change
   sky_scatter: () => !splitOn(),                          // the sky view's twin of fill_scatter (§4.9): above leaf_diffuse 0 the leaf is a lantern and its measured glow replaces this authored one — counting both would count it twice
   fill_scatter: (cam) => fillOpen() && !splitOn() && CAMERAS[cam].groups.includes('floor'),   // the floor alone reads the proxy's scattered light; the cloth and the tent take the skylight through the canopy and nothing else. Above leaf_diffuse 0 the measured diffuse light replaces it, so the slider would lie
@@ -736,6 +737,7 @@ const TIPS = {
   litter:"<b>Let the fallen leaves lie on the floor.</b> A leaf that has let go lands on the ground, casts nothing, and is seen by <i>reflection</i> — which is why the same red leaf that glows backlit in the canopy lies there tan and dull, lit from above: it is a surface now, not a window. The last to fall lie on top, the carpet goes from red through copper to brown as it ages, and the wind of the season carries it. It is the same carpet whenever you look: nothing piles up as the clock runs. The sky fill and the sun light it as they light the ground beside it. Off, the floor is exactly what it was. Only the floor has leaves to lie on, and only once leaf fall has dropped some.",
   litter_age:"<b>How long a fallen leaf takes to turn brown.</b> In seasons, like fall start: a leaf that fell this instant is still its own colour — red stays red — and one that fell this long ago is dry-leaf brown, with a smooth turn between. Low and the carpet is brown almost at once; high and it stays bright for weeks. (A provisional number, until a fresh-and-dry litter photo against a grey card sets it.) Only shows while litter is on.",
   litter_drift_m:"<b>How far the wind carries a falling leaf.</b> Metres sideways per metre of height it falls from, along the season's wind direction (the one in the wind section — not the gusts, so the carpet is the same whenever you look), with a scatter of about a third of that about it. 0 drops every leaf where it hung; up, the carpet lies down-wind of the tree. Only shows while litter is on.",
+  leaf_wetness:"<b>How soaked the fallen leaves lie.</b> A dead leaf on the ground drinks the rain: water fills the air in its tissue, it scatters less light back, and it goes darker and richer in one move — a red leaf gets redder and deeper, a brown one near black. A day after rain is about 0.5; 1 is a leaf under water, an overstatement. It is an <i>effective</i> number that the grey-card photo of dry against wet litter will set, not a measured wetness. Leaves still on the tree are alive and are untouched. The ground itself stays dry, so lower its colour by hand for a rain look. Only shows while litter is on.",
   turn_start:"<b>The season at which the first leaf starts to turn.</b> Below it every leaf is summer; this is the threshold the phenology slider has to pass.",
   turn_span:"<b>How long the turn takes, in seasons.</b> By turn start plus this, every leaf has finished.",
   turn_spread:"<b>How scattered the leaves' start times are.</b> 0 = the whole tree turns together; up = leaves start at different moments, so mid-turn is a mosaic of green, gold and red on one tree. Held under the span so each leaf's own turn still takes time.",

@@ -29,11 +29,32 @@ const LITTER_SIGMA = 0.3;   // the scatter about the drift, as a share of it: a 
 const LITTER_PEAK = 0.35;
 const ALBEDO_BROWN = [0.12, 0.08, 0.05];
 
+// THE RAIN DAY (`leaf_wetness`; spec §4.7, "Wet litter"). José: "one day after rain many leaves fell on the ground". A dead leaf on the ground soaks: water fills
+// the air spaces of its tissue, the index contrast at every cell-wall/air interface falls from (n_wall − 1) to (n_wall − n_water), and scattering goes as Δn². Less
+// scattering lets light travel deeper before it returns, so more of it is absorbed: the leaf darkens AND saturates in one move, the strongly absorbed channel most.
+// Dead tissue only: a red leaf still on the tree is alive and keeps its frost, so the carpet is the only reader of this.
+const N_WALL = 1.47, N_WATER = 1.333;
+const WET_RHO = ((N_WALL - N_WATER)/(N_WALL - 1))**2;   // ≈ 0.085: the share of its scattering a fully soaked leaf keeps
+// Kubelka–Munk for an opaque pile. kmReflect is the STABLE inverse (not the textbook 1 + X − √(X² + 2X), which is NaN at R = 0 and cancels badly below R ≈ 1e-4):
+// X = Infinity lands on 0 cleanly and small R stays exact.
+const kmInvert = (R) => (1 - R)*(1 - R)/(2*R);
+const kmReflect = (X) => 1/(1 + X + Math.sqrt(X*X + 2*X));
+// S falls by the index law while K is the pigments' and does not move. w ≤ 0 (or NaN) is the gate: no arithmetic at all, R to the bit.
+function wetten(R, w){
+  if(!(w > 0)) return R;
+  if(R >= 1) return 1;   // nothing to absorb: white never darkens
+  if(R <= 0) return 0;
+  return kmReflect(kmInvert(R)/(1 - Math.min(w, 1)*(1 - WET_RHO)));
+}
+
 // ONE function, so the browning process (P4b) replaces it behind the same signature and nothing else moves: (a leaf's τ, its age in
-// litter_age units) -> the albedo it reflects with. Age 0 is the leaf's own hue; age ≥ 1 is ALBEDO_BROWN to the bit, whatever the leaf was.
-function litterAlbedo(tau, age, out = [0, 0, 0]){
+// litter_age units, the effective wetness) -> the albedo it reflects with. Age 0 is the leaf's own hue; age ≥ 1 is ALBEDO_BROWN to the bit, whatever the leaf was.
+// Wetness is applied LAST, to the dry law's output: the age mix is the leaf's state, not a coverage mix, so K–M on the mixed R is the right object, and the honest
+// reflectance that replaces the dry law needs no change here. `wet` sits before `out`: a caller that left `out` in its slot would hand an array to every comparison.
+function litterAlbedo(tau, age, wet = 0, out = [0, 0, 0]){
   const hue = leafHue([Math.exp(-tau[0]), Math.exp(-tau[1]), Math.exp(-tau[2])]), s = smoothstep(0, 1, age);
   for(let c = 0; c < 3; c++) out[c] = LITTER_PEAK*hue[c]*(1 - s) + ALBEDO_BROWN[c]*s;
+  if(wet > 0) for(let c = 0; c < 3; c++) out[c] = wetten(out[c], wet);
   return out;
 }
 // How old a leaf lies, in litter_age units: 0 the day it fell (phenology = its D). A litter_age of 0 is no time at all to brown in, so
@@ -67,7 +88,7 @@ function litterOrder(list){
 //   [cos, sin, fade, v]  its angle on the ground as a unit vector (no trig on the GPU), the fade it carries (§5.3: a marginal leaf or
 //                        tree lies at its fade, so a density morph does not pop its litter in at full weight), and its outline — leafVariant(seed, j, k),
 //                        the very one the grove hung it in, so a fallen leaf keeps its shape; 0 for the ellipse, which has none
-//   [r, g, b, 0]         litterAlbedo(tau, age)
+//   [r, g, b, 0]         litterAlbedo(tau, age, wetness)
 // `wrap` is the endless park's carpet, which repeats like its fill: a landing is folded into the frame, and a stamp that crosses an edge
 // is drawn again on the far side (the copy sits beside its leaf, so the layering is kept). A finite tree's is clamped: a stamp wholly off
 // its padded frame has nothing to read and is dropped. `minHalf` is the half-extent below which the bake enlarges a stamp (three quarters of
@@ -87,7 +108,7 @@ function litterInstances(list, P, frame, wrap, minHalf = 0){
       if(x - reach < ox) xs.push(ext); if(x + reach > ox + ext) xs.push(-ext);
       if(y - reach < oy) ys.push(ext); if(y + reach > oy + ext) ys.push(-ext);
     } else if(x + reach < ox || x - reach > ox + ext || y + reach < oy || y - reach > oy + ext) continue;
-    litterAlbedo(l.tau, litterAge(P, l.D), rgb);
+    litterAlbedo(l.tau, litterAge(P, l.D), P.leaf_wetness, rgb);
     const c = Math.cos(land.rot), s = Math.sin(land.rot);
     for(const dx of xs) for(const dy of ys) buf.push(x + dx, y + dy, A, B, c, s, l.fade, shape ? leafVariant(P.seed, l.j, l.k) : 0, rgb[0], rgb[1], rgb[2], 0);
   }
@@ -104,7 +125,7 @@ function litterInstances(list, P, frame, wrap, minHalf = 0){
 // OFF it is nothing: a 1×1 texture, no program, no buffer, no pass (`litter` 0, or a camera that is not the floor, or no leaf has fallen yet).
 // ============================================================================
 function newLitterState(){
-  return { tex: null, res: 0, ready: false, grove: null, sig: new Float64Array(11), ox: 0, oy: 0, ext: 1, count: 0, passes: 0, vao: null, buf: null };
+  return { tex: null, res: 0, ready: false, grove: null, sig: new Float64Array(12), ox: 0, oy: 0, ext: 1, count: 0, passes: 0, vao: null, buf: null };
 }
 
 function makeLitter(hub){
@@ -138,6 +159,7 @@ function makeLitter(hub){
   function litterSig(o, res, fr, wrap, n){
     o[0] = res; o[1] = fr.ox; o[2] = fr.oy; o[3] = fr.ext; o[4] = wrap ? 1 : 0;
     o[5] = params.litter_age; o[6] = params.litter_drift_m; o[7] = params.wind_direction_deg; o[8] = params.phenology; o[9] = params.seed; o[10] = n;
+    o[11] = params.leaf_wetness;   // MORPH-class: a change re-bakes the carpet alone, and the sig must be long enough to hold it (a write past a Float64Array's end is silently dropped)
   }
 
   function bakeLitter(list, res, fr, wrap){
@@ -202,4 +224,4 @@ function makeLitter(hub){
   return { litterWanted, refreshLitter, releaseLitter };
 }
 
-export { LITTER_SALT, LITTER_SIGMA, LITTER_PEAK, ALBEDO_BROWN, INSTANCE_FLOATS, litterAlbedo, litterAge, litterLanding, litterOrder, litterInstances, newLitterState, makeLitter };
+export { LITTER_SALT, LITTER_SIGMA, LITTER_PEAK, ALBEDO_BROWN, N_WALL, N_WATER, WET_RHO, kmInvert, kmReflect, wetten, INSTANCE_FLOATS, litterAlbedo, litterAge, litterLanding, litterOrder, litterInstances, newLitterState, makeLitter };

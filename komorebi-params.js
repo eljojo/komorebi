@@ -37,6 +37,7 @@ const MORPH_KEYS = [
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'canopy_fill','fill_scatter',                                         // the sky fill (§4.7): two live shader uniforms — the receiver's mix and the leaf albedo the fill pass reads — so they tween; the canopy_fill gate crossing 0 allocates the fill lazily, mid-tween, which is not a look pop
+  'leaf_wetness',                                                       // the rain day (§4.7): read by the carpet bake only — refreshLitter's signature notices it and only the carpet re-bakes; no regrow (a CANOPY key would regrow the whole grove per frame to re-tint the carpet, and macros may never write CANOPY keys, which P8's rain, a live writer, will need)
   'leaf_diffuse',                                                       // a leaf is not a window (§4.5): k = −ln(1−d) is a live uniform on both paths (the layer tap reads it, the faithful cast re-bakes on it), so it tweens
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'fabric_tt','fabric_tint_r','fabric_tint_g','fabric_tint_b',          // the receiver's fabric (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
@@ -177,6 +178,7 @@ const DEFAULTS = {
   litter: 0,                       // the carpet (§4.7, P3b): the fallen leaves lie on the floor and the floor reflects off them. THE GATE, separate from leaf_drop so the canopy half can be judged alone: 0 = no texture (1x1), no bake pass, the floor's literal old line. Only the floor reads it
   litter_age: 0.15,                // PROVISIONAL (phenology units): how long a fallen leaf takes to go from its own hue to brown — smoothstep over (phenology − its day) / litter_age. Read by the regrow-time bake only
   litter_drift_m: 0.4,             // metres a falling leaf is carried per metre of height, along the AUTHORED wind_direction_deg (the season's wind, never the live gusts), with a scatter of 0.3 of that. Read by the regrow-time bake only
+  leaf_wetness: 0,                 // the rain day (§4.7): 0..1, how soaked the fallen leaves lie — darker and more saturated (K–M with scattering cut by the index law). An EFFECTIVE wetness (it absorbs the water film too; a rain day is about 0.5, the grey card will set it). 0 = the dry law with no arithmetic. Read by the carpet bake only, never by the grove or a shader
   canopy_extent_m: 12.0,           // world size of baked layers (>= view + 2*max shift)
   tex_resolution: 2048,
   bake_resolution: 1024,           // TUNE (§9): bake-pass / layer-texture size; 0 = follow tex_resolution. Ships at 1024 (cheaper-bake baseline). auto_quality trims it below the knee like samples; set 0 (follow) per look for a full-res bake.
