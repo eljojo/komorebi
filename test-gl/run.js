@@ -42,6 +42,9 @@ const STILL_FRAMES = [20, 60];   // the stillness proof: one engine, two capture
 // Suite 2 as data: one row per invariant. `a` and `b` are param overrides merged over the preset (and then
 // over the harness's motion freeze); the assertion is always "these two frames are byte-identical".
 // Adding an invariant is adding a line. (`rebake: true` re-bakes before the capture — only a faithful look needs it.)
+// (`rebakeB: true` re-bakes frame b only, so a = what the engine shows by itself and b = the same look re-baked: the rows that hold a faithful look's
+// FIRST frame to its settled one. `from: { preset, over?, auto?, perf? }` makes frame a the setParams route: the engine is born as that look and moved to
+// this one — see harness.html's __run for what `auto` and `perf` set up.)
 // (`differ: true` inverts the assertion — the two frames must NOT match, and GL must stay clean: the row proves a gate
 // is a real switch, so the byte-identical rows beside it cannot be passing only because the feature is dead.)
 // (`near: N` is the continuity row: the frames may differ, but nowhere by more than N grey levels — a sweep that steps by a hair
@@ -87,9 +90,9 @@ const INVARIANTS = [
   // The sieve tier is not gated by wall_fraction alone: at s_j = 0 wall and cell are one tissue, so a vein share
   // must still change nothing (it is what lets a species bundle carry one without touching a summer look)...
   { name: 'wall_fraction at summer == absent (layer path)', preset: 'memories', a: {}, b: { wall_fraction: 0.3, anthocyanin: 0.8 } },
-  // ...and park 1 is faithful: its leaves ride faithData, a second write of the same tau. `rebake` because a faithful
-  // look's first frame is baked against an empty sun cloud (rebuildAll bakes before regenSource) and shows no leaf
-  // colour at all, so without it this row would compare two dark frames and could never fail.
+  // ...and park 1 is faithful: its leaves ride faithData, a second write of the same tau. `rebake` is from when a faithful look's
+  // first frame was baked against an empty sun cloud (rebuildAll baked before regenSource) and showed no leaf colour at all, so the
+  // row compared two dark frames and could never fail; the "shows its real frame unaided" rows now hold that, and the flag stays.
   { name: 'pigment family inert at summer (faithful path)', preset: 'park 1', rebake: true,
     a: {}, b: { phenology: 0.5, anthocyanin: 1, tannin: 1, turn_span: 0.3, wall_fraction: 0.3 } },
   // LIGHT DECIDES WHO TURNS FIRST (§4.5). turn_exposure 0 is P0's per-leaf hash and nothing else: the same bytes as a look that
@@ -248,18 +251,37 @@ const INVARIANTS = [
   { name: 'leaf_diffuse darkens the beam (layer path)', preset: 'memories', differ: true, a: {}, b: { leaf_diffuse: 0.95 } },
   { name: 'leaf_diffuse darkens the beam (faithful path)', preset: 'park 1', rebake: true, differ: true, a: {}, b: { leaf_diffuse: 0.95 } },
   // ...and with it open, the energy has to go somewhere. d·T leaves the beam and the fill hands it to the shade, so a frame whose
-  // diffuse light was thrown away (S never written, never read) sits BELOW the one that still carries it: memories 0.70 against its
-  // 1.49, the tent 0.70 against 0.99, and the curtain — a dim look, where its beam is nearly dark and S is the whole change: ×1.00
-  // with S thrown away — 1.00 against 1.53 (S read at the vertical plane's view factor, 0.5; read at 1 it was 2.0, double). The bounds
-  // below sit between the two, so they are floors under a loss, not a fit to a number. (park 1 is not here: its leaves pass so little
-  // of the sun that the frame cannot tell; the faithful S is held by the fill check's bookkeeping rows instead.)
+  // diffuse light was thrown away (S never written, never read) sits BELOW the one that still carries it, measured on the real cast:
+  // memories 0.80 against its 1.42, the tent 0.81 against 1.01, the curtain 0.957 against 1.008 (S read at the vertical plane's view
+  // factor, 0.5; read at 1 it is 1.053). The bounds below sit between the two, so they are floors under a loss, not a fit to a number,
+  // and the curtain's upper edge leaves 0.5 vs 1 to the cloth's own hemisphere (not derived yet). (park 1 is not here: its leaves pass
+  // so little of the sun that the frame cannot tell, 0.998 either way; the faithful S is held by the fill check's bookkeeping rows instead.)
+  // A LESSON KEPT: the curtain's first band, [1.05, 1.6], and "1.00 against 1.53, 2.0 read at 1", were measured on the dark first frame —
+  // the faithful cast baked before its own source, a beam with no sun in it, so S was the whole frame. The real cast's beam is most of
+  // the cloth and S about 5% of it. A faithful row that reads its frame unaided now IS the real cast (the bake-order fix, rows above).
   { name: 'the diffuse light lands in the shade (layer path)', preset: 'memories', lit: [1.0, 1.6],
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   // the cloth and the tent used to read Tsky alone; with the beam gone dark they have to read S too, or the energy leaks
-  { name: 'the diffuse light lands on the cloth (curtain)', preset: 'curtain 1', lit: [1.05, 1.6],
+  { name: 'the diffuse light lands on the cloth (curtain)', preset: 'curtain 1', lit: [0.98, 1.10],
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'the diffuse light lands on the cloth (tent)', preset: 'tent 1', lit: [0.9, 1.3],
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  // A FAITHFUL LOOK SHOWS ITS REAL FRAME UNAIDED (§4.5). The cast pre-integrates the soft shadow over the source cloud, so the bake has to come after
+  // the cloud is cut: rebuildAll once baked first — against an empty cloud (a born engine: a dark frame) or the previous look's (setParams: a lit, wrong one) —
+  // and with motion frozen nothing re-baked it. a is what the engine shows by itself; b is the same look re-baked, the frame the `rebake` workaround always took.
+  { name: 'park 1 shows its real frame unaided (born)', preset: 'park 1', rebakeB: true, a: {}, b: {} },
+  { name: 'curtain 1 shows its real frame unaided (born)', preset: 'curtain 1', rebakeB: true, a: {}, b: {} },
+  // ...and when it arrives by setParams: from a layer look (no cast of its own), from a faithful one (a different cloud, lit), and onto the cloth
+  { name: 'park 1 shows its real frame unaided (setParams from a layer look)', preset: 'park 1', rebakeB: true, from: { preset: 'memories' }, a: {}, b: {} },
+  { name: 'park 1 shows its real frame unaided (setParams from the curtain)', preset: 'park 1', rebakeB: true, from: { preset: 'curtain 1' }, a: {}, b: {} },
+  { name: 'curtain 1 shows its real frame unaided (setParams from a layer look)', preset: 'curtain 1', rebakeB: true, from: { preset: 'afternoon 7' }, a: {}, b: {} },
+  // THE GOVERNOR'S LEFTOVERS. resetPerf runs after rebuildAll and can re-cut the cloud (regenSource, no bake): the old look's governor is still on when the swap
+  // arrives, with perf.sampleCount at ITS count (park 2: 48) or trimmed by the governor (q 0.7 on a 29-sample look: 22) — and bakeRes() is still full there, so no
+  // bake-res change re-bakes it either. The cast is its sample set: it has to be re-cast when the count the new look settles on is not the one it was cast with.
+  { name: 'park 1 shows its real frame unaided (setParams from a look with more samples, governor on)', preset: 'park 1', rebakeB: true,
+    from: { preset: 'park 2', auto: true }, a: {}, b: {} },
+  { name: 'park 1 shows its real frame unaided (setParams from a trimmed governor)', preset: 'park 1', rebakeB: true,
+    from: { preset: 'park 1', auto: true, perf: { quality: 0.7, sampleCount: 22 } }, a: {}, b: {} },
   // THE LEAF IS A LANTERN (§4.9, P0c-sky). The sky view's wood moved out of the layer texture's alpha into a texture of its own
   // (R16F per layer), and the leaf bake stopped masking alpha, so coverage rides it on every camera. At leaf_diffuse 0 none of that may
   // be visible: every look, canopy 1-4 above all (the only looks with a sky camera), is the frame it was before the move. These are
@@ -271,8 +293,10 @@ const INVARIANTS = [
   { name: 'canopy 4 is the frame it was before the texture move', preset: 'canopy 4', pin: '4c5e56d5' },
   // ...and the cameras that never had a wood texture to read: a 1x1 unread R16F beside them changes nothing, and the fill's program text
   // (the shared ray's signature moved) bakes the same shade.
-  { name: 'park 1 is the frame it was (faithful floor: wood texture 1x1, unread)', preset: 'park 1', pin: '6b57b555' },
-  { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', pin: '7cad5bb5' },
+  // (park 1 and curtain 1 were re-recorded once, from 6b57b555 / 7cad5bb5: the old hashes pinned the frame baked before its own source cloud. The new ones are the
+  // rebaked frames — the "shows its real frame unaided" rows above hold the unaided frame equal to the re-baked one, so these cannot drift from it.)
+  { name: 'park 1 is the frame it was (faithful floor: wood texture 1x1, unread)', preset: 'park 1', pin: '75f18f24' },
+  { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', pin: '32ad83b8' },
   { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'bdcffc3c' },
   { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', pin: '13525cdd' },
   // The ONE pin that moved, on purpose: it is a leaf_diffuse > 0 frame, and P0c-edge reads every texel there as a mixture of leaf and gap (§4.5), so the
@@ -648,7 +672,7 @@ async function main() {
     // ---- opt-in: LOOKS — `node run.js --look "<preset>" [--as <name>] key=value ... [--look ...]` (repeatable) ----
     // For eyes, not proof: one PNG per spec, the preset with the overrides merged on (values are JSON, so
     // phenology=0.75 and faithful_canopy=true both work), written to out/<name>.png. Unlike the suites it
-    // re-bakes first (`rebake`), so a faithful look's frame is the real one and not the empty-sun-cloud first bake.
+    // re-bakes first (`rebake`), so a faithful look's frame is the settled one (the first bake is now the real one too: see "shows its real frame unaided").
     // `--size 960x540` after a --look renders that one at that size (default 320x180, what every hash is taken at).
     if (process.argv[2] === '--look') {
       const specs = [];
@@ -747,14 +771,16 @@ async function main() {
     if (!fillOnly && !skyOnly && !edgeOnly) log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
     for (const inv of (fillOnly || skyOnly || edgeOnly) ? [] : INVARIANTS.filter((r) => !gateFilters.length || gateFilters.some((f) => r.name.toLowerCase().includes(f)))) {
       const opts = inv.rebake ? { rebake: true } : undefined;
-      const a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.a || {}, GATE_FRAMES, opts]);
+      const optsA = inv.from ? { ...opts, from: inv.from } : opts;   // from: frame a is reached by setParams out of another look
+      const optsB = inv.rebakeB ? { rebake: true } : opts;           // rebakeB: frame b is the same engine's frame, re-baked
+      const a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.a || {}, GATE_FRAMES, optsA]);
       if (inv.pin) {   // a PIN row: one frame, one number written down before the change (see INVARIANTS)
         const got = a.captures[0].hash, ok = !a.glError && got === inv.pin;
         record('gate', inv.name, ok, ok ? `pinned (${got})` : a.glError ? `gl.getError 0x${a.glError.toString(16)}` : `hash ${got}, pinned ${inv.pin} — the frame moved`);
         log(`  ${ok ? 'ok  ' : 'FAIL'}  [${inv.preset}] ${inv.name}${ok ? `   ${got}` : a.glError ? `   gl.getError 0x${a.glError.toString(16)}` : `   hash ${got}, pinned ${inv.pin}`}`);
         continue;
       }
-      const b = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.b, GATE_FRAMES, opts]);
+      const b = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.b, GATE_FRAMES, optsB]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.captures[0].id]);
       const tag = inv.known ? 'KNOWN-FAIL' : 'FAIL';
       if (inv.near != null) {   // a CONTINUITY row: a hair's step moves the picture by a hair

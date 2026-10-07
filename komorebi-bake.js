@@ -165,7 +165,7 @@ export function makeBake(hub){
 
   function bakeFaithful(){
     const k = ballisticK(params.leaf_diffuse);
-    faith.k = k;   // recorded even for an empty grove: refreshFaith compares against it
+    faith.k = k; faith.n = src.count;   // recorded even for an empty grove: refreshFaith compares against them
     // Only "no grove built yet" returns early. A grove with no leaves — leaf_drop 1 at leaf-off, §4.5 abscission, or no foliage at all — still has
     // its shadow to bake: the wood if there is any, and otherwise Σw·1 = 1, a lit floor. (An instanced draw of zero leaves is a no-op.) Returning
     // on an empty leaf set left faithTex at zero, which transport reads as a floor in total shade.
@@ -432,8 +432,11 @@ export function makeBake(hub){
   // Once per frame, before transport draws: the faithful cast carries the beam's k pre-integrated (§4.5), so unlike the layer
   // path — which reads k at the tap — it must be re-cast when leaf_diffuse moves without anything else having baked: a
   // tween, a slider. Under wind the bake runs every frame anyway and has already recorded the current k.
+  // The same goes for the sample count: it is what the cast is made of, and resetPerf (after rebuildAll's bake) or the governor can
+  // re-cut the cloud to a count the bake did not see — the old look's, or a trimmed one — with no bake-res change to re-bake it.
+  // Only the COUNT is compared: a transition's morph moves the cloud's shape every frame, and the cast is not re-cast for that.
   function refreshFaith(){
-    if(faithfulOn() && faith.k !== ballisticK(params.leaf_diffuse)) bakeFaithful();
+    if(faithfulOn() && (faith.k !== ballisticK(params.leaf_diffuse) || faith.n !== src.count)) bakeFaithful();
   }
 
   // Once per frame, before transport draws: the fill is current, or it is not wanted and holds nothing.

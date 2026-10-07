@@ -173,6 +173,7 @@ function create(canvas, opts){
                   pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
                   gx:new Float32Array(MAX_SAMPLES), gy:new Float32Array(MAX_SAMPLES),// per-sample ground-shift scratch (hoisted; no per-bake alloc)
                   k:0,                                                               // the beam's neutral depth the cast was last baked with (§4.5): the cast pre-integrates it, so a live leaf_diffuse re-bakes it (refreshFaith)
+                  n:0,                                                               // the sample count the cast was last baked over: the cast IS its samples, so a governor step or a resetPerf that re-cuts the cloud re-bakes it (refreshFaith)
                   segVAO:null, segBuf:null, segRest:[], segArr:null, segCount:0 };   // + the woody skeleton (trunk+branches+twigs): rest segments, the per-bake swayed instance array, its VAO
   // SKY VIEW's share of that skeleton (§4.9): the FINE wood (level > 1) the analytic occluder never carries, sorted
   // into the leaves' own depth layers so a twig and the leaves hanging on it stamp into the SAME texture. Built
@@ -452,7 +453,10 @@ function create(canvas, opts){
   if(EDITOR) makeEditorTools(hub);   // debug overlays + profiler + motion mirror; EDITOR=false strips the call (and its module with it)
 
   // ---- the rebuild scopes the editor drives, plus a full param swap ----
-  function rebuildAll(){ rebuildTextures(); regenCanopy(); bake(); regenSource(); }
+  // The cloud is cut BEFORE the bake: the faithful cast pre-integrates its soft shadow over the source's samples (§4.5), so a bake made first casts
+  // against whatever cloud came before — empty on a born engine (a dark frame), the previous look's after setParams — and with still air nothing re-bakes it.
+  // regenSource reads only params, perf and the transition's bloom; nothing the textures or the grove set up.
+  function rebuildAll(){ rebuildTextures(); regenCanopy(); regenSource(); bake(); }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
   function apply(scope){
     if(lost) return;                                  // see setParams

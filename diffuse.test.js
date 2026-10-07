@@ -495,6 +495,39 @@ test("the faithful cast takes k at the bake, per stamp: the leaf's mixture over 
   expect(/else\s*frag = vec4\(exp\(-vTau\*cov\), 1\.0\);/.test(FS_FAITH)).toBe(true);
 });
 
+// refreshFaith is what keeps the cast current for a frame that nothing else baked. A recording stub GL and no grove (faith.vao null: bakeFaithful
+// records what it was made of and stops there) are enough to read WHEN it casts; the pixels of the cast are the harness's.
+import { makeBake } from "./komorebi-bake.js";
+function castRig(over = {}) {
+  let casts = 0;
+  const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : () => { if (name === "bindFramebuffer") casts++; return {}; }) });
+  const params = { leaf_diffuse: 0, ...over };
+  const src = { count: 29 }, faith = { vao: null, k: 0, n: 0 };
+  const bake = makeBake({ gl, params, motion: {}, src, faith, sky: {}, U: {}, fill: {}, bakeRes: () => 256, faithfulOn: () => true });
+  return { bake, params, src, faith, casts: () => casts };
+}
+
+test("refreshFaith: the cast is re-cast when leaf_diffuse moves OR the sample count does, and not for anything else", () => {
+  const r = castRig();
+  r.bake.bakeFaithful();
+  expect([r.faith.k, r.faith.n], "the bake records what it was made of").toEqual([0, 29]);
+  const base = r.casts();
+  r.bake.refreshFaith(); r.bake.refreshFaith();
+  expect(r.casts(), "nothing moved: no cast").toBe(base);
+  r.src.flat = new Float32Array(87); r.src.maxR = 0.02;                                 // a transition's morph re-cuts the cloud's SHAPE every frame at the same count
+  r.bake.refreshFaith();
+  expect(r.casts(), "the cloud's shape moved at the same count: no cast (the morph does not re-cast the whole tree each frame)").toBe(base);
+  r.params.leaf_diffuse = 0.5; r.bake.refreshFaith();
+  expect(r.casts(), "leaf_diffuse moved: re-cast").toBe(base + 1);
+  r.bake.refreshFaith();
+  expect(r.casts(), "...once").toBe(base + 1);
+  r.src.count = 22; r.bake.refreshFaith();                                              // resetPerf / the governor re-cut the cloud to a count the bake did not see
+  expect(r.casts(), "the sample count moved: re-cast").toBe(base + 2);
+  expect(r.faith.n).toBe(22);
+  r.bake.refreshFaith();
+  expect(r.casts(), "...once").toBe(base + 2);
+});
+
 test("ONE texelMix text: the sky ray, the fill, the cast tap and the faithful stamp carry the very same snippet, once each", () => {
   const mix = SH.GLSL_TEXEL_MIX;
   expect(typeof mix).toBe("string");

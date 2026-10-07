@@ -143,9 +143,9 @@ window.__diff = (idA, idB) => {
 
 // One engine, one look, captured at each of `frames` (ascending rAF tick counts). The engine is paused and
 // disposed before resolving, so twenty-odd of these in a row never hold twenty live GL contexts.
-// opts.rebake: re-bake at tick 4 (what the robustness suite does) — a faithful look otherwise captures the first
-// bake, made against an empty sun cloud (rebuildAll bakes before regenSource). Off for every suite: their hashes
-// are of what the engine shows by itself. opts.size = [w, h]: the canvas in CSS px (the `--look` eyeball mode only —
+// opts.rebake: re-bake at tick 4 (what the robustness suite does) — a faithful look's first bake was once made against an empty
+// sun cloud (rebuildAll baked before regenSource), and the "shows its real frame unaided" rows hold it to the re-baked frame now.
+// Off for every suite: their hashes are of what the engine shows by itself. opts.size = [w, h]: the canvas in CSS px (the `--look` eyeball mode only —
 // a soft artefact such as a mip's facets wants a frame bigger than the 320x180 every hash is taken at).
 window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, reject) => {
   const base = PRESETS[presetName];
@@ -178,7 +178,13 @@ window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, re
   const timer = setTimeout(() => finish(new Error(`'${presetName}' did not reach frame ${want[0]} within 120 s`)), 120000);
 
   try {
-    eng = create(canvas, { params });
+    // opts.from = { preset, over?, auto?, perf? }: the setParams route. The engine is BORN as that look and moved to this one by setParams before
+    // its first frame, so what rebuildAll meets is the old look's state: its source cloud, and with `auto` its governor (on, perf.sampleCount at the old
+    // look's count). `perf` pokes the governor's own fields to what a mid-session trim leaves. The swap itself turns the governor off again (FREEZE).
+    const f = opts && opts.from;
+    if (f && !PRESETS[f.preset]) throw new Error(`unknown preset '${f.preset}' (from)`);
+    eng = create(canvas, { params: f ? Object.assign({}, PRESETS[f.preset], f.over || {}, FREEZE, f.auto ? { auto_quality: true } : {}) : params });
+    if (f) { if (f.perf) Object.assign(eng.perf, f.perf); eng.setParams(params); }
   } catch (e) { return finish(e); }
 
   const gl = eng.gl;
@@ -1176,8 +1182,8 @@ window.__contextLoss = async (presetName, opts) => {
   const out = {};
   try {
     await withTimeout(capture(8), 60000, 'warm-up frames');
-    // rebuildAll() bakes BEFORE regenSource(), so with motion frozen the faithful path's first frame stays baked against an
-    // empty sun cloud (nothing re-bakes it). Settle that here, so the pre-loss frame is the real look and the comparison means something.
+    // (rebuildAll() once baked BEFORE regenSource(), so with motion frozen the faithful path's first frame stayed baked against an
+    // empty sun cloud. It no longer does; the re-bake stays so the pre-loss frame is a bake made in this run, as the comparison always had.)
     eng.apply('bake');
     if (o.retarget) eng.setParams(Object.assign({}, PRESETS[o.retarget], FREEZE));
     if (o.transition) eng.transitionTo(Object.assign({}, PRESETS[presetName], { seed: 1234567 }, FREEZE), { duration: 0.6 });
