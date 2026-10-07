@@ -298,6 +298,50 @@ void main(){
   frag = vec4(vec3(exp(-uWoodTau*cov)), 1.0);              // wood blocks every colour equally → dark, neutral
 }`;
 
+// THE LITTER CARPET (§4.7, komorebi-litter.js): the fallen leaves stamped onto the floor, once per regrow, into an RGBA8 texture over the fill's frame.
+// A stamp is one flat ellipse — the leaf's own half-axes, lying face up, so no foreshortening and no height: it casts nothing and is seen by
+// reflection. Everything a stamp needs arrives ready from the CPU (position, size, the angle as a unit vector, the albedo it reflects with),
+// so there is no trig and no colour law here: komorebi-litter.js owns both, and a browning process that replaces its colour needs no shader.
+// The output is PREMULTIPLIED — rgb already times coverage — and drawn with ONE, ONE_MINUS_SRC_ALPHA, so the instance order is the layering
+// (the last to fall lie on top) and the alpha channel accumulates as 1 − Π(1 − a). Premultiplied is also what makes a texel a mixture: the
+// bilinear read and the mips average coverage-weighted colour, where straight alpha would darken every edge toward the empty texels' black.
+const VS_LITTER = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aCorner;   // [-1,1] quad corner
+layout(location=1) in vec4 iA;        // centre.xy (m), A (long half), B0 (short half)
+layout(location=2) in vec4 iB;        // cos, sin of its angle on the ground; the fade it carries (§5.3)
+layout(location=3) in vec4 iC;        // the albedo it reflects with (litterAlbedo)
+uniform vec2  uLitterOrigin;          // the plan square the carpet covers: the fill's own frame
+uniform vec2  uLitterExtent;
+uniform float uLitterMinHalf;         // the smallest half-extent a stamp is drawn at (three quarters of a texel, so a texel and a half across): a leaf under a texel would otherwise fall between pixel centres and vanish
+out vec2 vLocal;
+out vec4 vCol;
+void main(){
+  vec2 hs = iA.zw;
+  vec2 k = max(vec2(1.0), uLitterMinHalf/hs);                  // enlarge a sub-texel stamp to a texel's worth...
+  float a = iB.z/(k.x*k.y);                                    // ...and spend what it gained in area out of its alpha, so the leaf keeps its area (to the rim's anti-aliasing, which over-counts a stamp this small by ~20%)
+  vec2 m = 1.0 + 1.5*uLitterMinHalf/(hs*k);                    // the quad is a texel and a bit wider than the stamp all round: the rim's anti-aliasing ramp lies half outside the ellipse, and a fragment outside the quad is never made (the tips were cut at 50%)
+  vec2 d = aCorner*m*hs*k;
+  vec2 world = iA.xy + vec2(iB.x*d.x - iB.y*d.y, iB.y*d.x + iB.x*d.y);
+  gl_Position = vec4((world - uLitterOrigin)/uLitterExtent*2.0 - 1.0, 0.0, 1.0);
+  vLocal = aCorner*m;
+  vCol = vec4(iC.rgb*a, a);
+}`;
+
+const FS_LITTER = `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in vec4 vCol;
+out vec4 frag;
+void main(){
+  // a leaf on the ground has a crisp edge: one texel of anti-aliasing, whatever the frame (a stamp's rim in r is one pixel's worth of
+  // fwidth), not the soft penumbra mask the canopy's leaves are baked with — that mask is how a leaf throws a shadow, not what it looks like
+  float r = length(vLocal);
+  float cov = clamp((1.0 - r)/max(fwidth(r), 1e-4) + 0.5, 0.0, 1.0);
+  if (cov <= 0.0) discard;
+  frag = vCol*cov;
+}`;
+
 const VS_FULL = `#version 300 es
 precision highp float;
 out vec2 vUv;
@@ -644,4 +688,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };

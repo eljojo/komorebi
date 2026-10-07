@@ -66,11 +66,13 @@ const CANOPY_KEYS = [
   'cluster_spread_m','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b','droop','taper_delta','crown_aspect',
   'phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction','turn_exposure','exposure_absolute',   // leaf colour, like trans_rgb: each is a per-leaf tau read at regrow, so it morphs the SAME grove (spec §4.5)
   'leaf_drop','drop_start','drop_span','drop_exposure',   // abscission (§4.5): which leaves are still on the tree is decided at regrow, so it morphs the SAME grove too (a leaf fades out by §5.3's rule, never pops)
+  'litter_age','litter_drift_m',   // the litter carpet (§4.7): how browned each leaf lies and how far the season's wind carried it — read only by the regrow-time bake, so they morph with the grove they are baked from
 ];
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
   'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis',
   'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
   'fill_directions','fill_resolution',                                  // the sky fill's TUNE pair (§4.7): a ray count and a texture size are integers that cannot interpolate, and the size reallocates
+  'litter','litter_resolution',                                         // the carpet (§4.7): a gate that allocates (1x1 <-> res²) and the size it allocates at — neither interpolates, so a look that crosses them dissolves under the bloom rather than popping a carpet in
 ];   // (tone_map is a live uniform: it just snaps — under the bloom if one's already running, else at the end — never forces one)
 // ---- scene-MODE flags. Not continuous (never tween) but NOT inert either: flipping one changes regen-time state
 // (faithful_canopy reallocates faithTex + switches the bake path; standing_scene reshapes the bake's crown sizing;
@@ -171,6 +173,9 @@ const DEFAULTS = {
   drop_start: 0.7,                 // the season at which the first leaf lets go (phenology units; the turn starts at turn_start 0.6)
   drop_span: 0.3,                  // how long the dropping share takes to fall, in seasons: the last of it is down by drop_start + drop_span
   drop_exposure: 1.0,              // how far light orders the drop (0 = each leaf's own hash, 1 = the sunlit leaves go first). Reads the same exposure turn_exposure does, so it needs no turn_exposure of its own
+  litter: 0,                       // the carpet (§4.7, P3b): the fallen leaves lie on the floor and the floor reflects off them. THE GATE, separate from leaf_drop so the canopy half can be judged alone: 0 = no texture (1x1), no bake pass, the floor's literal old line. Only the floor reads it
+  litter_age: 0.15,                // PROVISIONAL (phenology units): how long a fallen leaf takes to go from its own hue to brown — smoothstep over (phenology − its day) / litter_age. Read by the regrow-time bake only
+  litter_drift_m: 0.4,             // metres a falling leaf is carried per metre of height, along the AUTHORED wind_direction_deg (the season's wind, never the live gusts), with a scatter of 0.3 of that. Read by the regrow-time bake only
   canopy_extent_m: 12.0,           // world size of baked layers (>= view + 2*max shift)
   tex_resolution: 2048,
   bake_resolution: 1024,           // TUNE (§9): bake-pass / layer-texture size; 0 = follow tex_resolution. Ships at 1024 (cheaper-bake baseline). auto_quality trims it below the knee like samples; set 0 (follow) per look for a full-res bake.
@@ -279,6 +284,7 @@ const DEFAULTS = {
   leaf_diffuse: 0.0,
   fill_directions: 16,             // TUNE: the K cosine-weighted rays the fill integrates (stratified in cos²θ, no noise)
   fill_resolution: 256,            // TUNE: the fill texture's size over its frame — the canopy box in the endless park (which wraps it), the box PADDED by 3·h_max on a finite look (standing_scene or a receiver: the glow decays across the floor, §4.7), so the texel is coarser there. It varies at the scale of crown gaps, not dapples
+  litter_resolution: 1024,         // TUNE (§4.7): the carpet's texture size over the fill's own frame (the box in the endless park, the box padded by 3·h_max on a finite tree). RGBA8, so 4 MiB at 1024 (5.3 with its mips). A 10 cm leaf must read as a leaf: raise it for a wide frame
   sky_turbidity: 0.05,             // atmospheric haze β (Ångström); reddens low sun, desaturates dusk
   mesopic_strength: 0.6,           // Purkinje: how far rods cool the deep shade at dusk (0 off; gated to low sun)
   chromatic_aberration: 0.0,       // leaf-edge diffraction (θ∝λ): per-channel red/blue spread of the dapples (0 = off, presets untouched)

@@ -11,6 +11,7 @@ model. Read the spec before you change what the engine does.
   - **`komorebi-grove.js`** — `buildGrove`: the grown canopy — trees, leaves binned to depth layers, the woody occluder, the faithful-path geometry.
   - **`komorebi-bake.js`** — the per-frame bakes: leaves to per-layer optical depth, the faithful path's pre-integrated soft shadow, and the sky fill — the hemisphere integral of those layers that lights the shade (`canopy_fill`, §4.7).
   - **`komorebi-fill.js`** — the sky fill's CPU half: the fixed cosine-weighted directions and the per-ray quadrature as pure functions, the reference `fill.test.js` and the pixel harness hold the shader to.
+  - **`komorebi-litter.js`** — the fallen leaves as a floor material: the pure laws (where a leaf lands, the one colour law `litterAlbedo`, drop order) and the once-per-regrow RGBA8 carpet bake over the fill's frame.
   - **`komorebi-source.js`** — the Vogel-spiral point-sun cloud and the shared cast geometry (bulk shift, ellipse projection, layer heights).
   - **`komorebi-motion.js`** — the broadband wind signal and the trunk/limb/twig spring hierarchy.
   - **`komorebi-transitions.js`** — the cloud-bloom crossfade between looks.

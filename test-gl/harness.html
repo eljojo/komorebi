@@ -14,6 +14,8 @@
     __rimCheck(preset, overrides)       the lantern's RIM: leaf glow at a soft edge against the same leaf's interior, through the shared ray, on the layers the engine baked (§4.5, a texel is a mixture)
     __haloCheck(preset, overrides)      the cast tap's HALO: the beam through a soft-edge texel (tap and tapCA, as the engine compiles them) against the mixture, on the layers the engine baked
     __stampCheck(opts)                  the faithful stamp's edge band: FS_FAITH, as the engine compiles it, drawn for one leaf and held to the per-leaf mixture
+    __litterCheck(preset, overrides)    the litter carpet the engine baked, read back and held to the grove's own list: frame, coverage, colour, drift, once per regrow
+    __litterStamp()                     VS_LITTER/FS_LITTER as the engine compiles them, drawn for a few known stamps: layering order, the blend, sub-texel energy, the rim
     __fillToggle(preset, overrides)     canopy_fill opened and shut on a RUNNING engine: what it allocates, frees, and the frames either side
     __liveChange(preset, over, key, value)  one param changed on a RUNNING engine (nothing rebuilt), the frame after it — for knobs that tween
     __diff(idA, idB) / __png(id)        exact byte comparison + the PNG artifact
@@ -31,9 +33,10 @@
 <body></body>
 <script type="module">
 import { create, MAX_OCC, TRANSPORT_GROUPS } from '/komorebi.js';
-import { VS_FULL, FS_FAITH, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/komorebi-shaders.js';
+import { VS_FULL, FS_FAITH, VS_LITTER, FS_LITTER, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/komorebi-shaders.js';
 import { PRESETS } from '/presets.js';
-import { fillDirections, fillRef, fillTile, texelTap, skyRayRef, texelMix } from '/komorebi-fill.js';
+import { fillDirections, fillFrame, fillRef, fillTile, texelTap, skyRayRef, texelMix } from '/komorebi-fill.js';
+import { litterAge, litterAlbedo, litterInstances } from '/komorebi-litter.js';
 import { atmosphere, ballisticK, sunDirection } from '/komorebi-math.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
@@ -718,6 +721,137 @@ void main(){
 });
 
 // ---------------------------------------------------------------------------
+// THE LITTER CARPET (§4.7, P3b), measured on the texture the engine really baked. The bun tests hold komorebi-litter.js's laws and the wiring over a stub GL;
+// this reads the RGBA8 carpet back and holds it to the grove's own litter list through the same pure functions, so a bake that landed the wrong frame, lost
+// leaves, dropped the layering or mis-composed its colour is a number and not a feeling. The things worth a number:
+//   frame    the carpet covers the square the fill covers — fillFrame(E, h_max, bulkOn) — recomputed HERE from the params (the heights as transport has them: the
+//            park band, or where the faithful tree's twigs grew), and compared with what the engine says AND with the fill when it is open
+//   raster   the GPU's carpet against a CPU raster of the very stamps it was handed (litterInstances), painted in drop order with the same premultiplied over, the
+//            same enlargement of a sub-texel leaf and the same one-texel rim. A dense carpet is many layers deep (afternoon 7 lays 2 m² of leaf on every m² of floor),
+//            so the covered area and the mean colour are NOT the sum over leaves — the last to fall lie on top — and the only honest reference is the painting itself.
+//            `orderDiff` is the same raster painted in the REVERSE order: how far apart "the last on top" and "the first on top" really are on this carpet, which is
+//            what the GPU's agreement with the right one has to be small against
+//   sparse   on a carpet too thin to overlap (the first day or two of the fall) there IS a closed form: Σα·texel² is Σπ·A·B0·fade and the mean albedo is the
+//            area-weighted mean of litterAlbedo. This is the check that the raster reference is not agreeing with a bug it shares
+//   drift    (a finite tree only: the park wraps, and a mean of positions on a circle is a different question) the carpet's centroid against the leaves' own, which
+//            has to point the way the authored wind blows and be about the area-weighted h·litter_drift_m long
+//   once     `passes` is 1 after two dozen frames: baked once per regrow, never per frame
+// ---------------------------------------------------------------------------
+function litterRaster(inst, n, frame, reverse) {
+  const F = 12, d = inst.data, texel = frame.ext / n, minHalf = 0.75 * texel, out = new Float32Array(n * n * 4);
+  const order = Array.from({ length: inst.count }, (_, i) => i); if (reverse) order.reverse();
+  for (const i of order) {
+    const o = i * F, x = d[o], y = d[o + 1], A = d[o + 2], B = d[o + 3], c = d[o + 4], s = d[o + 5], f = d[o + 6];
+    const kx = Math.max(1, minHalf / A), ky = Math.max(1, minHalf / B), hx = A * kx, hy = B * ky, a0 = f / (kx * ky), rad = Math.hypot(hx, hy) + 2 * minHalf;
+    const i0 = Math.max(0, Math.floor((x - rad - frame.ox) / texel) - 1), i1 = Math.min(n - 1, Math.ceil((x + rad - frame.ox) / texel) + 1);
+    const j0 = Math.max(0, Math.floor((y - rad - frame.oy) / texel) - 1), j1 = Math.min(n - 1, Math.ceil((y + rad - frame.oy) / texel) + 1);
+    const loc = (px, py) => Math.hypot((c * px + s * py) / hx, (-s * px + c * py) / hy);
+    for (let j = j0; j <= j1; j++) for (let ii = i0; ii <= i1; ii++) {
+      const px = frame.ox + (ii + 0.5) * texel - x, py = frame.oy + (j + 0.5) * texel - y, r = loc(px, py);
+      const w = Math.max(Math.abs(loc(px + texel, py) - r) + Math.abs(loc(px, py + texel) - r), 1e-4), cov = Math.min(Math.max((1 - r) / w + 0.5, 0), 1);
+      if (!(cov > 0)) continue;
+      const a = a0 * cov, k = (j * n + ii) * 4;
+      for (let ch = 0; ch < 3; ch++) out[k + ch] = d[o + 8 + ch] * a + out[k + ch] * (1 - a);
+      out[k + 3] = a + out[k + 3] * (1 - a);
+    }
+  }
+  return out;
+}
+window.__litterCheck = (presetName, overrides) => withEngine(presetName, overrides, 24, (eng, gl) => {
+  const p = eng.params, L = eng.litter, list = L.grove?.litter, n = L.res;
+  if (!list?.length) throw new Error(`'${presetName}' has no litter list: nothing was baked`);
+  gl.getError();
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, L.tex, 0);
+  const px = new Uint8Array(n * n * 4); gl.readPixels(0, 0, n, n, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb);
+  const glError = gl.getError();
+  const bulk = !!(p.standing_scene || p.receiver), faithful = p.faithful_canopy && (p.receiver | 0) !== 2 && !p.sky_view;
+  const nL = p.layer_count, H = faithful ? Array.from(eng.faith.binH).slice(0, 4) : Array.from({ length: nL }, (_, i) => (nL > 1 ? p.canopy_base_height_m + (i / (nL - 1)) * p.canopy_thickness_m : p.canopy_base_height_m));
+  const want = fillFrame(p.canopy_extent_m, Math.max(...H.slice(0, nL)), bulk), have = { ox: L.ox, oy: L.oy, ext: L.ext };
+  const frameErr = Math.max(Math.abs(want.ox - have.ox), Math.abs(want.oy - have.oy), Math.abs(want.ext - have.ext));
+  const fillFrameErr = eng.fill.ready ? Math.max(Math.abs(eng.fill.ox - L.ox), Math.abs(eng.fill.oy - L.oy), Math.abs(eng.fill.ext - L.ext)) : null;
+  // the grove's own leaves, through the pure functions: the stamps the bake was handed, painted on the CPU in drop order — and the other way about
+  // sorted HERE, by the one rule the spec states (ascending day, ties by address), and not left to litterOrder: a reference that took its order from the code it is
+  // checking would agree with whatever order that code made. (litterInstances sorts again, which a sorted list leaves alone.)
+  const byDay = [...list].sort((a, b) => a.D - b.D || a.j - b.j || a.k - b.k);
+  const inst = litterInstances(byDay, p, want, !bulk, 0.75 * want.ext / n), texel = want.ext / n;
+  const cpu = litterRaster(inst, n, want, false), rev = litterRaster(inst, n, want, true);
+  let aSum = 0, rgbSum = [0, 0, 0], aCpu = 0, dA = 0, dRgb = 0, dAmax = 0, oA = 0, oRgb = 0, nz = 0;
+  for (let i = 0; i < n * n; i++) {
+    const a = px[i * 4 + 3] / 255; aSum += a; aCpu += cpu[i * 4 + 3];
+    for (let c = 0; c < 3; c++) rgbSum[c] += px[i * 4 + c] / 255;
+    if (a > 0 || cpu[i * 4 + 3] > 0) {
+      nz++;
+      const da = Math.abs(a - cpu[i * 4 + 3]); dA += da; dAmax = Math.max(dAmax, da);
+      oA += Math.abs(rev[i * 4 + 3] - cpu[i * 4 + 3]);
+      for (let c = 0; c < 3; c++) { dRgb += Math.abs(px[i * 4 + c] / 255 - cpu[i * 4 + c]); oRgb += Math.abs(rev[i * 4 + c] - cpu[i * 4 + c]); }
+    }
+  }
+  let sparseArea = 0, wsum = 0, meanCpu = [0, 0, 0], lx = 0, ly = 0, cx = 0, cy = 0;
+  for (const l of list) {
+    const w = Math.PI * l.size[0] * l.size[1] * l.fade, a = litterAlbedo(l.tau, litterAge(p, l.D)), d = l.h * p.litter_drift_m, ang = p.wind_direction_deg * Math.PI / 180;
+    sparseArea += w; wsum += w; for (let c = 0; c < 3; c++) meanCpu[c] += w * a[c];
+    lx += w * l.x; ly += w * l.y; cx += w * (l.x + d * Math.cos(ang)); cy += w * (l.y + d * Math.sin(ang));
+  }
+  meanCpu = meanCpu.map((v) => v / wsum);
+  let mx = 0, my = 0;
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const a = px[(j * n + i) * 4 + 3] / 255; if (a > 0) { mx += a * (want.ox + (i + 0.5) * texel); my += a * (want.oy + (j + 0.5) * texel); } }
+  mx /= Math.max(aSum, 1e-12); my /= Math.max(aSum, 1e-12);
+  return { res: n, ready: L.ready, passes: L.passes, count: L.count, instCpu: inst.count, nLeaves: list.length, bulk, glError, frameErr, fillFrameErr, frame: have, texelCm: texel * 100,
+    area: { got: aSum * texel * texel, cpu: aCpu * texel * texel, leaves: sparseArea, ratioLeaves: aSum * texel * texel / sparseArea, ratioCpu: aSum / aCpu },
+    raster: { meanAlpha: dA / nz, maxAlpha: dAmax, meanRgb: dRgb / (3 * nz), orderAlpha: oA / nz, orderRgb: oRgb / (3 * nz), texels: nz, covered: nz / (n * n) },
+    mean: rgbSum.map((v) => v / Math.max(aSum, 1e-12)), meanCpu, driftWant: [(cx - lx) / wsum, (cy - ly) / wsum], driftGot: [mx - lx / wsum, my - ly / wsum] };
+});
+
+// THE CARPET'S STAMP, as the engine compiles it: VS_LITTER/FS_LITTER drawn into a 64² RGBA8 target (one frame unit a texel) with the engine's own blend. Four
+// stamps whose right answers are arithmetic: LAYERING (a green stamp at fade 0.5 laid OVER a red one: src + dst·(1 − a), alpha accumulating as 1 − Π(1 − a), and
+// reversed it is the red that wins — instance order IS the layering), SUB-TEXEL ENERGY (a leaf under a texel is enlarged and its alpha spent, so its area survives),
+// and THE RIM (a disc: its area to 2%, one texel of anti-aliasing, a hard interior).
+window.__litterStamp = () => withEngine('memories', {}, 2, (eng, gl) => {
+  const N = 64, F = 12;
+  const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(`litter stamp shader: ${gl.getShaderInfoLog(sh)}`); return sh; };
+  const prog = gl.createProgram(); gl.attachShader(prog, mk(gl.VERTEX_SHADER, VS_LITTER)); gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, FS_LITTER)); gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(`litter stamp link: ${gl.getProgramInfoLog(prog)}`);
+  gl.getError();
+  gl.activeTexture(gl.TEXTURE13);
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const buf = gl.createBuffer(), vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  for (let a = 0; a < 3; a++) { gl.enableVertexAttribArray(1 + a); gl.vertexAttribPointer(1 + a, 4, gl.FLOAT, false, 4 * F, 16 * a); gl.vertexAttribDivisor(1 + a, 1); }
+  const stamp = (x, y, A, B, rot, fade, rgb) => [x, y, A, B, Math.cos(rot), Math.sin(rot), fade, 0, rgb[0], rgb[1], rgb[2], 0];
+  const draw = (stamps) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.viewport(0, 0, N, N); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(prog);
+    gl.uniform2f(gl.getUniformLocation(prog, 'uLitterOrigin'), 0, 0); gl.uniform2f(gl.getUniformLocation(prog, 'uLitterExtent'), N, N); gl.uniform1f(gl.getUniformLocation(prog, 'uLitterMinHalf'), 0.75);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(stamps.flat()), gl.DYNAMIC_DRAW);
+    gl.bindVertexArray(vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, stamps.length);
+    gl.disable(gl.BLEND);
+    const out = new Uint8Array(N * N * 4); gl.readPixels(0, 0, N, N, gl.RGBA, gl.UNSIGNED_BYTE, out);
+    return out;
+  };
+  const at = (out, i, j) => Array.from(out.subarray((j * N + i) * 4, (j * N + i) * 4 + 4)).map((v) => v / 255);
+  const red = [0.9, 0.1, 0.05], green = [0.1, 0.8, 0.1];
+  const S1 = stamp(20, 32, 12, 8, 0, 1, red), S2 = stamp(30, 32, 12, 8, 0, 0.5, green);
+  const both = draw([S1, S2]), rev = draw([S2, S1]);
+  const overlap = at(both, 24, 32), reversed = at(rev, 24, 32), onlyRed = at(both, 12, 32), onlyGreen = at(both, 40, 32);
+  // sixteen leaves under a texel, at sixteen sub-pixel phases: one leaf's coverage depends on where it falls between pixel centres, its mean over phases is what is held
+  const tinies = []; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) tinies.push(stamp(4 + 14 * i + (i + 0.5) / 4, 4 + 14 * j + (j + 0.5) / 4, 0.2, 0.1, 0.7 * (i + j), 1, [1, 1, 1]));
+  const tiny = draw(tinies);
+  let tinyArea = 0, tinyMax = 0; for (let i = 0; i < N * N; i++) { tinyArea += tiny[i * 4 + 3] / 255; tinyMax = Math.max(tinyMax, tiny[i * 4 + 3] / 255); }
+  const disc = draw([stamp(32, 40, 10, 10, 0, 1, [0.5, 0.5, 0.5])]);
+  let discArea = 0, rim = 0; for (let i = 0; i < N * N; i++) { const a = disc[i * 4 + 3]; discArea += a / 255; if (a > 0 && a < 255) rim++; }
+  const glError = gl.getError();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb); gl.deleteTexture(tex); gl.deleteVertexArray(vao); gl.deleteBuffer(buf); gl.deleteBuffer(quad); gl.deleteProgram(prog);
+  return { overlap, reversed, onlyRed, onlyGreen, tinyArea, tinyWant: 16 * Math.PI * 0.2 * 0.1, tinyMax, discArea, discWant: Math.PI * 100, rim, centre: at(disc, 32, 40), glError };
+});
+
+// ---------------------------------------------------------------------------
 // THE SKY FILL, OPENED AND SHUT ON A RUNNING ENGINE (§4.7). canopy_fill is a MORPH key: it tweens, so it crosses 0 in the
 // middle of a transition or a slider drag, and nothing rebuilds when it does. The fill therefore allocates lazily on the
 // first draw that wants it (on the faithful path, a low-res layer set with it) and frees on the first that does not.
@@ -775,7 +909,7 @@ window.__fillToggle = (presetName, overrides, opts) => new Promise((resolve, rej
 window.__liveChange = (presetName, overrides, key, value, opts) => new Promise((resolve, reject) => {
   const base = PRESETS[presetName];
   if (!base) return reject(new Error(`unknown preset '${presetName}'`));
-  const o = Object.assign({ rebake: false }, opts || {});
+  const o = Object.assign({ rebake: false, apply: null }, opts || {});
   const params = Object.assign({}, base, overrides || {}, FREEZE);
   const canvas = document.createElement('canvas');
   canvas.className = 'stage'; canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
@@ -794,7 +928,7 @@ window.__liveChange = (presetName, overrides, key, value, opts) => new Promise((
     ticks++;
     if (o.rebake && ticks === 4) eng.apply('bake');
     if (done) return;
-    if (ticks === 15) eng.params[key] = value;
+    if (ticks === 15) { eng.params[key] = value; if (o.apply) eng.apply(o.apply); }   // (a knob that regrows the grove is moved the way the editor moves it: assigned, then the rebuild scope run)
     if (ticks < 36) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     const w = canvas.width, h = canvas.height, bytes = new Uint8Array(w * h * 4);

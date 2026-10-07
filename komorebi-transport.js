@@ -161,6 +161,14 @@ const GLSL_T_FLOOR_DECLS = `uniform float uViewExtent;
 uniform float uFarSmear;         // far-field dapple smear (m of extra throw per unit foreshortening, §4.7)
 uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)`;
 
+// ---- THE LITTER CARPET (§4.7), the floor's alone: the receiver that REFLECTS is the one that has fallen leaves to reflect off. The cloth and the
+// tent transmit through fabric and the sky view has no surface, so none of them speaks this group (the registry holds it). The bake
+// (VS_LITTER, komorebi-litter.js) writes the texture once per regrow; this is only the flag that says it is ready and the read's frame. ----
+const GLSL_T_LITTER_DECLS = `uniform int   uLitterOn;         // the carpet is baked and ready (litter 1, and a leaf has fallen). 0 = nothing is read at all: the floor's old material, byte-identical
+uniform highp sampler2D uLitter;   // the fallen leaves' reflectance, PREMULTIPLIED (rgb·coverage, coverage in alpha), RGBA8, mipped
+uniform vec2  uLitterOrigin;       // the plan square it covers: the same frame as the sky fill's (fillFrame) but the carpet's own uniforms — the fill may be shut, and the carpet is read either way
+uniform vec2  uLitterExtent;`;
+
 const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fragment -> ground point on z=0, plus a far-field haze factor.
     // At uPitch=0 this reduces EXACTLY to the old orthographic map (vUv-0.5)*uViewExtent*[aspect,1] for any
     // fov (a flat plane seen straight-on is linear), so presets are untouched until tilted. ----
@@ -203,12 +211,29 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fra
 // for the fill is the bytes it always was. A branch rather than a separate program because canopy_fill TWEENS in a
 // transition, and a program is selected by MODE flags only (§4.6): the one first-compile a camera costs must land
 // inside a bloom, not on a slider.
-const GLSL_T_FLOOR_MATERIAL = `    if(uCanopyFill > 0.0){
-      vec2 fuv = (world-uFillOrigin)/uFillExtent;
-      vec3 amb = mix(uAmbient, uAmbient*textureLod(uFillT, fuv, FILL_LOD).rgb + textureLod(uFillS, fuv, FILL_LOD).rgb, uCanopyFill);
-      col = (acc*uSunColor + amb) * uGround;
+// THE FLOOR IS A MAP (§4.7, the litter). Where a leaf has fallen the floor reflects off the leaf, not off the ground: the albedo is the
+// carpet's, composed OVER the ground's (the carpet is stored premultiplied, so this is mix(uGround, rgb/a, a) with no division). Nothing
+// else changes — it is the SAME irradiance, so the fill's Tsky and S light the carpet for free (they are in `amb`) and the beam's suns land
+// on it in whatever colour the canopy let through. The carpet branch is the outer one and the old material is its else, verbatim, so a look
+// that never lays litter runs the lines it always ran; the fill's share is one expression, shared by both, so the two cannot drift.
+const GLSL_T_FLOOR_FILL_SHARE = `mix(uAmbient, uAmbient*textureLod(uFillT, fuv, FILL_LOD).rgb + textureLod(uFillS, fuv, FILL_LOD).rgb, uCanopyFill)`;
+const GLSL_T_FLOOR_MATERIAL = `    if(uLitterOn != 0){
+      vec4 L = texture(uLitter, (world-uLitterOrigin)/uLitterExtent);
+      vec3 ground = uGround*(1.0-L.a) + L.rgb;
+      vec3 amb = uAmbient;
+      if(uCanopyFill > 0.0){
+        vec2 fuv = (world-uFillOrigin)/uFillExtent;
+        amb = ${GLSL_T_FLOOR_FILL_SHARE};
+      }
+      col = (acc*uSunColor + amb) * ground;
     } else {
-      col = (acc*uSunColor + uAmbient) * uGround;            // OPAQUE FLOOR — literal old expression, byte-identical
+      if(uCanopyFill > 0.0){
+        vec2 fuv = (world-uFillOrigin)/uFillExtent;
+        vec3 amb = ${GLSL_T_FLOOR_FILL_SHARE};
+        col = (acc*uSunColor + amb) * uGround;
+      } else {
+        col = (acc*uSunColor + uAmbient) * uGround;          // OPAQUE FLOOR — literal old expression, byte-identical
+      }
     }`;
 
 // ---- CLOTH camera (§4.9): the curtain, seen head-on ----
@@ -962,6 +987,7 @@ const TRANSPORT_GROUPS = {
                                                       tentEndApex:'uTentEndApex', tentHipRake:'uTentHipRake', tentEye:'uTentEye',
                                                       tentFade:'uTentFade', tentSeam:'uTentSeam', tentMesh:'uTentMesh' } },
   fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillT:'uFillT', fillS:'uFillS', fillOrigin:'uFillOrigin', fillExtent:'uFillExtent' } },
+  litter:    { decls: GLSL_T_LITTER_DECLS,    locs: { litterOn:'uLitterOn', litter:'uLitter', litterOrigin:'uLitterOrigin', litterExtent:'uLitterExtent' } },
   sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
                                                       exposure:'uExposure', contrast:'uContrast', tone:'uToneMap' } },
@@ -974,10 +1000,10 @@ const TRANSPORT_GROUPS = {
 // the knob families an entry answers for, so a reader can find the other end of a receiver from here. ----
 const CAMERAS = {
   floor: {
-    groups: ['head','rayView','occ','transport','woodCast','tap','ca','faith','floor','fill','post'],
+    groups: ['head','rayView','occ','transport','woodCast','tap','ca','faith','floor','fill','litter','post'],
     prologue: GLSL_T_PRO_FLOOR, camera: GLSL_T_FLOOR_CAMERA, faith: GLSL_T_FAITH_FLOOR,
     material: [GLSL_T_FLOOR_MATERIAL],
-    params: ['ground_*', 'far_smear', 'view_*', 'canopy_fill', 'fill_*'],
+    params: ['ground_*', 'far_smear', 'view_*', 'canopy_fill', 'fill_*', 'litter*'],
     note: 'the light lands on the ground and REFLECTS (§4.7) — the park default, and the only camera with an albedo',
   },
   cloth: {
@@ -1013,7 +1039,7 @@ const cameraFor = (p) => p.sky_view ? 'sky' : (p.receiver|0) === 2 ? 'enclosure'
 // they need engine state (the GL objects, params, the grove) a module-level table cannot reach. This list is the
 // seam between the two — create() checks its table against it on construction, and registry.test.js checks it
 // against TRANSPORT_GROUPS and CAMERAS. Neither half can drift without one of those saying so.
-const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','tap','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','sky','post'];
+const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','tap','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','litter','sky','post'];
 
 // The assembler. Every conditional it used to carry is now a lookup: the decls are the entry's groups in order,
 // the body is the entry's own snippets, and the only branch left is the one real structural fork — whether this

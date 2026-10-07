@@ -126,6 +126,7 @@ const PANEL = [
   ['s','exposure_absolute','absolute light',0,1,0.01,'canopy'], // §4.5: what sun-first orders by — 0 the grove's own rank of light, 1 the raw light (a shaded grove turns late and pale)
   ['s','leaf_drop','leaf fall',0,1,0.01,'canopy'],             // §4.5: abscission — the share of leaves that let go by the end of the fall span; the rest hang on (marcescent). 0 = nothing falls
   ['s','drop_exposure','sun falls first',0,1,0.01,'canopy'],   // §4.5: how far light orders the fall — the sunlit crown lets go first (it reads the same exposure sun first does)
+  ['sel','litter','litter',[['off',0],['on',1]],''],            // §4.7: the fallen leaves lie on the floor and the floor reflects off them — the carpet's own gate, apart from leaf fall so the canopy half can be judged alone. A select, not a checkbox: a preset writes 0/1, and a boolean would never equal it
   ['btn','reseed', reseed],
   ['adv','fine geometry'],
   ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
@@ -141,6 +142,8 @@ const PANEL = [
   ['s','turn_spread','turn spread',0,0.6,0.01,'canopy'],
   ['s','drop_start','fall start',0,1,0.01,'canopy'],
   ['s','drop_span','fall span',0.02,0.6,0.01,'canopy'],
+  ['s','litter_age','browns over',0.01,0.6,0.01,''],           // §4.7: how long a fallen leaf takes to go from its own hue to brown, in seasons (read at the next bake, which the carpet notices by itself)
+  ['s','litter_drift_m','carried',0,2,0.01,''],                // §4.7: metres a falling leaf is carried per metre of height, along the season's wind
 
   ['h','Transport'],
   ['s','time_of_day','time (h)',5,19,0.25,'suntime'],
@@ -252,6 +255,7 @@ const PANEL = [
   ['sel','bake_resolution','bake res',[['follow tex',0],['768',768],['1024',1024],['1536',1536],['2048',2048]],'textures'],
   ['s','fill_directions','fill rays',4,64,1,''],                                  // the sky fill's two TUNE knobs (§4.7): read live at the next bake, no rebuild
   ['sel','fill_resolution','fill res',[['128',128],['256',256],['512',512]],''],
+  ['sel','litter_resolution','litter res',[['512',512],['1024',1024],['2048',2048]],''],   // the carpet's texture over the fill's frame (§4.7): a 10 cm leaf must read as a leaf, and a finite tree's frame is wide
   ['t','adaptive_motion','adaptive fps',''],
   ['sel','adaptive_idle_fps','idle fps',[['24',24],['30',30],['48',48]],''],
   ['t','auto_quality','auto 60fps','perf'],
@@ -339,6 +343,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
   tent_fade:'tent', tent_seam:'tent', tent_mesh:'tent',
   sky_scatter:'sky',
   canopy_fill:'fill', fill_scatter:'fill', fill_directions:'fill', fill_resolution:'fill',   // the sky view lights no surface, so it speaks no fill group (§4.7)
+  litter:'litter', litter_age:'litter', litter_drift_m:'litter', litter_resolution:'litter',   // only the floor reflects, so only the floor has fallen leaves to reflect off (§4.7): the cloth transmits and the sky view has no surface
   leaf_diffuse:['tap','sky'],      // the beam's k is read at the cast cameras' tap and, as the lantern's disk and glow (§4.9), by the sky view's own group — any one of them
   chromatic_aberration:'ca',       // the sky view runs no cast, so there is no transport shift to split by wavelength
   faithful_canopy:'faith',         // the enclosure and the sky view force the layer tier and bake no faith texture
@@ -347,6 +352,7 @@ const faithLive = (cam) => params.faithful_canopy && !!CAMERAS[cam].faith;   // 
 const apertureOn = () => params.window_w_m*params.window_h_m > 0;
 const turning = () => params.phenology > params.turn_start;                  // the grove's own senescing gate (komorebi-grove.js)
 const dropping = () => turning() && params.leaf_drop > 0;                    // abscission's own gate (leaf_drop > 0, komorebi-grove.js), behind the season's
+const carpeted = () => dropping() && params.litter > 0;                      // the litter carpet's own gate (§4.7): it lays the leaves leaf fall lets go of, so with none falling there is nothing to bake
 const glowOn = (cam) => cam !== 'floor' && params.glow_bleed > 0;            // the diffusion tier's own gate (render.js drawFrameInto)
 const fillOpen = () => params.canopy_fill > 0;                               // the sky fill's own gate (§4.7): until it opens nothing bakes
 const splitOn = () => params.leaf_diffuse > 0;                               // a leaf is not a window (§4.5): the P0b albedo is the proxy this replaces, and is off above 0
@@ -367,6 +373,8 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   turn_span: turning, turn_spread: turning,
   leaf_drop: turning,                                     // abscission (§4.5): the same season gate the pigments sit behind — before a leaf can be turning, no leaf is about to fall
   drop_exposure: dropping, drop_start: dropping, drop_span: dropping,   // ride on leaf fall: with it at 0 nothing drops, so when and in what order are moot
+  litter: dropping,                                       // the carpet (§4.7): the leaves it lays are the ones leaf fall lets go of
+  litter_age: carpeted, litter_drift_m: carpeted, litter_resolution: carpeted,   // sliders on a bake that does not run until the gate is open and a leaf can have fallen
   exposure_absolute: () => turning() && params.turn_exposure > 0,   // rides on sun first: it only chooses what that order is made of, so with turn_exposure 0 there is no order for it to change
   sky_scatter: () => !splitOn(),                          // the sky view's twin of fill_scatter (§4.9): above leaf_diffuse 0 the leaf is a lantern and its measured glow replaces this authored one — counting both would count it twice
   fill_scatter: (cam) => fillOpen() && !splitOn() && CAMERAS[cam].groups.includes('floor'),   // the floor alone reads the proxy's scattered light; the cloth and the tent take the skylight through the canopy and nothing else. Above leaf_diffuse 0 the measured diffuse light replaces it, so the slider would lie
@@ -386,7 +394,7 @@ function rowLive(key, cam){
 function gateSig(){
   const cam = cameraFor(params);
   return [cam, params.eclipse, params.view_pitch_deg>0, params.glow_bleed>0, params.mullion_tau>0, apertureOn(),
-          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam), turning(), params.turn_exposure>0, params.leaf_drop>0, fillOpen(), splitOn()].join('|');
+          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam), turning(), params.turn_exposure>0, params.leaf_drop>0, params.litter>0, fillOpen(), splitOn()].join('|');
 }
 let gateSigLast = null;
 function refreshGates(){
@@ -723,6 +731,9 @@ const TIPS = {
   drop_exposure:"<b>Let the sun's side lose its leaves first.</b> At 1 the leaves that see the most sun — the top of the crown, its sunny side — let go first and the shaded inside last, which is where the leaves that stay are; at 0 every leaf lets go on its own day, whatever light it gets. It reads the same exposure as <i>sun first</i>, so it works with that at 0. Only shows while leaf fall is above 0.",
   drop_start:"<b>The season at which the first leaf lets go.</b> Below it every leaf is on the tree. Phenology units, like turn start — it ships later (0.7 against 0.6), so the leaves colour before they fall.",
   drop_span:"<b>How long the falling takes, in seasons.</b> By fall start plus this, every leaf that is going to fall is down.",
+  litter:"<b>Let the fallen leaves lie on the floor.</b> A leaf that has let go lands on the ground, casts nothing, and is seen by <i>reflection</i> — which is why the same red leaf that glows backlit in the canopy lies there tan and dull, lit from above: it is a surface now, not a window. The last to fall lie on top, the carpet goes from red through copper to brown as it ages, and the wind of the season carries it. It is the same carpet whenever you look: nothing piles up as the clock runs. The sky fill and the sun light it as they light the ground beside it. Off, the floor is exactly what it was. Only the floor has leaves to lie on, and only once leaf fall has dropped some.",
+  litter_age:"<b>How long a fallen leaf takes to turn brown.</b> In seasons, like fall start: a leaf that fell this instant is still its own colour — red stays red — and one that fell this long ago is dry-leaf brown, with a smooth turn between. Low and the carpet is brown almost at once; high and it stays bright for weeks. (A provisional number, until a fresh-and-dry litter photo against a grey card sets it.) Only shows while litter is on.",
+  litter_drift_m:"<b>How far the wind carries a falling leaf.</b> Metres sideways per metre of height it falls from, along the season's wind direction (the one in the wind section — not the gusts, so the carpet is the same whenever you look), with a scatter of about a third of that about it. 0 drops every leaf where it hung; up, the carpet lies down-wind of the tree. Only shows while litter is on.",
   turn_start:"<b>The season at which the first leaf starts to turn.</b> Below it every leaf is summer; this is the threshold the phenology slider has to pass.",
   turn_span:"<b>How long the turn takes, in seasons.</b> By turn start plus this, every leaf has finished.",
   turn_spread:"<b>How scattered the leaves' start times are.</b> 0 = the whole tree turns together; up = leaves start at different moments, so mid-turn is a mosaic of green, gold and red on one tree. Held under the span so each leaf's own turn still takes time.",
@@ -750,6 +761,7 @@ const TIPS = {
   fill_scatter:"<b>How much sunlight a leaf bounces back down — an authored stand-in for the light it passes.</b> Keep it low: 0.1–0.25 sat right against a beam that was already carrying the leaf's light. The shade is coloured by what the leaves <i>pass</i>, not by how bright they are. 0 = the shade is the filtered sky and nothing else. Only the floor reads it; it can never lift the shade past the light that landed on the leaves. Shown while canopy fill is up — and only until <i>leaf diffuse</i> is: that measures this light instead of guessing it, and counting both would count it twice.",
   leaf_diffuse:"<b>A leaf is frosted glass, not stained glass.</b> The light a leaf passes is almost all <i>diffuse</i> — scattered inside the leaf and sent on in every direction — not a sharp coloured picture of the leaf. This is how much: 0 = the old leaf, which paints its colour as a crisp copy of itself inside its own shadow (and overlapping leaves of opposite colours go mud-dark); ~0.95 is a real leaf. Up, the sun-images keep only what travels straight through, so a leaf a few metres up throws a <i>dark</i> shadow, and the rest lands in the shade in the leaf's own colour, spread over the floor under it. It needs <i>canopy fill</i> to land anywhere — with that shut the diffuse light just leaves the sun-images — and it switches <i>leaf scatter</i> off. The curtain and the tent take it too. Looking up, it is the difference between a window and a lantern: with it up the sun's disk no longer shows through a leaf (only through a gap), and each leaf instead glows with the light it took out of your line of sight, in its own colour — it needs no canopy fill, and it switches <i>foliage glow</i> off.",
   fill_directions:"<b>How many directions of sky each shade point averages.</b> A fixed, evenly spread fan (no noise, no shimmer). More = a smoother, truer fill; fewer = cheaper — it is a bake cost, paid again whenever the leaves move. 16 is plenty for most looks. Shown while canopy fill is up. A/B it in the profiler.",
+  litter_resolution:"<b>Resolution of the leaf carpet.</b> One square over the same ground the shade-light map covers: the canopy box on an endless-canopy look (where the carpet repeats), that box padded on every side for a tree standing in a scene (where it does not). A 10 cm leaf should still read as a leaf, so a wide frame wants more; it costs 4 MiB at 1024 and 16 MiB at 2048, paid once per regrow. Shown while litter is on.",
   fill_resolution:"<b>Resolution of the shade-light map.</b> It varies at the scale of crown gaps, not dapples, so a coarse map is enough, and halving it makes the bake ~4× cheaper. On an endless-canopy look the map covers the canopy box, and wraps (light leaving one side comes in from the other). On a standing tree, the curtain or the tent it covers the box <i>plus a margin of 3× the canopy height</i> on every side — so the glow can fade out across the floor instead of stopping at an edge — and the same pixels spread wider, which makes each one coarser: raise this if its shade looks blocky. Shown while canopy fill is up. A/B it in the profiler.",
   ambient_skylight:"<b>How much the sky fills the shadows.</b> The light that isn't direct sun — now coloured for real (blue by day, warmer at dusk). Up = softer, lifted shade; down = deep, moody shadows.",
   sky_turbidity:"<b>Haze in the air.</b> Clean air = low; dust or humidity = higher, which makes a low sun redder and a sunset more washed-out orange.",

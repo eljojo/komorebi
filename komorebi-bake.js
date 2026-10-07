@@ -321,6 +321,16 @@ export function makeBake(hub){
   const _atm = { sun:[0,0,0], ambient:[0,0,0] }, FILL_TURNS = fillTurns();   // the 16 slot rotations never change
   const _sig = new Float64Array(13);
 
+  // THE FRAME the fill is baked over: fillFrame(E, h_max, bulkOn), h_max the tallest layer its rays start from — where the faithful tree's twigs
+  // REALLY grew on that path, the park band otherwise. It is a function of the look and not of whether the fill is open, which is what lets the
+  // litter carpet (komorebi-litter.js) be baked and read over the very same square: it asks here, so the two cannot disagree about it.
+  const fillHeights = () => faithfulOn() ? faith.binH.subarray(0, MAX_LAYERS) : hub.layerHeights();
+  function fillFrameNow(H = fillHeights()){
+    let hMax = 0;
+    for(let i=0;i<params.layer_count;i++) hMax = Math.max(hMax, H[i]);
+    return fillFrame(params.canopy_extent_m, hMax, hub.bulkOn());
+  }
+
   // Everything the fill depends on besides the layers themselves (which rebake it eagerly, from bake()). The sun can
   // move without any bake — a time-of-day morph, the editor's sun drag — and S reads the sun's colour and its path
   // through the layers (never the skylight: Tsky is a transmittance and S is sun-scatter alone), so a draw compares
@@ -377,9 +387,7 @@ export function makeBake(hub){
     // open sky past its box and is baked over the box padded by 3·h_max; the endless park has no edge, so its box REPEATS and the
     // frame is the box. REPEAT is on the layer textures for this pass only — transport reads the same textures CLAMPed.
     const bulk = hub.bulkOn(), wrap = !bulk, nL = params.layer_count;
-    let hMax = 0;
-    for(let i=0;i<nL;i++) hMax = Math.max(hMax, H[i]);
-    const fr = fillFrame(E, hMax, bulk);
+    const fr = fillFrameNow(H);
     fill.ox = fr.ox; fill.oy = fr.oy; fill.ext = fr.ext;   // what every receiver reads the textures by
     const e = hub.fillFor(), u = e.U;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fillFBO);
@@ -434,5 +442,5 @@ export function makeBake(hub){
     if(fillStale()) bakeFill(false);
   }
 
-  return { bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes };
+  return { bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow };
 }

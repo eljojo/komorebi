@@ -1,12 +1,13 @@
 import { clamp, lerp } from './komorebi-math.js';
 import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, CANOPY_KEYS, TOPO_KEYS, DEFAULTS, migrateLegacy } from './komorebi-params.js';
-import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
+import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
 import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi-transport.js';
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
 import { makeGrove } from './komorebi-grove.js';
 import { makeBake } from './komorebi-bake.js';
+import { makeLitter, newLitterState } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
 import { makeEditorTools } from './komorebi-editor-tools.js';
 
@@ -95,7 +96,7 @@ function create(canvas, opts){
   // webglcontextrestored calls it again, because a lost context kills all of them. Hence `let`, not `const`.
   let progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
   let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
-  let bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
+  let bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -148,6 +149,16 @@ function create(canvas, opts){
     }
     return fillEntry;
   }
+  // THE LITTER CARPET's bake program (§4.7): compiled on the first carpet, like the fill's, so a look that never lays litter (every shipped one) pays
+  // neither the compile nor the buffer. A program belongs to the context that linked it, so a restore forgets it too.
+  let litterEntry = null;
+  function litterFor(){
+    if(!litterEntry){
+      const prog = program(VS_LITTER, FS_LITTER);
+      litterEntry = { prog, U: { origin:loc(prog,'uLitterOrigin'), extent:loc(prog,'uLitterExtent'), minHalf:loc(prog,'uLitterMinHalf') } };
+    }
+    return litterEntry;
+  }
   // adaptive frame-rate (TUNE §9): offscreen present target + cadence state. presentFBO/presentTex are canvas-sized
   // and allocated lazily on first use (so a look that never enables adaptive_motion pays nothing).
   let presentTex=null, adaptiveLastRender=0, adaptiveHot=true;
@@ -170,6 +181,9 @@ function create(canvas, opts){
   // THE SKY FILL's state (§4.7): Tsky and S over the fill's frame, allocated lazily when canopy_fill opens and freed when
   // it shuts. `ready` = the textures hold a bake of what `sig` records, so the receiver may believe them.
   const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(13), K:0, rays:null, ox:0, oy:0, ext:1 };   // sig: what the bake was made of, sized by komorebi-bake.js's fillSig — a slot it writes past this is silently dropped, and the fill then re-bakes every frame. ox/oy/ext: the plan square the textures cover (the box, or the padded frame of a finite tree), which every receiver reads them by
+  // THE LITTER's state (§4.7): the carpet texture (a 1×1 until a leaf has fallen and the floor asks), the square it covers, and what it was baked of.
+  // komorebi-litter.js owns the shape, so a context restore can put it back to the fresh one in a line.
+  const litter = newLitterState();
 
   // ---- THE SHARED INTERNALS (hub), continued: the stable plumbing and the shared mutable state. The engine's
   // subsystems live in sibling modules (grove, bake, source,
@@ -179,9 +193,9 @@ function create(canvas, opts){
   // how cross-subsystem calls resolve without import cycles. ----
   Object.assign(hub, {
     // stable plumbing (never reassigned)
-    gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, fill, U,
+    gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, fill, litter, U,
     // (the GL handles — programs, buffers, FBOs, occTex, extTimer — and the subsystems over them are set by initGPU())
-    effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera, fillFor,
+    effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera, fillFor, litterFor,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
     woodTex: [],            // SKY VIEW (§4.9): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)
@@ -271,7 +285,8 @@ function create(canvas, opts){
                          quadBuf, emptyVAO, bakeFBO, faithFBO, fillFBO, occTex });
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
     ({ buildGrove } = makeGrove(hub)); hub.buildGrove = buildGrove;
-    ({ bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes } = makeBake(hub)); Object.assign(hub, { bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes });
+    ({ bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow });
+    ({ refreshLitter } = makeLitter(hub)); hub.refreshLitter = refreshLitter;   // after the bake: the carpet is read over the fill's frame, and asks the bake module for it
     ({ drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));
     Object.assign(hub, { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit });
     if(EDITOR) hub.initEditorGL?.();   // the debug overlays' buffers (absent on the very first call: makeEditorTools runs later and calls it itself)
@@ -491,21 +506,23 @@ function create(canvas, opts){
       transportCache.forEach(v => { gl.deleteProgram(v.prog); });   // however many cameras this engine actually visited
       transportCache.clear();
       if(fillEntry){ gl.deleteProgram(fillEntry.prog); fillEntry = null; }   // the sky fill's bake, if a look ever opened it
+      if(litterEntry){ gl.deleteProgram(litterEntry.prog); litterEntry = null; }   // the litter carpet's, likewise
       hub.layerTex.forEach(t => { gl.deleteTexture(t); });
       hub.woodTex.forEach(t => { gl.deleteTexture(t); });
-      [hub.clusterTex, hub.clusterGeomTex, occTex, hub.faithTex, hub.faithScratch, hub.benchTex, presentTex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
+      [hub.clusterTex, hub.clusterGeomTex, occTex, hub.faithTex, hub.faithScratch, hub.benchTex, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
       freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
       [bakeFBO, faithFBO, fillFBO, hub.benchFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       hub.layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
       if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
       if(sky.segVAO){ gl.deleteVertexArray(sky.segVAO); gl.deleteBuffer(sky.segBuf); }
+      if(litter.vao){ gl.deleteVertexArray(litter.vao); gl.deleteBuffer(litter.buf); }
       [emptyVAO, hub.srcDbgVAO, hub.vizVAO].forEach(v => { if(v) gl.deleteVertexArray(v); });
       [quadBuf, hub.srcDbgBuf, hub.vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });
       if(EDITOR) hub.setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     },
-    ...(EDITOR ? { fill, faith, layers: () => hub.layerTex, woods: () => hub.woodTex,   // the sky fill's state + the layers it reads (and the sky view's wood beside them), for the pixel harness's shader-vs-reference checks (test-gl/); stripped from the player build
+    ...(EDITOR ? { fill, litter, faith, layers: () => hub.layerTex, woods: () => hub.woodTex,   // the sky fill's state + the layers it reads (and the sky view's wood beside them), for the pixel harness's shader-vs-reference checks (test-gl/); stripped from the player build
                    drawSourceInset: hub.drawSourceInset, drawTreeInset: hub.drawTreeInset, treeInsetHit: hub.treeInsetHit, profiler: hub.profiler, snapshotMotion: hub.snapshotMotion, applyMotion: hub.applyMotion, setMotionSource: hub.setMotionSource,
                    isLowMotion: () => motionMagnitude() < ADAPT_LO } : {}) };   // editor-only handles, stripped from the player build
   // ---- adaptive frame-rate helpers (TUNE §9) ----
@@ -597,6 +614,7 @@ function create(canvas, opts){
     lost = false;
     transportCache.clear(); presentTex = null;         // dead handles: forgotten, never deleted
     fillEntry = null; fill.tex = [null, null]; fill.res = 0; fill.ready = false;   // the sky fill's program and textures died with the context; the first draw that wants it rebuilds both
+    litterEntry = null; Object.assign(litter, newLitterState());                   // ...and so did the carpet's: initGPU() makes the fresh 1×1, and the first draw that has fallen leaves to show bakes it again
     Object.assign(hub, { layerTex:[], woodTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
                          clusterTex:null, clusterGeomTex:null, presentFBO:null, presentW:0, presentH:0 });
     faith.vao = faith.buf = faith.segVAO = faith.segBuf = null;

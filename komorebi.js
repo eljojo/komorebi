@@ -6,6 +6,7 @@
 // is a factory module over that hub:
 //   komorebi-grove.js         buildGrove — the grown canopy (spec §4.5)
 //   komorebi-bake.js          the layer + faithful bakes, and the sky fill that lights the shade (spec §4.5/§4.7)
+//   komorebi-litter.js        the fallen leaves as an albedo carpet the floor reads (spec §4.7)
 //   komorebi-source.js        the point-sun cloud + shared cast geometry (spec §4.4)
 //   komorebi-motion.js        wind + the spring hierarchy (spec §5)
 //   komorebi-transitions.js   the cloud-bloom crossfade between looks (spec §9)

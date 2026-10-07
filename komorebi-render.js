@@ -29,6 +29,7 @@ export function makeRender(hub){
   function drawFrameInto(fbo, w, h){
     hub.refreshFaith();   // the faithful cast has k baked in (§4.5): current for THIS frame's leaf_diffuse, or untouched
     hub.refreshFill();   // the sky fill (§4.7) is current for THIS frame's sun and sky, or not wanted — before any target is bound, because a re-bake binds its own
+    hub.refreshLitter(); // the litter carpet (§4.7) is current for THIS grove, or nothing has fallen / the gate is shut — same reason: its bake binds its own target
     // the SKY VIEW joins the diffusion gate (§4.9): the very same linear-HDR spread reads there as the eye's own
     // VEILING GLARE — the wash around a bright source seen through gaps, which is scatter in the eye rather than in
     // a weave, but the same operator on the same quantity. A perception-tier reading of a transport pass, the same
@@ -321,6 +322,18 @@ export function makeRender(hub){
       gl.uniform2f(u.fillExtent, hub.fill.ext, hub.fill.ext);
       gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[0]);
       gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[1]);
+    },
+    // THE LITTER CARPET (§4.7): the floor's reflectance where a leaf has fallen. Unit 8 (0-3 the layers, 4 the faith texture, 5 the wood table, 6-7 the fill; the
+    // sky view's wood textures also sit on 8+, but that camera speaks neither this group nor the floor). `ready` is the bake's own say-so, as the fill's is: a shut
+    // gate, or a grove with nothing fallen, reads 0 and the floor takes its old material; the 1×1 beside it is bound and never sampled.
+    litter: (u) => {
+      const L = hub.litter, on = L.ready ? 1 : 0;
+      gl.uniform1i(u.litterOn, on);
+      gl.uniform1i(u.litter, 8);
+      gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, L.tex);
+      if(!on) return;
+      gl.uniform2f(u.litterOrigin, L.ox, L.oy);   // the fill's frame, which is not the canopy's (a finite tree's is padded)
+      gl.uniform2f(u.litterExtent, L.ext, L.ext);
     },
     // THE SKY VIEW's own: regenSource's numbers (the seen source), so the sun you look at and the dapples it throws are drawn
     // from one distribution, and the lantern (§4.9): the beam's k, and the per-layer wood textures on units 8-11 (0-3 the layers, 5 the

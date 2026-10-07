@@ -151,6 +151,45 @@ const INVARIANTS = [
     a: {}, b: { phenology: 1, leaf_drop: 1 } },
   { name: 'a bare canopy is a lit cloth, not an unbaked one (curtain)', preset: 'curtain 1', rebake: true, lit: [1.05, 1.6],
     a: {}, b: { phenology: 1, leaf_drop: 1 } },
+  // THE LITTER (§4.7, P3b). `litter` is the carpet's own gate, separate from leaf_drop so the canopy half can be judged alone: at 0 the whole family (how fast
+  // it browns, how far the season's wind carries it, how big its texture is) is dead code and the floor is the one before it existed — taken in a FALL frame where
+  // leaves have fallen and the carpet would bite (phenology 0.9, leaf_drop 1: two thirds of the span, so there is plenty to lay), on the layer path and the
+  // faithful one (rebake: see above)...
+  { name: 'litter family inert at litter 0 (layer path)', preset: 'afternoon 7',
+    a: { leaf_drop: 1, phenology: 0.9 }, b: { leaf_drop: 1, phenology: 0.9, litter: 0, litter_age: 0.5, litter_drift_m: 2, litter_resolution: 512 } },
+  { name: 'litter family inert at litter 0 (faithful path)', preset: 'park 1', rebake: true,
+    a: { leaf_drop: 1, phenology: 0.9 }, b: { leaf_drop: 1, phenology: 0.9, litter: 0, litter_age: 0.5, litter_drift_m: 2, litter_resolution: 512 } },
+  // (zero-vs-absent pins the DEFAULTS merge path, so it too is taken in a frame the carpet would bite: a default of 1 would show here and nowhere else)
+  { name: 'litter 0 == absent (layer path)', preset: 'afternoon 7', a: { leaf_drop: 1, phenology: 0.9 }, b: { leaf_drop: 1, phenology: 0.9, litter: 0 } },
+  { name: 'litter 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: { leaf_drop: 1, phenology: 0.9 }, b: { leaf_drop: 1, phenology: 0.9, litter: 0 } },
+  // ...a carpet with nothing on it is the floor: at the shipped summer no leaf has fallen, so the gate open is the gate shut (nothing is even allocated)...
+  { name: 'litter 1 with nothing fallen == litter 0 (layer path)', preset: 'afternoon 7', a: { leaf_drop: 1, litter: 0 }, b: { leaf_drop: 1, litter: 1 } },
+  { name: 'litter 1 with leaf_drop 0 == litter 0 (faithful path)', preset: 'park 1', rebake: true, a: { phenology: 0.9, litter: 0 }, b: { phenology: 0.9, litter: 1 } },
+  // ...and the other half: above 0 the leaves are on the floor, on both floor paths, and with the fill and the split open (where the carpet is lit by what
+  // lights the ground beside it, S and Tsky) — or a carpet that never reached the floor's material would satisfy every row above.
+  { name: 'litter 1 lays a carpet (layer path)', preset: 'afternoon 7', differ: true,
+    a: { leaf_drop: 1, phenology: 0.9 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1 } },
+  { name: 'litter 1 lays a carpet (faithful path)', preset: 'park 1', rebake: true, differ: true,
+    a: { leaf_drop: 1, phenology: 0.9 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1 } },
+  { name: 'litter 1 lays a carpet in the lit shade (layer path, fill and split open)', preset: 'afternoon 7', differ: true,
+    a: { leaf_drop: 1, phenology: 0.9, canopy_fill: 1, leaf_diffuse: 0.95 }, b: { leaf_drop: 1, phenology: 0.9, canopy_fill: 1, leaf_diffuse: 0.95, litter: 1 } },
+  { name: 'litter 1 lays a carpet in the lit shade (faithful path, fill and split open)', preset: 'park 1', rebake: true, differ: true,
+    a: { leaf_drop: 1, phenology: 0.9, canopy_fill: 1, leaf_diffuse: 0.95 }, b: { leaf_drop: 1, phenology: 0.9, canopy_fill: 1, leaf_diffuse: 0.95, litter: 1 } },
+  // the family is live once the gate is open: how browned they lie, how far the season's wind carried them, and which way it blew
+  { name: 'litter_age is live (layer path)', preset: 'afternoon 7', differ: true,
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1, litter_age: 0.01 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, litter_age: 1 } },
+  { name: 'litter_drift_m is live (layer path)', preset: 'afternoon 7', differ: true,
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1, litter_drift_m: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, litter_drift_m: 2 } },
+  { name: 'the authored wind direction carries the litter (faithful path)', preset: 'park 1', rebake: true, differ: true,
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1, wind_direction_deg: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, wind_direction_deg: 180 } },
+  // UNREAD ELSEWHERE: the curtain and the tent transmit through fabric and the sky view has no surface, so none of them reads the carpet — and none of them
+  // bakes it: the same look with the gate open is the same frame, to the byte. (These looks are not dropping, so give them a fall to be unmoved by.)
+  { name: 'the curtain does not read the litter', preset: 'curtain 1',
+    a: { leaf_drop: 1, phenology: 0.9, litter: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1 } },
+  { name: 'the tent does not read the litter', preset: 'tent 1',
+    a: { leaf_drop: 1, phenology: 0.9, litter: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1 } },
+  { name: 'the sky view does not read the litter', preset: 'canopy 1',
+    a: { leaf_drop: 1, phenology: 0.9, litter: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1 } },
   // THE SKY FILL (§4.7): the shade lit through the canopy. canopy_fill 0 is the old floor, so the whole family behind it —
   // the leaf albedo, the ray count, the texture size — has to be dead code on every camera that could read it...
   { name: 'sky fill family inert at canopy_fill 0 (layer path)', preset: 'memories',
@@ -324,6 +363,14 @@ const LIVE_CHANGES = [
   { name: 'memories (layer path: the tap reads it, the fill re-bakes)', preset: 'memories', over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
   { name: 'park 1 with the fill shut (faithful: the cast is re-cast, nothing else moves)', preset: 'park 1', rebake: true, over: { canopy_fill: 0 }, key: 'leaf_diffuse', value: 0.95 },
   { name: 'park 1 with the fill open (faithful: the cast AND the fill)', preset: 'park 1', rebake: true, over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
+  // THE CARPET (§4.7) is noticed at draw time, not baked at a regrow the engine does not run when a slider moves: opened on a running engine it must be the
+  // frame an engine born with it shows, and the authored wind direction — a MORPH key, tweened in a transition — must carry it there too
+  { name: 'afternoon 7 (the carpet bakes when the gate opens)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9 }, key: 'litter', value: 1, litter: true },
+  { name: 'park 1 (faithful: the carpet bakes when the gate opens)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, phenology: 0.9 }, key: 'litter', value: 1, litter: true },
+  { name: 'park 1 (the season turns its wind: the carpet is carried again)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, phenology: 0.9, litter: 1, wind_direction_deg: 20 }, key: 'wind_direction_deg', value: 200, litter: true },
+  { name: 'afternoon 7 (the season moves and the grove regrows: the carpet follows it, fresher and more of it)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.8, litter: 1 }, key: 'phenology', value: 0.95, apply: 'canopy', litter: true },
+  // (the same leaves, fallen on the same days, in another colour: nothing the carpet's signature holds has moved but the grove itself, which a regrow makes anew)
+  { name: 'afternoon 7 (the grove regrows with the same leaves fallen in another colour: the carpet is re-laid)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9, litter: 1, anthocyanin: 0.8, turn_exposure: 1 }, key: 'anthocyanin', value: 0.2, apply: 'canopy', litter: true },
 ];
 // canopy_fill crossed on a RUNNING engine (it tweens, so nothing rebuilds when it does). `sky: true` = the camera has no
 // surface to light, so the fill must stay unallocated and the frame must not move.
@@ -335,6 +382,26 @@ const FILL_TOGGLES = [
   { name: 'canopy 1 (the sky view: never allocates)', preset: 'canopy 1', sky: true, over: { fill_scatter: 0.3 } },
 ];
 const FILL_TOL = 2e-3;
+
+// THE LITTER CARPET vs THE GROVE'S OWN LIST (§4.7, P3b). Each row lets the engine bake a real carpet (frozen motion), reads the RGBA8 texture back, and holds it to the
+// same leaves through komorebi-litter.js's pure functions (see __litterCheck for what each number is): the FRAME (the fill's, recomputed from the params), the STAMPS the
+// bake was handed (every one of them), the RASTER (a CPU painting of those stamps in drop order, against the GPU's, with the reverse order's painting as the yardstick: the
+// last to fall lie on top, and the GPU must agree with the right order by far less than the two orders disagree with each other), the closed forms on a SPARSE carpet
+// (area and mean colour, so the raster is not agreeing with a bug it shares) and — on a finite tree — the DRIFT. `passes` 1 is "once per regrow" measured on the running
+// engine. The bun tests hold that the buffer is litterInstances in drop order; these hold that the GPU turned the buffer into the floor.
+const FALL_LOOK = { leaf_drop: 1, phenology: 0.9, anthocyanin: 0.8, turn_exposure: 1, canopy_fill: 1, litter: 1 };
+const LITTER_CHECKS = [
+  { name: 'afternoon 7 at 0.9 — the endless park: the box, wrapped, a dense carpet', preset: 'afternoon 7', over: { ...FALL_LOOK } },
+  { name: 'afternoon 7 at 0.9, 512 px, the fill shut (the carpet is read whether or not canopy_fill is open)', preset: 'afternoon 7', over: { ...FALL_LOOK, canopy_fill: 0, litter_resolution: 512 } },
+  { name: 'afternoon 7 on the first day of the fall — a sparse carpet: the closed forms', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71 }, sparse: true },
+  { name: 'park 1 at 0.9 — a finite tree: the padded frame, clamped, and the drift down-wind', preset: 'park 1', over: { ...FALL_LOOK }, drift: true },
+  { name: 'park 1 at 0.9, the season blowing the other way', preset: 'park 1', over: { ...FALL_LOOK, wind_direction_deg: 215, litter_drift_m: 0.8 }, drift: true },
+];
+// (the rim's one-texel anti-aliasing ramp over-counts a leaf's area by π·w²/12 — a few % of a 5-texel leaf, ~20% of one under a texel — and overlap takes it back on a carpet
+// that thickens: so the sparse carpet's area is within a few % of Σπ·A·B0·fade, and no carpet is over it by more than the ramp's own bias)
+const LITTER_RASTER = { alpha: 0.02, rgb: 0.02, area: [0.97, 1.03], vsOrder: 0.25 }, LITTER_SPARSE = { area: [0.9, 1.05], mean: 0.12 }, LITTER_OVER = 1.1, LITTER_DRIFT = { angleDeg: 20, len: 0.25 };
+// THE STAMP (VS_LITTER/FS_LITTER as the engine compiles them) against arithmetic: see __litterStamp.
+const LITTER_STAMP_TOL = 0.02;
 
 // THE LANTERN's RAY vs ITS REFERENCE (§4.9). The same GLSL snippet the fill check holds, but the sky camera's half of it: readWood TRUE, the
 // wood read from the layer's own R16F texture, T_src (the beam: a leaf kills the disk) and the glow through wood, on the layers and wood the
@@ -453,6 +520,10 @@ async function robustness(page) {
     // faithful path a resized layer set — so a restore that forgot them would pass every row above
     { name: 'memories with the sky fill open recovers byte-identical', preset: 'memories', opts: { over: { canopy_fill: 1, fill_scatter: 0.5 } } },
     { name: 'park 1 (faithful) with the sky fill open recovers byte-identical', preset: 'park 1', opts: { over: { canopy_fill: 1, fill_scatter: 0.5 } } },
+    // the litter carpet (§4.7) owns a texture, a program, a VAO and a buffer that a lost context kills too — and its bake is NOTICED at draw time, so a
+    // restore that forgot them would only show as a floor without its leaves: the pre-loss frame has the carpet, so the post-restore one must
+    { name: 'afternoon 7 with the litter carpet recovers byte-identical', preset: 'afternoon 7', opts: { over: { leaf_drop: 1, phenology: 0.9, litter: 1 } } },
+    { name: 'park 1 (faithful) with the litter carpet and the fill recovers byte-identical', preset: 'park 1', opts: { over: { leaf_drop: 1, phenology: 0.9, litter: 1, canopy_fill: 1 } } },
     { name: 'recovers from the CURRENT params, not the create-time ones', preset: 'park 1', opts: { retarget: 'memories' } },
     { name: 'paused stays paused across loss + restore', preset: 'memories', opts: { pause: true } },
     { name: 'loss mid-transition recovers and the route settles', preset: 'memories', opts: { transition: true } },
@@ -854,14 +925,17 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || detail}`);
     }
 
-    if (!gateOnly && !robustOnly && !skyOnly && !edgeOnly) log('\nLEAF DIFFUSE — changed on a running engine, nothing rebuilt');
-    for (const c of (gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : LIVE_CHANGES) {
-      const name = `leaf_diffuse live: ${c.name}`;
+    // (the carpet's own live rows run with `--gate litter` too: a gate row alone cannot see a signature that forgot a number)
+    const litterRowsToo = gateOnly && (!gateFilters.length || gateFilters.some((f) => f && 'litter'.includes(f)));
+    const liveRows = (gateOnly || robustOnly || skyOnly || edgeOnly) ? (litterRowsToo ? LIVE_CHANGES.filter((c) => c.litter) : []) : LIVE_CHANGES;
+    if (liveRows.length) log('\nLIVE KNOBS — changed on a running engine, nothing rebuilt (leaf_diffuse tweens; the carpet is noticed at draw time)');
+    for (const c of liveRows) {
+      const name = `${c.key} live: ${c.name}`;
       let a, b;
       try {
         const opts = c.rebake ? { rebake: true } : undefined;
         a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [c.preset, { ...c.over, [c.key]: c.value }, 36, opts]);   // born with the knob
-        b = await page.evaluate(([p, o, k, v, q]) => window.__liveChange(p, o, k, v, q), [c.preset, c.over, c.key, c.value, { rebake: !!c.rebake }]);   // the knob moved at tick 15
+        b = await page.evaluate(([p, o, k, v, q]) => window.__liveChange(p, o, k, v, q), [c.preset, c.over, c.key, c.value, { rebake: !!c.rebake, apply: c.apply || null }]);   // the knob moved at tick 15
       } catch (e) { record('live', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); continue; }
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.capture.id]);
       const never = await page.evaluate(([p, o, q]) => window.__run(p, o, [36], q), [c.preset, c.over, c.rebake ? { rebake: true } : undefined]);   // ...and the frame it must NOT be: the knob never moved
@@ -872,6 +946,72 @@ async function main() {
       if (a.glError || b.glError) bad.push(`gl.getError 0x${(a.glError || b.glError).toString(16)}`);
       record('live', name, bad.length === 0, bad.join('; ') || `identical to a frame born with it (${a.captures[0].hash}); the unchanged frame is ${never.captures[0].hash}`);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || a.captures[0].hash}`);
+    }
+
+    // ---- suite 2c: the litter carpet (§4.7). Runs with the full sweep, and alone as `--gate litter`. ----
+    const litterRun = !solo || (gateOnly && (!gateFilters.length || gateFilters.some((f) => f && 'litter'.includes(f))));
+    if (litterRun) log('\nLITTER — the carpet the engine baked, read back and held to the grove\'s own list');
+    for (const c of litterRun ? LITTER_CHECKS : []) {
+      const name = `carpet: ${c.name}`;
+      let r;
+      try { r = await page.evaluate(([p, o]) => window.__litterCheck(p, o), [c.preset, c.over]); }
+      catch (e) { record('litter', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); continue; }
+      const bad = [], f3 = (a) => a.map((v) => v.toFixed(3)).join('/');
+      if (!r.ready) bad.push('the carpet is not ready');
+      if (r.passes !== 1) bad.push(`${r.passes} bake passes in 24 frames: it is baked once per regrow, not per frame`);
+      if (r.res !== (c.over.litter_resolution ?? 1024)) bad.push(`texture is ${r.res} px, not litter_resolution`);
+      if (r.frameErr > 1e-4) bad.push(`frame is off fillFrame(E, h_max, bulkOn) by ${r.frameErr.toExponential(2)} m`);
+      if (r.fillFrameErr != null && r.fillFrameErr > 1e-4) bad.push(`frame is off the fill's own by ${r.fillFrameErr.toExponential(2)} m`);
+      if (r.count !== r.instCpu) bad.push(`the bake drew ${r.count} stamps, the pure function made ${r.instCpu}`);
+      const ra = r.raster;
+      if (ra.meanAlpha > LITTER_RASTER.alpha) bad.push(`the carpet's coverage is off the CPU painting of its stamps by ${ra.meanAlpha.toFixed(4)} per covered texel (max ${ra.maxAlpha.toFixed(3)})`);
+      if (ra.meanRgb > LITTER_RASTER.rgb) bad.push(`the carpet's colour is off the CPU painting by ${ra.meanRgb.toFixed(4)} per covered texel`);
+      if (!(r.area.ratioCpu >= LITTER_RASTER.area[0] && r.area.ratioCpu <= LITTER_RASTER.area[1])) bad.push(`covered area is x${r.area.ratioCpu.toFixed(3)} of the CPU painting's`);
+      // the layering is a matter of COLOUR (coverage is the same whichever leaf is on top), so the yardstick is the colour: the GPU's distance from the right painting, against the
+      // wrong painting's distance from it
+      if (!c.sparse && !(ra.meanRgb <= LITTER_RASTER.vsOrder * ra.orderRgb)) bad.push(`the GPU's colour agrees with the CPU painting by ${ra.meanRgb.toFixed(4)}, but painting the other way round differs by only ${ra.orderRgb.toFixed(4)}: the layering is not measured`);
+      if (!c.sparse && !(ra.orderRgb > 0.02)) bad.push('the first-on-top and last-on-top paintings are the same carpet: the layering is not measured');
+      if (!(r.area.got <= r.area.leaves * LITTER_OVER)) bad.push(`the carpet covers ${r.area.got.toFixed(2)} m², more than the ${r.area.leaves.toFixed(2)} m² of leaves lying on it (+${Math.round((LITTER_OVER - 1) * 100)}% for the rim)`);
+      if (c.sparse) {
+        if (!(r.area.ratioLeaves >= LITTER_SPARSE.area[0] && r.area.ratioLeaves <= LITTER_SPARSE.area[1])) bad.push(`a sparse carpet covers x${r.area.ratioLeaves.toFixed(3)} of Σπ·A·B0·fade (want ${LITTER_SPARSE.area.join('..')})`);
+        r.mean.forEach((m, ch) => { if (r.meanCpu[ch] > 0.03 && !(Math.abs(m / r.meanCpu[ch] - 1) <= LITTER_SPARSE.mean)) bad.push(`mean albedo channel ${ch}: ${m.toFixed(4)} against ${r.meanCpu[ch].toFixed(4)}`); });
+        if (!(r.area.leaves > 1)) bad.push(`only ${r.area.leaves.toFixed(2)} m² of leaves: nothing was measured`);
+      }
+      if (c.drift) {
+        const want = Math.hypot(...r.driftWant), got = Math.hypot(...r.driftGot);
+        const angle = Math.abs(((Math.atan2(r.driftGot[1], r.driftGot[0]) - Math.atan2(r.driftWant[1], r.driftWant[0]) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI) * 180 / Math.PI;
+        if (!(want > 0.2)) bad.push(`the drift is ${want.toFixed(3)} m: nothing was measured`);
+        if (!(angle <= LITTER_DRIFT.angleDeg)) bad.push(`the carpet is carried ${angle.toFixed(1)}° off the wind (${f3(r.driftGot)} against ${f3(r.driftWant)} m)`);
+        if (!(Math.abs(got / want - 1) <= LITTER_DRIFT.len)) bad.push(`the carpet is carried ${got.toFixed(3)} m, the leaves' own drift is ${want.toFixed(3)} m`);
+      }
+      if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
+      const detail = `${r.res}px over ${r.frame.ext.toFixed(1)} m (${r.texelCm.toFixed(1)} cm/texel)  ${r.nLeaves} leaves, ${r.count} stamps, ${(100 * ra.covered).toFixed(0)}% covered  vs CPU painting: α ${ra.meanAlpha.toFixed(4)} rgb ${ra.meanRgb.toFixed(4)} (the other order: α ${ra.orderAlpha.toFixed(3)} rgb ${ra.orderRgb.toFixed(3)})  area ${r.area.got.toFixed(2)} of ${r.area.leaves.toFixed(2)} m² of leaves${c.drift ? `  drift (${f3(r.driftGot)}) vs (${f3(r.driftWant)}) m` : ''}  passes ${r.passes}`;
+      record('litter', name, bad.length === 0, bad.join('; ') || detail);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || detail}`);
+      if (bad.length) log(`        ${detail}`);
+    }
+    if (litterRun) {
+      const name = 'stamp: layering, the blend, sub-texel energy and the rim (VS_LITTER/FS_LITTER as compiled)';
+      let r;
+      try { r = await page.evaluate(() => window.__litterStamp()); }
+      catch (e) { record('litter', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); r = null; }
+      if (r) {
+        const bad = [], near = (got, want, what) => got.forEach((v, i) => { if (!(Math.abs(v - want[i]) <= LITTER_STAMP_TOL)) bad.push(`${what}: ${got.map((x) => x.toFixed(3)).join('/')} is not ${want.map((x) => x.toFixed(3)).join('/')}`); });
+        // green at fade 0.5 over red: premultiplied over, src + dst·(1 − a): the colour is the mixture and the alpha is 1 − (1 − 0.5)(1 − 1) = 1
+        near(r.overlap, [0.5, 0.45, 0.075, 1], 'a half-faded green laid OVER red');
+        near(r.reversed, [0.9, 0.1, 0.05, 1], 'the same two, red laid last: the red wins outright (instance order is the layering)');
+        near(r.onlyRed, [0.9, 0.1, 0.05, 1], 'red alone');
+        near(r.onlyGreen, [0.05, 0.4, 0.05, 0.5], 'green alone is premultiplied (rgb·a, a)');
+        if (!(r.tinyArea / r.tinyWant >= 0.9 && r.tinyArea / r.tinyWant <= 1.35)) bad.push(`sixteen sub-texel leaves keep x${(r.tinyArea / r.tinyWant).toFixed(3)} of their area (each is enlarged and its alpha spent: the rim's ramp may add up to ~25%, never take it away)`);
+        if (!(r.tinyMax > 0 && r.tinyMax < 0.2)) bad.push(`a sub-texel leaf's peak alpha ${r.tinyMax.toFixed(3)}: not enlarged, or not dimmed`);
+        if (!(Math.abs(r.discArea / r.discWant - 1) <= 0.02)) bad.push(`a disc of radius 10 covers x${(r.discArea / r.discWant).toFixed(4)} of π·10²`);
+        near(r.centre.slice(0, 3), [0.5, 0.5, 0.5], 'the disc interior'); if (r.centre[3] < 0.99) bad.push(`the disc's interior alpha is ${r.centre[3].toFixed(3)}`);
+        if (!(r.rim > 20 && r.rim < 140)) bad.push(`the rim is ${r.rim} texels wide in total: one texel of anti-aliasing is ~${Math.round(2 * Math.PI * 10)}`);
+        if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
+        const detail = `overlap ${r.overlap.map((v) => v.toFixed(3)).join('/')}  reversed ${r.reversed.map((v) => v.toFixed(2)).join('/')}  sub-texel area (16 phases) x${(r.tinyArea / r.tinyWant).toFixed(3)} (peak α ${r.tinyMax.toFixed(3)})  disc x${(r.discArea / r.discWant).toFixed(4)}, rim ${r.rim} texels`;
+        record('litter', name, bad.length === 0, bad.join('; ') || detail);
+        log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || detail}`);
+      }
     }
 
     // ---- suite 4: transition routing ----
