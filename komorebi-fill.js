@@ -4,7 +4,7 @@
 //
 //     E_shade(x) = uAmbient · T̄_sky(x) + ∫ L_scat(x, ω) cosθ dω
 //
-// and the second integrand IS the sky view's radiance along a ray (§4.9). The fill shader (FS_FILL) evaluates both
+// and the second integrand IS the sky view's scattered radiance along a ray (§4.9). The fill shader (FS_FILL) evaluates both
 // over K fixed, cosine-weighted directions; these are the same directions and the same per-ray sum as pure
 // functions, so the laws (weights, the Jensen direction, the energy bound) are held by `bun test` without a GPU.
 // The shader is the authority on the numbers; the GLSL both cameras run (GLSL_SKY_RAY) is what keeps the sky view
@@ -65,8 +65,8 @@ const hue = (t) => { const m = Math.max(t[0], t[1], t[2], 1e-4); return [t[0] / 
 // ONE ray through the layer stack — the sky view's per-ray formula (§4.9), line for line with GLSL_SKY_RAY.
 //   layers: [{ h, t(x, y) -> [r,g,b] }], lowest first; t is the layer's FOLIAGE transmittance at a plan point
 //   p: where the ray starts (plan); shift: its plan travel per metre of rise; gS: the sun's, the same
-//   returns { T: Π t_L (what the ray passes), L: Σ thr_L (1 − t_L) ŝ_L (sun·A_L + amb) } — L BEFORE the albedo
-export function skyRayRef(layers, p, shift, gS, sun, amb){
+//   returns { T: Π t_L (what the ray passes), L: Σ thr_L (1 − t_L) ŝ_L (sun·A_L) } — L BEFORE the albedo. No skylight in L: its passage is T
+export function skyRayRef(layers, p, shift, gS, sun){
   const n = layers.length;
   const at = layers.map((l) => [p[0] + shift[0] * l.h, p[1] + shift[1] * l.h]);
   const t = layers.map((l, L) => l.t(at[L][0], at[L][1]));
@@ -81,7 +81,7 @@ export function skyRayRef(layers, p, shift, gS, sun, amb){
     }
     const s = hue(t[i]);
     for(let c = 0; c < 3; c++){
-      L[c] += thr[c] * (1 - t[i][c]) * s[c] * (sun[c] * A[c] + amb[c]);
+      L[c] += thr[c] * (1 - t[i][c]) * s[c] * (sun[c] * A[c]);
       thr[c] *= t[i][c];
       T[c] *= t[i][c];
     }
@@ -94,10 +94,10 @@ export function skyRayRef(layers, p, shift, gS, sun, amb){
 // The mean is of TRANSMITTANCE, never of optical depth: T is Σ_k Π_L t_kL, and `meanTau` (the veil that mean tau
 // would give) is returned only so a test can hold the Jensen gap between the two. scatter = the leaves' albedo; tile = the
 // texel's slot in the interleaving (fillTile), as the shader derives it from its own texel.
-export function fillRef(layers, x, K, { gS, sun, amb, scatter, tile }){
+export function fillRef(layers, x, K, { gS, sun, scatter, tile }){
   const T = [0, 0, 0], S = [0, 0, 0], tau = [0, 0, 0];
   for(const d of fillDirections(K, tile)){
-    const r = skyRayRef(layers, x, d.shift, scatter > 0 ? gS : null, sun, amb);   // scatter 0 skips the whole sun-path branch, exactly as FS_FILL does
+    const r = skyRayRef(layers, x, d.shift, scatter > 0 ? gS : null, sun);   // scatter 0 skips the whole sun-path branch, exactly as FS_FILL does
     for(let c = 0; c < 3; c++){ T[c] += r.T[c]; S[c] += r.L[c]; tau[c] -= Math.log(Math.max(r.T[c], 1e-300)); }
   }
   return { T: T.map((v) => v / K), S: S.map((v) => (v / K) * scatter), meanTau: tau.map((v) => v / K) };

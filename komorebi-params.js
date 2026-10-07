@@ -186,8 +186,8 @@ const DEFAULTS = {
   // and it overrides the receiver entirely (there is no surface, so no fabric, no ground, no seams). Off = every
   // look unchanged.
   sky_view: false,
-  sky_scatter: 0.0,                // SKY VIEW (§4.9): how brightly the foliage GLOWS in its own right — single-scatter radiance from the light
-                                   // reaching each layer from above, on top of the transmitted sky. 0 = pure transmission, byte-identical (a crown can only darken)
+  sky_scatter: 0.0,                // SKY VIEW (§4.9): how brightly the foliage GLOWS in its own right — single-scatter radiance from the SUN's light
+                                   // reaching each layer from above, on top of the transmitted sky (which already carries the skylight). 0 = pure transmission, byte-identical (a crown can only darken)
   standing_scene: false,           // opt-in: render the trunk as a real vertical occluder (its swept shadow streak)
   trunk_radius_m: 0.1,             // trunk thickness (m) → width of its shadow streak; the area light softens it along its length
   faithful_canopy: false,          // FAITHFUL TREE (spec §4.5): opt out of the depth-layer leaf cheat. Off = leaves binned to a

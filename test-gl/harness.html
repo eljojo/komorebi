@@ -258,7 +258,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
       for (let q = 0; q < o.samples; q++) {              // a fixed scatter of texels, interior and border alike
         const i = Math.floor(((q * 0.6180339887) % 1) * n), j = Math.floor(((q * 0.7548776662 + 0.3) % 1) * n);
         const x = [-E / 2 + ((i + 0.5) / n) * E, -E / 2 + ((j + 0.5) / n) * E];
-        const ref = fillRef(layers, x, K, { gS, sun: atm.sun, amb: atm.ambient, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j) });   // only the floor reads S (the cloth and the tent are handed albedo 0); each texel carries its own slot of the 4x4 interleaving tile
+        const ref = fillRef(layers, x, K, { gS, sun: atm.sun, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j) });   // only the floor reads S (the cloth and the tent are handed albedo 0); each texel carries its own slot of the 4x4 interleaving tile
         for (let c = 0; c < 3; c++) {
           const gT = T[(j * n + i) * 4 + c], gSv = S[(j * n + i) * 4 + c];
           eT = Math.max(eT, Math.abs(gT - ref.T[c])); eS = Math.max(eS, Math.abs(gSv - ref.S[c]));

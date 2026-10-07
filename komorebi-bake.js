@@ -305,16 +305,17 @@ export function makeBake(hub){
   // scatter branch is skipped in the shader outright.
   const fillAlbedo = () => CAMERAS[cameraFor(params)].groups.includes('floor') ? clamp(params.fill_scatter, 0, 1) : 0;
   const _atm = { sun:[0,0,0], ambient:[0,0,0] }, _sd = [0,0,0], FILL_TURNS = fillTurns();   // the 16 slot rotations never change
-  const _sig = new Float64Array(12);
+  const _sig = new Float64Array(11);
 
   // Everything the fill depends on besides the layers themselves (which rebake it eagerly, from bake()). The sun can
-  // move without any bake — a time-of-day morph, the editor's sun drag — and S reads the sun's colour, its path
-  // through the layers and the sky, so a draw compares this against what the fill was baked with and re-runs just the
-  // pass. (The layer path reprojects the cast per frame for the same reason; the fill has to follow it.)
+  // move without any bake — a time-of-day morph, the editor's sun drag — and S reads the sun's colour and its path
+  // through the layers (never the skylight: Tsky is a transmittance and S is sun-scatter alone), so a draw compares
+  // this against what the fill was baked with and re-runs just the pass. (The layer path reprojects the cast per
+  // frame for the same reason; the fill has to follow it.)
   function fillSig(o){
-    o[0]=params.sun_elevation_deg; o[1]=params.sun_azimuth_deg; o[2]=params.sky_turbidity; o[3]=params.ambient_skylight;
-    o[4]=fillAlbedo(); o[5]=fillK(); o[6]=fillRes(); o[7]=params.layer_count; o[8]=params.canopy_base_height_m;
-    o[9]=params.canopy_thickness_m; o[10]=params.canopy_extent_m; o[11]=faithfulOn() ? 1 : 0;
+    o[0]=params.sun_elevation_deg; o[1]=params.sun_azimuth_deg; o[2]=params.sky_turbidity;
+    o[3]=fillAlbedo(); o[4]=fillK(); o[5]=fillRes(); o[6]=params.layer_count; o[7]=params.canopy_base_height_m;
+    o[8]=params.canopy_thickness_m; o[9]=params.canopy_extent_m; o[10]=faithfulOn() ? 1 : 0;
   }
   function fillStale(){
     if(!fill.ready) return true;
@@ -357,7 +358,6 @@ export function makeBake(hub){
     gl.uniform2f(u.origin, -E/2, -E/2);
     gl.uniform2f(u.extent, E, E);
     gl.uniform3f(u.sun, _atm.sun[0], _atm.sun[1], _atm.sun[2]);
-    gl.uniform3f(u.ambient, _atm.ambient[0], _atm.ambient[1], _atm.ambient[2]);
     gl.uniform3f(u.sunDir, _sd[0], _sd[1], _sd[2]);
     gl.uniform1fv(u.heights, H);
     gl.uniform1i(u.layerCount, params.layer_count);

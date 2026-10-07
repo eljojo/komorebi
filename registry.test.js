@@ -98,6 +98,12 @@ test("the per-ray physics is ONE source: the sky view and the fill both carry GL
   expect(FS_FILL.split(GLSL_SKY_RAY).join("").includes(term)).toBe(false);
 });
 
+test("the shared per-ray snippet never reads the skylight: its passage is T·sky, so a source term of it counts it twice", () => {
+  // the source term is the SUN's light scattered by the lit leaves (§4.9). uAmbient inside it re-radiates skylight
+  // that the transmission term (the eye ray's T·sky, the fill's Tsky) already carries.
+  expect(GLSL_SKY_RAY.replace(/\/\/.*$/gm, "").includes("uAmbient")).toBe(false);
+});
+
 test("both programs declare every uniform the shared per-ray snippet reads", () => {
   const needs = new Set(GLSL_SKY_RAY.replace(/\/\/.*$/gm, "").match(/\bu[A-Z]\w*/g));   // identifiers in the code, not in the prose
   expect(needs.size).toBeGreaterThan(5);

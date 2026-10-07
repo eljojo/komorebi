@@ -339,14 +339,18 @@ vec4 tapUpLW(highp sampler2D t, vec2 world, bool openOutside, bool woodInAlpha){
 // L += throughput·(1 − t_L)·ŝ_L·S_L, throughput *= t_L, accumulated eye → sky.
 //  • (1 − t_L) is the share of the beam this layer takes OUT of the ray — the scattering density, measured from
 //    the same tap the silhouette uses, not authored.
-//  • S_L is the irradiance arriving at that layer FROM ABOVE: the sun attenuated by the layers over it along
-//    the SUN's ray (offset +g per metre of rise, since that is where the light comes from), plus the skylight.
-//    Those are extra taps and nothing else — the field already holds everything they need.
+//  • S_L is the SUN's irradiance arriving at that layer FROM ABOVE: the sun attenuated by the layers over it along
+//    the SUN's ray (offset +g per metre of rise, since that is where the light comes from). Those are extra taps
+//    and nothing else — the field already holds everything they need.
+//    NOT the skylight, which would count it twice: its passage through the leaves is already T·sky (the eye ray's
+//    transmission, the fill's Tsky), and for a uniform sky diffuse transmission through Lambertian leaves equals
+//    that ballistic T·L_sky to first order. Leaf-top reflection goes up, never to an eye below, and an underside has
+//    no light to send on (the model has no ground bounce). With the sun off, Lsc is exactly 0.
 //  • ŝ_L is the layer's own transmittance normalized to unit peak: HUE only (§3.5), so the knob carries
 //    brightness and the chlorophyll spectrum carries colour. Taking the LAYER's rather than one leaf's also
 //    accounts to first order for the scattered light filtering back out through the layer that made it.
 // The bound is structural: Σ throughput·(1 − t_L) telescopes to 1 − Π t_L ≤ 1 per channel, ŝ ≤ 1 and the albedo
-// ≤ 1, so a crown can never radiate more than the light falling on it.
+// ≤ 1, so a crown can never radiate more than the sunlight falling on it.
 void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, bool scatter, bool openOutside, bool woodInAlpha, out vec3 T, out vec3 Lsc){
   vec4 qL0 = uLayerCount>0 ? tapUpLW(uLayer[0], pL0, openOutside, woodInAlpha) : vec4(1.0);
   vec4 qL1 = uLayerCount>1 ? tapUpLW(uLayer[1], pL1, openOutside, woodInAlpha) : vec4(1.0);
@@ -374,10 +378,10 @@ void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, bool scatter, bool openOutsi
     // THE SOURCE TERM READS FOLIAGE ONLY. Wood appears in the throughput, which can only take light away, and
     // nowhere in the emission — so a ray that meets nothing but wood scatters exactly nothing.
     vec3 thr = vec3(1.0);
-    Lsc += thr*(1.0-tL0)*leafHue(tL0)*(uSunColor*A0 + uAmbient); thr *= xL0;
-    Lsc += thr*(1.0-tL1)*leafHue(tL1)*(uSunColor*A1 + uAmbient); thr *= xL1;
-    Lsc += thr*(1.0-tL2)*leafHue(tL2)*(uSunColor*A2 + uAmbient); thr *= xL2;
-    Lsc += thr*(1.0-tL3)*leafHue(tL3)*(uSunColor    + uAmbient);   // nothing is stacked above the top layer
+    Lsc += thr*(1.0-tL0)*leafHue(tL0)*uSunColor*A0; thr *= xL0;
+    Lsc += thr*(1.0-tL1)*leafHue(tL1)*uSunColor*A1; thr *= xL1;
+    Lsc += thr*(1.0-tL2)*leafHue(tL2)*uSunColor*A2; thr *= xL2;
+    Lsc += thr*(1.0-tL3)*leafHue(tL3)*uSunColor;   // nothing is stacked above the top layer
   }
 }`;
 
@@ -394,7 +398,7 @@ void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, bool scatter, bool openOutsi
 // the K products are what get averaged — never a mip or a blur of the optical depth, which would turn a gappy canopy
 // into a uniform veil and underestimate the fill. The sum is DIVIDED by K (not scaled by 1/K), so K rays of exactly
 // 1 sum to exactly K and give exactly 1: no canopy is exactly bright, for any K.
-// ENERGY: Tsky ≤ 1 by construction, and S ≤ fill_scatter·(1 − Tsky)·(sun + ambient) per channel by the sky view's
+// ENERGY: Tsky ≤ 1 by construction, and S ≤ fill_scatter·(1 − Tsky)·sun per channel by the sky view's
 // telescoping bound — structural, no clamp. Wood is not read (woodInAlpha false): the analytic occluder takes the
 // beam only, and a limb's share of the hemisphere is thin.
 const FS_FILL = `#version 300 es
