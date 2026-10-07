@@ -102,6 +102,11 @@ function mixtureTau(tauWall, tauCell, fw, out = [0,0,0]){
   for(let c=0;c<3;c++) out[c] = -Math.log(f*Math.exp(-tauWall[c]) + (1-f)*Math.exp(-tauCell[c]));
   return out;
 }
+// A leaf's own turn clock phi_j: the FIRST draw of leafTau's stream, the number its senescence starts by when no light orders it (turn_exposure 0).
+// Given as its order with a gain of 1, leafTau is that leaf to the bit — which is what lets the exposure rank use it as the tie-break among
+// leaves of equal light (exposureRank's `key`): the one that would have started first on its own is the one the rank puts first. It does not
+// draw a stream of its own, so nothing about a leaf moves. Pure function of (seed, j, k), like leafTau's.
+function leafClock(seed, j, k){ return mulberry32(hash3((seed>>>0)^LEAF_SALT, j, k))(); }
 // One leaf's tau (R,G,B): summer*(1-s) + s*(carotenoid + a*anthocyanin + b*tannin), the cells; the walls the same
 // without the anthocyanin (vein tissue makes none); then the sieve mixture. j,k = the leaf's cluster and its place in
 // it — stable under tree_count / density morphs, which a flat running index is not. Fills `out` (no garbage per leaf).
@@ -217,9 +222,28 @@ function exposureGrid(x, y, z, area, E, out = new Float64Array(x.length)){
 // below a sunlit one. What is lost is absolute light — a wholly open canopy is still ordered, top to underside, over
 // its whole span, which amplifies differences a stand that sunny would barely have, and a grove wholly in shade still
 // has a red, early half. exposureBlend (below) gives absolute light back, as far as exposure_absolute says.
-function exposureRank(ex, out = new Float64Array(ex.length)){
+// TIES. A leaf whose one representative ray crosses no leaf area is exactly 1 — the up-sun shell and the top of the stand, a few percent of a
+// grove — and equals have to share a rank (the mean-rank law), so they would share one u: one turn phase, one drop day, a surface that dims as
+// one. `key` (optional: each leaf's own turn clock, leafClock) breaks the tie, and only the tie: within a run of equal exposure the leaf with the
+// SMALLER key — the one that would have turned first on its own — takes the higher rank, so the group spreads over its own slice of the order
+// (the same (lo + up)/(2n) per leaf, so every untied leaf's rank is the keyless one to the bit). Leaves equal in the key as well (a 32-bit
+// collision) cannot be told apart and keep the mid-rank of their slots, so the ranks stay a permutation of (i + 1/2)/n and the mean exactly 1/2.
+// Absent `key` it is the keyless law, ties alike. NOT reached at exposure_absolute 1: there u is the raw exposure, literally 1.0 for the group.
+function exposureRank(ex, key, out = new Float64Array(ex.length)){
   const n = ex.length;
   if(!n) return out;
+  if(key){
+    const order = new Uint32Array(n);
+    for(let i=0;i<n;i++) order[i] = i;
+    order.sort((a, b) => ex[a] < ex[b] ? -1 : ex[a] > ex[b] ? 1 : key[b] < key[a] ? -1 : key[b] > key[a] ? 1 : 0);   // exposure ascending, then key DESCENDING: the earliest clock is last, the highest rank
+    for(let lo=0, up;lo<n;lo=up){
+      const e = ex[order[lo]], q = key[order[lo]];
+      for(up=lo+1;up<n && ex[order[up]] === e && key[order[up]] === q;up++);
+      const r = (lo + up)/(2*n);
+      for(let m=lo;m<up;m++) out[order[m]] = r;
+    }
+    return out;
+  }
   const sorted = Float64Array.from(ex).sort();                // typed arrays sort numerically
   for(let i=0;i<n;i++){
     const v = ex[i];
@@ -421,4 +445,4 @@ function growNode(g, rng, out, base, dir, len, level, limb){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

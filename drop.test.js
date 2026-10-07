@@ -182,7 +182,8 @@ const PIG = { phenology: 0.95, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2
 const FROZEN = {
   "summer/layer": "8913d117", "summer/faith": "dad14bc3",
   "pigment/layer": "610ecb09", "pigment/faith": "487265f1",
-  "lit/layer": "4d728b7d", "lit/faith": "964badf7",
+  // lit/* re-recorded when the tie-break landed (exposureRank's key): the fully lit shell is ordered by each leaf's own clock, not stacked on one mid-rank. summer/* and pigment/* did not move.
+  "lit/layer": "c26ff213", "lit/faith": "1ef35281",
 };
 test("leaf_drop 0 is P1 to the bit — summer, fall, and fall with sun first — with the rest of the family armed", () => {
   const armed = { drop_start: 0.5, drop_span: 0.1, drop_exposure: 1, leaf_drop: 0 };
@@ -213,11 +214,11 @@ test("the share still hanging: 1 up to drop_start, never rises with the season, 
     }
     expect(any, "not vacuous: leaves did go").toBe(true);
     // the share at the end of the span: the rank is uniform, so the drop phases are evenly spread and 1 − leaf_drop is held to within a leaf.
-    // (Leaves of EQUAL exposure share a rank and so a day — the fully lit crown top is a tenth of this grove — but they sit at the
-    // exposed end, far from these cuts; the precondition is asserted, so a cut that lands in a tie fails loudly rather than loosely.)
+    // (Leaves of EQUAL exposure used to share a rank and so a day — the fully lit crown top is a tenth of this grove — and a cut inside
+    // that group would have taken all of it or none; the leaf's own clock now breaks the tie, and the precondition is asserted: no day is shared.)
     const phases = [...phasesOf(dense({ phenology: 0.5 })).values()];
     const ties = new Map(); for (const v of phases) ties.set(v, (ties.get(v) ?? 0) + 1);
-    expect([...ties].filter(([v, c]) => c > 3 && Math.abs(v - L) < 0.05), `no tie group at the cut (leaf_drop ${L})`).toEqual([]);
+    expect([...ties].filter(([, c]) => c > 1), `no day shared by more than one leaf (leaf_drop ${L})`).toEqual([]);
     const end = grow(dense({ phenology: DS + SPAN, leaf_drop: L, drop_exposure: 1 })).faithLeaves.length / SF;
     expect(Math.abs(end / n - (1 - L)), `leaf_drop ${L}: ${end}/${n} retained`).toBeLessThanOrEqual(1 / n + 1e-12);
   }
@@ -314,6 +315,58 @@ test("exposure is the season's: a leaf's day does not depend on the phenology it
     expect(l.D).toBeLessThanOrEqual(0.85);
   }
   for (const l of late) expect(l.D).toBeLessThanOrEqual(0.95);
+});
+
+// ---- TIES: the leaves nothing shades share an exposure of exactly 1 (the up-sun shell and the stand's top), and the rank used to give them
+// one mid-rank — one drop day, one fade, a surface dimming as one. Each one's own turn clock now orders them over their slice of the order.
+// The litter carries the grove's own doubles (x, y, h, the half-axes, the fade), so exposureGrid over them IS the grove's exposure, bit for bit,
+// and the claims below can be exact.
+const TIES = { phenology: 1, leaf_drop: 1, drop_exposure: 1, exposure_absolute: 0 };
+const litterExposure = (r) => math.exposureGrid(
+  Float64Array.from(r.litter, (l) => l.x), Float64Array.from(r.litter, (l) => l.y), Float64Array.from(r.litter, (l) => l.h),
+  Float64Array.from(r.litter, (l) => Math.PI * l.size[0] * l.size[1] * l.fade), r.params.canopy_extent_m);
+
+test("no two leaves share a day: at drop_exposure 1 the days are exactly drop_start + drop_span·(i + ½)/n — the shell spread, not stacked", () => {
+  const r = grow(dense(TIES), true), n = r.litter.length;
+  expect(n).toBeGreaterThan(10000);
+  const days = r.litter.map((l) => l.D).sort((a, b) => a - b);
+  let worst = 0, at = -1;
+  for (let i = 0; i < n; i++) { const d = Math.abs(days[i] - (DS + SPAN * (i + 0.5) / n)); if (d > worst) { worst = d; at = i; } }
+  expect(worst, `worst day ${at} of ${n}`).toBeLessThan(1e-9);
+  expect(new Set(days).size, "every leaf its own day").toBe(n);
+});
+
+test("inside the sunlit shell the leaf that started turning first lets go first", () => {
+  const r = grow(dense(TIES), true), ex = litterExposure(r);
+  const shell = r.litter.filter((_, i) => ex[i] === 1).map((l) => ({ D: l.D, phi: math.leafClock(r.params.seed, l.j, l.k) })).sort((a, b) => a.phi - b.phi);
+  expect(shell.length, "not vacuous: a real shell, a tenth of the grove").toBeGreaterThan(500);
+  expect(new Set(shell.map((s) => s.phi)).size, "no two clocks collide").toBe(shell.length);
+  for (let i = 1; i < shell.length; i++) expect(shell[i - 1].D < shell[i].D, `clock ${shell[i - 1].phi} (day ${shell[i - 1].D}) vs ${shell[i].phi} (day ${shell[i].D})`).toBe(true);
+});
+
+test("one u: the litter's colour is leafTau at the order its DAY implies — the turn and the drop read the same rank", () => {
+  // phenology 1 has every leaf fully turned (only the red gain is read); 0.85 is mid-turn, so the turn ORDER is read too, on the half that has fallen by then
+  for (const phenology of [1, 0.85]) {
+    const r = grow(dense({ ...TIES, phenology, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2, turn_exposure: 1 }), true), P = r.params, tau = tauOf(P), out = [0, 0, 0];
+    expect(r.litter.length, `phenology ${phenology}`).toBeGreaterThan(phenology === 1 ? 10000 : 5000);
+    let worst = 0;
+    for (const l of r.litter) {
+      const u = 1 - (l.D - P.drop_start) / P.drop_span, want = math.leafTau(tau, P, P.seed, l.j, l.k, out, math.turnOrder(u), math.redGain(u));
+      for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(l.tau[c] - want[c]));
+    }
+    expect(worst, `phenology ${phenology}`).toBeLessThan(1e-9);
+  }
+});
+
+test("between rank and raw light: at exposure_absolute 0.5 the days are still all different; at 1 the shell shares one — the named corner", () => {
+  const half = grow(dense({ ...TIES, exposure_absolute: 0.5 }), true);
+  expect(new Set(half.litter.map((l) => l.D)).size, "(1 − w) of the rank's spread survives").toBe(half.litter.length);
+  // At 1 u IS the raw exposure, literally 1.0 for every leaf that nothing shades: there is no rank left to spread them by, and they go on
+  // drop_start itself, together. Held as a fact, not fixed (a correction inside the rank cannot reach a blend that has dropped it).
+  const one = grow(dense({ ...TIES, exposure_absolute: 1 }), true), ex = litterExposure(one);
+  const shell = one.litter.filter((_, i) => ex[i] === 1);
+  expect(shell.length, "not vacuous").toBeGreaterThan(500);
+  for (const l of shell) expect(l.D, `${l.j}/${l.k}`).toBe(one.params.drop_start);
 });
 
 test("the drop never touches the growth RNG: skeleton, twigs, and every surviving leaf's place are the grove's own", () => {

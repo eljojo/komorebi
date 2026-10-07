@@ -105,6 +105,44 @@ test("a leaf's rank in its grove is its percentile: monotone, ties alike, the me
   expect(math.exposureRank(new Float64Array(0)).length).toBe(0);
 });
 
+test("a keyed rank spreads a tie over its own slice, the earlier clock on top — and moves nothing that was not tied", () => {
+  const ex = Float64Array.from([0.9, 0.1, 0.5, 0.5, 1, 0.01, 0.5, 0.3]), n = ex.length;
+  const key = Float64Array.from([0.8, 0.8, 0.7, 0.1, 0.3, 0.3, 0.35, 0.3]);   // read only inside the tie (leaves 2, 3, 6): the other keys are decoys, some of them equal, and must move nothing
+  const keyless = math.exposureRank(ex), u = math.exposureRank(ex, key);
+  // the tie holds slots 3, 4, 5 of the sorted order; a SMALLER key (an earlier turn) is the higher rank, so key 0.7 takes slot 3 and key 0.1 slot 5
+  expect([u[2], u[6], u[3]]).toEqual([3.5 / n, 4.5 / n, 5.5 / n]);
+  const byKey = [2, 3, 6].sort((a, b) => key[a] - key[b]);
+  expect(u[byKey[0]] > u[byKey[1]] && u[byKey[1]] > u[byKey[2]], "strictly decreasing in the key").toBe(true);
+  for (const i of [0, 1, 4, 5, 7]) expect(Object.is(u[i], keyless[i]), `untied leaf ${i}: ${u[i]} vs ${keyless[i]}`).toBe(true);   // the same expression as the keyless rank: its float, not near it
+  expect(Array.from(u).sort((a, b) => a - b), "still a permutation of (i + 1/2)/n").toEqual(Array.from({ length: n }, (_, i) => (i + 0.5) / n));
+  expect(Math.abs(u.reduce((s, v) => s + v, 0) / n - 0.5)).toBeLessThan(1e-12);   // P1's mean-red invariant survives the tie-break
+  // two leaves equal in BOTH (a 32-bit collision of the clock) cannot be told apart: they keep the mid-rank, the one slot-pair they hold
+  const twin = math.exposureRank(Float64Array.from([0.5, 0.5, 0.5, 0.2]), Float64Array.from([0.3, 0.3, 0.8, 0.1]));
+  expect(Array.from(twin)).toEqual([0.75, 0.75, 1.5 / 4, 0.5 / 4]);
+  // `out` is the third argument, keyed or not
+  const out = new Float64Array(n);
+  expect(math.exposureRank(ex, key, out)).toBe(out);
+  expect(Array.from(out)).toEqual(Array.from(u));
+  expect(math.exposureRank(ex, undefined, out)).toBe(out);
+  expect(Array.from(out)).toEqual(Array.from(keyless));
+  expect(math.exposureRank(new Float64Array(0), new Float64Array(0)).length).toBe(0);
+});
+
+test("leafClock is the leaf's own turn clock — the first draw of leafTau's stream — so a leaf handed it as its order does not move", () => {
+  for (const [seed, j, k] of [[0, 0, 0], [7, 3, 5], [1234567, 41, 7], [3000000000, 9, 0], [-5, 2, 1]])   // the stream's salt is frozen here (drop.test.js's idiom): the clock must never become another stream
+    expect(math.leafClock(seed, j, k), `${seed}/${j}/${k}`).toBe(math.mulberry32(math.hash3(seed ^ 0x51ED270B, j, k))());
+  // handed back as the leaf's own order, with a gain of 1, turn_exposure 1 is the hash's leaf — to the bit, for every leaf
+  const P = fall({ phenology: 0.75, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2 }), tau = tauOf(P), out = [0, 0, 0], want = [0, 0, 0];
+  let turning = 0;
+  for (let j = 0; j < 40; j++) for (let k = 0; k < 8; k++) {
+    math.leafTau(tau, { ...P, turn_exposure: 0 }, P.seed, j, k, want);
+    math.leafTau(tau, { ...P, turn_exposure: 1 }, P.seed, j, k, out, math.leafClock(P.seed, j, k), 1);
+    for (let c = 0; c < 3; c++) expect(Object.is(out[c], want[c]), `leaf ${j}/${k}, channel ${c}: ${out[c]} vs ${want[c]}`).toBe(true);
+    if (want[1] !== tau[1]) turning++;
+  }
+  expect(turning, "not vacuous: leaves are turning").toBeGreaterThan(150);
+});
+
 test("the two maps are monotone and keep their ranges: turn order in [0,1), red gain 0.5..1.5 and mean 1", () => {
   let prevPhi = Infinity, prevGain = -Infinity, sum = 0;
   for (let i = 0; i <= 20; i++) {
@@ -364,12 +402,30 @@ const tausOf = (faithLeaves) => { const t = []; for (let i = 0; i + STRIDE <= fa
 const CROWD = dense({ phenology: 0.75, leaf_size_m: 0.15 });
 const FALL = { ...CROWD, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2, turn_exposure: 1 };   // turn_exposure 1, phenology 0.75
 
+test("on a real grove the key splits exactly what the rank could not: the sunlit shell (e = 1) spreads, every other leaf's rank is the keyless one to the bit", () => {
+  // from the float32 buffer, as wantTaus does: the claim is about the functions on a real stand, not about the grove's own pass
+  const { params, faithLeaves } = growWith({ ...FALL, exposure_absolute: 0 }, true);
+  const L = leavesOf(faithLeaves), ex = math.exposureGrid(L.x, L.y, L.z, L.a, params.canopy_extent_m);
+  const key = Float64Array.from(L.j, (j, i) => math.leafClock(params.seed, j, L.k[i]));
+  const keyless = math.exposureRank(ex), keyed = math.exposureRank(ex, key);
+  let shell = 0, split = 0, moved = -1;
+  for (let i = 0; i < ex.length; i++) {
+    if (ex[i] === 1) { shell++; if (!Object.is(keyed[i], keyless[i])) split++; }
+    else if (!Object.is(keyed[i], keyless[i]) && moved < 0) moved = i;
+  }
+  expect(shell, "not vacuous: a real shell of fully lit leaves").toBeGreaterThan(200);
+  expect(split / shell, "an odd group's middle leaf can keep the mid-rank, and nothing else").toBeGreaterThanOrEqual(0.95);
+  expect(moved, "no leaf below the shell was re-ranked").toBe(-1);
+  expect(Math.abs(Array.from(keyed).reduce((s, v) => s + v, 0) / ex.length - 0.5), "the mean is still exactly one half").toBeLessThan(1e-12);
+});
+
 // P1's grove, frozen (58853f9): one number per grove — FNV-1a over the float32 bits of every leaf's tau (all channels, in buffer
 // order). Not recomputed from the buffer: positions come back through float32, which re-ranks a few dozen leaves in ten thousand,
 // so only the number can say "the same leaves, to the bit". (A crowded grove and `dense`'s own share one: the rank is blind to a uniform
 // scale of leaf area. Regenerate only when P1's own maps, or the growth stream, change on purpose.)
 const digest = (taus) => { const w = new Uint32Array(Float32Array.from(taus).buffer); let h = 0x811c9dc5; for (const v of w) { h ^= v; h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; };
-const P1_DIGEST = { 0.75: 0x3d1e802c, 1: 0x26bd6bbf };
+// Re-recorded when the tie-break landed (exposureRank's key): the fully lit shell (e = 1) is ordered by each leaf's own clock, not stacked on one mid-rank.
+const P1_DIGEST = { 0.75: 0x4ee012b8, 1: 0xf3dcd7fb };
 
 test("exposure_absolute 0 is P1 for every leaf, to the bit: turn_exposure 1 at phenology 0.75 (and 1)", () => {
   for (const ph of [0.75, 1]) {

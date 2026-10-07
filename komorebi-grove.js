@@ -6,7 +6,7 @@
 // grove value (installGrove, in the engine, makes one active). A factory over
 // the engine's shared internals (hub).
 // ============================================================================
-import { DEG, DROP_EPS, FAITH_MAX_RATIO, GOLDEN, clamp, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafTau, makeGauss, mulberry32, redGain, retention, turnOrder } from './komorebi-math.js';
+import { DEG, DROP_EPS, FAITH_MAX_RATIO, GOLDEN, clamp, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, makeGauss, mulberry32, redGain, retention, turnOrder } from './komorebi-math.js';
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
 
 export function makeGrove(hub){
@@ -288,10 +288,10 @@ export function makeGrove(hub){
       // still hanging, so a leaf's day does not move as the season is read at another phenology.
       let u = null;
       if(lit || (dropping && params.drop_exposure > 0)){
-        const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n);
-        for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; }
+        const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
+        for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; K[i]=leafClock(params.seed, rec[REC*i+4], rec[REC*i+5]); }
         const ex = exposureGrid(X, Y, Z, Ar, E);
-        u = exposureBlend(exposureRank(ex), ex, params.exposure_absolute);
+        u = exposureBlend(exposureRank(ex, K), ex, params.exposure_absolute);   // K: the leaves nothing shades (e = 1) are ordered by their own clocks, not stacked on one rank
       }
       let alive = null;
       if(dropping){ litter = []; leafW = new Float32Array(nClusterTotal*nLeaf).fill(1); alive = new Uint8Array(n).fill(1); }
