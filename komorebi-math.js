@@ -2,9 +2,10 @@
 // CPU math & physics substrate — pure functions, no GL, no engine state.
 // Constants and interpolation helpers, the 3-band atmosphere (spec §3.5), the
 // deterministic RNG that keeps the canopy frame-stable, the broadband wind
-// signal (spec §5.1), and the skeleton-growth vector helpers (spec §4.5).
+// signal (spec §5.1), and the skeleton-growth grammar and its vector helpers (spec §4.5).
 // ============================================================================
 const DEG = Math.PI / 180, TAU = Math.PI*2;
+const GOLDEN = Math.PI*(3 - Math.sqrt(5));   // the golden angle (rad), the step of every spiral in the growth: trees about the grove, limbs up the trunk, children about a node (§4.5)
 // Area shared by two circles, radii r1/r2, centres d apart — the eclipse's moon against the source's core disk and
 // against its whole extent. Used only to renormalize the SEEN source's radiance (§4.9); the cast's own crescent comes
 // from zeroing sample weights, which is a discrete estimate of this same area.
@@ -348,6 +349,76 @@ function bendDown(dir, dth){
   const ca = Math.cos(a);
   return [ ca*dir[0]/horiz, ca*dir[1]/horiz, Math.sin(a) ];
 }
+// coneDir restricted to the plane z = 0, for an in-plane unit `d`: the cone's offset along the in-plane perpendicular
+// (sin·cos az) is kept and the part along z (sin·sin az) is dropped, so az 0 and π fork to opposite sides and az π/2 holds
+// the heading. Same side as coneDir's own s axis; always unit, so the zero-length projection coneDir would need a guard
+// for (spread π/2 at az π/2) is simply no turn.
+function coneDirPlane(d, az, spread){
+  const m = Math.hypot(d[0], d[1]) || 1e-9, hx = d[0]/m, hy = d[1]/m;
+  const dl = Math.atan2(Math.sin(spread)*Math.cos(az), Math.cos(spread));
+  const c = Math.cos(dl), s = Math.sin(dl);
+  return [ c*hx + s*hy, c*hy - s*hx, 0 ];
+}
+
+// ---- THE GRAMMAR (spec §4.5): a skeleton grown from a spec, a stream and an `out` — trunk, limb, branch, twig by one
+// recursive rule — a function and not a closure, so a leaf's veins can grow by the same rules the tree's boughs do.
+// The caller owns `out` ({ seg:[], tw:[] }) and may grow many roots into one: a twig's index is the count in `out.tw` before
+// it, which the segments of its own wood carry (`tw`, -1 for wood that bears nothing) so the faithful bake swings them about
+// the twig's joint (§5.4). Pure: nothing is read but the arguments, nothing written but `out`. THE STREAM IS THE CONTRACT —
+// three draws per child, in the order azimuth, spread, length; reorder one and every grove there is regrows differently.
+// spec: levels (depth; level >= levels bears a twig), kids (children per node; `opposite` is always 2), lenRatio, coneA
+// (the child cone's half-angle), droop (signed gravitropic curve, §4.5), phyllo (0 spiral / 1 whorled / 2 opposite),
+// leader (monopodial: the spiral steps by the golden angle), and the root: base, dir (unit), len, level, limb.
+// plane: the leaf's 2-D use — every z is 0, no droop, children turn by coneDirPlane. The draws are the same, so a plane
+// run is the same topology as the 3-D one.
+function growSkeleton(spec, rng, out){
+  const { base, dir, len, level, limb, plane } = spec;
+  if(!plane){ growNode(spec, rng, out, base, dir, len, level, limb); return; }
+  const m = Math.hypot(dir[0], dir[1]) || 1e-9;
+  growNode(spec, rng, out, [base[0], base[1], 0], [dir[0]/m, dir[1]/m, 0], len, level, limb);
+}
+function growNode(g, rng, out, base, dir, len, level, limb){
+  const { levels, plane } = g;
+  // index the twig this call will bear, if it is a terminal one — the segments pushed below are that twig's
+  // OWN wood, and the faithful bake must swing them about the same joint, by the same angle, as its leaves (§5.4).
+  const twIdx = (level >= levels) ? out.tw.length : -1;
+  // droop/upsweep (spec §4.5): curve the branch toward gravity over a few SUB-SEGMENTS — a smooth arc, not a
+  // straight ray and not a single kink. Stronger on outer orders (level/levels), and children inherit the
+  // curved END-TANGENT, so the sag compounds toward the tips (the willow cascade / birch trail). 0 = straight.
+  const dLevel = plane ? 0 : g.droop * (level/levels);
+  let tip, endDir = dir;
+  if(Math.abs(dLevel) > 1e-3){
+    const nSub = Math.min(6, 1 + Math.round(Math.abs(dLevel)*5));
+    const dl = len/nSub, dth = dLevel*1.9/nSub;        // total curve ≈ dLevel·1.9 rad over the branch length
+    let p = base, d = dir;
+    for(let sx=0;sx<nSub;sx++){
+      d = bendDown(d, dth);                            // tilt the heading toward −z (down) in its own vertical plane
+      const np = [ p[0]+d[0]*dl, p[1]+d[1]*dl, p[2]+d[2]*dl ];
+      // f0/f1 = this sub-segment's fractional span of the ONE level→level+1 taper step, so the faithful skeleton
+      // thins SMOOTHLY along a drooping branch instead of resetting the full step per sub-segment (a sawtooth).
+      out.seg.push({ a:p, b:np, level, limb, f0:sx/nSub, f1:(sx+1)/nSub, tw:twIdx });
+      p = np;
+    }
+    tip = p; endDir = d;
+  } else {
+    tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
+    out.seg.push({ a:base, b:tip, level, limb, f0:0, f1:1, tw:twIdx });   // straight branch: full step (byte-identical)
+  }
+  // bx,by = the twig's REAL base: where this terminal branch attaches to its parent. It is the joint the whole
+  // twig (wood + the leaves on it) turns about under the medium band, and — being offset from the clump toward
+  // the parent by GROWTH — it is a genuine stem joint, so §5.1's anti-vortex property holds without uStemLen.
+  if(level >= levels){ out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb, dx:endDir[0], dy:endDir[1], bx:base[0], by:base[1] }); return; }   // dx,dy = twig heading (plan) so leaves can hug the twig, not scatter as a blob
+  // phyllotaxis (§4.5): how children fan around the parent. opposite forces PAIRED forks; whorled an even ring; spiral the golden angle.
+  const { phyllo, coneA, lenRatio, leader } = g;
+  const nKids = (phyllo===2) ? 2 : g.kids;
+  for(let c=0;c<nKids;c++){
+    let az, spread;
+    if(phyllo===2){       az = level*1.5707963 + c*Math.PI + (rng()-0.5)*0.08;  spread = coneA*(0.9+0.12*rng()); }   // opposite/decussate: a symmetric Y, plane flipped 90° each level
+    else if(phyllo===1){  az = (c+0.5)/nKids*TAU + (rng()-0.5)*0.15;           spread = coneA*(0.7+0.5*rng()); }   // whorled: even ring (conifer tiers)
+    else {                az = (leader ? c*GOLDEN : (c+0.5)/nKids*TAU) + (rng()-0.5)*(leader?0.4:1.2); spread = coneA*(0.55+0.9*rng()); }   // spiral / legacy fan
+    growNode(g, rng, out, tip, (plane ? coneDirPlane : coneDir)(endDir, az, spread), len*lenRatio*(0.8+0.4*rng()), level+1, limb);
+  }
+}
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

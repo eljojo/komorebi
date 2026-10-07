@@ -6,7 +6,7 @@
 // grove value (installGrove, in the engine, makes one active). A factory over
 // the engine's shared internals (hub).
 // ============================================================================
-import { DEG, DROP_EPS, FAITH_MAX_RATIO, bendDown, clamp, coneDir, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, hash3, leafTau, makeGauss, mulberry32, redGain, retention, turnOrder } from './komorebi-math.js';
+import { DEG, DROP_EPS, FAITH_MAX_RATIO, GOLDEN, clamp, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafTau, makeGauss, mulberry32, redGain, retention, turnOrder } from './komorebi-math.js';
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
 
 export function makeGrove(hub){
@@ -63,7 +63,6 @@ export function makeGrove(hub){
 
     // crowns overlap so the canopy fills the VIEW (not just the baked extent): the fill radius is tied
     // to view_extent (so the grove fills the frame regardless of zoom), capped to fit inside the bake.
-    const golden = Math.PI*(3 - Math.sqrt(5));
     const Rfill = Math.min(E*0.46, Math.max(0.5, params.view_extent_m));
     // crown radius. PARK model: tied to the view so crowns fill the frame. STANDING scene (§4.8): a natural,
     // fixed fraction of the bake extent instead — so a single tree's crown fits the texture (the view-tied size
@@ -77,52 +76,13 @@ export function makeGrove(hub){
     const droop = clamp(params.droop, -1, 1);        // signed gravitropic curve: >0 sag down (willow/birch), <0 upsweep (conifer); 0 = straight rays
     const phyllo = params.phyllotaxis==='opposite' ? 2 : params.phyllotaxis==='whorled' ? 1 : 0;   // child-azimuth rule (§4.5)
 
-    function grow(out, base, dir, len, level, limb){
-      // index the twig this call will bear, if it is a terminal one — the segments pushed below are that twig's
-      // OWN wood, and the faithful bake must swing them about the same joint, by the same angle, as its leaves (§5.4).
-      const twIdx = (level >= levels) ? out.tw.length : -1;
-      // droop/upsweep (spec §4.5): curve the branch toward gravity over a few SUB-SEGMENTS — a smooth arc, not a
-      // straight ray and not a single kink. Stronger on outer orders (level/levels), and children inherit the
-      // curved END-TANGENT, so the sag compounds toward the tips (the willow cascade / birch trail). 0 = straight.
-      const dLevel = droop * (level/levels);
-      let tip, endDir = dir;
-      if(Math.abs(dLevel) > 1e-3){
-        const nSub = Math.min(6, 1 + Math.round(Math.abs(dLevel)*5));
-        const dl = len/nSub, dth = dLevel*1.9/nSub;        // total curve ≈ dLevel·1.9 rad over the branch length
-        let p = base, d = dir;
-        for(let sx=0;sx<nSub;sx++){
-          d = bendDown(d, dth);                            // tilt the heading toward −z (down) in its own vertical plane
-          const np = [ p[0]+d[0]*dl, p[1]+d[1]*dl, p[2]+d[2]*dl ];
-          // f0/f1 = this sub-segment's fractional span of the ONE level→level+1 taper step, so the faithful skeleton
-          // thins SMOOTHLY along a drooping branch instead of resetting the full step per sub-segment (a sawtooth).
-          out.seg.push({ a:p, b:np, level, limb, f0:sx/nSub, f1:(sx+1)/nSub, tw:twIdx });
-          p = np;
-        }
-        tip = p; endDir = d;
-      } else {
-        tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
-        out.seg.push({ a:base, b:tip, level, limb, f0:0, f1:1, tw:twIdx });   // straight branch: full step (byte-identical)
-      }
-      // bx,by = the twig's REAL base: where this terminal branch attaches to its parent. It is the joint the whole
-      // twig (wood + the leaves on it) turns about under the medium band, and — being offset from the clump toward
-      // the parent by GROWTH — it is a genuine stem joint, so §5.1's anti-vortex property holds without uStemLen.
-      if(level >= levels){ out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb, dx:endDir[0], dy:endDir[1], bx:base[0], by:base[1] }); return; }   // dx,dy = twig heading (plan) so leaves can hug the twig, not scatter as a blob
-      // phyllotaxis (§4.5): how children fan around the parent. opposite forces PAIRED forks; whorled an even ring; spiral the golden angle.
-      const nKids = (phyllo===2) ? 2 : kids;
-      for(let c=0;c<nKids;c++){
-        let az, spread;
-        if(phyllo===2){       az = level*1.5707963 + c*Math.PI + (gr()-0.5)*0.08;  spread = coneA*(0.9+0.12*gr()); }   // opposite/decussate: a symmetric Y, plane flipped 90° each level
-        else if(phyllo===1){  az = (c+0.5)/nKids*TAU2 + (gr()-0.5)*0.15;           spread = coneA*(0.7+0.5*gr()); }   // whorled: even ring (conifer tiers)
-        else {                az = (L>0 ? c*golden : (c+0.5)/nKids*TAU2) + (gr()-0.5)*(L>0?0.4:1.2); spread = coneA*(0.55+0.9*gr()); }   // spiral / legacy fan
-        grow(out, tip, coneDir(endDir, az, spread), len*lenRatio*(0.8+0.4*gr()), level+1, limb);
-      }
-    }
+    const grammar = { levels, kids, lenRatio, coneA, droop, phyllo, leader:L>0 };   // the tree's grammar, whole (math.growSkeleton): everything a node needs to grow its children, bar the root
 
     for(let tt=0;tt<nTree;tt++){
       // trunk placement: Vogel disk so trees spread evenly; the first tree sits at the centre.
       const treeCov = (tt===nFull) ? tFrac : 1.0;        // the marginal tree fades in by coverage (1 for full trees)
       const rr = Rfill*Math.sqrt(tt/treeCountF);         // normalise by the continuous count -> trees re-space smoothly as it morphs
-      const aa = tt*golden + (gr()-0.5)*0.6;
+      const aa = tt*GOLDEN + (gr()-0.5)*0.6;
       const tx = rr*Math.cos(aa), ty = rr*Math.sin(aa);
       const crown = crown0*(0.7+0.6*gr());               // per-tree size variation (smaller -> denser)
       const out = { seg:[], tw:[] };
@@ -141,7 +101,7 @@ export function makeGrove(hub){
           const f = (i+0.5)/lpt;                         // 0..1 up the limb set
           const h = hLo + (hHi-hLo)*f;                   // attach height ON the trunk axis, above the bole
           limbAttach[gi] = h;                            // (local; scaled below)
-          const azGeo = i*golden + (gr()-0.5)*0.3;       // phyllotaxis spiral (geometry)
+          const azGeo = i*GOLDEN + (gr()-0.5)*0.3;       // phyllotaxis spiral (geometry)
           const pitch = limbEl*(1 + 0.4*L*f);            // steeper toward the apex → a tighter cone
           const ce = Math.cos(pitch), se = Math.sin(pitch);
           const len = (0.4+0.2*gr())*(1 - 0.45*L*f);     // limbs SHORTER than the crown is tall → narrow crown on a tall trunk, not a bush; acrotony shortens toward the apex
@@ -150,7 +110,7 @@ export function makeGrove(hub){
           const azBal = (i+0.5)/lpt*TAU2 + (gr()-0.5)*(TAU2/lpt)*0.6;
           limbDir[2*gi]=Math.cos(azBal); limbDir[2*gi+1]=Math.sin(azBal);
           limbRaw[2*i]=Math.cos(azGeo)*len; limbRaw[2*i+1]=Math.sin(azGeo)*len;
-          grow(out, [0,0,h], dir, len, 1, gi);
+          growSkeleton({ ...grammar, base:[0,0,h], dir, len, level:1, limb:gi }, gr, out);
         }
       } else {
         // legacy single-hub: every limb from one point (the palm/lollipop) — kept as the leader_strength=0 case
@@ -163,7 +123,7 @@ export function makeGrove(hub){
           limbDir[2*gi]=Math.cos(azL); limbDir[2*gi+1]=Math.sin(azL);
           limbRaw[2*i]=dir[0]*len; limbRaw[2*i+1]=dir[1]*len;
           limbAttach[gi] = 0;                            // the hub IS the attach point (local 0); zLift below puts it at the trunk top
-          grow(out, [0,0,0], dir, len, 1, gi);
+          growSkeleton({ ...grammar, base:[0,0,0], dir, len, level:1, limb:gi }, gr, out);
         }
       }
       // normalise the crown's PLAN extent to `crown` and lift onto the trunk. A monopodial tree carries its own
