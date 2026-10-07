@@ -6,7 +6,7 @@
 // grove value (installGrove, in the engine, makes one active). A factory over
 // the engine's shared internals (hub).
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, bendDown, clamp, coneDir, exposureBlend, exposureGrid, exposureRank, hash3, leafTau, makeGauss, mulberry32, redGain, turnOrder } from './komorebi-math.js';
+import { DEG, DROP_EPS, FAITH_MAX_RATIO, bendDown, clamp, coneDir, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, hash3, leafTau, makeGauss, mulberry32, redGain, retention, turnOrder } from './komorebi-math.js';
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
 
 export function makeGrove(hub){
@@ -257,7 +257,7 @@ export function makeGrove(hub){
     // ---- hang a leaf cluster on each twig, accumulating one instance buffer per depth layer ----
     const layerData = [];
     for(let l=0;l<nLayer;l++) layerData.push([]);   // 17 floats/leaf — see attribute layout below
-    const faithData = [];                           // FAITHFUL: ALL leaves in one buffer, + the continuous height (§4.5) before the fade: 18 floats/leaf
+    let faithData = [];                             // FAITHFUL: ALL leaves in one buffer, + the continuous height (§4.5) before the fade: 18 floats/leaf (let: abscission compacts it)
     const faithful = faithfulOn();                  // hoisted: the packing convention below must be ONE decision for the whole grove, not re-asked per leaf
     // Autumn senescence (§4.5): per-leaf pigment state. Every s_j is exactly 0 until phenology passes turn_start, so
     // below it the authored `tau` goes through untouched — the gate that keeps every shipped look byte-identical.
@@ -266,7 +266,12 @@ export function makeGrove(hub){
     // and height — so with turn_exposure up each leaf notes where its tau went (rec: x, y, z, area, j, k, fade, layer,
     // slot in its layer buffer, slot in the faithful one) and the loop below rewrites them once the grove is laid out.
     // Off (the default, and every look that never asks) rec is never made and the loop is P0's, bit for bit.
-    const lit = senescing && params.turn_exposure > 0, rec = lit ? [] : null;
+    // Abscission (§4.5) is a second reason to look back: who has let go is decided over the whole stand too (the light orders it), and a
+    // leaf that has is compacted out of both buffers. `dropping` is its gate: at leaf_drop 0, or in a season before the first leaf's fade
+    // can begin (drop_start - DROP_EPS), rec, the retention arithmetic, the compaction and the litter are never made — P1's buffers to the bit.
+    const lit = senescing && params.turn_exposure > 0;
+    const dropping = params.leaf_drop > 0 && params.phenology > params.drop_start - DROP_EPS;
+    const rec = (lit || dropping) ? [] : null;
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const rng  = mulberry32(hash3(params.seed>>>0, j, 101));               // arrangement stream
@@ -312,18 +317,55 @@ export function makeGrove(hub){
                   lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, cov);
         faithData.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
                   lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, t.z, cov);   // + REAL grown height (attr 5) — cast == preview — then the fade (attr 6)
-        if(lit) rec.push(x, y, t.z, Math.PI*A*B0*cov, j, k, cov, t.layer, data.length-9, faithData.length-10);   // flat area (the ellipse), orientation ignored; the two slots are where this leaf's tau starts
+        if(rec) rec.push(x, y, t.z, Math.PI*A*B0*cov, j, k, cov, t.layer, data.length-9, faithData.length-10);   // flat area (the ellipse), orientation ignored; the two slots are where this leaf's tau starts
       }
     }
-    if(lit && rec.length){
-      const REC = 10, n = rec.length/REC, X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n);
-      for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; }
-      const ex = exposureGrid(X, Y, Z, Ar, E);
-      const u = exposureBlend(exposureRank(ex), ex, params.exposure_absolute);   // each leaf's place in the grove's order of light — and, as far as exposure_absolute says, its raw light — what the two maps in math.js take
+    let litter = null, leafW = null;
+    if(rec?.length){
+      const REC = 10, n = rec.length/REC;
+      // each leaf's place in the grove's order of light — and, as far as exposure_absolute says, its raw light — what the two maps in math.js
+      // (and the drop day) take. It is the FULL summer set whatever has dropped: exposure is a season integral, not a function of who is
+      // still hanging, so a leaf's day does not move as the season is read at another phenology.
+      let u = null;
+      if(lit || (dropping && params.drop_exposure > 0)){
+        const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n);
+        for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; }
+        const ex = exposureGrid(X, Y, Z, Ar, E);
+        u = exposureBlend(exposureRank(ex), ex, params.exposure_absolute);
+      }
+      let alive = null;
+      if(dropping){ litter = []; leafW = new Float32Array(nClusterTotal*nLeaf).fill(1); alive = new Uint8Array(n).fill(1); }
       for(let i=0;i<n;i++){
-        const o = REC*i, cov = rec[o+6], lt = leafTau(tau, params, params.seed, rec[o+4], rec[o+5], leafT, turnOrder(u[i]), redGain(u[i]));
+        const o = REC*i, j = rec[o+4], k = rec[o+5];
+        let w = 1, D = 0;
+        if(dropping){
+          D = dropDay(params, dropPhase(dropHash(params.seed, j, k), u ? u[i] : 0, params.drop_exposure));
+          w = retention(D, params.phenology);
+          leafW[j*nLeaf + k] = w;
+        }
+        if(!lit && w === 1) continue;                                        // nothing about this leaf changed: its tau is already in the buffers
+        const lt = lit ? leafTau(tau, params, params.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i])) : senescing ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
+        const cov = rec[o+6], cf = cov*w;                                    // §5.3: a leaf leaves by fading — cov <- cov.w scales its tau and the fade its ballistic shadow rides on together
         const d = layerData[rec[o+7]], li = rec[o+8], fi = rec[o+9];
-        for(let c=0;c<3;c++){ d[li+c] = lt[c]*cov; faithData[fi+c] = lt[c]*cov; }
+        for(let c=0;c<3;c++){ d[li+c] = lt[c]*cf; faithData[fi+c] = lt[c]*cf; }
+        d[li+8] = cf; faithData[fi+9] = cf;
+        if(w === 0){
+          alive[i] = 0;
+          litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [d[li-6], d[li-5]], j, k, fade: cov });
+        }
+      }
+      // A leaf with w = 0 is not a faint leaf, it is no leaf: compacted out of both buffers in one pass over the records, so a bare canopy
+      // is not a bake of ten thousand empty quads (a zero-tau quad still costs one in the bake). Survivors keep their order, in both.
+      if(litter?.length){
+        const keepL = layerData.map(() => []), keepF = [];
+        for(let i=0;i<n;i++){
+          if(!alive[i]) continue;
+          const o = REC*i, li = rec[o+8] - 8, fi = rec[o+9] - 8, kl = keepL[rec[o+7]];
+          for(let q=0;q<17;q++) kl.push(layerData[rec[o+7]][li+q]);
+          for(let q=0;q<18;q++) keepF.push(faithData[fi+q]);
+        }
+        for(let l=0;l<nLayer;l++) layerData[l] = keepL[l];
+        faithData = keepF;
       }
     }
 
@@ -498,7 +540,8 @@ export function makeGrove(hub){
       if(px0>px1){ const h=params.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
       faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
     }
-    return { hier, layerVAO, clusterTex, clusterGeomTex };
+    hier.leafW = leafW;   // abscission (§4.5): each leaf's retained weight by (twig, slot) for the tree preview, which scatters its own leaves; null at the gate
+    return { hier, layerVAO, clusterTex, clusterGeomTex, litter };
   }
 
   return { buildGrove };

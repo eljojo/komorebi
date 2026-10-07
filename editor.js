@@ -124,6 +124,8 @@ const PANEL = [
   ['s','wall_fraction','vein share',0,0.6,0.01,'canopy'],
   ['s','turn_exposure','sun first',0,1,0.01,'canopy'],         // §4.5: light orders the turn — the sunlit crown first and reddest
   ['s','exposure_absolute','absolute light',0,1,0.01,'canopy'], // §4.5: what sun-first orders by — 0 the grove's own rank of light, 1 the raw light (a shaded grove turns late and pale)
+  ['s','leaf_drop','leaf fall',0,1,0.01,'canopy'],             // §4.5: abscission — the share of leaves that let go by the end of the fall span; the rest hang on (marcescent). 0 = nothing falls
+  ['s','drop_exposure','sun falls first',0,1,0.01,'canopy'],   // §4.5: how far light orders the fall — the sunlit crown lets go first (it reads the same exposure sun first does)
   ['btn','reseed', reseed],
   ['adv','fine geometry'],
   ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
@@ -137,6 +139,8 @@ const PANEL = [
   ['s','turn_start','turn start',0,1,0.01,'canopy'],
   ['s','turn_span','turn span',0.02,0.6,0.01,'canopy'],
   ['s','turn_spread','turn spread',0,0.6,0.01,'canopy'],
+  ['s','drop_start','fall start',0,1,0.01,'canopy'],
+  ['s','drop_span','fall span',0.02,0.6,0.01,'canopy'],
 
   ['h','Transport'],
   ['s','time_of_day','time (h)',5,19,0.25,'suntime'],
@@ -342,6 +346,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
 const faithLive = (cam) => params.faithful_canopy && !!CAMERAS[cam].faith;   // faithfulOn(), read off the registry
 const apertureOn = () => params.window_w_m*params.window_h_m > 0;
 const turning = () => params.phenology > params.turn_start;                  // the grove's own senescing gate (komorebi-grove.js)
+const dropping = () => turning() && params.leaf_drop > 0;                    // abscission's own gate (leaf_drop > 0, komorebi-grove.js), behind the season's
 const glowOn = (cam) => cam !== 'floor' && params.glow_bleed > 0;            // the diffusion tier's own gate (render.js drawFrameInto)
 const fillOpen = () => params.canopy_fill > 0;                               // the sky fill's own gate (§4.7): until it opens nothing bakes
 const splitOn = () => params.leaf_diffuse > 0;                               // a leaf is not a window (§4.5): the P0b albedo is the proxy this replaces, and is off above 0
@@ -360,6 +365,8 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   adaptive_idle_fps: () => params.adaptive_motion,
   anthocyanin: turning, tannin: turning, wall_fraction: turning, turn_exposure: turning,   // senescence (§4.5): until a leaf has begun to turn (phenology past turn_start) its tau is the authored summer one, whatever these say
   turn_span: turning, turn_spread: turning,
+  leaf_drop: turning,                                     // abscission (§4.5): the same season gate the pigments sit behind — before a leaf can be turning, no leaf is about to fall
+  drop_exposure: dropping, drop_start: dropping, drop_span: dropping,   // ride on leaf fall: with it at 0 nothing drops, so when and in what order are moot
   exposure_absolute: () => turning() && params.turn_exposure > 0,   // rides on sun first: it only chooses what that order is made of, so with turn_exposure 0 there is no order for it to change
   sky_scatter: () => !splitOn(),                          // the sky view's twin of fill_scatter (§4.9): above leaf_diffuse 0 the leaf is a lantern and its measured glow replaces this authored one — counting both would count it twice
   fill_scatter: (cam) => fillOpen() && !splitOn() && CAMERAS[cam].groups.includes('floor'),   // the floor alone reads the proxy's scattered light; the cloth and the tent take the skylight through the canopy and nothing else. Above leaf_diffuse 0 the measured diffuse light replaces it, so the slider would lie
@@ -379,7 +386,7 @@ function rowLive(key, cam){
 function gateSig(){
   const cam = cameraFor(params);
   return [cam, params.eclipse, params.view_pitch_deg>0, params.glow_bleed>0, params.mullion_tau>0, apertureOn(),
-          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam), turning(), params.turn_exposure>0, fillOpen(), splitOn()].join('|');
+          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam), turning(), params.turn_exposure>0, params.leaf_drop>0, fillOpen(), splitOn()].join('|');
 }
 let gateSigLast = null;
 function refreshGates(){
@@ -712,6 +719,10 @@ const TIPS = {
   wall_fraction:"<b>How much of each leaf is bright vein, not dark cell.</b> Light through a leaf is the average of what its veins and cells <i>transmit</i>, not of how dark they are — so a few clear veins lift a deep red leaf into a glowing orange, more than their share of the area suggests (the sieve effect). The veins make no red. 0 = one uniform tissue.",
   turn_exposure:"<b>Let the light decide who turns first.</b> Anthocyanin is made in light, so the leaves that see the sun — the top of the crown, its sunny side, the outer shell, a tree with no neighbour shading it — turn earlier and go redder, while the shaded inside and underside turn later and stay yellower. Exposure is worked out from where every leaf sits among the others, under a fixed mid-season sun (not the look's own sun), so it follows the shape of the grove, and a tree standing in another's shade turns after one in the open. The season's pace and the average red stay the look's own — light only decides who goes first and moves red from the shade to the sun. 0 = every leaf turns on its own clock regardless of light. Only shows once the season has passed the turn.",
   exposure_absolute:"<b>Order by the grove's own light, or by how much light there is.</b> At 0 each leaf is placed by its rank in the grove's order of light, so even a stand wholly in deep shade has a red, early half, and the season's pace and the average red stay the look's own. Up, a leaf's place follows its actual light instead: a crowded grove sitting in its own shade turns later and makes less red, a sparse one in the open turns earlier and deeper. That is the absolute physics, and it repaints a look as its density moves — the blend between is yours to set. It only chooses what <i>sun first</i> orders by, so it does nothing while that is 0. Only shows once the season has passed the turn.",
+  leaf_drop:"<b>How many leaves let go before the season is over.</b> Each leaf has its own day, so the canopy thins leaf by leaf, and each one fades out of the cast shadow rather than vanishing. By fall start plus fall span this share is on the ground; the rest hang on, brown and dry — a beech keeps about half its leaves all winter. 0 = nothing falls. Provisional values by species: maple 1, red oak 0.8, beech 0.5. Only shows once the season has passed the turn.",
+  drop_exposure:"<b>Let the sun's side lose its leaves first.</b> At 1 the leaves that see the most sun — the top of the crown, its sunny side — let go first and the shaded inside last, which is where the leaves that stay are; at 0 every leaf lets go on its own day, whatever light it gets. It reads the same exposure as <i>sun first</i>, so it works with that at 0. Only shows while leaf fall is above 0.",
+  drop_start:"<b>The season at which the first leaf lets go.</b> Below it every leaf is on the tree. Phenology units, like turn start — it ships later (0.7 against 0.6), so the leaves colour before they fall.",
+  drop_span:"<b>How long the falling takes, in seasons.</b> By fall start plus this, every leaf that is going to fall is down.",
   turn_start:"<b>The season at which the first leaf starts to turn.</b> Below it every leaf is summer; this is the threshold the phenology slider has to pass.",
   turn_span:"<b>How long the turn takes, in seasons.</b> By turn start plus this, every leaf has finished.",
   turn_spread:"<b>How scattered the leaves' start times are.</b> 0 = the whole tree turns together; up = leaves start at different moments, so mid-turn is a mosaic of green, gold and red on one tree. Held under the span so each leaf's own turn still takes time.",

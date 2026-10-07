@@ -166,7 +166,10 @@ export function makeBake(hub){
   function bakeFaithful(){
     const k = ballisticK(params.leaf_diffuse);
     faith.k = k;   // recorded even for an empty grove: refreshFaith compares against it
-    if(faith.count===0){ gl.bindFramebuffer(gl.FRAMEBUFFER, null); return; }
+    // Only "no grove built yet" returns early. A grove with no leaves — leaf_drop 1 at leaf-off, §4.5 abscission, or no foliage at all — still has
+    // its shadow to bake: the wood if there is any, and otherwise Σw·1 = 1, a lit floor. (An instanced draw of zero leaves is a no-op.) Returning
+    // on an empty leaf set left faithTex at zero, which transport reads as a floor in total shade.
+    if(!faith.vao){ gl.bindFramebuffer(gl.FRAMEBUFFER, null); return; }
     const res = bakeRes(), N = src.count;
     // cast-region frame: the shadow lands OFFSET from the canopy by the bulk throw (standing scene), so the faith
     // texture must cover where it FALLS, not the canopy plan. world = planPoint − g·h, so the cast box is the REAL

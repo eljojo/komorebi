@@ -226,6 +226,32 @@ try {
   for (let i = 0; i < 30 && !absGone; i++) { await page.waitForTimeout(400); absGone = (await rowShown('absolute light')) === false; }
   check('back at summer it goes again, whatever sun first says', absGone && (await rowShown('sun first')) === false, `${await rowShown('absolute light')} ${await rowShown('sun first')}`);
   await setSunFirst(0);
+  // LEAF FALL (§4.5, abscission) is the gate of its own family and sits behind the same season as the pigments: before a leaf can be turning
+  // none is about to fall, so the row hides at summer. Its followers (what order, when, how long) are sliders that lie while leaf fall is 0 —
+  // nothing drops — so they hide until it is up, and go again with it.
+  const setSlider = (label, v) => page.evaluate(([lab, val]) => {
+    const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === lab);
+    const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
+  }, [label, v]);
+  const DROP_FOLLOWERS = ['sun falls first', 'fall start', 'fall span'];
+  const followersShown = async () => Promise.all(DROP_FOLLOWERS.map(rowShown));
+  check('at summer leaf fall and its followers are hidden', (await rowShown('leaf fall')) === false && (await followersShown()).every((v) => v === false), `${await rowShown('leaf fall')} ${await followersShown()}`);
+  await setSeason(0.8);
+  let fallRow = false;
+  for (let i = 0; i < 30 && !fallRow; i++) { await page.waitForTimeout(400); fallRow = (await rowShown('leaf fall')) === true; }
+  check('past the turn leaf fall is there, its followers are not (it ships at 0)', fallRow && (await followersShown()).every((v) => v === false), `${await rowShown('leaf fall')} ${await followersShown()}`);
+  await setSlider('leaf fall', 0.5);
+  let followers = false;
+  for (let i = 0; i < 30 && !followers; i++) { await page.waitForTimeout(400); followers = (await followersShown()).every((v) => v === true); }
+  check('raise leaf fall and sun falls first, fall start and fall span appear', followers, `${await followersShown()}`);
+  await setSlider('leaf fall', 0);
+  let followersGone = false;
+  for (let i = 0; i < 30 && !followersGone; i++) { await page.waitForTimeout(400); followersGone = (await followersShown()).every((v) => v === false); }
+  check('and go with it when it returns to 0', followersGone && (await rowShown('leaf fall')) === true, `${await followersShown()} ${await rowShown('leaf fall')}`);
+  await setSeason(0.5);
+  let fallGone = false;
+  for (let i = 0; i < 30 && !fallGone; i++) { await page.waitForTimeout(400); fallGone = (await rowShown('leaf fall')) === false; }
+  check('back at summer leaf fall goes too', fallGone, `${await rowShown('leaf fall')}`);
   // THE SKY FILL ROWS (§4.7): canopy_fill is the gate and sits on every camera that lights a surface; its three followers
   // (the leaf albedo, the ray count, the texture size) are sliders that lie while it is shut — nothing bakes — so they hide
   // until it opens. The albedo is the floor's alone (the cloth and the tent take Tsky only), and the sky view, which has

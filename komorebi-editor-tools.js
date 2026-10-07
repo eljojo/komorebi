@@ -68,6 +68,7 @@ export function makeEditorTools(hub){
     const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
     const base=[];
     const faithful = faithfulOn();   // hoisted, and it must be the SAME answer regenCanopy packed the bake with
+    const lw = hub.hier.leafW;       // abscission (§4.5): each leaf's retained weight by (twig, slot), the grove's own; null while nothing can have dropped
     for(let j=0;j<tws.length;j++){
       const t=tws[j], cx=t.x, cy=t.y, cz=t.z, tcov=(t.tcov===undefined?1:t.tcov);
       const ti=(t.tree===undefined?0:t.tree), tnt=((ti*0.61803398875)%1)*2-1;   // per-tree warmth [-1,1], golden-spread so neighbours differ
@@ -75,7 +76,9 @@ export function makeEditorTools(hub){
       const gauss=makeGauss(mulberry32(hash3(params.seed>>>0, j, 101)));   // per-twig scatter, j = twig index == the bake's seed (same count & spread, not bit-identical)
       for(let k=0;k<nLeaf;k++){
         const g1=gauss(), g2=gauss();   // leaves hug the twig — must match the bake (§4.5)
-        const cov = ((k===pcInt) ? frac : 1.0) * tcov;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast
+        const w = lw ? lw[j*nLeaf+k] : 1;                // a leaf the grove has compacted out is gone here too (the draws above still run: the next leaf's scatter must not move)
+        if(w === 0) continue;
+        const cov = ((k===pcInt) ? frac : 1.0) * tcov * w;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast — × the leaf's fade out (§5.3)
         const hug = faithful && tHasDir;
         const x = hug ? cx - Math.abs(g1)*params.cluster_spread_m*1.5*tdx - g2*params.cluster_spread_m*0.4*tdy : cx + g1*params.cluster_spread_m;
         const y = hug ? cy - Math.abs(g1)*params.cluster_spread_m*1.5*tdy + g2*params.cluster_spread_m*0.4*tdx : cy + g2*params.cluster_spread_m;

@@ -256,6 +256,27 @@ function exposureBlend(rank, ex, w, out = new Float64Array(rank.length)){
   return out;
 }
 
+// ---- ABSCISSION (spec §4.5, P3a). A leaf lets go on its own day, the sunlit ones first, and a marcescent share (beech
+// keeps about half its brown leaves) never does within the season. Per leaf: a drop PHASE phi_d = mix(hash_d, 1 - u,
+// drop_exposure) — hash_d its own draw, u its exposure as P1/P1b leave it (the rank, or the blend with raw light; consumed,
+// never recomputed) — and a drop DAY D = drop_start + drop_span . phi_d / leaf_drop for phi_d < leaf_drop, else never.
+// The retention floor 1 - leaf_drop is the shaded tail of that order: exactly the tissue that is marcescent.
+// hash_d is a pure function of (seed, cluster, leaf) on its OWN salt, so drawing it cannot move a twig or a leaf of any
+// shipped grove, and it is independent of the pigment draw (LEAF_SALT) and the arrangement stream (hash3(seed, j, 101)).
+const DROP_SALT = 0x7A3C91D5;
+function dropHash(seed, j, k){ return mulberry32(hash3((seed>>>0)^DROP_SALT, j, k))(); }
+function dropPhase(hashD, u, w){
+  if(!(w > 0)) return hashD;                                  // drop_exposure 0: the hash itself, no arithmetic
+  const v = Math.min(w, 1);
+  return hashD*(1 - v) + turnOrder(u)*v;                      // the same 1 - u the turn orders by (clamped under 1, so a leaf with no light still has a day); v = 1 is turnOrder(u) exactly
+}
+function dropDay(P, phiD){ return phiD < P.leaf_drop ? P.drop_start + P.drop_span*phiD/P.leaf_drop : Infinity; }
+// §5.3's continuity rule: a leaf leaves by fading, never popping. w falls from 1 to 0 over the DROP_EPS (phenology units)
+// ending at the leaf's day, so a season that moves by a hair moves the canopy by a hair. cov <- cov . w scales the leaf's
+// tau and the fade its ballistic shadow rides on together. GATE: before the fade begins w is 1 with no arithmetic at all.
+const DROP_EPS = 0.01;
+function retention(D, p){ return p > D - DROP_EPS ? 1 - smoothstep(D - DROP_EPS, D, p) : 1; }
+
 // A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
 // diffuse share (d = leaf_diffuse) is scattered by the mesophyll and leaves in every direction. The beam sees (1−d)·T, which
 // is NEUTRAL depth on top of the leaf's own: k = −ln(1−d) per leaf (a texel is a mixture of one, §4.5, texelMix), the same in every channel because the split is
@@ -329,4 +350,4 @@ function bendDown(dir, dth){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };

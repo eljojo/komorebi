@@ -119,6 +119,38 @@ const INVARIANTS = [
     a: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1, exposure_absolute: 1 } },
   { name: 'exposure_absolute 1 changes the P1 frame (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1, exposure_absolute: 1 } },
+  // ABSCISSION (§4.5). leaf_drop 0 is the gate: with it down the whole family (when it starts, how long it takes, how far light orders it)
+  // is dead code, and the frame is the one before the family existed — at the shipped summer, where the season would keep it dead anyway,
+  // and in a FALL frame (phenology 0.9, past drop_start − ε), where only the gate itself does. Layer path and faithful path (rebake: see above)...
+  { name: 'drop family inert at leaf_drop 0 (layer path)', preset: 'memories',
+    a: {}, b: { leaf_drop: 0, drop_start: 0.6, drop_span: 0.1, drop_exposure: 1 } },
+  { name: 'drop family inert at leaf_drop 0 in a fall frame (layer path)', preset: 'memories',
+    a: { phenology: 0.9, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 0.9, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 0, drop_start: 0.6, drop_span: 0.1, drop_exposure: 1 } },
+  { name: 'drop family inert at leaf_drop 0 in a fall frame (faithful path)', preset: 'park 1', rebake: true,
+    a: { phenology: 0.9, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 0.9, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 0, drop_start: 0.6, drop_span: 0.1, drop_exposure: 1 } },
+  // (zero-vs-absent pins the DEFAULTS merge path, so it too is taken in a fall frame: at summer a default of 1 would be as inert as a default of 0)
+  { name: 'leaf_drop 0 == absent (layer path)', preset: 'memories', a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 0 } },
+  { name: 'leaf_drop 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 0 } },
+  // ...and the other half: above 0 the canopy thins, on every camera that draws leaves — the floor (afternoon 7, park 1), the sky view,
+  // the cloth and the tent — or a drop that never reached the buffers would satisfy every row above. Phenology 0.9: two thirds of the way
+  // through the span, so some have gone and some have not.
+  { name: 'leaf_drop 1 thins the canopy (layer path)', preset: 'afternoon 7', differ: true,
+    a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
+  { name: 'leaf_drop 1 thins the canopy (faithful path)', preset: 'park 1', rebake: true, differ: true,
+    a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
+  { name: 'leaf_drop 1 thins the canopy (sky view)', preset: 'canopy 1', differ: true,
+    a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
+  { name: 'leaf_drop 1 thins the canopy (curtain)', preset: 'curtain 1', rebake: true, differ: true,
+    a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
+  { name: 'leaf_drop 1 thins the canopy (tent)', preset: 'tent 1', differ: true,
+    a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
+  // ...and a canopy with NO leaves left is a lit scene, not an unbaked one: the faithful bake once returned early on an empty leaf set and left
+  // its shadow texture at zero — a black floor, the moment leaf_drop 1 reached leaf-off (measured ×0.36 of the leafy frame, both looks). The wood still
+  // casts and the leafy shadow is a patch on a lit floor, so the park's frame is barely brighter (×1.02) and the cloth's a fifth (×1.21): above 0.9, not below.
+  { name: 'a bare canopy is a lit floor, not an unbaked one (faithful path)', preset: 'park 1', rebake: true, lit: [0.9, 1.25],
+    a: {}, b: { phenology: 1, leaf_drop: 1 } },
+  { name: 'a bare canopy is a lit cloth, not an unbaked one (curtain)', preset: 'curtain 1', rebake: true, lit: [1.05, 1.6],
+    a: {}, b: { phenology: 1, leaf_drop: 1 } },
   // THE SKY FILL (§4.7): the shade lit through the canopy. canopy_fill 0 is the old floor, so the whole family behind it —
   // the leaf albedo, the ray count, the texture size — has to be dead code on every camera that could read it...
   { name: 'sky fill family inert at canopy_fill 0 (layer path)', preset: 'memories',
