@@ -13,7 +13,7 @@
     __skyCheck(preset, overrides)       the sky view's shared ray (the lantern, wood read) against komorebi-fill.js's skyRayRef, on the layers and wood textures the engine really baked
     __rimCheck(preset, overrides)       the lantern's RIM: leaf glow at a soft edge against the same leaf's interior, through the shared ray, on the layers the engine baked (§4.5, a texel is a mixture)
     __haloCheck(preset, overrides)      the cast tap's HALO: the beam through a soft-edge texel (tap and tapCA, as the engine compiles them) against the mixture, on the layers the engine baked
-    __stampCheck(opts)                  the faithful stamp's edge band: FS_FAITH, as the engine compiles it, drawn for one leaf and held to the per-leaf mixture
+    __stampCheck(opts)                  the faithful stamp's edge band: FS_FAITH, as the engine compiles it, drawn for one leaf and held to the per-leaf mixture — and FS_BAKE's edge law, ellipse and outline, held to the CPU's
     __litterCheck(preset, overrides)    the litter carpet the engine baked, read back and held to the grove's own list: frame, coverage, colour, drift, once per regrow
     __litterStamp()                     VS_LITTER/FS_LITTER as the engine compiles them, drawn for a few known stamps: layering order, the blend, sub-texel energy, the rim
     __fillToggle(preset, overrides)     canopy_fill opened and shut on a RUNNING engine: what it allocates, frees, and the frames either side
@@ -33,10 +33,11 @@
 <body></body>
 <script type="module">
 import { create, MAX_OCC, TRANSPORT_GROUPS } from '/komorebi.js';
-import { VS_FULL, FS_FAITH, VS_LITTER, FS_LITTER, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/komorebi-shaders.js';
+import { VS_FULL, FS_BAKE, FS_FAITH, VS_LITTER, FS_LITTER, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/komorebi-shaders.js';
 import { PRESETS } from '/presets.js';
 import { fillDirections, fillFrame, fillRef, fillTile, texelTap, skyRayRef, texelMix } from '/komorebi-fill.js';
 import { litterAge, litterAlbedo, litterInstances } from '/komorebi-litter.js';
+import { LEAF_SAMPLES, leafShape } from '/komorebi-leaf.js';
 import { atmosphere, ballisticK, sunDirection } from '/komorebi-math.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
@@ -693,11 +694,11 @@ window.__stampCheck = (opts) => withEngine('memories', {}, 2, (eng, gl) => {
   const tauLeaf = [1.35, 0.69, 1.83];
   const vs = `#version 300 es
 precision highp float;
-out vec2 vLocal; out vec3 vTau; out float vFade;
+out vec2 vLocal; out vec3 vTau; out float vFade; flat out float vVariant;
 uniform vec3 uTau; uniform float uFade;
 void main(){
   vec2 p = vec2((gl_VertexID==1)?3.0:-1.0, (gl_VertexID==2)?3.0:-1.0);
-  vLocal = p*1.2; vTau = uTau; vFade = uFade;
+  vLocal = p*1.2; vTau = uTau; vFade = uFade; vVariant = 0.0;   // the gate is left shut (uLeafShape 0): the ellipse's own law, as ever
   gl_Position = vec4(p, 0.0, 1.0);
 }`;
   const smooth = (e0, e1, x) => { const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1); return t * t * (3 - 2 * t); };
@@ -723,7 +724,53 @@ void main(){
     }
     rows.push({ name: cs.name, err, nBand, nIn, nOut, finite, glError, bandOverMix: bandMean.map((v, ch) => v / Math.max(mixMean[ch], 1e-12)), slabOverMix: slabMean.map((v, ch) => v / Math.max(mixMean[ch], 1e-12)) });
   }
-  return { k, edge, rows };
+  // THE OUTLINE'S EDGE LAW (§4.5, P4a-2): FS_BAKE as the engine compiles it, drawn for ONE leaf behind a trivial vertex shader (vLocal over the leaf's own quad box, a constant variant, vTau 1
+  // and vFade 1: the pixel is (cov, cov, cov, cov)). The ellipse is the gate shut — uLeafShape 0 — and keeps the old law to the old tolerance (2e-5). The maple is the gate open over the REAL
+  // profile texture the grove makes (R16F, REPEAT in θ, LINEAR), held to the CPU's q' = |l| − r(θ) + 1 over the same profile rounded to half float and read linearly: the tolerance is the
+  // GPU's own (half-float storage, fixed-point filter weights, atan), ~1e-2 across the ramp. Σalpha — the leaf's area to the ramp — is held to the ellipse's at the same uEdge: the profile is
+  // area-normalised, so what a lobed leaf adds in rim it loses in lobes only to the ramp's second order.
+  const half = (x) => { if (x === 0) return 0; const q = Math.pow(2, Math.floor(Math.log2(Math.abs(x))) - 10); return Math.round(x / q) * q; };
+  const vsBox = `#version 300 es
+precision highp float;
+out vec2 vLocal; out vec3 vTau; out float vFade; flat out float vVariant;
+uniform vec4 uBox; uniform float uVariant;
+void main(){
+  vec2 p = vec2((gl_VertexID==1)?3.0:-1.0, (gl_VertexID==2)?3.0:-1.0);
+  vLocal = uBox.xy + p*uBox.zw; vTau = vec3(1.0); vFade = 1.0; vVariant = uVariant;
+  gl_Position = vec4(p, 0.0, 1.0);
+}`;
+  const shape = leafShape('maple', 1234), W3 = 301;
+  const leafTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, leafTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, LEAF_SAMPLES, shape.rows, 0, gl.RED, gl.FLOAT, shape.data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const profileAt = (v, theta) => {   // the CPU's linear read of the half-rounded row: texel i sits at u = (i + ½)/256, REPEAT in θ
+    const u = (theta / (2 * Math.PI) + 0.5) * LEAF_SAMPLES - 0.5, i0 = Math.floor(u), f = u - i0, at = (i) => half(shape.data[v * LEAF_SAMPLES + (((i % LEAF_SAMPLES) + LEAF_SAMPLES) % LEAF_SAMPLES)]);
+    return at(i0) * (1 - f) + at(i0 + 1) * f;
+  };
+  const maskRow = (name, gate, v, box) => {
+    const { out, glError } = probe(gl, { vs: vsBox, fs: FS_BAKE, w: W3, h: W3, clear: -7, setup: (prog, U) => {
+      gl.uniform1f(U('uEdge'), edge); gl.uniform1i(U('uLeafShape'), gate); gl.uniform1i(U('uLeafTex'), 6);
+      gl.uniform4f(U('uBox'), box[0], box[1], box[2], box[3]); gl.uniform1f(U('uVariant'), v);
+    } });
+    let err = 0, sum = 0, nIn = 0, nBand = 0, finite = true, wrongSide = 0;
+    for (let j = 0; j < W3; j++) for (let i = 0; i < W3; i++) {
+      const x = box[0] + ((i + 0.5) / W3 * 2 - 1) * box[2], y = box[1] + ((j + 0.5) / W3 * 2 - 1) * box[3], px = out[0].subarray((j * W3 + i) * 4, (j * W3 + i) * 4 + 4);
+      if (!px.every(Number.isFinite)) finite = false;
+      const q = gate ? Math.hypot(x, y) - profileAt(v, Math.atan2(y, x)) + 1 : Math.hypot(x, y), want = 1 - smooth(1 - edge, 1, q), got = px[0] === -7 ? 0 : px[0];   // a discard leaves the sentinel: no coverage
+      err = Math.max(err, Math.abs(got - want), px[0] === -7 ? 0 : Math.abs(px[3] - px[0]));   // alpha is the coverage too (vFade 1)
+      if (want > 0 !== got > 0 && Math.abs(want - got) > 0.05) wrongSide++;
+      sum += got * (2 * box[2] / W3) * (2 * box[3] / W3);
+      if (want > 0.02) nIn++;
+      if (want > 0.05 && want < 0.95) nBand++;
+    }
+    return { name, err, area: sum, nIn, nBand, finite, wrongSide, glError };
+  };
+  const ell = maskRow('ellipse (gate shut)', 0, 0, [0, 0, 1.2, 1.2]);
+  const outline = [ell, ...[0, 3, 7].map((v) => maskRow(`maple variant ${v}`, 1, v, shape.box))].map((r) => ({ ...r, areaOverEllipse: r.area / ell.area }));
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, null); gl.deleteTexture(leafTex);
+  return { k, edge, rows, outline };
 });
 
 // ---------------------------------------------------------------------------
@@ -743,18 +790,30 @@ void main(){
 //            has to point the way the authored wind blows and be about the area-weighted h·litter_drift_m long
 //   once     `passes` is 1 after two dozen frames: baked once per regrow, never per frame
 // ---------------------------------------------------------------------------
-function litterRaster(inst, n, frame, reverse) {
+function litterRaster(inst, n, frame, reverse, shape = null) {
   const F = 12, d = inst.data, texel = frame.ext / n, minHalf = 0.75 * texel, out = new Float32Array(n * n * 4);
   const order = Array.from({ length: inst.count }, (_, i) => i); if (reverse) order.reverse();
+  // an outline's stamp is cut by q' = |l| − r(θ) + 1 over the half-float profile of the variant it lies in (slot 7), read linearly in θ: the CPU's own copy of leafQ
+  const half = (v) => { if (v === 0) return 0; const q = Math.pow(2, Math.floor(Math.log2(Math.abs(v))) - 10); return Math.round(v / q) * q; };
+  const profileAt = (v, theta) => { const u = (theta / (2 * Math.PI) + 0.5) * LEAF_SAMPLES - 0.5, i0 = Math.floor(u), f = u - i0, at = (i) => half(shape.data[v * LEAF_SAMPLES + (((i % LEAF_SAMPLES) + LEAF_SAMPLES) % LEAF_SAMPLES)]); return at(i0) * (1 - f) + at(i0 + 1) * f; };
   for (const i of order) {
-    const o = i * F, x = d[o], y = d[o + 1], A = d[o + 2], B = d[o + 3], c = d[o + 4], s = d[o + 5], f = d[o + 6];
-    const kx = Math.max(1, minHalf / A), ky = Math.max(1, minHalf / B), hx = A * kx, hy = B * ky, a0 = f / (kx * ky), rad = Math.hypot(hx, hy) + 2 * minHalf;
+    const o = i * F, x = d[o], y = d[o + 1], A = d[o + 2], B = d[o + 3], c = d[o + 4], s = d[o + 5], f = d[o + 6], v = d[o + 7];
+    const kx = Math.max(1, minHalf / A), ky = Math.max(1, minHalf / B), hx = A * kx, hy = B * ky, a0 = f / (kx * ky), rad = (shape ? shape.reach * Math.max(hx, hy) : Math.hypot(hx, hy)) + 2 * minHalf;
     const i0 = Math.max(0, Math.floor((x - rad - frame.ox) / texel) - 1), i1 = Math.min(n - 1, Math.ceil((x + rad - frame.ox) / texel) + 1);
     const j0 = Math.max(0, Math.floor((y - rad - frame.oy) / texel) - 1), j1 = Math.min(n - 1, Math.ceil((y + rad - frame.oy) / texel) + 1);
-    const loc = (px, py) => Math.hypot((c * px + s * py) / hx, (-s * px + c * py) / hy);
+    const loc = shape
+      ? (px, py) => { const lx = (c * px + s * py) / hx, ly = (-s * px + c * py) / hy; return Math.hypot(lx, ly) - profileAt(v, Math.atan2(ly, lx)) + 1; }
+      : (px, py) => Math.hypot((c * px + s * py) / hx, (-s * px + c * py) / hy);
     for (let j = j0; j <= j1; j++) for (let ii = i0; ii <= i1; ii++) {
       const px = frame.ox + (ii + 0.5) * texel - x, py = frame.oy + (j + 0.5) * texel - y, r = loc(px, py);
-      const w = Math.max(Math.abs(loc(px + texel, py) - r) + Math.abs(loc(px, py + texel) - r), 1e-4), cov = Math.min(Math.max((1 - r) / w + 0.5, 0), 1);
+      // fwidth: the ellipse's q is smooth, so the forward difference is the GPU's. An outline's has kinks (the tips, the sinuses, the teeth), where HOW the GPU differences matters at the rim:
+      // SwiftShader's derivative is COARSE — one per 2x2 quad, taken against the quad's top-left pixel — and a forward difference per pixel read the rim 5x further off (mean α 0.021 against 0.004).
+      let w;
+      if (shape) {
+        const bx = px - (ii % 2) * texel, by = py - (j % 2) * texel, q00 = loc(bx, by);
+        w = Math.max(Math.abs(loc(bx + texel, by) - q00) + Math.abs(loc(bx, by + texel) - q00), 1e-4);
+      } else w = Math.max(Math.abs(loc(px + texel, py) - r) + Math.abs(loc(px, py + texel) - r), 1e-4);
+      const cov = Math.min(Math.max((1 - r) / w + 0.5, 0), 1);
       if (!(cov > 0)) continue;
       const a = a0 * cov, k = (j * n + ii) * 4;
       for (let ch = 0; ch < 3; ch++) out[k + ch] = d[o + 8 + ch] * a + out[k + ch] * (1 - a);
@@ -782,7 +841,8 @@ window.__litterCheck = (presetName, overrides) => withEngine(presetName, overrid
   // checking would agree with whatever order that code made. (litterInstances sorts again, which a sorted list leaves alone.)
   const byDay = [...list].sort((a, b) => a.D - b.D || a.j - b.j || a.k - b.k);
   const inst = litterInstances(byDay, p, want, !bulk, 0.75 * want.ext / n), texel = want.ext / n;
-  const cpu = litterRaster(inst, n, want, false), rev = litterRaster(inst, n, want, true);
+  const shape = leafShape(p.leaf_shape, p.seed);   // null is the ellipse: the stamps are painted by the old law
+  const cpu = litterRaster(inst, n, want, false, shape), rev = litterRaster(inst, n, want, true, shape);
   let aSum = 0, rgbSum = [0, 0, 0], aCpu = 0, dA = 0, dRgb = 0, dAmax = 0, oA = 0, oRgb = 0, nz = 0;
   for (let i = 0; i < n * n; i++) {
     const a = px[i * 4 + 3] / 255; aSum += a; aCpu += cpu[i * 4 + 3];
@@ -834,7 +894,7 @@ window.__litterStamp = () => withEngine('memories', {}, 2, (eng, gl) => {
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.viewport(0, 0, N, N); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     gl.useProgram(prog);
-    gl.uniform2f(gl.getUniformLocation(prog, 'uLitterOrigin'), 0, 0); gl.uniform2f(gl.getUniformLocation(prog, 'uLitterExtent'), N, N); gl.uniform1f(gl.getUniformLocation(prog, 'uLitterMinHalf'), 0.75);
+    gl.uniform2f(gl.getUniformLocation(prog, 'uLitterOrigin'), 0, 0); gl.uniform2f(gl.getUniformLocation(prog, 'uLitterExtent'), N, N); gl.uniform1f(gl.getUniformLocation(prog, 'uLitterMinHalf'), 0.75); gl.uniform4f(gl.getUniformLocation(prog, 'uShapeBox'), 0, 0, 1, 1);   // the ellipse's quad (the gate, uLeafShape, is left at 0)
     gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(stamps.flat()), gl.DYNAMIC_DRAW);
     gl.bindVertexArray(vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, stamps.length);
     gl.disable(gl.BLEND);

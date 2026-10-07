@@ -12,6 +12,8 @@
 import { DEG, TAU, clamp, hash3, makeGauss, mulberry32, smoothstep } from './komorebi-math.js';
 import { leafHue } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
+import { bindLeafShape } from './komorebi-grove.js';
+import { leafShape, leafVariant } from './komorebi-leaf.js';
 
 // A leaf's landing and its angle on the ground are its OWN draws, from a stream seeded by (seed, cluster, leaf) on a salt of its own —
 // never the growth RNG, so laying litter cannot move a twig or a leaf of any shipped grove, and independent of the pigment, drop-day,
@@ -62,8 +64,9 @@ function litterOrder(list){
 
 // The bake's instance buffer: INSTANCE_FLOATS per stamp, in drop order —
 //   [x, y, A, B0]        where it lies (metres) and the leaf's own half-axes (the grove's A and the face-on B0: lying flat it is not foreshortened)
-//   [cos, sin, fade, 0]  its angle on the ground as a unit vector (no trig on the GPU), and the fade it carries (§5.3: a marginal leaf or
-//                        tree lies at its fade, so a density morph does not pop its litter in at full weight)
+//   [cos, sin, fade, v]  its angle on the ground as a unit vector (no trig on the GPU), the fade it carries (§5.3: a marginal leaf or
+//                        tree lies at its fade, so a density morph does not pop its litter in at full weight), and its outline — leafVariant(seed, j, k),
+//                        the very one the grove hung it in, so a fallen leaf keeps its shape; 0 for the ellipse, which has none
 //   [r, g, b, 0]         litterAlbedo(tau, age)
 // `wrap` is the endless park's carpet, which repeats like its fill: a landing is folded into the frame, and a stamp that crosses an edge
 // is drawn again on the far side (the copy sits beside its leaf, so the layering is kept). A finite tree's is clamped: a stamp wholly off
@@ -73,9 +76,10 @@ function litterOrder(list){
 const INSTANCE_FLOATS = 12;
 const wrapInto = (v, o, ext) => o + ((((v - o) % ext) + ext) % ext);
 function litterInstances(list, P, frame, wrap, minHalf = 0){
-  const { ox, oy, ext } = frame, buf = [], rgb = [0, 0, 0];
+  const { ox, oy, ext } = frame, buf = [], rgb = [0, 0, 0], shape = leafShape(P.leaf_shape, P.seed);   // shape: the outline the leaves hung in; null is the ellipse
   for(const l of litterOrder(list)){
-    const land = litterLanding(l, P), A = l.size[0], B = l.size[1], reach = Math.max(A, B, minHalf) + 1.5*minHalf;   // + the margin the stamp's quad is drawn with (VS_LITTER)
+    // + the margin the stamp's quad is drawn with (VS_LITTER); and an outline's quad is its box, whose far corner is `reach` leaf units from the base the stamp turns about
+    const land = litterLanding(l, P), A = l.size[0], B = l.size[1], reach = (Math.max(A, B, minHalf) + 1.5*minHalf)*(shape ? shape.reach : 1);
     let x = land.x, y = land.y;
     const xs = [0], ys = [0];
     if(wrap){
@@ -85,7 +89,7 @@ function litterInstances(list, P, frame, wrap, minHalf = 0){
     } else if(x + reach < ox || x - reach > ox + ext || y + reach < oy || y - reach > oy + ext) continue;
     litterAlbedo(l.tau, litterAge(P, l.D), rgb);
     const c = Math.cos(land.rot), s = Math.sin(land.rot);
-    for(const dx of xs) for(const dy of ys) buf.push(x + dx, y + dy, A, B, c, s, l.fade, 0, rgb[0], rgb[1], rgb[2], 0);
+    for(const dx of xs) for(const dy of ys) buf.push(x + dx, y + dy, A, B, c, s, l.fade, shape ? leafVariant(P.seed, l.j, l.k) : 0, rgb[0], rgb[1], rgb[2], 0);
   }
   return { data: Float32Array.from(buf), count: buf.length/INSTANCE_FLOATS };
 }
@@ -156,6 +160,9 @@ function makeLitter(hub){
       gl.uniform2f(u.origin, fr.ox, fr.oy);
       gl.uniform2f(u.extent, fr.ext, fr.ext);
       gl.uniform1f(u.minHalf, minHalf);
+      const unit = gl.getParameter(gl.ACTIVE_TEXTURE);
+      bindLeafShape(gl, u, hub.grove);   // the outline the leaves fell from (unit 6) — the active grove's, whose list this is
+      gl.activeTexture(unit);            // ...and the unit active before it stays active: the mips below are made on the carpet's own, wherever that was, and unit 6 is the fill's sampler
       gl.bindBuffer(gl.ARRAY_BUFFER, litter.buf);
       gl.bufferData(gl.ARRAY_BUFFER, inst.data, gl.DYNAMIC_DRAW);
       gl.bindVertexArray(litter.vao);

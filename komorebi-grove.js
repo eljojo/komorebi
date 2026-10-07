@@ -8,6 +8,7 @@
 // ============================================================================
 import { DEG, DROP_EPS, FAITH_MAX_RATIO, GOLDEN, clamp, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, makeGauss, mulberry32, redGain, retention, turnOrder } from './komorebi-math.js';
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
+import { LEAF_ID_FRAC, LEAF_SAMPLES, leafShape, leafVariant } from './komorebi-leaf.js';
 
 export function makeGrove(hub){
   const { gl, params, MAX_TEX, quadBuf, faithfulOn, occ, faith, sky } = hub;
@@ -33,6 +34,9 @@ export function makeGrove(hub){
     const frac = pcF - pcInt;                         // marginal leaf fades in by this
     const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
     const TAU2 = Math.PI*2;
+    // THE LEAF'S OUTLINE (§4.5, P4a-2): null is the ellipse — the stamp's own line, and nothing below is asked of it. A grove OWNS its outline (like its cluster
+    // textures), because a transition's crossfade bakes two groves into one layer texture and they may not share one.
+    const shape = leafShape(params.leaf_shape, params.seed);
 
     // ---- grow a GROVE: tree_count trees whose trunks spread across the view region with overlapping
     // crowns. Each tree is a trunk -> limb_count arms (rising by branch_pitch, fanned around the
@@ -270,13 +274,15 @@ export function makeGrove(hub){
         // The hashes inside leafTau are pure functions of (seed, j, k) — they must never draw from rng/rng2/gr above,
         // or every shipped grove reshuffles.
         const lt = senescing ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
+        // the cluster id the VS reads: j, and for an outline its row in the FRACTION (j + v/32) — a pure hash of (seed, j, k) on the leaf's own salt, like the pigment above
+        const cid = shape ? j + leafVariant(params.seed, j, k)/LEAF_ID_FRAC : j;
         // iFade: the very `cov` folded into tau above. The bake writes it into alpha (coverage) so the leaf's BALLISTIC shadow (§4.5) fades out
         // with its tau — the mixture reads (tau·cov, cov·fade) as the same leaf over fade·cov of the area — instead of keeping its full footprint
         // on a leaf that is not there yet; alpha has no other reader.
         data.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                  lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, cov);
+                  lt[0]*cov,lt[1]*cov,lt[2]*cov, cid, ax,ay,orient,phase, cov);
         faithData.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                  lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, t.z, cov);   // + REAL grown height (attr 5) — cast == preview — then the fade (attr 6)
+                  lt[0]*cov,lt[1]*cov,lt[2]*cov, cid, ax,ay,orient,phase, t.z, cov);   // + REAL grown height (attr 5) — cast == preview — then the fade (attr 6)
         if(rec) rec.push(x, y, t.z, Math.PI*A*B0*cov, j, k, cov, t.layer, data.length-9, faithData.length-10);   // flat area (the ellipse), orientation ignored; the two slots are where this leaf's tau starts
       }
     }
@@ -339,7 +345,7 @@ export function makeGrove(hub){
       gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
       gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
       gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-      const S=68;   // 17 floats/leaf: [c.xy,A,B0][angle,tilt,swingGain,swingPhase][tau.rgb,clusterId][orbit.xyzw][iFade]
+      const S=68;   // 17 floats/leaf: [c.xy,A,B0][angle,tilt,swingGain,swingPhase][tau.rgb,clusterId (+ the outline in its fraction)][orbit.xyzw][iFade]
       gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
       gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
       gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
@@ -391,6 +397,19 @@ export function makeGrove(hub){
     };
     const clusterTex     = makeDataTex(null, hier.clusterData);      // dynamic bend angles — a NEW texture per grove (the old one is freed at install)
     const clusterGeomTex = makeDataTex(null, hier.clusterGeom);      // static geometry
+    // the outline's own texture, R16F: LEAF_SAMPLES θ across, one row per variant down. θ REPEATs (±π are one place), the variants CLAMP (a read between two rows is no leaf),
+    // LINEAR in θ and no mips — a profile is read at its own resolution. 1×1 for the ellipse: bound and never sampled, because the shader's gate is a uniform branch.
+    const leafTex = (() => {
+      const tx = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tx);
+      if(shape) gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, LEAF_SAMPLES, shape.rows, 0, gl.RED, gl.FLOAT, shape.data);
+      else gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, 1, 1, 0, gl.RED, gl.HALF_FLOAT, null);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return tx;
+    })();
     // ---- woody occluder (spec §4.5): trunk + MAIN LIMBS (level<=1) as CONTINUOUS-height analytic segments. Map
     // each grown z to a floor height with the SAME crown mapping the leaves bin by (zMin->canopy_base,
     // zMax->base+thickness), and the bole linearly to 0 — so a limb's base lands at the trunk's height and the
@@ -501,8 +520,18 @@ export function makeGrove(hub){
       faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
     }
     hier.leafW = leafW;   // abscission (§4.5): each leaf's retained weight by (twig, slot) for the tree preview, which scatters its own leaves; null at the gate
-    return { hier, layerVAO, clusterTex, clusterGeomTex, litter };
+    return { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter };
   }
 
   return { buildGrove };
+}
+
+// What a bake hands its program to draw a grove's leaves in THEIR shape: the outline's texture (unit 6: 0-3 are the layers, 4 and 5 the cluster textures), the
+// gate (a uniform, per grove — a crossfade bakes an ellipse grove and a maple one in one pass) and the box the quad covers. The ellipse's box is (0, 0, 1, 1), which
+// leaves the corner it scales to the bit (x·1 + 0), so the off state is the quad it always was. `u` is a program's own table: bake, faith and litter name them alike.
+const NO_BOX = [0, 0, 1, 1];
+export function bindLeafShape(gl, u, g){
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, g.leafTex); gl.uniform1i(u.leafTex, 6);
+  gl.uniform1i(u.leafShape, g.shape ? 1 : 0);
+  gl.uniform4fv(u.shapeBox, g.shape ? g.shape.box : NO_BOX);
 }

@@ -323,6 +323,31 @@ const INVARIANTS = [
   // frame at any leaf_diffuse (an eye ray that meets only wood emits exactly 0, and its disk is the sky's: tb = t).
   { name: 'a bare grove is one frame at any leaf_diffuse (sky view: wood never glows)', preset: 'canopy 1',
     a: { foliage_density: 0, leaf_diffuse: 0 }, b: { foliage_density: 0, leaf_diffuse: 0.95 } },
+  // THE LEAF'S OUTLINE (§4.5, P4a-2). leaf_shape 'ellipse' is the stamp the engine has always cut: the literal `float r = length(vLocal)` line, a uniform branch round the outline,
+  // a 1x1 texture never sampled and a quad of (0, 0, 1, 1) that leaves its corners to the bit — so naming it is the frame before the knob existed, on every camera and path (the
+  // pins above are the same claim for the looks themselves). The faithful and curtain rows re-bake (see `rebake`), the carpet row is taken in a fall frame where it has leaves to cut...
+  { name: "leaf_shape 'ellipse' == absent (layer path)", preset: 'memories', a: {}, b: { leaf_shape: 'ellipse' } },
+  { name: "leaf_shape 'ellipse' == absent (faithful path)", preset: 'park 1', rebake: true, a: {}, b: { leaf_shape: 'ellipse' } },
+  { name: "leaf_shape 'ellipse' == absent (sky view)", preset: 'canopy 1', a: {}, b: { leaf_shape: 'ellipse' } },
+  { name: "leaf_shape 'ellipse' == absent (curtain)", preset: 'curtain 1', rebake: true, a: {}, b: { leaf_shape: 'ellipse' } },
+  { name: "leaf_shape 'ellipse' == absent (tent)", preset: 'tent 1', a: {}, b: { leaf_shape: 'ellipse' } },
+  { name: "leaf_shape 'ellipse' == absent (the litter carpet)", preset: 'afternoon 7',
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_shape: 'ellipse' } },
+  // ...and the other half: 'maple' is a real switch on every camera that cuts a leaf's mask, and on the carpet (aspect 1: the profile carries its own width-to-length) — or an
+  // outline that never reached a mask would satisfy every row above.
+  // (aspect 1 on BOTH sides: it changes the frame by itself, so a pair that only differed in aspect would pass with the outline dead)
+  { name: "leaf_shape 'maple' changes the canopy (layer path)", preset: 'memories', differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'maple' } },
+  { name: "leaf_shape 'maple' changes the canopy (faithful path)", preset: 'park 1', rebake: true, differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'maple' } },
+  { name: "leaf_shape 'maple' changes the canopy (sky view)", preset: 'canopy 1', differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'maple' } },
+  { name: "leaf_shape 'maple' changes the canopy (curtain)", preset: 'curtain 1', rebake: true, differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'maple' } },
+  { name: "leaf_shape 'maple' lays another carpet (litter)", preset: 'afternoon 7', differ: true,
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1, leaf_shape: 'maple' } },
+  // AREA IS CONSERVED, so the canopy keeps its fullness: the profile is the unit circle's area, so a maple at aspect 1 and 1/√aspect of the size has the leaf the ellipse had (the species
+  // bundle's 0.103 = 0.13/√1.6; memories and afternoon 7 sit at 0.1 and 1.75, so 0.0756). The mean level of the frame stays within 5%.
+  { name: 'a maple of the same leaf area keeps the canopy as full (layer path: memories)', preset: 'memories', lit: [0.95, 1.05],
+    a: {}, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
+  { name: 'a maple of the same leaf area keeps the canopy as full (layer path: afternoon 7)', preset: 'afternoon 7', lit: [0.95, 1.05],
+    a: {}, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
 ];
 
 // THE SKY FILL vs ITS REFERENCE (§4.7). The bun tests hold komorebi-fill.js's laws; this holds the GLSL to it. Each row
@@ -420,6 +445,10 @@ const LITTER_CHECKS = [
   { name: 'afternoon 7 on the first day of the fall — a sparse carpet: the closed forms', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71 }, sparse: true },
   { name: 'park 1 at 0.9 — a finite tree: the padded frame, clamped, and the drift down-wind', preset: 'park 1', over: { ...FALL_LOOK }, drift: true },
   { name: 'park 1 at 0.9, the season blowing the other way', preset: 'park 1', over: { ...FALL_LOOK, wind_direction_deg: 215, litter_drift_m: 0.8 }, drift: true },
+  // THE OUTLINE ON THE GROUND (§4.5, P4a-2): the same carpet, its leaves cut by q' = |l| − r(θ) + 1 in the variant they hung in. The CPU painting uses the same law over the same profile
+  // (half-float rounded, read linearly), so what is held is that the GPU turned the instance buffer — outline slot, enlarged quad, box and all — into the carpet.
+  { name: 'afternoon 7 at 0.9, maple — the lobed stamps painted by the same q\' law', preset: 'afternoon 7', over: { ...FALL_LOOK, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
+  { name: 'afternoon 7 on the first day of the fall, maple — a sparse carpet: the closed forms (area is conserved)', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 }, sparse: true },
 ];
 // (the rim's one-texel anti-aliasing ramp over-counts a leaf's area by π·w²/12 — a few % of a 5-texel leaf, ~20% of one under a texel — and overlap takes it back on a carpet
 // that thickens: so the sparse carpet's area is within a few % of Σπ·A·B0·fade, and no carpet is over it by more than the ramp's own bias)
@@ -457,6 +486,11 @@ const HALO_CHECKS = [
   { name: 'memories, leaf_diffuse 0.95 (the layer floor)', preset: 'memories', over: { leaf_diffuse: 0.95 } },
 ];
 const HALO_TOL = 2e-3, HALO_BAND = [0.99, 1.01], HALO_MIN_TEXELS = 500, STAMP_TOL = 2e-5;
+// THE OUTLINE'S EDGE LAW (§4.5, P4a-2), FS_BAKE drawn for one leaf: the gate shut keeps the ellipse's own tolerance, the gate open is held to the CPU's q' over the same profile at the GPU's own
+// (half-float storage, fixed-point filter weights, atan: the design allowed ~1e-2 across the ramp; measured 1e-5, so the bar is 1e-3). Σalpha, a lobed leaf's coverage against the ellipse's at the same uEdge: the profile is area-normalised, but the
+// ramp is RADIAL (q' = |l| − r(θ) + 1), so it is thinner across a flank by the cosine of the flank's tilt and a lobed leaf keeps MORE of its area than the ellipse does — measured x1.04 (three
+// variants, 1.038-1.042) where the design said 1%. The band is that law's own, not a tolerance: it holds a stable ramp, and says the maple is the ellipse's area plus ~4%, never less.
+const OUTLINE_TOL = 1e-3, OUTLINE_AREA = [1.0, 1.06];
 
 // Suite 4 as data: one row per transition ROUTING tier. transitionTo classifies the from->to diff into a
 // tier, and each tier drives different code — the grove crossfade grows a SECOND grove (buildTargetGrove),
@@ -472,6 +506,9 @@ const TRANSITION_ROUTES = [
     expect: { crossfade: false, structDiff: false } },
   { name: 'seed-only topology diff takes the grove crossfade', from: 'memories', to: 'memories',
     over: { seed: 1234567 },
+    expect: { crossfade: true, structDiff: true } },
+  { name: 'a leaf_shape change takes the grove crossfade (each grove baked in its own outline)', from: 'memories', to: 'memories',
+    over: { leaf_shape: 'maple', leaf_aspect: 1 },
     expect: { crossfade: true, structDiff: true } },
   { name: 'wood at the target end closes the crossfade gate', from: 'memories', to: 'memories',
     over: { seed: 7654321, branch_tau: 0.5 },
@@ -886,7 +923,7 @@ async function main() {
       record('edge', name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(48)} ${bad.join('; ') || detail}`);
     }
-    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : [{ name: 'FS_FAITH, one leaf at leaf_diffuse 0.95 (the faithful floor and cloth)', opts: { d: 0.95 } }]) {
+    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : [{ name: 'FS_FAITH, one leaf at leaf_diffuse 0.95 (the faithful floor and cloth); FS_BAKE, one leaf in each outline', opts: { d: 0.95 } }]) {
       const name = `stamp: ${c.name}`;
       let r;
       try { r = await page.evaluate((o) => window.__stampCheck(o), c.opts); }
@@ -901,7 +938,15 @@ async function main() {
           if (!row.bandOverMix.every((v) => v >= 0.999)) bad.push(`${row.name}: the edge band's mean is x${f3(row.bandOverMix)} of the mixture's (the slab's x${f3(row.slabOverMix)})`);
         }
       }
-      const detail = `k ${r.k.toFixed(2)}  ${r.rows.map((x) => `${x.name} err ${x.err.toExponential(1)}`).join(', ')}  edge band x${f3(r.rows[0].bandOverMix)} of the mixture (the slab: x${f3(r.rows[0].slabOverMix)}), ${r.rows[0].nBand} px`;
+      for (const row of r.outline) {
+        const maple = row.name.startsWith('maple');
+        if (row.err > (maple ? OUTLINE_TOL : STAMP_TOL)) bad.push(`FS_BAKE ${row.name}: off the CPU's law by ${row.err.toExponential(2)} (want ≤ ${(maple ? OUTLINE_TOL : STAMP_TOL).toExponential(0)})`);
+        if (!row.finite) bad.push(`FS_BAKE ${row.name}: a non-finite pixel`);
+        if (row.glError) bad.push(`FS_BAKE ${row.name}: gl.getError 0x${row.glError.toString(16)}`);
+        if (!(row.nBand >= 100)) bad.push(`FS_BAKE ${row.name}: nothing measured (${row.nBand} edge-band pixels)`);
+        if (maple && !(row.areaOverEllipse >= OUTLINE_AREA[0] && row.areaOverEllipse <= OUTLINE_AREA[1])) bad.push(`FS_BAKE ${row.name}: Σalpha is x${row.areaOverEllipse.toFixed(4)} of the ellipse's (want ${OUTLINE_AREA.join('..')})`);
+      }
+      const detail = `k ${r.k.toFixed(2)}  ${r.rows.map((x) => `${x.name} err ${x.err.toExponential(1)}`).join(', ')}  edge band x${f3(r.rows[0].bandOverMix)} of the mixture (the slab: x${f3(r.rows[0].slabOverMix)}), ${r.rows[0].nBand} px  FS_BAKE: ${r.outline.map((x) => `${x.name} err ${x.err.toExponential(1)}${x.name.startsWith('maple') ? ` Σα x${x.areaOverEllipse.toFixed(4)}` : ''}`).join(', ')}`;
       record('edge', name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(72)} ${bad.join('; ') || detail}`);
     }

@@ -12,6 +12,7 @@ model. Read the spec before you change what the engine does.
   - **`komorebi-bake.js`** — the per-frame bakes: leaves to per-layer optical depth, the faithful path's pre-integrated soft shadow, and the sky fill — the hemisphere integral of those layers that lights the shade (`canopy_fill`, §4.7).
   - **`komorebi-fill.js`** — the sky fill's CPU half: the fixed cosine-weighted directions and the per-ray quadrature as pure functions, the reference `fill.test.js` and the pixel harness hold the shader to.
   - **`komorebi-litter.js`** — the fallen leaves as a floor material: the pure laws (where a leaf lands, the one colour law `litterAlbedo`, drop order) and the once-per-regrow RGBA8 carpet bake over the fill's frame.
+  - **`komorebi-leaf.js`** — the leaf's outline: the sugar maple grown as a vein skeleton in the plane (`growLeaf`), cut as a radial profile r(θ) from the petiole base and area-normalised (`profile`, `leafShape`), and `leafVariant`, the one hash the grove and the litter share so a fallen leaf keeps its shape. Pure; `GLSL_LEAF_Q` in `komorebi-shaders.js` is its shader half.
   - **`komorebi-source.js`** — the Vogel-spiral point-sun cloud and the shared cast geometry (bulk shift, ellipse projection, layer heights).
   - **`komorebi-motion.js`** — the broadband wind signal and the trunk/limb/twig spring hierarchy.
   - **`komorebi-transitions.js`** — the cloud-bloom crossfade between looks.

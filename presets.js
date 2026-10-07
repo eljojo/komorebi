@@ -1004,25 +1004,26 @@ export const EXPERIMENTAL = ['canopy 1', 'canopy 2', 'canopy 3', 'canopy 4', 'cu
 export const TREE_SPECIES = {
   // decurrent dome: low leader → forks low into a few heavy arms, broad rounded, stout slow-thinning wood
   'oak':      { leader_strength:0.12, droop:-0.04, taper_delta:2.4, crown_aspect:0.8, phyllotaxis:'spiral',
-                branch_levels:4, branch_children:3, limb_count:5, branch_angle_deg:48, branch_pitch_deg:30, branch_length_ratio:0.62, foliage_density:1.7, leaf_size_m:0.12 },
+                branch_levels:4, branch_children:3, limb_count:5, branch_angle_deg:48, branch_pitch_deg:30, branch_length_ratio:0.62, foliage_density:1.7, leaf_size_m:0.12, leaf_shape:'ellipse' },
   // excurrent cone: strong central leader, near-horizontal whorled tiers shortening to the apex, secondary droop
   'spruce':   { leader_strength:0.92, droop:0.22, taper_delta:2.0, crown_aspect:1.9, phyllotaxis:'whorled',
-                branch_levels:3, branch_children:3, limb_count:9, branch_angle_deg:22, branch_pitch_deg:12, branch_length_ratio:0.6, foliage_density:1.8, leaf_size_m:0.07 },
+                branch_levels:3, branch_children:3, limb_count:9, branch_angle_deg:22, branch_pitch_deg:12, branch_length_ratio:0.6, foliage_density:1.8, leaf_size_m:0.07, leaf_shape:'ellipse' },
   // slender monopodial, lacy fast-thinning periphery, fine outer twigs trailing down
   'birch':    { leader_strength:0.85, droop:0.25, taper_delta:2.7, crown_aspect:1.3, phyllotaxis:'spiral',
-                branch_levels:4, branch_children:3, limb_count:7, branch_angle_deg:34, branch_pitch_deg:46, branch_length_ratio:0.64, foliage_density:1.3, leaf_size_m:0.13 },
+                branch_levels:4, branch_children:3, limb_count:7, branch_angle_deg:34, branch_pitch_deg:46, branch_length_ratio:0.64, foliage_density:1.3, leaf_size_m:0.13, leaf_shape:'ellipse' },
   // weeping fountain: low leader, scaffolds rise then long whips cascade down
   'willow':   { leader_strength:0.2, droop:0.45, taper_delta:2.4, crown_aspect:0.95, phyllotaxis:'spiral',
-                branch_levels:4, branch_children:3, limb_count:7, branch_angle_deg:30, branch_pitch_deg:32, branch_length_ratio:0.78, foliage_density:1.5, leaf_size_m:0.11 },
-  // opposite/decussate: a leader carrying stacked symmetric Y-forks (the maple/ash candelabra)
+                branch_levels:4, branch_children:3, limb_count:7, branch_angle_deg:30, branch_pitch_deg:32, branch_length_ratio:0.78, foliage_density:1.5, leaf_size_m:0.11, leaf_shape:'ellipse' },
+  // opposite/decussate: a leader carrying stacked symmetric Y-forks (the maple/ash candelabra). The one bundle with an OUTLINE (komorebi-leaf.js): the profile carries its own
+  // width-to-length, so leaf_aspect is 1 and leaf_size_m 0.103 = 0.13/√1.6 — which keeps the leaf's AREA where the ellipse at the default aspect had it (canopy fullness unchanged)
   'maple':    { leader_strength:0.45, droop:-0.05, taper_delta:2.2, crown_aspect:1.0, phyllotaxis:'opposite',
-                branch_levels:4, branch_children:3, limb_count:3, branch_angle_deg:26, branch_pitch_deg:52, branch_length_ratio:0.72, foliage_density:1.5, leaf_size_m:0.13 },
+                branch_levels:4, branch_children:3, limb_count:3, branch_angle_deg:26, branch_pitch_deg:52, branch_length_ratio:0.72, foliage_density:1.5, leaf_size_m:0.103, leaf_aspect:1.0, leaf_shape:'maple' },
   // fastigiate column (Lombardy poplar / Italian cypress): strong leader, steep near-parallel branches, tall-narrow
   'columnar': { leader_strength:0.9, droop:-0.1, taper_delta:2.0, crown_aspect:1.8, phyllotaxis:'spiral',
-                branch_levels:3, branch_children:3, limb_count:12, branch_angle_deg:14, branch_pitch_deg:78, branch_length_ratio:0.6, foliage_density:2.0, leaf_size_m:0.12 },
+                branch_levels:3, branch_children:3, limb_count:12, branch_angle_deg:14, branch_pitch_deg:78, branch_length_ratio:0.6, foliage_density:2.0, leaf_size_m:0.12, leaf_shape:'ellipse' },
   // a tall bare stipe with a crown of arching fronds up top — a strong leader (so it gets a real TRUNK, not the
   // legacy single-hub stub), fronds (level-1, terminal) attaching high and arching down, constant-thickness stipe.
   // Intentionally the sparsest: ~14 distinct fronds (branch_levels 1), so it leans on big leaves for shadow presence.
   'palm':     { leader_strength:0.85, droop:0.55, taper_delta:1.3, crown_aspect:1.3, phyllotaxis:'spiral',
-                branch_levels:1, branch_children:1, limb_count:14, branch_angle_deg:18, branch_pitch_deg:60, branch_length_ratio:1.0, foliage_density:1.4, leaf_size_m:0.20 },
+                branch_levels:1, branch_children:1, limb_count:14, branch_angle_deg:18, branch_pitch_deg:60, branch_length_ratio:1.0, foliage_density:1.4, leaf_size_m:0.20, leaf_shape:'ellipse' },
 };

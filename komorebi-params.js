@@ -69,7 +69,7 @@ const CANOPY_KEYS = [
   'litter_age','litter_drift_m',   // the litter carpet (§4.7): how browned each leaf lies and how far the season's wind carried it — read only by the regrow-time bake, so they morph with the grove they are baked from
 ];
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
-  'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis',
+  'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis','leaf_shape',   // leaf_shape: a different outline is a different texture and a different quad — it cannot interpolate, and a transition's crossfade bakes the two groves' shapes in one pass
   'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
   'fill_directions','fill_resolution',                                  // the sky fill's TUNE pair (§4.7): a ray count and a texture size are integers that cannot interpolate, and the size reallocates
   'litter','litter_resolution',                                         // the carpet (§4.7): a gate that allocates (1x1 <-> res²) and the size it allocates at — neither interpolates, so a look that crosses them dissolves under the bloom rather than popping a carpet in
@@ -146,6 +146,7 @@ const DEFAULTS = {
   taper_delta: 2.0,                // pipe-model / Leonardo branch taper (spec §4.5): drawn branch half-width shrinks by children^(−1/Δ) per fork. ~2 = area-conserving (woody); high = stout (oak), low = lacy fast-thinning (birch). Silhouette-only (branch occluder), no dapple cost.
   crown_aspect: 1.0,               // crown height factor (spec §4.5): scales the crown's height. >1 taller (conifer/columnar), <1 broad dome (oak/cedar). A narrow tree's height is capped at crown_radius·FAITH_MAX_RATIO·aspect so it can't run away. Drives the faithful cast + 3D preview; the layer cast normalises height away (invariant).
   phyllotaxis: 'spiral',           // child-azimuth rule (spec §4.5): 'spiral' (golden angle — most trees), 'whorled' (even ring per node — conifer tiers), 'opposite' (paired forks 180° apart, decussate 90°/level — maple/ash).
+  leaf_shape: 'ellipse',           // the leaf's OUTLINE (spec §4.5, P4a-2): 'ellipse' is the stamp it has always been (the literal old line, byte-identical); 'maple' is a grown sugar-maple blade — a radial profile r(θ) from the petiole base, area-normalised so the canopy's fullness is where it was (komorebi-leaf.js). A species bundle carries it, and every bundle names it, so an oak picked after a maple takes the lobes off. A name with no outline is the ellipse
   tree_species: '',                // INERT label (spec §4.5): the editor expands a TREE_SPECIES bundle into the shape knobs above and stamps the name here; the engine never reads it. '' = custom / no species picked.
   clusters_per_layer: 60,          // legacy (pre-skeleton); unused by the grown canopy, kept for preset compat
   leaves_per_cluster: 22,          // leaves per terminal twig

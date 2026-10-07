@@ -155,7 +155,8 @@ function create(canvas, opts){
   function litterFor(){
     if(!litterEntry){
       const prog = program(VS_LITTER, FS_LITTER);
-      litterEntry = { prog, U: { origin:loc(prog,'uLitterOrigin'), extent:loc(prog,'uLitterExtent'), minHalf:loc(prog,'uLitterMinHalf') } };
+      litterEntry = { prog, U: { origin:loc(prog,'uLitterOrigin'), extent:loc(prog,'uLitterExtent'), minHalf:loc(prog,'uLitterMinHalf'),
+        leafTex:loc(prog,'uLeafTex'), leafShape:loc(prog,'uLeafShape'), shapeBox:loc(prog,'uShapeBox') } };
     }
     return litterEntry;
   }
@@ -240,13 +241,15 @@ function create(canvas, opts){
                windLevel:loc(progBake,'uWindLevel'), windTime:loc(progBake,'uWindTime'),
                leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
                clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
-               coverage:loc(progBake,'uCoverage') };
+               coverage:loc(progBake,'uCoverage'),
+               leafTex:loc(progBake,'uLeafTex'), leafShape:loc(progBake,'uLeafShape'), shapeBox:loc(progBake,'uShapeBox') };   // the leaf's outline (komorebi-leaf.js): its texture, the gate and the quad's box — bound per grove
     U.faith = { origin:loc(progFaith,'uFaithOrigin'), extent:loc(progFaith,'uFaithExtent'), g:loc(progFaith,'uG'), edge:loc(progFaith,'uEdge'),
                 curtainBake:loc(progFaith,'uCurtainBake'), clothY:loc(progFaith,'uClothY'),
                 morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
                 windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
                 leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
-                clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom'), beamK:loc(progFaith,'uBeamK') };
+                clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom'), beamK:loc(progFaith,'uBeamK'),
+                leafTex:loc(progFaith,'uLeafTex'), leafShape:loc(progFaith,'uLeafShape'), shapeBox:loc(progFaith,'uShapeBox') };
     U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
                    curtainBake:loc(progFaithSeg,'uCurtainBake'), clothY:loc(progFaithSeg,'uClothY'),
                    segSway:loc(progFaithSeg,'uSegSway'), segTau:loc(progFaithSeg,'uSegTau') };
@@ -356,6 +359,7 @@ function create(canvas, opts){
     g.layerVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
     if(g.clusterTex) gl.deleteTexture(g.clusterTex);
     if(g.clusterGeomTex) gl.deleteTexture(g.clusterGeomTex);
+    if(g.leafTex) gl.deleteTexture(g.leafTex);
   }
   function installGrove(g){
     if(hub.grove && hub.grove !== g) freeGrove(hub.grove);
@@ -517,7 +521,7 @@ function create(canvas, opts){
       if(litterEntry){ gl.deleteProgram(litterEntry.prog); litterEntry = null; }   // the litter carpet's, likewise
       hub.layerTex.forEach(t => { gl.deleteTexture(t); });
       hub.woodTex.forEach(t => { gl.deleteTexture(t); });
-      [hub.clusterTex, hub.clusterGeomTex, occTex, hub.faithTex, hub.faithScratch, hub.benchTex, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
+      [hub.clusterTex, hub.clusterGeomTex, hub.grove?.leafTex, occTex, hub.faithTex, hub.faithScratch, hub.benchTex, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
       freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
       [bakeFBO, faithFBO, fillFBO, hub.benchFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       hub.layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });

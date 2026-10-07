@@ -280,6 +280,18 @@ try {
   check('and with leaf fall back at 0 litter goes too', await poll(async () => (await rowShown('litter')) === false), `${await rowShown('litter')}`);
   await setSeason(0.5);
   await poll(async () => (await rowShown('leaf fall')) === false);
+  // THE LEAF'S OUTLINE (§4.5, P4a-2). The species picker merges a bundle over the live look, and every bundle names its outline — the maple's is 'maple', every other 'ellipse' — so the
+  // 'leaf shape' select follows the pick both ways: a maple -> oak pick has to take the lobes off, or the oak is lobed.
+  const selVal = (label) => page.evaluate((lab) => { const r = [...document.querySelectorAll('#dev .ctl.select')].find((q) => q.querySelector('label')?.textContent === lab); return r.querySelector('select').value; }, label);
+  check("the leaf shape row is there and reads the look's own outline: ellipse", (await rowShown('leaf shape')) === true && (await selVal('leaf shape')) === 'ellipse', `${await rowShown('leaf shape')} ${await selVal('leaf shape')}`);
+  await setSelect('species', 'maple');
+  check("picking maple in the species select turns 'leaf shape' to maple", await poll(async () => (await selVal('leaf shape')) === 'maple'), `reads ${await selVal('leaf shape')}`);
+  await setSelect('species', 'oak');
+  check("picking oak takes the lobes off: 'leaf shape' reads ellipse", await poll(async () => (await selVal('leaf shape')) === 'ellipse'), `reads ${await selVal('leaf shape')}`);
+  await setSelect('species', 'maple');
+  await poll(async () => (await selVal('leaf shape')) === 'maple');
+  await setSelect('leaf shape', 'ellipse');
+  check("changing the outline by hand is a divergence from the picked species: the picker drops back to custom", await poll(async () => (await selVal('species')) === ''), `species reads '${await selVal('species')}'`);
   // THE SKY FILL ROWS (§4.7): canopy_fill is the gate and sits on every camera that lights a surface; its three followers
   // (the leaf albedo, the ray count, the texture size) are sliders that lie while it is shut — nothing bakes — so they hide
   // until it opens. The albedo is the floor's alone (the cloth and the tent take Tsky only), and the sky view, which has

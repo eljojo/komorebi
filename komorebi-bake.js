@@ -12,6 +12,7 @@ import { atmosphere, ballisticK, clamp } from './komorebi-math.js';
 import { MAX_FILL_DIRS, MAX_LAYERS } from './komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
+import { bindLeafShape } from './komorebi-grove.js';
 
 export function makeBake(hub){
   const { gl, params, motion, src, faith, sky, U, fill, bakeFBO, faithFBO, fillFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
@@ -64,6 +65,7 @@ export function makeBake(hub){
       for(const [g, cov] of baking){
         if(!(cov > 0)) continue;                               // a grove at zero coverage contributes no optical depth; skip the draw rather than issue it
         gl.uniform1f(U.bake.coverage, cov);
+        bindLeafShape(gl, U.bake, g);                          // this grove's leaf outline (unit 6), first: the unit left ACTIVE is the cluster geometry's, as it always was — the engine binds a target onto whatever is, and unit 6 is the fill's sampler
         gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, g.clusterTex);     gl.uniform1i(U.bake.clusterTex, 4);
         gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, g.clusterGeomTex); gl.uniform1i(U.bake.clusterGeom, 5);
         const L=g.layerVAO[l];
@@ -196,7 +198,8 @@ export function makeBake(hub){
     const hLo = woodOn ? 0 : faith.hMin*(params.sway_pitch>0 ? 0.1 : 1), hHi = faith.hMax;
     // pad: the leaf quad half-extent, the incoherent drift orbit, and the live coherent sway (leaves+wood translate
     // by up to |sway| at the crown) — none of which are in the rest plan AABB. (The twig-hug trail-back already is.)
-    const pad = params.leaf_size_m + params.drift_amount + Math.hypot(motion.sway[0],motion.sway[1]) + 0.05;
+    // A leaf's long half-axis is at most 0.7·leaf_size_m, which an ellipse's pad of 1 covers with room to spare; a lobed outline reaches rmax of it from its base.
+    const pad = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)) + params.drift_amount + Math.hypot(motion.sway[0],motion.sway[1]) + 0.05;
     let minx,maxx,miny,maxy;
     if(params.receiver){
       // CURTAIN cast frame (§4.9): occluders project onto the VERTICAL cloth (Y=cy), not the floor — the projection is
@@ -248,6 +251,7 @@ export function makeBake(hub){
     gl.uniform1f(U.faith.flutterFreq, params.flutter_freq);
     gl.uniform2f(U.faith.sway, motion.sway[0], motion.sway[1]);
     gl.uniform1f(U.faith.hRef, Math.max(faith.hMax, 1e-3));   // height-scale the coherent sway → base anchored, crown sways (matches the wood)
+    bindLeafShape(gl, U.faith, hub.grove);   // the active grove's outline (unit 6), first, so the unit left active is the cluster geometry's (see bakeLayers)
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex);     gl.uniform1i(U.faith.clusterTex, 4);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(U.faith.clusterGeom, 5);
 
