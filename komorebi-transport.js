@@ -35,10 +35,19 @@ const GLSL_T_RAY_VIEW = `uniform float uPitch;            // camera tilt from st
 uniform float uFov;              // vertical full FOV (rad) — perspective strength / lens
 uniform float uViewYaw;          // camera orbit about vertical (rad); rotates the sampled floor about frame centre. 0 = unchanged`;
 
-// ---- the layer read every CAST camera makes (floor, cloth, enclosure): optical depth -> transmittance. ----
-const GLSL_T_TAP = `vec3 tap(highp sampler2D t, vec2 world){
+// ---- the layer read every CAST camera makes (floor, cloth, enclosure): optical depth -> transmittance. A LEAF IS NOT A
+// WINDOW (§4.5): a texel holds the leaves' true depth in rgb and their COVERAGE in alpha, and the BEAM is only the ballistic
+// share, e^(-τ - k·alpha): neutral depth k per unit coverage (k = −ln(1−leaf_diffuse)), the diffuse rest being what the fill
+// hands the shade. k tweens, so the gate is a uniform branch whose else is the read the engine has always made. ----
+const GLSL_T_TAP = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per unit coverage (alpha). 0 = the old leaf, byte-identical
+vec3 tap(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
-  return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
+  if(uBeamK > 0.0){
+    vec4 d = texture(t,uv);
+    return exp(-(d.rgb + uBeamK*d.a));   // optical depth + the beam's neutral share -> the ballistic transmittance
+  } else {
+    return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
+  }
 }`;
 
 // ---- THE SOURCE SAMPLES and the per-unit-height ground shift: the many-suns integral of §4.2/§4.6. The sky
@@ -80,10 +89,17 @@ const GLSL_T_CA_DECLS = `uniform vec3  uChroma;            // per-channel diffra
 // green=1). The colour fringe lands at every leaf/dapple edge and rides the same H*g shift, so it grows with
 // canopy height and the low-sun ellipse for free. Three single-channel taps; only taken when diffraction is on.
 vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
-  float aR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent).r;
-  float aG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent).g;
-  float aB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent).b;
-  return exp(-vec3(aR,aG,aB));      // per-channel optical depth -> transmittance, each at its dispersed path
+  if(uBeamK > 0.0){   // the beam's k·coverage rides each channel's own dispersed read (§4.5)
+    vec4 qR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent);
+    vec4 qG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent);
+    vec4 qB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent);
+    return exp(-vec3(qR.r + uBeamK*qR.a, qG.g + uBeamK*qG.a, qB.b + uBeamK*qB.a));
+  } else {
+    float aR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent).r;
+    float aG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent).g;
+    float aB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent).b;
+    return exp(-vec3(aR,aG,aB));      // per-channel optical depth -> transmittance, each at its dispersed path
+  }
 }`;
 
 // ---- the FAITHFUL tap (§4.5): one pre-integrated texture instead of the sample loop. Floor and cloth only —
@@ -387,11 +403,15 @@ const GLSL_T_FABRIC_MATERIAL = `    // The landed irradiance the fabric answers.
     // term takes Tsky at the point's plan position (world, which both receivers set above) — read from the floor's
     // hemisphere. A NAMED APPROXIMATION on both counts: a vertical cloth's hemisphere is half ground-bounce, which the
     // engine has no term for, and the fill is baked at floor height, so a point high up the cloth reads the hemisphere
-    // a floor point under it would see. The scattered light S is not read here at all. Shut gate = the old line, verbatim.
+    // a floor point under it would see. The scattered light S is read only once a leaf is not a window (§4.5): the P0b
+    // proxy was the floor's alone, but the diffuse light a leaf passes is the other half of what the beam no longer carries,
+    // so with leaf_diffuse up the cloth and the tent take it too — through the same view of the hemisphere as the sky (skyF),
+    // since it is hemispherical light — or the energy leaks the moment the beam goes dark. Shut gate = the old line, verbatim.
     vec3 E;
     if(uCanopyFill > 0.0){
       vec3 skyT = mix(vec3(1.0), textureLod(uFillT, (world-uCanopyOrigin)/uCanopyExtent, FILL_LOD).rgb, uCanopyFill);
       E = acc*uSunColor*beamF + uAmbient*skyF*skyT;
+      if(uBeamK > 0.0) E += textureLod(uFillS, (world-uCanopyOrigin)/uCanopyExtent, FILL_LOD).rgb*skyF*uCanopyFill;   // mix(a, b + S, w) = mix(a, b, w) + S·w: the floor's own share
     } else {
       E = acc*uSunColor*beamF + uAmbient*skyF;
     }
@@ -697,7 +717,7 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
       // runs along its own hemisphere rays. Here the eye's rays leave the box onto open sky and the layer texture's
       // alpha is the wood's optical depth.
       vec3 T, Lsc;
-      skyRay(pL0, pL1, pL2, pL3, uSkyScatter > 0.0, true, true, T, Lsc);
+      skyRay(pL0, pL1, pL2, pL3, uSkyScatter > 0.0, true, true, 0.0, T, Lsc);   // the literal 0.0: the sky view is still unsplit (§4.5, P0c-sky) and declares no uBeamK
       if(uSkyScatter > 0.0) Lsc *= uSkyScatter;
       // WOOD AS SILHOUETTE. The same segments the floor casts shadows with (§4.5), read as GEOMETRY this time: no
       // uBulkShift term anywhere here, because that vector is where the wood's shadow FALLS and we are looking at the
@@ -894,7 +914,7 @@ const TRANSPORT_GROUPS = {
   occ:       { decls: GLSL_T_OCC_DECLS,       locs: { occTex:'uOccTex', occCount:'uOccCount', occTau:'uOccTau', occSway:'uOccSway', occHRef:'uOccHRef' } },
   transport: { decls: GLSL_T_TRANSPORT_DECLS, locs: { samples:'uSamples[0]', count:'uSampleCount', proj:'uProj', bulkShift:'uBulkShift' } },
   woodCast:  { decls: GLSL_T_WOOD_CAST_DECLS, locs: { occPenumbra:'uOccPenumbra' } },
-  tap:       { decls: GLSL_T_TAP },
+  tap:       { decls: GLSL_T_TAP,             locs: { beamK:'uBeamK' } },
   ca:        { decls: GLSL_T_CA_DECLS,        locs: { chroma:'uChroma' } },
   faith:     { decls: GLSL_T_FAITH_DECLS,     locs: { faithful:'uFaithful', faithTex:'uFaithTex', faithOrigin:'uFaithOrigin', faithExtent:'uFaithExtent' } },
   sunDir:    { decls: GLSL_T_SUN_DIR_DECLS,   locs: { sunDir:'uSunDir' } },
@@ -961,7 +981,7 @@ const cameraFor = (p) => p.sky_view ? 'sky' : (p.receiver|0) === 2 ? 'enclosure'
 // they need engine state (the GL objects, params, the grove) a module-level table cannot reach. This list is the
 // seam between the two — create() checks its table against it on construction, and registry.test.js checks it
 // against TRANSPORT_GROUPS and CAMERAS. Neither half can drift without one of those saying so.
-const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','sky','post'];
+const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','tap','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','sky','post'];
 
 // The assembler. Every conditional it used to carry is now a lookup: the decls are the entry's groups in order,
 // the body is the entry's own snippets, and the only branch left is the one real structural fork — whether this

@@ -137,7 +137,7 @@ function growWith(over, faithful = false) {
   const g = makeGrove(hub).buildGrove(null);
   return { params, g, faith, layers: g.layerVAO.map((l) => Array.from(l.buf.data)), faithLeaves: Array.from(faith.buf.data) };
 }
-// float indices of tau in a leaf record: [c.xy,A,B0][angle,tilt,swingGain,swingPhase][tau.rgb,clusterId][orbit]
+// float indices of tau in a leaf record: [c.xy,A,B0][angle,tilt,swingGain,swingPhase][tau.rgb,clusterId][orbit][iFade] (+ the faithful record's height before the fade)
 const isTau = (i, stride) => i % stride >= 8 && i % stride <= 10;
 const sansTau = (arr, stride) => arr.filter((_, i) => !isTau(i, stride));
 // index of the first float where two uploads disagree, -1 if they match to the bit — a failure that names a slot
@@ -160,8 +160,8 @@ test("the per-leaf hashes never touch the growth RNG: geometry is identical at a
     // skeleton and twigs come off the growth stream; positions, sizes, tilts, orbits off each leaf's own streams
     expect(JSON.stringify(autumn.g.hier.segments)).toBe(JSON.stringify(summer.g.hier.segments));
     expect(JSON.stringify(autumn.g.hier.twigs)).toBe(JSON.stringify(summer.g.hier.twigs));
-    for (const [i, l] of summer.layers.entries()) expect(firstDiff(sansTau(autumn.layers[i], 16), sansTau(l, 16)), `layer ${i}`).toBe(-1);
-    expect(firstDiff(sansTau(autumn.faithLeaves, 17), sansTau(summer.faithLeaves, 17))).toBe(-1);
+    for (const [i, l] of summer.layers.entries()) expect(firstDiff(sansTau(autumn.layers[i], 17), sansTau(l, 17)), `layer ${i}`).toBe(-1);
+    expect(firstDiff(sansTau(autumn.faithLeaves, 18), sansTau(summer.faithLeaves, 18))).toBe(-1);
     // ...and it is not vacuous: the tau slots themselves did move
     expect(firstDiff(autumn.faithLeaves, summer.faithLeaves)).toBeGreaterThanOrEqual(0);
   }
@@ -171,13 +171,13 @@ test("the grove writes leafTau times the leaf's own coverage, into both the laye
   const { params, faithLeaves, layers } = growWith({ phenology: 0.85, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2 });
   const tau = tauOf(params), nLeaf = 8, frac = 0.5;                  // 5 × 1.5 = 7.5 leaves per twig: seven whole, one half
   let checked = 0, half = 0;
-  for (let i = 0; i + 16 < faithLeaves.length; i += 17) {
-    const j = faithLeaves[i + 11], k = (i / 17) % nLeaf, cov = k === 7 ? frac : 1;
+  for (let i = 0; i + 17 < faithLeaves.length; i += 18) {
+    const j = faithLeaves[i + 11], k = (i / 18) % nLeaf, cov = k === 7 ? frac : 1;
     const want = math.leafTau(tau, params, params.seed, j, k);
     for (let c = 0; c < 3; c++) expect(faithLeaves[i + 8 + c]).toBe(Math.fround(want[c] * cov));
     checked++; if (cov < 1) half++;
   }
   expect(checked).toBeGreaterThan(100);
   expect(half).toBeGreaterThan(10);
-  expect(layers.flat().length / 16).toBe(checked);                   // the layer buffers carry the same leaves
+  expect(layers.flat().length / 17).toBe(checked);                   // the layer buffers carry the same leaves
 });

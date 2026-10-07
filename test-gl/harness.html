@@ -11,6 +11,7 @@
     __run(preset, overrides, frames, opts)  one engine, captured at the given rAF tick counts (opts.rebake: see below)
     __fillCheck(preset, overrides)      the sky fill's shader against komorebi-fill.js, on the layers the engine really baked
     __fillToggle(preset, overrides)     canopy_fill opened and shut on a RUNNING engine: what it allocates, frees, and the frames either side
+    __liveChange(preset, over, key, value)  one param changed on a RUNNING engine (nothing rebuilt), the frame after it — for knobs that tween
     __diff(idA, idB) / __png(id)        exact byte comparison + the PNG artifact
 
   WHY THE CAPTURE HAPPENS INSIDE onFrame: the context is created without preserveDrawingBuffer, so the
@@ -28,7 +29,7 @@
 import { create, MAX_OCC } from '/komorebi.js';
 import { PRESETS } from '/presets.js';
 import { fillRef, fillTile } from '/komorebi-fill.js';
-import { atmosphere, sunDirection } from '/komorebi-math.js';
+import { atmosphere, ballisticK, sunDirection } from '/komorebi-math.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
 // The freeze set. Wind is deterministic noise-of-TIME (no RNG), so the only way to get a reproducible frame
@@ -232,7 +233,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
     const fx = Math.min(Math.max(u * n - 0.5, 0), n - 1), fy = Math.min(Math.max(v * n - 0.5, 0), n - 1);
     const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(x0 + 1, n - 1), y1 = Math.min(y0 + 1, n - 1), ax = fx - x0, ay = fy - y0;
     const at = (x, y, c) => data[(y * n + x) * 4 + c];
-    return [0, 1, 2].map((c) => (at(x0, y0, c) * (1 - ax) + at(x1, y0, c) * ax) * (1 - ay) + (at(x0, y1, c) * (1 - ax) + at(x1, y1, c) * ax) * ay);
+    return [0, 1, 2, 3].map((c) => (at(x0, y0, c) * (1 - ax) + at(x1, y0, c) * ax) * (1 - ay) + (at(x0, y1, c) * (1 - ax) + at(x1, y1, c) * ax) * ay);   // rgb = true depth, a = coverage (§4.5)
   };
   eng.onFrame = () => {
     ticks++;
@@ -247,7 +248,9 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
       const heights = faithful ? Array.from(eng.faith.binH).slice(0, nL)
         : Array.from({ length: nL }, (_, i) => (nL > 1 ? p.canopy_base_height_m + (i / (nL - 1)) * p.canopy_thickness_m : p.canopy_base_height_m));
       const data = lt.slice(0, nL).map((t) => read(t, lres));
-      const layers = heights.map((h, L) => ({ h, t: (x, y) => tap(data[L], lres, (x + E / 2) / E, (y + E / 2) / E).map((tau) => Math.exp(-tau)) }));
+      const at4 = (L, x, y) => tap(data[L], lres, (x + E / 2) / E, (y + E / 2) / E);
+      const layers = heights.map((h, L) => ({ h, t: (x, y) => at4(L, x, y).slice(0, 3).map((tau) => Math.exp(-tau)), c: (x, y) => at4(L, x, y)[3] }));
+      const beamK = ballisticK(p.leaf_diffuse);   // the split (§4.5): above 0 the reference emits t − tb from coverage, with the albedo off
       const atm = atmosphere({ sun: [0, 0, 0], ambient: [0, 0, 0] }, p.sun_elevation_deg, p.sky_turbidity, p.ambient_skylight);
       const sd = sunDirection([0, 0, 0], p.sun_elevation_deg, p.sun_azimuth_deg);
       const gS = [sd[0] / Math.max(sd[2], 0.05), sd[1] / Math.max(sd[2], 0.05)];
@@ -258,7 +261,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
       for (let q = 0; q < o.samples; q++) {              // a fixed scatter of texels, interior and border alike
         const i = Math.floor(((q * 0.6180339887) % 1) * n), j = Math.floor(((q * 0.7548776662 + 0.3) % 1) * n);
         const x = [-E / 2 + ((i + 0.5) / n) * E, -E / 2 + ((j + 0.5) / n) * E];
-        const ref = fillRef(layers, x, K, { gS, sun: atm.sun, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j) });   // only the floor reads S (the cloth and the tent are handed albedo 0); each texel carries its own slot of the 4x4 interleaving tile
+        const ref = fillRef(layers, x, K, { gS, sun: atm.sun, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j), k: beamK });   // the proxy's albedo is the floor's alone (the cloth and the tent are handed 0) and is off above k = 0; each texel carries its own slot of the 4x4 interleaving tile
         for (let c = 0; c < 3; c++) {
           const gT = T[(j * n + i) * 4 + c], gSv = S[(j * n + i) * 4 + c];
           eT = Math.max(eT, Math.abs(gT - ref.T[c])); eS = Math.max(eS, Math.abs(gSv - ref.S[c]));
@@ -279,7 +282,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
         for (let y = 0; y < m / 2; y++) for (let x = 0; x < m / 2; x++) nx[y * (m / 2) + x] = (lvl[2 * y * m + 2 * x] + lvl[2 * y * m + 2 * x + 1] + lvl[(2 * y + 1) * m + 2 * x] + lvl[(2 * y + 1) * m + 2 * x + 1]) / 4;
         lvl = nx; m /= 2;
       }
-      finish(null, { errT: eT, errS: eS, meanT: sT / k, meanS: sS / k, minT, maxT, res: n, K, layerRes: lres, faithful, heights, rough });
+      finish(null, { errT: eT, errS: eS, meanT: sT / k, meanS: sS / k, minT, maxT, res: n, K, layerRes: lres, faithful, heights, rough, beamK });
     } catch (e) { finish(e); }
   };
 });
@@ -329,6 +332,48 @@ window.__fillToggle = (presetName, overrides, opts) => new Promise((resolve, rej
     if (ticks === 15) eng.params.canopy_fill = 1;
     if (ticks === 36) { grab('open'); eng.params.canopy_fill = 0; }
     if (ticks === 58) { grab('shut again'); finish(null); }
+  };
+});
+
+// ---------------------------------------------------------------------------
+// A KNOB MOVED ON A RUNNING ENGINE (§4.5). leaf_diffuse is a MORPH key: it tweens, so in a transition or under a slider it changes
+// every frame and NOTHING rebuilds — no apply(), no setParams. Whatever depends on it has to notice by itself: the layer tap reads it as
+// a uniform, the fill's signature carries it so S re-bakes, and the faithful cast (which has it baked in) re-casts. This engine is
+// born without the change, settles, takes it at tick 15 with a bare assignment, and the frame at tick 36 is returned for the runner to
+// hold against an engine born with the knob already set (and against one where it never moved).
+// ---------------------------------------------------------------------------
+window.__liveChange = (presetName, overrides, key, value, opts) => new Promise((resolve, reject) => {
+  const base = PRESETS[presetName];
+  if (!base) return reject(new Error(`unknown preset '${presetName}'`));
+  const o = Object.assign({ rebake: false }, opts || {});
+  const params = Object.assign({}, base, overrides || {}, FREEZE);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage'; canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  document.body.appendChild(canvas);
+  let eng = null, ticks = 0, done = false, glError = 0, capture = null;
+  const finish = (err) => {
+    if (done) return; done = true; clearTimeout(timer);
+    try { eng?.setPaused(true); eng?.dispose(); } catch { /* nothing to stop */ }
+    canvas.remove();
+    if (err) reject(err); else resolve({ capture, glError });
+  };
+  const timer = setTimeout(() => finish(new Error('live change did not finish within 120 s')), 120000);
+  try { eng = create(canvas, { params }); } catch (e) { return finish(e); }
+  const gl = eng.gl;
+  eng.onFrame = () => {
+    ticks++;
+    if (o.rebake && ticks === 4) eng.apply('bake');
+    if (done) return;
+    if (ticks === 15) eng.params[key] = value;
+    if (ticks < 36) return;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const w = canvas.width, h = canvas.height, bytes = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+    const e = gl.getError(); if (e) glError = e;
+    const id = `c${nextId++}`;
+    caps.set(id, { w, h, bytes });
+    capture = { id, hash: fnv1a(bytes) };
+    finish(null);
   };
 });
 

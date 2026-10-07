@@ -4,7 +4,7 @@
 // camera registry), the lateral-diffusion glow tier, and the layer-debug blit.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, atmosphere, clamp, smoothstep, sunDirection } from './komorebi-math.js';
+import { DEG, atmosphere, ballisticK, clamp, smoothstep, sunDirection } from './komorebi-math.js';
 import { MAX_LAYERS } from './komorebi-params.js';
 import { CAMERAS, GROUP_UPLOAD_KEYS } from './komorebi-transport.js';
 
@@ -27,6 +27,7 @@ export function makeRender(hub){
   // uniform and an untaken shader branch. Gate ON: transport writes LINEAR HDR into the sharp target instead, and
   // drawDiffusion spreads it and composites into the caller's target (§4.9).
   function drawFrameInto(fbo, w, h){
+    hub.refreshFaith();   // the faithful cast has k baked in (§4.5): current for THIS frame's leaf_diffuse, or untouched
     hub.refreshFill();   // the sky fill (§4.7) is current for THIS frame's sun and sky, or not wanted — before any target is bound, because a re-bake binds its own
     // the SKY VIEW joins the diffusion gate (§4.9): the very same linear-HDR spread reads there as the eye's own
     // VEILING GLARE — the wash around a bright source seen through gaps, which is scatter in the eye rather than in
@@ -184,6 +185,10 @@ export function makeRender(hub){
       const el = Math.max(params.sun_elevation_deg,6)*DEG;            // penumbra/height: source angular core projected to ground (~/sin elev), widened by cloud
       gl.uniform1f(u.occPenumbra, (params.core_angular_radius_deg*DEG)/Math.sin(el)*(1.0+3.0*params.cloud_thickness));
     },
+    // THE BEAM's neutral depth (§4.5): k = −ln(1−leaf_diffuse), the share of a leaf's transmitted light that is diffuse and so is no
+    // longer in the beam. Every cast camera reads it at the tap (the layer path), and the receivers that read S gate on it too.
+    // On the faithful path the tap is not where k lives — the cast has it baked in (bake.js) — but the receivers' gate is.
+    tap: (u) => { gl.uniform1f(u.beamK, ballisticK(params.leaf_diffuse)); },
     ca: (u) => {
       // edge diffraction (§3.6): per-channel λ-proportional spread of the transport shift. Green (555nm) is the
       // reference; red(620) spreads more, blue(470) less. 0 -> (1,1,1), the byte-identical single-tap path.

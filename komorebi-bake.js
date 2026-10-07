@@ -8,7 +8,7 @@
 // is the swayed skeleton both cast bakes share. A factory over the engine's
 // shared internals (hub).
 // ============================================================================
-import { atmosphere, clamp, sunDirection } from './komorebi-math.js';
+import { atmosphere, ballisticK, clamp, sunDirection } from './komorebi-math.js';
 import { MAX_FILL_DIRS, MAX_LAYERS } from './komorebi-params.js';
 import { fillRays, fillTurns } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
@@ -50,11 +50,12 @@ export function makeBake(hub){
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);          // optical depth accumulates additively
     const base=params.canopy_base_height_m;
-    // ALPHA IS THE WOOD'S CHANNEL IN SKY MODE (§4.9). The layer texture's rgb is the foliage's per-channel optical
-    // depth and its alpha has never been read by anything — tap/tapUp/tapCA and the debug blit all take .rgb — so the
-    // look-up camera claims it for the skeleton, and the leaves must stop writing their coverage there or the two
-    // would sum into one meaningless number. A colour mask does it without touching the leaf shader, which keeps
-    // every other look's bake bit-for-bit what it was.
+    // ALPHA IS THE LEAVES' COVERAGE, and the WOOD'S CHANNEL IN SKY MODE (§4.9). The layer texture's rgb is the foliage's
+    // per-channel optical depth; its alpha is Σ of the leaf masks over the texel, fade included (§4.5), which is what
+    // turns leaf_diffuse's k into the beam's neutral depth (k·alpha) and into the fill's emission. At k = 0 nothing reads
+    // it — tap/tapCA and the debug blit all take .rgb — so the look-up camera claims it for the skeleton, and the leaves
+    // must stop writing their coverage there or the two would sum into one meaningless number. A colour mask does it
+    // without touching the leaf shader, which keeps the sky view's bake bit-for-bit what it was.
     for(let l=0;l<params.layer_count;l++){
       // higher layers ride longer levers -> sway more when height gain > 0 (else pure translation)
       const f = faithfulSway ? H[l]/Math.max(faith.hMax,1e-3) : 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
@@ -160,6 +161,8 @@ export function makeBake(hub){
   }
 
   function bakeFaithful(){
+    const k = ballisticK(params.leaf_diffuse);
+    faith.k = k;   // recorded even for an empty grove: refreshFaith compares against it
     if(faith.count===0){ gl.bindFramebuffer(gl.FRAMEBUFFER, null); return; }
     const res = bakeRes(), N = src.count;
     // cast-region frame: the shadow lands OFFSET from the canopy by the bulk throw (standing scene), so the faith
@@ -228,6 +231,7 @@ export function makeBake(hub){
     gl.uniform2f(U.faith.origin, faith.ox, faith.oy);
     gl.uniform2f(U.faith.extent, faith.ext, faith.ext);
     gl.uniform1f(U.faith.edge, params.edge_softness);   // soft leaf rim (same as the layer bake); 0 here = hard ellipses
+    gl.uniform1f(U.faith.beamK, k);                     // the BEAM's neutral depth (§4.5), pre-integrated into the cast like everything else the leaves do to it
     gl.uniform1i(U.faith.curtainBake, params.receiver ? 1 : 0);   // §4.9: project onto the vertical cloth (curtain) vs the floor
     gl.uniform1f(U.faith.clothY, params.cloth_distance_m);
     gl.uniform1f(U.faith.morph, params.drift_phase);
@@ -305,7 +309,7 @@ export function makeBake(hub){
   // scatter branch is skipped in the shader outright.
   const fillAlbedo = () => CAMERAS[cameraFor(params)].groups.includes('floor') ? clamp(params.fill_scatter, 0, 1) : 0;
   const _atm = { sun:[0,0,0], ambient:[0,0,0] }, _sd = [0,0,0], FILL_TURNS = fillTurns();   // the 16 slot rotations never change
-  const _sig = new Float64Array(11);
+  const _sig = new Float64Array(12);
 
   // Everything the fill depends on besides the layers themselves (which rebake it eagerly, from bake()). The sun can
   // move without any bake — a time-of-day morph, the editor's sun drag — and S reads the sun's colour and its path
@@ -316,6 +320,7 @@ export function makeBake(hub){
     o[0]=params.sun_elevation_deg; o[1]=params.sun_azimuth_deg; o[2]=params.sky_turbidity;
     o[3]=fillAlbedo(); o[4]=fillK(); o[5]=fillRes(); o[6]=params.layer_count; o[7]=params.canopy_base_height_m;
     o[8]=params.canopy_thickness_m; o[9]=params.canopy_extent_m; o[10]=faithfulOn() ? 1 : 0;
+    o[11]=ballisticK(params.leaf_diffuse);   // the split changes what S is made of, and no bake moves when it tweens
   }
   function fillStale(){
     if(!fill.ready) return true;
@@ -366,6 +371,7 @@ export function makeBake(hub){
     gl.uniform2fv(u.turn, FILL_TURNS);
     gl.uniform1i(u.count, K);
     gl.uniform1f(u.scatter, fillAlbedo());
+    gl.uniform1f(u.beamK, ballisticK(params.leaf_diffuse));   // above 0 the albedo is off and every surface camera reads S (the shader says so)
     for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]); gl.uniform1i(u.layers[i], i); }
     gl.bindVertexArray(emptyVAO);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -382,11 +388,18 @@ export function makeBake(hub){
     if(faithfulOn() && hub.layerSize > 1) hub.allocLayers(1);   // the faithful layers go back to the 1×1 they are without the fill
   }
 
+  // Once per frame, before transport draws: the faithful cast carries the beam's k pre-integrated (§4.5), so unlike the layer
+  // path — which reads k at the tap — it must be re-cast when leaf_diffuse moves without anything else having baked: a
+  // tween, a slider. Under wind the bake runs every frame anyway and has already recorded the current k.
+  function refreshFaith(){
+    if(faithfulOn() && faith.k !== ballisticK(params.leaf_diffuse)) bakeFaithful();
+  }
+
   // Once per frame, before transport draws: the fill is current, or it is not wanted and holds nothing.
   function refreshFill(){
     if(!fillWanted()){ if(fill.tex[0]) releaseFill(); return; }
     if(fillStale()) bakeFill(false);
   }
 
-  return { bake, bakeFaithful, bakeFill, refreshFill, fillWanted, fillLayerRes };
+  return { bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes };
 }

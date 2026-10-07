@@ -94,7 +94,7 @@ function create(canvas, opts){
   // webglcontextrestored calls it again, because a lost context kills all of them. Hence `let`, not `const`.
   let progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
   let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
-  let bake, bakeFaithful, bakeFill, refreshFill, fillWanted, fillLayerRes, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
+  let bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -142,7 +142,7 @@ function create(canvas, opts){
       const prog = program(VS_FULL, FS_FILL);
       fillEntry = { prog, U: { origin:loc(prog,'uCanopyOrigin'), extent:loc(prog,'uCanopyExtent'), sun:loc(prog,'uSunColor'),
         layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'].map(n => loc(prog,n)), heights:loc(prog,'uLayerHeight[0]'), layerCount:loc(prog,'uLayerCount'),
-        sunDir:loc(prog,'uSunDir'), ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter') } };
+        sunDir:loc(prog,'uSunDir'), ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter'), beamK:loc(prog,'uFillBeamK') } };
     }
     return fillEntry;
   }
@@ -159,6 +159,7 @@ function create(canvas, opts){
   const faith = { vao:null, buf:null, count:0, hMin:0, hMax:1, ox:0, oy:0, ext:1,   // FAITHFUL leaf geometry (all leaves, continuous height) + the cast-region frame, computed in bakeFaithful (§4.5)
                   pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
                   gx:new Float32Array(MAX_SAMPLES), gy:new Float32Array(MAX_SAMPLES),// per-sample ground-shift scratch (hoisted; no per-bake alloc)
+                  k:0,                                                               // the beam's neutral depth the cast was last baked with (§4.5): the cast pre-integrates it, so a live leaf_diffuse re-bakes it (refreshFaith)
                   segVAO:null, segBuf:null, segRest:[], segArr:null, segCount:0 };   // + the woody skeleton (trunk+branches+twigs): rest segments, the per-bake swayed instance array, its VAO
   // SKY VIEW's share of that skeleton (§4.9): the FINE wood (level > 1) the analytic occluder never carries, sorted
   // into the leaves' own depth layers so a twig and the leaves hanging on it stamp into the SAME texture. Built
@@ -166,7 +167,7 @@ function create(canvas, opts){
   const sky = { segVAO:null, segBuf:null, segRest:[], segArr:null, start:[], count:[] };
   // THE SKY FILL's state (§4.7): Tsky and S over the canopy box, allocated lazily when canopy_fill opens and freed when
   // it shuts. `ready` = the textures hold a bake of what `sig` records, so the receiver may believe them.
-  const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(11), K:0, rays:null };
+  const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(12), K:0, rays:null };   // sig: what the bake was made of, sized by komorebi-bake.js's fillSig — a slot it writes past this is silently dropped, and the fill then re-bakes every frame
 
   // ---- THE SHARED INTERNALS (hub), continued: the stable plumbing and the shared mutable state. The engine's
   // subsystems live in sibling modules (grove, bake, source,
@@ -227,7 +228,7 @@ function create(canvas, opts){
                 morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
                 windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
                 leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
-                clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom') };
+                clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom'), beamK:loc(progFaith,'uBeamK') };
     U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
                    curtainBake:loc(progFaithSeg,'uCurtainBake'), clothY:loc(progFaithSeg,'uClothY'),
                    segSway:loc(progFaithSeg,'uSegSway'), segTau:loc(progFaithSeg,'uSegTau') };
@@ -267,7 +268,7 @@ function create(canvas, opts){
                          quadBuf, emptyVAO, bakeFBO, faithFBO, fillFBO, occTex });
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
     ({ buildGrove } = makeGrove(hub)); hub.buildGrove = buildGrove;
-    ({ bake, bakeFaithful, bakeFill, refreshFill, fillWanted, fillLayerRes } = makeBake(hub)); Object.assign(hub, { bake, bakeFaithful, bakeFill, refreshFill, fillWanted, fillLayerRes });
+    ({ bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes } = makeBake(hub)); Object.assign(hub, { bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes });
     ({ drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));
     Object.assign(hub, { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit });
     if(EDITOR) hub.initEditorGL?.();   // the debug overlays' buffers (absent on the very first call: makeEditorTools runs later and calls it itself)

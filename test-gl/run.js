@@ -44,6 +44,10 @@ const STILL_FRAMES = [20, 60];   // the stillness proof: one engine, two capture
 // Adding an invariant is adding a line. (`rebake: true` re-bakes before the capture — only a faithful look needs it.)
 // (`differ: true` inverts the assertion — the two frames must NOT match, and GL must stay clean: the row proves a gate
 // is a real switch, so the byte-identical rows beside it cannot be passing only because the feature is dead.)
+// (`near: N` is the continuity row: the frames may differ, but nowhere by more than N grey levels — a sweep that steps by a hair
+// must move the picture by a hair. A pop is a difference this large from a change that small.)
+// (`lit: [lo, hi]` is the energy row: the frames must differ AND frame b's mean level must sit between lo and hi times
+// frame a's. It is what says a split of the light moved it somewhere instead of throwing it away.)
 // ---------------------------------------------------------------------------
 const FABRIC_FAMILY = {
   fabric_tt: 0.9, fabric_tint_r: 0.9, fabric_tint_g: 0.2, fabric_tint_b: 0.7,
@@ -110,6 +114,51 @@ const INVARIANTS = [
   { name: 'canopy_fill 1 changes the cloth (tent)', preset: 'tent 1', differ: true, a: { canopy_fill: 0 }, b: { canopy_fill: 1 } },
   { name: 'fill_scatter is live at canopy_fill 1 (layer path)', preset: 'memories', differ: true,
     a: { canopy_fill: 1, fill_scatter: 0 }, b: { canopy_fill: 1, fill_scatter: 0.8 } },
+  // A LEAF IS NOT A WINDOW (§4.5). leaf_diffuse 0 is k = 0: tap()'s else, FS_FAITH's else, the P0b proxy verbatim and a
+  // sky view compiled with the literal 0.0 — the same bytes as a look that never heard of the knob, on every camera...
+  { name: 'leaf_diffuse 0 == absent (layer path)', preset: 'memories', a: {}, b: { leaf_diffuse: 0 } },
+  { name: 'leaf_diffuse 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { leaf_diffuse: 0 } },
+  // ...with the fill open, where P0b's proxy is what has to survive the refactor...
+  { name: 'leaf_diffuse 0 keeps the P0b fill (layer path)', preset: 'memories',
+    a: { canopy_fill: 1, fill_scatter: 0.15 }, b: { canopy_fill: 1, fill_scatter: 0.15, leaf_diffuse: 0 } },
+  { name: 'leaf_diffuse 0 keeps the P0b fill (faithful path)', preset: 'park 1', rebake: true,
+    a: { canopy_fill: 1, fill_scatter: 0.15 }, b: { canopy_fill: 1, fill_scatter: 0.15, leaf_diffuse: 0 } },
+  { name: 'leaf_diffuse 0 keeps the P0b fill (curtain)', preset: 'curtain 1', a: { canopy_fill: 1 }, b: { canopy_fill: 1, leaf_diffuse: 0 } },
+  { name: 'leaf_diffuse 0 keeps the P0b fill (tent)', preset: 'tent 1', a: { canopy_fill: 1 }, b: { canopy_fill: 1, leaf_diffuse: 0 } },
+  // ...and the sky view, which this phase leaves unsplit, must not so much as notice it.
+  { name: 'the sky view ignores leaf_diffuse (1 == 0)', preset: 'canopy 1', a: { leaf_diffuse: 0 }, b: { leaf_diffuse: 1 } },
+  // Above 0 the P0b proxy is OFF: its albedo is the authored stand-in for exactly the light the split measures, and counting
+  // both would count it twice. The knob is inert, not merely small.
+  { name: 'fill_scatter is inert once leaf_diffuse is up (layer path)', preset: 'memories',
+    a: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0.8 } },
+  { name: 'fill_scatter is inert once leaf_diffuse is up (faithful path)', preset: 'park 1', rebake: true,
+    a: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0.8 } },
+  // THE MARGINAL FADE (§5.3). A leaf — or a whole tree — fading in has its fade folded into tau on the CPU, so the beam's neutral depth
+  // k·coverage has to carry the same fade (iFade) or the ballistic shadow pops to full the instant the leaf exists. Step the count
+  // from "none" to 0.005 of one: the fade is 0.005, and the picture must move by about that much — not by a whole leaf's shadow per twig.
+  // (Measured: a faded-in leaf moves the frame by 2 and 1 grey levels; a bake whose alpha ignores the fade, by 39 and 46.)
+  // (Leaves only: a fractional tree_count also re-spaces the trees that are already there, so its frames cannot be compared this way —
+  // the grove's own test holds the marginal tree's fade in iFade instead.)
+  { name: 'a marginal leaf fades its ballistic shadow with it (layer path)', preset: 'memories', near: 10,
+    a: { canopy_fill: 1, leaf_diffuse: 0.95, foliage_density: 17 / 39 }, b: { canopy_fill: 1, leaf_diffuse: 0.95, foliage_density: 17.005 / 39 } },
+  { name: 'a marginal leaf fades its ballistic shadow with it (faithful path)', preset: 'park 1', rebake: true, near: 10,
+    a: { canopy_fill: 1, leaf_diffuse: 0.95, foliage_density: 1.55 }, b: { canopy_fill: 1, leaf_diffuse: 0.95, foliage_density: 1.55 + 0.005 / 20 } },
+  // The other half of every row above: the split is a real switch, and it reaches the screen on each camera that reads it.
+  // With the fill SHUT it only takes the diffuse share out of the beam...
+  { name: 'leaf_diffuse darkens the beam (layer path)', preset: 'memories', differ: true, a: {}, b: { leaf_diffuse: 0.95 } },
+  { name: 'leaf_diffuse darkens the beam (faithful path)', preset: 'park 1', rebake: true, differ: true, a: {}, b: { leaf_diffuse: 0.95 } },
+  // ...and with it open, the energy has to go somewhere. d·T leaves the beam and the fill hands it to the shade, so a frame whose
+  // diffuse light was thrown away (S never written, never read) sits BELOW the one that still carries it: memories 0.70 against its
+  // 1.22, the tent 0.70 against 1.04, and the curtain — a dim look, where the leaf light is as bright as its whole sky — 1.00 against
+  // 2.03. The bounds below sit between the two, so they are floors under a loss, not a fit to a number. (park 1 is not here: its leaves
+  // pass so little of the sun that the frame cannot tell; the faithful S is held by the fill check's energy balance instead.)
+  { name: 'the diffuse light lands in the shade (layer path)', preset: 'memories', lit: [1.0, 1.6],
+    a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  // the cloth and the tent used to read Tsky alone; with the beam gone dark they have to read S too, or the energy leaks
+  { name: 'the diffuse light lands on the cloth (curtain)', preset: 'curtain 1', lit: [1.5, 3],
+    a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  { name: 'the diffuse light lands on the cloth (tent)', preset: 'tent 1', lit: [0.9, 1.3],
+    a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
 ];
 
 // THE SKY FILL vs ITS REFERENCE (§4.7). The bun tests hold komorebi-fill.js's laws; this holds the GLSL to it. Each row
@@ -125,6 +174,22 @@ const FILL_CHECKS = [
   { name: 'park 1 — faithful: a low-res layer set at the grown heights', preset: 'park 1', rebake: true, over: { canopy_fill: 1, fill_scatter: 0.5 } },
   { name: 'curtain 1 — Tsky only, S handed albedo 0', preset: 'curtain 1', over: { canopy_fill: 1, fill_scatter: 0.5 } },
   { name: 'tent 1 — the enclosure forces the layer tier; Tsky only', preset: 'tent 1', over: { canopy_fill: 1, fill_scatter: 0.5 } },
+  // A LEAF IS NOT A WINDOW (§4.5): the same checks with the split on — S is now the emitted t − tb, from the coverage in alpha, the
+  // albedo knob is off (it is set here on purpose: if it leaked, the reference would not see it), and the cloth and the tent read S
+  { name: 'memories, leaf_diffuse 0.95 — the emission from alpha, albedo ignored', preset: 'memories', over: { canopy_fill: 1, fill_scatter: 0.5, leaf_diffuse: 0.95 } },
+  { name: 'memories, leaf_diffuse 0.5 — K 7 at 128 px', preset: 'memories', over: { canopy_fill: 1, leaf_diffuse: 0.5, fill_directions: 7, fill_resolution: 128 } },
+  { name: 'memories in autumn, leaf_diffuse 0.95 — a red canopy, per-channel', preset: 'memories', over: { canopy_fill: 1, leaf_diffuse: 0.95, phenology: 1, anthocyanin: 0.8 } },
+  { name: 'park 1, leaf_diffuse 0.95 — faithful: coverage from the low-res layer set', preset: 'park 1', rebake: true, over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  { name: 'curtain 1, leaf_diffuse 0.95 — S is computed for the cloth too', preset: 'curtain 1', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  { name: 'tent 1, leaf_diffuse 0.95 — and for the tent', preset: 'tent 1', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+];
+// leaf_diffuse (and with it k) changed on a RUNNING engine, nothing rebuilt (it tweens, so a transition and a slider both do this):
+// the frame must be the one an engine made with the knob already there shows. The fill's signature carries k so S re-bakes, and on
+// the faithful path the cast has k baked in, so a frame that kept the old cast would look like the knob did nothing.
+const LIVE_CHANGES = [
+  { name: 'memories (layer path: the tap reads it, the fill re-bakes)', preset: 'memories', over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
+  { name: 'park 1 with the fill shut (faithful: the cast is re-cast, nothing else moves)', preset: 'park 1', rebake: true, over: { canopy_fill: 0 }, key: 'leaf_diffuse', value: 0.95 },
+  { name: 'park 1 with the fill open (faithful: the cast AND the fill)', preset: 'park 1', rebake: true, over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
 ];
 // canopy_fill crossed on a RUNNING engine (it tweens, so nothing rebuilds when it does). `sky: true` = the camera has no
 // surface to light, so the fill must stay unallocated and the frame must not move.
@@ -448,6 +513,20 @@ async function main() {
       const b = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.b, GATE_FRAMES, opts]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.captures[0].id]);
       const tag = inv.known ? 'KNOWN-FAIL' : 'FAIL';
+      if (inv.near != null) {   // a CONTINUITY row: a hair's step moves the picture by a hair
+        const gl = a.glError || b.glError, ok = !gl && (d.equal || d.maxDelta <= inv.near);
+        record('gate', inv.name, ok, ok ? `max Δ${d.equal ? 0 : d.maxDelta} <= ${inv.near} (${d.equal ? 0 : d.diffPixels}/${d.total ?? 0} px differ)` : gl ? `gl.getError 0x${gl.toString(16)}` : `max Δ${d.maxDelta} over ${inv.near}: ${d.diffPixels}/${d.total} px moved, first at ${d.firstAt} — it pops`);
+        log(`  ${ok ? 'ok  ' : 'FAIL'}  [${inv.preset}] ${inv.name}${ok ? `   max Δ${d.equal ? 0 : d.maxDelta}` : gl ? `   gl.getError 0x${gl.toString(16)}` : `   max Δ${d.maxDelta} (want <= ${inv.near})`}`);
+        continue;
+      }
+      if (inv.lit) {   // an ENERGY row: the frames differ, and b is neither dark nor blown relative to a
+        const gl = a.glError || b.glError, ratio = b.captures[0].stats.mean / a.captures[0].stats.mean;
+        const ok = !d.equal && !gl && ratio >= inv.lit[0] && ratio <= inv.lit[1];
+        record('gate', inv.name, ok, ok ? `mean level ×${ratio.toFixed(3)} (${a.captures[0].stats.mean.toFixed(1)} -> ${b.captures[0].stats.mean.toFixed(1)}), within ×${inv.lit.join('..×')}`
+          : gl ? `gl.getError 0x${gl.toString(16)}` : d.equal ? `frames IDENTICAL (${a.captures[0].hash}) — the split does nothing` : `mean level ×${ratio.toFixed(3)} is outside ×${inv.lit.join('..×')}`);
+        log(`  ${ok ? 'ok  ' : 'FAIL'}  [${inv.preset}] ${inv.name}${ok ? `   ×${ratio.toFixed(3)}` : gl ? `   gl.getError 0x${gl.toString(16)}` : `   ×${ratio.toFixed(3)} (want ×${inv.lit.join('..×')})`}`);
+        continue;
+      }
       if (inv.differ) {   // a LIVE row: the frames must differ, and the engine must have stayed GL-clean doing it
         const gl = a.glError || b.glError;
         const ok = !d.equal && !gl;
@@ -478,7 +557,8 @@ async function main() {
       if (r.errT > FILL_TOL) bad.push(`Tsky off by ${r.errT.toExponential(2)}`);
       if (r.errS > FILL_TOL) bad.push(`S off by ${r.errS.toExponential(2)}`);
       if (!(r.maxT > r.minT + 1e-3)) bad.push(`Tsky is flat (${r.minT.toFixed(4)}..${r.maxT.toFixed(4)}): nothing was measured`);
-      const detail = `errT ${r.errT.toExponential(1)} errS ${r.errS.toExponential(1)}  Tsky ${r.minT.toFixed(2)}..${r.maxT.toFixed(2)} mean ${r.meanT.toFixed(3)}  S mean ${r.meanS.toFixed(3)}  texel-to-texel rms by mip ${r.rough.map((v) => v.toFixed(3)).join('/')}  ${r.res}px K${r.K}${r.faithful ? `  layers ${r.layerRes}px @ ${r.heights.map((h) => h.toFixed(2)).join('/')} m` : ''}`;
+      if (c.over.leaf_diffuse > 0 && !(r.meanS > 0.01)) bad.push(`S is empty (mean ${r.meanS.toFixed(4)}) with the split on: nothing was measured`);
+      const detail = `${r.beamK > 0 ? `k ${r.beamK.toFixed(2)}  ` : ''}errT ${r.errT.toExponential(1)} errS ${r.errS.toExponential(1)}  Tsky ${r.minT.toFixed(2)}..${r.maxT.toFixed(2)} mean ${r.meanT.toFixed(3)}  S mean ${r.meanS.toFixed(3)}  texel-to-texel rms by mip ${r.rough.map((v) => v.toFixed(3)).join('/')}  ${r.res}px K${r.K}${r.faithful ? `  layers ${r.layerRes}px @ ${r.heights.map((h) => h.toFixed(2)).join('/')} m` : ''}`;
       record('fill', c.name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(62)} ${bad.join('; ') || detail}`);
     }
@@ -504,6 +584,26 @@ async function main() {
       const detail = `${shut.hash} -> ${open.hash} -> ${again.hash}   allocated ${[shut, open, again].map((x) => (x.allocated ? 'yes' : 'no')).join('/')}`;
       record('fill', name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || detail}`);
+    }
+
+    if (!gateOnly && !robustOnly) log('\nLEAF DIFFUSE — changed on a running engine, nothing rebuilt');
+    for (const c of (gateOnly || robustOnly) ? [] : LIVE_CHANGES) {
+      const name = `leaf_diffuse live: ${c.name}`;
+      let a, b;
+      try {
+        const opts = c.rebake ? { rebake: true } : undefined;
+        a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [c.preset, { ...c.over, [c.key]: c.value }, 36, opts]);   // born with the knob
+        b = await page.evaluate(([p, o, k, v, q]) => window.__liveChange(p, o, k, v, q), [c.preset, c.over, c.key, c.value, { rebake: !!c.rebake }]);   // the knob moved at tick 15
+      } catch (e) { record('live', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); continue; }
+      const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.capture.id]);
+      const never = await page.evaluate(([p, o, q]) => window.__run(p, o, [36], q), [c.preset, c.over, c.rebake ? { rebake: true } : undefined]);   // ...and the frame it must NOT be: the knob never moved
+      const stale = await page.evaluate(([x, y]) => window.__diff(x, y), [never.captures[0].id, b.capture.id]);
+      const bad = [];
+      if (!d.equal) bad.push(`${d.diffPixels}/${d.total} px differ from a frame born with it (max Δ${d.maxDelta})`);
+      if (stale.equal) bad.push('the frame is the one from before the change — the knob did nothing');
+      if (a.glError || b.glError) bad.push(`gl.getError 0x${(a.glError || b.glError).toString(16)}`);
+      record('live', name, bad.length === 0, bad.join('; ') || `identical to a frame born with it (${a.captures[0].hash}); the unchanged frame is ${never.captures[0].hash}`);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || a.captures[0].hash}`);
     }
 
     // ---- suite 4: transition routing ----

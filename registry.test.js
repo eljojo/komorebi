@@ -23,7 +23,7 @@ test("every group a camera speaks is a group that exists", () => {
 
 test("every group carrying uniforms also carries an upload — a declared uniform nobody fills reads as zero", () => {
   for (const [g, def] of Object.entries(TRANSPORT_GROUPS)) {
-    if (!def.locs) continue;   // a functions-only group (the taps, the fold field, the warp) has nothing to fill
+    if (!def.locs) continue;   // a functions-only group (the fold field, the warp) has nothing to fill
     expect(`${g}: ${GROUP_UPLOAD_KEYS.includes(g)}`).toBe(`${g}: true`);
   }
 });
@@ -33,7 +33,7 @@ test("no uploader without a group, and no group without a camera — both are de
   for (const g of ALL_GROUPS) expect(`group ${g} spoken: ${SPOKEN.has(g)}`).toBe(`group ${g} spoken: true`);
 });
 
-test("a functions-only group uploads nothing — the taps and the fold field declare no uniforms of their own", () => {
+test("a functions-only group uploads nothing — the fold field and the warp declare no uniforms of their own", () => {
   for (const g of GROUP_UPLOAD_KEYS) expect(`${g} has locs: ${!!TRANSPORT_GROUPS[g].locs}`).toBe(`${g} has locs: true`);
 });
 

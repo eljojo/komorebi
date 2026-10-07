@@ -37,6 +37,7 @@ const MORPH_KEYS = [
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'canopy_fill','fill_scatter',                                         // the sky fill (§4.7): two live shader uniforms — the receiver's mix and the leaf albedo the fill pass reads — so they tween; the canopy_fill gate crossing 0 allocates the fill lazily, mid-tween, which is not a look pop
+  'leaf_diffuse',                                                       // a leaf is not a window (§4.5): k = −ln(1−d) is a live uniform on both paths (the layer tap reads it, the faithful cast re-bakes on it), so it tweens
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'fabric_tt','fabric_tint_r','fabric_tint_g','fabric_tint_b',          // the receiver's fabric (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
   'cloth_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','fabric_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
@@ -261,7 +262,13 @@ const DEFAULTS = {
   // old floor, literally `(acc·sun + ambient)·ground` — the quality-rung gate, ships shut because presets merge over
   // these defaults (a 1 here would relight every shipped look); a look opts in. 1 = the physical shade.
   canopy_fill: 0.0,
-  fill_scatter: 0.0,               // the leaf's single-scattering albedo: the floor's twin of sky_scatter (§4.9), read only on the floor. 0 = the shade is filtered skylight and nothing else
+  fill_scatter: 0.0,               // the leaf's single-scattering albedo: the floor's twin of sky_scatter (§4.9), read only on the floor. 0 = the shade is filtered skylight and nothing else. INERT once leaf_diffuse is up: that is this light, measured instead of authored
+  // A LEAF IS NOT A WINDOW (spec §4.5/§4.6/§4.7): the share d of a leaf's transmitted light that is DIFFUSE — scattered
+  // by the mesophyll like frosted glass, not passed like stained glass. The beam keeps only (1−d)·T, as neutral depth
+  // k = −ln(1−d) per unit coverage; the rest is the light the canopy fill hands to the shade (canopy_fill), in the leaf's
+  // own colour. Physically ~0.95. 0 = the old, ballistic leaf: the literal old beam and the P0b proxy, byte-identical.
+  // It needs canopy_fill to land anywhere: with the fill shut the diffuse share just leaves the beam.
+  leaf_diffuse: 0.0,
   fill_directions: 16,             // TUNE: the K cosine-weighted rays the fill integrates (stratified in cos²θ, no noise)
   fill_resolution: 256,            // TUNE: the fill texture's size over the canopy box — it varies at the scale of crown gaps, not dapples
   sky_turbidity: 0.05,             // atmospheric haze β (Ångström); reddens low sun, desaturates dusk

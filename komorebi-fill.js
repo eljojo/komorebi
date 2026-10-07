@@ -60,14 +60,38 @@ export function fillTurns(){
 }
 
 // leafHue: a transmittance normalized to unit peak — the spectrum with its brightness divided out (§3.5's idiom).
-const hue = (t) => { const m = Math.max(t[0], t[1], t[2], 1e-4); return [t[0] / m, t[1] / m, t[2] / m]; };
+export const leafHue = (t) => { const m = Math.max(t[0], t[1], t[2], 1e-4); return [t[0] / m, t[1] / m, t[2] / m]; };
+
+// A LEAF IS NOT A WINDOW (§4.5). A layer texel holds the leaf's true optical depth τ in rgb and its COVERAGE c in alpha (Σ of
+// the leaf masks over it), so the one texel carries both transmittances. t = e^−τ is all the light the leaf passes — hue,
+// skylight, the light it sends on downward. The BALLISTIC share, the part that still travels as a beam, is tb = e^(−τ − k·c): k
+// is neutral depth per unit coverage (math.js ballisticK), identical in every channel, so tb is t scaled by one number and
+// has t's own hue. What is left, t − tb = t·(1 − e^(−k·c)), is the diffuse light the leaf emits; it is never negative and
+// never more than t. k = 0 hands the input back (the gate: the same array, no arithmetic), like leafTau's s = 0.
+export function ballistic(t, c, k){
+  if(!(k > 0)) return t;
+  const f = Math.exp(-k * c);
+  return [t[0] * f, t[1] * f, t[2] * f];
+}
+
+// What ONE leaf leaves in a layer texel, as the bake writes it (VS_BAKE/FS_BAKE): rgb = its depth, which the grove has already
+// scaled by the marginal fade (§5.3), and alpha = its coverage with that SAME fade (iFade), both × the leaf mask at this
+// texel (`edge`) and the grove's crossfade share (`grove`, uCoverage). Alpha carrying the fade is what lets the ballistic
+// shadow fade with its leaf: k·alpha is then a depth that goes to 0 as f does, where coverage alone would keep k·edge of
+// beam-dimming on a leaf that is not there yet and pop it in.
+export const leafTexel = (tau, fade, edge = 1, grove = 1) => ({ rgb: tau.map((v) => v * fade * grove * edge), a: edge * fade * grove });
 
 // ONE ray through the layer stack — the sky view's per-ray formula (§4.9), line for line with GLSL_SKY_RAY.
-//   layers: [{ h, t(x, y) -> [r,g,b] }], lowest first; t is the layer's FOLIAGE transmittance at a plan point
+//   layers: [{ h, t(x, y) -> [r,g,b], c(x, y) -> coverage }], lowest first; t is the layer's FOLIAGE transmittance at a plan
+//   point, c its coverage (read only when k > 0)
 //   p: where the ray starts (plan); shift: its plan travel per metre of rise; gS: the sun's, the same
-//   returns { T: Π t_L (what the ray passes), L: Σ thr_L (1 − t_L) ŝ_L (sun·A_L) } — L BEFORE the albedo. No skylight in L: its passage is T
-export function skyRayRef(layers, p, shift, gS, sun){
-  const n = layers.length;
+//   k: the beam's neutral depth (ballisticK). 0 runs the P0b sum, ŝ-weighted. k > 0 is the split (§4.5): each layer emits the light its
+//   beam lost, t − tb, in its own hue (no ŝ, no albedo), lit by the sun's BALLISTIC path to it, A_L = Π_{M>L} tb_M, and
+//   carried down through the layers below by their TRUE t. The ray itself still passes the true t: the skylight needs no split.
+//   returns { T: Π t_L (what the ray passes), L: P0b: Σ thr_L (1 − t_L) ŝ_L (sun·A_L) — BEFORE the albedo; split: Σ thr_L (t_L − tb_L) (sun·A_L) }
+//   No skylight in L either way: its passage is T
+export function skyRayRef(layers, p, shift, gS, sun, k = 0){
+  const n = layers.length, split = k > 0;
   const at = layers.map((l) => [p[0] + shift[0] * l.h, p[1] + shift[1] * l.h]);
   const t = layers.map((l, L) => l.t(at[L][0], at[L][1]));
   const T = [1, 1, 1], L = [0, 0, 0], thr = [1, 1, 1];
@@ -76,10 +100,20 @@ export function skyRayRef(layers, p, shift, gS, sun){
     // the sun's path down to layer i: what the layers above it let through, read along g from where THIS ray crosses i
     const A = [1, 1, 1];
     for(let m = i + 1; m < n; m++){
-      const dh = layers[m].h - layers[i].h, a = layers[m].t(at[i][0] + gS[0] * dh, at[i][1] + gS[1] * dh);
+      const dh = layers[m].h - layers[i].h, x = at[i][0] + gS[0] * dh, y = at[i][1] + gS[1] * dh;
+      const a = split ? ballistic(layers[m].t(x, y), layers[m].c(x, y), k) : layers[m].t(x, y);   // the beam only: a leaf's diffuse light does not travel on as one
       for(let c = 0; c < 3; c++) A[c] *= a[c];
     }
-    const s = hue(t[i]);
+    if(split){
+      const e = 1 - Math.exp(-k * layers[i].c(at[i][0], at[i][1]));
+      for(let c = 0; c < 3; c++){
+        L[c] += thr[c] * t[i][c] * e * (sun[c] * A[c]);
+        thr[c] *= t[i][c];
+        T[c] *= t[i][c];
+      }
+      continue;
+    }
+    const s = leafHue(t[i]);
     for(let c = 0; c < 3; c++){
       L[c] += thr[c] * (1 - t[i][c]) * s[c] * (sun[c] * A[c]);
       thr[c] *= t[i][c];
@@ -93,12 +127,14 @@ export function skyRayRef(layers, p, shift, gS, sun){
 // 1 sum to exactly K and divide to exactly 1 — "no canopy" is exactly bright for any K, as it is in the shader.
 // The mean is of TRANSMITTANCE, never of optical depth: T is Σ_k Π_L t_kL, and `meanTau` (the veil that mean tau
 // would give) is returned only so a test can hold the Jensen gap between the two. scatter = the leaves' albedo; tile = the
-// texel's slot in the interleaving (fillTile), as the shader derives it from its own texel.
-export function fillRef(layers, x, K, { gS, sun, scatter, tile }){
-  const T = [0, 0, 0], S = [0, 0, 0], tau = [0, 0, 0];
+// texel's slot in the interleaving (fillTile), as the shader derives it from its own texel. k = the beam's neutral depth:
+// above 0 the albedo is OFF — the P0b proxy was an authored stand-in for exactly the diffuse light k measures, so counting
+// both would count it twice — and S is the emitted light as it is, in the leaf's own colour, at the level d·T.
+export function fillRef(layers, x, K, { gS, sun, scatter, tile, k = 0 }){
+  const T = [0, 0, 0], S = [0, 0, 0], tau = [0, 0, 0], split = k > 0;
   for(const d of fillDirections(K, tile)){
-    const r = skyRayRef(layers, x, d.shift, scatter > 0 ? gS : null, sun);   // scatter 0 skips the whole sun-path branch, exactly as FS_FILL does
+    const r = skyRayRef(layers, x, d.shift, split || scatter > 0 ? gS : null, sun, k);   // scatter 0 skips the whole sun-path branch, exactly as FS_FILL does
     for(let c = 0; c < 3; c++){ T[c] += r.T[c]; S[c] += r.L[c]; tau[c] -= Math.log(Math.max(r.T[c], 1e-300)); }
   }
-  return { T: T.map((v) => v / K), S: S.map((v) => (v / K) * scatter), meanTau: tau.map((v) => v / K) };
+  return { T: T.map((v) => v / K), S: S.map((v) => (v / K) * (split ? 1 : scatter)), meanTau: tau.map((v) => v / K) };
 }

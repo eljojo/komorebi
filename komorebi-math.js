@@ -121,6 +121,15 @@ function leafTau(tauSummer, P, seed, j, k, out = [0,0,0]){
   return mixtureTau(wall, cell, P.wall_fraction, out);
 }
 
+// A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
+// diffuse share (d = leaf_diffuse) is scattered by the mesophyll and leaves in every direction. The beam sees (1−d)·T, which
+// is NEUTRAL depth on top of the leaf's own: k = −ln(1−d) per unit coverage, the same in every channel because the split is
+// set by the leaf's scattering structure and not by its pigments (so the beam keeps the leaf's hue and the diffuse share
+// is simply t − tb). d → 1 is −ln 0, so k is capped where the beam is already dark (e^−6 = 0.25 %). d = 0 is exactly 0 —
+// the gate, no log round trip — and so is anything that is not a positive number.
+const BEAM_K_MAX = 6;
+function ballisticK(d){ return d > 0 ? Math.min(-Math.log1p(-Math.min(d, 1)), BEAM_K_MAX) : 0; }
+
 // ---- broadband wind signal (spec §5.1). Real wind is BROADBAND, not a single frequency — a single sine
 // reads as a machine because all its energy sits at one period. A frame-stable fractal sum of octaves over
 // TIME with per-octave amplitude gain G=2^(-H) gives a power spectrum ∝ f^-(2H+1): the Kolmogorov inertial
@@ -185,4 +194,4 @@ function bendDown(dir, dth){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafTau, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, bendDown };

@@ -256,8 +256,8 @@ export function makeGrove(hub){
 
     // ---- hang a leaf cluster on each twig, accumulating one instance buffer per depth layer ----
     const layerData = [];
-    for(let l=0;l<nLayer;l++) layerData.push([]);   // 16 floats/leaf — see attribute layout below
-    const faithData = [];                           // FAITHFUL: ALL leaves in one buffer + a 17th float = continuous height (§4.5)
+    for(let l=0;l<nLayer;l++) layerData.push([]);   // 17 floats/leaf — see attribute layout below
+    const faithData = [];                           // FAITHFUL: ALL leaves in one buffer, + the continuous height (§4.5) before the fade: 18 floats/leaf
     const faithful = faithfulOn();                  // hoisted: the packing convention below must be ONE decision for the whole grove, not re-asked per leaf
     // Autumn senescence (§4.5): per-leaf pigment state. Every s_j is exactly 0 until phenology passes turn_start, so
     // below it the authored `tau` goes through untouched — the gate that keeps every shipped look byte-identical.
@@ -300,10 +300,12 @@ export function makeGrove(hub){
         // The hashes inside leafTau are pure functions of (seed, j, k) — they must never draw from rng/rng2/gr above,
         // or every shipped grove reshuffles.
         const lt = senescing ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
+        // iFade: the very `cov` folded into tau above. The bake writes it into alpha (coverage) so the leaf's BALLISTIC shadow (§4.5,
+        // k·alpha) fades out with its tau instead of keeping full weight on a leaf that is not there yet — alpha has no other reader.
         data.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                  lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase);
+                  lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, cov);
         faithData.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                  lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, t.z);   // + REAL grown height (attr 5) — cast == preview
+                  lt[0]*cov,lt[1]*cov,lt[2]*cov, j, ax,ay,orient,phase, t.z, cov);   // + REAL grown height (attr 5) — cast == preview — then the fade (attr 6)
       }
     }
 
@@ -317,13 +319,14 @@ export function makeGrove(hub){
       gl.bindBuffer(gl.ARRAY_BUFFER,quadBuf);
       gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
       gl.bindBuffer(gl.ARRAY_BUFFER,buf);
-      const S=64;   // 16 floats/leaf: [c.xy,A,B0][angle,tilt,swingGain,swingPhase][tau.rgb,clusterId][orbit.xyzw]
+      const S=68;   // 17 floats/leaf: [c.xy,A,B0][angle,tilt,swingGain,swingPhase][tau.rgb,clusterId][orbit.xyzw][iFade]
       gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
       gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
       gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
       gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,4,gl.FLOAT,false,S,48); gl.vertexAttribDivisor(4,1);
+      gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,1,gl.FLOAT,false,S,64); gl.vertexAttribDivisor(5,1);
       gl.bindVertexArray(null);
-      return { vao, count: arr.length/16, buf };
+      return { vao, count: arr.length/17, buf };
     };
     for(let l=0;l<nLayer;l++) layerVAO.push(buildLayerVAO(new Float32Array(layerData[l])));
 
@@ -340,14 +343,15 @@ export function makeGrove(hub){
       gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
       gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      const S=68;   // 17 floats/leaf: the 16 bake floats + the continuous height
+      const S=72;   // 18 floats/leaf: the 16 bake floats + the continuous height + the fade
       gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
       gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
       gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
       gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,4,gl.FLOAT,false,S,48); gl.vertexAttribDivisor(4,1);
       gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,1,gl.FLOAT,false,S,64); gl.vertexAttribDivisor(5,1);
+      gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6,1,gl.FLOAT,false,S,68); gl.vertexAttribDivisor(6,1);
       gl.bindVertexArray(null);
-      faith.vao=vao; faith.buf=buf; faith.count=arr.length/17;
+      faith.vao=vao; faith.buf=buf; faith.count=arr.length/18;
     }
 
     // (the woody shadow is now the CONTINUOUS-height analytic occluder built below, §4.5 — the old layer-stamped
@@ -468,7 +472,7 @@ export function makeGrove(hub){
     // clipped it — park 1's crown reaches ~4.3 m vs half=3.25 m.) Rest positions; the per-bake pad covers sway+drift.
     {
       let px0=1e18,py0=1e18,px1=-1e18,py1=-1e18;
-      for(let i=0;i<faithData.length;i+=17){ const x=faithData[i],y=faithData[i+1]; if(x<px0)px0=x; if(x>px1)px1=x; if(y<py0)py0=y; if(y>py1)py1=y; }
+      for(let i=0;i<faithData.length;i+=18){ const x=faithData[i],y=faithData[i+1]; if(x<px0)px0=x; if(x>px1)px1=x; if(y<py0)py0=y; if(y>py1)py1=y; }
       for(const s of faith.segRest){
         if(s.ax<px0)px0=s.ax; if(s.ax>px1)px1=s.ax; if(s.ay<py0)py0=s.ay; if(s.ay>py1)py1=s.ay;
         if(s.bx<px0)px0=s.bx; if(s.bx>px1)px1=s.bx; if(s.by<py0)py0=s.by; if(s.by>py1)py1=s.by;
