@@ -50,19 +50,17 @@ export function makeBake(hub){
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);          // optical depth accumulates additively
     const base=params.canopy_base_height_m;
-    // ALPHA IS THE LEAVES' COVERAGE, and the WOOD'S CHANNEL IN SKY MODE (§4.9). The layer texture's rgb is the foliage's
-    // per-channel optical depth; its alpha is Σ of the leaf masks over the texel, fade included (§4.5), which is what
-    // turns leaf_diffuse's k into the beam's neutral depth (k·alpha) and into the fill's emission. At k = 0 nothing reads
-    // it — tap/tapCA and the debug blit all take .rgb — so the look-up camera claims it for the skeleton, and the leaves
-    // must stop writing their coverage there or the two would sum into one meaningless number. A colour mask does it
-    // without touching the leaf shader, which keeps the sky view's bake bit-for-bit what it was.
+    // ALPHA IS THE LEAVES' COVERAGE, ON EVERY CAMERA (§4.5/§4.9). The layer texture's rgb is the foliage's per-channel optical depth;
+    // its alpha is Σ of the leaf masks over the texel, fade included, which is what turns leaf_diffuse's k into the beam's neutral
+    // depth (k·alpha) and into the fill's emission and the sky camera's glow. At k = 0 nothing reads it. The sky view's fine wood used
+    // to claim that channel (a colour mask kept the leaves from writing their coverage there); it has a texture of its own now (woodTex,
+    // below), so this bake is the same bake on every camera.
     for(let l=0;l<params.layer_count;l++){
       // higher layers ride longer levers -> sway more when height gain > 0 (else pure translation)
       const f = faithfulSway ? H[l]/Math.max(faith.hMax,1e-3) : 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
       gl.uniform2f(U.bake.sway, motion.sway[0]*f, motion.sway[1]*f);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.layerTex[l], 0);
-      gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1. UNMASKED: alpha is the wood's channel in sky mode and must be cleared too, or it accumulates across bakes
-      if(params.sky_view) gl.colorMask(true, true, true, false);
+      gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1, coverage 0: alpha has to reset too, or it accumulates across bakes
       for(const [g, cov] of baking){
         if(!(cov > 0)) continue;                               // a grove at zero coverage contributes no optical depth; skip the draw rather than issue it
         gl.uniform1f(U.bake.coverage, cov);
@@ -72,30 +70,35 @@ export function makeBake(hub){
         gl.bindVertexArray(L.vao);
         gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, L.count);
       }
-      if(params.sky_view) gl.colorMask(true, true, true, true);   // back to full before the next layer's clear
     }
     // The woody TRUNK and MAIN LIMBS are never stamped here — they are the continuous-height analytic occluder in
     // transport (§4.5), because a long segment cut into layer bands casts a shadow that shatters into a staircase.
     // The SKY VIEW adds back the FINE wood only (§4.9): it is read along the eye's ray rather than cast, it is short
     // enough to sit inside one band, and it carries the same per-layer sway the leaves in that band get — so the
-    // leaves have visible twigs to hang on instead of floating in clouds around bare limb tips.
-    if(params.sky_view && params.branch_tau > 0 && sky.segRest.length > 0){
-      fillSwayedSegs(sky.segRest, sky.segArr, 0, 0);   // the coherent translation arrives per LAYER below, exactly as the leaves take it
-      gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, sky.segArr);
-      gl.useProgram(progFaithSeg);
-      gl.uniform2f(U.faithSeg.origin, -E/2, -E/2);
-      gl.uniform2f(U.faithSeg.extent, E, E);          // the CANOPY plan frame, the leaves' own — no sun projection here
-      gl.uniform2f(U.faithSeg.g, 0.0, 0.0);           // g is where a shadow FALLS; nothing here is a shadow
-      gl.uniform1i(U.faithSeg.curtainBake, 0);
-      gl.uniform1f(U.faithSeg.woodTau, params.branch_tau);
-      gl.uniform1i(U.faithSeg.segTau, 1);             // layer textures accumulate OPTICAL DEPTH additively
-      gl.bindVertexArray(sky.segVAO);
+    // leaves have visible twigs to hang on instead of floating in clouds around bare limb tips. It goes in the layer's OWN wood texture
+    // (R16F, woodTex[l], cleared to 0 every bake: a layer with no twigs, or a branch_tau tweened to 0, reads as no wood), beside the
+    // layer it is registered with, so the layer's rgb stays the foliage's depth and its alpha the leaves' coverage.
+    if(params.sky_view){
+      const woodOn = params.branch_tau > 0 && sky.segRest.length > 0;
+      if(woodOn){
+        fillSwayedSegs(sky.segRest, sky.segArr, 0, 0);   // the coherent translation arrives per LAYER below, exactly as the leaves take it
+        gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, sky.segArr);
+        gl.useProgram(progFaithSeg);
+        gl.uniform2f(U.faithSeg.origin, -E/2, -E/2);
+        gl.uniform2f(U.faithSeg.extent, E, E);          // the CANOPY plan frame, the leaves' own — no sun projection here
+        gl.uniform2f(U.faithSeg.g, 0.0, 0.0);           // g is where a shadow FALLS; nothing here is a shadow
+        gl.uniform1i(U.faithSeg.curtainBake, 0);
+        gl.uniform1f(U.faithSeg.woodTau, params.branch_tau);
+        gl.uniform1i(U.faithSeg.segTau, 1);             // layer textures accumulate OPTICAL DEPTH additively
+        gl.bindVertexArray(sky.segVAO);
+      }
       for(let l=0;l<params.layer_count;l++){
-        if(!sky.count[l]) continue;
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.woodTex[l], 0);
+        gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+        if(!woodOn || !sky.count[l]) continue;
         const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
         gl.uniform2f(U.faithSeg.segSway, motion.sway[0]*f, motion.sway[1]*f);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.layerTex[l], 0);
         gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);   // draw this layer's slice: no baseInstance in WebGL2, so the attribute origin moves instead
         gl.vertexAttribPointer(1,4,gl.FLOAT,false,32,sky.start[l]*32);
         gl.vertexAttribPointer(2,4,gl.FLOAT,false,32,sky.start[l]*32+16);

@@ -6,7 +6,7 @@
 // black: the mid-fall "mud"). The split is T = T_b + T_d, ballistic (1−d)·T and diffuse d·T, and it enters as
 // NEUTRAL depth: k = −ln(1−d), τ_ball = τ + k·coverage. These tests hold the laws that would otherwise fail
 // SILENTLY: a ballistic share that is not the same hue as the leaf, a conservation that leaks, a gate that is not
-// the old frame, a marginal leaf whose shadow pops, a sky view that has quietly started to read a knob it must not.
+// the old frame, a marginal leaf whose shadow pops. (The sky view's own half of the split — the lantern — is skydiffuse.test.js.)
 // komorebi-fill.js is the reference the pixel harness holds the shader to; bun holds the reference to the laws.
 // ============================================================================
 import { test, expect } from "bun:test";
@@ -300,19 +300,20 @@ test("the faithful cast takes k at the bake: exp(−(τ + k·fade)·cov), and th
   expect(/else\s*frag = vec4\(exp\(-vTau\*cov\), 1\.0\);/.test(FS_FAITH)).toBe(true);
 });
 
-test("the sky camera is compiled with the literal 0.0 and never declares the knob: this phase leaves the sky view alone", () => {
+test("the sky camera passes the beam's k to the shared ray from its OWN group; the fill passes its own, and reads no wood", () => {
   const sky = buildTransport("sky");
-  expect(sky.includes("skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0, true, true, 0.0, T, Lsc);")).toBe(true);
-  expect(code(sky).includes("uBeamK")).toBe(false);                          // (the comment on that very line names it; the code never does)
-  expect(CAMERAS.sky.groups).not.toContain("tap");
-  expect(FS_FILL.includes("skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], uFillG, scatter, uFillOpen, false, uFillBeamK, T, Lsc);")).toBe(true);
+  expect(sky.includes("skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0 || uBeamK > 0.0, true, true, uBeamK, T, Tsrc, Lsc);")).toBe(true);
+  expect(sky.includes("uniform float uBeamK;")).toBe(true);
+  expect(CAMERAS.sky.groups).not.toContain("tap");                           // the cast cameras' tap is not part of a camera that casts nothing
+  expect(Object.keys(TRANSPORT_GROUPS.sky.locs)).toContain("beamK");
+  expect(FS_FILL.includes("skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], uFillG, scatter, uFillOpen, false, uFillBeamK, T, Tb, Lsc);")).toBe(true);
 });
 
-test("the shared per-ray snippet: alpha is COVERAGE where the wood is not in it, and the emission is the leaf's own hue, no albedo", () => {
-  expect(GLSL_SKY_RAY.includes("woodInAlpha ? exp(-d.a) : d.a")).toBe(true);
+test("the shared per-ray snippet: alpha is COVERAGE on every camera, the wood is its own texture, and the emission is the leaf's own hue, no albedo", () => {
+  expect(GLSL_SKY_RAY.includes("c = d.a; w = readWood ? exp(-texture(wood, uv).r) : 1.0;")).toBe(true);
   const src = code(GLSL_SKY_RAY);
-  expect(/if\(beamK > 0\.0 && !woodInAlpha\)\{/.test(src)).toBe(true);        // the split only where alpha is coverage; the sky view's call can never reach it
-  expect(src.includes("thr*tL0*(1.0-exp(-beamK*qL0.a))*uSunColor*A0")).toBe(true);
+  expect(/if\(beamK > 0\.0\)\{/.test(src)).toBe(true);                       // the split wherever k is up: the fill's and, now, the sky camera's
+  expect(src.includes("thr*tL0*(1.0-exp(-beamK*cL0))*uSunColor*A0")).toBe(true);
   expect(src.includes("uAmbient")).toBe(false);                               // the skylight is Tsky's, and its passage needs no split (the uniform-sky identity)
   expect(src.includes("thr*(1.0-tL0)*leafHue(tL0)*uSunColor*A0")).toBe(true);  // the P0b term, still there as the else
   // the fill's own gain: the albedo at d = 0 (the literal old product), 1 above it

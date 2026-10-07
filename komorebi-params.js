@@ -190,7 +190,7 @@ const DEFAULTS = {
   // look unchanged.
   sky_view: false,
   sky_scatter: 0.0,                // SKY VIEW (§4.9): how brightly the foliage GLOWS in its own right — single-scatter radiance from the SUN's light
-                                   // reaching each layer from above, on top of the transmitted sky (which already carries the skylight). 0 = pure transmission, byte-identical (a crown can only darken)
+                                   // reaching each layer from above, on top of the transmitted sky (which already carries the skylight). 0 = pure transmission, byte-identical (a crown can only darken). INERT once leaf_diffuse is up: the leaf is then a lantern and that glow is measured, not authored
   standing_scene: false,           // opt-in: render the trunk as a real vertical occluder (its swept shadow streak)
   trunk_radius_m: 0.1,             // trunk thickness (m) → width of its shadow streak; the area light softens it along its length
   faithful_canopy: false,          // FAITHFUL TREE (spec §4.5): opt out of the depth-layer leaf cheat. Off = leaves binned to a
@@ -269,7 +269,8 @@ const DEFAULTS = {
   // by the mesophyll like frosted glass, not passed like stained glass. The beam keeps only (1−d)·T, as neutral depth
   // k = −ln(1−d) per unit coverage; the rest is the light the canopy fill hands to the shade (canopy_fill), in the leaf's
   // own colour. Physically ~0.95. 0 = the old, ballistic leaf: the literal old beam and the P0b proxy, byte-identical.
-  // It needs canopy_fill to land anywhere: with the fill shut the diffuse share just leaves the beam.
+  // It needs canopy_fill to land anywhere on a surface: with the fill shut the diffuse share just leaves the beam. The sky view needs no fill:
+  // looking up, a leaf is a lantern (§4.9) — the disk shows through gaps only, and each leaf glows with the light it took out of the line of sight.
   leaf_diffuse: 0.0,
   fill_directions: 16,             // TUNE: the K cosine-weighted rays the fill integrates (stratified in cos²θ, no noise)
   fill_resolution: 256,            // TUNE: the fill texture's size over its frame — the canopy box in the endless park (which wraps it), the box PADDED by 3·h_max on a finite look (standing_scene or a receiver: the glow decays across the floor, §4.7), so the texel is coarser there. It varies at the scale of crown gaps, not dapples

@@ -27,8 +27,9 @@ function create(canvas, opts){
   const extCBF = gl.getExtension('EXT_color_buffer_float');     // renderable half/float
   gl.getExtension('EXT_float_blend');                            // genuinely OPTIONAL: it only governs blending into *32-bit* float
                                                                  // targets. Every blend target here is RGBA16F (makeLayerTexture: the
-                                                                 // layers, faithTex, faithScratch), which is color-renderable AND
-                                                                 // blendable in core WebGL2 once EXT_color_buffer_float is present.
+                                                                 // layers, faithTex, faithScratch) or R16F (makeWoodTexture: the sky view's
+                                                                 // wood), which are color-renderable AND blendable in core WebGL2 once
+                                                                 // EXT_color_buffer_float is present.
                                                                  // The only RGBA32F textures (clusterTex/clusterGeomTex) are data
                                                                  // textures, texelFetch-sampled, never blended — so do NOT promote this
                                                                  // to a hard requirement (it would reject capable 16F-blend devices).
@@ -183,6 +184,7 @@ function create(canvas, opts){
     effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera, fillFor,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
+    woodTex: [],            // SKY VIEW (§4.9): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)
     layerSize: 0,           // the size the active layer textures were last allocated at (allocLayers) — the faithful path's sky fill resizes them in place
     layerVAO: [],           // per-layer leaf instance VAOs {vao,count,buf}
     faithTex: null,         // FAITHFUL path (§4.5): pre-integrated soft shadow (RGBA16F); 1×1 when faithful_canopy off
@@ -285,12 +287,31 @@ function create(canvas, opts){
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
     return t;
   }
-  // the active layers at `size`, the rest 1×1 (an inactive layer is never read). The one place layer textures are made.
+  // THE WOOD'S TEXTURE (§4.9): one half-float channel, because the wood's optical depth is accumulated additively by the stamp and has to
+  // round as it did when it shared the layer texture's alpha. Half float for the same reason as everything here it is blended into;
+  // R16F is colour-renderable and linearly filterable with EXT_color_buffer_float, like the RGBA16F beside it.
+  function makeWoodTexture(size){
+    const t=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,t);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.R16F,size,size,0,gl.RED,gl.HALF_FLOAT,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  // the active layers at `size`, the rest 1×1 (an inactive layer is never read). The one place layer textures are made — and the
+  // wood's beside them: the sky view's layers carry a wood texture at their own size, every other camera's are 1×1 and unread.
   function allocLayers(size){
     hub.layerTex.forEach(t=>{ gl.deleteTexture(t); });
+    hub.woodTex.forEach(t=>{ gl.deleteTexture(t); });
     hub.layerTex = [];
+    hub.woodTex = [];
     hub.layerSize = size;
-    for(let i=0;i<MAX_LAYERS;i++) hub.layerTex.push(makeLayerTexture(i < params.layer_count ? size : 1));
+    for(let i=0;i<MAX_LAYERS;i++){
+      hub.layerTex.push(makeLayerTexture(i < params.layer_count ? size : 1));
+      hub.woodTex.push(makeWoodTexture(params.sky_view && i < params.layer_count ? size : 1));
+    }
   }
   function rebuildTextures(){
     const res = bakeRes();
@@ -471,6 +492,7 @@ function create(canvas, opts){
       transportCache.clear();
       if(fillEntry){ gl.deleteProgram(fillEntry.prog); fillEntry = null; }   // the sky fill's bake, if a look ever opened it
       hub.layerTex.forEach(t => { gl.deleteTexture(t); });
+      hub.woodTex.forEach(t => { gl.deleteTexture(t); });
       [hub.clusterTex, hub.clusterGeomTex, occTex, hub.faithTex, hub.faithScratch, hub.benchTex, presentTex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
       freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
       [bakeFBO, faithFBO, fillFBO, hub.benchFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
@@ -483,7 +505,7 @@ function create(canvas, opts){
       if(EDITOR) hub.setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
       gl.getExtension('WEBGL_lose_context')?.loseContext();
     },
-    ...(EDITOR ? { fill, faith, layers: () => hub.layerTex,   // the sky fill's state + the layers it reads, for the pixel harness's shader-vs-reference check (test-gl/); stripped from the player build
+    ...(EDITOR ? { fill, faith, layers: () => hub.layerTex, woods: () => hub.woodTex,   // the sky fill's state + the layers it reads (and the sky view's wood beside them), for the pixel harness's shader-vs-reference checks (test-gl/); stripped from the player build
                    drawSourceInset: hub.drawSourceInset, drawTreeInset: hub.drawTreeInset, treeInsetHit: hub.treeInsetHit, profiler: hub.profiler, snapshotMotion: hub.snapshotMotion, applyMotion: hub.applyMotion, setMotionSource: hub.setMotionSource,
                    isLowMotion: () => motionMagnitude() < ADAPT_LO } : {}) };   // editor-only handles, stripped from the player build
   // ---- adaptive frame-rate helpers (TUNE §9) ----
@@ -575,7 +597,7 @@ function create(canvas, opts){
     lost = false;
     transportCache.clear(); presentTex = null;         // dead handles: forgotten, never deleted
     fillEntry = null; fill.tex = [null, null]; fill.res = 0; fill.ready = false;   // the sky fill's program and textures died with the context; the first draw that wants it rebuilds both
-    Object.assign(hub, { layerTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
+    Object.assign(hub, { layerTex:[], woodTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
                          clusterTex:null, clusterGeomTex:null, presentFBO:null, presentW:0, presentH:0 });
     faith.vao = faith.buf = faith.segVAO = faith.segBuf = null;
     sky.segVAO = sky.segBuf = null;

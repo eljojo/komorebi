@@ -22,8 +22,8 @@
 //                     the same frame, one loop, paused state kept; `node run.js --robust` runs only this)
 // Opt-in, not suites: `--transition <from> <to>` (a watched transition), `--look <preset> key=value ...`
 // (a look with overrides, for eyes), `--gate [substring ...]` (only the gate invariants — the rows whose
-// name matches, if any are given — the fast loop for a gate you are adding) and `--fill` (only the sky fill's
-// shader-vs-reference check).
+// name matches, if any are given — the fast loop for a gate you are adding), `--fill` (only the sky fill's
+// shader-vs-reference check) and `--sky` (only the look-up ray's).
 // ============================================================================
 import { createReadStream } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
@@ -48,6 +48,9 @@ const STILL_FRAMES = [20, 60];   // the stillness proof: one engine, two capture
 // must move the picture by a hair. A pop is a difference this large from a change that small.)
 // (`lit: [lo, hi]` is the energy row: the frames must differ AND frame b's mean level must sit between lo and hi times
 // frame a's. It is what says a split of the light moved it somewhere instead of throwing it away.)
+// (`pin: '<hash>'` is the row with no `b`: frame a's own hash must be the one written down BEFORE the change it guards. Byte-identical
+// "a == b" rows say a gate is a gate; a pin says the frame itself did not move — the proof for a change that touches no gate at all,
+// like moving the sky view's wood out of the layer texture's alpha. The hash is the harness's FNV-1a over the 320x180 frame.)
 // ---------------------------------------------------------------------------
 const FABRIC_FAMILY = {
   fabric_tt: 0.9, fabric_tint_r: 0.9, fabric_tint_g: 0.2, fabric_tint_b: 0.7,
@@ -152,8 +155,7 @@ const INVARIANTS = [
     a: { canopy_fill: 1, fill_scatter: 0.15 }, b: { canopy_fill: 1, fill_scatter: 0.15, leaf_diffuse: 0 } },
   { name: 'leaf_diffuse 0 keeps the P0b fill (curtain)', preset: 'curtain 1', a: { canopy_fill: 1 }, b: { canopy_fill: 1, leaf_diffuse: 0 } },
   { name: 'leaf_diffuse 0 keeps the P0b fill (tent)', preset: 'tent 1', a: { canopy_fill: 1 }, b: { canopy_fill: 1, leaf_diffuse: 0 } },
-  // ...and the sky view, which this phase leaves unsplit, must not so much as notice it.
-  { name: 'the sky view ignores leaf_diffuse (1 == 0)', preset: 'canopy 1', a: { leaf_diffuse: 0 }, b: { leaf_diffuse: 1 } },
+  // ...and the sky view, which reads the split from P0c-sky on (§4.9): at 0 it is the frame it was (rows below).
   // Above 0 the P0b proxy is OFF: its albedo is the authored stand-in for exactly the light the split measures, and counting
   // both would count it twice. The knob is inert, not merely small.
   { name: 'fill_scatter is inert once leaf_diffuse is up (layer path)', preset: 'memories',
@@ -187,6 +189,42 @@ const INVARIANTS = [
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'the diffuse light lands on the cloth (tent)', preset: 'tent 1', lit: [0.9, 1.3],
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  // THE LEAF IS A LANTERN (§4.9, P0c-sky). The sky view's wood moved out of the layer texture's alpha into a texture of its own
+  // (R16F per layer), and the leaf bake stopped masking alpha, so coverage rides it on every camera. At leaf_diffuse 0 none of that may
+  // be visible: every look, canopy 1-4 above all (the only looks with a sky camera), is the frame it was before the move. These are
+  // PINS, hashes written down from the engine before the change (the rest of the file's rows compare two frames of one engine,
+  // which a texture move could survive by moving both).
+  { name: 'canopy 1 is the frame it was before the texture move', preset: 'canopy 1', pin: '5dc2bd4c' },
+  { name: 'canopy 2 is the frame it was before the texture move', preset: 'canopy 2', pin: '5d41e98a' },
+  { name: 'canopy 3 is the frame it was before the texture move', preset: 'canopy 3', pin: '212b9cef' },
+  { name: 'canopy 4 is the frame it was before the texture move', preset: 'canopy 4', pin: '4c5e56d5' },
+  // ...and the cameras that never had a wood texture to read: a 1x1 unread R16F beside them changes nothing, and the fill's program text
+  // (the shared ray's signature moved) bakes the same shade.
+  { name: 'park 1 is the frame it was (faithful floor: wood texture 1x1, unread)', preset: 'park 1', pin: '6b57b555' },
+  { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', pin: '7cad5bb5' },
+  { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'bdcffc3c' },
+  { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', pin: '13525cdd' },
+  { name: 'memories with the split and the fill open is the frame it was (the shared ray changed its signature)', preset: 'memories',
+    a: { canopy_fill: 1, leaf_diffuse: 0.95 }, pin: 'eb960892' },
+  // The gate, on the camera that grew a branch: leaf_diffuse 0 is beamK 0 is the literal old composition in the else...
+  { name: 'canopy 1 with leaf_diffuse 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { leaf_diffuse: 0 } },
+  // ...with the whole P0c family armed behind it: the fill the sky view never reads, and sky_scatter, a live knob at 0 and the same
+  // frame on both sides here (the pair differs in canopy_fill only)
+  { name: 'the P0c family is inert on the sky camera at leaf_diffuse 0 (sky view)', preset: 'canopy 1',
+    a: { leaf_diffuse: 0, sky_scatter: 0.5 }, b: { leaf_diffuse: 0, sky_scatter: 0.5, canopy_fill: 1 } },
+  // sky_scatter is the retired proxy once the leaf is a lantern, exactly as fill_scatter is on the floor: a superseded knob is dead at d > 0
+  { name: 'sky_scatter is inert once leaf_diffuse is up (sky view)', preset: 'canopy 1',
+    a: { leaf_diffuse: 0.9, sky_scatter: 0.5 }, b: { leaf_diffuse: 0.9, sky_scatter: 0.0 } },
+  // The other half: the split is a real switch on the sky camera, and sky_scatter was a real one before it.
+  { name: 'leaf_diffuse changes the look-up frame (sky view)', preset: 'canopy 1', differ: true, a: { leaf_diffuse: 0 }, b: { leaf_diffuse: 0.9 } },
+  { name: 'sky_scatter is live at leaf_diffuse 0 (sky view)', preset: 'canopy 1', differ: true, a: { leaf_diffuse: 0, sky_scatter: 0 }, b: { leaf_diffuse: 0, sky_scatter: 0.5 } },
+  // The glow replaces the window, it does not vanish with it: with the light thrown away (the leaf's beam taken out and nothing put back)
+  // the frame sits at x0.89 of the window's, with it x1.03 (canopy 1, mean level). The floor under the loss, not a fit to either.
+  { name: 'the lantern keeps the light (sky view)', preset: 'canopy 1', lit: [0.95, 1.15], a: { leaf_diffuse: 0 }, b: { leaf_diffuse: 0.95 } },
+  // Wood is a pure attenuator: with no leaves there is nothing to glow and nothing for a ballistic k to act on, so a bare grove is the same
+  // frame at any leaf_diffuse (an eye ray that meets only wood emits exactly 0, and its disk is the sky's: tb = t).
+  { name: 'a bare grove is one frame at any leaf_diffuse (sky view: wood never glows)', preset: 'canopy 1',
+    a: { foliage_density: 0, leaf_diffuse: 0 }, b: { foliage_density: 0, leaf_diffuse: 0.95 } },
 ];
 
 // THE SKY FILL vs ITS REFERENCE (§4.7). The bun tests hold komorebi-fill.js's laws; this holds the GLSL to it. Each row
@@ -262,6 +300,16 @@ const FILL_TOGGLES = [
   { name: 'canopy 1 (the sky view: never allocates)', preset: 'canopy 1', sky: true, over: { fill_scatter: 0.3 } },
 ];
 const FILL_TOL = 2e-3;
+
+// THE LANTERN's RAY vs ITS REFERENCE (§4.9). The same GLSL snippet the fill check holds, but the sky camera's half of it: readWood TRUE, the
+// wood read from the layer's own R16F texture, T_src (the beam: a leaf kills the disk) and the glow through wood, on the layers and wood the
+// engine really baked (__skyCheck). Every sky look at the three d that matter: 0 (the window: Tb is T, L is the P0b proxy), 0.5, and the
+// physical 0.95 (k ~ 3: a unit of coverage keeps 5% of the disk). The tolerance is the storage, as FILL_TOL is: the layers are half float and
+// the reference interpolates the readback in float64, which is ~2e-4 observed at worst; a wrong wood read, sun path, throughput or beam is
+// 0.06-0.8 off (each is mutation-tested: wood in the emission, the beam ignoring coverage, a sun path that ignores wood). Each row also has to MEASURE something: rays whose disk a leaf killed, rays with a lit leaf, rays
+// the wood is in the way of, and wood in the texture at all.
+const SKY_CHECKS = ['canopy 1', 'canopy 2', 'canopy 3', 'canopy 4'].flatMap((preset) => [0, 0.5, 0.95].map((d) => ({ name: `${preset}, leaf_diffuse ${d}`, preset, over: { leaf_diffuse: d } })));
+const SKY_TOL = 1e-3;
 
 // Suite 4 as data: one row per transition ROUTING tier. transitionTo classifies the from->to diff into a
 // tier, and each tier drives different code — the grove crossfade grows a SECOND grove (buildTargetGrove),
@@ -499,9 +547,10 @@ async function main() {
     const robustOnly = process.argv[2] === '--robust';
     const gateOnly = process.argv[2] === '--gate';
     const fillOnly = process.argv[2] === '--fill';
-    const solo = robustOnly || gateOnly || fillOnly;   // one suite, nothing else
+    const skyOnly = process.argv[2] === '--sky';
+    const solo = robustOnly || gateOnly || fillOnly || skyOnly;   // one suite, nothing else
     const gateFilters = gateOnly ? process.argv.slice(3).map((s) => s.toLowerCase()) : [];
-    const filters = (gateOnly || fillOnly) ? [] : process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
+    const filters = (gateOnly || fillOnly || skyOnly) ? [] : process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
     const allPresets = await page.evaluate(() => window.__presets());
     const presets = solo ? [] : filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
     if (filters.length && presets.length === 0) { log(`no preset matches: ${filters.join(', ')}`); await browser.close(); server.close(); process.exit(1); }
@@ -567,10 +616,16 @@ async function main() {
     }
 
     // ---- suite 2: the gate invariants ----
-    if (!fillOnly) log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
-    for (const inv of fillOnly ? [] : INVARIANTS.filter((r) => !gateFilters.length || gateFilters.some((f) => r.name.toLowerCase().includes(f)))) {
+    if (!fillOnly && !skyOnly) log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
+    for (const inv of (fillOnly || skyOnly) ? [] : INVARIANTS.filter((r) => !gateFilters.length || gateFilters.some((f) => r.name.toLowerCase().includes(f)))) {
       const opts = inv.rebake ? { rebake: true } : undefined;
-      const a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.a, GATE_FRAMES, opts]);
+      const a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.a || {}, GATE_FRAMES, opts]);
+      if (inv.pin) {   // a PIN row: one frame, one number written down before the change (see INVARIANTS)
+        const got = a.captures[0].hash, ok = !a.glError && got === inv.pin;
+        record('gate', inv.name, ok, ok ? `pinned (${got})` : a.glError ? `gl.getError 0x${a.glError.toString(16)}` : `hash ${got}, pinned ${inv.pin} — the frame moved`);
+        log(`  ${ok ? 'ok  ' : 'FAIL'}  [${inv.preset}] ${inv.name}${ok ? `   ${got}` : a.glError ? `   gl.getError 0x${a.glError.toString(16)}` : `   hash ${got}, pinned ${inv.pin}`}`);
+        continue;
+      }
       const b = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.b, GATE_FRAMES, opts]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.captures[0].id]);
       const tag = inv.known ? 'KNOWN-FAIL' : 'FAIL';
@@ -608,8 +663,8 @@ async function main() {
     }
 
     // ---- suite 2b: the sky fill's shader against its reference ----
-    if (!gateOnly && !robustOnly) log('\nSKY FILL — the shader against komorebi-fill.js, on the layers the engine baked');
-    for (const c of (gateOnly || robustOnly) ? [] : FILL_CHECKS) {
+    if (!gateOnly && !robustOnly && !skyOnly) log('\nSKY FILL — the shader against komorebi-fill.js, on the layers the engine baked');
+    for (const c of (gateOnly || robustOnly || skyOnly) ? [] : FILL_CHECKS) {
       let r;
       try {
         r = await page.evaluate(([p, o, q]) => window.__fillCheck(p, o, q), [c.preset, c.over, { rebake: !!c.rebake }]);
@@ -624,8 +679,25 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(62)} ${bad.join('; ') || detail}`);
     }
 
-    if (!gateOnly && !robustOnly) log('\nSKY FILL — the bookkeeping: what the engine\'s fill holds against what the leaves emitted and the beam gave up');
-    for (const c of (gateOnly || robustOnly) ? [] : FILL_ENERGY) {
+    if (!gateOnly && !robustOnly && !fillOnly) log('\nLOOK-UP RAY — the lantern\'s shared ray (wood read) against komorebi-fill.js, on the layers and wood the engine baked');
+    for (const c of (gateOnly || robustOnly || fillOnly) ? [] : SKY_CHECKS) {
+      let r;
+      try { r = await page.evaluate(([p, o]) => window.__skyCheck(p, o), [c.preset, c.over]); }
+      catch (e) { record('sky', c.name, false, e.message.split('\n')[0]); log(`  FAIL  ${c.name} — ${e.message.split('\n')[0]}`); continue; }
+      const bad = [];
+      for (const q of ['T', 'Tb', 'L']) if (r.err[q] > SKY_TOL) bad.push(`${q} off by ${r.err[q].toExponential(2)}`);
+      if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
+      if (!(r.woodTexels > 0)) bad.push('the wood texture is empty: nothing was measured');
+      if (!(r.woodHit > 0)) bad.push('no ray met the wood: its read was not measured');
+      if (!(r.glowing > 0)) bad.push('no ray met a lit leaf: the glow was not measured');
+      if (c.over.leaf_diffuse > 0 && !(r.killed > 0)) bad.push('no leaf put out the disk on any ray: T_src was not measured');
+      const detail = `k ${r.k.toFixed(2)}  errT ${r.err.T.toExponential(1)} errTb ${r.err.Tb.toExponential(1)} errL ${r.err.L.toExponential(1)}  ${r.N} rays @ ${r.n}px: disk killed on ${r.killed}, lit leaf on ${r.glowing}, wood in the way of ${r.woodHit} (of the glow on ${r.woodGlow})  wood ${r.woodTexels} texels, coverage ${r.covTexels}`;
+      record('sky', c.name, bad.length === 0, bad.join('; ') || detail);
+      log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(32)} ${bad.join('; ') || detail}`);
+    }
+
+    if (!gateOnly && !robustOnly && !skyOnly) log('\nSKY FILL — the bookkeeping: what the engine\'s fill holds against what the leaves emitted and the beam gave up');
+    for (const c of (gateOnly || robustOnly || skyOnly) ? [] : FILL_ENERGY) {
       let r;
       try { r = await page.evaluate(([p, o, q]) => window.__fillCheck(p, o, q), [c.preset, c.over, { rebake: !!c.rebake, energy: true, samples: 8 }]); }
       catch (e) { record('fill', c.name, false, e.message.split('\n')[0]); log(`  FAIL  ${c.name} — ${e.message.split('\n')[0]}`); continue; }
@@ -650,8 +722,8 @@ async function main() {
       if (bad.length) log(`        ${detail}`);
     }
 
-    if (!gateOnly && !robustOnly) log('\nSKY FILL — canopy_fill opened and shut on a running engine');
-    for (const c of (gateOnly || robustOnly) ? [] : FILL_TOGGLES) {
+    if (!gateOnly && !robustOnly && !skyOnly) log('\nSKY FILL — canopy_fill opened and shut on a running engine');
+    for (const c of (gateOnly || robustOnly || skyOnly) ? [] : FILL_TOGGLES) {
       const name = `${c.name}: ${c.sky ? 'opening it allocates nothing and moves nothing' : 'shut costs nothing, open bakes, shut again is the old frame'}`;
       let r;
       try { r = await page.evaluate(([p, o, q]) => window.__fillToggle(p, o, q), [c.preset, c.over, { rebake: !!c.rebake }]); }
@@ -673,8 +745,8 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || detail}`);
     }
 
-    if (!gateOnly && !robustOnly) log('\nLEAF DIFFUSE — changed on a running engine, nothing rebuilt');
-    for (const c of (gateOnly || robustOnly) ? [] : LIVE_CHANGES) {
+    if (!gateOnly && !robustOnly && !skyOnly) log('\nLEAF DIFFUSE — changed on a running engine, nothing rebuilt');
+    for (const c of (gateOnly || robustOnly || skyOnly) ? [] : LIVE_CHANGES) {
       const name = `leaf_diffuse live: ${c.name}`;
       let a, b;
       try {
@@ -716,7 +788,7 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${route.name.padEnd(50)} ${bad.join('; ') || `${r.ticks} ticks ${r.ms} ms`}`);
     }
     }
-    if (!filters.length && !gateOnly && !fillOnly) await robustness(page);
+    if (!filters.length && !gateOnly && !fillOnly && !skyOnly) await robustness(page);
   } finally {
     await browser.close();
     server.close();

@@ -322,10 +322,13 @@ export function makeRender(hub){
       gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[0]);
       gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[1]);
     },
-    // THE SKY VIEW's own three: regenSource's numbers, so the sun you look at and the dapples it throws are drawn
-    // from one distribution. No other camera declares them — there is no seen source anywhere else.
+    // THE SKY VIEW's own: regenSource's numbers (the seen source), so the sun you look at and the dapples it throws are drawn
+    // from one distribution, and the lantern (§4.9): the beam's k, and the per-layer wood textures on units 8-11 (0-3 the layers, 5 the
+    // wood table; the fill and faith units are not spoken here). No other camera declares them — there is no seen source anywhere else.
     sky: (u) => {
       gl.uniform1f(u.skyScatter, clamp(params.sky_scatter, 0, 1));
+      gl.uniform1f(u.beamK, ballisticK(params.leaf_diffuse));   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
+      for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE8+i); gl.bindTexture(gl.TEXTURE_2D, hub.woodTex[i]); gl.uniform1i(u.woods[i], 8+i); }
       gl.uniform2f(u.srcAngR, src.coreR, src.haloR);
       gl.uniform2f(u.srcAngL, src.Lcore, src.Lhalo);
       gl.uniform2f(u.srcMoon, src.moonD, src.moonR);

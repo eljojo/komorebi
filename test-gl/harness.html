@@ -10,6 +10,7 @@
     __presets()                         the built-in look names, read from PRESETS (never hardcoded)
     __run(preset, overrides, frames, opts)  one engine, captured at the given rAF tick counts (opts.rebake: see below)
     __fillCheck(preset, overrides)      the sky fill's shader against komorebi-fill.js, on the layers the engine really baked
+    __skyCheck(preset, overrides)       the sky view's shared ray (the lantern, wood read) against komorebi-fill.js's skyRayRef, on the layers and wood textures the engine really baked
     __fillToggle(preset, overrides)     canopy_fill opened and shut on a RUNNING engine: what it allocates, frees, and the frames either side
     __liveChange(preset, over, key, value)  one param changed on a RUNNING engine (nothing rebuilt), the frame after it — for knobs that tween
     __diff(idA, idB) / __png(id)        exact byte comparison + the PNG artifact
@@ -27,9 +28,10 @@
 <body></body>
 <script type="module">
 import { create, MAX_OCC } from '/komorebi.js';
+import { VS_FULL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/komorebi-shaders.js';
 import { PRESETS } from '/presets.js';
-import { fillDirections, fillRef, fillTile, texelTap } from '/komorebi-fill.js';
-import { atmosphere, ballisticK } from '/komorebi-math.js';
+import { fillDirections, fillRef, fillTile, texelTap, skyRayRef } from '/komorebi-fill.js';
+import { atmosphere, ballisticK, sunDirection } from '/komorebi-math.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
 // The freeze set. Wind is deterministic noise-of-TIME (no RNG), so the only way to get a reproducible frame
@@ -337,6 +339,140 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
         energy = { E: per, Etot: per.reduce((a, v) => a.map((x, c) => x + v[c]), [0, 0, 0]), Ropen, Rin, Dbeam, Reng, edge: ringSum / Math.max(ringN, 1), crown, frame: fr, bulkOn, gS, mode, lres, nL };
       }
       finish(null, { errT: eT, errS: eS, meanT: sT / k, meanS: sS / k, minT, maxT, maxS, res: n, K, layerRes: lres, faithful, heights, rough, beamK, energy });
+    } catch (e) { finish(e); }
+  };
+});
+
+// ---------------------------------------------------------------------------
+// THE LANTERN's RAY, SHADER vs REFERENCE (spec §4.9). The sky camera's per-pixel work is the shared GLSL ray (GLSL_SKY_RAY) with readWood
+// TRUE: the leaf's beam and glow, the sun's ballistic path, and the layer-stamped wood read from its own R16F texture. The fill check above
+// holds that snippet to komorebi-fill.js at readWood FALSE; this holds the other half — the wood reads, T_src, and the lantern's emission
+// through wood — on the textures the engine really baked. The camera itself cannot be compared this way (its output is tone-mapped to 8 bits,
+// and the source, the analytic wood and the glare sit on top), so the ray runs alone: a tiny program made of exactly the engine's snippets,
+// one ray a fragment, T / Tb / Lsc into three float targets, against skyRayRef taking the very same taps through the same domain (open sky
+// past the box) from a readback of the same textures. Rays are a fixed scatter of eyes and gazes, the sun path is the sky camera's own
+// (uSunDir.xy / max(uSunDir.z, 0.05)), and every figure is measured against the same stack with the wood removed, so "the wood is read"
+// is a count, not a hope.
+// ---------------------------------------------------------------------------
+window.__skyCheck = (presetName, overrides, opts) => new Promise((resolve, reject) => {
+  const base = PRESETS[presetName];
+  if (!base) return reject(new Error(`unknown preset '${presetName}'`));
+  const o = Object.assign({ frames: 24, rays: 1024 }, opts || {});
+  const params = Object.assign({}, base, overrides || {}, FREEZE);
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage'; canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  document.body.appendChild(canvas);
+  let eng = null, ticks = 0, done = false;
+  const finish = (err, out) => {
+    if (done) return; done = true; clearTimeout(timer);
+    try { eng?.setPaused(true); eng?.dispose(); } catch { /* nothing to stop */ }
+    canvas.remove();
+    if (err) reject(err); else resolve(out);
+  };
+  const timer = setTimeout(() => finish(new Error('sky check did not reach its frame within 120 s')), 120000);
+  try { eng = create(canvas, { params }); } catch (e) { return finish(e); }
+  const gl = eng.gl;
+  const read = (tex, n) => {                           // a 16F texture, level 0, as float32 (an R16F reads back as (r, 0, 0, 1))
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const out = new Float32Array(n * n * 4);
+    gl.readPixels(0, 0, n, n, gl.RGBA, gl.FLOAT, out);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb);
+    return out;
+  };
+  eng.onFrame = () => {
+    ticks++;
+    if (done || ticks < o.frames) return;
+    try {
+      const p = eng.params, E = p.canopy_extent_m, nL = p.layer_count, n = eng.perf.bres;
+      if (!p.sky_view) return finish(new Error(`'${presetName}' is not a sky view: nothing here reads the wood`));
+      const lt = eng.layers(), wt = eng.woods();
+      const dat = lt.slice(0, nL).map((t) => read(t, n)), wdat = wt.slice(0, nL).map((t) => read(t, n));
+      const canopy = { ox: -E / 2, oy: -E / 2, ext: E };
+      const heights = Array.from({ length: nL }, (_, i) => (nL > 1 ? p.canopy_base_height_m + (i / (nL - 1)) * p.canopy_thickness_m : p.canopy_base_height_m));
+      const k = ballisticK(p.leaf_diffuse), atm = atmosphere({ sun: [0, 0, 0], ambient: [0, 0, 0] }, p.sun_elevation_deg, p.sky_turbidity, p.ambient_skylight);
+      const sd = [0, 0, 0]; sunDirection(sd, p.sun_elevation_deg, p.sun_azimuth_deg);
+      const gS = [sd[0] / Math.max(sd[2], 0.05), sd[1] / Math.max(sd[2], 0.05)];   // the sky camera's own sun path: it has no beam to share one with
+      // the rays: a fixed LCG scatter of eyes over the central 8 m and gazes from 20° to 90° of elevation; pL_i = eye + dir.xy·(h_i/dir.z)
+      const N = o.rays, rays = new Float32Array(N * 12), eyes = [];
+      let seed = 12345; const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+      for (let i = 0; i < N; i++) {
+        const ex = (rnd() - 0.5) * 8, ey = (rnd() - 0.5) * 8, az = rnd() * 2 * Math.PI, el = 0.35 + rnd() * 1.2;
+        const dz = Math.sin(el), dxy = Math.cos(el), sh = [Math.cos(az) * dxy / dz, Math.sin(az) * dxy / dz];
+        const pts = heights.map((h) => [ex + sh[0] * h, ey + sh[1] * h]);
+        while (pts.length < 4) pts.push([0, 0]);
+        rays.set([pts[0][0], pts[0][1], pts[1][0], pts[1][1], pts[2][0], pts[2][1], pts[3][0], pts[3][1], gS[0], gS[1], 0, 0], i * 12);
+        eyes.push({ eye: [ex, ey], sh });
+      }
+      const fsrc = `#version 300 es
+precision highp float;
+layout(location=0) out vec4 oT; layout(location=1) out vec4 oTb; layout(location=2) out vec4 oL;
+${GLSL_LAYER_FIELD}
+${GLSL_WOOD_FIELD}
+${GLSL_SKY_RAY}
+uniform highp sampler2D uRays;
+uniform float uBeamK;
+void main(){
+  int i = int(gl_FragCoord.x);
+  vec4 a = texelFetch(uRays, ivec2(i*3+0, 0), 0), b = texelFetch(uRays, ivec2(i*3+1, 0), 0), c = texelFetch(uRays, ivec2(i*3+2, 0), 0);
+  vec3 T, Tb, L;
+  skyRay(a.xy, a.zw, b.xy, b.zw, c.xy, true, true, true, uBeamK, T, Tb, L);   // the sky camera's call: open outside, wood read, the sun path it looks at
+  oT = vec4(T, 1.0); oTb = vec4(Tb, 1.0); oL = vec4(L, 1.0);
+}`;
+      const mk = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(`probe shader: ${gl.getShaderInfoLog(sh)}`); return sh; };
+      const prog = gl.createProgram();
+      gl.attachShader(prog, mk(gl.VERTEX_SHADER, VS_FULL)); gl.attachShader(prog, mk(gl.FRAGMENT_SHADER, fsrc)); gl.linkProgram(prog);
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(`probe link: ${gl.getProgramInfoLog(prog)}`);
+      gl.useProgram(prog);
+      const U = (nm) => gl.getUniformLocation(prog, nm);
+      gl.getError();                                   // whatever the engine left is not the probe's
+      const rayTex = gl.createTexture(); gl.activeTexture(gl.TEXTURE12); gl.bindTexture(gl.TEXTURE_2D, rayTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, N * 3, 1, 0, gl.RGBA, gl.FLOAT, rays);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.uniform1i(U('uRays'), 12);
+      gl.uniform2f(U('uCanopyOrigin'), canopy.ox, canopy.oy); gl.uniform2f(U('uCanopyExtent'), E, E);
+      gl.uniform3f(U('uSunColor'), atm.sun[0], atm.sun[1], atm.sun[2]); gl.uniform3f(U('uAmbient'), atm.ambient[0], atm.ambient[1], atm.ambient[2]);
+      gl.uniform1fv(U('uLayerHeight[0]'), heights.concat([0, 0, 0, 0]).slice(0, 4)); gl.uniform1i(U('uLayerCount'), nL); gl.uniform1f(U('uBeamK'), k);
+      for (let i = 0; i < 4; i++) {                    // the layers on units 0-3 and the wood on 8-11: the units the sky camera itself uses
+        gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, lt[i]); gl.uniform1i(U(`uLayer[${i}]`), i);
+        gl.activeTexture(gl.TEXTURE8 + i); gl.bindTexture(gl.TEXTURE_2D, wt[i]); gl.uniform1i(U(`uWood[${i}]`), 8 + i);
+      }
+      gl.activeTexture(gl.TEXTURE13);                  // the targets are made on a unit the program never samples (else one is read while attached)
+      const targets = [0, 1, 2].map(() => {
+        const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, N, 1, 0, gl.RGBA, gl.FLOAT, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        return t;
+      });
+      const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      targets.forEach((t, i) => gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0));
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error("the sky check's float targets are incomplete");
+      gl.viewport(0, 0, N, 1); gl.disable(gl.BLEND);
+      gl.bindVertexArray(gl.createVertexArray()); gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const out = targets.map((_t, i) => { gl.readBuffer(gl.COLOR_ATTACHMENT0 + i); const a = new Float32Array(N * 4); gl.readPixels(0, 0, N, 1, gl.RGBA, gl.FLOAT, a); return a; });
+      const glError = gl.getError();
+      // the reference: the same taps through the same domain, from a readback of the same textures (wood is exp(−r) of the R16F)
+      const tap = (L, x, y) => texelTap(dat[L], n, canopy, 'open', x, y), wtap = (L, x, y) => texelTap(wdat[L], n, canopy, 'open', x, y);
+      const bare = heights.map((h, L) => ({ h, t: (x, y) => tap(L, x, y).slice(0, 3).map((v) => Math.exp(-v)), c: (x, y) => tap(L, x, y)[3] }));
+      const layers = bare.map((l, L) => ({ ...l, w: (x, y) => Math.exp(-wtap(L, x, y)[0]) }));
+      const err = { T: 0, Tb: 0, L: 0 }, scale = { T: 0, Tb: 0, L: 0 };
+      let killed = 0, glowing = 0, woodHit = 0, woodGlow = 0;
+      for (let i = 0; i < N; i++) {
+        const r = skyRayRef(layers, eyes[i].eye, eyes[i].sh, gS, atm.sun, k), nw = skyRayRef(bare, eyes[i].eye, eyes[i].sh, gS, atm.sun, k);
+        for (let c = 0; c < 3; c++) {
+          err.T = Math.max(err.T, Math.abs(out[0][i * 4 + c] - r.T[c])); err.Tb = Math.max(err.Tb, Math.abs(out[1][i * 4 + c] - r.Tb[c])); err.L = Math.max(err.L, Math.abs(out[2][i * 4 + c] - r.L[c]));
+          scale.T = Math.max(scale.T, r.T[c]); scale.Tb = Math.max(scale.Tb, r.Tb[c]); scale.L = Math.max(scale.L, r.L[c]);
+        }
+        if (r.Tb[1] < 0.5 * r.T[1]) killed++;                  // a leaf has put out the disk on this ray
+        if (r.L[1] > 0.05) glowing++;                          // a lit leaf on this ray
+        if (r.T[1] < 0.9 * nw.T[1]) woodHit++;                 // the wood is in this ray's way: reading it changed the answer
+        if (Math.abs(r.L[1] - nw.L[1]) > 0.01) woodGlow++;     // ...and in the way of the glow's: through its own throughput or the sun's path
+      }
+      let woodTexels = 0, covTexels = 0;
+      for (let L = 0; L < nL; L++) for (let i = 0; i < n * n; i++) { if (wdat[L][i * 4] > 0) woodTexels++; if (dat[L][i * 4 + 3] > 0) covTexels++; }
+      finish(null, { k, err, scale, N, n, killed, glowing, woodHit, woodGlow, woodTexels, covTexels, glError });
     } catch (e) { finish(e); }
   };
 });

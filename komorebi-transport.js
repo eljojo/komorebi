@@ -1,5 +1,5 @@
 import { MAX_SAMPLES, MAX_OCC } from './komorebi-params.js';
-import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY } from './komorebi-shaders.js';
+import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY } from './komorebi-shaders.js';
 
 // ============================================================================
 // THE TRANSPORT MASTER (spec §4.6 / §4.9) — ONE source, FOUR straight-line programs.
@@ -653,7 +653,9 @@ const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec §4.9): the rec
     }`;
 
 // ---- SKY VIEW camera (§4.9): the retina as the receiver ----
-const GLSL_T_SKY_DECLS = `uniform float uSkyScatter;        // SKY VIEW (§4.9): single-scatter foliage radiance — how brightly a lit crown glows in its own right (0 = pure transmission, byte-identical)
+const GLSL_T_SKY_DECLS = `uniform float uSkyScatter;        // SKY VIEW (§4.9): single-scatter foliage radiance — how brightly a lit crown glows in its own right (0 = pure transmission, byte-identical). Superseded, and inert, once the leaf is a lantern (uBeamK > 0)
+uniform float uBeamK;             // k = −ln(1−leaf_diffuse) (§4.5): above 0 the leaf is a lantern, not a window — the disk is only the beam a leaf lets through, and what it took out of the line of sight is its glow. 0 = the old window, byte-identical. (The cast cameras carry it in their tap group; this camera casts nothing, so it has none)
+${GLSL_WOOD_FIELD}
 uniform vec2  uSrcAngR;           // the SEEN source's angular radii (core, halo) — the very two the sampler draws its offsets from
 uniform vec2  uSrcAngL;           // its radiance in each region (core, halo). CPU-derived from the sampler's own post-cloud weight split, so the sun you look at and the dapples it throws cannot drift apart
 uniform vec2  uSrcMoon;           // eclipse: the moon disk's (centre offset, radius) in the sampler's own source plane; .y = 0 = no eclipse
@@ -667,7 +669,7 @@ uniform vec2  uSrcMoon;           // eclipse: the moon disk's (centre offset, ra
 // daylight look puts open sky near sRGB (184,208,232) and keeps it clear of the thinnest sunlit crown.
 const float SKY_AA = 0.004;
 const float SKY_SKY_GAIN = 7.5;
-// leafHue, the layer tap along a ray, and skyRay itself — the single-scatter sum — live in ONE shared snippet
+// leafHue, the layer tap along a ray (tapSky), and skyRay itself — the single-scatter sum and the lantern — live in ONE shared snippet
 // (shaders.js), because the sky fill's bake (§4.7) integrates the very same ray over the floor's hemisphere.
 ${GLSL_SKY_RAY}
 // Closest approach between the upward view ray (origin O, UNIT direction U, t ≥ 0) and the wood segment Pa→Pb.
@@ -717,13 +719,14 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
       vec2 pL1 = eye.xy + dir.xy*(uLayerHeight[1]/dir.z);
       vec2 pL2 = eye.xy + dir.xy*(uLayerHeight[2]/dir.z);
       vec2 pL3 = eye.xy + dir.xy*(uLayerHeight[3]/dir.z);
-      // The whole read — the four layer taps, the transmittance, and (when sky_scatter is up) the single-scatter
-      // foliage radiance of §4.9 — is skyRay (shaders.js, GLSL_SKY_RAY): one source, which the sky fill's bake (§4.7)
-      // runs along its own hemisphere rays. Here the eye's rays leave the box onto open sky and the layer texture's
-      // alpha is the wood's optical depth.
-      vec3 T, Lsc;
-      skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0, true, true, 0.0, T, Lsc);   // the sun it looks at is the sun that lights what it sees: it has no beam to share one with. The literal 0.0: the sky view is still unsplit (§4.5, P0c-sky) and declares no uBeamK
-      if(uSkyScatter > 0.0) Lsc *= uSkyScatter;
+      // The whole read — the four layer taps, the transmittance, and the single-scatter foliage radiance of §4.9 (the proxy
+      // sky_scatter scales, or, above leaf_diffuse 0, the lantern) — is skyRay (shaders.js, GLSL_SKY_RAY): one source, which the sky
+      // fill's bake (§4.7) runs along its own hemisphere rays. Here the eye's rays leave the box onto open sky and the wood is read
+      // from each layer's own R16F texture (readWood true). T is the SKY's transmittance (leaves × wood); Tsrc the BEAM's, the
+      // disk's: a leaf kills it (§4.5), so the sun burns through the gaps and never through a leaf.
+      vec3 T, Tsrc, Lsc;
+      skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0 || uBeamK > 0.0, true, true, uBeamK, T, Tsrc, Lsc);   // the sun it looks at is the sun that lights what it sees: it has no beam to share one with
+      if(uBeamK <= 0.0 && uSkyScatter > 0.0) Lsc *= uSkyScatter;   // the retired proxy, exactly as fill_scatter is on the floor: above leaf_diffuse 0 the measured glow replaces it, and it is the same light counted once
       // WOOD AS SILHOUETTE. The same segments the floor casts shadows with (§4.5), read as GEOMETRY this time: no
       // uBulkShift term anywhere here, because that vector is where the wood's shadow FALLS and we are looking at the
       // wood itself. The sway is kept, each endpoint drifting by its own height fraction exactly as the cast does, so
@@ -749,6 +752,7 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
           float infront = smoothstep(0.05, 0.2, ds.y);
           float e = exp(-uOccTau * infront * (1.0 - smoothstep(H.z, H.z + pen, ds.x)));   // Beer's law, same as the cast: overlaps add optical depth
           T *= e;
+          Tsrc *= e;   // the disk is occluded like the sky behind it
           Lsc *= e;   // wood stands BELOW the crowns on an upward ray, so it occludes the canopy's own glow as it occludes the sky behind it
         }
       }
@@ -777,10 +781,22 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
         vec2 q = vec2(dot(dir, ca*sUp - sa*sHor), dot(dir, sa*sUp + ca*sHor));   // the ray's offset in the sampler's own (x,y)
         L *= smoothstep(uSrcMoon.y - aa, uSrcMoon.y + aa, length(q - vec2(uSrcMoon.x, 0.0)));
       }
-      // COMPOSITION: T·(sky + source). No receiver material of any kind — no Tt, no dye, no folds, no seams, no
-      // ground albedo — because there is no surface between the canopy and the eye. The sky is attenuated by the
-      // same T the sun is: leaves dim the blue behind them exactly as they dim the disk.
-      skyRad = (uAmbient*SKY_SKY_GAIN + uSunColor*L) * T + Lsc;   // transmitted source + sky, plus what the leaves themselves radiate. At sky_scatter 0, Lsc is exactly 0.
+      // COMPOSITION. No receiver material of any kind — no Tt, no dye, no folds, no seams, no ground albedo — because there is no
+      // surface between the canopy and the eye.
+      // The WINDOW (leaf_diffuse 0, the literal old line, in the else): T·(sky + source). The sky is attenuated by the same T the sun
+      // is: leaves dim the blue behind them exactly as they dim the disk, and the disk shows through every leaf, tinted.
+      // The LANTERN (uBeamK > 0): the sky seen through the leaves (T), plus what the leaves themselves radiate (Lsc, the glow: the light
+      // each took out of the line of sight, at its own level), and the disk, which only the beam reaches (Tsrc, through gaps). The
+      // glow sits at the sun's irradiance and the disk is authored (SKY_SUN_GAIN), so the two scales are authored apart; the leaf
+      // model that conserves between them is dimensionless. srcSeen is the leaked disk ALONE, its own variable and added LAST: a
+      // later phase takes it out of this sum and gives it to the eye.
+      if(uBeamK > 0.0){
+        vec3 srcSeen = uSunColor*L*Tsrc;
+        skyRad = uAmbient*SKY_SKY_GAIN*T + Lsc;
+        skyRad += srcSeen;
+      } else {
+        skyRad = (uAmbient*SKY_SKY_GAIN + uSunColor*L) * T + Lsc;   // transmitted source + sky, plus what the leaves themselves radiate. At sky_scatter 0, Lsc is exactly 0.
+      }
     }`;
 
 const GLSL_T_SKY_MATERIAL = `    col = skyRad;                                          // SKY VIEW: no receiver at all — the branch above already answered with radiance (§4.9)`;
@@ -937,7 +953,7 @@ const TRANSPORT_GROUPS = {
                                                       tentEndApex:'uTentEndApex', tentHipRake:'uTentHipRake', tentEye:'uTentEye',
                                                       tentFade:'uTentFade', tentSeam:'uTentSeam', tentMesh:'uTentMesh' } },
   fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillT:'uFillT', fillS:'uFillS', fillOrigin:'uFillOrigin', fillExtent:'uFillExtent' } },
-  sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
+  sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
                                                       exposure:'uExposure', contrast:'uContrast', tone:'uToneMap' } },
 };

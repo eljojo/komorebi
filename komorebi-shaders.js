@@ -261,12 +261,13 @@ uniform int uSegTau;   // 0 = TRANSMITTANCE, for the cast's multiplicative scrat
 out vec4 frag;
 void main(){
   float cov = 1.0 - smoothstep(0.9, 1.0, abs(vAcross));    // tight anti-alias rim — keep THIN twigs opaque (the soft penumbra comes from the per-sample integration, not this edge)
-  // THE LAYER STAMP WRITES ALPHA ONLY, and the zero in rgb is the whole fix rather than a tidiness: the layer
-  // texture's rgb is the FOLIAGE's optical depth, and the sky view's scatter term reads its scattering density and
-  // its hue from exactly that. Neutral wood dropped into rgb normalizes to a near-white hue at near-full density, so
-  // the twig web lights up as cream filaments brighter than the sky it stands against. Wood occludes; it does not
-  // glow. (Additive blend, so a zero in rgb leaves the leaves alone.)
-  if(uSegTau != 0){ frag = vec4(0.0, 0.0, 0.0, uWoodTau*cov); return; }
+  // THE LAYER STAMP WRITES THE WOOD'S OWN TEXTURE, an R16F per layer (§4.9), and only r of it. The layer texture's rgb is the FOLIAGE's
+  // optical depth and its alpha the leaves' COVERAGE, and the sky view's scatter reads its density and hue from exactly those.
+  // Neutral wood dropped into rgb normalizes to a near-white hue at near-full density, so the twig web would light up as cream
+  // filaments brighter than the sky it stands against; wood occludes, it does not glow — so it lives where the sun's own
+  // coverage cannot meet it. (Additive blend, cleared to 0 per layer: a layer with no twigs reads as no wood.) Half float, because
+  // the depth accumulates and must round as it did when it shared the layer texture's alpha: the bytes did not move.
+  if(uSegTau != 0){ frag = vec4(uWoodTau*cov, 0.0, 0.0, 0.0); return; }
   frag = vec4(vec3(exp(-uWoodTau*cov)), 1.0);              // wood blocks every colour equally → dark, neutral
 }`;
 
@@ -312,6 +313,11 @@ uniform highp sampler2D uLayer[${MAX_LAYERS}];   // highp: optical depth exceeds
 uniform float uLayerHeight[${MAX_LAYERS}];
 uniform int   uLayerCount;`;
 
+// ---- THE WOOD FIELD (§4.9): the layer-stamped fine wood, one R16F texture per layer, beside the layers it was stamped with. The sky camera
+// declares it, and the sky fill's bake carries the same line because it runs the same shared ray — whose wood reads sit behind
+// `readWood`, a literal false in the fill, so the four samplers are declared there and never sampled. No cast camera declares it. ----
+const GLSL_WOOD_FIELD = `uniform highp sampler2D uWood[${MAX_LAYERS}];   // r = the wood's optical depth (neutral), per layer; read only where readWood is true`;
+
 // ---- the raw unit sun vector. The floor never needs it (its throw rides uProj/uBulkShift); the fabric's fold
 // incidence, the enclosure's per-panel beam and the sky view's seen source and sun path all do. (The sky fill does NOT: it lights its
 // leaves along the BEAM's path, uFillG, so the shade and the beam it balances share one sun.) ----
@@ -332,31 +338,33 @@ const GLSL_SUN_DIR_DECLS = `uniform vec3  uSunDir;            // UNIT sun direct
 //   gS          — the plan travel per metre of rise of the SUN's path to a leaf: where the light that reaches a leaf comes
 //                 from. The sky view looks at the real sun, so it passes the sun's own direction. The fill balances the
 //                 beam, whose path is the bulk shift (none at all in the endless park), so it passes that: one sun per camera.
-//   woodInAlpha — a layer texel comes apart into two quantities on purpose (§4.9). .rgb is the FOLIAGE's per-channel
-//                 transmittance; .a is the WOOD's, neutral because wood blocks every colour equally. They live in
-//                 different channels because they are different KINDS of occluder to the scatter term: a leaf takes
-//                 light out of the ray and puts some of it back, wood only takes it out. Only the sky view's bake
-//                 puts wood there; everywhere else alpha is leaf coverage, which must never be read as an optical
-//                 depth — so the fill says false and gets 1.
+//   readWood    — a layer's foliage and its wood are different KINDS of occluder to the scatter term (§4.9): a leaf takes light out of
+//                 the ray and puts some of it back, wood only takes it out. So they are two quantities in two textures: the
+//                 layer texel's rgb is the foliage's depth and its alpha the leaves' COVERAGE (on every camera, from the one
+//                 leaf bake), and the wood's own depth is the layer's R16F in uWood. The sky view says true and reads it; the
+//                 fill says false — its hemisphere ignores wood by design (a limb's share of the sky is thin, and the analytic
+//                 occluder takes the beam only) — and gets 1.
 const GLSL_SKY_RAY = `// A transmittance normalized to unit peak: the spectrum with its brightness divided out (§3.5's idiom, and the same
 // one the curtain's dye uses). What survives is chlorophyll's green-gold; the knob that reads it carries the level.
 vec3 leafHue(vec3 t){ return t / max(max(t.r, t.g), max(t.b, 1e-4)); }
-vec4 tapUpLW(highp sampler2D t, vec2 world, bool openOutside, bool woodInAlpha){
+// One tap of a layer: the foliage's transmittance t, its COVERAGE c (alpha — the one bake writes it on every camera, §4.5) and, where
+// readWood, the layer's wood transmittance w from its own texture. Open sky outside the box: no leaves, nothing to cover, no wood.
+void tapSky(highp sampler2D layer, highp sampler2D wood, vec2 world, bool openOutside, bool readWood, out vec3 t, out float c, out float w){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
-  if(openOutside && (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))) return vec4(1.0, 1.0, 1.0, woodInAlpha ? 1.0 : 0.0);   // open sky: no wood, and no leaves to cover anything
-  vec4 d = texture(t,uv);
-  return vec4(exp(-d.rgb), woodInAlpha ? exp(-d.a) : d.a);   // alpha is the wood's transmittance in the sky view, and the leaves' COVERAGE everywhere else (§4.5)
+  if(openOutside && (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))){ t = vec3(1.0); c = 0.0; w = 1.0; return; }
+  vec4 d = texture(layer, uv);
+  t = exp(-d.rgb); c = d.a; w = readWood ? exp(-texture(wood, uv).r) : 1.0;
 }
-// What a tap takes out of the SUN's path: leaves × wood. Where alpha is coverage (the fill) it is not a transmittance and
-// does not multiply; there the sun's passage is the leaf's BALLISTIC share exp(-τ - k·coverage) — the diffuse share has left
-// the beam (§4.5), and arrives as the emission below instead.
-vec3 sunPass(vec4 q, bool woodInAlpha, float beamK){
-  if(woodInAlpha) return q.rgb*q.a;
-  return beamK > 0.0 ? q.rgb*exp(-beamK*q.a) : q.rgb;
+// What a tap takes out of the SUN's path: the leaf's BALLISTIC share tb = t·e^(-k·coverage) (the diffuse share has left the beam, §4.5,
+// and arrives as the emission below), × the wood where it is read — a twig shadows a leaf exactly as another leaf does.
+vec3 sunPass(vec3 t, float c, float w, bool readWood, float beamK){
+  vec3 tb = beamK > 0.0 ? t*exp(-beamK*c) : t;
+  return readWood ? tb*w : tb;
 }
 // pL_i is where the ray crosses layer i's plane — the caller's own geometry, so the eye's perspective and the
-// hemisphere's fixed directions both fit. Returns T (what the ray passes: leaves × wood, per channel) and Lsc (the
-// foliage's single-scatter radiance along it, BEFORE the albedo: the caller multiplies uSkyScatter / fill_scatter).
+// hemisphere's fixed directions both fit. Returns T (what the ray passes: leaves × wood, per channel), Tb (what the BEAM passes along it,
+// Π tb·w: the sun's disk seen through the canopy — a leaf kills it; = T at beamK 0) and Lsc (the foliage's single-scatter radiance along
+// it, BEFORE the albedo at beamK 0: the caller multiplies uSkyScatter / fill_scatter; the lantern's glow, at its own level, above it).
 // ---- SINGLE-SCATTER FOLIAGE RADIANCE (§4.9). Transmission alone can only DARKEN: every ray is the sky attenuated, so
 // a leaf is at best a dim filter and a deep crown is black. Foliage in daylight is LIT — light reaches a leaf,
 // scatters inside it and leaves in every direction, so a sunlit crown is brighter than a shaded one against the same
@@ -376,48 +384,51 @@ vec3 sunPass(vec4 q, bool woodInAlpha, float beamK){
 //    accounts to first order for the scattered light filtering back out through the layer that made it.
 // The bound is structural: Σ throughput·(1 − t_L) telescopes to 1 − Π t_L ≤ 1 per channel, ŝ ≤ 1 and the albedo
 // ≤ 1, so a crown can never radiate more than the sunlight falling on it.
-// ---- A LEAF IS NOT A WINDOW (§4.5): beamK > 0 replaces that proxy by what it stood in for. Where the layer's alpha is
-// coverage (woodInAlpha false — the fill), a leaf passes t = e^-τ in all, but only tb = e^(-τ - k·coverage) of it keeps
-// travelling as a beam; the rest, t − tb = t·(1 − e^(-k·coverage)), is diffuse light the leaf sends on downward, in its own
-// hue (k is neutral) and at the level d·T — no ŝ, no albedo, so nothing authored is left in it. It is lit by the sun's
-// BALLISTIC path to it (A_L = Π_{M>L} tb_M) and falls through the layers below on their TRUE t (thr), which telescopes:
+// ---- A LEAF IS NOT A WINDOW (§4.5): beamK > 0 replaces that proxy by what it stood in for. A leaf passes t = e^-τ in all, but only
+// tb = e^(-τ - k·coverage) of it keeps travelling as a beam; the rest, t − tb = t·(1 − e^(-k·coverage)), is diffuse light the leaf
+// sends on, in its own hue (k is neutral) and at the level d·T — no ŝ, no albedo, so nothing authored is left in it. It is lit by the
+// sun's BALLISTIC path to it (A_L = Π_{M>L} tb_M·w_M) and falls through the layers below on their TRUE t (thr), which telescopes:
 //   Π tb + Σ_L thr_L·(t_L − tb_L)·A_L = Π t   (Q_L = Π_{M≤L} t · Π_{M>L} tb steps from the first to the second)
-// so beam + emitted is the total transmitted for any d, and at d = 0 the new term is identically zero. T is untouched: for
-// a uniform sky, diffuse transmission through Lambertian leaves equals the ballistic one to first order, so the skylight
-// needs no split — only the sun does. The sky view passes the literal 0.0, and woodInAlpha with it, so this branch is
-// dead code there (§4.9 stays unsplit until P0c-sky).
-void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, vec2 gS, bool scatter, bool openOutside, bool woodInAlpha, float beamK, out vec3 T, out vec3 Lsc){
-  vec4 noLeaf = vec4(1.0, 1.0, 1.0, woodInAlpha ? 1.0 : 0.0);   // a layer that is not there: transmits everything, covers nothing
-  vec4 qL0 = uLayerCount>0 ? tapUpLW(uLayer[0], pL0, openOutside, woodInAlpha) : noLeaf;
-  vec4 qL1 = uLayerCount>1 ? tapUpLW(uLayer[1], pL1, openOutside, woodInAlpha) : noLeaf;
-  vec4 qL2 = uLayerCount>2 ? tapUpLW(uLayer[2], pL2, openOutside, woodInAlpha) : noLeaf;
-  vec4 qL3 = uLayerCount>3 ? tapUpLW(uLayer[3], pL3, openOutside, woodInAlpha) : noLeaf;
+// when the eye ray IS the sun's ray (every A_L then reads the very taps the ray passes): beam + emitted is the total transmitted for
+// any d, and at d = 0 the new term is identically zero. Off that line it is not an identity and no inequality either (a lit leaf is
+// seen through a leaf beside the sun's path): the bound is per layer, a leaf glows no more than its diffuse share of the sunlight
+// landing on it. T is untouched: for a uniform sky, diffuse transmission through Lambertian leaves equals the ballistic one to first
+// order, so the skylight needs no split — only the sun does. WOOD (readWood, the sky camera) is a pure attenuator: it is in T, Tb, the
+// sun's path and thr, and never in the emission, so a ray that meets nothing but wood scatters exactly nothing.
+void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, vec2 gS, bool scatter, bool openOutside, bool readWood, float beamK, out vec3 T, out vec3 Tb, out vec3 Lsc){
+  // a layer that is not there: transmits everything, covers nothing, holds no wood
+  vec3 tL0 = vec3(1.0), tL1 = vec3(1.0), tL2 = vec3(1.0), tL3 = vec3(1.0);
+  float cL0 = 0.0, cL1 = 0.0, cL2 = 0.0, cL3 = 0.0, wL0 = 1.0, wL1 = 1.0, wL2 = 1.0, wL3 = 1.0;
+  if(uLayerCount>0) tapSky(uLayer[0], uWood[0], pL0, openOutside, readWood, tL0, cL0, wL0);
+  if(uLayerCount>1) tapSky(uLayer[1], uWood[1], pL1, openOutside, readWood, tL1, cL1, wL1);
+  if(uLayerCount>2) tapSky(uLayer[2], uWood[2], pL2, openOutside, readWood, tL2, cL2, wL2);
+  if(uLayerCount>3) tapSky(uLayer[3], uWood[3], pL3, openOutside, readWood, tL3, cL3, wL3);
   // tL = what the FOLIAGE does (this layer's leaves alone) — the only thing the scatter term may read.
   // xL = what the RAY loses (leaves × wood) — the only thing transmittance may read.
-  vec3 tL0 = qL0.rgb, tL1 = qL1.rgb, tL2 = qL2.rgb, tL3 = qL3.rgb;
-  vec3 xL0 = woodInAlpha ? qL0.rgb*qL0.a : qL0.rgb, xL1 = woodInAlpha ? qL1.rgb*qL1.a : qL1.rgb, xL2 = woodInAlpha ? qL2.rgb*qL2.a : qL2.rgb, xL3 = woodInAlpha ? qL3.rgb*qL3.a : qL3.rgb;
+  vec3 xL0 = readWood ? tL0*wL0 : tL0, xL1 = readWood ? tL1*wL1 : tL1, xL2 = readWood ? tL2*wL2 : tL2, xL3 = readWood ? tL3*wL3 : tL3;
   T = vec3(1.0);
   T *= xL0; T *= xL1; T *= xL2; T *= xL3;
+  Tb = beamK > 0.0 ? T*exp(-beamK*(cL0 + cL1 + cL2 + cL3)) : T;   // Π tb·w: the beam's own transmittance along the ray, in the leaves' hue
   Lsc = vec3(0.0);
   if(scatter){
     vec3 A0 = vec3(1.0), A1 = vec3(1.0), A2 = vec3(1.0);
     // the SUN's path takes the FULL transmittance — a twig shadows a leaf exactly as another leaf does; it is
     // only as a SOURCE that wood must not participate.
-    vec4 a01, a02, a03, a12, a13, a23;
-    if(uLayerCount>1){ a01 = tapUpLW(uLayer[1], pL0 + gS*(uLayerHeight[1]-uLayerHeight[0]), openOutside, woodInAlpha); A0 *= sunPass(a01, woodInAlpha, beamK); }
-    if(uLayerCount>2){ a02 = tapUpLW(uLayer[2], pL0 + gS*(uLayerHeight[2]-uLayerHeight[0]), openOutside, woodInAlpha); A0 *= sunPass(a02, woodInAlpha, beamK); }
-    if(uLayerCount>3){ a03 = tapUpLW(uLayer[3], pL0 + gS*(uLayerHeight[3]-uLayerHeight[0]), openOutside, woodInAlpha); A0 *= sunPass(a03, woodInAlpha, beamK); }
-    if(uLayerCount>2){ a12 = tapUpLW(uLayer[2], pL1 + gS*(uLayerHeight[2]-uLayerHeight[1]), openOutside, woodInAlpha); A1 *= sunPass(a12, woodInAlpha, beamK); }
-    if(uLayerCount>3){ a13 = tapUpLW(uLayer[3], pL1 + gS*(uLayerHeight[3]-uLayerHeight[1]), openOutside, woodInAlpha); A1 *= sunPass(a13, woodInAlpha, beamK); }
-    if(uLayerCount>3){ a23 = tapUpLW(uLayer[3], pL2 + gS*(uLayerHeight[3]-uLayerHeight[2]), openOutside, woodInAlpha); A2 *= sunPass(a23, woodInAlpha, beamK); }
+    vec3 sT; float sC, sW;
+    if(uLayerCount>1){ tapSky(uLayer[1], uWood[1], pL0 + gS*(uLayerHeight[1]-uLayerHeight[0]), openOutside, readWood, sT, sC, sW); A0 *= sunPass(sT, sC, sW, readWood, beamK); }
+    if(uLayerCount>2){ tapSky(uLayer[2], uWood[2], pL0 + gS*(uLayerHeight[2]-uLayerHeight[0]), openOutside, readWood, sT, sC, sW); A0 *= sunPass(sT, sC, sW, readWood, beamK); }
+    if(uLayerCount>3){ tapSky(uLayer[3], uWood[3], pL0 + gS*(uLayerHeight[3]-uLayerHeight[0]), openOutside, readWood, sT, sC, sW); A0 *= sunPass(sT, sC, sW, readWood, beamK); }
+    if(uLayerCount>2){ tapSky(uLayer[2], uWood[2], pL1 + gS*(uLayerHeight[2]-uLayerHeight[1]), openOutside, readWood, sT, sC, sW); A1 *= sunPass(sT, sC, sW, readWood, beamK); }
+    if(uLayerCount>3){ tapSky(uLayer[3], uWood[3], pL1 + gS*(uLayerHeight[3]-uLayerHeight[1]), openOutside, readWood, sT, sC, sW); A1 *= sunPass(sT, sC, sW, readWood, beamK); }
+    if(uLayerCount>3){ tapSky(uLayer[3], uWood[3], pL2 + gS*(uLayerHeight[3]-uLayerHeight[2]), openOutside, readWood, sT, sC, sW); A2 *= sunPass(sT, sC, sW, readWood, beamK); }
     // THE SOURCE TERM READS FOLIAGE ONLY. Wood appears in the throughput, which can only take light away, and
     // nowhere in the emission — so a ray that meets nothing but wood scatters exactly nothing.
     vec3 thr = vec3(1.0);
-    if(beamK > 0.0 && !woodInAlpha){
-      Lsc += thr*tL0*(1.0-exp(-beamK*qL0.a))*uSunColor*A0; thr *= xL0;
-      Lsc += thr*tL1*(1.0-exp(-beamK*qL1.a))*uSunColor*A1; thr *= xL1;
-      Lsc += thr*tL2*(1.0-exp(-beamK*qL2.a))*uSunColor*A2; thr *= xL2;
-      Lsc += thr*tL3*(1.0-exp(-beamK*qL3.a))*uSunColor;   // nothing is stacked above the top layer
+    if(beamK > 0.0){
+      Lsc += thr*tL0*(1.0-exp(-beamK*cL0))*uSunColor*A0; thr *= xL0;
+      Lsc += thr*tL1*(1.0-exp(-beamK*cL1))*uSunColor*A1; thr *= xL1;
+      Lsc += thr*tL2*(1.0-exp(-beamK*cL2))*uSunColor*A2; thr *= xL2;
+      Lsc += thr*tL3*(1.0-exp(-beamK*cL3))*uSunColor;   // nothing is stacked above the top layer
     } else {
       Lsc += thr*(1.0-tL0)*leafHue(tL0)*uSunColor*A0; thr *= xL0;
       Lsc += thr*(1.0-tL1)*leafHue(tL1)*uSunColor*A1; thr *= xL1;
@@ -441,7 +452,7 @@ void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, vec2 gS, bool scatter, bool 
 // into a uniform veil and underestimate the fill. The sum is DIVIDED by K (not scaled by 1/K), so K rays of exactly
 // 1 sum to exactly K and give exactly 1: no canopy is exactly bright, for any K.
 // ENERGY: Tsky ≤ 1 by construction, and S ≤ fill_scatter·(1 − Tsky)·sun per channel by the sky view's
-// telescoping bound — structural, no clamp. Wood is not read (woodInAlpha false): the analytic occluder takes the
+// telescoping bound — structural, no clamp. Wood is not read (readWood false): the analytic occluder takes the
 // beam only, and a limb's share of the hemisphere is thin.
 // THE BOOKS CLOSE (§4.7). Over a floor of unbounded extent every ray's light from a leaf lands somewhere, so the fill holds exactly
 // what the leaves send down — IF the leaves are lit by the beam's own sun (uFillG, not the real one) and the box is not the world:
@@ -454,6 +465,7 @@ in vec2 vUv;
 layout(location=0) out vec4 fillT;
 layout(location=1) out vec4 fillS;
 ${GLSL_LAYER_FIELD}
+${GLSL_WOOD_FIELD}
 uniform vec2  uFillOrigin;                  // the plan square this pass bakes over: the canopy box (the endless park, which wraps it) or the box padded by 3·h_max (a finite tree, open sky outside it) — komorebi-fill.js fillFrame. uCanopyOrigin/Extent stay the box the LAYERS were baked over
 uniform vec2  uFillExtent;
 uniform vec2  uFillG;                       // the BEAM's sun path, the bulk shift (§4.8): 0 in the endless park, the real throw for a standing tree / the cloth. One sun per camera: the light a leaf scatters is the light the beam gave up
@@ -480,8 +492,8 @@ void main(){
     float c2 = r.x - sub/K;                          // cos²θ = 1 − (k + ½ + sub)/K
     vec2 u = vec2(r.y*turn.x - r.z*turn.y, r.z*turn.x + r.y*turn.y);   // (cosφ, sinφ) turned by the slot
     vec2 s = sqrt((1.0 - c2)/c2)*u;                  // tanθ·(cosφ, sinφ)
-    vec3 T, Lsc;
-    skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], uFillG, scatter, uFillOpen, false, uFillBeamK, T, Lsc);
+    vec3 T, Tb, Lsc;
+    skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], uFillG, scatter, uFillOpen, false, uFillBeamK, T, Tb, Lsc);
     Tsum += T; Lsum += Lsc;
   }
   fillT = vec4(Tsum/K, 1.0);
@@ -599,4 +611,4 @@ void main(){
 }`;
 
 
-export { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };

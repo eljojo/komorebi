@@ -8,7 +8,7 @@
 // over K fixed, cosine-weighted directions; these are the same directions and the same per-ray sum as pure
 // functions, so the laws (weights, the Jensen direction, the energy bound) are held by `bun test` without a GPU.
 // The shader is the authority on the numbers; the GLSL both cameras run (GLSL_SKY_RAY) is what keeps the sky view
-// and the fill from drifting, and test-gl's fill check holds this file to the shader on real layers.
+// and the fill from drifting, and test-gl's fill check holds this file to the shader on real layers (and its sky check the look-up half: wood read, the beam's T_src, the lantern's glow).
 // ============================================================================
 
 export const FILL_GOLDEN = Math.PI * (3 - Math.sqrt(5));   // the golden angle, the source cloud's own azimuth step (§4.4)
@@ -138,46 +138,82 @@ export function ballistic(t, c, k){
 export const leafTexel = (tau, fade, edge = 1, grove = 1) => ({ rgb: tau.map((v) => v * fade * grove * edge), a: edge * fade * grove });
 
 // ONE ray through the layer stack — the sky view's per-ray formula (§4.9), line for line with GLSL_SKY_RAY.
-//   layers: [{ h, t(x, y) -> [r,g,b], c(x, y) -> coverage }], lowest first; t is the layer's FOLIAGE transmittance at a plan
-//   point, c its coverage (read only when k > 0)
+//   layers: [{ h, t(x, y) -> [r,g,b], c(x, y) -> coverage, w?(x, y) -> wood }], lowest first; t is the layer's FOLIAGE transmittance at
+//   a plan point, c its coverage (read only when k > 0), w the layer-stamped WOOD's transmittance there (neutral: one number for all
+//   three channels). A layer with no w is read with no wood — what the fill does (readWood false: its hemisphere ignores wood by
+//   design); the sky camera's layers carry it.
 //   p: where the ray starts (plan); shift: its plan travel per metre of rise; gS: the SUN PATH's, the same per-metre travel — the BEAM's
 //   (the bulk shift: [0, 0] in the endless park) for the fill, the real sun's for the sky view, which has no beam (§4.7, one sun per camera)
 //   k: the beam's neutral depth (ballisticK). 0 runs the P0b sum, ŝ-weighted. k > 0 is the split (§4.5): each layer emits the light its
-//   beam lost, t − tb, in its own hue (no ŝ, no albedo), lit by the sun's BALLISTIC path to it, A_L = Π_{M>L} tb_M, and
-//   carried down through the layers below by their TRUE t. The ray itself still passes the true t: the skylight needs no split.
-//   returns { T: Π t_L (what the ray passes), L: P0b: Σ thr_L (1 − t_L) ŝ_L (sun·A_L) — BEFORE the albedo; split: Σ thr_L (t_L − tb_L) (sun·A_L) }
+//   beam lost, t − tb, in its own hue (no ŝ, no albedo), lit by the sun's BALLISTIC path to it, A_L = Π_{M>L} tb_M·w_M, and
+//   carried down through the layers below by their TRUE t (and the wood: wood blocks the glow, it never makes any).
+//   The ray itself still passes the true t: the skylight needs no split.
+//   returns { T: Π t_L·w_L (what the ray passes), Tb: Π tb_L·w_L (what the BEAM passes — the sun's disk, seen: a leaf kills it; = T at k = 0),
+//             L: P0b: Σ thr_L (1 − t_L) ŝ_L (sun·A_L) — BEFORE the albedo; split: the glow Σ thr_L (t_L − tb_L) (sun·A_L) }
 //   No skylight in L either way: its passage is T
 export function skyRayRef(layers, p, shift, gS, sun, k = 0){
   const n = layers.length, split = k > 0;
+  const wood = (l, x, y) => (l.w ? l.w(x, y) : 1);   // a layer with no wood texture reads as clear
   const at = layers.map((l) => [p[0] + shift[0] * l.h, p[1] + shift[1] * l.h]);
   const t = layers.map((l, L) => l.t(at[L][0], at[L][1]));
-  const T = [1, 1, 1], L = [0, 0, 0], thr = [1, 1, 1];
-  if(gS == null){ for(let i = 0; i < n; i++) for(let c = 0; c < 3; c++) T[c] *= t[i][c]; return { T, L }; }   // no albedo asked: the scatter branch is skipped, as the shader skips it
+  const w = layers.map((l, L) => wood(l, at[L][0], at[L][1]));
+  const x = layers.map((l, L) => (l.w ? [t[L][0] * w[L], t[L][1] * w[L], t[L][2] * w[L]] : t[L]));   // what the RAY loses: leaves × wood
+  const T = [1, 1, 1], L = [0, 0, 0], thr = [1, 1, 1], Tb = [1, 1, 1];
+  for(let i = 0; i < n; i++) for(let c = 0; c < 3; c++) T[c] *= x[i][c];
+  if(split) for(let i = 0; i < n; i++){
+    const tb = ballistic(t[i], layers[i].c(at[i][0], at[i][1]), k);   // the beam through this layer, in the leaf's own hue
+    for(let c = 0; c < 3; c++) Tb[c] *= layers[i].w ? tb[c] * w[i] : tb[c];
+  } else for(let c = 0; c < 3; c++) Tb[c] = T[c];
+  if(gS == null) return { T, Tb, L };   // no albedo asked: the scatter branch is skipped, as the shader skips it
   for(let i = 0; i < n; i++){
     // the sun's path down to layer i: what the layers above it let through, read along g from where THIS ray crosses i
     const A = [1, 1, 1];
     for(let m = i + 1; m < n; m++){
-      const dh = layers[m].h - layers[i].h, x = at[i][0] + gS[0] * dh, y = at[i][1] + gS[1] * dh;
-      const a = split ? ballistic(layers[m].t(x, y), layers[m].c(x, y), k) : layers[m].t(x, y);   // the beam only: a leaf's diffuse light does not travel on as one
-      for(let c = 0; c < 3; c++) A[c] *= a[c];
+      const dh = layers[m].h - layers[i].h, px = at[i][0] + gS[0] * dh, py = at[i][1] + gS[1] * dh, tm = layers[m].t(px, py);
+      const a = split ? ballistic(tm, layers[m].c(px, py), k) : tm;   // the beam only: a leaf's diffuse light does not travel on as one
+      const wm = wood(layers[m], px, py);                              // ...and a twig shadows a leaf exactly as another leaf does
+      for(let c = 0; c < 3; c++) A[c] *= layers[m].w ? a[c] * wm : a[c];
     }
     if(split){
       const e = 1 - Math.exp(-k * layers[i].c(at[i][0], at[i][1]));
       for(let c = 0; c < 3; c++){
-        L[c] += thr[c] * t[i][c] * e * (sun[c] * A[c]);
-        thr[c] *= t[i][c];
-        T[c] *= t[i][c];
+        L[c] += thr[c] * t[i][c] * e * (sun[c] * A[c]);   // the leaf's foliage alone: wood is in thr and A, never in the emission
+        thr[c] *= x[i][c];
       }
       continue;
     }
     const s = leafHue(t[i]);
     for(let c = 0; c < 3; c++){
       L[c] += thr[c] * (1 - t[i][c]) * s[c] * (sun[c] * A[c]);
-      thr[c] *= t[i][c];
-      T[c] *= t[i][c];
+      thr[c] *= x[i][c];
     }
   }
-  return { T, L };
+  return { T, Tb, L };
+}
+
+// THE SKY VIEW'S EYE RAY, composed (§4.9): the sky camera's whole per-pixel sum, line for line with GLSL_T_SKY_CAMERA. `wood` is the
+// analytic occluder's transmittance (trunk and main limbs, one neutral number along this ray: the camera's loop of `T *= e`),
+// `ambient` is uAmbient·SKY_SKY_GAIN, `disk` the sampler's angular radiance at this ray (core / halo / moon, L), `skyScatter` the
+// retired proxy's knob. k = 0 is the sky camera as it was: (ambient + sun·L)·T + sky_scatter·Lsc, character for character. Above 0 the
+// leaf is a lantern: the sky is seen through every leaf (T), the disk through none that covers it (Tsrc), and the light a leaf took out
+// of the line of sight comes back as its glow. srcSeen is the leaked disk ALONE and is added last, so a later phase can take it out of
+// the sum and route it somewhere of its own (the eye). `proxy` is the sky_scatter term (zero above k = 0: retired, exactly like the
+// fill's albedo); `glow` the lantern (zero at k = 0, by identity).
+export function skySeenRef(layers, p, shift, gS, { sun, ambient, disk, k = 0, skyScatter = 0, wood = 1 }){
+  const split = k > 0, scatter = skyScatter > 0 || split;
+  const r = skyRayRef(layers, p, shift, scatter ? gS : null, sun, k);
+  const T = r.T.map((v) => v * wood), Tsrc = r.Tb.map((v) => v * wood);
+  let Lsc = r.L;
+  if(!split && skyScatter > 0) Lsc = Lsc.map((v) => v * skyScatter);   // the proxy, as the camera scales it: before the wood
+  Lsc = Lsc.map((v) => v * wood);                                        // wood stands BELOW the crowns on an upward ray: it occludes the canopy's own glow as it does the sky
+  const zero = [0, 0, 0];
+  if(!split){
+    const rad = [0, 1, 2].map((c) => (ambient[c] + sun[c] * disk) * T[c] + Lsc[c]);
+    return { T, Tsrc, glow: zero, proxy: Lsc, srcSeen: [0, 1, 2].map((c) => sun[c] * disk * Tsrc[c]), rad, acc: T };
+  }
+  const srcSeen = [0, 1, 2].map((c) => sun[c] * disk * Tsrc[c]);
+  const rad = [0, 1, 2].map((c) => (ambient[c] * T[c] + Lsc[c]) + srcSeen[c]);
+  return { T, Tsrc, glow: Lsc, proxy: zero, srcSeen, rad, acc: T };
 }
 
 // The fill at plan point x: the mean of K rays. Both sums are DIVIDED by K (not scaled by 1/K), so K rays of exactly
