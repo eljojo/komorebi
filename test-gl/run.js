@@ -24,19 +24,36 @@
 // (a look with overrides, for eyes), `--gate [substring ...]` (only the gate invariants — the rows whose
 // name matches, if any are given — the fast loop for a gate you are adding), `--fill` (only the sky fill's
 // shader-vs-reference check), `--sky` (only the look-up ray's) and `--edge` (only the soft-edge rows: rim, halo, stamp).
+//
+// THE MANIFEST AND --verify. A full run writes out/harness-manifest.json: every row's result and hashes, and a KEY — the sha256 of
+// every byte the harness served, plus run.js, harness-lib.mjs, harness.html and macros.js, the browser's version, the rasteriser's
+// name, the launch flags and the machine. `--verify [path]` is the cheap way to trust one: it loads the harness page on the tree
+// in front of it (so the served set is the real one), refuses if the key is not the manifest's, then re-renders the pins and a
+// seeded sample of the a/b rows (`--verify-seed <n>` repeats a sample) and requires their hashes to equal the manifest's.
+// WHAT IT PROVES: the manifest describes THIS tree on THIS browser (a stale or hand-edited one fails on the key, which moves with any
+// served byte), and that a sample of its hashes reproduces. WHAT IT DOES NOT: it does not re-prove every row — the checks that read
+// textures back (fill, sky, rim, halo, stamp, litter), the live knobs, transitions and robustness are taken from the manifest on the
+// strength of the key alone — and it cannot tell a run that did not finish from one that did if the file was written by hand and its
+// key forged. Only a full, green run writes a manifest that verifies.
 // ============================================================================
-import { createReadStream } from 'node:fs';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { macroParams } from '../macros.js';
+import { createRenderMemo, diffInputs, manifestKey, sampleRows } from './harness-lib.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served
 const OUT = join(ROOT, 'test-gl', 'out');
-const SMOKE_FRAMES = 60;    // ticks a smoke run renders before its screenshot (long enough for the bake to warm and any governor to settle)
-const GATE_FRAMES = 24;     // ticks a gate comparison settles for (motion is frozen, so this only has to clear the bake)
+const MANIFEST = join(OUT, 'harness-manifest.json');
+// One count for every plain render, so a smoke frame and a gate `{}` frame are the same memo key (renderOnce). Motion is frozen, so
+// motionActive() is false from tick 1 and the frame is final there: measured, the hash at tick 1 equals the hash at 4, 24 and 60
+// (cost is engine CREATION, not ticks). 8 only has to clear the `rebake` rows' re-bake at tick 4 (harness.html) with a margin.
+// (Not a settle test: adaptive_motion stays on under FREEZE, so a tick inside 1000/adaptive_idle_fps re-presents the last frame.)
+const SMOKE_FRAMES = 8;     // ticks a smoke run renders before its screenshot (the bake has warmed; the governor is off under FREEZE)
+const GATE_FRAMES = 8;      // ticks a gate comparison settles for (motion is frozen, so this only has to clear the bake and the tick-4 re-bake)
 const STILL_FRAMES = [20, 60];   // the stillness proof: one engine, two captures forty ticks apart
 
 // ---------------------------------------------------------------------------
@@ -646,25 +663,93 @@ const DETERMINISM = ['park 1', 'curtain 1', 'memories', 'canopy 1'];
 // ---------------------------------------------------------------------------
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 
+const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
+
 function serveRoot() {
+  // What the browser was actually handed, hashed, is the manifest key's body — so a file the harness never loads cannot move it.
+  const served = new Map();   // '/path' -> sha256 of the bytes sent, 200s only (a 404 for /favicon.ico is not part of the tree)
   const server = createServer(async (req, res) => {
     const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     const file = join(ROOT, normalize(path).replace(/^(\.\.[/\\])+/, ''));
     if (file !== ROOT && !file.startsWith(`${ROOT}/`)) { res.writeHead(403).end('forbidden'); return; }
+    let bytes;
     try {
       if (!(await stat(file)).isFile()) throw new Error('not a file');
+      bytes = await readFile(file);
     } catch { res.writeHead(404).end('not found'); return; }
+    served.set(`/${relative(ROOT, file)}`, sha256(bytes));
     res.writeHead(200, { 'content-type': MIME[extname(file).toLowerCase()] || 'application/octet-stream' });
-    createReadStream(file).pipe(res);
+    res.end(bytes);
   });
-  return new Promise((ok) => { server.listen(0, '127.0.0.1', () => ok({ server, port: server.address().port })); });
+  return new Promise((ok) => { server.listen(0, '127.0.0.1', () => ok({ server, port: server.address().port, served })); });
 }
 
 // ---------------------------------------------------------------------------
 const results = [];
 const log = (...a) => console.log(...a);
 const slug = (s) => s.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
-const record = (suite, name, pass, detail) => { results.push({ suite, name, pass, detail }); };
+// `hashes` (render rows only) is what the manifest keeps of the frames behind the verdict: a / b, a pin's own, a toggle's three stages.
+const record = (suite, name, pass, detail, hashes) => { results.push({ suite, name, pass, detail, ...(hashes ? { hashes } : {}) }); };
+
+// SwiftShader/ANGLE is the whole reason this works headless: a real WebGL2 ES 3.00 implementation with
+// EXT_color_buffer_float, and a software rasteriser, so the same bytes come out on any machine.
+// --enable-unsafe-swiftshader is what recent Chrome requires to allow the software fallback for WebGL.
+// (A constant, not inline: the manifest key holds the flags the hashes were taken under.)
+const LAUNCH_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--force-color-profile=srgb'];
+
+// One engine render, once per run per distinct input (harness-lib.mjs: createRenderMemo). The same (preset, overrides, frames, opts) is the
+// same frame — the determinism rows prove exactly that — and memories `{}` alone is asked for ~24 times. `{ fresh: true }` is for the
+// rows whose claim IS "two independent engines of the same inputs" (determinism's "reproduces"): a memo there would compare a frame
+// with itself and prove nothing. The captures live in the page's `caps` map, so a hit's ids stay good for __diff and __png.
+const memos = new WeakMap();
+let lastMemo = null;   // for the end-of-run count
+function renderOnce(page, preset, overrides, frames, opts, flags) {
+  if (!memos.has(page)) {
+    lastMemo = createRenderMemo((p, o, f, q) => page.evaluate(([p2, o2, f2, q2]) => window.__run(p2, o2, f2, q2), [p, o, f, q]));
+    memos.set(page, lastMemo);
+  }
+  return memos.get(page).once(preset, overrides, frames, opts, flags);
+}
+
+// One gate row's renders (b is null for a pin), shared by the sweep and by --verify so both ask the engine the same question.
+async function renderRow(page, inv) {
+  const opts = inv.rebake ? { rebake: true } : undefined;
+  const optsA = inv.from ? { ...opts, from: inv.from } : opts;   // from: frame a is reached by setParams out of another look
+  const optsB = inv.rebakeB ? { rebake: true } : opts;           // rebakeB: frame b is the same engine's frame, re-baked
+  const a = await renderOnce(page, inv.preset, inv.a || {}, [GATE_FRAMES], optsA);
+  const b = inv.pin ? null : await renderOnce(page, inv.preset, inv.b, [GATE_FRAMES], optsB);
+  return { a, b };
+}
+
+// --verify (see the header for what it proves). Returns true when the manifest describes this tree and the sample reproduces.
+const VERIFY_AB = 15;
+async function verifyManifest(page, { inputs, served, path, seed }) {
+  let m;
+  try { m = JSON.parse(await readFile(path, 'utf8')); } catch (e) { log(`VERIFY REFUSED — cannot read the manifest ${path}: ${e.message.split('\n')[0]}`); return false; }
+  const key = manifestKey(inputs, served);
+  if (manifestKey(m.inputs || {}, m.served || []) !== m.key) { log(`VERIFY REFUSED — ${path} does not match its own key: its body was edited after it was written.`); return false; }
+  if (key !== m.key) {
+    log(`VERIFY REFUSED — the manifest was taken on another tree or browser.\n  manifest key ${m.key}\n  this tree    ${key}`);
+    for (const d of diffInputs(m, { inputs, served })) log(`  moved: ${d}`);
+    return false;
+  }
+  if (m.failures) { log(`VERIFY REFUSED — the manifest is of a run with ${m.failures} failing row(s); it is not a proof.`); return false; }
+  const gate = m.rows.filter((r) => r.suite === 'gate' && r.hashes);
+  const pins = gate.filter((r) => r.hashes.pin !== undefined), ab = gate.filter((r) => r.hashes.b !== undefined);
+  log(`VERIFY — the key matches (${key.slice(0, 16)}…); ${pins.length} pins + ${Math.min(VERIFY_AB, ab.length)} of ${ab.length} a/b rows, seed ${seed} (--verify-seed ${seed} repeats this sample)`);
+  let bad = 0;
+  for (const row of [...pins, ...sampleRows(ab, VERIFY_AB, seed)]) {
+    const inv = INVARIANTS.find((x) => x.name === row.name);
+    if (!inv) { bad++; log(`  FAIL  ${row.name} — no such row in this run.js`); continue; }
+    let got;
+    try { const { a, b } = await renderRow(page, inv); got = { a: a.captures[0].hash, ...(b ? { b: b.captures[0].hash } : {}) }; } catch (e) { bad++; log(`  FAIL  ${row.name} — ${e.message.split('\n')[0]}`); continue; }
+    const want = row.hashes, ok = got.a === want.a && (want.pin === undefined ? got.b === want.b : got.a === want.pin);
+    if (!ok) bad++;
+    log(`  ${ok ? 'ok  ' : 'FAIL'}  ${row.name}   ${want.pin !== undefined ? `pin ${want.pin}` : `a ${want.a} b ${want.b}`}  ->  ${want.pin !== undefined ? got.a : `a ${got.a} b ${got.b}`}`);
+  }
+  log(bad ? `VERIFY FAILED — ${bad} row(s) did not reproduce` : 'VERIFY OK — the manifest describes this tree and the sample reproduces');
+  return bad === 0;
+}
 
 async function writePNG(name, dataURL) {
   const file = join(OUT, `${name}.png`);
@@ -743,19 +828,17 @@ async function robustness(page) {
 
 async function main() {
   await mkdir(OUT, { recursive: true });
-  const { server, port } = await serveRoot();
+  const t0 = Date.now();
+  const { server, port, served } = await serveRoot();
   const browser = await chromium.launch({
-    // SwiftShader/ANGLE is the whole reason this works headless: a real WebGL2 ES 3.00 implementation with
-    // EXT_color_buffer_float, and a software rasteriser, so the same bytes come out on any machine.
-    // --enable-unsafe-swiftshader is what recent Chrome requires to allow the software fallback for WebGL.
-    args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--force-color-profile=srgb'],
+    args: LAUNCH_ARGS,   // (why these: see LAUNCH_ARGS)
   });
   const page = await browser.newPage({ deviceScaleFactor: 1, viewport: { width: 640, height: 400 } });
   page.setDefaultTimeout(300000);
   page.on('pageerror', (e) => { if (!e.message.includes('komorebi-test-')) log(`  [page error] ${e.message}`); });   // komorebi-test-* = a deliberate host throw
   page.on('console', (m) => { if (m.type() === 'error') log(`  [console] ${m.text()}`); });
 
-  let failures = 0;
+  let failures = 0, fullRun = false, servedAtEnd = null, inputs = null, servedAtLoad = null;
   try {
     await page.goto(`http://127.0.0.1:${port}/test-gl/harness.html`, { waitUntil: 'load' });
     await page.waitForFunction(() => window.__ready === true);
@@ -774,6 +857,28 @@ async function main() {
     log(`WebGL2  ${info.version}`);
     log(`        ${info.glsl}`);
     log(`        renderer: ${info.renderer}   EXT_color_buffer_float: yes   EXT_float_blend: ${info.floatBlend ? 'yes' : 'no'}   dpr: ${info.dpr}`);
+
+    // The page and its modules are loaded: `served` is now the real set (every import the harness makes is a request the server saw).
+    const servedList = () => [...served].map(([path, sha]) => ({ path, sha256: sha }));
+    const fileSha = async (...parts) => sha256(await readFile(join(ROOT, ...parts)));
+    inputs = {
+      runJs: sha256(await readFile(fileURLToPath(import.meta.url))), harnessLib: await fileSha('test-gl', 'harness-lib.mjs'),
+      harnessHtml: await fileSha('test-gl', 'harness.html'), macrosJs: await fileSha('macros.js'),
+      browser: browser.version(), renderer: info.renderer, args: LAUNCH_ARGS, platform: process.platform, arch: process.arch,
+    };
+    servedAtLoad = servedList();
+
+    // ---- opt-in: VERIFY — `--verify [manifest] [--verify-seed n]`: see the header ----
+    const vi = process.argv.indexOf('--verify');
+    if (vi >= 0) {
+      const given = process.argv[vi + 1];
+      const si = process.argv.indexOf('--verify-seed');
+      const seed = si >= 0 ? Number(process.argv[si + 1]) : Math.floor(Math.random() * 2 ** 31);
+      if (!Number.isInteger(seed)) { log('usage: node run.js --verify [manifest.json] [--verify-seed <integer>]'); await browser.close(); server.close(); process.exit(2); }
+      const ok = await verifyManifest(page, { inputs, served: servedAtLoad, path: given && !given.startsWith('--') ? resolve(given) : MANIFEST, seed });
+      await browser.close(); server.close();
+      process.exit(ok ? 0 : 1);
+    }
 
     // ---- suite 4 (opt-in): TRANSITIONS ----
     // `node run.js --transition "afternoon 7" "canopy 1"` — deliberately NOT part of the default run, because
@@ -851,6 +956,7 @@ async function main() {
     const solo = robustOnly || gateOnly || fillOnly || skyOnly || edgeOnly;   // one suite, nothing else
     const gateFilters = gateOnly ? process.argv.slice(3).map((s) => s.toLowerCase()) : [];
     const filters = (gateOnly || fillOnly || skyOnly || edgeOnly) ? [] : process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
+    fullRun = !solo && !filters.length;   // only the whole sweep writes a manifest
     const allPresets = await page.evaluate(() => window.__presets());
     const presets = solo ? [] : filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
     if (filters.length && presets.length === 0) { log(`no preset matches: ${filters.join(', ')}`); await browser.close(); server.close(); process.exit(1); }
@@ -859,7 +965,7 @@ async function main() {
     for (const name of presets) {
       let r;
       try {
-        r = await page.evaluate(([p, f]) => window.__run(p, {}, [f]), [name, SMOKE_FRAMES]);
+        r = await renderOnce(page, name, {}, [SMOKE_FRAMES]);
       } catch (e) {
         record('smoke', name, false, e.message.split('\n')[0]);
         log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`);
@@ -881,7 +987,7 @@ async function main() {
       if (cut > 0) truncated.push(`${name} grew ${r.occ.want}, cap ${r.occ.cap} — ${cut} segments of wood dropped`);
       await writePNG(slug(name), await page.evaluate((id) => window.__png(id), c.id));   // out/<preset>.png — the look itself, the artifact this suite exists to produce
       record('smoke', name, bad.length === 0, bad.length ? bad.join('; ')
-        : `${c.w}×${c.h} var ${s.variance.toFixed(0)} mean ${s.mean.toFixed(1)} ${r.ms} ms${cut > 0 ? `  WOOD TRUNCATED ${r.occ.want}>${r.occ.cap}` : ''}`);
+        : `${c.w}×${c.h} var ${s.variance.toFixed(0)} mean ${s.mean.toFixed(1)} hash ${c.hash} ${r.ms} ms${cut > 0 ? `  WOOD TRUNCATED ${r.occ.want}>${r.occ.cap}` : ''}`, { a: c.hash });
       log(`  ${bad.length ? 'FAIL' : cut > 0 ? 'WARN' : 'ok  '}  ${name.padEnd(14)} var ${s.variance.toFixed(0).padStart(5)}  mean ${s.mean.toFixed(1).padStart(5)}  ${String(r.ms).padStart(6)} ms  ${bad.join('; ')}`);
     }
     // Loud, but deliberately not a FAILURE: the looks that hit the cap were authored against the truncation, so
@@ -899,7 +1005,7 @@ async function main() {
     for (const name of solo ? [] : DETERMINISM) {
       const r = await page.evaluate(([p, f]) => window.__run(p, {}, f), [name, STILL_FRAMES]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [r.captures[0].id, r.captures[1].id]);
-      record('determinism', `${name} holds still`, d.equal, d.equal ? `hash ${r.captures[0].hash}` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}`);
+      record('determinism', `${name} holds still`, d.equal, d.equal ? `hash ${r.captures[0].hash}` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}`, { a: r.captures[0].hash, b: r.captures[1].hash });
       log(`  ${d.equal ? 'ok  ' : 'FAIL'}  ${name.padEnd(14)} hash ${r.captures[0].hash}  ${d.equal ? '' : `${d.diffPixels} px differ (max Δ${d.maxDelta})`}`);
       if (!d.equal) await writePNG(`diff-still-${slug(name)}`, d.png);
     }
@@ -907,10 +1013,10 @@ async function main() {
     // ---- suite 3b: two independent engines ----
     if (!solo) log('\nDETERMINISM — two independent engines, same look');
     for (const name of solo ? [] : DETERMINISM) {
-      const a = await page.evaluate(([p, f]) => window.__run(p, {}, [f]), [name, GATE_FRAMES]);
-      const b = await page.evaluate(([p, f]) => window.__run(p, {}, [f]), [name, GATE_FRAMES]);
+      const a = await renderOnce(page, name, {}, [GATE_FRAMES], undefined, { fresh: true });   // fresh: the claim is two INDEPENDENT engines (see renderOnce)
+      const b = await renderOnce(page, name, {}, [GATE_FRAMES], undefined, { fresh: true });
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.captures[0].id]);
-      record('determinism', `${name} reproduces`, d.equal, d.equal ? `hash ${a.captures[0].hash}` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}`);
+      record('determinism', `${name} reproduces`, d.equal, d.equal ? `hash ${a.captures[0].hash}` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}`, { a: a.captures[0].hash, b: b.captures[0].hash });
       log(`  ${d.equal ? 'ok  ' : 'FAIL'}  ${name.padEnd(14)} ${a.captures[0].hash} vs ${b.captures[0].hash}  ${d.equal ? '' : `${d.diffPixels} px differ (max Δ${d.maxDelta})`}`);
       if (!d.equal) await writePNG(`diff-repro-${slug(name)}`, d.png);
     }
@@ -918,22 +1024,19 @@ async function main() {
     // ---- suite 2: the gate invariants ----
     if (!fillOnly && !skyOnly && !edgeOnly) log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
     for (const inv of (fillOnly || skyOnly || edgeOnly) ? [] : INVARIANTS.filter((r) => !gateFilters.length || gateFilters.some((f) => r.name.toLowerCase().includes(f)))) {
-      const opts = inv.rebake ? { rebake: true } : undefined;
-      const optsA = inv.from ? { ...opts, from: inv.from } : opts;   // from: frame a is reached by setParams out of another look
-      const optsB = inv.rebakeB ? { rebake: true } : opts;           // rebakeB: frame b is the same engine's frame, re-baked
-      const a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.a || {}, GATE_FRAMES, optsA]);
+      const { a, b } = await renderRow(page, inv);
       if (inv.pin) {   // a PIN row: one frame, one number written down before the change (see INVARIANTS)
         const got = a.captures[0].hash, ok = !a.glError && got === inv.pin;
-        record('gate', inv.name, ok, ok ? `pinned (${got})` : a.glError ? `gl.getError 0x${a.glError.toString(16)}` : `hash ${got}, pinned ${inv.pin} — the frame moved`);
+        record('gate', inv.name, ok, ok ? `pinned (${got})` : a.glError ? `gl.getError 0x${a.glError.toString(16)}` : `hash ${got}, pinned ${inv.pin} — the frame moved`, { a: got, pin: inv.pin });
         log(`  ${ok ? 'ok  ' : 'FAIL'}  [${inv.preset}] ${inv.name}${ok ? `   ${got}` : a.glError ? `   gl.getError 0x${a.glError.toString(16)}` : `   hash ${got}, pinned ${inv.pin}`}`);
         continue;
       }
-      const b = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [inv.preset, inv.b, GATE_FRAMES, optsB]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.captures[0].id]);
+      const hashes = { a: a.captures[0].hash, b: b.captures[0].hash };
       const tag = inv.known ? 'KNOWN-FAIL' : 'FAIL';
       if (inv.near != null) {   // a CONTINUITY row: a hair's step moves the picture by a hair
         const gl = a.glError || b.glError, ok = !gl && (d.equal || d.maxDelta <= inv.near);
-        record('gate', inv.name, ok, ok ? `max Δ${d.equal ? 0 : d.maxDelta} <= ${inv.near} (${d.equal ? 0 : d.diffPixels}/${d.total ?? 0} px differ)` : gl ? `gl.getError 0x${gl.toString(16)}` : `max Δ${d.maxDelta} over ${inv.near}: ${d.diffPixels}/${d.total} px moved, first at ${d.firstAt} — it pops`);
+        record('gate', inv.name, ok, ok ? `max Δ${d.equal ? 0 : d.maxDelta} <= ${inv.near} (${d.equal ? 0 : d.diffPixels}/${d.total ?? 0} px differ)` : gl ? `gl.getError 0x${gl.toString(16)}` : `max Δ${d.maxDelta} over ${inv.near}: ${d.diffPixels}/${d.total} px moved, first at ${d.firstAt} — it pops`, hashes);
         log(`  ${ok ? 'ok  ' : 'FAIL'}  [${inv.preset}] ${inv.name}${ok ? `   max Δ${d.equal ? 0 : d.maxDelta}` : gl ? `   gl.getError 0x${gl.toString(16)}` : `   max Δ${d.maxDelta} (want <= ${inv.near})`}`);
         continue;
       }
@@ -941,7 +1044,7 @@ async function main() {
         const gl = a.glError || b.glError, ratio = b.captures[0].stats.mean / a.captures[0].stats.mean;
         const ok = !d.equal && !gl && ratio >= inv.lit[0] && ratio <= inv.lit[1];
         record('gate', inv.name, ok, ok ? `mean level ×${ratio.toFixed(3)} (${a.captures[0].stats.mean.toFixed(1)} -> ${b.captures[0].stats.mean.toFixed(1)}), within ×${inv.lit.join('..×')}`
-          : gl ? `gl.getError 0x${gl.toString(16)}` : d.equal ? `frames IDENTICAL (${a.captures[0].hash}) — the split does nothing` : `mean level ×${ratio.toFixed(3)} is outside ×${inv.lit.join('..×')}`);
+          : gl ? `gl.getError 0x${gl.toString(16)}` : d.equal ? `frames IDENTICAL (${a.captures[0].hash}) — the split does nothing` : `mean level ×${ratio.toFixed(3)} is outside ×${inv.lit.join('..×')}`, hashes);
         log(`  ${ok ? 'ok  ' : 'FAIL'}  [${inv.preset}] ${inv.name}${ok ? `   ×${ratio.toFixed(3)}` : gl ? `   gl.getError 0x${gl.toString(16)}` : `   ×${ratio.toFixed(3)} (want ×${inv.lit.join('..×')})`}`);
         continue;
       }
@@ -949,7 +1052,7 @@ async function main() {
         const gl = a.glError || b.glError;
         const ok = !d.equal && !gl;
         record('gate', inv.name, ok, ok ? `differ (${a.captures[0].hash} vs ${b.captures[0].hash}), ${d.diffPixels}/${d.total} px, max Δ${d.maxDelta}`
-          : gl ? `gl.getError 0x${gl.toString(16)}` : `frames IDENTICAL (${a.captures[0].hash}) — the gate is not a switch`);
+          : gl ? `gl.getError 0x${gl.toString(16)}` : `frames IDENTICAL (${a.captures[0].hash}) — the gate is not a switch`, hashes);
         log(`  ${ok ? 'ok  ' : 'FAIL'}  [${inv.preset}] ${inv.name}${ok ? '' : gl ? `   gl.getError 0x${gl.toString(16)}` : '   frames identical — the gate does nothing'}`);
         continue;
       }
@@ -959,7 +1062,7 @@ async function main() {
         await writePNG(`diff-${slug(inv.name)}`, d.png);
       }
       record('gate', inv.name, d.equal || !!inv.known,
-        d.equal ? `identical (${a.captures[0].hash})` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}, first at ${d.firstAt}${inv.known ? ` — known: ${inv.known}` : ''}`);
+        d.equal ? `identical (${a.captures[0].hash})` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}, first at ${d.firstAt}${inv.known ? ` — known: ${inv.known}` : ''}`, hashes);
       log(`  ${d.equal ? 'ok  ' : tag}  [${inv.preset}] ${inv.name}`);
       if (!d.equal) log(`        ${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}, first at (${d.firstAt}) — see out/diff-${slug(inv.name)}.png`);
     }
@@ -1105,7 +1208,7 @@ async function main() {
       if (!r.diff.shutAgain.equal) bad.push(`shut again is not the old frame (${r.diff.shutAgain.diffPixels}/${r.diff.shutAgain.total} px differ)`);
       if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
       const detail = `${shut.hash} -> ${open.hash} -> ${again.hash}   allocated ${[shut, open, again].map((x) => (x.allocated ? 'yes' : 'no')).join('/')}`;
-      record('fill', name, bad.length === 0, bad.join('; ') || detail);
+      record('fill', name, bad.length === 0, bad.join('; ') || detail, { shut: shut.hash, open: open.hash, again: again.hash });
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || detail}`);
     }
 
@@ -1128,7 +1231,7 @@ async function main() {
       if (!d.equal) bad.push(`${d.diffPixels}/${d.total} px differ from a frame born with it (max Δ${d.maxDelta})`);
       if (stale.equal) bad.push('the frame is the one from before the change — the knob did nothing');
       if (a.glError || b.glError) bad.push(`gl.getError 0x${(a.glError || b.glError).toString(16)}`);
-      record('live', name, bad.length === 0, bad.join('; ') || `identical to a frame born with it (${a.captures[0].hash}); the unchanged frame is ${never.captures[0].hash}`);
+      record('live', name, bad.length === 0, bad.join('; ') || `identical to a frame born with it (${a.captures[0].hash}); the unchanged frame is ${never.captures[0].hash}`, { a: a.captures[0].hash, b: b.capture.hash, never: never.captures[0].hash });
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || a.captures[0].hash}`);
     }
 
@@ -1217,7 +1320,7 @@ async function main() {
         if (r.interrupted) {
           if (!(r.bloomAtInterrupt > 0)) bad.push(`the route had no bloom (${r.bloomAtInterrupt}) when it was interrupted — nothing to leave behind, the row proves nothing`);
           if (r.bloomAfter !== 0) bad.push(`trans.bloom=${r.bloomAfter} after the abort (want 0; the route had reached ${r.bloomAtInterrupt.toFixed(3)})`);
-          const born = await page.evaluate(([look, f]) => window.__run(look, {}, [f]), [route.interrupt.with, GATE_FRAMES]);   // an engine BORN as the look the route was swapped to
+          const born = await renderOnce(page, route.interrupt.with, {}, [GATE_FRAMES]);   // an engine BORN as the look the route was swapped to
           const d = await page.evaluate(([x, y]) => window.__diff(x, y), [r.afterId, born.captures[0].id]);
           if (!d.equal) {
             bad.push(`the settled frame after the abort is not a born '${route.interrupt.with}': ${d.diffPixels}/${d.total} px differ (max Δ${d.maxDelta})`);
@@ -1234,6 +1337,7 @@ async function main() {
     }
     }
     if (!filters.length && !gateOnly && !fillOnly && !skyOnly && !edgeOnly) await robustness(page);
+    servedAtEnd = servedList();
   } finally {
     await browser.close();
     server.close();
@@ -1250,6 +1354,15 @@ async function main() {
   }
   log('─'.repeat(w0 + 60));
   log(`${results.length} cases, ${results.length - failures} pass, ${failures} fail   ·   screenshots in test-gl/out/`);
+  const memo = lastMemo ? lastMemo.stats() : { hits: 0, misses: 0 };
+  log(`renders: ${memo.misses} engines built, ${memo.hits} repeats answered from the memo   ·   ${Math.round((Date.now() - t0) / 1000)} s`);
+  if (fullRun && servedAtEnd) {
+    // A module the page loads late would make the key depend on when it was taken; the key is taken at page load, so say so if the sets differ.
+    if (servedAtEnd.length !== servedAtLoad.length) log(`  WARNING: ${servedAtEnd.length - servedAtLoad.length} file(s) were first served after the page loaded; the manifest key covers the load-time set only`);
+    const manifest = { version: 1, key: manifestKey(inputs, servedAtLoad), inputs, served: servedAtLoad.sort((a, b) => (a.path < b.path ? -1 : 1)), failures, cases: results.length, wallSeconds: Math.round((Date.now() - t0) / 1000), memo, rows: results };
+    await writeFile(MANIFEST, `${JSON.stringify(manifest, null, 1)}\n`);
+    log(`manifest: ${MANIFEST}   key ${manifest.key}`);
+  }
   process.exit(failures ? 1 : 0);
 }
 
