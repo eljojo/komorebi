@@ -214,6 +214,8 @@ const PANEL = [
   ['s','sky_turbidity','haze β',0,0.5,0.01,''],
   ['s','mesopic_strength','dusk rods',0,1,0.01,''],
   ['s','chromatic_aberration','diffraction',0,6,0.1,''],
+  ['s','vignette','edge fade',0,1,0.01,''],            // §4.7: the projector's soft iris — the frame's light fades to black over the outer fraction; the gate, 0 = off byte for byte
+  ['s','vignette_shape','edge shape',2,8,0.1,''],      // its superellipse exponent: 2 an ellipse touching the edges, 8 a rounded rectangle; inert while the fade is 0
   ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
 
   ['h','Background'],
@@ -802,6 +804,8 @@ const TIPS = {
   sky_turbidity:"<b>Haze in the air.</b> Clean air = low; dust or humidity = higher, which makes a low sun redder and a sunset more washed-out orange.",
   mesopic_strength:"<b>How blue the shadows go at dusk.</b> As light fades your eye quietly switches to night vision, which is colour-blind and blue-ish — so the dim shade cools toward grey-blue while the bright dapples stay warm. Only kicks in at low sun. 0 = off.",
   chromatic_aberration:"<b>Prism fringe — red and blue split at the leaf edges.</b> Light bends round each leaf edge by an angle that grows with its wavelength (diffraction, θ∝λ), so red spreads a touch wider than blue and every dapple gains a warm outer rim and a cool core. Rides the same shift as the dapples, so it grows with canopy height and the low-sun stretch for free. 0 = off; ~1 is the true wavelength spread, higher exaggerates.",
+  vignette:"<b>Edge fade — burns the corners.</b> Fades the frame's edges to black so a projected picture pools instead of showing its rectangle; the value is how much of the way in from the edge the fade reaches. 0 = off.",
+  vignette_shape:"<b>Edge shape.</b> From round (2) to rounded-rectangle (8). Does nothing while the edge fade is 0.",
   tone_map:"<b>How over-bright light is squeezed onto the screen.</b> ACES is the soft, filmy default; Reinhard is simpler; None just clips the brightest bits.",
   // Background
   'Background':"<b>The floor the light lands on.</b> Plain white by default; tint it and it reads like real ground. The dapples reflect off it — deep shade goes dark earth, midtones warm brown, and only the hottest spots still burn toward white. (A couple of the afternoon looks carry a warm Mount-Royal dirt; all three at 1 = white floor.)",

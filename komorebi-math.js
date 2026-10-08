@@ -458,4 +458,14 @@ function growNode(g, rng, out, base, dir, len, level, limb){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+// THE EDGE (§4.7), as the shader computes it (GLSL_T_POST): a superellipse mask on the frame, 1 inside radius
+// (1 − feather), 0 at the frame's edge and in the corners beyond the curve. u, v in 0..1. The reference the
+// vignette test holds the shader's formula to; feather 0 is the gate shut.
+function vignetteMask(u, v, feather, shape) {
+  if (!(feather > 0)) return 1;
+  const qx = Math.abs(u * 2 - 1), qy = Math.abs(v * 2 - 1);
+  const d = Math.pow(Math.pow(qx, shape) + Math.pow(qy, shape), 1 / shape);
+  return 1 - smoothstep(1 - feather, 1, d);
+}
+
+export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

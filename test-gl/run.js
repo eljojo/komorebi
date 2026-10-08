@@ -82,6 +82,16 @@ const INVARIANTS = [
   // value would show up here and nowhere else.
   { name: 'sway_pitch 0 == absent (layer path)', preset: 'memories', a: {}, b: { sway_pitch: 0 } },
   { name: 'chromatic_aberration 0 == absent (layer path)', preset: 'memories', a: {}, b: { chromatic_aberration: 0 } },
+  // The edge fade (§4.7) lives in the post block every camera runs. vignette 0 is the gate: the shape, set to something
+  // that would bite, must be dead code on all three kinds of program.
+  { name: 'vignette 0 == absent (layer path)', preset: 'memories', a: {}, b: { vignette: 0, vignette_shape: 7 } },
+  { name: 'vignette 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { vignette: 0, vignette_shape: 7 } },
+  { name: 'vignette 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { vignette: 0, vignette_shape: 7 } },
+  { name: 'vignette 0.3 darkens the frame (layer path)', preset: 'memories', differ: true, a: {}, b: { vignette: 0.3 } },
+  { name: 'vignette 0.3 darkens the frame (sky view)', preset: 'canopy 1', differ: true, a: {}, b: { vignette: 0.3 } },
+  // ...and the shape is live once the gate is open.
+  { name: 'vignette_shape is live at vignette 0.3 (layer path)', preset: 'memories', differ: true,
+    a: { vignette: 0.3, vignette_shape: 2 }, b: { vignette: 0.3, vignette_shape: 8 } },
   { name: 'branch_tau 0 == absent (layer path)', preset: 'memories', a: {}, b: { branch_tau: 0 } },
   // Autumn senescence (§4.5). The shipped looks sit at phenology 0.5, below turn_start, so no leaf has begun to turn
   // and the whole pigment family — capacity, clock, vein share — has to be dead code: not "close", the same bytes.

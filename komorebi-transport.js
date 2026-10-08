@@ -142,6 +142,8 @@ uniform float uMesopic;           // Purkinje strength (the mesopic_strength kno
 uniform vec3  uHazeColor;        // linear-HDR distance haze the far floor dissolves into (§4.7)
 uniform int   uLinearOut;         // 0 = end the Look here and write display-encoded colour (every look, unchanged). 1 = write LINEAR HDR
                                   // instead: the lateral-diffusion tier (§4.9) must spread light BEFORE the curve, so it runs toneTail itself after the blur.
+uniform float uVignette;          // the edge fade (§4.7): the outer fraction of the frame's half-extent the light fades to black over. 0 = off, byte-identical
+uniform float uVignetteShape;     // its superellipse exponent, 2..8: 2 an ellipse touching all four edges, 8 a rounded rectangle. Inert at uVignette 0
 ${GLSL_TONE_TAIL}`;
 
 // ---- THE SKY FILL's receiver half (§4.7): what the three surface cameras read. The bake (FS_FILL, run per bake by
@@ -901,6 +903,13 @@ const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (§3.5): as the sun
   float rod = (1.0 - smoothstep(0.15, 0.6, dot(acc, LUMA))) * uTwilight * uMesopic;  // 1 deep shade, 0 dapples
   col = mix(col, dot(col, LUMA)*ROD_BLUE, rod*0.6);     // cap 0.6 so the deepest shade keeps a hint of green
   col = mix(col, uHazeColor, fog);                       // far floor dissolves into atmospheric haze (§4.7); fog==0 at pitch 0
+  // ---- THE EDGE (§4.7): the projector's soft iris — a mask on the LIGHT, before the tail, so the glow tier spreads
+  // masked light and the fade dims as a real throw would. A presentation device, not physics: named, and 0 is off. ----
+  if(uVignette > 0.0){
+    vec2 q = abs(vUv*2.0 - 1.0);                                   // 0 at frame centre, 1 at each edge, aspect-free: the mask touches all four edges
+    float d = pow(pow(q.x, uVignetteShape) + pow(q.y, uVignetteShape), 1.0/uVignetteShape);   // superellipse radius: 2 an ellipse, 8 a rounded rectangle
+    col *= 1.0 - smoothstep(1.0 - uVignette, 1.0, d);
+  }
   // The Look's tail (exposure/curve/contrast/gamma) is toneTail() — shared verbatim with the diffusion composite.
   // Skipping it is the ONLY thing uLinearOut changes: what leaves here is then the same linear HDR radiance the
   // fabric produced, which is the space a lateral spread has to happen in (§4.9).
@@ -1000,7 +1009,8 @@ const TRANSPORT_GROUPS = {
   litter:    { decls: GLSL_T_LITTER_DECLS,    locs: { litterOn:'uLitterOn', litter:'uLitter', litterOrigin:'uLitterOrigin', litterExtent:'uLitterExtent' } },
   sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
-                                                      exposure:'uExposure', contrast:'uContrast', tone:'uToneMap' } },
+                                                      exposure:'uExposure', contrast:'uContrast', tone:'uToneMap',
+                                                      vignette:'uVignette', vignetteShape:'uVignetteShape' } },
 };
 
 // ---- THE SENTENCES. One entry per camera. `groups` is ORDERED and that order is the emitted declaration order —

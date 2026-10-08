@@ -38,6 +38,7 @@ const MORPH_KEYS = [
   // look: branch_tau>0 only in park 1, which is faithful → analytic occluder gated off. Live occ.ht recompute = TODO.)
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
+  'vignette','vignette_shape',                                          // the edge fade (§4.7): two live shader uniforms in the post block every camera runs — the feather (also the gate) and the superellipse exponent — so they tween; a presentation device, not a fall tier
   'canopy_fill','fill_scatter',                                         // the sky fill (§4.7): two live shader uniforms — the receiver's mix and the leaf albedo the fill pass reads — so they tween; the canopy_fill gate crossing 0 allocates the fill lazily, mid-tween, which is not a look pop
   'leaf_wetness',                                                       // the rain day (§4.7): read by the carpet bake only — refreshLitter's signature notices it and only the carpet re-bakes; no regrow (a CANOPY key would regrow the whole grove per frame to re-tint the carpet, and macros may never write CANOPY keys, which P8's rain, a live writer, will need)
   'leaf_diffuse',                                                       // a leaf is not a window (§4.5): k = −ln(1−d) is a live uniform on both paths (the layer tap reads it, the faithful cast re-bakes on it), so it tweens
@@ -299,6 +300,8 @@ const DEFAULTS = {
   sky_turbidity: 0.05,             // atmospheric haze β (Ångström); reddens low sun, desaturates dusk
   mesopic_strength: 0.6,           // Purkinje: how far rods cool the deep shade at dusk (0 off; gated to low sun)
   chromatic_aberration: 0.0,       // leaf-edge diffraction (θ∝λ): per-channel red/blue spread of the dapples (0 = off, presets untouched)
+  vignette: 0.0,                   // the edge fade (§4.7): the frame's light fades to black over the outer `vignette` fraction of its half-extent. THE GATE and the feather: 0 = off, every look byte-identical. A presentation device for the projector (a real throw is a hard rectangle; the yard has no frame), not physics
+  vignette_shape: 2,               // the edge fade's superellipse exponent, 2..8: 2 an ellipse touching all four edges, 8 a rounded rectangle. Inert while vignette is 0
   tone_map: 2,                     // 0 none, 1 reinhard, 2 aces
   ground_r: 1.0, ground_g: 1.0, ground_b: 1.0,   // ground albedo (floor reflectance, spec §4.7): white floor by default — a few looks set a warm dirt
   // Wind — coherent band (spec §5.1)
