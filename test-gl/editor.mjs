@@ -112,19 +112,25 @@ try {
   }
   check('wind pad writes wind_strength', parseFloat(wv) > 1.5, `strength now ${wv}`);
 
-  // season macro (on release) regrows without error
+  // season macro: the slider is a TARGET the bus eases toward on the frame clock (no snap, no transition, no error)
+  const densNow = () => page.$eval('#dev', (dev) => {
+    const rows = [...dev.querySelectorAll('.ctl')];
+    return parseFloat(rows.find((r) => r.querySelector('label')?.textContent === 'density').querySelector('input').value);
+  });
+  const dens0 = await densNow();
   await page.$eval('#play', (el) => {
     const rows = [...el.querySelectorAll('.ctl')];
     const row = rows.find((r) => r.querySelector('label')?.textContent === 'season');
     const inp = row.querySelector('input');
     inp.value = '0';
-    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  const dens = await page.$eval('#dev', (dev) => {
-    const rows = [...dev.querySelectorAll('.ctl')];
-    return rows.find((r) => r.querySelector('label')?.textContent === 'density').querySelector('input').value;
-  });
-  check('season macro (release) regrows to sparse spring', Math.abs(parseFloat(dens) - 0.45) < 1e-6, `density ${dens}`);
+  const densRight = await densNow();
+  check('season macro tweens: right after the input the density has not snapped', Math.abs(densRight - 0.45) > 1e-6 && Math.abs(densRight - dens0) < 0.5, `density ${dens0} -> ${densRight} (target 0.45)`);
+  // the ease advances at most 0.1 s of clock per frame (a slept tab must not jump it), and SwiftShader frames are long: wait out the frames, not the seconds
+  let dens = await densNow();
+  for (let tries = 0; tries < 240 && Math.abs(dens - 0.45) > 1e-6; tries++) { await page.waitForTimeout(500); dens = await densNow(); }
+  check('season macro (input) tweens to sparse spring', Math.abs(dens - 0.45) < 1e-6, `density ${dens}`);
 
   // experimental toggle reveals every built-in look
   await page.$eval('#play', (el) => {

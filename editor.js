@@ -50,7 +50,7 @@ if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
 function applyScope(scope){ eng.apply(scope); }                      // slider/toggle rebuild
 function reseed(){ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }   // same grove, grown again
-function applyParams(obj){ eng.setParams(obj); syncAllControls(); }  // load a whole preset (instant)
+function applyParams(obj){ endTween(); eng.setParams(obj); syncAllControls(); }  // load a whole preset (instant)
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
 
 // ===========================================================================
@@ -427,10 +427,36 @@ function syncAllControls(){ for(const k in controlEls) syncControl(k); syncMacro
 // lands it on the live engine. A future MIDI/audio source calls the same
 // bus.set and needs nothing from this file.
 // ===========================================================================
+// THE TWEEN'S COST GATE (macros.js: a `tween` macro regrows the grove each tick). The regrow is CPU, so it is timed
+// where it happens: an EMA of what applyScope('canopy') costs. Over 12 ms the next live apply waits cost/0.30 ms of wall
+// time (regrows take at most ~30% of it) — the ease keeps running on the clock meanwhile (tickTween hands the bus the
+// summed dt, which a one-pole composes exactly), so the catch-up is a bigger step, not a stall. Over 50 ms on the EMA
+// the look falls back to the old behaviour: no live applies, one exact apply on release. The cost is the look's own
+// (a fall frame costs ~4x its summer one: the exposure grid is phenology-independent and recomputed on every regrow —
+// a re-season scope is the successor). Measured with bun over buildGrove: afternoon 7 16 ms summer / ~70 fall, the void
+// 49 / ~220, montebello 3.5 / ~15.
+const TWEEN_SLOW_MS = 12, TWEEN_BUDGET = 0.30, TWEEN_OFF_MS = 50;
+let tweenCost = 0, tweenWaitUntil = 0, tweenOff = false, tweenAcc = 0, tweenLast = performance.now();
+function endTween(){ bus.cancel(); tweenCost = 0; tweenWaitUntil = 0; tweenOff = false; tweenAcc = 0; }   // any route that loads a look: or the tween keeps writing CANOPY keys over it
+function tickTween(){
+  const now = performance.now(), dt = Math.min(0.1, (now - tweenLast) / 1000);   // a tab that slept must not jump the ease
+  tweenLast = now;
+  tweenAcc += dt;
+  if(tweenOff || eng.trans.active || now < tweenWaitUntil) return;              // a look in transition owns the canopy keys
+  const d = tweenAcc; tweenAcc = 0;
+  bus.tick(d);
+}
 const bus = createBus(() => params, (dict, scope, _live) => {
   Object.assign(params, dict);
   for(const k in dict){ maybeClearSpecies(k); syncControl(k); }   // the advanced sliders track the macro underneath
-  if(scope !== null) applyScope(scope);
+  if(scope === 'canopy'){
+    const t0 = performance.now();
+    applyScope(scope);
+    const t1 = performance.now(), cost = t1 - t0;
+    tweenCost = tweenCost ? 0.7 * tweenCost + 0.3 * cost : cost;
+    tweenWaitUntil = cost > TWEEN_SLOW_MS ? t0 + cost / TWEEN_BUDGET : 0;
+    if(tweenCost > TWEEN_OFF_MS) tweenOff = true;
+  } else if(scope !== null) applyScope(scope);
 });
 const macroEls = {};      // bus key -> range input (play + strip surfaces; pad handled separately)
 let padDot=null, padEl=null;
@@ -442,8 +468,9 @@ function macroSlider(busKey, label){
   const lab=document.createElement('label'); lab.textContent=label ?? m.label;
   const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=1; inp.step=0.005;
   inp.value=bus.get(busKey);
-  if(m.live) inp.addEventListener('input', ()=>bus.set(busKey, parseFloat(inp.value)));
+  if(m.live || m.tween) inp.addEventListener('input', ()=>bus.set(busKey, parseFloat(inp.value)));   // a tween macro's slider is a TARGET: onFrame's tickTween eases to it
   else inp.addEventListener('change', ()=>bus.set(busKey, parseFloat(inp.value)));   // regrows the grove: on release only
+  if(m.tween) inp.addEventListener('change', ()=>{ if(tweenOff){ bus.set(busKey, parseFloat(inp.value)); bus.tick(1e9); } });   // fallback look: one exact apply on release
   row.append(lab,inp);
   if(!macroEls[busKey]) macroEls[busKey]=[];
   macroEls[busKey].push(inp);
@@ -1031,8 +1058,9 @@ function stepPreset(dir){
   const names=presetNames(); if(!names.length) return;
   let i=names.indexOf(presetSel.value); if(i<0) i=0;
   const name = names[(i+dir+names.length)%names.length];                    // wrap at the ends
+  endTween();
   eng.transitionTo(getPreset(name), { duration:transDur,
-    onEnd:()=>{ refreshPresetSelect(name); syncAllControls(); } });         // morph from the current live look to the target
+    onEnd:()=>{ endTween(); refreshPresetSelect(name); syncAllControls(); } });   // morph from the current live look to the target
   refreshPresetSelect(name);                                               // reflect target in the dropdown = next step's origin
 }
 
@@ -1079,6 +1107,7 @@ document.addEventListener('mouseleave',()=>{ treePointer=null; });
 // ---- per-frame overlays: reflect the engine's drift phase, draw the source
 // inset (when the panel is open), and update the HUD. ------------------------
 eng.onFrame = ()=> {
+  tickTween();
   if(params.drift_auto) syncControl('drift_phase');
   refreshGates();               // a transition, a macro or a preset can flip a mode as readily as the row itself; the signature check makes the miss cheap
   const devUp = !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');   // a sliding-out panel counts as gone
@@ -1353,8 +1382,9 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
     document.body.classList.remove('intro');        // un-dim the canvas to full strength
     welcome.classList.add('out');                   // dissolve the intro text
     setTimeout(()=>{ welcome.style.display='none'; }, 1000);
+    endTween();
     eng.transitionTo(getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec §9)
-      onEnd:()=>{ refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); setTimeout(arrive,300); } });
+      onEnd:()=>{ endTween(); refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); setTimeout(arrive,300); } });
     setTimeout(()=>{ refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); arrive(); }, 5500);  // fallback if onEnd never fires
   });
 })();

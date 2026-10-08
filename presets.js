@@ -731,7 +731,9 @@ export const PRESETS = {
   }),
   // 'memories' — the §1 north-star look: a sparse early-spring grove (foliage 0.45, so individual leaves
   // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
+  // (phenology 0.15 here and 0.40 on 'morning 1' are stamps for the season macro's probe: both sit below turn_start, where every reader of phenology is gated, so the frames are the same bytes)
   'memories': Object.assign({}, DEFAULTS, {
+    "phenology": 0.15,
     "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 0.45,
@@ -748,6 +750,7 @@ export const PRESETS = {
     "auto_quality": true,
   }),
   'morning 1': Object.assign({}, DEFAULTS, {
+    "phenology": 0.40,
     "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,

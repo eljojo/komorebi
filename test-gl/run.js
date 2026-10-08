@@ -31,6 +31,7 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { macroParams } from '../macros.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served
 const OUT = join(ROOT, 'test-gl', 'out');
@@ -258,6 +259,23 @@ const INVARIANTS = [
     a: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0.8 } },
   { name: 'fill_scatter is inert once leaf_diffuse is up (faithful path)', preset: 'park 1', rebake: true,
     a: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0.8 } },
+  // THE SEASON MACRO (macros.js). Its stops are recipes lifted from the looks they sit on, so each is those looks' own frame to the byte —
+  // the pigment capacities and the phenology it writes are inert below turn_start, and the looks that stamp a phenology (0.15, 0.40) only
+  // for its probe's sake are the same bytes as the absent one. A stop that drifted, or a stamp that leaked into a frame, fails here.
+  { name: 'season macro t 0 == memories', preset: 'memories', a: {}, b: { ...macroParams('season', 0) } },
+  { name: 'season macro t 0.35 == morning 1', preset: 'morning 1', a: {}, b: { ...macroParams('season', 0.35) } },
+  { name: 'season macro t 0.55 == afternoon 4', preset: 'afternoon 4', a: {}, b: { ...macroParams('season', 0.55) } },
+  { name: 'season stamp: morning 1 phenology 0.40 == absent', preset: 'morning 1', a: {}, b: { phenology: 0.5 } },
+  { name: 'season stamp: memories phenology 0.15 == absent', preset: 'memories', a: {}, b: { phenology: 0.5 } },
+  // ...and the other half: the fall end is a real switch (else stops that never reached the leaves would pass every row above)
+  { name: 'season macro t 1 changes memories', preset: 'memories', differ: true, a: {}, b: { ...macroParams('season', 1) } },
+  // THE SLIDER IS CONTINUOUS. A drag moves t by a hair per input event; the frame must move by a hair. Measured on afternoon 4 (a step of
+  // 0.001 in t is 0.00079 in phenology across the fall segment, and a leaf mid-fade crosses its window 0.01 wide: a leaf crossing is
+  // physical, and measured max Δ8 grey levels at both t, bound 12 = 1.5x; a pop is a leaf's whole shadow, tens of levels).
+  { name: 'season macro: a hair of t moves the fall frame by a hair (t 0.80)', preset: 'afternoon 4', near: 12,
+    a: { ...macroParams('season', 0.80) }, b: { ...macroParams('season', 0.801) } },
+  { name: 'season macro: a hair of t moves the fall frame by a hair (t 0.95)', preset: 'afternoon 4', near: 12,
+    a: { ...macroParams('season', 0.95) }, b: { ...macroParams('season', 0.951) } },
   // THE MARGINAL FADE (§5.3). A leaf — or a whole tree — fading in has its fade folded into tau on the CPU, so the beam's neutral depth
   // k·coverage has to carry the same fade (iFade) or the ballistic shadow pops to full the instant the leaf exists. Step the count
   // from "none" to 0.005 of one: the fade is 0.005, and the picture must move by about that much — not by a whole leaf's shadow per twig.
