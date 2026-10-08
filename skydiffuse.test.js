@@ -297,7 +297,7 @@ test("srcSeen is its own named variable and is composed LAST — never folded in
 test("the fill passes readWood = false and the sky camera true; the wood is its own texture (tapSky), never alpha", () => {
   expect(FS_FILL.includes("uFillG, scatter, uFillOpen, false, uFillBeamK, T, Tb, Lsc);")).toBe(true);
   expect(sky.includes("uSkyScatter > 0.0 || uBeamK > 0.0, true, true, uBeamK, T, Tsrc, Lsc);")).toBe(true);
-  expect(GLSL_SKY_RAY.includes("void tapSky(highp sampler2D layer, highp sampler2D wood, vec2 world, bool openOutside, bool readWood, float beamK, out vec3 t, out vec3 tb, out float w){")).toBe(true);
+  expect(GLSL_SKY_RAY.includes("void tapSky(highp sampler2D layer, highp sampler2D wood, vec2 world, bool openOutside, bool readWood, float beamK, out vec3 t, out vec3 tb, out vec3 th, out float w){")).toBe(true);
   expect(GLSL_SKY_RAY.includes("tapSky(uLayer[0], uWood[0], pL0, openOutside, readWood, beamK,")).toBe(true);
   expect(code(GLSL_SKY_RAY).includes("exp(-d.a)")).toBe(false);               // alpha is coverage everywhere now
   for (const dead of ["tapUpLW", "woodInAlpha"]) { expect(GLSL_SKY_RAY.includes(dead), dead).toBe(false); expect(sky.includes(dead), dead).toBe(false); expect(FS_FILL.includes(dead), dead).toBe(false); }

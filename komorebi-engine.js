@@ -6,7 +6,7 @@ import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
 import { makeGrove } from './komorebi-grove.js';
-import { makeBake, makeFill, NO_FILL } from './komorebi-bake.js';
+import { makeBake, makeFill, NO_FILL, FILL_SIG_LEN } from './komorebi-bake.js';
 import { makeLitter, newLitterState, NO_LITTER } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
 import { makeEditorTools } from './komorebi-editor-tools.js';
@@ -158,7 +158,7 @@ function create(canvas, opts){
       fillEntry = { prog, U: { origin:loc(prog,'uCanopyOrigin'), extent:loc(prog,'uCanopyExtent'), sun:loc(prog,'uSunColor'),   // origin/extent: the box the LAYERS were baked over; frameOrigin/frameExtent: the plan square the FILL is baked over
         layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'].map(n => loc(prog,n)), heights:loc(prog,'uLayerHeight[0]'), layerCount:loc(prog,'uLayerCount'),
         frameOrigin:loc(prog,'uFillOrigin'), frameExtent:loc(prog,'uFillExtent'), sunPath:loc(prog,'uFillG'), open:loc(prog,'uFillOpen'),
-        ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter'), beamK:loc(prog,'uFillBeamK') } };
+        ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter'), beamK:loc(prog,'uFillBeamK'), edgeArea:loc(prog,'uEdgeArea') } };
     }
     return fillEntry;
   } : null;
@@ -187,6 +187,7 @@ function create(canvas, opts){
                   pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
                   gx:new Float32Array(MAX_SAMPLES), gy:new Float32Array(MAX_SAMPLES),// per-sample ground-shift scratch (hoisted; no per-bake alloc)
                   k:0,                                                               // the beam's neutral depth the cast was last baked with (§4.5): the cast pre-integrates it, so a live leaf_diffuse re-bakes it (refreshFaith)
+                  edgeArea:0,                                                        // the edge law the cast was last baked with (§4.5): edge_area is baked into each stamp at k = 0, so flipping it re-casts (refreshFaith)
                   n:0,                                                               // the sample count the cast was last baked over: the cast IS its samples, so a governor step or a resetPerf that re-cuts the cloud re-bakes it (refreshFaith)
                   segVAO:null, segBuf:null, segRest:[], segArr:null, segCount:0 };   // + the woody skeleton (trunk+branches+twigs): rest segments, the per-bake swayed instance array, its VAO
   // SKY VIEW's share of that skeleton (§4.9): the FINE wood (level > 1) the analytic occluder never carries, sorted
@@ -195,7 +196,7 @@ function create(canvas, opts){
   const sky = { segVAO:null, segBuf:null, segRest:[], segArr:null, start:[], count:[] };
   // THE SKY FILL's state (§4.7): Tsky and S over the fill's frame, allocated lazily when canopy_fill opens and freed when
   // it shuts. `ready` = the textures hold a bake of what `sig` records, so the receiver may believe them.
-  const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(13), K:0, rays:null, ox:0, oy:0, ext:1 };   // sig: what the bake was made of, sized by komorebi-bake.js's fillSig — a slot it writes past this is silently dropped, and the fill then re-bakes every frame. ox/oy/ext: the plan square the textures cover (the box, or the padded frame of a finite tree), which every receiver reads them by
+  const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(FILL_SIG_LEN), K:0, rays:null, ox:0, oy:0, ext:1 };   // sig: what the bake was made of, sized by komorebi-bake.js's FILL_SIG_LEN, which fillSig is held to — a slot written past a Float64Array's end is silently dropped, and the fill then re-bakes every frame. ox/oy/ext: the plan square the textures cover (the box, or the padded frame of a finite tree), which every receiver reads them by
   // THE LITTER's state (§4.7): the carpet texture (a 1×1 until a leaf has fallen and the floor asks), the square it covers, and what it was baked of.
   // komorebi-litter.js owns the shape, so a context restore can put it back to the fresh one in a line.
   const litter = newLitterState();
@@ -261,7 +262,7 @@ function create(canvas, opts){
                 morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
                 windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
                 leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
-                clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom'), beamK:loc(progFaith,'uBeamK'),
+                clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom'), beamK:loc(progFaith,'uBeamK'), edgeArea:loc(progFaith,'uEdgeArea'),
                 leafTex:loc(progFaith,'uLeafTex'), leafShape:loc(progFaith,'uLeafShape'), shapeBox:loc(progFaith,'uShapeBox') };
     U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
                    curtainBake:loc(progFaithSeg,'uCurtainBake'), clothY:loc(progFaithSeg,'uClothY'),

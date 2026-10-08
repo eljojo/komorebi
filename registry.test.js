@@ -131,7 +131,7 @@ test("the fill is READ from a coarser mip: K rays point-sampled per texel are an
 // ---- THE BEAM (§4.5). The beam's k is read by the taps, and by the receivers' fill share: it is a group of its own so that a bundle which cuts
 // the leaf's diffuse share (embed-build.mjs, FEATURES.leafDiffuse) drops the uniform and keeps the taps as the functions they are.
 test("the beam's k is a group of its own, spoken before the taps that read it, and the taps are functions only", () => {
-  expect(Object.keys(TRANSPORT_GROUPS.beam.locs)).toEqual(["beamK"]);
+  expect(Object.keys(TRANSPORT_GROUPS.beam.locs)).toEqual(["beamK", "edgeArea"]);
   expect(TRANSPORT_GROUPS.beam.decls.includes("uniform float uBeamK;")).toBe(true);
   expect(TRANSPORT_GROUPS.tap.locs).toBeUndefined();
   expect(TRANSPORT_GROUPS.tap.decls.includes("uniform")).toBe(false);

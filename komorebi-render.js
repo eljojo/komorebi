@@ -191,10 +191,10 @@ export function makeRender(hub){
       gl.uniform1f(u.occPenumbra, (params.core_angular_radius_deg*DEG)/Math.sin(el)*(1.0+3.0*params.cloud_thickness));
     },
     // THE BEAM's neutral depth (§4.5): k = −ln(1−leaf_diffuse), the share of a leaf's transmitted light that is diffuse and so is no
-    // longer in the beam. Every cast camera reads it at the tap (the layer path), and the receivers that read S gate on it too.
+    // longer in the beam; edge_area (§4.5) rides beside it as a 0/1, the same texel read as a mixture at k = 0. Every cast camera reads it at the tap (the layer path), and the receivers that read S gate on it too.
     // On the faithful path the tap is not where k lives — the cast has it baked in (bake.js) — but the receivers' gate is.
     // Its own group (the taps that read it are functions only): a bundle that cut the leaf's diffuse share drops the uniform and keeps the taps.
-    beam: (u) => { gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0); },
+    beam: (u) => { gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0); gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0); },
     ca: (u) => {
       // edge diffraction (§3.6): per-channel λ-proportional spread of the transport shift. Green (555nm) is the
       // reference; red(620) spreads more, blue(470) less. 0 -> (1,1,1), the byte-identical single-tap path.
@@ -345,6 +345,7 @@ export function makeRender(hub){
     // wood table; the fill and faith units are not spoken here). No other camera declares them — there is no seen source anywhere else.
     sky: (u) => {
       gl.uniform1f(u.skyScatter, clamp(params.sky_scatter, 0, 1));
+      gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);          // at k = 0 the sky ray reads each texel as its mixture (§4.5)
       gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
       for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE8+i); gl.bindTexture(gl.TEXTURE_2D, hub.woodTex[i]); gl.uniform1i(u.woods[i], 8+i); }
       gl.uniform2f(u.srcAngR, src.coreR, src.haloR);

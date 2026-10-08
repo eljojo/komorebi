@@ -79,6 +79,7 @@ const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branchi
   'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis','leaf_shape',   // leaf_shape: a different outline is a different texture and a different quad — it cannot interpolate, and a transition's crossfade bakes the two groves' shapes in one pass
   'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
   'fill_directions','fill_resolution',                                  // the sky fill's TUNE pair (§4.7): a ray count and a texture size are integers that cannot interpolate, and the size reallocates
+  'edge_area',                                                          // a flip moves every soft edge at once; snap it under the bloom.
   'litter','litter_resolution',                                         // the carpet (§4.7): a gate that allocates (1x1 <-> res²) and the size it allocates at — neither interpolates, so a look that crosses them dissolves under the bloom rather than popping a carpet in
 ];   // (tone_map is a live uniform: it just snaps — under the bloom if one's already running, else at the end — never forces one)
 // ---- scene-MODE flags. Not continuous (never tween) but NOT inert either: flipping one changes regen-time state
@@ -291,6 +292,7 @@ const DEFAULTS = {
   // It needs canopy_fill to land anywhere on a surface: with the fill shut the diffuse share just leaves the beam. The sky view needs no fill:
   // looking up, a leaf is a lantern (§4.9) — the disk shows through gaps only, and each leaf glows with the light it took out of the line of sight.
   leaf_diffuse: 0.0,
+  edge_area: false,                // the texel read as a mixture at d = 0 too (§4.5): the depth-averaged soft edge is Jensen-dark, and this reads it as part leaf, part sky. A boolean, because a 0..1 blend of two readings of one texel is a transmittance no texel has. INERT above leaf_diffuse 0: the split is already area-correct
   fill_directions: 16,             // TUNE: the K cosine-weighted rays the fill integrates (stratified in cos²θ, no noise)
   fill_resolution: 256,            // TUNE: the fill texture's size over its frame — the canopy box in the endless park (which wraps it), the box PADDED by 3·h_max on a finite look (standing_scene or a receiver: the glow decays across the floor, §4.7), so the texel is coarser there. It varies at the scale of crown gaps, not dapples
   litter_resolution: 1024,         // TUNE (§4.7): the carpet's texture size over the fill's own frame (the box in the endless park, the box padded by 3·h_max on a finite tree). RGBA8, so 4 MiB at 1024 (5.3 with its mips). A 10 cm leaf must read as a leaf: raise it for a wide frame
@@ -371,7 +373,8 @@ function migrateLegacy(obj){
 // a carpet needs a leaf that has fallen, so litter is open only for a look that drops.
 const FEATURES = {
   fill:        { open: (P) => P.canopy_fill > 0,           group: 'fill',   flag: 'FEAT_FILL' },
-  leafDiffuse: { open: (P) => P.leaf_diffuse > 0,          group: 'beam',   flag: 'FEAT_LEAF_DIFFUSE' },
+  // edge_area opens this tier too: its mixture read lives in the same tagged GLSL and the same beam group, so a bundle that cut the tier would silently ignore the knob
+  leafDiffuse: { open: (P) => P.leaf_diffuse > 0 || P.edge_area,   group: 'beam',   flag: 'FEAT_LEAF_DIFFUSE' },
   pigment:     { open: senescing,                          group: null,     flag: 'FEAT_PIGMENT' },
   exposure:    { open: ordered,                            group: null,     flag: 'FEAT_EXPOSURE' },
   drop:        { open: dropping,                           group: null,     flag: 'FEAT_DROP' },

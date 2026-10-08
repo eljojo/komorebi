@@ -507,7 +507,7 @@ test("the layer bake binds each grove's own outline before each of its draws —
 });
 
 test("the faithful bake draws the ACTIVE grove in its outline, and pads its cast frame by the longest radius that outline reaches (a lobe is not an ellipse's quad)", () => {
-  const src = readFileSync(new URL("./komorebi-bake.js", import.meta.url), "utf8"), fn = src.slice(src.indexOf("function bakeFaithful"), src.indexOf("function bakeFaithful") + 9000);
+  const src = readFileSync(new URL("./komorebi-bake.js", import.meta.url), "utf8"), fn = src.slice(src.indexOf("function bakeFaithful"), src.indexOf("function bakeFaithful") + 10000);
   expect(fn).toContain("bindLeafShape(gl, U.faith, hub.grove);");
   expect(fn.indexOf("bindLeafShape(gl, U.faith, hub.grove);")).toBeLessThan(fn.indexOf("gl.drawArraysInstanced"));
   expect(fn).toContain("const pad = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)) + params.drift_amount");   // a leaf's long half-axis is at most 0.7·leaf_size_m; the ellipse's 1 is the pad it has always had, to the bit

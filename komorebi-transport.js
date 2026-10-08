@@ -40,18 +40,20 @@ uniform float uViewYaw;          // camera orbit about vertical (rad); rotates t
 // share. The texel is a MIXTURE of leaf and gap, not a slab (GLSL_TEXEL_MIX, one text, shared with the sky ray and the faithful stamp):
 // the beam passes the gap whole and a leaf at e^(-τ̄ - k) of it, where k = −ln(1−leaf_diffuse) is neutral depth per leaf and τ̄ the
 // leaf's own depth, so an edge texel no longer reads as a thin dark leaf and every ballistic shadow loses its halo. k tweens, so the
-// gate is a uniform branch whose else is the read the engine has always made. ----
+// gate is a uniform branch whose else is the read the engine has always made. At k = 0 the same text is the same mixture (Tb is T there) when edge_area is on,
+// so the gate is `uBeamK > 0.0 || uEdgeArea != 0`: the depth-averaged edge is the default for byte-identity, and the look is José's. ----
 // THE FEATURE TAGS. A line whose comment ends with the tag marker (an at-sign and the word feature) and the names of features is dropped from a bundle that cut any feature it
 // names (embed-build.mjs, tagged(); the features are FEATURES in komorebi-params.js): the lines of a branch that only an open feature takes, down to the else that makes the
 // old read the whole body. A tag names every feature whose absence makes the line unreachable (a line inside the litter branch that reads the fill names both). In the raw
 // modules a tag is a GLSL comment and nothing else; features.test.js holds that dropping any subset leaves every literal as balanced as it was. (No backticks in a comment
 // in this file: the bundler finds the shader literals by pairing them.)
 // The beam's k is a group of its own, so that the taps below can stay when the uniform goes: they are functions, and without the uniform they are the old reads.
-const GLSL_T_BEAM = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per leaf. 0 = the old leaf, byte-identical`;
+const GLSL_T_BEAM = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per leaf. 0 = the old leaf, byte-identical
+uniform int uEdgeArea;   // edge_area (§4.5): 1 = the taps read a texel as its mixture at k = 0 too (inert above it: the split already does). 0 = the slab, byte-identical`;
 const GLSL_T_TAP = `${GLSL_TEXEL_MIX}   // @feature leafDiffuse
 vec3 tap(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
-  if(uBeamK > 0.0){   // @feature leafDiffuse
+  if(uBeamK > 0.0 || uEdgeArea != 0){   // @feature leafDiffuse
     vec4 d = texture(t,uv);   // @feature leafDiffuse
     vec3 T, Tb;   // @feature leafDiffuse
     texelMix(d.rgb, d.a, uBeamK, T, Tb);   // the texel's mixture: what is left of the beam, the gap passing it whole @feature leafDiffuse
@@ -100,7 +102,7 @@ const GLSL_T_CA_DECLS = `uniform vec3  uChroma;            // per-channel diffra
 // green=1). The colour fringe lands at every leaf/dapple edge and rides the same H*g shift, so it grows with
 // canopy height and the low-sun ellipse for free. Three single-channel taps; only taken when diffraction is on.
 vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
-  if(uBeamK > 0.0){   // the beam's mixture rides each channel's own dispersed read (§4.5) @feature leafDiffuse
+  if(uBeamK > 0.0 || uEdgeArea != 0){   // the beam's mixture rides each channel's own dispersed read (§4.5) @feature leafDiffuse
     vec4 qR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent);   // @feature leafDiffuse
     vec4 qG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent);   // @feature leafDiffuse
     vec4 qB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent);   // @feature leafDiffuse
@@ -694,7 +696,8 @@ const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec §4.9): the rec
 
 // ---- SKY VIEW camera (§4.9): the retina as the receiver ----
 const GLSL_T_SKY_DECLS = `uniform float uSkyScatter;        // SKY VIEW (§4.9): single-scatter foliage radiance — how brightly a lit crown glows in its own right (0 = pure transmission, byte-identical). Superseded, and inert, once the leaf is a lantern (uBeamK > 0)
-uniform float uBeamK;             // k = −ln(1−leaf_diffuse) (§4.5): above 0 the leaf is a lantern, not a window — the disk is only the beam a leaf lets through, and what it took out of the line of sight is its glow. 0 = the old window, byte-identical. (The cast cameras carry it in their tap group; this camera casts nothing, so it has none)
+uniform float uBeamK;             // k = −ln(1−leaf_diffuse) (§4.5): above 0 the leaf is a lantern, not a window — the disk is only the beam a leaf lets through, and what it took out of the line of sight is its glow. 0 = the old window, byte-identical. (The cast cameras carry it in their beam group; this camera casts nothing, so it has none)
+uniform int uEdgeArea;   // edge_area (§4.5): at k = 0 the sky ray reads each texel as its mixture too (the shared ray reads this by name). 0 = the slab, byte-identical
 ${GLSL_WOOD_FIELD}
 uniform vec2  uSrcAngR;           // the SEEN source's angular radii (core, halo) — the very two the sampler draws its offsets from
 uniform vec2  uSrcAngL;           // its radiance in each region (core, halo). CPU-derived from the sampler's own post-cloud weight split, so the sun you look at and the dapples it throws cannot drift apart
@@ -977,7 +980,7 @@ const TRANSPORT_GROUPS = {
   occ:       { decls: GLSL_T_OCC_DECLS,       locs: { occTex:'uOccTex', occCount:'uOccCount', occTau:'uOccTau', occSway:'uOccSway', occHRef:'uOccHRef' } },
   transport: { decls: GLSL_T_TRANSPORT_DECLS, locs: { samples:'uSamples[0]', count:'uSampleCount', proj:'uProj', bulkShift:'uBulkShift' } },
   woodCast:  { decls: GLSL_T_WOOD_CAST_DECLS, locs: { occPenumbra:'uOccPenumbra' } },
-  beam:      { decls: GLSL_T_BEAM,            locs: { beamK:'uBeamK' } },
+  beam:      { decls: GLSL_T_BEAM,            locs: { beamK:'uBeamK', edgeArea:'uEdgeArea' } },
   tap:       { decls: GLSL_T_TAP },
   ca:        { decls: GLSL_T_CA_DECLS,        locs: { chroma:'uChroma' } },
   faith:     { decls: GLSL_T_FAITH_DECLS,     locs: { faithful:'uFaithful', faithTex:'uFaithTex', faithOrigin:'uFaithOrigin', faithExtent:'uFaithExtent' } },
@@ -995,7 +998,7 @@ const TRANSPORT_GROUPS = {
                                                       tentFade:'uTentFade', tentSeam:'uTentSeam', tentMesh:'uTentMesh' } },
   fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillT:'uFillT', fillS:'uFillS', fillOrigin:'uFillOrigin', fillExtent:'uFillExtent' } },
   litter:    { decls: GLSL_T_LITTER_DECLS,    locs: { litterOn:'uLitterOn', litter:'uLitter', litterOrigin:'uLitterOrigin', litterExtent:'uLitterExtent' } },
-  sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
+  sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
                                                       exposure:'uExposure', contrast:'uContrast', tone:'uToneMap' } },
 };

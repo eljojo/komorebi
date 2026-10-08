@@ -284,7 +284,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
         const box = q % 2 === 1 && fr.ext > E;                // a finite tree's frame is mostly empty floor: every other sample is drawn from the canopy box instead
         const i = Math.min(n - 1, Math.floor((box ? ((canopy.ox - fr.ox) + u0 * E) / fr.ext : u0) * n)), j = Math.min(n - 1, Math.floor((box ? ((canopy.oy - fr.oy) + v0 * E) / fr.ext : v0) * n));
         const x = [fr.ox + ((i + 0.5) / n) * fr.ext, fr.oy + ((j + 0.5) / n) * fr.ext];
-        const ref = fillRef(layers, x, K, { gS, sun: atm.sun, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j), k: beamK });   // the proxy's albedo is the floor's alone (the cloth and the tent are handed 0) and is off above k = 0; each texel carries its own slot of the 4x4 interleaving tile
+        const ref = fillRef(layers, x, K, { gS, sun: atm.sun, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j), k: beamK, edgeArea: !!p.edge_area });   // the proxy's albedo is the floor's alone (the cloth and the tent are handed 0) and is off above k = 0; each texel carries its own slot of the 4x4 interleaving tile
         for (let c = 0; c < 3; c++) {
           const gT = T[(j * n + i) * 4 + c], gSv = S[(j * n + i) * 4 + c];
           eT = Math.max(eT, Math.abs(gT - ref.T[c])); eS = Math.max(eS, Math.abs(gSv - ref.S[c]));
@@ -423,6 +423,7 @@ precision highp float;
 layout(location=0) out vec4 oT; layout(location=1) out vec4 oTb; layout(location=2) out vec4 oL;
 ${GLSL_LAYER_FIELD}
 ${GLSL_WOOD_FIELD}
+uniform int uEdgeArea;   // edge_area (§4.5): the shared ray reads it by name, so the program declares it first
 ${GLSL_SKY_RAY}
 uniform highp sampler2D uRays;
 uniform float uBeamK;
@@ -446,7 +447,7 @@ void main(){
       gl.uniform1i(U('uRays'), 12);
       gl.uniform2f(U('uCanopyOrigin'), canopy.ox, canopy.oy); gl.uniform2f(U('uCanopyExtent'), E, E);
       gl.uniform3f(U('uSunColor'), atm.sun[0], atm.sun[1], atm.sun[2]); gl.uniform3f(U('uAmbient'), atm.ambient[0], atm.ambient[1], atm.ambient[2]);
-      gl.uniform1fv(U('uLayerHeight[0]'), heights.concat([0, 0, 0, 0]).slice(0, 4)); gl.uniform1i(U('uLayerCount'), nL); gl.uniform1f(U('uBeamK'), k);
+      gl.uniform1fv(U('uLayerHeight[0]'), heights.concat([0, 0, 0, 0]).slice(0, 4)); gl.uniform1i(U('uLayerCount'), nL); gl.uniform1f(U('uBeamK'), k); gl.uniform1i(U('uEdgeArea'), p.edge_area ? 1 : 0);
       for (let i = 0; i < 4; i++) {                    // the layers on units 0-3 and the wood on 8-11: the units the sky camera itself uses
         gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, lt[i]); gl.uniform1i(U(`uLayer[${i}]`), i);
         gl.activeTexture(gl.TEXTURE8 + i); gl.bindTexture(gl.TEXTURE_2D, wt[i]); gl.uniform1i(U(`uWood[${i}]`), 8 + i);
@@ -473,7 +474,7 @@ void main(){
       const err = { T: 0, Tb: 0, L: 0 }, scale = { T: 0, Tb: 0, L: 0 };
       let killed = 0, glowing = 0, woodHit = 0, woodGlow = 0;
       for (let i = 0; i < N; i++) {
-        const r = skyRayRef(layers, eyes[i].eye, eyes[i].sh, gS, atm.sun, k), nw = skyRayRef(bare, eyes[i].eye, eyes[i].sh, gS, atm.sun, k);
+        const r = skyRayRef(layers, eyes[i].eye, eyes[i].sh, gS, atm.sun, k, !!p.edge_area), nw = skyRayRef(bare, eyes[i].eye, eyes[i].sh, gS, atm.sun, k, !!p.edge_area);
         for (let c = 0; c < 3; c++) {
           err.T = Math.max(err.T, Math.abs(out[0][i * 4 + c] - r.T[c])); err.Tb = Math.max(err.Tb, Math.abs(out[1][i * 4 + c] - r.Tb[c])); err.L = Math.max(err.L, Math.abs(out[2][i * 4 + c] - r.L[c]));
           scale.T = Math.max(scale.T, r.T[c]); scale.Tb = Math.max(scale.Tb, r.Tb[c]); scale.L = Math.max(scale.L, r.L[c]);
@@ -573,6 +574,7 @@ precision highp float;
 layout(location=0) out vec4 oL;
 ${GLSL_LAYER_FIELD}
 ${GLSL_WOOD_FIELD}
+uniform int uEdgeArea;   // edge_area (§4.5): the shared ray reads it by name, so the program declares it first
 ${GLSL_SKY_RAY}
 uniform float uBeamK;
 uniform vec2 uGS, uCrop0;
@@ -586,7 +588,7 @@ void main(){
   const { out, glError } = probe(gl, { fs, w: crop, h: crop, setup: (prog, U) => {
     gl.uniform2f(U('uCanopyOrigin'), ox, ox); gl.uniform2f(U('uCanopyExtent'), E, E);
     gl.uniform3f(U('uSunColor'), atm.sun[0], atm.sun[1], atm.sun[2]); gl.uniform3f(U('uAmbient'), atm.ambient[0], atm.ambient[1], atm.ambient[2]);
-    gl.uniform1fv(U('uLayerHeight[0]'), heights.concat([0, 0, 0, 0]).slice(0, 4)); gl.uniform1i(U('uLayerCount'), nL); gl.uniform1f(U('uBeamK'), k);
+    gl.uniform1fv(U('uLayerHeight[0]'), heights.concat([0, 0, 0, 0]).slice(0, 4)); gl.uniform1i(U('uLayerCount'), nL); gl.uniform1f(U('uBeamK'), k); gl.uniform1i(U('uEdgeArea'), p.edge_area ? 1 : 0);
     gl.uniform2f(U('uGS'), sd[0] / Math.max(sd[2], 0.05), sd[1] / Math.max(sd[2], 0.05));
     gl.uniform2f(U('uCrop0'), ox + i0 * texel, ox + i0 * texel); gl.uniform1f(U('uTexel'), texel);
     for (let i = 0; i < 4; i++) {
@@ -625,7 +627,7 @@ void main(){
 window.__haloCheck = (presetName, overrides, opts) => withEngine(presetName, overrides, 24, (eng, gl) => {
   const o = Object.assign({ crop: 384, H: 5, gx: 0.013, gy: -0.007, cs: [1.03, 1.0, 0.97] }, opts || {});
   const p = eng.params, E = p.canopy_extent_m, nL = p.layer_count, n = eng.perf.bres, k = ballisticK(p.leaf_diffuse);
-  if (!(k > 0)) throw new Error('the halo is a leaf_diffuse > 0 effect: nothing to measure at 0');
+  if (!(k > 0) && !p.edge_area) throw new Error('the halo is a mixture effect (leaf_diffuse > 0, or edge_area at 0): the slab read has no halo to measure');
   const lt = eng.layers(), dat = lt.slice(0, nL).map((t) => readLayer(gl, t, n)), ox = -E / 2, texel = E / n;
   const crop = Math.min(o.crop, n), i0 = Math.floor((n - crop) / 2), canopy = { ox, oy: ox, ext: E };
   const fs = `#version 300 es
@@ -654,7 +656,7 @@ void main(){
     const { out, glError } = probe(gl, { fs, w: crop, h: crop, targets: 2, setup: (prog, U) => {
       gl.uniform2f(U('uCanopyOrigin'), ox, ox); gl.uniform2f(U('uCanopyExtent'), E, E);
       gl.uniform3f(U('uSunColor'), 1, 1, 1); gl.uniform3f(U('uAmbient'), 1, 1, 1);
-      gl.uniform1fv(U('uLayerHeight[0]'), [0, 0, 0, 0]); gl.uniform1i(U('uLayerCount'), nL); gl.uniform1f(U('uBeamK'), k);
+      gl.uniform1fv(U('uLayerHeight[0]'), [0, 0, 0, 0]); gl.uniform1i(U('uLayerCount'), nL); gl.uniform1f(U('uBeamK'), k); gl.uniform1i(U('uEdgeArea'), p.edge_area ? 1 : 0);
       gl.uniform2f(U('uCrop0'), ox + i0 * texel, ox + i0 * texel); gl.uniform1f(U('uTexel'), texel);
       gl.uniform2f(U('uG'), o.gx, o.gy); gl.uniform1f(U('uH'), o.H); gl.uniform3f(U('uChroma'), o.cs[0], o.cs[1], o.cs[2]); gl.uniform1i(U('uWhich'), L);
       for (let i = 0; i < 4; i++) { gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, lt[i]); gl.uniform1i(U(`uLayer[${i}]`), i); }
@@ -707,7 +709,7 @@ void main(){
   const rows = [];
   for (const cs of cases) {
     const { out, glError } = probe(gl, { vs, fs: FS_FAITH, w: W2, h: W2, clear: -7, setup: (prog, U) => {
-      gl.uniform1f(U('uEdge'), edge); gl.uniform1f(U('uBeamK'), k);
+      gl.uniform1f(U('uEdge'), edge); gl.uniform1f(U('uBeamK'), k); gl.uniform1i(U('uEdgeArea'), opts && opts.edgeArea ? 1 : 0);
       gl.uniform3f(U('uTau'), tauLeaf[0] * cs.fade, tauLeaf[1] * cs.fade, tauLeaf[2] * cs.fade); gl.uniform1f(U('uFade'), cs.fade);
     } });
     let err = 0, nBand = 0, nIn = 0, nOut = 0, bandMin = [9, 9, 9], bandMean = [0, 0, 0], slabMean = [0, 0, 0], mixMean = [0, 0, 0], finite = true;

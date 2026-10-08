@@ -11,7 +11,8 @@
 // komorebi-fill.js is the reference the pixel harness holds the shader to; bun holds the reference to the laws.
 // ============================================================================
 import { test, expect } from "bun:test";
-import { DEFAULTS, MORPH_KEYS, CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, buildTransport } from "./komorebi.js";
+import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, buildTransport } from "./komorebi.js";
+import { readFileSync } from "node:fs";
 import * as M from "./komorebi-math.js";
 import * as F from "./komorebi-fill.js";
 import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FILL, GLSL_SKY_RAY } from "./komorebi-shaders.js";
@@ -478,9 +479,9 @@ test("every cast camera taps the BEAM through the texel's mixture, and a shut ga
     expect(/texelMix\(d\.rgb, d\.a, uBeamK, T, Tb\);\s*return Tb;/.test(code(src)), `${cam} tap returns the ballistic share`).toBe(true);
     expect(code(src).includes("exp(-(d.rgb + uBeamK*d.a))"), `${cam}: the slab form is gone`).toBe(false);
     // the else of the uniform branch is the line the engine has always run
-    expect(/if\(uBeamK > 0\.0\)\{[^}]*\}\s*else\s*\{\s*return exp\(-texture\(t,uv\)\.rgb\);/.test(code(src)), `${cam} tap else`).toBe(true);
+    expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{[^}]*\}\s*else\s*\{\s*return exp\(-texture\(t,uv\)\.rgb\);/.test(code(src)), `${cam} tap else`).toBe(true);
     // ...and diffraction's per-channel taps ride the same mixture, at each channel's own dispersed position
-    expect(/if\(uBeamK > 0\.0\)\{[^}]*texelMix\(qR\.rgb, qR\.a, uBeamK[^}]*texelMix\(qG\.rgb, qG\.a, uBeamK[^}]*texelMix\(qB\.rgb, qB\.a, uBeamK[^}]*\}\s*else\s*\{\s*float aR = texture\(t, \(world \+ H\*g\*cs\.r - uCanopyOrigin\)\/uCanopyExtent\)\.r;/.test(code(src)), `${cam} tapCA`).toBe(true);
+    expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{[^}]*texelMix\(qR\.rgb, qR\.a, uBeamK[^}]*texelMix\(qG\.rgb, qG\.a, uBeamK[^}]*texelMix\(qB\.rgb, qB\.a, uBeamK[^}]*\}\s*else\s*\{\s*float aR = texture\(t, \(world \+ H\*g\*cs\.r - uCanopyOrigin\)\/uCanopyExtent\)\.r;/.test(code(src)), `${cam} tapCA`).toBe(true);
     expect(src.includes("return exp(-vec3(aR,aG,aB));"), `${cam} tapCA else`).toBe(true);
   }
 });
@@ -492,7 +493,7 @@ test("the faithful cast takes k at the bake, per stamp: the leaf's mixture over 
   expect(code(FS_FAITH).includes("texelMix(vTau*cov, cov*vFade, uBeamK, T, Tb);")).toBe(true);
   expect(/frag = vec4\(Tb, 1\.0\);/.test(code(FS_FAITH))).toBe(true);
   expect(code(FS_FAITH).includes("exp(-(vTau + uBeamK*vFade)*cov)")).toBe(false);   // the slab form is gone
-  expect(/else\s*frag = vec4\(exp\(-vTau\*cov\), 1\.0\);/.test(FS_FAITH)).toBe(true);
+  expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{\s*vec3 T, Tb;\s*texelMix\(vTau\*cov, cov\*vFade, uBeamK, T, Tb\);\s*frag = vec4\(Tb, 1\.0\);\s*\}\s*else frag = vec4\(exp\(-vTau\*cov\), 1\.0\);/.test(code(FS_FAITH))).toBe(true);
 });
 
 // refreshFaith is what keeps the cast current for a frame that nothing else baked. A recording stub GL and no grove (faith.vao null: bakeFaithful
@@ -556,13 +557,13 @@ test("the sky camera passes the beam's k to the shared ray from its OWN group; t
 test("the shared per-ray snippet: alpha is COVERAGE on every camera, the wood is its own texture, and the emission is the leaf's own hue T − Tb, no albedo", () => {
   expect(GLSL_SKY_RAY.includes("w = readWood ? exp(-texture(wood, uv).r) : 1.0;")).toBe(true);
   const src = code(GLSL_SKY_RAY);
-  expect(src.includes("if(beamK > 0.0) texelMix(d.rgb, d.a, beamK, t, tb);")).toBe(true);   // the tap reconstructs the mixture from the pair, once per tap...
+  expect(src.includes("if(beamK > 0.0 || uEdgeArea != 0) texelMix(d.rgb, d.a, beamK, t, tb);")).toBe(true);   // the tap reconstructs the mixture from the pair, once per tap...
   expect(src.includes("else { t = exp(-d.rgb); tb = t; }")).toBe(true);                       // ...and its else is the d = 0 read, the slab, character for character
   expect(/if\(beamK > 0\.0\)\{/.test(src)).toBe(true);                       // the split wherever k is up: the fill's and, now, the sky camera's
   expect(src.includes("Lsc += thr*(tL0 - tbL0)*uSunColor*A0;")).toBe(true);   // emit = T − Tb, the very terms the beam and the sky took out
   expect(src.includes("exp(-beamK")).toBe(false);                             // no slab form anywhere in the ray: k only ever reaches a texel through texelMix
   expect(src.includes("uAmbient")).toBe(false);                               // the skylight is Tsky's, and its passage needs no split (the uniform-sky identity)
-  expect(src.includes("thr*(1.0-tL0)*leafHue(tL0)*uSunColor*A0")).toBe(true);  // the P0b term, still there as the else
+  expect(src.includes("thr*(1.0-tL0)*leafHue(thL0)*uSunColor*A0")).toBe(true);  // the P0b term, still there as the else
   // the fill's own gain: the albedo at d = 0 (the literal old product), 1 above it
   expect(FS_FILL.includes("fillS = vec4(Lsum/K*(uFillBeamK > 0.0 ? 1.0 : uFillScatter), 1.0);")).toBe(true);
   expect(FS_FILL.includes("bool scatter = uFillScatter > 0.0 || uFillBeamK > 0.0;")).toBe(true);
@@ -596,8 +597,188 @@ test("the curtain reads S at the vertical plane's view factor, 0.5 — the tent'
 });
 
 test("registry: the beam's k is a declared, uploaded uniform of the beam group — and the fill bake carries its own", () => {
-  expect(Object.keys(TRANSPORT_GROUPS.beam.locs)).toEqual(["beamK"]);
+  expect(Object.keys(TRANSPORT_GROUPS.beam.locs)).toEqual(["beamK", "edgeArea"]);
   expect(GROUP_UPLOAD_KEYS).toContain("beam");
   for (const cam of ["floor", "cloth", "enclosure"]) expect(CAMERAS[cam].groups, cam).toContain("beam");
   expect(code(FS_FILL).includes("uniform float uFillBeamK;")).toBe(true);
+});
+
+// ---- edge_area: the soft edge is a mixture at d = 0 too (spec §4.5, decision 33) -------------------------------------------------------
+// The depth-averaged edge at d = 0 is a named approximation kept for byte-identity: every reader takes the bake's pair as a SLAB. edge_area is the knob that
+// lets a look read it as the mixture it is, at k = 0 (where Tb is T bit for bit). Off, every reference and every shader is the code it was.
+const sameBits = (a, b, what) => {
+  const fa = JSON.stringify(a), fb = JSON.stringify(b);
+  expect(fb, what).toBe(fa);
+  const walk = (x, y) => { if (typeof x === "number") expect(Object.is(x, y), what).toBe(true); else if (x && typeof x === "object") for (const key of Object.keys(x)) walk(x[key], y[key]); };
+  walk(a, b);
+};
+
+test("edge_area: ships false, is a TOPO key (a flip moves every soft edge at once), and no other class", () => {
+  expect(DEFAULTS.edge_area).toBe(false);
+  expect(TOPO_KEYS).toContain("edge_area");
+  expect(MORPH_KEYS).not.toContain("edge_area");
+  expect(CANOPY_KEYS).not.toContain("edge_area");
+  expect(MODE_KEYS).not.toContain("edge_area");
+});
+
+test("edge_area: the references are today's, bit for bit, when it is false or absent — and a no-op at k > 0", () => {
+  for (let seed = 0; seed < 300; seed++) {
+    const layers = covStack(seed, 1 + (seed % 4)), K = [1, 4, 16][seed % 3], tile = seed % 16, scatter = [0, 0.15, 0.5][seed % 3], k = kOf(seed);
+    const gS = [((hash(seed, 17, 0) % 2000) - 1000) / 500, ((hash(seed, 17, 1) % 2000) - 1000) / 500], x = [(hash(seed, 19, 0) % 4000) / 1000 - 2, (hash(seed, 19, 1) % 4000) / 1000 - 2];
+    const args = [layers, x, [0.2, -0.1], gS, SUN];
+    sameBits(F.skyRayRef(...args), F.skyRayRef(...args, 0, false), `skyRayRef absent == false, seed ${seed}`);
+    sameBits(F.skyRayRef(...args, k), F.skyRayRef(...args, k, false), `skyRayRef k, seed ${seed}`);
+    sameBits(F.fillRef(layers, x, K, { gS, sun: SUN, scatter, tile }), F.fillRef(layers, x, K, { gS, sun: SUN, scatter, tile, edgeArea: false }), `fillRef absent == false, seed ${seed}`);
+    const t = layers[0].t(x[0], x[1]), c = layers[0].c(x[0], x[1]);
+    expect(F.ballistic(t, c, 0, false), `ballistic gate, seed ${seed}`).toBe(t);                       // the same array: the gate hands the input back
+    expect(F.ballistic(t, c, 0), `ballistic gate absent, seed ${seed}`).toBe(t);
+    if (k > 0) {   // above 0 the split is already area-correct: the knob has nothing to change
+      sameBits(F.skyRayRef(...args, k, false), F.skyRayRef(...args, k, true), `skyRayRef no-op, seed ${seed}`);
+      sameBits(F.fillRef(layers, x, K, { gS, sun: SUN, scatter, tile, k }), F.fillRef(layers, x, K, { gS, sun: SUN, scatter, tile, k, edgeArea: true }), `fillRef no-op, seed ${seed}`);
+      sameBits(F.ballistic(t, c, k, false), F.ballistic(t, c, k, true), `ballistic no-op, seed ${seed}`);
+    }
+    sameBits(F.skySeenRef(layers, x, [0.2, -0.1], gS, { sun: SUN, ambient: [0.3, 0.3, 0.4], disk: 2, k }), F.skySeenRef(layers, x, [0.2, -0.1], gS, { sun: SUN, ambient: [0.3, 0.3, 0.4], disk: 2, k, edgeArea: false }), `skySeenRef, seed ${seed}`);
+  }
+});
+
+test("edge_area at k = 0: every layer is read as its texel's mixture T (and Tb IS T); the beam never darkens relative to the slab, and a full texel is the slab to the bit", () => {
+  for (let seed = 0; seed < 400; seed++) {
+    const layers = covStack(seed, 1 + (seed % 4)), p = [(hash(seed, 19, 0) % 4000) / 1000 - 2, (hash(seed, 19, 1) % 4000) / 1000 - 2];
+    const r = F.skyRayRef(layers, p, [0, 0], null, SUN, 0, true), want = [1, 1, 1];
+    for (const l of layers) {
+      const m = F.texelMix(l.t(p[0], p[1]).map((v) => -Math.log(v)), l.c(p[0], p[1]), 0);
+      for (let c = 0; c < 3; c++) want[c] *= m.T[c];
+    }
+    for (let c = 0; c < 3; c++) { expect(r.T[c], `seed ${seed}`).toBeCloseTo(want[c], 12); expect(r.Tb[c], `Tb is T, seed ${seed}`).toBe(r.T[c]); }
+  }
+  for (let ti = 0; ti <= 70; ti++) for (let ci = 1; ci <= 40; ci++) {   // Jensen: T_mix = (1 − a) + a·e^(−τ/a) ≥ e^(−τ) for a ≤ 1
+    const tau = ti / 10, c = ci / 40, T = F.texelMix([tau, tau, tau], c, 0).T[0];
+    expect(T, `τ ${tau} c ${c}`).toBeGreaterThanOrEqual(Math.exp(-tau) - 1e-15);
+    if (c === 1) expect(T, `a full texel is the slab to the bit, τ ${tau}`).toBe(Math.exp(-tau));
+  }
+  for (let seed = 0; seed < 100; seed++) {   // ...and a stack of full texels (c ≥ 1) is the slab too, so the knob moves only what a gap moves
+    const tau = leafDepth(seed, 4), c = 1 + 2 * u01(seed, 8, 1, 1, 1), m = F.texelMix(tau, c, 0);
+    for (let ch = 0; ch < 3; ch++) expect(m.T[ch]).toBe(Math.exp(-tau[ch]));
+  }
+});
+
+test("edge_area at k = 0: the fill's skylight is never darker than the slab's, and the P0b proxy stays inside its bound L ≤ (1 − Π t)·sun on the mixture", () => {
+  let brighter = 0;
+  for (let seed = 0; seed < 300; seed++) {
+    const layers = covStack(seed, 1 + (seed % 4)), K = [4, 16][seed % 2], tile = seed % 16, scatter = [0.15, 1][seed % 2], gS = [0.4, -0.3], x = [(hash(seed, 19, 0) % 4000) / 1000 - 2, (hash(seed, 19, 1) % 4000) / 1000 - 2];
+    const off = F.fillRef(layers, x, K, { gS, sun: SUN, scatter, tile }), on = F.fillRef(layers, x, K, { gS, sun: SUN, scatter, tile, edgeArea: true });
+    for (let c = 0; c < 3; c++) { expect(on.T[c], `seed ${seed}`).toBeGreaterThanOrEqual(off.T[c] - 1e-15); if (on.T[c] > off.T[c]) brighter++; }
+    const r = F.skyRayRef(layers, x, [0.2, 0.1], gS, SUN, 0, true);
+    for (let c = 0; c < 3; c++) expect(r.L[c], `seed ${seed} ch ${c}`).toBeLessThanOrEqual((1 - r.T[c]) * SUN[c] + 1e-12);
+  }
+  expect(brighter).toBeGreaterThan(100);   // not vacuous: the mixture really does lighten the soft edges
+});
+
+test("edge_area: the four widened conditions are `|| uEdgeArea != 0` and each else is the literal old read, in the cast taps, the faithful stamp and the shared ray", () => {
+  for (const cam of ["floor", "cloth", "enclosure"]) {
+    const src = code(buildTransport(cam));
+    expect(src.includes("return exp(-texture(t,uv).rgb);"), `${cam} tap else`).toBe(true);
+    expect(src.includes("return exp(-vec3(aR,aG,aB));"), `${cam} tapCA else`).toBe(true);
+    expect(src.split("uBeamK > 0.0 || uEdgeArea != 0").length - 1, `${cam}: tap and tapCA, nothing else`).toBe(2);
+  }
+  expect(code(GLSL_SKY_RAY).split("uEdgeArea").length - 1, "the shared ray reads it in tapSky only: the mixture, and the proxy's leaf hue").toBe(2);
+  const ray = code(GLSL_SKY_RAY);
+  expect(ray.includes("if(beamK > 0.0 || uEdgeArea != 0) texelMix(d.rgb, d.a, beamK, t, tb);")).toBe(true);
+  expect(ray.includes("else { t = exp(-d.rgb); tb = t; }")).toBe(true);
+  expect(ray.includes("if(beamK > 0.0){   // Π tb·w") || /if\(beamK > 0\.0\)\{\s*\n?\s*Tb = vec3\(1\.0\)/.test(ray), "skyRay's Tb product keeps keying on beamK").toBe(true);
+  expect(/if\(beamK > 0\.0\)\{\s*Lsc \+= thr\*\(tL0 - tbL0\)/.test(ray), "the emission keeps keying on beamK").toBe(true);
+});
+
+test("edge_area: `uniform int uEdgeArea;` is declared by the faithful stamp, the fill and every built camera that reads it; the shared snippets declare nothing", () => {
+  const decl = "uniform int uEdgeArea;";
+  expect(FS_FAITH.includes(decl)).toBe(true);
+  expect(FS_FILL.includes(decl)).toBe(true);
+  for (const cam of ["floor", "cloth", "enclosure", "sky"]) expect(buildTransport(cam).split(decl).length - 1, `${cam} declares it once`).toBe(1);
+  expect(GLSL_SKY_RAY.includes("uniform int uEdgeArea")).toBe(false);          // the shared ray reads it by name: the program declares it (registry.test.js holds both to that)
+  expect(SH.GLSL_TEXEL_MIX.includes("uEdgeArea")).toBe(false);                 // the snippet reads no uniform
+  expect(Object.keys(TRANSPORT_GROUPS.sky.locs)).toContain("edgeArea");
+  expect(TRANSPORT_GROUPS.beam.locs.edgeArea).toBe("uEdgeArea");
+  expect(TRANSPORT_GROUPS.sky.locs.edgeArea).toBe("uEdgeArea");
+  expect(TRANSPORT_GROUPS.beam.decls.includes(decl)).toBe(true);               // beside uBeamK, in the group a bundle without the leaf's diffuse share drops
+});
+
+test("edge_area: refreshFaith re-casts when it flips and flips back — the cast has the edge law baked in — and for nothing else", () => {
+  const r = castRig({ edge_area: false });
+  r.bake.bakeFaithful();
+  expect(r.faith.edgeArea, "the bake records what it was made of").toBe(0);
+  const base = r.casts();
+  r.bake.refreshFaith();
+  expect(r.casts(), "nothing moved").toBe(base);
+  r.params.edge_area = true; r.bake.refreshFaith();
+  expect(r.casts(), "edge_area on: re-cast").toBe(base + 1);
+  expect(r.faith.edgeArea).toBe(1);
+  r.bake.refreshFaith();
+  expect(r.casts(), "...once").toBe(base + 1);
+  r.params.edge_area = false; r.bake.refreshFaith();
+  expect(r.casts(), "edge_area off again: re-cast once more").toBe(base + 2);
+  r.bake.refreshFaith();
+  expect(r.casts()).toBe(base + 2);
+});
+
+// The fill signature: a stub-GL rig on makeFill (the fill is its own factory), in castRig's style. bakeFill reads the hub for its textures, heights and program;
+// the stubs below are everything it touches. Whether the fill re-bakes is read off drawArrays: one fullscreen triangle per bake.
+import { makeFill, FILL_SIG_LEN } from "./komorebi-bake.js";
+function fillRig(over = {}) {
+  let draws = 0;
+  const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : () => { if (name === "drawArrays") draws++; return name === "checkFramebufferStatus" ? "FRAMEBUFFER_COMPLETE" : {}; }) });
+  const params = { ...DEFAULTS, canopy_fill: 1, ...over };
+  const fill = { tex: [null, null], res: 0, ready: false, sig: new Float64Array(FILL_SIG_LEN), K: 0, rays: null, ox: 0, oy: 0, ext: 1 };
+  const U = new Proxy({}, { get: (_t, name) => (name === "layers" ? [0, 1, 2, 3] : 1) });
+  const hub = {
+    gl, params, fill, fillFBO: {}, emptyVAO: {}, bakeRes: () => 256, faithfulOn: () => false, faith: {}, layerTex: [{}, {}, {}, {}], layerSize: 256,
+    makeLayerTexture: () => ({}), layerHeights: () => [2, 3, 4, 5], bulkOn: () => false, bulkShift: () => [0, 0], fillFor: () => ({ prog: {}, U }),
+    allocLayers() {}, bakeLayers() {}, fillFrameNow: () => ({ ox: -5, oy: -5, ext: 10 }), fail(m) { throw new Error(m); },
+  };
+  return { f: makeFill(hub), params, fill, draws: () => draws };
+}
+
+test("fillSig: 14 slots, the last one is edge_area — a flip re-bakes the fill once, and exposure does not", () => {
+  expect(FILL_SIG_LEN).toBe(14);
+  const r = fillRig();
+  r.f.refreshFill();
+  expect(r.fill.ready, "the first refresh bakes").toBe(true);
+  expect(r.fill.sig.length).toBe(FILL_SIG_LEN);
+  expect(r.fill.sig[FILL_SIG_LEN - 1], "edge_area off").toBe(0);
+  const base = r.draws();
+  expect(base).toBeGreaterThan(0);
+  r.f.refreshFill();
+  expect(r.draws(), "nothing moved: no bake").toBe(base);
+  r.params.exposure = 2; r.f.refreshFill();
+  expect(r.draws(), "exposure is not in the signature").toBe(base);
+  r.params.edge_area = true; r.f.refreshFill();
+  expect(r.draws(), "edge_area on: one bake").toBe(base + 1);
+  expect(r.fill.sig[FILL_SIG_LEN - 1]).toBe(1);
+  r.f.refreshFill();
+  expect(r.draws(), "...once").toBe(base + 1);
+});
+
+test("fillSig: the signature array is sized from FILL_SIG_LEN in both places (a write past a Float64Array's end is dropped silently, and the fill re-bakes every frame)", () => {
+  const bake = readFileSync(new URL("./komorebi-bake.js", import.meta.url), "utf8"), engine = readFileSync(new URL("./komorebi-engine.js", import.meta.url), "utf8");
+  expect(bake.includes("new Float64Array(FILL_SIG_LEN)")).toBe(true);
+  expect(engine.includes("new Float64Array(FILL_SIG_LEN)")).toBe(true);
+  const slots = [...bake.match(/function fillSig\(o\)\{[\s\S]*?\n {2}\}/)[0].matchAll(/o\[(\d+)\]/g)].map((m) => +m[1]);
+  expect(Math.max(...slots)).toBe(FILL_SIG_LEN - 1);
+  expect(new Set(slots).size).toBe(FILL_SIG_LEN);
+});
+
+// edge_area at k = 0 and the P0b proxy: its hue is the LEAF's, not the mixture's. ŝ = t/max t of the mixture t = (1 − a) + a·e^(−τ̄) tends to white as the gap grows — a hue the leaf never
+// had, and the gap emits nothing — so under edge_area the proxy's level stays (1 − t) and its hue is leafHue(e^(−τ̄)), τ̄ = τ/a. Off, the proxy is the literal old line.
+test("edge_area at d 0: the P0b proxy's hue is the leaf's own e^(−τ̄); a pure gap glows nothing; off is untouched", () => {
+  const tauLeaf = [0.9, 1.6, 2.8];
+  const one = (c) => [{ h: 3, t: () => tauLeaf.map((v) => Math.exp(-v * c)), c: () => c }];   // the bake's pair for one leaf over a share c of the texel
+  for (const c of [0.05, 0.3, 0.6, 0.95, 1]) {
+    const layers = one(c), r = F.skyRayRef(layers, [0, 0], [0, 0], [0, 0], SUN, 0, true), m = F.texelMix(tauLeaf.map((v) => v * c), c, 0), hue = F.leafHue(tauLeaf.map((v) => Math.exp(-v)));
+    for (let ch = 0; ch < 3; ch++) expect(r.L[ch], `c ${c} ch ${ch}`).toBeCloseTo((1 - m.T[ch]) * hue[ch] * SUN[ch], 12);
+  }
+  expect(F.skyRayRef(one(0), [0, 0], [0, 0], [0, 0], SUN, 0, true).L, "a pure gap").toEqual([0, 0, 0]);
+  expect(F.skyRayRef(one(5e-5), [0, 0], [0, 0], [0, 0], SUN, 0, true).L, "an empty texel").toEqual([0, 0, 0]);
+  for (let seed = 0; seed < 100; seed++) {   // off: the old reference, bit for bit (the earlier rows hold the rest)
+    const layers = covStack(seed, 1 + (seed % 4)), a = [layers, [0.1, 0.2], [0.2, 0.1], [0.3, -0.2], SUN];
+    sameBits(F.skyRayRef(...a, 0, false), F.skyRayRef(...a), `seed ${seed}`);
+  }
 });

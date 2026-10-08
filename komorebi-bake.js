@@ -18,6 +18,11 @@ import { bindLeafShape } from './komorebi-grove.js';
 // The tier this module owns besides the fill (which is its own factory below, so a bundle that cuts it cuts the factory): the leaf's diffuse share. The bundler substitutes
 // it by a literal (embed-build.mjs); false means no look in the bundle opens leaf_diffuse, and the beam's k is 0 wherever it is read.
 const FEAT_LEAF_DIFFUSE = true;
+// edge_area (§4.5) as the 0/1 every reader takes it as. Behind the flag for the reason k is: a bundle that cut the leaf's diffuse share has no GLSL that reads it.
+const edgeAreaOn = (params) => (FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);
+// How many slots the fill's signature has (fillSig, below). The engine sizes its `fill.sig` from this: a write past a Float64Array's end is dropped silently, and
+// the fill then re-bakes every frame, so the length is one number in one place.
+export const FILL_SIG_LEN = 14;
 
 export function makeBake(hub){
   const { gl, params, motion, src, faith, sky, U, bakeFBO, faithFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
@@ -173,6 +178,7 @@ export function makeBake(hub){
   function bakeFaithful(){
     const k = FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0;
     faith.k = k; faith.n = src.count;   // recorded even for an empty grove: refreshFaith compares against them
+    faith.edgeArea = edgeAreaOn(params);   // the cast has the edge law baked in, like k
     // Only "no grove built yet" returns early. A grove with no leaves — leaf_drop 1 at leaf-off, §4.5 abscission, or no foliage at all — still has
     // its shadow to bake: the wood if there is any, and otherwise Σw·1 = 1, a lit floor. (An instanced draw of zero leaves is a no-op.) Returning
     // on an empty leaf set left faithTex at zero, which transport reads as a floor in total shade.
@@ -246,6 +252,7 @@ export function makeBake(hub){
     gl.uniform2f(U.faith.extent, faith.ext, faith.ext);
     gl.uniform1f(U.faith.edge, params.edge_softness);   // soft leaf rim (same as the layer bake); 0 here = hard ellipses
     gl.uniform1f(U.faith.beamK, k);                     // the BEAM's neutral depth (§4.5), pre-integrated into the cast like everything else the leaves do to it
+    gl.uniform1i(U.faith.edgeArea, faith.edgeArea);     // ...and so is the edge law: at k = 0 each stamp is the leaf's mixture, not the slab of its mask
     gl.uniform1i(U.faith.curtainBake, params.receiver ? 1 : 0);   // §4.9: project onto the vertical cloth (curtain) vs the floor
     gl.uniform1f(U.faith.clothY, params.cloth_distance_m);
     gl.uniform1f(U.faith.morph, params.drift_phase);
@@ -319,11 +326,12 @@ export function makeBake(hub){
   // Once per frame, before transport draws: the faithful cast carries the beam's k pre-integrated (§4.5), so unlike the layer
   // path — which reads k at the tap — it must be re-cast when leaf_diffuse moves without anything else having baked: a
   // tween, a slider. Under wind the bake runs every frame anyway and has already recorded the current k.
+  // edge_area is baked into the cast the same way (each stamp's law at k = 0), so flipping it re-casts too; a live toggle rebuilds nothing else.
   // The same goes for the sample count: it is what the cast is made of, and resetPerf (after rebuildAll's bake) or the governor can
   // re-cut the cloud to a count the bake did not see — the old look's, or a trimmed one — with no bake-res change to re-bake it.
   // Only the COUNT is compared: a transition's morph moves the cloud's shape every frame, and the cast is not re-cast for that.
   function refreshFaith(){
-    if(faithfulOn() && (faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count)) bakeFaithful();
+    if(faithfulOn() && (faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count || faith.edgeArea !== edgeAreaOn(params))) bakeFaithful();
   }
 
   return { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow };
@@ -358,7 +366,7 @@ export function makeFill(hub){
   // scatter branch is skipped in the shader outright.
   const fillAlbedo = () => CAMERAS[cameraFor(params)].groups.includes('floor') ? clamp(params.fill_scatter, 0, 1) : 0;
   const _atm = { sun:[0,0,0], ambient:[0,0,0] }, FILL_TURNS = fillTurns();   // the 16 slot rotations never change
-  const _sig = new Float64Array(13);
+  const _sig = new Float64Array(FILL_SIG_LEN);
 
 
   // Everything the fill depends on besides the layers themselves (which rebake it eagerly, from bake()). The sun can
@@ -372,6 +380,7 @@ export function makeFill(hub){
     o[8]=params.canopy_thickness_m; o[9]=params.canopy_extent_m; o[10]=faithfulOn() ? 1 : 0;
     o[11]=FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0;   // the split changes what S is made of, and no bake moves when it tweens
     o[12]=hub.bulkOn() ? 1 : 0;              // wrap vs open + padded frame (the beam's bulk shift itself rides the sun elevation and azimuth above)
+    o[13]=edgeAreaOn(params);                // the edge law changes what Tsky and S are made of, and no bake moves when it flips live
   }
   function fillStale(){
     if(!fill.ready) return true;
@@ -441,6 +450,7 @@ export function makeFill(hub){
     gl.uniform1i(u.count, K);
     gl.uniform1f(u.scatter, fillAlbedo());
     gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the albedo is off and every surface camera reads S (the shader says so)
+    gl.uniform1i(u.edgeArea, edgeAreaOn(params));                                      // at k = 0 the rays read each texel as its mixture (§4.5)
     for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]); gl.uniform1i(u.layers[i], i); }
     if(wrap) setLayerWrap(nL, gl.REPEAT);
     gl.bindVertexArray(emptyVAO);

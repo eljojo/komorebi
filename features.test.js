@@ -48,6 +48,7 @@ test("each table key opens its feature, and a feature that needs a season does n
   expect(open({})).toEqual([]);                                              // the defaults are a summer with nothing special in it
   expect(open({ canopy_fill: 0.5 })).toEqual(["fill"]);
   expect(open({ leaf_diffuse: 0.3 })).toEqual(["leafDiffuse"]);
+  expect(open({ edge_area: true })).toEqual(["leafDiffuse"]);                // the edge law is GLSL the leaf-diffuse tier owns (tagged lines, the beam group): a bundle without the tier cannot read it
   expect(open({ phenology: 0.65 })).toEqual(["pigment"]);
   expect(open({ litter: 1 })).toEqual([]);                                   // a carpet needs a leaf that has fallen
   expect(open({ turn_exposure: 1 })).toEqual([]);                            // and light orders nothing in a summer
@@ -112,7 +113,7 @@ const treeIn = (opts) => {
 const UNIFORMS = {
   fill: ["uCanopyFill", "uFillT", "uFillS", "uFillOrigin", "uFillExtent"],
   litter: ["uLitterOn", "uLitter", "uLitterOrigin", "uLitterExtent"],
-  leafDiffuse: ["uBeamK"],
+  leafDiffuse: ["uBeamK", "uEdgeArea"],
 };
 
 test("a program assembled with a feature cut names no uniform of that feature's group — on all four cameras", async () => {

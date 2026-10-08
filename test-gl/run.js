@@ -388,6 +388,34 @@ const INVARIANTS = [
     a: {}, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
   { name: 'a maple of the same leaf area keeps the canopy as full (layer path: afternoon 7)', preset: 'afternoon 7', lit: [0.95, 1.05],
     a: {}, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
+  // EDGE_AREA (§4.5, decision 33): the soft edge read as a mixture at d = 0 too. Off it is the depth-averaged slab the engine has always read — the literal else of the four
+  // widened conditions — so naming it false is the frame before the knob existed, on every camera and path (the pins above are the same claim for the looks themselves)...
+  { name: 'edge_area false == absent (layer path)', preset: 'memories', a: {}, b: { edge_area: false } },
+  { name: 'edge_area false == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { edge_area: false } },
+  { name: 'edge_area false == absent (curtain)', preset: 'curtain 1', a: {}, b: { edge_area: false } },
+  { name: 'edge_area false == absent (tent)', preset: 'tent 1', a: {}, b: { edge_area: false } },
+  { name: 'edge_area false == absent (sky view)', preset: 'canopy 1', a: {}, b: { edge_area: false } },
+  // ...with the fill open, where the sky ray the fill bakes carries the same widened tap (and the signature slot is 0 on both sides)
+  { name: 'edge_area false keeps the fill (layer path)', preset: 'memories',
+    a: { canopy_fill: 1, fill_scatter: 0.15 }, b: { canopy_fill: 1, fill_scatter: 0.15, edge_area: false } },
+  { name: 'edge_area false keeps the fill (faithful path)', preset: 'park 1', rebake: true,
+    a: { canopy_fill: 1, fill_scatter: 0.15 }, b: { canopy_fill: 1, fill_scatter: 0.15, edge_area: false } },
+  // Above leaf_diffuse 0 the split is already area-correct: the knob has nothing to change, and the frame is byte-identical with it on (the cast, the fill and the lantern alike)
+  { name: 'edge_area is inert on the split (layer path, fill open)', preset: 'memories',
+    a: { canopy_fill: 1, leaf_diffuse: 0.95 }, b: { canopy_fill: 1, leaf_diffuse: 0.95, edge_area: true } },
+  { name: 'edge_area is inert on the split (faithful path, fill open)', preset: 'park 1', rebake: true,
+    a: { canopy_fill: 1, leaf_diffuse: 0.95 }, b: { canopy_fill: 1, leaf_diffuse: 0.95, edge_area: true } },
+  { name: 'edge_area is inert on the split (sky view)', preset: 'canopy 1', a: { leaf_diffuse: 0.95 }, b: { leaf_diffuse: 0.95, edge_area: true } },
+  // The other half: at d = 0 the knob is a real switch on each camera that reads a texel — or the rows above would pass with the widened conditions dead
+  { name: 'edge_area true changes the layer floor at d 0', preset: 'memories', differ: true, a: {}, b: { edge_area: true } },
+  { name: 'edge_area true changes the faithful floor at d 0 (the cast is re-made)', preset: 'park 1', rebake: true, differ: true, a: {}, b: { edge_area: true } },
+  { name: 'edge_area true changes the curtain at d 0', preset: 'curtain 1', differ: true, a: {}, b: { edge_area: true } },
+  { name: 'edge_area true changes the look-up frame at d 0 (sky view)', preset: 'canopy 1', differ: true, a: {}, b: { edge_area: true } },
+  // The mixture only ever LIGHTENS a soft edge (Jensen), so the frame's mean level rises, a little (the soft edge is a minority of the area). Floors under a loss, not a fit
+  { name: 'edge_area lightens the soft edges, a little (layer path: memories)', preset: 'memories', lit: [1.0, 1.08], a: {}, b: { edge_area: true } },
+  { name: 'edge_area lightens the soft edges, a little (layer path: afternoon 7)', preset: 'afternoon 7', lit: [1.0, 1.08], a: {}, b: { edge_area: true } },
+  // The look edge_area made, written down once every row above was green (a pin says the frame itself does not drift; the rows say it moved the right way)
+  { name: 'memories with edge_area on is the frame edge_area made', preset: 'memories', a: { edge_area: true }, pin: '0acca242' },
 ];
 
 // THE SKY FILL vs ITS REFERENCE (§4.7). The bun tests hold komorebi-fill.js's laws; this holds the GLSL to it. Each row
@@ -411,6 +439,10 @@ const FILL_CHECKS = [
   { name: 'park 1, leaf_diffuse 0.95 — faithful: coverage from the low-res layer set', preset: 'park 1', rebake: true, over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'curtain 1, leaf_diffuse 0.95 — S is computed for the cloth too', preset: 'curtain 1', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'tent 1, leaf_diffuse 0.95 — and for the tent', preset: 'tent 1', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  // EDGE_AREA (§4.5): at d = 0 every texel is read as its mixture too, so Tsky is the mixture's and the albedo's P0b proxy runs on it (the albedo stays ON: only the split retires it)
+  { name: 'memories, edge_area — the mixture at d 0, the albedo kept', preset: 'memories', over: { canopy_fill: 1, fill_scatter: 0.5, edge_area: true } },
+  { name: 'park 1, edge_area — faithful: the mixture from the low-res layer set', preset: 'park 1', rebake: true, over: { canopy_fill: 1, fill_scatter: 0.5, edge_area: true } },
+  { name: 'curtain 1, edge_area — Tsky is the mixture\'s for the cloth too', preset: 'curtain 1', over: { canopy_fill: 1, fill_scatter: 0.5, edge_area: true } },
 ];
 // THE FILL'S BOOKKEEPING (§4.7), measured on the layers the engine really baked (__fillCheck's `energy`). No light is made or lost
 // globally — what a frame shows is DISPLACEMENT (glow under the crown, shadow down-sun) — but the fill had two real breaks, and these
@@ -452,6 +484,11 @@ const LIVE_CHANGES = [
   { name: 'memories (layer path: the tap reads it, the fill re-bakes)', preset: 'memories', over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
   { name: 'park 1 with the fill shut (faithful: the cast is re-cast, nothing else moves)', preset: 'park 1', rebake: true, over: { canopy_fill: 0 }, key: 'leaf_diffuse', value: 0.95 },
   { name: 'park 1 with the fill open (faithful: the cast AND the fill)', preset: 'park 1', rebake: true, over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
+  // EDGE_AREA (§4.5) is a TOPO key, yet a bare assignment on a running engine still changes it live: the tap reads the uniform, the fill re-bakes on its signature slot,
+  // and the faithful cast is re-cast (the edge law is baked into each stamp)
+  { name: 'memories, edge_area (layer path: the tap reads it, the fill re-bakes on its signature)', preset: 'memories', over: { canopy_fill: 1 }, key: 'edge_area', value: true },
+  { name: 'park 1 with the fill shut, edge_area (faithful: the cast is re-cast)', preset: 'park 1', rebake: true, over: { canopy_fill: 0 }, key: 'edge_area', value: true },
+  { name: 'park 1 with the fill open, edge_area (faithful: the cast AND the fill)', preset: 'park 1', rebake: true, over: { canopy_fill: 1 }, key: 'edge_area', value: true },
   // THE CARPET (§4.7) is noticed at draw time, not baked at a regrow the engine does not run when a slider moves: opened on a running engine it must be the
   // frame an engine born with it shows, and the authored wind direction — a MORPH key, tweened in a transition — must carry it there too
   { name: 'afternoon 7 (the carpet bakes when the gate opens)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9 }, key: 'litter', value: 1, litter: true },
@@ -515,6 +552,8 @@ const LITTER_STAMP_TOL = 0.02;
 // 0.06-0.8 off (each is mutation-tested: wood in the emission, the beam ignoring coverage, a sun path that ignores wood). Each row also has to MEASURE something: rays whose disk a leaf killed, rays with a lit leaf, rays
 // the wood is in the way of, and wood in the texture at all.
 const SKY_CHECKS = ['canopy 1', 'canopy 2', 'canopy 3', 'canopy 4'].flatMap((preset) => [0, 0.5, 0.95].map((d) => ({ name: `${preset}, leaf_diffuse ${d}`, preset, over: { leaf_diffuse: d } })));
+// EDGE_AREA (§4.5): the same ray with the d = 0 mixture on (d 0: P0b on the mixture t; 0.95: the knob is inert, and the rows must say so)
+SKY_CHECKS.push(...[0, 0.95].map((d) => ({ name: `canopy 1, leaf_diffuse ${d}, edge_area`, preset: 'canopy 1', over: { leaf_diffuse: d, edge_area: true } })));
 const SKY_TOL = 1e-3;
 
 // A TEXEL IS A MIXTURE, NOT A SLAB (§4.5, P0c-edge). The bake stores Σ τ·cov and Σ cov; read as a slab of depth τ the pair is Jensen-dark at a soft edge, and
@@ -530,11 +569,18 @@ const SKY_TOL = 1e-3;
 //     band the shader's mean equals the mixture's. `slab` is the old answer, reported as the depth of the halo the row would have seen.
 //   THE FAITHFUL STAMP (park 1, curtain 1): FS_FAITH drawn for one leaf, every pixel held to (1 − cf) + cf·e^(−τ_leaf − k), cf = cov·fade — whole, half faded, and
 //     too faint to exist (exactly clear, and finite: vTau/vFade is never formed).
-const RIM_CHECKS = [{ name: 'canopy 1, leaf_diffuse 0.95', preset: 'canopy 1', over: { leaf_diffuse: 0.95 } }];
+const RIM_CHECKS = [
+  { name: 'canopy 1, leaf_diffuse 0.95', preset: 'canopy 1', over: { leaf_diffuse: 0.95 } },
+  // edge_area at d 0: the P0b proxy keeps its level (1 − t, t the mixture) and takes its hue from the LEAF's own e^(−τ̄) (the gap emits nothing, and its t whitens ŝ = t/max t)
+  { name: 'canopy 1, leaf_diffuse 0, edge_area on (the P0b proxy on the mixture)', preset: 'canopy 1', over: { leaf_diffuse: 0, edge_area: true } },
+];
 const RIM_MAX = 1.1, RIM_MIN_TEXELS = 300;
 const HALO_CHECKS = [
   { name: 'afternoon 7, leaf_diffuse 0.95 (the layer floor, blue τ 6.9)', preset: 'afternoon 7', over: { leaf_diffuse: 0.95 } },
   { name: 'memories, leaf_diffuse 0.95 (the layer floor)', preset: 'memories', over: { leaf_diffuse: 0.95 } },
+  // edge_area at d 0 (k = 0: Tb is T): the slab is Jensen-dark here too, and the tap must equal the mixture's T
+  { name: 'afternoon 7, edge_area at d 0 (the layer floor, blue τ 6.9)', preset: 'afternoon 7', over: { edge_area: true } },
+  { name: 'memories, edge_area at d 0 (the layer floor)', preset: 'memories', over: { edge_area: true } },
 ];
 const HALO_TOL = 2e-3, HALO_BAND = [0.99, 1.01], HALO_MIN_TEXELS = 500, STAMP_TOL = 2e-5;
 // THE OUTLINE'S EDGE LAW (§4.5, P4a-2), FS_BAKE drawn for one leaf: the gate shut keeps the ellipse's own tolerance, the gate open is held to the CPU's q' over the same profile at the GPU's own
@@ -949,7 +995,8 @@ async function main() {
       try { r = await page.evaluate(([p, o]) => window.__rimCheck(p, o), [c.preset, c.over]); }
       catch (e) { record('edge', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); continue; }
       const bad = [], peak = Math.max(...r.rimMax), f2 = (a) => a.map((v) => v.toFixed(2)).join('/');
-      if (!(peak <= RIM_MAX)) bad.push(`the rim is x${peak.toFixed(2)} of the interior (R/G/B ${f2(r.rimMax)}, at coverage ${f2(r.rimAt)}), over x${RIM_MAX}`);
+      const rimMax = c.max ?? RIM_MAX;
+      if (!(peak <= rimMax)) bad.push(`the rim is x${peak.toFixed(2)} of the interior (R/G/B ${f2(r.rimMax)}, at coverage ${f2(r.rimAt)}), over x${rimMax}`);
       if (!(r.nIn >= RIM_MIN_TEXELS && r.nRim >= RIM_MIN_TEXELS)) bad.push(`nothing measured: ${r.nIn} interior and ${r.nRim} rim texels (need ${RIM_MIN_TEXELS})`);
       if (!(r.interiorGlow > 0.01)) bad.push(`the interior does not glow (${r.interiorGlow.toExponential(1)}): nothing to compare the rim with`);
       if (r.glError) bad.push(`gl.getError 0x${r.glError.toString(16)}`);
@@ -974,7 +1021,8 @@ async function main() {
       record('edge', name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(48)} ${bad.join('; ') || detail}`);
     }
-    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : [{ name: 'FS_FAITH, one leaf at leaf_diffuse 0.95 (the faithful floor and cloth); FS_BAKE, one leaf in each outline', opts: { d: 0.95 } }]) {
+    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : [{ name: 'FS_FAITH, one leaf at leaf_diffuse 0.95 (the faithful floor and cloth); FS_BAKE, one leaf in each outline', opts: { d: 0.95 } },
+    { name: 'FS_FAITH, one leaf at leaf_diffuse 0 with edge_area on (the stamp is the leaf\'s mixture at k = 0); FS_BAKE, one leaf in each outline', opts: { d: 0, edgeArea: true } }]) {
       const name = `stamp: ${c.name}`;
       let r;
       try { r = await page.evaluate((o) => window.__stampCheck(o), c.opts); }
@@ -1053,7 +1101,7 @@ async function main() {
 
     // (the carpet's own live rows run with `--gate litter` too: a gate row alone cannot see a signature that forgot a number)
     const litterRowsToo = gateOnly && (!gateFilters.length || gateFilters.some((f) => f && 'litter'.includes(f)));
-    const liveRows = (gateOnly || robustOnly || skyOnly || edgeOnly) ? (litterRowsToo ? LIVE_CHANGES.filter((c) => c.litter) : []) : LIVE_CHANGES;
+    const liveRows = (gateOnly || robustOnly || skyOnly || edgeOnly) ? LIVE_CHANGES.filter((c) => (litterRowsToo && c.litter) || (gateOnly && gateFilters.some((f) => f && c.name.toLowerCase().includes(f)))) : LIVE_CHANGES;
     if (liveRows.length) log('\nLIVE KNOBS — changed on a running engine, nothing rebuilt (leaf_diffuse tweens; the carpet is noticed at draw time)');
     for (const c of liveRows) {
       const name = `${c.key} live: ${c.name}`;

@@ -325,14 +325,17 @@ try {
     const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
   }, v);
   check('the leaf diffuse row is there on the floor, beside a leaf scatter that still works', (await rowShown('leaf diffuse')) === true && (await rowShown('leaf scatter')) === true, `${await rowShown('leaf diffuse')} ${await rowShown('leaf scatter')}`);
+  check('the edge area row is shown at leaf diffuse 0', (await rowShown('edge area')) === true, `${await rowShown('edge area')}`);
   await setSplit(0.7);
   let scatterGone = false;
   for (let i = 0; i < 30 && !scatterGone; i++) { await page.waitForTimeout(400); scatterGone = (await rowShown('leaf scatter')) === false && (await rowShown('leaf diffuse')) === true; }
   check('leaf diffuse above 0 retires the albedo slider it replaces', scatterGone, `${await rowShown('leaf scatter')} ${await rowShown('leaf diffuse')}`);
+  check('...and edge area, whose job every texel already does above 0', (await rowShown('edge area')) === false, `${await rowShown('edge area')}`);
   await setSplit(0);
   let scatterBack = false;
   for (let i = 0; i < 30 && !scatterBack; i++) { await page.waitForTimeout(400); scatterBack = (await rowShown('leaf scatter')) === true; }
   check('and at 0 the albedo is back', scatterBack, `${await rowShown('leaf scatter')}`);
+  check('...and edge area is back with it', (await rowShown('edge area')) === true, `${await rowShown('edge area')}`);
   await setReceiver(1);                                             // the curtain takes Tsky alone: the albedo is a slider that lies there
   let clothFill = false;
   for (let i = 0; i < 30 && !clothFill; i++) { await page.waitForTimeout(400); clothFill = !(await rowShown('leaf scatter')) && (await rowShown('fill rays')) && (await rowShown('canopy fill')); }
