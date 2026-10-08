@@ -227,8 +227,8 @@ const INVARIANTS = [
     a: { leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_wetness: 0.5 } },
   { name: 'wet litter darkens the carpet (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_wetness: 0.5 } },
-  // wet leaves absorb: the frame gets darker, and by a bounded amount (it is the carpet only, the dirt stays dry)
-  { name: 'wet litter takes light, it does not invent it (layer path, lit shade)', preset: 'afternoon 7', lit: [0.77, 0.995],
+  // wet leaves absorb: the frame gets darker, and by a bounded amount (it is the carpet only, the dirt stays dry). Measured ×0.836 on the honest law (κ 2; ×0.871 on the transmittance colour it replaced); the bound sits ~0.1 either side
+  { name: 'wet litter takes light, it does not invent it (layer path, lit shade)', preset: 'afternoon 7', lit: [0.74, 0.94],
     a: { leaf_drop: 1, phenology: 0.9, litter: 1, canopy_fill: 1, leaf_diffuse: 0.5 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, canopy_fill: 1, leaf_diffuse: 0.5, leaf_wetness: 0.5 } },
   // the curtain and the sky view never declare the carpet, so they never read its wetness either
   { name: 'the curtain does not read the wetness', preset: 'curtain 1',

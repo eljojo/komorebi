@@ -193,22 +193,58 @@ const TAUS = {
   maroon: [0.2, 4.5, 3.4],
   russet: [1.1, 1.75, 4.7],
 };
-test("litterAlbedo at age 0 is the leaf's own hue at peak 0.35: a red leaf reflects red", () => {
-  expect(L.LITTER_PEAK).toBe(0.35);
-  for (const [name, tau] of Object.entries(TAUS)) {
-    const a = L.litterAlbedo(tau, 0), hue = leafHue(tau.map((t) => Math.exp(-t)));
-    expect(Math.max(...a), name).toBeCloseTo(0.35, 12);                                         // normalised to peak 0.35
-    for (let c = 0; c < 3; c++) expect(a[c], `${name} ${c}`).toBeCloseTo(0.35 * hue[c], 12);   // and it is the leaf's hue, not a tint
-  }
-  const red = L.litterAlbedo(TAUS.red, 0);
-  expect(red[0]).toBeGreaterThan(2 * red[1]); expect(red[0]).toBeGreaterThan(2 * red[2]);       // a backlit red leaf lying down is still red, for as long as it is fresh
-  expect(L.litterAlbedo(TAUS.red, -3)).toEqual(L.litterAlbedo(TAUS.red, 0));                    // not yet fallen reads as fresh, never as a negative mix
+// The redhead (anthocyanin .8, no wall fraction, fully turned): the saturated end of what a maple lays down.
+const REDHEAD = math.leafTau(TAUS.summer, { ...DEFAULTS, phenology: 1, anthocyanin: 0.8, tannin: 0, wall_fraction: 0, turn_exposure: 0 }, 290626672, 3, 4);
+const sat = (a) => Math.min(...a) / Math.max(...a);                                                                  // min/max: 1 is grey, 0 is a pure primary
+// today's law (0.35·leafHue(e^−τ)), frozen here only to say the honest one is less saturated than it
+const oldLaw = (tau) => { const h = leafHue(tau.map((t) => Math.exp(-t))); return h.map((v) => 0.35 * v); };
+
+test("the honest law's constants: κ is 2 (PROVISIONAL, the grey card fits it) and the cuticle's dry share is 0.04; LITTER_PEAK is retired", () => {
+  expect(L.LITTER_KAPPA).toBe(2);
+  expect(L.F_CUTICLE).toBe(0.04);
+  expect("LITTER_PEAK" in L).toBe(false);
 });
 
-test("litterAlbedo at age ≥ 1 is ALBEDO_BROWN to the bit — whatever the leaf was — and in between it walks there monotonically, channel by channel", () => {
+test("TAU_BROWN round-trips: age ≥ 1 is ALBEDO_BROWN to the bit (the branch), and the formula without the branch gives it within 1e-12", () => {
   expect(L.ALBEDO_BROWN).toEqual([0.12, 0.08, 0.05]);
-  for (const [name, tau] of Object.entries(TAUS)) {
-    for (const age of [1, 1.0000001, 2, 10, Infinity]) { const b = L.litterAlbedo(tau, age); for (let c = 0; c < 3; c++) expect(Object.is(b[c], L.ALBEDO_BROWN[c]), `${name} age ${age} ch ${c}`).toBe(true); }
+  for (const [name, tau] of Object.entries({ ...TAUS, REDHEAD })) for (const age of [1, 1.0000001, 2, 10, Infinity]) {
+    const b = L.litterAlbedo(tau, age); for (let c = 0; c < 3; c++) expect(Object.is(b[c], L.ALBEDO_BROWN[c]), `${name} age ${age} ch ${c}`).toBe(true);
+  }
+  for (let c = 0; c < 3; c++) {                                                                                      // the law itself, unbranched: R = F + (1−F)·kmReflect(κ·τ_brown)
+    const R = L.F_CUTICLE + (1 - L.F_CUTICLE) * L.kmReflect(L.LITTER_KAPPA * L.TAU_BROWN[c]);
+    expect(Math.abs(R - L.ALBEDO_BROWN[c]), `ch ${c}`).toBeLessThan(1e-12);
+  }
+});
+
+test("litterAlbedo is a reflectance: R ∈ [F_w, 1], a white scatterer at τ = 0, strictly darker with every channel's τ", () => {
+  expect(L.litterAlbedo([0, 0, 0], 0, 0)).toEqual([1, 1, 1]);
+  const rnd = math.mulberry32(5);
+  for (let i = 0; i < 300; i++) {
+    const tau = [rnd() * 6, rnd() * 6, rnd() * 6], age = rnd() * 1.2, w = rnd();
+    const a = L.litterAlbedo(tau, age, w);
+    for (let c = 0; c < 3; c++) { expect(a[c]).toBeGreaterThanOrEqual(L.F_CUTICLE * (1 - w) - 1e-15); expect(a[c]).toBeLessThanOrEqual(1); }
+  }
+  for (let c = 0; c < 3; c++) {
+    let prev = 1;
+    for (let t = 0.05; t <= 8; t += 0.05) { const tau = [1, 1, 1]; tau[c] = t; const r = L.litterAlbedo(tau, 0, 0)[c]; expect(r < prev, `ch ${c} τ ${t}`).toBe(true); prev = r; }
+  }
+});
+
+test("the carpet is less saturated than the transmittance colour it replaces: for every TAUS leaf and the redhead, min/max is higher; the redhead keeps its green and stays under half in red", () => {
+  for (const [name, tau] of Object.entries({ ...TAUS, REDHEAD })) expect(sat(L.litterAlbedo(tau, 0)), name).toBeGreaterThan(sat(oldLaw(tau)));
+  const r = L.litterAlbedo(REDHEAD, 0);
+  expect(r[1]).toBeGreaterThanOrEqual(0.3 * r[0]);
+  expect(r[0]).toBeLessThan(0.5);
+});
+
+test("the numbers at κ 2: TAUS.red at age 0 is (.331, .103, .096) dry and (.227, .057, .053) at w 0.5", () => {
+  const dry = L.litterAlbedo(TAUS.red, 0, 0), wet = L.litterAlbedo(TAUS.red, 0, 0.5);
+  [0.331, 0.103, 0.096].forEach((v, c) => { expect(Math.abs(dry[c] - v), `dry ${c}`).toBeLessThan(0.002); });
+  [0.227, 0.057, 0.053].forEach((v, c) => { expect(Math.abs(wet[c] - v), `wet ${c}`).toBeLessThan(0.002); });
+});
+
+test("age walks toward brown monotonically, channel by channel, never overshooting, and is exact at age 1", () => {
+  for (const [name, tau] of Object.entries({ ...TAUS, REDHEAD })) {
     const fresh = L.litterAlbedo(tau, 0), prev = [...fresh];
     for (let i = 1; i <= 100; i++) {
       const a = L.litterAlbedo(tau, i / 100);
@@ -220,8 +256,21 @@ test("litterAlbedo at age ≥ 1 is ALBEDO_BROWN to the bit — whatever the leaf
       }
     }
   }
-  const half = L.litterAlbedo(TAUS.red, 0.5), fr = L.litterAlbedo(TAUS.red, 0);
-  for (let c = 0; c < 3; c++) expect(half[c]).toBeCloseTo((fr[c] + L.ALBEDO_BROWN[c]) / 2, 12);   // a smoothstep: half way at the middle
+  expect(L.litterAlbedo(TAUS.red, -3)).toEqual(L.litterAlbedo(TAUS.red, 0));                    // not yet fallen reads as fresh, never as a negative mix
+});
+
+test("browning is mixed in K-space, not in reflectance: at age ½ the pigment load q is the mean of fresh's and brown's, so the half-aged leaf is NOT the reflectance midpoint", () => {
+  const q = (R) => L.kmInvert((R - L.F_CUTICLE) / (1 - L.F_CUTICLE));    // the load a reflectance implies
+  for (const tau of [TAUS.red, TAUS.gold, REDHEAD]) {
+    const half = L.litterAlbedo(tau, 0.5), fr = L.litterAlbedo(tau, 0), s = math.smoothstep(0, 1, 0.5);
+    let off = 0;
+    for (let c = 0; c < 3; c++) {
+      const want = (1 - s) * L.LITTER_KAPPA * tau[c] + s * L.LITTER_KAPPA * L.TAU_BROWN[c];
+      expect(q(half[c]) / want, `ch ${c}`).toBeCloseTo(1, 10);
+      off = Math.max(off, Math.abs(half[c] - (fr[c] + L.ALBEDO_BROWN[c]) / 2));
+    }
+    expect(off, "K-space is not the reflectance mean").toBeGreaterThan(1e-3);
+  }
 });
 
 test("litterAlbedo(tau, age) is the ONE colour law: a pure function of its two arguments, filling `out` — P4b's browning replaces it behind this signature", () => {
@@ -590,17 +639,14 @@ test("the Kubelka–Munk pair round-trips on a log grid, and its ends are exact 
   expect(L.kmInvert(0)).toBe(Infinity);
 });
 
-test("wetten: w ≤ 0 is the identity to the bit; white and black stay put", () => {
-  const rnd = math.mulberry32(7);
-  for (let i = 0; i < 500; i++) { const R = rnd(); expect(Object.is(L.wetten(R, 0), R)).toBe(true); expect(Object.is(L.wetten(R, -0.3), R)).toBe(true); expect(Object.is(L.wetten(R, undefined), R)).toBe(true); }
-  expect(L.wetten(0, 0.5)).toBe(0);
-  expect(L.wetten(1, 0.5)).toBe(1);
-  expect(L.wetten(1.2, 0.5)).toBe(1);
-  expect(L.wetten(0, 1)).toBe(0);
+test("wetten is retired: the wet step is inside the law, and the law no longer reads leafHue", () => {
+  expect("wetten" in L).toBe(false);
+  const src = readFileSync(new URL("./komorebi-litter.js", import.meta.url), "utf8");
+  expect(/import[^\n]*leafHue/.test(src)).toBe(false);
 });
 
-test("wetness only darkens: monotone non-increasing in w for every leaf at every age, strictly for 0 < R < 1", () => {
-  for (const [name, tau] of Object.entries(TAUS)) for (const age of [0, 0.5, 1]) {
+test("wetness only darkens: monotone non-increasing in w per channel for every leaf at every age, strictly for 0 < R < 1", () => {
+  for (const [name, tau] of Object.entries({ ...TAUS, REDHEAD })) for (const age of [0, 0.5, 1]) {
     let prev = L.litterAlbedo(tau, age, 0);
     for (let i = 1; i <= 200; i++) {
       const a = L.litterAlbedo(tau, age, i / 200);
@@ -613,40 +659,29 @@ test("wetness only darkens: monotone non-increasing in w for every leaf at every
   }
 });
 
-test("wet litter saturates as it darkens: the strongly absorbed channel drops most, so min/max falls", () => {
-  const ratio = (a) => Math.min(...a) / Math.max(...a);
-  for (const name of ["red", "maroon"]) expect(ratio(L.litterAlbedo(TAUS[name], 0, 0.5)), name).toBeLessThan(ratio(L.litterAlbedo(TAUS[name], 0, 0)));
-  const r = L.wetten(0.35, 0.5);                                                                  // sanity of the spec's red leaf
-  const wr = [0.35, 0.035, 0.02].map((v) => L.wetten(v, 0.5));
-  expect(wr[0]).toBeCloseTo(0.252, 3); expect(wr[1]).toBeCloseTo(0.0196, 4); expect(wr[2]).toBeCloseTo(0.0110, 4);
-  expect(r).toBeCloseTo(wr[0], 15);
+test("wet litter saturates as it darkens: min/max falls at w 0.5 for every TAUS leaf, the redhead, and brown", () => {
+  for (const [name, tau] of Object.entries({ ...TAUS, REDHEAD })) expect(sat(L.litterAlbedo(tau, 0, 0.5)), name).toBeLessThan(sat(L.litterAlbedo(tau, 0, 0)));
+  expect(sat(L.litterAlbedo(TAUS.red, 1, 0.5)), "brown").toBeLessThan(sat(L.ALBEDO_BROWN));
 });
 
-test("the design's numbers: fresh ×0.719 at w 0.5, the browns ×0.567–0.603, fresh ×0.177 at w 1", () => {
-  expect(L.wetten(0.35, 0.5) / 0.35).toBeCloseTo(0.719, 2);
-  expect(Math.abs(L.wetten(0.35, 0.5) / 0.35 - 0.719)).toBeLessThan(0.005);
-  const ratios = L.ALBEDO_BROWN.map((v) => L.wetten(v, 0.5) / v);
-  for (const q of ratios) { expect(q).toBeGreaterThanOrEqual(0.567 - 0.002); expect(q).toBeLessThanOrEqual(0.603 + 0.002); }
-  expect(ratios[0]).toBeCloseTo(0.603, 2); expect(ratios[1]).toBeCloseTo(0.583, 2); expect(ratios[2]).toBeCloseTo(0.567, 2);
-  expect(Math.abs(L.wetten(0.35, 1) / 0.35 - 0.177)).toBeLessThan(0.005);
-  expect(L.wetten(0.35, 5)).toBe(L.wetten(0.35, 1));                                              // w is clamped at full soaking
+test("the wet numbers, per channel, at κ 2 and w 0.5: brown ×(.564, .538, .512), a fresh red leaf ×(.685, .553, .549) — the strongly absorbed channels drop most; w is clamped at full soaking", () => {
+  const ratios = (age, w) => { const a = L.litterAlbedo(TAUS.red, age, w), d = L.litterAlbedo(TAUS.red, age, 0); return a.map((v, c) => v / d[c]); };
+  ratios(1, 0.5).forEach((q, c) => { expect(Math.abs(q - [0.564, 0.538, 0.512][c]), `brown ${c}`).toBeLessThan(0.002); });
+  ratios(0, 0.5).forEach((q, c) => { expect(Math.abs(q - [0.685, 0.553, 0.549][c]), `red ${c}`).toBeLessThan(0.002); });
+  ratios(0, 1).forEach((q, c) => { expect(Math.abs(q - [0.145, 0.061, 0.058][c]), `red w1 ${c}`).toBeLessThan(0.002); });
+  expect(L.litterAlbedo(TAUS.red, 0, 5)).toEqual(L.litterAlbedo(TAUS.red, 0, 1));
 });
 
-test("the gate is bit-identical: litterAlbedo(tau, age, 0) is the dry law, and the K–M pair is only reachable inside `if (wet > 0)`", () => {
-  const dry = (tau, age) => {                                                                     // a frozen copy of the dry law as it stood before wetness
-    const hue = leafHue([Math.exp(-tau[0]), Math.exp(-tau[1]), Math.exp(-tau[2])]), s = math.smoothstep(0, 1, age);
-    return [0, 1, 2].map((c) => L.LITTER_PEAK * hue[c] * (1 - s) + L.ALBEDO_BROWN[c] * s);
-  };
+test("the gate: w ≤ 0 (and NaN) is the dry evaluation to the bit — S_w = 1 and F_w = F exactly, so nothing wet is computed", () => {
   const rnd = math.mulberry32(11);
   for (let i = 0; i < 200; i++) {
-    const tau = [rnd() * 3, rnd() * 5, rnd() * 5], age = rnd() * 1.4, want = dry(tau, age);
-    const a = L.litterAlbedo(tau, age, 0), b = L.litterAlbedo(tau, age);
-    for (let c = 0; c < 3; c++) { expect(Object.is(a[c], want[c])).toBe(true); expect(Object.is(b[c], want[c])).toBe(true); }
+    const tau = [rnd() * 3, rnd() * 5, rnd() * 5], age = rnd() * 1.4, want = L.litterAlbedo(tau, age, 0);
+    for (const w of [undefined, -0.3, NaN, -0]) { const a = L.litterAlbedo(tau, age, w); for (let c = 0; c < 3; c++) expect(Object.is(a[c], want[c]), `w ${w}`).toBe(true); }
+    for (let c = 0; c < 3; c++) {                                                                                    // and the dry value is the unwetted expression, not a lookalike
+      const s = math.smoothstep(0, 1, age), q = L.LITTER_KAPPA * ((1 - s) * tau[c] + s * L.TAU_BROWN[c]);
+      if (age < 1) expect(Object.is(want[c], L.F_CUTICLE + (1 - L.F_CUTICLE) * L.kmReflect(q))).toBe(true);
+    }
   }
-  const src = readFileSync(new URL("./komorebi-litter.js", import.meta.url), "utf8").replace(/\/\/.*$/gm, "");
-  const body = src.slice(src.indexOf("function litterAlbedo"), src.indexOf("function litterAge"));
-  expect(body).toMatch(/if\(wet > 0\)[^\n]*wetten\(/);
-  expect(body.replace(/if\(wet > 0\)[^\n]*\n/, "")).not.toContain("wetten(");
 });
 
 test("the buffer carries the wet albedo: leaf_wetness 0.5 → litterAlbedo(tau, age, 0.5); 0 → the dry value", () => {

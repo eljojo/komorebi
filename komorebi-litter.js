@@ -10,7 +10,6 @@
 // (VS_LITTER/FS_LITTER) and the floor's read (GLSL_T_FLOOR_MATERIAL) are the authority on the pixels.
 // ============================================================================
 import { DEG, TAU, clamp, hash3, makeGauss, mulberry32, smoothstep } from './komorebi-math.js';
-import { leafHue } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
 import { bindLeafShape } from './komorebi-grove.js';
 import { leafShape, leafVariant } from './komorebi-leaf.js';
@@ -21,40 +20,44 @@ import { leafShape, leafVariant } from './komorebi-leaf.js';
 const LITTER_SALT = 0x2B9D4F6E;
 const LITTER_SIGMA = 0.3;   // the scatter about the drift, as a share of it: a leaf is carried, not aimed (σ = 0.3·h·litter_drift_m)
 
-// THE COLOUR — PROVISIONAL until a fresh-vs-dry litter photo against a grey card replaces both numbers. A fallen leaf reflects the hue
-// of its own pigments: e^(−τ) is what it PASSES, and its hue (the transmittance with its brightness divided out, §3.5's idiom) is what
-// it reflects, at the peak reflectance of a green-to-red leaf's brightest channel (0.35). That is FRESH. Over `litter_age` it browns —
-// a smoothstep of (phenology − its day)/litter_age toward a dry-leaf brown — so the carpet ages red → copper → brown, the last to fall
-// on top. Linear reflectance: LDR, so the texture is RGBA8.
-const LITTER_PEAK = 0.35;
+// THE COLOUR (spec §4.7, "What colour it lies in"). A fallen leaf is seen by REFLECTION, and a leaf reflects because it scatters: the strongly absorbed
+// channel comes back from the shallowest scatterings, so a reflectance saturates far less than the transmittance e^(−τ) does. The first law here was the
+// transmittance's hue laid on the ground (0.35·leafHue(e^(−τ))): maximally saturated, an orange-yellow stain, and the dead end this replaces — the carpet is
+// not the canopy's cast laid on the floor. The carpet is several leaves deep where it shows, so the honest object is the opaque pile, Kubelka–Munk R∞, whose
+// one unknown is the absorption per unit τ relative to the tissue's scattering: κ. PROVISIONAL at 2 until the Gatineau grey card fits it (with F and w's scale).
+// Linear reflectance: LDR, so the texture is RGBA8.
+const LITTER_KAPPA = 2;
+const F_CUTICLE = 0.04;   // the cuticle's surface share, dry: frost that reflects whatever the pigments do
 const ALBEDO_BROWN = [0.12, 0.08, 0.05];
 
-// THE RAIN DAY (`leaf_wetness`; spec §4.7, "Wet litter"). José: "one day after rain many leaves fell on the ground". A dead leaf on the ground soaks: water fills
-// the air spaces of its tissue, the index contrast at every cell-wall/air interface falls from (n_wall − 1) to (n_wall − n_water), and scattering goes as Δn². Less
-// scattering lets light travel deeper before it returns, so more of it is absorbed: the leaf darkens AND saturates in one move, the strongly absorbed channel most.
-// Dead tissue only: a red leaf still on the tree is alive and keeps its frost, so the carpet is the only reader of this.
+// THE RAIN DAY (`leaf_wetness`; spec §4.7). José: "one day after rain many leaves fell on the ground". A dead leaf on the ground soaks: water fills the air spaces of
+// its tissue, the index contrast at every cell-wall/air interface falls from (n_wall − 1) to (n_wall − n_water), and scattering goes as Δn². Less scattering lets
+// light travel deeper before it returns, so more is absorbed: the leaf darkens AND saturates in one move, the strongly absorbed channel most. Dead tissue only: a
+// red leaf still on the tree is alive and keeps its frost, so the carpet is the only reader of this.
 const N_WALL = 1.47, N_WATER = 1.333;
 const WET_RHO = ((N_WALL - N_WATER)/(N_WALL - 1))**2;   // ≈ 0.085: the share of its scattering a fully soaked leaf keeps
 // Kubelka–Munk for an opaque pile. kmReflect is the STABLE inverse (not the textbook 1 + X − √(X² + 2X), which is NaN at R = 0 and cancels badly below R ≈ 1e-4):
 // X = Infinity lands on 0 cleanly and small R stays exact.
 const kmInvert = (R) => (1 - R)*(1 - R)/(2*R);
 const kmReflect = (X) => 1/(1 + X + Math.sqrt(X*X + 2*X));
-// S falls by the index law while K is the pigments' and does not move. w ≤ 0 (or NaN) is the gate: no arithmetic at all, R to the bit.
-function wetten(R, w){
-  if(!(w > 0)) return R;
-  if(R >= 1) return 1;   // nothing to absorb: white never darkens
-  if(R <= 0) return 0;
-  return kmReflect(kmInvert(R)/(1 - Math.min(w, 1)*(1 - WET_RHO)));
-}
+// The pigment load (in τ units) whose pile reflects ALBEDO_BROWN, once the cuticle's share is taken off: so age ≥ 1 IS ALBEDO_BROWN, whatever the leaf was.
+const TAU_BROWN = ALBEDO_BROWN.map((R) => kmInvert((R - F_CUTICLE)/(1 - F_CUTICLE))/LITTER_KAPPA);
 
 // ONE function, so the browning process (P4b) replaces it behind the same signature and nothing else moves: (a leaf's τ, its age in
-// litter_age units, the effective wetness) -> the albedo it reflects with. Age 0 is the leaf's own hue; age ≥ 1 is ALBEDO_BROWN to the bit, whatever the leaf was.
-// Wetness is applied LAST, to the dry law's output: the age mix is the leaf's state, not a coverage mix, so K–M on the mixed R is the right object, and the honest
-// reflectance that replaces the dry law needs no change here. `wet` sits before `out`: a caller that left `out` in its slot would hand an array to every comparison.
+// litter_age units, the effective wetness) -> the albedo it reflects with. Age 0 is the leaf's own pigments; age ≥ 1 is ALBEDO_BROWN to the bit, whatever the leaf was.
+// Browning is mixed INSIDE the pigments (K-space, in q), not in reflectance: a reflectance mix would need kmInvert on the mixed state for wetness, a τ addition could
+// never raise a red leaf's green toward brown's, and the K mix is linear in the pigments, monotone per channel toward brown, exact at age 1 — and it is P4b's hook.
+// Wetness cuts S by the index law (q = K/S rises) and the cuticle's frost F with it: a water film turns its diffuse frost into a mirror lobe a Lambertian floor never
+// shows. w ≤ 0 (or NaN) clamps to 0, where S_w = 1 and F_w = F exactly: the gate is the arithmetic itself, no wet term to compute.
+// `wet` sits before `out`: a caller that left `out` in its slot would hand an array to every comparison.
 function litterAlbedo(tau, age, wet = 0, out = [0, 0, 0]){
-  const hue = leafHue([Math.exp(-tau[0]), Math.exp(-tau[1]), Math.exp(-tau[2])]), s = smoothstep(0, 1, age);
-  for(let c = 0; c < 3; c++) out[c] = LITTER_PEAK*hue[c]*(1 - s) + ALBEDO_BROWN[c]*s;
-  if(wet > 0) for(let c = 0; c < 3; c++) out[c] = wetten(out[c], wet);
+  if(age >= 1 && !(wet > 0)){ out[0] = ALBEDO_BROWN[0]; out[1] = ALBEDO_BROWN[1]; out[2] = ALBEDO_BROWN[2]; return out; }   // exact to the bit (the formula is within ~1e-16)
+  const s = smoothstep(0, 1, age), w = Math.min(Math.max(wet, 0), 1) || 0;
+  const Sw = 1 - w*(1 - WET_RHO), Fw = F_CUTICLE*(1 - w);
+  for(let c = 0; c < 3; c++){
+    const q = LITTER_KAPPA*((1 - s)*tau[c] + s*TAU_BROWN[c])/Sw;
+    out[c] = Fw + (1 - Fw)*kmReflect(q);
+  }
   return out;
 }
 // How old a leaf lies, in litter_age units: 0 the day it fell (phenology = its D). A litter_age of 0 is no time at all to brown in, so
@@ -227,4 +230,4 @@ function makeLitter(hub){
 // What the engine holds in place of the carpet in a bundle that cut it (embed-build.mjs, FEATURES.litter): nothing to bake, nothing to release.
 const NO_LITTER = { refreshLitter: () => {} };
 
-export { NO_LITTER, LITTER_SALT, LITTER_SIGMA, LITTER_PEAK, ALBEDO_BROWN, N_WALL, N_WATER, WET_RHO, kmInvert, kmReflect, wetten, INSTANCE_FLOATS, litterAlbedo, litterAge, litterLanding, litterOrder, litterInstances, newLitterState, makeLitter };
+export { NO_LITTER, LITTER_SALT, LITTER_SIGMA, LITTER_KAPPA, F_CUTICLE, TAU_BROWN, ALBEDO_BROWN, N_WALL, N_WATER, WET_RHO, kmInvert, kmReflect, INSTANCE_FLOATS, litterAlbedo, litterAge, litterLanding, litterOrder, litterInstances, newLitterState, makeLitter };
