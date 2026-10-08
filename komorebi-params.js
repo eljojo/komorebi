@@ -69,6 +69,10 @@ const CANOPY_KEYS = [
   'leaf_drop','drop_start','drop_span','drop_exposure',   // abscission (§4.5): which leaves are still on the tree is decided at regrow, so it morphs the SAME grove too (a leaf fades out by §5.3's rule, never pops)
   'litter_age','litter_drift_m',   // the litter carpet (§4.7): how browned each leaf lies and how far the season's wind carried it — read only by the regrow-time bake, so they morph with the grove they are baked from
 ];
+// THE SEASON SET (§4.5, "Re-seasoning"): the canopy keys a phenology change may move without the grove's SKELETON moving — they change only
+// each leaf's tau, whether it is still hanging, and what lies on the ground. A grove built with `keepSeason` re-runs exactly these over its
+// cached leaves (komorebi-grove.js reseasonGrove); every other canopy key regrows. A subset of CANOPY_KEYS (reseason.test.js holds it).
+const SEASON_KEYS = ['phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction','turn_exposure','exposure_absolute','leaf_drop','drop_start','drop_span','drop_exposure'];
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
   'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis','leaf_shape',   // leaf_shape: a different outline is a different texture and a different quad — it cannot interpolate, and a transition's crossfade bakes the two groves' shapes in one pass
   'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
@@ -357,4 +361,4 @@ function migrateLegacy(obj){
   return out;
 }
 
-export { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, LEGACY_KEYS, migrateLegacy };
+export { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, LEGACY_KEYS, migrateLegacy };

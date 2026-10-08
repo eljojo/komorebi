@@ -462,6 +462,13 @@ const LIVE_CHANGES = [
   { name: 'afternoon 7 (the season moves and the grove regrows: the carpet follows it, fresher and more of it)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.8, litter: 1 }, key: 'phenology', value: 0.95, apply: 'canopy', litter: true },
   // (the same leaves, fallen on the same days, in another colour: nothing the carpet's signature holds has moved but the grove itself, which a regrow makes anew)
   { name: 'afternoon 7 (the grove regrows with the same leaves fallen in another colour: the carpet is re-laid)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9, litter: 1, anthocyanin: 0.8, turn_exposure: 1 }, key: 'anthocyanin', value: 0.2, apply: 'canopy', litter: true },
+  // THE SEASON SCOPE (§4.5 "Re-seasoning"): the season set moved on a running engine and re-run over the grove's cached leaves must show the frame an engine born at the new
+  // season shows. The first row is the lazy path (the engine was born without a cache, so the apply is one full build with keepSeason); `prime` first moves the season by
+  // a little at tick 10 so the apply that is measured at tick 15 is the FAST path, the re-season itself, on a cache that is already built.
+  { name: 'afternoon 7 (the season scope: a phenology change on a running engine shows the frame an engine born at it shows)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', litter: true },
+  { name: 'afternoon 7 (the season scope, on a built cache: the re-season itself)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', prime: 0.85, litter: true },
+  { name: 'park 1 (the season scope, faithful: the cast is re-cast from the re-seasoned leaves)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', litter: true },
+  { name: 'park 1 (the season scope, faithful, on a built cache: the re-season itself)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', prime: 0.85, litter: true },
 ];
 // canopy_fill crossed on a RUNNING engine (it tweens, so nothing rebuilds when it does). `sky: true` = the camera has no
 // surface to light, so the fill must stay unallocated and the frame must not move.
@@ -1054,7 +1061,7 @@ async function main() {
       try {
         const opts = c.rebake ? { rebake: true } : undefined;
         a = await page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q), [c.preset, { ...c.over, [c.key]: c.value }, 36, opts]);   // born with the knob
-        b = await page.evaluate(([p, o, k, v, q]) => window.__liveChange(p, o, k, v, q), [c.preset, c.over, c.key, c.value, { rebake: !!c.rebake, apply: c.apply || null }]);   // the knob moved at tick 15
+        b = await page.evaluate(([p, o, k, v, q]) => window.__liveChange(p, o, k, v, q), [c.preset, c.over, c.key, c.value, { rebake: !!c.rebake, apply: c.apply || null, prime: c.prime ?? null }]);   // the knob moved at tick 15
       } catch (e) { record('live', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); continue; }
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.capture.id]);
       const never = await page.evaluate(([p, o, q]) => window.__run(p, o, [36], q), [c.preset, c.over, c.rebake ? { rebake: true } : undefined]);   // ...and the frame it must NOT be: the knob never moved

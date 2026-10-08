@@ -300,6 +300,11 @@ function dropDay(P, phiD){ return phiD < P.leaf_drop ? P.drop_start + P.drop_spa
 // ending at the leaf's day, so a season that moves by a hair moves the canopy by a hair. cov <- cov . w scales the leaf's
 // tau and the fade its ballistic shadow rides on together. GATE: before the fade begins w is 1 with no arithmetic at all.
 const DROP_EPS = 0.01;
+// CALM, for a season that is played live (macros.js): no applied step of the phenology may be wider than half a fade window, or it jumps the fade of every
+// leaf whose window it spans and pops it (salt-and-pepper thinning, §5.3). A full-speed drag moves ~0.006 a frame at 60 Hz, inside the clamp; a rate-gated
+// catch-up after a slow regrow moves ~0.018, which is not. THE TRADE: while the clamp binds the season moves slower than the hand, at most
+// TWEEN_STEP per apply, and arrives a beat late (the landing still snaps to the stop's exact dict).
+const TWEEN_STEP = DROP_EPS/2;
 function retention(D, p){ return p > D - DROP_EPS ? 1 - smoothstep(D - DROP_EPS, D, p) : 1; }
 
 // A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
@@ -445,4 +450,4 @@ function growNode(g, rng, out, base, dir, len, level, limb){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

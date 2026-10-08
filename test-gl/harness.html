@@ -975,7 +975,7 @@ window.__fillToggle = (presetName, overrides, opts) => new Promise((resolve, rej
 window.__liveChange = (presetName, overrides, key, value, opts) => new Promise((resolve, reject) => {
   const base = PRESETS[presetName];
   if (!base) return reject(new Error(`unknown preset '${presetName}'`));
-  const o = Object.assign({ rebake: false, apply: null }, opts || {});
+  const o = Object.assign({ rebake: false, apply: null, prime: null }, opts || {});
   const params = Object.assign({}, base, overrides || {}, FREEZE);
   const canvas = document.createElement('canvas');
   canvas.className = 'stage'; canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
@@ -994,6 +994,7 @@ window.__liveChange = (presetName, overrides, key, value, opts) => new Promise((
     ticks++;
     if (o.rebake && ticks === 4) eng.apply('bake');
     if (done) return;
+    if (ticks === 10 && o.prime !== null) { eng.params[key] = o.prime; eng.apply(o.apply); }   // (a first move of the season, so the apply below finds the cache the first one built)
     if (ticks === 15) { eng.params[key] = value; if (o.apply) eng.apply(o.apply); }   // (a knob that regrows the grove is moved the way the editor moves it: assigned, then the rebuild scope run)
     if (ticks < 36) return;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);

@@ -56,7 +56,7 @@ export function makeEditorTools(hub){
   // inset leaf scatter: one blob per LEAF (count = leaves_per_cluster × foliage_density) so the density
   // slider visibly fills/thins the preview. Base positions are scattered once per regrow (keyed on `hier`
   // identity — every canopy knob makes a new hier) and reprojected each frame; the proj buffer is reused.
-  let treeLeafHier=null, treeLeafBase=null, treeLeafProj=null;
+  let treeLeafHier=null, treeLeafW=null, treeLeafBase=null, treeLeafProj=null;
   function buildTreeLeaves(){
     // Drive the preview off the grove's TWIGS (one cluster per leaf-bearing node) — NOT terminal segments. With droop,
     // a twig is split into sub-segments all tagged level≥levels, so the old segment-filter over-drew nSub×nLeaf clusters
@@ -87,7 +87,7 @@ export function makeEditorTools(hub){
     }
     treeLeafBase=new Float32Array(base);
     treeLeafProj=new Float32Array(base.length/5*6);   // base: x,y,z,cov,tint (5) -> proj: x,y,r,g,b,size (6)
-    treeLeafHier=hub.hier;
+    treeLeafHier=hub.hier; treeLeafW=lw;
   }
   function treeInsetGeom(){
     const base = Math.min(300, canvas.width*0.32, canvas.height*0.42);
@@ -154,7 +154,7 @@ export function makeEditorTools(hub){
       const wpx=Math.max(0.6, 4.4*Math.pow(ptf, s.level));   // trunk (level 0) thick -> twig thin, by Δ
       pushQuad(s.a, s.b, wpx, lerp(0.05,0.30+0.20*f,cv), lerp(0.07,0.22+0.16*f,cv), lerp(0.09,0.12+0.06*f,cv)); }
     // leaf blobs: the scatter on every terminal twig, so the density slider fills/thins the preview.
-    if(treeLeafHier!==hub.hier) buildTreeLeaves();
+    if(treeLeafHier!==hub.hier || treeLeafW!==hub.hier.leafW) buildTreeLeaves();   // a re-season (§4.5) keeps the hier and makes a new leafW
     const lsz=S*0.04, nLf=treeLeafBase.length/5;
     // per-leaf opacity falls as the per-twig count climbs, so a dense canopy reads as a translucent haze the
     // branches show through (option 3) instead of an opaque green wall — density stays legible as coverage.

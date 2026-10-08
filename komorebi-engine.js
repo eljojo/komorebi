@@ -96,7 +96,7 @@ function create(canvas, opts){
   // webglcontextrestored calls it again, because a lost context kills all of them. Hence `let`, not `const`.
   let progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
   let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
-  let bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
+  let reseasonGrove, reseasonable, bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -288,7 +288,7 @@ function create(canvas, opts){
     Object.assign(hub, { extTimer, progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz,
                          quadBuf, emptyVAO, bakeFBO, faithFBO, fillFBO, occTex });
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
-    ({ buildGrove } = makeGrove(hub)); hub.buildGrove = buildGrove;
+    ({ buildGrove, reseasonGrove, reseasonable } = makeGrove(hub)); hub.buildGrove = buildGrove;
     ({ bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow });
     ({ refreshLitter } = makeLitter(hub)); hub.refreshLitter = refreshLitter;   // after the bake: the carpet is read over the fill's frame, and asks the bake module for it
     ({ drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));
@@ -462,11 +462,24 @@ function create(canvas, opts){
   // regenSource reads only params, perf and the transition's bloom; nothing the textures or the grove set up.
   function rebuildAll(){ rebuildTextures(); regenCanopy(); regenSource(); bake(); }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
+  // The season axis (§4.5 "Re-seasoning"): a change to the season set alone is re-run over the grove's cached leaves; anything else the grove reads, or a grove the cache
+  // does not describe, regrows (with the cache, so the NEXT one is the fast one). Not during a transition (the incoming grove shares the engine-global faith.*, and the
+  // morph owns the canopy keys). The carpet's signature keys on the grove's identity plus phenology and the litter keys, NOT the capacities, so an anthocyanin-only
+  // re-season would leave it stale: dropping the grove it was baked from makes the next refreshLitter bake it.
+  // Returns the path it took, 'reseason' or 'build': the editor's cost gate must not fold a one-off cache build into its EMA.
+  function reseason(){
+    let path = 'reseason';
+    if(!hub.groveIn && !trans.active && reseasonable(hub.grove)){ reseasonGrove(hub.grove, params); litter.grove = null; }
+    else { installGrove(buildGrove(hub.hier, { keepSeason: true })); path = 'build'; }
+    bake();
+    return path;
+  }
   function apply(scope){
     if(lost) return;                                  // see setParams
     if(scope==='source') regenSource();
     else if(scope==='bake') bake();                  // drift moves leaves at bake time only
     else if(scope==='canopy'){ regenCanopy(); bake(); }
+    else if(scope==='season') return reseason();
     else if(scope==='textures'){ rebuildTextures(); regenCanopy(); bake(); }
     else if(scope==='perf') resetPerf();
   }

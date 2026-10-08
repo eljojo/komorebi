@@ -6,7 +6,8 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
-import { MACROS, createBus, macroParams, macroUsable, macroValue } from "./macros.js";
+import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep, TWEEN_OFF_MS, TWEEN_SLOW_MS, TWEEN_BUDGET } from "./macros.js";
+import { DROP_EPS, TWEEN_STEP } from "./komorebi-math.js";
 import { PRESETS } from "./presets.js";
 
 const MORPH = new Set(MORPH_KEYS), CANOPY = new Set(CANOPY_KEYS);
@@ -37,12 +38,12 @@ test("non-live macros stay inside MORPH ∪ CANOPY (no TOPO/MODE)", () => {
   }
 });
 
-test("a tweened macro is never `live` (the editor branches on truthiness), regrows the canopy, and has a positive time constant", () => {
+test("a tweened macro is never `live` (the editor branches on truthiness), rides the re-season scope, and has a positive time constant", () => {
   const tweened = Object.entries(MACROS).filter(([, m]) => m.tween !== undefined);
   expect(tweened.map(([k]) => k)).toContain("season");
   for (const [key, m] of tweened) {
     expect(m.live, `${key}: live must be falsy, not a string`).toBe(false);
-    expect(m.scope, `${key}: a tween rides the canopy regrow`).toBe("canopy");
+    expect(m.scope, `${key}: a tween rides the re-season scope (the engine decides fast or full)`).toBe("season");
     expect(typeof m.tween === "number" && m.tween > 0, `${key}: tween must be seconds > 0`).toBe(true);
   }
   expect(MACROS.season.tween).toBe(0.8);
@@ -197,7 +198,7 @@ test("tween: converges to the target, the applied phenology is monotone, and the
   const ph = calls.map((c) => c.dict.phenology);
   expect(ph.length).toBeGreaterThan(10);
   for (let i = 1; i < ph.length; i++) expect(ph[i] >= ph[i - 1], `step ${i}`).toBe(true);
-  expect(calls.every((c) => c.scope === "canopy" && c.live === false)).toBe(true);
+  expect(calls.every((c) => c.scope === "season" && c.live === false)).toBe(true);
   expect(calls[calls.length - 1].dict).toEqual(macroParams("season", 1));
   expect(bus.get("season")).toBe(1);
   const n = calls.length;
@@ -270,10 +271,91 @@ test("tween: get() reads the look (the probe), not the target", () => {
   expect(bus.get("season")).toBeLessThan(1);
 });
 
-test("the one-pole step: x += (target - x)(1 - e^(-dt/tau)), so it composes across any frame split", () => {
-  const a = rig(PRESETS.memories), b = rig(PRESETS.memories);
-  a.bus.set("season", 1); b.bus.set("season", 1);
+test("the one-pole step: x += (target - x)(1 - e^(-dt/tau)), so it composes across any frame split (while the step clamp is slack)", () => {
+  const a = rig(), b = rig();                      // afternoon 4 toward a stop 0.02 away: far inside the clamp, which is deliberately NOT composable when it binds
+  a.bus.set("season", 0.57); b.bus.set("season", 0.57);
   for (let i = 0; i < 10; i++) a.bus.tick(0.01);
   b.bus.tick(0.1);
   expect(a.calls[a.calls.length - 1].dict.phenology).toBeCloseTo(b.calls[b.calls.length - 1].dict.phenology, 9);
+});
+
+// ---- calm: the step clamp --------------------------------------------------------------------------------------------------
+// A leaf fades over DROP_EPS of phenology. A step wider than that pops the leaves whose fade it jumps (a salt-and-pepper
+// thinning), and a rate-gated catch-up after a slow regrow is exactly such a step. So an applied step of the probe is at most
+// TWEEN_STEP = DROP_EPS/2; the ease lags the clock while it binds, and the landing is still the stop's exact dict.
+test("the step clamp: TWEEN_STEP is half a fade window, defined beside DROP_EPS", () => {
+  expect(TWEEN_STEP).toBe(DROP_EPS / 2);
+});
+
+test("the step clamp: a tick whose ease would move phenology further applies exactly TWEEN_STEP and keeps the remainder", () => {
+  const { bus, calls } = rig();                    // afternoon 4: phenology 0.5
+  bus.set("season", 1);
+  bus.tick(0.4);                                   // the ease alone would take ~0.2 of the way: ~0.06 of phenology
+  expect(calls.length).toBe(1);
+  expect(calls[0].dict.phenology).toBe(0.5 + TWEEN_STEP);
+  bus.tick(0.4);
+  expect(calls[1].dict.phenology).toBe(0.5 + TWEEN_STEP + TWEEN_STEP);   // the remainder is still owed: the next tick spends it
+  for (let i = 1; i < calls.length; i++) expect(Math.abs(calls[i].dict.phenology - calls[i - 1].dict.phenology)).toBeLessThanOrEqual(TWEEN_STEP * (1 + 1e-12));
+});
+
+test("the step clamp: no applied step ever exceeds it, in either direction, and the landing is still the stop's exact dict", () => {
+  for (const [start, target] of [[PRESETS.memories, 1], [PRESETS.montebello, 0]]) {
+    const { bus, calls } = rig(start);
+    bus.set("season", target);
+    for (let i = 0; i < 3000; i++) bus.tick(1 / 60);
+    let prev = start.phenology;
+    for (const c of calls) { expect(Math.abs(c.dict.phenology - prev)).toBeLessThanOrEqual(TWEEN_STEP * (1 + 1e-9)); prev = c.dict.phenology; }
+    expect(calls[calls.length - 1].dict).toEqual(macroParams("season", target));
+  }
+});
+
+test("the step clamp: a slow drag is unchanged, step for step", () => {
+  const { bus, calls } = rig();
+  bus.set("season", 0.57);
+  bus.tick(1 / 60);
+  const x = 0.55 + (0.57 - 0.55) * (1 - Math.exp(-1 / 60 / MACROS.season.tween));
+  expect(calls[0].dict).toEqual(macroParams("season", x));
+});
+
+test("the step clamp: the first apply is measured from the look's own phenology", () => {
+  const { bus, calls } = rig(PRESETS.montebello);
+  bus.set("season", 0);
+  bus.tick(1e-3);
+  expect(Math.abs(calls[0].dict.phenology - 0.9)).toBeLessThanOrEqual(TWEEN_STEP * (1 + 1e-9));
+});
+
+// ---- the cost gate's step (the editor's EMA, pure so it can be held without a DOM) ----------------------------------------------
+const fresh = () => ({ cost: 0, waitUntil: 0, off: false, last: null });
+const core = ({ cost, waitUntil, off }) => ({ cost, waitUntil, off });
+test("the gate: a one-off cache 'build' feeds neither the EMA nor the wait, however slow", () => {
+  expect(core(tweenGateStep(fresh(), 200, "build", 1000))).toEqual(core(fresh()));
+  const warm = { cost: 6, waitUntil: 0, off: false, last: "reseason" };
+  expect(core(tweenGateStep(warm, TWEEN_OFF_MS * 4, "build", 1000))).toEqual(core(warm));
+});
+
+test("the gate: a drag that starts in the fall — one 55 ms build, then re-seasons — stays live", () => {
+  let s = fresh();
+  s = tweenGateStep(s, 55, "build", 0);
+  expect(s.off).toBe(false);
+  s = tweenGateStep(s, 6, "reseason", 100);
+  expect(core(s)).toEqual({ cost: 6, waitUntil: 0, off: false });
+});
+
+test("the gate: consecutive builds (the spring half regrows every tick) ARE measured, so a heavy look still falls back", () => {
+  let s = tweenGateStep(fresh(), 80, "build", 0);   // the cache build: free
+  s = tweenGateStep(s, 80, "build", 100);           // the next tick regrew again: that is the recurring cost
+  expect(s.cost).toBe(80);
+  expect(s.off).toBe(true);
+});
+
+test("the gate: reseason and canopy applies feed the EMA as before (wait over the slow line, off over the off line)", () => {
+  let s = tweenGateStep(fresh(), 30, "reseason", 1000);
+  expect(s.cost).toBe(30);
+  expect(s.waitUntil).toBeCloseTo(1000 + 30 / TWEEN_BUDGET, 9);
+  expect(s.off).toBe(false);
+  s = tweenGateStep(fresh(), 60, "canopy", 0);
+  expect(s.off).toBe(true);
+  s = tweenGateStep({ cost: 10, waitUntil: 5, off: false, last: "reseason" }, 20, "reseason", 0);
+  expect(s.cost).toBeCloseTo(0.7 * 10 + 0.3 * 20, 12);
+  expect(tweenGateStep({ cost: 10, waitUntil: 5, off: false, last: "reseason" }, TWEEN_SLOW_MS - 1, "reseason", 0).waitUntil).toBe(0);
 });

@@ -5,10 +5,37 @@
 // geometry, and the per-clump data textures — allocated and RETURNED as one
 // grove value (installGrove, in the engine, makes one active). A factory over
 // the engine's shared internals (hub).
+//
+// RE-SEASONING (§4.5, P2b). The season is a function of the grove, not a regrow: a phenology change moves each leaf's tau, the retained weight w, which leaves
+// are compacted out, the litter list and leafW — and nothing else. The skeleton, every leaf's place, size, orientation, height and cluster address, the exposure field
+// and its keyed rank are the GROVE's. So a grove built with `keepSeason` keeps a per-leaf record (`g.season`), and reseasonGrove re-runs the season arithmetic
+// over it in one pass on typed arrays, landing BIT FOR BIT where a fresh buildGrove at the same params lands (reseason.test.js holds it, over every variant): the
+// slider's last tick is the resting state and nothing regrows on release.
+//   THE KEY. `season.key` is every param buildGrove READS except the season set (komorebi-params.js SEASON_KEYS), plus faithfulOn(). The engine re-seasons only
+//   while the key still matches; a changed key regrows. GROVE_READS is derived from `grep -n "params\." komorebi-grove.js` and reseason.test.js greps again, so a
+//   new read cannot slip past the key.
+//   THE CACHE IS LAZY. A summer build keeps no record (rec exists only when lit || dropping, and recording always costs ~5 ms and ~7 MB a regrow): the first
+//   'season' apply on a grove without one does one full build with keepSeason. The exposure field and its keyed rank are built by the first re-season whose gate needs
+//   `u`, and the rank is never written into (exposureBlend hands it back itself at exposure_absolute 0).
+//   GOTCHAS. A and B0 are kept as DOUBLES: the litter's `size` is read from the doubles in buildGrove, and a float32 copy differs in the last bits. A re-season writes
+//   into the EXISTING buffers (layerVAO[l].buf, faith.buf), so the VAO pointers stay valid; it never touches `gr`, the hier springs, clusterData, clusterTex or leafTex —
+//   which is also why there is no shallow-copy grove: installGrove would free the textures it shared. faith.* is engine-global (a second grove built for a transition
+//   writes it), so the engine re-seasons only with no transition and with faith.buf still this grove's. leafW is a NEW array each time: the tree preview keys on it.
+//   MEASURED (bun, median of 7, fall at t 0.9): afternoon 7 73 ms a regrow, the void 201, montebello 15 — see the cost test in reseason.test.js for the re-season's.
 // ============================================================================
 import { DEG, DROP_EPS, FAITH_MAX_RATIO, GOLDEN, clamp, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, makeGauss, mulberry32, redGain, retention, turnOrder } from './komorebi-math.js';
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
 import { LEAF_ID_FRAC, LEAF_SAMPLES, leafShape, leafVariant } from './komorebi-leaf.js';
+
+// Every param buildGrove reads besides the season set, and so the whole of `season.key` (faithful_canopy and receiver reach it through faithfulOn(), which the key carries
+// as the boolean it is). Held against a grep of this file in reseason.test.js.
+export const GROVE_READS = [
+  'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
+  'cluster_spread_m','crown_aspect','droop','faithful_canopy','foliage_density','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaves_per_cluster',
+  'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','trans_b','trans_g','trans_r','tree_count','trunk_radius_m','view_extent_m',
+];
+export const seasonKey = (params, faithful) => `${GROVE_READS.map(k => params[k]).join('|')}|${faithful ? 1 : 0}`;
+const SREC = 11;   // a season record: x, y, h, A, B0, area, j, k, cov, layer, start of the leaf's 17 floats in its layer's buffer (the faithful record's first 16 are the same numbers)
 
 export function makeGrove(hub){
   const { gl, params, MAX_TEX, quadBuf, faithfulOn, occ, faith, sky } = hub;
@@ -21,7 +48,7 @@ export function makeGrove(hub){
   // (occ and faith are still written straight to engine state below. They belong to the ACTIVE grove, and the
   // crossfade's gate excludes both of their consumers — wood needs branch_tau > 0, faith needs faithfulOn() —
   // so a second grove never needs its own copy of either. If that gate ever widens, they move in here too.)
-  function buildGrove(prevHier){
+  function buildGrove(prevHier, { keepSeason = false } = {}){
     const layerVAO = [];   // this grove's own; the OUTGOING grove's GL objects are freed by installGrove, not here
     const E = params.canopy_extent_m;
     const tau = [
@@ -236,6 +263,8 @@ export function makeGrove(hub){
     const lit = senescing && params.turn_exposure > 0;
     const dropping = params.leaf_drop > 0 && params.phenology > params.drop_start - DROP_EPS;
     const rec = (lit || dropping) ? [] : null;
+    const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
+    let sAt = 0;
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const rng  = mulberry32(hash3(params.seed>>>0, j, 101));               // arrangement stream
@@ -284,8 +313,10 @@ export function makeGrove(hub){
         faithData.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
                   lt[0]*cov,lt[1]*cov,lt[2]*cov, cid, ax,ay,orient,phase, t.z, cov);   // + REAL grown height (attr 5) — cast == preview — then the fade (attr 6)
         if(rec) rec.push(x, y, t.z, Math.PI*A*B0*cov, j, k, cov, t.layer, data.length-9, faithData.length-10);   // flat area (the ellipse), orientation ignored; the two slots are where this leaf's tau starts
+        if(sRec){ sRec[sAt]=x; sRec[sAt+1]=y; sRec[sAt+2]=t.z; sRec[sAt+3]=A; sRec[sAt+4]=B0; sRec[sAt+5]=Math.PI*A*B0*cov; sRec[sAt+6]=j; sRec[sAt+7]=k; sRec[sAt+8]=cov; sRec[sAt+9]=t.layer; sRec[sAt+10]=data.length-17; sAt += SREC; }
       }
     }
+    const seasonBase = keepSeason ? layerData.map(a => Float32Array.from(a)) : null;   // the UNCOMPACTED layer records, before the rewrite below touches a tau
     let litter = null, leafW = null;
     if(rec?.length){
       const REC = 10, n = rec.length/REC;
@@ -520,10 +551,85 @@ export function makeGrove(hub){
       faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
     }
     hier.leafW = leafW;   // abscission (§4.5): each leaf's retained weight by (twig, slot) for the tree preview, which scatters its own leaves; null at the gate
-    return { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter };
+    const grove = { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter };
+    if(keepSeason){
+      let sx0=1e18, sy0=1e18, sx1=-1e18, sy1=-1e18;   // the wood's share of the faithful AABB: the season never moves it
+      for(const s of faith.segRest){
+        if(s.ax<sx0)sx0=s.ax; if(s.ax>sx1)sx1=s.ax; if(s.ay<sy0)sy0=s.ay; if(s.ay>sy1)sy1=s.ay;
+        if(s.bx<sx0)sx0=s.bx; if(s.bx>sx1)sx1=s.bx; if(s.by<sy0)sy0=s.by; if(s.by>sy1)sy1=s.by;
+      }
+      grove.season = { key: seasonKey(params, faithful), rec: sRec, base: seasonBase, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, E, tau, seg: [sx0, sx1, sy0, sy1],
+                       faithBuf: faith.buf, ex: null, rank: null, u: null, outL: null, outF: null };
+    }
+    return grove;
   }
 
-  return { buildGrove };
+  // Does this grove's cache still describe the params, and is the engine-global faith.* still its own? (see the header: THE KEY, GOTCHAS)
+  const reseasonable = (g) => !!g?.season && g.season.faithBuf === faith.buf && g.season.key === seasonKey(params, faithfulOn());
+
+  // The season arithmetic of buildGrove (the hang loop's tau, the rec rewrite, the compaction, the litter, leafW, the faithful AABB), re-run over g.season in ONE pass
+  // on typed arrays. It must stay the same arithmetic as buildGrove's, call for call — reseason.test.js holds the bytes.
+  function reseasonGrove(g, P = params){
+    const S = g.season, n = S.n, rec = S.rec, nLeaf = S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0];
+    const senescing = P.phenology > P.turn_start;
+    const lit = senescing && P.turn_exposure > 0;
+    const dropping = P.leaf_drop > 0 && P.phenology > P.drop_start - DROP_EPS;
+    let u = null;
+    if(n > 0 && (lit || (dropping && P.drop_exposure > 0))){   // mirrors buildGrove's gate for the light
+      if(!S.rank){
+        const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
+        for(let i=0;i<n;i++){ const o = SREC*i; X[i]=rec[o]; Y[i]=rec[o+1]; Z[i]=rec[o+2]; Ar[i]=rec[o+5]; K[i]=leafClock(P.seed, rec[o+6], rec[o+7]); }
+        S.ex = exposureGrid(X, Y, Z, Ar, S.E);
+        S.rank = exposureRank(S.ex, K);
+      }
+      if(!S.u) S.u = new Float64Array(n);
+      u = exposureBlend(S.rank, S.ex, P.exposure_absolute, S.u);   // at exposure_absolute 0 this IS the rank: read, never written
+    }
+    if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); }
+    const outL = S.outL, outF = S.outF, wL = new Int32Array(nLayer);
+    const track = dropping && n > 0;
+    const litter = track ? [] : null, leafW = track ? new Float32Array(S.nCluster*nLeaf).fill(1) : null;
+    let wF = 0, px0 = S.seg[0], px1 = S.seg[1], py0 = S.seg[2], py1 = S.seg[3];
+    let lx0 = 1e18, ly0 = 1e18, lx1 = -1e18, ly1 = -1e18;   // the survivors' plan extent (doubles, like buildGrove's own scan of faithData)
+    for(let i=0;i<n;i++){
+      const o = SREC*i, j = rec[o+6], k = rec[o+7];
+      let w = 1, D = 0;
+      if(track){
+        D = dropDay(P, dropPhase(dropHash(P.seed, j, k), u ? u[i] : 0, P.drop_exposure));
+        w = retention(D, P.phenology);
+        leafW[j*nLeaf + k] = w;
+      }
+      const lt = lit ? leafTau(tau, P, P.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i])) : senescing ? leafTau(tau, P, P.seed, j, k, leafT) : tau;
+      const cov = rec[o+8], cf = cov*w;
+      if(w === 0){
+        litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: cov });
+        continue;
+      }
+      const l = rec[o+9], li = rec[o+10], bl = S.base[l], dl = outL[l], at = wL[l];
+      for(let q=0;q<8;q++){ const v = bl[li+q]; dl[at+q] = v; outF[wF+q] = v; }
+      for(let c=0;c<3;c++){ const v = lt[c]*cf; dl[at+8+c] = v; outF[wF+8+c] = v; }
+      for(let q=11;q<16;q++){ const v = bl[li+q]; dl[at+q] = v; outF[wF+q] = v; }
+      dl[at+16] = cf; outF[wF+16] = rec[o+2]; outF[wF+17] = cf;
+      wL[l] = at + 17; wF += 18;
+      const x = rec[o], y = rec[o+1];
+      if(x<lx0)lx0=x; if(x>lx1)lx1=x; if(y<ly0)ly0=y; if(y>ly1)ly1=y;
+    }
+    for(let l=0;l<nLayer;l++){
+      const L = g.layerVAO[l];
+      gl.bindBuffer(gl.ARRAY_BUFFER, L.buf);
+      gl.bufferData(gl.ARRAY_BUFFER, outL[l].subarray(0, wL[l]), gl.DYNAMIC_DRAW);
+      L.count = wL[l]/17;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, S.faithBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, outF.subarray(0, wF), gl.DYNAMIC_DRAW);
+    faith.count = wF/18;
+    if(lx0<px0)px0=lx0; if(lx1>px1)px1=lx1; if(ly0<py0)py0=ly0; if(ly1>py1)py1=ly1;
+    if(px0>px1){ const h=P.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
+    faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
+    g.litter = litter; g.hier.leafW = leafW;
+  }
+
+  return { buildGrove, reseasonGrove, reseasonable };
 }
 
 // What a bake hands its program to draw a grove's leaves in THEIR shape: the outline's texture (unit 6: 0-3 are the layers, 4 and 5 the cluster textures), the

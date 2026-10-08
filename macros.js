@@ -23,6 +23,8 @@
 // macros.test.js holds these claims to the engine's own key classification.
 // ============================================================================
 
+import { TWEEN_STEP } from './komorebi-math.js';
+
 const clamp01 = (t) => Math.min(1, Math.max(0, t));
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -137,14 +139,15 @@ export const MACROS = {
   // NEVER TARGETS (macros.test.js pins the list): canopy_fill, leaf_diffuse, exposure_absolute, litter,
   // litter_resolution, litter_age, litter_drift_m, leaf_wetness. They are physics a look has or doesn't, and
   // `litter` is TOPO, which no macro may write.
-  // THE TWEEN. The slider is a target; the bus eases toward it (one pole, τ 0.8 s) and regrows the grove each
+  // THE TWEEN. The slider is a target; the bus eases toward it (one pole, τ 0.8 s) and applies the recipe each
   // tick, so the change of seasons plays as you drag. It is the bus's own and never `transitionTo`, which restarts
   // an ease-in on every input, runs resetPerf at the end of every route and dissolves (a bloom) above budget.
-  // The editor gates the regrows by their measured cost. Known waste: the exposure grid is phenology-independent
-  // (the full summer set) and is recomputed on every regrow — a re-season scope is the successor. FLOOR-gated: the
+  // Its scope is 'season' (not 'canopy'): the engine re-runs the season arithmetic over the grove's cached leaves when
+  // only the season set moved (the fall half of the axis) and regrows when the recipe moves structure (the spring half),
+  // so the bus needs no diff. The editor gates the applies by their measured cost. FLOOR-gated: the
   // sky/cloth looks author their leaf hue per species (canopy 1's chlorophyll green carries its glow).
   season: {
-    label: 'season', scope: 'canopy', live: false, tween: 0.8, probe: 'phenology', gate: 'floor',
+    label: 'season', scope: 'season', live: false, tween: 0.8, probe: 'phenology', gate: 'floor',
     stops: [
       { t: 0.0, from: 'memories', set: { phenology: 0.15, foliage_density: 0.45, branch_length_ratio: 0.91, branch_pitch_deg: 45, trans_r: 0.376, trans_g: 0.247, trans_b: 0.113, ...FALL_CAPACITY } },
       { t: 0.35, from: 'morning 1', set: { phenology: 0.40, foliage_density: 1.65, branch_length_ratio: 0.62, branch_pitch_deg: 26, trans_r: 0.26, trans_g: 0.356, trans_b: 0.195, ...FALL_CAPACITY } },
@@ -223,12 +226,24 @@ export function macroValue(key, params) {
 // A TWEEN macro (`tween: τ`) is the exception to "set applies": set() only stores the TARGET, and the caller's frame
 // clock calls tick(dt), which eases x toward it — x += (target − x)(1 − e^(−dt/τ)), one pole: no velocity state,
 // monotone, never overshoots, and it composes across any split of the same elapsed time (so a caller that skips
-// ticks while a regrow is expensive can hand the sum later and land where it would have). Each tick applies
+// ticks while a regrow is expensive can hand the sum later and land where it would have — until the step clamp below binds,
+// which deliberately does not compose: it is the one place the season is allowed to lag the clock). Each tick applies
 // macroParams(key, x) at the macro's scope ONCE, and only if that dict differs from the last one applied. Inside ε
 // of the target it snaps, applies the target's own dict once (the resting state is the stop's bytes) and idles.
 // get() on a tween macro keeps reading the look (the probe), not the target. cancel() drops every target and
 // applies nothing: the caller loading a whole look must call it, or the tween keeps writing over it.
 const TWEEN_EPS = 0.002;
+// THE COST GATE's step (the editor times every apply and feeds it here; pure so bun can hold it). Over TWEEN_SLOW_MS the next apply waits cost/TWEEN_BUDGET ms of
+// wall time; over TWEEN_OFF_MS on the EMA the look falls back to one exact apply on release. GOTCHA: the first season apply on a grove with no cache is a full build
+// ('build', the regrow's cost plus the record) — a one-off the next tick never pays again, which on a heavy look in the fall (~55 ms on afternoon 7) would seed the EMA
+// over the off line and latch the fallback for the whole drag. CONSEQUENCE: a 'build' that follows a non-build (or opens the drag) is not measured. A 'build' that follows
+// a 'build' IS: that is the spring half, where the recipe moves structure and every tick really regrows, and the gate must keep throttling it.
+export const TWEEN_SLOW_MS = 12, TWEEN_BUDGET = 0.30, TWEEN_OFF_MS = 50;
+export function tweenGateStep(state, cost, path, t0) {
+  if (path === 'build' && state.last !== 'build') return { ...state, last: 'build' };
+  const ema = state.cost ? 0.7 * state.cost + 0.3 * cost : cost;
+  return { cost: ema, waitUntil: cost > TWEEN_SLOW_MS ? t0 + cost / TWEEN_BUDGET : 0, off: state.off || ema > TWEEN_OFF_MS, last: path };
+}
 const sameDict = (a, b) => !!a && Object.keys(b).every((k) => a[k] === b[k]);
 export function createBus(getParams, apply) {
   const tweens = new Map();   // key -> { x, target, last }
@@ -254,7 +269,19 @@ export function createBus(getParams, apply) {
         st.x += (st.target - st.x) * (1 - Math.exp(-dt / m.tween));
         const landed = Math.abs(st.x - st.target) < TWEEN_EPS;
         if (landed) st.x = st.target;
-        const dict = macroParams(key, st.x);
+        let dict = macroParams(key, st.x);
+        if (!landed) {
+          // CALM: an applied step of the probe is at most TWEEN_STEP (komorebi-math.js, beside DROP_EPS, with the trade it makes). The ease is held back to
+          // the clamped place, so the remainder is still owed to the next tick and the season simply lags the clock while the clamp binds; the landing above
+          // is never clamped, so the resting state is the stop's own bytes (and a release's tick(1e9) lands in one apply). Measured from the last apply, or the look.
+          const from = st.last ? st.last[m.probe] : getParams()[m.probe], to = dict[m.probe];
+          if (typeof from === 'number' && Math.abs(to - from) > TWEEN_STEP) {
+            const stepped = from + Math.sign(to - from) * TWEEN_STEP;
+            st.x = macroValue(key, { [m.probe]: stepped });
+            dict = macroParams(key, st.x);
+            dict[m.probe] = stepped;   // exactly TWEEN_STEP away (the inverse and the lerp agree to a few ulps; the other params are the recipe at st.x)
+          }
+        }
         if (!sameDict(st.last, dict)) { st.last = dict; apply(dict, m.scope, m.live); }
         if (landed) tweens.delete(key);
       }

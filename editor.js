@@ -2,7 +2,7 @@ import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor } from './komorebi.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
-import { MACROS, createBus, macroUsable } from './macros.js';
+import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
 // ============================================================================
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
@@ -48,7 +48,7 @@ const perf = eng.perf;
 // time-of-day is an editor-only INPUT method (it writes sun elevation/azimuth); not an engine param.
 if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
-function applyScope(scope){ eng.apply(scope); }                      // slider/toggle rebuild
+function applyScope(scope){ return eng.apply(scope); }                      // slider/toggle rebuild
 function reseed(){ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }   // same grove, grown again
 function applyParams(obj){ endTween(); eng.setParams(obj); syncAllControls(); }  // load a whole preset (instant)
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
@@ -427,17 +427,19 @@ function syncAllControls(){ for(const k in controlEls) syncControl(k); syncMacro
 // lands it on the live engine. A future MIDI/audio source calls the same
 // bus.set and needs nothing from this file.
 // ===========================================================================
-// THE TWEEN'S COST GATE (macros.js: a `tween` macro regrows the grove each tick). The regrow is CPU, so it is timed
-// where it happens: an EMA of what applyScope('canopy') costs. Over 12 ms the next live apply waits cost/0.30 ms of wall
-// time (regrows take at most ~30% of it) — the ease keeps running on the clock meanwhile (tickTween hands the bus the
-// summed dt, which a one-pole composes exactly), so the catch-up is a bigger step, not a stall. Over 50 ms on the EMA
-// the look falls back to the old behaviour: no live applies, one exact apply on release. The cost is the look's own
-// (a fall frame costs ~4x its summer one: the exposure grid is phenology-independent and recomputed on every regrow —
-// a re-season scope is the successor). Measured with bun over buildGrove: afternoon 7 16 ms summer / ~70 fall, the void
-// 49 / ~220, montebello 3.5 / ~15.
-const TWEEN_SLOW_MS = 12, TWEEN_BUDGET = 0.30, TWEEN_OFF_MS = 50;
-let tweenCost = 0, tweenWaitUntil = 0, tweenOff = false, tweenAcc = 0, tweenLast = performance.now();
-function endTween(){ bus.cancel(); tweenCost = 0; tweenWaitUntil = 0; tweenOff = false; tweenAcc = 0; }   // any route that loads a look: or the tween keeps writing CANOPY keys over it
+// THE TWEEN'S COST GATE (macros.js: a `tween` macro applies the recipe each tick, at scope 'season'). The apply is CPU, so it is timed
+// where it happens: an EMA of what applyScope('season') costs. Over 12 ms the next live apply waits cost/0.30 ms of wall
+// time (applies take at most ~30% of it) — the ease keeps running on the clock meanwhile (tickTween hands the bus the
+// summed dt, which a one-pole composes exactly, until the bus's step clamp binds), so the catch-up is a bigger step, not a stall. Over 50 ms on the EMA
+// the look falls back to the old behaviour: no live applies, one exact apply on release. The cost is the look's own, and the engine decides what an apply is:
+// the fall half of the axis only moves the season set, so the engine re-runs the season arithmetic over the grove's cached leaves (§4.5 "Re-seasoning");
+// the spring half moves structure and regrows. Measured with bun at t 0.9 (median of 11), regrow -> re-season: afternoon 7 62 -> ~6 ms (summer's own regrow is
+// 15), the void 154 -> ~14 (47), montebello 12 -> ~1 (3.3). Both big looks stay under the 50 ms line, which used to take them out of the live half. The first apply
+// of a drag on a grove without the cache is a full build (the regrow's cost, plus the record): a one-off the next tick never pays again, so it is NOT measured —
+// it would seed the EMA over the off line on a heavy fall look and latch the fallback for the whole drag (unless it follows another build: the spring half regrows
+// every tick and stays gated). The thresholds and the EMA step live in macros.js, tweenGateStep.
+let tweenCost = 0, tweenWaitUntil = 0, tweenOff = false, tweenPath = null, tweenAcc = 0, tweenLast = performance.now();
+function endTween(){ bus.cancel(); tweenCost = 0; tweenWaitUntil = 0; tweenOff = false; tweenPath = null; tweenAcc = 0; }   // any route that loads a look: or the tween keeps writing CANOPY keys over it
 function tickTween(){
   const now = performance.now(), dt = Math.min(0.1, (now - tweenLast) / 1000);   // a tab that slept must not jump the ease
   tweenLast = now;
@@ -449,13 +451,11 @@ function tickTween(){
 const bus = createBus(() => params, (dict, scope, _live) => {
   Object.assign(params, dict);
   for(const k in dict){ maybeClearSpecies(k); syncControl(k); }   // the advanced sliders track the macro underneath
-  if(scope === 'canopy'){
+  if(scope === 'season'){
     const t0 = performance.now();
-    applyScope(scope);
-    const t1 = performance.now(), cost = t1 - t0;
-    tweenCost = tweenCost ? 0.7 * tweenCost + 0.3 * cost : cost;
-    tweenWaitUntil = cost > TWEEN_SLOW_MS ? t0 + cost / TWEEN_BUDGET : 0;
-    if(tweenCost > TWEEN_OFF_MS) tweenOff = true;
+    const path = applyScope(scope);
+    const g = tweenGateStep({ cost: tweenCost, waitUntil: tweenWaitUntil, off: tweenOff, last: tweenPath }, performance.now() - t0, path, t0);
+    tweenCost = g.cost; tweenWaitUntil = g.waitUntil; tweenOff = g.off; tweenPath = g.last;
   } else if(scope !== null) applyScope(scope);
 });
 const macroEls = {};      // bus key -> range input (play + strip surfaces; pad handled separately)
