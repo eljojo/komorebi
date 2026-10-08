@@ -171,6 +171,40 @@ export const PRESETS = {
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "auto_quality": true,   // park 1 is faithful_canopy (the heaviest path) — without the governor a weak device has no recovery; matches every sibling look
   }),
+  // 'montebello' — the first FALL look (spec §4.5 senescence, §4.7 the litter): park 1's grove, the same seed, seen from
+  // the FAR side with the sun behind us (the camera orbited 180° and reframed on the trees), late in the season. José
+  // named it after the dry river valley at Dhamma Suttama, Montebello QC, where he sat under the turning trees in
+  // early fall 2026, and he chose its recipe frame by frame from the park-1 sheets (review 2026-10-07: grid #5 + #8 + #9
+  // in the A2 framing, "k2"): phenology 0.9 with the exposed leaves turned first, a maple's sieve (wall_fraction 0.2),
+  // SOFT pigments — anthocyanin 0.4, not the 0.8 "redhead" he turned down, with a little tannin for russet among the
+  // red — the blend of glass (leaf_diffuse 0.5), the shade lit THROUGH the canopy (canopy_fill 1), the sunlit leaves
+  // dropped (leaf_drop 1) and lying as a carpet round the trees' feet (litter 1), the shadows running away from us.
+  // Exposure is park 1's own. It carries the fall tiers into the player bundle, which he accepted; and it is the look
+  // the season macro's fall stops are lifted from (macros.js). Dry: a rain day is leaf_wetness ≈ 0.5, with the dirt
+  // lowered by hand until the rain writes both.
+  'montebello': Object.assign({}, DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
+    "leaf_drop": 1, "litter": 1,                                                                    // the sunlit leaves have let go and lie on the floor (§4.5, §4.7)
+    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
+    "view_center_x": -0.7, "view_center_y": -3, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor, as park 1
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+  }),
   'park 2': Object.assign({}, DEFAULTS, {
   "sample_count": 48,
   "core_angular_radius_deg": 0.56,
