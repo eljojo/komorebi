@@ -109,6 +109,15 @@
               exec node editor.mjs "$@"
             '';
           };
+          # `nix run .#review -- spec.json [--dir <folder>] [--keep-export]` — the review-sheet tool: renders a
+          # spec's judging frames from a clean `git archive` of one commit (never the working tree), lays
+          # labelled sheets with quotable IDs and writes the manifest.json the review folders carry.
+          # Same first-run setup as pixels: cd test-gl && npm install && npx playwright install chromium.
+          review = pkgs.writeShellApplication {
+            name = "review";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.imagemagick pkgs.git pkgs.gnutar ];
+            text = ''exec node test-gl/review.mjs "$@"'';
+          };
         in {
           dev = { type = "app"; program = "${dev}/bin/dev"; };
           lint = { type = "app"; program = "${lint}/bin/lint"; };
@@ -116,6 +125,7 @@
           pixels = { type = "app"; program = "${pixels}/bin/pixels"; };
           editor = { type = "app"; program = "${editor}/bin/editor"; };
           embed = { type = "app"; program = "${embed}/bin/embed"; };
+          review = { type = "app"; program = "${review}/bin/review"; };
           embed-check = { type = "app"; program = "${embed-check}/bin/embed-check"; };
           default = self.apps.${pkgs.system}.dev;
         });

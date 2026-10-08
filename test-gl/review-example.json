@@ -1,0 +1,18 @@
+{
+  "commit": "HEAD",
+  "made_by": "example spec, test-gl/review.mjs",
+  "size": [320, 180],
+  "sheets": [
+    {
+      "file": "example.png",
+      "title": "review.mjs example: two looks, one override",
+      "question": "Does the tool lay out two labelled frames and write the manifest?",
+      "tile": "2x1",
+      "common": { "overrides": { "leaf_wetness": 0 } },
+      "frames": [
+        { "id": "e1", "preset": "montebello", "what": "montebello, dry" },
+        { "id": "e2", "preset": "afternoon 7", "overrides": { "leaf_wetness": 0.5 }, "label": "e2  afternoon 7, wet 0.5", "what": "afternoon 7, wet 0.5" }
+      ]
+    }
+  ]
+}
