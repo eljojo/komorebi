@@ -481,7 +481,7 @@ function layerRig(grove, groveIn, crossW = 0) {
   const U = { bake: Object.fromEntries(keys.map((k) => [k, `bake.${k}`])) };
   const params = { ...DEFAULTS, layer_count: 2, canopy_extent_m: 12, canopy_base_height_m: 5, canopy_thickness_m: 3 };
   const hub = { gl, params, motion: { u: 0, time: 0, sway: [0, 0] }, src: {}, faith: {}, sky: {}, U, fill: {}, bakeFBO: {}, faithFBO: {}, fillFBO: {}, emptyVAO: {}, progBake: {}, progFaith: {}, progFaithSeg: {}, progFAcc: {},
-    bakeRes: () => 256, faithfulOn: () => false, layerTex: [{}, {}, {}, {}], layerHeights: () => [5, 8], grove, groveIn, crossW };
+    bakeRes: () => 256, faithfulOn: () => false, layerTex: [{}, {}, {}, {}], layerHeights: () => [5, 8], grove, groveIn, crossW, fillWanted: () => false };
   makeBake(hub).bake();
   return { calls };
 }

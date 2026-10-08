@@ -5,8 +5,9 @@
 // bake into one pre-integrated soft-shadow texture (the opt-out from the
 // depth-layer cheat). Then the SKY FILL (§4.7): the hemisphere integral of
 // those layers that lights the shade the beam does not reach. fillSwayedSegs
-// is the swayed skeleton both cast bakes share. A factory over the engine's
-// shared internals (hub).
+// is the swayed skeleton both cast bakes share. Two factories over the engine's
+// shared internals (hub): makeBake, and makeFill — the sky fill on its own, so a
+// bundle whose looks never open canopy_fill can leave it out whole.
 // ============================================================================
 import { atmosphere, ballisticK, clamp } from './komorebi-math.js';
 import { MAX_FILL_DIRS, MAX_LAYERS } from './komorebi-params.js';
@@ -14,14 +15,18 @@ import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
 import { bindLeafShape } from './komorebi-grove.js';
 
+// The tier this module owns besides the fill (which is its own factory below, so a bundle that cuts it cuts the factory): the leaf's diffuse share. The bundler substitutes
+// it by a literal (embed-build.mjs); false means no look in the bundle opens leaf_diffuse, and the beam's k is 0 wherever it is read.
+const FEAT_LEAF_DIFFUSE = true;
+
 export function makeBake(hub){
-  const { gl, params, motion, src, faith, sky, U, fill, bakeFBO, faithFBO, fillFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
+  const { gl, params, motion, src, faith, sky, U, bakeFBO, faithFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
 
   // ---- one bake: the cast the camera reads, then (if the shade is lit through the canopy) the fill ----------------
   function bake(){
     if(faithfulOn()) bakeFaithful();   // FAITHFUL path (§4.5): cast the real tree, not the layer slabs
     else bakeLayers(bakeRes(), hub.layerHeights(), false);
-    if(fillWanted()) bakeFill(true);   // true: on the faithful path the layers are not otherwise baked, so the fill bakes its own low-res set
+    if(hub.fillWanted()) hub.bakeFill(true);   // true: on the faithful path the layers are not otherwise baked, so the fill bakes its own low-res set (a bundle without the fill holds a fillWanted that is false)
   }
 
   // ---- bake leaves into per-layer optical-depth textures ---------------------
@@ -166,7 +171,7 @@ export function makeBake(hub){
   }
 
   function bakeFaithful(){
-    const k = ballisticK(params.leaf_diffuse);
+    const k = FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0;
     faith.k = k; faith.n = src.count;   // recorded even for an empty grove: refreshFaith compares against them
     // Only "no grove built yet" returns early. A grove with no leaves — leaf_drop 1 at leaf-off, §4.5 abscission, or no foliage at all — still has
     // its shadow to bake: the wood if there is any, and otherwise Σw·1 = 1, a lit floor. (An instanced draw of zero leaves is a no-op.) Returning
@@ -300,8 +305,38 @@ export function makeBake(hub){
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  // ============================================================================
-  // THE SKY FILL (spec §4.7, "What the shade is lit by"). The floor is lit by the beam through the gaps, by the
+  // The sky fill itself is makeFill, below; what stays here is the frame it is baked over, because the litter carpet reads its frame from this module whether or not the fill is.
+  // THE FRAME the fill is baked over: fillFrame(E, h_max, bulkOn), h_max the tallest layer its rays start from — where the faithful tree's twigs
+  // REALLY grew on that path, the park band otherwise. It is a function of the look and not of whether the fill is open, which is what lets the
+  // litter carpet (komorebi-litter.js) be baked and read over the very same square: it asks here, so the two cannot disagree about it.
+  const fillHeights = () => faithfulOn() ? faith.binH.subarray(0, MAX_LAYERS) : hub.layerHeights();
+  function fillFrameNow(H = fillHeights()){
+    let hMax = 0;
+    for(let i=0;i<params.layer_count;i++) hMax = Math.max(hMax, H[i]);
+    return fillFrame(params.canopy_extent_m, hMax, hub.bulkOn());
+  }
+
+  // Once per frame, before transport draws: the faithful cast carries the beam's k pre-integrated (§4.5), so unlike the layer
+  // path — which reads k at the tap — it must be re-cast when leaf_diffuse moves without anything else having baked: a
+  // tween, a slider. Under wind the bake runs every frame anyway and has already recorded the current k.
+  // The same goes for the sample count: it is what the cast is made of, and resetPerf (after rebuildAll's bake) or the governor can
+  // re-cut the cloud to a count the bake did not see — the old look's, or a trimmed one — with no bake-res change to re-bake it.
+  // Only the COUNT is compared: a transition's morph moves the cloud's shape every frame, and the cast is not re-cast for that.
+  function refreshFaith(){
+    if(faithfulOn() && (faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count)) bakeFaithful();
+  }
+
+  return { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow };
+}
+
+// ============================================================================
+// The sky fill as a factory of its own (spec §4.7): a bundle whose looks never open canopy_fill leaves it out whole (embed-build.mjs, FEATURES.fill), so the engine
+// builds it as `FEAT_FILL ? makeFill(hub) : NO_FILL` and reaches it only through the hub. NO_FILL is what the engine holds instead: a fill that is never wanted.
+// ============================================================================
+export function makeFill(hub){
+  const { gl, params, fill, fillFBO, emptyVAO, bakeRes, faithfulOn, faith } = hub;
+
+  // ---- THE SKY FILL (spec §4.7, "What the shade is lit by"). The floor is lit by the beam through the gaps, by the
   // skylight that ALSO had to come through the canopy, and by sunlight the lit leaves scatter downward; the cast
   // filtered only the first. This bakes the other two: Tsky(x) and S(x), the cosine-weighted hemisphere of the layer
   // field, into two low-res textures (komorebi-shaders.js, FS_FILL, runs the very ray the sky view runs). Off (canopy_fill
@@ -325,15 +360,6 @@ export function makeBake(hub){
   const _atm = { sun:[0,0,0], ambient:[0,0,0] }, FILL_TURNS = fillTurns();   // the 16 slot rotations never change
   const _sig = new Float64Array(13);
 
-  // THE FRAME the fill is baked over: fillFrame(E, h_max, bulkOn), h_max the tallest layer its rays start from — where the faithful tree's twigs
-  // REALLY grew on that path, the park band otherwise. It is a function of the look and not of whether the fill is open, which is what lets the
-  // litter carpet (komorebi-litter.js) be baked and read over the very same square: it asks here, so the two cannot disagree about it.
-  const fillHeights = () => faithfulOn() ? faith.binH.subarray(0, MAX_LAYERS) : hub.layerHeights();
-  function fillFrameNow(H = fillHeights()){
-    let hMax = 0;
-    for(let i=0;i<params.layer_count;i++) hMax = Math.max(hMax, H[i]);
-    return fillFrame(params.canopy_extent_m, hMax, hub.bulkOn());
-  }
 
   // Everything the fill depends on besides the layers themselves (which rebake it eagerly, from bake()). The sun can
   // move without any bake — a time-of-day morph, the editor's sun drag — and S reads the sun's colour and its path
@@ -344,7 +370,7 @@ export function makeBake(hub){
     o[0]=params.sun_elevation_deg; o[1]=params.sun_azimuth_deg; o[2]=params.sky_turbidity;
     o[3]=fillAlbedo(); o[4]=fillK(); o[5]=fillRes(); o[6]=params.layer_count; o[7]=params.canopy_base_height_m;
     o[8]=params.canopy_thickness_m; o[9]=params.canopy_extent_m; o[10]=faithfulOn() ? 1 : 0;
-    o[11]=ballisticK(params.leaf_diffuse);   // the split changes what S is made of, and no bake moves when it tweens
+    o[11]=FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0;   // the split changes what S is made of, and no bake moves when it tweens
     o[12]=hub.bulkOn() ? 1 : 0;              // wrap vs open + padded frame (the beam's bulk shift itself rides the sun elevation and azimuth above)
   }
   function fillStale(){
@@ -384,14 +410,14 @@ export function makeBake(hub){
     if(faithful){
       const lres = fillLayerRes();
       if(hub.layerSize !== lres){ hub.allocLayers(lres); layersToo = true; }   // the fill was opened on a running faithful look: its layers do not exist yet
-      if(layersToo) bakeLayers(lres, faith.binH, true);
+      if(layersToo) hub.bakeLayers(lres, faith.binH, true);
       H = faith.binH.subarray(0, MAX_LAYERS);   // where the faithful tree's twigs REALLY grew, not the park band
     } else H = hub.layerHeights();
     // THE FRAME this pass covers, and what the layer textures do outside their box. Both follow one flag: a finite tree (bulkOn) is
     // open sky past its box and is baked over the box padded by 3·h_max; the endless park has no edge, so its box REPEATS and the
     // frame is the box. REPEAT is on the layer textures for this pass only — transport reads the same textures CLAMPed.
     const bulk = hub.bulkOn(), wrap = !bulk, nL = params.layer_count;
-    const fr = fillFrameNow(H);
+    const fr = hub.fillFrameNow(H);
     fill.ox = fr.ox; fill.oy = fr.oy; fill.ext = fr.ext;   // what every receiver reads the textures by
     const e = hub.fillFor(), u = e.U;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fillFBO);
@@ -414,7 +440,7 @@ export function makeBake(hub){
     gl.uniform2fv(u.turn, FILL_TURNS);
     gl.uniform1i(u.count, K);
     gl.uniform1f(u.scatter, fillAlbedo());
-    gl.uniform1f(u.beamK, ballisticK(params.leaf_diffuse));   // above 0 the albedo is off and every surface camera reads S (the shader says so)
+    gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the albedo is off and every surface camera reads S (the shader says so)
     for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]); gl.uniform1i(u.layers[i], i); }
     if(wrap) setLayerWrap(nL, gl.REPEAT);
     gl.bindVertexArray(emptyVAO);
@@ -433,21 +459,13 @@ export function makeBake(hub){
     if(faithfulOn() && hub.layerSize > 1) hub.allocLayers(1);   // the faithful layers go back to the 1×1 they are without the fill
   }
 
-  // Once per frame, before transport draws: the faithful cast carries the beam's k pre-integrated (§4.5), so unlike the layer
-  // path — which reads k at the tap — it must be re-cast when leaf_diffuse moves without anything else having baked: a
-  // tween, a slider. Under wind the bake runs every frame anyway and has already recorded the current k.
-  // The same goes for the sample count: it is what the cast is made of, and resetPerf (after rebuildAll's bake) or the governor can
-  // re-cut the cloud to a count the bake did not see — the old look's, or a trimmed one — with no bake-res change to re-bake it.
-  // Only the COUNT is compared: a transition's morph moves the cloud's shape every frame, and the cast is not re-cast for that.
-  function refreshFaith(){
-    if(faithfulOn() && (faith.k !== ballisticK(params.leaf_diffuse) || faith.n !== src.count)) bakeFaithful();
-  }
-
   // Once per frame, before transport draws: the fill is current, or it is not wanted and holds nothing.
   function refreshFill(){
     if(!fillWanted()){ if(fill.tex[0]) releaseFill(); return; }
     if(fillStale()) bakeFill(false);
   }
 
-  return { bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow };
+  return { bakeFill, refreshFill, fillWanted, fillLayerRes };
 }
+
+export const NO_FILL = { bakeFill: () => {}, refreshFill: () => {}, fillWanted: () => false, fillLayerRes: () => 1 };

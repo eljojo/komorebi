@@ -71,7 +71,8 @@
             '';
           };
           # `nix run .#embed -- '<look>'...` — the one-page bundle: only the named looks, only the cameras
-          # they select. Writes dist/komorebi.embed.min.js. Verify it with `nix run .#embed-check`.
+          # they select, only the fall tiers they open (`--features a,b|all|none` overrides that set).
+          # Writes dist/komorebi.embed.min.js. Verify it with `nix run .#embed-check`.
           embed = pkgs.writeShellApplication {
             name = "embed";
             runtimeInputs = [ pkgs.bun pkgs.gzip pkgs.nodejs_22 ];

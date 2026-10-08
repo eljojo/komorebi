@@ -4,6 +4,8 @@
 // knob (spec §9 "Scene transitions"), DEFAULTS (the editor edits a live copy;
 // presets merge over it), and the legacy-name migration (spec §9).
 // ============================================================================
+import { senescing, dropping, ordered } from './komorebi-math.js';
+
 const MAX_SAMPLES = 48;
 const BAKE_MIN = 768;   // floor auto_quality trims bake_resolution to below the knee (§9)
 const MAX_LAYERS = 4;
@@ -361,4 +363,31 @@ function migrateLegacy(obj){
   return out;
 }
 
-export { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, LEGACY_KEYS, migrateLegacy };
+// ---- THE FEATURE REGISTRY (spec §9, "What a bundle cuts"). The fall tiers are code that a look either opens or does not, and a bundle built for one page's
+// looks can leave out the ones none of them opens — the way cameraFor lets it leave out the cameras. `open(P)` is the whole question, asked of a look merged over
+// DEFAULTS; `group` is the transport uniform group the tier owns (cut with it from every camera), `flag` the FEAT_ constant its modules guard it by (the build
+// substitutes it, embed-build.mjs). The predicates are komorebi-math.js's, which the grove reads too: the registry and the grove cannot disagree about when a
+// season is on. Two things the table does not say and a bundle depends on: the exposure pass is also opened by a DROP that follows the light (see `ordered`), and
+// a carpet needs a leaf that has fallen, so litter is open only for a look that drops.
+const FEATURES = {
+  fill:        { open: (P) => P.canopy_fill > 0,           group: 'fill',   flag: 'FEAT_FILL' },
+  leafDiffuse: { open: (P) => P.leaf_diffuse > 0,          group: 'beam',   flag: 'FEAT_LEAF_DIFFUSE' },
+  pigment:     { open: senescing,                          group: null,     flag: 'FEAT_PIGMENT' },
+  exposure:    { open: ordered,                            group: null,     flag: 'FEAT_EXPOSURE' },
+  drop:        { open: dropping,                           group: null,     flag: 'FEAT_DROP' },
+  litter:      { open: (P) => P.litter > 0 && dropping(P), group: 'litter', flag: 'FEAT_LITTER' },
+};
+const featuresFor = (P) => Object.keys(FEATURES).filter((f) => FEATURES[f].open(P));
+// What a host is told when it opens a tier its bundle cut: the tier stays off (the cut code is not there to run), and a look that depends on it would otherwise
+// paint something else with nothing said. One message per feature per engine (`warned` is the engine's), none from the raw modules (cut is empty there).
+function cutWarnings(P, build, warned){
+  const out = [];
+  for(const f of build.cut){
+    if(warned.has(f) || !FEATURES[f].open(P)) continue;
+    warned.add(f);
+    out.push(`komorebi: ${f} is not in ${build.name}, so it stays off; build a bundle with the look that uses it (nix run .#embed -- '<look>'…)`);
+  }
+  return out;
+}
+
+export { FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, LEGACY_KEYS, migrateLegacy };

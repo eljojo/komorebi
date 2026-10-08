@@ -369,7 +369,7 @@ test("the carpet's bake: a stamp in a unit quad, premultiplied, sized and turned
 // THE BAKE'S WIRING: what the carpet is handed, when it is baked, and when it is not. A stub GL records the calls, and a real makeSource /
 // makeBake supply the very bulkOn, layerHeights and fill frame the engine uses — so this holds the wiring, not a restatement of it.
 // ============================================================================
-import { makeBake } from "./komorebi-bake.js";
+import { makeBake, makeFill } from "./komorebi-bake.js";
 import { makeSource } from "./komorebi-source.js";
 import { MAX_LAYERS } from "./komorebi-params.js";
 
@@ -387,8 +387,9 @@ function litterRig(over = {}, { list = fallen().litter, faithful = false } = {})
     bakeRes: () => 256, faithfulOn: () => faithful, layerTex: Array.from({ length: MAX_LAYERS }, (_, i) => ({ layer: i })), makeLayerTexture: () => ({}), allocLayers: () => {}, layerSize: 256, fail: (m) => { throw new Error(m); },
     fillFor: () => ({ prog: {}, U }), litterFor: () => ({ prog: { prog: "litter" }, U: { origin: "uLitterOrigin", extent: "uLitterExtent", minHalf: "uLitterMinHalf" } }), bulkShift, bulkOn, layerHeights,
     grove: { litter: list } };
-  const bake = makeBake(hub);
-  hub.fillFrameNow = bake.fillFrameNow;
+  const bake0 = makeBake(hub);
+  Object.assign(hub, { bakeLayers: bake0.bakeLayers, fillFrameNow: bake0.fillFrameNow });
+  const bake = { ...bake0, ...makeFill(hub) };   // the bake and the fill are two factories now; the rig holds both as one
   const lit = L.makeLitter(hub);
   const count = (name) => calls.filter((c) => c[0] === name).length;
   const draws = () => calls.filter((c) => c[0] === "drawArraysInstanced");

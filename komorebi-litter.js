@@ -224,4 +224,7 @@ function makeLitter(hub){
   return { litterWanted, refreshLitter, releaseLitter };
 }
 
-export { LITTER_SALT, LITTER_SIGMA, LITTER_PEAK, ALBEDO_BROWN, N_WALL, N_WATER, WET_RHO, kmInvert, kmReflect, wetten, INSTANCE_FLOATS, litterAlbedo, litterAge, litterLanding, litterOrder, litterInstances, newLitterState, makeLitter };
+// What the engine holds in place of the carpet in a bundle that cut it (embed-build.mjs, FEATURES.litter): nothing to bake, nothing to release.
+const NO_LITTER = { refreshLitter: () => {} };
+
+export { NO_LITTER, LITTER_SALT, LITTER_SIGMA, LITTER_PEAK, ALBEDO_BROWN, N_WALL, N_WATER, WET_RHO, kmInvert, kmReflect, wetten, INSTANCE_FLOATS, litterAlbedo, litterAge, litterLanding, litterOrder, litterInstances, newLitterState, makeLitter };

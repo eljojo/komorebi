@@ -23,7 +23,16 @@
 //   writes it), so the engine re-seasons only with no transition and with faith.buf still this grove's. leafW is a NEW array each time: the tree preview keys on it.
 //   MEASURED (bun, median of 7, fall at t 0.9): afternoon 7 73 ms a regrow, the void 201, montebello 15 — see the cost test in reseason.test.js for the re-season's.
 // ============================================================================
-import { DEG, DROP_EPS, FAITH_MAX_RATIO, GOLDEN, clamp, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, makeGauss, mulberry32, redGain, retention, turnOrder } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, GOLDEN, clamp, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, turnOrder } from './komorebi-math.js';
+
+// The fall tiers this module owns, as the bundler sees them (embed-build.mjs): each is substituted by a literal, true or false, and the code behind a false one is not
+// in the bundle. A tier is cut only for a look that does not open it (komorebi-params.js FEATURES), so a flag that is false here means the guarded arithmetic was
+// already unreachable for every look the bundle carries. The flags sit in the SAME expression as the call they guard, never in a predicate function or a local that
+// holds one (`const sen = FEAT_X && ...`): a minifier inlines neither, and the arithmetic behind a guard it cannot fold stays in the bundle.
+const FEAT_PIGMENT = true;
+const FEAT_EXPOSURE = true;
+const FEAT_DROP = true;
+const FEAT_LITTER = true;
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
 import { LEAF_ID_FRAC, LEAF_SAMPLES, leafShape, leafVariant } from './komorebi-leaf.js';
 
@@ -252,7 +261,7 @@ export function makeGrove(hub){
     const faithful = faithfulOn();                  // hoisted: the packing convention below must be ONE decision for the whole grove, not re-asked per leaf
     // Autumn senescence (§4.5): per-leaf pigment state. Every s_j is exactly 0 until phenology passes turn_start, so
     // below it the authored `tau` goes through untouched — the gate that keeps every shipped look byte-identical.
-    const senescing = params.phenology > params.turn_start, leafT = [0,0,0];
+    const sen = senescing(params), leafT = [0,0,0];
     // Light decides who turns first (§4.5): exposure is a property of the STAND, not of the leaf — it needs every leaf's place
     // and height — so with turn_exposure up each leaf notes where its tau went (rec: x, y, z, area, j, k, fade, layer,
     // slot in its layer buffer, slot in the faithful one) and the loop below rewrites them once the grove is laid out.
@@ -260,9 +269,8 @@ export function makeGrove(hub){
     // Abscission (§4.5) is a second reason to look back: who has let go is decided over the whole stand too (the light orders it), and a
     // leaf that has is compacted out of both buffers. `dropping` is its gate: at leaf_drop 0, or in a season before the first leaf's fade
     // can begin (drop_start - DROP_EPS), rec, the retention arithmetic, the compaction and the litter are never made — P1's buffers to the bit.
-    const lit = senescing && params.turn_exposure > 0;
-    const dropping = params.leaf_drop > 0 && params.phenology > params.drop_start - DROP_EPS;
-    const rec = (lit || dropping) ? [] : null;
+    const isLit = lit(params), isDropping = dropping(params);
+    const rec = ((FEAT_EXPOSURE && isLit) || (FEAT_DROP && isDropping)) ? [] : null;
     const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
     let sAt = 0;
     for(let j=0;j<nClusterTotal;j++){
@@ -302,7 +310,7 @@ export function makeGrove(hub){
         // this leaf's own tau: a leaf not yet turning gets `tau` itself (leafTau's s=0 branch copies it, no arithmetic).
         // The hashes inside leafTau are pure functions of (seed, j, k) — they must never draw from rng/rng2/gr above,
         // or every shipped grove reshuffles.
-        const lt = senescing ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
+        const lt = FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
         // the cluster id the VS reads: j, and for an outline its row in the FRACTION (j + v/32) — a pure hash of (seed, j, k) on the leaf's own salt, like the pigment above
         const cid = shape ? j + leafVariant(params.seed, j, k)/LEAF_ID_FRAC : j;
         // iFade: the very `cov` folded into tau above. The bake writes it into alpha (coverage) so the leaf's BALLISTIC shadow (§4.5) fades out
@@ -324,36 +332,36 @@ export function makeGrove(hub){
       // (and the drop day) take. It is the FULL summer set whatever has dropped: exposure is a season integral, not a function of who is
       // still hanging, so a leaf's day does not move as the season is read at another phenology.
       let u = null;
-      if(lit || (dropping && params.drop_exposure > 0)){
+      if(FEAT_EXPOSURE && ordered(params)){
         const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
         for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; K[i]=leafClock(params.seed, rec[REC*i+4], rec[REC*i+5]); }
         const ex = exposureGrid(X, Y, Z, Ar, E);
         u = exposureBlend(exposureRank(ex, K), ex, params.exposure_absolute);   // K: the leaves nothing shades (e = 1) are ordered by their own clocks, not stacked on one rank
       }
-      let alive = null;
-      if(dropping){ litter = []; leafW = new Float32Array(nClusterTotal*nLeaf).fill(1); alive = new Uint8Array(n).fill(1); }
+      let alive = null, gone = 0;
+      if(FEAT_DROP && isDropping){ litter = []; leafW = new Float32Array(nClusterTotal*nLeaf).fill(1); alive = new Uint8Array(n).fill(1); }
       for(let i=0;i<n;i++){
         const o = REC*i, j = rec[o+4], k = rec[o+5];
         let w = 1, D = 0;
-        if(dropping){
+        if(FEAT_DROP && isDropping){
           D = dropDay(params, dropPhase(dropHash(params.seed, j, k), u ? u[i] : 0, params.drop_exposure));
           w = retention(D, params.phenology);
           leafW[j*nLeaf + k] = w;
         }
-        if(!lit && w === 1) continue;                                        // nothing about this leaf changed: its tau is already in the buffers
-        const lt = lit ? leafTau(tau, params, params.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i])) : senescing ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
+        if(!(FEAT_EXPOSURE && isLit) && w === 1) continue;                   // nothing about this leaf changed: its tau is already in the buffers
+        const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, params, params.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i])) : FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
         const cov = rec[o+6], cf = cov*w;                                    // §5.3: a leaf leaves by fading — cov <- cov.w scales its tau and the fade its ballistic shadow rides on together
         const d = layerData[rec[o+7]], li = rec[o+8], fi = rec[o+9];
         for(let c=0;c<3;c++){ d[li+c] = lt[c]*cf; faithData[fi+c] = lt[c]*cf; }
         d[li+8] = cf; faithData[fi+9] = cf;
         if(w === 0){
-          alive[i] = 0;
-          litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [d[li-6], d[li-5]], j, k, fade: cov });
+          alive[i] = 0; gone++;
+          if(FEAT_LITTER) litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [d[li-6], d[li-5]], j, k, fade: cov });   // its own statement: a build without the carpet still compacts, by the count of leaves that went and not by the list
         }
       }
       // A leaf with w = 0 is not a faint leaf, it is no leaf: compacted out of both buffers in one pass over the records, so a bare canopy
       // is not a bake of ten thousand empty quads (a zero-tau quad still costs one in the bake). Survivors keep their order, in both.
-      if(litter?.length){
+      if(gone){
         const keepL = layerData.map(() => []), keepF = [];
         for(let i=0;i<n;i++){
           if(!alive[i]) continue;
@@ -571,11 +579,9 @@ export function makeGrove(hub){
   // on typed arrays. It must stay the same arithmetic as buildGrove's, call for call — reseason.test.js holds the bytes.
   function reseasonGrove(g, P = params){
     const S = g.season, n = S.n, rec = S.rec, nLeaf = S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0];
-    const senescing = P.phenology > P.turn_start;
-    const lit = senescing && P.turn_exposure > 0;
-    const dropping = P.leaf_drop > 0 && P.phenology > P.drop_start - DROP_EPS;
+    const sen = senescing(P), isLit = lit(P), isDropping = dropping(P);
     let u = null;
-    if(n > 0 && (lit || (dropping && P.drop_exposure > 0))){   // mirrors buildGrove's gate for the light
+    if(n > 0 && FEAT_EXPOSURE && ordered(P)){   // mirrors buildGrove's gate for the light
       if(!S.rank){
         const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
         for(let i=0;i<n;i++){ const o = SREC*i; X[i]=rec[o]; Y[i]=rec[o+1]; Z[i]=rec[o+2]; Ar[i]=rec[o+5]; K[i]=leafClock(P.seed, rec[o+6], rec[o+7]); }
@@ -587,22 +593,22 @@ export function makeGrove(hub){
     }
     if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); }
     const outL = S.outL, outF = S.outF, wL = new Int32Array(nLayer);
-    const track = dropping && n > 0;
-    const litter = track ? [] : null, leafW = track ? new Float32Array(S.nCluster*nLeaf).fill(1) : null;
+    const track = isDropping && n > 0;
+    const litter = FEAT_DROP && track ? [] : null, leafW = FEAT_DROP && track ? new Float32Array(S.nCluster*nLeaf).fill(1) : null;
     let wF = 0, px0 = S.seg[0], px1 = S.seg[1], py0 = S.seg[2], py1 = S.seg[3];
     let lx0 = 1e18, ly0 = 1e18, lx1 = -1e18, ly1 = -1e18;   // the survivors' plan extent (doubles, like buildGrove's own scan of faithData)
     for(let i=0;i<n;i++){
       const o = SREC*i, j = rec[o+6], k = rec[o+7];
       let w = 1, D = 0;
-      if(track){
+      if(FEAT_DROP && track){
         D = dropDay(P, dropPhase(dropHash(P.seed, j, k), u ? u[i] : 0, P.drop_exposure));
         w = retention(D, P.phenology);
         leafW[j*nLeaf + k] = w;
       }
-      const lt = lit ? leafTau(tau, P, P.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i])) : senescing ? leafTau(tau, P, P.seed, j, k, leafT) : tau;
+      const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, P, P.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i])) : FEAT_PIGMENT && sen ? leafTau(tau, P, P.seed, j, k, leafT) : tau;
       const cov = rec[o+8], cf = cov*w;
       if(w === 0){
-        litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: cov });
+        if(FEAT_LITTER) litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: cov });
         continue;
       }
       const l = rec[o+9], li = rec[o+10], bl = S.base[l], dl = outL[l], at = wL[l];

@@ -346,7 +346,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
   sky_scatter:'sky',
   canopy_fill:'fill', fill_scatter:'fill', fill_directions:'fill', fill_resolution:'fill',   // the sky view lights no surface, so it speaks no fill group (§4.7)
   litter:'litter', litter_age:'litter', litter_drift_m:'litter', leaf_wetness:'litter', litter_resolution:'litter',   // only the floor reflects, so only the floor has fallen leaves to reflect off (§4.7): the cloth transmits and the sky view has no surface
-  leaf_diffuse:['tap','sky'],      // the beam's k is read at the cast cameras' tap and, as the lantern's disk and glow (§4.9), by the sky view's own group — any one of them
+  leaf_diffuse:['beam','sky'],     // the beam's k is read at the cast cameras' taps (their beam group) and, as the lantern's disk and glow (§4.9), by the sky view's own group — any one of them
   chromatic_aberration:'ca',       // the sky view runs no cast, so there is no transport shift to split by wavelength
   faithful_canopy:'faith',         // the enclosure and the sky view force the layer tier and bake no faith texture
 };

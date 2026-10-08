@@ -41,18 +41,24 @@ uniform float uViewYaw;          // camera orbit about vertical (rad); rotates t
 // the beam passes the gap whole and a leaf at e^(-τ̄ - k) of it, where k = −ln(1−leaf_diffuse) is neutral depth per leaf and τ̄ the
 // leaf's own depth, so an edge texel no longer reads as a thin dark leaf and every ballistic shadow loses its halo. k tweens, so the
 // gate is a uniform branch whose else is the read the engine has always made. ----
-const GLSL_T_TAP = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per leaf. 0 = the old leaf, byte-identical
-${GLSL_TEXEL_MIX}
+// THE FEATURE TAGS. A line whose comment ends with the tag marker (an at-sign and the word feature) and the names of features is dropped from a bundle that cut any feature it
+// names (embed-build.mjs, tagged(); the features are FEATURES in komorebi-params.js): the lines of a branch that only an open feature takes, down to the else that makes the
+// old read the whole body. A tag names every feature whose absence makes the line unreachable (a line inside the litter branch that reads the fill names both). In the raw
+// modules a tag is a GLSL comment and nothing else; features.test.js holds that dropping any subset leaves every literal as balanced as it was. (No backticks in a comment
+// in this file: the bundler finds the shader literals by pairing them.)
+// The beam's k is a group of its own, so that the taps below can stay when the uniform goes: they are functions, and without the uniform they are the old reads.
+const GLSL_T_BEAM = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per leaf. 0 = the old leaf, byte-identical`;
+const GLSL_T_TAP = `${GLSL_TEXEL_MIX}   // @feature leafDiffuse
 vec3 tap(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
-  if(uBeamK > 0.0){
-    vec4 d = texture(t,uv);
-    vec3 T, Tb;
-    texelMix(d.rgb, d.a, uBeamK, T, Tb);   // the texel's mixture: what is left of the beam, the gap passing it whole
-    return Tb;
-  } else {
+  if(uBeamK > 0.0){   // @feature leafDiffuse
+    vec4 d = texture(t,uv);   // @feature leafDiffuse
+    vec3 T, Tb;   // @feature leafDiffuse
+    texelMix(d.rgb, d.a, uBeamK, T, Tb);   // the texel's mixture: what is left of the beam, the gap passing it whole @feature leafDiffuse
+    return Tb;   // @feature leafDiffuse
+  } else {   // @feature leafDiffuse
     return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
-  }
+  }   // @feature leafDiffuse
 }`;
 
 // ---- THE SOURCE SAMPLES and the per-unit-height ground shift: the many-suns integral of §4.2/§4.6. The sky
@@ -94,21 +100,21 @@ const GLSL_T_CA_DECLS = `uniform vec3  uChroma;            // per-channel diffra
 // green=1). The colour fringe lands at every leaf/dapple edge and rides the same H*g shift, so it grows with
 // canopy height and the low-sun ellipse for free. Three single-channel taps; only taken when diffraction is on.
 vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
-  if(uBeamK > 0.0){   // the beam's mixture rides each channel's own dispersed read (§4.5)
-    vec4 qR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent);
-    vec4 qG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent);
-    vec4 qB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent);
-    vec3 T, Tb, bR, bG, bB;
-    texelMix(qR.rgb, qR.a, uBeamK, T, bR);
-    texelMix(qG.rgb, qG.a, uBeamK, T, bG);
-    texelMix(qB.rgb, qB.a, uBeamK, T, bB);
-    return vec3(bR.r, bG.g, bB.b);
-  } else {
+  if(uBeamK > 0.0){   // the beam's mixture rides each channel's own dispersed read (§4.5) @feature leafDiffuse
+    vec4 qR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent);   // @feature leafDiffuse
+    vec4 qG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent);   // @feature leafDiffuse
+    vec4 qB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent);   // @feature leafDiffuse
+    vec3 T, Tb, bR, bG, bB;   // @feature leafDiffuse
+    texelMix(qR.rgb, qR.a, uBeamK, T, bR);   // @feature leafDiffuse
+    texelMix(qG.rgb, qG.a, uBeamK, T, bG);   // @feature leafDiffuse
+    texelMix(qB.rgb, qB.a, uBeamK, T, bB);   // @feature leafDiffuse
+    return vec3(bR.r, bG.g, bB.b);   // @feature leafDiffuse
+  } else {   // @feature leafDiffuse
     float aR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent).r;
     float aG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent).g;
     float aB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent).b;
     return exp(-vec3(aR,aG,aB));      // per-channel optical depth -> transmittance, each at its dispersed path
-  }
+  }   // @feature leafDiffuse
 }`;
 
 // ---- the FAITHFUL tap (§4.5): one pre-integrated texture instead of the sample loop. Floor and cloth only —
@@ -217,24 +223,24 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fra
 // on it in whatever colour the canopy let through. The carpet branch is the outer one and the old material is its else, verbatim, so a look
 // that never lays litter runs the lines it always ran; the fill's share is one expression, shared by both, so the two cannot drift.
 const GLSL_T_FLOOR_FILL_SHARE = `mix(uAmbient, uAmbient*textureLod(uFillT, fuv, FILL_LOD).rgb + textureLod(uFillS, fuv, FILL_LOD).rgb, uCanopyFill)`;
-const GLSL_T_FLOOR_MATERIAL = `    if(uLitterOn != 0){
-      vec4 L = texture(uLitter, (world-uLitterOrigin)/uLitterExtent);
-      vec3 ground = uGround*(1.0-L.a) + L.rgb;
-      vec3 amb = uAmbient;
-      if(uCanopyFill > 0.0){
-        vec2 fuv = (world-uFillOrigin)/uFillExtent;
-        amb = ${GLSL_T_FLOOR_FILL_SHARE};
-      }
-      col = (acc*uSunColor + amb) * ground;
-    } else {
-      if(uCanopyFill > 0.0){
-        vec2 fuv = (world-uFillOrigin)/uFillExtent;
-        vec3 amb = ${GLSL_T_FLOOR_FILL_SHARE};
-        col = (acc*uSunColor + amb) * uGround;
-      } else {
+const GLSL_T_FLOOR_MATERIAL = `    if(uLitterOn != 0){   // @feature litter
+      vec4 L = texture(uLitter, (world-uLitterOrigin)/uLitterExtent);   // @feature litter
+      vec3 ground = uGround*(1.0-L.a) + L.rgb;   // @feature litter
+      vec3 amb = uAmbient;   // @feature litter
+      if(uCanopyFill > 0.0){   // @feature litter fill
+        vec2 fuv = (world-uFillOrigin)/uFillExtent;   // @feature litter fill
+        amb = ${GLSL_T_FLOOR_FILL_SHARE};   // @feature litter fill
+      }   // @feature litter fill
+      col = (acc*uSunColor + amb) * ground;   // @feature litter
+    } else {   // @feature litter
+      if(uCanopyFill > 0.0){   // @feature fill
+        vec2 fuv = (world-uFillOrigin)/uFillExtent;   // @feature fill
+        vec3 amb = ${GLSL_T_FLOOR_FILL_SHARE};   // @feature fill
+        col = (acc*uSunColor + amb) * uGround;   // @feature fill
+      } else {   // @feature fill
         col = (acc*uSunColor + uAmbient) * uGround;          // OPAQUE FLOOR — literal old expression, byte-identical
-      }
-    }`;
+      }   // @feature fill
+    }   // @feature litter`;
 
 // ---- CLOTH camera (§4.9): the curtain, seen head-on ----
 const GLSL_T_CLOTH_DECLS = `uniform float uViewExtent;
@@ -446,13 +452,13 @@ const GLSL_T_FABRIC_MATERIAL = `    // The landed irradiance the fabric answers.
     // plane, sees half the hemisphere (0.5) — its sky term keeps the floor's skyF 1, so S gets a factor of its own: read at 1 the
     // cloth doubled when the split opened. Shut gate = the old line, verbatim.
     vec3 E;
-    if(uCanopyFill > 0.0){
-      vec3 skyT = mix(vec3(1.0), textureLod(uFillT, (world-uFillOrigin)/uFillExtent, FILL_LOD).rgb, uCanopyFill);
-      E = acc*uSunColor*beamF + uAmbient*skyF*skyT;
-      if(uBeamK > 0.0) E += textureLod(uFillS, (world-uFillOrigin)/uFillExtent, FILL_LOD).rgb*skyS*uCanopyFill;   // mix(a, b + S, w) = mix(a, b, w) + S·w: the floor's own share
-    } else {
+    if(uCanopyFill > 0.0){   // @feature fill
+      vec3 skyT = mix(vec3(1.0), textureLod(uFillT, (world-uFillOrigin)/uFillExtent, FILL_LOD).rgb, uCanopyFill);   // @feature fill
+      E = acc*uSunColor*beamF + uAmbient*skyF*skyT;   // @feature fill
+      if(uBeamK > 0.0) E += textureLod(uFillS, (world-uFillOrigin)/uFillExtent, FILL_LOD).rgb*skyS*uCanopyFill;   // mix(a, b + S, w) = mix(a, b, w) + S·w: the floor's own share @feature fill leafDiffuse
+    } else {   // @feature fill
       E = acc*uSunColor*beamF + uAmbient*skyF;
-    }
+    }   // @feature fill
     E *= recvAtten;                                        // enclosure only: interior depth fade × the ridge seam`;
 
 const GLSL_T_FABRIC_TAIL = `    vec3 tintHat = uFabricTint / max(max(uFabricTint.r, uFabricTint.g), max(uFabricTint.b, 1e-4));   // unit-peak HUE
@@ -971,7 +977,8 @@ const TRANSPORT_GROUPS = {
   occ:       { decls: GLSL_T_OCC_DECLS,       locs: { occTex:'uOccTex', occCount:'uOccCount', occTau:'uOccTau', occSway:'uOccSway', occHRef:'uOccHRef' } },
   transport: { decls: GLSL_T_TRANSPORT_DECLS, locs: { samples:'uSamples[0]', count:'uSampleCount', proj:'uProj', bulkShift:'uBulkShift' } },
   woodCast:  { decls: GLSL_T_WOOD_CAST_DECLS, locs: { occPenumbra:'uOccPenumbra' } },
-  tap:       { decls: GLSL_T_TAP,             locs: { beamK:'uBeamK' } },
+  beam:      { decls: GLSL_T_BEAM,            locs: { beamK:'uBeamK' } },
+  tap:       { decls: GLSL_T_TAP },
   ca:        { decls: GLSL_T_CA_DECLS,        locs: { chroma:'uChroma' } },
   faith:     { decls: GLSL_T_FAITH_DECLS,     locs: { faithful:'uFaithful', faithTex:'uFaithTex', faithOrigin:'uFaithOrigin', faithExtent:'uFaithExtent' } },
   sunDir:    { decls: GLSL_T_SUN_DIR_DECLS,   locs: { sunDir:'uSunDir' } },
@@ -1000,21 +1007,21 @@ const TRANSPORT_GROUPS = {
 // the knob families an entry answers for, so a reader can find the other end of a receiver from here. ----
 const CAMERAS = {
   floor: {
-    groups: ['head','rayView','occ','transport','woodCast','tap','ca','faith','floor','fill','litter','post'],
+    groups: ['head','rayView','occ','transport','woodCast','beam','tap','ca','faith','floor','fill','litter','post'],
     prologue: GLSL_T_PRO_FLOOR, camera: GLSL_T_FLOOR_CAMERA, faith: GLSL_T_FAITH_FLOOR,
     material: [GLSL_T_FLOOR_MATERIAL],
     params: ['ground_*', 'far_smear', 'view_*', 'canopy_fill', 'fill_*', 'litter*'],
     note: 'the light lands on the ground and REFLECTS (§4.7) — the park default, and the only camera with an albedo',
   },
   cloth: {
-    groups: ['head','occ','transport','woodCast','tap','ca','faith','sunDir','cloth','fabric','fold','warp','window','fill','post'],
+    groups: ['head','occ','transport','woodCast','beam','tap','ca','faith','sunDir','cloth','fabric','fold','warp','window','fill','post'],
     prologue: GLSL_T_PRO_CLOTH, camera: GLSL_T_CLOTH_CAMERA, faith: GLSL_T_FAITH_CLOTH,
     material: [GLSL_T_FABRIC_MATERIAL, GLSL_T_WINDOW_APPLY, GLSL_T_FABRIC_TAIL],
     params: ['fabric_*', 'fold_*', 'velvet_sheen', 'cloth_distance_m', 'mullion_*', 'window_*', 'view_extent_m', 'view_center_*', 'canopy_fill'],
     note: 'a standing curtain seen head-on, TRANSMITTING (§4.9); the only camera with a flat plane behind it, so the window and the pleat warp are its alone',
   },
   enclosure: {
-    groups: ['head','rayView','occ','transport','woodCast','tap','ca','sunDir','fabric','fold','tent','fill','post'],
+    groups: ['head','rayView','occ','transport','woodCast','beam','tap','ca','sunDir','fabric','fold','tent','fill','post'],
     prologue: GLSL_T_PRO_TENT, camera: GLSL_T_TENT_CAMERA, faith: null,
     material: [GLSL_T_FABRIC_MATERIAL, GLSL_T_FABRIC_TAIL],
     params: ['fabric_*', 'fold_*', 'velvet_sheen', 'tent_*', 'view_*', 'canopy_fill'],
@@ -1039,7 +1046,7 @@ const cameraFor = (p) => p.sky_view ? 'sky' : (p.receiver|0) === 2 ? 'enclosure'
 // they need engine state (the GL objects, params, the grove) a module-level table cannot reach. This list is the
 // seam between the two — create() checks its table against it on construction, and registry.test.js checks it
 // against TRANSPORT_GROUPS and CAMERAS. Neither half can drift without one of those saying so.
-const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','tap','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','litter','sky','post'];
+const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','beam','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','litter','sky','post'];
 
 // The assembler. Every conditional it used to carry is now a lookup: the decls are the entry's groups in order,
 // the body is the entry's own snippets, and the only branch left is the one real structural fork — whether this

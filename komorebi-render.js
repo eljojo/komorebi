@@ -8,6 +8,10 @@ import { DEG, atmosphere, ballisticK, clamp, smoothstep, sunDirection } from './
 import { MAX_LAYERS } from './komorebi-params.js';
 import { CAMERAS, GROUP_UPLOAD_KEYS } from './komorebi-transport.js';
 
+// The leaf's diffuse share (komorebi-params.js FEATURES.leafDiffuse), as a bundle cuts it: substituted by a literal at build time (embed-build.mjs). False means no look in the
+// bundle opens leaf_diffuse, so the beam's k is 0 at every read below and ballisticK is not carried.
+const FEAT_LEAF_DIFFUSE = true;
+
 export function makeRender(hub){
   const { gl, canvas, params, perf, motion, src, occ, occTex, faith, U, emptyVAO, progBlit, progGlowBlur, progGlowMix, faithfulOn, transportFor, transportCamera, fail } = hub;
 
@@ -189,7 +193,8 @@ export function makeRender(hub){
     // THE BEAM's neutral depth (§4.5): k = −ln(1−leaf_diffuse), the share of a leaf's transmitted light that is diffuse and so is no
     // longer in the beam. Every cast camera reads it at the tap (the layer path), and the receivers that read S gate on it too.
     // On the faithful path the tap is not where k lives — the cast has it baked in (bake.js) — but the receivers' gate is.
-    tap: (u) => { gl.uniform1f(u.beamK, ballisticK(params.leaf_diffuse)); },
+    // Its own group (the taps that read it are functions only): a bundle that cut the leaf's diffuse share drops the uniform and keeps the taps.
+    beam: (u) => { gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0); },
     ca: (u) => {
       // edge diffraction (§3.6): per-channel λ-proportional spread of the transport shift. Green (555nm) is the
       // reference; red(620) spreads more, blue(470) less. 0 -> (1,1,1), the byte-identical single-tap path.
@@ -340,7 +345,7 @@ export function makeRender(hub){
     // wood table; the fill and faith units are not spoken here). No other camera declares them — there is no seen source anywhere else.
     sky: (u) => {
       gl.uniform1f(u.skyScatter, clamp(params.sky_scatter, 0, 1));
-      gl.uniform1f(u.beamK, ballisticK(params.leaf_diffuse));   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
+      gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
       for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE8+i); gl.bindTexture(gl.TEXTURE_2D, hub.woodTex[i]); gl.uniform1i(u.woods[i], 8+i); }
       gl.uniform2f(u.srcAngR, src.coreR, src.haloR);
       gl.uniform2f(u.srcAngL, src.Lcore, src.Lhalo);

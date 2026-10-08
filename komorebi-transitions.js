@@ -17,6 +17,7 @@ export function makeTransitions(hub){
     opts = opts || {};
     if(!target || typeof target!=='object') return;
     const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
+    hub.warnCut(to);   // a tier this build cut that the target opens stays off, and is said so (once per engine)
     const from = {};
     for(const k of MORPH_KEYS)  from[k] = params[k];       // continuous look — always morphs live
     for(const k of CANOPY_KEYS) from[k] = params[k];       // continuous canopy — morphs live IF the topology matches

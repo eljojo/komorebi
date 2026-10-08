@@ -11,6 +11,7 @@
 //   --over <json>         merge these params over every look, in BOTH engines — for the tiers no shipped look opens
 //                         (e.g. --over '{"canopy_fill":1,"fill_scatter":0.3}': the sky fill's code ships in the bundle
 //                         and stays off at runtime, so its minified copy is only exercised by asking for it).
+//                         A page console.warn (the engine's own: a tier the look opens that this bundle cut) is printed under PAGE WARNINGS, and is not a failure.
 //   --against <file.js>   also render a second bundle (an older deploy) and report how far the look moved,
 //                         with a contact sheet in test-gl/out/. This is a look diff, not a pass or a fail.
 //
@@ -163,9 +164,12 @@ const { server, port } = await serve();
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const page = await browser.newPage({ viewport: { width: 640, height: 480 }, deviceScaleFactor: 1 });
 page.setDefaultTimeout(180000);
-const errors = [];
+const errors = [], warnings = [];
 page.on('pageerror', (e) => errors.push(e.message));
-page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+page.on('console', (m) => {
+  if (m.type() === 'error') errors.push(`console: ${m.text()}`);
+  else if (m.type() === 'warning' && !m.text().includes('GL Driver Message')) warnings.push(m.text());   // the driver's performance notes (ReadPixels stalls) are Chromium's, not the engine's
+});
 
 let failed = 0, looks = named;
 try {
@@ -207,6 +211,9 @@ try {
   console.log(`FAIL  ${e.message.split('\n')[0]}`);
 }
 if (errors.length) { console.log('PAGE ERRORS:'); for (const e of errors) console.log(`  ${e}`); }
+// A warning is not a failure: it is the bundle saying a tier a look opened is not in it (komorebi-params.js cutWarnings). It is printed so that a frame that differs from the raw
+// engine's can be read next to the engine's own explanation of why.
+if (warnings.length) { console.log('PAGE WARNINGS:'); for (const w of warnings) console.log(`  ${w}`); }
 console.log(`\n${looks.length} look(s), ${failed ? `${failed} FAILED` : 'all byte-identical to the raw engine'}${errors.length ? `, ${errors.length} page errors` : ''}`);
 await browser.close();
 server.close();

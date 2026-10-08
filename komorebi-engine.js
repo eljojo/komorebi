@@ -1,13 +1,13 @@
 import { clamp, lerp } from './komorebi-math.js';
-import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, CANOPY_KEYS, TOPO_KEYS, DEFAULTS, migrateLegacy } from './komorebi-params.js';
+import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, CANOPY_KEYS, TOPO_KEYS, DEFAULTS, migrateLegacy, cutWarnings } from './komorebi-params.js';
 import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
 import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi-transport.js';
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
 import { makeGrove } from './komorebi-grove.js';
-import { makeBake } from './komorebi-bake.js';
-import { makeLitter, newLitterState } from './komorebi-litter.js';
+import { makeBake, makeFill, NO_FILL } from './komorebi-bake.js';
+import { makeLitter, newLitterState, NO_LITTER } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
 import { makeEditorTools } from './komorebi-editor-tools.js';
 
@@ -15,6 +15,14 @@ import { makeEditorTools } from './komorebi-editor-tools.js';
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
 // overlays (their shaders, buffers, draw fns). typeof keeps an undefined-global load safe (= true).
 const EDITOR = (typeof KOMOREBI_EDITOR !== "undefined") ? KOMOREBI_EDITOR : true;
+
+// The same idea for the fall tiers this file builds (komorebi-params.js FEATURES, embed-build.mjs): a deploy bundle for one page's looks substitutes each of these by a literal,
+// and a false one removes the sky fill's factory and program, or the litter carpet's, from the bundle altogether. Raw modules keep both true.
+const FEAT_FILL = true;
+const FEAT_LITTER = true;
+// WHICH BUILD THIS IS and what it cut. The raw modules cut nothing; a bundle's build rewrites this line (verbatim, or it throws) with its file name, the looks it was
+// made for and the tiers it left out, so that a host which opens one of those gets told once (warnCut) rather than a quietly different picture.
+const BUILD = { name: 'modules', cut: [] };
 
 // ===========================================================================
 // create(canvas, opts) — one self-contained engine instance on a canvas.
@@ -42,6 +50,10 @@ function create(canvas, opts){
   let extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;   // mutable: extensions are per-context-incarnation, re-fetched by initGPU() after a context restore
 
   const params = Object.assign({}, DEFAULTS, migrateLegacy(opts.params) || {});
+  // A tier the host opens that this build cut stays off, and is said so once per engine: at the three doors params come through (here, setParams, transitionTo).
+  const warned = new Set();
+  const warnCut = (P) => { for(const m of cutWarnings(P, BUILD, warned)) console.warn(m); };
+  warnCut(params);
   // Auto-quality runtime throttle (driven by the params.auto_quality toggle). Holds the live
   // resolution / sample-count it trims to. Never touches the artistic params.
   const perf = { auto:false, quality:1, resScale:1, sampleCount:params.sample_count, bres:0, acc:0, lowCount:0, hiCount:0, upWait:20, glow:false };  // bres = size the layer textures are currently built at (so applyQuality knows when to reallocate); glow = the lateral-diffusion tier actually ran this frame (false when gated off OR when its 16F targets came back incomplete)
@@ -96,7 +108,7 @@ function create(canvas, opts){
   // webglcontextrestored calls it again, because a lost context kills all of them. Hence `let`, not `const`.
   let progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
   let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
-  let reseasonGrove, reseasonable, bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
+  let reseasonGrove, reseasonable, bake, bakeLayers, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -136,10 +148,11 @@ function create(canvas, opts){
     return e;
   }
   // THE SKY FILL's bake program (§4.7): compiled on first use like a transport variant, so a look that never opens
-  // canopy_fill (every shipped one) pays neither the compile nor the textures. A program belongs to the context that
-  // linked it, so a restore forgets it (see onContextRestored) and the next fill compiles afresh.
+  // canopy_fill (every shipped one but the fall looks) pays neither the compile nor the textures. A program belongs to the context that
+  // linked it, so a restore forgets it (see onContextRestored) and the next fill compiles afresh. A const behind its flag and not a function declaration: a bundle that
+  // cut the fill must not be left holding the shader this names (a minifier keeps an unused function declaration, and the string with it).
   let fillEntry = null;
-  function fillFor(){
+  const fillFor = FEAT_FILL ? () => {
     if(!fillEntry){
       const prog = program(VS_FULL, FS_FILL);
       fillEntry = { prog, U: { origin:loc(prog,'uCanopyOrigin'), extent:loc(prog,'uCanopyExtent'), sun:loc(prog,'uSunColor'),   // origin/extent: the box the LAYERS were baked over; frameOrigin/frameExtent: the plan square the FILL is baked over
@@ -148,18 +161,18 @@ function create(canvas, opts){
         ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter'), beamK:loc(prog,'uFillBeamK') } };
     }
     return fillEntry;
-  }
-  // THE LITTER CARPET's bake program (§4.7): compiled on the first carpet, like the fill's, so a look that never lays litter (every shipped one) pays
-  // neither the compile nor the buffer. A program belongs to the context that linked it, so a restore forgets it too.
+  } : null;
+  // THE LITTER CARPET's bake program (§4.7): compiled on the first carpet, like the fill's, so a look that never lays litter (every shipped one but the fall looks) pays
+  // neither the compile nor the buffer. A program belongs to the context that linked it, so a restore forgets it too. Behind its flag for the same reason as the fill's.
   let litterEntry = null;
-  function litterFor(){
+  const litterFor = FEAT_LITTER ? () => {
     if(!litterEntry){
       const prog = program(VS_LITTER, FS_LITTER);
       litterEntry = { prog, U: { origin:loc(prog,'uLitterOrigin'), extent:loc(prog,'uLitterExtent'), minHalf:loc(prog,'uLitterMinHalf'),
         leafTex:loc(prog,'uLeafTex'), leafShape:loc(prog,'uLeafShape'), shapeBox:loc(prog,'uShapeBox') } };
     }
     return litterEntry;
-  }
+  } : null;
   // adaptive frame-rate (TUNE §9): offscreen present target + cadence state. presentFBO/presentTex are canvas-sized
   // and allocated lazily on first use (so a look that never enables adaptive_motion pays nothing).
   let presentTex=null, adaptiveLastRender=0, adaptiveHot=true;
@@ -197,7 +210,7 @@ function create(canvas, opts){
     // stable plumbing (never reassigned)
     gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, fill, litter, U,
     // (the GL handles — programs, buffers, FBOs, occTex, extTimer — and the subsystems over them are set by initGPU())
-    effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera, fillFor, litterFor,
+    effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera, fillFor, litterFor, warnCut,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
     woodTex: [],            // SKY VIEW (§4.9): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)
@@ -289,8 +302,9 @@ function create(canvas, opts){
                          quadBuf, emptyVAO, bakeFBO, faithFBO, fillFBO, occTex });
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
     ({ buildGrove, reseasonGrove, reseasonable } = makeGrove(hub)); hub.buildGrove = buildGrove;
-    ({ bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow });
-    ({ refreshLitter } = makeLitter(hub)); hub.refreshLitter = refreshLitter;   // after the bake: the carpet is read over the fill's frame, and asks the bake module for it
+    ({ bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow });
+    ({ bakeFill, refreshFill, fillWanted, fillLayerRes } = FEAT_FILL ? makeFill(hub) : NO_FILL); Object.assign(hub, { bakeFill, refreshFill, fillWanted, fillLayerRes });   // the fill reads the layers and the frame the bake just put on the hub
+    ({ refreshLitter } = FEAT_LITTER ? makeLitter(hub) : NO_LITTER); hub.refreshLitter = refreshLitter;   // after the bake: the carpet is read over the fill's frame, and asks the bake module for it
     ({ drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));
     Object.assign(hub, { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit });
     if(EDITOR) hub.initEditorGL?.();   // the debug overlays' buffers (absent on the very first call: makeEditorTools runs later and calls it itself)
@@ -498,8 +512,9 @@ function create(canvas, opts){
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
     }
-    if(lost){ Object.assign(params, DEFAULTS, migrateLegacy(obj)); return; }   // no GPU to rebuild on: the live params are what restoreGPU() rebuilds from
+    if(lost){ const m = Object.assign(params, DEFAULTS, migrateLegacy(obj)); warnCut(m); return; }   // no GPU to rebuild on: the live params are what restoreGPU() rebuilds from
     const merged = Object.assign({}, DEFAULTS, migrateLegacy(obj));   // legacy names -> current; missing keys -> defaults (forward-compat)
+    warnCut(merged);
     for(const k in DEFAULTS) params[k] = merged[k];
     rebuildAll();
     resetPerf();                                       // a preset may carry auto-quality

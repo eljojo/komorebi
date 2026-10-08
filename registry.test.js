@@ -9,7 +9,7 @@
 // (The fourth half — that GROUP_UPLOAD's functions match GROUP_UPLOAD_KEYS — cannot be seen from here, because the
 // functions close over engine state. create() checks that pair itself, on construction.)
 import { test, expect } from "bun:test";
-import { CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, TRANSPORT_CAMERAS, buildTransport } from "./komorebi.js";
+import { CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, TRANSPORT_CAMERAS, FEATURES, buildTransport } from "./komorebi.js";
 import { FS_FILL, GLSL_SKY_RAY, GLSL_LAYER_FIELD, GLSL_SUN_DIR_DECLS } from "./komorebi-shaders.js";
 
 const ALL_GROUPS = Object.keys(TRANSPORT_GROUPS);
@@ -126,4 +126,30 @@ test("the fill is READ from a coarser mip: K rays point-sampled per texel are an
   }
   expect(buildTransport("floor").includes("textureLod(uFillS")).toBe(true);
   expect(buildTransport("floor").includes("const float FILL_LOD")).toBe(true);
+});
+
+// ---- THE BEAM (§4.5). The beam's k is read by the taps, and by the receivers' fill share: it is a group of its own so that a bundle which cuts
+// the leaf's diffuse share (embed-build.mjs, FEATURES.leafDiffuse) drops the uniform and keeps the taps as the functions they are.
+test("the beam's k is a group of its own, spoken before the taps that read it, and the taps are functions only", () => {
+  expect(Object.keys(TRANSPORT_GROUPS.beam.locs)).toEqual(["beamK"]);
+  expect(TRANSPORT_GROUPS.beam.decls.includes("uniform float uBeamK;")).toBe(true);
+  expect(TRANSPORT_GROUPS.tap.locs).toBeUndefined();
+  expect(TRANSPORT_GROUPS.tap.decls.includes("uniform")).toBe(false);
+  expect(GROUP_UPLOAD_KEYS).toContain("beam");
+  expect(GROUP_UPLOAD_KEYS).not.toContain("tap");
+  for (const cam of ["floor", "cloth", "enclosure"]) {
+    const g = CAMERAS[cam].groups;
+    expect(g.indexOf("beam"), `${cam} speaks beam`).toBeGreaterThanOrEqual(0);
+    expect(g.indexOf("beam"), `${cam}: declaration before use`).toBeLessThan(g.indexOf("tap"));
+    expect(g.indexOf("tap")).toBeLessThan(g.indexOf("ca"));   // tapCA reads uBeamK too
+  }
+  expect(CAMERAS.sky.groups).not.toContain("beam");           // the sky view declares its own uBeamK in its own group
+});
+
+test("every feature that owns a group names one that exists and that a camera speaks — a feature the cut could not find would silently stay", () => {
+  for (const [name, f] of Object.entries(FEATURES)) {
+    if (!f.group) continue;
+    expect(ALL_GROUPS.includes(f.group), `${name}: group ${f.group}`).toBe(true);
+    expect(SPOKEN.has(f.group), `${name}: ${f.group} is spoken`).toBe(true);
+  }
 });

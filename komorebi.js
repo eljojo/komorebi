@@ -45,7 +45,10 @@
 // halves in agreement). TRANSPORT_CAMERAS/buildTransport are glslcheck's door onto the assembled variants.
 // cameraFor is the registry's selector: the editor asks it which camera a look runs so it can hide the knobs that
 // camera's groups never read (§4.9), rather than keeping a second copy of the receiver/sky_view chain.
+// FEATURES/featuresFor/cutWarnings are cameraFor's twin for the fall tiers (§9, "What a bundle cuts"): which of the sky fill, the leaf's diffuse share, the
+// autumn pigment, the exposure pass, abscission and the litter carpet a look opens. The bundler cuts what no kept look opens, and the engine warns once
+// when a host opens one its bundle cut.
 export { create } from './komorebi-engine.js';
-export { DEFAULTS, LEGACY_KEYS, migrateLegacy, MAX_LAYERS, MAX_SAMPLES, MAX_OCC, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS } from './komorebi-params.js';
+export { DEFAULTS, LEGACY_KEYS, migrateLegacy, FEATURES, featuresFor, cutWarnings, MAX_LAYERS, MAX_SAMPLES, MAX_OCC, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS } from './komorebi-params.js';
 export { DEG } from './komorebi-math.js';
 export { TRANSPORT_CAMERAS, TRANSPORT_GROUPS, CAMERAS, GROUP_UPLOAD_KEYS, cameraFor, buildTransport } from './komorebi-transport.js';

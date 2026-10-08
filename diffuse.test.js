@@ -478,9 +478,9 @@ test("every cast camera taps the BEAM through the texel's mixture, and a shut ga
     expect(/texelMix\(d\.rgb, d\.a, uBeamK, T, Tb\);\s*return Tb;/.test(code(src)), `${cam} tap returns the ballistic share`).toBe(true);
     expect(code(src).includes("exp(-(d.rgb + uBeamK*d.a))"), `${cam}: the slab form is gone`).toBe(false);
     // the else of the uniform branch is the line the engine has always run
-    expect(/if\(uBeamK > 0\.0\)\{[^}]*\}\s*else\s*\{\s*return exp\(-texture\(t,uv\)\.rgb\);/.test(src), `${cam} tap else`).toBe(true);
+    expect(/if\(uBeamK > 0\.0\)\{[^}]*\}\s*else\s*\{\s*return exp\(-texture\(t,uv\)\.rgb\);/.test(code(src)), `${cam} tap else`).toBe(true);
     // ...and diffraction's per-channel taps ride the same mixture, at each channel's own dispersed position
-    expect(/if\(uBeamK > 0\.0\)\{[^}]*texelMix\(qR\.rgb, qR\.a, uBeamK[^}]*texelMix\(qG\.rgb, qG\.a, uBeamK[^}]*texelMix\(qB\.rgb, qB\.a, uBeamK[^}]*\}\s*else\s*\{\s*float aR = texture\(t, \(world \+ H\*g\*cs\.r - uCanopyOrigin\)\/uCanopyExtent\)\.r;/.test(src), `${cam} tapCA`).toBe(true);
+    expect(/if\(uBeamK > 0\.0\)\{[^}]*texelMix\(qR\.rgb, qR\.a, uBeamK[^}]*texelMix\(qG\.rgb, qG\.a, uBeamK[^}]*texelMix\(qB\.rgb, qB\.a, uBeamK[^}]*\}\s*else\s*\{\s*float aR = texture\(t, \(world \+ H\*g\*cs\.r - uCanopyOrigin\)\/uCanopyExtent\)\.r;/.test(code(src)), `${cam} tapCA`).toBe(true);
     expect(src.includes("return exp(-vec3(aR,aG,aB));"), `${cam} tapCA else`).toBe(true);
   }
 });
@@ -595,9 +595,9 @@ test("the curtain reads S at the vertical plane's view factor, 0.5 — the tent'
   }
 });
 
-test("registry: the beam's k is a declared, uploaded uniform of the tap group — and the fill bake carries its own", () => {
-  expect(Object.keys(TRANSPORT_GROUPS.tap.locs)).toEqual(["beamK"]);
-  expect(GROUP_UPLOAD_KEYS).toContain("tap");
-  for (const cam of ["floor", "cloth", "enclosure"]) expect(CAMERAS[cam].groups, cam).toContain("tap");
+test("registry: the beam's k is a declared, uploaded uniform of the beam group — and the fill bake carries its own", () => {
+  expect(Object.keys(TRANSPORT_GROUPS.beam.locs)).toEqual(["beamK"]);
+  expect(GROUP_UPLOAD_KEYS).toContain("beam");
+  for (const cam of ["floor", "cloth", "enclosure"]) expect(CAMERAS[cam].groups, cam).toContain("beam");
   expect(code(FS_FILL).includes("uniform float uFillBeamK;")).toBe(true);
 });

@@ -24,7 +24,7 @@ Editor: [komorebi.eljojo.net](https://komorebi.eljojo.net). Examples: [`examples
 
 ## Add it to your page
 
-Download [`komorebi.player.min.js`](https://komorebi.eljojo.net/dist/komorebi.player.min.js) (about 25 kB gzipped; `nix run .#build` prints the current size) and put it on your own server. **Do not link to the copy on komorebi.eljojo.net.** That copy is for the editor and the examples. It changes without notice, and it is not a CDN.
+Download [`komorebi.player.min.js`](https://komorebi.eljojo.net/dist/komorebi.player.min.js) (about 37 kB gzipped; `nix run .#build` prints the current size) and put it on your own server. **Do not link to the copy on komorebi.eljojo.net.** That copy is for the editor and the examples. It changes without notice, and it is not a CDN.
 
 ```html
 <canvas id="komorebi" style="position:fixed; inset:0; width:100%; height:100%; z-index:-1"></canvas>
@@ -100,9 +100,16 @@ Serve ES modules over http(s). A page on `file://` cannot import them.
 The bundle contains every shipped look. The experimental looks are not in it: they are the receiver, enclosure
 and sky-view work, and they are the only looks that use a camera other than the floor.
 
-If your page uses two or three looks, `nix run .#embed -- '<look>'...` builds a bundle with only those looks and
-the cameras they use. Four looks come to 74 kB, or 24 kB gzipped. `nix run .#embed-check` renders each look
-through the bundle and through the raw modules, and requires the frames to be identical.
+If your page uses two or three looks, `nix run .#embed -- '<look>'...` builds a bundle with only those looks, the
+cameras they use, and the fall tiers they open: the sky fill, the leaf's diffuse share, the autumn pigment, the exposure
+pass, leaf drop and the litter carpet. A tier none of the looks opens is left out. The three homepage looks
+(`'morning 2' 'afternoon 5b' 'morning 3'`) come to 84 kB, or 28 kB gzipped, against 36 kB before the fall tiers could be
+cut; the player bundle keeps every tier, because `montebello` ships and opens all six. `nix run .#embed-check` renders
+each look through the bundle and through the raw modules, and requires the frames to be identical.
+
+If you then switch a page's params to something the bundle was not built for (open `canopy_fill` on a bundle that left
+the fill out, say), the tier stays off and the engine logs one `console.warn` per tier:
+`komorebi: fill is not in komorebi.embed.min.js (...), so it stays off; build a bundle with the look that uses it`.
 
 ## Develop
 

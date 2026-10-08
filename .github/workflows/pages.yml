@@ -42,6 +42,12 @@ jobs:
       - name: Build the bundle
         run: nix run .#build      # writes dist/komorebi.player.min.js and prints the size table
 
+      # The eljojo.net homepage loads THIS one, not the player bundle: its three looks open none of the fall tiers (the sky fill, the leaf's diffuse share, the autumn
+      # pigment, the exposure pass, abscission, the litter carpet), and a bundle built for them leaves those out. It is published beside the player bundle, so it is also there
+      # to download; the README tells embedders to serve their own copy of either.
+      - name: Build the homepage bundle
+        run: nix run .#embed -- 'morning 2' 'afternoon 5b' 'morning 3'      # writes dist/komorebi.embed.min.js
+
       # The site is the repo without the git data, this workflow and the pixel harness. New files ship
       # automatically, because the list is exclusions and not inclusions.
       - name: Assemble the site

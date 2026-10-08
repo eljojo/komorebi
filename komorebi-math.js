@@ -305,6 +305,14 @@ const DROP_EPS = 0.01;
 // catch-up after a slow regrow moves ~0.018, which is not. THE TRADE: while the clamp binds the season moves slower than the hand, at most
 // TWEEN_STEP per apply, and arrives a beat late (the landing still snaps to the stop's exact dict).
 const TWEEN_STEP = DROP_EPS/2;
+// THE SEASON'S PREDICATES, in one place: the grove reads them to decide what to compute, and the feature registry (komorebi-params.js FEATURES)
+// reads them to decide what a bundle may leave out. They are the same four questions asked of the same params, so they cannot be asked twice.
+// `ordered` is the exposure pass's gate: the drop consumes the exposure rank (the sunlit leaves go first) even at turn_exposure 0, so a look that drops
+// its leaves by light needs the pass whether or not it lets light order the turn.
+const senescing = (P) => P.phenology > P.turn_start;
+const lit = (P) => senescing(P) && P.turn_exposure > 0;
+const dropping = (P) => P.leaf_drop > 0 && P.phenology > P.drop_start - DROP_EPS;
+const ordered = (P) => lit(P) || (dropping(P) && P.drop_exposure > 0);
 function retention(D, p){ return p > D - DROP_EPS ? 1 - smoothstep(D - DROP_EPS, D, p) : 1; }
 
 // A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
@@ -450,4 +458,4 @@ function growNode(g, rng, out, base, dir, len, level, limb){
 }
 
 
-export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

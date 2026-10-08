@@ -6,8 +6,10 @@
 // this into dist/komorebi.player.min.js with every SHIPPED look (the
 // experimental ones, and the cameras only they use, are cut). `nix run .#embed
 // -- '<look>'...` bundles this SAME entry for one page's looks only, into
-// dist/komorebi.embed.min.js. embed-build.mjs holds both, and embed-check
-// proves the kept looks still render byte-identically.
+// dist/komorebi.embed.min.js, and cuts the fall tiers none of those looks opens.
+// The eljojo.net homepage loads that one, built for 'morning 2' 'afternoon 5b'
+// 'morning 3' by .github/workflows/pages.yml. embed-build.mjs holds both, and
+// embed-check proves the kept looks still render byte-identically.
 // The editor and player.html in THIS repo import the modules directly and never
 // touch this file — it exists only for classic-script consumers.
 // ============================================================================
