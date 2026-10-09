@@ -65,6 +65,24 @@ function sunDirection(out, elevDeg, azDeg){
   return out;
 }
 
+// The beam lands on a surface by the cosine of its incidence (`sun_cosine`, §3.5): the geometric factor the atmosphere's spectrum never carried. A pure function of the
+// sun's angles and the receiver, ONE table, unclamped in elevation like sunDirection above (the 4° of the editor's clock and the 6° of the throws are floors on those, not
+// on the surface: at 2° the floor gets sin 2°, not sin 4°). Radiance is invariant, so the seen disk takes nothing and the sky view gets 1 — the law belongs to the receiver.
+//   floor      horizontal, normal +z: sin el.
+//   enclosure  the crown, a horizontal panel: sin el. Every panel then multiplies by its own beamF in the shader, which is its incidence RELATIVE to the horizontal, so
+//              beamF·sin el is dot(n, sun) only where beamF's two limits are clear of it: its cap at 2 (a panel turned into a sun below 30° is held to 2·sin el of the true
+//              dot(n, sun) = 1: 0.845 at 25°, 0.416 at 12°) and its 0.15 divisor floor (below ≈ 8.6° every panel lands sin el/0.15 of its dot, the crown too, so the crown is
+//              anchored to the floor only above that). tent 1's 55° is clear of both.
+//   cloth      vertical, normal ±y: cos el·|sin az| = |sunDirection.y|. foldIncidence's `sgn` always picks the sun's side of the cloth, so the magnitude is the right one.
+// It is the factor f.sunIrr scales uSunColor by (komorebi-render.js) and the fill's S takes the floor's of (komorebi-bake.js), so nothing in a shader multiplies by it.
+const SUN_INCIDENCE = {
+  floor:     (el) => Math.max(Math.sin(el*DEG), 0),
+  enclosure: (el) => Math.max(Math.sin(el*DEG), 0),
+  cloth:     (el, az) => Math.abs(Math.cos(el*DEG)*Math.sin(az*DEG)),
+  sky:       () => 1,
+};
+function sunIncidence(camera, elevDeg, azDeg){ return SUN_INCIDENCE[camera](elevDeg, azDeg); }
+
 // ---- deterministic RNG so canopy is frame-stable & reproducible ------------
 function mulberry32(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
@@ -560,4 +578,4 @@ function vignetteMask(u, v, feather, shape) {
   return 1 - smoothstep(1 - feather, 1, d);
 }
 
-export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, sunIncidence, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

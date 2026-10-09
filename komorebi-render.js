@@ -4,7 +4,7 @@
 // camera registry), the lateral-diffusion glow tier, and the layer-debug blit.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, atmosphere, ballisticK, clamp, smoothstep, sunDirection } from './komorebi-math.js';
+import { DEG, atmosphere, ballisticK, clamp, lerp, smoothstep, sunDirection, sunIncidence } from './komorebi-math.js';
 import { MAX_LAYERS } from './komorebi-params.js';
 import { CAMERAS, GROUP_UPLOAD_KEYS } from './komorebi-transport.js';
 
@@ -132,8 +132,10 @@ export function makeRender(hub){
       gl.uniform2f(u.viewCenter, params.view_center_x, params.view_center_y);   // camera pan (world m) — frames the off-frame tree; no auto-centre (§4.8)
       gl.uniform2f(u.origin, -f.E/2, -f.E/2);
       gl.uniform2f(u.extent, f.E, f.E);
-      // physical sun + sky colour from solar elevation (spec §3.5): warm/red low sun, ozone-blue shadows
-      gl.uniform3f(u.sun, f.atm.sun[0], f.atm.sun[1], f.atm.sun[2]);
+      // physical sun + sky colour from solar elevation (spec §3.5): warm/red low sun, ozone-blue shadows. On the floor, the cloth and the tent uSunColor feeds the beam and nothing else, so the
+      // cosine law (sun_cosine) is a scale of THIS upload and never a multiply in a shader (acc*uSunColor*f could contract into another FMA than today's line and break byte-identity even at f = 1).
+      // f.sunIrr is exactly 1 at sun_cosine 0, where x*1 is exact; the sky view's is always 1, because its uSunColor is the disk's radiance.
+      gl.uniform3f(u.sun, f.atm.sun[0]*f.sunIrr, f.atm.sun[1]*f.sunIrr, f.atm.sun[2]*f.sunIrr);
       gl.uniform3f(u.ambient, f.atm.ambient[0], f.atm.ambient[1], f.atm.ambient[2]);
       gl.uniform1fv(u.heights, hub.layerHeights());
       gl.uniform1i(u.layerCount, params.layer_count);
@@ -383,6 +385,7 @@ export function makeRender(hub){
     const f = {
       E: params.canopy_extent_m,
       atm: atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight),
+      sunIrr: lerp(1, sunIncidence(cam, params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1)),   // the beam's cosine of incidence on THIS receiver (sun_cosine, §3.5); the sky view's is 1. Held to 0..1 like canopy_fill and vignette: past 1 the blend turns the sun colour negative
       wood: !faithfulOn() && params.branch_tau > 0 && occ.count > 0,   // read by the table upload and the penumbra alike, so they cannot disagree
       linearOut: linearOut ? 1 : 0,
     };

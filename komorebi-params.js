@@ -39,6 +39,7 @@ const MORPH_KEYS = [
   'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'vignette','vignette_shape',                                          // the edge fade (§4.7): two live shader uniforms in the post block every camera runs — the feather (also the gate) and the superellipse exponent — so they tween; a presentation device, not a fall tier
+  'sun_cosine',                                                         // the sun's cosine law (§3.5): a live scale of the uploaded sun colour and a fill re-run (fillSig), no bake — so it tweens
   'canopy_fill','fill_scatter',                                         // the sky fill (§4.7): two live shader uniforms — the receiver's mix and the leaf albedo the fill pass reads — so they tween; the canopy_fill gate crossing 0 allocates the fill lazily, mid-tween, which is not a look pop
   'leaf_wetness',                                                       // the rain day (§4.7): read by the carpet bake only — refreshLitter's signature notices it and only the carpet re-bakes; no regrow (a CANOPY key would regrow the whole grove per frame to re-tint the carpet, and macros may never write CANOPY keys, which P8's rain, a live writer, will need)
   'leaf_diffuse',                                                       // a leaf is not a window (§4.5): k = −ln(1−d) is a live uniform on both paths (the layer tap reads it, the faithful cast re-bakes on it), so it tweens — except across 0: the authored scatter proxy (sky_scatter, fill_scatter) is dropped the moment k > 0, so a tween out of 0 snaps that term off (counting both would count the light twice, §4.9)
@@ -200,6 +201,11 @@ const DEFAULTS = {
   // Transport
   sun_elevation_deg: 55,
   sun_azimuth_deg: 30,
+  // THE SUN'S COSINE LAW (§3.5): the beam lands on every receiver by the cosine of its incidence — the floor and the tent's crown sin(el), the flat cloth cos(el)·|sin(az)| — which the
+  // atmosphere's spectrum never carried, so a 12° floor was as bright as a 70° one. 0..1, a blend: 0 = the old full-strength beam, byte-identical (the factor is exactly 1 and nothing
+  // in a shader reads it); 1 = the law, normalised to the zenith, so a look that turns it on re-sits its `exposure` (about ×2.3 at 26°). The sky view never reads it: radiance is invariant, the seen
+  // disk takes nothing. The skylight is not a beam and keeps its level. Author only 0 or 1 (an interior value is the law under a higher sun, which a real sun does give).
+  sun_cosine: 0.0,
   // Look
   view_extent_m: 4.0,              // vertical span of the visible ground (zoom = on-axis span, any tilt)
   view_pitch_deg: 16,              // camera tilt from straight-down (0 = top-down); gentle under-the-tree default

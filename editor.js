@@ -159,6 +159,7 @@ const PANEL = [
   ['s','latitude','latitude °',0,66,1,'suntime'],
   ['s','sun_elevation_deg','elev °',4,90,0.5,''],
   ['s','sun_azimuth_deg','azim °',0,360,1,''],
+  ['s','sun_cosine','cosine',0,1,0.01,''],              // §3.5: the beam lands by the cosine of its incidence on every receiver — 0 is the old full-strength beam, byte for byte; a look that opens it re-sits its exposure
 
   ['h','Look'],
   ['s','view_extent_m','view (m)',0.5,40,0.1,''],
@@ -354,6 +355,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
   tent_len_m:'tent', tent_end_lean:'tent', tent_end_apex_h_m:'tent', tent_hip_rake:'tent', tent_eye_h_m:'tent',
   tent_fade:'tent', tent_seam:'tent', tent_mesh:'tent',
   sky_scatter:'sky',
+  sun_cosine:'transport',          // the uniform rides every camera's head group (the sky view's too, where the factor is always 1: radiance has no surface), so head cannot tell the sky view apart; 'transport' stands in for "has a cast": the floor, the cloth and the tent speak it and the sky view (head, not transport) does not, so the row is live where the beam lands on a receiver (§3.5)
   canopy_fill:'fill', fill_scatter:'fill', fill_directions:'fill', fill_resolution:'fill',   // the sky view lights no surface, so it speaks no fill group (§4.7)
   litter:'litter', litter_age:'litter', litter_drift_m:'litter', leaf_wetness:'litter', litter_resolution:'litter',   // only the floor reflects, so only the floor has fallen leaves to reflect off (§4.7): the cloth transmits and the sky view has no surface
   edge_area:['beam','sky'],        // the same two groups carry its uniform: the cast cameras' beam group and the sky view's own
@@ -796,6 +798,7 @@ const TIPS = {
   latitude:"<b>Where on Earth you are — it sets how high the noon sun climbs.</b> Near the equator the midday sun is nearly overhead; far north it stays low and raking all day. (45° ≈ Montreal, where this all began.)",
   sun_elevation_deg:"<b>How high the sun is — drag it down for sunset.</b> A low sun stretches the dapples into long ellipses, turns the light warm and orange, and lets the shade go cool blue. The most scene-changing knob. (Or just drag on the picture.)",
   sun_azimuth_deg:"<b>Which compass direction the sun is in.</b> Turns the direction the dapples stretch and lean.",
+  sun_cosine:"<b>Let the sun's height light the ground.</b> A low sun spreads its light thin across the floor, the way a torch held at a slant does, so with this up the day brightens toward noon and dims toward dusk at a fixed exposure. At 0 every sun lands at full strength whatever its height (what every look has always done); at 1 the floor takes the cosine of the sun's angle, the curtain and the tent theirs. A look that turns it on re-sits its exposure — about ×2.3 higher for a 26° sun — because the law is measured from a sun straight overhead. The sun you see is unchanged: the disk looks as bright at any height, and the skylight is not sunlight, so it keeps its level. Not shown when looking up.",
   // Look
   view_extent_m:"<b>Zoom — how much ground you see.</b> Small = a close-up of a few big dapples; large = a wide field of many small ones. (It's the span at screen centre, so it holds as you tilt.)",
   view_pitch_deg:"<b>Tilt — straight down vs. out along the floor.</b> 0° is the old top-down map; raise it and you're sitting under the tree — the near floor drops to the bottom of frame, the far floor recedes and dissolves into haze. (Or just drag up/down on the picture.)",

@@ -395,6 +395,9 @@ vec3 foldField(vec2 cloth){
 // warp geometry is the gate, no separate knob. The ratio exceeds 1 on a flank turned INTO the sun — real (that
 // flank truly collects more than the flat plane), and it diverges as the sun rakes parallel to the cloth, the same
 // degenerate pose clothGy already guards, where the whole cloth-space cast is meaningless anyway.
+// All of it is RELATIVE to the flat cloth. The flat cloth's own incidence, its sy (|sunDir.y| = cos(el)·|sin(az)|), is the absolute factor, and it
+// arrives with uSunColor, which the CPU scales by sun_cosine (komorebi-render.js): a flank turned into the sun collects its ratio of the flat
+// cloth's share, and nothing is multiplied twice.
 float foldIncidence(float slope){
   if(uFoldWarp == 0.0) return 1.0;                                         // flat cloth: no tilt, so nothing to vary — byte-identical
   float sgn = uBulkShift.y < 0.0 ? -1.0 : 1.0;                             // which side of the cloth the sun stands on
@@ -676,13 +679,19 @@ const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec §4.9): the rec
     recvZ = hit.z;
     n = vec3(nxy, n.z);
     // PER-PANEL LIGHT — the thing a flat wall cannot do, and the reason this receiver exists. beamF is the beam's
-    // incidence on THIS panel, normalized by the sun's own vertical component so a HORIZONTAL panel comes out
-    // exactly 1: the floor and curtain conventions already absorb sin(elevation) into their irradiance (acc is the
-    // fraction of the disk that cleared, landing on a surface those models never tilt), so 1 is precisely what "as
-    // bright as the old receivers" has to mean. THE CROWN IS THAT ANCHOR — it is horizontal, so it lands at exactly
-    // 1 and the slopes and cap panels read as departures from it. The 0.15 floor (≈8.6° elevation) keeps a horizon sun
-    // from dividing by nothing. The sky is a hemisphere rather than a direction, so it takes how much of that
-    // hemisphere the panel can see instead — 1 on the crown, and less the more steeply a panel stands up.
+    // incidence on THIS panel RELATIVE to a horizontal one: dot(n, sun) normalized by the sun's own vertical component, so a
+    // HORIZONTAL panel comes out exactly 1. The absolute horizontal factor, sin(elevation), is NOT in it: that arrives with
+    // uSunColor, which the CPU scales by sun_cosine (komorebi-render.js). At sun_cosine 0 the old convention holds — every
+    // horizontal surface lands at the full beam (acc is the fraction of the disk that cleared, landing on a surface that was never
+    // tilted to the sun: the floor's historical omission, kept so a look that never asks for the law is the bytes it was), so 1 is
+    // precisely what "as bright as the old receivers" has to mean. At 1, beamF·sin(elevation) is dot(n, sun) only where beamF's two
+    // limits are clear of it: the cap at 2 (a panel turned into a sun below 30° is held to 2·sin(el) of the dot(n, sun) = 1 it should
+    // land: 0.845 at 25°, 0.416 at 12°) and the 0.15 floor (below ≈8.6° every panel lands sin(el)/0.15 of its dot, the crown too, so the
+    // crown is anchored to the floor only above that). tent 1 (55°) is clear of both. THE CROWN IS THE ANCHOR — it is horizontal, so it
+    // lands at exactly 1 (down to that floor) and the slopes and cap panels read as departures from it. The 0.15 floor (≈8.6° elevation)
+    // keeps a horizon sun from dividing by nothing. The sky is a
+    // hemisphere rather than a direction, so it takes how much of that hemisphere the panel can see instead — 1 on the
+    // crown, and less the more steeply a panel stands up.
     beamF = clamp(dot(n, uSunDir) / max(uSunDir.z, 0.15), 0.0, 2.0);
     skyF  = 0.5 + 0.5*n.z;
     skyS = skyF;                     // S is hemispherical light too: the same view of the hemisphere as the sky

@@ -38,7 +38,7 @@ import { PRESETS } from '/presets.js';
 import { fillDirections, fillFrame, fillRef, fillTile, texelTap, skyRayRef, texelMix } from '/komorebi-fill.js';
 import { litterAge, litterAlbedo, litterInstances } from '/komorebi-litter.js';
 import { LEAF_SAMPLES, leafShape } from '/komorebi-leaf.js';
-import { atmosphere, ballisticK, sunDirection } from '/komorebi-math.js';
+import { atmosphere, ballisticK, lerp, sunDirection, sunIncidence } from '/komorebi-math.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
 // The freeze set. Wind is deterministic noise-of-TIME (no RNG), so the only way to get a reproducible frame
@@ -272,6 +272,9 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
       const layers = heights.map((h, L) => ({ h, t: (x, y) => at4(L, x, y).slice(0, 3).map((tau) => Math.exp(-tau)), c: (x, y) => at4(L, x, y)[3] }));
       const beamK = ballisticK(p.leaf_diffuse);   // the split (§4.5): above 0 the reference emits t − tb from coverage, with the albedo off
       const atm = atmosphere({ sun: [0, 0, 0], ambient: [0, 0, 0] }, p.sun_elevation_deg, p.sky_turbidity, p.ambient_skylight);
+      // THE SUN THE LEAVES ARE LIT BY (§3.5, sun_cosine): the beam colour scaled by the floor's cosine, whatever surface reads S — the leaves are near-horizontal. The same scale the bake uploads, restated
+      // here from komorebi-math.js rather than read back from the engine, so a bake that forgot it (or scaled by the wrong camera) is a miss of ~1/sin el against this reference. 1 at sun_cosine 0, exactly.
+      const fsun = atm.sun.map((v) => v * lerp(1, sunIncidence('floor', p.sun_elevation_deg, p.sun_azimuth_deg), p.sun_cosine));
       // ONE SUN PER CAMERA (§4.7): the fill lights its leaves along the BEAM's path — the bulk shift, 0 in the endless park — never along the real sun
       const elB = Math.max(p.sun_elevation_deg, 6) * Math.PI / 180, azB = p.sun_azimuth_deg * Math.PI / 180, cotB = Math.cos(elB) / Math.sin(elB);
       const gS = bulkOn ? [cotB * Math.cos(azB), cotB * Math.sin(azB)] : [0, 0];
@@ -284,7 +287,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
         const box = q % 2 === 1 && fr.ext > E;                // a finite tree's frame is mostly empty floor: every other sample is drawn from the canopy box instead
         const i = Math.min(n - 1, Math.floor((box ? ((canopy.ox - fr.ox) + u0 * E) / fr.ext : u0) * n)), j = Math.min(n - 1, Math.floor((box ? ((canopy.oy - fr.oy) + v0 * E) / fr.ext : v0) * n));
         const x = [fr.ox + ((i + 0.5) / n) * fr.ext, fr.oy + ((j + 0.5) / n) * fr.ext];
-        const ref = fillRef(layers, x, K, { gS, sun: atm.sun, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j), k: beamK, edgeArea: !!p.edge_area });   // the proxy's albedo is the floor's alone (the cloth and the tent are handed 0) and is off above k = 0; each texel carries its own slot of the 4x4 interleaving tile
+        const ref = fillRef(layers, x, K, { gS, sun: fsun, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j), k: beamK, edgeArea: !!p.edge_area });   // the proxy's albedo is the floor's alone (the cloth and the tent are handed 0) and is off above k = 0; each texel carries its own slot of the 4x4 interleaving tile
         for (let c = 0; c < 3; c++) {
           const gT = T[(j * n + i) * 4 + c], gSv = S[(j * n + i) * 4 + c];
           eT = Math.max(eT, Math.abs(gT - ref.T[c])); eS = Math.max(eS, Math.abs(gSv - ref.S[c]));
@@ -313,7 +316,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
         // the field the fill integrates. The emitters are a G×G midpoint grid over the canopy box, read through the same domain as the bake.
         // the rays are the ones the ENGINE's texels together hold: each of the 16 tile slots has its own rotation of the K, so a floor point's
         // neighbourhood sees 16·K distinct directions, and the far tail of the hemisphere (where a ray leaves the frame) is only in the union
-        const sun = atm.sun, G = o.grid, cell = E / G, w = cell * cell, dirs = [];
+        const sun = fsun, G = o.grid, cell = E / G, w = cell * cell, dirs = [];
         for (let b = 0; b < 16; b++) for (const d of fillDirections(K, b)) dirs.push(d.shift);
         const K2 = dirs.length;
         const per = Array.from({ length: nL }, () => [0, 0, 0]), Dbeam = [0, 0, 0], Ropen = [0, 0, 0], Rin = [0, 0, 0];

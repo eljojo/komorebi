@@ -521,6 +521,30 @@ const INVARIANTS = [
     a: { inner_leaves: 0.3 }, b: { inner_leaves: 0.301 } },
   { name: 'inner_leaves: a hair of the share moves the frame by a hair (layer path)', preset: 'afternoon 7', near: 57,
     a: { inner_leaves: 0.3 }, b: { inner_leaves: 0.301 } },
+  // THE SUN'S COSINE LAW (§3.5, `sun_cosine`): the beam lands on each receiver by its incidence, as a CPU scale of the uSunColor upload (komorebi-render.js) and of the fill's sun (komorebi-bake.js); no GLSL
+  // moves. 0 is the gate and it ships at 0 on every look. Naming it must be the frame before the knob existed, on all four cameras: the floor (layer path: afternoon 7; faithful: park 1), the cloth
+  // (curtain 1), the enclosure (tent 1) and the sky view (canopy 1). Zero-vs-absent holds the DEFAULTS merge path (a default, or a look, that is not 0 would split the pair) ...
+  { name: 'sun_cosine 0 == absent (layer path)', preset: 'afternoon 7', a: {}, b: { sun_cosine: 0 } },
+  { name: 'sun_cosine 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { sun_cosine: 0 } },
+  { name: 'sun_cosine 0 == absent (curtain)', preset: 'curtain 1', rebake: true, a: {}, b: { sun_cosine: 0 } },
+  { name: 'sun_cosine 0 == absent (tent)', preset: 'tent 1', a: {}, b: { sun_cosine: 0 } },
+  { name: 'sun_cosine 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { sun_cosine: 0 } },
+  // ...and a pin holds the other half, that 0 is the frame that existed before the law (a law that leaked in at 0 would scale both halves of a pair alike). The sky view, the floor and the cloth already carry pins above
+  // (canopy 1-4, park 1, curtain 1, memories, afternoon 7); the enclosure had none. The hash is tent 1's smoke frame in the manifest of the last green run before this change.
+  { name: 'tent 1 is the frame it was before sun_cosine (enclosure)', preset: 'tent 1', pin: '6f8597f7' },
+  // The law moves what it should. The floor (faithful path, 26 degrees: I is 0.438): the beam share falls x0.438 (measured in linear HDR on a fixed lit/shade pair: x0.436) and the skylight share holds, so the mean
+  // level of the frame lands between 0.438 and 1: measured x0.814 (it is the mean of the ACES-mapped, gamma-encoded bytes, which moves far less than the linear beam does), the bound that ratio +-0.08. The cloth, the tent and the fall look with its fill and S open each differ...
+  { name: 'sun_cosine 1 dims the floor (faithful path)', preset: 'park 1', rebake: true, lit: [0.73, 0.89], a: {}, b: { sun_cosine: 1 } },
+  // ...but that mean is mostly lit floor, so it cannot tell a skylight that held from one that was scaled too (x0.794 if the ambient took the factor as well, against x0.814). A dense canopy can: most of its floor is
+  // shade, so its mean is mostly the skylight's and only the beam share falls. Measured x0.768 (afternoon 7 pulled down to 26 degrees); a skylight scaled by 0.438 as well lands at x0.675, so the bound is that ratio +-0.05.
+  { name: 'sun_cosine 1 dims the beam and the skylight holds (dense canopy at 26 degrees, layer path)', preset: 'afternoon 7', lit: [0.72, 0.82], a: { sun_elevation_deg: 26 }, b: { sun_elevation_deg: 26, sun_cosine: 1 } },
+  { name: 'sun_cosine 1 moves the curtain', preset: 'curtain 1', differ: true, a: {}, b: { sun_cosine: 1 } },
+  { name: 'sun_cosine 1 moves the tent', preset: 'tent 1', differ: true, a: {}, b: { sun_cosine: 1 } },
+  { name: 'sun_cosine 1 moves a fall look (montebello: the fill and S open)', preset: 'montebello', rebake: true, differ: true, a: {}, b: { sun_cosine: 1 } },
+  // ...and the sky view never reads it: radiance is invariant, the seen disk takes nothing, so even at 1 the frame is the same bytes.
+  { name: 'sun_cosine 1 does not touch the sky view', preset: 'canopy 1', a: {}, b: { sun_cosine: 1 } },
+  // A near-zenith look barely moves (I is 0.995 at 84.5 degrees): a hair of the beam, not a re-lit picture.
+  { name: 'sun_cosine 1 barely moves a near-zenith look (afternoon 7)', preset: 'afternoon 7', near: 3, a: {}, b: { sun_cosine: 1 } },
 ];
 
 // THE SKY FILL vs ITS REFERENCE (§4.7). The bun tests hold komorebi-fill.js's laws; this holds the GLSL to it. Each row
@@ -548,6 +572,9 @@ const FILL_CHECKS = [
   { name: 'memories, edge_area — the mixture at d 0, the albedo kept', preset: 'memories', over: { canopy_fill: 1, fill_scatter: 0.5, edge_area: true } },
   { name: 'park 1, edge_area — faithful: the mixture from the low-res layer set', preset: 'park 1', rebake: true, over: { canopy_fill: 1, fill_scatter: 0.5, edge_area: true } },
   { name: 'curtain 1, edge_area — Tsky is the mixture\'s for the cloth too', preset: 'curtain 1', over: { canopy_fill: 1, fill_scatter: 0.5, edge_area: true } },
+  // SUN_COSINE (§3.5): the leaves are lit by the floor's cosine, so S is scaled by sin el (x0.438 at montebello's 26 degrees) and Tsky, the skylight, is not. The reference is built from the unscaled atmosphere
+  // and the same scale restated in harness.html: a bake that forgot it would be ~2.3x off in S.
+  { name: 'montebello, sun_cosine 1 — S takes the leaves\' own sin el, Tsky does not', preset: 'montebello', rebake: true, over: { sun_cosine: 1 } },
 ];
 // THE FILL'S BOOKKEEPING (§4.7), measured on the layers the engine really baked (__fillCheck's `energy`). No light is made or lost
 // globally — what a frame shows is DISPLACEMENT (glow under the crown, shadow down-sun) — but the fill had two real breaks, and these
@@ -577,6 +604,10 @@ const FILL_ENERGY = [
   { name: 'afternoon 7, one layer — the bottom layer received what it emitted (wrap)', preset: 'afternoon 7', kind: 'bottom', over: { canopy_fill: 1, leaf_diffuse: 0.95, layer_count: 1 } },
   { name: 'memories — the fill holds what the leaves sent down, and what the beam gave up (park, one sun)', preset: 'memories', kind: 'park', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'afternoon 7 — the fill holds what the leaves sent down, and what the beam gave up (park, one sun)', preset: 'afternoon 7', kind: 'park', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
+  // SUN_COSINE (§3.5): the books close under the law too. The leaves are lit by the floor's sin el, so S (baked from a scaled sun) and the beam the leaves give up (scaled at transport) fall by one factor
+  // and Reng/D_beam must stay 1. harness.html builds the reference's `sun` as atm.sun x the same factor (`fsun`), and no other row here sets sun_cosine — so a reference that went back to atm.sun could
+  // not fail. memories' 36 degrees (I = 0.588) is far enough from 1 that a reference that forgot the scale lands the ratios at x0.59 (measured 0.5876 and 0.585) and a bake that forgot it at x1.70 (1.704, 1.696).
+  { name: 'memories, sun_cosine 1 — the fill holds what the leaves sent down, and what the beam gave up (park, one sun)', preset: 'memories', kind: 'park', over: { canopy_fill: 1, leaf_diffuse: 0.95, sun_cosine: 1 } },
   { name: 'park 1 — a finite tree: what it sends down lands inside the padded frame, and decays', preset: 'park 1', kind: 'tree', rebake: true, over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'tent 1 — a finite tree: what it sends down lands inside the padded frame, and decays', preset: 'tent 1', kind: 'tree', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'curtain 1 — a finite tree: what it sends down lands inside the padded frame, and decays', preset: 'curtain 1', kind: 'tree', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
@@ -594,6 +625,9 @@ const LIVE_CHANGES = [
   { name: 'memories, edge_area (layer path: the tap reads it, the fill re-bakes on its signature)', preset: 'memories', over: { canopy_fill: 1 }, key: 'edge_area', value: true },
   { name: 'park 1 with the fill shut, edge_area (faithful: the cast is re-cast)', preset: 'park 1', rebake: true, over: { canopy_fill: 0 }, key: 'edge_area', value: true },
   { name: 'park 1 with the fill open, edge_area (faithful: the cast AND the fill)', preset: 'park 1', rebake: true, over: { canopy_fill: 1 }, key: 'edge_area', value: true },
+  // THE SUN'S COSINE LAW (§3.5) tweens: the uniform scale follows the live param, and the fill's S re-bakes on fillSig's slot 14 — a gate row alone cannot see a signature that forgot the key, because an engine born
+  // with the knob bakes S scaled and a running one would keep the unscaled S it baked at 0.
+  { name: 'montebello (sun_cosine: the day dims the fill\'s S too)', preset: 'montebello', rebake: true, over: {}, key: 'sun_cosine', value: 1 },
   // THE CARPET (§4.7) is noticed at draw time, not baked at a regrow the engine does not run when a slider moves: opened on a running engine it must be the
   // frame an engine born with it shows, and the authored wind direction — a MORPH key, tweened in a transition — must carry it there too
   { name: 'afternoon 7 (the carpet bakes when the gate opens)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9 }, key: 'litter', value: 1, litter: true },
