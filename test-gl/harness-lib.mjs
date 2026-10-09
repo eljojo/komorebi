@@ -1,5 +1,5 @@
 // The pixel harness's pure parts, split out of run.js so `bun test` can hold them (harness-lib.test.js): the render memo,
-// the seeded sample --verify draws, and the manifest's key. No browser, no filesystem — run.js hands them what it served.
+// the seeded sample --verify draws, the manifest's key and what --verify holds its rows to. No browser, no filesystem — run.js hands them what it served.
 import { createHash } from 'node:crypto';
 
 // JSON with sorted keys, so two spellings of one input are one key. undefined (an absent opts) and null are the same absence.
@@ -62,6 +62,31 @@ const byPath = (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 // The key is over what the run stood on: every byte the harness served (the set, sorted, not the order the browser asked in), and the
 // things that are not served but decide a hash — run.js, harness.html, macros.js, the browser, the rasteriser, the launch flags, the machine.
 export const manifestKey = (inputs, served) => createHash('sha256').update(canonicalJSON({ inputs, served: served.slice().sort(byPath) })).digest('hex');
+
+// A gate row's verdict as its hashes alone can say it — re-derived by --verify from the frames it re-renders, never taken from the manifest:
+// a pin is its pinned hash, a byte-identical row is a == b (or a known failure), a live or energy row differs. A continuity row (`near`) is
+// judged on pixels, not hashes: null, and its reproduction is all --verify holds of it.
+export function hashVerdict(inv, got) {
+  if (inv.pin !== undefined) return got.a === inv.pin;
+  if (inv.near != null) return null;
+  if (inv.differ || inv.lit) return got.a !== got.b;
+  return got.a === got.b || !!inv.known;
+}
+
+// The manifest's body, which its key does not cover (the key is what the run STOOD ON, not what it found): a full, green run has every
+// row passing, as many rows as it says, and every gate row the run.js in front of us defines.
+export function manifestBodyProblems(m, invariantNames) {
+  const out = [];
+  const rows = Array.isArray(m.rows) ? m.rows : [];
+  if (rows.length !== m.cases) out.push(`${rows.length} rows, but cases says ${m.cases}`);
+  const failing = rows.filter((r) => !r.pass);
+  if (failing.length !== (m.failures ?? 0)) out.push(`${failing.length} failing row(s), but failures says ${m.failures ?? 0}`);
+  for (const r of failing.slice(0, 5)) out.push(`failed: ${r.name}`);
+  const gate = new Set(rows.filter((r) => r.suite === 'gate').map((r) => r.name));
+  const missing = invariantNames.filter((n) => !gate.has(n));
+  if (missing.length) out.push(`${missing.length} gate row(s) missing, e.g. ${missing.slice(0, 3).join('; ')}`);
+  return out;
+}
 
 // What moved between a manifest and the tree in front of us, in words — so a refusal says which file, not just "the key differs".
 export function diffInputs(was, now) {

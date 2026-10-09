@@ -29,9 +29,12 @@
 // every byte the harness served, plus run.js, harness-lib.mjs, harness.html and macros.js, the browser's version, the rasteriser's
 // name, the launch flags and the machine. `--verify [path]` is the cheap way to trust one: it loads the harness page on the tree
 // in front of it (so the served set is the real one), refuses if the key is not the manifest's, then re-renders the pins and a
-// seeded sample of the a/b rows (`--verify-seed <n>` repeats a sample) and requires their hashes to equal the manifest's.
-// WHAT IT PROVES: the manifest describes THIS tree on THIS browser (a stale or hand-edited one fails on the key, which moves with any
-// served byte), and that a sample of its hashes reproduces. WHAT IT DOES NOT: it does not re-prove every row — the checks that read
+// seeded sample of the a/b rows (`--verify-seed <n>` repeats a sample) and requires their hashes to equal the manifest's, and each
+// re-rendered row's verdict, re-derived from its new hashes (harness-lib.mjs hashVerdict), to pass.
+// WHAT IT PROVES: the manifest describes THIS tree on THIS browser (a stale one, or one whose inputs were edited, fails on the key, which
+// moves with any served byte), its rows look like a full, green run's (every row passing, as many as it says, every GATE row this run.js
+// defines — the other suites' rows are counted, not named; the key does not cover the rows, so they are checked apart from it), and a sample
+// of its hashes reproduces, a continuity (`near`) row by reproduction alone: hashes cannot judge it. WHAT IT DOES NOT: it does not re-prove every row — the checks that read
 // textures back (fill, sky, rim, halo, stamp, litter), the live knobs, transitions and robustness are taken from the manifest on the
 // strength of the key alone — and it cannot tell a run that did not finish from one that did if the file was written by hand and its
 // key forged. Only a full, green run writes a manifest that verifies.
@@ -43,7 +46,7 @@ import { extname, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { macroParams } from '../macros.js';
-import { createRenderMemo, diffInputs, manifestKey, sampleRows } from './harness-lib.mjs';
+import { createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, sampleRows } from './harness-lib.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served
 const OUT = join(ROOT, 'test-gl', 'out');
@@ -743,13 +746,16 @@ async function verifyManifest(page, { inputs, served, path, seed }) {
   let m;
   try { m = JSON.parse(await readFile(path, 'utf8')); } catch (e) { log(`VERIFY REFUSED — cannot read the manifest ${path}: ${e.message.split('\n')[0]}`); return false; }
   const key = manifestKey(inputs, served);
-  if (manifestKey(m.inputs || {}, m.served || []) !== m.key) { log(`VERIFY REFUSED — ${path} does not match its own key: its body was edited after it was written.`); return false; }
+  if (manifestKey(m.inputs || {}, m.served || []) !== m.key) { log(`VERIFY REFUSED — ${path} does not match its own key: its inputs or served list were edited after it was written.`); return false; }
   if (key !== m.key) {
     log(`VERIFY REFUSED — the manifest was taken on another tree or browser.\n  manifest key ${m.key}\n  this tree    ${key}`);
     for (const d of diffInputs(m, { inputs, served })) log(`  moved: ${d}`);
     return false;
   }
   if (m.failures) { log(`VERIFY REFUSED — the manifest is of a run with ${m.failures} failing row(s); it is not a proof.`); return false; }
+  // the key does not cover the rows, so hold them to what a full, green run of THIS run.js writes
+  const body = manifestBodyProblems(m, INVARIANTS.map((x) => x.name));
+  if (body.length) { log(`VERIFY REFUSED — the manifest's rows are not a full, green run's:\n  ${body.join('\n  ')}`); return false; }
   const gate = m.rows.filter((r) => r.suite === 'gate' && r.hashes);
   const pins = gate.filter((r) => r.hashes.pin !== undefined), ab = gate.filter((r) => r.hashes.b !== undefined);
   log(`VERIFY — the key matches (${key.slice(0, 16)}…); ${pins.length} pins + ${Math.min(VERIFY_AB, ab.length)} of ${ab.length} a/b rows, seed ${seed} (--verify-seed ${seed} repeats this sample)`);
@@ -759,9 +765,10 @@ async function verifyManifest(page, { inputs, served, path, seed }) {
     if (!inv) { bad++; log(`  FAIL  ${row.name} — no such row in this run.js`); continue; }
     let got;
     try { const { a, b } = await renderRow(page, inv); got = { a: a.captures[0].hash, ...(b ? { b: b.captures[0].hash } : {}) }; } catch (e) { bad++; log(`  FAIL  ${row.name} — ${e.message.split('\n')[0]}`); continue; }
-    const want = row.hashes, ok = got.a === want.a && (want.pin === undefined ? got.b === want.b : got.a === want.pin);
+    const want = row.hashes, reproduces = got.a === want.a && (want.pin === undefined ? got.b === want.b : got.a === want.pin);
+    const verdict = hashVerdict(inv, got), ok = reproduces && verdict !== false;   // the row's verdict from the new hashes, not the manifest's word for it
     if (!ok) bad++;
-    log(`  ${ok ? 'ok  ' : 'FAIL'}  ${row.name}   ${want.pin !== undefined ? `pin ${want.pin}` : `a ${want.a} b ${want.b}`}  ->  ${want.pin !== undefined ? got.a : `a ${got.a} b ${got.b}`}`);
+    log(`  ${ok ? 'ok  ' : 'FAIL'}  ${row.name}   ${want.pin !== undefined ? `pin ${want.pin}` : `a ${want.a} b ${want.b}`}  ->  ${want.pin !== undefined ? got.a : `a ${got.a} b ${got.b}`}${verdict === false ? '   — and the row itself fails' : ''}`);
   }
   log(bad ? `VERIFY FAILED — ${bad} row(s) did not reproduce` : 'VERIFY OK — the manifest describes this tree and the sample reproduces');
   return bad === 0;

@@ -2,7 +2,7 @@
 // what can silently go wrong without one is the memo's key (two inputs that are the same engine must collide, two
 // that are not must not), the fresh bypass the "two independent engines" rows stand on, and the manifest's key.
 import { describe, expect, test } from 'bun:test';
-import { canonicalJSON, createRenderMemo, diffInputs, manifestKey, renderKey, sampleRows, seededRandom } from './harness-lib.mjs';
+import { canonicalJSON, createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, renderKey, sampleRows, seededRandom } from './harness-lib.mjs';
 
 describe('renderKey', () => {
   test('key order and an absent opts do not matter', () => {
@@ -101,5 +101,32 @@ describe('manifestKey / diffInputs', () => {
     expect(d).toContain('served /komorebi.js changed');
     expect(d).toContain('served /presets.js no longer served');
     expect(d).toContain('served /new.js newly served');
+  });
+});
+
+describe('hashVerdict / manifestBodyProblems — what --verify holds the rows to, since the key does not cover them', () => {
+  test('each kind of row, from its hashes alone', () => {
+    expect(hashVerdict({ pin: 'aa' }, { a: 'aa' })).toBe(true);
+    expect(hashVerdict({ pin: 'aa' }, { a: 'bb' })).toBe(false);
+    expect(hashVerdict({}, { a: 'aa', b: 'aa' })).toBe(true);
+    expect(hashVerdict({}, { a: 'aa', b: 'bb' }), 'a byte-identical row whose frames differ fails, whatever the manifest says').toBe(false);
+    expect(hashVerdict({ known: 'why' }, { a: 'aa', b: 'bb' })).toBe(true);
+    expect(hashVerdict({ differ: true }, { a: 'aa', b: 'aa' }), 'a live row whose frames match fails').toBe(false);
+    expect(hashVerdict({ lit: [0.5, 2] }, { a: 'aa', b: 'bb' })).toBe(true);
+    expect(hashVerdict({ near: 3 }, { a: 'aa', b: 'bb' }), 'pixels decide a continuity row, not hashes').toBe(null);
+  });
+  const green = () => ({ failures: 0, cases: 3, rows: [{ suite: 'gate', name: 'g1', pass: true }, { suite: 'gate', name: 'g2', pass: true }, { suite: 'fill', name: 'f', pass: true }] });
+  test('a full, green run has no problems', () => expect(manifestBodyProblems(green(), ['g1', 'g2'])).toEqual([]));
+  test('a failing row with failures hand-set to 0 is refused', () => {
+    const m = green(); m.rows[0].pass = false;
+    expect(manifestBodyProblems(m, ['g1', 'g2']).join('\n')).toContain('g1');
+  });
+  test('dropped rows are refused: by the count, and by the gate rows this run.js defines', () => {
+    const m = green(); m.rows.splice(1, 1);
+    const p = manifestBodyProblems(m, ['g1', 'g2']).join('\n');
+    expect(p).toContain('cases says 3');
+    expect(p).toContain('missing');
+    m.cases = 2;
+    expect(manifestBodyProblems(m, ['g1', 'g2']).join('\n')).toContain('g2');
   });
 });
