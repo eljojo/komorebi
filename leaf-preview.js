@@ -76,7 +76,7 @@ function makeLeafPreview(params, hierOf){
       canvas.dataset.grows = String(++grows); canvas.dataset.size = String(made.size);
     }
     if(params.wall_fraction !== seenRaster){ seenRaster = params.wall_fraction; seenRasterAt = now; }
-    if(params.wall_fraction !== sigRaster && (regrown || !raster || now - seenRasterAt >= SETTLE_MS)){   // a new maze has no raster to show: that one is at once
+    if(regrown || (params.wall_fraction !== sigRaster && (!raster || now - seenRasterAt >= SETTLE_MS))){   // a new maze has no raster to show: that one is at once, even at the same vein share (the old raster is the old leaf's maze)
       raster = rasterLeaf(grown.blade, grown.maze, params.wall_fraction, N); sigRaster = params.wall_fraction; sigPaint = '';
       canvas.dataset.rasters = String(++rasters); canvas.dataset.wall = String(sigRaster);
     }

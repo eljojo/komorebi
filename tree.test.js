@@ -695,10 +695,13 @@ test("the held leaf mid-turn: its s and colours are its tree's lead and depth; s
     expect(H.canvas.dataset.label).toContain("leaf 1·0 ");
     expect(H.canvas.dataset.label).toContain(` · s ${sOf(1, 0, dT2b).toFixed(2)} a `);
     expect(H.canvas.dataset.label).toContain(` · tree 2 Δ ${dT2b.toFixed(3)} c ${cT2b.toFixed(2)}`);
-    // the label's a and b are read back from the leaf's two tissues, so they carry the tree's depth (leafTau's own draws, by hand); the pixels of the leaf after a regrow are not asserted here
+    // the label's a and b are read back from the leaf's two tissues, so they carry the tree's depth (leafTau's own draws, by hand)
     const r = math.mulberry32(math.hash3((seed >>> 0) ^ 0x51ED270B, 1, 0));
     r();   // the first draw is the leaf's turn phase
     const aHand = params.anthocyanin * (0.5 + r()) * cT2b, bHand = params.tannin * (0.5 + r()) * cT2b;
     expect(H.canvas.dataset.label).toContain(` a ${aHand.toFixed(2)} b ${bHand.toFixed(2)} · tree 2`);
+    // ...and its pixels: a regrown maze has no raster of its own, so it is rasterised with the regrow whether or not the vein share moved — else the new leaf's colours land on the old leaf's maze
+    expect(H.canvas.dataset.rasters, "the regrow paid its raster").toBe("2");
+    expect(firstByte(H.painted[H.painted.length - 1], paintOf(params, 1, 0, dT2b, cT2b)), "the colours are 1·0's, on 1·0's own maze").toBe(-1);
   } finally { H.done(); }
 }, 120000);
