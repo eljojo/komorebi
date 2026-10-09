@@ -20,6 +20,8 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeGrove } from '../komorebi-grove.js';
+import { DEFAULTS, migrateLegacy } from '../komorebi-params.js';
 import { EXPERIMENTAL, PRESETS } from '../presets.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served
@@ -37,6 +39,30 @@ function serveRoot() {
     createReadStream(file).pipe(res);
   });
   return new Promise((ok) => server.listen(0, '127.0.0.1', () => ok({ server, port: server.address().port })));
+}
+
+// What a look hangs, counted off the grove the engine's own code builds for it (over a stub GL): how many clusters it has and how many leaves hang on each. The leaves are
+// the instance buffers' own count, not leaves_per_cluster × foliage_density: the held leaf's [ / ] must walk exactly these, and an oracle that restated the formula would agree
+// with a preview that restated it too. phenology 0 so no leaf has let go.
+function hungBy(look) {
+  const gl = new Proxy({}, {
+    get(t, name) {
+      if (name === 'createBuffer') return () => ({ data: null });
+      if (name === 'bindBuffer') return (_, b) => { t.cur = b; };
+      if (name === 'bufferData') return (_, data) => { if (t.cur) t.cur.data = data; };
+      return () => ({});
+    },
+  });
+  const params = { ...DEFAULTS, ...migrateLegacy(PRESETS[look]), phenology: 0 };
+  const hub = { gl, params, MAX_TEX: 8192, quadBuf: {}, faithfulOn: () => false, occ: {}, faith: {}, sky: { start: [], count: [] } };
+  const g = makeGrove(hub).buildGrove(null);
+  const clusters = g.hier.twigs.length;
+  return { clusters, perCluster: g.layerVAO.reduce((s, L) => s + L.count, 0) / clusters };
+}
+// the shipped look at this foliage density that hangs the fewest clusters (the walk is the cost of the check)
+function lookAtDensity(density) {
+  const rows = Object.keys(PRESETS).filter((n) => !EXPERIMENTAL.includes(n) && PRESETS[n].foliage_density === density).map((name) => ({ name, ...hungBy(name) }));
+  return rows.sort((a, b) => a.clusters - b.clusters)[0];
 }
 
 const { server, port } = await serveRoot();
@@ -459,17 +485,133 @@ try {
   await setSlider('phenology', 0.5);
   const summerLeaf = await until((m) => m.n > 1000 && m.g > m.r, 20000);
   check('at summer the leaf is green (mean G > R over the lamina)', summerLeaf.n > 1000 && summerLeaf.g > summerLeaf.r, JSON.stringify(summerLeaf));
-  await setSlider('phenology', 1);
-  await setSlider('anthocyanin', 0.8);
-  await setSlider('vein share', 0.2);
-  const autumnLeaf = await until((m) => m.r > m.g, 2000);
-  check('phenology 1, anthocyanin 0.8, vein share 0.2: the mean turns red within 2 s', autumnLeaf.r > autumnLeaf.g, JSON.stringify(autumnLeaf));
+  // GOLD FIRST. At phenology 1 a leaf with no anthocyanin at all is already carotenoid-gold with R > G (T .74 / .58), so "r > g" says nothing about whether the anthocyanin
+  // (or the vein share) reached the inset. The red leaf is held to the gold one instead: the same leaf, the same season and vein share, only the anthocyanin moved. And the label
+  // is waited on before anything is read off the canvas: the repaint rewrites its `a`, and a read taken before it is a read of the old picture.
   const leafLabel = () => page.$eval('#leaf', (c) => c.dataset.label);
-  const l0 = await leafLabel();
+  const labelState = async () => {
+    const label = await leafLabel(), m = /^leaf (\d+)·(\d+) · outline \d+ · s (-?[\d.]+) a (-?[\d.]+) b (-?[\d.]+)$/.exec(label ?? '');
+    return m ? { label, j: +m[1], k: +m[2], s: +m[3], a: +m[4], b: +m[5] } : { label };
+  };
+  const untilLabel = async (pred, ms) => { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await labelState(); if (pred(v)) return v; await page.waitForTimeout(100); } return v; };
+  const rOverG = (m) => m.r / m.g;
+  await setSlider('anthocyanin', 0);
+  await setSlider('vein share', 0.2);
+  await setSlider('phenology', 1);
+  const goldState = await untilLabel((s) => s.s > 0.5 && s.a < 0.005, 20000);
+  check('phenology 1, anthocyanin 0, vein share 0.2: the leaf has turned and the label says no anthocyanin', goldState.s > 0.5 && goldState.a < 0.005, goldState.label);
+  const goldLeaf = await leafMean();
+  await setSlider('anthocyanin', 0.8);
+  // a leaf's own anthocyanin is 0.5-1.5 x the knob (leafTau), so the label reads 0.4-1.2 at 0.8; anything above 0.35 is the knob having reached the picture
+  const redState = await untilLabel((s) => s.s > 0.5 && s.a >= 0.35, 20000);
+  check('anthocyanin 0.8: the repaint landed (the label reads a between 0.35 and 1.25)', redState.a >= 0.35 && redState.a <= 1.25, redState.label);
+  const autumnLeaf = await leafMean();
+  check(`the red leaf's mean r/g is at least 1.5x the gold leaf's (red ${rOverG(autumnLeaf).toFixed(2)}, gold ${rOverG(goldLeaf).toFixed(2)})`, rOverG(autumnLeaf) >= 1.5 * rOverG(goldLeaf), `red ${JSON.stringify(autumnLeaf)} gold ${JSON.stringify(goldLeaf)}`);
   await page.keyboard.press(']');
-  let l1 = l0;
-  for (let i = 0; i < 100 && l1 === l0; i++) { await page.waitForTimeout(100); l1 = await leafLabel(); }
-  check('] steps to the next leaf (the address label changes)', l1 !== l0, `${l0} -> ${l1}`);
+  const stepped = await untilLabel((s) => s.j !== redState.j || s.k !== redState.k, 10000);   // the address only: the label's s / a / b can move without a step
+  check('] steps to the next leaf: the address moves to the one after it', (stepped.j === redState.j && stepped.k === redState.k + 1) || (stepped.j === redState.j + 1 && stepped.k === 0), `${redState.label} -> ${stepped.label}`);
+
+  // THE LEAVES THE GROVE HANGS. [ / ] walk one ring through exactly the leaves the grove hung — a cluster's own count (the marginal leaf only where there is one), over the
+  // grove's own clusters, wrapping at both ends — and the oracle is the grove the engine's code builds for the look (hungBy), never leaves_per_cluster × foliage_density.
+  // `data-at` is the address the keys hold now; the picture (the label) follows once the address has been still.
+  const atNow = () => page.$eval('#leaf', (c) => c.dataset.at);
+  const walk = async (key, want, limit) => {                        // press until the address reads `want`; the addresses on the way, first to last
+    const seen = [await atNow()];
+    for (let i = 0; i < limit && seen[seen.length - 1] !== want; i++) { await page.keyboard.press(key); seen.push(await atNow()); }
+    return seen;
+  };
+  const applyLook = async (name) => {
+    await page.$eval('#dev select', (sel, v) => { sel.value = v; sel.dispatchEvent(new Event('change', { bubbles: true })); }, name);
+    await page.waitForTimeout(1500);
+  };
+  const dense = lookAtDensity(1.65);
+  await applyLook(dense.name);
+  const upTo = await walk(']', '1·0', dense.perCluster + 5);
+  check(`on ${dense.name} (density 1.65, ${dense.perCluster} leaves a cluster) ] reaches leaf 0·${dense.perCluster - 1} and then 1·0`, upTo[upTo.length - 1] === '1·0' && upTo[upTo.length - 2] === `0·${dense.perCluster - 1}`, upTo.slice(-3).join(' '));
+  await walk('[', '0·0', dense.perCluster + 5);
+  await page.keyboard.press('[');
+  const lastLeaf = `${dense.clusters - 1}·${dense.perCluster - 1}`;
+  check(`[ from 0·0 wraps to the last leaf of the last cluster, ${lastLeaf} (${dense.clusters} clusters)`, (await atNow()) === lastLeaf, `at ${await atNow()}`);
+  const wrapped = await untilLabel((s) => `${s.j}·${s.k}` === lastLeaf, 20000);
+  check('...and the picture follows to it: that leaf grows', `${wrapped.j}·${wrapped.k}` === lastLeaf, wrapped.label);
+  await page.keyboard.press(']');
+  check('] from the last leaf wraps to 0·0', (await atNow()) === '0·0', `at ${await atNow()}`);
+  const sparse = lookAtDensity(0.45);
+  await applyLook(sparse.name);
+  const upToSparse = await walk(']', '1·0', sparse.perCluster + 5);
+  check(`on ${sparse.name} (density 0.45, ${sparse.perCluster} leaves a cluster) no address past leaf 0·${sparse.perCluster - 1} is ever shown`, upToSparse[upToSparse.length - 1] === '1·0' && upToSparse[upToSparse.length - 2] === `0·${sparse.perCluster - 1}`, upToSparse.slice(-3).join(' '));
+
+  // SETTLE (§4.5). A regrow is ~0.5 s and a re-raster most of that, so a slider drag, or a canopy morph that lerps leaf_size_m every tick, must not pay one per frame: the picture
+  // keeps showing the last leaf until its inputs have been still for 250 ms, then makes the one it was asked for. `data-grows` / `data-rasters` count the makes; `data-size` /
+  // `data-wall` are what the picture on show was made with.
+  const dataOf = (name) => page.$eval('#leaf', (c, n) => c.dataset[n], name);
+  const dragged = async (row, values, counter, made) => {
+    const c0 = +(await dataOf(counter));
+    for (const [i, v] of values.entries()) { await setSlider(row, v); if (i < values.length - 1) await page.waitForTimeout(100); }
+    const during = +(await dataOf(counter)) - c0;
+    const want = await page.evaluate((lab) => [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === lab).querySelector('input').value, row);
+    const t0 = Date.now();
+    while (Date.now() - t0 < 20000 && Number(await dataOf(made)) !== Number(want)) await page.waitForTimeout(100);
+    const landed = +(await dataOf(counter)) - c0 - during;
+    await page.waitForTimeout(800);                                 // and nothing more follows it
+    return { during, landed, later: +(await dataOf(counter)) - c0 - during - landed, want, made: await dataOf(made) };
+  };
+  const sizes = Array.from({ length: 10 }, (_, i) => 0.06 + 0.005 * i);
+  const dz = await dragged('leaf (m)', sizes, 'grows', 'size');
+  check(`dragging leaf (m) through ${sizes.length} values regrows at most twice during the drag (${dz.during})`, dz.during <= 2, JSON.stringify(dz));
+  check(`...then exactly once when it settles, on the final size (${dz.made} of ${dz.want}), and not again`, dz.landed === 1 && dz.later === 0 && Number(dz.made) === Number(dz.want), JSON.stringify(dz));
+  const veins = Array.from({ length: 10 }, (_, i) => 0.05 + 0.01 * i);
+  const dw = await dragged('vein share', veins, 'rasters', 'wall');
+  check(`dragging vein share through ${veins.length} values re-rasterises at most twice during the drag (${dw.during})`, dw.during <= 2, JSON.stringify(dw));
+  check(`...then exactly once when it settles, on the final share (${dw.made} of ${dw.want}), and not again`, dw.landed === 1 && dw.later === 0 && Number(dw.made) === Number(dw.want), JSON.stringify(dw));
+
+  // THE INSET IS UNDER THE CONTROLS and over the art. It is fixed bottom-left and 80 % of the screen when big, so it overlaps the strip's ‹ arrow and the panels' lower rows,
+  // and it takes the clicks aimed at them unless the controls are stacked above it. Where nothing overlaps it, a click still toggles its size.
+  const leafBox = () => page.$eval('#leaf', (c) => { const r = c.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: c.clientWidth }; });
+  const topAt = (x, y) => page.evaluate(([px, py]) => { const e = document.elementFromPoint(px, py); return e ? `${e.closest('#leaf, #strip, #play, #dev, #gl')?.id ?? e.tagName}` : null; }, [x, y]);
+  const small = await leafBox();
+  await page.mouse.click(small.l + 40, small.t + 30);               // the inset's upper-left: clear of the strip along the bottom, and of both panels (hidden in zen)
+  check('a click on the inset where nothing overlaps it enlarges it', await poll(async () => (await leafBox()).w > small.w + 50), `${small.w} -> ${(await leafBox()).w}`);
+  const big = await leafBox();
+  const overArt = await topAt(big.l + 40, big.t + 30);
+  check('and it still paints over the art canvas', overArt === 'leaf', `top element at the inset's corner: ${overArt}`);
+  const centreOf = (sel) => page.$eval(sel, (b) => { const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  const inside = (p) => p.x > big.l && p.x < big.r && p.y > big.t && p.y < big.b;
+  const sbc = await centreOf('#strip');
+  let arrow = { faded: true, top: null };
+  for (let i = 0; i < 20 && arrow.faded; i++) {                      // wake the strip, then read it in one go: it retires again a few seconds after the cursor stills
+    await page.mouse.move(sbc.x, sbc.y - 80); await page.mouse.move(sbc.x + 1, sbc.y - 79);
+    await page.waitForTimeout(300);
+    const a = await centreOf('#strip .preset button');
+    arrow = { ...a, faded: await page.$eval('#strip', (e) => e.classList.contains('faded')), top: await topAt(a.x, a.y) };
+  }
+  check('the strip\'s ‹ arrow, under the big inset, is the control: elementFromPoint there is the strip, not #leaf', !arrow.faded && inside(arrow) && arrow.top === 'strip', JSON.stringify({ ...arrow, insideInset: inside(arrow) }));
+  const lowestRow = (panel) => page.evaluate(([sel, b]) => {
+    const rows = [...document.querySelectorAll(`${sel} .ctl`)].map((r) => { const q = r.getBoundingClientRect(); return { id: r.dataset.tipKey ?? r.textContent.slice(0, 12), x: q.left + q.width / 2, y: q.top + q.height / 2, w: q.width }; })
+      .filter((r) => r.w > 0 && r.x > b.l && r.x < b.r && r.y > b.t && r.y < Math.min(b.b, innerHeight));
+    return rows.sort((p, q) => q.y - p.y)[0] ?? null;
+  }, [panel, big]);
+  const slidIn = (id) => page.waitForFunction((q) => document.getElementById(q).getBoundingClientRect().left >= 0, id, { timeout: 15000 });   // the panel's slide-in is a transition: its rows are off-screen until it lands
+  await page.$eval('#strip .preset .more', (b) => b.click());
+  await page.waitForSelector('#play:not(.hidden)', { timeout: 15000 });
+  await slidIn('play');
+  const playRow = await lowestRow('#play');
+  const playTop = playRow && await topAt(playRow.x, playRow.y);
+  check('the playful panel\'s lowest row under the inset is the control, not #leaf', playTop === 'play', JSON.stringify({ ...playRow, top: playTop }));
+  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('advanced')).click());
+  await page.waitForSelector('#dev:not(.hidden)', { timeout: 15000 });
+  await slidIn('dev');
+  const devRow = await lowestRow('#dev');
+  const devTop = devRow && await topAt(devRow.x, devRow.y);
+  check('the advanced panel\'s lowest row under the inset is the control, not #leaf', devTop === 'dev', JSON.stringify({ ...devRow, top: devTop }));
+  await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('playful')).click());
+  await page.waitForSelector('#play:not(.hidden)');
+  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('zen')).click());
+  await page.waitForSelector('#strip:not(.hidden)');
+  await page.waitForTimeout(700);
+  await page.mouse.click(big.l + 40, big.t + 30);
+  check('and a click where nothing overlaps it shrinks it again', await poll(async () => (await leafBox()).w < big.w - 50), `${big.w} -> ${(await leafBox()).w}`);
+
   await page.keyboard.press('l');
   check('l again hides it', await page.$eval('#leaf', (c) => getComputedStyle(c).display === 'none'));
   await setSlider('phenology', 0.5);   // leave the season as the checks below found it

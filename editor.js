@@ -1096,7 +1096,7 @@ window.addEventListener('keydown',e=>{
   }
   if(k==='r'||k==='R'){ reseed(); return; }
   if(k==='t'||k==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; return; }
-  if(k==='l'||k==='L'){ showLeaf=!showLeaf; leaf??=makeLeafPreview(params); leaf.show(showLeaf); return; }
+  if(k==='l'||k==='L'){ showLeaf=!showLeaf; leaf??=makeLeafPreview(params, () => eng.grove().hier); leaf.show(showLeaf); return; }
   if(showLeaf && (k==='['||k===']')){ leaf.step(k===']'?1:-1); return; }
   if(k==='f'||k==='F'){                                                     // toggle browser fullscreen (webkit fallback for Safari)
     const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;

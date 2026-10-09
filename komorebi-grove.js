@@ -232,6 +232,7 @@ export function makeGrove(hub){
       limbAngle:new Float32Array(nLimb), limbVel:new Float32Array(nLimb),   // scalar YAW bend (radians): rotation about the vertical
       limbPitch:new Float32Array(nLimb), limbPitchVel:new Float32Array(nLimb),   // second DOF (§5.1): ELEVATION bend in the limb's own vertical plane — what sway_pitch foreshortens by. Same spring constants as the yaw.
       nClusterTotal,
+      nLeaf,   // the leaves hung on each cluster, the marginal one counted where there is one: the grove's own record, which the editor's held leaf walks instead of rebuilding it from the params
       clusterPlan:new Float32Array(nClusterTotal*2), clusterLimb:new Int32Array(nClusterTotal),
       clusterPhase:new Float32Array(nClusterTotal),
       twigAngle:new Float32Array(nClusterTotal), twigVel:new Float32Array(nClusterTotal),
