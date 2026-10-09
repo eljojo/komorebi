@@ -357,7 +357,7 @@ export function makeRender(hub){
       // consistent atmosphere (only visible once tilt blooms the fog; invisible at pitch 0).
       const a = f.atm.ambient, m = Math.max(a[0],a[1],a[2],1e-4), hb = 0.6;
       gl.uniform3f(u.haze, a[0]/m*hb, a[1]/m*hb, a[2]/m*hb);
-      gl.uniform1f(u.vignette, params.vignette); gl.uniform1f(u.vignetteShape, params.vignette_shape);
+      gl.uniform1f(u.vignette, clamp(params.vignette, 0, 1)); gl.uniform1f(u.vignetteShape, clamp(params.vignette_shape, 2, 8));   // the shader divides by the shape, and past 1 the edge dims the centre: held to the documented ranges
       // Purkinje (§3.5): rods take over the dim shade as the sun lowers. The global weight rides the same
       // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
       gl.uniform1f(u.twilight, smoothstep(30, 4, params.sun_elevation_deg));
