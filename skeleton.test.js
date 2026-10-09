@@ -59,7 +59,7 @@ function groveOf(over) {
 const CASES = {};
 for (const [name, bundle] of Object.entries(TREE_SPECIES)) for (const seed of [1, 1234, 90210]) CASES[`${name}:${seed}`] = { ...bundle, seed };
 for (const phyllotaxis of ["spiral", "whorled", "opposite"]) CASES[`hub-${phyllotaxis}`] = { phyllotaxis };
-CASES["hub-droop"] = { droop: 0.35 };   // not 0.3: 0.3·(1/3)·5 is 0.49999999999999994, which Math.round sent to 0 cold and to 1 once JavaScriptCore had JITted it, so its digest was never recorded. growNode rounds by hand now; the tie test below holds that
+CASES["hub-droop"] = { droop: 0.3 };   // 0.3·(1/3)·5 is 0.49999999999999994, the tie growNode rounds by hand (JavaScriptCore's Math.round sent it to 0 cold and to 1 once JITted); the tie test below holds that
 for (const look of ["park 1", "curtain 1", "afternoon 7"]) CASES[look] = { ...PRESETS[look], leaves_per_cluster: 2 };
 
 const PLATFORM = `${process.platform}-${process.arch}`;
@@ -89,7 +89,7 @@ const FIXTURES_BY_PLATFORM = {
     "hub-spiral": { seg: 315, segs: "d6a321db", tw: 216, twigs: "8dedcd39" },
     "hub-whorled": { seg: 315, segs: "9d04371a", tw: 216, twigs: "b103e532" },
     "hub-opposite": { seg: 171, segs: "714fdf11", tw: 96, twigs: "537d668f" },
-    "hub-droop": { seg: 843, segs: "ec70464d", tw: 216, twigs: "e5858394" },
+    "hub-droop": { seg: 819, segs: "f0d09388", tw: 216, twigs: "b98dfaee" },   // recorded from growSkeleton on 2026-10-09, not before the refactor: this case dodged droop 0.3 until growNode rounded by hand, so no pre-refactor digest of it exists. Its counts are the proof of structure only
     "park 1": { seg: 552, segs: "a5ffde76", tw: 198, twigs: "edaf598a" },
     "curtain 1": { seg: 1104, segs: "78834041", tw: 396, twigs: "4d1e7bea" },
     "afternoon 7": { seg: 720, segs: "0fb3c121", tw: 495, twigs: "78a7d80a" },
@@ -119,7 +119,7 @@ const FIXTURES_BY_PLATFORM = {
     "hub-spiral": { seg: 315, segs: "cbed48e9", tw: 216, twigs: "9965c7ec" },
     "hub-whorled": { seg: 315, segs: "bbbc64e8", tw: 216, twigs: "e4900194" },
     "hub-opposite": { seg: 171, segs: "b5d876fe", tw: 96, twigs: "00288f15" },
-    "hub-droop": { seg: 843, segs: "91943a80", tw: 216, twigs: "bd27ef8f" },
+    "hub-droop": { seg: 819, segs: "29a614d5", tw: 216, twigs: "6c39a312" },   // droop 0.3 (it replaced 0.35 after this table was first recorded): recorded 2026-10-09 on the same x86_64-linux builder from growSkeleton with the review fixes
     "park 1": { seg: 552, segs: "e9e48a88", tw: 198, twigs: "11a1fda7" },
     "curtain 1": { seg: 1104, segs: "81ba95ce", tw: 396, twigs: "64f62a68" },
     "afternoon 7": { seg: 720, segs: "5267ba43", tw: 495, twigs: "b63a6eae" },
