@@ -180,8 +180,9 @@ export const PRESETS = {
   // red — the blend of glass (leaf_diffuse 0.5), the shade lit THROUGH the canopy (canopy_fill 1), the sunlit leaves
   // dropped (leaf_drop 1) and lying as a carpet round the trees' feet (litter 1), the shadows running away from us.
   // Exposure is park 1's own. It carries the fall tiers into the player bundle, which he accepted; and it is the look
-  // the season macro's fall stops are lifted from (macros.js). Dry: a rain day is leaf_wetness ≈ 0.5, with the dirt
-  // lowered by hand until the rain writes both. The carpet is the honest reflectance (§4.7: an opaque pile, κ provisional until
+  // the season macro's fall stops are lifted from (macros.js). A rain day as shipped: leaf_wetness 0.5 (José, 2026-10-08, m2 on
+  // the brief 02 sheet, the third sheet where the wet carpet won), with the dirt already lowered by hand until the rain writes
+  // both. The carpet is the honest reflectance (§4.7: an opaque pile, κ provisional until
   // the grey card), far less saturated than the stain it replaced; so the dirt is park 1's ×0.6 (2026-10-08, José, from the
   // review sheets): real soil reflects 0.1–0.2, and on park 1's dirt a montebello leaf matched it in chroma and sat at 1.1× its
   // luminance, so the carpet vanished into the ground.
@@ -195,7 +196,7 @@ export const PRESETS = {
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
-    "leaf_drop": 1, "litter": 1,                                                                    // the sunlit leaves have let go and lie on the floor (§4.5, §4.7)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.5,                                               // the sunlit leaves have let go and lie damp on the floor (§4.5, §4.7)
     "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -0.7, "view_center_y": -3, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
