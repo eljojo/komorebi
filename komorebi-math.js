@@ -453,7 +453,10 @@ function growNode(g, rng, out, base, dir, len, level, limb){
   const dLevel = plane ? 0 : g.droop * (level/levels);
   let tip, endDir = dir;
   if(Math.abs(dLevel) > 1e-3){
-    const nSub = Math.min(6, 1 + Math.round(Math.abs(dLevel)*5));
+    // rounded by hand, not by Math.round: at a tie like 0.15·(2/3)·5 = 0.49999999999999994 (canopy 3's level 2) JavaScriptCore's Math.round answers 0 cold
+    // and 1 once it has JITted this function — the same params, another grove after a few regrows. x − floor(x) is exact, so this is V8's answer everywhere.
+    const x = Math.abs(dLevel)*5, fl = Math.floor(x);
+    const nSub = Math.min(6, 1 + fl + (x - fl >= 0.5 ? 1 : 0));
     const dl = len/nSub, dth = dLevel*1.9/nSub;        // total curve ≈ dLevel·1.9 rad over the branch length
     let p = base, d = dir;
     for(let sx=0;sx<nSub;sx++){

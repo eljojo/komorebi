@@ -52,7 +52,7 @@ function groveOf(over) {
 const CASES = {};
 for (const [name, bundle] of Object.entries(TREE_SPECIES)) for (const seed of [1, 1234, 90210]) CASES[`${name}:${seed}`] = { ...bundle, seed };
 for (const phyllotaxis of ["spiral", "whorled", "opposite"]) CASES[`hub-${phyllotaxis}`] = { phyllotaxis };
-CASES["hub-droop"] = { droop: 0.35 };   // not 0.3: 0.3·(1/3)·5 is 0.49999999999999994, which Math.round sends to 0 cold and to 1 once JavaScriptCore has JITted it — the same grove, two answers
+CASES["hub-droop"] = { droop: 0.35 };   // not 0.3: 0.3·(1/3)·5 is 0.49999999999999994, which Math.round sent to 0 cold and to 1 once JavaScriptCore had JITted it, so its digest was never recorded. growNode rounds by hand now; the tie test below holds that
 for (const look of ["park 1", "curtain 1", "afternoon 7"]) CASES[look] = { ...PRESETS[look], leaves_per_cluster: 2 };
 
 const FIXTURES = {   // captured from the closure grow() at HEAD d2e996e, before it moved: segment/twig counts and the FNV digest of every record
@@ -105,6 +105,19 @@ const unit = (v) => { const m = Math.hypot(v[0], v[1], v[2]); return [v[0] / m, 
 const parentOf = (out, s) => out.seg.find((p) => p.b === s.a);   // a child grows from its parent's tip: the very same array
 const angle = (u, v) => Math.acos(Math.min(1, Math.max(-1, u[0] * v[0] + u[1] * v[1] + u[2] * v[2])));
 const HALF = () => 0.5;   // every draw the middle of its range: az offset 0, spread and length factor exactly their nominal
+
+test("a droop at a rounding tie grows one grove, cold or JITted: 0.15·(2/3)·5 = 0.49999999999999994 is one sub-segment every time (canopy 3's level 2)", () => {
+  expect(0.15 * (2 / 3) * 5).toBe(0.49999999999999994);   // the tie itself, as growNode computes it
+  const spec = specOf({ levels: 3, kids: 3, droop: 0.15 });
+  const first = grown(spec).seg.length;
+  for (let i = 0; i < 1000; i++) {   // enough calls for JavaScriptCore to tier growNode up: Math.round's answer first moved near build 200 in a cold bun
+    const out = grown(spec);
+    expect(out.seg.length, `build ${i}`).toBe(first);
+    const l2 = out.seg.filter((s) => s.level === 2);
+    expect(l2.length, `build ${i}: three level-2 branches, one sub-segment each`).toBe(3);
+    for (const s of l2) expect([s.f0, s.f1], `build ${i}`).toEqual([0, 1]);
+  }
+});
 
 test("the grammar, read off a stream that always says 0.5: each child is lenRatio of its parent, deviating by the phyllotaxis' spread", () => {
   for (const [phyllo, spreadK, kids] of [[0, 1.0, 3], [1, 0.95, 3], [2, 0.96, 2]]) {   // spiral coneA·(0.55+0.9·½), whorled ·(0.7+0.5·½), opposite ·(0.9+0.12·½)
