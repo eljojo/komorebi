@@ -13,9 +13,10 @@
 // slider's last tick is the resting state and nothing regrows on release.
 //   THE KEY. `season.key` is every param buildGrove READS except the season set (komorebi-params.js SEASON_KEYS), plus faithfulOn(). The engine re-seasons only
 //   while the key still matches; a changed key regrows. GROVE_READS is derived from `grep -n "params\." komorebi-grove.js` and reseason.test.js greps again, so a
-//   new read cannot slip past the key.
+//   new read cannot slip past the key. Every grove carries its key (`grove.key`, cache or not), so the engine can tell a regrow whose structure is the one on screen from one
+//   whose structure is still moving: only the first keeps the record, because the next tick of a moving structure would throw it away.
 //   THE CACHE IS LAZY. A summer build keeps no record (rec exists only when lit || dropping, and recording always costs ~5 ms and ~7 MB a regrow): the first
-//   'season' apply on a grove without one does one full build with keepSeason. The exposure field and its keyed rank are kept from that build when it ran the
+//   'season' apply on a grove without one does one full build with keepSeason (when the structure it builds is the one on screen; see THE KEY). The exposure field and its keyed rank are kept from that build when it ran the
 //   pass, and otherwise built by the first re-season whose gate needs `u`; the rank is never written into (exposureBlend hands it back itself at exposure_absolute 0).
 //   GOTCHAS. A and B0 are kept as DOUBLES: the litter's `size` is read from the doubles in buildGrove, and a float32 copy differs in the last bits. A re-season writes
 //   into the EXISTING buffers (layerVAO[l].buf, faith.buf), so the VAO pointers stay valid; it never touches `gr`, the hier springs, clusterData, clusterTex or leafTex —
@@ -563,14 +564,14 @@ export function makeGrove(hub){
       faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
     }
     hier.leafW = leafW;   // abscission (§4.5): each leaf's retained weight by (twig, slot) for the tree preview, which scatters its own leaves; null at the gate
-    const grove = { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter };
+    const grove = { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter, key: seasonKey(params, faithful) };   // key: the structure it was grown for (see THE KEY)
     if(keepSeason){
       let sx0=1e18, sy0=1e18, sx1=-1e18, sy1=-1e18;   // the wood's share of the faithful AABB: the season never moves it
       for(const s of faith.segRest){
         if(s.ax<sx0)sx0=s.ax; if(s.ax>sx1)sx1=s.ax; if(s.ay<sy0)sy0=s.ay; if(s.ay>sy1)sy1=s.ay;
         if(s.bx<sx0)sx0=s.bx; if(s.bx>sx1)sx1=s.bx; if(s.by<sy0)sy0=s.by; if(s.by>sy1)sy1=s.by;
       }
-      grove.season = { key: seasonKey(params, faithful), rec: sRec, base: seasonBase, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, E, tau, seg: [sx0, sx1, sy0, sy1],
+      grove.season = { key: grove.key, rec: sRec, base: seasonBase, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, E, tau, seg: [sx0, sx1, sy0, sy1],
                        faithBuf: faith.buf, ex: sEx, rank: sRank, u: null, outL: null, outF: null };
     }
     return grove;

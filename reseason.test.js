@@ -273,6 +273,31 @@ test("apply('season'): the carpet's grove is dropped, so the next refreshLitter 
   expect(eng.litter.grove).toBe(null);
 });
 
+// ---- the record is kept only when the structure has stopped moving ----------------------------------------------------------
+// A season apply that has to build (no cache, or a stale one) used to keep the per-leaf record every time. On the season slider's spring half every tick moves structure, so every
+// tick built a record (~5 ms, ~7 MB on afternoon 7) that the next tick threw away. It is kept now when the structure being built is the one the grove on screen was grown for.
+test("apply('season') over a sweep that moves the structure: no tick keeps a season record; the first with the structure settled keeps one and the apply after it is fast; every frame is a fresh build's", () => {
+  const { eng } = engineRig({});
+  const fresh = (label) => { const B = rig({ ...eng.params }); compare(label, snapshot(eng, eng.grove()), snapshot(B, B.G.buildGrove(null))); };
+  for (const foliage_density of [1.1, 1.2, 1.3, 1.4, 1.5]) {
+    Object.assign(eng.params, { foliage_density, phenology: 0.8 });
+    expect(eng.apply("season"), `density ${foliage_density}`).toBe("build");
+    expect(eng.grove().season, `density ${foliage_density}: the structure moved, so the next tick would throw the record away`).toBeUndefined();
+    fresh(`density ${foliage_density}`);
+  }
+  Object.assign(eng.params, { phenology: 0.85 });
+  expect(eng.apply("season"), "the structure is the one just built: this regrow keeps the record").toBe("build");
+  expect(eng.grove().season, "...and it is there").toBeDefined();
+  fresh("settled, with the record");
+  Object.assign(eng.params, { phenology: 0.9, anthocyanin: 0.7 });
+  expect(eng.apply("season"), "the apply after it takes the fast path").toBe("reseason");
+  fresh("re-seasoned");
+  Object.assign(eng.params, { foliage_density: 1.6 });
+  expect(eng.apply("season"), "the structure moves again").toBe("build");
+  expect(eng.grove().season, "...and the record is not kept").toBeUndefined();
+  fresh("moving again");
+});
+
 // ---- the cost: reported, not asserted -------------------------------------------------------------------------------------------
 const med = (f, n = 7) => { const ts = []; for (let i = 0; i < n; i++) { const t0 = performance.now(); f(); ts.push(performance.now() - t0); } ts.sort((a, b) => a - b); return ts[n >> 1]; };
 test("cost (reported): a fall frame by regrow and by re-season at t 0.9, median of 7", () => {

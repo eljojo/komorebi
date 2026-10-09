@@ -5,7 +5,7 @@ import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
-import { makeGrove } from './komorebi-grove.js';
+import { makeGrove, seasonKey } from './komorebi-grove.js';
 import { makeBake, makeFill, NO_FILL, FILL_SIG_LEN } from './komorebi-bake.js';
 import { makeLitter, newLitterState, NO_LITTER } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
@@ -481,14 +481,19 @@ function create(canvas, opts){
   function rebuildAll(){ rebuildTextures(); regenCanopy(); regenSource(); bake(); }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
   // The season axis (§4.5 "Re-seasoning"): a change to the season set alone is re-run over the grove's cached leaves; anything else the grove reads, or a grove the cache
-  // does not describe, regrows (with the cache, so the NEXT one is the fast one). Not during a transition (the incoming grove shares the engine-global faith.*, and the
+  // does not describe, regrows (with the cache once the structure holds still, so the NEXT one is the fast one). Not during a transition (the incoming grove shares the engine-global faith.*, and the
   // morph owns the canopy keys). The carpet's signature keys on the grove's identity plus phenology and the litter keys, NOT the capacities, so an anthocyanin-only
   // re-season would leave it stale: dropping the grove it was baked from makes the next refreshLitter bake it.
   // Returns the path it took, 'reseason' or 'build': the editor's cost gate must not fold a one-off cache build into its EMA.
   function reseason(){
     let path = 'reseason';
     if(!hub.groveIn && !trans.active && reseasonable(hub.grove)){ reseasonGrove(hub.grove, params); litter.grove = null; }
-    else { installGrove(buildGrove(hub.hier, { keepSeason: true })); path = 'build'; }
+    else {
+      // The record is kept only when the structure being grown is the one the grove on screen was grown for (grove.key): on the season slider's spring half every tick moves structure, so every
+      // tick would build a record (~5 ms, ~7 MB on afternoon 7) that the next one throws away, and the cost would enter the editor's tween gate as well. Leaving that half costs one extra
+      // full build: the last tick that moved the structure builds without a record, the next builds with it, and the one after is the fast path.
+      installGrove(buildGrove(hub.hier, { keepSeason: hub.grove?.key === seasonKey(params, faithfulOn()) })); path = 'build';
+    }
     bake();
     return path;
   }
@@ -568,7 +573,8 @@ function create(canvas, opts){
     },
     ...(EDITOR ? { fill, litter, faith, layers: () => hub.layerTex, woods: () => hub.woodTex,   // the sky fill's state + the layers it reads (and the sky view's wood beside them), for the pixel harness's shader-vs-reference checks (test-gl/); stripped from the player build
                    drawSourceInset: hub.drawSourceInset, drawTreeInset: hub.drawTreeInset, treeInsetHit: hub.treeInsetHit, profiler: hub.profiler, snapshotMotion: hub.snapshotMotion, applyMotion: hub.applyMotion, setMotionSource: hub.setMotionSource,
-                   isLowMotion: () => motionMagnitude() < ADAPT_LO } : {}) };   // editor-only handles, stripped from the player build
+                   isLowMotion: () => motionMagnitude() < ADAPT_LO,
+                   grove: () => hub.grove } : {}) };   // editor-only handles, stripped from the player build (grove: the one on screen: the held leaf walks its hier; reseason.test.js reads its season record)
   // ---- adaptive frame-rate helpers (TUNE §9) ----
   function ensureFrameTarget(){                       // lazy canvas-sized RGBA8 present target; reallocated on resize
     const w=canvas.width, h=canvas.height;
