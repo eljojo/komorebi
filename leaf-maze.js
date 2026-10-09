@@ -282,10 +282,12 @@ function paintLeaf(raster, tauWall, tauCell, blemishes = []){
 // f_w = 0 makes mixtureTau copy the cell, so the first call IS τ_cell; with the anthocyanin at 0 as well, a = 0·(0.5 + r()) = 0, the draws keep their order
 // (phi, then a, then b), and cell = base + s·(pig + 0) is exactly the wall's arithmetic. No `phiE`: with turn_exposure > 0 the canopy's leaf turns by its light,
 // which a leaf held in the hand cannot know — so this is the leaf at its own clock.
-function tissues(P, seed, j, k){
+// `dT` and `cT` are its tree's lead and depth (tree_clock_spread, tree_pigment_spread; math.js treeShifts / treeGains), which the caller reads for the tree the leaf hangs on and hands to both calls
+// alike: the lead moves the leaf's clock and the depth scales its red AND brown, so the walls brown with the tree and the cells redden with it. Absent, the leaf is the tree-less one.
+function tissues(P, seed, j, k, dT, cT){
   const summer = [P.trans_r, P.trans_g, P.trans_b].map((t) => -Math.log(Math.min(0.999, Math.max(1e-4, t))));   // komorebi-grove.js's tauSummer
-  const cell = leafTau(summer, { ...P, wall_fraction: 0 }, seed, j, k);
-  const wall = leafTau(summer, { ...P, wall_fraction: 0, anthocyanin: 0 }, seed, j, k);
+  const cell = leafTau(summer, { ...P, wall_fraction: 0 }, seed, j, k, undefined, undefined, undefined, dT, cT);
+  const wall = leafTau(summer, { ...P, wall_fraction: 0, anthocyanin: 0 }, seed, j, k, undefined, undefined, undefined, dT, cT);
   return { wall, cell, summer };
 }
 

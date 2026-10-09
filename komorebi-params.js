@@ -68,14 +68,14 @@ const CANOPY_KEYS = [
   'canopy_extent_m',                                                  // baked world size — only a regrow + re-bake (NO texture realloc), so it morphs continuously
   'branch_angle_deg','branch_length_ratio','branch_pitch_deg','foliage_density','leaves_per_cluster',
   'cluster_spread_m','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b','droop','taper_delta','crown_aspect',
-  'phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction','turn_exposure','exposure_absolute',   // leaf colour, like trans_rgb: each is a per-leaf tau read at regrow, so it morphs the SAME grove (spec §4.5)
+  'phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction','turn_exposure','exposure_absolute','tree_clock_spread','tree_pigment_spread',   // leaf colour, like trans_rgb: each is a per-leaf tau read at regrow, so it morphs the SAME grove (spec §4.5); the last two are per TREE, the same tau and day by a tree's own draw
   'leaf_drop','drop_start','drop_span','drop_exposure','drop_lag',   // abscission (§4.5): which leaves are still on the tree is decided at regrow, so it morphs the SAME grove too (a leaf fades out by §5.3's rule, never pops)
   'litter_age','litter_drift_m',   // the litter carpet (§4.7): how browned each leaf lies and how far the season's wind carried it — read only by the regrow-time bake, so they morph with the grove they are baked from
 ];
 // THE SEASON SET (§4.5, "Re-seasoning"): the canopy keys a phenology change may move without the grove's SKELETON moving — they change only
 // each leaf's tau, whether it is still hanging, and what lies on the ground. A grove built with `keepSeason` re-runs exactly these over its
 // cached leaves (komorebi-grove.js reseasonGrove); every other canopy key regrows. A subset of CANOPY_KEYS (reseason.test.js holds it).
-const SEASON_KEYS = ['phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction','turn_exposure','exposure_absolute','leaf_drop','drop_start','drop_span','drop_exposure','drop_lag'];
+const SEASON_KEYS = ['phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction','turn_exposure','exposure_absolute','tree_clock_spread','tree_pigment_spread','leaf_drop','drop_start','drop_span','drop_exposure','drop_lag'];
 const TOPO_KEYS = [   // these genuinely re-arrange the grove (different branching / depth / seed) — can't interpolate
   'branch_levels','branch_children','limb_count','layer_count','leader_strength','phyllotaxis','leaf_shape',   // leaf_shape: a different outline is a different texture and a different quad — it cannot interpolate, and a transition's crossfade bakes the two groves' shapes in one pass
   'tex_resolution','bake_resolution','seed','sample_count','eclipse',   // bake_resolution reallocs the layer textures like tex_resolution; eclipse: a false->true toggle turns every dapple to a crescent — hide it under a bloom
@@ -172,7 +172,7 @@ const DEFAULTS = {
   // GATE: a leaf that has not begun to turn (every leaf, at phenology <= turn_start) keeps trans_rgb literally —
   // the shipped looks sit at 0.5, so they render byte-identically whatever the pigment knobs below say.
   phenology: 0.5,
-  turn_start: 0.6,                 // phenology at which the EARLIEST leaf begins to turn
+  turn_start: 0.6,                 // phenology at which the EARLIEST leaf begins to turn (an early tree begins up to tree_clock_spread sooner)
   turn_span: 0.3,                  // ...and by turn_start + turn_span every leaf has finished (with drop_after_turn each leaf finishes turn_span − turn_spread after its own start, the last still at turn_start + turn_span)
   turn_spread: 0.18,               // how far the leaves' start times scatter (phenology units, clamped under the span): 0.6 of the default span, so mid-turn is a mosaic (green · gold · red on one tree) and the last leaf still finishes at 0.9
   anthocyanin: 0.0,                // red capacity (maple, sumac): synthesised as the leaf turns, ×(0.5..1.5) per leaf — the ~3:1 range in red depth across one tree. 0 = a plain gold turn
@@ -180,6 +180,8 @@ const DEFAULTS = {
   wall_fraction: 0.0,              // share of the leaf that is bright vein walls rather than dark cells (the sieve effect, §4.5): the mean is of transmittances, so a few clear walls lift a deep leaf. 0 = one uniform tissue
   turn_exposure: 0.0,              // light decides who turns first (§4.5, P1): 0..1, how far a leaf's turn is ordered by its exposure to the season's sun (the crown's top, its sun side, a tree with no shading neighbour turn EARLIER and make MORE red; the shaded interior later and yellower). 0 = P0's per-leaf hash alone, bit for bit, at any phenology — every experimental behaviour is a toggle
   exposure_absolute: 0.0,          // ranked vs absolute light (§4.5, P1b): 0..1, how far a leaf's place in the turn follows its RAW exposure instead of its rank in the grove's exposure order — u = mix(rank, exposure, this). 0 = the rank (P1: the look's own schedule and mean red, bit for bit); 1 = the raw light, so a grove in deep shade turns later and paler. Read wherever the exposure order is: through turn_exposure, and through the drop's order (drop_exposure while leaves fall, not after their turn — komorebi-math.js ordered) even at turn_exposure 0
+  tree_clock_spread: 0.0,          // one tree ahead of its neighbours (§4.5): 0..0.15 seasons, how far AHEAD the earliest tree can run. Each tree draws a lead Δ = −this·v³ from (seed, tree index) on its own salt: most trees near the look's schedule (median an eighth of this, one in five beyond half), the lead moving the tree's start, finish and drop together, and the gates open this much sooner (komorebi-math.js turnOpens). 0 = the look's clock for every tree, bit for bit
+  tree_pigment_spread: 0.0,        // each tree's red AND brown capacity × (1 ± this): 0..1, mean 1 in expectation, not by construction (a tree keeps its draw as the grove grows); 1 lets a tree go without red. 0 = the look's capacity, bit for bit
   leaf_drop: 0.0,                  // abscission (§4.5, P3a): 0..1, the share of leaves that have let go by drop_start + drop_span; the rest are marcescent (beech keeps ~half its brown leaves) and never drop within the season. THE GATE: 0 = nothing ever drops, P1's buffers bit for bit. Provisional species values: maple 1, red oak 0.8, beech 0.5
   drop_start: 0.7,                 // the season at which the first leaf lets go (phenology units; the turn starts at turn_start 0.6). Not read with drop_after_turn: the first leaf then goes when it has turned, turn_start + turn_span − turn_spread + drop_lag + DROP_EPS
   drop_span: 0.3,                  // how long the dropping share takes to fall, in seasons: the last of it is down by drop_start + drop_span

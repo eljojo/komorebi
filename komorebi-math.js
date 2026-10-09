@@ -99,10 +99,13 @@ function turnLength(P){
   const span = Math.max(P.turn_span, 1e-4);
   return span - clamp(P.turn_spread, 0, span*0.95);
 }
-function senescence(P, phi){
+// ONE TREE AHEAD (`dT`, below): a tree's lead moves the whole clock — the start, and so the finish with it — by shifting `turn_start`. The grove hands no `dT` at tree_clock_spread 0 (and the
+// lead of a tree that draws exactly 0 is 0), and then `start` IS turn_start: the expressions below are today's, literally, with no `+ 0` in them.
+function senescence(P, phi, dT){
   const span = Math.max(P.turn_span, 1e-4), spread = clamp(P.turn_spread, 0, span*0.95);
-  if(afterTurn(P)){ const T0 = P.turn_start + phi*spread; return smoothstep(T0, T0 + (span - spread), P.phenology); }
-  return smoothstep(P.turn_start + phi*spread, P.turn_start + span, P.phenology);
+  const start = dT ? P.turn_start + dT : P.turn_start;
+  if(afterTurn(P)){ const T0 = start + phi*spread; return smoothstep(T0, T0 + (span - spread), P.phenology); }
+  return smoothstep(start + phi*spread, start + span, P.phenology);
 }
 // The sieve effect (Beer's law is convex): a leaf is bright vein walls (tau_wall) beside dark cells (tau_cell), and
 // light through the whole leaf is the MEAN OF TRANSMITTANCES, not of tau — so a small clear fraction lifts a deep
@@ -135,15 +138,18 @@ function turnPhase(P, phi, phiE){
 // LIGHT (below): `phiE` and `gainE` = this leaf's turn order and red gain by exposure, given only by a grove that has
 // laid itself out. Absent `phiE`, or turn_exposure 0, no arithmetic touches phi or a: P0's leaf, to the bit. The draws
 // keep their order either way (phi, then a, then b), so the hash never moves.
-function leafTau(tauSummer, P, seed, j, k, out = [0,0,0], phiE, gainE){
+// ONE TREE AHEAD (§4.5): `dT` (<= 0) is the leaf's tree's lead, which shifts its clock (senescence); `cT` is the tree's depth, which scales red AND brown after the light's gain — the walls brown with the
+// tree, because b is in both tissues. Both absent (the grove hands them over only at tree_clock_spread / tree_pigment_spread above 0) and no arithmetic touches the leaf.
+function leafTau(tauSummer, P, seed, j, k, out = [0,0,0], phiE, gainE, dT, cT){
   const r = mulberry32(hash3((seed>>>0)^LEAF_SALT, j, k));
   const w = phiE === undefined ? 0 : P.turn_exposure;
   const phi = turnPhase(P, r(), phiE);                        // mix(phi, f(1 - exposure), w); r() first, so the draws keep their order
-  const s = senescence(P, phi);
+  const s = senescence(P, phi, dT);
   if(s === 0){ out[0]=tauSummer[0]; out[1]=tauSummer[1]; out[2]=tauSummer[2]; return out; }
   let a = P.anthocyanin*(0.5 + r());
-  const b = P.tannin*(0.5 + r());
+  let b = P.tannin*(0.5 + r());
   if(w > 0) a *= 1 + (gainE - 1)*w;                           // a * mix(1, g(exposure), w)
+  if(cT !== undefined){ a *= cT; b *= cT; }                   // the tree's depth, red and brown together
   const cell = _leafCell, wall = _leafWall;
   for(let c=0;c<3;c++){
     const base = tauSummer[c]*(1-s), pig = TAU_CAROTENOID[c] + b*TAU_TANNIN[c];
@@ -243,7 +249,7 @@ function exposureGrid(x, y, z, area, E, out = new Float64Array(x.length)){
 // TIES. A leaf whose one representative ray crosses no leaf area is exactly 1 — the up-sun shell and the top of the stand, a few percent of a
 // grove — and equals have to share a rank (the mean-rank law), so they would share one u: one turn phase, one drop day, a surface that dims as
 // one. `key` (optional: each leaf's own turn clock, leafClock) breaks the tie, and only the tie: within a run of equal exposure the leaf with the
-// SMALLER key — the one that would have turned first on its own — takes the higher rank, so the group spreads over its own slice of the order
+// SMALLER key — the one that would have turned first on its own (its own clock, not its tree's: a tree's lead is added after the rank) — takes the higher rank, so the group spreads over its own slice of the order
 // (the same (lo + up)/(2n) per leaf, so every untied leaf's rank is the keyless one to the bit). Leaves equal in the key as well (a 32-bit
 // collision) cannot be told apart and keep the mid-rank of their slots, so the ranks stay a permutation of (i + 1/2)/n and the mean exactly 1/2.
 // Absent `key` it is the keyless law, ties alike. NOT reached at exposure_absolute 1: there u is the raw exposure, literally 1.0 for the group.
@@ -313,14 +319,16 @@ function dropPhase(hashD, u, w){
   const v = Math.min(w, 1);
   return hashD*(1 - v) + turnOrder(u)*v;                      // the same 1 - u the turn orders by (clamped under 1, so a leaf with no light still has a day); v = 1 is turnOrder(u) exactly
 }
-function dropDay(P, phiD){ return phiD < P.leaf_drop ? P.drop_start + P.drop_span*phiD/P.leaf_drop : Infinity; }
+// ONE TREE AHEAD: `dT` shifts the old drop clock with the turn's (a leaf that fell earlier lies older), both clocks by the same lead. Absent or 0 it is today's expression.
+function dropDay(P, phiD, dT){ return phiD < P.leaf_drop ? (dT ? P.drop_start + dT : P.drop_start) + P.drop_span*phiD/P.leaf_drop : Infinity; }
 // AFTER THE TURN (drop_after_turn 1): the day is the end of the leaf's OWN window, T0 + L, plus the fade's DROP_EPS (so s_j is 1 where the fade BEGINS, D − ε, not
 // only at D) plus drop_lag (0 = it fades the instant it has turned). `phiTurn` is the leaf's turn phase (turnPhase): one order for the colour and the day, no hash
 // of its own (a third clock, §4.5). leaf_drop stays the share: marcescent = the last to turn. drop_start/span/exposure are not read.
-function dropDayAfterTurn(P, phiTurn){
+function dropDayAfterTurn(P, phiTurn, dT){
   if(!(phiTurn < P.leaf_drop)) return Infinity;
   const span = Math.max(P.turn_span, 1e-4), spread = clamp(P.turn_spread, 0, span*0.95);
-  return P.turn_start + phiTurn*spread + (span - spread) + DROP_EPS + P.drop_lag;
+  const start = dT ? P.turn_start + dT : P.turn_start;        // the tree's lead (see senescence): the same start the colour was turned by, so the day still follows the turn
+  return start + phiTurn*spread + (span - spread) + DROP_EPS + P.drop_lag;
 }
 // §5.3's continuity rule: a leaf leaves by fading, never popping. w falls from 1 to 0 over the DROP_EPS (phenology units)
 // ending at the leaf's day, so a season that moves by a hair moves the canopy by a hair. cov <- cov . w scales the leaf's
@@ -335,14 +343,52 @@ const TWEEN_STEP = DROP_EPS/2;
 // reads them to decide what a bundle may leave out. They are the same four questions asked of the same params, so they cannot be asked twice.
 // `ordered` is the exposure pass's gate: the drop consumes the exposure rank (the sunlit leaves go first) even at turn_exposure 0, so a look that drops
 // its leaves by light needs the pass whether or not it lets light order the turn.
-const senescing = (P) => P.phenology > P.turn_start;
+// ONE TREE AHEAD: the gates open by the knob's REACH. The earliest a leaf can begin is turn_start − tree_clock_spread (a tree's lead is S·v³ with v < 1, so none reaches it) and the earliest it can
+// fade is drop_start − S; opening that far ahead is free for a tree that has not got there (every s is 0, `retention` returns 1) and a late open would skip a leaf. At 0 these are turn_start and
+// drop_start themselves, the literal old predicates. THE GATE, restated: every leaf at phenology <= turn_start − tree_clock_spread keeps its authored tau literally. At <= 0.1 every shipped summer (0.5)
+// is untouched; at 0.15 a tree with v³ > 2/3 reaches into it (canopy 2's trees 5, 11, 12) — physical, and said in the spec and the help.
+const turnOpens = (P) => P.tree_clock_spread > 0 ? P.turn_start - P.tree_clock_spread : P.turn_start;
+const dropOpens = (P) => P.tree_clock_spread > 0 ? P.drop_start - P.tree_clock_spread : P.drop_start;
+const senescing = (P) => P.phenology > turnOpens(P);
 const lit = (P) => senescing(P) && P.turn_exposure > 0;
 // After the turn the first fade begins at turn_start + L + drop_lag (the earliest leaf, phi' 0, D − ε), and `dropping` opens ONE ε before it on purpose: (x + ε) − ε is not x
 // in float, an early open is free (retention returns exactly 1), and a late one would skip a fade. It may never be later than the first fade.
 // The drop follows the turn there, not the light, so drop_exposure no longer asks for the pass (a lit turn still does).
-const dropping = (P) => P.leaf_drop > 0 && P.phenology > (afterTurn(P) ? P.turn_start + turnLength(P) + P.drop_lag - DROP_EPS : P.drop_start - DROP_EPS);
+const dropping = (P) => P.leaf_drop > 0 && P.phenology > (afterTurn(P) ? turnOpens(P) + turnLength(P) + P.drop_lag - DROP_EPS : dropOpens(P) - DROP_EPS);
 const ordered = (P) => lit(P) || (dropping(P) && !afterTurn(P) && P.drop_exposure > 0);
 function retention(D, p){ return p > D - DROP_EPS ? 1 - smoothstep(D - DROP_EPS, D, p) : 1; }
+
+// ---- ONE TREE AHEAD OF ITS NEIGHBOURS (spec §4.5, `tree_clock_spread`, `tree_pigment_spread`). Within one kind the INDIVIDUAL shifts the clock by days to two weeks (a stressed tree runs early, a long tail) and its
+// red depth about two to one between neighbours; within a crown it is the light (above). So each tree t (the twig's `tree`) draws two numbers, on a salt of its own and never the growth, arrangement or
+// leaf streams — the lead first, then the depth — and the grove asks two tables, null at the gate. TREE_SALT = 2·0x9E3779B9 mod 2^32: the next multiple of the golden gamma, in no other stream.
+//   the lead   Δ_t = −S·v³ <= 0 (S = tree_clock_spread): SKEWED — most trees near the look's schedule, a few early. Mean S/4, median S/8, sd 0.283·S, one in five (1 − 2^(−1/3) = 0.206) beyond S/2. S is the REACH,
+//              as turn_spread is the last leaf's. It shifts the tree's clocks, not the season (`D` stays global, so a leaf that fell earlier lies older): start, finish and both drop days together.
+//              A cube because the square is a spread, not a skew, and the fourth power leaves five trees too thin a tail to ever show one.
+//   the depth  c_t = 1 + s·(2w − 1), s = tree_pigment_spread: in [1 − s, 1 + s), mean 1 in EXPECTATION and not by construction (a tree keeps its draw as the grove grows, so a tree_count morph is an identity); s = 1 lets
+//              a tree go without red. It scales the leaf's anthocyanin AND tannin together (leafTau).
+// A tree's two numbers are a pure function of (seed, t): the same at any tree_count, the marginal tree's included. Light still ranks grove-wide: the rank's key stays the leaf's own clock, so the cached rank
+// survives the knobs (which is what lets them be season keys) and the lead is added after it.
+const TREE_SALT = 0x3C6EF372;
+function treeDraws(seed, t, out = [0,0]){
+  const r = mulberry32(hash3((seed>>>0)^TREE_SALT, t, 0));
+  out[0] = r(); out[1] = r();
+  return out;
+}
+const treeShift = (v, S) => -S*(v*v*v);
+const treeGain = (w, s) => 1 + s*(2*w - 1);
+// THE GATE is the table: no knob, no draw and nothing handed on (null), so the grove's off path is the literal old arithmetic.
+function treeShifts(P, nTree){
+  if(!(P.tree_clock_spread > 0)) return null;
+  const out = new Float64Array(nTree), d = [0,0];
+  for(let t=0;t<nTree;t++) out[t] = treeShift(treeDraws(P.seed, t, d)[0], P.tree_clock_spread);
+  return out;
+}
+function treeGains(P, nTree){
+  if(!(P.tree_pigment_spread > 0)) return null;
+  const out = new Float64Array(nTree), d = [0,0];
+  for(let t=0;t<nTree;t++) out[t] = treeGain(treeDraws(P.seed, t, d)[1], P.tree_pigment_spread);
+  return out;
+}
 
 // A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
 // diffuse share (d = leaf_diffuse) is scattered by the mesophyll and leaves in every direction. The beam sees (1−d)·T, which
@@ -501,4 +547,4 @@ function vignetteMask(u, v, feather, shape) {
   return 1 - smoothstep(1 - feather, 1, d);
 }
 
-export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

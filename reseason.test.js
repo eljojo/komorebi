@@ -109,6 +109,24 @@ identity("drop after the turn, faithful", { drop_after_turn: 1 }, { faithful: tr
 identity("drop after the turn, turn_exposure 0 (the leaf's own clock) with leaf_drop 0.6", { drop_after_turn: 1, turn_exposure: 0, leaf_drop: 0.6 }, { phs: AFTER_PH });
 identity("drop after the turn, drop_lag moving with the clock", { drop_after_turn: 1 }, { phs: AFTER_PH, move: (p) => ({ drop_lag: 0.02 + p * 0.08 }) });
 identity("turn_start, turn_span, turn_spread, drop_start, drop_span moving (the whole season set)", {}, { move: (p) => ({ turn_start: 0.55 + p * 0.05, turn_span: 0.3 + p * 0.1, turn_spread: 0.2 * p, drop_start: 0.6 + p * 0.05, drop_span: 0.25 + p * 0.05 }) });
+// One tree ahead of its neighbours (`tree_clock_spread`, `tree_pigment_spread`; tree.test.js holds the laws): the lead and the depth are tables of the tree count the record keeps, and the loop
+// reads each leaf's tree off its twig, so the re-season makes the build's own four calls (the two drop days, the turn and the tau) with the same dT and cT, bit for bit.
+identity("per-tree clock", { tree_clock_spread: 0.1, drop_after_turn: 1 }, { phs: AFTER_PH });
+identity("per-tree clock, faithful", { tree_clock_spread: 0.1, drop_after_turn: 1 }, { faithful: true, phs: AFTER_PH });
+identity("per-tree clock, the old drop clock (it shifts too)", { tree_clock_spread: 0.1 });
+identity("per-tree pigment", { tree_pigment_spread: 0.6 });
+identity("per-tree clock on a marginal tree (it draws its own lead)", { tree_count: 2.4, tree_clock_spread: 0.1 });
+identity("per-tree pigment on a marginal tree, faithful", { tree_count: 2.4, tree_pigment_spread: 0.6 }, { faithful: true });
+identity("both knobs moving with the clock", {}, { move: (p) => ({ tree_clock_spread: 0.15 * p, tree_pigment_spread: 0.9 * (1 - p) }) });
+identity("both knobs moving with the clock, after the turn", { drop_after_turn: 1 }, { phs: AFTER_PH, move: (p) => ({ tree_clock_spread: 0.15 * (1 - p), tree_pigment_spread: 0.9 * p }) });
+// The UNLIT arm. SMALL turns by the light (turn_exposure 1), and a lit leaf's tau is overwritten by the exposure arm of the rewrite; every variant above therefore leaves the other arm — the one a grove with
+// turn_exposure 0 takes, `FEAT_PIGMENT && sen` — free to lose its lead or its depth with nothing failing. These turn by the leaf's own clock alone: with no drop (the hang loop's tau is the only
+// tau, and the re-season's sen-only arm must reproduce it for every leaf), with the hash-only old drop clock (the rewrite's non-lit arm, for the leaves that go), and after the turn.
+identity("unlit per-tree clock (the sen-only arm carries the lead)", { tree_clock_spread: 0.1, turn_exposure: 0, leaf_drop: 0 });
+identity("unlit per-tree pigment (the sen-only arm carries the depth)", { tree_pigment_spread: 0.6, anthocyanin: 0.8, turn_exposure: 0, leaf_drop: 0 });
+identity("unlit per-tree clock and pigment, the old drop clock on the hash alone", { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, turn_exposure: 0, drop_exposure: 0, leaf_drop: 1 });
+identity("unlit per-tree clock and pigment, the old drop clock on the hash alone, faithful", { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, turn_exposure: 0, drop_exposure: 0, leaf_drop: 1 }, { faithful: true });
+identity("unlit per-tree clock and pigment, after the turn", { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, turn_exposure: 0, drop_after_turn: 1, leaf_drop: 1 }, { phs: AFTER_PH });
 
 test("an anthocyanin-only change: the leaves recolour, none drops, and it is a fresh build's bytes", () => {
   const base = { ...SMALL, leaf_drop: 0, phenology: 0.8 };
@@ -186,9 +204,9 @@ test("a fall build keeps the exposure field it ran, and it is the one the first 
 const read = (f) => readFileSync(new URL(f, import.meta.url), "utf8");
 test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exactly what buildGrove reads besides the season set", () => {
   const SEASON = paramsMod.SEASON_KEYS;
-  expect(SEASON.length).toBe(14);
+  expect(SEASON.length).toBe(16);
   for (const k of SEASON) expect(CANOPY_KEYS, k).toContain(k);
-  expect([...SEASON].sort()).toEqual(["anthocyanin", "drop_exposure", "drop_lag", "drop_span", "drop_start", "exposure_absolute", "leaf_drop", "phenology", "tannin", "turn_exposure", "turn_spread", "turn_span", "turn_start", "wall_fraction"].sort());
+  expect([...SEASON].sort()).toEqual(["anthocyanin", "drop_exposure", "drop_lag", "drop_span", "drop_start", "exposure_absolute", "leaf_drop", "phenology", "tannin", "tree_clock_spread", "tree_pigment_spread", "turn_exposure", "turn_spread", "turn_span", "turn_start", "wall_fraction"].sort());
   const src = read("./komorebi-grove.js");
   const reads = new Set([...src.matchAll(/params\.([a-z_0-9]+)/g)].map((m) => m[1]).filter((k) => k in DEFAULTS));
   const season = new Set(SEASON), listed = new Set(groveMod.GROVE_READS);
@@ -233,7 +251,7 @@ test("apply('season'): the first builds with the cache (a full path); a season-s
   let b = built(counts);
   expect(eng.apply("season"), "no cache yet: a full build says so").toBe("build");
   expect(built(counts), "no cache yet: one full build").toBeGreaterThan(b);
-  for (const change of [{ phenology: 0.85 }, { phenology: 0.9, anthocyanin: 0.7 }, { leaf_drop: 0.5, drop_start: 0.72, turn_start: 0.58 }, { exposure_absolute: 0.5 }]) {
+  for (const change of [{ phenology: 0.85 }, { phenology: 0.9, anthocyanin: 0.7 }, { leaf_drop: 0.5, drop_start: 0.72, turn_start: 0.58 }, { exposure_absolute: 0.5 }, { tree_clock_spread: 0.1 }, { tree_pigment_spread: 0.6 }]) {
     b = built(counts);
     Object.assign(eng.params, change);
     expect(eng.apply("season"), `${JSON.stringify(change)}: the cache was used`).toBe("reseason");

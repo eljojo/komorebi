@@ -9,18 +9,19 @@
 // SETTLE_MS, and then makes the one it was asked for. The recolour is cheap and follows the sliders live; the first draw after `L` has nothing to show and is at once.
 //
 // THE PICTURE IS THE LEAF IT WAS MADE FOR: while a regrow waits, the address, the seed, the size and the shape the label and the pigment read are the ones the maze
-// on show was grown with (`made`), never the params' newer ones.
+// on show was grown with (`made`), never the params' newer ones. The leaf's TREE is read the same way: the tree the grove hangs cluster `made.j` on (hierOf, the grove the engine holds), and its lead and
+// depth are drawn from `made.seed` — the knobs' values are the live ones, so they recolour with the sliders like the pigments, but never from the params' seed or address, which run ahead of the picture.
 //
 // STACKING: the controls win. The canvas is positioned and has no z-index on purpose, so it stacks by DOM order — it sits right after the art canvas (a positioned
 // element over a plain one) and before #dev, #play and everything else, and the strip's z-index 8 puts the strip above it too. It stops click and pointer events only on itself.
 // ============================================================================
-import { TAU_ANTHOCYANIN, TAU_CAROTENOID, TAU_TANNIN, leafClock, senescence } from './komorebi-math.js';
+import { TAU_ANTHOCYANIN, TAU_CAROTENOID, TAU_TANNIN, leafClock, senescence, treeGains, treeShifts } from './komorebi-math.js';
 import { LEAF_SHAPES, MAPLE } from './komorebi-leaf.js';
 import { leafMaze, paintLeaf, rasterLeaf, tissues } from './leaf-maze.js';
 
 const N = 512;   // the raster's side: a regrow + raster costs ~0.5 s in bun, once per settled change of leaf, never per frame
 const SETTLE_MS = 250;   // how long a regrow's or a re-raster's inputs must have stood still (performance.now()) before it is paid
-const PIGMENT_KEYS = ['phenology', 'turn_start', 'turn_span', 'turn_spread', 'turn_exposure', 'anthocyanin', 'tannin', 'trans_r', 'trans_g', 'trans_b', 'drop_after_turn'];
+const PIGMENT_KEYS = ['phenology', 'turn_start', 'turn_span', 'turn_spread', 'turn_exposure', 'anthocyanin', 'tannin', 'trans_r', 'trans_g', 'trans_b', 'drop_after_turn', 'tree_clock_spread', 'tree_pigment_spread'];
 
 // hierOf() is the grove the engine holds (its `hier`): [ / ] walk what it hung, so they read its counts and never rebuild them from the params
 function makeLeafPreview(params, hierOf){
@@ -79,15 +80,18 @@ function makeLeafPreview(params, hierOf){
       raster = rasterLeaf(grown.blade, grown.maze, params.wall_fraction, N); sigRaster = params.wall_fraction; sigPaint = '';
       canvas.dataset.rasters = String(++rasters); canvas.dataset.wall = String(sigRaster);
     }
-    const pg = `${PIGMENT_KEYS.map((q) => params[q]).join('|')}|${sigGrow}|${sigRaster}`;
+    const tree = hierOf?.()?.twigs?.[made.j]?.tree ?? 0;   // the tree this leaf's cluster hangs on, in the grove on screen
+    const pg = `${PIGMENT_KEYS.map((q) => params[q]).join('|')}|${sigGrow}|${sigRaster}|${tree}`;
     if(pg !== sigPaint){
-      tint = tissues(params, made.seed, made.j, made.k);
+      const mine = { ...params, seed: made.seed }, dT = treeShifts(mine, tree + 1)?.[tree], cT = treeGains(mine, tree + 1)?.[tree];   // the tree's lead and depth, at the leaf's own seed; absent while a knob is 0
+      tint = tissues(params, made.seed, made.j, made.k, dT, cT);
       bctx.putImageData(new ImageData(paintLeaf(raster, tint.wall, tint.cell), N, N), 0, 0);
       sigPaint = pg;
       // the leaf's own state, read back from its two tissues (the pigment law stays leafTau's): s from its clock, a and b from how far the tissues part
-      const s = senescence(params, leafClock(made.seed, made.j, made.k)), a = s > 0 ? (tint.cell[1] - tint.wall[1])/(s*TAU_ANTHOCYANIN[1]) : 0;
+      const s = senescence(params, leafClock(made.seed, made.j, made.k), dT), a = s > 0 ? (tint.cell[1] - tint.wall[1])/(s*TAU_ANTHOCYANIN[1]) : 0;
       const b = s > 0 && params.tannin > 0 ? (tint.wall[0] - tint.summer[0]*(1 - s) - s*TAU_CAROTENOID[0])/(s*TAU_TANNIN[0]) : 0;
-      label = `leaf ${made.j}·${made.k} · outline ${grown.variant} · s ${s.toFixed(2)} a ${a.toFixed(2)} b ${b.toFixed(2)}`;
+      const ofTree = dT !== undefined || cT !== undefined ? ` · tree ${tree}${dT !== undefined ? ` Δ ${dT.toFixed(3)}` : ''}${cT !== undefined ? ` c ${cT.toFixed(2)}` : ''}` : '';   // what the tree did to this leaf, when a knob is up
+      label = `leaf ${made.j}·${made.k} · outline ${grown.variant} · s ${s.toFixed(2)} a ${a.toFixed(2)} b ${b.toFixed(2)}${ofTree}`;
       canvas.dataset.label = label;
     }
     if(canvas.width !== px || canvas.height !== px){ canvas.width = canvas.height = px; }

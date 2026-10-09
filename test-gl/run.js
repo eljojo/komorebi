@@ -185,6 +185,35 @@ const INVARIANTS = [
     a: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1 }, b: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1, drop_after_turn: 1 } },
   { name: 'drop_after_turn 1 holds the leaves until they have turned (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1 }, b: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1, drop_after_turn: 1 } },
+  // ONE TREE AHEAD OF ITS NEIGHBOURS (§4.5, `tree_clock_spread`, `tree_pigment_spread`). Both knobs ship at 0: every tree on the look's schedule and capacity, and the frame is the one before they
+  // existed, bit for bit (zero-vs-absent pins the DEFAULTS merge path, so it too is taken in a FALL frame where a tree's lead and depth would bite: leaves mid-turn, mid-fall and red) —
+  // on the layer path, the faithful one (rebake: see above) and the sky view...
+  { name: 'tree_clock_spread 0 == absent (layer path)', preset: 'afternoon 7',
+    a: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1 }, b: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1, tree_clock_spread: 0 } },
+  { name: 'tree_clock_spread 0 == absent (faithful path)', preset: 'park 1', rebake: true,
+    a: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1 }, b: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1, tree_clock_spread: 0 } },
+  { name: 'tree_clock_spread 0 == absent (sky view)', preset: 'canopy 1',
+    a: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1 }, b: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1, tree_clock_spread: 0 } },
+  { name: 'tree_pigment_spread 0 == absent (layer path)', preset: 'afternoon 7',
+    a: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1 }, b: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1, tree_pigment_spread: 0 } },
+  { name: 'tree_pigment_spread 0 == absent (faithful path)', preset: 'park 1', rebake: true,
+    a: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1 }, b: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1, tree_pigment_spread: 0 } },
+  { name: 'tree_pigment_spread 0 == absent (sky view)', preset: 'canopy 1',
+    a: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1 }, b: { phenology: 0.85, anthocyanin: 0.8, turn_exposure: 1, leaf_drop: 1, tree_pigment_spread: 0 } },
+  // ...and armed AT SUMMER the family is still inert: the gates open by the reach (0.11 here, so the pass runs and every leaf is rewritten), but the earliest tree begins at 0.54 and phenology is 0.5 —
+  // no leaf has begun, so none has an arithmetic to carry and the frame is the summer one, to the byte.
+  { name: 'per-tree family armed at summer: the earliest tree is still to come (layer path)', preset: 'afternoon 7',
+    a: {}, b: { tree_clock_spread: 0.11, tree_pigment_spread: 1, anthocyanin: 0.8, tannin: 0.5, turn_exposure: 1 } },
+  // ...and the other half: above 0 each is a real switch on a frame it can reach, on the paths that draw leaves (else a lead that never got to the leaves would pass every row above). The lead on a mid-turn
+  // frame (0.78: the early trees are well under way where the rest have barely begun); the depth on a turned one (phenology 1: every leaf fully turned, so the red the tree's factor scales is all that shows).
+  { name: 'tree_clock_spread 0.1 moves a mid-turn frame (layer path)', preset: 'afternoon 7', differ: true,
+    a: { phenology: 0.78, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 0.78, anthocyanin: 0.8, turn_exposure: 1, tree_clock_spread: 0.1 } },
+  { name: 'tree_clock_spread 0.1 moves a mid-turn frame (faithful path)', preset: 'park 1', rebake: true, differ: true,
+    a: { phenology: 0.78, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 0.78, anthocyanin: 0.8, turn_exposure: 1, tree_clock_spread: 0.1 } },
+  { name: 'tree_pigment_spread 0.6 moves a turned frame (layer path)', preset: 'afternoon 7', differ: true,
+    a: { phenology: 1, anthocyanin: 0.8 }, b: { phenology: 1, anthocyanin: 0.8, tree_pigment_spread: 0.6 } },
+  { name: 'tree_pigment_spread 0.6 moves a turned frame (sky view)', preset: 'canopy 2', differ: true,
+    a: { phenology: 0.78, anthocyanin: 0.8 }, b: { phenology: 0.78, anthocyanin: 0.8, tree_pigment_spread: 0.6 } },
   { name: 'leaf_drop 1 thins the canopy (sky view)', preset: 'canopy 1', differ: true,
     a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
   { name: 'leaf_drop 1 thins the canopy (curtain)', preset: 'curtain 1', rebake: true, differ: true,
@@ -322,6 +351,9 @@ const INVARIANTS = [
   // The same continuity after the turn: a hair of phenology moves the fall frame by a hair (the fades are DROP_EPS wide, the window of each leaf is its own)
   { name: 'drop_after_turn: a hair of phenology moves the fall frame by a hair (faithful path)', preset: 'park 1', rebake: true, near: 12,
     a: { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1, drop_after_turn: 1, phenology: 0.85 }, b: { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1, drop_after_turn: 1, phenology: 0.851 } },
+  // ...and the lead is continuous: a hair of tree_clock_spread moves each tree's whole clock by at most a hair (Δ = −S·v³ moves its fade windows, each DROP_EPS wide, by v³ of it), never a leaf's whole shadow
+  { name: 'tree_clock_spread: a hair of the lead moves the fall frame by a hair (layer path)', preset: 'afternoon 7', near: 12,
+    a: { phenology: 0.8, anthocyanin: 0.4, turn_exposure: 1, leaf_drop: 1, drop_after_turn: 1, tree_clock_spread: 0.1 }, b: { phenology: 0.8, anthocyanin: 0.4, turn_exposure: 1, leaf_drop: 1, drop_after_turn: 1, tree_clock_spread: 0.101 } },
   // THE MARGINAL FADE (§5.3). A leaf — or a whole tree — fading in has its fade folded into tau on the CPU, so the beam's neutral depth
   // k·coverage has to carry the same fade (iFade) or the ballistic shadow pops to full the instant the leaf exists. Step the count
   // from "none" to 0.005 of one: the fade is 0.005, and the picture must move by about that much — not by a whole leaf's shadow per twig.
@@ -552,6 +584,11 @@ const LIVE_CHANGES = [
   { name: 'afternoon 7 (the season scope, on a built cache: the re-season itself)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', prime: 0.85, litter: true },
   { name: 'park 1 (the season scope, faithful: the cast is re-cast from the re-seasoned leaves)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, drop_after_turn: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', litter: true },
   { name: 'park 1 (the season scope, faithful, on a built cache: the re-season itself)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, drop_after_turn: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', prime: 0.85, litter: true },
+  // ONE TREE AHEAD (§4.5): both knobs are season keys, so a slider moves them by the re-season, and the frame must be the one an engine born with the knob shows — the lead moves every tree's days
+  // (the carpet too: it is laid from the days), the depth only the colour. `prime` as above, so the measured apply is the re-season itself; the pigment rows carry a capacity, or the depth has no red to scale.
+  { name: 'afternoon 7 (a tree ahead: the lead on a built cache, the re-season itself)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, anthocyanin: 0.8, phenology: 0.8 }, key: 'tree_clock_spread', value: 0.1, apply: 'season', prime: 0.05, litter: true },
+  { name: 'afternoon 7 (a tree ahead: the depth on a built cache, the re-season itself)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, anthocyanin: 0.8, tannin: 0.3, phenology: 0.8 }, key: 'tree_pigment_spread', value: 0.6, apply: 'season', prime: 0.3, litter: true },
+  { name: 'park 1 (a tree ahead, faithful: the cast is re-cast from the re-seasoned leaves)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, anthocyanin: 0.8, drop_after_turn: 1, phenology: 0.8 }, key: 'tree_clock_spread', value: 0.1, apply: 'season', prime: 0.05, litter: true },
 ];
 // canopy_fill crossed on a RUNNING engine (it tweens, so nothing rebuilds when it does). `sky: true` = the camera has no
 // surface to light, so the fill must stay unallocated and the frame must not move.

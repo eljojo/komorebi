@@ -228,7 +228,7 @@ try {
     const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === 'phenology');
     const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
   }, v);
-  const PIGMENT_ROWS = ['anthocyanin', 'tannin', 'vein share', 'sun first'];
+  const PIGMENT_ROWS = ['anthocyanin', 'tannin', 'vein share', 'sun first', 'early trees', 'tree pigment'];
   const pigmentShown = async () => (await Promise.all(PIGMENT_ROWS.map(rowShown)));
   check('the season row is there and the pigment rows hide at summer', (await rowShown('phenology')) === true && (await pigmentShown()).every((v) => v === false), `${await rowShown('phenology')} ${await pigmentShown()}`);
   await setSeason(0.8);
@@ -265,6 +265,20 @@ try {
     const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === lab);
     const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
   }, [label, v]);
+  // THE REACH (§4.5, early trees): the earliest tree begins up to its reach sooner, so the season rows open by it — with early trees at 0.15 the pigment rows are there at phenology 0.5 (0.5 > 0.6 − 0.15), and
+  // shut again with it. (The row itself waits for the season like the pigments, so it is raised from a turning one first.)
+  await setSeason(0.8);
+  let reachRows = false;
+  for (let i = 0; i < 30 && !reachRows; i++) { await page.waitForTimeout(400); reachRows = (await pigmentShown()).every((v) => v === true); }
+  await setSlider('early trees', 0.15);
+  await setSeason(0.5);
+  let reached = false;
+  for (let i = 0; i < 30 && !reached; i++) { await page.waitForTimeout(400); reached = (await pigmentShown()).every((v) => v === true); }
+  check('early trees 0.15 opens the pigment rows at summer (the earliest tree is already turning)', reachRows && reached, `${reachRows} ${await pigmentShown()}`);
+  await setSlider('early trees', 0);
+  let reachShut = false;
+  for (let i = 0; i < 30 && !reachShut; i++) { await page.waitForTimeout(400); reachShut = (await pigmentShown()).every((v) => v === false); }
+  check('and early trees back at 0 shuts them with the summer', reachShut, `${await pigmentShown()}`);
   const DROP_FOLLOWERS = ['sun falls first', 'fall start', 'fall span', 'after its turn'];   // 'fall lag' is not one: it waits for 'after its turn' as well
   const followersShown = async () => Promise.all(DROP_FOLLOWERS.map(rowShown));
   check('at summer leaf fall and its followers are hidden', (await rowShown('leaf fall')) === false && (await followersShown()).every((v) => v === false), `${await rowShown('leaf fall')} ${await followersShown()}`);

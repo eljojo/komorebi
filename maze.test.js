@@ -48,6 +48,24 @@ test("two calls to leafTau give the tissues, and mixtureTau of them is leafTau's
   }
 });
 
+test("tissues with a tree's lead and depth are leafTau's with the same, to the bit; handed neither they are the call they were; the walls brown with the tree and the cells redden with it", () => {
+  const rnd = math.mulberry32(41);
+  for (let n = 0; n < 200; n++) {
+    const P = { ...DEFAULTS, phenology: 0.5 + 0.5 * rnd(), turn_start: 0.3, turn_span: 0.3, turn_spread: 0.2 * rnd(), anthocyanin: 1.2 * rnd(), tannin: rnd(), wall_fraction: 0.01 + 0.5 * rnd(), drop_after_turn: n % 2 };
+    const seed = Math.floor(rnd() * 1e6), j = Math.floor(rnd() * 40), k = Math.floor(rnd() * 22), dT = -0.15 * rnd() ** 3, cT = 1 + 0.9 * (2 * rnd() - 1);
+    const { wall, cell } = MAZE.tissues(P, seed, j, k, dT, cT);
+    const mix = math.mixtureTau(wall, cell, P.wall_fraction), tau = math.leafTau(tauOf(P), P, seed, j, k, undefined, undefined, undefined, dT, cT);
+    for (let c = 0; c < 3; c++) expect(Object.is(mix[c], tau[c])).toBe(true);
+    const bare = MAZE.tissues(P, seed, j, k), none = MAZE.tissues(P, seed, j, k, undefined, undefined);
+    for (let c = 0; c < 3; c++) { expect(Object.is(bare.wall[c], none.wall[c])).toBe(true); expect(Object.is(bare.cell[c], none.cell[c])).toBe(true); }
+  }
+  // the depth acts on the leaf's pigments only: at the end of the turn the cells part from the walls by a·anthocyanin, and a is c times the tree-less leaf's
+  const P = { ...DEFAULTS, phenology: 1, turn_start: 0.6, turn_span: 0.3, anthocyanin: 0.8, tannin: 0.5 };
+  const base = MAZE.tissues(P, 5, 3, 4), deep = MAZE.tissues(P, 5, 3, 4, undefined, 1.5);
+  expect((deep.cell[1] - deep.wall[1]) / (base.cell[1] - base.wall[1])).toBeCloseTo(1.5, 9);
+  expect(deep.wall[0] - base.wall[0], "the walls brown with the tree (tannin is in both tissues)").toBeGreaterThan(0.1);
+});
+
 test("tissues: before the turn wall = cell = the summer tau; at the end of it the walls are gold and the cells red", () => {
   const P = { ...DEFAULTS, turn_start: 0.6, turn_span: 0.3, turn_spread: 0.18, anthocyanin: 0.8 }, summer = tauOf(P);
   for (const phenology of [0, 0.3, 0.6]) {

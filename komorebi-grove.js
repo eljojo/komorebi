@@ -24,7 +24,7 @@
 //   writes it), so the engine re-seasons only with no transition and with faith.buf still this grove's. leafW is a NEW array each time: the tree preview keys on it.
 //   MEASURED (bun, median of 7, fall at t 0.9): afternoon 7 73 ms a regrow, the void 201, montebello 15 — see the cost test in reseason.test.js for the re-season's.
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, turnOrder, turnPhase } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, treeGains, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
 
 // The fall tiers this module owns, as the bundler sees them (embed-build.mjs): each is substituted by a literal, true or false, and the code behind a false one is not
 // in the bundle. A tier is cut only for a look that does not open it (komorebi-params.js FEATURES), so a flag that is false here means the guarded arithmetic was
@@ -88,6 +88,11 @@ export function makeGrove(hub){
     const nFull  = Math.floor(treeCountF);
     const tFrac  = treeCountF - nFull;                  // marginal-tree coverage; 0 at integer counts
     const nTree  = nFull + (tFrac>1e-4 ? 1 : 0);        // trees actually built this frame
+    // One tree ahead of its neighbours (§4.5): each tree's lead (its clocks run Δ sooner) and depth (its red and brown × c), drawn from (seed, tree index) on a salt of their own, so a tree keeps its numbers
+    // as the grove grows and the marginal tree has its own. Tables of nTree, or null while the knob is 0 (no draw, nothing handed on). They touch only a leaf's tau and day; the growth stream is never drawn from.
+    // Each table is built only where a tier that reads it is in the bundle: the lead by leafTau (pigment, exposure) and by the two drop days (drop), the depth by leafTau alone. The parentheses are load-bearing: the bundler
+    // folds a dead `false ? A : B` as TEXT (embed-build.mjs foldDeadTernaries) and would take the last operand of a bare `||` for the whole condition.
+    const tShift = (FEAT_PIGMENT || FEAT_EXPOSURE || FEAT_DROP) ? treeShifts(params, nTree) : null, tGain = (FEAT_PIGMENT || FEAT_EXPOSURE) ? treeGains(params, nTree) : null;
     const lpt    = Math.max(1, params.limb_count|0);   // limbs per tree
     const levels = Math.max(1, params.branch_levels|0);
     const kids   = Math.max(1, params.branch_children|0);
@@ -278,6 +283,7 @@ export function makeGrove(hub){
     let sAt = 0;
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
+      const dT = tShift ? tShift[t.tree] : undefined, cT = tGain ? tGain[t.tree] : undefined;   // this cluster's tree's lead and depth
       const rng  = mulberry32(hash3(params.seed>>>0, j, 101));               // arrangement stream
       const rng2 = mulberry32(hash3((params.seed>>>0)^0x5bd1e995, j, 101));  // wind-identity stream (separate)
       const gauss = makeGauss(rng);
@@ -314,7 +320,7 @@ export function makeGrove(hub){
         // this leaf's own tau: a leaf not yet turning gets `tau` itself (leafTau's s=0 branch copies it, no arithmetic).
         // The hashes inside leafTau are pure functions of (seed, j, k) — they must never draw from rng/rng2/gr above,
         // or every shipped grove reshuffles.
-        const lt = FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
+        const lt = FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT, undefined, undefined, dT, cT) : tau;
         // the cluster id the VS reads: j, and for an outline its row in the FRACTION (j + v/32) — a pure hash of (seed, j, k) on the leaf's own salt, like the pigment above
         const cid = shape ? j + leafVariant(params.seed, j, k)/LEAF_ID_FRAC : j;
         // iFade: the very `cov` folded into tau above. The bake writes it into alpha (coverage) so the leaf's BALLISTIC shadow (§4.5) fades out
@@ -347,15 +353,16 @@ export function makeGrove(hub){
       if(FEAT_DROP && isDropping){ litter = []; leafW = new Float32Array(nClusterTotal*nLeaf).fill(1); alive = new Uint8Array(n).fill(1); }
       for(let i=0;i<n;i++){
         const o = REC*i, j = rec[o+4], k = rec[o+5];
+        const dT = tShift ? tShift[twigs[j].tree] : undefined, cT = tGain ? tGain[twigs[j].tree] : undefined;   // this leaf's tree: the hang loop's own pair
         let w = 1, D = 0;
         if(FEAT_DROP && isDropping){
-          D = after ? dropDayAfterTurn(params, turnPhase(params, leafClock(params.seed, j, k), FEAT_EXPOSURE && isLit ? turnOrder(u[i]) : undefined))
-            : dropDay(params, dropPhase(dropHash(params.seed, j, k), u ? u[i] : 0, params.drop_exposure));
+          D = after ? dropDayAfterTurn(params, turnPhase(params, leafClock(params.seed, j, k), FEAT_EXPOSURE && isLit ? turnOrder(u[i]) : undefined), dT)
+            : dropDay(params, dropPhase(dropHash(params.seed, j, k), u ? u[i] : 0, params.drop_exposure), dT);
           w = retention(D, params.phenology);
           leafW[j*nLeaf + k] = w;
         }
         if(!(FEAT_EXPOSURE && isLit) && w === 1) continue;                   // nothing about this leaf changed: its tau is already in the buffers
-        const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, params, params.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i])) : FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT) : tau;
+        const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, params, params.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i]), dT, cT) : FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT, undefined, undefined, dT, cT) : tau;
         const cov = rec[o+6], cf = cov*w;                                    // §5.3: a leaf leaves by fading — cov <- cov.w scales its tau and the fade its ballistic shadow rides on together
         const d = layerData[rec[o+7]], li = rec[o+8], fi = rec[o+9];
         for(let c=0;c<3;c++){ d[li+c] = lt[c]*cf; faithData[fi+c] = lt[c]*cf; }
@@ -572,7 +579,7 @@ export function makeGrove(hub){
         if(s.ax<sx0)sx0=s.ax; if(s.ax>sx1)sx1=s.ax; if(s.ay<sy0)sy0=s.ay; if(s.ay>sy1)sy1=s.ay;
         if(s.bx<sx0)sx0=s.bx; if(s.bx>sx1)sx1=s.bx; if(s.by<sy0)sy0=s.by; if(s.by>sy1)sy1=s.by;
       }
-      grove.season = { key: grove.key, rec: sRec, base: seasonBase, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, E, tau, seg: [sx0, sx1, sy0, sy1],
+      grove.season = { key: grove.key, rec: sRec, base: seasonBase, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, nTree, E, tau, seg: [sx0, sx1, sy0, sy1],
                        faithBuf: faith.buf, ex: sEx, rank: sRank, u: null, outL: null, outF: null };
     }
     return grove;
@@ -586,6 +593,7 @@ export function makeGrove(hub){
   function reseasonGrove(g, P = params){
     const S = g.season, n = S.n, rec = S.rec, nLeaf = S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0];
     const sen = senescing(P), isLit = lit(P), isDropping = dropping(P), after = afterTurn(P);
+    const tShift = (FEAT_PIGMENT || FEAT_EXPOSURE || FEAT_DROP) ? treeShifts(P, S.nTree) : null, tGain = (FEAT_PIGMENT || FEAT_EXPOSURE) ? treeGains(P, S.nTree) : null, twigs = g.hier.twigs;   // the trees' lead and depth: the build's own tables, from the tree count the record kept, guarded by the same tiers
     let u = null;
     if(n > 0 && FEAT_EXPOSURE && ordered(P)){   // mirrors buildGrove's gate for the light
       if(!S.rank){
@@ -605,14 +613,15 @@ export function makeGrove(hub){
     let lx0 = 1e18, ly0 = 1e18, lx1 = -1e18, ly1 = -1e18;   // the survivors' plan extent (doubles, like buildGrove's own scan of faithData)
     for(let i=0;i<n;i++){
       const o = SREC*i, j = rec[o+6], k = rec[o+7];
+      const dT = tShift ? tShift[twigs[j].tree] : undefined, cT = tGain ? tGain[twigs[j].tree] : undefined;
       let w = 1, D = 0;
       if(FEAT_DROP && track){
-        D = after ? dropDayAfterTurn(P, turnPhase(P, leafClock(P.seed, j, k), FEAT_EXPOSURE && isLit ? turnOrder(u[i]) : undefined))
-          : dropDay(P, dropPhase(dropHash(P.seed, j, k), u ? u[i] : 0, P.drop_exposure));
+        D = after ? dropDayAfterTurn(P, turnPhase(P, leafClock(P.seed, j, k), FEAT_EXPOSURE && isLit ? turnOrder(u[i]) : undefined), dT)
+          : dropDay(P, dropPhase(dropHash(P.seed, j, k), u ? u[i] : 0, P.drop_exposure), dT);
         w = retention(D, P.phenology);
         leafW[j*nLeaf + k] = w;
       }
-      const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, P, P.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i])) : FEAT_PIGMENT && sen ? leafTau(tau, P, P.seed, j, k, leafT) : tau;
+      const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, P, P.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i]), dT, cT) : FEAT_PIGMENT && sen ? leafTau(tau, P, P.seed, j, k, leafT, undefined, undefined, dT, cT) : tau;
       const cov = rec[o+8], cf = cov*w;
       if(w === 0){
         if(FEAT_LITTER) litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: cov });

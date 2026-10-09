@@ -171,6 +171,11 @@ const PROBES = {
   "drop, litter 1": { ...B, turn_exposure: 0, litter: 1 },
   "drop, litter 0 (the compaction counts the leaves that went, not the carpet)": { ...B, litter: 0 },
   "marcescent": { phenology: 0.95, leaf_drop: 0.5, turn_exposure: 0.5 },
+  // One tree ahead (§4.5): the grove builds a tree's lead for the arms that read it and its depth for the pigment and the exposure, behind the same flags as the arms. With the knobs UP a table
+  // the cut grove wrongly lost, or a guard the bundler's text fold mangled (`true || true || null`: a table that is the boolean `true`), is a different tree here and nowhere else.
+  "pigment, trees ahead": { phenology: 0.75, tree_clock_spread: 0.1, tree_pigment_spread: 0.6 },
+  "pigment + exposure, trees ahead": { phenology: 0.75, turn_exposure: 1, tree_clock_spread: 0.1, tree_pigment_spread: 0.6 },
+  "drop at turn_exposure 0, trees ahead": { ...B, turn_exposure: 0, tree_clock_spread: 0.1, tree_pigment_spread: 0.6 },
 };
 
 async function treeOf(dir, mutate) {

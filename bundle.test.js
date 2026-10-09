@@ -43,6 +43,26 @@ test("every marker is in a bundle that keeps its tier, and gone from the homepag
     }
 });
 
+// ONE TREE AHEAD (§4.5): the grove builds a tree's lead for the arms that read it (the pigment, the exposure and the drop) and its depth for the pigment and the exposure alone, and nothing
+// otherwise, so a bundle that cuts them carries neither draw. The markers are the salt the draws are made on (TREE_SALT 0x3C6EF372, in a minified bundle its decimal) and the depth's one
+// property read, chosen like the tiers' above: in the bundle with everything, gone from the one with nothing.
+const TREE_SALT = "1013904242", TREE_DEPTH = ".tree_pigment_spread";
+test("the per-tree draws are carried by a bundle that keeps a tier reading them, and by no other: the homepage set has neither the salt nor the depth table", () => {
+  const w = text(whole), h = text(home), p = text(player);
+  expect(0x3C6EF372, "the marker is the salt").toBe(Number(TREE_SALT));
+  for (const m of [TREE_SALT, TREE_DEPTH]) {
+    expect(w.includes(m), `'${m}' is in the all-features bundle`).toBe(true);
+    expect(p.includes(m), `'${m}' is in the general player`).toBe(true);
+    expect(h.includes(m), `'${m}' is still in the homepage bundle`).toBe(false);
+  }
+});
+
+test("the lead is drawn for the drop alone, the depth for the pigment and the exposure: a bundle that keeps only abscission has the salt and not the depth", () => {
+  const drop = build({ looks: HOME, features: ["drop"], out: join(dir, "drop.js"), quiet: true }), t = text(drop);
+  expect(t.includes(TREE_SALT), "the drop days shift by the tree's lead").toBe(true);
+  expect(t.includes(TREE_DEPTH), "nothing in it reads the depth").toBe(false);
+});
+
 test("the general player keeps every tier, because montebello ships and opens all six", () => {
   expect(player.cut).toEqual([]);
   const p = text(player);
