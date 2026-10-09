@@ -220,6 +220,7 @@ export const PRESETS = {
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.79, "turn_exposure": 0.71, "exposure_absolute": 0.93, "anthocyanin": 0.82, "tannin": 0.48, "wall_fraction": 0.13,   // mid-turn, deep red capacity, the raw light ordering the turn (§4.5)
     "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.36, "drop_after_turn": 1,                                                          // the whole drop has let go, each leaf after its own turn, and lies damp on the floor (§4.5, §4.7): his pd3 over 0.71 and 0.85
+    "drop_lag": 0,   // no wait after the turn (José, 2026-10-09, P1: "i like p1"). drop_after_turn held back the carpet he had asked for here and picked as pd3 — at 0.79 the default lag leaves only the first few leaves down — so a leaf lets go the moment its turn ends and his carpet comes back; every fallen leaf has still finished turning
     "view_extent_m": 39.28644129433203, "view_pitch_deg": 73.99882812500043, "view_fov_deg": 60, "view_yaw_deg": -161.79726562499684,
     "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
     "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
@@ -230,6 +231,128 @@ export const PRESETS = {
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 2.18909165230681, "drift_auto": true, "drift_speed": 0.02,
     "auto_quality": true,   // the faithful path under squally wind, as montebello: the governor stays on
+  }),
+  // 'forest floor' — WORKING NAME: José has not named it. P5 on the 2026-10-09 proposals sheet: afternoon 7 at full fall, the view from under the canopy — a dark crown shadow with warm dapples and green
+  // flecks filling the frame, the carpet laid damp beneath it; the 'komorebi on the ground' half of his valley memory. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." Built from what he
+  // kept choosing on afternoon 7 in fall: "w8 and w6 are my fav" (wet litter), a4 and a6 (litter colour), "a2 more than a1" (the litter law) and ta1, ta3, ta4 (the per-tree sheet). The recipe is ta's —
+  // montebello's capacity (anthocyanin 0.4, tannin 0.2, wall_fraction 0.2), mid-turn, drop after turn — with the trees differing (tree_pigment_spread 0.6 from ta3/ta4, tree_clock_spread 0.05 between ta3's
+  // 0 and ta4's 0.1) and the carpet wet (0.5: a2 over a1, w8, a6). At ta's 0.78 with the default lag almost nothing has fallen, so a wet carpet would not show: phenology 0.8 with drop_lag 0 lays
+  // the leaves whose turn phase is under 0.39 (the sunlit ones, each fully turned, 39%) and the buried interior stays green. The sun, the camera and the grove are afternoon 7's. canopy_fill and
+  // leaf_diffuse stay 0, as there.
+  'forest floor': Object.assign({}, DEFAULTS, {
+    "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "tex_resolution": 1024,
+    "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
+    "auto_quality": true,
+    "phenology": 0.8, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // montebello's capacity, mid-turn, the exposed leaves first (§4.5)
+    "leaf_drop": 1, "drop_after_turn": 1, "drop_lag": 0, "litter": 1, "leaf_wetness": 0.5,           // each leaf lets go the moment its own turn ends and lies damp on the floor (§4.5, §4.7): at 0.8 the sunlit 39% are down
+    "tree_clock_spread": 0.05, "tree_pigment_spread": 0.6,                                           // the trees differ: one ahead of its neighbour by a hair, and not in the same red (§4.5)
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
+    "view_pitch_deg": 24, "view_fov_deg": 64,
+  }),
+  // 'the yellow tree' — WORKING NAME: José has not named it. P6 on the 2026-10-09 proposals sheet, where it was called 'the beech'; the name is changed here because brief 07 adds a beech LEAF SHAPE
+  // (leaf_shape 'beech') and this look uses montebello's own leaves, not that outline. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." A place memory of his that was never made a look:
+  // "there was this one tree at the beginning of theretreat all yellow, by the end of the trip half of its leaves were on the ground", and of IMG_0404 "the tree that was all yellow by the end, it ended up
+  // being so oragne" (2026-10-06). No other look is gold: montebello is rose-russet and park fall deep red. He liked gold when it was offered ("i like y1, 2, and 3", the stained-glass sheet; the gold
+  // litter-law carpet a1/a2): anthocyanin 0.2 tips it toward orange, tannin 0.35 is the beech russet between montebello's 0.2 and park fall's 0.48 (the leaves he collected all measured warmer than the
+  // engine's gold). leaf_drop 0.5 is the engine's provisional beech value: the half that turns last stays on, so at 0.9 half the leaves are on the ground, as he counted. leaf_diffuse 0 is the stained
+  // glass he called the ultimate goal ("i like the dark patches of the left one", "yes the dapples were coloured"); canopy_fill stays 1. tree_pigment_spread 0.3 keeps the two trees from being one colour.
+  // Everything else is montebello's but the camera: the feet behind the eye (view_center -1.75, -4.93), his k8 over k5 on the picks sheet ("i like k3,k4,k6,k8", 2026-10-09). The same
+  // move on montebello itself (k1, P3 without the drift) left no carpet in frame and was not picked, so montebello keeps its own camera.
+  'the yellow tree': Object.assign({}, DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.2, "tannin": 0.35, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
+    "leaf_drop": 0.5, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the half that turns first has let go AFTER turning and lies damp on the floor, the half that turns last stays on (§4.5, §4.7): at 0.9 half the leaves are down
+    "leaf_diffuse": 0, "canopy_fill": 1,                                                          // stained glass, not the blend: the dapples are coloured; the shade lit through the leaves (§4.5, §4.7)
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
+    "view_center_x": -1.75, "view_center_y": -4.93,   // the trunk feet behind the eye (his k8, picked over k5 on the old camera): the half-down crown's carpet still lies in view
+    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    "tree_pigment_spread": 0.3,   // the two trees are not one colour (§4.5)
+    "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+  }),
+  // 'montebello, rain' — WORKING NAME: José has not named it. P7 on the 2026-10-09 proposals sheet: montebello on a rain day. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." He asked for the
+  // set: "we could have a few variations to showcase various weather styles" (2026-10-08), and wet is the choice that has won every time it was offered (w6, w8, c13, c15, a6, m2). His memory gives the
+  // cause: "one day after rain many leaves fell on the ground" — drop_lag 0 (the same lag as park fall's), so every leaf that has finished turning lets go at once. The rest: the leaves soaked to 0.75
+  // (w4), wet soil at ×0.4 (c9's dirt), the weather macro's own overcast stop (cloud_thickness 0.55, halo 8, from canopy 4), and morning 2's humid haze (sky_turbidity 0.2). The exposure stays montebello's
+  // 2.44, although the haze macro lowers it under haze. Everything else is montebello's, the camera as the sheet showed it.
+  'montebello, rain': Object.assign({}, DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.55, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.75, "drop_after_turn": 1,                        // the leaves have let go AFTER turning and lie soaked on the floor (§4.5, §4.7); wetness 0.75 is his w4
+    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
+    "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
+    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.2, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "ground_r": 0.132, "ground_g": 0.084, "ground_b": 0.048,   // park 1's warm Mount-Royal dirt ×0.4, wet soil (his c9, dirt ×0.4)
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    "drop_lag": 0,   // no wait after the turn: every leaf that has finished turning lets go at once, so at 0.9 about 94% are down, not 67% (the cause of "one day after rain many leaves fell on the ground", §4.5)
+    "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+  }),
+  // 'cherry blossom' — WORKING NAME, from his own words: José has not named it. P8 on the 2026-10-09 proposals sheet. "d9 is the most beautiful, is that spring? i love it omg cherry blossoms????" (2026-10-07), and r3
+  // was among his top picks on 2026-10-08. The pink is the redhead pigments (anthocyanin 0.8, no tannin, no sieve) on the honest carpet: d9's recipe on today's montebello, dry (d9 and a4 were dry, "pale
+  // pink in the sun") and on park 1's own paler dirt. Two changes answer his two objections to these pigments: tree_pigment_spread 0.6 so the crown is not "too uniformly red" (the trees differ, as
+  // on his per-tree sheet), and litter_age 0.3 so the fallen leaves stay fresh, not browned. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." Everything else is montebello's, the camera
+  // as the sheet showed it.
+  'cherry blossom': Object.assign({}, DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.8, "tannin": 0, "wall_fraction": 0,   // the redhead pigments, no russet and no sieve, and who turns first (§4.5)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie DRY on the floor (§4.5, §4.7): d9 and a4 were dry
+    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
+    "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
+    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // park 1's own warm Mount-Royal dirt, as in d9
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    "tree_pigment_spread": 0.6, "litter_age": 0.3,   // not one red across the crown, and the fallen leaves fresh, not browned (§4.5, §4.7)
+    "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
   }),
   'park 2': Object.assign({}, DEFAULTS, {
   "sample_count": 48,
