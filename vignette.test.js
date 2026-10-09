@@ -73,7 +73,19 @@ test("the post group declares and locates both uniforms, and every camera's prog
   for (const cam of ["floor", "cloth", "enclosure", "sky"]) {
     const src = buildTransport(cam);
     expect(src.split("THE EDGE (§4.7)").length - 1, cam).toBe(1);
+    // The mask's own lines, each once, pinned by text: they are vignetteMask (komorebi-math.js) line for line — the gate, q, the
+    // superellipse radius, the fade — so the shader cannot drift from the reference the numbers above hold, and a missing line fails here.
+    const lines = [
+      "if(uVignette > 0.0){",                                                                           // if (!(feather > 0)) return 1
+      "vec2 q = abs(vUv*2.0 - 1.0);",                                                                    // qx, qy = |u·2 − 1|, |v·2 − 1|
+      "float d = pow(pow(q.x, uVignetteShape) + pow(q.y, uVignetteShape), 1.0/uVignetteShape);",        // d = (qx^n + qy^n)^(1/n)
+      "col *= 1.0 - smoothstep(1.0 - uVignette, 1.0, d);",                                               // 1 − smoothstep(1 − feather, 1, d)
+    ];
+    for (const l of lines) expect(src.split(l).length - 1, `${cam}: ${l}`).toBe(1);
+    const at = lines.map((l) => src.indexOf(l)), tail = src.indexOf("if(uLinearOut == 0) col = toneTail(col);");
+    expect(tail, cam).toBeGreaterThanOrEqual(0);
+    for (let i = 1; i < at.length; i++) expect(at[i], `${cam}: in order`).toBeGreaterThan(at[i - 1]);
     // Before the tail, not after: the glow tier spreads masked light.
-    expect(src.indexOf("col *= 1.0 - smoothstep(1.0 - uVignette, 1.0, d);"), cam).toBeLessThan(src.indexOf("if(uLinearOut == 0) col = toneTail(col);"));
+    expect(at[at.length - 1], cam).toBeLessThan(tail);
   }
 });

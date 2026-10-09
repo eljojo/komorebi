@@ -54,12 +54,18 @@ test("the sweep: the sky view's strings are in no floor-only bundle, cut or not 
   expect(text(player).includes("uSkyScatter")).toBe(false);                    // the shipped looks are all floor looks too
 });
 
+// The BUILD literal itself, read out of the minified text: the name, then its own `cut` array. A bare `"fill"` anywhere in the bundle proves
+// nothing — FEATURES' group names, TOPO_KEYS ('litter') and MORPH_KEYS ('exposure') carry three of the six whatever BUILD says.
+const buildCut = (src, name) => {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = new RegExp(`name\\s*:\\s*["']${esc}["']\\s*,\\s*cut\\s*:\\s*\\[([^\\]]*)\\]`).exec(src);
+  return m ? [...m[1].matchAll(/["'](\w+)["']/g)].map((x) => x[1]).sort() : null;
+};
+
 test("const BUILD says which bundle this is and what it cut — the engine's warning reads it", () => {
-  const h = text(home);
-  expect(h.includes("komorebi.embed.min.js (morning 2, afternoon 5b, morning 3)")).toBe(true);
-  for (const f of Object.keys(MARKERS)) expect(h.includes(`"${f}"`), f).toBe(true);
-  expect(text(whole).includes("komorebi.embed.min.js (morning 2, afternoon 5b, morning 3)")).toBe(true);
-  expect(text(player).includes("komorebi.player.min.js")).toBe(true);
+  expect(buildCut(text(home), "komorebi.embed.min.js (morning 2, afternoon 5b, morning 3)"), "the homepage bundle's BUILD").toEqual(Object.keys(MARKERS).sort());
+  expect(buildCut(text(whole), "komorebi.embed.min.js (morning 2, afternoon 5b, morning 3)"), "--features all cuts nothing").toEqual([]);
+  expect(buildCut(text(player), "komorebi.player.min.js (every shipped look)"), "the player keeps every tier").toEqual([]);
 });
 
 test("a bundle with fewer tiers is the smaller bundle", () => {
