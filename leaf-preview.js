@@ -35,7 +35,7 @@ function makeLeafPreview(params, hierOf){
   let big = false, j = 0, k = 0, shown = false, label = '', grown = null, raster = null, tint = null, made = null, grows = 0, rasters = 0;
   let sigGrow = '', sigRaster = null, sigPaint = '', sigSize = '';
   let seenGrow = '', seenGrowAt = 0, seenRaster = null, seenRasterAt = 0;   // what draw() last saw of the two expensive signatures, and when each last moved
-  canvas.dataset.at = '0·0';   // the address the keys hold now; data-label / -size / -wall are what the picture on show was made with, and -grows / -rasters count the makes (test-gl/editor.mjs reads them)
+  canvas.dataset.at = '0·0';   // the address the keys hold now; data-label / -size / -grammar / -wall are what the picture on show was made with (the grammar its veins were grown in: palmate for a maple, pinnate for a beech), and -grows / -rasters count the makes (test-gl/editor.mjs reads them)
   const sizeCss = () => (big ? 'min(80vh, 70vw)' : 'min(420px, 45vh)');
   // a click grows it and shrinks it again; it must not reach the canvas's gesture handlers (orbit, the tree's pin) beneath
   for(const ev of ['click', 'pointerdown', 'pointerup']) canvas.addEventListener(ev, (e) => e.stopPropagation());
@@ -73,7 +73,7 @@ function makeLeafPreview(params, hierOf){
     if(sg !== sigGrow && (!grown || now - seenGrowAt >= SETTLE_MS)){
       made = { seed: params.seed, shape: params.leaf_shape, size: params.leaf_size_m, j, k };
       grown = leafMaze(spec(), made.seed, made.j, made.k, made.size); sigGrow = sg; regrown = true;
-      canvas.dataset.grows = String(++grows); canvas.dataset.size = String(made.size);
+      canvas.dataset.grows = String(++grows); canvas.dataset.size = String(made.size); canvas.dataset.grammar = grown.blade.grammar;
     }
     if(params.wall_fraction !== seenRaster){ seenRaster = params.wall_fraction; seenRasterAt = now; }
     if(regrown || (params.wall_fraction !== sigRaster && (!raster || now - seenRasterAt >= SETTLE_MS))){   // a new maze has no raster to show: that one is at once, even at the same vein share (the old raster is the old leaf's maze)

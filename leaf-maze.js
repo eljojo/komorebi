@@ -7,7 +7,8 @@
 // older veins left, each ending where it meets an older wall — a T-junction, never the 120° Y a Voronoi diagram makes — and a hierarchy of widths falls out
 // of the order the cuts were made in. SEEDED BY THE GROWN VEINS: order 1 are the five primaries, which cut the margin polygon into radial sectors; order 2
 // are the skeleton's secondaries, each running along its direction until it hits the wall of the region it is in; from order 3 on, a region bigger than an
-// areole is cut by a chord across its long axis, until every cell is about 1 mm.
+// areole is cut by a chord across its long axis, until every cell is about 1 mm. (A pinnate blade, the beech, has ONE order-1 vein: its midrib, which cuts the margin into the
+// blade's two sides; its secondaries are order 2 and everything after is the same. bladeOf names the grammar.)
 //
 // THE WALLS CARRY EXACTLY `wall_fraction`: each wall has a half-width in proportion to its order, solved so the walls' area is f_w of the lamina and then
 // measured on the raster and corrected once. So the picture's mean transmittance is the mixture the engine computes, and the sieve reads literally.
@@ -102,20 +103,29 @@ function growAreoles(blade, { seed, cellM, unitM }){
   const margin = marginOf(blade), walls = [], veins = blade.skel.veins;
   // ORDER 1: the five primaries are rays from the petiole base — and the margin is star-shaped from it — so each cuts a radial polygon into two radial ones.
   // Built straight as sectors between consecutive primaries by angle, the last wrapping through the petiole's side.
+  // A PINNATE blade (a beech) has ONE order-1 vein, its midrib: a straight chord of the margin along the axis through the origin (the margin is star-shaped from there, so the axis meets it once
+  // each way), which cuts the blade into its two sides, upper and lower. The secondaries begin on it.
   const O = [0, 0], prim = [];
-  for(const v of veins){
-    if(v.order !== 1) continue;
-    const len = Math.hypot(v.b[0], v.b[1]), d = [v.b[0]/len, v.b[1]/len], hit = rayHit(margin, O, d);
-    prim.push({ d, hit, ang: Math.atan2(d[1], d[0]) });
-    walls.push({ a: [0, 0], b: hit.pt, order: 1 });
+  let regions;
+  if(blade.grammar === 'pinnate'){
+    const mid = chord(margin, O, [1, 0]);
+    walls.push({ a: mid.a, b: mid.b, order: 1 });
+    regions = mid.parts.map((poly) => ({ poly, order: 1 }));
+  } else {
+    for(const v of veins){
+      if(v.order !== 1) continue;
+      const len = Math.hypot(v.b[0], v.b[1]), d = [v.b[0]/len, v.b[1]/len], hit = rayHit(margin, O, d);
+      prim.push({ d, hit, ang: Math.atan2(d[1], d[0]) });
+      walls.push({ a: [0, 0], b: hit.pt, order: 1 });
+    }
+    const sorted = [...prim].sort((p, q) => p.ang - q.ang);
+    regions = sorted.map((p, i) => {
+      const q = sorted[(i + 1) % sorted.length], n = margin.length, poly = [O, p.hit.pt];
+      for(let s = 1, c = (q.hit.e - p.hit.e + n) % n; s <= c; s++) poly.push(margin[(p.hit.e + s) % n]);
+      poly.push(q.hit.pt);
+      return { poly: dedupe(poly), order: 1 };
+    });
   }
-  const sorted = [...prim].sort((p, q) => p.ang - q.ang);
-  const regions = sorted.map((p, i) => {
-    const q = sorted[(i + 1) % sorted.length], n = margin.length, poly = [O, p.hit.pt];
-    for(let s = 1, c = (q.hit.e - p.hit.e + n) % n; s <= c; s++) poly.push(margin[(p.hit.e + s) % n]);
-    poly.push(q.hit.pt);
-    return { poly: dedupe(poly), order: 1 };
-  });
   // ORDER 2: each secondary, in skeleton order, starts on its primary and runs along its direction to the first wall or the margin of the region it enters;
   // a younger vein ends where it meets an older wall. One that meets a neighbour's secondary is shorter than growLeaf's: intended.
   for(const v of veins){

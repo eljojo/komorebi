@@ -5,14 +5,18 @@
 //
 // THE SHAPE IS A RADIAL PROFILE, NOT AN ATLAS. A stamp may vary its OUTLINE and nothing finer: texelMix (§4.5) is exact only while a
 // leaf's depth is uniform inside a bake texel (7-22 mm), so a vein or a tooth baked into the stamp's depth would be averaged in τ and
-// come out Jensen-dark. The outline is the one thing a coverage mask can carry honestly, so it is r(θ) from the PETIOLE BASE — the one
-// origin a maple is star-shaped from, where the centroid is not — in the unit frame the ellipse lives in, AREA-NORMALISED (∮½r²dθ = π, the
-// unit circle's) so that swapping the ellipse for a lobed blade of the same size and aspect leaves the canopy's fullness where it was.
+// come out Jensen-dark. The outline is the one thing a coverage mask can carry honestly, so it is r(θ) from the leaf's ORIGIN — the one
+// point the blade is star-shaped from, where the centroid is not: the PETIOLE BASE of a maple, a point 0.45 of the way along a beech's midrib
+// — in the unit frame the ellipse lives in, AREA-NORMALISED (∮½r²dθ = π, the unit circle's) so that swapping the ellipse for a lobed blade of
+// the same size and aspect leaves the canopy's fullness where it was. (The stamp is placed by that origin: a beech hangs from the middle of
+// its blade, as the ellipse does, and a maple from its base.)
 //
-// A blade GROWS: primary veins fan from the base, each carrying a lamina of discs that thins to a point at its tip, and alternate secondaries
-// run out along each primary until they leave the lamina and end in a tooth. The blade is the union of the lamina's discs; a secondary only
-// decides where the margin is toothed (the teeth are sub-texel everywhere, kept as process and never tuned for). growSkeleton cannot grow
-// this: it spawns children at a node's tip, by phyllotaxis, and a maple's laterals leave the vein along its length at a fan of fixed angles.
+// A blade GROWS, in one of two grammars. PALMATE (growLeaf, the maple): primary veins fan from the base, each carrying a lamina of discs that
+// thins to a point at its tip, and alternate secondaries run out along each primary until they leave the lamina and end in a tooth. PINNATE
+// (growPinnate, the beech): ONE midrib, and the secondaries leave it along its length. The blade is the union of the lamina's discs; a secondary
+// only decides where the margin is toothed (the teeth are sub-texel everywhere, kept as process and never tuned for). growSkeleton cannot grow
+// either: it spawns children at a node's tip, by phyllotaxis, and a maple's laterals (a beech's secondaries) leave the vein along its length at
+// a fan of fixed angles.
 // ============================================================================
 import { DEG, TAU, hash3, mulberry32 } from './komorebi-math.js';
 
@@ -35,13 +39,26 @@ const FLIP_SALT = 0x3D8C5A21;      // turns half the hanging leaves through a ha
 // sinuses a maple needs. The first `hub` of a primary carries no lamina (the base is a notch, not a disc). Lengths are the central primary's.
 const MAPLE = Object.freeze({
   species: 1,   // hash3's second argument: each species' outlines are its own draws
+  grammar: 'palmate',   // growLeaf: the primaries fan from one hub (bladeOf picks the grower by this)
   angles: Object.freeze([-105, -62, 0, 62, 105]), angleJitter: 4,   // primaries (°) and the ± they wander
   lengths: Object.freeze([0.55, 0.85, 1, 0.85, 0.55]), lengthJitter: 0.10,
   hub: 0.12, hold: 0.6, rho: 0.19, taper: 1,
   secStep: 0.18, secAngle: 45, secJitter: 0.10,   // alternate secondaries every 0.18 along a primary, at 45° ± 10%
   tooth: 0.02, toothHalf: 0.06,                   // each secondary ends in a 2% radial tooth, 0.06 rad to either side
 });
-const LEAF_SHAPES = Object.freeze({ maple: MAPLE });
+// THE AMERICAN BEECH (Fagus grandifolia), pinnate: a midrib with 9-13 secondaries a side, alternate and half a step out of phase, leaving it forward at ~45° and running out to the margin to end in a
+// small tooth. The lamina is a disc every 0.01 along the midrib of radius body(s) = W·s^a(1−s)^c, normalised to peak at W: a round base (a < 1), the blade widest at a/(a + c) of the way along, and a long
+// taper to a point (c > 1). Each disc's centre is offset across the midrib by `asym` of its own radius, which makes the base oblique. W, a, c and asym wander per leaf with the length (WIDTH_JITTER and
+// the rest, below): the beech's eight outlines are more alike than the maple's — only these draws part them. `origin` is where the profile is read from: 0.45 of the way along the midrib, a point the blade is
+// star-shaped from (the radial profile holds it; the red oak has no such point). Width over length ~0.55, a pointed apex (28-43° to either side, 35° on average), no lobes.
+const BEECH = Object.freeze({
+  species: 3, grammar: 'pinnate', origin: 0.45, lenJitter: 0.06,
+  W: 0.30, aBase: 0.55, cApex: 1.25,
+  nMin: 9, nMax: 13, s0: 0.06, s1: 0.94, posJitter: 0.2,   // secondaries a side; they sit over s0..s1 of the midrib, each ±posJitter of a step off its place
+  angle: 45, angleJitter: 4,
+  tooth: 0.02, toothHalf: 0.05,
+});
+const LEAF_SHAPES = Object.freeze({ maple: MAPLE, beech: BEECH });
 
 // One blade's vein skeleton, in the plane, from a spec and a stream. Returns { discs, veins, teeth }: the lamina as flat (x, y, r) triples, the
 // veins as {a, b, order} for a picture, and the margin points the secondaries end at. THE STREAM IS THE CONTRACT: per primary its angle then its length,
@@ -88,13 +105,41 @@ function exitAlong(discs, x, y, dx, dy){
   return reach;
 }
 
-// r(θ) of one variant: the farthest point of the blade along each of LEAF_SAMPLES rays from the petiole base — the far root of the farthest chord, which is
-// the blade's reach on that ray whether or not the ray is whole inside it (the grammar's blade is star-shaped from the base, a test holds that) — then the
+// One pinnate blade's vein skeleton, in the plane and in the ORIGIN frame (the profile is read from there): the midrib runs +x from (−origin·len, 0) to ((1 − origin)·len, 0), and the apex is +x.
+// Returns the same { discs, veins, teeth } as growLeaf, so everything downstream of the grammar (the profile, the teeth, the held leaf) is one body. The midrib is the one order-1 vein; each secondary
+// is order 2, leaves the midrib at its position, runs out at its angle until it leaves the lamina (exitAlong) and ends in a tooth. The lamina is the midrib's discs alone: a secondary adds none.
+// THE STREAM IS THE CONTRACT (pinnate.test.js replays it): len, W, a, c, asym, nSide, then per secondary, alternating sides, its position and then its angle — reorder them and every beech regrows.
+// The disc radius is body(s) and does not scale with len, so the length is a draw of the leaf's ASPECT (it is area-normalised away, the radius is not): without that the length would move nothing.
+const WIDTH_JITTER = 0.10, A_JITTER = 0.10, C_JITTER = 0.15, OBLIQUE = 0.06;   // W ±10%, the base's roundness a ±0.10, the taper c ±0.15, asym ±0.06 of a disc's radius
+function growPinnate(spec, rng){
+  const discs = [], veins = [], teeth = [], u = () => rng()*2 - 1;
+  const len = 1 + u()*spec.lenJitter, W = spec.W*(1 + u()*WIDTH_JITTER), a = spec.aBase + u()*A_JITTER, c = spec.cApex + u()*C_JITTER, asym = u()*OBLIQUE;
+  const nSide = spec.nMin + Math.floor(rng()*(spec.nMax - spec.nMin + 1));
+  const peak = Math.pow(a/(a + c), a)*Math.pow(c/(a + c), c), ox = spec.origin*len, n = Math.ceil(len/0.01);
+  for(let i = 0; i <= n; i++){
+    const s = i/n, r = s > 0 && s < 1 ? W*Math.pow(s, a)*Math.pow(1 - s, c)/peak : 0;
+    if(r > 0) discs.push(s*len - ox, asym*r, r);
+  }
+  veins.push({ a: [-ox, 0], b: [len - ox, 0], order: 1 });
+  for(let i = 0; i < 2*nSide; i++){
+    const side = (i % 2) ? 1 : -1, k = Math.floor(i/2);
+    const s = spec.s0 + (spec.s1 - spec.s0)*(k + 0.5*(i % 2) + 0.25)/nSide + u()*spec.posJitter/nSide;
+    const ang = (spec.angle + u()*spec.angleJitter)*DEG, bx = s*len - ox, ex = Math.cos(ang), ey = side*Math.sin(ang), L = exitAlong(discs, bx, 0, ex, ey);
+    veins.push({ a: [bx, 0], b: [bx + ex*L, ey*L], order: 2 });
+    teeth.push([bx + ex*L, ey*L]);
+  }
+  return { discs, veins, teeth };
+}
+const GRAMMARS = { palmate: growLeaf, pinnate: growPinnate };
+
+// r(θ) of one variant: the farthest point of the blade along each of LEAF_SAMPLES rays from the leaf's origin — the far root of the farthest chord, which is
+// the blade's reach on that ray whether or not the ray is whole inside it (the grammar's blade is star-shaped from its origin, a test holds that) — then the
 // teeth, then the area normalisation. `variantSeed` is the stream's seed.
 // bladeOf is that whole body with nothing thrown away: the skeleton the outline was grown from, and `k`, the area normalisation (r is already scaled by it) — so a
-// consumer that wants the veins gets the SAME growLeaf run the outline came from, and skeleton points × k are in the outline's unit frame. `profile` is its r.
+// consumer that wants the veins gets the SAME grammar run the outline came from, and skeleton points × k are in the outline's unit frame — and the grammar's name, since the
+// veins of a palmate blade and a pinnate one are not cut into regions alike by the editor's held leaf. `profile` is its r.
 function bladeOf(spec, variantSeed){
-  const skel = growLeaf(spec, mulberry32(variantSeed)), { discs, teeth } = skel, r = new Float64Array(LEAF_SAMPLES);
+  const skel = GRAMMARS[spec.grammar](spec, mulberry32(variantSeed)), { discs, teeth } = skel, r = new Float64Array(LEAF_SAMPLES);
   for(let i = 0; i < LEAF_SAMPLES; i++){
     const th = TAU*((i + 0.5)/LEAF_SAMPLES - 0.5), c = Math.cos(th), s = Math.sin(th);
     let far = 0;
@@ -115,7 +160,7 @@ function bladeOf(spec, variantSeed){
   for(let i = 0; i < LEAF_SAMPLES; i++) a += 0.5*r[i]*r[i]*(TAU/LEAF_SAMPLES);
   const k = Math.sqrt(Math.PI/a);
   for(let i = 0; i < LEAF_SAMPLES; i++) r[i] *= k;
-  return { skel, r, k };
+  return { skel, r, k, grammar: spec.grammar };
 }
 const profile = (spec, variantSeed) => bladeOf(spec, variantSeed).r;
 // The seed of variant v's stream: the grove's seed, the outline salt and the species — so a re-seeded grove grows other outlines, and no two species share a draw.
@@ -165,4 +210,4 @@ function leafShape(name, seed){
   return g;
 }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, MAPLE, LEAF_SHAPES, growLeaf, bladeOf, profile, outlineSeed, leafVariant, leafFlip, leafShape };
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafFlip, leafShape };

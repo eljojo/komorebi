@@ -346,6 +346,7 @@ try {
   // 'leaf shape' select follows the pick both ways: a maple -> oak pick has to take the lobes off, or the oak is lobed.
   const selVal = (label) => page.evaluate((lab) => { const r = [...document.querySelectorAll('#dev .ctl.select')].find((q) => q.querySelector('label')?.textContent === lab); return r.querySelector('select').value; }, label);
   check("the leaf shape row is there and reads the look's own outline: ellipse", (await rowShown('leaf shape')) === true && (await selVal('leaf shape')) === 'ellipse', `${await rowShown('leaf shape')} ${await selVal('leaf shape')}`);
+  check("the leaf shape select offers the ellipse, the maple and the beech", JSON.stringify(await page.evaluate(() => [...[...document.querySelectorAll('#dev .ctl.select')].find((q) => q.querySelector('label')?.textContent === 'leaf shape').querySelectorAll('option')].map((o) => o.value))) === '["ellipse","maple","beech"]');
   await setSelect('species', 'maple');
   check("picking maple in the species select turns 'leaf shape' to maple", await poll(async () => (await selVal('leaf shape')) === 'maple'), `reads ${await selVal('leaf shape')}`);
   await setSelect('species', 'oak');
@@ -528,6 +529,16 @@ try {
   await page.keyboard.press(']');
   const stepped = await untilLabel((s) => s.j !== redState.j || s.k !== redState.k, 10000);   // the address only: the label's s / a / b can move without a step
   check('] steps to the next leaf: the address moves to the one after it', (stepped.j === redState.j && stepped.k === redState.k + 1) || (stepped.j === redState.j + 1 && stepped.k === 0), `${redState.label} -> ${stepped.label}`);
+
+  // A BEECH'S OWN VEINS (P4a-3). The inset reads the outline table by the look's leaf_shape, and bladeOf names the grammar the veins were grown in, so picking the beech regrows the held leaf as a beech (a midrib and
+  // its secondaries, cut by leaf-maze.js as a pinnate blade) and not as the maple it falls back to for the ellipse. `data-grammar` is the grammar the veins of the picture on show were grown in (the blade's
+  // own, not the look's name for it: an inset that ignored the table would read palmate here).
+  const grammarNow = () => page.$eval('#leaf', (c) => c.dataset.grammar);
+  check("the held leaf of the ellipse look is the maple's blade (palmate), as it was", (await grammarNow()) === 'palmate', `reads ${await grammarNow()}`);
+  await setSelect('leaf shape', 'beech');
+  check("picking the beech regrows the held leaf as a beech: data-grammar reads pinnate", await poll(async () => (await grammarNow()) === 'pinnate'), `reads ${await grammarNow()}`);
+  await setSelect('leaf shape', 'ellipse');
+  check("...and the ellipse regrows it again as the maple's blade it falls back to (data-grammar reads palmate)", await poll(async () => (await grammarNow()) === 'palmate'), `reads ${await grammarNow()}`);
 
   // THE LEAVES THE GROVE HANGS. [ / ] walk one ring through exactly the leaves the grove hung — a cluster's own count (the marginal leaf only where there is one), over the
   // grove's own clusters, wrapping at both ends — and the oracle is the grove the engine's code builds for the look (hungBy), never leaves_per_cluster × foliage_density.

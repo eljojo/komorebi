@@ -28,7 +28,7 @@ const GLSL_TEXEL_MIX = `void texelMix(vec3 tau, float c, float k, out vec3 T, ou
 // it from here, so the edge law cannot be spelled two ways. An outlined leaf is cut by q' = |l| − r(θ) + 1 where the ellipse is cut by |l|: the same ramp reads it
 // (smoothstep(1 − uEdge, 1, q')), with the width it has at a tip and at the bottom of a sinus, where |l|/r(θ) would double it at a tip. It is ~0.6× as wide across a
 // steep flank — the ramp is radial, and a flank is not — which is named and fine: the bake's edge is a penumbra, and the carpet's one texel. r(θ) is the profile of
-// komorebi-leaf.js, from the petiole base: θ across the texture (REPEAT: the seam at ±π is one place), one row per variant, sample i at the texel centre (i + ½)/256.
+// komorebi-leaf.js, from the leaf's origin (the maple's petiole base, a point on the beech's midrib): θ across the texture (REPEAT: the seam at ±π is one place), one row per variant, sample i at the texel centre (i + ½)/256.
 const GLSL_LEAF_Q = `uniform highp sampler2D uLeafTex;   // R16F: r(θ) per variant, in the leaf's own unit frame (area-normalised, ∮½r²dθ = π)
 float leafQ(vec2 l, float variant){
   float m = length(l);

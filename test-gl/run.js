@@ -460,12 +460,25 @@ const INVARIANTS = [
   { name: "leaf_shape 'maple' changes the canopy (curtain)", preset: 'curtain 1', rebake: true, differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'maple' } },
   { name: "leaf_shape 'maple' lays another carpet (litter)", preset: 'afternoon 7', differ: true,
     a: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1, leaf_shape: 'maple' } },
+  // THE BEECH (§4.5, P4a-3): a pinnate blade through the same texture and the same three masks, read from a point on its midrib. 'beech' is as real a switch as 'maple' on every camera that cuts a
+  // leaf's mask and on the carpet, or an outline that never reached a mask would satisfy every row above (aspect 1 on both sides, as for the maple).
+  { name: "leaf_shape 'beech' changes the canopy (layer path)", preset: 'memories', differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'beech' } },
+  { name: "leaf_shape 'beech' changes the canopy (faithful path)", preset: 'park 1', rebake: true, differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'beech' } },
+  { name: "leaf_shape 'beech' changes the canopy (sky view)", preset: 'canopy 1', differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'beech' } },
+  { name: "leaf_shape 'beech' changes the canopy (curtain)", preset: 'curtain 1', rebake: true, differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'beech' } },
+  { name: "leaf_shape 'beech' lays another carpet (litter)", preset: 'afternoon 7', differ: true,
+    a: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1, leaf_shape: 'beech' } },
   // AREA IS CONSERVED, so the canopy keeps its fullness: the profile is the unit circle's area, so a maple at aspect 1 and 1/√aspect of the size has the leaf the ellipse had (the species
   // bundle's 0.103 = 0.13/√1.6; memories and afternoon 7 sit at 0.1 and 1.75, so 0.0756). The mean level of the frame stays within 5%.
   { name: 'a maple of the same leaf area keeps the canopy as full (layer path: memories)', preset: 'memories', lit: [0.95, 1.05],
     a: {}, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
   { name: 'a maple of the same leaf area keeps the canopy as full (layer path: afternoon 7)', preset: 'afternoon 7', lit: [0.95, 1.05],
     a: {}, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
+  // ...and the beech keeps it as full: the same leaf area at the same size (a beech's width-to-length is in its profile, so aspect 1 and 0.0756 here as for the maple)
+  { name: "leaf_shape 'beech' of the same leaf area keeps the canopy as full (layer path: memories)", preset: 'memories', lit: [0.95, 1.05],
+    a: {}, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 } },
+  { name: "leaf_shape 'beech' of the same leaf area keeps the canopy as full (layer path: afternoon 7)", preset: 'afternoon 7', lit: [0.95, 1.05],
+    a: {}, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 } },
   // EDGE_AREA (§4.5, decision 33): the soft edge read as a mixture at d = 0 too. Off it is the depth-averaged slab the engine has always read — the literal else of the four
   // widened conditions — so naming it false is the frame before the knob existed, on every camera and path (the pins above are the same claim for the looks themselves)...
   { name: 'edge_area false == absent (layer path)', preset: 'memories', a: {}, b: { edge_area: false } },
@@ -681,6 +694,9 @@ const LITTER_CHECKS = [
   // (half-float rounded, read linearly), so what is held is that the GPU turned the instance buffer — outline slot, enlarged quad, box and all — into the carpet.
   { name: 'afternoon 7 at 0.9, maple — the lobed stamps painted by the same q\' law', preset: 'afternoon 7', over: { ...FALL_LOOK, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
   { name: 'afternoon 7 on the first day of the fall, maple — a sparse carpet: the closed forms (area is conserved)', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 }, sparse: true },
+  // ...and the beech (P4a-3), a long narrow blade read from the middle of its midrib: the same law over its own profile, and its own sparse carpet's area
+  { name: 'afternoon 7 at 0.9, beech — the pinnate stamps painted by the same q\' law', preset: 'afternoon 7', over: { ...FALL_LOOK, leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 } },
+  { name: 'afternoon 7 on the first day of the fall, beech — a sparse carpet: the closed forms (area is conserved)', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71, leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 }, sparse: true },
 ];
 // (the rim's one-texel anti-aliasing ramp over-counts a leaf's area by π·w²/12 — a few % of a 5-texel leaf, ~20% of one under a texel — and overlap takes it back on a carpet
 // that thickens: so the sparse carpet's area is within a few % of Σπ·A·B0·fade, and no carpet is over it by more than the ramp's own bias)
@@ -732,6 +748,10 @@ const HALO_TOL = 2e-3, HALO_BAND = [0.99, 1.01], HALO_MIN_TEXELS = 500, STAMP_TO
 // ramp is RADIAL (q' = |l| − r(θ) + 1), so it is thinner across a flank by the cosine of the flank's tilt and a lobed leaf keeps MORE of its area than the ellipse does — measured x1.04 (three
 // variants, 1.038-1.042) where the design said 1%. The band is that law's own, not a tolerance: it holds a stable ramp, and says the maple is the ellipse's area plus ~4%, never less.
 const OUTLINE_TOL = 1e-3, OUTLINE_AREA = [1.0, 1.06];
+// The beech (P4a-3) is held to the same law over ITS profile texture, and its Σalpha is a band of its own: the ramp is radial, so what a thin pointed blade keeps against the ellipse is another number. Measured
+// x1.007-1.012 (variants 0, 3, 7 of seed 1234; the maple's x1.038-1.042): the ellipse's area plus about a percent — there are no sinuses for the ramp to thin across — and never less.
+const BEECH_AREA = [1.0, 1.03];
+const OUTLINE_BANDS = { maple: OUTLINE_AREA, beech: BEECH_AREA };
 
 // Suite 4 as data: one row per transition ROUTING tier. transitionTo classifies the from->to diff into a
 // tier, and each tier drives different code — the grove crossfade grows a SECOND grove (buildTargetGrove),
@@ -750,6 +770,9 @@ const TRANSITION_ROUTES = [
     expect: { crossfade: true, structDiff: true } },
   { name: 'a leaf_shape change takes the grove crossfade (each grove baked in its own outline)', from: 'memories', to: 'memories',
     over: { leaf_shape: 'maple', leaf_aspect: 1 },
+    expect: { crossfade: true, structDiff: true } },
+  { name: 'a leaf_shape change to the beech takes the grove crossfade (a pinnate outline, its own texture)', from: 'memories', to: 'memories',
+    over: { leaf_shape: 'beech', leaf_aspect: 1 },
     expect: { crossfade: true, structDiff: true } },
   { name: 'wood at the target end closes the crossfade gate', from: 'memories', to: 'memories',
     over: { seed: 7654321, branch_tau: 0.5 },
@@ -1272,14 +1295,14 @@ async function main() {
         }
       }
       for (const row of r.outline) {
-        const maple = row.name.startsWith('maple');
-        if (row.err > (maple ? OUTLINE_TOL : STAMP_TOL)) bad.push(`FS_BAKE ${row.name}: off the CPU's law by ${row.err.toExponential(2)} (want ≤ ${(maple ? OUTLINE_TOL : STAMP_TOL).toExponential(0)})`);
+        const band = OUTLINE_BANDS[row.name.split(' ')[0]];   // the outlines (maple, beech) have a band; the ellipse with the gate shut has none
+        if (row.err > (band ? OUTLINE_TOL : STAMP_TOL)) bad.push(`FS_BAKE ${row.name}: off the CPU's law by ${row.err.toExponential(2)} (want ≤ ${(band ? OUTLINE_TOL : STAMP_TOL).toExponential(0)})`);
         if (!row.finite) bad.push(`FS_BAKE ${row.name}: a non-finite pixel`);
         if (row.glError) bad.push(`FS_BAKE ${row.name}: gl.getError 0x${row.glError.toString(16)}`);
         if (!(row.nBand >= 100)) bad.push(`FS_BAKE ${row.name}: nothing measured (${row.nBand} edge-band pixels)`);
-        if (maple && !(row.areaOverEllipse >= OUTLINE_AREA[0] && row.areaOverEllipse <= OUTLINE_AREA[1])) bad.push(`FS_BAKE ${row.name}: Σalpha is x${row.areaOverEllipse.toFixed(4)} of the ellipse's (want ${OUTLINE_AREA.join('..')})`);
+        if (band && !(row.areaOverEllipse >= band[0] && row.areaOverEllipse <= band[1])) bad.push(`FS_BAKE ${row.name}: Σalpha is x${row.areaOverEllipse.toFixed(4)} of the ellipse's (want ${band.join('..')})`);
       }
-      const detail = `k ${r.k.toFixed(2)}  ${r.rows.map((x) => `${x.name} err ${x.err.toExponential(1)}`).join(', ')}  edge band x${f3(r.rows[0].bandOverMix)} of the mixture (the slab: x${f3(r.rows[0].slabOverMix)}), ${r.rows[0].nBand} px  FS_BAKE: ${r.outline.map((x) => `${x.name} err ${x.err.toExponential(1)}${x.name.startsWith('maple') ? ` Σα x${x.areaOverEllipse.toFixed(4)}` : ''}`).join(', ')}`;
+      const detail = `k ${r.k.toFixed(2)}  ${r.rows.map((x) => `${x.name} err ${x.err.toExponential(1)}`).join(', ')}  edge band x${f3(r.rows[0].bandOverMix)} of the mixture (the slab: x${f3(r.rows[0].slabOverMix)}), ${r.rows[0].nBand} px  FS_BAKE: ${r.outline.map((x) => `${x.name} err ${x.err.toExponential(1)}${OUTLINE_BANDS[x.name.split(' ')[0]] ? ` Σα x${x.areaOverEllipse.toFixed(4)}` : ''}`).join(', ')}`;
       record('edge', name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(72)} ${bad.join('; ') || detail}`);
     }

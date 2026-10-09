@@ -745,17 +745,19 @@ void main(){
   vLocal = uBox.xy + p*uBox.zw; vTau = vec3(1.0); vFade = 1.0; vVariant = uVariant;
   gl_Position = vec4(p, 0.0, 1.0);
 }`;
-  const shape = leafShape('maple', 1234), W3 = 301;
+  const W3 = 301;
   const leafTex = gl.createTexture();
-  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, leafTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, LEAF_SAMPLES, shape.rows, 0, gl.RED, gl.FLOAT, shape.data);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  const profileAt = (v, theta) => {   // the CPU's linear read of the half-rounded row: texel i sits at u = (i + ½)/256, REPEAT in θ
+  const useShape = (shape) => {   // the grove's own texture for this outline, on unit 6
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, leafTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, LEAF_SAMPLES, shape.rows, 0, gl.RED, gl.FLOAT, shape.data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  };
+  const profileAt = (shape, v, theta) => {   // the CPU's linear read of the half-rounded row: texel i sits at u = (i + ½)/256, REPEAT in θ
     const u = (theta / (2 * Math.PI) + 0.5) * LEAF_SAMPLES - 0.5, i0 = Math.floor(u), f = u - i0, at = (i) => half(shape.data[v * LEAF_SAMPLES + (((i % LEAF_SAMPLES) + LEAF_SAMPLES) % LEAF_SAMPLES)]);
     return at(i0) * (1 - f) + at(i0 + 1) * f;
   };
-  const maskRow = (name, gate, v, box) => {
+  const maskRow = (name, gate, v, box, shape) => {
     const { out, glError } = probe(gl, { vs: vsBox, fs: FS_BAKE, w: W3, h: W3, clear: -7, setup: (prog, U) => {
       gl.uniform1f(U('uEdge'), edge); gl.uniform1i(U('uLeafShape'), gate); gl.uniform1i(U('uLeafTex'), 6);
       gl.uniform4f(U('uBox'), box[0], box[1], box[2], box[3]); gl.uniform1f(U('uVariant'), v);
@@ -764,7 +766,7 @@ void main(){
     for (let j = 0; j < W3; j++) for (let i = 0; i < W3; i++) {
       const x = box[0] + ((i + 0.5) / W3 * 2 - 1) * box[2], y = box[1] + ((j + 0.5) / W3 * 2 - 1) * box[3], px = out[0].subarray((j * W3 + i) * 4, (j * W3 + i) * 4 + 4);
       if (!px.every(Number.isFinite)) finite = false;
-      const q = gate ? Math.hypot(x, y) - profileAt(v, Math.atan2(y, x)) + 1 : Math.hypot(x, y), want = 1 - smooth(1 - edge, 1, q), got = px[0] === -7 ? 0 : px[0];   // a discard leaves the sentinel: no coverage
+      const q = gate ? Math.hypot(x, y) - profileAt(shape, v, Math.atan2(y, x)) + 1 : Math.hypot(x, y), want = 1 - smooth(1 - edge, 1, q), got = px[0] === -7 ? 0 : px[0];   // a discard leaves the sentinel: no coverage
       err = Math.max(err, Math.abs(got - want), px[0] === -7 ? 0 : Math.abs(px[3] - px[0]));   // alpha is the coverage too (vFade 1)
       if (want > 0 !== got > 0 && Math.abs(want - got) > 0.05) wrongSide++;
       sum += got * (2 * box[2] / W3) * (2 * box[3] / W3);
@@ -773,8 +775,11 @@ void main(){
     }
     return { name, err, area: sum, nIn, nBand, finite, wrongSide, glError };
   };
+  const maple = leafShape('maple', 1234), beech = leafShape('beech', 1234);   // each outline is its own texture and its own box (P4a-3: the beech's, a pinnate blade read from a point on its midrib)
+  useShape(maple);
   const ell = maskRow('ellipse (gate shut)', 0, 0, [0, 0, 1.2, 1.2]);
-  const outline = [ell, ...[0, 3, 7].map((v) => maskRow(`maple variant ${v}`, 1, v, shape.box))].map((r) => ({ ...r, areaOverEllipse: r.area / ell.area }));
+  const rowsOf = (name, shape) => { useShape(shape); return [0, 3, 7].map((v) => maskRow(`${name} variant ${v}`, 1, v, shape.box, shape)); };
+  const outline = [ell, ...rowsOf('maple', maple), ...rowsOf('beech', beech)].map((r) => ({ ...r, areaOverEllipse: r.area / ell.area }));
   gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, null); gl.deleteTexture(leafTex);
   return { k, edge, rows, outline };
 });
