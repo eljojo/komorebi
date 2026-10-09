@@ -101,6 +101,13 @@ identity("drop_exposure 0 with turn_exposure 1", { drop_exposure: 0 });
 identity("leaf_drop 0 (no litter, no leafW)", { leaf_drop: 0 });
 identity("leaf_drop 0.6 (a marcescent share)", { leaf_drop: 0.6 });
 identity("tannin and wall_fraction moving with the clock", { leaf_drop: 0 }, { move: (p) => ({ tannin: 0.2 + p * 0.3, wall_fraction: 0.6 * (1 - p) }) });
+// After the turn: the window each leaf turns in, and the day it lets go, are one law on this side of the cache. Extra stops put the branch in view: the first leaf lets go
+// at turn_start + L + lag (0.78 here), so 0.8 is mid-fade for the earliest and 0.85 for a good share. `identity` fails any variant whose stops never drop a leaf or never catch one mid-fade.
+const AFTER_PH = [0.5, 0.6, 0.7, 0.775, 0.8, 0.82, 0.85, 0.9, 0.95, 1.0];
+identity("drop after the turn", { drop_after_turn: 1 }, { phs: AFTER_PH });
+identity("drop after the turn, faithful", { drop_after_turn: 1 }, { faithful: true, phs: AFTER_PH });
+identity("drop after the turn, turn_exposure 0 (the leaf's own clock) with leaf_drop 0.6", { drop_after_turn: 1, turn_exposure: 0, leaf_drop: 0.6 }, { phs: AFTER_PH });
+identity("drop after the turn, drop_lag moving with the clock", { drop_after_turn: 1 }, { phs: AFTER_PH, move: (p) => ({ drop_lag: 0.02 + p * 0.08 }) });
 identity("turn_start, turn_span, turn_spread, drop_start, drop_span moving (the whole season set)", {}, { move: (p) => ({ turn_start: 0.55 + p * 0.05, turn_span: 0.3 + p * 0.1, turn_spread: 0.2 * p, drop_start: 0.6 + p * 0.05, drop_span: 0.25 + p * 0.05 }) });
 
 test("an anthocyanin-only change: the leaves recolour, none drops, and it is a fresh build's bytes", () => {
@@ -163,20 +170,23 @@ test("laziness: a summer build keeps no season cache unless asked; ex and rank w
 const read = (f) => readFileSync(new URL(f, import.meta.url), "utf8");
 test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exactly what buildGrove reads besides the season set", () => {
   const SEASON = paramsMod.SEASON_KEYS;
-  expect(SEASON.length).toBe(13);
+  expect(SEASON.length).toBe(14);
   for (const k of SEASON) expect(CANOPY_KEYS, k).toContain(k);
-  expect([...SEASON].sort()).toEqual(["anthocyanin", "drop_exposure", "drop_span", "drop_start", "exposure_absolute", "leaf_drop", "phenology", "tannin", "turn_exposure", "turn_spread", "turn_span", "turn_start", "wall_fraction"].sort());
+  expect([...SEASON].sort()).toEqual(["anthocyanin", "drop_exposure", "drop_lag", "drop_span", "drop_start", "exposure_absolute", "leaf_drop", "phenology", "tannin", "turn_exposure", "turn_spread", "turn_span", "turn_start", "wall_fraction"].sort());
   const src = read("./komorebi-grove.js");
   const reads = new Set([...src.matchAll(/params\.([a-z_0-9]+)/g)].map((m) => m[1]).filter((k) => k in DEFAULTS));
   const season = new Set(SEASON), listed = new Set(groveMod.GROVE_READS);
   for (const k of reads) expect(season.has(k) || listed.has(k), `buildGrove reads params.${k}: it is neither in the season set nor in the key`).toBe(true);
   // the listed keys buildGrove does not name itself reach it through faithfulOn() — which the key also carries, as the boolean it is
-  for (const k of listed) expect(reads.has(k) || ["faithful_canopy", "receiver"].includes(k), `${k} is in the key but buildGrove never reads it`).toBe(true);
+  // ...or through the math it hands params to: drop_after_turn is a flip the key must carry (it moves every leaf's day and its mid-turn colour) and is read as P.drop_after_turn in komorebi-math.js
+  const mathSrc = read("./komorebi-math.js"), mathReads = new Set([...mathSrc.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
+  for (const k of listed) expect(reads.has(k) || ["faithful_canopy", "receiver"].includes(k) || mathReads.has(k), `${k} is in the key but buildGrove never reads it`).toBe(true);
+  expect(listed.has("drop_after_turn"), "a flip of the flag invalidates the cache").toBe(true);
   for (const k of listed) { expect(k in DEFAULTS, k).toBe(true); expect(season.has(k), `${k} is a season key`).toBe(false); }
   // and what the math functions it hands params to read (leafTau, senescence, dropDay) is the season set, nothing else
   const math = read("./komorebi-math.js");
   const P = new Set([...math.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
-  for (const k of P) expect(season.has(k), `komorebi-math.js reads P.${k}, a season-set key?`).toBe(true);
+  for (const k of P) expect(season.has(k) || listed.has(k), `komorebi-math.js reads P.${k}, a season-set key (or one the cache key carries)?`).toBe(true);
 });
 
 // ---- the engine: apply('season') decides fast or full -------------------------------------------------------------------
@@ -217,7 +227,7 @@ test("apply('season'): the first builds with the cache (a full path); a season-s
 
 test("apply('season'): a param buildGrove reads besides the season set takes the full path", () => {
   const cases = [{ view_extent_m: 5.1 }, { seed: 4242 }, { faithful_canopy: true }, { foliage_density: 1.4 }, { leaf_shape: "maple" }, { canopy_base_height_m: 2.4 },
-    { canopy_thickness_m: 1.1 }, { trunk_radius_m: 0.21 }, { tree_count: 3 }, { trans_g: 0.4 }, { limb_count: 5 }, { leaf_size_m: 0.13 }, { sky_view: true }];
+    { canopy_thickness_m: 1.1 }, { trunk_radius_m: 0.21 }, { tree_count: 3 }, { drop_after_turn: 1 }, { trans_g: 0.4 }, { limb_count: 5 }, { leaf_size_m: 0.13 }, { sky_view: true }];
   for (const change of cases) {
     const { eng, counts } = engineRig({});
     eng.apply("season");                                   // the cache

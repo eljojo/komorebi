@@ -23,7 +23,7 @@
 //   writes it), so the engine re-seasons only with no transition and with faith.buf still this grove's. leafW is a NEW array each time: the tree preview keys on it.
 //   MEASURED (bun, median of 7, fall at t 0.9): afternoon 7 73 ms a regrow, the void 201, montebello 15 — see the cost test in reseason.test.js for the re-season's.
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, GOLDEN, clamp, dropDay, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, turnOrder } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, turnOrder, turnPhase } from './komorebi-math.js';
 
 // The fall tiers this module owns, as the bundler sees them (embed-build.mjs): each is substituted by a literal, true or false, and the code behind a false one is not
 // in the bundle. A tier is cut only for a look that does not open it (komorebi-params.js FEATURES), so a flag that is false here means the guarded arithmetic was
@@ -40,7 +40,7 @@ import { LEAF_ID_FRAC, LEAF_SAMPLES, leafShape, leafVariant } from './komorebi-l
 // as the boolean it is). Held against a grep of this file in reseason.test.js.
 export const GROVE_READS = [
   'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
-  'cluster_spread_m','crown_aspect','droop','faithful_canopy','foliage_density','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaves_per_cluster',
+  'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaves_per_cluster',
   'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','trans_b','trans_g','trans_r','tree_count','trunk_radius_m','view_extent_m',
 ];
 export const seasonKey = (params, faithful) => `${GROVE_READS.map(k => params[k]).join('|')}|${faithful ? 1 : 0}`;
@@ -269,7 +269,7 @@ export function makeGrove(hub){
     // Abscission (§4.5) is a second reason to look back: who has let go is decided over the whole stand too (the light orders it), and a
     // leaf that has is compacted out of both buffers. `dropping` is its gate: at leaf_drop 0, or in a season before the first leaf's fade
     // can begin (drop_start - DROP_EPS), rec, the retention arithmetic, the compaction and the litter are never made — P1's buffers to the bit.
-    const isLit = lit(params), isDropping = dropping(params);
+    const isLit = lit(params), isDropping = dropping(params), after = afterTurn(params);
     const rec = ((FEAT_EXPOSURE && isLit) || (FEAT_DROP && isDropping)) ? [] : null;
     const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
     let sAt = 0;
@@ -344,7 +344,8 @@ export function makeGrove(hub){
         const o = REC*i, j = rec[o+4], k = rec[o+5];
         let w = 1, D = 0;
         if(FEAT_DROP && isDropping){
-          D = dropDay(params, dropPhase(dropHash(params.seed, j, k), u ? u[i] : 0, params.drop_exposure));
+          D = after ? dropDayAfterTurn(params, turnPhase(params, leafClock(params.seed, j, k), FEAT_EXPOSURE && isLit ? turnOrder(u[i]) : undefined))
+            : dropDay(params, dropPhase(dropHash(params.seed, j, k), u ? u[i] : 0, params.drop_exposure));
           w = retention(D, params.phenology);
           leafW[j*nLeaf + k] = w;
         }
@@ -579,7 +580,7 @@ export function makeGrove(hub){
   // on typed arrays. It must stay the same arithmetic as buildGrove's, call for call — reseason.test.js holds the bytes.
   function reseasonGrove(g, P = params){
     const S = g.season, n = S.n, rec = S.rec, nLeaf = S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0];
-    const sen = senescing(P), isLit = lit(P), isDropping = dropping(P);
+    const sen = senescing(P), isLit = lit(P), isDropping = dropping(P), after = afterTurn(P);
     let u = null;
     if(n > 0 && FEAT_EXPOSURE && ordered(P)){   // mirrors buildGrove's gate for the light
       if(!S.rank){
@@ -601,7 +602,8 @@ export function makeGrove(hub){
       const o = SREC*i, j = rec[o+6], k = rec[o+7];
       let w = 1, D = 0;
       if(FEAT_DROP && track){
-        D = dropDay(P, dropPhase(dropHash(P.seed, j, k), u ? u[i] : 0, P.drop_exposure));
+        D = after ? dropDayAfterTurn(P, turnPhase(P, leafClock(P.seed, j, k), FEAT_EXPOSURE && isLit ? turnOrder(u[i]) : undefined))
+          : dropDay(P, dropPhase(dropHash(P.seed, j, k), u ? u[i] : 0, P.drop_exposure));
         w = retention(D, P.phenology);
         leafW[j*nLeaf + k] = w;
       }

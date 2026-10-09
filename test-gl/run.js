@@ -169,6 +169,19 @@ const INVARIANTS = [
     a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
   { name: 'leaf_drop 1 thins the canopy (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
+  // DROP AFTER THE TURN (§4.5, `drop_after_turn`): the flag is a gate. Off it is dead code and the fall frame is the one before it existed (zero-vs-absent, in a frame that
+  // drops: at 0.85 the leaves are mid-fade on the layer path and the faithful one), and below turn_start it is inert whatever it and the lag say...
+  { name: 'drop_after_turn 0 == absent (layer path)', preset: 'afternoon 7',
+    a: { phenology: 0.85, leaf_drop: 1, turn_exposure: 1 }, b: { phenology: 0.85, leaf_drop: 1, turn_exposure: 1, drop_after_turn: 0 } },
+  { name: 'drop_after_turn 0 == absent (faithful path)', preset: 'park 1', rebake: true,
+    a: { phenology: 0.85, leaf_drop: 1, turn_exposure: 1 }, b: { phenology: 0.85, leaf_drop: 1, turn_exposure: 1, drop_after_turn: 0 } },
+  { name: 'drop_after_turn inert below turn_start', preset: 'afternoon 7',
+    a: { phenology: 0.6, leaf_drop: 1 }, b: { phenology: 0.6, leaf_drop: 1, drop_after_turn: 1, drop_lag: 0.1 } },
+  // ...and the other half: on, at 0.8 the leaves that today are mid-turn and half fallen are still hanging (the first goes at 0.78), on both paths
+  { name: 'drop_after_turn 1 holds the leaves until they have turned (layer path)', preset: 'afternoon 7', differ: true,
+    a: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1 }, b: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1, drop_after_turn: 1 } },
+  { name: 'drop_after_turn 1 holds the leaves until they have turned (faithful path)', preset: 'park 1', rebake: true, differ: true,
+    a: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1 }, b: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1, drop_after_turn: 1 } },
   { name: 'leaf_drop 1 thins the canopy (sky view)', preset: 'canopy 1', differ: true,
     a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
   { name: 'leaf_drop 1 thins the canopy (curtain)', preset: 'curtain 1', rebake: true, differ: true,
@@ -303,6 +316,9 @@ const INVARIANTS = [
     a: { ...macroParams('season', 0.80) }, b: { ...macroParams('season', 0.801) } },
   { name: 'season macro: a hair of t moves the fall frame by a hair (t 0.95)', preset: 'afternoon 4', near: 12,
     a: { ...macroParams('season', 0.95) }, b: { ...macroParams('season', 0.951) } },
+  // The same continuity after the turn: a hair of phenology moves the fall frame by a hair (the fades are DROP_EPS wide, the window of each leaf is its own)
+  { name: 'drop_after_turn: a hair of phenology moves the fall frame by a hair (faithful path)', preset: 'park 1', rebake: true, near: 12,
+    a: { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1, drop_after_turn: 1, phenology: 0.85 }, b: { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1, drop_after_turn: 1, phenology: 0.851 } },
   // THE MARGINAL FADE (§5.3). A leaf — or a whole tree — fading in has its fade folded into tau on the CPU, so the beam's neutral depth
   // k·coverage has to carry the same fade (iFade) or the ballistic shadow pops to full the instant the leaf exists. Step the count
   // from "none" to 0.005 of one: the fade is 0.005, and the picture must move by about that much — not by a whole leaf's shadow per twig.
@@ -531,8 +547,8 @@ const LIVE_CHANGES = [
   // a little at tick 10 so the apply that is measured at tick 15 is the FAST path, the re-season itself, on a cache that is already built.
   { name: 'afternoon 7 (the season scope: a phenology change on a running engine shows the frame an engine born at it shows)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', litter: true },
   { name: 'afternoon 7 (the season scope, on a built cache: the re-season itself)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', prime: 0.85, litter: true },
-  { name: 'park 1 (the season scope, faithful: the cast is re-cast from the re-seasoned leaves)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', litter: true },
-  { name: 'park 1 (the season scope, faithful, on a built cache: the re-season itself)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', prime: 0.85, litter: true },
+  { name: 'park 1 (the season scope, faithful: the cast is re-cast from the re-seasoned leaves)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, drop_after_turn: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', litter: true },
+  { name: 'park 1 (the season scope, faithful, on a built cache: the re-season itself)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, drop_after_turn: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', prime: 0.85, litter: true },
 ];
 // canopy_fill crossed on a RUNNING engine (it tweens, so nothing rebuilds when it does). `sky: true` = the camera has no
 // surface to light, so the fill must stay unallocated and the frame must not move.

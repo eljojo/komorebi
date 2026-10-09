@@ -239,7 +239,7 @@ try {
     const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === lab);
     const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
   }, [label, v]);
-  const DROP_FOLLOWERS = ['sun falls first', 'fall start', 'fall span'];
+  const DROP_FOLLOWERS = ['sun falls first', 'fall start', 'fall span', 'after its turn'];   // 'fall lag' is not one: it waits for 'after its turn' as well
   const followersShown = async () => Promise.all(DROP_FOLLOWERS.map(rowShown));
   check('at summer leaf fall and its followers are hidden', (await rowShown('leaf fall')) === false && (await followersShown()).every((v) => v === false), `${await rowShown('leaf fall')} ${await followersShown()}`);
   await setSeason(0.8);
@@ -250,6 +250,20 @@ try {
   let followers = false;
   for (let i = 0; i < 30 && !followers; i++) { await page.waitForTimeout(400); followers = (await followersShown()).every((v) => v === true); }
   check('raise leaf fall and sun falls first, fall start and fall span appear', followers, `${await followersShown()}`);
+  // AFTER ITS TURN: with it on the day is the turn's end plus the lag, so fall start, fall span and sun falls first are not read and hide; the lag appears
+  const setToggle = (label, on) => page.evaluate(([lab, val]) => {
+    const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === lab);
+    const i = r.querySelector('input'); i.checked = val; i.dispatchEvent(new Event('change', { bubbles: true }));
+  }, [label, on]);
+  check('fall lag waits for after its turn', (await rowShown('fall lag')) === false, `${await rowShown('fall lag')}`);
+  await setToggle('after its turn', true);
+  let afterOn = false;
+  for (let i = 0; i < 30 && !afterOn; i++) { await page.waitForTimeout(400); afterOn = (await rowShown('fall lag')) === true; }
+  check('after its turn: fall lag appears, fall start / span / sun falls first go', afterOn && (await Promise.all(['sun falls first', 'fall start', 'fall span'].map(rowShown))).every((v) => v === false), `${await rowShown('fall lag')} ${await Promise.all(['sun falls first', 'fall start', 'fall span'].map(rowShown))}`);
+  await setToggle('after its turn', false);
+  let afterOff = false;
+  for (let i = 0; i < 30 && !afterOff; i++) { await page.waitForTimeout(400); afterOff = (await rowShown('fall lag')) === false && (await rowShown('fall start')) === true; }
+  check('and back off: the old three return, the lag goes', afterOff, `${await rowShown('fall lag')} ${await rowShown('fall start')}`);
   await setSlider('leaf fall', 0);
   let followersGone = false;
   for (let i = 0; i < 30 && !followersGone; i++) { await page.waitForTimeout(400); followersGone = (await followersShown()).every((v) => v === false); }

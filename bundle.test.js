@@ -14,7 +14,7 @@ const HOME = ["morning 2", "afternoon 5b", "morning 3"];   // the three-look set
 const MARKERS = {
   fill: ["uFillRay", ".fill_directions", ".fill_resolution"],
   leafDiffuse: ["texelMix(d.rgb, d.a, uBeamK, T, Tb)", "log1p"],
-  pigment: [".turn_spread", ".wall_fraction", ".anthocyanin"],
+  pigment: [".wall_fraction", ".anthocyanin"],   // not ".turn_spread" any more: `dropping` reads it (the length of a leaf's own window, drop_after_turn), and the predicates are in every bundle
   exposure: [".exposure_absolute"],
   drop: [".drop_span"],
   litter: ["uLitterMinHalf", ".litter_age", ".litter_drift_m"],

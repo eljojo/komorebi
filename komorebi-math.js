@@ -88,8 +88,19 @@ const LEAF_SALT = 0x51ED270B;
 const _leafCell=[0,0,0], _leafWall=[0,0,0];   // scratch for leafTau, written and read within one synchronous call
 // s_j: how far leaf (stream value phi in [0,1)) has turned. smoothstep from its own start to the common finish; the
 // spread is clamped under the span so the transition keeps a floor of width and the smoothstep a positive one.
+// DROP AFTER THE TURN (`drop_after_turn`, spec §4.5 Abscission): the common finish above leaves a leaf no turn of its own to wait for (every leaf ends at
+// turn_start + turn_span), so a drop bound to the turn would have no order. At 1 each leaf's window is its own LENGTH L = span − spread from its own start, and
+// the last leaf (phi -> 1) still ends at turn_start + span. The start is the same expression, so s = 0 below turn_start and every summer byte survive. THE TRADE:
+// the mid-turn crown turns sooner at 1 (a turn change inside a drop knob; from turn_start + turn_span on the colour is identical). At 0 the branch is not
+// taken and the expression below is today's, literally.
+const afterTurn = (P) => P.drop_after_turn > 0;
+function turnLength(P){
+  const span = Math.max(P.turn_span, 1e-4);
+  return span - clamp(P.turn_spread, 0, span*0.95);
+}
 function senescence(P, phi){
   const span = Math.max(P.turn_span, 1e-4), spread = clamp(P.turn_spread, 0, span*0.95);
+  if(afterTurn(P)){ const T0 = P.turn_start + phi*spread; return smoothstep(T0, T0 + (span - spread), P.phenology); }
   return smoothstep(P.turn_start + phi*spread, P.turn_start + span, P.phenology);
 }
 // The sieve effect (Beer's law is convex): a leaf is bright vein walls (tau_wall) beside dark cells (tau_cell), and
@@ -107,6 +118,13 @@ function mixtureTau(tauWall, tauCell, fw, out = [0,0,0]){
 // leaves of equal light (exposureRank's `key`): the one that would have started first on its own is the one the rank puts first. It does not
 // draw a stream of its own, so nothing about a leaf moves. Pure function of (seed, j, k), like leafTau's.
 function leafClock(seed, j, k){ return mulberry32(hash3((seed>>>0)^LEAF_SALT, j, k))(); }
+// A leaf's turn phase phi' (leafTau's, in leafTau's float order): its own clock, mixed toward the exposure order by turn_exposure when the grove hands one over.
+// One function so the turn and the drop-after-the-turn ask the same question of the same leaf; the draw itself stays leafTau's, so no stream moves.
+function turnPhase(P, phi, phiE){
+  const w = phiE === undefined ? 0 : P.turn_exposure;
+  if(w > 0) phi += (phiE - phi)*w;
+  return phi;
+}
 // One leaf's tau (R,G,B): summer*(1-s) + s*(carotenoid + a*anthocyanin + b*tannin), the cells; the walls the same
 // without the anthocyanin (vein tissue makes none); then the sieve mixture. j,k = the leaf's cluster and its place in
 // it — stable under tree_count / density morphs, which a flat running index is not. Fills `out` (no garbage per leaf).
@@ -119,8 +137,7 @@ function leafClock(seed, j, k){ return mulberry32(hash3((seed>>>0)^LEAF_SALT, j,
 function leafTau(tauSummer, P, seed, j, k, out = [0,0,0], phiE, gainE){
   const r = mulberry32(hash3((seed>>>0)^LEAF_SALT, j, k));
   const w = phiE === undefined ? 0 : P.turn_exposure;
-  let phi = r();
-  if(w > 0) phi += (phiE - phi)*w;                            // mix(phi, f(1 - exposure), w)
+  const phi = turnPhase(P, r(), phiE);                        // mix(phi, f(1 - exposure), w); r() first, so the draws keep their order
   const s = senescence(P, phi);
   if(s === 0){ out[0]=tauSummer[0]; out[1]=tauSummer[1]; out[2]=tauSummer[2]; return out; }
   let a = P.anthocyanin*(0.5 + r());
@@ -296,6 +313,14 @@ function dropPhase(hashD, u, w){
   return hashD*(1 - v) + turnOrder(u)*v;                      // the same 1 - u the turn orders by (clamped under 1, so a leaf with no light still has a day); v = 1 is turnOrder(u) exactly
 }
 function dropDay(P, phiD){ return phiD < P.leaf_drop ? P.drop_start + P.drop_span*phiD/P.leaf_drop : Infinity; }
+// AFTER THE TURN (drop_after_turn 1): the day is the end of the leaf's OWN window, T0 + L, plus the fade's DROP_EPS (so s_j is 1 where the fade BEGINS, D − ε, not
+// only at D) plus drop_lag (0 = it fades the instant it has turned). `phiTurn` is the leaf's turn phase (turnPhase): one order for the colour and the day, no hash
+// of its own (a third clock, §4.5). leaf_drop stays the share: marcescent = the last to turn. drop_start/span/exposure are not read.
+function dropDayAfterTurn(P, phiTurn){
+  if(!(phiTurn < P.leaf_drop)) return Infinity;
+  const span = Math.max(P.turn_span, 1e-4), spread = clamp(P.turn_spread, 0, span*0.95);
+  return P.turn_start + phiTurn*spread + (span - spread) + DROP_EPS + P.drop_lag;
+}
 // §5.3's continuity rule: a leaf leaves by fading, never popping. w falls from 1 to 0 over the DROP_EPS (phenology units)
 // ending at the leaf's day, so a season that moves by a hair moves the canopy by a hair. cov <- cov . w scales the leaf's
 // tau and the fade its ballistic shadow rides on together. GATE: before the fade begins w is 1 with no arithmetic at all.
@@ -311,8 +336,11 @@ const TWEEN_STEP = DROP_EPS/2;
 // its leaves by light needs the pass whether or not it lets light order the turn.
 const senescing = (P) => P.phenology > P.turn_start;
 const lit = (P) => senescing(P) && P.turn_exposure > 0;
-const dropping = (P) => P.leaf_drop > 0 && P.phenology > P.drop_start - DROP_EPS;
-const ordered = (P) => lit(P) || (dropping(P) && P.drop_exposure > 0);
+// After the turn the first fade begins at turn_start + L + drop_lag (the earliest leaf, phi' 0, D − ε), and `dropping` opens ONE ε before it on purpose: (x + ε) − ε is not x
+// in float, an early open is free (retention returns exactly 1), and a late one would skip a fade. It may never be later than the first fade.
+// The drop follows the turn there, not the light, so drop_exposure no longer asks for the pass (a lit turn still does).
+const dropping = (P) => P.leaf_drop > 0 && P.phenology > (afterTurn(P) ? P.turn_start + turnLength(P) + P.drop_lag - DROP_EPS : P.drop_start - DROP_EPS);
+const ordered = (P) => lit(P) || (dropping(P) && !afterTurn(P) && P.drop_exposure > 0);
 function retention(D, p){ return p > D - DROP_EPS ? 1 - smoothstep(D - DROP_EPS, D, p) : 1; }
 
 // A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
@@ -468,4 +496,4 @@ function vignetteMask(u, v, feather, shape) {
   return 1 - smoothstep(1 - feather, 1, d);
 }
 
-export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
