@@ -8,7 +8,7 @@ model. Read the spec before you change what the engine does.
 
 - **`komorebi.js`** — the engine's public door, an ES module: `export { create, DEFAULTS, … }`, re-exported from the modules below. The whole renderer, no UI.
   - **`komorebi-engine.js`** — `create()` itself: GL plumbing, the shared-internals hub the subsystem factories close over, the rebuild coordinators, auto-quality, and the frame loop.
-  - **`komorebi-grove.js`** — `buildGrove`: the grown canopy — trees, leaves binned to depth layers, the woody occluder, the faithful-path geometry.
+  - **`komorebi-grove.js`** — `buildGrove`: the grown canopy — trees, leaves binned to depth layers, the woody occluder, the faithful-path geometry; and `placeLeaf`, where one leaf hangs (at its twig's tip or, with `inner_leaves`, on the older wood), which the editor's tree preview calls too.
   - **`komorebi-bake.js`** — the per-frame bakes: leaves to per-layer optical depth, the faithful path's pre-integrated soft shadow, and the sky fill — the hemisphere integral of those layers that lights the shade (`canopy_fill`, §4.7).
   - **`komorebi-fill.js`** — the sky fill's CPU half: the fixed cosine-weighted directions and the per-ray quadrature as pure functions, the reference `fill.test.js` and the pixel harness hold the shader to.
   - **`komorebi-litter.js`** — the fallen leaves as a floor material: the pure laws (where a leaf lands, the one colour law `litterAlbedo`, drop order) and the once-per-regrow RGBA8 carpet bake over the fill's frame.

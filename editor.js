@@ -136,6 +136,7 @@ const PANEL = [
   ['s','branch_levels','levels',1,4,1,'canopy'],
   ['s','leaves_per_cluster','leaves/twig',1,80,1,'canopy'],
   ['s','cluster_spread_m','spread (m)',0.02,1,0.01,'canopy'],
+  ['s','inner_leaves','inner leaves',0,1,0.01,'canopy'],   // §4.5: leaves on the older wood, so the crown is full — the share of each twig's leaves hung back along the limbs it grew from; 0 = the hollow crown, leaves at the twigs only
   ['s','leaf_size_m','leaf (m)',0.01,0.4,0.005,'canopy'],
   ['s','leaf_aspect','aspect',1,4,0.05,'canopy'],
   ['s','max_tilt','tilt',0,1,0.01,'canopy'],
@@ -758,6 +759,7 @@ const TIPS = {
   foliage_density:"<b>How full the canopy is — sparse spring vs. thick summer.</b> The big mood knob. Sparse: every leaf matters, so the faint wind can totally reshuffle the gaps. Thick: the same flutter only makes them twinkle.",
   leaves_per_cluster:"<b>How many leaves on each twig-tip.</b> Sets the overall leaf count (and how heavy it is to draw). Crossing whole numbers fades in smoothly, so you can sweep it without it jumping.",
   cluster_spread_m:"<b>How tightly leaves bunch on a twig.</b> Tight = distinct clumps with clear gaps between them; loose = a more even leaf carpet.",
+  inner_leaves:"<b>A full crown: sun leaves at the shell, shade leaves inside.</b> A tree only grows leaves at the ends of its twigs, so from above it reads as a wheel — a ring of leaves, a thin core, and bare limbs for spokes. A real crown also carries leaves on the older wood, thinning toward the trunk and never to none. This hangs that share of every twig's leaves back along the limbs it grew from, at the height they hang. 0 = the hollow crown, leaves at the twig tips only. It moves leaves, it adds none: the count and the leaf area stay the look's.",
   leaf_size_m:"<b>How big each leaf is.</b> Bigger leaves block more and leave smaller gaps — and small gaps are exactly what make those soft, round sun-pictures.",
   leaf_aspect:"<b>Leaf shape — round vs. long and narrow.</b> Higher = skinnier leaves. Changes the shape each leaf blocks as it rocks in the wind.",
   max_tilt:"<b>How tilted the leaves sit at rest.</b> A tilted leaf is seen more edge-on, so it blocks less — this thins the canopy and gives the wind something to foreshorten.",

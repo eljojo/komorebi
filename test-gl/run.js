@@ -494,6 +494,33 @@ const INVARIANTS = [
   { name: 'edge_area lightens the soft edges, a little (layer path: afternoon 7)', preset: 'afternoon 7', lit: [1.0, 1.08], a: {}, b: { edge_area: true } },
   // The look edge_area made, written down once every row above was green (a pin says the frame itself does not drift; the rows say it moved the right way)
   { name: 'memories with edge_area on is the frame edge_area made', preset: 'memories', a: { edge_area: true }, pin: '0acca242' },
+  // LEAVES ON THE OLDER WOOD (§4.5, `inner_leaves`). 0 is the gate: no path is collected and every leaf is placed where its twig puts it, so naming it is the frame before the knob existed, on every kind of look that hangs leaves
+  // (park 1 and curtain 1 are faithful and ride faithData; afternoon 7 and memories are the layer path; canopy 1 is the sky view)...
+  { name: 'inner_leaves 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { inner_leaves: 0 } },
+  { name: 'inner_leaves 0 == absent (layer path: afternoon 7)', preset: 'afternoon 7', a: {}, b: { inner_leaves: 0 } },
+  { name: 'inner_leaves 0 == absent (layer path: memories)', preset: 'memories', a: {}, b: { inner_leaves: 0 } },
+  { name: 'inner_leaves 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { inner_leaves: 0 } },
+  { name: 'inner_leaves 0 == absent (curtain)', preset: 'curtain 1', rebake: true, a: {}, b: { inner_leaves: 0 } },
+  // ...and the other half: above 0 the crown fills in, on the faithful cast, the layer cast and a fall canopy that is lit and letting go (the leaves on the wood change who shades whom, and so who turns and who falls) —
+  // or a knob that never reached the buffers would satisfy every row above
+  { name: 'inner_leaves 0.5 fills the crown (faithful path)', preset: 'park 1', rebake: true, differ: true, a: {}, b: { inner_leaves: 0.5 } },
+  { name: 'inner_leaves 0.5 fills the crown (layer path)', preset: 'afternoon 7', differ: true, a: {}, b: { inner_leaves: 0.5 } },
+  { name: 'inner_leaves 0.5 fills a fall crown (montebello: lit, dropping)', preset: 'montebello', rebake: true, differ: true, a: {}, b: { inner_leaves: 0.5 } },
+  // The leaves are moved, not made or lost: the mean level of the frame is the look's own to within what a different arrangement of the same area can do (leaves on the wood overlap more, shade each other, and
+  // the shell opens a little). Park 1 at 70 degrees, where the crown is seen from nearly above and the wheel is plain. Measured x1.0002 (201.75 -> 201.80, 4477 of 57600 pixels differ): the bound is that ratio +-0.1.
+  { name: 'inner_leaves 0.5 keeps the light (faithful path, sun at 70 degrees)', preset: 'park 1', rebake: true, lit: [0.9, 1.1],
+    a: { sun_elevation_deg: 70 }, b: { sun_elevation_deg: 70, inner_leaves: 0.5 } },
+  // THE GLIDE IS CONTINUOUS (§5.3). A drag moves inner_leaves by a hair per input event, and each leaf slides along its own line on a smoothstep of the share, its place AND its height, so the frame must move by a hair. In a step
+  // of 0.001 a leaf in the glide moves at most 0.03 of its tip-to-wood reach (inner.test.js holds that per leaf, in plan and in height: the steepest slope of the 0.05-wide smoothstep is 30), and a reach runs to 2-3 m, so the
+  // fastest leaf is carried a fraction of a leaf's width across the floor (afternoon 7: 0.079 m) and the frame moves by what that leaf's dapple does. Measured max Δ32 on park 1 (1256 of 57600 px differ) and Δ38 on
+  // afternoon 7 (29970 differ); the bound is 1.5x, as the rows above. THIS ROW IS A FLOOR AND NOT A POP DETECTOR: the worst Δ is the fastest honest leaf, and a leaf that pops (the glide shut with INNER_GLIDE 1e-9, or the height
+  // jumping to the wood's the moment the share leaves 0) lands in the same range (measured Δ24 / Δ47 shut, Δ18 / Δ52 height jumped), so what tells a pop from a glide is inner.test.js. What it holds is the other half: the knob
+  // reaches the screen on both casts without moving the frame wholesale on a hair. (On the layer path a leaf also changes LAYER as its height crosses a bin: 10 of afternoon 7's 32175 leaves in this step, 2 of park 1's 6138
+  // in its four. The layer index is a step function of the height by design, so that hop is a leaf's shadow changing floor, and it is inside the Δ above.)
+  { name: 'inner_leaves: a hair of the share moves the frame by a hair (faithful path)', preset: 'park 1', rebake: true, near: 48,
+    a: { inner_leaves: 0.3 }, b: { inner_leaves: 0.301 } },
+  { name: 'inner_leaves: a hair of the share moves the frame by a hair (layer path)', preset: 'afternoon 7', near: 57,
+    a: { inner_leaves: 0.3 }, b: { inner_leaves: 0.301 } },
 ];
 
 // THE SKY FILL vs ITS REFERENCE (§4.7). The bun tests hold komorebi-fill.js's laws; this holds the GLSL to it. Each row

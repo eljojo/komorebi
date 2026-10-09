@@ -484,13 +484,18 @@ function coneDirPlane(d, az, spread){
 // plane: a flat 2-D sheet — every z is 0, no droop, children turn by coneDirPlane. The draws are the same, so a plane
 // run is the same topology as the 3-D one. No engine caller: it was meant for the leaf's veins, which grow by growLeaf
 // instead (komorebi-leaf.js says why); skeleton.test.js holds what it promises.
+// THE PATH (`out.path`, optional): a caller that hands an array here gets, parallel to out.tw (the same index), each twig's ancestors — every joint from the twig's tip back to where its limb meets the
+// trunk axis (the root's base), droop sub-segment joints included so the path follows the curve — as a list of the very point arrays the segments hold, tip first. It is a PARALLEL structure and
+// not a key of the twig record, because skeleton.test.js digests every key of every record; and it draws nothing from the stream. A caller that hands none grows exactly what it grew before; the plane
+// mode, which has no trunk to run back to, passes no chain even when one is asked for.
 function growSkeleton(spec, rng, out){
   const { base, dir, len, level, limb, plane } = spec;
-  if(!plane){ growNode(spec, rng, out, base, dir, len, level, limb); return; }
+  if(!plane){ growNode(spec, rng, out, base, dir, len, level, limb, out.path ? [base] : undefined); return; }
   const m = Math.hypot(dir[0], dir[1]) || 1e-9;
   growNode(spec, rng, out, [base[0], base[1], 0], [dir[0]/m, dir[1]/m, 0], len, level, limb);
 }
-function growNode(g, rng, out, base, dir, len, level, limb){
+// `chain`: the joints from the root's base to this branch's base, inclusive, or undefined when no path is being collected (see growSkeleton)
+function growNode(g, rng, out, base, dir, len, level, limb, chain){
   const { levels, plane } = g;
   // index the twig this call will bear, if it is a terminal one — the segments pushed below are that twig's
   // OWN wood, and the faithful bake must swing them about the same joint, by the same angle, as its leaves (§5.4).
@@ -500,6 +505,7 @@ function growNode(g, rng, out, base, dir, len, level, limb){
   // curved END-TANGENT, so the sag compounds toward the tips (the willow cascade / birch trail). 0 = straight.
   const dLevel = plane ? 0 : g.droop * (level/levels);
   let tip, endDir = dir;
+  const joints = chain ? [] : null;   // the joints this branch adds past its base: every sub-segment's end, or just the tip
   if(Math.abs(dLevel) > 1e-3){
     // rounded by hand, not by Math.round: at a tie like 0.15·(2/3)·5 = 0.49999999999999994 (canopy 3's level 2) JavaScriptCore's Math.round answers 0 cold
     // and 1 once it has JITted this function — the same params, another grove after a few regrows. x − floor(x) is exact, so this is V8's answer everywhere.
@@ -513,17 +519,24 @@ function growNode(g, rng, out, base, dir, len, level, limb){
       // f0/f1 = this sub-segment's fractional span of the ONE level→level+1 taper step, so the faithful skeleton
       // thins SMOOTHLY along a drooping branch instead of resetting the full step per sub-segment (a sawtooth).
       out.seg.push({ a:p, b:np, level, limb, f0:sx/nSub, f1:(sx+1)/nSub, tw:twIdx });
+      if(joints) joints.push(np);
       p = np;
     }
     tip = p; endDir = d;
   } else {
     tip = [ base[0]+dir[0]*len, base[1]+dir[1]*len, base[2]+dir[2]*len ];
     out.seg.push({ a:base, b:tip, level, limb, f0:0, f1:1, tw:twIdx });   // straight branch: full step (byte-identical)
+    if(joints) joints.push(tip);
   }
+  const here = chain ? chain.concat(joints) : undefined;   // root-first: the trunk end of the wood, then every joint out to this branch's tip
   // bx,by = the twig's REAL base: where this terminal branch attaches to its parent. It is the joint the whole
   // twig (wood + the leaves on it) turns about under the medium band, and — being offset from the clump toward
   // the parent by GROWTH — it is a genuine stem joint, so §5.1's anti-vortex property holds without uStemLen.
-  if(level >= levels){ out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb, dx:endDir[0], dy:endDir[1], bx:base[0], by:base[1] }); return; }   // dx,dy = twig heading (plan) so leaves can hug the twig, not scatter as a blob
+  if(level >= levels){
+    out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb, dx:endDir[0], dy:endDir[1], bx:base[0], by:base[1] });   // dx,dy = twig heading (plan) so leaves can hug the twig, not scatter as a blob
+    if(here) out.path.push(here.reverse());   // tip first (here is this twig's own list, concatenated: the chain its parents hold is untouched)
+    return;
+  }
   // phyllotaxis (§4.5): how children fan around the parent. opposite forces PAIRED forks; whorled an even ring; spiral the golden angle.
   const { phyllo, coneA, lenRatio, leader } = g;
   const nKids = (phyllo===2) ? 2 : g.kids;
@@ -532,7 +545,7 @@ function growNode(g, rng, out, base, dir, len, level, limb){
     if(phyllo===2){       az = level*1.5707963 + c*Math.PI + (rng()-0.5)*0.08;  spread = coneA*(0.9+0.12*rng()); }   // opposite/decussate: a symmetric Y, plane flipped 90° each level
     else if(phyllo===1){  az = (c+0.5)/nKids*TAU + (rng()-0.5)*0.15;           spread = coneA*(0.7+0.5*rng()); }   // whorled: even ring (conifer tiers)
     else {                az = (leader ? c*GOLDEN : (c+0.5)/nKids*TAU) + (rng()-0.5)*(leader?0.4:1.2); spread = coneA*(0.55+0.9*rng()); }   // spiral / legacy fan
-    growNode(g, rng, out, tip, (plane ? coneDirPlane : coneDir)(endDir, az, spread), len*lenRatio*(0.8+0.4*rng()), level+1, limb);
+    growNode(g, rng, out, tip, (plane ? coneDirPlane : coneDir)(endDir, az, spread), len*lenRatio*(0.8+0.4*rng()), level+1, limb, here);
   }
 }
 

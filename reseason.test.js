@@ -119,6 +119,13 @@ identity("per-tree clock on a marginal tree (it draws its own lead)", { tree_cou
 identity("per-tree pigment on a marginal tree, faithful", { tree_count: 2.4, tree_pigment_spread: 0.6 }, { faithful: true });
 identity("both knobs moving with the clock", {}, { move: (p) => ({ tree_clock_spread: 0.15 * p, tree_pigment_spread: 0.9 * (1 - p) }) });
 identity("both knobs moving with the clock, after the turn", { drop_after_turn: 1 }, { phs: AFTER_PH, move: (p) => ({ tree_clock_spread: 0.15 * (1 - p), tree_pigment_spread: 0.9 * p }) });
+
+// Leaves on the older wood (`inner_leaves`, inner.test.js holds the laws): a canopy key the cache key carries, so the season never moves it, but a re-season keeps every leaf where the grove put it —
+// its place, its height and its layer, which the record kept — and so lands where a fresh build at the same params lands, on both paths, mid-fall, with the light ordering the leaves it hangs on the wood.
+identity("inner leaves 0.4 (a leaf's own height and layer are in the record)", { inner_leaves: 0.4 });
+identity("inner leaves 0.4, faithful", { inner_leaves: 0.4 }, { faithful: true });
+identity("inner leaves 0.4, marginal leaf and tree, after the turn, with the per-tree clock", { inner_leaves: 0.4, foliage_density: 1.3, tree_count: 2.4, drop_after_turn: 1, tree_clock_spread: 0.1 }, { phs: AFTER_PH });
+identity("inner leaves 0.4, maple outline, faithful", { inner_leaves: 0.4, leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756 }, { faithful: true });
 // The UNLIT arm. SMALL turns by the light (turn_exposure 1), and a lit leaf's tau is overwritten by the exposure arm of the rewrite; every variant above therefore leaves the other arm — the one a grove with
 // turn_exposure 0 takes, `FEAT_PIGMENT && sen` — free to lose its lead or its depth with nothing failing. These turn by the leaf's own clock alone: with no drop (the hang loop's tau is the only
 // tau, and the re-season's sen-only arm must reproduce it for every leaf), with the hash-only old drop clock (the rewrite's non-lit arm, for the leaves that go), and after the turn.
@@ -261,7 +268,7 @@ test("apply('season'): the first builds with the cache (a full path); a season-s
 
 test("apply('season'): a param buildGrove reads besides the season set takes the full path", () => {
   const cases = [{ view_extent_m: 5.1 }, { seed: 4242 }, { faithful_canopy: true }, { foliage_density: 1.4 }, { leaf_shape: "maple" }, { canopy_base_height_m: 2.4 },
-    { canopy_thickness_m: 1.1 }, { trunk_radius_m: 0.21 }, { tree_count: 3 }, { drop_after_turn: 1 }, { trans_g: 0.4 }, { limb_count: 5 }, { leaf_size_m: 0.13 }, { sky_view: true }];
+    { canopy_thickness_m: 1.1 }, { trunk_radius_m: 0.21 }, { tree_count: 3 }, { drop_after_turn: 1 }, { trans_g: 0.4 }, { limb_count: 5 }, { leaf_size_m: 0.13 }, { sky_view: true }, { inner_leaves: 0.3 }];
   for (const change of cases) {
     const { eng, counts } = engineRig({});
     eng.apply("season");                                   // the cache

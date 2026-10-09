@@ -67,7 +67,7 @@ const CANOPY_KEYS = [
   'tree_count',                                                       // continuous (spec §4.5): a fractional count grows a marginal tree in, so a tree-count transition MORPHS instead of dissolving
   'canopy_extent_m',                                                  // baked world size — only a regrow + re-bake (NO texture realloc), so it morphs continuously
   'branch_angle_deg','branch_length_ratio','branch_pitch_deg','foliage_density','leaves_per_cluster',
-  'cluster_spread_m','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b','droop','taper_delta','crown_aspect',
+  'cluster_spread_m','inner_leaves','leaf_size_m','leaf_aspect','max_tilt','edge_softness','trans_r','trans_g','trans_b','droop','taper_delta','crown_aspect',
   'phenology','turn_start','turn_span','turn_spread','anthocyanin','tannin','wall_fraction','turn_exposure','exposure_absolute','tree_clock_spread','tree_pigment_spread',   // leaf colour, like trans_rgb: each is a per-leaf tau read at regrow, so it morphs the SAME grove (spec §4.5); the last two are per TREE, the same tau and day by a tree's own draw
   'leaf_drop','drop_start','drop_span','drop_exposure','drop_lag',   // abscission (§4.5): which leaves are still on the tree is decided at regrow, so it morphs the SAME grove too (a leaf fades out by §5.3's rule, never pops)
   'litter_age','litter_drift_m',   // the litter carpet (§4.7): how browned each leaf lies and how far the season's wind carried it — read only by the regrow-time bake, so they morph with the grove they are baked from
@@ -161,6 +161,7 @@ const DEFAULTS = {
   clusters_per_layer: 60,          // legacy (pre-skeleton); unused by the grown canopy, kept for preset compat
   leaves_per_cluster: 22,          // leaves per terminal twig
   cluster_spread_m: 0.13,
+  inner_leaves: 0,                 // leaves on the older wood, so the crown is full (§4.5): 0..1, the share of each twig's leaves hung back along the wood it grew from instead of at its tip — shade leaves, thinning inward and never to zero, as a real crown carries them. A share, not more leaves: the count and the area are the look's. 0 = every leaf at its twig, the old placement to the bit (no path is even collected). A canopy key (it moves leaves), not a season key
   leaf_size_m: 0.09,
   leaf_aspect: 1.6,
   max_tilt: 0.8,                   // orientation foreshortening amount
