@@ -121,8 +121,10 @@ export function makeTransitions(hub){
       for(const k in DEFAULTS) params[k] = trans.to[k];
       hub.regenSource(); hub.resetPerf();                          // bloom now 0; re-probe quality for the new look (it may carry auto-quality)
       if(faithfulOn()) hub.bake();                   // land the faith texture on the exact target sun (resetPerf only re-bakes on a bake-res change)
-      const cb = trans.onEnd; trans.onEnd = null; if(cb) cb();
+      const cb = trans.onEnd; trans.onEnd = null;
+      return cb;                                     // handed back, not called: frame() calls it after scheduling the next frame, so a throwing onEnd cannot end the animation
     }
+    return null;
   }
 
   return { transitionTo, tickTransition };

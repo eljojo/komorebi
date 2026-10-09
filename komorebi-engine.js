@@ -633,12 +633,14 @@ function create(canvas, opts){
       return;
     }
     const dt = dtms/1000;
+    let landed = null;                               // the route's onEnd, when it lands this frame
     if(trans.active){                                // a running transition owns the re-source/re-bake each frame
       if(motionActive()) tick(dt);                   // keep wind alive; the morph re-asserts drift_phase right after
-      tickTransition(dt);
+      landed = tickTransition(dt);
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
     if(params.show_layer && !faithfulOn()) drawLayerBlit(); else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
     schedule();
+    if(landed) landed();                             // after schedule(), like onFrame: a throwing host callback must not end the animation
     if(eng.onFrame) eng.onFrame(dtms);               // editor draws HUD + source inset here
   }
 
@@ -666,8 +668,8 @@ function create(canvas, opts){
     if(trans.active){ trans.active=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
     rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
-    if(cb) cb();
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)
+    if(cb) cb();                                       // after the restart: a throwing onEnd must not leave a restored engine with no loop
   }
   canvas.addEventListener('webglcontextlost', onContextLost);
   canvas.addEventListener('webglcontextrestored', onContextRestored);

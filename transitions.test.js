@@ -4,6 +4,7 @@
 // with no error; these tests turn that into a loud `bun test` failure. Run: `bun test transitions.test.js`.
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
+import { makeTransitions } from "./komorebi-transitions.js";
 
 // the DEFAULTS knobs that deliberately do NOT participate in transitions: runtime/debug flags, the look's
 // tone-map + wind-pattern (live uniforms / a table swap, snapped not tweened), and the legacy clusters_per_layer.
@@ -43,4 +44,27 @@ test("every DEFAULTS knob is classified or explicitly excluded — no silent omi
   const covered = new Set([...MORPH_KEYS, ...CANOPY_KEYS, ...TOPO_KEYS, ...MODE_KEYS, ...KNOWN_EXCLUDED]);
   const missing = Object.keys(DEFAULTS).filter((k) => !covered.has(k));
   expect(missing).toEqual([]);   // add a new knob to a transition class (MORPH/CANOPY/TOPO/MODE) or KNOWN_EXCLUDED
+});
+
+// A host's onEnd is a host callback like onFrame: the engine must schedule its next frame BEFORE it runs, or a throwing onEnd ends the
+// animation. tickTransition therefore lands the route and hands the callback back for frame() to call after schedule(), never calls it.
+test("a landing route's onEnd is handed back by tickTransition, not called", () => {
+  let fired = 0;
+  const noop = () => {};
+  const hub = {
+    params: { ...DEFAULTS }, faithfulOn: () => false, motionActive: () => false, crossW: 0, groveIn: null,
+    regenSource: noop, resetPerf: noop, bake: noop, regenCanopy: noop, installGrove: noop,
+    trans: { active: true, t: 0.99, dur: 1, durScale: 1, bloomMax: 1, crossfade: false, from: { ...DEFAULTS }, to: { ...DEFAULTS, exposure: 2 },
+             swapped: true, structDiff: false, canopyMorph: false, bloom: 0, onEnd: () => { fired++; } },
+  };
+  const { tickTransition } = makeTransitions(hub);
+  const cb = tickTransition(1);   // the step is clamped to 1/15 s: 0.99 + 0.067 lands
+  expect(typeof cb).toBe("function");
+  expect(fired, "not called inside the tick").toBe(0);
+  expect(hub.trans.active).toBe(false);
+  expect(hub.trans.onEnd, "cleared before it is handed back, so an abort cannot fire it").toBe(null);
+  expect(hub.params.exposure, "landed on the target").toBe(2);
+  cb();
+  expect(fired).toBe(1);
+  expect(tickTransition(1), "nothing to hand back once landed").toBeFalsy();
 });
