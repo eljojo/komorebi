@@ -196,7 +196,7 @@ export const PRESETS = {
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.5,                                               // the sunlit leaves have let go and lie damp on the floor (§4.5, §4.7)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie damp on the floor (§4.5, §4.7); José: "yes turn it on for both"
     "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -0.7, "view_center_y": -3, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
@@ -219,7 +219,7 @@ export const PRESETS = {
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.79, "turn_exposure": 0.71, "exposure_absolute": 0.93, "anthocyanin": 0.82, "tannin": 0.48, "wall_fraction": 0.13,   // mid-turn, deep red capacity, the raw light ordering the turn (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.36,                                                                                // the whole drop has let go by the end of its window and lies damp on the floor (§4.5, §4.7): his pd3 over 0.71 and 0.85
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.36, "drop_after_turn": 1,                                                          // the whole drop has let go, each leaf after its own turn, and lies damp on the floor (§4.5, §4.7): his pd3 over 0.71 and 0.85
     "view_extent_m": 39.28644129433203, "view_pitch_deg": 73.99882812500043, "view_fov_deg": 60, "view_yaw_deg": -161.79726562499684,
     "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
     "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
