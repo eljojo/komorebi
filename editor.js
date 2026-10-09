@@ -3,6 +3,7 @@ import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
 import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
+import { makeLeafPreview } from './leaf-preview.js';
 // ============================================================================
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
@@ -1080,6 +1081,8 @@ function stepPreset(dir){
 
 // T = toggle the 3D tree-grove preview inset (independent of the dev panel)
 let showTree=false;
+// L = toggle the held-leaf inset (leaf-preview.js); [ / ] step to the next leaf while it is up. Built on the first L and never before.
+let showLeaf=false, leaf=null;
 window.addEventListener('keydown',e=>{
   const k=e.key;
   if(k==='d'||k==='D'){
@@ -1093,6 +1096,8 @@ window.addEventListener('keydown',e=>{
   }
   if(k==='r'||k==='R'){ reseed(); return; }
   if(k==='t'||k==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; return; }
+  if(k==='l'||k==='L'){ showLeaf=!showLeaf; leaf??=makeLeafPreview(params); leaf.show(showLeaf); return; }
+  if(showLeaf && (k==='['||k===']')){ leaf.step(k===']'?1:-1); return; }
   if(k==='f'||k==='F'){                                                     // toggle browser fullscreen (webkit fallback for Safari)
     const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;
     if(fsEl){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
@@ -1127,6 +1132,7 @@ eng.onFrame = ()=> {
   const devUp = !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');   // a sliding-out panel counts as gone
   if(params.show_source && devUp) eng.drawSourceInset();
   if(showTree) eng.drawTreeInset(treePointer, treePinned);
+  if(showLeaf) leaf.draw();
   const cmpOpen = cmp.classList.contains('show');
   // profiler breakdown: the live whole-frame fps at full quality — the honest 'is it holding 60' number the
   // misleading offscreen 'headroom' used to obscure. (The A/B picker shows each engine's fps separately.)

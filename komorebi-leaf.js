@@ -90,8 +90,10 @@ function exitAlong(discs, x, y, dx, dy){
 // r(θ) of one variant: the farthest point of the blade along each of LEAF_SAMPLES rays from the petiole base — the far root of the farthest chord, which is
 // the blade's reach on that ray whether or not the ray is whole inside it (the grammar's blade is star-shaped from the base, a test holds that) — then the
 // teeth, then the area normalisation. `variantSeed` is the stream's seed.
-function profile(spec, variantSeed){
-  const { discs, teeth } = growLeaf(spec, mulberry32(variantSeed)), r = new Float64Array(LEAF_SAMPLES);
+// bladeOf is that whole body with nothing thrown away: the skeleton the outline was grown from, and `k`, the area normalisation (r is already scaled by it) — so a
+// consumer that wants the veins gets the SAME growLeaf run the outline came from, and skeleton points × k are in the outline's unit frame. `profile` is its r.
+function bladeOf(spec, variantSeed){
+  const skel = growLeaf(spec, mulberry32(variantSeed)), { discs, teeth } = skel, r = new Float64Array(LEAF_SAMPLES);
   for(let i = 0; i < LEAF_SAMPLES; i++){
     const th = TAU*((i + 0.5)/LEAF_SAMPLES - 0.5), c = Math.cos(th), s = Math.sin(th);
     let far = 0;
@@ -112,8 +114,9 @@ function profile(spec, variantSeed){
   for(let i = 0; i < LEAF_SAMPLES; i++) a += 0.5*r[i]*r[i]*(TAU/LEAF_SAMPLES);
   const k = Math.sqrt(Math.PI/a);
   for(let i = 0; i < LEAF_SAMPLES; i++) r[i] *= k;
-  return r;
+  return { skel, r, k };
 }
+const profile = (spec, variantSeed) => bladeOf(spec, variantSeed).r;
 // The seed of variant v's stream: the grove's seed, the outline salt and the species — so a re-seeded grove grows other outlines, and no two species share a draw.
 const outlineSeed = (spec, seed, v) => hash3((seed>>>0)^OUTLINE_SALT, spec.species, v);
 
@@ -154,4 +157,4 @@ function leafShape(name, seed){
   return g;
 }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, MAPLE, LEAF_SHAPES, growLeaf, profile, outlineSeed, leafVariant, leafShape };
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, MAPLE, LEAF_SHAPES, growLeaf, bladeOf, profile, outlineSeed, leafVariant, leafShape };

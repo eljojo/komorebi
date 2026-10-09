@@ -437,6 +437,41 @@ try {
   await page.waitForTimeout(900);
   check('D wakes it again (hover-equivalent)', await page.$eval('#strip', (e) => !e.classList.contains('faded')));
 
+  // THE HELD LEAF (L, leaf-preview.js §4.5): one grown leaf against the sun, off until summoned. Its lamina's mean colour is read off the canvas itself:
+  // green at summer, red at the end of the turn with anthocyanin up — and it must follow the sliders without a regrow.
+  await page.$eval('#hint', (h) => h.classList.add('gone'));
+  check('the held leaf is not in the page until L', await page.$('#leaf') === null);
+  await page.keyboard.press('l');
+  await page.waitForSelector('#leaf', { state: 'visible', timeout: 15000 });
+  let leafSized = false;                                            // the size is set on the first frame after the key, not by the key
+  for (let i = 0; i < 100 && !leafSized; i++) { leafSized = await page.$eval('#leaf', (c) => c.clientWidth > 0 && c.clientWidth === c.clientHeight); if (!leafSized) await page.waitForTimeout(100); }
+  check('l shows #leaf, square and non-zero', leafSized);
+  check('and does not surface the key hints', await page.$eval('#hint', (h) => h.classList.contains('gone')));
+  const leafMean = () => page.$eval('#leaf', (c) => {
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let r = 0, g = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 60) { r += d[i]; g += d[i + 1]; n++; }
+    return { r: r / (n || 1), g: g / (n || 1), n };
+  });
+  const until = async (pred, ms) => { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await leafMean(); if (pred(v)) return v; await page.waitForTimeout(100); } return v; };
+  await setSlider('phenology', 0.5);
+  const summerLeaf = await until((m) => m.n > 1000 && m.g > m.r, 20000);
+  check('at summer the leaf is green (mean G > R over the lamina)', summerLeaf.n > 1000 && summerLeaf.g > summerLeaf.r, JSON.stringify(summerLeaf));
+  await setSlider('phenology', 1);
+  await setSlider('anthocyanin', 0.8);
+  await setSlider('vein share', 0.2);
+  const autumnLeaf = await until((m) => m.r > m.g, 2000);
+  check('phenology 1, anthocyanin 0.8, vein share 0.2: the mean turns red within 2 s', autumnLeaf.r > autumnLeaf.g, JSON.stringify(autumnLeaf));
+  const leafLabel = () => page.$eval('#leaf', (c) => c.dataset.label);
+  const l0 = await leafLabel();
+  await page.keyboard.press(']');
+  let l1 = l0;
+  for (let i = 0; i < 100 && l1 === l0; i++) { await page.waitForTimeout(100); l1 = await leafLabel(); }
+  check('] steps to the next leaf (the address label changes)', l1 !== l0, `${l0} -> ${l1}`);
+  await page.keyboard.press('l');
+  check('l again hides it', await page.$eval('#leaf', (c) => getComputedStyle(c).display === 'none'));
+  await setSlider('phenology', 0.5);   // leave the season as the checks below found it
+
   // the key hints retire on a timer; H resurfaces them
   await page.$eval('#hint', (h) => h.classList.add('gone'));        // stand in for the 30 s retire
   await page.keyboard.press('h');
