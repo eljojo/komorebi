@@ -316,11 +316,14 @@ export function makeBake(hub){
   // THE FRAME the fill is baked over: fillFrame(E, h_max, bulkOn), h_max the tallest layer its rays start from — where the faithful tree's twigs
   // REALLY grew on that path, the park band otherwise. It is a function of the look and not of whether the fill is open, which is what lets the
   // litter carpet (komorebi-litter.js) be baked and read over the very same square: it asks here, so the two cannot disagree about it.
-  const fillHeights = () => faithfulOn() ? faith.binH.subarray(0, MAX_LAYERS) : hub.layerHeights();
+  // refreshLitter asks for it every frame to compare signatures, so it allocates nothing: binH read in place (only the first layer_count are
+  // read), and one scratch frame, which callers copy out of and never keep.
+  const fillHeights = () => faithfulOn() ? faith.binH : hub.layerHeights();
+  const _frame = { ox: 0, oy: 0, ext: 0 };
   function fillFrameNow(H = fillHeights()){
     let hMax = 0;
     for(let i=0;i<params.layer_count;i++) hMax = Math.max(hMax, H[i]);
-    return fillFrame(params.canopy_extent_m, hMax, hub.bulkOn());
+    return fillFrame(params.canopy_extent_m, hMax, hub.bulkOn(), _frame);
   }
 
   // Once per frame, before transport draws: the faithful cast carries the beam's k pre-integrated (§4.5), so unlike the layer
@@ -464,6 +467,12 @@ export function makeFill(hub){
 
   // Free what a shut gate no longer needs: the look pays nothing for a fill it has switched off.
   function releaseFill(){
+    // detach first: a delete frees a texture only once nothing holds it, and it detaches only from the BOUND framebuffer — fillFBO is not
+    // bound here, so its two attachments would keep both mip chains resident until the fill reopened
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fillFBO);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, null, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     for(const t of fill.tex) if(t) gl.deleteTexture(t);
     fill.tex = [null, null]; fill.res = 0; fill.ready = false;
     if(faithfulOn() && hub.layerSize > 1) hub.allocLayers(1);   // the faithful layers go back to the 1×1 they are without the fill

@@ -71,9 +71,10 @@ export function fillTurns(){
 //   'clamp' what it was; kept so the reference can say what the old box did.
 // The frame is the plan square the fill is BAKED over (and every receiver reads it by): origin (ox, oy), side ext.
 export const FILL_PAD = 3;
-export function fillFrame(E, hMax, bulkOn){
+export function fillFrame(E, hMax, bulkOn, out = {}){   // `out`: a caller's scratch, filled in place (the engine asks every frame)
   const pad = bulkOn ? FILL_PAD * hMax : 0;
-  return { ox: -E / 2 - pad, oy: -E / 2 - pad, ext: E + 2 * pad };
+  out.ox = -E / 2 - pad; out.oy = -E / 2 - pad; out.ext = E + 2 * pad;
+  return out;
 }
 
 // A layer read through a domain: the layer's t / c closures are defined inside `frame` (the canopy box); outside it a tap reads

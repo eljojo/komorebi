@@ -566,6 +566,8 @@ test("the carpet's frame IS the fill's: fillFrame(E, hMax, bulkOn) — computed 
   // the question is the bake module's, asked the same way for every look with a bulk throw (the cloth never bakes a carpet, but its fill is this frame)
   for (const over of [{ standing_scene: true }, { receiver: 1 }, { receiver: 2 }]) expect(litterRig(over).bake.fillFrameNow(), JSON.stringify(over)).toEqual(fillFrame(E, layerTop, true));
   expect(litterRig({}).bake.fillFrameNow()).toEqual(fillFrame(E, layerTop, false));
+  const rig = litterRig({});
+  expect(rig.bake.fillFrameNow(), "one scratch frame: refreshLitter asks every frame, and a static frame allocates nothing").toBe(rig.bake.fillFrameNow());
   // the faithful tree's layers are where its twigs REALLY grew (faith.binH), and the frame follows them exactly as the fill's does
   const f = litterRig({ litter: 1, standing_scene: true, layer_count: 3 }, { faithful: true });
   f.lit.refreshLitter();

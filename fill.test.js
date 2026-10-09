@@ -401,6 +401,9 @@ test("the fill frame: the canopy box itself in the endless park, padded by 3·h_
   const f = FILL.fillFrame(40, 5.5, true);
   expect(f.ox + f.ext / 2).toBeCloseTo(0, 12);                          // centred on the canopy
   expect(f.ext).toBeCloseTo(40 + 2 * 3 * 5.5, 12);
+  const out = { ox: 0, oy: 0, ext: 0 };   // the engine asks every frame (the litter's signature): a caller's scratch is filled in place, nothing allocated
+  expect(FILL.fillFrame(28, 8, true, out)).toBe(out);
+  expect(out).toEqual({ ox: -38, oy: -38, ext: 76 });
 });
 
 test("the domain: wrap is the torus, open is open sky, clamp is the border — and inside the frame all three are the field", () => {
