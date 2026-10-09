@@ -538,7 +538,7 @@ test("exposure_absolute never touches a leaf's own hash: a whisper of it is a wh
   expect(worst, "not vacuous: the whisper is not nothing").toBeGreaterThan(0);
 });
 
-test("exposure_absolute rides on turn_exposure: with that at 0, or at summer, it moves nothing", () => {
+test("exposure_absolute rides on turn_exposure: with that at 0 and no leaf falling (FALL drops none), or at summer, it moves nothing — the drop's own order is drop.test.js's", () => {
   for (const over of [{ turn_exposure: 0 }, { phenology: 0.5 }]) {
     const base = { ...FALL, ...over };
     const off = growWith({ ...base, exposure_absolute: 0 }, true), on = growWith({ ...base, exposure_absolute: 1 }, true);

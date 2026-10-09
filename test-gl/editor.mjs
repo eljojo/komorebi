@@ -213,8 +213,8 @@ try {
   let summer = false;
   for (let i = 0; i < 30 && !summer; i++) { await page.waitForTimeout(400); summer = (await pigmentShown()).every((v) => v === false); }
   check('and go again when the season comes back', summer, `${await pigmentShown()}`);
-  // ABSOLUTE LIGHT (§4.5) rides on sun first: it only chooses what that order is made of, so it needs the season past the turn AND
-  // turn_exposure up — turning alone (every look ships sun first at 0) leaves no order for it to change.
+  // ABSOLUTE LIGHT (§4.5) chooses what the exposure order is made of, so it needs the season past the turn AND an order to choose for:
+  // sun first up, or (below) leaves falling by the light. Turning alone (the look under test ships sun first at 0 and leaf fall at 0) leaves none.
   const setSunFirst = (val) => page.evaluate((v) => {
     const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === 'sun first');
     const i = r.querySelector('input'); i.value = String(v); i.dispatchEvent(new Event('input', { bubbles: true }));
@@ -250,17 +250,23 @@ try {
   let followers = false;
   for (let i = 0; i < 30 && !followers; i++) { await page.waitForTimeout(400); followers = (await followersShown()).every((v) => v === true); }
   check('raise leaf fall and sun falls first, fall start and fall span appear', followers, `${await followersShown()}`);
-  // AFTER ITS TURN: with it on the day is the turn's end plus the lag, so fall start, fall span and sun falls first are not read and hide; the lag appears
-  const setToggle = (label, on) => page.evaluate(([lab, val]) => {
-    const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === lab);
-    const i = r.querySelector('input'); i.checked = val; i.dispatchEvent(new Event('change', { bubbles: true }));
-  }, [label, on]);
+  // ABSOLUTE LIGHT reads the fall's order too: leaves letting go by the light (sun falls first ships at 1) is an order for it to choose the make of, sun first at 0 or not
+  let absFall = false;
+  for (let i = 0; i < 30 && !absFall; i++) { await page.waitForTimeout(400); absFall = (await rowShown('absolute light')) === true; }
+  check('leaves falling by the light: absolute light shows with sun first at 0', absFall, `${await rowShown('absolute light')}`);
+  // AFTER ITS TURN: with it on the day is the turn's end plus the lag, so fall start, fall span and sun falls first are not read and hide; the lag appears.
+  // A select like litter (a 0/1 TOPO key: a checkbox's boolean would never equal a preset's 0)
+  const setSelect = (label, v) => page.evaluate(([lab, val]) => {
+    const r = [...document.querySelectorAll('#dev .ctl.select')].find((q) => q.querySelector('label')?.textContent === lab);
+    const sel = r.querySelector('select'); sel.value = String(val); sel.dispatchEvent(new Event('change', { bubbles: true }));
+  }, [label, v]);
   check('fall lag waits for after its turn', (await rowShown('fall lag')) === false, `${await rowShown('fall lag')}`);
-  await setToggle('after its turn', true);
+  await setSelect('after its turn', 1);
   let afterOn = false;
   for (let i = 0; i < 30 && !afterOn; i++) { await page.waitForTimeout(400); afterOn = (await rowShown('fall lag')) === true; }
   check('after its turn: fall lag appears, fall start / span / sun falls first go', afterOn && (await Promise.all(['sun falls first', 'fall start', 'fall span'].map(rowShown))).every((v) => v === false), `${await rowShown('fall lag')} ${await Promise.all(['sun falls first', 'fall start', 'fall span'].map(rowShown))}`);
-  await setToggle('after its turn', false);
+  check('after its turn the fall reads no exposure order, so with sun first at 0 absolute light goes', (await rowShown('absolute light')) === false, `${await rowShown('absolute light')}`);
+  await setSelect('after its turn', 0);
   let afterOff = false;
   for (let i = 0; i < 30 && !afterOff; i++) { await page.waitForTimeout(400); afterOff = (await rowShown('fall lag')) === false && (await rowShown('fall start')) === true; }
   check('and back off: the old three return, the lag goes', afterOff, `${await rowShown('fall lag')} ${await rowShown('fall start')}`);
@@ -275,10 +281,6 @@ try {
   // THE LITTER ROWS (§4.7). `litter` is the carpet's own gate beside leaf fall: the leaves it lays are the ones leaf fall lets go of, so it hides at summer and
   // while leaf fall is 0; its followers (how it browns, how far the season's wind carries it, how big its texture is) are sliders on a bake that does not run
   // while it is off, so they hide until it is on. Only the floor has leaves to lie on: on the curtain there is none of the four.
-  const setSelect = (label, v) => page.evaluate(([lab, val]) => {
-    const r = [...document.querySelectorAll('#dev .ctl.select')].find((q) => q.querySelector('label')?.textContent === lab);
-    const sel = r.querySelector('select'); sel.value = String(val); sel.dispatchEvent(new Event('change', { bubbles: true }));
-  }, [label, v]);
   const LITTER_FOLLOWERS = ['browns over', 'carried', 'wet', 'litter res'];
   const litterFollowers = async () => Promise.all(LITTER_FOLLOWERS.map(rowShown));
   const poll = async (f) => { let ok = false; for (let i = 0; i < 30 && !ok; i++) { await page.waitForTimeout(400); ok = await f(); } return ok; };
