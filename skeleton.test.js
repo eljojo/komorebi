@@ -4,6 +4,13 @@
 // fails SILENTLY: this is a pure refactor, so the grove is the SAME grove — every segment and twig of every species,
 // bit for bit — because one reordered draw from the growth stream reshuffles every look there is. The fixtures below
 // were captured from the closure grow() BEFORE it moved; the rest holds what the plane variant promises.
+//
+// "Bit for bit" is a claim about ONE platform. The digest is of float64 BITS, and JavaScriptCore's Math.sin/cos/tan/
+// acos/atan2/pow/exp/log/hypot are the system libm's, which glibc and Apple's disagree on in the last bit (over 2000
+// inputs each, sin 99, cos 74, tan 837, acos 302, hypot 861, atan2 4, exp 5, pow 1, log 1): oak:1 differs in 882 of its
+// 9045 segment numbers and 1170 of its 5265 twig numbers, by at most 1.8e-15 m, the structure identical. So a table is
+// keyed by `${platform}-${arch}` and pins that platform only. darwin-arm64's was captured before the refactor and is its
+// proof; linux-x64's is the Pages runner's pin. A platform with no table fails one named test, never passes or skips.
 // ============================================================================
 import { expect, test } from "bun:test";
 import { DEFAULTS } from "./komorebi.js";
@@ -55,38 +62,86 @@ for (const phyllotaxis of ["spiral", "whorled", "opposite"]) CASES[`hub-${phyllo
 CASES["hub-droop"] = { droop: 0.35 };   // not 0.3: 0.3·(1/3)·5 is 0.49999999999999994, which Math.round sent to 0 cold and to 1 once JavaScriptCore had JITted it, so its digest was never recorded. growNode rounds by hand now; the tie test below holds that
 for (const look of ["park 1", "curtain 1", "afternoon 7"]) CASES[look] = { ...PRESETS[look], leaves_per_cluster: 2 };
 
-const FIXTURES = {   // captured from the closure grow() at HEAD d2e996e, before it moved: segment/twig counts and the FNV digest of every record
-  "oak:1": { seg: 603, segs: "d2e4d489", tw: 405, twigs: "6a5bc98c" },
-  "oak:1234": { seg: 603, segs: "98ce0e4e", tw: 405, twigs: "7c33727d" },
-  "oak:90210": { seg: 603, segs: "0a3cbfa3", tw: 405, twigs: "1df21823" },
-  "spruce:1": { seg: 678, segs: "fd588b43", tw: 243, twigs: "767cce8c" },
-  "spruce:1234": { seg: 678, segs: "b269e889", tw: 243, twigs: "1317435c" },
-  "spruce:90210": { seg: 678, segs: "5fec275e", tw: 243, twigs: "d84c27bd" },
-  "birch:1": { seg: 1662, segs: "3bc5fc23", tw: 567, twigs: "cbe00293" },
-  "birch:1234": { seg: 1662, segs: "c7732877", tw: 567, twigs: "646f4e2d" },
-  "birch:90210": { seg: 1662, segs: "a3e046ee", tw: 567, twigs: "f2b8b7ae" },
-  "willow:1": { seg: 2439, segs: "010e3c75", tw: 567, twigs: "0b487873" },
-  "willow:1234": { seg: 2439, segs: "bd1cc6bb", tw: 567, twigs: "dedb4aca" },
-  "willow:90210": { seg: 2439, segs: "9d1bc68b", tw: 567, twigs: "dc2d169e" },
-  "maple:1": { seg: 138, segs: "01a922c7", tw: 72, twigs: "a818f92f" },
-  "maple:1234": { seg: 138, segs: "3fdc4ab3", tw: 72, twigs: "e07266ad" },
-  "maple:90210": { seg: 138, segs: "12aa7088", tw: 72, twigs: "ee243968" },
-  "columnar:1": { seg: 795, segs: "bfbdccfb", tw: 324, twigs: "6bc99af1" },
-  "columnar:1234": { seg: 795, segs: "7c8db7b7", tw: 324, twigs: "01d423b1" },
-  "columnar:90210": { seg: 795, segs: "8873f6ff", tw: 324, twigs: "46c1bc5e" },
-  "palm:1": { seg: 171, segs: "ff7316b0", tw: 42, twigs: "d1ce0c19" },
-  "palm:1234": { seg: 171, segs: "2d2fafcc", tw: 42, twigs: "8d2f86a7" },
-  "palm:90210": { seg: 171, segs: "8d731e67", tw: 42, twigs: "81d5cfb1" },
-  "hub-spiral": { seg: 315, segs: "d6a321db", tw: 216, twigs: "8dedcd39" },
-  "hub-whorled": { seg: 315, segs: "9d04371a", tw: 216, twigs: "b103e532" },
-  "hub-opposite": { seg: 171, segs: "714fdf11", tw: 96, twigs: "537d668f" },
-  "hub-droop": { seg: 843, segs: "ec70464d", tw: 216, twigs: "e5858394" },
-  "park 1": { seg: 552, segs: "a5ffde76", tw: 198, twigs: "edaf598a" },
-  "curtain 1": { seg: 1104, segs: "78834041", tw: 396, twigs: "4d1e7bea" },
-  "afternoon 7": { seg: 720, segs: "0fb3c121", tw: 495, twigs: "78a7d80a" },
+const PLATFORM = `${process.platform}-${process.arch}`;
+const FIXTURES_BY_PLATFORM = {
+  "darwin-arm64": {   // captured from the closure grow() at HEAD d2e996e, before it moved: segment/twig counts and the FNV digest of every record. On this platform the table is the refactor's proof, bit for bit
+    "oak:1": { seg: 603, segs: "d2e4d489", tw: 405, twigs: "6a5bc98c" },
+    "oak:1234": { seg: 603, segs: "98ce0e4e", tw: 405, twigs: "7c33727d" },
+    "oak:90210": { seg: 603, segs: "0a3cbfa3", tw: 405, twigs: "1df21823" },
+    "spruce:1": { seg: 678, segs: "fd588b43", tw: 243, twigs: "767cce8c" },
+    "spruce:1234": { seg: 678, segs: "b269e889", tw: 243, twigs: "1317435c" },
+    "spruce:90210": { seg: 678, segs: "5fec275e", tw: 243, twigs: "d84c27bd" },
+    "birch:1": { seg: 1662, segs: "3bc5fc23", tw: 567, twigs: "cbe00293" },
+    "birch:1234": { seg: 1662, segs: "c7732877", tw: 567, twigs: "646f4e2d" },
+    "birch:90210": { seg: 1662, segs: "a3e046ee", tw: 567, twigs: "f2b8b7ae" },
+    "willow:1": { seg: 2439, segs: "010e3c75", tw: 567, twigs: "0b487873" },
+    "willow:1234": { seg: 2439, segs: "bd1cc6bb", tw: 567, twigs: "dedb4aca" },
+    "willow:90210": { seg: 2439, segs: "9d1bc68b", tw: 567, twigs: "dc2d169e" },
+    "maple:1": { seg: 138, segs: "01a922c7", tw: 72, twigs: "a818f92f" },
+    "maple:1234": { seg: 138, segs: "3fdc4ab3", tw: 72, twigs: "e07266ad" },
+    "maple:90210": { seg: 138, segs: "12aa7088", tw: 72, twigs: "ee243968" },
+    "columnar:1": { seg: 795, segs: "bfbdccfb", tw: 324, twigs: "6bc99af1" },
+    "columnar:1234": { seg: 795, segs: "7c8db7b7", tw: 324, twigs: "01d423b1" },
+    "columnar:90210": { seg: 795, segs: "8873f6ff", tw: 324, twigs: "46c1bc5e" },
+    "palm:1": { seg: 171, segs: "ff7316b0", tw: 42, twigs: "d1ce0c19" },
+    "palm:1234": { seg: 171, segs: "2d2fafcc", tw: 42, twigs: "8d2f86a7" },
+    "palm:90210": { seg: 171, segs: "8d731e67", tw: 42, twigs: "81d5cfb1" },
+    "hub-spiral": { seg: 315, segs: "d6a321db", tw: 216, twigs: "8dedcd39" },
+    "hub-whorled": { seg: 315, segs: "9d04371a", tw: 216, twigs: "b103e532" },
+    "hub-opposite": { seg: 171, segs: "714fdf11", tw: 96, twigs: "537d668f" },
+    "hub-droop": { seg: 843, segs: "ec70464d", tw: 216, twigs: "e5858394" },
+    "park 1": { seg: 552, segs: "a5ffde76", tw: 198, twigs: "edaf598a" },
+    "curtain 1": { seg: 1104, segs: "78834041", tw: 396, twigs: "4d1e7bea" },
+    "afternoon 7": { seg: 720, segs: "0fb3c121", tw: 495, twigs: "78a7d80a" },
+  },
+  "linux-x64": {   // recorded 2026-10-09 on x86_64-linux (the Pages runner's platform; an x86_64-linux nix builder with the flake's bun 1.3.13) from b6fa379's growSkeleton: the same counts as darwin-arm64 for every case, other last bits. It pins today's grove on that platform from here on; the darwin table is what proves the refactor moved nothing
+    "oak:1": { seg: 603, segs: "b6407cc6", tw: 405, twigs: "5d3f52e7" },
+    "oak:1234": { seg: 603, segs: "b9d87cc5", tw: 405, twigs: "c64ccf91" },
+    "oak:90210": { seg: 603, segs: "2f7a3128", tw: 405, twigs: "ac74f9a2" },
+    "spruce:1": { seg: 678, segs: "bca381fa", tw: 243, twigs: "39761a79" },
+    "spruce:1234": { seg: 678, segs: "121df22f", tw: 243, twigs: "9479a0ed" },
+    "spruce:90210": { seg: 678, segs: "23214d89", tw: 243, twigs: "9d034748" },
+    "birch:1": { seg: 1662, segs: "8f10ebb6", tw: 567, twigs: "0369be75" },
+    "birch:1234": { seg: 1662, segs: "ce89cea2", tw: 567, twigs: "02a1ceb8" },
+    "birch:90210": { seg: 1662, segs: "46332163", tw: 567, twigs: "7aafba78" },
+    "willow:1": { seg: 2439, segs: "a4cb81b1", tw: 567, twigs: "858238ec" },
+    "willow:1234": { seg: 2439, segs: "2bae4827", tw: 567, twigs: "f01bbc14" },
+    "willow:90210": { seg: 2439, segs: "472e4210", tw: 567, twigs: "71571fd5" },
+    "maple:1": { seg: 138, segs: "f46cb780", tw: 72, twigs: "387d7b3d" },
+    "maple:1234": { seg: 138, segs: "092ca744", tw: 72, twigs: "b0f202e8" },
+    "maple:90210": { seg: 138, segs: "6a28ffe7", tw: 72, twigs: "f42995c1" },
+    "columnar:1": { seg: 795, segs: "3366d802", tw: 324, twigs: "f388456b" },
+    "columnar:1234": { seg: 795, segs: "2e67e031", tw: 324, twigs: "e3b1bf9c" },
+    "columnar:90210": { seg: 795, segs: "0a334f05", tw: 324, twigs: "f12e6eb6" },
+    "palm:1": { seg: 171, segs: "820b55d7", tw: 42, twigs: "67aed6e5" },
+    "palm:1234": { seg: 171, segs: "9610525e", tw: 42, twigs: "1c80f2f4" },
+    "palm:90210": { seg: 171, segs: "0669fdb9", tw: 42, twigs: "1a7c19b1" },
+    "hub-spiral": { seg: 315, segs: "cbed48e9", tw: 216, twigs: "9965c7ec" },
+    "hub-whorled": { seg: 315, segs: "bbbc64e8", tw: 216, twigs: "e4900194" },
+    "hub-opposite": { seg: 171, segs: "b5d876fe", tw: 96, twigs: "00288f15" },
+    "hub-droop": { seg: 843, segs: "91943a80", tw: 216, twigs: "bd27ef8f" },
+    "park 1": { seg: 552, segs: "e9e48a88", tw: 198, twigs: "11a1fda7" },
+    "curtain 1": { seg: 1104, segs: "81ba95ce", tw: 396, twigs: "64f62a68" },
+    "afternoon 7": { seg: 720, segs: "5267ba43", tw: 495, twigs: "b63a6eae" },
+  },
 };
+const FIXTURES = FIXTURES_BY_PLATFORM[PLATFORM];
 
-for (const [key, over] of Object.entries(CASES)) {
+test(`the skeleton fixtures are recorded for this platform (${PLATFORM})`, () => {
+  if (!FIXTURES) throw new Error(`no skeleton fixtures for ${PLATFORM} (recorded: ${Object.keys(FIXTURES_BY_PLATFORM).join(", ")}). The digests are of float64 bits, and Math.sin/cos/tan/acos/atan2/pow/exp/log/hypot come from the system libm, which differs between platforms in the last bit: a table is a claim about one platform. To record one, run \`bun test skeleton.test.js\` on that platform and copy each case's Received string into FIXTURES_BY_PLATFORM["${PLATFORM}"]`);
+});
+
+test("the platforms' tables name the same cases and agree on every segment and twig count: a re-record can move bits, never the grove's structure", () => {
+  const [first, ...rest] = Object.entries(FIXTURES_BY_PLATFORM);
+  for (const [platform, table] of rest) {
+    expect(Object.keys(table), `${platform} vs ${first[0]}`).toEqual(Object.keys(first[1]));
+    for (const [key, row] of Object.entries(table)) {
+      expect({ seg: row.seg, tw: row.tw }, `${platform} ${key}`).toEqual({ seg: first[1][key].seg, tw: first[1][key].tw });
+    }
+  }
+});
+
+if (FIXTURES) for (const [key, over] of Object.entries(CASES)) {   // no table: the one red row above says so, not 28 confusing ones
   test(`${key}: the grove's segments and twigs are the ones grow() grew`, () => {
     const g = groveOf(over);
     const got = { seg: g.segments.length, segs: fnv(g.segments), tw: g.twigs.length, twigs: fnv(g.twigs) };
