@@ -120,6 +120,34 @@ const meets = (p, idx) => {
   return dir;
 };
 
+// A junction's arms, from the walls themselves: every wall that touches the point (within 1e-9) contributes its direction pointing away from it, as an angle in
+// degrees, and a wall that passes through contributes two. A Y is three arms pairwise 120 degrees apart (within 15): a T has two of them collinear.
+const armsAt = (p, walls) => {
+  const arms = [], dir = (from, to) => Math.atan2(to[1] - from[1], to[0] - from[0]) / math.DEG;
+  for (const w of walls) {
+    if (Math.hypot(w.a[0] - p[0], w.a[1] - p[1]) < 1e-9) arms.push(dir(p, w.b));
+    else if (Math.hypot(w.b[0] - p[0], w.b[1] - p[1]) < 1e-9) arms.push(dir(p, w.a));
+    else if (segDist(p, w.a, w.b) < 1e-9) arms.push(dir(p, w.a), dir(p, w.b));
+  }
+  return arms;
+};
+const gapDeg = (x, y) => { const d = Math.abs(x - y) % 360; return Math.min(d, 360 - d); };
+const isY = (arms) => arms.length === 3 && [[0, 1], [0, 2], [1, 2]].every(([p, q]) => Math.abs(gapDeg(arms[p], arms[q]) - 120) <= 15);
+
+test("the Y classifier can fail: three walls meeting at 120 degrees count 1, a wall met square by another counts 0", () => {
+  const P = [3, 4], at = (deg, len = 1) => [P[0] + len * Math.cos(deg * math.DEG), P[1] + len * Math.sin(deg * math.DEG)];
+  const y = [{ a: P, b: at(10) }, { a: at(130), b: P }, { a: P, b: at(250, 2) }];          // 10, 130, 250: pairwise 120; one wall ends there, one starts there
+  expect(armsAt(P, y).length).toBe(3);
+  expect(isY(armsAt(P, y))).toBe(true);
+  const t = [{ a: at(0, -1), b: at(0, 1) }, { a: P, b: at(90) }];                           // one wall passing through, one starting on it
+  expect(armsAt(P, t).length).toBe(3);
+  expect(isY(armsAt(P, t))).toBe(false);
+  const nearY = [{ a: P, b: at(0) }, { a: P, b: at(100) }, { a: P, b: at(250) }];            // 0, 100, 250: gaps 100, 110, 150: 150 is not 120 +/- 15
+  expect(isY(armsAt(P, nearY))).toBe(false);
+  expect([y, t].map((walls) => [P].filter((q) => isY(armsAt(q, walls))).length)).toEqual([1, 0]);
+  expect(armsAt([99, 99], y)).toEqual([]);                                                  // a point on no wall has no arms
+});
+
 test("T-junctions: every wall of order >= 2 ends on an older wall or the margin; chords meet at ~90 degrees and no junction is a Y", () => {
   const angles = [];
   maze.walls.forEach((w, i) => {
@@ -131,17 +159,13 @@ test("T-junctions: every wall of order >= 2 ends on an older wall or the margin;
   const med = angles[angles.length >> 1];
   expect(Math.abs(med - 90)).toBeLessThan(10);
   expect(angles.filter((a) => Math.abs(a - 90) <= 25).length / angles.length).toBeGreaterThanOrEqual(0.8);
-  // a T has two of its three arms collinear (180 degrees apart): a Y has none. The arms of a chord's end are the chord and the two halves of the wall it lands on.
-  let ys = 0;
-  maze.walls.forEach((w, i) => {
-    if (w.order < 3 || i % 7) return;
-    const m = meets(w.b, i);
-    if (Math.hypot(...m) < 1e-9) return;
-    const ang = Math.atan2(w.a[1] - w.b[1], w.a[0] - w.b[0]), ma = Math.atan2(m[1], m[0]);
-    const arms = [ang, ma, ma + Math.PI], gap = (x, y) => { const d = Math.abs(((x - y) % TAU + TAU) % TAU); return Math.min(d, TAU - d) / math.DEG; };
-    if ([[0, 1], [0, 2], [1, 2]].every(([p, q]) => Math.abs(gap(arms[p], arms[q]) - 120) <= 15)) ys++;
-  });
-  expect(ys).toBe(0);
+  // a T has two of its three arms collinear (180 degrees apart): a Y has none. The arms are read off the REAL walls at the chord's two ends, so the count can be anything.
+  const ends = [];
+  maze.walls.forEach((w, i) => { if (w.order >= 3 && !(i % 7)) ends.push(w.a, w.b); });
+  const junctions = ends.map((p) => armsAt(p, maze.walls)).filter((arms) => arms.length >= 2);   // an end on the margin has only its own chord: not a junction of walls
+  expect(junctions.length).toBeGreaterThan(100);
+  expect(junctions.filter((arms) => arms.length === 3).length / junctions.length).toBeGreaterThan(0.9);   // three-armed junctions, so a count of 0 Ys is a finding and not a classifier that never sees three arms
+  expect(junctions.filter(isY).length).toBe(0);
 }, 30000);
 
 test("the hierarchy: 5 primaries, the skeleton's own secondaries, shorter walls with each order, and no cell across a primary", () => {

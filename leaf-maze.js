@@ -146,9 +146,12 @@ function growAreoles(blade, { seed, cellM, unitM }){
   }
   return { cells, walls };
 }
-// Cells meet their walls square (the crop's rows of cells, and Bohn et al.'s: a new wall leaves a domain perpendicular to the older ones that bound it). The
-// principal axis says only where the region is long, and the sides of a region cut by earlier chords are not square to it, so the direction is squared once to the
-// two sides it would land on: the cross-axis chord is tried, and where its two ends meet near-parallel sides it turns to be perpendicular to their mean.
+// Cells meet their walls nearly square (the crop's rows of cells, and Bohn et al.'s: a new wall leaves a domain perpendicular to the older ones that bound it). The
+// principal axis says only where the region is long, and the sides of a region cut by earlier chords are not square to it, so the direction is turned once toward the
+// two sides it would land on: the cross-axis chord d is tried, and where its two ends meet near-parallel sides it turns HALFWAY to the perpendicular q of their mean.
+// normalize(d + q) is the bisector of the two, so a chord 40° off square ends about 20° off: not square. The half turn is what the maze is built and measured with
+// (junction median 83.5°, 94 % of chord ends within 90° ± 25°; maze.test.js holds ±10° and 80 %), and a full turn would draw a different maze everywhere, so "nearly
+// square" is the claim this fixture makes.
 function squared(poly, p, d){
   const f = rayHit(poly, p, d), b = rayHit(poly, p, [-d[0], -d[1]]);
   if(!f || !b) return d;
