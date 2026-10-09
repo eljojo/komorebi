@@ -91,6 +91,41 @@ export function mergeManifest(old, fresh) {
   return { ...old, ...fresh, sheets };
 }
 
+// The commits a folder already holds renders of: each sheet's own, and for a manifest written before sheets carried one, the
+// top-level source tree it was all rendered from.
+export function folderCommits(old) {
+  if (!old?.sheets) return [];
+  const top = /git archive ([0-9a-f]{7,40})\b/.exec(old.how_rendered?.source_tree ?? '')?.[1] ?? null;
+  return [...new Set(old.sheets.map((s) => s.commit ?? top).filter(Boolean))];
+}
+
+// What would make a render into this folder lie about what it holds — checked before the render, every problem at once. One folder is one
+// commit: a sheet from another beside them would be read as theirs (the manifest's provenance is per folder, and José's words are kept by
+// file). And an ID names one image: a frame ID the folder already holds on another sheet would overwrite that sheet's frames/<id>.png
+// under its recorded sha256.
+export function folderProblems(old, spec, sha) {
+  if (!old?.sheets) return [];
+  const out = [];
+  const other = folderCommits(old).filter((c) => !sha.startsWith(c) && !c.startsWith(sha));
+  if (other.length) out.push(`the folder holds renders of ${other.join(', ')}, not ${sha.slice(0, 7)}: render into another folder (--dir, or another spec.date)`);
+  const owner = new Map();
+  for (const sh of old.sheets) for (const f of sh.frames ?? []) owner.set(f.id, sh.file);
+  for (const sh of spec.sheets) for (const f of sh.frames) {
+    const o = owner.get(f.id);
+    if (o && o !== sh.file) out.push(`frame id ${f.id} is already ${o}'s in this folder, not ${sh.file}'s: pick another id`);
+  }
+  return out;
+}
+
+// The spec beside the manifest says how to re-render every sheet the folder holds, not only the last run's: a sheet the new spec does not
+// mention keeps its old entry — with the old spec's top-level size folded into its common.size, since the merged spec's top level is the new one's.
+export function mergeSpec(oldSpec, spec) {
+  const files = new Set(spec.sheets.map((sh) => sh.file));
+  const kept = (oldSpec?.sheets ?? []).filter((sh) => !files.has(sh.file))
+    .map((sh) => (oldSpec.size && !sh.common?.size ? { ...sh, common: { ...(sh.common ?? {}), size: oldSpec.size } } : sh));
+  return { ...spec, sheets: [...spec.sheets, ...kept] };
+}
+
 // ---- the render path ----
 
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
@@ -118,6 +153,10 @@ function main(argv) {
   }
   const date = spec.date ?? today();
   const dir = resolve(dirArg ?? join(REPO, 'test-gl/out/review', date));
+  const mpath = join(dir, 'manifest.json'), spath = join(dir, 'review-spec.json');
+  const old = existsSync(mpath) ? JSON.parse(readFileSync(mpath, 'utf8')) : null;
+  const clash = folderProblems(old, spec, sha);
+  if (clash.length) throw new Error(`cannot render into ${dir}:\n  ${clash.join('\n  ')}`);
   mkdirSync(join(dir, 'frames'), { recursive: true });
 
   const tmp = mkdtempSync(join(tmpdir(), 'komorebi-review-'));
@@ -158,7 +197,7 @@ function main(argv) {
       if (s.title) margs.push('-title', magickText(s.title));
       margs.push(join(dir, s.file));
       sh('magick', margs);
-      return { file: s.file, ids: frames.map((f) => f.id).join(', '), question: s.question ?? '', common: s.common ?? {}, frames, lead_read: null, jose: null };
+      return { file: s.file, commit: sha, ids: frames.map((f) => f.id).join(', '), question: s.question ?? '', common: s.common ?? {}, frames, lead_read: null, jose: null };
     });
 
     const fresh = {
@@ -176,11 +215,14 @@ function main(argv) {
       ids: 'Every frame has an ID printed on its sheet. José refers to frames by these IDs. frames/<id>.png.',
       sheets,
     };
-    const mpath = join(dir, 'manifest.json');
-    const old = existsSync(mpath) ? JSON.parse(readFileSync(mpath, 'utf8')) : null;
-    writeFileSync(mpath, `${JSON.stringify(mergeManifest(old, fresh), null, 2)}\n`);
-    // The spec as it ran, with the resolved sha, so the folder can be re-rendered from itself.
-    writeFileSync(join(dir, 'review-spec.json'), `${JSON.stringify({ ...spec, commit: sha, date }, null, 2)}\n`);
+    // read again, not the copy from before the render: it takes minutes, and another run may have added a sheet to this folder meanwhile
+    const now = existsSync(mpath) ? JSON.parse(readFileSync(mpath, 'utf8')) : null;
+    const late = folderProblems(now, spec, sha);
+    if (late.length) throw new Error(`the folder changed during the render; nothing written to its manifest (the frames and sheets are on disk):\n  ${late.join('\n  ')}`);
+    writeFileSync(mpath, `${JSON.stringify(mergeManifest(now, fresh), null, 2)}\n`);
+    // The spec as it ran, with the resolved sha, so the folder can be re-rendered from itself — every sheet it holds (one folder, one commit).
+    const oldSpec = existsSync(spath) ? JSON.parse(readFileSync(spath, 'utf8')) : null;
+    writeFileSync(spath, `${JSON.stringify({ ...mergeSpec(oldSpec, spec), commit: sha, date }, null, 2)}\n`);
 
     for (const s of sheets) console.log(join(dir, s.file));
     console.log(`${sheets.length} sheet(s), ${resolved.length} frame(s) from ${sha.slice(0, 7)} -> ${dir}`);

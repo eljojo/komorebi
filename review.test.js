@@ -2,7 +2,7 @@
 // real run; what can silently go wrong without one is the spec's meaning, the argv handed to run.js, and
 // the manifest merge that must never erase José's words.
 import { describe, expect, test } from 'bun:test';
-import { frameLabel, lookArgs, mergeManifest, overrideArgs, resolveFrame, specProblems, validateSpec } from './test-gl/review.mjs';
+import { folderCommits, folderProblems, frameLabel, lookArgs, mergeManifest, mergeSpec, overrideArgs, resolveFrame, specProblems, validateSpec } from './test-gl/review.mjs';
 
 const spec = () => ({
   commit: 'HEAD',
@@ -110,5 +110,46 @@ describe('manifest merge', () => {
   test('a fresh non-null jose/lead_read is not clobbered by the old, and null does not clobber the old', () => {
     const old = { sheets: [sheet('a.png', [], { jose: 'old' })] };
     expect(mergeManifest(old, { sheets: [sheet('a.png', [], { jose: 'new' })] }).sheets[0].jose).toBe('new');
+  });
+});
+
+describe('the folder: one commit, and an id names one image', () => {
+  const A = 'a'.repeat(40), B = 'b'.repeat(40);
+  const sheet = (file, ids, extra = {}) => ({ file, frames: ids.map((id) => ({ id })), ...extra });
+  const legacy = { how_rendered: { source_tree: `git archive ${A} exported to a temp dir` }, sheets: [sheet('a.png', ['c1', 'c2'])] };
+
+  test('a new folder has no problems', () => expect(folderProblems(null, spec(), A)).toEqual([]));
+  test("a manifest from before sheets carried a commit is read by its source tree; a sheet's own commit wins", () => {
+    expect(folderCommits(legacy)).toEqual([A]);
+    expect(folderCommits({ ...legacy, sheets: [sheet('a.png', ['c1'], { commit: B })] })).toEqual([B]);
+  });
+  test('re-rendering the same commit into its folder is fine, the same sheet keeping its ids', () => {
+    expect(folderProblems(legacy, spec(), A)).toEqual([]);
+  });
+  test('another commit into the folder is refused, so no sheet is attributed to a commit it was not rendered from', () => {
+    expect(folderProblems(legacy, spec(), B).join('\n')).toContain('holds renders of');
+  });
+  test('an id the folder holds on another sheet is refused, whether or not that sheet is re-rendered (frames/<id>.png would change under it)', () => {
+    const s = spec();
+    s.sheets[0].file = 'b.png';   // c1 and c2 on a new sheet, while a.png holds them
+    const p = folderProblems(legacy, s, A).join('\n');
+    expect(p).toContain('c1');
+    expect(p).toContain('c2');
+    s.sheets.push(sheet('a.png', ['c9']));   // a.png re-rendered without them: still one id, two sheets
+    expect(folderProblems(legacy, s, A).length).toBe(2);
+  });
+  test('mergeSpec keeps the sheets the new spec does not mention, so the folder re-renders from itself', () => {
+    const old = { sheets: [sheet('z.png', ['z1']), sheet('a.png', ['c1'])] };
+    expect(mergeSpec(old, spec()).sheets.map((s) => s.file)).toEqual(['a.png', 'z.png']);
+    expect(mergeSpec(null, spec()).sheets.map((s) => s.file)).toEqual(['a.png']);
+  });
+  test("a kept sheet keeps the size it was rendered at: the old spec's top-level size moves into its common.size", () => {
+    const old = { size: [320, 180], sheets: [sheet('z.png', ['z1'], { common: { preset: 'p' } }), sheet('y.png', ['y1'], { common: { size: [100, 50] } })] };
+    const m = mergeSpec(old, { ...spec(), size: [640, 360] });
+    const z = m.sheets.find((s) => s.file === 'z.png'), y = m.sheets.find((s) => s.file === 'y.png');
+    expect(resolveFrame(m, z, z.frames[0]).size).toEqual([320, 180]);
+    expect(z.common.preset).toBe('p');
+    expect(resolveFrame(m, y, y.frames[0]).size, "a sheet's own size stands").toEqual([100, 50]);
+    expect(resolveFrame(m, m.sheets[0], m.sheets[0].frames[0]).size, 'the new sheets take the new size').toEqual([640, 360]);
   });
 });
