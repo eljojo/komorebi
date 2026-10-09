@@ -162,7 +162,7 @@ export const leafTexel = (tau, fade, edge = 1, grove = 1) => ({ rgb: tau.map((v)
 
 // ONE ray through the layer stack — the sky view's per-ray formula (§4.9), line for line with GLSL_SKY_RAY.
 //   layers: [{ h, t(x, y) -> [r,g,b], c(x, y) -> coverage, w?(x, y) -> wood }], lowest first; t is the layer's FOLIAGE transmittance at
-//   a plan point (the texture's e^−τ), c its coverage (read only when k > 0), w the layer-stamped WOOD's transmittance there (neutral: one number for all
+//   a plan point (the texture's e^−τ), c its coverage (read when k > 0 or edgeArea), w the layer-stamped WOOD's transmittance there (neutral: one number for all
 //   three channels). A layer with no w is read with no wood — what the fill does (readWood false: its hemisphere ignores wood by
 //   design); the sky camera's layers carry it.
 //   p: where the ray starts (plan); shift: its plan travel per metre of rise; gS: the SUN PATH's, the same per-metre travel — the BEAM's

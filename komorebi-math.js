@@ -57,7 +57,8 @@ function atmosphere(out, hDeg, beta, ambientSky){
 
 // The sun's UNIT direction (cos el·cos az, cos el·sin az, sin el), written into `out`. Deliberately unclamped in
 // elevation (§4.9): incidence on a vertical cloth peaks as the sun lowers, where the 1/sin(el) throws diverge. ONE
-// helper because two readers need the same vector — transport's uSunDir upload and the sky fill's sun path (§4.7).
+// helper because every reader needs the same vector — transport's uSunDir upload (the cloth's and tent's incidence, the sky view's seen source) and the harness.
+// The sky fill does not read it: its sun path is the beam's bulk shift (ONE SUN PER CAMERA, komorebi-bake.js, §4.7).
 function sunDirection(out, elevDeg, azDeg){
   const el=elevDeg*DEG, az=azDeg*DEG;
   out[0]=Math.cos(el)*Math.cos(az); out[1]=Math.cos(el)*Math.sin(az); out[2]=Math.sin(el);
@@ -426,7 +427,7 @@ function coneDirPlane(d, az, spread){
 }
 
 // ---- THE GRAMMAR (spec §4.5): a skeleton grown from a spec, a stream and an `out` — trunk, limb, branch, twig by one
-// recursive rule — a function and not a closure, so a leaf's veins can grow by the same rules the tree's boughs do.
+// recursive rule — a function and not a closure, pure and testable on its own.
 // The caller owns `out` ({ seg:[], tw:[] }) and may grow many roots into one: a twig's index is the count in `out.tw` before
 // it, which the segments of its own wood carry (`tw`, -1 for wood that bears nothing) so the faithful bake swings them about
 // the twig's joint (§5.4). Pure: nothing is read but the arguments, nothing written but `out`. THE STREAM IS THE CONTRACT —
@@ -434,8 +435,9 @@ function coneDirPlane(d, az, spread){
 // spec: levels (depth; level >= levels bears a twig), kids (children per node; `opposite` is always 2), lenRatio, coneA
 // (the child cone's half-angle), droop (signed gravitropic curve, §4.5), phyllo (0 spiral / 1 whorled / 2 opposite),
 // leader (monopodial: the spiral steps by the golden angle), and the root: base, dir (unit), len, level, limb.
-// plane: the leaf's 2-D use — every z is 0, no droop, children turn by coneDirPlane. The draws are the same, so a plane
-// run is the same topology as the 3-D one.
+// plane: a flat 2-D sheet — every z is 0, no droop, children turn by coneDirPlane. The draws are the same, so a plane
+// run is the same topology as the 3-D one. No engine caller: it was meant for the leaf's veins, which grow by growLeaf
+// instead (komorebi-leaf.js says why); skeleton.test.js holds what it promises.
 function growSkeleton(spec, rng, out){
   const { base, dir, len, level, limb, plane } = spec;
   if(!plane){ growNode(spec, rng, out, base, dir, len, level, limb); return; }

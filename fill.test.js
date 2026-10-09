@@ -234,7 +234,7 @@ test("the gate: canopy_fill ships shut, and the fill knobs carry the defaults th
   expect(DEFAULTS.fill_resolution).toBe(256);
 });
 
-test("the sun's unit direction is one helper: the sky view's seen source and the fill's sun path read the same vector", () => {
+test("the sun's unit direction is one helper: transport's uSunDir reads it (the cloth's incidence, the sky view's seen source); the fill walks the beam's bulk shift instead, one sun per camera", () => {
   const v = sunDirection([0, 0, 0], 55, 30);
   expect(v[0]).toBe(Math.cos(55 * DEG) * Math.cos(30 * DEG));
   expect(v[1]).toBe(Math.cos(55 * DEG) * Math.sin(30 * DEG));

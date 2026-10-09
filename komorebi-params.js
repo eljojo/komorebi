@@ -41,7 +41,7 @@ const MORPH_KEYS = [
   'vignette','vignette_shape',                                          // the edge fade (§4.7): two live shader uniforms in the post block every camera runs — the feather (also the gate) and the superellipse exponent — so they tween; a presentation device, not a fall tier
   'canopy_fill','fill_scatter',                                         // the sky fill (§4.7): two live shader uniforms — the receiver's mix and the leaf albedo the fill pass reads — so they tween; the canopy_fill gate crossing 0 allocates the fill lazily, mid-tween, which is not a look pop
   'leaf_wetness',                                                       // the rain day (§4.7): read by the carpet bake only — refreshLitter's signature notices it and only the carpet re-bakes; no regrow (a CANOPY key would regrow the whole grove per frame to re-tint the carpet, and macros may never write CANOPY keys, which P8's rain, a live writer, will need)
-  'leaf_diffuse',                                                       // a leaf is not a window (§4.5): k = −ln(1−d) is a live uniform on both paths (the layer tap reads it, the faithful cast re-bakes on it), so it tweens
+  'leaf_diffuse',                                                       // a leaf is not a window (§4.5): k = −ln(1−d) is a live uniform on both paths (the layer tap reads it, the faithful cast re-bakes on it), so it tweens — except across 0: the authored scatter proxy (sky_scatter, fill_scatter) is dropped the moment k > 0, so a tween out of 0 snaps that term off (counting both would count the light twice, §4.9)
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'fabric_tt','fabric_tint_r','fabric_tint_g','fabric_tint_b',          // the receiver's fabric (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
   'cloth_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','fabric_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
@@ -291,7 +291,7 @@ const DEFAULTS = {
   fill_scatter: 0.0,               // the leaf's single-scattering albedo: the floor's twin of sky_scatter (§4.9), read only on the floor. 0 = the shade is filtered skylight and nothing else. INERT once leaf_diffuse is up: that is this light, measured instead of authored
   // A LEAF IS NOT A WINDOW (spec §4.5/§4.6/§4.7): the share d of a leaf's transmitted light that is DIFFUSE — scattered
   // by the mesophyll like frosted glass, not passed like stained glass. The beam keeps only (1−d)·T, as neutral depth
-  // k = −ln(1−d) per unit coverage; the rest is the light the canopy fill hands to the shade (canopy_fill), in the leaf's
+  // k = −ln(1−d) per leaf (a texel is a mixture of one: κ = k·c/a, §4.5 texelMix); the rest is the light the canopy fill hands to the shade (canopy_fill), in the leaf's
   // own colour. Physically ~0.95. 0 = the old, ballistic leaf: the literal old beam and the P0b proxy, byte-identical.
   // It needs canopy_fill to land anywhere on a surface: with the fill shut the diffuse share just leaves the beam. The sky view needs no fill:
   // looking up, a leaf is a lantern (§4.9) — the disk shows through gaps only, and each leaf glows with the light it took out of the line of sight.

@@ -1,6 +1,6 @@
 // ============================================================================
 // The tree's grammar as a function (spec §4.5, P4a-1): growSkeleton(spec, rng, out) in komorebi-math.js, lifted out of
-// buildGrove so a leaf's veins can grow by the same rules (plane: true). The claim worth holding loudly is the one that
+// buildGrove (with a flat `plane` mode no engine caller uses yet). The claim worth holding loudly is the one that
 // fails SILENTLY: this is a pure refactor, so the grove is the SAME grove — every segment and twig of every species,
 // bit for bit — because one reordered draw from the growth stream reshuffles every look there is. The fixtures below
 // were captured from the closure grow() BEFORE it moved; the rest holds what the plane variant promises.
@@ -94,7 +94,7 @@ for (const [key, over] of Object.entries(CASES)) {
   });
 }
 
-// ---- the function: one place, called by the grove (the tree) and, later, the leaf ----
+// ---- the function: one place, called by the grove (the tree); the leaf grows by its own grammar (growLeaf) ----
 const deepFreeze = (o) => { Object.values(o).forEach((v) => { if (v && typeof v === "object") deepFreeze(v); }); return Object.freeze(o); };
 const specOf = (over) => ({ levels: 4, kids: 3, lenRatio: 0.7, coneA: 0.6, droop: 0, phyllo: 0, leader: false, plane: false, base: [0, 0, 0], dir: [1, 0, 0], len: 1, level: 1, limb: 0, ...over });
 const fresh = () => ({ seg: [], tw: [] });
@@ -165,7 +165,7 @@ test("droop curves a branch over sub-segments and plain branches stay one segmen
   expect(meanZ(bent)).toBeLessThan(meanZ(straight));               // positive droop sags
 });
 
-// ---- plane: the leaf's 2-D use (the tree never passes it) ----
+// ---- plane: a flat 2-D sheet (no engine caller passes it yet) ----
 test("coneDirPlane is coneDir with the out-of-plane part dropped: unit, z = 0, and where the projection of coneDir points", () => {
   for (const hd of [0, 0.7, 2.1, -1.3, 3.0]) {
     const d = [Math.cos(hd), Math.sin(hd), 0];

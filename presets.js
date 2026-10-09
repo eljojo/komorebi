@@ -209,7 +209,7 @@ export const PRESETS = {
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
   }),
-  'park fall': Object.assign({}, DEFAULTS, {   // José's mid-turn look on montebello's grove (2026-10-08): the crown still turning, every leaf that will fall already down and damp, the park seen wide from the far side
+  'park fall': Object.assign({}, DEFAULTS, {   // José's mid-turn look on montebello's grove (2026-10-08): the crown still turning, the sunlit leaves already down and damp (every leaf falls by drop_start + drop_span = 1.0; at 0.79 those with exposure u ≥ 0.7 have), the park seen wide from the far side
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,

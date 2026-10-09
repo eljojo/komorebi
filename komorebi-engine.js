@@ -104,8 +104,11 @@ function create(canvas, opts){
     if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail(`Link: ${gl.getProgramInfoLog(p)}`);
     return p;
   }
-  // EVERY handle the engine holds on the GL context is created by initGPU() — create() calls it once, and a
-  // webglcontextrestored calls it again, because a lost context kills all of them. Hence `let`, not `const`.
+  // initGPU() creates the eager handles — create() calls it once, and a webglcontextrestored calls it again, because
+  // a lost context kills all of them. Hence `let`, not `const`. The handles made lazily outside it and held outside the
+  // subsystems it rebuilds (the transport cache, the fill's and the litter's programs and textures, the present target,
+  // the grove's and the layers' VAOs and textures) must also be forgotten by hand in onContextRestored, or a restore
+  // keeps a dead handle.
   let progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
   let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
   let reseasonGrove, reseasonable, bake, bakeLayers, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
@@ -513,7 +516,7 @@ function create(canvas, opts){
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
     }
-    if(lost){ const m = Object.assign(params, DEFAULTS, migrateLegacy(obj)); warnCut(m); return; }   // no GPU to rebuild on: the live params are what restoreGPU() rebuilds from
+    if(lost){ const m = Object.assign(params, DEFAULTS, migrateLegacy(obj)); warnCut(m); return; }   // no GPU to rebuild on: the live params are what onContextRestored() rebuilds from
     const merged = Object.assign({}, DEFAULTS, migrateLegacy(obj));   // legacy names -> current; missing keys -> defaults (forward-compat)
     warnCut(merged);
     for(const k in DEFAULTS) params[k] = merged[k];
@@ -645,7 +648,8 @@ function create(canvas, opts){
   }
 
   // ---- CONTEXT LOSS (automatic recovery). preventDefault on the loss is what lets the browser restore at all.
-  // On restore every handle from before is dead, so initGPU() recreates them all and the ordinary rebuild path
+  // On restore every handle from before is dead: initGPU() recreates the eager ones, the lazy ones are forgotten below (and made
+  // again on first use), and the ordinary rebuild path
   // regrows the grove/bake/source from the CURRENT params (the springs in hub.hier survive: they are CPU state).
   function onContextLost(e){
     if(!alive) return;

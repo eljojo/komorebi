@@ -563,6 +563,7 @@ void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, vec2 gS, bool scatter, bool 
 // floor, over the canopy box), K fixed cosine-weighted rays each, and the two quantities the shade is made of:
 //   Tsky(x) = (1/K) Σ_k Π_L T_L(x + h_L·s_k)       the skylight's transmittance through the canopy — forestry's diffuse gap fraction
 //   S(x)    = fill_scatter · (1/K) Σ_k Lsc_k        the sunlight the lit leaves scatter down onto it — the sky view's radiance, integrated
+//             (at k = 0, the proxy; at uFillBeamK > 0 the measured emission (1/K) Σ_k Σ_L thr·(T − Tb)·sun·A, with no albedo: §4.5)
 // where s_k = tanθ_k·(cosφ_k, sinφ_k) is ray k's plan travel per metre of rise. The K directions are the plain set of
 // komorebi-fill.js (uFillRay: cos²θ_k and φ_k per ray), and each TEXEL rotates it by its slot in a fixed 4x4 Bayer tile
 // (INTERLEAVED SAMPLING): azimuth by 2π·b/16 and cos²θ by a sub-stratum, so the 16 texels of a tile (a mip-2 box) hold
@@ -572,8 +573,8 @@ void skyRay(vec2 pL0, vec2 pL1, vec2 pL2, vec2 pL3, vec2 gS, bool scatter, bool 
 // the K products are what get averaged — never a mip or a blur of the optical depth, which would turn a gappy canopy
 // into a uniform veil and underestimate the fill. The sum is DIVIDED by K (not scaled by 1/K), so K rays of exactly
 // 1 sum to exactly K and give exactly 1: no canopy is exactly bright, for any K.
-// ENERGY: Tsky ≤ 1 by construction, and S ≤ fill_scatter·(1 − Tsky)·sun per channel by the sky view's
-// telescoping bound — structural, no clamp. Wood is not read (readWood false): the analytic occluder takes the
+// ENERGY: Tsky ≤ 1 by construction, and at k = 0 S ≤ fill_scatter·(1 − Tsky)·sun per channel by the sky view's
+// telescoping bound — structural, no clamp. At k > 0 the bound is per layer only (GLSL_SKY_RAY says why). Wood is not read (readWood false): the analytic occluder takes the
 // beam only, and a limb's share of the hemisphere is thin.
 // THE BOOKS CLOSE (§4.7). Over a floor of unbounded extent every ray's light from a leaf lands somewhere, so the fill holds exactly
 // what the leaves send down — IF the leaves are lit by the beam's own sun (uFillG, not the real one) and the box is not the world:
