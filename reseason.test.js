@@ -166,6 +166,22 @@ test("laziness: a summer build keeps no season cache unless asked; ex and rank w
   expect(d.season.ex).not.toBe(null);
 });
 
+test("a fall build keeps the exposure field it ran, and it is the one the first re-season would have built", () => {
+  const F = rig({ ...SMALL, phenology: 0.8, exposure_absolute: 0.5 });
+  const f = F.G.buildGrove(null, { keepSeason: true });
+  expect(f.season.ex, "the build ran the pass: the record keeps it").not.toBe(null);
+  expect(f.season.rank).not.toBe(null);
+  const L = rig({ ...SMALL, phenology: 0.5, exposure_absolute: 0.5 });   // the same grove from a summer cache: its first fall re-season builds them
+  const l = L.G.buildGrove(null, { keepSeason: true });
+  Object.assign(L.params, { phenology: 0.8 }); L.G.reseasonGrove(l, L.params);
+  expect(firstDiff(f.season.ex, l.season.ex), "the field").toBe(null);
+  expect(firstDiff(f.season.rank, l.season.rank), "the keyed rank").toBe(null);
+  const rank = f.season.rank, copy = Float64Array.from(rank);
+  Object.assign(F.params, { phenology: 0.9, exposure_absolute: 0 }); F.G.reseasonGrove(f, F.params);
+  expect(f.season.rank, "reused, not rebuilt").toBe(rank);
+  expect(firstDiff(rank, copy), "never written into").toBe(null);
+});
+
 // ---- the key ---------------------------------------------------------------------------------------------------------------
 const read = (f) => readFileSync(new URL(f, import.meta.url), "utf8");
 test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exactly what buildGrove reads besides the season set", () => {
@@ -270,7 +286,7 @@ test("cost (reported): a fall frame by regrow and by re-season at t 0.9, median 
     const g = R.G.buildGrove(null, { keepSeason: true });
     const t0 = performance.now();
     R.G.reseasonGrove(g, R.params);
-    const tFirst = performance.now() - t0;                 // the first one pays the exposure field
+    const tFirst = performance.now() - t0;                 // the first one: a fall build kept the exposure field, so it no longer pays it
     const tRe = med(() => R.G.reseasonGrove(g, R.params));
     Object.assign(R.params, { phenology: 0.5 });
     const tSummer = med(() => R.G.buildGrove(null));

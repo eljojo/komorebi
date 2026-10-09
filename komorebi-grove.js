@@ -15,8 +15,8 @@
 //   while the key still matches; a changed key regrows. GROVE_READS is derived from `grep -n "params\." komorebi-grove.js` and reseason.test.js greps again, so a
 //   new read cannot slip past the key.
 //   THE CACHE IS LAZY. A summer build keeps no record (rec exists only when lit || dropping, and recording always costs ~5 ms and ~7 MB a regrow): the first
-//   'season' apply on a grove without one does one full build with keepSeason. The exposure field and its keyed rank are built by the first re-season whose gate needs
-//   `u`, and the rank is never written into (exposureBlend hands it back itself at exposure_absolute 0).
+//   'season' apply on a grove without one does one full build with keepSeason. The exposure field and its keyed rank are kept from that build when it ran the
+//   pass, and otherwise built by the first re-season whose gate needs `u`; the rank is never written into (exposureBlend hands it back itself at exposure_absolute 0).
 //   GOTCHAS. A and B0 are kept as DOUBLES: the litter's `size` is read from the doubles in buildGrove, and a float32 copy differs in the last bits. A re-season writes
 //   into the EXISTING buffers (layerVAO[l].buf, faith.buf), so the VAO pointers stay valid; it never touches `gr`, the hier springs, clusterData, clusterTex or leafTex —
 //   which is also why there is no shallow-copy grove: installGrove would free the textures it shared. faith.* is engine-global (a second grove built for a transition
@@ -272,6 +272,7 @@ export function makeGrove(hub){
     const isLit = lit(params), isDropping = dropping(params), after = afterTurn(params);
     const rec = ((FEAT_EXPOSURE && isLit) || (FEAT_DROP && isDropping)) ? [] : null;
     const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
+    let sEx = null, sRank = null;   // the exposure field and keyed rank, when this build ran the pass: the record keeps them, so the first re-season does not pay it again
     let sAt = 0;
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
@@ -336,8 +337,9 @@ export function makeGrove(hub){
       if(FEAT_EXPOSURE && ordered(params)){
         const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
         for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; K[i]=leafClock(params.seed, rec[REC*i+4], rec[REC*i+5]); }
-        const ex = exposureGrid(X, Y, Z, Ar, E);
-        u = exposureBlend(exposureRank(ex, K), ex, params.exposure_absolute);   // K: the leaves nothing shades (e = 1) are ordered by their own clocks, not stacked on one rank
+        const ex = exposureGrid(X, Y, Z, Ar, E), rank = exposureRank(ex, K);   // K: the leaves nothing shades (e = 1) are ordered by their own clocks, not stacked on one rank
+        u = exposureBlend(rank, ex, params.exposure_absolute);   // read below, never written: at exposure_absolute 0 it IS the rank the record keeps
+        if(keepSeason){ sEx = ex; sRank = rank; }   // the same leaves in the same order as sRec (one push site), the same seed, clocks and E: what reseasonGrove would build
       }
       let alive = null, gone = 0;
       if(FEAT_DROP && isDropping){ litter = []; leafW = new Float32Array(nClusterTotal*nLeaf).fill(1); alive = new Uint8Array(n).fill(1); }
@@ -569,7 +571,7 @@ export function makeGrove(hub){
         if(s.bx<sx0)sx0=s.bx; if(s.bx>sx1)sx1=s.bx; if(s.by<sy0)sy0=s.by; if(s.by>sy1)sy1=s.by;
       }
       grove.season = { key: seasonKey(params, faithful), rec: sRec, base: seasonBase, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, E, tau, seg: [sx0, sx1, sy0, sy1],
-                       faithBuf: faith.buf, ex: null, rank: null, u: null, outL: null, outF: null };
+                       faithBuf: faith.buf, ex: sEx, rank: sRank, u: null, outL: null, outF: null };
     }
     return grove;
   }
