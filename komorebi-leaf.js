@@ -25,6 +25,7 @@ const LEAF_ID_FRAC = 32;    // a leaf's outline rides its cluster id's FRACTION 
 // growth (0x5EED) salts — a test holds them apart.
 const OUTLINE_SALT = 0x4C3AF001;   // grows the outlines
 const VARIANT_SALT = 0x6E1B35D7;   // picks a leaf's outline
+const FLIP_SALT = 0x3D8C5A21;      // turns half the hanging leaves through a half turn
 
 // THE SUGAR MAPLE (Acer saccharum), measured against the reference photos: actinodromous, five primaries from the hub — laterals at ±55-70° and
 // basals at ±100-115° — whose lamina is a stripe of constant width that thins to a point. The lamina's half-width is rho·len along the first `hold` of a
@@ -126,6 +127,13 @@ function leafVariant(seed, j, k){
   return Math.floor(mulberry32(hash3((seed>>>0)^VARIANT_SALT, j, k))()*LEAF_VARIANTS);
 }
 
+// Whether a hanging leaf is turned a half turn past the grove's draw. The grove draws a leaf's angle on [0, π), every orientation there is for an ellipse
+// (it is the same leaf a half turn on) and half of them for an outline, which is not: every tip would point into one half-plane. A pure function of
+// (seed, cluster, leaf) on its own salt, so the growth stream and every ellipse grove keep their bytes.
+function leafFlip(seed, j, k){
+  return mulberry32(hash3((seed>>>0)^FLIP_SALT, j, k))() < 0.5;
+}
+
 // A species' outlines for a seed, as the grove hands them to the bake: the LEAF_VARIANTS profiles in one buffer (a texture's rows, rounded to the float32 it
 // uploads), the box the quad has to cover — the union of the variants' extents in the unit frame, as `[cx, cy, hx, hy]` (centre and half-size) — and `reach`, the
 // farthest corner of it from the origin (the litter's cull radius, in leaf units), and `rmax`, the longest radius of any outline (the faithful cast frame's pad). null is the ellipse: no profile, no box, nothing to upload. Memoised on
@@ -157,4 +165,4 @@ function leafShape(name, seed){
   return g;
 }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, MAPLE, LEAF_SHAPES, growLeaf, bladeOf, profile, outlineSeed, leafVariant, leafShape };
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, MAPLE, LEAF_SHAPES, growLeaf, bladeOf, profile, outlineSeed, leafVariant, leafFlip, leafShape };

@@ -262,7 +262,7 @@ test("leafVariant: one of eight, a pure function of (seed, cluster, leaf), unifo
 });
 
 test("the leaf's streams never touch the growth RNG: their own salts, uncorrelated with every other stream, and no state to advance", () => {
-  const salts = [LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* the pigment draw */, 0x7A3C91D5 /* the drop day */, 0x5bd1e995 /* wind identity */, 0x5EED /* growth */];
+  const salts = [LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, LEAF.FLIP_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* the pigment draw */, 0x7A3C91D5 /* the drop day */, 0x5bd1e995 /* wind identity */, 0x5EED /* growth */];
   expect(new Set(salts).size).toBe(salts.length);
   const corr = (u, w) => {
     const n = u.length, mu = mean(u), mw = mean(w);
@@ -279,6 +279,7 @@ test("the leaf's streams never touch the growth RNG: their own salts, uncorrelat
     pigment: cells.map(([j, k]) => first(seed ^ 0x51ED270B, j, k)),
     drop: cells.map(([j, k]) => math.dropHash(seed, j, k)),
     litter: cells.map(([j, k]) => first(seed ^ 0x2B9D4F6E, j, k)),
+    flip: cells.map(([j, k]) => (LEAF.leafFlip(seed, j, k) ? 1 : 0)),   // the half turn: not tied to the outline a leaf hangs in
   };
   for (const [name, s] of Object.entries(streams)) expect(Math.abs(corr(variant, s)), name).toBeLessThan(0.1);
   // the grammar's own stream is no leaf's: the variant a leaf hangs in does not move the outlines, and the outlines do not move it
@@ -349,14 +350,37 @@ test("a maple's cluster id carries its outline in the fraction — j + v/32, exa
   expect(g.shape).toBe(LEAF.leafShape("maple", params.seed));
 });
 
-test("the outline never touches the growth: a maple grove is the ellipse's grove leaf for leaf — positions, sizes, angles, tau — but for the one float and the aspect it asked for", () => {
+test("the outline never touches the growth: a maple grove is the ellipse's grove leaf for leaf — positions, sizes, tau — but for the one float, the aspect it asked for, and half the angles a half turn on", () => {
   const ell = groveRig({ ...MAPLE_LOOK, leaf_shape: "ellipse" }), map = groveRig(MAPLE_LOOK);
   expect(map.layers.length).toBe(ell.layers.length);
+  let n = 0, turned = 0;
   map.layers.forEach((L, l) => {
     expect(L.length).toBe(ell.layers[l].length);
-    for (let i = 0; i < L.length; i++) if (i % 17 !== 11) expect(Object.is(L[i], ell.layers[l][i]), `layer ${l} float ${i}`).toBe(true);
+    for (let i = 0; i < L.length; i++) if (i % 17 !== 11 && i % 17 !== 4) expect(Object.is(L[i], ell.layers[l][i]), `layer ${l} float ${i}`).toBe(true);
     for (let i = 11; i < L.length; i += 17) expect(Math.floor(L[i])).toBe(ell.layers[l][i]);
+    // the angle: the ellipse's draw, or that draw plus π (float32 rounds the sum, so within an ulp of 2π)
+    for (let i = 4; i < L.length; i += 17) {
+      const d = L[i] - ell.layers[l][i];
+      expect(d === 0 || Math.abs(d - Math.PI) < 2e-6, `layer ${l} float ${i}: ${d}`).toBe(true);
+      n++; if (d !== 0) turned++;
+    }
   });
+  expect(n).toBeGreaterThan(200);
+  expect(turned / n, "about half the blades point into the other half-plane").toBeGreaterThan(0.35);
+  expect(turned / n).toBeLessThan(0.65);
+});
+
+test("an outline's half turn is a pure hash of (seed, cluster, leaf): the ellipse's angles stay [0, π) and every maple tip direction is reachable", () => {
+  const ell = groveRig({ ...MAPLE_LOOK, leaf_shape: "ellipse" }), map = groveRig(MAPLE_LOOK);
+  for (const L of ell.layers) for (let i = 4; i < L.length; i += 17) { expect(L[i]).toBeGreaterThanOrEqual(0); expect(L[i]).toBeLessThan(Math.PI + 1e-6); }
+  let down = 0, up = 0;   // the central lobe's direction at rest is R·(1, 0) = (cos a, −sin a) (VS_BAKE): its y sign says which half-plane the tip is in
+  for (const L of map.layers) for (let i = 4; i < L.length; i += 17) { if (-Math.sin(L[i]) < 0) down++; else up++; }
+  expect(down).toBeGreaterThan(0);
+  expect(up).toBeGreaterThan(0);
+  const flips = [];
+  for (let k = 0; k < 64; k++) flips.push(LEAF.leafFlip(7, 3, k));
+  for (let k = 0; k < 64; k++) expect(LEAF.leafFlip(7, 3, k), "the same address, the same answer").toBe(flips[k]);
+  expect(flips.some((f) => f) && flips.some((f) => !f)).toBe(true);
 });
 
 test("one texture per grove, made beside the cluster textures: R16F, 256 × 8, REPEAT in θ and CLAMP across variants, LINEAR — and a 1×1 for the ellipse", () => {

@@ -34,7 +34,7 @@ const FEAT_EXPOSURE = true;
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
-import { LEAF_ID_FRAC, LEAF_SAMPLES, leafShape, leafVariant } from './komorebi-leaf.js';
+import { LEAF_ID_FRAC, LEAF_SAMPLES, leafFlip, leafShape, leafVariant } from './komorebi-leaf.js';
 
 // Every param buildGrove reads besides the season set, and so the whole of `season.key` (faithful_canopy and receiver reach it through faithfulOn(), which the key carries
 // as the boolean it is). Held against a grep of this file in reseason.test.js.
@@ -303,7 +303,8 @@ export function makeGrove(hub){
         const A = size*0.5;                              // long half-axis
         const B0 = size*0.5/params.leaf_aspect;          // face-on short half (shader foreshortens)
         const restTilt = rng()*params.max_tilt*(Math.PI*0.5);
-        const angle = rng()*Math.PI;
+        let angle = rng()*Math.PI;
+        if(shape && leafFlip(params.seed, j, k)) angle += Math.PI;   // an outline is not the same leaf a half turn on: half of them take the other half-plane (komorebi-leaf.js)
         const ax = 0.4+0.6*rng(), ay = 0.4+0.6*rng();    // incoherent orbit
         const orient = rng()*TAU2, phase = rng()*TAU2;
         const swingGain = 0.6+0.8*rng2(), swingPhase = rng2()*TAU2;
