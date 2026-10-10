@@ -209,6 +209,39 @@ try {
   await page.waitForSelector('#dev:not(.hidden)');
   check('ladder: playful -> advanced', await page.$eval('#play', (e) => e.classList.contains('hidden')));
 
+  // THE AREAS (Part B): the advanced panel is eleven collapsible areas, grouped by the pass you make, each remembering whether it is open. The first <select> in #dev stays the preset dropdown.
+  const areas = await page.$$eval('#dev > details > summary.sec', (ss) => ss.map((s) => ({ name: s.textContent, open: s.parentElement.open })));
+  check('the areas, in order: Sun, Colour & light, Density, Season, Leaves, Tree shape, Scene, Wind, Tune, Debug, Lab',
+    areas.map((a) => a.name).join('|') === 'Sun|Colour & light|Density|Season|Leaves|Tree shape|Scene|Wind|Tune|Debug|Lab', areas.map((a) => a.name).join('|'));
+  check('Colour & light, Density and Season start open, and every other area closed (Lab included)',
+    areas.every((a) => a.open === ['Colour & light', 'Density', 'Season'].includes(a.name)), JSON.stringify(areas.filter((a) => a.open).map((a) => a.name)));
+  const areaOf = (lbl) => page.evaluate((l) => {
+    const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === l);
+    if (!r) return null;
+    let d = r.closest('details');
+    while (d.parentElement.closest('details')) d = d.parentElement;
+    return d.querySelector(':scope > summary').textContent;
+  }, lbl);
+  const placed = {};
+  for (const lbl of ['ground R', 'ground B', 'tonemap', 'faithful tree', 'fabric Tt', 'receiver', 'glow bleed', 'limbs', 'speed', 'phenology', 'fall lag', 'leaf variety', 'density', 'CLOUD']) placed[lbl] = await areaOf(lbl);
+  check('ground rows sit under Colour & light, tone_map under Tune, the faithful tree under Tree shape, the cloth under Lab',
+    placed['ground R'] === 'Colour & light' && placed['ground B'] === 'Colour & light' && placed.tonemap === 'Tune' && placed['faithful tree'] === 'Tree shape' && placed['fabric Tt'] === 'Lab' && placed.receiver === 'Lab', JSON.stringify(placed));
+  check('and the rest land where they were grouped: glow bleed in Scene, limbs and leaf drift speed in Wind, phenology and fall lag in Season',
+    placed['glow bleed'] === 'Scene' && placed.limbs === 'Wind' && placed.speed === 'Wind' && placed.phenology === 'Season' && placed['fall lag'] === 'Season' && placed['leaf variety'] === 'Leaves' && placed.density === 'Density' && placed.CLOUD === 'Sun', JSON.stringify(placed));
+  const nested = await page.$$eval('#dev > details > details', (ds) => ds.map((d) => `${d.parentElement.querySelector(':scope > summary').textContent}/${d.querySelector(':scope > summary').textContent}:${d.open}`));
+  check('Wind holds two nested groups, spring mechanics and leaf drift, both closed', nested.join() === 'Wind/spring mechanics:false,Wind/leaf drift:false', nested.join());
+  const tipless = await page.evaluate(() => [...document.querySelectorAll('#dev summary')].filter((s) => {
+    const tip = document.getElementById('tip');
+    tip.innerHTML = ''; tip.style.display = 'none';
+    s.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    return tip.style.display !== 'block' || tip.innerHTML === '';
+  }).map((s) => s.textContent));
+  check('every area and nested group has a tip', tipless.length === 0, tipless.join());
+  const summaryShown = (txt) => page.evaluate((t) => {
+    const s = [...document.querySelectorAll('#dev summary.sec')].find((q) => q.textContent === t);
+    return s ? getComputedStyle(s.parentElement).display !== 'none' : null;
+  }, txt);
+
   // INERT ROWS: the advanced panel hides the knobs the current camera never reads (§4.9), and an emptied
   // section takes its heading with it. Computed style, not the property — the point is that the CSS lands.
   const rowShown = (lbl) => page.evaluate((l) => {
@@ -219,16 +252,12 @@ try {
     const r = [...document.querySelectorAll('#dev .ctl.select')].find((q) => q.querySelector('label')?.textContent === 'receiver');
     const s = r.querySelector('select'); s.value = String(val); s.dispatchEvent(new Event('change', { bubbles: true }));
   }, v);
-  const headShown = (txt) => page.evaluate((t) => {
-    const h = [...document.querySelectorAll('#dev h2')].find((q) => q.textContent === t);
-    return h ? getComputedStyle(h).display !== 'none' : null;
-  }, txt);
   check('the floor look shows the ground and hides the cloth', (await rowShown('ground R')) && !(await rowShown('fabric Tt')));
   await setReceiver(1);                                             // curtain: no floor albedo, no ray camera, but a fabric
   let curtain = false;                                              // the gate pass rides onFrame — SwiftShader frames are long, and the camera swap compiles a new program
   for (let i = 0; i < 30 && !curtain; i++) { await page.waitForTimeout(400); curtain = !(await rowShown('ground R')) && !(await rowShown('tilt \u00b0')) && (await rowShown('fabric Tt')); }
   check('curtain hides the floor-only knobs and shows the fabric', curtain);
-  check('an emptied section takes its heading with it', (await headShown('Background')) === false);
+  check('an area with a live row keeps its heading on the curtain (Colour & light, Lab)', (await summaryShown('Colour & light')) === true && (await summaryShown('Lab')) === true);
   await setReceiver(0);
   let floor = false;
   for (let i = 0; i < 30 && !floor; i++) { await page.waitForTimeout(400); floor = (await rowShown('ground R')) && !(await rowShown('fabric Tt')); }
@@ -416,6 +445,7 @@ try {
   let skyFill = false;                                              // the sky camera speaks no fill group: all four rows go
   for (let i = 0; i < 40 && !skyFill; i++) { await page.waitForTimeout(400); skyFill = !(await rowShown('canopy fill')) && (await fillShown()).every((v) => v === false); }
   check('the sky view has none of the four fill rows', skyFill, `${await rowShown('canopy fill')} ${await fillShown()}`);
+  check('and an emptied area takes its heading with it: looking up leaves Lab nothing, so Lab goes', (await summaryShown('Lab')) === false && (await summaryShown('Wind')) === true, `${await summaryShown('Lab')} ${await summaryShown('Wind')}`);
   check('the sky view never reads sun_cosine: radiance is invariant, so its row is hidden', (await rowShown('cosine')) === false, `${await rowShown('cosine')}`);
   // THE LEAF IS A LANTERN (§4.9): the look-up view reads the split through its own group, so the row is there, and above 0 the authored
   // foliage glow is the proxy it replaces (the sky view's twin of the floor's leaf scatter) and goes; at 0 it is back.
@@ -681,15 +711,21 @@ try {
   }, v);
   const askSave = async (reply) => { dialogs.length = 0; dialogReply = reply; await devBtn('save'); dialogReply = null; return dialogs[0]; };
 
-  const rowDisplay = await page.evaluate(() => getComputedStyle(document.querySelector('#dev select').closest('.ctl').nextElementSibling).display);
+  const rowDisplay = await page.evaluate(() => getComputedStyle(document.querySelector('#dev .playlist-row')).display);
   check('with one playlist there is no playlist row', rowDisplay === 'none', rowDisplay);
   check('and no \u25b6 anywhere', (await displayOf(page, '.playstop')).every((x) => x === 'none') && (await page.$$('#strip .playstop')).length === 0, (await displayOf(page, '.playstop')).join());
 
+  // THE LOOK'S CHIP (every editor, arboretum or not): one muted line under the look select that says where the look lives
+  const chipNow = () => page.$eval('#dev .look-chip', (e) => (e.hidden ? '' : e.textContent));
+  const chipIs = async (want) => poll(async () => (await chipNow()) === want);
   await devPick('afternoon 7');
+  check('a built-in, unchanged, reads "built-in"', await chipIs('built-in'), await chipNow());
   await setCloudSlider(0.12);
+  check('and an edit prefixes "● edited · "', await chipIs('● edited · built-in'), await chipNow());
   let d = await askSave('k2 mine');
   check('save on a built-in offers no name', d?.type === 'prompt' && d.def === '', JSON.stringify(d));
   check('a new name adds a ★ and selects it', (await devOpts()).some(([v, t]) => v === 'k2 mine' && t === '★ k2 mine') && (await page.$eval('#dev select', (s) => s.value)) === 'k2 mine');
+  check('a saved ★ with no arboretum reads "★ saved here", and the save cleared the edit', await chipIs('★ saved here'), await chipNow());
   d = await askSave(null);
   check('save pre-fills the current ★ name', d?.def === 'k2 mine', JSON.stringify(d));
   check('and cancelling it adds nothing', (await devOpts()).filter(([, t]) => t.startsWith('★ ')).length === 1);
@@ -721,20 +757,33 @@ try {
   check('delete still refuses a built-in', dialogs[0]?.type === 'alert' && /Built-in/.test(dialogs[0].message), JSON.stringify(dialogs));
   for (const n of ['k2 mine', 'k2 mine 2']) { await devPick(n); await devBtn('delete'); }
   check('and the ★ looks go the same way', (await devOpts()).every(([, t]) => !t.startsWith('★ ')));
+  // ⌘S / Ctrl+S is the save button: the same prompt, the same ★, and the browser's own save-page stays out of it
+  dialogs.length = 0; dialogReply = 'k2 keys';
+  await page.keyboard.press('Control+s');
+  dialogReply = null;
+  await page.waitForTimeout(300);
+  check('Ctrl+S prompts for a name and keeps a ★ under it', dialogs[0]?.type === 'prompt' && (await devOpts()).some(([v, t]) => v === 'k2 keys' && t === '★ k2 keys'), JSON.stringify(dialogs));
+  await devPick('k2 keys'); await devBtn('delete');
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('komorebi.editor')));
   check('the editor settings remember the playlist and the entry', stored.playlist === 'local' && typeof stored.selected?.local === 'string', JSON.stringify(stored));
 
-  // the gate (arboretum, editor-integration-design §1): at /index.html (a fork, komorebi's own dev server) arboretum is off
-  const arbAsked = requested.filter((p) => p.startsWith('/api/') || /arboretum/i.test(p));
-  check('at /index.html the editor makes no request to arboretum, and never fetches its code', arbAsked.length === 0, arbAsked.join());
+  // the tiers (arboretum.js): at /index.html (a fork, komorebi's own dev server) arboretum is local-only: its code is there to keep the ★ looks,
+  // but it asks the network for nothing, and shows nothing of the session
+  const arbAsked = requested.filter((p) => p.startsWith('/api/'));
+  check('at /index.html the editor makes no request to arboretum at startup', arbAsked.length === 0, arbAsked.join());
   const arbUi = await page.evaluate(() => ({ marker: document.body.dataset.arboretum, text: ['dev', 'play', 'strip'].filter((id) => /arboretum/i.test(document.getElementById(id).textContent)) }));
   check('and shows no arboretum UI', arbUi.marker === undefined && arbUi.text.length === 0, JSON.stringify(arbUi));
 
-  // reload holds the mode (persistence)
+  // reload holds the mode (persistence), and each area stays open or closed the way it was left
+  await page.evaluate(() => { for (const n of ['Season', 'Lab']) [...document.querySelectorAll('#dev summary.sec')].find((q) => q.textContent === n).click(); });   // Season closes, Lab opens
+  await page.waitForFunction(() => { const o = JSON.parse(localStorage.getItem('komorebi.editor')).open ?? {}; return o.Season === false && o.Lab === true; }).catch(() => {});
   await page.reload({ waitUntil: 'load' });
   await page.click('#feel');
   await page.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
   check('mode persists across reload (zen)', true);
+  const reopened = await page.$$eval('#dev > details > summary.sec', (ss) => Object.fromEntries(ss.map((s) => [s.textContent, s.parentElement.open])));
+  check('and the areas persist: Season closed and Lab open as left, Colour & light and Density still open, Sun still closed',
+    reopened.Season === false && reopened.Lab === true && reopened['Colour & light'] === true && reopened.Density === true && reopened.Sun === false, JSON.stringify(reopened));
 
   // a cached arboretum playlist as the second playlist: the row and the ▶ appear (play and advanced, never zen), and the arrows walk its items
   {
@@ -759,7 +808,7 @@ try {
     check('a cached cloud playlist lists its items by name and opens on the first', first.opts.join() === 'one,two' && first.value === '0', JSON.stringify(first));
     check('with a second playlist the playlist row is there, on the active one', await page2.evaluate(() => {
       const s = document.querySelectorAll('#dev select')[1];
-      return getComputedStyle(s.closest('.ctl')).display !== 'none' && [...s.options].map((o) => o.textContent).join() === 'On this browser,k2 list' && s.value === 'arb:7';
+      return getComputedStyle(s.closest('.ctl')).display !== 'none' && [...s.options].map((o) => o.textContent).join() === 'all looks,k2 list' && s.value === 'arb:7';
     }));
     const vis = await page2.evaluate(() => Object.fromEntries(['play', 'dev', 'strip'].map((id) => [id, [...document.querySelectorAll(`#${id} .playstop`)].map((b) => getComputedStyle(b).display !== 'none')])));
     check('the ▶ shows in play and advanced, and the zen strip has none', vis.play.length === 1 && vis.play[0] && vis.dev.length === 1 && vis.dev[0] && vis.strip.length === 0, JSON.stringify(vis));
@@ -769,7 +818,7 @@ try {
     await page2.waitForTimeout(400);
     await page2.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'local'; s.dispatchEvent(new Event('change', { bubbles: true })); });
     const back = await sel2();
-    check('swapping to On this browser lists the built-ins again and the ▶ goes', back.opts.length > 3 && back.value === Object.keys(PRESETS)[0]
+    check('swapping to all looks lists the built-ins again and the ▶ goes', back.opts.length > 3 && back.value === Object.keys(PRESETS)[0]
       && (await displayOf(page2, '.playstop')).every((x) => x === 'none'), JSON.stringify({ n: back.opts.length, v: back.value }));
     await ctx.close();
   }
@@ -788,12 +837,49 @@ try {
     let on = null;
     try { on = await (await page3.waitForFunction(() => document.body.dataset.arboretum || null)).jsonValue(); } catch { /* reported below */ }
     check('under /editor/ with /api/health answering, the gate opens on the page\'s own origin', on === `http://127.0.0.1:${port}`, String(on));
-    check('and it asked /api/health once and loaded arboretum.js from /editor/', asked.filter((p) => p === '/api/health').length === 1 && asked.includes('/editor/arboretum.js'), asked.filter((p) => /api|arboretum/.test(p)).join());
+    check('and it asked /api/health once', asked.filter((p) => p === '/api/health').length === 1, asked.filter((p) => /api|arboretum/.test(p)).join());
     await ctx3.close();
   }
 
-  // ---- ARBORETUM'S CONTROLS (arboretum.js, K4), at /editor/ with page.route standing in for arboretum: the sign-in cycle, cloud
-  // playlists beside On this browser, what save / remove / ↑ / add to / new playlist write, the picker, refresh, and its refusals ----
+  // the read tier: a link opened at /index.html (a fork) is GET from arboretum's own origin, anonymously, and lands as a ★; nothing else is asked.
+  // The mock stands in for arboretum's CORS allowing anonymous GETs from any origin.
+  {
+    await page.goto('about:blank');
+    const arboretumOrigin = 'https://arboretum.eljojo.net';
+    const open6 = async (hash, answer) => {
+      const ctx = await browser.newContext({ viewport: { width: 640, height: 480 } });
+      const pg = await ctx.newPage();
+      pg.setDefaultTimeout(30000);
+      pg.on('pageerror', (e) => errors.push(`[after check ${results.length}] k6 page: ${e.message}`));
+      pg.on('console', (m) => { if (m.type() === 'error' && !(m.text().startsWith('Failed to load resource') && /arboretum\.eljojo\.net/.test(m.location().url))) errors.push(`[after check ${results.length}] k6 page console: ${m.text()}`); });
+      const own = [], theirs = [];
+      pg.on('request', (r) => { const u = new URL(r.url()); if (u.origin === arboretumOrigin) theirs.push(`${r.method()} ${u.pathname}${u.search} cookie:${r.headers().cookie ?? '-'}`); else if (u.pathname.startsWith('/api/')) own.push(u.pathname); });
+      await pg.route(`${arboretumOrigin}/**`, (route) => answer(route));
+      await pg.goto(`http://127.0.0.1:${port}/index.html${hash}`, { waitUntil: 'load' });
+      return { ctx, pg, own, theirs };
+    };
+    {
+      const dusk = { id: 31, owner: 'ana', name: 'k6 forked', version: 1, params: PRESETS.memories };
+      const { ctx, pg, own, theirs } = await open6('#arboretum=31', (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(dusk) }));
+      await pg.click('#feel');
+      const there = await pg.waitForFunction(() => document.querySelector('#dev select').value === 'k6 forked', null, { timeout: 60000 }).then(() => true, () => false);
+      check('a #arboretum= link at /index.html is one cookie-less GET to arboretum\'s own origin, and lands as a ★', there && theirs.join() === 'GET /api/presets/31 cookie:-' && own.length === 0, `${there} ${theirs.join()} ${own.join()}`);
+      const rec = await pg.evaluate(() => ({ star: 'k6 forked' in JSON.parse(localStorage.getItem('komorebi.presets') || '{}'), origin: JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin?.['k6 forked'], marker: document.body.dataset.arboretum, ui: !!document.querySelector('.arb-cta, .arb-inrow, .arb-who') }));
+      check('and it is a synced copy of #31 by ana, with no session and no arboretum controls', rec.star && rec.origin?.id === 31 && rec.origin.owner === 'ana' && rec.origin.synced === true && rec.marker === undefined && !rec.ui, JSON.stringify(rec));
+      await ctx.close();
+    }
+    {
+      const { ctx, pg, theirs } = await open6('#arboretum=31', (route) => route.abort('failed'));   // a browser that blocks the read (CORS), or a network that fails
+      await pg.click('#feel');
+      const said = await pg.waitForFunction(() => document.getElementById('hint').textContent === 'arboretum: arboretum unreachable' && !document.getElementById('hint').classList.contains('gone'), null, { timeout: 20000 }).then(() => true, () => false);
+      await pg.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
+      check('a link the browser blocks is said quietly through the key-hint line, and the editor lands as usual', said && theirs.length === 1 && (await pg.$eval('#dev select', (s) => s.value)) === 'afternoon 7', `${said} ${theirs.join()}`);
+      await ctx.close();
+    }
+  }
+
+  // ---- ARBORETUM, the shelf (arboretum.js), at /editor/ with page.route standing in for arboretum: the sign-in cycle, ☁ rows in all looks,
+  // save as the one verb (it goes up at once, or waits), the look's chip, the `in:` chips, `+`, a cloud playlist of yours, and the refusals ----
   {
     await page.goto('about:blank');
     const ctx4 = await browser.newContext({ viewport: { width: 640, height: 480 } });
@@ -801,7 +887,7 @@ try {
     const page4 = await ctx4.newPage();
     page4.setDefaultTimeout(30000);
     page4.on('pageerror', (e) => errors.push(`[after check ${results.length}] page 4: ${e.message}`));
-    // the mock's own refusals (401, 422, 429, a missing commit.json) are logged by Chromium as failed loads: expected, not page errors
+    // the mock's own refusals (401, 422, 503, a missing commit.json) are logged by Chromium as failed loads: expected, not page errors
     const expected = (m) => m.text().startsWith('Failed to load resource') && /\/api\/|commit\.json/.test(m.location().url);
     page4.on('console', (m) => { if (m.type() === 'error' && !expected(m)) errors.push(`[after check ${results.length}] page 4 console: ${m.text()}`); });
     const alerts = [], prompts = [];
@@ -866,7 +952,7 @@ try {
     const lastCall = (re) => calls(re).at(-1);
     const until = async (fn, ms = 15000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await page4.waitForTimeout(60); } return false; };
     const dev4 = (fn, ...a) => page4.evaluate(fn, ...a);
-    const opts4 = (i) => dev4((n) => [...document.querySelectorAll('#dev select')[n].options].map((o) => o.textContent), i);   // i: 0 = the look select, 1 = the playlist select, 2 = add to
+    const opts4 = (i) => dev4((n) => [...document.querySelectorAll('#dev select')[n].options].map((o) => o.textContent), i);   // i: 0 = the look select, 1 = the playlist select
     const pick4 = (i, v) => dev4(([n, val]) => { const s = document.querySelectorAll('#dev select')[n]; s.value = val; s.dispatchEvent(new Event('change', { bubbles: true })); }, [i, v]);
     const value4 = (i) => dev4((n) => document.querySelectorAll('#dev select')[n].value, i);
     const click4 = (sel) => dev4((s) => document.querySelector(s).click(), sel);
@@ -880,6 +966,16 @@ try {
     const save4 = async (name) => { prompts.length = 0; reply = name; await btn4('save'); reply = null; return prompts[0]; };
     const waitCall = (re, n = 1) => until(() => calls(re).length >= n);
     const near = (a, b) => Math.abs(a - b) < 1e-6;
+    const chip4 = () => dev4(() => { const e = document.querySelector('#dev .look-chip'); return e.hidden ? '' : e.textContent; });
+    const chipIs4 = (want) => until(async () => (await chip4()) === want);
+    const toast4 = async () => (await text4('#dev .arb-status')) ?? '';
+    const chips4 = () => dev4(() => [...document.querySelectorAll('#dev .arb-inrow .arb-in')].map((b) => `${b.textContent}:${b.getAttribute('aria-pressed')}`).join());
+    const chipsAre4 = (want) => until(async () => (await chips4()) === want);
+    const clickChip4 = (name) => dev4((n) => [...document.querySelectorAll('#dev .arb-inrow .arb-in')].find((b) => b.textContent === n).click(), name);
+    const origin4 = () => dev4(() => JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin ?? {});
+    const stars4 = () => dev4(() => Object.keys(JSON.parse(localStorage.getItem('komorebi.presets') || '{}')));
+    const focus4 = () => dev4(() => window.dispatchEvent(new Event('focus')));
+    const putAfter = (path) => { const i = seen.findLastIndex((c) => c.method === 'PUT' && c.path === path); return { put: seen[i], before: seen[i - 1] }; };
 
     // zen first: a visitor who never opens the advanced panel causes no /api/me (design §3.3)
     await page4.goto(`http://127.0.0.1:${port}/editor/index.html`, { waitUntil: 'load' });
@@ -899,10 +995,12 @@ try {
     await until(() => shown4('#dev .arb-cta'));
 
     // signed out: one button, and nothing that needs a session
-    check('opening advanced asks /api/me once; signed out, it offers "save your playlists in arboretum ↗"',
-      calls(/^GET \/api\/me$/).length === 1 && (await text4('#dev .arb-cta')) === 'save your playlists in arboretum ↗' && await shown4('#dev .arb-cta'));
-    check('and shows no ↑, no add to, no picker, and no playlist row', !(await shown4('#dev .arb-push')) && !(await shown4('#dev .arb-addto')) && !(await shown4('#dev .arb-picker'))
-      && !(await dev4(() => { const r = document.querySelectorAll('#dev select')[1].closest('.ctl'); return getComputedStyle(r).display !== 'none'; })));
+    check('opening advanced asks /api/me once; signed out, the last line of Presets is "keep your looks in arboretum ↗"',
+      calls(/^GET \/api\/me$/).length === 1 && (await text4('#dev .arb-cta')) === 'keep your looks in arboretum ↗' && await shown4('#dev .arb-cta'));
+    check('and shows no chips, no +, no playlist row, no "arboretum ·" line, and no ↑ / add to / picker / refresh',
+      !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row')) && !(await shown4('#dev .playlist-row button')) && (await text4('#dev .arb-who')) === ''
+      && !(await dev4(() => !!document.querySelector('.arb-push, .arb-addto, .arb-picker, .arb-refresh, .arb-head'))));
+    check('the look still has its chip: a built-in, unchanged', await chipIs4('built-in'), await chip4());
     const [popup] = await Promise.all([ctx4.waitForEvent('page'), click4('#dev .arb-cta')]);
     await popup.waitForURL('**/login').catch(() => {});
     check('the button opens arboretum\'s /login in a new tab', popup.url() === `http://127.0.0.1:${port}/login`, popup.url());
@@ -910,145 +1008,194 @@ try {
 
     // the sign-in cycle: back in the editor window, focus asks /api/me again
     server.signedIn = true;
-    await dev4(() => window.dispatchEvent(new Event('focus')));
-    await until(async () => !(await shown4('#dev .arb-cta')) && (await opts4(1)).length === 4);
-    check('on focus /api/me is asked again, and a 200 takes the button away', calls(/^GET \/api\/me$/).length === 2 && !(await shown4('#dev .arb-cta')));
-    check('the playlist select then lists your playlists beside On this browser, and "New playlist…" last', (await opts4(1)).join() === 'On this browser,morning,evening,New playlist…', (await opts4(1)).join());
-    check('and says who is signed in', /signed in as jo/.test((await text4('#dev .arb-who')) ?? ''), String(await text4('#dev .arb-who')));
+    await focus4();
+    await until(async () => (await text4('#dev .arb-who')) === 'arboretum · jo' && (await opts4(1)).length === 3);
+    check('on focus /api/me is asked again, the button goes, and the line reads "arboretum · jo"', calls(/^GET \/api\/me$/).length === 2 && !(await shown4('#dev .arb-cta')) && (await text4('#dev .arb-who')) === 'arboretum · jo');
+    check('the playlist select lists all looks, then your playlists, with no "New playlist…" option', (await opts4(1)).join() === 'all looks,morning,evening', (await opts4(1)).join());
+    check('signed in, the playlist row is shown with a +', await shown4('#dev .playlist-row') && await shown4('#dev .playlist-row button'));
+    check('your playlists are fetched once each, for the chips', calls(/^GET \/api\/playlists\/7$/).length === 1 && calls(/^GET \/api\/playlists\/8$/).length === 1);
+    const allLooks = await opts4(0);
+    check('all looks ends with a ☁ row for each of your presets that has no ★ here', allLooks.slice(-2).join() === '☁ dusk,☁ dawn', allLooks.slice(-3).join());
+    check('and the playful dropdown never lists one', await dev4(() => [...document.querySelectorAll('#play select')].every((s) => ![...s.options].some((o) => o.textContent.includes('☁')))));
 
-    // ↑ on a ★ saved from a built-in
+    // a ☁ row: picked, it becomes a ★ here (no duplicate) and the chip says where it is
+    await pick4(0, '☁21');
+    await waitCall(/^GET \/api\/presets\/21$/);
+    await until(async () => (await value4(0)) === 'dusk');
+    const afterPick = await opts4(0);
+    check('picking ☁ dusk fetches it, brings it in as a ★ and lands on it; the ☁ row is gone', afterPick.filter((t) => t === '★ dusk').length === 1 && !afterPick.includes('☁ dusk') && (await value4(0)) === 'dusk' && (await value4(1)) === 'local', afterPick.slice(-4).join());
+    check('the chip reads ☁ #21 v1', await chipIs4('☁ #21 v1'), await chip4());
+
+    // save is the one verb: a ★ from a built-in goes up at once
     await pick4(0, 'afternoon 7');
+    check('a built-in selected: "built-in"', await chipIs4('built-in'), await chip4());
     await slider4(0.12);
-    await save4('k4 mine');
-    check('↑ on a new ★ says "new preset"', (await text4('#dev .arb-push')) === '↑ new preset' && !(await dev4(() => document.querySelector('#dev .arb-push').disabled)), String(await text4('#dev .arb-push')));
-    await click4('#dev .arb-push');
+    check('an edit prefixes "● edited · "', await chipIs4('● edited · built-in'), await chip4());
+    const pre0 = await save4('k4 mine');
     await waitCall(/^POST \/api\/presets$/);
     const up = lastCall(/^POST \/api\/presets$/)?.body ?? {};
-    check('↑ POSTs /api/presets with parent look:<built-in> and no komorebi_commit', up.parent === 'look:afternoon 7' && up.name === 'k4 mine' && !('komorebi_commit' in up) && near(up.params?.cloud_thickness, 0.12), JSON.stringify({ ...up, params: '…' }));
-    await until(async () => (await text4('#dev .arb-push')) === '↑ new version of #12');
-    check('after the 201 the label reads "↑ new version of #12", and the status says what landed', (await text4('#dev .arb-push')) === '↑ new version of #12' && /#12 v1/.test((await text4('#dev .arb-status')) ?? ''), `${await text4('#dev .arb-push')} / ${await text4('#dev .arb-status')}`);
-    const origin4 = () => dev4(() => JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin ?? {});
+    check('save on a built-in offers no name, and POSTs /api/presets with parent look:<built-in> and no komorebi_commit', pre0 === '' && up.parent === 'look:afternoon 7' && up.name === 'k4 mine' && !('komorebi_commit' in up) && near(up.params?.cloud_thickness, 0.12), JSON.stringify({ ...up, params: '…' }));
+    check('the chip turns ☁ #12 v1 and the toast says what landed', await chipIs4('☁ #12 v1') && /^kept in arboretum · #12 v1$/.test(await toast4()), `${await chip4()} / ${await toast4()}`);
     const rec = (await origin4())['k4 mine'];
-    check('a ★ that went up is recorded as a synced copy of #12', rec?.id === 12 && rec.version === 1 && rec.owner === 'jo' && rec.synced === true, JSON.stringify(rec));
-    await pick4(0, 'afternoon 7');
-    check('↑ on an unchanged built-in is disabled, and says so', (await text4('#dev .arb-push')) === 'built-in · unchanged' && await dev4(() => document.querySelector('#dev .arb-push').disabled), String(await text4('#dev .arb-push')));
+    check('the ★ is recorded as a synced copy of #12', rec?.id === 12 && rec.version === 1 && rec.owner === 'jo' && rec.synced === true && !rec.pending, JSON.stringify(rec));
+    await slider4(0.35);
+    check('editing it says so over its cloud chip', await chipIs4('● edited · ☁ #12 v1'), await chip4());
+    const pre1 = await save4('k4 mine');
+    await waitCall(/^POST \/api\/presets\/12\/versions$/);
+    const ver = lastCall(/^POST \/api\/presets\/12\/versions$/)?.body ?? {};
+    check('save again pre-fills the ★\'s name and POSTs a new version of #12, with no parent', pre1 === 'k4 mine' && ver.name === 'k4 mine' && near(ver.params?.cloud_thickness, 0.35) && !('parent' in ver), JSON.stringify({ ...ver, params: '…' }));
+    check('the chip reads ☁ #12 v2', await chipIs4('☁ #12 v2') && /#12 v2/.test(await toast4()), `${await chip4()} / ${await toast4()}`);
 
-    // a cloud playlist of yours
-    await pick4(1, 'arb:7');
-    await until(async () => (await opts4(0)).join() === 'dawn,dusk');
-    check('activating a cloud playlist GETs it, and the dev select lists its items by name', calls(/^GET \/api\/playlists\/7$/).length === 1 && (await opts4(0)).join() === 'dawn,dusk', (await opts4(0)).join());
-    check('inside it the look is already online (no ↑) and delete is "remove"', !(await shown4('#dev .arb-push')) && (await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => b.textContent === 'remove'))));
-
-    await slider4(0.31);
-    const before = seen.length;
-    const pre = await save4('dawn');
-    await waitCall(/^POST \/api\/presets\/5\/versions$/);
-    check('save there pre-fills the item\'s name', pre === 'dawn', String(pre));
-    const ver = lastCall(/^POST \/api\/presets\/5\/versions$/)?.body ?? {};
-    check('save with the item yours POSTs a new version of it', ver.name === 'dawn' && near(ver.params?.cloud_thickness, 0.31) && !('parent' in ver), JSON.stringify({ ...ver, params: '…' }));
-    await until(async () => /#5 v2/.test((await text4('#dev .arb-status')) ?? ''));
-    check('and the status says "#5 v2", with no items written (the playlist already points at the preset)', /#5 v2/.test((await text4('#dev .arb-status')) ?? '') && seen.slice(before).every((c) => c.method !== 'PUT'), String(await text4('#dev .arb-status')));
-
-    await pick4(0, '1');
-    await slider4(0.44);
-    await page4.waitForTimeout(300);
-    await save4('dusk, mine');
+    // the playlists a look is in: one chip each, toggled with a fresh GET, the unavailable items sent back
+    check('under the save row: in: with a chip per playlist of yours, none lit for a look in none', await chipsAre4('morning:false,evening:false'), await chips4());
+    await clickChip4('morning');
+    await waitCall(/^PUT \/api\/playlists\/8\/items$/);
+    const m1 = putAfter('/api/playlists/8/items');
+    check('clicking morning GETs it fresh and PUTs it with this look\'s preset appended, and the chip lights', m1.before.path === '/api/playlists/8' && JSON.stringify(m1.put.body.items.map((i) => i.preset_id)) === '[12]' && await chipsAre4('morning:true,evening:false'), JSON.stringify(m1.put.body) + await chips4());
+    await clickChip4('evening');
     await waitCall(/^PUT \/api\/playlists\/7\/items$/);
-    const post = lastCall(/^POST \/api\/presets$/ )?.body ?? {};
-    check('save with the item someone else\'s POSTs your own new preset, parented on theirs', post.name === 'dusk, mine' && post.parent === 'preset:6@3' && near(post.params?.cloud_thickness, 0.44), JSON.stringify({ ...post, params: '…' }));
-    const iPut = seen.findLastIndex((c) => c.method === 'PUT' && c.path === '/api/playlists/7/items');
-    check('and replaces that item: a fresh GET first, the place kept, the unavailable item sent back with its times',
-      seen[iPut - 1].method === 'GET' && seen[iPut - 1].path === '/api/playlists/7'
-      && JSON.stringify(seen[iPut].body.items.map((i) => i.preset_id)) === JSON.stringify([5, server.nextPreset - 1, 99])
-      && seen[iPut].body.items[2].dwell_s === 40 && seen[iPut].body.items[2].crossfade_s === 7 && !('unavailable' in seen[iPut].body.items[2])
-      && seen[iPut].body.items[1].dwell_s === 12, JSON.stringify(seen[iPut]?.body));
-    await until(async () => (await opts4(0)).join() === 'dawn,dusk, mine');
-    check('the dev select then lists the replacement', (await opts4(0)).join() === 'dawn,dusk, mine', (await opts4(0)).join());
+    const e1 = putAfter('/api/playlists/7/items');
+    check('adding to evening keeps its other items in their places, the unavailable one sent back with its times',
+      e1.before.path === '/api/playlists/7' && JSON.stringify(e1.put.body.items.map((i) => i.preset_id)) === '[5,6,99,12]'
+      && e1.put.body.items[2].dwell_s === 40 && e1.put.body.items[2].crossfade_s === 7 && !('unavailable' in e1.put.body.items[2]) && await chipsAre4('morning:true,evening:true'), JSON.stringify(e1.put.body) + await chips4());
+    await clickChip4('evening');
+    await waitCall(/^PUT \/api\/playlists\/7\/items$/, 2);
+    const e2 = putAfter('/api/playlists/7/items');
+    check('clicking a lit chip takes the look out again: a fresh GET, the rest kept', e2.before.path === '/api/playlists/7' && JSON.stringify(e2.put.body.items.map((i) => i.preset_id)) === '[5,6,99]' && await chipsAre4('morning:true,evening:false'), JSON.stringify(e2.put.body) + await chips4());
 
-    await pick4(0, '1');
-    await btn4('remove');
-    await until(async () => (await opts4(0)).join() === 'dawn');
-    const rm = seen.findLastIndex((c) => c.method === 'PUT' && c.path === '/api/playlists/7/items');
-    check('remove PUTs the list without the item, from a fresh GET, the unavailable item kept', seen[rm - 1].path === '/api/playlists/7' && seen[rm - 1].method === 'GET'
-      && JSON.stringify(seen[rm].body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99]) && (await opts4(0)).join() === 'dawn', JSON.stringify(seen[rm]?.body));
-
-    // a new playlist
+    // + makes a private playlist, which becomes the active one and gets a chip
     reply = 'night';
-    await pick4(1, '+new');
+    await click4('#dev .playlist-row button');
     reply = null;
     await until(async () => (await value4(1)) === 'arb:9');
     const np = lastCall(/^POST \/api\/playlists$/)?.body;
-    check('"New playlist…" prompts, POSTs only the name, and makes the new playlist active', JSON.stringify(np) === '{"name":"night"}' && (await value4(1)) === 'arb:9' && (await opts4(0)).length === 0 && (await opts4(1)).includes('night'), JSON.stringify({ np, v: await value4(1), l: await opts4(0) }));
-
-    // add to: a ★ that is already online goes in without an upload; one that is not is uploaded first
+    check('+ prompts, POSTs only the name, and makes the new playlist active', JSON.stringify(np) === '{"name":"night"}' && (await value4(1)) === 'arb:9' && (await opts4(0)).length === 0 && (await opts4(1)).includes('night'), JSON.stringify({ np, v: await value4(1), l: await opts4(0) }));
+    check('and it has its chip', (await chips4()).startsWith('night:false'), await chips4());
     await pick4(1, 'local');
-    await page4.waitForTimeout(500);
+    await until(async () => (await value4(1)) === 'local');
     await pick4(0, 'k4 mine');
-    const posts = calls(/^POST \/api\/presets/).length;
-    await pick4(2, '8');
-    await waitCall(/^PUT \/api\/playlists\/8\/items$/);
-    const a1 = seen.findLastIndex((c) => c.method === 'PUT' && c.path === '/api/playlists/8/items');
-    check('add to puts a ★ that is online into the playlist, from a fresh GET, with no upload', calls(/^POST \/api\/presets/).length === posts && seen[a1 - 1].path === '/api/playlists/8' && JSON.stringify(seen[a1].body.items) === '[{"preset_id":12}]', JSON.stringify(seen[a1]?.body));
-    check('and says where', /morning/.test((await text4('#dev .arb-status')) ?? ''), String(await text4('#dev .arb-status')));
+    check('back in all looks the chips read the cached playlists: morning lit for #12', await chipsAre4('night:false,morning:true,evening:false'), await chips4());
+
+    // an upload that cannot happen now waits; the next successful /api/me check sends it
     await pick4(0, 'afternoon 7');
     await slider4(0.5);
-    await save4('k4 fresh');
-    await pick4(2, '8');
-    await waitCall(/^PUT \/api\/playlists\/8\/items$/, 2);
-    const a2 = seen.findLastIndex((c) => c.method === 'PUT' && c.path === '/api/playlists/8/items');
+    server.refuse = { status: 503, body: { error: 'upstream down' } };
+    const p0 = calls(/^POST /).length;
+    const pre2 = await save4('k4 later');
+    await waitCall(/^POST /, p0 + 1);
+    check('a 503 on save keeps the ★ and the chip says it waits', pre2 === '' && await chipIs4('⇡ waiting to go up') && (await origin4())['k4 later']?.pending === true, `${await chip4()} ${JSON.stringify((await origin4())['k4 later'])}`);
+    await focus4();
+    await waitCall(/^POST \/api\/presets$/, 3);
+    const later = lastCall(/^POST \/api\/presets$/)?.body ?? {};
+    check('on the next /api/me check it is pushed (a new preset, parented on the built-in), and the chip turns ☁', later.name === 'k4 later' && later.parent === 'look:afternoon 7' && await chipIs4('☁ #13 v1') && !(await origin4())['k4 later'].pending, `${JSON.stringify({ ...later, params: '…' })} ${await chip4()}`);
+
+    // adding a look that is not online yet uploads it first, by the same rule
+    await slider4(0.55);
+    server.refuse = { status: 503, body: { error: 'upstream down' } };
+    await save4('k4 offline');
+    await chipIs4('⇡ waiting to go up');
+    const p1 = calls(/^POST \/api\/presets$/).length;
+    await clickChip4('night');
+    await waitCall(/^PUT \/api\/playlists\/9\/items$/);
     const fresh = lastCall(/^POST \/api\/presets$/)?.body ?? {};
-    check('add to uploads a ★ that is not online first (the smart rule), then appends the new preset',
-      fresh.name === 'k4 fresh' && fresh.parent === 'look:afternoon 7' && JSON.stringify(seen[a2].body.items.map((i) => i.preset_id)) === JSON.stringify([12, server.nextPreset - 1]), JSON.stringify(seen[a2]?.body));
+    const n1 = putAfter('/api/playlists/9/items');
+    check('a chip on a look that is not online uploads it first, then appends the new preset',
+      calls(/^POST \/api\/presets$/).length === p1 + 1 && fresh.name === 'k4 offline' && fresh.parent === 'preset:13@1' && n1.before.path === '/api/playlists/9' && JSON.stringify(n1.put.body.items.map((i) => i.preset_id)) === '[14]', JSON.stringify({ ...fresh, params: '…' }) + JSON.stringify(n1.put.body));
+    check('and the chip turns ☁ #14 v1 with night lit', await chipIs4('☁ #14 v1') && await chipsAre4('night:true,morning:false,evening:false'), `${await chip4()} ${await chips4()}`);
 
-    // the picker: your own presets, saved into On this browser
-    check('the picker lists your own presets by name', (await dev4(() => [...document.querySelector('#dev .arb-picker select').options].map((o) => o.textContent).join())) === 'my presets ▾,dusk,dawn');
-    await dev4(() => { const s = document.querySelector('#dev .arb-picker select'); s.value = '21'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-    await waitCall(/^GET \/api\/presets\/21$/);
-    await until(async () => (await opts4(0)).includes('★ dusk'));
-    check('picking one fetches it and saves it into On this browser, selected', (await opts4(0)).includes('★ dusk') && (await value4(0)) === 'dusk' && (await value4(1)) === 'local', JSON.stringify({ v: await value4(0), l: await value4(1) }));
+    // saving a look that waits to go up sends it once: the pending push and the save are the same upload
+    await slider4(0.6);
+    server.refuse = { status: 503, body: { error: 'upstream down' } };
+    await save4('k4 twice');
+    await chipIs4('⇡ waiting to go up');
+    const p2 = calls(/^POST \/api\/presets/).length;
+    await save4('k4 twice');
+    await waitCall(/^POST \/api\/presets/, p2 + 1);
+    await new Promise((r) => setTimeout(r, 400));
+    check('saving a waiting look again uploads it once, not twice', calls(/^POST \/api\/presets/).length === p2 + 1 && !(await origin4())['k4 twice']?.pending, `${calls(/^POST \/api\/presets/).length - p2} ${JSON.stringify((await origin4())['k4 twice'])}`);
 
-    // refresh
-    lists[10] = { id: 10, name: 'dawn chorus', items: [] };
-    await click4('#dev .arb-refresh');
-    await until(async () => (await opts4(1)).includes('dawn chorus'));
-    check('refresh asks arboretum again for your playlists', (await opts4(1)).includes('dawn chorus'), (await opts4(1)).join());
-
-    // provenance (design §4.1): saving over a ★ that is on arboretum leaves its copy there behind; deleting the ★ forgets the record
-    check('a ★ brought in by the picker is recorded as a synced copy', (await origin4()).dusk?.id === 21 && (await origin4()).dusk.synced === true, JSON.stringify((await origin4()).dusk));
+    // a refusal is shown verbatim and is not pending
     await pick4(0, 'k4 mine');
     await slider4(0.7);
-    await save4('k4 mine');
-    check('saving over a ★ that is on arboretum marks the copy there as behind', (await origin4())['k4 mine']?.id === 12 && (await origin4())['k4 mine'].synced === false, JSON.stringify((await origin4())['k4 mine']));
-    await pick4(0, 'dusk');
-    await btn4('delete');
-    check('deleting a ★ forgets its record', !('dusk' in (await origin4())), JSON.stringify(Object.keys(await origin4())));
-
-    // arboretum's refusals, verbatim, on the status line
-    await pick4(0, 'k4 mine');
     const refusals = [
-      [422, { error: 'arboretum is pinned to komorebi abc1234; unknown keys: grain_size', keys: ['grain_size'] }],
       [422, { error: 'branch_levels must be 1–4', reason: 'out_of_range' }],
       [422, { error: "this is the built-in 'afternoon 7', unchanged — change something first", reason: 'builtin' }],
-      [429, { error: 'at most 1000 presets per user', limit: 'presets' }],
     ];
     for (const [status, body] of refusals) {
       server.refuse = { status, body };
       const n = calls(/^POST /).length;
-      await click4('#dev .arb-push');
+      await save4('k4 mine');
       await waitCall(/^POST /, n + 1);
-      await until(async () => (await text4('#dev .arb-status')) === body.error);
-      check(`${status} ${body.reason ?? body.limit ?? ''} is shown verbatim`, (await text4('#dev .arb-status')) === body.error, String(await text4('#dev .arb-status')));
+      await until(async () => (await toast4()) === body.error);
+      const o = (await origin4())['k4 mine'];
+      check(`${status} ${body.reason} is shown verbatim in the toast and the chip's title, and is not pending`,
+        (await toast4()) === body.error && (await dev4(() => document.querySelector('#dev .look-chip').title)).includes(body.error) && !o.pending && (await chip4()) === '★ saved here · ☁ #12 is older', `${await toast4()} | ${await chip4()} | ${JSON.stringify(o)}`);
     }
+    const afterRefusals = calls(/^POST /).length;
+    await focus4();
+    await page4.waitForTimeout(800);
+    check('and the next check does not retry it', calls(/^POST /).length === afterRefusals);
 
-    // a session that has ended mid-use: the button comes back
+    // a cloud playlist of yours
+    await pick4(1, 'arb:7');
+    await until(async () => (await opts4(0)).join() === 'dawn,dusk');
+    check('activating a cloud playlist GETs it fresh, and the look select lists its items by name', calls(/^GET \/api\/playlists\/7$/).length >= 3 && (await opts4(0)).join() === 'dawn,dusk', (await opts4(0)).join());
+    check('an item is a cloud look: ☁ #5 v1, and delete is "remove"', await chipIs4('☁ #5 v1') && (await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => b.textContent === 'remove'))), await chip4());
+    await pick4(0, '1');
+    check('and someone else\'s item says whose it is', await chipIs4("☁ #6 v3 · ana's"), await chip4());
+    await pick4(0, '0');
+    await slider4(0.31);
+    const before = seen.length;
+    const pre = await save4('dawn');
+    await waitCall(/^POST \/api\/presets\/5\/versions$/);
+    const verd = lastCall(/^POST \/api\/presets\/5\/versions$/)?.body ?? {};
+    check('save there pre-fills the item\'s name; with the item yours it POSTs a new version of it', pre === 'dawn' && verd.name === 'dawn' && near(verd.params?.cloud_thickness, 0.31) && !('parent' in verd), JSON.stringify({ ...verd, params: '…' }));
+    await until(async () => /#5 v2/.test(await toast4()));
+    check('the toast says "kept in arboretum · #5 v2", and no items were written (the playlist already points at the preset)', /^kept in arboretum · #5 v2$/.test(await toast4()) && seen.slice(before).every((c) => c.method !== 'PUT'), await toast4());
+    check('and it exists here too, as a ★ recorded as a synced copy of #5', (await stars4()).includes('dawn') && (await origin4()).dawn?.id === 5 && (await origin4()).dawn.synced === true, JSON.stringify((await origin4()).dawn));
+    await pick4(0, '1');
+    await slider4(0.44);
+    await page4.waitForTimeout(300);
+    await save4('dusk, mine');
+    await waitCall(/^PUT \/api\/playlists\/7\/items$/, 3);
+    const post = lastCall(/^POST \/api\/presets$/ )?.body ?? {};
+    check('save with the item someone else\'s POSTs your own new preset, parented on theirs', post.name === 'dusk, mine' && post.parent === 'preset:6@3' && near(post.params?.cloud_thickness, 0.44), JSON.stringify({ ...post, params: '…' }));
+    const rp = putAfter('/api/playlists/7/items');
+    check('and replaces that item: a fresh GET first, the place kept, the unavailable item sent back with its times',
+      rp.before.method === 'GET' && rp.before.path === '/api/playlists/7'
+      && JSON.stringify(rp.put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, server.nextPreset - 1, 99])
+      && rp.put.body.items[2].dwell_s === 40 && rp.put.body.items[2].crossfade_s === 7 && !('unavailable' in rp.put.body.items[2])
+      && rp.put.body.items[1].dwell_s === 12, JSON.stringify(rp.put.body));
+    await until(async () => (await opts4(0)).join() === 'dawn,dusk, mine');
+    check('the look select then lists the replacement', (await opts4(0)).join() === 'dawn,dusk, mine', (await opts4(0)).join());
+    await pick4(0, '1');
+    await btn4('remove');
+    await until(async () => (await opts4(0)).join() === 'dawn');
+    const rm = putAfter('/api/playlists/7/items');
+    check('remove PUTs the list without the item, from a fresh GET, the unavailable item kept', rm.before.path === '/api/playlists/7' && rm.before.method === 'GET'
+      && JSON.stringify(rm.put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99]) && (await opts4(0)).join() === 'dawn', JSON.stringify(rm.put.body));
+    await pick4(1, 'local');
+    await until(async () => (await value4(1)) === 'local');
+    const mineNow = await opts4(0);
+    check('back in all looks, what was saved there is listed once, as ★s (no ☁ row for dawn)', mineNow.includes('★ dawn') && mineNow.includes('★ dusk, mine') && !mineNow.includes('☁ dawn'), mineNow.slice(-6).join());
+
+    // a session that has ended mid-use: the sign-in line comes back, and the ★ waits
     server.signedIn = false;
-    await click4('#dev .arb-push');
+    await pick4(0, 'k4 mine');
+    await slider4(0.9);
+    await save4('k4 mine');
     await until(() => shown4('#dev .arb-cta'));
-    check('a 401 on a write brings the sign-in button back, and takes the session controls away', await shown4('#dev .arb-cta') && !(await shown4('#dev .arb-push')));
+    check('a 401 on a write brings the sign-in line back, and takes the chips, the + and the name away',
+      await shown4('#dev .arb-cta') && (await text4('#dev .arb-who')) === '' && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button')));
+    check('the ★ is kept and the chip says it waits', await chipIs4('⇡ waiting to go up') && (await origin4())['k4 mine']?.pending === true, await chip4());
+    const idle = seen.length;
+    await save4('k4 mine');
+    await page4.waitForTimeout(400);
+    check('a save while signed out (after a known session) asks nothing and keeps waiting', seen.length === idle && await chip4() === '⇡ waiting to go up', `${seen.length - idle} ${await chip4()}`);
 
     check('no request ever carried visibility', seen.every((c) => !/visibility/i.test(`${c.path} ${JSON.stringify(c.body ?? '')}`)), seen.find((c) => /visibility/i.test(JSON.stringify(c.body ?? '')))?.path);
     check('and arboretum raised no alert', alerts.length === 0, alerts.join(' | '));
-    const elsewhere = await dev4(() => ['play', 'strip'].filter((id) => /arboretum/i.test(document.getElementById(id).textContent) || document.getElementById(id).querySelector('.arb-push, .arb-cta, .arb-status, .arb-picker')));
+    const elsewhere = await dev4(() => ['play', 'strip'].filter((id) => /arboretum|☁/i.test(document.getElementById(id).textContent) || document.getElementById(id).querySelector('.arb-inrow, .arb-cta, .arb-status, .arb-who, .look-chip, .arb-in')));
     check('and nothing of it is in the playful sidebar or the zen strip', elsewhere.length === 0, elsewhere.join());
     await ctx4.close();
   }
@@ -1077,6 +1224,7 @@ try {
       if (u.pathname === '/api/health') return json({ ok: true, engine: 'abc1234' });
       if (u.pathname === '/api/me') return json({ username: 'jo', kind: 'session' });
       if (u.pathname === '/api/playlists') return json({ playlists: [{ id: 7, owner: 'jo', name: 'k4 cached' }] });
+      if (u.pathname === '/api/presets') return json({ presets: [] });
       return route.abort('failed');   // the playlist itself cannot be reached
     });
     await page5.goto(`http://127.0.0.1:${port}/editor/index.html`, { waitUntil: 'load' });
@@ -1087,9 +1235,9 @@ try {
     await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'local'; s.dispatchEvent(new Event('change', { bubbles: true })); });
     await page5.waitForTimeout(500);
     await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'arb:7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-    await page5.waitForFunction(() => /offline copy from/.test(document.querySelector('#dev .arb-status')?.textContent ?? ''), null, { timeout: 15000 }).catch(() => {});
-    const off = await page5.evaluate(() => ({ status: document.querySelector('#dev .arb-status')?.textContent, opts: [...document.querySelectorAll('#dev select')[0].options].map((o) => o.textContent), list: document.querySelectorAll('#dev select')[1].value }));
-    check('when the playlist cannot be fetched its cached copy is played, and the status says so', /^offline copy from /.test(off.status ?? '') && off.opts.join() === 'one,two' && off.list === 'arb:7', JSON.stringify(off));
+    await page5.waitForFunction(() => document.querySelector('#dev .look-chip')?.textContent === 'offline copy · 2023-11-14', null, { timeout: 15000 }).catch(() => {});
+    const off = await page5.evaluate(() => ({ status: document.querySelector('#dev .look-chip')?.textContent, opts: [...document.querySelectorAll('#dev select')[0].options].map((o) => o.textContent), list: document.querySelectorAll('#dev select')[1].value }));
+    check('when the playlist cannot be fetched its cached copy is played, and the look\'s chip says so, with the day it was fetched', off.status === 'offline copy · 2023-11-14' && off.opts.join() === 'one,two' && off.list === 'arb:7', JSON.stringify(off));
     await ctx5.close();
   }
   // ---- LINKS AND PLAY (K5), at /editor/ with page.route standing in for arboretum: the two link shapes, a failed link, playing a playlist, and the cache ----
@@ -1124,7 +1272,7 @@ try {
     const until5 = (pg, fn, arg, ms = 60000) => pg.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false);
     const landed = (pg, value) => until5(pg, (v) => document.querySelector('#dev select').value === v, value);
 
-    // #arboretum=<id>: saved into On this browser, "feel" lands on it, the hash is cleared
+    // #arboretum=<id>: saved into all looks, "feel" lands on it, the hash is cleared
     {
       const dusk = { id: 12, owner: 'ana', name: 'k5 dusk', version: 2, params: PRESETS.memories };
       const { ctx, pg, seen } = await open5('#arboretum=12', healthy((u, json) => (u.pathname === '/api/presets/12' ? json(200, dusk) : json(401, { error: 'sign in' }))));
@@ -1137,7 +1285,7 @@ try {
         list: JSON.parse(localStorage.getItem('komorebi.editor') || '{}').playlist,
         hash: location.hash,
       }));
-      check('#arboretum=12: it asks for preset 12, and after "feel" the dev select reads the imported ★, saved in On this browser', there && seen.includes('/api/presets/12') && a.label === '★ k5 dusk' && a.star && a.list === 'local', JSON.stringify({ there, ...a }));
+      check('#arboretum=12: it asks for preset 12, and after "feel" the dev select reads the imported ★, saved in all looks', there && seen.includes('/api/presets/12') && a.label === '★ k5 dusk' && a.star && a.list === 'local', JSON.stringify({ there, ...a }));
       check('it is a synced copy of #12 v2 by ana, and the hash is cleared', a.origin?.id === 12 && a.origin.version === 2 && a.origin.owner === 'ana' && a.origin.synced === true && a.hash === '', JSON.stringify(a));
       await ctx.close();
     }
@@ -1210,7 +1358,7 @@ try {
       await pg.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent === 'save').click());
       await until5(pg, () => document.querySelectorAll('#dev select')[1].value === 'local', null, 15000);
       const mine = await pg.evaluate(() => ({ list: document.querySelectorAll('#dev select')[1].value, value: document.querySelector('#dev select').value, star: 'k5 mine' in JSON.parse(localStorage.getItem('komorebi.presets') || '{}') }));
-      check('and save there makes a ★ in On this browser and switches to it, writing nothing to arboretum', mine.list === 'local' && mine.value === 'k5 mine' && mine.star && methods.slice(before).every((m) => m === 'GET'), JSON.stringify({ mine, after: seen.slice(before) }));
+      check('and save there makes a ★ in all looks and switches to it, writing nothing to arboretum', mine.list === 'local' && mine.value === 'k5 mine' && mine.star && methods.slice(before).every((m) => m === 'GET'), JSON.stringify({ mine, after: seen.slice(before) }));
       // the token comes back with a re-fetch
       await pg.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'arb:7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
       await until5(pg, () => document.querySelector('#dev select').value !== 'k5 mine', null, 15000);

@@ -1,8 +1,8 @@
 import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor } from './komorebi.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
-import { getStored, setStored, getPreset } from './presets-store.js';
-import { getState, entries, resolve, step, starValue, starName, entryName, playlists, plays, timing, detect, parseHash, makePlayer } from './playlists.js';
+import { mount, getStored, getPreset, getState } from './arboretum.js';
+import { entries, resolve, step, starValue, starName, entryName, cloudPresetId, lookState, playlists, plays, timing, parseHash, makePlayer } from './playlists.js';
 import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
@@ -12,7 +12,7 @@ import { LEAF_SHAPES } from './komorebi-leaf.js';
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
 // the playful macro sidebar, and the advanced dev panel (three depths of one control tree) — plus the HUD,
 // insets, preset management, sun-drag input, scene-transition stepping, and the auto-profiler UI. Pure
-// sub-concerns are split into siblings: presets-store.js (★ localStorage I/O), playlists.js (the lists the dropdown shows and the arrows step), macros.js (the control-bus
+// sub-concerns are split into siblings: arboretum.js (where every preset is kept: the ★ looks in localStorage, and arboretum online where the browser allows), playlists.js (the lists the dropdown shows and the arrows step), macros.js (the control-bus
 // macro mappings the upper rungs drive) and profiler.js (the cost taxonomy + variant algorithm). The
 // viewer-only player (player.html) is a separate, UI-less consumer of the same engine. ES modules — must be
 // SERVED over http(s) (`nix run .#dev`), not opened off the filesystem.
@@ -27,7 +27,7 @@ const fmt = (v) => Number.isInteger(v) ? String(v)
   : Math.abs(v)>=100 ? String(Math.round(v))   // big non-integers (azimuth / wind dir, step 1°) round to whole, not a 17-digit float
   : (+v).toFixed(2);
 
-// ---- presets: getStored/setStored/getPreset are imported from presets-store.js (built-ins + ★ localStorage) ----
+// ---- presets: the editor only saves, loads and lists looks through arboretum.js (getPreset: built-ins + ★ looks) ----
 const DEFAULT_PRESET = 'afternoon 7';   // the editor's working default + fallback look (preset DATA lives in presets.js)
 const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro, until "feel"
 
@@ -37,12 +37,13 @@ const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro
 // stands alone; ＋ climbs the ladder when you want more); the choice sticks thereafter. ----
 const SETTINGS_KEY = 'komorebi.editor';
 const settings = (() => {
-  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {} };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist
+  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {} };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name
   let s = base;
   try { s = Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch { /* unreadable: the defaults */ }
   if(typeof s.playlist !== 'string') s.playlist = 'local';
   if(!s.selected || typeof s.selected !== 'object') s.selected = {};
+  if(!s.open || typeof s.open !== 'object') s.open = {};
   return s;
 })();
 function saveSettings(){ try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* storage disabled — the mode just doesn't stick */ } }
@@ -56,16 +57,20 @@ const perf = eng.perf;
 // time-of-day is an editor-only INPUT method (it writes sun elevation/azimuth); not an engine param.
 if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
-function applyScope(scope){ stopPlay(); return eng.apply(scope); }          // slider/toggle rebuild — every edit of the look comes through here (or updateSunFromTime, a drag, species, paste, save), and stops play
+function applyScope(scope){ stopPlay(); chipSoon(); return eng.apply(scope); }   // slider/toggle rebuild — every edit of the look comes through here (or updateSunFromTime, a drag, species, paste, save), stops play and wakes the look's chip
 function reseed(){ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }   // same grove, grown again
-function applyParams(obj){ endTween(); eng.setParams(obj); syncAllControls(); }  // load a whole preset (instant)
+function applyParams(obj){ endTween(); eng.setParams(obj); syncAllControls(); chipSoon(); }  // load a whole preset (instant)
+// The chip under the look select (lookChip, built with the presets UI) says "● edited" once the live params leave the entry's, so it is
+// looked at again after each edit: at most every 200 ms, the last edit always read.
+let lookChip=null, chipTimer=0;
+function chipSoon(){ if(!chipTimer) chipTimer=setTimeout(()=>{ chipTimer=0; refreshChip(); }, 200); }
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
 
 // ===========================================================================
 // Dev panel
 // ===========================================================================
 const controlEls={};   // key -> {input, valEl}
-let dragSun=false;     // desktop canvas-drag mode: false = orbit the camera (the default — "make sense of things"), true = drag the sun (the novelty). Toggled by the Look-section button.
+let dragSun=false;     // desktop canvas-drag mode: false = orbit the camera (the default — "make sense of things"), true = drag the sun (the novelty). Toggled by the Scene area's button.
 // shape knobs the TREE_SPECIES bundles set — editing one means you've diverged from the picked species, so the
 // dropdown drops back to "— custom" (the tree_species label clears). Scene knobs (light/camera/wind) aren't here:
 // species is shape-only, so tweaking those keeps the species name (§4.5).
@@ -98,127 +103,20 @@ function frameShadow(){
 // scope: 'source' rebuilds the light; 'canopy' rebuilds+rebakes leaves;
 // 'textures' reallocates layer textures too; 'perf' resets auto-quality; '' just re-reads each frame.
 const PANEL = [
-  ['h','Source'],
-  ['s','cloud_thickness','CLOUD',0,1,0.01,'source'],
-  ['s','core_weight_fraction','core wt',0,1,0.01,'source'],
-  ['s','core_angular_radius_deg','core °',0.05,2,0.01,'source'],
-  ['adv','advanced'],
-  ['s','halo_angular_radius_deg','halo °',1,30,0.1,'source'],
-  ['t','eclipse','eclipse','source'],
-  ['s','eclipse_amount','ecl amt',0,1,0.01,'source'],
-
-  ['h','Canopy'],
-  ['species','species'],
-  ['s','tree_count','trees',1,16,1,'canopy'],
-  ['s','canopy_base_height_m','base h (m)',2,20,0.1,''],
-  ['s','canopy_extent_m','extent (m)',6,80,0.5,'textures'],   // the sky view needs boxes a floor look never did: the grove must reach far enough sideways to fill an upward frame
-  ['s','foliage_density','density',0.1,3,0.05,'canopy'],
-  ['s','branch_children','children',1,6,1,'canopy'],
-  ['s','branch_angle_deg','branch °',5,80,1,'canopy'],
-  ['s','branch_length_ratio','len ratio',0.3,0.92,0.01,'canopy'],
-  ['s','branch_pitch_deg','pitch °',0,80,1,'canopy'],
-  ['s','leader_strength','leader',0,1,0.01,'canopy'],
-  ['s','droop','droop',-1,1,0.01,'canopy'],
-  ['s','taper_delta','taper',1.2,3.5,0.05,'canopy'],
-  ['s','crown_aspect','crown',0.4,3,0.05,'canopy'],
-  ['sels','phyllotaxis','phyllo',[['spiral','spiral'],['whorled','whorled'],['opposite','opposite']],'canopy'],
-  ['sels','leaf_shape','leaf shape',[['ellipse','ellipse'],['maple','maple'],['beech','beech']],'canopy'],   // §4.5, P4a-2/3: the leaf's outline — a species bundle sets it (the maple's is 'maple'), and so does every other, so a pick never leaves the lobes behind; the beech has no bundle yet
-  ['s','leaf_variety','leaf variety',0,1.5,0.05,'canopy'],   // §4.5, P4a-4: how different the leaves are, tree from tree and sun from shade — only an outline varies, so it is hidden on the ellipse look (LOCAL_GATE); a new texture, so it dissolves rather than morphs (TOPO)
-  ['s','branch_tau','branches',0,5,0.05,'bake'],
-  ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
-  ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
-  ['s','trans_b','trans B',0.001,0.6,0.001,'canopy'],
-  ['s','phenology','phenology',0,1,0.01,'canopy'],            // §4.5: the season — 0.5 is summer, where the three below (and the turn clock) are inert and hidden
-  ['s','anthocyanin','anthocyanin',0,1.5,0.01,'canopy'],
-  ['s','tannin','tannin',0,1.5,0.01,'canopy'],
-  ['s','wall_fraction','vein share',0,0.6,0.01,'canopy'],
-  ['s','turn_exposure','sun first',0,1,0.01,'canopy'],         // §4.5: light orders the turn — the sunlit crown first and reddest
-  ['s','exposure_absolute','absolute light',0,1,0.01,'canopy'], // §4.5: what the exposure order is made of — sun first's, and the fall's while leaves let go by the light — 0 the grove's own rank of light, 1 the raw light (a shaded grove turns late and pale)
-  ['s','leaf_drop','leaf fall',0,1,0.01,'canopy'],             // §4.5: abscission — the share of leaves that let go by the end of the fall span; the rest hang on (marcescent). 0 = nothing falls
-  ['s','drop_exposure','sun falls first',0,1,0.01,'canopy'],   // §4.5: how far light orders the fall — the sunlit crown lets go first (it reads the same exposure sun first does)
-  ['sel','litter','litter',[['off',0],['on',1]],''],            // §4.7: the fallen leaves lie on the floor and the floor reflects off them — the carpet's own gate, apart from leaf fall so the canopy half can be judged alone. A select, not a checkbox: a preset writes 0/1, and a boolean would never equal it
-  ['btn','reseed', reseed],
-  ['adv','fine geometry'],
-  ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
-  ['s','branch_levels','levels',1,4,1,'canopy'],
-  ['s','leaves_per_cluster','leaves/twig',1,80,1,'canopy'],
-  ['s','cluster_spread_m','spread (m)',0.02,1,0.01,'canopy'],
-  ['s','inner_leaves','inner leaves',0,1,0.01,'canopy'],   // §4.5: leaves on the older wood, so the crown is full — the share of each twig's leaves hung back along the limbs it grew from; 0 = the hollow crown, leaves at the twigs only
-  ['s','leaf_size_m','leaf (m)',0.01,0.4,0.005,'canopy'],
-  ['s','leaf_aspect','aspect',1,4,0.05,'canopy'],
-  ['s','max_tilt','tilt',0,1,0.01,'canopy'],
-  ['s','edge_softness','edge',0.01,1,0.01,'canopy'],
-  ['s','turn_start','turn start',0,1,0.01,'canopy'],
-  ['s','turn_span','turn span',0.02,0.6,0.01,'canopy'],
-  ['s','turn_spread','turn spread',0,0.6,0.01,'canopy'],
-  ['s','tree_clock_spread','early trees',0,0.15,0.005,'canopy'],   // §4.5: one tree ahead of its neighbours — how far ahead the earliest tree can run; each tree draws its own lead, its whole clock moves (start, finish, letting go)
-  ['s','tree_pigment_spread','tree pigment',0,1,0.01,'canopy'],   // §4.5: each tree's own depth of red AND brown, 1 ± this; neighbours of one kind differ about two to one
-  ['s','drop_start','fall start',0,1,0.01,'canopy'],
-  ['s','drop_span','fall span',0.02,0.6,0.01,'canopy'],
-  ['s','drop_lag','fall lag',0,0.2,0.01,'canopy'],           // §4.5: with 'after its turn', how long a leaf that has finished turning hangs before it fades
-  ['sel','drop_after_turn','after its turn',[['off',0],['on',1]],'canopy'],   // §4.5: a leaf lets go only once it has turned (a regrow: it moves every leaf's day and the mid-turn colour). A select, not a checkbox, for litter's reason: a TOPO key that a preset writes as 0/1
-  ['s','litter_age','browns over',0.01,0.6,0.01,''],           // §4.7: how long a fallen leaf takes to go from its own hue to brown, in seasons (read at the next bake, which the carpet notices by itself)
-  ['s','litter_drift_m','carried',0,2,0.01,''],                // §4.7: metres a falling leaf is carried per metre of height, along the season's wind
-  ['s','leaf_wetness','wet',0,1,0.01,''],                      // §4.7: the rain day — fallen leaves darker and more saturated; an effective number, about 0.5 after rain
-
-  ['h','Transport'],
+  ['hc','Sun'],
   ['s','time_of_day','time (h)',5,19,0.25,'suntime'],
   ['s','latitude','latitude °',0,66,1,'suntime'],
   ['s','sun_elevation_deg','elev °',4,90,0.5,''],
   ['s','sun_azimuth_deg','azim °',0,360,1,''],
   ['s','sun_cosine','cosine',0,1,0.01,''],              // §3.5: the beam lands by the cosine of its incidence on every receiver — 0 is the old full-strength beam, byte for byte; a look that opens it re-sits its exposure
+  ['s','cloud_thickness','CLOUD',0,1,0.01,'source'],
+  ['s','core_weight_fraction','core wt',0,1,0.01,'source'],
+  ['s','core_angular_radius_deg','core °',0.05,2,0.01,'source'],
+  ['s','halo_angular_radius_deg','halo °',1,30,0.1,'source'],
+  ['t','eclipse','eclipse','source'],
+  ['s','eclipse_amount','ecl amt',0,1,0.01,'source'],
 
-  ['h','Look'],
-  ['s','view_extent_m','view (m)',0.5,40,0.1,''],
-  ['s','view_pitch_deg','tilt °',0,90,1,''],   // 90 is the zenith, which the sky view's looks sit at
-  ['s','view_yaw_deg','orbit °',-180,180,1,''],
-  ['s','view_center_x','pan x',-25,25,0.1,''],
-  ['s','view_center_y','pan y',-25,25,0.1,''],
-  ['s','view_fov_deg','fov °',10,110,1,''],
-  ['s','far_smear','far smear',0,8,0.25,''],
-  ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
-  ['t','sky_view','look up','textures'],   // the third camera (§4.9): forces the layer tier, so it reallocates like faithful_canopy does
-  ['s','sky_scatter','foliage glow',0,1,0.01,''],   // §4.9: single-scatter radiance — the sunlit crown lights up instead of only filtering
-  ['t','standing_scene','standing scene','canopy'],   // changes crown sizing (crown0 in regenCanopy) — needs a regrow, not just the live bulk-offset read
-  ['t','faithful_canopy','faithful tree','textures'],
-  ['s','trunk_radius_m','trunk r',0,0.5,0.01,'canopy'],
-  ['sel','receiver','receiver',[['floor',0],['curtain',1],['tent',2]],''],   // curtain handoff: the surface the light lands on — floor reflects, curtain transmits (moss velvet), tent stands that same cloth around you
-  ['s','fabric_tt','fabric Tt',0,1,0.01,''],
-  ['s','fabric_tint_r','moss R',0,1,0.01,''],
-  ['s','fabric_tint_g','moss G',0,1,0.01,''],
-  ['s','fabric_tint_b','moss B',0,1,0.01,''],
-  ['s','cloth_distance_m','cloth dist',-20,20,0.1,''],
-  ['s','fold_depth','drape',0,2,0.01,''],
-  ['s','fold_scale','pleats',0.3,12,0.1,''],
-  ['s','fold_coarsen','pleat coarsen',0,2,0.02,''],
-  ['s','fold_warp','pleat depth (m)',0,0.3,0.005,''],   // GEOMETRY (§4.9): displaces the cloth, so the cast bends — 'drape' above only shades it
-  ['s','velvet_sheen','velvet sheen',0,1.5,0.01,''],
-  ['s','fabric_scatter','pile scatter',0,1,0.01,''],
-  ['s','glow_bleed','glow bleed',0,1,0.01,''],       // THE GATE (§4.9): >0 routes the frame through linear HDR + two blur passes + a compositing tone-map
-  ['s','glow_bleed_m','bleed (m)',0,0.2,0.005,''],   // how far the weave carries the light, in cloth metres
-  ['s','mullion_tau','window bars',0,6,0.05,''],   // the gate: 0 = no window grid (analytic cloth-space occluder, curtain only)
-  ['s','mullion_pitch_m','pane (m)',0.05,2,0.01,''],
-  ['s','mullion_bar_m','bar (m)',0.002,0.15,0.001,''],
-  ['s','mullion_depth_m','bar depth (m)',0,0.5,0.005,''],
-  ['s','window_w_m','window w (m)',0,8,0.05,''],   // the gate: w×h = 0 = no aperture, the light runs to infinity (every look before this one)
-  ['s','window_h_m','window h (m)',0,8,0.05,''],
-  ['s','window_cx_m','window x',-10,10,0.05,''],
-  ['s','window_cy_m','window y',-10,10,0.05,''],
-  ['s','window_wall','wall leak',0,0.5,0.005,''],
-  ['s','tent_ridge_h_m','crown h (m)',0.4,3,0.05,''],     // the enclosure's polytope (receiver 'tent'): crown plane, arch run, crown flat, length, end lean, the foot hip cap
-  ['s','tent_half_w_m','half width (m)',0.4,3,0.05,''],
-  ['s','tent_crown_w_m','crown w (m)',0,1.5,0.01,''],     // 0 = no flat top, the walls meet in a ridge line (the v1 A-frame)
-  ['s','tent_shoulder_h_m','arch h (m)',0.1,2.5,0.01,''],   // the arch's widest point; clamped into [0.30,0.70]x crown height, outside which the profile doubles back
-  ['s','tent_shoulder_w_m','arch bulge (m)',0.2,3,0.01,''], // clamped UP to the straight base->crown line: below it the arc curves the wrong way and would slice the crown off
-  ['s','tent_len_m','length (m)',0.8,8,0.1,''],
-  ['s','tent_end_lean','end lean',0,2,0.02,''],
-  ['s','tent_end_apex_h_m','vent apex (m)',0.05,2,0.01,''],   // the top of the foot triangle, and where the two hips converge
-  ['s','tent_hip_rake','hip rake',0.15,2,0.01,''],            // how much faster the hips rake back than the end wall; floored so they never coincide with it
-  ['s','tent_eye_h_m','eye (m)',0,2,0.05,''],
-  ['s','tent_fade','depth fade',0,0.4,0.005,''],
-  ['s','tent_seam','ridge seam',0,6,0.05,''],   // the gate: 0 = no seam
-  ['s','tent_mesh','mesh band',0,1,0.01,''],    // per-panel MATERIAL: the sides above the shoulder hem turn to mesh
-  ['btn','frame shadow', ()=>frameShadow()],   // one-time camera framing onto the cast shadow (the off-frame-tree / shadow-only composition, spec §4.8) — a starting point to nudge, NOT an auto-track
+  ['hc','Colour & light'],
   ['s','exposure','exposure',0,4,0.01,''],
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
@@ -229,16 +127,90 @@ const PANEL = [
   ['s','sky_turbidity','haze β',0,0.5,0.01,''],
   ['s','mesopic_strength','dusk rods',0,1,0.01,''],
   ['s','chromatic_aberration','diffraction',0,6,0.1,''],
-  ['s','vignette','edge fade',0,1,0.01,''],            // §4.7: the projector's soft iris — the frame's light fades to black over the outer fraction; the gate, 0 = off byte for byte
-  ['s','vignette_shape','edge shape',2,8,0.1,''],      // its superellipse exponent: 2 an ellipse touching the edges, 8 a rounded rectangle; inert while the fade is 0
-  ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
-
-  ['h','Background'],
+  ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
+  ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
+  ['s','trans_b','trans B',0.001,0.6,0.001,'canopy'],
   ['s','ground_r','ground R',0,1,0.01,''],
   ['s','ground_g','ground G',0,1,0.01,''],
   ['s','ground_b','ground B',0,1,0.01,''],
+  ['s','vignette','edge fade',0,1,0.01,''],            // §4.7: the projector's soft iris — the frame's light fades to black over the outer fraction; the gate, 0 = off byte for byte
+  ['s','vignette_shape','edge shape',2,8,0.1,''],      // its superellipse exponent: 2 an ellipse touching the edges, 8 a rounded rectangle; inert while the fade is 0
 
-  ['h','Wind — coherent band'],
+  ['hc','Density'],
+  ['s','foliage_density','density',0.1,3,0.05,'canopy'],
+  ['s','tree_count','trees',1,16,1,'canopy'],
+  ['s','leaves_per_cluster','leaves/twig',1,80,1,'canopy'],
+  ['s','inner_leaves','inner leaves',0,1,0.01,'canopy'],   // §4.5: leaves on the older wood, so the crown is full — the share of each twig's leaves hung back along the limbs it grew from; 0 = the hollow crown, leaves at the twigs only
+  ['s','cluster_spread_m','spread (m)',0.02,1,0.01,'canopy'],
+  ['s','canopy_extent_m','extent (m)',6,80,0.5,'textures'],   // the sky view needs boxes a floor look never did: the grove must reach far enough sideways to fill an upward frame
+  ['s','canopy_thickness_m','depth (m)',0,10,0.1,''],
+  ['btn','reseed', reseed],
+
+  ['hc','Season'],
+  ['s','phenology','phenology',0,1,0.01,'canopy'],            // §4.5: the season — 0.5 is summer, where the three below (and the turn clock) are inert and hidden
+  ['s','turn_start','turn start',0,1,0.01,'canopy'],
+  ['s','turn_span','turn span',0.02,0.6,0.01,'canopy'],
+  ['s','turn_spread','turn spread',0,0.6,0.01,'canopy'],
+  ['s','tree_clock_spread','early trees',0,0.15,0.005,'canopy'],   // §4.5: one tree ahead of its neighbours — how far ahead the earliest tree can run; each tree draws its own lead, its whole clock moves (start, finish, letting go)
+  ['s','tree_pigment_spread','tree pigment',0,1,0.01,'canopy'],   // §4.5: each tree's own depth of red AND brown, 1 ± this; neighbours of one kind differ about two to one
+  ['s','anthocyanin','anthocyanin',0,1.5,0.01,'canopy'],
+  ['s','tannin','tannin',0,1.5,0.01,'canopy'],
+  ['s','wall_fraction','vein share',0,0.6,0.01,'canopy'],
+  ['s','turn_exposure','sun first',0,1,0.01,'canopy'],         // §4.5: light orders the turn — the sunlit crown first and reddest
+  ['s','exposure_absolute','absolute light',0,1,0.01,'canopy'], // §4.5: what the exposure order is made of — sun first's, and the fall's while leaves let go by the light — 0 the grove's own rank of light, 1 the raw light (a shaded grove turns late and pale)
+  ['s','leaf_drop','leaf fall',0,1,0.01,'canopy'],             // §4.5: abscission — the share of leaves that let go by the end of the fall span; the rest hang on (marcescent). 0 = nothing falls
+  ['s','drop_exposure','sun falls first',0,1,0.01,'canopy'],   // §4.5: how far light orders the fall — the sunlit crown lets go first (it reads the same exposure sun first does)
+  ['s','drop_start','fall start',0,1,0.01,'canopy'],
+  ['s','drop_span','fall span',0.02,0.6,0.01,'canopy'],
+  ['s','drop_lag','fall lag',0,0.2,0.01,'canopy'],           // §4.5: with 'after its turn', how long a leaf that has finished turning hangs before it fades
+  ['sel','drop_after_turn','after its turn',[['off',0],['on',1]],'canopy'],   // §4.5: a leaf lets go only once it has turned (a regrow: it moves every leaf's day and the mid-turn colour). A select, not a checkbox, for litter's reason: a TOPO key that a preset writes as 0/1
+  ['sel','litter','litter',[['off',0],['on',1]],''],            // §4.7: the fallen leaves lie on the floor and the floor reflects off them — the carpet's own gate, apart from leaf fall so the canopy half can be judged alone. A select, not a checkbox: a preset writes 0/1, and a boolean would never equal it
+  ['s','litter_age','browns over',0.01,0.6,0.01,''],           // §4.7: how long a fallen leaf takes to go from its own hue to brown, in seasons (read at the next bake, which the carpet notices by itself)
+  ['s','litter_drift_m','carried',0,2,0.01,''],                // §4.7: metres a falling leaf is carried per metre of height, along the season's wind
+  ['s','leaf_wetness','wet',0,1,0.01,''],                      // §4.7: the rain day — fallen leaves darker and more saturated; an effective number, about 0.5 after rain
+
+  ['hc','Leaves'],
+  ['sels','leaf_shape','leaf shape',[['ellipse','ellipse'],['maple','maple'],['beech','beech']],'canopy'],   // §4.5, P4a-2/3: the leaf's outline — a species bundle sets it (the maple's is 'maple'), and so does every other, so a pick never leaves the lobes behind; the beech has no bundle yet
+  ['s','leaf_size_m','leaf (m)',0.01,0.4,0.005,'canopy'],
+  ['s','leaf_aspect','aspect',1,4,0.05,'canopy'],
+  ['s','leaf_variety','leaf variety',0,1.5,0.05,'canopy'],   // §4.5, P4a-4: how different the leaves are, tree from tree and sun from shade — only an outline varies, so it is hidden on the ellipse look (LOCAL_GATE); a new texture, so it dissolves rather than morphs (TOPO)
+  ['s','max_tilt','tilt',0,1,0.01,'canopy'],
+  ['s','edge_softness','edge',0.01,1,0.01,'canopy'],
+
+  ['hc','Tree shape'],
+  ['species','species'],
+  ['s','branch_children','children',1,6,1,'canopy'],
+  ['s','branch_angle_deg','branch °',5,80,1,'canopy'],
+  ['s','branch_length_ratio','len ratio',0.3,0.92,0.01,'canopy'],
+  ['s','branch_pitch_deg','pitch °',0,80,1,'canopy'],
+  ['s','leader_strength','leader',0,1,0.01,'canopy'],
+  ['s','droop','droop',-1,1,0.01,'canopy'],
+  ['s','taper_delta','taper',1.2,3.5,0.05,'canopy'],
+  ['s','crown_aspect','crown',0.4,3,0.05,'canopy'],
+  ['sels','phyllotaxis','phyllo',[['spiral','spiral'],['whorled','whorled'],['opposite','opposite']],'canopy'],
+  ['s','branch_levels','levels',1,4,1,'canopy'],
+  ['s','branch_tau','branches',0,5,0.05,'bake'],
+  ['s','canopy_base_height_m','base h (m)',2,20,0.1,''],
+  ['s','trunk_radius_m','trunk r',0,0.5,0.01,'canopy'],
+  ['t','faithful_canopy','faithful tree','textures'],
+
+  ['hc','Scene'],
+  ['t','sky_view','look up','textures'],   // the third camera (§4.9): forces the layer tier, so it reallocates like faithful_canopy does
+  ['t','standing_scene','standing scene','canopy'],   // changes crown sizing (crown0 in regenCanopy) — needs a regrow, not just the live bulk-offset read
+  ['s','view_extent_m','view (m)',0.5,40,0.1,''],
+  ['s','view_pitch_deg','tilt °',0,90,1,''],   // 90 is the zenith, which the sky view's looks sit at
+  ['s','view_yaw_deg','orbit °',-180,180,1,''],
+  ['s','view_center_x','pan x',-25,25,0.1,''],
+  ['s','view_center_y','pan y',-25,25,0.1,''],
+  ['s','view_fov_deg','fov °',10,110,1,''],
+  ['s','far_smear','far smear',0,8,0.25,''],
+  ['s','sky_scatter','foliage glow',0,1,0.01,''],   // §4.9: single-scatter radiance — the sunlit crown lights up instead of only filtering
+  ['s','glow_bleed','glow bleed',0,1,0.01,''],       // THE GATE (§4.9): >0 routes the frame through linear HDR + two blur passes + a compositing tone-map
+  ['s','glow_bleed_m','bleed (m)',0,0.2,0.005,''],   // how far the weave carries the light, in cloth metres
+  ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
+  ['btn','frame shadow', ()=>frameShadow()],   // one-time camera framing onto the cast shadow (the off-frame-tree / shadow-only composition, spec §4.8) — a starting point to nudge, NOT an auto-track
+
+  ['hc','Wind'],
   ['sels','wind_pattern','pattern',[['steady','steady'],['gusty','gusty'],['squally','squally'],['choppy','choppy'],['lazy','lazy']],''],
   ['s','wind_strength','strength',0,2,0.01,''],
   ['s','wind_gustiness','gustiness',0,0.6,0.01,''],
@@ -261,14 +233,14 @@ const PANEL = [
   ['s','stem_length','stem (m)',0,1.5,0.01,''],
   ['s','leaf_swing','leaf swing',0,2,0.01,''],
   ['s','flutter_freq','flutter Hz',0,5,0.05,''],
-
-  ['hc','Leaf drift (incoherent band)'],
+  ['adv','leaf drift'],
   ['s','drift_amount','amount (m)',0,0.4,0.005,'bake'],
   ['s','drift_phase','phase',0,6.2832,0.01,'bake'],
   ['t','drift_auto','auto',''],
   ['s','drift_speed','speed',0,2,0.01,''],
 
   ['hc','Tune'],
+  ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
   ['s','sample_count','samples',16,48,1,'source'],
   ['sel','tex_resolution','res',[['1024',1024],['2048',2048],['4096',4096]],'textures'],
   ['s','layer_count','layers',1,MAX_LAYERS,1,'textures'],
@@ -285,16 +257,59 @@ const PANEL = [
   ['t','show_layer','show layer','' ],
   ['s','show_layer_index','layer #',0,MAX_LAYERS-1,1,''],
   ['btn','profile · measure & lighten', ()=>runProfile()],
+
+  ['hc','Lab'],
+  ['sel','receiver','receiver',[['floor',0],['curtain',1],['tent',2]],''],   // curtain handoff: the surface the light lands on — floor reflects, curtain transmits (moss velvet), tent stands that same cloth around you
+  ['s','fabric_tt','fabric Tt',0,1,0.01,''],
+  ['s','fabric_tint_r','moss R',0,1,0.01,''],
+  ['s','fabric_tint_g','moss G',0,1,0.01,''],
+  ['s','fabric_tint_b','moss B',0,1,0.01,''],
+  ['s','cloth_distance_m','cloth dist',-20,20,0.1,''],
+  ['s','fold_depth','drape',0,2,0.01,''],
+  ['s','fold_scale','pleats',0.3,12,0.1,''],
+  ['s','fold_coarsen','pleat coarsen',0,2,0.02,''],
+  ['s','fold_warp','pleat depth (m)',0,0.3,0.005,''],   // GEOMETRY (§4.9): displaces the cloth, so the cast bends — 'drape' above only shades it
+  ['s','velvet_sheen','velvet sheen',0,1.5,0.01,''],
+  ['s','fabric_scatter','pile scatter',0,1,0.01,''],
+  ['s','mullion_tau','window bars',0,6,0.05,''],   // the gate: 0 = no window grid (analytic cloth-space occluder, curtain only)
+  ['s','mullion_pitch_m','pane (m)',0.05,2,0.01,''],
+  ['s','mullion_bar_m','bar (m)',0.002,0.15,0.001,''],
+  ['s','mullion_depth_m','bar depth (m)',0,0.5,0.005,''],
+  ['s','window_w_m','window w (m)',0,8,0.05,''],   // the gate: w×h = 0 = no aperture, the light runs to infinity (every look before this one)
+  ['s','window_h_m','window h (m)',0,8,0.05,''],
+  ['s','window_cx_m','window x',-10,10,0.05,''],
+  ['s','window_cy_m','window y',-10,10,0.05,''],
+  ['s','window_wall','wall leak',0,0.5,0.005,''],
+  ['s','tent_ridge_h_m','crown h (m)',0.4,3,0.05,''],     // the enclosure's polytope (receiver 'tent'): crown plane, arch run, crown flat, length, end lean, the foot hip cap
+  ['s','tent_half_w_m','half width (m)',0.4,3,0.05,''],
+  ['s','tent_crown_w_m','crown w (m)',0,1.5,0.01,''],     // 0 = no flat top, the walls meet in a ridge line (the v1 A-frame)
+  ['s','tent_shoulder_h_m','arch h (m)',0.1,2.5,0.01,''],   // the arch's widest point; clamped into [0.30,0.70]x crown height, outside which the profile doubles back
+  ['s','tent_shoulder_w_m','arch bulge (m)',0.2,3,0.01,''], // clamped UP to the straight base->crown line: below it the arc curves the wrong way and would slice the crown off
+  ['s','tent_len_m','length (m)',0.8,8,0.1,''],
+  ['s','tent_end_lean','end lean',0,2,0.02,''],
+  ['s','tent_end_apex_h_m','vent apex (m)',0.05,2,0.01,''],   // the top of the foot triangle, and where the two hips converge
+  ['s','tent_hip_rake','hip rake',0.15,2,0.01,''],            // how much faster the hips rake back than the end wall; floored so they never coincide with it
+  ['s','tent_eye_h_m','eye (m)',0,2,0.05,''],
+  ['s','tent_fade','depth fade',0,0.4,0.005,''],
+  ['s','tent_seam','ridge seam',0,6,0.05,''],   // the gate: 0 = no seam
+  ['s','tent_mesh','mesh band',0,1,0.01,''],    // per-panel MATERIAL: the sides above the shoulder hem turn to mesh
 ];
 
+// The areas open the way he left them (settings.open, by area name); until he has touched one, these three are open: the
+// passes he makes most (colour and density for the projector, the season). The rest start closed.
+const OPEN_AREAS = new Set(['Colour & light', 'Density', 'Season']);
 function buildPanel(){
-  let container = dev;                                        // rows append here; an 'adv'/'hc' group redirects them into a <details>
-  const group=(text,cls)=>{ const d=document.createElement('details'); const s=document.createElement('summary');
-    s.textContent=text; s.dataset.tipKey=text; s.className=cls; d.appendChild(s); dev.appendChild(d); return d; };
+  let area = dev, container = dev;                            // rows append to `container`; an 'hc' area, or an 'adv' group inside one, redirects them into a <details>
+  const group=(text,cls,parent)=>{ const d=document.createElement('details'); const s=document.createElement('summary');
+    s.textContent=text; s.dataset.tipKey=text; s.className=cls; d.appendChild(s); parent.appendChild(d); return d; };
   for(const item of PANEL){
-    if(item[0]==='h'){ const h=document.createElement('h2'); h.textContent=item[1]; h.dataset.tipKey=item[1]; dev.appendChild(h); container=dev; continue; }
-    if(item[0]==='hc'){ container=group(item[1],'sec'); continue; }    // a whole collapsible section (closed by default)
-    if(item[0]==='adv'){ container=group(item[1],'adv'); continue; }   // a collapsible 'advanced' sub-group inside the current section
+    if(item[0]==='hc'){                                        // an area: a collapsible section whose state is remembered
+      const name=item[1], d=group(name,'sec',dev);
+      d.open = settings.open[name] ?? OPEN_AREAS.has(name);
+      d.addEventListener('toggle',()=>{ if(settings.open[name]!==d.open){ settings.open[name]=d.open; saveSettings(); } });
+      area=container=d; continue;
+    }
+    if(item[0]==='adv'){ container=group(item[1],'adv',area); continue; }   // a collapsible sub-group inside the current area (closed by default, not remembered)
     const row=document.createElement('div'); row.className='ctl';
     if(item[0]==='s'){
       const [,key,label,min,max,step,scope]=item;
@@ -429,8 +444,8 @@ function refreshGates(){
   gateSigLast = sig;
   const cam = cameraFor(params);
   for(const key of GATED_KEYS) if(controlEls[key]) controlEls[key].row.hidden = !rowLive(key, cam);
-  // a group or a heading with nothing left under it would dangle (the whole Background section, in every look
-  // that isn't a floor), so they follow their rows.
+  // an area, a sub-group or a heading with nothing left under it would dangle (the whole Lab, once you look up),
+  // so they follow their rows — a sub-group's rows count toward its area too.
   for(const d of dev.querySelectorAll('details')) d.hidden = ![...d.querySelectorAll('.ctl')].some(r => !r.hidden);
   let head=null, any=false;
   for(const el of dev.children){
@@ -527,7 +542,7 @@ function presetRow(withPlay){
 }
 const presetNameEls=[];
 function syncPlayPreset(){ if(presetSel) for(const el of presetNameEls) el.textContent = entryName(getState(), getStored(), activeList(), presetSel.value); }
-// ▶/■ shows only while the active playlist carries dwell times (a cloud playlist); On this browser has none. Playing
+// ▶/■ shows only while the active playlist carries dwell times (a cloud playlist); all looks has none. Playing
 // (playlists.js makePlayer) holds each look for its dwell and then steps to the next, which fades in over its own
 // crossfade; the dwell starts once that look has arrived (goTo), and the look play starts on has no fade in.
 const playBtns=[];
@@ -701,16 +716,18 @@ function buildStrip(){
 // ---- tooltips: lead with a plain "this does that", then build up to the why. Hover any knob or
 // heading. Different people think differently, so each starts simple and goes deeper underneath. ----
 const TIPS = {
-  // section headings
-  'advanced':"<b>The cloud's finer dials — set once, rarely touched.</b> Halo size, sample count (smoothness vs. speed), and the eclipse demo. Folded away so the everyday CLOUD and sharpness knobs sit up top.",
-  'fine geometry':"<b>The canopy's set-and-forget shape.</b> Leaf size, aspect and rest-tilt, cluster spread, recursion depth, texture detail — dialled in once for the whole piece, not per look. (Your presets never change them.)",
+  // area headings (and the nested groups); the row tips follow
+  'Sun':"<b>Where the sun is, and how sharp it is.</b> Its place in the sky (by clock or by angle) and the cloud that softens it: a small sun is crisp, a big hazy one melts every dapple.",
+  'Colour & light':"<b>How the light is shown and what it is made of.</b> Brightness, contrast, the sky that fills the shadows, the colour a leaf passes, the ground the light lands on, and the projector's edge fade — the passes you set for a screen.",
+  'Density':"<b>How full the grove is.</b> Foliage density, trees and leaves, and the size of the patch they grow in; the dice roll a new arrangement.",
+  'Season':"<b>The year, from spring to leaf-off.</b> The phenology slider and everything it sets going: when leaves turn, how red and brown they go, when they let go, and the litter they leave on the floor.",
+  'Leaves':"<b>What one leaf is.</b> Its outline, size, aspect, tilt at rest and how soft its edge is.",
+  'Tree shape':"<b>The tree's own form.</b> Species, how the branches fork, fan and droop, the crown, the wood's shadow and the trunk; the faithful tree casts it as it really stands.",
+  'Scene':"<b>Where you stand and what you look at.</b> The camera (zoom, tilt, orbit, pan, lens), looking up, the standing tree, and the glow and haze that come with a view.",
+  'Wind':"<b>The breeze.</b> The coherent wind that moves the whole canopy together, with the springs it moves through and the faint leaf drift folded away beneath it.",
+  'Lab':"<b>Curtain, tent and window experiments.</b> The receiver, the cloth it is made of, the window and the tent — kept apart from the floor looks.",
   'spring mechanics':"<b>How the branches feel in the wind — tuned once.</b> The gust envelope, spring stiffness / ceiling / damping / backlash, and the per-level limb &amp; twig flex. Per scene you really only change strength and direction above.",
-  'Source':"<b>The light itself.</b> The sun here isn't a single dot — it's a little cloud of sample-suns covering the sun's real size (plus any haze around it). That finite size is the reason every shadow edge is soft. These knobs shape the light.",
-  'Canopy':"<b>The trees.</b> A small grove, grown branch by branch, with leaves on the twig-tips. You never actually see the tree — only the shadow it throws on the ground — so we only bother modelling what changes that shadow.",
-  'Transport':"<b>Where the sun sits in the sky.</b> Sets how the dapples stretch on the tilted ground — and now also the colour of the light and how cool the shadows go at dusk.",
-  'Look':"<b>The finishing touches — brightness, contrast, colour.</b> Everything here is about how the picture is shown, never the simulation underneath.",
-  'Wind — coherent band':"<b>The breeze that moves the whole canopy together.</b> Pick a <b>pattern</b> for its character, then dial how much, how gusty, how frequent, and which way. The trunk slides the pattern sideways while limbs and twigs lean and spring back; deep lulls let it swing back through rest, and a crosswind keeps it from being a dead-straight slide.",
-  'Leaf drift (incoherent band)':"<b>The faint, fidgety wind from all sides at once.</b> Each leaf jiggles on its own, so gaps reshuffle — merging and splitting like light on the floor of a pool — instead of sliding. (A preview of the second kind of wind.)",
+  'leaf drift':"<b>The faint, fidgety wind from all sides at once.</b> Each leaf jiggles on its own, so gaps reshuffle — merging and splitting like light on the floor of a pool — instead of sliding. (A preview of the second kind of wind.)",
   'Tune':"<b>Performance vs. quality — set once for the machine, not the look.</b> Sample count, texture &amp; bake resolution, depth layers, the auto-60fps governor, and the adaptive-fps idle saver. Two opt-in optimizations live here (bake res, adaptive fps) that trade a little fidelity for speed — the profiler (<b>profile</b> below) measures them and can both lighten a heavy look and spend spare budget on quality.",
   'Debug':"<b>Tools for peeking under the hood.</b> These don't change the art.",
   bake_resolution:"<b>Resolution of the leaf-shadow bake, split off from texture res.</b> Lower it to make the per-frame bake (the windy-look cost the auto-governor can't touch) ~quadratically cheaper, at the price of softening the very sharpest sub-leaf gaps. <i>follow tex</i> = match texture res (no change). Opt-in; A/B it in the profiler.",
@@ -718,7 +735,6 @@ const TIPS = {
   adaptive_idle_fps:"<b>The reduced rate 'adaptive fps' falls to</b> in low-motion frames. Lower saves more but steps the slow shimmer more visibly.",
   'Presets':"<b>Saved looks.</b> Built-in ones are marked •, your own ★ (saved in this browser). Copy/paste JSON to share a look with someone. Step between them live with the <b>← →</b> arrow keys.",
   'fade':"<b>How long a scene change takes.</b> Stepping presets with ← → cross-dissolves over this many seconds: the look morphs while a soft cloud drifts over to hide the trees and branches regrowing behind it. 0 = instant cut.",
-  // Source
   sample_count:"<b>Smoothness of the light, traded against speed.</b> More samples = silkier dapples; fewer = faster. It's how many tiny suns we spread across the sun's disk. Auto-quality trims it when the frame rate dips.",
   core_angular_radius_deg:"<b>How big the sun looks — the master softness of every dapple.</b> A bigger sun blurs the shadows more. Tiny gaps stop showing their own shape and instead cast little pictures of the sun — that's what a dapple is. (Real sun ≈ 0.27°; presets often nudge it bigger for a dreamier feel.)",
   halo_angular_radius_deg:"<b>How wide the cloudy glow around the sun spreads.</b> Thin cloud smears the sun into a big halo; this is its size, and it shows up as the CLOUD knob goes up.",
@@ -726,7 +742,6 @@ const TIPS = {
   cloud_thickness:"<b>The master 'cloudiness' dial — turn it up and everything melts soft.</b> Drifting cloud simply makes the sun look bigger and blurrier, so the dapples bloom, dim and lose contrast all together. The single most expressive control in here.",
   eclipse:"<b>A little science demo, not weather.</b> Slides a moon across the sun so it becomes a crescent — and watch every dapple on the ground turn into a crescent too. That's the proof the dapples are pictures of the sun, not the shapes of the gaps.",
   eclipse_amount:"<b>How far the moon covers the sun</b> — i.e. how thin the crescent gets. Only matters with 'eclipse' on.",
-  // Canopy
   layer_count:"<b>How many depth-slices the tree is flattened into (3–4).</b> The one spot where we cheat. Higher slices shift more as the sun moves, so taller leaves blur more — some dapples crisp, some soft, for free. The eye can't count the slices.",
   canopy_base_height_m:"<b>How high the lowest leaves are.</b> A taller canopy gives bigger, softer dapples (a 10 m tree casts ~10 cm-soft edges). It also gives the branches a longer lever to sway on.",
   canopy_thickness_m:"<b>How deep the leafy layer is, top to bottom.</b> More depth = a wider mix of sharp (low) and soft (high) dapples.",
@@ -819,13 +834,11 @@ const TIPS = {
   canopy_extent_m:"<b>How big the simulated patch of ground is.</b> It has to be bigger than what you're viewing (with room for the sun to shift things), or dapples run off the edge. The grove auto-fits inside it.",
   tex_resolution:"<b>Detail of the leaf-shadow map.</b> Higher resolves the tiniest gaps (the sharpest dapples) but costs more. 1024 is usually plenty for something this soft.",
   reseed:"<b>Roll a new random tree layout.</b> Same kind of grove, freshly grown — a different arrangement of trees, branches and leaves.",
-  // Transport / time of day
   time_of_day:"<b>Set the sun by clock time instead of by angle.</b> Drag from dawn through noon to dusk and the sun rises, arcs over, and sets — warming the light and stretching the dapples as it goes. It works out the real sun position for a spring day at your latitude, and writes the elevation/azimuth below.",
   latitude:"<b>Where on Earth you are — it sets how high the noon sun climbs.</b> Near the equator the midday sun is nearly overhead; far north it stays low and raking all day. (45° ≈ Montreal, where this all began.)",
   sun_elevation_deg:"<b>How high the sun is — drag it down for sunset.</b> A low sun stretches the dapples into long ellipses, turns the light warm and orange, and lets the shade go cool blue. The most scene-changing knob. (Or just drag on the picture.)",
   sun_azimuth_deg:"<b>Which compass direction the sun is in.</b> Turns the direction the dapples stretch and lean.",
   sun_cosine:"<b>Let the sun's height light the ground.</b> A low sun spreads its light thin across the floor, the way a torch held at a slant does, so with this up the day brightens toward noon and dims toward dusk at a fixed exposure. At 0 every sun lands at full strength whatever its height (what every look has always done); at 1 the floor takes the cosine of the sun's angle, the curtain and the tent theirs. A look that turns it on re-sits its exposure — about ×2.3 higher for a 26° sun — because the law is measured from a sun straight overhead. The sun you see is unchanged: the disk looks as bright at any height, and the skylight is not sunlight, so it keeps its level. Not shown when looking up.",
-  // Look
   view_extent_m:"<b>Zoom — how much ground you see.</b> Small = a close-up of a few big dapples; large = a wide field of many small ones. (It's the span at screen centre, so it holds as you tilt.)",
   view_pitch_deg:"<b>Tilt — straight down vs. out along the floor.</b> 0° is the old top-down map; raise it and you're sitting under the tree — the near floor drops to the bottom of frame, the far floor recedes and dissolves into haze. (Or just drag up/down on the picture.)",
   view_yaw_deg:"<b>Orbit — spin the view around.</b> Rotates which compass direction is 'up the screen' on the floor, so you can walk around the structure and make sense of it from any side. (Or just drag left/right on the picture.) Doesn't move the sun, so the shadows stay physically cast as you turn.",
@@ -851,12 +864,9 @@ const TIPS = {
   vignette:"<b>Edge fade — burns the corners.</b> Fades the frame's edges to black so a projected picture pools instead of showing its rectangle; the value is how much of the way in from the edge the fade reaches. 0 = off.",
   vignette_shape:"<b>Edge shape.</b> From round (2) to rounded-rectangle (8). Does nothing while the edge fade is 0.",
   tone_map:"<b>How over-bright light is squeezed onto the screen.</b> ACES is the soft, filmy default; Reinhard is simpler; None just clips the brightest bits.",
-  // Background
-  'Background':"<b>The floor the light lands on.</b> Plain white by default; tint it and it reads like real ground. The dapples reflect off it — deep shade goes dark earth, midtones warm brown, and only the hottest spots still burn toward white. (A couple of the afternoon looks carry a warm Mount-Royal dirt; all three at 1 = white floor.)",
   ground_r:"<b>How much RED the ground reflects.</b> Earth is warm, so red leads — it's what makes the floor read as soil rather than concrete. 1 = pure white on this channel.",
   ground_g:"<b>How much GREEN the ground reflects.</b> Mid for brown dirt; raise it toward mossy or grassy ground, drop it for redder clay.",
   ground_b:"<b>How much BLUE the ground reflects.</b> Low for warm dirt; raise it toward grey gravel or cool stone.",
-  // Wind — coherent
   wind_pattern:"<b>The character of the wind.</b> Real wind isn't one frequency — it's a whole spread of them at once, and these are different recipes for that spread. <b>steady</b>: smooth rolling breeze. <b>gusty</b>: the natural default. <b>squally</b>: bursty, comes in clustered shoves with deep lulls. <b>choppy</b>: nervous, fine, cold-front edge. <b>lazy</b>: a very slow faint stir. All five read the same knobs below — they just shape them differently.",
   wind_strength:"<b>How much wind — how hard it blows.</b> 0 = still. Turn it up and the branches bend, fight at the peak of a gust, then snap back.",
   wind_gustiness:"<b>How alive vs. steady the wind is.</b> Low = a smooth, near-constant lean; high = it surges and drops, and the deep lulls let the branches swing all the way back through rest (and even past it). This is the 'is it gusty' knob — real open-air wind sits around 0.1–0.25.",
@@ -878,12 +888,10 @@ const TIPS = {
   stem_length:"<b>Where a twig bends from.</b> Pivoting a clump from its own middle makes it spin in place (an ugly little whirlpool); offsetting the pivot toward the branch makes it swing like a real twig. Set it to 0 and the whirlpools come back.",
   leaf_swing:"<b>How much each leaf rocks in the wind.</b> A rocking leaf turns edge-on and back, so dapples change shape and blink — not just slide. This is a big part of what makes it read as wind at all.",
   flutter_freq:"<b>How fast the leaves flutter.</b> The quick trembling on top of the slow sway — the glisten.",
-  // Leaf drift
   drift_amount:"<b>How much the leaves jiggle in place.</b> 0 = frozen; a little = a faint twinkle; a lot = the gaps fully reshuffle, merging and splitting like light on the bottom of a pool.",
   drift_phase:"<b>Scrub the jiggle by hand.</b> Slides every leaf around its little loop. Because it's a loop, the pattern comes right back to where it started each cycle.",
   drift_auto:"<b>Let the jiggle run on its own.</b> A hands-free preview of that faint, all-directions wind.",
   drift_speed:"<b>How fast the jiggle runs</b> when 'auto' is on.",
-  // Debug
   auto_quality:"<b>Auto-tunes quality to hold ~60 fps.</b> Drops the cheapest quality first (resolution, then sample count) when things get heavy, and is slow to crank back up. Never touches the look — only the sharpness.",
   show_source:"<b>Show a little map of the sun</b> you're sampling (centre + glow) in the corner. Watch it change as you move CLOUD or eclipse.",
   show_layer:"<b>Peek at one raw depth-slice</b> of leaf shadows, instead of the finished picture. <i>(Inert in faithful-tree mode — there the canopy isn't baked into depth slices.)</i>",
@@ -905,7 +913,7 @@ dev.addEventListener('scroll', ()=>{ tip.style.display='none'; });
 // ---- time of day: an alternative to the raw sun angle. Works out the sun's elevation & azimuth for a
 // SPRING day (equinox, so declination ≈ 0) at the chosen latitude, and writes them to the sun knobs. --
 function updateSunFromTime(){
-  stopPlay();
+  stopPlay(); chipSoon();
   const lat=(params.latitude||0)*DEG, H=(params.time_of_day-12)*15*DEG;   // hour angle: 15°/hr, 0 at solar noon
   const el = Math.asin(clamp(Math.cos(lat)*Math.cos(H), -1, 1))/DEG;      // equinox: elevation = asin(cos lat · cos H)
   const az = (180 + Math.atan2(Math.sin(H), Math.cos(H)*Math.sin(lat))/DEG + 360) % 360;  // east → south → west
@@ -915,21 +923,22 @@ function updateSunFromTime(){
 }
 
 // ---- presets UI: dropdown + save/delete + copy/paste JSON -------------------
-// What the dropdown shows and the arrows walk is the ACTIVE PLAYLIST's entries (playlists.js): On this browser —
-// the built-ins, then the ★ looks — or a cached arboretum playlist. The EXPERIMENTAL looks are hidden unless the
+// What the dropdown shows and the arrows walk is the ACTIVE PLAYLIST's entries (playlists.js): all looks —
+// the built-ins, then the ★ looks, then (signed in) your arboretum presets with no ★ here yet, as ☁ rows only this
+// dropdown lists — or a cached arboretum playlist. The EXPERIMENTAL looks are hidden unless the
 // settings toggle shows them, but the one you're ON always stays listed (flipping the toggle mid-look must not
 // strand you).
-let presetSel, playlistSel, playlistRow, deleteBtn;
+let presetSel, playlistSel, playlistRow, plusBtn, deleteBtn;
 const presetRows={};                               // where arboretum.js puts its controls: the save row and the copy/paste row
-let arb=null;                                      // arboretum.js's hooks once it has mounted; null leaves On this browser as it was
+let arb=null;                                      // arboretum.js's hooks, set at the end of the file; null only while the panel is being built
 const BUILTINS = { PRESETS, EXPERIMENTAL };
 const presetSelects=[];                            // every surface's preset dropdown; presetSel (the dev one) is the canonical value
-// A playlist that has left the cache falls back to On this browser.
+// A playlist that has left the cache falls back to all looks.
 function activeList(){
   const a=settings.playlist;
   return a.startsWith('arb:') && getState().playlists[a.slice(4)] ? a : 'local';
 }
-const listEntries = (keep) => entries(getState(), getStored(), BUILTINS, settings.showBeta, activeList(), keep);
+const listEntries = (keep, cloud=[]) => entries(getState(), getStored(), BUILTINS, settings.showBeta, activeList(), keep, cloud);   // `cloud`: the ☁ rows, for the one dropdown that lists them
 const resolveEntry = (value) => resolve(getState(), getStored(), activeList(), value);
 // The entry you were last on in the active playlist, else its first.
 function resumeAt(){
@@ -937,28 +946,32 @@ function resumeAt(){
   const list=listEntries(was);
   return list.some(e=>e.value===was) ? was : list[0]?.value;
 }
-// A visit opens on the editor's default look in On this browser, and where you left off in a cloud playlist.
+// A visit opens on the editor's default look in all looks, and where you left off in a cloud playlist.
 const landing = () => activeList()==='local' ? DEFAULT_PRESET : resumeAt();
 function refreshPresetSelect(selected){
   const keep=selected ?? presetSel.value;
-  const list=listEntries(keep);
+  const list=listEntries(keep), withCloud=listEntries(keep, arb?.cloudPresets());
   for(const sel of presetSelects){
+    const rows = sel===presetSel ? withCloud : list;            // arboretum shows in the advanced panel alone: the playful dropdown never lists a ☁ row
     sel.innerHTML='';
-    for(const e of list){ const o=document.createElement('option'); o.value=e.value; o.textContent=e.label; sel.appendChild(o); }
+    for(const e of rows){ const o=document.createElement('option'); o.value=e.value; o.textContent=e.label; sel.appendChild(o); }
     sel.value=keep;                                             // every surface shows the same selection
   }
-  if(keep && settings.selected[activeList()]!==keep){ settings.selected[activeList()]=keep; saveSettings(); }
+  if(keep && cloudPresetId(keep)===null && settings.selected[activeList()]!==keep){ settings.selected[activeList()]=keep; saveSettings(); }
   syncPlayPreset();                                             // the stepper labels mirror the name
   syncPlaylistUI();
 }
-// the playlist select exists once there is a second playlist to swap to; until then no row, and no ▶
+// the playlist select exists once there is a second playlist to swap to — or at once, with a `+` beside it, when arboretum is
+// mounted and you are signed in; until then no row, and no ▶
 function syncPlaylistUI(){
   if(playlistSel){
     const lists=arb ? arb.lists() : playlists(getState());
+    const signedIn=!!arb?.info().me;
     playlistSel.innerHTML='';
     for(const l of lists){ const o=document.createElement('option'); o.value=l.value; o.textContent=l.label; playlistSel.appendChild(o); }
     playlistSel.value=activeList();
-    playlistRow.hidden = lists.length<2;
+    plusBtn.hidden = !signedIn;
+    playlistRow.hidden = !signedIn && lists.length<2;
   }
   if(deleteBtn){
     const cloud = arb && activeList()!=='local';
@@ -967,11 +980,21 @@ function syncPlaylistUI(){
   }
   syncPlayButtons();
   arb?.changed();
+  refreshChip();
+}
+// The chip under the look select: where this look lives, in a few words (playlists.js lookState). Live params stand aside while a
+// transition carries them, so a look fading in is not "edited".
+function refreshChip(){
+  if(!lookChip) return;
+  const i=arb?.info() ?? {};
+  const c=lookState(getState(), getStored(), activeList(), presetSel.value, eng.trans.active ? null : params, i.me ?? null, i);
+  lookChip.textContent=c.text; lookChip.title=c.title; lookChip.hidden=c.text==='';
 }
 // Select an entry and ease to it: the arrows, the swipe, and a playlist swap. A cloud entry brings its own crossfade.
 // While playing, a look's dwell starts when it has arrived (onEnd), and nothing waits while it fades in; a step by hand
 // is the same, so it restarts the dwell.
 function goTo(value){
+  if(cloudPresetId(value)!==null){ loadEntry(value); return; }               // a ☁ row is brought in, not faded to
   const t=timing(getState(), activeList(), value);
   endTween();
   player.leaving();
@@ -980,6 +1003,11 @@ function goTo(value){
   refreshPresetSelect(value);                                               // reflect target in the dropdown = next step's origin
 }
 function loadEntry(value){                          // the dropdown: an instant load
+  const cloud=cloudPresetId(value);
+  if(cloud!==null){                                 // a ☁ row: arboretum brings the preset in as a ★, which lands here; if it cannot, the selection goes back
+    arb?.bringIn(cloud).then((ok)=>{ if(!ok) refreshPresetSelect(settings.selected[activeList()]); });
+    return;
+  }
   const p=resolveEntry(value);
   if(p) applyParams(p);
   refreshPresetSelect(value);
@@ -991,20 +1019,29 @@ function setActive(list){
   const value=resumeAt();
   if(value===undefined) refreshPresetSelect(''); else goTo(value);
 }
-// A ★ is written to On this browser whatever playlist you were on; the list then shows it.
+// A ★ is written to all looks whatever playlist you were on; the list then shows it.
 function saveStar(name, p){
-  arb?.saved(name, activeList(), presetSel.value);   // before the selection moves: it is where this ★ came from
-  const s=getStored(); s[name]=JSON.parse(JSON.stringify(p)); setStored(s);
+  arb.writeStar(name, p);                            // before the selection moves: it is where this ★ came from
   settings.playlist='local'; saveSettings();
   refreshPresetSelect(starValue(name));
 }
-// Save: a ★ in On this browser, or — in a cloud playlist of yours, once arboretum has mounted — a look uploaded to arboretum.
-// Someone else's playlist is read-only (design §3.5): saving there keeps a ★ of your own.
+// Save is the one way to keep a look: a ★ in all looks, which — once arboretum has mounted and you are signed in — goes up at
+// once; in a cloud playlist of yours it is uploaded and placed there (and is a ★ too). Someone else's playlist is read-only
+// (design §3.5): saving there keeps a ★ of your own.
 function saveLook(name, p){
   stopPlay();
-  if(arb && activeList()!=='local' && arb.writable()) arb.save(name, p); else saveStar(name, p);
+  if(arb && activeList()!=='local' && arb.writable()){ arb.save(name, p); return; }
+  saveStar(name, p);
+  arb?.keep(name);
 }
-function showStar(name){                           // a ★ arboretum.js has just brought in: On this browser, on that look
+// The save button and ⌘S / Ctrl+S: ask for a name, then keep the look.
+function promptSave(){
+  const here=entryName(getState(), getStored(), activeList(), presetSel.value);
+  const fromBuiltin=activeList()==='local' && starName(getStored(), 'local', presetSel.value)===null;
+  const n=(prompt('Save preset as:', fromBuiltin ? '' : here)||'').trim(); if(!n) return;   // a ★ or a cloud item offers its own name; a built-in's is not yours to reuse
+  saveLook(n, params);
+}
+function showStar(name){                           // a ★ arboretum.js has just brought in: all looks, on that look
   settings.playlist='local'; saveSettings(); stopPlay();
   loadEntry(starValue(name));
 }
@@ -1025,29 +1062,27 @@ function buildPresetUI(){
   presetSel.addEventListener('change',()=>loadEntry(presetSel.value));
   presetSelects.push(presetSel);
   r1.appendChild(presetSel); dev.appendChild(r1);
+  lookChip=document.createElement('div'); lookChip.className='look-chip';   // directly under the look select, in every editor
+  lookChip.style.cssText='font-size:11px;color:#9fb89f;margin:-1px 0 4px;word-break:break-word';
+  dev.appendChild(lookChip);
   // below the preset select, not above it: the first select in #dev stays the preset dropdown
-  playlistRow=document.createElement('div'); playlistRow.className='ctl select'; playlistRow.hidden=true;
+  playlistRow=document.createElement('div'); playlistRow.className='ctl select playlist-row'; playlistRow.hidden=true;
   playlistSel=document.createElement('select');
   playlistSel.addEventListener('change',()=>{
     const v=playlistSel.value;
-    if(!arb) setActive(v);
-    else if(v==='+new') arb.create();
-    else arb.activate(v);
+    if(arb) arb.activate(v); else setActive(v);
   });
-  playlistRow.appendChild(playlistSel); dev.appendChild(playlistRow);
+  plusBtn=mkBtn('+',()=>arb?.create()); plusBtn.title='new playlist'; plusBtn.hidden=true;   // signed in to arboretum only
+  playlistRow.append(playlistSel, plusBtn); dev.appendChild(playlistRow);
 
   const r2=document.createElement('div'); r2.className='ctl';
   deleteBtn=mkBtn('delete',()=>{
     if(activeList()!=='local'){ arb?.remove(); return; }     // taking a look out of an arboretum playlist is written to arboretum
-    const n=starName(getStored(), 'local', presetSel.value), s=getStored();
+    const n=starName(getStored(), 'local', presetSel.value);
     if(n===null){ alert("Built-in presets can't be deleted."); return; }
-    delete s[n]; setStored(s); arb?.deleted(n); refreshPresetSelect(DEFAULT_PRESET); });
+    arb.deleteStar(n); refreshPresetSelect(DEFAULT_PRESET); });
   r2.append(
-    mkBtn('save',()=>{
-      const here=entryName(getState(), getStored(), activeList(), presetSel.value);
-      const fromBuiltin=activeList()==='local' && starName(getStored(), 'local', presetSel.value)===null;
-      const n=(prompt('Save preset as:', fromBuiltin ? '' : here)||'').trim(); if(!n) return;   // a ★ or a cloud item offers its own name; a built-in's is not yours to reuse
-      saveLook(n, params); }),
+    mkBtn('save',promptSave),
     deleteBtn,
     playButton());
   dev.appendChild(r2);
@@ -1176,7 +1211,7 @@ canvas.addEventListener('pointermove',e=>{
     px=e.clientX; py=e.clientY; return;                        // vertical is committed on release
   }
   if(!dragging) return;
-  stopPlay();
+  stopPlay(); chipSoon();
   if(dragSun){                                                   // novelty mode: drag positions the sun (as before)
     params.sun_azimuth_deg = (params.sun_azimuth_deg + (e.clientX-px)*0.3 + 360)%360;
     params.sun_elevation_deg = clamp(params.sun_elevation_deg - (e.clientY-py)*0.3, 4, 90);
@@ -1196,7 +1231,7 @@ canvas.addEventListener('pointermove',e=>{
 // mouse wheel = zoom the camera (view extent), in both drag modes; preventDefault so the page doesn't scroll
 canvas.addEventListener('wheel', e=>{
   e.preventDefault();
-  stopPlay();
+  stopPlay(); chipSoon();
   params.view_extent_m = clamp(params.view_extent_m * Math.exp(e.deltaY*0.0015), 0.5, 40);
   syncControl('view_extent_m');
 }, { passive:false });
@@ -1224,6 +1259,11 @@ window.addEventListener('keydown',e=>{
     if(settings.mode==='min' && !strip.classList.contains('hidden')){
       if(strip.classList.contains('faded')) stripWake(); else strip.classList.add('faded');
     } else togglePanel();
+    return;
+  }
+  if((e.metaKey||e.ctrlKey) && (k==='s'||k==='S')){                         // ⌘S / Ctrl+S: save, not the browser's save-page
+    e.preventDefault();
+    if(!document.body.classList.contains('intro')) promptSave();
     return;
   }
   if(k==='r'||k==='R'){ reseed(); return; }
@@ -1532,7 +1572,7 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
     if(eng.trans.active && performance.now()<arriveBy){ setTimeout(arrive, 500); return; }   // the tier clock is frame-clamped, so wall time can stretch; wait it out, don't guess it
     slideInPanel(); stripWake();
   }
-  // `opened` is what arboretum.js made of the link: { value } (a ★ in On this browser) | { list, value, play } | { failed } | null (no link, or arboretum is off)
+  // `opened` is what arboretum.js made of the link: { value } (a ★ in all looks) | { list, value, play } | { failed } | null (no link, or arboretum is off)
   function land(opened){
     let at, playOnce=false;
     if(opened?.failed) showHint(`arboretum: ${opened.failed}`);    // a first-run visitor is in zen and would see nothing else; the look is the usual landing
@@ -1560,19 +1600,23 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
   });
 })();
 
-// ---- arboretum: loaded only where `detect` names its origin (komorebi.eljojo.net, or arboretum's own dev server). On a fork
-// or komorebi's own dev server `detect` answers null without a request, and arboretum.js is never fetched. ----
+// ---- arboretum: the place the presets are kept, whether online or not (arboretum.js). It runs everywhere: the ★ looks are its
+// local tier; on a fork it asks the network for nothing but a link the person opened (any origin may read), and only where
+// `detect` names its origin (komorebi.eljojo.net, or arboretum's own dev server) does it add the session: sign-in, the cloud
+// playlists and the controls for them. ----
 const link = parseHash(location.hash);
 // What the editor lends arboretum.js, and nothing else of itself.
 const arbHost = {
   params, rows: presetRows,
   active: activeList, value: () => presetSel.value,
-  sync: syncPlaylistUI,                                         // the playlist select and the buttons that follow the active list
+  sync: () => refreshPresetSelect(),                            // re-list (the ☁ rows follow your presets), then the playlist select, the chip and the buttons that follow the active list
   select: refreshPresetSelect,                                  // re-list the active playlist, on this entry
   reload: () => refreshPresetSelect(resumeAt()),                // ...after its items changed under it
   activate: setActive,
   show: showStar,
   advancedShown: () => !dev.classList.contains('hidden'),
 };
-// A link is opened as soon as arboretum has mounted; `linkReady` is what the welcome gate waits on (null where arboretum is off).
-const linkReady = detect(location, fetch).then((origin) => { if(origin) return import('./arboretum.js').then((m) => { arb = m.mount(origin, arbHost); syncPlaylistUI(); return link ? arb.open(link) : null; }); return null; });
+arb = mount(arbHost);
+syncPlaylistUI();
+// A link is opened as soon as arboretum is up; `linkReady` is what the welcome gate waits on (null without a link).
+const linkReady = link ? arb.open(link) : null;

@@ -21,6 +21,14 @@ function fake(...answers) {
 }
 const rejection = async (p) => { try { await p; } catch (e) { return e; } throw new Error("did not reject"); };
 
+test("a reader (credentials: omit) sends no cookie on any call, for the anonymous GETs of a link on any origin", async () => {
+  const f = fake({ body: {} });
+  const a = api(ORIGIN, f.fetchImpl, { credentials: "omit" });
+  await a.preset(12, { k: "tok" });
+  await a.playlist(7);
+  expect(f.calls.map((c) => c.init.credentials)).toEqual(["omit", "omit"]);
+});
+
 test("each call goes to its route with the method arboretum expects, and credentials", async () => {
   const f = fake({ body: {} });
   const a = api(ORIGIN, f.fetchImpl);

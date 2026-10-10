@@ -826,11 +826,11 @@ test("the wind slip, pinned to what the spec quotes: park 1's squally wind from 
 });
 
 // ---- 13. the editor ------------------------------------------------------------------------------------------------------------------------
-test("the editor offers it: a canopy row after the spread, and a help text in the editor's voice", () => {
+test("the editor offers it: a canopy row in the Density area, just before the spread, and a help text in the editor's voice", () => {
   const src = read("./editor.js");
   const row = src.indexOf("['s','inner_leaves','inner leaves',0,1,0.01,'canopy']"), spread = src.indexOf("['s','cluster_spread_m'");
   expect(row, "the row").toBeGreaterThan(-1);
-  expect(row).toBeGreaterThan(spread);
-  expect(row - spread, "right after cluster_spread_m").toBeLessThan(200);
+  expect(row).toBeLessThan(spread);
+  expect(spread - row, "right before cluster_spread_m").toBeLessThan(500);
   expect(src, "its help").toMatch(/\n {2}inner_leaves:"<b>/);
 });

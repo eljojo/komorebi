@@ -1,10 +1,9 @@
-// Tests for playlists.js — the pure playlist model beside presets-store.js. Run: `bun test playlists.test.js`.
-// bun has no localStorage, so each test installs a fresh in-memory shim (the presets-store.test.js pattern).
+// Tests for playlists.js — the pure playlist model; the storage under it is arboretum.js (arboretum-storage.test.js). Run: `bun test playlists.test.js`.
 import { test, expect, beforeEach } from "bun:test";
-import { ARB_KEY, getState, setState, detect, parseHash, entries, resolve, step, builtinTwin,
+import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted, onPushed,
   uploadPlan, itemsAfter, playlists, plays, timing, starValue, starName, entryName,
-  fromEntry, onlineId, pushButton, placeChange, fromVersion, linkPlaylist, writable, makePlayer } from "./playlists.js";
+  fromEntry, onlineId, placeChange, cloudPresetId, sameLook, lookState, markPending, clearPending, pendingNames, playlistChips, fromVersion, linkPlaylist, writable, makePlayer } from "./playlists.js";
 import * as builtins from "./presets.js";
 import { DEFAULTS, cameraFor } from "./komorebi.js";
 
@@ -19,38 +18,6 @@ beforeEach(() => {
 });
 
 const EMPTY = { v: 1, me: null, origin: {}, playlists: {} };
-
-// ---- state ------------------------------------------------------------------
-
-test("getState is the empty v1 object when nothing is stored", () => {
-  expect(getState()).toEqual(EMPTY);
-});
-
-test("getState is the empty v1 object when the value is corrupt", () => {
-  localStorage.setItem(ARB_KEY, "}{ not json");
-  expect(getState()).toEqual(EMPTY);
-  localStorage.setItem(ARB_KEY, "[1,2]");
-  expect(getState()).toEqual(EMPTY);
-  localStorage.setItem(ARB_KEY, JSON.stringify({ v: 2, origin: { a: { parent: "look:x" } } }));
-  expect(getState()).toEqual(EMPTY);
-});
-
-test("setState / getState round-trips", () => {
-  const s = { v: 1, me: { username: "jo" }, origin: { a: { id: 3, version: 1, owner: "jo", synced: true } }, playlists: {} };
-  setState(s);
-  expect(getState()).toEqual(s);
-});
-
-test("getState fills in the fields a stored v1 object lacks", () => {
-  localStorage.setItem(ARB_KEY, JSON.stringify({ v: 1, me: { username: "jo" } }));
-  expect(getState()).toEqual({ ...EMPTY, me: { username: "jo" } });
-});
-
-test("setState never throws without localStorage; getState degrades to empty", () => {
-  delete globalThis.localStorage;
-  expect(() => setState(EMPTY)).not.toThrow();
-  expect(getState()).toEqual(EMPTY);
-});
 
 // ---- detect: the one gate (design §1) --------------------------------------------
 
@@ -257,21 +224,21 @@ test("entryName is the look's name: the ★'s, the built-in's, or the cloud item
 // ---- the playlists a visitor can pick, and what playing needs --------------------------
 
 test("playlists lists On this browser first, then the cached arboretum playlists by their names", () => {
-  expect(playlists(EMPTY)).toEqual([{ value: "local", label: "On this browser" }]);
+  expect(playlists(EMPTY)).toEqual([{ value: "local", label: "all looks" }]);
   let s = cachePlaylist(EMPTY, apiList());
   s = cachePlaylist(s, apiList({ id: 8, name: "other" }));
   expect(playlists(s)).toEqual([
-    { value: "local", label: "On this browser" }, { value: "arb:7", label: "mine" }, { value: "arb:8", label: "other" }]);
+    { value: "local", label: "all looks" }, { value: "arb:7", label: "mine" }, { value: "arb:8", label: "other" }]);
 });
 
 test("playlists lists yours as arboretum names them, then the cached ones that are not among them", () => {
   let s = cachePlaylist(EMPTY, apiList({ name: "old name" }));
   s = cachePlaylist(s, apiList({ id: 8, name: "someone's" }));
   expect(playlists(s, [{ id: 9, name: "new" }, { id: 7, name: "mine now" }])).toEqual([
-    { value: "local", label: "On this browser" }, { value: "arb:9", label: "new" }, { value: "arb:7", label: "mine now" },
+    { value: "local", label: "all looks" }, { value: "arb:9", label: "new" }, { value: "arb:7", label: "mine now" },
     { value: "arb:8", label: "someone's" }]);
   expect(playlists(EMPTY, [{ id: 3, name: "fresh" }])).toEqual([
-    { value: "local", label: "On this browser" }, { value: "arb:3", label: "fresh" }]);
+    { value: "local", label: "all looks" }, { value: "arb:3", label: "fresh" }]);
 });
 
 test("plays: only a cached cloud playlist with something in it carries dwell times", () => {
@@ -668,13 +635,6 @@ test("onlineId is the arboretum preset an entry already is: a cloud item, or a �
   expect(onlineId(state, stored, "arb:7", "3")).toBeNull();
 });
 
-test("pushButton says what the smart button does, or that a built-in is unchanged and disables it", () => {
-  expect(pushButton({ kind: "version", label: "↑ new version of #12" })).toEqual({ label: "↑ new version of #12", disabled: false });
-  expect(pushButton({ kind: "preset", label: "↑ new preset" })).toEqual({ label: "↑ new preset", disabled: false });
-  const refused = "this is the built-in 'afternoon 7', unchanged — change something first";
-  expect(pushButton({ refused })).toEqual({ label: "built-in · unchanged", disabled: true, title: refused });
-});
-
 test("placeChange turns where an upload goes into the change itemsAfter applies", () => {
   expect(placeChange({ playlist: 7, at: 2 }, 31)).toEqual({ kind: "replace", at: 2, preset_id: 31 });
   expect(placeChange({ playlist: 7, at: null }, 31)).toEqual({ kind: "append", preset_id: 31 });
@@ -730,9 +690,9 @@ test("playlists labels a cached playlist that is not yours with its owner, once 
   let s = cachePlaylist(EMPTY, apiList({ owner: "jo" }));
   s = cachePlaylist(s, apiList({ id: 8, name: "evening", owner: "ana" }));
   expect(playlists(s, [], "jo")).toEqual([
-    { value: "local", label: "On this browser" }, { value: "arb:7", label: "mine" }, { value: "arb:8", label: "evening · ana" }]);
-  expect(playlists(s, [{ id: 7, name: "mine" }], "jo").map((l) => l.label)).toEqual(["On this browser", "mine", "evening · ana"]);
-  expect(playlists(s).map((l) => l.label)).toEqual(["On this browser", "mine", "evening"]);   // not signed in: names only, as before
+    { value: "local", label: "all looks" }, { value: "arb:7", label: "mine" }, { value: "arb:8", label: "evening · ana" }]);
+  expect(playlists(s, [{ id: 7, name: "mine" }], "jo").map((l) => l.label)).toEqual(["all looks", "mine", "evening · ana"]);
+  expect(playlists(s).map((l) => l.label)).toEqual(["all looks", "mine", "evening"]);   // not signed in: names only, as before
 });
 
 // ---- playing (design §3.6): the dwell starts when a look has arrived, the first look has no fade in ----------
@@ -824,4 +784,184 @@ test("onChange says when playing starts or stops, and only then", () => {
   expect(log.changed).toBe(1);
   p.stop(); p.stop();
   expect(log.changed).toBe(2);
+});
+
+// ---- the shelf: one list of looks, one chip per look, pending uploads, and the playlists a look is in ---------------
+
+test("the local list is called all looks", () => {
+  expect(LOCAL_NAME).toBe("all looks");
+  expect(playlists(EMPTY)).toEqual([{ value: "local", label: "all looks" }]);
+});
+
+const mineList = [{ id: 21, owner: "jo", name: "dusk", version: 1 }, { id: 22, owner: "jo", name: "dawn", version: 3 }];
+
+test("entries of all looks end with a ☁ row for each of your presets that has no ★ here, valued ☁<id>", () => {
+  expect(entries(EMPTY, { x: {} }, fake, false, "local", "a", mineList)).toEqual([
+    { value: "a", label: "• a" }, { value: "c", label: "• c" }, { value: "x", label: "★ x" },
+    { value: "☁21", label: "☁ dusk" }, { value: "☁22", label: "☁ dawn" }]);
+  expect(entries(EMPTY, {}, fake, false, "local", "a")).toEqual(entries(EMPTY, {}, fake, false, "local", "a", []));   // no list (signed out, no arboretum): none
+});
+
+test("a preset that already has a ★ appears once, as the ★ — synced or not", () => {
+  const state = { ...EMPTY, origin: { x: { id: 21, version: 1, owner: "jo", synced: true }, y: { id: 22, version: 1, owner: "jo", synced: false }, z: { parent: "look:a" } } };
+  const list = entries(state, { x: {}, y: {}, z: {} }, fake, false, "local", "a", mineList);
+  expect(list.map((e) => e.label)).toEqual(["• a", "• c", "★ x", "★ y", "★ z"]);
+  expect(entries(onDeleted(state, "x"), { y: {}, z: {} }, fake, false, "local", "a", mineList).map((e) => e.label)).toContain("☁ dusk");   // forgetting the ★ brings the row back
+});
+
+test("a cloud playlist's entries have no ☁ rows", () => {
+  expect(entries(cloud([item("one")]), {}, fake, false, "arb:7", "0", mineList).map((e) => e.label)).toEqual(["one"]);
+});
+
+test("cloudPresetId reads the id off a ☁ value, and nothing off any other", () => {
+  expect(cloudPresetId("☁21")).toBe(21);
+  for (const v of ["a", "★ a", "0", "", undefined, "☁", "☁x"]) expect(cloudPresetId(v)).toBeNull();
+});
+
+test("a ★ named like a ☁ value gets a value of its own, so the two never collide", () => {
+  expect(starValue("☁21")).toBe("★ ☁21");
+  expect(starName({ "☁21": {} }, "local", "★ ☁21")).toBe("☁21");
+  expect(starName({ "☁21": {} }, "local", "☁21")).toBeNull();
+});
+
+// ---- sameLook: the equality builtinTwin uses, for the chip's "edited" ----
+
+test("sameLook compares every DEFAULTS key, ignoring the overlays and drift_phase, with a tolerance on numbers", () => {
+  const a = clone("afternoon 7");
+  expect(sameLook(a, { ...a })).toBe(true);
+  expect(sameLook(a, { ...a, show_source: !a.show_source, show_layer_index: 3 })).toBe(true);
+  expect(sameLook(a, { ...a, drift_phase: a.drift_phase + 2 })).toBe(true);   // animated state: it would mark every look edited
+  expect(sameLook(a, { ...a, exposure: a.exposure + 1e-9 })).toBe(true);
+  expect(sameLook(a, { ...a, exposure: a.exposure + 0.01 })).toBe(false);
+  expect(sameLook(a, { ...a, tree_species: "oak" })).toBe(false);
+  expect(sameLook(a, { ...a, time_of_day: 3, latitude: 10 })).toBe(true);   // the editor's helpers are not in DEFAULTS
+});
+
+test("builtinTwin ignores drift_phase too", () => {
+  expect(builtinTwin({ ...clone("afternoon 7"), drift_phase: 4 }, builtins)).toBe("afternoon 7");
+});
+
+// ---- lookState: the one chip under the look select ----
+
+const afternoon = clone("afternoon 7");
+const synced = { id: 12, version: 2, owner: "jo", synced: true };
+const chipOf = (state, stored, active, value, live, me = "jo", ctx = {}) => lookState(state, stored, active, value, live, me, ctx);
+
+test("lookState: a built-in, unchanged", () => {
+  expect(chipOf(EMPTY, {}, "local", "afternoon 7", afternoon).text).toBe("built-in");
+});
+
+test("lookState: a ★ never uploaded, or with no arboretum", () => {
+  expect(chipOf(EMPTY, { mine: afternoon }, "local", "mine", afternoon).text).toBe("★ saved here");
+  expect(chipOf({ ...EMPTY, origin: { mine: { parent: "look:afternoon 7" } } }, { mine: afternoon }, "local", "mine", afternoon, null).text).toBe("★ saved here");
+});
+
+test("lookState: a ★ that is a synced arboretum preset", () => {
+  expect(chipOf({ ...EMPTY, origin: { mine: synced } }, { mine: afternoon }, "local", "mine", afternoon).text).toBe("☁ #12 v2");
+});
+
+test("lookState: a ★ whose arboretum copy is behind, and one waiting to go up", () => {
+  const behind = { ...EMPTY, origin: { mine: { ...synced, synced: false } } };
+  expect(chipOf(behind, { mine: afternoon }, "local", "mine", afternoon).text).toBe("★ saved here · ☁ #12 is older");
+  const waiting = markPending(behind, "mine");
+  expect(chipOf(waiting, { mine: afternoon }, "local", "mine", afternoon).text).toBe("⇡ waiting to go up");
+  const fresh = markPending({ ...EMPTY, origin: { mine: { parent: "look:afternoon 7" } } }, "mine");
+  expect(chipOf(fresh, { mine: afternoon }, "local", "mine", afternoon).text).toBe("⇡ waiting to go up");
+});
+
+test("lookState: an item of a cloud playlist, with its owner when it is not yours", () => {
+  const s = { ...EMPTY, playlists: { 7: { id: 7, name: "evening", owner: "jo", fetched_at: Date.UTC(2026, 9, 10, 12), items: [
+    { preset_id: 5, version: 1, owner: "jo", name: "dawn", dwell_s: 1, crossfade_s: 1, params: afternoon },
+    { preset_id: 6, version: 3, owner: "ana", name: "dusk", dwell_s: 1, crossfade_s: 1, params: afternoon }] } } };
+  expect(chipOf(s, {}, "arb:7", "0", afternoon).text).toBe("☁ #5 v1");
+  expect(chipOf(s, {}, "arb:7", "1", afternoon).text).toBe("☁ #6 v3 · ana's");
+  expect(chipOf(s, {}, "arb:7", "1", afternoon, null).text).toBe("☁ #6 v3 · ana's");   // signed out, it is still not yours
+});
+
+test("lookState: a cached playlist shown because arboretum could not be reached says so, with the day it was fetched", () => {
+  const s = { ...EMPTY, playlists: { 7: { id: 7, name: "evening", owner: "jo", fetched_at: Date.UTC(2026, 9, 10, 12), items: [
+    { preset_id: 5, version: 1, owner: "jo", name: "dawn", dwell_s: 1, crossfade_s: 1, params: afternoon }] } } };
+  expect(chipOf(s, {}, "arb:7", "0", afternoon, "jo", { offline: true }).text).toBe("offline copy · 2026-10-10");
+});
+
+test("lookState: live params that differ from the entry's are prefixed ● edited · , for every kind of entry", () => {
+  const edited = { ...afternoon, exposure: afternoon.exposure + 0.3 };
+  expect(chipOf(EMPTY, {}, "local", "afternoon 7", edited).text).toBe("● edited · built-in");
+  expect(chipOf({ ...EMPTY, origin: { mine: synced } }, { mine: afternoon }, "local", "mine", edited).text).toBe("● edited · ☁ #12 v2");
+  const s = { ...EMPTY, playlists: { 7: { id: 7, name: "e", owner: "jo", fetched_at: 0, items: [{ preset_id: 5, version: 1, owner: "jo", name: "dawn", dwell_s: 1, crossfade_s: 1, params: afternoon }] } } };
+  expect(chipOf(s, {}, "arb:7", "0", edited).text).toBe("● edited · ☁ #5 v1");
+});
+
+test("lookState: drift_phase and a debug overlay do not make a look edited; no live params means no edit to report", () => {
+  expect(chipOf(EMPTY, {}, "local", "afternoon 7", { ...afternoon, drift_phase: 3, show_layer: true }).text).toBe("built-in");
+  expect(chipOf(EMPTY, {}, "local", "afternoon 7", null).text).toBe("built-in");
+});
+
+test("lookState: the title is a sentence, and carries arboretum's last refusal for the look verbatim", () => {
+  const c = chipOf(EMPTY, {}, "local", "afternoon 7", afternoon, "jo", { error: "branch_levels must be 1–4" });
+  expect(c.title.length).toBeGreaterThan(10);
+  expect(c.title).toContain("branch_levels must be 1–4");
+  expect(chipOf(EMPTY, {}, "local", "afternoon 7", afternoon).title).not.toContain("undefined");
+});
+
+test("lookState says nothing for a value that is not an entry", () => {
+  expect(chipOf(EMPTY, {}, "local", "☁21", afternoon)).toEqual({ text: "", title: "" });
+  expect(chipOf(EMPTY, {}, "arb:9", "0", afternoon)).toEqual({ text: "", title: "" });
+});
+
+// ---- pending uploads ----
+
+test("markPending flags a ★'s record, keeping the rest of it; onPushed clears it, and so does forgetting the ★", () => {
+  const s = markPending({ ...EMPTY, origin: { a: { parent: "look:x" }, b: synced } }, "a");
+  expect(s.origin.a).toEqual({ parent: "look:x", pending: true });
+  expect(markPending(s, "b").origin.b).toEqual({ ...synced, pending: true });
+  expect(onPushed(s, "a", { id: 40, version: 1, owner: "jo" }).origin.a).toEqual({ id: 40, version: 1, owner: "jo", synced: true });
+  expect(onDeleted(s, "a").origin.a).toBeUndefined();
+});
+
+test("clearPending drops the flag and keeps the rest, for a refused upload that retrying would not help", () => {
+  const s = markPending({ ...EMPTY, origin: { a: { ...synced, synced: false } } }, "a");
+  expect(clearPending(s, "a").origin.a).toEqual({ ...synced, synced: false });
+  expect(clearPending(markPending(EMPTY, "a"), "a").origin.a).toBeUndefined();   // a record that was only the flag goes with it
+  expect(clearPending(EMPTY, "a")).toEqual(EMPTY);
+});
+
+test("markPending on a ★ with no record makes one, so an upload that never started can wait", () => {
+  expect(markPending(EMPTY, "a").origin.a).toEqual({ pending: true });
+});
+
+test("pendingNames lists the ★ looks marked pending, in the store's order, and not one that is gone", () => {
+  const s = markPending(markPending(markPending(EMPTY, "b"), "a"), "gone");
+  expect(pendingNames(s, { a: {}, b: {}, c: {} })).toEqual(["a", "b"]);
+  expect(pendingNames(EMPTY, { a: {} })).toEqual([]);
+});
+
+test("saving over a pending ★ keeps it pending (the copy is still behind); a new name starts fresh", () => {
+  const pending = markPending({ ...EMPTY, origin: { a: { ...synced } } }, "a");
+  expect(onSaved(pending, "a", { kind: "local", name: "a" }).origin.a).toEqual({ ...synced, synced: false, pending: true });
+  expect(onSaved(pending, "b", { kind: "local", name: "a" }).origin.b).toEqual({ parent: "preset:12@2" });
+});
+
+// ---- the playlists a look is in ----
+
+test("itemsAfter removes the first item with a preset id from a fresh copy, keeping the unavailable items and everyone's times", () => {
+  const fresh = [
+    { preset_id: 5, dwell_s: 11, crossfade_s: 2 }, { preset_id: 99, dwell_s: 40, crossfade_s: 7, unavailable: true },
+    { preset_id: 6, dwell_s: 12, crossfade_s: 3 }, { preset_id: 5, dwell_s: 13, crossfade_s: 4 }];
+  expect(itemsAfter(fresh, { kind: "remove_preset", preset_id: 5 })).toEqual([
+    { preset_id: 99, dwell_s: 40, crossfade_s: 7 }, { preset_id: 6, dwell_s: 12, crossfade_s: 3 }, { preset_id: 5, dwell_s: 13, crossfade_s: 4 }]);
+  expect(itemsAfter(fresh, { kind: "remove_preset", preset_id: 77 }).length).toBe(4);   // not in it: nothing goes
+});
+
+test("playlistChips: one per playlist of yours, lit when this look's preset is an item of it", () => {
+  const view = (id, ids) => ({ id, name: `p${id}`, owner: "jo", fetched_at: 1, unavailable: 0, items: ids.map((n) => ({ preset_id: n, version: 1, owner: "jo", name: "n", dwell_s: 1, crossfade_s: 1, params: {} })) });
+  const state = { ...EMPTY, origin: { mine: synced, behind: { ...synced, id: 13, synced: false }, loose: { parent: "look:a" } },
+    playlists: { 7: view(7, [12, 5]), 8: view(8, [5]) } };
+  const mine = [{ id: 7, name: "p7" }, { id: 8, name: "p8" }, { id: 9, name: "p9" }];   // 9 is not cached yet
+  expect(playlistChips(state, { mine: {} }, "local", "mine", mine)).toEqual([
+    { id: 7, name: "p7", lit: true }, { id: 8, name: "p8", lit: false }, { id: 9, name: "p9", lit: false }]);
+  expect(playlistChips(state, { behind: {} }, "local", "behind", mine).every((c) => !c.lit)).toBe(true);   // an edited ★ is a newer look than the preset the playlist holds
+  expect(playlistChips(state, { loose: {} }, "local", "loose", mine).every((c) => !c.lit)).toBe(true);
+  expect(playlistChips(state, {}, "local", "afternoon 7", mine).every((c) => !c.lit)).toBe(true);
+  expect(playlistChips(state, {}, "arb:8", "0", mine).map((c) => c.lit)).toEqual([true, true, false]);   // a cloud item: its own preset_id
 });

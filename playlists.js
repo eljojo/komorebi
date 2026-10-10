@@ -1,40 +1,15 @@
 // ============================================================================
-// Komorebi editor — playlists. PURE: the model of "On this browser" beside the arboretum playlists, and the
-// rules that move a look between them (editor-integration-design §3–§6). No DOM, and no network beyond the
-// `fetch` that `detect` is handed. Persistence goes through getState/setState only; the ★ half is
-// presets-store.js, so `stored` is passed in and handed back for the caller to setStored.
+// Komorebi editor — playlists. PURE: the model of "all looks" beside the arboretum playlists, and the rules that move a
+// look between them (editor-integration-design §3–§6). No DOM, no storage and no network beyond the `fetch` that `detect`
+// is handed: the state is passed in and handed back (arboretum.js keeps it in localStorage, and the ★ looks beside it).
 // ============================================================================
 import { DEFAULTS, migrateLegacy } from "./komorebi.js";
 import * as BUILTINS from "./presets.js";
 
-export const ARB_KEY = "komorebi.arboretum";
-
-const emptyState = () => ({ v: 1, me: null, origin: {}, playlists: {} });
-const isObject = (o) => o !== null && typeof o === "object" && !Array.isArray(o);
-
-// The v1 state; empty on nothing, on corrupt JSON, and on a value that is not v1.
-export function getState() {
-  try {
-    const s = JSON.parse(localStorage.getItem(ARB_KEY) || "null");
-    if (!isObject(s) || s.v !== 1) return emptyState();
-    return {
-      v: 1,
-      me: isObject(s.me) ? s.me : null,
-      origin: isObject(s.origin) ? s.origin : {},
-      playlists: isObject(s.playlists) ? s.playlists : {},
-    };
-  } catch { return emptyState(); }   // no localStorage, or malformed JSON -> behave as empty
-}
-
-export function setState(s) {
-  try { localStorage.setItem(ARB_KEY, JSON.stringify(s)); }
-  catch { /* storage full / disabled — the cache just isn't kept */ }
-}
-
 // ---- where arboretum is on (design §1). The only function here that may reach the network, and only on a
 // loopback host under /editor/, which is where arboretum's own dev server puts the editor. ----
 const PRODUCTION_HOST = "komorebi.eljojo.net";
-const ARBORETUM = "https://arboretum.eljojo.net";
+export const ARBORETUM = "https://arboretum.eljojo.net";
 
 export async function detect(location, fetchImpl) {
   if (location.hostname === PRODUCTION_HOST) return ARBORETUM;
@@ -73,26 +48,32 @@ export function parseHash(hash) {
 }
 
 // ---- the list a playlist shows and steps (design §3.2, §3.4) ----------------------
-export const LOCAL_NAME = "On this browser";
+export const LOCAL_NAME = "all looks";
 const cloudId = (active) => (active.startsWith("arb:") ? active.slice(4) : null);
 const cloudItems = (state, active) => state.playlists[cloudId(active)]?.items ?? [];
 const isBuiltin = (PRESETS, name) => Object.hasOwn(PRESETS, name);
 
-// In On this browser a value is the look's name — except for a ★ that shares a built-in's name, which takes the
+// In all looks a value is the look's name — except for a ★ that shares a built-in's name, which takes the
 // value "★ <name>" so the two stay apart (one value would load the same look for both). A ★ whose name already
-// starts "★ " is escaped the same way, so no two values collide. The value never depends on whether the built-in is
+// starts "★ " (or "☁", the mark of a cloud row's value) is escaped the same way, so no two values collide. The value never depends on whether the built-in is
 // listed, so the experimental toggle cannot move a ★'s value.
-const starValueOf = (PRESETS, name) => (isBuiltin(PRESETS, name) || name.startsWith("★ ") ? `★ ${name}` : name);
+const starValueOf = (PRESETS, name) => (isBuiltin(PRESETS, name) || name.startsWith("★ ") || name.startsWith("☁") ? `★ ${name}` : name);
 export const starValue = (name) => starValueOf(BUILTINS.PRESETS, name);
 
-// The ★ an On this browser value denotes, or null when it is a built-in (or nothing).
+// The ★ an all-looks value denotes, or null when it is a built-in (or nothing).
 export function starName(stored, active, value) {
   if (cloudId(active) !== null || typeof value !== "string") return null;
   if (value.startsWith("★ ")) {
     const name = value.slice(2);
     return Object.hasOwn(stored, name) && starValue(name) === value ? name : null;
   }
-  return Object.hasOwn(stored, value) && !isBuiltin(BUILTINS.PRESETS, value) ? value : null;
+  return Object.hasOwn(stored, value) && starValue(value) === value ? value : null;   // starValue(value) === value: neither a built-in's name nor one that needs escaping
+}
+
+// A cloud row of all looks has the value "☁<id>": one of your arboretum presets that has no ★ here yet.
+export function cloudPresetId(value) {
+  const m = typeof value === "string" ? /^☁(\d+)$/.exec(value) : null;
+  return m ? Number(m[1]) : null;
 }
 
 // The look's own name: a ★'s, a built-in's, a cloud item's.
@@ -101,7 +82,7 @@ export function entryName(state, stored, active, value) {
   return starName(stored, active, value) ?? value;
 }
 
-// The playlists a visitor can pick between: On this browser, then yours as arboretum lists them (`mine`: summaries,
+// The playlists a visitor can pick between: all looks, then yours as arboretum lists them (`mine`: summaries,
 // not cached until picked), then the cached ones that are not among them. Once you are signed in (`me`), a cached one
 // that is someone else's carries its owner's name.
 export function playlists(state, mine = [], me = null) {
@@ -115,7 +96,7 @@ export function playlists(state, mine = [], me = null) {
 // Whether the active playlist plays: only an arboretum playlist carries dwell times (design §3.6).
 export const plays = (state, active) => cloudItems(state, active).length > 0;
 
-// The dwell and crossfade of a cloud entry; On this browser has none.
+// The dwell and crossfade of a cloud entry; all looks has none.
 export function timing(state, active, value) {
   const it = cloudId(active) === null ? undefined : cloudItems(state, active)[Number(value)];
   return it ? { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s } : null;
@@ -123,7 +104,8 @@ export function timing(state, active, value) {
 
 // The EXPERIMENTAL looks are hidden unless `showBeta` — but the one you are on (`keep`) always stays listed.
 // A value in a cloud playlist is an item index (two items may share a name).
-export function entries(state, stored, builtins, showBeta, active, keep) {
+// In all looks, `cloud` (your arboretum presets, as arboretum lists them) adds a "☁ <name>" row for each one no ★ here is a copy of.
+export function entries(state, stored, builtins, showBeta, active, keep, cloud = []) {
   if (cloudId(active) !== null)
     return cloudItems(state, active).map((it, i) => ({ value: String(i), label: it.name }));
   const { PRESETS, EXPERIMENTAL } = builtins;
@@ -132,6 +114,7 @@ export function entries(state, stored, builtins, showBeta, active, keep) {
       .filter((n) => showBeta || !EXPERIMENTAL.includes(n) || n === keep)
       .map((n) => ({ value: n, label: `${EXPERIMENTAL.includes(n) ? "◦" : "•"} ${n}` })),   // ◦ marks an experimental look
     ...Object.keys(stored).map((n) => ({ value: starValueOf(PRESETS, n), label: `★ ${n}` })),
+    ...cloud.filter((p) => !Object.keys(stored).some((n) => state.origin[n]?.id === p.id)).map((p) => ({ value: `☁${p.id}`, label: `☁ ${p.name}` })),
   ];
 }
 
@@ -150,19 +133,22 @@ export function step(list, value, dir) {
 }
 
 // ---- the built-in guard (design §3.8) ----------------------------------------------
-// The debug overlays do not change the art, so flipping one must not make a built-in "modified".
-const OVERLAY_KEYS = new Set(["show_source", "show_layer", "show_layer_index"]);
+// The debug overlays do not change the art, so flipping one must not make a built-in "modified". drift_phase is an
+// animated state (the engine moves it with drift_auto), so it would mark every look edited.
+const NOT_THE_LOOK = new Set(["show_source", "show_layer", "show_layer_index", "drift_phase"]);
+const LOOK_KEYS = Object.keys(DEFAULTS).filter((k) => !NOT_THE_LOOK.has(k));
+const close = (a, b) => a === b || (typeof a === "number" && typeof b === "number" && Math.abs(a - b) <= 1e-6);   // absolute: a seed is a large integer, a slider step is never under 0.001
 
-// The name of the built-in that `params` still is — equal on every DEFAULTS key but the overlays — or null.
+// Whether two param sets are the same look: equal on every DEFAULTS key but the ones above, numbers within a tolerance.
 // `time_of_day` / `latitude` are not in DEFAULTS: they only write the sun knobs, which are compared.
+export function sameLook(a, b) {
+  const A = migrateLegacy(a), B = migrateLegacy(b);
+  return LOOK_KEYS.every((k) => close(A[k], B[k]));
+}
+
+// The name of the built-in that `params` still is, or null.
 export function builtinTwin(params, builtins) {
-  const P = migrateLegacy(params);
-  const keys = Object.keys(DEFAULTS).filter((k) => !OVERLAY_KEYS.has(k));
-  for (const name of Object.keys(builtins.PRESETS)) {
-    const B = migrateLegacy(builtins.PRESETS[name]);
-    if (keys.every((k) => P[k] === B[k])) return name;
-  }
-  return null;
+  return Object.keys(builtins.PRESETS).find((name) => sameLook(params, builtins.PRESETS[name])) ?? null;
 }
 
 // ---- the cache of arboretum playlists (design §6.1). Every function below returns a new state. ----
@@ -238,10 +224,24 @@ export function onPushed(state, name, api) {
   return withOrigin(state, { ...state.origin, [name]: { id: api.id, version: api.version, owner: api.owner, synced: true } });
 }
 
+// A ★ whose upload could not happen yet (arboretum unreachable, or the session ended) keeps its record, flagged `pending`;
+// the next successful /api/me check pushes it. onPushed writes a fresh record, which is how the flag clears. A refusal
+// is not pending: retrying it would be refused again.
+export function markPending(state, name) {
+  return withOrigin(state, { ...state.origin, [name]: { ...state.origin[name], pending: true } });
+}
+
+export function clearPending(state, name) {
+  const { pending: _, ...rest } = state.origin[name] ?? {};
+  return withOrigin(state, Object.keys(rest).length ? { ...state.origin, [name]: rest } : withoutKey(state.origin, name));
+}
+
+export const pendingNames = (state, stored) => Object.keys(stored).filter((n) => state.origin[n]?.pending === true);
+
 // ---- the smart upload (design §4.2) ------------------------------------------------------------
-// What an upload would do, decided from what is known about the look, so the button can say it before the click:
+// What an upload would do, decided from what is known about the look:
 //   { kind: 'version' | 'preset', path, body, label, into? } | { refused }
-// In On this browser the params are the stored ★ snapshot (what you saved is what goes online); in a cloud
+// In all looks the params are the stored ★ snapshot (what you saved is what goes online); in a cloud
 // playlist they are the live look, because the cloud is that folder's store, and `into` names the place the
 // uploaded preset takes in it (`at` null: appended). `body.name` is the current look's name — the caller
 // replaces it with what the save prompt returns; "" when a cloud playlist has no item to take it from.
@@ -277,13 +277,17 @@ export function uploadPlan(state, stored, active, value, live, me, commit, cam) 
 // the whole list, so the owner's unavailable items are sent back in their places or they would be dropped.
 // `at` counts the playable items only — the numbering `entries` uses. An appended preset carries no times, so
 // arboretum's defaults apply; a replacement keeps the times of the place it takes.
-// change: { kind: 'append', preset_id } | { kind: 'remove', at } | { kind: 'replace', at, preset_id }
+// `remove_preset` takes out the first playable item of that preset (a chip, which knows the preset and not a place).
+// change: { kind: 'append', preset_id } | { kind: 'remove', at } | { kind: 'replace', at, preset_id } | { kind: 'remove_preset', preset_id }
 export function itemsAfter(fresh, change) {
   const out = [];
-  let playable = 0;
+  let playable = 0, removed = false;
   for (const it of fresh) {
     const times = { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s };
-    if (it.unavailable || change.kind === "append" || change.at !== playable++) out.push({ preset_id: it.preset_id, ...times });
+    if (change.kind === "remove_preset") {
+      if (!it.unavailable && !removed && it.preset_id === change.preset_id) removed = true;
+      else out.push({ preset_id: it.preset_id, ...times });
+    } else if (it.unavailable || change.kind === "append" || change.at !== playable++) out.push({ preset_id: it.preset_id, ...times });
     else if (change.kind === "replace") out.push({ preset_id: change.preset_id, ...times });
   }
   if (change.kind === "append") out.push({ preset_id: change.preset_id });
@@ -311,10 +315,49 @@ export function onlineId(state, stored, active, value) {
   return o?.id !== undefined && o.synced ? o.id : null;
 }
 
-// The smart ↑ button, from the plan: its label says what it will do before the click; an unchanged built-in disables it.
-export function pushButton(plan) {
-  if (plan.refused) return { label: "built-in · unchanged", disabled: true, title: plan.refused };
-  return { label: plan.label, disabled: false };
+// The playlists of yours (`mine`: arboretum's summaries) as chips for this look: lit where its preset is an item of the
+// cached copy. A playlist not cached yet is unlit.
+export function playlistChips(state, stored, active, value, mine) {
+  const preset = onlineId(state, stored, active, value);
+  return mine.map((p) => ({ id: p.id, name: p.name, lit: preset !== null && !!state.playlists[p.id]?.items.some((it) => it.preset_id === preset) }));
+}
+
+// ---- the chip under the look select: where the look lives, in a few words ----
+// `live` the params on screen (null while a transition is carrying them, or to skip the edit check); `me` your username;
+// `ctx.offline` the active cloud playlist is its cached copy because arboretum could not be reached; `ctx.error` arboretum's
+// last refusal for this look, which the title carries verbatim.
+export function lookState(state, stored, active, value, live, me, { offline = false, error = null } = {}) {
+  let text, title, params;
+  const id = cloudId(active);
+  if (id !== null) {
+    const it = cloudItems(state, active)[Number(value)];
+    if (!it) return { text: "", title: "" };
+    params = it.params;
+    if (offline) {
+      text = `offline copy · ${new Date(state.playlists[id].fetched_at).toISOString().slice(0, 10)}`;
+      title = "arboretum could not be reached, so this is the copy of the playlist kept here";
+    } else {
+      text = `☁ #${it.preset_id} v${it.version}${it.owner !== me ? ` · ${it.owner}'s` : ""}`;
+      title = it.owner === me ? "an item of your playlist, kept in arboretum" : `an item of ${it.owner}'s preset, kept in arboretum`;
+    }
+  } else {
+    const star = starName(stored, active, value);
+    if (star !== null) {
+      const o = state.origin[star];
+      params = stored[star];
+      if (o?.pending) { text = "⇡ waiting to go up"; title = "saved here; it goes to arboretum when arboretum can be reached and you are signed in"; }
+      else if (o?.id !== undefined && o.synced) { text = `☁ #${o.id} v${o.version}`; title = "saved here, and kept in arboretum"; }
+      else if (o?.id !== undefined) { text = `★ saved here · ☁ #${o.id} is older`; title = "saved here; the copy in arboretum is an older version of it"; }
+      else { text = "★ saved here"; title = "saved in this browser, not in arboretum"; }
+    } else if (typeof value === "string" && isBuiltin(BUILTINS.PRESETS, value)) {
+      params = BUILTINS.PRESETS[value];
+      text = "built-in";
+      title = "a built-in look: save keeps a copy of your own";
+    } else return { text: "", title: "" };
+  }
+  if (live && !sameLook(live, params)) { text = `● edited · ${text}`; title = `the look on screen differs from the saved one. ${title}`; }
+  if (error) title = `${title} — arboretum said: ${error}`;
+  return { text, title };
 }
 
 // An upload's `into` (uploadPlan) as the change itemsAfter applies to a fresh copy of the playlist.
