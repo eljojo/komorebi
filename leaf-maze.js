@@ -14,7 +14,7 @@
 // measured on the raster and corrected once. So the picture's mean transmittance is the mixture the engine computes, and the sieve reads literally.
 // ============================================================================
 import { DEG, TAU, hash3, leafTau, mulberry32 } from './komorebi-math.js';
-import { LEAF_SAMPLES, bladeOf, leafVariant, outlineSeed } from './komorebi-leaf.js';
+import { LEAF_SAMPLES, bladeOf, leafVariant, outlineSeed, rowBlade } from './komorebi-leaf.js';
 
 const AREOLE_M = 0.001;          // a maple's areole is ~1 mm across. It moves into the species spec the day the engine reads it
 const AREOLE_SALT = 0x3D1A8C57;  // the maze's own stream: distinct from every salt the leaf's other streams use (maze.test.js lists them)
@@ -318,12 +318,14 @@ function tissues(P, seed, j, k, dT, cT){
 // ---- the leaf at an address ---------------------------------------------------------------------------------------------------
 // Leaf (j, k) of the grove: its outline variant and the stream that grew it are the grove's own (leafVariant, outlineSeed), so this is the leaf the engine hangs
 // there. Memoised on what regrows it (seed, address, size) — the raster and the pigment are the preview's to redo, and cheap beside the maze.
+// WITH `variety` (leaf_variety) AND the leaf's `row`, both of which the caller reads off the grove it shows (hier.leafVariety, hier.leafRow[j·nLeaf + k]) and never recomputes from the params: the blade is the row's
+// (rowBlade, the very function the outline texture was made by) and the variant IS the row; the memo gains the pair. Without them every line is the one it was.
 const memo = new Map();
-function leafMaze(spec, seed, j, k, sizeM){
-  const key = `${spec.species}|${seed>>>0}|${j}|${k}|${sizeM}`;
+function leafMaze(spec, seed, j, k, sizeM, variety = 0, row){
+  const varied = variety > 0 && row !== undefined, key = `${spec.species}|${seed>>>0}|${j}|${k}|${sizeM}${varied ? `|${variety}|${row}` : ''}`;
   let g = memo.get(key);
   if(!g){
-    const variant = leafVariant(seed, j, k), blade = bladeOf(spec, outlineSeed(spec, seed, variant));
+    const variant = varied ? row : leafVariant(seed, j, k), blade = varied ? rowBlade(spec, seed, variety, row) : bladeOf(spec, outlineSeed(spec, seed, variant));
     g = { variant, blade, maze: growAreoles(blade, { seed: hash3(seed>>>0, j, k), cellM: AREOLE_M, unitM: sizeM/2 }) };
     if(memo.size >= 8) memo.delete(memo.keys().next().value);
     memo.set(key, g);

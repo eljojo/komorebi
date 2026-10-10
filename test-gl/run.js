@@ -502,6 +502,36 @@ const INVARIANTS = [
   // ...and the canopy is as full as the look had it: a maple at the look's own aspect (no hand-set 1, no hand-set size) holds its mean level, as the ellipse of the same leaf area did above
   { name: "the aspect law keeps the canopy as full: a maple at the look's own 1.75 (layer: memories)", preset: 'memories', lit: [0.95, 1.05], a: {}, b: { leaf_shape: 'maple' } },
   { name: "the aspect law keeps the canopy as full: a maple at the look's own 1.75 (layer: afternoon 7)", preset: 'afternoon 7', lit: [0.95, 1.05], a: {}, b: { leaf_shape: 'maple' } },
+  // LEAF VARIETY (§4.5, P4a-4): a tree's family of outlines, each leaf a member under its light. Off (0 or absent) it is the old arithmetic and the old shader lines — the cluster id's fraction j + v/32 multiplied by a uniform that says 32,
+  // the literal /8 for the row — so naming it is the frame before the knob existed, on every camera that cuts a leaf's mask and on the carpet (the pins above are the same claim for the looks themselves); the ellipse has no rows to vary.
+  { name: "leaf_variety 0 == absent (layer path, maple)", preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 0 } },
+  { name: "leaf_variety 0 == absent (faithful path, maple)", preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 0 } },
+  { name: "leaf_variety 0 == absent (sky view, maple)", preset: 'canopy 1', a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 0 } },
+  { name: "leaf_variety 0 == absent (curtain, maple)", preset: 'curtain 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 0 } },
+  { name: "leaf_variety 0 == absent (the litter carpet, maple)", preset: 'afternoon 7',
+    a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, leaf_variety: 0 } },
+  { name: "leaf_variety on the ellipse is the ellipse (layer path)", preset: 'memories', a: {}, b: { leaf_variety: 1 } },
+  { name: "leaf_variety on the ellipse is the ellipse (faithful path)", preset: 'park 1', rebake: true, a: {}, b: { leaf_variety: 1 } },
+  // ...and the other half: 1 is a real switch on every camera that cuts a leaf's mask and on the carpet, on the maple and on the beech, or rows that never reached a mask would satisfy every row above
+  { name: "leaf_variety 1 changes the canopy (layer path)", preset: 'memories', differ: true, a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1 } },
+  { name: "leaf_variety 1 changes the canopy (faithful path)", preset: 'park 1', rebake: true, differ: true, a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1 } },
+  { name: "leaf_variety 1 changes the canopy (sky view)", preset: 'canopy 1', differ: true, a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1 } },
+  { name: "leaf_variety 1 changes the canopy (curtain)", preset: 'curtain 1', rebake: true, differ: true, a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1 } },
+  { name: "leaf_variety 1 lays another carpet (litter)", preset: 'afternoon 7', differ: true,
+    a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, leaf_variety: 1 } },
+  { name: "leaf_variety 1 changes a beech canopy (layer)", preset: 'memories', differ: true, a: { leaf_shape: 'beech', leaf_aspect: 1 }, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_variety: 1 } },
+  // THE ENERGY: the size shift is renormalised by the cover-weighted area, so the canopy is as full as the look had it (the sun leaves smaller, the shade leaves larger, the same Σ cov·A·B0) — the mean level of the frame stays within 5%
+  { name: "leaf_variety 1 keeps the canopy as full (layer path: memories)", preset: 'memories', lit: [0.95, 1.05], a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1 } },
+  { name: "leaf_variety 1 keeps the canopy as full (layer path: afternoon 7)", preset: 'afternoon 7', lit: [0.95, 1.05], a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1 } },
+  // THE CONTINUITY: the size shift is continuous in the rank of light, never stepped by a column, so a hair of the knob moves the picture by a hair (the rows themselves are re-dealt in whole by a TOPO step from 0, which is a dissolve);
+  // and a density step at variety 1 moves the rank of light a hair, so the few leaves whose light class it crosses swap outline — the second row measures that: seven leaves' lobes, never a size.
+  // THE FIRST ROW'S BOUND is 24: a hair of the knob re-grows all 64 rows, and the grammar quantises an outline at about half a percent of a radius (its secondaries' count and the discs' spacing
+  // step with a length), so the knob has a floor, measured at Δ10–23 across its steps (1 → 1.001 Δ14, 1 → 1.01 Δ13, 0.5 → 0.51 Δ19, 1 → 1.1 Δ23, 1.5 → 1.51 Δ10), where the same half percent of leaf_size_m is Δ9–20 (a maple, 0.0756 → 0.0757 and 0.0763) and the 0 → 0.01
+  // re-deal is Δ82: a floor, not a pop. A bound of 12 fails at the very step this row takes (Δ13).
+  { name: "leaf_variety 1 vs 1.01 moves the canopy by a hair (layer: memories)", preset: 'memories', near: 24,
+    a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1.01 } },
+  { name: "a density step at leaf_variety 1 (foliage_density 1.5 vs 1.51, layer: afternoon 7)", preset: 'afternoon 7', near: 24,
+    a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1, foliage_density: 1.5 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1, foliage_density: 1.51 } },
   // EDGE_AREA (§4.5, decision 33): the soft edge read as a mixture at d = 0 too. Off it is the depth-averaged slab the engine has always read — the literal else of the four
   // widened conditions — so naming it false is the frame before the knob existed, on every camera and path (the pins above are the same claim for the looks themselves)...
   { name: 'edge_area false == absent (layer path)', preset: 'memories', a: {}, b: { edge_area: false } },
@@ -717,6 +747,10 @@ const LITTER_CHECKS = [
   // (half-float rounded, read linearly), so what is held is that the GPU turned the instance buffer — outline slot, enlarged quad, box and all — into the carpet.
   { name: 'afternoon 7 at 0.9, maple — the lobed stamps painted by the same q\' law', preset: 'afternoon 7', over: { ...FALL_LOOK, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
   { name: 'afternoon 7 on the first day of the fall, maple — a sparse carpet: the closed forms (area is conserved)', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 }, sparse: true },
+  // LEAF VARIETY (P4a-4): the same carpet at variety 1 — each stamp cut by q' over the row of the 64-row table the leaf hung in (the instance's slot 7 is the leaf's own `row`), the CPU painting over the same table, and the sparse carpet's area
+  // the closed form again (the size shift is renormalised by the cover-weighted area, but a fallen leaf lies at its own shifted size: Σπ·A·B0·fade is the list's, whatever the grove's total)
+  { name: 'afternoon 7 at 0.9, maple, leaf_variety 1 — each stamp in the row it hung in', preset: 'afternoon 7', over: { ...FALL_LOOK, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756, leaf_variety: 1 } },
+  { name: 'afternoon 7 on the first day of the fall, maple, leaf_variety 1 — each stamp in the row it hung in, a sparse carpet: the closed forms (area is conserved)', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756, leaf_variety: 1 }, sparse: true },
   // ...and the beech (P4a-3), a long narrow blade read from the middle of its midrib: the same law over its own profile, and its own sparse carpet's area
   { name: 'afternoon 7 at 0.9, beech — the pinnate stamps painted by the same q\' law', preset: 'afternoon 7', over: { ...FALL_LOOK, leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 } },
   { name: 'afternoon 7 on the first day of the fall, beech — a sparse carpet: the closed forms (area is conserved)', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71, leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 }, sparse: true },
@@ -772,12 +806,16 @@ const HALO_TOL = 2e-3, HALO_BAND = [0.99, 1.01], HALO_MIN_TEXELS = 500, STAMP_TO
 // five-pointed star (three variants, 1.038-1.042) where the design said 1%, and x1.080-1.084 for the RECALIBRATED one (variants 0, 3, 7 of seed 1234; leaf diversity, 2026-10-09). To first order a ramp of width e loses ½·e·∮r dθ of
 // the area, and with ∮½r² fixed at π the mean radius is below 1 for any profile that is not a circle (Cauchy–Schwarz: ∮r dθ ≤ 2π), so the more r(θ) varies the more a leaf keeps: the recalibrated maple varies more — long lobes
 // in front of a truncate base that reaches 0.1 behind the petiole over 100° of arc. The CPU's law (OUTLINE_TOL) did not move and passes. THE BAND is 1..1.10 (the star alone sat inside 1..1.06), and the law above is why: for a radial ramp of width e (0.26 here) the excess over the ellipse is Σα − 1 ≈ 0.33·(1 − mean r) — the star ×1.04 (mean r 0.88), the recalibrated maple
-// ×1.08 (0.75), the beech ×1.01 (0.97) — and José's thirteen leaves, area-normalised, have mean r 0.59–0.81 and lie at ×1.06–1.14 by the same law; 1.10 holds the maple the engine grows (×1.08), and his most lobed leaves sit above it. The band is that law's own, not a tolerance: it holds a stable ramp, and says the maple is the ellipse's area plus ~8%, never less.
+// ×1.08 (0.75), the beech ×1.01 (0.97) — and José's thirteen leaves, area-normalised, have mean r 0.59–0.81 and lie at ×1.06–1.14 by the same law; 1.10 holds the maple the engine grows (×1.08) and its varied rows (below), and his most lobed leaves sit above it. The band is that law's own, not a tolerance: it holds a stable ramp, and says the maple is the ellipse's area plus ~8%, never less.
 const OUTLINE_TOL = 1e-3, OUTLINE_AREA = [1.0, 1.10];
 // The beech (P4a-3) is held to the same law over ITS profile texture, and its Σalpha is a band of its own: the ramp is radial, so what a thin pointed blade keeps against the ellipse is another number. Measured
 // x1.007-1.012 (variants 0, 3, 7 of seed 1234; the first maple's x1.038-1.042): the ellipse's area plus about a percent — there are no sinuses for the ramp to thin across — and never less.
 const BEECH_AREA = [1.0, 1.03];
-const OUTLINE_BANDS = { maple: OUTLINE_AREA, beech: BEECH_AREA };
+// The 64-row tables (leaf_variety 1, rows 0, 27, 63 of seed 1234) are read through the same snippet with uLeafRows 64 and held to the same CPU law (measured err 1.1e-5 to 1.3e-5 on the maple's, 5.6e-6 to 7.2e-6 on the beech's, against the bar of 1e-3).
+// Their Σalpha, measured: the varied maple's x1.0842, x1.0783, x1.0836 (the recalibrated maple's own x1.080-1.084: the rows are the same species at other angles and breadths, the sun's narrower lobes included) and the varied beech's
+// x1.0123, x1.0133, x1.0100 (the beech's own x1.007-1.012) — so each takes its species' band.
+const MAPLE_VARIED_AREA = OUTLINE_AREA, BEECH_VARIED_AREA = BEECH_AREA;
+const OUTLINE_BANDS = { maple: OUTLINE_AREA, beech: BEECH_AREA, 'maple-varied': MAPLE_VARIED_AREA, 'beech-varied': BEECH_VARIED_AREA };
 
 // Suite 4 as data: one row per transition ROUTING tier. transitionTo classifies the from->to diff into a
 // tier, and each tier drives different code — the grove crossfade grows a SECOND grove (buildTargetGrove),
@@ -796,6 +834,9 @@ const TRANSITION_ROUTES = [
     expect: { crossfade: true, structDiff: true } },
   { name: 'a leaf_shape change takes the grove crossfade (each grove baked in its own outline)', from: 'memories', to: 'memories',
     over: { leaf_shape: 'maple', leaf_aspect: 1 },
+    expect: { crossfade: true, structDiff: true } },
+  { name: 'a leaf_variety change takes the grove crossfade (a 64-row texture and a row a leaf: it cannot morph)', from: 'memories', to: 'memories',
+    over: { leaf_variety: 1 },
     expect: { crossfade: true, structDiff: true } },
   { name: 'a leaf_shape change to the beech takes the grove crossfade (a pinnate outline, its own texture)', from: 'memories', to: 'memories',
     over: { leaf_shape: 'beech', leaf_aspect: 1 },

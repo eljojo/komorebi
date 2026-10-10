@@ -1,5 +1,5 @@
 import { MAX_LAYERS, MAX_FILL_DIRS } from './komorebi-params.js';
-import { LEAF_ID_FRAC, LEAF_VARIANTS } from './komorebi-leaf.js';
+import { LEAF_VARIANTS } from './komorebi-leaf.js';
 
 // ===========================================================================
 // Shaders
@@ -30,11 +30,13 @@ const GLSL_TEXEL_MIX = `void texelMix(vec3 tau, float c, float k, out vec3 T, ou
 // steep flank — the ramp is radial, and a flank is not — which is named and fine: the bake's edge is a penumbra, and the carpet's one texel. r(θ) is the profile of
 // komorebi-leaf.js, from the leaf's origin (the maple's petiole base, a point on the beech's midrib): θ across the texture (REPEAT: the seam at ±π is one place), one row per variant, sample i at the texel centre (i + ½)/256.
 const GLSL_LEAF_Q = `uniform highp sampler2D uLeafTex;   // R16F: r(θ) per variant, in the leaf's own unit frame (area-normalised, ∮½r²dθ = π)
+uniform float uLeafRows;                   // 0 = the species' eight rows (the literal divide below, as it always was); else the rows of a varied grove's table (leaf_variety: 64), which only that grove sets
 float leafQ(vec2 l, float variant){
   float m = length(l);
   vec2 d = dot(l, l) < 1e-12 ? vec2(1.0, 0.0) : l;                 // atan(0, 0) is undefined: at the base itself any direction will do
   float u = atan(d.y, d.x)*0.15915494 + 0.5;                       // θ/2π + ½
   float v = (variant + 0.5)/${LEAF_VARIANTS}.0;                              // a row's centre: a read between two variants is no leaf
+  if(uLeafRows > 0.0) v = (variant + 0.5)/uLeafRows;                         // a varied grove's own table; the literal line above is kept for the rest, because a divide by a uniform may compile to a multiply by a reciprocal (2.5 ULP) where a literal one may not
   return m - texture(uLeafTex, vec2(u, v)).r + 1.0;
 }`;
 
@@ -65,6 +67,7 @@ uniform float uStemLen;               // twig stem length: pivot offset toward t
 // rather than cutting. 1.0 is the identity and the only value any non-transitioning frame ever sees.
 uniform float uCoverage;
 uniform vec4  uShapeBox;              // the quad's box in the leaf's own frame: (centre.xy, half.xy). The ellipse's (0, 0, 1, 1) is the square it always was; an outline's is the union of its variants' extents (komorebi-leaf.js)
+uniform float uLeafIdFrac;            // the packing of the outline's row in the cluster id's fraction: 32 for the species' eight rows, 128 for a varied grove's 64 (leaf_variety) — x·32 and x·128 are exact, so the multiply by 32 is a literal's bits
 out vec2 vLocal;
 out vec3 vTau;
 out float vFade;
@@ -107,7 +110,7 @@ void main(){
   vec2 uv = (world - uCanopyOrigin)/uCanopyExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = lc;
-  vVariant = floor(fract(iC.w)*${LEAF_ID_FRAC}.0 + 0.5);   // the outline's row, in the cluster id's fraction (komorebi-grove.js): j + v/${LEAF_ID_FRAC}, and int(iC.w + 0.5) above is still j
+  vVariant = floor(fract(iC.w)*uLeafIdFrac + 0.5);   // the outline's row, in the cluster id's fraction (komorebi-grove.js): j + row/uLeafIdFrac, and int(iC.w + 0.5) above is still j
   vTau = iC.xyz * uCoverage;   // x 1.0 is the identity in IEEE, so every non-transitioning frame bakes the bytes it always did
   vFade = iFade * uCoverage;   // the same two lever arms on COVERAGE, so a leaf fading in (or a grove crossfading) fades its ballistic shadow with its tau, not at full weight (§4.5)
 }`;
@@ -163,6 +166,7 @@ uniform float uWindTime;
 uniform float uLeafSwing;
 uniform float uFlutterFreq;
 uniform vec4  uShapeBox;              // the quad's box in the leaf's own frame (see VS_BAKE)
+uniform float uLeafIdFrac;            // the packing of the outline's row in the cluster id's fraction (see VS_BAKE)
 out vec2 vLocal;
 out vec3 vTau;
 out float vFade;
@@ -220,7 +224,7 @@ void main(){
   vec2 uv = (recvPt - uFaithOrigin)/uFaithExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = lc;
-  vVariant = floor(fract(iC.w)*${LEAF_ID_FRAC}.0 + 0.5);
+  vVariant = floor(fract(iC.w)*uLeafIdFrac + 0.5);
   vTau = iC.xyz;
   vFade = iFade;
 }`;

@@ -126,6 +126,16 @@ identity("inner leaves 0.4 (a leaf's own height and layer are in the record)", {
 identity("inner leaves 0.4, faithful", { inner_leaves: 0.4 }, { faithful: true });
 identity("inner leaves 0.4, marginal leaf and tree, after the turn, with the per-tree clock", { inner_leaves: 0.4, foliage_density: 1.3, tree_count: 2.4, drop_after_turn: 1, tree_clock_spread: 0.1 }, { phs: AFTER_PH });
 identity("inner leaves 0.4, maple outline, faithful", { inner_leaves: 0.4, leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756 }, { faithful: true });
+// Leaf variety (`leaf_variety`, variety.test.js holds the laws): each leaf's outline row and size shift come from the grove's own rank of light, on the summer set, BEFORE the season base is taken — so the record the re-season
+// reads carries the row in the cluster id and the shifted half-axes, the litter list carries the row it lies in, and a re-season lands bit for bit where a fresh build lands, on both paths, mid-fall, with the shifted
+// areas never fed back to the light (the record keeps the pre-shift area: the season's rank at any variety is the variety-0 rank).
+const VAR = { leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756, leaf_variety: 1 };
+identity("leaf variety 1, maple (the row rides the cluster id; the litter keeps it)", VAR);
+identity("leaf variety 1, maple, faithful", VAR, { faithful: true });
+identity("leaf variety 1, maple, inner leaves 0.4", { ...VAR, inner_leaves: 0.4 });
+identity("leaf variety 1, maple, marginal leaf and tree", { ...VAR, tree_count: 2.4, foliage_density: 1.3 });
+identity("leaf variety 1, maple, exposure_absolute 0.5", { ...VAR, exposure_absolute: 0.5 });
+identity("leaf variety 1, maple, unlit (the row needs the light whether or not the turn does)", { ...VAR, turn_exposure: 0, drop_exposure: 0, leaf_drop: 1 });
 // The UNLIT arm. SMALL turns by the light (turn_exposure 1), and a lit leaf's tau is overwritten by the exposure arm of the rewrite; every variant above therefore leaves the other arm — the one a grove with
 // turn_exposure 0 takes, `FEAT_PIGMENT && sen` — free to lose its lead or its depth with nothing failing. These turn by the leaf's own clock alone: with no drop (the hang loop's tau is the only
 // tau, and the re-season's sen-only arm must reproduce it for every leaf), with the hash-only old drop clock (the rewrite's non-lit arm, for the leaves that go), and after the turn.
@@ -207,6 +217,22 @@ test("a fall build keeps the exposure field it ran, and it is the one the first 
   expect(firstDiff(rank, copy), "never written into").toBe(null);
 });
 
+test("leaf variety: the build keeps the rank of light its rows were drawn by, a re-season reuses it (never writes into it) and never touches the table of rows", () => {
+  const A = rig({ ...SMALL, ...VAR, phenology: 0.5, exposure_absolute: 0 });   // a summer build: nothing asks for the light but the rows
+  const g = A.G.buildGrove(null, { keepSeason: true });
+  expect(g.season.ex, "the pass ran the field for the rows: the record keeps it").not.toBe(null);
+  expect(g.season.rank).not.toBe(null);
+  const rank = g.season.rank, copy = Float64Array.from(rank), rows = Uint8Array.from(g.hier.leafRow), ex = g.season.ex;
+  expect(rows.some((r) => r !== rows[0]), "the rows differ").toBe(true);
+  for (const step of [{ phenology: 0.8 }, { phenology: 0.9, exposure_absolute: 0.5 }, { phenology: 0.72, exposure_absolute: 1 }, { phenology: 0.8, exposure_absolute: 0 }]) {
+    Object.assign(A.params, step); A.G.reseasonGrove(g, A.params);
+    expect(g.season.rank, `${JSON.stringify(step)}: the same object`).toBe(rank);
+    expect(g.season.ex).toBe(ex);
+    expect(firstDiff(rank, copy), "never written into").toBe(null);
+    expect(Array.from(g.hier.leafRow), "the rows are the shape's, not the season's").toEqual(Array.from(rows));
+  }
+});
+
 // ---- the key ---------------------------------------------------------------------------------------------------------------
 const read = (f) => readFileSync(new URL(f, import.meta.url), "utf8");
 test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exactly what buildGrove reads besides the season set", () => {
@@ -267,7 +293,7 @@ test("apply('season'): the first builds with the cache (a full path); a season-s
 });
 
 test("apply('season'): a param buildGrove reads besides the season set takes the full path", () => {
-  const cases = [{ view_extent_m: 5.1 }, { seed: 4242 }, { faithful_canopy: true }, { foliage_density: 1.4 }, { leaf_shape: "maple" }, { canopy_base_height_m: 2.4 },
+  const cases = [{ view_extent_m: 5.1 }, { seed: 4242 }, { faithful_canopy: true }, { foliage_density: 1.4 }, { leaf_shape: "maple" }, { leaf_shape: "maple", leaf_variety: 1 }, { leaf_variety: 0.5 }, { canopy_base_height_m: 2.4 },
     { canopy_thickness_m: 1.1 }, { trunk_radius_m: 0.21 }, { tree_count: 3 }, { drop_after_turn: 1 }, { trans_g: 0.4 }, { limb_count: 5 }, { leaf_size_m: 0.13 }, { sky_view: true }, { inner_leaves: 0.3 }];
   for (const change of cases) {
     const { eng, counts } = engineRig({});

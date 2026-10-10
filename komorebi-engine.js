@@ -172,7 +172,7 @@ function create(canvas, opts){
     if(!litterEntry){
       const prog = program(VS_LITTER, FS_LITTER);
       litterEntry = { prog, U: { origin:loc(prog,'uLitterOrigin'), extent:loc(prog,'uLitterExtent'), minHalf:loc(prog,'uLitterMinHalf'),
-        leafTex:loc(prog,'uLeafTex'), leafShape:loc(prog,'uLeafShape'), shapeBox:loc(prog,'uShapeBox') } };
+        leafTex:loc(prog,'uLeafTex'), leafShape:loc(prog,'uLeafShape'), shapeBox:loc(prog,'uShapeBox'), leafIdFrac:loc(prog,'uLeafIdFrac'), leafRows:loc(prog,'uLeafRows') } };   // the carpet's VS has no packing to read: its uLeafIdFrac is a null, and uploading to a null is a no-op
     }
     return litterEntry;
   } : null;
@@ -259,14 +259,14 @@ function create(canvas, opts){
                leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
                clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
                coverage:loc(progBake,'uCoverage'),
-               leafTex:loc(progBake,'uLeafTex'), leafShape:loc(progBake,'uLeafShape'), shapeBox:loc(progBake,'uShapeBox') };   // the leaf's outline (komorebi-leaf.js): its texture, the gate and the quad's box — bound per grove
+               leafTex:loc(progBake,'uLeafTex'), leafShape:loc(progBake,'uLeafShape'), shapeBox:loc(progBake,'uShapeBox'), leafIdFrac:loc(progBake,'uLeafIdFrac'), leafRows:loc(progBake,'uLeafRows') };   // the leaf's outline (komorebi-leaf.js): its texture, the gate, the quad's box and the table's packing — bound per grove
     U.faith = { origin:loc(progFaith,'uFaithOrigin'), extent:loc(progFaith,'uFaithExtent'), g:loc(progFaith,'uG'), edge:loc(progFaith,'uEdge'),
                 curtainBake:loc(progFaith,'uCurtainBake'), clothY:loc(progFaith,'uClothY'),
                 morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
                 windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
                 leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
                 clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom'), beamK:loc(progFaith,'uBeamK'), edgeArea:loc(progFaith,'uEdgeArea'),
-                leafTex:loc(progFaith,'uLeafTex'), leafShape:loc(progFaith,'uLeafShape'), shapeBox:loc(progFaith,'uShapeBox') };
+                leafTex:loc(progFaith,'uLeafTex'), leafShape:loc(progFaith,'uLeafShape'), shapeBox:loc(progFaith,'uShapeBox'), leafIdFrac:loc(progFaith,'uLeafIdFrac'), leafRows:loc(progFaith,'uLeafRows') };
     U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
                    curtainBake:loc(progFaithSeg,'uCurtainBake'), clothY:loc(progFaithSeg,'uClothY'),
                    segSway:loc(progFaithSeg,'uSegSway'), segTau:loc(progFaithSeg,'uSegTau') };

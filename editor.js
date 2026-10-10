@@ -5,6 +5,7 @@ import { getStored, setStored, getPreset } from './presets-store.js';
 import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
+import { LEAF_SHAPES } from './komorebi-leaf.js';
 // ============================================================================
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
@@ -117,6 +118,7 @@ const PANEL = [
   ['s','crown_aspect','crown',0.4,3,0.05,'canopy'],
   ['sels','phyllotaxis','phyllo',[['spiral','spiral'],['whorled','whorled'],['opposite','opposite']],'canopy'],
   ['sels','leaf_shape','leaf shape',[['ellipse','ellipse'],['maple','maple'],['beech','beech']],'canopy'],   // §4.5, P4a-2/3: the leaf's outline — a species bundle sets it (the maple's is 'maple'), and so does every other, so a pick never leaves the lobes behind; the beech has no bundle yet
+  ['s','leaf_variety','leaf variety',0,1.5,0.05,'canopy'],   // §4.5, P4a-4: how different the leaves are, tree from tree and sun from shade — only an outline varies, so it is hidden on the ellipse look (LOCAL_GATE); a new texture, so it dissolves rather than morphs (TOPO)
   ['s','branch_tau','branches',0,5,0.05,'bake'],
   ['s','trans_r','trans R',0.001,0.6,0.001,'canopy'],
   ['s','trans_g','trans G',0.001,0.9,0.001,'canopy'],
@@ -385,6 +387,7 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   window_cx_m: apertureOn, window_cy_m: apertureOn, window_wall: apertureOn,
   drift_speed: () => params.drift_auto && params.drift_amount > 0,
   adaptive_idle_fps: () => params.adaptive_motion,
+  leaf_variety: () => !!LEAF_SHAPES[params.leaf_shape],      // only an outline has rows to vary (§4.5): the ellipse's leaf is one stamp, so the knob would act on nothing
   anthocyanin: turning, tannin: turning, wall_fraction: turning, turn_exposure: turning,   // senescence (§4.5): until a leaf has begun to turn (phenology past turn_start) its tau is the authored summer one, whatever these say
   turn_span: turning, turn_spread: turning,
   tree_clock_spread: turning, tree_pigment_spread: turning,   // §4.5: a tree's lead and depth act on a leaf that can be turning — the same gate the pigments sit behind, which opens by the lead's own reach
@@ -413,7 +416,7 @@ function rowLive(key, cam){
 function gateSig(){
   const cam = cameraFor(params);
   return [cam, params.eclipse, params.view_pitch_deg>0, params.glow_bleed>0, params.mullion_tau>0, apertureOn(),
-          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam), turning(), params.turn_exposure>0, params.leaf_drop>0, params.drop_after_turn>0, params.drop_exposure>0, params.litter>0, fillOpen(), splitOn()].join('|');
+          params.drift_auto && params.drift_amount>0, params.adaptive_motion, params.show_layer, faithLive(cam), turning(), params.turn_exposure>0, params.leaf_drop>0, params.drop_after_turn>0, params.drop_exposure>0, params.litter>0, fillOpen(), splitOn(), params.leaf_shape].join('|');
 }
 let gateSigLast = null;
 function refreshGates(){
@@ -763,6 +766,7 @@ const TIPS = {
   cluster_spread_m:"<b>How tightly leaves bunch on a twig.</b> Tight = distinct clumps with clear gaps between them; loose = a more even leaf carpet.",
   inner_leaves:"<b>A full crown: sun leaves at the shell, shade leaves inside.</b> A tree only grows leaves at the ends of its twigs, so from above it reads as a wheel — a ring of leaves, a thin core, and bare limbs for spokes. A real crown also carries leaves on the older wood, thinning toward the trunk and never to none. This hangs that share of every twig's leaves back along the limbs it grew from, at the height they hang. 0 = the hollow crown, leaves at the twig tips only. It moves leaves, it adds none: the count and the leaf area stay the look's.",
   leaf_size_m:"<b>How big each leaf is.</b> Bigger leaves block more and leave smaller gaps — and small gaps are exactly what make those soft, round sun-pictures.",
+  leaf_variety:"<b>How different the leaves are — tree from tree, sun from shade.</b> 0 = eight leaves a species, the same on every tree. Up, each tree grows its own family of leaves (a tree's leaves look like each other, its neighbour's like another family), and inside a crown the sun leaves at the top and the outside are smaller and more deeply cut, the shade leaves within larger and fuller. 1 = about three quarters of the distance between two of José's maples, read on the whole outline and not on each axis alone; 1.5 about all of it. Only an outline varies: the ellipse has none. A fallen leaf keeps the shape it hung in.",
   leaf_aspect:"<b>Leaf shape — round vs. long and narrow.</b> Higher = skinnier leaves. Changes the shape each leaf blocks as it rocks in the wind. An outlined leaf (maple, beech) keeps its own width-to-length: for it the aspect sets only the leaf's area — the area an oval of this size and aspect would have — so a maple at 1.75 is a smaller maple, never a squashed one.",
   max_tilt:"<b>How tilted the leaves sit at rest.</b> A tilted leaf is seen more edge-on, so it blocks less — this thins the canopy and gives the wind something to foreshorten.",
   edge_softness:"<b>How fuzzy each leaf's own edge is.</b> Small = crisp, detailed leaves; large = softer blobs. (It's honest blur from a leaf only half-covering a pixel.)",

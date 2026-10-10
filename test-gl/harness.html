@@ -760,6 +760,7 @@ void main(){
   const maskRow = (name, gate, v, box, shape) => {
     const { out, glError } = probe(gl, { vs: vsBox, fs: FS_BAKE, w: W3, h: W3, clear: -7, setup: (prog, U) => {
       gl.uniform1f(U('uEdge'), edge); gl.uniform1i(U('uLeafShape'), gate); gl.uniform1i(U('uLeafTex'), 6);
+      gl.uniform1f(U('uLeafRows'), shape?.idFrac ? shape.rows : 0);   // a varied table's row count (leaf_variety: 64); the 8-row outlines and the ellipse say 0 outright, the literal /8 path
       gl.uniform4f(U('uBox'), box[0], box[1], box[2], box[3]); gl.uniform1f(U('uVariant'), v);
     } });
     let err = 0, sum = 0, nIn = 0, nBand = 0, finite = true, wrongSide = 0;
@@ -776,10 +777,11 @@ void main(){
     return { name, err, area: sum, nIn, nBand, finite, wrongSide, glError };
   };
   const maple = leafShape('maple', 1234), beech = leafShape('beech', 1234);   // each outline is its own texture and its own box (P4a-3: the beech's, a pinnate blade read from a point on its midrib)
+  const mapleV = leafShape('maple', 1234, 1), beechV = leafShape('beech', 1234, 1);   // leaf_variety 1: the 64-row tables, read through the same snippet with uLeafRows 64 (rows 0, 27 and 63: the first genotype's shade, a middle one's light class 3, the last's full sun)
   useShape(maple);
   const ell = maskRow('ellipse (gate shut)', 0, 0, [0, 0, 1.2, 1.2]);
-  const rowsOf = (name, shape) => { useShape(shape); return [0, 3, 7].map((v) => maskRow(`${name} variant ${v}`, 1, v, shape.box, shape)); };
-  const outline = [ell, ...rowsOf('maple', maple), ...rowsOf('beech', beech)].map((r) => ({ ...r, areaOverEllipse: r.area / ell.area }));
+  const rowsOf = (name, shape, rows = [0, 3, 7]) => { useShape(shape); return rows.map((v) => maskRow(`${name} variant ${v}`, 1, v, shape.box, shape)); };
+  const outline = [ell, ...rowsOf('maple', maple), ...rowsOf('beech', beech), ...rowsOf('maple-varied', mapleV, [0, 27, 63]), ...rowsOf('beech-varied', beechV, [0, 27, 63])].map((r) => ({ ...r, areaOverEllipse: r.area / ell.area }));
   gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, null); gl.deleteTexture(leafTex);
   return { k, edge, rows, outline };
 });
@@ -852,7 +854,7 @@ window.__litterCheck = (presetName, overrides) => withEngine(presetName, overrid
   // checking would agree with whatever order that code made. (litterInstances sorts again, which a sorted list leaves alone.)
   const byDay = [...list].sort((a, b) => a.D - b.D || a.j - b.j || a.k - b.k);
   const inst = litterInstances(byDay, p, want, !bulk, 0.75 * want.ext / n), texel = want.ext / n;
-  const shape = leafShape(p.leaf_shape, p.seed);   // null is the ellipse: the stamps are painted by the old law
+  const shape = leafShape(p.leaf_shape, p.seed, p.leaf_variety);   // null is the ellipse: the stamps are painted by the old law; with leaf_variety the 64-row table the leaves hung in (a stamp's row is the leaf's own)
   const cpu = litterRaster(inst, n, want, false, shape), rev = litterRaster(inst, n, want, true, shape);
   let aSum = 0, rgbSum = [0, 0, 0], aCpu = 0, dA = 0, dRgb = 0, dAmax = 0, oA = 0, oRgb = 0, nz = 0;
   for (let i = 0; i < n * n; i++) {

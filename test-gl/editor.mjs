@@ -535,10 +535,16 @@ try {
   // own, not the look's name for it: an inset that ignored the table would read palmate here).
   const grammarNow = () => page.$eval('#leaf', (c) => c.dataset.grammar);
   check("the held leaf of the ellipse look is the maple's blade (palmate), as it was", (await grammarNow()) === 'palmate', `reads ${await grammarNow()}`);
+  // LEAF VARIETY (P4a-4): only an outline has rows to vary, so the `leaf variety` row is there for the maple and the beech and hidden on the ellipse look (LOCAL_GATE reads leaf_shape, and gateSig carries it)
+  check("the ellipse look has no outlines to vary: the leaf variety row is hidden", (await rowShown('leaf variety')) === false, `${await rowShown('leaf variety')}`);
   await setSelect('leaf shape', 'beech');
   check("picking the beech regrows the held leaf as a beech: data-grammar reads pinnate", await poll(async () => (await grammarNow()) === 'pinnate'), `reads ${await grammarNow()}`);
+  check("picking the beech shows the leaf variety row", await poll(async () => (await rowShown('leaf variety')) === true), `${await rowShown('leaf variety')}`);
+  await setSelect('leaf shape', 'maple');
+  check("picking the maple keeps the leaf variety row", await poll(async () => (await rowShown('leaf variety')) === true && (await grammarNow()) === 'palmate'), `${await rowShown('leaf variety')} ${await grammarNow()}`);
   await setSelect('leaf shape', 'ellipse');
   check("...and the ellipse regrows it again as the maple's blade it falls back to (data-grammar reads palmate)", await poll(async () => (await grammarNow()) === 'palmate'), `reads ${await grammarNow()}`);
+  check("...and hides the leaf variety row again", await poll(async () => (await rowShown('leaf variety')) === false), `${await rowShown('leaf variety')}`);
 
   // THE LEAVES THE GROVE HANGS. [ / ] walk one ring through exactly the leaves the grove hung — a cluster's own count (the marginal leaf only where there is one), over the
   // grove's own clusters, wrapping at both ends — and the oracle is the grove the engine's code builds for the look (hungBy), never leaves_per_cluster × foliage_density.

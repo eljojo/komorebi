@@ -392,6 +392,14 @@ function treeDraws(seed, t, out = [0,0]){
   out[0] = r(); out[1] = r();
   return out;
 }
+// THE TREE'S LEAF GENOTYPE (`leaf_variety`, §4.5): the same stream's THIRD draw, floor(r()·G) — an individual holds its clock, its red depth and its leaf form in one place. The first two stay treeDraws' (the lead, the depth), so
+// tree_clock_spread and tree_pigment_spread keep their bits, and the growth stream is never touched. Pure per (seed, t): the same at any tree_count, the marginal tree's included; two trees may share one (siblings). Nothing here is
+// gated: the grove asks only while leaf_variety is up.
+function treeGenotype(seed, t, G){
+  const r = mulberry32(hash3((seed>>>0)^TREE_SALT, t, 0));
+  r(); r();
+  return Math.floor(r()*G);
+}
 const treeShift = (v, S) => -S*(v*v*v);
 const treeGain = (w, s) => 1 + s*(2*w - 1);
 // THE GATE is the table: no knob, no draw and nothing handed on (null), so the grove's off path is the literal old arithmetic.
@@ -578,4 +586,4 @@ function vignetteMask(u, v, feather, shape) {
   return 1 - smoothstep(1 - feather, 1, d);
 }
 
-export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, sunIncidence, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, sunIncidence, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

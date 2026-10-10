@@ -30,6 +30,16 @@ const LEAF_ID_FRAC = 32;    // a leaf's outline rides its cluster id's FRACTION 
 const OUTLINE_SALT = 0x4C3AF001;   // grows the outlines
 const VARIANT_SALT = 0x6E1B35D7;   // picks a leaf's outline
 const FLIP_SALT = 0x3D8C5A21;      // turns half the hanging leaves through a half turn
+// LEAF VARIETY (`leaf_variety`, spec §4.5): a species is a distribution, a tree a family, a leaf a member under its light. Rows of the outline texture are g·V + c: G genotypes (a tree draws one, math.js treeGenotype) of V light
+// classes (column 0 the deepest shade, V − 1 full sun) — 64 rows where the species has 8 — and a leaf hangs in the row its tree's genotype and its own rank of light pick. The packing is j + row/128, exact in float32 for any
+// cluster below 2^17 (the GPU's MAX_TEXTURE_SIZE, which the engine does not cap, is 2^14 on most and 2^15 on desktop GL); the eight-row grove keeps LEAF_ID_FRAC above, which is why the shader takes the packing as a uniform.
+const VARIETY_GENOTYPES = 8;       // G
+const VARIETY_COLUMNS = 8;         // V
+const VARIETY_ID_FRAC = 128;       // 64 rows / 128 = under ½, so int(iC.w + 0.5) is still the cluster
+const GENOTYPE_SALT = 0x78DDE6E4;  // grows a genotype's and a row's spread: 4·0x9E3779B9 mod 2^32, the golden gamma's next multiple after the inner-leaves salt's 3·, in no other stream
+const VARIETY_JITTER = 2;          // the light class is the leaf's rank of light, ± this many columns (the leaf's own leafJitter draw)
+const RHO_LIGHT = 0.04;            // sun leaves narrower lobes: a deeper cut by RHO_LIGHT·variety across the columns (classic in oaks; for maple and beech an extrapolation from a smaller, thicker sun leaf — Hanson 1917 — so conservative)
+const SIZE_LIGHT = 0.15;           // sun leaves smaller, shade leaves larger by this much at variety 1 (komorebi-grove.js shifts the size by it, renormalised so the canopy's area is the look's)
 
 // THE SUGAR MAPLE (Acer saccharum), RECALIBRATED 2026-10-09 to José's thirteen leaves (DSC_0617-0622, DSCF1667 ×3, DSC_0656 ×5), read with the same measure as the engine's (leaf-shape.test.js): actinodromous, a central
 // primary and a lateral pair at ±43° (his 33-50°, mean 43) — three main lobes — and a basal pair of short stubs at ±95°, 0.36 of the central, that are a small lobe on some leaves and a shoulder on the rest (his are absent, a
@@ -176,8 +186,30 @@ const outlineSeed = (spec, seed, v) => hash3((seed>>>0)^OUTLINE_SALT, spec.speci
 // A leaf's outline, by the address that never moves: one of LEAF_VARIANTS, a pure function of (seed, cluster, leaf) on its own salt. The grove (which
 // outline it hangs in) and the litter (which it lies in) both ask here, so a fallen leaf keeps its shape.
 function leafVariant(seed, j, k){
-  return Math.floor(mulberry32(hash3((seed>>>0)^VARIANT_SALT, j, k))()*LEAF_VARIANTS);
+  return Math.floor(leafJitter(seed, j, k)*LEAF_VARIANTS);
 }
+// leafVariant's own draw, unfloored: the one number of a leaf's address that leaf_variety reuses to jitter its light class by (leafColumn), so no stream of its own is added
+function leafJitter(seed, j, k){
+  return mulberry32(hash3((seed>>>0)^VARIANT_SALT, j, k))();
+}
+// A leaf's light class from its rank of light u in the grove (0 buried .. 1 most exposed) and its jitter h: V·u, ± VARIETY_JITTER columns of h, clamped to the table — a column is where the rank puts it, not stepped by it
+const leafColumn = (u, h) => Math.min(VARIETY_COLUMNS - 1, Math.max(0, Math.floor(VARIETY_COLUMNS*u + VARIETY_JITTER*(h - 0.5))));
+// THE ROW'S SPEC: the species' numbers moved by the spread of the row's genotype g and its own leaf draws, scaled by the variety v, and by its light class c. Palmate (the maple): the lateral angle, the basal length, the lobe breadth and the lateral
+// length each move by a genotype draw plus a leaf draw (and the basal angle by a leaf draw), and the sun cuts deeper (rho − RHO_LIGHT·v·λ, λ = (c + ½)/V − ½, −7/16 in the deepest shade to +7/16 in full sun). THE STREAMS ARE THE CONTRACT: the genotype's
+// four draws in this order, then the leaf's five — reorder them and every row there is regrows. Pinnate (the beech) has no genotype numbers: its rows differ by their growth streams alone, so the spec is the spec.
+const U = (r) => 2*r() - 1;
+function rowSpec(spec, seed, v, row){
+  if(spec.grammar !== 'palmate') return spec;
+  const g = Math.floor(row/VARIETY_COLUMNS), c = row % VARIETY_COLUMNS;
+  const gs = mulberry32(hash3((seed>>>0)^GENOTYPE_SALT, spec.species, g)), ls = mulberry32(hash3((seed>>>0)^GENOTYPE_SALT, spec.species, VARIETY_GENOTYPES + row));
+  const dLatG = 5*U(gs), dBasG = 0.15*U(gs), dRhoG = 0.025*U(gs), dLenG = 0.07*U(gs);
+  const dLatL = 5*U(ls), dBasL = 0.12*U(ls), dRhoL = 0.02*U(ls), dLenL = 0.06*U(ls), dBasAng = 10*U(ls);
+  const lam = (c + 0.5)/VARIETY_COLUMNS - 0.5, lat = spec.angles[3] + v*(dLatG + dLatL), ba = spec.angles[4] + v*dBasAng;
+  const bl = Math.max(0.12, spec.lengths[0] + v*(dBasG + dBasL)), ll = spec.lengths[1] + v*(dLenG + dLenL);
+  return { ...spec, angles: [-ba, -lat, 0, lat, ba], lengths: [bl, ll, 1, ll, bl], rho: spec.rho + v*(dRhoG + dRhoL) - RHO_LIGHT*v*lam };
+}
+// The blade of row `row` at variety v — the texture's profile of that row and the held leaf's blade, ONE function so the inset shows the leaf the bake was handed. The growth stream is the row's own.
+const rowBlade = (spec, seed, v, row) => bladeOf(rowSpec(spec, seed, v, row), outlineSeed(spec, seed, row));
 
 // Whether a hanging leaf is turned a half turn past the grove's draw. The grove draws a leaf's angle on [0, π), every orientation there is for an ellipse
 // (it is the same leaf a half turn on) and half of them for an outline, which is not: every tip would point into one half-plane. A pure function of
@@ -190,17 +222,20 @@ function leafFlip(seed, j, k){
 // uploads), the box the quad has to cover — the union of the variants' extents in the unit frame, as `[cx, cy, hx, hy]` (centre and half-size) — and `reach`, the
 // farthest corner of it from the origin (the litter's cull radius, in leaf units), and `rmax`, the longest radius of any outline (the faithful cast frame's pad). null is the ellipse: no profile, no box, nothing to upload. Memoised on
 // (shape, seed): the engine asks per regrow, the litter per bake, the harness per check — and a name with no outline yet is the ellipse, not an error.
+// WITH `variety` ABOVE 0 the table is the genotype × light one — VARIETY_GENOTYPES·VARIETY_COLUMNS = 64 rows of rowBlade — and the descriptor says how it is packed: `idFrac` 128 (j + row/idFrac in the cluster id), `perTree` the rows a tree owns, `variety`
+// itself; memoised on (shape, seed, variety). At 0 (or absent, or anything that is not a positive number) it is the descriptor it always was, the same object, with no new field.
 const memo = new Map();
-function leafShape(name, seed){
+function leafShape(name, seed, variety = 0){
   const spec = LEAF_SHAPES[name];
   if(!spec) return null;
-  const key = `${name}|${seed>>>0}`;
+  const varied = variety > 0, key = varied ? `${name}|${seed>>>0}|${variety}` : `${name}|${seed>>>0}`;
   let g = memo.get(key);
   if(!g){
-    const data = new Float32Array(LEAF_VARIANTS*LEAF_SAMPLES);
-    for(let v = 0; v < LEAF_VARIANTS; v++) data.set(profile(spec, outlineSeed(spec, seed, v)), v*LEAF_SAMPLES);
+    const rows = varied ? VARIETY_GENOTYPES*VARIETY_COLUMNS : LEAF_VARIANTS, data = new Float32Array(rows*LEAF_SAMPLES);
+    if(varied) for(let row = 0; row < rows; row++) data.set(rowBlade(spec, seed, variety, row).r, row*LEAF_SAMPLES);
+    else for(let v = 0; v < LEAF_VARIANTS; v++) data.set(profile(spec, outlineSeed(spec, seed, v)), v*LEAF_SAMPLES);
     let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
-    for(let v = 0; v < LEAF_VARIANTS; v++) for(let i = 0; i < LEAF_SAMPLES; i++){
+    for(let v = 0; v < rows; v++) for(let i = 0; i < LEAF_SAMPLES; i++){
       const th = TAU*((i + 0.5)/LEAF_SAMPLES - 0.5), r = data[v*LEAF_SAMPLES + i], x = r*Math.cos(th), y = r*Math.sin(th);
       if(x < x0) x0 = x;
       if(x > x1) x1 = x;
@@ -210,11 +245,12 @@ function leafShape(name, seed){
     const pad = 0.01, hx = (x1 - x0)/2 + pad, hy = (y1 - y0)/2 + pad, cx = (x0 + x1)/2, cy = (y0 + y1)/2;   // pad: half float's rounding of r, and the arc between two samples bulging past their chord
     let rmax = 0;
     for(let i = 0; i < data.length; i++) rmax = Math.max(rmax, data[i]);
-    g = { name, data, rows: LEAF_VARIANTS, box: [cx, cy, hx, hy], reach: Math.hypot(Math.abs(cx) + hx, Math.abs(cy) + hy), rmax };
+    g = { name, data, rows, box: [cx, cy, hx, hy], reach: Math.hypot(Math.abs(cx) + hx, Math.abs(cy) + hy), rmax };
+    if(varied){ g.idFrac = VARIETY_ID_FRAC; g.perTree = VARIETY_COLUMNS; g.variety = variety; }
     if(memo.size >= 8) memo.delete(memo.keys().next().value);
     memo.set(key, g);
   }
   return g;
 }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafFlip, leafShape };
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, SIZE_LIGHT, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, rowSpec, rowBlade, leafFlip, leafShape };

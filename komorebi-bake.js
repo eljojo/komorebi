@@ -209,8 +209,8 @@ export function makeBake(hub){
     const hLo = woodOn ? 0 : faith.hMin*(params.sway_pitch>0 ? 0.1 : 1), hHi = faith.hMax;
     // pad: the leaf quad half-extent, the incoherent drift orbit, and the live coherent sway (leaves+wood translate
     // by up to |sway| at the crown) — none of which are in the rest plan AABB. (The twig-hug trail-back already is.)
-    // A leaf's long half-axis is at most 0.7·leaf_size_m, which an ellipse's pad of 1 covers with room to spare; a lobed outline reaches rmax of it from its base.
-    const pad = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)) + params.drift_amount + Math.hypot(motion.sway[0],motion.sway[1]) + 0.05;
+    // A leaf's long half-axis is at most 0.7·leaf_size_m, which an ellipse's pad of 1 covers with room to spare; a lobed outline reaches rmax of it from its base, and leaf_variety's size shift (scaleMax, up to ~1.15 of the look's) grows the half-axis by as much (×1 is exact when there is none).
+    const pad = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)*(hub.grove?.scaleMax ?? 1)) + params.drift_amount + Math.hypot(motion.sway[0],motion.sway[1]) + 0.05;
     let minx,maxx,miny,maxy;
     if(params.receiver){
       // CURTAIN cast frame (§4.9): occluders project onto the VERTICAL cloth (Y=cy), not the floor — the projection is

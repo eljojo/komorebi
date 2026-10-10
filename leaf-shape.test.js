@@ -544,7 +544,10 @@ test("leafQ: q' = |l| − r(θ) + 1 — the ellipse's ramp WIDTH kept at the tip
   expect(q).toContain("float leafQ(vec2 l, float variant){");
   expect(q).toContain("atan(");
   expect(q).toContain("0.15915494");                                                  // 1/2π: u = θ/2π + ½
-  expect(q).toContain(`(variant + 0.5)/${LEAF.LEAF_VARIANTS}.0`);                    // a row's centre: no read between two variants
+  expect(q).toContain(`float v = (variant + 0.5)/${LEAF.LEAF_VARIANTS}.0;`);         // a row's centre: no read between two variants — the literal line, kept: a divide by a literal may compile to an exact multiply where a divide by a uniform may not
+  expect(q, "a varied grove's table has more rows: a uniform branch overrides the literal line, after it").toContain("uniform float uLeafRows;");
+  expect(q).toContain("if(uLeafRows > 0.0) v = (variant + 0.5)/uLeafRows;");
+  expect(q.indexOf("if(uLeafRows > 0.0)"), "...and only after it").toBeGreaterThan(q.indexOf("float v = (variant + 0.5)/"));
   expect(q).toContain("- texture(uLeafTex, vec2(u, v)).r + 1.0");
   expect(/dot\(l, ?l\) < 1e-12/.test(q), "atan(0, 0) is undefined: the origin has a guard").toBe(true);
 });
@@ -555,7 +558,8 @@ test("the quad grows with the outline: every VS places a corner at aCorner·box.
     expect(code(vs).includes("vec2 lc = aCorner*uShapeBox.zw + uShapeBox.xy;"), `${name} scales the corner into the box`).toBe(true);
     expect(code(vs).includes("R*(lc*vec2(A,B))"), `${name} places the leaf by it`).toBe(true);
     expect(code(vs).includes("vLocal = lc;"), `${name} hands the mask the same local`).toBe(true);
-    expect(code(vs).includes("vVariant = floor(fract(iC.w)*32.0 + 0.5);"), `${name} reads the outline off the fraction`).toBe(true);
+    expect(code(vs).includes("vVariant = floor(fract(iC.w)*uLeafIdFrac + 0.5);"), `${name} reads the outline off the fraction, by the grove's own packing`).toBe(true);
+    expect(vs.includes("uniform float uLeafIdFrac;"), `${name} declares the packing`).toBe(true);
     expect(code(vs).includes("int cid = int(iC.w + 0.5);"), `${name}: the cluster is still j`).toBe(true);
     expect(code(vs).includes("R*(aCorner*vec2(A,B))"), `${name}: no corner is placed any other way`).toBe(false);
   }
@@ -571,8 +575,9 @@ test("the quad grows with the outline: every VS places a corner at aCorner·box.
 
 test("the program's uniforms are named alike in the bake, the faithful bake and the carpet, and the engine looks every one of them up and frees the texture", () => {
   const engine = readFileSync(new URL("./komorebi-engine.js", import.meta.url), "utf8");
-  for (const prog of ["progBake", "progFaith"]) for (const [key, name] of [["leafTex", "uLeafTex"], ["leafShape", "uLeafShape"], ["shapeBox", "uShapeBox"]]) expect(engine.includes(`${key}:loc(${prog},'${name}')`), `${prog} ${name}`).toBe(true);
-  for (const [key, name] of [["leafTex", "uLeafTex"], ["leafShape", "uLeafShape"], ["shapeBox", "uShapeBox"]]) expect(engine.includes(`${key}:loc(prog,'${name}')`), `litter ${name}`).toBe(true);
+  const names = [["leafTex", "uLeafTex"], ["leafShape", "uLeafShape"], ["shapeBox", "uShapeBox"], ["leafIdFrac", "uLeafIdFrac"], ["leafRows", "uLeafRows"]];   // the last two: the grove's packing (the VS) and its row count (the FS) — the litter's program has no uLeafIdFrac, and its lookup is a null that an upload ignores
+  for (const prog of ["progBake", "progFaith"]) for (const [key, name] of names) expect(engine.includes(`${key}:loc(${prog},'${name}')`), `${prog} ${name}`).toBe(true);
+  for (const [key, name] of names) expect(engine.includes(`${key}:loc(prog,'${name}')`), `litter ${name}`).toBe(true);
   const between = (a, b) => engine.slice(engine.indexOf(a), engine.indexOf(b, engine.indexOf(a)));
   expect(between("function freeGrove", "function installGrove")).toContain("g.leafTex");                // a grove frees what it made
   expect(between("dispose(){", "gl.getExtension('WEBGL_lose_context')")).toContain("hub.grove?.leafTex");   // ...and a disposed engine frees the active one's (a lost context forgets it with the grove: grove:null)
@@ -599,20 +604,22 @@ const stateAt = (calls, n) => {
     activeBefore: calls.slice(0, calls.indexOf(tex)).reverse().find((c) => c[0] === "activeTexture")?.[1] };
 };
 
-test("bindLeafShape: unit 6, the grove's own texture and gate and box — and the ellipse's box is (0, 0, 1, 1), the quad it has always been", () => {
-  const { calls, gl } = rec(), u = { leafTex: "u.tex", leafShape: "u.shape", shapeBox: "u.box" };
-  const shape = LEAF.leafShape("maple", 9);
+test("bindLeafShape: unit 6, the grove's own texture and gate and box and packing — the ellipse's box is (0, 0, 1, 1), the quad it has always been, and an 8-row grove sends 32 and 0 (the literal path)", () => {
+  const { calls, gl } = rec(), u = { leafTex: "u.tex", leafShape: "u.shape", shapeBox: "u.box", leafIdFrac: "u.idFrac", leafRows: "u.rows" };
+  const shape = LEAF.leafShape("maple", 9), varied = LEAF.leafShape("maple", 9, 1);
   bindLeafShape(gl, u, { leafTex: "leaf-m", shape });
   bindLeafShape(gl, u, { leafTex: "leaf-e", shape: null });
+  bindLeafShape(gl, u, { leafTex: "leaf-v", shape: varied });
   expect(calls).toEqual([
-    ["activeTexture", "TEXTURE6"], ["bindTexture", "TEXTURE_2D", "leaf-m"], ["uniform1i", "u.tex", 6], ["uniform1i", "u.shape", 1], ["uniform4fv", "u.box", shape.box],
-    ["activeTexture", "TEXTURE6"], ["bindTexture", "TEXTURE_2D", "leaf-e"], ["uniform1i", "u.tex", 6], ["uniform1i", "u.shape", 0], ["uniform4fv", "u.box", [0, 0, 1, 1]],
+    ["activeTexture", "TEXTURE6"], ["bindTexture", "TEXTURE_2D", "leaf-m"], ["uniform1i", "u.tex", 6], ["uniform1i", "u.shape", 1], ["uniform4fv", "u.box", shape.box], ["uniform1f", "u.idFrac", 32], ["uniform1f", "u.rows", 0],
+    ["activeTexture", "TEXTURE6"], ["bindTexture", "TEXTURE_2D", "leaf-e"], ["uniform1i", "u.tex", 6], ["uniform1i", "u.shape", 0], ["uniform4fv", "u.box", [0, 0, 1, 1]], ["uniform1f", "u.idFrac", 32], ["uniform1f", "u.rows", 0],
+    ["activeTexture", "TEXTURE6"], ["bindTexture", "TEXTURE_2D", "leaf-v"], ["uniform1i", "u.tex", 6], ["uniform1i", "u.shape", 1], ["uniform4fv", "u.box", varied.box], ["uniform1f", "u.idFrac", 128], ["uniform1f", "u.rows", 64],
   ]);
 });
 
 function layerRig(grove, groveIn, crossW = 0) {
   const { calls, gl } = rec();
-  const keys = ["origin", "extent", "edge", "morph", "morphAmount", "windLevel", "windTime", "leafSwing", "flutterFreq", "stemLen", "sway", "coverage", "clusterTex", "clusterGeom", "leafTex", "leafShape", "shapeBox"];
+  const keys = ["origin", "extent", "edge", "morph", "morphAmount", "windLevel", "windTime", "leafSwing", "flutterFreq", "stemLen", "sway", "coverage", "clusterTex", "clusterGeom", "leafTex", "leafShape", "shapeBox", "leafIdFrac", "leafRows"];
   const U = { bake: Object.fromEntries(keys.map((k) => [k, `bake.${k}`])) };
   const params = { ...DEFAULTS, layer_count: 2, canopy_extent_m: 12, canopy_base_height_m: 5, canopy_thickness_m: 3 };
   const hub = { gl, params, motion: { u: 0, time: 0, sway: [0, 0] }, src: {}, faith: {}, sky: {}, U, fill: {}, bakeFBO: {}, faithFBO: {}, fillFBO: {}, emptyVAO: {}, progBake: {}, progFaith: {}, progFaithSeg: {}, progFAcc: {},
@@ -645,7 +652,7 @@ test("the faithful bake draws the ACTIVE grove in its outline, and pads its cast
   const src = readFileSync(new URL("./komorebi-bake.js", import.meta.url), "utf8"), fn = src.slice(src.indexOf("function bakeFaithful"), src.indexOf("function bakeFaithful") + 10000);
   expect(fn).toContain("bindLeafShape(gl, U.faith, hub.grove);");
   expect(fn.indexOf("bindLeafShape(gl, U.faith, hub.grove);")).toBeLessThan(fn.indexOf("gl.drawArraysInstanced"));
-  expect(fn).toContain("const pad = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)) + params.drift_amount");   // a leaf's long half-axis is at most 0.7·leaf_size_m; the ellipse's 1 is the pad it has always had, to the bit
+  expect(fn).toContain("const pad = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)*(hub.grove?.scaleMax ?? 1)) + params.drift_amount");   // a leaf's long half-axis is at most 0.7·leaf_size_m, times the largest shift leaf_variety gave one (scaleMax; ×1 is exact when there is none); the ellipse's 1 is the pad it has always had, to the bit
 });
 
 // ---- the carpet: the leaf lies in the shape it hung in ----

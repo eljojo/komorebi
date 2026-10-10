@@ -24,7 +24,7 @@
 //   writes it), so the engine re-seasons only with no transition and with faith.buf still this grove's. leafW is a NEW array each time: the tree preview keys on it.
 //   MEASURED (bun, median of 7, fall at t 0.9): afternoon 7 73 ms a regrow, the void 201, montebello 15 — see the cost test in reseason.test.js for the re-season's.
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
 
 // The fall tiers this module owns, as the bundler sees them (embed-build.mjs): each is substituted by a literal, true or false, and the code behind a false one is not
 // in the bundle. A tier is cut only for a look that does not open it (komorebi-params.js FEATURES), so a flag that is false here means the guarded arithmetic was
@@ -35,13 +35,13 @@ const FEAT_EXPOSURE = true;
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
-import { LEAF_ID_FRAC, LEAF_SAMPLES, leafFlip, leafShape, leafVariant } from './komorebi-leaf.js';
+import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
 
 // Every param buildGrove reads besides the season set, and so the whole of `season.key` (faithful_canopy and receiver reach it through faithfulOn(), which the key carries
 // as the boolean it is). Held against a grep of this file in reseason.test.js.
 export const GROVE_READS = [
   'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
-  'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaves_per_cluster',
+  'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_variety','leaves_per_cluster',
   'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','trans_b','trans_g','trans_r','tree_count','trunk_radius_m','view_extent_m',
 ];
 export const seasonKey = (params, faithful) => `${GROVE_READS.map(k => params[k]).join('|')}|${faithful ? 1 : 0}`;
@@ -129,7 +129,9 @@ export function makeGrove(hub){
     const TAU2 = Math.PI*2;
     // THE LEAF'S OUTLINE (§4.5, P4a-2): null is the ellipse — the stamp's own line, and nothing below is asked of it. A grove OWNS its outline (like its cluster
     // textures), because a transition's crossfade bakes two groves into one layer texture and they may not share one.
-    const shape = leafShape(params.leaf_shape, params.seed);
+    const shape = leafShape(params.leaf_shape, params.seed, params.leaf_variety);
+    // LEAF VARIETY (§4.5): only an outline varies — the ellipse has no outlines to choose among — and only above 0. Below it every line of this function is the one it always was.
+    const vary = !!shape && params.leaf_variety > 0;
 
     // ---- grow a GROVE: tree_count trees whose trunks spread across the view region with overlapping
     // crowns. Each tree is a trunk -> limb_count arms (rising by branch_pitch, fanned around the
@@ -307,6 +309,7 @@ export function makeGrove(hub){
       limbPitch:new Float32Array(nLimb), limbPitchVel:new Float32Array(nLimb),   // second DOF (§5.1): ELEVATION bend in the limb's own vertical plane — what sway_pitch foreshortens by. Same spring constants as the yaw.
       nClusterTotal,
       nLeaf,   // the leaves hung on each cluster, the marginal one counted where there is one: the grove's own record, which the editor's held leaf walks instead of rebuilding it from the params
+      leafRow: null, leafVariety: 0,   // leaf_variety (§4.5): each leaf's row in the outline table by (cluster, leaf) — j·nLeaf + k — and the variety the table was made for; the held leaf and the litter read them, never the params, which run ahead of the picture. null and 0 at the gate
       clusterPlan:new Float32Array(nClusterTotal*2), clusterLimb:new Int32Array(nClusterTotal),
       clusterPhase:new Float32Array(nClusterTotal),
       twigAngle:new Float32Array(nClusterTotal), twigVel:new Float32Array(nClusterTotal),
@@ -347,7 +350,8 @@ export function makeGrove(hub){
     // leaf that has is compacted out of both buffers. `dropping` is its gate: at leaf_drop 0, or in a season before the first leaf's fade
     // can begin (drop_start - DROP_EPS), rec, the retention arithmetic, the compaction and the litter are never made — P1's buffers to the bit.
     const isLit = lit(params), isDropping = dropping(params), after = afterTurn(params);
-    const rec = ((FEAT_EXPOSURE && isLit) || (FEAT_DROP && isDropping)) ? [] : null;
+    const rec = ((FEAT_EXPOSURE && isLit) || (FEAT_DROP && isDropping) || vary) ? [] : null;   // vary: the rows are drawn by the light, over the same record
+    const REC = 10;
     const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
     let sEx = null, sRank = null;   // the exposure field and keyed rank, when this build ran the pass: the record keeps them, so the first re-season does not pay it again
     let sAt = 0;
@@ -414,18 +418,53 @@ export function makeGrove(hub){
     // with heavy droop and inner leaves up leans a hair less at the same height, which is the price of one frame for the leaves and the wood (they share it).
     if(zLow < faith.hMin) faith.hMin = zLow;
     if(zHigh > faith.hMax) faith.hMax = zHigh;
+    // Every leaf's place in the grove's order of light — the rank the season's exposure pass also builds, and from the same leaves: x, y, z, the leaf's flat area as the hang loop left it (BEFORE any shift below), its own clock as the tie-break.
+    // The one function for both the rows (the pass below) and the season block, so the two cannot disagree about who is in the sun.
+    const lightOf = () => {
+      const n = rec.length/REC, X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
+      for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; K[i]=leafClock(params.seed, rec[REC*i+4], rec[REC*i+5]); }
+      const ex = exposureGrid(X, Y, Z, Ar, E);   // K: the leaves nothing shades (e = 1) are ordered by their own clocks, not stacked on one rank
+      return { ex, rank: exposureRank(ex, K) };
+    };
+    // LEAF VARIETY (§4.5, `leaf_variety`): which row of the outline table each leaf hangs in, and how big it is, from the grove's own light. The rank is the SUMMER set's, keyed by the leaf's clock as the season's is, and never exposureBlend's
+    // (exposure_absolute is a season key; shape is not season) — so it is the season's rank to the bit, and a leaf's colour, day and fall order are the variety-0 grove's. THE ROW is its tree's genotype (treeGenotype: a pure function of (seed, t))
+    // and its light class, the rank in columns jittered by the leaf's own leafJitter draw, so no stream is drawn from. THE SIZE shifts with the rank itself, continuous and not stepped by the column: m = 1 + SIZE_LIGHT·v·(1 − 2u), sun leaves
+    // smaller, and is renormalised once per grove, weighted by each leaf's cover, so that Σ cov·A·B0 is the look's: the canopy is as full as it was, and the marginal leaf and tree count only as much as they fade in. The area the LIGHT reads
+    // (rec, and the season record's slot 5) is the pre-shift one, which is what makes the rank the variety-0 rank. Runs BEFORE the season base is taken, so a re-season's copies carry the row (the cluster id's fraction) and the shifted half-axes.
+    // The packing is j + row/128 in the cluster id; the hang loop pushed j + variant/32, which this overwrites in both buffers. The growth, positions, angles, flips, tilts, tau and heights are untouched.
+    let leafRow = null, vLight = null, scaleMax = 1;
+    if(vary){
+      leafRow = new Uint8Array(nClusterTotal*nLeaf);
+      if(rec.length){
+        const n = rec.length/REC, v = params.leaf_variety, mOf = (u) => 1 + SIZE_LIGHT*v*(1 - 2*u);
+        vLight = lightOf();
+        const rank = vLight.rank, geno = Array.from({ length: nTree }, (_, t) => treeGenotype(params.seed, t, VARIETY_GENOTYPES));
+        let S0 = 0, S1 = 0;
+        for(let i=0;i<n;i++){ const o = REC*i, d = layerData[rec[o+7]], li = rec[o+8], w = rec[o+6]*d[li-6]*d[li-5], m = mOf(rank[i]); S0 += w; S1 += w*m*m; }
+        const kappa = S1 > 0 ? Math.sqrt(S0/S1) : 1;
+        for(let i=0;i<n;i++){
+          const o = REC*i, j = rec[o+4], k = rec[o+5], u = rank[i], d = layerData[rec[o+7]], li = rec[o+8], fi = rec[o+9];
+          const row = geno[twigs[j].tree]*VARIETY_COLUMNS + leafColumn(u, leafJitter(params.seed, j, k)), s = kappa*mOf(u), cid = j + row/VARIETY_ID_FRAC;
+          d[li-6] *= s; d[li-5] *= s; faithData[fi-6] = d[li-6]; faithData[fi-5] = d[li-5];
+          d[li+3] = cid; faithData[fi+3] = cid;
+          leafRow[j*nLeaf + k] = row;
+          if(s > scaleMax) scaleMax = s;
+          if(sRec){ sRec[i*SREC+3] = d[li-6]; sRec[i*SREC+4] = d[li-5]; }
+        }
+        if(keepSeason){ sEx = vLight.ex; sRank = vLight.rank; }   // what reseasonGrove would build from the record (its slot 5 keeps the pre-shift area): the first re-season does not pay for it again
+      }
+      hier.leafRow = leafRow; hier.leafVariety = params.leaf_variety;
+    }
     const seasonBase = keepSeason ? layerData.map(a => Float32Array.from(a)) : null;   // the UNCOMPACTED layer records, before the rewrite below touches a tau
     let litter = null, leafW = null;
     if(rec?.length){
-      const REC = 10, n = rec.length/REC;
+      const n = rec.length/REC;
       // each leaf's place in the grove's order of light — and, as far as exposure_absolute says, its raw light — what the two maps in math.js
       // (and the drop day) take. It is the FULL summer set whatever has dropped: exposure is a season integral, not a function of who is
       // still hanging, so a leaf's day does not move as the season is read at another phenology.
       let u = null;
       if(FEAT_EXPOSURE && ordered(params)){
-        const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
-        for(let i=0;i<n;i++){ X[i]=rec[REC*i]; Y[i]=rec[REC*i+1]; Z[i]=rec[REC*i+2]; Ar[i]=rec[REC*i+3]; K[i]=leafClock(params.seed, rec[REC*i+4], rec[REC*i+5]); }
-        const ex = exposureGrid(X, Y, Z, Ar, E), rank = exposureRank(ex, K);   // K: the leaves nothing shades (e = 1) are ordered by their own clocks, not stacked on one rank
+        const light = vLight ?? lightOf(), ex = light.ex, rank = light.rank;   // leaf_variety has already built them, from these very leaves: the same arrays
         u = exposureBlend(rank, ex, params.exposure_absolute);   // read below, never written: at exposure_absolute 0 it IS the rank the record keeps
         if(keepSeason){ sEx = ex; sRank = rank; }   // the same leaves in the same order as sRec (one push site), the same seed, clocks and E: what reseasonGrove would build
       }
@@ -449,7 +488,7 @@ export function makeGrove(hub){
         d[li+8] = cf; faithData[fi+9] = cf;
         if(w === 0){
           alive[i] = 0; gone++;
-          if(FEAT_LITTER) litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [d[li-6], d[li-5]], j, k, fade: cov });   // its own statement: a build without the carpet still compacts, by the count of leaves that went and not by the list
+          if(FEAT_LITTER) litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [d[li-6], d[li-5]], j, k, fade: cov, ...(leafRow && { row: leafRow[j*nLeaf + k] }) });   // its own statement: a build without the carpet still compacts, by the count of leaves that went and not by the list. `row` (leaf_variety): the outline it hung in, which the carpet lies it in
         }
       }
       // A leaf with w = 0 is not a faint leaf, it is no leaf: compacted out of both buffers in one pass over the records, so a bare canopy
@@ -653,6 +692,7 @@ export function makeGrove(hub){
     }
     hier.leafW = leafW;   // abscission (§4.5): each leaf's retained weight by (twig, slot) for the tree preview, which scatters its own leaves; null at the gate
     const grove = { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter, key: seasonKey(params, faithful) };   // key: the structure it was grown for (see THE KEY)
+    if(vary) grove.scaleMax = scaleMax;   // the largest shift leaf_variety gave a leaf: the faithful cast frame's pad grows by it (komorebi-bake.js); absent at the gate
     if(keepSeason){
       let sx0=1e18, sy0=1e18, sx1=-1e18, sy1=-1e18;   // the wood's share of the faithful AABB: the season never moves it
       for(const s of faith.segRest){
@@ -671,7 +711,7 @@ export function makeGrove(hub){
   // The season arithmetic of buildGrove (the hang loop's tau, the rec rewrite, the compaction, the litter, leafW, the faithful AABB), re-run over g.season in ONE pass
   // on typed arrays. It must stay the same arithmetic as buildGrove's, call for call — reseason.test.js holds the bytes.
   function reseasonGrove(g, P = params){
-    const S = g.season, n = S.n, rec = S.rec, nLeaf = S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0];
+    const S = g.season, n = S.n, rec = S.rec, nLeaf = S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0], leafRow = g.hier.leafRow;   // leafRow: the table of rows the build drew (leaf_variety), which the litter keeps; null at the gate
     const sen = senescing(P), isLit = lit(P), isDropping = dropping(P), after = afterTurn(P);
     const tShift = (FEAT_PIGMENT || FEAT_EXPOSURE || FEAT_DROP) ? treeShifts(P, S.nTree) : null, tGain = (FEAT_PIGMENT || FEAT_EXPOSURE) ? treeGains(P, S.nTree) : null, twigs = g.hier.twigs;   // the trees' lead and depth: the build's own tables, from the tree count the record kept, guarded by the same tiers
     let u = null;
@@ -704,7 +744,7 @@ export function makeGrove(hub){
       const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, P, P.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i]), dT, cT) : FEAT_PIGMENT && sen ? leafTau(tau, P, P.seed, j, k, leafT, undefined, undefined, dT, cT) : tau;
       const cov = rec[o+8], cf = cov*w;
       if(w === 0){
-        if(FEAT_LITTER) litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: cov });
+        if(FEAT_LITTER) litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: cov, ...(leafRow && { row: leafRow[j*nLeaf + k] }) });
         continue;
       }
       const l = rec[o+9], li = rec[o+10], bl = S.base[l], dl = outL[l], at = wL[l];
@@ -742,4 +782,7 @@ export function bindLeafShape(gl, u, g){
   gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, g.leafTex); gl.uniform1i(u.leafTex, 6);
   gl.uniform1i(u.leafShape, g.shape ? 1 : 0);
   gl.uniform4fv(u.shapeBox, g.shape ? g.shape.box : NO_BOX);
+  // leaf_variety's packing: the cluster id's fraction is j + row/idFrac, and a varied grove's table has `rows` rows to read it in. An eight-row grove and the ellipse send 32 and 0: the VS's multiply by 32 is the same IEEE op as a literal ·32 (x·32 is exact), and the FS keeps its literal /8.
+  gl.uniform1f(u.leafIdFrac, g.shape?.idFrac ?? LEAF_ID_FRAC);
+  gl.uniform1f(u.leafRows, g.shape?.idFrac ? g.shape.rows : 0);
 }

@@ -11,12 +11,13 @@
 // THE PICTURE IS THE LEAF IT WAS MADE FOR: while a regrow waits, the address, the seed, the size and the shape the label and the pigment read are the ones the maze
 // on show was grown with (`made`), never the params' newer ones. The leaf's TREE is read the same way: the tree the grove hangs cluster `made.j` on (hierOf, the grove the engine holds), and its lead and
 // depth are drawn from `made.seed` — the knobs' values are the live ones, so they recolour with the sliders like the pigments, but never from the params' seed or address, which run ahead of the picture.
+// So is its ROW (leaf_variety): which of the 64 outlines the grove hung this leaf in, and the variety that table was made for, are the grove's (hier.leafRow, hier.leafVariety), read at the regrow and part of its signature, never the params'.
 //
 // STACKING: the controls win. The canvas is positioned and has no z-index on purpose, so it stacks by DOM order — it sits right after the art canvas (a positioned
 // element over a plain one) and before #dev, #play and everything else, and the strip's z-index 8 puts the strip above it too. It stops click and pointer events only on itself.
 // ============================================================================
 import { TAU_ANTHOCYANIN, TAU_CAROTENOID, TAU_TANNIN, leafClock, senescence, treeGains, treeShifts } from './komorebi-math.js';
-import { LEAF_SHAPES, MAPLE } from './komorebi-leaf.js';
+import { LEAF_SHAPES, MAPLE, VARIETY_COLUMNS } from './komorebi-leaf.js';
 import { leafMaze, paintLeaf, rasterLeaf, tissues } from './leaf-maze.js';
 
 const N = 512;   // the raster's side: a regrow + raster costs about 0.13 s in bun, once per settled change of leaf, never per frame
@@ -69,12 +70,14 @@ function makeLeafPreview(params, hierOf){
     const now = performance.now(), css = sizeCss();
     if(css !== sigSize){ canvas.style.width = canvas.style.height = css; sigSize = css; sigPaint = ''; }
     const px = Math.max(64, Math.round(canvas.clientWidth*(window.devicePixelRatio || 1)));
-    const unit = unitOf(), sg = `${params.seed}|${params.leaf_shape}|${unit}|${j}|${k}`;
+    // leaf_variety: the row this leaf hangs in and the variety the grove's table was made for are the GROVE's (hier.leafRow, hier.leafVariety), never the params', which run ahead of the picture; with no table the leaf is today's, every byte
+    const hv = hierOf?.(), tabled = !!hv?.leafRow && hv.leafVariety > 0, row = tabled ? hv.leafRow[j*hv.nLeaf + k] : undefined, variety = tabled ? hv.leafVariety : 0;
+    const unit = unitOf(), sg = `${params.seed}|${params.leaf_shape}|${unit}|${j}|${k}${tabled ? `|${variety}|${row}` : ''}`;
     if(sg !== seenGrow){ seenGrow = sg; seenGrowAt = now; }
     let regrown = false;
     if(sg !== sigGrow && (!grown || now - seenGrowAt >= SETTLE_MS)){
-      made = { seed: params.seed, shape: params.leaf_shape, size: params.leaf_size_m, aspect: params.leaf_aspect, unit, j, k };
-      grown = leafMaze(spec(), made.seed, made.j, made.k, made.unit); sigGrow = sg; regrown = true;
+      made = { seed: params.seed, shape: params.leaf_shape, size: params.leaf_size_m, aspect: params.leaf_aspect, unit, variety, row, j, k };
+      grown = leafMaze(spec(), made.seed, made.j, made.k, made.unit, made.variety, made.row); sigGrow = sg; regrown = true;
       canvas.dataset.grows = String(++grows); canvas.dataset.size = String(made.size); canvas.dataset.unit = String(made.unit); canvas.dataset.grammar = grown.blade.grammar;
     }
     if(params.wall_fraction !== seenRaster){ seenRaster = params.wall_fraction; seenRasterAt = now; }
@@ -93,7 +96,9 @@ function makeLeafPreview(params, hierOf){
       const s = senescence(params, leafClock(made.seed, made.j, made.k), dT), a = s > 0 ? (tint.cell[1] - tint.wall[1])/(s*TAU_ANTHOCYANIN[1]) : 0;
       const b = s > 0 && params.tannin > 0 ? (tint.wall[0] - tint.summer[0]*(1 - s) - s*TAU_CAROTENOID[0])/(s*TAU_TANNIN[0]) : 0;
       const ofTree = dT !== undefined || cT !== undefined ? ` · tree ${tree}${dT !== undefined ? ` Δ ${dT.toFixed(3)}` : ''}${cT !== undefined ? ` c ${cT.toFixed(2)}` : ''}` : '';   // what the tree did to this leaf, when a knob is up
-      label = `leaf ${made.j}·${made.k} · outline ${grown.variant} · s ${s.toFixed(2)} a ${a.toFixed(2)} b ${b.toFixed(2)}${ofTree}`;
+      // a varied grove's leaf also says whose it is and in what light it grew: its tree (once, when the knobs above already named it), the genotype that tree drew and the light class — 4 and up is sun
+      const c = made.row === undefined ? 0 : made.row % VARIETY_COLUMNS, ofRow = made.row === undefined ? '' : `${ofTree ? '' : ` · tree ${tree}`} · genotype ${Math.floor(made.row/VARIETY_COLUMNS)} · ${c >= VARIETY_COLUMNS/2 ? 'sun' : 'shade'} ${c}`;
+      label = `leaf ${made.j}·${made.k} · outline ${grown.variant} · s ${s.toFixed(2)} a ${a.toFixed(2)} b ${b.toFixed(2)}${ofTree}${ofRow}`;
       canvas.dataset.label = label;
     }
     if(canvas.width !== px || canvas.height !== px){ canvas.width = canvas.height = px; }

@@ -89,8 +89,9 @@ function litterOrder(list){
 // The bake's instance buffer: INSTANCE_FLOATS per stamp, in drop order —
 //   [x, y, A, B0]        where it lies (metres) and the leaf's own half-axes (the grove's A and the face-on B0: lying flat it is not foreshortened)
 //   [cos, sin, fade, v]  its angle on the ground as a unit vector (no trig on the GPU), the fade it carries (§5.3: a marginal leaf or
-//                        tree lies at its fade, so a density morph does not pop its litter in at full weight), and its outline — leafVariant(seed, j, k),
-//                        the very one the grove hung it in, so a fallen leaf keeps its shape; 0 for the ellipse, which has none
+//                        tree lies at its fade, so a density morph does not pop its litter in at full weight), and its outline — the row the grove hung it in,
+//                        which the leaf carries (`row`, leaf_variety: the genotype × light table's, not a function of its address) or, without one, leafVariant(seed, j, k),
+//                        so a fallen leaf keeps its shape; 0 for the ellipse, which has none
 //   [r, g, b, 0]         litterAlbedo(tau, age, wetness)
 // `wrap` is the endless park's carpet, which repeats like its fill: a landing is folded into the frame, and a stamp that crosses an edge
 // is drawn again on the far side (the copy sits beside its leaf, so the layering is kept). A finite tree's is clamped: a stamp wholly off
@@ -100,7 +101,7 @@ function litterOrder(list){
 const INSTANCE_FLOATS = 12;
 const wrapInto = (v, o, ext) => o + ((((v - o) % ext) + ext) % ext);
 function litterInstances(list, P, frame, wrap, minHalf = 0){
-  const { ox, oy, ext } = frame, buf = [], rgb = [0, 0, 0], shape = leafShape(P.leaf_shape, P.seed);   // shape: the outline the leaves hung in; null is the ellipse
+  const { ox, oy, ext } = frame, buf = [], rgb = [0, 0, 0], shape = leafShape(P.leaf_shape, P.seed, P.leaf_variety);   // shape: the outline the leaves hung in (the 64-row table, with leaf_variety); null is the ellipse
   for(const l of litterOrder(list)){
     // + the margin the stamp's quad is drawn with (VS_LITTER); and an outline's quad is its box, whose far corner is `reach` leaf units from the base the stamp turns about
     const land = litterLanding(l, P), A = l.size[0], B = l.size[1], reach = (Math.max(A, B, minHalf) + 1.5*minHalf)*(shape ? shape.reach : 1);
@@ -113,7 +114,7 @@ function litterInstances(list, P, frame, wrap, minHalf = 0){
     } else if(x + reach < ox || x - reach > ox + ext || y + reach < oy || y - reach > oy + ext) continue;
     litterAlbedo(l.tau, litterAge(P, l.D), P.leaf_wetness, rgb);
     const c = Math.cos(land.rot), s = Math.sin(land.rot);
-    for(const dx of xs) for(const dy of ys) buf.push(x + dx, y + dy, A, B, c, s, l.fade, shape ? leafVariant(P.seed, l.j, l.k) : 0, rgb[0], rgb[1], rgb[2], 0);
+    for(const dx of xs) for(const dy of ys) buf.push(x + dx, y + dy, A, B, c, s, l.fade, shape ? (l.row ?? leafVariant(P.seed, l.j, l.k)) : 0, rgb[0], rgb[1], rgb[2], 0);
   }
   return { data: Float32Array.from(buf), count: buf.length/INSTANCE_FLOATS };
 }

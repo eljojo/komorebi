@@ -99,7 +99,7 @@ const inPoly = (p, poly) => { let c = false; for (let i = 0, j = poly.length - 1
 test("the maze is pure: regrown it is bit-equal, another seed grows another, and AREOLE_SALT is a stream of its own", () => {
   expect(MAZE.growAreoles(blade0, opts(1))).toEqual(maze);
   expect(MAZE.growAreoles(blade0, opts(2))).not.toEqual(maze);
-  const salts = [MAZE.AREOLE_SALT, LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* pigment */, 0x7A3C91D5 /* drop */, 0x5bd1e995 /* wind */, 0x5EED /* growth */];
+  const salts = [MAZE.AREOLE_SALT, LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, LEAF.GENOTYPE_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* pigment */, 0x7A3C91D5 /* drop */, 0x5bd1e995 /* wind */, 0x5EED /* growth */];
   expect(new Set(salts).size).toBe(salts.length);
 });
 
@@ -231,7 +231,7 @@ test("the blemish hook is a no-op while the list is empty: masks and colours bit
 // ---- the stamp: the row spans paint the box scan's buffer, to the byte ------------------------------------------------------
 // THE REFERENCE is the stamp as it was first written, kept here as the proof of any faster one: each wall visits every pixel of its box padded by hw + 1, evaluates the coverage there and keeps the max.
 // leaf-maze.js visits only the columns a wall can reach in each row and evaluates the very same expression in them, so on ANY walls the two buffers must agree byte for byte: the mazes' own
-// (the star, the maple, the beech) and the ones that make a span's edge cases (zero length, along a row, along a column, off the view, a hairline, a fat wall).
+// (the star, the maple, the beech and, with leaf_variety, rows of its table) and the ones that make a span's edge cases (zero length, along a row, along a column, off the view, a hairline, a fat wall).
 const SS = 4;                                                                           // leaf-maze.js's subsamples per axis
 const widthOfRef = (o) => (o === 1 ? 4 : o === 2 ? 3 : 1 + 0.5 * Math.max(0, 5 - o));
 function boxStamp(walls, w, view, S) {
@@ -262,6 +262,8 @@ const stampBlades = [
   ["the maple", bladeOf(MAPLE, outlineSeed(MAPLE, 1234, 0)), [256, 512, 1024]],
   ["the maple, the cost test's leaf", bladeOf(MAPLE, outlineSeed(MAPLE, 31, 5)), [256, 512]],
   ["the beech", bladeOf(LEAF.BEECH, outlineSeed(LEAF.BEECH, 1234, 3)), [256, 512, 1024]],
+  ...[0, 27, 63].map((row) => [`the maple's leaf_variety row ${row}`, LEAF.rowBlade(MAPLE, 1234, 1, row), [256, 512]]),
+  ["the beech's leaf_variety row 27", LEAF.rowBlade(LEAF.BEECH, 1234, 1, 27), [256, 512]],
 ];
 for (const [name, blade, Ns] of stampBlades) {
   test(`the stamp is the box scan's buffer, to the byte: ${name}, N ${Ns.join(" / ")} at wall_fraction 0.05 and 0.4`, () => {
