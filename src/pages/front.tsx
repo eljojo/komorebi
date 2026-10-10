@@ -39,11 +39,11 @@ function Garden(props: { entries: Entry[] }) {
       <ul class="looks">
         {props.entries.map((e) => (
           <li class="look" data-src={`/api/presets/${e.id}`}>
-            <p class="name">
-              <a href={`${BASE}/p/${e.id}`}>{e.name}</a>
-            </p>
+            {/* The name is not a link: a click rests the player on it and a double-click takes it fullscreen (José). */}
+            <p class="name">{e.name}</p>
             <p class="by">
-              by <a href={`${BASE}/u/${e.owner}`}>{e.owner}</a> · <a href={komorebiPresetLink(e.id)}>open in komorebi</a>
+              by <a href={`${BASE}/u/${e.owner}`}>{e.owner}</a> · <a href={`${BASE}/p/${e.id}`}>details</a> ·{' '}
+              <a href={komorebiPresetLink(e.id)}>open in komorebi</a>
             </p>
           </li>
         ))}
@@ -77,7 +77,7 @@ export function registerFrontPages(app: Hono<AppEnv>) {
     const viewer = await viewerOf(c);
     const entries = await gardenEntries(connect(c.env.DB));
     return c.html(
-      <Layout title="arboretum" viewer={viewer} wide scripts={entries.length ? [`${BASE}/js/garden.js`] : []}>
+      <Layout title="arboretum" viewer={viewer} home wide scripts={entries.length ? [`${BASE}/js/garden.js`] : []}>
         <div class="column">
           <h1>
             arboretum<span class="sub">where looks are kept</span>

@@ -86,12 +86,12 @@ describe('the garden on /arboretum', () => {
 });
 
 describe('the front page text', () => {
-  it('links into about, and opens komorebi once, straight into the light', async () => {
+  it('links into about, with no pill and no link to itself: the komorebi name leads home', async () => {
     const r = await get('/arboretum');
     for (const href of ['/about', '/arboretum/llms.txt']) expect(r.text).toContain(`href="${href}"`);
     expect(r.text).not.toContain('player.html');
-    expect(r.text.match(/>open komorebi</g)).toHaveLength(1);
-    expect(r.text).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
+    expect(r.text).not.toContain('>open komorebi<');
+    expect(r.text).not.toContain('href="/arboretum"');
   });
 
   it('is titled arboretum · komorebi', async () => {

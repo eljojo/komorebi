@@ -1,6 +1,7 @@
 // The garden's one player. The entries beside it are plain linked text; resting on one (the pointer settling, the
 // keyboard focusing it, a tap on its body) moves the player to that look with the engine's own crossfade, slowly.
 import { loadEngine } from './engine.js';
+import { fullscreenOnDoubleClick, toggleFullscreen } from './fullscreen.js';
 
 const root = document.getElementById('garden');
 
@@ -28,6 +29,7 @@ async function mount() {
     const [first, Komorebi] = await Promise.all([paramsOf(entries[0]), loadEngine(canvas.dataset.engine)]);
     const engine = Komorebi.create(canvas, { params: first });
     document.addEventListener('visibilitychange', () => engine.setPaused(document.hidden));
+    fullscreenOnDoubleClick(canvas);
 
     let shown = 0;    // the look the player is on
     let wanted = 0;   // the look the visitor last rested on
@@ -62,6 +64,13 @@ async function mount() {
         if (event.target.closest('a')) return;
         clearTimeout(timer);
         go(i);
+      });
+      // A double-click on it takes the player fullscreen, on that look (José, 2026-10-10), as a double-click on the player does.
+      entry.addEventListener('dblclick', (event) => {
+        if (event.target.closest('a')) return;
+        clearTimeout(timer);
+        go(i);
+        toggleFullscreen(document, canvas);
       });
     });
     mark();

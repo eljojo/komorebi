@@ -27,14 +27,17 @@ const NAV = [
 
 describe('every page carries komorebi’s links', () => {
   it('signed out, on every page type', async () => {
-    for (const [, path] of await pages()) {
+    for (const [name, path] of await pages()) {
       const r = await get(path);
-      for (const part of NAV) expect(r.text, `${path} ${part}`).toContain(part);
-      expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
+      // José, 2026-10-10: on arboretum's own front page, its link and the pill are redundant; the komorebi name leads home.
+      const front = name === 'front';
+      for (const part of NAV) if (!(front && part === 'href="/arboretum"')) expect(r.text, `${path} ${part}`).toContain(part);
       expect(r.text, path).toMatch(/<a[^>]*href="\/"[^>]*>komorebi<\/a>/);
       expect(r.text, path).toContain('href="/arboretum/login"');
       expect(r.text, path).not.toContain('player.html');
-      expect(r.text.match(/>open komorebi</g), path).toHaveLength(1);
+      expect(r.text.match(/>open komorebi</g)?.length ?? 0, path).toBe(front ? 0 : 1);
+      if (front) expect(r.text, path).not.toContain('href="/arboretum"');
+      else expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
       expect(r.text, path).toMatch(/<title>[^<]* · komorebi<\/title>/);
       expect(r.text, path).not.toContain('· arboretum</title>');
     }
@@ -45,8 +48,10 @@ describe('every page carries komorebi’s links', () => {
     for (const path of ['/arboretum', '/arboretum/new', '/arboretum/settings']) {
       const r = await asSession(user, 'GET', path);
       expect(r.status, path).toBe(200);
-      for (const part of NAV) expect(r.text, `${path} ${part}`).toContain(part);
-      expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
+      const front = path === '/arboretum';
+      for (const part of NAV) if (!(front && part === 'href="/arboretum"')) expect(r.text, `${path} ${part}`).toContain(part);
+      if (front) expect(r.text, path).not.toContain('>open komorebi<');
+      else expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
       expect(r.text, path).toContain('href="/arboretum/new"');
       expect(r.text, path).toContain('href="/arboretum/settings"');
       expect(r.text, path).toContain(`href="/arboretum/u/${user.username}"`);

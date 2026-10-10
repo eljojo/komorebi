@@ -18,7 +18,6 @@ describe('the front pages', () => {
     expect(r.status).toBe(200);
     html(r);
     expect(r.text).toContain('href="/arboretum/login"');
-    expect(r.text).toContain('href="/arboretum"');
     expect(r.text).toContain('href="/arboretum/arboretum.css"');
     expect(r.text).not.toContain('href="/arboretum/signup"');
   });

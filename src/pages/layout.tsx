@@ -12,7 +12,7 @@ export const viewerOf = (c: Ctx): Promise<Actor | null> => authorize(c, 'anonymo
 // Every page is a plain document that reads without JavaScript; `scripts` are the modules that add to it. Arboretum is
 // a part of komorebi, so no page names itself as a site: the head is komorebi's, with arboretum as one of its links.
 // The page is a plain dark ground: a canvas appears only where a look is being highlighted.
-export function Layout(props: { title: string; viewer: Actor | null; scripts?: string[]; classic?: string[]; wide?: boolean; children?: Child }) {
+export function Layout(props: { title: string; home?: boolean; viewer: Actor | null; scripts?: string[]; classic?: string[]; wide?: boolean; children?: Child }) {
   const { viewer } = props;
   return (
     <>
@@ -29,7 +29,8 @@ export function Layout(props: { title: string; viewer: Actor | null; scripts?: s
           <header>
             <a class="name" href="/">komorebi</a>
             <nav>
-              <a href={BASE}>arboretum</a>
+              {/* On arboretum's own front page its link and the pill are redundant: the komorebi name leads home (José). */}
+              {props.home ? null : <a href={BASE}>arboretum</a>}
               <a href="/about">about</a>
               {viewer ? (
                 <>
@@ -42,7 +43,7 @@ export function Layout(props: { title: string; viewer: Actor | null; scripts?: s
               )}
             </nav>
             {/* Straight into the light: the welcome's own "feel", without the welcome (index.html reads #feel). */}
-            <a class="feel" href="/#feel">open komorebi</a>
+            {props.home ? null : <a class="feel" href="/#feel">open komorebi</a>}
           </header>
           <main class={props.wide ? 'wide' : undefined}>{props.children}</main>
           {props.classic?.map((src) => <script src={src}></script>)}

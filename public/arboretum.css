@@ -141,8 +141,9 @@ section#owner-controls { margin-top: 3rem; border-top: 1px solid var(--line); }
 .look + .look { margin-top: 0.35rem; }
 .look p { margin: 0; }
 .look .name { font: 400 1.1em/1.35 var(--display); }
-.look .name a { color: var(--ink); text-decoration: none; }
+.look { user-select: none; }   /* a double-click takes the player fullscreen; it must not select the name */
+.look .name { color: var(--ink); cursor: pointer; }
 .look .by { font-size: 0.9em; color: var(--quiet); }
 .look:hover, .look:focus-within { border-left-color: rgba(159, 184, 159, 0.6); }
 .look[aria-current] { border-left-color: rgba(240, 224, 168, 0.7); }
-.look[aria-current] .name a { color: var(--sun); }
+.look[aria-current] .name { color: var(--sun); }
