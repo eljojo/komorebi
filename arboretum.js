@@ -186,7 +186,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   // look selected and the mirror's copy of your playlists.
   function drawChips() {
     if (!on) return;
-    const mine = signedIn() ? getMirror().playlists : [];
+    const mine = signedIn() ? getMirror().playlists.filter((p) => p.owner === me) : [];
     inRow.hidden = mine.length === 0;
     if (!mine.length) return;
     chips.replaceChildren(...playlistChips(view(), getStored(), host.active(), host.value(), mine).map((c) => {
@@ -223,9 +223,18 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   // ---- who is signed in. Asked when the advanced panel is first shown or a cloud playlist is active, and again whenever
   // the window regains focus, so a sign-in finished in the other tab shows at once. A successful answer sends the saves that
   // waited, refreshes the mirror, and — the first time in a session — offers to move the ★ looks in. ----
+  function bindWaitingOwner() {
+    const owner = getState().me?.username;
+    const m = getMirror();
+    // Legacy queues had no owner. Only the previously cached session can identify them; an unknown owner stays unsent.
+    if (m.queue.some((q) => q.owner === undefined))
+      return setMirror({ ...m, queue: m.queue.map((q) => q.owner === undefined ? { ...q, owner: owner ?? null } : q) });
+    return true;
+  }
   function signOut() {
+    const bound = bindWaitingOwner();
     me = null; out = true;
-    setState({ ...getState(), me: null });   // the mirror and the waiting saves stay: signing in again resumes from them
+    if (bound) setState({ ...getState(), me: null });   // the mirror and the waiting saves stay: signing in again resumes from them
     render();
   }
   function fail(e) {
@@ -235,7 +244,14 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   }
   async function check() {
     try {
-      me = (await api.me()).username;
+      const username = (await api.me()).username;
+      if (!bindWaitingOwner()) {
+        me = null; out = true;
+        say("this browser could not keep the waiting saves' owner; free storage before signing in");
+        render();
+        return;
+      }
+      me = username;
       out = false;
       offline = false;
       setState({ ...getState(), me: { username: me } });
@@ -259,7 +275,9 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     if (!origin) return null;
     api = makeApi(origin, fetchImpl);
     on = true;
-    me = getState().me?.username ?? null;
+    const bound = bindWaitingOwner();
+    me = bound ? getState().me?.username ?? null : null;
+    out = !bound;
     buildControls(origin);
     render();
     if (wantStart || host.advancedShown() || host.active() !== "local") start();
@@ -354,7 +372,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     catch (e) {
       if (e.status === 401) { signOut(); host.keepLocal(name, live); return; }   // the session ended: the look is kept here, as a ★, until you sign in
       if (networkDown(e)) {
-        const m = enqueue(getMirror(), p);
+        const m = enqueue(getMirror(), { ...p, owner: me });
         setMirror(m);
         offline = true;
         render();
@@ -383,6 +401,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     pushing = true;
     try {
       for (const q of getMirror().queue) {
+        if (q.owner !== me) continue;
         let res;
         try { res = await send(q); }
         catch (e) {

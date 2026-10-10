@@ -5,14 +5,14 @@
 // person opened. Each claim is a test, like maze.test.js's "nothing ships": a leak fails silently otherwise, because a bundle
 // that carries dead code still renders.
 // ============================================================================
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "./embed-build.mjs";
 import { api } from "./arboretum-api.js";
-import { getStored, mount } from "./arboretum.js";
-import { parseHash, starValue } from "./playlists.js";
+import { getStored, getMirror, MIRROR_KEY, mount, setMirror, setState } from "./arboretum.js";
+import { emptyMirror, enqueue, parseHash, starValue } from "./playlists.js";
 
 const HOME = ["morning 2", "afternoon 5b", "morning 3"];   // the three-look set the homepage loads
 const engine = () => [...readdirSync(".").filter((f) => /^komorebi-.*\.js$/.test(f)), "komorebi.js", "komorebi.global.js", "presets.js", "macros.js"];
@@ -48,6 +48,102 @@ const spy = (answer) => {
   const calls = [];
   return { calls, fetchImpl: async (url, init) => { calls.push({ url, init }); return new Response(JSON.stringify(answer), { status: 200 }); } };
 };
+
+const originalDocument = globalThis.document, originalWindow = globalThis.window;
+afterEach(() => {
+  globalThis.document = originalDocument;
+  globalThis.window = originalWindow;
+});
+const json = (body) => new Response(JSON.stringify(body));
+// Only the DOM boundary is stubbed: session checks, storage and upload plans run through the real controller.
+async function session(fetchImpl, extra = {}) {
+  const elements = [], events = {};
+  const element = () => {
+    const e = { style: {}, dataset: {}, append() {}, after() {}, addEventListener() {}, replaceChildren() {}, setAttribute() {} };
+    elements.push(e);
+    return e;
+  };
+  globalThis.document = { body: element(), createElement: element };
+  globalThis.window = { addEventListener: (name, fn) => { events[name] = fn; } };
+  let synced;
+  const h = { ...host, rows: { save: element(), tools: element() }, sync: () => synced?.(), ...extra };
+  const a = mount(h, { loc: at("komorebi.eljojo.net"), fetchImpl });
+  await a.ready;
+  return { a, elements, start: () => new Promise((resolve) => { synced = resolve; a.advanced(); }), focus: () => events.focus() };
+}
+
+test("a different account cannot upload the previous account's waiting saves", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  setMirror(enqueue(emptyMirror(), { kind: "preset", path: "/api/presets", body: { name: "alice's look", params: { exposure: 99 } } }));
+  let user = "bob";
+  const writes = [];
+  const s = await session(async (url, init) => {
+    if (url.endsWith("/api/me")) return json({ username: user });
+    if (init.method === "POST") { writes.push(user); return json({ id: 17, version: 1, owner: user }); }
+    if (url.includes("/api/presets?")) return json({ presets: [] });
+    if (url.includes("/api/playlists?")) return json({ playlists: [] });
+    throw new Error(`unexpected ${url}`);
+  });
+  await s.start();
+  expect(writes).toEqual([]);
+  expect(getMirror().queue).toHaveLength(1);
+  expect(s.a.view().playlists.unc.items).toEqual([]);
+  user = "alice";
+  await s.focus();
+  expect(writes).toEqual(["alice"]);
+  expect(getMirror().queue).toEqual([]);
+});
+
+test("signing out preserves the owner of legacy waiting saves", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  setMirror(enqueue(emptyMirror(), { kind: "preset", path: "/api/presets", body: { name: "waiting", params: {} } }));
+  let user = null;
+  const writes = [];
+  const s = await session(async (url, init) => {
+    if (url.endsWith("/api/me")) return user ? json({ username: user }) : new Response("{}", { status: 401 });
+    if (init.method === "POST") { writes.push(user); return json({ id: 17, version: 1 }); }
+    return json(url.includes("/api/presets?") ? { presets: [] } : { playlists: [] });
+  });
+  await s.start();
+  expect(getMirror().queue[0].owner).toBe("alice");
+  user = "bob";
+  await s.focus();
+  expect(writes).toEqual([]);
+  expect(getMirror().queue).toHaveLength(1);
+});
+
+test("failed ownership persistence cannot reassign a legacy queue on the next check", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  setMirror(enqueue(emptyMirror(), { kind: "preset", path: "/api/presets", body: { name: "waiting", params: {} } }));
+  const set = localStorage.setItem;
+  localStorage.setItem = (k, v) => { if (k === MIRROR_KEY) throw new Error("quota"); set(k, v); };
+  const writes = [];
+  const s = await session(async (url, init) => {
+    if (url.endsWith("/api/me")) return json({ username: "bob" });
+    if (init.method === "POST") { writes.push("bob"); return json({ id: 17, version: 1 }); }
+    return json(url.includes("/api/presets?") ? { presets: [] } : { playlists: [] });
+  });
+  await s.start();
+  expect(s.a.signedIn()).toBe(false);
+  localStorage.setItem = set;
+  await s.focus();
+  expect(writes).toEqual([]);
+  expect(getMirror().queue[0].owner).toBe("alice");
+});
+
+test("a legacy queue with no known owner stays unsent across repeated session checks", async () => {
+  setMirror(enqueue(emptyMirror(), { kind: "preset", path: "/api/presets", body: { name: "unknown owner", params: {} } }));
+  const writes = [];
+  const s = await session(async (url, init) => {
+    if (url.endsWith("/api/me")) return json({ username: "bob" });
+    if (init.method === "POST") { writes.push("bob"); return json({ id: 17, version: 1 }); }
+    return json(url.includes("/api/presets?") ? { presets: [] } : { playlists: [] });
+  });
+  await s.start();
+  await s.focus();
+  expect(writes).toEqual([]);
+  expect(getMirror().queue).toHaveLength(1);
+});
 
 test("with detect null, mounting makes no fetch and builds nothing", async () => {
   for (const loc of [at("example.org"), at("fork.github.io"), at("localhost", "/index.html"), at("localhost", "/")]) {

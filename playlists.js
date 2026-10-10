@@ -430,6 +430,10 @@ export function uncategorized(mirror) {
 // by link). Signed out it is the state itself, so the mirror shows nowhere.
 export function viewState(state, mirror, me) {
   if (me === null) return state;
+  mirror = {
+    ...mirror, order: mirror.order.filter((id) => mirror.presets[id]?.owner === me),
+    playlists: mirror.playlists.filter((p) => p.owner === me), queue: mirror.queue.filter((q) => q.owner === me),
+  };
   const { patches, fresh } = waiting(mirror);
   const folders = {};
   for (const l of mirror.playlists) {
@@ -452,10 +456,11 @@ export const isFolder = (view, active, me) => cloudId(active) !== null && cloudI
 // playlists, built-ins, and on this browser while ★ looks not yet in arboretum remain.
 export function listChoices(view, { me, stored, mirror, active = null }) {
   if (me === null) return playlists(view);
-  const mine = new Set(mirror.playlists.map((l) => String(l.id)));
+  const folders = mirror.playlists.filter((p) => p.owner === me);
+  const mine = new Set(folders.map((l) => String(l.id)));
   const out = [];
   if (view.playlists.unc.items.length || !mine.size || active === "arb:unc") out.push({ value: "arb:unc", label: "uncategorized" });
-  for (const l of mirror.playlists) out.push({ value: `arb:${l.id}`, label: l.name });
+  for (const l of folders) out.push({ value: `arb:${l.id}`, label: l.name });
   for (const p of Object.values(view.playlists)) if (p.id !== "unc" && !mine.has(String(p.id))) out.push({ value: `arb:${p.id}`, label: p.owner === me ? p.name : `${p.name} · ${p.owner}` });
   out.push({ value: "builtins", label: "built-ins" });
   if (moveCandidates(view, stored).length) out.push({ value: "local", label: "on this browser" });

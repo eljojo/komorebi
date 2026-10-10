@@ -934,6 +934,16 @@ test("viewState signed out is the state itself: the mirror shows nowhere", () =>
   expect(viewState(state, m, null)).toBe(state);
 });
 
+test("a signed-in view excludes another account's mirror and waiting saves", () => {
+  let m = mirrorOf([preset(5, "alice", { owner: "alice" })], [{ id: 7, name: "alice's folder", ids: [5] }]);
+  m.playlists[0].owner = "alice";
+  m = enqueue(m, { owner: "alice", kind: "preset", path: "/api/presets", body: { name: "waiting", params: {} } });
+  const v = viewState(EMPTY, m, "bob");
+  expect(v.playlists.unc.items).toEqual([]);
+  expect(v.playlists[7]).toBeUndefined();
+  expect(listChoices(v, { me: "bob", stored: {}, mirror: m }).map((l) => l.value)).toEqual(["arb:unc", "builtins"]);
+});
+
 test("viewState signed in adds your playlists and the uncategorized list, dated by the last refresh", () => {
   const m = mirrorOf([preset(5, "e"), preset(4, "d")], [{ id: 7, name: "evening", ids: [4] }]);
   const v = viewState(EMPTY, m, "jo");
@@ -947,8 +957,8 @@ test("viewState signed in adds your playlists and the uncategorized list, dated 
 
 test("a waiting update shows in the playlists that hold the preset, and a waiting new look in the folder it was saved into", () => {
   let m = mirrorOf([preset(5, "e"), preset(4, "d")], [{ id: 7, name: "evening", ids: [4] }]);
-  m = enqueue(m, { kind: "version", path: "/api/presets/4/versions", body: { name: "d2", params: { exposure: 44 } } });
-  m = enqueue(m, { kind: "preset", path: "/api/presets", body: { name: "fresh", params: {} }, into: { playlist: 7, at: null } });
+  m = enqueue(m, { owner: "jo", kind: "version", path: "/api/presets/4/versions", body: { name: "d2", params: { exposure: 44 } } });
+  m = enqueue(m, { owner: "jo", kind: "preset", path: "/api/presets", body: { name: "fresh", params: {} }, into: { playlist: 7, at: null } });
   const items = viewState(EMPTY, m, "jo").playlists[7].items;
   expect(items.map((i) => i.name)).toEqual(["d2", "fresh"]);
   expect(items.map((i) => !!i.pending)).toEqual([true, true]);
@@ -1138,7 +1148,7 @@ test("savePlan tags a look experimental when its camera is not the floor", () =>
 // ---- the chip, for the mirror ----
 
 test("lookState: a waiting save is ⇡ waiting to go up, and the title says when the copy here is incomplete", () => {
-  const m = enqueue(mirrorOf([preset(5, "e")]), { kind: "preset", path: "/api/presets", body: { name: "q", params: afternoon } });
+  const m = enqueue(mirrorOf([preset(5, "e")]), { owner: "jo", kind: "preset", path: "/api/presets", body: { name: "q", params: afternoon } });
   const v = viewState(EMPTY, m, "jo");
   expect(lookState(v, {}, "arb:unc", "0", afternoon, "jo").text).toBe("⇡ waiting to go up");
   expect(lookState(v, {}, "arb:unc", "1", { ...preset(5, "e").params }, "jo", { offline: true }).text).toBe("offline copy · 2026-10-10");
