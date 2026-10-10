@@ -250,7 +250,7 @@ export function uploadPlan(state, stored, active, value, live, me, commit, cam) 
     ? state.origin[star ?? value]
     : it && { id: it.preset_id, version: it.version, owner: it.owner };
   const out = planFrom(params, known, id === null ? (star ?? value) : (it?.name ?? ""), me, commit, cam);
-  if (id !== null) out.into = { playlist: Number(id), at: it ? Number(value) : null };
+  if (id !== null) out.into = it ? { playlist: Number(id), at: Number(value), target: itemTarget(cloudItems(state, active), Number(value)) } : { playlist: Number(id), at: null };
   return out;
 }
 
@@ -278,7 +278,25 @@ function planFrom(params, known, name, me, commit, cam) {
 // arboretum's defaults apply; a replacement keeps the times of the place it takes.
 // `remove_preset` takes out the first playable item of that preset (a chip, which knows the preset and not a place).
 // change: { kind: 'append', preset_id } | { kind: 'remove', at } | { kind: 'replace', at, preset_id } | { kind: 'remove_preset', preset_id }
+// A captured target follows a place across reorders. Identical duplicates retain their occurrence only while their count agrees.
+const matchesTarget = (it, target) => !it.unavailable && it.preset_id === target.preset_id && it.dwell_s === target.dwell_s && it.crossfade_s === target.crossfade_s;
+export function itemTarget(items, at) {
+  const it = items[at];
+  if (!it || it.preset_id === undefined) return null;
+  const target = { preset_id: it.preset_id, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s };
+  return { ...target, occurrence: items.slice(0, at).filter((i) => matchesTarget(i, target)).length, count: items.filter((i) => matchesTarget(i, target)).length };
+}
+function targetAt(items, target) {
+  const playable = items.filter((it) => !it.unavailable);
+  const matches = playable.map((it, i) => matchesTarget(it, target) ? i : -1).filter((i) => i >= 0);
+  return matches.length === target.count ? matches[target.occurrence] ?? -1 : -1;
+}
 export function itemsAfter(fresh, change) {
+  if (change.target) {
+    const at = targetAt(fresh, change.target);
+    if (at < 0) throw { error: "that playlist item changed; reload the playlist before changing it" };
+    change = { ...change, at };
+  }
   const out = [];
   let playable = 0, removed = false;
   for (const it of fresh) {
@@ -364,7 +382,7 @@ export function lookState(state, stored, active, value, live, me, { offline = fa
 
 // An upload's `into` (uploadPlan) as the change itemsAfter applies to a fresh copy of the playlist.
 export function placeChange(into, preset_id) {
-  return into.at === null ? { kind: "append", preset_id } : { kind: "replace", at: into.at, preset_id };
+  return into.at === null ? { kind: "append", preset_id } : { kind: "replace", at: into.at, preset_id, ...(into.target ? { target: into.target } : {}) };
 }
 
 // ---- the links (design §5) -------------------------------------------------------------------------------------
@@ -453,7 +471,8 @@ export function viewState(state, mirror, me) {
     let items = l.items.map((it) => patchedItem(it, patches));
     for (const q of fresh) {
       if (q.into?.playlist !== l.id) continue;
-      items = q.into.at === null ? [...items, waitingItem(q)] : items.map((it, i) => (i === q.into.at ? waitingItem(q) : it));
+      const at = q.into.target ? targetAt(items, q.into.target) : q.into.at;
+      items = at === null || at < 0 ? [...items, waitingItem(q)] : items.map((it, i) => (i === at ? waitingItem(q) : it));
     }
     folders[l.id] = { ...l, fetched_at: mirror.at ?? l.fetched_at, items };
   }

@@ -541,7 +541,7 @@ test("uploadPlan from a cloud playlist uploads the live look and says which item
   const live = changed();
   expect(plan(inList(mineItem), {}, "arb:7", "0", live, { commit: COMMIT })).toEqual({
     kind: "version", path: "/api/presets/5/versions", label: "↑ new version of #5",
-    body: { name: "dawn", params: live, komorebi_commit: COMMIT }, into: { playlist: 7, at: 0 },
+    body: { name: "dawn", params: live, komorebi_commit: COMMIT }, into: { playlist: 7, at: 0, target: { preset_id: 5, dwell_s: 30, crossfade_s: 5, occurrence: 0, count: 1 } },
   });
 });
 
@@ -550,7 +550,7 @@ test("uploadPlan from a cloud item that is someone else's is your new preset, pa
   const p = plan(inList(mineItem, theirItem), {}, "arb:7", "1", live);
   expect(p).toEqual({
     kind: "preset", path: "/api/presets", label: "↑ new preset",
-    body: { name: "dusk", params: live, parent: "preset:6@2" }, into: { playlist: 7, at: 1 },
+    body: { name: "dusk", params: live, parent: "preset:6@2" }, into: { playlist: 7, at: 1, target: { preset_id: 6, dwell_s: 30, crossfade_s: 5, occurrence: 0, count: 1 } },
   });
 });
 

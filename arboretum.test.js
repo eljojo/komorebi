@@ -196,6 +196,92 @@ test("the editor keeps the selected preset across a mirror reorder, so saving up
   expect(model.lookState(state, {}, "arb:unc", "", one.params, "alice")).toEqual({ text: "", title: "" });
 });
 
+const playlistItem = (id, owner = "alice", dwell_s = id * 10) => ({ preset_id: id, version: 1, owner, name: `look ${id}`, params: { exposure: id }, dwell_s, crossfade_s: 2 });
+const folderMirror = (items) => ({ ...emptyMirror(), playlists: [{ id: 7, owner: "alice", name: "folder", items }] });
+const wireItems = (items) => items.map(({ preset_id, dwell_s, crossfade_s }) => ({ preset_id, dwell_s, crossfade_s }));
+
+test("removing after a concurrent reorder removes the displayed item, preserving unavailable entries", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const one = playlistItem(1), two = playlistItem(2), unavailable = { preset_id: 9, dwell_s: 40, crossfade_s: 7, unavailable: true };
+  setMirror(folderMirror([one, two]));
+  let active = "local";
+  const writes = [];
+  const s = await session(async (_url, init) => {
+    if (init.method === "PUT") { const body = JSON.parse(init.body); writes.push(body.items); return json({ id: 7, owner: "alice", items: body.items }); }
+    return json({ id: 7, owner: "alice", items: [two, unavailable, one] });
+  }, { active: () => active, value: () => "0" });
+  active = "arb:7";
+  await s.a.remove();
+  expect(writes).toEqual([wireItems([two, unavailable])]);
+});
+
+test("a fork replaces its original playlist item after a concurrent reorder", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const one = playlistItem(1, "bob"), two = playlistItem(2);
+  setMirror(folderMirror([one, two]));
+  let active = "local";
+  const writes = [];
+  const s = await session(async (url, init) => {
+    if (url === "./commit.json") return new Response("{}", { status: 404 });
+    if (init.method === "POST") return json({ id: 3, version: 1, owner: "alice" });
+    if (init.method === "PUT") { const body = JSON.parse(init.body); writes.push(body.items); return json({ id: 7, owner: "alice", items: body.items }); }
+    return json({ id: 7, owner: "alice", items: [two, one] });
+  }, { active: () => active, value: () => "0", showCloud() {} });
+  active = "arb:7";
+  await s.a.saveCloud("fork", { exposure: 99 });
+  expect(writes).toEqual([wireItems([two, { ...one, preset_id: 3 }])]);
+});
+
+test("a vanished playlist item cannot cause a write to another item", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const one = playlistItem(1), two = playlistItem(2);
+  setMirror(folderMirror([one, two]));
+  let active = "local";
+  const writes = [];
+  const s = await session(async (_url, init) => {
+    if (init.method === "PUT") { const body = JSON.parse(init.body); writes.push(body.items); return json({ id: 7, owner: "alice", items: body.items }); }
+    return json({ id: 7, owner: "alice", items: [two] });
+  }, { active: () => active, value: () => "0" });
+  active = "arb:7";
+  await s.a.remove();
+  expect(writes).toEqual([]);
+  expect(s.elements.find((e) => e.className === "arb-status").textContent).toMatch(/item.*changed/i);
+});
+
+test("duplicate presets with different dwell times retain the intended playlist place", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const short = playlistItem(1), long = playlistItem(1, "alice", 100), two = playlistItem(2);
+  setMirror(folderMirror([short, two, long]));
+  let active = "local";
+  const writes = [];
+  const s = await session(async (_url, init) => {
+    if (init.method === "PUT") { const body = JSON.parse(init.body); writes.push(body.items); return json({ id: 7, owner: "alice", items: body.items }); }
+    return json({ id: 7, owner: "alice", items: [long, short, two] });
+  }, { active: () => active, value: () => "2" });
+  active = "arb:7";
+  await s.a.remove();
+  expect(writes).toEqual([wireItems([short, two])]);
+});
+
+test("a fork whose playlist target vanished remains uncategorized and keeps the refusal visible", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  setMirror(folderMirror([playlistItem(1, "bob"), playlistItem(2)]));
+  let active = "local";
+  const writes = [], shown = [];
+  const s = await session(async (url, init) => {
+    if (url === "./commit.json") return new Response("{}", { status: 404 });
+    if (init.method === "POST") return json({ id: 3, version: 1, owner: "alice" });
+    if (init.method === "PUT") { writes.push(JSON.parse(init.body).items); return json({ id: 7, owner: "alice", items: [] }); }
+    return json({ id: 7, owner: "alice", items: [playlistItem(2)] });
+  }, { active: () => active, value: () => "0", showCloud: (...args) => shown.push(args) });
+  active = "arb:7";
+  await s.a.saveCloud("fork", { exposure: 99 });
+  expect(writes).toEqual([]);
+  expect(getMirror().presets[3].params).toEqual({ exposure: 99 });
+  expect(s.elements.find((e) => e.className === "arb-status").textContent).toMatch(/item.*changed/i);
+  expect(shown).toEqual([["arb:unc", { id: 3 }]]);
+});
+
 test("with detect null, mounting makes no fetch and builds nothing", async () => {
   for (const loc of [at("example.org"), at("fork.github.io"), at("localhost", "/index.html"), at("localhost", "/")]) {
     const f = spy({});

@@ -19,7 +19,7 @@
 import { api as makeApi } from "./arboretum-api.js";
 import { cameraFor, migrateLegacy } from "./komorebi.js";
 import { PRESETS } from "./presets.js";
-import { ARBORETUM, cachePlaylist, dequeue, detect, emptyMirror, enqueue, entryName, fromEntry, fromVersion, isFolder, itemsAfter, linkPlaylist, listChoices,
+import { ARBORETUM, cachePlaylist, dequeue, detect, emptyMirror, enqueue, entryName, fromEntry, fromVersion, isFolder, itemsAfter, itemTarget, linkPlaylist, listChoices,
   mirrorDiff, mirrorPlaylist, mirrorPut, mirrorSync, moveCandidates, movePlan, onDeleted, onSaved, onlineId, placeChange, playlistChips, savePlan, savePreset,
   starValue, uploadPlan, viewState } from "./playlists.js";
 
@@ -339,6 +339,8 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
 
   // Every write to a playlist's items starts from a fresh GET and applies the one change to that, never to the cache.
   async function writeItems(id, change) {
+    if ((change.kind === "remove" || change.kind === "replace") && !change.target)
+      throw { error: "that playlist item changed; reload the playlist before changing it" };
     const fresh = await api.playlist(id);
     const v = await api.putItems(id, itemsAfter(fresh.items, change));
     cacheView(v);
@@ -388,7 +390,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     offline = false;
     if (refusal?.key === keyOf(active, value)) refusal = null;
     try { await landed(p, res); }
-    catch (e) { fail(e); }
+    catch (e) { fail(e); host.showCloud(p.kind === "preset" ? "arb:unc" : list, { id: res.id }); return; }
     say(`kept in arboretum · #${res.id} v${res.version}`);
     render();
     host.showCloud(list, { id: res.id });
@@ -428,7 +430,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     if (!on || !value) return;
     const pid = Number(active.slice(4)), at = Number(value);
     try {
-      await writeItems(pid, { kind: "remove", at });
+      await writeItems(pid, { kind: "remove", at, target: itemTarget(view().playlists[pid]?.items ?? [], at) });
       const n = view().playlists[pid].items.length;
       say("");
       host.select(n ? String(Math.min(at, n - 1)) : "");
