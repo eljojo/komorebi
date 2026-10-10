@@ -145,6 +145,29 @@ test("a legacy queue with no known owner stays unsent across repeated session ch
   expect(getMirror().queue).toHaveLength(1);
 });
 
+test("an offline save rejected by storage reports failure without selecting a nonexistent waiting save", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const shown = [];
+  const s = await session(async () => { throw new Error("offline"); }, { showCloud: (...args) => shown.push(args) });
+  const set = localStorage.setItem;
+  localStorage.setItem = (k, v) => { if (k === MIRROR_KEY) throw new Error("quota"); set(k, v); };
+  const live = { exposure: 99 };
+  await s.a.saveCloud("waiting", live);
+  expect(shown).toEqual([]);
+  expect(getMirror().queue).toEqual([]);
+  expect(s.elements.find((e) => e.className === "arb-status").textContent).toMatch(/could not save.*storage/i);
+  expect(live).toEqual({ exposure: 99 });
+});
+
+test("a persisted offline save is selected and bound to the current account", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const shown = [];
+  const s = await session(async () => { throw new Error("offline"); }, { showCloud: (...args) => shown.push(args) });
+  await s.a.saveCloud("waiting", { exposure: 99 });
+  expect(getMirror().queue[0]).toMatchObject({ owner: "alice", body: { name: "waiting", params: { exposure: 99 } } });
+  expect(shown).toEqual([["arb:unc", { seq: 1 }]]);
+});
+
 test("with detect null, mounting makes no fetch and builds nothing", async () => {
   for (const loc of [at("example.org"), at("fork.github.io"), at("localhost", "/index.html"), at("localhost", "/")]) {
     const f = spy({});

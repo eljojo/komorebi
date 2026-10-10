@@ -373,9 +373,10 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
       if (e.status === 401) { signOut(); host.keepLocal(name, live); return; }   // the session ended: the look is kept here, as a ★, until you sign in
       if (networkDown(e)) {
         const m = enqueue(getMirror(), { ...p, owner: me });
-        setMirror(m);
+        const kept = setMirror(m);
         offline = true;
         render();
+        if (!kept) { say("could not save: this browser's storage is full or disabled; the look is still on screen"); return; }
         host.showCloud(list, p.kind === "version" ? { id: Number(p.path.split("/")[3]) } : { seq: m.queue.at(-1).seq });
         return;
       }
