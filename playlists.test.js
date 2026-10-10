@@ -4,7 +4,7 @@ import { test, expect, beforeEach } from "bun:test";
 import { ARB_KEY, getState, setState, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted, onPushed,
   uploadPlan, itemsAfter, playlists, plays, timing, starValue, starName, entryName,
-  fromEntry, onlineId, pushButton, placeChange } from "./playlists.js";
+  fromEntry, onlineId, pushButton, placeChange, fromVersion, linkPlaylist, writable, makePlayer } from "./playlists.js";
 import * as builtins from "./presets.js";
 import { DEFAULTS, cameraFor } from "./komorebi.js";
 
@@ -678,4 +678,150 @@ test("pushButton says what the smart button does, or that a built-in is unchange
 test("placeChange turns where an upload goes into the change itemsAfter applies", () => {
   expect(placeChange({ playlist: 7, at: 2 }, 31)).toEqual({ kind: "replace", at: 2, preset_id: 31 });
   expect(placeChange({ playlist: 7, at: null }, 31)).toEqual({ kind: "append", preset_id: 31 });
+});
+
+// ---- the links (design §5, K5) -------------------------------------------------------------
+
+test("fromVersion gives a /versions/:n answer the head's shape, so savePreset takes it", () => {
+  const v = { preset_id: 12, n: 2, name: "dusk", description: null, tags: [], params: { exposure: 3 }, via: "web", created_at: 1 };
+  const head = { id: 12, owner: "ana", version: 5, name: "dusk, later", params: { exposure: 9 } };
+  expect(fromVersion(v, head)).toMatchObject({ id: 12, owner: "ana", version: 2, name: "dusk", params: { exposure: 3 } });
+  const out = savePreset(EMPTY, {}, fromVersion(v, head));
+  expect(out.name).toBe("dusk");
+  expect(out.stored.dusk).toEqual({ exposure: 3 });
+  expect(out.state.origin.dusk).toEqual({ id: 12, version: 2, owner: "ana", synced: true });
+});
+
+test("linkPlaylist caches the playlist with the link's share token, and names the list and the first item", () => {
+  const out = linkPlaylist(EMPTY, apiList({ owner: "ana" }), "tok");
+  expect(out.list).toBe("arb:7");
+  expect(out.value).toBe("0");
+  expect(out.state.playlists[7]).toMatchObject({ id: 7, owner: "ana", k: "tok" });
+  expect(EMPTY.playlists).toEqual({});
+});
+
+test("linkPlaylist without a token keeps the one already cached", () => {
+  const first = linkPlaylist(EMPTY, apiList(), "tok").state;
+  expect(linkPlaylist(first, apiList()).state.playlists[7].k).toBe("tok");
+});
+
+test("linkPlaylist drops the owner's unavailable items, and fails on a playlist with nothing playable, caching nothing", () => {
+  const gone = { preset_id: 9, dwell_s: 30, crossfade_s: 5, unavailable: true };
+  expect(linkPlaylist(EMPTY, apiList({ items: [gone, apiItem(1, "one")] })).state.playlists[7].items.map((i) => i.name)).toEqual(["one"]);
+  for (const items of [[], [gone]]) {
+    const out = linkPlaylist(EMPTY, apiList({ items }));
+    expect(out.failed).toBe("that playlist has nothing to play");
+    expect(out.state).toBeUndefined();
+  }
+});
+
+// ---- someone else's playlist is read-only (design §3.5) ----------------------------------------
+
+test("writable: On this browser always; a cloud playlist only when it is yours", () => {
+  const s = cloud([item("one")]);   // owned by jo
+  expect(writable(s, "local", null)).toBe(true);
+  expect(writable(s, "arb:7", "jo")).toBe(true);
+  expect(writable(s, "arb:7", "ana")).toBe(false);
+  expect(writable(s, "arb:7", null)).toBe(false);   // not signed in: nothing to write with
+  expect(writable(s, "arb:9", "jo")).toBe(false);   // not cached
+});
+
+test("playlists labels a cached playlist that is not yours with its owner, once you are signed in", () => {
+  let s = cachePlaylist(EMPTY, apiList({ owner: "jo" }));
+  s = cachePlaylist(s, apiList({ id: 8, name: "evening", owner: "ana" }));
+  expect(playlists(s, [], "jo")).toEqual([
+    { value: "local", label: "On this browser" }, { value: "arb:7", label: "mine" }, { value: "arb:8", label: "evening · ana" }]);
+  expect(playlists(s, [{ id: 7, name: "mine" }], "jo").map((l) => l.label)).toEqual(["On this browser", "mine", "evening · ana"]);
+  expect(playlists(s).map((l) => l.label)).toEqual(["On this browser", "mine", "evening"]);   // not signed in: names only, as before
+});
+
+// ---- playing (design §3.6): the dwell starts when a look has arrived, the first look has no fade in ----------
+
+const clock = () => {
+  let now = 0, tasks = [];
+  return {
+    set: (fn, ms) => { const t = { fn, at: now + ms }; tasks.push(t); return t; },
+    clear: (t) => { tasks = tasks.filter((x) => x !== t); },
+    advance(ms) {
+      now += ms;
+      for (let due = tasks.find((t) => t.at <= now); due; due = tasks.find((t) => t.at <= now)) { tasks = tasks.filter((t) => t !== due); due.fn(); }
+    },
+    pending: () => tasks.length,
+  };
+};
+const TIMES = { 0: { dwell_s: 2, crossfade_s: 5 }, 1: { dwell_s: 3, crossfade_s: 1 } };
+function playerOn(extra = {}) {
+  const c = clock(), log = { advanced: 0, changed: 0 };
+  const p = makePlayer({ timing: (v) => TIMES[v] ?? null, advance: () => { log.advanced++; }, setTimer: c.set, clearTimer: c.clear, onChange: () => { log.changed++; }, ...extra });
+  return { p, c, log };
+}
+
+test("the look play starts on is simply there: it holds its dwell with no crossfade added", () => {
+  const { p, c, log } = playerOn();
+  p.start("0");
+  expect(p.playing).toBe(true);
+  c.advance(1999);
+  expect(log.advanced).toBe(0);
+  c.advance(1);
+  expect(log.advanced).toBe(1);
+});
+
+test("a look's dwell starts when it has arrived, not before: nothing is pending while it fades in", () => {
+  const { p, c, log } = playerOn();
+  p.start("0");
+  c.advance(2000);                  // the dwell is up: the editor starts the step to the next look...
+  p.leaving();                      // ...and while that look fades in nothing is waiting
+  c.advance(60000);
+  expect(log.advanced).toBe(1);
+  expect(c.pending()).toBe(0);
+  p.arrived("1");                   // it has faded in: its own dwell starts now
+  c.advance(2999);
+  expect(log.advanced).toBe(1);
+  c.advance(1);
+  expect(log.advanced).toBe(2);
+});
+
+test("a look put there by hand restarts the dwell", () => {
+  const { p, c, log } = playerOn();
+  p.start("0");
+  c.advance(1500);
+  p.arrived("1");                   // stepped by hand at 1.5 s
+  c.advance(2999);
+  expect(log.advanced).toBe(0);
+  c.advance(1);
+  expect(log.advanced).toBe(1);
+  expect(c.pending()).toBe(0);
+});
+
+test("stopping cancels the dwell, and a look that arrives afterwards starts none", () => {
+  const { p, c, log } = playerOn();
+  p.start("0");
+  p.stop();
+  expect(p.playing).toBe(false);
+  expect(c.pending()).toBe(0);
+  p.arrived("1");
+  c.advance(60000);
+  expect(log.advanced).toBe(0);
+});
+
+test("starting twice does not run two dwells; a look with no times never waits", () => {
+  const { p, c, log } = playerOn();
+  p.start("0"); p.start("0");
+  expect(c.pending()).toBe(1);
+  p.arrived("nowhere");             // no dwell for it (On this browser has none)
+  expect(c.pending()).toBe(0);
+  c.advance(60000);
+  expect(log.advanced).toBe(0);
+});
+
+test("onChange says when playing starts or stops, and only then", () => {
+  const { p, log } = playerOn();
+  p.stop();
+  expect(log.changed).toBe(0);
+  p.start("0"); p.start("0");
+  expect(log.changed).toBe(1);
+  p.arrived("1");
+  expect(log.changed).toBe(1);
+  p.stop(); p.stop();
+  expect(log.changed).toBe(2);
 });

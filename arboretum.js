@@ -9,8 +9,8 @@
 import { api as makeApi } from "./arboretum-api.js";
 import { cameraFor } from "./komorebi.js";
 import { getStored, setStored } from "./presets-store.js";
-import { cachePlaylist, fromEntry, getState, itemsAfter, onDeleted, onPushed, onSaved, onlineId, placeChange,
-  playlists, pushButton, savePreset, setState, uploadPlan } from "./playlists.js";
+import { cachePlaylist, fromEntry, fromVersion, getState, itemsAfter, linkPlaylist, onDeleted, onPushed, onSaved, onlineId, placeChange,
+  playlists, pushButton, savePreset, setState, starValue, uploadPlan, writable } from "./playlists.js";
 
 const NEW = "+new";   // the value of "New playlist…", in the playlist select and in "add to"
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -112,19 +112,23 @@ export function mount(origin, host) {
     await check();
     const a = host.active();
     if (a === "local" || me === null) return;
-    try { setState(cachePlaylist(getState(), await api.playlist(a.slice(4)))); host.reload(); } catch (e) { fail(e); }
+    try { setState(cachePlaylist(getState(), await fetchList(a.slice(4)))); host.reload(); } catch (e) { fail(e); }
   });
 
   // ---- playlists ----
   // The select's options: yours, the cached ones, and — once signed in — "New playlist…".
-  const lists = () => [...playlists(getState(), mine), ...(me !== null ? [{ value: NEW, label: "New playlist…" }] : [])];
+  const lists = () => [...playlists(getState(), mine, me), ...(me !== null ? [{ value: NEW, label: "New playlist…" }] : [])];
+
+  // A playlist opened by link is fetched again with the share token the link carried, which the cache kept (an unlisted
+  // one of someone else's is not visible without it).
+  const fetchList = (id) => api.playlist(id, { k: getState().playlists[id]?.k ?? undefined });
 
   // Activating fetches the playlist fresh; when arboretum cannot be reached the cached copy plays on.
   async function activate(list) {
     if (!list.startsWith("arb:")) { host.activate(list); return; }
     const id = list.slice(4);
     try {
-      setState(cachePlaylist(getState(), await api.playlist(id)));
+      setState(cachePlaylist(getState(), await fetchList(id)));
       say("");
     } catch (e) {
       if (e.status === 401) signOut();
@@ -249,14 +253,34 @@ export function mount(origin, host) {
     } catch (e) { fail(e); }
   }
 
+  // ---- the links (design §5). Called once, when arboretum has mounted, so the fetch is usually done by the time "feel"
+  // is pressed. It saves what the link names and says where the editor should land; it never throws. ----
+  async function open(link) {
+    try {
+      if (link.preset) {
+        const { id, n, k } = link.preset;
+        const [head, pinned] = await Promise.all([api.preset(id, { k }), n === undefined ? null : api.preset(id, { n, k })]);
+        const r = savePreset(getState(), getStored(), pinned ? fromVersion(pinned, head) : head);
+        setState(r.state);
+        setStored(r.stored);
+        return { value: starValue(r.name) };
+      }
+      const out = linkPlaylist(getState(), await api.playlist(link.playlist.id, { k: link.playlist.k }), link.playlist.k);
+      if (out.failed) return { failed: out.failed };
+      setState(out.state);
+      return { list: out.list, value: out.value, play: true };
+    } catch (e) { return { failed: e.error ?? String(e) }; }
+  }
+
   push.addEventListener("click", pushStar);
   addto.addEventListener("change", async () => { const t = addto.value; addto.value = ""; if (t) await addTo(t); });
   pickSel.addEventListener("change", async () => { const id = pickSel.value; pickSel.value = ""; if (id) await pick(id); });
   render();
 
   return {
-    lists, activate, create, save, remove, changed,
+    lists, activate, create, save, remove, changed, open,
     advanced: start,
+    writable: () => writable(getState(), host.active(), me),
     // provenance (design §4.1): what the editor's own saves and deletes mean for a ★'s record
     saved: (name, active, value) => setState(onSaved(getState(), name, fromEntry(getState(), getStored(), active, value))),
     deleted: (name) => setState(onDeleted(getState(), name)),

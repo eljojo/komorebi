@@ -1092,6 +1092,147 @@ try {
     check('when the playlist cannot be fetched its cached copy is played, and the status says so', /^offline copy from /.test(off.status ?? '') && off.opts.join() === 'one,two' && off.list === 'arb:7', JSON.stringify(off));
     await ctx5.close();
   }
+  // ---- LINKS AND PLAY (K5), at /editor/ with page.route standing in for arboretum: the two link shapes, a failed link, playing a playlist, and the cache ----
+  {
+    await page.goto('about:blank');   // one GL page at a time
+    const expected5 = (m) => m.text().startsWith('Failed to load resource') && /\/api\//.test(m.location().url);   // the mock's own 401/404/aborts
+    // A page at /editor/ on `hash`; `answer(url, json)` is the mock arboretum behind /api/health. Returns the page and every /api path+query it asked.
+    const open5 = async (hash, answer, cache = null) => {
+      const ctx = await browser.newContext({ viewport: { width: 640, height: 480 } });
+      if (cache) await ctx.addInitScript(([c]) => {
+        if (localStorage.getItem('komorebi.editor')) return;   // only the first load: a reload keeps what the page wrote
+        localStorage.setItem('komorebi.arboretum', JSON.stringify(c));
+        localStorage.setItem('komorebi.editor', JSON.stringify({ mode: 'play', playlist: 'arb:7' }));
+      }, [cache]);
+      const pg = await ctx.newPage();
+      pg.setDefaultTimeout(30000);
+      pg.on('pageerror', (e) => errors.push(`[after check ${results.length}] k5 page: ${e.message}`));
+      pg.on('console', (m) => { if (m.type() === 'error' && !expected5(m)) errors.push(`[after check ${results.length}] k5 page console: ${m.text()}`); });
+      const seen = [], methods = [];
+      await pg.route('**/api/**', (route) => {
+        const u = new URL(route.request().url());
+        seen.push(u.pathname + u.search);
+        methods.push(route.request().method());
+        const json = (status, b) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+        return answer(u, json, route);
+      });
+      await pg.goto(`http://127.0.0.1:${port}/editor/index.html${hash}`, { waitUntil: 'load' });
+      return { ctx, pg, seen, methods };
+    };
+    const healthy = (rest) => (u, json, route) => (u.pathname === '/api/health' ? json(200, { ok: true, engine: 'abc1234' }) : rest(u, json, route));
+    const devValue = (pg) => pg.$eval('#dev select', (s) => s.value);
+    const until5 = (pg, fn, arg, ms = 60000) => pg.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false);
+    const landed = (pg, value) => until5(pg, (v) => document.querySelector('#dev select').value === v, value);
+
+    // #arboretum=<id>: saved into On this browser, "feel" lands on it, the hash is cleared
+    {
+      const dusk = { id: 12, owner: 'ana', name: 'k5 dusk', version: 2, params: PRESETS.memories };
+      const { ctx, pg, seen } = await open5('#arboretum=12', healthy((u, json) => (u.pathname === '/api/presets/12' ? json(200, dusk) : json(401, { error: 'sign in' }))));
+      await pg.click('#feel');
+      const there = await landed(pg, 'k5 dusk');
+      const a = await pg.evaluate(() => ({
+        label: [...document.querySelectorAll('#dev select')[0].options].find((o) => o.selected)?.textContent,
+        star: 'k5 dusk' in JSON.parse(localStorage.getItem('komorebi.presets') || '{}'),
+        origin: JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin?.['k5 dusk'],
+        list: JSON.parse(localStorage.getItem('komorebi.editor') || '{}').playlist,
+        hash: location.hash,
+      }));
+      check('#arboretum=12: it asks for preset 12, and after "feel" the dev select reads the imported ★, saved in On this browser', there && seen.includes('/api/presets/12') && a.label === '★ k5 dusk' && a.star && a.list === 'local', JSON.stringify({ there, ...a }));
+      check('it is a synced copy of #12 v2 by ana, and the hash is cleared', a.origin?.id === 12 && a.origin.version === 2 && a.origin.owner === 'ana' && a.origin.synced === true && a.hash === '', JSON.stringify(a));
+      await ctx.close();
+    }
+    // #arboretum=<id>@<n>&k=<token>: that version, with the token, normalised to the head's shape
+    {
+      const head = { id: 12, owner: 'ana', name: 'k5 head', version: 5, params: PRESETS['afternoon 7'] };
+      const v2 = { preset_id: 12, n: 2, name: 'k5 pinned', description: null, tags: [], params: PRESETS.memories, via: 'web', created_at: 1 };
+      const { ctx, pg, seen } = await open5('#arboretum=12@2&k=tok', healthy((u, json) => {
+        if (u.searchParams.get('k') !== 'tok') return json(404, { error: 'not found' });
+        if (u.pathname === '/api/presets/12/versions/2') return json(200, v2);
+        return u.pathname === '/api/presets/12' ? json(200, head) : json(404, { error: 'not found' });
+      }));
+      await pg.click('#feel');
+      const there = await landed(pg, 'k5 pinned');
+      const rec = await pg.evaluate(() => JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin?.['k5 pinned']);
+      check('#arboretum=12@2&k=tok requests /versions/2?k=tok', seen.includes('/api/presets/12/versions/2?k=tok'), seen.join());
+      check('and the pinned version lands as a ★ recorded as #12 v2 by the head\'s owner', there && rec?.id === 12 && rec.version === 2 && rec.owner === 'ana' && rec.synced === true, JSON.stringify({ there, rec }));
+      await ctx.close();
+    }
+    // a failed link: afternoon 7, and the reason through the hint
+    {
+      const { ctx, pg } = await open5('#arboretum=99', healthy((_u, json) => json(404, { error: 'not found' })));
+      await pg.click('#feel');
+      const said = await until5(pg, () => document.getElementById('hint').textContent === 'arboretum: not found' && !document.getElementById('hint').classList.contains('gone'), null, 20000);   // it is up for ten seconds from "feel"
+      check('a 404 link shows "arboretum: not found" through the hint', said);
+      await pg.keyboard.press('h');
+      const keys = await pg.evaluate(() => document.getElementById('hint').textContent);
+      check('and H brings the key hints back in its place', /change scene/.test(keys), keys);
+      await pg.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
+      check('it lands on afternoon 7', (await devValue(pg)) === 'afternoon 7', await devValue(pg));
+      await ctx.close();
+    }
+    // #arboretum-playlist=<id>&k=<token>: the playlist is active and plays
+    {
+      const mk = (id, name, params) => ({ preset_id: id, version: 1, owner: 'ana', name, dwell_s: 2, crossfade_s: 1, params });
+      const list7 = { id: 7, owner: 'ana', name: 'k5 list', description: null, visibility: 'unlisted', items: [mk(1, 'one', PRESETS['afternoon 7']), mk(2, 'two', PRESETS.memories)], unavailable: 0 };
+      const { ctx, pg, seen, methods } = await open5('#arboretum-playlist=7&k=tok', healthy((u, json) => {
+        if (u.pathname === '/api/playlists/7') return u.searchParams.get('k') === 'tok' ? json(200, list7) : json(404, { error: 'not found' });
+        return json(401, { error: 'sign in' });
+      }));
+      const prompts5 = [];
+      pg.on('dialog', async (d) => { prompts5.push(d.type()); if (d.type() === 'prompt') await d.accept('k5 mine'); else await d.dismiss(); });
+      await pg.click('#feel');
+      const first = await until5(pg, () => { const s = document.querySelector('#dev select'); return s.value === '0' && [...s.options].map((o) => o.textContent).join() === 'one,two'; });
+      check('#arboretum-playlist=7&k=tok requests the playlist with the token, and after "feel" the dev select is on item 0 of it', first && seen.includes('/api/playlists/7?k=tok'), seen.join());
+      const kept = await pg.evaluate(() => JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').playlists?.[7]?.k);
+      check('the token is remembered with the cached playlist, and the playlist is the active one', kept === 'tok' && (await pg.evaluate(() => JSON.parse(localStorage.getItem('komorebi.editor')).playlist)) === 'arb:7', String(kept));
+      const second = await until5(pg, () => document.querySelector('#dev select').value === '1', null, 30000);
+      check('play starts by itself: within the dwell the next item is on', second, await devValue(pg));
+      const surfaces = await pg.evaluate(() => Object.fromEntries(['play', 'dev', 'strip'].map((id) => [id, [...document.querySelectorAll(`#${id} .playstop`)].map((b) => `${getComputedStyle(b).display !== 'none'}:${b.textContent}`)])));
+      check('while it plays the ■ is in the playful sidebar and the advanced panel, and the zen strip has none', surfaces.play.length === 1 && surfaces.play[0] === 'true:■' && surfaces.dev.length === 1 && surfaces.dev[0] === 'true:■' && surfaces.strip.length === 0, JSON.stringify(surfaces));
+      // a weather-slider edit stops it
+      await pg.$eval('#play', (el) => {
+        const inp = [...el.querySelectorAll('.ctl')].find((r) => r.querySelector('label')?.textContent === 'weather').querySelector('input');
+        inp.value = '0.3'; inp.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      const at = await devValue(pg);
+      await pg.waitForTimeout(3800);
+      const btns = await pg.evaluate(() => [...document.querySelectorAll('.playstop')].map((b) => b.textContent).join());
+      check('a weather-slider edit stops play: the item stays, and the buttons read ▶', (await devValue(pg)) === at && btns === '▶,▶', `${at} -> ${await devValue(pg)} ${btns}`);
+      // ‹ steps back, and the dev select follows
+      await pg.$eval('#play .preset button:nth-child(1)', (b) => b.click());
+      const back = at === '1' ? '0' : '1';
+      check('‹ steps back and the dev select follows', await until5(pg, (v) => document.querySelector('#dev select').value === v, back, 15000) && (await pg.$eval('#play .preset .name', (e) => e.textContent)) === (back === '0' ? 'one' : 'two'), `${at} -> ${await devValue(pg)}`);
+      // someone else's playlist is read-only (design §3.5)
+      const del = await pg.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].filter((b) => b.textContent === 'remove' || b.textContent === 'delete').map((b) => b.hidden));
+      check('it is read-only: there is no remove', del.length === 1 && del[0] === true, JSON.stringify(del));
+      const before = seen.length;
+      await pg.evaluate(() => { const i = [...document.querySelectorAll('#dev .ctl')].find((r) => r.querySelector('label')?.textContent === 'CLOUD').querySelector('input'); i.value = '0.21'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+      await pg.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent === 'save').click());
+      await until5(pg, () => document.querySelectorAll('#dev select')[1].value === 'local', null, 15000);
+      const mine = await pg.evaluate(() => ({ list: document.querySelectorAll('#dev select')[1].value, value: document.querySelector('#dev select').value, star: 'k5 mine' in JSON.parse(localStorage.getItem('komorebi.presets') || '{}') }));
+      check('and save there makes a ★ in On this browser and switches to it, writing nothing to arboretum', mine.list === 'local' && mine.value === 'k5 mine' && mine.star && methods.slice(before).every((m) => m === 'GET'), JSON.stringify({ mine, after: seen.slice(before) }));
+      // the token comes back with a re-fetch
+      await pg.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'arb:7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+      await until5(pg, () => document.querySelector('#dev select').value !== 'k5 mine', null, 15000);
+      check('opening the playlist again fetches it with the token the link carried', seen.filter((p) => p === '/api/playlists/7?k=tok').length === 2, seen.filter((p) => /playlists/.test(p)).join());
+      await ctx.close();
+    }
+    // the cache: with arboretum unreachable a cached playlist still steps
+    {
+      const cache = { v: 1, me: null, origin: {}, playlists: { 7: { id: 7, name: 'k5 cached', owner: 'ana', k: 'tok', fetched_at: 1700000000000, unavailable: 0, items: [
+        { preset_id: 1, version: 1, owner: 'ana', name: 'one', dwell_s: 2, crossfade_s: 1, params: PRESETS['afternoon 7'] },
+        { preset_id: 2, version: 1, owner: 'ana', name: 'two', dwell_s: 2, crossfade_s: 1, params: PRESETS.memories }] } } };
+      const { ctx, pg } = await open5('', (_u, _json, route) => route.abort('failed'), cache);
+      await pg.click('#feel');
+      await pg.waitForSelector('#play:not(.hidden)', { timeout: 60000 });
+      await pg.waitForTimeout(800);
+      const s0 = await pg.$eval('#dev select', (s) => ({ value: s.value, opts: [...s.options].map((o) => o.textContent).join() }));
+      await pg.$eval('#play .preset button:nth-child(2)', (b) => b.click());
+      const stepped = await until5(pg, () => document.querySelector('#dev select').value === '1', null, 15000);
+      check('with every call to arboretum failing, a cached playlist still steps', s0.opts === 'one,two' && stepped && (await pg.$eval('#play .preset .name', (e) => e.textContent)) === 'two', JSON.stringify(s0));
+      await ctx.close();
+    }
+  }
 } catch (e) {
   check('smoke run', false, e.message.split('\n')[0]);
 }

@@ -2,7 +2,7 @@ import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor } from './komorebi.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
-import { getState, entries, resolve, step, starValue, starName, entryName, playlists, plays, timing, detect } from './playlists.js';
+import { getState, entries, resolve, step, starValue, starName, entryName, playlists, plays, timing, detect, parseHash, makePlayer } from './playlists.js';
 import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
@@ -56,7 +56,7 @@ const perf = eng.perf;
 // time-of-day is an editor-only INPUT method (it writes sun elevation/azimuth); not an engine param.
 if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
-function applyScope(scope){ return eng.apply(scope); }                      // slider/toggle rebuild
+function applyScope(scope){ stopPlay(); return eng.apply(scope); }          // slider/toggle rebuild — every edit of the look comes through here (or updateSunFromTime, a drag, species, paste, save), and stops play
 function reseed(){ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }   // same grove, grown again
 function applyParams(obj){ endTween(); eng.setParams(obj); syncAllControls(); }  // load a whole preset (instant)
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
@@ -324,7 +324,7 @@ function buildPanel(){
       const sel=document.createElement('select');
       const o0=document.createElement('option'); o0.value=''; o0.textContent='— custom'; sel.appendChild(o0);
       for(const name of Object.keys(TREE_SPECIES)){ const o=document.createElement('option'); o.value=name; o.textContent=name; if(name===params.tree_species) o.selected=true; sel.appendChild(o); }
-      sel.addEventListener('change',()=>{ const b=TREE_SPECIES[sel.value];
+      sel.addEventListener('change',()=>{ const b=TREE_SPECIES[sel.value]; stopPlay();
         if(b) applyParams(Object.assign({}, params, b, { tree_species:sel.value }));   // bundle over the live params, keep the scene
         else params.tree_species=''; });
       row.append(lab,sel); controlEls.tree_species={input:sel,row}; row.dataset.tipKey='tree_species';
@@ -527,19 +527,21 @@ function presetRow(withPlay){
 }
 const presetNameEls=[];
 function syncPlayPreset(){ if(presetSel) for(const el of presetNameEls) el.textContent = entryName(getState(), getStored(), activeList(), presetSel.value); }
-// ▶/■ shows only while the active playlist carries dwell times (a cloud playlist); On this browser has none. It only
-// flips the state: nothing advances on a timer yet.
-let playing=false;
+// ▶/■ shows only while the active playlist carries dwell times (a cloud playlist); On this browser has none. Playing
+// (playlists.js makePlayer) holds each look for its dwell and then steps to the next, which fades in over its own
+// crossfade; the dwell starts once that look has arrived (goTo), and the look play starts on has no fade in.
 const playBtns=[];
+const player=makePlayer({ timing:(value)=>timing(getState(), activeList(), value), advance:()=>stepPreset(1), onChange:()=>syncPlayButtons() });
+const stopPlay=()=>player.stop();                  // an edit of the look is yours to hear out: play never fights it
 function playButton(){
   const b=document.createElement('button'); b.className='playstop';
-  b.addEventListener('click',()=>{ playing=!playing; syncPlayButtons(); });
+  b.addEventListener('click',()=>{ if(player.playing) player.stop(); else player.start(presetSel.value); });
   playBtns.push(b);
   return b;
 }
 function syncPlayButtons(){
-  const on=plays(getState(), activeList());
-  for(const b of playBtns){ b.hidden=!on; b.textContent=playing?'■':'▶'; b.title=playing?'stop':'play'; }
+  const on=plays(getState(), activeList()), p=player.playing;
+  for(const b of playBtns){ b.hidden=!on; b.textContent=p?'■':'▶'; b.title=p?'stop':'play'; }
 }
 function syncMacroControls(){
   for(const key in macroEls){
@@ -602,7 +604,7 @@ function buildPlayPanel(){
   const ssel=document.createElement('select');
   const o0=document.createElement('option'); o0.value=''; o0.textContent='— custom'; ssel.appendChild(o0);
   for(const n of Object.keys(TREE_SPECIES)){ const o=document.createElement('option'); o.value=n; o.textContent=n; ssel.appendChild(o); }
-  ssel.addEventListener('change',()=>{ const b=TREE_SPECIES[ssel.value];
+  ssel.addEventListener('change',()=>{ const b=TREE_SPECIES[ssel.value]; stopPlay();
     if(b) applyParams(Object.assign({}, params, b, { tree_species:ssel.value }));
     else params.tree_species=''; });
   sr.append(slab,ssel); play.appendChild(sr);
@@ -903,6 +905,7 @@ dev.addEventListener('scroll', ()=>{ tip.style.display='none'; });
 // ---- time of day: an alternative to the raw sun angle. Works out the sun's elevation & azimuth for a
 // SPRING day (equinox, so declination ≈ 0) at the chosen latitude, and writes them to the sun knobs. --
 function updateSunFromTime(){
+  stopPlay();
   const lat=(params.latitude||0)*DEG, H=(params.time_of_day-12)*15*DEG;   // hour angle: 15°/hr, 0 at solar noon
   const el = Math.asin(clamp(Math.cos(lat)*Math.cos(H), -1, 1))/DEG;      // equinox: elevation = asin(cos lat · cos H)
   const az = (180 + Math.atan2(Math.sin(H), Math.cos(H)*Math.sin(lat))/DEG + 360) % 360;  // east → south → west
@@ -957,26 +960,34 @@ function syncPlaylistUI(){
     playlistSel.value=activeList();
     playlistRow.hidden = lists.length<2;
   }
-  if(deleteBtn) deleteBtn.textContent = arb && activeList()!=='local' ? 'remove' : 'delete';   // in a cloud playlist it takes the item out of the playlist
+  if(deleteBtn){
+    const cloud = arb && activeList()!=='local';
+    deleteBtn.textContent = cloud ? 'remove' : 'delete';   // in a cloud playlist it takes the item out of the playlist
+    deleteBtn.hidden = cloud && !arb.writable();           // ...of yours: someone else's playlist is read-only (design §3.5)
+  }
   syncPlayButtons();
   arb?.changed();
 }
 // Select an entry and ease to it: the arrows, the swipe, and a playlist swap. A cloud entry brings its own crossfade.
+// While playing, a look's dwell starts when it has arrived (onEnd), and nothing waits while it fades in; a step by hand
+// is the same, so it restarts the dwell.
 function goTo(value){
   const t=timing(getState(), activeList(), value);
   endTween();
+  player.leaving();
   eng.transitionTo(resolveEntry(value), { duration: t ? t.crossfade_s : transDur,
-    onEnd:()=>{ endTween(); refreshPresetSelect(value); syncAllControls(); } });   // morph from the current live look to the target
+    onEnd:()=>{ endTween(); refreshPresetSelect(value); syncAllControls(); player.arrived(value); } });   // morph from the current live look to the target
   refreshPresetSelect(value);                                               // reflect target in the dropdown = next step's origin
 }
 function loadEntry(value){                          // the dropdown: an instant load
   const p=resolveEntry(value);
   if(p) applyParams(p);
   refreshPresetSelect(value);
+  player.arrived(value);                            // an instant load has arrived at once
 }
 function setActive(list){
   if(list===activeList()) return;
-  settings.playlist=list; saveSettings(); playing=false;
+  settings.playlist=list; saveSettings(); stopPlay();
   const value=resumeAt();
   if(value===undefined) refreshPresetSelect(''); else goTo(value);
 }
@@ -987,10 +998,14 @@ function saveStar(name, p){
   settings.playlist='local'; saveSettings();
   refreshPresetSelect(starValue(name));
 }
-// Save: a ★ in On this browser, or — in a cloud playlist, once arboretum has mounted — a look uploaded to arboretum.
-function saveLook(name, p){ if(arb && activeList()!=='local') arb.save(name, p); else saveStar(name, p); }
+// Save: a ★ in On this browser, or — in a cloud playlist of yours, once arboretum has mounted — a look uploaded to arboretum.
+// Someone else's playlist is read-only (design §3.5): saving there keeps a ★ of your own.
+function saveLook(name, p){
+  stopPlay();
+  if(arb && activeList()!=='local' && arb.writable()) arb.save(name, p); else saveStar(name, p);
+}
 function showStar(name){                           // a ★ arboretum.js has just brought in: On this browser, on that look
-  settings.playlist='local'; saveSettings(); playing=false;
+  settings.playlist='local'; saveSettings(); stopPlay();
   loadEntry(starValue(name));
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
@@ -1044,7 +1059,7 @@ function buildPresetUI(){
       if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).catch(()=>prompt('Copy JSON:',txt));
       else prompt('Copy JSON:',txt); }),
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
-      try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(_e){ alert('Invalid JSON'); } }));
+      try{ const o=JSON.parse(txt); stopPlay(); applyParams(o.params||o); refreshPresetSelect(); }catch(_e){ alert('Invalid JSON'); } }));
   dev.appendChild(r3);
   presetRows.tools=r3;
   refreshPresetSelect(landing());
@@ -1076,11 +1091,15 @@ function slideInPanel(){
 }
 // the key hints stay HIDDEN unless summoned — the canvas is the point, not the legend. H (mapped to
 // nothing else) shows them for ten seconds.
-let hintTimer=0;
-function showHint(){
+// With a `text` it says that for the same ten seconds (the welcome has nowhere else to put a reason); after, or on the next plain
+// showHint, the key hints are back.
+let hintTimer=0, keyHints=null;
+function showHint(text){
   hint.classList.remove('gone');
   clearTimeout(hintTimer);
-  hintTimer=setTimeout(()=>hint.classList.add('gone'), 10000);
+  if(text===undefined && keyHints!==null){ hint.innerHTML=keyHints; keyHints=null; }
+  if(text!==undefined){ keyHints??=hint.innerHTML; hint.textContent=text; }
+  hintTimer=setTimeout(()=>{ hint.classList.add('gone'); if(keyHints!==null){ hint.innerHTML=keyHints; keyHints=null; } }, 10000);
 }
 function slideOutPanel(){
   const el = panelEl();
@@ -1157,6 +1176,7 @@ canvas.addEventListener('pointermove',e=>{
     px=e.clientX; py=e.clientY; return;                        // vertical is committed on release
   }
   if(!dragging) return;
+  stopPlay();
   if(dragSun){                                                   // novelty mode: drag positions the sun (as before)
     params.sun_azimuth_deg = (params.sun_azimuth_deg + (e.clientX-px)*0.3 + 360)%360;
     params.sun_elevation_deg = clamp(params.sun_elevation_deg - (e.clientY-py)*0.3, 4, 90);
@@ -1176,6 +1196,7 @@ canvas.addEventListener('pointermove',e=>{
 // mouse wheel = zoom the camera (view extent), in both drag modes; preventDefault so the page doesn't scroll
 canvas.addEventListener('wheel', e=>{
   e.preventDefault();
+  stopPlay();
   params.view_extent_m = clamp(params.view_extent_m * Math.exp(e.deltaY*0.0015), 0.5, 40);
   syncControl('view_extent_m');
 }, { passive:false });
@@ -1499,6 +1520,9 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
 // crossfades to the editor's default look. On desktop the dev panel then slides
 // in (D toggles it thereafter); on TOUCH it stays hidden — the art stands alone
 // until a double-tap brings it up (press-and-hold peeks; spec §9).
+// An arboretum link (#arboretum=…, #arboretum-playlist=…) changes where it lands: on the look the link brought in, or on
+// the first item of the playlist it opened, which then plays (editor-integration-design §5). The link's fetch starts as
+// soon as arboretum mounts, so it is usually done by "feel"; if not, the crossfade waits for it, five seconds at most.
 // ===========================================================================
 (()=> {
   const welcome=document.getElementById('welcome'), feel=document.getElementById('feel');
@@ -1508,21 +1532,37 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
     if(eng.trans.active && performance.now()<arriveBy){ setTimeout(arrive, 500); return; }   // the tier clock is frame-clamped, so wall time can stretch; wait it out, don't guess it
     slideInPanel(); stripWake();
   }
+  // `opened` is what arboretum.js made of the link: { value } (a ★ in On this browser) | { list, value, play } | { failed } | null (no link, or arboretum is off)
+  function land(opened){
+    let at, playOnce=false;
+    if(opened?.failed) showHint(`arboretum: ${opened.failed}`);    // a first-run visitor is in zen and would see nothing else; the look is the usual landing
+    else if(opened){
+      settings.playlist=opened.list ?? 'local'; saveSettings();
+      at=opened.value; playOnce=!!opened.play;
+      history.replaceState(null, '', location.pathname+location.search);   // a reload must not import again (an @n link would re-pin every time)
+    }
+    const target=at ?? landing();
+    let settled=false;
+    const landed=()=>{ refreshPresetSelect(target); syncAllControls(); if(playOnce){ playOnce=false; player.start(target); } };   // the first look has no fade in: its dwell starts here
+    eng.transitionTo(resolveEntry(target) ?? getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec §9)
+      onEnd:()=>{ settled=true; endTween(); landed(); setTimeout(arrive,300); } });
+    setTimeout(()=>{ if(!settled) landed(); arrive(); }, 5500);  // fallback if onEnd never fires
+  }
   feel.addEventListener('click',()=>{
     if(started) return; started=true;
     document.body.classList.remove('intro');        // un-dim the canvas to full strength
     welcome.classList.add('out');                   // dissolve the intro text
     setTimeout(()=>{ welcome.style.display='none'; }, 1000);
     endTween();
-    const land=landing();
-    eng.transitionTo(resolveEntry(land) ?? getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec §9)
-      onEnd:()=>{ endTween(); refreshPresetSelect(land); syncAllControls(); setTimeout(arrive,300); } });
-    setTimeout(()=>{ refreshPresetSelect(land); syncAllControls(); arrive(); }, 5500);  // fallback if onEnd never fires
+    if(!link){ land(null); return; }
+    Promise.race([linkReady, new Promise((ok)=>setTimeout(()=>ok({ failed:'no answer in time' }), 5000))])
+      .catch((e)=>{ console.error(e); return null; }).then(land);
   });
 })();
 
 // ---- arboretum: loaded only where `detect` names its origin (komorebi.eljojo.net, or arboretum's own dev server). On a fork
 // or komorebi's own dev server `detect` answers null without a request, and arboretum.js is never fetched. ----
+const link = parseHash(location.hash);
 // What the editor lends arboretum.js, and nothing else of itself.
 const arbHost = {
   params, rows: presetRows,
@@ -1534,4 +1574,5 @@ const arbHost = {
   show: showStar,
   advancedShown: () => !dev.classList.contains('hidden'),
 };
-detect(location, fetch).then((origin) => { if(origin) return import('./arboretum.js').then((m) => { arb = m.mount(origin, arbHost); syncPlaylistUI(); }); });
+// A link is opened as soon as arboretum has mounted; `linkReady` is what the welcome gate waits on (null where arboretum is off).
+const linkReady = detect(location, fetch).then((origin) => { if(origin) return import('./arboretum.js').then((m) => { arb = m.mount(origin, arbHost); syncPlaylistUI(); return link ? arb.open(link) : null; }); return null; });

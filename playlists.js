@@ -102,12 +102,14 @@ export function entryName(state, stored, active, value) {
 }
 
 // The playlists a visitor can pick between: On this browser, then yours as arboretum lists them (`mine`: summaries,
-// not cached until picked), then the cached ones that are not among them.
-export function playlists(state, mine = []) {
+// not cached until picked), then the cached ones that are not among them. Once you are signed in (`me`), a cached one
+// that is someone else's carries its owner's name.
+export function playlists(state, mine = [], me = null) {
   const listed = new Set(mine.map((p) => String(p.id)));
+  const label = (p) => (me && p.owner !== me ? `${p.name} · ${p.owner}` : p.name);
   return [{ value: "local", label: LOCAL_NAME },
     ...mine.map((p) => ({ value: `arb:${p.id}`, label: p.name })),
-    ...Object.values(state.playlists).filter((p) => !listed.has(String(p.id))).map((p) => ({ value: `arb:${p.id}`, label: p.name }))];
+    ...Object.values(state.playlists).filter((p) => !listed.has(String(p.id))).map((p) => ({ value: `arb:${p.id}`, label: label(p) }))];
 }
 
 // Whether the active playlist plays: only an arboretum playlist carries dwell times (design §3.6).
@@ -318,4 +320,44 @@ export function pushButton(plan) {
 // An upload's `into` (uploadPlan) as the change itemsAfter applies to a fresh copy of the playlist.
 export function placeChange(into, preset_id) {
   return into.at === null ? { kind: "append", preset_id } : { kind: "replace", at: into.at, preset_id };
+}
+
+// ---- the links (design §5) -------------------------------------------------------------------------------------
+// `GET /api/presets/:id/versions/:n` answers {preset_id, n, name, params, …}: no `id`, `owner` or `version`, which
+// savePreset reads off the head. The owner is not on a version at all, so it comes from the head fetched beside it.
+export const fromVersion = (v, head) => ({ ...v, id: v.preset_id, version: v.n, owner: head.owner });
+
+// A playlist link: the playlist is cached (with the link's share token, so an unlisted one can be fetched again) and
+// becomes the active one, on its first item. Nothing playable is a failure, and nothing is cached for it.
+export function linkPlaylist(state, view, k) {
+  const next = cachePlaylist(state, k === undefined ? view : { ...view, k });
+  if (!next.playlists[view.id].items.length) return { failed: "that playlist has nothing to play" };
+  return { state: next, list: `arb:${view.id}`, value: "0" };
+}
+
+// ---- read-only (design §3.5): a playlist is written only by its owner --------------------------------------------
+export const writable = (state, active, me) => active === "local" || (!!me && state.playlists[cloudId(active)]?.owner === me);
+
+// ---- playing (design §3.6) ----------------------------------------------------------------------------------------
+// A cloud playlist plays: each look is held for its `dwell_s`, then the next fades in over its own `crossfade_s`.
+// The dwell starts when a look has finished fading in, so a long crossfade never eats the time a look is meant to be
+// seen (José's call; arboretum's own player does the same). The look play starts on is simply there: no fade in.
+// The editor owns the engine: `advance` is its step to the next look; it calls `leaving` as that step begins and
+// `arrived` when the look has landed — also when a look is put there by hand, which restarts the dwell. Timers are
+// injectable so the schedule can be tested without waiting.
+export function makePlayer({ timing, advance, onChange, setTimer = setTimeout, clearTimer = clearTimeout }) {
+  let on = false, timer = null;
+  const idle = () => { if (timer !== null) { clearTimer(timer); timer = null; } };
+  const arrived = (value) => {
+    idle();
+    const t = on ? timing(value) : null;
+    if (t) timer = setTimer(() => { timer = null; if (on) advance(); }, t.dwell_s * 1000);
+  };
+  return {
+    get playing() { return on; },
+    start(value) { if (on) return; on = true; arrived(value); onChange?.(); },
+    stop() { if (!on) return; on = false; idle(); onChange?.(); },
+    leaving: idle,
+    arrived,
+  };
 }
