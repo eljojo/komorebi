@@ -2,7 +2,7 @@
 
 > A place where komorebi looks (presets) are kept, versioned, and grouped into playlists. Komorebi is a WebGL2
 > rendering of sunlight through leaves (https://komorebi.eljojo.net). This file is how an agent uses
-> arboretum's JSON API at https://arboretum.eljojo.net/api.
+> arboretum's JSON API at https://komorebi.eljojo.net/api.
 
 A preset is a komorebi param set: the same flat JSON object the komorebi editor's "copy JSON" button produces.
 Arboretum stores it verbatim, keeps every version, and hands it back to the editor.
@@ -10,15 +10,14 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
 ## Authentication
 
 - Agents use a bearer token: `Authorization: Bearer <token>`. The person mints one at
-  https://arboretum.eljojo.net/settings, with scope `read` or `write` (write includes read).
+  https://komorebi.eljojo.net/arboretum/settings, with scope `read` or `write` (write includes read).
 - Read the token from the environment variable `ARBORETUM_TOKEN`. Never print, echo, log or commit it.
 - A token acts as its person, with limits: anything it creates is **private**, it can change only private
   things, and it can never make anything public or unlisted, archive, or manage tokens and passkeys. Publishing
   is the person's act, in a browser.
 - Every version records how it arrived; a token's versions say `token:<its label>`.
-- The komorebi editor (https://komorebi.eljojo.net) uses the person's browser session. It may read, create
-  presets, versions and playlists, and set a playlist's items, but only private ones: from the editor,
-  `visibility` other than `private` is a 403, because publishing is done on arboretum itself.
+- The komorebi editor (https://komorebi.eljojo.net) is on the same origin as arboretum and uses the person's browser
+  session, so it acts as the person, with no token.
 
 ## Rules for every request
 
@@ -97,12 +96,12 @@ is 429, naming it.
 - Open a preset in komorebi: `https://komorebi.eljojo.net/#arboretum=<id>` (`@<n>` for one version,
   `&k=<share_token>` when unlisted).
 - Play a playlist in komorebi: `https://komorebi.eljojo.net/#arboretum-playlist=<id>`.
-- Its page on arboretum: `https://arboretum.eljojo.net/p/<id>` and `https://arboretum.eljojo.net/l/<id>`.
+- Its page on arboretum: `https://komorebi.eljojo.net/arboretum/p/<id>` and `https://komorebi.eljojo.net/arboretum/l/<id>`.
 
 ## Example
 
 ```
-curl -s https://arboretum.eljojo.net/api/presets \
+curl -s https://komorebi.eljojo.net/api/presets \
   -H "Authorization: Bearer $ARBORETUM_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"morning, softer","parent":"look:morning 2","params":{"cloud_thickness":0.5,"exposure":2.2}}'

@@ -656,7 +656,7 @@ describe('preset summary queries', () => {
     const o = await owner();
     await makePreset(o.user, o.token);
     const seen: string[] = [];
-    const path = what === 'the owner list' ? '/api/presets?owner=me' : `/u/${o.user.username}`;
+    const path = what === 'the owner list' ? '/api/presets?owner=me' : `/arboretum/u/${o.user.username}`;
     const res = await intercepting((sql) => void seen.push(sql))(request('GET', path, { token: o.token }));
     expect(res.status).toBe(200);
     const reads = seen.filter((sql) => /join "preset_versions"/.test(sql));
@@ -693,7 +693,7 @@ describe('GET /api/presets/:id/versions', () => {
   // A history is a list of names and dates; the params of every version are never needed to draw it.
   it.each([
     ['the API list', (id: number, token: string) => request('GET', `/api/presets/${id}/versions`, { token })],
-    ['the history page', (id: number, token: string) => request('GET', `/p/${id}/history`, { token })],
+    ['the history page', (id: number, token: string) => request('GET', `/arboretum/p/${id}/history`, { token })],
   ])('reads no params for %s', async (_what, req) => {
     const o = await owner();
     const p = await makePreset(o.user, o.token);
@@ -780,13 +780,16 @@ describe('visibility and archiving are session-only', () => {
       expect((await get(`/api/presets/${p.id}`)).status).toBe(200);
     });
 
-    it('a session write records web, or editor from the komorebi origin', async () => {
+    it('a session write records web from an arboretum page, and editor from anywhere else', async () => {
       const o = await owner();
-      const web = await asSession(o.user, 'POST', '/api/presets', { json: { name: 'x', params: PARAMS } });
+      const web = await asSession(o.user, 'POST', '/api/presets', {
+        json: { name: 'x', params: PARAMS },
+        headers: { Referer: 'https://arboretum.test/arboretum/new' },
+      });
       expect(web.json.via).toBe('web');
       const editor = await asSession(o.user, 'POST', `/api/presets/${web.json.id}/versions`, {
         json: { name: 'y' },
-        headers: { Origin: 'https://komorebi.eljojo.net' },
+        headers: { Referer: 'https://arboretum.test/' },
       });
       expect(editor.json.via).toBe('editor');
     });

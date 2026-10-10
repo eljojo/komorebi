@@ -1,4 +1,5 @@
 import { failure, send } from './api.js';
+import { BASE } from './base.js';
 import { say } from './dom.js';
 
 const { startAuthentication, browserSupportsWebAuthn } = window.SimpleWebAuthnBrowser;
@@ -20,5 +21,5 @@ button.addEventListener('click', async () => {
   }
   const done = await send('POST', '/api/auth/login', { credential });
   if (!done.ok) return say(page, failure(done));
-  location.assign('/');
+  location.assign(BASE);
 });

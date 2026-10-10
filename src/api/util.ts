@@ -1,6 +1,5 @@
 import { sql } from 'drizzle-orm';
 import type { Ctx } from '../auth';
-import { CORS_ORIGINS } from '../config';
 import { ApiError } from '../errors';
 import { randomBase64Url } from '../random';
 
@@ -36,14 +35,3 @@ export const visibilityChange = (visibility: Visibility) => ({
     shareToken: sql<string>`case when visibility = 'unlisted' then share_token else ${randomBase64Url(16)} end`,
   }),
 });
-
-// A request from the editor's origin may create things but never make them visible: publishing is a person's act
-// on arboretum itself, the same stance as for tokens (spec §3.3). Without this a script on that origin could
-// publish a look through the session cookie the editor's CORS grant carries.
-export const fromEditor = (c: Ctx) => CORS_ORIGINS.includes(c.req.header('Origin') ?? '');
-
-export function assertNotPublishedFromEditor(c: Ctx, visibility: Visibility) {
-  if (visibility !== 'private' && fromEditor(c)) {
-    throw new ApiError(403, 'publishing is done on arboretum, not from the editor');
-  }
-}

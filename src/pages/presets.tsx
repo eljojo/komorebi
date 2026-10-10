@@ -9,6 +9,7 @@ import { presetVersions } from '../db/schema';
 import engine from '../../public/engine/engine.json';
 import { komorebiPresetLink } from './links';
 import { Layout, Tags, day, notFound, viewerOf } from './layout';
+import { BASE } from '../config';
 
 type Row = NonNullable<Awaited<ReturnType<typeof loadPreset>>>;
 
@@ -52,7 +53,7 @@ function OwnerControls(props: { row: Row; origin: string }) {
       </p>
       {preset.visibility === 'unlisted' ? (
         <p>
-          share link <input class="share" readonly value={`${props.origin}/p/${preset.id}?k=${preset.shareToken}`} />
+          share link <input class="share" readonly value={`${props.origin}${BASE}/p/${preset.id}?k=${preset.shareToken}`} />
         </p>
       ) : null}
       <p>
@@ -86,7 +87,7 @@ function OwnerControls(props: { row: Row; origin: string }) {
 }
 
 export function registerPresetPages(app: Hono<AppEnv>) {
-  app.get('/p/:id', async (c) => {
+  app.get(`${BASE}/p/:id`, async (c) => {
     const viewer = await viewerOf(c);
     const row = await visibleRow(c, viewer);
     if (!row) return notFound(c, viewer);
@@ -94,10 +95,10 @@ export function registerPresetPages(app: Hono<AppEnv>) {
     const k = shareKey(row);
     const isOwner = viewer?.userId === preset.ownerId;
     return c.html(
-      <Layout title={head.name} viewer={viewer} scripts={['/js/preview.js', ...(isOwner ? ['/js/owner-preset.js'] : [])]}>
+      <Layout title={head.name} viewer={viewer} scripts={[`${BASE}/js/preview.js`, ...(isOwner ? [`${BASE}/js/owner-preset.js`] : [])]}>
         <h1>{head.name}</h1>
         <p class="meta">
-          by <a href={`/u/${row.owner}`}>{row.owner}</a> <Tags tags={head.tags} />
+          by <a href={`${BASE}/u/${row.owner}`}>{row.owner}</a> <Tags tags={head.tags} />
         </p>
         {head.description ? <p>{head.description}</p> : null}
         <Look tags={head.tags} src={`/api/presets/${preset.id}${withK(k)}`} />
@@ -105,14 +106,14 @@ export function registerPresetPages(app: Hono<AppEnv>) {
           <a class="primary" href={komorebiPresetLink(preset.id, { k })}>open in komorebi</a>
         </p>
         <p class="meta">
-          version {head.n} · <a href={`/p/${preset.id}/history${withK(k)}`}>history</a>
+          version {head.n} · <a href={`${BASE}/p/${preset.id}/history${withK(k)}`}>history</a>
         </p>
         {isOwner ? <OwnerControls row={row} origin={c.env.ORIGIN} /> : null}
       </Layout>,
     );
   });
 
-  app.get('/p/:id/history', async (c) => {
+  app.get(`${BASE}/p/:id/history`, async (c) => {
     const viewer = await viewerOf(c);
     const row = await visibleRow(c, viewer);
     if (!row) return notFound(c, viewer);
@@ -127,13 +128,13 @@ export function registerPresetPages(app: Hono<AppEnv>) {
       <Layout title={`history of ${head.name}`} viewer={viewer}>
         <h1>{head.name}</h1>
         <p class="meta">
-          <a href={`/p/${preset.id}${withK(k)}`}>back to the look</a>
+          <a href={`${BASE}/p/${preset.id}${withK(k)}`}>back to the look</a>
         </p>
         <h2>history</h2>
         <ul class="plain">
           {versions.map((v) => (
             <li>
-              <span class="n">{v.n}</span> <a href={`/p/${preset.id}/v/${v.n}${withK(k)}`}>{v.name}</a>{' '}
+              <span class="n">{v.n}</span> <a href={`${BASE}/p/${preset.id}/v/${v.n}${withK(k)}`}>{v.name}</a>{' '}
               <span class="when">{v.via} · {day(v.createdAt)}</span>
             </li>
           ))}
@@ -142,7 +143,7 @@ export function registerPresetPages(app: Hono<AppEnv>) {
     );
   });
 
-  app.get('/p/:id/v/:n', async (c) => {
+  app.get(`${BASE}/p/:id/v/:n`, async (c) => {
     const viewer = await viewerOf(c);
     const row = await visibleRow(c, viewer);
     const n = parseId(c.req.param('n'));
@@ -154,10 +155,10 @@ export function registerPresetPages(app: Hono<AppEnv>) {
     if (!v) return notFound(c, viewer);
     const k = shareKey(row);
     return c.html(
-      <Layout title={v.name} viewer={viewer} scripts={['/js/preview.js']}>
+      <Layout title={v.name} viewer={viewer} scripts={[`${BASE}/js/preview.js`]}>
         <h1>{v.name}</h1>
         <p class="meta">
-          version {v.n} of <a href={`/p/${row.preset.id}${withK(k)}`}>this look</a> by <a href={`/u/${row.owner}`}>{row.owner}</a> <Tags tags={v.tags} />
+          version {v.n} of <a href={`${BASE}/p/${row.preset.id}${withK(k)}`}>this look</a> by <a href={`${BASE}/u/${row.owner}`}>{row.owner}</a> <Tags tags={v.tags} />
         </p>
         {v.description ? <p>{v.description}</p> : null}
         <Look tags={v.tags} src={`/api/presets/${row.preset.id}/versions/${v.n}${withK(k)}`} />
@@ -165,7 +166,7 @@ export function registerPresetPages(app: Hono<AppEnv>) {
           <a class="primary" href={komorebiPresetLink(row.preset.id, { n: v.n, k })}>open this version in komorebi</a>
         </p>
         <p class="meta">
-          <span class="when">{v.via} · {day(v.createdAt)}</span> · <a href={`/p/${row.preset.id}/history${withK(k)}`}>history</a>
+          <span class="when">{v.via} · {day(v.createdAt)}</span> · <a href={`${BASE}/p/${row.preset.id}/history${withK(k)}`}>history</a>
         </p>
       </Layout>,
     );

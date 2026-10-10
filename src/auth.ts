@@ -3,7 +3,7 @@
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { Context, Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { CORS_ORIGINS } from './config';
+import { BASE } from './config';
 import { connect } from './db/client';
 import { apiTokens, sessions, users } from './db/schema';
 import { ApiError } from './errors';
@@ -87,8 +87,14 @@ export function secured<P extends Policy>(
   app.on(method, path, async (c) => handler(c, await authorize(c, policy)));
 }
 
-// How a new version arrived (spec §3.3).
-export function viaFor(actor: Actor, origin: string | null): string {
+// How a new version arrived (spec §3.3). History only: nothing is allowed or refused by it. The editor and
+// arboretum are one origin, so a session's source is read off the page that sent the request: a Referer inside
+// BASE is a page of arboretum's own, anything else (komorebi's editor at the root, or no Referer) is the editor.
+export function viaFor(actor: Actor, referer: string | null): string {
   if (actor.kind === 'token') return `token:${actor.label}`;
-  return origin !== null && CORS_ORIGINS.includes(origin) ? 'editor' : 'web';
+  let path: string | null = null;
+  try {
+    if (referer !== null) path = new URL(referer).pathname;
+  } catch {}
+  return path !== null && (path === BASE || path.startsWith(`${BASE}/`)) ? 'web' : 'editor';
 }

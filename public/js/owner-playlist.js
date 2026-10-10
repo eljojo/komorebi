@@ -1,4 +1,4 @@
-// The owner's controls on /l/:id: visibility, and the list itself (reorder, remove, dwell, crossfade).
+// The owner's controls on /arboretum/l/:id: visibility, and the list itself (reorder, remove, dwell, crossfade).
 import { failure, send } from './api.js';
 import { el, say } from './dom.js';
 

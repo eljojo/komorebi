@@ -8,7 +8,7 @@ import { ApiError } from '../errors';
 import { randomBase64Url } from '../random';
 import { validateMeta } from '../validate';
 import { canSee } from './access';
-import { assertNotPublishedFromEditor, fromEditor, isVisibility, parseId, readJsonBody, visibilityChange } from './util';
+import { isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
 const MAX_ITEMS = 500;
 const DWELL = { min: 1, max: 3600, default: 30 };
@@ -88,14 +88,14 @@ async function ownedPlaylist(c: Ctx, actor: Actor): Promise<PlaylistRow> {
 }
 
 // Anyone sees a public or unlisted playlist at once, so changing one is a person's act (spec §3.3).
-function assertTokenMayChange(c: Ctx, actor: Actor, row: PlaylistRow) {
-  if ((actor.kind === 'token' || fromEditor(c)) && row.playlist.visibility !== 'private') throw visibleRefusal();
+function assertTokenMayChange(actor: Actor, row: PlaylistRow) {
+  if (actor.kind === 'token' && row.playlist.visibility !== 'private') throw visibleRefusal();
 }
 
 // The same rule as a condition of the write itself, for the statements below: the owner may have published the
-// playlist since `assertTokenMayChange` read it. The editor has the same restriction; a session on arboretum has none.
-const privateIfToken = (c: Ctx, actor: Actor) => (actor.kind === 'token' || fromEditor(c) ? sql`visibility = 'private'` : sql`1`);
-const visibleRefusal = () => new ApiError(403, 'changing a visible playlist needs a person in a browser; tokens and the editor can only change private playlists');
+// playlist since `assertTokenMayChange` read it. A session has no such restriction.
+const privateIfToken = (actor: Actor) => (actor.kind === 'token' ? sql`visibility = 'private'` : sql`1`);
+const visibleRefusal = () => new ApiError(403, 'changing a visible playlist needs a person in a browser; tokens can only change private playlists');
 
 function checkedMeta(name: unknown, description: unknown) {
   const meta = validateMeta({ name, description });
@@ -131,7 +131,6 @@ export function registerPlaylists(app: Hono<AppEnv>) {
       if (actor.kind === 'token' && body.visibility !== 'private') {
         throw new ApiError(403, 'making a playlist visible needs a person in a browser; a token can only create private playlists');
       }
-      assertNotPublishedFromEditor(c, body.visibility);
       visibility = body.visibility;
     }
     const meta = checkedMeta(body.name, body.description);
@@ -186,15 +185,14 @@ export function registerPlaylists(app: Hono<AppEnv>) {
       // Publishing is a person's act (spec §3.3); a token may not even ask.
       if (actor.kind !== 'session') throw new ApiError(403, 'changing visibility needs a person in a browser; a token cannot do it');
       if (!isVisibility(body.visibility)) throw new ApiError(400, 'visibility must be public, unlisted or private');
-      assertNotPublishedFromEditor(c, body.visibility);
       Object.assign(patch, visibilityChange(body.visibility));
     }
-    assertTokenMayChange(c, actor, row);
+    assertTokenMayChange(actor, row);
     const meta = checkedMeta('name' in body ? body.name : row.playlist.name, 'description' in body ? body.description : (row.playlist.description ?? undefined));
     if ('name' in body) patch.name = meta.name;
     if ('description' in body) patch.description = meta.description ?? null;
 
-    const updated = await db.update(playlists).set(patch).where(and(eq(playlists.id, row.playlist.id), privateIfToken(c, actor))).returning({ id: playlists.id });
+    const updated = await db.update(playlists).set(patch).where(and(eq(playlists.id, row.playlist.id), privateIfToken(actor))).returning({ id: playlists.id });
     if (!updated.length) throw visibleRefusal();
     return c.json(await playlistView(db, (await loadPlaylist(db, row.playlist.id))!, actor));
   });
@@ -202,7 +200,7 @@ export function registerPlaylists(app: Hono<AppEnv>) {
   secured(app, 'PUT', '/api/playlists/:id/items', 'write', async (c, actor) => {
     const db = connect(c.env.DB);
     const row = await ownedPlaylist(c, actor);
-    assertTokenMayChange(c, actor, row);
+    assertTokenMayChange(actor, row);
     const { body } = await readJsonBody(c);
     const items = parseItems(body.items);
     const revision = body.revision;
@@ -230,7 +228,7 @@ export function registerPlaylists(app: Hono<AppEnv>) {
     for (let at = 0; at < rows.length; at += ROWS_PER_INSERT) inserts.push(db.insert(playlistItems).values(rows.slice(at, at + ROWS_PER_INSERT)));
     const touch = db.update(playlists).set({
       updatedAt: Date.now(),
-      revision: sql<number>`(select ${playlists.revision} + 1 where ${playlists.revision} = ${revision} and ${privateIfToken(c, actor)})`,
+      revision: sql<number>`(select ${playlists.revision} + 1 where ${playlists.revision} = ${revision} and ${privateIfToken(actor)})`,
     }).where(eq(playlists.id, row.playlist.id));
     try {
       await db.batch([
@@ -241,7 +239,7 @@ export function registerPlaylists(app: Hono<AppEnv>) {
       ]);
     } catch (err) {
       if (/NOT NULL constraint failed: playlists\.revision/i.test(`${err} ${(err as { cause?: unknown })?.cause}`)) {
-        assertTokenMayChange(c, actor, (await loadPlaylist(db, row.playlist.id))!);
+        assertTokenMayChange(actor, (await loadPlaylist(db, row.playlist.id))!);
         throw new ApiError(409, 'that playlist changed; reload it before saving the list');
       }
       throw err;

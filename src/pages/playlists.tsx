@@ -7,9 +7,10 @@ import { connect } from '../db/client';
 import engine from '../../public/engine/engine.json';
 import { komorebiPlaylistLink } from './links';
 import { Layout, notFound, viewerOf } from './layout';
+import { BASE } from '../config';
 
 export function registerPlaylistPages(app: Hono<AppEnv>) {
-  app.get('/l/:id', async (c) => {
+  app.get(`${BASE}/l/:id`, async (c) => {
     const viewer = await viewerOf(c);
     const db = connect(c.env.DB);
     const row = await loadPlaylist(db, parseId(c.req.param('id')));
@@ -28,11 +29,11 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
       <Layout
         title={playlist.name}
         viewer={viewer}
-        scripts={[...(playable.length ? ['/js/player.js'] : []), ...(isOwner ? ['/js/owner-playlist.js'] : [])]}
+        scripts={[...(playable.length ? [`${BASE}/js/player.js`] : []), ...(isOwner ? [`${BASE}/js/owner-playlist.js`] : [])]}
       >
         <h1>{playlist.name}</h1>
         <p class="meta">
-          by <a href={`/u/${row.owner}`}>{row.owner}</a>
+          by <a href={`${BASE}/u/${row.owner}`}>{row.owner}</a>
         </p>
         {playlist.description ? <p>{playlist.description}</p> : null}
         {playable.length ? (
@@ -59,7 +60,7 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
               </li>
             ) : (
               <li data-preset={i.preset_id} data-dwell={i.dwell_s} data-crossfade={i.crossfade_s}>
-                <a href={`/p/${i.preset_id}`}>{i.name}</a>{' '}
+                <a href={`${BASE}/p/${i.preset_id}`}>{i.name}</a>{' '}
                 <span class="when">
                   {i.dwell_s} s · crossfade {i.crossfade_s} s
                 </span>
@@ -85,7 +86,7 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
             </p>
             {playlist.visibility === 'unlisted' ? (
               <p>
-                share link <input class="share" readonly value={`${c.env.ORIGIN}/l/${playlist.id}?k=${playlist.shareToken}`} />
+                share link <input class="share" readonly value={`${c.env.ORIGIN}${BASE}/l/${playlist.id}?k=${playlist.shareToken}`} />
               </p>
             ) : null}
             <p>

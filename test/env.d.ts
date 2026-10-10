@@ -19,4 +19,5 @@ declare module 'node:path';
 // Vite's file-list import: the keys are the matching paths (the guard test reads only those).
 interface ImportMeta {
   glob(pattern: string | string[]): Record<string, () => Promise<unknown>>;
+  glob(pattern: string | string[], options: { query: string; import: string; eager: true }): Record<string, unknown>;
 }

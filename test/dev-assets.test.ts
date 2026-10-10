@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { BASE } from '../src/config';
+import gitignore from '../.gitignore?raw';
 import wranglerConfig from '../wrangler.jsonc?raw';
 import { buildEditorAssets, syncKomorebiFile } from '../scripts/editor-assets.mjs';
 
@@ -34,15 +36,22 @@ function snapshot(dir: string, base = dir): Record<string, string> {
   return out;
 }
 
-describe('buildEditorAssets: public/ whole, and the komorebi checkout under editor/', () => {
-  it('serves both, so the editor and the API share one origin', () => {
+describe('buildEditorAssets: public/ under arboretum/, and the komorebi checkout under editor/', () => {
+  it('serves both, so the editor and the API share one origin, and public/ where the deployed site has it', () => {
     const { args, outDir } = setup();
     buildEditorAssets(args);
-    expect(readFileSync(join(outDir, 'llms.txt'), 'utf8')).toBe('llms');
-    expect(readFileSync(join(outDir, 'engine', 'engine.json'), 'utf8')).toBe('engine');
+    expect(readFileSync(join(outDir, 'arboretum', 'llms.txt'), 'utf8')).toBe('llms');
+    expect(readFileSync(join(outDir, 'arboretum', 'engine', 'engine.json'), 'utf8')).toBe('engine');
     expect(readFileSync(join(outDir, 'editor', 'index.html'), 'utf8')).toBe('index');
     expect(readFileSync(join(outDir, 'editor', 'editor.js'), 'utf8')).toBe('editor');
     expect(readFileSync(join(outDir, 'editor', 'examples', 'one.json'), 'utf8')).toBe('one');
+    expect(existsSync(join(outDir, 'llms.txt'))).toBe(false);
+  });
+
+  it('puts public/ at the path the pages link to (BASE)', () => {
+    const { args, outDir } = setup();
+    buildEditorAssets(args);
+    expect(readFileSync(join(outDir, BASE, 'llms.txt'), 'utf8')).toBe('llms');
   });
 
   it('leaves out git data, dependencies, the pixel harness, builds, workflows and unit tests', () => {
@@ -111,8 +120,9 @@ describe('syncKomorebiFile: the watcher keeps one changed file current', () => {
   });
 });
 
-// The dev server serves komorebi's files with `wrangler dev --assets`, a command-line override. A deploy reads
-// the config and ships `./public` alone, so nothing of komorebi's may ever sit there (design §1.1).
+// The dev server serves komorebi's files with `wrangler dev --assets`, a command-line override. A deploy ships
+// the built site (scripts/site.mjs), whose arboretum/ is a copy of public/, so nothing of komorebi's may ever sit
+// in public/ (design §1.1).
 describe('the never-deployable guard', () => {
   const published = Object.keys(import.meta.glob('../public/**/*')).map((p) => p.slice('../public/'.length));
 
@@ -130,7 +140,10 @@ describe('the never-deployable guard', () => {
     expect(published.some((p) => p.startsWith('engine/'))).toBe(true);
   });
 
-  it('keeps wrangler.jsonc deploying ./public alone', () => {
-    expect(wranglerConfig).toMatch(/"directory"\s*:\s*"\.\/public"/);
+  // A plain `wrangler deploy` must never ship a half site, such as public/ alone at the root: the directory it
+  // uploads is the built one, which does not exist until scripts/site.mjs has run.
+  it('keeps wrangler.jsonc deploying the built, gitignored site and never public/ alone or the repo root', () => {
+    expect(wranglerConfig).toMatch(/"directory"\s*:\s*"\.\/\.site"/);
+    expect(gitignore.split('\n')).toContain('.site/');
   });
 });

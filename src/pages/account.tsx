@@ -2,6 +2,7 @@ import type { Hono } from 'hono';
 import type { AppEnv, Ctx } from '../auth';
 import { TAGS } from '../validate';
 import { Layout, WEBAUTHN_BROWSER, viewerOf } from './layout';
+import { BASE } from '../config';
 
 // A person's pages: a signed-out visitor, or anyone who is not a person in a browser, is sent to sign in.
 async function signedIn(c: Ctx) {
@@ -10,11 +11,11 @@ async function signedIn(c: Ctx) {
 }
 
 export function registerAccountPages(app: Hono<AppEnv>) {
-  app.get('/new', async (c) => {
+  app.get(`${BASE}/new`, async (c) => {
     const viewer = await signedIn(c);
-    if (!viewer) return c.redirect('/login');
+    if (!viewer) return c.redirect(`${BASE}/login`);
     return c.html(
-      <Layout title="new look" viewer={viewer} scripts={['/js/new.js']}>
+      <Layout title="new look" viewer={viewer} scripts={[`${BASE}/js/new.js`]}>
         <h1>new look</h1>
         <p>Paste the JSON that komorebi’s “copy JSON” gives you, or choose the file. Either the params object or <code>{'{ "params": … }'}</code> works.</p>
         <form id="new">
@@ -58,11 +59,11 @@ export function registerAccountPages(app: Hono<AppEnv>) {
     );
   });
 
-  app.get('/settings', async (c) => {
+  app.get(`${BASE}/settings`, async (c) => {
     const viewer = await signedIn(c);
-    if (!viewer) return c.redirect('/login');
+    if (!viewer) return c.redirect(`${BASE}/login`);
     return c.html(
-      <Layout title="settings" viewer={viewer} classic={[WEBAUTHN_BROWSER]} scripts={['/js/settings.js']}>
+      <Layout title="settings" viewer={viewer} classic={[WEBAUTHN_BROWSER]} scripts={[`${BASE}/js/settings.js`]}>
         <h1>settings</h1>
         <noscript><p>Settings need JavaScript.</p></noscript>
 

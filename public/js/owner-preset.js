@@ -1,5 +1,6 @@
-// The owner's controls on /p/:id. Each one is a call to the same API an agent would make.
+// The owner's controls on /arboretum/p/:id. Each one is a call to the same API an agent would make.
 import { failure, send } from './api.js';
+import { BASE } from './base.js';
 import { el, say } from './dom.js';
 import { readLook, versionBody } from './paste.js';
 
@@ -63,5 +64,5 @@ addForm.addEventListener('submit', async (event) => {
   items.push({ preset_id: Number(id) });
   const put = await send('PUT', `/api/playlists/${listId}/items`, { revision: list.data.revision, items });
   if (!put.ok) return say(box, failure(put));
-  box.querySelector('.msg').replaceChildren('added to ', el('a', { href: `/l/${listId}`, textContent: put.data.name }));
+  box.querySelector('.msg').replaceChildren('added to ', el('a', { href: `${BASE}/l/${listId}`, textContent: put.data.name }));
 });

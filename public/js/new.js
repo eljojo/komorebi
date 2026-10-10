@@ -1,4 +1,5 @@
 import { failure, send } from './api.js';
+import { BASE } from './base.js';
 import { say } from './dom.js';
 import { createBody, readLook } from './paste.js';
 
@@ -21,5 +22,5 @@ form.addEventListener('submit', async (event) => {
   });
   const r = await send('POST', '/api/presets', body);
   if (!r.ok) return say(form, failure(r));
-  location.assign(`/p/${r.data.id}`);
+  location.assign(`${BASE}/p/${r.data.id}`);
 });

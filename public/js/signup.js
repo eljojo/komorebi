@@ -1,4 +1,5 @@
 import { failure, send } from './api.js';
+import { BASE } from './base.js';
 import { say } from './dom.js';
 
 const { startRegistration, browserSupportsWebAuthn } = window.SimpleWebAuthnBrowser;
@@ -20,5 +21,5 @@ form.addEventListener('submit', async (event) => {
   }
   const done = await send('POST', '/api/auth/register', { credential });
   if (!done.ok) return say(form, failure(done));
-  location.assign('/');
+  location.assign(BASE);
 });

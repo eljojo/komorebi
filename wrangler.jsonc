@@ -6,17 +6,23 @@
 		"nodejs_compat"
 	],
 	"assets": {
-		// Must stay ./public and never the repo root: the whole directory is uploaded,
-		// and the repo root holds artifacts/ (plans, scratch) that must never be served.
-		"directory": "./public",
-		"binding": "ASSETS"
+		// The whole site, built by scripts/site.mjs (`nix run .#deploy` runs it): komorebi's static site at the root and
+		// public/ under arboretum/. It is gitignored, so a plain `wrangler deploy` before a build stops at a missing
+		// directory instead of shipping public/ alone at the root. Never the repo root: the whole directory is
+		// uploaded, and the repo root holds artifacts/ (plans, scratch) that must never be served.
+		"directory": "./.site",
+		"binding": "ASSETS",
+		// `/` is komorebi's index.html, an asset; the Worker sees it first so arboretum.eljojo.net can be redirected.
+		// Everything else that matches a file is served as an asset, never reaching the Worker.
+		"run_worker_first": ["/"]
 	},
 	"routes": [
+		{ "pattern": "komorebi.eljojo.net", "custom_domain": true },
 		{ "pattern": "arboretum.eljojo.net", "custom_domain": true }
 	],
 	"vars": {
-		"RP_ID": "arboretum.eljojo.net",
-		"ORIGIN": "https://arboretum.eljojo.net"
+		"RP_ID": "komorebi.eljojo.net",
+		"ORIGIN": "https://komorebi.eljojo.net"
 	},
 	"d1_databases": [
 		{

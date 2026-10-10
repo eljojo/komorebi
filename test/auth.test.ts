@@ -129,42 +129,6 @@ describe('the CSRF guard: writes must be application/json', () => {
 describe('CORS on /api/*', () => {
   const KOMOREBI = 'https://komorebi.eljojo.net';
 
-  // The editor's whole surface (spec §8), and nothing else.
-  const EDITOR_ROUTES = [
-    'GET /api/me',
-    'GET /api/presets',
-    'POST /api/presets',
-    'GET /api/presets/1',
-    'GET /api/presets/1/versions',
-    'GET /api/presets/1/versions/2',
-    'POST /api/presets/1/versions',
-    'GET /api/playlists',
-    'GET /api/playlists/1',
-    'POST /api/playlists',
-    'PUT /api/playlists/1/items',
-  ];
-  // A script on the editor's origin must not be able to reach these: minting a token, publishing, the export.
-  const OTHER_ROUTES = [
-    'GET /api/health',
-    'POST /api/auth/register-options',
-    'POST /api/auth/register',
-    'POST /api/auth/login-options',
-    'POST /api/auth/login',
-    'POST /api/auth/logout',
-    'GET /api/auth/passkeys',
-    'POST /api/auth/passkeys/x/remove',
-    'POST /api/auth/add-passkey-options',
-    'POST /api/auth/add-passkey',
-    'POST /api/tokens',
-    'GET /api/tokens',
-    'DELETE /api/tokens/1',
-    'GET /api/export',
-    'PATCH /api/presets/1',
-    'POST /api/presets/1/archive',
-    'POST /api/presets/1/unarchive',
-    'PATCH /api/playlists/1',
-  ];
-
   async function preflight(path: string, origin: string, method = 'POST') {
     const res = await createApp().request(
       path,
@@ -180,106 +144,48 @@ describe('CORS on /api/*', () => {
     return (await createApp().request(path, init, env)).headers;
   }
 
-  it.each([KOMOREBI])('allows %s, with credentials', async (origin) => {
-    const h = await preflight('/api/presets', origin);
-    expect(h.get('Access-Control-Allow-Origin')).toBe(origin);
-    expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
-    expect(h.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim()).sort()).toEqual(['GET', 'POST']);
-    expect((h.get('Access-Control-Allow-Headers') ?? '').toLowerCase().split(',').map((m) => m.trim()).sort()).toEqual(['authorization', 'content-type']);
-  });
-
-  it.each(['https://evil.example', 'https://komorebi.eljojo.net.evil.example', 'http://localhost:8000', 'http://localhost:8001', 'https://eljojo.net', 'null'])(
-    'gives %s no allow-origin on a preflight',
-    async (origin) => {
-      const h = await preflight('/api/presets', origin);
-      expect(h.get('Access-Control-Allow-Origin')).toBeNull();
-    },
-  );
-
-  it.each(EDITOR_ROUTES)('answers the komorebi origin on %s, preflight and request', async (route) => {
-    const [method, path] = route.split(' ');
-    expect((await preflight(path, KOMOREBI, method)).get('Access-Control-Allow-Origin'), 'preflight').toBe(KOMOREBI);
-    const h = await actual(method, path, KOMOREBI);
-    expect(h.get('Access-Control-Allow-Origin'), 'request').toBe(KOMOREBI);
-    expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
-  });
-
-  it.each(OTHER_ROUTES)('gives the komorebi origin no CORS headers on %s, preflight or request', async (route) => {
-    const [method, path] = route.split(' ');
-    for (const h of [await preflight(path, KOMOREBI, method), await actual(method, path, KOMOREBI)]) {
-      expect(h.get('Access-Control-Allow-Origin')).toBeNull();
-      expect(h.get('Access-Control-Allow-Credentials')).toBeNull();
-    }
-  });
-
-  it('does not grant a method the route lacks: a preflight for DELETE on an editor path gets nothing', async () => {
-    expect((await preflight('/api/presets/1', KOMOREBI, 'DELETE')).get('Access-Control-Allow-Origin')).toBeNull();
-    expect((await preflight('/api/presets/1', KOMOREBI, 'PATCH')).get('Access-Control-Allow-Origin')).toBeNull();
-    expect((await preflight('/api/playlists', KOMOREBI, 'PUT')).get('Access-Control-Allow-Origin')).toBeNull();
-    expect((await preflight('/api/playlists/1/items', KOMOREBI, 'POST')).get('Access-Control-Allow-Origin')).toBeNull();
-  });
-
-  // A preflight is cached by the browser for every method it lists, so it may list only what that path grants the
-  // editor: a GET preflight on /api/playlists must not leave a POST permitted for the cache's lifetime.
-  it.each([
-    ['/api/me', ['GET']],
-    ['/api/presets', ['GET', 'POST']],
-    ['/api/presets/1', ['GET']],
-    ['/api/presets/1/versions', ['GET', 'POST']],
-    ['/api/presets/1/versions/2', ['GET']],
-    ['/api/playlists', ['GET', 'POST']],
-    ['/api/playlists/1', ['GET']],
-    ['/api/playlists/1/items', ['PUT']],
-  ])('advertises on %s only %j', async (path, methods) => {
-    for (const asked of methods) {
-      const h = await preflight(path, KOMOREBI, asked);
-      expect(h.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim()).sort()).toEqual(methods);
-    }
-  });
-
-  it('answers a request from elsewhere with no allow-origin, even on an editor route', async () => {
-    expect((await actual('GET', '/api/me', 'https://evil.example')).get('Access-Control-Allow-Origin')).toBeNull();
-  });
-
-  // Any editor, on any host, may read a look or a playlist it was handed a link to (José, 2026-10-10: "ideally any
-  // editor would be able to load presets from arboretum if the browser allowed the ajax request"). The grant is `*`
-  // without credentials, so a browser never lets a page read a credentialed answer through it: what anyone reads
-  // this way is what an anonymous visitor may see.
+  // The editor and arboretum are one origin, so nothing is cross-origin for them. What stays is the anonymous read
+  // grant: any editor, on any host, may read a look or a playlist it was handed a link to (José, 2026-10-10:
+  // "ideally any editor would be able to load presets from arboretum if the browser allowed the ajax request").
+  // The grant is `*` without credentials, so a browser never lets a page read a credentialed answer through it:
+  // what anyone reads this way is what an anonymous visitor may see.
   const READ_ROUTES = ['/api/presets/1', '/api/presets/1/versions', '/api/presets/1/versions/2', '/api/playlists/1'];
   it.each(READ_ROUTES)('lets any origin read GET %s, without credentials', async (path) => {
-    for (const origin of ['https://evil.example', 'http://localhost:8000', 'https://eljojo.net', 'null']) {
+    for (const origin of [KOMOREBI, 'https://evil.example', 'http://localhost:8000', 'https://eljojo.net', 'null']) {
       const h = await actual('GET', path, origin);
       expect(h.get('Access-Control-Allow-Origin'), origin).toBe('*');
       expect(h.get('Access-Control-Allow-Credentials'), origin).toBeNull();
       const p = await preflight(path, origin, 'GET');
       expect(p.get('Access-Control-Allow-Origin'), `${origin} preflight`).toBe('*');
+      expect(p.get('Access-Control-Allow-Credentials'), `${origin} preflight`).toBeNull();
       expect(p.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim())).toEqual(['GET']);
     }
   });
 
-  it('keeps the komorebi origin credentialed on the read routes', async () => {
-    const h = await actual('GET', '/api/presets/1', KOMOREBI);
-    expect(h.get('Access-Control-Allow-Origin')).toBe(KOMOREBI);
-    expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
-  });
-
-  it.each(['GET /api/presets', 'GET /api/playlists', 'GET /api/me', 'GET /api/export', 'POST /api/presets/1/versions', 'PUT /api/playlists/1/items'])(
-    'grants other origins nothing on %s',
-    async (route) => {
-      const [method, path] = route.split(' ');
-      expect((await actual(method, path, 'https://evil.example')).get('Access-Control-Allow-Origin')).toBeNull();
-      expect((await preflight(path, 'https://evil.example', method)).get('Access-Control-Allow-Origin')).toBeNull();
-    },
-  );
-
-  it('also reaches a 415, so the editor can read the refusal', async () => {
-    const res = await createApp().request(
-      '/api/presets',
-      { method: 'POST', headers: { Origin: KOMOREBI, 'Content-Type': 'text/plain' }, body: 'x' },
-      env,
-    );
-    expect(res.status).toBe(415);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(KOMOREBI);
+  // Listings, `me`, every write, the export, tokens and the ceremonies were only ever the same-origin page's.
+  it.each([
+    'GET /api/health',
+    'GET /api/me',
+    'GET /api/presets',
+    'POST /api/presets',
+    'POST /api/presets/1/versions',
+    'PATCH /api/presets/1',
+    'GET /api/playlists',
+    'POST /api/playlists',
+    'PUT /api/playlists/1/items',
+    'PATCH /api/playlists/1',
+    'GET /api/export',
+    'POST /api/tokens',
+    'GET /api/tokens',
+    'POST /api/auth/login',
+  ])('grants no origin, the komorebi one included, anything on %s', async (route) => {
+    const [method, path] = route.split(' ');
+    for (const origin of [KOMOREBI, 'https://evil.example', 'null']) {
+      for (const h of [await preflight(path, origin, method), await actual(method, path, origin)]) {
+        expect(h.get('Access-Control-Allow-Origin'), origin).toBeNull();
+        expect(h.get('Access-Control-Allow-Credentials'), origin).toBeNull();
+      }
+    }
   });
 });
 
@@ -307,18 +213,33 @@ describe('via', () => {
   const token = { userId: 1, username: 'u', kind: 'token', scope: 'write', label: 'studio laptop claude' } as const;
   const session = { userId: 1, username: 'u', kind: 'session' } as const;
 
-  it('is token:<label> for a token', () => {
+  it('is token:<label> for a token, whatever the Referer', () => {
     expect(viaFor(token, null)).toBe('token:studio laptop claude');
-    expect(viaFor(token, 'https://komorebi.eljojo.net')).toBe('token:studio laptop claude');
+    expect(viaFor(token, 'https://komorebi.eljojo.net/arboretum/new')).toBe('token:studio laptop claude');
   });
 
-  it('is editor for a session from the komorebi origin and web otherwise', () => {
-    expect(viaFor(session, 'https://komorebi.eljojo.net')).toBe('editor');
-    expect(viaFor(session, 'http://localhost:8000')).toBe('web');
-    expect(viaFor(session, 'http://localhost:8001')).toBe('web');
-    expect(viaFor(session, null)).toBe('web');
-    expect(viaFor(session, 'https://arboretum.eljojo.net')).toBe('web');
-    expect(viaFor(session, 'https://komorebi.eljojo.net.evil.example')).toBe('web');
+  // The editor and arboretum share an origin now, so which one made a request is read off the page that sent it.
+  // The label is history only; nothing is allowed or refused by it.
+  it.each([
+    'https://komorebi.eljojo.net/arboretum',
+    'https://komorebi.eljojo.net/arboretum/',
+    'https://komorebi.eljojo.net/arboretum/p/12?k=abc',
+    'https://localhost:8787/arboretum/new',
+  ])('is web for a session whose Referer is an arboretum page: %s', (referer) => {
+    expect(viaFor(session, referer)).toBe('web');
+  });
+
+  it.each([
+    'https://komorebi.eljojo.net/',
+    'https://komorebi.eljojo.net/#arboretum=12',
+    'https://komorebi.eljojo.net/examples/',
+    'https://localhost:8787/editor/',
+    'https://komorebi.eljojo.net/arboretumx/new',
+    'https://komorebi.eljojo.net/x/arboretum/new',
+    null,
+    'not a url',
+  ])('is editor for a session from anywhere else: %s', (referer) => {
+    expect(viaFor(session, referer)).toBe('editor');
   });
 });
 
@@ -359,15 +280,5 @@ describe('the request body cap', () => {
     const u = await makeUser();
     const r = await call('POST', '/api/presets', { token: await makeToken(u), body: JSON.stringify({ pad: 'x'.repeat(MAX - 100) }) });
     expect(r.status).not.toBe(413);
-  });
-
-  it('gives a 413 the CORS headers, so the editor can read it', async () => {
-    const res = await createApp().request(
-      '/api/presets',
-      { method: 'POST', headers: { Origin: 'https://komorebi.eljojo.net', 'Content-Type': 'application/json' }, body: 'x'.repeat(MAX + 1) },
-      env,
-    );
-    expect(res.status).toBe(413);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://komorebi.eljojo.net');
   });
 });

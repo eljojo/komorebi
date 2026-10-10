@@ -25,6 +25,11 @@ export const RESERVED_USERNAMES = [
 
 export const KOMOREBI_ORIGIN = 'https://komorebi.eljojo.net';
 
-// Credentialed CORS is only ever granted to this one origin (spec §3.2); never `*`. Local development is
-// same-origin (the editor is served by arboretum's own dev server), so it needs no entry.
-export const CORS_ORIGINS = [KOMOREBI_ORIGIN];
+// Arboretum's pages and its static files live under this path on komorebi.eljojo.net; `/` and everything else
+// outside /api is komorebi's own site. The one place the prefix is written: every page route, href and asset URL
+// is built from it. public/js finds it from where its own modules are served (public/js/base.js).
+export const BASE = '/arboretum';
+
+// arboretum.eljojo.net stays attached while links to it are replaced: its /api answers as ever, and every other
+// path is a permanent redirect to the same path under BASE on KOMOREBI_ORIGIN.
+export const LEGACY_HOST = 'arboretum.eljojo.net';

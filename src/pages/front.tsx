@@ -5,6 +5,7 @@ import type { AppEnv } from '../auth';
 import { connect } from '../db/client';
 import { playlists, presetVersions, presets, users } from '../db/schema';
 import { Layout, WEBAUTHN_BROWSER, Tags, day, notFound, viewerOf } from './layout';
+import { BASE } from '../config';
 
 // Only what is not public gets a label: it tells the owner who else can see the thing.
 function Visibility(props: { of: 'public' | 'unlisted' | 'private' }) {
@@ -18,7 +19,7 @@ function Looks(props: { rows: LookRow[] }) {
     <ul class="plain">
       {props.rows.map((r) => (
         <li>
-          <a href={`/p/${r.preset.id}`}>{r.head.name}</a> <Tags tags={r.head.tags} /> <Visibility of={r.preset.visibility} />{' '}
+          <a href={`${BASE}/p/${r.preset.id}`}>{r.head.name}</a> <Tags tags={r.head.tags} /> <Visibility of={r.preset.visibility} />{' '}
           <span class="when">{day(r.preset.updatedAt)}</span>
         </li>
       ))}
@@ -27,7 +28,7 @@ function Looks(props: { rows: LookRow[] }) {
 }
 
 export function registerFrontPages(app: Hono<AppEnv>) {
-  app.get('/', async (c) => {
+  app.get(BASE, async (c) => {
     const viewer = await viewerOf(c);
     return c.html(
       <Layout title="arboretum" viewer={viewer}>
@@ -38,7 +39,7 @@ export function registerFrontPages(app: Hono<AppEnv>) {
         <p>Find the right look or playlist here, then open it in komorebi and let it be.</p>
         {viewer ? null : (
           <p>
-            <a href="/login">Sign in or sign up</a>.
+            <a href={`${BASE}/login`}>Sign in or sign up</a>.
           </p>
         )}
       </Layout>,
@@ -47,10 +48,10 @@ export function registerFrontPages(app: Hono<AppEnv>) {
 
   // Sign-in and sign-up are one page (José, 2026-10-09). Sign-in comes first: it asks for nothing, and a
   // passkey from 1Password or the system answers it.
-  app.get('/login', async (c) => {
+  app.get(`${BASE}/login`, async (c) => {
     const viewer = await viewerOf(c);
     return c.html(
-      <Layout title="sign in" viewer={viewer} classic={[WEBAUTHN_BROWSER]} scripts={['/js/login.js', '/js/signup.js']}>
+      <Layout title="sign in" viewer={viewer} classic={[WEBAUTHN_BROWSER]} scripts={[`${BASE}/js/login.js`, `${BASE}/js/signup.js`]}>
         <h1>sign in</h1>
         <p>
           <button id="login" type="button">sign in with a passkey</button>
@@ -74,7 +75,7 @@ export function registerFrontPages(app: Hono<AppEnv>) {
     );
   });
 
-  app.get('/u/:username', async (c) => {
+  app.get(`${BASE}/u/:username`, async (c) => {
     const viewer = await viewerOf(c);
     const db = connect(c.env.DB);
     const [user] = await db.select().from(users).where(eq(users.username, c.req.param('username').toLowerCase()));
@@ -103,7 +104,7 @@ export function registerFrontPages(app: Hono<AppEnv>) {
           <ul class="plain">
             {lists.map((l) => (
               <li>
-                <a href={`/l/${l.id}`}>{l.name}</a> <Visibility of={l.visibility} /> <span class="when">{day(l.updatedAt)}</span>
+                <a href={`${BASE}/l/${l.id}`}>{l.name}</a> <Visibility of={l.visibility} /> <span class="when">{day(l.updatedAt)}</span>
               </li>
             ))}
           </ul>

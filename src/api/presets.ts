@@ -10,7 +10,7 @@ import { randomBase64Url } from '../random';
 import { duplicateKeys, rawMember } from '../rawjson';
 import { MAX_PARAMS_BYTES, builtinTwin, validateMeta, validateParams } from '../validate';
 import { canSee } from './access';
-import { assertNotPublishedFromEditor, fromEditor, isVisibility, parseId, readJsonBody, visibilityChange } from './util';
+import { isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
 type PresetRow = { preset: typeof presets.$inferSelect; owner: string; head: typeof presetVersions.$inferSelect };
 type PresetSummaryRow = Omit<PresetRow, 'head'> & { head: Omit<PresetRow['head'], 'params'> };
@@ -144,7 +144,7 @@ async function checkedParent(c: Ctx, db: Db, actor: Actor, parent: unknown): Pro
   return parent;
 }
 
-const visibleRefusal = new ApiError(403, 'changing a visible preset needs a person in a browser; tokens and the editor can only add versions to private presets');
+const visibleRefusal = new ApiError(403, 'changing a visible preset needs a person in a browser; tokens can only add versions to private presets');
 
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -157,8 +157,8 @@ const UNDER_VERSION_QUOTA =
 const VERSION_COLUMNS = 'preset_id, n, name, description, tags, params, komorebi_commit, parent, via, created_at';
 
 // A token's right to change a preset is a condition of the insert (spec §3.3): the owner may have published it
-// since it was read. The editor has the same restriction. Only a session on arboretum itself needs no such condition.
-const PRIVATE_OR_PERSON = "(? = 0 or (select visibility from presets where id = ?) = 'private')"; // 1 for a token or editor else 0, preset id
+// since it was read. A session needs no such condition.
+const PRIVATE_OR_PERSON = "(? = 0 or (select visibility from presets where id = ?) = 'private')"; // 1 for a token else 0, preset id
 
 const versionQuotaBinds = (ownerId: number, now: number) => [ownerId, now - DAY_MS, LIMITS.versionsPerDay];
 const versionValues = (f: VersionFields, via: string, now: number) => [f.name, f.description, JSON.stringify(f.tags), f.params, f.komorebiCommit, f.parent, via, now];
@@ -187,14 +187,13 @@ export function registerPresets(app: Hono<AppEnv>) {
       if (actor.kind === 'token' && body.visibility !== 'private') {
         throw new ApiError(403, 'making a preset visible needs a person in a browser; a token can only create private presets');
       }
-      assertNotPublishedFromEditor(c, body.visibility);
       visibility = body.visibility;
     }
 
     const fields = await versionFields(c, db, actor, body, text, null);
 
     const now = Date.now();
-    const via = viaFor(actor, c.req.header('Origin') ?? null);
+    const via = viaFor(actor, c.req.header('Referer') ?? null);
     const d1 = c.env.DB;
     // One batch is one transaction: a preset never exists without its first version as head. When a quota
     // refuses the first insert, `changes()` is 0 and the next two statements do nothing.
@@ -250,7 +249,7 @@ export function registerPresets(app: Hono<AppEnv>) {
     const db = connect(c.env.DB);
     const row = await ownedPreset(c, actor);
     // Anyone sees a public or unlisted look at once, so changing one is a person's act (spec §3.3).
-    const restricted = actor.kind === 'token' || fromEditor(c);
+    const restricted = actor.kind === 'token';
     if (restricted && row.preset.visibility !== 'private') throw visibleRefusal;
     const { body, text } = await readJsonBody(c);
     if ('visibility' in body) throw new ApiError(400, 'visibility is not part of a version; change it with PATCH /api/presets/:id');
@@ -263,7 +262,7 @@ export function registerPresets(app: Hono<AppEnv>) {
     const inherited = ['name', 'description', 'tags', 'params', 'komorebi_commit', 'parent'];
     const supplied = (i: number) => i >= inherited.length || Object.hasOwn(body, inherited[i]);
     const fieldsSql = [...inherited.map((column, i) => supplied(i) ? '?' : `h.${column}`), '?', '?'].join(', ');
-    const fieldsBinds = versionValues(fields, viaFor(actor, c.req.header('Origin') ?? null), now).filter((_, i) => supplied(i));
+    const fieldsBinds = versionValues(fields, viaFor(actor, c.req.header('Referer') ?? null), now).filter((_, i) => supplied(i));
     const [append] = await d1.batch<{ id: number }>([
       d1
         .prepare(

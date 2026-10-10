@@ -1,4 +1,5 @@
 import { failure, send } from './api.js';
+import { BASE } from './base.js';
 import { day, el, say } from './dom.js';
 
 const { startRegistration } = window.SimpleWebAuthnBrowser;
@@ -18,7 +19,7 @@ async function showPasskeys() {
           onclick: async () => {
             const gone = await send('POST', `/api/auth/passkeys/${encodeURIComponent(p.id)}/remove`);
             // Removing a passkey signs the user out everywhere, this tab included.
-            if (gone.ok) location.assign('/login');
+            if (gone.ok) location.assign(`${BASE}/login`);
             else say(passkeys, failure(gone));
           },
         }))),
@@ -75,7 +76,7 @@ mint.addEventListener('submit', async (event) => {
 
 document.getElementById('logout').addEventListener('click', async () => {
   const r = await send('POST', '/api/auth/logout');
-  if (r.ok) location.assign('/');
+  if (r.ok) location.assign(BASE);
   else say(passkeys, failure(r));
 });
 

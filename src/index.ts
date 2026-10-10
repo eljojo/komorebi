@@ -9,23 +9,12 @@ import { registerPresets } from './api/presets';
 import { registerTokens } from './api/tokens';
 import { registerPages } from './pages';
 import { type AppEnv, type Resolver, bearerToken, sessionCookie } from './auth';
-import { CORS_ORIGINS, MAX_BODY_BYTES } from './config';
+import { BASE, KOMOREBI_ORIGIN, LEGACY_HOST, MAX_BODY_BYTES } from './config';
 import { ApiError } from './errors';
 import { ENGINE_COMMIT } from './generated/engine';
 
-const EDITOR_ROUTES: [string, RegExp][] = [
-  ['GET', /^\/api\/me$/],
-  ['GET', /^\/api\/presets$/],
-  ['POST', /^\/api\/presets$/],
-  ['GET', /^\/api\/presets\/[^/]+(\/versions(\/[^/]+)?)?$/],
-  ['POST', /^\/api\/presets\/[^/]+\/versions$/],
-  ['GET', /^\/api\/playlists(\/[^/]+)?$/],
-  ['POST', /^\/api\/playlists$/],
-  ['PUT', /^\/api\/playlists\/[^/]+\/items$/],
-];
-
 // What any editor on any host may read: one look (head or a version) and one playlist, the things a link names.
-// Listings, `me` and every write stay the komorebi origin's alone.
+// Listings, `me` and every write are the same-origin pages' and tokens' alone: no other origin gets a CORS grant.
 const READ_ROUTES: RegExp[] = [/^\/api\/presets\/[^/]+(\/versions(\/[^/]+)?)?$/, /^\/api\/playlists\/[^/]+$/];
 
 const HARDENING_HEADERS = {
@@ -37,7 +26,16 @@ const HARDENING_HEADERS = {
 
 // `resolvers` is how a caller is recognised, in order: a bearer token wins over the session cookie.
 export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) {
-  const app = new Hono<AppEnv>();
+  // Not strict: `/arboretum/` is the same page as `/arboretum`, as a static site would answer it.
+  const app = new Hono<AppEnv>({ strict: false });
+
+  // `/` is komorebi's own index.html, a static asset that run_worker_first (wrangler.jsonc) routes here so the old
+  // host can be redirected. On the site it is handed straight back to the assets, before the hardening below: it is
+  // komorebi's page, and answers as the static site always did.
+  app.use('*', async (c, next) => {
+    if (c.req.path === '/' && new URL(c.req.url).hostname !== LEGACY_HOST) return c.env.ASSETS.fetch(c.req.raw);
+    await next();
+  });
 
   app.use('*', async (c, next) => {
     c.set('resolvers', resolvers);
@@ -52,27 +50,22 @@ export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) 
     for (const [name, value] of Object.entries(HARDENING_HEADERS)) c.res.headers.set(name, value);
   });
 
-  // Credentialed CORS goes only to the routes the editor uses (spec §8). Everywhere else a script running on the
-  // editor's origin gets no answer it may read, so it cannot mint a token, publish a look or read the export.
-  // A preflight names the method it is for, so that decides which route it is asking about. It advertises only the
-  // methods this path grants the editor, because the browser caches every method a preflight lists.
-  const editorCors = cors({
-    origin: (origin) => (CORS_ORIGINS.includes(origin) ? origin : null),
-    credentials: true,
-    allowMethods: (_origin, c) => EDITOR_ROUTES.filter(([, path]) => path.test(c.req.path)).map(([m]) => m),
-    allowHeaders: ['Content-Type', 'Authorization'],
+  // While arboretum.eljojo.net stays attached, only its /api answers; every other path is the same path under BASE on
+  // the one site (a 301 turns any write into a GET, which is fine: nothing writes through a page, only through /api).
+  app.use('*', async (c, next) => {
+    const url = new URL(c.req.url);
+    if (url.hostname !== LEGACY_HOST || url.pathname.startsWith('/api/')) return next();
+    return c.redirect(`${KOMOREBI_ORIGIN}${BASE}${url.pathname === '/' ? '' : url.pathname}${url.search}`, 301);
   });
-  // The anonymous read grant: `*` and no credentials, so a browser never hands a page a credentialed answer through
-  // it, and what another host reads is what an anonymous visitor may see (José: "any editor would be able to load
-  // presets from arboretum if the browser allowed the ajax request").
+
+  // The anonymous read grant, and the only CORS there is: the editor and arboretum are one origin, so nothing of the
+  // session's needs a cross-origin answer. `*` and no credentials, so a browser never hands a page a credentialed
+  // answer through it, and what another host reads is what an anonymous visitor may see (José: "any editor would be
+  // able to load presets from arboretum if the browser allowed the ajax request").
   const readCors = cors({ origin: '*', allowMethods: ['GET'] });
   app.use('/api/*', (c, next) => {
     const method = c.req.method === 'OPTIONS' ? c.req.header('Access-Control-Request-Method') : c.req.method;
-    const origin = c.req.header('Origin');
-    const editor = EDITOR_ROUTES.some(([m, path]) => m === method && path.test(c.req.path));
-    if (editor && origin !== undefined && CORS_ORIGINS.includes(origin)) return editorCors(c, next);
-    if (method === 'GET' && READ_ROUTES.some((path) => path.test(c.req.path))) return readCors(c, next);
-    return editor ? editorCors(c, next) : next();
+    return method === 'GET' && READ_ROUTES.some((path) => path.test(c.req.path)) ? readCors(c, next) : next();
   });
 
   // A params object is at most 16 KB (spec §5), so nothing legitimate comes near this. Hono checks Content-Length
@@ -82,8 +75,8 @@ export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) 
     bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: `a request body is at most ${MAX_BODY_BYTES / 1024} KB` }, 413) }),
   );
 
-  // The CSRF guard (spec §3.2): with CORS granted to one origin, a cross-origin form post (always a "simple"
-  // content type) is the only write left that needs no preflight, and this refuses it before anything else runs.
+  // The CSRF guard (spec §3.2): a cross-origin form post (always a "simple" content type) is the one write that
+  // needs no preflight, and this refuses it before anything else runs.
   app.use('/api/*', async (c, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
       const type = (c.req.header('Content-Type') ?? '').split(';')[0].trim().toLowerCase();

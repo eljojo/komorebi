@@ -11,8 +11,8 @@ const HARDENING = {
 
 describe('hardening headers on every response the Worker generates', () => {
   it.each([
-    ['the front page', () => get('/')],
-    ['the sign-in page', () => get('/login')],
+    ['the front page', () => get('/arboretum')],
+    ['the sign-in page', () => get('/arboretum/login')],
     ['a missing page', () => get('/nowhere')],
     ['an API read', () => get('/api/health')],
     ['an API refusal', () => get('/api/me')],
@@ -28,16 +28,16 @@ describe('hardening headers on every response the Worker generates', () => {
     const user = await makeUser();
     const token = await makeToken(user);
     const preset = await makePreset(user, token);
-    for (const path of [`/p/${preset.id}`, '/api/export']) {
+    for (const path of [`/arboretum/p/${preset.id}`, '/api/export']) {
       const r = await call('GET', path, { token });
       for (const [name, value] of Object.entries(HARDENING)) expect(r.headers.get(name), `${path} ${name}`).toBe(value);
     }
   });
 
-  it('keeps the CORS headers on an editor route', async () => {
-    const r = await call('GET', '/api/health', { headers: { Origin: 'https://komorebi.eljojo.net' } });
+  it('keeps the CORS headers on a read route', async () => {
+    const r = await call('GET', '/api/presets/1', { headers: { Origin: 'https://komorebi.eljojo.net' } });
     expect(r.headers.get('cache-control')).toBe('no-store');
-    const p = await call('OPTIONS', '/api/presets', { headers: { Origin: 'https://komorebi.eljojo.net', 'Access-Control-Request-Method': 'GET' } });
-    expect(p.headers.get('access-control-allow-origin')).toBe('https://komorebi.eljojo.net');
+    const p = await call('OPTIONS', '/api/presets/1', { headers: { Origin: 'https://komorebi.eljojo.net', 'Access-Control-Request-Method': 'GET' } });
+    expect(p.headers.get('access-control-allow-origin')).toBe('*');
   });
 });

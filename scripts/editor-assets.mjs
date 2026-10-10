@@ -1,5 +1,6 @@
-// The folder `wrangler dev --assets` serves in arboretum's dev mode (design §1.1): public/ whole, and a komorebi
-// checkout under editor/, so the editor and the API share one origin and the session cookie just works.
+// The folder `wrangler dev --assets` serves in arboretum's dev mode (design §1.1): public/ under arboretum/, where
+// the deployed site has it, and a komorebi checkout under editor/, so the editor and the API share one origin and the
+// session cookie just works. The checkout stays at editor/, not the root: komorebi's detect() keys on /editor/.
 // It only ever reads the checkout and public/; everything is written under `outDir`.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
@@ -27,7 +28,7 @@ function copyTree(from, to, rel = '') {
 // `outDir` is emptied first, so a file removed upstream is gone from the next build.
 export function buildEditorAssets({ publicDir, komorebiDir, outDir }) {
   rmSync(outDir, { recursive: true, force: true });
-  copyTree(publicDir, outDir);
+  copyTree(publicDir, join(outDir, 'arboretum'));
   copyTree(komorebiDir, join(outDir, 'editor'));
 }
 

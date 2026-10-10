@@ -2,9 +2,10 @@ import type { Child } from 'hono/jsx';
 import { raw } from 'hono/html';
 import type { Actor, Ctx } from '../auth';
 import { authorize } from '../auth';
+import { BASE } from '../config';
 
 // Copied from node_modules by scripts/vendor.mjs; the version is in the name so a bump is a visible change.
-export const WEBAUTHN_BROWSER = '/vendor/simplewebauthn-browser-14.0.0.umd.min.js';
+export const WEBAUTHN_BROWSER = `${BASE}/vendor/simplewebauthn-browser-14.0.0.umd.min.js`;
 
 export const viewerOf = (c: Ctx): Promise<Actor | null> => authorize(c, 'anonymous');
 
@@ -20,21 +21,21 @@ export function Layout(props: { title: string; viewer: Actor | null; scripts?: s
           <meta name="viewport" content="width=device-width, initial-scale=1" />
           <meta name="color-scheme" content="light dark" />
           <title>{props.title === 'arboretum' ? 'arboretum' : `${props.title} · arboretum`}</title>
-          <link rel="stylesheet" href="/arboretum.css" />
+          <link rel="stylesheet" href={`${BASE}/arboretum.css`} />
         </head>
         <body>
           <header>
-            <a class="home" href="/">arboretum</a>
+            <a class="home" href={BASE}>arboretum</a>
             <nav>
               {viewer ? (
                 <>
-                  <a href="/new">new</a>
-                  <a href="/settings">settings</a>
-                  <a href={`/u/${viewer.username}`}>{viewer.username}</a>
+                  <a href={`${BASE}/new`}>new</a>
+                  <a href={`${BASE}/settings`}>settings</a>
+                  <a href={`${BASE}/u/${viewer.username}`}>{viewer.username}</a>
                 </>
               ) : (
                 <>
-                  <a href="/login">sign in</a>
+                  <a href={`${BASE}/login`}>sign in</a>
                 </>
               )}
             </nav>
@@ -53,7 +54,7 @@ export function notFound(c: Ctx, viewer: Actor | null) {
   return c.html(
     <Layout title="not found" viewer={viewer}>
       <h1>not found</h1>
-      <p>There is nothing here. <a href="/">Back to the start.</a></p>
+      <p>There is nothing here. <a href={BASE}>Back to the start.</a></p>
     </Layout>,
     404,
   );
