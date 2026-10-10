@@ -2,6 +2,7 @@ import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor } from './komorebi.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
+import { getState, entries, resolve, step, starValue, starName, entryName, playlists, plays, timing } from './playlists.js';
 import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
@@ -11,7 +12,7 @@ import { LEAF_SHAPES } from './komorebi-leaf.js';
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
 // the playful macro sidebar, and the advanced dev panel (three depths of one control tree) — plus the HUD,
 // insets, preset management, sun-drag input, scene-transition stepping, and the auto-profiler UI. Pure
-// sub-concerns are split into siblings: presets-store.js (★ localStorage I/O), macros.js (the control-bus
+// sub-concerns are split into siblings: presets-store.js (★ localStorage I/O), playlists.js (the lists the dropdown shows and the arrows step), macros.js (the control-bus
 // macro mappings the upper rungs drive) and profiler.js (the cost taxonomy + variant algorithm). The
 // viewer-only player (player.html) is a separate, UI-less consumer of the same engine. ES modules — must be
 // SERVED over http(s) (`nix run .#dev`), not opened off the filesystem.
@@ -36,9 +37,13 @@ const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro
 // stands alone; ＋ climbs the ladder when you want more); the choice sticks thereafter. ----
 const SETTINGS_KEY = 'komorebi.editor';
 const settings = (() => {
-  const base = { mode: 'min', showBeta: false };
-  try { return Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
-  catch { return base; }
+  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {} };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist
+  let s = base;
+  try { s = Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
+  catch { /* unreadable: the defaults */ }
+  if(typeof s.playlist !== 'string') s.playlist = 'local';
+  if(!s.selected || typeof s.selected !== 'object') s.selected = {};
+  return s;
 })();
 function saveSettings(){ try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* storage disabled — the mode just doesn't stick */ } }
 
@@ -508,7 +513,7 @@ function timeSlider(){
   macroEls.time.push(inp);
   return row;
 }
-function presetRow(){
+function presetRow(withPlay){
   const row=document.createElement('div'); row.className='preset';
   const prev=document.createElement('button'); prev.textContent='‹';
   const next=document.createElement('button'); next.textContent='›';
@@ -516,11 +521,26 @@ function presetRow(){
   prev.addEventListener('click', ()=>stepPreset(-1));
   next.addEventListener('click', ()=>stepPreset(1));
   row.append(prev,next,name);   // both arrows together, title after — the buttons stay put however long the name runs
+  if(withPlay) row.appendChild(playButton());
   presetNameEls.push(name);
   return row;
 }
 const presetNameEls=[];
-function syncPlayPreset(){ if(presetSel) for(const el of presetNameEls) el.textContent = presetSel.value; }
+function syncPlayPreset(){ if(presetSel) for(const el of presetNameEls) el.textContent = entryName(getState(), getStored(), activeList(), presetSel.value); }
+// ▶/■ shows only while the active playlist carries dwell times (a cloud playlist); On this browser has none. It only
+// flips the state: nothing advances on a timer yet.
+let playing=false;
+const playBtns=[];
+function playButton(){
+  const b=document.createElement('button'); b.className='playstop';
+  b.addEventListener('click',()=>{ playing=!playing; syncPlayButtons(); });
+  playBtns.push(b);
+  return b;
+}
+function syncPlayButtons(){
+  const on=plays(getState(), activeList());
+  for(const b of playBtns){ b.hidden=!on; b.textContent=playing?'■':'▶'; b.title=playing?'stop':'play'; }
+}
 function syncMacroControls(){
   for(const key in macroEls){
     const t = key==='time' ? params.time_of_day : bus.get(key);
@@ -546,7 +566,7 @@ function buildPlayPanel(){
   const modes=document.createElement('div'); modes.className='modes';
   modes.append(modeButton('min','· zen'), modeButton('adv','⚙ advanced'));
   play.appendChild(modes);
-  play.appendChild(presetRow());
+  play.appendChild(presetRow(true));
 
   const h=(t)=>{ const e=document.createElement('h2'); e.textContent=t; play.appendChild(e); };
   h('light');
@@ -600,7 +620,7 @@ function buildPlayPanel(){
   // (◦ marks an experimental look)
   const pr=document.createElement('div'); pr.className='ctl select';
   const psel=document.createElement('select');
-  psel.addEventListener('change',()=>{ applyParams(getPreset(psel.value)); refreshPresetSelect(psel.value); });
+  psel.addEventListener('change',()=>loadEntry(psel.value));
   presetSelects.push(psel);
   pr.appendChild(psel); play.appendChild(pr);
 
@@ -892,24 +912,75 @@ function updateSunFromTime(){
 }
 
 // ---- presets UI: dropdown + save/delete + copy/paste JSON -------------------
-// The EXPERIMENTAL looks are hidden from the dropdown and the stepping unless the settings toggle shows
-// them — but the one you're ON always stays listed (flipping the toggle mid-look must not strand you).
-let presetSel;
-function visibleBuiltins(keep){
-  return Object.keys(PRESETS).filter(n => settings.showBeta || !EXPERIMENTAL.includes(n) || n === keep);
-}
+// What the dropdown shows and the arrows walk is the ACTIVE PLAYLIST's entries (playlists.js): On this browser —
+// the built-ins, then the ★ looks — or a cached arboretum playlist. The EXPERIMENTAL looks are hidden unless the
+// settings toggle shows them, but the one you're ON always stays listed (flipping the toggle mid-look must not
+// strand you).
+let presetSel, playlistSel, playlistRow;
+const BUILTINS = { PRESETS, EXPERIMENTAL };
 const presetSelects=[];                            // every surface's preset dropdown; presetSel (the dev one) is the canonical value
+// A playlist that has left the cache falls back to On this browser.
+function activeList(){
+  const a=settings.playlist;
+  return a.startsWith('arb:') && getState().playlists[a.slice(4)] ? a : 'local';
+}
+const listEntries = (keep) => entries(getState(), getStored(), BUILTINS, settings.showBeta, activeList(), keep);
+const resolveEntry = (value) => resolve(getState(), getStored(), activeList(), value);
+// The entry you were last on in the active playlist, else its first.
+function resumeAt(){
+  const was=settings.selected[activeList()];
+  const list=listEntries(was);
+  return list.some(e=>e.value===was) ? was : list[0]?.value;
+}
+// A visit opens on the editor's default look in On this browser, and where you left off in a cloud playlist.
+const landing = () => activeList()==='local' ? DEFAULT_PRESET : resumeAt();
 function refreshPresetSelect(selected){
-  const stored=getStored();
   const keep=selected ?? presetSel.value;
+  const list=listEntries(keep);
   for(const sel of presetSelects){
     sel.innerHTML='';
-    const mk=(name,mark)=>{ const o=document.createElement('option'); o.value=name; o.textContent=mark+name; sel.appendChild(o); };
-    for(const n of visibleBuiltins(keep)) mk(n, EXPERIMENTAL.includes(n)?'◦ ':'• ');   // ◦ marks an experimental look
-    for(const n of Object.keys(stored)) mk(n,'★ ');             // saved
+    for(const e of list){ const o=document.createElement('option'); o.value=e.value; o.textContent=e.label; sel.appendChild(o); }
     sel.value=keep;                                             // every surface shows the same selection
   }
+  if(keep && settings.selected[activeList()]!==keep){ settings.selected[activeList()]=keep; saveSettings(); }
   syncPlayPreset();                                             // the stepper labels mirror the name
+  syncPlaylistUI();
+}
+// the playlist select exists once there is a second playlist to swap to; until then no row, and no ▶
+function syncPlaylistUI(){
+  if(playlistSel){
+    const lists=playlists(getState());
+    playlistSel.innerHTML='';
+    for(const l of lists){ const o=document.createElement('option'); o.value=l.value; o.textContent=l.label; playlistSel.appendChild(o); }
+    playlistSel.value=activeList();
+    playlistRow.hidden = lists.length<2;
+  }
+  syncPlayButtons();
+}
+// Select an entry and ease to it: the arrows, the swipe, and a playlist swap. A cloud entry brings its own crossfade.
+function goTo(value){
+  const t=timing(getState(), activeList(), value);
+  endTween();
+  eng.transitionTo(resolveEntry(value), { duration: t ? t.crossfade_s : transDur,
+    onEnd:()=>{ endTween(); refreshPresetSelect(value); syncAllControls(); } });   // morph from the current live look to the target
+  refreshPresetSelect(value);                                               // reflect target in the dropdown = next step's origin
+}
+function loadEntry(value){                          // the dropdown: an instant load
+  const p=resolveEntry(value);
+  if(p) applyParams(p);
+  refreshPresetSelect(value);
+}
+function setActive(list){
+  if(list===activeList()) return;
+  settings.playlist=list; saveSettings(); playing=false;
+  const value=resumeAt();
+  if(value===undefined) refreshPresetSelect(''); else goTo(value);
+}
+// A ★ is written to On this browser whatever playlist you were on; the list then shows it.
+function saveStar(name, p){
+  const s=getStored(); s[name]=JSON.parse(JSON.stringify(p)); setStored(s);
+  settings.playlist='local'; saveSettings();
+  refreshPresetSelect(starValue(name));
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
 function buildPresetUI(){
@@ -925,17 +996,28 @@ function buildPresetUI(){
   beta.append(blab,binp); dev.appendChild(beta); betaToggles.push(binp);
   const r1=document.createElement('div'); r1.className='ctl select';
   presetSel=document.createElement('select');
-  presetSel.addEventListener('change',()=>{ applyParams(getPreset(presetSel.value)); refreshPresetSelect(presetSel.value); });
+  presetSel.addEventListener('change',()=>loadEntry(presetSel.value));
   presetSelects.push(presetSel);
   r1.appendChild(presetSel); dev.appendChild(r1);
+  // below the preset select, not above it: the first select in #dev stays the preset dropdown
+  playlistRow=document.createElement('div'); playlistRow.className='ctl select'; playlistRow.hidden=true;
+  playlistSel=document.createElement('select');
+  playlistSel.addEventListener('change',()=>setActive(playlistSel.value));
+  playlistRow.appendChild(playlistSel); dev.appendChild(playlistRow);
 
   const r2=document.createElement('div'); r2.className='ctl';
   r2.append(
-    mkBtn('save',()=>{ const n=(prompt('Save preset as:')||'').trim(); if(!n) return;
-      const s=getStored(); s[n]=JSON.parse(JSON.stringify(params)); setStored(s); refreshPresetSelect(n); }),
-    mkBtn('delete',()=>{ const n=presetSel.value, s=getStored();
-      if(!(n in s)){ alert("Built-in presets can't be deleted."); return; }
-      delete s[n]; setStored(s); refreshPresetSelect(DEFAULT_PRESET); }));
+    mkBtn('save',()=>{
+      const here=entryName(getState(), getStored(), activeList(), presetSel.value);
+      const fromBuiltin=activeList()==='local' && starName(getStored(), 'local', presetSel.value)===null;
+      const n=(prompt('Save preset as:', fromBuiltin ? '' : here)||'').trim(); if(!n) return;   // a ★ or a cloud item offers its own name; a built-in's is not yours to reuse
+      saveStar(n, params); }),
+    mkBtn('delete',()=>{
+      if(activeList()!=='local') return;                       // taking a look out of an arboretum playlist is written to arboretum
+      const n=starName(getStored(), 'local', presetSel.value), s=getStored();
+      if(n===null){ alert("Built-in presets can't be deleted."); return; }
+      delete s[n]; setStored(s); refreshPresetSelect(DEFAULT_PRESET); }),
+    playButton());
   dev.appendChild(r2);
 
   const r3=document.createElement('div'); r3.className='ctl';
@@ -946,7 +1028,7 @@ function buildPresetUI(){
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
       try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(_e){ alert('Invalid JSON'); } }));
   dev.appendChild(r3);
-  refreshPresetSelect(DEFAULT_PRESET);
+  refreshPresetSelect(landing());
 }
 
 // ---- dev panel reveal / dismiss / transient peek ---------------------------
@@ -1083,15 +1165,9 @@ if(coarse)
 // ---- arrow-key scene stepping: prev/next preset with a cloud-bloom transition (spec §9). The dropdown
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
-function presetNames(){ return [...visibleBuiltins(presetSel.value), ...Object.keys(getStored())]; }   // dropdown order (beta-filtered)
 function stepPreset(dir){
-  const names=presetNames(); if(!names.length) return;
-  let i=names.indexOf(presetSel.value); if(i<0) i=0;
-  const name = names[(i+dir+names.length)%names.length];                    // wrap at the ends
-  endTween();
-  eng.transitionTo(getPreset(name), { duration:transDur,
-    onEnd:()=>{ endTween(); refreshPresetSelect(name); syncAllControls(); } });   // morph from the current live look to the target
-  refreshPresetSelect(name);                                               // reflect target in the dropdown = next step's origin
+  const value=step(listEntries(presetSel.value), presetSel.value, dir);   // wraps at the ends
+  if(value!==undefined) goTo(value);
 }
 
 // T = toggle the 3D tree-grove preview inset (independent of the dev panel)
@@ -1372,9 +1448,9 @@ function loadVariant(i){
 }
 function saveVariant(){
   const v=cmpVariants[cmpIdx];
-  const name=(prompt('Save variant as:', `${presetSel.value} · ${v.name}`)||'').trim();
+  const name=(prompt('Save variant as:', `${entryName(getState(), getStored(), activeList(), presetSel.value)} · ${v.name}`)||'').trim();
   if(!name) return;
-  const s=getStored(); s[name]=JSON.parse(JSON.stringify(v.params)); setStored(s); refreshPresetSelect(name);
+  saveStar(name, v.params);
   closeCmp();
 }
 function closeCmp(){ cmp.classList.remove('show'); cmpInfo.style.display='none'; cmpFps.classList.remove('show');
@@ -1418,8 +1494,9 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
     welcome.classList.add('out');                   // dissolve the intro text
     setTimeout(()=>{ welcome.style.display='none'; }, 1000);
     endTween();
-    eng.transitionTo(getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec §9)
-      onEnd:()=>{ endTween(); refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); setTimeout(arrive,300); } });
-    setTimeout(()=>{ refreshPresetSelect(DEFAULT_PRESET); syncAllControls(); arrive(); }, 5500);  // fallback if onEnd never fires
+    const land=landing();
+    eng.transitionTo(resolveEntry(land) ?? getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec §9)
+      onEnd:()=>{ endTween(); refreshPresetSelect(land); syncAllControls(); setTimeout(arrive,300); } });
+    setTimeout(()=>{ refreshPresetSelect(land); syncAllControls(); arrive(); }, 5500);  // fallback if onEnd never fires
   });
 })();

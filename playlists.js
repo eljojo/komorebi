@@ -73,11 +73,51 @@ export function parseHash(hash) {
 }
 
 // ---- the list a playlist shows and steps (design §3.2, §3.4) ----------------------
+export const LOCAL_NAME = "On this browser";
 const cloudId = (active) => (active.startsWith("arb:") ? active.slice(4) : null);
 const cloudItems = (state, active) => state.playlists[cloudId(active)]?.items ?? [];
+const isBuiltin = (PRESETS, name) => Object.hasOwn(PRESETS, name);
+
+// In On this browser a value is the look's name — except for a ★ that shares a built-in's name, which takes the
+// value "★ <name>" so the two stay apart (one value would load the same look for both). A ★ whose name already
+// starts "★ " is escaped the same way, so no two values collide. The value never depends on whether the built-in is
+// listed, so the experimental toggle cannot move a ★'s value.
+const starValueOf = (PRESETS, name) => (isBuiltin(PRESETS, name) || name.startsWith("★ ") ? `★ ${name}` : name);
+export const starValue = (name) => starValueOf(BUILTINS.PRESETS, name);
+
+// The ★ an On this browser value denotes, or null when it is a built-in (or nothing).
+export function starName(stored, active, value) {
+  if (cloudId(active) !== null || typeof value !== "string") return null;
+  if (value.startsWith("★ ")) {
+    const name = value.slice(2);
+    return Object.hasOwn(stored, name) && starValue(name) === value ? name : null;
+  }
+  return Object.hasOwn(stored, value) && !isBuiltin(BUILTINS.PRESETS, value) ? value : null;
+}
+
+// The look's own name: a ★'s, a built-in's, a cloud item's.
+export function entryName(state, stored, active, value) {
+  if (cloudId(active) !== null) return cloudItems(state, active)[Number(value)]?.name;
+  return starName(stored, active, value) ?? value;
+}
+
+// The playlists a visitor can pick between: On this browser, then the cached arboretum ones.
+export function playlists(state) {
+  return [{ value: "local", label: LOCAL_NAME },
+    ...Object.values(state.playlists).map((p) => ({ value: `arb:${p.id}`, label: p.name }))];
+}
+
+// Whether the active playlist plays: only an arboretum playlist carries dwell times (design §3.6).
+export const plays = (state, active) => cloudItems(state, active).length > 0;
+
+// The dwell and crossfade of a cloud entry; On this browser has none.
+export function timing(state, active, value) {
+  const it = cloudId(active) === null ? undefined : cloudItems(state, active)[Number(value)];
+  return it ? { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s } : null;
+}
 
 // The EXPERIMENTAL looks are hidden unless `showBeta` — but the one you are on (`keep`) always stays listed.
-// On this browser a value is a look name, in a cloud playlist an item index (two items may share a name).
+// A value in a cloud playlist is an item index (two items may share a name).
 export function entries(state, stored, builtins, showBeta, active, keep) {
   if (cloudId(active) !== null)
     return cloudItems(state, active).map((it, i) => ({ value: String(i), label: it.name }));
@@ -86,15 +126,15 @@ export function entries(state, stored, builtins, showBeta, active, keep) {
     ...Object.keys(PRESETS)
       .filter((n) => showBeta || !EXPERIMENTAL.includes(n) || n === keep)
       .map((n) => ({ value: n, label: `${EXPERIMENTAL.includes(n) ? "◦" : "•"} ${n}` })),   // ◦ marks an experimental look
-    ...Object.keys(stored).map((n) => ({ value: n, label: `★ ${n}` })),
+    ...Object.keys(stored).map((n) => ({ value: starValueOf(PRESETS, n), label: `★ ${n}` })),
   ];
 }
 
-// The params of an entry, through migrateLegacy so a look saved yesterday loads tomorrow. A ★ shadows the
-// built-in of its name.
+// The params of an entry, through migrateLegacy so a look saved yesterday loads tomorrow.
 export function resolve(state, stored, active, value) {
   if (cloudId(active) !== null) return migrateLegacy(cloudItems(state, active)[Number(value)]?.params);
-  return migrateLegacy(value in stored ? stored[value] : BUILTINS.PRESETS[value]);
+  const star = starName(stored, active, value);
+  return migrateLegacy(star !== null ? stored[star] : BUILTINS.PRESETS[value]);
 }
 
 // The next value, wrapping; from a value that is not listed, from the first entry.
@@ -151,9 +191,11 @@ export function savePreset(state, stored, api) {
   let name = same.find((n) => state.origin[n].synced);
   if (name === undefined) {
     name = same.length ? `${api.name} (v${api.version})` : api.name;
-    // A name a ★ already has belongs to an unrelated look (the same-id ones were found above).
-    if (name in stored) name = `${api.name} (#${api.id})`;
-    for (let n = 2; name in stored; n++) name = `${api.name} (#${api.id}) ${n}`;
+    // A name a ★ already has belongs to an unrelated look (the same-id ones were found above), and a built-in's
+    // name is taken too: a ★ of that name would shadow the built-in.
+    const taken = (n) => n in stored || Object.hasOwn(BUILTINS.PRESETS, n);
+    if (taken(name)) name = `${api.name} (#${api.id})`;
+    for (let n = 2; taken(name); n++) name = `${api.name} (#${api.id}) ${n}`;
   }
   return {
     state: withOrigin(state, { ...state.origin, [name]: record }),
@@ -202,15 +244,16 @@ export function onPushed(state, name, api) {
 export function uploadPlan(state, stored, active, value, live, me, commit, cam) {
   const id = cloudId(active);
   const it = id === null ? undefined : cloudItems(state, active)[Number(value)];
-  const params = id === null ? (value in stored ? stored[value] : BUILTINS.PRESETS[value]) : live;
+  const star = starName(stored, active, value);   // the ★ the value denotes, if it is one
+  const params = id === null ? (star !== null ? stored[star] : BUILTINS.PRESETS[value]) : live;
   const twin = builtinTwin(params, BUILTINS);
   if (twin !== null) return { refused: `this is the built-in '${twin}', unchanged — change something first` };
 
   // What the look is known to be on arboretum: a preset id and its owner, or the version it started from.
   const known = id === null
-    ? state.origin[value]
+    ? state.origin[star ?? value]
     : it && { id: it.preset_id, version: it.version, owner: it.owner };
-  const name = id === null ? value : (it?.name ?? "");
+  const name = id === null ? (star ?? value) : (it?.name ?? "");
   const out = known?.id !== undefined && known.owner === me
     ? { kind: "version", path: `/api/presets/${known.id}/versions`, label: `↑ new version of #${known.id}`, body: { name, params } }
     : { kind: "preset", path: "/api/presets", label: "↑ new preset", body: { name, params } };

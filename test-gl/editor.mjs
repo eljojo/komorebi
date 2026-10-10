@@ -73,6 +73,15 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(`[after check ${results.length}] ${e.message}\n    ${(e.stack || '').split('\n').slice(1, 4).join('\n    ')}`));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`[after check ${results.length}] console: ${m.text()}`); });
 
+// every alert/confirm/prompt the page raises is recorded; a prompt is answered with `dialogReply` (null cancels it)
+const dialogs = [];
+let dialogReply = null;
+page.on('dialog', async (d) => {
+  dialogs.push({ type: d.type(), message: d.message(), def: d.defaultValue() });
+  if (d.type() === 'prompt' && dialogReply !== null) await d.accept(dialogReply); else await d.dismiss();
+});
+const displayOf = (pg, sel) => pg.$$eval(sel, (els) => els.map((e) => getComputedStyle(e).display));
+
 const results = [];
 const check = (name, ok, detail = '') => { results.push([name, ok, detail]); console.log(`  ${ok ? 'ok  ' : 'FAIL'}  ${name}${detail && !ok ? ` — ${detail}` : ''}`); };
 
@@ -659,11 +668,102 @@ try {
   await page.keyboard.press('x');
   check('any unmapped key resurfaces them too', await page.$eval('#hint', (h) => !h.classList.contains('gone')));
 
+  // ---- PLAYLISTS (playlists.js): the save prompt, a ★ that shares a built-in's name, and the rows that wait for a second playlist ----
+  const devPick = (value) => page.evaluate((v) => { const s = document.querySelector('#dev select'); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); }, value);
+  const devOpts = () => page.$eval('#dev select', (s) => [...s.options].map((o) => [o.value, o.textContent]));
+  const devBtn = (text) => page.evaluate((t) => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent === t).click(), text);
+  const setCloudSlider = (v) => page.$eval('#dev', (dev, val) => {
+    const i = [...dev.querySelectorAll('.ctl')].find((r) => r.querySelector('label')?.textContent === 'CLOUD').querySelector('input');
+    i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
+  }, v);
+  const askSave = async (reply) => { dialogs.length = 0; dialogReply = reply; await devBtn('save'); dialogReply = null; return dialogs[0]; };
+
+  const rowDisplay = await page.evaluate(() => getComputedStyle(document.querySelector('#dev select').closest('.ctl').nextElementSibling).display);
+  check('with one playlist there is no playlist row', rowDisplay === 'none', rowDisplay);
+  check('and no \u25b6 anywhere', (await displayOf(page, '.playstop')).every((x) => x === 'none') && (await page.$$('#strip .playstop')).length === 0, (await displayOf(page, '.playstop')).join());
+
+  await devPick('afternoon 7');
+  await setCloudSlider(0.12);
+  let d = await askSave('k2 mine');
+  check('save on a built-in offers no name', d?.type === 'prompt' && d.def === '', JSON.stringify(d));
+  check('a new name adds a ★ and selects it', (await devOpts()).some(([v, t]) => v === 'k2 mine' && t === '★ k2 mine') && (await page.$eval('#dev select', (s) => s.value)) === 'k2 mine');
+  d = await askSave(null);
+  check('save pre-fills the current ★ name', d?.def === 'k2 mine', JSON.stringify(d));
+  check('and cancelling it adds nothing', (await devOpts()).filter(([, t]) => t.startsWith('★ ')).length === 1);
+  d = await askSave('k2 mine 2');
+  check('another new name adds another ★', (await devOpts()).filter(([, t]) => t.startsWith('★ ')).length === 2 && d?.def === 'k2 mine');
+
+  // a ★ named like a built-in lists beside it, with a value of its own, and each loads its own look
+  d = await askSave('afternoon 7');
+  const same = (await devOpts()).filter(([, t]) => t.endsWith(' afternoon 7'));
+  check('a ★ named like a built-in is listed beside it, as before, with a value of its own', same.length === 2 && same[0][1] === '• afternoon 7' && same[1][1] === '★ afternoon 7' && same[0][0] !== same[1][0], JSON.stringify(same));
+  await devPick(same[0][0]);
+  check('the built-in loads the built-in', Math.abs(parseFloat(await cloudVal()) - PRESETS['afternoon 7'].cloud_thickness) < 1e-6, `cloud ${await cloudVal()}`);
+  await devPick(same[1][0]);
+  check('and the ★ loads the ★', Math.abs(parseFloat(await cloudVal()) - 0.12) < 1e-6, `cloud ${await cloudVal()}`);
+  await page.waitForTimeout(300);
+  await page.$eval('#play .preset button:nth-child(1)', (b) => b.click());   // ‹ from the ★: the entry before it in the list, not the one before the built-in
+  check('stepping goes from the ★, not from the built-in of its name', (await page.$eval('#dev select', (s) => s.value)) === 'k2 mine 2');
+  await page.waitForTimeout(400);
+
+  // delete takes the ★ and leaves the built-in
+  await devPick(same[1][0]);
+  dialogs.length = 0;
+  await devBtn('delete');
+  const afterDel = await devOpts();
+  check('delete removes the ★ and leaves the built-in', afterDel.filter(([, t]) => t.endsWith(' afternoon 7')).map(([, t]) => t).join() === '• afternoon 7' && dialogs.length === 0, JSON.stringify(afterDel.filter(([, t]) => t.endsWith(' afternoon 7'))));
+  await devPick('memories');
+  dialogs.length = 0;
+  await devBtn('delete');
+  check('delete still refuses a built-in', dialogs[0]?.type === 'alert' && /Built-in/.test(dialogs[0].message), JSON.stringify(dialogs));
+  for (const n of ['k2 mine', 'k2 mine 2']) { await devPick(n); await devBtn('delete'); }
+  check('and the ★ looks go the same way', (await devOpts()).every(([, t]) => !t.startsWith('★ ')));
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('komorebi.editor')));
+  check('the editor settings remember the playlist and the entry', stored.playlist === 'local' && typeof stored.selected?.local === 'string', JSON.stringify(stored));
+
   // reload holds the mode (persistence)
   await page.reload({ waitUntil: 'load' });
   await page.click('#feel');
   await page.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
   check('mode persists across reload (zen)', true);
+
+  // a cached arboretum playlist as the second playlist: the row and the ▶ appear (play and advanced, never zen), and the arrows walk its items
+  {
+    await page.goto('about:blank');   // one GL page at a time: SwiftShader starves a second page's load while the first renders
+    const cloudCache = { v: 1, me: null, origin: {}, playlists: { 7: { id: 7, name: 'k2 list', owner: 'jo', k: null, fetched_at: 1, unavailable: 0, items: [
+      { preset_id: 1, version: 1, owner: 'jo', name: 'one', dwell_s: 2, crossfade_s: 1, params: PRESETS['afternoon 7'] },
+      { preset_id: 2, version: 1, owner: 'jo', name: 'two', dwell_s: 2, crossfade_s: 1, params: PRESETS.memories }] } } };
+    const ctx = await browser.newContext({ viewport: { width: 640, height: 480 } });
+    await ctx.addInitScript(([cache]) => {
+      if (localStorage.getItem('komorebi.editor')) return;   // only the first load: a reload keeps what the page wrote
+      localStorage.setItem('komorebi.arboretum', JSON.stringify(cache));
+      localStorage.setItem('komorebi.editor', JSON.stringify({ mode: 'play', playlist: 'arb:7' }));
+    }, [cloudCache]);
+    const page2 = await ctx.newPage();
+    page2.setDefaultTimeout(30000);
+    page2.on('pageerror', (e) => errors.push(`[after check ${results.length}] page 2: ${e.message}`));
+    await page2.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'load' });
+    await page2.click('#feel');
+    await page2.waitForSelector('#play:not(.hidden)', { timeout: 60000 });
+    const sel2 = () => page2.$eval('#dev select', (s) => ({ value: s.value, opts: [...s.options].map((o) => o.textContent) }));
+    const first = await sel2();
+    check('a cached cloud playlist lists its items by name and opens on the first', first.opts.join() === 'one,two' && first.value === '0', JSON.stringify(first));
+    check('with a second playlist the playlist row is there, on the active one', await page2.evaluate(() => {
+      const s = document.querySelectorAll('#dev select')[1];
+      return getComputedStyle(s.closest('.ctl')).display !== 'none' && [...s.options].map((o) => o.textContent).join() === 'On this browser,k2 list' && s.value === 'arb:7';
+    }));
+    const vis = await page2.evaluate(() => Object.fromEntries(['play', 'dev', 'strip'].map((id) => [id, [...document.querySelectorAll(`#${id} .playstop`)].map((b) => getComputedStyle(b).display !== 'none')])));
+    check('the ▶ shows in play and advanced, and the zen strip has none', vis.play.length === 1 && vis.play[0] && vis.dev.length === 1 && vis.dev[0] && vis.strip.length === 0, JSON.stringify(vis));
+    await page2.waitForTimeout(800);
+    await page2.$eval('#play .preset button:nth-child(2)', (b) => b.click());
+    check('› steps to the next item, by index', (await sel2()).value === '1' && (await page2.$eval('#play .preset .name', (e) => e.textContent)) === 'two');
+    await page2.waitForTimeout(400);
+    await page2.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'local'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    const back = await sel2();
+    check('swapping to On this browser lists the built-ins again and the ▶ goes', back.opts.length > 3 && back.value === Object.keys(PRESETS)[0]
+      && (await displayOf(page2, '.playstop')).every((x) => x === 'none'), JSON.stringify({ n: back.opts.length, v: back.value }));
+    await ctx.close();
+  }
 } catch (e) {
   check('smoke run', false, e.message.split('\n')[0]);
 }

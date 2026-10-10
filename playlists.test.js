@@ -3,7 +3,7 @@
 import { test, expect, beforeEach } from "bun:test";
 import { ARB_KEY, getState, setState, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted, onPushed,
-  uploadPlan, itemsAfter } from "./playlists.js";
+  uploadPlan, itemsAfter, playlists, plays, timing, starValue, starName, entryName } from "./playlists.js";
 import * as builtins from "./presets.js";
 import { DEFAULTS, cameraFor } from "./komorebi.js";
 
@@ -143,6 +143,19 @@ test("entries of On this browser lists a ★ that shares a built-in's name besid
   expect(entries(EMPTY, { a: {} }, fake, false, "local", "a").map((e) => e.label)).toEqual(["• a", "• c", "★ a"]);
 });
 
+test("entries gives a ★ that shares a built-in's name a value of its own, so it can be told from the built-in", () => {
+  const list = entries(EMPTY, { a: {}, b: {}, x: {} }, fake, false, "local", "a");   // b is a hidden experimental built-in
+  expect(list.filter((e) => e.label.endsWith(" a")).map((e) => e.value)).toEqual(["a", "★ a"]);
+  expect(new Set(list.map((e) => e.value)).size).toBe(list.length);
+  expect(list.find((e) => e.label === "★ b").value).toBe("★ b");   // not tied to whether the built-in is listed
+  expect(list.find((e) => e.label === "★ x").value).toBe("x");     // every other ★ keeps its name as its value
+});
+
+test("entries keeps values unique even for a ★ named like another ★'s value", () => {
+  const list = entries(EMPTY, { a: {}, "★ a": {} }, fake, false, "local", "a");
+  expect(new Set(list.map((e) => e.value)).size).toBe(list.length);
+});
+
 test("entries of On this browser is, for the shipped looks, exactly the list editor.js builds today", () => {
   const { PRESETS, EXPERIMENTAL } = builtins;
   for (const showBeta of [false, true])
@@ -162,12 +175,18 @@ test("entries of a playlist that is not cached is empty", () => {
   expect(entries(EMPTY, {}, fake, true, "arb:9", "0")).toEqual([]);
 });
 
-test("resolve of On this browser: a ★ shadows the built-in of its name, else the built-in, else undefined", () => {
+test("resolve of On this browser: a ★ by its value, a built-in by its name, else undefined", () => {
   const mine = { exposure: 9 };
   expect(resolve(EMPTY, { x: mine }, "local", "x")).toEqual(mine);
-  expect(resolve(EMPTY, { "afternoon 7": mine }, "local", "afternoon 7")).toEqual(mine);
   expect(resolve(EMPTY, {}, "local", "afternoon 7")).toBe(builtins.PRESETS["afternoon 7"]);
   expect(resolve(EMPTY, {}, "local", "nope")).toBeUndefined();
+});
+
+test("resolve tells a ★ that shares a built-in's name from the built-in, by their values", () => {
+  const mine = { exposure: 9 };
+  const [builtin, star] = entries(EMPTY, { "afternoon 7": mine }, builtins, false, "local", "afternoon 7").filter((e) => e.label.endsWith("afternoon 7"));
+  expect(resolve(EMPTY, { "afternoon 7": mine }, "local", builtin.value)).toBe(builtins.PRESETS["afternoon 7"]);
+  expect(resolve(EMPTY, { "afternoon 7": mine }, "local", star.value)).toEqual(mine);
 });
 
 test("resolve runs migrateLegacy on a ★ look, on a copy", () => {
@@ -197,6 +216,66 @@ test("step from a value that is not listed starts from the first entry; an empty
   const e = [{ value: "a" }, { value: "b" }, { value: "c" }];
   expect(step(e, "zzz", 1)).toBe("b");
   expect(step([], "a", 1)).toBeUndefined();
+});
+
+// ---- the names of the entries (a ★'s value is its name unless a built-in has it) -----------------------
+
+test("starValue is the ★'s name, escaped only where a built-in has that name or another value would collide", () => {
+  expect(starValue("mine")).toBe("mine");
+  expect(starValue("afternoon 7")).toBe("★ afternoon 7");
+  expect(starValue("★ mine")).toBe("★ ★ mine");
+});
+
+test("starName reads the ★ an On this browser value denotes: by name, by escape, or none for a built-in", () => {
+  const stored = { mine: {}, "afternoon 7": {}, "★ odd": {} };
+  expect(starName(stored, "local", "mine")).toBe("mine");
+  expect(starName(stored, "local", "★ afternoon 7")).toBe("afternoon 7");
+  expect(starName(stored, "local", "★ ★ odd")).toBe("★ odd");
+  expect(starName(stored, "local", "afternoon 7")).toBeNull();   // the built-in, though a ★ shares its name
+  expect(starName(stored, "local", "memories")).toBeNull();
+  expect(starName(stored, "local", "gone")).toBeNull();
+  expect(starName(stored, "arb:7", "mine")).toBeNull();
+});
+
+test("starName agrees with entries: every ★ entry's value reads back to its name", () => {
+  const stored = { mine: {}, "afternoon 7": {}, "★ odd": {}, memories: {} };
+  const list = entries(EMPTY, stored, builtins, true, "local", "mine");
+  for (const e of list) if (e.label.startsWith("★ ")) expect(starName(stored, "local", e.value)).toBe(e.label.slice(2));
+  for (const e of list) if (!e.label.startsWith("★ ")) expect(starName(stored, "local", e.value)).toBeNull();
+});
+
+test("entryName is the look's name: the ★'s, the built-in's, or the cloud item's", () => {
+  const s = cloud([item("one"), item("two")]);
+  expect(entryName(EMPTY, { "afternoon 7": {} }, "local", "★ afternoon 7")).toBe("afternoon 7");
+  expect(entryName(EMPTY, { "afternoon 7": {} }, "local", "afternoon 7")).toBe("afternoon 7");
+  expect(entryName(EMPTY, { mine: {} }, "local", "mine")).toBe("mine");
+  expect(entryName(s, {}, "arb:7", "1")).toBe("two");
+  expect(entryName(s, {}, "arb:7", "5")).toBeUndefined();
+});
+
+// ---- the playlists a visitor can pick, and what playing needs --------------------------
+
+test("playlists lists On this browser first, then the cached arboretum playlists by their names", () => {
+  expect(playlists(EMPTY)).toEqual([{ value: "local", label: "On this browser" }]);
+  let s = cachePlaylist(EMPTY, apiList());
+  s = cachePlaylist(s, apiList({ id: 8, name: "other" }));
+  expect(playlists(s)).toEqual([
+    { value: "local", label: "On this browser" }, { value: "arb:7", label: "mine" }, { value: "arb:8", label: "other" }]);
+});
+
+test("plays: only a cached cloud playlist with something in it carries dwell times", () => {
+  const s = cloud([item("one")]);
+  expect(plays(s, "arb:7")).toBe(true);
+  expect(plays(s, "local")).toBe(false);
+  expect(plays(cloud([]), "arb:7")).toBe(false);
+  expect(plays(s, "arb:9")).toBe(false);
+});
+
+test("timing is the dwell and crossfade of a cloud item; On this browser has none", () => {
+  const s = cloud([{ ...item("one"), dwell_s: 12, crossfade_s: 3 }]);
+  expect(timing(s, "arb:7", "0")).toEqual({ dwell_s: 12, crossfade_s: 3 });
+  expect(timing(s, "arb:7", "4")).toBeNull();
+  expect(timing(s, "local", "afternoon 7")).toBeNull();
 });
 
 // ---- the built-in guard (design §3.8) -------------------------------------------------
@@ -327,6 +406,19 @@ test("savePreset: an unrelated ★ of the same name makes the import '<name> (#<
   expect(out.state.origin.dusk).toBeUndefined();
 });
 
+test("savePreset: a built-in's name is taken too, so an import named like one never shadows it", () => {
+  const out = savePreset(EMPTY, {}, arbPreset({ name: "afternoon 7" }));
+  expect(out.name).toBe("afternoon 7 (#12)");
+  expect(out.stored).toEqual({ "afternoon 7 (#12)": { exposure: 3 } });
+  expect(out.state.origin["afternoon 7 (#12)"]).toEqual(rec(3, true));
+});
+
+test("savePreset: the suffixed name of a built-in's import is made unique like any other", () => {
+  const out = savePreset(EMPTY, { "afternoon 7 (#12)": { a: 1 } }, arbPreset({ name: "afternoon 7" }));
+  expect(out.name).toBe("afternoon 7 (#12) 2");
+  expect(out.stored["afternoon 7 (#12)"]).toEqual({ a: 1 });
+});
+
 test("savePreset never lands on a name a ★ already has", () => {
   const out = savePreset(EMPTY, { dusk: { a: 1 }, "dusk (#12)": { b: 2 } }, arbPreset());
   expect(out.stored.dusk).toEqual({ a: 1 });
@@ -454,6 +546,14 @@ test("uploadPlan refuses an unchanged built-in, however it is held", () => {
   expect(plan(EMPTY, { mine: clone("afternoon 7") }, "local", "mine", {})).toEqual(msg);
   const fromElsewhere = { ...clone("afternoon 7"), show_layer: true };
   expect(plan(EMPTY, { mine: fromElsewhere }, "local", "mine", {})).toEqual(msg);
+});
+
+test("uploadPlan reads a ★ that shares a built-in's name by its value: the ★ is uploaded under its name, the built-in is refused", () => {
+  const mine = changed();
+  const state = stateWith({ "afternoon 7": { parent: "look:afternoon 7" } });
+  const p = plan(state, { "afternoon 7": mine }, "local", starValue("afternoon 7"), {});
+  expect(p).toEqual({ kind: "preset", path: "/api/presets", label: "↑ new preset", body: { name: "afternoon 7", params: mine, parent: "look:afternoon 7" } });
+  expect(plan(state, { "afternoon 7": mine }, "local", "afternoon 7", {}).refused).toMatch(/afternoon 7/);
 });
 
 test("uploadPlan accepts a built-in once something is changed", () => {
