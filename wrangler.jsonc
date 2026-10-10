@@ -1,25 +1,29 @@
 {
-  "name": "komorebi-arboretum",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-10-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "assets": {
-    // Must stay ./public and never the repo root: the whole directory is uploaded,
-    // and the repo root holds artifacts/ (plans, scratch) that must never be served.
-    "directory": "./public",
-    "binding": "ASSETS"
-  },
-  "vars": {
-    "RP_ID": "arboretum.eljojo.net",
-    "ORIGIN": "https://arboretum.eljojo.net"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "komorebi-arboretum",
-      // Placeholder. Creating the real database is a live step for José (wrangler d1 create).
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "migrations"
-    }
-  ]
+	"name": "komorebi-arboretum",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		// Must stay ./public and never the repo root: the whole directory is uploaded,
+		// and the repo root holds artifacts/ (plans, scratch) that must never be served.
+		"directory": "./public",
+		"binding": "ASSETS"
+	},
+	"routes": [
+		{ "pattern": "arboretum.eljojo.net", "custom_domain": true }
+	],
+	"vars": {
+		"RP_ID": "arboretum.eljojo.net",
+		"ORIGIN": "https://arboretum.eljojo.net"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "komorebi-arboretum",
+			"database_id": "baaaaa65-bbae-4e37-8e76-bcf6e80d99c5",
+			"migrations_dir": "migrations"
+		}
+	]
 }
