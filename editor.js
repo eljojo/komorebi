@@ -951,8 +951,13 @@ function resumeAt(){
   const list=listEntries(was);
   return list.some(e=>e.value===was) ? was : list[0]?.value;
 }
-// A visit opens on the editor's default look in all looks, and where you left off in a cloud playlist.
-const landing = () => ['local','builtins'].includes(activeList()) ? DEFAULT_PRESET : resumeAt();
+// A visit opens where you left off: the look you were last on, in the list you were last in ("feel" fades into it from the
+// welcome's own look). A look that is gone lands on the editor's default in all looks and the built-ins, and on a playlist's first.
+function landing(){
+  const was=settings.selected[activeList()];
+  if(was!==undefined && listEntries(was).some(e=>e.value===was)) return was;
+  return ['local','builtins'].includes(activeList()) ? DEFAULT_PRESET : resumeAt();
+}
 function refreshPresetSelect(selected){
   const keep=selected ?? presetSel.value;
   const list=listEntries(keep);
@@ -1235,6 +1240,13 @@ canvas.addEventListener('wheel', e=>{
   params.view_extent_m = clamp(params.view_extent_m * Math.exp(e.deltaY*0.0015), 0.5, 40);
   syncControl('view_extent_m');
 }, { passive:false });
+// a pointer resting on the picture hides after a few seconds (#gl.still) and comes back the moment it moves; over a panel it never hides
+const STILL_MS = 3000;
+let stillTimer = 0;
+function pointerMoved(){ canvas.classList.remove('still'); clearTimeout(stillTimer); stillTimer = setTimeout(() => canvas.classList.add('still'), STILL_MS); }
+canvas.addEventListener('pointermove', pointerMoved);
+canvas.addEventListener('pointerdown', pointerMoved);
+canvas.addEventListener('pointerleave', () => { clearTimeout(stillTimer); canvas.classList.remove('still'); });
 // on a touch device the keyboard / drag hints don't apply — show the swipe + panel gestures instead
 if(coarse)
   hint.innerHTML = 'swipe <b>↕</b> scenes · <b>↔</b> time · <b>double-tap</b> panel · <b>hold</b> peek';
