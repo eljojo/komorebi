@@ -55,6 +55,10 @@ jobs:
           mkdir -p _site
           rsync -a --exclude '.git' --exclude '.github' --exclude 'test-gl' --exclude 'flake.*' ./ _site/
 
+      # The editor tells arboretum which komorebi commit a look was made on (arboretum-api.js reads this file). It exists only on the
+      # deployed site, so a local checkout and the dev mode send no commit.
+      - run: printf '{"commit":"%s"}\n' "$GITHUB_SHA" > _site/commit.json
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

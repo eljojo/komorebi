@@ -31,7 +31,8 @@ const { chromium } = require('playwright');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 function serveRoot() {
   const server = createServer(async (req, res) => {
-    const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    // arboretum's dev server serves the editor under /editor/ (editor-integration-design §1.1); the same files answer there
+    const path = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/editor\//, '/');
     const file = join(ROOT, normalize(path === '/' ? '/index.html' : path).replace(/^(\.\.[/\\])+/, ''));
     if (file !== ROOT && !file.startsWith(`${ROOT}/`)) { res.writeHead(403).end(); return; }
     try { if (!(await stat(file)).isFile()) throw 0; } catch { res.writeHead(404).end(); return; }
@@ -72,6 +73,8 @@ page.setDefaultTimeout(30000);
 const errors = [];
 page.on('pageerror', (e) => errors.push(`[after check ${results.length}] ${e.message}\n    ${(e.stack || '').split('\n').slice(1, 4).join('\n    ')}`));
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`[after check ${results.length}] console: ${m.text()}`); });
+const requested = [];   // every path the main page (at /index.html) asks for
+page.on('request', (r) => requested.push(new URL(r.url()).pathname));
 
 // every alert/confirm/prompt the page raises is recorded; a prompt is answered with `dialogReply` (null cancels it)
 const dialogs = [];
@@ -721,6 +724,12 @@ try {
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('komorebi.editor')));
   check('the editor settings remember the playlist and the entry', stored.playlist === 'local' && typeof stored.selected?.local === 'string', JSON.stringify(stored));
 
+  // the gate (arboretum, editor-integration-design §1): at /index.html (a fork, komorebi's own dev server) arboretum is off
+  const arbAsked = requested.filter((p) => p.startsWith('/api/') || /arboretum/i.test(p));
+  check('at /index.html the editor makes no request to arboretum, and never fetches its code', arbAsked.length === 0, arbAsked.join());
+  const arbUi = await page.evaluate(() => ({ marker: document.body.dataset.arboretum, text: ['dev', 'play', 'strip'].filter((id) => /arboretum/i.test(document.getElementById(id).textContent)) }));
+  check('and shows no arboretum UI', arbUi.marker === undefined && arbUi.text.length === 0, JSON.stringify(arbUi));
+
   // reload holds the mode (persistence)
   await page.reload({ waitUntil: 'load' });
   await page.click('#feel');
@@ -763,6 +772,24 @@ try {
     check('swapping to On this browser lists the built-ins again and the ▶ goes', back.opts.length > 3 && back.value === Object.keys(PRESETS)[0]
       && (await displayOf(page2, '.playstop')).every((x) => x === 'none'), JSON.stringify({ n: back.opts.length, v: back.value }));
     await ctx.close();
+  }
+
+  // the editor under /editor/, where arboretum's dev server serves it, with /api/health answering as arboretum does: the gate opens
+  {
+    await page.goto('about:blank');
+    const ctx3 = await browser.newContext({ viewport: { width: 640, height: 480 } });
+    const page3 = await ctx3.newPage();
+    page3.setDefaultTimeout(30000);
+    page3.on('pageerror', (e) => errors.push(`[after check ${results.length}] page 3: ${e.message}`));
+    const asked = [];
+    page3.on('request', (r) => asked.push(new URL(r.url()).pathname));
+    await page3.route('**/api/health', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, engine: 'abc1234' }) }));
+    await page3.goto(`http://127.0.0.1:${port}/editor/index.html`, { waitUntil: 'load' });
+    let on = null;
+    try { on = await (await page3.waitForFunction(() => document.body.dataset.arboretum || null)).jsonValue(); } catch { /* reported below */ }
+    check('under /editor/ with /api/health answering, the gate opens on the page\'s own origin', on === `http://127.0.0.1:${port}`, String(on));
+    check('and it asked /api/health once and loaded arboretum.js from /editor/', asked.filter((p) => p === '/api/health').length === 1 && asked.includes('/editor/arboretum.js'), asked.filter((p) => /api|arboretum/.test(p)).join());
+    await ctx3.close();
   }
 } catch (e) {
   check('smoke run', false, e.message.split('\n')[0]);

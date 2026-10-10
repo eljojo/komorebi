@@ -2,7 +2,7 @@ import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor } from './komorebi.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { getStored, setStored, getPreset } from './presets-store.js';
-import { getState, entries, resolve, step, starValue, starName, entryName, playlists, plays, timing } from './playlists.js';
+import { getState, entries, resolve, step, starValue, starName, entryName, playlists, plays, timing, detect } from './playlists.js';
 import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
@@ -1500,3 +1500,7 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
     setTimeout(()=>{ refreshPresetSelect(land); syncAllControls(); arrive(); }, 5500);  // fallback if onEnd never fires
   });
 })();
+
+// ---- arboretum: loaded only where `detect` names its origin (komorebi.eljojo.net, or arboretum's own dev server). On a fork
+// or komorebi's own dev server `detect` answers null without a request, and arboretum.js is never fetched. ----
+detect(location, fetch).then((origin) => { if(origin) return import('./arboretum.js').then((m) => m.mount(origin)); });
