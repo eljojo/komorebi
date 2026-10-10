@@ -161,7 +161,7 @@ describe('S2: a token write that loses a race with the owner publishing', () => 
 
     const r = await asToken(/from "playlists"/, async () => {
       expect((await asSession(owner, 'PATCH', `/api/playlists/${list.id}`, { json: { visibility: 'unlisted' } })).status).toBe(200);
-    }, 'PUT', `/api/playlists/${list.id}/items`, token, { items: items(b.id) });
+    }, 'PUT', `/api/playlists/${list.id}/items`, token, { revision: 1, items: items(b.id) });
 
     expect(r.status, r.text).toBe(403);
     const rows = await db.select().from(playlistItems).where(eq(playlistItems.playlistId, list.id)).orderBy(playlistItems.position);

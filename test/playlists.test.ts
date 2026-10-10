@@ -196,7 +196,41 @@ describe('GET /api/playlists?owner=', () => {
 });
 
 describe('PUT /api/playlists/:id/items', () => {
-  const put = (token: string | undefined, id: number, json: unknown) => call('PUT', `/api/playlists/${id}/items`, { token, json });
+  it('refuses a stale revision without dropping a newer item', async () => {
+    const o = await owner();
+    const a = await makePreset(o.user, o.token);
+    const b = await makePreset(o.user, o.token);
+    const list = await makePlaylist(o.token);
+    const initial = (await get(`/api/playlists/${list.id}`, o.token)).json;
+    const revision = initial.revision ?? 0;
+    const first = await call('PUT', `/api/playlists/${list.id}/items`, { token: o.token, json: { revision, items: [{ preset_id: a.id }] } });
+    expect(first.status).toBe(200);
+    const stale = await call('PUT', `/api/playlists/${list.id}/items`, { token: o.token, json: { revision, items: [{ preset_id: b.id }] } });
+    expect(stale.status).toBe(409);
+    expect((await get(`/api/playlists/${list.id}`, o.token)).json.items.map((i: any) => i.preset_id)).toEqual([a.id]);
+  });
+
+  it('accepts only one of two writes with the same revision, including an empty replacement', async () => {
+    const o = await owner();
+    const a = await makePreset(o.user, o.token);
+    const list = await makePlaylist(o.token);
+    const writes = await Promise.all([[], [{ preset_id: a.id }]].map((items) => call('PUT', `/api/playlists/${list.id}/items`, { token: o.token, json: { revision: 0, items } })));
+    expect(writes.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect((await get(`/api/playlists/${list.id}`, o.token)).json.revision).toBe(1);
+  });
+
+  it.each([undefined, -1, 0.5, '0', null])('requires a nonnegative integer revision: %s', async (revision) => {
+    const o = await owner();
+    const list = await makePlaylist(o.token);
+    const r = await call('PUT', `/api/playlists/${list.id}/items`, { token: o.token, json: { revision, items: [] } });
+    expect(r.status).toBe(400);
+    expect(r.json.error).toMatch(/revision/);
+  });
+
+  const put = async (token: string | undefined, id: number, json: unknown) => {
+    const revision = (await get(`/api/playlists/${id}`, token)).json?.revision;
+    return call('PUT', `/api/playlists/${id}/items`, { token, json: { ...(json as Record<string, unknown>), revision } });
+  };
 
   it('replaces the whole ordered list, with the defaults 30 s and 5 s', async () => {
     const o = await owner();
@@ -458,7 +492,7 @@ describe('a token cannot change what is visible (spec §3.3)', () => {
       expect(r.status).toBe(403);
       expect(r.json.error).toMatch(/browser/);
     }
-    const put = await call('PUT', `/api/playlists/${p.id}/items`, { token: o.token, json: { items: [{ preset_id: mine.id }] } });
+    const put = await call('PUT', `/api/playlists/${p.id}/items`, { token: o.token, json: { revision: 0, items: [{ preset_id: mine.id }] } });
     expect(put.status).toBe(403);
     expect(put.json.error).toMatch(/browser/);
     const after = (await asSession(o.user, 'GET', `/api/playlists/${p.id}`)).json;
@@ -470,7 +504,7 @@ describe('a token cannot change what is visible (spec §3.3)', () => {
     const mine = await makePreset(o.user, o.token);
     const p = await makePlaylist(o.token);
     expect((await call('PATCH', `/api/playlists/${p.id}`, { token: o.token, json: { name: 'quiet' } })).status).toBe(200);
-    expect((await call('PUT', `/api/playlists/${p.id}/items`, { token: o.token, json: { items: [{ preset_id: mine.id }] } })).status).toBe(200);
+    expect((await call('PUT', `/api/playlists/${p.id}/items`, { token: o.token, json: { revision: 0, items: [{ preset_id: mine.id }] } })).status).toBe(200);
   });
 
   it.each(['public', 'unlisted'] as const)('lets a person in a browser change a %s playlist', async (visibility) => {
@@ -478,13 +512,16 @@ describe('a token cannot change what is visible (spec §3.3)', () => {
     const mine = await makePreset(o.user, o.token);
     const p = await makePlaylist(o.token, { visibility });
     expect((await asSession(o.user, 'PATCH', `/api/playlists/${p.id}`, { json: { name: 'by hand' } })).status).toBe(200);
-    expect((await asSession(o.user, 'PUT', `/api/playlists/${p.id}/items`, { json: { items: [{ preset_id: mine.id }] } })).status).toBe(200);
+    expect((await asSession(o.user, 'PUT', `/api/playlists/${p.id}/items`, { json: { revision: 0, items: [{ preset_id: mine.id }] } })).status).toBe(200);
   });
 });
 
 describe('the owner’s view keeps what is unavailable, in its place (so saving does not drop it)', () => {
   // The playlist is public, and a token may not change a visible one: the owner saves it from a browser.
-  const put = (o: { user: { id: number } }, id: number, json: unknown) => asSession(o.user, 'PUT', `/api/playlists/${id}/items`, { json });
+  const put = async (o: { user: { id: number } }, id: number, json: unknown) => {
+    const revision = (await asSession(o.user, 'GET', `/api/playlists/${id}`)).json.revision;
+    return asSession(o.user, 'PUT', `/api/playlists/${id}/items`, { json: { ...(json as Record<string, unknown>), revision } });
+  };
 
   async function withHiddenMiddle() {
     const o = await owner();

@@ -69,7 +69,7 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
         </ol>
         {isOwner && unavailable > 0 ? <p class="quiet">{unavailable === 1 ? '1 item unavailable' : `${unavailable} items unavailable`}</p> : null}
         {isOwner ? (
-          <section id="owner-controls" data-playlist={playlist.id} hidden>
+          <section id="owner-controls" data-playlist={playlist.id} data-revision={playlist.revision} hidden>
             <h2>yours</h2>
             <p>
               <label>

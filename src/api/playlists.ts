@@ -48,7 +48,7 @@ function summary(row: PlaylistRow, viewer: Actor | null) {
     description: playlist.description,
     created_at: playlist.createdAt,
     updated_at: playlist.updatedAt,
-    ...(viewer?.userId === playlist.ownerId && { visibility: playlist.visibility, share_token: playlist.shareToken }),
+    ...(viewer?.userId === playlist.ownerId && { visibility: playlist.visibility, share_token: playlist.shareToken, revision: playlist.revision }),
   };
 }
 
@@ -205,6 +205,10 @@ export function registerPlaylists(app: Hono<AppEnv>) {
     assertTokenMayChange(c, actor, row);
     const { body } = await readJsonBody(c);
     const items = parseItems(body.items);
+    const revision = body.revision;
+    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) {
+      throw new ApiError(400, 'revision must be the nonnegative integer returned by GET /api/playlists/:id');
+    }
 
     // Every new preset must be one the owner can see now: their own, or someone else's public one. One that is
     // already in this list stays acceptable when it has become unavailable, or saving would drop it (§4.2).
@@ -219,28 +223,29 @@ export function registerPlaylists(app: Hono<AppEnv>) {
     const unusable = ids.filter((id) => !usable.has(id));
     if (unusable.length) throw new ApiError(422, 'some presets are not yours and not public', { preset_ids: unusable });
 
-    // A token's right is a condition of every statement. The new rows take their playlist id from a subselect that
-    // finds nothing once the playlist is visible; the NOT NULL column then refuses the insert and the batch rolls
-    // back whole, the delete too. The final update reports the same refusal when there are no rows to insert.
-    const listId = sql<number>`(select id from playlists where id = ${row.playlist.id} and ${privateIfToken(c, actor)})`;
-    const rows = items.map((i, position) => ({ playlistId: listId, position, ...i }));
+    // The first statement reserves this revision and checks private-only writers atomically. A mismatch assigns
+    // NULL to a NOT NULL column, aborting the whole batch before the old list can be deleted, even for an empty PUT.
+    const rows = items.map((i, position) => ({ playlistId: row.playlist.id, position, ...i }));
     const inserts = [];
     for (let at = 0; at < rows.length; at += ROWS_PER_INSERT) inserts.push(db.insert(playlistItems).values(rows.slice(at, at + ROWS_PER_INSERT)));
-    const touch = db.update(playlists).set({ updatedAt: Date.now() }).where(and(eq(playlists.id, row.playlist.id), privateIfToken(c, actor))).returning({ id: playlists.id });
-    let touched: { id: number }[];
+    const touch = db.update(playlists).set({
+      updatedAt: Date.now(),
+      revision: sql<number>`(select ${playlists.revision} + 1 where ${playlists.revision} = ${revision} and ${privateIfToken(c, actor)})`,
+    }).where(eq(playlists.id, row.playlist.id));
     try {
-      const results = await db.batch([
-        db.delete(playlistItems).where(and(eq(playlistItems.playlistId, row.playlist.id), sql`exists (select 1 from playlists where id = ${row.playlist.id} and ${privateIfToken(c, actor)})`)),
+      await db.batch([
+        touch,
+        db.delete(playlistItems).where(eq(playlistItems.playlistId, row.playlist.id)),
         // One transaction: a failure leaves the old list.
         ...inserts,
-        touch,
       ]);
-      touched = results.at(-1) as { id: number }[];
     } catch (err) {
-      if (/NOT NULL constraint failed/i.test(`${err} ${(err as { cause?: unknown })?.cause}`)) throw visibleRefusal();
+      if (/NOT NULL constraint failed: playlists\.revision/i.test(`${err} ${(err as { cause?: unknown })?.cause}`)) {
+        assertTokenMayChange(c, actor, (await loadPlaylist(db, row.playlist.id))!);
+        throw new ApiError(409, 'that playlist changed; reload it before saving the list');
+      }
       throw err;
     }
-    if (!touched.length) throw visibleRefusal();
     return c.json(await playlistView(db, (await loadPlaylist(db, row.playlist.id))!, actor));
   });
 }

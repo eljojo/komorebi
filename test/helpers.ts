@@ -159,7 +159,7 @@ export async function makePlaylist(token: string, opts: { visibility?: 'public' 
   const r = await call('POST', '/api/playlists', { token, json: { name: opts.name ?? 'a list' } });
   if (r.status !== 201) throw new Error(`makePlaylist: ${r.status} ${r.text}`);
   if (opts.items) {
-    const put = await call('PUT', `/api/playlists/${r.json.id}/items`, { token, json: { items: opts.items } });
+    const put = await call('PUT', `/api/playlists/${r.json.id}/items`, { token, json: { revision: r.json.revision, items: opts.items } });
     if (put.status !== 200) throw new Error(`makePlaylist items: ${put.status} ${put.text}`);
   }
   if (opts.visibility) await env.DB.prepare('UPDATE playlists SET visibility = ? WHERE id = ?').bind(opts.visibility, r.json.id).run();

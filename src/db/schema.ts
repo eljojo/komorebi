@@ -81,6 +81,7 @@ export const playlists = sqliteTable(
     shareToken: text('share_token').notNull().unique(),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
+    revision: integer('revision').notNull().default(0),
   },
   (t) => [check('playlists_visibility', sql`${t.visibility} in ('public', 'unlisted', 'private')`), index('playlists_owner').on(t.ownerId)],
 );

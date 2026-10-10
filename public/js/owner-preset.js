@@ -61,7 +61,7 @@ addForm.addEventListener('submit', async (event) => {
   if (!list.ok) return say(box, failure(list));
   const items = list.data.items.map(({ preset_id, dwell_s, crossfade_s }) => ({ preset_id, dwell_s, crossfade_s }));
   items.push({ preset_id: Number(id) });
-  const put = await send('PUT', `/api/playlists/${listId}/items`, { items });
+  const put = await send('PUT', `/api/playlists/${listId}/items`, { revision: list.data.revision, items });
   if (!put.ok) return say(box, failure(put));
   box.querySelector('.msg').replaceChildren('added to ', el('a', { href: `/l/${listId}`, textContent: put.data.name }));
 });

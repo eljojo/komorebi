@@ -74,10 +74,11 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
   `unavailable` count.
 - `PATCH /api/playlists/:id` `{ name?, description? }` (owner). A token may do this only on a private
   playlist, and can never send `visibility`.
-- `PUT /api/playlists/:id/items` `{ items: [{ preset_id, dwell_s?, crossfade_s? }] }` replaces the ordered
+- `PUT /api/playlists/:id/items` `{ revision, items: [{ preset_id, dwell_s?, crossfade_s? }] }` replaces the ordered
   list (owner; a token only on a private playlist). `dwell_s` 1–3600, default 30; `crossfade_s` 0–120,
   default 5; at most 500 items. Each preset must be yours or someone's public one. Send back the unavailable
-  items you were given to keep them.
+  items you were given to keep them. Send the owner-only `revision` from the GET whose items you edited. A
+  stale revision is 409 and changes nothing; reload and reconcile your edit before submitting again.
 
 ## Your data, and tokens
 

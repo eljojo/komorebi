@@ -36,6 +36,13 @@
       "when": 1791599753873,
       "tag": "0004_backfill_webauthn_user_id",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791664387140,
+      "tag": "0005_confused_the_hood",
+      "breakpoints": true
     }
   ]
 }
