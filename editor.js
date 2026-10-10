@@ -1635,12 +1635,19 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
   const prefetch=()=>{ loadAbout().catch(()=>{}); };   // quietly, as the pointer or focus arrives
   aboutLink.addEventListener('pointerenter', prefetch);
   aboutLink.addEventListener('focus', prefetch);
+  // The address follows what is showing: opening pushes the about link's own href, so Back is the reverse breath (`closeAbout`) and
+  // Forward opens it again; "feel" from about puts the index's path back (replaceState), so a reload lands in the editor, not on about.
+  // A reload at /about is the standalone about.html, which is the same page. `gen` lets whichever came last win a breath still running.
+  const home=location.pathname+location.search;
+  let gen=0;
   function openAbout(column){
     if(started) return;
+    const g=++gen;
+    if(aboutView){ aboutView.classList.remove('out'); return; }   // Forward while the column was still breathing out: it simply turns back in
     welcome.classList.add('out');                   // the welcome's own breath out, .9s
     arb.ready.then((origin)=>{ if(origin) for(const id of ['arbHead','arbText']) column.querySelector(`#${id}`).hidden=false; });   // as #arbLink: only where arboretum is served
     setTimeout(()=>{
-      if(started) return;                           // "feel" was pressed during the breath out
+      if(started || g!==gen) return;                // "feel" was pressed during the breath out, or Back came
       welcome.style.visibility='hidden';
       const view=document.createElement('div'); view.id='aboutView'; view.className='out'; view.tabIndex=-1;
       view.append(column);
@@ -1653,14 +1660,37 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
       view.classList.remove('out'); view.focus({ preventScroll:true });
     }, 900);
   }
+  function closeAbout(){                            // the reverse of opening: the column breathes out, then the welcome breathes back in
+    const g=++gen, view=aboutView;
+    aboutOpen=false;
+    if(!view){ welcome.style.visibility=''; welcome.classList.remove('out'); return; }   // Back before the column came: the welcome turns back
+    view.classList.add('out');
+    setTimeout(()=>{
+      if(started || g!==gen) return;                // "feel" was pressed, or Forward came
+      view.remove(); aboutView=null;
+      welcome.style.visibility=''; welcome.classList.remove('out');
+    }, 900);
+  }
   aboutLink.addEventListener('click',(e)=>{
     if(e.defaultPrevented || !plain(e) || started) return;
     e.preventDefault();
     if(aboutOpen) return; aboutOpen=true;
-    loadAbout().then(openAbout, ()=>{ location.href=aboutLink.href; });
+    loadAbout().then((column)=>{
+      if(!aboutOpen || started) return;             // Back, or "feel", came while it loaded
+      history.pushState({ about:true }, '', aboutLink.href);
+      openAbout(column);
+    }, ()=>{ location.href=aboutLink.href; });
+  });
+  addEventListener('popstate',(e)=>{
+    const about=!!e.state?.about;
+    if(started){ if(about) history.replaceState(null, '', home); return; }   // Forward onto about after "feel": the editor is what shows, so the address says so
+    if(about && !aboutOpen){ aboutOpen=true; loadAbout().then(openAbout, ()=>{ location.reload(); }); }
+    else if(!about && aboutOpen) closeAbout();
   });
   feel.addEventListener('click',()=>{
     if(started) return; started=true;
+    if(aboutOpen) history.replaceState(null, '', home);   // the editor arrives at the index's own address
+    gen++;
     document.body.classList.remove('intro');        // un-dim the canvas to full strength
     welcome.classList.add('out');                   // dissolve the intro text
     if(aboutView){ const v=aboutView; v.classList.add('out'); setTimeout(()=>v.remove(), 1000); aboutView=null; }   // ...and the about column, if it is what is showing

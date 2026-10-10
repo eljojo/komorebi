@@ -24,6 +24,7 @@
 
   <h2>How it’s made</h2>
   <p>Most of the bright shapes on the ground are not the shapes of the gaps between the leaves: each small gap in the canopy acts as a pinhole, so every dapple is an image of the sun. The sun is about half a degree wide, which is why those images are soft; komorebi scatters many small suns across it, lets each one cast a sharp shadow, and sums them. The leaves are really where they are, held in a few layers at different depths. Wind moves the trunk, limbs and twigs as damped springs, so a gust slides the whole pattern sideways and, when it dies, everything returns to where it started.</p>
+  <p>The whole model is written down in the <a href="https://github.com/eljojo/komorebi/blob/main/komorebi-spec.md">spec</a>, beside the <a href="https://github.com/eljojo/komorebi">source</a>.</p>
 
   <h2>On your own page</h2>
   <p>The engine is a standalone WebGL2 script that you put on your own server and point at a canvas. The <a href="examples/">examples</a> show a page background, a panel, and the ES-module route.</p>
@@ -36,6 +37,7 @@
   <p class="made">Made with love and peace and harmony by <a href="https://eljojo.net">José Albornoz</a>, from Canada.</p>
 </main>
 
+<script type="module" src="./breathe.js"></script>
 <script type="module">
   // The same route as examples/module.html: the engine's ES modules, served as they are.
   import { create } from './komorebi.js';

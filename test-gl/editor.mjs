@@ -99,7 +99,7 @@ try {
   // the welcome's quiet row: "about" is always there, "arboretum" only where arboretum is served (not here, at /index.html)
   check('at /index.html the welcome shows the about link and hides the arboretum link',
     await page.isVisible('#welcome .more a[href="about.html"]') && !(await page.isVisible('#arbLink')));
-  // "about" opens in place: no navigation, the welcome's text gone, the same canvas still dimmed under body.intro
+  // "about" opens in place: no page load, the welcome's text gone, the same canvas still dimmed under body.intro; the address becomes about.html's
   const urlBefore = page.url();
   await page.evaluate(() => { window.__glBefore = document.getElementById('gl'); });
   await page.click('#welcome .more a[href="about.html"]');
@@ -116,10 +116,32 @@ try {
       arbHidden: getComputedStyle(document.getElementById('arbHead')).display === 'none',
     };
   });
-  check('clicking about keeps the page\'s URL and shows the about content in place, the welcome text gone',
-    page.url() === urlBefore && inPlace.text && inPlace.clear && inPlace.welcomeGone, JSON.stringify({ url: page.url(), ...inPlace }));
+  const aboutPath = new URL(page.url()).pathname;
+  check('clicking about shows the about content in place, the welcome text gone, and the address is about.html\'s',
+    /^\/about(\.html)?$/.test(aboutPath) && inPlace.text && inPlace.clear && inPlace.welcomeGone, JSON.stringify({ url: page.url(), ...inPlace }));
   check('and the canvas is the same element, still dimmed by body.intro', inPlace.sameCanvas && inPlace.dimmed, JSON.stringify(inPlace));
   check('and the arboretum line stays hidden where arboretum is not served', inPlace.arbHidden);
+  // Back is the reverse of opening: the column breathes out, the welcome breathes back in, the canvas never touched
+  await page.evaluate(() => history.back());
+  await page.waitForFunction(() => !document.getElementById('aboutView'), null, { timeout: 15000 });
+  await page.waitForTimeout(1100);   // the welcome's breath in (.9s) has landed
+  const backed = await page.evaluate(() => {
+    const w = document.getElementById('welcome'), cs = getComputedStyle(w);
+    return {
+      welcomeShown: cs.visibility === 'visible' && parseFloat(cs.opacity) === 1 && !w.classList.contains('out'),
+      sameCanvas: document.getElementById('gl') === window.__glBefore,
+      dimmed: document.body.classList.contains('intro'),
+      noAbout: !document.getElementById('aboutView'),
+    };
+  });
+  check('Back from about returns to the welcome: the about view gone, the welcome whole, the same canvas, the address the index\'s',
+    backed.welcomeShown && backed.sameCanvas && backed.dimmed && backed.noAbout && new URL(page.url()).pathname === new URL(urlBefore).pathname, JSON.stringify({ url: page.url(), ...backed }));
+  // ...and the welcome's about opens again
+  await page.click('#welcome .more a[href="about.html"]');
+  await page.waitForSelector('#aboutView:not(.out) #aboutCol', { timeout: 15000 });
+  await page.waitForTimeout(1100);
+  check('clicking about after Back opens it again, at about.html\'s address, on the same canvas',
+    /^\/about(\.html)?$/.test(new URL(page.url()).pathname) && await page.evaluate(() => document.getElementById('gl') === window.__glBefore));
   await page.keyboard.press('d');
   await page.waitForTimeout(300);
   check('while about is open the welcome still owns the screen (no panel, D included)',
@@ -127,7 +149,8 @@ try {
   await page.click('#aboutView a.feel');   // the column's "feel" is the welcome's feel
   await page.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });   // arrive() waits out the full welcome crossfade (slower under SwiftShader)
   check('feel in the about content brings the editor: the canvas un-dimmed, the about content gone, still the same page',
-    await page.evaluate(() => !document.body.classList.contains('intro') && !document.getElementById('aboutView') && document.getElementById('gl') === window.__glBefore) && page.url() === urlBefore);
+    await page.evaluate(() => !document.body.classList.contains('intro') && !document.getElementById('aboutView') && document.getElementById('gl') === window.__glBefore));
+  check('and feel from about leaves the address at the index\'s own path, so a reload lands in the editor', new URL(page.url()).pathname === new URL(urlBefore).pathname, page.url());
   check('boot lands in zen everywhere', true);
   await page.$eval('#strip .preset .more', (b) => b.click());              // climb to playful for the macro checks
   await page.waitForSelector('#play:not(.hidden)', { timeout: 15000 });
