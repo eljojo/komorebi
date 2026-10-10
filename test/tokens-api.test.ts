@@ -8,6 +8,13 @@ import { PARAMS, asSession, call, db, get, makeToken, makeUser, sessionFor } fro
 const mint = (user: { id: number }, json: unknown) => asSession(user, 'POST', '/api/tokens', { json });
 
 describe('POST /api/tokens', () => {
+  it.each(['\0abc', 'ab\0cd'])('refuses a NUL label without creating a token: %s', async (label) => {
+    const u = await makeUser();
+    const r = await mint(u, { label, scope: 'write' });
+    expect(r.status).toBe(400);
+    expect(await db.select().from(apiTokens).where(eq(apiTokens.userId, u.id))).toEqual([]);
+  });
+
   it('mints a token for a session and shows it once', async () => {
     const u = await makeUser();
     const r = await mint(u, { label: 'studio laptop claude', scope: 'write' });
