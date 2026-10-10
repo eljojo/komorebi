@@ -651,6 +651,20 @@ describe('POST /api/presets/:id/versions', () => {
   });
 });
 
+describe('preset summary queries', () => {
+  it.each(['the owner list', 'the profile'])('reads no params for %s', async (what) => {
+    const o = await owner();
+    await makePreset(o.user, o.token);
+    const seen: string[] = [];
+    const path = what === 'the owner list' ? '/api/presets?owner=me' : `/u/${o.user.username}`;
+    const res = await intercepting((sql) => void seen.push(sql))(request('GET', path, { token: o.token }));
+    expect(res.status).toBe(200);
+    const reads = seen.filter((sql) => /join "preset_versions"/.test(sql));
+    expect(reads.length).toBeGreaterThan(0);
+    for (const sql of reads) expect(sql).not.toMatch(/"preset_versions"\."params"/);
+  });
+});
+
 describe('GET /api/presets/:id/versions', () => {
   it('lists a summary per version in order, and returns one whole', async () => {
     const o = await owner();

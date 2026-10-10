@@ -11,7 +11,7 @@ function Visibility(props: { of: 'public' | 'unlisted' | 'private' }) {
   return props.of === 'public' ? null : <span class="label">{props.of}</span>;
 }
 
-type LookRow = { preset: typeof presets.$inferSelect; head: typeof presetVersions.$inferSelect };
+type LookRow = { preset: typeof presets.$inferSelect; head: Pick<typeof presetVersions.$inferSelect, 'name' | 'tags'> };
 
 function Looks(props: { rows: LookRow[] }) {
   return (
@@ -83,7 +83,7 @@ export function registerFrontPages(app: Hono<AppEnv>) {
     // The same `canSee` for everyone: a stranger gets the public view, and the owner gets everything of theirs,
     // so the owner can find their own private looks from any machine (spec §12) and unarchive what they shelved.
     const shown = (await db
-      .select({ preset: presets, head: presetVersions })
+      .select({ preset: presets, head: { name: presetVersions.name, tags: presetVersions.tags } })
       .from(presets)
       .innerJoin(presetVersions, eq(presetVersions.id, presets.headVersionId))
       .where(eq(presets.ownerId, user.id))

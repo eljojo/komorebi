@@ -1,4 +1,4 @@
-import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { type Actor, type AppEnv, type Ctx, secured, viaFor } from '../auth';
 import { LIMITS } from '../config';
@@ -13,6 +13,8 @@ import { canSee } from './access';
 import { assertNotPublishedFromEditor, fromEditor, isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
 type PresetRow = { preset: typeof presets.$inferSelect; owner: string; head: typeof presetVersions.$inferSelect };
+type PresetSummaryRow = Omit<PresetRow, 'head'> & { head: Omit<PresetRow['head'], 'params'> };
+const { params: _params, ...summaryColumns } = getTableColumns(presetVersions);
 
 export async function loadPreset(db: Db, id: number | null): Promise<PresetRow | undefined> {
   if (id === null) return undefined;
@@ -27,7 +29,7 @@ export async function loadPreset(db: Db, id: number | null): Promise<PresetRow |
 
 // The preset as an API client sees it: the head version plus the preset's own fields. The owner also sees who
 // else can see it.
-export function presetView(row: PresetRow, viewer: Actor | null, withParams = true) {
+function presetSummary(row: PresetSummaryRow, viewer: Actor | null) {
   const { preset, head } = row;
   return {
     id: preset.id,
@@ -41,13 +43,16 @@ export function presetView(row: PresetRow, viewer: Actor | null, withParams = tr
     via: head.via,
     created_at: preset.createdAt,
     updated_at: preset.updatedAt,
-    ...(withParams && { params: JSON.parse(head.params) }),
     ...(viewer?.userId === preset.ownerId && {
       visibility: preset.visibility,
       share_token: preset.shareToken,
       archived: preset.archivedAt !== null,
     }),
   };
+}
+
+export function presetView(row: PresetRow, viewer: Actor | null) {
+  return { ...presetSummary(row, viewer), params: JSON.parse(row.head.params) };
 }
 
 const notFound = () => new ApiError(404, 'not found');
@@ -230,13 +235,13 @@ export function registerPresets(app: Hono<AppEnv>) {
       where = and(eq(presets.ownerId, user.id), eq(presets.visibility, 'public'), isNull(presets.archivedAt));
     }
     const rows = await db
-      .select({ preset: presets, owner: users.username, head: presetVersions })
+      .select({ preset: presets, owner: users.username, head: summaryColumns })
       .from(presets)
       .innerJoin(users, eq(users.id, presets.ownerId))
       .innerJoin(presetVersions, eq(presetVersions.id, presets.headVersionId))
       .where(where)
       .orderBy(desc(presets.id));
-    return c.json({ presets: rows.map((r) => presetView(r, viewer, false)) });
+    return c.json({ presets: rows.map((r) => presetSummary(r, viewer)) });
   });
 
   secured(app, 'GET', '/api/presets/:id', 'anonymous', async (c, actor) => c.json(presetView(await visiblePreset(c, actor), actor)));
