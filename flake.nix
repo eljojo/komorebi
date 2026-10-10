@@ -35,8 +35,23 @@
             npx wrangler deploy
           '';
         };
+        # Follow komorebi: `nix run .#pin` pins the engine to ~/code/komorebi's local main (its newest commit, pushed
+        # or not); `nix run .#pin -- <commit>` pins any other. Commit the result, and deploy when it should go live.
+        pin = pkgs.writeShellApplication {
+          name = "arboretum-pin";
+          runtimeInputs = with pkgs; [ nodejs_22 git ];
+          text = ''
+            cd "$(git rev-parse --show-toplevel)"
+            exec node scripts/pin-engine.mjs "''${1:-main}"
+          '';
+        };
       in
       {
+        apps.pin = {
+          type = "app";
+          program = "${pin}/bin/arboretum-pin";
+        };
+
         apps.deploy = {
           type = "app";
           program = "${deploy}/bin/arboretum-deploy";
