@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:workers';
+import { env, exports } from 'cloudflare:workers';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../src';
@@ -140,7 +140,7 @@ describe('CORS on /api/*', () => {
     const h = await options(origin);
     expect(h.get('Access-Control-Allow-Origin')).toBe(origin);
     expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
-    expect(h.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim()).sort()).toEqual(['GET', 'PATCH', 'POST', 'PUT']);
+    expect(h.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim()).sort()).toEqual(['DELETE', 'GET', 'PATCH', 'POST', 'PUT']);
     expect((h.get('Access-Control-Allow-Headers') ?? '').toLowerCase().split(',').map((m) => m.trim()).sort()).toEqual(['authorization', 'content-type']);
   });
 
@@ -201,8 +201,60 @@ describe('via', () => {
 
   it('is editor for a session from the komorebi origin and web otherwise', () => {
     expect(viaFor(session, 'https://komorebi.eljojo.net')).toBe('editor');
+    expect(viaFor(session, 'http://localhost:8000')).toBe('editor');
+    expect(viaFor(session, 'http://localhost:8001')).toBe('web');
     expect(viaFor(session, null)).toBe('web');
     expect(viaFor(session, 'https://arboretum.eljojo.net')).toBe('web');
     expect(viaFor(session, 'https://komorebi.eljojo.net.evil.example')).toBe('web');
+  });
+});
+
+describe('the request body cap', () => {
+  const MAX = 64 * 1024;
+
+  it('refuses a body over 64 KB with a 413 from its Content-Length, before reading it', async () => {
+    const u = await makeUser();
+    const r = await call('POST', '/api/presets', { token: await makeToken(u), body: JSON.stringify({ pad: 'x'.repeat(MAX) }) });
+    expect(r.status).toBe(413);
+    expect(r.json).toEqual({ error: expect.any(String) });
+  });
+
+  it('refuses one that lies about or omits its length, stopping the read at the limit', async () => {
+    const u = await makeUser();
+    const chunk = new TextEncoder().encode('x'.repeat(8 * 1024));
+    let sent = 0;
+    const body = new ReadableStream({
+      pull(controller) {
+        sent += chunk.length;
+        controller.enqueue(chunk);
+        if (sent > 4 * MAX) controller.close();
+      },
+    });
+    const res = await exports.default.fetch(
+      new Request('https://arboretum.test/api/presets', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await makeToken(u)}`, 'Content-Type': 'application/json' },
+        body,
+        duplex: 'half',
+      } as RequestInit),
+    );
+    expect(res.status).toBe(413);
+    expect(sent).toBeLessThan(4 * MAX);
+  });
+
+  it('lets a body just under it through to the next check', async () => {
+    const u = await makeUser();
+    const r = await call('POST', '/api/presets', { token: await makeToken(u), body: JSON.stringify({ pad: 'x'.repeat(MAX - 100) }) });
+    expect(r.status).not.toBe(413);
+  });
+
+  it('gives a 413 the CORS headers, so the editor can read it', async () => {
+    const res = await createApp().request(
+      '/api/presets',
+      { method: 'POST', headers: { Origin: 'https://komorebi.eljojo.net', 'Content-Type': 'application/json' }, body: 'x'.repeat(MAX + 1) },
+      env,
+    );
+    expect(res.status).toBe(413);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://komorebi.eljojo.net');
   });
 });

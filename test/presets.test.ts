@@ -537,7 +537,7 @@ describe('visibility and archiving are session-only', () => {
     expect((await call('POST', '/api/presets/999999999/archive', { token: o.token, json: {} })).status).toBe(403);
   });
 
-  describe('as a person in a browser (the session branch, via a stand-in)', () => {
+  describe('as a person in a browser (a real session)', () => {
     it('PATCH sets visibility, and the preset then reads accordingly', async () => {
       const o = await owner();
       const p = await makePreset(o.user, o.token);

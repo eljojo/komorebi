@@ -9,6 +9,10 @@
     "directory": "./public",
     "binding": "ASSETS"
   },
+  "vars": {
+    "RP_ID": "arboretum.eljojo.net",
+    "ORIGIN": "https://arboretum.eljojo.net"
+  },
   "d1_databases": [
     {
       "binding": "DB",

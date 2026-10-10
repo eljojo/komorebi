@@ -1,16 +1,19 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
+import { registerAuth } from './api/auth';
 import { registerMe } from './api/me';
 import { registerExport } from './api/export';
 import { registerPlaylists } from './api/playlists';
 import { registerPresets } from './api/presets';
-import { type AppEnv, type Resolver, bearerToken } from './auth';
-import { CORS_ORIGINS } from './config';
+import { registerTokens } from './api/tokens';
+import { type AppEnv, type Resolver, bearerToken, sessionCookie } from './auth';
+import { CORS_ORIGINS, MAX_BODY_BYTES } from './config';
 import { ApiError } from './errors';
 import { ENGINE_COMMIT } from './generated/engine';
 
-// `resolvers` is how a caller is recognised; brief 03 adds the session cookie to the default.
-export function createApp(resolvers: Resolver[] = [bearerToken]) {
+// `resolvers` is how a caller is recognised, in order: a bearer token wins over the session cookie.
+export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) {
   const app = new Hono<AppEnv>();
 
   app.use('*', async (c, next) => {
@@ -23,9 +26,16 @@ export function createApp(resolvers: Resolver[] = [bearerToken]) {
     cors({
       origin: (origin) => (CORS_ORIGINS.includes(origin) ? origin : null),
       credentials: true,
-      allowMethods: ['GET', 'POST', 'PUT', 'PATCH'],
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
       allowHeaders: ['Content-Type', 'Authorization'],
     }),
+  );
+
+  // A params object is at most 16 KB (spec §5), so nothing legitimate comes near this. Hono checks Content-Length
+  // and also stops a stream that outgrows it.
+  app.use(
+    '/api/*',
+    bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: `a request body is at most ${MAX_BODY_BYTES / 1024} KB` }, 413) }),
   );
 
   // The CSRF guard (spec §3.2): with CORS granted to one origin, a cross-origin form post (always a "simple"
@@ -50,6 +60,8 @@ export function createApp(resolvers: Resolver[] = [bearerToken]) {
   registerPresets(app);
   registerPlaylists(app);
   registerExport(app);
+  registerAuth(app);
+  registerTokens(app);
 
   return app;
 }

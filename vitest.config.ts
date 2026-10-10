@@ -7,7 +7,7 @@ export default defineConfig(async () => {
     plugins: [
       cloudflareTest({
         wrangler: { configPath: './wrangler.jsonc' },
-        miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
+        miniflare: { bindings: { TEST_MIGRATIONS: migrations, RP_ID: 'arboretum.test', ORIGIN: 'https://arboretum.test' } },
       }),
     ],
     test: { setupFiles: ['./test/apply-migrations.ts'] },

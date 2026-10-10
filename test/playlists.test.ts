@@ -349,6 +349,39 @@ describe('the items a viewer gets', () => {
     expect(back.json.items).toHaveLength(1);
   });
 
+  it('archiving a preset through a session hides it from other people\'s reads and playlists, and the playlist owner is told', async () => {
+    const o = await owner();
+    const other = await owner();
+    const theirs = await makePreset(other.user, other.token, { name: 'theirs', visibility: 'public' });
+    const keep = await makePreset(other.user, other.token, { name: 'keep', visibility: 'public' });
+    const p = await makePlaylist(o.token, { visibility: 'public', items: [{ preset_id: theirs.id }, { preset_id: keep.id }] });
+    const names = (r: { json: any }) => r.json.items.map((i: any) => i.name);
+
+    expect((await asSession(other.user, 'POST', `/api/presets/${theirs.id}/archive`, { json: {} })).status).toBe(200);
+
+    expect((await get(`/api/presets/${theirs.id}`, o.token)).status).toBe(404);
+    expect((await get(`/api/presets/${theirs.id}`)).status).toBe(404);
+    const mine = await get(`/api/playlists/${p.id}`, o.token);
+    expect(names(mine)).toEqual(['keep']);
+    expect(mine.json.unavailable).toBe(1);
+    expect(names(await get(`/api/playlists/${p.id}`))).toEqual(['keep']);
+
+    expect((await asSession(other.user, 'POST', `/api/presets/${theirs.id}/unarchive`, { json: {} })).status).toBe(200);
+    const back = await get(`/api/playlists/${p.id}`, o.token);
+    expect(names(back)).toEqual(['theirs', 'keep']);
+    expect(back.json.unavailable).toBe(0);
+  });
+
+  it('only a session may change a playlist\'s visibility; a token with write scope may not', async () => {
+    const o = await owner();
+    const p = await makePlaylist(o.token);
+    const viaToken = await call('PATCH', `/api/playlists/${p.id}`, { token: o.token, json: { visibility: 'public' } });
+    expect(viaToken.status).toBe(403);
+    const viaSession = await asSession(o.user, 'PATCH', `/api/playlists/${p.id}`, { json: { visibility: 'public' } });
+    expect(viaSession.status).toBe(200);
+    expect(viaSession.json.visibility).toBe('public');
+  });
+
   it('a read token sees what its user sees', async () => {
     const o = await owner();
     const a = await makePreset(o.user, o.token, { name: 'private one' });

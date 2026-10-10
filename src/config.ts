@@ -5,7 +5,21 @@ export const LIMITS = {
   // Rolling 24 hours, counting the first version of a new preset.
   versionsPerDay: 200,
   tokens: 10,
+  // Per IP address, per rolling hour (spec §5). Only completed sign-ups and failed logins count.
+  signupsPerHour: 5,
+  failedLoginsPerHour: 20,
 };
+
+export const MAX_BODY_BYTES = 64 * 1024;
+
+export const SESSION_MS = 30 * 24 * 3600 * 1000;
+export const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+// Names that would let someone pass for the project, plus the site's own path words (spec §3.1).
+export const RESERVED_USERNAMES = [
+  'komorebi', 'arboretum', 'admin', 'api', 'root', 'www', 'help', 'about', 'settings', 'new',
+  'login', 'logout', 'signup', 'u', 'p', 'l', 'engine', 'export',
+];
 
 export const KOMOREBI_ORIGIN = 'https://komorebi.eljojo.net';
 

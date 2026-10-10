@@ -1,11 +1,10 @@
 import { env, exports } from 'cloudflare:workers';
 import { drizzle } from 'drizzle-orm/d1';
 import { and, eq } from 'drizzle-orm';
-import { createApp } from '../src';
-import { type Resolver, bearerToken } from '../src/auth';
-import { connect } from '../src/db/client';
-import { presetVersions, presets, users } from '../src/db/schema';
-import { mintToken } from '../src/tokens';
+import { SESSION_MS } from '../src/config';
+import { presetVersions, presets, sessions, users } from '../src/db/schema';
+import { randomBase64Url } from '../src/random';
+import { mintToken, sha256Hex } from '../src/tokens';
 
 export const db = drizzle(env.DB);
 
@@ -60,19 +59,39 @@ export const get = (path: string, token?: string) => call('GET', path, { token }
 
 export const PARAMS = { tree_count: 3, eclipse: false, tree_species: 'oak' };
 
-// Brief 03 adds real sessions. Until then a test-only resolver stands in for one, so the session-only routes
-// can be exercised: `X-Test-Session: <username>`.
-const fakeSession: Resolver = async (c) => {
-  const username = c.req.header('X-Test-Session');
-  if (!username) return null;
-  const [u] = await connect(c.env.DB).select().from(users).where(eq(users.username, username));
-  return u ? { userId: u.id, username: u.username, kind: 'session' } : null;
-};
-const sessionApp = createApp([bearerToken, fakeSession]);
+// A person's browser: a cookie jar and an address, talking to the real app. The jar keeps what Set-Cookie says
+// and drops what it deletes, as a browser would.
+let ipSeq = 0;
+export class Browser {
+  jar = new Map<string, string>();
+  ip = `10.${(++ipSeq >> 16) & 255}.${(ipSeq >> 8) & 255}.${ipSeq & 255}`;
 
-export async function asSession(user: { username: string }, method: string, path: string, opts: CallOpts = {}): Promise<Reply> {
-  const headers = { ...opts.headers, 'X-Test-Session': user.username };
-  return reply(await sessionApp.fetch(request(method, path, { ...opts, headers }), env));
+  async call(method: string, path: string, opts: CallOpts = {}): Promise<Reply> {
+    const headers: Record<string, string> = { 'CF-Connecting-IP': this.ip, ...opts.headers };
+    if (this.jar.size) headers.Cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    const res = await exports.default.fetch(request(method, path, { ...opts, headers }));
+    for (const line of res.headers.getSetCookie()) {
+      const [pair, ...attrs] = line.split(';').map((p) => p.trim());
+      const [name, ...value] = pair.split('=');
+      const gone = attrs.some((a) => /^max-age=0$/i.test(a)) || value.join('=') === '';
+      if (gone) this.jar.delete(name);
+      else this.jar.set(name, value.join('='));
+    }
+    return reply(res);
+  }
+}
+
+// A real session for a user made directly in the database, for tests that are about something else than signing in.
+export async function sessionFor(user: { id: number }) {
+  const token = randomBase64Url(32);
+  const now = Date.now();
+  await db.insert(sessions).values({ tokenHash: await sha256Hex(token), userId: user.id, createdAt: now, expiresAt: now + SESSION_MS });
+  return token;
+}
+
+export async function asSession(user: { id: number }, method: string, path: string, opts: CallOpts = {}): Promise<Reply> {
+  const headers = { ...opts.headers, Cookie: `__Host-session=${await sessionFor(user)}` };
+  return call(method, path, { ...opts, headers });
 }
 
 type PresetOpts = { visibility?: 'public' | 'unlisted' | 'private'; archived?: boolean } & Record<string, unknown>;

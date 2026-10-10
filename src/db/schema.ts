@@ -94,3 +94,57 @@ export const playlistItems = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.playlistId, t.position] })],
 );
+
+export const credentials = sqliteTable(
+  'credentials',
+  {
+    // The authenticator's credential id, base64url: what a usernameless login presents to find the account.
+    id: text('id').primaryKey(),
+    userId: integer('user_id').notNull().references(() => users.id),
+    // COSE public key, base64url.
+    publicKey: text('public_key').notNull(),
+    counter: integer('counter').notNull(),
+    transports: text('transports', { mode: 'json' }).$type<string[]>(),
+    createdAt: integer('created_at').notNull(),
+    lastUsedAt: integer('last_used_at'),
+  },
+  (t) => [index('credentials_user').on(t.userId)],
+);
+
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    // sha-256 hex of the cookie's value; the value itself is never stored.
+    tokenHash: text('token_hash').primaryKey(),
+    userId: integer('user_id').notNull().references(() => users.id),
+    createdAt: integer('created_at').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+  },
+  (t) => [index('sessions_user').on(t.userId)],
+);
+
+// Server-side and single-use: a ceremony's challenge is deleted the moment it is looked up, so a captured
+// response cannot be replayed with a cookie the client sets itself. The browser holds only `id`.
+export const challenges = sqliteTable(
+  'challenges',
+  {
+    id: text('id').primaryKey(),
+    challenge: text('challenge').notNull(),
+    purpose: text('purpose', { enum: ['register', 'login', 'add-passkey'] }).notNull(),
+    // Null for sign-up and login, where nobody is known yet.
+    userId: integer('user_id').references(() => users.id),
+    pendingUsername: text('pending_username'),
+    expiresAt: integer('expires_at').notNull(),
+  },
+  (t) => [check('challenges_purpose', sql`${t.purpose} in ('register', 'login', 'add-passkey')`)],
+);
+
+export const rateEvents = sqliteTable(
+  'rate_events',
+  {
+    ip: text('ip').notNull(),
+    action: text('action').notNull(),
+    at: integer('at').notNull(),
+  },
+  (t) => [index('rate_events_ip_action').on(t.ip, t.action, t.at)],
+);

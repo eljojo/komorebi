@@ -1,11 +1,13 @@
 // Who is asking, and whether they may (spec §3). Every /api route is registered through `secured`, which runs
 // `authorize` first, so a route cannot forget to ask.
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { Context, Hono } from 'hono';
-import { KOMOREBI_ORIGIN } from './config';
+import { getCookie } from 'hono/cookie';
+import { CORS_ORIGINS } from './config';
 import { connect } from './db/client';
-import { apiTokens, users } from './db/schema';
+import { apiTokens, sessions, users } from './db/schema';
 import { ApiError } from './errors';
+import { SESSION_COOKIE } from './session';
 import { sha256Hex } from './tokens';
 
 export type TokenActor = { userId: number; username: string; kind: 'token'; scope: 'read' | 'write'; label: string };
@@ -15,7 +17,7 @@ export type Actor = TokenActor | SessionActor;
 export type AppEnv = { Bindings: Cloudflare.Env; Variables: { resolvers: Resolver[] } };
 export type Ctx = Context<AppEnv>;
 
-// One way of recognising a caller. Brief 03 adds the session cookie as a second one.
+// One way of recognising a caller.
 export type Resolver = (c: Ctx) => Promise<Actor | null>;
 
 export const bearerToken: Resolver = async (c) => {
@@ -30,6 +32,20 @@ export const bearerToken: Resolver = async (c) => {
   if (!row) return null;
   await db.update(apiTokens).set({ lastUsedAt: Date.now() }).where(eq(apiTokens.id, row.tokenId));
   return { userId: row.userId, username: row.username, kind: 'token', scope: row.scope, label: row.label };
+};
+
+// A bearer header, whether or not its token works, means the caller chose to be a token: a cookie riding along
+// is not consulted, so a bad token is a 401 rather than a quiet fallback to the browser's login.
+export const sessionCookie: Resolver = async (c) => {
+  if (/^bearer /i.test(c.req.header('Authorization') ?? '')) return null;
+  const value = getCookie(c, SESSION_COOKIE, 'host');
+  if (!value) return null;
+  const [row] = await connect(c.env.DB)
+    .select({ userId: users.id, username: users.username })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(and(eq(sessions.tokenHash, await sha256Hex(value)), gt(sessions.expiresAt, Date.now())));
+  return row ? { ...row, kind: 'session' } : null;
 };
 
 async function getActor(c: Ctx): Promise<Actor | null> {
@@ -62,7 +78,7 @@ export const policies = new Map<string, Policy>();
 
 export function secured<P extends Policy>(
   app: Hono<AppEnv>,
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   policy: P,
   handler: (c: Ctx, actor: ActorFor<P>) => Response | Promise<Response>,
@@ -71,8 +87,8 @@ export function secured<P extends Policy>(
   app.on(method, path, async (c) => handler(c, await authorize(c, policy)));
 }
 
-// How a new version arrived (spec §3.3). Sessions come with brief 03; until then only the token branch runs.
+// How a new version arrived (spec §3.3).
 export function viaFor(actor: Actor, origin: string | null): string {
   if (actor.kind === 'token') return `token:${actor.label}`;
-  return origin === KOMOREBI_ORIGIN ? 'editor' : 'web';
+  return origin !== null && CORS_ORIGINS.includes(origin) ? 'editor' : 'web';
 }
