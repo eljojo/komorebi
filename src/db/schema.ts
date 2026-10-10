@@ -67,7 +67,7 @@ export const presetVersions = sqliteTable(
     via: text('via').notNull(),
     createdAt: integer('created_at').notNull(),
   },
-  (t) => [unique('preset_versions_preset_n').on(t.presetId, t.n)],
+  (t) => [unique('preset_versions_preset_n').on(t.presetId, t.n), index('preset_versions_created').on(t.presetId, t.createdAt)],
 );
 
 export const playlists = sqliteTable(

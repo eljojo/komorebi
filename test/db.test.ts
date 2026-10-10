@@ -78,4 +78,9 @@ describe('indexes', () => {
   it('lets the rate-event count use the (ip, action, at) index', async () => {
     expect(await plan('SELECT count(*) FROM rate_events WHERE ip = ? AND action = ? AND at > ?', 'x', 'signup', 1)).toMatch(/USING (COVERING )?INDEX/);
   });
+
+  it('bounds the daily version count by both preset and creation time', async () => {
+    const query = 'SELECT count(*) FROM preset_versions v JOIN presets p ON p.id = v.preset_id WHERE p.owner_id = ? AND v.created_at > ?';
+    expect(await plan(query, 1, 1)).toMatch(/USING COVERING INDEX .*\(preset_id=\? AND created_at>\?\)/);
+  });
 });
