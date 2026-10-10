@@ -71,7 +71,8 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
 
 ## Your data, and tokens
 
-- `GET /api/export`: everything the person owns, every version of every preset included, as one JSON.
+- `GET /api/export`: everything the person owns, every version of every preset included, as one JSON. Each
+  version carries `params_text`, its exact stored text, beside the parsed `params`.
 - `POST /api/tokens`, `GET /api/tokens` and `DELETE /api/tokens/:id` mint, list and revoke tokens. Browser
   only; a token gets 403.
 

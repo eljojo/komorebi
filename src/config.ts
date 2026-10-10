@@ -5,9 +5,11 @@ export const LIMITS = {
   // Rolling 24 hours, counting the first version of a new preset.
   versionsPerDay: 200,
   tokens: 10,
-  // Per IP address, per rolling hour (spec §5). Only completed sign-ups and failed logins count.
+  // Per IP address, per rolling hour (spec §5). Completed sign-ups and failed logins count, and so does every
+  // ceremony started (register-options, login-options and add-passkey-options share one count).
   signupsPerHour: 5,
   failedLoginsPerHour: 20,
+  ceremoniesPerHour: 60,
 };
 
 export const MAX_BODY_BYTES = 64 * 1024;

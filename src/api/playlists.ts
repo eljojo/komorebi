@@ -88,10 +88,13 @@ async function ownedPlaylist(c: Ctx, actor: Actor): Promise<PlaylistRow> {
 
 // Anyone sees a public or unlisted playlist at once, so changing one is a person's act (spec §3.3).
 function assertTokenMayChange(actor: Actor, row: PlaylistRow) {
-  if (actor.kind === 'token' && row.playlist.visibility !== 'private') {
-    throw new ApiError(403, 'changing a visible playlist needs a person in a browser; a token can only change private playlists');
-  }
+  if (actor.kind === 'token' && row.playlist.visibility !== 'private') throw visibleRefusal();
 }
+
+// The same rule as a condition of the write itself, for the statements below: the owner may have published the
+// playlist since `assertTokenMayChange` read it. A person's write has no condition.
+const privateIfToken = (actor: Actor) => (actor.kind === 'token' ? sql`visibility = 'private'` : sql`1`);
+const visibleRefusal = () => new ApiError(403, 'changing a visible playlist needs a person in a browser; a token can only change private playlists');
 
 function checkedMeta(name: unknown, description: unknown) {
   const meta = validateMeta({ name, description });
@@ -188,7 +191,8 @@ export function registerPlaylists(app: Hono<AppEnv>) {
     patch.name = meta.name;
     patch.description = meta.description ?? null;
 
-    await db.update(playlists).set(patch).where(eq(playlists.id, row.playlist.id));
+    const updated = await db.update(playlists).set(patch).where(and(eq(playlists.id, row.playlist.id), privateIfToken(actor))).returning({ id: playlists.id });
+    if (!updated.length) throw visibleRefusal();
     return c.json(await playlistView(db, (await loadPlaylist(db, row.playlist.id))!, actor));
   });
 
@@ -212,15 +216,28 @@ export function registerPlaylists(app: Hono<AppEnv>) {
     const unusable = ids.filter((id) => !usable.has(id));
     if (unusable.length) throw new ApiError(422, 'some presets are not yours and not public', { preset_ids: unusable });
 
-    const rows = items.map((i, position) => ({ playlistId: row.playlist.id, position, ...i }));
+    // A token's right is a condition of every statement. The new rows take their playlist id from a subselect that
+    // finds nothing once the playlist is visible; the NOT NULL column then refuses the insert and the batch rolls
+    // back whole, the delete too. The final update reports the same refusal when there are no rows to insert.
+    const listId = sql<number>`(select id from playlists where id = ${row.playlist.id} and ${privateIfToken(actor)})`;
+    const rows = items.map((i, position) => ({ playlistId: listId, position, ...i }));
     const inserts = [];
     for (let at = 0; at < rows.length; at += ROWS_PER_INSERT) inserts.push(db.insert(playlistItems).values(rows.slice(at, at + ROWS_PER_INSERT)));
-    // One transaction: a failure leaves the old list.
-    await db.batch([
-      db.delete(playlistItems).where(eq(playlistItems.playlistId, row.playlist.id)),
-      ...inserts,
-      db.update(playlists).set({ updatedAt: Date.now() }).where(eq(playlists.id, row.playlist.id)),
-    ]);
+    const touch = db.update(playlists).set({ updatedAt: Date.now() }).where(and(eq(playlists.id, row.playlist.id), privateIfToken(actor))).returning({ id: playlists.id });
+    let touched: { id: number }[];
+    try {
+      const results = await db.batch([
+        db.delete(playlistItems).where(and(eq(playlistItems.playlistId, row.playlist.id), sql`exists (select 1 from playlists where id = ${row.playlist.id} and ${privateIfToken(actor)})`)),
+        // One transaction: a failure leaves the old list.
+        ...inserts,
+        touch,
+      ]);
+      touched = results.at(-1) as { id: number }[];
+    } catch (err) {
+      if (/NOT NULL constraint failed/i.test(`${err} ${(err as { cause?: unknown })?.cause}`)) throw visibleRefusal();
+      throw err;
+    }
+    if (!touched.length) throw visibleRefusal();
     return c.json(await playlistView(db, (await loadPlaylist(db, row.playlist.id))!, actor));
   });
 }

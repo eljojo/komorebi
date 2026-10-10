@@ -5,7 +5,7 @@ import looks from './fixtures/looks.json';
 import { LIMITS } from '../src/config';
 import { presets } from '../src/db/schema';
 import { LOOK_NAMES } from '../src/generated/engine';
-import { PARAMS, asSession, call, db, fillPresets, fillVersions, get, makePreset, makeToken, makeUser, presetCount, storedParams } from './helpers';
+import { PARAMS, asSession, call, db, fillPresets, fillVersions, get, intercepting, makePreset, makeToken, makeUser, presetCount, request, storedParams } from './helpers';
 
 async function owner(scope: 'read' | 'write' = 'write') {
   const user = await makeUser('owner');
@@ -569,6 +569,22 @@ describe('GET /api/presets/:id/versions', () => {
       via: 'token:test laptop',
       created_at: expect.any(Number),
     });
+  });
+
+  // A history is a list of names and dates; the params of every version are never needed to draw it.
+  it.each([
+    ['the API list', (id: number, token: string) => request('GET', `/api/presets/${id}/versions`, { token })],
+    ['the history page', (id: number, token: string) => request('GET', `/p/${id}/history`, { token })],
+  ])('reads no params for %s', async (_what, req) => {
+    const o = await owner();
+    const p = await makePreset(o.user, o.token);
+    await call('POST', `/api/presets/${p.id}/versions`, { token: o.token, json: { name: 'two' } });
+    const seen: string[] = [];
+    const res = await intercepting((sql) => void seen.push(sql))(req(p.id, o.token));
+    expect(res.status).toBe(200);
+    const versionReads = seen.filter((sql) => /from "preset_versions"/.test(sql));
+    expect(versionReads.length).toBeGreaterThan(0);
+    for (const sql of versionReads) expect(sql).not.toMatch(/"params"/);
   });
 
   it.each(['0', '3', 'x', '1.5'])('is 404 for version %s', async (n) => {

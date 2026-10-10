@@ -22,6 +22,13 @@ const EDITOR_ROUTES: [string, RegExp][] = [
   ['GET', /^\/api\/playlists(\/[^/]+)?$/],
 ];
 
+const HARDENING_HEADERS = {
+  'Content-Security-Policy': "frame-ancestors 'none'",
+  'X-Frame-Options': 'DENY',
+  'X-Content-Type-Options': 'nosniff',
+  'Cache-Control': 'no-store',
+};
+
 // `resolvers` is how a caller is recognised, in order: a bearer token wins over the session cookie.
 export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) {
   const app = new Hono<AppEnv>();
@@ -31,13 +38,22 @@ export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) 
     await next();
   });
 
+  // Everything the Worker answers: no framing (a same-site sibling could otherwise steer a signed-in person's
+  // clicks on publish, archive or revoke), no sniffing, and nothing cached, since pages, the export and a freshly
+  // minted token are private. Static assets never reach the Worker, so this does not slow them.
+  app.use('*', async (c, next) => {
+    await next();
+    for (const [name, value] of Object.entries(HARDENING_HEADERS)) c.res.headers.set(name, value);
+  });
+
   // Credentialed CORS goes only to the routes the editor uses (spec §8). Everywhere else a script running on the
   // editor's origin gets no answer it may read, so it cannot mint a token, publish a look or read the export.
-  // A preflight names the method it is for, so that decides which route it is asking about.
+  // A preflight names the method it is for, so that decides which route it is asking about. It advertises only the
+  // methods this path grants the editor, because the browser caches every method a preflight lists.
   const editorCors = cors({
     origin: (origin) => (CORS_ORIGINS.includes(origin) ? origin : null),
     credentials: true,
-    allowMethods: ['GET', 'POST'],
+    allowMethods: (_origin, c) => EDITOR_ROUTES.filter(([, path]) => path.test(c.req.path)).map(([m]) => m),
     allowHeaders: ['Content-Type', 'Authorization'],
   });
   app.use('/api/*', (c, next) => {

@@ -6,6 +6,9 @@ import { check, index, integer, primaryKey, real, sqliteTable, text, unique } fr
 export const users = sqliteTable('users', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   username: text('username').notNull().unique(),
+  // The WebAuthn user handle (base64url of opaque random bytes), the same for every passkey of the account. Set at
+  // sign-up; the migration that added it gave existing users one. Never derived from anything about the person.
+  webauthnUserId: text('webauthn_user_id').unique(),
   createdAt: integer('created_at').notNull(),
 });
 
@@ -134,6 +137,8 @@ export const challenges = sqliteTable(
     // Null for sign-up and login, where nobody is known yet.
     userId: integer('user_id').references(() => users.id),
     pendingUsername: text('pending_username'),
+    // Sign-up only: the user handle sent in the options, kept until the account exists to hold it.
+    pendingUserHandle: text('pending_user_handle'),
     expiresAt: integer('expires_at').notNull(),
   },
   (t) => [

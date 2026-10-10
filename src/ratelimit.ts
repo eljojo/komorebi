@@ -1,5 +1,5 @@
 // Per-IP limits over a rolling hour (spec §5). Old rows are pruned as they are read.
-import { and, count, eq, gt, lt } from 'drizzle-orm';
+import { and, count, eq, gt, lt, sql } from 'drizzle-orm';
 import type { Ctx } from './auth';
 import type { Db } from './db/client';
 import { rateEvents } from './db/schema';
@@ -29,7 +29,32 @@ export async function assertUnder(db: Db, ip: string, action: string, max: numbe
     .select({ n: count() })
     .from(rateEvents)
     .where(and(eq(rateEvents.ip, ip), eq(rateEvents.action, action), gt(rateEvents.at, now - WINDOW_MS)));
-  if (n >= max) throw new ApiError(429, `too many ${limit.replace(/([A-Z])/g, ' $1').toLowerCase()} from this address; try again later`, { limit });
+  if (n >= max) throw tooMany(limit);
 }
 
 export const recordEvent = (db: Db, ip: string, action: string) => db.insert(rateEvents).values({ ip, action, at: Date.now() });
+
+// `assertUnder` reads a count and `recordEvent` writes later, so a burst of parallel requests can all pass the
+// read. This is the event as a value that refuses itself: the time while the window has room, NULL once it is
+// full. `at` is NOT NULL, so the insert fails when the limit is already reached, and a batch carrying it is
+// rolled back whole. The count and the insert are one statement, which D1 runs atomically.
+export function eventWithin(ip: string, action: string, max: number) {
+  const now = Date.now();
+  return sql<number>`(select ${now} where (select count(*) from rate_events where ip = ${ip} and action = ${action} and at > ${now - WINDOW_MS}) < ${max})`;
+}
+
+export const eventFull = (err: unknown) => /NOT NULL constraint failed: rate_events\.at/i.test(`${err} ${(err as { cause?: unknown })?.cause}`);
+
+export const tooMany = (limit: string) =>
+  new ApiError(429, `too many ${limit.replace(/([A-Z])/g, ' $1').toLowerCase()} from this address; try again later`, { limit });
+
+// Records one event only while the limit has room; over it, the 429 the limit names.
+export async function reserve(db: Db, ip: string, action: string, max: number, limit: string) {
+  await db.delete(rateEvents).where(lt(rateEvents.at, Date.now() - WINDOW_MS));
+  try {
+    await db.insert(rateEvents).values({ ip, action, at: eventWithin(ip, action, max) });
+  } catch (err) {
+    if (eventFull(err)) throw tooMany(limit);
+    throw err;
+  }
+}

@@ -1,5 +1,6 @@
 import { env, exports } from 'cloudflare:workers';
 import { drizzle } from 'drizzle-orm/d1';
+import { createApp } from '../src/index';
 import { and, eq } from 'drizzle-orm';
 import { SESSION_MS } from '../src/config';
 import { presetVersions, presets, sessions, users } from '../src/db/schema';
@@ -63,13 +64,15 @@ export const PARAMS = { tree_count: 3, eclipse: false, tree_species: 'oak' };
 // and drops what it deletes, as a browser would.
 let ipSeq = 0;
 export class Browser {
+  // How a request reaches the app; a test swaps it for `racing(...)` to interleave a write between two statements.
+  fetcher: (req: Request) => Promise<Response> = (req) => exports.default.fetch(req);
   jar = new Map<string, string>();
   ip = `10.${(++ipSeq >> 16) & 255}.${(ipSeq >> 8) & 255}.${ipSeq & 255}`;
 
   async call(method: string, path: string, opts: CallOpts = {}): Promise<Reply> {
     const headers: Record<string, string> = { 'CF-Connecting-IP': this.ip, ...opts.headers };
     if (this.jar.size) headers.Cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
-    const res = await exports.default.fetch(request(method, path, { ...opts, headers }));
+    const res = await this.fetcher(request(method, path, { ...opts, headers }));
     for (const line of res.headers.getSetCookie()) {
       const [pair, ...attrs] = line.split(';').map((p) => p.trim());
       const [name, ...value] = pair.split('=');
@@ -161,4 +164,45 @@ export async function makePlaylist(token: string, opts: { visibility?: 'public' 
   }
   if (opts.visibility) await env.DB.prepare('UPDATE playlists SET visibility = ? WHERE id = ?').bind(opts.visibility, r.json.id).run();
   return r.json as { id: number; share_token: string };
+}
+
+// Reaches the app through a D1 binding that reports every statement to `after` once it has run, and waits for
+// whatever `after` does before the handler goes on. It wraps the binding only; the app code does not know.
+export function intercepting(after: (sql: string) => Promise<unknown> | void): (req: Request) => Promise<Response> {
+  const wrap = (stmt: any, sql: string): any =>
+    new Proxy(stmt, {
+      get(target, prop) {
+        if (prop === '__real') return target;
+        if (prop === 'bind') return (...args: unknown[]) => wrap(target.bind(...args), sql);
+        if (['all', 'first', 'run', 'raw'].includes(prop as string)) {
+          return async (...args: unknown[]) => {
+            const result = await target[prop](...args);
+            await after(sql);
+            return result;
+          };
+        }
+        const value = target[prop];
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  const DB = new Proxy(env.DB as any, {
+    get(target, prop) {
+      if (prop === 'prepare') return (sql: string) => wrap(target.prepare(sql), sql);
+      if (prop === 'batch') return (stmts: any[]) => target.batch(stmts.map((s) => s.__real ?? s));
+      const value = target[prop];
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return (req) => Promise.resolve(createApp().fetch(req, { ...env, DB }));
+}
+
+// A deterministic race: once the first statement matching `when` has run, `then` runs (typically another request
+// that changes what the handler already read), and only then does the handler go on. Later statements are untouched.
+export function racing(when: RegExp, then: () => Promise<unknown>): (req: Request) => Promise<Response> {
+  let fired = false;
+  return intercepting(async (sql) => {
+    if (fired || !when.test(sql)) return;
+    fired = true;
+    await then();
+  });
 }

@@ -1,7 +1,7 @@
 // The inline playlist player (spec §6): one canvas that steps through the visible items in order, looping.
 import { loadEngine } from './engine.js';
 import { fullscreenOnDoubleClick } from './fullscreen.js';
-import { arrive, playable } from './queue.js';
+import { arrive, holdFor, playable } from './queue.js';
 
 const canvas = document.getElementById('player');
 
@@ -21,23 +21,23 @@ async function mount() {
 
     const mark = () => rows.forEach((row, i) => (i === at ? row.setAttribute('aria-current', 'true') : row.removeAttribute('aria-current')));
 
-    // The transition into an item takes that item's crossfade; it holds for its own dwell before the next step.
+    // The transition into an item takes that item's crossfade; its dwell starts once that has finished.
     const step = (to) => {
       const arrival = arrive(items, to);
       at = arrival.at;
       engine.transitionTo(items[at].params, { duration: arrival.duration });
       mark();
-      schedule();
+      schedule(true);
     };
-    const schedule = () => {
+    const schedule = (fadesIn) => {
       clearTimeout(timer);
-      if (items.length > 1) timer = setTimeout(() => step(at + 1), items[at].dwell_s * 1000);
+      if (items.length > 1) timer = setTimeout(() => step(at + 1), holdFor(items[at], fadesIn) * 1000);
     };
 
     document.getElementById('prev').addEventListener('click', () => step(at - 1));
     document.getElementById('next').addEventListener('click', () => step(at + 1));
     mark();
-    schedule();
+    schedule(false);
   } catch {
     // No WebGL2 (spec §7), or nothing to play: the page stays a plain list.
     canvas.closest('figure').remove();

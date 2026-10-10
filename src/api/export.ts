@@ -6,7 +6,8 @@ import { playlistItems, playlists, presetVersions, presets } from '../db/schema'
 import { ENGINE_COMMIT } from '../generated/engine';
 import { versionView } from './presets';
 
-// Your backup: everything the actor's user owns, archived presets and private ones included.
+// Your backup: everything the actor's user owns, archived presets and private ones included. A version's
+// `params` is the parsed object; `params_text` is the exact text that was stored (spec §2.3), which is what a restore would use.
 export function registerExport(app: Hono<AppEnv>) {
   secured(app, 'GET', '/api/export', 'read', async (c, actor) => {
     const db = connect(c.env.DB);
@@ -38,7 +39,7 @@ export function registerExport(app: Hono<AppEnv>) {
         archived_at: p.archivedAt,
         created_at: p.createdAt,
         updated_at: p.updatedAt,
-        versions: versions.filter((v) => v.version.presetId === p.id).map((v) => versionView(v.version)),
+        versions: versions.filter((v) => v.version.presetId === p.id).map((v) => ({ ...versionView(v.version), params_text: v.version.params })),
       })),
       playlists: lists.map((l) => ({
         id: l.id,

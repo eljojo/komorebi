@@ -30,4 +30,25 @@ describe('double-click to fullscreen (José, 2026-10-09)', () => {
     listeners.dblclick();
     expect(calls).toEqual(['request']);
   });
+
+  it('stays inline, without throwing, when the method is missing', () => {
+    expect(() => toggleFullscreen({ fullscreenElement: null }, {})).not.toThrow();
+    expect(() => toggleFullscreen({ fullscreenElement: {} }, {})).not.toThrow();
+  });
+
+  it('swallows a rejected request, so nothing is left unhandled', async () => {
+    const unhandled: unknown[] = [];
+    const seen = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', seen);
+    try {
+      const el = { requestFullscreen: () => Promise.reject(new Error('denied')) };
+      const doc = { fullscreenElement: {}, exitFullscreen: () => Promise.reject(new Error('denied')) };
+      toggleFullscreen({ fullscreenElement: null }, el);
+      toggleFullscreen(doc, el);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      process.off('unhandledRejection', seen);
+    }
+    expect(unhandled).toEqual([]);
+  });
 });

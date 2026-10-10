@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ENGINE_COMMIT } from '../src/generated/engine';
-import { PARAMS, call, get, makePlaylist, makePreset, makeToken, makeUser } from './helpers';
+import { PARAMS, call, get, makePlaylist, makePreset, makeToken, makeUser, storedParams } from './helpers';
 
 describe('GET /api/export', () => {
   it('needs an actor, and a read token is enough', async () => {
@@ -49,5 +49,21 @@ describe('GET /api/export', () => {
     const r = await get('/api/export', await makeToken(mine));
     expect(r.json.presets).toEqual([]);
     expect(r.json.playlists).toEqual([]);
+  });
+
+  it('carries each version\'s params exactly as stored, byte for byte, beside the parsed object', async () => {
+    const u = await makeUser('export');
+    const token = await makeToken(u);
+    const oddly = '{ "tree_count": 1.0,\n\t"exposure":   1e0 , "eclipse" : false }';
+    const made = await call('POST', '/api/presets', { token, body: `{"name":"odd","params":${oddly}}` });
+    expect(made.status, made.text).toBe(201);
+    const second = await call('POST', `/api/presets/${made.json.id}/versions`, { token, body: '{"params":{"tree_count":  4}}' });
+    expect(second.status, second.text).toBe(201);
+
+    const versions = (await get('/api/export', token)).json.presets[0].versions;
+    expect(versions[0].params_text).toBe(oddly);
+    expect(versions[0].params_text).toBe(await storedParams(made.json.id, 1));
+    expect(versions[1].params_text).toBe('{"tree_count":  4}');
+    expect(versions[0].params).toEqual({ tree_count: 1, exposure: 1, eclipse: false });
   });
 });

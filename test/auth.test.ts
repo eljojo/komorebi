@@ -218,6 +218,23 @@ describe('CORS on /api/*', () => {
     expect((await preflight('/api/playlists', KOMOREBI, 'POST')).get('Access-Control-Allow-Origin')).toBeNull();
   });
 
+  // A preflight is cached by the browser for every method it lists, so it may list only what that path grants the
+  // editor: a GET preflight on /api/playlists must not leave a POST permitted for the cache's lifetime.
+  it.each([
+    ['/api/me', ['GET']],
+    ['/api/presets', ['GET', 'POST']],
+    ['/api/presets/1', ['GET']],
+    ['/api/presets/1/versions', ['GET', 'POST']],
+    ['/api/presets/1/versions/2', ['GET']],
+    ['/api/playlists', ['GET']],
+    ['/api/playlists/1', ['GET']],
+  ])('advertises on %s only %j', async (path, methods) => {
+    for (const asked of methods) {
+      const h = await preflight(path, KOMOREBI, asked);
+      expect(h.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim()).sort()).toEqual(methods);
+    }
+  });
+
   it('answers a request from elsewhere with no allow-origin, even on an editor route', async () => {
     expect((await actual('GET', '/api/me', 'https://evil.example')).get('Access-Control-Allow-Origin')).toBeNull();
   });

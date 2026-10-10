@@ -22,6 +22,20 @@
       "when": 1791597152741,
       "tag": "0002_bizarre_jamie_braddock",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791599750898,
+      "tag": "0003_safe_greymalkin",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791599753873,
+      "tag": "0004_backfill_webauthn_user_id",
+      "breakpoints": true
     }
   ]
 }

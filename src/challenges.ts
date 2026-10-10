@@ -12,10 +12,10 @@ import { randomBase64Url } from './random';
 
 type Purpose = typeof challenges.$inferSelect.purpose;
 
-export async function issueChallenge(c: Ctx, db: Db, row: { challenge: string; purpose: Purpose; userId?: number; pendingUsername?: string }) {
+export async function issueChallenge(c: Ctx, db: Db, row: { challenge: string; purpose: Purpose; userId?: number; pendingUsername?: string; pendingUserHandle?: string }) {
   await db.delete(challenges).where(lt(challenges.expiresAt, Date.now()));
   const id = randomBase64Url(24);
-  await db.insert(challenges).values({ id, userId: null, pendingUsername: null, ...row, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+  await db.insert(challenges).values({ id, userId: null, pendingUsername: null, pendingUserHandle: null, ...row, expiresAt: Date.now() + CHALLENGE_TTL_MS });
   setCookie(c, 'challenge', id, { prefix: 'host', httpOnly: true, secure: true, path: '/', sameSite: 'Lax', maxAge: CHALLENGE_TTL_MS / 1000 });
 }
 

@@ -7,6 +7,7 @@ import { LIMITS, RESERVED_USERNAMES, SESSION_MS } from '../src/config';
 import { challenges, credentials, rateEvents, sessions, users } from '../src/db/schema';
 import { ipKey } from '../src/ratelimit';
 import { sha256Hex } from '../src/tokens';
+import backfill from '../migrations/0004_backfill_webauthn_user_id.sql?raw';
 import { Authenticator } from './authenticator';
 import { Browser, call, db, makeToken, makeUser } from './helpers';
 
@@ -752,7 +753,8 @@ describe('per-IP limits', () => {
     const b = new Browser();
     const options = await b.call('POST', '/api/auth/login-options');
     await b.call('POST', '/api/auth/login', { json: { credential: await a.get(options.json, 'wrong') } });
-    expect((await db.select().from(rateEvents).where(eq(rateEvents.ip, b.ip))).map((e) => e.action)).toEqual(['failed-login']);
+    // login-options also counts, as the ceremony it started.
+    expect((await db.select().from(rateEvents).where(eq(rateEvents.ip, b.ip))).map((e) => e.action).sort()).toEqual(['ceremony', 'failed-login']);
   });
 });
 
@@ -782,5 +784,49 @@ describe('ipKey: what a rate limit counts by', () => {
 
   it('leaves what is not an address (no header) alone', () => {
     expect(ipKey('unknown')).toBe('unknown');
+  });
+});
+
+describe('one WebAuthn user handle per account', () => {
+  it('stores the handle from the registration options on the user at sign-up', async () => {
+    const b = new Browser();
+    const username = newName();
+    const options = await b.call('POST', '/api/auth/register-options', { json: { username } });
+    await b.call('POST', '/api/auth/register', { json: { credential: await new Authenticator().create(options.json) } });
+    expect((await userNamed(username)).webauthnUserId).toBe(options.json.user.id);
+  });
+
+  it('is opaque and random: different for each account, and not made from the username', async () => {
+    const handles = new Set<string>();
+    for (let i = 0; i < 3; i++) {
+      const options = await new Browser().call('POST', '/api/auth/register-options', { json: { username: newName() } });
+      expect(options.json.user.id).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]{43,}$/));
+      handles.add(options.json.user.id);
+    }
+    expect(handles.size).toBe(3);
+  });
+
+  it('is reused for every passkey added later', async () => {
+    const b = new Browser();
+    const username = newName();
+    const options = await b.call('POST', '/api/auth/register-options', { json: { username } });
+    await b.call('POST', '/api/auth/register', { json: { credential: await new Authenticator().create(options.json) } });
+
+    const first = await b.call('POST', '/api/auth/add-passkey-options');
+    const second = await b.call('POST', '/api/auth/add-passkey-options');
+    expect(first.json.user.id).toBe(options.json.user.id);
+    expect(second.json.user.id).toBe(options.json.user.id);
+    expect((await userNamed(username)).webauthnUserId).toBe(options.json.user.id);
+  });
+
+  it('is given to accounts that existed before, by the migration, without touching one that has it', async () => {
+    const old = await Promise.all([1, 2, 3].map(() => db.insert(users).values({ username: newName(), createdAt: 1 }).returning().then((r) => r[0])));
+    const [kept] = await db.insert(users).values({ username: newName(), createdAt: 1, webauthnUserId: 'already-has-one' }).returning();
+    for (const sql of backfill.split('--> statement-breakpoint').map((q) => q.replace(/^--.*$/gm, '').replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean)) await env.DB.exec(sql);
+
+    const after = await Promise.all(old.map((u) => userNamed(u.username)));
+    for (const u of after) expect(u.webauthnUserId).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]{43,}$/));
+    expect(new Set(after.map((u) => u.webauthnUserId)).size).toBe(3);
+    expect((await userNamed(kept.username)).webauthnUserId).toBe('already-has-one');
   });
 });

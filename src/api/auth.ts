@@ -13,11 +13,13 @@ import type { Hono } from 'hono';
 import { type AppEnv, type Ctx, secured } from '../auth';
 import { LIMITS } from '../config';
 import { type Db, connect } from '../db/client';
-import { credentials, sessions, users } from '../db/schema';
+import { credentials, rateEvents, sessions, users } from '../db/schema';
 import { issueChallenge, takeChallenge } from '../challenges';
 import { ApiError } from '../errors';
-import { assertUnder, clientIp, recordEvent } from '../ratelimit';
+import { assertUnder, clientIp, eventFull, eventWithin, reserve, tooMany } from '../ratelimit';
 import { SESSION_COOKIE, endSession, openSession, setSessionCookie } from '../session';
+import { sha256Hex } from '../tokens';
+import { randomBase64Url } from '../random';
 import { freeUsername } from '../usernames';
 import { readJsonBody } from './util';
 
@@ -38,6 +40,8 @@ const TRANSPORTS = ['usb', 'nfc', 'ble', 'internal', 'hybrid', 'smart-card', 'ca
 const MAX_CREDENTIAL_ID_BYTES = 1023;
 
 const isUnique = (err: unknown) => /UNIQUE/i.test(`${err} ${(err as { cause?: unknown })?.cause}`);
+// A subselect that found nothing: the row it was meant to read (a credential, a session) is gone.
+const isMissing = (err: unknown) => /NOT NULL constraint failed/i.test(`${err} ${(err as { cause?: unknown })?.cause}`);
 
 // A passkey that checks out, as the row we store.
 async function verifiedPasskey(c: Ctx, response: any, expectedChallenge: string) {
@@ -70,23 +74,31 @@ export const credentialUsed = (db: Db, id: string, counter: number) =>
   db.update(credentials).set({ counter: sql`max(counter, ${counter})`, lastUsedAt: Date.now() }).where(eq(credentials.id, id));
 
 async function failedLogin(db: Db, ip: string, message: string): Promise<never> {
-  await recordEvent(db, ip, 'failed-login');
+  await reserve(db, ip, 'failed-login', LIMITS.failedLoginsPerHour, 'failedLogins');
   throw new ApiError(401, message);
 }
+
+// Starting any ceremony counts against one per-address limit, taken before the options are made (spec §5).
+const startCeremony = (c: Ctx, db: Db) => reserve(db, clientIp(c), 'ceremony', LIMITS.ceremoniesPerHour, 'ceremonyStarts');
 
 export function registerAuth(app: Hono<AppEnv>) {
   secured(app, 'POST', '/api/auth/register-options', 'anonymous', async (c) => {
     const db = connect(c.env.DB);
     await assertUnder(db, clientIp(c), 'signup', LIMITS.signupsPerHour, 'signups');
     const username = await freeUsername(db, (await readJsonBody(c)).body.username);
+    await startCeremony(c, db);
+    // One opaque handle per account (WebAuthn user handle), random and unrelated to the person; it is kept with
+    // the challenge until the account exists to hold it.
+    const handle = randomBase64Url(32);
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
       rpID: c.env.RP_ID,
       userName: username,
+      userID: isoBase64URL.toBuffer(handle),
       attestationType: 'none',
       authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
     });
-    await issueChallenge(c, db, { challenge: options.challenge, purpose: 'register', pendingUsername: username });
+    await issueChallenge(c, db, { challenge: options.challenge, purpose: 'register', pendingUsername: username, pendingUserHandle: handle });
     return c.json(options);
   });
 
@@ -99,17 +111,19 @@ export function registerAuth(app: Hono<AppEnv>) {
     const username = await freeUsername(db, challenge.pendingUsername);
     const credential = await verifiedPasskey(c, response, challenge.challenge);
 
-    // One transaction, so there is never a user without a passkey (or a passkey without a user).
+    // One transaction, so there is never a user without a passkey (or a passkey without a user). Its first
+    // statement is the sign-up's own rate event, which refuses itself over the limit and so aborts the rest.
     const userId = sql<number>`(select id from users where username = ${username})`;
     const session = await openSession(db, userId);
     try {
       await db.batch([
-        db.insert(users).values({ username, createdAt: Date.now() }),
+        db.insert(rateEvents).values({ ip, action: 'signup', at: eventWithin(ip, 'signup', LIMITS.signupsPerHour) }),
+        db.insert(users).values({ username, webauthnUserId: challenge.pendingUserHandle, createdAt: Date.now() }),
         db.insert(credentials).values(passkeyRow(userId, credential)),
         ...session.statements,
-        recordEvent(db, ip, 'signup'),
       ]);
     } catch (err) {
+      if (eventFull(err)) throw tooMany('signups');
       if (isUnique(err)) throw new ApiError(409, 'that username or passkey is already taken');
       throw err;
     }
@@ -120,6 +134,7 @@ export function registerAuth(app: Hono<AppEnv>) {
   secured(app, 'POST', '/api/auth/login-options', 'anonymous', async (c) => {
     const db = connect(c.env.DB);
     await assertUnder(db, clientIp(c), 'failed-login', LIMITS.failedLoginsPerHour, 'failedLogins');
+    await startCeremony(c, db);
     // No allowCredentials: a discoverable credential names its own account, so nobody types a username.
     const options = await generateAuthenticationOptions({ rpID: c.env.RP_ID, userVerification: 'preferred' });
     await issueChallenge(c, db, { challenge: options.challenge, purpose: 'login' });
@@ -161,11 +176,19 @@ export function registerAuth(app: Hono<AppEnv>) {
       return failedLogin(db, ip, 'that passkey could not be verified');
     }
 
-    const session = await openSession(db, stored.cred.userId);
-    await db.batch([
-      credentialUsed(db, stored.cred.id, counter),
-      ...session.statements,
-    ]);
+    // The session's owner is read from the credential inside the batch: a passkey removed while this assertion was
+    // being verified leaves no row to read, the NOT NULL user_id refuses the insert, and the batch rolls back
+    // whole. Otherwise a removal (which ends every session) could be followed by a fresh 30-day one.
+    const session = await openSession(db, sql`(select user_id from credentials where id = ${stored.cred.id})`);
+    try {
+      await db.batch([
+        credentialUsed(db, stored.cred.id, counter),
+        ...session.statements,
+      ]);
+    } catch (err) {
+      if (isMissing(err)) return failedLogin(db, ip, 'that passkey is not recognised');
+      throw err;
+    }
     setSessionCookie(c, session.token);
     return c.json({ username: stored.username });
   });
@@ -203,11 +226,15 @@ export function registerAuth(app: Hono<AppEnv>) {
 
   secured(app, 'POST', '/api/auth/add-passkey-options', 'session', async (c, actor) => {
     const db = connect(c.env.DB);
+    await startCeremony(c, db);
     const existing = await db.select({ id: credentials.id }).from(credentials).where(eq(credentials.userId, actor.userId));
+    // Every passkey of an account carries the account's one user handle, or credential managers show two people.
+    const [{ handle }] = await db.select({ handle: users.webauthnUserId }).from(users).where(eq(users.id, actor.userId));
     const options = await generateRegistrationOptions({
       rpName: RP_NAME,
       rpID: c.env.RP_ID,
       userName: actor.username,
+      userID: isoBase64URL.toBuffer(handle!),
       attestationType: 'none',
       excludeCredentials: existing,
       authenticatorSelection: { residentKey: 'required', userVerification: 'preferred' },
@@ -222,10 +249,15 @@ export function registerAuth(app: Hono<AppEnv>) {
     const challenge = await takeChallenge(c, db, 'add-passkey');
     if (challenge.userId !== actor.userId) throw new ApiError(400, 'that sign-in step was started by someone else (challenge)');
     const credential = await verifiedPasskey(c, response, challenge.challenge);
+    // The owner is read from the session that authorised this enrollment, at commit. Removing a passkey ends
+    // every session, so an enrollment still pending then finds no session, the NOT NULL user_id refuses the
+    // insert, and nothing is added.
+    const owner = sql<number>`(select user_id from sessions where token_hash = ${await sha256Hex(getCookie(c, SESSION_COOKIE, 'host')!)} and expires_at > ${Date.now()})`;
     try {
-      await db.insert(credentials).values(passkeyRow(actor.userId, credential));
+      await db.insert(credentials).values(passkeyRow(owner, credential));
     } catch (err) {
       if (isUnique(err)) throw new ApiError(409, 'that passkey is already registered');
+      if (isMissing(err)) throw new ApiError(401, 'your session ended before the passkey was added; sign in again');
       throw err;
     }
     return c.json({ id: credential.id }, 201);

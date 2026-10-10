@@ -118,7 +118,11 @@ export function registerPresetPages(app: Hono<AppEnv>) {
     if (!row) return notFound(c, viewer);
     const { preset, head } = row;
     const k = shareKey(row);
-    const versions = await connect(c.env.DB).select().from(presetVersions).where(eq(presetVersions.presetId, preset.id)).orderBy(desc(presetVersions.n));
+    const versions = await connect(c.env.DB)
+      .select({ n: presetVersions.n, name: presetVersions.name, via: presetVersions.via, createdAt: presetVersions.createdAt })
+      .from(presetVersions)
+      .where(eq(presetVersions.presetId, preset.id))
+      .orderBy(desc(presetVersions.n));
     return c.html(
       <Layout title={`history of ${head.name}`} viewer={viewer}>
         <h1>{head.name}</h1>
