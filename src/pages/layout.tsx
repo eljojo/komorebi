@@ -35,7 +35,6 @@ export function Layout(props: { title: string; viewer: Actor | null; scripts?: s
               ) : (
                 <>
                   <a href="/login">sign in</a>
-                  <a href="/signup">sign up</a>
                 </>
               )}
             </nav>

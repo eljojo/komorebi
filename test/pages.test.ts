@@ -20,23 +20,30 @@ describe('the front pages', () => {
     expect(r.status).toBe(200);
     html(r);
     expect(r.text).toContain('href="/login"');
-    expect(r.text).toContain('href="/signup"');
+    expect(r.text).not.toContain('href="/signup"');
     expect(r.text).not.toContain('a quiet afternoon');
   });
 
-  it('/signup says plainly that there is no recovery', async () => {
-    const r = await get('/signup');
-    expect(r.status).toBe(200);
-    expect(r.text).toMatch(/no recovery/i);
-    expect(r.text).toMatch(/every passkey/i);
-    expect(r.text).toContain('name="username"');
-  });
-
-  it('/login is one passkey button and no username field', async () => {
+  // José, 2026-10-09: sign-in and sign-up are one page.
+  it('/login is one page: the passkey sign-in button, and sign-up with a username below it', async () => {
     const r = await get('/login');
     expect(r.status).toBe(200);
     expect(r.text).toContain('id="login"');
-    expect(r.text).not.toContain('name="username"');
+    expect(r.text).toContain('id="signup"');
+    expect(r.text).toContain('name="username"');
+    expect(r.text.indexOf('id="login"')).toBeLessThan(r.text.indexOf('id="signup"'));
+    expect(r.text).toContain('src="/js/login.js"');
+    expect(r.text).toContain('src="/js/signup.js"');
+  });
+
+  it('/login says plainly that there is no recovery', async () => {
+    const r = await get('/login');
+    expect(r.text).toMatch(/no recovery/i);
+    expect(r.text).toMatch(/every passkey/i);
+  });
+
+  it('there is no separate /signup page', async () => {
+    expect((await get('/signup')).status).toBe(404);
   });
 
   it('the nav shows who is signed in, and a way in when nobody is', async () => {
@@ -612,7 +619,7 @@ describe('/new and /settings', () => {
 describe('the vendored passkey library', () => {
   it('is named for the version package.json installs, and the ceremony pages load it', async () => {
     expect(WEBAUTHN_BROWSER).toBe(`/vendor/simplewebauthn-browser-${webauthn.version}.umd.min.js`);
-    for (const path of ['/signup', '/login']) expect((await get(path)).text).toContain(`src="${WEBAUTHN_BROWSER}"`);
+    for (const path of ['/login']) expect((await get(path)).text).toContain(`src="${WEBAUTHN_BROWSER}"`);
     const o = await owner();
     expect((await asSession(o.user, 'GET', '/settings')).text).toContain(`src="${WEBAUTHN_BROWSER}"`);
   });

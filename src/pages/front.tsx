@@ -38,18 +38,25 @@ export function registerFrontPages(app: Hono<AppEnv>) {
         <p>Find the right look or playlist here, then open it in komorebi and let it be.</p>
         {viewer ? null : (
           <p>
-            <a href="/login">Sign in</a> or <a href="/signup">sign up</a>.
+            <a href="/login">Sign in or sign up</a>.
           </p>
         )}
       </Layout>,
     );
   });
 
-  app.get('/signup', async (c) => {
+  // Sign-in and sign-up are one page (José, 2026-10-09). Sign-in comes first: it asks for nothing, and a
+  // passkey from 1Password or the system answers it.
+  app.get('/login', async (c) => {
     const viewer = await viewerOf(c);
     return c.html(
-      <Layout title="sign up" viewer={viewer} classic={[WEBAUTHN_BROWSER]} scripts={['/js/signup.js']}>
-        <h1>sign up</h1>
+      <Layout title="sign in" viewer={viewer} classic={[WEBAUTHN_BROWSER]} scripts={['/js/login.js', '/js/signup.js']}>
+        <h1>sign in</h1>
+        <p>
+          <button id="login" type="button">sign in with a passkey</button>
+        </p>
+        <p class="msg" role="status"></p>
+        <h2>new here?</h2>
         <p>Choose a username, then make a passkey. There is no email and no password.</p>
         <p>
           <strong>There is no recovery.</strong> If you lose every passkey, the account is gone. Add a second passkey in settings once you are in.
@@ -63,23 +70,6 @@ export function registerFrontPages(app: Hono<AppEnv>) {
           <p class="msg" role="status"></p>
         </form>
         <noscript><p>Passkeys need JavaScript.</p></noscript>
-      </Layout>,
-    );
-  });
-
-  app.get('/login', async (c) => {
-    const viewer = await viewerOf(c);
-    return c.html(
-      <Layout title="sign in" viewer={viewer} classic={[WEBAUTHN_BROWSER]} scripts={['/js/login.js']}>
-        <h1>sign in</h1>
-        <p>
-          <button id="login" type="button">sign in with a passkey</button>
-        </p>
-        <p class="msg" role="status"></p>
-        <noscript><p>Passkeys need JavaScript.</p></noscript>
-        <p>
-          New here? <a href="/signup">Sign up.</a>
-        </p>
       </Layout>,
     );
   });
