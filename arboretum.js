@@ -19,7 +19,7 @@
 import { api as makeApi } from "./arboretum-api.js";
 import { cameraFor, migrateLegacy } from "./komorebi.js";
 import { PRESETS } from "./presets.js";
-import { ARBORETUM, cachePlaylist, dequeue, detect, emptyMirror, enqueue, entryName, fromEntry, fromVersion, isFolder, itemsAfter, itemTarget, linkPlaylist, listChoices,
+import { ARBORETUM, cachePlaylist, dequeue, detect, editorWritable, emptyMirror, enqueue, entryName, fromEntry, fromVersion, isFolder, itemsAfter, itemTarget, linkPlaylist, listChoices,
   mirrorDiff, mirrorPlaylist, mirrorPut, mirrorSync, moveCandidates, movePlan, onDeleted, onSaved, onlineId, placeChange, playlistChips, savePlan, savePreset,
   starValue, uploadPlan, viewState } from "./playlists.js";
 
@@ -186,7 +186,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   // look selected and the mirror's copy of your playlists.
   function drawChips() {
     if (!on) return;
-    const mine = signedIn() ? getMirror().playlists.filter((p) => p.owner === me) : [];
+    const mine = signedIn() ? getMirror().playlists.filter((p) => p.owner === me && editorWritable(p)) : [];
     inRow.hidden = mine.length === 0;
     if (!mine.length) return;
     chips.replaceChildren(...playlistChips(view(), getStored(), host.active(), host.value(), mine).map((c) => {
@@ -355,7 +355,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   // An upload landed: the preset is filed in the mirror at once, and the folder it was saved into takes it (a new preset in the
   // place of the item or at the end; a new version, the playlist already pointing at the preset).
   async function landed(p, res) {
-    setMirror(mirrorPut(getMirror(), { id: res.id, version: res.version, owner: res.owner ?? me, name: p.body.name, params: p.body.params }));
+    setMirror(mirrorPut(getMirror(), { id: res.id, version: res.version, owner: res.owner ?? me, name: p.body.name, params: p.body.params, visibility: res.visibility ?? "private" }));
     if (!p.into) return;
     if (p.kind === "version") cacheView(await api.playlist(p.into.playlist));
     else await writeItems(p.into.playlist, placeChange(p.into, res.id));
@@ -443,7 +443,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     delete stored[name];
     setStored(stored);
     setState(onDeleted(getState(), name));
-    setMirror(mirrorPut(getMirror(), { id: res.id, version: res.version, owner: res.owner ?? me, name: p.body.name, params: p.body.params }));
+    setMirror(mirrorPut(getMirror(), { id: res.id, version: res.version, owner: res.owner ?? me, name: p.body.name, params: p.body.params, visibility: res.visibility ?? "private" }));
   }
 
   // A chip: the look joins the folder, or leaves it (the first item of that preset). Joining or leaving moves it out of or back into
@@ -463,7 +463,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
         if (p.refused) { say(p.refused); return; }
         res = await send(p);
         if (star?.kind === "local") adopt(star.name, p, res);
-        else setMirror(mirrorPut(getMirror(), { id: res.id, version: res.version, owner: res.owner ?? me, name: p.body.name, params: p.body.params }));
+        else setMirror(mirrorPut(getMirror(), { id: res.id, version: res.version, owner: res.owner ?? me, name: p.body.name, params: p.body.params, visibility: res.visibility ?? "private" }));
         preset = res.id;
       }
       await writeItems(pid, lit ? { kind: "remove_preset", preset_id: preset } : { kind: "append", preset_id: preset });

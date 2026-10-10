@@ -169,6 +169,8 @@ export function builtinTwin(params, builtins) {
 // ---- the cache of arboretum playlists (design §6.1). Every function below returns a new state. ----
 const withOrigin = (state, origin) => ({ ...state, origin });
 const withoutKey = (o, key) => Object.fromEntries(Object.entries(o).filter(([k]) => k !== key));
+const visibilityOf = (p) => p.visibility === undefined ? {} : { visibility: p.visibility };
+export const editorWritable = (p) => p.visibility === undefined || p.visibility === "private";
 
 // `params` are stored as received (migrateLegacy runs on resolve, never here). The owner's unavailable items
 // are not playable, so they leave the list and are counted on the playlist. The share token `k` comes from the
@@ -177,6 +179,8 @@ export function cachePlaylist(state, api) {
   const gone = api.items.filter((i) => i.unavailable).length;
   const entry = {
     id: api.id, name: api.name, owner: api.owner,
+    ...visibilityOf(api),
+    ...(api.revision === undefined ? {} : { revision: api.revision }),
     k: api.k ?? state.playlists[api.id]?.k ?? null,
     fetched_at: Date.now(),
     unavailable: api.unavailable ?? gone,
@@ -192,7 +196,7 @@ export function dropPlaylist(state, id) {
 
 // ---- bringing a look in from arboretum (design §5): no duplicates, and unsynced edits are never overwritten ----
 export function savePreset(state, stored, api) {
-  const record = { id: api.id, version: api.version, owner: api.owner, synced: true };
+  const record = { id: api.id, version: api.version, owner: api.owner, synced: true, ...visibilityOf(api) };
   const same = Object.keys(stored).filter((n) => state.origin[n]?.id === api.id);
   let name = same.find((n) => state.origin[n].synced);
   if (name === undefined) {
@@ -254,7 +258,7 @@ export function uploadPlan(state, stored, active, value, live, me, commit, cam) 
   // What the look is known to be on arboretum: a preset id and its owner, or the version it started from.
   const known = id === null
     ? state.origin[star ?? value]
-    : it && { id: it.preset_id, version: it.version, owner: it.owner };
+    : it && { id: it.preset_id, version: it.version, owner: it.owner, ...visibilityOf(it) };
   const out = planFrom(params, known, id === null ? (star ?? value) : (it?.name ?? ""), me, commit, cam);
   if (id !== null) out.into = it ? { playlist: Number(id), at: Number(value), target: itemTarget(cloudItems(state, active), Number(value)) } : { playlist: Number(id), at: null };
   return out;
@@ -262,10 +266,10 @@ export function uploadPlan(state, stored, active, value, live, me, commit, cam) 
 
 const refusedTwin = (twin) => `this is the built-in '${twin}', unchanged — change something first`;
 
-// The upload itself, from what the look is known to be: a new version of its preset when that is yours, else a new preset
+// The upload itself, from what the look is known to be: a new version of your private preset, else a new preset
 // with the version or look it started from as its parent.
 function planFrom(params, known, name, me, commit, cam) {
-  const out = known?.id !== undefined && known.owner === me
+  const out = known?.id !== undefined && known.owner === me && editorWritable(known)
     ? { kind: "version", path: `/api/presets/${known.id}/versions`, label: `↑ new version of #${known.id}`, body: { name, params } }
     : { kind: "preset", path: "/api/presets", label: "↑ new preset", body: { name, params } };
   if (commit) out.body.komorebi_commit = commit;
@@ -394,7 +398,7 @@ export function placeChange(into, preset_id) {
 // ---- the links (design §5) -------------------------------------------------------------------------------------
 // `GET /api/presets/:id/versions/:n` answers {preset_id, n, name, params, …}: no `id`, `owner` or `version`, which
 // savePreset reads off the head. The owner is not on a version at all, so it comes from the head fetched beside it.
-export const fromVersion = (v, head) => ({ ...v, id: v.preset_id, version: v.n, owner: head.owner });
+export const fromVersion = (v, head) => ({ ...v, id: v.preset_id, version: v.n, owner: head.owner, ...visibilityOf(head) });
 
 // A playlist link: the playlist is cached (with the link's share token, so an unlisted one can be fetched again) and
 // becomes the active one, on its first item. Nothing playable is a failure, and nothing is cached for it.
@@ -438,8 +442,8 @@ export function makePlayer({ timing, advance, onChange, setTimer = setTimeout, c
 export const emptyMirror = () => ({ v: 1, at: null, incomplete: false, order: [], presets: {}, playlists: [], queue: [] });
 
 const DWELL = { dwell_s: 30, crossfade_s: 5 };   // arboretum's defaults for an item that carries no times
-const own = (p) => ({ id: p.id, version: p.version, owner: p.owner, name: p.name, params: p.params });
-const itemOf = (p, extra) => ({ preset_id: p.id, version: p.version, owner: p.owner, name: p.name, ...DWELL, params: p.params, ...extra });
+const own = (p) => ({ id: p.id, version: p.version, owner: p.owner, name: p.name, params: p.params, ...visibilityOf(p) });
+const itemOf = (p, extra) => ({ preset_id: p.id, version: p.version, owner: p.owner, name: p.name, ...DWELL, params: p.params, ...visibilityOf(p), ...extra });
 const waitingItem = (q) => ({ name: q.body.name, ...DWELL, params: q.body.params, pending: true, seq: q.seq });   // no preset_id yet: it is not on arboretum
 
 // The saves that wait, split by what they do to the mirror: an update to a preset patches it wherever it is shown; a new one is an item of its own.
@@ -474,7 +478,7 @@ export function viewState(state, mirror, me) {
   const { patches, fresh } = waiting(mirror);
   const folders = {};
   for (const l of mirror.playlists) {
-    let items = l.items.map((it) => patchedItem(it, patches));
+    let items = l.items.map((it) => patchedItem({ ...it, ...visibilityOf(mirror.presets[it.preset_id] ?? it) }, patches));
     for (const q of fresh) {
       if (q.into?.playlist !== l.id) continue;
       const at = q.into.target ? targetAt(items, q.into.target) : q.into.at;
@@ -486,8 +490,8 @@ export function viewState(state, mirror, me) {
   return { ...state, me: { username: me }, playlists: { ...state.playlists, ...folders, unc } };
 }
 
-// Whether `active` is a folder: a playlist of yours, which a save can place a look in.
-export const isFolder = (view, active, me) => cloudId(active) !== null && cloudId(active) !== "unc" && !!me && view.playlists[cloudId(active)]?.owner === me;
+// Whether `active` is a private playlist of yours, which an editor save can place a look in.
+export const isFolder = (view, active, me) => cloudId(active) !== null && cloudId(active) !== "unc" && !!me && view.playlists[cloudId(active)]?.owner === me && editorWritable(view.playlists[cloudId(active)]);
 
 // The lists the playlist select offers. Signed out: all looks, then the playlists cached from links, as ever. Signed in:
 // uncategorized (hidden when empty and you have other folders — unless you are in it), your folders, other cached
@@ -506,11 +510,11 @@ export function listChoices(view, { me, stored, mirror, active = null }) {
 }
 
 // ---- keeping the mirror in step with arboretum ----
-// `summaries` is GET /api/presets?owner=me: id, version, name, owner — no params. Only the presets whose version moved are fetched.
+// `summaries` is GET /api/presets?owner=me: no params. Visibility can change without a new version, and affects where saves go.
 export function mirrorDiff(mirror, summaries) {
   const ids = new Set(summaries.map((s) => s.id));
   return {
-    fetch: summaries.filter((s) => mirror.presets[s.id]?.version !== s.version).map((s) => s.id),
+    fetch: summaries.filter((s) => mirror.presets[s.id]?.version !== s.version || mirror.presets[s.id]?.visibility !== s.visibility).map((s) => s.id),
     order: summaries.map((s) => s.id),
     gone: Object.keys(mirror.presets).map(Number).filter((id) => !ids.has(id)),
   };
@@ -573,7 +577,7 @@ export function savePlan(view, stored, active, value, live, me, commit, cam, nam
   if (twin !== null) return { refused: refusedTwin(twin) };
   const it = cloudId(active) === null ? undefined : cloudItem(view, active, value);
   const star = starName(stored, active, value);
-  const known = it ? { id: it.preset_id, version: it.version, owner: it.owner }
+  const known = it ? { id: it.preset_id, version: it.version, owner: it.owner, ...visibilityOf(it) }
     : star !== null ? view.origin[star]
     : isBuiltin(BUILTINS.PRESETS, value) ? { parent: `look:${value}` } : undefined;
   return { ...planFrom(live, known, name, me, commit, cam), target: "unc" };

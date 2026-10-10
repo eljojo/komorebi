@@ -255,6 +255,28 @@ test("a playlist revision conflict keeps the uploaded fork uncategorized and doe
   expect(s.elements.find((e) => e.className === "arb-status").textContent).toMatch(/playlist changed/);
 });
 
+test("editing your public playlist forks a visible preset privately without changing the published playlist", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const m = folderMirror([playlistItem(1)]);
+  m.presets[1] = { id: 1, version: 1, owner: "alice", name: "published", params: { exposure: 1 }, visibility: "public" };
+  m.playlists[0].visibility = "public";
+  setMirror(m);
+  let active = "local";
+  const writes = [], shown = [];
+  const s = await session(async (url, init) => {
+    if (url === "./commit.json") return new Response("{}", { status: 404 });
+    if (init.method !== "POST") throw new Error(`unexpected ${init.method} ${url}`);
+    writes.push({ url, body: JSON.parse(init.body) });
+    return json({ id: 3, version: 1, owner: "alice", visibility: "private" });
+  }, { active: () => active, value: () => "0", showCloud: (...args) => shown.push(args) });
+  active = "arb:7";
+  await s.a.saveCloud("private edit", { exposure: 99 });
+  expect(writes).toEqual([{ url: "https://arboretum.eljojo.net/api/presets", body: { name: "private edit", params: { exposure: 99 }, parent: "preset:1@1" } }]);
+  expect(getMirror().playlists[0].items).toEqual(m.playlists[0].items);
+  expect(getMirror().presets[3].visibility).toBe("private");
+  expect(shown).toEqual([["arb:unc", { id: 3 }]]);
+});
+
 test("a vanished playlist item cannot cause a write to another item", async () => {
   setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
   const one = playlistItem(1), two = playlistItem(2);

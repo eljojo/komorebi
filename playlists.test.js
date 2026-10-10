@@ -309,7 +309,7 @@ test("cachePlaylist keeps what playing and re-fetching need, and nothing else", 
   const before = Date.now();
   const s = cachePlaylist(EMPTY, apiList());
   expect(s.playlists[7]).toEqual({
-    id: 7, name: "mine", owner: "jo", k: null, fetched_at: expect.any(Number), unavailable: 0,
+    id: 7, name: "mine", owner: "jo", visibility: "private", k: null, fetched_at: expect.any(Number), unavailable: 0,
     items: [{ preset_id: 1, version: 2, owner: "jo", name: "one", dwell_s: 30, crossfade_s: 5, params: { exposure: 1 } }],
   });
   expect(s.playlists[7].fetched_at).toBeGreaterThanOrEqual(before);
@@ -892,6 +892,39 @@ const mirrorOf = (presets, lists = [], extra = {}) => {
   for (const l of lists) m.playlists.push({ id: l.id, name: l.name, owner: "jo", k: null, fetched_at: 1, unavailable: 0, items: l.ids.map((id) => ({ preset_id: id, version: 1, owner: "jo", name: m.presets[id]?.name ?? "?", dwell_s: 30, crossfade_s: 5, params: {} })) });
   return m;
 };
+
+for (const visibility of ["public", "unlisted"]) {
+  test(`saving your ${visibility} preset creates a private fork, including from a private folder or a local copy`, () => {
+    const p = preset(5, "shared", { visibility, version: 3 });
+    const m = mirrorOf([p], [{ id: 8, name: "private folder", ids: [5] }]);
+    m.playlists[0].visibility = "private";
+    const v = viewState(EMPTY, m, "jo");
+    const plan = savePlan(v, {}, "arb:8", "0", edited, "jo", null, cameraFor, "edited");
+    expect(plan).toMatchObject({ kind: "preset", path: "/api/presets", body: { parent: "preset:5@1" }, into: { playlist: 8, at: 0 } });
+    const saved = savePreset(EMPTY, {}, p);
+    expect(savePlan(saved.state, saved.stored, "local", saved.name, edited, "jo", null, cameraFor, "edited")).toMatchObject({ kind: "preset", body: { parent: "preset:5@3" } });
+    expect(fromVersion({ preset_id: 5, n: 2, params: {} }, p).visibility).toBe(visibility);
+  });
+
+  test(`saving from your ${visibility} playlist leaves it unchanged and targets uncategorized`, () => {
+    const m = mirrorOf([preset(5, "private", { visibility: "private" })], [{ id: 8, name: "shared folder", ids: [5] }]);
+    m.playlists[0].visibility = visibility;
+    const v = viewState(EMPTY, m, "jo");
+    expect(isFolder(v, "arb:8", "jo")).toBe(false);
+    const plan = savePlan(v, {}, "arb:8", "0", edited, "jo", null, cameraFor, "edited");
+    expect(plan).toMatchObject({ kind: "version", target: "unc" });
+    expect(plan.into).toBeUndefined();
+  });
+}
+
+test("the mirror refreshes visibility changes even when the version is unchanged", () => {
+  const m = mirrorPut(emptyMirror(), preset(5, "shared", { visibility: "private" }));
+  expect(m.presets[5].visibility).toBe("private");
+  expect(mirrorDiff(m, [preset(5, "shared", { visibility: "public" })]).fetch).toEqual([5]);
+  expect(mirrorDiff(m, [preset(5, "shared", { visibility: "private" })]).fetch).toEqual([]);
+  const state = cachePlaylist(EMPTY, { id: 8, owner: "jo", name: "shared", visibility: "public", revision: 4, items: [] });
+  expect(state.playlists[8]).toMatchObject({ visibility: "public", revision: 4 });
+});
 
 test("an empty mirror holds nothing, and says it was never refreshed", () => {
   expect(emptyMirror()).toEqual({ v: 1, at: null, incomplete: false, order: [], presets: {}, playlists: [], queue: [] });
