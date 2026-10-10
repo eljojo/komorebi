@@ -20,8 +20,28 @@
             exec node scripts/dev.mjs "$@"
           '';
         };
+        # The deploy, start to finish: install exactly the lockfile, typecheck and test, apply the D1 migrations
+        # to the live database, then let wrangler build and upload the Worker and public/. Any failing step stops
+        # it before anything reaches Cloudflare; the migration step asks before it touches the live database.
+        deploy = pkgs.writeShellApplication {
+          name = "arboretum-deploy";
+          runtimeInputs = with pkgs; [ nodejs_22 git ];
+          text = ''
+            cd "$(git rev-parse --show-toplevel)"
+            npm ci
+            npm run typecheck
+            npm test
+            npx wrangler d1 migrations apply komorebi-arboretum --remote
+            npx wrangler deploy
+          '';
+        };
       in
       {
+        apps.deploy = {
+          type = "app";
+          program = "${deploy}/bin/arboretum-deploy";
+        };
+
         apps.dev = {
           type = "app";
           program = "${dev}/bin/arboretum-dev";
