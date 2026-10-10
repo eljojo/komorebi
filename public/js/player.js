@@ -1,5 +1,6 @@
 // The inline playlist player (spec §6): one canvas that steps through the visible items in order, looping.
 import { loadEngine } from './engine.js';
+import { fullscreenOnDoubleClick } from './fullscreen.js';
 import { arrive, playable } from './queue.js';
 
 const canvas = document.getElementById('player');
@@ -14,6 +15,7 @@ async function mount() {
     if (!items.length) throw new Error('nothing to play');
 
     const engine = Komorebi.create(canvas, { params: items[0].params });
+    fullscreenOnDoubleClick(canvas);
     let at = 0;
     let timer;
 
