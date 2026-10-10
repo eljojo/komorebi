@@ -3,7 +3,7 @@
 // grown leaf of the grove against the sun with its areole maze at full resolution (leaf-maze.js does the physics; this draws it). Built on first show and
 // never otherwise, so nothing exists until `L`; imported by editor.js alone.
 //
-// draw() runs from eng.onFrame and does nothing unless a signature moved, because the work has three prices: (seed, shape, size, address) REGROWS the maze;
+// draw() runs from eng.onFrame and does nothing unless a signature moved, because the work has three prices: (seed, shape, unit — the size, and for an outline the aspect's area law too — address) REGROWS the maze;
 // wall_fraction re-rasterises the masks; the pigment only recolours. The first two are about 0.13 s in bun and never per frame — a signature that is still moving (a slider
 // drag, a canopy morph lerping leaf_size_m every tick) is DEFERRED, not dropped: the picture keeps the last leaf it made until the inputs have stood still for
 // SETTLE_MS, and then makes the one it was asked for. The recolour is cheap and follows the sliders live; the first draw after `L` has nothing to show and is at once.
@@ -42,6 +42,8 @@ function makeLeafPreview(params, hierOf){
   canvas.addEventListener('click', () => { big = !big; canvas.style.cursor = big ? 'zoom-out' : 'zoom-in'; });
 
   const spec = () => LEAF_SHAPES[params.leaf_shape] ?? MAPLE;
+  // the size the maze is grown at: an outline takes the look's leaf AREA, never its aspect (komorebi-grove.js), so its unit is leaf_size_m/√aspect (exactly leaf_size_m at aspect 1); the ellipse look has no outline, the inset grows the maple at the nominal size
+  const unitOf = () => LEAF_SHAPES[params.leaf_shape] ? params.leaf_size_m/Math.sqrt(params.leaf_aspect) : params.leaf_size_m;
   function show(on){
     shown = on;
     canvas.style.display = on ? 'block' : 'none';
@@ -67,13 +69,13 @@ function makeLeafPreview(params, hierOf){
     const now = performance.now(), css = sizeCss();
     if(css !== sigSize){ canvas.style.width = canvas.style.height = css; sigSize = css; sigPaint = ''; }
     const px = Math.max(64, Math.round(canvas.clientWidth*(window.devicePixelRatio || 1)));
-    const sg = `${params.seed}|${params.leaf_shape}|${params.leaf_size_m}|${j}|${k}`;
+    const unit = unitOf(), sg = `${params.seed}|${params.leaf_shape}|${unit}|${j}|${k}`;
     if(sg !== seenGrow){ seenGrow = sg; seenGrowAt = now; }
     let regrown = false;
     if(sg !== sigGrow && (!grown || now - seenGrowAt >= SETTLE_MS)){
-      made = { seed: params.seed, shape: params.leaf_shape, size: params.leaf_size_m, j, k };
-      grown = leafMaze(spec(), made.seed, made.j, made.k, made.size); sigGrow = sg; regrown = true;
-      canvas.dataset.grows = String(++grows); canvas.dataset.size = String(made.size); canvas.dataset.grammar = grown.blade.grammar;
+      made = { seed: params.seed, shape: params.leaf_shape, size: params.leaf_size_m, aspect: params.leaf_aspect, unit, j, k };
+      grown = leafMaze(spec(), made.seed, made.j, made.k, made.unit); sigGrow = sg; regrown = true;
+      canvas.dataset.grows = String(++grows); canvas.dataset.size = String(made.size); canvas.dataset.unit = String(made.unit); canvas.dataset.grammar = grown.blade.grammar;
     }
     if(params.wall_fraction !== seenRaster){ seenRaster = params.wall_fraction; seenRasterAt = now; }
     if(regrown || (params.wall_fraction !== sigRaster && (!raster || now - seenRasterAt >= SETTLE_MS))){   // a new maze has no raster to show: that one is at once, even at the same vein share (the old raster is the old leaf's maze)
@@ -98,7 +100,7 @@ function makeLeafPreview(params, hierOf){
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(buf, 0, 0, px, px);
     // overlays: 1 cm in the picture's own scale (the view spans 2·half units of the size it was grown at, /2), the address, and what the engine does NOT show
-    const unitPx = px/(2*raster.view.half), cmPx = 0.01/(made.size/2)*unitPx, u = px/420, pad = 10*u;
+    const unitPx = px/(2*raster.view.half), cmPx = 0.01/(made.unit/2)*unitPx, u = px/420, pad = 10*u;
     ctx.fillStyle = '#fff'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2*u; ctx.font = `${11*u}px ui-monospace,Menlo,monospace`;
     ctx.beginPath(); ctx.moveTo(pad, px - pad); ctx.lineTo(pad + cmPx, px - pad); ctx.stroke();
     ctx.fillText('1 cm', pad, px - pad - 5*u);
@@ -106,7 +108,9 @@ function makeLeafPreview(params, hierOf){
     const note = LEAF_SHAPES[made.shape] ? '' : '(the engine draws the ellipse) ';
     ctx.fillText(`${note}at the leaf's own clock: no exposure order`, pad, 30*u);
     // the grove gives each leaf 0.6-1.4x the look's leaf_size_m from its arrangement stream; replaying that stream here would couple the two, so the picture says what it is
-    ctx.fillText(`nominal ${(made.size*100).toFixed(1)} cm; the grove draws 0.6–1.4× of it`, pad, 44*u);
+    // an outline takes the look's leaf AREA, not its aspect (komorebi-grove.js): the maze is grown at the area-equivalent size, so when that is not the nominal one the line says both
+    const own = made.unit !== made.size ? ` (an outline at aspect ${made.aspect}: ${(made.unit*100).toFixed(1)} cm at its own width)` : '';
+    ctx.fillText(`nominal ${(made.size*100).toFixed(1)} cm${own}; the grove draws 0.6–1.4× of it`, pad, 44*u);
   }
   return { canvas, draw, show, step, get shown(){ return shown; } };
 }

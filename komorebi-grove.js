@@ -380,8 +380,10 @@ export function makeGrove(hub){
         if(z > zHigh) zHigh = z;
         const li = z === t.z ? t.layer : layerOf(z), data = layerData[li];   // a leaf at its twig's height is on its twig's layer; one on the wood is on the layer of its own height
         const size = params.leaf_size_m*(0.6+0.8*rng());
-        const A = size*0.5;                              // long half-axis
-        const B0 = size*0.5/params.leaf_aspect;          // face-on short half (shader foreshortens)
+        // An outline has its own width-to-length (komorebi-leaf.js), so the look's aspect is not its to squash: it takes the leaf AREA the ellipse would have, π·A·B0 = π·size²/(4·aspect), with A = B0 = size/(2√aspect) —
+        // the fullness stays where the look had it, and a maple at 1.75 is a smaller maple, never a thin one. At aspect 1 Math.sqrt(1) is exactly 1 and x/1 is x, so both are the old bits; the ellipse keeps its literal line.
+        const A  = shape ? size*0.5/Math.sqrt(params.leaf_aspect) : size*0.5;   // long half-axis
+        const B0 = shape ? A : size*0.5/params.leaf_aspect;                     // face-on short half (shader foreshortens)
         const restTilt = rng()*params.max_tilt*(Math.PI*0.5);
         let angle = rng()*Math.PI;
         if(shape && leafFlip(params.seed, j, k)) angle += Math.PI;   // an outline is not the same leaf a half turn on: half of them take the other half-plane (komorebi-leaf.js)

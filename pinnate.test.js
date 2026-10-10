@@ -440,7 +440,8 @@ test("leafMaze(beech, ...) is the grove's own beech at that address: its variant
 // A stub DOM is enough to run draw() (tree.test.js's rig): the canvas keeps its dataset, the clock is the test's.
 async function heldLeaf(params, hier) {
   const { makeLeafPreview } = await import("./leaf-preview.js");
-  const ctx = new Proxy({}, { get: (t, name) => (name in t ? t[name] : () => {}), set: (t, name, v) => { t[name] = v; return true; } });
+  const calls = [];   // every call the inset makes on its 2d context, [name, ...args]: the bar and the words are drawn there and nowhere else
+  const ctx = new Proxy({}, { get: (t, name) => (name in t ? t[name] : (...args) => { calls.push([name, ...args]); }), set: (t, name, v) => { t[name] = v; return true; } });
   const canvas = { style: {}, dataset: {}, width: 0, height: 0, clientWidth: 420, getContext: () => ctx, addEventListener() {}, after() {} };
   const saved = { document: globalThis.document, window: globalThis.window, ImageData: globalThis.ImageData }, now = performance.now;
   let t = 1000;
@@ -451,7 +452,7 @@ async function heldLeaf(params, hier) {
   globalThis.ImageData = class { constructor(data, w, h) { this.data = data; this.width = w; this.height = h; } };
   try {
     const preview = makeLeafPreview(params, () => hier);
-    return { preview, canvas, tick: (ms = 0) => { t += ms; preview.draw(); }, done: () => { performance.now = now; Object.assign(globalThis, saved); } };
+    return { preview, canvas, calls, tick: (ms = 0) => { t += ms; preview.draw(); }, done: () => { performance.now = now; Object.assign(globalThis, saved); } };
   } catch (e) { performance.now = now; Object.assign(globalThis, saved); throw e; }
 }
 test("the held leaf of a beech look grows pinnate, of a maple and of the ellipse look palmate, and follows a pick of the shape", async () => {
@@ -469,6 +470,60 @@ test("the held leaf of a beech look grows pinnate, of a maple and of the ellipse
     expect(H.canvas.dataset.grammar, "the ellipse look falls back to the maple's blade").toBe("palmate");
   } finally { H.done(); }
 }, 60000);
+
+// THE ASPECT LAW, held leaf's side (leaf-shape.test.js holds the grove's): an outline takes the look's leaf AREA, so the leaf the inset grows is the maple at leaf_size_m/√aspect — the unit the grove's
+// A = B0 = size/(2√aspect) puts it at — and not at the nominal size, which was the canopy's squashed leaf and the inset's whole one disagreeing. The ellipse look has no outline: the inset
+// grows the maple at the nominal size, as it always did, and its aspect is nothing to the picture.
+test("the held leaf follows the aspect law: a maple look grows its maze at leaf_size_m/√aspect (data-unit) while data-size stays the nominal size, an aspect move regrows it once, the ellipse look never", async () => {
+  const hier = { nClusterTotal: 4, nLeaf: 3, twigs: [{ tree: 0 }, { tree: 0 }, { tree: 0 }, { tree: 0 }] };
+  const params = { ...DEFAULTS, seed: 1234, phenology: 0.8, leaf_shape: "maple", leaf_size_m: 0.1, leaf_aspect: 1.75, wall_fraction: 0.2 };
+  const H = await heldLeaf(params, hier);
+  try {
+    H.preview.show(true); H.tick();
+    expect(H.canvas.dataset.unit, "the outline's unit: the area the ellipse would have").toBe(String(0.1 / Math.sqrt(1.75)));
+    expect(H.canvas.dataset.size, "the nominal size, which editor.mjs reads").toBe("0.1");
+    expect(H.canvas.dataset.grows).toBe("1");
+    params.leaf_aspect = 1; H.tick(10);
+    expect(H.canvas.dataset.grows, "deferred while the input moves").toBe("1");
+    H.tick(300);
+    expect(H.canvas.dataset.grows, "an aspect move regrows the maple's maze once").toBe("2");
+    expect(H.canvas.dataset.unit, "at aspect 1 the unit is the size, exactly").toBe(H.canvas.dataset.size);
+    expect(H.canvas.dataset.unit).toBe("0.1");
+    H.tick(1000);
+    expect(H.canvas.dataset.grows, "...and only once").toBe("2");
+    params.leaf_shape = "ellipse"; params.leaf_aspect = 1.75; H.tick(10); H.tick(300);
+    const grows = H.canvas.dataset.grows;
+    expect(H.canvas.dataset.unit, "the ellipse look: the maple at the nominal size, as ever").toBe("0.1");
+    params.leaf_aspect = 1.2; H.tick(10); H.tick(300);
+    expect(H.canvas.dataset.grows, "an ellipse look's aspect is nothing to the picture").toBe(grows);
+  } finally { H.done(); }
+}, 120000);
+
+// The overlays are the picture's scale and its words, which the dataset does not carry: the 1 cm bar is a centimetre of the leaf the maze was grown at (`unit`), so on the very same blade it is √aspect longer at aspect 1.75 than at 1,
+// and the nominal line names both sizes only when they differ.
+test("the held leaf's 1 cm bar is a centimetre of the size the maze was grown at, and its nominal line names both sizes when an outline's differs", async () => {
+  const hier = { nClusterTotal: 4, nLeaf: 3, twigs: [{ tree: 0 }, { tree: 0 }, { tree: 0 }, { tree: 0 }] };
+  const params = { ...DEFAULTS, seed: 1234, phenology: 0.8, leaf_shape: "maple", leaf_size_m: 0.1, leaf_aspect: 1.75, wall_fraction: 0.2 };
+  const H = await heldLeaf(params, hier);
+  const last = (name, pick = () => true) => { const c = H.calls.filter((x) => x[0] === name && pick(x)); expect(c.length, `the inset drew ${name}`).toBeGreaterThan(0); return c.at(-1); };
+  const bar = () => last("lineTo")[1] - last("moveTo")[1];
+  const nominal = () => last("fillText", (x) => /^nominal /.test(x[1]))[1];
+  const settle = () => { H.calls.length = 0; H.tick(10); H.tick(300); };
+  // the bar by hand: 1 cm over the unit's half (a unit is half the size), in the picture's pixels per unit — which the raster of the very blade the inset holds says
+  const barBy = (unit) => { const [, j, k] = H.canvas.dataset.label.match(/^leaf (\d+)·(\d+)/), g = MAZE.leafMaze(MAPLE, 1234, +j, +k, unit); return (0.01 / (unit / 2)) * (H.canvas.width / (2 * MAZE.rasterLeaf(g.blade, g.maze, 0.2, 64).view.half)); };
+  try {
+    H.preview.show(true); H.tick();
+    const own = bar();
+    expect(own, "at aspect 1.75 the bar is a centimetre of the leaf at leaf_size_m/√1.75").toBeCloseTo(barBy(0.1 / Math.sqrt(1.75)), 6);
+    expect(nominal()).toBe("nominal 10.0 cm (an outline at aspect 1.75: 7.6 cm at its own width); the grove draws 0.6–1.4× of it");
+    params.leaf_aspect = 1; settle();
+    expect(bar(), "at aspect 1 the bar is a centimetre of the leaf at leaf_size_m").toBeCloseTo(barBy(0.1), 6);
+    expect(own / bar(), "the same blade at a smaller unit: a centimetre is √1.75 longer").toBeCloseTo(Math.sqrt(1.75), 9);
+    expect(nominal(), "at aspect 1 the two sizes are one and the line names it once").toBe("nominal 10.0 cm; the grove draws 0.6–1.4× of it");
+    params.leaf_shape = "ellipse"; params.leaf_aspect = 1.75; settle();
+    expect(nominal(), "the ellipse look has no outline: the maple at the nominal size, and nothing to name").toBe("nominal 10.0 cm; the grove draws 0.6–1.4× of it");
+  } finally { H.done(); }
+}, 120000);
 
 // ---- the grove: nothing but the texture and the box -----------------------------------------------------------------------------------
 function groveRig(over) {

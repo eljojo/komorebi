@@ -405,6 +405,67 @@ test("the grove's variant is a function of the grove's seed: another seed hangs 
 });
 
 // ============================================================================
+// THE ASPECT LAW (leaf diversity, 2026-10-09). José: "last night i actually tried rendering maple and it looked so thin and weird". The hang loop divided every leaf's width by
+// leaf_aspect, an outline's included, so his ultraviolet maple (aspect 1.75) was squashed from W/L 1.27-1.71 to 0.73-0.98 (each over 1.75) — narrower than every one of his thirteen leaves — and the
+// editor's `leaf shape` select leaves the look's 1.75 in place. An outline has its own width-to-length; what the look's aspect means for it is the leaf's AREA: A = B0 = size/(2√aspect),
+// so π·A·B0 is the ellipse's π·size²/(4·aspect) and the canopy is as full as it was.
+// ============================================================================
+const ASPECT = 1.75;
+const lawBuffers = (faithful) => {
+  const map = groveRig({ ...MAPLE_LOOK, leaf_aspect: ASPECT }, faithful), ell = groveRig({ ...MAPLE_LOOK, leaf_shape: "ellipse", leaf_aspect: ASPECT }, faithful);
+  return faithful ? [[map.faithLeaves, ell.faithLeaves, 18]] : map.layers.map((L, l) => [L, ell.layers[l], 17]);
+};
+
+test("an outline takes the look's leaf AREA, never its aspect: A === B0 and A·B0 the ellipse's, in both buffers — and nothing else of a leaf moves but its half turn and its variant", () => {
+  let n = 0;
+  for (const faithful of [false, true]) for (const [M, E, stride] of lawBuffers(faithful)) {
+    expect(M.length).toBe(E.length);
+    for (let i = 0; i < M.length; i += stride) {
+      const tag = `${faithful ? "faithful" : "layer"} leaf at float ${i}`;
+      expect(M[i + 2], `${tag}: an outline is as wide as it is long`).toBe(M[i + 3]);
+      expect(Math.abs((M[i + 2] * M[i + 2]) / (E[i + 2] * E[i + 3]) - 1), `${tag}: the ellipse's area (float32 rounding only)`).toBeLessThan(2e-7);
+      for (let c = 0; c < stride; c++) if (c !== 2 && c !== 3 && c !== 4 && c !== 11) expect(Object.is(M[i + c], E[i + c]), `${tag} float ${c}`).toBe(true);
+      n++;
+    }
+  }
+  expect(n).toBeGreaterThan(1000);
+});
+
+test("the ellipse keeps its own line at the look's aspect: B0 is A/aspect, never A — the law is the outline's and nobody else's", () => {
+  for (const faithful of [false, true]) {
+    const ell = groveRig({ ...MAPLE_LOOK, leaf_shape: "ellipse", leaf_aspect: ASPECT }, faithful);
+    const bufs = faithful ? [[ell.faithLeaves, 18]] : ell.layers.map((L) => [L, 17]);
+    for (const [E, stride] of bufs) for (let i = 0; i < E.length; i += stride) {
+      expect(E[i + 3] / Math.fround(E[i + 2] / ASPECT) - 1, `${faithful ? "faithful" : "layer"} float ${i}`).toBeCloseTo(0, 6);
+      expect(E[i + 3]).toBeLessThan(E[i + 2]);
+    }
+  }
+});
+
+test("the litter follows by itself: a fallen outline lies at A === B0 and the ellipse's area, in doubles — it reads the record's (A, B0)", () => {
+  const over = { phenology: 0.9, leaf_drop: 1 }, map = groveRig({ ...MAPLE_LOOK, ...over, leaf_aspect: ASPECT }).litter, ell = groveRig({ ...MAPLE_LOOK, ...over, leaf_shape: "ellipse", leaf_aspect: ASPECT }).litter;
+  expect(map.length, "the same leaves fell").toBe(ell.length);
+  expect(map.length).toBeGreaterThan(100);
+  const at = new Map(ell.map((l) => [`${l.j}/${l.k}`, l]));
+  for (const l of map) {
+    const e = at.get(`${l.j}/${l.k}`);
+    expect(e, `leaf ${l.j}/${l.k} fell on both`).toBeDefined();
+    expect(l.size[0], `leaf ${l.j}/${l.k}`).toBe(l.size[1]);
+    expect(Math.abs((l.size[0] * l.size[1]) / (e.size[0] * e.size[1]) - 1), `leaf ${l.j}/${l.k}`).toBeLessThan(1e-15);
+  }
+});
+
+test("the faithful cast's pad still covers a leaf: the longest half-axis in the buffer is at most 0.7·leaf_size_m, at aspect 1 and at 1.75", () => {
+  for (const aspect of [1, ASPECT]) for (const faithful of [false, true]) {
+    const { faithLeaves } = groveRig({ ...MAPLE_LOOK, leaf_aspect: aspect }, faithful);
+    let top = 0;
+    for (let i = 0; i < faithLeaves.length; i += 18) top = Math.max(top, faithLeaves[i + 2], faithLeaves[i + 3]);
+    expect(top, `aspect ${aspect}`).toBeLessThanOrEqual(0.7 * MAPLE_LOOK.leaf_size_m * (1 + 1e-6));
+    expect(top).toBeGreaterThan(0.5 * MAPLE_LOOK.leaf_size_m);
+  }
+});
+
+// ============================================================================
 // THE SHADERS: the quad grows with the outline, and one snippet carries the edge law into the three programs that cut a leaf's mask. The strings are
 // the contract (the pixel harness holds the pixels): the ellipse's own line must survive in each, because the gate is a uniform branch and not a program.
 // ============================================================================

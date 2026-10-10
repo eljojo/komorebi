@@ -468,6 +468,11 @@ const INVARIANTS = [
   { name: "leaf_shape 'beech' changes the canopy (curtain)", preset: 'curtain 1', rebake: true, differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'beech' } },
   { name: "leaf_shape 'beech' lays another carpet (litter)", preset: 'afternoon 7', differ: true,
     a: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1, leaf_shape: 'beech' } },
+  // THE BEECH, AS IT HUNG (leaf diversity, 2026-10-09): pins, written down from the engine before the aspect law and before leaf_variety, which both promise the beech's frame does not move
+  // (the law because its look is at aspect 1, leaf_variety because it ships at 0): the layer bake, the faithful cast and the carpet, each taken as a whole frame.
+  { name: 'beech, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: 'cb958f0e' },
+  { name: 'beech, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: '5742e790' },
+  { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1 }, pin: '894c1749' },
   // AREA IS CONSERVED, so the canopy keeps its fullness: the profile is the unit circle's area, so a maple at aspect 1 and 1/√aspect of the size has the leaf the ellipse had (the species
   // bundle's 0.103 = 0.13/√1.6; memories and afternoon 7 sit at 0.1 and 1.75, so 0.0756). The mean level of the frame stays within 5%.
   { name: 'a maple of the same leaf area keeps the canopy as full (layer path: memories)', preset: 'memories', lit: [0.95, 1.05],
@@ -479,6 +484,20 @@ const INVARIANTS = [
     a: {}, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 } },
   { name: "leaf_shape 'beech' of the same leaf area keeps the canopy as full (layer path: afternoon 7)", preset: 'afternoon 7', lit: [0.95, 1.05],
     a: {}, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 } },
+  // THE ASPECT LAW (§4.5, leaf diversity): an outline takes the look's leaf AREA, never its aspect (A = B0 = size/(2√aspect)). It is not a knob, so there is no a/b to hold byte-identical: the proof is
+  // CONTINUITY — a maple at the look's 1.75 IS a maple at aspect 1 and leaf_size_m/√1.75 to a float's last bit (before the law it was a squashed leaf, far off) — and a differ row that the ellipse is still
+  // stretched (the law is the outline's alone). The faithful cast is not a row of these: its pad reads leaf_size_m, so the two frames would be framed differently.
+  { name: 'the aspect law: a maple at aspect 1.75 is a maple at 1 and leaf_size_m/√1.75 (layer: memories)', preset: 'memories', near: 2,
+    a: { leaf_shape: 'maple', leaf_aspect: 1.75 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75) } },
+  { name: 'the aspect law: a maple at aspect 1.75 is a maple at 1 and leaf_size_m/√1.75 (layer: afternoon 7)', preset: 'afternoon 7', near: 2,
+    a: { leaf_shape: 'maple', leaf_aspect: 1.75 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75) } },
+  { name: 'the aspect law: a beech at aspect 1.75 is a beech at 1 and leaf_size_m/√1.75 (layer: memories)', preset: 'memories', near: 2,
+    a: { leaf_shape: 'beech', leaf_aspect: 1.75 }, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75) } },
+  { name: "the aspect law is the outline's: an ellipse at 1.75 is still not one at 1 and leaf_size_m/√1.75 (memories)", preset: 'memories', differ: true,
+    a: { leaf_aspect: 1.75 }, b: { leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75) } },
+  // ...and the canopy is as full as the look had it: a maple at the look's own aspect (no hand-set 1, no hand-set size) holds its mean level, as the ellipse of the same leaf area did above
+  { name: "the aspect law keeps the canopy as full: a maple at the look's own 1.75 (layer: memories)", preset: 'memories', lit: [0.95, 1.05], a: {}, b: { leaf_shape: 'maple' } },
+  { name: "the aspect law keeps the canopy as full: a maple at the look's own 1.75 (layer: afternoon 7)", preset: 'afternoon 7', lit: [0.95, 1.05], a: {}, b: { leaf_shape: 'maple' } },
   // EDGE_AREA (§4.5, decision 33): the soft edge read as a mixture at d = 0 too. Off it is the depth-averaged slab the engine has always read — the literal else of the four
   // widened conditions — so naming it false is the frame before the knob existed, on every camera and path (the pins above are the same claim for the looks themselves)...
   { name: 'edge_area false == absent (layer path)', preset: 'memories', a: {}, b: { edge_area: false } },
