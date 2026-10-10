@@ -40,6 +40,9 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
 - Keys left out take komorebi's defaults when the look loads, so a partial object is a valid look.
 - An unknown key is refused with 422, naming it: `arboretum is pinned to komorebi <sha>; unknown keys: …`.
   A key newer than the pin can't be stored until arboretum's pin moves; don't rename or drop keys to get past it.
+- Komorebi's own built-in looks are not stored: a look that is an unchanged copy of one (the debug overlays,
+  `time_of_day` and `latitude` ignored, keys left out at their defaults) is refused with 422, reason `builtin`,
+  naming the look. Change something first.
 - Metadata: `name` (1–80 characters, required), `description` (at most 500), `tags` (from `projector`,
   `experimental`).
 

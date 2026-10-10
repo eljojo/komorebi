@@ -1,4 +1,5 @@
 // The upload guard (spec §5): what a preset may contain. Pure functions, no I/O.
+import { BUILTIN_LOOKS, DEFAULT_VALUES } from './generated/builtins';
 import { ANGLE_KEYS, ENGINE_COMMIT, INTEGER_KEYS, LEGACY_KEYS, PARAM_CHOICES, PARAM_RANGES, PARAM_TYPES } from './generated/engine';
 
 export const MAX_PARAMS_BYTES = 16384;
@@ -121,6 +122,31 @@ export function validateParams(params: unknown): { ok: true } | ParamsRefusal {
     };
   }
   return { ok: true };
+}
+
+// Like komorebi's migrateLegacy: an old spelling becomes its current key unless the current key is already there.
+function migrated(params: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...params };
+  for (const [old, current] of Object.entries(LEGACY_KEYS)) {
+    if (!Object.hasOwn(params, old)) continue;
+    if (!Object.hasOwn(out, current)) out[current] = params[old];
+    delete out[old];
+  }
+  return out;
+}
+
+// The debug overlays change what is drawn over the art, not the art; time_of_day and latitude are editor inputs
+// to the sun knobs, which are compared themselves. Neither makes a built-in look "modified".
+const NOT_THE_ART = ['show_source', 'show_layer', 'show_layer_index'];
+const COMPARED = Object.keys(DEFAULT_VALUES).filter((k) => !NOT_THE_ART.includes(k));
+
+const builtins = Object.entries(BUILTIN_LOOKS).map(([name, look]) => ({ name, look: { ...DEFAULT_VALUES, ...migrated(look) } }));
+
+// The name of the built-in look these params are an unchanged copy of, or null (design §3.8). Both sides are
+// compared as the engine would load them: legacy keys migrated, absent keys at their defaults, values with ===.
+export function builtinTwin(params: Record<string, unknown>): string | null {
+  const mine = { ...DEFAULT_VALUES, ...migrated(params) };
+  return builtins.find(({ look }) => COMPARED.every((k) => mine[k] === look[k]))?.name ?? null;
 }
 
 export type Meta = { name: string; description?: string; tags: string[] };

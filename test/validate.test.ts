@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import looks from './fixtures/looks.json';
 import { ANGLE_KEYS, ENGINE_COMMIT, LEGACY_KEYS, PARAM_CHOICES, PARAM_RANGES, PARAM_TYPES } from '../src/generated/engine';
-import { validateMeta, validateParams } from '../src/validate';
+import { DEFAULT_VALUES } from '../src/generated/builtins';
+import { builtinTwin, validateMeta, validateParams } from '../src/validate';
 
 const lookNames = Object.keys(looks) as (keyof typeof looks)[];
 const SHORT = ENGINE_COMMIT.slice(0, 7);
@@ -298,5 +299,64 @@ describe('validateMeta', () => {
 
   it('reports every problem at once', () => {
     expect(errors({ name: '', description: 'd'.repeat(501), tags: ['x'] })).toHaveLength(3);
+  });
+});
+
+describe('builtinTwin: an unchanged copy of a shipped look', () => {
+  const some = 'afternoon 7' as keyof typeof looks;
+  const look = looks[some] as Record<string, number | boolean | string>;
+  const DEBUG = ['show_source', 'show_layer', 'show_layer_index'];
+
+  it.each(lookNames)('names %s when it is sent as shipped', (name) => {
+    // Two shipped looks that differ only in a debug overlay would both match; the name must be one whose params are the same.
+    const twin = builtinTwin(looks[name]);
+    expect(twin).not.toBeNull();
+    expect(Object.keys(DEFAULT_VALUES).filter((k) => !DEBUG.includes(k) && (looks as any)[twin!][k] !== (looks as any)[name][k])).toEqual([]);
+  });
+
+  it('names the look itself when no other look shares its params', () => {
+    expect(builtinTwin(look)).toBe(some);
+  });
+
+  it('is null for a look with one knob moved a little', () => {
+    const moved = { ...look, cloud_thickness: (look.cloud_thickness as number) + 0.01 };
+    expect(validateParams(moved)).toEqual({ ok: true });
+    expect(builtinTwin(moved)).toBeNull();
+  });
+
+  it('is null for a look that is nothing like a built-in', () => {
+    expect(builtinTwin({ tree_count: 3 })).toBeNull();
+  });
+
+  it('still names the look when only a debug overlay is flipped', () => {
+    expect(builtinTwin({ ...look, show_source: !look.show_source, show_layer: true, show_layer_index: 3 })).toBe(some);
+  });
+
+  it('still names the look with time_of_day and latitude added', () => {
+    expect(builtinTwin({ ...look, time_of_day: 7.5, latitude: 45 })).toBe(some);
+  });
+
+  it('still names the look when keys equal to their defaults are left out', () => {
+    const partial = Object.fromEntries(Object.entries(look).filter(([k, v]) => DEFAULT_VALUES[k] !== v));
+    expect(Object.keys(partial).length).toBeLessThan(Object.keys(look).length);
+    expect(builtinTwin(partial)).toBe(some);
+  });
+
+  it('still names the look when a knob is under its legacy spelling', () => {
+    const [old, current] = Object.entries(LEGACY_KEYS)[0];
+    const { [current]: value, ...rest } = look;
+    expect(builtinTwin({ ...rest, [old]: value })).toBe(some);
+  });
+
+  it('lets a current key already present win over its legacy spelling, as migrateLegacy does', () => {
+    const [old, current] = Object.entries(LEGACY_KEYS)[0];
+    const stale = (look[current] as number) + 0.01;
+    expect(builtinTwin({ ...look, [old]: stale })).toBe(some);
+    const { [current]: _dropped, ...rest } = look;
+    expect(builtinTwin({ ...rest, [old]: stale })).toBeNull();
+  });
+
+  it('compares strictly: a number and its text are different', () => {
+    expect(builtinTwin({ ...look, tree_count: String(look.tree_count) })).toBeNull();
   });
 });

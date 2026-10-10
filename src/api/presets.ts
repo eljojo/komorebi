@@ -8,7 +8,7 @@ import { ApiError } from '../errors';
 import { LOOK_NAMES } from '../generated/engine';
 import { randomBase64Url } from '../random';
 import { duplicateKeys, rawMember } from '../rawjson';
-import { MAX_PARAMS_BYTES, validateMeta, validateParams } from '../validate';
+import { MAX_PARAMS_BYTES, builtinTwin, validateMeta, validateParams } from '../validate';
 import { canSee } from './access';
 import { assertNotPublishedFromEditor, isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
@@ -102,6 +102,9 @@ async function versionFields(c: Ctx, db: Db, actor: Actor, body: Record<string, 
   } else {
     params = head.params;
   }
+  // Komorebi already ships these; a copy would only be the same look under another name.
+  const twin = builtinTwin(JSON.parse(params));
+  if (twin !== null) throw new ApiError(422, `this is komorebi's built-in look "${twin}", unchanged; change something first`, { reason: 'builtin', keys: [] });
 
   let komorebiCommit = head?.komorebiCommit ?? null;
   if (has('komorebi_commit')) {

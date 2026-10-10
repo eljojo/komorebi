@@ -3,8 +3,9 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import looks from './fixtures/looks.json';
 import { LIMITS } from '../src/config';
-import { presets } from '../src/db/schema';
-import { LOOK_NAMES } from '../src/generated/engine';
+import { presetVersions, presets } from '../src/db/schema';
+import { LEGACY_KEYS, LOOK_NAMES } from '../src/generated/engine';
+import { DEFAULT_VALUES } from '../src/generated/builtins';
 import { PARAMS, asSession, call, db, fillPresets, fillVersions, get, intercepting, makePreset, makeToken, makeUser, presetCount, request, storedParams } from './helpers';
 
 async function owner(scope: 'read' | 'write' = 'write') {
@@ -96,13 +97,110 @@ describe('POST /api/presets', () => {
       expect(r.json.params).toEqual({ tree_count: 3, eclipse: false, tree_species: 'oak' });
     });
 
-    it.each(Object.entries(looks))('keeps the shipped look %s as sent', async (_name, look) => {
+    // A shipped look unchanged is refused (builtin looks, below), so each one is sent with one knob nudged.
+    it.each(Object.entries(looks))('keeps the shipped look %s, one knob changed, as sent', async (_name, shipped) => {
       const { token } = await owner();
+      const look = { ...shipped, cloud_thickness: shipped.cloud_thickness + 0.01 };
       const raw = JSON.stringify(look, null, 2);
       const r = await call('POST', '/api/presets', { token, body: `{"params":${raw},"name":"x"}` });
       expect(r.status, r.text).toBe(201);
       expect(await storedParams(r.json.id, 1)).toBe(raw);
       expect(r.json.params).toEqual(look);
+    });
+  });
+
+  describe('built-in looks are not stored unchanged', () => {
+    const shipped = looks['afternoon 7'] as Record<string, number | boolean | string>;
+    const refused = (r: { status: number; json: any }, name: string) => {
+      expect(r.status).toBe(422);
+      expect(r.json).toMatchObject({ reason: 'builtin', error: `this is komorebi's built-in look "${name}", unchanged; change something first` });
+    };
+    async function post(params: unknown, who?: { token: string }) {
+      const { token } = who ?? (await owner());
+      return call('POST', '/api/presets', { token, json: { name: 'mine', params } });
+    }
+
+    it.each(Object.keys(looks))('refuses %s as shipped, naming a look with the same params', async (name) => {
+      const r = await post(looks[name as keyof typeof looks]);
+      expect(r.status).toBe(422);
+      expect(r.json.reason).toBe('builtin');
+      const named = /built-in look "(.*)", unchanged/.exec(r.json.error)![1] as keyof typeof looks;
+      expect(Object.keys(DEFAULT_VALUES).filter((k) => !k.startsWith('show_') && (looks[named] as any)[k] !== (looks[name as keyof typeof looks] as any)[k])).toEqual([]);
+    });
+
+    it('names the look itself', async () => {
+      refused(await post(shipped), 'afternoon 7');
+    });
+
+    it('stores nothing when it refuses', async () => {
+      const o = await owner();
+      const before = await presetCount(o.user.id);
+      await post(shipped, o);
+      expect(await presetCount(o.user.id)).toBe(before);
+    });
+
+    it('accepts a built-in with one knob changed a little', async () => {
+      expect((await post({ ...shipped, cloud_thickness: (shipped.cloud_thickness as number) + 0.01 })).status).toBe(201);
+    });
+
+    it('still refuses it with only a debug overlay flipped', async () => {
+      refused(await post({ ...shipped, show_layer: true, show_layer_index: 2, show_source: false }), 'afternoon 7');
+    });
+
+    it('still refuses it with time_of_day and latitude added', async () => {
+      refused(await post({ ...shipped, time_of_day: 6.5, latitude: 45.4 }), 'afternoon 7');
+    });
+
+    it('still refuses it sent partially, with the keys equal to their defaults left out', async () => {
+      const partial = Object.fromEntries(Object.entries(shipped).filter(([k, v]) => DEFAULT_VALUES[k] !== v));
+      expect(Object.keys(partial).length).toBeLessThan(Object.keys(shipped).length);
+      refused(await post(partial), 'afternoon 7');
+    });
+
+    it('still refuses it under a legacy key spelling', async () => {
+      const [old, current] = Object.entries(LEGACY_KEYS)[0];
+      const { [current]: value, ...rest } = shipped;
+      refused(await post({ ...rest, [old]: value }), 'afternoon 7');
+    });
+
+    it('refuses through a session and from the editor too', async () => {
+      const user = await makeUser('person');
+      refused(await asSession(user, 'POST', '/api/presets', { json: { name: 'mine', params: shipped } }), 'afternoon 7');
+      const editor = await asSession(user, 'POST', '/api/presets', { headers: { Origin: 'https://komorebi.eljojo.net' }, json: { name: 'mine', params: shipped } });
+      refused(editor, 'afternoon 7');
+    });
+
+    async function seededHead(params: unknown) {
+      const o = await owner();
+      const p = await makePreset(o.user, o.token, { name: 'fine' });
+      const [{ id }] = await db.select({ id: presetVersions.id }).from(presetVersions).where(eq(presetVersions.presetId, p.id));
+      await db.update(presetVersions).set({ params: JSON.stringify(params) }).where(eq(presetVersions.id, id));
+      return { ...o, id: p.id };
+    }
+
+    it('lets a rename-only version of a preset whose head is fine through', async () => {
+      const o = await owner();
+      const p = await makePreset(o.user, o.token, { name: 'fine', params: { ...shipped, cloud_thickness: (shipped.cloud_thickness as number) + 0.01 } });
+      const r = await call('POST', `/api/presets/${p.id}/versions`, { token: o.token, json: { name: 'renamed' } });
+      expect(r.status).toBe(201);
+    });
+
+    it('refuses a version whose params turn it into a built-in, and appends nothing', async () => {
+      const o = await owner();
+      const p = await makePreset(o.user, o.token, { name: 'fine' });
+      refused(await call('POST', `/api/presets/${p.id}/versions`, { token: o.token, json: { params: shipped } }), 'afternoon 7');
+      expect((await get(`/api/presets/${p.id}/versions`, o.token)).json.versions).toHaveLength(1);
+    });
+
+    it('refuses a rename-only version whose carried-over head is a built-in', async () => {
+      const o = await seededHead(shipped);
+      refused(await call('POST', `/api/presets/${o.id}/versions`, { token: o.token, json: { name: 'renamed' } }), 'afternoon 7');
+    });
+
+    it('accepts a version that moves a built-in head off the built-in', async () => {
+      const o = await seededHead(shipped);
+      const r = await call('POST', `/api/presets/${o.id}/versions`, { token: o.token, json: { params: { ...shipped, cloud_thickness: (shipped.cloud_thickness as number) + 0.01 } } });
+      expect(r.status).toBe(201);
     });
   });
 
