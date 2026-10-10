@@ -27,3 +27,5 @@
 #aboutCol .feel:hover, #aboutCol .feel:focus-visible { color: #fff8e6; background: rgba(240,224,168,.11); border-color: rgba(240,224,168,.6);
   box-shadow: 0 0 34px rgba(240,224,168,.28); transform: translateY(-1px); }
 #aboutCol .feel:active { transform: translateY(0); }
+/* who made it: a quiet last line beneath "feel" */
+#aboutCol p.made { margin-top: 2.5em; font-size: clamp(13px,1.8vw,15px); font-style: italic; color: #9fb89f; }
