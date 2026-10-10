@@ -175,6 +175,13 @@
   #welcome .feel:hover { color: #fff8e6; background: rgba(240,224,168,.11); border-color: rgba(240,224,168,.6);
     box-shadow: 0 0 34px rgba(240,224,168,.28); transform: translateY(-1px); }   /* light blooming through */
   #welcome .feel:active { transform: translateY(0); }
+  /* two plain links beneath "feel": quiet, so "feel" stays the one primary action */
+  #welcome .more { display: flex; gap: .7em; align-items: baseline; margin-top: -4px;
+    font: italic 400 clamp(15px,2vw,16px)/1 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; letter-spacing: .015em; }
+  #welcome .more a { color: #9fb89f; text-decoration: none; transition: color .45s ease; }
+  #welcome .more a:hover, #welcome .more a:focus-visible { color: #f1e7cf; }
+  #welcome .more a[hidden] { display: none; }
+  #welcome .more #arbLink::after { content: "·"; margin-left: .7em; color: #9fb89f; }   /* the dot goes with the link it follows, so it hides with it */
   /* dev panel slides in from the left on first reveal; afterwards D just toggles it */
   #dev { transition: transform .6s cubic-bezier(.22,.61,.36,1); }
   #dev.offscreen { transform: translateX(-100%); }
@@ -200,6 +207,7 @@
     <h1>Komorebi<span class="jp">木漏れ日</span></h1>
     <p>Sunlight that leaks through the leaves of trees — and the soft, shifting dapples it scatters on the ground.</p>
     <button id="feel" class="feel" type="button">feel</button>
+    <div class="more"><a id="arbLink" href="/arboretum" hidden>arboretum</a><a href="about.html">about</a></div>
   </div>
 </div>
 

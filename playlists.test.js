@@ -22,7 +22,7 @@ const EMPTY = { v: 1, me: null, origin: {}, playlists: {} };
 
 // ---- detect: the one gate (design §1) --------------------------------------------
 
-const loc = (hostname, pathname, origin = `https://${hostname}`) => ({ hostname, pathname, origin });
+const loc = (hostname, pathname, origin = `https://${hostname}`) => ({ hostname, pathname, origin, protocol: origin.slice(0, origin.indexOf(":") + 1) });
 const fakeFetch = (answer) => {
   const calls = [];
   const f = async (url) => { calls.push(url); return answer; };
@@ -44,10 +44,30 @@ test("detect: a fork's host is null, with no request", async () => {
   expect(f.calls).toEqual([]);
 });
 
-test("detect: localhost outside /editor/ is null, with no request", async () => {
+test("detect: plain-http localhost outside /editor/ is null, with no request (komorebi's own dev server)", async () => {
   const f = fakeFetch(json(200, { ok: true, engine: "abc" }));
   expect(await detect(loc("localhost", "/", "http://localhost:8000"), f)).toBeNull();
   expect(await detect(loc("127.0.0.1", "/index.html", "http://127.0.0.1:8000"), f)).toBeNull();
+  expect(f.calls).toEqual([]);
+});
+
+test("detect: https localhost, at any path, is the page's own origin when /api/health says it is arboretum (its dev server serves the site at /)", async () => {
+  const f = fakeFetch(json(200, { ok: true, engine: "abc" }));
+  expect(await detect(loc("localhost", "/", "https://localhost:8787"), f)).toBe("https://localhost:8787");
+  expect(await detect(loc("127.0.0.1", "/index.html", "https://127.0.0.1:8787"), fakeFetch(json(200, { ok: true, engine: "abc" })))).toBe("https://127.0.0.1:8787");
+  expect(f.calls).toEqual(["https://localhost:8787/api/health"]);
+  expect(await detect(loc("localhost", "/", "https://localhost:8787"), fakeFetch(json(404, {})))).toBeNull();
+});
+
+test("detect: plain-http localhost under /editor/ is probed too (the editor smoke's door)", async () => {
+  const f = fakeFetch(json(200, { ok: true, engine: "abc" }));
+  expect(await detect(loc("127.0.0.1", "/editor/index.html", "http://127.0.0.1:4000"), f)).toBe("http://127.0.0.1:4000");
+  expect(f.calls).toEqual(["http://127.0.0.1:4000/api/health"]);
+});
+
+test("detect: a non-loopback host over https is null unless it is the production host, with no request", async () => {
+  const f = fakeFetch(json(200, { ok: true, engine: "abc" }));
+  expect(await detect(loc("example.org", "/", "https://example.org"), f)).toBeNull();
   expect(f.calls).toEqual([]);
 });
 

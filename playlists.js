@@ -7,14 +7,16 @@ import { DEFAULTS, migrateLegacy } from "./komorebi.js";
 import * as BUILTINS from "./presets.js";
 
 // ---- where arboretum is on (design §1). The only function here that may reach the network, and only on a
-// loopback host under /editor/, which is where arboretum's own dev server puts the editor. ----
+// loopback host that may be arboretum's own dev server: one served over https (that server serves this checkout at its root), or
+// one under /editor/ (the editor smoke's door, which serves over plain http). komorebi's own `nix run .#dev` (plain http, at /)
+// asks nothing. ----
 const PRODUCTION_HOST = "komorebi.eljojo.net";
 export const ARBORETUM = "https://komorebi.eljojo.net";
 
 export async function detect(location, fetchImpl) {
   if (location.hostname === PRODUCTION_HOST) return ARBORETUM;
   const loopback = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-  if (!loopback || !location.pathname.startsWith("/editor/")) return null;
+  if (!loopback || (location.protocol !== "https:" && !location.pathname.startsWith("/editor/"))) return null;
   try {
     const res = await fetchImpl(`${location.origin}/api/health`);
     if (!res.ok) return null;

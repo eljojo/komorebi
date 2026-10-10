@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Komorebi — about</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; background: #0a0d0a; }
+  /* the welcome's own look, faint behind the text exactly as `body.intro #gl` holds it */
+  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; opacity: .33; pointer-events: none; }
+  main { position: relative; z-index: 1; box-sizing: border-box; max-width: 36em; margin: 0 auto; padding: 14vh 24px 12vh;
+    text-align: center; display: flex; flex-direction: column; align-items: center; gap: 26px;
+    animation: about-in 1.4s ease both; }
+  @keyframes about-in { from { opacity: 0; } to { opacity: 1; } }
+  h1 { margin: 0; font: 300 clamp(42px, 9vw, 78px)/1 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    letter-spacing: .03em; color: #f2f6ee; text-shadow: 0 2px 30px rgba(0,0,0,.5); }
+  h1 .jp { display: block; margin-top: .38em; font-size: .3em; letter-spacing: .5em;
+    color: #9fb89f; font-weight: 400; text-indent: .5em; }
+  h2 { margin: 18px 0 -8px; font: italic 400 clamp(16px,2.2vw,19px)/1.3 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    letter-spacing: .02em; color: #9fb89f; }
+  p, blockquote { margin: 0; max-width: 30em; color: #cedcc5; text-shadow: 0 1px 16px rgba(0,0,0,.55);
+    font: 400 clamp(15px,2.2vw,19px)/1.65 ui-serif,Georgia,"Times New Roman",serif; }
+  blockquote { font-style: italic; color: #e3ecda; }
+  p a { color: #9fb89f; text-decoration: underline; text-underline-offset: .2em; text-decoration-color: rgba(159,184,159,.4);
+    transition: color .45s ease, text-decoration-color .45s ease; }
+  p a:hover, p a:focus-visible { color: #f1e7cf; text-decoration-color: rgba(241,231,207,.5); }
+  p a[hidden], p[hidden], h2[hidden] { display: none; }
+  /* "feel", as the welcome has it */
+  .feel { margin-top: 18px; cursor: pointer; color: #f1e7cf; text-decoration: none;
+    font: italic 400 clamp(19px,2.7vw,23px)/1 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    letter-spacing: .015em; padding: 10px 32px; border-radius: 40px;
+    background: rgba(240,224,168,.05); border: 1px solid rgba(232,217,168,.30);
+    box-shadow: 0 0 0 rgba(240,224,168,0);
+    transition: color .45s ease, background .45s ease, border-color .45s ease, box-shadow .55s ease, transform .35s ease; }
+  .feel:hover, .feel:focus-visible { color: #fff8e6; background: rgba(240,224,168,.11); border-color: rgba(240,224,168,.6);
+    box-shadow: 0 0 34px rgba(240,224,168,.28); transform: translateY(-1px); }
+  .feel:active { transform: translateY(0); }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<main>
+  <h1>Komorebi<span class="jp">木漏れ日</span></h1>
+  <p>Sunlight that leaks through the leaves of trees — and the soft, shifting dapples it scatters on the ground.</p>
+  <blockquote>Komorebi recreates the feeling you get when sitting under a tree, feeling the shadows, the inner calm. The world organized chaotically scrambles as the wind blows, and then peacefully goes back into its proper arrangement, the way nature wants it to be</blockquote>
+
+  <h2>How it’s made</h2>
+  <p>Most of the bright shapes on the ground are not the shapes of the gaps between the leaves: each small gap in the canopy acts as a pinhole, so every dapple is an image of the sun. The sun is about half a degree wide, which is why those images are soft; komorebi scatters many small suns across it, lets each one cast a sharp shadow, and sums them. The leaves are really where they are, held in a few layers at different depths. Wind moves the trunk, limbs and twigs as damped springs, so a gust slides the whole pattern sideways and, when it dies, everything returns to where it started.</p>
+
+  <h2>On your own page</h2>
+  <p>The engine is a standalone WebGL2 script that you put on your own server and point at a canvas. The <a href="examples/">examples</a> show a page background, a panel, and the ES-module route.</p>
+
+  <h2 id="arbHead" hidden>Arboretum</h2>
+  <p id="arbText" hidden>Looks are kept in <a href="/arboretum">arboretum</a>, grouped into playlists and shared.</p>
+
+  <a class="feel" href="./">feel</a>
+</main>
+
+<script type="module">
+  // The same route as examples/module.html: the engine's ES modules, served as they are.
+  import { create } from './komorebi.js';
+  import { PRESETS } from './presets.js';
+  import { detect } from './playlists.js';
+
+  try {
+    const eng = create(document.getElementById('gl'), { params: PRESETS['afternoon 6'] });   // the look the welcome shows behind its intro
+    document.addEventListener('visibilitychange', () => eng.setPaused(document.hidden));
+  } catch (e) { /* no WebGL2 / float targets: the page keeps its dark ground */ }
+
+  // arboretum is mentioned only where it is served (detect answers its origin), as on the welcome
+  detect(location, fetch).catch(() => null).then((origin) => {
+    if (origin) for (const id of ['arbHead', 'arbText']) document.getElementById(id).hidden = false;
+  });
+</script>
+</body>
+</html>

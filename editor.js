@@ -1641,6 +1641,7 @@ const arbHost = {
   advancedShown: () => !dev.classList.contains('hidden'),
 };
 arb = mount(arbHost);
+arb.ready.then((origin)=>{ if(origin) document.getElementById('arbLink').hidden=false; });   // the welcome's "arboretum" link shows only where arboretum is served
 syncPlaylistUI();
 // A link is opened as soon as arboretum is up; `linkReady` is what the welcome gate waits on (null without a link).
 const linkReady = link ? arb.open(link) : null;

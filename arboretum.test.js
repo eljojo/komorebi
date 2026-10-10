@@ -69,9 +69,14 @@ async function session(fetchImpl, extra = {}) {
   let synced;
   const h = { ...host, rows: { save: element(), tools: element() }, sync: () => synced?.(), ...extra };
   const a = mount(h, { loc: at("komorebi.eljojo.net"), fetchImpl });
-  await a.ready;
-  return { a, elements, opened, start: () => new Promise((resolve) => { synced = resolve; a.advanced(); }), focus: () => events.focus() };
+  const origin = await a.ready;
+  return { a, origin, elements, opened, start: () => new Promise((resolve) => { synced = resolve; a.advanced(); }), focus: () => events.focus() };
 }
+
+test("ready resolves to the origin detect named, which the page reads to show its arboretum links", async () => {
+  const s = await session(async () => { throw new TypeError("Failed to fetch"); });
+  expect(s.origin).toBe("https://komorebi.eljojo.net");
+});
 
 test("a different account cannot upload the previous account's waiting saves", async () => {
   setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
@@ -377,7 +382,7 @@ function welcomeGate(hash, opened) {
     applyParams: (p) => loaded.push(p), resolveEntry: (value) => ({ value }), getPreset: () => ({}), DEFAULT_PRESET: "default",
     settings: {}, saveSettings() {}, landing: () => "default", showHint: (s) => hints.push(s),
     endTween() {}, refreshPresetSelect() {}, syncAllControls() {}, slideInPanel() {}, stripWake() {}, player: { start() {} },
-    parseHash, mount: () => ({ open: () => opened }), params: {}, presetRows: {}, activeList: () => "local",
+    parseHash, mount: () => ({ open: () => opened, ready: Promise.resolve(null) }), params: {}, presetRows: {}, activeList: () => "local",
     presetSel: { value: "" }, resumeAt() {}, setActive() {}, showCloud() {}, saveStar() {}, dev: { classList: { contains: () => true } }, syncPlaylistUI() {},
   };
   const source = readFileSync("editor.js", "utf8");

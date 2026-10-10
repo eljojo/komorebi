@@ -31,7 +31,7 @@ const { chromium } = require('playwright');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css' };
 function serveRoot() {
   const server = createServer(async (req, res) => {
-    // arboretum's dev server serves the editor under /editor/ (editor-integration-design §1.1); the same files answer there
+    // arboretum's dev server serves the site at its root; under /editor/ the same files answer here, over plain http, which is how the smoke reaches the session tier
     const path = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/editor\//, '/');
     const file = join(ROOT, normalize(path === '/' ? '/index.html' : path).replace(/^(\.\.[/\\])+/, ''));
     if (file !== ROOT && !file.startsWith(`${ROOT}/`)) { res.writeHead(403).end(); return; }
@@ -96,6 +96,9 @@ try {
   await page.waitForTimeout(300);
   const introClean = await page.evaluate(() => ['dev', 'play', 'strip'].every((id) => getComputedStyle(document.getElementById(id)).display === 'none'));
   check('intro hides every surface (D key included)', introClean);
+  // the welcome's quiet row: "about" is always there, "arboretum" only where arboretum is served (not here, at /index.html)
+  check('at /index.html the welcome shows the about link and hides the arboretum link',
+    await page.isVisible('#welcome .more a[href="about.html"]') && !(await page.isVisible('#arbLink')));
   await page.click('#feel');
   await page.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });   // arrive() waits out the full welcome crossfade (slower under SwiftShader)
   check('boot lands in zen everywhere', true);
@@ -838,6 +841,9 @@ try {
     try { on = await (await page3.waitForFunction(() => document.body.dataset.arboretum || null)).jsonValue(); } catch { /* reported below */ }
     check('under /editor/ with /api/health answering, the gate opens on the page\'s own origin', on === `http://127.0.0.1:${port}`, String(on));
     check('and it asked /api/health once', asked.filter((p) => p === '/api/health').length === 1, asked.filter((p) => /api|arboretum/.test(p)).join());
+    let arbShown = false;
+    try { await page3.waitForSelector('#arbLink', { state: 'visible', timeout: 5000 }); arbShown = true; } catch { /* reported below */ }
+    check('and the welcome\'s arboretum link shows, to /arboretum, beside about', arbShown && await page3.$eval('#arbLink', (a) => a.getAttribute('href')) === '/arboretum' && await page3.isVisible('#welcome .more a[href="about.html"]'));
     await ctx3.close();
   }
 
