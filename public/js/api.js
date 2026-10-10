@@ -2,15 +2,23 @@
 // else (spec §3.2), so even a write with nothing to say sends `{}`.
 export async function send(method, path, body) {
   const write = method !== 'GET';
-  const res = await fetch(path, {
-    method,
-    headers: write ? { 'Content-Type': 'application/json' } : {},
-    body: write ? (typeof body === 'string' ? body : JSON.stringify(body ?? {})) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: write ? { 'Content-Type': 'application/json' } : {},
+      body: write ? (typeof body === 'string' ? body : JSON.stringify(body ?? {})) : undefined,
+    });
+  } catch {
+    return { ok: false, status: 0, data: { error: 'arboretum unreachable; check before retrying a save' } };
+  }
   let data = {};
   try {
     data = await res.json();
-  } catch {}
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) throw new Error('not an API object');
+  } catch {
+    return { ok: false, status: res.status, data: { error: res.ok ? 'the reply could not be read; check before retrying a save' : `something went wrong (${res.status})` } };
+  }
   return { ok: res.ok, status: res.status, data };
 }
 
