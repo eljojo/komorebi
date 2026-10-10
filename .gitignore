@@ -1,0 +1,6 @@
+# Plans, specs, scratch and review renders: local only, never committed and never deployed.
+# The Worker deploys only its bundled code and the static assets directory, which artifacts/ is not part of.
+artifacts/
+node_modules/
+.wrangler/
+.dev.vars*
