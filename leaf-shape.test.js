@@ -22,6 +22,8 @@ test("leaf_shape ships 'ellipse' and is a TOPO key: a different outline is a dif
 });
 
 // ---- the measure: Fable's, from the round-11 script (smooth ±3 samples; maxima over ±10, merged inside 12; lobes are the maxima in |θ| < 125°) -----
+// RECALIBRATED 2026-10-09 against José's thirteen maples (DSC_0617–0622, DSCF1667 ×3, DSC_0656 ×5), which this same measure reads as THREE main lobes and, in a few, a small basal one on each side: so the
+// lobes are found by the central one (within 10° of the axis) and the two that flank it, and nothing below counts on five.
 function measure(r) {
   const sm = new Float64Array(N);
   for (let i = 0; i < N; i++) { let s = 0; for (let d = -3; d <= 3; d++) s += r[(i + d + N) % N]; sm[i] = s / 7; }
@@ -41,9 +43,27 @@ function measure(r) {
     for (let i = lobes[k]; i <= lobes[k + 1]; i++) mn = Math.min(mn, sm[i]);
     sinus.push(1 - mn / Math.min(lobeR[k], lobeR[k + 1]));
   }
-  const asym = Math.max(Math.abs(lobeR[0] - lobeR[4]) / ((lobeR[0] + lobeR[4]) / 2), Math.abs(lobeR[1] - lobeR[3]) / ((lobeR[1] + lobeR[3]) / 2));
-  return { sm, lobes, lobeR, sinus, asym };
+  const c = lobes.findIndex((i) => Math.abs(th(i)) < 10 * DEG), flanked = c > 0 && c < lobes.length - 1;
+  const asym = flanked ? Math.abs(lobeR[c - 1] - lobeR[c + 1]) / ((lobeR[c - 1] + lobeR[c + 1]) / 2) : NaN;   // the two laterals: the basals are not always there
+  return { sm, lobes, lobeR, sinus, c, flanked, asym };
 }
+// The blade's SOLIDITY (its area over its convex hull's: a star is low, a mitten high) and its WIDTH OVER LENGTH, (max y − min y)/max x, from the origin — the petiole base — along the axis; and r(θ) symmetrised, the
+// mean of the profile at θ and −θ, which is how the six angles of the table in spec §4.5 are read.
+function hullArea(p) {
+  const q = [...p].sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const x of q) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], x) <= 0) lo.pop(); lo.push(x); }
+  for (const x of q.reverse()) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], x) <= 0) up.pop(); up.push(x); }
+  const h = lo.slice(0, -1).concat(up.slice(0, -1));
+  let s = 0;
+  for (let i = 0; i < h.length; i++) { const a = h[i], b = h[(i + 1) % h.length]; s += a[0] * b[1] - b[0] * a[1]; }
+  return Math.abs(s) / 2;
+}
+function shapeOf(r) {
+  const pts = Array.from(r, (rr, i) => [rr * Math.cos(th(i)), rr * Math.sin(th(i))]), xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  return { solidity: Math.PI / hullArea(pts), wl: (Math.max(...ys) - Math.min(...ys)) / Math.max(...xs) };
+}
+const symAt = (r, deg) => { const i = Math.round(((deg * DEG) / TAU + 0.5) * N - 0.5); return 0.5 * (r[i] + r[N - 1 - i]); };
 // THE TIP HALF-ANGLE: how wide the wedge a lobe ends in opens. In the lobe's own frame (x along the lobe, from the petiole base through its tip; y across),
 // the margin's half-width w against its depth d behind the tip is a line near the tip — the least-squares slope of w over d ∈ [0.06, 0.26]·(lobe length),
 // the distal quarter minus the last sixth of it (the tooth and the rounding of the very tip), atan of it, the mean of the two flanks. It is the angle of the
@@ -79,43 +99,73 @@ const memo = new Map();
 const outlines = (seed) => { if (!memo.has(seed)) memo.set(seed, Array.from({ length: LEAF.LEAF_VARIANTS }, (_, v) => outline(seed, v))); return memo.get(seed); };
 const every = (f) => { for (const seed of SEEDS) outlines(seed).forEach((r, v) => { f(r, `seed ${seed} v${v}`, measure(r), seed, v); }); };
 
-test("eight variants of a sugar maple, three seeds: five lobes — exactly five maxima across the forward 250° — and a base that is not one", () => {
+test("eight variants of a sugar maple, three seeds: three to five lobes across the forward 250° — a central lobe on the axis and one each side of it, the laterals at 33–53° (José's thirteen: 43 ± 4)", () => {
   expect(LEAF.LEAF_VARIANTS).toBe(8);
   expect(LEAF.LEAF_SAMPLES).toBe(256);
   expect(LEAF.LEAF_ID_FRAC).toBe(32);   // the fraction of a cluster id, in 1/32ths: exact in float32 for any cluster a texture can hold
   expect((LEAF.LEAF_VARIANTS - 1) / LEAF.LEAF_ID_FRAC, "the VS reads the cluster as int(iC.w + 0.5): a fraction of ½ or more would round up into the next cluster").toBeLessThan(0.5);
+  const counts = [], lat = [];
   every((_r, tag, m) => {
-    expect(m.lobes.length, tag).toBe(5);
-    const deg = m.lobes.map((i) => th(i) / DEG);
-    expect(deg[0], tag).toBeLessThan(-95); expect(deg[0], tag).toBeGreaterThan(-115);   // basals at ~±105°
-    expect(deg[1], tag).toBeLessThan(-52); expect(deg[1], tag).toBeGreaterThan(-72);    // laterals at ~±62°
-    expect(Math.abs(deg[2]), tag).toBeLessThan(10);                                      // the central lobe is the leaf's axis
-    expect(deg[4], tag).toBeLessThan(115); expect(deg[4], tag).toBeGreaterThan(95);
+    expect(m.lobes.length, tag).toBeGreaterThanOrEqual(3); expect(m.lobes.length, tag).toBeLessThanOrEqual(5);
+    expect(m.flanked, `${tag}: a central lobe within 10° of the axis, and a lobe each side of it`).toBe(true);
+    for (const i of [m.lobes[m.c - 1], m.lobes[m.c + 1]]) { const a = Math.abs(th(i) / DEG); expect(a, tag).toBeGreaterThan(33); expect(a, tag).toBeLessThan(53); lat.push(a); }
+    counts.push(m.lobes.length);
   });
+  expect(mean(counts), "three main lobes and, now and then, a small basal one — not the star's five").toBeLessThanOrEqual(4.6);
+  expect(mean(lat)).toBeGreaterThan(40); expect(mean(lat)).toBeLessThan(47);
 });
 
-test("the lobes' order of length: a basal is shorter than its lateral, and the central is the longest of a maple — on average (jitter ±10% lets one leaf break it)", () => {
-  const cen = [], lat = [], bas = [];
+test("the lobes' order of length: the central lobe is the longest of a maple — on every leaf, and by more than 5% over its laterals on average", () => {
+  const ratio = [];
   every((_r, tag, m) => {
-    expect(m.lobeR[0], tag).toBeLessThan(m.lobeR[1]);   // basal < lateral, both sides, every leaf
-    expect(m.lobeR[4], tag).toBeLessThan(m.lobeR[3]);
-    bas.push(m.lobeR[0], m.lobeR[4]); lat.push(m.lobeR[1], m.lobeR[3]); cen.push(m.lobeR[2]);
+    expect(m.lobeR[m.c], tag).toBeGreaterThan(m.lobeR[m.c - 1]);
+    expect(m.lobeR[m.c], tag).toBeGreaterThan(m.lobeR[m.c + 1]);
+    ratio.push(m.lobeR[m.c] / ((m.lobeR[m.c - 1] + m.lobeR[m.c + 1]) / 2));
   });
-  expect(mean(bas)).toBeLessThan(mean(lat));
-  expect(mean(lat)).toBeLessThan(mean(cen));
-  expect(mean(cen) / mean(lat), "a central lobe stands clear of its laterals").toBeGreaterThan(1.05);
+  expect(mean(ratio), "a central lobe stands clear of its laterals").toBeGreaterThan(1.05);
 });
 
-test("sinuses: central–lateral 0.35–0.65 of the shorter lobe, basal–lateral 0.1–0.4 — deep U's at the laterals, a notch at the base", () => {
+test("sinuses: central–lateral 0.12–0.45 of the shorter lobe on every leaf, 0.20–0.32 on average (José's: 0.26) — U's, not the five-pointed star's gaps (0.53)", () => {
+  const all = [];
   every((_r, tag, m) => {
-    for (const k of [1, 2]) { expect(m.sinus[k], `${tag} sinus ${k}`).toBeGreaterThan(0.35); expect(m.sinus[k], `${tag} sinus ${k}`).toBeLessThan(0.65); }
-    for (const k of [0, 3]) { expect(m.sinus[k], `${tag} sinus ${k}`).toBeGreaterThan(0.1); expect(m.sinus[k], `${tag} sinus ${k}`).toBeLessThan(0.4); }
+    for (const k of [m.c - 1, m.c]) { expect(m.sinus[k], `${tag} sinus ${k}`).toBeGreaterThan(0.12); expect(m.sinus[k], `${tag} sinus ${k}`).toBeLessThan(0.45); all.push(m.sinus[k]); }
   });
+  expect(mean(all)).toBeGreaterThan(0.20); expect(mean(all)).toBeLessThan(0.32);
 });
 
-test("the lobes end in a wedge 25–35° to either side of their axis (the tip half-angle, measured on the distal quarter of the margin — see tipHalfAngle)", () => {
+test("solidity and width over length: the blade fills its hull (0.66–0.83 on every leaf, 0.70–0.79 on average; his 0.760) and is about as wide as it is long (0.95–1.60, 1.10–1.45; his 1.29)", () => {
+  const sol = [], wl = [];
+  every((r, tag) => {
+    const q = shapeOf(r);
+    expect(q.solidity, tag).toBeGreaterThan(0.66); expect(q.solidity, tag).toBeLessThan(0.83);
+    expect(q.wl, tag).toBeGreaterThan(0.95); expect(q.wl, tag).toBeLessThan(1.60);
+    sol.push(q.solidity); wl.push(q.wl);
+  });
+  expect(mean(sol)).toBeGreaterThan(0.70); expect(mean(sol)).toBeLessThan(0.79);
+  expect(mean(wl)).toBeGreaterThan(1.10); expect(mean(wl)).toBeLessThan(1.45);
+});
+
+test("a truncate base: no blade behind the petiole — mean r(150°) ≤ 0.12 and r(120°) ≤ 0.25 (his 0.03 and 0.11; the star's 0.30 and 0.74) — and exactly: r(θ)·(−cos θ) never passes back·k", () => {
+  expect(MAPLE.back, "the half-plane behind the petiole's insertion, in the grammar's own units").toBeGreaterThan(0);
+  const r150 = [], r120 = [];
+  for (const seed of SEEDS) for (let v = 0; v < LEAF.LEAF_VARIANTS; v++) {
+    const b = LEAF.bladeOf(MAPLE, LEAF.outlineSeed(MAPLE, seed, v));
+    r150.push(symAt(b.r, 150)); r120.push(symAt(b.r, 120));
+    for (let i = 0; i < N; i++) { const c = Math.cos(th(i)); if (c < 0) expect(b.r[i] * -c, `seed ${seed} v${v} ray ${i}`).toBeLessThanOrEqual(MAPLE.back * b.k + 1e-12); }
+  }
+  expect(mean(r150)).toBeLessThanOrEqual(0.12);
+  expect(mean(r120)).toBeLessThanOrEqual(0.25);
+});
+
+test("the laterals sit where his do: the blade reaches farther at 44° than at 62° (his 1.66 against 1.15) — the star's deep gap was at 44° and its laterals at 62°", () => {
+  const r44 = [], r62 = [];
+  every((r) => { r44.push(symAt(r, 44)); r62.push(symAt(r, 62)); });
+  expect(mean(r44)).toBeGreaterThan(mean(r62));
+});
+
+test("the lobes end in a wedge 25–35° to either side of their axis (the tip half-angle, measured on the distal quarter of the margin — see tipHalfAngle): the central lobe and both laterals", () => {
   every((_r, tag, m) => {
-    for (const k of [1, 2, 3]) { const a = tipHalfAngle(m.sm, m.lobes[k]); expect(a, `${tag} lobe ${k}`).toBeGreaterThan(25); expect(a, `${tag} lobe ${k}`).toBeLessThan(35); }
+    for (const k of [m.c - 1, m.c, m.c + 1]) { const a = tipHalfAngle(m.sm, m.lobes[k]); expect(a, `${tag} lobe ${k}`).toBeGreaterThan(25); expect(a, `${tag} lobe ${k}`).toBeLessThan(35); }
   });
   // the measure itself reads a wedge: a cone pointing along +x with its apex at 1 and its flanks 30° off the axis, which in polar form is r(θ) = 1/(cos θ + sin|θ|/tan 30°)
   const cone = Float64Array.from({ length: N }, (_, i) => (Math.abs(th(i)) < 60 * DEG ? 1 / (Math.cos(th(i)) + Math.sin(Math.abs(th(i))) / Math.tan(30 * DEG)) : 0.35));
@@ -125,9 +175,9 @@ test("the lobes end in a wedge 25–35° to either side of their axis (the tip h
   expect(tipHalfAngle(m.sm, tip)).toBeLessThan(31);
 });
 
-test("asymmetry: no two sides of a leaf are one (every leaf above 1%), and about a tenth of a lobe on average (3–15%)", () => {
+test("asymmetry: no two sides of a leaf are one (the laterals differ on every leaf, by more than 0.2%), and by a tenth of a lobe on average (3–15%)", () => {
   const all = [];
-  every((_r, tag, m) => { expect(m.asym, tag).toBeGreaterThan(0.01); all.push(m.asym); });
+  every((_r, tag, m) => { expect(m.asym, tag).toBeGreaterThan(0.002); all.push(m.asym); });
   expect(mean(all)).toBeGreaterThan(0.03);
   expect(mean(all)).toBeLessThan(0.15);
 });

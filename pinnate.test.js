@@ -325,8 +325,10 @@ test("leafShape('beech'): eight rows of 256 float32s, the very profiles above, a
 });
 
 // ---- the maple does not move -----------------------------------------------------------------------------------------------------------
-// leaf-shape.test.js, leaf.test.js and maze.test.js are unedited; they hold the maple's features. This holds its BITS: the profiles, the skeletons and the texture of the maple, taken at
-// 9fc0d90, before the pinnate grammar was added. The exact digests are a claim about ONE platform (JavaScriptCore's Math.sin/cos/atan2/sqrt come from the system libm: skeleton.test.js says the
+// leaf-shape.test.js, leaf.test.js and maze.test.js hold the maple's features. This holds its BITS: the profiles, the skeletons and the texture of the maple, as the RECALIBRATION made them (2026-10-09, to
+// José's thirteen leaves: spec §4.5). The first set, taken at 9fc0d90 before the pinnate grammar was added and kept through it, was the star: prof 97ae2efe0a1a41d0, skel b8e55a7e7b023d4d, tex 08d268769edf3009
+// quantised, and 1a0cce67…, 48c49276…, f1c56d34… exact on darwin-arm64 — calibrated before his leaves were measured. A DIGEST IS A PIN AGAINST DRIFT, NOT A PROOF: it says nothing was moved by accident, and
+// the bands in leaf-shape.test.js are the calibration. The exact digests are a claim about ONE platform (JavaScriptCore's Math.sin/cos/atan2/sqrt come from the system libm: skeleton.test.js says the
 // same of the grove), so they are keyed like its fixtures; the quantised ones (1e-7: a ulp never reaches them, a changed draw moves them by 1e-2) hold everywhere.
 const flat = (x, out = []) => { if (typeof x === "number") out.push(x); else if (x && typeof x === "object") for (const k of Object.keys(x)) flat(x[k], out); return out; };
 const digestBits = (xs) => createHash("sha256").update(Buffer.from(Float64Array.from(xs).buffer)).digest("hex").slice(0, 16);
@@ -341,9 +343,9 @@ const mapleNumbers = () => {
   const shape = LEAF.leafShape("maple", 1234);
   return { prof, skel, tex: [...shape.data, ...shape.box, shape.reach, shape.rmax] };
 };
-const MAPLE_Q = { prof: "97ae2efe0a1a41d0", skel: "b8e55a7e7b023d4d", tex: "08d268769edf3009" };
-const MAPLE_BITS = { "darwin-arm64": { prof: "1a0cce673865be83", skel: "48c492766f6856b8", tex: "f1c56d34f2dd058c" } };
-test("the maple's profiles, skeletons and texture are the bits they were before the pinnate grammar (quantised everywhere; exact on the platform they were recorded on)", () => {
+const MAPLE_Q = { prof: "a2bb3ac3aaa6adac", skel: "6b99c5ef2f73f585", tex: "3ebafa0ad42c8c65" };
+const MAPLE_BITS = { "darwin-arm64": { prof: "bc4cad417fd1869c", skel: "28d69483eda86b08", tex: "d44de379600be97c" } };
+test("the maple's profiles, skeletons and texture are the bits the recalibration made (2026-10-09; quantised everywhere, exact on the platform they were recorded on)", () => {
   const got = mapleNumbers();
   for (const key of ["prof", "skel", "tex"]) expect(digestQ(got[key]), `${key}, quantised`).toBe(MAPLE_Q[key]);
   const exact = MAPLE_BITS[`${process.platform}-${process.arch}`];

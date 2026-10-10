@@ -31,18 +31,23 @@ const OUTLINE_SALT = 0x4C3AF001;   // grows the outlines
 const VARIANT_SALT = 0x6E1B35D7;   // picks a leaf's outline
 const FLIP_SALT = 0x3D8C5A21;      // turns half the hanging leaves through a half turn
 
-// THE SUGAR MAPLE (Acer saccharum), measured against the reference photos: actinodromous, five primaries from the hub — laterals at ±55-70° and
-// basals at ±100-115° — whose lamina is a stripe of constant width that thins to a point. The lamina's half-width is rho·len along the first `hold` of a
-// primary and then falls to (1 − taper)·rho·len at its tip: the wedge a lobe ends in opens at asin(rho·taper/(1 − hold)) to either side of its vein, whatever
-// its length. The wedge's angle and the sinus beside it fight (a wide wedge fills the sinus with its own flank), and `hold` is what lets them both be as a
-// maple has them: a 30° tip on a lobe whose sides run nearly parallel down to a deep U. At hold 0 this is a plain linear taper, and then no lobe tip gets wider than ~17° with the
-// sinuses a maple needs. The first `hub` of a primary carries no lamina (the base is a notch, not a disc). Lengths are the central primary's.
+// THE SUGAR MAPLE (Acer saccharum), RECALIBRATED 2026-10-09 to José's thirteen leaves (DSC_0617-0622, DSCF1667 ×3, DSC_0656 ×5), read with the same measure as the engine's (leaf-shape.test.js): actinodromous, a central
+// primary and a lateral pair at ±43° (his 33-50°, mean 43) — three main lobes — and a basal pair of short stubs at ±95°, 0.36 of the central, that are a small lobe on some leaves and a shoulder on the rest (his are absent, a
+// shoulder, or a lobe). Its lamina is a stripe of constant width that thins to a point: the half-width is rho·len along the first `hold` of a primary and then falls to (1 − taper)·rho·len at its tip, so the wedge a lobe ends in opens at
+// asin(rho·taper/(1 − hold)) to either side of its vein, whatever its length. The wedge's angle and the sinus beside it fight (a wide wedge fills the sinus with its own flank), and `hold` is what lets them both be as a maple has them: a
+// 30° tip on a lobe whose sides run nearly parallel down to a U. At hold 0 this is a plain linear taper, and then no lobe tip gets wider than ~17° with the sinuses a maple needs. The first `hub` of a primary carries no lamina. Lengths are the
+// central primary's. `rho` 0.21 is what gives the U's their 0.26 depth and the blade its solidity (0.77; his 0.760) and width over length (1.17; his 1.29).
+// THE TRUNCATE BASE (`back`): a sugar maple's petiole inserts on a straight line, and the blade lies wholly in front of it — his r(150°) is 0.03 — where the discs of the basal primaries bulged to 0.30 behind it. So bladeOf cuts the blade by the
+// half-plane x ≥ −back (a point the blade is still star-shaped from: a half-plane holds the origin), in the grammar's own units (the central primary ≈ 1), after the teeth and before the area is normalised. Only the maple names it; the beech's bits do not move.
+// THE STAR THIS REPLACES was laterals at ±62° and basals at ±105° of length 0.55, rho 0.19, no clip: five pointed lobes with sinuses twice his (0.53) and laterals where his sinuses are, a blade reaching behind its petiole — the
+// "calibrated on José's pressed leaves" of the first spec, which were not these leaves, and what he meant by "they all look the same to me". The bands in leaf-shape.test.js are the calibration; the digests in pinnate.test.js only pin it against drift.
 const MAPLE = Object.freeze({
   species: 1,   // hash3's second argument: each species' outlines are its own draws
   grammar: 'palmate',   // growLeaf: the primaries fan from one hub (bladeOf picks the grower by this)
-  angles: Object.freeze([-105, -62, 0, 62, 105]), angleJitter: 4,   // primaries (°) and the ± they wander
-  lengths: Object.freeze([0.55, 0.85, 1, 0.85, 0.55]), lengthJitter: 0.10,
-  hub: 0.12, hold: 0.6, rho: 0.19, taper: 1,
+  angles: Object.freeze([-95, -43, 0, 43, 95]), angleJitter: 4,   // primaries (°) and the ± they wander
+  lengths: Object.freeze([0.36, 0.85, 1, 0.85, 0.36]), lengthJitter: 0.10,
+  hub: 0.12, hold: 0.6, rho: 0.21, taper: 1,
+  back: 0.035,   // the truncate base: no blade behind the line x = −back (the petiole's insertion), in the grammar's units; undefined = no clip
   secStep: 0.18, secAngle: 45, secJitter: 0.10,   // alternate secondaries every 0.18 along a primary, at 45° ± 10%
   tooth: 0.02, toothHalf: 0.06,                   // each secondary ends in a 2% radial tooth, 0.06 rad to either side
 });
@@ -156,6 +161,8 @@ function bladeOf(spec, variantSeed){
       if(Math.abs(d) < spec.toothHalf) r[i] *= 1 + spec.tooth*(0.5 + 0.5*Math.cos(Math.PI*d/spec.toothHalf));
     }
   }
+  // the truncate base (MAPLE.back): no blade behind the line x = −back, so a ray that points backward is cut where it meets it. After the teeth (a tooth cannot stand out of the line) and before the area, which is π of what is left
+  if(spec.back !== undefined) for(let i = 0; i < LEAF_SAMPLES; i++){ const c = Math.cos(TAU*((i + 0.5)/LEAF_SAMPLES - 0.5)); if(c < 0) r[i] = Math.min(r[i], spec.back/-c); }
   let a = 0;
   for(let i = 0; i < LEAF_SAMPLES; i++) a += 0.5*r[i]*r[i]*(TAU/LEAF_SAMPLES);
   const k = Math.sqrt(Math.PI/a);

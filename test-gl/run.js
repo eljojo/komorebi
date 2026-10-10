@@ -473,6 +473,10 @@ const INVARIANTS = [
   { name: 'beech, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: 'cb958f0e' },
   { name: 'beech, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: '5742e790' },
   { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1 }, pin: '894c1749' },
+  // ...and the RECALIBRATED MAPLE (leaf diversity, 2026-10-09), pinned the same way at the end of the recalibration and before any leaf_variety edit: its own bits are new, so what leaf_variety must not move is these.
+  { name: 'the recalibrated maple, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '319ba7ac' },
+  { name: 'the recalibrated maple, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '40f09381' },
+  { name: 'the recalibrated maple, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1 }, pin: '75db3e41' },
   // AREA IS CONSERVED, so the canopy keeps its fullness: the profile is the unit circle's area, so a maple at aspect 1 and 1/√aspect of the size has the leaf the ellipse had (the species
   // bundle's 0.103 = 0.13/√1.6; memories and afternoon 7 sit at 0.1 and 1.75, so 0.0756). The mean level of the frame stays within 5%.
   { name: 'a maple of the same leaf area keeps the canopy as full (layer path: memories)', preset: 'memories', lit: [0.95, 1.05],
@@ -764,11 +768,14 @@ const HALO_CHECKS = [
 const HALO_TOL = 2e-3, HALO_BAND = [0.99, 1.01], HALO_MIN_TEXELS = 500, STAMP_TOL = 2e-5;
 // THE OUTLINE'S EDGE LAW (§4.5, P4a-2), FS_BAKE drawn for one leaf: the gate shut keeps the ellipse's own tolerance, the gate open is held to the CPU's q' over the same profile at the GPU's own
 // (half-float storage, fixed-point filter weights, atan: the design allowed ~1e-2 across the ramp; measured 1e-5, so the bar is 1e-3). Σalpha, a lobed leaf's coverage against the ellipse's at the same uEdge: the profile is area-normalised, but the
-// ramp is RADIAL (q' = |l| − r(θ) + 1), so it is thinner across a flank by the cosine of the flank's tilt and a lobed leaf keeps MORE of its area than the ellipse does — measured x1.04 (three
-// variants, 1.038-1.042) where the design said 1%. The band is that law's own, not a tolerance: it holds a stable ramp, and says the maple is the ellipse's area plus ~4%, never less.
-const OUTLINE_TOL = 1e-3, OUTLINE_AREA = [1.0, 1.06];
+// ramp is RADIAL (q' = |l| − r(θ) + 1), so it is thinner across a flank by the cosine of the flank's tilt and a lobed leaf keeps MORE of its area than the ellipse does — measured x1.04 for the first maple, the
+// five-pointed star (three variants, 1.038-1.042) where the design said 1%, and x1.080-1.084 for the RECALIBRATED one (variants 0, 3, 7 of seed 1234; leaf diversity, 2026-10-09). To first order a ramp of width e loses ½·e·∮r dθ of
+// the area, and with ∮½r² fixed at π the mean radius is below 1 for any profile that is not a circle (Cauchy–Schwarz: ∮r dθ ≤ 2π), so the more r(θ) varies the more a leaf keeps: the recalibrated maple varies more — long lobes
+// in front of a truncate base that reaches 0.1 behind the petiole over 100° of arc. The CPU's law (OUTLINE_TOL) did not move and passes. THE BAND is 1..1.10 (the star alone sat inside 1..1.06), and the law above is why: for a radial ramp of width e (0.26 here) the excess over the ellipse is Σα − 1 ≈ 0.33·(1 − mean r) — the star ×1.04 (mean r 0.88), the recalibrated maple
+// ×1.08 (0.75), the beech ×1.01 (0.97) — and José's thirteen leaves, area-normalised, have mean r 0.59–0.81 and lie at ×1.06–1.14 by the same law; 1.10 holds the maple the engine grows (×1.08), and his most lobed leaves sit above it. The band is that law's own, not a tolerance: it holds a stable ramp, and says the maple is the ellipse's area plus ~8%, never less.
+const OUTLINE_TOL = 1e-3, OUTLINE_AREA = [1.0, 1.10];
 // The beech (P4a-3) is held to the same law over ITS profile texture, and its Σalpha is a band of its own: the ramp is radial, so what a thin pointed blade keeps against the ellipse is another number. Measured
-// x1.007-1.012 (variants 0, 3, 7 of seed 1234; the maple's x1.038-1.042): the ellipse's area plus about a percent — there are no sinuses for the ramp to thin across — and never less.
+// x1.007-1.012 (variants 0, 3, 7 of seed 1234; the first maple's x1.038-1.042): the ellipse's area plus about a percent — there are no sinuses for the ramp to thin across — and never less.
 const BEECH_AREA = [1.0, 1.03];
 const OUTLINE_BANDS = { maple: OUTLINE_AREA, beech: BEECH_AREA };
 
