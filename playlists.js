@@ -101,10 +101,13 @@ export function entryName(state, stored, active, value) {
   return starName(stored, active, value) ?? value;
 }
 
-// The playlists a visitor can pick between: On this browser, then the cached arboretum ones.
-export function playlists(state) {
+// The playlists a visitor can pick between: On this browser, then yours as arboretum lists them (`mine`: summaries,
+// not cached until picked), then the cached ones that are not among them.
+export function playlists(state, mine = []) {
+  const listed = new Set(mine.map((p) => String(p.id)));
   return [{ value: "local", label: LOCAL_NAME },
-    ...Object.values(state.playlists).map((p) => ({ value: `arb:${p.id}`, label: p.name }))];
+    ...mine.map((p) => ({ value: `arb:${p.id}`, label: p.name })),
+    ...Object.values(state.playlists).filter((p) => !listed.has(String(p.id))).map((p) => ({ value: `arb:${p.id}`, label: p.name }))];
 }
 
 // Whether the active playlist plays: only an arboretum playlist carries dwell times (design §3.6).
@@ -283,4 +286,36 @@ export function itemsAfter(fresh, change) {
   }
   if (change.kind === "append") out.push({ preset_id: change.preset_id });
   return out;
+}
+
+// ---- what a save started from, and what the buttons say (design §3.5, §4.1, §4.2) ----------------------------
+// The entry a save starts from, in the shape onSaved and the provenance rules read; null when it is not a listed entry.
+export function fromEntry(state, stored, active, value) {
+  if (cloudId(active) !== null) {
+    const item = cloudItems(state, active)[Number(value)];
+    return item ? { kind: "cloud", item } : null;
+  }
+  const star = starName(stored, active, value);
+  if (star !== null) return { kind: "local", name: star };
+  return typeof value === "string" && isBuiltin(BUILTINS.PRESETS, value) ? { kind: "builtin", name: value } : null;
+}
+
+// The arboretum preset an entry already is, or null when it has to go up first: a cloud item is one; a ★ is only
+// while its copy is current (an edited ★ is a newer look than the preset the playlist would get).
+export function onlineId(state, stored, active, value) {
+  if (cloudId(active) !== null) return cloudItems(state, active)[Number(value)]?.preset_id ?? null;
+  const star = starName(stored, active, value);
+  const o = star === null ? undefined : state.origin[star];
+  return o?.id !== undefined && o.synced ? o.id : null;
+}
+
+// The smart ↑ button, from the plan: its label says what it will do before the click; an unchanged built-in disables it.
+export function pushButton(plan) {
+  if (plan.refused) return { label: "built-in · unchanged", disabled: true, title: plan.refused };
+  return { label: plan.label, disabled: false };
+}
+
+// An upload's `into` (uploadPlan) as the change itemsAfter applies to a fresh copy of the playlist.
+export function placeChange(into, preset_id) {
+  return into.at === null ? { kind: "append", preset_id } : { kind: "replace", at: into.at, preset_id };
 }

@@ -39,6 +39,7 @@ export function api(origin, fetchImpl) {
     health: () => call("GET", "/api/health"),
     me: () => call("GET", "/api/me"),
     preset: (id, { n, k } = {}) => call("GET", `/api/presets/${id}${n === undefined ? "" : `/versions/${n}`}${query(k)}`),
+    presets: () => call("GET", "/api/presets?owner=me"),   // the picker's list: yours, newest first, without params
     create: (body) => call("POST", "/api/presets", body),
     addVersion: (id, body) => call("POST", `/api/presets/${id}/versions`, body),
     playlists: () => call("GET", "/api/playlists?owner=me"),

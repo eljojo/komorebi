@@ -3,7 +3,8 @@
 import { test, expect, beforeEach } from "bun:test";
 import { ARB_KEY, getState, setState, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted, onPushed,
-  uploadPlan, itemsAfter, playlists, plays, timing, starValue, starName, entryName } from "./playlists.js";
+  uploadPlan, itemsAfter, playlists, plays, timing, starValue, starName, entryName,
+  fromEntry, onlineId, pushButton, placeChange } from "./playlists.js";
 import * as builtins from "./presets.js";
 import { DEFAULTS, cameraFor } from "./komorebi.js";
 
@@ -261,6 +262,16 @@ test("playlists lists On this browser first, then the cached arboretum playlists
   s = cachePlaylist(s, apiList({ id: 8, name: "other" }));
   expect(playlists(s)).toEqual([
     { value: "local", label: "On this browser" }, { value: "arb:7", label: "mine" }, { value: "arb:8", label: "other" }]);
+});
+
+test("playlists lists yours as arboretum names them, then the cached ones that are not among them", () => {
+  let s = cachePlaylist(EMPTY, apiList({ name: "old name" }));
+  s = cachePlaylist(s, apiList({ id: 8, name: "someone's" }));
+  expect(playlists(s, [{ id: 9, name: "new" }, { id: 7, name: "mine now" }])).toEqual([
+    { value: "local", label: "On this browser" }, { value: "arb:9", label: "new" }, { value: "arb:7", label: "mine now" },
+    { value: "arb:8", label: "someone's" }]);
+  expect(playlists(EMPTY, [{ id: 3, name: "fresh" }])).toEqual([
+    { value: "local", label: "On this browser" }, { value: "arb:3", label: "fresh" }]);
 });
 
 test("plays: only a cached cloud playlist with something in it carries dwell times", () => {
@@ -628,4 +639,43 @@ test("itemsAfter does not touch the list it was given", () => {
   const list = fresh();
   itemsAfter(list, { kind: "remove", at: 0 });
   expect(list).toEqual(fresh());
+});
+
+// ---- what a save started from, and what is already online (design §4.1, §4.2) ----------------------------
+
+test("fromEntry reads the entry a save starts from: a ★, a built-in, a cloud item, or nothing", () => {
+  const state = { ...cloud([item("one")]), origin: {} };
+  const stored = { mine: {} };
+  expect(fromEntry(state, stored, "local", "mine")).toEqual({ kind: "local", name: "mine" });
+  expect(fromEntry(state, stored, "local", "afternoon 7")).toEqual({ kind: "builtin", name: "afternoon 7" });
+  expect(fromEntry(state, { "afternoon 7": {} }, "local", "★ afternoon 7")).toEqual({ kind: "local", name: "afternoon 7" });
+  expect(fromEntry(state, stored, "arb:7", "0")).toEqual({ kind: "cloud", item: item("one") });
+  expect(fromEntry(state, stored, "local", "")).toBeNull();
+  expect(fromEntry(state, stored, "local", undefined)).toBeNull();
+  expect(fromEntry(state, stored, "arb:7", "5")).toBeNull();
+});
+
+test("onlineId is the arboretum preset an entry already is: a cloud item, or a ★ whose copy is still current", () => {
+  const state = { ...cloud([{ ...item("one"), preset_id: 4 }]), origin: {
+    synced: { id: 12, version: 3, owner: "ana", synced: true }, edited: { id: 13, version: 1, owner: "jo", synced: false }, child: { parent: "look:afternoon 7" } } };
+  const stored = { synced: {}, edited: {}, child: {}, loose: {} };
+  expect(onlineId(state, stored, "arb:7", "0")).toBe(4);
+  expect(onlineId(state, stored, "local", "synced")).toBe(12);
+  expect(onlineId(state, stored, "local", "edited")).toBeNull();   // the local look has moved on: it must go up first
+  expect(onlineId(state, stored, "local", "child")).toBeNull();
+  expect(onlineId(state, stored, "local", "loose")).toBeNull();
+  expect(onlineId(state, stored, "local", "afternoon 7")).toBeNull();
+  expect(onlineId(state, stored, "arb:7", "3")).toBeNull();
+});
+
+test("pushButton says what the smart button does, or that a built-in is unchanged and disables it", () => {
+  expect(pushButton({ kind: "version", label: "↑ new version of #12" })).toEqual({ label: "↑ new version of #12", disabled: false });
+  expect(pushButton({ kind: "preset", label: "↑ new preset" })).toEqual({ label: "↑ new preset", disabled: false });
+  const refused = "this is the built-in 'afternoon 7', unchanged — change something first";
+  expect(pushButton({ refused })).toEqual({ label: "built-in · unchanged", disabled: true, title: refused });
+});
+
+test("placeChange turns where an upload goes into the change itemsAfter applies", () => {
+  expect(placeChange({ playlist: 7, at: 2 }, 31)).toEqual({ kind: "replace", at: 2, preset_id: 31 });
+  expect(placeChange({ playlist: 7, at: null }, 31)).toEqual({ kind: "append", preset_id: 31 });
 });

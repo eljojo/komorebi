@@ -916,7 +916,9 @@ function updateSunFromTime(){
 // the built-ins, then the ★ looks — or a cached arboretum playlist. The EXPERIMENTAL looks are hidden unless the
 // settings toggle shows them, but the one you're ON always stays listed (flipping the toggle mid-look must not
 // strand you).
-let presetSel, playlistSel, playlistRow;
+let presetSel, playlistSel, playlistRow, deleteBtn;
+const presetRows={};                               // where arboretum.js puts its controls: the save row and the copy/paste row
+let arb=null;                                      // arboretum.js's hooks once it has mounted; null leaves On this browser as it was
 const BUILTINS = { PRESETS, EXPERIMENTAL };
 const presetSelects=[];                            // every surface's preset dropdown; presetSel (the dev one) is the canonical value
 // A playlist that has left the cache falls back to On this browser.
@@ -949,13 +951,15 @@ function refreshPresetSelect(selected){
 // the playlist select exists once there is a second playlist to swap to; until then no row, and no ▶
 function syncPlaylistUI(){
   if(playlistSel){
-    const lists=playlists(getState());
+    const lists=arb ? arb.lists() : playlists(getState());
     playlistSel.innerHTML='';
     for(const l of lists){ const o=document.createElement('option'); o.value=l.value; o.textContent=l.label; playlistSel.appendChild(o); }
     playlistSel.value=activeList();
     playlistRow.hidden = lists.length<2;
   }
+  if(deleteBtn) deleteBtn.textContent = arb && activeList()!=='local' ? 'remove' : 'delete';   // in a cloud playlist it takes the item out of the playlist
   syncPlayButtons();
+  arb?.changed();
 }
 // Select an entry and ease to it: the arrows, the swipe, and a playlist swap. A cloud entry brings its own crossfade.
 function goTo(value){
@@ -978,9 +982,16 @@ function setActive(list){
 }
 // A ★ is written to On this browser whatever playlist you were on; the list then shows it.
 function saveStar(name, p){
+  arb?.saved(name, activeList(), presetSel.value);   // before the selection moves: it is where this ★ came from
   const s=getStored(); s[name]=JSON.parse(JSON.stringify(p)); setStored(s);
   settings.playlist='local'; saveSettings();
   refreshPresetSelect(starValue(name));
+}
+// Save: a ★ in On this browser, or — in a cloud playlist, once arboretum has mounted — a look uploaded to arboretum.
+function saveLook(name, p){ if(arb && activeList()!=='local') arb.save(name, p); else saveStar(name, p); }
+function showStar(name){                           // a ★ arboretum.js has just brought in: On this browser, on that look
+  settings.playlist='local'; saveSettings(); playing=false;
+  loadEntry(starValue(name));
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
 function buildPresetUI(){
@@ -1002,23 +1013,30 @@ function buildPresetUI(){
   // below the preset select, not above it: the first select in #dev stays the preset dropdown
   playlistRow=document.createElement('div'); playlistRow.className='ctl select'; playlistRow.hidden=true;
   playlistSel=document.createElement('select');
-  playlistSel.addEventListener('change',()=>setActive(playlistSel.value));
+  playlistSel.addEventListener('change',()=>{
+    const v=playlistSel.value;
+    if(!arb) setActive(v);
+    else if(v==='+new') arb.create();
+    else arb.activate(v);
+  });
   playlistRow.appendChild(playlistSel); dev.appendChild(playlistRow);
 
   const r2=document.createElement('div'); r2.className='ctl';
+  deleteBtn=mkBtn('delete',()=>{
+    if(activeList()!=='local'){ arb?.remove(); return; }     // taking a look out of an arboretum playlist is written to arboretum
+    const n=starName(getStored(), 'local', presetSel.value), s=getStored();
+    if(n===null){ alert("Built-in presets can't be deleted."); return; }
+    delete s[n]; setStored(s); arb?.deleted(n); refreshPresetSelect(DEFAULT_PRESET); });
   r2.append(
     mkBtn('save',()=>{
       const here=entryName(getState(), getStored(), activeList(), presetSel.value);
       const fromBuiltin=activeList()==='local' && starName(getStored(), 'local', presetSel.value)===null;
       const n=(prompt('Save preset as:', fromBuiltin ? '' : here)||'').trim(); if(!n) return;   // a ★ or a cloud item offers its own name; a built-in's is not yours to reuse
-      saveStar(n, params); }),
-    mkBtn('delete',()=>{
-      if(activeList()!=='local') return;                       // taking a look out of an arboretum playlist is written to arboretum
-      const n=starName(getStored(), 'local', presetSel.value), s=getStored();
-      if(n===null){ alert("Built-in presets can't be deleted."); return; }
-      delete s[n]; setStored(s); refreshPresetSelect(DEFAULT_PRESET); }),
+      saveLook(n, params); }),
+    deleteBtn,
     playButton());
   dev.appendChild(r2);
+  presetRows.save=r2;
 
   const r3=document.createElement('div'); r3.className='ctl';
   r3.append(
@@ -1028,6 +1046,7 @@ function buildPresetUI(){
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
       try{ const o=JSON.parse(txt); applyParams(o.params||o); refreshPresetSelect(); }catch(_e){ alert('Invalid JSON'); } }));
   dev.appendChild(r3);
+  presetRows.tools=r3;
   refreshPresetSelect(landing());
 }
 
@@ -1053,6 +1072,7 @@ function slideInPanel(){
   void el.offsetWidth;                             // ...reflow so the next change animates...
   el.classList.remove('offscreen');               // ...and slide it in
   if(el===strip) stripWake();                     // the strip starts its fade clock the moment it arrives
+  if(el===dev) arb?.advanced();                   // arboretum first asks who is signed in when the advanced panel is first shown
 }
 // the key hints stay HIDDEN unless summoned — the canvas is the point, not the legend. H (mapped to
 // nothing else) shows them for ten seconds.
@@ -1450,7 +1470,7 @@ function saveVariant(){
   const v=cmpVariants[cmpIdx];
   const name=(prompt('Save variant as:', `${entryName(getState(), getStored(), activeList(), presetSel.value)} · ${v.name}`)||'').trim();
   if(!name) return;
-  saveStar(name, v.params);
+  saveLook(name, v.params);
   closeCmp();
 }
 function closeCmp(){ cmp.classList.remove('show'); cmpInfo.style.display='none'; cmpFps.classList.remove('show');
@@ -1503,4 +1523,15 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
 
 // ---- arboretum: loaded only where `detect` names its origin (komorebi.eljojo.net, or arboretum's own dev server). On a fork
 // or komorebi's own dev server `detect` answers null without a request, and arboretum.js is never fetched. ----
-detect(location, fetch).then((origin) => { if(origin) return import('./arboretum.js').then((m) => m.mount(origin)); });
+// What the editor lends arboretum.js, and nothing else of itself.
+const arbHost = {
+  params, rows: presetRows,
+  active: activeList, value: () => presetSel.value,
+  sync: syncPlaylistUI,                                         // the playlist select and the buttons that follow the active list
+  select: refreshPresetSelect,                                  // re-list the active playlist, on this entry
+  reload: () => refreshPresetSelect(resumeAt()),                // ...after its items changed under it
+  activate: setActive,
+  show: showStar,
+  advancedShown: () => !dev.classList.contains('hidden'),
+};
+detect(location, fetch).then((origin) => { if(origin) return import('./arboretum.js').then((m) => { arb = m.mount(origin, arbHost); syncPlaylistUI(); }); });

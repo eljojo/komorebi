@@ -791,6 +791,307 @@ try {
     check('and it asked /api/health once and loaded arboretum.js from /editor/', asked.filter((p) => p === '/api/health').length === 1 && asked.includes('/editor/arboretum.js'), asked.filter((p) => /api|arboretum/.test(p)).join());
     await ctx3.close();
   }
+
+  // ---- ARBORETUM'S CONTROLS (arboretum.js, K4), at /editor/ with page.route standing in for arboretum: the sign-in cycle, cloud
+  // playlists beside On this browser, what save / remove / ↑ / add to / new playlist write, the picker, refresh, and its refusals ----
+  {
+    await page.goto('about:blank');
+    const ctx4 = await browser.newContext({ viewport: { width: 640, height: 480 } });
+    await ctx4.route('**/login', (route) => route.fulfill({ contentType: 'text/html', body: '<p>login</p>' }));
+    const page4 = await ctx4.newPage();
+    page4.setDefaultTimeout(30000);
+    page4.on('pageerror', (e) => errors.push(`[after check ${results.length}] page 4: ${e.message}`));
+    // the mock's own refusals (401, 422, 429, a missing commit.json) are logged by Chromium as failed loads: expected, not page errors
+    const expected = (m) => m.text().startsWith('Failed to load resource') && /\/api\/|commit\.json/.test(m.location().url);
+    page4.on('console', (m) => { if (m.type() === 'error' && !expected(m)) errors.push(`[after check ${results.length}] page 4 console: ${m.text()}`); });
+    const alerts = [], prompts = [];
+    let reply = null;
+    page4.on('dialog', async (d) => {
+      if (d.type() !== 'prompt') { alerts.push(d.message()); await d.dismiss(); return; }
+      prompts.push(d.defaultValue());
+      if (reply !== null) await d.accept(reply); else await d.dismiss();
+    });
+
+    // The mock arboretum. `seen` is every call the page makes to it, in order, with the body it sent.
+    const seen = [];
+    const known = {   // preset_id -> what a playlist item shows of it
+      5: { name: 'dawn', owner: 'jo', version: 1, params: PRESETS['afternoon 7'] },
+      6: { name: 'dusk', owner: 'ana', version: 3, params: PRESETS.memories },
+    };
+    const lists = {
+      7: { id: 7, name: 'evening', items: [
+        { preset_id: 5, version: 1, owner: 'jo', name: 'dawn', dwell_s: 11, crossfade_s: 2, params: PRESETS['afternoon 7'] },
+        { preset_id: 6, version: 3, owner: 'ana', name: 'dusk', dwell_s: 12, crossfade_s: 3, params: PRESETS.memories },
+        { preset_id: 99, dwell_s: 40, crossfade_s: 7, unavailable: true }] },
+      8: { id: 8, name: 'morning', items: [] },
+    };
+    const server = { signedIn: false, refuse: null, nextPreset: 12, nextList: 9 };
+    const view = (l) => ({ id: l.id, owner: 'jo', name: l.name, description: null, created_at: 1, updated_at: 2, visibility: 'private', share_token: 'sekret', items: l.items, unavailable: l.items.filter((i) => i.unavailable).length });
+    await page4.route('**/api/**', (route) => {
+      const req = route.request(), u = new URL(req.url());
+      const body = req.postData() ? JSON.parse(req.postData()) : undefined;
+      seen.push({ method: req.method(), path: u.pathname + u.search, body });
+      const json = (status, b) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
+      const k = `${req.method()} ${u.pathname}`;
+      if (k === 'GET /api/health') return json(200, { ok: true, engine: 'abc1234' });
+      if (!server.signedIn) return json(401, { error: 'sign in, or send a bearer token' });
+      if (k === 'GET /api/me') return json(200, { username: 'jo', kind: 'session' });
+      if (k === 'GET /api/playlists') return json(200, { playlists: Object.values(lists).map(({ items, ...s }) => ({ ...s, owner: 'jo' })).reverse() });
+      if (k === 'GET /api/presets') return json(200, { presets: [{ id: 21, owner: 'jo', name: 'dusk', version: 1 }, { id: 5, owner: 'jo', name: 'dawn', version: 1 }] });
+      if (k === 'GET /api/presets/21') return json(200, { id: 21, owner: 'jo', name: 'dusk', version: 1, params: PRESETS.memories });
+      const one = u.pathname.match(/^\/api\/playlists\/(\d+)$/), items = u.pathname.match(/^\/api\/playlists\/(\d+)\/items$/);
+      if (one && req.method() === 'GET') return json(200, view(lists[one[1]]));
+      if (req.method() === 'POST' && /^\/api\/presets(\/\d+\/versions)?$/.test(u.pathname)) {
+        if (server.refuse) { const r = server.refuse; server.refuse = null; return json(r.status, r.body); }
+        const id = u.pathname === '/api/presets' ? server.nextPreset++ : Number(u.pathname.split('/')[3]);
+        const version = (known[id]?.version ?? 0) + 1;
+        known[id] = { name: body.name, owner: 'jo', version, params: body.params };
+        return json(201, { id, owner: 'jo', name: body.name, version });
+      }
+      if (k === 'POST /api/playlists') {
+        const l = { id: server.nextList++, name: body.name, items: [] };
+        lists[l.id] = l;
+        return json(201, view(l));
+      }
+      if (items && req.method() === 'PUT') {
+        const l = lists[items[1]];
+        l.items = body.items.map((i) => known[i.preset_id]
+          ? { preset_id: i.preset_id, version: known[i.preset_id].version, owner: known[i.preset_id].owner, name: known[i.preset_id].name, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, params: known[i.preset_id].params }
+          : { preset_id: i.preset_id, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, unavailable: true });
+        return json(200, view(l));
+      }
+      return json(404, { error: 'not found' });
+    });
+    const calls = (re) => seen.filter((c) => re.test(`${c.method} ${c.path}`));
+    const lastCall = (re) => calls(re).at(-1);
+    const until = async (fn, ms = 15000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await page4.waitForTimeout(60); } return false; };
+    const dev4 = (fn, ...a) => page4.evaluate(fn, ...a);
+    const opts4 = (i) => dev4((n) => [...document.querySelectorAll('#dev select')[n].options].map((o) => o.textContent), i);   // i: 0 = the look select, 1 = the playlist select, 2 = add to
+    const pick4 = (i, v) => dev4(([n, val]) => { const s = document.querySelectorAll('#dev select')[n]; s.value = val; s.dispatchEvent(new Event('change', { bubbles: true })); }, [i, v]);
+    const value4 = (i) => dev4((n) => document.querySelectorAll('#dev select')[n].value, i);
+    const click4 = (sel) => dev4((s) => document.querySelector(s).click(), sel);
+    const btn4 = (text) => dev4((t) => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent === t).click(), text);
+    const shown4 = (sel) => dev4((s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && !e.closest('[hidden]'); }, sel);
+    const text4 = (sel) => dev4((s) => document.querySelector(s)?.textContent ?? null, sel);
+    const slider4 = (v) => dev4((val) => {
+      const i = [...document.querySelectorAll('#dev .ctl')].find((r) => r.querySelector('label')?.textContent === 'CLOUD').querySelector('input');
+      i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
+    }, v);
+    const save4 = async (name) => { prompts.length = 0; reply = name; await btn4('save'); reply = null; return prompts[0]; };
+    const waitCall = (re, n = 1) => until(() => calls(re).length >= n);
+    const near = (a, b) => Math.abs(a - b) < 1e-6;
+
+    // zen first: a visitor who never opens the advanced panel causes no /api/me (design §3.3)
+    await page4.goto(`http://127.0.0.1:${port}/editor/index.html`, { waitUntil: 'load' });
+    await page4.click('#feel');
+    await page4.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
+    await page4.waitForTimeout(500);
+    check('in zen, arboretum is asked nothing but /api/health', seen.every((c) => c.path === '/api/health'), seen.map((c) => c.path).join());
+    await page4.$eval('#strip .preset .more', (b) => b.click());
+    await page4.waitForSelector('#play:not(.hidden)', { timeout: 15000 });
+    await page4.waitForTimeout(800);
+    await page4.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); s.value = 'afternoon 7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page4.waitForTimeout(1200);   // settle: the welcome crossfade is aborted by a hard load, as in the playlists section above
+    check('and in the playful sidebar too', seen.every((c) => c.path === '/api/health'), seen.map((c) => c.path).join());
+    await page4.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('advanced')).click());
+    await page4.waitForSelector('#dev:not(.hidden)', { timeout: 15000 });
+    await waitCall(/^GET \/api\/me$/);
+    await until(() => shown4('#dev .arb-cta'));
+
+    // signed out: one button, and nothing that needs a session
+    check('opening advanced asks /api/me once; signed out, it offers "save your playlists in arboretum ↗"',
+      calls(/^GET \/api\/me$/).length === 1 && (await text4('#dev .arb-cta')) === 'save your playlists in arboretum ↗' && await shown4('#dev .arb-cta'));
+    check('and shows no ↑, no add to, no picker, and no playlist row', !(await shown4('#dev .arb-push')) && !(await shown4('#dev .arb-addto')) && !(await shown4('#dev .arb-picker'))
+      && !(await dev4(() => { const r = document.querySelectorAll('#dev select')[1].closest('.ctl'); return getComputedStyle(r).display !== 'none'; })));
+    const [popup] = await Promise.all([ctx4.waitForEvent('page'), click4('#dev .arb-cta')]);
+    await popup.waitForURL('**/login').catch(() => {});
+    check('the button opens arboretum\'s /login in a new tab', popup.url() === `http://127.0.0.1:${port}/login`, popup.url());
+    await popup.close();
+
+    // the sign-in cycle: back in the editor window, focus asks /api/me again
+    server.signedIn = true;
+    await dev4(() => window.dispatchEvent(new Event('focus')));
+    await until(async () => !(await shown4('#dev .arb-cta')) && (await opts4(1)).length === 4);
+    check('on focus /api/me is asked again, and a 200 takes the button away', calls(/^GET \/api\/me$/).length === 2 && !(await shown4('#dev .arb-cta')));
+    check('the playlist select then lists your playlists beside On this browser, and "New playlist…" last', (await opts4(1)).join() === 'On this browser,morning,evening,New playlist…', (await opts4(1)).join());
+    check('and says who is signed in', /signed in as jo/.test((await text4('#dev .arb-who')) ?? ''), String(await text4('#dev .arb-who')));
+
+    // ↑ on a ★ saved from a built-in
+    await pick4(0, 'afternoon 7');
+    await slider4(0.12);
+    await save4('k4 mine');
+    check('↑ on a new ★ says "new preset"', (await text4('#dev .arb-push')) === '↑ new preset' && !(await dev4(() => document.querySelector('#dev .arb-push').disabled)), String(await text4('#dev .arb-push')));
+    await click4('#dev .arb-push');
+    await waitCall(/^POST \/api\/presets$/);
+    const up = lastCall(/^POST \/api\/presets$/)?.body ?? {};
+    check('↑ POSTs /api/presets with parent look:<built-in> and no komorebi_commit', up.parent === 'look:afternoon 7' && up.name === 'k4 mine' && !('komorebi_commit' in up) && near(up.params?.cloud_thickness, 0.12), JSON.stringify({ ...up, params: '…' }));
+    await until(async () => (await text4('#dev .arb-push')) === '↑ new version of #12');
+    check('after the 201 the label reads "↑ new version of #12", and the status says what landed', (await text4('#dev .arb-push')) === '↑ new version of #12' && /#12 v1/.test((await text4('#dev .arb-status')) ?? ''), `${await text4('#dev .arb-push')} / ${await text4('#dev .arb-status')}`);
+    const origin4 = () => dev4(() => JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin ?? {});
+    const rec = (await origin4())['k4 mine'];
+    check('a ★ that went up is recorded as a synced copy of #12', rec?.id === 12 && rec.version === 1 && rec.owner === 'jo' && rec.synced === true, JSON.stringify(rec));
+    await pick4(0, 'afternoon 7');
+    check('↑ on an unchanged built-in is disabled, and says so', (await text4('#dev .arb-push')) === 'built-in · unchanged' && await dev4(() => document.querySelector('#dev .arb-push').disabled), String(await text4('#dev .arb-push')));
+
+    // a cloud playlist of yours
+    await pick4(1, 'arb:7');
+    await until(async () => (await opts4(0)).join() === 'dawn,dusk');
+    check('activating a cloud playlist GETs it, and the dev select lists its items by name', calls(/^GET \/api\/playlists\/7$/).length === 1 && (await opts4(0)).join() === 'dawn,dusk', (await opts4(0)).join());
+    check('inside it the look is already online (no ↑) and delete is "remove"', !(await shown4('#dev .arb-push')) && (await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => b.textContent === 'remove'))));
+
+    await slider4(0.31);
+    const before = seen.length;
+    const pre = await save4('dawn');
+    await waitCall(/^POST \/api\/presets\/5\/versions$/);
+    check('save there pre-fills the item\'s name', pre === 'dawn', String(pre));
+    const ver = lastCall(/^POST \/api\/presets\/5\/versions$/)?.body ?? {};
+    check('save with the item yours POSTs a new version of it', ver.name === 'dawn' && near(ver.params?.cloud_thickness, 0.31) && !('parent' in ver), JSON.stringify({ ...ver, params: '…' }));
+    await until(async () => /#5 v2/.test((await text4('#dev .arb-status')) ?? ''));
+    check('and the status says "#5 v2", with no items written (the playlist already points at the preset)', /#5 v2/.test((await text4('#dev .arb-status')) ?? '') && seen.slice(before).every((c) => c.method !== 'PUT'), String(await text4('#dev .arb-status')));
+
+    await pick4(0, '1');
+    await slider4(0.44);
+    await page4.waitForTimeout(300);
+    await save4('dusk, mine');
+    await waitCall(/^PUT \/api\/playlists\/7\/items$/);
+    const post = lastCall(/^POST \/api\/presets$/ )?.body ?? {};
+    check('save with the item someone else\'s POSTs your own new preset, parented on theirs', post.name === 'dusk, mine' && post.parent === 'preset:6@3' && near(post.params?.cloud_thickness, 0.44), JSON.stringify({ ...post, params: '…' }));
+    const iPut = seen.findLastIndex((c) => c.method === 'PUT' && c.path === '/api/playlists/7/items');
+    check('and replaces that item: a fresh GET first, the place kept, the unavailable item sent back with its times',
+      seen[iPut - 1].method === 'GET' && seen[iPut - 1].path === '/api/playlists/7'
+      && JSON.stringify(seen[iPut].body.items.map((i) => i.preset_id)) === JSON.stringify([5, server.nextPreset - 1, 99])
+      && seen[iPut].body.items[2].dwell_s === 40 && seen[iPut].body.items[2].crossfade_s === 7 && !('unavailable' in seen[iPut].body.items[2])
+      && seen[iPut].body.items[1].dwell_s === 12, JSON.stringify(seen[iPut]?.body));
+    await until(async () => (await opts4(0)).join() === 'dawn,dusk, mine');
+    check('the dev select then lists the replacement', (await opts4(0)).join() === 'dawn,dusk, mine', (await opts4(0)).join());
+
+    await pick4(0, '1');
+    await btn4('remove');
+    await until(async () => (await opts4(0)).join() === 'dawn');
+    const rm = seen.findLastIndex((c) => c.method === 'PUT' && c.path === '/api/playlists/7/items');
+    check('remove PUTs the list without the item, from a fresh GET, the unavailable item kept', seen[rm - 1].path === '/api/playlists/7' && seen[rm - 1].method === 'GET'
+      && JSON.stringify(seen[rm].body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99]) && (await opts4(0)).join() === 'dawn', JSON.stringify(seen[rm]?.body));
+
+    // a new playlist
+    reply = 'night';
+    await pick4(1, '+new');
+    reply = null;
+    await until(async () => (await value4(1)) === 'arb:9');
+    const np = lastCall(/^POST \/api\/playlists$/)?.body;
+    check('"New playlist…" prompts, POSTs only the name, and makes the new playlist active', JSON.stringify(np) === '{"name":"night"}' && (await value4(1)) === 'arb:9' && (await opts4(0)).length === 0 && (await opts4(1)).includes('night'), JSON.stringify({ np, v: await value4(1), l: await opts4(0) }));
+
+    // add to: a ★ that is already online goes in without an upload; one that is not is uploaded first
+    await pick4(1, 'local');
+    await page4.waitForTimeout(500);
+    await pick4(0, 'k4 mine');
+    const posts = calls(/^POST \/api\/presets/).length;
+    await pick4(2, '8');
+    await waitCall(/^PUT \/api\/playlists\/8\/items$/);
+    const a1 = seen.findLastIndex((c) => c.method === 'PUT' && c.path === '/api/playlists/8/items');
+    check('add to puts a ★ that is online into the playlist, from a fresh GET, with no upload', calls(/^POST \/api\/presets/).length === posts && seen[a1 - 1].path === '/api/playlists/8' && JSON.stringify(seen[a1].body.items) === '[{"preset_id":12}]', JSON.stringify(seen[a1]?.body));
+    check('and says where', /morning/.test((await text4('#dev .arb-status')) ?? ''), String(await text4('#dev .arb-status')));
+    await pick4(0, 'afternoon 7');
+    await slider4(0.5);
+    await save4('k4 fresh');
+    await pick4(2, '8');
+    await waitCall(/^PUT \/api\/playlists\/8\/items$/, 2);
+    const a2 = seen.findLastIndex((c) => c.method === 'PUT' && c.path === '/api/playlists/8/items');
+    const fresh = lastCall(/^POST \/api\/presets$/)?.body ?? {};
+    check('add to uploads a ★ that is not online first (the smart rule), then appends the new preset',
+      fresh.name === 'k4 fresh' && fresh.parent === 'look:afternoon 7' && JSON.stringify(seen[a2].body.items.map((i) => i.preset_id)) === JSON.stringify([12, server.nextPreset - 1]), JSON.stringify(seen[a2]?.body));
+
+    // the picker: your own presets, saved into On this browser
+    check('the picker lists your own presets by name', (await dev4(() => [...document.querySelector('#dev .arb-picker select').options].map((o) => o.textContent).join())) === 'my presets ▾,dusk,dawn');
+    await dev4(() => { const s = document.querySelector('#dev .arb-picker select'); s.value = '21'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await waitCall(/^GET \/api\/presets\/21$/);
+    await until(async () => (await opts4(0)).includes('★ dusk'));
+    check('picking one fetches it and saves it into On this browser, selected', (await opts4(0)).includes('★ dusk') && (await value4(0)) === 'dusk' && (await value4(1)) === 'local', JSON.stringify({ v: await value4(0), l: await value4(1) }));
+
+    // refresh
+    lists[10] = { id: 10, name: 'dawn chorus', items: [] };
+    await click4('#dev .arb-refresh');
+    await until(async () => (await opts4(1)).includes('dawn chorus'));
+    check('refresh asks arboretum again for your playlists', (await opts4(1)).includes('dawn chorus'), (await opts4(1)).join());
+
+    // provenance (design §4.1): saving over a ★ that is on arboretum leaves its copy there behind; deleting the ★ forgets the record
+    check('a ★ brought in by the picker is recorded as a synced copy', (await origin4()).dusk?.id === 21 && (await origin4()).dusk.synced === true, JSON.stringify((await origin4()).dusk));
+    await pick4(0, 'k4 mine');
+    await slider4(0.7);
+    await save4('k4 mine');
+    check('saving over a ★ that is on arboretum marks the copy there as behind', (await origin4())['k4 mine']?.id === 12 && (await origin4())['k4 mine'].synced === false, JSON.stringify((await origin4())['k4 mine']));
+    await pick4(0, 'dusk');
+    await btn4('delete');
+    check('deleting a ★ forgets its record', !('dusk' in (await origin4())), JSON.stringify(Object.keys(await origin4())));
+
+    // arboretum's refusals, verbatim, on the status line
+    await pick4(0, 'k4 mine');
+    const refusals = [
+      [422, { error: 'arboretum is pinned to komorebi abc1234; unknown keys: grain_size', keys: ['grain_size'] }],
+      [422, { error: 'branch_levels must be 1–4', reason: 'out_of_range' }],
+      [422, { error: "this is the built-in 'afternoon 7', unchanged — change something first", reason: 'builtin' }],
+      [429, { error: 'at most 1000 presets per user', limit: 'presets' }],
+    ];
+    for (const [status, body] of refusals) {
+      server.refuse = { status, body };
+      const n = calls(/^POST /).length;
+      await click4('#dev .arb-push');
+      await waitCall(/^POST /, n + 1);
+      await until(async () => (await text4('#dev .arb-status')) === body.error);
+      check(`${status} ${body.reason ?? body.limit ?? ''} is shown verbatim`, (await text4('#dev .arb-status')) === body.error, String(await text4('#dev .arb-status')));
+    }
+
+    // a session that has ended mid-use: the button comes back
+    server.signedIn = false;
+    await click4('#dev .arb-push');
+    await until(() => shown4('#dev .arb-cta'));
+    check('a 401 on a write brings the sign-in button back, and takes the session controls away', await shown4('#dev .arb-cta') && !(await shown4('#dev .arb-push')));
+
+    check('no request ever carried visibility', seen.every((c) => !/visibility/i.test(`${c.path} ${JSON.stringify(c.body ?? '')}`)), seen.find((c) => /visibility/i.test(JSON.stringify(c.body ?? '')))?.path);
+    check('and arboretum raised no alert', alerts.length === 0, alerts.join(' | '));
+    const elsewhere = await dev4(() => ['play', 'strip'].filter((id) => /arboretum/i.test(document.getElementById(id).textContent) || document.getElementById(id).querySelector('.arb-push, .arb-cta, .arb-status, .arb-picker')));
+    check('and nothing of it is in the playful sidebar or the zen strip', elsewhere.length === 0, elsewhere.join());
+    await ctx4.close();
+  }
+
+  // a cloud playlist that is active when the page opens asks /api/me at once, and when arboretum cannot be reached its cached copy plays on
+  {
+    await page.goto('about:blank');
+    const cache = { v: 1, me: null, origin: {}, playlists: { 7: { id: 7, name: 'k4 cached', owner: 'jo', k: null, fetched_at: 1700000000000, unavailable: 0, items: [
+      { preset_id: 1, version: 1, owner: 'jo', name: 'one', dwell_s: 2, crossfade_s: 1, params: PRESETS['afternoon 7'] },
+      { preset_id: 2, version: 1, owner: 'jo', name: 'two', dwell_s: 2, crossfade_s: 1, params: PRESETS.memories }] } } };
+    const ctx5 = await browser.newContext({ viewport: { width: 640, height: 480 } });
+    await ctx5.addInitScript(([c]) => {
+      if (localStorage.getItem('komorebi.editor')) return;
+      localStorage.setItem('komorebi.arboretum', JSON.stringify(c));
+      localStorage.setItem('komorebi.editor', JSON.stringify({ mode: 'play', playlist: 'arb:7' }));
+    }, [cache]);
+    const page5 = await ctx5.newPage();
+    page5.setDefaultTimeout(30000);
+    page5.on('pageerror', (e) => errors.push(`[after check ${results.length}] page 5: ${e.message}`));
+    page5.on('console', (m) => { if (m.type() === 'error' && !(m.text().startsWith('Failed to load resource') && /\/api\//.test(m.location().url))) errors.push(`[after check ${results.length}] page 5 console: ${m.text()}`); });
+    const asked5 = [];
+    await page5.route('**/api/**', (route) => {
+      const u = new URL(route.request().url());
+      asked5.push(u.pathname);
+      const json = (b) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(b) });
+      if (u.pathname === '/api/health') return json({ ok: true, engine: 'abc1234' });
+      if (u.pathname === '/api/me') return json({ username: 'jo', kind: 'session' });
+      if (u.pathname === '/api/playlists') return json({ playlists: [{ id: 7, owner: 'jo', name: 'k4 cached' }] });
+      return route.abort('failed');   // the playlist itself cannot be reached
+    });
+    await page5.goto(`http://127.0.0.1:${port}/editor/index.html`, { waitUntil: 'load' });
+    await page5.click('#feel');
+    await page5.waitForSelector('#play:not(.hidden)', { timeout: 60000 });
+    const got = async () => { const end = Date.now() + 15000; while (Date.now() < end) { if (asked5.includes('/api/me')) return true; await page5.waitForTimeout(60); } return false; };
+    check('with a cloud playlist active, /api/me is asked without the advanced panel', await got(), asked5.join());
+    await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'local'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page5.waitForTimeout(500);
+    await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'arb:7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page5.waitForFunction(() => /offline copy from/.test(document.querySelector('#dev .arb-status')?.textContent ?? ''), null, { timeout: 15000 }).catch(() => {});
+    const off = await page5.evaluate(() => ({ status: document.querySelector('#dev .arb-status')?.textContent, opts: [...document.querySelectorAll('#dev select')[0].options].map((o) => o.textContent), list: document.querySelectorAll('#dev select')[1].value }));
+    check('when the playlist cannot be fetched its cached copy is played, and the status says so', /^offline copy from /.test(off.status ?? '') && off.opts.join() === 'one,two' && off.list === 'arb:7', JSON.stringify(off));
+    await ctx5.close();
+  }
 } catch (e) {
   check('smoke run', false, e.message.split('\n')[0]);
 }

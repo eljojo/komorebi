@@ -27,6 +27,7 @@ test("each call goes to its route with the method arboretum expects, and credent
   await a.health();
   await a.me();
   await a.preset(12);
+  await a.presets();
   await a.playlists();
   await a.playlist(7);
   await a.create({ name: "x", params: {} });
@@ -37,6 +38,7 @@ test("each call goes to its route with the method arboretum expects, and credent
     `GET ${ORIGIN}/api/health`,
     `GET ${ORIGIN}/api/me`,
     `GET ${ORIGIN}/api/presets/12`,
+    `GET ${ORIGIN}/api/presets?owner=me`,
     `GET ${ORIGIN}/api/playlists?owner=me`,
     `GET ${ORIGIN}/api/playlists/7`,
     `POST ${ORIGIN}/api/presets`,
