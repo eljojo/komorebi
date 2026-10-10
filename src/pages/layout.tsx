@@ -9,8 +9,10 @@ export const WEBAUTHN_BROWSER = `${BASE}/vendor/simplewebauthn-browser-14.0.0.um
 
 export const viewerOf = (c: Ctx): Promise<Actor | null> => authorize(c, 'anonymous');
 
-// Every page is a plain document that reads without JavaScript; `scripts` are the modules that add to it.
-export function Layout(props: { title: string; viewer: Actor | null; scripts?: string[]; classic?: string[]; children?: Child }) {
+// Every page is a plain document that reads without JavaScript; `scripts` are the modules that add to it. Arboretum is
+// a part of komorebi, so no page names itself as a site: the head is komorebi's, with arboretum as one of its links.
+// The page is a plain dark ground: a canvas appears only where a look is being highlighted.
+export function Layout(props: { title: string; viewer: Actor | null; scripts?: string[]; classic?: string[]; wide?: boolean; children?: Child }) {
   const { viewer } = props;
   return (
     <>
@@ -19,14 +21,17 @@ export function Layout(props: { title: string; viewer: Actor | null; scripts?: s
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <meta name="color-scheme" content="light dark" />
-          <title>{props.title === 'arboretum' ? 'arboretum' : `${props.title} · arboretum`}</title>
+          <meta name="color-scheme" content="dark" />
+          <title>{`${props.title} · komorebi`}</title>
           <link rel="stylesheet" href={`${BASE}/arboretum.css`} />
         </head>
         <body>
           <header>
-            <a class="home" href={BASE}>arboretum</a>
+            <a class="name" href="/">komorebi</a>
             <nav>
+              <a href={BASE}>arboretum</a>
+              <a href="/about">about</a>
+              <a href="/player.html">player</a>
               {viewer ? (
                 <>
                   <a href={`${BASE}/new`}>new</a>
@@ -34,13 +39,12 @@ export function Layout(props: { title: string; viewer: Actor | null; scripts?: s
                   <a href={`${BASE}/u/${viewer.username}`}>{viewer.username}</a>
                 </>
               ) : (
-                <>
-                  <a href={`${BASE}/login`}>sign in</a>
-                </>
+                <a href={`${BASE}/login`}>sign in</a>
               )}
             </nav>
+            <a class="feel" href="/">open komorebi</a>
           </header>
-          <main>{props.children}</main>
+          <main class={props.wide ? 'wide' : undefined}>{props.children}</main>
           {props.classic?.map((src) => <script src={src}></script>)}
           {props.scripts?.map((src) => <script type="module" src={src}></script>)}
         </body>

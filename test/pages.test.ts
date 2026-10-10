@@ -13,9 +13,7 @@ async function owner() {
 const html = (r: { headers: Headers }) => expect(r.headers.get('Content-Type')).toMatch(/^text\/html/);
 
 describe('the front pages', () => {
-  it('/arboretum says what arboretum is and offers a way in, without listing any looks', async () => {
-    const o = await owner();
-    await makePreset(o.user, o.token, { visibility: 'public', name: 'a quiet afternoon' });
+  it('/arboretum says what arboretum is and offers a way in (its garden is in garden.test.ts)', async () => {
     const r = await get('/arboretum');
     expect(r.status).toBe(200);
     html(r);
@@ -23,7 +21,6 @@ describe('the front pages', () => {
     expect(r.text).toContain('href="/arboretum"');
     expect(r.text).toContain('href="/arboretum/arboretum.css"');
     expect(r.text).not.toContain('href="/arboretum/signup"');
-    expect(r.text).not.toContain('a quiet afternoon');
   });
 
   it('/arboretum/ with a trailing slash is the same front page', async () => {

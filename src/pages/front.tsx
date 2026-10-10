@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { canSee } from '../api/access';
 import type { AppEnv } from '../auth';
@@ -6,6 +6,51 @@ import { connect } from '../db/client';
 import { playlists, presetVersions, presets, users } from '../db/schema';
 import { Layout, WEBAUTHN_BROWSER, Tags, day, notFound, viewerOf } from './layout';
 import { BASE } from '../config';
+import engine from '../../public/engine/engine.json';
+import { komorebiPresetLink } from './links';
+
+// How many looks the garden picks. Only the player draws; the rest are quiet entries.
+const GARDEN_SIZE = 6;
+
+type Entry = { id: number; name: string; owner: string };
+
+// A few at random, from what anyone may see without a key: public and not archived (`canSee`, for an anonymous viewer).
+// We will improve the choosing over time.
+async function gardenEntries(db: ReturnType<typeof connect>): Promise<Entry[]> {
+  return db
+    .select({ id: presets.id, name: presetVersions.name, owner: users.username })
+    .from(presets)
+    .innerJoin(presetVersions, eq(presetVersions.id, presets.headVersionId))
+    .innerJoin(users, eq(users.id, presets.ownerId))
+    .where(and(eq(presets.visibility, 'public'), isNull(presets.archivedAt)))
+    .orderBy(sql`random()`)
+    .limit(GARDEN_SIZE);
+}
+
+// One player, and the looks it moves between as the pointer or the keyboard rests on an entry (garden.js). The entries
+// are plain, linked text, so the list reads and works without the script; the figure goes where there is no WebGL2.
+function Garden(props: { entries: Entry[] }) {
+  if (!props.entries.length) return <p class="garden-empty">The garden is quiet for now. Looks that people share will grow here.</p>;
+  return (
+    <div id="garden" class="garden">
+      <figure class="stage">
+        <canvas id="stage" data-engine={engine.file}></canvas>
+      </figure>
+      <ul class="looks">
+        {props.entries.map((e) => (
+          <li class="look" data-src={`/api/presets/${e.id}`}>
+            <p class="name">
+              <a href={`${BASE}/p/${e.id}`}>{e.name}</a>
+            </p>
+            <p class="by">
+              by <a href={`${BASE}/u/${e.owner}`}>{e.owner}</a> · <a href={komorebiPresetLink(e.id)}>open in komorebi</a>
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 // Only what is not public gets a label: it tells the owner who else can see the thing.
 function Visibility(props: { of: 'public' | 'unlisted' | 'private' }) {
@@ -30,18 +75,68 @@ function Looks(props: { rows: LookRow[] }) {
 export function registerFrontPages(app: Hono<AppEnv>) {
   app.get(BASE, async (c) => {
     const viewer = await viewerOf(c);
+    const entries = await gardenEntries(connect(c.env.DB));
     return c.html(
-      <Layout title="arboretum" viewer={viewer}>
-        <h1>arboretum</h1>
-        <p>
-          A quiet place where <a href="https://komorebi.eljojo.net">komorebi</a> looks are kept, grouped into playlists, and shared.
-        </p>
-        <p>Find the right look or playlist here, then open it in komorebi and let it be.</p>
-        {viewer ? null : (
+      <Layout title="arboretum" viewer={viewer} wide scripts={entries.length ? [`${BASE}/js/garden.js`] : []}>
+        <div class="column">
+          <h1>
+            arboretum<span class="sub">where looks are kept</span>
+          </h1>
           <p>
-            <a href={`${BASE}/login`}>Sign in or sign up</a>.
+            Komorebi is sunlight through leaves, and a look is one way of tuning it: a canopy, a sun, a wind, an hour of the day. Arboretum
+            is the part of komorebi where looks are kept, so an afternoon you found still loads tomorrow, and where anyone can walk among the
+            ones people chose to share.
           </p>
-        )}
+        </div>
+
+        <section class="garden-section">
+          <h2>The garden</h2>
+          <p class="column">
+            A few of the looks people have shared publicly, picked anew each time you come. Rest on one, or tap it, and the light moves to it; open
+            it in komorebi and let it be.
+          </p>
+          <Garden entries={entries} />
+        </section>
+
+        <div class="column">
+          <h2>Keeping your looks</h2>
+          <p>
+            Sign in with a passkey and the looks you save from inside komorebi are kept here, ready on your other machines too. There is
+            no email and no password, and so no way back if every passkey is lost: add a second one once you are in. Each edit becomes a
+            new version, and the older ones stay.
+          </p>
+          {viewer ? null : (
+            <p>
+              <a href={`${BASE}/login`}>Sign in or sign up</a>.
+            </p>
+          )}
+
+          <h2>Playlists</h2>
+          <p>
+            A playlist is looks in an order, each with a dwell, how long it stays, and a crossfade, how it melts into the next. Play one in
+            komorebi and the light drifts from look to look.
+          </p>
+
+          <h2>Sharing</h2>
+          <p>
+            A look you save from komorebi starts out private, and only you can see it. Make it unlisted and anyone who has its link can open it, though it
+            is listed nowhere. Make it public and it can appear in the garden above and on your page. Playlists are shared the same way.
+          </p>
+
+          <h2>For the curious, and for agents</h2>
+          <p>
+            Everything here is also a JSON API on the same site, and <a href={`${BASE}/llms.txt`}>llms.txt</a> tells an agent how to use it.
+            In <a href={`${BASE}/settings`}>settings</a> you can make a token that lets an agent read, or read and write, as you. What it
+            makes stays private; making something public is always your own act, in a browser.
+          </p>
+
+          <h2>And the rest</h2>
+          <p>
+            Read <a href="/about">about</a> komorebi, watch the looks drift in the <a href="/player.html">player</a>, or go straight to the
+            light.
+          </p>
+          <a class="feel" href="/">open komorebi</a>
+        </div>
       </Layout>,
     );
   });
