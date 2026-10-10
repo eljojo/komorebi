@@ -1240,6 +1240,14 @@ canvas.addEventListener('wheel', e=>{
   params.view_extent_m = clamp(params.view_extent_m * Math.exp(e.deltaY*0.0015), 0.5, 40);
   syncControl('view_extent_m');
 }, { passive:false });
+// browser fullscreen, on and off (webkit fallback for Safari): F, and a double-click on the picture. On touch a double-tap is the
+// panel's gesture, so there the double-click (which a double-tap also fires) is left alone.
+function toggleFullscreen(){
+  const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;
+  if(fsEl){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
+  else { const p=(el.requestFullscreen||el.webkitRequestFullscreen).call(el); if(p?.catch) p.catch(()=>{}); }
+}
+canvas.addEventListener('dblclick', ()=>{ if(!coarse && !document.body.classList.contains('intro')) toggleFullscreen(); });
 // a pointer resting on the picture hides after a few seconds (#gl.still) and comes back the moment it moves; over a panel it never hides
 const STILL_MS = 3000;
 let stillTimer = 0;
@@ -1282,12 +1290,7 @@ window.addEventListener('keydown',e=>{
   if(k==='t'||k==='T'){ showTree=!showTree; document.getElementById('hint').style.display = showTree?'none':''; return; }
   if(k==='l'||k==='L'){ showLeaf=!showLeaf; leaf??=makeLeafPreview(params, () => eng.grove().hier); leaf.show(showLeaf); return; }
   if(showLeaf && (k==='['||k===']')){ leaf.step(k===']'?1:-1); return; }
-  if(k==='f'||k==='F'){                                                     // toggle browser fullscreen (webkit fallback for Safari)
-    const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;
-    if(fsEl){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
-    else { const p=(el.requestFullscreen||el.webkitRequestFullscreen).call(el); if(p?.catch) p.catch(()=>{}); }
-    return;
-  }
+  if(k==='f'||k==='F'){ toggleFullscreen(); return; }
   if(k==='ArrowLeft'||k==='ArrowRight'||k==='ArrowUp'||k==='ArrowDown'){
     const tag=(document.activeElement?.tagName)||'';
     if(tag==='INPUT'||tag==='SELECT') return;                               // let a focused panel control use the arrows
