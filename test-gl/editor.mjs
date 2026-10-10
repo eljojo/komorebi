@@ -570,7 +570,7 @@ try {
   const upToSparse = await walk(']', '1·0', sparse.perCluster + 5);
   check(`on ${sparse.name} (density 0.45, ${sparse.perCluster} leaves a cluster) no address past leaf 0·${sparse.perCluster - 1} is ever shown`, upToSparse[upToSparse.length - 1] === '1·0' && upToSparse[upToSparse.length - 2] === `0·${sparse.perCluster - 1}`, upToSparse.slice(-3).join(' '));
 
-  // SETTLE (§4.5). A regrow is ~0.5 s and a re-raster most of that, so a slider drag, or a canopy morph that lerps leaf_size_m every tick, must not pay one per frame: the picture
+  // SETTLE (§4.5). A regrow is about 0.13 s in bun and a re-raster most of that, so a slider drag, or a canopy morph that lerps leaf_size_m every tick, must not pay one per frame: the picture
   // keeps showing the last leaf until its inputs have been still for 250 ms, then makes the one it was asked for. `data-grows` / `data-rasters` count the makes; `data-size` /
   // `data-wall` are what the picture on show was made with.
   const dataOf = (name) => page.$eval('#leaf', (c, n) => c.dataset[n], name);

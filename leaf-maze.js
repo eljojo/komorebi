@@ -220,19 +220,33 @@ function fillLamina(margin, view, S){
 }
 // each wall as a capsule of half-width w·widthOf(order), as the area of a one-sample box it covers (exact for a strip, so a hairline keeps its area), the
 // union of them by max so a junction is not counted twice
-function stampWalls(walls, w, view, S){
-  const s = S/(2*view.half), cover = new Uint8Array(S*S);
-  for(const wl of walls){
-    const ax = (wl.a[1] - view.cy)*s + S/2, ay = S/2 - (wl.a[0] - view.cx)*s, bx = (wl.b[1] - view.cy)*s + S/2, by = S/2 - (wl.b[0] - view.cx)*s;
-    const hw = w*widthOf(wl.order)*s, dx = bx - ax, dy = by - ay, l2 = dx*dx + dy*dy, pad = hw + 1;
-    const c0 = Math.max(0, Math.floor(Math.min(ax, bx) - pad)), c1 = Math.min(S - 1, Math.ceil(Math.max(ax, bx) + pad));
-    const r0 = Math.max(0, Math.floor(Math.min(ay, by) - pad)), r1 = Math.min(S - 1, Math.ceil(Math.max(ay, by) + pad));
-    for(let r = r0; r <= r1; r++) for(let c = c0; c <= c1; c++){
-      const px = c + 0.5 - ax, py = r + 0.5 - ay, t = l2 ? Math.max(0, Math.min(1, (px*dx + py*dy)/l2)) : 0, d = Math.hypot(px - t*dx, py - t*dy);
+// A pixel is covered only where its centre lies within hw + ½ of the wall's segment, so a row needs only the columns that can: the part of the segment that is within that reach of the row's centre line is
+// t ∈ [ta, tb], and a point on the row within reach of the segment is within reach of x(t) for one of them. One column more each side keeps a rounding of the span from costing a pixel; the expression in the loop
+// is the one a scan of the wall's whole padded box evaluates, so the buffer is that scan's to the byte (maze.test.js keeps the box scan and holds this to it).
+// ONE CALL A WALL: with the loop over the walls inside one function the stamp would be a single call of millions of pixel evaluations, which the JIT leaves its lower tiers only by on-stack replacement, and a speculation
+// failure on the first walls of a maze it has not seen throws that away, so the first pass over a new maze is the slow one. Called a wall at a time it tiers up by call count, and a failure costs one wall.
+function stampWall(cover, wl, w, view, s, S){
+  const ax = (wl.a[1] - view.cy)*s + S/2, ay = S/2 - (wl.a[0] - view.cx)*s, bx = (wl.b[1] - view.cy)*s + S/2, by = S/2 - (wl.b[0] - view.cx)*s;
+  const hw = w*widthOf(wl.order)*s, dx = bx - ax, dy = by - ay, l2 = dx*dx + dy*dy, reach = hw + 0.5, pad = hw + 1;
+  const c0 = Math.max(0, Math.floor(Math.min(ax, bx) - pad)), c1 = Math.min(S - 1, Math.ceil(Math.max(ax, bx) + pad));
+  const r0 = Math.max(0, Math.floor(Math.min(ay, by) - pad)), r1 = Math.min(S - 1, Math.ceil(Math.max(ay, by) + pad));
+  for(let r = r0; r <= r1; r++){
+    const yc = r + 0.5, py = yc - ay;
+    let ta = 0, tb = 1;
+    if(dy !== 0){ const u = (yc - reach - ay)/dy, v = (yc + reach - ay)/dy; ta = Math.max(0, Math.min(u, v)); tb = Math.min(1, Math.max(u, v)); }
+    else if(Math.abs(py) >= reach) continue;
+    if(ta > tb) continue;
+    const xa = ax + ta*dx, xb = ax + tb*dx, cl = Math.max(c0, Math.floor(Math.min(xa, xb) - reach) - 1), ch = Math.min(c1, Math.ceil(Math.max(xa, xb) + reach) + 1);
+    for(let c = cl; c <= ch; c++){
+      const px = c + 0.5 - ax, t = l2 ? Math.max(0, Math.min(1, (px*dx + py*dy)/l2)) : 0, d = Math.hypot(px - t*dx, py - t*dy);
       const cov = Math.min(d + 0.5, hw) - Math.max(d - 0.5, -hw);
       if(cov > 0){ const v = Math.round(Math.min(1, cov)*255), i = r*S + c; if(v > cover[i]) cover[i] = v; }
     }
   }
+}
+function stampWalls(walls, w, view, S){
+  const s = S/(2*view.half), cover = new Uint8Array(S*S);
+  for(const wl of walls) stampWall(cover, wl, w, view, s, S);
   return cover;
 }
 // one pass at width w: the two coverages per pixel (`lam`: how much of it is lamina; `wall`: how much of THAT is wall), and the share of the lamina the walls hold
@@ -317,4 +331,5 @@ function leafMaze(spec, seed, j, k, sizeM){
   return g;
 }
 
-export { AREOLE_M, AREOLE_SALT, marginOf, growAreoles, rasterLeaf, paintLeaf, tissues, leafMaze };
+// stampWalls is exported for maze.test.js, which holds it to its reference box scan
+export { AREOLE_M, AREOLE_SALT, marginOf, growAreoles, rasterLeaf, paintLeaf, tissues, leafMaze, stampWalls };

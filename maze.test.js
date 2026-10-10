@@ -228,6 +228,67 @@ test("the blemish hook is a no-op while the list is empty: masks and colours bit
   expect(Buffer.from(MAZE.paintLeaf(b, wall, cell, [])).equals(Buffer.from(MAZE.paintLeaf(a, wall, cell)))).toBe(true);
 });
 
+// ---- the stamp: the row spans paint the box scan's buffer, to the byte ------------------------------------------------------
+// THE REFERENCE is the stamp as it was first written, kept here as the proof of any faster one: each wall visits every pixel of its box padded by hw + 1, evaluates the coverage there and keeps the max.
+// leaf-maze.js visits only the columns a wall can reach in each row and evaluates the very same expression in them, so on ANY walls the two buffers must agree byte for byte: the mazes' own
+// (the star, the maple, the beech) and the ones that make a span's edge cases (zero length, along a row, along a column, off the view, a hairline, a fat wall).
+const SS = 4;                                                                           // leaf-maze.js's subsamples per axis
+const widthOfRef = (o) => (o === 1 ? 4 : o === 2 ? 3 : 1 + 0.5 * Math.max(0, 5 - o));
+function boxStamp(walls, w, view, S) {
+  const s = S / (2 * view.half), cover = new Uint8Array(S * S);
+  for (const wl of walls) {
+    const ax = (wl.a[1] - view.cy) * s + S / 2, ay = S / 2 - (wl.a[0] - view.cx) * s, bx = (wl.b[1] - view.cy) * s + S / 2, by = S / 2 - (wl.b[0] - view.cx) * s;
+    const hw = w * widthOfRef(wl.order) * s, dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, pad = hw + 1;
+    const c0 = Math.max(0, Math.floor(Math.min(ax, bx) - pad)), c1 = Math.min(S - 1, Math.ceil(Math.max(ax, bx) + pad));
+    const r0 = Math.max(0, Math.floor(Math.min(ay, by) - pad)), r1 = Math.min(S - 1, Math.ceil(Math.max(ay, by) + pad));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const px = c + 0.5 - ax, py = r + 0.5 - ay, t = l2 ? Math.max(0, Math.min(1, (px * dx + py * dy) / l2)) : 0, d = Math.hypot(px - t * dx, py - t * dy);
+      const cov = Math.min(d + 0.5, hw) - Math.max(d - 0.5, -hw);
+      if (cov > 0) { const v = Math.round(Math.min(1, cov) * 255), i = r * S + c; if (v > cover[i]) cover[i] = v; }
+    }
+  }
+  return cover;
+}
+const sameBytes = (got, want) => { if (Buffer.from(got).equals(Buffer.from(want))) return "same"; const i = got.findIndex((v, k) => v !== want[k]); return `differs at ${i}: ${got[i]} for ${want[i]}`; };
+const painted = (a) => { let n = 0; for (let i = 0; i < a.length; i++) if (a[i]) n++; return n; };
+// the maple's first calibration, a literal so the stamp is held to that blade whatever MAPLE becomes: laterals at ±62° and a basal pair 0.55 of the central
+const STAR = Object.freeze({
+  species: 1, grammar: "palmate", angles: Object.freeze([-105, -62, 0, 62, 105]), angleJitter: 4, lengths: Object.freeze([0.55, 0.85, 1, 0.85, 0.55]), lengthJitter: 0.10,
+  hub: 0.12, hold: 0.6, rho: 0.19, taper: 1, secStep: 0.18, secAngle: 45, secJitter: 0.10, tooth: 0.02, toothHalf: 0.06,
+});
+// [name, blade, the N it is held at]: the preview rasterises at 512 (leaf-preview.js's N); 256 and 1024 are half and double that, other span geometries over the same walls
+const stampBlades = [
+  ["the star", bladeOf(STAR, outlineSeed(STAR, 1234, 0)), [256, 512, 1024]],
+  ["the maple", bladeOf(MAPLE, outlineSeed(MAPLE, 1234, 0)), [256, 512, 1024]],
+  ["the maple, the cost test's leaf", bladeOf(MAPLE, outlineSeed(MAPLE, 31, 5)), [256, 512]],
+  ["the beech", bladeOf(LEAF.BEECH, outlineSeed(LEAF.BEECH, 1234, 3)), [256, 512, 1024]],
+];
+for (const [name, blade, Ns] of stampBlades) {
+  test(`the stamp is the box scan's buffer, to the byte: ${name}, N ${Ns.join(" / ")} at wall_fraction 0.05 and 0.4`, () => {
+    const m = MAZE.growAreoles(blade, opts(7));
+    for (const N of Ns) for (const fw of [0.05, 0.4]) {
+      const r = MAZE.rasterLeaf(blade, m, fw, N), S = N * SS, want = boxStamp(m.walls, r.w, r.view, S), got = MAZE.stampWalls(m.walls, r.w, r.view, S);
+      expect(painted(want), "the reference paints something").toBeGreaterThan(S * 20);
+      expect(sameBytes(got, want), `${name}, N ${N}, wall_fraction ${fw}`).toBe("same");
+    }
+  }, 30000);
+}
+
+test("the stamp is the box scan's buffer, to the byte, on walls that are all edge: zero length, along a row, along a column, off the view, a hairline, a fat wall", () => {
+  const rnd = math.mulberry32(2026), pick = (n) => Math.floor(rnd() * n), at = () => 3 * rnd() - 1.5;   // the view is [-1, 1]: a wall may start and end outside it
+  const walls = [];
+  for (let i = 0; i < 160; i++) {
+    const a = [at(), at()], kind = i % 8;
+    const b = kind === 0 ? a : kind === 1 ? [a[0], at()] : kind === 2 ? [at(), a[1]] : kind === 3 ? [a[0] + 1e-9 * rnd(), at()] : kind === 4 ? [a[0] + 0.01 * rnd(), a[1] + 0.01 * rnd()] : [at(), at()];
+    walls.push({ a, b, order: 1 + pick(5) });
+  }
+  walls.push({ a: [0.25, 0.25], b: [-0.25, -0.25], order: 1 }, { a: [0, -0.5], b: [0, 0.5], order: 2 }, { a: [-0.5, 0], b: [0.5, 0], order: 3 });   // a diagonal, a column and a row, centred
+  for (const S of [64, 256]) for (const w of [1e-4, 0.002, 0.012, 0.15, 0.6]) {
+    const view = { cx: 0.1, cy: -0.05, half: 1 };
+    expect(sameBytes(MAZE.stampWalls(walls, w, view, S), boxStamp(walls, w, view, S)), `S ${S}, w ${w}`).toBe("same");
+  }
+}, 30000);
+
 // ---- the gate --------------------------------------------------------------------------------------------------------------
 test("nothing ships: no engine module, bundle shim, preset or macro names the fixture", () => {
   const files = [...readdirSync(".").filter((f) => /^komorebi-.*\.js$/.test(f)), "komorebi.js", "komorebi.global.js", "presets.js", "macros.js"];

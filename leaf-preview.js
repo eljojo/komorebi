@@ -4,7 +4,7 @@
 // never otherwise, so nothing exists until `L`; imported by editor.js alone.
 //
 // draw() runs from eng.onFrame and does nothing unless a signature moved, because the work has three prices: (seed, shape, size, address) REGROWS the maze;
-// wall_fraction re-rasterises the masks; the pigment only recolours. The first two are ~0.5 s and never per frame — a signature that is still moving (a slider
+// wall_fraction re-rasterises the masks; the pigment only recolours. The first two are about 0.13 s in bun and never per frame — a signature that is still moving (a slider
 // drag, a canopy morph lerping leaf_size_m every tick) is DEFERRED, not dropped: the picture keeps the last leaf it made until the inputs have stood still for
 // SETTLE_MS, and then makes the one it was asked for. The recolour is cheap and follows the sliders live; the first draw after `L` has nothing to show and is at once.
 //
@@ -19,7 +19,7 @@ import { TAU_ANTHOCYANIN, TAU_CAROTENOID, TAU_TANNIN, leafClock, senescence, tre
 import { LEAF_SHAPES, MAPLE } from './komorebi-leaf.js';
 import { leafMaze, paintLeaf, rasterLeaf, tissues } from './leaf-maze.js';
 
-const N = 512;   // the raster's side: a regrow + raster costs ~0.5 s in bun, once per settled change of leaf, never per frame
+const N = 512;   // the raster's side: a regrow + raster costs about 0.13 s in bun, once per settled change of leaf, never per frame
 const SETTLE_MS = 250;   // how long a regrow's or a re-raster's inputs must have stood still (performance.now()) before it is paid
 const PIGMENT_KEYS = ['phenology', 'turn_start', 'turn_span', 'turn_spread', 'turn_exposure', 'anthocyanin', 'tannin', 'trans_r', 'trans_g', 'trans_b', 'drop_after_turn', 'tree_clock_spread', 'tree_pigment_spread'];
 
