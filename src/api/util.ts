@@ -1,0 +1,25 @@
+import type { Ctx } from '../auth';
+import { ApiError } from '../errors';
+
+export const VISIBILITIES = ['public', 'unlisted', 'private'] as const;
+export type Visibility = (typeof VISIBILITIES)[number];
+
+export const isVisibility = (v: unknown): v is Visibility => VISIBILITIES.includes(v as Visibility);
+
+// The request body as the sender wrote it, and parsed. Callers that must keep a member verbatim cut it from `text`.
+export async function readJsonBody(c: Ctx): Promise<{ text: string; body: Record<string, unknown> }> {
+  const text = await c.req.text();
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new ApiError(400, 'the body is not valid JSON');
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new ApiError(400, 'the body must be a JSON object');
+  return { text, body: body as Record<string, unknown> };
+}
+
+// An id or version number in a path. Anything else is simply not found.
+export function parseId(raw: string | undefined): number | null {
+  return raw !== undefined && /^[1-9]\d{0,14}$/.test(raw) ? Number(raw) : null;
+}

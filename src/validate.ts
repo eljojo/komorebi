@@ -1,7 +1,7 @@
 // The upload guard (spec §5): what a preset may contain. Pure functions, no I/O.
 import { ENGINE_COMMIT, LEGACY_KEYS, PARAM_TYPES } from './generated/engine';
 
-const MAX_PARAMS_BYTES = 16384;
+export const MAX_PARAMS_BYTES = 16384;
 const MAX_STRING = 64;
 const MAX_NAME = 80;
 const MAX_DESCRIPTION = 500;

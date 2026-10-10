@@ -1,0 +1,208 @@
+import { env } from 'cloudflare:workers';
+import { eq } from 'drizzle-orm';
+import { describe, expect, it } from 'vitest';
+import { createApp } from '../src';
+import { policies, viaFor } from '../src/auth';
+import { LIMITS } from '../src/config';
+import { apiTokens } from '../src/db/schema';
+import { mintToken, sha256Hex } from '../src/tokens';
+import { call, db, get, makeToken, makeUser, reply } from './helpers';
+
+describe('tokens', () => {
+  it('look like arb_ + 32 random bytes in base64url, and only the hash is stored', async () => {
+    const u = await makeUser();
+    const { token } = await mintToken(db, u.id, 'studio laptop', 'read');
+    expect(token).toMatch(/^arb_[A-Za-z0-9_-]{43}$/);
+    const [row] = await db.select().from(apiTokens).where(eq(apiTokens.userId, u.id));
+    expect(row.tokenHash).toBe(await sha256Hex(token));
+    expect(row.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(row)).not.toContain(token);
+    expect(row.scope).toBe('read');
+    expect(row.label).toBe('studio laptop');
+  });
+
+  it('are different every time', async () => {
+    const u = await makeUser();
+    const a = await mintToken(db, u.id, 'a', 'read');
+    const b = await mintToken(db, u.id, 'b', 'read');
+    expect(a.token).not.toBe(b.token);
+  });
+
+  it('refuse a label outside 1 to 40 characters', async () => {
+    const u = await makeUser();
+    await expect(mintToken(db, u.id, '', 'read')).rejects.toMatchObject({ status: 400 });
+    await expect(mintToken(db, u.id, 'x'.repeat(41), 'read')).rejects.toMatchObject({ status: 400 });
+    await expect(mintToken(db, u.id, 'x'.repeat(40), 'read')).resolves.toBeTruthy();
+  });
+
+  it(`stop at ${LIMITS.tokens} live tokens per user with a 429 naming the limit; a revoked token frees a slot`, async () => {
+    const u = await makeUser();
+    for (let i = 0; i < LIMITS.tokens; i++) await mintToken(db, u.id, `t${i}`, 'read');
+    await expect(mintToken(db, u.id, 'one too many', 'read')).rejects.toMatchObject({
+      status: 429,
+      message: expect.stringContaining(`${LIMITS.tokens} live tokens`),
+    });
+    await db.update(apiTokens).set({ revokedAt: Date.now() }).where(eq(apiTokens.label, 't0'));
+    await expect(mintToken(db, u.id, 'fits now', 'read')).resolves.toBeTruthy();
+    const other = await makeUser();
+    await expect(mintToken(db, other.id, 'someone else', 'read')).resolves.toBeTruthy();
+  });
+});
+
+describe('GET /api/me', () => {
+  it('says who the token acts as', async () => {
+    const u = await makeUser('me');
+    const r = await get('/api/me', await makeToken(u));
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ username: u.username, kind: 'token' });
+  });
+
+  it('is 401 without a token, with a made-up token, and with a revoked one', async () => {
+    const u = await makeUser();
+    const token = await makeToken(u);
+    expect((await get('/api/me')).status).toBe(401);
+    expect((await get('/api/me', 'arb_nonsense')).status).toBe(401);
+    await db.update(apiTokens).set({ revokedAt: Date.now() }).where(eq(apiTokens.userId, u.id));
+    const r = await get('/api/me', token);
+    expect(r.status).toBe(401);
+    expect(r.json).toEqual({ error: expect.any(String) });
+  });
+
+  it('records last_used_at', async () => {
+    const u = await makeUser();
+    const token = await makeToken(u);
+    const [before] = await db.select().from(apiTokens).where(eq(apiTokens.userId, u.id));
+    expect(before.lastUsedAt).toBeNull();
+    await get('/api/me', token);
+    const [after] = await db.select().from(apiTokens).where(eq(apiTokens.userId, u.id));
+    expect(after.lastUsedAt).toBeGreaterThan(0);
+  });
+
+  it('accepts the Bearer scheme in any case and refuses other schemes', async () => {
+    const u = await makeUser();
+    const token = await makeToken(u);
+    const as = (auth: string) => call('GET', '/api/me', { headers: { Authorization: auth } });
+    expect((await as(`bearer ${token}`)).status).toBe(200);
+    expect((await as(`Basic ${token}`)).status).toBe(401);
+    expect((await as(token)).status).toBe(401);
+  });
+});
+
+describe('errors', () => {
+  it('are JSON, also for an unknown /api path', async () => {
+    const r = await get('/api/nope');
+    expect(r.status).toBe(404);
+    expect(r.json).toEqual({ error: expect.any(String) });
+  });
+});
+
+describe('the CSRF guard: writes must be application/json', () => {
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'])('%s with another content type is 415 before anything else runs', async (method) => {
+    const u = await makeUser();
+    const token = await makeToken(u);
+    for (const type of ['text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data']) {
+      const r = await call(method, '/api/presets', { token, body: '{}', headers: { 'Content-Type': type } });
+      expect(r.status, `${method} ${type}`).toBe(415);
+      expect(r.json.error).toMatch(/application\/json/);
+    }
+  });
+
+  it('is 415 even for an anonymous request, and for a missing content type', async () => {
+    const res = await createApp().request('/api/presets', { method: 'POST', body: 'x' }, env);
+    expect(res.status).toBe(415);
+  });
+
+  it('lets application/json with parameters through to the next check', async () => {
+    const r = await call('POST', '/api/presets', { body: '{}', headers: { 'Content-Type': 'Application/JSON; charset=utf-8' } });
+    expect(r.status).toBe(401);
+  });
+
+  it('does not apply to GET, HEAD or OPTIONS', async () => {
+    expect((await get('/api/health')).status).toBe(200);
+    const head = await reply(await createApp().request('/api/health', { method: 'HEAD' }, env));
+    expect(head.status).toBe(200);
+    const opts = await reply(await createApp().request('/api/presets', { method: 'OPTIONS' }, env));
+    expect(opts.status).not.toBe(415);
+  });
+});
+
+describe('CORS on /api/*', () => {
+  async function options(origin: string) {
+    const res = await createApp().request(
+      '/api/presets',
+      { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type,authorization' } },
+      env,
+    );
+    return res.headers;
+  }
+
+  it.each(['https://komorebi.eljojo.net', 'http://localhost:8000'])('allows %s, with credentials', async (origin) => {
+    const h = await options(origin);
+    expect(h.get('Access-Control-Allow-Origin')).toBe(origin);
+    expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
+    expect(h.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim()).sort()).toEqual(['GET', 'PATCH', 'POST', 'PUT']);
+    expect((h.get('Access-Control-Allow-Headers') ?? '').toLowerCase().split(',').map((m) => m.trim()).sort()).toEqual(['authorization', 'content-type']);
+  });
+
+  it.each(['https://evil.example', 'https://komorebi.eljojo.net.evil.example', 'http://localhost:8001', 'https://eljojo.net', 'null'])(
+    'gives %s no allow-origin on a preflight',
+    async (origin) => {
+      const h = await options(origin);
+      expect(h.get('Access-Control-Allow-Origin')).toBeNull();
+    },
+  );
+
+  it('answers a real request from the komorebi origin with its origin, and one from elsewhere with none', async () => {
+    const ok = await createApp().request('/api/health', { headers: { Origin: 'https://komorebi.eljojo.net' } }, env);
+    expect(ok.headers.get('Access-Control-Allow-Origin')).toBe('https://komorebi.eljojo.net');
+    const no = await createApp().request('/api/health', { headers: { Origin: 'https://evil.example' } }, env);
+    expect(no.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+
+  it('also reaches a 415, so the editor can read the refusal', async () => {
+    const res = await createApp().request(
+      '/api/presets',
+      { method: 'POST', headers: { Origin: 'https://komorebi.eljojo.net', 'Content-Type': 'text/plain' }, body: 'x' },
+      env,
+    );
+    expect(res.status).toBe(415);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://komorebi.eljojo.net');
+  });
+});
+
+describe('every /api route goes through authorize', () => {
+  it('has a declared policy for each registered route except /api/health', () => {
+    const app = createApp();
+    const routes = app.routes.filter((r) => r.path.startsWith('/api') && r.method !== 'ALL');
+    expect(routes.length).toBeGreaterThan(10);
+    const unguarded = routes
+      .filter((r) => r.path !== '/api/health')
+      .filter((r) => !policies.has(`${r.method} ${r.path}`))
+      .map((r) => `${r.method} ${r.path}`);
+    expect(unguarded).toEqual([]);
+  });
+
+  it('would catch a route registered around the helper', () => {
+    const app = createApp();
+    app.get('/api/sneaky', (c) => c.json({}));
+    const sneaky = app.routes.filter((r) => r.method !== 'ALL' && !policies.has(`${r.method} ${r.path}`) && r.path !== '/api/health');
+    expect(sneaky.map((r) => r.path)).toEqual(['/api/sneaky']);
+  });
+});
+
+describe('via', () => {
+  const token = { userId: 1, username: 'u', kind: 'token', scope: 'write', label: 'studio laptop claude' } as const;
+  const session = { userId: 1, username: 'u', kind: 'session' } as const;
+
+  it('is token:<label> for a token', () => {
+    expect(viaFor(token, null)).toBe('token:studio laptop claude');
+    expect(viaFor(token, 'https://komorebi.eljojo.net')).toBe('token:studio laptop claude');
+  });
+
+  it('is editor for a session from the komorebi origin and web otherwise', () => {
+    expect(viaFor(session, 'https://komorebi.eljojo.net')).toBe('editor');
+    expect(viaFor(session, null)).toBe('web');
+    expect(viaFor(session, 'https://arboretum.eljojo.net')).toBe('web');
+    expect(viaFor(session, 'https://komorebi.eljojo.net.evil.example')).toBe('web');
+  });
+});

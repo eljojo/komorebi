@@ -2,7 +2,7 @@
 // Default commit is komorebi's origin/main as already fetched; this never fetches and never touches
 // the komorebi working tree (it reads the repo through `git archive` only).
 // Outputs, all committed so the Worker and the tests never need ~/code/komorebi:
-//   src/generated/engine.ts       commit, param types, legacy keys, experimental look names
+//   src/generated/engine.ts       commit, param types, legacy keys, look names, experimental look names
 //   test/fixtures/looks.json      every shipped look, the validator's golden fixtures
 //   public/engine/*               the browser bundle (every camera, every feature tier) + engine.json
 import { execFileSync } from 'node:child_process';
@@ -43,6 +43,9 @@ try {
     'export const LEGACY_KEYS: Record<string, string> = {',
     ...Object.entries(LEGACY_KEYS).map(entry),
     '};',
+    '',
+    '// Every shipped look, so a `look:<name>` parent can be checked.',
+    `export const LOOK_NAMES: string[] = ${JSON.stringify(Object.keys(PRESETS))};`,
     '',
     `export const EXPERIMENTAL_LOOKS: string[] = ${JSON.stringify(EXPERIMENTAL)};`,
     '',

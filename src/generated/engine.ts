@@ -174,4 +174,7 @@ export const LEGACY_KEYS: Record<string, string> = {
   "curtain_distance_m": "cloth_distance_m",
 };
 
+// Every shipped look, so a `look:<name>` parent can be checked.
+export const LOOK_NAMES: string[] = ["afternoon 4","afternoon 4b","afternoon 5","afternoon 5b","prism","afternoon 6","afternoon 6b","afternoon 7","park 1","montebello","park fall","park 2","canopy 1","canopy 2","canopy 3","canopy 4","curtain 1","curtain 2","tent 1","memories","morning 1","morning 2","morning 3","morning 3b","the void","eclipse","acid dreams"];
+
 export const EXPERIMENTAL_LOOKS: string[] = ["canopy 1","canopy 2","canopy 3","canopy 4","curtain 1","curtain 2","tent 1","the void"];
