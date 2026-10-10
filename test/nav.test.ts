@@ -39,10 +39,12 @@ describe('every page carries komorebi’s links', () => {
       expect(r.text.match(/href="\/about"/g)?.length ?? 0, path).toBe(1);
       expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
       if (front) expect(r.text, path).not.toContain('href="/arboretum"');
-      // José, 2026-10-10: on the home, "about" and the pill close the page; everywhere else they stay in the head.
+      // José, 2026-10-10: "about" is never in the head; it closes every page (the home's closing carries it with the pill).
+      // The pill closes the home and stays in the head everywhere else.
       const head = r.text.slice(r.text.indexOf('<header>'), r.text.indexOf('</header>'));
-      expect(head.includes('href="/about"'), `${path} about in the head`).toBe(!front);
+      expect(head.includes('href="/about"'), `${path} about in the head`).toBe(false);
       expect(head.includes('>open komorebi<'), `${path} pill in the head`).toBe(!front);
+      if (!front) expect(r.text.indexOf('href="/about"'), `${path} about after main`).toBeGreaterThan(r.text.indexOf('</main>'));
       expect(r.text, path).toMatch(/<title>[^<]* · komorebi<\/title>/);
       // komorebi's own module, from the site root (not under BASE): every page breathes out before it navigates away.
       expect(r.text, path).toContain('<script type="module" src="/breathe.js"></script>');
