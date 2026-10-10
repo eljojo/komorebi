@@ -515,6 +515,13 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
         const r = savePreset(getState(), getStored(), pinned ? fromVersion(pinned, head) : head);
         setState(r.state);
         setStored(r.stored);
+        if (signedIn() && head.owner === me) {
+          for (const p of Object.values(view().playlists)) {
+            if (p.owner !== me) continue;
+            const at = p.items.findIndex((it) => !it.pending && it.preset_id === id && it.version === r.state.origin[r.name].version);
+            if (at >= 0) return { list: `arb:${p.id}`, value: String(at) };
+          }
+        }
         return { value: starValue(r.name) };
       }
       const got = linkPlaylist(getState(), await wire.playlist(link.playlist.id, { k: link.playlist.k }), link.playlist.k);

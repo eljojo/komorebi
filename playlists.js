@@ -54,6 +54,13 @@ const cloudItems = (state, active) => state.playlists[cloudId(active)]?.items ??
 const cloudItem = (state, active, value) => value === "" || value === null || value === undefined ? undefined : cloudItems(state, active)[Number(value)];
 const isBuiltin = (PRESETS, name) => Object.hasOwn(PRESETS, name);
 const synced = (o) => o?.id !== undefined && o.synced === true;   // a ★ whose arboretum copy is current
+// A linked look stays local unless the same owned version is selectable in the cloud view. Other owners and pinned versions
+// have no equivalent in the owned mirror, even though their local copies are synced with arboretum.
+const browserNames = (state, stored) => Object.keys(stored).filter((n) => {
+  const o = state.origin[n], me = state.me?.username;
+  return !synced(o) || o.owner !== me || !Object.values(state.playlists).some((p) => p.owner === me && p.items.some((it) =>
+    !it.pending && it.preset_id === o.id && it.version === o.version));
+});
 
 // In all looks a value is the look's name — except for a ★ that shares a built-in's name, which takes the
 // value "★ <name>" so the two stay apart (one value would load the same look for both). A ★ whose name already
@@ -121,8 +128,7 @@ export function entries(state, stored, builtins, showBeta, active, keep, signedI
   const shipped = Object.keys(PRESETS)
     .filter((n) => showBeta || !EXPERIMENTAL.includes(n) || n === keep)
     .map((n) => ({ value: n, label: `${EXPERIMENTAL.includes(n) ? "◦" : "•"} ${n}` }));   // ◦ marks an experimental look
-  const stars = Object.keys(stored)
-    .filter((n) => !signedIn || !synced(state.origin[n]))
+  const stars = (signedIn ? browserNames(state, stored) : Object.keys(stored))
     .map((n) => ({ value: starValueOf(PRESETS, n), label: `★ ${n}` }));
   return active === "builtins" ? shipped : signedIn ? stars : [...shipped, ...stars];
 }
@@ -477,7 +483,7 @@ export function viewState(state, mirror, me) {
     folders[l.id] = { ...l, fetched_at: mirror.at ?? l.fetched_at, items };
   }
   const unc = { id: "unc", name: "uncategorized", owner: me, k: null, fetched_at: mirror.at ?? 0, unavailable: 0, items: uncategorized(mirror) };
-  return { ...state, playlists: { ...state.playlists, ...folders, unc } };
+  return { ...state, me: { username: me }, playlists: { ...state.playlists, ...folders, unc } };
 }
 
 // Whether `active` is a folder: a playlist of yours, which a save can place a look in.
@@ -495,7 +501,7 @@ export function listChoices(view, { me, stored, mirror, active = null }) {
   for (const l of folders) out.push({ value: `arb:${l.id}`, label: l.name });
   for (const p of Object.values(view.playlists)) if (p.id !== "unc" && !mine.has(String(p.id))) out.push({ value: `arb:${p.id}`, label: p.owner === me ? p.name : `${p.name} · ${p.owner}` });
   out.push({ value: "builtins", label: "built-ins" });
-  if (moveCandidates(view, stored).length) out.push({ value: "local", label: "on this browser" });
+  if (browserNames(view, stored).length) out.push({ value: "local", label: "on this browser" });
   return out;
 }
 

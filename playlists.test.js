@@ -1014,7 +1014,7 @@ test("isFolder: a playlist of yours that can be written to, not uncategorized, n
 
 test("entries of built-ins are the built-ins alone; signed in, on this browser is the un-moved ★s alone; signed out, all looks are both", () => {
   const stored = { x: {}, y: {} };
-  const state = { ...EMPTY, origin: { y: { id: 5, version: 1, owner: "jo", synced: true } } };
+  const state = { ...cloud([{ ...item("y"), preset_id: 5 }]), me: { username: "jo" }, origin: { y: { id: 5, version: 1, owner: "jo", synced: true } } };
   expect(entries(state, stored, fake, false, "builtins", "a").map((e) => e.label)).toEqual(["• a", "• c"]);
   expect(entries(state, stored, fake, false, "local", "a", true).map((e) => e.label)).toEqual(["★ x"]);
   expect(entries(state, stored, fake, false, "local", "a").map((e) => e.label)).toEqual(["• a", "• c", "★ x", "★ y"]);

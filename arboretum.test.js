@@ -282,6 +282,37 @@ test("a fork whose playlist target vanished remains uncategorized and keeps the 
   expect(shown).toEqual([["arb:unc", { id: 3 }]]);
 });
 
+test("a signed-in shared preset link remains selectable on this browser", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const s = await session(async () => json({ id: 20, owner: "bob", version: 1, name: "shared", params: { exposure: 99 } }));
+  const opened = await s.a.open(parseHash("#arboretum=20"));
+  expect(s.a.lists("local").some((l) => l.value === "local")).toBe(true);
+  expect(model.entries(s.a.view(), getStored(), { PRESETS: {}, EXPERIMENTAL: [] }, false, "local", opened.value, true)).toEqual([{ value: "shared", label: "★ shared" }]);
+  expect(model.resolve(s.a.view(), getStored(), "local", opened.value)).toEqual({ exposure: 99 });
+  expect(model.moveCandidates(s.a.view(), getStored())).toEqual([]);
+});
+
+test("a pinned version of an owned preset remains selectable beside its newer mirrored head", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const head = { id: 20, owner: "alice", version: 2, name: "mine", params: { exposure: 22 } };
+  setMirror({ ...emptyMirror(), order: [20], presets: { 20: head } });
+  const s = await session(async (url) => json(url.includes("/versions/") ? { preset_id: 20, n: 1, name: "old", params: { exposure: 11 } } : head));
+  const opened = await s.a.open(parseHash("#arboretum=20@1"));
+  expect(s.a.lists("local").some((l) => l.value === "local")).toBe(true);
+  expect(model.entries(s.a.view(), getStored(), { PRESETS: {}, EXPERIMENTAL: [] }, false, "local", opened.value, true).map((e) => e.value)).toContain(opened.value);
+  expect(model.resolve(s.a.view(), getStored(), "local", opened.value)).toEqual({ exposure: 11 });
+});
+
+test("opening the mirrored owned head lands on its cloud entry", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const head = { id: 20, owner: "alice", version: 2, name: "mine", params: { exposure: 22 } };
+  setMirror({ ...emptyMirror(), order: [20], presets: { 20: head } });
+  const s = await session(async () => json(head));
+  const opened = await s.a.open(parseHash("#arboretum=20"));
+  expect(opened).toEqual({ list: "arb:unc", value: "0" });
+  expect(model.resolve(s.a.view(), getStored(), opened.list, opened.value)).toEqual(head.params);
+});
+
 test("with detect null, mounting makes no fetch and builds nothing", async () => {
   for (const loc of [at("example.org"), at("fork.github.io"), at("localhost", "/index.html"), at("localhost", "/")]) {
     const f = spy({});
