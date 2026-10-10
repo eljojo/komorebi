@@ -118,6 +118,26 @@
             runtimeInputs = [ pkgs.nodejs_22 pkgs.imagemagick pkgs.git pkgs.gnutar ];
             text = ''exec node test-gl/review.mjs "$@"'';
           };
+          # `nix run .#video -- --arboretum <id> --commit <sha> --out test-gl/out/video/<name> --seconds 300` — the headless
+          # video exporter: one look (an arboretum preset, or --look-json <file>) stepped frame by frame on the Mac's GPU
+          # (Chromium on Metal) into a lossless segment set and an HEVC delivery for a projector; `-- --help` lists every option.
+          # The engine is a `git archive` of --commit (git, gnutar); ffmpeg is nix's. Same first-run setup as pixels: cd test-gl
+          # && npm install && npx playwright install chromium. It runs from the repo root, and under macOS caffeinate -i when
+          # that exists (/usr/bin, outside nix): a render of an hour must not idle-sleep.
+          video = pkgs.writeShellApplication {
+            name = "video";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.ffmpeg pkgs.git pkgs.gnutar ];
+            text = ''
+              if [ ! -d test-gl/node_modules ]; then
+                echo "first run: cd test-gl && npm install && npx playwright install chromium" >&2
+                exit 1
+              fi
+              if command -v caffeinate >/dev/null; then
+                exec caffeinate -i node test-gl/render-video.mjs "$@"
+              fi
+              exec node test-gl/render-video.mjs "$@"
+            '';
+          };
         in {
           dev = { type = "app"; program = "${dev}/bin/dev"; };
           lint = { type = "app"; program = "${lint}/bin/lint"; };
@@ -126,6 +146,7 @@
           editor = { type = "app"; program = "${editor}/bin/editor"; };
           embed = { type = "app"; program = "${embed}/bin/embed"; };
           review = { type = "app"; program = "${review}/bin/review"; };
+          video = { type = "app"; program = "${video}/bin/video"; };
           embed-check = { type = "app"; program = "${embed-check}/bin/embed-check"; };
           default = self.apps.${pkgs.system}.dev;
         });

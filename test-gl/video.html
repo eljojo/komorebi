@@ -1,0 +1,305 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>komorebi — video exporter page</title>
+<!--
+  The page half of the headless video exporter (driven by render-video.mjs and gpu-probe.mjs through Playwright).
+  Served by video-lib.mjs's server, which hands THIS file out of test-gl/ and every other path out of the ENGINE tree
+  (a `git archive` of a commit, or the working tree) — so the engine it imports is the one being recorded.
+
+  THE CLOCK. The engine's only wall-clock reads are requestAnimationFrame's stamp and performance.now() at start-up
+  (komorebi-engine.js: `last = performance.now()` and `schedule()`), so both are replaced here BEFORE any module loads:
+  a queue the driver pumps with an exact stamp. __clock.pump(t) fires the callbacks queued BEFORE the call (frame()
+  re-queues itself before onFrame, so one pump = one frame), with performance.now() == t throughout.
+
+  THE STAMPS. A frame's dt is (stamp - previous stamp)/1000 and tick() runs ceil(dt/(1/120)) Euler sub-steps. With
+  stamps n*1000/60 that quotient lands on 2.0000000000000004 for ~46 % of frames (3 sub-steps instead of 2), so the
+  driver uses a DYADIC step: stepMs = floor(1000/fps * 2^20)/2^20. Every stamp is then exact in a double, every dt is
+  the same double, and the quotient sits ~4e-8 below the integer, so the sub-step count is constant (2 at 60 fps).
+  The cost is a clock 3.8e-8 slow (5 minutes lose 11 microseconds of simulated time). run-key: stepMs, T0.
+
+  THE READBACK happens inside eng.onFrame (the context has no preserveDrawingBuffer; the drawing buffer is only
+  defined inside the rAF callback that drew it).
+
+  API (all on window.__v):
+    glinfo()                         a throwaway context: renderer, extensions, limits, a real 3840x2160 drawing buffer
+    sinkTest(url, w, h, n, batch)    POST noise frames to the sink, nothing rendered: the pipe's own throughput
+    cheapPreroll(params, frames, step, T0)   the integrator state after `frames` pumps on a tiny engine (CPU state is GPU-independent)
+    open({ params, rw, rh, step, T0, at, state })   one engine at render size rw x rh, clock at pump `at`, optional restored state
+    run({ from, to, sink, batch, timing })   pump frames from+1..to, read each back; optionally POST batches to `sink`
+    snapshot() / close()
+-->
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas.stage { position: absolute; top: 0; left: 0; }
+</style>
+<body></body>
+<script>
+(() => {
+  const realNow = performance.now.bind(performance);
+  let vnow = 0, q = [];
+  Object.defineProperty(performance, 'now', { value: () => vnow, configurable: true, writable: true });
+  window.requestAnimationFrame = (cb) => { q.push(cb); return q.length; };
+  window.cancelAnimationFrame = () => {};
+  window.__clock = {
+    realNow,
+    set(t) { vnow = t; },
+    now() { return vnow; },
+    pending() { return q.length; },
+    drain() { q = []; },                    // callbacks left queued by a disposed engine would be counted by the next pump
+    pump(t) { vnow = t; const cur = q; q = []; for (const cb of cur) cb(t); return cur.length; },
+  };
+})();
+</script>
+<script type="module">
+import { create, DEFAULTS } from '/komorebi.js';
+
+const clock = window.__clock, real = clock.realNow;
+const S = { eng: null, canvas: null, W: 0, H: 0, step: 0, T0: 0, ring: [], cur: null, captured: false, glError: 0, lost: false, timing: null };
+const v = window.__v = {};
+
+// 64-bit identity of a frame: two 32-bit lanes over the RGBA words (lane A is FNV-1a over 32-bit words, lane B a multiply-xorshift mix).
+// Word-wise on purpose: the harness's byte-wise FNV is 18 ms per 1080p frame, this is ~3.
+function hash64(u8) {
+  const w = new Uint32Array(u8.buffer, u8.byteOffset, u8.byteLength >>> 2);
+  let a = 0x811c9dc5 | 0, b = 0x9747b28c | 0;
+  for (let i = 0; i < w.length; i++) {
+    const x = w[i];
+    a = Math.imul(a ^ x, 0x01000193);
+    b = Math.imul(b ^ x, 0x5bd1e995); b ^= b >>> 15;
+  }
+  return (a >>> 0).toString(16).padStart(8, '0') + (b >>> 0).toString(16).padStart(8, '0');
+}
+// a sparse mean of the colour bytes, to tell a rendered frame from a black or a flat one
+function sparseMean(u8) {
+  let s = 0, n = 0;
+  for (let i = 0; i < u8.length; i += 4 * 997) { s += u8[i] + u8[i + 1] + u8[i + 2]; n += 3; }
+  return s / n;
+}
+
+v.glinfo = () => {
+  const out = { dpr: window.devicePixelRatio, ua: navigator.userAgent };
+  const c = document.createElement('canvas');
+  c.width = 3840; c.height = 2160;
+  const gl = c.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
+  if (!gl) return { ...out, webgl2: false };
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  Object.assign(out, {
+    webgl2: true,
+    renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+    vendor: dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR),
+    version: gl.getParameter(gl.VERSION),
+    glsl: gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
+    colorBufferFloat: !!gl.getExtension('EXT_color_buffer_float'),
+    colorBufferHalfFloat: !!gl.getExtension('EXT_color_buffer_half_float'),
+    floatBlend: !!gl.getExtension('EXT_float_blend'),
+    timerQuery: !!gl.getExtension('EXT_disjoint_timer_query_webgl2'),
+    maxTexture: gl.getParameter(gl.MAX_TEXTURE_SIZE),
+    maxRenderbuffer: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
+    maxViewport: Array.from(gl.getParameter(gl.MAX_VIEWPORT_DIMS)),
+    drawingBuffer4k: [gl.drawingBufferWidth, gl.drawingBufferHeight],
+    extensions: gl.getSupportedExtensions().length,
+  });
+  // a real RGBA16F render target at the bake sizes (the engine's layer / faithful textures): complete, and no GL error after allocating it
+  out.fboRGBA16F = {};
+  for (const n of [2048, 4096, 8192]) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, n, n, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    const f = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+    const st = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    gl.viewport(0, 0, n, n); gl.clearColor(0.25, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.finish();
+    out.fboRGBA16F[n] = { complete: st === gl.FRAMEBUFFER_COMPLETE, glError: gl.getError() };
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(f); gl.deleteTexture(t);
+  }
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  // and the other sizes a supersampled render would ask for
+  out.drawingBuffers = {};
+  for (const [w, h] of [[1920, 1080], [2560, 1440], [3840, 2160], [5760, 3240], [7680, 4320]]) {
+    const cc = document.createElement('canvas'); cc.width = w; cc.height = h;
+    const g = cc.getContext('webgl2', { antialias: false, alpha: false });
+    out.drawingBuffers[`${w}x${h}`] = g ? [g.drawingBufferWidth, g.drawingBufferHeight] : null;
+    g?.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+  return out;
+};
+
+// A Blob body, not the typed array: Chromium reports an ArrayBuffer body's bytes (base64) in Network.requestWillBeSent, which Playwright then
+// parses for every POST (23 MB/s, and a 512 MB string overflow at 4K). A Blob body is reported as a blob, not as bytes.
+// A Blob sent is only released when its wrapper is garbage-collected; unreleased, the browser's blob store refuses a POST at ~2 GB in total
+// ("Failed to fetch"). The launch passes --js-flags=--expose-gc for this.
+const freeBlobs = () => { if (typeof window.gc === 'function') window.gc(); };
+
+// The pipe on its own: noise frames (four distinct, cycled), POSTed in batches, nothing rendered.
+v.sinkTest = async (url, w, h, n, batch) => {
+  const fb = w * h * 4;
+  const bufs = [new Uint8Array(fb * batch), new Uint8Array(fb * batch)];
+  let seed = 12345;
+  const noise = (u8) => { for (let i = 0; i < u8.length; i += 4) { seed = (Math.imul(seed, 1664525) + 1013904223) | 0; u8[i] = seed >>> 24; u8[i + 1] = (seed >>> 16) & 255; u8[i + 2] = (seed >>> 8) & 255; u8[i + 3] = 255; } };
+  for (const b of bufs) for (let j = 0; j < batch; j++) noise(b.subarray(j * fb, (j + 1) * fb));
+  const t0 = real();
+  let last = null, sent = 0, ri = 0;
+  while (sent < n) {
+    const k = Math.min(batch, n - sent);
+    if (last) await last;   // one POST in flight at a time: the sink pipes into ONE ffmpeg stdin, in order
+    last = fetch(url, { method: 'POST', body: new Blob([bufs[ri].subarray(0, k * fb)]) }).then((r) => { if (!r.ok) throw new Error(`sink ${r.status}`); freeBlobs(); });
+    sent += k; ri ^= 1;
+  }
+  if (last) await last;
+  return { frames: n, ms: real() - t0 };
+};
+
+// ---- the integrator state: motion + drift phase + the six spring arrays (komorebi-engine / -motion / -grove) ----
+const ARR = ['limbAngle', 'limbVel', 'limbPitch', 'limbPitchVel', 'twigAngle', 'twigVel'];
+const MOT = ['time', 'u', 'v', 'uLat', 'vLat', 'env', 'driveEnv'];
+const toB64 = (f32) => { const u8 = new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength); let s = ''; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192)); return btoa(s); };
+const fromB64 = (b64, f32) => { const s = atob(b64); if (s.length !== f32.byteLength) throw new Error(`state array length ${s.length} != ${f32.byteLength}`); const u8 = new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength); for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i); };
+function snapshotOf(eng) {
+  const h = eng.grove().hier, m = eng.motion;
+  return { motion: Object.fromEntries(MOT.map((k) => [k, m[k]])), drift_phase: eng.params.drift_phase, arrays: Object.fromEntries(ARR.map((k) => [k, toB64(h[k])])) };
+}
+function restoreInto(eng, st) {
+  const h = eng.grove().hier;
+  for (const k of MOT) eng.motion[k] = st.motion[k];
+  eng.params.drift_phase = st.drift_phase;
+  for (const k of ARR) fromB64(st.arrays[k], h[k]);
+}
+v.snapshot = () => snapshotOf(S.eng);
+
+function forceGovernorsOff(params) {
+  params.adaptive_motion = false; params.auto_quality = false;
+  return params;
+}
+
+// The CPU half of the engine does not know the GPU exists: a tiny engine (64x36, bake 256, 8 samples) integrates the same springs
+// at ~1 ms a frame, so 30 s of pre-roll costs seconds, not minutes of full-size bakes. The caller proves the equality (gpu-probe.mjs).
+v.cheapPreroll = (params, frames, step, T0) => {
+  const p = forceGovernorsOff({ ...params, bake_resolution: 256, tex_resolution: 256, sample_count: 8 });
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage'; canvas.style.width = '64px'; canvas.style.height = '36px';
+  canvas.width = 64; canvas.height = 36;
+  document.body.appendChild(canvas);
+  clock.set(T0);
+  const eng = create(canvas, { params: p });
+  for (let n = 1; n <= frames; n++) clock.pump(T0 + n * step);
+  const st = snapshotOf(eng);
+  const info = { motionActive: Math.abs(eng.motion.u) + Math.abs(eng.motion.uLat) > 0, frames, motion_time: eng.motion.time };
+  eng.setPaused(true); eng.dispose(); canvas.remove(); clock.drain();
+  return { state: st, info };
+};
+
+v.open = ({ params, rw, rh, step, T0, at, state, overrideKeys = [] }) => {
+  if (S.eng) v.close();
+  for (const k of overrideKeys) if (!(k in DEFAULTS)) throw new Error(`override '${k}' is not an engine param (not in DEFAULTS)`);
+  if (window.devicePixelRatio !== 1) throw new Error(`devicePixelRatio is ${window.devicePixelRatio}, not 1: the backing store would not be ${rw}x${rh}`);
+  const p = forceGovernorsOff({ ...params });
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage'; canvas.style.width = `${rw}px`; canvas.style.height = `${rh}px`;
+  canvas.width = rw; canvas.height = rh;
+  document.body.appendChild(canvas);
+  canvas.addEventListener('webglcontextlost', () => { S.lost = true; });
+  clock.drain();
+  clock.set(T0 + at * step);                 // create() reads performance.now(): the first pump is then exactly one step later
+  const eng = create(canvas, { params: p });
+  Object.assign(S, { eng, canvas, W: rw, H: rh, step, T0, cur: null, captured: false, glError: 0, lost: false, timing: null });
+  const gl = eng.gl;
+  S.timer = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+  if (eng.params.adaptive_motion !== false || eng.params.auto_quality !== false || eng.perf.auto !== false)
+    throw new Error('adaptive_motion / auto_quality are not off');
+  if (state) restoreInto(eng, state);
+  eng.onFrame = () => {
+    if (!S.cur) return;
+    const T = S.timing;
+    if (T) { T.tA = real(); if (T.q) gl.endQuery(S.timer.TIME_ELAPSED_EXT); }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(0, 0, S.W, S.H, gl.RGBA, gl.UNSIGNED_BYTE, S.cur);
+    if (T) {
+      // gl.finish() and a polled fence do not wait inside one task in Chromium (the spec forbids it), so: the first readPixels is the
+      // GPU's remaining work PLUS the copy; an immediate second one is the copy alone; the timer query (collected after the run) is the GPU's own clock.
+      T.tC = real();
+      gl.readPixels(0, 0, S.W, S.H, gl.RGBA, gl.UNSIGNED_BYTE, S.cur);
+      T.tD = real();
+    }
+    const e = gl.getError(); if (e) S.glError = e;
+    S.captured = true;
+  };
+  // the first pump makes resize() run and proves the backing store is what the file will be
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  const info = {
+    renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+    canvas: [canvas.width, canvas.height], drawingBuffer: [gl.drawingBufferWidth, gl.drawingBufferHeight],
+    bakeRes: eng.params.bake_resolution, samples: eng.params.sample_count,
+    adaptive_motion: eng.params.adaptive_motion, auto_quality: eng.params.auto_quality, perfAuto: eng.perf.auto,
+    faithful: eng.params.faithful_canopy, nonDefault: Object.keys(eng.params).filter((k) => !(k in DEFAULTS)),
+  };
+  if (gl.drawingBufferWidth !== rw || gl.drawingBufferHeight !== rh) throw new Error(`drawing buffer ${gl.drawingBufferWidth}x${gl.drawingBufferHeight} != requested ${rw}x${rh}`);
+  return info;
+};
+
+// Pump frames from+1..to. A captured frame is read inside onFrame into a slot of the ring; with `sink` each full batch is POSTed
+// (two in flight at most, the response is the back-pressure). Without it the frames are only hashed.
+v.run = async ({ from, to, sink, batch, timing, capture = true, keepEvery = 0 }) => {
+  const { eng, W, H, step, T0 } = S;
+  const fb = W * H * 4, B = Math.max(1, batch || 1);
+  if (capture && (!S.ring.length || S.ring[0].length !== fb * B)) S.ring = [new Uint8Array(fb * B), new Uint8Array(fb * B)];
+  const kept = [], hashes = [], means = [], tm = timing ? { pump: [], read1: [], copy: [], total: [], busy: [] } : null, queries = [];
+  let ri = 0, last = null, inBatch = 0, minMean = 1e9, maxMean = 0;
+  const flush = async () => {
+    if (!sink || !inBatch) { inBatch = 0; return; }
+    const n = inBatch; inBatch = 0;
+    if (last) await last;   // strictly one POST in flight (the sink pipes into one ffmpeg stdin, in order); the next batch renders meanwhile
+    last = fetch(sink, { method: 'POST', body: new Blob([S.ring[ri].subarray(0, n * fb)]) }).then((r) => { if (!r.ok) throw new Error(`sink answered ${r.status}`); freeBlobs(); });
+    ri ^= 1;
+  };
+  for (let n = from + 1; n <= to; n++) {
+    if (S.lost) throw new Error('webglcontextlost');
+    S.cur = capture ? S.ring[ri].subarray(inBatch * fb, (inBatch + 1) * fb) : null;
+    S.captured = false; S.timing = tm ? {} : null;
+    if (tm && S.timer) { S.timing.q = eng.gl.createQuery(); eng.gl.beginQuery(S.timer.TIME_ELAPSED_EXT, S.timing.q); }
+    const t0 = real();
+    const fired = clock.pump(T0 + n * step);
+    const t3 = real();
+    if (fired !== 1) throw new Error(`pump ${n} fired ${fired} callbacks`);
+    if (n === from + 1) {   // the first frame's resize() has run: the backing store must still be exactly the size the file will be
+      const g = eng.gl;
+      if (S.canvas.width !== W || S.canvas.height !== H || g.drawingBufferWidth !== W || g.drawingBufferHeight !== H)
+        throw new Error(`after the first pump the canvas is ${S.canvas.width}x${S.canvas.height} and the drawing buffer ${g.drawingBufferWidth}x${g.drawingBufferHeight}, not ${W}x${H}`);
+    }
+    if (capture) {
+      if (!S.captured) throw new Error(`pump ${n}: onFrame did not read (engine paused, lost or disposed)`);
+      if (S.glError) throw new Error(`pump ${n}: GL error 0x${S.glError.toString(16)}`);
+      hashes.push(hash64(S.cur));
+      if (keepEvery && (n - from) % keepEvery === 0) kept.push({ n, b64: toB64(S.cur) });
+      const m = sparseMean(S.cur); means.push(m); if (m < minMean) minMean = m; if (m > maxMean) maxMean = m;
+      if (tm) {
+        const T = S.timing;
+        tm.pump.push(T.tA - t0); tm.read1.push(T.tC - T.tA); tm.copy.push(T.tD - T.tC); tm.total.push(T.tC - t0);
+        if (T.q) queries.push(T.q);
+      }
+      inBatch++;
+      if (inBatch === B) await flush();
+    } else if (tm) { tm.total.push(t3 - t0); tm.pump.push(t3 - t0); }
+  }
+  await flush();
+  if (last) await last;
+  S.cur = null;
+  if (tm && queries.length) {   // query results are only visible from a later task
+    await new Promise((r) => setTimeout(r, 100));
+    const g = eng.gl;
+    const disjoint = g.getParameter(S.timer.GPU_DISJOINT_EXT);
+    for (const q of queries) { tm.busy.push(g.getQueryParameter(q, g.QUERY_RESULT_AVAILABLE) && !disjoint ? g.getQueryParameter(q, g.QUERY_RESULT) / 1e6 : NaN); g.deleteQuery(q); }
+  }
+  return { hashes, kept, minMean, maxMean, timing: tm, snapshot: snapshotOf(eng), pumped: to - from };
+};
+
+v.close = () => {
+  const { eng, canvas } = S;
+  if (eng) { try { eng.setPaused(true); eng.dispose(); } catch { /* a lost engine has nothing to stop */ } }
+  canvas?.remove();
+  clock.drain();
+  Object.assign(S, { eng: null, canvas: null, cur: null, ring: [] });
+};
+
+window.__ready = true;
+</script>
