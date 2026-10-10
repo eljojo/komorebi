@@ -4,7 +4,36 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { credentials, playlistItems, playlists, presetVersions, sessions, users } from '../src/db/schema';
 import { Authenticator } from './authenticator';
-import { Browser, asSession, db, makePlaylist, makePreset, makeToken, makeUser, racing, reply, request, sessionFor } from './helpers';
+import { Browser, asSession, call, db, makePlaylist, makePreset, makeToken, makeUser, racing, reply, request, sessionFor, storedParams } from './helpers';
+
+describe('partial updates keep fields changed after the read', () => {
+  it('a rename-only version carries the latest params and metadata verbatim', async () => {
+    const user = await makeUser();
+    const token = await makeToken(user);
+    const preset = await makePreset(user, token);
+    const params = '{ "tree_count": 9.0 }';
+    const r = await racing(/from "presets"/, async () => {
+      const newer = await call('POST', `/api/presets/${preset.id}/versions`, {
+        token, body: `{"params":${params},"description":"new note","tags":["projector"],"komorebi_commit":"abc1234","parent":"look:afternoon 4"}`,
+      });
+      expect(newer.status).toBe(201);
+    })(request('POST', `/api/presets/${preset.id}/versions`, { token, json: { name: 'renamed' } })).then(reply);
+    expect(r.status).toBe(201);
+    expect(r.json).toMatchObject({ name: 'renamed', version: 3, params: { tree_count: 9 }, description: 'new note', tags: ['projector'], komorebi_commit: 'abc1234', parent: 'look:afternoon 4' });
+    expect(await storedParams(preset.id, 3)).toBe(params);
+  });
+
+  it('a visibility-only playlist PATCH preserves a concurrent rename and description', async () => {
+    const user = await makeUser();
+    const token = await makeToken(user);
+    const list = await makePlaylist(token, { name: 'original' });
+    const r = await racing(/from "playlists"/, async () => {
+      expect((await asSession(user, 'PATCH', `/api/playlists/${list.id}`, { json: { name: 'newer', description: 'new note' } })).status).toBe(200);
+    })(request('PATCH', `/api/playlists/${list.id}`, { headers: { Cookie: `__Host-session=${await sessionFor(user)}` }, json: { visibility: 'public' } })).then(reply);
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ name: 'newer', description: 'new note', visibility: 'public' });
+  });
+});
 
 const run = crypto.randomUUID().slice(0, 6);
 let seq = 0;

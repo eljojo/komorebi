@@ -254,14 +254,20 @@ export function registerPresets(app: Hono<AppEnv>) {
     const now = Date.now();
     const id = row.preset.id;
     const d1 = c.env.DB;
+    // Omitted fields follow the head at commit, rather than undoing a version appended after our read.
+    const inherited = ['name', 'description', 'tags', 'params', 'komorebi_commit', 'parent'];
+    const supplied = (i: number) => i >= inherited.length || Object.hasOwn(body, inherited[i]);
+    const fieldsSql = [...inherited.map((column, i) => supplied(i) ? '?' : `h.${column}`), '?', '?'].join(', ');
+    const fieldsBinds = versionValues(fields, viaFor(actor, c.req.header('Origin') ?? null), now).filter((_, i) => supplied(i));
     const [append] = await d1.batch<{ id: number }>([
       d1
         .prepare(
           `insert into preset_versions (${VERSION_COLUMNS})
-           select ?, (select coalesce(max(n), 0) + 1 from preset_versions where preset_id = ?), ?, ?, ?, ?, ?, ?, ?, ?
-           where ${UNDER_VERSION_QUOTA} and ${PRIVATE_OR_PERSON} returning id`,
+           select p.id, (select coalesce(max(n), 0) + 1 from preset_versions where preset_id = ?), ${fieldsSql}
+           from presets p join preset_versions h on h.id = p.head_version_id
+           where p.id = ? and ${UNDER_VERSION_QUOTA} and ${PRIVATE_OR_PERSON} returning id`,
         )
-        .bind(id, id, ...versionValues(fields, viaFor(actor, c.req.header('Origin') ?? null), now), ...versionQuotaBinds(actor.userId, now), restricted ? 1 : 0, id),
+        .bind(id, ...fieldsBinds, id, ...versionQuotaBinds(actor.userId, now), restricted ? 1 : 0, id),
       d1.prepare('update presets set head_version_id = last_insert_rowid(), updated_at = ? where id = ? and changes() > 0').bind(now, id),
     ]);
     const appended = append.results;

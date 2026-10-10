@@ -191,8 +191,8 @@ export function registerPlaylists(app: Hono<AppEnv>) {
     }
     assertTokenMayChange(c, actor, row);
     const meta = checkedMeta('name' in body ? body.name : row.playlist.name, 'description' in body ? body.description : (row.playlist.description ?? undefined));
-    patch.name = meta.name;
-    patch.description = meta.description ?? null;
+    if ('name' in body) patch.name = meta.name;
+    if ('description' in body) patch.description = meta.description ?? null;
 
     const updated = await db.update(playlists).set(patch).where(and(eq(playlists.id, row.playlist.id), privateIfToken(c, actor))).returning({ id: playlists.id });
     if (!updated.length) throw visibleRefusal();
