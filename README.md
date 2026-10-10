@@ -41,7 +41,7 @@ The tests run in the Workers runtime, in-process, against a local D1 with the mi
 
 ## The komorebi engine
 
-Arboretum renders looks with komorebi's own engine, pinned to a commit on komorebi's `origin/main`. Its
+Arboretum renders looks with komorebi's own engine, pinned to one komorebi commit. Its
 validator only accepts the keys that engine knows, within the editor's slider ranges. To move the pin:
 
 ```sh
