@@ -233,7 +233,7 @@ describe('via', () => {
     'https://komorebi.eljojo.net/',
     'https://komorebi.eljojo.net/#arboretum=12',
     'https://komorebi.eljojo.net/examples/',
-    'https://localhost:8787/editor/',
+    'https://localhost:8787/',
     'https://komorebi.eljojo.net/arboretumx/new',
     'https://komorebi.eljojo.net/x/arboretum/new',
     null,

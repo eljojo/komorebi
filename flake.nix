@@ -10,7 +10,7 @@
     utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
-        # The dev mode: arboretum plus a komorebi checkout at /editor/ on one https origin (scripts/dev.mjs).
+        # The dev mode: arboretum plus a komorebi checkout at the root on one https origin (scripts/dev.mjs).
         # It runs from the repo root, because it builds into .wrangler there and uses node_modules' wrangler.
         dev = pkgs.writeShellApplication {
           name = "arboretum-dev";

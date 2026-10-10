@@ -18,13 +18,14 @@ nix run .#dev -- ~/code/komorebi-arboretum-editor   # or another checkout, such 
 ```
 
 It applies the migrations to the local database, then runs `wrangler dev` over https with the passkeys pointed at
-localhost. Open https://localhost:8787/arboretum and accept the self-signed certificate once.
+localhost. Open https://localhost:8787/ (komorebi) or https://localhost:8787/arboretum and accept the self-signed certificate once.
 
-The komorebi editor is served from the same origin, at https://localhost:8787/editor/, so the editor and the API
+The komorebi editor is served from the same origin, at https://localhost:8787/, so the editor and the API
 share one session cookie with no CORS. The checkout is copied (read-only) into `.wrangler/editor-assets`, a
 throwaway folder that is gitignored and never deployed: `wrangler.jsonc` ships the built site (`.site`, below), and
-`--assets` only overrides it for the dev command. There `public/` is served under `/arboretum/`, as deployed, and the
-checkout stays at `/editor/` because komorebi's `detect()` keys on that path on localhost. After changing a file in the checkout, reload the tab.
+`--assets` only overrides it for the dev command. The layout is the deployed site's: the checkout at the root and
+`public/` under `/arboretum/`. A checkout that has an `arboretum/` path of its own is refused. After changing a file
+in the checkout, reload the tab.
 
 It has to be https. The session and passkey-challenge cookies are `__Host-` cookies, which are `Secure`, and
 Safari drops `Secure` cookies on plain `http://localhost`, so signing up fails there. The dev command's `RP_ID` and

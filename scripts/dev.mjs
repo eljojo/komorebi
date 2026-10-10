@@ -1,9 +1,8 @@
-// Arboretum's dev mode (design §1.1): `nix run .#dev [komorebi-checkout]`. Serves arboretum (pages under /arboretum,
-// as deployed) and, under /editor/, a komorebi checkout from one https origin, so the editor's session cookie and
-// API calls are same-origin. The checkout is only ever read: it is copied into .wrangler/editor-assets, which is
-// gitignored and is never what `wrangler deploy` ships (wrangler.jsonc ships the built site, ./.site; --assets
-// below is a dev-command override). The checkout stays at /editor/ rather than the root, because komorebi's
-// detect() keys on /editor/ on loopback.
+// Arboretum's dev mode (design §1.1): `nix run .#dev [komorebi-checkout]`. Serves the deployed site's layout from one
+// https origin, so the editor's session cookie and API calls are same-origin: a komorebi checkout at the root and
+// arboretum's pages under /arboretum. The checkout is only ever read: it is copied into .wrangler/editor-assets, which
+// is gitignored and is never what `wrangler deploy` ships (wrangler.jsonc ships the built site, ./.site; --assets
+// below is a dev-command override that keeps the config's run_worker_first, so `/` still passes the Worker).
 import { spawn } from 'node:child_process';
 import { watch } from 'node:fs';
 import { homedir } from 'node:os';
@@ -26,7 +25,7 @@ const watcher = watch(komorebiDir, { recursive: true }, (_event, rel) => {
   if (rel) syncKomorebiFile({ komorebiDir, outDir, rel });
 });
 
-console.log(`arboretum  ${ORIGIN}/arboretum\nthe editor ${ORIGIN}/editor/  (serving ${komorebiDir}; reload the tab after changing a file there)`);
+console.log(`komorebi   ${ORIGIN}/\narboretum  ${ORIGIN}/arboretum  (serving ${komorebiDir}; reload the tab after changing a file there)`);
 const server = run(['dev', '--local-protocol', 'https', '--port', '8787', '--var', 'RP_ID:localhost', '--var', `ORIGIN:${ORIGIN}`, '--assets', outDir]);
 server.on('exit', (code) => {
   watcher.close();

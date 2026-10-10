@@ -36,16 +36,36 @@ function snapshot(dir: string, base = dir): Record<string, string> {
   return out;
 }
 
-describe('buildEditorAssets: public/ under arboretum/, and the komorebi checkout under editor/', () => {
+describe('buildEditorAssets: the komorebi checkout at the root and public/ under arboretum/, as the deployed site has them', () => {
   it('serves both, so the editor and the API share one origin, and public/ where the deployed site has it', () => {
     const { args, outDir } = setup();
     buildEditorAssets(args);
     expect(readFileSync(join(outDir, 'arboretum', 'llms.txt'), 'utf8')).toBe('llms');
     expect(readFileSync(join(outDir, 'arboretum', 'engine', 'engine.json'), 'utf8')).toBe('engine');
-    expect(readFileSync(join(outDir, 'editor', 'index.html'), 'utf8')).toBe('index');
-    expect(readFileSync(join(outDir, 'editor', 'editor.js'), 'utf8')).toBe('editor');
-    expect(readFileSync(join(outDir, 'editor', 'examples', 'one.json'), 'utf8')).toBe('one');
+    expect(readFileSync(join(outDir, 'index.html'), 'utf8')).toBe('index');
+    expect(readFileSync(join(outDir, 'editor.js'), 'utf8')).toBe('editor');
+    expect(readFileSync(join(outDir, 'examples', 'one.json'), 'utf8')).toBe('one');
     expect(existsSync(join(outDir, 'llms.txt'))).toBe(false);
+    expect(existsSync(join(outDir, 'editor'))).toBe(false);
+  });
+
+  it('adds nothing of its own to the checkout (dev has no commit.json, as a local checkout has none)', () => {
+    const { args, outDir } = setup();
+    buildEditorAssets(args);
+    expect(Object.keys(snapshot(outDir)).sort()).toEqual(['/arboretum/engine/engine.json', '/arboretum/llms.txt', '/editor.js', '/examples/one.json', '/index.html']);
+  });
+
+  it('refuses a checkout that has its own arboretum/ path, before writing anything', () => {
+    const { args, outDir, komorebiDir, put } = setup();
+    put(join(komorebiDir, 'arboretum', 'llms.txt'), 'theirs');
+    expect(() => buildEditorAssets(args)).toThrow(/arboretum\/llms\.txt: written twice/);
+    expect(existsSync(join(outDir, 'index.html'))).toBe(false);
+  });
+
+  it('refuses a checkout whose file stands where the arboretum/ folder goes', () => {
+    const { args, komorebiDir, put } = setup();
+    put(join(komorebiDir, 'arboretum'), 'a file');
+    expect(() => buildEditorAssets(args)).toThrow(/arboretum: is a file and also holds arboretum\/llms\.txt/);
   });
 
   it('puts public/ at the path the pages link to (BASE)', () => {
@@ -66,16 +86,16 @@ describe('buildEditorAssets: public/ under arboretum/, and the komorebi checkout
     put(join(komorebiDir, 'maze.test.js'), 'test');
     put(join(komorebiDir, 'examples', 'deep.test.js'), 'test');
     buildEditorAssets(args);
-    expect(Object.keys(snapshot(join(outDir, 'editor'))).sort()).toEqual(['/editor.js', '/examples/one.json', '/index.html']);
+    expect(Object.keys(snapshot(outDir)).filter((p) => !p.startsWith('/arboretum/')).sort()).toEqual(['/editor.js', '/examples/one.json', '/index.html']);
   });
 
   it('starts from nothing, so a file removed from the checkout is gone from the next build', () => {
     const { args, outDir, put } = setup();
-    put(join(outDir, 'editor', 'stale.js'), 'old');
-    put(join(outDir, 'stale-too.txt'), 'old');
+    put(join(outDir, 'stale.js'), 'old');
+    put(join(outDir, 'arboretum', 'stale-too.txt'), 'old');
     buildEditorAssets(args);
-    expect(existsSync(join(outDir, 'editor', 'stale.js'))).toBe(false);
-    expect(existsSync(join(outDir, 'stale-too.txt'))).toBe(false);
+    expect(existsSync(join(outDir, 'stale.js'))).toBe(false);
+    expect(existsSync(join(outDir, 'arboretum', 'stale-too.txt'))).toBe(false);
   });
 
   it('only reads the checkout and public/', () => {
@@ -94,18 +114,18 @@ describe('syncKomorebiFile: the watcher keeps one changed file current', () => {
     put(join(komorebiDir, 'fresh', 'new.js'), 'new');
     syncKomorebiFile({ komorebiDir, outDir, rel: 'editor.js' });
     syncKomorebiFile({ komorebiDir, outDir, rel: join('fresh', 'new.js') });
-    expect(readFileSync(join(outDir, 'editor', 'editor.js'), 'utf8')).toBe('edited');
-    expect(readFileSync(join(outDir, 'editor', 'fresh', 'new.js'), 'utf8')).toBe('new');
+    expect(readFileSync(join(outDir, 'editor.js'), 'utf8')).toBe('edited');
+    expect(readFileSync(join(outDir, 'fresh', 'new.js'), 'utf8')).toBe('new');
   });
 
   it('removes from the output a file that is gone from the checkout', () => {
     const { args, outDir, komorebiDir, put } = setup();
     put(join(komorebiDir, 'gone.js'), 'x');
     buildEditorAssets(args);
-    expect(existsSync(join(outDir, 'editor', 'gone.js'))).toBe(true);
+    expect(existsSync(join(outDir, 'gone.js'))).toBe(true);
     rmSync(join(komorebiDir, 'gone.js'));
     syncKomorebiFile({ komorebiDir, outDir, rel: 'gone.js' });
-    expect(existsSync(join(outDir, 'editor', 'gone.js'))).toBe(false);
+    expect(existsSync(join(outDir, 'gone.js'))).toBe(false);
   });
 
   it('ignores a path the build leaves out', () => {
@@ -115,8 +135,8 @@ describe('syncKomorebiFile: the watcher keeps one changed file current', () => {
     put(join(komorebiDir, 'node_modules', 'x.js'), 'x');
     syncKomorebiFile({ komorebiDir, outDir, rel: 'maze.test.js' });
     syncKomorebiFile({ komorebiDir, outDir, rel: join('node_modules', 'x.js') });
-    expect(existsSync(join(outDir, 'editor', 'maze.test.js'))).toBe(false);
-    expect(existsSync(join(outDir, 'editor', 'node_modules'))).toBe(false);
+    expect(existsSync(join(outDir, 'maze.test.js'))).toBe(false);
+    expect(existsSync(join(outDir, 'node_modules'))).toBe(false);
   });
 });
 
