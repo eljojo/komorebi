@@ -2,7 +2,7 @@ import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor } from './komorebi.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
-import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer } from './playlists.js';
+import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter } from './playlists.js';
 import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
@@ -958,14 +958,19 @@ function landing(){
   if(was!==undefined && listEntries(was).some(e=>e.value===was)) return was;
   return ['local','builtins'].includes(activeList()) ? DEFAULT_PRESET : resumeAt();
 }
+let listedState=null, listedActive=null;
 function refreshPresetSelect(selected){
-  const keep=selected ?? presetSel.value;
+  const active=activeList(), state=stateNow();
+  let keep=selected ?? presetSel.value;
+  if(selected===undefined && listedState)
+    keep=listedActive===active ? selectionAfter(listedState, state, active, keep) : '';
   const list=listEntries(keep);
   for(const sel of presetSelects){
     sel.innerHTML='';
     for(const e of list){ const o=document.createElement('option'); o.value=e.value; o.textContent=e.label; sel.appendChild(o); }
     sel.value=keep;                                             // every surface shows the same selection
   }
+  listedState=state; listedActive=active;
   if(keep && settings.selected[activeList()]!==keep){ settings.selected[activeList()]=keep; saveSettings(); }
   syncPlayPreset();                                             // the stepper labels mirror the name
   syncPlaylistUI();

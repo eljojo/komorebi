@@ -51,6 +51,7 @@ export function parseHash(hash) {
 export const LOCAL_NAME = "all looks";
 const cloudId = (active) => (active.startsWith("arb:") ? active.slice(4) : null);
 const cloudItems = (state, active) => state.playlists[cloudId(active)]?.items ?? [];
+const cloudItem = (state, active, value) => value === "" || value === null || value === undefined ? undefined : cloudItems(state, active)[Number(value)];
 const isBuiltin = (PRESETS, name) => Object.hasOwn(PRESETS, name);
 const synced = (o) => o?.id !== undefined && o.synced === true;   // a ★ whose arboretum copy is current
 
@@ -60,6 +61,18 @@ const synced = (o) => o?.id !== undefined && o.synced === true;   // a ★ whose
 // listed, so the experimental toggle cannot move a ★'s value.
 const starValueOf = (PRESETS, name) => (isBuiltin(PRESETS, name) || name.startsWith("★ ") ? `★ ${name}` : name);
 export const starValue = (name) => starValueOf(BUILTINS.PRESETS, name);
+
+// A refresh may reorder a cloud list without changing the live look. Follow its preset (or waiting save), never the old index.
+export function selectionAfter(before, after, active, value) {
+  if (cloudId(active) === null) return value;
+  if (value === "") return "";
+  const old = cloudItems(before, active), item = old[Number(value)];
+  if (!item) return "";
+  const same = (it) => item.preset_id !== undefined ? it.preset_id === item.preset_id : item.seq !== undefined && it.seq === item.seq;
+  const occurrence = old.slice(0, Number(value)).filter(same).length;
+  const matches = cloudItems(after, active).map((it, i) => same(it) ? i : -1).filter((i) => i >= 0);
+  return matches[occurrence] === undefined ? "" : String(matches[occurrence]);
+}
 
 // The ★ an all-looks value denotes, or null when it is a built-in (or nothing).
 export function starName(stored, active, value) {
@@ -73,7 +86,7 @@ export function starName(stored, active, value) {
 
 // The look's own name: a ★'s, a built-in's, a cloud item's.
 export function entryName(state, stored, active, value) {
-  if (cloudId(active) !== null) return cloudItems(state, active)[Number(value)]?.name;
+  if (cloudId(active) !== null) return cloudItem(state, active, value)?.name;
   return starName(stored, active, value) ?? value;
 }
 
@@ -93,7 +106,7 @@ export const plays = (state, active) => cloudItems(state, active).length > 0;
 
 // The dwell and crossfade of a cloud entry; all looks has none.
 export function timing(state, active, value) {
-  const it = cloudId(active) === null ? undefined : cloudItems(state, active)[Number(value)];
+  const it = cloudId(active) === null ? undefined : cloudItem(state, active, value);
   return it ? { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s } : null;
 }
 
@@ -116,7 +129,7 @@ export function entries(state, stored, builtins, showBeta, active, keep, signedI
 
 // The params of an entry, through migrateLegacy so a look saved yesterday loads tomorrow.
 export function resolve(state, stored, active, value) {
-  if (cloudId(active) !== null) return migrateLegacy(cloudItems(state, active)[Number(value)]?.params);
+  if (cloudId(active) !== null) return migrateLegacy(cloudItem(state, active, value)?.params);
   const star = starName(stored, active, value);
   return migrateLegacy(star !== null ? stored[star] : BUILTINS.PRESETS[value]);
 }
@@ -226,7 +239,7 @@ export function onDeleted(state, name) {
 // `me` is your username, `cam` the engine's cameraFor. A cloud playlist here is one of yours, and cached.
 export function uploadPlan(state, stored, active, value, live, me, commit, cam) {
   const id = cloudId(active);
-  const it = id === null ? undefined : cloudItems(state, active)[Number(value)];
+  const it = id === null ? undefined : cloudItem(state, active, value);
   const star = starName(stored, active, value);   // the ★ the value denotes, if it is one
   const params = id === null ? (star !== null ? stored[star] : BUILTINS.PRESETS[value]) : live;
   const twin = builtinTwin(params, BUILTINS);
@@ -284,7 +297,7 @@ export function itemsAfter(fresh, change) {
 // The entry a save starts from, in the shape onSaved and the provenance rules read; null when it is not a listed entry.
 export function fromEntry(state, stored, active, value) {
   if (cloudId(active) !== null) {
-    const item = cloudItems(state, active)[Number(value)];
+    const item = cloudItem(state, active, value);
     return item ? { kind: "cloud", item } : null;
   }
   const star = starName(stored, active, value);
@@ -295,7 +308,7 @@ export function fromEntry(state, stored, active, value) {
 // The arboretum preset an entry already is, or null when it has to go up first: a cloud item is one; a ★ is only
 // while its copy is current (an edited ★ is a newer look than the preset the playlist would get).
 export function onlineId(state, stored, active, value) {
-  if (cloudId(active) !== null) return cloudItems(state, active)[Number(value)]?.preset_id ?? null;
+  if (cloudId(active) !== null) return cloudItem(state, active, value)?.preset_id ?? null;
   const star = starName(stored, active, value);
   const o = star === null ? undefined : state.origin[star];
   return o?.id !== undefined && o.synced ? o.id : null;
@@ -316,7 +329,7 @@ export function lookState(state, stored, active, value, live, me, { offline = fa
   let text, title, params;
   const id = cloudId(active);
   if (id !== null) {
-    const it = cloudItems(state, active)[Number(value)];
+    const it = cloudItem(state, active, value);
     if (!it) return { text: "", title: "" };
     params = it.params;
     if (it.pending) {
@@ -533,7 +546,7 @@ export function savePlan(view, stored, active, value, live, me, commit, cam, nam
   }
   const twin = builtinTwin(live, BUILTINS);
   if (twin !== null) return { refused: refusedTwin(twin) };
-  const it = cloudId(active) === null ? undefined : cloudItems(view, active)[Number(value)];
+  const it = cloudId(active) === null ? undefined : cloudItem(view, active, value);
   const star = starName(stored, active, value);
   const known = it ? { id: it.preset_id, version: it.version, owner: it.owner }
     : star !== null ? view.origin[star]

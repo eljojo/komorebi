@@ -13,6 +13,7 @@ import { build } from "./embed-build.mjs";
 import { api } from "./arboretum-api.js";
 import { getStored, getMirror, MIRROR_KEY, mount, setMirror, setState } from "./arboretum.js";
 import { emptyMirror, enqueue, parseHash, starValue } from "./playlists.js";
+import * as model from "./playlists.js";
 
 const HOME = ["morning 2", "afternoon 5b", "morning 3"];   // the three-look set the homepage loads
 const engine = () => [...readdirSync(".").filter((f) => /^komorebi-.*\.js$/.test(f)), "komorebi.js", "komorebi.global.js", "presets.js", "macros.js"];
@@ -166,6 +167,33 @@ test("a persisted offline save is selected and bound to the current account", as
   await s.a.saveCloud("waiting", { exposure: 99 });
   expect(getMirror().queue[0]).toMatchObject({ owner: "alice", body: { name: "waiting", params: { exposure: 99 } } });
   expect(shown).toEqual([["arb:unc", { seq: 1 }]]);
+});
+
+test("the editor keeps the selected preset across a mirror reorder, so saving updates that preset", () => {
+  const one = { id: 1, version: 1, owner: "alice", name: "one", params: { exposure: 11 } };
+  const two = { id: 2, version: 1, owner: "alice", name: "two", params: { exposure: 22 } };
+  const m = { ...emptyMirror(), order: [1, 2], presets: { 1: one, 2: two } };
+  let state = model.viewState({ origin: {}, playlists: {} }, m, "alice");
+  const select = { value: "", appendChild() {} };
+  const settings = { selected: {} };
+  const source = readFileSync("editor.js", "utf8");
+  const body = source.slice(source.indexOf("function refreshPresetSelect("), source.indexOf("// the playlist select exists"));
+  const refresh = new Function("presetSel", "presetSelects", "listEntries", "document", "settings", "activeList", "stateNow", "selectionAfter", "saveSettings", "syncPlayPreset", "syncPlaylistUI",
+    `let listedState=null, listedActive=null; ${body}; return refreshPresetSelect;`)(
+    select, [select], () => model.entries(state, {}, { PRESETS: {}, EXPERIMENTAL: [] }, false, "arb:unc"), { createElement: () => ({}) },
+    settings, () => "arb:unc", () => state, model.selectionAfter, () => {}, () => {}, () => {});
+  refresh("0");
+  state = model.viewState({ origin: {}, playlists: {} }, model.mirrorSync(m, [two, one], {}, [], [], 1), "alice");
+  refresh();
+  expect(select.value).toBe("1");
+  const plan = model.savePlan(state, {}, "arb:unc", select.value, one.params, "alice", null, () => "floor", "one");
+  expect(plan.path).toBe("/api/presets/1/versions");
+  expect(plan.body.params).toEqual(one.params);
+  state = model.viewState({ origin: {}, playlists: {} }, model.mirrorSync(m, [two], {}, [], [], 2), "alice");
+  refresh();
+  expect(select.value).toBe("");
+  expect(model.savePlan(state, {}, "arb:unc", select.value, one.params, "alice", null, () => "floor", "one").kind).toBe("preset");
+  expect(model.lookState(state, {}, "arb:unc", "", one.params, "alice")).toEqual({ text: "", title: "" });
 });
 
 test("with detect null, mounting makes no fetch and builds nothing", async () => {
