@@ -7,6 +7,8 @@ export const BREATH = { ms: 900, ease: "ease", opacity: "0", filter: "blur(10px)
 
 const hasFragment = (href) => href.includes("#");
 const withoutFragment = (u) => `${u.origin}${u.pathname}${u.search}`;
+// Arboretum's pages, on this same site. Moving among them is plain (José): only coming into arboretum, or leaving it, breathes.
+const inArboretum = (u) => u.pathname === "/arboretum" || u.pathname.startsWith("/arboretum/");
 
 // event: the click ({ button, metaKey, ctrlKey, shiftKey, altKey, defaultPrevented }); link: the anchor ({ href: resolved, target,
 // download: whether the attribute is there }); here: this page's address. True when the click will navigate this tab to another
@@ -20,6 +22,7 @@ export function breathes(event, link, here) {
   try { to = new URL(link.href); from = new URL(here); } catch { return false; }
   if (to.protocol !== "http:" && to.protocol !== "https:") return false;   // javascript:, mailto:, tel:… leave this page standing, so it must not be breathed out
   if (hasFragment(link.href) && withoutFragment(to) === withoutFragment(from)) return false;   // a jump within this page
+  if (to.origin === from.origin && inArboretum(to) && inArboretum(from)) return false;   // from one arboretum page to another
   return true;
 }
 

@@ -71,3 +71,18 @@ test("an unparseable href never breathes", () => {
 test("the breath is the welcome's: .9s ease, opacity 0, blur 10px, scale 1.04", () => {
   expect(BREATH).toEqual({ ms: 900, ease: "ease", opacity: "0", filter: "blur(10px)", transform: "scale(1.04)" });
 });
+
+// José, 2026-10-10: moving between arboretum's own pages is plain; coming into arboretum, or leaving it, breathes.
+test("a link from one arboretum page to another does not breathe", () => {
+  const profile = "https://komorebi.eljojo.net/arboretum/u/eljojo";
+  for (const to of ["/arboretum/p/2", "/arboretum/settings", "/arboretum/new", "/arboretum", "/arboretum/"])
+    expect(breathes(click(), a(`https://komorebi.eljojo.net${to}`), profile), to).toBe(false);
+  expect(breathes(click(), a("https://komorebi.eljojo.net/arboretum/u/eljojo"), "https://komorebi.eljojo.net/arboretum")).toBe(false);
+});
+
+test("into arboretum, and out of it, still breathes", () => {
+  expect(breathes(click(), a("https://komorebi.eljojo.net/arboretum"), "https://komorebi.eljojo.net/")).toBe(true);
+  expect(breathes(click(), a("https://komorebi.eljojo.net/#feel"), "https://komorebi.eljojo.net/arboretum/settings")).toBe(true);
+  expect(breathes(click(), a("https://komorebi.eljojo.net/about"), "https://komorebi.eljojo.net/arboretum/p/2")).toBe(true);
+  expect(breathes(click(), a("https://komorebi.eljojo.net/arboretumish"), "https://komorebi.eljojo.net/arboretum")).toBe(true);
+});
