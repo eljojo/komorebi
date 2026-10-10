@@ -14,7 +14,7 @@ import { isVisibility, parseId, readJsonBody } from './util';
 
 type PresetRow = { preset: typeof presets.$inferSelect; owner: string; head: typeof presetVersions.$inferSelect };
 
-async function loadPreset(db: Db, id: number | null): Promise<PresetRow | undefined> {
+export async function loadPreset(db: Db, id: number | null): Promise<PresetRow | undefined> {
   if (id === null) return undefined;
   const [row] = await db
     .select({ preset: presets, owner: users.username, head: presetVersions })

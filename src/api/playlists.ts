@@ -18,7 +18,7 @@ const ROWS_PER_INSERT = 19;
 
 type PlaylistRow = { playlist: typeof playlists.$inferSelect; owner: string };
 
-async function loadPlaylist(db: Db, id: number | null): Promise<PlaylistRow | undefined> {
+export async function loadPlaylist(db: Db, id: number | null): Promise<PlaylistRow | undefined> {
   if (id === null) return undefined;
   const [row] = await db
     .select({ playlist: playlists, owner: users.username })
@@ -53,7 +53,7 @@ function summary(row: PlaylistRow, viewer: Actor | null) {
 
 // The playlist with the items as this viewer may see them (spec §4.2): the rest are left out silently, and
 // only the owner is told how many.
-async function playlistView(db: Db, row: PlaylistRow, viewer: Actor | null) {
+export async function playlistView(db: Db, row: PlaylistRow, viewer: Actor | null) {
   const all = await loadItems(db, row.playlist.id);
   // An archived preset is skipped even for its own author: playlists never play what is archived.
   const visible = all.filter((i) => !i.preset.archivedAt && canSee(i.preset, viewer, undefined));

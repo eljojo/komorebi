@@ -1,0 +1,97 @@
+/* One accent, two palettes, no framework. Nothing here moves: only a look does. */
+:root {
+  --bg: #f6f3ec;
+  --ink: #2b2a26;
+  --quiet: #77736a;
+  --line: #ddd8cb;
+  --accent: #4d6b3c;
+  --field: #fffdf8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1c18;
+    --ink: #e4e1d6;
+    --quiet: #96927f;
+    --line: #35362f;
+    --accent: #9cbd86;
+    --field: #22231e;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html { background: var(--bg); color: var(--ink); }
+body {
+  margin: 0 auto;
+  padding: 1.25rem 1rem 4rem;
+  max-width: 40rem;
+  font: 1rem/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow-wrap: anywhere;
+}
+
+a { color: var(--accent); text-underline-offset: 0.2em; }
+h1, h2 { font-family: ui-serif, Georgia, "Times New Roman", serif; font-weight: 500; line-height: 1.25; }
+h1 { font-size: 1.9rem; margin: 2.5rem 0 0.75rem; }
+h2 { font-size: 1.2rem; margin: 2.25rem 0 0.5rem; }
+p { margin: 0.75rem 0; }
+
+header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1.5rem; align-items: baseline; }
+header .home { color: var(--ink); text-decoration: none; font-family: ui-serif, Georgia, serif; font-size: 1.1rem; }
+nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; font-size: 0.95rem; }
+
+.meta, .quiet, .when { color: var(--quiet); font-size: 0.92rem; }
+.meta a, .when a { color: inherit; }
+.n { display: inline-block; min-width: 1.5rem; color: var(--quiet); }
+.tags { display: inline-flex; gap: 0.5rem; }
+.tag { color: var(--quiet); font-size: 0.85rem; }
+.tag::before { content: "#"; }
+.note { border-left: 2px solid var(--line); padding-left: 0.75rem; color: var(--quiet); }
+.primary { font-size: 1.05rem; }
+
+ul.plain, ol.plain { list-style: none; padding: 0; margin: 0.5rem 0; }
+ul.plain li, ol.plain li { padding: 0.35rem 0; border-bottom: 1px solid var(--line); }
+ol.plain li[aria-current] { border-bottom-color: var(--accent); }
+
+/* A modest preview, not a viewing room (spec §2.1). */
+.preview { margin: 1.25rem 0; }
+.preview canvas { display: block; width: 100%; max-width: 32rem; aspect-ratio: 16 / 10; background: var(--line); border-radius: 4px; }
+.preview figcaption { margin-top: 0.5rem; }
+
+label { display: block; margin: 0.9rem 0; }
+label.inline { display: inline-block; margin-right: 1rem; }
+input, textarea, select, button { font: inherit; color: inherit; }
+input:not([type="checkbox"]), textarea, select {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+label select, label input.seconds { display: inline-block; width: auto; }
+input.seconds { width: 5rem; }
+input.share { font-size: 0.9rem; }
+textarea { font-family: ui-monospace, Menlo, monospace; font-size: 0.88rem; }
+fieldset { border: 1px solid var(--line); border-radius: 4px; margin: 0.9rem 0; }
+button {
+  padding: 0.4rem 0.9rem;
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+}
+button:hover { background: var(--field); }
+.controls { display: block; margin-top: 0.25rem; }
+.controls label { display: inline-block; margin: 0 1rem 0 0; }
+.controls button { margin-right: 0.35rem; padding: 0.15rem 0.6rem; font-size: 0.9rem; }
+
+details { margin: 0.75rem 0; }
+summary { cursor: pointer; }
+code { word-break: break-all; }
+#minted { border: 1px solid var(--accent); border-radius: 4px; padding: 0.5rem 1rem; margin: 1rem 0; }
+.msg { min-height: 1.65em; color: var(--quiet); }
+section#owner-controls { margin-top: 3rem; border-top: 1px solid var(--line); }

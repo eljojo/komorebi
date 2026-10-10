@@ -5,7 +5,7 @@ export const MAX_PARAMS_BYTES = 16384;
 const MAX_STRING = 64;
 const MAX_NAME = 80;
 const MAX_DESCRIPTION = 500;
-const TAGS = ['projector', 'experimental'];
+export const TAGS = ['projector', 'experimental'];
 
 // The editor's export carries these two input helpers (found in `park 2` and `acid dreams`), but DEFAULTS does not.
 const EDITOR_KEYS: Record<string, 'number'> = { time_of_day: 'number', latitude: 'number' };

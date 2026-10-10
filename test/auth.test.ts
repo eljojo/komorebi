@@ -185,7 +185,7 @@ describe('every /api route goes through authorize', () => {
   it('would catch a route registered around the helper', () => {
     const app = createApp();
     app.get('/api/sneaky', (c) => c.json({}));
-    const sneaky = app.routes.filter((r) => r.method !== 'ALL' && !policies.has(`${r.method} ${r.path}`) && r.path !== '/api/health');
+    const sneaky = app.routes.filter((r) => r.path.startsWith('/api') && r.method !== 'ALL' && !policies.has(`${r.method} ${r.path}`) && r.path !== '/api/health');
     expect(sneaky.map((r) => r.path)).toEqual(['/api/sneaky']);
   });
 });

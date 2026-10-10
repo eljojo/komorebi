@@ -7,6 +7,7 @@ import { registerExport } from './api/export';
 import { registerPlaylists } from './api/playlists';
 import { registerPresets } from './api/presets';
 import { registerTokens } from './api/tokens';
+import { registerPages } from './pages';
 import { type AppEnv, type Resolver, bearerToken, sessionCookie } from './auth';
 import { CORS_ORIGINS, MAX_BODY_BYTES } from './config';
 import { ApiError } from './errors';
@@ -62,6 +63,7 @@ export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) 
   registerExport(app);
   registerAuth(app);
   registerTokens(app);
+  registerPages(app);
 
   return app;
 }
