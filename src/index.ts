@@ -20,6 +20,8 @@ const EDITOR_ROUTES: [string, RegExp][] = [
   ['GET', /^\/api\/presets\/[^/]+(\/versions(\/[^/]+)?)?$/],
   ['POST', /^\/api\/presets\/[^/]+\/versions$/],
   ['GET', /^\/api\/playlists(\/[^/]+)?$/],
+  ['POST', /^\/api\/playlists$/],
+  ['PUT', /^\/api\/playlists\/[^/]+\/items$/],
 ];
 
 const HARDENING_HEADERS = {

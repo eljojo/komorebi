@@ -25,5 +25,6 @@ export const RESERVED_USERNAMES = [
 
 export const KOMOREBI_ORIGIN = 'https://komorebi.eljojo.net';
 
-// Credentialed CORS is only ever granted to these two (spec §3.2); never `*`.
-export const CORS_ORIGINS = [KOMOREBI_ORIGIN, 'http://localhost:8000'];
+// Credentialed CORS is only ever granted to this one origin (spec §3.2); never `*`. Local development is
+// same-origin (the editor is served by arboretum's own dev server), so it needs no entry.
+export const CORS_ORIGINS = [KOMOREBI_ORIGIN];

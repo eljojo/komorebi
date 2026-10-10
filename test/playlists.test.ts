@@ -206,8 +206,8 @@ describe('PUT /api/playlists/:id/items', () => {
     const r = await put(o.token, p.id, { items: [{ preset_id: b.id }, { preset_id: a.id, dwell_s: 60, crossfade_s: 0 }] });
     expect(r.status).toBe(200);
     expect(r.json.items).toEqual([
-      { preset_id: b.id, name: 'b', dwell_s: 30, crossfade_s: 5, params: PARAMS },
-      { preset_id: a.id, name: 'a', dwell_s: 60, crossfade_s: 0, params: PARAMS },
+      { preset_id: b.id, version: 1, owner: o.user.username, name: 'b', dwell_s: 30, crossfade_s: 5, params: PARAMS },
+      { preset_id: a.id, version: 1, owner: o.user.username, name: 'a', dwell_s: 60, crossfade_s: 0, params: PARAMS },
     ]);
     const swapped = await put(o.token, p.id, { items: [{ preset_id: a.id }] });
     expect(swapped.json.items.map((i: any) => i.preset_id)).toEqual([a.id]);
@@ -303,6 +303,20 @@ describe('the items a viewer gets', () => {
     await asSession(o.user, 'POST', `/api/presets/${a.id}/versions`, { json: { name: 'new name', params: { tree_count: 9 } } });
     const item = (await get(`/api/playlists/${p.id}`)).json.items[0];
     expect(item).toMatchObject({ name: 'new name', params: { tree_count: 9 } });
+  });
+
+  it('carry the head version number and the username of the preset\'s owner', async () => {
+    const o = await owner();
+    const other = await owner();
+    const mine = await makePreset(o.user, o.token, { name: 'mine', visibility: 'public' });
+    const theirs = await makePreset(other.user, other.token, { name: 'theirs', visibility: 'public' });
+    await asSession(other.user, 'POST', `/api/presets/${theirs.id}/versions`, { json: { name: 'theirs, again', params: { tree_count: 4 } } });
+    const p = await makePlaylist(o.token, { visibility: 'public', items: [{ preset_id: mine.id }, { preset_id: theirs.id }] });
+    for (const viewer of [o.token, undefined]) {
+      const items = (await get(`/api/playlists/${p.id}`, viewer)).json.items;
+      expect(items[0]).toMatchObject({ preset_id: mine.id, version: 1, owner: o.user.username });
+      expect(items[1]).toMatchObject({ preset_id: theirs.id, version: 2, owner: other.user.username });
+    }
   });
 
   it('leave out what this viewer cannot see, silently, and tell only the owner how many', async () => {

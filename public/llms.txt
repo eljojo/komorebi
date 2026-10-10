@@ -16,6 +16,9 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
   things, and it can never make anything public or unlisted, archive, or manage tokens and passkeys. Publishing
   is the person's act, in a browser.
 - Every version records how it arrived; a token's versions say `token:<its label>`.
+- The komorebi editor (https://komorebi.eljojo.net) uses the person's browser session. It may read, create
+  presets, versions and playlists, and set a playlist's items, but only private ones: from the editor,
+  `visibility` other than `private` is a 403, because publishing is done on arboretum itself.
 
 ## Rules for every request
 
@@ -62,7 +65,8 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
 - `GET /api/playlists?owner=me|<username>`: `{ playlists: [...] }`.
 - `POST /api/playlists`: `{ name, description? }`. Creates a private playlist (201).
 - `GET /api/playlists/:id` (`?k=` when unlisted): the playlist and its `items`, each
-  `{ preset_id, name, dwell_s, crossfade_s, params }`, as this viewer may see them. The owner also gets items
+  `{ preset_id, version, owner, name, dwell_s, crossfade_s, params }`, as this viewer may see them (`version` is
+  the preset's head version, `owner` its owner's username). The owner also gets items
   that are unavailable now, as `{ preset_id, dwell_s, crossfade_s, unavailable: true }`, and an
   `unavailable` count.
 - `PATCH /api/playlists/:id` `{ name?, description? }` (owner). A token may do this only on a private

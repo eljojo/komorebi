@@ -15,3 +15,8 @@ declare module '*?raw' {
 declare module 'node:fs';
 declare module 'node:os';
 declare module 'node:path';
+
+// Vite's file-list import: the keys are the matching paths (the guard test reads only those).
+interface ImportMeta {
+  glob(pattern: string | string[]): Record<string, () => Promise<unknown>>;
+}

@@ -8,7 +8,7 @@ import { ApiError } from '../errors';
 import { randomBase64Url } from '../random';
 import { validateMeta } from '../validate';
 import { canSee } from './access';
-import { isVisibility, parseId, readJsonBody, visibilityChange } from './util';
+import { assertNotPublishedFromEditor, isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
 const MAX_ITEMS = 500;
 const DWELL = { min: 1, max: 3600, default: 30 };
@@ -30,9 +30,10 @@ export async function loadPlaylist(db: Db, id: number | null): Promise<PlaylistR
 
 async function loadItems(db: Db, playlistId: number) {
   return db
-    .select({ item: playlistItems, preset: presets, head: presetVersions })
+    .select({ item: playlistItems, preset: presets, head: presetVersions, presetOwner: users.username })
     .from(playlistItems)
     .innerJoin(presets, eq(presets.id, playlistItems.presetId))
+    .innerJoin(users, eq(users.id, presets.ownerId))
     .innerJoin(presetVersions, eq(presetVersions.id, presets.headVersionId))
     .where(eq(playlistItems.playlistId, playlistId))
     .orderBy(playlistItems.position);
@@ -54,7 +55,7 @@ function summary(row: PlaylistRow, viewer: Actor | null) {
 // The playlist with the items as this viewer may see them (spec §4.2). Other people simply get fewer items. The
 // owner gets the unavailable ones too, in their places and with nothing but their times, so the list they edit
 // is whole and saving it does not drop an item that may come back; they are also told how many.
-type PlayableItem = { preset_id: number; name: string; dwell_s: number; crossfade_s: number; params: unknown };
+type PlayableItem = { preset_id: number; version: number; owner: string; name: string; dwell_s: number; crossfade_s: number; params: unknown };
 type UnavailableItem = { preset_id: number; dwell_s: number; crossfade_s: number; unavailable: true };
 
 export async function playlistView(db: Db, row: PlaylistRow, viewer: Actor | null) {
@@ -66,7 +67,7 @@ export async function playlistView(db: Db, row: PlaylistRow, viewer: Actor | nul
     ...summary(row, viewer),
     items: all.flatMap((i): (PlayableItem | UnavailableItem)[] => {
       if (available(i)) {
-        return [{ preset_id: i.preset.id, name: i.head.name, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, params: JSON.parse(i.head.params) }];
+        return [{ preset_id: i.preset.id, version: i.head.n, owner: i.presetOwner, name: i.head.name, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, params: JSON.parse(i.head.params) }];
       }
       return isOwner ? [{ preset_id: i.preset.id, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, unavailable: true }] : [];
     }),
@@ -130,6 +131,7 @@ export function registerPlaylists(app: Hono<AppEnv>) {
       if (actor.kind === 'token' && body.visibility !== 'private') {
         throw new ApiError(403, 'making a playlist visible needs a person in a browser; a token can only create private playlists');
       }
+      assertNotPublishedFromEditor(c, body.visibility);
       visibility = body.visibility;
     }
     const meta = checkedMeta(body.name, body.description);

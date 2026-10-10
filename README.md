@@ -8,19 +8,25 @@ editor and agents use. How an agent uses the API is in [`public/llms.txt`](publi
 
 ## Run it locally
 
-The toolchain is the nix devShell. Every command goes through `nix develop -c`.
+The toolchain is the nix devShell. Install the dependencies once, then start the dev mode:
 
 ```sh
-nix develop -c npm install
-nix develop -c npx wrangler d1 migrations apply komorebi-arboretum --local
-nix develop -c npx wrangler dev --local-protocol https --var RP_ID:localhost --var ORIGIN:https://localhost:8787
+nix develop -c npm ci
+nix run .#dev                                       # serves the komorebi checkout at ~/code/komorebi
+nix run .#dev -- ~/code/komorebi-arboretum-editor   # or another checkout, such as a worktree
 ```
 
-Open https://localhost:8787 and accept the self-signed certificate once.
+It applies the migrations to the local database, then runs `wrangler dev` over https with the passkeys pointed at
+localhost. Open https://localhost:8787 and accept the self-signed certificate once.
+
+The komorebi editor is served from the same origin, at https://localhost:8787/editor/, so the editor and the API
+share one session cookie with no CORS. The checkout is copied (read-only) into `.wrangler/editor-assets`, a
+throwaway folder that is gitignored and never deployed: `wrangler.jsonc` still ships `./public` alone, and
+`--assets` only overrides it for the dev command. After changing a file in the checkout, reload the tab.
 
 It has to be https. The session and passkey-challenge cookies are `__Host-` cookies, which are `Secure`, and
-Safari drops `Secure` cookies on plain `http://localhost`, so signing up fails there. The two `--var`s point the
-passkeys at localhost instead of arboretum.eljojo.net.
+Safari drops `Secure` cookies on plain `http://localhost`, so signing up fails there. The dev command's `RP_ID` and
+`ORIGIN` vars point the passkeys at localhost instead of arboretum.eljojo.net.
 
 The local database lives in `.wrangler/` and is never uploaded.
 

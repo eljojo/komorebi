@@ -10,7 +10,7 @@ import { randomBase64Url } from '../random';
 import { duplicateKeys, rawMember } from '../rawjson';
 import { MAX_PARAMS_BYTES, validateMeta, validateParams } from '../validate';
 import { canSee } from './access';
-import { isVisibility, parseId, readJsonBody, visibilityChange } from './util';
+import { assertNotPublishedFromEditor, isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
 type PresetRow = { preset: typeof presets.$inferSelect; owner: string; head: typeof presetVersions.$inferSelect };
 
@@ -179,6 +179,7 @@ export function registerPresets(app: Hono<AppEnv>) {
       if (actor.kind === 'token' && body.visibility !== 'private') {
         throw new ApiError(403, 'making a preset visible needs a person in a browser; a token can only create private presets');
       }
+      assertNotPublishedFromEditor(c, body.visibility);
       visibility = body.visibility;
     }
 

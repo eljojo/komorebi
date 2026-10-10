@@ -140,6 +140,8 @@ describe('CORS on /api/*', () => {
     'POST /api/presets/1/versions',
     'GET /api/playlists',
     'GET /api/playlists/1',
+    'POST /api/playlists',
+    'PUT /api/playlists/1/items',
   ];
   // A script on the editor's origin must not be able to reach these: minting a token, publishing, the export.
   const OTHER_ROUTES = [
@@ -160,9 +162,7 @@ describe('CORS on /api/*', () => {
     'PATCH /api/presets/1',
     'POST /api/presets/1/archive',
     'POST /api/presets/1/unarchive',
-    'POST /api/playlists',
     'PATCH /api/playlists/1',
-    'PUT /api/playlists/1/items',
   ];
 
   async function preflight(path: string, origin: string, method = 'POST') {
@@ -180,7 +180,7 @@ describe('CORS on /api/*', () => {
     return (await createApp().request(path, init, env)).headers;
   }
 
-  it.each([KOMOREBI, 'http://localhost:8000'])('allows %s, with credentials', async (origin) => {
+  it.each([KOMOREBI])('allows %s, with credentials', async (origin) => {
     const h = await preflight('/api/presets', origin);
     expect(h.get('Access-Control-Allow-Origin')).toBe(origin);
     expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
@@ -188,7 +188,7 @@ describe('CORS on /api/*', () => {
     expect((h.get('Access-Control-Allow-Headers') ?? '').toLowerCase().split(',').map((m) => m.trim()).sort()).toEqual(['authorization', 'content-type']);
   });
 
-  it.each(['https://evil.example', 'https://komorebi.eljojo.net.evil.example', 'http://localhost:8001', 'https://eljojo.net', 'null'])(
+  it.each(['https://evil.example', 'https://komorebi.eljojo.net.evil.example', 'http://localhost:8000', 'http://localhost:8001', 'https://eljojo.net', 'null'])(
     'gives %s no allow-origin on a preflight',
     async (origin) => {
       const h = await preflight('/api/presets', origin);
@@ -215,7 +215,8 @@ describe('CORS on /api/*', () => {
   it('does not grant a method the route lacks: a preflight for DELETE on an editor path gets nothing', async () => {
     expect((await preflight('/api/presets/1', KOMOREBI, 'DELETE')).get('Access-Control-Allow-Origin')).toBeNull();
     expect((await preflight('/api/presets/1', KOMOREBI, 'PATCH')).get('Access-Control-Allow-Origin')).toBeNull();
-    expect((await preflight('/api/playlists', KOMOREBI, 'POST')).get('Access-Control-Allow-Origin')).toBeNull();
+    expect((await preflight('/api/playlists', KOMOREBI, 'PUT')).get('Access-Control-Allow-Origin')).toBeNull();
+    expect((await preflight('/api/playlists/1/items', KOMOREBI, 'POST')).get('Access-Control-Allow-Origin')).toBeNull();
   });
 
   // A preflight is cached by the browser for every method it lists, so it may list only what that path grants the
@@ -226,8 +227,9 @@ describe('CORS on /api/*', () => {
     ['/api/presets/1', ['GET']],
     ['/api/presets/1/versions', ['GET', 'POST']],
     ['/api/presets/1/versions/2', ['GET']],
-    ['/api/playlists', ['GET']],
+    ['/api/playlists', ['GET', 'POST']],
     ['/api/playlists/1', ['GET']],
+    ['/api/playlists/1/items', ['PUT']],
   ])('advertises on %s only %j', async (path, methods) => {
     for (const asked of methods) {
       const h = await preflight(path, KOMOREBI, asked);
@@ -281,7 +283,7 @@ describe('via', () => {
 
   it('is editor for a session from the komorebi origin and web otherwise', () => {
     expect(viaFor(session, 'https://komorebi.eljojo.net')).toBe('editor');
-    expect(viaFor(session, 'http://localhost:8000')).toBe('editor');
+    expect(viaFor(session, 'http://localhost:8000')).toBe('web');
     expect(viaFor(session, 'http://localhost:8001')).toBe('web');
     expect(viaFor(session, null)).toBe('web');
     expect(viaFor(session, 'https://arboretum.eljojo.net')).toBe('web');
