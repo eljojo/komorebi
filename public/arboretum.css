@@ -127,6 +127,11 @@ section#owner-controls { margin-top: 3rem; border-top: 1px solid var(--line); }
 .column > h1 { margin-bottom: 1.25rem; }
 .column h1 .sub { display: block; margin-top: 0.5em; font-size: 0.4em; letter-spacing: 0.3em; text-indent: 0.3em; color: var(--quiet); font-weight: 400; }
 .column .feel { margin-top: 1rem; }
+/* The home's closing: a quiet italic "about" above the one warm pill. */
+.closing { display: flex; flex-direction: column; align-items: center; gap: 1.1rem; margin: 3rem 0 2rem; font: italic 400 clamp(15px, 2vw, 16px)/1.4 var(--display); letter-spacing: 0.015em; }
+.closing a:not(.feel) { color: var(--quiet); text-decoration: none; }
+.closing a:not(.feel):hover, .closing a:not(.feel):focus-visible { color: var(--sun); }
+.closing .feel { margin-top: 0; }
 .garden-section { margin-top: 3rem; text-align: center; }
 .garden-section > h2 { margin-bottom: 0.25rem; }
 .garden-empty { text-align: center; color: var(--quiet); font-style: italic; margin: 2rem 0; }

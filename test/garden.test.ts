@@ -86,12 +86,18 @@ describe('the garden on /arboretum', () => {
 });
 
 describe('the front page text', () => {
-  it('links into about, with no pill and no link to itself: the komorebi name leads home', async () => {
+  it('links into about and ends on the pill, with no link to itself: the komorebi name leads home', async () => {
     const r = await get('/arboretum');
     for (const href of ['/about', '/arboretum/llms.txt']) expect(r.text).toContain(`href="${href}"`);
     expect(r.text).not.toContain('player.html');
-    expect(r.text).not.toContain('>open komorebi<');
+    expect(r.text.match(/>open komorebi</g)?.length).toBe(1);
     expect(r.text).not.toContain('href="/arboretum"');
+    // About and the pill are the page's closing, after the last section and not in the head.
+    const head = r.text.slice(r.text.indexOf('<header>'), r.text.indexOf('</header>'));
+    expect(head).not.toContain('/about');
+    expect(head).not.toContain('open komorebi');
+    expect(r.text.indexOf('href="/about"')).toBeGreaterThan(r.text.lastIndexOf('<h2'));
+    expect(r.text.indexOf('>open komorebi<')).toBeGreaterThan(r.text.lastIndexOf('<h2'));
   });
 
   it('is titled arboretum · komorebi', async () => {

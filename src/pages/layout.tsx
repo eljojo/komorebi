@@ -31,7 +31,8 @@ export function Layout(props: { title: string; home?: boolean; viewer: Actor | n
             <nav>
               {/* On arboretum's own front page its link and the pill are redundant: the komorebi name leads home (José). */}
               {props.home ? null : <a href={BASE}>arboretum</a>}
-              <a href="/about">about</a>
+              {/* On the home, about and the pill close the page instead (front.tsx). */}
+              {props.home ? null : <a href="/about">about</a>}
               {viewer ? (
                 <>
                   <a href={`${BASE}/new`}>new</a>
@@ -48,6 +49,8 @@ export function Layout(props: { title: string; home?: boolean; viewer: Actor | n
           <main class={props.wide ? 'wide' : undefined}>{props.children}</main>
           {props.classic?.map((src) => <script src={src}></script>)}
           {props.scripts?.map((src) => <script type="module" src={src}></script>)}
+          {/* komorebi's own module, from the site root and not under BASE: the page breathes out before a link leaves it. */}
+          <script type="module" src="/breathe.js"></script>
         </body>
       </html>
     </>

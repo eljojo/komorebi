@@ -35,11 +35,19 @@ describe('every page carries komorebi’s links', () => {
       expect(r.text, path).toMatch(/<a[^>]*href="\/"[^>]*>komorebi<\/a>/);
       expect(r.text, path).toContain('href="/arboretum/login"');
       expect(r.text, path).not.toContain('player.html');
-      expect(r.text.match(/>open komorebi</g)?.length ?? 0, path).toBe(front ? 0 : 1);
+      expect(r.text.match(/>open komorebi</g)?.length ?? 0, path).toBe(1);
+      expect(r.text.match(/href="\/about"/g)?.length ?? 0, path).toBe(1);
+      expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
       if (front) expect(r.text, path).not.toContain('href="/arboretum"');
-      else expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
+      // José, 2026-10-10: on the home, "about" and the pill close the page; everywhere else they stay in the head.
+      const head = r.text.slice(r.text.indexOf('<header>'), r.text.indexOf('</header>'));
+      expect(head.includes('href="/about"'), `${path} about in the head`).toBe(!front);
+      expect(head.includes('>open komorebi<'), `${path} pill in the head`).toBe(!front);
       expect(r.text, path).toMatch(/<title>[^<]* · komorebi<\/title>/);
+      // komorebi's own module, from the site root (not under BASE): every page breathes out before it navigates away.
+      expect(r.text, path).toContain('<script type="module" src="/breathe.js"></script>');
       expect(r.text, path).not.toContain('· arboretum</title>');
+      expect(r.text.match(/\/breathe\.js/g)?.length ?? 0, path).toBe(1);
     }
   });
 
@@ -50,12 +58,27 @@ describe('every page carries komorebi’s links', () => {
       expect(r.status, path).toBe(200);
       const front = path === '/arboretum';
       for (const part of NAV) if (!(front && part === 'href="/arboretum"')) expect(r.text, `${path} ${part}`).toContain(part);
-      if (front) expect(r.text, path).not.toContain('>open komorebi<');
-      else expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
+      expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
+      expect(r.text, path).toContain('<script type="module" src="/breathe.js"></script>');
       expect(r.text, path).toContain('href="/arboretum/new"');
       expect(r.text, path).toContain('href="/arboretum/settings"');
       expect(r.text, path).toContain(`href="/arboretum/u/${user.username}"`);
     }
+  });
+
+  it('closes the home with "about" and the pill, after the last section and outside the head', async () => {
+    const { text } = await get('/arboretum');
+    const lastHeading = text.lastIndexOf('<h2');
+    const afterHead = text.slice(text.indexOf('</header>'));
+    expect(lastHeading).toBeGreaterThan(-1);
+    expect(text.indexOf('href="/about"')).toBeGreaterThan(lastHeading);
+    expect(text.indexOf('>open komorebi<')).toBeGreaterThan(lastHeading);
+    expect(afterHead).toContain('href="/about"');
+    expect(afterHead).toMatch(/<a[^>]*class="feel"[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
+    // the head keeps the name and the session links
+    const head = text.slice(text.indexOf('<header>'), text.indexOf('</header>'));
+    expect(head).toContain('href="/arboretum/login"');
+    expect(head).toMatch(/<a[^>]*href="\/"[^>]*>komorebi<\/a>/);
   });
 
   it('has no background light: no light script, and a canvas only where a look is highlighted (the garden’s player, a look, a playlist)', async () => {
