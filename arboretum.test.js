@@ -58,19 +58,19 @@ afterEach(() => {
 const json = (body) => new Response(JSON.stringify(body));
 // Only the DOM boundary is stubbed: session checks, storage and upload plans run through the real controller.
 async function session(fetchImpl, extra = {}) {
-  const elements = [], events = {};
+  const elements = [], events = {}, opened = [];
   const element = () => {
-    const e = { style: {}, dataset: {}, append() {}, after() {}, addEventListener() {}, replaceChildren() {}, setAttribute() {} };
+    const e = { style: {}, dataset: {}, listeners: {}, append() {}, after() {}, addEventListener(name, fn) { e.listeners[name] = fn; }, replaceChildren() {}, setAttribute() {} };
     elements.push(e);
     return e;
   };
   globalThis.document = { body: element(), createElement: element };
-  globalThis.window = { addEventListener: (name, fn) => { events[name] = fn; } };
+  globalThis.window = { addEventListener: (name, fn) => { events[name] = fn; }, open: (...args) => { opened.push(args); } };
   let synced;
   const h = { ...host, rows: { save: element(), tools: element() }, sync: () => synced?.(), ...extra };
   const a = mount(h, { loc: at("komorebi.eljojo.net"), fetchImpl });
   await a.ready;
-  return { a, elements, start: () => new Promise((resolve) => { synced = resolve; a.advanced(); }), focus: () => events.focus() };
+  return { a, elements, opened, start: () => new Promise((resolve) => { synced = resolve; a.advanced(); }), focus: () => events.focus() };
 }
 
 test("a different account cannot upload the previous account's waiting saves", async () => {
@@ -93,6 +93,12 @@ test("a different account cannot upload the previous account's waiting saves", a
   await s.focus();
   expect(writes).toEqual(["alice"]);
   expect(getMirror().queue).toEqual([]);
+});
+
+test("the sign-in button opens arboretum's login page, under /arboretum", async () => {
+  const s = await session(async () => { throw new TypeError("Failed to fetch"); });
+  s.elements.find((e) => e.className === "arb-cta").listeners.click();
+  expect(s.opened).toEqual([["https://komorebi.eljojo.net/arboretum/login", "_blank", "noopener"]]);
 });
 
 test("signing out preserves the owner of legacy waiting saves", async () => {
@@ -271,7 +277,7 @@ test("editing your public playlist forks a visible preset privately without chan
   }, { active: () => active, value: () => "0", showCloud: (...args) => shown.push(args) });
   active = "arb:7";
   await s.a.saveCloud("private edit", { exposure: 99 });
-  expect(writes).toEqual([{ url: "https://arboretum.eljojo.net/api/presets", body: { name: "private edit", params: { exposure: 99 }, parent: "preset:1@1" } }]);
+  expect(writes).toEqual([{ url: "https://komorebi.eljojo.net/api/presets", body: { name: "private edit", params: { exposure: 99 }, parent: "preset:1@1" } }]);
   expect(getMirror().playlists[0].items).toEqual(m.playlists[0].items);
   expect(getMirror().presets[3].visibility).toBe("private");
   expect(shown).toEqual([["arb:unc", { id: 3 }]]);
@@ -428,7 +434,7 @@ test("opening a link on any origin is one GET to arboretum, credentials omitted,
   const a = mount(host, { loc: at("example.org"), fetchImpl: f.fetchImpl });
   const out = await a.open(parseHash("#arboretum=12"));
   expect(f.calls.length).toBe(1);
-  expect(f.calls[0].url).toBe("https://arboretum.eljojo.net/api/presets/12");
+  expect(f.calls[0].url).toBe("https://komorebi.eljojo.net/api/presets/12");
   expect(f.calls[0].init.method).toBe("GET");
   expect(f.calls[0].init.credentials).toBe("omit");
   expect(out).toEqual({ value: starValue("dusk") });

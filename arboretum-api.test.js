@@ -6,7 +6,7 @@
 import { expect, test } from "bun:test";
 import { api } from "./arboretum-api.js";
 
-const ORIGIN = "https://arboretum.eljojo.net";
+const ORIGIN = "https://komorebi.eljojo.net";
 
 // A fetch that records each call and answers from a queue (or one fixed answer).
 function fake(...answers) {

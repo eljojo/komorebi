@@ -352,7 +352,7 @@ export { createReadStream };
 
 // ---- the arboretum: a look fetched from the API instead of read from a file ----
 // The API host. The preset's public page (/p/<id>) is always on it, wherever --arboretum-base fetched from (a mirror, or a mock in the tests).
-export const ARBORETUM_BASE = 'https://arboretum.eljojo.net';
+export const ARBORETUM_BASE = 'https://komorebi.eljojo.net';
 const sortKeys = (v) => (Array.isArray(v) ? v.map(sortKeys) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])])) : v);
 // The preset's params as bytes: keys sorted at every depth, so the hash is the params' and not the order a server happened to write them in. It is the look's identity in the run key.
 export const canonicalJson = (v) => JSON.stringify(sortKeys(v));

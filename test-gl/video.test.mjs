@@ -902,12 +902,12 @@ test('a long run is told before the render that its delivery may pass 4 GiB (std
 const TOKEN = 'test-bearer-0123456789abcdef', SHARE = 'test-share/+&=fedcba9876543210';
 const SECRETS = [TOKEN, SHARE, encodeURIComponent(SHARE)];
 const holdsSecret = (text) => SECRETS.some((x) => text.includes(x));
-const ARB_PUBLIC = 'https://arboretum.eljojo.net';
+const ARB_PUBLIC = 'https://komorebi.eljojo.net';
 const ARB_PARAMS = { leaf_size: 2, foliage_density: 2.4, nested: { b: 2, a: 1 } };
 // functions, not constants: a library that does not export canonicalSha256 fails these tests one by one, not the file.
 // arbKey: what the run key pins of the preset. arbFetch: what is recorded beside it (the preset as last fetched, and how).
 const arbKey = () => ({ id: 3, version: 1, params_sha256: lib.canonicalSha256(ARB_PARAMS) });
-const arbFetch = () => ({ name: 'projector 3', page_url: `${ARB_PUBLIC}/p/3`, komorebi_commit: 'abc1234', api_base: 'http://mock', requested: '3@1', head_resolved: false, share_token_sha256_prefix: sha256(SHARE).slice(0, 8), fetched_at: '2026-01-01T00:00:00.000Z' });
+const arbFetch = () => ({ name: 'projector 3', page_url: `${ARB_PUBLIC}/arboretum/p/3`, komorebi_commit: 'abc1234', api_base: 'http://mock', requested: '3@1', head_resolved: false, share_token_sha256_prefix: sha256(SHARE).slice(0, 8), fetched_at: '2026-01-01T00:00:00.000Z' });
 // The shapes arboretum answers (its llms.txt; read live): the head route names the preset { id, version } and a version route { preset_id, n }, each beside its own other keys.
 // The mock builds both from one record, so a client that reads one route's names off the other's answer fails here as it does against the server.
 const LIVE_HEAD_KEYS = ['archived', 'created_at', 'description', 'id', 'komorebi_commit', 'name', 'owner', 'params', 'parent', 'share_token', 'tags', 'updated_at', 'version', 'via', 'visibility'];
@@ -1070,7 +1070,7 @@ test('--arboretum: the head is fetched once and pinned in the run key; the look 
   const rk = readJson(join(out, 'run-key.json')), params = presetV(3, 2).params, sha = lib.canonicalSha256(params);
   assert.deepEqual(rk.body.arboretum, { id: 3, version: 2, params_sha256: sha }, 'the key pins what decides the frames');
   assert.equal(rk.body.look_sha256, sha, 'the look IS the preset\'s params');
-  assert.deepEqual(rk.arboretum_fetch, { name: 'projector 3', page_url: `${ARB_PUBLIC}/p/3`, komorebi_commit: 'abc1234', api_base: mock.base, requested: '3', head_resolved: true, share_token_sha256_prefix: sha256(SHARE).slice(0, 8), fetched_at: rk.arboretum_fetch.fetched_at });
+  assert.deepEqual(rk.arboretum_fetch, { name: 'projector 3', page_url: `${ARB_PUBLIC}/arboretum/p/3`, komorebi_commit: 'abc1234', api_base: mock.base, requested: '3', head_resolved: true, share_token_sha256_prefix: sha256(SHARE).slice(0, 8), fetched_at: rk.arboretum_fetch.fetched_at });
   assert.equal(rk.look.source, 'arboretum');
   assert.equal(rk.look.path, null);
   const argvAt = rk.invocation.argv.indexOf('--arboretum');

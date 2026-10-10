@@ -845,13 +845,13 @@ try {
   // The mock stands in for arboretum's CORS allowing anonymous GETs from any origin.
   {
     await page.goto('about:blank');
-    const arboretumOrigin = 'https://arboretum.eljojo.net';
+    const arboretumOrigin = 'https://komorebi.eljojo.net';
     const open6 = async (hash, answer) => {
       const ctx = await browser.newContext({ viewport: { width: 640, height: 480 } });
       const pg = await ctx.newPage();
       pg.setDefaultTimeout(30000);
       pg.on('pageerror', (e) => errors.push(`[after check ${results.length}] k6 page: ${e.message}`));
-      pg.on('console', (m) => { if (m.type() === 'error' && !(m.text().startsWith('Failed to load resource') && /arboretum\.eljojo\.net/.test(m.location().url))) errors.push(`[after check ${results.length}] k6 page console: ${m.text()}`); });
+      pg.on('console', (m) => { if (m.type() === 'error' && !(m.text().startsWith('Failed to load resource') && /komorebi\.eljojo\.net/.test(m.location().url))) errors.push(`[after check ${results.length}] k6 page console: ${m.text()}`); });
       const own = [], theirs = [];
       pg.on('request', (r) => { const u = new URL(r.url()); if (u.origin === arboretumOrigin) theirs.push(`${r.method()} ${u.pathname}${u.search} cookie:${r.headers().cookie ?? '-'}`); else if (u.pathname.startsWith('/api/')) own.push(u.pathname); });
       await pg.route(`${arboretumOrigin}/**`, (route) => answer(route));
@@ -881,7 +881,7 @@ try {
   {
     await page.goto('about:blank');
     const ctx4 = await browser.newContext({ viewport: { width: 640, height: 480 } });
-    await ctx4.route('**/login', (route) => route.fulfill({ contentType: 'text/html', body: '<p>login</p>' }));
+    await ctx4.route('**/arboretum/login', (route) => route.fulfill({ contentType: 'text/html', body: '<p>login</p>' }));
     // two ★ looks made before ever signing in, seeded once
     await ctx4.addInitScript(([one, two]) => {
       if (localStorage.getItem('komorebi.presets') !== null) return;
@@ -1018,8 +1018,8 @@ try {
     check('a save signed out is a ★ here, and asks arboretum nothing', preS === 'local one' && (await stars4()).includes('local three') && calls(/^POST /).length === 0 && seen.every((c) => c.path === '/api/health' || c.path === '/api/me'), JSON.stringify(await stars4()));
     await pick4(0, 'local three'); await btn4('delete');
     const [popup] = await Promise.all([ctx4.waitForEvent('page'), click4('#dev .arb-cta')]);
-    await popup.waitForURL('**/login').catch(() => {});
-    check('the sign-in button opens arboretum\'s /login in a new tab', popup.url() === `http://127.0.0.1:${port}/login`, popup.url());
+    await popup.waitForURL('**/arboretum/login').catch(() => {});
+    check('the sign-in button opens arboretum\'s /arboretum/login in a new tab', popup.url() === `http://127.0.0.1:${port}/arboretum/login`, popup.url());
     await popup.close();
 
     // SIGNED IN: the first check offers to move the ★ looks in, and mirrors the cloud

@@ -166,7 +166,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     who.style.cssText = "font-size:11px;color:#9fb89f";
     line.append(cta, who);
     host.rows.tools.after(moveBox, line);
-    cta.addEventListener("click", () => window.open(`${origin}/login`, "_blank", "noopener"));
+    cta.addEventListener("click", () => window.open(`${origin}/arboretum/login`, "_blank", "noopener"));
     moveYes.addEventListener("click", moveLocal);
     moveNo.addEventListener("click", () => { movePrompt = false; render(); });
     status.hidden = true;

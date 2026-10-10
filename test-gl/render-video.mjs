@@ -3,7 +3,7 @@
 //   nix run .#video -- <the same>     from the repo root, under caffeinate (a render of an hour must not idle-sleep).  --help  prints this.
 //   N minutes of an arboretum preset for the projector:   nix run .#video -- --arboretum <id> --commit <sha> --out test-gl/out/video/<name> --seconds 300
 //
-//   --arboretum 3          the look is an arboretum preset (https://arboretum.eljojo.net/p/3): its params come from the API instead of a file. Without @version the head is resolved
+//   --arboretum 3          the look is an arboretum preset (https://komorebi.eljojo.net/arboretum/p/3): its params come from the API instead of a file. Without @version the head is resolved
 //                          ONCE, at the first run, and the version it answers with is pinned in the run key: a resume that finds the head moved on is refused, and says to resume with
 //                          3@<the run's version>. :<share_token> opens an unlisted preset (?k=); ARBORETUM_TOKEN in the environment is sent as a bearer token when it is set.
 //                          Neither token is written anywhere, nor passed to a child process (the share token's sha256 prefix is recorded, to say which link it was); a
@@ -177,7 +177,7 @@ if (LOOK) {
   // stamp on the same version moves no frame, so it sits outside the key and a resume refreshes it.
   ARB_RECORD = {
     block: { id: preset.id, version: preset.version, params_sha256: canonicalSha256(preset.params) },
-    fetch: { name: preset.name, page_url: `${ARBORETUM_BASE}/p/${preset.id}`, komorebi_commit: preset.komorebi_commit, api_base: ARB_BASE, requested: preset.requested, head_resolved: ARB.version === null, share_token_sha256_prefix: ARB.share ? sha256(ARB.share).slice(0, 8) : null, fetched_at: new Date().toISOString() },
+    fetch: { name: preset.name, page_url: `${ARBORETUM_BASE}/arboretum/p/${preset.id}`, komorebi_commit: preset.komorebi_commit, api_base: ARB_BASE, requested: preset.requested, head_resolved: ARB.version === null, share_token_sha256_prefix: ARB.share ? sha256(ARB.share).slice(0, 8) : null, fetched_at: new Date().toISOString() },
   };
 }
 const finalParams = { ...lookParams, ...overrides, adaptive_motion: false, auto_quality: false };

@@ -31,9 +31,9 @@ const fakeFetch = (answer) => {
 };
 const json = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 
-test("detect: the production host is arboretum.eljojo.net, with no request", async () => {
+test("detect: the production host is komorebi.eljojo.net itself, with no request", async () => {
   const f = fakeFetch(json(200, {}));
-  expect(await detect(loc("komorebi.eljojo.net", "/"), f)).toBe("https://arboretum.eljojo.net");
+  expect(await detect(loc("komorebi.eljojo.net", "/"), f)).toBe("https://komorebi.eljojo.net");
   expect(f.calls).toEqual([]);
 });
 

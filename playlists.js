@@ -9,7 +9,7 @@ import * as BUILTINS from "./presets.js";
 // ---- where arboretum is on (design §1). The only function here that may reach the network, and only on a
 // loopback host under /editor/, which is where arboretum's own dev server puts the editor. ----
 const PRODUCTION_HOST = "komorebi.eljojo.net";
-export const ARBORETUM = "https://arboretum.eljojo.net";
+export const ARBORETUM = "https://komorebi.eljojo.net";
 
 export async function detect(location, fetchImpl) {
   if (location.hostname === PRODUCTION_HOST) return ARBORETUM;

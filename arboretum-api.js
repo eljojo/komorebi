@@ -11,7 +11,7 @@ const unreachable = { status: 0, error: "arboretum unreachable" };
 // `credentials` is "include" for the session (the default) and "omit" for a reader: the anonymous GETs a link makes from any
 // origin, which must not carry a cookie.
 export function api(origin, fetchImpl, { credentials = "include" } = {}) {
-  // A session call sends the session cookie: harmless same-origin (the dev mode), required cross-origin (komorebi.eljojo.net).
+  // A session call sends the session cookie: same-origin everywhere (komorebi.eljojo.net serves the API itself; so does arboretum's dev host).
   // A write names its Content-Type or arboretum's CSRF guard refuses it with 415.
   async function call(method, path, body) {
     const init = { method, credentials };
