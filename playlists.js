@@ -52,12 +52,13 @@ export const LOCAL_NAME = "all looks";
 const cloudId = (active) => (active.startsWith("arb:") ? active.slice(4) : null);
 const cloudItems = (state, active) => state.playlists[cloudId(active)]?.items ?? [];
 const isBuiltin = (PRESETS, name) => Object.hasOwn(PRESETS, name);
+const synced = (o) => o?.id !== undefined && o.synced === true;   // a ★ whose arboretum copy is current
 
 // In all looks a value is the look's name — except for a ★ that shares a built-in's name, which takes the
 // value "★ <name>" so the two stay apart (one value would load the same look for both). A ★ whose name already
-// starts "★ " (or "☁", the mark of a cloud row's value) is escaped the same way, so no two values collide. The value never depends on whether the built-in is
+// starts "★ " is escaped the same way, so no two values collide. The value never depends on whether the built-in is
 // listed, so the experimental toggle cannot move a ★'s value.
-const starValueOf = (PRESETS, name) => (isBuiltin(PRESETS, name) || name.startsWith("★ ") || name.startsWith("☁") ? `★ ${name}` : name);
+const starValueOf = (PRESETS, name) => (isBuiltin(PRESETS, name) || name.startsWith("★ ") ? `★ ${name}` : name);
 export const starValue = (name) => starValueOf(BUILTINS.PRESETS, name);
 
 // The ★ an all-looks value denotes, or null when it is a built-in (or nothing).
@@ -68,12 +69,6 @@ export function starName(stored, active, value) {
     return Object.hasOwn(stored, name) && starValue(name) === value ? name : null;
   }
   return Object.hasOwn(stored, value) && starValue(value) === value ? value : null;   // starValue(value) === value: neither a built-in's name nor one that needs escaping
-}
-
-// A cloud row of all looks has the value "☁<id>": one of your arboretum presets that has no ★ here yet.
-export function cloudPresetId(value) {
-  const m = typeof value === "string" ? /^☁(\d+)$/.exec(value) : null;
-  return m ? Number(m[1]) : null;
 }
 
 // The look's own name: a ★'s, a built-in's, a cloud item's.
@@ -103,19 +98,20 @@ export function timing(state, active, value) {
 }
 
 // The EXPERIMENTAL looks are hidden unless `showBeta` — but the one you are on (`keep`) always stays listed.
-// A value in a cloud playlist is an item index (two items may share a name).
-// In all looks, `cloud` (your arboretum presets, as arboretum lists them) adds a "☁ <name>" row for each one no ★ here is a copy of.
-export function entries(state, stored, builtins, showBeta, active, keep, cloud = []) {
+// A value in a cloud playlist is an item index (two items may share a name). Three lists are local: all looks (signed out:
+// the built-ins, then the ★ looks), and signed in, built-ins (the shipped looks alone, read-only) and on this browser (the ★
+// looks not yet in arboretum — one that is already a synced preset is listed there as itself).
+export function entries(state, stored, builtins, showBeta, active, keep, signedIn = false) {
   if (cloudId(active) !== null)
     return cloudItems(state, active).map((it, i) => ({ value: String(i), label: it.name }));
   const { PRESETS, EXPERIMENTAL } = builtins;
-  return [
-    ...Object.keys(PRESETS)
-      .filter((n) => showBeta || !EXPERIMENTAL.includes(n) || n === keep)
-      .map((n) => ({ value: n, label: `${EXPERIMENTAL.includes(n) ? "◦" : "•"} ${n}` })),   // ◦ marks an experimental look
-    ...Object.keys(stored).map((n) => ({ value: starValueOf(PRESETS, n), label: `★ ${n}` })),
-    ...cloud.filter((p) => !Object.keys(stored).some((n) => state.origin[n]?.id === p.id)).map((p) => ({ value: `☁${p.id}`, label: `☁ ${p.name}` })),
-  ];
+  const shipped = Object.keys(PRESETS)
+    .filter((n) => showBeta || !EXPERIMENTAL.includes(n) || n === keep)
+    .map((n) => ({ value: n, label: `${EXPERIMENTAL.includes(n) ? "◦" : "•"} ${n}` }));   // ◦ marks an experimental look
+  const stars = Object.keys(stored)
+    .filter((n) => !signedIn || !synced(state.origin[n]))
+    .map((n) => ({ value: starValueOf(PRESETS, n), label: `★ ${n}` }));
+  return active === "builtins" ? shipped : signedIn ? stars : [...shipped, ...stars];
 }
 
 // The params of an entry, through migrateLegacy so a look saved yesterday loads tomorrow.
@@ -220,24 +216,6 @@ export function onDeleted(state, name) {
   return withOrigin(state, withoutKey(state.origin, name));
 }
 
-export function onPushed(state, name, api) {
-  return withOrigin(state, { ...state.origin, [name]: { id: api.id, version: api.version, owner: api.owner, synced: true } });
-}
-
-// A ★ whose upload could not happen yet (arboretum unreachable, or the session ended) keeps its record, flagged `pending`;
-// the next successful /api/me check pushes it. onPushed writes a fresh record, which is how the flag clears. A refusal
-// is not pending: retrying it would be refused again.
-export function markPending(state, name) {
-  return withOrigin(state, { ...state.origin, [name]: { ...state.origin[name], pending: true } });
-}
-
-export function clearPending(state, name) {
-  const { pending: _, ...rest } = state.origin[name] ?? {};
-  return withOrigin(state, Object.keys(rest).length ? { ...state.origin, [name]: rest } : withoutKey(state.origin, name));
-}
-
-export const pendingNames = (state, stored) => Object.keys(stored).filter((n) => state.origin[n]?.pending === true);
-
 // ---- the smart upload (design §4.2) ------------------------------------------------------------
 // What an upload would do, decided from what is known about the look:
 //   { kind: 'version' | 'preset', path, body, label, into? } | { refused }
@@ -252,13 +230,22 @@ export function uploadPlan(state, stored, active, value, live, me, commit, cam) 
   const star = starName(stored, active, value);   // the ★ the value denotes, if it is one
   const params = id === null ? (star !== null ? stored[star] : BUILTINS.PRESETS[value]) : live;
   const twin = builtinTwin(params, BUILTINS);
-  if (twin !== null) return { refused: `this is the built-in '${twin}', unchanged — change something first` };
+  if (twin !== null) return { refused: refusedTwin(twin) };
 
   // What the look is known to be on arboretum: a preset id and its owner, or the version it started from.
   const known = id === null
     ? state.origin[star ?? value]
     : it && { id: it.preset_id, version: it.version, owner: it.owner };
-  const name = id === null ? (star ?? value) : (it?.name ?? "");
+  const out = planFrom(params, known, id === null ? (star ?? value) : (it?.name ?? ""), me, commit, cam);
+  if (id !== null) out.into = { playlist: Number(id), at: it ? Number(value) : null };
+  return out;
+}
+
+const refusedTwin = (twin) => `this is the built-in '${twin}', unchanged — change something first`;
+
+// The upload itself, from what the look is known to be: a new version of its preset when that is yours, else a new preset
+// with the version or look it started from as its parent.
+function planFrom(params, known, name, me, commit, cam) {
   const out = known?.id !== undefined && known.owner === me
     ? { kind: "version", path: `/api/presets/${known.id}/versions`, label: `↑ new version of #${known.id}`, body: { name, params } }
     : { kind: "preset", path: "/api/presets", label: "↑ new preset", body: { name, params } };
@@ -268,7 +255,6 @@ export function uploadPlan(state, stored, active, value, live, me, commit, cam) 
     if (parent) out.body.parent = parent;
     if (cam(params) !== "floor") out.body.tags = ["experimental"];   // arboretum-spec §4.3
   }
-  if (id !== null) out.into = { playlist: Number(id), at: it ? Number(value) : null };
   return out;
 }
 
@@ -326,16 +312,20 @@ export function playlistChips(state, stored, active, value, mine) {
 // `live` the params on screen (null while a transition is carrying them, or to skip the edit check); `me` your username;
 // `ctx.offline` the active cloud playlist is its cached copy because arboretum could not be reached; `ctx.error` arboretum's
 // last refusal for this look, which the title carries verbatim.
-export function lookState(state, stored, active, value, live, me, { offline = false, error = null } = {}) {
+export function lookState(state, stored, active, value, live, me, { offline = false, error = null, incomplete = false } = {}) {
   let text, title, params;
   const id = cloudId(active);
   if (id !== null) {
     const it = cloudItems(state, active)[Number(value)];
     if (!it) return { text: "", title: "" };
     params = it.params;
-    if (offline) {
+    if (it.pending) {
+      text = "⇡ waiting to go up";
+      title = "saved here; it goes to arboretum when arboretum can be reached";
+    } else if (offline) {
       text = `offline copy · ${new Date(state.playlists[id].fetched_at).toISOString().slice(0, 10)}`;
-      title = "arboretum could not be reached, so this is the copy of the playlist kept here";
+      title = "arboretum could not be reached, so this is the copy of your looks kept here";
+      if (incomplete) title += " (offline copy incomplete: this browser had room for only part of it)";
     } else {
       text = `☁ #${it.preset_id} v${it.version}${it.owner !== me ? ` · ${it.owner}'s` : ""}`;
       title = it.owner === me ? "an item of your playlist, kept in arboretum" : `an item of ${it.owner}'s preset, kept in arboretum`;
@@ -345,8 +335,7 @@ export function lookState(state, stored, active, value, live, me, { offline = fa
     if (star !== null) {
       const o = state.origin[star];
       params = stored[star];
-      if (o?.pending) { text = "⇡ waiting to go up"; title = "saved here; it goes to arboretum when arboretum can be reached and you are signed in"; }
-      else if (o?.id !== undefined && o.synced) { text = `☁ #${o.id} v${o.version}`; title = "saved here, and kept in arboretum"; }
+      if (synced(o)) { text = `☁ #${o.id} v${o.version}`; title = "saved here, and kept in arboretum"; }
       else if (o?.id !== undefined) { text = `★ saved here · ☁ #${o.id} is older`; title = "saved here; the copy in arboretum is an older version of it"; }
       else { text = "★ saved here"; title = "saved in this browser, not in arboretum"; }
     } else if (typeof value === "string" && isBuiltin(BUILTINS.PRESETS, value)) {
@@ -378,9 +367,6 @@ export function linkPlaylist(state, view, k) {
   return { state: next, list: `arb:${view.id}`, value: "0" };
 }
 
-// ---- read-only (design §3.5): a playlist is written only by its owner --------------------------------------------
-export const writable = (state, active, me) => active === "local" || (!!me && state.playlists[cloudId(active)]?.owner === me);
-
 // ---- playing (design §3.6) ----------------------------------------------------------------------------------------
 // A cloud playlist plays: each look is held for its `dwell_s`, then the next fades in over its own `crossfade_s`.
 // The dwell starts when a look has finished fading in, so a long crossfade never eats the time a look is meant to be
@@ -403,4 +389,149 @@ export function makePlayer({ timing, advance, onChange, setTimer = setTimeout, c
     leaving: idle,
     arrived,
   };
+}
+
+// ============================================================================
+// Cloud first (signed in). Arboretum is where your looks live, and a complete copy of it is kept in this browser: the MIRROR.
+// It holds every preset you own (head version) and every playlist of yours, newest first / in arboretum's order, and the
+// saves that could not go up yet (`queue`, in the order they were made). Signed out, none of it is shown. Playlists are
+// folders: the lists you see are the folders, the built-ins, and "uncategorized" — a list derived from the mirror, never
+// written to arboretum, that holds your presets that are in no folder.
+// ============================================================================
+export const emptyMirror = () => ({ v: 1, at: null, incomplete: false, order: [], presets: {}, playlists: [], queue: [] });
+
+const DWELL = { dwell_s: 30, crossfade_s: 5 };   // arboretum's defaults for an item that carries no times
+const own = (p) => ({ id: p.id, version: p.version, owner: p.owner, name: p.name, params: p.params });
+const itemOf = (p, extra) => ({ preset_id: p.id, version: p.version, owner: p.owner, name: p.name, ...DWELL, params: p.params, ...extra });
+const waitingItem = (q) => ({ name: q.body.name, ...DWELL, params: q.body.params, pending: true, seq: q.seq });   // no preset_id yet: it is not on arboretum
+
+// The saves that wait, split by what they do to the mirror: an update to a preset patches it wherever it is shown; a new one is an item of its own.
+function waiting(mirror) {
+  const patches = {}, fresh = [];
+  for (const q of mirror.queue) {
+    const m = q.kind === "version" ? /^\/api\/presets\/(\d+)\/versions$/.exec(q.path) : null;
+    if (m) patches[m[1]] = q; else fresh.push(q);
+  }
+  return { patches, fresh };
+}
+const patchedItem = (it, patches) => (patches[it.preset_id] ? { ...it, name: patches[it.preset_id].body.name, params: patches[it.preset_id].body.params, pending: true, seq: patches[it.preset_id].seq } : it);
+
+// Your presets in no folder, newest first; a save that waits is the newest of them.
+export function uncategorized(mirror) {
+  const { patches, fresh } = waiting(mirror);
+  const filed = new Set(mirror.playlists.flatMap((l) => l.items.map((i) => i.preset_id)));
+  return [
+    ...fresh.filter((q) => !q.into).reverse().map(waitingItem),
+    ...mirror.order.map((id) => mirror.presets[id]).filter((p) => p && !filed.has(p.id)).map((p) => patchedItem(itemOf(p), patches)),
+  ];
+}
+
+// The state the editor reads signed in: your folders and uncategorized join the playlists it already caches (those opened
+// by link). Signed out it is the state itself, so the mirror shows nowhere.
+export function viewState(state, mirror, me) {
+  if (me === null) return state;
+  const { patches, fresh } = waiting(mirror);
+  const folders = {};
+  for (const l of mirror.playlists) {
+    let items = l.items.map((it) => patchedItem(it, patches));
+    for (const q of fresh) {
+      if (q.into?.playlist !== l.id) continue;
+      items = q.into.at === null ? [...items, waitingItem(q)] : items.map((it, i) => (i === q.into.at ? waitingItem(q) : it));
+    }
+    folders[l.id] = { ...l, fetched_at: mirror.at ?? l.fetched_at, items };
+  }
+  const unc = { id: "unc", name: "uncategorized", owner: me, k: null, fetched_at: mirror.at ?? 0, unavailable: 0, items: uncategorized(mirror) };
+  return { ...state, playlists: { ...state.playlists, ...folders, unc } };
+}
+
+// Whether `active` is a folder: a playlist of yours, which a save can place a look in.
+export const isFolder = (view, active, me) => cloudId(active) !== null && cloudId(active) !== "unc" && !!me && view.playlists[cloudId(active)]?.owner === me;
+
+// The lists the playlist select offers. Signed out: all looks, then the playlists cached from links, as ever. Signed in:
+// uncategorized (hidden when empty and you have other folders — unless you are in it), your folders, other cached
+// playlists, built-ins, and on this browser while ★ looks not yet in arboretum remain.
+export function listChoices(view, { me, stored, mirror, active = null }) {
+  if (me === null) return playlists(view);
+  const mine = new Set(mirror.playlists.map((l) => String(l.id)));
+  const out = [];
+  if (view.playlists.unc.items.length || !mine.size || active === "arb:unc") out.push({ value: "arb:unc", label: "uncategorized" });
+  for (const l of mirror.playlists) out.push({ value: `arb:${l.id}`, label: l.name });
+  for (const p of Object.values(view.playlists)) if (p.id !== "unc" && !mine.has(String(p.id))) out.push({ value: `arb:${p.id}`, label: p.owner === me ? p.name : `${p.name} · ${p.owner}` });
+  out.push({ value: "builtins", label: "built-ins" });
+  if (moveCandidates(view, stored).length) out.push({ value: "local", label: "on this browser" });
+  return out;
+}
+
+// ---- keeping the mirror in step with arboretum ----
+// `summaries` is GET /api/presets?owner=me: id, version, name, owner — no params. Only the presets whose version moved are fetched.
+export function mirrorDiff(mirror, summaries) {
+  const ids = new Set(summaries.map((s) => s.id));
+  return {
+    fetch: summaries.filter((s) => mirror.presets[s.id]?.version !== s.version).map((s) => s.id),
+    order: summaries.map((s) => s.id),
+    gone: Object.keys(mirror.presets).map(Number).filter((id) => !ids.has(id)),
+  };
+}
+
+const playlistEntry = (view) => cachePlaylist({ playlists: {} }, view).playlists[view.id];
+
+// A refresh: `fetched` the presets fetched by id; `listSums` your playlists as arboretum lists them, `views` their views in the
+// same order (null where one could not be fetched: its old copy stays). The queue is not the refresh's business.
+export function mirrorSync(mirror, summaries, fetched, listSums, views, now) {
+  const presets = {};
+  for (const s of summaries) {
+    const p = fetched[s.id] ? own(fetched[s.id]) : mirror.presets[s.id];
+    if (p) presets[s.id] = p;
+  }
+  return {
+    ...mirror, at: now, presets, order: summaries.map((s) => s.id).filter((id) => presets[id]),
+    playlists: listSums.map((s, i) => (views[i] ? playlistEntry(views[i]) : mirror.playlists.find((l) => l.id === s.id))).filter(Boolean),
+  };
+}
+
+// A write's answer, filed at once: the preset at the front, the playlist as arboretum now has it.
+export function mirrorPut(mirror, p) {
+  return { ...mirror, presets: { ...mirror.presets, [p.id]: own(p) }, order: [p.id, ...mirror.order.filter((id) => id !== p.id)] };
+}
+
+export function mirrorPlaylist(mirror, view) {
+  const entry = playlistEntry(view);
+  const at = mirror.playlists.findIndex((l) => l.id === entry.id);
+  return { ...mirror, playlists: at < 0 ? [...mirror.playlists, entry] : mirror.playlists.map((l, i) => (i === at ? entry : l)) };
+}
+
+// ---- saves that wait: pushed in the order they were made, on the next successful check ----
+export function enqueue(mirror, plan) {
+  const seq = Math.max(0, ...mirror.queue.map((q) => q.seq)) + 1;
+  return { ...mirror, queue: [...mirror.queue, { seq, ...plan }] };
+}
+
+export const dequeue = (mirror, seq) => ({ ...mirror, queue: mirror.queue.filter((q) => q.seq !== seq) });
+
+// ---- moving the local looks in ----
+// The ★ looks that are not yet a synced arboretum preset, and what moving each would do (uploadPlan: a new version when
+// its origin is your own preset, else a new private preset with its parent; an unchanged built-in is refused).
+export const moveCandidates = (state, stored) => Object.keys(stored).filter((n) => !synced(state.origin[n]));
+
+export const movePlan = (state, stored, me, commit, cam) =>
+  moveCandidates(state, stored).map((name) => ({ name, plan: uploadPlan(state, stored, "local", starValue(name), null, me, commit, cam) }));
+
+// ---- saving when signed in: every save goes to arboretum, private, and never asks where ----
+// In a folder of yours it is uploadPlan's rule (a new version of the item, or a new preset placed there). Anywhere else — uncategorized,
+// built-ins, someone else's playlist, a ★, a pasted look — it is a new version when the look is a preset of yours and otherwise
+// a new preset, and it lands in uncategorized (`target`). `name` is what the save prompt returned.
+export function savePlan(view, stored, active, value, live, me, commit, cam, name) {
+  if (isFolder(view, active, me)) {
+    const p = uploadPlan(view, stored, active, value, live, me, commit, cam);
+    if (!p.refused) { p.body.name = name; p.target = "folder"; }
+    return p;
+  }
+  const twin = builtinTwin(live, BUILTINS);
+  if (twin !== null) return { refused: refusedTwin(twin) };
+  const it = cloudId(active) === null ? undefined : cloudItems(view, active)[Number(value)];
+  const star = starName(stored, active, value);
+  const known = it ? { id: it.preset_id, version: it.version, owner: it.owner }
+    : star !== null ? view.origin[star]
+    : isBuiltin(BUILTINS.PRESETS, value) ? { parent: `look:${value}` } : undefined;
+  return { ...planFrom(live, known, name, me, commit, cam), target: "unc" };
 }

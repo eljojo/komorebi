@@ -878,16 +878,23 @@ try {
     }
   }
 
-  // ---- ARBORETUM, the shelf (arboretum.js), at /editor/ with page.route standing in for arboretum: the sign-in cycle, ☁ rows in all looks,
-  // save as the one verb (it goes up at once, or waits), the look's chip, the `in:` chips, `+`, a cloud playlist of yours, and the refusals ----
+  // ---- ARBORETUM, cloud first (arboretum.js), at /editor/ with page.route standing in for arboretum. Signed out it is local-only; signed
+  // in, your looks live in arboretum (folders, and uncategorized for the rest), a full copy is kept here, and every save goes up ----
   {
     await page.goto('about:blank');
     const ctx4 = await browser.newContext({ viewport: { width: 640, height: 480 } });
     await ctx4.route('**/login', (route) => route.fulfill({ contentType: 'text/html', body: '<p>login</p>' }));
+    // two ★ looks made before ever signing in, seeded once
+    await ctx4.addInitScript(([one, two]) => {
+      if (localStorage.getItem('komorebi.presets') !== null) return;
+      localStorage.setItem('komorebi.presets', JSON.stringify({ 'local one': one, 'local two': two }));
+      localStorage.setItem('komorebi.arboretum', JSON.stringify({ v: 1, me: null, origin: { 'local two': { parent: 'look:memories' } }, playlists: {} }));
+      localStorage.setItem('komorebi.editor', JSON.stringify({ mode: 'play', playlist: 'local' }));
+    }, [{ ...PRESETS.memories, cloud_thickness: 0.2 }, { ...PRESETS.memories, cloud_thickness: 0.25 }]);
     const page4 = await ctx4.newPage();
     page4.setDefaultTimeout(30000);
     page4.on('pageerror', (e) => errors.push(`[after check ${results.length}] page 4: ${e.message}`));
-    // the mock's own refusals (401, 422, 503, a missing commit.json) are logged by Chromium as failed loads: expected, not page errors
+    // the mock's own refusals (401, 422, aborted calls, a missing commit.json) are logged by Chromium as failed loads: expected, not page errors
     const expected = (m) => m.text().startsWith('Failed to load resource') && /\/api\/|commit\.json/.test(m.location().url);
     page4.on('console', (m) => { if (m.type() === 'error' && !expected(m)) errors.push(`[after check ${results.length}] page 4 console: ${m.text()}`); });
     const alerts = [], prompts = [];
@@ -900,51 +907,55 @@ try {
 
     // The mock arboretum. `seen` is every call the page makes to it, in order, with the body it sent.
     const seen = [];
-    const known = {   // preset_id -> what a playlist item shows of it
-      5: { name: 'dawn', owner: 'jo', version: 1, params: PRESETS['afternoon 7'] },
-      6: { name: 'dusk', owner: 'ana', version: 3, params: PRESETS.memories },
+    const db = {   // the presets, newest first; the playlists
+      presets: [
+        { id: 21, owner: 'jo', name: 'dusk', version: 1, params: PRESETS.memories },
+        { id: 5, owner: 'jo', name: 'dawn', version: 1, params: PRESETS['afternoon 7'] },
+        { id: 6, owner: 'ana', name: 'ana dusk', version: 3, params: PRESETS.memories },
+      ],
+      lists: {
+        7: { id: 7, name: 'evening', items: [{ preset_id: 5, dwell_s: 11, crossfade_s: 2 }, { preset_id: 6, dwell_s: 12, crossfade_s: 3 }, { preset_id: 99, dwell_s: 40, crossfade_s: 7 }] },
+        8: { id: 8, name: 'morning', items: [] },
+      },
     };
-    const lists = {
-      7: { id: 7, name: 'evening', items: [
-        { preset_id: 5, version: 1, owner: 'jo', name: 'dawn', dwell_s: 11, crossfade_s: 2, params: PRESETS['afternoon 7'] },
-        { preset_id: 6, version: 3, owner: 'ana', name: 'dusk', dwell_s: 12, crossfade_s: 3, params: PRESETS.memories },
-        { preset_id: 99, dwell_s: 40, crossfade_s: 7, unavailable: true }] },
-      8: { id: 8, name: 'morning', items: [] },
-    };
-    const server = { signedIn: false, refuse: null, nextPreset: 12, nextList: 9 };
-    const view = (l) => ({ id: l.id, owner: 'jo', name: l.name, description: null, created_at: 1, updated_at: 2, visibility: 'private', share_token: 'sekret', items: l.items, unavailable: l.items.filter((i) => i.unavailable).length });
+    const server = { signedIn: false, down: false, refuse: null, nextPreset: 12, nextList: 9 };
+    const byId = (id) => db.presets.find((p) => p.id === id);
+    const itemView = (i) => { const p = byId(i.preset_id); return p ? { preset_id: p.id, version: p.version, owner: p.owner, name: p.name, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, params: p.params } : { preset_id: i.preset_id, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, unavailable: true }; };
+    const view = (l) => { const items = l.items.map(itemView); return { id: l.id, owner: 'jo', name: l.name, description: null, created_at: 1, updated_at: 2, visibility: 'private', share_token: 'sekret', items, unavailable: items.filter((i) => i.unavailable).length }; };
     await page4.route('**/api/**', (route) => {
       const req = route.request(), u = new URL(req.url());
       const body = req.postData() ? JSON.parse(req.postData()) : undefined;
+      const k = `${req.method()} ${u.pathname}`;
+      if (server.down && k !== 'GET /api/health') { seen.push({ method: req.method(), path: u.pathname + u.search, body, down: true }); return route.abort('failed'); }
       seen.push({ method: req.method(), path: u.pathname + u.search, body });
       const json = (status, b) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
-      const k = `${req.method()} ${u.pathname}`;
       if (k === 'GET /api/health') return json(200, { ok: true, engine: 'abc1234' });
       if (!server.signedIn) return json(401, { error: 'sign in, or send a bearer token' });
       if (k === 'GET /api/me') return json(200, { username: 'jo', kind: 'session' });
-      if (k === 'GET /api/playlists') return json(200, { playlists: Object.values(lists).map(({ items, ...s }) => ({ ...s, owner: 'jo' })).reverse() });
-      if (k === 'GET /api/presets') return json(200, { presets: [{ id: 21, owner: 'jo', name: 'dusk', version: 1 }, { id: 5, owner: 'jo', name: 'dawn', version: 1 }] });
-      if (k === 'GET /api/presets/21') return json(200, { id: 21, owner: 'jo', name: 'dusk', version: 1, params: PRESETS.memories });
-      const one = u.pathname.match(/^\/api\/playlists\/(\d+)$/), items = u.pathname.match(/^\/api\/playlists\/(\d+)\/items$/);
-      if (one && req.method() === 'GET') return json(200, view(lists[one[1]]));
+      if (k === 'GET /api/playlists') return json(200, { playlists: Object.values(db.lists).map(({ items, ...s }) => ({ ...s, owner: 'jo' })).reverse() });
+      if (k === 'GET /api/presets') return json(200, { presets: db.presets.filter((p) => p.owner === 'jo').map(({ params, ...s }) => s) });
+      const one = u.pathname.match(/^\/api\/presets\/(\d+)$/), items = u.pathname.match(/^\/api\/playlists\/(\d+)\/items$/), pl = u.pathname.match(/^\/api\/playlists\/(\d+)$/);
+      if (one && req.method() === 'GET') return byId(Number(one[1])) ? json(200, byId(Number(one[1]))) : json(404, { error: 'not found' });
+      if (pl && req.method() === 'GET') return json(200, view(db.lists[pl[1]]));
       if (req.method() === 'POST' && /^\/api\/presets(\/\d+\/versions)?$/.test(u.pathname)) {
         if (server.refuse) { const r = server.refuse; server.refuse = null; return json(r.status, r.body); }
-        const id = u.pathname === '/api/presets' ? server.nextPreset++ : Number(u.pathname.split('/')[3]);
-        const version = (known[id]?.version ?? 0) + 1;
-        known[id] = { name: body.name, owner: 'jo', version, params: body.params };
-        return json(201, { id, owner: 'jo', name: body.name, version });
+        if (u.pathname === '/api/presets') {
+          const p = { id: server.nextPreset++, owner: 'jo', name: body.name, version: 1, params: body.params };
+          db.presets.unshift(p);
+          return json(201, { id: p.id, owner: 'jo', name: p.name, version: 1 });
+        }
+        const p = byId(Number(u.pathname.split('/')[3]));
+        Object.assign(p, { name: body.name, version: p.version + 1, params: body.params });
+        return json(201, { id: p.id, owner: 'jo', name: p.name, version: p.version });
       }
       if (k === 'POST /api/playlists') {
         const l = { id: server.nextList++, name: body.name, items: [] };
-        lists[l.id] = l;
+        db.lists[l.id] = l;
         return json(201, view(l));
       }
       if (items && req.method() === 'PUT') {
-        const l = lists[items[1]];
-        l.items = body.items.map((i) => known[i.preset_id]
-          ? { preset_id: i.preset_id, version: known[i.preset_id].version, owner: known[i.preset_id].owner, name: known[i.preset_id].name, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, params: known[i.preset_id].params }
-          : { preset_id: i.preset_id, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, unavailable: true });
-        return json(200, view(l));
+        db.lists[items[1]].items = body.items;
+        return json(200, view(db.lists[items[1]]));
       }
       return json(404, { error: 'not found' });
     });
@@ -954,7 +965,9 @@ try {
     const dev4 = (fn, ...a) => page4.evaluate(fn, ...a);
     const opts4 = (i) => dev4((n) => [...document.querySelectorAll('#dev select')[n].options].map((o) => o.textContent), i);   // i: 0 = the look select, 1 = the playlist select
     const pick4 = (i, v) => dev4(([n, val]) => { const s = document.querySelectorAll('#dev select')[n]; s.value = val; s.dispatchEvent(new Event('change', { bubbles: true })); }, [i, v]);
+    const pickByText4 = (i, t) => dev4(([n, text]) => { const s = document.querySelectorAll('#dev select')[n]; s.value = [...s.options].find((o) => o.textContent === text).value; s.dispatchEvent(new Event('change', { bubbles: true })); }, [i, t]);
     const value4 = (i) => dev4((n) => document.querySelectorAll('#dev select')[n].value, i);
+    const selectedText4 = (i) => dev4((n) => { const s = document.querySelectorAll('#dev select')[n]; return s.selectedOptions[0]?.textContent ?? ''; }, i);
     const click4 = (sel) => dev4((s) => document.querySelector(s).click(), sel);
     const btn4 = (text) => dev4((t) => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent === t).click(), text);
     const shown4 = (sel) => dev4((s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && !e.closest('[hidden]'); }, sel);
@@ -967,235 +980,237 @@ try {
     const waitCall = (re, n = 1) => until(() => calls(re).length >= n);
     const near = (a, b) => Math.abs(a - b) < 1e-6;
     const chip4 = () => dev4(() => { const e = document.querySelector('#dev .look-chip'); return e.hidden ? '' : e.textContent; });
+    const chipTitle4 = () => dev4(() => document.querySelector('#dev .look-chip').title);
     const chipIs4 = (want) => until(async () => (await chip4()) === want);
     const toast4 = async () => (await text4('#dev .arb-status')) ?? '';
     const chips4 = () => dev4(() => [...document.querySelectorAll('#dev .arb-inrow .arb-in')].map((b) => `${b.textContent}:${b.getAttribute('aria-pressed')}`).join());
     const chipsAre4 = (want) => until(async () => (await chips4()) === want);
     const clickChip4 = (name) => dev4((n) => [...document.querySelectorAll('#dev .arb-inrow .arb-in')].find((b) => b.textContent === n).click(), name);
-    const origin4 = () => dev4(() => JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin ?? {});
     const stars4 = () => dev4(() => Object.keys(JSON.parse(localStorage.getItem('komorebi.presets') || '{}')));
+    const mirror4 = () => dev4(() => JSON.parse(localStorage.getItem('komorebi.arboretum.mirror') || 'null'));
     const focus4 = () => dev4(() => window.dispatchEvent(new Event('focus')));
     const putAfter = (path) => { const i = seen.findLastIndex((c) => c.method === 'PUT' && c.path === path); return { put: seen[i], before: seen[i - 1] }; };
+    const moveBox4 = () => dev4(() => { const b = document.querySelector('#dev .arb-move'); return b && !b.hidden ? { text: b.querySelector('.arb-move-text').hidden ? '' : b.querySelector('.arb-move-text').textContent, buttons: [...b.querySelectorAll('button')].filter((x) => !x.hidden).map((x) => x.textContent) } : null; });
+    const openAdvanced4 = async () => {
+      await page4.click('#feel');
+      await page4.waitForSelector('#play:not(.hidden), #dev:not(.hidden)', { timeout: 60000 });   // the mode you left is the mode you come back to
+      await page4.waitForTimeout(800);
+      if (await page4.$eval('#dev', (e) => e.classList.contains('hidden'))) await page4.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('advanced')).click());
+      await page4.waitForSelector('#dev:not(.hidden)', { timeout: 15000 });
+    };
+    // switching list is asynchronous (a folder is fetched first): the select shows the new value at once, so wait for the editor to have moved
+    const editorList4 = () => dev4(() => JSON.parse(localStorage.getItem('komorebi.editor')).playlist);
+    const goList4 = async (text, value) => { await pickByText4(1, text); await until(async () => (await editorList4()) === value); };
+    const POSTS = /^POST \/api\/presets(\/\d+\/versions)?$/;
 
-    // zen first: a visitor who never opens the advanced panel causes no /api/me (design §3.3)
+    // SIGNED OUT: local only. Two ★ looks, no notice, no cloud UI, and arboretum is asked nothing but who you are.
     await page4.goto(`http://127.0.0.1:${port}/editor/index.html`, { waitUntil: 'load' });
-    await page4.click('#feel');
-    await page4.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
-    await page4.waitForTimeout(500);
-    check('in zen, arboretum is asked nothing but /api/health', seen.every((c) => c.path === '/api/health'), seen.map((c) => c.path).join());
-    await page4.$eval('#strip .preset .more', (b) => b.click());
-    await page4.waitForSelector('#play:not(.hidden)', { timeout: 15000 });
-    await page4.waitForTimeout(800);
-    await page4.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); s.value = 'afternoon 7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-    await page4.waitForTimeout(1200);   // settle: the welcome crossfade is aborted by a hard load, as in the playlists section above
-    check('and in the playful sidebar too', seen.every((c) => c.path === '/api/health'), seen.map((c) => c.path).join());
-    await page4.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('advanced')).click());
-    await page4.waitForSelector('#dev:not(.hidden)', { timeout: 15000 });
+    await openAdvanced4();
     await waitCall(/^GET \/api\/me$/);
     await until(() => shown4('#dev .arb-cta'));
-
-    // signed out: one button, and nothing that needs a session
-    check('opening advanced asks /api/me once; signed out, the last line of Presets is "keep your looks in arboretum ↗"',
-      calls(/^GET \/api\/me$/).length === 1 && (await text4('#dev .arb-cta')) === 'keep your looks in arboretum ↗' && await shown4('#dev .arb-cta'));
-    check('and shows no chips, no +, no playlist row, no "arboretum ·" line, and no ↑ / add to / picker / refresh',
-      !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row')) && !(await shown4('#dev .playlist-row button')) && (await text4('#dev .arb-who')) === ''
-      && !(await dev4(() => !!document.querySelector('.arb-push, .arb-addto, .arb-picker, .arb-refresh, .arb-head'))));
-    check('the look still has its chip: a built-in, unchanged', await chipIs4('built-in'), await chip4());
+    check('in the playful sidebar and the zen strip, arboretum is asked nothing but /api/health (and /api/me once the advanced panel opens)', seen.every((c) => c.path === '/api/health' || c.path === '/api/me'), seen.map((c) => c.path).join());
+    check('signed out it is local only: all looks lists the two ★ looks, and there is no notice, no chips, no +, no folders',
+      (await opts4(1)).join() === 'all looks' && (await opts4(0)).includes('★ local one') && (await opts4(0)).includes('★ local two') && !(await moveBox4())
+      && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row')) && (await text4('#dev .arb-who')) === '' && (await text4('#dev .arb-cta')) === 'keep your looks in arboretum ↗');
+    check('the look has its chip: a built-in, unchanged', await chipIs4('built-in'), await chip4());
+    await pick4(0, 'local one');
+    check('and a ★ is "★ saved here"', await chipIs4('★ saved here'), await chip4());
+    await slider4(0.21);
+    const preS = await save4('local three');
+    check('a save signed out is a ★ here, and asks arboretum nothing', preS === 'local one' && (await stars4()).includes('local three') && calls(/^POST /).length === 0 && seen.every((c) => c.path === '/api/health' || c.path === '/api/me'), JSON.stringify(await stars4()));
+    await pick4(0, 'local three'); await btn4('delete');
     const [popup] = await Promise.all([ctx4.waitForEvent('page'), click4('#dev .arb-cta')]);
     await popup.waitForURL('**/login').catch(() => {});
-    check('the button opens arboretum\'s /login in a new tab', popup.url() === `http://127.0.0.1:${port}/login`, popup.url());
+    check('the sign-in button opens arboretum\'s /login in a new tab', popup.url() === `http://127.0.0.1:${port}/login`, popup.url());
     await popup.close();
 
-    // the sign-in cycle: back in the editor window, focus asks /api/me again
+    // SIGNED IN: the first check offers to move the ★ looks in, and mirrors the cloud
     server.signedIn = true;
     await focus4();
-    await until(async () => (await text4('#dev .arb-who')) === 'arboretum · jo' && (await opts4(1)).length === 3);
-    check('on focus /api/me is asked again, the button goes, and the line reads "arboretum · jo"', calls(/^GET \/api\/me$/).length === 2 && !(await shown4('#dev .arb-cta')) && (await text4('#dev .arb-who')) === 'arboretum · jo');
-    check('the playlist select lists all looks, then your playlists, with no "New playlist…" option', (await opts4(1)).join() === 'all looks,morning,evening', (await opts4(1)).join());
-    check('signed in, the playlist row is shown with a +', await shown4('#dev .playlist-row') && await shown4('#dev .playlist-row button'));
-    check('your playlists are fetched once each, for the chips', calls(/^GET \/api\/playlists\/7$/).length === 1 && calls(/^GET \/api\/playlists\/8$/).length === 1);
-    const allLooks = await opts4(0);
-    check('all looks ends with a ☁ row for each of your presets that has no ★ here', allLooks.slice(-2).join() === '☁ dusk,☁ dawn', allLooks.slice(-3).join());
-    check('and the playful dropdown never lists one', await dev4(() => [...document.querySelectorAll('#play select')].every((s) => ![...s.options].some((o) => o.textContent.includes('☁')))));
+    await until(async () => (await text4('#dev .arb-who')) === 'arboretum · jo' && (await moveBox4()) !== null);
+    check('signed in, the line reads "arboretum · jo" and a notice offers to move the 2 ★ looks, private', (await text4('#dev .arb-who')) === 'arboretum · jo' && JSON.stringify(await moveBox4()) === JSON.stringify({ text: "move your 2 looks into arboretum? they'll be private", buttons: ['move', 'not now'] }), JSON.stringify(await moveBox4()));
+    check('the lists are uncategorized, your folders in arboretum\'s order, the built-ins, and on this browser (the ★ looks are not moved yet)', (await opts4(1)).join() === 'uncategorized,morning,evening,built-ins,on this browser', (await opts4(1)).join());
+    check('and no all looks, and no ☁ rows', !(await opts4(1)).includes('all looks') && (await opts4(0)).every((t) => !t.includes('☁')), (await opts4(0)).join());
+    check('the mirror holds what is mine (dusk, dawn) and both playlists, fetched by version: each preset once', JSON.stringify((await mirror4()).order) === '[21,5]' && (await mirror4()).playlists.map((l) => l.id).join() === '8,7' && calls(/^GET \/api\/presets\/(21|5)$/).length === 2 && calls(/^GET \/api\/presets\/6$/).length === 0, JSON.stringify(await mirror4()).slice(0, 160));
+    check('with a + beside the playlist select', await shown4('#dev .playlist-row button'));
 
-    // a ☁ row: picked, it becomes a ★ here (no duplicate) and the chip says where it is
-    await pick4(0, '☁21');
-    await waitCall(/^GET \/api\/presets\/21$/);
-    await until(async () => (await value4(0)) === 'dusk');
-    const afterPick = await opts4(0);
-    check('picking ☁ dusk fetches it, brings it in as a ★ and lands on it; the ☁ row is gone', afterPick.filter((t) => t === '★ dusk').length === 1 && !afterPick.includes('☁ dusk') && (await value4(0)) === 'dusk' && (await value4(1)) === 'local', afterPick.slice(-4).join());
-    check('the chip reads ☁ #21 v1', await chipIs4('☁ #21 v1'), await chip4());
+    // not now: the ★ looks stay as their own list, with a button; the notice is not asked again on every focus
+    await click4('#dev .arb-move-no');
+    await focus4();
+    await page4.waitForTimeout(600);
+    check('"not now" puts the notice away, keeps both ★s, and a later focus does not ask again', (await moveBox4()) === null || !(await moveBox4()).text, JSON.stringify(await moveBox4()));
+    await goList4('on this browser', 'local');
+    check('on this browser lists the un-moved ★s, with a "move to arboretum" button', (await opts4(0)).join() === '★ local one,★ local two' && JSON.stringify((await moveBox4())?.buttons) === '["move to arboretum"]', `${(await opts4(0)).join()} ${JSON.stringify(await moveBox4())}`);
+    await pick4(0, 'local one');
+    check('a ★ there has its chip, and removing is a delete (the ★ only)', await chipIs4('★ saved here') && (await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => b.textContent === 'delete' && !b.hidden))));
 
-    // save is the one verb: a ★ from a built-in goes up at once
+    // the next session asks again; a refusal during the move stays local with its reason
+    await page4.reload({ waitUntil: 'load' });
+    await openAdvanced4();
+    await until(async () => (await moveBox4())?.text);
+    check('in the next session the first signed-in check asks again', (await moveBox4())?.text === "move your 2 looks into arboretum? they'll be private", JSON.stringify(await moveBox4()));
+    server.refuse = { status: 422, body: { error: 'branch_levels must be 1–4', reason: 'out_of_range' } };
+    const p0 = calls(POSTS).length;
+    await click4('#dev .arb-move-yes');
+    await waitCall(POSTS, p0 + 2);
+    await until(async () => (await stars4()).join() === 'local one');
+    const mv = calls(POSTS).slice(p0);
+    check('move uploads each ★ as a private preset (parent, no visibility) — the refused one stays local, the other is no longer a ★', mv.length === 2 && mv[0].body.name === 'local one' && mv[1].body.name === 'local two' && mv[1].body.parent === 'look:memories' && (await stars4()).join() === 'local one', JSON.stringify(mv.map((c) => c.body.name)));
+    const toastNow = await toast4();
+    await pickByText4(1, 'on this browser');
+    await until(async () => (await opts4(0)).join() === '★ local one');
+    await pick4(0, 'local one');
+    check('the refusal is in the toast verbatim, and in that look\'s chip title', toastNow === 'branch_levels must be 1–4' && (await chipTitle4()).includes('branch_levels must be 1–4'), `${toastNow} | ${await chipTitle4()}`);
+    await click4('#dev .arb-move-yes');
+    await waitCall(POSTS, p0 + 3);
+    await until(async () => (await stars4()).length === 0 && (await value4(1)) === 'arb:unc');
+    check('move to arboretum again moves the rest: no local ★ left, and the editor goes to uncategorized, where both moved looks are', (await stars4()).length === 0 && (await value4(1)) === 'arb:unc' && (await opts4(0)).includes('local one') && (await opts4(0)).includes('local two') && (await opts4(0)).includes('dusk'), `${(await stars4()).join()} ${(await opts4(0)).join()}`);
+    check('and on this browser, and the notice, are gone', !(await opts4(1)).includes('on this browser') && (await moveBox4()) === null, (await opts4(1)).join());
+    check('no request carried visibility', seen.every((c) => !/visibility/i.test(`${c.path} ${JSON.stringify(c.body ?? '')}`)));
+
+    // every save goes to arboretum, private: a built-in becomes a new preset, parented on it, and lands in uncategorized
+    await goList4('built-ins', 'builtins');
+    check('built-ins is a list of the shipped looks alone, with no remove or delete', (await opts4(0)).every((t) => /^[•◦] /.test(t)) && !(await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => (b.textContent === 'delete' || b.textContent === 'remove') && !b.hidden))));
     await pick4(0, 'afternoon 7');
     check('a built-in selected: "built-in"', await chipIs4('built-in'), await chip4());
     await slider4(0.12);
     check('an edit prefixes "● edited · "', await chipIs4('● edited · built-in'), await chip4());
-    const pre0 = await save4('k4 mine');
-    await waitCall(/^POST \/api\/presets$/);
-    const up = lastCall(/^POST \/api\/presets$/)?.body ?? {};
-    check('save on a built-in offers no name, and POSTs /api/presets with parent look:<built-in> and no komorebi_commit', pre0 === '' && up.parent === 'look:afternoon 7' && up.name === 'k4 mine' && !('komorebi_commit' in up) && near(up.params?.cloud_thickness, 0.12), JSON.stringify({ ...up, params: '…' }));
-    check('the chip turns ☁ #12 v1 and the toast says what landed', await chipIs4('☁ #12 v1') && /^kept in arboretum · #12 v1$/.test(await toast4()), `${await chip4()} / ${await toast4()}`);
-    const rec = (await origin4())['k4 mine'];
-    check('the ★ is recorded as a synced copy of #12', rec?.id === 12 && rec.version === 1 && rec.owner === 'jo' && rec.synced === true && !rec.pending, JSON.stringify(rec));
-    await slider4(0.35);
-    check('editing it says so over its cloud chip', await chipIs4('● edited · ☁ #12 v1'), await chip4());
-    const pre1 = await save4('k4 mine');
-    await waitCall(/^POST \/api\/presets\/12\/versions$/);
-    const ver = lastCall(/^POST \/api\/presets\/12\/versions$/)?.body ?? {};
-    check('save again pre-fills the ★\'s name and POSTs a new version of #12, with no parent', pre1 === 'k4 mine' && ver.name === 'k4 mine' && near(ver.params?.cloud_thickness, 0.35) && !('parent' in ver), JSON.stringify({ ...ver, params: '…' }));
-    check('the chip reads ☁ #12 v2', await chipIs4('☁ #12 v2') && /#12 v2/.test(await toast4()), `${await chip4()} / ${await toast4()}`);
+    const p1 = calls(POSTS).length;
+    const preB = await save4('k4 fresh');
+    await waitCall(POSTS, p1 + 1);
+    const fresh = lastCall(POSTS)?.body ?? {};
+    check('save on a built-in offers no name and POSTs a new preset with parent look:<built-in> (no komorebi_commit here)', preB === '' && fresh.name === 'k4 fresh' && fresh.parent === 'look:afternoon 7' && !('komorebi_commit' in fresh) && near(fresh.params?.cloud_thickness, 0.12), JSON.stringify({ ...fresh, params: '…' }));
+    const freshId = server.nextPreset - 1;
+    await until(async () => (await value4(1)) === 'arb:unc' && (await selectedText4(0)) === 'k4 fresh');
+    check('the editor goes to uncategorized, on the new look, and no ★ was written here', (await value4(1)) === 'arb:unc' && (await selectedText4(0)) === 'k4 fresh' && (await stars4()).length === 0, `${await value4(1)} ${await selectedText4(0)}`);
+    check(`the chip reads ☁ #${freshId} v1 and the toast says what landed`, await chipIs4(`☁ #${freshId} v1`) && (await toast4()) === `kept in arboretum · #${freshId} v1`, `${await chip4()} / ${await toast4()}`);
+    check('uncategorized lists it first, newest first', (await opts4(0))[0] === 'k4 fresh', (await opts4(0)).join());
 
-    // the playlists a look is in: one chip each, toggled with a fresh GET, the unavailable items sent back
-    check('under the save row: in: with a chip per playlist of yours, none lit for a look in none', await chipsAre4('morning:false,evening:false'), await chips4());
+    // saving a preset of yours is a new version of it, in place
+    await slider4(0.35);
+    check('editing it says so over its cloud chip', await chipIs4(`● edited · ☁ #${freshId} v1`), await chip4());
+    const preV = await save4('k4 fresh');
+    await waitCall(POSTS, p1 + 2);
+    const ver = lastCall(POSTS);
+    check('save again pre-fills its name and POSTs a new version of it, with no parent', preV === 'k4 fresh' && ver.path === `/api/presets/${freshId}/versions` && !('parent' in ver.body) && near(ver.body.params.cloud_thickness, 0.35), JSON.stringify({ ...ver, body: '…' }));
+    check('the chip reads v2', await chipIs4(`☁ #${freshId} v2`), await chip4());
+
+    // folders: a chip moves the look out of uncategorized and back, with no request of its own for uncategorized
+    check('under the save row: in: with a chip per folder, none lit', await chipsAre4('morning:false,evening:false'), await chips4());
     await clickChip4('morning');
     await waitCall(/^PUT \/api\/playlists\/8\/items$/);
     const m1 = putAfter('/api/playlists/8/items');
-    check('clicking morning GETs it fresh and PUTs it with this look\'s preset appended, and the chip lights', m1.before.path === '/api/playlists/8' && JSON.stringify(m1.put.body.items.map((i) => i.preset_id)) === '[12]' && await chipsAre4('morning:true,evening:false'), JSON.stringify(m1.put.body) + await chips4());
+    await until(async () => (await value4(1)) === 'arb:8');
+    check('adding to morning GETs it fresh and appends this look\'s preset; the look is no longer uncategorized and the editor follows it into the folder',
+      m1.before.path === '/api/playlists/8' && JSON.stringify(m1.put.body.items.map((i) => i.preset_id)) === JSON.stringify([freshId]) && (await value4(1)) === 'arb:8' && (await selectedText4(0)) === 'k4 fresh' && await chipsAre4('morning:true,evening:false'), JSON.stringify(m1.put.body) + await chips4());
+    await goList4('uncategorized', 'arb:unc');
+    check('and uncategorized no longer lists it', !(await opts4(0)).includes('k4 fresh'), (await opts4(0)).join());
+    await goList4('morning', 'arb:8');
+    await clickChip4('morning');
+    await waitCall(/^PUT \/api\/playlists\/8\/items$/, 2);
+    await until(async () => (await value4(1)) === 'arb:unc');
+    check('taking it out of its last folder brings it back to uncategorized, selected there', (await opts4(0)).includes('k4 fresh') && (await selectedText4(0)) === 'k4 fresh' && await chipsAre4('morning:false,evening:false'), `${(await opts4(0)).join()} ${await chips4()}`);
     await clickChip4('evening');
     await waitCall(/^PUT \/api\/playlists\/7\/items$/);
     const e1 = putAfter('/api/playlists/7/items');
     check('adding to evening keeps its other items in their places, the unavailable one sent back with its times',
-      e1.before.path === '/api/playlists/7' && JSON.stringify(e1.put.body.items.map((i) => i.preset_id)) === '[5,6,99,12]'
-      && e1.put.body.items[2].dwell_s === 40 && e1.put.body.items[2].crossfade_s === 7 && !('unavailable' in e1.put.body.items[2]) && await chipsAre4('morning:true,evening:true'), JSON.stringify(e1.put.body) + await chips4());
-    await clickChip4('evening');
-    await waitCall(/^PUT \/api\/playlists\/7\/items$/, 2);
-    const e2 = putAfter('/api/playlists/7/items');
-    check('clicking a lit chip takes the look out again: a fresh GET, the rest kept', e2.before.path === '/api/playlists/7' && JSON.stringify(e2.put.body.items.map((i) => i.preset_id)) === '[5,6,99]' && await chipsAre4('morning:true,evening:false'), JSON.stringify(e2.put.body) + await chips4());
+      e1.before.path === '/api/playlists/7' && JSON.stringify(e1.put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 6, 99, freshId])
+      && e1.put.body.items[2].dwell_s === 40 && e1.put.body.items[2].crossfade_s === 7 && !('unavailable' in e1.put.body.items[2]), JSON.stringify(e1.put.body));
 
-    // + makes a private playlist, which becomes the active one and gets a chip
+    // a + makes a private playlist, which becomes the active folder and gets a chip
     reply = 'night';
     await click4('#dev .playlist-row button');
     reply = null;
-    await until(async () => (await value4(1)) === 'arb:9');
-    const np = lastCall(/^POST \/api\/playlists$/)?.body;
-    check('+ prompts, POSTs only the name, and makes the new playlist active', JSON.stringify(np) === '{"name":"night"}' && (await value4(1)) === 'arb:9' && (await opts4(0)).length === 0 && (await opts4(1)).includes('night'), JSON.stringify({ np, v: await value4(1), l: await opts4(0) }));
-    check('and it has its chip', (await chips4()).startsWith('night:false'), await chips4());
-    await pick4(1, 'local');
-    await until(async () => (await value4(1)) === 'local');
-    await pick4(0, 'k4 mine');
-    check('back in all looks the chips read the cached playlists: morning lit for #12', await chipsAre4('night:false,morning:true,evening:false'), await chips4());
+    await until(async () => (await value4(1)) === `arb:${server.nextList - 1}`);
+    check('+ prompts, POSTs only the name, and makes the new folder active, with its chip', JSON.stringify(lastCall(/^POST \/api\/playlists$/)?.body) === '{"name":"night"}' && (await opts4(0)).length === 0 && (await chips4()).includes('night:false'), `${await chips4()}`);
 
-    // an upload that cannot happen now waits; the next successful /api/me check sends it
-    await pick4(0, 'afternoon 7');
-    await slider4(0.5);
-    server.refuse = { status: 503, body: { error: 'upstream down' } };
-    const p0 = calls(/^POST /).length;
-    const pre2 = await save4('k4 later');
-    await waitCall(/^POST /, p0 + 1);
-    check('a 503 on save keeps the ★ and the chip says it waits', pre2 === '' && await chipIs4('⇡ waiting to go up') && (await origin4())['k4 later']?.pending === true, `${await chip4()} ${JSON.stringify((await origin4())['k4 later'])}`);
-    await focus4();
-    await waitCall(/^POST \/api\/presets$/, 3);
-    const later = lastCall(/^POST \/api\/presets$/)?.body ?? {};
-    check('on the next /api/me check it is pushed (a new preset, parented on the built-in), and the chip turns ☁', later.name === 'k4 later' && later.parent === 'look:afternoon 7' && await chipIs4('☁ #13 v1') && !(await origin4())['k4 later'].pending, `${JSON.stringify({ ...later, params: '…' })} ${await chip4()}`);
-
-    // adding a look that is not online yet uploads it first, by the same rule
-    await slider4(0.55);
-    server.refuse = { status: 503, body: { error: 'upstream down' } };
-    await save4('k4 offline');
-    await chipIs4('⇡ waiting to go up');
-    const p1 = calls(/^POST \/api\/presets$/).length;
-    await clickChip4('night');
-    await waitCall(/^PUT \/api\/playlists\/9\/items$/);
-    const fresh = lastCall(/^POST \/api\/presets$/)?.body ?? {};
-    const n1 = putAfter('/api/playlists/9/items');
-    check('a chip on a look that is not online uploads it first, then appends the new preset',
-      calls(/^POST \/api\/presets$/).length === p1 + 1 && fresh.name === 'k4 offline' && fresh.parent === 'preset:13@1' && n1.before.path === '/api/playlists/9' && JSON.stringify(n1.put.body.items.map((i) => i.preset_id)) === '[14]', JSON.stringify({ ...fresh, params: '…' }) + JSON.stringify(n1.put.body));
-    check('and the chip turns ☁ #14 v1 with night lit', await chipIs4('☁ #14 v1') && await chipsAre4('night:true,morning:false,evening:false'), `${await chip4()} ${await chips4()}`);
-
-    // saving a look that waits to go up sends it once: the pending push and the save are the same upload
-    await slider4(0.6);
-    server.refuse = { status: 503, body: { error: 'upstream down' } };
-    await save4('k4 twice');
-    await chipIs4('⇡ waiting to go up');
-    const p2 = calls(/^POST \/api\/presets/).length;
-    await save4('k4 twice');
-    await waitCall(/^POST \/api\/presets/, p2 + 1);
-    await new Promise((r) => setTimeout(r, 400));
-    check('saving a waiting look again uploads it once, not twice', calls(/^POST \/api\/presets/).length === p2 + 1 && !(await origin4())['k4 twice']?.pending, `${calls(/^POST \/api\/presets/).length - p2} ${JSON.stringify((await origin4())['k4 twice'])}`);
-
-    // a refusal is shown verbatim and is not pending
-    await pick4(0, 'k4 mine');
-    await slider4(0.7);
-    const refusals = [
-      [422, { error: 'branch_levels must be 1–4', reason: 'out_of_range' }],
-      [422, { error: "this is the built-in 'afternoon 7', unchanged — change something first", reason: 'builtin' }],
-    ];
-    for (const [status, body] of refusals) {
-      server.refuse = { status, body };
-      const n = calls(/^POST /).length;
-      await save4('k4 mine');
-      await waitCall(/^POST /, n + 1);
-      await until(async () => (await toast4()) === body.error);
-      const o = (await origin4())['k4 mine'];
-      check(`${status} ${body.reason} is shown verbatim in the toast and the chip's title, and is not pending`,
-        (await toast4()) === body.error && (await dev4(() => document.querySelector('#dev .look-chip').title)).includes(body.error) && !o.pending && (await chip4()) === '★ saved here · ☁ #12 is older', `${await toast4()} | ${await chip4()} | ${JSON.stringify(o)}`);
-    }
-    const afterRefusals = calls(/^POST /).length;
-    await focus4();
-    await page4.waitForTimeout(800);
-    check('and the next check does not retry it', calls(/^POST /).length === afterRefusals);
-
-    // a cloud playlist of yours
-    await pick4(1, 'arb:7');
-    await until(async () => (await opts4(0)).join() === 'dawn,dusk');
-    check('activating a cloud playlist GETs it fresh, and the look select lists its items by name', calls(/^GET \/api\/playlists\/7$/).length >= 3 && (await opts4(0)).join() === 'dawn,dusk', (await opts4(0)).join());
-    check('an item is a cloud look: ☁ #5 v1, and delete is "remove"', await chipIs4('☁ #5 v1') && (await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => b.textContent === 'remove'))), await chip4());
-    await pick4(0, '1');
-    check('and someone else\'s item says whose it is', await chipIs4("☁ #6 v3 · ana's"), await chip4());
+    // a save in a folder places it there; and a ★ is not written
+    await goList4('evening', 'arb:7');
+    await until(async () => (await opts4(0)).join() === 'dawn,ana dusk,k4 fresh');
     await pick4(0, '0');
     await slider4(0.31);
     const before = seen.length;
-    const pre = await save4('dawn');
-    await waitCall(/^POST \/api\/presets\/5\/versions$/);
-    const verd = lastCall(/^POST \/api\/presets\/5\/versions$/)?.body ?? {};
-    check('save there pre-fills the item\'s name; with the item yours it POSTs a new version of it', pre === 'dawn' && verd.name === 'dawn' && near(verd.params?.cloud_thickness, 0.31) && !('parent' in verd), JSON.stringify({ ...verd, params: '…' }));
+    const preF = await save4('dawn');
     await until(async () => /#5 v2/.test(await toast4()));
-    check('the toast says "kept in arboretum · #5 v2", and no items were written (the playlist already points at the preset)', /^kept in arboretum · #5 v2$/.test(await toast4()) && seen.slice(before).every((c) => c.method !== 'PUT'), await toast4());
-    check('and it exists here too, as a ★ recorded as a synced copy of #5', (await stars4()).includes('dawn') && (await origin4()).dawn?.id === 5 && (await origin4()).dawn.synced === true, JSON.stringify((await origin4()).dawn));
+    check('save in a folder pre-fills the item\'s name and POSTs a new version of it, with no items written (the playlist already points at it)', preF === 'dawn' && /^kept in arboretum · #5 v2$/.test(await toast4()) && seen.slice(before).every((c) => c.method !== 'PUT') && (await stars4()).length === 0, await toast4());
     await pick4(0, '1');
     await slider4(0.44);
-    await page4.waitForTimeout(300);
-    await save4('dusk, mine');
-    await waitCall(/^PUT \/api\/playlists\/7\/items$/, 3);
-    const post = lastCall(/^POST \/api\/presets$/ )?.body ?? {};
-    check('save with the item someone else\'s POSTs your own new preset, parented on theirs', post.name === 'dusk, mine' && post.parent === 'preset:6@3' && near(post.params?.cloud_thickness, 0.44), JSON.stringify({ ...post, params: '…' }));
+    await save4('ana dusk, mine');
+    await until(async () => (await opts4(0)).join() === 'dawn,ana dusk, mine,k4 fresh');
     const rp = putAfter('/api/playlists/7/items');
-    check('and replaces that item: a fresh GET first, the place kept, the unavailable item sent back with its times',
-      rp.before.method === 'GET' && rp.before.path === '/api/playlists/7'
-      && JSON.stringify(rp.put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, server.nextPreset - 1, 99])
-      && rp.put.body.items[2].dwell_s === 40 && rp.put.body.items[2].crossfade_s === 7 && !('unavailable' in rp.put.body.items[2])
-      && rp.put.body.items[1].dwell_s === 12, JSON.stringify(rp.put.body));
-    await until(async () => (await opts4(0)).join() === 'dawn,dusk, mine');
-    check('the look select then lists the replacement', (await opts4(0)).join() === 'dawn,dusk, mine', (await opts4(0)).join());
+    check('save on someone else\'s item makes your own new preset, parented on theirs, in the place of the item: a fresh GET, the unavailable item sent back',
+      lastCall(POSTS).body.parent === 'preset:6@3' && rp.before.path === '/api/playlists/7' && rp.put.body.items[1].dwell_s === 12 && rp.put.body.items[2].preset_id === 99 && rp.put.body.items[2].dwell_s === 40, JSON.stringify(rp.put.body));
     await pick4(0, '1');
     await btn4('remove');
-    await until(async () => (await opts4(0)).join() === 'dawn');
+    await until(async () => (await opts4(0)).join() === 'dawn,k4 fresh');
     const rm = putAfter('/api/playlists/7/items');
-    check('remove PUTs the list without the item, from a fresh GET, the unavailable item kept', rm.before.path === '/api/playlists/7' && rm.before.method === 'GET'
-      && JSON.stringify(rm.put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99]) && (await opts4(0)).join() === 'dawn', JSON.stringify(rm.put.body));
-    await pick4(1, 'local');
-    await until(async () => (await value4(1)) === 'local');
-    const mineNow = await opts4(0);
-    check('back in all looks, what was saved there is listed once, as ★s (no ☁ row for dawn)', mineNow.includes('★ dawn') && mineNow.includes('★ dusk, mine') && !mineNow.includes('☁ dawn'), mineNow.slice(-6).join());
+    check('remove takes the item out of the folder from a fresh GET, the unavailable item kept', rm.before.path === '/api/playlists/7' && JSON.stringify(rm.put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99, freshId]), JSON.stringify(rm.put.body));
+    await goList4('uncategorized', 'arb:unc');
+    check('in uncategorized there is no remove or delete (archiving is on arboretum\'s site)', !(await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => (b.textContent === 'delete' || b.textContent === 'remove') && !b.hidden))));
 
-    // a session that has ended mid-use: the sign-in line comes back, and the ★ waits
+    // a refusal on a save is shown verbatim and is not queued
+    await pick4(0, '0');
+    await slider4(0.7);
+    server.refuse = { status: 422, body: { error: 'branch_levels must be 1–4', reason: 'out_of_range' } };
+    const q0 = (await mirror4()).queue.length;
+    await save4(await selectedText4(0));
+    await until(async () => (await toast4()) === 'branch_levels must be 1–4');
+    check('a 422 on save is in the toast verbatim and the chip title, and nothing waits', (await chipTitle4()).includes('branch_levels must be 1–4') && (await mirror4()).queue.length === q0, `${await toast4()} | ${await chipTitle4()}`);
+
+    // OFFLINE: arboretum cannot be reached; the mirror answers
+    const today = new Date().toISOString().slice(0, 10);
+    server.down = true;
+    await focus4();
+    await until(async () => (await opts4(1)).includes('offline'));
+    check('with arboretum down, every list still shows from the mirror and the playlist select says offline once', (await opts4(1)).filter((t) => t === 'offline').length === 1 && (await opts4(1)).includes('uncategorized') && (await opts4(0)).length > 0, (await opts4(1)).join());
+    check('and the look\'s chip says offline copy, dated by the last refresh', (await chip4()).replace(/^● edited · /, '') === `offline copy · ${today}`, await chip4());
+    await goList4('evening', 'arb:7');
+    check('a folder opens from the mirror too, without a request that gets through', (await opts4(0)).join() === 'dawn,k4 fresh', (await opts4(0)).join());
+
+    // an offline save waits, shown as such, and goes up in order
+    await goList4('uncategorized', 'arb:unc');
+    await pick4(0, '0');
+    const name0 = await selectedText4(0);
+    await slider4(0.77);
+    await save4(name0);
+    check('an offline save of a preset of yours waits: the chip says ⇡ waiting to go up', await chipIs4('⇡ waiting to go up') && (await mirror4()).queue.length === 1, `${await chip4()} ${(await mirror4()).queue.length}`);
+    await goList4('built-ins', 'builtins');
+    await pick4(0, 'memories');
+    await slider4(0.05);
+    await save4('k4 offline');
+    await goList4('uncategorized', 'arb:unc');
+    check('an offline save of a new look is a pending item at the top of uncategorized, and both wait in the order made', (await opts4(0))[0] === 'k4 offline' && (await mirror4()).queue.map((q) => q.body.name).join() === `${name0},k4 offline`, `${(await opts4(0))[0]} ${(await mirror4()).queue.map((q) => q.body.name)}`);
+    await pick4(0, '0');
+    check('and its chip says ⇡ waiting to go up', await chipIs4('⇡ waiting to go up'), await chip4());
+    const idle = calls(POSTS).length;
+    server.down = false;
+    await focus4();
+    await waitCall(POSTS, idle + 2);
+    await until(async () => (await mirror4()).queue.length === 0);
+    const pushed = calls(POSTS).slice(idle);
+    check('with arboretum back, the next check pushes them in the order they were made', pushed.length === 2 && pushed[0].path.endsWith('/versions') && pushed[0].body.name === name0 && pushed[1].path === '/api/presets' && pushed[1].body.name === 'k4 offline' && pushed[1].body.parent === 'look:memories', JSON.stringify(pushed.map((c) => [c.path, c.body.name])));
+    await until(async () => !(await opts4(1)).includes('offline'));
+    check('and the offline mark goes, the waiting items are ordinary looks again', !(await opts4(1)).includes('offline') && (await mirror4()).queue.length === 0 && (await chip4()).startsWith('☁ #'), `${(await opts4(1)).join()} ${await chip4()}`);
+
+    // SIGNED OUT AGAIN: the mirror is not shown, saves are local ★s; signing back in resumes
     server.signedIn = false;
-    await pick4(0, 'k4 mine');
-    await slider4(0.9);
-    await save4('k4 mine');
+    await focus4();
     await until(() => shown4('#dev .arb-cta'));
-    check('a 401 on a write brings the sign-in line back, and takes the chips, the + and the name away',
-      await shown4('#dev .arb-cta') && (await text4('#dev .arb-who')) === '' && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button')));
-    check('the ★ is kept and the chip says it waits', await chipIs4('⇡ waiting to go up') && (await origin4())['k4 mine']?.pending === true, await chip4());
-    const idle = seen.length;
-    await save4('k4 mine');
-    await page4.waitForTimeout(400);
-    check('a save while signed out (after a known session) asks nothing and keeps waiting', seen.length === idle && await chip4() === '⇡ waiting to go up', `${seen.length - idle} ${await chip4()}`);
+    check('a session that has ended brings the sign-in line back; the lists are all looks alone — the mirror is kept but not shown', (await opts4(1)).join() === 'all looks' && (await mirror4()).order.length > 2 && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button')), `${(await opts4(1)).join()} ${(await mirror4()).order.length}`);
+    const idle2 = seen.length, posts2 = calls(POSTS).length;
+    await pick4(0, 'afternoon 7');
+    await slider4(0.66);
+    await save4('local again');
+    await page4.waitForTimeout(300);
+    check('and a save is a local ★ again, with no request', (await stars4()).join() === 'local again' && calls(POSTS).length === posts2 && seen.slice(idle2).every((c) => c.path === '/api/me' || c.path === '/api/health'), JSON.stringify(seen.slice(idle2).map((c) => `${c.method} ${c.path}`)));
+    server.signedIn = true;
+    await focus4();
+    await until(async () => (await opts4(1)).includes('uncategorized'));
+    check('signing in again resumes from the mirror; the local ★ is on its list with the move button, and the notice is not put up again this session', (await opts4(1)).includes('on this browser') && (await opts4(1)).includes('uncategorized') && JSON.stringify(await moveBox4()) === JSON.stringify({ text: '', buttons: ['move to arboretum'] }), `${(await opts4(1)).join()} ${JSON.stringify(await moveBox4())}`);
 
     check('no request ever carried visibility', seen.every((c) => !/visibility/i.test(`${c.path} ${JSON.stringify(c.body ?? '')}`)), seen.find((c) => /visibility/i.test(JSON.stringify(c.body ?? '')))?.path);
     check('and arboretum raised no alert', alerts.length === 0, alerts.join(' | '));
-    const elsewhere = await dev4(() => ['play', 'strip'].filter((id) => /arboretum|☁/i.test(document.getElementById(id).textContent) || document.getElementById(id).querySelector('.arb-inrow, .arb-cta, .arb-status, .arb-who, .look-chip, .arb-in')));
+    const elsewhere = await dev4(() => ['play', 'strip'].filter((id) => /arboretum|☁|uncategorized/i.test(document.getElementById(id).textContent) || document.getElementById(id).querySelector('.arb-inrow, .arb-cta, .arb-status, .arb-who, .arb-move, .look-chip, .arb-in')));
     check('and nothing of it is in the playful sidebar or the zen strip', elsewhere.length === 0, elsewhere.join());
     await ctx4.close();
   }
@@ -1232,7 +1247,7 @@ try {
     await page5.waitForSelector('#play:not(.hidden)', { timeout: 60000 });
     const got = async () => { const end = Date.now() + 15000; while (Date.now() < end) { if (asked5.includes('/api/me')) return true; await page5.waitForTimeout(60); } return false; };
     check('with a cloud playlist active, /api/me is asked without the advanced panel', await got(), asked5.join());
-    await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'local'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'builtins'; s.dispatchEvent(new Event('change', { bubbles: true })); });
     await page5.waitForTimeout(500);
     await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'arb:7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
     await page5.waitForFunction(() => document.querySelector('#dev .look-chip')?.textContent === 'offline copy · 2023-11-14', null, { timeout: 15000 }).catch(() => {});

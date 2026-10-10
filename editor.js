@@ -2,7 +2,7 @@ import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor } from './komorebi.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
-import { entries, resolve, step, starValue, starName, entryName, cloudPresetId, lookState, playlists, plays, timing, parseHash, makePlayer } from './playlists.js';
+import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer } from './playlists.js';
 import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
@@ -541,12 +541,12 @@ function presetRow(withPlay){
   return row;
 }
 const presetNameEls=[];
-function syncPlayPreset(){ if(presetSel) for(const el of presetNameEls) el.textContent = entryName(getState(), getStored(), activeList(), presetSel.value); }
+function syncPlayPreset(){ if(presetSel) for(const el of presetNameEls) el.textContent = entryName(stateNow(), getStored(), activeList(), presetSel.value); }
 // ▶/■ shows only while the active playlist carries dwell times (a cloud playlist); all looks has none. Playing
 // (playlists.js makePlayer) holds each look for its dwell and then steps to the next, which fades in over its own
 // crossfade; the dwell starts once that look has arrived (goTo), and the look play starts on has no fade in.
 const playBtns=[];
-const player=makePlayer({ timing:(value)=>timing(getState(), activeList(), value), advance:()=>stepPreset(1), onChange:()=>syncPlayButtons() });
+const player=makePlayer({ timing:(value)=>timing(stateNow(), activeList(), value), advance:()=>stepPreset(1), onChange:()=>syncPlayButtons() });
 const stopPlay=()=>player.stop();                  // an edit of the look is yours to hear out: play never fights it
 function playButton(){
   const b=document.createElement('button'); b.className='playstop';
@@ -555,7 +555,7 @@ function playButton(){
   return b;
 }
 function syncPlayButtons(){
-  const on=plays(getState(), activeList()), p=player.playing;
+  const on=plays(stateNow(), activeList()), p=player.playing;
   for(const b of playBtns){ b.hidden=!on; b.textContent=p?'■':'▶'; b.title=p?'stop':'play'; }
 }
 function syncMacroControls(){
@@ -934,12 +934,17 @@ let arb=null;                                      // arboretum.js's hooks, set 
 const BUILTINS = { PRESETS, EXPERIMENTAL };
 const presetSelects=[];                            // every surface's preset dropdown; presetSel (the dev one) is the canonical value
 // A playlist that has left the cache falls back to all looks.
+const stateNow = () => arb ? arb.view() : getState();   // arboretum's view of the state: signed in, your folders and uncategorized join it
 function activeList(){
   const a=settings.playlist;
-  return a.startsWith('arb:') && getState().playlists[a.slice(4)] ? a : 'local';
+  if(!arb) return a.startsWith('arb:') && getState().playlists[a.slice(4)] ? a : 'local';
+  const choices=arb.lists(a);
+  if(choices.some(l=>l.value===a)) return a;
+  // a list that is not offered (a folder that is gone; all looks once you are signed in, where the look you are on is a built-in) falls back
+  return arb.signedIn() ? (a==='local' ? 'builtins' : choices[0].value) : 'local';
 }
-const listEntries = (keep, cloud=[]) => entries(getState(), getStored(), BUILTINS, settings.showBeta, activeList(), keep, cloud);   // `cloud`: the ☁ rows, for the one dropdown that lists them
-const resolveEntry = (value) => resolve(getState(), getStored(), activeList(), value);
+const listEntries = (keep) => entries(stateNow(), getStored(), BUILTINS, settings.showBeta, activeList(), keep, !!arb?.signedIn());
+const resolveEntry = (value) => resolve(stateNow(), getStored(), activeList(), value);
 // The entry you were last on in the active playlist, else its first.
 function resumeAt(){
   const was=settings.selected[activeList()];
@@ -947,17 +952,16 @@ function resumeAt(){
   return list.some(e=>e.value===was) ? was : list[0]?.value;
 }
 // A visit opens on the editor's default look in all looks, and where you left off in a cloud playlist.
-const landing = () => activeList()==='local' ? DEFAULT_PRESET : resumeAt();
+const landing = () => ['local','builtins'].includes(activeList()) ? DEFAULT_PRESET : resumeAt();
 function refreshPresetSelect(selected){
   const keep=selected ?? presetSel.value;
-  const list=listEntries(keep), withCloud=listEntries(keep, arb?.cloudPresets());
+  const list=listEntries(keep);
   for(const sel of presetSelects){
-    const rows = sel===presetSel ? withCloud : list;            // arboretum shows in the advanced panel alone: the playful dropdown never lists a ☁ row
     sel.innerHTML='';
-    for(const e of rows){ const o=document.createElement('option'); o.value=e.value; o.textContent=e.label; sel.appendChild(o); }
+    for(const e of list){ const o=document.createElement('option'); o.value=e.value; o.textContent=e.label; sel.appendChild(o); }
     sel.value=keep;                                             // every surface shows the same selection
   }
-  if(keep && cloudPresetId(keep)===null && settings.selected[activeList()]!==keep){ settings.selected[activeList()]=keep; saveSettings(); }
+  if(keep && settings.selected[activeList()]!==keep){ settings.selected[activeList()]=keep; saveSettings(); }
   syncPlayPreset();                                             // the stepper labels mirror the name
   syncPlaylistUI();
 }
@@ -965,18 +969,19 @@ function refreshPresetSelect(selected){
 // mounted and you are signed in; until then no row, and no ▶
 function syncPlaylistUI(){
   if(playlistSel){
-    const lists=arb ? arb.lists() : playlists(getState());
-    const signedIn=!!arb?.info().me;
+    const lists=arb ? arb.lists(settings.playlist) : playlists(getState());
+    const signedIn=!!arb?.signedIn();
     playlistSel.innerHTML='';
     for(const l of lists){ const o=document.createElement('option'); o.value=l.value; o.textContent=l.label; playlistSel.appendChild(o); }
+    if(arb?.info().offline){ const o=document.createElement('option'); o.value='~offline'; o.textContent='offline'; o.disabled=true; playlistSel.appendChild(o); }   // arboretum could not be reached: these lists are the copy kept here
     playlistSel.value=activeList();
     plusBtn.hidden = !signedIn;
     playlistRow.hidden = !signedIn && lists.length<2;
   }
   if(deleteBtn){
-    const cloud = arb && activeList()!=='local';
-    deleteBtn.textContent = cloud ? 'remove' : 'delete';   // in a cloud playlist it takes the item out of the playlist
-    deleteBtn.hidden = cloud && !arb.writable();           // ...of yours: someone else's playlist is read-only (design §3.5)
+    const a=activeList(), cloud=a.startsWith('arb:');
+    deleteBtn.textContent = cloud ? 'remove' : 'delete';   // in a folder of yours it takes the item out of the playlist
+    deleteBtn.hidden = a==='builtins' || (cloud && !arb?.canRemove());   // nothing is removed from the built-ins, from uncategorized, or from someone else's playlist (design §3.5)
   }
   syncPlayButtons();
   arb?.changed();
@@ -987,15 +992,14 @@ function syncPlaylistUI(){
 function refreshChip(){
   if(!lookChip) return;
   const i=arb?.info() ?? {};
-  const c=lookState(getState(), getStored(), activeList(), presetSel.value, eng.trans.active ? null : params, i.me ?? null, i);
+  const c=lookState(stateNow(), getStored(), activeList(), presetSel.value, eng.trans.active ? null : params, i.me ?? null, i);
   lookChip.textContent=c.text; lookChip.title=c.title; lookChip.hidden=c.text==='';
 }
 // Select an entry and ease to it: the arrows, the swipe, and a playlist swap. A cloud entry brings its own crossfade.
 // While playing, a look's dwell starts when it has arrived (onEnd), and nothing waits while it fades in; a step by hand
 // is the same, so it restarts the dwell.
 function goTo(value){
-  if(cloudPresetId(value)!==null){ loadEntry(value); return; }               // a ☁ row is brought in, not faded to
-  const t=timing(getState(), activeList(), value);
+  const t=timing(stateNow(), activeList(), value);
   endTween();
   player.leaving();
   eng.transitionTo(resolveEntry(value), { duration: t ? t.crossfade_s : transDur,
@@ -1003,11 +1007,6 @@ function goTo(value){
   refreshPresetSelect(value);                                               // reflect target in the dropdown = next step's origin
 }
 function loadEntry(value){                          // the dropdown: an instant load
-  const cloud=cloudPresetId(value);
-  if(cloud!==null){                                 // a ☁ row: arboretum brings the preset in as a ★, which lands here; if it cannot, the selection goes back
-    arb?.bringIn(cloud).then((ok)=>{ if(!ok) refreshPresetSelect(settings.selected[activeList()]); });
-    return;
-  }
   const p=resolveEntry(value);
   if(p) applyParams(p);
   refreshPresetSelect(value);
@@ -1025,25 +1024,26 @@ function saveStar(name, p){
   settings.playlist='local'; saveSettings();
   refreshPresetSelect(starValue(name));
 }
-// Save is the one way to keep a look: a ★ in all looks, which — once arboretum has mounted and you are signed in — goes up at
-// once; in a cloud playlist of yours it is uploaded and placed there (and is a ★ too). Someone else's playlist is read-only
-// (design §3.5): saving there keeps a ★ of your own.
+// Save is the one way to keep a look. Signed in to arboretum, every save goes to arboretum, private, and never asks where: into
+// the folder you are in, else uncategorized (arboretum.js). Otherwise it is a ★ in this browser, whatever list you were on.
 function saveLook(name, p){
   stopPlay();
-  if(arb && activeList()!=='local' && arb.writable()){ arb.save(name, p); return; }
+  if(arb?.signedIn()){ arb.saveCloud(name, p); return; }   // signed in, every save goes to arboretum (private) and none is kept here
   saveStar(name, p);
-  arb?.keep(name);
 }
 // The save button and ⌘S / Ctrl+S: ask for a name, then keep the look.
 function promptSave(){
-  const here=entryName(getState(), getStored(), activeList(), presetSel.value);
-  const fromBuiltin=activeList()==='local' && starName(getStored(), 'local', presetSel.value)===null;
+  const here=entryName(stateNow(), getStored(), activeList(), presetSel.value);
+  const fromBuiltin=['local','builtins'].includes(activeList()) && starName(getStored(), 'local', presetSel.value)===null;
   const n=(prompt('Save preset as:', fromBuiltin ? '' : here)||'').trim(); if(!n) return;   // a ★ or a cloud item offers its own name; a built-in's is not yours to reuse
   saveLook(n, params);
 }
-function showStar(name){                           // a ★ arboretum.js has just brought in: all looks, on that look
-  settings.playlist='local'; saveSettings(); stopPlay();
-  loadEntry(starValue(name));
+// Arboretum has filed a look in a list (or queued it there): go to that list, on that look, without loading it — it is already on screen.
+function showCloud(list, match){
+  settings.playlist=list; saveSettings(); stopPlay();
+  const items=stateNow().playlists[list.slice(4)]?.items ?? [];
+  const at=items.findIndex(i=>match.seq!==undefined ? i.seq===match.seq : i.preset_id===match.id);
+  refreshPresetSelect(at<0 ? '' : String(at));      // the look has left this list (it joined a folder): nothing selected
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
 function buildPresetUI(){
@@ -1077,7 +1077,7 @@ function buildPresetUI(){
 
   const r2=document.createElement('div'); r2.className='ctl';
   deleteBtn=mkBtn('delete',()=>{
-    if(activeList()!=='local'){ arb?.remove(); return; }     // taking a look out of an arboretum playlist is written to arboretum
+    if(activeList().startsWith('arb:')){ arb?.remove(); return; }     // taking a look out of an arboretum playlist is written to arboretum
     const n=starName(getStored(), 'local', presetSel.value);
     if(n===null){ alert("Built-in presets can't be deleted."); return; }
     arb.deleteStar(n); refreshPresetSelect(DEFAULT_PRESET); });
@@ -1529,7 +1529,7 @@ function loadVariant(i){
 }
 function saveVariant(){
   const v=cmpVariants[cmpIdx];
-  const name=(prompt('Save variant as:', `${entryName(getState(), getStored(), activeList(), presetSel.value)} · ${v.name}`)||'').trim();
+  const name=(prompt('Save variant as:', `${entryName(stateNow(), getStored(), activeList(), presetSel.value)} · ${v.name}`)||'').trim();
   if(!name) return;
   saveLook(name, v.params);
   closeCmp();
@@ -1609,11 +1609,12 @@ const link = parseHash(location.hash);
 const arbHost = {
   params, rows: presetRows,
   active: activeList, value: () => presetSel.value,
-  sync: () => refreshPresetSelect(),                            // re-list (the ☁ rows follow your presets), then the playlist select, the chip and the buttons that follow the active list
+  sync: () => refreshPresetSelect(),                            // re-list (your looks follow the mirror), then the playlist select, the chip and the buttons that follow the active list
   select: refreshPresetSelect,                                  // re-list the active playlist, on this entry
   reload: () => refreshPresetSelect(resumeAt()),                // ...after its items changed under it
   activate: setActive,
-  show: showStar,
+  showCloud,
+  keepLocal: saveStar,                                          // the session ended under a save: the look is kept here, as a ★, until you sign in
   advancedShown: () => !dev.classList.contains('hidden'),
 };
 arb = mount(arbHost);

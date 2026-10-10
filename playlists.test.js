@@ -1,9 +1,10 @@
 // Tests for playlists.js — the pure playlist model; the storage under it is arboretum.js (arboretum-storage.test.js). Run: `bun test playlists.test.js`.
 import { test, expect, beforeEach } from "bun:test";
 import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
-  cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted, onPushed,
+  cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted,
   uploadPlan, itemsAfter, playlists, plays, timing, starValue, starName, entryName,
-  fromEntry, onlineId, placeChange, cloudPresetId, sameLook, lookState, markPending, clearPending, pendingNames, playlistChips, fromVersion, linkPlaylist, writable, makePlayer } from "./playlists.js";
+  fromEntry, onlineId, placeChange, sameLook, lookState, playlistChips,
+  emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, isFolder, fromVersion, linkPlaylist, makePlayer } from "./playlists.js";
 import * as builtins from "./presets.js";
 import { DEFAULTS, cameraFor } from "./komorebi.js";
 
@@ -462,12 +463,6 @@ test("onDeleted removes the record of a deleted ★", () => {
   expect(state.origin.a).toBeDefined();
 });
 
-test("onPushed records the uploaded look as synced, from the response", () => {
-  const state = stateWith({ a: { parent: "look:x" } });
-  expect(onPushed(state, "a", { id: 31, version: 1, owner: "jo", name: "a", params: {} }).origin.a)
-    .toEqual({ id: 31, version: 1, owner: "jo", synced: true });
-});
-
 // ---- the smart upload (design §4.2) ---------------------------------------------------------
 
 const COMMIT = "a17b492a17b492a17b492a17b492a17b492a17b4";
@@ -677,15 +672,6 @@ test("linkPlaylist drops the owner's unavailable items, and fails on a playlist 
 
 // ---- someone else's playlist is read-only (design §3.5) ----------------------------------------
 
-test("writable: On this browser always; a cloud playlist only when it is yours", () => {
-  const s = cloud([item("one")]);   // owned by jo
-  expect(writable(s, "local", null)).toBe(true);
-  expect(writable(s, "arb:7", "jo")).toBe(true);
-  expect(writable(s, "arb:7", "ana")).toBe(false);
-  expect(writable(s, "arb:7", null)).toBe(false);   // not signed in: nothing to write with
-  expect(writable(s, "arb:9", "jo")).toBe(false);   // not cached
-});
-
 test("playlists labels a cached playlist that is not yours with its owner, once you are signed in", () => {
   let s = cachePlaylist(EMPTY, apiList({ owner: "jo" }));
   s = cachePlaylist(s, apiList({ id: 8, name: "evening", owner: "ana" }));
@@ -793,37 +779,6 @@ test("the local list is called all looks", () => {
   expect(playlists(EMPTY)).toEqual([{ value: "local", label: "all looks" }]);
 });
 
-const mineList = [{ id: 21, owner: "jo", name: "dusk", version: 1 }, { id: 22, owner: "jo", name: "dawn", version: 3 }];
-
-test("entries of all looks end with a ☁ row for each of your presets that has no ★ here, valued ☁<id>", () => {
-  expect(entries(EMPTY, { x: {} }, fake, false, "local", "a", mineList)).toEqual([
-    { value: "a", label: "• a" }, { value: "c", label: "• c" }, { value: "x", label: "★ x" },
-    { value: "☁21", label: "☁ dusk" }, { value: "☁22", label: "☁ dawn" }]);
-  expect(entries(EMPTY, {}, fake, false, "local", "a")).toEqual(entries(EMPTY, {}, fake, false, "local", "a", []));   // no list (signed out, no arboretum): none
-});
-
-test("a preset that already has a ★ appears once, as the ★ — synced or not", () => {
-  const state = { ...EMPTY, origin: { x: { id: 21, version: 1, owner: "jo", synced: true }, y: { id: 22, version: 1, owner: "jo", synced: false }, z: { parent: "look:a" } } };
-  const list = entries(state, { x: {}, y: {}, z: {} }, fake, false, "local", "a", mineList);
-  expect(list.map((e) => e.label)).toEqual(["• a", "• c", "★ x", "★ y", "★ z"]);
-  expect(entries(onDeleted(state, "x"), { y: {}, z: {} }, fake, false, "local", "a", mineList).map((e) => e.label)).toContain("☁ dusk");   // forgetting the ★ brings the row back
-});
-
-test("a cloud playlist's entries have no ☁ rows", () => {
-  expect(entries(cloud([item("one")]), {}, fake, false, "arb:7", "0", mineList).map((e) => e.label)).toEqual(["one"]);
-});
-
-test("cloudPresetId reads the id off a ☁ value, and nothing off any other", () => {
-  expect(cloudPresetId("☁21")).toBe(21);
-  for (const v of ["a", "★ a", "0", "", undefined, "☁", "☁x"]) expect(cloudPresetId(v)).toBeNull();
-});
-
-test("a ★ named like a ☁ value gets a value of its own, so the two never collide", () => {
-  expect(starValue("☁21")).toBe("★ ☁21");
-  expect(starName({ "☁21": {} }, "local", "★ ☁21")).toBe("☁21");
-  expect(starName({ "☁21": {} }, "local", "☁21")).toBeNull();
-});
-
 // ---- sameLook: the equality builtinTwin uses, for the chip's "edited" ----
 
 test("sameLook compares every DEFAULTS key, ignoring the overlays and drift_phase, with a tolerance on numbers", () => {
@@ -860,13 +815,9 @@ test("lookState: a ★ that is a synced arboretum preset", () => {
   expect(chipOf({ ...EMPTY, origin: { mine: synced } }, { mine: afternoon }, "local", "mine", afternoon).text).toBe("☁ #12 v2");
 });
 
-test("lookState: a ★ whose arboretum copy is behind, and one waiting to go up", () => {
+test("lookState: a ★ whose arboretum copy is behind", () => {
   const behind = { ...EMPTY, origin: { mine: { ...synced, synced: false } } };
   expect(chipOf(behind, { mine: afternoon }, "local", "mine", afternoon).text).toBe("★ saved here · ☁ #12 is older");
-  const waiting = markPending(behind, "mine");
-  expect(chipOf(waiting, { mine: afternoon }, "local", "mine", afternoon).text).toBe("⇡ waiting to go up");
-  const fresh = markPending({ ...EMPTY, origin: { mine: { parent: "look:afternoon 7" } } }, "mine");
-  expect(chipOf(fresh, { mine: afternoon }, "local", "mine", afternoon).text).toBe("⇡ waiting to go up");
 });
 
 test("lookState: an item of a cloud playlist, with its owner when it is not yours", () => {
@@ -905,41 +856,8 @@ test("lookState: the title is a sentence, and carries arboretum's last refusal f
 });
 
 test("lookState says nothing for a value that is not an entry", () => {
-  expect(chipOf(EMPTY, {}, "local", "☁21", afternoon)).toEqual({ text: "", title: "" });
+  expect(chipOf(EMPTY, {}, "local", "nope", afternoon)).toEqual({ text: "", title: "" });
   expect(chipOf(EMPTY, {}, "arb:9", "0", afternoon)).toEqual({ text: "", title: "" });
-});
-
-// ---- pending uploads ----
-
-test("markPending flags a ★'s record, keeping the rest of it; onPushed clears it, and so does forgetting the ★", () => {
-  const s = markPending({ ...EMPTY, origin: { a: { parent: "look:x" }, b: synced } }, "a");
-  expect(s.origin.a).toEqual({ parent: "look:x", pending: true });
-  expect(markPending(s, "b").origin.b).toEqual({ ...synced, pending: true });
-  expect(onPushed(s, "a", { id: 40, version: 1, owner: "jo" }).origin.a).toEqual({ id: 40, version: 1, owner: "jo", synced: true });
-  expect(onDeleted(s, "a").origin.a).toBeUndefined();
-});
-
-test("clearPending drops the flag and keeps the rest, for a refused upload that retrying would not help", () => {
-  const s = markPending({ ...EMPTY, origin: { a: { ...synced, synced: false } } }, "a");
-  expect(clearPending(s, "a").origin.a).toEqual({ ...synced, synced: false });
-  expect(clearPending(markPending(EMPTY, "a"), "a").origin.a).toBeUndefined();   // a record that was only the flag goes with it
-  expect(clearPending(EMPTY, "a")).toEqual(EMPTY);
-});
-
-test("markPending on a ★ with no record makes one, so an upload that never started can wait", () => {
-  expect(markPending(EMPTY, "a").origin.a).toEqual({ pending: true });
-});
-
-test("pendingNames lists the ★ looks marked pending, in the store's order, and not one that is gone", () => {
-  const s = markPending(markPending(markPending(EMPTY, "b"), "a"), "gone");
-  expect(pendingNames(s, { a: {}, b: {}, c: {} })).toEqual(["a", "b"]);
-  expect(pendingNames(EMPTY, { a: {} })).toEqual([]);
-});
-
-test("saving over a pending ★ keeps it pending (the copy is still behind); a new name starts fresh", () => {
-  const pending = markPending({ ...EMPTY, origin: { a: { ...synced } } }, "a");
-  expect(onSaved(pending, "a", { kind: "local", name: "a" }).origin.a).toEqual({ ...synced, synced: false, pending: true });
-  expect(onSaved(pending, "b", { kind: "local", name: "a" }).origin.b).toEqual({ parent: "preset:12@2" });
 });
 
 // ---- the playlists a look is in ----
@@ -964,4 +882,266 @@ test("playlistChips: one per playlist of yours, lit when this look's preset is a
   expect(playlistChips(state, { loose: {} }, "local", "loose", mine).every((c) => !c.lit)).toBe(true);
   expect(playlistChips(state, {}, "local", "afternoon 7", mine).every((c) => !c.lit)).toBe(true);
   expect(playlistChips(state, {}, "arb:8", "0", mine).map((c) => c.lit)).toEqual([true, true, false]);   // a cloud item: its own preset_id
+});
+
+// ---- cloud first: signed in, arboretum is where the looks live, and a full copy of it is kept here ---------------------------------
+
+const preset = (id, name, extra = {}) => ({ id, version: 1, owner: "jo", name, params: { exposure: id }, ...extra });
+const mirrorOf = (presets, lists = [], extra = {}) => {
+  const m = { ...emptyMirror(), at: Date.UTC(2026, 9, 10, 12), order: presets.map((p) => p.id), presets: Object.fromEntries(presets.map((p) => [p.id, p])), ...extra };
+  for (const l of lists) m.playlists.push({ id: l.id, name: l.name, owner: "jo", k: null, fetched_at: 1, unavailable: 0, items: l.ids.map((id) => ({ preset_id: id, version: 1, owner: "jo", name: m.presets[id]?.name ?? "?", dwell_s: 30, crossfade_s: 5, params: {} })) });
+  return m;
+};
+
+test("an empty mirror holds nothing, and says it was never refreshed", () => {
+  expect(emptyMirror()).toEqual({ v: 1, at: null, incomplete: false, order: [], presets: {}, playlists: [], queue: [] });
+});
+
+// ---- uncategorized: your presets that are in none of your playlists, newest first ----
+
+test("uncategorized is your presets minus every preset in your playlists, in the mirror's newest-first order", () => {
+  const m = mirrorOf([preset(5, "e"), preset(4, "d"), preset(3, "c"), preset(2, "b"), preset(1, "a")], [{ id: 7, name: "evening", ids: [4, 1] }, { id: 8, name: "morning", ids: [1, 2] }]);
+  expect(uncategorized(m).map((i) => i.name)).toEqual(["e", "c"]);
+});
+
+test("an uncategorized item looks like a playlist item, with arboretum's default times", () => {
+  const [it] = uncategorized(mirrorOf([preset(5, "e", { version: 3 })]));
+  expect(it).toEqual({ preset_id: 5, version: 3, owner: "jo", name: "e", dwell_s: 30, crossfade_s: 5, params: { exposure: 5 } });
+});
+
+test("another user's item in one of your playlists does not hide a preset of yours that shares no id with it", () => {
+  const m = mirrorOf([preset(5, "mine")], [{ id: 7, name: "evening", ids: [99] }]);   // 99 is someone else's: not in the mirror's presets
+  expect(uncategorized(m).map((i) => i.name)).toEqual(["mine"]);
+});
+
+test("a save that waits to go up is uncategorized too, newest first and marked pending; an update to a preset patches it where it is", () => {
+  let m = mirrorOf([preset(5, "e"), preset(4, "d")]);
+  m = enqueue(m, { kind: "preset", path: "/api/presets", body: { name: "fresh", params: { exposure: 9 } } });
+  m = enqueue(m, { kind: "version", path: "/api/presets/4/versions", body: { name: "d2", params: { exposure: 44 } } });
+  const items = uncategorized(m);
+  expect(items.map((i) => i.name)).toEqual(["fresh", "e", "d2"]);
+  expect(items[0]).toMatchObject({ pending: true, params: { exposure: 9 } });
+  expect(items[0].preset_id).toBeUndefined();
+  expect(items[2]).toMatchObject({ preset_id: 4, pending: true, params: { exposure: 44 } });
+  expect(items[1].pending).toBeUndefined();
+});
+
+// ---- the view: signed in, the mirror's lists join the state; signed out, there is no mirror ----
+
+test("viewState signed out is the state itself: the mirror shows nowhere", () => {
+  const state = { ...EMPTY, playlists: { 3: { id: 3, name: "linked", owner: "ana", items: [] } } };
+  const m = mirrorOf([preset(5, "e")], [{ id: 7, name: "evening", ids: [5] }], { queue: [{ seq: 1, kind: "preset", path: "/api/presets", body: { name: "q", params: {} } }] });
+  expect(viewState(state, m, null)).toBe(state);
+});
+
+test("viewState signed in adds your playlists and the uncategorized list, dated by the last refresh", () => {
+  const m = mirrorOf([preset(5, "e"), preset(4, "d")], [{ id: 7, name: "evening", ids: [4] }]);
+  const v = viewState(EMPTY, m, "jo");
+  expect(Object.keys(v.playlists).sort()).toEqual(["7", "unc"]);
+  expect(v.playlists.unc).toMatchObject({ id: "unc", name: "uncategorized", owner: "jo", fetched_at: m.at });
+  expect(v.playlists.unc.items.map((i) => i.name)).toEqual(["e"]);
+  expect(v.playlists[7].fetched_at).toBe(m.at);
+  expect(plays(v, "arb:unc")).toBe(true);
+  expect(entries(v, {}, fake, false, "arb:unc", "0").map((e) => e.label)).toEqual(["e"]);
+});
+
+test("a waiting update shows in the playlists that hold the preset, and a waiting new look in the folder it was saved into", () => {
+  let m = mirrorOf([preset(5, "e"), preset(4, "d")], [{ id: 7, name: "evening", ids: [4] }]);
+  m = enqueue(m, { kind: "version", path: "/api/presets/4/versions", body: { name: "d2", params: { exposure: 44 } } });
+  m = enqueue(m, { kind: "preset", path: "/api/presets", body: { name: "fresh", params: {} }, into: { playlist: 7, at: null } });
+  const items = viewState(EMPTY, m, "jo").playlists[7].items;
+  expect(items.map((i) => i.name)).toEqual(["d2", "fresh"]);
+  expect(items.map((i) => !!i.pending)).toEqual([true, true]);
+  expect(viewState(EMPTY, m, "jo").playlists.unc.items.map((i) => i.name)).toEqual(["e"]);   // the new look is in a folder: not uncategorized
+});
+
+// ---- the lists the select offers ----
+
+const labels = (c) => c.map((l) => `${l.value}=${l.label}`);
+
+test("signed out: all looks, then the cached playlists as before — the mirror is never offered", () => {
+  const m = mirrorOf([preset(5, "e")], [{ id: 7, name: "evening", ids: [5] }]);
+  const state = { ...EMPTY, playlists: { 3: { id: 3, name: "linked", owner: "ana", items: [] } } };
+  expect(labels(listChoices(viewState(state, m, null), { me: null, stored: { x: {} }, mirror: m }))).toEqual(["local=all looks", "arb:3=linked"]);
+});
+
+test("signed in: uncategorized, your playlists, built-ins — and on this browser only while un-moved ★s exist", () => {
+  const m = mirrorOf([preset(5, "e"), preset(4, "d")], [{ id: 8, name: "morning", ids: [4] }, { id: 7, name: "evening", ids: [] }]);
+  const v = viewState(EMPTY, m, "jo");
+  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:unc=uncategorized", "arb:8=morning", "arb:7=evening", "builtins=built-ins"]);
+  expect(labels(listChoices(v, { me: "jo", stored: { x: {} }, mirror: m })).at(-1)).toBe("local=on this browser");
+  const synced = { ...EMPTY, origin: { x: { id: 5, version: 1, owner: "jo", synced: true } } };
+  expect(labels(listChoices(viewState(synced, m, "jo"), { me: "jo", stored: { x: {} }, mirror: m })).at(-1)).toBe("builtins=built-ins");   // already in arboretum: not un-moved
+});
+
+test("uncategorized is hidden when it is empty and you have other folders — unless you are in it", () => {
+  const m = mirrorOf([preset(4, "d")], [{ id: 8, name: "morning", ids: [4] }]);
+  const v = viewState(EMPTY, m, "jo");
+  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:8=morning", "builtins=built-ins"]);
+  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m, active: "arb:unc" }))[0]).toBe("arb:unc=uncategorized");
+  const none = mirrorOf([]);
+  expect(labels(listChoices(viewState(EMPTY, none, "jo"), { me: "jo", stored: {}, mirror: none }))).toEqual(["arb:unc=uncategorized", "builtins=built-ins"]);   // no folders at all: it always exists
+});
+
+test("signed in: a playlist cached from a link is listed after yours, with its owner", () => {
+  const m = mirrorOf([preset(5, "e")], [{ id: 8, name: "morning", ids: [] }]);
+  const state = { ...EMPTY, playlists: { 3: { id: 3, name: "linked", owner: "ana", items: [] } } };
+  expect(labels(listChoices(viewState(state, m, "jo"), { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:unc=uncategorized", "arb:8=morning", "arb:3=linked · ana", "builtins=built-ins"]);
+});
+
+test("isFolder: a playlist of yours that can be written to, not uncategorized, not someone else's", () => {
+  const m = mirrorOf([], [{ id: 8, name: "morning", ids: [] }]);
+  const state = { ...EMPTY, playlists: { 3: { id: 3, name: "linked", owner: "ana", items: [] } } };
+  const v = viewState(state, m, "jo");
+  expect(isFolder(v, "arb:8", "jo")).toBe(true);
+  expect(isFolder(v, "arb:unc", "jo")).toBe(false);
+  expect(isFolder(v, "arb:3", "jo")).toBe(false);
+  expect(isFolder(v, "builtins", "jo")).toBe(false);
+  expect(isFolder(v, "local", "jo")).toBe(false);
+});
+
+// ---- entries per list ----
+
+test("entries of built-ins are the built-ins alone; signed in, on this browser is the un-moved ★s alone; signed out, all looks are both", () => {
+  const stored = { x: {}, y: {} };
+  const state = { ...EMPTY, origin: { y: { id: 5, version: 1, owner: "jo", synced: true } } };
+  expect(entries(state, stored, fake, false, "builtins", "a").map((e) => e.label)).toEqual(["• a", "• c"]);
+  expect(entries(state, stored, fake, false, "local", "a", true).map((e) => e.label)).toEqual(["★ x"]);
+  expect(entries(state, stored, fake, false, "local", "a").map((e) => e.label)).toEqual(["• a", "• c", "★ x", "★ y"]);
+});
+
+test("a built-ins value loads its built-in, even beside a ★ of the same name", () => {
+  expect(resolve(EMPTY, { "afternoon 7": { exposure: 9 } }, "builtins", "afternoon 7").exposure).toBe(builtins.PRESETS["afternoon 7"].exposure);
+});
+
+// ---- the mirror, kept in step with arboretum ----
+
+const summaries = (...ps) => ps.map(({ id, version = 1, name, owner = "jo" }) => ({ id, version, name, owner }));
+
+test("mirrorDiff names the presets to fetch — new ones and ones whose version moved — and not the unchanged", () => {
+  const m = mirrorOf([preset(5, "e"), preset(4, "d", { version: 2 }), preset(3, "c")]);
+  const d = mirrorDiff(m, summaries({ id: 6, name: "f" }, { id: 5, name: "e" }, { id: 4, version: 3, name: "d" }));
+  expect(d.fetch).toEqual([6, 4]);
+  expect(d.order).toEqual([6, 5, 4]);
+  expect(d.gone).toEqual([3]);
+});
+
+test("mirrorSync keeps the unchanged presets as they were, takes the fetched ones, drops the gone ones, and dates the refresh", () => {
+  const m = mirrorOf([preset(5, "e"), preset(3, "c")]);
+  const fetched = { 6: { id: 6, owner: "jo", name: "f", version: 1, params: { exposure: 6 } } };
+  const out = mirrorSync(m, summaries({ id: 6, name: "f" }, { id: 5, name: "e" }), fetched, [], [], 1234);
+  expect(out.order).toEqual([6, 5]);
+  expect(out.presets[5]).toBe(m.presets[5]);
+  expect(out.presets[6]).toEqual({ id: 6, version: 1, owner: "jo", name: "f", params: { exposure: 6 } });
+  expect(out.presets[3]).toBeUndefined();
+  expect(out.at).toBe(1234);
+});
+
+test("mirrorSync takes your playlists' views in the order arboretum lists them; one that could not be fetched keeps its old copy; the queue is untouched", () => {
+  const m = mirrorOf([], [{ id: 7, name: "old seven", ids: [] }, { id: 9, name: "gone", ids: [] }], { queue: [{ seq: 1, kind: "preset", path: "/api/presets", body: { name: "q", params: {} } }] });
+  const sums = [{ id: 8, name: "eight" }, { id: 7, name: "seven" }];
+  const out = mirrorSync(m, [], {}, sums, [{ id: 8, name: "eight", owner: "jo", items: [] }, null], 5);
+  expect(out.playlists.map((l) => l.id)).toEqual([8, 7]);
+  expect(out.playlists.find((l) => l.id === 7).name).toBe("old seven");
+  expect(out.playlists.find((l) => l.id === 8).name).toBe("eight");
+  expect(out.queue).toEqual(m.queue);
+});
+
+test("mirrorPut files a preset at the front of the order, whether new or a new version", () => {
+  const m = mirrorOf([preset(5, "e"), preset(4, "d")]);
+  const out = mirrorPut(m, preset(4, "d2", { version: 2 }));
+  expect(out.order).toEqual([4, 5]);
+  expect(out.presets[4].version).toBe(2);
+  expect(mirrorPut(m, preset(9, "n")).order).toEqual([9, 5, 4]);
+});
+
+test("mirrorPlaylist files a playlist's view as cachePlaylist stores it, unavailable items out", () => {
+  const out = mirrorPlaylist(emptyMirror(), { id: 7, name: "evening", owner: "jo", items: [{ preset_id: 5, version: 1, owner: "jo", name: "e", dwell_s: 1, crossfade_s: 1, params: {} }, { preset_id: 99, dwell_s: 1, crossfade_s: 1, unavailable: true }] });
+  expect(out.playlists[0].items.map((i) => i.preset_id)).toEqual([5]);
+  expect(out.playlists[0].unavailable).toBe(1);
+});
+
+// ---- saves that wait ----
+
+test("the queue keeps saves in the order they were made, numbered, and dequeue takes one out by its number", () => {
+  let m = emptyMirror();
+  m = enqueue(m, { kind: "preset", path: "/api/presets", body: { name: "a", params: {} } });
+  m = enqueue(m, { kind: "preset", path: "/api/presets", body: { name: "b", params: {} } });
+  m = enqueue(m, { kind: "version", path: "/api/presets/4/versions", body: { name: "c", params: {} } });
+  expect(m.queue.map((q) => [q.seq, q.body.name])).toEqual([[1, "a"], [2, "b"], [3, "c"]]);
+  const rest = dequeue(m, 2);
+  expect(rest.queue.map((q) => q.body.name)).toEqual(["a", "c"]);
+  expect(enqueue(rest, { kind: "preset", path: "/api/presets", body: { name: "d", params: {} } }).queue.at(-1).seq).toBe(4);   // numbers are never reused while others wait
+});
+
+// ---- moving the local looks in ----
+
+const edited = { ...afternoon, exposure: afternoon.exposure + 0.5 };
+
+test("moveCandidates are the ★s that are not yet a synced arboretum preset", () => {
+  const state = { ...EMPTY, origin: { synced: { id: 5, version: 1, owner: "jo", synced: true }, behind: { id: 6, version: 1, owner: "jo", synced: false }, child: { parent: "look:afternoon 7" } } };
+  expect(moveCandidates(state, { synced: {}, behind: {}, child: {}, loose: {} })).toEqual(["behind", "child", "loose"]);
+  expect(moveCandidates(EMPTY, {})).toEqual([]);
+});
+
+test("movePlan plans each as uploadPlan does: a new version of a preset of yours, a new preset (with its parent) otherwise, a refusal for an unchanged built-in", () => {
+  const state = { ...EMPTY, origin: { behind: { id: 6, version: 2, owner: "jo", synced: false }, child: { parent: "look:afternoon 7" } } };
+  const stored = { behind: edited, child: edited, twin: afternoon };
+  const plans = movePlan(state, stored, "jo", COMMIT, cameraFor);
+  expect(plans.map((p) => p.name)).toEqual(["behind", "child", "twin"]);
+  expect(plans[0].plan).toMatchObject({ kind: "version", path: "/api/presets/6/versions", body: { name: "behind", komorebi_commit: COMMIT } });
+  expect(plans[1].plan).toMatchObject({ kind: "preset", path: "/api/presets", body: { name: "child", parent: "look:afternoon 7" } });
+  expect(plans[2].plan.refused).toMatch(/afternoon 7/);
+});
+
+// ---- saving when signed in: every save goes to arboretum, and never asks where ----
+
+test("savePlan in a folder of yours is the playlist rules as they were: a new version of the item, or a new preset placed there", () => {
+  const m = mirrorOf([preset(5, "e")], [{ id: 8, name: "morning", ids: [5] }]);
+  const v = viewState(EMPTY, m, "jo");
+  const same = savePlan(v, {}, "arb:8", "0", edited, "jo", null, cameraFor, "e");
+  expect(same).toMatchObject({ kind: "version", path: "/api/presets/5/versions", into: { playlist: 8, at: 0 }, target: "folder" });
+  const fresh = savePlan(viewState(EMPTY, mirrorOf([], [{ id: 8, name: "morning", ids: [] }]), "jo"), {}, "arb:8", "", edited, "jo", null, cameraFor, "new");
+  expect(fresh).toMatchObject({ kind: "preset", into: { playlist: 8, at: null }, target: "folder" });
+});
+
+test("savePlan outside a folder targets uncategorized: from a built-in a new preset parented on it", () => {
+  const p = savePlan(EMPTY, {}, "builtins", "afternoon 7", edited, "jo", COMMIT, cameraFor, "mine");
+  expect(p).toMatchObject({ kind: "preset", path: "/api/presets", target: "unc", body: { name: "mine", parent: "look:afternoon 7", komorebi_commit: COMMIT } });
+  expect(p.body.params).toEqual(edited);
+  expect(p.into).toBeUndefined();
+});
+
+test("savePlan from an uncategorized item of yours is a new version of it; from someone else's playlist, a new preset parented on theirs", () => {
+  const m = mirrorOf([preset(5, "e", { version: 3 })]);
+  const v = viewState(EMPTY, m, "jo");
+  expect(savePlan(v, {}, "arb:unc", "0", edited, "jo", null, cameraFor, "e2")).toMatchObject({ kind: "version", path: "/api/presets/5/versions", target: "unc", body: { name: "e2" } });
+  const theirs = { ...EMPTY, playlists: { 3: { id: 3, name: "linked", owner: "ana", items: [{ preset_id: 6, version: 3, owner: "ana", name: "dusk", dwell_s: 1, crossfade_s: 1, params: afternoon }] } } };
+  const p = savePlan(theirs, {}, "arb:3", "0", edited, "jo", null, cameraFor, "mine");
+  expect(p).toMatchObject({ kind: "preset", target: "unc", body: { name: "mine", parent: "preset:6@3" } });
+  expect(p.into).toBeUndefined();
+});
+
+test("savePlan from an un-moved ★ carries its parent; an unchanged built-in is refused; a pasted look with no origin is a plain new preset", () => {
+  const state = { ...EMPTY, origin: { star: { parent: "look:afternoon 7" } } };
+  expect(savePlan(state, { star: edited }, "local", "star", edited, "jo", null, cameraFor, "again").body.parent).toBe("look:afternoon 7");
+  expect(savePlan(EMPTY, {}, "builtins", "afternoon 7", afternoon, "jo", null, cameraFor, "same").refused).toMatch(/afternoon 7/);
+  const pasted = savePlan(EMPTY, {}, "builtins", "memories", { ...edited, seed: 5 }, "jo", null, cameraFor, "pasted");
+  expect(pasted.kind).toBe("preset");
+});
+
+test("savePlan tags a look experimental when its camera is not the floor", () => {
+  const curtain = { ...clone("curtain 1"), seed: clone("curtain 1").seed + 1 };
+  expect(savePlan(EMPTY, {}, "builtins", "curtain 1", curtain, "jo", null, cameraFor, "c").body.tags).toEqual(["experimental"]);
+});
+
+// ---- the chip, for the mirror ----
+
+test("lookState: a waiting save is ⇡ waiting to go up, and the title says when the copy here is incomplete", () => {
+  const m = enqueue(mirrorOf([preset(5, "e")]), { kind: "preset", path: "/api/presets", body: { name: "q", params: afternoon } });
+  const v = viewState(EMPTY, m, "jo");
+  expect(lookState(v, {}, "arb:unc", "0", afternoon, "jo").text).toBe("⇡ waiting to go up");
+  expect(lookState(v, {}, "arb:unc", "1", { ...preset(5, "e").params }, "jo", { offline: true }).text).toBe("offline copy · 2026-10-10");
+  expect(lookState(v, {}, "arb:unc", "1", preset(5, "e").params, "jo", { offline: true, incomplete: true }).title).toContain("offline copy incomplete");
+  expect(lookState(v, {}, "arb:unc", "1", preset(5, "e").params, "jo").title).not.toContain("incomplete");
 });
