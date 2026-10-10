@@ -313,6 +313,62 @@ test("opening the mirrored owned head lands on its cloud entry", async () => {
   expect(model.resolve(s.a.view(), getStored(), opened.list, opened.value)).toEqual(head.params);
 });
 
+function welcomeGate(hash, opened) {
+  const classes = new Set(["intro"]), loaded = [], transitions = [], hints = [];
+  const welcome = { style: {}, classList: { add() {} } };
+  let click;
+  const feel = { addEventListener: (_event, fn) => { click = fn; }, click: () => click() };
+  const scope = {
+    document: { body: { classList: { remove: (c) => classes.delete(c) } }, getElementById: (id) => id === "feel" ? feel : welcome },
+    performance: { now: () => 0 }, setTimeout() {},
+    location: { hash, pathname: "/", search: "" }, history: { replaceState() {} },
+    eng: { trans: { active: false }, transitionTo: (p, opts) => { transitions.push({ p, duration: opts.duration }); opts.onEnd(); } },
+    applyParams: (p) => loaded.push(p), resolveEntry: (value) => ({ value }), getPreset: () => ({}), DEFAULT_PRESET: "default",
+    settings: {}, saveSettings() {}, landing: () => "default", showHint: (s) => hints.push(s),
+    endTween() {}, refreshPresetSelect() {}, syncAllControls() {}, slideInPanel() {}, stripWake() {}, player: { start() {} },
+    parseHash, mount: () => ({ open: () => opened }), params: {}, presetRows: {}, activeList: () => "local",
+    presetSel: { value: "" }, resumeAt() {}, setActive() {}, showCloud() {}, saveStar() {}, dev: { classList: { contains: () => true } }, syncPlaylistUI() {},
+  };
+  const source = readFileSync("editor.js", "utf8");
+  const start = source.indexOf("(()=> {", source.indexOf("// Welcome gate"));
+  new Function(...Object.keys(scope), source.slice(start))(...Object.values(scope));
+  return { classes, welcome, feel, loaded, transitions, hints };
+}
+const settleGate = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
+
+test("a preset permalink skips feel and loads the requested look without the welcome crossfade", async () => {
+  let resolve;
+  const opened = new Promise((done) => { resolve = done; });
+  const gate = welcomeGate("#arboretum=22", opened);
+  expect(gate.classes.has("intro")).toBe(false);
+  expect(gate.welcome.style.display).toBe("none");
+  resolve({ value: "requested" });
+  await settleGate();
+  expect(gate.loaded).toEqual([{ value: "requested" }]);
+  expect(gate.transitions).toEqual([]);
+});
+
+test("ordinary visits and playlist links still wait for feel", async () => {
+  for (const hash of ["", "#arboretum-playlist=7", "#arboretum=invalid"]) {
+    const gate = welcomeGate(hash, Promise.resolve({ list: "arb:7", value: "0", play: true }));
+    await settleGate();
+    expect(gate.classes.has("intro")).toBe(true);
+    expect(gate.loaded).toEqual([]);
+    expect(gate.transitions).toEqual([]);
+    gate.feel.click();
+    await settleGate();
+    expect(gate.classes.has("intro")).toBe(false);
+    expect(gate.transitions[0].duration).toBe(4);
+  }
+});
+
+test("a failed preset permalink still shows its reason and opens the default look", async () => {
+  const gate = welcomeGate("#arboretum=22", Promise.resolve({ failed: "not found" }));
+  await settleGate();
+  expect(gate.hints).toEqual(["arboretum: not found"]);
+  expect(gate.loaded).toEqual([{ value: "default" }]);
+});
+
 test("with detect null, mounting makes no fetch and builds nothing", async () => {
   for (const loc of [at("example.org"), at("fork.github.io"), at("localhost", "/index.html"), at("localhost", "/")]) {
     const f = spy({});

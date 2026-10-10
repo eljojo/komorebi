@@ -861,7 +861,6 @@ try {
     {
       const dusk = { id: 31, owner: 'ana', name: 'k6 forked', version: 1, params: PRESETS.memories };
       const { ctx, pg, own, theirs } = await open6('#arboretum=31', (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(dusk) }));
-      await pg.click('#feel');
       const there = await pg.waitForFunction(() => document.querySelector('#dev select').value === 'k6 forked', null, { timeout: 60000 }).then(() => true, () => false);
       check('a #arboretum= link at /index.html is one cookie-less GET to arboretum\'s own origin, and lands as a ★', there && theirs.join() === 'GET /api/presets/31 cookie:-' && own.length === 0, `${there} ${theirs.join()} ${own.join()}`);
       const rec = await pg.evaluate(() => ({ star: 'k6 forked' in JSON.parse(localStorage.getItem('komorebi.presets') || '{}'), origin: JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin?.['k6 forked'], marker: document.body.dataset.arboretum, ui: !!document.querySelector('.arb-cta, .arb-inrow, .arb-who') }));
@@ -870,7 +869,6 @@ try {
     }
     {
       const { ctx, pg, theirs } = await open6('#arboretum=31', (route) => route.abort('failed'));   // a browser that blocks the read (CORS), or a network that fails
-      await pg.click('#feel');
       const said = await pg.waitForFunction(() => document.getElementById('hint').textContent === 'arboretum: arboretum unreachable' && !document.getElementById('hint').classList.contains('gone'), null, { timeout: 20000 }).then(() => true, () => false);
       await pg.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
       check('a link the browser blocks is said quietly through the key-hint line, and the editor lands as usual', said && theirs.length === 1 && (await pg.$eval('#dev select', (s) => s.value)) === 'afternoon 7', `${said} ${theirs.join()}`);
@@ -1287,11 +1285,10 @@ try {
     const until5 = (pg, fn, arg, ms = 60000) => pg.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false);
     const landed = (pg, value) => until5(pg, (v) => document.querySelector('#dev select').value === v, value);
 
-    // #arboretum=<id>: saved into all looks, "feel" lands on it, the hash is cleared
+    // #arboretum=<id>: saved into all looks, lands directly without "feel", the hash is cleared
     {
       const dusk = { id: 12, owner: 'ana', name: 'k5 dusk', version: 2, params: PRESETS.memories };
       const { ctx, pg, seen } = await open5('#arboretum=12', healthy((u, json) => (u.pathname === '/api/presets/12' ? json(200, dusk) : json(401, { error: 'sign in' }))));
-      await pg.click('#feel');
       const there = await landed(pg, 'k5 dusk');
       const a = await pg.evaluate(() => ({
         label: [...document.querySelectorAll('#dev select')[0].options].find((o) => o.selected)?.textContent,
@@ -1299,8 +1296,9 @@ try {
         origin: JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin?.['k5 dusk'],
         list: JSON.parse(localStorage.getItem('komorebi.editor') || '{}').playlist,
         hash: location.hash,
+        intro: document.body.classList.contains('intro'), welcome: getComputedStyle(document.getElementById('welcome')).display,
       }));
-      check('#arboretum=12: it asks for preset 12, and after "feel" the dev select reads the imported ★, saved in all looks', there && seen.includes('/api/presets/12') && a.label === '★ k5 dusk' && a.star && a.list === 'local', JSON.stringify({ there, ...a }));
+      check('#arboretum=12: it asks for preset 12, and without "feel" the dev select reads the imported ★, saved in all looks', there && seen.includes('/api/presets/12') && a.label === '★ k5 dusk' && a.star && a.list === 'local' && !a.intro && a.welcome === 'none', JSON.stringify({ there, ...a }));
       check('it is a synced copy of #12 v2 by ana, and the hash is cleared', a.origin?.id === 12 && a.origin.version === 2 && a.origin.owner === 'ana' && a.origin.synced === true && a.hash === '', JSON.stringify(a));
       await ctx.close();
     }
@@ -1313,7 +1311,6 @@ try {
         if (u.pathname === '/api/presets/12/versions/2') return json(200, v2);
         return u.pathname === '/api/presets/12' ? json(200, head) : json(404, { error: 'not found' });
       }));
-      await pg.click('#feel');
       const there = await landed(pg, 'k5 pinned');
       const rec = await pg.evaluate(() => JSON.parse(localStorage.getItem('komorebi.arboretum') || '{}').origin?.['k5 pinned']);
       check('#arboretum=12@2&k=tok requests /versions/2?k=tok', seen.includes('/api/presets/12/versions/2?k=tok'), seen.join());
@@ -1323,8 +1320,7 @@ try {
     // a failed link: afternoon 7, and the reason through the hint
     {
       const { ctx, pg } = await open5('#arboretum=99', healthy((_u, json) => json(404, { error: 'not found' })));
-      await pg.click('#feel');
-      const said = await until5(pg, () => document.getElementById('hint').textContent === 'arboretum: not found' && !document.getElementById('hint').classList.contains('gone'), null, 20000);   // it is up for ten seconds from "feel"
+      const said = await until5(pg, () => document.getElementById('hint').textContent === 'arboretum: not found' && !document.getElementById('hint').classList.contains('gone'), null, 20000);   // it is up for ten seconds from the failed fetch
       check('a 404 link shows "arboretum: not found" through the hint', said);
       await pg.keyboard.press('h');
       const keys = await pg.evaluate(() => document.getElementById('hint').textContent);

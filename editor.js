@@ -1583,6 +1583,7 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
 // An arboretum link (#arboretum=…, #arboretum-playlist=…) changes where it lands: on the look the link brought in, or on
 // the first item of the playlist it opened, which then plays (editor-integration-design §5). The link's fetch starts as
 // soon as arboretum mounts, so it is usually done by "feel"; if not, the crossfade waits for it, five seconds at most.
+// Preset permalinks bypass "feel" and the welcome crossfade: the requested look is applied as soon as it arrives.
 // ===========================================================================
 (()=> {
   const welcome=document.getElementById('welcome'), feel=document.getElementById('feel');
@@ -1604,6 +1605,7 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
     const target=at ?? landing();
     let settled=false;
     const landed=()=>{ refreshPresetSelect(target); syncAllControls(); if(playOnce){ playOnce=false; player.start(target); } };   // the first look has no fade in: its dwell starts here
+    if(link?.preset){ applyParams(resolveEntry(target) ?? getPreset(DEFAULT_PRESET)); landed(); arrive(); return; }
     eng.transitionTo(resolveEntry(target) ?? getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec §9)
       onEnd:()=>{ settled=true; endTween(); landed(); setTimeout(arrive,300); } });
     setTimeout(()=>{ if(!settled) landed(); arrive(); }, 5500);  // fallback if onEnd never fires
@@ -1612,7 +1614,8 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
     if(started) return; started=true;
     document.body.classList.remove('intro');        // un-dim the canvas to full strength
     welcome.classList.add('out');                   // dissolve the intro text
-    setTimeout(()=>{ welcome.style.display='none'; }, 1000);
+    if(link?.preset) welcome.style.display='none';
+    else setTimeout(()=>{ welcome.style.display='none'; }, 1000);
     endTween();
     if(!link){ land(null); return; }
     Promise.race([linkReady, new Promise((ok)=>setTimeout(()=>ok({ failed:'no answer in time' }), 5000))])
@@ -1641,3 +1644,4 @@ arb = mount(arbHost);
 syncPlaylistUI();
 // A link is opened as soon as arboretum is up; `linkReady` is what the welcome gate waits on (null without a link).
 const linkReady = link ? arb.open(link) : null;
+if(link?.preset) document.getElementById('feel').click();
