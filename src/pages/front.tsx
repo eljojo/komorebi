@@ -129,13 +129,6 @@ export function registerFrontPages(app: Hono<AppEnv>) {
             In <a href={`${BASE}/settings`}>settings</a> you can make a token that lets an agent read, or read and write, as you. What it
             makes stays private; making something public is always your own act, in a browser.
           </p>
-
-          <h2>And the rest</h2>
-          <p>
-            Read <a href="/about">about</a> komorebi, watch the looks drift in the <a href="/player.html">player</a>, or go straight to the
-            light.
-          </p>
-          <a class="feel" href="/">open komorebi</a>
         </div>
       </Layout>,
     );

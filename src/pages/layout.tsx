@@ -31,7 +31,6 @@ export function Layout(props: { title: string; viewer: Actor | null; scripts?: s
             <nav>
               <a href={BASE}>arboretum</a>
               <a href="/about">about</a>
-              <a href="/player.html">player</a>
               {viewer ? (
                 <>
                   <a href={`${BASE}/new`}>new</a>
@@ -42,7 +41,8 @@ export function Layout(props: { title: string; viewer: Actor | null; scripts?: s
                 <a href={`${BASE}/login`}>sign in</a>
               )}
             </nav>
-            <a class="feel" href="/">open komorebi</a>
+            {/* Straight into the light: the welcome's own "feel", without the welcome (index.html reads #feel). */}
+            <a class="feel" href="/#feel">open komorebi</a>
           </header>
           <main class={props.wide ? 'wide' : undefined}>{props.children}</main>
           {props.classic?.map((src) => <script src={src}></script>)}

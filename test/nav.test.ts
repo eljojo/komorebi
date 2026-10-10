@@ -23,7 +23,6 @@ const NAV = [
   'href="/"',
   'href="/arboretum"',
   'href="/about"',
-  'href="/player.html"',
 ];
 
 describe('every page carries komorebi’s links', () => {
@@ -31,9 +30,11 @@ describe('every page carries komorebi’s links', () => {
     for (const [, path] of await pages()) {
       const r = await get(path);
       for (const part of NAV) expect(r.text, `${path} ${part}`).toContain(part);
-      expect(r.text, path).toMatch(/<a[^>]*href="\/"[^>]*>open komorebi<\/a>/);
+      expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
       expect(r.text, path).toMatch(/<a[^>]*href="\/"[^>]*>komorebi<\/a>/);
       expect(r.text, path).toContain('href="/arboretum/login"');
+      expect(r.text, path).not.toContain('player.html');
+      expect(r.text.match(/>open komorebi</g), path).toHaveLength(1);
       expect(r.text, path).toMatch(/<title>[^<]* · komorebi<\/title>/);
       expect(r.text, path).not.toContain('· arboretum</title>');
     }
@@ -45,7 +46,7 @@ describe('every page carries komorebi’s links', () => {
       const r = await asSession(user, 'GET', path);
       expect(r.status, path).toBe(200);
       for (const part of NAV) expect(r.text, `${path} ${part}`).toContain(part);
-      expect(r.text, path).toMatch(/<a[^>]*href="\/"[^>]*>open komorebi<\/a>/);
+      expect(r.text, path).toMatch(/<a[^>]*href="\/#feel"[^>]*>open komorebi<\/a>/);
       expect(r.text, path).toContain('href="/arboretum/new"');
       expect(r.text, path).toContain('href="/arboretum/settings"');
       expect(r.text, path).toContain(`href="/arboretum/u/${user.username}"`);
