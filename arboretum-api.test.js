@@ -91,6 +91,12 @@ test("a write sends its body as JSON with the Content-Type arboretum's CSRF guar
   expect(read.headers).toBeUndefined();
 });
 
+test("playlist writes send the revision of the items the caller read", async () => {
+  const f = fake({ body: {} });
+  await api(ORIGIN, f.fetchImpl).putItems(7, [{ preset_id: 12 }], 4);
+  expect(JSON.parse(f.calls[0].init.body)).toEqual({ revision: 4, items: [{ preset_id: 12 }] });
+});
+
 test("a 2xx answer resolves with its JSON", async () => {
   const f = fake({ status: 201, body: { id: 12, version: 1 } });
   expect(await api(ORIGIN, f.fetchImpl).create({ name: "x", params: {} })).toEqual({ id: 12, version: 1 });

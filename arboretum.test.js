@@ -232,6 +232,29 @@ test("a fork replaces its original playlist item after a concurrent reorder", as
   expect(writes).toEqual([wireItems([two, { ...one, preset_id: 3 }])]);
 });
 
+test("a playlist revision conflict keeps the uploaded fork uncategorized and does not retry", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  setMirror(folderMirror([playlistItem(1, "bob")]));
+  let active = "local";
+  const writes = [], shown = [];
+  const s = await session(async (url, init) => {
+    if (url === "./commit.json") return new Response("{}", { status: 404 });
+    if (init.method === "POST") return json({ id: 3, version: 1, owner: "alice" });
+    if (init.method === "PUT") {
+      writes.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ error: "that playlist changed; reload it before saving the list" }), { status: 409 });
+    }
+    return json({ id: 7, revision: 4, owner: "alice", items: [playlistItem(1, "bob")] });
+  }, { active: () => active, value: () => "0", showCloud: (...args) => shown.push(args) });
+  active = "arb:7";
+  await s.a.saveCloud("fork", { exposure: 99 });
+  expect(writes).toHaveLength(1);
+  expect(writes[0].revision).toBe(4);
+  expect(getMirror().presets[3].params).toEqual({ exposure: 99 });
+  expect(shown).toEqual([["arb:unc", { id: 3 }]]);
+  expect(s.elements.find((e) => e.className === "arb-status").textContent).toMatch(/playlist changed/);
+});
+
 test("a vanished playlist item cannot cause a write to another item", async () => {
   setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
   const one = playlistItem(1), two = playlistItem(2);

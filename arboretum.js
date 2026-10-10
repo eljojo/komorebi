@@ -342,7 +342,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     if ((change.kind === "remove" || change.kind === "replace") && !change.target)
       throw { error: "that playlist item changed; reload the playlist before changing it" };
     const fresh = await api.playlist(id);
-    const v = await api.putItems(id, itemsAfter(fresh.items, change));
+    const v = await api.putItems(id, itemsAfter(fresh.items, change), fresh.revision);
     cacheView(v);
     return v;
   }
