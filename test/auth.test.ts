@@ -241,6 +241,37 @@ describe('CORS on /api/*', () => {
     expect((await actual('GET', '/api/me', 'https://evil.example')).get('Access-Control-Allow-Origin')).toBeNull();
   });
 
+  // Any editor, on any host, may read a look or a playlist it was handed a link to (José, 2026-10-10: "ideally any
+  // editor would be able to load presets from arboretum if the browser allowed the ajax request"). The grant is `*`
+  // without credentials, so a browser never lets a page read a credentialed answer through it: what anyone reads
+  // this way is what an anonymous visitor may see.
+  const READ_ROUTES = ['/api/presets/1', '/api/presets/1/versions', '/api/presets/1/versions/2', '/api/playlists/1'];
+  it.each(READ_ROUTES)('lets any origin read GET %s, without credentials', async (path) => {
+    for (const origin of ['https://evil.example', 'http://localhost:8000', 'https://eljojo.net', 'null']) {
+      const h = await actual('GET', path, origin);
+      expect(h.get('Access-Control-Allow-Origin'), origin).toBe('*');
+      expect(h.get('Access-Control-Allow-Credentials'), origin).toBeNull();
+      const p = await preflight(path, origin, 'GET');
+      expect(p.get('Access-Control-Allow-Origin'), `${origin} preflight`).toBe('*');
+      expect(p.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim())).toEqual(['GET']);
+    }
+  });
+
+  it('keeps the komorebi origin credentialed on the read routes', async () => {
+    const h = await actual('GET', '/api/presets/1', KOMOREBI);
+    expect(h.get('Access-Control-Allow-Origin')).toBe(KOMOREBI);
+    expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
+  });
+
+  it.each(['GET /api/presets', 'GET /api/playlists', 'GET /api/me', 'GET /api/export', 'POST /api/presets/1/versions', 'PUT /api/playlists/1/items'])(
+    'grants other origins nothing on %s',
+    async (route) => {
+      const [method, path] = route.split(' ');
+      expect((await actual(method, path, 'https://evil.example')).get('Access-Control-Allow-Origin')).toBeNull();
+      expect((await preflight(path, 'https://evil.example', method)).get('Access-Control-Allow-Origin')).toBeNull();
+    },
+  );
+
   it('also reaches a 415, so the editor can read the refusal', async () => {
     const res = await createApp().request(
       '/api/presets',

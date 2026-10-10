@@ -24,6 +24,10 @@ const EDITOR_ROUTES: [string, RegExp][] = [
   ['PUT', /^\/api\/playlists\/[^/]+\/items$/],
 ];
 
+// What any editor on any host may read: one look (head or a version) and one playlist, the things a link names.
+// Listings, `me` and every write stay the komorebi origin's alone.
+const READ_ROUTES: RegExp[] = [/^\/api\/presets\/[^/]+(\/versions(\/[^/]+)?)?$/, /^\/api\/playlists\/[^/]+$/];
+
 const HARDENING_HEADERS = {
   'Content-Security-Policy': "frame-ancestors 'none'",
   'X-Frame-Options': 'DENY',
@@ -58,9 +62,17 @@ export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) 
     allowMethods: (_origin, c) => EDITOR_ROUTES.filter(([, path]) => path.test(c.req.path)).map(([m]) => m),
     allowHeaders: ['Content-Type', 'Authorization'],
   });
+  // The anonymous read grant: `*` and no credentials, so a browser never hands a page a credentialed answer through
+  // it, and what another host reads is what an anonymous visitor may see (José: "any editor would be able to load
+  // presets from arboretum if the browser allowed the ajax request").
+  const readCors = cors({ origin: '*', allowMethods: ['GET'] });
   app.use('/api/*', (c, next) => {
     const method = c.req.method === 'OPTIONS' ? c.req.header('Access-Control-Request-Method') : c.req.method;
-    return EDITOR_ROUTES.some(([m, path]) => m === method && path.test(c.req.path)) ? editorCors(c, next) : next();
+    const origin = c.req.header('Origin');
+    const editor = EDITOR_ROUTES.some(([m, path]) => m === method && path.test(c.req.path));
+    if (editor && origin !== undefined && CORS_ORIGINS.includes(origin)) return editorCors(c, next);
+    if (method === 'GET' && READ_ROUTES.some((path) => path.test(c.req.path))) return readCors(c, next);
+    return editor ? editorCors(c, next) : next();
   });
 
   // A params object is at most 16 KB (spec §5), so nothing legitimate comes near this. Hono checks Content-Length
