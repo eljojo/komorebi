@@ -1696,3 +1696,5 @@ syncPlaylistUI();
 // A link is opened as soon as arboretum is up; `linkReady` is what the welcome gate waits on (null without a link).
 const linkReady = link ? arb.open(link) : null;
 if(link?.preset) document.getElementById('feel').click();
+// `/#feel` ("open komorebi" on arboretum's pages) is the welcome's own feel, pressed for you: the same arrival, without the intro text.
+else if(location.hash==='#feel'){ history.replaceState(null, '', location.pathname+location.search); document.getElementById('feel').click(); }
