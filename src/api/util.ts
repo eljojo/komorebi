@@ -1,5 +1,7 @@
+import { sql } from 'drizzle-orm';
 import type { Ctx } from '../auth';
 import { ApiError } from '../errors';
+import { randomBase64Url } from '../random';
 
 export const VISIBILITIES = ['public', 'unlisted', 'private'] as const;
 export type Visibility = (typeof VISIBILITIES)[number];
@@ -23,3 +25,13 @@ export async function readJsonBody(c: Ctx): Promise<{ text: string; body: Record
 export function parseId(raw: string | undefined): number | null {
   return raw !== undefined && /^[1-9]\d{0,14}$/.test(raw) ? Number(raw) : null;
 }
+
+// The columns that change when someone sets a visibility. Every transition *into* unlisted draws a new share
+// token, so a link from an earlier unlisted period stays dead. The CASE reads the row as it was, so the draw
+// happens in the same statement as the change and setting unlisted on an unlisted look keeps its link.
+export const visibilityChange = (visibility: Visibility) => ({
+  visibility,
+  ...(visibility === 'unlisted' && {
+    shareToken: sql<string>`case when visibility = 'unlisted' then share_token else ${randomBase64Url(16)} end`,
+  }),
+});

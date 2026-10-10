@@ -136,7 +136,11 @@ export const challenges = sqliteTable(
     pendingUsername: text('pending_username'),
     expiresAt: integer('expires_at').notNull(),
   },
-  (t) => [check('challenges_purpose', sql`${t.purpose} in ('register', 'login', 'add-passkey')`)],
+  (t) => [
+    check('challenges_purpose', sql`${t.purpose} in ('register', 'login', 'add-passkey')`),
+    // Every ceremony sweeps the expired ones.
+    index('challenges_expires').on(t.expiresAt),
+  ],
 );
 
 export const rateEvents = sqliteTable(
@@ -146,5 +150,6 @@ export const rateEvents = sqliteTable(
     action: text('action').notNull(),
     at: integer('at').notNull(),
   },
-  (t) => [index('rate_events_ip_action').on(t.ip, t.action, t.at)],
+  // (ip, action, at) serves the counts; `at` alone serves the sweep of rows older than the window.
+  (t) => [index('rate_events_ip_action').on(t.ip, t.action, t.at), index('rate_events_at').on(t.at)],
 );

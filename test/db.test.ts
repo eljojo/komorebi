@@ -59,3 +59,23 @@ describe('schema', () => {
     ).rejects.toThrow();
   });
 });
+
+// The pruning deletes run on every ceremony and every limit check, so they must not scan their tables.
+describe('indexes', () => {
+  async function plan(query: string, ...binds: unknown[]) {
+    const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${query}`).bind(...binds).all<{ detail: string }>();
+    return results.map((r) => r.detail).join(' | ');
+  }
+
+  it('lets the challenge pruning find expired rows by an index', async () => {
+    expect(await plan('DELETE FROM challenges WHERE expires_at < ?', 1)).toMatch(/USING (COVERING )?INDEX/);
+  });
+
+  it('lets the rate-event pruning find old rows by an index', async () => {
+    expect(await plan('DELETE FROM rate_events WHERE at < ?', 1)).toMatch(/USING (COVERING )?INDEX/);
+  });
+
+  it('lets the rate-event count use the (ip, action, at) index', async () => {
+    expect(await plan('SELECT count(*) FROM rate_events WHERE ip = ? AND action = ? AND at > ?', 'x', 'signup', 1)).toMatch(/USING (COVERING )?INDEX/);
+  });
+});

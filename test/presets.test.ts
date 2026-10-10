@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:workers';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import looks from './fixtures/looks.json';
@@ -124,6 +125,28 @@ describe('POST /api/presets', () => {
       expect(r.json).toMatchObject({ reason: 'bad_values', keys: ['tree_count'] });
     });
 
+    // JSON.parse keeps only the last copy of a repeated key, but the stored text is the sender's own: an earlier
+    // copy would be stored without ever being validated.
+    it.each([
+      ['a repeated known key', '{"tree_count":3,"tree_count":4}', ['tree_count']],
+      ['a repeated key whose earlier copy has the wrong type', '{"tree_count":"junk","tree_count":3}', ['tree_count']],
+      ['a repeated key spelled with an escape', '{"tree_count":3,"tree\\u005fcount":4}', ['tree_count']],
+      ['a repeated unknown key', '{"tree_count":3,"nope":1,"nope":2}', ['nope']],
+    ])('refuses %s with 422, naming the key', async (_what, params, keys) => {
+      const { token, user } = await owner();
+      const r = await call('POST', '/api/presets', { token, body: `{"name":"x","params":${params}}` });
+      expect(r.status).toBe(422);
+      expect(r.json).toMatchObject({ reason: expect.stringMatching(/duplicate_keys|unknown_keys/), keys });
+      expect(r.json.error).toContain(keys[0]);
+      expect(await presetCount(user.id)).toBe(0);
+    });
+
+    it('says duplicate_keys when that is the only trouble', async () => {
+      const { token } = await owner();
+      const r = await call('POST', '/api/presets', { token, body: '{"name":"x","params":{"eclipse":true,"eclipse":false}}' });
+      expect(r.json).toMatchObject({ reason: 'duplicate_keys', keys: ['eclipse'] });
+    });
+
     it('refuses params that are not an object, or missing', async () => {
       expect((await post({ name: 'x', params: [] })).json.reason).toBe('not_object');
       expect((await post({ name: 'x' })).status).toBe(422);
@@ -237,6 +260,39 @@ describe('POST /api/presets', () => {
       expect(r.json.error).toContain(`${LIMITS.versionsPerDay} new versions`);
       const v = await call('POST', `/api/presets/${first.id}/versions`, { token, json: { name: 'renamed' } });
       expect(v.status).toBe(429);
+    });
+
+    it(`stops at ${LIMITS.presets} presets when a burst arrives at once`, async () => {
+      const { user, token } = await owner();
+      await fillPresets(user.id, LIMITS.presets - 5);
+      const replies = await Promise.all(Array.from({ length: 12 }, (_, i) => call('POST', '/api/presets', { token, json: { name: `burst ${i}`, params: PARAMS } })));
+      expect(replies.filter((r) => r.status === 201)).toHaveLength(5);
+      expect(replies.filter((r) => r.status === 429).every((r) => r.json.limit === 'presets')).toBe(true);
+      expect(replies.filter((r) => r.status === 429)).toHaveLength(7);
+      expect(await presetCount(user.id)).toBe(LIMITS.presets);
+    });
+
+    it(`stops at ${LIMITS.versionsPerDay} new versions when a burst of new versions arrives at once`, async () => {
+      const { user, token } = await owner();
+      const first = await makePreset(user, token);
+      await fillVersions(first.id, LIMITS.versionsPerDay - 6, Date.now() - 1000, 2);
+      const replies = await Promise.all(Array.from({ length: 12 }, (_, i) => call('POST', `/api/presets/${first.id}/versions`, { token, json: { name: `burst ${i}` } })));
+      expect(replies.filter((r) => r.status === 201)).toHaveLength(5);
+      expect(replies.filter((r) => r.status === 429)).toHaveLength(7);
+      const versions = (await get(`/api/presets/${first.id}/versions`, token)).json.versions;
+      expect(versions.at(-1).n).toBe(LIMITS.versionsPerDay - 6 + 1 + 5);
+    });
+
+    it('stops at the daily version limit when a burst of new presets arrives, and leaves no preset without a head', async () => {
+      const { user, token } = await owner();
+      const first = await makePreset(user, token);
+      await fillVersions(first.id, LIMITS.versionsPerDay - 6, Date.now() - 1000, 2);
+      const replies = await Promise.all(Array.from({ length: 12 }, (_, i) => call('POST', '/api/presets', { token, json: { name: `burst ${i}`, params: PARAMS } })));
+      expect(replies.filter((r) => r.status === 201)).toHaveLength(5);
+      expect(replies.filter((r) => r.status === 429)).toHaveLength(7);
+      expect(await presetCount(user.id)).toBe(6);
+      const headless = await env.DB.prepare('SELECT count(*) AS n FROM presets WHERE owner_id = ? AND head_version_id IS NULL').bind(user.id).first<{ n: number }>();
+      expect(headless!.n).toBe(0);
     });
 
     it('rolls: versions older than 24 hours do not count', async () => {
@@ -382,6 +438,14 @@ describe('POST /api/presets/:id/versions', () => {
     });
     return { ...o, id: created.json.id as number, raw };
   }
+
+  it('refuses a repeated key in a new version too, and appends nothing', async () => {
+    const o = await seeded();
+    const r = await call('POST', `/api/presets/${o.id}/versions`, { token: o.token, body: '{"params":{"eclipse":true,"eclipse":false}}' });
+    expect(r.status).toBe(422);
+    expect(r.json).toMatchObject({ reason: 'duplicate_keys', keys: ['eclipse'] });
+    expect((await get(`/api/presets/${o.id}/versions`, o.token)).json.versions).toHaveLength(1);
+  });
 
   it('appends version n+1 and moves the head; a rename alone carries everything else over', async () => {
     const s = await seeded();
@@ -598,5 +662,71 @@ describe('visibility and archiving are session-only', () => {
       expect(r.status).toBe(201);
       expect(r.json.visibility).toBe('unlisted');
     });
+  });
+});
+
+describe('a fresh share link each time it goes unlisted', () => {
+  const setVisibility = (user: { id: number }, id: number, visibility: string) =>
+    asSession(user, 'PATCH', `/api/presets/${id}`, { json: { visibility } });
+
+  it.each(['private', 'public'])('makes a new token when a %s preset goes unlisted, and the old link stays dead', async (from) => {
+    const o = await owner();
+    const p = await makePreset(o.user, o.token, { visibility: from as 'private' | 'public' });
+    const before = p.share_token;
+    const r = await setVisibility(o.user, p.id, 'unlisted');
+    expect(r.status).toBe(200);
+    expect(r.json.share_token).not.toBe(before);
+    expect(r.json.share_token).toMatch(/^[A-Za-z0-9_-]{20,}$/);
+    expect((await get(`/api/presets/${p.id}?k=${r.json.share_token}`)).status).toBe(200);
+    expect((await get(`/api/presets/${p.id}?k=${before}`)).status).toBe(404);
+  });
+
+  it('does not bring back the link of an earlier unlisted period', async () => {
+    const o = await owner();
+    const p = await makePreset(o.user, o.token);
+    const first = (await setVisibility(o.user, p.id, 'unlisted')).json.share_token;
+    await setVisibility(o.user, p.id, 'private');
+    const second = (await setVisibility(o.user, p.id, 'unlisted')).json.share_token;
+    expect(second).not.toBe(first);
+    expect((await get(`/api/presets/${p.id}?k=${first}`)).status).toBe(404);
+    expect((await get(`/api/presets/${p.id}?k=${second}`)).status).toBe(200);
+  });
+
+  it('keeps the token when it is set to unlisted while already unlisted, since that is no transition', async () => {
+    const o = await owner();
+    const p = await makePreset(o.user, o.token);
+    const first = (await setVisibility(o.user, p.id, 'unlisted')).json.share_token;
+    const again = await setVisibility(o.user, p.id, 'unlisted');
+    expect(again.json.share_token).toBe(first);
+  });
+
+  it('keeps the token when it goes from unlisted to something else', async () => {
+    const o = await owner();
+    const p = await makePreset(o.user, o.token);
+    const first = (await setVisibility(o.user, p.id, 'unlisted')).json.share_token;
+    expect((await setVisibility(o.user, p.id, 'public')).json.share_token).toBe(first);
+  });
+});
+
+describe('a token cannot change what is visible (spec §3.3)', () => {
+  it.each(['public', 'unlisted'] as const)('is refused a new version on a %s preset, with 403, and nothing is appended', async (visibility) => {
+    const o = await owner();
+    const p = await makePreset(o.user, o.token, { visibility });
+    const r = await call('POST', `/api/presets/${p.id}/versions`, { token: o.token, json: { name: 'sneaky' } });
+    expect(r.status).toBe(403);
+    expect(r.json.error).toMatch(/browser/);
+    expect((await get(`/api/presets/${p.id}/versions`, o.token)).json.versions).toHaveLength(1);
+  });
+
+  it('may append versions to a private preset', async () => {
+    const o = await owner();
+    const p = await makePreset(o.user, o.token);
+    expect((await call('POST', `/api/presets/${p.id}/versions`, { token: o.token, json: { name: 'quiet' } })).status).toBe(201);
+  });
+
+  it.each(['public', 'unlisted'] as const)('lets a person in a browser append to a %s preset', async (visibility) => {
+    const o = await owner();
+    const p = await makePreset(o.user, o.token, { visibility });
+    expect((await asSession(o.user, 'POST', `/api/presets/${p.id}/versions`, { json: { name: 'by hand' } })).status).toBe(201);
   });
 });

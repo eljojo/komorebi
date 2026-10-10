@@ -1,8 +1,11 @@
 import { env } from 'cloudflare:workers';
+import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { credentialUsed } from '../src/api/auth';
 import { LIMITS, RESERVED_USERNAMES, SESSION_MS } from '../src/config';
 import { challenges, credentials, rateEvents, sessions, users } from '../src/db/schema';
+import { ipKey } from '../src/ratelimit';
 import { sha256Hex } from '../src/tokens';
 import { Authenticator } from './authenticator';
 import { Browser, call, db, makeToken, makeUser } from './helpers';
@@ -231,6 +234,71 @@ describe('register', () => {
   });
 });
 
+describe('what a passkey stores is only what WebAuthn defines', () => {
+  const idOfLength = (bytes: number) => isoBase64URL.fromBuffer(crypto.getRandomValues(new Uint8Array(bytes)));
+  const storedFor = async (username: string) => (await db.select().from(credentials).where(eq(credentials.userId, (await userNamed(username)).id)))[0];
+
+  async function registerWith(response: Record<string, unknown>, a = new Authenticator()) {
+    const b = new Browser();
+    const username = newName();
+    const options = await b.call('POST', '/api/auth/register-options', { json: { username } });
+    const credential = await a.create(options.json);
+    Object.assign(credential.response, response);
+    return { username, b, r: await b.call('POST', '/api/auth/register', { json: { credential } }) };
+  }
+
+  it('keeps the transports WebAuthn lists and drops anything else', async () => {
+    const { username, r, b } = await registerWith({ transports: ['usb', 'nfc', 'ble', 'internal', 'hybrid', 'smart-card', 'cable', 'carrier-pigeon', '{"a":1}', 7, { big: 'json' }, null] });
+    expect(r.status, r.text).toBe(201);
+    expect((await storedFor(username)).transports).toEqual(['usb', 'nfc', 'ble', 'internal', 'hybrid', 'smart-card', 'cable']);
+    expect((await b.call('GET', '/api/auth/passkeys')).json.passkeys[0].transports).toEqual(['usb', 'nfc', 'ble', 'internal', 'hybrid', 'smart-card', 'cable']);
+  });
+
+  it('stores no transports when what was sent is not a list', async () => {
+    for (const transports of ['internal', { big: 'json' }, 7]) {
+      const { username, r } = await registerWith({ transports });
+      expect(r.status, r.text).toBe(201);
+      expect((await storedFor(username)).transports).toBeNull();
+    }
+  });
+
+  it('applies to an added passkey too', async () => {
+    const b = new Browser();
+    const { username } = await signUp(b);
+    const options = await b.call('POST', '/api/auth/add-passkey-options');
+    const credential = await new Authenticator().create(options.json);
+    credential.response.transports = ['usb', 'junk'];
+    expect((await b.call('POST', '/api/auth/add-passkey', { json: { credential } })).status).toBe(201);
+    const rows = await db.select().from(credentials).where(eq(credentials.userId, (await userNamed(username)).id));
+    expect(rows.map((c) => c.transports).sort()).toEqual([['internal'], ['usb']]);
+  });
+
+  it('accepts a credential id of 1023 bytes and refuses one of 1024', async () => {
+    const long = new Authenticator();
+    long.credentialId = idOfLength(1023);
+    const ok = await registerWith({}, long);
+    expect(ok.r.status, ok.r.text).toBe(201);
+
+    const tooLong = new Authenticator();
+    tooLong.credentialId = idOfLength(1024);
+    const bad = await registerWith({}, tooLong);
+    expect(bad.r.status).toBe(400);
+    expect(bad.r.json.error).toMatch(/1023/);
+    expect(await userNamed(bad.username)).toBeUndefined();
+  });
+
+  it('refuses an added passkey with an id over 1023 bytes too', async () => {
+    const b = new Browser();
+    await signUp(b);
+    const options = await b.call('POST', '/api/auth/add-passkey-options');
+    const tooLong = new Authenticator();
+    tooLong.credentialId = idOfLength(1024);
+    const r = await b.call('POST', '/api/auth/add-passkey', { json: { credential: await tooLong.create(options.json) } });
+    expect(r.status).toBe(400);
+    expect(r.json.error).toMatch(/1023/);
+  });
+});
+
 describe('login', () => {
   it('is usernameless: the options name no credential, and the passkey alone finds the account', async () => {
     const { username, a } = await signUp(new Browser());
@@ -257,6 +325,47 @@ describe('login', () => {
     const [cred] = await db.select().from(credentials).where(eq(credentials.userId, (await userNamed(username)).id));
     expect(cred.counter).toBe(2);
     expect(cred.lastUsedAt).toBeGreaterThanOrEqual(before);
+  });
+
+  describe('the signature counter', () => {
+    async function stored(counter: number) {
+      const user = await makeUser();
+      const id = isoBase64URL.fromBuffer(crypto.getRandomValues(new Uint8Array(32)));
+      await db.insert(credentials).values({ id, userId: user.id, publicKey: 'k', counter, transports: null, createdAt: Date.now() });
+      return id;
+    }
+    const counterOf = async (id: string) => (await db.select().from(credentials).where(eq(credentials.id, id)))[0];
+
+    // Two logins verified against the same stored counter can finish in either order; the later write must not
+    // undo the earlier one, or a replayed assertion would verify again.
+    it('never goes backwards: a lower value arriving later is ignored', async () => {
+      const id = await stored(5);
+      await db.batch([credentialUsed(db, id, 7)]);
+      await db.batch([credentialUsed(db, id, 6)]);
+      expect((await counterOf(id)).counter).toBe(7);
+    });
+
+    it('moves forward', async () => {
+      const id = await stored(5);
+      await db.batch([credentialUsed(db, id, 6)]);
+      expect((await counterOf(id)).counter).toBe(6);
+      await db.batch([credentialUsed(db, id, 9)]);
+      expect((await counterOf(id)).counter).toBe(9);
+    });
+
+    it('stays 0 for a passkey that always sends 0 (synced passkeys such as 1Password)', async () => {
+      const id = await stored(0);
+      await db.batch([credentialUsed(db, id, 0)]);
+      expect((await counterOf(id)).counter).toBe(0);
+    });
+
+    it('still records the use when the counter does not move', async () => {
+      const id = await stored(7);
+      await db.batch([credentialUsed(db, id, 3)]);
+      const row = await counterOf(id);
+      expect(row.counter).toBe(7);
+      expect(row.lastUsedAt).toBeGreaterThan(0);
+    });
   });
 
   it('opens a session cookie with the same attributes as sign-up', async () => {
@@ -466,12 +575,47 @@ describe('passkeys', () => {
 
     const gone = await b.call('POST', `/api/auth/passkeys/${first.credentialId}/remove`);
     expect(gone.status).toBe(200);
+    // Removing signs this session out too, so the rest goes through a fresh login.
+    expect((await b.call('GET', '/api/auth/passkeys')).status).toBe(401);
+    expect((await signIn(b, second)).status).toBe(200);
     expect((await b.call('GET', '/api/auth/passkeys')).json.passkeys.map((p: any) => p.id)).toEqual([second.credentialId]);
 
     const last = await b.call('POST', `/api/auth/passkeys/${second.credentialId}/remove`);
     expect(last.status).toBe(409);
     expect(last.json.error).toMatch(/last/);
     expect((await b.call('GET', '/api/auth/passkeys')).json.passkeys).toHaveLength(1);
+  });
+
+  it('signs the user out everywhere when one is removed, the current session included, and nobody else', async () => {
+    const b = new Browser();
+    const { username, a: first } = await signUp(b);
+    const options = await b.call('POST', '/api/auth/add-passkey-options');
+    const second = new Authenticator();
+    await b.call('POST', '/api/auth/add-passkey', { json: { credential: await second.create(options.json) } });
+    const elsewhere = new Browser();
+    expect((await signIn(elsewhere, second)).status).toBe(200);
+    const bystander = new Browser();
+    await signUp(bystander);
+    const user = await userNamed(username);
+    expect((await db.select().from(sessions).where(eq(sessions.userId, user.id))).length).toBe(2);
+
+    expect((await b.call('POST', `/api/auth/passkeys/${first.credentialId}/remove`)).status).toBe(200);
+
+    expect((await db.select().from(sessions).where(eq(sessions.userId, user.id)))).toEqual([]);
+    expect((await b.call('GET', '/api/me')).status).toBe(401);
+    expect((await elsewhere.call('GET', '/api/me')).status).toBe(401);
+    expect((await bystander.call('GET', '/api/me')).status).toBe(200);
+    expect((await signIn(new Browser(), second)).status).toBe(200);
+  });
+
+  it('keeps every session when the removal is refused', async () => {
+    const b = new Browser();
+    const { a } = await signUp(b);
+    const elsewhere = new Browser();
+    expect((await signIn(elsewhere, a)).status).toBe(200);
+    expect((await b.call('POST', `/api/auth/passkeys/${a.credentialId}/remove`)).status).toBe(409);
+    expect((await b.call('GET', '/api/me')).status).toBe(200);
+    expect((await elsewhere.call('GET', '/api/me')).status).toBe(200);
   });
 
   it("cannot remove someone else's, and an unknown id is a 404", async () => {
@@ -505,6 +649,52 @@ describe('per-IP limits', () => {
     expect(options.status).toBe(429);
     expect(options.json).toMatchObject({ limit: 'signups' });
     await signUp(new Browser());
+  });
+
+  describe('by IPv6 /64', () => {
+    // A person or a bot typically holds a whole /64, so rotating the lower 64 bits must not buy more sign-ups.
+    const inside = (tail: string) => `2001:db8:1:2:${tail}`;
+
+    it(`allow ${LIMITS.signupsPerHour} sign-ups an hour from one /64, however its addresses are spelled`, async () => {
+      const spellings = [inside('1::1'), inside('aaaa:bbbb:cccc:dddd'), '2001:DB8:1:2::7', '2001:db8:1:2:0:0:0:9', inside('ffff:ffff:ffff:ffff')];
+      expect(spellings).toHaveLength(LIMITS.signupsPerHour);
+      for (const ip of spellings) {
+        const b = new Browser();
+        b.ip = ip;
+        await signUp(b);
+      }
+      const blocked = new Browser();
+      blocked.ip = inside('1234::5678');
+      const options = await blocked.call('POST', '/api/auth/register-options', { json: { username: newName() } });
+      expect(options.status).toBe(429);
+      expect(options.json).toMatchObject({ limit: 'signups' });
+    });
+
+    it('leave the neighbouring /64 and IPv4 alone', async () => {
+      const b = new Browser();
+      b.ip = '2001:db8:5:5:1::1';
+      for (let i = 0; i < LIMITS.signupsPerHour; i++) await signUp(b);
+      const next = new Browser();
+      next.ip = '2001:db8:5:6::1';
+      await signUp(next);
+      await signUp(new Browser());
+    });
+
+    it('count failed logins by /64 too', async () => {
+      const stranger = new Authenticator();
+      await stranger.create({ challenge: 'x', user: { id: 'x' } });
+      const prefix = '2001:db8:9:9';
+      for (let i = 0; i < LIMITS.failedLoginsPerHour; i++) {
+        const b = new Browser();
+        b.ip = `${prefix}:${i + 1}::1`;
+        const options = await b.call('POST', '/api/auth/login-options');
+        expect(options.status).toBe(200);
+        expect((await b.call('POST', '/api/auth/login', { json: { credential: await stranger.get(options.json) } })).status).toBe(401);
+      }
+      const b = new Browser();
+      b.ip = `${prefix}:ffff::2`;
+      expect((await b.call('POST', '/api/auth/login-options')).status).toBe(429);
+    });
   });
 
   it('stop a registration that was started before the limit was reached', async () => {
@@ -570,5 +760,27 @@ describe('the config', () => {
   it('RP_ID and ORIGIN come from bindings', () => {
     expect(env.RP_ID).toBe('arboretum.test');
     expect(env.ORIGIN).toBe('https://arboretum.test');
+  });
+});
+
+describe('ipKey: what a rate limit counts by', () => {
+  it('is an IPv4 address as it is', () => {
+    expect(ipKey('203.0.113.7')).toBe('203.0.113.7');
+  });
+
+  it('is the /64 prefix of an IPv6 address, spelled one way whatever the input spelling', () => {
+    expect(ipKey('2001:db8:1:2:3:4:5:6')).toBe('2001:db8:1:2::/64');
+    expect(ipKey('2001:DB8:1:2::1')).toBe('2001:db8:1:2::/64');
+    expect(ipKey('2001:0db8:0001:0002:ffff:ffff:ffff:ffff')).toBe('2001:db8:1:2::/64');
+    expect(ipKey('2001:db8::1')).toBe('2001:db8:0:0::/64');
+    expect(ipKey('::1')).toBe('0:0:0:0::/64');
+  });
+
+  it('reads an IPv4-mapped IPv6 address as the IPv4 address', () => {
+    expect(ipKey('::ffff:203.0.113.7')).toBe('203.0.113.7');
+  });
+
+  it('leaves what is not an address (no header) alone', () => {
+    expect(ipKey('unknown')).toBe('unknown');
   });
 });

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { LIMITS } from '../src/config';
 import { apiTokens } from '../src/db/schema';
 import { sha256Hex } from '../src/tokens';
-import { PARAMS, asSession, call, db, get, makeToken, makeUser } from './helpers';
+import { PARAMS, asSession, call, db, get, makeToken, makeUser, sessionFor } from './helpers';
 
 const mint = (user: { id: number }, json: unknown) => asSession(user, 'POST', '/api/tokens', { json });
 
@@ -46,6 +46,17 @@ describe('POST /api/tokens', () => {
     const r = await mint(u, { label: 'too many', scope: 'read' });
     expect(r.status).toBe(429);
     expect(r.json).toMatchObject({ limit: 'tokens' });
+  });
+
+  it(`stops at ${LIMITS.tokens} when 25 mints arrive at once, not after`, async () => {
+    const u = await makeUser();
+    // One session made beforehand, so the 25 requests really are in flight together.
+    const headers = { Cookie: `__Host-session=${await sessionFor(u)}` };
+    const replies = await Promise.all(Array.from({ length: 25 }, (_, i) => call('POST', '/api/tokens', { json: { label: `burst${i}`, scope: 'read' }, headers })));
+    expect(replies.filter((r) => r.status === 201)).toHaveLength(LIMITS.tokens);
+    expect(replies.filter((r) => r.status === 429)).toHaveLength(25 - LIMITS.tokens);
+    const live = await db.select().from(apiTokens).where(eq(apiTokens.userId, u.id));
+    expect(live).toHaveLength(LIMITS.tokens);
   });
 
   it('is 401 anonymously and 403 for any token, even a write one', async () => {

@@ -13,6 +13,15 @@ import { CORS_ORIGINS, MAX_BODY_BYTES } from './config';
 import { ApiError } from './errors';
 import { ENGINE_COMMIT } from './generated/engine';
 
+const EDITOR_ROUTES: [string, RegExp][] = [
+  ['GET', /^\/api\/me$/],
+  ['GET', /^\/api\/presets$/],
+  ['POST', /^\/api\/presets$/],
+  ['GET', /^\/api\/presets\/[^/]+(\/versions(\/[^/]+)?)?$/],
+  ['POST', /^\/api\/presets\/[^/]+\/versions$/],
+  ['GET', /^\/api\/playlists(\/[^/]+)?$/],
+];
+
 // `resolvers` is how a caller is recognised, in order: a bearer token wins over the session cookie.
 export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) {
   const app = new Hono<AppEnv>();
@@ -22,15 +31,19 @@ export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) 
     await next();
   });
 
-  app.use(
-    '/api/*',
-    cors({
-      origin: (origin) => (CORS_ORIGINS.includes(origin) ? origin : null),
-      credentials: true,
-      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-      allowHeaders: ['Content-Type', 'Authorization'],
-    }),
-  );
+  // Credentialed CORS goes only to the routes the editor uses (spec §8). Everywhere else a script running on the
+  // editor's origin gets no answer it may read, so it cannot mint a token, publish a look or read the export.
+  // A preflight names the method it is for, so that decides which route it is asking about.
+  const editorCors = cors({
+    origin: (origin) => (CORS_ORIGINS.includes(origin) ? origin : null),
+    credentials: true,
+    allowMethods: ['GET', 'POST'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+  });
+  app.use('/api/*', (c, next) => {
+    const method = c.req.method === 'OPTIONS' ? c.req.header('Access-Control-Request-Method') : c.req.method;
+    return EDITOR_ROUTES.some(([m, path]) => m === method && path.test(c.req.path)) ? editorCors(c, next) : next();
+  });
 
   // A params object is at most 16 KB (spec §5), so nothing legitimate comes near this. Hono checks Content-Length
   // and also stops a stream that outgrows it.

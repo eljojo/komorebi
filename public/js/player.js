@@ -1,14 +1,16 @@
 // The inline playlist player (spec §6): one canvas that steps through the visible items in order, looping.
 import { loadEngine } from './engine.js';
+import { arrive, playable } from './queue.js';
 
 const canvas = document.getElementById('player');
 
 async function mount() {
-  const rows = [...document.querySelectorAll('#items > li')];
+  // The owner's list also holds rows for items that are unavailable now; they are skipped here as in the data.
+  const rows = [...document.querySelectorAll('#items > li:not([data-unavailable])')];
   try {
     const [res, Komorebi] = await Promise.all([fetch(canvas.dataset.src), loadEngine(canvas.dataset.engine)]);
     if (!res.ok) throw new Error('the playlist could not be loaded');
-    const { items } = await res.json();
+    const items = playable((await res.json()).items);
     if (!items.length) throw new Error('nothing to play');
 
     const engine = Komorebi.create(canvas, { params: items[0].params });
@@ -17,11 +19,11 @@ async function mount() {
 
     const mark = () => rows.forEach((row, i) => (i === at ? row.setAttribute('aria-current', 'true') : row.removeAttribute('aria-current')));
 
-    // Leaving an item takes that item's crossfade; it holds for its own dwell before the next step.
+    // The transition into an item takes that item's crossfade; it holds for its own dwell before the next step.
     const step = (to) => {
-      const leaving = items[at];
-      at = (to + items.length) % items.length;
-      engine.transitionTo(items[at].params, { duration: leaving.crossfade_s });
+      const arrival = arrive(items, to);
+      at = arrival.at;
+      engine.transitionTo(items[at].params, { duration: arrival.duration });
       mark();
       schedule();
     };

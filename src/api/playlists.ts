@@ -1,4 +1,4 @@
-import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { type Actor, type AppEnv, type Ctx, secured } from '../auth';
 import { LIMITS } from '../config';
@@ -8,7 +8,7 @@ import { ApiError } from '../errors';
 import { randomBase64Url } from '../random';
 import { validateMeta } from '../validate';
 import { canSee } from './access';
-import { isVisibility, parseId, readJsonBody } from './util';
+import { isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
 const MAX_ITEMS = 500;
 const DWELL = { min: 1, max: 3600, default: 30 };
@@ -51,22 +51,26 @@ function summary(row: PlaylistRow, viewer: Actor | null) {
   };
 }
 
-// The playlist with the items as this viewer may see them (spec §4.2): the rest are left out silently, and
-// only the owner is told how many.
+// The playlist with the items as this viewer may see them (spec §4.2). Other people simply get fewer items. The
+// owner gets the unavailable ones too, in their places and with nothing but their times, so the list they edit
+// is whole and saving it does not drop an item that may come back; they are also told how many.
+type PlayableItem = { preset_id: number; name: string; dwell_s: number; crossfade_s: number; params: unknown };
+type UnavailableItem = { preset_id: number; dwell_s: number; crossfade_s: number; unavailable: true };
+
 export async function playlistView(db: Db, row: PlaylistRow, viewer: Actor | null) {
   const all = await loadItems(db, row.playlist.id);
+  const isOwner = viewer?.userId === row.playlist.ownerId;
   // An archived preset is skipped even for its own author: playlists never play what is archived.
-  const visible = all.filter((i) => !i.preset.archivedAt && canSee(i.preset, viewer, undefined));
+  const available = (i: (typeof all)[number]) => !i.preset.archivedAt && canSee(i.preset, viewer, undefined);
   return {
     ...summary(row, viewer),
-    items: visible.map((i) => ({
-      preset_id: i.preset.id,
-      name: i.head.name,
-      dwell_s: i.item.dwellS,
-      crossfade_s: i.item.crossfadeS,
-      params: JSON.parse(i.head.params),
-    })),
-    ...(viewer?.userId === row.playlist.ownerId && { unavailable: all.length - visible.length }),
+    items: all.flatMap((i): (PlayableItem | UnavailableItem)[] => {
+      if (available(i)) {
+        return [{ preset_id: i.preset.id, name: i.head.name, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, params: JSON.parse(i.head.params) }];
+      }
+      return isOwner ? [{ preset_id: i.preset.id, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, unavailable: true }] : [];
+    }),
+    ...(isOwner && { unavailable: all.filter((i) => !available(i)).length }),
   };
 }
 
@@ -80,6 +84,13 @@ async function ownedPlaylist(c: Ctx, actor: Actor): Promise<PlaylistRow> {
   const row = await visiblePlaylist(c, actor);
   if (row.playlist.ownerId !== actor.userId) throw new ApiError(403, 'only the owner can do that');
   return row;
+}
+
+// Anyone sees a public or unlisted playlist at once, so changing one is a person's act (spec §3.3).
+function assertTokenMayChange(actor: Actor, row: PlaylistRow) {
+  if (actor.kind === 'token' && row.playlist.visibility !== 'private') {
+    throw new ApiError(403, 'changing a visible playlist needs a person in a browser; a token can only change private playlists');
+  }
 }
 
 function checkedMeta(name: unknown, description: unknown) {
@@ -120,14 +131,14 @@ export function registerPlaylists(app: Hono<AppEnv>) {
     }
     const meta = checkedMeta(body.name, body.description);
 
-    const [{ owned }] = await db.select({ owned: count() }).from(playlists).where(eq(playlists.ownerId, actor.userId));
-    if (owned >= LIMITS.playlists) throw new ApiError(429, `at most ${LIMITS.playlists} playlists per user`, { limit: 'playlists' });
-
+    // The limit is part of the insert, so a burst of parallel requests cannot each pass a count made before the others landed.
     const now = Date.now();
-    const [created] = await db
-      .insert(playlists)
-      .values({ ownerId: actor.userId, name: meta.name, description: meta.description ?? null, visibility, shareToken: randomBase64Url(16), createdAt: now, updatedAt: now })
-      .returning({ id: playlists.id });
+    const [created] = await db.all<{ id: number }>(sql`
+      insert into playlists (owner_id, name, description, visibility, share_token, created_at, updated_at)
+      select ${actor.userId}, ${meta.name}, ${meta.description ?? null}, ${visibility}, ${randomBase64Url(16)}, ${now}, ${now}
+      where (select count(*) from playlists where owner_id = ${actor.userId}) < ${LIMITS.playlists}
+      returning id`);
+    if (!created) throw new ApiError(429, `at most ${LIMITS.playlists} playlists per user`, { limit: 'playlists' });
     return c.json(await playlistView(db, (await loadPlaylist(db, created.id))!, actor), 201);
   });
 
@@ -170,8 +181,9 @@ export function registerPlaylists(app: Hono<AppEnv>) {
       // Publishing is a person's act (spec §3.3); a token may not even ask.
       if (actor.kind !== 'session') throw new ApiError(403, 'changing visibility needs a person in a browser; a token cannot do it');
       if (!isVisibility(body.visibility)) throw new ApiError(400, 'visibility must be public, unlisted or private');
-      patch.visibility = body.visibility;
+      Object.assign(patch, visibilityChange(body.visibility));
     }
+    assertTokenMayChange(actor, row);
     const meta = checkedMeta('name' in body ? body.name : row.playlist.name, 'description' in body ? body.description : (row.playlist.description ?? undefined));
     patch.name = meta.name;
     patch.description = meta.description ?? null;
@@ -183,17 +195,20 @@ export function registerPlaylists(app: Hono<AppEnv>) {
   secured(app, 'PUT', '/api/playlists/:id/items', 'write', async (c, actor) => {
     const db = connect(c.env.DB);
     const row = await ownedPlaylist(c, actor);
+    assertTokenMayChange(actor, row);
     const { body } = await readJsonBody(c);
     const items = parseItems(body.items);
 
-    // Every preset must be one the owner can see now: their own, or someone else's public one.
+    // Every new preset must be one the owner can see now: their own, or someone else's public one. One that is
+    // already in this list stays acceptable when it has become unavailable, or saving would drop it (§4.2).
     // The ids go in as one JSON parameter because a statement may bind only 100.
     const ids = [...new Set(items.map((i) => i.presetId))];
     const found = await db
       .select({ id: presets.id, ownerId: presets.ownerId, visibility: presets.visibility, shareToken: presets.shareToken, archivedAt: presets.archivedAt })
       .from(presets)
       .where(sql`${presets.id} in (select value from json_each(${JSON.stringify(ids)}))`);
-    const usable = new Set(found.filter((p) => canSee(p, actor, undefined)).map((p) => p.id));
+    const listed = new Set((await db.select({ id: playlistItems.presetId }).from(playlistItems).where(eq(playlistItems.playlistId, row.playlist.id))).map((r) => r.id));
+    const usable = new Set(found.filter((p) => listed.has(p.id) || canSee(p, actor, undefined)).map((p) => p.id));
     const unusable = ids.filter((id) => !usable.has(id));
     if (unusable.length) throw new ApiError(422, 'some presets are not yours and not public', { preset_ids: unusable });
 

@@ -57,7 +57,7 @@ describe('/u/:username', () => {
     html(r);
   });
 
-  it('lists only public, non-archived presets and public playlists, as text with no previews', async () => {
+  async function seeded() {
     const o = await owner();
     await makePreset(o.user, o.token, { visibility: 'public', name: 'shown look', tags: ['projector'] });
     await makePreset(o.user, o.token, { visibility: 'unlisted', name: 'unlisted look' });
@@ -66,8 +66,14 @@ describe('/u/:username', () => {
     await makePlaylist(o.token, { visibility: 'public', name: 'shown list' });
     await makePlaylist(o.token, { visibility: 'unlisted', name: 'unlisted list' });
     await makePlaylist(o.token, { name: 'private list' });
+    return o;
+  }
 
-    for (const viewer of [undefined, o.user]) {
+  it('lists only public, non-archived presets and public playlists to everyone else, as text with no previews', async () => {
+    const o = await seeded();
+    const someoneElse = await makeUser('other');
+
+    for (const viewer of [undefined, someoneElse]) {
       const r = viewer ? await asSession(viewer, 'GET', `/u/${o.user.username}`) : await get(`/u/${o.user.username}`);
       expect(r.status).toBe(200);
       expect(r.text).toContain('shown look');
@@ -76,8 +82,59 @@ describe('/u/:username', () => {
       for (const hidden of ['unlisted look', 'private look', 'archived look', 'unlisted list', 'private list']) {
         expect(r.text).not.toContain(hidden);
       }
+      expect(r.text).not.toMatch(/archived<\/h2>/);
       expect(r.text).not.toContain('<canvas');
     }
+  });
+
+  describe('as the owner', () => {
+    // The <li> that holds a name, so a label is checked on its own row.
+    const row = (text: string, name: string) => new RegExp(`<li>(?:(?!</li>).)*${name}(?:(?!</li>).)*</li>`, 's').exec(text)?.[0] ?? '';
+
+    it('lists all their non-archived presets and playlists, each labelled private or unlisted where it is not public', async () => {
+      const o = await seeded();
+      const r = await asSession(o.user, 'GET', `/u/${o.user.username}`);
+      expect(r.status).toBe(200);
+      expect(row(r.text, 'unlisted look')).toMatch(/>unlisted</);
+      expect(row(r.text, 'private look')).toMatch(/>private</);
+      expect(row(r.text, 'unlisted list')).toMatch(/>unlisted</);
+      expect(row(r.text, 'private list')).toMatch(/>private</);
+      const pub = row(r.text, 'shown look');
+      expect(pub).toContain('shown look');
+      expect(pub).not.toMatch(/>(private|unlisted|public)</);
+      expect(row(r.text, 'shown list')).not.toMatch(/>(private|unlisted|public)</);
+      expect(r.text).not.toContain('<canvas');
+    });
+
+    it('lists their archived presets under an archived heading, after the rest, and links them', async () => {
+      const o = await owner();
+      const live = await makePreset(o.user, o.token, { visibility: 'public', name: 'live look' });
+      const old = await makePreset(o.user, o.token, { visibility: 'private', archived: true, name: 'shelved look' });
+      const r = await asSession(o.user, 'GET', `/u/${o.user.username}`);
+      const heading = r.text.search(/<h2[^>]*>archived<\/h2>/);
+      expect(heading).toBeGreaterThan(-1);
+      expect(r.text.indexOf('shelved look')).toBeGreaterThan(heading);
+      expect(r.text.indexOf('live look')).toBeLessThan(heading);
+      expect(r.text).toContain(`href="/p/${old.id}"`);
+      expect(r.text).toContain(`href="/p/${live.id}"`);
+    });
+
+    it('has no archived heading when nothing is archived', async () => {
+      const o = await owner();
+      await makePreset(o.user, o.token, { name: 'only look' });
+      const r = await asSession(o.user, 'GET', `/u/${o.user.username}`);
+      expect(r.text).not.toMatch(/archived<\/h2>/);
+    });
+
+    it('keeps another person’s private and archived things off their own profile view of someone else', async () => {
+      const o = await seeded();
+      const me = await seeded();
+      const r = await asSession(me.user, 'GET', `/u/${o.user.username}`);
+      expect(r.text).toContain('shown look');
+      for (const hidden of ['unlisted look', 'private look', 'archived look', 'unlisted list', 'private list']) {
+        expect(r.text).not.toContain(hidden);
+      }
+    });
   });
 
   it('links each item to its page', async () => {
@@ -247,8 +304,10 @@ describe('/p/:id', () => {
 describe('/p/:id/history', () => {
   it('lists the versions newest first, with how each arrived', async () => {
     const o = await owner();
-    const p = await makePreset(o.user, o.token, { visibility: 'public', name: 'first name' });
+    const p = await makePreset(o.user, o.token, { name: 'first name' });
+    // A token may only add to a private look, so the look is published afterwards.
     await call('POST', `/api/presets/${p.id}/versions`, { token: await makeToken(o.user, { label: 'studio laptop claude' }), json: { name: 'second name' } });
+    await asSession(o.user, 'PATCH', `/api/presets/${p.id}`, { json: { visibility: 'public' } });
     const r = await get(`/p/${p.id}/history`);
     expect(r.status).toBe(200);
     expect(r.text.indexOf('second name')).toBeGreaterThan(-1);
@@ -425,6 +484,56 @@ describe('/l/:id', () => {
     const stranger = await get(`/l/${l.id}`);
     expect(stranger.text).not.toMatch(/unavailable/);
     expect(stranger.text).not.toContain('theirs');
+  });
+
+  describe('what the owner cannot play now', () => {
+    async function hiddenMiddle() {
+      const o = await owner();
+      const other = await makeUser('other');
+      const first = await makePreset(o.user, o.token, { visibility: 'public', name: 'first look' });
+      const theirs = await makePreset(other, await makeToken(other), { visibility: 'public', name: 'their secret name' });
+      const l = await makePlaylist(o.token, {
+        visibility: 'public',
+        items: [{ preset_id: first.id }, { preset_id: theirs.id, dwell_s: 77, crossfade_s: 3 }],
+      });
+      await asSession(other, 'PATCH', `/api/presets/${theirs.id}`, { json: { visibility: 'private' } });
+      return { o, first, theirs, l };
+    }
+
+    it('are rows of their own in the owner’s list, in place and with their times, which the editor can keep or remove', async () => {
+      const { o, first, theirs, l } = await hiddenMiddle();
+      const r = await asSession(o.user, 'GET', `/l/${l.id}`);
+      expect(r.text).toContain(`data-preset="${theirs.id}" data-dwell="77" data-crossfade="3" data-unavailable="true"`);
+      expect(r.text.indexOf(`data-preset="${first.id}"`)).toBeLessThan(r.text.indexOf(`data-preset="${theirs.id}"`));
+      expect(r.text).not.toContain('their secret name');
+      expect(r.text).toMatch(/<li[^>]*data-unavailable[^>]*>[^]*?unavailable[^]*?<\/li>/);
+      expect(r.text).toContain('1 item unavailable');
+    });
+
+    it('are not said to be dropped by saving, because saving keeps them', async () => {
+      const { o, l } = await hiddenMiddle();
+      const r = await asSession(o.user, 'GET', `/l/${l.id}`);
+      expect(r.text).not.toMatch(/drops/i);
+    });
+
+    it('are not rows for anyone else', async () => {
+      const { l } = await hiddenMiddle();
+      const r = await get(`/l/${l.id}`);
+      expect(r.text).not.toContain('data-unavailable');
+      expect(r.text.match(/<li /g)).toHaveLength(1);
+    });
+
+    it('leave nothing to play when every item is unavailable', async () => {
+      const o = await owner();
+      const a = await makePreset(o.user, o.token, { name: 'a' });
+      const l = await makePlaylist(o.token, { items: [{ preset_id: a.id }] });
+      await asSession(o.user, 'POST', `/api/presets/${a.id}/archive`);
+      const r = await asSession(o.user, 'GET', `/l/${l.id}`);
+      expect(r.text).not.toContain('<canvas');
+      expect(r.text).not.toContain('player.js');
+      expect(r.text).toContain('nothing to play yet');
+      expect(r.text).toContain('data-unavailable');
+    });
   });
 
   describe('owner controls', () => {

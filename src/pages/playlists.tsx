@@ -21,19 +21,21 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
     const isOwner = viewer?.userId === playlist.ownerId;
     const k = playlist.visibility === 'unlisted' ? playlist.shareToken : undefined;
     const unavailable = view.unavailable ?? 0;
+    // The owner's list also holds the items they cannot play now; those are rows to keep or remove, never played.
+    const playable = view.items.filter((i) => !('unavailable' in i));
 
     return c.html(
       <Layout
         title={playlist.name}
         viewer={viewer}
-        scripts={[...(view.items.length ? ['/js/player.js'] : []), ...(isOwner ? ['/js/owner-playlist.js'] : [])]}
+        scripts={[...(playable.length ? ['/js/player.js'] : []), ...(isOwner ? ['/js/owner-playlist.js'] : [])]}
       >
         <h1>{playlist.name}</h1>
         <p class="meta">
           by <a href={`/u/${row.owner}`}>{row.owner}</a>
         </p>
         {playlist.description ? <p>{playlist.description}</p> : null}
-        {view.items.length ? (
+        {playable.length ? (
           <figure class="preview">
             <canvas id="player" data-src={`/api/playlists/${playlist.id}${k ? `?k=${k}` : ''}`} data-engine={engine.file}></canvas>
             <figcaption>
@@ -47,14 +49,23 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
           <a class="primary" href={komorebiPlaylistLink(playlist.id, k)}>play in komorebi</a>
         </p>
         <ol id="items" class="plain">
-          {view.items.map((i) => (
-            <li data-preset={i.preset_id} data-dwell={i.dwell_s} data-crossfade={i.crossfade_s}>
-              <a href={`/p/${i.preset_id}`}>{i.name}</a>{' '}
-              <span class="when">
-                {i.dwell_s} s · crossfade {i.crossfade_s} s
-              </span>
-            </li>
-          ))}
+          {view.items.map((i) =>
+            'unavailable' in i ? (
+              <li data-preset={i.preset_id} data-dwell={i.dwell_s} data-crossfade={i.crossfade_s} data-unavailable="true">
+                <span class="quiet">unavailable</span>{' '}
+                <span class="when">
+                  {i.dwell_s} s · crossfade {i.crossfade_s} s
+                </span>
+              </li>
+            ) : (
+              <li data-preset={i.preset_id} data-dwell={i.dwell_s} data-crossfade={i.crossfade_s}>
+                <a href={`/p/${i.preset_id}`}>{i.name}</a>{' '}
+                <span class="when">
+                  {i.dwell_s} s · crossfade {i.crossfade_s} s
+                </span>
+              </li>
+            ),
+          )}
         </ol>
         {isOwner && unavailable > 0 ? <p class="quiet">{unavailable === 1 ? '1 item unavailable' : `${unavailable} items unavailable`}</p> : null}
         {isOwner ? (
@@ -79,7 +90,6 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
             ) : null}
             <p>
               <button id="save-items" type="button">save the list</button>
-              {unavailable > 0 ? ' Saving drops the items that are unavailable.' : null}
             </p>
             <p class="msg" role="status"></p>
           </section>

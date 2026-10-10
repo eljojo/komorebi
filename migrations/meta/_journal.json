@@ -15,6 +15,13 @@
       "when": 1791594270433,
       "tag": "0001_ambitious_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791597152741,
+      "tag": "0002_bizarre_jamie_braddock",
+      "breakpoints": true
     }
   ]
 }

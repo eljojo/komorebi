@@ -4,12 +4,13 @@
 // `1` and drops the sender's whitespace. So the text is cut out of the request body instead.
 // The caller has already run JSON.parse on `text`, so it is a valid object and this does not re-validate.
 // One copy serves both ends: the Worker cuts params out of a request body, and the pages cut them out of a paste.
+
+// Calls `visit(name, valueText)` for each top-level member of the object in `text`, in order, repeats included.
 /**
  * @param {string} text
- * @param {string} key
- * @returns {string | undefined}
+ * @param {(name: string, value: string) => void} visit
  */
-export function rawMember(text, key) {
+function eachMember(text, visit) {
   let i = 0;
   const skipSpace = () => {
     while (text[i] === ' ' || text[i] === '\t' || text[i] === '\n' || text[i] === '\r') i++;
@@ -41,11 +42,9 @@ export function rawMember(text, key) {
 
   skipSpace();
   i++; // the opening brace
-  /** @type {string | undefined} */
-  let found;
   for (;;) {
     skipSpace();
-    if (text[i] === '}') return found;
+    if (text[i] === '}') return;
     const keyStart = i;
     skipString();
     const name = JSON.parse(text.slice(keyStart, i));
@@ -54,9 +53,36 @@ export function rawMember(text, key) {
     skipSpace();
     const valueStart = i;
     skipValue();
-    // A duplicate key: JSON.parse keeps the last, so this does too.
-    if (name === key) found = text.slice(valueStart, i);
+    visit(name, text.slice(valueStart, i));
     skipSpace();
     if (text[i] === ',') i++;
   }
+}
+
+/**
+ * @param {string} text
+ * @param {string} key
+ * @returns {string | undefined}
+ */
+export function rawMember(text, key) {
+  /** @type {string | undefined} */
+  let found;
+  // A duplicate key: JSON.parse keeps the last, so this does too.
+  eachMember(text, (name, value) => {
+    if (name === key) found = value;
+  });
+  return found;
+}
+
+// The top-level keys the object text spells more than once. JSON.parse keeps only the last copy, so the earlier
+// ones would be stored (verbatim, spec §2.3) without ever being validated.
+/**
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function duplicateKeys(text) {
+  const seen = new Set();
+  const repeated = new Set();
+  eachMember(text, (name) => (seen.has(name) ? repeated.add(name) : seen.add(name)));
+  return [...repeated];
 }

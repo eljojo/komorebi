@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { type Actor, type AppEnv, type Ctx, secured, viaFor } from '../auth';
 import { LIMITS } from '../config';
@@ -7,10 +7,10 @@ import { presetVersions, presets, users } from '../db/schema';
 import { ApiError } from '../errors';
 import { LOOK_NAMES } from '../generated/engine';
 import { randomBase64Url } from '../random';
-import { rawMember } from '../rawjson';
+import { duplicateKeys, rawMember } from '../rawjson';
 import { MAX_PARAMS_BYTES, validateMeta, validateParams } from '../validate';
 import { canSee } from './access';
-import { isVisibility, parseId, readJsonBody } from './util';
+import { isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
 type PresetRow = { preset: typeof presets.$inferSelect; owner: string; head: typeof presetVersions.$inferSelect };
 
@@ -91,6 +91,10 @@ async function versionFields(c: Ctx, db: Db, actor: Actor, body: Record<string, 
     const refusal = validateParams(body.params);
     if (!refusal.ok) throw new ApiError(422, refusal.message, { reason: refusal.reason, keys: refusal.keys });
     params = rawMember(text, 'params')!;
+    const repeated = duplicateKeys(params);
+    if (repeated.length) {
+      throw new ApiError(422, `params repeats keys: ${repeated.join(', ')}`, { reason: 'duplicate_keys', keys: repeated });
+    }
     // The validator measures the parsed value; padding with whitespace must not get past it.
     if (new TextEncoder().encode(params).length > MAX_PARAMS_BYTES) {
       throw new ApiError(422, 'params is over 16 KB', { reason: 'too_large', keys: [] });
@@ -132,15 +136,26 @@ async function checkedParent(c: Ctx, db: Db, actor: Actor, parent: unknown): Pro
   return parent;
 }
 
-async function assertVersionQuota(db: Db, ownerId: number) {
-  const [{ recent }] = await db
-    .select({ recent: count() })
-    .from(presetVersions)
-    .innerJoin(presets, eq(presets.id, presetVersions.presetId))
-    .where(and(eq(presets.ownerId, ownerId), gt(presetVersions.createdAt, Date.now() - 24 * 3600 * 1000)));
-  if (recent >= LIMITS.versionsPerDay) {
-    throw new ApiError(429, `at most ${LIMITS.versionsPerDay} new versions per 24 hours`, { limit: 'versionsPerDay' });
+const DAY_MS = 24 * 3600 * 1000;
+
+// The quotas are conditions of the insert itself (a statement is atomic, a check made before it is not), so a
+// burst of parallel requests cannot all pass a count taken before the first of them landed. These run as raw D1
+// statements because drizzle's batch cannot carry a parameterised raw one; each fragment says which values it binds.
+const UNDER_PRESET_QUOTA = '(select count(*) from presets where owner_id = ?) < ?'; // owner, limit
+const UNDER_VERSION_QUOTA =
+  '(select count(*) from preset_versions v join presets p on p.id = v.preset_id where p.owner_id = ? and v.created_at > ?) < ?'; // owner, cutoff, limit
+const VERSION_COLUMNS = 'preset_id, n, name, description, tags, params, komorebi_commit, parent, via, created_at';
+
+const versionQuotaBinds = (ownerId: number, now: number) => [ownerId, now - DAY_MS, LIMITS.versionsPerDay];
+const versionValues = (f: VersionFields, via: string, now: number) => [f.name, f.description, JSON.stringify(f.tags), f.params, f.komorebiCommit, f.parent, via, now];
+
+// Which limit refused the insert: only the message depends on this, so it need not be atomic.
+async function quotaRefusal(db: Db, ownerId: number, presetsToo: boolean): Promise<ApiError> {
+  if (presetsToo) {
+    const [{ owned }] = await db.select({ owned: count() }).from(presets).where(eq(presets.ownerId, ownerId));
+    if (owned >= LIMITS.presets) return new ApiError(429, `at most ${LIMITS.presets} presets per user`, { limit: 'presets' });
   }
+  return new ApiError(429, `at most ${LIMITS.versionsPerDay} new versions per 24 hours`, { limit: 'versionsPerDay' });
 }
 
 export function registerPresets(app: Hono<AppEnv>) {
@@ -159,21 +174,29 @@ export function registerPresets(app: Hono<AppEnv>) {
 
     const fields = await versionFields(c, db, actor, body, text, null);
 
-    const [{ owned }] = await db.select({ owned: count() }).from(presets).where(eq(presets.ownerId, actor.userId));
-    if (owned >= LIMITS.presets) throw new ApiError(429, `at most ${LIMITS.presets} presets per user`, { limit: 'presets' });
-    await assertVersionQuota(db, actor.userId);
-
     const now = Date.now();
-    // One batch is one transaction: a preset never exists without its first version as head.
-    const [[created]] = await db.batch([
-      db.insert(presets).values({ ownerId: actor.userId, visibility, shareToken: randomBase64Url(16), createdAt: now, updatedAt: now }).returning({ id: presets.id }),
-      db.insert(presetVersions).values({ ...fields, presetId: sql`last_insert_rowid()`, n: 1, via: viaFor(actor, c.req.header('Origin') ?? null), createdAt: now }),
-      db
-        .update(presets)
-        .set({ headVersionId: sql`last_insert_rowid()` })
-        .where(eq(presets.id, sql`(select preset_id from preset_versions where id = last_insert_rowid())`)),
+    const via = viaFor(actor, c.req.header('Origin') ?? null);
+    const d1 = c.env.DB;
+    // One batch is one transaction: a preset never exists without its first version as head. When a quota
+    // refuses the first insert, `changes()` is 0 and the next two statements do nothing.
+    const [first] = await d1.batch<{ id: number }>([
+      d1
+        .prepare(
+          `insert into presets (owner_id, visibility, share_token, created_at, updated_at)
+           select ?, ?, ?, ?, ? where ${UNDER_PRESET_QUOTA} and ${UNDER_VERSION_QUOTA} returning id`,
+        )
+        .bind(actor.userId, visibility, randomBase64Url(16), now, now, actor.userId, LIMITS.presets, ...versionQuotaBinds(actor.userId, now)),
+      d1
+        .prepare(`insert into preset_versions (${VERSION_COLUMNS}) select last_insert_rowid(), 1, ?, ?, ?, ?, ?, ?, ?, ? where changes() > 0`)
+        .bind(...versionValues(fields, via, now)),
+      d1.prepare(
+        `update presets set head_version_id = last_insert_rowid()
+         where changes() > 0 and id = (select preset_id from preset_versions where id = last_insert_rowid())`,
+      ),
     ]);
-    return c.json(presetView((await loadPreset(db, created.id))!, actor), 201);
+    const created = first.results;
+    if (!created.length) throw await quotaRefusal(db, actor.userId, true);
+    return c.json(presetView((await loadPreset(db, created[0].id))!, actor), 201);
   });
 
   secured(app, 'GET', '/api/presets', 'anonymous', async (c, actor) => {
@@ -207,24 +230,29 @@ export function registerPresets(app: Hono<AppEnv>) {
   secured(app, 'POST', '/api/presets/:id/versions', 'write', async (c, actor) => {
     const db = connect(c.env.DB);
     const row = await ownedPreset(c, actor);
+    // Anyone sees a public or unlisted look at once, so changing one is a person's act (spec §3.3).
+    if (actor.kind === 'token' && row.preset.visibility !== 'private') {
+      throw new ApiError(403, 'changing a visible preset needs a person in a browser; a token can only add versions to private presets');
+    }
     const { body, text } = await readJsonBody(c);
     if ('visibility' in body) throw new ApiError(400, 'visibility is not part of a version; change it with PATCH /api/presets/:id');
 
     const fields = await versionFields(c, db, actor, body, text, row.head);
-    await assertVersionQuota(db, actor.userId);
-
     const now = Date.now();
     const id = row.preset.id;
-    await db.batch([
-      db.insert(presetVersions).values({
-        ...fields,
-        presetId: id,
-        n: sql`(select coalesce(max(n), 0) + 1 from preset_versions where preset_id = ${id})`,
-        via: viaFor(actor, c.req.header('Origin') ?? null),
-        createdAt: now,
-      }),
-      db.update(presets).set({ headVersionId: sql`last_insert_rowid()`, updatedAt: now }).where(eq(presets.id, id)),
+    const d1 = c.env.DB;
+    const [append] = await d1.batch<{ id: number }>([
+      d1
+        .prepare(
+          `insert into preset_versions (${VERSION_COLUMNS})
+           select ?, (select coalesce(max(n), 0) + 1 from preset_versions where preset_id = ?), ?, ?, ?, ?, ?, ?, ?, ?
+           where ${UNDER_VERSION_QUOTA} returning id`,
+        )
+        .bind(id, id, ...versionValues(fields, viaFor(actor, c.req.header('Origin') ?? null), now), ...versionQuotaBinds(actor.userId, now)),
+      d1.prepare('update presets set head_version_id = last_insert_rowid(), updated_at = ? where id = ? and changes() > 0').bind(now, id),
     ]);
+    const appended = append.results;
+    if (!appended.length) throw await quotaRefusal(db, actor.userId, false);
     return c.json(presetView((await loadPreset(db, id))!, actor), 201);
   });
 
@@ -249,7 +277,7 @@ export function registerPresets(app: Hono<AppEnv>) {
     const row = await ownedPreset(c, actor);
     const { body } = await readJsonBody(c);
     if (!isVisibility(body.visibility)) throw new ApiError(400, 'visibility must be public, unlisted or private');
-    await db.update(presets).set({ visibility: body.visibility, updatedAt: Date.now() }).where(eq(presets.id, row.preset.id));
+    await db.update(presets).set({ ...visibilityChange(body.visibility), updatedAt: Date.now() }).where(eq(presets.id, row.preset.id));
     return c.json(presetView((await loadPreset(db, row.preset.id))!, actor));
   });
 

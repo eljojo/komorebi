@@ -7,7 +7,20 @@ import { ApiError } from './errors';
 
 const WINDOW_MS = 3600 * 1000;
 
-export const clientIp = (c: Ctx) => c.req.header('CF-Connecting-IP') ?? 'unknown';
+// What a limit counts by. IPv6 gives a person a whole /64 to rotate addresses in, so those count by their /64
+// prefix; IPv4 stays per address. An IPv4-mapped IPv6 address is the IPv4 address it wraps.
+export function ipKey(ip: string): string {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+  if (mapped) return mapped[1];
+  if (!ip.includes(':')) return ip;
+  const [head, tail] = ip.split('%')[0].split('::');
+  const groups = (part: string) => (part ? part.split(':') : []);
+  const first = groups(head);
+  const padded = tail === undefined ? first : [...first, ...Array(Math.max(0, 8 - first.length - groups(tail).length)).fill('0'), ...groups(tail)];
+  return `${padded.slice(0, 4).map((g) => parseInt(g, 16).toString(16)).join(':')}::/64`;
+}
+
+export const clientIp = (c: Ctx) => ipKey(c.req.header('CF-Connecting-IP') ?? 'unknown');
 
 export async function assertUnder(db: Db, ip: string, action: string, max: number, limit: string) {
   const now = Date.now();

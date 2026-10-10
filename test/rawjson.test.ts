@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import looks from './fixtures/looks.json';
-import { rawMember } from '../src/rawjson';
+import { duplicateKeys, rawMember } from '../src/rawjson';
 
 describe('rawMember: the exact text of one member of a JSON object', () => {
   it('returns the substring as written, whitespace and number spelling included', () => {
@@ -40,5 +40,28 @@ describe('rawMember: the exact text of one member of a JSON object', () => {
     for (const raw of [JSON.stringify(look), JSON.stringify(look, null, 2), JSON.stringify(look, null, '\t\t')]) {
       expect(rawMember(`{ "name":"x" ,"params":${raw}\n}`, 'params')).toBe(raw);
     }
+  });
+});
+
+describe('duplicateKeys: top-level keys an object text repeats', () => {
+  it('names a repeated key once, however often it repeats', () => {
+    expect(duplicateKeys('{"a":1,"b":2,"a":3,"a":4}')).toEqual(['a']);
+  });
+
+  it('names every repeated key, in the order they first repeat', () => {
+    expect(duplicateKeys('{"a":1,"b":2,"b":3,"a":4}')).toEqual(['b', 'a']);
+  });
+
+  it('sees an escaped spelling as the same key', () => {
+    expect(duplicateKeys('{"a":1,"\\u0061":2}')).toEqual(['a']);
+  });
+
+  it('is empty when no key repeats, and for an empty object', () => {
+    expect(duplicateKeys('{"a":1,"b":{"c":1},"c":[1]}')).toEqual([]);
+    expect(duplicateKeys('{}')).toEqual([]);
+  });
+
+  it('does not look inside nested values, or at a key-shaped string value', () => {
+    expect(duplicateKeys('{"a":{"b":1,"b":2},"c":"\\"a\\":1"}')).toEqual([]);
   });
 });

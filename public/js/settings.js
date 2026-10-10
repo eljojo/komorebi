@@ -17,7 +17,8 @@ async function showPasskeys() {
           textContent: 'remove',
           onclick: async () => {
             const gone = await send('POST', `/api/auth/passkeys/${encodeURIComponent(p.id)}/remove`);
-            if (gone.ok) showPasskeys();
+            // Removing a passkey signs the user out everywhere, this tab included.
+            if (gone.ok) location.assign('/login');
             else say(passkeys, failure(gone));
           },
         }))),

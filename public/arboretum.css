@@ -46,6 +46,7 @@ nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; font-size: 0.95rem; 
 .tags { display: inline-flex; gap: 0.5rem; }
 .tag { color: var(--quiet); font-size: 0.85rem; }
 .tag::before { content: "#"; }
+.label { color: var(--quiet); font-size: 0.85rem; font-style: italic; }
 .note { border-left: 2px solid var(--line); padding-left: 0.75rem; color: var(--quiet); }
 .primary { font-size: 1.05rem; }
 

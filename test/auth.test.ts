@@ -127,46 +127,109 @@ describe('the CSRF guard: writes must be application/json', () => {
 });
 
 describe('CORS on /api/*', () => {
-  async function options(origin: string) {
+  const KOMOREBI = 'https://komorebi.eljojo.net';
+
+  // The editor's whole surface (spec §8), and nothing else.
+  const EDITOR_ROUTES = [
+    'GET /api/me',
+    'GET /api/presets',
+    'POST /api/presets',
+    'GET /api/presets/1',
+    'GET /api/presets/1/versions',
+    'GET /api/presets/1/versions/2',
+    'POST /api/presets/1/versions',
+    'GET /api/playlists',
+    'GET /api/playlists/1',
+  ];
+  // A script on the editor's origin must not be able to reach these: minting a token, publishing, the export.
+  const OTHER_ROUTES = [
+    'GET /api/health',
+    'POST /api/auth/register-options',
+    'POST /api/auth/register',
+    'POST /api/auth/login-options',
+    'POST /api/auth/login',
+    'POST /api/auth/logout',
+    'GET /api/auth/passkeys',
+    'POST /api/auth/passkeys/x/remove',
+    'POST /api/auth/add-passkey-options',
+    'POST /api/auth/add-passkey',
+    'POST /api/tokens',
+    'GET /api/tokens',
+    'DELETE /api/tokens/1',
+    'GET /api/export',
+    'PATCH /api/presets/1',
+    'POST /api/presets/1/archive',
+    'POST /api/presets/1/unarchive',
+    'POST /api/playlists',
+    'PATCH /api/playlists/1',
+    'PUT /api/playlists/1/items',
+  ];
+
+  async function preflight(path: string, origin: string, method = 'POST') {
     const res = await createApp().request(
-      '/api/presets',
-      { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type,authorization' } },
+      path,
+      { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': method, 'Access-Control-Request-Headers': 'content-type,authorization' } },
       env,
     );
     return res.headers;
   }
 
-  it.each(['https://komorebi.eljojo.net', 'http://localhost:8000'])('allows %s, with credentials', async (origin) => {
-    const h = await options(origin);
+  async function actual(method: string, path: string, origin: string) {
+    const init: RequestInit = { method, headers: { Origin: origin, 'Content-Type': 'application/json' } };
+    if (method !== 'GET') init.body = '{}';
+    return (await createApp().request(path, init, env)).headers;
+  }
+
+  it.each([KOMOREBI, 'http://localhost:8000'])('allows %s, with credentials', async (origin) => {
+    const h = await preflight('/api/presets', origin);
     expect(h.get('Access-Control-Allow-Origin')).toBe(origin);
     expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
-    expect(h.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim()).sort()).toEqual(['DELETE', 'GET', 'PATCH', 'POST', 'PUT']);
+    expect(h.get('Access-Control-Allow-Methods')?.split(',').map((m) => m.trim()).sort()).toEqual(['GET', 'POST']);
     expect((h.get('Access-Control-Allow-Headers') ?? '').toLowerCase().split(',').map((m) => m.trim()).sort()).toEqual(['authorization', 'content-type']);
   });
 
   it.each(['https://evil.example', 'https://komorebi.eljojo.net.evil.example', 'http://localhost:8001', 'https://eljojo.net', 'null'])(
     'gives %s no allow-origin on a preflight',
     async (origin) => {
-      const h = await options(origin);
+      const h = await preflight('/api/presets', origin);
       expect(h.get('Access-Control-Allow-Origin')).toBeNull();
     },
   );
 
-  it('answers a real request from the komorebi origin with its origin, and one from elsewhere with none', async () => {
-    const ok = await createApp().request('/api/health', { headers: { Origin: 'https://komorebi.eljojo.net' } }, env);
-    expect(ok.headers.get('Access-Control-Allow-Origin')).toBe('https://komorebi.eljojo.net');
-    const no = await createApp().request('/api/health', { headers: { Origin: 'https://evil.example' } }, env);
-    expect(no.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  it.each(EDITOR_ROUTES)('answers the komorebi origin on %s, preflight and request', async (route) => {
+    const [method, path] = route.split(' ');
+    expect((await preflight(path, KOMOREBI, method)).get('Access-Control-Allow-Origin'), 'preflight').toBe(KOMOREBI);
+    const h = await actual(method, path, KOMOREBI);
+    expect(h.get('Access-Control-Allow-Origin'), 'request').toBe(KOMOREBI);
+    expect(h.get('Access-Control-Allow-Credentials')).toBe('true');
+  });
+
+  it.each(OTHER_ROUTES)('gives the komorebi origin no CORS headers on %s, preflight or request', async (route) => {
+    const [method, path] = route.split(' ');
+    for (const h of [await preflight(path, KOMOREBI, method), await actual(method, path, KOMOREBI)]) {
+      expect(h.get('Access-Control-Allow-Origin')).toBeNull();
+      expect(h.get('Access-Control-Allow-Credentials')).toBeNull();
+    }
+  });
+
+  it('does not grant a method the route lacks: a preflight for DELETE on an editor path gets nothing', async () => {
+    expect((await preflight('/api/presets/1', KOMOREBI, 'DELETE')).get('Access-Control-Allow-Origin')).toBeNull();
+    expect((await preflight('/api/presets/1', KOMOREBI, 'PATCH')).get('Access-Control-Allow-Origin')).toBeNull();
+    expect((await preflight('/api/playlists', KOMOREBI, 'POST')).get('Access-Control-Allow-Origin')).toBeNull();
+  });
+
+  it('answers a request from elsewhere with no allow-origin, even on an editor route', async () => {
+    expect((await actual('GET', '/api/me', 'https://evil.example')).get('Access-Control-Allow-Origin')).toBeNull();
   });
 
   it('also reaches a 415, so the editor can read the refusal', async () => {
     const res = await createApp().request(
       '/api/presets',
-      { method: 'POST', headers: { Origin: 'https://komorebi.eljojo.net', 'Content-Type': 'text/plain' }, body: 'x' },
+      { method: 'POST', headers: { Origin: KOMOREBI, 'Content-Type': 'text/plain' }, body: 'x' },
       env,
     );
     expect(res.status).toBe(415);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://komorebi.eljojo.net');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(KOMOREBI);
   });
 });
 

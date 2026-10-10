@@ -68,6 +68,15 @@ describe('POST /api/playlists', () => {
     expect(r.json.error).toContain(`${LIMITS.playlists} playlists`);
     expect((await call('POST', '/api/playlists', { token: (await owner()).token, json: { name: 'x' } })).status).toBe(201);
   });
+
+  it(`stops at ${LIMITS.playlists} playlists when a burst arrives at once`, async () => {
+    const o = await owner();
+    await fillPlaylists(o.user.id, LIMITS.playlists - 5);
+    const replies = await Promise.all(Array.from({ length: 12 }, (_, i) => call('POST', '/api/playlists', { token: o.token, json: { name: `burst ${i}` } })));
+    expect(replies.filter((r) => r.status === 201)).toHaveLength(5);
+    expect(replies.filter((r) => r.status === 429)).toHaveLength(7);
+    expect(await playlistCount(o.user.id)).toBe(LIMITS.playlists);
+  });
 });
 
 describe('PATCH /api/playlists/:id', () => {
@@ -291,7 +300,7 @@ describe('the items a viewer gets', () => {
     const o = await owner();
     const a = await makePreset(o.user, o.token, { name: 'old name', visibility: 'public' });
     const p = await makePlaylist(o.token, { visibility: 'public', items: [{ preset_id: a.id }] });
-    await call('POST', `/api/presets/${a.id}/versions`, { token: o.token, json: { name: 'new name', params: { tree_count: 9 } } });
+    await asSession(o.user, 'POST', `/api/presets/${a.id}/versions`, { json: { name: 'new name', params: { tree_count: 9 } } });
     const item = (await get(`/api/playlists/${p.id}`)).json.items[0];
     expect(item).toMatchObject({ name: 'new name', params: { tree_count: 9 } });
   });
@@ -306,7 +315,7 @@ describe('the items a viewer gets', () => {
       visibility: 'public',
       items: [{ preset_id: visible.id }, { preset_id: turns.id }, { preset_id: mineUnlisted.id }],
     });
-    const names = (r: { json: any }) => r.json.items.map((i: any) => i.name);
+    const names = (r: { json: any }) => r.json.items.filter((i: any) => !i.unavailable).map((i: any) => i.name);
 
     expect(names(await get(`/api/playlists/${p.id}`, o.token))).toEqual(['visible', 'goes private', 'mine, unlisted']);
 
@@ -332,7 +341,7 @@ describe('the items a viewer gets', () => {
     const p = await makePlaylist(o.token, { visibility: 'public', items: [{ preset_id: theirs.id }, { preset_id: mine.id }] });
     await env.DB.prepare('UPDATE presets SET archived_at = 1 WHERE id IN (?, ?)').bind(theirs.id, mine.id).run();
     const r = await get(`/api/playlists/${p.id}`, o.token);
-    expect(r.json.items).toEqual([]);
+    expect(r.json.items.map((i: any) => [i.preset_id, i.unavailable])).toEqual([[theirs.id, true], [mine.id, true]]);
     expect(r.json.unavailable).toBe(2);
     expect((await get(`/api/playlists/${p.id}`, other.token)).json.items).toEqual([]);
   });
@@ -347,6 +356,7 @@ describe('the items a viewer gets', () => {
     const back = await get(`/api/playlists/${p.id}`, o.token);
     expect(back.json.unavailable).toBe(0);
     expect(back.json.items).toHaveLength(1);
+    expect(back.json.items[0]).toMatchObject({ name: 'a' });
   });
 
   it('archiving a preset through a session hides it from other people\'s reads and playlists, and the playlist owner is told', async () => {
@@ -355,7 +365,7 @@ describe('the items a viewer gets', () => {
     const theirs = await makePreset(other.user, other.token, { name: 'theirs', visibility: 'public' });
     const keep = await makePreset(other.user, other.token, { name: 'keep', visibility: 'public' });
     const p = await makePlaylist(o.token, { visibility: 'public', items: [{ preset_id: theirs.id }, { preset_id: keep.id }] });
-    const names = (r: { json: any }) => r.json.items.map((i: any) => i.name);
+    const names = (r: { json: any }) => r.json.items.filter((i: any) => !i.unavailable).map((i: any) => i.name);
 
     expect((await asSession(other.user, 'POST', `/api/presets/${theirs.id}/archive`, { json: {} })).status).toBe(200);
 
@@ -388,5 +398,155 @@ describe('the items a viewer gets', () => {
     const p = await makePlaylist(o.token, { items: [{ preset_id: a.id }] });
     const read = await makeToken(o.user, { scope: 'read' });
     expect((await get(`/api/playlists/${p.id}`, read)).json.items).toHaveLength(1);
+  });
+});
+
+describe('a fresh share link each time a playlist goes unlisted', () => {
+  const setVisibility = (user: { id: number }, id: number, visibility: string) =>
+    asSession(user, 'PATCH', `/api/playlists/${id}`, { json: { visibility } });
+
+  it.each(['private', 'public'] as const)('makes a new token when a %s playlist goes unlisted, and the old link stays dead', async (from) => {
+    const o = await owner();
+    const p = await makePlaylist(o.token, { visibility: from });
+    const r = await setVisibility(o.user, p.id, 'unlisted');
+    expect(r.status).toBe(200);
+    expect(r.json.share_token).not.toBe(p.share_token);
+    expect((await get(`/api/playlists/${p.id}?k=${r.json.share_token}`)).status).toBe(200);
+    expect((await get(`/api/playlists/${p.id}?k=${p.share_token}`)).status).toBe(404);
+  });
+
+  it('does not bring back the link of an earlier unlisted period', async () => {
+    const o = await owner();
+    const p = await makePlaylist(o.token);
+    const first = (await setVisibility(o.user, p.id, 'unlisted')).json.share_token;
+    await setVisibility(o.user, p.id, 'private');
+    const second = (await setVisibility(o.user, p.id, 'unlisted')).json.share_token;
+    expect(second).not.toBe(first);
+    expect((await get(`/api/playlists/${p.id}?k=${first}`)).status).toBe(404);
+  });
+
+  it('keeps the token when it is set to unlisted while already unlisted, or leaves unlisted', async () => {
+    const o = await owner();
+    const p = await makePlaylist(o.token);
+    const first = (await setVisibility(o.user, p.id, 'unlisted')).json.share_token;
+    expect((await setVisibility(o.user, p.id, 'unlisted')).json.share_token).toBe(first);
+    expect((await setVisibility(o.user, p.id, 'public')).json.share_token).toBe(first);
+  });
+});
+
+describe('a token cannot change what is visible (spec §3.3)', () => {
+  it.each(['public', 'unlisted'] as const)('is refused a rename, a new description and new items on a %s playlist, with 403', async (visibility) => {
+    const o = await owner();
+    const mine = await makePreset(o.user, o.token);
+    const p = await makePlaylist(o.token, { name: 'before', visibility });
+    for (const body of [{ name: 'sneaky' }, { description: 'sneaky' }]) {
+      const r = await call('PATCH', `/api/playlists/${p.id}`, { token: o.token, json: body });
+      expect(r.status).toBe(403);
+      expect(r.json.error).toMatch(/browser/);
+    }
+    const put = await call('PUT', `/api/playlists/${p.id}/items`, { token: o.token, json: { items: [{ preset_id: mine.id }] } });
+    expect(put.status).toBe(403);
+    expect(put.json.error).toMatch(/browser/);
+    const after = (await asSession(o.user, 'GET', `/api/playlists/${p.id}`)).json;
+    expect(after).toMatchObject({ name: 'before', description: null, items: [] });
+  });
+
+  it('may change a private playlist', async () => {
+    const o = await owner();
+    const mine = await makePreset(o.user, o.token);
+    const p = await makePlaylist(o.token);
+    expect((await call('PATCH', `/api/playlists/${p.id}`, { token: o.token, json: { name: 'quiet' } })).status).toBe(200);
+    expect((await call('PUT', `/api/playlists/${p.id}/items`, { token: o.token, json: { items: [{ preset_id: mine.id }] } })).status).toBe(200);
+  });
+
+  it.each(['public', 'unlisted'] as const)('lets a person in a browser change a %s playlist', async (visibility) => {
+    const o = await owner();
+    const mine = await makePreset(o.user, o.token);
+    const p = await makePlaylist(o.token, { visibility });
+    expect((await asSession(o.user, 'PATCH', `/api/playlists/${p.id}`, { json: { name: 'by hand' } })).status).toBe(200);
+    expect((await asSession(o.user, 'PUT', `/api/playlists/${p.id}/items`, { json: { items: [{ preset_id: mine.id }] } })).status).toBe(200);
+  });
+});
+
+describe('the owner’s view keeps what is unavailable, in its place (so saving does not drop it)', () => {
+  // The playlist is public, and a token may not change a visible one: the owner saves it from a browser.
+  const put = (o: { user: { id: number } }, id: number, json: unknown) => asSession(o.user, 'PUT', `/api/playlists/${id}/items`, { json });
+
+  async function withHiddenMiddle() {
+    const o = await owner();
+    const other = await owner();
+    const first = await makePreset(o.user, o.token, { name: 'first', visibility: 'public' });
+    const theirs = await makePreset(other.user, other.token, { name: 'theirs', visibility: 'public' });
+    const last = await makePreset(o.user, o.token, { name: 'last', visibility: 'public' });
+    const p = await makePlaylist(o.token, {
+      visibility: 'public',
+      items: [{ preset_id: first.id, dwell_s: 10, crossfade_s: 1 }, { preset_id: theirs.id, dwell_s: 20, crossfade_s: 2 }, { preset_id: last.id, dwell_s: 40, crossfade_s: 3 }],
+    });
+    await asSession(other.user, 'PATCH', `/api/presets/${theirs.id}`, { json: { visibility: 'private' } });
+    return { o, other, first, theirs, last, p };
+  }
+
+  it('returns an unavailable item where it sits, with no name and no params', async () => {
+    const { o, first, theirs, last, p } = await withHiddenMiddle();
+    const r = await get(`/api/playlists/${p.id}`, o.token);
+    expect(r.json.items).toHaveLength(3);
+    expect(r.json.items[0]).toMatchObject({ preset_id: first.id, name: 'first', dwell_s: 10, crossfade_s: 1 });
+    expect(r.json.items[1]).toEqual({ preset_id: theirs.id, dwell_s: 20, crossfade_s: 2, unavailable: true });
+    expect(r.json.items[2]).toMatchObject({ preset_id: last.id, name: 'last' });
+    expect(r.json.unavailable).toBe(1);
+  });
+
+  it('tells nobody else: other people get the playable items only', async () => {
+    const { other, p, theirs } = await withHiddenMiddle();
+    const stranger = await get(`/api/playlists/${p.id}`);
+    expect(stranger.json.items.map((i: any) => i.name)).toEqual(['first', 'last']);
+    expect(stranger.text).not.toContain('unavailable');
+    // The hidden preset's own author is not the playlist's owner: they see their preset, and no count.
+    const author = await get(`/api/playlists/${p.id}`, await makeToken(other.user));
+    expect(author.json.items.map((i: any) => i.preset_id)).toContain(theirs.id);
+    expect(author.json).not.toHaveProperty('unavailable');
+  });
+
+  it('is what the owner saves back: the list read is accepted by PUT and nothing is dropped', async () => {
+    const { o, p, theirs } = await withHiddenMiddle();
+    const read = (await get(`/api/playlists/${p.id}`, o.token)).json.items;
+    const saved = await put(o, p.id, { items: read.map((i: any) => ({ preset_id: i.preset_id, dwell_s: i.dwell_s, crossfade_s: i.crossfade_s })) });
+    expect(saved.status, saved.text).toBe(200);
+    expect(saved.json.items.map((i: any) => i.preset_id)).toEqual(read.map((i: any) => i.preset_id));
+    expect(saved.json.items[1]).toEqual({ preset_id: theirs.id, dwell_s: 20, crossfade_s: 2, unavailable: true });
+    // It is still there when the preset comes back.
+    await env.DB.prepare("UPDATE presets SET visibility = 'public' WHERE id = ?").bind(theirs.id).run();
+    expect((await get(`/api/playlists/${p.id}`)).json.items.map((i: any) => i.name)).toEqual(['first', 'theirs', 'last']);
+  });
+
+  it('accepts it moved to another place, with other times', async () => {
+    const { o, p, first, theirs, last } = await withHiddenMiddle();
+    const r = await put(o, p.id, { items: [{ preset_id: theirs.id, dwell_s: 99 }, { preset_id: last.id }, { preset_id: first.id }] });
+    expect(r.status, r.text).toBe(200);
+    expect(r.json.items[0]).toEqual({ preset_id: theirs.id, dwell_s: 99, crossfade_s: 5, unavailable: true });
+  });
+
+  it('can be removed, and then it is gone: putting it back is refused like any invisible preset', async () => {
+    const { o, p, first, theirs, last } = await withHiddenMiddle();
+    expect((await put(o, p.id, { items: [{ preset_id: first.id }, { preset_id: last.id }] })).status).toBe(200);
+    expect((await get(`/api/playlists/${p.id}`, o.token)).json.unavailable).toBe(0);
+    const back = await put(o, p.id, { items: [{ preset_id: first.id }, { preset_id: theirs.id }] });
+    expect(back.status).toBe(422);
+    expect(back.json.preset_ids).toEqual([theirs.id]);
+  });
+
+  it('still requires new items to be visible when they are added', async () => {
+    const { o, other, p, first, theirs } = await withHiddenMiddle();
+    const hidden = await makePreset(other.user, other.token, { name: 'also hidden', visibility: 'private' });
+    const r = await put(o, p.id, { items: [{ preset_id: first.id }, { preset_id: theirs.id }, { preset_id: hidden.id }] });
+    expect(r.status).toBe(422);
+    expect(r.json.preset_ids).toEqual([hidden.id]);
+  });
+
+  it('counts only this playlist’s own list: a preset hidden here but listed in another playlist is not allowed in', async () => {
+    const { o, theirs } = await withHiddenMiddle();
+    const elsewhere = await makePlaylist(o.token);
+    const r = await put(o, elsewhere.id, { items: [{ preset_id: theirs.id }] });
+    expect(r.status).toBe(422);
   });
 });

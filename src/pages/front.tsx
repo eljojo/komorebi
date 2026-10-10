@@ -6,6 +6,26 @@ import { connect } from '../db/client';
 import { playlists, presetVersions, presets, users } from '../db/schema';
 import { Layout, WEBAUTHN_BROWSER, Tags, day, notFound, viewerOf } from './layout';
 
+// Only what is not public gets a label: it tells the owner who else can see the thing.
+function Visibility(props: { of: 'public' | 'unlisted' | 'private' }) {
+  return props.of === 'public' ? null : <span class="label">{props.of}</span>;
+}
+
+type LookRow = { preset: typeof presets.$inferSelect; head: typeof presetVersions.$inferSelect };
+
+function Looks(props: { rows: LookRow[] }) {
+  return (
+    <ul class="plain">
+      {props.rows.map((r) => (
+        <li>
+          <a href={`/p/${r.preset.id}`}>{r.head.name}</a> <Tags tags={r.head.tags} /> <Visibility of={r.preset.visibility} />{' '}
+          <span class="when">{day(r.preset.updatedAt)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function registerFrontPages(app: Hono<AppEnv>) {
   app.get('/', async (c) => {
     const viewer = await viewerOf(c);
@@ -70,17 +90,19 @@ export function registerFrontPages(app: Hono<AppEnv>) {
     const [user] = await db.select().from(users).where(eq(users.username, c.req.param('username').toLowerCase()));
     if (!user) return notFound(c, viewer);
 
-    // Anyone's profile is the public view, the owner's included: canSee with nobody, so no second rule.
-    const looks = (
-      await db
-        .select({ preset: presets, head: presetVersions })
-        .from(presets)
-        .innerJoin(presetVersions, eq(presetVersions.id, presets.headVersionId))
-        .where(eq(presets.ownerId, user.id))
-        .orderBy(desc(presets.id))
-    ).filter((r) => canSee(r.preset, null, undefined));
+    // The same `canSee` for everyone: a stranger gets the public view, and the owner gets everything of theirs,
+    // so the owner can find their own private looks from any machine (spec §12) and unarchive what they shelved.
+    const shown = (await db
+      .select({ preset: presets, head: presetVersions })
+      .from(presets)
+      .innerJoin(presetVersions, eq(presetVersions.id, presets.headVersionId))
+      .where(eq(presets.ownerId, user.id))
+      .orderBy(desc(presets.id))
+    ).filter((r) => canSee(r.preset, viewer, undefined));
+    const looks = shown.filter((r) => !r.preset.archivedAt);
+    const archived = shown.filter((r) => r.preset.archivedAt);
     const lists = (await db.select().from(playlists).where(eq(playlists.ownerId, user.id)).orderBy(desc(playlists.id))).filter((l) =>
-      canSee(l, null, undefined),
+      canSee(l, viewer, undefined),
     );
 
     return c.html(
@@ -91,7 +113,7 @@ export function registerFrontPages(app: Hono<AppEnv>) {
           <ul class="plain">
             {lists.map((l) => (
               <li>
-                <a href={`/l/${l.id}`}>{l.name}</a> <span class="when">{day(l.updatedAt)}</span>
+                <a href={`/l/${l.id}`}>{l.name}</a> <Visibility of={l.visibility} /> <span class="when">{day(l.updatedAt)}</span>
               </li>
             ))}
           </ul>
@@ -99,17 +121,13 @@ export function registerFrontPages(app: Hono<AppEnv>) {
           <p class="quiet">none yet</p>
         )}
         <h2>looks</h2>
-        {looks.length ? (
-          <ul class="plain">
-            {looks.map((r) => (
-              <li>
-                <a href={`/p/${r.preset.id}`}>{r.head.name}</a> <Tags tags={r.head.tags} /> <span class="when">{day(r.preset.updatedAt)}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p class="quiet">none yet</p>
-        )}
+        {looks.length ? <Looks rows={looks} /> : <p class="quiet">none yet</p>}
+        {archived.length ? (
+          <>
+            <h2 class="quiet">archived</h2>
+            <Looks rows={archived} />
+          </>
+        ) : null}
       </Layout>,
     );
   });

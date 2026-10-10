@@ -13,7 +13,7 @@ import type { Hono } from 'hono';
 import { type AppEnv, type Ctx, secured } from '../auth';
 import { LIMITS } from '../config';
 import { type Db, connect } from '../db/client';
-import { credentials, users } from '../db/schema';
+import { credentials, sessions, users } from '../db/schema';
 import { issueChallenge, takeChallenge } from '../challenges';
 import { ApiError } from '../errors';
 import { assertUnder, clientIp, recordEvent } from '../ratelimit';
@@ -32,17 +32,27 @@ async function credentialFrom(c: Ctx) {
   return body.credential as any;
 }
 
+// The transports WebAuthn defines. The browser sends them, so anything else is the sender's JSON, not a fact
+// about the authenticator, and is not kept or echoed back.
+const TRANSPORTS = ['usb', 'nfc', 'ble', 'internal', 'hybrid', 'smart-card', 'cable'];
+const MAX_CREDENTIAL_ID_BYTES = 1023;
+
 const isUnique = (err: unknown) => /UNIQUE/i.test(`${err} ${(err as { cause?: unknown })?.cause}`);
 
 // A passkey that checks out, as the row we store.
 async function verifiedPasskey(c: Ctx, response: any, expectedChallenge: string) {
+  let credential;
   try {
     const result = await verifyRegistrationResponse({ response, expectedChallenge, ...verifying(c) });
     if (!result.verified) throw new Error('not verified');
-    return result.registrationInfo!.credential;
+    credential = result.registrationInfo!.credential;
   } catch {
     throw new ApiError(400, 'that passkey could not be verified');
   }
+  if (isoBase64URL.toBuffer(credential.id).length > MAX_CREDENTIAL_ID_BYTES) {
+    throw new ApiError(400, `that passkey's id is longer than WebAuthn allows (${MAX_CREDENTIAL_ID_BYTES} bytes)`);
+  }
+  return credential;
 }
 
 const passkeyRow = (userId: number | ReturnType<typeof sql>, credential: Awaited<ReturnType<typeof verifiedPasskey>>) => ({
@@ -50,9 +60,14 @@ const passkeyRow = (userId: number | ReturnType<typeof sql>, credential: Awaited
   userId,
   publicKey: isoBase64URL.fromBuffer(credential.publicKey),
   counter: credential.counter,
-  transports: credential.transports ?? null,
+  transports: Array.isArray(credential.transports) ? credential.transports.filter((t) => TRANSPORTS.includes(t)) : null,
   createdAt: Date.now(),
 });
+
+// Two logins verified against the same stored counter can finish in either order, so the later write must not
+// roll the counter back: a replayed assertion would verify again. A passkey that always sends 0 stays at 0.
+export const credentialUsed = (db: Db, id: string, counter: number) =>
+  db.update(credentials).set({ counter: sql`max(counter, ${counter})`, lastUsedAt: Date.now() }).where(eq(credentials.id, id));
 
 async function failedLogin(db: Db, ip: string, message: string): Promise<never> {
   await recordEvent(db, ip, 'failed-login');
@@ -148,7 +163,7 @@ export function registerAuth(app: Hono<AppEnv>) {
 
     const session = await openSession(db, stored.cred.userId);
     await db.batch([
-      db.update(credentials).set({ counter, lastUsedAt: Date.now() }).where(eq(credentials.id, stored.cred.id)),
+      credentialUsed(db, stored.cred.id, counter),
       ...session.statements,
     ]);
     setSessionCookie(c, session.token);
@@ -171,11 +186,17 @@ export function registerAuth(app: Hono<AppEnv>) {
     const id = String(c.req.param('id'));
     const [mine] = await db.select({ id: credentials.id }).from(credentials).where(and(eq(credentials.id, id), eq(credentials.userId, actor.userId)));
     if (!mine) throw new ApiError(404, 'not found');
-    // The count is part of the delete, so two removals racing cannot both pass the check.
-    const removed = await db
-      .delete(credentials)
-      .where(and(eq(credentials.id, id), sql`(select count(*) from credentials where user_id = ${actor.userId}) > 1`))
-      .returning({ id: credentials.id });
+    // The count is part of the delete, so two removals racing cannot both pass the check. A removal also ends
+    // every session of the user, this one included, in the same transaction: a passkey that was removed because
+    // it was lost must not leave behind a login that someone holding it already made. The sessions go only
+    // when the credential is really gone.
+    const [removed] = await db.batch([
+      db
+        .delete(credentials)
+        .where(and(eq(credentials.id, id), sql`(select count(*) from credentials where user_id = ${actor.userId}) > 1`))
+        .returning({ id: credentials.id }),
+      db.delete(sessions).where(and(eq(sessions.userId, actor.userId), sql`not exists (select 1 from credentials where id = ${id})`)),
+    ]);
     if (!removed.length) throw new ApiError(409, 'this is your last passkey; add another before removing it');
     return c.json({ removed: id });
   });
