@@ -4,14 +4,16 @@
 // Everything is built into a temporary place first and only put where the repo keeps it once every step has
 // succeeded (scripts/stage.mjs), so a failed bump leaves the committed files exactly as they were.
 // Outputs, all committed so the Worker and the tests never need ~/code/komorebi:
-//   src/generated/engine.ts       commit, param types, legacy keys, look names, experimental look names
+//   src/generated/engine.ts       commit, param types, the editor's slider ranges and select choices, legacy keys,
+//                                 look names, experimental look names
 //   test/fixtures/looks.json      every shipped look, the validator's golden fixtures
 //   public/engine/*               the browser bundle (every camera, every feature tier) + engine.json
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { extractRows } from './editor-rows.mjs';
 import { install } from './stage.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -26,13 +28,34 @@ try {
   const archive = execFileSync('git', ['-C', KOMOREBI, 'archive', commit], { maxBuffer: 1 << 30 });
   execFileSync('tar', ['-x', '-C', tmp], { input: archive });
 
-  const { DEFAULTS, LEGACY_KEYS } = await import(pathToFileURL(join(tmp, 'komorebi-params.js')).href);
+  const { DEFAULTS, LEGACY_KEYS, MAX_LAYERS } = await import(pathToFileURL(join(tmp, 'komorebi-params.js')).href);
   const { PRESETS, EXPERIMENTAL } = await import(pathToFileURL(join(tmp, 'presets.js')).href);
 
   const types = Object.entries(DEFAULTS).map(([k, v]) => {
     if (!['number', 'boolean', 'string'].includes(typeof v)) throw new Error(`DEFAULTS.${k} is a ${typeof v}`);
     return [k, typeof v];
   });
+
+  // The editor's own knobs are the bound on a look (brief 07). editor.js is a DOM module, so its PANEL table is read as text.
+  const rows = extractRows(readFileSync(join(tmp, 'editor.js'), 'utf8'), { MAX_LAYERS });
+  const editorKeys = ['time_of_day', 'latitude']; // helpers the editor's export carries; DEFAULTS has no entry for them
+  const ranges = new Map();
+  const choices = new Map();
+  for (const row of rows) {
+    const type = editorKeys.includes(row.key) ? 'number' : typeof DEFAULTS[row.key];
+    if (row.kind === 's') {
+      if (type !== 'number') throw new Error(`editor slider ${row.key} is for a ${type} param`);
+      if (ranges.has(row.key)) throw new Error(`editor has two sliders for ${row.key}`);
+      ranges.set(row.key, row);
+    } else {
+      if (type !== (row.kind === 'sel' ? 'number' : 'string')) throw new Error(`editor ${row.kind} ${row.key} is for a ${type} param`);
+      if (choices.has(row.key)) throw new Error(`editor has two selects for ${row.key}`);
+      choices.set(row.key, row.choices);
+    }
+  }
+  const isAngle = (r) => r.key.endsWith('_deg') && ((r.min === -180 && r.max === 180) || (r.min === 0 && r.max === 360));
+  const angleKeys = [...ranges.values()].filter(isAngle).map((r) => r.key);
+  const integerKeys = [...ranges.values()].filter((r) => r.step === 1).map((r) => r.key);
   const entry = ([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`;
   const stage = join(tmp, 'arboretum-stage');
   mkdirSync(stage);
@@ -42,6 +65,22 @@ try {
     '',
     'export const PARAM_TYPES: Record<string, \'number\' | \'boolean\' | \'string\'> = {',
     ...types.map(entry),
+    '};',
+    '',
+    '// The komorebi editor\'s slider ranges, exactly as its panel has them (validate.ts adds the leeway).',
+    'export const PARAM_RANGES: Record<string, { min: number; max: number }> = {',
+    ...[...ranges.values()].map((r) => `  ${JSON.stringify(r.key)}: { "min": ${r.min}, "max": ${r.max} },`),
+    '};',
+    '',
+    '// Sliders whose step is 1: their stretched bounds round to whole numbers.',
+    `export const INTEGER_KEYS: string[] = ${JSON.stringify(integerKeys)};`,
+    '',
+    '// Sliders that are a direction around a circle (-180...180 or 0...360, named *_deg): any number is one.',
+    `export const ANGLE_KEYS: string[] = ${JSON.stringify(angleKeys)};`,
+    '',
+    '// The editor\'s selects: the only values a look may hold for these keys.',
+    'export const PARAM_CHOICES: Record<string, (number | string)[]> = {',
+    ...[...choices].map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`),
     '};',
     '',
     '// Old spelling -> current name.',
@@ -77,7 +116,7 @@ try {
     older,
   );
 
-  console.log(`pinned komorebi ${commit}: ${types.length} params, ${Object.keys(LEGACY_KEYS).length} legacy keys, ${Object.keys(PRESETS).length} looks`);
+  console.log(`pinned komorebi ${commit}: ${types.length} params, ${ranges.size} ranges, ${choices.size} select rows, ${Object.keys(LEGACY_KEYS).length} legacy keys, ${Object.keys(PRESETS).length} looks`);
 } finally {
   rmSync(tmp, { recursive: true, force: true });
 }

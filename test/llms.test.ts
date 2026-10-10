@@ -16,4 +16,10 @@ describe('llms.txt', () => {
     expect(doc).toContain('ARBORETUM_TOKEN');
     expect(doc).toMatch(/never print/i);
   });
+
+  it('tells an agent that numbers stay within the editor\'s slider ranges, with leeway, and that a refusal names the range', () => {
+    expect(doc).toMatch(/slider ranges/);
+    expect(doc).toMatch(/quarter of each range/);
+    expect(doc).toMatch(/out_of_range/);
+  });
 });

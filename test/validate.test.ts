@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import looks from './fixtures/looks.json';
-import { ENGINE_COMMIT, LEGACY_KEYS, PARAM_TYPES } from '../src/generated/engine';
+import { ANGLE_KEYS, ENGINE_COMMIT, LEGACY_KEYS, PARAM_CHOICES, PARAM_RANGES, PARAM_TYPES } from '../src/generated/engine';
 import { validateMeta, validateParams } from '../src/validate';
 
 const lookNames = Object.keys(looks) as (keyof typeof looks)[];
@@ -45,7 +45,8 @@ describe('validateParams: the shipped looks are the golden fixtures', () => {
 describe('validateParams: key tables', () => {
   it('accepts every legacy key with a value of its current key\'s type', () => {
     for (const [old, current] of Object.entries(LEGACY_KEYS)) {
-      const value = { number: 1, boolean: true, string: 'x' }[PARAM_TYPES[current]];
+      // a number inside the editor's range for that key, and a string from its choices
+      const value = { number: PARAM_RANGES[current]?.min ?? 1, boolean: true, string: PARAM_CHOICES[current]?.[0] ?? 'x' }[PARAM_TYPES[current]];
       expect(validateParams({ [old]: value }), old).toEqual({ ok: true });
     }
   });
@@ -86,12 +87,129 @@ describe('validateParams: value types', () => {
   });
 
   it('accepts a string of 64 characters and refuses 65', () => {
-    expect(validateParams({ [str]: 'x'.repeat(64) })).toEqual({ ok: true });
-    expect(refusal({ [str]: 'x'.repeat(65) }).keys).toEqual([str]);
+    // tree_species is a string with no list of choices
+    expect(validateParams({ tree_species: 'x'.repeat(64) })).toEqual({ ok: true });
+    expect(refusal({ tree_species: 'x'.repeat(65) }).keys).toEqual(['tree_species']);
   });
 
   it('lists every bad key', () => {
     expect(refusal({ [num]: 'a', [bool]: 2 }).keys).toEqual([num, bool]);
+  });
+});
+
+describe('validateParams: the editor\'s ranges, with leeway', () => {
+  const outOfRange = (params: unknown) => {
+    const r = refusal(params);
+    expect(r.reason).toBe('out_of_range');
+    return r;
+  };
+
+  it('refuses the review\'s S1 look, naming the one key that is past the editor', () => {
+    const r = outOfRange({ tree_count: 1, limb_count: 1, branch_levels: 20, branch_children: 6 });
+    expect(r.keys).toEqual(['branch_levels']);
+    expect(r.message).toContain('branch_levels must be 1–4');
+  });
+
+  it('holds a fractional slider to its range stretched by a quarter of its span at each end', () => {
+    // vignette_shape is 2…8 in the editor: 0.5…9.5 with leeway
+    expect(PARAM_RANGES.vignette_shape).toEqual({ min: 2, max: 8 });
+    for (const v of [0.5, 2, 9.5]) expect(validateParams({ vignette_shape: v }), String(v)).toEqual({ ok: true });
+    for (const v of [0.4999, 9.5001]) expect(outOfRange({ vignette_shape: v }).message).toContain('vignette_shape must be 0.5–9.5');
+  });
+
+  it('rounds an integer slider\'s stretched max down and its min up', () => {
+    // branch_levels is 1…4 step 1: 0.25…4.75 stretches to 1…4
+    expect(PARAM_RANGES.branch_levels).toEqual({ min: 1, max: 4 });
+    for (const v of [1, 4]) expect(validateParams({ branch_levels: v })).toEqual({ ok: true });
+    for (const v of [0, 0.5, 4.5, 5]) expect(outOfRange({ branch_levels: v }).keys).toEqual(['branch_levels']);
+    // sample_count is 16…48 step 1: 8…56 exactly
+    for (const v of [8, 56]) expect(validateParams({ sample_count: v })).toEqual({ ok: true });
+    for (const v of [7, 57]) expect(outOfRange({ sample_count: v }).keys).toEqual(['sample_count']);
+  });
+
+  it('never lets a slider whose min is 0 or more accept a negative value', () => {
+    // cloud_thickness is 0…1: the stretch would reach −0.25
+    expect(validateParams({ cloud_thickness: 0 })).toEqual({ ok: true });
+    expect(outOfRange({ cloud_thickness: -0.0001 }).message).toContain('cloud_thickness must be 0–1.25');
+    // a count whose own min is 1 can't go negative either
+    expect(outOfRange({ tree_count: -1 }).keys).toEqual(['tree_count']);
+  });
+
+  it('lets a slider with a negative min go below it', () => {
+    // droop is -1…1: -1.5…1.5
+    expect(validateParams({ droop: -1.5 })).toEqual({ ok: true });
+    expect(outOfRange({ droop: -1.6 }).message).toContain('droop must be -1.5–1.5');
+  });
+
+  it('accepts any finite angle for an angle key, since it wraps', () => {
+    expect(ANGLE_KEYS).toEqual(expect.arrayContaining(['view_yaw_deg', 'sun_azimuth_deg', 'wind_direction_deg']));
+    for (const key of ANGLE_KEYS) {
+      for (const v of [540, -540, 208.5, 1e6]) expect(validateParams({ [key]: v }), `${key} ${v}`).toEqual({ ok: true });
+    }
+    expect(refusal({ view_yaw_deg: Infinity }).reason).toBe('bad_values');
+  });
+
+  it('knows an angle key only by its range and its _deg name', () => {
+    for (const key of ANGLE_KEYS) {
+      const { min, max } = PARAM_RANGES[key];
+      expect(key.endsWith('_deg')).toBe(true);
+      expect(`${min},${max}`).toMatch(/^(-180,180|0,360)$/);
+    }
+    // a 0…90 or 4…90 elevation is not an angle that wraps
+    expect(ANGLE_KEYS).not.toContain('view_pitch_deg');
+    expect(ANGLE_KEYS).not.toContain('sun_elevation_deg');
+    expect(outOfRange({ view_pitch_deg: 400 }).keys).toEqual(['view_pitch_deg']);
+  });
+
+  it('takes a select\'s choices exactly, with no leeway', () => {
+    expect(PARAM_CHOICES.phyllotaxis).toEqual(['spiral', 'whorled', 'opposite']);
+    expect(validateParams({ phyllotaxis: 'whorled' })).toEqual({ ok: true });
+    expect(outOfRange({ phyllotaxis: 'fibonacci' }).message).toContain('phyllotaxis must be one of spiral, whorled, opposite');
+    expect(PARAM_CHOICES.tone_map).toEqual([0, 1, 2]);
+    expect(validateParams({ tone_map: 2 })).toEqual({ ok: true });
+    for (const v of [3, 0.5, -1]) expect(outOfRange({ tone_map: v }).keys).toEqual(['tone_map']);
+  });
+
+  it('bounds clusters_per_layer, which has no slider, at 1 to 82 with no leeway', () => {
+    expect(PARAM_RANGES).not.toHaveProperty('clusters_per_layer');
+    for (const v of [1, 82]) expect(validateParams({ clusters_per_layer: v })).toEqual({ ok: true });
+    for (const v of [0, 83]) expect(outOfRange({ clusters_per_layer: v }).message).toContain('clusters_per_layer must be 1–82');
+  });
+
+  it('leaves seed and tree_species to their types', () => {
+    expect(validateParams({ seed: 4e9, tree_species: 'anything short' })).toEqual({ ok: true });
+  });
+
+  it('holds a legacy key to its current key\'s range, and takes time_of_day and latitude from their own rows', () => {
+    const [old, current] = Object.entries(LEGACY_KEYS).find(([, cur]) => PARAM_RANGES[cur])!;
+    const { max } = PARAM_RANGES[current];
+    const r = outOfRange({ [old]: max * 100 + 1000 });
+    expect(r.keys).toEqual([old]);
+    expect(r.message).toContain(old);
+    expect(PARAM_RANGES.time_of_day).toEqual({ min: 5, max: 19 });
+    expect(validateParams({ time_of_day: 22.5, latitude: 82 })).toEqual({ ok: true });
+    expect(outOfRange({ time_of_day: 23, latitude: 83 }).keys).toEqual(['time_of_day', 'latitude']);
+  });
+
+  it('names every key that is out of range, each with the range it was held to', () => {
+    const r = outOfRange({ branch_levels: 9, branch_children: 40 });
+    expect(r.keys).toEqual(['branch_levels', 'branch_children']);
+    expect(r.message).toContain('branch_levels must be 1–4');
+    expect(r.message).toContain('branch_children must be 0–7');
+  });
+
+  it('reports a wrong type before a range', () => {
+    expect(refusal({ branch_levels: 'many' }).reason).toBe('bad_values');
+  });
+
+  it('accepts the four shipped looks that go past the editor\'s sliders, unchanged', () => {
+    expect(looks.montebello.view_yaw_deg).toBe(208.5);
+    expect(looks['canopy 2'].foliage_density).toBe(3.4);
+    expect(looks['curtain 2'].fold_warp).toBe(0.34);
+    expect(looks['acid dreams'].branch_length_ratio).toBe(1);
+    for (const name of ['montebello', 'canopy 2', 'curtain 2', 'acid dreams'] as const) {
+      expect(validateParams(looks[name]), name).toEqual({ ok: true });
+    }
   });
 });
 

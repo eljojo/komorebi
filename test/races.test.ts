@@ -89,7 +89,7 @@ describe('S2: a token write that loses a race with the owner publishing', () => 
 
     const r = await asToken(/from "presets"/, async () => {
       expect((await asSession(owner, 'PATCH', `/api/presets/${preset.id}`, { json: { visibility: 'public' } })).status).toBe(200);
-    }, 'POST', `/api/presets/${preset.id}/versions`, token, { params: { tree_count: 99 } });
+    }, 'POST', `/api/presets/${preset.id}/versions`, token, { params: { tree_count: 9 } });
 
     expect(r.status, r.text).toBe(403);
     expect(await db.select().from(presetVersions).where(eq(presetVersions.presetId, preset.id))).toHaveLength(1);

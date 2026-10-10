@@ -125,6 +125,13 @@ describe('POST /api/presets', () => {
       expect(r.json).toMatchObject({ reason: 'bad_values', keys: ['tree_count'] });
     });
 
+    it('names the keys past what the editor can make, with the range they were held to', async () => {
+      const r = await post({ name: 'x', params: { tree_count: 1, limb_count: 1, branch_levels: 20, branch_children: 6 } });
+      expect(r.status).toBe(422);
+      expect(r.json).toMatchObject({ reason: 'out_of_range', keys: ['branch_levels'] });
+      expect(r.json.error).toMatch(/branch_levels must be 1–4/);
+    });
+
     // JSON.parse keeps only the last copy of a repeated key, but the stored text is the sender's own: an earlier
     // copy would be stored without ever being validated.
     it.each([

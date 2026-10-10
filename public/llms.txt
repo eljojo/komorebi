@@ -30,6 +30,9 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
 
 - Only keys the pinned komorebi engine knows (its DEFAULTS, plus old spellings and the editor's `time_of_day`
   and `latitude`), each with its own type: finite numbers, booleans, strings of at most 64 characters.
+- Numbers must stay within the komorebi editor's slider ranges, with a quarter of each range as leeway, and a
+  select's value must be one of its choices. An out-of-range look is refused with 422, reason `out_of_range`,
+  naming the key and its range: `branch_levels must be 1–4`.
 - At most 16 KB of JSON, no duplicate keys.
 - Keys left out take komorebi's defaults when the look loads, so a partial object is a valid look.
 - An unknown key is refused with 422, naming it: `arboretum is pinned to komorebi <sha>; unknown keys: …`.

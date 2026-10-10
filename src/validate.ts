@@ -1,5 +1,5 @@
 // The upload guard (spec §5): what a preset may contain. Pure functions, no I/O.
-import { ENGINE_COMMIT, LEGACY_KEYS, PARAM_TYPES } from './generated/engine';
+import { ANGLE_KEYS, ENGINE_COMMIT, INTEGER_KEYS, LEGACY_KEYS, PARAM_CHOICES, PARAM_RANGES, PARAM_TYPES } from './generated/engine';
 
 export const MAX_PARAMS_BYTES = 16384;
 const MAX_STRING = 64;
@@ -10,11 +10,19 @@ export const TAGS = ['projector', 'experimental'];
 // The editor's export carries these two input helpers (found in `park 2` and `acid dreams`), but DEFAULTS does not.
 const EDITOR_KEYS: Record<string, 'number'> = { time_of_day: 'number', latitude: 'number' };
 
+// A look must be one the editor can make (REVIEW S1: absurd topology freezes the tab of whoever opens it), but a few
+// shipped looks sit past its sliders, so a slider's range stretches by this share of its span at each end.
+export const RANGE_LEEWAY = 0.25;
+
+// `clusters_per_layer` has no editor slider, but it sets how much the grove costs. José set its bound at the
+// shipped maximum, 82, with no leeway.
+export const CLUSTERS_PER_LAYER = { min: 1, max: 82 };
+
 type ParamsRefusal = {
   ok: false;
-  reason: 'not_object' | 'too_large' | 'unknown_keys' | 'bad_values';
+  reason: 'not_object' | 'too_large' | 'unknown_keys' | 'bad_values' | 'out_of_range';
   message: string;
-  // The offending keys, for the two key-level reasons; empty otherwise.
+  // The offending keys, for the key-level reasons; empty otherwise.
   keys: string[];
 };
 
@@ -30,6 +38,41 @@ function hasType(value: unknown, type: string): boolean {
   if (type === 'number') return typeof value === 'number' && Number.isFinite(value);
   if (type === 'boolean') return typeof value === 'boolean';
   return typeof value === 'string' && value.length <= MAX_STRING;
+}
+
+// Which knob's rules a key follows: a legacy spelling follows its current key; the editor's own helpers have rows of their own.
+const currentKey = (key: string) => (Object.hasOwn(LEGACY_KEYS, key) ? LEGACY_KEYS[key] : key);
+
+// 12 significant digits drop the float noise from the stretch (0.3 + 0.075), so a bound reads as the number it is.
+const tidy = (n: number) => Number(n.toPrecision(12));
+
+// The range a key is held to, leeway included; undefined when it has none.
+function boundsOf(key: string): { min: number; max: number } | undefined {
+  const k = currentKey(key);
+  if (k === 'clusters_per_layer') return CLUSTERS_PER_LAYER;
+  if (!Object.hasOwn(PARAM_RANGES, k)) return undefined;
+  const { min, max } = PARAM_RANGES[k];
+  const stretch = (max - min) * RANGE_LEEWAY;
+  let lo = tidy(min - stretch);
+  let hi = tidy(max + stretch);
+  if (min >= 0) lo = Math.max(0, lo);
+  if (INTEGER_KEYS.includes(k)) {
+    lo = Math.ceil(lo);
+    hi = Math.floor(hi);
+  }
+  return { min: lo, max: hi };
+}
+
+// What is wrong with a value of the right type, or undefined. A string value is only held to a choice list.
+function rangeProblem(key: string, value: unknown): string | undefined {
+  const k = currentKey(key);
+  if (Object.hasOwn(PARAM_CHOICES, k)) {
+    const choices = PARAM_CHOICES[k];
+    return choices.includes(value as number | string) ? undefined : `${key} must be one of ${choices.join(', ')}`;
+  }
+  if (typeof value !== 'number' || ANGLE_KEYS.includes(k)) return undefined; // an angle wraps: 208.5 is -151.5
+  const bounds = boundsOf(key);
+  return bounds && (value < bounds.min || value > bounds.max) ? `${key} must be ${bounds.min}–${bounds.max}` : undefined;
 }
 
 export function validateParams(params: unknown): { ok: true } | ParamsRefusal {
@@ -62,6 +105,19 @@ export function validateParams(params: unknown): { ok: true } | ParamsRefusal {
       reason: 'bad_values',
       message: `values of the wrong type (numbers must be finite, strings at most ${MAX_STRING} characters): ${bad.join(', ')}`,
       keys: bad,
+    };
+  }
+
+  const problems = entries.flatMap(([k, v]) => {
+    const problem = rangeProblem(k, v);
+    return problem ? [{ key: k, problem }] : [];
+  });
+  if (problems.length) {
+    return {
+      ok: false,
+      reason: 'out_of_range',
+      message: `out of range for the komorebi editor: ${problems.map((p) => p.problem).join('; ')}`,
+      keys: problems.map((p) => p.key),
     };
   }
   return { ok: true };
