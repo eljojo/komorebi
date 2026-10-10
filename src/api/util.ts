@@ -40,9 +40,10 @@ export const visibilityChange = (visibility: Visibility) => ({
 // A request from the editor's origin may create things but never make them visible: publishing is a person's act
 // on arboretum itself, the same stance as for tokens (spec §3.3). Without this a script on that origin could
 // publish a look through the session cookie the editor's CORS grant carries.
+export const fromEditor = (c: Ctx) => CORS_ORIGINS.includes(c.req.header('Origin') ?? '');
+
 export function assertNotPublishedFromEditor(c: Ctx, visibility: Visibility) {
-  const origin = c.req.header('Origin');
-  if (visibility !== 'private' && origin !== undefined && CORS_ORIGINS.includes(origin)) {
+  if (visibility !== 'private' && fromEditor(c)) {
     throw new ApiError(403, 'publishing is done on arboretum, not from the editor');
   }
 }

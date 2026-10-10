@@ -10,7 +10,7 @@ import { randomBase64Url } from '../random';
 import { duplicateKeys, rawMember } from '../rawjson';
 import { MAX_PARAMS_BYTES, builtinTwin, validateMeta, validateParams } from '../validate';
 import { canSee } from './access';
-import { assertNotPublishedFromEditor, isVisibility, parseId, readJsonBody, visibilityChange } from './util';
+import { assertNotPublishedFromEditor, fromEditor, isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
 type PresetRow = { preset: typeof presets.$inferSelect; owner: string; head: typeof presetVersions.$inferSelect };
 
@@ -139,7 +139,7 @@ async function checkedParent(c: Ctx, db: Db, actor: Actor, parent: unknown): Pro
   return parent;
 }
 
-const visibleRefusal = new ApiError(403, 'changing a visible preset needs a person in a browser; a token can only add versions to private presets');
+const visibleRefusal = new ApiError(403, 'changing a visible preset needs a person in a browser; tokens and the editor can only add versions to private presets');
 
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -152,8 +152,8 @@ const UNDER_VERSION_QUOTA =
 const VERSION_COLUMNS = 'preset_id, n, name, description, tags, params, komorebi_commit, parent, via, created_at';
 
 // A token's right to change a preset is a condition of the insert (spec §3.3): the owner may have published it
-// since it was read. A session needs no such condition.
-const PRIVATE_OR_PERSON = "(? = 0 or (select visibility from presets where id = ?) = 'private')"; // 1 for a token else 0, preset id
+// since it was read. The editor has the same restriction. Only a session on arboretum itself needs no such condition.
+const PRIVATE_OR_PERSON = "(? = 0 or (select visibility from presets where id = ?) = 'private')"; // 1 for a token or editor else 0, preset id
 
 const versionQuotaBinds = (ownerId: number, now: number) => [ownerId, now - DAY_MS, LIMITS.versionsPerDay];
 const versionValues = (f: VersionFields, via: string, now: number) => [f.name, f.description, JSON.stringify(f.tags), f.params, f.komorebiCommit, f.parent, via, now];
@@ -245,7 +245,8 @@ export function registerPresets(app: Hono<AppEnv>) {
     const db = connect(c.env.DB);
     const row = await ownedPreset(c, actor);
     // Anyone sees a public or unlisted look at once, so changing one is a person's act (spec §3.3).
-    if (actor.kind === 'token' && row.preset.visibility !== 'private') throw visibleRefusal;
+    const restricted = actor.kind === 'token' || fromEditor(c);
+    if (restricted && row.preset.visibility !== 'private') throw visibleRefusal;
     const { body, text } = await readJsonBody(c);
     if ('visibility' in body) throw new ApiError(400, 'visibility is not part of a version; change it with PATCH /api/presets/:id');
 
@@ -260,11 +261,11 @@ export function registerPresets(app: Hono<AppEnv>) {
            select ?, (select coalesce(max(n), 0) + 1 from preset_versions where preset_id = ?), ?, ?, ?, ?, ?, ?, ?, ?
            where ${UNDER_VERSION_QUOTA} and ${PRIVATE_OR_PERSON} returning id`,
         )
-        .bind(id, id, ...versionValues(fields, viaFor(actor, c.req.header('Origin') ?? null), now), ...versionQuotaBinds(actor.userId, now), actor.kind === 'token' ? 1 : 0, id),
+        .bind(id, id, ...versionValues(fields, viaFor(actor, c.req.header('Origin') ?? null), now), ...versionQuotaBinds(actor.userId, now), restricted ? 1 : 0, id),
       d1.prepare('update presets set head_version_id = last_insert_rowid(), updated_at = ? where id = ? and changes() > 0').bind(now, id),
     ]);
     const appended = append.results;
-    if (!appended.length) throw await quotaRefusal(db, actor.userId, false, actor.kind === 'token' ? id : undefined);
+    if (!appended.length) throw await quotaRefusal(db, actor.userId, false, restricted ? id : undefined);
     return c.json(presetView((await loadPreset(db, id))!, actor), 201);
   });
 
