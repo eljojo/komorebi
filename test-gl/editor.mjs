@@ -99,8 +99,35 @@ try {
   // the welcome's quiet row: "about" is always there, "arboretum" only where arboretum is served (not here, at /index.html)
   check('at /index.html the welcome shows the about link and hides the arboretum link',
     await page.isVisible('#welcome .more a[href="about.html"]') && !(await page.isVisible('#arbLink')));
-  await page.click('#feel');
+  // "about" opens in place: no navigation, the welcome's text gone, the same canvas still dimmed under body.intro
+  const urlBefore = page.url();
+  await page.evaluate(() => { window.__glBefore = document.getElementById('gl'); });
+  await page.click('#welcome .more a[href="about.html"]');
+  await page.waitForSelector('#aboutView:not(.out) #aboutCol', { timeout: 15000 });
+  await page.waitForTimeout(1100);   // the breath in (.9s) has landed
+  const inPlace = await page.evaluate(() => {
+    const w = document.getElementById('welcome'), v = document.getElementById('aboutView'), gl = document.getElementById('gl');
+    return {
+      sameCanvas: gl === window.__glBefore,
+      dimmed: document.body.classList.contains('intro') && Math.abs(parseFloat(getComputedStyle(gl).opacity) - 0.33) < 0.01,
+      welcomeGone: getComputedStyle(w).visibility === 'hidden' || parseFloat(getComputedStyle(w).opacity) === 0,
+      clear: parseFloat(getComputedStyle(v).opacity) === 1,
+      text: v.textContent.includes('How it’s made') && v.textContent.includes('On your own page'),
+      arbHidden: getComputedStyle(document.getElementById('arbHead')).display === 'none',
+    };
+  });
+  check('clicking about keeps the page\'s URL and shows the about content in place, the welcome text gone',
+    page.url() === urlBefore && inPlace.text && inPlace.clear && inPlace.welcomeGone, JSON.stringify({ url: page.url(), ...inPlace }));
+  check('and the canvas is the same element, still dimmed by body.intro', inPlace.sameCanvas && inPlace.dimmed, JSON.stringify(inPlace));
+  check('and the arboretum line stays hidden where arboretum is not served', inPlace.arbHidden);
+  await page.keyboard.press('d');
+  await page.waitForTimeout(300);
+  check('while about is open the welcome still owns the screen (no panel, D included)',
+    await page.evaluate(() => ['dev', 'play', 'strip'].every((id) => getComputedStyle(document.getElementById(id)).display === 'none')));
+  await page.click('#aboutView a.feel');   // the column's "feel" is the welcome's feel
   await page.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });   // arrive() waits out the full welcome crossfade (slower under SwiftShader)
+  check('feel in the about content brings the editor: the canvas un-dimmed, the about content gone, still the same page',
+    await page.evaluate(() => !document.body.classList.contains('intro') && !document.getElementById('aboutView') && document.getElementById('gl') === window.__glBefore) && page.url() === urlBefore);
   check('boot lands in zen everywhere', true);
   await page.$eval('#strip .preset .more', (b) => b.click());              // climb to playful for the macro checks
   await page.waitForSelector('#play:not(.hidden)', { timeout: 15000 });

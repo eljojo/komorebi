@@ -1610,10 +1610,60 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
       onEnd:()=>{ settled=true; endTween(); landed(); setTimeout(arrive,300); } });
     setTimeout(()=>{ if(!settled) landed(); arrive(); }, 5500);  // fallback if onEnd never fires
   }
+  // "about", in place. The column is about.html's own (#aboutCol, with the stylesheet it links), fetched and parsed once and never
+  // copied into this page's source; the welcome breathes out and the column breathes in over the same canvas, still under
+  // body.intro. A failed fetch, or a click that asks for a tab (middle, cmd/ctrl, shift), goes to the page itself.
+  const aboutLink=welcome.querySelector('.more a[href="about.html"]');
+  let aboutLoad=null, aboutOpen=false, aboutView=null;
+  const plain=(e)=> !e.button && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+  function loadAbout(){
+    if(aboutLoad) return aboutLoad;
+    aboutLoad=(async()=>{
+      const url=aboutLink.href, res=await fetch(url);
+      if(!res.ok) throw new Error(`about: ${res.status}`);
+      const doc=new DOMParser().parseFromString(await res.text(),'text/html');
+      const column=doc.getElementById('aboutCol');
+      if(!column) throw new Error('about: no column');
+      await Promise.all([...doc.querySelectorAll('link[rel="stylesheet"]')].map((l)=> new Promise((ok,no)=>{
+        const css=document.createElement('link'); css.rel='stylesheet'; css.href=new URL(l.getAttribute('href'),url).href;
+        css.onload=ok; css.onerror=()=>no(new Error('about: stylesheet')); document.head.appendChild(css);
+      })));
+      return document.importNode(column,true);
+    })();
+    return aboutLoad;
+  }
+  const prefetch=()=>{ loadAbout().catch(()=>{}); };   // quietly, as the pointer or focus arrives
+  aboutLink.addEventListener('pointerenter', prefetch);
+  aboutLink.addEventListener('focus', prefetch);
+  function openAbout(column){
+    if(started) return;
+    welcome.classList.add('out');                   // the welcome's own breath out, .9s
+    arb.ready.then((origin)=>{ if(origin) for(const id of ['arbHead','arbText']) column.querySelector(`#${id}`).hidden=false; });   // as #arbLink: only where arboretum is served
+    setTimeout(()=>{
+      if(started) return;                           // "feel" was pressed during the breath out
+      welcome.style.visibility='hidden';
+      const view=document.createElement('div'); view.id='aboutView'; view.className='out'; view.tabIndex=-1;
+      view.append(column);
+      view.addEventListener('click',(e)=>{          // the column's "feel" is this feel, not a second one
+        const a=e.target.closest('a.feel');
+        if(a && plain(e)){ e.preventDefault(); feel.click(); }
+      });
+      document.body.append(view); aboutView=view;
+      void view.offsetWidth;                        // commit the 'out' state so removing it is a transition: the reverse breath
+      view.classList.remove('out'); view.focus({ preventScroll:true });
+    }, 900);
+  }
+  aboutLink.addEventListener('click',(e)=>{
+    if(e.defaultPrevented || !plain(e) || started) return;
+    e.preventDefault();
+    if(aboutOpen) return; aboutOpen=true;
+    loadAbout().then(openAbout, ()=>{ location.href=aboutLink.href; });
+  });
   feel.addEventListener('click',()=>{
     if(started) return; started=true;
     document.body.classList.remove('intro');        // un-dim the canvas to full strength
     welcome.classList.add('out');                   // dissolve the intro text
+    if(aboutView){ const v=aboutView; v.classList.add('out'); setTimeout(()=>v.remove(), 1000); aboutView=null; }   // ...and the about column, if it is what is showing
     if(link?.preset) welcome.style.display='none';
     else setTimeout(()=>{ welcome.style.display='none'; }, 1000);
     endTween();

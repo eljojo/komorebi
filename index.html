@@ -182,6 +182,11 @@
   #welcome .more a:hover, #welcome .more a:focus-visible { color: #f1e7cf; }
   #welcome .more a[hidden] { display: none; }
   #welcome .more #arbLink::after { content: "·"; margin-left: .7em; color: #9fb89f; }   /* the dot goes with the link it follows, so it hides with it */
+  /* "about", in place: about.html's column (styled by about.css, fetched by editor.js) laid over the same canvas. It breathes in and
+     out as the welcome does (#welcome.out); taller than the screen, it scrolls here. */
+  #aboutView { position: fixed; inset: 0; z-index: 31; overflow-y: auto; overscroll-behavior: contain; outline: none;
+    transition: opacity .9s ease, filter .9s ease, transform .9s ease; }
+  #aboutView.out { opacity: 0; filter: blur(10px); transform: scale(1.04); pointer-events: none; }
   /* dev panel slides in from the left on first reveal; afterwards D just toggles it */
   #dev { transition: transform .6s cubic-bezier(.22,.61,.36,1); }
   #dev.offscreen { transform: translateX(-100%); }
