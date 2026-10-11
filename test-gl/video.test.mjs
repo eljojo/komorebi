@@ -673,6 +673,117 @@ test('--restart discards the previous run\'s manifest and delivery with its mast
   assert.notEqual(readJson(join(f.out, 'run-key.json')).key, f.rk.key);
 }));
 
+// ---------------------------------------------------------------- --discard-master: the segments go once the delivery is verified
+// A run folder a render would have left (segments, jsons, hashes, checkpoints) but with the key the REAL exporter derives, so a render command resumes it: makeRun's fixture key is
+// dropped, the checkpoints are added, and the first invocation writes run-key.json itself and finds every segment done (no browser is reached).
+const renderArgs = (f, flags = {}) => ['--commit', 'HEAD', ...encodeArgs(f, flags).slice(1)];
+function readyRun(root) {
+  const f = makeRun(root);
+  rmSync(join(f.out, 'run-key.json'));
+  for (const at of [60, 90]) writeFileSync(join(f.out, 'ckpt', `ckpt_${String(at).padStart(9, '0')}.json`), '{}');
+  return f;
+}
+const ready = (fn) => withDir((root) => fn(readyRun(root), root));
+const segMkvs = (f) => readdirSync(join(f.out, 'seg')).filter((n) => n.endsWith('.mkv'));
+const KEPT = ['list.txt', 'SHA256SUMS', 'seg_00000.json', 'seg_00001.json', 'seg_00000.hashes', 'seg_00001.hashes'];
+
+test('--discard-master is incompatible with --merge-master and --drop-segments (and with --encode-only): a one-line reason, exit 2, nothing created', () => withDir((root) => {
+  const out = join(root, 'run'), look = join(root, 'look.json');
+  writeFileSync(look, '{"params":{"leaf_size":1}}\n');
+  const base = ['--look-json', look, '--commit', 'HEAD', '--out', out, '--discard-master'];
+  for (const [extra, what] of [[['--merge-master'], /--merge-master/], [['--drop-segments'], /--drop-segments/], [['--merge-master', '--drop-segments'], /--merge-master|--drop-segments/], [['--encode-only'], /--encode-only/]]) {
+    const r = exporter([...base, ...extra]);
+    assert.equal(r.status, 2, `${extra}: ${r.all}`);
+    assert.match(r.err, /--discard-master/);
+    assert.match(r.err, what);
+    assert.equal(r.err.trim().split('\n').length, 1, `one line: ${r.err}`);
+  }
+  assert.ok(!existsSync(out), 'a refused invocation created the folder');
+}));
+
+test('--discard-master: the delivery is encoded and verified, then seg/*.mkv go; the lists, checksums, per-segment records, checkpoints and hashes stay, and the manifest says so', () => ready((f) => {
+  const r = exporter(renderArgs(f, { ...X265, '--discard-master': true }));
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.all, /frame accounting EXACT/);
+  assert.deepEqual(segMkvs(f), [], 'the segments are still there');
+  for (const n of KEPT) assert.ok(existsSync(join(f.out, 'seg', n)), `seg/${n} was removed`);
+  assert.ok(readdirSync(join(f.out, 'ckpt')).length >= 2 && existsSync(join(f.out, 'hashes.txt')));
+  assert.ok(!existsSync(join(f.out, 'master.mkv')));
+  assert.equal(lib.countFrames(join(f.out, 'delivery.mp4')), 60, 'the delivery was encoded before the segments went');
+  const m = readJson(join(f.out, 'manifest.json'));
+  assert.equal(m.master.discarded, true);
+  assert.ok(Number.isFinite(Date.parse(m.master.discarded_at)), 'the time it was discarded');
+  assert.equal(m.master.segments_on_disk, false);
+  assert.equal(m.frame_accounting.exact, true);
+  const c = readJson(join(f.out, 'complete.json'));
+  assert.equal(c.key, readJson(join(f.out, 'run-key.json')).key);
+  assert.equal(c.frames, 60);
+}));
+
+test('without --discard-master the segments stay (the flag is the only thing that deletes them)', () => ready((f) => {
+  assert.equal(exporter(renderArgs(f)).status, 0);
+  assert.equal(segMkvs(f).length, 2);
+  assert.equal(readJson(join(f.out, 'manifest.json')).master.discarded, undefined);
+}));
+
+test('--discard-master with --stills and --measure: both read the master, so they run before the segments go', () => ready((f) => {
+  const r = exporter(renderArgs(f, { ...X265, '--discard-master': true, '--measure': true, '--stills': '0,1' }));
+  assert.equal(r.status, 0, r.all);
+  assert.deepEqual(segMkvs(f), []);
+  for (const t of ['00s', '01s']) assert.ok(existsSync(join(f.out, `master-still-${t}.png`)) && existsSync(join(f.out, `still-${t}.png`)), `stills at ${t}`);
+  const m = readJson(join(f.out, 'manifest.json'));
+  assert.equal(m.quality_vs_master.frames_compared, 60);
+  assert.equal(m.quality_vs_master.encoder_free_baseline.frames_compared, 60);
+  assert.equal(m.frame_accounting.exact, true);
+  assert.equal(m.master.discarded, true);
+}));
+
+test('--encode-only on a discarded run refuses (exit 3) and writes nothing', () => ready((f) => {
+  assert.equal(exporter(renderArgs(f, { '--discard-master': true })).status, 0);
+  const manifest = readFileSync(join(f.out, 'manifest.json'), 'utf8');
+  const r = exporter(encodeArgs(f));
+  assert.equal(r.status, 3, r.all);
+  assert.match(r.err, /the master was discarded \(--discard-master\); re-render with --restart/);
+  assert.equal(readFileSync(join(f.out, 'manifest.json'), 'utf8'), manifest);
+  assert.deepEqual(segMkvs(f), []);
+}));
+
+test('the same command again on a completed, discarded run answers complete, exit 0: nothing is re-rendered or re-encoded, no browser is asked for', () => ready((f) => {
+  const args = renderArgs(f, { ...X265, '--discard-master': true });
+  assert.equal(exporter(args).status, 0);
+  const before = { manifest: readFileSync(join(f.out, 'manifest.json'), 'utf8'), delivery: sha256(readFileSync(join(f.out, 'delivery.mp4'))), complete: readFileSync(join(f.out, 'complete.json'), 'utf8') };
+  for (const again of [args, renderArgs(f, X265), renderArgs(f)]) {   // with the flag, without it, and without a delivery
+    const r = exporter(again);
+    assert.equal(r.status, 0, r.all);
+    assert.match(r.out, /complete/);
+    assert.doesNotMatch(r.all, /Executable doesn't exist|resuming at segment|FAILED/);
+    assert.deepEqual(segMkvs(f), [], 'a segment was rendered again');
+    assert.equal(readFileSync(join(f.out, 'manifest.json'), 'utf8'), before.manifest);
+    assert.equal(sha256(readFileSync(join(f.out, 'delivery.mp4'))), before.delivery);
+    assert.equal(readFileSync(join(f.out, 'complete.json'), 'utf8'), before.complete);
+  }
+}));
+
+test('--discard-master keeps the segments of a run whose delivery failed (exit 1), and a rerun resumes as today: the delivery is encoded, then they go', () => ready((f) => {
+  const r = exporter(renderArgs(f, { ...X265, '--x265-preset': 'bogus', '--discard-master': true }));
+  assert.equal(r.status, 1, r.all);
+  assert.equal(segMkvs(f).length, 2, 'the segments went with the delivery failed');
+  assert.ok(!existsSync(join(f.out, 'complete.json')));
+  const again = exporter(renderArgs(f, { ...X265, '--discard-master': true }));
+  assert.equal(again.status, 0, again.all);
+  assert.deepEqual(segMkvs(f), []);
+}));
+
+test('--discard-master keeps the segments when the frame accounting is not exact (exit 4); no complete.json', () => ready((f) => {
+  const j = join(f.out, 'seg', 'seg_00001.json');
+  writeFileSync(j, JSON.stringify({ ...readJson(j), bytes_piped: 1 }));   // one segment's frames no longer account for the whole
+  const r = exporter(renderArgs(f, { '--discard-master': true }));
+  assert.equal(r.status, 4, r.all);
+  assert.match(r.all, /MISMATCH/);
+  assert.equal(segMkvs(f).length, 2, 'the segments went with the accounting not exact');
+  assert.ok(!existsSync(join(f.out, 'complete.json')));
+}));
+
 test('--set: a key outside the quality knobs is accepted with a warning and the manifest says NOT as authored; the two governors are refused (exit 2)', () => withDir((root) => {
   const f = makeRun(root, { overrides: { bake_resolution: 64, leaf_size: 3 } });
   const r = exporter(encodeArgs(f, { '--set': ['bake_resolution=64', 'leaf_size=3'] }));

@@ -29,6 +29,11 @@
 //   --chrome <variant>     a key of GPU_VARIANTS in video-lib.mjs (default shell+angle-metal)          --restart  discard a previous run in --out (its master, manifest and delivery)
 //   --merge-master         also write ONE master.mkv (a stream copy of the segments): a second copy on disk. Without it the master IS the segment set.
 //   --drop-segments        (needs --merge-master) after master.mkv is written and verified, delete seg/*.mkv; the run is then complete.json and is not re-rendered
+//   --discard-master       no master at all: after the delivery is encoded and its frame accounting is EXACT (and after --stills and --measure, which read the master), delete seg/*.mkv.
+//                          Kept: seg/list.txt, seg/SHA256SUMS, the per-segment .json and .hashes, ckpt/, hashes.txt, complete.json. manifest.json says master.discarded = true
+//                          (master.discarded_at) and segments_on_disk false; complete.json says master_discarded, so the same command again answers "complete" and renders and encodes
+//                          nothing. A later --encode-only on it is refused (re-render with --restart). Incompatible with --merge-master, --drop-segments and --encode-only. A run
+//                          interrupted or not verified before that point keeps its segments and resumes as ever. (A lossless master is about 0.8 GiB per 20 s at 1080p, 2.6 GiB at 4K.)
 //   --encode-only          skip rendering: re-encode the delivery (and stills / measure) from the master already in --out. The manifest is rebuilt from run-key.json and the
 //                          segment jsons; the flags (--look-json or --arboretum <id>[@version] (no fetch), --set, --size, --ss, --fps, --seconds ..) must DESCRIBE that run, else exit 3 naming the difference.
 // THE MASTER is the lossless segment set: seg/seg_NNNNN.mkv, seg/list.txt (ffmpeg's concat demuxer list, names relative to the list: `-f concat -safe 0 -i seg/list.txt`
@@ -102,6 +107,8 @@ if (!['ffv1', 'x264rgb'].includes(MASTER)) die('--master ffv1|x264rgb');
 if (!['hevc_videotoolbox', 'libx265', 'none'].includes(DELIVERY)) die('--delivery hevc_videotoolbox|libx265|none');
 try { scaleRate(VT_BITRATE, 1); } catch (e) { die(`--vt-bitrate: ${e.message}`); }
 if (!GPU_VARIANTS[CHROME]) die(`--chrome ${CHROME}: not one of ${Object.keys(GPU_VARIANTS).join(', ')}`);
+const DISCARD = has('--discard-master');
+if (DISCARD) for (const f of ['--merge-master', '--drop-segments', '--encode-only']) if (has(f)) die(`--discard-master and ${f} are incompatible: ${f === '--encode-only' ? 'it re-encodes from the master that --discard-master deletes' : 'it keeps a master that --discard-master deletes'}`);
 if (has('--drop-segments') && !MERGE) die('--drop-segments needs --merge-master: without it the segments ARE the master');
 const N = Math.round(SECONDS * FPS);
 if (Math.abs(N - SECONDS * FPS) > 1e-9) die(`--seconds ${SECONDS} x --fps ${FPS} is not a whole number of frames`);
@@ -217,6 +224,7 @@ if (ENCODE_ONLY) {
   if (!existsSync(P('run-key.json'))) refuse(`${OUT} has no run-key.json: --encode-only needs the run that made the master`);
   RK = readJson(P('run-key.json'));
   RUN_KEY = RK.key;
+  if (existsSync(P('complete.json')) && readJson(P('complete.json')).master_discarded) refuse('the master was discarded (--discard-master); re-render with --restart');
   const flags = { look_sha256: lookBytes ? sha256(lookBytes) : RK.body.look_sha256, overrides, fps: FPS, size: [OW, OH], ss: SS, ss_space: SS === 1 ? 'n/a' : SS_SPACE, preroll_frames: PREROLL, segment_frames: SEG_FRAMES, master: MASTER };
   const differs = Object.keys(flags).filter((k) => !isDeepStrictEqual(RK.body[k], flags[k]));
   const onDisk = (existsSync(P('seg')) ? readdirSync(P('seg')) : []).filter((f) => /^seg_\d+\.json$/.test(f)).map((f) => readJson(P('seg', f)));
@@ -573,7 +581,14 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
 const completeFile = P('complete.json');
 const alreadyComplete = !has('--restart') && !ENCODE_ONLY && existsSync(completeFile) && (segsPresent() || mergedPresent()) && readJson(completeFile).key === RUN_KEY;
 const skipRender = ENCODE_ONLY || alreadyComplete;
+// a completed run whose master was discarded has no segments, so alreadyComplete (which wants them) is false: it is answered here, before anything would re-render from the missing segments
+const discardedComplete = !has('--restart') && !ENCODE_ONLY && existsSync(completeFile) && (() => { const c = readJson(completeFile); return c.key === RUN_KEY && c.master_discarded === true; })();
 try {
+  if (discardedComplete) {
+    for (let i = 0; i < nSegs; i++) rmSync(segFile(i), { force: true });   // a run that died between complete.json and the last delete finishes the job
+    log('the run is already complete (complete.json matches this run key) and its master was discarded (--discard-master): nothing to render or encode; --restart renders it again');
+    process.exit(0);
+  }
   const firstTodo = skipRender ? nSegs : firstTodoSeg();
   checkDisk(Math.max(0, N - firstTodo * SEG_FRAMES));
   if (!skipRender) await renderAll(firstTodo);
@@ -604,9 +619,13 @@ try {
   }
   await stills();
   const { manifest, fa, setSha } = buildManifest({ segs, mpackets, masterProbe, mergedSha });
+  // the delivery is encoded and probed, the stills and the measure have read the master: only an EXACT accounting lets the segments go
+  const discarding = DISCARD && fa.exact;
+  if (discarding) Object.assign(manifest.master, { segments_on_disk: false, discarded: true, discarded_at: new Date().toISOString() });
   writeJsonAtomic(P('manifest.json'), manifest);
-  if (!skipRender && fa.exact) {
-    writeFileSync(completeFile, JSON.stringify({ key: RUN_KEY, frames: N, master_set_sha256: setSha, at: new Date().toISOString() }));
+  if ((!skipRender || discarding) && fa.exact) {
+    writeFileSync(completeFile, JSON.stringify({ key: RUN_KEY, frames: N, master_set_sha256: setSha, ...(discarding ? { master_discarded: true } : {}), at: new Date().toISOString() }));
+    if (discarding) { for (let i = 0; i < nSegs; i++) rmSync(segFile(i), { force: true }); log('master discarded (--discard-master): seg/*.mkv deleted; the lists, checksums, segment records, checkpoints and hashes stay'); }
     if (has('--drop-segments')) { for (let i = 0; i < nSegs; i++) rmSync(segFile(i), { force: true }); log('segments dropped (seg/*.mkv); master.mkv, hashes, checkpoints and the lists stay'); }
   }
   log(`done: ${N} frames; master ${mpackets} packets in ${nSegs} segments (${manifest.master_probe.size_mib.toFixed(0)} MiB)${mergedSha ? ' + merged master.mkv' : ''}; delivery ${man.delivery_probe && !man.delivery_probe.error ? `${man.delivery_probe.decoded_frames} frames, ${man.delivery_probe.size_mib.toFixed(1)} MiB, ${man.delivery_probe.mbit_s.toFixed(1)} Mbit/s` : 'none'}; frame accounting ${fa.exact ? 'EXACT' : 'MISMATCH'}`);
