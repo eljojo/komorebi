@@ -1,15 +1,18 @@
 // The GPU probe: does Metal come up in headless Chromium, are its pixels repeatable, what does a frame cost, how fast is the pipe.
 // A sibling of run.js that touches nothing of it. `node test-gl/gpu-probe.mjs [stage...] [--look <json>] [--cherry <json>] [--tree|--commit <sha>]`
 //   stages: glinfo | determinism | timing | swiftshader | sink      (default: all, in that order)
+//   webcodecs is opt-in: glinfo webcodecs --look <json> --out <fresh local directory>. Short native 1080p/4K MP4s,
+//   decoded quality vs lossless RGB and measured export cost vs the current HEVC quality-100 path. No supersampling/downscale.
 // Writes test-gl/out/video/probe/<stage>.json beside a probe.log, so a later stage (or a later session) reads the earlier stages' answers.
 // One Chromium at a time, always closed before the next launch.
 import { chromium } from 'playwright';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import os from 'node:os';
 import {
-  GPU_VARIANTS, REPO, T0_MS, browserFacts, exportEngine, fmt, launchBrowser, openPage, spawnFfmpeg, startServer, stats, stepMsFor, subStepHistogram, pipeRequestTo,
+  GPU_VARIANTS, REPO, T0_MS, browserFacts, countFrames, deliveryArgs, exportEngine, ffmpegVersion, ffprobeJson, fmt, launchBrowser, onExit, openPage, runFfmpegAsync, runMeasure, sha256, spawnFfmpeg, startServer, stats, stepMsFor, subStepHistogram, pipeRequestTo,
 } from './video-lib.mjs';
+import { annexBMuxArgs, avcConfig, encodeCanvasRun, hevcConfig } from './webcodecs.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
@@ -18,7 +21,7 @@ const CHERRY = flag('--cherry', join(PRESET_DIR, 'projector-cherry.json'));
 const ULTRA = flag('--look', join(PRESET_DIR, 'projector-ultraviolet.json'));
 const OUT = resolve(flag('--out', join(REPO, 'test-gl/out/video/probe')));
 mkdirSync(OUT, { recursive: true });
-const STAGES = argv.filter((a) => ['glinfo', 'determinism', 'timing', 'swiftshader', 'sink'].includes(a));
+const STAGES = argv.filter((a) => ['glinfo', 'determinism', 'timing', 'swiftshader', 'sink', 'webcodecs'].includes(a));
 const want = (s) => !STAGES.length || STAGES.includes(s);
 const FPS = 60, STEP = stepMsFor(FPS);
 
@@ -273,6 +276,102 @@ async function stageSink(binary) {
   return rows;
 }
 
+// ============================================================ 6. direct canvas encoding (opt-in)
+async function stageWebcodecs(binary) {
+  const FPS = 60, PRE = 1800, FRAMES = 120;
+  const params = baseParams(ULTRA), rows = [];
+  const report = { engine: exp.provenance, look: ULTRA, params_sha256: sha256(JSON.stringify(params)), binary, cpu: os.cpus()[0].model, ffmpeg: ffmpegVersion(),
+    source_sha256: { gpu_probe: sha256(readFileSync(new URL(import.meta.url))), video_html: sha256(readFileSync(join(REPO, 'test-gl/video.html'))), webcodecs: sha256(readFileSync(join(REPO, 'test-gl/webcodecs.mjs'))) },
+    fps: FPS, frames: FRAMES, preroll_frames: PRE, step_ms: STEP,
+    note: 'Native output sizes, NO supersampling or downscale. prefer-hardware is a hint; the selected hardware backend is not established. CPU quality measurement time is excluded from export times. Short runs include encoder startup/flush and can overstate long-run overhead.', rows };
+  const checkFrames = (file) => {
+    const n = countFrames(file);
+    if (n !== FRAMES) throw new Error(`${file}: decoded ${n} frames, expected ${FRAMES}`);
+    return ffprobeJson(file).streams.find((s) => s.codec_type === 'video');
+  };
+  await withBrowser(binary, async (browser) => {
+    onExit(() => browser.browser.close().catch(() => {}));
+    report.browser = await browserFacts(browser.browser);
+    const page = await openPage(browser.browser, srv.port);
+    const cp = await page.evaluate(([p, n, step, T0]) => window.__v.cheapPreroll(p, n, step, T0), [params, PRE, STEP, T0_MS]);
+    for (const [width, height, over] of [[1920, 1080, {}], [3840, 2160, { tex_resolution: 4096, bake_resolution: 0, sample_count: 48 }]]) {
+      const dir = join(OUT, `webcodecs-${width}x${height}`);
+      mkdirSync(dir, { recursive: true });
+      const open = async () => {
+        const info = await page.evaluate((o) => window.__v.open(o), { params: { ...params, ...over }, rw: width, rh: height, step: STEP, T0: T0_MS, at: PRE, state: cp.state });
+        if (!isMetal(info.renderer)) throw new Error(`not Metal: ${info.renderer}`);
+        return info;
+      };
+      const master = join(dir, 'reference.mkv');
+      if (existsSync(master)) throw new Error(`probe output already exists: ${master}; use a fresh --out`);
+      const info = await open();
+      const ff = spawnFfmpeg(['-hide_banner', '-nostats', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${width}x${height}`, '-framerate', String(FPS), '-i', '-',
+        '-an', '-vf', 'vflip,format=bgr0', '-fps_mode', 'passthrough', '-frames:v', String(FRAMES),
+        '-c:v', 'ffv1', '-level', '3', '-coder', '1', '-context', '1', '-g', '1', '-slices', '24', '-slicecrc', '1', master]);
+      onExit(() => ff.kill());
+      const counter = { bytes: 0 };
+      srv.sinks.set('webcodecs-reference', async (req, res) => { await pipeRequestTo(req, ff, counter); res.writeHead(200).end('ok'); });
+      const referenceStart = Date.now();
+      let reference;
+      try {
+        reference = await page.evaluate(([from, to, batch]) => window.__v.run({ from, to, batch, sink: '/__sink/webcodecs-reference' }), [PRE, PRE + FRAMES, width === 1920 ? 8 : 2]);
+        const done = await ff.end();
+        if (done.code !== 0 || counter.bytes !== FRAMES * width * height * 4) throw new Error(`reference: ${done.stderrTail || 'wrong byte count'}`);
+      } finally { ff.kill(); srv.sinks.delete('webcodecs-reference'); }
+      const referenceMs = Date.now() - referenceStart;
+      checkFrames(master);
+      const distinct = new Set(reference.hashes).size;
+      log(`webcodecs reference ${width}x${height}: ${referenceMs} ms, ${distinct}/${FRAMES} distinct frames`);
+      const referenceRow = { width, height, overrides: over, renderer: info.renderer, reference_wall_ms: referenceMs, reference_ffmpeg_args: ff.args, distinct_reference_frames: distinct };
+
+      const current = join(dir, 'hevc-q100.mp4'), currentStart = Date.now();
+      const result = await runFfmpegAsync(deliveryArgs({ input: ['-i', master], out: current, fps: FPS, trc: 'bt709', codec: 'hevc_videotoolbox', vtQuality: 100, gop: 120 }), { onChild: (p) => onExit(() => p.kill('SIGKILL')) });
+      if (result.code !== 0) throw new Error(`HEVC reference: ${result.stderr.slice(-1500)}`);
+      const currentMs = Date.now() - currentStart;
+      const currentRow = { ...referenceRow, encoder: 'current HEVC q100', path: current, export_wall_ms: referenceMs + currentMs,
+        delivery_encode_ms: currentMs, size_bytes: statSync(current).size, stream: checkFrames(current),
+        quality: await runMeasure({ delivery: current, input: ['-i', master], cwd: dir, fps: FPS, psnrLog: 'hevc-psnr.log', ssimLog: 'hevc-ssim.log' }) };
+      rows.push(currentRow);
+      log(`  current HEVC q100: ${currentRow.export_wall_ms} ms total; PSNR ${fmt(currentRow.quality.psnr_rgb_avg_db, 2)}, SSIM ${fmt(currentRow.quality.ssim_rgb_all, 6)}`);
+
+      const variants = [120e6].map((bitrate) => ({ kind: 'AVC', codec: 'h264', configOf: avcConfig, bitrate }))
+        .concat([60e6, 120e6, 240e6].map((bitrate) => ({ kind: 'HEVC', codec: 'hevc', configOf: hevcConfig, bitrate })));
+      for (const { kind, codec, configOf, bitrate } of variants) {
+        const config = configOf({ width, height, fps: FPS, bitrate });
+        const support = await page.evaluate(async (c) => typeof VideoEncoder !== 'undefined' && (await VideoEncoder.isConfigSupported(c)).supported, config);
+        if (!support) { rows.push({ ...referenceRow, encoder: `WebCodecs ${kind}`, config, unsupported: true }); log(`  ${kind} ${bitrate / 1e6}M: not supported`); continue; }
+        await open();
+        const out = join(dir, `${kind.toLowerCase()}-${bitrate / 1e6}M.mp4`);
+        const mux = spawnFfmpeg(annexBMuxArgs({ fps: FPS, out, codec })), encodedCounter = { bytes: 0 };
+        onExit(() => mux.kill());
+        srv.sinks.set('webcodecs-encoded', async (req, res) => { await pipeRequestTo(req, mux, encodedCounter); res.writeHead(200).end('ok'); });
+        const started = Date.now();
+        try {
+          const encoded = await page.evaluate(encodeCanvasRun, { config, from: PRE, to: PRE + FRAMES, sink: '/__sink/webcodecs-encoded' });
+          const done = await mux.end();
+          if (done.code !== 0 || encoded.bytes !== encodedCounter.bytes) throw new Error(`${kind} mux: ${done.stderrTail || 'wrong byte count'}`);
+          const ms = Date.now() - started;
+          const row = { ...referenceRow, encoder: `WebCodecs ${kind}`, path: out, config, encoded, export_wall_ms: ms, speedup: currentRow.export_wall_ms / ms,
+            size_bytes: statSync(out).size, stream: checkFrames(out),
+            quality: await runMeasure({ delivery: out, input: ['-i', master], cwd: dir, fps: FPS, psnrLog: `${kind}-${bitrate}-psnr.log`, ssimLog: `${kind}-${bitrate}-ssim.log` }) };
+          if (row.quality.frames_compared !== FRAMES) throw new Error(`${kind} comparison did not pair every frame`);
+          rows.push(row);
+          log(`  ${kind} ${bitrate / 1e6}M: ${ms} ms, ${fmt(row.speedup, 2)}x current; PSNR ${fmt(row.quality.psnr_rgb_avg_db, 2)}, SSIM ${fmt(row.quality.ssim_rgb_all, 6)}`);
+        } catch (e) { rows.push({ ...referenceRow, encoder: `WebCodecs ${kind}`, config, error: String(e.message || e) }); log(`  ${kind} ${bitrate / 1e6}M FAILED: ${e.message}`); }
+        finally { mux.kill(); srv.sinks.delete('webcodecs-encoded'); }
+        save('webcodecs', report);
+      }
+      await page.evaluate(() => window.__v.close());
+      save('webcodecs', report);
+    }
+    await page.close();
+  });
+  save('webcodecs', report);
+  if (![1920, 3840].every((width) => rows.some((r) => r.width === width && r.encoder.startsWith('WebCodecs') && r.quality)))
+    throw new Error('direct encoding did not produce a verified MP4 at each size; inspect webcodecs.json');
+  return report;
+}
+
 // ============================================================ main
 try {
   let gl = load('glinfo');
@@ -286,6 +385,7 @@ try {
     if (want('timing')) await stageTiming(binary);
     if (want('swiftshader')) await stageSwiftshader(binary);
     if (want('sink')) await stageSink(binary);
+    if (STAGES.includes('webcodecs')) await stageWebcodecs(binary);
   }
 } finally {
   await srv.close();

@@ -26,6 +26,7 @@
     cheapPreroll(params, frames, step, T0)   the integrator state after `frames` pumps on a tiny engine (CPU state is GPU-independent)
     open({ params, rw, rh, step, T0, at, state })   one engine at render size rw x rh, clock at pump `at`, optional restored state
     run({ from, to, sink, batch, timing })   pump frames from+1..to, read each back; optionally POST batches to `sink`
+    runCanvas({ from, to, beforeFrame, onFrame })   the probe's direct encoder captures the canvas inside the same frame callback
     snapshot() / close()
 -->
 <style>
@@ -198,7 +199,8 @@ v.open = ({ params, rw, rh, step, T0, at, state, overrideKeys = [] }) => {
   canvas.className = 'stage'; canvas.style.width = `${rw}px`; canvas.style.height = `${rh}px`;
   canvas.width = rw; canvas.height = rh;
   document.body.appendChild(canvas);
-  canvas.addEventListener('webglcontextlost', () => { S.lost = true; });
+  // dispose() loses the old context asynchronously; its event must not poison a replacement engine.
+  canvas.addEventListener('webglcontextlost', () => { if (S.canvas === canvas) S.lost = true; });
   clock.drain();
   clock.set(T0 + at * step);                 // create() reads performance.now(): the first pump is then exactly one step later
   const eng = create(canvas, { params: p });
@@ -209,6 +211,7 @@ v.open = ({ params, rw, rh, step, T0, at, state, overrideKeys = [] }) => {
     throw new Error('adaptive_motion / auto_quality are not off');
   if (state) restoreInto(eng, state);
   eng.onFrame = () => {
+    if (S.canvasCapture) { S.canvasCapture(S.canvas); S.captured = true; return; }
     if (!S.cur) return;
     const T = S.timing;
     if (T) { T.tA = real(); if (T.q) gl.endQuery(S.timer.TIME_ELAPSED_EXT); }
@@ -291,6 +294,27 @@ v.run = async ({ from, to, sink, batch, timing, capture = true, keepEvery = 0 })
     for (const q of queries) { tm.busy.push(g.getQueryParameter(q, g.QUERY_RESULT_AVAILABLE) && !disjoint ? g.getQueryParameter(q, g.QUERY_RESULT) / 1e6 : NaN); g.deleteQuery(q); }
   }
   return { hashes, kept, minMean, maxMean, timing: tm, snapshot: snapshotOf(eng), pumped: to - from };
+};
+
+// A native encoder must snapshot the canvas before this callback returns. Yielding for queue/sink
+// back-pressure happens BEFORE pumping the next frame, while the engine clock remains unchanged.
+v.runCanvas = async ({ from, to, beforeFrame, onFrame }) => {
+  const { W, H, step, T0, eng } = S;
+  S.cur = null;
+  try {
+    for (let n = from + 1; n <= to; n++) {
+      await beforeFrame();
+      if (S.lost) throw new Error('webglcontextlost');
+      S.captured = false;
+      S.canvasCapture = (canvas) => onFrame(canvas, n - from - 1);
+      const fired = clock.pump(T0 + n * step);
+      if (fired !== 1 || !S.captured) throw new Error(`pump ${n}: canvas was not captured exactly once`);
+      const g = eng.gl;
+      if (S.canvas.width !== W || S.canvas.height !== H || g.drawingBufferWidth !== W || g.drawingBufferHeight !== H)
+        throw new Error('canvas size changed during direct encoding');
+    }
+    return { pumped: to - from };
+  } finally { S.canvasCapture = null; }
 };
 
 v.close = () => {
