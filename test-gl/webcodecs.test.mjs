@@ -28,6 +28,13 @@ test('HEVC configuration uses Annex B and a high tier for high bitrate 4K export
   assert.equal(c.hardwareAcceleration, 'prefer-hardware');
 });
 
+test('HEVC quantizer mode omits bitrate so per-frame quality controls the encoder', () => {
+  const c = lib.hevcQuantizerConfig({ width: 3840, height: 2160, fps: 60 });
+  assert.equal(c.bitrateMode, 'quantizer');
+  assert.equal(Object.hasOwn(c, 'bitrate'), false);
+  assert.equal(c.codec, 'hvc1.1.6.H156.B0');
+});
+
 test('Annex B MP4 muxing retains every decoded frame and exact CFR duration without encoding again', () => {
   const dir = mkdtempSync(join(tmpdir(), 'komorebi-avc-'));
   try {
@@ -64,10 +71,10 @@ test('HEVC Annex B muxing preserves frames and creates an Apple-compatible hvc1 
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-function browser({ supported = true, failSend = false, missing = false, reorder = false } = {}) {
-  const frames = [], packets = [], posts = [], events = [];
+function browser({ supported = true, failSend = false, missing = false, reorder = false, transform = false } = {}) {
+  const frames = [], packets = [], posts = [], events = [], encodeOptions = [], collected = [];
   class Frame {
-    constructor(canvas, init) { assert.equal(canvas.width, 1920); Object.assign(this, init); frames.push(this); }
+    constructor(canvas, init) { assert.equal(canvas.width, 1920); this.canvas = canvas; Object.assign(this, init); frames.push(this); }
     close() { this.closed = true; }
   }
   class Encoder extends EventTarget {
@@ -77,6 +84,7 @@ function browser({ supported = true, failSend = false, missing = false, reorder 
     encode(frame, options) {
       assert.equal(frame.closed, undefined);
       events.push(options.keyFrame);
+      encodeOptions.push(options);
       this.encodeQueueSize++;
       const timestamp = reorder ? -frame.timestamp : frame.timestamp;
       setImmediate(() => {
@@ -95,12 +103,12 @@ function browser({ supported = true, failSend = false, missing = false, reorder 
   const context = vm.createContext({ VideoEncoder: Encoder, VideoFrame: Frame, Blob, Uint8Array, Error, Math, Promise,
     performance: { now: () => Date.now() },
     fetch: async (url, options) => { posts.push({ url, bytes: new Uint8Array(await options.body.arrayBuffer()) }); return { ok: !failSend, status: failSend ? 503 : 200 }; },
-    window: { __v: { runCanvas: async ({ from, to, beforeFrame, onFrame }) => {
+    window: { gc: () => collected.push(posts.length), __v: { ...(transform ? { transformCanvas: () => ({ width: 1920, height: 1080, downscaled: true }) } : {}), runCanvas: async ({ from, to, beforeFrame, onFrame }) => {
       for (let n = from; n < to; n++) { await beforeFrame(); onFrame({ width: 1920, height: 1080 }, n - from); }
       return { pumped: to - from };
     } } },
   });
-  return { frames, packets, posts, events, run: (args) => vm.runInContext(`(${lib.encodeCanvasRun.toString()})`, context)(args) };
+  return { frames, packets, posts, events, encodeOptions, collected, run: (args) => vm.runInContext(`(${lib.encodeCanvasRun.toString()})`, context)(args) };
 }
 const args = { from: 1800, to: 1812, sink: '/__sink/encoded', config: { width: 1920, height: 1080, framerate: 60 }, queueLimit: 2 };
 
@@ -118,6 +126,37 @@ test('canvas encoding closes frames, drains native output and sends only compres
   assert.deepEqual(bytes.filter((_, i) => i % 5 === 4), Array.from({ length: 12 }, (_, i) => i));
   assert.equal(b.events[0], true);
   assert.ok(b.events.slice(1).every((v) => !v));
+  assert.deepEqual(b.collected, [1]);
+});
+
+test('HEVC quantizer is passed for every frame, including keyframes', async () => {
+  const b = browser();
+  await b.run({ ...args, quantizer: 1 });
+  assert.ok(b.encodeOptions.every((o) => o.hevc?.quantizer === 1));
+});
+
+test('encoding snapshots the GPU transformed canvas when a linear downscale is installed', async () => {
+  const b = browser({ transform: true });
+  await b.run(args);
+  assert.ok(b.frames.every((f) => f.canvas.downscaled));
+});
+
+test('raw delivery captures only the transformed output size and awaits bounded POST batches', async () => {
+  const sent = [], captured = [], collected = [];
+  const context = vm.createContext({ Blob, Uint8Array, Error, Promise,
+    fetch: async (_, options) => { sent.push([...new Uint8Array(await options.body.arrayBuffer())]); return { ok: true }; },
+    window: { gc: () => collected.push(sent.length), __v: {
+      transformCanvas: () => ({ width: 2, height: 2, getContext: () => ({ RGBA: 1, UNSIGNED_BYTE: 2,
+        readPixels: (_, __, w, h, ___, ____, data) => { assert.equal(w, 2); assert.equal(h, 2); data.fill(captured.length); captured.push(data); } }) }),
+      runCanvas: async ({ from, to, beforeFrame, onFrame }) => { for (let i = from; i < to; i++) { await beforeFrame(); onFrame({ width: 4, height: 4 }, i - from); } return { pumped: to - from }; },
+    } },
+  });
+  const result = await vm.runInContext(`(${lib.captureCanvasRun?.toString()})`, context)({ from: 1800, to: 1803, sink: '/raw', batch: 2 });
+  assert.equal(result.frames, 3);
+  assert.equal(result.bytes, 48);
+  assert.deepEqual(sent.map((p) => p.length), [32, 16]);
+  assert.deepEqual(sent.flat(), [...Array(16).fill(0), ...Array(16).fill(1), ...Array(16).fill(2)]);
+  assert.deepEqual(collected, [1, 2]);
 });
 
 test('unsupported browser codecs refuse before any frames are rendered', async () => {
