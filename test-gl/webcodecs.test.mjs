@@ -105,12 +105,13 @@ function browser({ supported = true, failSend = false, missing = false, reorder 
     fetch: async (url, options) => { posts.push({ url, bytes: new Uint8Array(await options.body.arrayBuffer()) }); return { ok: !failSend, status: failSend ? 503 : 200 }; },
     window: { gc: () => collected.push(posts.length), __v: { ...(transform ? { transformCanvas: () => ({ width: 1920, height: 1080, downscaled: true }) } : {}), runCanvas: async ({ from, to, beforeFrame, onFrame }) => {
       for (let n = from; n < to; n++) { await beforeFrame(); onFrame({ width: 1920, height: 1080 }, n - from); }
-      return { pumped: to - from };
+      return { pumped: to - from, snapshot: { at: to } };
     } } },
   });
   return { frames, packets, posts, events, encodeOptions, collected, run: (args) => vm.runInContext(`(${lib.encodeCanvasRun.toString()})`, context)(args) };
 }
 const args = { from: 1800, to: 1812, sink: '/__sink/encoded', config: { width: 1920, height: 1080, framerate: 60 }, queueLimit: 2 };
+const checkpointEngine = () => ({ motion: { time: 7 }, grove: () => ({ hier: Object.fromEntries(['limbAngle', 'limbVel', 'limbPitch', 'limbPitchVel', 'twigAngle', 'twigVel'].map((k) => [k, new Float32Array(0)])) }) });
 
 test('canvas encoding closes frames, drains native output and sends only compressed bytes in order', async () => {
   const b = browser();
@@ -127,6 +128,7 @@ test('canvas encoding closes frames, drains native output and sends only compres
   assert.equal(b.events[0], true);
   assert.ok(b.events.slice(1).every((v) => !v));
   assert.deepEqual(b.collected, [1]);
+  assert.equal(r.snapshot?.at, 1812);
 });
 
 test('HEVC quantizer is passed for every frame, including keyframes', async () => {
@@ -184,11 +186,11 @@ test('reordered output refuses raw Annex B muxing that would lose presentation t
 test('the existing video page exposes canvas capture inside onFrame, using the same deterministic clock', async () => {
   const html = readFileSync(new URL('./video.html', import.meta.url), 'utf8');
   const script = html.split('<script type="module">')[1].split('</script>')[0].replace(/^import .*;\n/gm, '');
-  const engine = { params: { adaptive_motion: false, auto_quality: false }, perf: { auto: false },
+  const engine = { ...checkpointEngine(), params: { adaptive_motion: false, auto_quality: false }, perf: { auto: false },
     gl: { getExtension: () => null, getParameter: () => 'test renderer', drawingBufferWidth: 2, drawingBufferHeight: 2 },
   };
   const stamps = [], canvases = [];
-  const context = vm.createContext({ create: (canvas) => { canvases.push(canvas); return engine; }, DEFAULTS: {},
+  const context = vm.createContext({ btoa, create: (canvas) => { canvases.push(canvas); return engine; }, DEFAULTS: {},
     performance: { now: () => 0 },
     document: { createElement: () => ({ style: {}, addEventListener: () => {} }), body: { appendChild: () => {} } },
     window: { devicePixelRatio: 1, __clock: { realNow: () => 0, drain: () => {}, set: () => {}, pump: (stamp) => { stamps.push(stamp); engine.onFrame(); return 1; } } },
@@ -200,6 +202,7 @@ test('the existing video page exposes canvas capture inside onFrame, using the s
   const callback = (canvas, i) => captured.push({ canvas, i });
   const r = await v.runCanvas({ from: 5, to: 8, beforeFrame: async () => {}, onFrame: callback });
   assert.equal(r.pumped, 3);
+  assert.equal(r.snapshot?.motion.time, 7);
   assert.deepEqual(stamps, [196, 212, 228]);
   assert.deepEqual(captured.map((f) => f.i), [0, 1, 2]);
   assert.ok(captured.every((f) => f.canvas === canvases[0]));
@@ -210,8 +213,8 @@ test('a delayed context-loss event from a disposed canvas does not invalidate it
   const script = html.split('<script type="module">')[1].split('</script>')[0].replace(/^import .*;\n/gm, '');
   const canvases = [];
   let engine;
-  const context = vm.createContext({ create: () => {
-    engine = { params: { adaptive_motion: false, auto_quality: false }, perf: { auto: false }, setPaused: () => {}, dispose: () => {},
+  const context = vm.createContext({ btoa, create: () => {
+    engine = { ...checkpointEngine(), params: { adaptive_motion: false, auto_quality: false }, perf: { auto: false }, setPaused: () => {}, dispose: () => {},
       gl: { getExtension: () => null, getParameter: () => 'test renderer', drawingBufferWidth: 2, drawingBufferHeight: 2 } };
     return engine;
   }, DEFAULTS: {}, performance: { now: () => 0 },

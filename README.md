@@ -111,6 +111,39 @@ If you then switch a page's params to something the bundle was not built for (op
 the fill out, say), the tier stays off and the engine logs one `console.warn` per tier:
 `komorebi: fill is not in komorebi.embed.min.js (...), so it stays off; build a bundle with the look that uses it`.
 
+## Rendering MP4s
+
+The Mac exporter uses the same scene and deterministic frame clock with four capture pipelines:
+
+| `--pipeline` | When to use it | How the MP4 is made |
+| --- | --- | --- |
+| `master` (default) | Lossless archives, studies, later re-encoding | Lossless RGB segments, then eight-bit HEVC. |
+| `gpu` | Everyday production | GPU resize when supersampling, output-sized RGB readback, VideoToolbox eight-bit HEVC. |
+| `gpu-main10` | Highest measured fidelity, especially faint colours | GPU capture, direct P010 conversion, VideoToolbox HEVC Main10. Source RGB remains eight-bit, SDR BT709. |
+| `browser` | Short scene-planning tests | Native browser HEVC QP1 from VideoFrame, then MP4 muxing. Fastest in the local comparison, with a small measured fidelity loss. |
+
+Pipeline and scene quality are independent. For a 1920x1080 output, `--ss 1` renders 1080p directly; `--ss 2` renders
+3840x2160 and combines four pixels per output pixel in linear light. This reduces sampling artifacts at additional cost;
+it is 4K down to 1080p. Selecting a GPU pipeline does not force supersampling. Direct pipelines support ss 1 and 2.
+
+```sh
+nix run .#video -- --look-json look.json --commit <sha> --out test-gl/out/video/preview --seconds 5 --pipeline browser
+nix run .#video -- --look-json look.json --commit <sha> --out test-gl/out/video/final --seconds 30 --pipeline gpu-main10 --vt-quality 100 --ss 2
+```
+
+GPU and master pipelines keep the existing 60M bitrate default; `--vt-quality 100` chooses highest-fidelity encoding with
+larger files. Browser QP1 is fixed and refuses VT delivery controls. Main10 is ten-bit YUV 4:2:0, not HDR.
+All pipelines checkpoint each segment. Direct modes retain encoded segments across interruption, stream-copy the final
+delivery, verify it and delete those temporary segments. They have no lossless master or raw pixel hashes, so they refuse
+`--measure`, `--stills`, `--encode-only`, `--merge-master` and `--drop-segments`. Their manifest records encoded checksums,
+the selected pipeline and exact decoded frame accounting.
+
+In two matched 30-second supersampled 1080p60 clips on an M1 Pro, the prototype GPU eight-bit path was 14–16% faster than
+the master workflow, Main10 12–15% faster and browser 20–22% faster. GPU eight-bit was near-identical to the old MP4;
+Main10 had the best measured source fidelity and roughly twice the file size. These are two looks, one run per method,
+before server segment integration; use actual job timing rather than assuming those gains on another machine.
+The [render server](https://github.com/eljojo/komorebi-render) exposes these as the job's `pipeline` field.
+
 ## Develop
 
 ES‑module dev needs http (not `file://`). With Nix:

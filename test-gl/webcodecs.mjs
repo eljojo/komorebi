@@ -103,7 +103,7 @@ export async function captureCanvasRun({ from, to, sink, batch = 8 }) {
     pending.push(data); bytes += data.byteLength;
   } });
   await flush();
-  return { frames: result.pumped, bytes };
+  return { frames: result.pumped, bytes, snapshot: result.snapshot };
 }
 
 export async function encodeCanvasRun({ config, from, to, sink, queueLimit = 4, quantizer }) {
@@ -163,6 +163,6 @@ export async function encodeCanvasRun({ config, from, to, sink, queueLimit = 4, 
     await encoder.flush(); check();
     await flush();
     if (result.pumped !== to - from || chunks !== to - from) throw new Error(`encoded ${chunks} chunks for ${to - from} frames`);
-    return { frames: result.pumped, chunks, bytes, timestamps: stamps, config: support.config, decoder_config: metadata, wall_ms: now() - started };
+    return { frames: result.pumped, chunks, bytes, snapshot: result.snapshot, timestamps: stamps, config: support.config, decoder_config: metadata, wall_ms: now() - started };
   } finally { encoder.close(); }
 }

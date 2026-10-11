@@ -313,7 +313,7 @@ v.runCanvas = async ({ from, to, beforeFrame, onFrame }) => {
       if (S.canvas.width !== W || S.canvas.height !== H || g.drawingBufferWidth !== W || g.drawingBufferHeight !== H)
         throw new Error('canvas size changed during direct encoding');
     }
-    return { pumped: to - from };
+    return { pumped: to - from, snapshot: snapshotOf(eng) };
   } finally { S.canvasCapture = null; }
 };
 

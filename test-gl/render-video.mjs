@@ -16,6 +16,12 @@
 //   --commit <sha>         the engine from `git archive <sha>` in a temp tree        --tree  a SNAPSHOT of the working tree, recorded dirty (git diff --stat + a hash of the diff)
 //   --fps 60  --seconds 300  --size 1920x1080  (the OUTPUT size)
 //   --ss k                 render at k x size and downscale in ffmpeg;  --ss-space linear|gamma  (default linear: see SS_NOTE in video-lib.mjs)
+//   --pipeline master|gpu|gpu-main10|browser (default master): master keeps the existing lossless intermediate; gpu resizes on the GPU then encodes HEVC Main8;
+//                          gpu-main10 converts output RGB directly to 10-bit P010 then HEVC Main10; browser feeds VideoFrame to native HEVC QP1, transferring only compressed bytes.
+//                          Scene quality and --ss are independent: --ss 1 renders output size directly, --ss 2 renders 4K for a 1080p delivery. Direct pipelines support ss 1/2,
+//                          linear downscale only, SDR bt709 and HEVC. GPU modes accept --vt-bitrate/--vt-quality; browser uses fixed QP1 (no VT delivery controls).
+//                          All modes checkpoint each segment. Direct modes keep encoded MP4 segments until delivery is stream-copied and verified, then delete them;
+//                          they have no lossless master or raw pixel hashes and refuse --measure, --stills, --encode-only, --merge-master and --drop-segments.
 //   --preroll 30           seconds of discarded motion before frame 0 (integrated on a tiny engine, see video.html cheapPreroll)
 //   --segment-seconds 10   one lossless segment + one checkpoint per this many seconds; a crash resumes from the last pair, exactly
 //   --master ffv1|x264rgb  the lossless master codec (RGB 4:4:4 8-bit, bit-exact to what the GPU wrote, after the optional downscale)
@@ -49,6 +55,8 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { basename, join, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import os from 'node:os';
+import { directDiskPlan, directJoinArgs, directSegmentArgs, pipelinePlan } from './pipeline.mjs';
+import { captureCanvasRun, encodeCanvasRun, hevcQuantizerConfig, installLinearDownscale } from './webcodecs.mjs';
 import {
   ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VT_BUFSIZE_X, VT_MAXRATE_X, assertServedPage, browserFacts, canonicalJson, canonicalSha256, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
   diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, ffmpegVersion, ffprobeJson, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, pipeRequestTo, qualityReport,
@@ -84,6 +92,7 @@ const SECONDS = Number(flag('--seconds', 300));
 const [OW, OH] = flag('--size', '1920x1080').split('x').map(Number);
 const SS = Number(flag('--ss', 1));
 const SS_SPACE = flag('--ss-space', 'linear');
+const PIPELINE = flag('--pipeline', 'master');
 const PREROLL_S = Number(flag('--preroll', 30));
 const SEG_S = Number(flag('--segment-seconds', 10));
 const MASTER = flag('--master', 'ffv1');
@@ -109,6 +118,13 @@ try { scaleRate(VT_BITRATE, 1); } catch (e) { die(`--vt-bitrate: ${e.message}`);
 if (!GPU_VARIANTS[CHROME]) die(`--chrome ${CHROME}: not one of ${Object.keys(GPU_VARIANTS).join(', ')}`);
 const DISCARD = has('--discard-master');
 if (DISCARD) for (const f of ['--merge-master', '--drop-segments', '--encode-only']) if (has(f)) die(`--discard-master and ${f} are incompatible: ${f === '--encode-only' ? 'it re-encodes from the master that --discard-master deletes' : 'it keeps a master that --discard-master deletes'}`);
+let PLAN;
+try { PLAN = pipelinePlan({ pipeline: PIPELINE, ow: OW, oh: OH, ss: SS, space: SS_SPACE }); } catch (e) { die(e.message); }
+if (PLAN.direct) {
+  for (const f of ['--measure', '--stills', '--encode-only', '--merge-master', '--drop-segments']) if (has(f)) die(`--pipeline ${PIPELINE} and ${f} are incompatible: direct pipelines have no lossless master`);
+  if (DELIVERY !== 'hevc_videotoolbox' || TRC !== 'bt709') die(`--pipeline ${PIPELINE} requires HEVC and SDR bt709`);
+  if (PIPELINE === 'browser' && (has('--vt-quality') || has('--vt-bitrate'))) die('--pipeline browser uses native HEVC QP1, not VideoToolbox delivery controls');
+}
 if (has('--drop-segments') && !MERGE) die('--drop-segments needs --merge-master: without it the segments ARE the master');
 const N = Math.round(SECONDS * FPS);
 if (Math.abs(N - SECONDS * FPS) > 1e-9) die(`--seconds ${SECONDS} x --fps ${FPS} is not a whole number of frames`);
@@ -142,7 +158,7 @@ const deliveryArgv = (input, out) => deliveryArgs({ input, out, fps: FPS, trc: T
 const nSegs = Math.ceil(N / SEG_FRAMES);
 const segName = (i) => `seg_${String(i).padStart(5, '0')}`;
 const P = (...a) => join(OUT, ...a);
-const segFile = (i) => P('seg', `${segName(i)}.mkv`);
+const segFile = (i) => P('seg', `${segName(i)}.${PLAN.extension}`);
 const LIST = P('seg', 'list.txt'), SUMS = P('seg', 'SHA256SUMS');
 const segsPresent = () => Array.from({ length: nSegs }, (_, i) => existsSync(segFile(i))).every(Boolean);
 const mergedPresent = () => existsSync(P('master.mkv'));
@@ -150,7 +166,7 @@ const mergedPresent = () => existsSync(P('master.mkv'));
 const masterInput = () => (segsPresent() ? CONCAT_INPUT(LIST) : ['-i', P('master.mkv')]);
 
 if (has('--print-ffmpeg')) {   // dry run: the commands, nothing launched, nothing written
-  console.log(JSON.stringify({ segment: [FFMPEG, ...segArgs('seg.mkv', SEG_FRAMES)], delivery: [FFMPEG, ...deliveryArgv(CONCAT_INPUT('seg/list.txt'), 'delivery.mp4')] }));
+  console.log(JSON.stringify({ segment: [FFMPEG, ...(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file: 'seg.mp4' }) : segArgs('seg.mkv', SEG_FRAMES))], delivery: [FFMPEG, ...(PLAN.direct ? directJoinArgs({ input: CONCAT_INPUT('seg/list.txt'), out: 'delivery.mp4', fps: FPS }) : deliveryArgv(CONCAT_INPUT('seg/list.txt'), 'delivery.mp4'))] }));
   process.exit(0);
 }
 // ------------------------------------------------------------------ files
@@ -209,6 +225,7 @@ const runKeyBody = () => ({
   look_sha256: sha256(lookBytes), overrides, forced: { adaptive_motion: false, auto_quality: false },
   fps: FPS, step_ms: STEP, t0_ms: T0_MS, size: [OW, OH], ss: SS, ss_space: SS === 1 ? 'n/a' : SS_SPACE, preroll_frames: PREROLL, segment_frames: SEG_FRAMES,
   master: MASTER, master_chain: masterChain(), chrome: CHROME, ffmpeg_version: FFMPEG_VERSION,
+  ...(PLAN.direct ? { pipeline: PIPELINE, master: null, master_chain: null, pipeline_identity: { pipeline_sha256: sha256(readFileSync(join(HERE, 'pipeline.mjs'))), webcodecs_sha256: sha256(readFileSync(join(HERE, 'webcodecs.mjs'))) }, delivery_settings: { vt_bitrate: PIPELINE === 'browser' || VT_QUALITY ? null : VT_BITRATE, vt_quality: PIPELINE === 'browser' ? null : VT_QUALITY ?? null, quantizer: PIPELINE === 'browser' ? 1 : null, gop: PIPELINE === 'browser' ? FPS * 2 : GOP } } : {}),
   ...(ARB_RECORD ? { arboretum: ARB_RECORD.block } : {}),   // a look from a file has no such key, so its run keys are what they were
 });
 if (has('--restart') && !ENCODE_ONLY) {
@@ -273,7 +290,7 @@ const PAGE_SHA = RK.body.exporter?.video_html_sha256;   // the page the key name
 
 // ------------------------------------------------------------------ segment bookkeeping (a segment is done when its ckpt AND its json exist)
 const segJson = (i) => readJson(P('seg', `${segName(i)}.json`));
-const segDone = (i) => { try { return existsSync(segFile(i)) && existsSync(P('seg', `${segName(i)}.hashes`)) && statSync(segFile(i)).size === segJson(i).file_bytes; } catch { return false; } };   // a half-written json is not done
+const segDone = (i) => { try { return existsSync(segFile(i)) && (PLAN.direct || existsSync(P('seg', `${segName(i)}.hashes`))) && statSync(segFile(i)).size === segJson(i).file_bytes; } catch { return false; } };   // a half-written json is not done
 const segRange = (i) => ({ from: PREROLL + i * SEG_FRAMES, to: PREROLL + Math.min(N, (i + 1) * SEG_FRAMES) });
 const ckptFile = (n) => P('ckpt', `ckpt_${String(n).padStart(9, '0')}.json`);
 // a segment is only trusted if every one before it is done too, and the checkpoint at its end exists
@@ -281,9 +298,10 @@ const firstTodoSeg = () => { let k = 0; while (k < nSegs && segDone(k) && exists
 
 // ------------------------------------------------------------------ disk: the peak of THIS run
 // The segments are the master (one copy; --merge-master adds a second), then the delivery on top (video-lib.mjs diskPlan: the figures it is built on).
-const deliveryMbit = () => estimateDeliveryMbit({ codec: DELIVERY, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE });   // an upper bound: the bitrate's cap, -q:v's measured worst case
+const deliveryMbit = () => PIPELINE === 'browser' ? 240 : PIPELINE === 'gpu-main10' && VT_QUALITY ? 320 : estimateDeliveryMbit({ codec: DELIVERY, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE });   // quality modes have no cap; these are planning estimates
 function checkDisk(framesToRender) {
-  const plan = diskPlan({ framesToRender, frames: N, fps: FPS, ow: OW, oh: OH, merge: MERGE && !mergedPresent(), deliveryMbit: deliveryMbit() }), g = (b) => (b / 2 ** 30).toFixed(1);
+  const plan = PLAN.direct ? directDiskPlan({ framesToRender, frames: N, fps: FPS, mbit: deliveryMbit() }) : diskPlan({ framesToRender, frames: N, fps: FPS, ow: OW, oh: OH, merge: MERGE && !mergedPresent(), deliveryMbit: deliveryMbit() });
+  const g = (b) => (b / 2 ** 30).toFixed(1);
   log(`disk: ${g(free())} GiB free; this run adds about ${g(plan.total)} GiB at its peak (segments ${g(plan.segments)}${plan.merged ? `, merged master ${g(plan.merged)}` : ''}, delivery ${g(plan.delivery)}, 1 GiB margin)`);
   // N / FPS and the rate bound are known now: a long run learns here that its delivery may not fit a FAT32 stick, not after hours of rendering
   const fat32 = fat32Forecast({ seconds: N / FPS, mbit: deliveryMbit() });
@@ -313,7 +331,7 @@ const recordRetry = (r) => { if (ri) { ri.retries.push(r); writeJsonAtomic(RI_FI
 async function renderAll(firstTodo) {
   if (firstTodo < nSegs) {   // an older master / completion mark is stale as soon as a segment is redone
     for (const f of ['master.mkv', 'complete.json']) rmSync(P(f), { force: true });
-    for (let i = firstTodo; i < nSegs; i++) for (const e of ['mkv', 'hashes', 'json']) rmSync(P('seg', `${segName(i)}.${e}`), { force: true });
+    for (let i = firstTodo; i < nSegs; i++) for (const e of [PLAN.extension, 'hashes', 'json']) rmSync(P('seg', `${segName(i)}.${e}`), { force: true });
   }
   if (firstTodo === nSegs) { log(`all ${nSegs} segments already done`); return; }
   log(`resuming at segment ${firstTodo}/${nSegs} (${firstTodo ? `checkpoint ${segRange(firstTodo - 1).to}` : 'from the pre-roll'})`);
@@ -321,7 +339,7 @@ async function renderAll(firstTodo) {
   const sinks = new Map();
   const srv = await startServer({ engineRoot: exp.dir, sinks });
   killers.push(() => srv.server.close());
-  const frameBytes = RW * RH * 4;
+  const frameBytes = PLAN.frameBytes;
   const batch = Math.max(1, Math.min(8, Math.floor((64 << 20) / frameBytes)));
   const params = finalParams;
   let session = null;   // { browser, page, launch }
@@ -335,7 +353,9 @@ async function renderAll(firstTodo) {
     // video.html is read live at every page load: what this session was handed must be the page the key names
     try { assertServedPage(srv.served, PAGE_SHA); } catch (e) { await b.browser.close(); throw fatal(e.message); }
     session = { browser: b.browser, page, launch: b, pageSha: srv.served.get(PAGE_KEY) };
-    return page.evaluate((o) => window.__v.open(o), { params, rw: RW, rh: RH, step: STEP, T0: T0_MS, at: atPump, state, overrideKeys: Object.keys(overrides) });
+    const info = await page.evaluate((o) => window.__v.open(o), { params, rw: RW, rh: RH, step: STEP, T0: T0_MS, at: atPump, state, overrideKeys: Object.keys(overrides) });
+    if (PLAN.downscale) await page.evaluate(installLinearDownscale, { width: OW, height: OH });
+    return info;
   };
 
   let startState, startAt;
@@ -376,7 +396,7 @@ async function renderAll(firstTodo) {
         if (!/metal/i.test(openInfo.renderer) || /swiftshader/i.test(openInfo.renderer)) throw new Error(`renderer is not Metal: ${openInfo.renderer}`);
       }
       const file = segFile(i);
-      ff = spawnFfmpeg(segArgs(file, frames));
+      ff = spawnFfmpeg(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file }) : segArgs(file, frames));
       const thisFf = ff;
       killers.push(() => thisFf.kill());
       if ((injected.get(i) ?? 0) < (INJECT[i] ?? 0)) { injected.set(i, (injected.get(i) ?? 0) + 1); throw new Error(`injected failure in segment ${i}`); }
@@ -385,22 +405,32 @@ async function renderAll(firstTodo) {
       const watchdog = setInterval(() => { if (Date.now() - counter.last > 15 * 60e3) { log('watchdog: no frames for 15 min, killing the browser'); session?.browser.close().catch(() => {}); } }, 30e3);
       const ts = Date.now();
       let r;
-      try { r = await session.page.evaluate(([f, t, bt, sk]) => window.__v.run({ from: f, to: t, batch: bt, sink: sk }), [from, to, batch, '/__sink/seg']); }
+      try {
+        r = PIPELINE === 'browser'
+          ? await session.page.evaluate(encodeCanvasRun, { config: hevcQuantizerConfig({ width: OW, height: OH, fps: FPS }), quantizer: 1, from, to, sink: '/__sink/seg' })
+          : PLAN.direct ? await session.page.evaluate(captureCanvasRun, { from, to, batch, sink: '/__sink/seg' })
+            : await session.page.evaluate(([f, t, bt, sk]) => window.__v.run({ from: f, to: t, batch: bt, sink: sk }), [from, to, batch, '/__sink/seg']);
+      }
       finally { clearInterval(watchdog); }
       const renderMs = Date.now() - ts;
       const done = await ff.end();
       if (done.code !== 0) throw new Error(`ffmpeg segment ${i} exited ${done.code}: ${done.stderrTail}`);
-      if (counter.bytes !== frames * frameBytes) throw new Error(`segment ${i}: ${counter.bytes} bytes reached ffmpeg, expected ${frames * frameBytes}`);
-      if (r.hashes.length !== frames) throw new Error(`segment ${i}: ${r.hashes.length} hashes for ${frames} frames`);
+      if (PIPELINE === 'browser' ? counter.bytes !== r.bytes || r.frames !== frames : counter.bytes !== frames * frameBytes || (PLAN.direct && r.frames !== frames)) throw new Error(`segment ${i}: capture frame/byte accounting mismatch`);
+      if (!PLAN.direct && r.hashes.length !== frames) throw new Error(`segment ${i}: ${r.hashes.length} hashes for ${frames} frames`);
       const packets = countPackets(file);
       if (packets !== frames) throw new Error(`segment ${i}: ffprobe counts ${packets} packets, expected ${frames}`);
+      if (PLAN.direct) {
+        if (countFrames(file) !== frames) throw new Error(`segment ${i}: decoded frame count mismatch`);
+        const s = ffprobeJson(file).streams.find((x) => x.codec_type === 'video');
+        if (s.width !== OW || s.height !== OH || s.r_frame_rate !== `${FPS}/1` || (PIPELINE === 'gpu-main10' && (s.profile !== 'Main 10' || s.pix_fmt !== 'yuv420p10le'))) throw new Error(`segment ${i}: wrong delivery dimensions, clock or Main10 profile`);
+      }
       // commit: hashes, checkpoint, then the json that says "done"
-      writeFileSync(P('seg', `${segName(i)}.hashes`), `${r.hashes.map((h, k) => `${from + k + 1 - PREROLL} ${h}`).join('\n')}\n`);
+      if (!PLAN.direct) writeFileSync(P('seg', `${segName(i)}.hashes`), `${r.hashes.map((h, k) => `${from + k + 1 - PREROLL} ${h}`).join('\n')}\n`);
       writeFileSync(ckptFile(to), JSON.stringify({ at: to, state: r.snapshot }));
-      writeFileSync(P('seg', `${segName(i)}.json`), JSON.stringify({ segment: i, first_frame: from - PREROLL, frames, pumps: [from + 1, to], bytes_piped: counter.bytes, packets, file_bytes: statSync(file).size, file_sha256: await sha256File(file), render_wall_ms: renderMs, ffmpeg_version: FFMPEG_VERSION, page_sha256: session.pageSha, ffmpeg_args: ff.args, hashes_sha256: sha256(readFileSync(P('seg', `${segName(i)}.hashes`))), minMean: r.minMean, maxMean: r.maxMean }, null, 2));
+      writeFileSync(P('seg', `${segName(i)}.json`), JSON.stringify({ segment: i, first_frame: from - PREROLL, frames, pumps: [from + 1, to], bytes_piped: counter.bytes, packets, file_bytes: statSync(file).size, file_sha256: await sha256File(file), render_wall_ms: renderMs, ffmpeg_version: FFMPEG_VERSION, page_sha256: session.pageSha, ffmpeg_args: ff.args, hashes_sha256: PLAN.direct ? null : sha256(readFileSync(P('seg', `${segName(i)}.hashes`))), minMean: r.minMean, maxMean: r.maxMean }, null, 2));
       state = r.snapshot; at = to; doneSegs++; i++;
       const elapsed = (Date.now() - t0) / 1000, perFrame = renderMs / frames, left = (nSegs - i) * SEG_FRAMES * perFrame / 1000;
-      log(`segment ${i - 1}/${nSegs - 1}: ${frames} frames, ${fmt(perFrame)} ms/frame (${fmt(1000 / perFrame)} fps), ${(statSync(file).size / 2 ** 20).toFixed(1)} MiB lossless, load ${os.loadavg()[0].toFixed(1)}, elapsed ${fmt(elapsed, 0)} s, ETA ${fmt(left, 0)} s`);
+      log(`segment ${i - 1}/${nSegs - 1}: ${frames} frames, ${fmt(perFrame)} ms/frame (${fmt(1000 / perFrame)} fps), ${(statSync(file).size / 2 ** 20).toFixed(1)} MiB ${PLAN.direct ? 'HEVC' : 'lossless'}, load ${os.loadavg()[0].toFixed(1)}, elapsed ${fmt(elapsed, 0)} s, ETA ${fmt(left, 0)} s`);
       if (ABORT_AFTER_SEG !== null && doneSegs >= ABORT_AFTER_SEG) { log(`--abort-after-seg ${ABORT_AFTER_SEG}: dying without cleanup`); process.kill(process.pid, 'SIGKILL'); }
     } catch (e) {
       if (e.fatal) { await closeSession(); throw e; }
@@ -411,7 +441,7 @@ async function renderAll(firstTodo) {
       await closeSession();                                 // the browser first: nothing posts to the sink any more
       if (ff) { ff.kill(); await ff.exited; }               // then the failed segment's ffmpeg, so it neither lingers nor holds the segment file
       sinks.delete('seg');
-      for (const ext of ['mkv', 'hashes', 'json']) rmSync(P('seg', `${segName(i)}.${ext}`), { force: true });
+      for (const ext of [PLAN.extension, 'hashes', 'json']) rmSync(P('seg', `${segName(i)}.${ext}`), { force: true });
       if (n >= MAX_ATTEMPTS) throw e;
       // the failed segment is redone from the checkpoint that opens it (`state`/`at` still hold it)
     }
@@ -435,7 +465,7 @@ async function recordMaster() {
       if (sha !== null && h !== sha) throw new Error(`segment ${i} (${segFile(i)}) is not the file that was written: sha256 ${h}, recorded ${sha}`);
       sha ??= h;
     }
-    segs.push({ file: `seg/${segName(i)}.mkv`, first_frame: j.first_frame, frames: j.frames, packets: j.packets, bytes: j.file_bytes, sha256: sha, sha256_origin: origin, hashes_sha256: j.hashes_sha256, bytes_piped: j.bytes_piped, render_wall_ms: j.render_wall_ms, ffmpeg_version: j.ffmpeg_version ?? null, page_sha256: j.page_sha256 ?? null });
+    segs.push({ file: `seg/${segName(i)}.${PLAN.extension}`, first_frame: j.first_frame, frames: j.frames, packets: j.packets, bytes: j.file_bytes, sha256: sha, sha256_origin: origin, hashes_sha256: j.hashes_sha256, bytes_piped: j.bytes_piped, render_wall_ms: j.render_wall_ms, ffmpeg_version: j.ffmpeg_version ?? null, page_sha256: j.page_sha256 ?? null });
   }
   const lateHashed = segs.filter((s) => s.sha256_origin !== 'segment json (written at render)').length;
   if (lateHashed) log(`WARNING: ${lateHashed}/${nSegs} segment jsons have no file_sha256 (made before the exporter hashed its segments): the hashes below are computed now, so they describe the files as they are, not as they were written`);
@@ -443,7 +473,7 @@ async function recordMaster() {
     writeFileSync(LIST, concatListText(segs.map((s) => basename(s.file))));   // names relative to the list, so the folder can be moved or copied
     writeFileSync(SUMS, `${segs.map((s) => `${s.sha256}  ${basename(s.file)}`).join('\n')}\n`);
   }
-  writeFileSync(P('hashes.txt'), Array.from({ length: nSegs }, (_, i) => readFileSync(P('seg', `${segName(i)}.hashes`), 'utf8')).join(''));
+  if (!PLAN.direct) writeFileSync(P('hashes.txt'), Array.from({ length: nSegs }, (_, i) => readFileSync(P('seg', `${segName(i)}.hashes`), 'utf8')).join(''));
   return segs;
 }
 
@@ -468,7 +498,7 @@ async function deliver() {
   const part = P('delivery.mp4.part');
   rmSync(part, { force: true });
   killers.push(() => rmSync(part, { force: true }));
-  const args = deliveryArgv(masterInput(), part);
+  const args = PLAN.direct ? directJoinArgs({ input: masterInput(), out: part, fps: FPS }) : deliveryArgv(masterInput(), part);
   const t = Date.now();
   const r = await runFfmpegAsync(args, { onChild: (p) => killers.push(() => p.kill('SIGKILL')) });
   if (r.code !== 0) { rmSync(part, { force: true }); throw new Error(`delivery encode failed: ${r.stderr.slice(-2000)}`); }
@@ -499,7 +529,7 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
   const renderInfo = existsSync(RI_FILE) ? readJson(RI_FILE) : null;
   const prev = existsSync(P('manifest.json')) ? readJson(P('manifest.json')) : null;   // only for a run from before render-info.json existed
   const walls = segs.map((s) => s.render_wall_ms), frameCount = segs.reduce((a, s) => a + s.frames, 0), wallSum = walls.reduce((a, b) => a + b, 0);
-  const piped = segs.reduce((a, s) => a + s.bytes_piped, 0) / (RW * RH * 4);
+  const piped = PLAN.direct ? frameCount : segs.reduce((a, s) => a + s.bytes_piped, 0) / (RW * RH * 4);
   const setSha = segs.every((s) => s.sha256) ? sha256(`${segs.map((s) => `${s.sha256}  ${basename(s.file)}`).join('\n')}\n`) : null;
   const lateHashed = segs.filter((s) => s.sha256_origin !== 'segment json (written at render)').length;
   const q = man.quality_vs_master;   // this invocation's measure: the frame accounting counts only what it measured itself
@@ -522,7 +552,7 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
   fa.exact = mpackets === N && piped === N && (man.delivery_probe ? man.delivery_probe.decoded_frames === N : true) && (q ? q.frames_compared === N && q.encoder_free_baseline.frames_compared === N : true);
   const lookPath = RK.look?.path ?? (prev?.look?.sha256 === K.look_sha256 ? prev.look.path : null);   // a path is only the look's if its bytes are the key's
   const manifest = {
-    tool: 'test-gl/render-video.mjs', made_at: new Date().toISOString(), run_key: RUN_KEY,
+    tool: 'test-gl/render-video.mjs', made_at: new Date().toISOString(), run_key: RUN_KEY, pipeline: PIPELINE,
     exporter: RK?.body.exporter ?? prev?.exporter ?? null,
     exporter_this_invocation: EXPORTER,
     engine: RK.provenance ?? prev?.engine, look: { path: lookPath, sha256: K.look_sha256, name: RK.look?.name ?? (lookPath ? basename(lookPath) : null), ...(K.arboretum ? { source: 'arboretum' } : {}) },
@@ -560,11 +590,11 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
     browser: renderInfo?.browser ?? prev?.browser,
     open_info: renderInfo?.open_info ?? prev?.open_info,
     render: renderInfo ? {
-      segments: nSegs, frames: frameCount, batch_frames: Math.max(1, Math.min(8, Math.floor((64 << 20) / (RW * RH * 4)))),
+      segments: nSegs, frames: frameCount, batch_frames: PIPELINE === 'browser' ? null : Math.max(1, Math.min(8, Math.floor((64 << 20) / PLAN.frameBytes))),
       render_wall_s: wallSum / 1000, ms_per_frame_mean: wallSum / frameCount, ms_per_frame_min_max_segment: [Math.min(...segs.map((s) => s.render_wall_ms / s.frames)), Math.max(...segs.map((s) => s.render_wall_ms / s.frames))],
       sessions: renderInfo.sessions.length, retries: renderInfo.retries.length, retry_log: renderInfo.retries,
     } : prev?.render,
-    hashes: { file: 'hashes.txt', sha256: sha256(readFileSync(P('hashes.txt'))), frames: N, per_segment: segs.map((s) => ({ file: `seg/${basename(s.file, '.mkv')}.hashes`, sha256: s.hashes_sha256 })) },
+    hashes: PLAN.direct ? null : { file: 'hashes.txt', sha256: sha256(readFileSync(P('hashes.txt'))), frames: N, per_segment: segs.map((s) => ({ file: `seg/${basename(s.file, '.mkv')}.hashes`, sha256: s.hashes_sha256 })) },
     master_probe: masterProbe,
     delivery: man.delivery ?? prev?.delivery, delivery_probe: man.delivery_probe, delivery_fat32: man.delivery_fat32, quality_vs_master: quality,
     frame_accounting: fa,
@@ -574,6 +604,17 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
       'quality_vs_master pairs frame i with frame i (settb/setpts=N on both inputs); the delivery is read back to RGB with the same player-grade chroma upsampling as the stills',
     ],
   };
+  if (PLAN.direct) {
+    manifest.pipeline = PIPELINE;
+    manifest.master = null;
+    manifest.master_probe = null;
+    manifest.encoded_segments = { codec: 'hevc', lossless: false, segments: segs, segments_on_disk: segsPresent(), list: 'seg/list.txt', checksums: 'seg/SHA256SUMS', set_sha256: setSha };
+    manifest.output.ss_downscale = PLAN.downscale ? { space: 'linear', filter: 'GPU highp float 2x2 box average in pow(2.2) linear light, rounded to RGBA8' } : null;
+    manifest.frame_accounting = { frames_requested: N, frames_captured: frameCount, encoded_packets: mpackets, delivery_decoded_frames: man.delivery_probe?.decoded_frames ?? null, exact: fa.exact };
+    manifest.delivery = { ...man.delivery, source: 'encoded MP4 segments, stream copied without re-encoding', pipeline: PIPELINE, codec: 'hevc', ...(PIPELINE === 'browser' ? { quantizer: 1, gop: FPS * 2, bitrate_arg: null, maxrate_arg: null, bufsize_arg: null, quality_arg: null } : {}) };
+    manifest.ffmpeg.delivery_command = [FFMPEG, ...directJoinArgs({ input: CONCAT_INPUT('seg/list.txt'), out: 'delivery.mp4', fps: FPS })].join(' ');
+    manifest.notes = ['SDR BT709, limited range, 4:2:0; Main10 increases YUV precision, source RGB remains eight-bit.', 'No lossless master or pixel hashes: encoded segments have SHA256 checksums and decoded frame counts.'];
+  }
   return { manifest, fa, setSha };
 }
 
@@ -620,15 +661,15 @@ try {
   await stills();
   const { manifest, fa, setSha } = buildManifest({ segs, mpackets, masterProbe, mergedSha });
   // the delivery is encoded and probed, the stills and the measure have read the master: only an EXACT accounting lets the segments go
-  const discarding = DISCARD && fa.exact;
-  if (discarding) Object.assign(manifest.master, { segments_on_disk: false, discarded: true, discarded_at: new Date().toISOString() });
+  const discarding = (DISCARD || PLAN.direct) && fa.exact;
+  if (discarding) Object.assign(PLAN.direct ? manifest.encoded_segments : manifest.master, { segments_on_disk: false, discarded: true, discarded_at: new Date().toISOString() });
   writeJsonAtomic(P('manifest.json'), manifest);
   if ((!skipRender || discarding) && fa.exact) {
     writeFileSync(completeFile, JSON.stringify({ key: RUN_KEY, frames: N, master_set_sha256: setSha, ...(discarding ? { master_discarded: true } : {}), at: new Date().toISOString() }));
-    if (discarding) { for (let i = 0; i < nSegs; i++) rmSync(segFile(i), { force: true }); log('master discarded (--discard-master): seg/*.mkv deleted; the lists, checksums, segment records, checkpoints and hashes stay'); }
+    if (discarding) { for (let i = 0; i < nSegs; i++) rmSync(segFile(i), { force: true }); log(PLAN.direct ? 'encoded segments removed after verified delivery; segment records, checksums and checkpoints stay' : 'master discarded (--discard-master): seg/*.mkv deleted; the lists, checksums, segment records, checkpoints and hashes stay'); }
     if (has('--drop-segments')) { for (let i = 0; i < nSegs; i++) rmSync(segFile(i), { force: true }); log('segments dropped (seg/*.mkv); master.mkv, hashes, checkpoints and the lists stay'); }
   }
-  log(`done: ${N} frames; master ${mpackets} packets in ${nSegs} segments (${manifest.master_probe.size_mib.toFixed(0)} MiB)${mergedSha ? ' + merged master.mkv' : ''}; delivery ${man.delivery_probe && !man.delivery_probe.error ? `${man.delivery_probe.decoded_frames} frames, ${man.delivery_probe.size_mib.toFixed(1)} MiB, ${man.delivery_probe.mbit_s.toFixed(1)} Mbit/s` : 'none'}; frame accounting ${fa.exact ? 'EXACT' : 'MISMATCH'}`);
+  log(`done: ${N} frames; ${PLAN.direct ? PIPELINE : 'master'} ${mpackets} packets in ${nSegs} segments (${(masterBytes / 2 ** 20).toFixed(0)} MiB)${mergedSha ? ' + merged master.mkv' : ''}; delivery ${man.delivery_probe && !man.delivery_probe.error ? `${man.delivery_probe.decoded_frames} frames, ${man.delivery_probe.size_mib.toFixed(1)} MiB, ${man.delivery_probe.mbit_s.toFixed(1)} Mbit/s` : 'none'}; frame accounting ${fa.exact ? 'EXACT' : 'MISMATCH'}`);
   if (!fa.exact) process.exitCode = 4;
 } catch (e) {
   log(`FAILED: ${e.stack || e}`);
