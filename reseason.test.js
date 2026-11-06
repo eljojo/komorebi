@@ -17,6 +17,7 @@ import { PRESETS } from "./presets.js";
 import { macroParams } from "./macros.js";
 import { makeBake } from "./komorebi-bake.js";
 import { VS_BAKE, VS_FAITH } from "./komorebi-shaders.js";
+import { makeMotion } from "./komorebi-motion.js";
 
 // ---- the rig: one stub GL per hub (a grove writes the engine-global faith.* of ITS hub, so the cached grove and the fresh
 // builds it is held to each get their own) ------------------------------------------------------------------------------
@@ -323,6 +324,29 @@ test("both leaf shaders turn downwind under positive torque and carry the footpr
     expect(Math.cos(a)).toBeCloseTo(expected[0], 14);
     expect(-Math.sin(a)).toBeCloseTo(expected[1], 14);
   }
+});
+
+function windRig(over) {
+  const R = rig({ ...DEFAULTS, ...SMALL, ...over }, true), g = R.G.buildGrove(null);
+  const motion = { time: 0, u: 0, v: 0, uLat: 0, vLat: 0, env: 0, driveEnv: 0, sway: [0, 0], windX: 1, windY: 0, weatherS: 1 };
+  Object.assign(R.hub, { grove: g, hier: g.hier, motion });
+  return { ...R, g, motion, ...makeMotion(R.hub) };
+}
+
+test("leaf drift alone does not force branch springs in still air", () => {
+  const r = windRig({ wind_strength: 0, drift_auto: true, drift_amount: 0.02 });
+  for (let i = 0; i < 600; i++) r.tick(1 / 60);
+  expect(Math.max(...r.g.hier.twigAngle.map(Math.abs), ...r.g.hier.limbAngle.map(Math.abs))).toBe(0);
+  expect(r.params.drift_phase).not.toBe(DEFAULTS.drift_phase);
+});
+
+test("branch springs settle after wind is switched off", () => {
+  const r = windRig({ wind_strength: 1.61, drift_auto: false });
+  for (let i = 0; i < 600; i++) r.tick(1 / 60);
+  expect(r.g.hier.maxV).toBeGreaterThan(0.01);
+  r.params.wind_strength = 0;
+  for (let i = 0; i < 7200 && r.motionActive(); i++) r.tick(1 / 60);
+  expect(r.motionActive()).toBe(false);
 });
 
 test("live wood radius reaches the faithful and analytic geometry without rebuilding the grove", () => {

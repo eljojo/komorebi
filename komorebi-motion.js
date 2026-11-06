@@ -18,7 +18,8 @@ export function makeMotion(hub){
     const hier = g?.hier;
     if(!hier) return;
     const t = motion.time;
-    const eb = 0.25 + 0.75*motion.env;       // differential bend breathes with the gust
+    const wind = clamp(params.wind_strength*motion.weatherS, 0, 1);
+    const eb = (0.25 + 0.75*motion.env)*wind;   // branch noise needs wind too; the springs can relax while leaf drift keeps ticking
     const u = motion.u;                       // coherent gust sense (signed, stiffened/backlashed)
     const dz = params.damping_ratio;
     const wL = Math.max(0.3, params.sway_stiffness*0.5), wT = Math.max(0.3, params.sway_stiffness*2.0);
