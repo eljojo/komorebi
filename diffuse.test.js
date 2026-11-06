@@ -479,9 +479,9 @@ test("every cast camera taps the BEAM through the texel's mixture, and a shut ga
     expect(/texelMix\(d\.rgb, d\.a, uBeamK, T, Tb\);\s*return Tb;/.test(code(src)), `${cam} tap returns the ballistic share`).toBe(true);
     expect(code(src).includes("exp(-(d.rgb + uBeamK*d.a))"), `${cam}: the slab form is gone`).toBe(false);
     // the else of the uniform branch is the line the engine has always run
-    expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{[^}]*\}\s*else\s*\{\s*return exp\(-texture\(t,uv\)\.rgb\);/.test(code(src)), `${cam} tap else`).toBe(true);
+    expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{[^}]*\}\s*else\s*\{\s*return exp\(-layerDepth\(t,world\)\.rgb\);/.test(code(src)), `${cam} tap else`).toBe(true);
     // ...and diffraction's per-channel taps ride the same mixture, at each channel's own dispersed position
-    expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{[^}]*texelMix\(qR\.rgb, qR\.a, uBeamK[^}]*texelMix\(qG\.rgb, qG\.a, uBeamK[^}]*texelMix\(qB\.rgb, qB\.a, uBeamK[^}]*\}\s*else\s*\{\s*float aR = texture\(t, \(world \+ H\*g\*cs\.r - uCanopyOrigin\)\/uCanopyExtent\)\.r;/.test(code(src)), `${cam} tapCA`).toBe(true);
+    expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{[^}]*texelMix\(qR\.rgb, qR\.a, uBeamK[^}]*texelMix\(qG\.rgb, qG\.a, uBeamK[^}]*texelMix\(qB\.rgb, qB\.a, uBeamK[^}]*\}\s*else\s*\{\s*float aR = layerDepth\(t, world \+ H\*g\*cs\.r\)\.r;/.test(code(src)), `${cam} tapCA`).toBe(true);
     expect(src.includes("return exp(-vec3(aR,aG,aB));"), `${cam} tapCA else`).toBe(true);
   }
 });
@@ -677,7 +677,7 @@ test("edge_area at k = 0: the fill's skylight is never darker than the slab's, a
 test("edge_area: the four widened conditions are `|| uEdgeArea != 0` and each else is the literal old read, in the cast taps, the faithful stamp and the shared ray", () => {
   for (const cam of ["floor", "cloth", "enclosure"]) {
     const src = code(buildTransport(cam));
-    expect(src.includes("return exp(-texture(t,uv).rgb);"), `${cam} tap else`).toBe(true);
+    expect(src.includes("return exp(-layerDepth(t,world).rgb);"), `${cam} tap else`).toBe(true);
     expect(src.includes("return exp(-vec3(aR,aG,aB));"), `${cam} tapCA else`).toBe(true);
     expect(src.split("uBeamK > 0.0 || uEdgeArea != 0").length - 1, `${cam}: tap and tapCA, nothing else`).toBe(2);
   }

@@ -71,11 +71,11 @@ function renderRig(over = {}) {
   const params = { ...DEFAULTS, ...over };
   const U = new Proxy({}, { get: (_t, k) => (k === "layers" || k === "woods" ? [0, 1, 2, 3].map((i) => `${k}${i}`) : k) });
   const hub = {
-    gl, canvas: { width: 320, height: 180 }, params, perf: {}, motion: { sway: [0, 0] }, occ: { count: 0 }, occTex: {}, faith: {}, U, emptyVAO: {},
+    gl, canvas: { width: 320, height: 180 }, params, trans: { active: false }, perf: {}, motion: { sway: [0, 0] }, occ: { count: 0 }, occTex: {}, faith: {}, U, emptyVAO: {},
     src: { flat: new Float32Array(48), count: 16, coreR: 0, haloR: 0, Lcore: 0, Lhalo: 0, moonD: 0, moonR: 0 },
     progBlit: {}, progGlowBlur: {}, progGlowMix: {}, faithfulOn: () => false, transportFor: () => ({ prog: {}, U }), transportCamera: () => cameraFor(params),
     fail(m) { throw new Error(m); }, refreshFaith() {}, refreshFill() {}, refreshLitter() {}, layerHeights: () => [2, 3, 4, 5], layerTex: [{}, {}, {}, {}],
-    woodTex: [{}, {}, {}, {}], faithTex: {}, projMatrix: () => new Float32Array(4), bulkShift: () => [0, 0], fill: { ready: false }, litter: { ready: false, tex: {} },
+    woodTex: [{}, {}, {}, {}], faithTex: {}, projMatrix: () => new Float32Array(4), bulkShift: () => [0, 0], bulkOn: () => !!(params.standing_scene || params.receiver), fill: { ready: false }, litter: { ready: false, tex: {} },
   };
   const r = makeRender(hub);
   return {
