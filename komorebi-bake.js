@@ -10,7 +10,7 @@
 // bundle whose looks never open canopy_fill can leave it out whole.
 // ============================================================================
 import { atmosphere, ballisticK, clamp, lerp, sunIncidence } from './komorebi-math.js';
-import { MAX_FILL_DIRS, MAX_LAYERS } from './komorebi-params.js';
+import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES } from './komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
 import { bindLeafShape } from './komorebi-grove.js';
@@ -177,7 +177,27 @@ export function makeBake(hub){
     }
   }
 
+  // Source offsets and weights matter even at an unchanged count. Snapshot the numeric inputs without per-frame strings or allocations.
+  const faithKeys = ['sun_elevation_deg','sun_azimuth_deg','receiver','cloth_distance_m','drift_phase','drift_amount','leaf_swing','flutter_freq','edge_softness'];
+  const faithInputs = new Float64Array(faithKeys.length+1), faithSource = new Float32Array(MAX_SAMPLES*3);
+  let faithReady = false;
+  function faithfulInputsMatch(record){
+    let same = faithReady;
+    for(let i=0;i<=faithKeys.length;i++){
+      const value = i===faithKeys.length ? bakeRes() : Number(params[faithKeys[i]]);
+      if(!Object.is(faithInputs[i], value)) same = false;
+      if(record) faithInputs[i] = value;
+    }
+    for(let i=0;i<src.count*3;i++){
+      if(faithSource[i]!==src.flat[i]) same = false;
+      if(record) faithSource[i] = src.flat[i];
+    }
+    if(record) faithReady = true;
+    return same;
+  }
+
   function bakeFaithful(){
+    faithfulInputsMatch(true);
     faith.branchTau=params.branch_tau;
     const k = FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0;
     faith.k = k; faith.n = src.count;   // recorded even for an empty grove: refreshFaith compares against them
@@ -335,11 +355,11 @@ export function makeBake(hub){
   // edge_area is baked into the cast the same way (each stamp's law at k = 0), so flipping it re-casts too; a live toggle rebuilds nothing else.
   // The same goes for the sample count: it is what the cast is made of, and resetPerf (after rebuildAll's bake) or the governor can
   // re-cut the cloud to a count the bake did not see — the old look's, or a trimmed one — with no bake-res change to re-bake it.
-  // Only the COUNT is compared: a transition's morph moves the cloud's shape every frame, and the cast is not re-cast for that.
+  // The numeric snapshot also checks the source shape, sun, cloth plane and leaf-bake uniforms: still air does not make those inputs static.
   function refreshFaith(){
     const woodChanged=hub.refreshWood();
     if(params.sky_view && (woodChanged || sky.branchTau!==params.branch_tau)) bakeLayers(bakeRes(), hub.layerHeights(), false);
-    if(faithfulOn() && (woodChanged || faith.branchTau!==params.branch_tau || faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count || faith.edgeArea !== edgeAreaOn(params))) bakeFaithful();
+    if(faithfulOn() && (woodChanged || faith.branchTau!==params.branch_tau || faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count || faith.edgeArea !== edgeAreaOn(params) || !faithfulInputsMatch(false))) bakeFaithful();
   }
 
   return { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow };

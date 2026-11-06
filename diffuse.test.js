@@ -502,31 +502,44 @@ import { makeBake } from "./komorebi-bake.js";
 function castRig(over = {}) {
   let casts = 0;
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : () => { if (name === "bindFramebuffer") casts++; return {}; }) });
-  const params = { leaf_diffuse: 0, ...over };
-  const src = { count: 29 }, faith = { vao: null, k: 0, n: 0 };
+  const params = { ...DEFAULTS, ...over };
+  const src = { count: 29, flat: new Float32Array(87) }, faith = { vao: null, k: 0, n: 0 };
   const bake = makeBake({ gl, params, motion: {}, src, faith, sky: {}, U: {}, fill: {}, refreshWood: () => false, bakeRes: () => 256, faithfulOn: () => true });
   return { bake, params, src, faith, casts: () => casts };
 }
 
-test("refreshFaith: the cast is re-cast when leaf_diffuse moves OR the sample count does, and not for anything else", () => {
+test("refreshFaith: source shape, diffuse split and sample count each refresh once; unchanged inputs do not", () => {
   const r = castRig();
   r.bake.bakeFaithful();
   expect([r.faith.k, r.faith.n], "the bake records what it was made of").toEqual([0, 29]);
   const base = r.casts();
   r.bake.refreshFaith(); r.bake.refreshFaith();
   expect(r.casts(), "nothing moved: no cast").toBe(base);
-  r.src.flat = new Float32Array(87); r.src.maxR = 0.02;                                 // a transition's morph re-cuts the cloud's SHAPE every frame at the same count
+  r.src.flat = new Float32Array(r.src.flat);                                        // regenerating an identical source is not a changed cast
   r.bake.refreshFaith();
-  expect(r.casts(), "the cloud's shape moved at the same count: no cast (the morph does not re-cast the whole tree each frame)").toBe(base);
+  expect(r.casts()).toBe(base);
+  r.src.flat[0] = 0.02; r.src.flat[2] = 0.1;                                       // same count, different offsets and weights
+  r.bake.refreshFaith();
+  expect(r.casts(), "the cloud changed at the same sample count").toBe(base + 1);
   r.params.leaf_diffuse = 0.5; r.bake.refreshFaith();
-  expect(r.casts(), "leaf_diffuse moved: re-cast").toBe(base + 1);
-  r.bake.refreshFaith();
-  expect(r.casts(), "...once").toBe(base + 1);
-  r.src.count = 22; r.bake.refreshFaith();                                              // resetPerf / the governor re-cut the cloud to a count the bake did not see
-  expect(r.casts(), "the sample count moved: re-cast").toBe(base + 2);
-  expect(r.faith.n).toBe(22);
+  expect(r.casts(), "leaf_diffuse moved: re-cast").toBe(base + 2);
   r.bake.refreshFaith();
   expect(r.casts(), "...once").toBe(base + 2);
+  r.src.count = 22; r.bake.refreshFaith();                                              // resetPerf / the governor re-cut the cloud to a count the bake did not see
+  expect(r.casts(), "the sample count moved: re-cast").toBe(base + 3);
+  expect(r.faith.n).toBe(22);
+  r.bake.refreshFaith();
+  expect(r.casts(), "...once").toBe(base + 3);
+});
+
+test("refreshFaith follows live sun, cloth placement and leaf-bake inputs in still air", () => {
+  const r = castRig(); r.bake.bakeFaithful();
+  for (const key of ['sun_elevation_deg', 'sun_azimuth_deg', 'cloth_distance_m', 'drift_phase', 'drift_amount', 'leaf_swing', 'flutter_freq', 'edge_softness']) {
+    const before = r.casts();
+    r.params[key] += 0.1; r.bake.refreshFaith();
+    expect(r.casts(), `${key} changed the cast`).toBe(before + 1);
+    r.bake.refreshFaith(); expect(r.casts(), `${key} unchanged`).toBe(before + 1);
+  }
 });
 
 test("ONE texelMix text: the sky ray, the fill, the cast tap and the faithful stamp carry the very same snippet, once each", () => {
