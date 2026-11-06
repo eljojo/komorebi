@@ -536,9 +536,34 @@ function bakeRig(over) {
   makeFill(hub).bakeFill(false);
   const draw = calls.findIndex((c) => c[0] === "drawArrays");
   const uni = (name) => calls.filter((c) => c[0].startsWith("uniform") && c[1] === name).map((c) => c.slice(2));
-  const wraps = (which) => calls.map((c, i) => [c, i]).filter(([c]) => c[0] === "texParameteri" && c[2] === "TEXTURE_WRAP_S" && c[3] === which).map(([, i]) => i);
-  return { calls, draw, uni, wraps, fill, params };
+  const wraps = (which) => {
+    let bound;
+    return calls.flatMap((c, i) => {
+      if (c[0] === 'bindTexture') bound = c[2];
+      return bound?.layer !== undefined && c[0] === 'texParameteri' && c[2] === 'TEXTURE_WRAP_S' && c[3] === which ? [i] : [];
+    });
+  };
+  const textureWraps = (texture) => {
+    let bound;
+    const state = {};
+    for (const c of calls) {
+      if (c[0] === 'bindTexture') bound = c[2];
+      if (c[0] === 'texParameteri' && bound === texture) state[c[2]] = c[3];
+    }
+    return state;
+  };
+  return { calls, draw, uni, wraps, fill, params, textureWraps };
 }
+
+test("the shade-lighting outputs repeat with the endless canopy and clamp for a finite tree", () => {
+  for (const over of [{}, { standing_scene: true }]) {
+    const r = bakeRig(over), mode = over.standing_scene ? 'CLAMP_TO_EDGE' : 'REPEAT';
+    for (const t of r.fill.tex) {
+      expect(r.textureWraps(t).TEXTURE_WRAP_S).toBe(mode);
+      expect(r.textureWraps(t).TEXTURE_WRAP_T).toBe(mode);
+    }
+  }
+});
 
 test("the park wraps and the finite tree pads: the wrap is selected by !bulkOn, on the layer textures, for the fill pass only", () => {
   const park = bakeRig({});

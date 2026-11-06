@@ -455,6 +455,12 @@ export function makeFill(hub){
     // open sky past its box and is baked over the box padded by 3·h_max; the endless park has no edge, so its box REPEATS and the
     // frame is the box. REPEAT is on the layer textures for this pass only — transport reads the same textures CLAMPed.
     const bulk = hub.bulkOn(), wrap = !bulk, nL = params.layer_count;
+    // The receiver samples these outside the box too: its shade lighting must repeat with the endless canopy.
+    for(const t of fill.tex){
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+    }
     const fr = hub.fillFrameNow(H);
     fill.ox = fr.ox; fill.oy = fr.oy; fill.ext = fr.ext;   // what every receiver reads the textures by
     const e = hub.fillFor(), u = e.U;
