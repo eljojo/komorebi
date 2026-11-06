@@ -15,6 +15,8 @@ import * as groveMod from "./komorebi-grove.js";
 import { makeGrove } from "./komorebi-grove.js";
 import { PRESETS } from "./presets.js";
 import { macroParams } from "./macros.js";
+import { makeBake } from "./komorebi-bake.js";
+import { VS_BAKE, VS_FAITH } from "./komorebi-shaders.js";
 
 // ---- the rig: one stub GL per hub (a grove writes the engine-global faith.* of ITS hub, so the cached grove and the fresh
 // builds it is held to each get their own) ------------------------------------------------------------------------------
@@ -278,6 +280,50 @@ function engineRig(over) {
   return { eng, counts };
 }
 const built = (counts) => counts.createBuffer + counts.createVertexArray;
+
+// GLSL constructors fill columns: evaluate the shader's own coefficients instead of assuming its rotation sign.
+function shaderTurn(source, cosine, sine, x, y, angle) {
+  const args = source.match(new RegExp(`mat2\\((${cosine},[^)]+)\\)`))[1].split(",");
+  const values = { [cosine]: Math.cos(angle), [sine]: Math.sin(angle) };
+  const m = args.map(s => (s.startsWith("-") ? -1 : 1) * values[s.replace(/^-/, "")]);
+  return [m[0] * x + m[2] * y, m[1] * x + m[3] * y];
+}
+
+test("leaf and wood rotations agree at every terminal tip, through twig then limb bends", () => {
+  const R = rig({ ...DEFAULTS, ...SMALL, sway_pitch: 0, branch_tau: 2 }, true), g = R.G.buildGrove(null), H = g.hier;
+  H.limbAngle.fill(0.2); H.twigAngle.fill(-0.15);
+  Object.assign(R.hub, { grove: g, hier: H, clusterTex: g.clusterTex, clusterGeomTex: g.clusterGeomTex,
+    motion: { u: 0, time: 0, sway: [0, 0] }, src: { count: 1, flat: new Float32Array([0, 0, 1]) }, U: { faith: {}, faithSeg: {}, facc: {} },
+    bakeRes: () => 256, projMatrix: () => [1, 0, 0, 1], bulkShift: () => [0, 0] });
+  R.faith.gx = new Float32Array(1); R.faith.gy = new Float32Array(1);
+  makeBake(R.hub).bakeFaithful();
+  const stride = R.faith.segArr.length / R.faith.segRest.length;
+  let checked = 0;
+  for (const [i, s] of R.faith.segRest.entries()) {
+    if (s.clump < 0) continue;
+    const t = H.twigs[s.clump];
+    const twig = shaderTurn(VS_FAITH, "ct", "st", s.bx - t.bx, s.by - t.by, H.twigAngle[s.clump]);
+    const limb = shaderTurn(VS_FAITH, "cl", "sl", twig[0] + t.bx - s.px, twig[1] + t.by - s.py, H.limbAngle[s.limb]);
+    expect(Math.hypot(limb[0] + s.px - R.faith.segArr[stride * i + 2], limb[1] + s.py - R.faith.segArr[stride * i + 3])).toBeLessThan(1e-5);
+    checked++;
+  }
+  expect(checked).toBeGreaterThan(100);
+});
+
+test("both leaf shaders turn downwind under positive torque and carry the footprint with the branch", () => {
+  for (const source of [VS_BAKE, VS_FAITH]) {
+    const [x, y] = shaderTurn(source, "cl", "sl", 1, 0, 0.2);
+    expect(x).toBeCloseTo(Math.cos(0.2), 14);
+    expect(y, "an arm along +x under a +y wind has positive torque and must move toward +y").toBeGreaterThan(0);
+    const expression = source.match(/float ang\s*=\s*([^;]+);/)[1];
+    const angleOf = (thL, thT) => Function("angle", "thL", "thT", "swing", `return ${expression}`)(0.7, thL, thT, 0);
+    expect(angleOf(0, 0), "preserve the still leaf's angle").toBe(0.7);
+    const a = angleOf(0.2, -0.15), rest = [Math.cos(0.7), -Math.sin(0.7)];
+    const expected = [Math.cos(0.05) * rest[0] - Math.sin(0.05) * rest[1], Math.sin(0.05) * rest[0] + Math.cos(0.05) * rest[1]];
+    expect(Math.cos(a)).toBeCloseTo(expected[0], 14);
+    expect(-Math.sin(a)).toBeCloseTo(expected[1], 14);
+  }
+});
 
 test("live wood radius reaches the faithful and analytic geometry without rebuilding the grove", () => {
   const { eng, counts } = engineRig({ faithful_canopy: true, branch_tau: 2 });

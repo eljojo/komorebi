@@ -97,11 +97,13 @@ void main(){
   float sa = bend.z*0.6;                                    // per-twig spread so they don't lockstep
   float ca=cos(sa), sna=sin(sa);
   vec2 Jtwig = C - (mat2(ca,-sna,sna,ca)*radial) * min(uStemLen, Lr*0.9);  // joint between clump & trunk
+  // mat2 fills columns: positive joint bends turn counterclockwise, as the CPU wood and wind torque do.
   float ct=cos(thT), st=sin(thT);
-  vec2 p    = Jtwig + mat2(ct,-st,st,ct)*(leafRest - Jtwig); // twig swings clump about its base joint
+  vec2 p    = Jtwig + mat2(ct,st,-st,ct)*(leafRest - Jtwig); // twig swings clump about its base joint
   float cl=cos(thL), sl=sin(thL);
-  vec2 base = BL + mat2(cl,-sl,sl,cl)*(p - BL);            // limb swings clump about the trunk
-  float ang = angle + thL + thT + 0.2*swing;               // leaf orientation rotates with the branch
+  vec2 base = BL + mat2(cl,sl,-sl,cl)*(p - BL);            // limb swings clump about the trunk
+  // The leaf outline uses a clockwise rest-angle basis, so joint bends subtract from that angle.
+  float ang = angle - thL - thT + 0.2*swing;               // leaf orientation rotates with the branch
   // ---- place the (foreshortened, rocked) leaf quad ----
   float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
@@ -200,11 +202,13 @@ void main(){
   // property comes for free — no uStemLen (the synthetic joint) and no bend.z spread: there is no made-up radial
   // direction left to decorrelate, the grown twig headings already differ. thT rides twig_flex → 0 = rest = byte-identical.
   // sway_pitch composes orthogonally: it only foreshortens iHeight (bend.w) and this is a plan-plane yaw.
+  // mat2 fills columns: positive joint bends turn counterclockwise, as the CPU wood and wind torque do.
   float ct=cos(thT), st=sin(thT);
-  vec2 p = TB + mat2(ct,-st,st,ct)*(leafRest - TB);      // twig swings the clump about its own grown base
+  vec2 p = TB + mat2(ct,st,-st,ct)*(leafRest - TB);      // twig swings the clump about its own grown base
   float cl=cos(thL), sl=sin(thL);
-  vec2 base = BL + mat2(cl,-sl,sl,cl)*(p - BL);          // the limb then swings that twig joint AND its clump about the trunk
-  float ang = angle + thL + thT + 0.2*swing;             // orientation rotates with the branch → the footprint presents differently as it turns (§5)
+  vec2 base = BL + mat2(cl,sl,-sl,cl)*(p - BL);          // the limb then swings that twig joint AND its clump about the trunk
+  // The leaf outline uses a clockwise rest-angle basis, so joint bends subtract from that angle.
+  float ang = angle - thL - thT + 0.2*swing;             // orientation rotates with the branch → the footprint presents differently as it turns (§5)
   float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
   vec2 lc = aCorner*uShapeBox.zw + uShapeBox.xy;                                 // the corner in the leaf's own frame: the ellipse's square to the bit, or the outline's box (see VS_BAKE)
