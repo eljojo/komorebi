@@ -51,15 +51,20 @@ uniform float uViewYaw;          // camera orbit about vertical (rad); rotates t
 const GLSL_T_BEAM = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per leaf. 0 = the old leaf, byte-identical
 uniform int uEdgeArea;   // edge_area (§4.5): 1 = the taps read a texel as its mixture at k = 0 too (inert above it: the split already does). 0 = the slab, byte-identical`;
 const GLSL_T_TAP = `${GLSL_TEXEL_MIX}   // @feature leafDiffuse
-vec3 tap(highp sampler2D t, vec2 world){
+vec4 layerDepth(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
+  // A finite tree ends at its box; an overhead canopy repeats through the sampler's wrap mode.
+  if(uCanopyOpen != 0 && (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))) return vec4(0.0);
+  return texture(t,uv);
+}
+vec3 tap(highp sampler2D t, vec2 world){
   if(uBeamK > 0.0 || uEdgeArea != 0){   // @feature leafDiffuse
-    vec4 d = texture(t,uv);   // @feature leafDiffuse
+    vec4 d = layerDepth(t,world);   // @feature leafDiffuse
     vec3 T, Tb;   // @feature leafDiffuse
     texelMix(d.rgb, d.a, uBeamK, T, Tb);   // the texel's mixture: what is left of the beam, the gap passing it whole @feature leafDiffuse
     return Tb;   // @feature leafDiffuse
   } else {   // @feature leafDiffuse
-    return exp(-texture(t,uv).rgb);   // optical depth -> transmittance
+    return exp(-layerDepth(t,world).rgb);   // optical depth -> transmittance
   }   // @feature leafDiffuse
 }`;
 
@@ -70,6 +75,7 @@ const GLSL_T_TRANSPORT_DECLS = `#define MAX_SAMPLES ${MAX_SAMPLES}
 uniform vec3  uSamples[MAX_SAMPLES];   // xy = angular offset (rad), z = weight (sum=1)
 uniform int   uSampleCount;
 uniform mat2  uProj;                    // angular->ground per unit height (ellipse + shear)
+uniform int   uCanopyOpen;              // finite tree: no optical depth outside the canopy box
 uniform vec2  uBulkShift;               // STANDING SCENE (§4.8): bulk lateral shadow offset per unit height = cot(elev)·(anti-sun dir).
                                         // The park model omits this (shadows sit directly under the canopy, only stretched) — invisible for
                                         // an infinite canopy, but a discrete tree needs its shadow CAST to the side. 0 = park model, unchanged.`;
@@ -103,18 +109,18 @@ const GLSL_T_CA_DECLS = `uniform vec3  uChroma;            // per-channel diffra
 // canopy height and the low-sun ellipse for free. Three single-channel taps; only taken when diffraction is on.
 vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
   if(uBeamK > 0.0 || uEdgeArea != 0){   // the beam's mixture rides each channel's own dispersed read (§4.5) @feature leafDiffuse
-    vec4 qR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent);   // @feature leafDiffuse
-    vec4 qG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent);   // @feature leafDiffuse
-    vec4 qB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent);   // @feature leafDiffuse
+    vec4 qR = layerDepth(t, world + H*g*cs.r);   // @feature leafDiffuse
+    vec4 qG = layerDepth(t, world + H*g*cs.g);   // @feature leafDiffuse
+    vec4 qB = layerDepth(t, world + H*g*cs.b);   // @feature leafDiffuse
     vec3 T, Tb, bR, bG, bB;   // @feature leafDiffuse
     texelMix(qR.rgb, qR.a, uBeamK, T, bR);   // @feature leafDiffuse
     texelMix(qG.rgb, qG.a, uBeamK, T, bG);   // @feature leafDiffuse
     texelMix(qB.rgb, qB.a, uBeamK, T, bB);   // @feature leafDiffuse
     return vec3(bR.r, bG.g, bB.b);   // @feature leafDiffuse
   } else {   // @feature leafDiffuse
-    float aR = texture(t, (world + H*g*cs.r - uCanopyOrigin)/uCanopyExtent).r;
-    float aG = texture(t, (world + H*g*cs.g - uCanopyOrigin)/uCanopyExtent).g;
-    float aB = texture(t, (world + H*g*cs.b - uCanopyOrigin)/uCanopyExtent).b;
+    float aR = layerDepth(t, world + H*g*cs.r).r;
+    float aG = layerDepth(t, world + H*g*cs.g).g;
+    float aB = layerDepth(t, world + H*g*cs.b).b;
     return exp(-vec3(aR,aG,aB));      // per-channel optical depth -> transmittance, each at its dispersed path
   }   // @feature leafDiffuse
 }`;
@@ -168,6 +174,7 @@ const float FILL_LOD = 3.0;`;
 
 // ---- FLOOR camera (§4.7) ----
 const GLSL_T_FLOOR_DECLS = `uniform float uViewExtent;
+uniform float uShadowOpacity;    // transition only: 0 is the lit floor, 1 is the canopy's full shadow
 uniform float uFarSmear;         // far-field dapple smear (m of extra throw per unit foreshortening, §4.7)
 uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)`;
 
@@ -227,7 +234,8 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fra
 // on it in whatever colour the canopy let through. The carpet branch is the outer one and the old material is its else, verbatim, so a look
 // that never lays litter runs the lines it always ran; the fill's share is one expression, shared by both, so the two cannot drift.
 const GLSL_T_FLOOR_FILL_SHARE = `mix(uAmbient, uAmbient*textureLod(uFillT, fuv, FILL_LOD).rgb + textureLod(uFillS, fuv, FILL_LOD).rgb, uCanopyFill)`;
-const GLSL_T_FLOOR_MATERIAL = `    if(uLitterOn != 0){   // @feature litter
+const GLSL_T_FLOOR_MATERIAL = `    if(uShadowOpacity < 1.0) acc = mix(vec3(1.0), acc, uShadowOpacity);
+    if(uLitterOn != 0){   // @feature litter
       vec4 L = texture(uLitter, (world-uLitterOrigin)/uLitterExtent);   // @feature litter
       vec3 ground = uGround*(1.0-L.a) + L.rgb;   // @feature litter
       vec3 amb = uAmbient;   // @feature litter
@@ -996,14 +1004,14 @@ const TRANSPORT_GROUPS = {
                                                       layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'] } },
   rayView:   { decls: GLSL_T_RAY_VIEW,        locs: { pitch:'uPitch', fov:'uFov', yaw:'uViewYaw' } },
   occ:       { decls: GLSL_T_OCC_DECLS,       locs: { occTex:'uOccTex', occCount:'uOccCount', occTau:'uOccTau', occSway:'uOccSway', occHRef:'uOccHRef' } },
-  transport: { decls: GLSL_T_TRANSPORT_DECLS, locs: { samples:'uSamples[0]', count:'uSampleCount', proj:'uProj', bulkShift:'uBulkShift' } },
+  transport: { decls: GLSL_T_TRANSPORT_DECLS, locs: { samples:'uSamples[0]', count:'uSampleCount', proj:'uProj', bulkShift:'uBulkShift', canopyOpen:'uCanopyOpen' } },
   woodCast:  { decls: GLSL_T_WOOD_CAST_DECLS, locs: { occPenumbra:'uOccPenumbra' } },
   beam:      { decls: GLSL_T_BEAM,            locs: { beamK:'uBeamK', edgeArea:'uEdgeArea' } },
   tap:       { decls: GLSL_T_TAP },
   ca:        { decls: GLSL_T_CA_DECLS,        locs: { chroma:'uChroma' } },
   faith:     { decls: GLSL_T_FAITH_DECLS,     locs: { faithful:'uFaithful', faithTex:'uFaithTex', faithOrigin:'uFaithOrigin', faithExtent:'uFaithExtent' } },
   sunDir:    { decls: GLSL_T_SUN_DIR_DECLS,   locs: { sunDir:'uSunDir' } },
-  floor:     { decls: GLSL_T_FLOOR_DECLS,     locs: { viewExtent:'uViewExtent', farSmear:'uFarSmear', ground:'uGround' } },
+  floor:     { decls: GLSL_T_FLOOR_DECLS,     locs: { viewExtent:'uViewExtent', farSmear:'uFarSmear', ground:'uGround', shadowOpacity:'uShadowOpacity' } },
   cloth:     { decls: GLSL_T_CLOTH_DECLS,     locs: { viewExtent:'uViewExtent', clothY:'uClothY' } },
   fabric:    { decls: GLSL_T_FABRIC_DECLS,    locs: { tt:'uTt', fabricTint:'uFabricTint', scatter:'uScatter', sheen:'uSheen',
                                                       foldDepth:'uFoldDepth', foldScale:'uFoldScale', foldCoarsen:'uFoldCoarsen', foldWarp:'uFoldWarp' } },

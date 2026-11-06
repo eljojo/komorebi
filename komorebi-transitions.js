@@ -8,6 +8,8 @@
 import { TAU, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
 import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
 
+const CAMERA_KEYS = new Set(['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y']);
+
 export function makeTransitions(hub){
   const { params, trans, faithfulOn } = hub;
 
@@ -23,6 +25,12 @@ export function makeTransitions(hub){
     for(const k of CANOPY_KEYS) from[k] = params[k];       // continuous canopy — morphs live IF the topology matches
     const topoDiff   = TOPO_KEYS.some(k => to[k]!==params[k]);     // a new tree/layer/seed: can't morph leaf-for-leaf
     const modeDiff   = MODE_KEYS.some(k => to[k]!==params[k]);     // a scene-MODE flag flips (faithful_canopy/standing_scene/receiver): needs a rebuild, NOT a snap-with-stale-state
+    const shadowFrom = trans.active && trans.backgroundFade ? trans.shadowOpacity : 1;
+    // Floor-to-floor mode changes meet on the lit ground, so the grove swap carries no shadow discontinuity.
+    trans.backgroundFade = modeDiff && !params.sky_view && !to.sky_view && (params.receiver|0)===0 && (to.receiver|0)===0;
+    trans.settleCamera = trans.backgroundFade && params.standing_scene && !to.standing_scene;
+    trans.shadowFrom = shadowFrom;
+    trans.shadowOpacity = trans.backgroundFade ? shadowFrom : 1;
     // Wood must meet zero at the mode swap when only one look has it: otherwise the woodless grove briefly
     // casts the other look's skeleton (an overhead trunk becomes a dot with radial limbs).
     trans.woodFade = modeDiff && ((params.branch_tau > 0) !== (to.branch_tau > 0));
@@ -63,7 +71,7 @@ export function makeTransitions(hub){
                  && layersShared;
     const tier = modeDiff ? 'mode' : crossOK ? 'cross' : 'dissolve';
     trans.crossfade = crossOK;
-    trans.bloomMax = BLOOM_MAX[tier];
+    trans.bloomMax = trans.backgroundFade ? 0 : BLOOM_MAX[tier];
     trans.durScale = trans.structDiff ? DUR_SCALE[tier] : 1;
     if(hub.groveIn){ hub.freeGrove(hub.groveIn); hub.groveIn = null; }   // a transition interrupting a transition drops the half-faded grove
     hub.crossW = 0;
@@ -82,7 +90,11 @@ export function makeTransitions(hub){
     // 0 at the ends, deepest at the midpoint — where the swap fires. Both structural tiers stop short of full
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
     trans.bloom = trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0;
+    trans.shadowOpacity = trans.backgroundFade
+      ? (t<0.5 ? lerp(trans.shadowFrom, 0, smoothstep(0,0.5,t)) : smoothstep(0.5,1,t)) : 1;
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
+      // The returning overhead grove is built for its final framing while invisible, then fades in without a camera landing.
+      if(trans.settleCamera && t>=0.5 && CAMERA_KEYS.has(k)){ params[k] = b; continue; }
       const w = k==='branch_tau' && trans.woodFade ? smoothstep(a>0 ? 0 : 0.5, a>0 ? 0.5 : 1, t) : e;
       params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,w, k==='drift_phase'?TAU:360) : lerp(a,b,w); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove

@@ -139,7 +139,14 @@ export function makeRender(hub){
       gl.uniform3f(u.ambient, f.atm.ambient[0], f.atm.ambient[1], f.atm.ambient[2]);
       gl.uniform1fv(u.heights, hub.layerHeights());
       gl.uniform1i(u.layerCount, params.layer_count);
-      for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]); gl.uniform1i(u.layers[i], i); }
+      // The fill temporarily changes wrap state; establish the transport's domain on every draw.
+      const wrap = !params.sky_view && !hub.bulkOn() ? gl.REPEAT : gl.CLAMP_TO_EDGE;
+      for(let i=0;i<MAX_LAYERS;i++){
+        gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+        gl.uniform1i(u.layers[i], i);
+      }
     },
     rayView: (u) => {
       gl.uniform1f(u.pitch, clamp(params.view_pitch_deg,0,80)*DEG);     // camera tilt (rad); 0 = top-down
@@ -186,6 +193,7 @@ export function makeRender(hub){
       // the sun moves — real physics, no camera tricks. Framing the tree off-frame is the camera's job (a fixed
       // pan, view_center), NOT an auto-centre on the crown (that decouples trunk from crown). Gated → 0 = park.
       const b = hub.bulkShift(); gl.uniform2f(u.bulkShift, b[0], b[1]);   // shared helper (matches the faithful bake; 0 when off)
+      gl.uniform1i(u.canopyOpen, hub.bulkOn() ? 1 : 0);
     },
     woodCast: (u, f) => {
       if(!f.wood) return;                                            // the same gate the table upload took: no wood, no penumbra to size
@@ -223,7 +231,8 @@ export function makeRender(hub){
       sunDirection(_sd, params.sun_elevation_deg, params.sun_azimuth_deg);
       gl.uniform3f(u.sunDir, _sd[0], _sd[1], _sd[2]);
     },
-    floor: (u) => {
+    floor: (u, f) => {
+      gl.uniform1f(u.shadowOpacity, f.shadowOpacity);
       gl.uniform1f(u.viewExtent, params.view_extent_m);
       gl.uniform1f(u.farSmear, Math.max(0, params.far_smear));          // far-field dapple smear (§4.7); 0 at pitch 0 regardless
       gl.uniform3f(u.ground, params.ground_r, params.ground_g, params.ground_b);   // dirt-floor albedo (spec §4.7)
@@ -319,8 +328,8 @@ export function makeRender(hub){
     // lit through the canopy. Units 6 and 7 (0-3 the layers, 4 the faith texture, 5 the wood table). `ready` is the
     // bake's own say-so that the textures hold what the current sun and layers imply; without it the gate reads shut
     // for the frame, which is the old expression, never an empty or stale texture. Shut = nothing is bound at all.
-    fill: (u) => {
-      const on = hub.fill.ready ? clamp(params.canopy_fill, 0, 1) : 0;
+    fill: (u, f) => {
+      const on = hub.fill.ready ? clamp(params.canopy_fill, 0, 1)*f.shadowOpacity : 0;
       gl.uniform1f(u.canopyFill, on);
       gl.uniform1i(u.fillT, 6);
       gl.uniform1i(u.fillS, 7);
@@ -384,6 +393,7 @@ export function makeRender(hub){
     gl.useProgram(variant.prog);
     const f = {
       E: params.canopy_extent_m,
+      shadowOpacity: hub.trans.active && hub.trans.backgroundFade ? hub.trans.shadowOpacity : 1,
       atm: atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight),
       sunIrr: lerp(1, sunIncidence(cam, params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1)),   // the beam's cosine of incidence on THIS receiver (sun_cosine, §3.5); the sky view's is 1. Held to 0..1 like canopy_fill and vignette: past 1 the blend turns the sun colour negative
       wood: !faithfulOn() && params.branch_tau > 0 && occ.count > 0,   // read by the table upload and the penumbra alike, so they cannot disagree

@@ -148,3 +148,56 @@ test("interrupting the park fade starts from its live wood opacity and fades out
   }
   expect(r.params).toEqual(PRESETS["afternoon 7"]);
 });
+
+for (const [from, to] of [["afternoon 7", "park 1"], ["park 1", "afternoon 7"]]) {
+  test(`${from} → ${to}: shadows dissolve into the lit floor around the grove swap`, () => {
+    const r = transitionRig(PRESETS[from]);
+    r.transitionTo(PRESETS[to]);
+    expect(r.hub.trans.shadowOpacity).toBe(1);
+    for (const [t, opacity] of [[0.25, 0.5], [0.5, 0], [0.75, 0.5], [1, 1]]) {
+      r.hub.trans.t = t;
+      r.tickTransition(0);
+      expect(r.hub.trans.shadowOpacity, `shadow opacity at t=${t}`).toBe(opacity);
+      expect(r.hub.trans.bloom, "the floor fade does not add a cloud flash").toBe(0);
+    }
+    expect(r.hub.trans.active).toBe(false);
+    expect(r.params).toEqual(PRESETS[to]);
+  });
+}
+
+test("interrupting a floor fade preserves its visible shadow opacity", () => {
+  const r = transitionRig(PRESETS["afternoon 7"]);
+  r.transitionTo(PRESETS["park 1"]);
+  r.hub.trans.t = 0.75;
+  r.tickTransition(0);
+  const opacity = r.hub.trans.shadowOpacity;
+  expect(opacity).toBe(0.5);
+  r.transitionTo(PRESETS["afternoon 7"]);
+  expect(r.hub.trans.shadowOpacity).toBe(opacity);
+  r.tickTransition(1 / 60);
+  expect(r.hub.trans.shadowOpacity).toBeLessThan(opacity);
+});
+
+test("park → afternoon: the incoming camera is settled before the grove rebuild and throughout the fade-in", () => {
+  const r = transitionRig(PRESETS["park 1"]), target = PRESETS["afternoon 7"];
+  const camera = ["view_extent_m", "view_pitch_deg", "view_fov_deg", "view_yaw_deg", "view_center_x", "view_center_y"];
+  r.transitionTo(target);
+  r.hub.trans.t = 0.25;
+  r.tickTransition(0);
+  expect(r.params.view_extent_m, "the outgoing half keeps its current movement").toBeGreaterThan(target.view_extent_m);
+  for (const t of [0.5, 0.6, 0.75, 0.95, 1]) {
+    r.hub.trans.t = t;
+    r.tickTransition(0);
+    for (const k of camera) expect(r.params[k], `${k} must be settled at t=${t}`).toBe(target[k]);
+  }
+  for (const k of camera) expect(r.swaps[0][k], `${k} must be final when the incoming grove is built`).toBe(target[k]);
+});
+
+test("afternoon → park keeps the existing camera tween", () => {
+  const r = transitionRig(PRESETS["afternoon 7"]);
+  r.transitionTo(PRESETS["park 1"]);
+  r.hub.trans.t = 0.75;
+  r.tickTransition(0);
+  expect(r.params.view_extent_m).toBeGreaterThan(PRESETS["afternoon 7"].view_extent_m);
+  expect(r.params.view_extent_m).toBeLessThan(PRESETS["park 1"].view_extent_m);
+});
