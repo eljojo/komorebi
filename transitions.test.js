@@ -220,3 +220,33 @@ for (const reverse of [false, true]) {
     expect(r.params).toEqual(reverse ? off : on);
   });
 }
+
+for (const reverse of [false, true]) {
+  test(`leaf_diffuse ${reverse ? "off" : "on"}: the proxy and measured glow meet at zero without a lighting jump`, () => {
+    const proxy = PRESETS["canopy 1"], split = { ...proxy, leaf_diffuse: 0.5 };
+    const r = transitionRig(reverse ? split : proxy);
+    r.transitionTo(reverse ? proxy : split);
+    r.hub.trans.t = 0.25;
+    r.tickTransition(0);
+    if (reverse) {
+      expect(r.params.leaf_diffuse).toBeCloseTo(0.25, 12);
+      expect(r.params.sky_scatter).toBe(0);
+    } else {
+      expect(r.params.leaf_diffuse).toBe(0);
+      expect(r.params.sky_scatter).toBeCloseTo(proxy.sky_scatter / 2, 12);
+    }
+    r.hub.trans.t = 0.5;
+    r.tickTransition(0);
+    expect(r.params.leaf_diffuse).toBe(0);
+    expect(r.params.sky_scatter).toBe(0);
+    r.hub.trans.t = 0.75;
+    r.tickTransition(0);
+    if (reverse) {
+      expect(r.params.leaf_diffuse).toBe(0);
+      expect(r.params.sky_scatter).toBeCloseTo(proxy.sky_scatter / 2, 12);
+    } else {
+      expect(r.params.sky_scatter).toBe(0);
+      expect(r.params.leaf_diffuse).toBeCloseTo(0.25, 12);
+    }
+  });
+}
