@@ -758,32 +758,21 @@ vec2 raySegDist(vec3 O, vec3 U, vec3 Pa, vec3 Pb){
   return vec2(length(W + s*U - tt*V), s);
 }`;
 
-const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, and the amendment to "we never see the tree, only what it casts".
-    // The eye lies on the ground at uViewCenter and looks UP; the surface the light reaches is the RETINA. Nothing
-    // new is invented — it is the same occluder field against the same source, read along upward rays instead of
-    // sun rays, which is why the whole thing is one branch and no new physics. uPitch here is gaze ELEVATION (90° =
-    // zenith); the ray basis is the enclosure's, character for character, so the two upward cameras agree. ----
-    float cp=cos(uPitch), sp=sin(uPitch);
-    float kf=max(tan(0.5*uFov), 1e-4);
-    float sxc=(vUv.x-0.5)*uAspect, tyc=(vUv.y-0.5);
-    vec3 dir = normalize(vec3(2.0*kf*sxc, cp - 2.0*kf*tyc*sp, sp + 2.0*kf*tyc*cp));
-    if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); dir.xy = mat2(cy,-sy,sy,cy)*dir.xy; }   // the grove spins under the gaze, the floor camera's own orbit matrix
-    vec3 eye = vec3(uViewCenter, 0.0);
-    // (no plan point here: the layer read below is per-layer, not per-pixel. In the mega-shader this branch still had
-    // to keep the shared 'world' defined for the cast blocks after it; this variant emits none of them, so it has none.)
-    if(dir.z <= 1e-3){
+const GLSL_T_SKY_READ = `    if(dir.z <= 1e-3){
       fog = 1.0;                     // at or under the horizon there is no canopy and no sky model: hand it to the same distance haze the floor path uses over its horizon (§4.7). One behaviour, one colour.
     } else {
-      // LAYERS AS ANGULAR SILHOUETTE. The ray crosses layer L's plane at plan eye + dir.xy·(h_L/dir.z) — the same
+      // LAYERS AS ANGULAR SILHOUETTE. The ray crosses layer L's plane at plan eye + dir.xy·((h_L-eye.z)/dir.z) — the same
       // texture, the same tap, and deliberately NO shift by g: g is where the SUN's rays land, and this is the EYE's
-      // ray. No recvZ either — these are absolute heights over an eye on the ground. Per-channel Beer's law then
+      // ray. No recvZ either — these are absolute heights, with eye.z zero in the native sky view. Per-channel Beer's law then
       // comes along for free, because tap() exponentiates a per-channel optical depth: a leaf between us and the sun
       // passes its own green-gold and the canopy GLOWS instead of silhouetting flat. That is the §4.5 leaf
       // transmittance finally seen head-on rather than inferred from a dapple's colour.
-      vec2 pL0 = eye.xy + dir.xy*(uLayerHeight[0]/dir.z);
-      vec2 pL1 = eye.xy + dir.xy*(uLayerHeight[1]/dir.z);
-      vec2 pL2 = eye.xy + dir.xy*(uLayerHeight[2]/dir.z);
-      vec2 pL3 = eye.xy + dir.xy*(uLayerHeight[3]/dir.z);
+      // A moving eye can rise above a layer. An upward ray misses it; an outside-box tap is exactly clear sky.
+      vec2 miss=uCanopyOrigin+2.0*uCanopyExtent;
+      vec2 pL0 = uLayerHeight[0]>eye.z ? eye.xy + dir.xy*((uLayerHeight[0]-eye.z)/dir.z) : miss;
+      vec2 pL1 = uLayerHeight[1]>eye.z ? eye.xy + dir.xy*((uLayerHeight[1]-eye.z)/dir.z) : miss;
+      vec2 pL2 = uLayerHeight[2]>eye.z ? eye.xy + dir.xy*((uLayerHeight[2]-eye.z)/dir.z) : miss;
+      vec2 pL3 = uLayerHeight[3]>eye.z ? eye.xy + dir.xy*((uLayerHeight[3]-eye.z)/dir.z) : miss;
       // The whole read — the four layer taps, the transmittance, and the single-scatter foliage radiance of §4.9 (the proxy
       // sky_scatter scales, or, above leaf_diffuse 0, the lantern) — is skyRay (shaders.js, GLSL_SKY_RAY): one source, which the sky
       // fill's bake (§4.7) runs along its own hemisphere rays. Here the eye's rays leave the box onto open sky and the wood is read
@@ -864,6 +853,21 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
       }
     }`;
 
+const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, and the amendment to "we never see the tree, only what it casts".
+    // The eye lies on the ground at uViewCenter and looks UP; the surface the light reaches is the RETINA. Nothing
+    // new is invented — it is the same occluder field against the same source, read along upward rays instead of
+    // sun rays, which is why the whole thing is one branch and no new physics. uPitch here is gaze ELEVATION (90° =
+    // zenith); the ray basis is the enclosure's, character for character, so the two upward cameras agree. ----
+    float cp=cos(uPitch), sp=sin(uPitch);
+    float kf=max(tan(0.5*uFov), 1e-4);
+    float sxc=(vUv.x-0.5)*uAspect, tyc=(vUv.y-0.5);
+    vec3 dir = normalize(vec3(2.0*kf*sxc, cp - 2.0*kf*tyc*sp, sp + 2.0*kf*tyc*cp));
+    if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); dir.xy = mat2(cy,-sy,sy,cy)*dir.xy; }   // the grove spins under the gaze, the floor camera's own orbit matrix
+    vec3 eye = vec3(uViewCenter, 0.0);
+    // (no plan point here: the layer read below is per-layer, not per-pixel. In the mega-shader this branch still had
+    // to keep the shared 'world' defined for the cast blocks after it; this variant emits none of them, so it has none.)
+${GLSL_T_SKY_READ}`;
+
 const GLSL_T_SKY_MATERIAL = `    col = skyRad;                                          // SKY VIEW: no receiver at all — the branch above already answered with radiance (§4.9)`;
 
 // ---- the layer sample loop (§4.6), the general-geometry occluder tier: every cast camera runs it, and the
@@ -913,6 +917,29 @@ const GLSL_T_WOOD_CAST = `  // woody occluder (spec §4.5), evaluated ONCE per p
     }
     acc *= woodT;
   }`;
+
+// Sky and ground share one eye. The horizon is crossed by rays, with both halves reading the same layer bake.
+const GLSL_T_VIEWPOINT = `    float cp=cos(uViewElevation), sp=sin(uViewElevation), kf=max(tan(0.5*uFov),1e-4);
+    float sx=(vUv.x-0.5)*uAspect, sy=vUv.y-0.5;
+    vec3 rawDir=vec3(2.0*kf*sx,cp-2.0*kf*sy*sp,sp+2.0*kf*sy*cp);
+    vec3 dir=normalize(rawDir);
+    if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sn=sin(uViewYaw); dir.xy=mat2(cy,-sn,sn,cy)*dir.xy; }
+    vec3 eye=uViewEye;
+    if(dir.z > 0.0){
+${GLSL_T_SKY_READ}
+    } else {
+      world = uViewEye.xy + dir.xy*(uViewEye.z/max(-dir.z,1e-6));
+      float halfExtent=0.5*uViewExtent*max(length(vec2(uAspect,1.0)),1e-4);
+      fog=smoothstep(1.15*halfExtent,3.0*halfExtent,length(world-uViewCenter));
+      float Dref=-sp+kf*cp;
+      extraThrow=uFarSmear*clamp(pow(max(Dref,1e-4)/max(-rawDir.z,1e-4),1.5)-1.0,0.0,4.0);
+${GLSL_T_LAYERS}
+${GLSL_T_WOOD_CAST}
+      skyRad=(acc*uSurfaceSunColor + uAmbient)*uGround;
+    }
+    // Both authored endpoint cameras retain their horizon treatment; the moving eye meets on the same haze.
+    float horizon=(4.0*uViewSkyWeight*(1.0-uViewSkyWeight))*(1.0-smoothstep(0.0,0.08,abs(dir.z)));
+    fog=max(fog,horizon);`;
 
 const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (§3.5): as the sun sets the eye's rods take over the dim shade —
   // colour desaturates toward a blue-green grey and saturated reds darken first, while the bright dapples
@@ -1003,6 +1030,11 @@ const GLSL_T_COL_DECL = `  // ---- Receiver (§4.x/§4.9). The landed irradiance
 // ---- THE VOCABULARY. One entry per uniform group: the GLSL it declares, and the location-table keys that GLSL
 // supports. A group with no `locs` contributes only functions (the taps, the fold field, the warp). ----
 const TRANSPORT_GROUPS = {
+  viewpoint: { decls: `uniform vec3 uViewEye;
+uniform float uViewElevation;
+uniform float uViewSkyWeight;
+uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevation', skyWeight:'uViewSkyWeight', surfaceSun:'uSurfaceSunColor'} },
+  skyTap:    { decls: GLSL_T_TAP.replace(GLSL_TEXEL_MIX, '') },   // the shared sky ray already declares texelMix
   head:      { decls: GLSL_T_HEAD,            locs: { aspect:'uAspect', viewCenter:'uViewCenter', origin:'uCanopyOrigin', extent:'uCanopyExtent',
                                                       sun:'uSunColor', ambient:'uAmbient', heights:'uLayerHeight[0]', layerCount:'uLayerCount',
                                                       layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'] } },
@@ -1040,6 +1072,14 @@ const TRANSPORT_GROUPS = {
 // null on the cameras that have no flat cast frame to pre-bake into. `params` is documentation, not enforcement:
 // the knob families an entry answers for, so a reader can find the other end of a receiver from here. ----
 const CAMERAS = {
+  viewpoint: {
+    groups: ['head','rayView','occ','sunDir','sky','transport','woodCast','skyTap','ca','floor','viewpoint','post'],
+    prologue: `vec2 world=vec2(0.0); float fog=0.0, extraThrow=0.0, recvZ=0.0;
+vec3 acc=vec3(0.0), skyRad=vec3(0.0);`,
+    camera: GLSL_T_VIEWPOINT, faith: null, rayTransport: true,
+    material: [GLSL_T_SKY_MATERIAL], params: ['view_*'],
+    note: 'transition-only shared-grove camera: upward rays see the canopy; downward rays read its shadow',
+  },
   floor: {
     groups: ['head','rayView','occ','transport','woodCast','beam','tap','ca','faith','floor','fill','litter','post'],
     prologue: GLSL_T_PRO_FLOOR, camera: GLSL_T_FLOOR_CAMERA, faith: GLSL_T_FAITH_FLOOR,
@@ -1080,7 +1120,7 @@ const cameraFor = (p) => p.sky_view ? 'sky' : (p.receiver|0) === 2 ? 'enclosure'
 // they need engine state (the GL objects, params, the grove) a module-level table cannot reach. This list is the
 // seam between the two — create() checks its table against it on construction, and registry.test.js checks it
 // against TRANSPORT_GROUPS and CAMERAS. Neither half can drift without one of those saying so.
-const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','beam','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','litter','sky','post'];
+const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','beam','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','litter','sky','viewpoint','post'];
 
 // The assembler. Every conditional it used to carry is now a lookup: the decls are the entry's groups in order,
 // the body is the entry's own snippets, and the only branch left is the one real structural fork — whether this
@@ -1090,7 +1130,7 @@ function buildTransport(camera){
   if(!e) throw new Error(`komorebi: unknown transport camera "${camera}"`);
   const p = e.groups.map(g => TRANSPORT_GROUPS[g].decls);
   p.push('void main(){', e.prologue, e.camera);
-  if(e.groups.includes('transport')){          // a CAST camera: the faithful tap or the sample loop, then the wood
+  if(e.groups.includes('transport') && !e.rayTransport){          // a CAST camera: the faithful tap or the sample loop, then the wood
     if(e.faith) p.push(e.faith);
     p.push(GLSL_T_LAYERS);
     if(e.faith) p.push('  }');

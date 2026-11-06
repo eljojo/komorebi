@@ -324,6 +324,7 @@ export function assemble({ looks, features, strip = true, name } = {}) {
   // reaches a camera keeps it by construction. A cut tier takes its uniform group out of every camera that spoke it, or buildTransport would index a group the table no longer has.
   const cutGroups = cut.map((f) => FEATURES[f].group).filter(Boolean);
   const cameras = [...new Set(kept.map((n) => cameraFor(PRESETS[n])))];
+  if(cameras.includes('sky') && cameras.includes('floor'))cameras.push('viewpoint');
   const groups = [...new Set(cameras.flatMap((c) => CAMERAS[c].groups))].filter((g) => !cutGroups.includes(g));
   const uploads = GROUP_UPLOAD_KEYS.filter((g) => groups.includes(g));
 

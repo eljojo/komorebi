@@ -5,11 +5,13 @@
 // transitionTo classifies the route; tickTransition drives it each frame.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { TAU, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { TAU, cameraPose, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
 import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
 
 const CAMERA_KEYS = new Set(['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y']);
 const WINDOW_KEYS = new Set(['window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall']);
+const VIEW_KEYS = new Set([...CAMERA_KEYS,'sky_view','drift_phase','auto_quality','adaptive_motion','adaptive_idle_fps','show_source','show_layer','show_layer_index']);
+const hemisphere = p => (p.sky_view ? p.view_pitch_deg : 90-p.view_pitch_deg) > p.view_fov_deg/2;
 const proxyGlow = (p) => p.sky_view ? p.sky_scatter : (p.receiver|0)===0 && p.canopy_fill>0 ? p.fill_scatter : 0;
 
 export function makeTransitions(hub){
@@ -22,6 +24,19 @@ export function makeTransitions(hub){
     if(!target || typeof target!=='object') return;
     const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
     const irisFrom = trans.active ? (trans.irisRadius ?? 1) : 1;
+    const movingView=trans.active && trans.viewpoint;
+    const viewpoint=!!((!trans.active || movingView) && (movingView || params.sky_view!==to.sky_view) && !params.faithful_canopy && !to.faithful_canopy
+      && params.receiver===0 && to.receiver===0 && params.branch_tau===0 && to.branch_tau===0
+      && params.canopy_fill===0 && to.canopy_fill===0 && params.litter===0 && to.litter===0
+      && hemisphere(to) && (movingView || hemisphere(params))
+      && Object.keys(DEFAULTS).every(k=>VIEW_KEYS.has(k) && (k!=='view_extent_m' || params.standing_scene) || params[k]===to[k]));
+    const viewFrom=movingView ? {eye:[...trans.viewEye],elevation:trans.viewElevation,skyWeight:trans.viewSkyWeight} : cameraPose(params);
+    trans.viewpoint=viewpoint;
+    trans.viewInterrupted=!!movingView;
+    if(viewpoint){
+      trans.viewFrom=viewFrom; trans.viewTo=cameraPose(to);
+      trans.viewEye=[...viewFrom.eye]; trans.viewElevation=viewFrom.elevation; trans.viewSkyWeight=viewFrom.skyWeight;
+    }
     hub.warnCut(to);   // a tier this build cut that the target opens stays off, and is said so (once per engine)
     const from = {};
     for(const k of MORPH_KEYS)  from[k] = params[k];       // continuous look — always morphs live
@@ -38,7 +53,7 @@ export function makeTransitions(hub){
     const modeDiff   = MODE_KEYS.some(k => to[k]!==params[k]);     // a scene-MODE flag flips (faithful_canopy/standing_scene/receiver): needs a rebuild, NOT a snap-with-stale-state
     const shadowFrom = trans.active && trans.backgroundFade ? trans.shadowOpacity : 1;
     // Floor-to-floor mode changes meet on the lit ground, so the grove swap carries no shadow discontinuity.
-    trans.backgroundFade = modeDiff && !params.sky_view && !to.sky_view && (params.receiver|0)===0 && (to.receiver|0)===0;
+    trans.backgroundFade = !viewpoint && modeDiff && !params.sky_view && !to.sky_view && (params.receiver|0)===0 && (to.receiver|0)===0;
     trans.settleCamera = trans.backgroundFade && params.standing_scene && !to.standing_scene;
     trans.shadowFrom = shadowFrom;
     trans.shadowOpacity = trans.backgroundFade ? shadowFrom : 1;
@@ -57,7 +72,7 @@ export function makeTransitions(hub){
     // dissolve+rebuild just like a topology change — never a live grove morph (which only regrows, no realloc).
     const morphGrove = canopyDiff && !topoDiff && !modeDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching+mode, small enough -> morph it
     trans.canopyMorph = morphGrove;
-    trans.structDiff  = topoDiff || modeDiff || (canopyDiff && !morphGrove);   // dissolve+rebuild on topology OR mode change, or a grove too big to morph
+    trans.structDiff  = viewpoint || topoDiff || modeDiff || (canopyDiff && !morphGrove);   // dissolve+rebuild on topology OR mode change, or a grove too big to morph
     // WHICH TIER'S BLOOM this is, decided once here rather than re-derived per frame: a mode flip's shallower hump
     // (the camera changes, so cover buys nothing and depth only blows the frame out) or a topology dissolve's
     // deeper one (there is a real grove swap under there that wants hiding). See BLOOM_MAX.
@@ -91,7 +106,7 @@ export function makeTransitions(hub){
     trans.irisRadius = sceneFade ? 1 : trans.irisFrom;
     const tier = modeDiff ? 'mode' : crossOK ? 'cross' : 'dissolve';
     trans.crossfade = crossOK;
-    trans.bloomMax = trans.backgroundFade ? 0 : BLOOM_MAX[tier];
+    trans.bloomMax = trans.backgroundFade || viewpoint ? 0 : BLOOM_MAX[tier];
     trans.durScale = trans.structDiff ? DUR_SCALE[tier] : 1;
     if(hub.groveIn){ hub.freeGrove(hub.groveIn); hub.groveIn = null; }   // a transition interrupting a transition drops the half-faded grove
     hub.crossW = 0;
@@ -112,6 +127,11 @@ export function makeTransitions(hub){
     const dur = trans.dur * trans.durScale;   // the tier's longer clock (see DUR_SCALE); scaled here, never into trans.dur, which stays the caller's sticky default
     trans.t = Math.min(1, trans.t + Math.min(dt,1/15)/dur);   // clamp the step like tick(): a tab-switch spike must not skip the bloom peak
     const t = trans.t, e = smoothstep(0,1,t);              // ease-in-out for the morph; raw t for the bloom hump
+    if(trans.viewpoint){
+      for(let i=0;i<3;i++) trans.viewEye[i]=lerp(trans.viewFrom.eye[i],trans.viewTo.eye[i],e);
+      trans.viewElevation=lerp(trans.viewFrom.elevation,trans.viewTo.elevation,e);
+      trans.viewSkyWeight=lerp(trans.viewFrom.skyWeight,trans.viewTo.skyWeight,e);
+    }
     if(trans.sceneFade){
       hub.stepSceneFade(dt);
       if(t<1) return null;
@@ -130,6 +150,7 @@ export function makeTransitions(hub){
       ? (t<0.5 ? lerp(trans.shadowFrom, 0, smoothstep(0,0.5,t)) : smoothstep(0.5,1,t)) : 1;
     trans.windowOpacity=lerp(trans.windowFrom, trans.windowTo, e);
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
+      if(trans.viewpoint && k==='drift_phase' && params.drift_auto) continue;
       if(trans.windowFade && WINDOW_KEYS.has(k)){ params[k]=trans.windowShape[k]; continue; }
       if(trans.splitFade){
         const leaving=trans.from.leaf_diffuse>0;
@@ -148,7 +169,9 @@ export function makeTransitions(hub){
     // and the arrangement reorganizes instead of being replaced. The incoming grove is installed as the engine's
     // own once it carries the whole picture, which is also when the structural params can safely snap: nothing
     // reads them again until the next regrow.
-    if(trans.crossfade){
+    if(trans.viewpoint){
+      trans.swapped=t>=0.5;   // one grove remains in place through the horizon; its mode-specific state lands at the end
+    } else if(trans.crossfade){
       hub.crossW = clamp((t - (0.5 - CROSS_HALF_W)) / (2*CROSS_HALF_W), 0, 1);
       hub.crossW = smoothstep(0, 1, hub.crossW);                   // ease it, so the fade has no corners at either end
       if(!trans.swapped && hub.crossW >= 1){
@@ -180,8 +203,13 @@ export function makeTransitions(hub){
       if(trans.canopyMorph || hub.motionActive() || faithSunMorph || woodFade || (trans.crossfade && trans.active)) hub.bake();
     }
     if(t>=1){                                              // land exactly on the target; clear the bloom
+      const drift=params.drift_phase;
       trans.active = false; trans.bloom = 0;
       for(const k in DEFAULTS) params[k] = trans.to[k];
+      if(trans.viewpoint){
+        if(params.drift_auto)params.drift_phase=drift;
+        hub.rebuildAll();
+      }
       hub.regenSource(); hub.resetPerf();                          // bloom now 0; re-probe quality for the new look (it may carry auto-quality)
       if(faithfulOn()) hub.bake();                   // land the faith texture on the exact target sun (resetPerf only re-bakes on a bake-res change)
       const cb = trans.onEnd; trans.onEnd = null;

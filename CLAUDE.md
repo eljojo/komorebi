@@ -15,11 +15,11 @@ model. Read the spec before you change what the engine does.
   - **`komorebi-leaf.js`** — the leaf's outline: the sugar maple grown as a vein skeleton in the plane (`growLeaf`), cut as a radial profile r(θ) from the petiole base and area-normalised (`profile`, `leafShape`), and `leafVariant`, the one hash the grove and the litter share so a fallen leaf keeps its shape — and, with `leaf_variety`, the genotype × light rows (`rowSpec`, `rowBlade`) the outline texture grows to 64. Pure; `GLSL_LEAF_Q` in `komorebi-shaders.js` is its shader half.
   - **`komorebi-source.js`** — the Vogel-spiral point-sun cloud and the shared cast geometry (bulk shift, ellipse projection, layer heights).
   - **`komorebi-motion.js`** — the broadband wind signal and the trunk/limb/twig spring hierarchy.
-  - **`komorebi-transitions.js`** — the cloud-bloom crossfade between looks.
+  - **`komorebi-transitions.js`** — routes between looks: live/grove morphs, cloud-bloom swaps, faithful scene dissolves, iris sweeps and the shared-grove sky↔floor viewpoint.
   - **`komorebi-scene-fade.js`** — the faithful structural transition's two moving scenes, canvas-sized targets and linear-display dissolve, including interruption and cleanup.
   - **`komorebi-render.js`** — one frame onto a target: the transport draw, the per-group uniform upload, the glow tier.
   - **`komorebi-editor-tools.js`** — EDITOR-only: debug overlays, the profiling primitive, the motion mirror.
-  - **`komorebi-transport.js`** — the transport master + camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.
+  - **`komorebi-transport.js`** — the transport master + camera registry: GLSL snippets `buildTransport()` assembles into one program per camera, including the transition-only viewpoint that joins sky rays to floor casts.
   - **`komorebi-shaders.js`** — the bake / faithful-bake / display shaders, the shared tone tail, and the sky fill's bake (`FS_FILL`) with the per-ray snippet (`GLSL_SKY_RAY`) it shares with the sky view.
   - **`komorebi-params.js`** — `DEFAULTS`, the legacy-name migration, the transition key classification, the engine caps, and the feature registry (`FEATURES`, `featuresFor`, `cutWarnings`: which fall tiers a look opens, so a bundle can cut the rest).
   - **`komorebi-math.js`** — CPU math: the atmosphere model, deterministic RNG, wind noise, skeleton-growth helpers.

@@ -116,19 +116,19 @@ const UNIFORMS = {
   leafDiffuse: ["uBeamK", "uEdgeArea"],
 };
 
-test("a program assembled with a feature cut names no uniform of that feature's group — on all four cameras", async () => {
+test("a program assembled with a feature cut names no uniform of that feature's group — on every camera", async () => {
   const looks = [...EXPERIMENTAL, "park 1"];                                  // every camera the repo has a look for
   for (const cut of subsets(["fill", "leafDiffuse", "litter"])) {
     const keep = ALL.filter((f) => !cut.includes(f));
     const dir = treeIn({ looks, features: keep, strip: false });
     try {
       const T = await import(`${pathToFileURL(join(dir, "komorebi-transport.js")).href}?${cut.join("-")}`);
-      expect(T.TRANSPORT_CAMERAS.length).toBe(4);
+      expect(T.TRANSPORT_CAMERAS.length).toBe(TRANSPORT_CAMERAS.length);
       for (const cam of T.TRANSPORT_CAMERAS) {
         const src = T.buildTransport(cam);
         expect(delta(src), `${cam} braces without ${cut}`).toBe(0);
         for (const f of cut) {
-          if (f === "leafDiffuse" && cam === "sky") continue;                // the sky view's group declares and reads its own uBeamK (a camera of its own, not the tap)
+          if (f === "leafDiffuse" && T.CAMERAS[cam].groups.includes("sky")) continue;   // upward rays declare their own uBeamK
           for (const u of UNIFORMS[f]) expect(new RegExp(`\\b${u}\\b`).test(src), `${cam} still names ${u} with ${f} cut`).toBe(false);
         }
       }

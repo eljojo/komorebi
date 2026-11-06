@@ -38,7 +38,9 @@ export function makeRender(hub){
     // VEILING GLARE — the wash around a bright source seen through gaps, which is scatter in the eye rather than in
     // a weave, but the same operator on the same quantity. A perception-tier reading of a transport pass, the same
     // honesty class as the mesopic shift below.
-    const glow = (params.receiver !== 0 || params.sky_view) && params.glow_bleed > 0 && ensureGlowTargets(w, h);
+    const viewpoint=hub.trans.active && hub.trans.viewpoint;
+    const skyGlow=viewpoint ? hub.trans.viewSkyWeight>0 : params.sky_view;
+    const glow = (params.receiver !== 0 || skyGlow) && params.glow_bleed > 0 && ensureGlowTargets(w, h);
     perf.glow = glow;
     gl.bindFramebuffer(gl.FRAMEBUFFER, glow ? glowFBO[0] : fbo);
     gl.viewport(0,0,w,h);
@@ -110,7 +112,7 @@ export function makeRender(hub){
     gl.useProgram(progGlowMix);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, glowTex[0]); gl.uniform1i(U.glowMix.sharp, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, glowTex[2]); gl.uniform1i(U.glowMix.blur, 1);
-    gl.uniform1f(U.glowMix.diffuse, clamp(params.glow_bleed, 0, 1));
+    gl.uniform1f(U.glowMix.diffuse, clamp(params.glow_bleed, 0, 1)*(hub.trans.active && hub.trans.viewpoint ? hub.trans.viewSkyWeight : 1));
     gl.uniform1f(U.glowMix.exposure, params.exposure);
     gl.uniform1f(U.glowMix.contrast, params.contrast);
     gl.uniform1i(U.glowMix.tone, params.tone_map);
@@ -127,6 +129,13 @@ export function makeRender(hub){
   // linear-out flag), computed once in drawTransportInto rather than twice here. Every body below is the body the
   // predicate chain ran — this is a regrouping, not a rewrite. ----
   const GROUP_UPLOAD = {
+    viewpoint: (u, f) => {
+      gl.uniform3fv(u.eye, hub.trans.viewEye);
+      gl.uniform1f(u.elevation, hub.trans.viewElevation);
+      gl.uniform1f(u.skyWeight, hub.trans.viewSkyWeight);
+      const incidence=lerp(1,sunIncidence('floor',params.sun_elevation_deg,params.sun_azimuth_deg),clamp(params.sun_cosine,0,1));
+      gl.uniform3f(u.surfaceSun,f.atm.sun[0]*incidence,f.atm.sun[1]*incidence,f.atm.sun[2]*incidence);
+    },
     head: (u, f) => {
       gl.uniform1f(u.aspect, canvas.width/canvas.height);
       gl.uniform2f(u.viewCenter, params.view_center_x, params.view_center_y);   // camera pan (world m) — frames the off-frame tree; no auto-centre (§4.8)

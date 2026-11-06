@@ -120,15 +120,16 @@ function createEngine(canvas, opts, driven=false){
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
   // ---- THE TRANSPORT PROGRAM CACHE (spec §4.6/§4.9). One program per camera, built by buildTransport, compiled on
-  // FIRST USE and then kept for the engine's life. Four is the whole space, and the build key only moves on a MODE
+  // FIRST USE and then kept for the engine's life. The four authored cameras move on a MODE
   // flip (sky_view / receiver), which already tears the grove down and rebuilds it under the transition bloom — so
   // the one first-compile a camera ever costs lands inside that bloom, where a frame's hitch is already hidden, and
   // never recurs. Nothing is shared across engines: an A/B wipe's second instance has its own GL context and builds
-  // its own cache, because a program belongs to the context that linked it. ----
+  // its own cache, because a program belongs to the context that linked it. A fifth program carries sky↔floor
+  // transitions through the horizon, using the same grove and the two endpoint cameras' reads. ----
   const transportCache = new Map();
   // Which variant this draw runs — the registry's own selector (§4.9), bound to these params. It can only change
-  // across a structural rebuild: sky_view and receiver are both MODE_KEYS.
-  const transportCamera = () => cameraFor(params);
+  // across a structural rebuild (sky_view and receiver are MODE_KEYS), or along the continuous viewpoint route.
+  const transportCamera = () => trans.active && trans.viewpoint && (trans.t>0 || trans.viewInterrupted) ? 'viewpoint' : cameraFor(params);
   // The per-variant location table, read straight off the registry: a variant's table holds exactly the keys its
   // groups declare, and nothing else. That is what lets the upload skip by GROUP rather than by null-checking a
   // location — a uniform that genuinely goes missing surfaces as a missing one instead of hiding among a dozen

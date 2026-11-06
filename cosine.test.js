@@ -46,7 +46,7 @@ test("sunIncidence is unclamped in elevation: 2° is sin 2°, not the editor's 4
 
 test("sunIncidence has a row for every camera of the registry — a new receiver must name its surface", () => {
   for (const cam of TRANSPORT_CAMERAS) expect(Number.isFinite(sunIncidence(cam, 30, 100)), cam).toBe(true);
-  expect(TRANSPORT_CAMERAS.slice().sort()).toEqual(["cloth", "enclosure", "floor", "sky"]);
+  expect(TRANSPORT_CAMERAS.slice().sort()).toEqual(["cloth", "enclosure", "floor", "sky", "viewpoint"]);
 });
 
 test("the table's numbers, to 3 places: park 1 .438, curtain 1 .860, curtain 2 .813, tent 1 .819, the y1–y4 sheet .208/.438/.766/.940, the sky views 1", () => {
@@ -139,11 +139,12 @@ test("sun_cosine is read clamped to 0..1 at the upload: 2 lands the factors of 1
   for (const v of r2.draw()[0]) expect(v, "no negative sun colour").toBeGreaterThan(0);
 });
 
-test("komorebi-render.js: the head uploader scales atm.sun by f.sunIrr, and that is the only place the factor is read", () => {
+test("komorebi-render.js: sun colour is scaled on the CPU, with a separate surface colour for the moving viewpoint", () => {
   const code = read("komorebi-render.js").split("\n").map((l) => l.replace(/\/\/.*$/, ""));
   const sunLines = code.filter((l) => l.includes("atm.sun"));
-  expect(sunLines.length, "atm.sun is read once").toBe(1);
-  expect(sunLines[0].includes("u.sun") && sunLines[0].includes("f.sunIrr")).toBe(true);
+  expect(sunLines.length, "one colour for the camera and one for the mixed view's floor rays").toBe(2);
+  expect(sunLines.some(l=>l.includes("u.sun") && l.includes("f.sunIrr"))).toBe(true);
+  expect(sunLines.some(l=>l.includes("u.surfaceSun") && l.includes("incidence"))).toBe(true);
   expect(code.filter((l) => l.includes("u.ambient"))[0].includes("sunIrr"), "the skylight is not scaled").toBe(false);
   const defs = code.filter((l) => l.includes("sunIrr") && !l.includes("u.sun"));
   expect(defs.length, "f.sunIrr is computed once, beside the atmosphere, and read nowhere else").toBe(1);

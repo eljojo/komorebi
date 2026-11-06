@@ -82,6 +82,55 @@ function transitionRig(from) {
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
 
+test("a shared grove turns continuously between sky and floor without a midpoint rebuild", () => {
+  for(const sky of [true,false]) {
+    const from={...DEFAULTS,sky_view:sky,faithful_canopy:false,standing_scene:true,branch_tau:0,canopy_fill:0,litter:0,
+      view_pitch_deg:sky?80:16,view_fov_deg:64};
+    const target={...from,sky_view:!sky,view_pitch_deg:sky?16:80};
+    const r=transitionRig(from);r.transitionTo(target,{duration:1});
+    expect(r.hub.trans.viewpoint).toBe(true);
+    expect(r.hub.trans.viewElevation).toBeCloseTo((sky?80:-74)*Math.PI/180,12);
+    for(let i=0;i<60;i++)r.tickTransition(1/60);
+    expect(r.hub.trans.viewElevation).toBeCloseTo(3*Math.PI/180,10);
+    expect(r.hub.trans.viewSkyWeight).toBeCloseTo(0.5,12);
+    expect(r.hub.trans.bloom).toBe(0);
+    expect(r.swaps).toHaveLength(0);
+    while(r.hub.trans.active)r.tickTransition(1/60);
+    expect(r.params).toEqual(target);
+    expect(r.swaps).toHaveLength(1);
+  }
+});
+
+test("viewpoint routing keeps grove replacement, faithful casts, wood, fill and other receivers on existing paths", () => {
+  const from={...DEFAULTS,sky_view:true,standing_scene:true,faithful_canopy:false,view_pitch_deg:80,view_fov_deg:64};
+  for(const change of [{seed:123},{foliage_density:2},{faithful_canopy:true},{standing_scene:false},
+    {branch_tau:2},{canopy_fill:0.4},{litter:1},{receiver:1},{view_pitch_deg:80}]) {
+    const r=transitionRig(from);
+    r.transitionTo({...from,sky_view:false,view_pitch_deg:16,...change});
+    expect(r.hub.trans.viewpoint,JSON.stringify(change)).toBe(false);
+  }
+});
+
+test("interrupting a viewpoint move continues from the current eye and gaze", () => {
+  const from={...DEFAULTS,sky_view:true,standing_scene:true,view_pitch_deg:80,view_fov_deg:64};
+  const r=transitionRig(from);r.transitionTo({...from,sky_view:false,view_pitch_deg:16});
+  for(let i=0;i<40;i++)r.tickTransition(1/60);
+  const eye=[...r.hub.trans.viewEye],angle=r.hub.trans.viewElevation;
+  r.transitionTo(from);r.tickTransition(0);
+  expect(r.hub.trans.viewpoint).toBe(true);
+  expect(r.hub.trans.viewEye).toEqual(eye);
+  expect(r.hub.trans.viewElevation).toBe(angle);
+});
+
+test("a partial cloud or grove transition cannot become a shared-grove viewpoint", () => {
+  const from={...DEFAULTS,sky_view:true,standing_scene:true,view_pitch_deg:80,view_fov_deg:64};
+  const r=transitionRig(from);
+  r.transitionTo({...from,cloud_thickness:.8});
+  r.tickTransition(1/60);
+  r.transitionTo({...r.params,sky_view:false,view_pitch_deg:16});
+  expect(r.hub.trans.viewpoint).toBe(false);
+});
+
 test("an iris turning on sweeps inward during the first quarter, before the scene swap", () => {
   const r=transitionRig({...DEFAULTS,vignette:0,vignette_shape:2});
   r.transitionTo({...r.params,vignette:0.24,vignette_shape:3.1});

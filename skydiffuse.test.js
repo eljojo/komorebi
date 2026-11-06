@@ -305,7 +305,7 @@ test("the fill passes readWood = false and the sky camera true; the wood is its 
 
 test("the wood samplers are the sky camera's alone: no floor, cloth or tent program declares or reads them", () => {
   expect(skyCode.includes("uniform highp sampler2D uWood[4];")).toBe(true);
-  for (const cam of TRANSPORT_CAMERAS.filter((c) => c !== "sky")) expect(buildTransport(cam).includes("uWood"), cam).toBe(false);
+  for (const cam of TRANSPORT_CAMERAS.filter((c) => !CAMERAS[c].groups.includes("sky"))) expect(buildTransport(cam).includes("uWood"), cam).toBe(false);
   for (const [name, g] of Object.entries(TRANSPORT_GROUPS)) if (name !== "sky") expect(g.decls.includes("uWood"), name).toBe(false);
   expect(TRANSPORT_GROUPS.sky.decls.includes("uWood")).toBe(true);
   expect(Object.keys(TRANSPORT_GROUPS.sky.locs)).toEqual(expect.arrayContaining(["beamK", "woods"]));

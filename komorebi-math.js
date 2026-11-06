@@ -80,8 +80,18 @@ const SUN_INCIDENCE = {
   enclosure: (el) => Math.max(Math.sin(el*DEG), 0),
   cloth:     (el, az) => Math.abs(Math.cos(el*DEG)*Math.sin(az*DEG)),
   sky:       () => 1,
+  viewpoint: () => 1,   // the upward rays see radiance; the floor branch applies its own incidence
 };
 function sunIncidence(camera, elevDeg, azDeg){ return SUN_INCIDENCE[camera](elevDeg, azDeg); }
+
+// The floor's gauge (height plus recenter) expressed as a real eye, in the sky camera's world frame.
+function cameraPose(p){
+  const pitch=clamp(p.view_pitch_deg,0,80)*DEG;
+  if(p.sky_view) return {eye:[p.view_center_x,p.view_center_y,0],elevation:pitch,skyWeight:1};
+  const k=Math.max(Math.tan(0.5*clamp(p.view_fov_deg,5,140)*DEG),1e-4);
+  const h=p.view_extent_m*Math.cos(pitch)**2/Math.max(2*k,1e-4), offset=h*Math.tan(pitch), yaw=p.view_yaw_deg*DEG;
+  return {eye:[p.view_center_x-offset*Math.sin(yaw),p.view_center_y-offset*Math.cos(yaw),h],elevation:pitch-Math.PI/2,skyWeight:0};
+}
 
 // ---- deterministic RNG so canopy is frame-stable & reproducible ------------
 function mulberry32(a){ return ()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
@@ -588,4 +598,4 @@ function vignetteMask(u, v, feather, shape, radius = 1) {
   return 1 - smoothstep(1 - feather, 1, d);
 }
 
-export { DEG, TAU, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, sunIncidence, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, cameraPose, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, sunIncidence, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
