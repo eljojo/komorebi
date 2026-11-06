@@ -240,7 +240,7 @@ test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exact
   expect(SEASON.length).toBe(16);
   for (const k of SEASON) expect(CANOPY_KEYS, k).toContain(k);
   expect([...SEASON].sort()).toEqual(["anthocyanin", "drop_exposure", "drop_lag", "drop_span", "drop_start", "exposure_absolute", "leaf_drop", "phenology", "tannin", "tree_clock_spread", "tree_pigment_spread", "turn_exposure", "turn_spread", "turn_span", "turn_start", "wall_fraction"].sort());
-  const src = read("./komorebi-grove.js");
+  const src = read("./komorebi-grove.js").split("  function refreshWood(){")[0];   // the live wood gate does not affect what buildGrove stores
   const reads = new Set([...src.matchAll(/params\.([a-z_0-9]+)/g)].map((m) => m[1]).filter((k) => k in DEFAULTS));
   const season = new Set(SEASON), listed = new Set(groveMod.GROVE_READS);
   for (const k of reads) expect(season.has(k) || listed.has(k), `buildGrove reads params.${k}: it is neither in the season set nor in the key`).toBe(true);
@@ -278,6 +278,41 @@ function engineRig(over) {
   return { eng, counts };
 }
 const built = (counts) => counts.createBuffer + counts.createVertexArray;
+
+test("live wood radius reaches the faithful and analytic geometry without rebuilding the grove", () => {
+  const { eng, counts } = engineRig({ faithful_canopy: true, branch_tau: 2 });
+  const buffers = built(counts);
+  for (const radius of [0.001, 0.24, 0.02]) {
+    eng.params.trunk_radius_m = radius;
+    eng.apply("bake");
+    const fresh = engineRig({ faithful_canopy: true, branch_tau: 2, trunk_radius_m: radius }).eng;
+    expect(eng.faith.segRest.map((s) => [s.ra, s.rb])).toEqual(fresh.faith.segRest.map((s) => [s.ra, s.rb]));
+    expect(Array.from(eng.occ.ht)).toEqual(Array.from(fresh.occ.ht));
+    expect(built(counts), "only wood data changes; leaf buffers are retained").toBe(buffers);
+  }
+});
+
+test("live canopy heights keep analytic wood aligned with the layer heights", () => {
+  const { eng, counts } = engineRig({ branch_tau: 2 });
+  const buffers = built(counts);
+  Object.assign(eng.params, { canopy_base_height_m: 4, canopy_thickness_m: 1.3 });
+  eng.apply("bake");
+  const fresh = engineRig({ branch_tau: 2, canopy_base_height_m: 4, canopy_thickness_m: 1.3 }).eng;
+  expect(Array.from(eng.occ.ht)).toEqual(Array.from(fresh.occ.ht));
+  expect(eng.occ.hRef).toBe(fresh.occ.hRef);
+  expect(built(counts)).toBe(buffers);
+});
+
+test("wood off: a leaf crossfade never refreshes the shared incoming wood geometry", () => {
+  const r = rig({ ...SMALL, branch_tau: 0 });
+  const outgoing = r.G.buildGrove(null);
+  r.hub.grove = outgoing;
+  r.params.branch_children = 2;
+  r.G.buildGrove(null);   // the incoming grove owns faith.* until it is installed
+  r.params.branch_children = 3;
+  r.params.canopy_base_height_m = 4;
+  expect(r.G.refreshWood()).toBe(false);
+});
 
 test("apply('season'): the first builds with the cache (a full path); a season-set-only change after it re-seasons — nothing is built", () => {
   const { eng, counts } = engineRig({});

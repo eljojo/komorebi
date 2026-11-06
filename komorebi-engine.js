@@ -305,7 +305,9 @@ function create(canvas, opts){
     Object.assign(hub, { extTimer, progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz,
                          quadBuf, emptyVAO, bakeFBO, faithFBO, fillFBO, occTex });
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
-    ({ buildGrove, reseasonGrove, reseasonable } = makeGrove(hub)); hub.buildGrove = buildGrove;
+    const groveSystem = makeGrove(hub);
+    ({ buildGrove, reseasonGrove, reseasonable } = groveSystem); hub.buildGrove = buildGrove;
+    hub.refreshWood = groveSystem.refreshWood;
     ({ bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow });
     ({ bakeFill, refreshFill, fillWanted, fillLayerRes } = FEAT_FILL ? makeFill(hub) : NO_FILL); Object.assign(hub, { bakeFill, refreshFill, fillWanted, fillLayerRes });   // the fill reads the layers and the frame the bake just put on the hub
     ({ refreshLitter } = FEAT_LITTER ? makeLitter(hub) : NO_LITTER); hub.refreshLitter = refreshLitter;   // after the bake: the carpet is read over the fill's frame, and asks the bake module for it

@@ -504,7 +504,7 @@ function castRig(over = {}) {
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : () => { if (name === "bindFramebuffer") casts++; return {}; }) });
   const params = { leaf_diffuse: 0, ...over };
   const src = { count: 29 }, faith = { vao: null, k: 0, n: 0 };
-  const bake = makeBake({ gl, params, motion: {}, src, faith, sky: {}, U: {}, fill: {}, bakeRes: () => 256, faithfulOn: () => true });
+  const bake = makeBake({ gl, params, motion: {}, src, faith, sky: {}, U: {}, fill: {}, refreshWood: () => false, bakeRes: () => 256, faithfulOn: () => true });
   return { bake, params, src, faith, casts: () => casts };
 }
 

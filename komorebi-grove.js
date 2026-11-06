@@ -692,6 +692,8 @@ export function makeGrove(hub){
     }
     hier.leafW = leafW;   // abscission (§4.5): each leaf's retained weight by (twig, slot) for the tree preview, which scatters its own leaves; null at the gate
     const grove = { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter, key: seasonKey(params, faithful) };   // key: the structure it was grown for (see THE KEY)
+    grove.wood = { radius: params.trunk_radius_m, base: _cb, thickness: _th, zMin, dz,
+                   taper: Math.pow(Math.max(1.001, kids), -1/clamp(params.taper_delta,1,4)) };
     if(vary) grove.scaleMax = scaleMax;   // the largest shift leaf_variety gave a leaf: the faithful cast frame's pad grows by it (komorebi-bake.js); absent at the gate
     if(keepSeason){
       let sx0=1e18, sy0=1e18, sx1=-1e18, sy1=-1e18;   // the wood's share of the faithful AABB: the season never moves it
@@ -771,7 +773,30 @@ export function makeGrove(hub){
     g.litter = litter; g.hier.leafW = leafW;
   }
 
-  return { buildGrove, reseasonGrove, reseasonable };
+  // Radius and layer height are live look uniforms, but wood stores them in CPU geometry too.
+  // Refresh those numbers from the grown skeleton; leaves and GPU allocations stay in place.
+  function refreshWood(){
+    if(!(params.branch_tau>0)) return false;   // a leaf-only crossfade shares faith.* with its incoming grove
+    const g = hub.grove, w = g?.wood;
+    if(!w || (w.radius===params.trunk_radius_m && w.base===params.canopy_base_height_m && w.thickness===params.canopy_thickness_m)) return false;
+    w.radius=params.trunk_radius_m; w.base=params.canopy_base_height_m; w.thickness=params.canopy_thickness_m;
+    const floorH = (z) => z<=w.zMin ? w.base*(Math.max(0,z)/Math.max(w.zMin,1e-3)) : w.base + (z-w.zMin)/w.dz*w.thickness;
+    let i=0, hRef=1e-3;
+    for(let k=0;k<g.hier.segments.length;k++){
+      const sg=g.hier.segments[k], s=faith.segRest[k];
+      s.ra=Math.max(0.012, w.radius*Math.pow(w.taper, sg.level+(sg.f0||0)));
+      s.rb=Math.max(0.008, w.radius*Math.pow(w.taper, sg.level+(sg.f1!=null?sg.f1:1)));
+      if(sg.level<=1 && i<occ.count){
+        const ha=floorH(sg.a[2]), hb=floorH(sg.b[2]), o=4*i++;
+        occ.ht[o]=ha; occ.ht[o+1]=hb; occ.ht[o+2]=Math.max(0.01, w.radius*Math.pow(w.taper, sg.level));
+        hRef=Math.max(hRef,ha,hb);
+      }
+    }
+    occ.hRef=hRef;
+    return true;
+  }
+
+  return { buildGrove, reseasonGrove, reseasonable, refreshWood };
 }
 
 // What a bake hands its program to draw a grove's leaves in THEIR shape: the outline's texture (unit 6: 0-3 are the layers, 4 and 5 the cluster textures), the

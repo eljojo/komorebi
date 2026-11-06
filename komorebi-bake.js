@@ -29,6 +29,7 @@ export function makeBake(hub){
 
   // ---- one bake: the cast the camera reads, then (if the shade is lit through the canopy) the fill ----------------
   function bake(){
+    hub.refreshWood();
     if(faithfulOn()) bakeFaithful();   // FAITHFUL path (§4.5): cast the real tree, not the layer slabs
     else bakeLayers(bakeRes(), hub.layerHeights(), false);
     if(hub.fillWanted()) hub.bakeFill(true);   // true: on the faithful path the layers are not otherwise baked, so the fill bakes its own low-res set (a bundle without the fill holds a fillWanted that is false)
@@ -39,6 +40,7 @@ export function makeBake(hub){
   // sway_height_gain lever, or the faithful path's own (coherent sway grows with the real height / hMax — the
   // rule VS_FAITH gives the leaves, §5.1), which the sky fill's low-res layers follow so the two stay registered.
   function bakeLayers(res, H, faithfulSway){
+    if(params.sky_view) sky.branchTau=params.branch_tau;
     const E = params.canopy_extent_m;
     gl.useProgram(progBake);
     gl.uniform2f(U.bake.origin, -E/2, -E/2);
@@ -176,6 +178,7 @@ export function makeBake(hub){
   }
 
   function bakeFaithful(){
+    faith.branchTau=params.branch_tau;
     const k = FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0;
     faith.k = k; faith.n = src.count;   // recorded even for an empty grove: refreshFaith compares against them
     faith.edgeArea = edgeAreaOn(params);   // the cast has the edge law baked in, like k
@@ -334,7 +337,9 @@ export function makeBake(hub){
   // re-cut the cloud to a count the bake did not see — the old look's, or a trimmed one — with no bake-res change to re-bake it.
   // Only the COUNT is compared: a transition's morph moves the cloud's shape every frame, and the cast is not re-cast for that.
   function refreshFaith(){
-    if(faithfulOn() && (faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count || faith.edgeArea !== edgeAreaOn(params))) bakeFaithful();
+    const woodChanged=hub.refreshWood();
+    if(params.sky_view && (woodChanged || sky.branchTau!==params.branch_tau)) bakeLayers(bakeRes(), hub.layerHeights(), false);
+    if(faithfulOn() && (woodChanged || faith.branchTau!==params.branch_tau || faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count || faith.edgeArea !== edgeAreaOn(params))) bakeFaithful();
   }
 
   return { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow };
