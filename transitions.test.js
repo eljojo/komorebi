@@ -201,3 +201,22 @@ test("afternoon → park keeps the existing camera tween", () => {
   expect(r.params.view_extent_m).toBeGreaterThan(PRESETS["afternoon 7"].view_extent_m);
   expect(r.params.view_extent_m).toBeLessThan(PRESETS["park 1"].view_extent_m);
 });
+
+for (const reverse of [false, true]) {
+  test(`window ${reverse ? "off" : "on"}: fade the aperture's influence with full-sized geometry`, () => {
+    const on = PRESETS["curtain 1"], off = { ...on, window_w_m: 0, window_h_m: 0 };
+    const r = transitionRig(reverse ? on : off);
+    r.transitionTo(reverse ? off : on);
+    for (const t of [0.01, 0.25, 0.5, 0.75]) {
+      r.hub.trans.t = t;
+      r.tickTransition(0);
+      expect(r.params.window_w_m).toBe(on.window_w_m);
+      expect(r.params.window_h_m).toBe(on.window_h_m);
+      expect(r.hub.trans.windowOpacity).toBeGreaterThan(0);
+      expect(r.hub.trans.windowOpacity).toBeLessThan(1);
+    }
+    r.hub.trans.t = 1;
+    r.tickTransition(0);
+    expect(r.params).toEqual(reverse ? off : on);
+  });
+}

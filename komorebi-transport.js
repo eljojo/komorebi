@@ -298,6 +298,7 @@ const GLSL_T_WINDOW_DECLS = `uniform vec4  uMullion;           // window mullion
 uniform float uMullPenumbra;      // mullion soft edge (m on the cloth) = depth × the source's angular width, CPU-side
 uniform vec4  uWindow;            // window aperture (§4.9): HALF width, HALF height, centre x, centre y — cloth metres. .x*.y = 0 = infinite light, off
 uniform float uWindowWall;        // light landing outside the aperture (the room's own dim front-side leak; the wall itself is opaque)
+uniform float uWindowOpacity;     // transition only: fade a full-sized aperture from unrestricted light
 // window MULLION GRID (spec §4.9): the authored near-cloth occluder — a rigid grid of vertical + horizontal bars
 // standing uMullion.z metres in FRONT of the cloth (sun side), evaluated analytically per pixel in cloth (u,v).
 // It is §4.5's woody occluder at centimetre range instead of metres, which is the whole point: at this d the
@@ -351,6 +352,7 @@ const GLSL_T_WINDOW_APPLY = `    // The window grid attenuates the WHOLE landed 
       float barConf = 1.0;                                 // 1 = infinite window, the grid runs edge to edge (byte-identical)
       if(uWindow.x*uWindow.y > 0.0){
         vec2 win = windowMask(castUV);
+        if(uWindowOpacity < 1.0) win = mix(vec2(1.0), win, uWindowOpacity);
         barConf = win.y;
         E *= win.x;
       }
@@ -1017,7 +1019,7 @@ const TRANSPORT_GROUPS = {
                                                       foldDepth:'uFoldDepth', foldScale:'uFoldScale', foldCoarsen:'uFoldCoarsen', foldWarp:'uFoldWarp' } },
   fold:      { decls: GLSL_T_FOLD_DECLS },
   warp:      { decls: GLSL_T_WARP_DECLS },
-  window:    { decls: GLSL_T_WINDOW_DECLS,    locs: { mullion:'uMullion', mullPenumbra:'uMullPenumbra', window:'uWindow', windowWall:'uWindowWall' } },
+  window:    { decls: GLSL_T_WINDOW_DECLS,    locs: { mullion:'uMullion', mullPenumbra:'uMullPenumbra', window:'uWindow', windowWall:'uWindowWall', windowOpacity:'uWindowOpacity' } },
   tent:      { decls: GLSL_T_TENT_DECLS,      locs: { tentRidge:'uTentRidge', tentHalfW:'uTentHalfW', tentCrownW:'uTentCrownW', tentLen:'uTentLen',
                                                       tentEndLean:'uTentEndLean', tentShoulderH:'uTentShoulderH', tentShoulderW:'uTentShoulderW',
                                                       tentEndApex:'uTentEndApex', tentHipRake:'uTentHipRake', tentEye:'uTentEye',

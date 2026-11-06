@@ -257,6 +257,7 @@ export function makeRender(hub){
       gl.uniform1f(u.scatter, params.fabric_scatter);
     },
     window: (u) => {
+      gl.uniform1f(u.windowOpacity, hub.trans.active && hub.trans.windowFade ? hub.trans.windowOpacity : 1);
       // window mullion grid (§4.9): the near-cloth authored occluder, analytic in cloth space. tau 0 = off (the shader
       // skips it), and only the curtain declares it, so no other camera pays. The penumbra is the woody occluder's
       // idiom MINUS its 1/sin(elevation) ground-obliquity term — the cloth is seen head-on — so it is just depth ×
