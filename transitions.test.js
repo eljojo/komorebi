@@ -82,6 +82,59 @@ function transitionRig(from) {
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
 
+test("faithful structural changes dissolve complete moving scenes without a midpoint rebuild or bloom", () => {
+  for (const change of [{ layer_count: 4, foliage_density: 2.4, tone_map: 0 },
+                         { seed: 783609357, leader_strength: 0.55, leaf_shape: "maple", foliage_density: 1 }]) {
+    const from = { ...DEFAULTS, faithful_canopy: true, layer_count: 3, foliage_density: 0.4, tone_map: 2 };
+    const r = transitionRig(from), target = { ...from, ...change };
+    let began = 0, steps = 0, ended = 0, callback = 0;
+    r.hub.beginSceneFade = () => { began++; expect(r.params).toEqual(from); };
+    r.hub.stepSceneFade = () => { steps++; };
+    r.hub.endSceneFade = () => { ended++; };
+    r.transitionTo(target, { duration: 1, onEnd: () => callback++ });
+    expect(r.hub.trans.sceneFade).toBe(true);
+    expect(began).toBe(1);
+    expect(r.params).toEqual(target);
+    expect(r.swaps).toHaveLength(1);
+    let cb;
+    for (let n = 0; r.hub.trans.active && n < 130; n++) {
+      cb = r.tickTransition(1 / 60) || cb;
+      expect(r.hub.trans.bloom).toBe(0);
+      expect(r.swaps).toHaveLength(1);
+    }
+    expect(r.hub.trans.active).toBe(false);
+    expect(steps).toBeGreaterThan(110);
+    expect(ended).toBe(1);
+    expect(callback).toBe(0);
+    cb();
+    expect(callback).toBe(1);
+  }
+});
+
+test("ordinary faithful look morphs and scene-mode changes keep their existing routes", () => {
+  const from = { ...DEFAULTS, faithful_canopy: true };
+  for (const change of [{ exposure: 2 }, { faithful_canopy: false }, { receiver: 1 }]) {
+    const r = transitionRig(from);
+    r.hub.beginSceneFade = () => { throw Error("unexpected scene dissolve"); };
+    r.transitionTo({ ...from, ...change });
+    expect(r.hub.trans.sceneFade).toBe(false);
+  }
+});
+
+test("a look-only edit interrupting a faithful scene dissolve starts another scene dissolve", () => {
+  const r = transitionRig({ ...DEFAULTS, faithful_canopy: true });
+  let began=0, ended=0;
+  r.hub.beginSceneFade=()=>began++;
+  r.hub.stepSceneFade=()=>{};
+  r.hub.endSceneFade=()=>ended++;
+  r.transitionTo({ ...r.params, seed:1234567 });
+  for(let i=0;i<30;i++) r.tickTransition(1/60);
+  r.transitionTo({ ...r.params, exposure:2 });
+  expect(r.hub.trans.sceneFade).toBe(true);
+  expect(began).toBe(2);
+  expect(ended).toBe(0);
+});
+
 for (const [from, to] of [["afternoon 7", "park 1"], ["park 1", "afternoon 7"]]) {
   test(`${from} → ${to}: wood stays off the afternoon canopy and meets zero at the mode swap`, () => {
     const r = transitionRig(PRESETS[from]);

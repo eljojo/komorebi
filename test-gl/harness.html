@@ -1162,7 +1162,8 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
         started = true;
         eng.transitionTo(Object.assign({}, B, over || {}, FREEZE), { duration: o.duration, onEnd: () => { onEndFired = true; } });
         // trans.* is set synchronously by transitionTo — read the routing verdict now, before it runs
-        route = { crossfade: eng.trans.crossfade, structDiff: eng.trans.structDiff, canopyMorph: eng.trans.canopyMorph };
+        route = { crossfade: eng.trans.crossfade, structDiff: eng.trans.structDiff, canopyMorph: eng.trans.canopyMorph,
+                  sceneFade: !!eng.trans.sceneFade, bloomMax: eng.trans.bloomMax };
         return;
       }
       if (o.interrupt && !interrupted && eng.trans.t >= o.interrupt.at) {

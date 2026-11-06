@@ -10,6 +10,7 @@ import { makeBake, makeFill, NO_FILL, FILL_SIG_LEN } from './komorebi-bake.js';
 import { makeLitter, newLitterState, NO_LITTER } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
 import { makeEditorTools } from './komorebi-editor-tools.js';
+import { makeSceneFade } from './komorebi-scene-fade.js';
 
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
@@ -27,7 +28,10 @@ const BUILD = { name: 'modules', cut: [] };
 // ===========================================================================
 // create(canvas, opts) — one self-contained engine instance on a canvas.
 // ===========================================================================
-function create(canvas, opts){
+function create(canvas, opts){ return createEngine(canvas, opts); }
+
+// A driven scene shares this canvas's context but owns no animation loop, events or context lifetime.
+function createEngine(canvas, opts, driven=false){
   opts = opts || {};
   const gl = canvas.getContext('webgl2', { antialias:false, alpha:false, premultipliedAlpha:false });
   function fail(msg){ throw new Error(`komorebi: ${msg}`); }
@@ -214,7 +218,7 @@ function create(canvas, opts){
     // stable plumbing (never reassigned)
     gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, fill, litter, U,
     // (the GL handles — programs, buffers, FBOs, occTex, extTimer — and the subsystems over them are set by initGPU())
-    effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera, fillFor, litterFor, warnCut,
+    effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera, fillFor, litterFor, warnCut, program,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
     woodTex: [],            // SKY VIEW (§4.9): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)
@@ -413,6 +417,15 @@ function create(canvas, opts){
   Object.assign(hub, { freeGrove, installGrove, regenCanopy, buildTargetGrove, rebuildAll, resetPerf, allocLayers, makeLayerTexture });
   const { transitionTo, tickTransition } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
+  const sceneFade = makeSceneFade(hub, () => {
+    const scene = createEngine(canvas, { params:{...params} }, true);
+    for(const k in motion) scene.hub.motion[k] = Array.isArray(motion[k]) ? [...motion[k]] : motion[k];
+    for(const k of ['limbAngle','limbVel','limbPitch','limbPitchVel','twigAngle','twigVel']) scene.hub.hier[k].set(hub.hier[k]);
+    scene.hub.hier.maxV=hub.hier.maxV;
+    scene.hub.publishBend(scene.hub.grove); scene.hub.bake();
+    return scene;
+  });
+  Object.assign(hub, sceneFade);
 
   // ---- auto-quality: hold ~60 fps by ratcheting render resolution then samples down; grudging to
   // climb back (each forced drop doubles the wait). Drives perf.*, never the user's art. ----
@@ -474,7 +487,7 @@ function create(canvas, opts){
     } else perf.hiCount = 0;
   }
 
-  if(EDITOR) makeEditorTools(hub);   // debug overlays + profiler + motion mirror; EDITOR=false strips the call (and its module with it)
+  if(EDITOR && !driven) makeEditorTools(hub);   // debug overlays + profiler + motion mirror; EDITOR=false strips the call (and its module with it)
 
   // ---- the rebuild scopes the editor drives, plus a full param swap ----
   // The cloud is cut BEFORE the bake: the faithful cast pre-integrates its soft shadow over the source's samples (§4.5), so a bake made first casts
@@ -519,6 +532,7 @@ function create(canvas, opts){
     // only trans field read while inactive; the rest are rewritten by transitionTo before anything reads them. Zeroed here,
     // ahead of the `lost` return, because onContextRestored zeroes it only for a transition still active.
     if(trans.active){
+      if(trans.sceneFade){ hub.endSceneFade(); trans.sceneFade=false; }
       trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0;
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
@@ -551,6 +565,7 @@ function create(canvas, opts){
     // picker, created per-comparison) leaves zero GPU residue when closed. A disposed engine must not be reused.
     dispose(){
       alive = false; loop++;
+      hub.endSceneFade();
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       [progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
@@ -570,8 +585,8 @@ function create(canvas, opts){
       if(litter.vao){ gl.deleteVertexArray(litter.vao); gl.deleteBuffer(litter.buf); }
       [emptyVAO, hub.srcDbgVAO, hub.vizVAO].forEach(v => { if(v) gl.deleteVertexArray(v); });
       [quadBuf, hub.srcDbgBuf, hub.vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });
-      if(EDITOR) hub.setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
-      gl.getExtension('WEBGL_lose_context')?.loseContext();
+      if(EDITOR && !driven) hub.setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
+      if(!driven) gl.getExtension('WEBGL_lose_context')?.loseContext();
     },
     ...(EDITOR ? { fill, litter, faith, layers: () => hub.layerTex, woods: () => hub.woodTex,   // the sky fill's state + the layers it reads (and the sky view's wood beside them), for the pixel harness's shader-vs-reference checks (test-gl/); stripped from the player build
                    drawSourceInset: hub.drawSourceInset, drawTreeInset: hub.drawTreeInset, treeInsetHit: hub.treeInsetHit, profiler: hub.profiler, snapshotMotion: hub.snapshotMotion, applyMotion: hub.applyMotion, setMotionSource: hub.setMotionSource,
@@ -647,9 +662,11 @@ function create(canvas, opts){
     let landed = null;                               // the route's onEnd, when it lands this frame
     if(trans.active){                                // a running transition owns the re-source/re-bake each frame
       if(motionActive()) tick(dt);                   // keep wind alive; the morph re-asserts drift_phase right after
+      if(trans.sceneFade && motionActive()) bake();
       landed = tickTransition(dt);
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
-    if(params.show_layer && !faithfulOn()) drawLayerBlit(); else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
+    if(trans.sceneFade) hub.timed('transport',hub.drawSceneFade);
+    else if(params.show_layer && !faithfulOn()) drawLayerBlit(); else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
     schedule();
     if(landed) landed();                             // after schedule(), like onFrame: a throwing host callback must not end the animation
     if(eng.onFrame) eng.onFrame(dtms);               // editor draws HUD + source inset here
@@ -663,6 +680,7 @@ function create(canvas, opts){
     if(!alive) return;
     e.preventDefault();
     lost = true; loop++;                               // stop the loop; setParams/apply only touch params until the restore
+    hub.endSceneFade();
   }
   function onContextRestored(){
     if(!alive) return;
@@ -677,12 +695,14 @@ function create(canvas, opts){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = trans.active ? trans.onEnd : null;
-    if(trans.active){ trans.active=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
+    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
     rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)
     if(cb) cb();                                       // after the restart: a throwing onEnd must not leave a restored engine with no loop
   }
+  if(driven) return { hub, draw:drawFrameInto, dispose:eng.dispose,
+    step(dt){ if(motionActive()){ tick(dt); bake(); } } };
   canvas.addEventListener('webglcontextlost', onContextLost);
   canvas.addEventListener('webglcontextrestored', onContextRestored);
   startLoop();

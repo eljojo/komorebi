@@ -65,7 +65,7 @@ export function makeSource(hub){
     pts.forEach((p,i)=>{ flat[i*3]=p[0]; flat[i*3+1]=p[1]; flat[i*3+2]=p[2];
       mr=Math.max(mr,Math.hypot(p[0],p[1])); mw=Math.max(mw,p[2]); });
     src.flat=flat; src.count=pts.length; src.maxR=mr; src.maxW=mw; src.haloR=haloR;
-    if(EDITOR){   // push the cloud into the editor's source-inset buffer (player build has none)
+    if(EDITOR && hub.srcDbgBuf){   // driven transition scenes have no editor overlays
       gl.bindBuffer(gl.ARRAY_BUFFER, hub.srcDbgBuf);
       gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
     }

@@ -16,6 +16,7 @@ model. Read the spec before you change what the engine does.
   - **`komorebi-source.js`** — the Vogel-spiral point-sun cloud and the shared cast geometry (bulk shift, ellipse projection, layer heights).
   - **`komorebi-motion.js`** — the broadband wind signal and the trunk/limb/twig spring hierarchy.
   - **`komorebi-transitions.js`** — the cloud-bloom crossfade between looks.
+  - **`komorebi-scene-fade.js`** — the faithful structural transition's two moving scenes, canvas-sized targets and linear-display dissolve, including interruption and cleanup.
   - **`komorebi-render.js`** — one frame onto a target: the transport draw, the per-group uniform upload, the glow tier.
   - **`komorebi-editor-tools.js`** — EDITOR-only: debug overlays, the profiling primitive, the motion mirror.
   - **`komorebi-transport.js`** — the transport master + camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.

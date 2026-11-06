@@ -79,6 +79,11 @@ export function makeTransitions(hub){
                  && !faithfulOn() && !to.faithful_canopy
                  && !(params.branch_tau > 0) && !(to.branch_tau > 0)
                  && layersShared;
+    const sceneFade = (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
+    if(sceneFade) trans.structDiff=true;   // an interruption still has two different visible scenes to dissolve
+    if(!sceneFade && trans.sceneFade) hub.endSceneFade();
+    if(sceneFade) hub.beginSceneFade();   // preserve the outgoing scene before params become the incoming look
+    trans.sceneFade = sceneFade;
     const tier = modeDiff ? 'mode' : crossOK ? 'cross' : 'dissolve';
     trans.crossfade = crossOK;
     trans.bloomMax = trans.backgroundFade ? 0 : BLOOM_MAX[tier];
@@ -90,6 +95,11 @@ export function makeTransitions(hub){
     trans.dur = Math.max(1e-3, opts.duration!=null ? opts.duration : trans.dur);   // stays the CALLER's number: it is also the sticky default for a later duration-less call, so the mode-flip stretch is applied at the clock (tickTransition) and never compounded into it
     trans.t = 0; trans.swapped = false; trans.bloom = 0; trans.active = true;
     trans.onEnd = opts.onEnd || null;
+    if(sceneFade){
+      trans.bloomMax = 0;
+      for(const k in DEFAULTS) params[k] = to[k];
+      hub.rebuildAll(); hub.resetPerf();
+    }
   }
 
   function tickTransition(dt){
@@ -97,6 +107,14 @@ export function makeTransitions(hub){
     const dur = trans.dur * trans.durScale;   // the tier's longer clock (see DUR_SCALE); scaled here, never into trans.dur, which stays the caller's sticky default
     trans.t = Math.min(1, trans.t + Math.min(dt,1/15)/dur);   // clamp the step like tick(): a tab-switch spike must not skip the bloom peak
     const t = trans.t, e = smoothstep(0,1,t);              // ease-in-out for the morph; raw t for the bloom hump
+    if(trans.sceneFade){
+      hub.stepSceneFade(dt);
+      if(t<1) return null;
+      trans.active=false; trans.sceneFade=false; trans.swapped=true;
+      hub.endSceneFade();
+      const cb=trans.onEnd; trans.onEnd=null;
+      return cb;
+    }
     // 0 at the ends, deepest at the midpoint — where the swap fires. Both structural tiers stop short of full
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
     trans.bloom = trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0;

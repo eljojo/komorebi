@@ -826,6 +826,15 @@ const OUTLINE_BANDS = { maple: OUTLINE_AREA, beech: BEECH_AREA, 'maple-varied': 
 // 'memories' is the base because the crossfade gate needs branch_tau 0 + non-faithful at both ends.
 // ---------------------------------------------------------------------------
 const TRANSITION_ROUTES = [
+  { name: 'faithful topology and tone changes dissolve complete scenes', from: 'park 1', to: 'park 1',
+    over: { seed: 1234567, foliage_density: 2.4, tone_map: 0 },
+    expect: { crossfade: false, structDiff: true, sceneFade: true, bloomMax: 0 } },
+  { name: 'faithful curtain topology changes dissolve complete scenes', from: 'curtain 1', to: 'curtain 1',
+    over: { seed: 1234567, leaf_shape: 'maple' },
+    expect: { crossfade: false, structDiff: true, sceneFade: true, bloomMax: 0 } },
+  { name: 'setParams mid-scene dissolve frees the outgoing scene and keeps the context', from: 'park 1', to: 'park 1',
+    over: { seed: 1234567 }, interrupt: { at: 0.35, with: 'morning 1' },
+    expect: { crossfade: false, structDiff: true, sceneFade: true, bloomMax: 0 } },
   { name: 'live morph stays non-structural', from: 'memories', to: 'memories',
     over: { sun_azimuth_deg: 123, sun_elevation_deg: 47 },
     expect: { crossfade: false, structDiff: false } },
@@ -1529,7 +1538,7 @@ async function main() {
         if (!r.interrupted) bad.push('interrupt never fired');
         if (r.onEndFired) bad.push('onEnd fired despite the abort');
         if (r.interrupted) {
-          if (!(r.bloomAtInterrupt > 0)) bad.push(`the route had no bloom (${r.bloomAtInterrupt}) when it was interrupted — nothing to leave behind, the row proves nothing`);
+          if (route.expect.sceneFade ? r.bloomAtInterrupt !== 0 : !(r.bloomAtInterrupt > 0)) bad.push(`unexpected bloom ${r.bloomAtInterrupt} at interruption`);
           if (r.bloomAfter !== 0) bad.push(`trans.bloom=${r.bloomAfter} after the abort (want 0; the route had reached ${r.bloomAtInterrupt.toFixed(3)})`);
           const born = await renderOnce(page, route.interrupt.with, {}, [GATE_FRAMES]);   // an engine BORN as the look the route was swapped to
           const d = await page.evaluate(([x, y]) => window.__diff(x, y), [r.afterId, born.captures[0].id]);

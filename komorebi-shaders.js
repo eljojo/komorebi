@@ -657,6 +657,21 @@ uniform sampler2D uTex;
 out vec4 frag;
 void main(){ frag = texture(uTex, vUv); }`;
 
+// The scene dissolve includes each look's tone map. Decode its display gamma before mixing light.
+const FS_SCENE_MIX = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uOutgoing;
+uniform sampler2D uIncoming;
+uniform float uWeight;
+out vec4 frag;
+void main(){
+  vec4 a=texture(uOutgoing,vUv), b=texture(uIncoming,vUv);
+  if(uWeight<=0.0){ frag=a; return; }
+  if(uWeight>=1.0){ frag=b; return; }
+  frag=vec4(pow(mix(pow(a.rgb,vec3(2.2)),pow(b.rgb,vec3(2.2)),uWeight),vec3(1.0/2.2)),1.0);
+}`;
+
 // ---- LATERAL DIFFUSION (spec §4.9), pass 1+2: one axis of a separable Gaussian over the LINEAR-HDR frame.
 // σ = radius/3, so the 13 taps span exactly ±3σ and the weights below are CONSTANT (exp(−k²/8), normalized): the
 // physical radius rides entirely in uStep, the tap SPACING. Separability is what makes a real 2-D neighbourhood
@@ -746,4 +761,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
