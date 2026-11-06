@@ -82,6 +82,44 @@ function transitionRig(from) {
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
 
+test("an iris turning on sweeps inward during the first quarter, before the scene swap", () => {
+  const r=transitionRig({...DEFAULTS,vignette:0,vignette_shape:2});
+  r.transitionTo({...r.params,vignette:0.24,vignette_shape:3.1});
+  expect(r.hub.trans.irisRadius).toBe(Math.SQRT2);
+  let radius=r.hub.trans.irisRadius;
+  for(let i=0;i<15;i++) {
+    r.tickTransition(1/60);
+    expect(r.hub.trans.irisRadius).toBeLessThanOrEqual(radius);
+    radius=r.hub.trans.irisRadius;
+  }
+  expect(radius).toBe(1);
+  expect(r.params.vignette).toBeCloseTo(0.24*0.15625,12);
+});
+
+test("an iris turning off opens beyond the frame during the last quarter", () => {
+  const r=transitionRig({...DEFAULTS,vignette:0.24,vignette_shape:3.1});
+  r.transitionTo({...r.params,vignette:0});
+  for(let i=0;i<45;i++) r.tickTransition(1/60);
+  expect(r.hub.trans.irisRadius).toBe(1);
+  for(let i=0;i<14;i++) r.tickTransition(1/60);
+  expect(r.hub.trans.irisRadius).toBeGreaterThan(1.4);
+  r.tickTransition(1/60);
+  expect(r.hub.trans.active).toBe(false);
+  expect(r.params.vignette).toBe(0);
+});
+
+test("interrupting an iris sweep carries its visible radius into the new morph", () => {
+  const r=transitionRig({...DEFAULTS,vignette:0});
+  r.transitionTo({...r.params,vignette:0.24});
+  for(let i=0;i<6;i++) r.tickTransition(1/60);
+  const radius=r.hub.trans.irisRadius;
+  expect(radius).toBeGreaterThan(1);
+  r.transitionTo({...r.params,vignette:0.4});
+  expect(r.hub.trans.irisRadius).toBe(radius);
+  r.tickTransition(0);
+  expect(r.hub.trans.irisRadius).toBe(radius);
+});
+
 test("faithful structural changes dissolve complete moving scenes without a midpoint rebuild or bloom", () => {
   for (const change of [{ layer_count: 4, foliage_density: 2.4, tone_map: 0 },
                          { seed: 783609357, leader_strength: 0.55, leaf_shape: "maple", foliage_density: 1 }]) {

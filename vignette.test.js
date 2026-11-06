@@ -13,6 +13,31 @@ test("feather 0 is off: the mask is 1 everywhere, corners included, whatever the
       expect(vignetteMask(u, v, 0, shape)).toBe(1);
 });
 
+test("an iris outside the frame keeps the corners lit on the first positive feather", () => {
+  const t=1/180, e=t*t*(3-2*t), feather=0.24*e, shape=2+1.1*e;
+  const radius=Math.SQRT2+(1-Math.SQRT2)*ss(0,0.25,t);
+  for(const [u,v] of [[0.02,0.02],[0.1,0.1],[0.9,0.9]]) {
+    expect(vignetteMask(u,v,feather,shape)).toBe(0);
+    expect(vignetteMask(u,v,feather,shape,radius)).toBe(1);
+  }
+});
+
+test("the moving iris reaches the authored mask exactly at radius one", () => {
+  for(const shape of [2,3.1,8]) for(const feather of [0,0.001,0.24,1])
+    for(let i=0;i<=20;i++) for(let j=0;j<=20;j++)
+      expect(vignetteMask(i/20,j/20,feather,shape,1)).toBe(vignetteMask(i/20,j/20,feather,shape));
+});
+
+test("every camera scales the iris radius before masking linear light", () => {
+  expect(TRANSPORT_GROUPS.post.locs.irisRadius).toBe("uIrisRadius");
+  for(const cam of ["floor","cloth","enclosure","sky"]) {
+    const src=buildTransport(cam), radius=src.indexOf("if(uIrisRadius != 1.0) d /= uIrisRadius;");
+    expect(src).toContain("uniform float uIrisRadius;");
+    expect(radius).toBeGreaterThan(0);
+    expect(radius).toBeLessThan(src.indexOf("col *= 1.0 - smoothstep(1.0 - uVignette, 1.0, d);"));
+  }
+});
+
 test("the centre is fully lit at any feather, and the four corners are black at any feather > 0 and shape 2..8", () => {
   for (const f of [0.01, 0.3, 1]) for (const shape of [2, 3.5, 8]) {
     expect(vignetteMask(0.5, 0.5, f, shape)).toBe(1);

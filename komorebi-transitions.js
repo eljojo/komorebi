@@ -21,6 +21,7 @@ export function makeTransitions(hub){
     opts = opts || {};
     if(!target || typeof target!=='object') return;
     const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
+    const irisFrom = trans.active ? (trans.irisRadius ?? 1) : 1;
     hub.warnCut(to);   // a tier this build cut that the target opens stays off, and is said so (once per engine)
     const from = {};
     for(const k of MORPH_KEYS)  from[k] = params[k];       // continuous look — always morphs live
@@ -84,6 +85,10 @@ export function makeTransitions(hub){
     if(!sceneFade && trans.sceneFade) hub.endSceneFade();
     if(sceneFade) hub.beginSceneFade();   // preserve the outgoing scene before params become the incoming look
     trans.sceneFade = sceneFade;
+    // Feather zero removes the entire mask. Move its boundary across the frame before crossing that gate.
+    trans.irisFrom = !sceneFade && params.vignette===0 && to.vignette>0 ? Math.SQRT2 : irisFrom;
+    trans.irisClosing = !sceneFade && params.vignette>0 && to.vignette===0;
+    trans.irisRadius = sceneFade ? 1 : trans.irisFrom;
     const tier = modeDiff ? 'mode' : crossOK ? 'cross' : 'dissolve';
     trans.crossfade = crossOK;
     trans.bloomMax = trans.backgroundFade ? 0 : BLOOM_MAX[tier];
@@ -115,6 +120,9 @@ export function makeTransitions(hub){
       const cb=trans.onEnd; trans.onEnd=null;
       return cb;
     }
+    trans.irisRadius = trans.irisClosing
+      ? lerp(trans.irisFrom ?? 1, Math.SQRT2, smoothstep(0.75,1,t))
+      : lerp(trans.irisFrom ?? 1, 1, smoothstep(0,0.25,t));
     // 0 at the ends, deepest at the midpoint — where the swap fires. Both structural tiers stop short of full
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
     trans.bloom = trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0;
