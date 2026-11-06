@@ -5,6 +5,7 @@
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
 import { makeTransitions } from "./komorebi-transitions.js";
+import { PRESETS } from "./presets.js";
 
 // the DEFAULTS knobs that deliberately do NOT participate in transitions: runtime/debug flags, the look's
 // tone-map + wind-pattern (live uniforms / a table swap, snapped not tweened), and the legacy clusters_per_layer.
@@ -67,4 +68,83 @@ test("a landing route's onEnd is handed back by tickTransition, not called", () 
   cb();
   expect(fired).toBe(1);
   expect(tickTransition(1), "nothing to hand back once landed").toBeFalsy();
+});
+
+function transitionRig(from) {
+  const noop = () => {};
+  const params = { ...from }, swaps = [], bakes = [];
+  const hub = {
+    params, trans: { dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
+    faithfulOn: () => params.faithful_canopy && (params.receiver | 0) !== 2 && !params.sky_view,
+    warnCut: noop, regenSource: noop, resetPerf: noop, bake: () => bakes.push({ ...params }), regenCanopy: noop,
+    rebuildAll: () => swaps.push({ ...params }), motionActive: () => false,
+  };
+  return { ...makeTransitions(hub), hub, params, swaps, bakes };
+}
+
+for (const [from, to] of [["afternoon 7", "park 1"], ["park 1", "afternoon 7"]]) {
+  test(`${from} → ${to}: wood stays off the afternoon canopy and meets zero at the mode swap`, () => {
+    const r = transitionRig(PRESETS[from]);
+    r.transitionTo(PRESETS[to]);
+    let sawFade = false, frames = 0;
+    while (r.hub.trans.active && frames++ < 200) {
+      r.tickTransition(1 / 60);
+      if (!r.params.standing_scene) expect(r.params.branch_tau, `wood on afternoon at t=${r.hub.trans.t}`).toBe(0);
+      else if (r.params.branch_tau > 0 && r.params.branch_tau < PRESETS["park 1"].branch_tau) sawFade = true;
+    }
+    expect(r.hub.trans.active).toBe(false);
+    expect(sawFade, "park's wood fades rather than snapping").toBe(true);
+    expect(r.swaps).toHaveLength(1);
+    expect(r.swaps[0].branch_tau, "both paths meet without wood at the swap").toBeCloseTo(0, 12);
+    expect(r.params).toEqual(PRESETS[to]);
+  });
+}
+
+test("wood still tweens across the whole route when its scene mode stays the same", () => {
+  for (const [a, b] of [[0, 2], [2, 0]]) {
+    const from = { ...PRESETS["park 1"], branch_tau: a };
+    const r = transitionRig(from);
+    r.transitionTo({ ...from, branch_tau: b });
+    for (let i = 0; i < 30; i++) r.tickTransition(1 / 60);
+    expect(r.params.branch_tau).toBeCloseTo(1, 12);
+    expect(r.swaps).toHaveLength(0);
+  }
+});
+
+for (const mode of ["faithful_canopy", "sky_view"]) {
+  test(`the ${mode} wood fade re-bakes in still air with an unchanged sun`, () => {
+    const r = transitionRig(DEFAULTS);
+    r.transitionTo({ ...DEFAULTS, [mode]: true, branch_tau: 2 });
+    for (let i = 0; i < 90; i++) r.tickTransition(1 / 60);
+    expect(r.params.branch_tau).toBeCloseTo(1, 12);
+    expect(r.bakes.some((p) => p.branch_tau > 0 && p.branch_tau < 2), "intermediate wood opacity reaches the bake").toBe(true);
+    expect(r.bakes.at(-1).branch_tau).toBe(r.params.branch_tau);
+  });
+}
+
+test("a mode swap between two wood-bearing looks keeps their ordinary wood tween", () => {
+  const from = { ...PRESETS["park 1"], branch_tau: 2 };
+  const r = transitionRig(from);
+  r.transitionTo({ ...from, faithful_canopy: false, branch_tau: 4 });
+  for (let i = 0; i < 60; i++) r.tickTransition(1 / 60);
+  expect(r.params.branch_tau).toBeCloseTo(3, 12);
+});
+
+test("interrupting the park fade starts from its live wood opacity and fades out before returning to afternoon", () => {
+  const r = transitionRig(PRESETS["afternoon 7"]);
+  r.transitionTo(PRESETS["park 1"]);
+  for (let i = 0; i < 90; i++) r.tickTransition(1 / 60);
+  const live = r.params.branch_tau;
+  expect(live).toBeGreaterThan(0);
+  expect(live).toBeLessThan(PRESETS["park 1"].branch_tau);
+  r.transitionTo(PRESETS["afternoon 7"]);
+  expect(r.params.branch_tau).toBe(live);
+  let previous = live, frames = 0;
+  while (r.hub.trans.active && frames++ < 200) {
+    r.tickTransition(1 / 60);
+    expect(r.params.branch_tau).toBeLessThanOrEqual(previous);
+    if (!r.params.standing_scene) expect(r.params.branch_tau).toBe(0);
+    previous = r.params.branch_tau;
+  }
+  expect(r.params).toEqual(PRESETS["afternoon 7"]);
 });

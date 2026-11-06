@@ -23,6 +23,9 @@ export function makeTransitions(hub){
     for(const k of CANOPY_KEYS) from[k] = params[k];       // continuous canopy — morphs live IF the topology matches
     const topoDiff   = TOPO_KEYS.some(k => to[k]!==params[k]);     // a new tree/layer/seed: can't morph leaf-for-leaf
     const modeDiff   = MODE_KEYS.some(k => to[k]!==params[k]);     // a scene-MODE flag flips (faithful_canopy/standing_scene/receiver): needs a rebuild, NOT a snap-with-stale-state
+    // Wood must meet zero at the mode swap when only one look has it: otherwise the woodless grove briefly
+    // casts the other look's skeleton (an overhead trunk becomes a dot with radial limbs).
+    trans.woodFade = modeDiff && ((params.branch_tau > 0) !== (to.branch_tau > 0));
     const canopyDiff = CANOPY_KEYS.some(k => to[k]!==params[k]);   // branch/leaf knobs differ
     const leafCount  = hub.layerVAO.reduce((s,L)=>s+L.count, 0);       // current grove size
     // a grove morph scales the leaf count by tree_count AND per-twig density (leaves_per_cluster*foliage_density);
@@ -80,7 +83,8 @@ export function makeTransitions(hub){
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
     trans.bloom = trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0;
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
-      params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,e, k==='drift_phase'?TAU:360) : lerp(a,b,e); }
+      const w = k==='branch_tau' && trans.woodFade ? smoothstep(a>0 ? 0 : 0.5, a>0 ? 0.5 : 1, t) : e;
+      params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,w, k==='drift_phase'?TAU:360) : lerp(a,b,w); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove
     let rebuilt = false;
     // THE CROSSFADE WINDOW replaces the cut where it is gated on: coverage eases 0 -> 1 across [0.5-HW, 0.5+HW],
@@ -113,8 +117,10 @@ export function makeTransitions(hub){
       // angle for the whole morph (the layer path is immune — transport reprojects each frame from uProj/uBulkShift).
       const faithSunMorph = faithfulOn() &&
         (trans.from.sun_elevation_deg!==trans.to.sun_elevation_deg || trans.from.sun_azimuth_deg!==trans.to.sun_azimuth_deg);
+      // These paths bake wood opacity into textures; a still-air fade must reach them too.
+      const woodFade = trans.woodFade && (faithfulOn() || params.sky_view);
       // ...and every frame the crossfade window is open, because the coverage split itself is what changed.
-      if(trans.canopyMorph || hub.motionActive() || faithSunMorph || (trans.crossfade && trans.active)) hub.bake();
+      if(trans.canopyMorph || hub.motionActive() || faithSunMorph || woodFade || (trans.crossfade && trans.active)) hub.bake();
     }
     if(t>=1){                                              // land exactly on the target; clear the bloom
       trans.active = false; trans.bloom = 0;
