@@ -114,8 +114,9 @@ export function makeBake(hub){
         const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
         gl.uniform2f(U.faithSeg.segSway, motion.sway[0]*f, motion.sway[1]*f);
         gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);   // draw this layer's slice: no baseInstance in WebGL2, so the attribute origin moves instead
-        gl.vertexAttribPointer(1,4,gl.FLOAT,false,32,sky.start[l]*32);
-        gl.vertexAttribPointer(2,4,gl.FLOAT,false,32,sky.start[l]*32+16);
+        gl.vertexAttribPointer(1,4,gl.FLOAT,false,36,sky.start[l]*36);
+        gl.vertexAttribPointer(2,4,gl.FLOAT,false,36,sky.start[l]*36+16);
+        gl.vertexAttribPointer(3,1,gl.FLOAT,false,36,sky.start[l]*36+32);
         gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, sky.count[l]);
       }
     }
@@ -156,7 +157,7 @@ export function makeBake(hub){
         ax = tbx + ctw*dax - stw*day; ay = tby + stw*dax + ctw*day;
         bx = tbx + ctw*dbx - stw*dby; by = tby + stw*dbx + ctw*dby;
       }
-      const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*8;
+      const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*9;
       // the SAME expression publishBend gives this limb's clumps, off the SAME pitch DOF — leaf-on-wood
       // registration is only kept by the two staying literally in lockstep (§5.1). The plan rotation above
       // is the yaw DOF; this is the elevation one, and the two compose orthogonally.
@@ -173,7 +174,7 @@ export function makeBake(hub){
       sa[o+1] = py + sn*(ax-px) + c*(ay-py) + swy*kA;
       sa[o+2] = px + c*(bx-px) - sn*(by-py) + swx*kB;
       sa[o+3] = py + sn*(bx-px) + c*(by-py) + swy*kB;
-      sa[o+4]=ha; sa[o+5]=hb; sa[o+6]=s.ra; sa[o+7]=s.rb;
+      sa[o+4]=ha; sa[o+5]=hb; sa[o+6]=s.ra; sa[o+7]=s.rb; sa[o+8]=s.cov;
     }
   }
 

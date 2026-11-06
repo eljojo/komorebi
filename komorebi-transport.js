@@ -93,7 +93,7 @@ const GLSL_T_OCC_DECLS = `// WOODY OCCLUDER (spec §4.5): the trunk + main limbs
 // the limb swing), row 1 = the static heights + radius. texelFetch on RGBA32F is exact — no filtering, no format
 // conversion — so the shader reads the identical float32s the uniform upload used to carry, and the cap becomes a
 // number the budget no longer has an opinion about.
-uniform highp sampler2D uOccTex;     // (k,0) = plan endpoints a.xy, b.xy;  (k,1) = a-height, b-height (above floor), radius, _
+uniform highp sampler2D uOccTex;     // (k,0) = plan endpoints a.xy, b.xy;  (k,1) = a-height, b-height (above floor), radius, tree coverage
 uniform int   uOccCount;             // 0 = off (no wood / park model), byte-identical
 uniform float uOccTau;               // wood optical depth (= branch_tau); 0 = off
 uniform vec2  uOccSway;              // whole-tree drift, matching the leaf bake
@@ -814,7 +814,7 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
           // and sun included. A 5-20 cm ramp keeps the gate C1; wood genuinely crossed by the gaze (ds.y large,
           // ds.x < radius) still blocks fully.
           float infront = smoothstep(0.05, 0.2, ds.y);
-          float e = exp(-uOccTau * infront * (1.0 - smoothstep(H.z, H.z + pen, ds.x)));   // Beer's law, same as the cast: overlaps add optical depth
+          float e = exp(-uOccTau * H.w * infront * (1.0 - smoothstep(H.z, H.z + pen, ds.x)));   // Beer's law, same as the cast: overlaps add optical depth
           T *= e;
           Tsrc *= e;   // the disk is occluded like the sky behind it
           Lsc *= e;   // wood stands BELOW the crowns on an upward ray, so it occludes the canopy's own glow as it occludes the sky behind it
@@ -908,7 +908,7 @@ const GLSL_T_WOOD_CAST = `  // woody occluder (spec §4.5), evaluated ONCE per p
       float dist = length(ap - seg*ab);
       float pen = max(0.3*H.z, mix(H.x,H.y,seg)*uOccPenumbra);   // penumbra grows with height (fakes the disk integral)
       float inside = 1.0 - smoothstep(H.z, H.z + pen, dist);
-      woodT *= exp(-uOccTau * inside);                          // Beer's law; overlaps add optical depth
+      woodT *= exp(-uOccTau * inside * H.w);                          // Beer's law; overlaps add optical depth
     }
     acc *= woodT;
   }`;

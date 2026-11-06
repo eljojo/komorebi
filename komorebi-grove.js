@@ -596,7 +596,7 @@ export function makeGrove(hub){
         if(rest.length >= MAX_OCC) continue;           // table full: keep counting rather than break, so the shortfall is a number instead of nothing
         const r = Math.max(0.01, params.trunk_radius_m*Math.pow(tf, sg.level));
         rest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], limb:sg.limb, px:sg.px, py:sg.py });   // limb+pivot for the per-frame swing
-        segH.push(floorH(sg.a[2]), floorH(sg.b[2]), r, 0);
+        segH.push(floorH(sg.a[2]), floorH(sg.b[2]), r, sg.cov);
       }
       // want > count means this grove is TRUNCATED: the tail of the grow order — whole later trees' boles and limbs —
       // casts no wood at all. It is invisible in a single frame (nothing is missing, there is just less), which is
@@ -622,11 +622,11 @@ export function makeGrove(hub){
         // bears no leaves at all. (twigs[] is already capped and scaled by here.)
         const cj = (sg.clump>=0 && sg.clump<twigs.length) ? sg.clump : -1;
         segRest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], ha:sg.a[2], hb:sg.b[2], ra, rb, limb:sg.limb, px:sg.px, py:sg.py,
-                       clump:cj, tbx:(cj>=0?twigs[cj].bx:0), tby:(cj>=0?twigs[cj].by:0),
+                       cov:sg.cov, clump:cj, tbx:(cj>=0?twigs[cj].bx:0), tby:(cj>=0?twigs[cj].by:0),
                        level:sg.level, mz:0.5*(sg.a[2]+sg.b[2]) });   // REAL grown heights (cast == preview); level + midpoint height pick the SKY view's layer bin below
       }
       faith.segRest = segRest; faith.segCount = segRest.length;
-      faith.segArr = new Float32Array(segRest.length*8);   // 8 floats/seg: iSeg(ax,ay,bx,by) + iSegH(ha,hb,ra,rb); positions refilled per bake with the sway
+      faith.segArr = new Float32Array(segRest.length*9);   // 9 floats/seg (last: marginal-tree coverage): iSeg(ax,ay,bx,by) + iSegH(ha,hb,ra,rb); positions refilled per bake with the sway
       if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
       const buf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -636,9 +636,10 @@ export function makeGrove(hub){
       gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
       gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      const S=32;
+      const S=36;
       gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
       gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
+      gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
       gl.bindVertexArray(null);
       faith.segVAO=vao; faith.segBuf=buf;
     }
@@ -661,7 +662,7 @@ export function makeGrove(hub){
         for(let l=0;l<nL;l++){ sky.start[l] = segRest.length; sky.count[l] = byLayer[l].length; for(const s0 of byLayer[l]) segRest.push(s0); }
       } else { sky.start.length = 0; sky.count.length = 0; }
       sky.segRest = segRest;
-      sky.segArr = new Float32Array(segRest.length*8);
+      sky.segArr = new Float32Array(segRest.length*9);
       if(sky.segVAO){ gl.deleteVertexArray(sky.segVAO); gl.deleteBuffer(sky.segBuf); sky.segVAO=null; sky.segBuf=null; }
       if(segRest.length){
         sky.segBuf = gl.createBuffer();
@@ -672,8 +673,9 @@ export function makeGrove(hub){
         gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
         gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
         gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
-        gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,32,0);  gl.vertexAttribDivisor(1,1);
-        gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,32,16); gl.vertexAttribDivisor(2,1);
+        gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,36,0);  gl.vertexAttribDivisor(1,1);
+        gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,36,16); gl.vertexAttribDivisor(2,1);
+        gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,36,32); gl.vertexAttribDivisor(3,1);
         gl.bindVertexArray(null);
       }
     }

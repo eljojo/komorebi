@@ -287,6 +287,7 @@ precision highp float;
 layout(location=0) in vec2 aCorner;   // [-1,1]: x = along (a→b), y = ±across (width)
 layout(location=1) in vec4 iSeg;      // plan endpoints: a.xy, b.xy
 layout(location=2) in vec4 iSegH;     // a-height, b-height, a-radius, b-radius
+layout(location=3) in float iWoodFade; // marginal-tree coverage, shared by its leaves and every wood stamp
 uniform vec2 uFaithOrigin;
 uniform vec2 uFaithExtent;
 uniform vec2 uG;
@@ -297,6 +298,7 @@ uniform vec2 uSegSway;                // rigid plan sway added to both endpoints
                                       // view's layer stamp needs the LEAF bake's per-layer sway instead, or the
                                       // twigs and the leaves hanging on them drift apart under wind (§4.9).
 out float vAcross;
+flat out float vWoodFade;
 void main(){
   float t = aCorner.x*0.5 + 0.5;                 // 0 at a, 1 at b
   // project BOTH endpoints to the receiver at their OWN heights FIRST, then build the capsule around that SHADOW spine.
@@ -318,11 +320,13 @@ void main(){
   vec2 world = mix(Ap, Bp, t) + perp * (aCorner.y * r);
   gl_Position = vec4((world - uFaithOrigin)/uFaithExtent*2.0-1.0, 0.0, 1.0);
   vAcross = aCorner.y;
+  vWoodFade = iWoodFade;
 }`;
 
 const FS_FAITH_SEG = `#version 300 es
 precision highp float;
 in float vAcross;
+flat in float vWoodFade;
 uniform float uWoodTau;
 uniform int uSegTau;   // 0 = TRANSMITTANCE, for the cast's multiplicative scratch. 1 = OPTICAL DEPTH, for the layer
                        // textures, which accumulate additively and exponentiate at the tap — the leaves' own convention
@@ -335,8 +339,8 @@ void main(){
   // filaments brighter than the sky it stands against; wood occludes, it does not glow — so it lives where the sun's own
   // coverage cannot meet it. (Additive blend, cleared to 0 per layer: a layer with no twigs reads as no wood.) Half float, because
   // the depth accumulates and must round as it did when it shared the layer texture's alpha: the bytes did not move.
-  if(uSegTau != 0){ frag = vec4(uWoodTau*cov, 0.0, 0.0, 0.0); return; }
-  frag = vec4(vec3(exp(-uWoodTau*cov)), 1.0);              // wood blocks every colour equally → dark, neutral
+  if(uSegTau != 0){ frag = vec4(uWoodTau*cov*vWoodFade, 0.0, 0.0, 0.0); return; }
+  frag = vec4(vec3(exp(-uWoodTau*cov*vWoodFade)), 1.0);              // wood blocks every colour equally → dark, neutral
 }`;
 
 // THE LITTER CARPET (§4.7, komorebi-litter.js): the fallen leaves stamped onto the floor, once per regrow, into an RGBA8 texture over the fill's frame.

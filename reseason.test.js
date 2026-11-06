@@ -9,14 +9,14 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
-import { CANOPY_KEYS, DEFAULTS, create } from "./komorebi.js";
+import { CANOPY_KEYS, DEFAULTS, create, buildTransport } from "./komorebi.js";
 import * as paramsMod from "./komorebi-params.js";
 import * as groveMod from "./komorebi-grove.js";
 import { makeGrove } from "./komorebi-grove.js";
 import { PRESETS } from "./presets.js";
 import { macroParams } from "./macros.js";
 import { makeBake } from "./komorebi-bake.js";
-import { VS_BAKE, VS_FAITH } from "./komorebi-shaders.js";
+import { VS_BAKE, VS_FAITH, VS_FAITH_SEG, FS_FAITH_SEG } from "./komorebi-shaders.js";
 import { makeMotion } from "./komorebi-motion.js";
 
 // ---- the rig: one stub GL per hub (a grove writes the engine-global faith.* of ITS hub, so the cached grove and the fresh
@@ -27,6 +27,8 @@ function rig(params, faithful = false) {
       if (name === "createBuffer") return () => ({ data: null });
       if (name === "bindBuffer") return (_, b) => { t.cur = b; };
       if (name === "bufferData") return (_, data) => { if (t.cur) t.cur.data = data; };
+      if (name === "bindVertexArray") return vao => { t.vao = vao; };
+      if (name === "vertexAttribPointer") return (attr, size, _type, _normalized, stride, offset) => { t.vao.attrs ??= {}; t.vao.attrs[attr] = { size, stride, offset }; };
       return () => ({});
     },
   });
@@ -347,6 +349,40 @@ test("branch springs settle after wind is switched off", () => {
   r.params.wind_strength = 0;
   for (let i = 0; i < 7200 && r.motionActive(); i++) r.tick(1 / 60);
   expect(r.motionActive()).toBe(false);
+});
+
+for (const mode of ['faithful', 'analytic', 'sky']) {
+  test(`a marginal tree carries its fade through the ${mode} wood path`, () => {
+    const R = rig({ ...DEFAULTS, ...PRESETS['park 1'], tree_count: 2.001, sky_view: mode === 'sky', sway_pitch: 0 }, mode === 'faithful');
+    const g = R.G.buildGrove(null), H = g.hier, F = R.faith;
+    for (const [i, sg] of H.segments.entries()) expect(F.segRest[i].cov, 'the geometry keeps its tree coverage').toBe(sg.cov);
+    const main = H.segments.filter(s => s.level <= 1).slice(0, R.hub.occ.count);
+    main.forEach((s, i) => { expect(R.hub.occ.ht[4 * i + 3]).toBeCloseTo(s.cov, 7); });
+    expect(F.segRest.some(s => s.cov < 0.002)).toBe(true);
+    expect(F.segVAO.attrs[3]).toEqual({ size: 1, stride: 36, offset: 32 });
+    if (mode === 'sky') expect(R.hub.sky.segVAO.attrs[3]).toEqual({ size: 1, stride: 36, offset: 32 });
+    Object.assign(R.hub, { grove: g, hier: H, clusterTex: g.clusterTex, clusterGeomTex: g.clusterGeomTex,
+      motion: { u: 0, time: 0, sway: [0, 0] }, src: { count: 1, flat: new Float32Array([0, 0, 1]) }, U: { bake: {}, faith: {}, faithSeg: {}, facc: {} },
+      bakeRes: () => 256, projMatrix: () => [1, 0, 0, 1], bulkShift: () => [0, 0], refreshWood: R.G.refreshWood,
+      layerTex: [{}, {}, {}, {}], woodTex: [{}, {}, {}, {}], layerHeights: () => [2, 2.5, 3, 3.6], fillWanted: () => false });
+    F.gx = new Float32Array(1); F.gy = new Float32Array(1);
+    makeBake(R.hub).bake();
+    const geometry = mode === 'sky' ? R.hub.sky : F;
+    if (mode !== 'analytic') {
+      expect(geometry.segArr.length).toBe(geometry.segRest.length * 9);
+      geometry.segRest.forEach((s, i) => { expect(geometry.segArr[9 * i + 8]).toBeCloseTo(s.cov, 7); });
+    }
+    if (mode === 'sky') {
+      const l = R.params.layer_count - 1;
+      expect(geometry.segVAO.attrs[3].offset).toBe(geometry.start[l] * 36 + 32);
+    }
+  });
+}
+
+test("the faithful stamp and both analytic wood readers consume the marginal tree fade", () => {
+  expect(VS_FAITH_SEG).toContain('vWoodFade = iWoodFade;');
+  expect(FS_FAITH_SEG).toContain('uWoodTau*cov*vWoodFade');
+  for (const cam of ['floor', 'sky']) expect(buildTransport(cam)).toMatch(/exp\(-uOccTau[^;]*H\.w/);
 });
 
 test("live wood radius reaches the faithful and analytic geometry without rebuilding the grove", () => {

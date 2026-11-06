@@ -329,7 +329,7 @@ test("the leaf bake is the same on every camera: alpha is coverage everywhere, n
 test("the wood stamp attaches woodTex[l], clears it per layer, and writes frag.r with the same additive blend", () => {
   expect(bakeSrc.includes("hub.woodTex[l]")).toBe(true);
   expect(/framebufferTexture2D\(gl\.FRAMEBUFFER, gl\.COLOR_ATTACHMENT0, gl\.TEXTURE_2D, hub\.woodTex\[l\], 0\);\s*gl\.clearColor\(0,0,0,0\); gl\.clear\(gl\.COLOR_BUFFER_BIT\);/.test(bakeSrc)).toBe(true);
-  expect(/if\(uSegTau != 0\)\{ frag = vec4\(uWoodTau\*cov, 0\.0, 0\.0, 0\.0\); return; \}/.test(FS_FAITH_SEG)).toBe(true);
+  expect(/if\(uSegTau != 0\)\{ frag = vec4\(uWoodTau\*cov\*vWoodFade, 0\.0, 0\.0, 0\.0\); return; \}/.test(FS_FAITH_SEG)).toBe(true);
   expect(code(FS_FAITH_SEG).includes("vec4(0.0, 0.0, 0.0, uWoodTau*cov)")).toBe(false);
 });
 
