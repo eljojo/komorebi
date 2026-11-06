@@ -1,5 +1,5 @@
 // The headless GPU video exporter: one look -> frame-stepped Metal render in Chromium -> raw frames over a local POST -> ffmpeg.
-// Linux uses --chrome chromium+angle-vulkan+enable-gpu with --delivery libx265 (or none for stills); software renderers are refused.
+// Linux uses --chrome chromium+angle-vulkan+enable-gpu with --delivery hevc_vaapi (libx265 for a CPU master encode, none for stills); software renderers are refused.
 // --delivery hevc_vaapi encodes on the AMD GPU at 60M (75M cap, 120M buffer), including gpu/gpu-main10 capture; VideoToolbox controls do not apply.
 //   node test-gl/render-video.mjs (--look-json <look.json> | --arboretum <id>[@<version>][:<share_token>]) (--commit <sha> | --tree) --out <dir> [options]
 //   nix run .#video -- <the same>     from the repo root, under caffeinate (a render of an hour must not idle-sleep).  --help  prints this.
@@ -27,7 +27,7 @@
 //   --preroll 30           seconds of discarded motion before frame 0 (integrated on a tiny engine, see video.html cheapPreroll)
 //   --segment-seconds 10   one lossless segment + one checkpoint per this many seconds; a crash resumes from the last pair, exactly
 //   --master ffv1|x264rgb  the lossless master codec (RGB 4:4:4 8-bit, bit-exact to what the GPU wrote, after the optional downscale)
-//   --delivery hevc_videotoolbox|libx265|none   [--vt-bitrate 60M | --vt-quality 100] [--x265-crf 16] [--x265-preset slow] [--gop 120] [--trc bt709|iec61966-2-1]
+//   --delivery hevc_videotoolbox|hevc_vaapi|libx265|none   [--vt-bitrate 60M | --vt-quality 100] [--x265-crf 16] [--x265-preset slow] [--gop 120] [--trc bt709|iec61966-2-1]
 //                          THE DEFAULT is made for a FAT32 USB stick played in a projector's own player: -b:v 60M -maxrate 75M -bufsize 120M (--vt-bitrate scales the cap, 1.25x, and
 //                          the buffer, 2x; its suffix is k, K or M, since ffmpeg reads a lowercase m as milli): about 2 GB for 5 minutes. --vt-quality 100 is the explicit choice for
 //                          the best picture: 157 Mbit/s, 5.9 GB for 5 minutes of a lit look.
