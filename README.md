@@ -144,11 +144,18 @@ Main10 had the best measured source fidelity and roughly twice the file size. Th
 before server segment integration; use actual job timing rather than assuming those gains on another machine.
 The [render server](https://github.com/eljojo/komorebi-render) exposes these as the job's `pipeline` field.
 
-On Linux with an AMD GPU, use `--chrome chromium+angle-vulkan+enable-gpu --delivery libx265` with the default master
-pipeline. Rendering uses the GPU; HEVC encoding uses the CPU. `--delivery none --stills 0` captures a still without a video
-delivery. Mesa's Vulkan driver and access to `/dev/dri/renderD*` are required; software renderers are refused. On NixOS,
-use patched Chromium with the same Playwright version as `test-gl/package.json`; komorebi-render's Linux Nix package
-provides that environment. Direct pipelines and VideoToolbox delivery controls remain Mac-only.
+On Linux with an AMD GPU, use `--chrome chromium+angle-vulkan+enable-gpu --delivery hevc_vaapi` with `master`, `gpu` or
+`gpu-main10`. Rendering uses Vulkan; hardware HEVC encoding uses VA-API on `/dev/dri/renderD128`, with NV12 for Main or
+P010 for Main10. The fixed 60M bitrate has a 75M cap and 120M buffer. Software frames are converted to YUV and uploaded
+before hardware encoding. VideoToolbox delivery controls and the browser pipeline remain
+Mac-only. Hardware initialization or encoding failures stop the export, with no CPU fallback. `--delivery libx265` remains
+an explicit CPU option for master exports. `--delivery none --stills 0` captures a still without a video delivery.
+
+Mesa graphics and `LIBVA_DRIVER_NAME=radeonsi` with `LIBVA_DRIVERS_PATH` pointing at Mesa's video drivers are required.
+On NixOS, use patched Chromium with the same Playwright version as `test-gl/package.json`; komorebi-render's Linux Nix
+package provides that environment. Run the hardware checks from the engine checkout with
+`nix develop ../komorebi-render -c node --test test-gl/vaapi-gpu.test.mjs`: they interrupt and resume each pipeline,
+verify decoded frames and colour tags, and include 4K Main10.
 
 ## Develop
 

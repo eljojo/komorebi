@@ -11,16 +11,17 @@ export function pipelinePlan({ pipeline = 'master', ow, oh, ss = 1, space = 'lin
   return { direct, downscale: direct && ss === 2, extension: direct ? 'mp4' : 'mkv', frameBytes: ow * oh * 4 * (direct ? 1 : ss * ss) };
 }
 
-export function directSegmentArgs({ pipeline, ow, oh, fps, trc, vtQuality, vtBitrate, gop, file }) {
+export function directSegmentArgs({ pipeline, ow, oh, fps, trc, vtQuality, vtBitrate, gop, file, codec = 'hevc_videotoolbox' }) {
   if (pipeline === 'browser') return annexBMuxArgs({ fps, out: file, codec: 'hevc' });
   const args = deliveryArgs({ input: ['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${ow}x${oh}`, '-framerate', String(fps), '-i', '-'],
-    out: file, fps, trc, codec: 'hevc_videotoolbox', vtQuality, vtBitrate, gop });
+    out: file, fps, trc, codec, vtQuality, vtBitrate, gop });
   const i = args.indexOf('-vf') + 1;
   args[i] = `vflip,${args[i]}`;
   if (pipeline === 'gpu-main10') {
-    args[i] = args[i].replace('format=yuv420p', 'format=p010le');
+    args[i] = args[i].replace(codec === 'hevc_vaapi' ? 'format=nv12' : 'format=yuv420p', 'format=p010le');
     args[args.indexOf('-profile:v') + 1] = 'main10';
-    args.splice(args.indexOf('-profile:v'), 0, '-pix_fmt', 'p010le');
+    // VAAPI encoders consume hardware surfaces; P010 is selected before hwupload.
+    if (codec !== 'hevc_vaapi') args.splice(args.indexOf('-profile:v'), 0, '-pix_fmt', 'p010le');
   }
   return args;
 }

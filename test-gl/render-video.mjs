@@ -1,5 +1,6 @@
 // The headless GPU video exporter: one look -> frame-stepped Metal render in Chromium -> raw frames over a local POST -> ffmpeg.
 // Linux uses --chrome chromium+angle-vulkan+enable-gpu with --delivery libx265 (or none for stills); software renderers are refused.
+// --delivery hevc_vaapi encodes on the AMD GPU at 60M (75M cap, 120M buffer), including gpu/gpu-main10 capture; VideoToolbox controls do not apply.
 //   node test-gl/render-video.mjs (--look-json <look.json> | --arboretum <id>[@<version>][:<share_token>]) (--commit <sha> | --tree) --out <dir> [options]
 //   nix run .#video -- <the same>     from the repo root, under caffeinate (a render of an hour must not idle-sleep).  --help  prints this.
 //   N minutes of an arboretum preset for the projector:   nix run .#video -- --arboretum <id> --commit <sha> --out test-gl/out/video/<name> --seconds 300
@@ -59,7 +60,7 @@ import os from 'node:os';
 import { directDiskPlan, directJoinArgs, directSegmentArgs, pipelinePlan } from './pipeline.mjs';
 import { captureCanvasRun, encodeCanvasRun, hevcQuantizerConfig, installLinearDownscale } from './webcodecs.mjs';
 import {
-  ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
+  ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VAAPI_BITRATE, VAAPI_DEVICE, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
   diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, ffmpegVersion, ffprobeJson, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, pipeRequestTo, qualityReport,
   redactArgv, runBaseline, runFfmpegAsync, runMeasure, scaleRate, sha256, sha256File, spawnFfmpeg, startServer, stepMsFor,
 } from './video-lib.mjs';
@@ -114,8 +115,8 @@ if (!Number.isFinite(FPS) || FPS <= 0) die('--fps');
 if (!Number.isInteger(SS) || SS < 1 || SS > 4) die('--ss must be an integer 1..4');
 if (!['linear', 'gamma'].includes(SS_SPACE)) die('--ss-space linear|gamma');
 if (!['ffv1', 'x264rgb'].includes(MASTER)) die('--master ffv1|x264rgb');
-if (!['hevc_videotoolbox', 'libx265', 'none'].includes(DELIVERY)) die('--delivery hevc_videotoolbox|libx265|none');
-if (DELIVERY === 'libx265' && (has('--vt-bitrate') || has('--vt-quality'))) die('VideoToolbox delivery controls cannot be used with libx265');
+if (!['hevc_videotoolbox', 'hevc_vaapi', 'libx265', 'none'].includes(DELIVERY)) die('--delivery hevc_videotoolbox|hevc_vaapi|libx265|none');
+if (['libx265', 'hevc_vaapi'].includes(DELIVERY) && (has('--vt-bitrate') || has('--vt-quality'))) die(`VideoToolbox delivery controls cannot be used with ${DELIVERY}`);
 try { scaleRate(VT_BITRATE, 1); } catch (e) { die(`--vt-bitrate: ${e.message}`); }
 if (!GPU_VARIANTS[CHROME]) die(`--chrome ${CHROME}: not one of ${Object.keys(GPU_VARIANTS).join(', ')}`);
 const DISCARD = has('--discard-master');
@@ -124,7 +125,8 @@ let PLAN;
 try { PLAN = pipelinePlan({ pipeline: PIPELINE, ow: OW, oh: OH, ss: SS, space: SS_SPACE }); } catch (e) { die(e.message); }
 if (PLAN.direct) {
   for (const f of ['--measure', '--stills', '--encode-only', '--merge-master', '--drop-segments']) if (has(f)) die(`--pipeline ${PIPELINE} and ${f} are incompatible: direct pipelines have no lossless master`);
-  if (DELIVERY !== 'hevc_videotoolbox' || TRC !== 'bt709') die(`--pipeline ${PIPELINE} requires --delivery hevc_videotoolbox and SDR bt709`);
+  if (!(DELIVERY === 'hevc_videotoolbox' || (DELIVERY === 'hevc_vaapi' && PIPELINE !== 'browser')) || TRC !== 'bt709')
+    die(`--pipeline ${PIPELINE} requires hardware HEVC and SDR bt709 (VAAPI supports gpu/gpu-main10; browser uses native HEVC)`);
   if (PIPELINE === 'browser' && (has('--vt-quality') || has('--vt-bitrate'))) die('--pipeline browser uses native HEVC QP1, not VideoToolbox delivery controls');
 }
 if (has('--drop-segments') && !MERGE) die('--drop-segments needs --merge-master: without it the segments ARE the master');
@@ -168,7 +170,7 @@ const mergedPresent = () => existsSync(P('master.mkv'));
 const masterInput = () => (segsPresent() ? CONCAT_INPUT(LIST) : ['-i', P('master.mkv')]);
 
 if (has('--print-ffmpeg')) {   // dry run: the commands, nothing launched, nothing written
-  console.log(JSON.stringify({ segment: [FFMPEG, ...(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file: 'seg.mp4' }) : segArgs('seg.mkv', SEG_FRAMES))], delivery: [FFMPEG, ...(PLAN.direct ? directJoinArgs({ input: CONCAT_INPUT('seg/list.txt'), out: 'delivery.mp4', fps: FPS }) : deliveryArgv(CONCAT_INPUT('seg/list.txt'), 'delivery.mp4'))] }));
+  console.log(JSON.stringify({ segment: [FFMPEG, ...(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, codec: DELIVERY, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file: 'seg.mp4' }) : segArgs('seg.mkv', SEG_FRAMES))], delivery: [FFMPEG, ...(PLAN.direct ? directJoinArgs({ input: CONCAT_INPUT('seg/list.txt'), out: 'delivery.mp4', fps: FPS }) : deliveryArgv(CONCAT_INPUT('seg/list.txt'), 'delivery.mp4'))] }));
   process.exit(0);
 }
 // ------------------------------------------------------------------ files
@@ -227,7 +229,7 @@ const runKeyBody = () => ({
   look_sha256: sha256(lookBytes), overrides, forced: { adaptive_motion: false, auto_quality: false },
   fps: FPS, step_ms: STEP, t0_ms: T0_MS, size: [OW, OH], ss: SS, ss_space: SS === 1 ? 'n/a' : SS_SPACE, preroll_frames: PREROLL, segment_frames: SEG_FRAMES,
   master: MASTER, master_chain: masterChain(), chrome: CHROME, ffmpeg_version: FFMPEG_VERSION,
-  ...(PLAN.direct ? { pipeline: PIPELINE, master: null, master_chain: null, pipeline_identity: { pipeline_sha256: sha256(readFileSync(join(HERE, 'pipeline.mjs'))), webcodecs_sha256: sha256(readFileSync(join(HERE, 'webcodecs.mjs'))) }, delivery_settings: { vt_bitrate: PIPELINE === 'browser' || VT_QUALITY ? null : VT_BITRATE, vt_quality: PIPELINE === 'browser' ? null : VT_QUALITY ?? null, quantizer: PIPELINE === 'browser' ? 1 : null, gop: PIPELINE === 'browser' ? FPS * 2 : GOP } } : {}),
+  ...(PLAN.direct ? { pipeline: PIPELINE, master: null, master_chain: null, pipeline_identity: { pipeline_sha256: sha256(readFileSync(join(HERE, 'pipeline.mjs'))), webcodecs_sha256: sha256(readFileSync(join(HERE, 'webcodecs.mjs'))) }, delivery_settings: { vt_bitrate: PIPELINE === 'browser' || DELIVERY === 'hevc_vaapi' || VT_QUALITY ? null : VT_BITRATE, vt_quality: PIPELINE === 'browser' ? null : VT_QUALITY ?? null, quantizer: PIPELINE === 'browser' ? 1 : null, gop: PIPELINE === 'browser' ? FPS * 2 : GOP, ...(DELIVERY === 'hevc_vaapi' ? { encoder: DELIVERY, vaapi_device: VAAPI_DEVICE, bitrate: VAAPI_BITRATE } : {}) } } : {}),
   ...(ARB_RECORD ? { arboretum: ARB_RECORD.block } : {}),   // a look from a file has no such key, so its run keys are what they were
 });
 if (has('--restart') && !ENCODE_ONLY) {
@@ -398,7 +400,7 @@ async function renderAll(firstTodo) {
         assertHardwareRenderer(openInfo.renderer, CHROME);
       }
       const file = segFile(i);
-      ff = spawnFfmpeg(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file }) : segArgs(file, frames));
+      ff = spawnFfmpeg(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, codec: DELIVERY, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file }) : segArgs(file, frames));
       const thisFf = ff;
       killers.push(() => thisFf.kill());
       if ((injected.get(i) ?? 0) < (INJECT[i] ?? 0)) { injected.set(i, (injected.get(i) ?? 0) + 1); throw new Error(`injected failure in segment ${i}`); }
@@ -508,7 +510,8 @@ async function deliver() {
   // the command that makes delivery.mp4, as --print-ffmpeg prints it (runnable from the run folder); the .part step and the absolute list it really ran are beside it
   man.delivery_command = [FFMPEG, ...deliveryArgv(segsPresent() ? CONCAT_INPUT('seg/list.txt') : ['-i', 'master.mkv'], 'delivery.mp4')].join(' ');
   man.delivery_command_as_run = [FFMPEG, ...args].join(' ');
-  man.delivery = { codec: DELIVERY, written_as: 'delivery.mp4.part, renamed to delivery.mp4 when the encode succeeded', source: segsPresent() ? 'the lossless segments through the concat demuxer (seg/list.txt)' : 'master.mkv', encode_wall_s: (Date.now() - t) / 1000, trc_tag: TRC, bitrate_arg: DELIVERY === 'hevc_videotoolbox' && !VT_QUALITY ? VT_BITRATE : undefined, maxrate_arg: DELIVERY === 'hevc_videotoolbox' && !VT_QUALITY ? scaleRate(VT_BITRATE, VT_MAXRATE_X) : undefined, bufsize_arg: DELIVERY === 'hevc_videotoolbox' && !VT_QUALITY ? scaleRate(VT_BITRATE, VT_BUFSIZE_X) : undefined, quality_arg: DELIVERY === 'hevc_videotoolbox' && VT_QUALITY ? VT_QUALITY : undefined, crf: DELIVERY === 'libx265' ? X265_CRF : undefined, preset: DELIVERY === 'libx265' ? X265_PRESET : undefined, gop: GOP };
+  const bitrate = DELIVERY === 'hevc_vaapi' ? VAAPI_BITRATE : DELIVERY === 'hevc_videotoolbox' && !VT_QUALITY ? VT_BITRATE : undefined;
+  man.delivery = { codec: DELIVERY, written_as: 'delivery.mp4.part, renamed to delivery.mp4 when the encode succeeded', source: segsPresent() ? 'the lossless segments through the concat demuxer (seg/list.txt)' : 'master.mkv', encode_wall_s: (Date.now() - t) / 1000, trc_tag: TRC, bitrate_arg: bitrate, maxrate_arg: bitrate ? scaleRate(bitrate, VT_MAXRATE_X) : undefined, bufsize_arg: bitrate ? scaleRate(bitrate, VT_BUFSIZE_X) : undefined, quality_arg: DELIVERY === 'hevc_videotoolbox' && VT_QUALITY ? VT_QUALITY : undefined, crf: DELIVERY === 'libx265' ? X265_CRF : undefined, preset: DELIVERY === 'libx265' ? X265_PRESET : undefined, gop: GOP, ...(DELIVERY === 'hevc_vaapi' ? { encoder: DELIVERY, vaapi_device: VAAPI_DEVICE } : {}) };
 }
 
 async function stills() {
@@ -602,7 +605,8 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
     frame_accounting: fa,
     notes: [
       'transfer tag: the delivery is tagged bt709 / bt709 / bt709, tv range (--trc); it can be retagged later with -c copy and hevc_metadata',
-      'HEVC level: left as VideoToolbox writes it (delivery_probe.level); the exporter does not set it',
+      DELIVERY === 'hevc_vaapi' ? 'HEVC level: left as VAAPI writes it (delivery_probe.level); the exporter does not set it'
+        : 'HEVC level: left as VideoToolbox writes it (delivery_probe.level); the exporter does not set it',
       'quality_vs_master pairs frame i with frame i (settb/setpts=N on both inputs); the delivery is read back to RGB with the same player-grade chroma upsampling as the stills',
     ],
   };

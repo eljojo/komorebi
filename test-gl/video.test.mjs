@@ -52,6 +52,30 @@ test('CPU delivery refuses VideoToolbox controls before doing any work', () => {
   }
 });
 
+test('VAAPI delivery uploads NV12 to the render node and uses bounded hardware HEVC', () => {
+  const args = lib.deliveryArgs({ input: ['-i', 'master.mkv'], out: 'delivery.mp4', fps: 60,
+    trc: 'bt709', codec: 'hevc_vaapi', gop: 120 });
+  assert.equal(args[args.indexOf('-c:v') + 1], 'hevc_vaapi');
+  assert.equal(args[args.indexOf('-vaapi_device') + 1], '/dev/dri/renderD128');
+  assert.ok(args.indexOf('-vaapi_device') < args.indexOf('-i'));
+  assert.match(args[args.indexOf('-vf') + 1], /format=nv12,hwupload$/);
+  assert.equal(args[args.indexOf('-profile:v') + 1], 'main');
+  assert.equal(args[args.indexOf('-b:v') + 1], '60M');
+  assert.equal(args[args.indexOf('-maxrate') + 1], '75M');
+  assert.equal(args[args.indexOf('-bufsize') + 1], '120M');
+  assert.equal(lib.estimateDeliveryMbit({ codec: 'hevc_vaapi' }), 75);
+  assert.ok(!args.includes('libx265'));
+});
+
+test('VAAPI delivery refuses VideoToolbox controls instead of silently changing their meaning', () => {
+  for (const flag of ['--vt-quality', '--vt-bitrate']) {
+    const r = exporter(['--look-json', '/missing.json', '--tree', '--out', '/missing-output',
+      '--delivery', 'hevc_vaapi', flag, flag === '--vt-quality' ? '100' : '60M', '--print-ffmpeg']);
+    assert.equal(r.status, 2, r.all);
+    assert.match(r.err, /VideoToolbox/);
+  }
+});
+
 // ---------------------------------------------------------------- the chain under test, fed raw rgba the way the page's readPixels delivers it
 function runChain(chain, frames, w, h, outW, outH) {
   return new Promise((resolve, reject) => {

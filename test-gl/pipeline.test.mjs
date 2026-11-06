@@ -34,6 +34,30 @@ test('browser segments mux native HEVC without a second encode or pixel conversi
   assert.ok(!argv.includes('-vf'));
 });
 
+test('VAAPI direct segments upload NV12 or P010 and select Main8 or Main10 hardware encoding', () => {
+  for (const pipeline of ['gpu', 'gpu-main10']) {
+    const args = lib.directSegmentArgs({ ...base, vtQuality: undefined, codec: 'hevc_vaapi', pipeline, file: 'seg.mp4' });
+    assert.equal(args[args.indexOf('-c:v') + 1], 'hevc_vaapi');
+    assert.equal(args[args.indexOf('-vaapi_device') + 1], '/dev/dri/renderD128');
+    assert.match(args[args.indexOf('-vf') + 1], /^vflip,/);
+    assert.match(args[args.indexOf('-vf') + 1], pipeline === 'gpu' ? /format=nv12,hwupload$/ : /format=p010le,hwupload$/);
+    assert.equal(args[args.indexOf('-profile:v') + 1], pipeline === 'gpu' ? 'main' : 'main10');
+    assert.deepEqual(args.flatMap((arg, i) => arg === '-pix_fmt' ? [args[i + 1]] : []), ['rgba']);
+  }
+});
+
+test('the exporter passes VAAPI to master and direct pipelines and stream-copies direct deliveries', () => {
+  for (const pipeline of ['master', 'gpu', 'gpu-main10']) {
+    const r = spawnSync(process.execPath, ['test-gl/render-video.mjs', '--look-json', '/missing.json', '--tree',
+      '--out', '/missing-output', '--delivery', 'hevc_vaapi', '--pipeline', pipeline, '--print-ffmpeg'], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    const printed = JSON.parse(r.stdout);
+    const encoded = pipeline === 'master' ? printed.delivery : printed.segment;
+    assert.equal(encoded[encoded.indexOf('-c:v') + 1], 'hevc_vaapi');
+    if (pipeline !== 'master') assert.equal(printed.delivery[printed.delivery.indexOf('-c:v') + 1], 'copy');
+  }
+});
+
 test('delivery joins encoded segments without a second lossy encode', () => {
   const argv = lib.directJoinArgs({ input: ['-f', 'concat', '-safe', '0', '-i', 'seg/list.txt'], out: 'delivery.mp4.part', fps: 60 });
   assert.equal(argv[argv.indexOf('-c:v') + 1], 'copy');

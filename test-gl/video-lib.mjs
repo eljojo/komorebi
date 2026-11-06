@@ -168,6 +168,7 @@ export const deliveryFilter = ({ fps, trc }) => `${INDEX_PTS(fps)},scale=out_col
 // hevc_videotoolbox's -b:v is an average. Beside it -maxrate (1.25x) and -bufsize (2x) make a ceiling a projector's own player can count on: 60M gives 75M / 120M,
 // about 2 GB for 5 minutes. -q:v 100 is the explicit choice for the best picture and measured 157 Mbit/s (5.9 GB for 5 minutes) on a lit look.
 export const VT_MAXRATE_X = 1.25, VT_BUFSIZE_X = 2;
+export const VAAPI_DEVICE = '/dev/dri/renderD128', VAAPI_BITRATE = '60M';
 const RATE = /^(\d+(?:\.\d+)?)([kKM]?)$/;
 // ffmpeg reads a lowercase m as milli: -b:v 60m asks for 0.06 bit/s, hevc_videotoolbox answers with its floor instead of an error (4 s of noisy 1080p60: 5-8 MB against 20 MB at 60M),
 // and the manifest and the free-space check would still say 60 Mbit/s
@@ -190,6 +191,7 @@ export function mbitOf(rate) {
 export function estimateDeliveryMbit({ codec, vtQuality, vtBitrate }) {
   if (codec === 'none') return 0;
   if (codec === 'libx265') return 40;
+  if (codec === 'hevc_vaapi') return mbitOf(VAAPI_BITRATE) * VT_MAXRATE_X;
   return vtQuality ? 160 : mbitOf(vtBitrate) * VT_MAXRATE_X;
 }
 // A FAT32 stick holds files up to 4 GiB - 1 byte. The player reads the stick directly, so a delivery over it is a failure found at the projector unless it is said here:
@@ -224,8 +226,13 @@ export function diskPlan({ framesToRender, frames, fps, ow, oh, merge, deliveryM
 
 // input: the ffmpeg input arguments of the master (['-i', file] or the concat demuxer over the segments)
 export function deliveryArgs({ input, out, fps, trc, codec, vtQuality, vtBitrate, crf, preset, gop }) {
-  const common = ['-hide_banner', '-nostats', '-y', ...input, '-an', '-vf', deliveryFilter({ fps, trc }), '-r', String(fps), '-fps_mode', 'cfr'];
-  const enc = codec === 'hevc_videotoolbox'
+  const vaapi = codec === 'hevc_vaapi';
+  const filter = deliveryFilter({ fps, trc });
+  const common = ['-hide_banner', '-nostats', '-y', ...(vaapi ? ['-vaapi_device', VAAPI_DEVICE] : []), ...input, '-an',
+    '-vf', vaapi ? filter.replace('format=yuv420p', 'format=nv12,hwupload') : filter, '-r', String(fps), '-fps_mode', 'cfr'];
+  const enc = vaapi
+    ? ['-c:v', 'hevc_vaapi', '-b:v', VAAPI_BITRATE, '-maxrate', scaleRate(VAAPI_BITRATE, VT_MAXRATE_X), '-bufsize', scaleRate(VAAPI_BITRATE, VT_BUFSIZE_X), '-profile:v', 'main', '-g', String(gop), '-tag:v', 'hvc1']
+    : codec === 'hevc_videotoolbox'
     ? ['-c:v', 'hevc_videotoolbox', ...(vtQuality ? ['-q:v', String(vtQuality)] : ['-b:v', vtBitrate, '-maxrate', scaleRate(vtBitrate, VT_MAXRATE_X), '-bufsize', scaleRate(vtBitrate, VT_BUFSIZE_X)]), '-profile:v', 'main', '-g', String(gop), '-tag:v', 'hvc1']
     : ['-c:v', 'libx265', '-preset', preset, '-crf', String(crf), '-g', String(gop), '-tag:v', 'hvc1', '-x265-params', `keyint=${gop}:min-keyint=${gop}:open-gop=0:log-level=error`];
   // -f mp4: the exporter writes to delivery.mp4.part and renames on success, and a name ending in .part has no muxer of its own
