@@ -506,10 +506,22 @@ async function deliver() {
   const t = Date.now();
   const r = await runFfmpegAsync(args, { onChild: (p) => killers.push(() => p.kill('SIGKILL')) });
   if (r.code !== 0) { rmSync(part, { force: true }); throw new Error(`delivery encode failed: ${r.stderr.slice(-2000)}`); }
+  // VAAPI encodes untagged (deliveryArgs says why); this stream copy makes the hvc1 MP4 Apple's players decode
+  let retag = null;
+  if (!PLAN.direct && DELIVERY === 'hevc_vaapi') {
+    const tagged = P('delivery.hvc1.mp4.part');
+    killers.push(() => rmSync(tagged, { force: true }));
+    retag = directJoinArgs({ input: ['-i', part], out: tagged, fps: FPS });
+    const t2 = await runFfmpegAsync(retag, { onChild: (p) => killers.push(() => p.kill('SIGKILL')) });
+    rmSync(part, { force: true });
+    if (t2.code !== 0) { rmSync(tagged, { force: true }); throw new Error(`delivery hvc1 retag failed: ${t2.stderr.slice(-2000)}`); }
+    renameSync(tagged, part);
+  }
   renameSync(part, P('delivery.mp4'));
   // the command that makes delivery.mp4, as --print-ffmpeg prints it (runnable from the run folder); the .part step and the absolute list it really ran are beside it
   man.delivery_command = [FFMPEG, ...deliveryArgv(segsPresent() ? CONCAT_INPUT('seg/list.txt') : ['-i', 'master.mkv'], 'delivery.mp4')].join(' ');
   man.delivery_command_as_run = [FFMPEG, ...args].join(' ');
+  if (retag) man.delivery_retag_command_as_run = [FFMPEG, ...retag].join(' ');
   const bitrate = DELIVERY === 'hevc_vaapi' ? VAAPI_BITRATE : DELIVERY === 'hevc_videotoolbox' && !VT_QUALITY ? VT_BITRATE : undefined;
   man.delivery = { codec: DELIVERY, written_as: 'delivery.mp4.part, renamed to delivery.mp4 when the encode succeeded', source: segsPresent() ? 'the lossless segments through the concat demuxer (seg/list.txt)' : 'master.mkv', encode_wall_s: (Date.now() - t) / 1000, trc_tag: TRC, bitrate_arg: bitrate, maxrate_arg: bitrate ? scaleRate(bitrate, VT_MAXRATE_X) : undefined, bufsize_arg: bitrate ? scaleRate(bitrate, VT_BUFSIZE_X) : undefined, quality_arg: DELIVERY === 'hevc_videotoolbox' && VT_QUALITY ? VT_QUALITY : undefined, crf: DELIVERY === 'libx265' ? X265_CRF : undefined, preset: DELIVERY === 'libx265' ? X265_PRESET : undefined, gop: GOP, ...(DELIVERY === 'hevc_vaapi' ? { encoder: DELIVERY, vaapi_device: VAAPI_DEVICE } : {}) };
 }
@@ -583,7 +595,7 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
       merged: mergedSha ? { file: 'master.mkv', sha256: mergedSha, how: 'stream copy of the segments' } : null,
     },
     // version: the ffmpeg of THIS invocation (the delivery, the stills, the measure); master_version: the one that made the segments (the key's; each segment's own is in master.segments)
-    ffmpeg: { version: FFMPEG_VERSION, master_version: K.ffmpeg_version ?? null, binary: FFMPEG, segment_command: [FFMPEG, ...(seg0Args ?? segArgs('seg_NNNNN.mkv', SEG_FRAMES))].join(' '), delivery_command: man.delivery_command ?? prev?.ffmpeg?.delivery_command, delivery_command_as_run: man.delivery_command_as_run ?? prev?.ffmpeg?.delivery_command_as_run },
+    ffmpeg: { version: FFMPEG_VERSION, master_version: K.ffmpeg_version ?? null, binary: FFMPEG, segment_command: [FFMPEG, ...(seg0Args ?? segArgs('seg_NNNNN.mkv', SEG_FRAMES))].join(' '), delivery_command: man.delivery_command ?? prev?.ffmpeg?.delivery_command, delivery_command_as_run: man.delivery_command_as_run ?? prev?.ffmpeg?.delivery_command_as_run, ...((man.delivery_retag_command_as_run ?? prev?.ffmpeg?.delivery_retag_command_as_run) ? { delivery_retag_command_as_run: man.delivery_retag_command_as_run ?? prev?.ffmpeg?.delivery_retag_command_as_run } : {}) },
     // invocation: how the run was launched (run-key.json; null where the key predates it), invocation_this_manifest: the run that wrote this file
     invocation: RK.invocation ? { ...RK.invocation, os: RK.body.os } : { argv: null, note: 'run-key.json does not record the rendering invocation (a run from before it did)' },
     invocation_this_manifest: { argv: redactArgv(argv), node: process.version, load: os.loadavg(), os: OSF },

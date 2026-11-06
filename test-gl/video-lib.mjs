@@ -230,8 +230,10 @@ export function deliveryArgs({ input, out, fps, trc, codec, vtQuality, vtBitrate
   const filter = deliveryFilter({ fps, trc });
   const common = ['-hide_banner', '-nostats', '-y', ...(vaapi ? ['-vaapi_device', VAAPI_DEVICE] : []), ...input, '-an',
     '-vf', vaapi ? filter.replace('format=yuv420p', 'format=nv12,hwupload') : filter, '-r', String(fps), '-fps_mode', 'cfr'];
+  // No hvc1 here: written at encode time, its hvcC holds ffmpeg's guessed parameter sets, which Mesa's radeonsi (26.2) does not
+  // encode with, and Apple refuses the file ("Cannot Decode"). A stream copy retagged as hvc1 afterwards (directJoinArgs) plays.
   const enc = vaapi
-    ? ['-c:v', 'hevc_vaapi', '-b:v', VAAPI_BITRATE, '-maxrate', scaleRate(VAAPI_BITRATE, VT_MAXRATE_X), '-bufsize', scaleRate(VAAPI_BITRATE, VT_BUFSIZE_X), '-profile:v', 'main', '-g', String(gop), '-tag:v', 'hvc1']
+    ? ['-c:v', 'hevc_vaapi', '-b:v', VAAPI_BITRATE, '-maxrate', scaleRate(VAAPI_BITRATE, VT_MAXRATE_X), '-bufsize', scaleRate(VAAPI_BITRATE, VT_BUFSIZE_X), '-profile:v', 'main', '-g', String(gop)]
     : codec === 'hevc_videotoolbox'
     ? ['-c:v', 'hevc_videotoolbox', ...(vtQuality ? ['-q:v', String(vtQuality)] : ['-b:v', vtBitrate, '-maxrate', scaleRate(vtBitrate, VT_MAXRATE_X), '-bufsize', scaleRate(vtBitrate, VT_BUFSIZE_X)]), '-profile:v', 'main', '-g', String(gop), '-tag:v', 'hvc1']
     : ['-c:v', 'libx265', '-preset', preset, '-crf', String(crf), '-g', String(gop), '-tag:v', 'hvc1', '-x265-params', `keyint=${gop}:min-keyint=${gop}:open-gop=0:log-level=error`];
