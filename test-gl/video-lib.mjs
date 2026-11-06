@@ -78,8 +78,15 @@ export const GPU_VARIANTS = {
   'shell+enable-gpu': { channel: null, args: ['--enable-gpu', '--force-color-profile=srgb'] },
   'chromium+enable-gpu': { channel: 'chromium', args: ['--enable-gpu', '--force-color-profile=srgb'] },
   'chromium+angle-metal+enable-gpu': { channel: 'chromium', args: ['--use-gl=angle', '--use-angle=metal', '--enable-gpu', '--force-color-profile=srgb'] },
+  'chromium+angle-vulkan+enable-gpu': { channel: 'chromium', args: ['--use-gl=angle', '--use-angle=vulkan', '--enable-gpu', '--force-color-profile=srgb'] },
   swiftshader: { channel: null, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--force-color-profile=srgb'] },
 };
+
+export function assertHardwareRenderer(renderer, variantName) {
+  const backend = GPU_VARIANTS[variantName]?.args.includes('--use-angle=vulkan') ? 'Vulkan' : 'Metal';
+  if (!new RegExp(backend, 'i').test(renderer) || /swiftshader|llvmpipe|lavapipe|softpipe|software/i.test(renderer))
+    throw new Error(`renderer is not hardware ${backend}: ${renderer}`);
+}
 
 export async function launchBrowser(chromium, variantName) {
   const v = GPU_VARIANTS[variantName];

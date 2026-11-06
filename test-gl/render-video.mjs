@@ -1,4 +1,5 @@
 // The headless GPU video exporter: one look -> frame-stepped Metal render in Chromium -> raw frames over a local POST -> ffmpeg.
+// Linux uses --chrome chromium+angle-vulkan+enable-gpu with --delivery libx265 (or none for stills); software renderers are refused.
 //   node test-gl/render-video.mjs (--look-json <look.json> | --arboretum <id>[@<version>][:<share_token>]) (--commit <sha> | --tree) --out <dir> [options]
 //   nix run .#video -- <the same>     from the repo root, under caffeinate (a render of an hour must not idle-sleep).  --help  prints this.
 //   N minutes of an arboretum preset for the projector:   nix run .#video -- --arboretum <id> --commit <sha> --out test-gl/out/video/<name> --seconds 300
@@ -58,7 +59,7 @@ import os from 'node:os';
 import { directDiskPlan, directJoinArgs, directSegmentArgs, pipelinePlan } from './pipeline.mjs';
 import { captureCanvasRun, encodeCanvasRun, hevcQuantizerConfig, installLinearDownscale } from './webcodecs.mjs';
 import {
-  ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VT_BUFSIZE_X, VT_MAXRATE_X, assertServedPage, browserFacts, canonicalJson, canonicalSha256, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
+  ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
   diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, ffmpegVersion, ffprobeJson, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, pipeRequestTo, qualityReport,
   redactArgv, runBaseline, runFfmpegAsync, runMeasure, scaleRate, sha256, sha256File, spawnFfmpeg, startServer, stepMsFor,
 } from './video-lib.mjs';
@@ -114,6 +115,7 @@ if (!Number.isInteger(SS) || SS < 1 || SS > 4) die('--ss must be an integer 1..4
 if (!['linear', 'gamma'].includes(SS_SPACE)) die('--ss-space linear|gamma');
 if (!['ffv1', 'x264rgb'].includes(MASTER)) die('--master ffv1|x264rgb');
 if (!['hevc_videotoolbox', 'libx265', 'none'].includes(DELIVERY)) die('--delivery hevc_videotoolbox|libx265|none');
+if (DELIVERY === 'libx265' && (has('--vt-bitrate') || has('--vt-quality'))) die('VideoToolbox delivery controls cannot be used with libx265');
 try { scaleRate(VT_BITRATE, 1); } catch (e) { die(`--vt-bitrate: ${e.message}`); }
 if (!GPU_VARIANTS[CHROME]) die(`--chrome ${CHROME}: not one of ${Object.keys(GPU_VARIANTS).join(', ')}`);
 const DISCARD = has('--discard-master');
@@ -122,7 +124,7 @@ let PLAN;
 try { PLAN = pipelinePlan({ pipeline: PIPELINE, ow: OW, oh: OH, ss: SS, space: SS_SPACE }); } catch (e) { die(e.message); }
 if (PLAN.direct) {
   for (const f of ['--measure', '--stills', '--encode-only', '--merge-master', '--drop-segments']) if (has(f)) die(`--pipeline ${PIPELINE} and ${f} are incompatible: direct pipelines have no lossless master`);
-  if (DELIVERY !== 'hevc_videotoolbox' || TRC !== 'bt709') die(`--pipeline ${PIPELINE} requires HEVC and SDR bt709`);
+  if (DELIVERY !== 'hevc_videotoolbox' || TRC !== 'bt709') die(`--pipeline ${PIPELINE} requires --delivery hevc_videotoolbox and SDR bt709`);
   if (PIPELINE === 'browser' && (has('--vt-quality') || has('--vt-bitrate'))) die('--pipeline browser uses native HEVC QP1, not VideoToolbox delivery controls');
 }
 if (has('--drop-segments') && !MERGE) die('--drop-segments needs --merge-master: without it the segments ARE the master');
@@ -393,7 +395,7 @@ async function renderAll(firstTodo) {
         const openInfo = await openSession(at, state);
         await recordSession(session, openInfo, i);
         log(`browser up: ${openInfo.renderer}; canvas ${openInfo.canvas} drawingBuffer ${openInfo.drawingBuffer}; bake ${openInfo.bakeRes} samples ${openInfo.samples}`);
-        if (!/metal/i.test(openInfo.renderer) || /swiftshader/i.test(openInfo.renderer)) throw new Error(`renderer is not Metal: ${openInfo.renderer}`);
+        assertHardwareRenderer(openInfo.renderer, CHROME);
       }
       const file = segFile(i);
       ff = spawnFfmpeg(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file }) : segArgs(file, frames));

@@ -144,6 +144,12 @@ Main10 had the best measured source fidelity and roughly twice the file size. Th
 before server segment integration; use actual job timing rather than assuming those gains on another machine.
 The [render server](https://github.com/eljojo/komorebi-render) exposes these as the job's `pipeline` field.
 
+On Linux with an AMD GPU, use `--chrome chromium+angle-vulkan+enable-gpu --delivery libx265` with the default master
+pipeline. Rendering uses the GPU; HEVC encoding uses the CPU. `--delivery none --stills 0` captures a still without a video
+delivery. Mesa's Vulkan driver and access to `/dev/dri/renderD*` are required; software renderers are refused. On NixOS,
+use patched Chromium with the same Playwright version as `test-gl/package.json`; komorebi-render's Linux Nix package
+provides that environment. Direct pipelines and VideoToolbox delivery controls remain Mac-only.
+
 ## Develop
 
 ES‑module dev needs http (not `file://`). With Nix:

@@ -23,6 +23,35 @@ import { CONCAT_INPUT, FFMPEG, HERE, PLAYER_RGB, concatListText, deliveryArgs, d
 const W = 3840, H = 2160;   // the render size of a 1080p ss-2 export
 const FIXTURES = ['ultraviolet', 'cherry'].map((l) => join(HERE, 'out', 'video', 'chain-fixtures', l, 'master.mkv'));
 
+test('the Linux browser uses ANGLE Vulkan with hardware acceleration enabled', async () => {
+  const variant = lib.GPU_VARIANTS['chromium+angle-vulkan+enable-gpu'];
+  assert.equal(variant?.channel, 'chromium');
+  assert.ok(variant.args.includes('--enable-gpu'));
+  assert.ok(variant.args.includes('--use-angle=vulkan'));
+});
+
+test('export renders accept hardware Vulkan and Metal while refusing software renderers', () => {
+  const vulkan = 'chromium+angle-vulkan+enable-gpu';
+  lib.assertHardwareRenderer('ANGLE (AMD, Vulkan 1.4 (AMD Radeon RX 6800 XT (RADV NAVI21)), radv)', vulkan);
+  lib.assertHardwareRenderer('ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)', 'shell+angle-metal');
+  for (const renderer of [
+    'ANGLE (Google, Vulkan (SwiftShader Device), SwiftShader driver)',
+    'ANGLE (Mesa, Vulkan (llvmpipe), Mesa)',
+    'ANGLE (Mesa, Vulkan (lavapipe), Mesa)',
+    'ANGLE (AMD, OpenGL 4.6, Radeon)',
+  ]) assert.throws(() => lib.assertHardwareRenderer(renderer, vulkan), /hardware Vulkan/);
+  assert.throws(() => lib.assertHardwareRenderer('ANGLE (AMD, Vulkan, Radeon)', 'shell+angle-metal'), /hardware Metal/);
+});
+
+test('CPU delivery refuses VideoToolbox controls before doing any work', () => {
+  for (const flag of ['--vt-quality', '--vt-bitrate']) {
+    const r = exporter(['--look-json', '/missing.json', '--tree', '--out', '/missing-output',
+      '--delivery', 'libx265', flag, flag === '--vt-quality' ? '100' : '60M', '--print-ffmpeg']);
+    assert.equal(r.status, 2, r.all);
+    assert.match(r.err, /VideoToolbox.*libx265|libx265.*VideoToolbox/);
+  }
+});
+
 // ---------------------------------------------------------------- the chain under test, fed raw rgba the way the page's readPixels delivers it
 function runChain(chain, frames, w, h, outW, outH) {
   return new Promise((resolve, reject) => {
