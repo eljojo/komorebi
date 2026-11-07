@@ -14,6 +14,7 @@ import { makeSceneFade } from './komorebi-scene-fade.js';
 import { makeLeafTravel } from './komorebi-leaf-travel.js';
 import { makeSeasonTravel } from './komorebi-season-travel.js';
 import { makeLitterRise } from './komorebi-litter-rise.js';
+import { makeGroveTravel } from './komorebi-grove-travel.js';
 
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
@@ -426,7 +427,7 @@ function createEngine(canvas, opts, driven=false){
   function copyMotion(from,to){
     for(const k in from.motion)to.motion[k]=Array.isArray(from.motion[k])?[...from.motion[k]]:from.motion[k];
     if(from.hier.topoSig===to.hier.topoSig){
-      for(const k of ['limbAngle','limbVel','limbPitch','limbPitchVel','twigAngle','twigVel'])to.hier[k].set(from.hier[k]);
+      for(const k of ['limbAngle','limbVel','limbPitch','limbPitchVel','twigAngle','twigVel'])to.hier[k].set(from.hier[k].subarray(0,to.hier[k].length));
       to.hier.maxV=from.hier.maxV;
     }
     if(to.params.drift_auto)to.params.drift_phase=from.params.drift_phase;
@@ -476,6 +477,13 @@ function createEngine(canvas, opts, driven=false){
   }
   Object.assign(hub,makeLeafTravel(hub,retainTravelSource));
   Object.assign(hub,makeSeasonTravel(hub));
+  Object.assign(hub,makeGroveTravel(hub,createScene,(scene,look)=>{
+    const phase=params.drift_phase;
+    for(const k in DEFAULTS)params[k]=look[k];
+    if(scene.hub===hub){if(params.drift_auto)params.drift_phase=phase;}
+    else{rebuildAll();copyMotion(scene.hub,hub);}
+    resetPerf();bake();
+  }));
   Object.assign(hub,makeLitterRise(hub,(look)=>{
     const source=createScene(look);
     source.hub.perf.auto=perf.auto;source.hub.perf.quality=perf.quality;
@@ -596,6 +604,7 @@ function createEngine(canvas, opts, driven=false){
       if(trans.leafTravel){hub.endLeafTravel();trans.leafTravel=false;}
       if(trans.seasonTravel){hub.endSeasonTravel();trans.seasonTravel=false;}
       if(trans.litterRise){hub.endLitterRise();trans.litterRise=false;}
+      if(trans.groveTravel){hub.endGroveTravel();trans.groveTravel=false;}
       trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0;
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
@@ -634,6 +643,7 @@ function createEngine(canvas, opts, driven=false){
       hub.endLeafTravel();
       hub.endSeasonTravel();
       hub.endLitterRise();
+      hub.endGroveTravel();
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       [progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
@@ -730,11 +740,12 @@ function createEngine(canvas, opts, driven=false){
     const dt = dtms/1000;
     let landed = null;                               // the route's onEnd, when it lands this frame
     if(trans.active){                                // a running transition owns the re-source/re-bake each frame
-      if(motionActive()) tick(dt);                   // keep wind alive; the morph re-asserts drift_phase right after
+      if(!trans.groveTravel&&motionActive()) tick(dt); // a grove journey advances both native wind states itself
       if(trans.sceneFade && motionActive()) bake();
       landed = tickTransition(dt);
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
-    if(trans.litterRise)hub.timed('transport',hub.drawLitterRise);
+    if(trans.groveTravel)hub.timed('transport',hub.drawGroveTravel);
+    else if(trans.litterRise)hub.timed('transport',hub.drawLitterRise);
     else if(trans.seasonTravel)hub.timed('transport',hub.drawSeasonTravel);
     else if(trans.leafTravel)hub.timed('transport',hub.drawLeafTravel);
     else if(trans.sceneFade) hub.timed('transport',hub.drawSceneFade);
@@ -759,6 +770,8 @@ function createEngine(canvas, opts, driven=false){
     if(seasonPending){trans.to=seasonPending.to;trans.onEnd=seasonPending.opts?.onEnd??null;}
     const risePending=hub.endLitterRise();
     if(risePending){trans.to=risePending.to;trans.onEnd=risePending.opts?.onEnd??null;}
+    const grovePending=hub.endGroveTravel();
+    if(grovePending){trans.to=grovePending.to;trans.onEnd=grovePending.opts?.onEnd??null;}
   }
   function onContextRestored(){
     if(!alive) return;
@@ -773,7 +786,7 @@ function createEngine(canvas, opts, driven=false){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = trans.active ? trans.onEnd : null;
-    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
+    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.groveTravel=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
     rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)
