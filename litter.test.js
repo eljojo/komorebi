@@ -216,6 +216,14 @@ test("TAU_BROWN round-trips: age ≥ 1 is ALBEDO_BROWN to the bit (the branch), 
   }
 });
 
+test('a travelling floor mark carries its interpolated endpoint reflectance without repainting ordinary litter',()=>{
+  const P=fall({phenology:.9,leaf_wetness:.7}),rgb=[.23,.12,.06],l=leaf({flight:{x:0,y:0,rot:0,albedo:rgb}});
+  const frame={ox:-5,oy:-5,ext:10},stamp=L.litterInstances([l],P,frame,false).data;
+  expect(Array.from(stamp.slice(8,11))).toEqual(Array.from(Float32Array.from(rgb)));
+  const plain={...l,flight:{x:0,y:0,rot:0}},ordinary=L.litterInstances([plain],P,frame,false).data;
+  expect(Array.from(ordinary.slice(8,11))).toEqual(Array.from(Float32Array.from(L.litterAlbedo(l.tau,L.litterAge(P,l.D),P.leaf_wetness))));
+});
+
 test("litterAlbedo is a reflectance: R ∈ [F_w, 1], a white scatterer at τ = 0, strictly darker with every channel's τ", () => {
   expect(L.litterAlbedo([0, 0, 0], 0, 0)).toEqual([1, 1, 1]);
   const rnd = math.mulberry32(5);

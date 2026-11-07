@@ -1,6 +1,7 @@
 import {test,expect} from 'bun:test';
 import {PRESETS} from './presets.js';
 import * as travel from './komorebi-season-travel.js';
+import {cameraPose} from './komorebi-math.js';
 
 test('seasonal leaf journeys are monotone, staggered and settle at their own endpoints',()=>{
   expect(typeof travel.flightProgress).toBe('function');
@@ -36,5 +37,30 @@ test('season travel requires a shared standing grove with a carpet at one end an
   for(const change of [{seed:1},{branch_angle_deg:20},{leaf_variety:.9},{standing_scene:false},{faithful_canopy:false},
     {sky_view:true},{receiver:1},{sun_elevation_deg:45},{tone_map:0},{foliage_density:100},{leaf_drop:.2},{litter:1}]){
     expect(travel.seasonTravelEligible(a,{...b,...change}),JSON.stringify(change)).toBe(false);
+  }
+});
+
+test('fall looks with litter at both ends travel through their shared standing grove',()=>{
+  for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['montebello, rain'],PRESETS['cherry blossom']]]){
+    expect(travel.seasonTravelEligible(a,b)).toBe(true);
+    expect(travel.seasonTravelEligible(b,a)).toBe(true);
+    for(const change of [{seed:1},{leaf_shape:'maple'},{branch_tau:0},{sun_azimuth_deg:120},{tone_map:0},{wind_strength:2}]){
+      expect(travel.seasonTravelEligible(a,{...b,...change}),JSON.stringify(change)).toBe(false);
+    }
+  }
+});
+
+test('montebello ↔ park fall moves directly between camera eyes without an outward-and-back detour',()=>{
+  for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['park fall'],PRESETS.montebello]]){
+    const aa=cameraPose(a).eye,bb=cameraPose(b).eye;let previous=aa;
+    for(let i=0;i<=600;i++){
+      const w=i/600,eye=cameraPose({...a,...travel.seasonCamera(a,b,w)}).eye;
+      for(let k=0;k<3;k++){
+        expect(eye[k]).toBeCloseTo(aa[k]+(bb[k]-aa[k])*w,10);
+        expect((eye[k]-previous[k])*(bb[k]-aa[k])).toBeGreaterThanOrEqual(-1e-12);
+      }
+      previous=eye;
+    }
+    expect(Math.abs(travel.seasonCamera(a,b,.999).view_yaw_deg-a.view_yaw_deg)).toBeLessThan(10.31);
   }
 });

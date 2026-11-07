@@ -110,6 +110,22 @@ test('cherry blossom ↔ park 2 follows one seasonal grove without a scene disso
   }
 });
 
+test('montebello ↔ park fall and rain ↔ cherry route to leaf travel instead of an ordinary grove morph',()=>{
+  for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['montebello, rain'],PRESETS['cherry blossom']]]){
+    for(const [from,to] of [[a,b],[b,a]]){
+      const r=transitionRig(from);let began=0;
+      r.hub.beginSeasonTravel=()=>began++;
+      r.transitionTo(to);
+      expect(r.hub.trans.seasonTravel).toBe(true);
+      expect(r.hub.trans.canopyMorph).toBe(false);
+      expect(r.hub.trans.sceneFade).toBe(false);
+      expect(r.hub.trans.bloomMax).toBe(0);
+      expect(r.hub.trans.durScale).toBe(2);
+      expect(began).toBe(1);expect(r.swaps).toHaveLength(0);
+    }
+  }
+});
+
 test("a shared grove turns continuously between sky and floor without a midpoint rebuild", () => {
   for(const sky of [true,false]) {
     const from={...DEFAULTS,sky_view:sky,faithful_canopy:false,standing_scene:true,branch_tau:0,canopy_fill:0,litter:0,

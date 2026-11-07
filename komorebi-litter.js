@@ -113,7 +113,8 @@ function litterInstances(list, P, frame, wrap, minHalf = 0){
       if(x - reach < ox) xs.push(ext); if(x + reach > ox + ext) xs.push(-ext);
       if(y - reach < oy) ys.push(ext); if(y + reach > oy + ext) ys.push(-ext);
     } else if(x + reach < ox || x - reach > ox + ext || y + reach < oy || y - reach > oy + ext) continue;
-    litterAlbedo(l.tau, litterAge(P, l.D), P.leaf_wetness, rgb);
+    if(l.flight?.albedo){ for(let c=0;c<3;c++) rgb[c]=l.flight.albedo[c]; }
+    else litterAlbedo(l.tau, litterAge(P, l.D), P.leaf_wetness, rgb);
     const c = Math.cos(land.rot), s = Math.sin(land.rot);
     for(const dx of xs) for(const dy of ys) buf.push(x + dx, y + dy, A, B, c, s, l.fade, shape ? (l.row ?? leafVariant(P.seed, l.j, l.k)) : 0, rgb[0], rgb[1], rgb[2], 0);
   }

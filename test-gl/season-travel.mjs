@@ -28,6 +28,47 @@ try{
     const diff=(a,b)=>a.reduce((m,x,i)=>Math.max(m,Math.abs(x-b[i])),0);
     function pump(n){for(let i=0;i<n;i++){stamp+=step;window.__clock.pump(stamp);}}
     function open(p){e?.dispose();c?.remove();window.__clock.drain();window.__clock.set(0);stamp=0;c=document.createElement('canvas');document.body.appendChild(c);e=create(c,{params:p});e.onFrame=()=>{const g=e.gl;last=new Uint8Array(320*180*4);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,320,180,g.RGBA,g.UNSIGNED_BYTE,last);const error=g.getError();need(!error,`WebGL ${error}`);};pump(1);}
+    const {cameraPose,smoothstep}=await import('/komorebi-math.js');
+    const tune={tree_count:1,branch_levels:2,branch_children:2,limb_count:4,leaves_per_cluster:6,
+      sample_count:5,tex_resolution:256,bake_resolution:128,fill_directions:4,fill_resolution:64,litter_resolution:256,
+      wind_strength:0,drift_auto:false,auto_quality:false,adaptive_motion:false};
+    const journey=()=>{
+      const g=e.gl,vao=g.getParameter(g.VERTEX_ARRAY_BINDING);g.bindVertexArray(e.faith.vao);
+      const buf=g.getVertexAttrib(7,g.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING);g.bindVertexArray(vao);
+      need(buf,'the travelling leaf attribute is absent');const data=new Float32Array(e.faith.count*4);
+      g.bindBuffer(g.ARRAY_BUFFER,buf);g.getBufferSubData(g.ARRAY_BUFFER,0,data);return data;
+    };
+    for(const [an,bn] of [['montebello','park fall'],['montebello, rain','cherry blossom']]){
+      for(const [fromName,toName] of [[an,bn],[bn,an]]){
+        const from={...PRESETS[fromName],...tune},to={...PRESETS[toName],...tune},id=l=>`${l.j}/${l.k}`;
+        open(from);const first=last.slice(),floorA=new Set(e.grove().litter.map(id));
+        open(to);const final=last.slice(),floorB=new Set(e.grove().litter.map(id));
+        open(from);e.transitionTo(to,{duration:1});need(e.trans.seasonTravel,`${fromName} -> ${toName} used an ordinary grove morph`);
+        window.__clock.pump(stamp);const sourceDelta=diff(first,last);need(sourceDelta<=1,`two-carpet source changed: ${sourceDelta}`);
+        const S=e.grove().season,aa=cameraPose(from).eye,bb=cameraPose(to).eye;let previous=journey(),shared=0,moving=0;
+        for(let i=0;i<S.n;i++){const k=`${S.rec[i*11+6]}/${S.rec[i*11+7]}`;if(floorA.has(k)&&floorB.has(k))shared++;if(floorA.has(k)!==floorB.has(k))moving++;}
+        need(shared>0&&moving>0,'the fixture needs grounded and travelling leaves');
+        for(let frame=0;frame<120;frame++){
+          pump(1);need(e.trans.active,'the travelling endpoint must still be available');const data=journey();
+          for(let i=0;i<S.n;i++){
+            const k=`${S.rec[i*11+6]}/${S.rec[i*11+7]}`,a=floorA.has(k),b=floorB.has(k),v=data[i*4+3];
+            if(a&&b)need(v===0,'a shared carpet leaf lifted and would fall back');
+            if(a&&!b)need(v>=previous[i*4+3],'a rising leaf reversed');
+            if(!a&&b)need(v<=previous[i*4+3],'a falling leaf reversed');
+          }
+          const eye=cameraPose(e.params).eye,w=smoothstep(0,1,e.trans.t);
+          for(let k=0;k<3;k++)need(Math.abs(eye[k]-(aa[k]+(bb[k]-aa[k])*w))<1e-9,'the camera took an outward-and-back detour');
+          previous=data;
+        }
+        const landingDelta=diff(final,last);need(landingDelta<=1,`two-carpet landing jumped: ${landingDelta}`);
+        pump(1);need(!e.trans.active&&diff(final,last)===0,'two-carpet native endpoint');
+        open(from);e.transitionTo(to,{duration:1});pump(60);const before=last.slice();
+        e.transitionTo(from,{duration:1});window.__clock.pump(stamp);const reversalDelta=diff(before,last);
+        need(reversalDelta===0,`two-carpet reversal changed the displayed frame: ${reversalDelta}`);
+        while(e.trans.active)pump(1);need(diff(first,last)===0,'two-carpet reversal did not restore the source');
+        results.push({from:fromName,to:toName,shared,moving,sourceDelta,landingDelta,reversalDelta});
+      }
+    }
     open(A);const nativeA=last.slice();open(B);const nativeB=last.slice();
     const edgeFailures=[],edge=(ok,msg)=>{if(!ok)edgeFailures.push(msg);};
     const windA={...A,wind_strength:1,weather_variability:0,drift_auto:true},windB={...B,wind_strength:1,weather_variability:0,drift_auto:true};
