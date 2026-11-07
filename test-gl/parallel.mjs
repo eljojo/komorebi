@@ -5,6 +5,8 @@
 // state arrives in-session from the segment before; here a tiny 64x36 engine (video.html cheapPreroll: the CPU half of the engine does not know the GPU exists) integrates the
 // whole timeline first and writes the state at every start the todo segments need, as the same ckpt/ckpt_<pump>.json files the serial path reads.
 
+import { isDeepStrictEqual } from 'node:util';
+
 // What the tiny engine overrides (video.html's cheapPreroll applies the same three to the look). Every playlist event's params must carry them too: with the look's own sizes
 // transitionTo would see a structural difference against the tiny engine's current params and take the cloud-dissolve route instead of the morph.
 export const TINY_QUALITY = { bake_resolution: 256, tex_resolution: 256, sample_count: 8 };
@@ -53,34 +55,74 @@ export function tinyPlan({ todo, segRange, schedule, preroll }) {
 // the events a tiny pass applies: every fade that starts after the pre-roll and at or before upTo
 export const eventsUpTo = (events, upTo, preroll) => events.filter((e) => e.start > preroll && e.start <= upTo);
 
+// The self-check: a checkpoint file `ckpt` that the tiny pass wrote ("tiny": true) against the full-size engine's state at the same pump. 'checked' = equal; 'mismatch' = the segment that starts
+// there was rendered from a state a serial render would not have had; 'existing' = a file a serial render wrote (nothing to check against).
+export const checkAgainstTiny = (ckpt, state) => (!ckpt.tiny ? 'existing' : isDeepStrictEqual(ckpt.state, state) ? 'checked' : 'mismatch');
+
+// ---- blocks ----
+// A session renders CONSECUTIVE segments in one engine, the way the serial path does: only the first segment of a block starts from a restored (tiny-pass) state, every later one from
+// the engine's own end state. Nothing is carried between NON-consecutive segments (hidden engine state would make the output depend on a session's history).
+// GUIDED SIZE: a claim takes K = clamp(ceil(remaining / (2 * jobs)), 1, maxBlock) segments, `remaining` counting every segment not yet claimed. Early claims are as large as maxBlock
+// allows (one browser launch and engine build amortised over K segments); as the pool drains K falls to 1, so the last sessions are not left holding long tails while others idle.
+// The factor 2 aims at about two claims per session in the shrinking phase. maxBlock 1 is one segment per claim: the per-segment behaviour.
+export const MIN_BLOCK = 1, MAX_BLOCK = 64, DEFAULT_BLOCK = 4;
+export function parseBlockSegments(raw) {
+  if (raw === undefined) return DEFAULT_BLOCK;
+  const n = Number(raw);
+  if (!/^\d+$/.test(String(raw)) || n < MIN_BLOCK || n > MAX_BLOCK) throw new Error(`--block-segments ${raw}: expected a whole number from ${MIN_BLOCK} to ${MAX_BLOCK} (segments one browser session renders in a row; the default is ${DEFAULT_BLOCK}, 1 is a session per segment)`);
+  return n;
+}
+export const blockSize = ({ remaining, jobs, maxBlock }) => Math.min(maxBlock, Math.max(1, Math.ceil(remaining / (2 * jobs))));
+// Takes the next block off the front of `unclaimed` (ascending): up to K segments, each the next by index; a hole in the indices ends the block.
+export function takeBlock(unclaimed, { jobs, maxBlock }) {
+  const k = blockSize({ remaining: unclaimed.length, jobs, maxBlock });
+  let n = 1;
+  while (n < k && n < unclaimed.length && unclaimed[n] === unclaimed[n - 1] + 1) n++;
+  return unclaimed.splice(0, n);
+}
+
 // ---- the pool ----
-// Up to `jobs` workers, each claiming the next unrendered segment from one ascending cursor (so the claim order is the segment order, whatever each takes: the segments left after a
-// crash are then mostly a prefix with a few holes). runSegment({ worker, segment, attempt }) renders and commits ONE segment and throws if it cannot; a throw with .fatal stops the
-// run (no more claims; segments in flight finish and commit, since they are good). Any other throw is retried by the SAME worker, up to maxAttempts, after onFailure({ worker, segment,
-// attempt, error }) has torn down what that attempt owned; a segment that fails maxAttempts times stops the run likewise and its message is the run's. A failure belongs to its
-// segment and its session: the other workers carry on.
-export async function runPool({ segments, jobs, maxAttempts, runSegment, onFailure = async () => {} }) {
-  const queue = [...segments];
-  let cursor = 0, stopped = false;
-  const completed = [], attempts = new Map(), failures = [];
+// Up to `jobs` workers, each claiming a BLOCK (takeBlock) from one ascending list, so the claim order is the segment order whatever each takes (the segments left after a crash are then
+// mostly a prefix with a few holes). onBlock({ worker, block }) is called at the claim, onBlockEnd({ worker, block }) when the worker is done with it, however it ended (close the session there).
+// runSegment({ worker, segment, attempt, index, block, fresh }) renders and commits ONE segment and throws if it cannot. `fresh` is true when the session must be (re)opened on the segment's
+// own start state: the block's first segment, and every retry; false when the worker's engine is still at the segment's start from the one before. A throw with .fatal stops the run (no more
+// claims; segments in flight finish and commit, since they are good). Any other throw is retried by the SAME worker, fresh, up to maxAttempts, after onFailure({ worker, segment, attempt,
+// error }) has torn down what that attempt owned. A segment that fails maxAttempts times is a failed segment: the segments the worker had already committed stay committed, the rest of its
+// block goes back to the pool for a fresh session to claim, the other workers carry on, and the run rejects at the end with the failed segment's message.
+export async function runPool({ segments, jobs, maxAttempts, maxBlock = 1, runSegment, onBlock = async () => {}, onBlockEnd = async () => {}, onFailure = async () => {} }) {
+  const unclaimed = [...segments].sort((a, b) => a - b);
+  let stopped = false;
+  const completed = [], attempts = new Map(), failures = [], blocks = [];
+  const release = (rest) => { unclaimed.push(...rest); unclaimed.sort((a, b) => a - b); };
   const worker = async (w) => {
-    while (!stopped && cursor < queue.length) {
-      const segment = queue[cursor++];
-      for (let attempt = 1; ; attempt++) {
-        attempts.set(segment, attempt);
-        try { await runSegment({ worker: w, segment, attempt }); completed.push(segment); break; }
-        catch (error) {
-          await onFailure({ worker: w, segment, attempt, error });
-          if (error?.fatal || attempt >= maxAttempts) { stopped = true; failures.push({ segment, error }); return; }
+    while (!stopped && unclaimed.length) {
+      const block = takeBlock(unclaimed, { jobs, maxBlock });
+      blocks.push({ worker: w, block: [...block] });
+      await onBlock({ worker: w, block });
+      try {
+        for (let index = 0; index < block.length; index++) {
+          if (stopped) break;   // a fatal error elsewhere: the segments already committed stay, no more are started
+          const segment = block[index];
+          let ok = false, retry = false;
+          for (let attempt = 1; ; attempt++) {
+            attempts.set(segment, attempt);
+            try { await runSegment({ worker: w, segment, attempt, index, block, fresh: index === 0 || retry }); completed.push(segment); ok = true; break; }
+            catch (error) {
+              retry = true;
+              await onFailure({ worker: w, segment, attempt, error });
+              if (error?.fatal || attempt >= maxAttempts) { if (error?.fatal) stopped = true; failures.push({ segment, error }); break; }
+            }
+          }
+          if (!ok) { if (!stopped) release(block.slice(index + 1)); break; }   // the worker itself carries on: a fresh block, a fresh session
         }
-      }
+      } finally { await onBlockEnd({ worker: w, block }); }
     }
   };
-  await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs, queue.length || 1)) }, (_, w) => worker(w + 1)));
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(jobs, unclaimed.length || 1)) }, (_, w) => worker(w + 1)));
   if (failures.length) {
     // fatal first (it is not about one segment), then the lowest segment: the same error whatever the timing
     failures.sort((a, b) => (Boolean(b.error?.fatal) - Boolean(a.error?.fatal)) || a.segment - b.segment);
     throw failures[0].error;
   }
-  return { completed, attempts };
+  return { completed, attempts, blocks };
 }

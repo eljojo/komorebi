@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { compareRuns } from './compare-runs.mjs';
-import { MAX_JOBS, TINY_QUALITY, eventsUpTo, parseJobs, restorePoint, runPool, tinyEvents, tinyPlan, todoSegments } from './parallel.mjs';
+import { DEFAULT_BLOCK, MAX_JOBS, TINY_QUALITY, blockSize, checkAgainstTiny, eventsUpTo, parseBlockSegments, parseJobs, restorePoint, runPool, takeBlock, tinyEvents, tinyPlan, todoSegments } from './parallel.mjs';
 import { HERE, playlistSchedule } from './video-lib.mjs';
 
 const tick = (ms = 1) => new Promise((r) => setTimeout(r, ms));
@@ -102,7 +102,7 @@ test('the exporter hands the tiny pass its events through tinyEvents, and runs t
   const src = readFileSync(join(HERE, 'render-video.mjs'), 'utf8');
   assert.match(src, /events: tinyEvents\(eventsUpTo\(PL_EVENTS, plan\.upTo, PREROLL\)\)/);
   assert.match(src, /await \(JOBS > 1 \? renderParallel\(\) : renderAll\(firstTodo\)\)/);
-  assert.doesNotMatch(src.slice(src.indexOf('const runKeyBody'), src.indexOf('if (has(\'--restart\')')), /JOBS|jobs/, 'the run key body does not mention jobs');
+  assert.doesNotMatch(src.slice(src.indexOf('const runKeyBody'), src.indexOf('if (has(\'--restart\')')), /JOBS|jobs|BLOCK_SEGMENTS|block_segments|blockSegments/, 'the run key body mentions neither jobs nor block size');
 });
 
 // ---------------------------------------------------------------- the pool
@@ -152,23 +152,23 @@ test('runPool: a segment that fails once is retried by the same worker, onFailur
   assert.equal(r.attempts.get(1), 2);
 });
 
-test('runPool: a segment failing maxAttempts times fails the run with ITS message, after exactly maxAttempts tries, and no further segment is claimed', async () => {
-  const tries = new Map(), claimed = [];
+test('runPool: a segment failing maxAttempts times is tried exactly maxAttempts times, the other segments still render, and the run rejects at the end with ITS message', async () => {
+  const tries = new Map(), done = [];
   await assert.rejects(runPool({
     segments: [0, 1, 2, 3, 4, 5], jobs: 1, maxAttempts: 3,
-    runSegment: async ({ segment }) => { claimed.push(segment); tries.set(segment, (tries.get(segment) ?? 0) + 1); if (segment === 2) throw new Error('segment 2 exploded'); },
+    runSegment: async ({ segment }) => { tries.set(segment, (tries.get(segment) ?? 0) + 1); if (segment === 2) throw new Error('segment 2 exploded'); done.push(segment); },
   }), /segment 2 exploded/);
   assert.equal(tries.get(2), 3);
-  assert.deepEqual([...new Set(claimed)], [0, 1, 2], 'nothing after the failed segment is started');
+  assert.deepEqual(done, [0, 1, 3, 4, 5], 'a bad segment costs the run its success, not the others their work (a rerun then redoes only the hole)');
 });
 
-test('runPool: a failed segment does not stop the segments in flight in other sessions: they finish, and the run still fails with the failed one\'s message', async () => {
+test('runPool: a failed segment does not stop the segments in flight in other sessions, and its worker goes on to claim more; the run rejects with the failed one\'s message', async () => {
   const finished = [];
   await assert.rejects(runPool({
     segments: [0, 1, 2, 3], jobs: 3, maxAttempts: 2,
     runSegment: async ({ segment }) => { if (segment === 0) throw new Error('bad browser'); await tick(15); finished.push(segment); },
   }), /bad browser/);
-  assert.deepEqual(finished.sort(), [1, 2], 'segments 1 and 2 were in flight and finished; 3 was never claimed');
+  assert.deepEqual(finished.sort(), [1, 2, 3]);
 });
 
 test('runPool: a session that fails (its browser dies) does not stop the others from taking the rest of the segments', async () => {
@@ -209,6 +209,177 @@ test('runPool: no segments is a no-op', async () => {
   assert.deepEqual(r.completed, []);
 });
 
+// ---------------------------------------------------------------- blocks
+test('parseBlockSegments: absent is the default 4; a whole number 1..64 is itself; everything else is refused with the range', () => {
+  assert.equal(parseBlockSegments(undefined), DEFAULT_BLOCK);
+  assert.equal(DEFAULT_BLOCK, 4);
+  for (const n of [1, 4, 64]) assert.equal(parseBlockSegments(String(n)), n);
+  for (const bad of ['0', '65', '-1', '1.5', 'x', '', '2x']) assert.throws(() => parseBlockSegments(bad), /--block-segments .*1 to 64/, `'${bad}'`);
+});
+
+test('blockSize: K = clamp(ceil(remaining / (2 * jobs)), 1, maxBlock): large while many remain, 1 at the tail, never above maxBlock', () => {
+  assert.equal(blockSize({ remaining: 30, jobs: 3, maxBlock: 4 }), 4, 'ceil(30/6)=5, capped at 4');
+  assert.equal(blockSize({ remaining: 18, jobs: 3, maxBlock: 4 }), 3);
+  assert.equal(blockSize({ remaining: 7, jobs: 3, maxBlock: 4 }), 2);
+  assert.equal(blockSize({ remaining: 6, jobs: 3, maxBlock: 4 }), 1);
+  assert.equal(blockSize({ remaining: 1, jobs: 8, maxBlock: 64 }), 1);
+  assert.equal(blockSize({ remaining: 1000, jobs: 2, maxBlock: 5 }), 5);
+  assert.equal(blockSize({ remaining: 1000, jobs: 2, maxBlock: 1 }), 1);
+});
+
+// every claim of a pool with this many todo segments, as the sizes and members a single worker would see (claims are taken in order)
+const claimsOf = (segments, jobs, maxBlock) => { const q = [...segments], out = []; while (q.length) out.push(takeBlock(q, { jobs, maxBlock })); return out; };
+
+test('takeBlock: the blocks cover every todo segment exactly once, in order, each at most maxBlock long, and the same twice', () => {
+  for (const [n, jobs, maxBlock] of [[30, 3, 4], [7, 2, 4], [100, 8, 64], [5, 1, 3], [1, 4, 4], [40, 3, 1]]) {
+    const segs = Array.from({ length: n }, (_, i) => i);
+    const blocks = claimsOf(segs, jobs, maxBlock);
+    assert.deepEqual(blocks.flat(), segs, `${n}/${jobs}/${maxBlock}: every segment once, in order`);
+    assert.ok(blocks.every((b) => b.length >= 1 && b.length <= maxBlock), `${n}/${jobs}/${maxBlock}: sizes ${blocks.map((b) => b.length)}`);
+    assert.deepEqual(claimsOf(segs, jobs, maxBlock), blocks, 'deterministic');
+  }
+});
+
+test('takeBlock: the guided sizes for 30 segments on 3 jobs shrink to 1 at the tail', () => {
+  const sizes = claimsOf(Array.from({ length: 30 }, (_, i) => i), 3, 4).map((b) => b.length);
+  assert.deepEqual(sizes, [4, 4, 4, 3, 3, 2, 2, 2, 1, 1, 1, 1, 1, 1]);
+  assert.equal(sizes.reduce((a, b) => a + b), 30);
+});
+
+test('takeBlock: a hole in the segment numbers ends a block; the next block starts after it', () => {
+  assert.deepEqual(claimsOf([0, 1, 2, 5, 6, 9], 1, 4), [[0, 1, 2], [5, 6], [9]]);
+  assert.deepEqual(claimsOf([3, 5, 6, 7, 8, 9, 10, 11], 1, 4), [[3], [5, 6, 7, 8], [9, 10], [11]], 'the guided size is a cap on the block, a hole is a stop (3 is alone: 5 is not its neighbour)');
+});
+
+test('takeBlock with maxBlock 1 is the per-segment claim order, one segment per claim', () => {
+  const segs = [0, 1, 2, 4, 5, 8];
+  assert.deepEqual(claimsOf(segs, 3, 1), segs.map((s) => [s]));
+});
+
+test('runPool with blocks: concurrency never exceeds jobs; each segment runs once; blocks are claimed in segment order; the first claims go to the workers in turn', async () => {
+  for (const jobs of [1, 2, 3, 8]) {
+    let active = 0, max = 0;
+    const seen = [];
+    const r = await runPool({ segments: Array.from({ length: 20 }, (_, i) => i), jobs, maxAttempts: 3, maxBlock: 4, runSegment: async ({ segment }) => { active++; max = Math.max(max, active); seen.push(segment); await tick(1); active--; } });
+    assert.ok(max <= jobs && max >= Math.min(jobs, 2) - 1, `jobs ${jobs}: ${max}`);
+    assert.deepEqual([...seen].sort((a, b) => a - b), Array.from({ length: 20 }, (_, i) => i));
+    assert.deepEqual(r.blocks.map((b) => b.block).flat(), Array.from({ length: 20 }, (_, i) => i), 'claims are in segment order');
+  }
+  const r = await runPool({ segments: Array.from({ length: 20 }, (_, i) => i), jobs: 3, maxAttempts: 3, maxBlock: 4, runSegment: async () => tick(1) });
+  assert.deepEqual(r.blocks.slice(0, 3).map((b) => b.worker), [1, 2, 3]);
+});
+
+test('runPool with blocks: only the first segment of a block is fresh (the session is opened once per block); the rest continue it; one onBlock and one onBlockEnd per block', async () => {
+  const log = [];
+  const r = await runPool({
+    segments: [0, 1, 2, 3, 4, 5, 6], jobs: 1, maxAttempts: 3, maxBlock: 4,
+    runSegment: async ({ segment, fresh, index }) => { log.push(['seg', segment, fresh, index]); },
+    onBlock: async ({ block }) => { log.push(['block', block.join(',')]); },
+    onBlockEnd: async ({ block }) => { log.push(['end', block.join(',')]); },
+  });
+  assert.deepEqual(r.blocks.map((b) => b.block), [[0, 1, 2, 3], [4, 5], [6]]);
+  assert.deepEqual(log.filter((l) => l[0] === 'seg').map((l) => [l[1], l[2]]), [[0, true], [1, false], [2, false], [3, false], [4, true], [5, false], [6, true]]);
+  const order = log.map((l) => l[0] === 'seg' ? `s${l[1]}` : `${l[0]}:${l[1]}`);
+  assert.deepEqual(order, ['block:0,1,2,3', 's0', 's1', 's2', 's3', 'end:0,1,2,3', 'block:4,5', 's4', 's5', 'end:4,5', 'block:6', 's6', 'end:6']);
+});
+
+// a session manager as render-video.mjs runs it: opens on a fresh segment, continues otherwise, closes at the end of a block; counts the opens
+function fakeSessions() {
+  const live = new Set(); let opens = 0, closes = 0, setupLogs = 0;
+  return {
+    get opens() { return opens; }, get closes() { return closes; }, get setupLogs() { return setupLogs; }, get liveNow() { return live.size; },
+    runSegment: async ({ worker, fresh }) => { if (fresh || !live.has(worker)) { if (live.delete(worker)) closes++; live.add(worker); opens++; setupLogs++; } },
+    onFailure: async ({ worker }) => { if (live.delete(worker)) closes++; },
+    onBlockEnd: async ({ worker }) => { if (live.delete(worker)) closes++; },
+  };
+}
+
+test('runPool with blocks: one session (one setup) per block when nothing fails; every session is closed at the end', async () => {
+  const f = fakeSessions();
+  const r = await runPool({ segments: Array.from({ length: 21 }, (_, i) => i), jobs: 3, maxAttempts: 3, maxBlock: 4, runSegment: f.runSegment, onFailure: f.onFailure, onBlockEnd: f.onBlockEnd });
+  assert.equal(f.opens, r.blocks.length);
+  assert.equal(f.setupLogs, r.blocks.length);
+  assert.ok(r.blocks.length < 21, 'fewer sessions than segments');
+  assert.equal(f.closes, f.opens);
+  assert.equal(f.liveNow, 0);
+  const per = await runPool({ segments: Array.from({ length: 9 }, (_, i) => i), jobs: 2, maxAttempts: 3, maxBlock: 1, runSegment: fakeSessions().runSegment });
+  assert.equal(per.blocks.length, 9, 'maxBlock 1: a block, so a session, per segment');
+});
+
+test('runPool with blocks: a segment that fails once inside a block is retried FRESH (a new session on its own start state) and the block goes on from it', async () => {
+  const f = fakeSessions(), seen = [];
+  let boom = 0;
+  const r = await runPool({
+    segments: [0, 1, 2, 3, 4, 5, 6, 7], jobs: 1, maxAttempts: 3, maxBlock: 4,
+    runSegment: async (a) => { seen.push([a.segment, a.attempt, a.fresh]); await f.runSegment(a); if (a.segment === 2 && boom++ < 1) throw new Error('browser crashed'); },
+    onFailure: f.onFailure, onBlockEnd: f.onBlockEnd,
+  });
+  assert.deepEqual(r.blocks.map((b) => b.block), [[0, 1, 2, 3], [4, 5], [6], [7]]);
+  assert.deepEqual(seen.filter((x) => x[0] <= 3), [[0, 1, true], [1, 1, false], [2, 1, false], [2, 2, true], [3, 1, false]]);
+  assert.equal(f.opens, 4 + 1, 'one session per block, and the retry\'s');
+  assert.equal(f.liveNow, 0);
+  assert.deepEqual([...r.completed], [0, 1, 2, 3, 4, 5, 6, 7]);
+});
+
+test('runPool with blocks: a segment out of attempts keeps the block\'s committed segments, hands the rest back, and ANOTHER session (a fresh one) takes them; the run rejects with the failed message', async () => {
+  const committed = [], claims = [];
+  await assert.rejects(runPool({
+    segments: Array.from({ length: 16 }, (_, i) => i), jobs: 2, maxAttempts: 2, maxBlock: 4,
+    runSegment: async ({ worker, segment, fresh }) => {
+      claims.push([segment, worker, fresh]);
+      await tick(2);
+      if (segment === 2) throw new Error('segment 2 would not render');
+      committed.push(segment);
+    },
+  }), /segment 2 would not render/);
+  assert.deepEqual(committed.sort((a, b) => a - b), [0, 1, ...Array.from({ length: 13 }, (_, i) => i + 3)], 'everything but the failed segment 2, each once: 0 and 1 (committed before it, in its block [0..3]) and 3 (handed back and rendered by a fresh claim)');
+  assert.ok(claims.filter((c) => c[0] === 3).every((c) => c[2]), 'segment 3 starts a new block: fresh');
+});
+
+test('runPool with blocks: a fatal error in a block stops the claims; segments in other sessions finish; the block\'s committed segments stay committed', async () => {
+  const committed = [];
+  await assert.rejects(runPool({
+    segments: [0, 1, 2, 3, 4, 5, 6, 7], jobs: 2, maxAttempts: 3, maxBlock: 4,
+    runSegment: async ({ segment }) => { await tick(3); if (segment === 1) throw Object.assign(new Error('state differs'), { fatal: true }); committed.push(segment); },
+  }), /state differs/);
+  assert.ok(committed.includes(0), 'segment 0, committed before the fatal one, stays');
+  assert.ok(!committed.some((s) => s >= 4), 'no further blocks are claimed once the run is stopped');
+});
+
+test('runPool with blocks: resume runs only the holes, as blocks of consecutive holes', async () => {
+  const done = new Set([0, 1, 4, 5, 8]);
+  const todo = todoSegments({ nSegs: 12, isDone: (i) => done.has(i) });
+  const r = await runPool({ segments: todo, jobs: 2, maxAttempts: 3, maxBlock: 4, runSegment: async ({ segment }) => { done.add(segment); } });
+  assert.deepEqual(r.blocks.map((b) => b.block), [[2, 3], [6, 7], [9], [10], [11]], 'blocks of consecutive holes, claimed in order, guided down to 1');
+  for (const b of r.blocks) for (let k = 1; k < b.block.length; k++) assert.equal(b.block[k], b.block[k - 1] + 1, 'a block never spans a hole');
+  assert.deepEqual([...done].sort((a, b) => a - b), Array.from({ length: 12 }, (_, i) => i));
+});
+
+// ---------------------------------------------------------------- the self-check
+test('checkAgainstTiny: equal is checked, different is a mismatch, a file a serial render wrote is not checked', () => {
+  const state = { motion: { time: 1.5 }, arrays: { limbAngle: 'AAAA' } };
+  assert.equal(checkAgainstTiny({ tiny: true, state: structuredClone(state) }, state), 'checked');
+  assert.equal(checkAgainstTiny({ tiny: true, state: { ...state, motion: { time: 1.5000001 } } }, state), 'mismatch');
+  assert.equal(checkAgainstTiny({ state: { other: 1 } }, state), 'existing');
+});
+
+test('the self-check runs after every segment of a block, not only the first (wiring, read from the source: the commit code is one path for fresh and continued segments)', () => {
+  const src = readFileSync(join(HERE, 'render-video.mjs'), 'utf8');
+  const lines = src.split('\n');
+  const atEnd = lines.find((l) => l.includes('reconcileCkpt(i, to, r.snapshot)')), atLandings = lines.find((l) => l.includes('reconcileCkpt(i, l.n, l.snapshot)') && l.includes('r.landings'));
+  assert.ok(atEnd?.trimStart().startsWith('checked['), `the end-of-segment check is unconditional: ${atEnd}`);
+  assert.ok(atLandings?.trimStart().startsWith('for (const l of r.landings'), `the landings check is unconditional: ${atLandings}`);
+  assert.doesNotMatch(src.slice(src.indexOf('const runSegment = async'), src.indexOf('const onFailure')), /fresh \?|if \(fresh\)[^\n]*reconcileCkpt/, 'reconcileCkpt is not conditional on fresh');
+});
+
+test('the exporter logs the block and its setup per session, and records blocks and setup seconds (wiring, read from the source)', () => {
+  const src = readFileSync(join(HERE, 'render-video.mjs'), 'utf8');
+  assert.match(src, /slog\(w, `setup \$\{fmt\(setupS\)\} s \(browser launch \+ engine build\)`\)/);
+  assert.match(src, /slog\(w, `block \[\$\{block\[0\]\}\.\.\$\{block\[block\.length - 1\]\}\]/);
+  assert.match(src, /blocks: nBlocks, setup_seconds_sum:/);
+  assert.match(src, /maxBlock: BLOCK_SEGMENTS/);
+});
+
 // ---------------------------------------------------------------- the exporter as a process: --jobs is not in the run key
 const RENDER_VIDEO = join(HERE, 'render-video.mjs');
 const NO_BROWSERS = join(tmpdir(), 'komorebi-video-test-no-browsers');
@@ -224,18 +395,20 @@ test('--jobs 1, no --jobs and --jobs 3 make the SAME run key; the key body has n
   const look = join(root, 'look.json');
   writeFileSync(look, '{"params":{"leaf_size":1}}\n');
   const keys = {};
-  for (const [name, extra] of [['none', []], ['one', ['--jobs', '1']], ['three', ['--jobs', '3']]]) {
+  for (const [name, extra] of [['none', []], ['one', ['--jobs', '1']], ['three', ['--jobs', '3']], ['blocks', ['--jobs', '3', '--block-segments', '2']], ['blocks1', ['--jobs', '2', '--block-segments', '1']]]) {
     const out = join(root, name);
     const r = exporter([...base(look, out), ...extra]);   // the key is written, then the first browser launch fails (no browsers path)
     assert.equal(r.status, 1, r.all);
     assert.match(r.all, /Executable doesn't exist/, `${name}: stops at the impossible browser launch`);
     const rk = JSON.parse(readFileSync(join(out, 'run-key.json'), 'utf8'));
     keys[name] = rk.key;
-    assert.ok(!JSON.stringify(rk.body).includes('jobs'), `${name}: no jobs in the key body`);
+    assert.ok(!/jobs|block/.test(JSON.stringify(rk.body)), `${name}: no jobs or blocks in the key body`);
     assert.equal(rk.invocation.argv.includes('--jobs'), extra.length > 0, `${name}: the argv records --jobs`);
   }
   assert.equal(keys.one, keys.none);
   assert.equal(keys.three, keys.none);
+  assert.equal(keys.blocks, keys.none);
+  assert.equal(keys.blocks1, keys.none);
   // and a folder rendered with one setting resumes under another: the key matches, so the run is not refused
   const again = exporter([...base(look, join(root, 'none')), '--jobs', '3']);
   assert.equal(again.status, 1, again.all);
@@ -255,10 +428,23 @@ test('--jobs outside 1..8, or not a number, is refused (exit 2, one line) before
   const last = exporter([...base(look, join(root, 'o')).slice(0, -2), '--jobs']);   // --jobs with no value, last
   assert.equal(last.status, 2, last.all);
 }));
+test('--block-segments outside 1..64, or not a number, is refused (exit 2, one line) before anything is created', () => withDir((root) => {
+  const look = join(root, 'look.json');
+  writeFileSync(look, '{"params":{}}\n');
+  for (const bad of ['0', '65', 'x', '1.5', '']) {
+    const out = join(root, `out-${bad}`);
+    const r = exporter([...base(look, out), '--jobs', '2', '--block-segments', bad]);
+    assert.equal(r.status, 2, `'${bad}': ${r.all}`);
+    assert.match(r.err, /--block-segments .*1 to 64/);
+    assert.ok(!existsSync(out), 'nothing created');
+  }
+}));
+
 test('--help documents --jobs', () => {
   const r = exporter(['--help']);
   assert.equal(r.status, 0, r.all);
   assert.match(r.out, /--jobs N/);
+  assert.match(r.out, /--block-segments n/);
   assert.match(r.out, /compare-runs\.mjs/);
 });
 
