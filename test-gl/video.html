@@ -25,7 +25,7 @@
     sinkTest(url, w, h, n, batch)    POST noise frames to the sink, nothing rendered: the pipe's own throughput
     cheapPreroll(params, frames, step, T0)   the integrator state after `frames` pumps on a tiny engine (CPU state is GPU-independent)
     open({ params, rw, rh, step, T0, at, state })   one engine at render size rw x rh, clock at pump `at`, optional restored state
-    run({ from, to, sink, batch, timing })   pump frames from+1..to, read each back; optionally POST batches to `sink`
+    run({ from, to, sink, batch, timing, events, snapAt })   pump frames from+1..to, read each back; optionally POST batches to `sink`. A playlist passes `events` (transitions started before given pumps) and `snapAt` (landings to hand the state back at)
     runCanvas({ from, to, beforeFrame, onFrame })   the probe's direct encoder captures the canvas inside the same frame callback
     snapshot() / close()
 -->
@@ -173,6 +173,16 @@ function forceGovernorsOff(params) {
   return params;
 }
 
+// PLAYLIST playback. The driver hands a run the transitions that START in it (`events`: { start, duration, params }, start = the pump the transitionTo is called BEFORE) and the
+// pumps whose state is to be handed back (`snapAt`: the landings, where a fade is over and the engine is at rest on its look; a fade in flight is not restorable state).
+// transitionTo reads the same virtual clock as everything else, so a fade is a function of the pump index and nothing else.
+const evMap = (events) => new Map((events || []).map((e) => [e.start, e]));
+const startEvent = (e) => S.eng.transitionTo(forceGovernorsOff({ ...e.params }), { duration: e.duration });
+const landing = (n) => {
+  if (S.eng.trans.active) throw new Error(`pump ${n}: the fade is still running where it should have landed. A fade between looks that differ in structure (seed, branching, resolutions, scene mode) takes the cloud-dissolve route on twice the clock, or a grove too big to morph falls back to it: keep a playlist's looks to one grove`);
+  return { n, snapshot: snapshotOf(S.eng) };
+};
+
 // The CPU half of the engine does not know the GPU exists: a tiny engine (64x36, bake 256, 8 samples) integrates the same springs
 // at ~1 ms a frame, so 30 s of pre-roll costs seconds, not minutes of full-size bakes. The caller proves the equality (gpu-probe.mjs).
 v.cheapPreroll = (params, frames, step, T0) => {
@@ -242,11 +252,12 @@ v.open = ({ params, rw, rh, step, T0, at, state, overrideKeys = [] }) => {
 
 // Pump frames from+1..to. A captured frame is read inside onFrame into a slot of the ring; with `sink` each full batch is POSTed
 // (two in flight at most, the response is the back-pressure). Without it the frames are only hashed.
-v.run = async ({ from, to, sink, batch, timing, capture = true, keepEvery = 0 }) => {
+v.run = async ({ from, to, sink, batch, timing, capture = true, keepEvery = 0, events, snapAt }) => {
   const { eng, W, H, step, T0 } = S;
   const fb = W * H * 4, B = Math.max(1, batch || 1);
   if (capture && (!S.ring.length || S.ring[0].length !== fb * B)) S.ring = [new Uint8Array(fb * B), new Uint8Array(fb * B)];
   const kept = [], hashes = [], means = [], tm = timing ? { pump: [], read1: [], copy: [], total: [], busy: [] } : null, queries = [];
+  const starts = evMap(events), snaps = new Set(snapAt || []), landings = [];
   let ri = 0, last = null, inBatch = 0, minMean = 1e9, maxMean = 0;
   const flush = async () => {
     if (!sink || !inBatch) { inBatch = 0; return; }
@@ -261,8 +272,10 @@ v.run = async ({ from, to, sink, batch, timing, capture = true, keepEvery = 0 })
     S.captured = false; S.timing = tm ? {} : null;
     if (tm && S.timer) { S.timing.q = eng.gl.createQuery(); eng.gl.beginQuery(S.timer.TIME_ELAPSED_EXT, S.timing.q); }
     const t0 = real();
+    if (starts.has(n)) startEvent(starts.get(n));
     const fired = clock.pump(T0 + n * step);
     const t3 = real();
+    if (snaps.has(n)) landings.push(landing(n));
     if (fired !== 1) throw new Error(`pump ${n} fired ${fired} callbacks`);
     if (n === from + 1) {   // the first frame's resize() has run: the backing store must still be exactly the size the file will be
       const g = eng.gl;
@@ -293,27 +306,30 @@ v.run = async ({ from, to, sink, batch, timing, capture = true, keepEvery = 0 })
     const disjoint = g.getParameter(S.timer.GPU_DISJOINT_EXT);
     for (const q of queries) { tm.busy.push(g.getQueryParameter(q, g.QUERY_RESULT_AVAILABLE) && !disjoint ? g.getQueryParameter(q, g.QUERY_RESULT) / 1e6 : NaN); g.deleteQuery(q); }
   }
-  return { hashes, kept, minMean, maxMean, timing: tm, snapshot: snapshotOf(eng), pumped: to - from };
+  return { hashes, kept, minMean, maxMean, timing: tm, snapshot: snapshotOf(eng), pumped: to - from, landings };
 };
 
 // A native encoder must snapshot the canvas before this callback returns. Yielding for queue/sink
 // back-pressure happens BEFORE pumping the next frame, while the engine clock remains unchanged.
-v.runCanvas = async ({ from, to, beforeFrame, onFrame }) => {
+v.runCanvas = async ({ from, to, beforeFrame, onFrame, events, snapAt }) => {
   const { W, H, step, T0, eng } = S;
   S.cur = null;
+  const starts = evMap(events), snaps = new Set(snapAt || []), landings = [];
   try {
     for (let n = from + 1; n <= to; n++) {
       await beforeFrame();
       if (S.lost) throw new Error('webglcontextlost');
       S.captured = false;
       S.canvasCapture = (canvas) => onFrame(canvas, n - from - 1);
+      if (starts.has(n)) startEvent(starts.get(n));
       const fired = clock.pump(T0 + n * step);
       if (fired !== 1 || !S.captured) throw new Error(`pump ${n}: canvas was not captured exactly once`);
+      if (snaps.has(n)) landings.push(landing(n));
       const g = eng.gl;
       if (S.canvas.width !== W || S.canvas.height !== H || g.drawingBufferWidth !== W || g.drawingBufferHeight !== H)
         throw new Error('canvas size changed during direct encoding');
     }
-    return { pumped: to - from, snapshot: snapshotOf(eng) };
+    return { pumped: to - from, snapshot: snapshotOf(eng), landings };
   } finally { S.canvasCapture = null; }
 };
 

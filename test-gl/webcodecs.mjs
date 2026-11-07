@@ -85,7 +85,7 @@ export function installLinearDownscale({ width, height }) {
 
 // The quality-100 alternative retains readback, but after GPU downscale and without a lossless
 // intermediate. The probe uses the same frame callback and back-pressure as the native encoder.
-export async function captureCanvasRun({ from, to, sink, batch = 8 }) {
+export async function captureCanvasRun({ from, to, sink, batch = 8, events, snapAt }) {
   const pending = [];
   let bytes = 0;
   const send = async () => {
@@ -96,17 +96,17 @@ export async function captureCanvasRun({ from, to, sink, batch = 8 }) {
   // Collect after send returns, when its Blob is unreachable; the browser blob store otherwise
   // accumulates raw batches across a long clip (the existing video page uses the same explicit GC).
   const flush = async () => { if (!pending.length) return; await send(); window.gc?.(); };
-  const result = await window.__v.runCanvas({ from, to, beforeFrame: async () => { if (pending.length >= batch) await flush(); }, onFrame(canvas) {
+  const result = await window.__v.runCanvas({ from, to, events, snapAt, beforeFrame: async () => { if (pending.length >= batch) await flush(); }, onFrame(canvas) {
     const out = window.__v.transformCanvas ? window.__v.transformCanvas(canvas) : canvas;
     const gl = out.getContext('webgl2'), data = new Uint8Array(out.width * out.height * 4);
     gl.readPixels(0, 0, out.width, out.height, gl.RGBA, gl.UNSIGNED_BYTE, data);
     pending.push(data); bytes += data.byteLength;
   } });
   await flush();
-  return { frames: result.pumped, bytes, snapshot: result.snapshot };
+  return { frames: result.pumped, bytes, snapshot: result.snapshot, landings: result.landings };
 }
 
-export async function encodeCanvasRun({ config, from, to, sink, queueLimit = 4, quantizer }) {
+export async function encodeCanvasRun({ config, from, to, sink, queueLimit = 4, quantizer, events, snapAt }) {
   if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') throw new Error('WebCodecs is not supported in this browser');
   const support = await VideoEncoder.isConfigSupported(config);
   if (!support.supported) throw new Error(`WebCodecs ${config.codec} is not supported at ${config.width}x${config.height}`);
@@ -152,7 +152,7 @@ export async function encodeCanvasRun({ config, from, to, sink, queueLimit = 4, 
   const started = now();
   try {
     encoder.configure(support.config);
-    const result = await window.__v.runCanvas({ from, to, beforeFrame: ready, onFrame(canvas, i) {
+    const result = await window.__v.runCanvas({ from, to, events, snapAt, beforeFrame: ready, onFrame(canvas, i) {
       const timestamp = Math.round(i * 1e6 / config.framerate);
       const duration = Math.round((i + 1) * 1e6 / config.framerate) - timestamp;
       const out = window.__v.transformCanvas ? window.__v.transformCanvas(canvas) : canvas;
@@ -163,6 +163,6 @@ export async function encodeCanvasRun({ config, from, to, sink, queueLimit = 4, 
     await encoder.flush(); check();
     await flush();
     if (result.pumped !== to - from || chunks !== to - from) throw new Error(`encoded ${chunks} chunks for ${to - from} frames`);
-    return { frames: result.pumped, chunks, bytes, snapshot: result.snapshot, timestamps: stamps, config: support.config, decoder_config: metadata, wall_ms: now() - started };
+    return { frames: result.pumped, chunks, bytes, snapshot: result.snapshot, landings: result.landings, timestamps: stamps, config: support.config, decoder_config: metadata, wall_ms: now() - started };
   } finally { encoder.close(); }
 }

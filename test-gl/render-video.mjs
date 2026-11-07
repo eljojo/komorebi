@@ -13,6 +13,13 @@
 //                          host (a mirror; the tests' mock); with ARBORETUM_TOKEN set it must be https (http only to localhost / 127.0.0.1), else the call is refused before any request.
 //                          The run key pins arboretum { id, version, params_sha256 }, which is what decides the frames. The manifest adds the preset as last fetched (name, page_url,
 //                          komorebi_commit: a rename or a commit stamp on the same version moves no frame, so a resume refreshes them) and how (api_base, requested, head_resolved, ..).
+//   --playlist-json <f>    instead of ONE look, a PLAYLIST: the engine walks its looks with transitionTo, the way arboretum plays one (dwell, then a fade over the NEXT look's own crossfade, looping).
+//   --arboretum-playlist <id>[:<share_token>]   the same, the list and every item's params fetched from arboretum (ARBORETUM_TOKEN as above; an item the token cannot read refuses the run).
+//                          <f> is [{ name?, params, dwell_s?, crossfade_s? }] (defaults 30 s and 5 s). --seconds is the length of the video; the playlist repeats to fill it, and the last fade may be cut.
+//                          The looks must share one grove (seed, branching, resolutions, scene mode): anything else is a cloud dissolve on twice the clock, not a morph, and is refused before the render.
+//                          A fade in flight is not restorable state, so a playlist's checkpoints are taken where each fade LANDS (ckpt/): a resume restores the last landing before the segment and replays
+//                          the frames in between unrecorded (at most one look's dwell and fade). No --encode-only. The playlist is in the run key (each item's params by hash), look.json is the
+//                          first look and playlist.json the whole list.
 //   --set key=value        override a look param (JSON value, or a bare string). Repeatable. adaptive_motion / auto_quality are refused: they are forced off. Only bake_resolution /
 //                          tex_resolution / sample_count keep the look as authored: any other key is accepted with a warning and the manifest says NOT as authored.
 //   --commit <sha>         the engine from `git archive <sha>` in a temp tree        --tree  a SNAPSHOT of the working tree, recorded dirty (git diff --stat + a hash of the diff)
@@ -55,13 +62,14 @@ import { chromium } from 'playwright';
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import os from 'node:os';
 import { directDiskPlan, directJoinArgs, directSegmentArgs, pipelinePlan } from './pipeline.mjs';
 import { captureCanvasRun, encodeCanvasRun, hevcQuantizerConfig, installLinearDownscale } from './webcodecs.mjs';
 import {
-  ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VAAPI_BITRATE, VAAPI_DEVICE, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
-  diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, ffmpegVersion, ffprobeJson, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, pipeRequestTo, qualityReport,
+  ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VAAPI_BITRATE, VAAPI_DEVICE, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, checkPlaylistTimes, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
+  diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, fetchArboretumPlaylist, ffmpegVersion, ffprobeJson, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, parsePlaylistSpec, pipeRequestTo, playlistFromJson, playlistSchedule, qualityReport,
   redactArgv, runBaseline, runFfmpegAsync, runMeasure, scaleRate, sha256, sha256File, spawnFfmpeg, startServer, stepMsFor,
 } from './video-lib.mjs';
 
@@ -81,13 +89,16 @@ if (has('--help') || has('-h')) {   // the header comment IS the usage
   process.exit(0);
 }
 
-const LOOK = flag('--look-json'), ARB_SPEC = flag('--arboretum');
-if (!!LOOK === !!ARB_SPEC) die('exactly one of --look-json <path> or --arboretum <id>[@<version>][:<share_token>]');
-let ARB = null;   // the parsed --arboretum
+const LOOK = flag('--look-json'), ARB_SPEC = flag('--arboretum'), PL_JSON = flag('--playlist-json'), PL_SPEC = flag('--arboretum-playlist');
+if ([LOOK, ARB_SPEC, PL_JSON, PL_SPEC].filter(Boolean).length !== 1) die('exactly one of --look-json <path>, --arboretum <id>[@<version>][:<share_token>], --playlist-json <path> or --arboretum-playlist <id>[:<share_token>]');
+const PLAYLIST_MODE = Boolean(PL_JSON || PL_SPEC);
+let ARB = null, PL_ARB = null;   // the parsed --arboretum / --arboretum-playlist
 if (ARB_SPEC) { try { ARB = parseArboretumSpec(ARB_SPEC); } catch (e) { die(e.message); } }
+if (PL_SPEC) { try { PL_ARB = parsePlaylistSpec(PL_SPEC); } catch (e) { die(e.message); } }
 const ARB_BASE = flag('--arboretum-base', ARBORETUM_BASE);
 const OUT = resolve(flag('--out') || die('--out <dir> is required'));
 const ENCODE_ONLY = has('--encode-only');
+if (PLAYLIST_MODE && ENCODE_ONLY) die('--encode-only is not supported for a playlist: its checkpoints are fade landings and the manifest is built from the playlist the run fetched');
 if (!ENCODE_ONLY && !!flag('--commit') === has('--tree')) die('exactly one of --commit <sha> or --tree');
 const FPS = Number(flag('--fps', 60));
 const SECONDS = Number(flag('--seconds', 300));
@@ -185,7 +196,26 @@ const writeJsonAtomic = (f, o) => { writeFileSync(`${f}.part`, `${JSON.stringify
 
 // ------------------------------------------------------------------ the look
 let lookBytes = null, lookParams = {}, ARB_RECORD = null;
-if (LOOK) {
+let PLAYLIST = null;   // { name, items: [{ preset_id, version, name, dwell_s, crossfade_s, params }], block (the run key's), fetch (how it was fetched) }
+if (PLAYLIST_MODE) {
+  let pl;
+  if (PL_JSON) {
+    try { pl = playlistFromJson(JSON.parse(readFileSync(PL_JSON, 'utf8')), basename(PL_JSON)); } catch (e) { die(`--playlist-json: ${e.message}`); }
+  } else {
+    try { pl = await fetchArboretumPlaylist({ base: ARB_BASE, id: PL_ARB.id, share: PL_ARB.share, token: ARBORETUM_TOKEN }); } catch (e) {
+      if (!(e instanceof ArboretumError)) throw e;
+      console.error(`render-video: ${e.message}`);
+      process.exit(e.refusal ? 3 : 1);
+    }
+  }
+  try { checkPlaylistTimes(pl.items, FPS); } catch (e) { die(e.message); }
+  if (pl.items.length < 2) die('a playlist needs at least two looks to transition between');
+  const block = { id: pl.id, revision: pl.revision, items: pl.items.map((it) => ({ preset_id: it.preset_id, version: it.version, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, params_sha256: canonicalSha256(it.params) })) };
+  PLAYLIST = { name: pl.name, items: pl.items, block,
+    fetch: PL_SPEC ? { name: pl.name, page_url: `${ARBORETUM_BASE}/arboretum/l/${pl.id}`, api_base: ARB_BASE, requested: pl.requested, share_token_sha256_prefix: PL_ARB.share ? sha256(PL_ARB.share).slice(0, 8) : null, fetched_at: new Date().toISOString() } : null };
+  lookParams = pl.items[0].params;
+  lookBytes = Buffer.from(canonicalJson(block));
+} else if (LOOK) {
   lookBytes = readFileSync(LOOK);
   const lookJson = JSON.parse(lookBytes.toString('utf8'));
   lookParams = lookJson.params || lookJson;
@@ -208,6 +238,11 @@ if (LOOK) {
   };
 }
 const finalParams = { ...lookParams, ...overrides, adaptive_motion: false, auto_quality: false };
+// a playlist's looks, each as rendered (the same overrides and the two governors forced off on every one)
+const STOP_PARAMS = PLAYLIST ? PLAYLIST.items.map((it) => ({ ...it.params, ...overrides, adaptive_motion: false, auto_quality: false })) : [finalParams];
+// the playlist's timeline in absolute pumps (video-lib.mjs playlistSchedule); [] for a single look
+const SCHEDULE = PLAYLIST ? playlistSchedule({ items: PLAYLIST.items, fps: FPS, preroll: PREROLL, frames: N }) : [];
+const PL_EVENTS = SCHEDULE.map((e) => ({ start: e.start, duration: e.duration_s, params: STOP_PARAMS[e.stop] }));
 const nonQuality = Object.keys(overrides).filter((k) => !QUALITY_KEYS.includes(k));
 if (nonQuality.length) console.warn(`render-video: WARNING — overrides outside the quality knobs: ${nonQuality.join(', ')} (the look is NOT as authored)`);
 
@@ -216,6 +251,19 @@ const killers = [];
 onExit(() => { for (const k of killers.splice(0)) { try { k(); } catch { /* already gone */ } } });
 // the engine is exported (and removed again on every way out, signals included: exportEngine registers that) only for a run that renders
 const exp = ENCODE_ONLY ? null : exportEngine({ ...(has('--tree') ? { tree: true } : { commit: flag('--commit') }), keep: has('--keep-export') });
+// A playlist is walked with transitionTo, which is a live MORPH only between looks that share a grove. Anything structural (TOPO_KEYS, MODE_KEYS) takes the cloud-dissolve route on twice
+// the clock, which neither fits the schedule nor can be checkpointed: refused here, from the engine tree's own key lists, before anything renders.
+if (PLAYLIST && exp) {
+  try {
+    const { TOPO_KEYS, MODE_KEYS, DEFAULTS } = await import(pathToFileURL(join(exp.dir, 'komorebi-params.js')).href);
+    const structural = [...TOPO_KEYS, ...MODE_KEYS];
+    for (let i = 0; i < STOP_PARAMS.length; i++) {
+      const a = { ...DEFAULTS, ...STOP_PARAMS[i] }, j = (i + 1) % STOP_PARAMS.length, b = { ...DEFAULTS, ...STOP_PARAMS[j] };
+      const differ = structural.filter((k) => !isDeepStrictEqual(a[k], b[k]));
+      if (differ.length) { console.error(`render-video: playlist item ${i + 1} (${PLAYLIST.items[i].name}) -> item ${j + 1} (${PLAYLIST.items[j].name}) changes ${differ.join(', ')}: that is a structural change (a dissolve under a cloud), not a morph. Keep a playlist's looks on one grove.`); process.exit(3); }
+    }
+  } catch (e) { if (e.code === 'ERR_MODULE_NOT_FOUND') warn(`could not check the playlist's looks for structural changes (${String(e.message).split('\n')[0]}); a fade that does not land will fail the render instead`); else throw e; }
+}
 const EXPORTER = exporterIdentity();
 const FFMPEG_VERSION = ffmpegVersion();   // this invocation's ffmpeg; in the run key, so a run is not resumed under another one
 const OSF = osFacts();
@@ -231,6 +279,7 @@ const runKeyBody = () => ({
   master: MASTER, master_chain: masterChain(), chrome: CHROME, ffmpeg_version: FFMPEG_VERSION,
   ...(PLAN.direct ? { pipeline: PIPELINE, master: null, master_chain: null, pipeline_identity: { pipeline_sha256: sha256(readFileSync(join(HERE, 'pipeline.mjs'))), webcodecs_sha256: sha256(readFileSync(join(HERE, 'webcodecs.mjs'))) }, delivery_settings: { vt_bitrate: PIPELINE === 'browser' || DELIVERY === 'hevc_vaapi' || VT_QUALITY ? null : VT_BITRATE, vt_quality: PIPELINE === 'browser' ? null : VT_QUALITY ?? null, quantizer: PIPELINE === 'browser' ? 1 : null, gop: PIPELINE === 'browser' ? FPS * 2 : GOP, ...(DELIVERY === 'hevc_vaapi' ? { encoder: DELIVERY, vaapi_device: VAAPI_DEVICE, bitrate: VAAPI_BITRATE } : {}) } } : {}),
   ...(ARB_RECORD ? { arboretum: ARB_RECORD.block } : {}),   // a look from a file has no such key, so its run keys are what they were
+  ...(PLAYLIST ? { playlist: PLAYLIST.block } : {}),         // likewise a single look has no playlist key
 });
 if (has('--restart') && !ENCODE_ONLY) {
   for (const d of ['seg', 'ckpt']) { rmSync(P(d), { recursive: true, force: true }); mkdirSync(P(d), { recursive: true }); }
@@ -273,14 +322,18 @@ if (ENCODE_ONLY) {
       console.error(`render-video: ${OUT} holds a run with a different key. What differs: ${changed.join(', ')}.${moved}\n  old ${RK.key}\n  new ${RUN_KEY}\n  --restart discards it.`);
       process.exit(3);
     }
+    if (PLAYLIST?.fetch) {   // the key matched: the frames are these; the playlist's name may have moved since
+      RK = { ...RK, look: { ...RK.look, name: PLAYLIST.name }, playlist_fetch: PLAYLIST.fetch };
+      writeJsonAtomic(P('run-key.json'), RK);
+    }
     if (ARB_RECORD) {   // the key matched: the frames are these; the preset's name or commit may have moved since, and the record follows it
       RK = { ...RK, look: { ...RK.look, name: ARB_RECORD.fetch.name }, arboretum_fetch: ARB_RECORD.fetch };
       writeJsonAtomic(P('run-key.json'), RK);
     }
   } else {
     // look and invocation sit beside the body: the key is the frames' identity, these say where the look file was and how the render was launched
-    RK = { key: RUN_KEY, body, provenance: exp.provenance, look: ARB_RECORD ? { path: null, name: ARB_RECORD.fetch.name, source: 'arboretum' } : { path: resolve(LOOK), name: basename(LOOK) },
-      ...(ARB_RECORD ? { arboretum_fetch: ARB_RECORD.fetch } : {}), invocation: { argv: redactArgv(argv), at: new Date().toISOString(), node: process.version } };
+    RK = { key: RUN_KEY, body, provenance: exp.provenance, look: PLAYLIST ? { path: PL_JSON ? resolve(PL_JSON) : null, name: PLAYLIST.name, source: PL_JSON ? 'playlist-json' : 'arboretum-playlist' } : ARB_RECORD ? { path: null, name: ARB_RECORD.fetch.name, source: 'arboretum' } : { path: resolve(LOOK), name: basename(LOOK) },
+      ...(ARB_RECORD ? { arboretum_fetch: ARB_RECORD.fetch } : {}), ...(PLAYLIST?.fetch ? { playlist_fetch: PLAYLIST.fetch } : {}), invocation: { argv: redactArgv(argv), at: new Date().toISOString(), node: process.version } };
     mkdirSync(OUT, { recursive: true });
     writeJsonAtomic(P('run-key.json'), RK);
   }
@@ -288,6 +341,7 @@ if (ENCODE_ONLY) {
   mkdirSync(P('seg'), { recursive: true });
   mkdirSync(P('ckpt'), { recursive: true });
   writeFileSync(P('look.json'), `${JSON.stringify(finalParams, null, 2)}\n`);
+  if (PLAYLIST) writeFileSync(P('playlist.json'), `${JSON.stringify({ name: PLAYLIST.name, items: PLAYLIST.items.map((it, i) => ({ name: it.name, preset_id: it.preset_id, version: it.version, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, params: STOP_PARAMS[i] })), timeline: SCHEDULE }, null, 2)}\n`);
 }
 
 const PAGE_SHA = RK.body.exporter?.video_html_sha256;   // the page the key names (an older key without it: nothing to compare, the check then fails loudly)
@@ -297,8 +351,13 @@ const segJson = (i) => readJson(P('seg', `${segName(i)}.json`));
 const segDone = (i) => { try { return existsSync(segFile(i)) && (PLAN.direct || existsSync(P('seg', `${segName(i)}.hashes`))) && statSync(segFile(i)).size === segJson(i).file_bytes; } catch { return false; } };   // a half-written json is not done
 const segRange = (i) => ({ from: PREROLL + i * SEG_FRAMES, to: PREROLL + Math.min(N, (i + 1) * SEG_FRAMES) });
 const ckptFile = (n) => P('ckpt', `ckpt_${String(n).padStart(9, '0')}.json`);
+// A playlist cannot checkpoint at a segment's end (a fade may be in flight there): its checkpoints are the LANDINGS, where the engine is at rest on a look. landingBefore(f) is the latest one at or
+// before pump f that is on disk (the pre-roll, on the first look, if none), and a resume restores it and replays the pumps up to f unrecorded.
+const landingsUpTo = (f) => SCHEDULE.filter((e) => e.land <= f);
+const landingBefore = (f) => { let best = { at: PREROLL, stop: 0 }; for (const e of landingsUpTo(f)) if (e.land > best.at && existsSync(ckptFile(e.land))) best = { at: e.land, stop: e.stop }; return best; };
+const segmentCheckpointed = (k) => (PLAYLIST ? landingsUpTo(segRange(k).to).every((e) => existsSync(ckptFile(e.land))) : existsSync(ckptFile(segRange(k).to)));
 // a segment is only trusted if every one before it is done too, and the checkpoint at its end exists
-const firstTodoSeg = () => { let k = 0; while (k < nSegs && segDone(k) && existsSync(ckptFile(segRange(k).to))) k++; return k; };
+const firstTodoSeg = () => { let k = 0; while (k < nSegs && segDone(k) && segmentCheckpointed(k)) k++; return k; };
 
 // ------------------------------------------------------------------ disk: the peak of THIS run
 // The segments are the master (one copy; --merge-master adds a second), then the delivery on top (video-lib.mjs diskPlan: the figures it is built on).
@@ -350,14 +409,14 @@ async function renderAll(firstTodo) {
   const closeSession = async () => { if (session) { try { await session.browser.close(); } catch { /* gone */ } session = null; } };
   killers.push(() => { session?.browser.close().catch(() => {}); });
 
-  const openSession = async (atPump, state) => {
+  const openSession = async (atPump, state, stop = 0) => {
     const b = await launchBrowser(chromium, CHROME);
     if (b.browser.version() !== CHROMIUM.version) { await b.browser.close(); throw fatal(`Chromium ${b.browser.version()} launched, the run key says ${CHROMIUM.version}`); }
     const page = await openPage(b.browser, srv.port);
     // video.html is read live at every page load: what this session was handed must be the page the key names
     try { assertServedPage(srv.served, PAGE_SHA); } catch (e) { await b.browser.close(); throw fatal(e.message); }
     session = { browser: b.browser, page, launch: b, pageSha: srv.served.get(PAGE_KEY) };
-    const info = await page.evaluate((o) => window.__v.open(o), { params, rw: RW, rh: RH, step: STEP, T0: T0_MS, at: atPump, state, overrideKeys: Object.keys(overrides) });
+    const info = await page.evaluate((o) => window.__v.open(o), { params: STOP_PARAMS[stop], rw: RW, rh: RH, step: STEP, T0: T0_MS, at: atPump, state, overrideKeys: Object.keys(overrides) });
     if (PLAN.downscale) await page.evaluate(installLinearDownscale, { width: OW, height: OH });
     return info;
   };
@@ -379,6 +438,8 @@ async function renderAll(firstTodo) {
       } finally { await b.browser.close().catch(() => {}); }
     }
     ({ state: startState } = readJson(ckptFile(PREROLL))); startAt = PREROLL;
+  } else if (PLAYLIST) {
+    startState = null; startAt = null;   // restored from the last landing when the session opens (below), and again after any retry
   } else {
     const c = readJson(ckptFile(segRange(firstTodo - 1).to));
     startState = c.state; startAt = c.at;
@@ -390,12 +451,20 @@ async function renderAll(firstTodo) {
   for (let i = firstTodo; i < nSegs; ) {
     const { from, to } = segRange(i);
     const frames = to - from;
-    if (at !== from) throw new Error(`internal: state is at ${at}, segment ${i} starts at ${from}`);
+    if (!PLAYLIST && at !== from) throw new Error(`internal: state is at ${at}, segment ${i} starts at ${from}`);
     let ff = null;
     try {
       if (!session) {
-        const openInfo = await openSession(at, state);
+        let openAt = at, openState = state, openStop = 0;
+        if (PLAYLIST) { const lb = landingBefore(from); openAt = lb.at; openStop = lb.stop; openState = readJson(ckptFile(lb.at)).state; }
+        const openInfo = await openSession(openAt, openState, openStop);
         await recordSession(session, openInfo, i);
+        if (PLAYLIST && openAt < from) {   // the engine is at rest on look `openStop` at pump openAt: replay the schedule up to the segment, unrecorded
+          const tr = Date.now();
+          const rp = await session.page.evaluate(([f, t, ev, sn]) => window.__v.run({ from: f, to: t, capture: false, events: ev, snapAt: sn }), [openAt, from, PL_EVENTS.filter((e) => e.start > openAt && e.start <= from), landingsUpTo(from).filter((e) => e.land > openAt).map((e) => e.land)]);
+          for (const l of rp.landings) writeFileSync(ckptFile(l.n), JSON.stringify({ at: l.n, state: l.snapshot }));
+          log(`playlist resume: restored the landing at pump ${openAt}, replayed ${from - openAt} pumps to segment ${i} in ${Date.now() - tr} ms`);
+        }
         log(`browser up: ${openInfo.renderer}; canvas ${openInfo.canvas} drawingBuffer ${openInfo.drawingBuffer}; bake ${openInfo.bakeRes} samples ${openInfo.samples}`);
         assertHardwareRenderer(openInfo.renderer, CHROME);
       }
@@ -408,12 +477,14 @@ async function renderAll(firstTodo) {
       sinks.set('seg', async (req, res) => { await pipeRequestTo(req, thisFf, counter); counter.last = Date.now(); res.writeHead(200).end('ok'); });
       const watchdog = setInterval(() => { if (Date.now() - counter.last > 15 * 60e3) { log('watchdog: no frames for 15 min, killing the browser'); session?.browser.close().catch(() => {}); } }, 30e3);
       const ts = Date.now();
+      // the playlist's fades that START in this segment, and the landings in it whose state is to come back (both empty for a single look)
+      const events = PL_EVENTS.filter((e) => e.start > from && e.start <= to), snapAt = landingsUpTo(to).filter((e) => e.land > from).map((e) => e.land);
       let r;
       try {
         r = PIPELINE === 'browser'
-          ? await session.page.evaluate(encodeCanvasRun, { config: hevcQuantizerConfig({ width: OW, height: OH, fps: FPS }), quantizer: 1, from, to, sink: '/__sink/seg' })
-          : PLAN.direct ? await session.page.evaluate(captureCanvasRun, { from, to, batch, sink: '/__sink/seg' })
-            : await session.page.evaluate(([f, t, bt, sk]) => window.__v.run({ from: f, to: t, batch: bt, sink: sk }), [from, to, batch, '/__sink/seg']);
+          ? await session.page.evaluate(encodeCanvasRun, { config: hevcQuantizerConfig({ width: OW, height: OH, fps: FPS }), quantizer: 1, from, to, sink: '/__sink/seg', events, snapAt })
+          : PLAN.direct ? await session.page.evaluate(captureCanvasRun, { from, to, batch, sink: '/__sink/seg', events, snapAt })
+            : await session.page.evaluate(([f, t, bt, sk, ev, sn]) => window.__v.run({ from: f, to: t, batch: bt, sink: sk, events: ev, snapAt: sn }), [from, to, batch, '/__sink/seg', events, snapAt]);
       }
       finally { clearInterval(watchdog); }
       const renderMs = Date.now() - ts;
@@ -430,7 +501,8 @@ async function renderAll(firstTodo) {
       }
       // commit: hashes, checkpoint, then the json that says "done"
       if (!PLAN.direct) writeFileSync(P('seg', `${segName(i)}.hashes`), `${r.hashes.map((h, k) => `${from + k + 1 - PREROLL} ${h}`).join('\n')}\n`);
-      writeFileSync(ckptFile(to), JSON.stringify({ at: to, state: r.snapshot }));
+      if (PLAYLIST) { for (const l of r.landings ?? []) writeFileSync(ckptFile(l.n), JSON.stringify({ at: l.n, state: l.snapshot })); if ((r.landings ?? []).length !== snapAt.length) throw new Error(`segment ${i}: ${(r.landings ?? []).length} landings for ${snapAt.length} expected`); }
+      else writeFileSync(ckptFile(to), JSON.stringify({ at: to, state: r.snapshot }));
       writeFileSync(P('seg', `${segName(i)}.json`), JSON.stringify({ segment: i, first_frame: from - PREROLL, frames, pumps: [from + 1, to], bytes_piped: counter.bytes, packets, file_bytes: statSync(file).size, file_sha256: await sha256File(file), render_wall_ms: renderMs, ffmpeg_version: FFMPEG_VERSION, page_sha256: session.pageSha, ffmpeg_args: ff.args, hashes_sha256: PLAN.direct ? null : sha256(readFileSync(P('seg', `${segName(i)}.hashes`))), minMean: r.minMean, maxMean: r.maxMean }, null, 2));
       state = r.snapshot; at = to; doneSegs++; i++;
       const elapsed = (Date.now() - t0) / 1000, perFrame = renderMs / frames, left = (nSegs - i) * SEG_FRAMES * perFrame / 1000;
@@ -572,7 +644,9 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
     tool: 'test-gl/render-video.mjs', made_at: new Date().toISOString(), run_key: RUN_KEY, pipeline: PIPELINE,
     exporter: RK?.body.exporter ?? prev?.exporter ?? null,
     exporter_this_invocation: EXPORTER,
-    engine: RK.provenance ?? prev?.engine, look: { path: lookPath, sha256: K.look_sha256, name: RK.look?.name ?? (lookPath ? basename(lookPath) : null), ...(K.arboretum ? { source: 'arboretum' } : {}) },
+    engine: RK.provenance ?? prev?.engine, look: { path: lookPath, sha256: K.look_sha256, name: RK.look?.name ?? (lookPath ? basename(lookPath) : null), ...(K.arboretum ? { source: 'arboretum' } : {}), ...(K.playlist ? { source: RK.look?.source ?? 'playlist' } : {}) },
+    // the playlist (the key's block, how it was fetched, and the timeline the frames were rendered on, in pumps; video frame = pump - preroll_frames)
+    ...(K.playlist ? { playlist: { ...K.playlist, ...RK.playlist_fetch, timeline: SCHEDULE, file: 'playlist.json' } } : {}),
     // the preset the look came from (the key's block, and how it was fetched); the token and the share token are in neither
     ...(K.arboretum ? { arboretum: { ...K.arboretum, ...RK.arboretum_fetch } } : {}),
     overrides: kOverrides, look_changes_are_quality_only: nonQuality.length === 0,

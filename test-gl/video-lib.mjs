@@ -381,7 +381,7 @@ export function parseArboretumSpec(spec) {
 }
 // What is recorded of how the exporter was launched: the share token is a credential, so it leaves the argv and a sha256 prefix says which link it was.
 export const redactArgv = (argv) => argv.map((a, i) => {
-  const m = argv[i - 1] === '--arboretum' ? /^([^:]*):(.+)$/.exec(a) : null;
+  const m = argv[i - 1] === '--arboretum' || argv[i - 1] === '--arboretum-playlist' ? /^([^:]*):(.+)$/.exec(a) : null;
   return m ? `${m[1]}:<share token omitted, sha256 ${sha256(m[2]).slice(0, 8)}>` : a;
 });
 // refusal: the server said no (401 / 403 / 404 / 422): the request cannot be met. Otherwise (a 5xx, nothing listening) it may be tried again.
@@ -427,6 +427,82 @@ export async function fetchArboretum({ base = ARBORETUM_BASE, id, version = null
   if (!Number.isInteger(gotVersion) || (version && gotVersion !== version)) throw fail(`the server answered version ${gotVersion}`, false);
   if (!body.params || typeof body.params !== 'object' || Array.isArray(body.params)) throw fail('the answer has no params', false);
   return { id, version: gotVersion, name: String(body.name ?? `preset ${id}`), komorebi_commit: body.komorebi_commit ?? null, params: body.params, requested };
+}
+
+// ---- the playlist: an ordered list of looks the engine walks with transitionTo (arboretum's own dwell and crossfade) ----
+// <id>[:<share_token>]. A playlist has no versions: its revision is what the fetch answers, and each item's params are pinned by hash in the run key.
+export function parsePlaylistSpec(spec) {
+  const m = /^([1-9]\d*)(?::(\S+))?$/.exec(String(spec));
+  if (!m) throw new Error('--arboretum-playlist: expected <id>[:<share_token>]');
+  return { id: Number(m[1]), share: m[2] ?? null };
+}
+// GET /api/playlists/<id>: { name, revision, items: [{ preset_id, version, name, dwell_s, crossfade_s, params }] } as this viewer may see them. An item this viewer cannot see
+// (`unavailable`) is refused, not skipped: a render that silently drops a look is a different piece. Messages are one line and carry neither token.
+export async function fetchArboretumPlaylist({ base = ARBORETUM_BASE, id, share = null, token = null, timeoutMs = 30000 }) {
+  const secrets = [token, share, share && encodeURIComponent(share)].filter(Boolean);
+  const say = (m) => { let t = String(m); for (const x of secrets) t = t.split(x).join('[redacted]'); return `arboretum playlist ${id}: ${t.replace(/\s+/g, ' ').trim().slice(0, 240)}`; };
+  const fail = (m, refusal) => new ArboretumError(say(m), refusal);
+  let host = 'the server';
+  try { host = new URL(base).host; } catch { /* reported below, where the fetch fails */ }
+  if (token && !isBearerSafeBase(base)) throw fail(`not sending the bearer token to ${host}: --arboretum-base must be https (http only to localhost or 127.0.0.1)`, true);
+  let res, text;
+  try {
+    const url = `${base.replace(/\/+$/, '')}/api/playlists/${id}${share ? `?k=${encodeURIComponent(share)}` : ''}`;
+    res = await fetch(url, { headers: { accept: 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, signal: AbortSignal.timeout(timeoutMs) });
+    text = await res.text();
+  } catch (e) { throw fail(`could not reach ${host} (${e.cause?.code ?? e.name})`, false); }
+  const serverSaid = () => { try { return JSON.parse(text).error ?? text; } catch { return text; } };
+  if (res.status === 401) throw fail(`401: ${token ? 'the token was refused' : 'it needs a token (set ARBORETUM_TOKEN)'}`, true);
+  if (res.status === 403) throw fail(`403: not allowed to read it ${token ? 'with this token' : 'without a token'}`, true);
+  if (res.status === 404) throw fail(`404: no such playlist${token ? '' : ' (it may be private: ARBORETUM_TOKEN is not set)'}`, true);
+  if (res.status === 422) throw fail(`422: the server rejected the request: ${serverSaid()}`, true);
+  if (!res.ok) throw fail(`the server answered ${res.status}`, false);
+  let body;
+  try { body = JSON.parse(text); } catch { throw fail('the answer is not JSON', false); }
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Number(body.id) !== id) throw fail('the answer is not that playlist', false);
+  if (!Array.isArray(body.items) || !body.items.length) throw fail('it has no items', true);
+  const items = body.items.map((it, i) => {
+    if (it.unavailable) throw fail(`item ${i + 1} (preset ${it.preset_id}) is unavailable to this token; a render does not skip looks`, true);
+    if (!it.params || typeof it.params !== 'object' || Array.isArray(it.params)) throw fail(`item ${i + 1} has no params`, false);
+    return { preset_id: it.preset_id, version: it.version ?? null, name: String(it.name ?? `preset ${it.preset_id}`), dwell_s: Number(it.dwell_s), crossfade_s: Number(it.crossfade_s), params: it.params };
+  });
+  return { id, name: String(body.name ?? `playlist ${id}`), revision: body.revision ?? null, items, requested: String(id) };
+}
+// Playlist items from a file: [{ name?, params, dwell_s?, crossfade_s? }] or { name?, items: [...] }. Defaults are arboretum's (dwell 30, crossfade 5).
+export function playlistFromJson(json, fallbackName = 'playlist') {
+  const list = Array.isArray(json) ? json : json?.items;
+  if (!Array.isArray(list) || !list.length) throw new Error('a playlist file is a non-empty list of { params, dwell_s?, crossfade_s? }');
+  const items = list.map((it, i) => {
+    const params = it?.params ?? null;
+    if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error(`playlist item ${i + 1} has no params`);
+    return { preset_id: null, version: null, name: String(it.name ?? `item ${i + 1}`), dwell_s: it.dwell_s ?? 30, crossfade_s: it.crossfade_s ?? 5, params };
+  });
+  return { id: null, name: String((!Array.isArray(json) && json?.name) || fallbackName), revision: null, items, requested: null };
+}
+// dwell 1..3600 s, crossfade 0..120 s (arboretum's limits), and a whole number of frames each: the schedule is in pumps, so a fraction of a frame would be rounded
+export function checkPlaylistTimes(items, fps) {
+  items.forEach((it, i) => {
+    if (!(Number.isFinite(it.dwell_s) && it.dwell_s >= 1 && it.dwell_s <= 3600)) throw new Error(`playlist item ${i + 1}: dwell_s must be 1..3600`);
+    if (!(Number.isFinite(it.crossfade_s) && it.crossfade_s >= 0 && it.crossfade_s <= 120)) throw new Error(`playlist item ${i + 1}: crossfade_s must be 0..120`);
+    for (const [k, v] of [['dwell_s', it.dwell_s], ['crossfade_s', it.crossfade_s]]) if (Math.abs(v * fps - Math.round(v * fps)) > 1e-9) throw new Error(`playlist item ${i + 1}: ${k} ${v} x ${fps} fps is not a whole number of frames`);
+  });
+}
+// The timeline, in absolute pump indexes (frame n is pumped at T0 + n*step; the video's first frame is pump preroll+1). The first look is simply there for its dwell; then each next look
+// (wrapping, so it loops) is faded in over ITS OWN crossfade, and its dwell is counted from the moment it has landed: arboretum's own playing rule (spec §9). `start` is the pump the
+// transitionTo is called before; `land` the pump after which the fade must be over (LAND_MARGIN pumps after the nominal end: the dyadic clock runs 3.8e-8 slow, so a 6 s fade is
+// 359.99999 frames of simulated time and lands one pump late). The landing is where a checkpoint can be taken: a fade in flight is not restorable state.
+export const LAND_MARGIN = 3;
+export function playlistSchedule({ items, fps, preroll, frames }) {
+  const end = preroll + frames, events = [];
+  if (items.length < 2) return events;
+  let cursor = preroll + Math.round(items[0].dwell_s * fps);
+  for (let k = 1; cursor < end; k++) {
+    const stop = k % items.length, it = items[stop];
+    const start = cursor + 1, land = start + Math.round(it.crossfade_s * fps) + LAND_MARGIN;
+    events.push({ k, stop, start, land, duration_s: it.crossfade_s });
+    cursor = land + Math.round(it.dwell_s * fps);
+  }
+  return events;
 }
 
 // ---- the engine tree: a pinned commit (git archive, as review.mjs does) or a SNAPSHOT of the working tree ----
