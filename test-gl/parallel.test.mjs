@@ -98,6 +98,13 @@ test('the page applies the same three sizes to the look as tinyEvents applies to
   assert.deepEqual(got, TINY_QUALITY);
 });
 
+test('the exporter hands the tiny pass its events through tinyEvents, and runs the serial path only for --jobs 1 (wiring, read from the source: the browser half cannot run here)', () => {
+  const src = readFileSync(join(HERE, 'render-video.mjs'), 'utf8');
+  assert.match(src, /events: tinyEvents\(eventsUpTo\(PL_EVENTS, plan\.upTo, PREROLL\)\)/);
+  assert.match(src, /await \(JOBS > 1 \? renderParallel\(\) : renderAll\(firstTodo\)\)/);
+  assert.doesNotMatch(src.slice(src.indexOf('const runKeyBody'), src.indexOf('if (has(\'--restart\')')), /JOBS|jobs/, 'the run key body does not mention jobs');
+});
+
 // ---------------------------------------------------------------- the pool
 test('runPool: concurrency never exceeds jobs, and reaches it', async () => {
   for (const jobs of [1, 2, 3, 8]) {
