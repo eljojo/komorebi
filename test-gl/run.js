@@ -840,16 +840,20 @@ const TRANSITION_ROUTES = [
     expect: { crossfade: false, structDiff: false } },
   { name: 'seed-only topology diff takes the grove crossfade', from: 'memories', to: 'memories',
     over: { seed: 1234567 },
-    expect: { crossfade: true, structDiff: true } },
+    expect: { crossfade: true, structDiff: true, bloomMax: 0 } },
+  { name: 'morning 1 to memories reorganizes without extra cloud cover', from: 'morning 1', to: 'memories',
+    over: {}, expect: { crossfade: true, structDiff: true, bloomMax: 0 } },
+  { name: 'memories to morning 1 reorganizes without extra cloud cover', from: 'memories', to: 'morning 1',
+    over: {}, expect: { crossfade: true, structDiff: true, bloomMax: 0 } },
   { name: 'a leaf_shape change takes the grove crossfade (each grove baked in its own outline)', from: 'memories', to: 'memories',
     over: { leaf_shape: 'maple', leaf_aspect: 1 },
-    expect: { crossfade: true, structDiff: true } },
+    expect: { crossfade: true, structDiff: true, bloomMax: 0 } },
   { name: 'a leaf_variety change takes the grove crossfade (a 64-row texture and a row a leaf: it cannot morph)', from: 'memories', to: 'memories',
     over: { leaf_variety: 1 },
-    expect: { crossfade: true, structDiff: true } },
+    expect: { crossfade: true, structDiff: true, bloomMax: 0 } },
   { name: 'a leaf_shape change to the beech takes the grove crossfade (a pinnate outline, its own texture)', from: 'memories', to: 'memories',
     over: { leaf_shape: 'beech', leaf_aspect: 1 },
-    expect: { crossfade: true, structDiff: true } },
+    expect: { crossfade: true, structDiff: true, bloomMax: 0 } },
   { name: 'wood at the target end closes the crossfade gate', from: 'memories', to: 'memories',
     over: { seed: 7654321, branch_tau: 0.5 },
     expect: { crossfade: false, structDiff: true } },
@@ -859,13 +863,15 @@ const TRANSITION_ROUTES = [
   // a hard param swap landing MID-crossfade must abort it cleanly (the observed failure: the incoming grove
   // kept baking against layer state the swap's rebuild had replaced — a dangling-VAO crash). onEnd must NOT
   // fire (the route was abandoned, not completed) and the engine must keep rendering after. And the abort must
-  // leave nothing of the route in the engine: the bloom the route had reached swells the cloud and the halo
-  // (effCloud, regenSource) for as long as trans.bloom stays up, so the settled frame has to be an engine
-  // born as the look it was swapped to — bloom 0, the same bytes. (The crossfade tier peaks at BLOOM_MAX.cross
-  // = 0.20, not nothing; the row refuses to pass if the route had not reached a bloom by the interrupt.)
+  // leave nothing of the route in the engine: the settled frame must equal an engine born as the new look.
+  // A grove crossfade must be inside its shared-bake window; a wood-bearing swap below must first reach
+  // positive cloud cover, so its abort still proves that the old bloom cannot leak into the new look.
   { name: 'setParams mid-crossfade aborts it cleanly', from: 'memories', to: 'memories',
     over: { seed: 1234567 }, interrupt: { at: 0.35, with: 'morning 1' },
-    expect: { crossfade: true, structDiff: true } },
+    expect: { crossfade: true, structDiff: true, bloomMax: 0 } },
+  { name: 'setParams mid-cloud dissolve clears its positive bloom', from: 'memories', to: 'memories',
+    over: { seed: 1234567, branch_tau: 0.5 }, interrupt: { at: 0.35, with: 'morning 1' },
+    expect: { crossfade: false, structDiff: true } },
 ];
 
 // Suite 3: two independently created engines on the same frozen look must land on the same bytes.
@@ -1538,7 +1544,8 @@ async function main() {
         if (!r.interrupted) bad.push('interrupt never fired');
         if (r.onEndFired) bad.push('onEnd fired despite the abort');
         if (r.interrupted) {
-          if (route.expect.sceneFade ? r.bloomAtInterrupt !== 0 : !(r.bloomAtInterrupt > 0)) bad.push(`unexpected bloom ${r.bloomAtInterrupt} at interruption`);
+          if (route.expect.crossfade && !(r.progressAtInterrupt > 0.25 && r.progressAtInterrupt < 0.75)) bad.push(`crossfade was outside its shared-bake window at ${r.progressAtInterrupt}`);
+          if (route.expect.sceneFade || route.expect.crossfade ? r.bloomAtInterrupt !== 0 : !(r.bloomAtInterrupt > 0)) bad.push(`unexpected bloom ${r.bloomAtInterrupt} at interruption`);
           if (r.bloomAfter !== 0) bad.push(`trans.bloom=${r.bloomAfter} after the abort (want 0; the route had reached ${r.bloomAtInterrupt.toFixed(3)})`);
           const born = await renderOnce(page, route.interrupt.with, {}, [GATE_FRAMES]);   // an engine BORN as the look the route was swapped to
           const d = await page.evaluate(([x, y]) => window.__diff(x, y), [r.afterId, born.captures[0].id]);

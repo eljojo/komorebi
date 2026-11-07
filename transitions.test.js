@@ -6,6 +6,8 @@ import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
 import { makeTransitions } from "./komorebi-transitions.js";
 import { PRESETS } from "./presets.js";
+import { makeSource } from "./komorebi-source.js";
+import { DEG, clamp, lerp } from "./komorebi-math.js";
 import riseFixture from './test-gl/fixtures/fall-look-up.json';
 
 // the DEFAULTS knobs that deliberately do NOT participate in transitions: runtime/debug flags, the look's
@@ -82,6 +84,42 @@ function transitionRig(from) {
   };
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
+
+for(const [from,to] of [['morning 1','memories'],['memories','morning 1']]){
+  test(`${from} → ${to}: the grove reorganizes without a cloud or halo detour`,()=>{
+    const r=transitionRig(PRESETS[from]),target={},installed=[];let overlap=false,arrived=0;
+    Object.assign(r.hub,{perf:{auto:false},src:{},buildTargetGrove:()=>target,installGrove:g=>installed.push(g),
+      effCloud:()=>clamp(lerp(r.params.cloud_thickness,1,r.hub.trans.bloom),0,1)});
+    r.hub.regenSource=makeSource(r.hub).regenSource;
+    r.transitionTo(PRESETS[to],{duration:1,onEnd:()=>arrived++});
+    expect(r.hub.trans.crossfade).toBe(true);expect(r.hub.groveIn).toBe(target);
+    expect(r.hub.trans.durScale).toBe(2);
+    let previous=r.params.cloud_thickness,callback,frames=0;
+    while(r.hub.trans.active&&frames++<130){
+      callback=r.tickTransition(1/60)||callback;
+      const p=r.params,src=r.hub.src,core=p.core_angular_radius_deg*DEG;
+      expect(src.haloR).toBeCloseTo(lerp(core*2,p.halo_angular_radius_deg*DEG,p.cloud_thickness),12);
+      const nCore=Math.max(3,Math.round(src.count*.5));let weight=0;
+      for(let i=0;i<nCore;i++)weight+=src.flat[i*3+2];
+      expect(weight).toBeCloseTo(p.core_weight_fraction*(1-p.cloud_thickness),6);
+      expect((p.cloud_thickness-previous)*(PRESETS[to].cloud_thickness-PRESETS[from].cloud_thickness)).toBeGreaterThanOrEqual(0);
+      expect(r.hub.trans.bloom).toBe(0);previous=p.cloud_thickness;
+      overlap ||= r.hub.crossW>0&&r.hub.crossW<1;
+    }
+    expect(overlap).toBe(true);expect(installed).toEqual([target]);expect(r.swaps).toHaveLength(0);
+    expect(r.hub.trans.active).toBe(false);expect(r.params).toEqual(PRESETS[to]);
+    expect(arrived).toBe(0);callback();expect(arrived).toBe(1);
+  });
+}
+
+test('topology swaps outside the shared layer bake retain their cloud cover',()=>{
+  for(const to of [{...PRESETS.memories,seed:123,branch_tau:1},{...PRESETS.memories,sky_view:true}]){
+    const r=transitionRig(PRESETS.memories);r.transitionTo(to);
+    expect(r.hub.trans.crossfade).toBe(false);
+    for(let i=0;i<60;i++)r.tickTransition(1/60);
+    expect(r.hub.trans.bloom).toBeGreaterThan(0);
+  }
+});
 
 test('fall memories → look up lifts the actual litter without a midpoint swap',()=>{
   const r=transitionRig(riseFixture.from);let began=0,steps=0,ended=0,arrived=0;
