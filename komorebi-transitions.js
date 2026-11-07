@@ -8,7 +8,7 @@
 import { TAU, cameraPose, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
 import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';
-import {litterRiseEligible,shadowRiseEligible} from './komorebi-litter-rise.js';
+import {litterRiseEligible,litterFallEligible,shadowRiseEligible} from './komorebi-litter-rise.js';
 
 const CAMERA_KEYS = new Set(['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y']);
 const WINDOW_KEYS = new Set(['window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall']);
@@ -27,14 +27,17 @@ export function makeTransitions(hub){
     const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
     if(trans.active&&trans.litterRise){hub.retargetLitterRise(to,opts);return;}
     const shadowRise=!trans.active&&shadowRiseEligible(params,to)&&hub.faith?.count!==0;
-    if(!trans.active&&(shadowRise||hub.grove?.litter?.length&&litterRiseEligible(params,to))){
+    const litterFall=!trans.active&&litterFallEligible(params,to)&&hub.beginLitterRise(to,false,true)!==false;
+    if(!trans.active&&(litterFall||shadowRise||hub.grove?.litter?.length&&litterRiseEligible(params,to))){
       hub.warnCut(to);
       Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
-        active:true,litterRise:true,shadowRise,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
+        active:true,litterRise:true,shadowRise,litterFall,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
         structDiff:true,canopyMorph:false,crossfade:false,backgroundFade:false,bloom:0,bloomMax:0,irisRadius:1,swapped:false,onEnd:opts.onEnd??null});
-      hub.beginLitterRise(to,shadowRise);
-      for(const k in DEFAULTS)params[k]=to[k];
-      hub.rebuildAll();hub.resetPerf();
+      if(!litterFall){
+        hub.beginLitterRise(to,shadowRise);
+        for(const k in DEFAULTS)params[k]=to[k];
+        hub.rebuildAll();hub.resetPerf();
+      }
       return;
     }
     if(trans.active&&trans.seasonTravel){hub.retargetSeasonTravel(to,opts);return;}

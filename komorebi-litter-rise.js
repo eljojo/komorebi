@@ -94,6 +94,8 @@ export const litterRiseEligible=FEAT_LITTER ? FEAT_DROP ? (a,b)=>{
     &&Object.keys(DEFAULTS).every(k=>RISE_KEYS.has(k)||a[k]===b[k]);
 }:()=>false:()=>false;
 
+export const litterFallEligible=(a,b)=>litterRiseEligible(b,a);
+
 // Shadow footprints have no carpet or standing-tree throw. The eye renderer currently lands on three sky planes.
 export const shadowRiseEligible=FEAT_SKY_FLIGHT ? (a,b)=>{
  const count=p=>Math.ceil(Math.max(1,p.tree_count))*p.limb_count*Math.max(1,p.branch_children)**Math.max(0,p.branch_levels-1);
@@ -108,7 +110,7 @@ export const shadowRiseEligible=FEAT_SKY_FLIGHT ? (a,b)=>{
   &&Math.max(count(a),count(b))*Math.max(Math.ceil(a.leaves_per_cluster*a.foliage_density),Math.ceil(b.leaves_per_cluster*b.foliage_density))<=CANOPY_MORPH_MAX;
 }:()=>false;
 
-function makeRiseRenderer(hub,source,from,to,footprints=false){
+function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  const a=source,b={hub},canvas=hub.canvas,h=a.hub,g=hub.gl;
  const read=h=>{
   const leaves=new Float32Array(h.faith.count*18);
@@ -173,8 +175,9 @@ function makeRiseRenderer(hub,source,from,to,footprints=false){
    bypasses=new Array(pairs.length);planner=risePlanner(from,to);planEnds=ends.slice();
   }
   if(planner){
-   // Preparation fits inside the pickup pause. Freeze one destination pose and finish before any leaf lifts.
-   const until=t>=.035?pairs.length:Math.min(pairs.length,planned+Math.ceil(pairs.length/12));
+   // Native endpoint pauses leave time to freeze one destination pose and prepare its eye detours.
+   const due=descending?t<=.9:t>=.035;
+   const until=due?pairs.length:Math.min(pairs.length,planned+Math.ceil(pairs.length/12));
    for(;planned<until;planned++){
     const o=planned*12;
     bypasses[planned]=planner([starts[o],starts[o+1],0],[planEnds[o],planEnds[o+1],planEnds[o+8]],ids[pairs[planned][0]/18]);
@@ -248,16 +251,28 @@ function makeRiseRenderer(hub,source,from,to,footprints=false){
 const NO_LITTER_RISE={endLitterRise(){}};
 export const makeLitterRise=FEAT_SKY_FLIGHT ? (hub,createSource)=>{
  let s=null;
- function beginLitterRise(to,footprints=false){s={source:createSource(),from:{...hub.params},to:{...to},footprints,renderer:null,pending:null};}
- function stepLitterRise(dt,t){if(!s.renderer)s.renderer=makeRiseRenderer(hub,s.source,s.from,s.to,s.footprints);s.renderer.step(t,dt);}
- function drawLitterRise(){s.renderer.draw();}
+ function beginLitterRise(to,footprints=false,reverse=false){
+  const source=createSource(reverse?to:undefined);
+  if(reverse&&!source.hub.grove.litter?.length){source.dispose();return false;}
+  s={source,from:{...(reverse?source.hub.params:hub.params)},to:{...(reverse?hub.params:to)},
+   footprints,reverse,progress:reverse?1:0,renderer:null,pending:null};
+  return true;
+ }
+ function stepLitterRise(dt,t){
+  if(!s.renderer)s.renderer=makeRiseRenderer(hub,s.source,s.from,s.to,s.footprints,s.reverse);
+  s.progress=s.reverse?1-t:t;s.renderer.step(s.progress,dt);
+ }
+ function drawLitterRise(){
+  if(s.reverse&&s.progress===1)hub.drawFrameInto(null,hub.canvas.width,hub.canvas.height);
+  else s.renderer.draw();
+ }
  function retargetLitterRise(to,opts){s.pending={to,opts};hub.trans.onEnd=null;}
- function finishLitterRise(){return s.pending;}
+ function finishLitterRise(){if(s.reverse)s.source.restore();return s.pending;}
  function endLitterRise(){
   if(!s)return;
   const pending=s.pending;
   if(s.renderer)s.renderer.dispose();else s.source.dispose();
-  s=null;hub.trans.shadowRise=false;return pending;
+  s=null;hub.trans.shadowRise=false;hub.trans.litterFall=false;return pending;
  }
  return {beginLitterRise,stepLitterRise,drawLitterRise,retargetLitterRise,finishLitterRise,endLitterRise};
 }:()=>NO_LITTER_RISE;

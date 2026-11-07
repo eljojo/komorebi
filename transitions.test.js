@@ -10,6 +10,7 @@ import { makeSource } from "./komorebi-source.js";
 import { DEG, clamp, lerp } from "./komorebi-math.js";
 import riseFixture from './test-gl/fixtures/fall-look-up.json';
 import shadowFixture from './test-gl/fixtures/purple-look-up.json';
+import descentFixture from './test-gl/fixtures/look-up-fall.json';
 
 // the DEFAULTS knobs that deliberately do NOT participate in transitions: runtime/debug flags, the look's
 // tone-map + wind-pattern (live uniforms / a table swap, snapped not tweened), and the legacy clusters_per_layer.
@@ -145,6 +146,28 @@ test('purple eye → look up carries its shadow footprints without a midpoint sw
   let cb;while(r.hub.trans.active)cb=r.tickTransition(1/60)||cb;
   expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(ended).toBe(1);
   expect(r.params.sky_view).toBe(true);expect(arrived).toBe(0);cb();expect(arrived).toBe(1);
+});
+
+test('look up → fall memories keeps the live sky grove until the carpet landing',()=>{
+  const r=transitionRig(descentFixture.from);let began,ended=0,arrived=0,steps=0;
+  Object.assign(r.hub,{beginLitterRise:(to,footprints,reverse)=>began={to,footprints,reverse},stepLitterRise:()=>steps++,
+    finishLitterRise:()=>{Object.assign(r.params,descentFixture.to);r.hub.rebuildAll();return null;},endLitterRise:()=>ended++});
+  r.transitionTo(descentFixture.to,{duration:1,onEnd:()=>arrived++});
+  expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.litterFall).toBe(true);
+  expect(began).toEqual({to:descentFixture.to,footprints:false,reverse:true});
+  expect(r.params.sky_view).toBe(true);expect(r.swaps).toHaveLength(0);
+  for(let i=0;i<100;i++){r.tickTransition(1/60);expect(r.params.sky_view).toBe(true);expect(r.swaps).toHaveLength(0);expect(r.hub.trans.bloom).toBe(0);}
+  let cb;while(r.hub.trans.active)cb=r.tickTransition(1/60)||cb;
+  expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(r.params).toEqual(descentFixture.to);
+  expect(ended).toBe(1);expect(arrived).toBe(0);cb();expect(arrived).toBe(1);
+});
+
+test('a floor with no dropped leaves keeps its existing transition when descent preparation declines',()=>{
+  const r=transitionRig(descentFixture.from);let prepared=0;
+  r.hub.beginLitterRise=()=>{prepared++;return false;};
+  r.transitionTo(descentFixture.to);
+  expect(prepared).toBe(1);expect(r.hub.trans.litterRise).not.toBe(true);expect(r.hub.trans.litterFall).not.toBe(true);
+  expect(r.hub.trans.structDiff).toBe(true);
 });
 
 test('cherry blossom ↔ park 2 follows one seasonal grove without a scene dissolve',()=>{

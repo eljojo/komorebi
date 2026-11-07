@@ -432,8 +432,8 @@ function createEngine(canvas, opts, driven=false){
     if(to.params.drift_auto)to.params.drift_phase=from.params.drift_phase;
     to.publishBend(to.grove);
   }
-  const createScene=()=>{
-    const scene = createEngine(canvas, { params:{...params} }, true);
+  const createScene=(look=params)=>{
+    const scene = createEngine(canvas, { params:{...look} }, true);
     copyMotion(hub,scene.hub);
     scene.hub.bake();
     return scene;
@@ -476,10 +476,14 @@ function createEngine(canvas, opts, driven=false){
   }
   Object.assign(hub,makeLeafTravel(hub,retainTravelSource));
   Object.assign(hub,makeSeasonTravel(hub));
-  Object.assign(hub,makeLitterRise(hub,()=>{
-    const source=createScene();
+  Object.assign(hub,makeLitterRise(hub,(look)=>{
+    const source=createScene(look);
     source.hub.perf.auto=perf.auto;source.hub.perf.quality=perf.quality;
     source.hub.applyQuality();source.hub.regenSource();source.hub.bake();
+    if(look)source.restore=()=>{
+      for(const k in DEFAULTS)params[k]=look[k];
+      rebuildAll();copyMotion(source.hub,hub);resetPerf();
+    };
     return source;
   }));
 
