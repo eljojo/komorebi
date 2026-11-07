@@ -338,6 +338,120 @@ void main(){
   }else frag=vec4(exp(-vTau*cov),1.0);
 }`;
 
+// The litter lift crosses the horizon as one 3D field. Its two targets accumulate optical depth and reflected-light moments.
+const VS_RISE = `#version 300 es
+precision highp float;
+layout(location=0)in vec2 aCorner;
+layout(location=1)in vec4 iA;
+layout(location=2)in vec4 iB;
+layout(location=3)in vec4 iC;
+layout(location=4)in vec4 iMaterial;
+layout(location=5)in vec4 iFlight;
+uniform vec3 uEye;
+uniform mat3 uBasis;
+uniform float uFov,uAspect;
+uniform vec4 uBox;
+out vec2 vLocal,vWorld;
+out vec3 vTau,vReflectance;
+out float vFade,vBeta,vVisible;
+flat out vec2 vRows;
+flat out float vWeight;
+void main(){
+ vec2 lc=aCorner*uBox.zw+uBox.xy;
+ float c=cos(iB.x),s=sin(iB.x),roll=iFlight.y;
+ vec2 leaf=lc*iA.zw;leaf.y*=cos(roll);
+ vec2 xy=iA.xy+mat2(c,-s,s,c)*leaf;
+ float z=iC.x+lc.y*iA.w*sin(roll);
+ vec3 relative=vec3(xy,z)-uEye;
+ vec3 p=vec3(dot(relative,uBasis[0]),dot(relative,uBasis[1]),dot(relative,uBasis[2]));
+ float k=tan(.5*uFov),near=.01,far=500.0;
+ gl_Position=vec4(p.x/(k*uAspect),p.y/k,(far+near)/(far-near)*p.z-2.0*far*near/(far-near),p.z);
+ vLocal=lc;vWorld=xy;vTau=iB.yzw;vFade=iC.y;vRows=iC.zw;
+ vReflectance=iMaterial.rgb;vBeta=iMaterial.a;vVisible=iFlight.x;vWeight=iFlight.z;
+}`;
+const FS_RISE = `#version 300 es
+precision highp float;
+in vec2 vLocal,vWorld;
+in vec3 vTau,vReflectance;
+in float vFade,vBeta,vVisible;
+flat in vec2 vRows;
+flat in float vWeight;
+uniform highp sampler2D uLeafA,uLeafB,uFaith,uFillT,uFillS;
+uniform int uShapeA,uShapeB;
+uniform vec2 uFaithOrigin,uFillOrigin;
+uniform float uFaithExtent,uFillExtent,uFillShare,uEdge;
+uniform vec3 uSun,uAmbient;
+layout(location=0)out vec4 depths;
+layout(location=1)out vec4 emissions;
+void main(){
+ vec2 d=dot(vLocal,vLocal)<1e-12?vec2(1,0):vLocal;
+ float u=atan(d.y,d.x)*.15915494+.5;
+ float ra=uShapeA==0?1.0:texture(uLeafA,vec2(u,vRows.x)).r;
+ float rb=uShapeB==0?1.0:texture(uLeafB,vec2(u,vRows.y)).r;
+ float r=length(vLocal)-mix(ra,rb,vWeight)+1.0;
+ float cov=(1.0-smoothstep(1.0-uEdge,1.0,r))*vVisible;
+ if(cov<=0.0)discard;
+ float area=clamp(cov*vFade,0.0,1.0);
+ float opaque=-log(max(1.0-area,1e-5));
+ vec3 tau=mix(vec3(opaque),vTau*cov,vBeta);
+ vec3 beam=texture(uFaith,(vWorld-uFaithOrigin)/uFaithExtent).rgb;
+ vec2 fuv=(vWorld-uFillOrigin)/uFillExtent;
+ vec3 ambient=mix(uAmbient,uAmbient*textureLod(uFillT,fuv,3.0).rgb+textureLod(uFillS,fuv,3.0).rgb,uFillShare);
+ vec3 light=(beam*uSun+ambient)*vReflectance;
+ float weight=dot(tau,vec3(.3333333333));
+ depths=vec4(tau,area);
+ emissions=vec4(light*weight*(1.0-vBeta),weight);
+}`;
+
+const VS_RISE_SKY = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec4 iA;
+layout(location=2) in vec4 iB;
+layout(location=3) in vec4 iC;
+layout(location=4) in vec4 iMaterial;
+layout(location=5) in vec4 iFlight;
+uniform vec2 uOrigin,uExtent;
+uniform vec4 uBox;
+uniform float uBand;
+uniform vec3 uHeights,uEye;
+out vec2 vLocal;
+out vec3 vTau;
+out float vFade,vLayer,vFlightW;
+flat out vec2 vRows;
+void main(){
+  vec2 lc=aCorner*uBox.zw+uBox.xy;
+  float c=cos(iB.x),s=sin(iB.x);
+  float plane=uBand<0.5?uHeights.x:(uBand<1.5?uHeights.y:uHeights.z);
+  float scale=(plane-uEye.z)/max(iC.x-uEye.z,.001);
+  vec2 world=uEye.xy+(iA.xy+mat2(c,-s,s,c)*(lc*iA.zw)-uEye.xy)*scale;
+  gl_Position=vec4(((world-uOrigin)/uExtent)*2.0-1.0,0.0,1.0);
+  float z=iC.x;
+  float w0=1.0-smoothstep(uHeights.x,uHeights.y,z),w2=smoothstep(uHeights.y,uHeights.z,z);
+  vLayer=(uBand<.5?w0:(uBand<1.5?1.0-w0-w2:w2))*smoothstep(0.0,.02,z-uEye.z)*iMaterial.a*iFlight.x;
+  vFlightW=iFlight.z;vLocal=lc;vTau=iB.yzw;vFade=iC.y;vRows=iC.zw;
+}`;
+const FS_RISE_SKY = `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in vec3 vTau;
+in float vFade,vLayer,vFlightW;
+flat in vec2 vRows;
+uniform highp sampler2D uLeafA,uLeafB;
+uniform int uShapeA,uShapeB;
+uniform float uEdge;
+out vec4 frag;
+void main(){
+  vec2 d=dot(vLocal,vLocal)<1e-12?vec2(1.0,0.0):vLocal;
+  float u=atan(d.y,d.x)*.15915494+.5;
+  float ra=uShapeA==0?1.0:texture(uLeafA,vec2(u,vRows.x)).r;
+  float rb=uShapeB==0?1.0:texture(uLeafB,vec2(u,vRows.y)).r;
+  float r=length(vLocal)-mix(ra,rb,vFlightW)+1.0;
+  float cov=1.0-smoothstep(1.0-uEdge,1.0,r);
+  if(cov<=0.0)discard;
+  frag=vec4(vTau*cov,vFade*cov)*vLayer;
+}`;
+
 // FAITHFUL pass 2 (per sample): acc += w_i · transmittance_i, additive, fullscreen. Summed over all samples the
 // accumulator holds Σ w_i·T_i — the soft shadow (same "sum of shifted sharp shadows" as transport's loop, but the
 // shift is per-leaf-continuous and pre-integrated here so transport taps it ONCE).
@@ -837,4 +951,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };

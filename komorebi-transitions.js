@@ -8,6 +8,7 @@
 import { TAU, cameraPose, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
 import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';
+import {litterRiseEligible} from './komorebi-litter-rise.js';
 
 const CAMERA_KEYS = new Set(['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y']);
 const WINDOW_KEYS = new Set(['window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall']);
@@ -24,6 +25,17 @@ export function makeTransitions(hub){
     opts = opts || {};
     if(!target || typeof target!=='object') return;
     const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
+    if(trans.active&&trans.litterRise){hub.retargetLitterRise(to,opts);return;}
+    if(!trans.active&&hub.grove?.litter?.length&&litterRiseEligible(params,to)){
+      hub.warnCut(to);
+      Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
+        active:true,litterRise:true,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
+        structDiff:true,canopyMorph:false,crossfade:false,backgroundFade:false,bloom:0,bloomMax:0,irisRadius:1,swapped:false,onEnd:opts.onEnd??null});
+      hub.beginLitterRise(to);
+      for(const k in DEFAULTS)params[k]=to[k];
+      hub.rebuildAll();hub.resetPerf();
+      return;
+    }
     if(trans.active&&trans.seasonTravel){hub.retargetSeasonTravel(to,opts);return;}
     const seasonTravel=!trans.active&&seasonTravelEligible(params,to);
     trans.seasonTravel=seasonTravel;
@@ -154,6 +166,15 @@ export function makeTransitions(hub){
     const dur = trans.dur * trans.durScale;   // the tier's longer clock (see DUR_SCALE); scaled here, never into trans.dur, which stays the caller's sticky default
     trans.t = Math.min(1, trans.t + Math.min(dt,1/15)/dur);   // clamp the step like tick(): a tab-switch spike must not skip the bloom peak
     const t = trans.t, e = smoothstep(0,1,t);              // ease-in-out for the morph; raw t for the bloom hump
+    if(trans.litterRise){
+      hub.stepLitterRise(dt,t);
+      if(t<1)return null;
+      const pending=hub.finishLitterRise();
+      trans.active=false;trans.litterRise=false;trans.swapped=true;
+      hub.endLitterRise();hub.regenSource();hub.bake();hub.resumeAdaptive?.();
+      const cb=trans.onEnd;trans.onEnd=null;
+      return pending?()=>hub.transitionTo(pending.to,pending.opts):cb;
+    }
     if(trans.viewpoint){
       for(let i=0;i<3;i++) trans.viewEye[i]=lerp(trans.viewFrom.eye[i],trans.viewTo.eye[i],e);
       trans.viewElevation=lerp(trans.viewFrom.elevation,trans.viewTo.elevation,e);

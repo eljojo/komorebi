@@ -6,6 +6,7 @@ import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
 import { makeTransitions } from "./komorebi-transitions.js";
 import { PRESETS } from "./presets.js";
+import riseFixture from './test-gl/fixtures/fall-look-up.json';
 
 // the DEFAULTS knobs that deliberately do NOT participate in transitions: runtime/debug flags, the look's
 // tone-map + wind-pattern (live uniforms / a table swap, snapped not tweened), and the legacy clusters_per_layer.
@@ -81,6 +82,18 @@ function transitionRig(from) {
   };
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
+
+test('fall memories → look up lifts the actual litter without a midpoint swap',()=>{
+  const r=transitionRig(riseFixture.from);let began=0,steps=0,ended=0,arrived=0;
+  r.hub.grove={litter:[{}]};
+  Object.assign(r.hub,{beginLitterRise:()=>began++,stepLitterRise:()=>steps++,finishLitterRise:()=>null,endLitterRise:()=>ended++});
+  r.transitionTo(riseFixture.to,{duration:1,onEnd:()=>arrived++});
+  expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);expect(began).toBe(1);
+  expect(r.swaps).toHaveLength(1);
+  let cb;for(let i=0;i<122&&r.hub.trans.active;i++)cb=r.tickTransition(1/60);
+  expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(ended).toBe(1);
+  expect(r.hub.trans.active).toBe(false);expect(r.params.sky_view).toBe(true);expect(arrived).toBe(0);cb?.();expect(arrived).toBe(1);
+});
 
 test('cherry blossom ↔ park 2 follows one seasonal grove without a scene dissolve',()=>{
   for(const [from,to] of [[PRESETS['cherry blossom'],PRESETS['park 2']],[PRESETS['park 2'],PRESETS['cherry blossom']]]){

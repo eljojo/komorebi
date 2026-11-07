@@ -72,7 +72,7 @@ test("the general player keeps every tier, because montebello ships and opens al
 });
 
 test("the sweep: the sky view's strings are in no floor-only bundle, cut or not (each carries an interpolation a minifier will not drop)", () => {
-  for (const r of [whole, home]) for (const m of ["uSkyScatter", "uSrcAngR", "raySegDist", "uViewEye"]) expect(text(r).includes(m), m).toBe(false);
+  for (const r of [whole, home]) for (const m of ["uSkyScatter", "uSrcAngR", "raySegDist", "uViewEye", "uRiseDepth"]) expect(text(r).includes(m), m).toBe(false);
   expect(text(player).includes("uSkyScatter")).toBe(false);                    // the shipped looks are all floor looks too
 });
 
@@ -82,6 +82,9 @@ test("a bundle retains the continuous viewpoint only when it carries both sky an
   const mixed=assemble({looks:[sky,'park 1']});
   expect(mixed.cameras).toContain('viewpoint');
   expect(mixed.files['komorebi-transport.js']).toContain('uniform vec3 uViewEye;');
+  const flight=assemble({looks:[sky,'park 1'],features:'all'});
+  expect(flight.cameras).toContain('rise');
+  expect(flight.files['komorebi-transport.js']).toContain('uRiseDepth');
 });
 
 // The BUILD literal itself, read out of the minified text: the name, then its own `cut` array. A bare `"fill"` anywhere in the bundle proves

@@ -761,6 +761,22 @@ vec2 raySegDist(vec3 O, vec3 U, vec3 Pa, vec3 Pb){
   return vec2(length(W + s*U - tt*V), s);
 }`;
 
+const GLSL_T_SKY_COMPOSE = `      // COMPOSITION. No receiver material of any kind — no Tt, no dye, no folds, no seams, no ground albedo — because there is no
+      // surface between the canopy and the eye.
+      // The WINDOW (leaf_diffuse 0, the literal old line, in the else): T·(sky + source). The sky is attenuated by the same T the sun
+      // is: leaves dim the blue behind them exactly as they dim the disk, and the disk shows through every leaf, tinted.
+      // The LANTERN (uBeamK > 0): the sky seen through the leaves (T), plus what the leaves themselves radiate (Lsc, the glow: the light
+      // each took out of the line of sight, at its own level), and the disk, which only the beam reaches (Tsrc, through gaps). The
+      // glow sits at the sun's irradiance and the disk is authored (SKY_SUN_GAIN), so the two scales are authored apart; the leaf
+      // model that conserves between them is dimensionless. srcSeen is the leaked disk ALONE, its own variable and added LAST: a
+      // later phase takes it out of this sum and gives it to the eye.
+      if(uBeamK > 0.0){
+        vec3 srcSeen = uSunColor*L*Tsrc;
+        skyRad = uAmbient*SKY_SKY_GAIN*T + Lsc;
+        skyRad += srcSeen;
+      } else {
+        skyRad = (uAmbient*SKY_SKY_GAIN + uSunColor*L) * T + Lsc;   // transmitted source + sky, plus what the leaves themselves radiate. At sky_scatter 0, Lsc is exactly 0.
+      }`;
 const GLSL_T_SKY_READ = `    if(dir.z <= 1e-3){
       fog = 1.0;                     // at or under the horizon there is no canopy and no sky model: hand it to the same distance haze the floor path uses over its horizon (§4.7). One behaviour, one colour.
     } else {
@@ -838,23 +854,9 @@ const GLSL_T_SKY_READ = `    if(dir.z <= 1e-3){
         vec2 q = vec2(dot(dir, ca*sUp - sa*sHor), dot(dir, sa*sUp + ca*sHor));   // the ray's offset in the sampler's own (x,y)
         L *= smoothstep(uSrcMoon.y - aa, uSrcMoon.y + aa, length(q - vec2(uSrcMoon.x, 0.0)));
       }
-      // COMPOSITION. No receiver material of any kind — no Tt, no dye, no folds, no seams, no ground albedo — because there is no
-      // surface between the canopy and the eye.
-      // The WINDOW (leaf_diffuse 0, the literal old line, in the else): T·(sky + source). The sky is attenuated by the same T the sun
-      // is: leaves dim the blue behind them exactly as they dim the disk, and the disk shows through every leaf, tinted.
-      // The LANTERN (uBeamK > 0): the sky seen through the leaves (T), plus what the leaves themselves radiate (Lsc, the glow: the light
-      // each took out of the line of sight, at its own level), and the disk, which only the beam reaches (Tsrc, through gaps). The
-      // glow sits at the sun's irradiance and the disk is authored (SKY_SUN_GAIN), so the two scales are authored apart; the leaf
-      // model that conserves between them is dimensionless. srcSeen is the leaked disk ALONE, its own variable and added LAST: a
-      // later phase takes it out of this sum and gives it to the eye.
-      if(uBeamK > 0.0){
-        vec3 srcSeen = uSunColor*L*Tsrc;
-        skyRad = uAmbient*SKY_SKY_GAIN*T + Lsc;
-        skyRad += srcSeen;
-      } else {
-        skyRad = (uAmbient*SKY_SKY_GAIN + uSunColor*L) * T + Lsc;   // transmitted source + sky, plus what the leaves themselves radiate. At sky_scatter 0, Lsc is exactly 0.
-      }
+${GLSL_T_SKY_COMPOSE}
     }`;
+const GLSL_T_RISE_SKY_READ = `${GLSL_T_SKY_READ.replace(GLSL_T_SKY_COMPOSE,'      skyRad=uAmbient*SKY_SKY_GAIN+uSunColor*L; riseT=T; riseScatter=Lsc;')}`;
 
 const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, and the amendment to "we never see the tree, only what it casts".
     // The eye lies on the ground at uViewCenter and looks UP; the surface the light reaches is the RETINA. Nothing
@@ -922,6 +924,9 @@ const GLSL_T_WOOD_CAST = `  // woody occluder (spec §4.5), evaluated ONCE per p
   }`;
 
 // Sky and ground share one eye. The horizon is crossed by rays, with both halves reading the same layer bake.
+const GLSL_T_VIEWPOINT_FLOOR = `${GLSL_T_LAYERS}
+${GLSL_T_WOOD_CAST}
+      skyRad=(acc*uSurfaceSunColor + uAmbient)*uGround;`;
 const GLSL_T_VIEWPOINT = `    float cp=cos(uViewElevation), sp=sin(uViewElevation), kf=max(tan(0.5*uFov),1e-4);
     float sx=(vUv.x-0.5)*uAspect, sy=vUv.y-0.5;
     vec3 rawDir=vec3(2.0*kf*sx,cp-2.0*kf*sy*sp,sp+2.0*kf*sy*cp);
@@ -936,13 +941,33 @@ ${GLSL_T_SKY_READ}
       fog=smoothstep(1.15*halfExtent,3.0*halfExtent,length(world-uViewCenter));
       float Dref=-sp+kf*cp;
       extraThrow=uFarSmear*clamp(pow(max(Dref,1e-4)/max(-rawDir.z,1e-4),1.5)-1.0,0.0,4.0);
-${GLSL_T_LAYERS}
-${GLSL_T_WOOD_CAST}
-      skyRad=(acc*uSurfaceSunColor + uAmbient)*uGround;
+${GLSL_T_VIEWPOINT_FLOOR}
     }
     // Both authored endpoint cameras retain their horizon treatment; the moving eye meets on the same haze.
     float horizon=(4.0*uViewSkyWeight*(1.0-uViewSkyWeight))*(1.0-smoothstep(0.0,0.08,abs(dir.z)));
     fog=max(fog,horizon);`;
+
+
+const GLSL_T_RISE_FLOOR = `      if(uFaithful!=0){acc=tapFaith(world);}else{
+${GLSL_T_LAYERS}
+${GLSL_T_WOOD_CAST}
+      }
+      vec3 floorCol;
+${GLSL_T_FLOOR_MATERIAL.replace(/\bcol\b/g,'floorCol').replace(/uSunColor/g,'uSurfaceSunColor')}
+      skyRad=floorCol;`;
+const GLSL_T_RISE_VIEW = `${GLSL_T_VIEWPOINT.replace(GLSL_T_SKY_READ,GLSL_T_RISE_SKY_READ).replace(GLSL_T_VIEWPOINT_FLOOR,GLSL_T_RISE_FLOOR)}`;
+const GLSL_T_RISE_MATERIAL = `    col=mix(skyRad,uHazeColor,fog); fog=0.0;
+    vec3 travelT=vec3(0.0), reflection=vec3(0.0);
+    for(int i=0;i<4;i++){
+      vec2 direction=vec2((i&1)==0?-1.0:1.0,(i&2)==0?-1.0:1.0);
+      vec2 uv=vUv+direction*uRiseStep;
+      vec3 T=exp(-texture(uRiseDepth,uv).rgb);vec4 material=texture(uRiseEmission,uv);
+      travelT+=T;reflection+=(vec3(1.0)-T)*(material.rgb/max(material.a,1e-5));
+    }
+    travelT*=.25;reflection*=.25;
+    if(dir.z>0.0)travelT=mix(travelT,riseT,uRiseNative);
+    col=col*travelT+reflection+riseScatter;`;
+
 
 const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (§3.5): as the sun sets the eye's rods take over the dim shade —
   // colour desaturates toward a blue-green grey and saturated reds darken first, while the bright dapples
@@ -1033,6 +1058,9 @@ const GLSL_T_COL_DECL = `  // ---- Receiver (§4.x/§4.9). The landed irradiance
 // ---- THE VOCABULARY. One entry per uniform group: the GLSL it declares, and the location-table keys that GLSL
 // supports. A group with no `locs` contributes only functions (the taps, the fold field, the warp). ----
 const TRANSPORT_GROUPS = {
+  rise: { decls: `uniform highp sampler2D uRiseDepth,uRiseEmission;
+uniform float uRiseNative;
+uniform vec2 uRiseStep;`, locs: {riseDepth:'uRiseDepth',riseEmission:'uRiseEmission',riseNative:'uRiseNative',riseStep:'uRiseStep'} },
   viewpoint: { decls: `uniform vec3 uViewEye;
 uniform float uViewElevation;
 uniform float uViewSkyWeight;
@@ -1076,6 +1104,14 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
 // null on the cameras that have no flat cast frame to pre-bake into. `params` is documentation, not enforcement:
 // the knob families an entry answers for, so a reader can find the other end of a receiver from here. ----
 const CAMERAS = {
+  rise: {
+    groups: ['head','rayView','occ','sunDir','sky','transport','woodCast','skyTap','ca','faith','floor','fill','litter','viewpoint','rise','post'],
+    prologue: `vec2 world=vec2(0.0);float fog=0.0,extraThrow=0.0,recvZ=0.0;
+vec3 acc=vec3(0.0),skyRad=vec3(0.0),riseT=vec3(1.0),riseScatter=vec3(0.0);`,
+    camera: GLSL_T_RISE_VIEW, faith: null, rayTransport: true,
+    material: [GLSL_T_RISE_MATERIAL], params: ['view_*','litter'],
+    note: 'transition-only litter flight: the foreground crosses both hemispheres in front of the distant haze',
+  },
   viewpoint: {
     groups: ['head','rayView','occ','sunDir','sky','transport','woodCast','skyTap','ca','floor','viewpoint','post'],
     prologue: `vec2 world=vec2(0.0); float fog=0.0, extraThrow=0.0, recvZ=0.0;
@@ -1124,7 +1160,7 @@ const cameraFor = (p) => p.sky_view ? 'sky' : (p.receiver|0) === 2 ? 'enclosure'
 // they need engine state (the GL objects, params, the grove) a module-level table cannot reach. This list is the
 // seam between the two — create() checks its table against it on construction, and registry.test.js checks it
 // against TRANSPORT_GROUPS and CAMERAS. Neither half can drift without one of those saying so.
-const GROUP_UPLOAD_KEYS = ['head','rayView','occ','transport','woodCast','beam','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','litter','sky','viewpoint','post'];
+const GROUP_UPLOAD_KEYS = ['rise','head','rayView','occ','transport','woodCast','beam','ca','faith','sunDir','floor','cloth','fabric','window','tent','fill','litter','sky','viewpoint','post'];
 
 // The assembler. Every conditional it used to carry is now a lookup: the decls are the entry's groups in order,
 // the body is the entry's own snippets, and the only branch left is the one real structural fork — whether this

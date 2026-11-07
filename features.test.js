@@ -123,7 +123,8 @@ test("a program assembled with a feature cut names no uniform of that feature's 
     const dir = treeIn({ looks, features: keep, strip: false });
     try {
       const T = await import(`${pathToFileURL(join(dir, "komorebi-transport.js")).href}?${cut.join("-")}`);
-      expect(T.TRANSPORT_CAMERAS.length).toBe(TRANSPORT_CAMERAS.length);
+      const cameras=TRANSPORT_CAMERAS.filter(cam=>cam!=='rise'||!cut.includes('litter'));
+      expect(T.TRANSPORT_CAMERAS).toEqual(cameras);   // the litter flight cannot run without its carpet tier
       for (const cam of T.TRANSPORT_CAMERAS) {
         const src = T.buildTransport(cam);
         expect(delta(src), `${cam} braces without ${cut}`).toBe(0);

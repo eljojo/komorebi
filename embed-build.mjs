@@ -325,6 +325,7 @@ export function assemble({ looks, features, strip = true, name } = {}) {
   const cutGroups = cut.map((f) => FEATURES[f].group).filter(Boolean);
   const cameras = [...new Set(kept.map((n) => cameraFor(PRESETS[n])))];
   if(cameras.includes('sky') && cameras.includes('floor'))cameras.push('viewpoint');
+  if(cameras.includes('viewpoint') && keep.includes('litter') && keep.includes('drop'))cameras.push('rise');
   const groups = [...new Set(cameras.flatMap((c) => CAMERAS[c].groups))].filter((g) => !cutGroups.includes(g));
   const uploads = GROUP_UPLOAD_KEYS.filter((g) => groups.includes(g));
 
@@ -351,7 +352,9 @@ export function assemble({ looks, features, strip = true, name } = {}) {
   const label = `${file} (${looks ? kept.join(', ') : 'every shipped look'})`;
   const flags = Object.fromEntries(Object.keys(FEATURES).map((f) => [FEATURES[f].flag, keep.includes(f)]));
   for (const [f, src] of files) {
-    let s = substituteFlags(src, f, flags);
+    // A litter flight needs both endpoint cameras as well as the seasonal tiers.
+    const localFlags=f==='komorebi-litter-rise.js'&&!cameras.includes('rise')?{...flags,FEAT_LITTER:false}:flags;
+    let s = substituteFlags(src, f, localFlags);
     if (f === 'komorebi-engine.js') {
       if (!s.includes(buildDecl)) throw new Error(`embed: ${f} does not declare BUILD as '${buildDecl}'`);
       s = s.replace(buildDecl, `const BUILD = ${JSON.stringify({ name: label, cut })};`);

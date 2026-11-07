@@ -80,6 +80,7 @@ const SUN_INCIDENCE = {
   enclosure: (el) => Math.max(Math.sin(el*DEG), 0),
   cloth:     (el, az) => Math.abs(Math.cos(el*DEG)*Math.sin(az*DEG)),
   sky:       () => 1,
+  rise:      () => 1,   // the flying-leaf view joins the same two hemispheres
   viewpoint: () => 1,   // the upward rays see radiance; the floor branch applies its own incidence
 };
 function sunIncidence(camera, elevDeg, azDeg){ return SUN_INCIDENCE[camera](elevDeg, azDeg); }

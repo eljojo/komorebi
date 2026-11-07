@@ -13,6 +13,7 @@ import { makeEditorTools } from './komorebi-editor-tools.js';
 import { makeSceneFade } from './komorebi-scene-fade.js';
 import { makeLeafTravel } from './komorebi-leaf-travel.js';
 import { makeSeasonTravel } from './komorebi-season-travel.js';
+import { makeLitterRise } from './komorebi-litter-rise.js';
 
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
@@ -139,7 +140,7 @@ function createEngine(canvas, opts, driven=false){
   const transportCache = new Map();
   // Which variant this draw runs — the registry's own selector (§4.9), bound to these params. It can only change
   // across a structural rebuild (sky_view and receiver are MODE_KEYS), or along the continuous viewpoint route.
-  const transportCamera = () => trans.active && trans.viewpoint && (trans.t>0 || trans.viewInterrupted) ? 'viewpoint' : cameraFor(params);
+  const transportCamera = () => trans.active && trans.riseField ? 'rise' : trans.active && trans.viewpoint && (trans.t>0 || trans.viewInterrupted) ? 'viewpoint' : cameraFor(params);
   // The per-variant location table, read straight off the registry: a variant's table holds exactly the keys its
   // groups declare, and nothing else. That is what lets the upload skip by GROUP rather than by null-checking a
   // location — a uniform that genuinely goes missing surfaces as a missing one instead of hiding among a dozen
@@ -193,7 +194,7 @@ function createEngine(canvas, opts, driven=false){
   } : null;
   // adaptive frame-rate (TUNE §9): offscreen present target + cadence state. presentFBO/presentTex are canvas-sized
   // and allocated lazily on first use (so a look that never enables adaptive_motion pays nothing).
-  let presentTex=null, adaptiveLastRender=0, adaptiveHot=true;
+  let presentTex=null, adaptiveLastRender=0, adaptiveHot=true, adaptiveResume=false;
   const ADAPT_HI=0.05, ADAPT_LO=0.02;   // hysteresis on the motion magnitude: above HI render every frame, below LO drop to idle_fps
   // lateral diffusion (§4.9): [0] = transport's LINEAR-HDR frame (the sharp one), [1]/[2] = the separable blur's
   // ping/pong. RGBA16F at the render size, one FBO each (attached once at allocation, so no per-frame re-attach),
@@ -475,6 +476,12 @@ function createEngine(canvas, opts, driven=false){
   }
   Object.assign(hub,makeLeafTravel(hub,retainTravelSource));
   Object.assign(hub,makeSeasonTravel(hub));
+  Object.assign(hub,makeLitterRise(hub,()=>{
+    const source=createScene();
+    source.hub.perf.auto=perf.auto;source.hub.perf.quality=perf.quality;
+    source.hub.applyQuality();source.hub.regenSource();source.hub.bake();
+    return source;
+  }));
 
   // ---- auto-quality: hold ~60 fps by ratcheting render resolution then samples down; grudging to
   // climb back (each forced drop doubles the wait). Drives perf.*, never the user's art. ----
@@ -584,6 +591,7 @@ function createEngine(canvas, opts, driven=false){
       if(trans.sceneFade){ hub.endSceneFade(); trans.sceneFade=false; }
       if(trans.leafTravel){hub.endLeafTravel();trans.leafTravel=false;}
       if(trans.seasonTravel){hub.endSeasonTravel();trans.seasonTravel=false;}
+      if(trans.litterRise){hub.endLitterRise();trans.litterRise=false;}
       trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0;
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
@@ -602,6 +610,8 @@ function createEngine(canvas, opts, driven=false){
   rebuildAll();
   resetPerf();
   let last=performance.now(), fps=60, paused=false, alive=true, lost=false;
+  // The journey bypasses the cached present frame; refresh it at the landing clock even in still air.
+  hub.resumeAdaptive=()=>{adaptiveLastRender=last;adaptiveHot=true;adaptiveResume=true;};
   // THE LOOP. `loop` is a generation: every start/stop bumps it, so a callback already queued with rAF by an
   // older loop is dropped when it fires — pause+resume, or a loss+restore inside one frame, can never leave two
   // loops running.
@@ -619,6 +629,7 @@ function createEngine(canvas, opts, driven=false){
       hub.endSceneFade();
       hub.endLeafTravel();
       hub.endSeasonTravel();
+      hub.endLitterRise();
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       [progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
@@ -681,6 +692,7 @@ function createEngine(canvas, opts, driven=false){
                     hub.hier ? hub.hier.maxV*0.5 : 0);
   }
   function adaptiveDue(now){
+    if(adaptiveResume){adaptiveResume=false;return true;}
     const m = motionMagnitude();
     if(adaptiveHot){ if(m < ADAPT_LO) adaptiveHot=false; }
     else if(m > ADAPT_HI) adaptiveHot=true;
@@ -718,7 +730,8 @@ function createEngine(canvas, opts, driven=false){
       if(trans.sceneFade && motionActive()) bake();
       landed = tickTransition(dt);
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
-    if(trans.seasonTravel)hub.timed('transport',hub.drawSeasonTravel);
+    if(trans.litterRise)hub.timed('transport',hub.drawLitterRise);
+    else if(trans.seasonTravel)hub.timed('transport',hub.drawSeasonTravel);
     else if(trans.leafTravel)hub.timed('transport',hub.drawLeafTravel);
     else if(trans.sceneFade) hub.timed('transport',hub.drawSceneFade);
     else if(params.show_layer && !faithfulOn()) drawLayerBlit(); else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
@@ -740,6 +753,8 @@ function createEngine(canvas, opts, driven=false){
     if(pending){trans.to=pending.to;trans.onEnd=pending.opts?.onEnd??null;}
     const seasonPending=hub.endSeasonTravel();
     if(seasonPending){trans.to=seasonPending.to;trans.onEnd=seasonPending.opts?.onEnd??null;}
+    const risePending=hub.endLitterRise();
+    if(risePending){trans.to=risePending.to;trans.onEnd=risePending.opts?.onEnd??null;}
   }
   function onContextRestored(){
     if(!alive) return;
@@ -754,7 +769,7 @@ function createEngine(canvas, opts, driven=false){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = trans.active ? trans.onEnd : null;
-    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
+    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
     rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)

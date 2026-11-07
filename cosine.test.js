@@ -46,7 +46,7 @@ test("sunIncidence is unclamped in elevation: 2° is sin 2°, not the editor's 4
 
 test("sunIncidence has a row for every camera of the registry — a new receiver must name its surface", () => {
   for (const cam of TRANSPORT_CAMERAS) expect(Number.isFinite(sunIncidence(cam, 30, 100)), cam).toBe(true);
-  expect(TRANSPORT_CAMERAS.slice().sort()).toEqual(["cloth", "enclosure", "floor", "sky", "viewpoint"]);
+  expect(TRANSPORT_CAMERAS.slice().sort()).toEqual(["cloth", "enclosure", "floor", "rise", "sky", "viewpoint"]);
 });
 
 test("the table's numbers, to 3 places: park 1 .438, curtain 1 .860, curtain 2 .813, tent 1 .819, the y1–y4 sheet .208/.438/.766/.940, the sky views 1", () => {

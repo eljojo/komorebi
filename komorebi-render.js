@@ -130,6 +130,12 @@ export function makeRender(hub){
   // linear-out flag), computed once in drawTransportInto rather than twice here. Every body below is the body the
   // predicate chain ran — this is a regrouping, not a rewrite. ----
   const GROUP_UPLOAD = {
+    rise: (u) => {
+      const field=hub.trans.riseField;
+      gl.activeTexture(gl.TEXTURE14);gl.bindTexture(gl.TEXTURE_2D,field.depth);gl.uniform1i(u.riseDepth,14);
+      gl.activeTexture(gl.TEXTURE15);gl.bindTexture(gl.TEXTURE_2D,field.emission);gl.uniform1i(u.riseEmission,15);
+      gl.uniform1f(u.riseNative,field.native);gl.uniform2fv(u.riseStep,field.step);
+    },
     viewpoint: (u, f) => {
       gl.uniform3fv(u.eye, hub.trans.viewEye);
       gl.uniform1f(u.elevation, hub.trans.viewElevation);
@@ -138,21 +144,22 @@ export function makeRender(hub){
       gl.uniform3f(u.surfaceSun,f.atm.sun[0]*incidence,f.atm.sun[1]*incidence,f.atm.sun[2]*incidence);
     },
     head: (u, f) => {
+      const atlas=hub.trans.riseField?.atlas,E=atlas?.extent??f.E;
       gl.uniform1f(u.aspect, canvas.width/canvas.height);
       gl.uniform2f(u.viewCenter, params.view_center_x, params.view_center_y);   // camera pan (world m) — frames the off-frame tree; no auto-centre (§4.8)
-      gl.uniform2f(u.origin, -f.E/2, -f.E/2);
-      gl.uniform2f(u.extent, f.E, f.E);
+      gl.uniform2f(u.origin, -E/2, -E/2);
+      gl.uniform2f(u.extent, E, E);
       // physical sun + sky colour from solar elevation (spec §3.5): warm/red low sun, ozone-blue shadows. On the floor, the cloth and the tent uSunColor feeds the beam and nothing else, so the
       // cosine law (sun_cosine) is a scale of THIS upload and never a multiply in a shader (acc*uSunColor*f could contract into another FMA than today's line and break byte-identity even at f = 1).
       // f.sunIrr is exactly 1 at sun_cosine 0, where x*1 is exact; the sky view's is always 1, because its uSunColor is the disk's radiance.
       gl.uniform3f(u.sun, f.atm.sun[0]*f.sunIrr, f.atm.sun[1]*f.sunIrr, f.atm.sun[2]*f.sunIrr);
       gl.uniform3f(u.ambient, f.atm.ambient[0], f.atm.ambient[1], f.atm.ambient[2]);
-      gl.uniform1fv(u.heights, hub.layerHeights());
+      gl.uniform1fv(u.heights, atlas?.heights??hub.layerHeights());
       gl.uniform1i(u.layerCount, params.layer_count);
       // The fill temporarily changes wrap state; establish the transport's domain on every draw.
       const wrap = !params.sky_view && !hub.bulkOn() ? gl.REPEAT : gl.CLAMP_TO_EDGE;
       for(let i=0;i<MAX_LAYERS;i++){
-        gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]);
+        gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, atlas?.textures[i]??hub.layerTex[i]);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
         gl.uniform1i(u.layers[i], i);
@@ -372,7 +379,8 @@ export function makeRender(hub){
       gl.uniform1f(u.skyScatter, clamp(params.sky_scatter, 0, 1));
       gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);          // at k = 0 the sky ray reads each texel as its mixture (§4.5)
       gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
-      for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE8+i); gl.bindTexture(gl.TEXTURE_2D, hub.woodTex[i]); gl.uniform1i(u.woods[i], 8+i); }
+      const base=hub.trans.riseField?10:8;   // the rising litter still speaks the floor's carpet on unit 8
+      for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+base+i); gl.bindTexture(gl.TEXTURE_2D, hub.woodTex[i]); gl.uniform1i(u.woods[i], base+i); }
       gl.uniform2f(u.srcAngR, src.coreR, src.haloR);
       gl.uniform2f(u.srcAngL, src.Lcore, src.Lhalo);
       gl.uniform2f(u.srcMoon, src.moonD, src.moonR);

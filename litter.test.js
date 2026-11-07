@@ -383,10 +383,10 @@ test("the floor's else is the old line: with the carpet unread the material is t
   expect(floor.slice(0, at).replace(/uniform[^;]*uLitter\w*;/g, "").includes("uLitter")).toBe(false);
 });
 
-test("the carpet is the floor's alone: no other camera declares it, samples it, or uploads it", () => {
+test("the carpet stays on the floor, including the floor half of the litter flight", () => {
   expect(Object.keys(TRANSPORT_GROUPS.litter.locs).sort()).toEqual(["litter", "litterExtent", "litterOn", "litterOrigin"]);
   expect(GROUP_UPLOAD_KEYS).toContain("litter");
-  for (const cam of TRANSPORT_CAMERAS) expect(CAMERAS[cam].groups.includes("litter"), `${cam} speaks the litter group`).toBe(cam === "floor");
+  for (const cam of TRANSPORT_CAMERAS) expect(CAMERAS[cam].groups.includes("litter"), `${cam} speaks the litter group`).toBe(cam === "floor" || cam === "rise");
   for (const cam of ["cloth", "enclosure", "sky"]) {
     const src = buildTransport(cam);
     expect(/uLitter/.test(src), `${cam} mentions the carpet`).toBe(false);
