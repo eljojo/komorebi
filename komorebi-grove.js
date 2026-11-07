@@ -23,6 +23,8 @@
 //   which is also why there is no shallow-copy grove: installGrove would free the textures it shared. faith.* is engine-global (a second grove built for a transition
 //   writes it), so the engine re-seasons only with no transition or a season-only grove morph, and with faith.buf still this grove's. leafW is a NEW array each time: the tree preview keys on it.
 //   MEASURED (bun, median of 7, fall at t 0.9): afternoon 7 73 ms a regrow, the void 201, montebello 15 — see the cost test in reseason.test.js for the re-season's.
+//   DENSITY CAPACITY. A fixed summer grove can keep a larger per-cluster prefix and reweight its active leaves. Its separate key excludes density, but its gate excludes pigment, drop and variety;
+//   opening those rebuilds the actual population before any exposure rank is needed. Ordinary builds and season records retain their original keys and arithmetic. The active count and cast bounds follow the prefix.
 // ============================================================================
 import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
 
@@ -45,6 +47,14 @@ export const GROVE_READS = [
   'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','tree_count','trunk_radius_m','view_extent_m',
 ];
 export const seasonKey = (params, faithful) => `${GROVE_READS.map(k => params[k]).join('|')}|${faithful ? 1 : 0}`;
+// Density can reuse a prefix only without population-dependent pigment, drop or outline work. It remains a structural key for ordinary re-seasoning.
+export const densityEligible = P => !senescing(P) && P.leaf_drop === 0 && P.leaf_variety === 0;
+const DENSITY_READS = GROVE_READS.filter(k => k !== 'foliage_density');
+export const densityKey = (P, faithful) => `${DENSITY_READS.map(k => P[k]).join('|')}|${faithful ? 1 : 0}`;
+export const densityCount = (P, density = P.foliage_density) => {
+  const pcF = Math.max(0, P.leaves_per_cluster*density), pcInt = Math.floor(pcF);
+  return pcInt + (pcF-pcInt > 1e-4 ? 1 : 0);
+};
 const SREC = 11;   // a season record: x, y, h, A, B0, area, j, k, cov, layer, start of the leaf's 17 floats in its layer's buffer (the faithful record's first 16 are the same numbers)
 
 // A FULL CROWN (§4.5, `inner_leaves`). Only a terminal twig bears leaves, so from above a grown crown is a wheel: a ring of leaves at the shell, a core a third as dense, bare limbs for spokes. A real crown carries shade
@@ -114,7 +124,9 @@ export function makeGrove(hub){
   // (occ and faith are still written straight to engine state below. They belong to the ACTIVE grove, and the
   // crossfade's gate excludes both of their consumers — wood needs branch_tau > 0, faith needs faithfulOn() —
   // so a second grove never needs its own copy of either. If that gate ever widens, they move in here too.)
-  function buildGrove(prevHier, { keepSeason = false } = {}){
+  function buildGrove(prevHier, { keepSeason = false, densityCapacity = null } = {}){
+    const cacheDensity = densityCapacity !== null && densityEligible(params);
+    keepSeason ||= cacheDensity;
     const layerVAO = [];   // this grove's own; the OUTGOING grove's GL objects are freed by installGrove, not here
     const E = params.canopy_extent_m;
     const tau = [
@@ -122,7 +134,7 @@ export function makeGrove(hub){
       -Math.log(clamp(params.trans_g,1e-4,0.999)),
       -Math.log(clamp(params.trans_b,1e-4,0.999)),
     ];
-    const pcF = Math.max(0, params.leaves_per_cluster*params.foliage_density);
+    const pcF = Math.max(0, params.leaves_per_cluster*(cacheDensity ? Math.max(params.foliage_density, densityCapacity) : params.foliage_density));
     const pcInt = Math.floor(pcF);
     const frac = pcF - pcInt;                         // marginal leaf fades in by this
     const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
@@ -706,16 +718,26 @@ export function makeGrove(hub){
       grove.season = { key: grove.key, rec: sRec, base: seasonBase, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, nTree, E, tau, seg: [sx0, sx1, sy0, sy1],
                        faithBuf: faith.buf, ex: sEx, rank: sRank, u: null, outL: null, outF: null };
     }
+    if(cacheDensity){
+      // The capacity's marginal leaf is geometry too; its live coverage is recomputed from the current params, never divided out of float32 tau.
+      const tipMin = hMin<=hMax ? hMin : 0;
+      grove.season.density = { key: densityKey(params, faithful), hMin: tipMin, hMax: hMax>hMin ? hMax : tipMin+1 };
+      reseasonGrove(grove);
+    }
     return grove;
   }
 
   // Does this grove's cache still describe the params, and is the engine-global faith.* still its own? (see the header: THE KEY, GOTCHAS)
-  const reseasonable = (g) => !!g?.season && g.season.faithBuf === faith.buf && g.season.key === seasonKey(params, faithfulOn());
+  const reseasonable = (g) => !!g?.season && g.season.faithBuf === faith.buf && (g.season.density
+    ? densityEligible(params) && g.season.density.key === densityKey(params, faithfulOn()) && densityCount(params) <= g.season.nLeaf
+    : g.season.key === seasonKey(params, faithfulOn()));
 
   // The season arithmetic of buildGrove (the hang loop's tau, the rec rewrite, the compaction, the litter, leafW, the faithful AABB), re-run over g.season in ONE pass
   // on typed arrays. It must stay the same arithmetic as buildGrove's, call for call — reseason.test.js holds the bytes.
   function reseasonGrove(g, P = params){
-    const S = g.season, n = S.n, rec = S.rec, nLeaf = S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0], leafRow = g.hier.leafRow;   // leafRow: the table of rows the build drew (leaf_variety), which the litter keeps; null at the gate
+    const S = g.season, n = S.n, rec = S.rec, nLeaf = S.density ? densityCount(P) : S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0], leafRow = g.hier.leafRow;   // leafRow: the table of rows the build drew (leaf_variety), which the litter keeps; null at the gate
+    const pcF = S.density ? Math.max(0, P.leaves_per_cluster*P.foliage_density) : 0, pcInt = Math.floor(pcF), frac = pcF-pcInt;
+    let hMin = S.density?.hMin, hMax = S.density?.hMax;
     // Summer transmission is authored live; the cached leaf geometry and exposure do not depend on it.
     tau[0] = -Math.log(clamp(P.trans_r,1e-4,0.999));
     tau[1] = -Math.log(clamp(P.trans_g,1e-4,0.999));
@@ -741,6 +763,7 @@ export function makeGrove(hub){
     let lx0 = 1e18, ly0 = 1e18, lx1 = -1e18, ly1 = -1e18;   // the survivors' plan extent (doubles, like buildGrove's own scan of faithData)
     for(let i=0;i<n;i++){
       const o = SREC*i, j = rec[o+6], k = rec[o+7];
+      if(S.density && k >= nLeaf) continue;
       const dT = tShift ? tShift[twigs[j].tree] : undefined, cT = tGain ? tGain[twigs[j].tree] : undefined;
       let w = 1, D = 0;
       if(FEAT_DROP && track){
@@ -750,7 +773,7 @@ export function makeGrove(hub){
         leafW[j*nLeaf + k] = w;
       }
       const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, P, P.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i]), dT, cT) : FEAT_PIGMENT && sen ? leafTau(tau, P, P.seed, j, k, leafT, undefined, undefined, dT, cT) : tau;
-      const cov = rec[o+8], cf = cov*w;
+      const cov = S.density ? ((k===pcInt) ? frac : 1.0)*twigs[j].tcov : rec[o+8], cf = cov*w;
       if(w === 0){
         if(FEAT_LITTER) litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: cov, ...(leafRow && { row: leafRow[j*nLeaf + k] }) });
         continue;
@@ -763,6 +786,7 @@ export function makeGrove(hub){
       wL[l] = at + 17; wF += 18;
       const x = rec[o], y = rec[o+1];
       if(x<lx0)lx0=x; if(x>lx1)lx1=x; if(y<ly0)ly0=y; if(y>ly1)ly1=y;
+      if(S.density){ const z = rec[o+2]; if(z<hMin)hMin=z; if(z>hMax)hMax=z; }
     }
     for(let l=0;l<nLayer;l++){
       const L = g.layerVAO[l];
@@ -776,6 +800,7 @@ export function makeGrove(hub){
     if(lx0<px0)px0=lx0; if(lx1>px1)px1=lx1; if(ly0<py0)py0=ly0; if(ly1>py1)py1=ly1;
     if(px0>px1){ const h=P.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
     faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
+    if(S.density){ faith.hMin=hMin; faith.hMax=hMax; g.hier.nLeaf=nLeaf; S.key=g.key=seasonKey(P, faithfulOn()); }
     g.litter = litter; g.hier.leafW = leafW;
   }
 

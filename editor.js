@@ -101,6 +101,7 @@ function frameShadow(){
 }
 
 // scope: 'source' rebuilds the light; 'canopy' rebuilds+rebakes leaves;
+// 'season' re-seasons cached leaves; 'density' reweights a fixed summer grove, or regrows outside its gate;
 // 'textures' reallocates layer textures too; 'perf' resets auto-quality; '' just re-reads each frame.
 const PANEL = [
   ['hc','Sun'],
@@ -137,7 +138,7 @@ const PANEL = [
   ['s','vignette_shape','edge shape',2,8,0.1,''],      // its superellipse exponent: 2 an ellipse touching the edges, 8 a rounded rectangle; inert while the fade is 0
 
   ['hc','Density'],
-  ['s','foliage_density','density',0.1,3,0.05,'canopy'],
+  ['s','foliage_density','density',0.1,3,0.05,'density'],
   ['s','tree_count','trees',1,16,1,'canopy'],
   ['s','leaves_per_cluster','leaves/twig',1,80,1,'canopy'],
   ['s','inner_leaves','inner leaves',0,1,0.01,'canopy'],   // §4.5: leaves on the older wood, so the crown is full — the share of each twig's leaves hung back along the limbs it grew from; 0 = the hollow crown, leaves at the twigs only

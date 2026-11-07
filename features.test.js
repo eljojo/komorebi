@@ -148,7 +148,7 @@ test("with nothing cut, buildTransport is the program the repo builds, character
 // A grove built with exactly the features a look does NOT open cut out must upload what the whole grove uploads. The reference is the
 // repo's grove with every tier on AND the exposure gate held open (ordered -> true), so it does not trust the predicate it is
 // checking: if `ordered` forgets that the drop consumes the rank, the cut grove drops its leaves by a phase the reference does not.
-function rig(makeG, params, tint) {
+function rig(makeG, params, tint, densityCapacity = null) {
   const gl = new Proxy({}, {
     get(t, name) {
       if (name === "createBuffer") return () => ({ data: null });
@@ -158,7 +158,7 @@ function rig(makeG, params, tint) {
     },
   });
   const faith = {}, hub = { gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => false, occ: {}, faith, sky: { start: [], count: [] } };
-  const G = makeG(hub), g = G.buildGrove(null, { keepSeason: !!tint });
+  const G = makeG(hub), g = G.buildGrove(null, { keepSeason: !!tint, densityCapacity });
   if (tint) { Object.assign(params, tint); G.reseasonGrove(g); }
   return { layers: g.layerVAO.map((l) => Array.from(l.buf.data)), faith: Array.from(faith.buf.data), leafW: g.hier.leafW ? Array.from(g.hier.leafW) : null };
 }
@@ -174,6 +174,20 @@ test('summer tint re-season works with every autumn feature cut', async () => {
     const fresh = rig(makeGrove, { ...params, ...tint });
     expect(JSON.stringify(rig(cut, { ...params }, tint)) === JSON.stringify(fresh), 'feature-cut tint matches fresh bytes').toBe(true);
     expect(JSON.stringify(rig(makeGrove, { ...params }, tint)) === JSON.stringify(fresh), 'uncut tint matches fresh bytes').toBe(true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+test('summer density reweight works with every autumn feature cut', async () => {
+  const params = P({ ...small, foliage_density: 0.4 });
+  expect(featuresFor(params)).toEqual([]);
+  const dir = treeIn({ looks: ['morning 2'], features: 'none', strip: false });
+  try {
+    const cut = (await import(pathToFileURL(join(dir, 'komorebi-grove.js')).href)).makeGrove;
+    for (const density of [0, 0.4, 1.65, 2]) {
+      const step = { foliage_density: density, trans_r: 0.1 };
+      const fresh = rig(makeGrove, { ...params, ...step });
+      expect(JSON.stringify(rig(cut, { ...params }, step, 2)) === JSON.stringify(fresh), `cut density ${density}`).toBe(true);
+      expect(JSON.stringify(rig(makeGrove, { ...params }, step, 2)) === JSON.stringify(fresh), `uncut density ${density}`).toBe(true);
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 const B = { phenology: 0.9, leaf_drop: 1 };

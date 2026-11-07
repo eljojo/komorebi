@@ -10,6 +10,7 @@ import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFA
 import {seasonTravelEligible} from './komorebi-season-travel.js';
 import {litterRiseEligible,litterFallEligible,shadowRiseEligible} from './komorebi-litter-rise.js';
 import {groveTravelEligible} from './komorebi-grove-travel.js';
+import {densityEligible, densityKey, densityCount} from './komorebi-grove.js';
 
 const CAMERA_KEYS = new Set(['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y']);
 const WINDOW_KEYS = new Set(['window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall']);
@@ -110,12 +111,17 @@ export function makeTransitions(hub){
     const densFrom   = Math.max(1e-6, params.leaves_per_cluster*params.foliage_density);
     const densTo     = Math.max(0,    to.leaves_per_cluster*to.foliage_density);
     const morphScale = (Math.max(1, to.tree_count)/Math.max(1, params.tree_count)) * (densTo/densFrom);
-    const morphCost  = leafCount * Math.max(1, morphScale);
+    const densityMorph = !!hub.hier && params.foliage_density !== to.foliage_density
+      && densityEligible(params) && densityEligible(to) && densityKey(params, faithfulOn()) === densityKey(to, faithfulOn())
+      && CANOPY_KEYS.every(k => k==='foliage_density' || SEASON_KEYS.includes(k) || to[k]===params[k]);
+    // Count the capacity, including the marginal leaf: a bare source's zero draw count must not bypass the peak budget.
+    const morphCost  = Math.max(leafCount * Math.max(1, morphScale), densityMorph ? hub.hier.nClusterTotal*Math.max(densityCount(params), densityCount(to)) : 0);
     // a mode flip can't morph leaf-for-leaf (the bake path / faithTex size / crown sizing change), so it forces a
     // dissolve+rebuild just like a topology change — never a live grove morph (which only regrows, no realloc).
     const morphGrove = canopyDiff && !topoDiff && !modeDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching+mode, small enough -> morph it
     trans.canopyMorph = !seasonTravel&&morphGrove;
     trans.seasonMorph = trans.canopyMorph && CANOPY_KEYS.every(k => SEASON_KEYS.includes(k) || to[k]===params[k]);
+    trans.densityMorph = trans.canopyMorph && densityMorph;
     trans.structDiff  = viewpoint || topoDiff || modeDiff || (canopyDiff && !morphGrove);   // dissolve+rebuild on topology OR mode change, or a grove too big to morph
     // WHICH TIER'S BLOOM this is, decided once here rather than re-derived per frame: a mode flip's shallower hump
     // (the camera changes, so cover buys nothing and depth only blows the frame out) or a topology dissolve's
@@ -281,7 +287,8 @@ export function makeTransitions(hub){
     }
     if(!rebuilt){
       if(trans.canopyMorph){
-        if(trans.seasonMorph) hub.reseason();   // one lazy record, then the same leaf arithmetic in the existing buffers
+        if(trans.densityMorph) hub.reweight(Math.max(trans.from.foliage_density, trans.to.foliage_density));
+        else if(trans.seasonMorph) hub.reseason();   // one lazy record, then the same leaf arithmetic in the existing buffers
         else hub.regenCanopy();                // geometry still regrows, carrying its live sway
       }
       hub.regenSource();                         // morphed cloud -> source (always; transport re-reads it every frame)

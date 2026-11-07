@@ -28,7 +28,7 @@
 //
 //   const eng = create(canvas, { params, onFrame });
 //   eng.params / .perf / .motion / .src / .fps   live state (read for a HUD)
-//   eng.apply(scope)        re-run a rebuild: 'source'|'canopy'|'textures'|'bake'|'perf'|''
+//   eng.apply(scope)        re-run a rebuild: 'source'|'canopy'|'season'|'density'|'textures'|'bake'|'perf'|''
 //   eng.setParams(obj)      merge a full param set and rebuild (no UI side effects)
 //   eng.transitionTo(obj, {duration, onEnd})  cloud-bloom crossfade to a look (spec §9 "Scene transitions")
 //   eng.trans               live transition state (active, t) — read for a HUD

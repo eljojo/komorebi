@@ -5,7 +5,7 @@ import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
-import { makeGrove, seasonKey } from './komorebi-grove.js';
+import { makeGrove, seasonKey, densityEligible, densityCount } from './komorebi-grove.js';
 import { makeBake, makeFill, NO_FILL, FILL_SIG_LEN } from './komorebi-bake.js';
 import { makeLitter, newLitterState, NO_LITTER } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
@@ -421,7 +421,7 @@ function createEngine(canvas, opts, driven=false){
   Object.assign(hub, { tickHierarchy, publishBend, motionActive, tick });
 
   // the engine-resident coordinators the transition route drives (hoisted function declarations)
-  Object.assign(hub, { freeGrove, installGrove, regenCanopy, reseason, buildTargetGrove, rebuildAll, resetPerf, applyQuality, allocLayers, makeLayerTexture });
+  Object.assign(hub, { freeGrove, installGrove, regenCanopy, reseason, reweight, buildTargetGrove, rebuildAll, resetPerf, applyQuality, allocLayers, makeLayerTexture });
   const { transitionTo, tickTransition } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
   function copyMotion(from,to){
@@ -585,12 +585,26 @@ function createEngine(canvas, opts, driven=false){
     }
     return path;
   }
+  // A fixed summer grove retains the largest requested per-cluster prefix; editor edits can expand it, reversals can reuse it.
+  function reweight(capacity = params.foliage_density){
+    if(hub.groveIn || trans.active && !(trans.canopyMorph && trans.densityMorph) || !densityEligible(params)){
+      regenCanopy(); return 'build';
+    }
+    const S = hub.grove?.season;
+    let path = 'reseason';
+    if(S?.density && reseasonable(hub.grove) && densityCount(params, capacity) <= S.nLeaf) reseasonGrove(hub.grove, params);
+    else { installGrove(buildGrove(hub.hier, { densityCapacity: capacity })); path = 'build'; }
+    litter.grove = null;
+    publishBend(hub.grove); hub.hier.maxV = 0;   // the editor's canopy apply also republished bends and replaced this activity hint
+    return path;
+  }
   function apply(scope){
     if(lost) return;                                  // see setParams
     if(scope==='source') regenSource();
     else if(scope==='bake') bake();                  // drift moves leaves at bake time only
     else if(scope==='canopy'){ regenCanopy(); bake(); }
     else if(scope==='season'){ const path = reseason(); bake(); return path; }
+    else if(scope==='density'){ const path = reweight(); bake(); return path; }
     else if(scope==='textures'){ rebuildTextures(); regenCanopy(); bake(); }
     else if(scope==='perf') resetPerf();
   }

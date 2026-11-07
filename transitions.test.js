@@ -4,6 +4,7 @@
 // with no error; these tests turn that into a loud `bun test` failure. Run: `bun test transitions.test.js`.
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
+import { CANOPY_MORPH_MAX } from "./komorebi-params.js";
 import { makeTransitions } from "./komorebi-transitions.js";
 import { PRESETS } from "./presets.js";
 import { makeSource } from "./komorebi-source.js";
@@ -87,9 +88,41 @@ function transitionRig(from) {
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
 
-test('tint morphs select re-season, while a changed density or leaf geometry still regrows', () => {
+test('density routing: summer fixed groves reweight within the peak budget, including a bare source', () => {
+  for (const fromDensity of [0, 0.4, 1.65]) for (const density of [0.4, 1.65]) {
+    if (fromDensity === density) continue;
+    const from = { ...DEFAULTS, leaves_per_cluster: 39, foliage_density: fromDensity }, r = transitionRig(from);
+    r.hub.hier = { nClusterTotal: 360 };
+    r.hub.layerVAO = [{ count: 360*Math.ceil(39*fromDensity) }];
+    const capacities = []; let regrows = 0;
+    r.hub.reweight = capacity => capacities.push(capacity);
+    r.hub.regenCanopy = () => regrows++;
+    r.transitionTo({ ...from, foliage_density: density, trans_r: 0.1 });
+    expect(r.hub.trans.densityMorph).toBe(true);
+    r.tickTransition(1/60);
+    expect(capacities).toEqual([Math.max(fromDensity, density)]); expect(regrows).toBe(0); expect(r.bakes).toHaveLength(1);
+  }
+  for (const over of [{ tree_count: 6 }, { leaf_size_m: 0.2 }, { view_extent_m: 9 }, { canopy_base_height_m: 6 }, { phenology: 0.8 }, { tree_clock_spread: 0.2 }, { leaf_drop: 1 }]) {
+    const from = { ...DEFAULTS }, r = transitionRig(from); r.hub.hier = { nClusterTotal: 360 };
+    r.transitionTo({ ...from, foliage_density: 0.4, ...over });
+    expect(r.hub.trans.densityMorph, JSON.stringify(over)).toBe(false);
+  }
+  for (const count of [CANOPY_MORPH_MAX/65, CANOPY_MORPH_MAX/65 + 1]) {
+    const from = { ...DEFAULTS, leaves_per_cluster: 39, foliage_density: 0 }, r = transitionRig(from);
+    r.hub.hier = { nClusterTotal: count }; r.hub.layerVAO = [{ count: 0 }];
+    r.transitionTo({ ...from, foliage_density: 1.65 });
+    expect(r.hub.trans.canopyMorph).toBe(count*65 <= CANOPY_MORPH_MAX);
+  }
+  const from = { ...DEFAULTS, leaves_per_cluster: 39, foliage_density: 0.4 }, r = transitionRig(from);
+  const clusters = Math.floor(CANOPY_MORPH_MAX/65);
+  r.hub.hier = { nClusterTotal: clusters }; r.hub.layerVAO = [{ count: clusters*16 }];
+  r.transitionTo({ ...from, foliage_density: 1.65 });
+  expect(r.hub.trans.canopyMorph, 'retain the original conservative budget as well as covering the capacity').toBe(clusters*16*(1.65/0.4) <= CANOPY_MORPH_MAX);
+});
+
+test('tint morphs select re-season, while autumn density or leaf geometry still regrows', () => {
   for (const other of [{}, { foliage_density: 2 }, { tree_count: 6 }, { leaf_size_m: 0.2 }, { cluster_spread_m: 0.4 }]) {
-    const from = { ...DEFAULTS, trans_r: 0.21, trans_g: 0.356, trans_b: 0.336 };
+    const from = { ...DEFAULTS, phenology: 0.8, trans_r: 0.21, trans_g: 0.356, trans_b: 0.336 };
     const r = transitionRig(from); let seasons = 0, regrows = 0;
     r.hub.reseason = () => seasons++; r.hub.regenCanopy = () => regrows++;
     r.transitionTo({ ...from, trans_r: 0.094, trans_g: 0.402, trans_b: 0.1, ...other });
