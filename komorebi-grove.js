@@ -21,7 +21,7 @@
 //   GOTCHAS. A and B0 are kept as DOUBLES: the litter's `size` is read from the doubles in buildGrove, and a float32 copy differs in the last bits. A re-season writes
 //   into the EXISTING buffers (layerVAO[l].buf, faith.buf), so the VAO pointers stay valid; it never touches `gr`, the hier springs, clusterData, clusterTex or leafTex —
 //   which is also why there is no shallow-copy grove: installGrove would free the textures it shared. faith.* is engine-global (a second grove built for a transition
-//   writes it), so the engine re-seasons only with no transition and with faith.buf still this grove's. leafW is a NEW array each time: the tree preview keys on it.
+//   writes it), so the engine re-seasons only with no transition or a season-only grove morph, and with faith.buf still this grove's. leafW is a NEW array each time: the tree preview keys on it.
 //   MEASURED (bun, median of 7, fall at t 0.9): afternoon 7 73 ms a regrow, the void 201, montebello 15 — see the cost test in reseason.test.js for the re-season's.
 // ============================================================================
 import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
@@ -42,7 +42,7 @@ import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_GENOTY
 export const GROVE_READS = [
   'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
   'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_variety','leaves_per_cluster',
-  'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','trans_b','trans_g','trans_r','tree_count','trunk_radius_m','view_extent_m',
+  'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','tree_count','trunk_radius_m','view_extent_m',
 ];
 export const seasonKey = (params, faithful) => `${GROVE_READS.map(k => params[k]).join('|')}|${faithful ? 1 : 0}`;
 const SREC = 11;   // a season record: x, y, h, A, B0, area, j, k, cov, layer, start of the leaf's 17 floats in its layer's buffer (the faithful record's first 16 are the same numbers)
@@ -716,6 +716,10 @@ export function makeGrove(hub){
   // on typed arrays. It must stay the same arithmetic as buildGrove's, call for call — reseason.test.js holds the bytes.
   function reseasonGrove(g, P = params){
     const S = g.season, n = S.n, rec = S.rec, nLeaf = S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0], leafRow = g.hier.leafRow;   // leafRow: the table of rows the build drew (leaf_variety), which the litter keeps; null at the gate
+    // Summer transmission is authored live; the cached leaf geometry and exposure do not depend on it.
+    tau[0] = -Math.log(clamp(P.trans_r,1e-4,0.999));
+    tau[1] = -Math.log(clamp(P.trans_g,1e-4,0.999));
+    tau[2] = -Math.log(clamp(P.trans_b,1e-4,0.999));
     const sen = senescing(P), isLit = lit(P), isDropping = dropping(P), after = afterTurn(P);
     const tShift = (FEAT_PIGMENT || FEAT_EXPOSURE || FEAT_DROP) ? treeShifts(P, S.nTree) : null, tGain = (FEAT_PIGMENT || FEAT_EXPOSURE) ? treeGains(P, S.nTree) : null, twigs = g.hier.twigs;   // the trees' lead and depth: the build's own tables, from the tree count the record kept, guarded by the same tiers
     let u = null;

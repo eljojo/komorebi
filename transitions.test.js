@@ -87,6 +87,20 @@ function transitionRig(from) {
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
 
+test('tint morphs select re-season, while a changed density or leaf geometry still regrows', () => {
+  for (const other of [{}, { foliage_density: 2 }, { tree_count: 6 }, { leaf_size_m: 0.2 }, { cluster_spread_m: 0.4 }]) {
+    const from = { ...DEFAULTS, trans_r: 0.21, trans_g: 0.356, trans_b: 0.336 };
+    const r = transitionRig(from); let seasons = 0, regrows = 0;
+    r.hub.reseason = () => seasons++; r.hub.regenCanopy = () => regrows++;
+    r.transitionTo({ ...from, trans_r: 0.094, trans_g: 0.402, trans_b: 0.1, ...other });
+    expect(r.hub.trans.canopyMorph).toBe(true);
+    r.tickTransition(1/60);
+    expect(seasons).toBe(Object.keys(other).length ? 0 : 1);
+    expect(regrows).toBe(Object.keys(other).length ? 1 : 0);
+    expect(r.bakes).toHaveLength(1);
+  }
+});
+
 for(const [from,to] of [['morning 1','memories'],['memories','morning 1']]){
   test(`${from} → ${to}: the grove reorganizes without a cloud or halo detour`,()=>{
     const r=transitionRig(PRESETS[from]),target={},installed=[];let overlap=false,arrived=0;

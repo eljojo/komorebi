@@ -6,7 +6,7 @@
 // A factory over the engine's shared internals (hub).
 // ============================================================================
 import { TAU, cameraPose, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
-import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
+import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';
 import {litterRiseEligible,litterFallEligible,shadowRiseEligible} from './komorebi-litter-rise.js';
 import {groveTravelEligible} from './komorebi-grove-travel.js';
@@ -115,6 +115,7 @@ export function makeTransitions(hub){
     // dissolve+rebuild just like a topology change — never a live grove morph (which only regrows, no realloc).
     const morphGrove = canopyDiff && !topoDiff && !modeDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching+mode, small enough -> morph it
     trans.canopyMorph = !seasonTravel&&morphGrove;
+    trans.seasonMorph = trans.canopyMorph && CANOPY_KEYS.every(k => SEASON_KEYS.includes(k) || to[k]===params[k]);
     trans.structDiff  = viewpoint || topoDiff || modeDiff || (canopyDiff && !morphGrove);   // dissolve+rebuild on topology OR mode change, or a grove too big to morph
     // WHICH TIER'S BLOOM this is, decided once here rather than re-derived per frame: a mode flip's shallower hump
     // (the camera changes, so cover buys nothing and depth only blows the frame out) or a topology dissolve's
@@ -279,7 +280,10 @@ export function makeTransitions(hub){
       }
     }
     if(!rebuilt){
-      if(trans.canopyMorph) hub.regenCanopy();   // regrow the morphing grove (regenCanopy republishes the carried-over sway)
+      if(trans.canopyMorph){
+        if(trans.seasonMorph) hub.reseason();   // one lazy record, then the same leaf arithmetic in the existing buffers
+        else hub.regenCanopy();                // geometry still regrows, carrying its live sway
+      }
       hub.regenSource();                         // morphed cloud -> source (always; transport re-reads it every frame)
       // re-bake only when the leaves actually move this frame — a grove morph, or live motion (wind/auto-drift,
       // both of which make motionActive() true). A settled-canopy look-crossfade keeps last frame's identical bake

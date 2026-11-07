@@ -421,7 +421,7 @@ function createEngine(canvas, opts, driven=false){
   Object.assign(hub, { tickHierarchy, publishBend, motionActive, tick });
 
   // the engine-resident coordinators the transition route drives (hoisted function declarations)
-  Object.assign(hub, { freeGrove, installGrove, regenCanopy, buildTargetGrove, rebuildAll, resetPerf, applyQuality, allocLayers, makeLayerTexture });
+  Object.assign(hub, { freeGrove, installGrove, regenCanopy, reseason, buildTargetGrove, rebuildAll, resetPerf, applyQuality, allocLayers, makeLayerTexture });
   const { transitionTo, tickTransition } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
   function copyMotion(from,to){
@@ -564,20 +564,25 @@ function createEngine(canvas, opts, driven=false){
   function rebuildAll(){ rebuildTextures(); regenCanopy(); regenSource(); bake(); }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
   // The season axis (§4.5 "Re-seasoning"): a change to the season set alone is re-run over the grove's cached leaves; anything else the grove reads, or a grove the cache
-  // does not describe, regrows (with the cache once the structure holds still, so the NEXT one is the fast one). Not during a transition (the incoming grove shares the engine-global faith.*, and the
-  // morph owns the canopy keys). The carpet's signature keys on the grove's identity plus phenology and the litter keys, NOT the capacities, so an anthocyanin-only
+  // does not describe, regrows (with the cache once the structure holds still, so the NEXT one is the fast one). Only a season-only grove morph may re-season during a
+  // transition: the other routes may share engine-global faith.* with an incoming grove. The carpet's signature keys on the grove's identity plus phenology and the litter keys, NOT the capacities, so an anthocyanin-only
   // re-season would leave it stale: dropping the grove it was baked from makes the next refreshLitter bake it.
   // Returns the path it took, 'reseason' or 'build': the editor's cost gate must not fold a one-off cache build into its EMA.
   function reseason(){
     let path = 'reseason';
-    if(!hub.groveIn && !trans.active && reseasonable(hub.grove)){ reseasonGrove(hub.grove, params); litter.grove = null; }
+    if(!hub.groveIn && (!trans.active || trans.canopyMorph && trans.seasonMorph) && reseasonable(hub.grove)){
+      reseasonGrove(hub.grove, params); litter.grove = null;
+      if(trans.active){
+        publishBend(hub.grove);   // the tween may have moved sway_pitch after the wind tick published its bend
+        hub.hier.maxV = 0;        // a morph regrow clears this activity hint; keep the same idle decision
+      }
+    }
     else {
       // The record is kept only when the structure being grown is the one the grove on screen was grown for (grove.key): on the season slider's spring half every tick moves structure, so every
       // tick would build a record (~5 ms, ~7 MB on afternoon 7) that the next one throws away, and the cost would enter the editor's tween gate as well. Leaving that half costs one extra
       // full build: the last tick that moved the structure builds without a record, the next builds with it, and the one after is the fast path.
       installGrove(buildGrove(hub.hier, { keepSeason: hub.grove?.key === seasonKey(params, faithfulOn()) })); path = 'build';
     }
-    bake();
     return path;
   }
   function apply(scope){
@@ -585,7 +590,7 @@ function createEngine(canvas, opts, driven=false){
     if(scope==='source') regenSource();
     else if(scope==='bake') bake();                  // drift moves leaves at bake time only
     else if(scope==='canopy'){ regenCanopy(); bake(); }
-    else if(scope==='season') return reseason();
+    else if(scope==='season'){ const path = reseason(); bake(); return path; }
     else if(scope==='textures'){ rebuildTextures(); regenCanopy(); bake(); }
     else if(scope==='perf') resetPerf();
   }

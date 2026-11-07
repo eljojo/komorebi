@@ -148,7 +148,7 @@ test("with nothing cut, buildTransport is the program the repo builds, character
 // A grove built with exactly the features a look does NOT open cut out must upload what the whole grove uploads. The reference is the
 // repo's grove with every tier on AND the exposure gate held open (ordered -> true), so it does not trust the predicate it is
 // checking: if `ordered` forgets that the drop consumes the rank, the cut grove drops its leaves by a phase the reference does not.
-function rig(makeG, params) {
+function rig(makeG, params, tint) {
   const gl = new Proxy({}, {
     get(t, name) {
       if (name === "createBuffer") return () => ({ data: null });
@@ -158,10 +158,24 @@ function rig(makeG, params) {
     },
   });
   const faith = {}, hub = { gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => false, occ: {}, faith, sky: { start: [], count: [] } };
-  const g = makeG(hub).buildGrove(null);
+  const G = makeG(hub), g = G.buildGrove(null, { keepSeason: !!tint });
+  if (tint) { Object.assign(params, tint); G.reseasonGrove(g); }
   return { layers: g.layerVAO.map((l) => Array.from(l.buf.data)), faith: Array.from(faith.buf.data), leafW: g.hier.leafW ? Array.from(g.hier.leafW) : null };
 }
 const small = { tree_count: 2, leaves_per_cluster: 5, foliage_density: 1.5, layer_count: 2, seed: 7 };
+
+test('summer tint re-season works with every autumn feature cut', async () => {
+  const tint = { trans_r: 0.094, trans_g: 0.402, trans_b: 0.1 };
+  const params = P({ ...small, trans_r: 0.21, trans_g: 0.356, trans_b: 0.336 });
+  expect(featuresFor(params)).toEqual([]);
+  const dir = treeIn({ looks: ['morning 2'], features: 'none', strip: false });
+  try {
+    const cut = (await import(pathToFileURL(join(dir, 'komorebi-grove.js')).href)).makeGrove;
+    const fresh = rig(makeGrove, { ...params, ...tint });
+    expect(JSON.stringify(rig(cut, { ...params }, tint)) === JSON.stringify(fresh), 'feature-cut tint matches fresh bytes').toBe(true);
+    expect(JSON.stringify(rig(makeGrove, { ...params }, tint)) === JSON.stringify(fresh), 'uncut tint matches fresh bytes').toBe(true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 const B = { phenology: 0.9, leaf_drop: 1 };
 const PROBES = {
   "pigment": { phenology: 0.75 },

@@ -31,7 +31,7 @@ test("the family ships off: both knobs 0, canopy AND season keys (they move only
     expect(TOPO_KEYS, k).not.toContain(k);
     expect(GROVE_READS, `${k} is a season key: the cache key must not carry it`).not.toContain(k);
   }
-  expect(SEASON_KEYS.length).toBe(16);
+  expect(SEASON_KEYS.length).toBe(19);
 });
 
 test("TREE_SALT is 2·0x9E3779B9 mod 2^32, differs from every other stream's salt, and is named nowhere else in the repo", () => {

@@ -415,11 +415,13 @@ const INVARIANTS = [
   // rebaked frames — the "shows its real frame unaided" rows above hold the unaided frame equal to the re-baked one, so these cannot drift from it.)
   { name: 'park 1 is the frame it was (faithful floor: wood texture 1x1, unread)', preset: 'park 1', pin: '75f18f24' },
   { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', pin: '32ad83b8' },
+  // TODO revisit these layer-floor pins: untouched 14a97c2 also gives ea083587 / 8f0a8e8e on this SwiftShader host (2026-11-07); tint-cache renders differ by 0 pixels.
   { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'bdcffc3c' },
   { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', pin: '13525cdd' },
   // The ONE pin that moved, on purpose: it is a leaf_diffuse > 0 frame, and P0c-edge reads every texel there as a mixture of leaf and gap (§4.5), so the
   // frame P0c-sky pinned (eb960892: the shared ray's new signature, the slab) is not this one. Re-recorded from the engine after the change; what says it moved
   // the right way is not this hash but the soft-edge rows (SOFT EDGES), the fill and look-up checks, and the energy rows.
+  // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 1eb1787a on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'memories with the split and the fill open is the frame P0c-edge made (was eb960892, the slab)', preset: 'memories',
     a: { canopy_fill: 1, leaf_diffuse: 0.95 }, pin: '143e4d01' },
   // The gate, on the camera that grew a branch: leaf_diffuse 0 is beamK 0 is the literal old composition in the else...
@@ -470,12 +472,16 @@ const INVARIANTS = [
     a: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1, leaf_shape: 'beech' } },
   // THE BEECH, AS IT HUNG (leaf diversity, 2026-10-09): pins, written down from the engine before the aspect law and before leaf_variety, which both promise the beech's frame does not move
   // (the law because its look is at aspect 1, leaf_variety because it ships at 0): the layer bake, the faithful cast and the carpet, each taken as a whole frame.
+  // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give ca24284d on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'beech, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: 'cb958f0e' },
   { name: 'beech, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: '5742e790' },
+  // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 9668d2f8 on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1 }, pin: '894c1749' },
   // ...and the RECALIBRATED MAPLE (leaf diversity, 2026-10-09), pinned the same way at the end of the recalibration and before any leaf_variety edit: its own bits are new, so what leaf_variety must not move is these.
+  // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 3169421c on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'the recalibrated maple, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '319ba7ac' },
   { name: 'the recalibrated maple, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '40f09381' },
+  // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give ff770410 on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'the recalibrated maple, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1 }, pin: '75db3e41' },
   // AREA IS CONSERVED, so the canopy keeps its fullness: the profile is the unit circle's area, so a maple at aspect 1 and 1/√aspect of the size has the leaf the ellipse had (the species
   // bundle's 0.103 = 0.13/√1.6; memories and afternoon 7 sit at 0.1 and 1.75, so 0.0756). The mean level of the frame stays within 5%.
@@ -559,6 +565,7 @@ const INVARIANTS = [
   { name: 'edge_area lightens the soft edges, a little (layer path: memories)', preset: 'memories', lit: [1.0, 1.08], a: {}, b: { edge_area: true } },
   { name: 'edge_area lightens the soft edges, a little (layer path: afternoon 7)', preset: 'afternoon 7', lit: [1.0, 1.08], a: {}, b: { edge_area: true } },
   // The look edge_area made, written down once every row above was green (a pin says the frame itself does not drift; the rows say it moved the right way)
+  // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give f9f447c6 on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'memories with edge_area on is the frame edge_area made', preset: 'memories', a: { edge_area: true }, pin: '0acca242' },
   // LEAVES ON THE OLDER WOOD (§4.5, `inner_leaves`). 0 is the gate: no path is collected and every leaf is placed where its twig puts it, so naming it is the frame before the knob existed, on every kind of look that hangs leaves
   // (park 1 and curtain 1 are faithful and ride faithData; afternoon 7 and memories are the layer path; canopy 1 is the sky view)...
@@ -597,6 +604,7 @@ const INVARIANTS = [
   { name: 'sun_cosine 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { sun_cosine: 0 } },
   // ...and a pin holds the other half, that 0 is the frame that existed before the law (a law that leaked in at 0 would scale both halves of a pair alike). The sky view, the floor and the cloth already carry pins above
   // (canopy 1-4, park 1, curtain 1, memories, afternoon 7); the enclosure had none. The hash is tent 1's smoke frame in the manifest of the last green run before this change.
+  // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 42403a64 on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'tent 1 is the frame it was before sun_cosine (enclosure)', preset: 'tent 1', pin: '6f8597f7' },
   // The law moves what it should. The floor (faithful path, 26 degrees: I is 0.438): the beam share falls x0.438 (measured in linear HDR on a fixed lit/shade pair: x0.436) and the skylight share holds, so the mean
   // level of the frame lands between 0.438 and 1: measured x0.814 (it is the mean of the ACES-mapped, gamma-encoded bytes, which moves far less than the linear beam does), the bound that ratio +-0.08. The cloth, the tent and the fall look with its fill and S open each differ...
@@ -683,6 +691,14 @@ const ENERGY_BOTTOM = 0.01, ENERGY_CLOSE = 0.015, ENERGY_BEAM = [0.95, 1.15], EN
 // the frame must be the one an engine made with the knob already there shows. The fill's signature carries k so S re-bakes, and on
 // the faithful path the cast has k baked in, so a frame that kept the old cast would look like the knob did nothing.
 const LIVE_CHANGES = [
+  ...['memories', 'park 1'].flatMap(preset => ['trans_r', 'trans_g', 'trans_b'].map((key, i) => ({
+    name: `${preset}, summer tint on a built cache`, preset, rebake: preset === 'park 1',
+    over: { phenology: 0.5, trans_r: 0.21, trans_g: 0.356, trans_b: 0.336, canopy_fill: 1 },
+    key, value: [0.094, 0.402, 0.1][i], prime: [0.18, 0.38, 0.2][i], apply: 'season',
+  }))),
+  { name: 'park 1, autumn tint on a built cache (fill and litter)', preset: 'park 1', rebake: true,
+    over: { phenology: 0.8, leaf_drop: 1, litter: 1, canopy_fill: 1, turn_exposure: 1 },
+    key: 'trans_r', value: 0.094, prime: 0.18, apply: 'season', litter: true },
   { name: 'memories (layer path: the tap reads it, the fill re-bakes)', preset: 'memories', over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
   { name: 'park 1 with the fill shut (faithful: the cast is re-cast, nothing else moves)', preset: 'park 1', rebake: true, over: { canopy_fill: 0 }, key: 'leaf_diffuse', value: 0.95 },
   { name: 'park 1 with the fill open (faithful: the cast AND the fill)', preset: 'park 1', rebake: true, over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
@@ -792,6 +808,7 @@ const RIM_CHECKS = [
   { name: 'canopy 1, leaf_diffuse 0, edge_area on (the P0b proxy on the mixture)', preset: 'canopy 1', over: { leaf_diffuse: 0, edge_area: true } },
 ];
 const RIM_MAX = 1.1, RIM_MIN_TEXELS = 300;
+// TODO revisit all four probes: untouched 14a97c2 also fails to compile (2026-11-07). __haloCheck embeds GLSL_LAYER_FIELD without uCanopyOpen's transport declaration.
 const HALO_CHECKS = [
   { name: 'afternoon 7, leaf_diffuse 0.95 (the layer floor, blue τ 6.9)', preset: 'afternoon 7', over: { leaf_diffuse: 0.95 } },
   { name: 'memories, leaf_diffuse 0.95 (the layer floor)', preset: 'memories', over: { leaf_diffuse: 0.95 } },
