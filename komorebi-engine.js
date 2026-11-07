@@ -12,6 +12,7 @@ import { makeRender } from './komorebi-render.js';
 import { makeEditorTools } from './komorebi-editor-tools.js';
 import { makeSceneFade } from './komorebi-scene-fade.js';
 import { makeLeafTravel } from './komorebi-leaf-travel.js';
+import { makeSeasonTravel } from './komorebi-season-travel.js';
 
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
@@ -75,11 +76,11 @@ function createEngine(canvas, opts, driven=false){
   // Live bake / layer-texture size. Pure function of quality + params: when auto_quality is engaged it trims the
   // bake below the knee (q<0.5) alongside samples, snapped to 256 so the textures only reallocate at a level
   // boundary — not on every fps nudge. rebuildTextures/bake both read this (transport samples by UV → smaller = softer).
-  const bakeRes = () => {
-    const full = bakeBaseline();
+  const bakeRes = (full=bakeBaseline()) => {
     if(!perf.auto || perf.quality >= 0.5) return full;
     return clamp(Math.round(lerp(BAKE_MIN, full, perf.quality/0.5)/256)*256, BAKE_MIN, full);
   };
+  const faithfulSamples = (full=params.sample_count) => clamp(Math.round(lerp(6,full,perf.quality)),3,Math.max(3,full));
   // IS THE FAITHFUL TIER ACTUALLY RUNNING? The flag alone no longer answers it, so nothing reads the flag directly:
   // the faithful bake pre-integrates the whole cast into ONE texture in ONE frame — floor (x,y) or cloth (u,v) — and
   // the ENCLOSURE's receiver is neither, it is a per-pixel ray cast onto sloped panels. So receiver 2 forces the
@@ -120,6 +121,14 @@ function createEngine(canvas, opts, driven=false){
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
+  function faithLocs(prog){
+    return { origin:loc(prog,'uFaithOrigin'), extent:loc(prog,'uFaithExtent'), g:loc(prog,'uG'), edge:loc(prog,'uEdge'),
+      seasonCast:loc(prog,'uSeasonCast'),curtainBake:loc(prog,'uCurtainBake'),clothY:loc(prog,'uClothY'),
+      morph:loc(prog,'uMorph'),morphAmount:loc(prog,'uMorphAmount'),sway:loc(prog,'uSway'),hRef:loc(prog,'uHRef'),
+      windLevel:loc(prog,'uWindLevel'),windTime:loc(prog,'uWindTime'),leafSwing:loc(prog,'uLeafSwing'),flutterFreq:loc(prog,'uFlutterFreq'),
+      clusterTex:loc(prog,'uClusterTex'),clusterGeom:loc(prog,'uClusterGeom'),beamK:loc(prog,'uBeamK'),edgeArea:loc(prog,'uEdgeArea'),
+      leafTex:loc(prog,'uLeafTex'),leafShape:loc(prog,'uLeafShape'),shapeBox:loc(prog,'uShapeBox'),leafIdFrac:loc(prog,'uLeafIdFrac'),leafRows:loc(prog,'uLeafRows')};
+  }
   // ---- THE TRANSPORT PROGRAM CACHE (spec §4.6/§4.9). One program per camera, built by buildTransport, compiled on
   // FIRST USE and then kept for the engine's life. The four authored cameras move on a MODE
   // flip (sky_view / receiver), which already tears the grove down and rebuilds it under the transition bloom — so
@@ -220,7 +229,7 @@ function createEngine(canvas, opts, driven=false){
     // stable plumbing (never reassigned)
     gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, fill, litter, U,
     // (the GL handles — programs, buffers, FBOs, occTex, extTimer — and the subsystems over them are set by initGPU())
-    effCloud, bakeBaseline, bakeRes, faithfulOn, transportFor, transportCamera, fillFor, litterFor, warnCut, program,
+    effCloud, bakeBaseline, bakeRes, faithfulSamples, faithfulOn, transportFor, transportCamera, fillFor, litterFor, warnCut, program, faithLocs,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
     woodTex: [],            // SKY VIEW (§4.9): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)
@@ -266,13 +275,7 @@ function createEngine(canvas, opts, driven=false){
                clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
                coverage:loc(progBake,'uCoverage'),
                leafTex:loc(progBake,'uLeafTex'), leafShape:loc(progBake,'uLeafShape'), shapeBox:loc(progBake,'uShapeBox'), leafIdFrac:loc(progBake,'uLeafIdFrac'), leafRows:loc(progBake,'uLeafRows') };   // the leaf's outline (komorebi-leaf.js): its texture, the gate, the quad's box and the table's packing — bound per grove
-    U.faith = { origin:loc(progFaith,'uFaithOrigin'), extent:loc(progFaith,'uFaithExtent'), g:loc(progFaith,'uG'), edge:loc(progFaith,'uEdge'),
-                curtainBake:loc(progFaith,'uCurtainBake'), clothY:loc(progFaith,'uClothY'),
-                morph:loc(progFaith,'uMorph'), morphAmount:loc(progFaith,'uMorphAmount'), sway:loc(progFaith,'uSway'), hRef:loc(progFaith,'uHRef'),
-                windLevel:loc(progFaith,'uWindLevel'), windTime:loc(progFaith,'uWindTime'),
-                leafSwing:loc(progFaith,'uLeafSwing'), flutterFreq:loc(progFaith,'uFlutterFreq'),   // (uStemLen removed: faithful dropped the twig-swing that used it)
-                clusterTex:loc(progFaith,'uClusterTex'), clusterGeom:loc(progFaith,'uClusterGeom'), beamK:loc(progFaith,'uBeamK'), edgeArea:loc(progFaith,'uEdgeArea'),
-                leafTex:loc(progFaith,'uLeafTex'), leafShape:loc(progFaith,'uLeafShape'), shapeBox:loc(progFaith,'uShapeBox'), leafIdFrac:loc(progFaith,'uLeafIdFrac'), leafRows:loc(progFaith,'uLeafRows') };
+    U.faith = faithLocs(progFaith);   // (uStemLen removed: faithful dropped the twig-swing that used it)
     U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
                    curtainBake:loc(progFaithSeg,'uCurtainBake'), clothY:loc(progFaithSeg,'uClothY'),
                    segSway:loc(progFaithSeg,'uSegSway'), segTau:loc(progFaithSeg,'uSegTau') };
@@ -312,7 +315,7 @@ function createEngine(canvas, opts, driven=false){
                          quadBuf, emptyVAO, bakeFBO, faithFBO, fillFBO, occTex });
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
     const groveSystem = makeGrove(hub);
-    ({ buildGrove, reseasonGrove, reseasonable } = groveSystem); hub.buildGrove = buildGrove;
+    ({ buildGrove, reseasonGrove, reseasonable } = groveSystem); Object.assign(hub,{buildGrove,reseasonGrove});
     hub.refreshWood = groveSystem.refreshWood;
     ({ bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow });
     ({ bakeFill, refreshFill, fillWanted, fillLayerRes } = FEAT_FILL ? makeFill(hub) : NO_FILL); Object.assign(hub, { bakeFill, refreshFill, fillWanted, fillLayerRes });   // the fill reads the layers and the frame the bake just put on the hub
@@ -416,7 +419,7 @@ function createEngine(canvas, opts, driven=false){
   Object.assign(hub, { tickHierarchy, publishBend, motionActive, tick });
 
   // the engine-resident coordinators the transition route drives (hoisted function declarations)
-  Object.assign(hub, { freeGrove, installGrove, regenCanopy, buildTargetGrove, rebuildAll, resetPerf, allocLayers, makeLayerTexture });
+  Object.assign(hub, { freeGrove, installGrove, regenCanopy, buildTargetGrove, rebuildAll, resetPerf, applyQuality, allocLayers, makeLayerTexture });
   const { transitionTo, tickTransition } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
   function copyMotion(from,to){
@@ -471,6 +474,7 @@ function createEngine(canvas, opts, driven=false){
     };
   }
   Object.assign(hub,makeLeafTravel(hub,retainTravelSource));
+  Object.assign(hub,makeSeasonTravel(hub));
 
   // ---- auto-quality: hold ~60 fps by ratcheting render resolution then samples down; grudging to
   // climb back (each forced drop doubles the wait). Drives perf.*, never the user's art. ----
@@ -493,7 +497,7 @@ function createEngine(canvas, opts, driven=false){
       // linearly in the sample count — so trim SAMPLES across the whole range (relieving the bake immediately as q
       // drops) and let resolution ride along. bakeRes() still trims below the knee. q=1 → full, look unchanged.
       res  = lerp(RES_MIN, 1, q);
-      samp = Math.round(lerp(SAMP_MIN, params.sample_count, q));
+      samp = faithfulSamples();
     // LAYER MODE, and the two NEW cameras land here by construction: faithfulOn() is false for the enclosure
     // (receiver 2 forces the layer tier) and false for the sky view (no cast frame to pre-bake), so neither can
     // reach the faithful branch above. That is the right branch for both, for the branch's own reason — the cost
@@ -579,6 +583,7 @@ function createEngine(canvas, opts, driven=false){
     if(trans.active){
       if(trans.sceneFade){ hub.endSceneFade(); trans.sceneFade=false; }
       if(trans.leafTravel){hub.endLeafTravel();trans.leafTravel=false;}
+      if(trans.seasonTravel){hub.endSeasonTravel();trans.seasonTravel=false;}
       trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0;
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
@@ -613,6 +618,7 @@ function createEngine(canvas, opts, driven=false){
       alive = false; loop++;
       hub.endSceneFade();
       hub.endLeafTravel();
+      hub.endSeasonTravel();
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       [progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
@@ -712,7 +718,8 @@ function createEngine(canvas, opts, driven=false){
       if(trans.sceneFade && motionActive()) bake();
       landed = tickTransition(dt);
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
-    if(trans.leafTravel)hub.timed('transport',hub.drawLeafTravel);
+    if(trans.seasonTravel)hub.timed('transport',hub.drawSeasonTravel);
+    else if(trans.leafTravel)hub.timed('transport',hub.drawLeafTravel);
     else if(trans.sceneFade) hub.timed('transport',hub.drawSceneFade);
     else if(params.show_layer && !faithfulOn()) drawLayerBlit(); else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
     schedule();
@@ -731,6 +738,8 @@ function createEngine(canvas, opts, driven=false){
     hub.endSceneFade();
     const pending=hub.endLeafTravel();
     if(pending){trans.to=pending.to;trans.onEnd=pending.opts?.onEnd??null;}
+    const seasonPending=hub.endSeasonTravel();
+    if(seasonPending){trans.to=seasonPending.to;trans.onEnd=seasonPending.opts?.onEnd??null;}
   }
   function onContextRestored(){
     if(!alive) return;
@@ -745,7 +754,7 @@ function createEngine(canvas, opts, driven=false){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = trans.active ? trans.onEnd : null;
-    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
+    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
     rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)

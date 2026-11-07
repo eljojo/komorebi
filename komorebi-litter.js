@@ -104,7 +104,8 @@ function litterInstances(list, P, frame, wrap, minHalf = 0){
   const { ox, oy, ext } = frame, buf = [], rgb = [0, 0, 0], shape = leafShape(P.leaf_shape, P.seed, P.leaf_variety);   // shape: the outline the leaves hung in (the 64-row table, with leaf_variety); null is the ellipse
   for(const l of litterOrder(list)){
     // + the margin the stamp's quad is drawn with (VS_LITTER); and an outline's quad is its box, whose far corner is `reach` leaf units from the base the stamp turns about
-    const land = litterLanding(l, P), A = l.size[0], B = l.size[1], reach = (Math.max(A, B, minHalf) + 1.5*minHalf)*(shape ? shape.reach : 1);
+    // A seasonal journey supplies the moving floor mark; ordinary litter keeps its deterministic resting place.
+    const land = l.flight ?? litterLanding(l, P), A = l.size[0], B = l.size[1], reach = (Math.max(A, B, minHalf) + 1.5*minHalf)*(shape ? shape.reach : 1);
     let x = land.x, y = land.y;
     const xs = [0], ys = [0];
     if(wrap){

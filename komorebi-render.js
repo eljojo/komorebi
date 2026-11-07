@@ -31,7 +31,8 @@ export function makeRender(hub){
   // uniform and an untaken shader branch. Gate ON: transport writes LINEAR HDR into the sharp target instead, and
   // drawDiffusion spreads it and composites into the caller's target (§4.9).
   function drawFrameInto(fbo, w, h){
-    if(hub.trans.travelField?.weight!==1)hub.refreshFaith();   // the faithful cast has k baked in (§4.5): current for THIS frame's leaf_diffuse, or untouched
+    // Seasonal travel owns both visible casts, including the native handoff's authored edge law.
+    if(!hub.trans.seasonTravel&&hub.trans.travelField?.weight!==1)hub.refreshFaith();   // the faithful cast has k baked in (§4.5): current for THIS frame's leaf_diffuse, or untouched
     hub.refreshFill();   // the sky fill (§4.7) is current for THIS frame's sun and sky, or not wanted — before any target is bound, because a re-bake binds its own
     hub.refreshLitter(); // the litter carpet (§4.7) is current for THIS grove, or nothing has fallen / the gate is shut — same reason: its bake binds its own target
     // the SKY VIEW joins the diffusion gate (§4.9): the very same linear-HDR spread reads there as the eye's own

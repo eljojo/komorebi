@@ -82,6 +82,21 @@ function transitionRig(from) {
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
 
+test('cherry blossom ↔ park 2 follows one seasonal grove without a scene dissolve',()=>{
+  for(const [from,to] of [[PRESETS['cherry blossom'],PRESETS['park 2']],[PRESETS['park 2'],PRESETS['cherry blossom']]]){
+    const r=transitionRig(from);let began=0,steps=0,ended=0,arrived=0;
+    Object.assign(r.hub,{beginSeasonTravel:()=>began++,stepSeasonTravel:()=>steps++,finishSeasonTravel:()=>null,endSeasonTravel:()=>ended++,
+      beginSceneFade:()=>{},endSceneFade:()=>{},stepSceneFade:()=>{}});
+    r.transitionTo(to,{duration:1,onEnd:()=>arrived++});
+    expect(r.hub.trans.seasonTravel).toBe(true);expect(r.hub.trans.sceneFade).toBe(false);
+    expect(r.hub.trans.bloomMax).toBe(0);expect(began).toBe(1);
+    let cb;while(r.hub.trans.active)cb=r.tickTransition(1/60)||cb;
+    expect(steps).toBeGreaterThan(0);expect(ended).toBe(1);
+    for(const k in DEFAULTS)expect(r.params[k],k).toBe(k==='drift_phase'?from[k]:to[k]);
+    expect(r.swaps).toHaveLength(0);expect(arrived).toBe(0);cb();expect(arrived).toBe(1);
+  }
+});
+
 test("a shared grove turns continuously between sky and floor without a midpoint rebuild", () => {
   for(const sky of [true,false]) {
     const from={...DEFAULTS,sky_view:sky,faithful_canopy:false,standing_scene:true,branch_tau:0,canopy_fill:0,litter:0,

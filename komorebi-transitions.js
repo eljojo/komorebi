@@ -7,6 +7,7 @@
 // ============================================================================
 import { TAU, cameraPose, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
 import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
+import {seasonTravelEligible} from './komorebi-season-travel.js';
 
 const CAMERA_KEYS = new Set(['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y']);
 const WINDOW_KEYS = new Set(['window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall']);
@@ -23,6 +24,9 @@ export function makeTransitions(hub){
     opts = opts || {};
     if(!target || typeof target!=='object') return;
     const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
+    if(trans.active&&trans.seasonTravel){hub.retargetSeasonTravel(to,opts);return;}
+    const seasonTravel=!trans.active&&seasonTravelEligible(params,to);
+    trans.seasonTravel=seasonTravel;
     const retarget=trans.active&&trans.leafTravel;
     if(retarget&&!hub.retargetLeafTravel(to,opts))return;
     const irisFrom = trans.active ? (trans.irisRadius ?? 1) : 1;
@@ -85,7 +89,7 @@ export function makeTransitions(hub){
     // a mode flip can't morph leaf-for-leaf (the bake path / faithTex size / crown sizing change), so it forces a
     // dissolve+rebuild just like a topology change — never a live grove morph (which only regrows, no realloc).
     const morphGrove = canopyDiff && !topoDiff && !modeDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching+mode, small enough -> morph it
-    trans.canopyMorph = morphGrove;
+    trans.canopyMorph = !seasonTravel&&morphGrove;
     trans.structDiff  = viewpoint || topoDiff || modeDiff || (canopyDiff && !morphGrove);   // dissolve+rebuild on topology OR mode change, or a grove too big to morph
     // WHICH TIER'S BLOOM this is, decided once here rather than re-derived per frame: a mode flip's shallower hump
     // (the camera changes, so cover buys nothing and depth only blows the frame out) or a topology dissolve's
@@ -109,7 +113,7 @@ export function makeTransitions(hub){
                  && !faithfulOn() && !to.faithful_canopy
                  && !(params.branch_tau > 0) && !(to.branch_tau > 0)
                  && layersShared;
-    const sceneFade = !leafTravel && (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
+    const sceneFade = !seasonTravel && !leafTravel && (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
     if(sceneFade) trans.structDiff=true;   // an interruption still has two different visible scenes to dissolve
     if(!sceneFade && trans.sceneFade) hub.endSceneFade();
     if(sceneFade) hub.beginSceneFade();   // preserve the outgoing scene before params become the incoming look
@@ -120,7 +124,7 @@ export function makeTransitions(hub){
     trans.irisRadius = sceneFade ? 1 : trans.irisFrom;
     const tier = modeDiff ? 'mode' : crossOK ? 'cross' : 'dissolve';
     trans.crossfade = crossOK;
-    trans.bloomMax = trans.backgroundFade || viewpoint || leafTravel ? 0 : BLOOM_MAX[tier];
+    trans.bloomMax = trans.backgroundFade || viewpoint || leafTravel || seasonTravel ? 0 : BLOOM_MAX[tier];
     trans.durScale = trans.structDiff ? DUR_SCALE[tier] : 1;
     if(hub.groveIn){ hub.freeGrove(hub.groveIn); hub.groveIn = null; }   // a transition interrupting a transition drops the half-faded grove
     hub.crossW = 0;
@@ -129,6 +133,7 @@ export function makeTransitions(hub){
     trans.dur = Math.max(1e-3, opts.duration!=null ? opts.duration : trans.dur);   // stays the CALLER's number: it is also the sticky default for a later duration-less call, so the mode-flip stretch is applied at the clock (tickTransition) and never compounded into it
     trans.t = 0; trans.swapped = false; trans.bloom = 0; trans.active = true;
     trans.onEnd = opts.onEnd || null;
+    if(seasonTravel){trans.structDiff=true;trans.durScale=2;hub.beginSeasonTravel(to);}
     if(leafTravel){
       trans.structDiff=true;trans.durScale=2;
       if(!retarget){
@@ -172,7 +177,7 @@ export function makeTransitions(hub){
       ? (t<0.5 ? lerp(trans.shadowFrom, 0, smoothstep(0,0.5,t)) : smoothstep(0.5,1,t)) : 1;
     trans.windowOpacity=lerp(trans.windowFrom, trans.windowTo, e);
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
-      if((trans.viewpoint||trans.leafTravel) && k==='drift_phase' && params.drift_auto) continue;
+      if((trans.viewpoint||trans.leafTravel||trans.seasonTravel) && k==='drift_phase' && params.drift_auto) continue;
       if(trans.windowFade && WINDOW_KEYS.has(k)){ params[k]=trans.windowShape[k]; continue; }
       if(trans.splitFade){
         const leaving=trans.from.leaf_diffuse>0;
@@ -191,7 +196,18 @@ export function makeTransitions(hub){
     // and the arrangement reorganizes instead of being replaced. The incoming grove is installed as the engine's
     // own once it carries the whole picture, which is also when the structural params can safely snap: nothing
     // reads them again until the next regrow.
-    if(trans.leafTravel){
+    if(trans.seasonTravel){
+      hub.stepSeasonTravel(dt,t);
+      if(t<1)return null;
+      const drift=params.drift_phase;
+      for(const k in DEFAULTS)params[k]=trans.to[k];
+      if(params.drift_auto)params.drift_phase=drift;
+      const pending=hub.finishSeasonTravel();
+      trans.active=false;trans.seasonTravel=false;hub.endSeasonTravel();
+      hub.regenSource();hub.resetPerf();hub.bake();
+      const cb=trans.onEnd;trans.onEnd=null;
+      return pending?()=>hub.transitionTo(pending.to,pending.opts):cb;
+    }else if(trans.leafTravel){
       hub.regenSource();hub.stepLeafTravel(dt,e);
       if(t<1)return null;
       const drift=params.drift_phase;

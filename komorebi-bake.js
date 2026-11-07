@@ -272,6 +272,7 @@ export function makeBake(hub){
 
     // static faith-VS uniforms (wind / flutter — match the preview & the layer bake); only uG changes per sample
     gl.useProgram(progFaith);
+    gl.uniform1i(U.faith.seasonCast,hub.seasonCast?1:0);
     gl.uniform2f(U.faith.origin, faith.ox, faith.oy);
     gl.uniform2f(U.faith.extent, faith.ext, faith.ext);
     gl.uniform1f(U.faith.edge, params.edge_softness);   // soft leaf rim (same as the layer bake); 0 here = hard ellipses

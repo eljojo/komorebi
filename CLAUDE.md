@@ -18,6 +18,7 @@ model. Read the spec before you change what the engine does.
   - **`komorebi-transitions.js`** — routes between looks: live/grove morphs, cloud-bloom swaps, faithful scene dissolves, iris sweeps and the shared-grove sky↔floor viewpoint.
   - **`komorebi-scene-fade.js`** — the faithful structural transition's two moving scenes, canvas-sized targets and linear-display dissolve, including interruption and cleanup.
   - **`komorebi-leaf-travel.js`** — the overhead faithful↔layer transition: spatial cluster correspondence, moving leaf geometry, its shared sun cast, native endpoint handoffs and reversal.
+  - **`komorebi-season-travel.js`** — the shared standing grove's seasonal transition: leaves travel between their floor landings and live twigs, colours change per leaf, and the camera glides through eye space; native cast handoffs, reversal and cleanup belong here too.
   - **`komorebi-render.js`** — one frame onto a target: the transport draw, the per-group uniform upload, the glow tier.
   - **`komorebi-editor-tools.js`** — EDITOR-only: debug overlays, the profiling primitive, the motion mirror.
   - **`komorebi-transport.js`** — the transport master + camera registry: GLSL snippets `buildTransport()` assembles into one program per camera, including the transition-only viewpoint that joins sky rays to floor casts.

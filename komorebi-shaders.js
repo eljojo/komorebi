@@ -143,8 +143,7 @@ void main(){
 // uG = this source sample's ground shift g_i), and mapped into the CAST frame (uFaithOrigin/uFaithExtent), which
 // covers where the shadow LANDS (offset by the bulk throw), not the canopy plan. One per source sample → the
 // "many suns" convolution done as geometry at continuous heights, so leaves sit on their twigs (no layer cheat).
-const VS_FAITH = `#version 300 es
-precision highp float;
+const GLSL_FAITH_VERTEX = `precision highp float;
 layout(location=0) in vec2 aCorner;   // [-1,1] quad corner
 layout(location=1) in vec4 iA;        // center.xy, A (long half), B0 (face-on short half)
 layout(location=2) in vec4 iB;        // angle, restTilt, swingGain, swingPhase
@@ -152,6 +151,10 @@ layout(location=3) in vec4 iC;        // tau.rgb, clusterId (which twig — hier
 layout(location=4) in vec4 iD;        // orbit: ampX, ampY, orientation, phase (incoherent drift)
 layout(location=5) in float iHeight;  // FAITHFUL: this leaf's continuous floor-height (floorH of its grown z)
 layout(location=6) in float iFade;    // the fade the CPU folded into iC.xyz: the ballistic depth k·fade has to ride it (§4.5)
+#ifdef SEASON_TRAVEL
+layout(location=7) in vec4 iJourney;  // floor landing.xy, clockwise angle, height fraction
+uniform highp int uSeasonCast;
+#endif
 uniform vec2  uFaithOrigin;           // cast-frame origin (floor space)
 uniform vec2  uFaithExtent;           // cast-frame extent (floor space)
 uniform vec2  uG;                     // this source sample's ground shift g_i = uProj*sample + uBulkShift
@@ -213,6 +216,18 @@ void main(){
   mat2 R=mat2(c,-s,s,c);
   vec2 lc = aCorner*uShapeBox.zw + uShapeBox.xy;                                 // the corner in the leaf's own frame: the ellipse's square to the bit, or the outline's box (see VS_BAKE)
   vec2 world = base + uSway*(hEff/uHRef) + drift + R*(lc*vec2(A,B));   // coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
+#ifdef SEASON_TRAVEL
+  if(uSeasonCast!=0){
+    float lift=iJourney.w;
+    vec2 centre=base+uSway*(hEff/uHRef)+drift;
+    float angleDelta=mod(ang-iJourney.z+3.14159265359,6.28318530718)-3.14159265359;
+    float travelingAngle=iJourney.z+angleDelta*lift+0.20*sin(6.28318530718*lift+iB.w)*sin(3.14159265359*lift);
+    mat2 turning=mat2(cos(travelingAngle),-sin(travelingAngle),sin(travelingAngle),cos(travelingAngle));
+    vec2 curl=0.22*sin(3.14159265359*lift)*vec2(cos(iB.w+2.0*lift),sin(iB.w+2.0*lift));
+    world=mix(iJourney.xy,centre,lift)+curl+turning*(lc*vec2(A,mix(B0,B,lift)));
+    hEff*=lift;
+  }
+#endif
   // project this leaf onto the RECEIVER along the sun-sample direction (uG.x, uG.y, 1). FLOOR (z=0): world - uG·h
   // (h→0; transport's layer loop adds +h·g to look UP — antipodal, so leaves land where the wood casts). CURTAIN
   // (vertical plane Y=uClothY, §4.9): drop onto the cloth → u = px - r·gx, v = h - r with r=(py-cy)/gy, so a
@@ -231,7 +246,17 @@ void main(){
   vVariant = floor(fract(iC.w)*uLeafIdFrac + 0.5);
   vTau = iC.xyz;
   vFade = iFade;
+#ifdef SEASON_TRAVEL
+  if(uSeasonCast!=0){float liftCast=smoothstep(0.0,0.13,iJourney.w);vTau*=liftCast;vFade*=liftCast;}
+#endif
 }`;
+
+const VS_FAITH = `#version 300 es
+${GLSL_FAITH_VERTEX}`;
+// A separate specialization keeps the native shader's arithmetic and compiler decisions intact.
+const VS_SEASON_TRAVEL = `#version 300 es
+#define SEASON_TRAVEL
+${GLSL_FAITH_VERTEX}`;
 
 // FAITHFUL pass 1 (per sample): each leaf outputs its TRANSMITTANCE exp(-τ); drawn with multiplicative blend
 // (dst *= src) so the scratch buffer ends at Π exp(-τ) = exp(-Σ τ) = the transmittance through the canopy for
@@ -243,6 +268,7 @@ void main(){
 // guard is what keeps vTau/vFade from dividing by 0. The else is the literal old line.
 const FS_FAITH = `#version 300 es
 precision highp float;
+uniform highp int uSeasonCast;
 in vec2 vLocal;
 in vec3 vTau;
 in float vFade;
@@ -262,7 +288,8 @@ void main(){
   if(uBeamK > 0.0 || uEdgeArea != 0){
     vec3 T, Tb;
     texelMix(vTau*cov, cov*vFade, uBeamK, T, Tb);
-    frag = vec4(Tb, 1.0);
+    // Native zero uses the legacy slab edge. Meet it continuously while this cast is carrying a seasonal journey.
+    frag = vec4(uSeasonCast!=0?mix(exp(-vTau*cov),Tb,smoothstep(0.0,0.08,uBeamK)):Tb, 1.0);
   }
   else frag = vec4(exp(-vTau*cov), 1.0);
 }`;
@@ -810,4 +837,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
