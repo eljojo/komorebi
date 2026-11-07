@@ -87,6 +87,13 @@ test("a bundle retains the continuous viewpoint only when it carries both sky an
   expect(flight.files['komorebi-transport.js']).toContain('uRiseDepth');
 });
 
+test('sky and floor bundles retain the shadow flight without seasonal tiers',()=>{
+  const sky=Object.keys(PRESETS).find(n=>PRESETS[n].sky_view);
+  const flight=assemble({looks:[sky,'park 1'],features:'none'});
+  expect(flight.cameras).toContain('rise');
+  expect(flight.files['komorebi-transport.js']).toContain('uRiseDepth');
+});
+
 // The BUILD literal itself, read out of the minified text: the name, then its own `cut` array. A bare `"fill"` anywhere in the bundle proves
 // nothing — FEATURES' group names, TOPO_KEYS ('litter') and MORPH_KEYS ('exposure') carry three of the six whatever BUILD says.
 const buildCut = (src, name) => {

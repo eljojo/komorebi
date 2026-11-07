@@ -117,6 +117,7 @@ export function makeRender(hub){
     gl.uniform1f(U.glowMix.exposure, params.exposure);
     gl.uniform1f(U.glowMix.contrast, params.contrast);
     gl.uniform1i(U.glowMix.tone, params.tone_map);
+    gl.uniform3fv(U.glowMix.travelTone,hub.trans.travelTone??[0,0,0]);
     gl.drawArrays(gl.TRIANGLES,0,3);
   }
 
@@ -135,6 +136,7 @@ export function makeRender(hub){
       gl.activeTexture(gl.TEXTURE14);gl.bindTexture(gl.TEXTURE_2D,field.depth);gl.uniform1i(u.riseDepth,14);
       gl.activeTexture(gl.TEXTURE15);gl.bindTexture(gl.TEXTURE_2D,field.emission);gl.uniform1i(u.riseEmission,15);
       gl.uniform1f(u.riseNative,field.native);gl.uniform2fv(u.riseStep,field.step);
+      gl.uniform1f(u.shadowLift,field.weight??0);
     },
     viewpoint: (u, f) => {
       gl.uniform3fv(u.eye, hub.trans.viewEye);
@@ -378,7 +380,7 @@ export function makeRender(hub){
     sky: (u) => {
       gl.uniform1f(u.skyScatter, clamp(params.sky_scatter, 0, 1));
       gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);          // at k = 0 the sky ray reads each texel as its mixture (§4.5)
-      gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
+      gl.uniform1f(u.beamK, hub.trans.riseField?.shadow ? 0 : FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
       const base=hub.trans.riseField?10:8;   // the rising litter still speaks the floor's carpet on unit 8
       for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+base+i); gl.bindTexture(gl.TEXTURE_2D, hub.woodTex[i]); gl.uniform1i(u.woods[i], base+i); }
       gl.uniform2f(u.srcAngR, src.coreR, src.haloR);

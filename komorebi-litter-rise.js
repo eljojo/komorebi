@@ -1,6 +1,6 @@
-// Litter becomes the overhead grove through one leaf field; the native ground cast remains below it.
+// Litter or shadow footprints become the overhead grove through one leaf field.
 // Flight is an authored transition path, with live destination wind and a deterministic detour around the eye.
-import {cameraPose,lerp,lerpAngle,smoothstep,DEG,TAU,leafClock,atmosphere} from './komorebi-math.js';
+import {cameraPose,lerp,lerpAngle,smoothstep,DEG,TAU,leafClock,atmosphere,ballisticK} from './komorebi-math.js';
 import {CANOPY_KEYS,TOPO_KEYS,SEASON_KEYS,DEFAULTS,CANOPY_MORPH_MAX} from './komorebi-params.js';
 import {pairLeaves,moveLeaves} from './komorebi-leaf-travel.js';
 import {VS_RISE,FS_RISE,VS_RISE_SKY,FS_RISE_SKY} from './komorebi-shaders.js';
@@ -73,6 +73,8 @@ export function planRiseBypass(a,b,id,from,to){return risePlanner(from,to)(a,b,i
 
 const FEAT_LITTER = true;
 const FEAT_DROP = true;
+const FEAT_LEAF_DIFFUSE = true;
+const FEAT_SKY_FLIGHT = true;
 const RISE_KEYS=new Set([...CANOPY_KEYS,...TOPO_KEYS,...SEASON_KEYS,
   'view_extent_m','view_pitch_deg','view_yaw_deg','view_fov_deg','view_center_x','view_center_y',
   'sky_view','faithful_canopy','standing_scene','sun_elevation_deg','sun_azimuth_deg','sky_turbidity','core_angular_radius_deg',
@@ -92,24 +94,50 @@ export const litterRiseEligible=FEAT_LITTER ? FEAT_DROP ? (a,b)=>{
     &&Object.keys(DEFAULTS).every(k=>RISE_KEYS.has(k)||a[k]===b[k]);
 }:()=>false:()=>false;
 
+// Shadow footprints have no carpet or standing-tree throw. The eye renderer currently lands on three sky planes.
+export const shadowRiseEligible=FEAT_SKY_FLIGHT ? (a,b)=>{
+ const count=p=>Math.ceil(Math.max(1,p.tree_count))*p.limb_count*Math.max(1,p.branch_children)**Math.max(0,p.branch_levels-1);
+ return !a.sky_view&&b.sky_view&&a.faithful_canopy&&!b.faithful_canopy&&!a.standing_scene&&b.standing_scene
+  &&a.receiver===0&&b.receiver===0&&a.branch_tau===0&&b.branch_tau===0
+  &&a.canopy_fill===0&&b.canopy_fill===0&&a.litter===0&&b.litter===0&&a.leaf_drop===0&&b.leaf_drop===0
+  &&a.inner_leaves===0&&b.inner_leaves===0&&a.leaf_diffuse>=0&&a.leaf_diffuse<1&&b.leaf_diffuse===0
+  &&a.sun_cosine===0&&b.sun_cosine===0&&a.eclipse===b.eclipse&&!a.edge_area&&!b.edge_area
+  &&b.layer_count===3&&a.leaf_size_m>0&&b.leaf_size_m>0&&Math.max(a.leaf_size_m,b.leaf_size_m)<=.2
+  &&a.tree_count>0&&b.tree_count>0&&a.foliage_density>0&&b.foliage_density>0&&a.leaves_per_cluster>0&&b.leaves_per_cluster>0
+  &&90-a.view_pitch_deg>a.view_fov_deg/2&&b.view_pitch_deg>b.view_fov_deg/2
+  &&Math.max(count(a),count(b))*Math.max(Math.ceil(a.leaves_per_cluster*a.foliage_density),Math.ceil(b.leaves_per_cluster*b.foliage_density))<=CANOPY_MORPH_MAX;
+}:()=>false;
 
-function makeRiseRenderer(hub,source,from,to){
+function makeRiseRenderer(hub,source,from,to,footprints=false){
  const a=source,b={hub},canvas=hub.canvas,h=a.hub,g=hub.gl;
- const litter=h.grove.litter.map(l=>({...l})),fades=litter.map(l=>l.fade),ids=litter.map(l=>leafClock(from.seed,l.j,l.k));
- const ground=new Float32Array(litter.length*18),reflectance=new Float32Array(litter.length*3),n=h.hier.nClusterTotal;
- const H={nClusterTotal:n,clusterData:new Float32Array(n*4),clusterGeom:new Float32Array(n*4),clusterPlan:new Float32Array(n*2)},count=new Uint32Array(n);
- for(let i=0;i<litter.length;i++){
-  const l=litter[i],p=litterLanding(l,from),o=18*i,row=l.row??leafVariant(from.seed,l.j,l.k);
-  ground[o]=p.x;ground[o+1]=p.y;ground[o+2]=l.size[0];ground[o+3]=l.size[1];ground[o+4]=-p.rot;
-  for(let c=0;c<3;c++)ground[o+8+c]=l.tau[c]*l.fade;
-  ground[o+11]=l.j+row/(h.grove.shape?.idFrac??32);ground[o+17]=l.fade;
-  H.clusterPlan[2*l.j]+=p.x;H.clusterPlan[2*l.j+1]+=p.y;count[l.j]++;
-  reflectance.set(litterAlbedo(l.tau,litterAge(from,l.D),from.leaf_wetness),3*i);
+ const read=h=>{
+  const leaves=new Float32Array(h.faith.count*18);
+  g.bindBuffer(g.ARRAY_BUFFER,h.faith.buf);g.getBufferSubData(g.ARRAY_BUFFER,0,leaves);
+  return {leaves,hier:h.hier,params:h.params,motion:h.motion,hMax:h.faith.hMax,shape:h.grove.shape,texture:h.grove.leafTex};
+ };
+ let A,ids,litter,fades,reflectance;
+ if(footprints){
+  A=read(h);ids=Array.from({length:A.leaves.length/18},(_,i)=>leafClock(from.seed,Math.round(A.leaves[18*i+11]),i));
+  // The source beam's ballistic depth becomes a filter at its ground footprint.
+  const extra=FEAT_LEAF_DIFFUSE?ballisticK(from.leaf_diffuse):0;
+  for(let i=0;i<A.leaves.length;i+=18)for(let c=0;c<3;c++)A.leaves[i+8+c]+=extra;
+ }else{
+  litter=h.grove.litter.map(l=>({...l}));fades=litter.map(l=>l.fade);ids=litter.map(l=>leafClock(from.seed,l.j,l.k));
+  const ground=new Float32Array(litter.length*18),n=h.hier.nClusterTotal;
+  reflectance=new Float32Array(litter.length*3);
+  const H={nClusterTotal:n,clusterData:new Float32Array(n*4),clusterGeom:new Float32Array(n*4),clusterPlan:new Float32Array(n*2)},count=new Uint32Array(n);
+  for(let i=0;i<litter.length;i++){
+   const l=litter[i],p=litterLanding(l,from),o=18*i,row=l.row??leafVariant(from.seed,l.j,l.k);
+   ground[o]=p.x;ground[o+1]=p.y;ground[o+2]=l.size[0];ground[o+3]=l.size[1];ground[o+4]=-p.rot;
+   for(let c=0;c<3;c++)ground[o+8+c]=l.tau[c]*l.fade;
+   ground[o+11]=l.j+row/(h.grove.shape?.idFrac??32);ground[o+17]=l.fade;
+   H.clusterPlan[2*l.j]+=p.x;H.clusterPlan[2*l.j+1]+=p.y;count[l.j]++;
+   reflectance.set(litterAlbedo(l.tau,litterAge(from,l.D),from.leaf_wetness),3*i);
+  }
+  for(let j=0;j<n;j++)if(count[j]){H.clusterPlan[j*2]/=count[j];H.clusterPlan[j*2+1]/=count[j];}
+  A={leaves:ground,hier:H,params:{...from,faithful_canopy:true,drift_amount:0,leaf_swing:0},motion:{time:0,u:0,sway:[0,0]},hMax:1,shape:h.grove.shape,texture:h.grove.leafTex};
  }
- for(let j=0;j<n;j++)if(count[j]){H.clusterPlan[j*2]/=count[j];H.clusterPlan[j*2+1]/=count[j];}
- const A={leaves:ground,hier:H,params:{...from,faithful_canopy:true,drift_amount:0,leaf_swing:0},motion:{time:0,u:0,sway:[0,0]},hMax:1,shape:h.grove.shape,texture:h.grove.leafTex};
- const target=new Float32Array(b.hub.faith.count*18);g.bindBuffer(g.ARRAY_BUFFER,b.hub.faith.buf);g.getBufferSubData(g.ARRAY_BUFFER,0,target);
- const B={leaves:target,hier:b.hub.hier,params:b.hub.params,motion:b.hub.motion,hMax:b.hub.faith.hMax,shape:b.hub.grove.shape,texture:b.hub.grove.leafTex};
+ const B=read(b.hub);
  const pairs=pairLeaves(A,B),starts=new Float32Array(pairs.length*12),ends=starts.slice(),data=starts.slice(),material=new Float32Array(pairs.length*4),flights=material.slice();
  moveLeaves(A,B,pairs,0,starts);
  const ba=A.shape?.box??[0,0,1,1],bb=B.shape?.box??[0,0,1,1],lo=[0,1].map(i=>Math.min(ba[i]-ba[i+2],bb[i]-bb[i+2])),hi=[0,1].map(i=>Math.max(ba[i]+ba[i+2],bb[i]+bb[i+2]));
@@ -139,6 +167,7 @@ function makeRiseRenderer(hub,source,from,to){
  const shapes=u=>{for(const [unit,q]of[[0,A],[1,B]]){g.activeTexture(g.TEXTURE0+unit);g.bindTexture(g.TEXTURE_2D,q.texture??b.hub.layerTex[3]);g.uniform1i(unit===0?u.LeafA:u.LeafB,unit);g.uniform1i(unit===0?u.ShapeA:u.ShapeB,q.shape?1:0);}g.uniform4fv(u.Box,box);};
  let bypasses=null,planner=null,planEnds=null,planned=0;
  function carriers(t){
+  if(footprints)moveLeaves(A,B,pairs,0,starts);
   moveLeaves(A,B,pairs,1,ends);
   if(t>0&&!bypasses){
    bypasses=new Array(pairs.length);planner=risePlanner(from,to);planEnds=ends.slice();
@@ -152,8 +181,10 @@ function makeRiseRenderer(hub,source,from,to){
    }
    if(planned===pairs.length){planner=null;planEnds=null;}
   }
-  for(let i=0;i<litter.length;i++){const q=riseLeaf([0,0,0],[0,0,1],t,ids[i]);litter[i].fade=fades[i]*q.floor;}
-  h.grove.litter=litter;h.litter.grove=null;
+  if(!footprints){
+   for(let i=0;i<litter.length;i++){const q=riseLeaf([0,0,0],[0,0,1],t,ids[i]);litter[i].fade=fades[i]*q.floor;}
+   h.grove.litter=litter;h.litter.grove=null;
+  }
   for(let i=0;i<pairs.length;i++){
    const o=i*12,m=i*4,source=pairs[i][0]/18,id=ids[source],q=riseLeaf([starts[o],starts[o+1],0],[ends[o],ends[o+1],ends[o+8]],t,id),w=q.flight;
    const position=riseBypass(q.position,bypasses?.[i],t);data[o]=position[0];data[o+1]=position[1];data[o+8]=position[2];
@@ -163,8 +194,9 @@ function makeRiseRenderer(hub,source,from,to){
    data[o+4]=lerpAngle(starts[o+4],ends[o+4],w,TAU);
    for(let c=0;c<3;c++)data[o+5+c]=lerp(starts[o+5+c],ends[o+5+c],w);
    data[o+9]=lerp(starts[o+9],ends[o+9],w);data[o+10]=starts[o+10];data[o+11]=ends[o+11];
-   material.set(reflectance.subarray(source*3,source*3+3),m);material[m+3]=q.translucent;
-   flights[m]=q.air;flights[m+1]=Math.sin(Math.PI*w)*.75*Math.sin(id*TAU+6*w);flights[m+2]=w;
+   if(footprints){material[m]=material[m+1]=material[m+2]=0;material[m+3]=1;}
+   else{material.set(reflectance.subarray(source*3,source*3+3),m);material[m+3]=q.translucent;}
+   flights[m]=footprints?smoothstep(0,.10,t):q.air;flights[m+1]=Math.sin(Math.PI*w)*.75*Math.sin(id*TAU+6*w);flights[m+2]=w;
   }
   for(const [buffer,array]of[[buf,data],[matBuf,material],[flightBuf,flights]]){g.bindBuffer(g.ARRAY_BUFFER,buffer);g.bufferSubData(g.ARRAY_BUFFER,0,array);}
  }
@@ -187,6 +219,12 @@ function makeRiseRenderer(hub,source,from,to){
 
  function step(t,dt){
   const q=riseCamera(from,to,t),p=h.params;
+  if(footprints){
+   for(const k of ['core_weight_fraction','halo_angular_radius_deg','cloud_thickness','exposure','contrast','ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration','vignette','vignette_shape','ground_r','ground_g','ground_b','sky_scatter','glow_bleed','glow_bleed_m'])p[k]=lerp(from[k],to[k],q.weight);
+   h.trans.travelTone=[0,0,0];h.trans.travelTone[from.tone_map]+=1-q.weight;h.trans.travelTone[to.tone_map]+=q.weight;
+   h.trans.irisRadius=from.vignette>0&&to.vignette===0?lerp(1,Math.SQRT2,smoothstep(.75,1,t))
+    :from.vignette===0&&to.vignette>0?lerp(Math.SQRT2,1,smoothstep(0,.25,t)):1;
+  }
   for(const k of ['view_extent_m','view_center_x','view_center_y','view_pitch_deg','sun_elevation_deg','sun_azimuth_deg','sky_turbidity','core_angular_radius_deg'])p[k]=lerp(from[k],to[k],q.weight);
   p.view_fov_deg=q.fov;p.view_yaw_deg=q.yaw;
   if(dt>0&&h.motionActive())h.tick(dt);
@@ -195,7 +233,7 @@ function makeRiseRenderer(hub,source,from,to){
    ensureEye();bakeEye(q);
    // The native target atlas takes over only after the moving carriers arrive.
    const atlas=t>=.9?{textures:hub.layerTex,heights:hub.layerHeights(),extent:to.canopy_extent_m}:bakeSky(q);
-   h.trans.riseField={depth:eyeTex[0],emission:eyeTex[1],native:smoothstep(.9,.995,t),step:[.5/fieldW,.5/fieldH],atlas};
+   h.trans.riseField={depth:eyeTex[0],emission:eyeTex[1],shadow:footprints,weight:footprints?smoothstep(0,.10,t):0,native:smoothstep(.9,.995,t),step:[.5/fieldW,.5/fieldH],atlas};
    Object.assign(h.trans,{active:true,viewpoint:true,t,viewEye:q.eye,viewElevation:q.elevation,viewSkyWeight:q.skyWeight});
   }else{h.trans.active=false;h.trans.riseField=null;}
  }
@@ -208,10 +246,10 @@ function makeRiseRenderer(hub,source,from,to){
 }
 
 const NO_LITTER_RISE={endLitterRise(){}};
-export const makeLitterRise=FEAT_LITTER ? FEAT_DROP ? (hub,createSource)=>{
+export const makeLitterRise=FEAT_SKY_FLIGHT ? (hub,createSource)=>{
  let s=null;
- function beginLitterRise(to){s={source:createSource(),from:{...hub.params},to:{...to},renderer:null,pending:null};}
- function stepLitterRise(dt,t){if(!s.renderer)s.renderer=makeRiseRenderer(hub,s.source,s.from,s.to);s.renderer.step(t,dt);}
+ function beginLitterRise(to,footprints=false){s={source:createSource(),from:{...hub.params},to:{...to},footprints,renderer:null,pending:null};}
+ function stepLitterRise(dt,t){if(!s.renderer)s.renderer=makeRiseRenderer(hub,s.source,s.from,s.to,s.footprints);s.renderer.step(t,dt);}
  function drawLitterRise(){s.renderer.draw();}
  function retargetLitterRise(to,opts){s.pending={to,opts};hub.trans.onEnd=null;}
  function finishLitterRise(){return s.pending;}
@@ -219,7 +257,7 @@ export const makeLitterRise=FEAT_LITTER ? FEAT_DROP ? (hub,createSource)=>{
   if(!s)return;
   const pending=s.pending;
   if(s.renderer)s.renderer.dispose();else s.source.dispose();
-  s=null;return pending;
+  s=null;hub.trans.shadowRise=false;return pending;
  }
  return {beginLitterRise,stepLitterRise,drawLitterRise,retargetLitterRise,finishLitterRise,endLitterRise};
-}:()=>NO_LITTER_RISE:()=>NO_LITTER_RISE;
+}:()=>NO_LITTER_RISE;

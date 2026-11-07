@@ -952,6 +952,7 @@ const GLSL_T_RISE_FLOOR = `      if(uFaithful!=0){acc=tapFaith(world);}else{
 ${GLSL_T_LAYERS}
 ${GLSL_T_WOOD_CAST}
       }
+      if(uShadowLift>0.0)acc=pow(max(acc,vec3(1e-6)),vec3(1.0-uShadowLift));
       vec3 floorCol;
 ${GLSL_T_FLOOR_MATERIAL.replace(/\bcol\b/g,'floorCol').replace(/uSunColor/g,'uSurfaceSunColor')}
       skyRad=floorCol;`;
@@ -1059,8 +1060,8 @@ const GLSL_T_COL_DECL = `  // ---- Receiver (§4.x/§4.9). The landed irradiance
 // supports. A group with no `locs` contributes only functions (the taps, the fold field, the warp). ----
 const TRANSPORT_GROUPS = {
   rise: { decls: `uniform highp sampler2D uRiseDepth,uRiseEmission;
-uniform float uRiseNative;
-uniform vec2 uRiseStep;`, locs: {riseDepth:'uRiseDepth',riseEmission:'uRiseEmission',riseNative:'uRiseNative',riseStep:'uRiseStep'} },
+uniform float uRiseNative,uShadowLift;
+uniform vec2 uRiseStep;`, locs: {riseDepth:'uRiseDepth',riseEmission:'uRiseEmission',riseNative:'uRiseNative',shadowLift:'uShadowLift',riseStep:'uRiseStep'} },
   viewpoint: { decls: `uniform vec3 uViewEye;
 uniform float uViewElevation;
 uniform float uViewSkyWeight;

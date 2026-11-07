@@ -285,7 +285,7 @@ function createEngine(canvas, opts, driven=false){
     U.present = { tex:loc(progPresent,'uTex') };
     U.glowBlur = { tex:loc(progGlowBlur,'uTex'), step:loc(progGlowBlur,'uStep') };
     U.glowMix = { sharp:loc(progGlowMix,'uSharp'), blur:loc(progGlowMix,'uBlur'), diffuse:loc(progGlowMix,'uDiffuse'),
-                  exposure:loc(progGlowMix,'uExposure'), contrast:loc(progGlowMix,'uContrast'), tone:loc(progGlowMix,'uToneMap') };
+                  exposure:loc(progGlowMix,'uExposure'), contrast:loc(progGlowMix,'uContrast'), tone:loc(progGlowMix,'uToneMap'),travelTone:loc(progGlowMix,'uTravelTone') };
     if(EDITOR){   // editor-only debug-overlay uniforms
       U.pts = { scale:loc(progPoints,'uScale'), maxW:loc(progPoints,'uMaxW') };
       U.viz = { point:loc(progViz,'uPoint'), pointAlpha:loc(progViz,'uPointAlpha'), lineAlpha:loc(progViz,'uLineAlpha') };

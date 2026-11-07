@@ -9,6 +9,7 @@ import { PRESETS } from "./presets.js";
 import { makeSource } from "./komorebi-source.js";
 import { DEG, clamp, lerp } from "./komorebi-math.js";
 import riseFixture from './test-gl/fixtures/fall-look-up.json';
+import shadowFixture from './test-gl/fixtures/purple-look-up.json';
 
 // the DEFAULTS knobs that deliberately do NOT participate in transitions: runtime/debug flags, the look's
 // tone-map + wind-pattern (live uniforms / a table swap, snapped not tweened), and the legacy clusters_per_layer.
@@ -131,6 +132,19 @@ test('fall memories → look up lifts the actual litter without a midpoint swap'
   let cb;for(let i=0;i<122&&r.hub.trans.active;i++)cb=r.tickTransition(1/60);
   expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(ended).toBe(1);
   expect(r.hub.trans.active).toBe(false);expect(r.params.sky_view).toBe(true);expect(arrived).toBe(0);cb?.();expect(arrived).toBe(1);
+});
+
+test('purple eye → look up carries its shadow footprints without a midpoint swap',()=>{
+  const r=transitionRig(shadowFixture.from);let began,steps=0,ended=0,arrived=0;
+  Object.assign(r.hub,{beginLitterRise:(to,footprints)=>began={to,footprints},stepLitterRise:()=>steps++,finishLitterRise:()=>null,endLitterRise:()=>ended++});
+  r.transitionTo(shadowFixture.to,{duration:1,onEnd:()=>arrived++});
+  expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.shadowRise).toBe(true);
+  expect(began).toEqual({to:shadowFixture.to,footprints:true});
+  expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);
+  expect(r.swaps).toHaveLength(1);
+  let cb;while(r.hub.trans.active)cb=r.tickTransition(1/60)||cb;
+  expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(ended).toBe(1);
+  expect(r.params.sky_view).toBe(true);expect(arrived).toBe(0);cb();expect(arrived).toBe(1);
 });
 
 test('cherry blossom ↔ park 2 follows one seasonal grove without a scene dissolve',()=>{
