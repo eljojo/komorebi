@@ -23,6 +23,8 @@ export function makeTransitions(hub){
     opts = opts || {};
     if(!target || typeof target!=='object') return;
     const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
+    const retarget=trans.active&&trans.leafTravel;
+    if(retarget&&!hub.retargetLeafTravel(to,opts))return;
     const irisFrom = trans.active ? (trans.irisRadius ?? 1) : 1;
     const movingView=trans.active && trans.viewpoint;
     const viewpoint=!!((!trans.active || movingView) && (movingView || params.sky_view!==to.sky_view) && !params.faithful_canopy && !to.faithful_canopy
@@ -62,6 +64,18 @@ export function makeTransitions(hub){
     trans.woodFade = modeDiff && ((params.branch_tau > 0) !== (to.branch_tau > 0));
     const canopyDiff = CANOPY_KEYS.some(k => to[k]!==params[k]);   // branch/leaf knobs differ
     const leafCount  = hub.layerVAO.reduce((s,L)=>s+L.count, 0);       // current grove size
+    const leavesFrom=hub.hier?.nLeaf??Math.ceil(params.leaves_per_cluster*params.foliage_density),leavesTo=Math.ceil(to.leaves_per_cluster*to.foliage_density);
+    const targetClusters=Math.ceil(Math.max(1,to.tree_count))*to.limb_count*Math.max(1,to.branch_children)**Math.max(0,to.branch_levels-1);
+    const carrierCount=Math.max(leafCount/Math.max(1,leavesFrom),targetClusters)*Math.max(leavesFrom,leavesTo);
+    const leafTravel=retarget||(!trans.active&&params.faithful_canopy!==to.faithful_canopy
+      && !params.sky_view&&!to.sky_view&&!params.standing_scene&&!to.standing_scene
+      && params.receiver===0&&to.receiver===0&&params.branch_tau===0&&to.branch_tau===0
+      && params.canopy_fill===0&&to.canopy_fill===0&&params.litter===0&&to.litter===0
+      && params.leaf_drop===0&&to.leaf_drop===0&&params.inner_leaves===0&&to.inner_leaves===0&&params.leaf_size_m>0&&to.leaf_size_m>0
+      && params.edge_area===to.edge_area&&params.eclipse===to.eclipse
+      && leafCount>0&&leavesTo>0&&carrierCount<=CANOPY_MORPH_MAX);
+    trans.leafTravel=!!leafTravel;
+    if(leafTravel){trans.backgroundFade=false;trans.settleCamera=false;}
     // a grove morph scales the leaf count by tree_count AND per-twig density (leaves_per_cluster*foliage_density);
     // budget against the busier (more-leaves) end so a dense/many-tree target falls back to the cheap dissolve.
     const densFrom   = Math.max(1e-6, params.leaves_per_cluster*params.foliage_density);
@@ -95,7 +109,7 @@ export function makeTransitions(hub){
                  && !faithfulOn() && !to.faithful_canopy
                  && !(params.branch_tau > 0) && !(to.branch_tau > 0)
                  && layersShared;
-    const sceneFade = (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
+    const sceneFade = !leafTravel && (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
     if(sceneFade) trans.structDiff=true;   // an interruption still has two different visible scenes to dissolve
     if(!sceneFade && trans.sceneFade) hub.endSceneFade();
     if(sceneFade) hub.beginSceneFade();   // preserve the outgoing scene before params become the incoming look
@@ -106,7 +120,7 @@ export function makeTransitions(hub){
     trans.irisRadius = sceneFade ? 1 : trans.irisFrom;
     const tier = modeDiff ? 'mode' : crossOK ? 'cross' : 'dissolve';
     trans.crossfade = crossOK;
-    trans.bloomMax = trans.backgroundFade || viewpoint ? 0 : BLOOM_MAX[tier];
+    trans.bloomMax = trans.backgroundFade || viewpoint || leafTravel ? 0 : BLOOM_MAX[tier];
     trans.durScale = trans.structDiff ? DUR_SCALE[tier] : 1;
     if(hub.groveIn){ hub.freeGrove(hub.groveIn); hub.groveIn = null; }   // a transition interrupting a transition drops the half-faded grove
     hub.crossW = 0;
@@ -115,6 +129,14 @@ export function makeTransitions(hub){
     trans.dur = Math.max(1e-3, opts.duration!=null ? opts.duration : trans.dur);   // stays the CALLER's number: it is also the sticky default for a later duration-less call, so the mode-flip stretch is applied at the clock (tickTransition) and never compounded into it
     trans.t = 0; trans.swapped = false; trans.bloom = 0; trans.active = true;
     trans.onEnd = opts.onEnd || null;
+    if(leafTravel){
+      trans.structDiff=true;trans.durScale=2;
+      if(!retarget){
+        hub.beginLeafTravel(to);
+        for(const k in DEFAULTS)params[k]=to[k];
+        hub.rebuildAll();hub.resetPerf();
+      }
+    }
     if(sceneFade){
       trans.bloomMax = 0;
       for(const k in DEFAULTS) params[k] = to[k];
@@ -150,7 +172,7 @@ export function makeTransitions(hub){
       ? (t<0.5 ? lerp(trans.shadowFrom, 0, smoothstep(0,0.5,t)) : smoothstep(0.5,1,t)) : 1;
     trans.windowOpacity=lerp(trans.windowFrom, trans.windowTo, e);
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
-      if(trans.viewpoint && k==='drift_phase' && params.drift_auto) continue;
+      if((trans.viewpoint||trans.leafTravel) && k==='drift_phase' && params.drift_auto) continue;
       if(trans.windowFade && WINDOW_KEYS.has(k)){ params[k]=trans.windowShape[k]; continue; }
       if(trans.splitFade){
         const leaving=trans.from.leaf_diffuse>0;
@@ -169,7 +191,18 @@ export function makeTransitions(hub){
     // and the arrangement reorganizes instead of being replaced. The incoming grove is installed as the engine's
     // own once it carries the whole picture, which is also when the structural params can safely snap: nothing
     // reads them again until the next regrow.
-    if(trans.viewpoint){
+    if(trans.leafTravel){
+      hub.regenSource();hub.stepLeafTravel(dt,e);
+      if(t<1)return null;
+      const drift=params.drift_phase;
+      for(const k in DEFAULTS)params[k]=trans.to[k];
+      if(params.drift_auto)params.drift_phase=drift;
+      const pending=hub.finishLeafTravel();
+      trans.active=false;trans.leafTravel=false;trans.travelField=null;trans.travelTone=null;
+      hub.endLeafTravel();hub.regenSource();hub.resetPerf();hub.bake();
+      const cb=trans.onEnd;trans.onEnd=null;
+      return pending?()=>hub.transitionTo(pending.to,pending.opts):cb;
+    }else if(trans.viewpoint){
       trans.swapped=t>=0.5;   // one grove remains in place through the horizon; its mode-specific state lands at the end
     } else if(trans.crossfade){
       hub.crossW = clamp((t - (0.5 - CROSS_HALF_W)) / (2*CROSS_HALF_W), 0, 1);

@@ -176,6 +176,9 @@ const float FILL_LOD = 3.0;`;
 // ---- FLOOR camera (§4.7) ----
 const GLSL_T_FLOOR_DECLS = `uniform float uViewExtent;
 uniform float uShadowOpacity;    // transition only: 0 is the lit floor, 1 is the canopy's full shadow
+uniform highp sampler2D uTravelCast;
+uniform vec2 uTravelOrigin;
+uniform float uTravelExtent,uTravelWeight;
 uniform float uFarSmear;         // far-field dapple smear (m of extra throw per unit foreshortening, §4.7)
 uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)`;
 
@@ -1047,7 +1050,8 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
   ca:        { decls: GLSL_T_CA_DECLS,        locs: { chroma:'uChroma' } },
   faith:     { decls: GLSL_T_FAITH_DECLS,     locs: { faithful:'uFaithful', faithTex:'uFaithTex', faithOrigin:'uFaithOrigin', faithExtent:'uFaithExtent' } },
   sunDir:    { decls: GLSL_T_SUN_DIR_DECLS,   locs: { sunDir:'uSunDir' } },
-  floor:     { decls: GLSL_T_FLOOR_DECLS,     locs: { viewExtent:'uViewExtent', farSmear:'uFarSmear', ground:'uGround', shadowOpacity:'uShadowOpacity' } },
+  floor:     { decls: GLSL_T_FLOOR_DECLS,     locs: { viewExtent:'uViewExtent', farSmear:'uFarSmear', ground:'uGround', shadowOpacity:'uShadowOpacity',
+                                                      travelCast:'uTravelCast',travelOrigin:'uTravelOrigin',travelExtent:'uTravelExtent',travelWeight:'uTravelWeight' } },
   cloth:     { decls: GLSL_T_CLOTH_DECLS,     locs: { viewExtent:'uViewExtent', clothY:'uClothY' } },
   fabric:    { decls: GLSL_T_FABRIC_DECLS,    locs: { tt:'uTt', fabricTint:'uFabricTint', scatter:'uScatter', sheen:'uSheen',
                                                       foldDepth:'uFoldDepth', foldScale:'uFoldScale', foldCoarsen:'uFoldCoarsen', foldWarp:'uFoldWarp' } },
@@ -1062,7 +1066,7 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
   litter:    { decls: GLSL_T_LITTER_DECLS,    locs: { litterOn:'uLitterOn', litter:'uLitter', litterOrigin:'uLitterOrigin', litterExtent:'uLitterExtent' } },
   sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
-                                                      exposure:'uExposure', contrast:'uContrast', tone:'uToneMap',
+                                                      exposure:'uExposure', contrast:'uContrast', tone:'uToneMap', travelTone:'uTravelTone',
                                                       vignette:'uVignette', vignetteShape:'uVignetteShape', irisRadius:'uIrisRadius' } },
 };
 
@@ -1131,11 +1135,14 @@ function buildTransport(camera){
   const p = e.groups.map(g => TRANSPORT_GROUPS[g].decls);
   p.push('void main(){', e.prologue, e.camera);
   if(e.groups.includes('transport') && !e.rayTransport){          // a CAST camera: the faithful tap or the sample loop, then the wood
+    if(camera==='floor')p.push('  if(uTravelWeight<1.0){');   // a fully travelling cast has no native contribution to evaluate
     if(e.faith) p.push(e.faith);
     p.push(GLSL_T_LAYERS);
     if(e.faith) p.push('  }');
     p.push(GLSL_T_WOOD_CAST);
+    if(camera==='floor')p.push('  }');
   }
+  if(camera==='floor')p.push('  if(uTravelWeight>0.0) acc=mix(acc,texture(uTravelCast,(world-uTravelOrigin)/uTravelExtent).rgb,uTravelWeight);');
   p.push(GLSL_T_COL_DECL, ...e.material, GLSL_T_POST, '}');
   return p.join('\n');
 }

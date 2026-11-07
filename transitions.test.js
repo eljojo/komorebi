@@ -131,6 +131,32 @@ test("a partial cloud or grove transition cannot become a shared-grove viewpoint
   expect(r.hub.trans.viewpoint).toBe(false);
 });
 
+test("a woodless overhead faithful↔layer switch moves leaves without clearing the floor or swapping at midpoint",()=>{
+  const from={...DEFAULTS,standing_scene:false,faithful_canopy:true,branch_tau:0,canopy_fill:0,litter:0};
+  const r=transitionRig(from);let started=0,steps=0,ended=0;
+  Object.assign(r.hub,{beginLeafTravel:()=>started++,stepLeafTravel:()=>steps++,finishLeafTravel:()=>null,endLeafTravel:()=>ended++});
+  r.transitionTo({...from,faithful_canopy:false,seed:123,layer_count:3,tone_map:2});
+  expect(r.hub.trans.leafTravel).toBe(true);
+  expect(r.hub.trans.backgroundFade).toBe(false);
+  expect(r.hub.trans.bloomMax).toBe(0);
+  expect(started).toBe(1);
+  for(let i=0;i<61;i++)r.tickTransition(1/60);
+  expect(r.swaps).toHaveLength(1); // the incoming native grove is built at the start, ready to receive the moving leaves
+  expect(steps).toBeGreaterThan(0);
+  while(r.hub.trans.active)r.tickTransition(1/60);
+  expect(ended).toBe(1);
+  expect(r.params.faithful_canopy).toBe(false);
+});
+
+test("leaf travel leaves other modes, empty groves, inner leaves, drop and oversized correspondences on their existing routes",()=>{
+  const from={...DEFAULTS,faithful_canopy:true};
+  for(const change of [{branch_tau:1},{canopy_fill:.5},{standing_scene:true},{sky_view:true},{receiver:1},
+    {litter:1},{leaf_drop:1},{inner_leaves:.5},{leaf_size_m:0},{foliage_density:0},{tree_count:1000}]){
+    const r=transitionRig(from);r.hub.beginLeafTravel=()=>{throw Error('unsupported leaf travel');};
+    r.transitionTo({...from,faithful_canopy:false,...change});expect(r.hub.trans.leafTravel,JSON.stringify(change)).toBe(false);
+  }
+});
+
 test("an iris turning on sweeps inward during the first quarter, before the scene swap", () => {
   const r=transitionRig({...DEFAULTS,vignette:0,vignette_shape:2});
   r.transitionTo({...r.params,vignette:0.24,vignette_shape:3.1});
@@ -198,9 +224,9 @@ test("faithful structural changes dissolve complete moving scenes without a midp
   }
 });
 
-test("ordinary faithful look morphs and scene-mode changes keep their existing routes", () => {
+test("ordinary faithful look morphs and other receiver changes keep their existing routes", () => {
   const from = { ...DEFAULTS, faithful_canopy: true };
-  for (const change of [{ exposure: 2 }, { faithful_canopy: false }, { receiver: 1 }]) {
+  for (const change of [{ exposure: 2 }, { receiver: 1 }]) {
     const r = transitionRig(from);
     r.hub.beginSceneFade = () => { throw Error("unexpected scene dissolve"); };
     r.transitionTo({ ...from, ...change });

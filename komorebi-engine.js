@@ -11,6 +11,7 @@ import { makeLitter, newLitterState, NO_LITTER } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
 import { makeEditorTools } from './komorebi-editor-tools.js';
 import { makeSceneFade } from './komorebi-scene-fade.js';
+import { makeLeafTravel } from './komorebi-leaf-travel.js';
 
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
@@ -418,15 +419,58 @@ function createEngine(canvas, opts, driven=false){
   Object.assign(hub, { freeGrove, installGrove, regenCanopy, buildTargetGrove, rebuildAll, resetPerf, allocLayers, makeLayerTexture });
   const { transitionTo, tickTransition } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
-  const sceneFade = makeSceneFade(hub, () => {
+  function copyMotion(from,to){
+    for(const k in from.motion)to.motion[k]=Array.isArray(from.motion[k])?[...from.motion[k]]:from.motion[k];
+    if(from.hier.topoSig===to.hier.topoSig){
+      for(const k of ['limbAngle','limbVel','limbPitch','limbPitchVel','twigAngle','twigVel'])to.hier[k].set(from.hier[k]);
+      to.hier.maxV=from.hier.maxV;
+    }
+    if(to.params.drift_auto)to.params.drift_phase=from.params.drift_phase;
+    to.publishBend(to.grove);
+  }
+  const createScene=()=>{
     const scene = createEngine(canvas, { params:{...params} }, true);
-    for(const k in motion) scene.hub.motion[k] = Array.isArray(motion[k]) ? [...motion[k]] : motion[k];
-    for(const k of ['limbAngle','limbVel','limbPitch','limbPitchVel','twigAngle','twigVel']) scene.hub.hier[k].set(hub.hier[k]);
-    scene.hub.hier.maxV=hub.hier.maxV;
-    scene.hub.publishBend(scene.hub.grove); scene.hub.bake();
+    copyMotion(hub,scene.hub);
+    scene.hub.bake();
     return scene;
-  });
+  };
+  const sceneFade = makeSceneFade(hub, createScene);
   Object.assign(hub, sceneFade);
+  function retainTravelSource(){
+    // This route has no wood, fill, litter or glow. Keep its actual grove and cast; share only the stateless GL plumbing.
+    const outgoing={...hub,params:{...params},perf:{...perf},trans:{active:false,bloom:0},
+      motion:Object.fromEntries(Object.entries(motion).map(([k,v])=>[k,Array.isArray(v)?[...v]:v])),
+      src:{...src},faith:{...faith},occ:{...occ},srcDbgBuf:null};
+    outgoing.faithfulOn=()=>outgoing.params.faithful_canopy;
+    outgoing.bakeRes=()=>outgoing.perf.bres;
+    outgoing.effCloud=()=>clamp(outgoing.params.cloud_thickness,0,1);
+    outgoing.transportCamera=()=>cameraFor(outgoing.params);
+    outgoing.fillWanted=()=>false;
+    outgoing.refreshFill=outgoing.refreshLitter=outgoing.refreshWood=()=>{};
+    Object.assign(outgoing,makeSource(outgoing),makeMotion(outgoing));
+    outgoing.motionTick=outgoing.tick;   // the copied parent tick closes over the incoming scene
+    Object.assign(outgoing,makeBake(outgoing));
+    Object.assign(outgoing,makeRender(outgoing));
+    const release=h=>{
+      freeGrove(h.grove);
+      for(const t of [...h.layerTex,...h.woodTex,h.faithTex,h.faithScratch])if(t)gl.deleteTexture(t);
+      for(const v of [h.faith.vao,h.faith.segVAO])if(v)gl.deleteVertexArray(v);
+      for(const b of [h.faith.buf,h.faith.segBuf])if(b)gl.deleteBuffer(b);
+    };
+    Object.assign(hub,{grove:null,layerVAO:[],clusterTex:null,clusterGeomTex:null,layerTex:[],woodTex:[],faithTex:null,faithScratch:null});
+    Object.assign(faith,{vao:null,buf:null,segVAO:null,segBuf:null});
+    let owned=true;
+    return {hub:outgoing,
+      restore(){
+        release(hub);
+        for(const k of ['grove','hier','layerVAO','clusterTex','clusterGeomTex','layerTex','woodTex','layerSize','faithTex','faithScratch'])hub[k]=outgoing[k];
+        Object.assign(faith,outgoing.faith);Object.assign(occ,outgoing.occ);perf.bres=outgoing.perf.bres;
+        copyMotion(outgoing,hub);owned=false;
+      },
+      dispose(){if(owned){release(outgoing);owned=false;}}
+    };
+  }
+  Object.assign(hub,makeLeafTravel(hub,retainTravelSource));
 
   // ---- auto-quality: hold ~60 fps by ratcheting render resolution then samples down; grudging to
   // climb back (each forced drop doubles the wait). Drives perf.*, never the user's art. ----
@@ -534,6 +578,7 @@ function createEngine(canvas, opts, driven=false){
     // ahead of the `lost` return, because onContextRestored zeroes it only for a transition still active.
     if(trans.active){
       if(trans.sceneFade){ hub.endSceneFade(); trans.sceneFade=false; }
+      if(trans.leafTravel){hub.endLeafTravel();trans.leafTravel=false;}
       trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0;
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
@@ -567,6 +612,7 @@ function createEngine(canvas, opts, driven=false){
     dispose(){
       alive = false; loop++;
       hub.endSceneFade();
+      hub.endLeafTravel();
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       [progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
@@ -666,7 +712,8 @@ function createEngine(canvas, opts, driven=false){
       if(trans.sceneFade && motionActive()) bake();
       landed = tickTransition(dt);
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
-    if(trans.sceneFade) hub.timed('transport',hub.drawSceneFade);
+    if(trans.leafTravel)hub.timed('transport',hub.drawLeafTravel);
+    else if(trans.sceneFade) hub.timed('transport',hub.drawSceneFade);
     else if(params.show_layer && !faithfulOn()) drawLayerBlit(); else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
     schedule();
     if(landed) landed();                             // after schedule(), like onFrame: a throwing host callback must not end the animation
@@ -682,6 +729,8 @@ function createEngine(canvas, opts, driven=false){
     e.preventDefault();
     lost = true; loop++;                               // stop the loop; setParams/apply only touch params until the restore
     hub.endSceneFade();
+    const pending=hub.endLeafTravel();
+    if(pending){trans.to=pending.to;trans.onEnd=pending.opts?.onEnd??null;}
   }
   function onContextRestored(){
     if(!alive) return;
@@ -696,7 +745,7 @@ function createEngine(canvas, opts, driven=false){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = trans.active ? trans.onEnd : null;
-    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
+    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
     rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)

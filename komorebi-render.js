@@ -31,7 +31,7 @@ export function makeRender(hub){
   // uniform and an untaken shader branch. Gate ON: transport writes LINEAR HDR into the sharp target instead, and
   // drawDiffusion spreads it and composites into the caller's target (§4.9).
   function drawFrameInto(fbo, w, h){
-    hub.refreshFaith();   // the faithful cast has k baked in (§4.5): current for THIS frame's leaf_diffuse, or untouched
+    if(hub.trans.travelField?.weight!==1)hub.refreshFaith();   // the faithful cast has k baked in (§4.5): current for THIS frame's leaf_diffuse, or untouched
     hub.refreshFill();   // the sky fill (§4.7) is current for THIS frame's sun and sky, or not wanted — before any target is bound, because a re-bake binds its own
     hub.refreshLitter(); // the litter carpet (§4.7) is current for THIS grove, or nothing has fallen / the gate is shut — same reason: its bake binds its own target
     // the SKY VIEW joins the diffusion gate (§4.9): the very same linear-HDR spread reads there as the eye's own
@@ -241,6 +241,9 @@ export function makeRender(hub){
       gl.uniform3f(u.sunDir, _sd[0], _sd[1], _sd[2]);
     },
     floor: (u, f) => {
+      const travel=hub.trans.travelField;
+      gl.activeTexture(gl.TEXTURE9);gl.bindTexture(gl.TEXTURE_2D,travel?.tex??hub.layerTex[3]);gl.uniform1i(u.travelCast,9);
+      gl.uniform1f(u.travelWeight,travel?.weight??0);gl.uniform2f(u.travelOrigin,travel?.ox??0,travel?.oy??0);gl.uniform1f(u.travelExtent,travel?.ext??1);
       gl.uniform1f(u.shadowOpacity, f.shadowOpacity);
       gl.uniform1f(u.viewExtent, params.view_extent_m);
       gl.uniform1f(u.farSmear, Math.max(0, params.far_smear));          // far-field dapple smear (§4.7); 0 at pitch 0 regardless
@@ -387,6 +390,7 @@ export function makeRender(hub){
       gl.uniform1f(u.exposure, params.exposure);
       gl.uniform1f(u.contrast, params.contrast);
       gl.uniform1i(u.tone, params.tone_map);
+      gl.uniform3fv(u.travelTone,hub.trans.travelTone??[0,0,0]);
       gl.uniform1i(u.linearOut, f.linearOut);   // 0 = end the Look here (every look); 1 = hand linear HDR to the diffusion passes (§4.9)
     },
   };

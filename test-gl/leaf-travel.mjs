@@ -1,0 +1,67 @@
+// The production route on WebGL, supplied through Playwright routes without a local server.
+import {chromium} from 'playwright';
+import {readFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import assert from 'node:assert/strict';
+const root=resolve(import.meta.dirname,'..');
+const clock=(await readFile(resolve(root,'test-gl/video.html'),'utf8')).match(/<script>([\s\S]*?)<\/script>/)[1];
+const browser=await chromium.launch({args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+try{
+  const page=await browser.newPage({viewport:{width:320,height:180},deviceScaleFactor:1});page.setDefaultTimeout(300000);
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.route('http://travel.test/**',async route=>{
+    const path=new URL(route.request().url()).pathname;
+    if(path==='/')return route.fulfill({contentType:'text/html',body:`<style>body{margin:0}canvas{width:320px;height:180px}</style><script>${clock}</script>`});
+    try{await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(root,`.${path}`))});}catch{await route.fulfill({status:404,body:''});}
+  });
+  await page.goto('http://travel.test/');
+  const results=await page.evaluate(async()=>{
+    const {create,DEFAULTS}=await import('/komorebi.js');
+    const A={...DEFAULTS,faithful_canopy:true,standing_scene:false,leaf_shape:'beech',leaf_variety:.9,foliage_density:1.5,leaf_diffuse:.34,
+      canopy_extent_m:14,tree_count:2,branch_levels:2,branch_children:2,limb_count:5,leaves_per_cluster:7,sample_count:8,tex_resolution:256,bake_resolution:256,
+      wind_strength:0,drift_auto:false,weather_variability:0,auto_quality:false,adaptive_motion:false,tone_map:0,vignette:.24,vignette_shape:3.1};
+    const B={...A,faithful_canopy:false,leaf_shape:'ellipse',leaf_variety:0,seed:123,tree_count:4,branch_levels:1,branch_children:1,
+      canopy_extent_m:7,canopy_base_height_m:2,canopy_thickness_m:2.6,foliage_density:1,leaf_diffuse:0,tone_map:2,vignette:0};
+    let e,c,last,stamp=0;const step=Math.floor(1000/60*2**20)/2**20;
+    function open(p){e?.dispose();c?.remove();window.__clock.drain();window.__clock.set(0);stamp=0;c=document.createElement('canvas');document.body.appendChild(c);e=create(c,{params:p});e.onFrame=()=>{const g=e.gl;last=new Uint8Array(320*180*4);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,320,180,g.RGBA,g.UNSIGNED_BYTE,last);if(g.getError())throw Error('WebGL error');};pump(1);}
+    function pump(n){for(let i=0;i<n;i++){stamp+=step;window.__clock.pump(stamp);}}
+    const diff=(a,b)=>a.reduce((m,x,i)=>Math.max(m,Math.abs(x-b[i])),0);
+    const need=(ok,msg)=>{if(!ok)throw Error(msg);};
+    open(A);const nativeA=last.slice();open(B);const nativeB=last.slice(),results=[];
+    open({...A,wind_strength:1});const windStart=e.motion.time;e.transitionTo({...B,wind_strength:1},{duration:1});pump(10);
+    const windElapsed=e.motion.time-windStart;need(Math.abs(windElapsed-10*step/1000)<1e-9,`a frame advanced the parent wind more than once: ${windElapsed}`);results.push({windElapsed});
+    for(const [from,to,start,end] of [[A,B,nativeA,nativeB],[B,A,nativeB,nativeA]]){
+      open(from);let ended=0;e.transitionTo(to,{duration:1,onEnd:()=>ended++});need(e.trans.leafTravel,'wrong transition route');
+      window.__clock.pump(stamp);const sourceDelta=diff(start,last);need(sourceDelta===0,`source endpoint changed: ${sourceDelta}`);
+      let frames=0;while(e.trans.active&&frames++<130)pump(1);
+      const endDelta=diff(end,last);need(endDelta===0,`target endpoint changed: ${endDelta}`);need(ended===1,'callback count');
+      results.push({route:from.faithful_canopy?'faithful to layers':'layers to faithful',sourceDelta,endDelta,frames});
+    }
+    const liveA={...A,wind_strength:1,drift_auto:true,drift_amount:.145},liveB={...B,wind_strength:1,drift_auto:true,drift_amount:.145};
+    open(liveA);e.transitionTo(liveB,{duration:1});pump(120);need(e.trans.active,'expected the frame immediately before landing');const nearLanding=last.slice(),phaseAtLanding=e.params.drift_phase;
+    e.setParams({...liveB,drift_phase:phaseAtLanding});window.__clock.pump(stamp);
+    const liveLandingDelta=diff(nearLanding,last);need(liveLandingDelta<=1,`moving target was stale or changed its edge law on landing: ${liveLandingDelta}`);results.push({liveLandingDelta});
+    open(liveB);const beforeFirstTick=last.slice();e.transitionTo(liveA,{duration:1});window.__clock.pump(stamp+.001);
+    const firstTickDelta=diff(beforeFirstTick,last);need(firstTickDelta<=1,`first positive diffuse value changed the native edge law: ${firstTickDelta}`);results.push({firstTickDelta});
+    open(A);e.params.view_extent_m*=1.1;pump(1);const reframed=last.slice();e.transitionTo(B,{duration:1});window.__clock.pump(stamp);
+    const reframedDelta=diff(reframed,last);need(reframedDelta===0,`starting a morph regrew the reframed source: ${reframedDelta}`);results.push({reframedDelta});
+    pump(15);e.transitionTo({...A,view_extent_m:A.view_extent_m*1.1},{duration:.1});while(e.trans.active)pump(1);
+    need(diff(reframed,last)===0,'reversal regrew the reframed source');
+    open(A);e.transitionTo(B,{duration:1});pump(45);const before=last.slice();e.transitionTo(A,{duration:1});window.__clock.pump(stamp);
+    const reverseDelta=diff(before,last);need(reverseDelta<=1,`reversal jumped: ${reverseDelta}`);while(e.trans.active)pump(1);need(diff(nativeA,last)===0,'reversal endpoint changed');results.push({reverseDelta});
+    open(A);e.transitionTo(B,{duration:1});pump(110);const edge=last.slice();e.transitionTo(A,{duration:1});window.__clock.pump(stamp);
+    const edgeReverseDelta=diff(edge,last);need(edgeReverseDelta<=1,`reversal near landing jumped: ${edgeReverseDelta}`);while(e.trans.active)pump(1);need(diff(nativeA,last)===0,'late reversal endpoint changed');results.push({edgeReverseDelta});
+    const C={...A,exposure:A.exposure+.2};open(C);const nativeC=last.slice();open(A);let cancelled=0,arrived=0;
+    e.transitionTo(B,{duration:1,onEnd:()=>cancelled++});pump(35);e.transitionTo(C,{duration:.1,onEnd:()=>arrived++});
+    let queuedFrames=0;while(e.trans.active&&queuedFrames++<160)pump(1);
+    need(!e.trans.active&&arrived===1&&cancelled===0,'queued request/callback did not land');need(diff(nativeC,last)===0,'queued target changed');results.push({queuedRequest:true});
+    open(A);e.transitionTo(B,{duration:1});pump(35);e.setParams(A);pump(1);need(diff(nativeA,last)===0,'hard replacement changed the endpoint');
+    open({...A,wind_strength:1,drift_auto:true,drift_amount:.145});e.transitionTo({...B,wind_strength:1,drift_auto:true,drift_amount:.145},{duration:1});let phase=e.params.drift_phase;while(e.trans.active){pump(1);need(e.params.drift_phase>phase,'drift stopped or jumped');phase=e.params.drift_phase;}results.push({driftContinuous:true});
+    open(A);e.transitionTo(B,{duration:1});pump(35);e.transitionTo(C,{duration:1});window.__loss={e,stamp,step,ext:e.gl.getExtension('WEBGL_lose_context'),nativeB:nativeC};return results;
+  });
+  await page.evaluate(()=>window.__loss.ext.loseContext());await page.waitForFunction(()=>window.__loss.e.gl.isContextLost());
+  await page.waitForTimeout(100);await page.evaluate(()=>window.__loss.ext.restoreContext());await page.waitForFunction(()=>!window.__loss.e.gl.isContextLost());
+  const recovery=await page.evaluate(()=>{const {e,stamp,step,nativeB}=window.__loss;let delta=-1;e.onFrame=()=>{const g=e.gl,b=new Uint8Array(nativeB.length);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,320,180,g.RGBA,g.UNSIGNED_BYTE,b);delta=b.reduce((m,x,i)=>Math.max(m,Math.abs(x-nativeB[i])),0);};window.__clock.pump(stamp+step);const error=e.gl.getError();e.dispose();return {delta,error};});
+  assert.deepEqual(recovery,{delta:0,error:0});assert.deepEqual(errors,[]);
+  for(const r of results)console.log('PASS',JSON.stringify(r));console.log('PASS context recovery',JSON.stringify(recovery));
+}finally{await browser.close();}

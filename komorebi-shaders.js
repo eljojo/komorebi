@@ -267,6 +267,50 @@ void main(){
   else frag = vec4(exp(-vTau*cov), 1.0);
 }`;
 
+// The transition carries evaluated wind positions, rather than assigning the new grove's joint ids to old leaves.
+const VS_LEAF_TRAVEL = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec4 iA;
+layout(location=2) in vec4 iB;
+layout(location=3) in vec4 iC;
+uniform vec2 uOrigin,uExtent,uG;
+uniform vec4 uBox;
+out vec2 vLocal;
+out vec3 vTau;
+out float vFade;
+flat out vec2 vRows;
+void main(){
+  vec2 lc=aCorner*uBox.zw+uBox.xy;
+  float c=cos(iB.x),s=sin(iB.x);
+  vec2 world=iA.xy+mat2(c,-s,s,c)*(lc*iA.zw)-uG*iC.x;
+  gl_Position=vec4(((world-uOrigin)/uExtent)*2.0-1.0,0.0,1.0);
+  vLocal=lc;vTau=iB.yzw;vFade=iC.y;vRows=iC.zw;
+}`;
+const FS_LEAF_TRAVEL = `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in vec3 vTau;
+in float vFade;
+flat in vec2 vRows;
+uniform highp sampler2D uLeafA,uLeafB;
+uniform int uShapeA,uShapeB,uEdgeArea;
+uniform float uWeight,uEdge,uBeamK;
+out vec4 frag;
+${GLSL_TEXEL_MIX}
+void main(){
+  vec2 d=dot(vLocal,vLocal)<1e-12?vec2(1.0,0.0):vLocal;
+  float u=atan(d.y,d.x)*0.15915494+0.5;
+  float ra=uShapeA==0?1.0:texture(uLeafA,vec2(u,vRows.x)).r;
+  float rb=uShapeB==0?1.0:texture(uLeafB,vec2(u,vRows.y)).r;
+  float r=length(vLocal)-mix(ra,rb,uWeight)+1.0;
+  float cov=1.0-smoothstep(1.0-uEdge,1.0,r);
+  if(cov<=0.0)discard;
+  if(uBeamK>0.0||uEdgeArea!=0){
+    vec3 T,Tb;texelMix(vTau*cov,cov*vFade,uBeamK,T,Tb);frag=vec4(Tb,1.0);
+  }else frag=vec4(exp(-vTau*cov),1.0);
+}`;
+
 // FAITHFUL pass 2 (per sample): acc += w_i · transmittance_i, additive, fullscreen. Summed over all samples the
 // accumulator holds Σ w_i·T_i — the soft shadow (same "sum of shifted sharp shadows" as transport's loop, but the
 // shift is per-leaf-continuous and pre-integrated here so transport taps it ONCE).
@@ -413,14 +457,19 @@ const GLSL_TONE_TAIL = `
 uniform float uExposure;
 uniform float uContrast;
 uniform int   uToneMap;
+uniform vec3  uTravelTone;
 vec3 reinhard(vec3 c){ return c/(1.0+c); }
 vec3 aces(vec3 x){ float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
   return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0); }
 vec3 toneTail(vec3 col){
   col *= uExposure;
+  vec3 exposed=col;
   if(uToneMap==1) col=reinhard(col);
   else if(uToneMap==2) col=aces(col);
   else col=clamp(col,0.0,1.0);
+  if(dot(uTravelTone,vec3(1.0))>0.0){
+    col=uTravelTone.x*clamp(exposed,0.0,1.0)+uTravelTone.y*reinhard(exposed)+uTravelTone.z*aces(exposed);
+  }
   col = clamp((col-0.5)*uContrast+0.5, 0.0, 1.0);
   return pow(col, vec3(1.0/2.2));
 }`;
@@ -761,4 +810,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
