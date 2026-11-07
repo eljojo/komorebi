@@ -23,7 +23,7 @@
   API (all on window.__v):
     glinfo()                         a throwaway context: renderer, extensions, limits, a real 3840x2160 drawing buffer
     sinkTest(url, w, h, n, batch)    POST noise frames to the sink, nothing rendered: the pipe's own throughput
-    cheapPreroll(params, frames, step, T0)   the integrator state after `frames` pumps on a tiny engine (CPU state is GPU-independent)
+    cheapPreroll(params, frames, step, T0, { snapshotAt, events, snapAt })   the integrator state after `frames` pumps on a tiny engine (CPU state is GPU-independent); the options also hand back the state at given pumps and walk a playlist's fades (--jobs)
     open({ params, rw, rh, step, T0, at, state })   one engine at render size rw x rh, clock at pump `at`, optional restored state
     run({ from, to, sink, batch, timing, events, snapAt })   pump frames from+1..to, read each back; optionally POST batches to `sink`. A playlist passes `events` (transitions started before given pumps) and `snapAt` (landings to hand the state back at)
     runCanvas({ from, to, beforeFrame, onFrame })   the probe's direct encoder captures the canvas inside the same frame callback
@@ -177,15 +177,17 @@ function forceGovernorsOff(params) {
 // pumps whose state is to be handed back (`snapAt`: the landings, where a fade is over and the engine is at rest on its look; a fade in flight is not restorable state).
 // transitionTo reads the same virtual clock as everything else, so a fade is a function of the pump index and nothing else.
 const evMap = (events) => new Map((events || []).map((e) => [e.start, e]));
-const startEvent = (e) => S.eng.transitionTo(forceGovernorsOff({ ...e.params }), { duration: e.duration });
-const landing = (n) => {
-  if (S.eng.trans.active) throw new Error(`pump ${n}: the fade is still running where it should have landed. A fade between looks that differ in structure (seed, branching, resolutions, scene mode) takes the cloud-dissolve route on twice the clock, or a grove too big to morph falls back to it: keep a playlist's looks to one grove`);
-  return { n, snapshot: snapshotOf(S.eng) };
+const startEvent = (e, eng = S.eng) => eng.transitionTo(forceGovernorsOff({ ...e.params }), { duration: e.duration });
+const landing = (n, eng = S.eng) => {
+  if (eng.trans.active) throw new Error(`pump ${n}: the fade is still running where it should have landed. A fade between looks that differ in structure (seed, branching, resolutions, scene mode) takes the cloud-dissolve route on twice the clock, or a grove too big to morph falls back to it: keep a playlist's looks to one grove`);
+  return { n, snapshot: snapshotOf(eng) };
 };
 
 // The CPU half of the engine does not know the GPU exists: a tiny engine (64x36, bake 256, 8 samples) integrates the same springs
 // at ~1 ms a frame, so 30 s of pre-roll costs seconds, not minutes of full-size bakes. The caller proves the equality (gpu-probe.mjs).
-v.cheapPreroll = (params, frames, step, T0) => {
+// opts (--jobs N, render-video.mjs): { snapshotAt: [pumps], events, snapAt } also hands back the state at those pumps and walks a playlist's fades (the driver gives the events
+// the same tiny sizes as the look: with the look's own, transitionTo would see a structural difference and dissolve instead of morph). Without opts: exactly as before.
+v.cheapPreroll = (params, frames, step, T0, opts = {}) => {
   const p = forceGovernorsOff({ ...params, bake_resolution: 256, tex_resolution: 256, sample_count: 8 });
   const canvas = document.createElement('canvas');
   canvas.className = 'stage'; canvas.style.width = '64px'; canvas.style.height = '36px';
@@ -193,11 +195,20 @@ v.cheapPreroll = (params, frames, step, T0) => {
   document.body.appendChild(canvas);
   clock.set(T0);
   const eng = create(canvas, { params: p });
-  for (let n = 1; n <= frames; n++) clock.pump(T0 + n * step);
+  const starts = evMap(opts.events), snaps = new Set(opts.snapAt || []), at = new Set(opts.snapshotAt || []), landings = [], snapshots = [];
+  for (let n = 1; n <= frames; n++) {
+    if (starts.has(n)) startEvent(starts.get(n), eng);
+    clock.pump(T0 + n * step);
+    if (snaps.has(n)) landings.push(landing(n, eng));
+    if (at.has(n)) {
+      if (eng.trans.active) throw new Error(`pump ${n}: a fade is in flight; a restore point must be at rest`);
+      snapshots.push({ n, snapshot: snapshotOf(eng) });
+    }
+  }
   const st = snapshotOf(eng);
   const info = { motionActive: Math.abs(eng.motion.u) + Math.abs(eng.motion.uLat) > 0, frames, motion_time: eng.motion.time };
   eng.setPaused(true); eng.dispose(); canvas.remove(); clock.drain();
-  return { state: st, info };
+  return { state: st, info, snapshots, landings };
 };
 
 v.open = ({ params, rw, rh, step, T0, at, state, overrideKeys = [] }) => {

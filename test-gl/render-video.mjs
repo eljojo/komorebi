@@ -33,6 +33,16 @@
 //                          they have no lossless master or raw pixel hashes and refuse --measure, --stills, --encode-only, --merge-master and --drop-segments.
 //   --preroll 30           seconds of discarded motion before frame 0 (integrated on a tiny engine, see video.html cheapPreroll)
 //   --segment-seconds 10   one lossless segment + one checkpoint per this many seconds; a crash resumes from the last pair, exactly
+//   --jobs N               (default 1, 1..8) render N segments at once, one Chromium session and one ffmpeg each, for a host whose single render leaves the GPU and cores idle (a render is a serial
+//                          chain of waits: tick, GPU, readback, POST). The output is meant to be BYTE-IDENTICAL to --jobs 1: the same frames, seg/ layout, hashes.txt and run key (--jobs is not in the key,
+//                          it cannot change a frame; it is recorded only in the invocation and, above 1, in render-info.json / the manifest's render.parallel). --jobs 1 is the code path as it was.
+//                          First a CPU-only pass on the tiny engine writes ckpt/ckpt_<pump>.json (marked "tiny": true) at every pump a segment to render starts from, so each can start alone: a single
+//                          look at the segment's own first pump; a playlist at the segment's first pump when it is at rest there, else at the pump before the fade it falls inside, replayed unrecorded
+//                          up to the segment (at most one crossfade of pumps), plus every fade landing. Each segment then gets its own fresh browser and engine opened on that state, claimed in segment
+//                          order by whichever session is free. Done = the segment's own files AND the checkpoint it starts from, so a crash leaves holes and only the holes are redone (--jobs 1 keeps
+//                          its contiguous prefix). Every segment's end state, from the full-size engine, is compared with the tiny pass's state for the same pump where one was written; a difference
+//                          means the output is NOT what a serial render makes: the run stops, naming the pump (rerun with --jobs 1). UNPROVEN until test-gl/compare-runs.mjs <serial> <parallel> says so on a
+//                          real GPU: tiny-engine state across FADES, VRAM at N sessions, and whether N sessions are faster. Log lines start "session s:"; the progress line is unchanged ("segment i/n: ... ms/frame").
 //   --master ffv1|x264rgb  the lossless master codec (RGB 4:4:4 8-bit, bit-exact to what the GPU wrote, after the optional downscale)
 //   --delivery hevc_videotoolbox|hevc_vaapi|libx265|none   [--vt-bitrate 60M | --vt-quality 100] [--x265-crf 16] [--x265-preset slow] [--gop 120] [--trc bt709|iec61966-2-1]
 //                          THE DEFAULT is made for a FAT32 USB stick played in a projector's own player: -b:v 60M -maxrate 75M -bufsize 120M (--vt-bitrate scales the cap, 1.25x, and
@@ -66,6 +76,7 @@ import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import os from 'node:os';
 import { directDiskPlan, directJoinArgs, directSegmentArgs, pipelinePlan } from './pipeline.mjs';
+import { eventsUpTo, parseJobs, restorePoint, runPool, tinyEvents, tinyPlan, todoSegments } from './parallel.mjs';
 import { captureCanvasRun, encodeCanvasRun, hevcQuantizerConfig, installLinearDownscale } from './webcodecs.mjs';
 import {
   ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VAAPI_BITRATE, VAAPI_DEVICE, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, checkPlaylistTimes, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
@@ -119,6 +130,8 @@ const TRC = flag('--trc', 'bt709');
 const STILLS = (flag('--stills', '') || '').split(',').filter(Boolean).map(Number);
 const CHROME = flag('--chrome', 'shell+angle-metal');
 const MERGE = has('--merge-master');
+let JOBS;   // not in the run key: it cannot change a frame (see renderParallel)
+try { JOBS = parseJobs(has('--jobs') ? (flag('--jobs') ?? '') : undefined); } catch (e) { die(e.message); }
 const ABORT_AFTER_SEG = flag('--abort-after-seg') === undefined ? null : Number(flag('--abort-after-seg'));   // test hook: die hard after this many segments
 // test hook: --inject-failure 0:2,3:1 makes segment 0 fail its first 2 attempts and segment 3 its first (after its ffmpeg is up), to exercise the retry path
 const INJECT = Object.fromEntries((flag('--inject-failure', '') || '').split(',').filter(Boolean).map((s) => s.split(':').map(Number)));
@@ -526,6 +539,152 @@ async function renderAll(firstTodo) {
   await srv.close();
 }
 
+// ------------------------------------------------------------------ render, --jobs N (N > 1): the same segments, N at a time
+// renderAll above is the serial path and is not touched. This one is separate on purpose: --jobs 1 must stay exactly what it was, and nothing here can run without a browser to prove it,
+// so the two share no code that could move. Keep the segment body (run, checks, commit) in step with renderAll's.
+//  - A segment is DONE when its own files are and the checkpoint it starts from is on disk (segReady); the segments left are the holes, in order. Files of a segment to redo are removed first.
+//  - One CPU-only pass on the tiny engine writes every start state the segments to render need (parallel.mjs tinyPlan), once, before any session opens. It writes only what is missing, with
+//    "tiny": true, so a checkpoint a serial render made is never replaced; the pass is how a hole in the middle of a run can start at all, there being no session that integrated up to it.
+//  - A segment is its own job: a fresh Chromium, an engine opened on its start state (a playlist replays the pumps from its restore point to the segment unrecorded), its own ffmpeg and sink
+//    (/__sink/seg-<i>), closed when it ends. Nothing carries from one segment to the next in a session, so a segment renders the same whichever session takes it and in whatever order;
+//    the price is a browser launch and an engine build per segment (a larger --segment-seconds amortises it).
+//  - The full-size engine's state at a segment's end (and at the landings in it) must equal the tiny pass's for the same pump, where one was written: that is the state the NEXT segment started from,
+//    and a serial render would have used this one. A difference is fatal for the segment (not retried: it is deterministic), and says to render with --jobs 1.
+const writeCkptIfAbsent = (n, state, extra = {}) => { const f = ckptFile(n); if (!existsSync(f)) { writeFileSync(`${f}.part.${process.pid}`, JSON.stringify({ at: n, state, ...extra })); renameSync(`${f}.part.${process.pid}`, f); } };
+const segReady = (i) => segDone(i) && existsSync(ckptFile(PLAYLIST ? restorePoint({ from: segRange(i).from, schedule: SCHEDULE, preroll: PREROLL }).at : segRange(i).from));
+function reconcileCkpt(seg, n, state) {   // the full engine's state at pump n vs the tiny pass's, else it is written (never over a file already there: a later segment may be reading it)
+  const f = ckptFile(n);
+  if (existsSync(f)) {
+    const c = readJson(f);
+    if (c.tiny && !isDeepStrictEqual(c.state, state)) throw fatal(`segment ${seg}: the state at pump ${n} from the full-size engine differs from the tiny engine's (${f}); the segment that starts there was rendered from the tiny one, so a parallel render is NOT what a serial one makes. Render with --jobs 1`);
+    return c.tiny ? 'checked' : 'existing';
+  }
+  writeCkptIfAbsent(n, state);
+  return 'written';
+}
+
+async function renderParallel() {
+  const todo = todoSegments({ nSegs, isDone: segReady });
+  if (!todo.length) { log(`all ${nSegs} segments already done`); return; }
+  for (const f of ['master.mkv', 'complete.json']) rmSync(P(f), { force: true });   // an older master / completion mark is stale as soon as a segment is redone
+  for (const i of todo) for (const e of [PLAN.extension, 'hashes', 'json']) rmSync(P('seg', `${segName(i)}.${e}`), { force: true });
+  log(`resuming ${todo.length}/${nSegs} segments (${todo.length === nSegs ? 'all' : `holes: ${todo.join(',')}`}) on ${JOBS} sessions`);
+
+  const sinks = new Map();
+  const srv = await startServer({ engineRoot: exp.dir, sinks });
+  killers.push(() => srv.server.close());
+  const frameBytes = PLAN.frameBytes;
+  const batch = Math.max(1, Math.min(8, Math.floor((64 << 20) / frameBytes)));
+
+  // ---- the CPU-only pass: every start state the segments to render need
+  const plan = tinyPlan({ todo, segRange, schedule: SCHEDULE, preroll: PREROLL });
+  const wanted = [...new Set([...plan.snapshotAt, ...plan.landings])];
+  if (wanted.some((n) => !existsSync(ckptFile(n)))) {
+    const b = await launchBrowser(chromium, CHROME);
+    killers.push(() => b.browser.close().catch(() => {}));
+    try {
+      const page = await openPage(b.browser, srv.port);
+      assertServedPage(srv.served, PAGE_SHA);
+      const t = Date.now();
+      const opts = { snapshotAt: plan.snapshotAt, snapAt: plan.landings, events: tinyEvents(eventsUpTo(PL_EVENTS, plan.upTo, PREROLL)) };
+      const r = await page.evaluate(([p, n, s, T, o]) => window.__v.cheapPreroll(p, n, s, T, o), [finalParams, plan.upTo, STEP, T0_MS, opts]);
+      if (!r.info.motionActive) log('WARNING: the springs are at rest after the pre-roll (motion not active): this look is calm');
+      if (r.snapshots.length !== plan.snapshotAt.length || r.landings.length !== plan.landings.length) throw new Error(`tiny pass: ${r.snapshots.length}/${plan.snapshotAt.length} states and ${r.landings.length}/${plan.landings.length} landings came back`);
+      for (const s of [...r.snapshots, ...r.landings]) writeCkptIfAbsent(s.n, s.snapshot, { tiny: true });
+      log(`tiny pass: ${plan.upTo} pumps integrated in ${Date.now() - t} ms; ${plan.snapshotAt.length} start states${PLAYLIST ? ` and ${plan.landings.length} landings` : ''} written where missing`);
+    } finally { await b.browser.close().catch(() => {}); }
+  }
+
+  const t0 = Date.now(), injected = new Map(), checked = { checked: 0, written: 0 };
+  let doneSegs = 0, perFrameSum = 0;
+  const slog = (w, ...a) => log(`session ${w}:`, ...a);
+
+  const runSegment = async ({ worker: w, segment: i }) => {
+    const { from, to } = segRange(i);
+    const frames = to - from;
+    const rp = PLAYLIST ? restorePoint({ from, schedule: SCHEDULE, preroll: PREROLL }) : { at: from, stop: 0, replay: 0 };
+    let sess = null, ff = null, watchdog = null;
+    const teardown = async () => {
+      clearInterval(watchdog);
+      if (sess) { try { await sess.browser.close(); } catch { /* gone */ } }
+      if (ff) { ff.kill(); await ff.exited; }   // the browser first: nothing posts to the sink any more
+      sinks.delete(`seg-${i}`);
+    };
+    try {
+      const b = await launchBrowser(chromium, CHROME);
+      if (b.browser.version() !== CHROMIUM.version) { await b.browser.close(); throw fatal(`Chromium ${b.browser.version()} launched, the run key says ${CHROMIUM.version}`); }
+      killers.push(() => b.browser.close().catch(() => {}));
+      sess = { browser: b.browser, launch: b, page: null, pageSha: null };
+      sess.page = await openPage(b.browser, srv.port);
+      try { assertServedPage(srv.served, PAGE_SHA); } catch (e) { throw fatal(e.message); }   // video.html is read live at every page load: it must be the page the key names
+      sess.pageSha = srv.served.get(PAGE_KEY);
+      const openInfo = await sess.page.evaluate((o) => window.__v.open(o), { params: STOP_PARAMS[rp.stop], rw: RW, rh: RH, step: STEP, T0: T0_MS, at: rp.at, state: readJson(ckptFile(rp.at)).state, overrideKeys: Object.keys(overrides) });
+      if (PLAN.downscale) await sess.page.evaluate(installLinearDownscale, { width: OW, height: OH });
+      await recordSession(sess, openInfo, i);
+      if (rp.replay > 0) {   // the engine is at rest on look rp.stop at pump rp.at: replay the schedule up to the segment, unrecorded
+        const tr = Date.now();
+        const rpl = await sess.page.evaluate(([f, t, ev, sn]) => window.__v.run({ from: f, to: t, capture: false, events: ev, snapAt: sn }), [rp.at, from, PL_EVENTS.filter((e) => e.start > rp.at && e.start <= from), landingsUpTo(from).filter((e) => e.land > rp.at).map((e) => e.land)]);
+        for (const l of rpl.landings) reconcileCkpt(i, l.n, l.snapshot);
+        slog(w, `segment ${i}: restored pump ${rp.at}, replayed ${rp.replay} pumps to the segment in ${Date.now() - tr} ms`);
+      }
+      slog(w, `segment ${i}: browser up: ${openInfo.renderer}; canvas ${openInfo.canvas} drawingBuffer ${openInfo.drawingBuffer}; bake ${openInfo.bakeRes} samples ${openInfo.samples}`);
+      assertHardwareRenderer(openInfo.renderer, CHROME);
+      const file = segFile(i), sink = `seg-${i}`;
+      ff = spawnFfmpeg(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, codec: DELIVERY, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file }) : segArgs(file, frames));
+      const thisFf = ff;
+      killers.push(() => thisFf.kill());
+      if ((injected.get(i) ?? 0) < (INJECT[i] ?? 0)) { injected.set(i, (injected.get(i) ?? 0) + 1); throw new Error(`injected failure in segment ${i}`); }
+      const counter = { bytes: 0, last: Date.now() };
+      sinks.set(sink, async (req, res) => { await pipeRequestTo(req, thisFf, counter); counter.last = Date.now(); res.writeHead(200).end('ok'); });
+      watchdog = setInterval(() => { if (Date.now() - counter.last > 15 * 60e3) { slog(w, 'watchdog: no frames for 15 min, killing the browser'); sess.browser.close().catch(() => {}); } }, 30e3);
+      const ts = Date.now();
+      const events = PL_EVENTS.filter((e) => e.start > from && e.start <= to), snapAt = landingsUpTo(to).filter((e) => e.land > from).map((e) => e.land);
+      const r = PIPELINE === 'browser'
+        ? await sess.page.evaluate(encodeCanvasRun, { config: hevcQuantizerConfig({ width: OW, height: OH, fps: FPS }), quantizer: 1, from, to, sink: `/__sink/${sink}`, events, snapAt })
+        : PLAN.direct ? await sess.page.evaluate(captureCanvasRun, { from, to, batch, sink: `/__sink/${sink}`, events, snapAt })
+          : await sess.page.evaluate(([f, t, bt, sk, ev, sn]) => window.__v.run({ from: f, to: t, batch: bt, sink: sk, events: ev, snapAt: sn }), [from, to, batch, `/__sink/${sink}`, events, snapAt]);
+      clearInterval(watchdog);
+      const renderMs = Date.now() - ts;
+      const done = await ff.end();
+      if (done.code !== 0) throw new Error(`ffmpeg segment ${i} exited ${done.code}: ${done.stderrTail}`);
+      if (PIPELINE === 'browser' ? counter.bytes !== r.bytes || r.frames !== frames : counter.bytes !== frames * frameBytes || (PLAN.direct && r.frames !== frames)) throw new Error(`segment ${i}: capture frame/byte accounting mismatch`);
+      if (!PLAN.direct && r.hashes.length !== frames) throw new Error(`segment ${i}: ${r.hashes.length} hashes for ${frames} frames`);
+      const packets = countPackets(file);
+      if (packets !== frames) throw new Error(`segment ${i}: ffprobe counts ${packets} packets, expected ${frames}`);
+      if (PLAN.direct) {
+        if (countFrames(file) !== frames) throw new Error(`segment ${i}: decoded frame count mismatch`);
+        const s = ffprobeJson(file).streams.find((x) => x.codec_type === 'video');
+        if (s.width !== OW || s.height !== OH || s.r_frame_rate !== `${FPS}/1` || (PIPELINE === 'gpu-main10' && (s.profile !== 'Main 10' || s.pix_fmt !== 'yuv420p10le'))) throw new Error(`segment ${i}: wrong delivery dimensions, clock or Main10 profile`);
+      }
+      // commit: hashes, the states (checked against the tiny pass's where it wrote one), then the json that says "done"
+      if (!PLAN.direct) writeFileSync(P('seg', `${segName(i)}.hashes`), `${r.hashes.map((h, k) => `${from + k + 1 - PREROLL} ${h}`).join('\n')}\n`);
+      if (PLAYLIST && (r.landings ?? []).length !== snapAt.length) throw new Error(`segment ${i}: ${(r.landings ?? []).length} landings for ${snapAt.length} expected`);
+      for (const l of r.landings ?? []) checked[reconcileCkpt(i, l.n, l.snapshot) === 'checked' ? 'checked' : 'written']++;
+      checked[reconcileCkpt(i, to, r.snapshot) === 'checked' ? 'checked' : 'written']++;   // where a fade is in flight at `to` no tiny file exists (only rest points are written), so this only writes
+      writeFileSync(P('seg', `${segName(i)}.json`), JSON.stringify({ segment: i, first_frame: from - PREROLL, frames, pumps: [from + 1, to], bytes_piped: counter.bytes, packets, file_bytes: statSync(file).size, file_sha256: await sha256File(file), render_wall_ms: renderMs, ffmpeg_version: FFMPEG_VERSION, page_sha256: sess.pageSha, ffmpeg_args: ff.args, hashes_sha256: PLAN.direct ? null : sha256(readFileSync(P('seg', `${segName(i)}.hashes`))), minMean: r.minMean, maxMean: r.maxMean }, null, 2));
+      doneSegs++; perFrameSum += renderMs / frames;
+      const elapsed = (Date.now() - t0) / 1000, perFrame = renderMs / frames, left = (todo.length - doneSegs) * SEG_FRAMES * (perFrameSum / doneSegs) / Math.min(JOBS, Math.max(1, todo.length - doneSegs)) / 1000;
+      log(`segment ${i}/${nSegs - 1}: ${frames} frames, ${fmt(perFrame)} ms/frame (${fmt(1000 / perFrame)} fps), ${(statSync(file).size / 2 ** 20).toFixed(1)} MiB ${PLAN.direct ? 'HEVC' : 'lossless'}, load ${os.loadavg()[0].toFixed(1)}, elapsed ${fmt(elapsed, 0)} s, ETA ${fmt(left, 0)} s, session ${w}`);
+      await teardown();
+      if (ABORT_AFTER_SEG !== null && doneSegs >= ABORT_AFTER_SEG) { log(`--abort-after-seg ${ABORT_AFTER_SEG}: dying without cleanup`); process.kill(process.pid, 'SIGKILL'); }
+    } catch (e) {
+      if (sess?.page?.pageLog?.length) e.pageLog = sess.page.pageLog.slice(0, 3);
+      await teardown();
+      throw e;
+    }
+  };
+  const onFailure = async ({ worker: w, segment: i, attempt: n, error: e }) => {
+    const msg = String(e.message || e).split('\n')[0];
+    slog(w, `segment ${i} FAILED (attempt ${n}/${MAX_ATTEMPTS})${e.fatal ? ' [fatal]' : ''}: ${msg}${e.pageLog ? ` | page: ${e.pageLog.join(' ; ')}` : ''}`);
+    recordRetry({ at: new Date().toISOString(), segment: i, attempt: n, error: msg, session: w });
+    for (const ext of [PLAN.extension, 'hashes', 'json']) rmSync(P('seg', `${segName(i)}.${ext}`), { force: true });
+  };
+  await runPool({ segments: todo, jobs: JOBS, maxAttempts: MAX_ATTEMPTS, runSegment, onFailure });
+  if (ri) { ri.parallel = { jobs: JOBS, segments_rendered: todo.length, tiny_state_checks: { ...checked, note: 'full-size end states (and landings) compared with the tiny pass\'s where it wrote one; any difference stops the run' } }; writeJsonAtomic(RI_FILE, ri); }
+  log(`parallel render done: ${todo.length} segments on ${JOBS} sessions in ${fmt((Date.now() - t0) / 1000, 0)} s; tiny-engine states checked ${checked.checked}, written ${checked.written}`);
+  await srv.close();
+}
+
 // ------------------------------------------------------------------ the master is the segment set: verify it, list it, checksum it
 let seg0Args = null;   // the ffmpeg arguments segment 0 was really made with (its json), for the manifest
 async function recordMaster() {
@@ -684,6 +843,7 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
       segments: nSegs, frames: frameCount, batch_frames: PIPELINE === 'browser' ? null : Math.max(1, Math.min(8, Math.floor((64 << 20) / PLAN.frameBytes))),
       render_wall_s: wallSum / 1000, ms_per_frame_mean: wallSum / frameCount, ms_per_frame_min_max_segment: [Math.min(...segs.map((s) => s.render_wall_ms / s.frames)), Math.max(...segs.map((s) => s.render_wall_ms / s.frames))],
       sessions: renderInfo.sessions.length, retries: renderInfo.retries.length, retry_log: renderInfo.retries,
+      ...(renderInfo.parallel ? { parallel: renderInfo.parallel } : {}),
     } : prev?.render,
     hashes: PLAN.direct ? null : { file: 'hashes.txt', sha256: sha256(readFileSync(P('hashes.txt'))), frames: N, per_segment: segs.map((s) => ({ file: `seg/${basename(s.file, '.mkv')}.hashes`, sha256: s.hashes_sha256 })) },
     master_probe: masterProbe,
@@ -723,8 +883,10 @@ try {
     process.exit(0);
   }
   const firstTodo = skipRender ? nSegs : firstTodoSeg();
-  checkDisk(Math.max(0, N - firstTodo * SEG_FRAMES));
-  if (!skipRender) await renderAll(firstTodo);
+  // --jobs N > 1 redoes the holes, not everything after the first one; --jobs 1 is the contiguous-prefix rule it always was
+  const framesToRender = JOBS > 1 && !skipRender ? todoSegments({ nSegs, isDone: segReady }).reduce((a, i) => a + segRange(i).to - segRange(i).from, 0) : Math.max(0, N - firstTodo * SEG_FRAMES);
+  checkDisk(framesToRender);
+  if (!skipRender) await (JOBS > 1 ? renderParallel() : renderAll(firstTodo));
   else log(alreadyComplete ? 'the run is already complete (complete.json matches this run key): re-using the master' : '--encode-only: using the master already in the output folder');
   const segs = await recordMaster();
   let mergedSha = existsSync(P('master.mkv')) && existsSync(P('manifest.json')) ? readJson(P('manifest.json')).master?.merged?.sha256 ?? null : null;   // a merged master from an earlier run of this folder
