@@ -576,7 +576,11 @@ test("the quad grows with the outline: every VS places a corner at aCorner·box.
 test("the program's uniforms are named alike in the bake, the faithful bake and the carpet, and the engine looks every one of them up and frees the texture", () => {
   const engine = readFileSync(new URL("./komorebi-engine.js", import.meta.url), "utf8");
   const names = [["leafTex", "uLeafTex"], ["leafShape", "uLeafShape"], ["shapeBox", "uShapeBox"], ["leafIdFrac", "uLeafIdFrac"], ["leafRows", "uLeafRows"]];   // the last two: the grove's packing (the VS) and its row count (the FS) — the litter's program has no uLeafIdFrac, and its lookup is a null that an upload ignores
-  for (const prog of ["progBake", "progFaith"]) for (const [key, name] of names) expect(engine.includes(`${key}:loc(${prog},'${name}')`), `${prog} ${name}`).toBe(true);
+  for (const [key, name] of names) expect(engine.includes(`${key}:loc(progBake,'${name}')`), `progBake ${name}`).toBe(true);
+  const faithLocs = new Function("loc", "prog", engine.match(/function faithLocs\(prog\)\{([\s\S]*?)\n {2}\}/)[1]);
+  const faithful = faithLocs((prog, name) => [prog, name], "faithful");
+  expect(engine).toContain("U.faith = faithLocs(progFaith)");
+  for (const [key, name] of names) expect(faithful[key], `progFaith ${name}`).toEqual(["faithful", name]);
   for (const [key, name] of names) expect(engine.includes(`${key}:loc(prog,'${name}')`), `litter ${name}`).toBe(true);
   const between = (a, b) => engine.slice(engine.indexOf(a), engine.indexOf(b, engine.indexOf(a)));
   expect(between("function freeGrove", "function installGrove")).toContain("g.leafTex");                // a grove frees what it made

@@ -371,12 +371,13 @@ test("opening the mirrored owned head lands on its cloud entry", async () => {
 
 function welcomeGate(hash, opened) {
   const classes = new Set(["intro"]), loaded = [], transitions = [], hints = [];
-  const welcome = { style: {}, classList: { add() {} } };
+  const about = { addEventListener() {} };
+  const welcome = { style: {}, classList: { add() {} }, querySelector: (selector) => selector === '.more a[href="about.html"]' ? about : null };
   let click;
   const feel = { addEventListener: (_event, fn) => { click = fn; }, click: () => click() };
   const scope = {
     document: { body: { classList: { remove: (c) => classes.delete(c) } }, getElementById: (id) => id === "feel" ? feel : welcome },
-    performance: { now: () => 0 }, setTimeout() {},
+    performance: { now: () => 0 }, setTimeout() {}, addEventListener() {},
     location: { hash, pathname: "/", search: "" }, history: { replaceState() {} },
     eng: { trans: { active: false }, transitionTo: (p, opts) => { transitions.push({ p, duration: opts.duration }); opts.onEnd(); } },
     applyParams: (p) => loaded.push(p), resolveEntry: (value) => ({ value }), getPreset: () => ({}), DEFAULT_PRESET: "default",
