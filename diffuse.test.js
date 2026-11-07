@@ -491,9 +491,9 @@ test("the faithful cast takes k at the bake, per stamp: the leaf's mixture over 
   expect(FS_FAITH.includes("in float vFade;")).toBe(true);
   // one stamp is one leaf over cf = cov·fade of the pixel at depth vTau/vFade: (1 − cf) + cf·e^(−vTau/vFade − k), which multiplicative blending then stacks leaf by leaf
   expect(code(FS_FAITH).includes("texelMix(vTau*cov, cov*vFade, uBeamK, T, Tb);")).toBe(true);
-  expect(/frag = vec4\(Tb, 1\.0\);/.test(code(FS_FAITH))).toBe(true);
   expect(code(FS_FAITH).includes("exp(-(vTau + uBeamK*vFade)*cov)")).toBe(false);   // the slab form is gone
-  expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{\s*vec3 T, Tb;\s*texelMix\(vTau\*cov, cov\*vFade, uBeamK, T, Tb\);\s*frag = vec4\(Tb, 1\.0\);\s*\}\s*else frag = vec4\(exp\(-vTau\*cov\), 1\.0\);/.test(code(FS_FAITH))).toBe(true);
+  // The seasonal edge bridge is checked in pixels by test-gl/season-travel.mjs; the native zero gate keeps its old read.
+  expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{[^}]*\}\s*else frag = vec4\(exp\(-vTau\*cov\), 1\.0\);/.test(code(FS_FAITH))).toBe(true);
 });
 
 // refreshFaith is what keeps the cast current for a frame that nothing else baked. A recording stub GL and no grove (faith.vao null: bakeFaithful

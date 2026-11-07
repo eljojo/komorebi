@@ -15,6 +15,44 @@ try{
     try{await route.fulfill({contentType:'text/javascript',body:await readFile(resolve(root,`.${path}`))});}catch{await route.fulfill({status:404,body:''});}
   });
   await page.goto('http://season.test/');
+  const edgeChecks=await page.evaluate(async()=>{
+    const {FS_FAITH}=await import('/komorebi-shaders.js'),{texelMix}=await import('/komorebi-fill.js');
+    const g=document.createElement('canvas').getContext('webgl2');
+    if(!g?.getExtension('EXT_color_buffer_float'))throw Error('Float WebGL2 unavailable');
+    const shader=(type,source)=>{const s=g.createShader(type);g.shaderSource(s,source);g.compileShader(s);if(!g.getShaderParameter(s,g.COMPILE_STATUS))throw Error(g.getShaderInfoLog(s));return s;};
+    const vs=shader(g.VERTEX_SHADER,`#version 300 es
+precision highp float;
+out vec2 vLocal;out vec3 vTau;out float vFade;flat out float vVariant;
+uniform float uRadius,uFade;
+void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0,1);vLocal=vec2(uRadius,0);vTau=vec3(${Math.LN10},1.1,4.6)*uFade;vFade=uFade;vVariant=0.0;}`);
+    const fs=shader(g.FRAGMENT_SHADER,FS_FAITH),p=g.createProgram();g.attachShader(p,vs);g.attachShader(p,fs);g.linkProgram(p);
+    if(!g.getProgramParameter(p,g.LINK_STATUS))throw Error(g.getProgramInfoLog(p));
+    const tex=g.createTexture();g.bindTexture(g.TEXTURE_2D,tex);g.texImage2D(g.TEXTURE_2D,0,g.RGBA32F,1,1,0,g.RGBA,g.FLOAT,null);
+    const fbo=g.createFramebuffer();g.bindFramebuffer(g.FRAMEBUFFER,fbo);g.framebufferTexture2D(g.FRAMEBUFFER,g.COLOR_ATTACHMENT0,g.TEXTURE_2D,tex,0);
+    if(g.checkFramebufferStatus(g.FRAMEBUFFER)!==g.FRAMEBUFFER_COMPLETE)throw Error('Edge framebuffer incomplete');
+    g.bindTexture(g.TEXTURE_2D,null);g.viewport(0,0,1,1);g.useProgram(p);g.clearColor(1,1,1,1);
+    const U=name=>g.getUniformLocation(p,name),smooth=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);};
+    g.uniform1f(U('uEdge'),.26);g.uniform1i(U('uLeafShape'),0);
+    let cases=0,maxError=0;
+    for(const edge of [1,0])for(const season of [1,0])for(const k of [0,.001,.04,.08,.2])for(const radius of [.87,.75,.97,1.1])for(const fade of [1,.5,3e-5,0]){
+      g.uniform1i(U('uEdgeArea'),edge);g.uniform1i(U('uSeasonCast'),season);g.uniform1f(U('uBeamK'),k);
+      g.uniform1f(U('uRadius'),radius);g.uniform1f(U('uFade'),fade);g.clear(g.COLOR_BUFFER_BIT);g.drawArrays(g.TRIANGLES,0,3);
+      const got=new Float32Array(4);g.readPixels(0,0,1,1,g.RGBA,g.FLOAT,got);
+      if(g.getError())throw Error('Faithful edge probe GL error');
+      const cov=1-smooth((radius-.74)/.26),tau=[Math.LN10,1.1,4.6].map(t=>t*fade*cov);
+      const slab=tau.map(t=>Math.exp(-t)),mixture=texelMix(tau,cov*fade,k).Tb;
+      // Only the legacy edge needs a bridge to its zero-diffusion endpoint; explicit area coverage stays exact.
+      const expected=k===0&&!edge?slab:season&&!edge?slab.map((t,c)=>t+(mixture[c]-t)*smooth(k/.08)):mixture;
+      for(let c=0;c<3;c++){
+        const error=Math.abs(got[c]-expected[c]);maxError=Math.max(maxError,error);
+        if(!Number.isFinite(got[c])||error>2e-5)throw Error(JSON.stringify({edge,season,k,radius,fade,channel:c,got:got[c],expected:expected[c]}));
+      }
+      cases++;
+    }
+    g.deleteFramebuffer(fbo);g.deleteTexture(tex);g.deleteProgram(p);g.deleteShader(vs);g.deleteShader(fs);g.getExtension('WEBGL_lose_context').loseContext();
+    return {cases,maxError};
+  });
+  console.log('faithful seasonal edge coverage',JSON.stringify(edgeChecks));
   const results=await page.evaluate(async()=>{
     const {create}=await import('/komorebi.js'),{PRESETS}=await import('/presets.js');
     const A={...PRESETS['cherry blossom'],tree_count:1,branch_levels:2,branch_children:2,limb_count:4,leaves_per_cluster:6,

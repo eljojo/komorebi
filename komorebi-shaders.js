@@ -288,8 +288,8 @@ void main(){
   if(uBeamK > 0.0 || uEdgeArea != 0){
     vec3 T, Tb;
     texelMix(vTau*cov, cov*vFade, uBeamK, T, Tb);
-    // Native zero uses the legacy slab edge. Meet it continuously while this cast is carrying a seasonal journey.
-    frag = vec4(uSeasonCast!=0?mix(exp(-vTau*cov),Tb,smoothstep(0.0,0.08,uBeamK)):Tb, 1.0);
+    // With edge_area off, native zero uses the legacy slab edge. Meet it continuously during a seasonal journey.
+    frag = vec4(uSeasonCast!=0&&uEdgeArea==0?mix(exp(-vTau*cov),Tb,smoothstep(0.0,0.08,uBeamK)):Tb, 1.0);
   }
   else frag = vec4(exp(-vTau*cov), 1.0);
 }`;
