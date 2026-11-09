@@ -129,7 +129,9 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
         }
         const curl=.22*Math.sin(Math.PI*v),phi=data[o+7]+2*v,height=data[o+16]*v;
         const x=lerp(path.land.x,data[o],v)+curl*Math.cos(phi),y=lerp(path.land.y,data[o+1],v)+curl*Math.sin(phi);
-        path.l.flight={x:x-bulk[0]*height,y:y-bulk[1]*height,rot:lerp(path.land.rot,-data[o+4],v),albedo:path.rgb};
+        // The mark turns with its shadow: VS_SEASON_TRAVEL's short arc and tumble, in the carpet's counter-clockwise sense.
+        const turn=lerpAngle(-path.land.rot,data[o+4],v,TAU)+.2*Math.sin(TAU*v+data[o+7])*Math.sin(Math.PI*v);
+        path.l.flight={x:x-bulk[0]*height,y:y-bulk[1]*height,rot:-turn,albedo:path.rgb};
       }
     }
     gl.bindBuffer(gl.ARRAY_BUFFER,faith.buf);gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
