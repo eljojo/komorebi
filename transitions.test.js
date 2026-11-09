@@ -582,3 +582,90 @@ for (const reverse of [false, true]) {
     }
   });
 }
+
+// ---- interruption starts from what is shown (spec contracts/transitions.md) ----
+const tickTo = (r, t) => { while (r.hub.trans.t < t) r.tickTransition(1/60); };
+const linked = from => { const r = transitionRig(from); r.hub.transitionTo = r.transitionTo; return r; };   // the engine's own wiring
+
+test('an interrupted cloud dissolve carries its bloom into the next route and eases it out', () => {
+  const from = { ...DEFAULTS }, r = transitionRig(from);
+  r.transitionTo({ ...from, layer_count: 3 });
+  expect(r.hub.trans.bloomMax).toBeGreaterThan(0);
+  tickTo(r, 0.45);
+  const shown = r.hub.trans.bloom;
+  expect(shown).toBeGreaterThan(0.4);
+  r.transitionTo(from);                               // back, before the swap: a live morph with no bloom of its own
+  expect(r.hub.trans.bloom).toBe(shown);
+  r.tickTransition(1/60);
+  expect(Math.abs(r.hub.trans.bloom - shown)).toBeLessThan(0.02);
+  tickTo(r, 0.5);
+  expect(r.hub.trans.bloom).toBe(0);
+});
+
+test('an interrupted lit-ground fade carries its shadow opacity into a route that is not one', () => {
+  const from = { ...DEFAULTS }, r = transitionRig(from);
+  r.transitionTo({ ...from, standing_scene: true });
+  expect(r.hub.trans.backgroundFade).toBe(true);
+  tickTo(r, 0.4);
+  const shown = r.hub.trans.shadowOpacity;
+  expect(shown).toBeLessThan(0.2);
+  r.transitionTo(from);
+  expect(r.hub.trans.backgroundFade).toBe(false);
+  r.tickTransition(1/60);
+  expect(Math.abs(r.hub.trans.shadowOpacity - shown)).toBeLessThan(0.02);
+  tickTo(r, 0.5);
+  expect(r.hub.trans.shadowOpacity).toBe(1);
+});
+
+test('a selection inside the crossfade window waits for the window to close, keeping the half-faded grove', () => {
+  const from = { ...DEFAULTS }, r = linked(from), freed = [], installed = [];
+  Object.assign(r.hub, { buildTargetGrove: to => ({ seed: to.seed }), freeGrove: g => freed.push(g), installGrove: g => installed.push(g) });
+  const to = { ...from, seed: 77 }; let ended = 0;
+  r.transitionTo(to, { onEnd: () => ended++ });
+  expect(r.hub.trans.crossfade).toBe(true);
+  tickTo(r, 0.5);
+  expect(r.hub.crossW).toBeGreaterThan(0);
+  const third = { ...from, exposure: from.exposure + 0.5 };
+  r.transitionTo(from); r.transitionTo(third);        // the latest waiting selection replaces the earlier one
+  expect(freed).toHaveLength(0); expect(r.hub.trans.to.seed).toBe(77); expect(r.hub.groveIn).not.toBeNull();
+  let start = null;
+  while (!start) start = r.tickTransition(1/60);
+  expect(installed).toHaveLength(1); expect(r.params.seed).toBe(77);
+  start();
+  expect(r.hub.trans.to.exposure).toBe(third.exposure); expect(r.hub.trans.t).toBe(0);
+  while (r.hub.trans.active) { const cb = r.tickTransition(1/60); if (cb) cb(); }
+  expect(ended).toBe(0);                              // the superseded route's completion never fires
+});
+
+test('a selection the faithful dissolve cannot take waits for its landing instead of dropping the outgoing scene', () => {
+  const from = { ...DEFAULTS, faithful_canopy: true }, r = linked(from); let ends = 0;
+  Object.assign(r.hub, { beginSceneFade: () => {}, stepSceneFade: () => {}, endSceneFade: () => ends++ });
+  r.transitionTo({ ...from, seed: 77 });
+  expect(r.hub.trans.sceneFade).toBe(true);
+  tickTo(r, 0.5);
+  const layer = { ...DEFAULTS, standing_scene: true, exposure: 2 };   // not faithful: no dissolve can take it
+  r.transitionTo(layer);
+  expect(ends).toBe(0); expect(r.hub.trans.sceneFade).toBe(true); expect(r.hub.trans.waiting.to.exposure).toBe(2);
+  let start = null;
+  while (!start) start = r.tickTransition(1/60);
+  expect(ends).toBe(1);
+  start();
+  expect(r.hub.trans.to.exposure).toBe(2);
+});
+
+test('a turn through the horizon finishes before a look it cannot reach starts, rather than teleporting the eye', () => {
+  const A = { ...DEFAULTS, sky_view: true, standing_scene: true, canopy_base_height_m: 2, view_pitch_deg: 80, view_fov_deg: 64, view_extent_m: 3.1 };
+  const B = { ...A, sky_view: false, view_pitch_deg: 16, view_fov_deg: 50, view_extent_m: 4.1 };
+  const r = linked(A);
+  r.transitionTo(B);
+  expect(r.hub.trans.viewpoint).toBe(true);
+  tickTo(r, 0.5);
+  const eye = [...r.hub.trans.viewEye];
+  r.transitionTo({ ...B, sun_elevation_deg: B.sun_elevation_deg - 20 });
+  expect(r.hub.trans.viewpoint).toBe(true); expect(r.hub.trans.viewEye).toEqual(eye);
+  let start = null;
+  while (!start) start = r.tickTransition(1/60);
+  expect(r.params.sky_view).toBe(false);
+  start();
+  expect(r.hub.trans.to.sun_elevation_deg).toBe(B.sun_elevation_deg - 20);
+});

@@ -20,6 +20,10 @@ const proxyGlow = (p) => p.sky_view ? p.sky_scatter : (p.receiver|0)===0 && p.ca
 
 export function makeTransitions(hub){
   const { params, trans, faithfulOn } = hub;
+  // A selection that waits for the moving route's settled frame (the latest one replaces it, and the route's own
+  // completion no longer fires), and the start of that selection once the route has settled.
+  const wait = (to, opts) => { trans.waiting = { to, opts }; trans.onEnd = null; };
+  const queued = cb => { const w = trans.waiting; trans.waiting = null; return w ? () => hub.transitionTo(w.to, w.opts) : cb; };
 
   // ---- preset transitions (spec §9): morph the continuous look, dissolve the structural rebuild behind
   // a transient cloud-bloom. One entry point — the future MIDI/event layer drives this same method. ----
@@ -51,6 +55,10 @@ export function makeTransitions(hub){
       return;
     }
     if(trans.active&&trans.seasonTravel){hub.retargetSeasonTravel(to,opts);return;}
+    // Two dissolving scenes and a crossfade inside its window are each a picture no other route can start from: the
+    // outgoing scene or the half-faded grove would be dropped. Such a selection waits, as it does on a travel route.
+    if(trans.active && (trans.crossfade && !trans.swapped && hub.crossW>0
+        || trans.sceneFade && (MODE_KEYS.some(k => to[k]!==params[k]) || !faithfulOn() || !to.faithful_canopy))){ wait(to, opts); return; }
     const seasonTravel=!trans.active&&seasonTravelEligible(params,to);
     trans.seasonTravel=seasonTravel;
     const retarget=trans.active&&trans.leafTravel;
@@ -62,6 +70,9 @@ export function makeTransitions(hub){
       && params.canopy_fill===0 && to.canopy_fill===0 && params.litter===0 && to.litter===0
       && hemisphere(to) && (movingView || hemisphere(params))
       && Object.keys(DEFAULTS).every(k=>VIEW_KEYS.has(k) && (k!=='view_extent_m' || params.standing_scene) || params[k]===to[k]));
+    // Only a viewpoint can start from an eye in the middle of the horizon; any other camera would teleport there.
+    if(movingView && !viewpoint){ wait(to, opts); return; }
+    trans.waiting = null;
     const viewFrom=movingView ? {eye:[...trans.viewEye],elevation:trans.viewElevation,skyWeight:trans.viewSkyWeight} : cameraPose(params);
     trans.viewpoint=viewpoint;
     trans.viewInterrupted=!!movingView;
@@ -83,12 +94,12 @@ export function makeTransitions(hub){
                  || (params.leaf_diffuse>0 && to.leaf_diffuse===0 && proxyGlow(to)>0);
     const topoDiff   = TOPO_KEYS.some(k => to[k]!==params[k]);     // a new tree/layer/seed: can't morph leaf-for-leaf
     const modeDiff   = MODE_KEYS.some(k => to[k]!==params[k]);     // a scene-MODE flag flips (faithful_canopy/standing_scene/receiver): needs a rebuild, NOT a snap-with-stale-state
-    const shadowFrom = trans.active && trans.backgroundFade ? trans.shadowOpacity : 1;
+    const shadowFrom = trans.active ? (trans.shadowOpacity ?? 1) : 1;   // whatever route is interrupted, from the shown opacity
     // Floor-to-floor mode changes meet on the lit ground, so the grove swap carries no shadow discontinuity.
     trans.backgroundFade = !viewpoint && modeDiff && !params.sky_view && !to.sky_view && (params.receiver|0)===0 && (to.receiver|0)===0;
     trans.settleCamera = trans.backgroundFade && params.standing_scene && !to.standing_scene;
     trans.shadowFrom = shadowFrom;
-    trans.shadowOpacity = trans.backgroundFade ? shadowFrom : 1;
+    trans.shadowOpacity = shadowFrom;
     // Wood must meet zero at the mode swap when only one look has it: otherwise the woodless grove briefly
     // casts the other look's skeleton (an overhead trunk becomes a dot with radial limbs).
     trans.woodFade = modeDiff && ((params.branch_tau > 0) !== (to.branch_tau > 0));
@@ -163,7 +174,8 @@ export function makeTransitions(hub){
     if(crossOK) hub.groveIn = hub.buildTargetGrove(to);          // grow it NOW, at rest, while it is still invisible
     trans.from = from; trans.to = to;
     trans.dur = Math.max(1e-3, opts.duration!=null ? opts.duration : trans.dur);   // stays the CALLER's number: it is also the sticky default for a later duration-less call, so the mode-flip stretch is applied at the clock (tickTransition) and never compounded into it
-    trans.t = 0; trans.swapped = false; trans.bloom = 0; trans.active = true;
+    trans.bloomFrom = trans.active ? trans.bloom : 0;   // an interrupted bloom eases out of the next route from where it is
+    trans.t = 0; trans.swapped = false; trans.bloom = trans.bloomFrom; trans.active = true;
     trans.onEnd = opts.onEnd || null;
     if(seasonTravel){trans.structDiff=true;trans.durScale=2;hub.beginSeasonTravel(to);}
     if(leafTravel){
@@ -209,22 +221,26 @@ export function makeTransitions(hub){
       trans.viewElevation=lerp(trans.viewFrom.elevation,trans.viewTo.elevation,e);
       trans.viewSkyWeight=lerp(trans.viewFrom.skyWeight,trans.viewTo.skyWeight,e);
     }
+    // Carried from an interrupted route: its bloom eases out and its shadow opacity back to full over the first half.
+    const carried = (trans.bloomFrom ?? 0)*(1 - smoothstep(0, 0.5, t));
+    trans.shadowOpacity = trans.backgroundFade
+      ? (t<0.5 ? lerp(trans.shadowFrom, 0, smoothstep(0,0.5,t)) : smoothstep(0.5,1,t))
+      : lerp(trans.shadowFrom ?? 1, 1, smoothstep(0, 0.5, t));
     if(trans.sceneFade){
+      trans.bloom = carried;
       hub.stepSceneFade(dt);
       if(t<1) return null;
       trans.active=false; trans.sceneFade=false; trans.swapped=true;
       hub.endSceneFade();
       const cb=trans.onEnd; trans.onEnd=null;
-      return cb;
+      return queued(cb);
     }
     trans.irisRadius = trans.irisClosing
       ? lerp(trans.irisFrom ?? 1, Math.SQRT2, smoothstep(0.75,1,t))
       : lerp(trans.irisFrom ?? 1, 1, smoothstep(0,0.25,t));
     // 0 at the ends, deepest at the midpoint — where the swap fires. Both structural tiers stop short of full
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
-    trans.bloom = trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0;
-    trans.shadowOpacity = trans.backgroundFade
-      ? (t<0.5 ? lerp(trans.shadowFrom, 0, smoothstep(0,0.5,t)) : smoothstep(0.5,1,t)) : 1;
+    trans.bloom = Math.max(trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0, carried);
     trans.windowOpacity=lerp(trans.windowFrom, trans.windowTo, e);
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
       if((trans.viewpoint||trans.leafTravel||trans.seasonTravel) && k==='drift_phase' && params.drift_auto) continue;
@@ -241,7 +257,7 @@ export function makeTransitions(hub){
       const w = k==='branch_tau' && trans.woodFade ? smoothstep(a>0 ? 0 : 0.5, a>0 ? 0.5 : 1, t) : e;
       params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,w, k==='drift_phase'?TAU:360) : lerp(a,b,w); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove
-    let rebuilt = false;
+    let rebuilt = false, wake = null;
     // THE CROSSFADE WINDOW replaces the cut where it is gated on: coverage eases 0 -> 1 across [0.5-HW, 0.5+HW],
     // and the arrangement reorganizes instead of being replaced. The incoming grove is installed as the engine's
     // own once it carries the whole picture, which is also when the structural params can safely snap: nothing
@@ -277,6 +293,7 @@ export function makeTransitions(hub){
         trans.swapped = true;
         for(const k in DEFAULTS) if(!MORPH_SET.has(k)) params[k] = trans.to[k];
         hub.installGrove(hub.groveIn); hub.groveIn = null; hub.crossW = 0;   // it IS the grove now; nothing is faded any more
+        if(trans.waiting) wake = queued(null);                        // a selection made inside the window starts from here
       }
     } else if(!trans.swapped && t>=0.5){                   // swap the grove once, hidden under the bloom peak
       trans.swapped = true;
@@ -318,9 +335,9 @@ export function makeTransitions(hub){
       hub.regenSource(); hub.resetPerf();                          // bloom now 0; re-probe quality for the new look (it may carry auto-quality)
       if(faithfulOn()) hub.bake();                   // land the faith texture on the exact target sun (resetPerf only re-bakes on a bake-res change)
       const cb = trans.onEnd; trans.onEnd = null;
-      return cb;                                     // handed back, not called: frame() calls it after scheduling the next frame, so a throwing onEnd cannot end the animation
+      return queued(cb);                             // handed back, not called: frame() calls it after scheduling the next frame, so a throwing onEnd cannot end the animation
     }
-    return null;
+    return wake;
   }
 
   return { transitionTo, tickTransition };

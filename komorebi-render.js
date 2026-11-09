@@ -419,7 +419,7 @@ export function makeRender(hub){
     gl.useProgram(variant.prog);
     const f = {
       E: params.canopy_extent_m,
-      shadowOpacity: hub.trans.active && hub.trans.backgroundFade ? hub.trans.shadowOpacity : 1,
+      shadowOpacity: hub.trans.active ? (hub.trans.shadowOpacity ?? 1) : 1,   // the lit-ground fade's, or what an interrupted one carries into the next route
       atm: atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight),
       sunIrr: lerp(1, sunIncidence(cam, params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1)),   // the beam's cosine of incidence on THIS receiver (sun_cosine, §3.5); the sky view's is 1. Held to 0..1 like canopy_fill and vignette: past 1 the blend turns the sun colour negative
       wood: !faithfulOn() && params.branch_tau > 0 && occ.count > 0,   // read by the table upload and the penumbra alike, so they cannot disagree

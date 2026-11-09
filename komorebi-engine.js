@@ -624,7 +624,7 @@ function createEngine(canvas, opts, driven=false){
       if(trans.seasonTravel){hub.endSeasonTravel();trans.seasonTravel=false;}
       if(trans.litterRise){hub.endLitterRise();trans.litterRise=false;}
       if(trans.groveTravel){hub.endGroveTravel();trans.groveTravel=false;}
-      trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0;
+      trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0; trans.shadowOpacity=1; trans.waiting=null;
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
     }
@@ -791,6 +791,7 @@ function createEngine(canvas, opts, driven=false){
     if(risePending){trans.to=risePending.to;trans.onEnd=risePending.opts?.onEnd??null;}
     const grovePending=hub.endGroveTravel();
     if(grovePending){trans.to=grovePending.to;trans.onEnd=grovePending.opts?.onEnd??null;}
+    if(trans.waiting){trans.to=trans.waiting.to;trans.onEnd=trans.waiting.opts?.onEnd??null;trans.waiting=null;}
   }
   function onContextRestored(){
     if(!alive) return;
@@ -805,7 +806,7 @@ function createEngine(canvas, opts, driven=false){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = trans.active ? trans.onEnd : null;
-    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.groveTravel=false; trans.bloom=0; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
+    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.groveTravel=false; trans.bloom=0; trans.shadowOpacity=1; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
     rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)
