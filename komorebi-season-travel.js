@@ -1,4 +1,4 @@
-import {DEG, TAU, cameraPose, leafClock, lerp, lerpAngle, smoothstep} from './komorebi-math.js';
+import {DEG, TAU, cameraPose, leafClock, lerp, lerpAngle, smoothstep, turnBack} from './komorebi-math.js';
 import {CANOPY_MORPH_MAX, DEFAULTS, SEASON_KEYS} from './komorebi-params.js';
 import {litterAlbedo,litterAge,litterLanding} from './komorebi-litter.js';
 import {makeBake} from './komorebi-bake.js';
@@ -92,11 +92,13 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     const same=p=>Object.keys(DEFAULTS).every(k=>k==='drift_phase'||k==='auto_quality'||k==='adaptive_motion'||p[k]===to[k]);
     const end=same(s.a.params)?0:same(s.b.params)?1:null;
     if(end===null){s.pending={to,opts};trans.onEnd=null;return;}
+    const v=s.turn?s.turn.rate(trans.t):(s.end-s.start)/(trans.dur*trans.durScale);
     s.pending=null;s.start=s.q;s.end=end;trans.to=to;trans.t=0;
     trans.dur=Math.max(1e-3,opts.duration??trans.dur);trans.onEnd=opts.onEnd??null;
+    s.turn=turnBack(s.q,v,end,2*trans.dur);trans.durScale=s.turn.T/trans.dur;
   }
   function stepSeasonTravel(_dt,t){
-    s.q=lerp(s.start,s.end,t);
+    s.q=s.turn?s.turn.at(t):lerp(s.start,s.end,t);
     const q=s.q,w=smoothstep(0,1,q),a=s.a,b=s.b,S=s.S,data=s.data,journey=s.journey;
     const side=q<.5?0:1,native=side===0?a:b;
     if(side!==s.side){

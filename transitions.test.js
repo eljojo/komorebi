@@ -8,7 +8,7 @@ import { CANOPY_MORPH_MAX } from "./komorebi-params.js";
 import { makeTransitions } from "./komorebi-transitions.js";
 import { PRESETS } from "./presets.js";
 import { makeSource } from "./komorebi-source.js";
-import { DEG, clamp, lerp } from "./komorebi-math.js";
+import { DEG, clamp, lerp, turnBack } from "./komorebi-math.js";
 import riseFixture from './test-gl/fixtures/fall-look-up.json';
 import shadowFixture from './test-gl/fixtures/purple-look-up.json';
 import descentFixture from './test-gl/fixtures/look-up-fall.json';
@@ -668,4 +668,27 @@ test('a turn through the horizon finishes before a look it cannot reach starts, 
   expect(r.params.sky_view).toBe(false);
   start();
   expect(r.hub.trans.to.sun_elevation_deg).toBe(B.sun_elevation_deg - 20);
+});
+
+test('turnBack: momentum is spent, then the route eases home; the farther out, the longer the way back, up to a whole route', () => {
+  const full = 4;
+  for (const [p, v, to] of [[0.5, 0.25, 0], [0.1, 0.25, 0], [0.9, 0.25, 0], [0.97, 0.4, 0], [0.5, 0.375, 0], [0.6, -0.25, 1], [0.5, 0, 0]]) {
+    const turn = turnBack(p, v, to, full), far = 1 - to;
+    expect(turn.T).toBeCloseTo(full*Math.min(1, 0.5 + Math.abs(to - p)), 12);
+    expect(turn.at(0)).toBeCloseTo(p, 12); expect(turn.rate(0)).toBeCloseTo(v, 12);
+    expect(turn.at(1)).toBeCloseTo(to, 12); expect(turn.rate(1)).toBeCloseTo(0, 12);
+    let previous = turn.at(0), turned = false, peak = p;
+    for (let u = 1/512; u <= 1; u += 1/512) {
+      const x = turn.at(u);
+      expect(Math.abs(x - far)).toBeGreaterThan(0);                        // never reaches the far end
+      expect(Math.abs(x - p)).toBeLessThanOrEqual(Math.abs(far - p)/2 + Math.abs(to - p) + 1e-12);
+      if (Math.sign(x - previous) === Math.sign(to - p) && x !== previous) turned = true;
+      else if (turned) expect(x).toBeCloseTo(previous, 12);               // once turned for home, it never heads out again
+      if (Math.abs(x - to) > Math.abs(peak - to)) peak = x;
+      previous = x;
+    }
+    if (v*Math.sign(to - p) < 0) expect(Math.abs(peak - p)).toBeGreaterThan(0);   // the momentum carried it past the press
+  }
+  const early = turnBack(0.1, 0.25, 0, full), mid = turnBack(0.5, 0.25, 0, full), late = turnBack(0.9, 0.25, 0, full);
+  expect(early.T).toBeLessThan(mid.T); expect(mid.T).toBe(full); expect(late.T).toBe(full);
 });

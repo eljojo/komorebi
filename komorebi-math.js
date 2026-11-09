@@ -23,6 +23,27 @@ const lerp = (a,b,t) => a + (b-a)*t;
 const smoothstep = (a,b,x) => { const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); };
 // shortest-arc interpolation for a periodic value (degrees->360, radians->TAU): 350°->10° goes +20°.
 const lerpAngle = (a,b,t,period) => { const d=((b-a)%period + period*1.5)%period - period*0.5; return a + d*t; };
+// A travel route turning back mid-flight (spec: reversal keeps progress): like walking home for a forgotten wallet.
+// The momentum it had is spent first, an even deceleration over a tenth of a second that carries it on just past the
+// press (never more than half the way left to the far end, which would otherwise be a landing), then it eases home
+// and settles at rest. The
+// farther out it was, the longer the way back, up to a whole route: half a route for a turn at the start, a whole
+// route from halfway on. Progress p and its velocity v (per second) stay continuous; `full` is a whole route in
+// seconds. Already heading for `to` (a second turn caught mid-deceleration), it eases there from its current velocity,
+// capped where the cubic would overshoot `to`.
+const turnBack = (p, v, to, full) => {
+  const T = full*Math.min(1, 0.5 + Math.abs(to-p)), dir = Math.sign(to-p) || 1;
+  if(v*dir >= 0){
+    const m0 = dir*Math.min(Math.abs(v)*T, 3*Math.abs(to-p));
+    return { T,
+      at: u => clamp((2*u*u*u-3*u*u+1)*p + (u*u*u-2*u*u+u)*m0 + (3*u*u-2*u*u*u)*to, 0, 1),
+      rate: u => ((6*u*u-6*u)*p + (3*u*u-4*u+1)*m0 + (6*u-6*u*u)*to)/T };
+  }
+  const td = Math.min(0.1, T/2, Math.abs(1-to-p)/Math.abs(v)), turn = p + v*td/2, back = T - td;
+  return { T,
+    at: u => { const s = u*T; return s < td ? p + v*s - v*s*s/(2*td) : lerp(turn, to, smoothstep(0, back, s-td)); },
+    rate: u => { const s = u*T; if(s < td) return v*(1 - s/td); const x = (s-td)/back; return (to-turn)*6*x*(1-x)/back; } };
+};
 
 // ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
 // 3-band (R=620, G=555, B=470 nm) Beer's-law model. As the sun lowers, air mass grows and Rayleigh
@@ -599,4 +620,4 @@ function vignetteMask(u, v, feather, shape, radius = 1) {
   return 1 - smoothstep(1 - feather, 1, d);
 }
 
-export { DEG, TAU, cameraPose, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, atmosphere, sunDirection, sunIncidence, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, cameraPose, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

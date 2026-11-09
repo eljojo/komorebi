@@ -1,4 +1,4 @@
-import {TAU,lerp,lerpAngle,smoothstep,leafClock} from './komorebi-math.js';
+import {TAU,lerp,lerpAngle,smoothstep,leafClock,turnBack} from './komorebi-math.js';
 import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from './komorebi-params.js';
 import {seasonCamera} from './komorebi-season-travel.js';
 import {litterLanding,litterAlbedo,litterAge} from './komorebi-litter.js';
@@ -200,10 +200,12 @@ export const makeGroveTravel=FEAT_LITTER?(hub,createScene,adoptScene)=>{
   const same=p=>Object.keys(DEFAULTS).every(k=>k==='drift_phase'||k==='auto_quality'||k==='adaptive_motion'||p[k]===to[k]);
   const end=same(s.lookA)?0:same(s.lookB)?1:null;
   if(end===null){s.pending={to,opts};hub.trans.onEnd=null;return;}
-  s.pending=null;s.start=s.q;s.end=end;hub.trans.to=to;hub.trans.t=0;
-  hub.trans.dur=Math.max(1e-3,opts.duration??hub.trans.dur);hub.trans.onEnd=opts.onEnd??null;
+  const tr=hub.trans,v=s.turn?s.turn.rate(tr.t):(s.end-s.start)/(tr.dur*tr.durScale);
+  s.pending=null;s.start=s.q;s.end=end;tr.to=to;tr.t=0;
+  tr.dur=Math.max(1e-3,opts.duration??tr.dur);tr.onEnd=opts.onEnd??null;
+  s.turn=turnBack(s.q,v,end,2*tr.dur);tr.durScale=s.turn.T/tr.dur;
  }
- function stepGroveTravel(dt,t){s.q=lerp(s.start,s.end,t);s.renderer.step(s.q,dt);}
+ function stepGroveTravel(dt,t){s.q=s.turn?s.turn.at(t):lerp(s.start,s.end,t);s.renderer.step(s.q,dt);}
  function drawGroveTravel(){s.renderer.draw();}
  function finishGroveTravel(){adoptScene(s.end===0?s.a:s.b,hub.trans.to);return s.pending;}
  function endGroveTravel(){if(!s)return;const pending=s.pending;s.renderer.dispose();s.carrier.dispose();s.other.dispose();s=null;return pending;}

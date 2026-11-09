@@ -62,7 +62,8 @@ export function makeTransitions(hub){
     const seasonTravel=!trans.active&&seasonTravelEligible(params,to);
     trans.seasonTravel=seasonTravel;
     const retarget=trans.active&&trans.leafTravel;
-    if(retarget&&!hub.retargetLeafTravel(to,opts))return;
+    const turnScale=retarget&&hub.retargetLeafTravel(to,opts);   // a reversal's clock, scaled to the distance it has left
+    if(retarget&&!turnScale)return;
     const irisFrom = trans.active ? (trans.irisRadius ?? 1) : 1;
     const movingView=trans.active && trans.viewpoint;
     const viewpoint=!!((!trans.active || movingView) && (movingView || params.sky_view!==to.sky_view) && !params.faithful_canopy && !to.faithful_canopy
@@ -179,7 +180,7 @@ export function makeTransitions(hub){
     trans.onEnd = opts.onEnd || null;
     if(seasonTravel){trans.structDiff=true;trans.durScale=2;hub.beginSeasonTravel(to);}
     if(leafTravel){
-      trans.structDiff=true;trans.durScale=2;
+      trans.structDiff=true;trans.durScale=retarget?turnScale:2;
       if(!retarget){
         hub.beginLeafTravel(to);
         for(const k in DEFAULTS)params[k]=to[k];
@@ -274,7 +275,7 @@ export function makeTransitions(hub){
       const cb=trans.onEnd;trans.onEnd=null;
       return pending?()=>hub.transitionTo(pending.to,pending.opts):cb;
     }else if(trans.leafTravel){
-      hub.regenSource();hub.stepLeafTravel(dt,e);
+      hub.regenSource();hub.stepLeafTravel(dt,e,t);
       if(t<1)return null;
       const drift=params.drift_phase;
       for(const k in DEFAULTS)params[k]=trans.to[k];

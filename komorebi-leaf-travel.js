@@ -1,4 +1,4 @@
-import { ballisticK, lerp, lerpAngle, smoothstep, TAU } from './komorebi-math.js';
+import { ballisticK, lerp, lerpAngle, smoothstep, TAU, turnBack } from './komorebi-math.js';
 import { DEFAULTS, MORPH_KEYS } from './komorebi-params.js';
 import { VS_LEAF_TRAVEL, FS_LEAF_TRAVEL } from './komorebi-shaders.js';
 const FEAT_LEAF_DIFFUSE = true;
@@ -84,9 +84,12 @@ export function makeLeafTravel(hub,createScene){
     const same=p=>Object.keys(DEFAULTS).every(k=>k==='drift_phase'||k==='auto_quality'||k==='adaptive_motion'||p[k]===to[k]);
     const end=same(s.lookA)?0:same(s.lookB)?1:null;
     if(end===null){s.pending={to,opts};trans.onEnd=null;return false;}
-    s.pending=null;s.start=s.progress;s.end=end;
+    // The clock the router will run: the way back from the displayed progress and velocity (turnBack).
+    const t=trans.t,v=s.turn?s.turn.rate(t):(s.end-s.start)*6*t*(1-t)/(trans.dur*trans.durScale);
+    const dur=Math.max(1e-3,opts.duration!=null?opts.duration:trans.dur);
+    s.pending=null;s.start=s.progress;s.end=end;s.turn=turnBack(s.progress,v,end,2*dur);
     s.toneStart=[...(trans.travelTone??s.toneStart)];s.toneEnd=[0,0,0];s.toneEnd[to.tone_map]=1;
-    return true;
+    return s.turn.T/dur;
   }
   function init(){
     s.b=read(hub);s.pairs=pairLeaves(s.a,s.b);s.data=new Float32Array(s.pairs.length*12);
@@ -103,13 +106,13 @@ export function makeLeafTravel(hub,createScene){
     const y0=Math.min(...boxes.map(b=>b[1]-b[3])),y1=Math.max(...boxes.map(b=>b[1]+b[3]));
     s.box=[(x0+x1)/2,(y0+y1)/2,(x1-x0)/2,(y1-y0)/2];
   }
-  function stepLeafTravel(dt,e){
+  function stepLeafTravel(dt,e,t){
     if(!s.b)init();
     const from=s.from.hub,phase=from.params.drift_phase;
     for(const k of MORPH_KEYS)from.params[k]=params[k];
     from.params.drift_phase=phase;
     if(from.motionActive())from.motionTick(dt);
-    s.progress=lerp(s.start,s.end,e);
+    s.progress=s.turn?s.turn.at(t):lerp(s.start,s.end,e);
     trans.travelTone=s.toneStart.map((v,i)=>lerp(v,s.toneEnd[i],e));
     const f=s.field,w=s.progress;
     f.weight=smoothstep(0,.12,w)*smoothstep(0,.12,1-w);
