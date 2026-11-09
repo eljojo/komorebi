@@ -309,6 +309,8 @@ export function makeTransitions(hub){
       const drift=params.drift_phase;
       trans.active = false; trans.bloom = 0;
       for(const k in DEFAULTS) params[k] = trans.to[k];
+      // The last morph step's lerp can miss sway_pitch by a rounding step; the bake below must read the exact target's bend.
+      if(hub.grove) hub.publishBend?.(hub.grove);
       if(trans.viewpoint){
         if(params.drift_auto)params.drift_phase=drift;
         hub.rebuildAll();
