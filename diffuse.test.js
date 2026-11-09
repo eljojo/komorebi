@@ -750,8 +750,8 @@ function fillRig(over = {}) {
   return { f: makeFill(hub), params, fill, draws: () => draws };
 }
 
-test("fillSig: 15 slots, edge_area is slot 13 (sun_cosine, slot 14, is cosine.test.js's) — a flip re-bakes the fill once, and exposure does not", () => {
-  expect(FILL_SIG_LEN).toBe(15);
+test("fillSig: 16 slots, edge_area is slot 13 (sun_cosine and sun_extinction, slots 14 and 15, are cosine.test.js's) — a flip re-bakes the fill once, and exposure does not", () => {
+  expect(FILL_SIG_LEN).toBe(16);
   const r = fillRig();
   r.f.refreshFill();
   expect(r.fill.ready, "the first refresh bakes").toBe(true);

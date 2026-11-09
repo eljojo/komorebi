@@ -19,7 +19,7 @@ export const PRESETS = {
     leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
     canopy_extent_m:6, tex_resolution:1024, seed:290626672,
     sun_elevation_deg:84.5, sun_azimuth_deg:201,
-    view_extent_m:3.1, exposure:2.44, contrast:0.98, ambient_skylight:0.97, tone_map:2,
+    view_extent_m:3.1, exposure:2.451, sun_cosine:1, contrast:0.98, ambient_skylight:0.97, tone_map:2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5° (José's C, 2026-11-09)
     wind_strength:1.34, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:2.5,
     sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.25, backlash_gain:1, sway_height_gain:1.6,
     limb_count:11, limb_flex:0.25, twig_flex:0.35, stem_length:0.14, leaf_swing:1.35, flutter_freq:1.4,
@@ -35,7 +35,7 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
     "seed": 290626672, "sun_elevation_deg": 85.1984375, "sun_azimuth_deg": 185.1914062500001,
-    "view_extent_m": 3.1, "exposure": 1.29, "contrast": 1.11, "ambient_skylight": 0.83, "sky_turbidity": 0.23, "tone_map": 2,
+    "view_extent_m": 3.1, "exposure": 1.295, "sun_cosine": 1, "contrast": 1.11, "ambient_skylight": 0.83, "sky_turbidity": 0.23, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 1.29/sin 85.2° (José's C, 2026-11-09)
     "wind_strength": 1.34, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 2.5,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.25, "backlash_gain": 1, "sway_height_gain": 1.6,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.35, "stem_length": 0.14, "leaf_swing": 1.35, "flutter_freq": 1.4,
@@ -52,7 +52,7 @@ export const PRESETS = {
     leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
     canopy_extent_m:6, tex_resolution:1024, seed:290626672,
     sun_elevation_deg:84.5, sun_azimuth_deg:201,
-    view_extent_m:3.1, exposure:2.44, contrast:0.98, ambient_skylight:0.97, tone_map:2,
+    view_extent_m:3.1, exposure:2.451, sun_cosine:1, contrast:0.98, ambient_skylight:0.97, tone_map:2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5° (José's C, 2026-11-09)
     wind_strength:0.07, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:1.3,
     sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.65, backlash_gain:1, sway_height_gain:0.75,
     limb_count:11, limb_flex:0.25, twig_flex:0.18, stem_length:0.18, leaf_swing:1.35, flutter_freq:1.4,
@@ -104,7 +104,7 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
     "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
-    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,
+    "view_extent_m": 3.1, "exposure": 2.451, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5° (José's C, 2026-11-09)
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
@@ -121,7 +121,7 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.87, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
     "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
-    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 1.14, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "tone_map": 2,
+    "view_extent_m": 3.1, "exposure": 2.451, "sun_cosine": 1, "contrast": 1.14, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5° (José's C, 2026-11-09)
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
@@ -137,7 +137,7 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "tex_resolution": 1024,
     "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
-    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,
+    "view_extent_m": 3.1, "exposure": 2.451, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5° (José's C, 2026-11-09)
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
@@ -162,7 +162,7 @@ export const PRESETS = {
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 28.50000000000159,
     "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 5.566, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26° (José's C, 2026-11-09)
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
@@ -200,7 +200,7 @@ export const PRESETS = {
     "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -0.7, "view_center_y": -3, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 7.116, "sun_cosine": 1, "sun_extinction": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law and the air's loss, exposure re-sat to 2.44/(sin 26° × 0.782) (José's C and L4C, 2026-11-09)
     "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
@@ -223,7 +223,7 @@ export const PRESETS = {
     "drop_lag": 0,   // no wait after the turn (José, 2026-10-09, P1: "i like p1"). drop_after_turn held back the carpet he had asked for here and picked as pd3 — at 0.79 the default lag leaves only the first few leaves down — so a leaf lets go the moment its turn ends and his carpet comes back; every fallen leaf has still finished turning
     "view_extent_m": 39.28644129433203, "view_pitch_deg": 73.99882812500043, "view_fov_deg": 60, "view_yaw_deg": -161.79726562499684,
     "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 5.566, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26° (José's C, 2026-11-09)
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor, as park 1 (montebello's is ×0.6 of it)
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
@@ -248,7 +248,7 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "tex_resolution": 1024,
     "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
-    "view_extent_m": 3.1, "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,
+    "view_extent_m": 3.1, "exposure": 2.451, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5° (José's C, 2026-11-09)
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
@@ -284,7 +284,7 @@ export const PRESETS = {
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -1.75, "view_center_y": -4.93,   // the trunk feet behind the eye (his k8, picked over k5 on the old camera): the half-down crown's carpet still lies in view
     "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 5.566, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26° (José's C, 2026-11-09)
     "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
@@ -314,7 +314,7 @@ export const PRESETS = {
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
     "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.2, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 5.566, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.2, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26° (José's C, 2026-11-09)
     "ground_r": 0.132, "ground_g": 0.084, "ground_b": 0.048,   // park 1's warm Mount-Royal dirt ×0.4, wet soil (his c9, dirt ×0.4)
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
@@ -344,7 +344,7 @@ export const PRESETS = {
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
     "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 2.44, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 5.566, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26° (José's C, 2026-11-09)
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // park 1's own warm Mount-Royal dirt, as in d9
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
@@ -705,7 +705,7 @@ export const PRESETS = {
     "window_w_m": 4.5, "window_h_m": 3.05, "window_cx_m": 0, "window_cy_m": 1.3, "window_wall": 0,
     "view_extent_m": 4.69, "view_pitch_deg": 19, "view_fov_deg": 60, "view_yaw_deg": -118.85,
     "view_center_x": 0, "view_center_y": 1.3, "trunk_radius_m": 0.1, "far_smear": 0,
-    "exposure": 1.4, "contrast": 1, "ambient_skylight": 0.5, "sky_turbidity": 0.06, "mesopic_strength": 0.5, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 1.627, "sun_cosine": 1, "sun_extinction": 1, "contrast": 1, "ambient_skylight": 0.5, "sky_turbidity": 0.06, "mesopic_strength": 0.5, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 1.4/the cloth's cos el·|sin az| (José's C, 2026-11-09); the air's loss with exposure held (L1B/L2B)
     "wind_pattern": "squally", "wind_strength": 1.2, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
@@ -736,7 +736,7 @@ export const PRESETS = {
     "window_w_m": 4.5, "window_h_m": 3.05, "window_cx_m": 0, "window_cy_m": 1.3, "window_wall": 0,
     "view_extent_m": 4.69, "view_pitch_deg": 19, "view_fov_deg": 60, "view_yaw_deg": -118.85,
     "view_center_x": 0, "view_center_y": 1.3, "trunk_radius_m": 0.1, "far_smear": 0,
-    "exposure": 1.5, "contrast": 1, "ambient_skylight": 0.42, "sky_turbidity": 0.12, "mesopic_strength": 0.85, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 1.845, "sun_cosine": 1, "sun_extinction": 1, "contrast": 1, "ambient_skylight": 0.42, "sky_turbidity": 0.12, "mesopic_strength": 0.85, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 1.5/the cloth's cos el·|sin az| (José's C, 2026-11-09); the air's loss with exposure held (L1B/L2B)
     "wind_pattern": "lazy", "wind_strength": 0.85, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
@@ -863,7 +863,7 @@ export const PRESETS = {
     //    It is also standing in for something real the model lacks: a white tent's shaded side is mostly lit by
     //    bounce off the lit side opposite, and there is no interreflection here (§4.9's honesty list).
     //  • THE LEAVES, above: paler trans lifts the mid-shade the ambient floor does not reach.
-    "exposure": 1.35, "contrast": 1.0, "ambient_skylight": 2.2, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
+    "exposure": 1.648, "sun_cosine": 1, "contrast": 1.0, "ambient_skylight": 2.2, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 1.35/the crown's sin 55° (José's C, 2026-11-09)
     "wind_pattern": "gusty", "wind_strength": 0.9, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
@@ -1093,7 +1093,7 @@ export const PRESETS = {
   "tent_seam": 0,
   "tent_mesh": 0,
   "far_smear": 3,
-  "exposure": 1.635,
+  "exposure": 4.624, "sun_cosine": 1,   // the receiver's cosine law, exposure re-sat to 1.635/sin 20.7° (José's C, 2026-11-09)
   "contrast": 1.0710000000000002,
   "ambient_skylight": 0.872,
   "sky_turbidity": 0.176,

@@ -23,7 +23,8 @@
 // macros.test.js holds these claims to the engine's own key classification.
 // ============================================================================
 
-import { TWEEN_STEP } from './komorebi-math.js';
+import { TWEEN_STEP, beamIrr } from './komorebi-math.js';
+import { cameraFor } from './komorebi-transport.js';
 
 const clamp01 = (t) => Math.min(1, Math.max(0, t));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -245,6 +246,9 @@ export function tweenGateStep(state, cost, path, t0) {
   return { cost: ema, waitUntil: cost > TWEEN_SLOW_MS ? t0 + cost / TWEEN_BUDGET : 0, off: state.off || ema > TWEEN_OFF_MS, last: path };
 }
 const sameDict = (a, b) => !!a && Object.keys(b).every((k) => a[k] === b[k]);
+// A stop's exposure is authored for the old law (afternoon 4 → 4b). On a look carrying the cosine law it is re-sat the way the look's own
+// exposure was (exposure / I), or haze would drop a re-sat look to the dark, law-on-at-old-exposure frame. With the law off I is exactly 1.
+const relit = (dict, p) => ('exposure' in dict ? { ...dict, exposure: dict.exposure / beamIrr(cameraFor(p), p) } : dict);
 export function createBus(getParams, apply) {
   const tweens = new Map();   // key -> { x, target, last }
   return {
@@ -258,7 +262,7 @@ export function createBus(getParams, apply) {
         else tweens.set(key, { x: macroValue(key, getParams()), target, last: null });   // a drag starts from where the look is
         return macroParams(key, target);
       }
-      const dict = macroParams(key, t);
+      const dict = relit(macroParams(key, t), getParams());
       apply(dict, commit || m.live ? m.scope : null, m.live);   // a non-live macro previews without its rebuild until commit
       return dict;
     },
@@ -282,6 +286,7 @@ export function createBus(getParams, apply) {
             dict[m.probe] = stepped;   // exactly TWEEN_STEP away (the inverse and the lerp agree to a few ulps; the other params are the recipe at st.x)
           }
         }
+        dict = relit(dict, getParams());
         if (!sameDict(st.last, dict)) { st.last = dict; apply(dict, m.scope, m.live); }
         if (landed) tweens.delete(key);
       }

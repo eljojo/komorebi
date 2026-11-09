@@ -23,7 +23,9 @@ test("montebello keeps its camera: P3 without the drift (k1) left no carpet in f
 });
 
 // P6, P7 and P8 are montebello with their proposal's overrides; the yellow tree also takes the camera with the feet behind the eye, his k8 over k5 on the picks sheet.
-const SHEET_MONTEBELLO = PRESETS.montebello;
+// montebello as these looks were picked from it. On 2026-11-09 montebello alone took the air's loss (sun_extinction, its exposure re-sat to 7.116);
+// the three looks built on it kept the cosine law only, at montebello's cosine re-sit.
+const SHEET_MONTEBELLO = { ...PRESETS.montebello, sun_extinction: 0, exposure: 5.566 };
 
 const NEW_LOOKS = {
   "forest floor": { base: PRESETS["afternoon 7"], over: { phenology: 0.8, turn_exposure: 1, anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, leaf_drop: 1, drop_after_turn: 1, drop_lag: 0, litter: 1, leaf_wetness: 0.5, tree_clock_spread: 0.05, tree_pigment_spread: 0.6 } },

@@ -105,6 +105,27 @@ const SUN_INCIDENCE = {
   viewpoint: () => 1,   // the upward rays see radiance; the floor branch applies its own incidence
 };
 function sunIncidence(camera, elevDeg, azDeg){ return SUN_INCIDENCE[camera](elevDeg, azDeg); }
+// The beam's broadband loss to the air (`sun_extinction`; a prototype under the artist's review, 2026-11-09). atmosphere() divides the beam by its
+// brightest channel to keep only its hue, which also divides out how much dimmer a low sun is after the longer path through the air. This is that
+// peak transmittance against the zenith's at the same turbidity: 1 overhead, about 0.5 at 12°, so a 12° floor against a 70° one is ×9.1 with the
+// cosine law rather than ×4.5. The skylight's own fall at dusk is not in it.
+function beamExtinction(hDeg, beta){
+  const peak = (m) => { let t = 0; for(let i=0;i<3;i++) t = Math.max(t, Math.exp(-m*(TAU_RAY[i] + TAU_OZ[i] + beta*TAU_AER[i]))); return t; };
+  return peak(airMass(hDeg))/peak(airMass(90));
+}
+// The receiver's share of that loss: exactly 1 at sun_extinction 0. The seen disk (the sky view, and the rays that look up) takes none in this prototype.
+const SEEN = new Set(['sky', 'rise', 'viewpoint']);
+const beamLoss = (camera, p) => SEEN.has(camera) ? 1 : lerp(1, beamExtinction(p.sun_elevation_deg, p.sky_turbidity), clamp(p.sun_extinction ?? 0, 0, 1));
+// The beam's factor on a receiver as the render applies it (komorebi-render.js): exactly 1 at sun_cosine 0 and sun_extinction 0.
+const beamIrr = (camera, p) => lerp(1, sunIncidence(camera, p.sun_elevation_deg, p.sun_azimuth_deg), clamp(p.sun_cosine, 0, 1))*beamLoss(camera, p);
+// Exposure for a look between a and b at weight w, `now` holding the in-between sun and sun_cosine. Lerping exposure and the law
+// apart over-lights the dapples midway (+18% in linear light between a look re-sat for the law and one without it); morphing their
+// product instead keeps the dapples moving straight from one end's level to the other's, and only the shade and the sky follow
+// exposure. With the law off at both ends every factor is exactly 1, so this is lerp(a.exposure, b.exposure, w) to the bit.
+function beamExposure(camera, a, b, w, now){
+  const irr = beamIrr(camera, now);
+  return irr > 0 ? lerp(a.exposure*beamIrr(camera, a), b.exposure*beamIrr(camera, b), w)/irr : lerp(a.exposure, b.exposure, w);   // a sun at the horizon lights nothing to hold
+}
 
 // The floor's gauge (height plus recenter) expressed as a real eye, in the sky camera's world frame.
 function cameraPose(p){
@@ -620,4 +641,4 @@ function vignetteMask(u, v, feather, shape, radius = 1) {
   return 1 - smoothstep(1 - feather, 1, d);
 }
 
-export { DEG, TAU, cameraPose, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, cameraPose, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

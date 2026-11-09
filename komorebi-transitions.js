@@ -5,7 +5,8 @@
 // transitionTo classifies the route; tickTransition drives it each frame.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { TAU, cameraPose, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { TAU, beamExposure, cameraPose, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { cameraFor } from './komorebi-transport.js';
 import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';
 import {litterRiseEligible,litterFallEligible,shadowRiseEligible} from './komorebi-litter-rise.js';
@@ -257,6 +258,8 @@ export function makeTransitions(hub){
       if(trans.settleCamera && t>=0.5 && CAMERA_KEYS.has(k)){ params[k] = b; continue; }
       const w = k==='branch_tau' && trans.woodFade ? smoothstep(a>0 ? 0 : 0.5, a>0 ? 0.5 : 1, t) : e;
       params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,w, k==='drift_phase'?TAU:360) : lerp(a,b,w); }
+    // Same receiver at both ends: the dapples travel straight from one end's level to the other's (beamExposure).
+    { const cam=cameraFor(trans.from); if(cam===cameraFor(trans.to)) params.exposure=beamExposure(cam,trans.from,trans.to,e,params); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove
     let rebuilt = false, wake = null;
     // THE CROSSFADE WINDOW replaces the cut where it is gated on: coverage eases 0 -> 1 across [0.5-HW, 0.5+HW],

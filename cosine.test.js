@@ -6,7 +6,8 @@
 import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, FEATURES, CAMERAS, TRANSPORT_CAMERAS, buildTransport, cameraFor } from "./komorebi.js";
-import { DEG, atmosphere, sunDirection, sunIncidence } from "./komorebi-math.js";
+import * as MATH from "./komorebi-math.js";
+import { DEG, atmosphere, beamExposure, sunDirection, sunIncidence } from "./komorebi-math.js";
 import { makeRender } from "./komorebi-render.js";
 import { FILL_SIG_LEN, makeFill } from "./komorebi-bake.js";
 import { PRESETS } from "./presets.js";
@@ -157,7 +158,50 @@ test("sun_cosine: 0 in DEFAULTS, MORPH class (a live uniform scale and a fill re
   expect(MORPH_KEYS).toContain("sun_cosine");
   for (const [name, set] of Object.entries({ CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS })) expect(set.includes("sun_cosine"), name).toBe(false);
   for (const [name, f] of Object.entries(FEATURES)) expect(f.open({ ...DEFAULTS, sun_cosine: 1 }), `${name} is not opened by sun_cosine`).toBe(f.open({ ...DEFAULTS }));   // there is no GLSL to cut
-  for (const [name, p] of Object.entries(PRESETS)) expect(p.sun_cosine ?? 0, `${name} ships with the law off`).toBe(0);
+});
+
+// ---- which looks carry the law: José's picks on the 2026-11-09 sheet (test-gl/out/review/2026-11-09-item2a-sun-cosine) ------------
+// "i think in general I can work with "C" … i think these are the ones i want to keep with the "legacy" look: 17A, 13A, 14A, 15A, 16A, 6A, 5A, 4A, 3A, 1A".
+// C is the law with exposure re-sat to exposure/I (I the look's own incidence), rounded to the sheet's three places; the sky views take 1 and are not on it.
+// The air's loss (sun_extinction), from the 2026-11-09 sheet (test-gl/out/review/2026-11-09-item5-air-loss): "i like: p4b, y3b, y4b, l4c, l1b, l2b" — the curtains with
+// exposure held (L1B, L2B), montebello with it re-sat by 1/E on top of the cosine re-sit (L4C); every other look off.
+const AIR_LOSS = { "curtain 1": "held", "curtain 2": "held", montebello: "re-sat" };
+const KEEP_OLD_LAW = ["eclipse", "morning 2", "the void", "afternoon 5b", "prism", "park 2", "morning 1", "morning 3", "morning 3b", "memories"];
+const SHIPPED_EXPOSURE = {   // each C look's exposure before the law, the numerator of its re-sit
+  "acid dreams": 1.635, "park 1": 2.44, montebello: 2.44, "park fall": 2.44, "the yellow tree": 2.44, "montebello, rain": 2.44, "cherry blossom": 2.44,
+  "curtain 2": 1.5, "tent 1": 1.35, "curtain 1": 1.4, "afternoon 4": 2.44, "afternoon 5": 2.44, "afternoon 6": 2.44, "afternoon 6b": 2.44, "afternoon 7": 2.44,
+  "forest floor": 2.44, "afternoon 4b": 1.29,
+};
+test("sun_cosine: the looks José picked as C carry the law at exposure/I; the ones he kept stay off; the sky views are untouched", () => {
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+  for (const [name, p] of Object.entries(PRESETS)) {
+    if (KEEP_OLD_LAW.includes(name) || p.sky_view) { expect(p.sun_cosine ?? 0, `${name} keeps the old law`).toBe(0); continue; }
+    expect(p.sun_cosine, `${name} carries the law`).toBe(1);
+    const I = sunIncidence(cameraFor(p), p.sun_elevation_deg, p.sun_azimuth_deg), E = MATH.beamExtinction(p.sun_elevation_deg, p.sky_turbidity);
+    const want = AIR_LOSS[name] === "re-sat" ? r3(r3(SHIPPED_EXPOSURE[name] / I) / E) : r3(SHIPPED_EXPOSURE[name] / I);
+    expect(p.exposure, `${name}'s exposure is re-sat`).toBe(want);
+  }
+  for (const [name, p] of Object.entries(PRESETS)) expect(p.sun_extinction ?? 0, `${name}: the air's loss as José picked it`).toBe(AIR_LOSS[name] ? 1 : 0);
+  expect(Object.keys(SHIPPED_EXPOSURE).length + KEEP_OLD_LAW.length + Object.values(PRESETS).filter((p) => p.sky_view).length).toBe(Object.keys(PRESETS).length);
+});
+
+// ---- a morph across the law: the dapples move straight, only the shade and sky follow exposure ---------------------------------
+test("beamExposure: exactly lerp with the law off at both ends; otherwise exposure × the law's factor moves linearly between the ends", () => {
+  const ends = [[0, 0, 26, 84.5], [1, 0, 26, 26], [1, 1, 26, 84.5], [0.3, 1, 12, 55]];
+  for (const [ca, cb, ea, eb] of ends) for (const cam of ["floor", "cloth", "enclosure"]) for (const w of [0, 0.25, 0.5, 0.9, 1]) {
+    const a = { ...DEFAULTS, sun_cosine: ca, sun_elevation_deg: ea, sun_azimuth_deg: 140, exposure: 2.44 };
+    const b = { ...DEFAULTS, sun_cosine: cb, sun_elevation_deg: eb, sun_azimuth_deg: 140, exposure: 5.566 };
+    const now = { ...a, sun_cosine: a.sun_cosine + (b.sun_cosine - a.sun_cosine) * w, sun_elevation_deg: ea + (eb - ea) * w };
+    const irr = (p) => 1 + (sunIncidence(cam, p.sun_elevation_deg, p.sun_azimuth_deg) - 1) * p.sun_cosine;
+    const e = beamExposure(cam, a, b, w, now);
+    if (ca === 0 && cb === 0) expect(e, `${cam} law off: plain lerp`).toBe(a.exposure + (b.exposure - a.exposure) * w);
+    else expect(e * irr(now)).toBeCloseTo(a.exposure * irr(a) + (b.exposure * irr(b) - a.exposure * irr(a)) * w, 12);
+  }
+  // cherry blossom → park 2, halfway: the separate lerps lit the dapples 18% over both ends; the product holds them where both ends have them
+  const cb = { ...DEFAULTS, ...PRESETS["cherry blossom"] }, p2 = { ...DEFAULTS, ...PRESETS["park 2"] }, mid = { ...cb, sun_cosine: 0.5 };
+  const I = sunIncidence("floor", 26, cb.sun_azimuth_deg);
+  expect(((cb.exposure + p2.exposure) / 2) * (1 + (I - 1) * 0.5) / p2.exposure).toBeGreaterThan(1.17);
+  expect(beamExposure("floor", cb, p2, 0.5, mid) * (1 + (I - 1) * 0.5)).toBeCloseTo((cb.exposure * I + p2.exposure) / 2, 12);
 });
 
 // ---- the fill: the leaves are lit by their own sin el, and S has to notice a live change --------------------------------------
@@ -175,12 +219,12 @@ function fillRig(over = {}) {
   return { f: makeFill(hub), params, fill, draws: () => draws, sun: () => calls.filter((c) => c[0] === "uniform3f" && c[1] === "sun").map((c) => c.slice(2)) };
 }
 
-test("fillSig notices sun_cosine: a change re-bakes the fill once, an unrelated key (exposure) does not, and the slot is the last of FILL_SIG_LEN", () => {
+test("fillSig notices sun_cosine (slot 14) and sun_extinction (slot 15, the last of FILL_SIG_LEN): a change re-bakes the fill once, an unrelated key (exposure) does not", () => {
   const r = fillRig();
   r.f.refreshFill();
   expect(r.fill.ready).toBe(true);
   expect(r.fill.sig.length, "the signature array has room for the slot").toBe(FILL_SIG_LEN);
-  expect(FILL_SIG_LEN, "slot 14 is sun_cosine, so the array holds 15").toBe(15);
+  expect(FILL_SIG_LEN, "slot 15 is sun_extinction, so the array holds 16").toBe(16);
   expect(r.fill.sig[14], "sun_cosine 0").toBe(0);
   const base = r.draws();
   r.f.refreshFill();
@@ -190,10 +234,13 @@ test("fillSig notices sun_cosine: a change re-bakes the fill once, an unrelated 
   r.params.sun_cosine = 1; r.f.refreshFill();
   expect(r.draws(), "sun_cosine 1: one bake").toBe(base + 1);
   expect(r.fill.sig[14]).toBe(1);
+  r.params.sun_extinction = 1; r.f.refreshFill();
+  expect(r.draws(), "sun_extinction 1: one more bake").toBe(base + 2);
+  expect(r.fill.sig[15]).toBe(1);
   r.f.refreshFill();
-  expect(r.draws(), "...once").toBe(base + 1);
+  expect(r.draws(), "...once").toBe(base + 2);
   r.params.sun_cosine = 0.4; r.f.refreshFill();
-  expect(r.draws(), "a tween step re-bakes too").toBe(base + 2);
+  expect(r.draws(), "a tween step re-bakes too").toBe(base + 3);
   expect(r.fill.sig[14]).toBe(0.4);
 });
 
@@ -310,4 +357,16 @@ test("the editor offers it: a row right after the azimuth, in a group the surfac
   expect(/noon/.test(help) && /dusk/.test(help), "the day brightens to noon and dims to dusk").toBe(true);
   expect(/exposure/.test(help) && /2\.3/.test(help), "a look that turns it on re-sits its exposure, about x2.3 at 26 degrees").toBe(true);
   expect(/sun you see/i.test(help), "the sun you see is unchanged").toBe(true);
+});
+
+// ---- the air's loss (sun_extinction, a prototype under review 2026-11-09): the peak transmittance atmosphere() divides out, against the zenith's --------
+test("sun_extinction: exactly 1 at 0 on every camera; at 1 the zenith is 1, a 12° floor with the cosine law is ×9.1 under a 70° one, and the seen disk takes none", () => {
+  const { beamExtinction, beamLoss, beamIrr } = MATH;
+  for (const cam of ["floor", "cloth", "enclosure", "sky"]) for (const el of ELEVS) expect(beamLoss(cam, { ...DEFAULTS, sun_elevation_deg: el }), `${cam} ${el}`).toBe(1);
+  expect(beamExtinction(90, 0.05)).toBe(1);
+  const p = (el) => ({ ...DEFAULTS, sun_cosine: 1, sun_extinction: 1, sun_elevation_deg: el, sky_turbidity: 0.05 });
+  expect(beamIrr("floor", p(70)) / beamIrr("floor", p(12))).toBeCloseTo(9.1, 1);
+  expect(beamIrr("floor", { ...p(70), sun_extinction: 0 }) / beamIrr("floor", { ...p(12), sun_extinction: 0 })).toBeCloseTo(4.5, 1);
+  for (const el of [5, 12, 26, 45]) expect(beamExtinction(el, 0.2), `haze takes more at ${el}°`).toBeLessThan(beamExtinction(el, 0.05));
+  expect(beamLoss("sky", p(12))).toBe(1);
 });

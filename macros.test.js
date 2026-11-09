@@ -7,7 +7,7 @@
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep, TWEEN_OFF_MS, TWEEN_SLOW_MS, TWEEN_BUDGET } from "./macros.js";
-import { DROP_EPS, TWEEN_STEP } from "./komorebi-math.js";
+import { DROP_EPS, TWEEN_STEP, beamExtinction } from "./komorebi-math.js";
 import { PRESETS } from "./presets.js";
 
 const MORPH = new Set(MORPH_KEYS), CANOPY = new Set(CANOPY_KEYS);
@@ -173,6 +173,15 @@ test("the bus routes set() through the mapping and the applier", () => {
   expect(calls[2][0]).toBe("canopy");
   expect(params.tree_count).toBe(1);
   expect(bus.get("grove")).toBe(0);
+});
+
+test("haze re-sits its exposure on a look carrying the cosine law, and writes the stop's own bytes on one without it", () => {
+  const drive = (look, t) => { const params = { ...DEFAULTS, ...PRESETS[look] }; createBus(() => params, (d) => Object.assign(params, d)).set("haze", t); return params.exposure; };
+  expect(drive("prism", 0)).toBe(2.44);                                        // the old law: afternoon 4's stop, untouched
+  expect(drive("prism", 1)).toBe(1.29);
+  const I = Math.sin(26 * Math.PI / 180), E = beamExtinction(26, PRESETS.montebello.sky_turbidity);   // montebello carries the law and the air's loss
+  expect(drive("montebello", 0)).toBeCloseTo(2.44 / (I * E), 12);               // montebello's own re-sit (7.116, rounded), not the dark 2.44
+  expect(drive("montebello", 1)).toBeCloseTo(1.29 / (I * E), 12);
 });
 
 // ---- the tween: a bus-side one-pole ease, never transitionTo -------------------------------------------------------------

@@ -9,7 +9,7 @@
 // shared internals (hub): makeBake, and makeFill — the sky fill on its own, so a
 // bundle whose looks never open canopy_fill can leave it out whole.
 // ============================================================================
-import { atmosphere, ballisticK, clamp, lerp, sunIncidence } from './komorebi-math.js';
+import { atmosphere, ballisticK, beamLoss, clamp, lerp, sunIncidence } from './komorebi-math.js';
 import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES } from './komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
@@ -22,7 +22,7 @@ const FEAT_LEAF_DIFFUSE = true;
 const edgeAreaOn = (params) => (FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);
 // How many slots the fill's signature has (fillSig, below). The engine sizes its `fill.sig` from this: a write past a Float64Array's end is dropped silently, and
 // the fill then re-bakes every frame, so the length is one number in one place.
-export const FILL_SIG_LEN = 15;
+export const FILL_SIG_LEN = 16;
 
 export function makeBake(hub){
   const { gl, params, motion, src, faith, sky, U, bakeFBO, faithFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
@@ -412,6 +412,7 @@ export function makeFill(hub){
     o[12]=hub.bulkOn() ? 1 : 0;              // wrap vs open + padded frame (the beam's bulk shift itself rides the sun elevation and azimuth above)
     o[13]=edgeAreaOn(params);                // the edge law changes what Tsky and S are made of, and no bake moves when it flips live
     o[14]=params.sun_cosine;                 // S is the leaves' scattered sun and the cosine law scales it, and no bake moves when it tweens
+    o[15]=params.sun_extinction;             // ...and so does the air's loss (the turbidity it depends on is o[2])
   }
   function fillStale(){
     if(!fill.ready) return true;
@@ -480,7 +481,7 @@ export function makeFill(hub){
     gl.uniform1i(u.open, wrap ? 0 : 1);
     // The leaves are near-horizontal (max_tilt), so the sunlight they take is the floor's cosine whatever surface reads S: the beam the leaves remove (scaled at transport) and the S they send down
     // (scaled here) then stay one split of one energy. T_sky is the skylight and keeps its level. GLSL_SKY_RAY is untouched — its input is scaled — so fill.test.js's reference still applies.
-    const sunIrr = lerp(1, sunIncidence('floor', params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1));   // held to 0..1 like the upload that scales the beam (komorebi-render.js), or the two halves of the split would disagree past 1
+    const sunIrr = lerp(1, sunIncidence('floor', params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1))*beamLoss('floor', params);   // held to 0..1 like the upload that scales the beam (komorebi-render.js), or the two halves of the split would disagree past 1
     gl.uniform3f(u.sun, _atm.sun[0]*sunIrr, _atm.sun[1]*sunIrr, _atm.sun[2]*sunIrr);
     gl.uniform1fv(u.heights, H);
     gl.uniform1i(u.layerCount, params.layer_count);

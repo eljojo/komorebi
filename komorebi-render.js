@@ -4,7 +4,7 @@
 // camera registry), the lateral-diffusion glow tier, and the layer-debug blit.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, atmosphere, ballisticK, clamp, lerp, smoothstep, sunDirection, sunIncidence } from './komorebi-math.js';
+import { DEG, atmosphere, ballisticK, beamLoss, clamp, lerp, smoothstep, sunDirection, sunIncidence } from './komorebi-math.js';
 import { MAX_LAYERS } from './komorebi-params.js';
 import { CAMERAS, GROUP_UPLOAD_KEYS } from './komorebi-transport.js';
 
@@ -142,7 +142,7 @@ export function makeRender(hub){
       gl.uniform3fv(u.eye, hub.trans.viewEye);
       gl.uniform1f(u.elevation, hub.trans.viewElevation);
       gl.uniform1f(u.skyWeight, hub.trans.viewSkyWeight);
-      const incidence=lerp(1,sunIncidence('floor',params.sun_elevation_deg,params.sun_azimuth_deg),clamp(params.sun_cosine,0,1));
+      const incidence=lerp(1,sunIncidence('floor',params.sun_elevation_deg,params.sun_azimuth_deg),clamp(params.sun_cosine,0,1))*beamLoss('floor',params);
       gl.uniform3f(u.surfaceSun,f.atm.sun[0]*incidence,f.atm.sun[1]*incidence,f.atm.sun[2]*incidence);
     },
     head: (u, f) => {
@@ -421,7 +421,8 @@ export function makeRender(hub){
       E: params.canopy_extent_m,
       shadowOpacity: hub.trans.active ? (hub.trans.shadowOpacity ?? 1) : 1,   // the lit-ground fade's, or what an interrupted one carries into the next route
       atm: atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight),
-      sunIrr: lerp(1, sunIncidence(cam, params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1)),   // the beam's cosine of incidence on THIS receiver (sun_cosine, §3.5); the sky view's is 1. Held to 0..1 like canopy_fill and vignette: past 1 the blend turns the sun colour negative
+      sunIrr: lerp(1, sunIncidence(cam, params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1))*beamLoss(cam, params),   // × the air's loss (sun_extinction), exactly 1 at 0
+        // the beam's cosine of incidence on THIS receiver (sun_cosine, §3.5); the sky view's is 1. Held to 0..1 like canopy_fill and vignette: past 1 the blend turns the sun colour negative
       wood: !faithfulOn() && params.branch_tau > 0 && occ.count > 0,   // read by the table upload and the penumbra alike, so they cannot disagree
       linearOut: linearOut ? 1 : 0,
     };

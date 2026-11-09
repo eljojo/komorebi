@@ -1,4 +1,4 @@
-import {DEG, TAU, cameraPose, leafClock, lerp, lerpAngle, smoothstep, turnBack} from './komorebi-math.js';
+import {DEG, TAU, beamExposure, cameraPose, leafClock, lerp, lerpAngle, smoothstep, turnBack} from './komorebi-math.js';
 import {CANOPY_MORPH_MAX, DEFAULTS, SEASON_KEYS} from './komorebi-params.js';
 import {litterAlbedo,litterAge,litterLanding} from './komorebi-litter.js';
 import {makeBake} from './komorebi-bake.js';
@@ -7,7 +7,7 @@ import {VS_SEASON_TRAVEL,FS_FAITH} from './komorebi-shaders.js';
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
 const CAMERA_KEYS=['view_extent_m','view_pitch_deg','view_yaw_deg','view_fov_deg','view_center_x','view_center_y'];
-const LOOK_KEYS=['canopy_fill','leaf_diffuse','leaf_wetness','ground_r','ground_g','ground_b','cloud_thickness','halo_angular_radius_deg','sky_turbidity'];
+const LOOK_KEYS=['canopy_fill','leaf_diffuse','leaf_wetness','ground_r','ground_g','ground_b','cloud_thickness','halo_angular_radius_deg','sky_turbidity','sun_cosine','sun_extinction','exposure'];
 // Re-season can recolour a leaf, but the flight route still requires the same authored summer tint.
 const SEASON_ROUTE_KEYS=new Set([...SEASON_KEYS.filter(k=>!['trans_r','trans_g','trans_b'].includes(k)),...CAMERA_KEYS,'drop_after_turn','litter','litter_age','litter_drift_m',
   ...LOOK_KEYS,'sample_count','bake_resolution','drift_phase','auto_quality','adaptive_motion','adaptive_idle_fps','show_source','show_layer','show_layer_index','tree_species']);
@@ -108,6 +108,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     if(!params.drift_auto)params.drift_phase=lerpAngle(a.params.drift_phase,b.params.drift_phase,w,TAU);
     // Use journey progress for the live look too: reversing must retain the displayed soil, weather and wetness.
     for(const k of LOOK_KEYS)params[k]=lerp(a.params[k],b.params[k],w);
+    params.exposure=beamExposure('floor',a.params,b.params,w,params);   // both ends stand on the floor (seasonTravelEligible)
     // A lone carpet keeps its authored age; two carpets carry their own endpoint reflectances below.
     params.litter=s.bothCarpets?1:q===1?0:a.params.litter;
     params.phenology=s.bothCarpets?lerp(a.params.phenology,b.params.phenology,w):a.params.phenology;
