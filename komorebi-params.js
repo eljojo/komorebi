@@ -34,7 +34,7 @@ const MORPH_KEYS = [
   'canopy_base_height_m','canopy_thickness_m','branch_tau','sky_scatter',   // layer heights + branch-shadow darkness + the sky view's foliage glow — read live, no rebuild
   // Wood stores radius and layer heights in CPU geometry as well as live uniforms. refreshWood keeps those
   // numbers aligned without regrowing the leaves; a faithful or sky bake refreshes when its wood changes.
-  'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','park_throw','trunk_radius_m','exposure','contrast',
+  'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','park_throw','trunk_radius_m','exposure','cloud_exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'vignette','vignette_shape',                                          // the edge fade (§4.7): two live shader uniforms in the post block every camera runs — the feather (also the gate) and the superellipse exponent — so they tween; a presentation device, not a fall tier
   'sun_cosine','sun_extinction',                                        // the sun's cosine law and the air's loss (§3.5): a live scale of the uploaded sun colour and a fill re-run (fillSig), no bake — so it tweens
@@ -299,6 +299,8 @@ const DEFAULTS = {
                                    // Physically real (leaves at different heights land at different places under a low sun) but off by default: with far_smear it streaks the floor
                                    // into sharp down-sun slashes, an artistic look to choose, never to land on (José, 2026-11-09, item 17). 0 = the park as it was, to the bit
   exposure: 1.3,
+  cloud_exposure: 0.0,             // a thicker cloud brightens the frame: exposure × (1 + this·cloud_thickness), as an eye opens up under a passing cloud.
+                                   // A look is authored at its own cloud with its exposure re-sat by it, so only a change of cloud shows. 0 = off
   contrast: 1.0,
   ambient_skylight: 0.5,
   // THE SKY FILL (spec §4.7, "What the shade is lit by"): the shade between the dapples is lit by the skylight that

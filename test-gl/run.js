@@ -381,7 +381,7 @@ const INVARIANTS = [
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   // the cloth and the tent used to read Tsky alone; with the beam gone dark they have to read S too, or the energy leaks
   { name: 'the diffuse light lands on the cloth (curtain)', preset: 'curtain 1', lit: [0.98, 1.10],   // measured under the old law, at curtain 1's old exposure
-    a: { canopy_fill: 1, leaf_diffuse: 0, sun_cosine: 0, sun_extinction: 0, exposure: 1.4 }, b: { canopy_fill: 1, leaf_diffuse: 0.95, sun_cosine: 0, sun_extinction: 0, exposure: 1.4 } },
+    a: { canopy_fill: 1, leaf_diffuse: 0, sun_cosine: 0, sun_extinction: 0, cloud_exposure: 0, exposure: 1.4 }, b: { canopy_fill: 1, leaf_diffuse: 0.95, sun_cosine: 0, sun_extinction: 0, cloud_exposure: 0, exposure: 1.4 } },
   { name: 'the diffuse light lands on the cloth (tent)', preset: 'tent 1', lit: [0.9, 1.3],
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   // A FAITHFUL LOOK SHOWS ITS REAL FRAME UNAIDED (§4.5). The cast pre-integrates the soft shadow over the source cloud, so the bake has to come after
@@ -413,12 +413,12 @@ const INVARIANTS = [
   // (the shared ray's signature moved) bakes the same shade.
   // (park 1 and curtain 1 were re-recorded once, from 6b57b555 / 7cad5bb5: the old hashes pinned the frame baked before its own source cloud. The new ones are the
   // rebaked frames — the "shows its real frame unaided" rows above hold the unaided frame equal to the re-baked one, so these cannot drift from it.)
-  { name: 'park 1 is the frame it was (faithful floor: wood texture 1x1, unread)', preset: 'park 1', a: { sun_cosine: 0, exposure: 2.44 }, pin: '75f18f24' },
+  { name: 'park 1 is the frame it was (faithful floor: wood texture 1x1, unread)', preset: 'park 1', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '75f18f24' },
   // curtain 1 became a velvet on 2026-11-09 (item 20): the row holds the laws at 0 on the cotton it was pinned on
-  { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', a: { sun_cosine: 0, sun_extinction: 0, exposure: 1.4, fabric_tt: 0.78, fabric_tint_r: 0.45, fabric_tint_g: 1, fabric_tint_b: 0.28, fold_depth: 0.38, velvet_sheen: 0.02 }, pin: '32ad83b8' },
+  { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', a: { sun_cosine: 0, sun_extinction: 0, cloud_exposure: 0, exposure: 1.4, fabric_tt: 0.78, fabric_tint_r: 0.45, fabric_tint_g: 1, fabric_tint_b: 0.28, fold_depth: 0.38, velvet_sheen: 0.02 }, pin: '32ad83b8' },
   // TODO revisit these layer-floor pins: untouched 14a97c2 also gives ea083587 / 8f0a8e8e on this SwiftShader host (2026-11-07); tint-cache renders differ by 0 pixels.
   { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'bdcffc3c' },
-  { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', a: { sun_cosine: 0, exposure: 2.44 }, pin: '13525cdd' },
+  { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '13525cdd' },
   // The ONE pin that moved, on purpose: it is a leaf_diffuse > 0 frame, and P0c-edge reads every texel there as a mixture of leaf and gap (§4.5), so the
   // frame P0c-sky pinned (eb960892: the shared ray's new signature, the slab) is not this one. Re-recorded from the engine after the change; what says it moved
   // the right way is not this hash but the soft-edge rows (SOFT EDGES), the fill and look-up checks, and the energy rows.
@@ -475,16 +475,16 @@ const INVARIANTS = [
   // (the law because its look is at aspect 1, leaf_variety because it ships at 0): the layer bake, the faithful cast and the carpet, each taken as a whole frame.
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give ca24284d on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'beech, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: 'cb958f0e' },
-  { name: 'beech, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'beech', leaf_aspect: 1, sun_cosine: 0, exposure: 2.44 }, pin: '5742e790' },
+  { name: 'beech, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'beech', leaf_aspect: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '5742e790' },
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 9668d2f8 on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, exposure: 2.44 }, pin: '894c1749' },
+  { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '894c1749' },
   // ...and the RECALIBRATED MAPLE (leaf diversity, 2026-10-09), pinned the same way at the end of the recalibration and before any leaf_variety edit: its own bits are new, so what leaf_variety must not move is these.
   // re-pinned 2026-11-09 on this host (macOS, SwiftShader) for the maple's curved base (item 8)
   { name: 'the recalibrated maple, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '21f30fcf' },
   // re-pinned 2026-11-09 on this host (macOS, SwiftShader) for the maple's curved base (item 8)
-  { name: 'the recalibrated maple, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1, sun_cosine: 0, exposure: 2.44 }, pin: 'cb25ef27' },
+  { name: 'the recalibrated maple, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: 'cb25ef27' },
   // re-pinned 2026-11-09 on this host (macOS, SwiftShader) for the maple's curved base (item 8)
-  { name: 'the recalibrated maple, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, exposure: 2.44 }, pin: '2711c9b7' },
+  { name: 'the recalibrated maple, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '2711c9b7' },
   // AREA IS CONSERVED, so the canopy keeps its fullness: the profile is the unit circle's area, so a maple at aspect 1 and 1/√aspect of the size has the leaf the ellipse had (the species
   // bundle's 0.103 = 0.13/√1.6; memories and afternoon 7 sit at 0.1 and 1.75, so 0.0756). The mean level of the frame stays within 5%.
   { name: 'a maple of the same leaf area keeps the canopy as full (layer path: memories)', preset: 'memories', lit: [0.95, 1.05],
@@ -613,13 +613,13 @@ const INVARIANTS = [
   // ...and a pin holds the other half, that 0 is the frame that existed before the law (a law that leaked in at 0 would scale both halves of a pair alike). The sky view, the floor and the cloth already carry pins above
   // (canopy 1-4, park 1, curtain 1, memories, afternoon 7); the enclosure had none. The hash is tent 1's smoke frame in the manifest of the last green run before this change.
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 42403a64 on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'tent 1 is the frame it was before sun_cosine (enclosure)', preset: 'tent 1', a: { sun_cosine: 0, exposure: 1.35 }, pin: '6f8597f7' },
+  { name: 'tent 1 is the frame it was before sun_cosine (enclosure)', preset: 'tent 1', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 1.35, fabric_nap: 0 }, pin: '6f8597f7' },
   // The law moves what it should. The floor (faithful path, 26 degrees: I is 0.438): the beam share falls x0.438 (measured in linear HDR on a fixed lit/shade pair: x0.436) and the skylight share holds, so the mean
   // level of the frame lands between 0.438 and 1: measured x0.814 (it is the mean of the ACES-mapped, gamma-encoded bytes, which moves far less than the linear beam does), the bound that ratio +-0.08. The cloth, the tent and the fall look with its fill and S open each differ...
-  { name: 'sun_cosine 1 dims the floor (faithful path)', preset: 'park 1', rebake: true, lit: [0.73, 0.89], a: { sun_cosine: 0, exposure: 2.44 }, b: { sun_cosine: 1, exposure: 2.44 } },
+  { name: 'sun_cosine 1 dims the floor (faithful path)', preset: 'park 1', rebake: true, lit: [0.73, 0.89], a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, b: { sun_cosine: 1, cloud_exposure: 0, exposure: 2.44 } },
   // ...but that mean is mostly lit floor, so it cannot tell a skylight that held from one that was scaled too (x0.794 if the ambient took the factor as well, against x0.814). A dense canopy can: most of its floor is
   // shade, so its mean is mostly the skylight's and only the beam share falls. Measured x0.768 (afternoon 7 pulled down to 26 degrees); a skylight scaled by 0.438 as well lands at x0.675, so the bound is that ratio +-0.05.
-  { name: 'sun_cosine 1 dims the beam and the skylight holds (dense canopy at 26 degrees, layer path)', preset: 'afternoon 7', lit: [0.72, 0.82], a: { sun_elevation_deg: 26, sun_cosine: 0, exposure: 2.44 }, b: { sun_elevation_deg: 26, sun_cosine: 1, exposure: 2.44 } },
+  { name: 'sun_cosine 1 dims the beam and the skylight holds (dense canopy at 26 degrees, layer path)', preset: 'afternoon 7', lit: [0.72, 0.82], a: { sun_elevation_deg: 26, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, b: { sun_elevation_deg: 26, sun_cosine: 1, cloud_exposure: 0, exposure: 2.44 } },
   { name: 'sun_cosine 1 moves the curtain', preset: 'curtain 1', differ: true, a: { sun_cosine: 0 }, b: { sun_cosine: 1 } },
   { name: 'sun_cosine 1 moves the tent', preset: 'tent 1', differ: true, a: { sun_cosine: 0 }, b: { sun_cosine: 1 } },
   { name: 'sun_cosine 1 moves a fall look (montebello: the fill and S open)', preset: 'montebello', rebake: true, differ: true, a: { sun_cosine: 0 }, b: { sun_cosine: 1 } },

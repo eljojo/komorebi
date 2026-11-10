@@ -117,6 +117,11 @@ function beamExtinction(hDeg, beta){
 const SEEN = new Set(['sky', 'rise', 'viewpoint']);
 const beamLoss = (camera, p) => SEEN.has(camera) ? 1 : lerp(1, beamExtinction(p.sun_elevation_deg, p.sky_turbidity), clamp(p.sun_extinction ?? 0, 0, 1));
 // The beam's factor on a receiver as the render applies it (komorebi-render.js): exactly 1 at sun_cosine 0 and sun_extinction 0.
+// The exposure the frame is shown at. With cloud_exposure up, a thicker cloud brightens the whole frame, as an eye or a camera opens up under a passing
+// cloud: exposure × (1 + cloud_exposure·cloud). A look is authored at its own cloud, its exposure re-sat to exposure/(1 + cloud), so it shows as it
+// always did there and brightens only as the cloud thickens past it. 0 is exposure itself.
+const cloudGain = (p) => p.cloud_exposure > 0 ? 1 + p.cloud_exposure*clamp(p.cloud_thickness, 0, 1) : 1;
+const shownExposure = (p) => p.cloud_exposure > 0 ? p.exposure*cloudGain(p) : p.exposure;
 const beamIrr = (camera, p) => lerp(1, sunIncidence(camera, p.sun_elevation_deg, p.sun_azimuth_deg), clamp(p.sun_cosine, 0, 1))*beamLoss(camera, p);
 // Exposure for a look between a and b at weight w, `now` holding the in-between sun and sun_cosine. Lerping exposure and the law
 // apart over-lights the dapples midway (+18% in linear light between a look re-sat for the law and one without it); morphing their
@@ -641,4 +646,4 @@ function vignetteMask(u, v, feather, shape, radius = 1) {
   return 1 - smoothstep(1 - feather, 1, d);
 }
 
-export { DEG, TAU, cameraPose, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, cameraPose, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

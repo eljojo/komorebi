@@ -23,7 +23,7 @@
 // macros.test.js holds these claims to the engine's own key classification.
 // ============================================================================
 
-import { TWEEN_STEP, beamIrr } from './komorebi-math.js';
+import { TWEEN_STEP, beamIrr, cloudGain } from './komorebi-math.js';
 import { cameraFor } from './komorebi-transport.js';
 
 const clamp01 = (t) => Math.min(1, Math.max(0, t));
@@ -248,7 +248,8 @@ export function tweenGateStep(state, cost, path, t0) {
 const sameDict = (a, b) => !!a && Object.keys(b).every((k) => a[k] === b[k]);
 // A stop's exposure is authored for the old law (afternoon 4 → 4b). On a look carrying the cosine law it is re-sat the way the look's own
 // exposure was (exposure / I), or haze would drop a re-sat look to the dark, law-on-at-old-exposure frame. With the law off I is exactly 1.
-const relit = (dict, p) => ('exposure' in dict ? { ...dict, exposure: dict.exposure / beamIrr(cameraFor(p), p) } : dict);
+// The same for cloud_exposure: a stop's exposure is what it shows at its own cloud, so it is divided by that cloud's gain.
+const relit = (dict, p) => ('exposure' in dict ? { ...dict, exposure: dict.exposure / (beamIrr(cameraFor(p), p)*cloudGain({ ...p, ...dict })) } : dict);
 export function createBus(getParams, apply) {
   const tweens = new Map();   // key -> { x, target, last }
   return {

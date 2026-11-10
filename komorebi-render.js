@@ -4,7 +4,7 @@
 // camera registry), the lateral-diffusion glow tier, and the layer-debug blit.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, atmosphere, ballisticK, beamLoss, clamp, lerp, smoothstep, sunDirection, sunIncidence } from './komorebi-math.js';
+import { DEG, atmosphere, ballisticK, beamLoss, clamp, lerp, smoothstep, sunDirection, sunIncidence, shownExposure } from './komorebi-math.js';
 import { MAX_LAYERS } from './komorebi-params.js';
 import { CAMERAS, GROUP_UPLOAD_KEYS } from './komorebi-transport.js';
 
@@ -114,7 +114,7 @@ export function makeRender(hub){
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, glowTex[0]); gl.uniform1i(U.glowMix.sharp, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, glowTex[2]); gl.uniform1i(U.glowMix.blur, 1);
     gl.uniform1f(U.glowMix.diffuse, clamp(params.glow_bleed, 0, 1)*(hub.trans.active && hub.trans.viewpoint ? hub.trans.viewSkyWeight : 1));
-    gl.uniform1f(U.glowMix.exposure, params.exposure);
+    gl.uniform1f(U.glowMix.exposure, shownExposure(params));
     gl.uniform1f(U.glowMix.contrast, params.contrast);
     gl.uniform1i(U.glowMix.tone, params.tone_map);
     gl.uniform3fv(U.glowMix.travelTone,hub.trans.travelTone??[0,0,0]);
@@ -399,7 +399,7 @@ export function makeRender(hub){
       // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
       gl.uniform1f(u.twilight, smoothstep(30, 4, params.sun_elevation_deg));
       gl.uniform1f(u.mesopic, params.mesopic_strength);
-      gl.uniform1f(u.exposure, params.exposure);
+      gl.uniform1f(u.exposure, shownExposure(params));   // cloud_exposure: a thicker cloud opens the exposure up
       gl.uniform1f(u.contrast, params.contrast);
       gl.uniform1i(u.tone, params.tone_map);
       gl.uniform3fv(u.travelTone,hub.trans.travelTone??[0,0,0]);

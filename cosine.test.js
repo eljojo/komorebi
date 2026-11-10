@@ -160,11 +160,11 @@ test("sun_cosine: 0 in DEFAULTS, MORPH class (a live uniform scale and a fill re
   for (const [name, f] of Object.entries(FEATURES)) expect(f.open({ ...DEFAULTS, sun_cosine: 1 }), `${name} is not opened by sun_cosine`).toBe(f.open({ ...DEFAULTS }));   // there is no GLSL to cut
 });
 
-// ---- which looks carry the law: José's picks on the 2026-11-09 sheet (test-gl/out/review/2026-11-09-item2a-sun-cosine) ------------
+// ---- which looks carry the law, and which keep the old one for their original contrast ------------------------------------------------
 // "i think in general I can work with "C" … i think these are the ones i want to keep with the "legacy" look: 17A, 13A, 14A, 15A, 16A, 6A, 5A, 4A, 3A, 1A".
 // C is the law with exposure re-sat to exposure/I (I the look's own incidence), rounded to the sheet's three places; the sky views take 1 and are not on it.
-// The air's loss (sun_extinction), from the 2026-11-09 sheet (test-gl/out/review/2026-11-09-item5-air-loss): "i like: p4b, y3b, y4b, l4c, l1b, l2b" — the curtains with
-// exposure held (L1B, L2B), montebello with it re-sat by 1/E on top of the cosine re-sit (L4C); every other look off.
+// The air's loss (sun_extinction): the curtains carry it with exposure held, montebello with exposure re-sat by 1/E on top of the cosine re-sit;
+// every other look is off.
 const AIR_LOSS = { "curtain 1": "held", "curtain 2": "held", montebello: "re-sat" };
 const KEEP_OLD_LAW = ["eclipse", "morning 2", "the void", "afternoon 5b", "prism", "park 2", "morning 1", "morning 3", "morning 3b", "memories"];
 const SHIPPED_EXPOSURE = {   // each C look's exposure before the law, the numerator of its re-sit
@@ -179,7 +179,7 @@ test("sun_cosine: the looks José picked as C carry the law at exposure/I; the o
     expect(p.sun_cosine, `${name} carries the law`).toBe(1);
     const I = sunIncidence(cameraFor(p), p.sun_elevation_deg, p.sun_azimuth_deg), E = MATH.beamExtinction(p.sun_elevation_deg, p.sky_turbidity);
     const want = AIR_LOSS[name] === "re-sat" ? r3(r3(SHIPPED_EXPOSURE[name] / I) / E) : r3(SHIPPED_EXPOSURE[name] / I);
-    expect(p.exposure, `${name}'s exposure is re-sat`).toBe(want);
+    expect(r3(MATH.shownExposure({ ...DEFAULTS, ...p })), `${name}'s exposure is re-sat (as shown, at its own cloud)`).toBe(want);
   }
   for (const [name, p] of Object.entries(PRESETS)) expect(p.sun_extinction ?? 0, `${name}: the air's loss as José picked it`).toBe(AIR_LOSS[name] ? 1 : 0);
   expect(Object.keys(SHIPPED_EXPOSURE).length + KEEP_OLD_LAW.length + Object.values(PRESETS).filter((p) => p.sky_view).length).toBe(Object.keys(PRESETS).length);
@@ -364,7 +364,7 @@ test("the editor offers it: a row right after the azimuth, in a group the surfac
   expect(/sun you see/i.test(help), "the sun you see is unchanged").toBe(true);
 });
 
-// ---- the air's loss (sun_extinction, a prototype under review 2026-11-09): the peak transmittance atmosphere() divides out, against the zenith's --------
+// ---- the air's loss (sun_extinction): the peak transmittance atmosphere() divides out, against the zenith's ---------------------------------
 test("sun_extinction: exactly 1 at 0 on every camera; at 1 the zenith is 1, a 12° floor with the cosine law is ×9.1 under a 70° one, and the seen disk takes none", () => {
   const { beamExtinction, beamLoss, beamIrr } = MATH;
   for (const cam of ["floor", "cloth", "enclosure", "sky"]) for (const el of ELEVS) expect(beamLoss(cam, { ...DEFAULTS, sun_elevation_deg: el }), `${cam} ${el}`).toBe(1);
@@ -374,4 +374,21 @@ test("sun_extinction: exactly 1 at 0 on every camera; at 1 the zenith is 1, a 12
   expect(beamIrr("floor", { ...p(70), sun_extinction: 0 }) / beamIrr("floor", { ...p(12), sun_extinction: 0 })).toBeCloseTo(4.5, 1);
   for (const el of [5, 12, 26, 45]) expect(beamExtinction(el, 0.2), `haze takes more at ${el}°`).toBeLessThan(beamExtinction(el, 0.05));
   expect(beamLoss("sky", p(12))).toBe(1);
+});
+
+// ---- exposure under cloud (cloud_exposure): a thicker cloud opens the exposure up; each look is re-sat at its own cloud ------------------------
+test("cloud_exposure: 0 is exposure itself; up, the frame shows exposure × (1 + cloud); every shipped look carries it, re-sat, and brightens only past its own cloud", () => {
+  const p = { ...DEFAULTS, exposure: 2, cloud_thickness: 0.4 };
+  expect(MATH.shownExposure(p), "off: the exposure itself").toBe(2);
+  expect(MATH.shownExposure({ ...p, cloud_exposure: 1 })).toBeCloseTo(2.8, 12);
+  expect(MATH.shownExposure({ ...p, cloud_exposure: 1, cloud_thickness: 3 }), "the cloud is held to 1").toBeCloseTo(4, 12);
+  expect(DEFAULTS.cloud_exposure, "off by default: a look saved without it keeps its exposure").toBe(0);
+  expect(MORPH_KEYS).toContain("cloud_exposure");
+  for (const [name, look] of Object.entries(PRESETS)) {
+    const L = { ...DEFAULTS, ...look };
+    expect(L.cloud_exposure, `${name} carries the coupling`).toBe(1);
+    const at = MATH.shownExposure(L), thicker = MATH.shownExposure({ ...L, cloud_thickness: Math.min(L.cloud_thickness + 0.3, 1) });
+    expect(Math.abs(at - L.exposure * (1 + Math.min(L.cloud_thickness, 1))), `${name}: re-sat by its own cloud`).toBeLessThan(1e-12);
+    if (L.cloud_thickness < 1) expect(thicker, `${name}: a thicker cloud opens it up`).toBeGreaterThan(at);
+  }
 });

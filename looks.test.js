@@ -4,9 +4,10 @@
 // would ship: "i like k3,k4,k6,k8" (P4: "not sure i see the difference").
 import { test, expect } from "bun:test";
 import { DEFAULTS } from "./komorebi.js";
+import { shownExposure } from "./komorebi-math.js";
 import { EXPERIMENTAL, PRESETS } from "./presets.js";
 
-test("park fall: drop_lag 0.05 (21-B, 2026-11-09), under the default 0.09", () => {
+test("park fall: drop_lag 0.05, under the default 0.09", () => {
   expect(PRESETS["park fall"].drop_lag).toBe(0.05);
   expect(DEFAULTS.drop_lag, "the default is the engine's").toBe(0.09);
   // the rest of the look is what it was
@@ -23,9 +24,9 @@ test("montebello keeps its camera: P3 without the drift (k1) left no carpet in f
 });
 
 // P6, P7 and P8 are montebello with their proposal's overrides; the yellow tree also takes the camera with the feet behind the eye, his k8 over k5 on the picks sheet.
-// montebello as these looks were picked from it. On 2026-11-09 montebello alone took the air's loss (sun_extinction, its exposure re-sat to 7.116);
-// the three looks built on it kept the cosine law only, at montebello's cosine re-sit.
-const SHEET_MONTEBELLO = { ...PRESETS.montebello, sun_extinction: 0, exposure: 5.566, tree_pigment_spread: 0, tree_clock_spread: 0 };   // montebello as the sheets had it: the air's loss and the per-tree colour (2026-11-09) are its own, not its children's
+// montebello as these looks were picked from it: before it took the air's loss, its per-tree colour and the cloud coupling, which the three looks
+// built on it do not carry.
+const SHEET_MONTEBELLO = { ...PRESETS.montebello, sun_extinction: 0, exposure: 5.566, tree_pigment_spread: 0, tree_clock_spread: 0, cloud_exposure: 0 };
 
 const NEW_LOOKS = {
   "forest floor": { base: PRESETS["afternoon 7"], over: { phenology: 0.8, turn_exposure: 1, anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, leaf_drop: 1, drop_after_turn: 1, drop_lag: 0, litter: 1, leaf_wetness: 0.5, tree_clock_spread: 0.05, tree_pigment_spread: 0.6 } },
@@ -43,7 +44,9 @@ test("the four new looks (P5-P8) follow park fall, in the sheet's order, and non
 for (const [name, { base, over }] of Object.entries(NEW_LOOKS)) {
   test(`'${name}' is its base look with its proposal's overrides, and not a key more`, () => {
     expect(PRESETS[name], "the look exists").toBeDefined();
-    expect(PRESETS[name]).toEqual({ ...DEFAULTS, ...base, ...over });
+    // exposure is re-sat by each look's own cloud (cloud_exposure), so what must match is the exposure it shows
+    const shown = (p) => { const q = { ...DEFAULTS, ...p }; const r = { ...q, exposure: Math.round(shownExposure(q) * 1e9) / 1e9 }; delete r.cloud_exposure; return r; };
+    expect(shown(PRESETS[name])).toEqual(shown({ ...base, ...over }));
     for (const [k, v] of Object.entries(over)) expect(PRESETS[name][k], `${name}.${k}`).toBe(v);
   });
 }
