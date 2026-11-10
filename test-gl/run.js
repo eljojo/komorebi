@@ -414,7 +414,8 @@ const INVARIANTS = [
   // (park 1 and curtain 1 were re-recorded once, from 6b57b555 / 7cad5bb5: the old hashes pinned the frame baked before its own source cloud. The new ones are the
   // rebaked frames — the "shows its real frame unaided" rows above hold the unaided frame equal to the re-baked one, so these cannot drift from it.)
   { name: 'park 1 is the frame it was (faithful floor: wood texture 1x1, unread)', preset: 'park 1', a: { sun_cosine: 0, exposure: 2.44 }, pin: '75f18f24' },
-  { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', a: { sun_cosine: 0, sun_extinction: 0, exposure: 1.4 }, pin: '32ad83b8' },
+  // curtain 1 became a velvet on 2026-11-09 (item 20): the row holds the laws at 0 on the cotton it was pinned on
+  { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', a: { sun_cosine: 0, sun_extinction: 0, exposure: 1.4, fabric_tt: 0.78, fabric_tint_r: 0.45, fabric_tint_g: 1, fabric_tint_b: 0.28, fold_depth: 0.38, velvet_sheen: 0.02 }, pin: '32ad83b8' },
   // TODO revisit these layer-floor pins: untouched 14a97c2 also gives ea083587 / 8f0a8e8e on this SwiftShader host (2026-11-07); tint-cache renders differ by 0 pixels.
   { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'bdcffc3c' },
   { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', a: { sun_cosine: 0, exposure: 2.44 }, pin: '13525cdd' },
@@ -478,11 +479,12 @@ const INVARIANTS = [
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 9668d2f8 on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, exposure: 2.44 }, pin: '894c1749' },
   // ...and the RECALIBRATED MAPLE (leaf diversity, 2026-10-09), pinned the same way at the end of the recalibration and before any leaf_variety edit: its own bits are new, so what leaf_variety must not move is these.
-  // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 3169421c on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'the recalibrated maple, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '319ba7ac' },
-  { name: 'the recalibrated maple, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1, sun_cosine: 0, exposure: 2.44 }, pin: '40f09381' },
-  // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give ff770410 on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'the recalibrated maple, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, exposure: 2.44 }, pin: '75db3e41' },
+  // re-pinned 2026-11-09 on this host (macOS, SwiftShader) for the maple's curved base (item 8)
+  { name: 'the recalibrated maple, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '21f30fcf' },
+  // re-pinned 2026-11-09 on this host (macOS, SwiftShader) for the maple's curved base (item 8)
+  { name: 'the recalibrated maple, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1, sun_cosine: 0, exposure: 2.44 }, pin: 'cb25ef27' },
+  // re-pinned 2026-11-09 on this host (macOS, SwiftShader) for the maple's curved base (item 8)
+  { name: 'the recalibrated maple, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, exposure: 2.44 }, pin: '2711c9b7' },
   // AREA IS CONSERVED, so the canopy keeps its fullness: the profile is the unit circle's area, so a maple at aspect 1 and 1/√aspect of the size has the leaf the ellipse had (the species
   // bundle's 0.103 = 0.13/√1.6; memories and afternoon 7 sit at 0.1 and 1.75, so 0.0756). The mean level of the frame stays within 5%.
   { name: 'a maple of the same leaf area keeps the canopy as full (layer path: memories)', preset: 'memories', lit: [0.95, 1.05],

@@ -289,7 +289,7 @@ export function makeBake(hub){
     gl.uniform1f(UF.flutterFreq, params.flutter_freq);
     gl.uniform2f(UF.sway, motion.sway[0], motion.sway[1]);
     gl.uniform1f(UF.hRef, Math.max(faith.hMax, 1e-3));   // height-scale the coherent sway → base anchored, crown sways (matches the wood)
-    bindLeafShape(gl, U.faith, hub.grove);   // the active grove's outline (unit 6), first, so the unit left active is the cluster geometry's (see bakeLayers)
+    bindLeafShape(gl, UF, hub.grove);   // the active grove's outline (unit 6), first, so the unit left active is the cluster geometry's (see bakeLayers)
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex);     gl.uniform1i(UF.clusterTex, 4);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(UF.clusterGeom, 5);
 
