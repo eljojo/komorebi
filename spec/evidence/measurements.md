@@ -702,6 +702,22 @@ No other motion measurement is recorded.
 
 - **Date:** not recorded.
 
+### The midpoint grove against the look loaded fresh
+
+- **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).
+- **On:** the harness, 320×180, `sample_count` 8, 256 textures and bakes, wind 0, `drift_amount` 0, automatic drift and quality off, a 1 s route (`test-gl/dissolve-landing.mjs`).
+- **Result:**
+
+  | route | before | after |
+  |---|---|---|
+  | `morning 3b → eclipse` (cloud dissolve) | max 141, mean 12.2 | max 0 |
+  | `afternoon 7 → park 1` (lit ground) | max 0 | max 0 |
+  | `park 1 → afternoon 7` (lit ground, camera settled) | max 0 | max 0 |
+
+  The grove was grown once, under the bloom, while the MORPH parameters were still tweening. `view_extent_m` is one of them and sizes a park crown (3.65 grown, between 3.1 and 4.2; `eclipse`'s crown cap is 3.91), and nothing regrew it. Regrowing alone made the landed frame equal the fresh one. The grove is now grown from the target's own value of every parameter it reads, while the picture keeps tweening.
+- **Still open, measured under the same conditions:** the shared-layer crossfade grows its incoming grove at the start from the outgoing MORPH values (`morning 1 → memories` with the target's `view_extent_m` at 2.5: max 206, mean 23.0; 27 shipped pairs differ in the crown this sets). A live morph that changes only `view_extent_m` never regrows (`afternoon 7` to itself at 2.5: max 170, mean 16.6). In still air with automatic drift off and `drift_amount` up, the layer bake made at the midpoint keeps that frame's `drift_phase` through landing (`morning 3b → eclipse` max 109, `park 1 → afternoon 7` max 140); one re-bake after landing makes each equal.
+- **Date:** 2026-11-10.
+
 ### A seasonal yaw
 
 `montebello`'s 208.5° to `park fall`'s −161.797° is a 10.30° turn by the shortest arc (arithmetic).

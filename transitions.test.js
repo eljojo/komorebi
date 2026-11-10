@@ -6,6 +6,7 @@ import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
 import { CANOPY_MORPH_MAX } from "./komorebi-params.js";
 import { makeTransitions } from "./komorebi-transitions.js";
+import { GROVE_READS } from "./komorebi-grove.js";
 import { PRESETS } from "./presets.js";
 import { makeSource } from "./komorebi-source.js";
 import { DEG, clamp, lerp, turnBack } from "./komorebi-math.js";
@@ -83,7 +84,10 @@ function transitionRig(from) {
     params, trans: { dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
     faithfulOn: () => params.faithful_canopy && (params.receiver | 0) !== 2 && !params.sky_view,
     warnCut: noop, regenSource: noop, resetPerf: noop, bake: () => bakes.push({ ...params }), regenCanopy: noop,
-    rebuildAll: () => swaps.push({ ...params }), motionActive: () => false,
+    // A rebuild given a look grows the grove from that look's values for every key the grove reads (the engine's rebuildAll),
+    // so a swap records what the grove is grown from.
+    rebuildAll: (look) => swaps.push({ ...params, ...(look ? Object.fromEntries(GROVE_READS.map((k) => [k, look[k]])) : {}) }),
+    motionActive: () => false,
   };
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
@@ -168,6 +172,23 @@ test('topology swaps outside the shared layer bake retain their cloud cover',()=
     for(let i=0;i<60;i++)r.tickTransition(1/60);
     expect(r.hub.trans.bloom).toBeGreaterThan(0);
   }
+});
+
+// The cloud dissolve regrows the grove once, at the midpoint, while the MORPH keys are still mid-tween. view_extent_m is one of
+// them and sizes a park crown, so a grove grown from the tweening value would land as neither look's grove.
+test('morning 3b → eclipse: the grove grown under the bloom is the target\'s, while the camera keeps tweening', () => {
+  const from = PRESETS['morning 3b'], to = PRESETS.eclipse, r = transitionRig(from);
+  expect(from.view_extent_m).not.toBe(to.view_extent_m);
+  r.transitionTo(to);
+  expect(r.hub.trans.structDiff && !r.hub.trans.crossfade && !r.hub.trans.backgroundFade, 'takes the cloud dissolve').toBe(true);
+  while (r.hub.trans.active && !r.swaps.length) r.tickTransition(1 / 60);
+  expect(r.swaps).toHaveLength(1);
+  for (const k of GROVE_READS) expect(r.swaps[0][k], `${k} when the grove is grown`).toBe(to[k]);
+  expect(r.params.view_extent_m, 'the picture keeps its tween').toBeGreaterThan(from.view_extent_m);
+  expect(r.params.view_extent_m).toBeLessThan(to.view_extent_m);
+  while (r.hub.trans.active) r.tickTransition(1 / 60);
+  expect(r.swaps).toHaveLength(1);
+  expect(r.params).toEqual(to);
 });
 
 test('fall memories → look up lifts the actual litter without a midpoint swap',()=>{

@@ -5,7 +5,7 @@ import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
-import { makeGrove, seasonKey, densityEligible, densityCount } from './komorebi-grove.js';
+import { makeGrove, seasonKey, densityEligible, densityCount, GROVE_READS } from './komorebi-grove.js';
 import { makeBake, makeFill, NO_FILL, FILL_SIG_LEN } from './komorebi-bake.js';
 import { makeLitter, newLitterState, NO_LITTER } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
@@ -562,7 +562,18 @@ function createEngine(canvas, opts, driven=false){
   // The cloud is cut BEFORE the bake: the faithful cast pre-integrates its soft shadow over the source's samples (§4.5), so a bake made first casts
   // against whatever cloud came before — empty on a born engine (a dark frame), the previous look's after setParams — and with still air nothing re-bakes it.
   // regenSource reads only params, perf and the transition's bloom; nothing the textures or the grove set up.
-  function rebuildAll(){ rebuildTextures(); regenCanopy(); regenSource(); bake(); }
+  // Given a look, the grove is grown from that look's value of every key it reads and the live params are put straight back: a
+  // route's hidden midpoint grows the grove it lands on while the MORPH keys the grove also reads (the view extent sizes a park
+  // crown) are still tweening for the picture. Wood radius and heights stay live: the bake's refreshWood re-reads them.
+  function rebuildAll(look){
+    rebuildTextures();
+    if(look){
+      const saved = {};
+      for(const k of GROVE_READS){ saved[k] = params[k]; params[k] = look[k]; }
+      try { regenCanopy(); } finally { for(const k of GROVE_READS) params[k] = saved[k]; }
+    } else regenCanopy();
+    regenSource(); bake();
+  }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
   // The season axis (§4.5 "Re-seasoning"): a change to the season set alone is re-run over the grove's cached leaves; anything else the grove reads, or a grove the cache
   // does not describe, regrows (with the cache once the structure holds still, so the NEXT one is the fast one). Only a season-only grove morph may re-season during a

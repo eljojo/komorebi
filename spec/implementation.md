@@ -272,8 +272,8 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 
 | Route | Module | Unit | Harness |
 |---|---|---|---|
-| Live morph, grove morph, shared-layer crossfade, capped bloom | `komorebi-transitions.js` | `transitions.test.js` (routing; through the real sampler) | transition-routing suite in the pixel harness (each tier driven to completion) |
-| Floor-to-floor fade through the lit ground | `komorebi-transitions.js` | `transitions.test.js` | routing suite |
+| Live morph, grove morph, shared-layer crossfade, capped bloom | `komorebi-transitions.js` | `transitions.test.js` (routing; through the real sampler) | transition-routing suite in the pixel harness (each tier driven to completion); `test-gl/dissolve-landing.mjs` (the cloud dissolve's landed frame against the target loaded fresh) |
+| Floor-to-floor fade through the lit ground | `komorebi-transitions.js` | `transitions.test.js` | routing suite; `test-gl/dissolve-landing.mjs` (landed against fresh, both directions) |
 | Faithful scene dissolve | `komorebi-scene-fade.js` | not recorded | routing suite |
 | Viewpoint sky↔floor | `komorebi-transitions.js`, `komorebi-transport.js` (fifth camera) | `viewpoint.test.js` | `test-gl/viewpoint.mjs` |
 | Leaf travel faithful↔layer | `komorebi-leaf-travel.js` | `leaf-travel.test.js` (correspondence, area) | `test-gl/leaf-travel.mjs` |

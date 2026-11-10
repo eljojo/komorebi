@@ -304,7 +304,7 @@ export function makeTransitions(hub){
       trans.swapped = true;
       if(trans.structDiff){
         for(const k in DEFAULTS) if(!MORPH_SET.has(k)) params[k] = trans.to[k];
-        hub.rebuildAll(); rebuilt = true;                      // regrow grove + textures + source + bake, all at once
+        hub.rebuildAll(trans.to); rebuilt = true;            // regrow grove + textures + source + bake, all at once; the grove is the target's own
       }
     }
     if(!rebuilt){
