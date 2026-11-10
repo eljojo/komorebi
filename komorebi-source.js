@@ -4,7 +4,7 @@
 // the bulk shadow offset (§4.8), the ellipse projection (§3.5/§4.6) and the
 // per-layer heights. A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, clamp, lerp, lensArea } from './komorebi-math.js';
+import { DEG, clamp, lerp } from './komorebi-math.js';
 import { MAX_LAYERS, MAX_SAMPLES, SKY_SUN_GAIN } from './komorebi-params.js';
 
 const EDITOR = (typeof KOMOREBI_EDITOR !== "undefined") ? KOMOREBI_EDITOR : true;
@@ -39,27 +39,22 @@ export function makeSource(hub){
     const moonR = params.eclipse ? coreR*1.0 : 0, moonD = params.eclipse ? coreR*(1.3-params.eclipse_amount) : 0;
     if(params.eclipse){
       for(const p of pts){ if(Math.hypot(p[0]-moonD, p[1])<moonR) p[2]=0; }
-      let s=0; for(const p of pts) s+=p[2];
-      if(s>0) for(const p of pts) p[2]/=s;     // renormalize (keep shape visible)
+      // No renormalisation: the floor dims by the share the moon covers, as a real eclipse does, and each crescent stays as bright per area as the
+      // clear sun's disc (José chose this, 2026-11-09, item 33-B). To bring back the old look, the crescents at the clear sun's total, renormalise here:
+      //   let s=0; for(const p of pts) s+=p[2]; if(s>0) for(const p of pts) p[2]/=s;
+      // and divide the seen source's Lcore/Lhalo below by the analytic uncovered share again (see there).
     }
     // THE SEEN SOURCE (§4.9, sky view): the same distribution these samples approximate, expressed as RADIANCE — the
     // core disk and the halo annulus, each carrying its post-cloud weight over its own solid angle. Derived HERE, from
     // the very numbers the sampler just used, so the sun you look at and the dapples it throws cannot drift apart:
     // raise cloud_thickness and the disk drains into the aureole by exactly the amount the dapples soften. Absolute
     // scale is authored — see SKY_SUN_GAIN.
-    // The eclipse renormalization is ANALYTIC (circle-circle overlap) rather than the discrete sum just used above,
-    // and deliberately so: the loop's sum is a 32-sample ESTIMATE of the energy the moon removes, and reusing it
-    // would bake that estimate's error into the visible source. Integrating the field below against the true
-    // overlap areas gives back exactly 1 — the same total the renormalized weights carry. What is left over, the gap
-    // between the two core:halo splits, is the SAMPLER's own discretization and belongs to the sampler.
+    // The eclipse's seen source is the uncovered disc at its own radiance: the moon removes area, not brightness (33-B, 2026-11-09). The renormalised
+    // version divided Lcore/Lhalo by `live`, the analytic share left uncovered (circle-circle overlap via lensArea); `git show 8d75e3b:komorebi-source.js` has it.
     const aCore = Math.PI*coreR*coreR, aHalo = Math.max(Math.PI*(haloR*haloR - coreR*coreR), 1e-12);
-    const eatCore = lensArea(coreR, moonR, moonD);                     // moon ∩ core disk
-    const eatHalo = lensArea(haloR, moonR, moonD) - eatCore;           // moon ∩ halo annulus = (moon ∩ whole source) − (moon ∩ core)
-    const liveCore = Wcore*(1 - eatCore/aCore), liveHalo = Whalo*(1 - eatHalo/aHalo);
-    const live = Math.max(liveCore + liveHalo, 1e-9);                  // 1 with no eclipse, so this whole block is inert then
     src.coreR = coreR; src.haloR = haloR; src.moonD = moonD; src.moonR = moonR;
-    src.Lcore = SKY_SUN_GAIN * (Wcore/live) / aCore;
-    src.Lhalo = SKY_SUN_GAIN * (Whalo/live) / aHalo;
+    src.Lcore = SKY_SUN_GAIN * Wcore / aCore;                          // the uncovered surface is as bright as ever; the eclipse removes area, not radiance (33-B)
+    src.Lhalo = SKY_SUN_GAIN * Whalo / aHalo;
     const flat=new Float32Array(pts.length*3);
     let mr=1e-9, mw=1e-9;
     pts.forEach((p,i)=>{ flat[i*3]=p[0]; flat[i*3+1]=p[1]; flat[i*3+2]=p[2];
