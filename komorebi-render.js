@@ -268,6 +268,7 @@ export function makeRender(hub){
       gl.uniform1f(u.tt, params.fabric_tt);
       gl.uniform3f(u.fabricTint, params.fabric_tint_r, params.fabric_tint_g, params.fabric_tint_b);
       gl.uniform1f(u.foldDepth, params.fold_depth);
+      gl.uniform1f(u.nap, params.fabric_nap);
       gl.uniform1f(u.foldScale, params.fold_scale);
       gl.uniform1f(u.foldCoarsen, params.fold_coarsen);
       // fold WARP (§4.9): the pleats' out-of-plane displacement in metres — GEOMETRY, feeding transport's read, where

@@ -43,7 +43,7 @@ const MORPH_KEYS = [
   'leaf_diffuse',                                                       // a leaf is not a window (§4.5): k = −ln(1−d) is a live uniform on both paths (the layer tap reads it, the faithful cast re-bakes on it), so it tweens — except across 0: the authored scatter proxy (sky_scatter, fill_scatter) is dropped the moment k > 0, so a tween out of 0 snaps that term off (counting both would count the light twice, §4.9)
   'ground_r','ground_g','ground_b',                                     // ground albedo (floor reflectance) — live look uniform, tweens in transitions
   'fabric_tt','fabric_tint_r','fabric_tint_g','fabric_tint_b',          // the receiver's fabric (handoff): brightness Tt + moss dye hue — continuous, tween live (the `receiver` gate itself is a scene-mode flag; see MODE_KEYS)
-  'cloth_distance_m','fold_depth','fold_scale','fold_coarsen','fold_warp','velvet_sheen','fabric_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
+  'cloth_distance_m','fold_depth','fabric_nap','fold_scale','fold_coarsen','fold_warp','velvet_sheen','fabric_scatter',   // curtain plane position + drape/velvet (shading) + the pleat GEOMETRY warp + the forward-scatter split — continuous live look uniforms (only read in curtain mode)
   'tent_ridge_h_m','tent_half_w_m','tent_crown_w_m','tent_shoulder_h_m','tent_shoulder_w_m','tent_len_m','tent_end_lean','tent_end_apex_h_m','tent_hip_rake','tent_eye_h_m','tent_fade','tent_seam','tent_mesh',   // the ENCLOSURE receiver's polytope (§4.9): every one is a live shader uniform read per pixel, so they tween — reshaping the tent around the viewer needs no rebuild (the `receiver` gate that selects it is the scene-mode flag)
   'glow_bleed','glow_bleed_m',                                          // lateral-diffusion glow (§4.9): the sharp/blurred split + its cloth-metre radius. Continuous, so they tween — but the split crossing 0 adds/drops the HDR passes mid-tween, which is a pass-count change, not a look pop
   'mullion_tau','mullion_pitch_m','mullion_bar_m','mullion_depth_m',    // window mullion grid (§4.9): analytic cloth-space occluder — continuous live uniforms, tau 0 = off
@@ -244,6 +244,8 @@ const DEFAULTS = {
   fabric_tint_r: 0.35, fabric_tint_g: 1.0, fabric_tint_b: 0.30,      // moss dye HUE (unit-peak; passes green ~550nm, absorbs red/blue — the chlorophyll-twin)
   cloth_distance_m: 0.0,           // curtain plane world-Y (its distance behind the tree); with the sun angle, sets where the tree's shadow lands on the cloth (§4.9)
   fold_depth: 0.0,                 // curtain drape: pleat SHADING — authored pile thickness on a flat plane (0 = flat cloth, up = deep velvet pleats); the geometry is fold_warp
+  fabric_nap: 0.0,                 // the fabric's fine grain, added to the pile's own (±0.04·min(fold_depth,1)): the amplitude of a fine vertical ripple in the cloth's
+                                   // transmission, so a taut cloth with no pile (the tent's nylon) can still show a grain. 0 = the pile's alone; 0.04 is a clear grain, 0.08 pinstripes
   fold_scale: 2.5,                 // curtain drape: pleat frequency (how many pleats across the cloth)
   fold_coarsen: 0.25,              // curtain drape: how much the pleats widen toward the hem (heavy fabric, λ∝√depth)
   fold_warp: 0.0,                  // pleat GEOMETRY (§4.9): metres the pleat bulges out of the cloth plane, which BENDS the arriving

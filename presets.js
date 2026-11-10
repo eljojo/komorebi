@@ -814,6 +814,7 @@ export const PRESETS = {
     // darker AND crisper — which is the delineation the smooth arch shading took away when the shoulder crease went.
     // The hem line itself is drawn by the seam knob, because the two bands are now separate panel groups.
     "tent_mesh": 0.6,
+    "fabric_nap": 0.04,   // a fine grain on the nylon: radial lines toward the far end, fine vertical ones on the lit end wall
     // LATERAL DIFFUSION (§4.9), the tier this look motivates: the wrap above softens each pixel's own fold, but only
     // this bleeds a hot dapple's glow ACROSS its cast-shadow edge — the reference's spotlight-versus-haze contrast.
     // The one look that opts into the expensive rung; 8 cm of bleed is about right for thin nylon. Both taste calls.

@@ -366,6 +366,7 @@ const GLSL_T_WINDOW_APPLY = `    // The window grid attenuates the WHOLE landed 
 // curtain and on a tent stood around the viewer. ----
 const GLSL_T_FABRIC_DECLS = `uniform float uTt;                // curtain total throughput Tt∈[0,1] — carries BRIGHTNESS (hue is uFabricTint)
 uniform vec3  uFabricTint;        // moss dye — HUE only; normalized to unit peak in-shader so it can't smuggle brightness past Tt
+uniform float uNap;               // the fabric's own nap (fabric_nap): fine grain added to the pile's, so a thin cloth can carry one too
 uniform float uFoldDepth;         // curtain drape: pleat SHADING — authored pile thickness on a flat plane (0 = flat cloth, no folds); displacement is uFoldWarp
 uniform float uFoldScale;         // curtain drape: pleat frequency (pleats per metre near the top)
 uniform float uFoldCoarsen;       // curtain drape: how much the pleats widen toward the hem (heavy fabric)
@@ -452,7 +453,7 @@ vec3 velvetCloth(vec2 cloth, vec3 fold, vec3 body, vec3 sheenCol, float scatter)
   // fine pile grain, TRUE-vertical (varies across x like the pleats). Amplitude rides the pile thickness knob:
   // grain is a property of PILE, so a thin taut fabric (tent nylon, fold_depth→0) is perfectly smooth — any fixed
   // grain on a bright near-white cloth reads as printed pinstripes, not fibre. ±4% at full pile.
-  float napAmp = 0.04 * min(uFoldDepth, 1.0);
+  float napAmp = 0.04 * min(uFoldDepth, 1.0) + uNap;                    // + the fabric's own nap: a taut nylon has no pile, but can have a grain
   float nap = (1.0 - napAmp) + napAmp*sin(6.2831853 * FOLD_NAP*uFoldScale * cloth.x);
   vec3 sheen = sheenCol * (uSheen * ridge * ridge);                      // soft pale glow on the ridges only
   return body * mix(band, bandSoft, scatter) * nap + sheen;
@@ -1083,7 +1084,7 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
                                                       travelCast:'uTravelCast',travelOrigin:'uTravelOrigin',travelExtent:'uTravelExtent',travelWeight:'uTravelWeight' } },
   cloth:     { decls: GLSL_T_CLOTH_DECLS,     locs: { viewExtent:'uViewExtent', clothY:'uClothY' } },
   fabric:    { decls: GLSL_T_FABRIC_DECLS,    locs: { tt:'uTt', fabricTint:'uFabricTint', scatter:'uScatter', sheen:'uSheen',
-                                                      foldDepth:'uFoldDepth', foldScale:'uFoldScale', foldCoarsen:'uFoldCoarsen', foldWarp:'uFoldWarp' } },
+                                                      foldDepth:'uFoldDepth', nap:'uNap', foldScale:'uFoldScale', foldCoarsen:'uFoldCoarsen', foldWarp:'uFoldWarp' } },
   fold:      { decls: GLSL_T_FOLD_DECLS },
   warp:      { decls: GLSL_T_WARP_DECLS },
   window:    { decls: GLSL_T_WINDOW_DECLS,    locs: { mullion:'uMullion', mullPenumbra:'uMullPenumbra', window:'uWindow', windowWall:'uWindowWall', windowOpacity:'uWindowOpacity' } },

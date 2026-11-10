@@ -268,6 +268,7 @@ const PANEL = [
   ['s','fabric_tint_b','moss B',0,1,0.01,''],
   ['s','cloth_distance_m','cloth dist',-20,20,0.1,''],
   ['s','fold_depth','drape',0,2,0.01,''],
+  ['s','fabric_nap','grain',0,0.1,0.005,''],
   ['s','fold_scale','pleats',0.3,12,0.1,''],
   ['s','fold_coarsen','pleat coarsen',0,2,0.02,''],
   ['s','fold_warp','pleat depth (m)',0,0.3,0.005,''],   // GEOMETRY (§4.9): displaces the cloth, so the cast bends — 'drape' above only shades it
@@ -371,7 +372,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
   far_smear:'floor', park_throw:'floor', ground_r:'floor', ground_g:'floor', ground_b:'floor',    // an albedo needs a floor to reflect off
   cloth_distance_m:'cloth',
   fabric_tt:'fabric', fabric_tint_r:'fabric', fabric_tint_g:'fabric', fabric_tint_b:'fabric',
-  fold_depth:'fabric', fold_scale:'fabric', fold_coarsen:'fabric', fold_warp:'fabric',
+  fold_depth:'fabric', fabric_nap:'fabric', fold_scale:'fabric', fold_coarsen:'fabric', fold_warp:'fabric',
   velvet_sheen:'fabric', fabric_scatter:'fabric',
   mullion_tau:'window', mullion_pitch_m:'window', mullion_bar_m:'window', mullion_depth_m:'window',
   window_w_m:'window', window_h_m:'window', window_cx_m:'window', window_cy_m:'window', window_wall:'window',
@@ -771,6 +772,7 @@ const TIPS = {
   fabric_tint_g:"<b>How much GREEN the curtain dye passes.</b> High for moss velvet — green is what leaks through, so the body of the curtain glows green-gold against the sunset.",
   fabric_tint_b:"<b>How much BLUE the curtain dye passes.</b> Low for moss. Nudge it for a cooler or warmer green.",
   cloth_distance_m:"<b>How far the curtain hangs from the tree.</b> The curtain is a standing wall; this slides it nearer or further along the ground, which — together with the sun's angle — sets where the tree's shadow lands on the cloth. Nudge it (with the sun angle and the pan) to frame the shadow on the curtain.",
+  fabric_nap:"<b>The cloth's fine grain.</b> A fine vertical ripple in how much light the fabric lets through, on top of the pile's own. 0 = only the pile's (none on a taut nylon); 0.04 a clear grain; 0.08 reads as printed pinstripes.",
   fold_depth:"<b>How draped the curtain is.</b> 0 = a flat sheet; up = the cloth hangs in deep vertical pleats. The pleats darken where the fabric turns edge-on (so more velvet to shine through) — the bright/dark folds of a real hanging curtain. This knob only <i>shades</i> the folds, though — <i>pleat depth</i> below is the one that pushes the cloth out into the room and bends the shadow over it.",
   fold_scale:"<b>How many pleats.</b> Low = a few broad waves; high = many tight gathers. Like choosing how full the curtain is bunched on its rod.",
   fold_warp:"<b>How far the pleats stand out of the cloth — and so how much the shadow bends over them.</b> The two fold knobs are different things and it's worth knowing which is which: <i>drape</i> only paints the folds on (dark where the cloth turns edge-on), while this one actually pushes the fabric out toward the room. That matters because a pleat sticking out catches the light a little earlier than the flat cloth beside it, so the leaf shadows and the window bars S-bend as they cross each fold instead of running dead straight over a picture of one. 0 = a flat sheet; a few centimetres is a real curtain.",
