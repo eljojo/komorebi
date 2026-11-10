@@ -382,11 +382,14 @@ test("ON (layer and faithful): the same grove but for each leaf's size and its r
       const row = geno[S0.nTree > 0 ? hier.twigs[j].tree : 0] * V + LEAF.leafColumn(rank[i], LEAF.leafJitter(seed, j, k)), s = kappa * m(rank[i]);
       expect(hier.leafRow[j * nLeaf + k], `${tag} leaf ${j}/${k}: its row`).toBe(row);
       cols.add(row % V); genos.add(Math.floor(row / V)); leaves++;
-      // (c) the packing the VS reads: j + row/128 in both buffers — the cluster, the rounded cluster and the row all recoverable
+      // (c) the packing the VS reads: j + (first row + 0.1 + 0.8·blend)/128 in both buffers — the cluster, the rounded cluster, the first row and the blend all recoverable
+      const cf = LEAF.leafColumnF(rank[i], LEAF.leafJitter(seed, j, k)), c0 = Math.min(Math.floor(cf), V - 1), bl = c0 < V - 1 ? cf - c0 : 0, r0 = row - (row % V) + c0;
+      expect(Math.floor(cf + 0.5), `${tag} leaf ${j}/${k}: the nearest column is the row's`).toBe(row % V);
       const wL = on.layers[l][at + 11], wF = on.faithLeaves[18 * i + 11];
       for (const w of [wL, wF]) {
-        expect(w, `${tag} leaf ${j}/${k}`).toBe(Math.fround(j + row / 128));
-        expect(Math.floor(w)).toBe(j); expect(Math.floor(w + 0.5)).toBe(j); expect(Math.floor((w - j) * 128 + 0.5)).toBe(row);
+        expect(w, `${tag} leaf ${j}/${k}`).toBe(Math.fround(j + (r0 + 0.1 + 0.8 * bl) / 128));
+        expect(Math.floor(w)).toBe(j); expect(Math.floor(w + 0.5)).toBe(j); expect(Math.floor((w - j) * 128)).toBe(r0);
+        expect(Math.abs(((w - j) * 128 - r0 - 0.1) / 0.8 - bl), `${tag} leaf ${j}/${k}: the blend, to the float's half-ulp at j`).toBeLessThanOrEqual((j >= 1 ? 2 ** (Math.floor(Math.log2(j)) - 24) : 2 ** -24) * 128 / 0.8 + 1e-9);
       }
       // (b), (e) A === B0, A_v/A_0 = κ·m(u) — in doubles from the records, and to a float32 in the buffers
       const a0 = S0.rec[o + 3], b0 = S0.rec[o + 4], av = S1.rec[o + 3], bv = S1.rec[o + 4];
@@ -430,7 +433,8 @@ test("a marginal tree hangs in its own genotype: at tree_count 2.4 every leaf of
       expect(Math.floor(row / V), `${tag} leaf ${j}/${k} on tree ${tree}: its family is treeGenotype's`).toBe(math.treeGenotype(seed, tree, G));
       for (const w of [R.layers[S.rec[o + 9]][S.rec[o + 10] + 11], R.faithLeaves[18 * i + 11]]) {
         expect(Number.isFinite(w), `${tag} leaf ${j}/${k}: the cluster id is a number`).toBe(true);
-        expect(w).toBe(Math.fround(j + row / 128));
+        expect(Math.floor((w - j) * 128 / V), `${tag} leaf ${j}/${k}: the packed row is in its family`).toBe(Math.floor(row / V));
+        expect(Math.floor(w)).toBe(j);
       }
     }
     expect(marginal, `${tag}: the marginal tree hangs leaves`).toBeGreaterThan(50);

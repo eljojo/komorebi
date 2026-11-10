@@ -37,7 +37,7 @@ const FEAT_EXPOSURE = true;
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
-import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
+import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafColumnF, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
 
 // Every param buildGrove reads besides the season set, and so the whole of `season.key` (faithful_canopy and receiver reach it through faithfulOn(), which the key carries
 // as the boolean it is). Held against a grep of this file in reseason.test.js.
@@ -456,7 +456,11 @@ export function makeGrove(hub){
         const kappa = S1 > 0 ? Math.sqrt(S0/S1) : 1;
         for(let i=0;i<n;i++){
           const o = REC*i, j = rec[o+4], k = rec[o+5], u = rank[i], d = layerData[rec[o+7]], li = rec[o+8], fi = rec[o+9];
-          const row = geno[twigs[j].tree]*VARIETY_COLUMNS + leafColumn(u, leafJitter(params.seed, j, k)), s = kappa*mOf(u), cid = j + row/VARIETY_ID_FRAC;
+          const h = leafJitter(params.seed, j, k), row = geno[twigs[j].tree]*VARIETY_COLUMNS + leafColumn(u, h), s = kappa*mOf(u);
+          // the outline rides the id as its first column plus the blend toward the next, packed into 0.1..0.9 of a row so a float's error never crosses a row (the VS reads it raw, leafQ blends):
+          // a float32's half-ulp stays under the 0.1/128 margin for a cluster id under 16384, and costs the blend under 0.08 of a column there
+          const cf = leafColumnF(u, h), c0 = Math.min(Math.floor(cf), VARIETY_COLUMNS - 1), w = c0 < VARIETY_COLUMNS - 1 ? cf - c0 : 0;
+          const cid = j + (geno[twigs[j].tree]*VARIETY_COLUMNS + c0 + 0.1 + 0.8*w)/VARIETY_ID_FRAC;
           d[li-6] *= s; d[li-5] *= s; faithData[fi-6] = d[li-6]; faithData[fi-5] = d[li-5];
           d[li+3] = cid; faithData[fi+3] = cid;
           leafRow[j*nLeaf + k] = row;

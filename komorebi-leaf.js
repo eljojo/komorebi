@@ -194,6 +194,9 @@ function leafJitter(seed, j, k){
 }
 // A leaf's light class from its rank of light u in the grove (0 buried .. 1 most exposed) and its jitter h: V·u, ± VARIETY_JITTER columns of h, clamped to the table — a column is where the rank puts it, not stepped by it
 const leafColumn = (u, h) => Math.min(VARIETY_COLUMNS - 1, Math.max(0, Math.floor(VARIETY_COLUMNS*u + VARIETY_JITTER*(h - 0.5))));
+// The same class, continuous (José chose it over the swap, 2026-11-09): column c sits at c exactly, and a leaf between two columns hangs a blend of
+// their outlines, so a morph that moves its rank moves its lobes instead of swapping them. leafColumn is its nearest column, which the carpet and the held leaf keep.
+const leafColumnF = (u, h) => Math.min(VARIETY_COLUMNS - 1, Math.max(0, VARIETY_COLUMNS*u + VARIETY_JITTER*(h - 0.5) - 0.5));
 // THE ROW'S SPEC: the species' numbers moved by the spread of the row's genotype g and its own leaf draws, scaled by the variety v, and by its light class c. Palmate (the maple): the lateral angle, the basal length, the lobe breadth and the lateral
 // length each move by a genotype draw plus a leaf draw (and the basal angle by a leaf draw), and the sun cuts deeper (rho − RHO_LIGHT·v·λ, λ = (c + ½)/V − ½, −7/16 in the deepest shade to +7/16 in full sun). THE STREAMS ARE THE CONTRACT: the genotype's
 // four draws in this order, then the leaf's five — reorder them and every row there is regrows. Pinnate (the beech) has no genotype numbers: its rows differ by their growth streams alone, so the spec is the spec.
@@ -253,4 +256,4 @@ function leafShape(name, seed, variety = 0){
   return g;
 }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, SIZE_LIGHT, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, rowSpec, rowBlade, leafFlip, leafShape };
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, SIZE_LIGHT, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape };

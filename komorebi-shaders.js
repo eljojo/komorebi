@@ -36,7 +36,13 @@ float leafQ(vec2 l, float variant){
   vec2 d = dot(l, l) < 1e-12 ? vec2(1.0, 0.0) : l;                 // atan(0, 0) is undefined: at the base itself any direction will do
   float u = atan(d.y, d.x)*0.15915494 + 0.5;                       // θ/2π + ½
   float v = (variant + 0.5)/${LEAF_VARIANTS}.0;                              // a row's centre: a read between two variants is no leaf
-  if(uLeafRows > 0.0) v = (variant + 0.5)/uLeafRows;                         // a varied grove's own table; the literal line above is kept for the rest, because a divide by a uniform may compile to a multiply by a reciprocal (2.5 ULP) where a literal one may not
+  // a varied grove's own table: its first column and the blend toward the next (0.1..0.9 of a row, komorebi-grove.js), the two rows' radii mixed so a leaf
+  // between two light classes hangs between their outlines; a whole row (the carpet's) reads w 0. The literal line above is kept for the rest, because a
+  // divide by a uniform may compile to a multiply by a reciprocal (2.5 ULP) where a literal one may not
+  if(uLeafRows > 0.0){
+    float r0 = floor(variant), w = clamp((variant - r0 - 0.1)/0.8, 0.0, 1.0);
+    return m - mix(texture(uLeafTex, vec2(u, (r0 + 0.5)/uLeafRows)).r, texture(uLeafTex, vec2(u, (r0 + 1.5)/uLeafRows)).r, w) + 1.0;
+  }
   return m - texture(uLeafTex, vec2(u, v)).r + 1.0;
 }`;
 
@@ -112,7 +118,7 @@ void main(){
   vec2 uv = (world - uCanopyOrigin)/uCanopyExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = lc;
-  vVariant = floor(fract(iC.w)*uLeafIdFrac + 0.5);   // the outline's row, in the cluster id's fraction (komorebi-grove.js): j + row/uLeafIdFrac, and int(iC.w + 0.5) above is still j
+  { float x = fract(iC.w)*uLeafIdFrac; vVariant = uLeafIdFrac > 64.0 ? x : floor(x + 0.5); }   // the outline's row, in the cluster id's fraction (komorebi-grove.js): j + row/uLeafIdFrac, and int(iC.w + 0.5) above is still j; a varied grove's (128) is read raw, its fraction the blend leafQ takes
   vTau = iC.xyz * uCoverage;   // x 1.0 is the identity in IEEE, so every non-transitioning frame bakes the bytes it always did
   vFade = iFade * uCoverage;   // the same two lever arms on COVERAGE, so a leaf fading in (or a grove crossfading) fades its ballistic shadow with its tau, not at full weight (§4.5)
 }`;
@@ -243,7 +249,7 @@ void main(){
   vec2 uv = (recvPt - uFaithOrigin)/uFaithExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = lc;
-  vVariant = floor(fract(iC.w)*uLeafIdFrac + 0.5);
+  { float x = fract(iC.w)*uLeafIdFrac; vVariant = uLeafIdFrac > 64.0 ? x : floor(x + 0.5); }
   vTau = iC.xyz;
   vFade = iFade;
 #ifdef SEASON_TRAVEL

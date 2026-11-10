@@ -546,7 +546,9 @@ test("leafQ: q' = |l| − r(θ) + 1 — the ellipse's ramp WIDTH kept at the tip
   expect(q).toContain("0.15915494");                                                  // 1/2π: u = θ/2π + ½
   expect(q).toContain(`float v = (variant + 0.5)/${LEAF.LEAF_VARIANTS}.0;`);         // a row's centre: no read between two variants — the literal line, kept: a divide by a literal may compile to an exact multiply where a divide by a uniform may not
   expect(q, "a varied grove's table has more rows: a uniform branch overrides the literal line, after it").toContain("uniform float uLeafRows;");
-  expect(q).toContain("if(uLeafRows > 0.0) v = (variant + 0.5)/uLeafRows;");
+  // a varied grove's variant is its first column plus 0.1..0.9 of the blend toward the next (komorebi-grove.js): the two rows' radii are mixed, never a read between rows
+  expect(q).toContain("float r0 = floor(variant), w = clamp((variant - r0 - 0.1)/0.8, 0.0, 1.0);");
+  expect(q).toContain("return m - mix(texture(uLeafTex, vec2(u, (r0 + 0.5)/uLeafRows)).r, texture(uLeafTex, vec2(u, (r0 + 1.5)/uLeafRows)).r, w) + 1.0;");
   expect(q.indexOf("if(uLeafRows > 0.0)"), "...and only after it").toBeGreaterThan(q.indexOf("float v = (variant + 0.5)/"));
   expect(q).toContain("- texture(uLeafTex, vec2(u, v)).r + 1.0");
   expect(/dot\(l, ?l\) < 1e-12/.test(q), "atan(0, 0) is undefined: the origin has a guard").toBe(true);
@@ -558,7 +560,7 @@ test("the quad grows with the outline: every VS places a corner at aCorner·box.
     expect(code(vs).includes("vec2 lc = aCorner*uShapeBox.zw + uShapeBox.xy;"), `${name} scales the corner into the box`).toBe(true);
     expect(code(vs).includes("R*(lc*vec2(A,B))"), `${name} places the leaf by it`).toBe(true);
     expect(code(vs).includes("vLocal = lc;"), `${name} hands the mask the same local`).toBe(true);
-    expect(code(vs).includes("vVariant = floor(fract(iC.w)*uLeafIdFrac + 0.5);"), `${name} reads the outline off the fraction, by the grove's own packing`).toBe(true);
+    expect(code(vs).includes("{ float x = fract(iC.w)*uLeafIdFrac; vVariant = uLeafIdFrac > 64.0 ? x : floor(x + 0.5); }"), `${name} reads the outline off the fraction, by the grove's own packing: rounded to a row, raw in a varied grove (its blend)`).toBe(true);
     expect(vs.includes("uniform float uLeafIdFrac;"), `${name} declares the packing`).toBe(true);
     expect(code(vs).includes("int cid = int(iC.w + 0.5);"), `${name}: the cluster is still j`).toBe(true);
     expect(code(vs).includes("R*(aCorner*vec2(A,B))"), `${name}: no corner is placed any other way`).toBe(false);
