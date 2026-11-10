@@ -106,7 +106,7 @@ test("rowSpec by hand: both GENOTYPE_SALT streams replayed draw for draw, and th
     expect(Math.abs(got.rho - want.rho), `${tag} rho`).toBeLessThan(1e-15);
     for (const key of Object.keys(MAPLE)) if (!["angles", "lengths", "rho"].includes(key)) expect(got[key], `${tag}: ${key} is the species'`).toEqual(MAPLE[key]);
   }
-  // the beech's bundle (2026-11-09): the same two streams, the genotype's three draws then the leaf's three, moving W, aBase and cApex; the sun narrows the blade by BEECH_LIGHT·v·λ
+  // the beech's bundle: the same two streams, the genotype's three draws then the leaf's three, moving W, aBase and cApex; the sun narrows the blade by BEECH_LIGHT·v·λ
   expect(LEAF.BEECH_LIGHT).toBe(0.057);
   for (const seed of [1, 1234]) for (const v of [1, 0.5]) for (const row of [0, 17, 36, 63]) {
     const g = Math.floor(row / V), c = row % V, lam = (c + 0.5) / V - 0.5, a = 1.5 * v;

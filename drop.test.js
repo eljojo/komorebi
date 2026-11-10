@@ -529,7 +529,7 @@ test("the tree preview scatters one point per leaf still on the tree: dropped le
 // ITS OWN window. Off (the default) none of this exists, to the bit; the claims below are the on state, and the exactness of the off one.
 // ============================================================================
 const CAP = { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1 };   // montebello's capacity, FALL_CAPACITY (macros.js)
-const LAG = 0.05;   // the lag these claims were measured at, set on each grove below (DEFAULTS has 0.09 since 2026-11-09)
+const LAG = 0.05;   // the lag these claims were measured at, set on each grove below (DEFAULTS has 0.09)
 
 // the sign of s·sp, with every smoothstep of today's senescence copied here, frozen: the claim at 0 is "the same expression, not an equivalent one"
 const oldSenescence = (P, phi) => {
@@ -568,7 +568,7 @@ const at = (P, p) => ({ ...P, phenology: p });
 test("after the turn: DEFAULTS ships it off with a lag of 0.09; the flag is a flip (TOPO) and the lag a season canopy knob", async () => {
   const { TOPO_KEYS, SEASON_KEYS } = await import("./komorebi-params.js");
   expect(DEFAULTS.drop_after_turn).toBe(0);
-  expect(DEFAULTS.drop_lag, "José, 2026-11-09: half the leaves down at 0.9").toBe(0.09);
+  expect(DEFAULTS.drop_lag, "a little under half the leaves down at 0.9").toBe(0.09);
   expect(TOPO_KEYS).toContain("drop_after_turn");
   expect(CANOPY_KEYS).not.toContain("drop_after_turn");
   expect(SEASON_KEYS).not.toContain("drop_after_turn");

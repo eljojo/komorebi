@@ -145,7 +145,7 @@ test("solidity and width over length: the blade fills its hull (0.66–0.83 on e
   expect(mean(wl)).toBeGreaterThan(1.10); expect(mean(wl)).toBeLessThan(1.45);
 });
 
-// the base (MAPLE.back and its curve, 2026-11-09): a point of the blade at grammar coordinates (x, y) lies in front of x = −B(y); r is in the normalised units, so x = r·cos/k
+// the base (MAPLE.back and its curve): a point of the blade at grammar coordinates (x, y) lies in front of x = −B(y); r is in the normalised units, so x = r·cos/k
 const baseB = (spec, y) => spec.back + spec.sag * Math.max(-0.25, 1 - (y / spec.bow) ** 2) - spec.notch * Math.exp(-Math.abs(y) / spec.notchW);
 const behindBase = (spec, r, k, c, s) => (r / k) * -c - baseB(spec, (r / k) * s);   // ≤ 0 for a point on or in front of the base
 test("the base: no blade behind the petiole — mean r(150°) ≤ 0.12 and r(120°) ≤ 0.25 (his 0.03 and 0.11; the star's 0.30 and 0.74) — and exactly: no point of r(θ) behind the curve x = −B(y)", () => {

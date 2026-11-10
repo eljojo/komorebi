@@ -622,7 +622,7 @@ test("every fill READ is over the fill's own frame, not the canopy's: the floor,
   expect(Object.keys(TRANSPORT_GROUPS.fill.locs).sort()).toEqual(["canopyFill", "fillExtent", "fillOrigin", "fillS", "fillT"]);
 });
 
-// The park's shear (park_throw, José 2026-11-09, item 17): the overhead park throws each layer by its height only when asked, by the standing scene's own throw × the knob; 0 is no throw at all,
+// The park's shear (park_throw): the overhead park throws each layer by its height only when asked, by the standing scene's own throw × the knob; 0 is no throw at all,
 // and a standing scene's throw is untouched by the knob, to the bit.
 test("park_throw: the overhead park throws cot(el)·(anti-sun) × the knob, 0 is exactly none, and a standing scene ignores it", () => {
   const src = (over) => makeSource({ gl: {}, params: { ...DEFAULTS, sun_elevation_deg: 23, sun_azimuth_deg: 40, ...over }, perf: {}, trans: {}, src: {}, effCloud: () => 0 });

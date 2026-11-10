@@ -343,10 +343,10 @@ const mapleNumbers = () => {
   const shape = LEAF.leafShape("maple", 1234);
   return { prof, skel, tex: [...shape.data, ...shape.box, shape.reach, shape.rmax] };
 };
-// prof and tex re-recorded 2026-11-09 for the curved base (José, item 8); the skeletons are the recalibration's, untouched
+// prof and tex re-recorded for the curved base; the skeletons are the recalibration's, untouched
 const MAPLE_Q = { prof: "b4f4224232ace055", skel: "6b99c5ef2f73f585", tex: "561bde8a7571e58e" };
 const MAPLE_BITS = { "darwin-arm64": { prof: "50d7c5d58819f4aa", skel: "28d69483eda86b08", tex: "28a4b53115143484" } };
-test("the maple's profiles, skeletons and texture are the bits the recalibration made (2026-10-09; the base's curve, 2026-11-09; quantised everywhere, exact on the platform they were recorded on)", () => {
+test("the maple's profiles, skeletons and texture are the bits the recalibration made (2026-10-09, then the curved base; quantised everywhere, exact on the platform they were recorded on)", () => {
   const got = mapleNumbers();
   for (const key of ["prof", "skel", "tex"]) expect(digestQ(got[key]), `${key}, quantised`).toBe(MAPLE_Q[key]);
   const exact = MAPLE_BITS[`${process.platform}-${process.arch}`];

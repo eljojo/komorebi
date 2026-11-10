@@ -835,7 +835,7 @@ test("the editor offers it: a canopy row in the Density area, just before the sp
   expect(src, "its help").toMatch(/\n {2}inner_leaves:"<b>/);
 });
 
-// ---- the pivot weight (José, 2026-11-09, item 8): a leaf hung on older wood follows that wood, not its twig's bend ----------------------
+// ---- the pivot weight: a leaf hung on older wood follows that wood, not its twig's bend -----------------------------------------------------
 // placeLeaf's out[3]: the share of its twig's bend the leaf drops, s on wood older than the twig's own (path segments past its grown base), 0 at the tip and on
 // the twig's own wood. VS_FAITH scales the twig bend by (1 − it), so 0 is today's motion to the bit.
 test("the pivot weight: s on the older wood, 0 on the twig's own wood and at the tip, 0 everywhere at inner_leaves 0", () => {
