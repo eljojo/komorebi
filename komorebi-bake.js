@@ -75,8 +75,12 @@ export function makeBake(hub){
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.layerTex[l], 0);
       gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1, coverage 0: alpha has to reset too, or it accumulates across bakes
       for(const [g, cov] of baking){
-        if(!(cov > 0)) continue;                               // a grove at zero coverage contributes no optical depth; skip the draw rather than issue it
+        // A grove at zero coverage contributes no optical depth; skip the draw rather than issue it. A route between layer counts bakes
+        // the larger count, and a grove binned into fewer layers has nothing above its own top layer.
+        if(!(cov > 0) || !g.layerVAO[l]) continue;
         gl.uniform1f(U.bake.coverage, cov);
+        // The incoming grove of a crossfade is cut with its own look's leaf edge, so nothing about its leaves changes when it is installed.
+        gl.uniform1f(U.bake.edge, g === hub.groveIn ? g.edgeSoftness : params.edge_softness);
         bindLeafShape(gl, U.bake, g);                          // this grove's leaf outline (unit 6), first: the unit left ACTIVE is the cluster geometry's, as it always was — the engine binds a target onto whatever is, and unit 6 is the fill's sampler
         gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, g.clusterTex);     gl.uniform1i(U.bake.clusterTex, 4);
         gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, g.clusterGeomTex); gl.uniform1i(U.bake.clusterGeom, 5);

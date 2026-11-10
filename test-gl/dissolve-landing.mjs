@@ -1,4 +1,4 @@
-// The midpoint routes land on the look loaded fresh, on real WebGL: the cloud dissolve (`morning 3b → eclipse`) and the fade
+// The midpoint routes land on the look loaded fresh, on real WebGL: the cloud dissolve (`morning 3b → eclipse` with wood, which closes the crossfade) and the fade
 // through the lit ground (`afternoon 7 ↔ park 1`) each regrow the grove once, mid-route, and the landed frame must equal the
 // target loaded fresh, byte for byte. Wind and drift are off, so nothing but the route can make the two frames differ.
 // No local server: Playwright supplies the repo's modules. Run from the repo root: nix develop -c bun test-gl/dissolve-landing.mjs
@@ -38,8 +38,8 @@ try {
     const max=(a,b)=>a.reduce((m,x,i)=>Math.max(m,Math.abs(x-b[i])),0);
     const mean=(a,b)=>a.reduce((s,x,i)=>s+(i%4===3?0:Math.abs(x-b[i])),0)/(a.length/4*3);
     const results=[];
-    for(const [a,b,route] of [['morning 3b','eclipse','dissolve'],['afternoon 7','park 1','lit ground'],['park 1','afternoon 7','lit ground']]){
-      const A={...PRESETS[a],...small},B={...PRESETS[b],...small};
+    for(const [a,b,route,over] of [['morning 3b','eclipse','dissolve',{branch_tau:0.5}],['afternoon 7','park 1','lit ground'],['park 1','afternoon 7','lit ground']]){
+      const A={...PRESETS[a],...small,...over},B={...PRESETS[b],...small,...over};
       open(B);const fresh=last.slice();
       open(A);let ended=0;e.transitionTo(B,{duration:1,onEnd:()=>ended++});
       const took=e.trans.backgroundFade?'lit ground':e.trans.structDiff&&!e.trans.crossfade?'dissolve':'other';

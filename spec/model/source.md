@@ -80,6 +80,8 @@ The eclipse is a **property of the source**, not a trick of the ground. Turned o
 
 **Law.** A real eclipse dims the light by the share of the disk the moon covers, and each crescent stays as bright per area as the clear sun's disc: every point of it still sees uncovered sun. The sampler drops the covered samples and keeps the rest at their own weight, and the seen source keeps its radiance over the uncovered disc. Until 2026-11-10 the sampler renormalised, so the crescents kept the clear sun's total and the dimming was left to exposure; the lines that did it are in the comment at the sampler (`komorebi-source.js`), to bring it back as a look's choice.
 
+A transition never switches the eclipse. Between an eclipsed look and an uneclipsed one the moon moves, from the authored bite to clear of the whole source or back, and while it moves each sample's weight fades across one sample spacing at the limb instead of dropping at once. At rest the rule above holds exactly. The account is [`transitions.md`](transitions.md#crossing-a-gate).
+
 ## The source, seen
 
 In the sky view, where the eye looks up through the canopy, the source is in frame for the first time, and it is **the sampler's own**: a core disk and a halo annulus, each at the radiance its weight over its own solid angle gives, with the same moon punched out in the same orientation the dapples image it at. So cloud drains the seen disk into the aureole by exactly as much as it softens the dapples, and an eclipse shows the crescent itself, through the leaves, throwing crescents. Because the sampler's halo is flat, the seen halo is flat too. The account is [`sky-view.md`](sky-view.md).

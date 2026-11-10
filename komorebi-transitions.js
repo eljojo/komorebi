@@ -12,6 +12,7 @@ import {seasonTravelEligible} from './komorebi-season-travel.js';
 import {litterRiseEligible,litterFallEligible,shadowRiseEligible,shadowFallEligible} from './komorebi-litter-rise.js';
 import {groveTravelEligible} from './komorebi-grove-travel.js';
 import {densityEligible, densityKey, densityCount} from './komorebi-grove.js';
+import {routeHeights, moonX} from './komorebi-source.js';
 
 const CAMERA_KEYS = new Set(['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y']);
 const WINDOW_KEYS = new Set(['window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall']);
@@ -76,6 +77,11 @@ export function makeTransitions(hub){
     // Only a viewpoint can start from an eye in the middle of the horizon; any other camera would teleport there.
     if(movingView && !viewpoint){ wait(to, opts); return; }
     trans.waiting = null;
+    // What an interrupted route shows, read before anything changes: its moon (place on the path and limb), its layer heights, and
+    // the layer count of the grove on screen (the layers a route raised above it are empty, so dropping them changes nothing).
+    const moonShown = trans.active && trans.moon ? trans.moon : null;
+    const layersShown = trans.active && trans.layerRoute ? Float64Array.from(hub.layerHeights()) : null;
+    if(layersShown) params.layer_count = trans.swapped ? trans.layerRoute.nTo : trans.layerRoute.nFrom;
     const viewFrom=movingView ? {eye:[...trans.viewEye],elevation:trans.viewElevation,skyWeight:trans.viewSkyWeight} : cameraPose(params);
     trans.viewpoint=viewpoint;
     trans.viewInterrupted=!!movingView;
@@ -151,15 +157,17 @@ export function makeTransitions(hub){
     //  • no WOOD at either end — the analytic occluder is one segment table, and this v1 crossfades LEAVES only.
     //    (The table is a texture since the packet before last and can hold two sets, so the wood crossfade is a
     //    real next step rather than a wish; until it exists, branch_tau > 0 keeps the honest cut.)
-    //  • the two groves must share one set of layer textures, so the knobs that SIZE those textures have to match.
+    //  • the two groves must share one set of layer textures, so the knobs that SIZE those textures have to match. Layer counts may
+    //    differ: the route bakes and casts the larger count, each grove in its own bins (trans.layerRoute, below).
     // Anything outside the gate takes the paths it already took.
-    const layersShared = to.layer_count===params.layer_count && to.tex_resolution===params.tex_resolution
-                      && to.bake_resolution===params.bake_resolution;
+    const layersShared = to.tex_resolution===params.tex_resolution && to.bake_resolution===params.bake_resolution;
     const crossOK = topoDiff && !modeDiff && !morphGrove
                  && !faithfulOn() && !to.faithful_canopy
                  && !(params.branch_tau > 0) && !(to.branch_tau > 0)
                  && layersShared;
-    const sceneFade = !seasonTravel && !leafTravel && (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
+    // A moon in flight is not a scene the dissolve of finished pictures can hold (its outgoing scene would show the moon at rest), so it
+    // takes the cloud dissolve and the moon carries on.
+    const sceneFade = !seasonTravel && !leafTravel && !moonShown && (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
     if(sceneFade) trans.structDiff=true;   // an interruption still has two different visible scenes to dissolve
     if(!sceneFade && trans.sceneFade) hub.endSceneFade();
     if(sceneFade) hub.beginSceneFade();   // preserve the outgoing scene before params become the incoming look
@@ -175,6 +183,32 @@ export function makeTransitions(hub){
     if(hub.groveIn){ hub.freeGrove(hub.groveIn); hub.groveIn = null; }   // a transition interrupting a transition drops the half-faded grove
     hub.crossW = 0;
     if(crossOK) hub.groveIn = hub.buildTargetGrove(to);          // grow it NOW, at rest, while it is still invisible
+    // BETWEEN LAYER COUNTS the route runs at the larger count: each layer's height moves from where it is shown to the incoming look's
+    // own (the shorter array padded with its top layer), a layer the outgoing grove does not fill is allocated now and passes the light
+    // whole, and the count comes down to the target's only at landing. A route that interrupts one keeps moving its heights from where they are.
+    const travel = sceneFade || leafTravel || seasonTravel;
+    trans.layerRoute = null;
+    if(!travel && (layersShown || crossOK && to.layer_count!==params.layer_count)){
+      const nFrom = params.layer_count, nTo = to.layer_count;
+      trans.layerRoute = { from: layersShown ?? routeHeights(nFrom, params.canopy_base_height_m, params.canopy_thickness_m),
+                           to: routeHeights(nTo, to.canopy_base_height_m, to.canopy_thickness_m), e: 0, nFrom, nTo };
+      params.layer_count = Math.max(nFrom, nTo);
+    }
+    if(trans.layerRoute || layersShown) hub.sizeLayers(params.layer_count);
+    // THE ECLIPSE GATE is crossed by the moon, never switched: `eclipse` is held on for the whole route and the moon moves between the
+    // eclipsed look's own bite (x = 0) and clear of the whole source (x = 1), placed each frame by regenSource. An interrupted route's
+    // moon starts the next from where it is shown, limb included, as an interrupted iris sweep carries its radius.
+    const xTo = to.eclipse ? 0 : 1;
+    trans.moon = null;
+    if(!travel && (moonShown || params.eclipse!==to.eclipse)){
+      const amount = to.eclipse ? to.eclipse_amount : moonShown ? moonShown.amount : params.eclipse_amount;
+      let x = !moonShown ? 1 - xTo : moonShown.x;
+      if(moonShown && amount!==moonShown.amount){   // a different bite: the same shown distance, placed on the new path (the source re-cut first, so it is this frame's)
+        hub.regenSource(); if(hub.src.coreR > 0) x = moonX(hub.src.moonD/hub.src.coreR, amount, hub.src.moonClear);
+      }
+      trans.moon = { from: x, to: xTo, x, amount, soft: moonShown ? moonShown.soft : 0, softFrom: moonShown ? moonShown.soft : 0 };
+      params.eclipse = true;
+    }
     trans.from = from; trans.to = to;
     trans.dur = Math.max(1e-3, opts.duration!=null ? opts.duration : trans.dur);   // stays the CALLER's number: it is also the sticky default for a later duration-less call, so the mode-flip stretch is applied at the clock (tickTransition) and never compounded into it
     trans.bloomFrom = trans.active ? trans.bloom : 0;   // an interrupted bloom eases out of the next route from where it is
@@ -196,11 +230,23 @@ export function makeTransitions(hub){
     }
   }
 
+  // The keys a route holds until landing rather than snapping at its swap: the raised layer count, and the eclipse while the moon moves.
+  const held = k => k==='layer_count' && !!trans.layerRoute || k==='eclipse' && !!trans.moon;
+
   function tickTransition(dt){
     if(!trans.active) return;
     const dur = trans.dur * trans.durScale;   // the tier's longer clock (see DUR_SCALE); scaled here, never into trans.dur, which stays the caller's sticky default
     trans.t = Math.min(1, trans.t + Math.min(dt,1/15)/dur);   // clamp the step like tick(): a tab-switch spike must not skip the bloom peak
     const t = trans.t, e = smoothstep(0,1,t);              // ease-in-out for the morph; raw t for the bloom hump
+    if(trans.layerRoute) trans.layerRoute.e = e;
+    if(trans.moon){
+      // The moon's place eases with the route; its limb is soft while it moves and hard again at both ends of its path. The softness
+      // runs on the raw clock (sin πt), so near either end it shrinks no faster than the eased moon slows: on the eased clock it would
+      // close first and a sample still crossing the limb would switch in one frame. An interrupted route's softness eases out over the first half.
+      const m = trans.moon;
+      m.x = lerp(m.from, m.to, e);
+      m.soft = Math.max(m.from!==m.to ? Math.sin(Math.PI*t) : 0, m.softFrom*(1 - smoothstep(0, 0.5, t)));
+    }
     if(trans.groveTravel){
       hub.stepGroveTravel(dt,t);
       if(t<1)return null;
@@ -296,14 +342,14 @@ export function makeTransitions(hub){
       hub.crossW = smoothstep(0, 1, hub.crossW);                   // ease it, so the fade has no corners at either end
       if(!trans.swapped && hub.crossW >= 1){
         trans.swapped = true;
-        for(const k in DEFAULTS) if(!MORPH_SET.has(k)) params[k] = trans.to[k];
+        for(const k in DEFAULTS) if(!MORPH_SET.has(k) && !held(k)) params[k] = trans.to[k];
         hub.installGrove(hub.groveIn); hub.groveIn = null; hub.crossW = 0;   // it IS the grove now; nothing is faded any more
         if(trans.waiting) wake = queued(null);                        // a selection made inside the window starts from here
       }
     } else if(!trans.swapped && t>=0.5){                   // swap the grove once, hidden under the bloom peak
       trans.swapped = true;
       if(trans.structDiff){
-        for(const k in DEFAULTS) if(!MORPH_SET.has(k)) params[k] = trans.to[k];
+        for(const k in DEFAULTS) if(!MORPH_SET.has(k) && !held(k)) params[k] = trans.to[k];
         hub.rebuildAll(trans.to); rebuilt = true;            // regrow grove + textures + source + bake, all at once; the grove is the target's own
       }
     }
@@ -331,6 +377,8 @@ export function makeTransitions(hub){
       const drift=params.drift_phase;
       trans.active = false; trans.bloom = 0;
       for(const k in DEFAULTS) params[k] = trans.to[k];
+      if(trans.layerRoute){ hub.sizeLayers(params.layer_count); trans.layerRoute = null; }
+      trans.moon = null;
       // The last morph step's lerp can miss sway_pitch by a rounding step; the bake below must read the exact target's bend.
       if(hub.grove) hub.publishBend?.(hub.grove);
       if(trans.viewpoint){

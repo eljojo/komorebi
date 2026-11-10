@@ -272,7 +272,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 
 | Route | Module | Unit | Harness |
 |---|---|---|---|
-| Live morph, grove morph, shared-layer crossfade, capped bloom | `komorebi-transitions.js` | `transitions.test.js` (routing; through the real sampler) | transition-routing suite in the pixel harness (each tier driven to completion); `test-gl/dissolve-landing.mjs` (the cloud dissolve's landed frame against the target loaded fresh) |
+| Live morph, grove morph, shared-layer crossfade, capped bloom | `komorebi-transitions.js` | `transitions.test.js` (routing; through the real sampler) | transition-routing suite in the pixel harness (each tier driven to completion); `test-gl/dissolve-landing.mjs` (the cloud dissolve's landed frame against the target loaded fresh); `test-gl/eclipse-crossfade.mjs` (the crossfade across layer counts and the moon: start, landing, spikes, interruptions, the sky view, the settled `eclipse` against the engine before) |
 | Floor-to-floor fade through the lit ground | `komorebi-transitions.js` | `transitions.test.js` | routing suite; `test-gl/dissolve-landing.mjs` (landed against fresh, both directions) |
 | Faithful scene dissolve | `komorebi-scene-fade.js` | not recorded | routing suite |
 | Viewpoint sky↔floor | `komorebi-transitions.js`, `komorebi-transport.js` (fifth camera) | `viewpoint.test.js` | `test-gl/viewpoint.mjs` |
@@ -281,6 +281,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 | Litter rise and fall | `komorebi-litter-rise.js` | `litter-rise.test.js` | `test-gl/litter-rise.mjs`, `test-gl/litter-fall.mjs` (`--render`) |
 | Shadow rise and fall | `komorebi-litter-rise.js` | `shadow-rise.test.js`, `transitions.test.js` | `test-gl/shadow-rise.mjs`, `test-gl/shadow-fall.mjs` (`--render`) |
 | Grove regroup | `komorebi-grove-travel.js` | `grove-travel.test.js` | `test-gl/grove-travel.mjs` (`--render`) |
+| Eclipse gate (the moon crosses) | `komorebi-transitions.js` (`trans.moon`), `komorebi-source.js` (`moonSpacing`, `moonClear`, `moonDistance`, `moonX`, `moonCover`) | `transitions.test.js` | `test-gl/eclipse-crossfade.mjs` |
 | Key classes | `komorebi-params.js` | `MORPH_KEYS`, `CANOPY_KEYS`, `TOPO_KEYS`, `MODE_KEYS`, `SEASON_KEYS`; `CANOPY_MORPH_MAX` | `transitions.test.js` and the coverage test (every knob classified or explicitly excluded) | — |
 
 `test-gl/fixtures/` holds four route fixtures (`fall-look-up.json`, `fall-park.json`, `look-up-fall.json`, `purple-look-up.json`); what each holds is not recorded. The gates themselves are [`contracts/transitions.md`](contracts/transitions.md).

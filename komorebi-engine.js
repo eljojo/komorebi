@@ -1,11 +1,11 @@
 import { clamp, lerp } from './komorebi-math.js';
-import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, CANOPY_KEYS, TOPO_KEYS, DEFAULTS, migrateLegacy, cutWarnings } from './komorebi-params.js';
+import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, DEFAULTS, migrateLegacy, cutWarnings } from './komorebi-params.js';
 import { VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
 import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi-transport.js';
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
-import { makeGrove, seasonKey, densityEligible, densityCount, GROVE_READS } from './komorebi-grove.js';
+import { makeGrove, seasonKey, densityEligible, densityCount, growAs } from './komorebi-grove.js';
 import { makeBake, makeFill, NO_FILL, FILL_SIG_LEN } from './komorebi-bake.js';
 import { makeLitter, newLitterState, NO_LITTER } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
@@ -359,9 +359,21 @@ function createEngine(canvas, opts, driven=false){
     hub.layerTex = [];
     hub.woodTex = [];
     hub.layerSize = size;
+    hub.layerSizes = []; hub.woodSizes = [];
     for(let i=0;i<MAX_LAYERS;i++){
-      hub.layerTex.push(makeLayerTexture(i < params.layer_count ? size : 1));
-      hub.woodTex.push(makeWoodTexture(params.sky_view && i < params.layer_count ? size : 1));
+      hub.layerSizes.push(i < params.layer_count ? size : 1);
+      hub.woodSizes.push(params.sky_view && i < params.layer_count ? size : 1);
+      hub.layerTex.push(makeLayerTexture(hub.layerSizes[i]));
+      hub.woodTex.push(makeWoodTexture(hub.woodSizes[i]));
+    }
+  }
+  // The same sizing for n active layers, replacing only the textures whose size changes: a route between layer counts raises the
+  // count at its start without touching the layers on screen (a new texture is empty, so it passes the light whole) and lowers it at landing.
+  function sizeLayers(n){
+    for(let i=0;i<MAX_LAYERS;i++){
+      const size = i < n ? hub.layerSize : 1, wood = params.sky_view && i < n ? hub.layerSize : 1;
+      if(hub.layerSizes[i] !== size){ gl.deleteTexture(hub.layerTex[i]); hub.layerTex[i] = makeLayerTexture(size); hub.layerSizes[i] = size; }
+      if(hub.woodSizes[i] !== wood){ gl.deleteTexture(hub.woodTex[i]); hub.woodTex[i] = makeWoodTexture(wood); hub.woodSizes[i] = wood; }
     }
   }
   function rebuildTextures(){
@@ -400,14 +412,12 @@ function createEngine(canvas, opts, driven=false){
     publishBend(g);   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
   }
   function regenCanopy(){ installGrove(buildGrove(hub.hier)); }   // the old shape: grow one, make it the one
-  // Grow the grove the TARGET look describes, without becoming it: the grove knobs are swapped in for the length
-  // of the build and put straight back, so nothing else in the frame notices. No prevHier — the incoming springs
-  // start at rest, which is what a newly grown tree has always done.
+  // Grow the grove the TARGET look describes, without becoming it (growAs: every key the build reads is the target's, MORPH ones
+  // included, for the length of the build). No prevHier — the incoming springs start at rest, which is what a newly grown tree has
+  // always done. Its leaf edge is recorded with it: the crossfade's bake cuts the incoming grove's leaves with its own look's edge.
   function buildTargetGrove(to){
-    const keys = [...TOPO_KEYS, ...CANOPY_KEYS], saved = {};
-    for(const k of keys){ saved[k] = params[k]; params[k] = to[k]; }
-    const g = buildGrove(null);
-    for(const k of keys) params[k] = saved[k];
+    const g = growAs(params, to, () => buildGrove(null));
+    g.edgeSoftness = to.edge_softness;
     return g;
   }
 
@@ -422,7 +432,7 @@ function createEngine(canvas, opts, driven=false){
   Object.assign(hub, { tickHierarchy, publishBend, motionActive, tick });
 
   // the engine-resident coordinators the transition route drives (hoisted function declarations)
-  Object.assign(hub, { freeGrove, installGrove, regenCanopy, reseason, reweight, buildTargetGrove, rebuildAll, resetPerf, applyQuality, allocLayers, makeLayerTexture });
+  Object.assign(hub, { freeGrove, installGrove, regenCanopy, reseason, reweight, buildTargetGrove, rebuildAll, sizeLayers, resetPerf, applyQuality, allocLayers, makeLayerTexture });
   const { transitionTo, tickTransition } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
   function copyMotion(from,to){
@@ -567,11 +577,7 @@ function createEngine(canvas, opts, driven=false){
   // crown) are still tweening for the picture. Wood radius and heights stay live: the bake's refreshWood re-reads them.
   function rebuildAll(look){
     rebuildTextures();
-    if(look){
-      const saved = {};
-      for(const k of GROVE_READS){ saved[k] = params[k]; params[k] = look[k]; }
-      try { regenCanopy(); } finally { for(const k of GROVE_READS) params[k] = saved[k]; }
-    } else regenCanopy();
+    if(look) growAs(params, look, regenCanopy); else regenCanopy();
     regenSource(); bake();
   }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
@@ -636,7 +642,7 @@ function createEngine(canvas, opts, driven=false){
       if(trans.seasonTravel){hub.endSeasonTravel();trans.seasonTravel=false;}
       if(trans.litterRise){hub.endLitterRise();trans.litterRise=false;}
       if(trans.groveTravel){hub.endGroveTravel();trans.groveTravel=false;}
-      trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0; trans.shadowOpacity=1; trans.waiting=null;
+      trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0; trans.shadowOpacity=1; trans.waiting=null; trans.moon=null; trans.layerRoute=null;
       if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
       hub.crossW=0;
     }
@@ -819,7 +825,7 @@ function createEngine(canvas, opts, driven=false){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = trans.active ? trans.onEnd : null;
-    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.groveTravel=false; trans.bloom=0; trans.shadowOpacity=1; trans.swapped=false; trans.onEnd=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
+    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.groveTravel=false; trans.bloom=0; trans.shadowOpacity=1; trans.swapped=false; trans.onEnd=null; trans.moon=null; trans.layerRoute=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
     rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)

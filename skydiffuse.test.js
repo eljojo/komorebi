@@ -334,7 +334,8 @@ test("the wood stamp attaches woodTex[l], clears it per layer, and writes frag.r
 });
 
 test("the engine allocates woodTex at the layer size iff sky_view (1×1 otherwise), as R16F, and frees and forgets it", () => {
-  expect(/makeWoodTexture\(params\.sky_view && i < params\.layer_count \? size : 1\)/.test(engineSrc)).toBe(true);
+  expect(/hub\.woodSizes\.push\(params\.sky_view && i < params\.layer_count \? size : 1\)/.test(engineSrc)).toBe(true);
+  expect(/hub\.woodTex\.push\(makeWoodTexture\(hub\.woodSizes\[i\]\)\)/.test(engineSrc)).toBe(true);
   expect(/texImage2D\(gl\.TEXTURE_2D,0,gl\.R16F,size,size,0,gl\.RED,gl\.HALF_FLOAT,null\)/.test(engineSrc)).toBe(true);   // half float: the wood's depth is accumulated additively and must be today's half-float bytes
   expect(/hub\.woodTex\.forEach\(t => \{ gl\.deleteTexture\(t\); \}\);/.test(engineSrc.slice(engineSrc.indexOf("dispose()")))).toBe(true);
   expect(/Object\.assign\(hub, \{ layerTex:\[\], woodTex:\[\],/.test(engineSrc)).toBe(true);   // the context-restore path

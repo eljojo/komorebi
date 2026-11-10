@@ -19,10 +19,10 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 
 | | |
 |---|---|
-| **Joins** | A pair where a gate parameter is zero at one end: window aperture width or height; `leaf_diffuse` with an active scatter proxy at the zero end; vignette feather. |
+| **Joins** | A pair where a gate parameter is zero at one end: window aperture width or height; `leaf_diffuse` with an active scatter proxy at the zero end; vignette feather. A pair where `eclipse` differs, on any route but the faithful scene dissolve: `morning 3b → eclipse`, `eclipse → acid dreams`. |
 | **Gate** | The crossing itself. Not applied inside a full scene dissolve (each scene keeps its own mask). |
-| **Duration** | Aperture: the morph. Diffuse proxy: out over the first half, in over the second. Iris: closes in from radius √2 over the first quarter, opens over the last quarter. |
-| **Promises** | The enabled end's geometry is kept and its restriction faded; no pinhole or ellipse grows from zero. Authored values land exactly. An interrupted iris sweep carries its radius. No saved parameter. |
+| **Duration** | Aperture: the morph. Diffuse proxy: out over the first half, in over the second. Iris: closes in from radius √2 over the first quarter, opens over the last quarter. Moon: the route's eased progress, four fifths of its path on the visible bite. |
+| **Promises** | The enabled end's geometry is kept and its restriction faded; no pinhole or ellipse grows from zero. The eclipse is held on and the moon moves between the authored bite and clear of every sample, continuous while the radii tween; its limb is soft only while it moves, so a settled eclipse is the hard crescent unchanged. Authored values land exactly. An interrupted iris sweep carries its radius, an interrupted moon its place and limb. No saved parameter. |
 
 ## Grove morph (incl. re-season, density)
 
@@ -37,10 +37,10 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 
 | | |
 |---|---|
-| **Joins** | A topology change between two layer groves. |
-| **Gate** | A TOPO difference and no MODE difference; not admitted as a grove morph; neither end faithful; no wood at either end; same layer count, texture size and bake size (one set of layer textures). |
+| **Joins** | A topology change between two layer groves, layer counts included: `morning 1 ↔ memories`, `morning 3b → eclipse`, `eclipse → acid dreams`. |
+| **Gate** | A TOPO difference and no MODE difference; not admitted as a grove morph; neither end faithful; no wood at either end; same texture size and bake size (one set of layer textures). |
 | **Duration** | 2*D*. |
-| **Promises** | No bloom: cloud thickness follows its ordinary interpolation and never overshoots either end. Both groves are baked at complementary coverage across a window around the midpoint; no leaf jumps. Native endpoints. Interruption inside the double-bake window is safe. |
+| **Promises** | No bloom: cloud thickness follows its ordinary interpolation and never overshoots either end. Both groves are baked at complementary coverage across a window around the midpoint; no leaf jumps. The incoming grove is the target's own, cut with its own leaf edge. Across layer counts the route runs at the larger count, the heights move from each end's own, and the count drops only at landing. Native endpoints. Interruption inside the double-bake window is safe; an interruption outside it starts from the shown heights, moon and grove. |
 
 ## Cloud dissolve
 

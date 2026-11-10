@@ -36,9 +36,20 @@ export function makeSource(hub){
       pts.push([r*Math.cos(a), r*Math.sin(a), nHalo>0?Whalo/nHalo:0]);
     }
     // eclipse: occlude a moon-disk over the sun -> remaining samples form a crescent
-    const moonR = params.eclipse ? coreR*1.0 : 0, moonD = params.eclipse ? coreR*(1.3-params.eclipse_amount) : 0;
+    const moonR = params.eclipse ? coreR*1.0 : 0;
+    let moonD = params.eclipse ? coreR*(1.3-params.eclipse_amount) : 0;
+    // A route crossing the eclipse gate moves the moon instead (trans.moon, from komorebi-transitions.js): its place on the path is
+    // carried in core radii and turned into a distance from THIS frame's radii, so it stays continuous while they tween, and its limb
+    // is soft by `soft` of each ring's own sample spacing while it moves. At rest the rule below is the hard one, exactly.
+    const moon = trans.active && trans.moon && params.eclipse && coreR > 0 ? trans.moon : null;
+    let dCore = 0, dHalo = 0;
+    if(moon){
+      [dCore, dHalo] = moonSpacing(coreR, haloR, nCore, nHalo);
+      src.moonClear = moonClear(coreR, haloR, dCore, dHalo);
+      moonD = coreR*moonDistance(moon.x, moon.amount, src.moonClear);
+    }
     if(params.eclipse){
-      for(const p of pts){ if(Math.hypot(p[0]-moonD, p[1])<moonR) p[2]=0; }
+      pts.forEach((p, i) => { p[2] *= moonCover(Math.hypot(p[0]-moonD, p[1]), moonR, moon ? moon.soft*(i < nCore ? dCore : dHalo) : 0); });
       // No renormalisation: the floor dims by the share the moon covers, as a real eclipse does, and each crescent stays as bright per area as the
       // clear sun's disc. To bring back the old look, the crescents at the clear sun's total, renormalise here:
       //   let s=0; for(const p of pts) s+=p[2]; if(s>0) for(const p of pts) p[2]/=s;
@@ -104,6 +115,10 @@ export function makeSource(hub){
   }
 
   function layerHeights(){
+    // A route between two layer counts (trans.layerRoute): every layer moves from the height it was shown at to the incoming look's
+    // own, on the route's eased progress; each end is its array exactly. Otherwise the look's own heights.
+    const R = trans.active && trans.layerRoute;
+    if(R){ for(let i=0;i<MAX_LAYERS;i++) _lh[i] = R.e <= 0 ? R.from[i] : R.e >= 1 ? R.to[i] : lerp(R.from[i], R.to[i], R.e); return _lh; }
     const n=params.layer_count, base=params.canopy_base_height_m, thick=params.canopy_thickness_m;
     for(let i=0;i<MAX_LAYERS;i++) _lh[i]= n>1 ? base+(i/(n-1))*thick : base;
     return _lh;
@@ -111,3 +126,41 @@ export function makeSource(hub){
 
   return { regenSource, bulkShift, bulkOn, projMatrix, layerHeights };
 }
+
+// The heights a route between layer counts starts or ends at: the look's own n heights over [base, base+thick], the layers above
+// its top padded with the top one, so a layer only one look fills moves to or from the nearest layer the other has.
+export function routeHeights(n, base, thick){
+  const out = new Float64Array(MAX_LAYERS), top = Math.max(1, n) - 1;
+  for(let i=0;i<MAX_LAYERS;i++){ const j = Math.min(i, top); out[i] = n>1 ? base+(j/(n-1))*thick : base; }
+  return out;
+}
+
+// ---- THE MOON ON A ROUTE (spec model/transitions.md, "Crossing a gate"). Pure functions of the source's own numbers; the moon's
+// radius is the core's, and distances are in core radii. ----
+// The share of the path, from the authored bite out, that runs to core contact (2 core radii): the visible bite gets most of the
+// moon's travel and the crossing of the halo, where nothing is yet bitten out of the core, is quick.
+export const MOON_BITE_SHARE = 0.8;
+// Each ring's own area-uniform sample spacing: the core disc and the halo annulus each share their area equally among their samples.
+// With no halo samples the halo band is the core's, so the clear distance stays defined.
+export function moonSpacing(coreR, haloR, nCore, nHalo){
+  const dCore = coreR*Math.sqrt(Math.PI/Math.max(1, nCore));
+  return [dCore, nHalo > 0 ? Math.sqrt(Math.PI*Math.max(0, haloR*haloR - coreR*coreR)/nHalo) : dCore];
+}
+// Clear of the whole sampled source: the moon's centre where its limb, less half a band, passes outside the core and the halo, in
+// core radii. Taken with the full band, so a sample is whole there however soft the limb is.
+export const moonClear = (coreR, haloR, dCore, dHalo) => (Math.max(coreR + dCore/2, haloR + dHalo/2) + coreR)/coreR;
+// The moon's distance at x on its path: 0 is the eclipsed look's own bite (the settled look's 1.3 − eclipse_amount), 1 is clear.
+// Monotone in x; the bite part takes MOON_BITE_SHARE of x.
+export function moonDistance(x, amount, clear){
+  const bite = 1.3 - amount, end = Math.max(clear, bite), contact = clamp(2, bite, end);
+  return x <= MOON_BITE_SHARE ? lerp(bite, contact, x/MOON_BITE_SHARE) : lerp(contact, end, (x - MOON_BITE_SHARE)/(1 - MOON_BITE_SHARE));
+}
+// Where a moon shown at distance m sits on a path to `amount`'s bite: what an interrupted route starts the next one from.
+export function moonX(m, amount, clear){
+  const bite = 1.3 - amount, end = Math.max(clear, bite), contact = clamp(2, bite, end);
+  if(m <= contact) return contact > bite ? (m - bite)/(contact - bite)*MOON_BITE_SHARE : 0;
+  return end > contact ? MOON_BITE_SHARE + (m - contact)/(end - contact)*(1 - MOON_BITE_SHARE) : 1;
+}
+// What of a sample at distance d from the moon's centre survives. A band of 0 is the hard rule (inside the moon it is gone, outside
+// it is whole); a positive band fades it linearly across that width, centred on the limb, so the weight is continuous in the moon's place.
+export const moonCover = (d, moonR, band) => band > 0 ? clamp((d - moonR)/band + 0.5, 0, 1) : (d < moonR ? 0 : 1);

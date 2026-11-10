@@ -176,8 +176,8 @@ test('topology swaps outside the shared layer bake retain their cloud cover',()=
 
 // The cloud dissolve regrows the grove once, at the midpoint, while the MORPH keys are still mid-tween. view_extent_m is one of
 // them and sizes a park crown, so a grove grown from the tweening value would land as neither look's grove.
-test('morning 3b → eclipse: the grove grown under the bloom is the target\'s, while the camera keeps tweening', () => {
-  const from = PRESETS['morning 3b'], to = PRESETS.eclipse, r = transitionRig(from);
+test('morning 3b → eclipse with wood: the grove grown under the bloom is the target\'s, while the camera keeps tweening', () => {
+  const from = { ...PRESETS['morning 3b'], branch_tau: 0.5 }, to = { ...PRESETS.eclipse, branch_tau: 0.5 }, r = transitionRig(from);   // wood closes the crossfade
   expect(from.view_extent_m).not.toBe(to.view_extent_m);
   r.transitionTo(to);
   expect(r.hub.trans.structDiff && !r.hub.trans.crossfade && !r.hub.trans.backgroundFade, 'takes the cloud dissolve').toBe(true);
@@ -632,7 +632,7 @@ const linked = from => { const r = transitionRig(from); r.hub.transitionTo = r.t
 
 test('an interrupted cloud dissolve carries its bloom into the next route and eases it out', () => {
   const from = { ...DEFAULTS }, r = transitionRig(from);
-  r.transitionTo({ ...from, layer_count: 3 });
+  r.transitionTo({ ...from, layer_count: 3, tex_resolution: from.tex_resolution/2 });   // a texture size the two groves cannot share: a dissolve
   expect(r.hub.trans.bloomMax).toBeGreaterThan(0);
   tickTo(r, 0.45);
   const shown = r.hub.trans.bloom;
@@ -734,4 +734,219 @@ test('turnBack: momentum is spent, then the route eases home; the farther out, t
   }
   const early = turnBack(0.1, 0.25, 0, full), mid = turnBack(0.5, 0.25, 0, full), late = turnBack(0.9, 0.25, 0, full);
   expect(early.T).toBeLessThan(mid.T); expect(mid.T).toBe(full); expect(late.T).toBe(full);
+});
+
+// ---- THE ECLIPSE PAIRS: the shared-layer crossfade across layer counts, and the moon crossing the eclipse gate ----
+// The source module's pure moon and height functions, read through the namespace so a missing one fails its test rather than the file.
+import * as SOURCE from "./komorebi-source.js";
+import * as GROVE from "./komorebi-grove.js";
+
+// The transition rig with the real sampler and layer heights wired in, the way the engine wires them.
+function sourceRig(from, over = {}) {
+  const r = transitionRig(from), sized = [], built = [];
+  Object.assign(r.hub, { perf: { auto: false }, src: {}, crossW: 0, sized, built,
+    buildTargetGrove: (to) => { const g = { to }; built.push(g); return g; }, installGrove: () => {}, freeGrove: () => {},
+    sizeLayers: (n) => sized.push(n),
+    effCloud: () => clamp(lerp(r.params.cloud_thickness, 1, r.hub.trans.bloom), 0, 1), ...over });
+  r.hub.trans.bloom = 0;
+  Object.assign(r.hub, makeSource(r.hub));
+  r.hub.transitionTo = r.transitionTo;
+  return r;
+}
+// The share of the source's weight the moon covers, from the sampler's own weights against the same source with no eclipse.
+const weights = (src) => Array.from({ length: src.count }, (_, i) => src.flat[i*3+2]);
+const native = (p) => { const r = sourceRig(p); r.hub.regenSource(); return { src: { ...r.hub.src, flat: r.hub.src.flat.slice() }, heights: Array.from(r.hub.layerHeights()) }; };
+const look = (p) => Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, p[k]]));   // the params a look has, whatever else an object carries
+const settle = (r) => { let frames = 0, cb; while (r.hub.trans.active && frames++ < 400) cb = r.tickTransition(1/60) || cb; return cb; };
+
+for (const [a, b] of [["morning 3b", "eclipse"], ["eclipse", "acid dreams"]]) {
+  test(`${a} → ${b}: the shared-layer crossfade across layer counts, with no bloom`, () => {
+    const A = PRESETS[a], B = PRESETS[b], r = sourceRig(A);
+    expect(A.layer_count).not.toBe(B.layer_count);
+    r.transitionTo(B, { duration: 1 });
+    expect(r.hub.trans.crossfade).toBe(true);
+    expect(r.hub.trans.bloomMax).toBe(0);
+    expect(r.hub.built.map((g) => g.to)).toEqual([B]);                  // the incoming grove is grown from the target look itself
+    const n = Math.max(A.layer_count, B.layer_count);
+    expect(r.params.layer_count, "the route runs at the larger count").toBe(n);
+    expect(r.hub.sized).toEqual([n]);
+    expect(r.params.eclipse, "the eclipse is held on for the whole route").toBe(true);
+    let frames = 0;
+    while (r.hub.trans.active && frames++ < 400) {
+      r.tickTransition(1/60);
+      expect(r.hub.trans.bloom).toBe(0);
+      if (r.hub.trans.active) { expect(r.params.layer_count).toBe(n); expect(r.params.eclipse).toBe(true); }
+    }
+    expect(r.swaps).toHaveLength(0);
+    expect(look(r.params)).toEqual(look(B));                             // the authored layer count and eclipse, restored at landing
+    expect(r.hub.sized.at(-1), "the layer textures come back to the target's count").toBe(B.layer_count);
+  });
+
+  test(`${a} → ${b}: each layer's height runs from the outgoing look's own to the incoming look's own`, () => {
+    const A = PRESETS[a], B = PRESETS[b], r = sourceRig(A), hA = native(A).heights, hB = native(B).heights;
+    r.transitionTo(B, { duration: 1 });
+    const h0 = Array.from(r.hub.layerHeights());
+    for (let i = 0; i < A.layer_count; i++) expect(h0[i], `layer ${i} at the start`).toBe(hA[i]);
+    let previous = h0;
+    while (r.hub.trans.active) {
+      r.tickTransition(1/60);
+      const h = Array.from(r.hub.layerHeights());
+      for (let i = 0; i < r.params.layer_count; i++) expect(Math.abs(h[i] - previous[i]), `layer ${i} moves smoothly`).toBeLessThan(0.1);
+      previous = h;
+    }
+    const h1 = Array.from(r.hub.layerHeights());
+    for (let i = 0; i < B.layer_count; i++) expect(h1[i], `layer ${i} at landing`).toBe(hB[i]);
+  });
+}
+
+test("the route's layer heights: each end exactly, and for equal counts the heights a tween of base and thickness gives", () => {
+  expect(typeof SOURCE.routeHeights).toBe("function");
+  for (const n of [1, 2, 3, 4]) {
+    const h = SOURCE.routeHeights(n, 4.2, 2.6), lh = native({ ...DEFAULTS, layer_count: n, canopy_base_height_m: 4.2, canopy_thickness_m: 2.6 }).heights;
+    for (let i = 0; i < n; i++) expect(Math.fround(h[i])).toBe(lh[i]);
+    for (let i = n; i < 4; i++) expect(h[i], "padded with the top layer").toBe(h[n - 1]);
+  }
+  const a = SOURCE.routeHeights(3, 4.2, 2.6), b = SOURCE.routeHeights(3, 4.9, 2.5);
+  for (const e of [0.25, 0.5, 0.75]) for (let i = 0; i < 3; i++)
+    expect(lerp(a[i], b[i], e)).toBeCloseTo(SOURCE.routeHeights(3, lerp(4.2, 4.9, e), lerp(2.6, 2.5, e))[i], 12);
+});
+
+test("equal layer counts keep today's heights through a crossfade", () => {
+  const r = sourceRig(PRESETS["morning 1"]);
+  r.transitionTo(PRESETS.memories, { duration: 1 });
+  expect(r.hub.trans.crossfade).toBe(true);
+  expect(r.hub.trans.layerRoute ?? null).toBe(null);
+  expect(r.hub.sized).toEqual([]);
+});
+
+test("the crossfade still refuses what the two groves cannot share", () => {
+  const A = PRESETS["morning 3b"];
+  for (const over of [{ tex_resolution: A.tex_resolution/2 }, { bake_resolution: A.bake_resolution/2 }, { branch_tau: 0.5 }]) {
+    const r = sourceRig(A); r.transitionTo({ ...PRESETS.eclipse, ...over });
+    expect(r.hub.trans.crossfade, JSON.stringify(over)).toBe(false);
+    expect(r.hub.trans.bloomMax).toBeGreaterThan(0);
+  }
+});
+
+test("the moon's path: the authored bite at one end, clear of every sample at the other, monotone between", () => {
+  expect(typeof SOURCE.moonDistance).toBe("function");
+  for (const [coreDeg, haloDeg, cloud, N] of [[0.3, 1, 0, 48], [0.27, 4, 0.4, 32], [0.3, 1, 0, 3], [0.5, 0.5, 0, 5]]) {
+    const coreR = coreDeg*DEG, haloR = lerp(coreR*2, haloDeg*DEG, cloud), nCore = Math.max(3, Math.round(N*0.5)), nHalo = Math.max(0, N - nCore);
+    const [dCore, dHalo] = SOURCE.moonSpacing(coreR, haloR, nCore, nHalo);
+    const clear = SOURCE.moonClear(coreR, haloR, dCore, dHalo);
+    for (const v of [dCore, dHalo, clear]) expect(Number.isFinite(v) && v > 0).toBe(true);
+    for (const amount of [0.6, 0.55, 0, -1]) {
+      expect(SOURCE.moonDistance(0, amount, clear), "the bite is the settled look's expression").toBe(1.3 - amount);
+      let previous = -Infinity;
+      for (let x = 0; x <= 1.0000001; x += 0.01) { const m = SOURCE.moonDistance(x, amount, clear); expect(m).toBeGreaterThanOrEqual(previous); previous = m; }
+      if (1.3 - amount < 2) expect(Math.abs(SOURCE.moonX(SOURCE.moonDistance(0.37, amount, clear), amount, clear) - 0.37)).toBeLessThan(1e-9);
+    }
+  }
+});
+
+test("the moon's limb: a band of zero is today's hard rule, and a band is continuous across the limb", () => {
+  expect(typeof SOURCE.moonCover).toBe("function");
+  for (const d of [0, 0.5, 0.999, 1, 1.001, 3]) expect(SOURCE.moonCover(d, 1, 0)).toBe(d < 1 ? 0 : 1);
+  expect(SOURCE.moonCover(1, 1, 0.2)).toBe(0.5);
+  expect(SOURCE.moonCover(0.85, 1, 0.2)).toBe(0);
+  expect(SOURCE.moonCover(1.15, 1, 0.2)).toBe(1);
+});
+
+test("entering the eclipse: the source starts with no sample covered, lands on the settled crescent, and never jumps", () => {
+  const A = PRESETS["morning 3b"], B = PRESETS.eclipse, r = sourceRig(A), clearA = weights(native(A).src), settled = weights(native(B).src);
+  r.transitionTo(B, { duration: 5 });
+  r.hub.regenSource();
+  expect(weights(r.hub.src), "zero time: the outgoing look's own weights").toEqual(clearA);
+  let previous = weights(r.hub.src), biggest = 0, moon = [];
+  while (r.hub.trans.active) {
+    r.tickTransition(1/60);
+    const w = weights(r.hub.src);
+    if (w.length === previous.length) biggest = Math.max(biggest, ...w.map((v, i) => Math.abs(v - previous[i])));
+    moon.push(r.hub.src.moonD/r.hub.src.coreR);
+    previous = w;
+  }
+  expect(weights(r.hub.src), "landed on the settled eclipse's own weights").toEqual(settled);
+  for (let i = 1; i < moon.length - 1; i++) expect(moon[i], "the moon only moves inward").toBeLessThanOrEqual(moon[i - 1] + 1e-12);
+  expect(biggest/Math.max(...settled), "no sample's weight jumps: a frame moves under a quarter of a sample").toBeLessThan(0.25);
+  const bite = moon.filter((m) => m < 2).length;
+  expect(bite/moon.length, "most of the time on the visible bite").toBeGreaterThan(0.6);
+});
+
+test("leaving the eclipse: the moon slides off and the authored values come back at landing", () => {
+  const A = PRESETS.eclipse, B = PRESETS["acid dreams"], r = sourceRig(A), bitten = weights(native(A).src), clearB = weights(native(B).src);
+  r.transitionTo(B, { duration: 1 });
+  r.hub.regenSource();
+  expect(weights(r.hub.src), "zero time: the settled crescent").toEqual(bitten);
+  settle(r);
+  expect(look(r.params)).toEqual(look(B));
+  expect(weights(r.hub.src)).toEqual(clearB);
+});
+
+test("a source with no halo samples, no cloud and the fewest samples keeps the moon's path defined", () => {
+  const A = { ...PRESETS.eclipse, sample_count: 3, cloud_thickness: 0, halo_angular_radius_deg: 0 }, r = sourceRig({ ...A, eclipse: false });
+  r.transitionTo(A, { duration: 1 });
+  while (r.hub.trans.active) { r.tickTransition(1/60); for (const v of r.hub.src.flat) expect(Number.isFinite(v)).toBe(true); expect(Number.isFinite(r.hub.src.moonD)).toBe(true); }
+});
+
+test("a cloud dissolve across the eclipse gate moves the moon under the bloom too", () => {
+  const A = { ...PRESETS["morning 3b"], branch_tau: 0.5 }, B = { ...PRESETS.eclipse, branch_tau: 0.5 }, r = sourceRig(A);
+  r.transitionTo(B, { duration: 1 });
+  expect(r.hub.trans.crossfade).toBe(false);
+  expect(r.hub.trans.bloomMax).toBeGreaterThan(0);
+  let moved = 0, previous = null;
+  while (r.hub.trans.active) {
+    r.tickTransition(1/60);
+    if (r.hub.trans.active) expect(r.params.eclipse).toBe(true);
+    const m = r.hub.src.moonD/r.hub.src.coreR;
+    if (previous !== null && m !== previous) moved++;
+    previous = m;
+  }
+  expect(r.swaps).toHaveLength(1);
+  expect(r.swaps[0].eclipse, "held through the midpoint swap").toBe(true);
+  expect(moved).toBeGreaterThan(50);
+  expect(look(r.params)).toEqual(look(B));
+});
+
+test("an interrupted eclipse route starts the next from the moon, limb and layer heights it shows", () => {
+  for (const back of [0.2, 0.8]) {
+    const A = PRESETS["morning 3b"], B = PRESETS.eclipse, r = sourceRig(A);
+    r.transitionTo(B, { duration: 1 });
+    tickTo(r, back);
+    if (r.hub.trans.crossfade && r.hub.crossW > 0 && r.hub.crossW < 1) continue;   // inside the window a selection waits (held below)
+    r.hub.regenSource();
+    const shown = { m: r.hub.src.moonD/r.hub.src.coreR, w: weights(r.hub.src), h: Array.from(r.hub.layerHeights()) };
+    r.transitionTo(A, { duration: 1 });
+    r.hub.regenSource();
+    expect(Math.abs(r.hub.src.moonD/r.hub.src.coreR - shown.m), `the moon stays where it was at t=${back}`).toBeLessThan(1e-9);
+    expect(weights(r.hub.src).map((v, i) => Math.abs(v - shown.w[i])).reduce((a, b) => Math.max(a, b), 0), "and the limb with it").toBeLessThan(1e-6);
+    expect(Array.from(r.hub.layerHeights()), "the layers stay where they were").toEqual(shown.h);
+    r.tickTransition(1/60);
+    expect(Math.abs(r.hub.src.moonD/r.hub.src.coreR - shown.m)).toBeLessThan(0.05);
+    settle(r);
+    expect(look(r.params)).toEqual(look(A));
+    expect(r.hub.sized.at(-1)).toBe(A.layer_count);
+    expect(weights(r.hub.src)).toEqual(weights(native(A).src));
+  }
+});
+
+test("a selection inside the eclipse crossfade's window waits, and the moon keeps moving", () => {
+  const A = PRESETS["morning 3b"], B = PRESETS.eclipse, r = sourceRig(A);
+  r.transitionTo(B, { duration: 1 });
+  let frames = 0;
+  while (!(r.hub.crossW > 0) && r.hub.trans.active && frames++ < 400) r.tickTransition(1/60);
+  expect(r.hub.trans.crossfade && r.hub.crossW > 0, "inside the crossfade window").toBe(true);
+  r.hub.crossW = 0.5;
+  r.transitionTo(PRESETS["acid dreams"], { duration: 1 });
+  expect(r.hub.trans.waiting?.to?.layer_count).toBe(PRESETS["acid dreams"].layer_count);
+  const m = r.hub.src.moonD;
+  r.tickTransition(1/60);
+  expect(r.hub.src.moonD).not.toBe(m);
+});
+
+test("the grove grown for a route is grown from the target's value of every key the grove reads", () => {
+  expect(typeof GROVE.growAs).toBe("function");
+  const params = { ...PRESETS["morning 3b"] }, look = PRESETS.eclipse, seen = {};
+  GROVE.growAs(params, look, () => Object.assign(seen, params));
+  for (const k of [...GROVE.GROVE_READS, "trans_r", "phenology", "edge_softness"]) expect(seen[k], k).toBe(look[k]);
+  expect(params).toEqual(PRESETS["morning 3b"]);
 });

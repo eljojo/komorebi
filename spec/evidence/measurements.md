@@ -718,6 +718,24 @@ No other motion measurement is recorded.
 - **Still open, measured under the same conditions:** the shared-layer crossfade grows its incoming grove at the start from the outgoing MORPH values (`morning 1 → memories` with the target's `view_extent_m` at 2.5: max 206, mean 23.0; 27 shipped pairs differ in the crown this sets). A live morph that changes only `view_extent_m` never regrows (`afternoon 7` to itself at 2.5: max 170, mean 16.6). In still air with automatic drift off and `drift_amount` up, the layer bake made at the midpoint keeps that frame's `drift_phase` through landing (`morning 3b → eclipse` max 109, `park 1 → afternoon 7` max 140); one re-bake after landing makes each equal.
 - **Date:** 2026-11-10.
 
+### The eclipse pairs: the cloud dissolve against the moon
+
+- **What was measured:** for `morning 3b → eclipse` (P1) and `eclipse → acid dreams` (P2), the route as shipped before (the cloud dissolve, bloom 0.55, `eclipse` flipped at the midpoint) against the variant José chose (B3: the crossfade across layer counts, each grove with its own leaf edge and grown from its own look, the moon on a path giving the visible bite four fifths of it, its limb soft while it moves). Excursion is the mean luminance's departure from the straight line between the two ends; steps are mean |frame n − frame n−1| in 8-bit levels.
+- **On:** the prototype review (`test-gl/out/review/2026-11-10-eclipse-transitions/pass2/`, git-ignored): 1280×720 at 60 fps on Metal, the looks as authored with automatic quality and adaptive motion off, the route called at frame 120 with a 5 s driver (a 10 s route), landing at frame 720. These are the prototype's numbers, not the engine's as built.
+- **Result:**
+
+  | pair | route | excursion above / below the line | largest step (frame) |
+  |---|---|---|---|
+  | P1 | cloud dissolve | +74.9 / −3.3 | 13.09 (f420, the swap) |
+  | P1 | B3 | +28.8 / −7.2 | 6.36 (f570, the window's close) |
+  | P2 | cloud dissolve | +60.5 / −6.5 | 67.32 (f420, the swap) |
+  | P2 | B3 | +29.2 / −21.1 | 0.95 (f410) |
+
+  P1's remaining step at the window's close is the sample count (32 → 48), about 4.2 of it in the prototype's ablation; settled backgrounds are up to 4.1 for `morning 3b`, about 0.3 for `eclipse` and 0.6 for `acid dreams`.
+- **As built** (`test-gl/eclipse-crossfade.mjs`: SwiftShader, 320×180, 256 textures and bakes, still air with `drift_amount` 0, a 2 s driver): both pairs land byte-equal to the target loaded fresh, a zero-time redraw at the start equals the outgoing look, no step coincides with a jump in the sampled source (largest single-frame change of any point-sun's weight 0.0067 of the total), and the settled `eclipse` is byte-equal to the engine before the change. The sample-count step at P1's window close is 4.51 against a neighbouring median of 0.86, the route's largest. With the limb's softness on the eased clock, as the prototype had it, P2 showed one spike near the bitten end (0.36 levels, a point-sun moving 0.016 of the total in one frame), because the band closed faster than the moon slowed on this shorter route; on the route's raw clock it shows none.
+- **What it established:** the bloom is gone from both pairs at less than half the excursion; what is left is the sample-count handoff, an open item.
+- **Date:** 2026-11-10.
+
 ### A seasonal yaw
 
 `montebello`'s 208.5° to `park fall`'s −161.797° is a 10.30° turn by the shortest arc (arithmetic).

@@ -36,7 +36,7 @@ const FEAT_PIGMENT = true;
 const FEAT_EXPOSURE = true;
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
-import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
+import { MAX_LAYERS, MAX_OCC, TOPO_KEYS, CANOPY_KEYS } from './komorebi-params.js';
 import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_REAL, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafColumnF, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
 
 // Every param buildGrove reads besides the season set, and so the whole of `season.key` (faithful_canopy and receiver reach it through faithfulOn(), which the key carries
@@ -46,6 +46,15 @@ export const GROVE_READS = [
   'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_variety','leaves_per_cluster',
   'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','tree_count','trunk_radius_m','view_extent_m',
 ];
+// Grow a grove as `look` would, on the live params: every key the build reads (the grove's own, the season set within the canopy keys,
+// the topology) is the look's for the length of `build` and is put straight back after, so nothing else in the frame notices. A route
+// grows the grove it lands on this way while the MORPH keys the grove also reads (the view extent sizes a park crown) are still tweening.
+const GROWN_KEYS = [...new Set([...GROVE_READS, ...TOPO_KEYS, ...CANOPY_KEYS])];
+export function growAs(params, look, build){
+  const saved = {};
+  for(const k of GROWN_KEYS){ saved[k] = params[k]; params[k] = look[k]; }
+  try { return build(); } finally { for(const k of GROWN_KEYS) params[k] = saved[k]; }
+}
 export const seasonKey = (params, faithful) => `${GROVE_READS.map(k => params[k]).join('|')}|${faithful ? 1 : 0}`;
 // Density can reuse a prefix only without population-dependent pigment, drop or outline work. It remains a structural key for ordinary re-seasoning.
 export const densityEligible = P => !senescing(P) && P.leaf_drop === 0 && P.leaf_variety === 0;
