@@ -99,7 +99,7 @@ export const PRESETS = {
     "sample_count": 32, "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
-    "tree_count": 4, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,   // five trees (José, 2026-11-09, item 23: "i don't think more trees were meant, but i don't hate it")
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
@@ -208,6 +208,8 @@ export const PRESETS = {
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    "tree_pigment_spread": 0.6,   // each tree its own colour (José, 2026-11-09, item 36: 36-D, "each tree is unique")
+    "tree_clock_spread": 0.05,   // and its own clock (José, 2026-11-09, item 36)
   }),
   'park fall': Object.assign({}, DEFAULTS, {   // José's mid-turn look on montebello's grove (2026-10-08): the crown still turning, the sunlit leaves already down and damp (every leaf falls by drop_start + drop_span = 1.0; at 0.79 those with exposure u ≥ 0.7 have), the park seen wide from the far side
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
@@ -220,7 +222,7 @@ export const PRESETS = {
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.79, "turn_exposure": 0.71, "exposure_absolute": 0.93, "anthocyanin": 0.82, "tannin": 0.48, "wall_fraction": 0.13,   // mid-turn, deep red capacity, the raw light ordering the turn (§4.5)
     "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.36, "drop_after_turn": 1,                                                          // the whole drop has let go, each leaf after its own turn, and lies damp on the floor (§4.5, §4.7): his pd3 over 0.71 and 0.85
-    "drop_lag": 0,   // no wait after the turn (José, 2026-10-09, P1: "i like p1"). drop_after_turn held back the carpet he had asked for here and picked as pd3 — at 0.79 the default lag leaves only the first few leaves down — so a leaf lets go the moment its turn ends and his carpet comes back; every fallen leaf has still finished turning
+    "drop_lag": 0.05,   // the lag the other fall looks had until 2026-11-09 (José, item 21: 21-B, over the 0 of 2026-10-09, "i like p1", which let a leaf go the moment its turn ended)
     "view_extent_m": 39.28644129433203, "view_pitch_deg": 73.99882812500043, "view_fov_deg": 60, "view_yaw_deg": -161.79726562499684,
     "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
     "exposure": 5.566, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26° (José's C, 2026-11-09)
@@ -231,6 +233,8 @@ export const PRESETS = {
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 2.18909165230681, "drift_auto": true, "drift_speed": 0.02,
     "auto_quality": true,   // the faithful path under squally wind, as montebello: the governor stays on
+    "tree_pigment_spread": 0.6,   // each tree its own colour (José, 2026-11-09, item 36: 36-D, "each tree is unique")
+    "tree_clock_spread": 0.05,   // and its own clock (José, 2026-11-09, item 36)
   }),
   // 'forest floor' — WORKING NAME: José has not named it. P5 on the 2026-10-09 proposals sheet: afternoon 7 at full fall, the view from under the canopy — a dark crown shadow with warm dapples and green
   // flecks filling the frame, the carpet laid damp beneath it; the 'komorebi on the ground' half of his valley memory. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." Built from what he
@@ -682,11 +686,11 @@ export const PRESETS = {
     "drift_amount": 0.1, "drift_phase": 2.6, "drift_auto": true, "drift_speed": 0.015,
     "auto_quality": true,
   }),
-  // 'curtain 1' — sunlit sheer cotton, the plant at the glass (spec §4.9). A thin bright curtain (high Tt,
-  // warm dye) in a dark room: one huge window (4.5 x 3.05 m, wall 0 = black surround), a faint translucent
+  // 'curtain 1' — a moss-green velvet, the plant at the glass (spec §4.9). It was a sunlit sheer cotton (high Tt, warm dye, matte)
+  // until José chose the velvet (2026-11-09, item 20, 20-1B: "i don't hate it. still feels like satin instead of velvet"). In a dark room: one huge window (4.5 x 3.05 m, wall 0 = black surround), a faint translucent
   // mullion grid, and the grove nearly TOUCHING the cloth (0.6 m) so the cast is crisp botanical shadow-play —
   // the near-contact shape regime, wanted here: leaves print as leaves and the deep fold warp S-bends them.
-  // Matte broad pleats (sheen ~0), tight strong glow, low warm sun far off-axis so the flanks split lit/dark.
+  // Broad pleats, tight strong glow, low warm sun far off-axis so the flanks split lit/dark.
   // Hand-tuned by the author; the grove seed is its own (938460877, 4 trees).
   'curtain 1': Object.assign({}, DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
@@ -698,8 +702,8 @@ export const PRESETS = {
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
     "seed": 938460877, "sun_elevation_deg": 13, "sun_azimuth_deg": 62,
     "receiver": 1, "standing_scene": true, "faithful_canopy": true,
-    "cloth_distance_m": 0.6, "fabric_tt": 0.78, "fabric_tint_r": 0.45, "fabric_tint_g": 1, "fabric_tint_b": 0.28,
-    "fold_depth": 0.38, "fold_scale": 0.6, "fold_coarsen": 0.22, "fold_warp": 0.28, "velvet_sheen": 0.02,
+    "cloth_distance_m": 0.6, "fabric_tt": 0.25, "fabric_tint_r": 0.35, "fabric_tint_g": 1, "fabric_tint_b": 0.3,   // a moss-green velvet: little light through the pile, the moss dye (José, 2026-11-09, item 20: 20-1B)
+    "fold_depth": 0.5, "fold_scale": 0.6, "fold_coarsen": 0.22, "fold_warp": 0.28, "velvet_sheen": 0.12,   // deeper pile and a soft sheen on the ridges (20-1B); the pile's texture still reads as satin to him, so it is open
     "fabric_scatter": 0.42, "glow_bleed": 0.74, "glow_bleed_m": 0.035,
     "mullion_tau": 0.7, "mullion_pitch_m": 0.44, "mullion_bar_m": 0.032, "mullion_depth_m": 0.04,
     "window_w_m": 4.5, "window_h_m": 3.05, "window_cx_m": 0, "window_cy_m": 1.3, "window_wall": 0,

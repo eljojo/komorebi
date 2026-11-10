@@ -477,7 +477,7 @@ test("neither lit nor dropping: the hang loop's leafTau takes each cluster's own
 
 test("unlit and dropping: the rewrite's sen-only arm takes each leaf's own tree's lead and depth — for the leaves mid-fade and the leaves that have gone, both clocks", () => {
   for (const flag of [0, 1]) {
-    const on = grow(small({ ...UNLIT, leaf_drop: 1, drop_exposure: 0, drop_after_turn: flag, phenology: 0.85 }));
+    const on = grow(small({ ...UNLIT, leaf_drop: 1, drop_exposure: 0, drop_after_turn: flag, drop_lag: 0.05, phenology: 0.85 }));   // the lag it was written at: at 0.85 some leaves are mid-fade
     expect(math.lit(on.params) || math.ordered(on.params), "no light anywhere: no rank, no exposure arm").toBe(false);
     expect(math.dropping(on.params)).toBe(true);
     const r = byHand(on);

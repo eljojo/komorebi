@@ -529,7 +529,7 @@ test("the tree preview scatters one point per leaf still on the tree: dropped le
 // ITS OWN window. Off (the default) none of this exists, to the bit; the claims below are the on state, and the exactness of the off one.
 // ============================================================================
 const CAP = { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1 };   // montebello's capacity, FALL_CAPACITY (macros.js)
-const LAG = 0.05;
+const LAG = 0.05;   // the lag these claims were measured at, set on each grove below (DEFAULTS has 0.09 since 2026-11-09)
 
 // the sign of s·sp, with every smoothstep of today's senescence copied here, frozen: the claim at 0 is "the same expression, not an equivalent one"
 const oldSenescence = (P, phi) => {
@@ -565,10 +565,10 @@ function turnPhases(over, faithful = false) {
 }
 const at = (P, p) => ({ ...P, phenology: p });
 
-test("after the turn: DEFAULTS ships it off with a lag of 0.05; the flag is a flip (TOPO) and the lag a season canopy knob", async () => {
+test("after the turn: DEFAULTS ships it off with a lag of 0.09; the flag is a flip (TOPO) and the lag a season canopy knob", async () => {
   const { TOPO_KEYS, SEASON_KEYS } = await import("./komorebi-params.js");
   expect(DEFAULTS.drop_after_turn).toBe(0);
-  expect(DEFAULTS.drop_lag).toBe(0.05);
+  expect(DEFAULTS.drop_lag, "José, 2026-11-09: half the leaves down at 0.9").toBe(0.09);
   expect(TOPO_KEYS).toContain("drop_after_turn");
   expect(CANOPY_KEYS).not.toContain("drop_after_turn");
   expect(SEASON_KEYS).not.toContain("drop_after_turn");
@@ -633,7 +633,7 @@ test("no leaf falls before its turn ends: s_j(D − ε) = 1 for every leaf in th
   expect(checked).toBeGreaterThan(2000);
 });
 
-const ON = { ...TIES, ...CAP, drop_after_turn: 1 };
+const ON = { ...TIES, ...CAP, drop_after_turn: 1, drop_lag: LAG };
 test("exact progression: sorted days = turn_start + span − spread + ε + lag + spread·(i+½)/n, all distinct (turn_exposure 1, exposure_absolute 0, leaf_drop 1)", () => {
   const r = grow(dense(ON), true), n = r.litter.length;
   expect(n).toBeGreaterThan(10000);
@@ -652,9 +652,9 @@ test("the order is the turn's: D follows φ′ (the leaf that turned first lets 
   expect(shell.length, "not vacuous: a real shell").toBeGreaterThan(500);
   for (let i = 1; i < shell.length; i++) expect(shell[i - 1].D < shell[i].D, `clock ${shell[i - 1].phi} vs ${shell[i].phi}`).toBe(true);
   // turn_exposure 0: no light in the turn, so none in the drop — the exposure pass is not even asked for
-  const P0 = { ...DEFAULTS, ...CAP, turn_exposure: 0, drop_after_turn: 1, phenology: 0.99 };
+  const P0 = { ...DEFAULTS, ...CAP, turn_exposure: 0, drop_after_turn: 1, drop_lag: LAG, phenology: 0.99 };
   expect(math.ordered(P0), "drop_exposure 1 does not open the pass when the drop follows the turn and the turn is not lit").toBe(false);
-  const z = grow(small({ ...CAP, turn_exposure: 0, drop_after_turn: 1, phenology: 0.99 }), true);
+  const z = grow(small({ ...CAP, turn_exposure: 0, drop_after_turn: 1, drop_lag: LAG, phenology: 0.99 }), true);
   expect(z.litter.length).toBeGreaterThan(100);
   for (const l of z.litter) expect(Math.abs(l.D - (0.6 + 0.12 + EPS + LAG + 0.18 * math.leafClock(z.params.seed, l.j, l.k))), `${l.j}/${l.k}`).toBeLessThan(1e-9);
 });
@@ -721,8 +721,8 @@ test("`dropping` at 1 is never later than the first fade (sweep by 1e-4), the re
 
 // ---- the baseline and the effect, on real groves (montebello's capacity). afternoon 7 (32 175 leaves) and park 1 (6 138) give the same shares: the rank is uniform. ----
 function table(look, flag) {
-  const over = { ...PRESETS[look], ...CAP, drop_after_turn: flag, phenology: 1 };
-  const r = grow(over, look === "park 1"), phases = turnPhases({ ...PRESETS[look], ...CAP }, look === "park 1"), n = r.litter.length;
+  const over = { ...PRESETS[look], ...CAP, drop_after_turn: flag, drop_lag: LAG, phenology: 1 };
+  const r = grow(over, look === "park 1"), phases = turnPhases({ ...PRESETS[look], ...CAP, drop_lag: LAG }, look === "park 1"), n = r.litter.length;
   const rows = {};
   for (const p of [0.75, 0.8, 0.85, 0.9]) {
     const fell = r.litter.filter((l) => l.D <= p), hang = r.litter.filter((l) => l.D > p);
