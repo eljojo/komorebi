@@ -456,7 +456,8 @@ export function makeFill(hub){
     } else H = hub.layerHeights();
     // THE FRAME this pass covers, and what the layer textures do outside their box. Both follow one flag: a finite tree (bulkOn) is
     // open sky past its box and is baked over the box padded by 3·h_max; the endless park has no edge, so its box REPEATS and the
-    // frame is the box. REPEAT is on the layer textures for this pass only — transport reads the same textures CLAMPed.
+    // frame is the box. The fill flips the wrap for this pass and puts CLAMP back; transport sets its own on every draw (komorebi-render.js:
+    // REPEAT for the endless park, CLAMP for a finite tree and the sky view).
     const bulk = hub.bulkOn(), wrap = !bulk, nL = params.layer_count;
     // The receiver samples these outside the box too: its shade lighting must repeat with the endless canopy.
     for(const t of fill.tex){

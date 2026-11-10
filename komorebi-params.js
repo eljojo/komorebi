@@ -13,9 +13,9 @@ const MAX_FILL_DIRS = 64;   // the sky fill's ray cap (§4.7): fill_directions i
 // Woody occluder segments (trunk + main limbs incl. droop sub-segments); continuous-height analytic shadow,
 // evaluated once per pixel (spec §4.5). The table is a TEXTURE now, not a uniform array, so this number costs
 // texels rather than fragment uniform rows (§6) — it is no longer a budget constraint, it is an authored ceiling.
-// IT STAYS AT 64 UNTIL SOMEONE CHOOSES OTHERWISE, and the reason is a measurement, not caution: 'the void' grows
-// 192 level-≤1 segments and has been silently truncated to 64 for its whole life. Raising the cap does not free
-// that look, it REPAINTS it — three times the wood it currently shows. That is a look decision, not a refactor's.
+// It is 256. 'the void' grows 192 level-≤1 segments, which a cap of 64 once truncated; but its wood is shut (branch_tau 0),
+// so it never reads the table, and canopy 1–4 use at most 64: raising the cap to 256 repainted no shipped look (byte-identical
+// frames at 64 and 256, 2026-11-09). Raising it further could still repaint a grove that outgrows it: a look decision.
 const MAX_OCC = 256;
 // SKY VIEW (§4.9): the authored radiance scale for the SEEN source. The physical contrast between a sun disk and a
 // blue sky is ~10^6, which neither an ACES tail nor a 13-tap glare kernel can carry — so what ships is a compressed
@@ -274,8 +274,9 @@ const DEFAULTS = {
   window_wall: 0.03,               // light landing OUTSIDE the aperture: the wall is opaque, so this stands in for the room's own dim
                                    // front-side light — without it the surround is a void rather than dark cloth
   // THE ENCLOSURE (§4.9), receiver 2: the same fabric as a CLOSED tent stood AROUND the viewer — a flat rectangular
-  // crown along the top, a rounded ARCH per side (a convex profile curve sampled as tangent strips), a HIP CAP at the
-  // far end (a small upright foot-vent triangle with two hips converging on its apex) and a plain leaning wall behind.
+  // crown along the top, a rounded ARCH per side (a convex profile curve sampled as tangent strips), and a HIP CAP at
+  // each end (a small upright foot-vent triangle with two hips converging on its apex): fifteen planes. The near cap is
+  // behind the eye, so no frame shows it.
   // These twelve shape it; the fabric itself is the curtain family above (same cloth physics, same transmission law).
   // Only read when receiver == 2 — the floor and the curtain never touch them.
   tent_ridge_h_m: 1.15,            // crown height (m): the flat top panel's plane, and what the upper walls lean in to
@@ -285,8 +286,8 @@ const DEFAULTS = {
   tent_shoulder_w_m: 0.92,         // half-width (m) AT that height. BULGED past the straight base→crown line (0.70 m here) is what curves the side out into an arch; on the line exactly the arc flattens to one straight slope
   tent_len_m: 2.3,                 // tent length (m): the far cap's base, and what closes the space instead of a vanishing point. The eye rides at 30 % of it
   tent_end_lean: 0.6,              // metres an end wall leans OUT per metre of height (0 = a vertical end wall); large values push the ends away and degenerate toward the A-frame
-  tent_end_apex_h_m: 0.55,         // height (m) of the far end's VENT APEX: the foot triangle stands from the floor up to here, and the two hips converge on it
-  tent_hip_rake: 0.45,             // how much MORE steeply the far hips rake back than the end wall (m per metre of height). 0 puts all three far planes on one — the single leaning slab this replaced — so it is floored just above that
+  tent_end_apex_h_m: 0.55,         // height (m) of each end's VENT APEX: the foot triangle stands from the floor up to here, and the two hips converge on it
+  tent_hip_rake: 0.45,             // how much MORE steeply the hips (both ends) rake back than the end wall (m per metre of height). 0 puts all three far planes on one — the single leaning slab this replaced — so it is floored just above that
   tent_eye_h_m: 0.5,               // eye height (m) inside — sitting up in a sleeping bag; clamped strictly inside every panel, or the viewer is outside their own tent
   tent_fade: 0.06,                 // interior depth fade (1/m): a gentle depth cue down a metres-deep tent — the far cap is what closes the space
   tent_seam: 0.0,                  // panel-junction seam optical depth (0 = none): the dark taped lines at the crown's long edges, the ceiling's centreline spine at the foot, and the cap rims
