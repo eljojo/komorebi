@@ -88,6 +88,7 @@ test("treeGenotype is the tree stream's THIRD draw — draws 1 and 2 stay the le
 // ±0.06, basal angle ±10°) and the light class c: λ = (c + ½)/8 − ½, whose deeper cut in the sun is RHO_LIGHT·v·λ off the lobe breadth.
 const U = (r) => 2 * r() - 1;
 function byHand(seed, v, row) {
+  v *= 1.5;   // VARIETY_REAL: the slider's 1 is the spreads' 1.5
   const g = Math.floor(row / V), c = row % V;
   const Gs = math.mulberry32(math.hash3((seed >>> 0) ^ 0x78DDE6E4, 1, g)), Ls = math.mulberry32(math.hash3((seed >>> 0) ^ 0x78DDE6E4, 1, G + row));
   const dLatG = 5 * U(Gs), dBasG = 0.15 * U(Gs), dRhoG = 0.025 * U(Gs), dLenG = 0.07 * U(Gs);
@@ -97,7 +98,7 @@ function byHand(seed, v, row) {
   return { angles: [-ba, -lat, 0, lat, ba], lengths: [bl, ll, 1, ll, bl], rho: rhoBase - 0.04 * v * lam, rhoBase, lam };
 }
 test("rowSpec by hand: both GENOTYPE_SALT streams replayed draw for draw, and the light class λ from the COLUMN — 3 seeds × 64 rows, every field to 1e-15", () => {
-  expect([LEAF.VARIETY_GENOTYPES, LEAF.VARIETY_COLUMNS, LEAF.VARIETY_ID_FRAC, LEAF.VARIETY_JITTER, LEAF.RHO_LIGHT, LEAF.SIZE_LIGHT]).toEqual([8, 8, 128, 2, 0.04, 0.15]);
+  expect([LEAF.VARIETY_GENOTYPES, LEAF.VARIETY_COLUMNS, LEAF.VARIETY_ID_FRAC, LEAF.VARIETY_JITTER, LEAF.RHO_LIGHT, LEAF.SIZE_LIGHT, LEAF.VARIETY_REAL]).toEqual([8, 8, 128, 2, 0.04, 0.15, 1.5]);
   for (const seed of [1, 1234, 290626672]) for (const v of [1, 0.5]) for (let row = 0; row < ROWS; row++) {
     const got = LEAF.rowSpec(MAPLE, seed, v, row), want = byHand(seed, v, row), tag = `seed ${seed} v ${v} row ${row}`;
     got.angles.forEach((a, i) => { expect(Math.abs(a - want.angles[i]), `${tag} angle ${i}`).toBeLessThan(1e-13); });   // degrees: 1e-15 relative to ~100
@@ -108,20 +109,20 @@ test("rowSpec by hand: both GENOTYPE_SALT streams replayed draw for draw, and th
   // the beech's bundle (2026-11-09): the same two streams, the genotype's three draws then the leaf's three, moving W, aBase and cApex; the sun narrows the blade by BEECH_LIGHT·v·λ
   expect(LEAF.BEECH_LIGHT).toBe(0.057);
   for (const seed of [1, 1234]) for (const v of [1, 0.5]) for (const row of [0, 17, 36, 63]) {
-    const g = Math.floor(row / V), c = row % V, lam = (c + 0.5) / V - 0.5;
+    const g = Math.floor(row / V), c = row % V, lam = (c + 0.5) / V - 0.5, a = 1.5 * v;
     const Gs = math.mulberry32(math.hash3((seed >>> 0) ^ 0x78DDE6E4, BEECH.species, g)), Ls = math.mulberry32(math.hash3((seed >>> 0) ^ 0x78DDE6E4, BEECH.species, G + row));
     const dWG = 0.03 * U(Gs), dAG = 0.08 * U(Gs), dCG = 0.12 * U(Gs), dWL = 0.02 * U(Ls), dAL = 0.05 * U(Ls), dCL = 0.08 * U(Ls);
     const got = LEAF.rowSpec(BEECH, seed, v, row), tag = `beech seed ${seed} v ${v} row ${row}`;
-    expect(Math.abs(got.W - (BEECH.W + v * (dWG + dWL) - 0.057 * v * lam)), `${tag} W`).toBeLessThan(1e-15);
-    expect(Math.abs(got.aBase - Math.max(0.25, BEECH.aBase + v * (dAG + dAL))), `${tag} aBase`).toBeLessThan(1e-15);
-    expect(Math.abs(got.cApex - Math.max(0.7, BEECH.cApex + v * (dCG + dCL))), `${tag} cApex`).toBeLessThan(1e-15);
+    expect(Math.abs(got.W - (BEECH.W + a * (dWG + dWL) - 0.057 * a * lam)), `${tag} W`).toBeLessThan(1e-15);
+    expect(Math.abs(got.aBase - Math.max(0.25, BEECH.aBase + a * (dAG + dAL))), `${tag} aBase`).toBeLessThan(1e-15);
+    expect(Math.abs(got.cApex - Math.max(0.7, BEECH.cApex + a * (dCG + dCL))), `${tag} cApex`).toBeLessThan(1e-15);
     for (const key of Object.keys(BEECH)) if (!["W", "aBase", "cApex"].includes(key)) expect(got[key], `${tag}: ${key} is the species'`).toEqual(BEECH[key]);
   }
   for (const key of ["W", "aBase", "cApex"]) expect(LEAF.rowSpec(BEECH, 1234, 0, 17)[key], `at variety 0 the beech's ${key} is the species'`).toBe(BEECH[key]);
   // the light, isolated: rho less the genotype and leaf draws is −RHO_LIGHT·v·λ with λ the COLUMN's — a narrower lobe (a deeper cut) in the sun, a fuller one in the shade, whatever the genotype
   for (const row of [0, 7, 8 + 3, 5 * V + 4, 63]) {
     const got = LEAF.rowSpec(MAPLE, 1234, 1, row), want = byHand(1234, 1, row), lam = ((row % V) + 0.5) / V - 0.5;
-    expect(Math.abs(got.rho - want.rhoBase + 0.04 * lam), `row ${row}`).toBeLessThan(1e-15);
+    expect(Math.abs(got.rho - want.rhoBase + 0.04 * 1.5 * lam), `row ${row}`).toBeLessThan(1e-15);
     expect(Math.sign(got.rho - want.rhoBase), `row ${row}: the sun cuts deeper`).toBe(-Math.sign(lam));
   }
   // at variety 0 a row is the variety-0 leaf of that number, bit for bit: the rows a grove at 0 hangs are the first eight of a grove at 1's table's recipe
@@ -264,9 +265,9 @@ function hullArea(p) {
 const solidity = (r) => Math.PI / hullArea(Array.from(r, (rr, i) => [rr * Math.cos(th(i)), rr * Math.sin(th(i))]));
 const table = (seed, v) => Array.from({ length: ROWS }, (_, row) => LEAF.rowBlade(MAPLE, seed, v, row).r);
 
-test("the spread at variety 1: pairwise 0.12–0.20 over the 64 rows, one tree's leaves more alike than two trees', every row a central lobe flanked by two, the sun more deeply cut than the shade", () => {
+test("the spread on its own scale (leaf_variety 1/1.5, where it was calibrated): pairwise 0.12–0.20 over the 64 rows, one tree's leaves more alike than two trees', every row a central lobe flanked by two, the sun more deeply cut than the shade", () => {
   for (const seed of [1, 1234, 90210]) {
-    const rows = table(seed, 1), pair = [], within = [], between = [];
+    const rows = table(seed, 1 / LEAF.VARIETY_REAL), pair = [], within = [], between = [];
     for (let a = 0; a < ROWS; a++) for (let b = a + 1; b < ROWS; b++) { const d = rmsM(rows[a], rows[b]); pair.push(d); (Math.floor(a / V) === Math.floor(b / V) ? within : between).push(d); }
     expect(mean(pair), `seed ${seed}: pairwise`).toBeGreaterThan(0.12); expect(mean(pair), `seed ${seed}: pairwise`).toBeLessThan(0.20);
     expect(mean(within), `seed ${seed}: a family is more alike than a stand`).toBeLessThan(mean(between));
@@ -385,7 +386,7 @@ test("ON (layer and faithful): the same grove but for each leaf's size and its r
     const n = S0.n, X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
     for (let i = 0; i < n; i++) { const o = SREC * i; X[i] = S0.rec[o]; Y[i] = S0.rec[o + 1]; Z[i] = S0.rec[o + 2]; Ar[i] = S0.rec[o + 5]; K[i] = math.leafClock(seed, S0.rec[o + 6], S0.rec[o + 7]); }
     const rank = math.exposureRank(math.exposureGrid(X, Y, Z, Ar, S0.E), K);
-    const geno = Array.from({ length: S0.nTree }, (_, t) => math.treeGenotype(seed, t, G)), m = (u) => 1 + LEAF.SIZE_LIGHT * 1 * (1 - 2 * u);
+    const geno = Array.from({ length: S0.nTree }, (_, t) => math.treeGenotype(seed, t, G)), m = (u) => 1 + LEAF.SIZE_LIGHT * LEAF.VARIETY_REAL * (1 - 2 * u);
     let s0 = 0, s1 = 0;
     for (let i = 0; i < n; i++) { const o = SREC * i, w = S0.rec[o + 8] * S0.rec[o + 3] * S0.rec[o + 4]; s0 += w; s1 += w * m(rank[i]) ** 2; }
     const kappa = Math.sqrt(s0 / s1);

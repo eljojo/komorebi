@@ -37,7 +37,7 @@ const FEAT_EXPOSURE = true;
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
 import { MAX_LAYERS, MAX_OCC } from './komorebi-params.js';
-import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafColumnF, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
+import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_REAL, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafColumnF, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
 
 // Every param buildGrove reads besides the season set, and so the whole of `season.key` (faithful_canopy and receiver reach it through faithfulOn(), which the key carries
 // as the boolean it is). Held against a grep of this file in reseason.test.js.
@@ -451,7 +451,7 @@ export function makeGrove(hub){
     if(vary){
       leafRow = new Uint8Array(nClusterTotal*nLeaf);
       if(rec.length){
-        const n = rec.length/REC, v = params.leaf_variety, mOf = (u) => 1 + SIZE_LIGHT*v*(1 - 2*u);
+        const n = rec.length/REC, v = VARIETY_REAL*params.leaf_variety, mOf = (u) => 1 + SIZE_LIGHT*v*(1 - 2*u);   // on the spreads' own scale (VARIETY_REAL)
         vLight = lightOf();
         const rank = vLight.rank, geno = Array.from({ length: nTree }, (_, t) => treeGenotype(params.seed, t, VARIETY_GENOTYPES));
         let S0 = 0, S1 = 0;

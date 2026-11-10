@@ -39,6 +39,9 @@ const VARIETY_ID_FRAC = 128;       // 64 rows / 128 = under ½, so int(iC.w + 0.
 const GENOTYPE_SALT = 0x78DDE6E4;  // grows a genotype's and a row's spread: 4·0x9E3779B9 mod 2^32, the golden gamma's next multiple after the inner-leaves salt's 3·, in no other stream
 const VARIETY_JITTER = 2;          // the light class is the leaf's rank of light, ± this many columns (the leaf's own leafJitter draw)
 const RHO_LIGHT = 0.04;            // sun leaves narrower lobes: a deeper cut by RHO_LIGHT·variety across the columns (classic in oaks; for maple and beech an extrapolation from a smaller, thicker sun leaf — Hanson 1917 — so conservative)
+// leaf_variety 1 is reality: the variety of real maples (José's photographed leaves), which the spreads below reach at 1.5 of their own scale; above 1 is
+// more varied than nature, on purpose. Every spread, the sun's cut and the size shift read the slider through this one scale.
+const VARIETY_REAL = 1.5;
 const SIZE_LIGHT = 0.15;           // sun leaves smaller, shade leaves larger by this much at variety 1 (komorebi-grove.js shifts the size by it, renormalised so the canopy's area is the look's)
 
 // THE SUGAR MAPLE (Acer saccharum), RECALIBRATED 2026-10-09 to José's thirteen leaves (DSC_0617-0622, DSCF1667 ×3, DSC_0656 ×5), read with the same measure as the engine's (leaf-shape.test.js): actinodromous, a central
@@ -219,18 +222,19 @@ const U = (r) => 2*r() - 1;
 // leaf ~8% wider; its smaller size in the sun is SIZE_LIGHT's, as for every species
 const BEECH_LIGHT = 0.057;
 function rowSpec(spec, seed, v, row){
+  const a = VARIETY_REAL*v;   // the slider's v on the scale the spreads below were set on: v 1 is a = 1.5, about the spread of José's photographed maples
   const g = Math.floor(row/VARIETY_COLUMNS), c = row % VARIETY_COLUMNS;
   const gs = mulberry32(hash3((seed>>>0)^GENOTYPE_SALT, spec.species, g)), ls = mulberry32(hash3((seed>>>0)^GENOTYPE_SALT, spec.species, VARIETY_GENOTYPES + row));
   if(spec.grammar !== 'palmate'){
     const dWG = 0.03*U(gs), dAG = 0.08*U(gs), dCG = 0.12*U(gs), dWL = 0.02*U(ls), dAL = 0.05*U(ls), dCL = 0.08*U(ls);
     const lam = (c + 0.5)/VARIETY_COLUMNS - 0.5;
-    return { ...spec, W: spec.W + v*(dWG + dWL) - BEECH_LIGHT*v*lam, aBase: Math.max(0.25, spec.aBase + v*(dAG + dAL)), cApex: Math.max(0.7, spec.cApex + v*(dCG + dCL)) };
+    return { ...spec, W: spec.W + a*(dWG + dWL) - BEECH_LIGHT*a*lam, aBase: Math.max(0.25, spec.aBase + a*(dAG + dAL)), cApex: Math.max(0.7, spec.cApex + a*(dCG + dCL)) };
   }
   const dLatG = 5*U(gs), dBasG = 0.15*U(gs), dRhoG = 0.025*U(gs), dLenG = 0.07*U(gs);
   const dLatL = 5*U(ls), dBasL = 0.12*U(ls), dRhoL = 0.02*U(ls), dLenL = 0.06*U(ls), dBasAng = 10*U(ls);
-  const lam = (c + 0.5)/VARIETY_COLUMNS - 0.5, lat = spec.angles[3] + v*(dLatG + dLatL), ba = spec.angles[4] + v*dBasAng;
-  const bl = Math.max(0.12, spec.lengths[0] + v*(dBasG + dBasL)), ll = spec.lengths[1] + v*(dLenG + dLenL);
-  return { ...spec, angles: [-ba, -lat, 0, lat, ba], lengths: [bl, ll, 1, ll, bl], rho: spec.rho + v*(dRhoG + dRhoL) - RHO_LIGHT*v*lam };
+  const lam = (c + 0.5)/VARIETY_COLUMNS - 0.5, lat = spec.angles[3] + a*(dLatG + dLatL), ba = spec.angles[4] + a*dBasAng;
+  const bl = Math.max(0.12, spec.lengths[0] + a*(dBasG + dBasL)), ll = spec.lengths[1] + a*(dLenG + dLenL);
+  return { ...spec, angles: [-ba, -lat, 0, lat, ba], lengths: [bl, ll, 1, ll, bl], rho: spec.rho + a*(dRhoG + dRhoL) - RHO_LIGHT*a*lam };
 }
 // The blade of row `row` at variety v — the texture's profile of that row and the held leaf's blade, ONE function so the inset shows the leaf the bake was handed. The growth stream is the row's own.
 const rowBlade = (spec, seed, v, row) => bladeOf(rowSpec(spec, seed, v, row), outlineSeed(spec, seed, row));
@@ -277,4 +281,4 @@ function leafShape(name, seed, variety = 0){
   return g;
 }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, BEECH_LIGHT, SIZE_LIGHT, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape };
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, BEECH_LIGHT, SIZE_LIGHT, VARIETY_REAL, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape };
