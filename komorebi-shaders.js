@@ -266,7 +266,8 @@ void main(){
 const VS_FAITH = `#version 300 es
 ${GLSL_FAITH_VERTEX}`;
 // A grove with leaves on older wood (inner_leaves) bakes with the pivot weight; every other grove with VS_FAITH itself, whose compile merely declaring the attribute
-// moved (3 pixels of park 1 on Metal), so the weight is its own specialization.
+// moved (3 pixels of park 1 on Metal), so the weight is its own specialization. A cleanup candidate (José would rather have the simpler code: fold it into VS_FAITH
+// and accept the three pixels; spec/exploration/open.md, harness).
 const VS_FAITH_PIVOT = `#version 300 es
 #define PIVOT
 ${GLSL_FAITH_VERTEX}`;
