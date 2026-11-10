@@ -105,7 +105,19 @@ test("rowSpec by hand: both GENOTYPE_SALT streams replayed draw for draw, and th
     expect(Math.abs(got.rho - want.rho), `${tag} rho`).toBeLessThan(1e-15);
     for (const key of Object.keys(MAPLE)) if (!["angles", "lengths", "rho"].includes(key)) expect(got[key], `${tag}: ${key} is the species'`).toEqual(MAPLE[key]);
   }
-  expect(LEAF.rowSpec(BEECH, 1234, 1, 17), "the beech has no genotype numbers: its rows differ by their growth streams only").toBe(BEECH);
+  // the beech's bundle (2026-11-09): the same two streams, the genotype's three draws then the leaf's three, moving W, aBase and cApex; the sun narrows the blade by BEECH_LIGHT·v·λ
+  expect(LEAF.BEECH_LIGHT).toBe(0.057);
+  for (const seed of [1, 1234]) for (const v of [1, 0.5]) for (const row of [0, 17, 36, 63]) {
+    const g = Math.floor(row / V), c = row % V, lam = (c + 0.5) / V - 0.5;
+    const Gs = math.mulberry32(math.hash3((seed >>> 0) ^ 0x78DDE6E4, BEECH.species, g)), Ls = math.mulberry32(math.hash3((seed >>> 0) ^ 0x78DDE6E4, BEECH.species, G + row));
+    const dWG = 0.03 * U(Gs), dAG = 0.08 * U(Gs), dCG = 0.12 * U(Gs), dWL = 0.02 * U(Ls), dAL = 0.05 * U(Ls), dCL = 0.08 * U(Ls);
+    const got = LEAF.rowSpec(BEECH, seed, v, row), tag = `beech seed ${seed} v ${v} row ${row}`;
+    expect(Math.abs(got.W - (BEECH.W + v * (dWG + dWL) - 0.057 * v * lam)), `${tag} W`).toBeLessThan(1e-15);
+    expect(Math.abs(got.aBase - Math.max(0.25, BEECH.aBase + v * (dAG + dAL))), `${tag} aBase`).toBeLessThan(1e-15);
+    expect(Math.abs(got.cApex - Math.max(0.7, BEECH.cApex + v * (dCG + dCL))), `${tag} cApex`).toBeLessThan(1e-15);
+    for (const key of Object.keys(BEECH)) if (!["W", "aBase", "cApex"].includes(key)) expect(got[key], `${tag}: ${key} is the species'`).toEqual(BEECH[key]);
+  }
+  for (const key of ["W", "aBase", "cApex"]) expect(LEAF.rowSpec(BEECH, 1234, 0, 17)[key], `at variety 0 the beech's ${key} is the species'`).toBe(BEECH[key]);
   // the light, isolated: rho less the genotype and leaf draws is −RHO_LIGHT·v·λ with λ the COLUMN's — a narrower lobe (a deeper cut) in the sun, a fuller one in the shade, whatever the genotype
   for (const row of [0, 7, 8 + 3, 5 * V + 4, 63]) {
     const got = LEAF.rowSpec(MAPLE, 1234, 1, row), want = byHand(1234, 1, row), lam = ((row % V) + 0.5) / V - 0.5;
@@ -124,7 +136,8 @@ test("rowBlade is bladeOf of the row's spec and the row's own growth stream — 
     expect(a.grammar).toBe("palmate");
   }
   expect(LEAF.rowBlade(BEECH, 1234, 1, 30).grammar).toBe("pinnate");
-  expect(Array.from(LEAF.rowBlade(BEECH, 1234, 1, 30).r), "a beech's row is its outline-seed leaf").toEqual(Array.from(LEAF.profile(BEECH, LEAF.outlineSeed(BEECH, 1234, 30))));
+  expect(Array.from(LEAF.rowBlade(BEECH, 1234, 1, 30).r), "a beech's row is bladeOf its row's spec and its outline seed").toEqual(Array.from(LEAF.bladeOf(LEAF.rowSpec(BEECH, 1234, 1, 30), LEAF.outlineSeed(BEECH, 1234, 30)).r));
+  expect(Array.from(LEAF.rowBlade(BEECH, 1234, 0, 30).r), "at variety 0 a beech's row is its outline-seed leaf").toEqual(Array.from(LEAF.profile(BEECH, LEAF.outlineSeed(BEECH, 1234, 30))));
 });
 
 // leafColumn: V·u + VARIETY_JITTER·(h − ½), floored and clamped to the eight columns — the jitter (±one column) is leafJitter's, the very draw leafVariant floors
@@ -205,7 +218,7 @@ test("every row of a varied maple is a leaf: area π to 1e-9 and star-shaped fro
       let reach = ahead[0][1], runs = 1;
       for (const [t0, t1] of ahead.slice(1)) { if (t0 > reach + 0.01) runs++; reach = Math.max(reach, t1); }
       if (runs !== 1) throw new Error(`${tag} ray ${i}: ${runs} runs`);
-      if (c < 0) expect(blade.r[i] * -c, `${tag} ray ${i}: the truncate base`).toBeLessThanOrEqual(spec.back * blade.k + 1e-12);
+      if (c < 0) { const x = (blade.r[i] / blade.k) * -c, y = (blade.r[i] / blade.k) * s, B = spec.back + spec.sag * Math.max(-0.25, 1 - (y / spec.bow) ** 2) - spec.notch * Math.exp(-Math.abs(y) / spec.notchW); expect(x - B, `${tag} ray ${i}: the base`).toBeLessThanOrEqual(1e-9); }
     }
   }
 });

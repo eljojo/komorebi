@@ -88,7 +88,7 @@ export function placeLeaf(hier, j, g1, g2, k, params, faithful, out){
   const hug = faithful && tHasDir;   // twig-hug only in faithful mode; the layer/park scatter stays byte-identical
   const x = hug ? t.x - Math.abs(g1)*params.cluster_spread_m*1.5*tdx - g2*params.cluster_spread_m*0.4*tdy : t.x + g1*params.cluster_spread_m;
   const y = hug ? t.y - Math.abs(g1)*params.cluster_spread_m*1.5*tdy + g2*params.cluster_spread_m*0.4*tdx : t.y + g2*params.cluster_spread_m;
-  out[0] = x; out[1] = y; out[2] = t.z;
+  out[0] = x; out[1] = y; out[2] = t.z; out[3] = 0;
   if(!(params.inner_leaves > 0)) return out;
   const path = hier.twigPath ? hier.twigPath[j] : undefined, n = path ? path.length/3 - 1 : 0;
   if(n < 1) return out;
@@ -110,6 +110,8 @@ export function placeLeaf(hier, j, g1, g2, k, params, faithful, out){
     wx = qx - Math.abs(g1)*sp*0.5*ex - g2*sp*0.4*ey; wy = qy - Math.abs(g1)*sp*0.5*ey + g2*sp*0.4*ex;
   } else { wx = qx + g1*sp*0.4; wy = qy + g2*sp*0.4; }    // the layer path's blob, tighter about the wood
   out[0] = x + (wx - x)*s; out[1] = y + (wy - y)*s; out[2] = t.z + (qz - t.z)*s;
+  let m = 0; while(m < n && !(path[3*m] === t.bx && path[3*m+1] === t.by)) m++;   // segments 0..m-1: the twig's own wood, tip back to its grown base
+  out[3] = i >= m ? s : 0;                                // PIVOT WEIGHT: on older wood the leaf drops its twig's bend, by its share on the wood
   return out;
 }
 
@@ -367,7 +369,8 @@ export function makeGrove(hub){
     const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
     let sEx = null, sRank = null;   // the exposure field and keyed rank, when this build ran the pass: the record keeps them, so the first re-season does not pay it again
     let sAt = 0;
-    const pos = [0,0,0];   // placeLeaf's scratch: one leaf's x, y, z
+    const pos = [0,0,0,0];   // placeLeaf's scratch: one leaf's x, y, z and its pivot weight
+    let pivotData = [];      // FAITHFUL: each leaf's pivot weight (placeLeaf's out[3]), in record order, before the fade (let: abscission compacts it with faithData)
     let zLow = Infinity, zHigh = -Infinity;   // the lowest and the highest height any leaf hangs at (past faith.hMin / faith.hMax only when inner_leaves hangs one on wood beyond every twig tip)
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
@@ -390,7 +393,7 @@ export function makeGrove(hub){
         const cov = ((k===pcInt) ? frac : 1.0) * t.tcov;   // marginal-leaf fade × marginal-tree fade (§4.5)
         // where it hangs (placeLeaf): the twig hug off the tip, and with inner_leaves up a share of the leaves on the wood behind it. Same two draws → other attributes unchanged.
         const g1 = gauss(), g2 = gauss();
-        placeLeaf(hier, j, g1, g2, k, params, faithful, pos);
+        placeLeaf(hier, j, g1, g2, k, params, faithful, pos); pivotData.push(pos[3]);
         const x = pos[0], y = pos[1], z = pos[2];
         if(z < zLow) zLow = z;
         if(z > zHigh) zHigh = z;
@@ -472,6 +475,7 @@ export function makeGrove(hub){
       hier.leafRow = leafRow; hier.leafVariety = params.leaf_variety;
     }
     const seasonBase = keepSeason ? layerData.map(a => Float32Array.from(a)) : null;   // the UNCOMPACTED layer records, before the rewrite below touches a tau
+    const seasonPivot = keepSeason ? Float32Array.from(pivotData) : null;              // ...and the pivot weights, in the same record order (one push site)
     let litter = null, leafW = null;
     if(rec?.length){
       const n = rec.length/REC;
@@ -511,14 +515,16 @@ export function makeGrove(hub){
       // is not a bake of ten thousand empty quads (a zero-tau quad still costs one in the bake). Survivors keep their order, in both.
       if(gone){
         const keepL = layerData.map(() => []), keepF = [];
+        const keepP = [];
         for(let i=0;i<n;i++){
           if(!alive[i]) continue;
           const o = REC*i, li = rec[o+8] - 8, fi = rec[o+9] - 8, kl = keepL[rec[o+7]];
           for(let q=0;q<17;q++) kl.push(layerData[rec[o+7]][li+q]);
           for(let q=0;q<18;q++) keepF.push(faithData[fi+q]);
+          keepP.push(pivotData[fi/18]);
         }
         for(let l=0;l<nLayer;l++) layerData[l] = keepL[l];
-        faithData = keepF;
+        faithData = keepF; pivotData = keepP;
       }
     }
 
@@ -563,6 +569,11 @@ export function makeGrove(hub){
       gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,4,gl.FLOAT,false,S,48); gl.vertexAttribDivisor(4,1);
       gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,1,gl.FLOAT,false,S,64); gl.vertexAttribDivisor(5,1);
       gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6,1,gl.FLOAT,false,S,68); gl.vertexAttribDivisor(6,1);
+      if(faith.pivotBuf) gl.deleteBuffer(faith.pivotBuf);
+      faith.pivotBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, faith.pivotBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pivotData), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(8); gl.vertexAttribPointer(8,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(8,1);   // the pivot weight, one float a leaf
+      faith.pivot = pivotData;   // the survivors' weights, as uploaded
+      faith.pivotOn = pivotData.some((w) => w > 0);   // the bake's specialization: VS_FAITH_PIVOT only where a leaf has one
       gl.bindVertexArray(null);
       faith.vao=vao; faith.buf=buf; faith.count=arr.length/18;
     }
@@ -719,7 +730,7 @@ export function makeGrove(hub){
         if(s.ax<sx0)sx0=s.ax; if(s.ax>sx1)sx1=s.ax; if(s.ay<sy0)sy0=s.ay; if(s.ay>sy1)sy1=s.ay;
         if(s.bx<sx0)sx0=s.bx; if(s.bx>sx1)sx1=s.bx; if(s.by<sy0)sy0=s.by; if(s.by>sy1)sy1=s.by;
       }
-      grove.season = { key: grove.key, rec: sRec, base: seasonBase, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, nTree, E, tau, seg: [sx0, sx1, sy0, sy1],
+      grove.season = { key: grove.key, rec: sRec, base: seasonBase, pivot: seasonPivot, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, nTree, E, tau, seg: [sx0, sx1, sy0, sy1],
                        faithBuf: faith.buf, ex: sEx, rank: sRank, u: null, outL: null, outF: null };
     }
     if(cacheDensity){
@@ -759,8 +770,8 @@ export function makeGrove(hub){
       if(!S.u) S.u = new Float64Array(n);
       u = exposureBlend(S.rank, S.ex, P.exposure_absolute, S.u);   // at exposure_absolute 0 this IS the rank: read, never written
     }
-    if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); }
-    const outL = S.outL, outF = S.outF, wL = new Int32Array(nLayer);
+    if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); S.outP = new Float32Array(n); }
+    const outL = S.outL, outF = S.outF, outP = S.outP, wL = new Int32Array(nLayer);
     const track = isDropping && n > 0;
     const litter = FEAT_DROP && track ? [] : null, leafW = FEAT_DROP && track ? new Float32Array(S.nCluster*nLeaf).fill(1) : null;
     let wF = 0, px0 = S.seg[0], px1 = S.seg[1], py0 = S.seg[2], py1 = S.seg[3];
@@ -786,7 +797,7 @@ export function makeGrove(hub){
       for(let q=0;q<8;q++){ const v = bl[li+q]; dl[at+q] = v; outF[wF+q] = v; }
       for(let c=0;c<3;c++){ const v = lt[c]*cf; dl[at+8+c] = v; outF[wF+8+c] = v; }
       for(let q=11;q<16;q++){ const v = bl[li+q]; dl[at+q] = v; outF[wF+q] = v; }
-      dl[at+16] = cf; outF[wF+16] = rec[o+2]; outF[wF+17] = cf;
+      dl[at+16] = cf; outF[wF+16] = rec[o+2]; outF[wF+17] = cf; outP[wF/18] = S.pivot[i];
       wL[l] = at + 17; wF += 18;
       const x = rec[o], y = rec[o+1];
       if(x<lx0)lx0=x; if(x>lx1)lx1=x; if(y<ly0)ly0=y; if(y>ly1)ly1=y;
@@ -801,6 +812,9 @@ export function makeGrove(hub){
     gl.bindBuffer(gl.ARRAY_BUFFER, S.faithBuf);
     gl.bufferData(gl.ARRAY_BUFFER, outF.subarray(0, wF), gl.DYNAMIC_DRAW);
     faith.count = wF/18;
+    gl.bindBuffer(gl.ARRAY_BUFFER, faith.pivotBuf);                                    // the survivors' pivot weights, beside them in the same order
+    gl.bufferData(gl.ARRAY_BUFFER, outP.subarray(0, wF/18), gl.DYNAMIC_DRAW);
+    faith.pivotOn = outP.subarray(0, wF/18).some((w) => w > 0);
     if(lx0<px0)px0=lx0; if(lx1>px1)px1=lx1; if(ly0<py0)py0=ly0; if(ly1>py1)py1=ly1;
     if(px0>px1){ const h=P.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
     faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;

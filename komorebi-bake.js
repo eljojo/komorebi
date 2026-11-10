@@ -271,26 +271,27 @@ export function makeBake(hub){
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.faithScratch, 0);
 
     // static faith-VS uniforms (wind / flutter — match the preview & the layer bake); only uG changes per sample
-    gl.useProgram(progFaith);
-    gl.uniform1i(U.faith.seasonCast,hub.seasonCast?1:0);
-    gl.uniform2f(U.faith.origin, faith.ox, faith.oy);
-    gl.uniform2f(U.faith.extent, faith.ext, faith.ext);
-    gl.uniform1f(U.faith.edge, params.edge_softness);   // soft leaf rim (same as the layer bake); 0 here = hard ellipses
-    gl.uniform1f(U.faith.beamK, k);                     // the BEAM's neutral depth (§4.5), pre-integrated into the cast like everything else the leaves do to it
-    gl.uniform1i(U.faith.edgeArea, faith.edgeArea);     // ...and so is the edge law: at k = 0 each stamp is the leaf's mixture, not the slab of its mask
-    gl.uniform1i(U.faith.curtainBake, params.receiver ? 1 : 0);   // §4.9: project onto the vertical cloth (curtain) vs the floor
-    gl.uniform1f(U.faith.clothY, params.cloth_distance_m);
-    gl.uniform1f(U.faith.morph, params.drift_phase);
-    gl.uniform1f(U.faith.morphAmount, params.drift_amount);
-    gl.uniform1f(U.faith.windLevel, motion.u);
-    gl.uniform1f(U.faith.windTime, motion.time);
-    gl.uniform1f(U.faith.leafSwing, params.leaf_swing);
-    gl.uniform1f(U.faith.flutterFreq, params.flutter_freq);
-    gl.uniform2f(U.faith.sway, motion.sway[0], motion.sway[1]);
-    gl.uniform1f(U.faith.hRef, Math.max(faith.hMax, 1e-3));   // height-scale the coherent sway → base anchored, crown sways (matches the wood)
+    const pFaith = faith.pivotOn ? hub.progFaithPivot : progFaith, UF = faith.pivotOn ? U.faithPivot : U.faith;   // leaves on older wood: the pivot weight's specialization
+    gl.useProgram(pFaith);
+    gl.uniform1i(UF.seasonCast,hub.seasonCast?1:0);
+    gl.uniform2f(UF.origin, faith.ox, faith.oy);
+    gl.uniform2f(UF.extent, faith.ext, faith.ext);
+    gl.uniform1f(UF.edge, params.edge_softness);   // soft leaf rim (same as the layer bake); 0 here = hard ellipses
+    gl.uniform1f(UF.beamK, k);                     // the BEAM's neutral depth (§4.5), pre-integrated into the cast like everything else the leaves do to it
+    gl.uniform1i(UF.edgeArea, faith.edgeArea);     // ...and so is the edge law: at k = 0 each stamp is the leaf's mixture, not the slab of its mask
+    gl.uniform1i(UF.curtainBake, params.receiver ? 1 : 0);   // §4.9: project onto the vertical cloth (curtain) vs the floor
+    gl.uniform1f(UF.clothY, params.cloth_distance_m);
+    gl.uniform1f(UF.morph, params.drift_phase);
+    gl.uniform1f(UF.morphAmount, params.drift_amount);
+    gl.uniform1f(UF.windLevel, motion.u);
+    gl.uniform1f(UF.windTime, motion.time);
+    gl.uniform1f(UF.leafSwing, params.leaf_swing);
+    gl.uniform1f(UF.flutterFreq, params.flutter_freq);
+    gl.uniform2f(UF.sway, motion.sway[0], motion.sway[1]);
+    gl.uniform1f(UF.hRef, Math.max(faith.hMax, 1e-3));   // height-scale the coherent sway → base anchored, crown sways (matches the wood)
     bindLeafShape(gl, U.faith, hub.grove);   // the active grove's outline (unit 6), first, so the unit left active is the cluster geometry's (see bakeLayers)
-    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex);     gl.uniform1i(U.faith.clusterTex, 4);
-    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(U.faith.clusterGeom, 5);
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex);     gl.uniform1i(UF.clusterTex, 4);
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(UF.clusterGeom, 5);
 
     // FAITHFUL skeleton (§4.5): refill the instance array with the live limb SWING + whole-tree drift, so the wood
     // sways WITH the leaves; then upload + set its statics once.
@@ -313,8 +314,8 @@ export function makeBake(hub){
       gl.bindFramebuffer(gl.FRAMEBUFFER, faithFBO);   // faithScratch (attached once above)
       gl.disable(gl.BLEND); gl.clearColor(1,1,1,1); gl.clear(gl.COLOR_BUFFER_BIT);
       gl.enable(gl.BLEND); gl.blendFunc(gl.ZERO, gl.SRC_COLOR);   // dst *= src → Π exp(-τ)
-      gl.useProgram(progFaith);
-      gl.uniform2f(U.faith.g, gx[i], gy[i]);
+      gl.useProgram(pFaith);
+      gl.uniform2f(UF.g, gx[i], gy[i]);
       gl.bindVertexArray(faith.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, faith.count);
       if(woodOn){   // wood into the SAME scratch (still multiplicative) → leaves × wood = combined transmittance_i

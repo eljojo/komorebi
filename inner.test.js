@@ -834,3 +834,48 @@ test("the editor offers it: a canopy row in the Density area, just before the sp
   expect(spread - row, "right before cluster_spread_m").toBeLessThan(500);
   expect(src, "its help").toMatch(/\n {2}inner_leaves:"<b>/);
 });
+
+// ---- the pivot weight (José, 2026-11-09, item 8): a leaf hung on older wood follows that wood, not its twig's bend ----------------------
+// placeLeaf's out[3]: the share of its twig's bend the leaf drops, s on wood older than the twig's own (path segments past its grown base), 0 at the tip and on
+// the twig's own wood. VS_FAITH scales the twig bend by (1 − it), so 0 is today's motion to the bit.
+test("the pivot weight: s on the older wood, 0 on the twig's own wood and at the tip, 0 everywhere at inner_leaves 0", () => {
+  const P = { ...DEFAULTS, seed: 5, cluster_spread_m: 0, inner_leaves: 1 };
+  const hier = { twigs: [{ x: 0, y: 0, z: 3, dx: 1, dy: 0, bx: -0.5, by: 0, tree: 0, layer: 0 }], twigPath: [Float64Array.from([0, 0, 3, -0.5, 0, 3, -4, 0, 3])], twigPathLen: Float64Array.from([4]) };
+  let own = 0, older = 0;
+  for (let k = 0; k < 400; k++) {
+    const { h, u } = hOf(P.seed, 0, k), d = u * u * 4, s = math.smoothstep(h, h + 0.05, P.inner_leaves);
+    const out = [0, 0, 0, 0];
+    GROVE.placeLeaf(hier, 0, 0, 0, k, P, true, out);
+    if (s === 0) { expect(out[3], `leaf ${k} at its tip`).toBe(0); continue; }
+    if (d <= 0.5) { expect(out[3], `leaf ${k} on the twig's own wood (d ${d.toFixed(3)})`).toBe(0); own++; }
+    else { expect(out[3], `leaf ${k} on older wood (d ${d.toFixed(3)})`).toBe(s); older++; }
+    const off = [0, 0, 0, 0];
+    GROVE.placeLeaf(hier, 0, 0, 0, k, { ...P, inner_leaves: 0 }, true, off);
+    expect(off[3], `leaf ${k} at inner_leaves 0`).toBe(0);
+  }
+  expect(own, "leaves on the twig's own wood (not vacuous)").toBeGreaterThan(10);
+  expect(older, "leaves on older wood (not vacuous)").toBeGreaterThan(100);
+});
+
+test("the pivot weights ride beside the faithful leaves: one a leaf, compacted with them when leaves have gone, all 0 at inner_leaves 0, some on the wood with it up", () => {
+  for (const [label, over] of [["off", { inner_leaves: 0 }], ["on", { inner_leaves: 0.45 }], ["on, half fallen", { inner_leaves: 0.45, leaf_drop: 1, phenology: 0.85, anthocyanin: 0.4, tannin: 0.2 }]]) {
+    const r = growWith(small(over), true);
+    expect(r.faith.pivot.length, `${label}: one weight a leaf`).toBe(r.faithLeaves.length / 18);
+    expect(Array.from(r.faith.pivotBuf.data ?? []).length, `${label}: the uploaded buffer is the same list`).toBe(r.faith.pivot.length);
+    if (over.inner_leaves === 0) expect(r.faith.pivot.every((w) => w === 0), `${label}: all 0`).toBe(true);
+    else expect(r.faith.pivot.filter((w) => w > 0).length, `${label}: leaves on older wood`).toBeGreaterThan(20);
+    if (over.leaf_drop) expect(r.litter.length, `${label}: leaves have gone (not vacuous)`).toBeGreaterThan(20);
+  }
+});
+
+test("the pivot weights survive a re-season: the grove re-seasoned in place to half fallen uploads the same weights a fresh build there does", () => {
+  const build = small({ inner_leaves: 0.45, leaf_drop: 1, anthocyanin: 0.4, tannin: 0.2, phenology: 0.5 }), to = { ...build, phenology: 0.85 };
+  const gl = stubGl(), faith = {};
+  const maker = GROVE.makeGrove({ gl, params: { ...DEFAULTS, ...build }, MAX_TEX: 16384, quadBuf: {}, faithfulOn: () => true, occ: {}, faith, sky: { start: [], count: [] } });
+  const g = maker.buildGrove(null, { keepSeason: true });
+  maker.reseasonGrove(g, { ...DEFAULTS, ...to });
+  const fresh = growWith(to, true);
+  expect(fresh.litter.length, "leaves have gone (not vacuous)").toBeGreaterThan(20);
+  expect(faith.buf.data.length / 18 === faith.pivotBuf.data.length, "one weight a leaf after the re-season").toBe(true);
+  expect(Array.from(faith.pivotBuf.data), "the re-season's weights are the fresh build's").toEqual(Array.from(Float32Array.from(fresh.faith.pivot)));
+});

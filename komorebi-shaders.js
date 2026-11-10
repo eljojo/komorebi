@@ -156,7 +156,10 @@ layout(location=2) in vec4 iB;        // angle, restTilt, swingGain, swingPhase
 layout(location=3) in vec4 iC;        // tau.rgb, clusterId (which twig — hierarchy lookup)
 layout(location=4) in vec4 iD;        // orbit: ampX, ampY, orientation, phase (incoherent drift)
 layout(location=5) in float iHeight;  // FAITHFUL: this leaf's continuous floor-height (floorH of its grown z)
-layout(location=6) in float iFade;    // the fade the CPU folded into iC.xyz: the ballistic depth k·fade has to ride it (§4.5)
+layout(location=6) in float iFade;
+#ifdef PIVOT
+layout(location=8) in float iPivotDrop;   // the share of its twig's bend a leaf on older wood drops (inner_leaves; komorebi-grove.js placeLeaf)
+#endif    // the fade the CPU folded into iC.xyz: the ballistic depth k·fade has to ride it (§4.5)
 #ifdef SEASON_TRAVEL
 layout(location=7) in vec4 iJourney;  // floor landing.xy, clockwise angle, height fraction
 uniform highp int uSeasonCast;
@@ -197,6 +200,9 @@ void main(){
   vec4 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0);   // .x limb bend, .y twig bend, .zw the sway_pitch height affine (see hEff)
   vec2 TB = geom.xy, BL = geom.zw;                         // TB = this twig's REAL grown base (faithful packs it where the layer path packs the tip)
   float thL = bend.x, thT = bend.y;
+#ifdef PIVOT
+  thT *= 1.0 - iPivotDrop;                                 // a leaf on older wood drops its twig's bend by its pivot weight, so it follows the wood it hangs on
+#endif
   // 3-D lean (§5.1): a wind-pitched limb lowers its leaves' height → shorter cast + less drift. The foreshorten is
   // ANCHORED at the limb's attach height: h' = attachH + (h−attachH)·fore, packed as the affine (.z, .w) =
   // (attachH·(1−fore), fore) so the shader is one madd. At the join h' = attachH exactly, so the pitching limb never
@@ -258,6 +264,11 @@ void main(){
 }`;
 
 const VS_FAITH = `#version 300 es
+${GLSL_FAITH_VERTEX}`;
+// A grove with leaves on older wood (inner_leaves) bakes with the pivot weight; every other grove with VS_FAITH itself, whose compile merely declaring the attribute
+// moved (3 pixels of park 1 on Metal), so the weight is its own specialization.
+const VS_FAITH_PIVOT = `#version 300 es
+#define PIVOT
 ${GLSL_FAITH_VERTEX}`;
 // A separate specialization keeps the native shader's arithmetic and compiler decisions intact.
 const VS_SEASON_TRAVEL = `#version 300 es
@@ -957,4 +968,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };

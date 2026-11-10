@@ -1,6 +1,6 @@
 import { clamp, lerp } from './komorebi-math.js';
 import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, CANOPY_KEYS, TOPO_KEYS, DEFAULTS, migrateLegacy, cutWarnings } from './komorebi-params.js';
-import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
+import { VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
 import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi-transport.js';
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
@@ -117,7 +117,7 @@ function createEngine(canvas, opts, driven=false){
   // subsystems it rebuilds (the transport cache, the fill's and the litter's programs and textures, the present target,
   // the grove's and the layers' VAOs and textures) must also be forgotten by hand in onContextRestored, or a restore
   // keeps a dead handle.
-  let progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
+  let progBake, progFaith, progFaithPivot, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
   let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
   let reseasonGrove, reseasonable, bake, bakeLayers, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
@@ -262,6 +262,7 @@ function createEngine(canvas, opts, driven=false){
     extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
     progBake = program(VS_BAKE, FS_BAKE);
     progFaith = program(VS_FAITH, FS_FAITH);   // FAITHFUL leaf bake (§4.5): per-sample transmittance at continuous heights
+    progFaithPivot = program(VS_FAITH_PIVOT, FS_FAITH);   // ...for a grove with leaves on older wood: the pivot weight (inner_leaves)
     progFaithSeg = program(VS_FAITH_SEG, FS_FAITH_SEG);   // FAITHFUL skeleton bake (§4.5): trunk+branches+twigs as geometry
     progFAcc = program(VS_FULL, FS_FACC);      // FAITHFUL accumulate: Σ w_i·transmittance_i
     progBlit = program(VS_FULL, FS_BLIT);
@@ -277,7 +278,7 @@ function createEngine(canvas, opts, driven=false){
                clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
                coverage:loc(progBake,'uCoverage'),
                leafTex:loc(progBake,'uLeafTex'), leafShape:loc(progBake,'uLeafShape'), shapeBox:loc(progBake,'uShapeBox'), leafIdFrac:loc(progBake,'uLeafIdFrac'), leafRows:loc(progBake,'uLeafRows') };   // the leaf's outline (komorebi-leaf.js): its texture, the gate, the quad's box and the table's packing — bound per grove
-    U.faith = faithLocs(progFaith);   // (uStemLen removed: faithful dropped the twig-swing that used it)
+    U.faith = faithLocs(progFaith); U.faithPivot = faithLocs(progFaithPivot);   // (uStemLen removed: faithful dropped the twig-swing that used it)
     U.faithSeg = { origin:loc(progFaithSeg,'uFaithOrigin'), extent:loc(progFaithSeg,'uFaithExtent'), g:loc(progFaithSeg,'uG'), woodTau:loc(progFaithSeg,'uWoodTau'),
                    curtainBake:loc(progFaithSeg,'uCurtainBake'), clothY:loc(progFaithSeg,'uClothY'),
                    segSway:loc(progFaithSeg,'uSegSway'), segTau:loc(progFaithSeg,'uSegTau') };
@@ -313,7 +314,7 @@ function createEngine(canvas, opts, driven=false){
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    Object.assign(hub, { extTimer, progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz,
+    Object.assign(hub, { extTimer, progBake, progFaith, progFaithPivot, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz,
                          quadBuf, emptyVAO, bakeFBO, faithFBO, fillFBO, occTex });
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
     const groveSystem = makeGrove(hub);
@@ -460,7 +461,7 @@ function createEngine(canvas, opts, driven=false){
       freeGrove(h.grove);
       for(const t of [...h.layerTex,...h.woodTex,h.faithTex,h.faithScratch])if(t)gl.deleteTexture(t);
       for(const v of [h.faith.vao,h.faith.segVAO])if(v)gl.deleteVertexArray(v);
-      for(const b of [h.faith.buf,h.faith.segBuf])if(b)gl.deleteBuffer(b);
+      for(const b of [h.faith.buf,h.faith.segBuf,h.faith.pivotBuf])if(b)gl.deleteBuffer(b);
     };
     Object.assign(hub,{grove:null,layerVAO:[],clusterTex:null,clusterGeomTex:null,layerTex:[],woodTex:[],faithTex:null,faithScratch:null});
     Object.assign(faith,{vao:null,buf:null,segVAO:null,segBuf:null});
@@ -665,7 +666,7 @@ function createEngine(canvas, opts, driven=false){
       hub.endGroveTravel();
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
-      [progBake, progFaith, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
+      [progBake, progFaith, progFaithPivot, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
       transportCache.forEach(v => { gl.deleteProgram(v.prog); });   // however many cameras this engine actually visited
       transportCache.clear();
       if(fillEntry){ gl.deleteProgram(fillEntry.prog); fillEntry = null; }   // the sky fill's bake, if a look ever opened it
@@ -677,6 +678,7 @@ function createEngine(canvas, opts, driven=false){
       [bakeFBO, faithFBO, fillFBO, hub.benchFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       hub.layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
+      if(faith.pivotBuf) gl.deleteBuffer(faith.pivotBuf);
       if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
       if(sky.segVAO){ gl.deleteVertexArray(sky.segVAO); gl.deleteBuffer(sky.segBuf); }
       if(litter.vao){ gl.deleteVertexArray(litter.vao); gl.deleteBuffer(litter.buf); }
@@ -801,7 +803,7 @@ function createEngine(canvas, opts, driven=false){
     litterEntry = null; Object.assign(litter, newLitterState());                   // ...and so did the carpet's: initGPU() makes the fresh 1×1, and the first draw that has fallen leaves to show bakes it again
     Object.assign(hub, { layerTex:[], woodTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
                          clusterTex:null, clusterGeomTex:null, presentFBO:null, presentW:0, presentH:0 });
-    faith.vao = faith.buf = faith.segVAO = faith.segBuf = null;
+    faith.vao = faith.buf = faith.segVAO = faith.segBuf = faith.pivotBuf = null;
     sky.segVAO = sky.segBuf = null;
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded

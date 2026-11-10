@@ -57,7 +57,8 @@ const MAPLE = Object.freeze({
   angles: Object.freeze([-95, -43, 0, 43, 95]), angleJitter: 4,   // primaries (°) and the ± they wander
   lengths: Object.freeze([0.36, 0.85, 1, 0.85, 0.36]), lengthJitter: 0.10,
   hub: 0.12, hold: 0.6, rho: 0.21, taper: 1,
-  back: 0.035,   // the truncate base: no blade behind the line x = −back (the petiole's insertion), in the grammar's units; undefined = no clip
+  back: 0.035,   // the base: no blade behind the curve x = −B(y) (the petiole's insertion), in the grammar's units; undefined = no clip
+  sag: 0.035, bow: 0.42, notch: 0.06, notchW: 0.07,   // B(y) = back + sag·max(−¼, 1 − (y/bow)²) − notch·e^(−|y|/notchW): beside the petiole the blade sags back, rounds into the basal lobes by |y| = bow, and a V notch comes forward at the petiole, so it sits in a sinus (José's photographs, DSC_0618/0622; chosen 2026-11-09)
   secStep: 0.18, secAngle: 45, secJitter: 0.10,   // alternate secondaries every 0.18 along a primary, at 45° ± 10%
   tooth: 0.02, toothHalf: 0.06,                   // each secondary ends in a 2% radial tooth, 0.06 rad to either side
 });
@@ -171,8 +172,20 @@ function bladeOf(spec, variantSeed){
       if(Math.abs(d) < spec.toothHalf) r[i] *= 1 + spec.tooth*(0.5 + 0.5*Math.cos(Math.PI*d/spec.toothHalf));
     }
   }
-  // the truncate base (MAPLE.back): no blade behind the line x = −back, so a ray that points backward is cut where it meets it. After the teeth (a tooth cannot stand out of the line) and before the area, which is π of what is left
-  if(spec.back !== undefined) for(let i = 0; i < LEAF_SAMPLES; i++){ const c = Math.cos(TAU*((i + 0.5)/LEAF_SAMPLES - 0.5)); if(c < 0) r[i] = Math.min(r[i], spec.back/-c); }
+  // the base (MAPLE.back and its curve): no blade behind x = −B(y), so a ray that points backward is cut where it FIRST leaves that region (marched in steps of 0.002, then bisected), which keeps r(θ) a radial
+  // function from the petiole base. After the teeth (a tooth cannot stand out of the base) and before the area, which is π of what is left
+  if(spec.back !== undefined) for(let i = 0; i < LEAF_SAMPLES; i++){
+    const th = TAU*((i + 0.5)/LEAF_SAMPLES - 0.5), c = Math.cos(th), s = Math.sin(th);
+    if(c >= 0) continue;
+    const B = (y) => spec.back + spec.sag*Math.max(-0.25, 1 - (y/spec.bow)**2) - spec.notch*Math.exp(-Math.abs(y)/spec.notchW);
+    const out = (t) => t*-c > B(t*s);
+    let lo = 0, hi = -1;
+    for(let t = 0.002; t < r[i]; t += 0.002){ if(out(t)){ hi = t; break; } lo = t; }
+    if(hi < 0 && out(r[i])) hi = r[i];   // the exit between the last step and the ray's own end
+    if(hi < 0) continue;
+    for(let n = 0; n < 24; n++){ const m = (lo + hi)/2; if(out(m)) hi = m; else lo = m; }
+    r[i] = lo;
+  }
   let a = 0;
   for(let i = 0; i < LEAF_SAMPLES; i++) a += 0.5*r[i]*r[i]*(TAU/LEAF_SAMPLES);
   const k = Math.sqrt(Math.PI/a);
@@ -199,12 +212,20 @@ const leafColumn = (u, h) => Math.min(VARIETY_COLUMNS - 1, Math.max(0, Math.floo
 const leafColumnF = (u, h) => Math.min(VARIETY_COLUMNS - 1, Math.max(0, VARIETY_COLUMNS*u + VARIETY_JITTER*(h - 0.5) - 0.5));
 // THE ROW'S SPEC: the species' numbers moved by the spread of the row's genotype g and its own leaf draws, scaled by the variety v, and by its light class c. Palmate (the maple): the lateral angle, the basal length, the lobe breadth and the lateral
 // length each move by a genotype draw plus a leaf draw (and the basal angle by a leaf draw), and the sun cuts deeper (rho − RHO_LIGHT·v·λ, λ = (c + ½)/V − ½, −7/16 in the deepest shade to +7/16 in full sun). THE STREAMS ARE THE CONTRACT: the genotype's
-// four draws in this order, then the leaf's five — reorder them and every row there is regrows. Pinnate (the beech) has no genotype numbers: its rows differ by their growth streams alone, so the spec is the spec.
+// four draws in this order, then the leaf's five — reorder them and every row there is regrows. Pinnate (the beech): a genotype draw and then a leaf draw each move the width W, the base's roundness aBase and the taper cApex, scaled by v, and the sun narrows the blade by BEECH_LIGHT·v·λ (chosen 2026-11-09). The beech's
+// streams are the maple's: the genotype's three draws, then the leaf's three.
 const U = (r) => 2*r() - 1;
+// the sun narrows a beech leaf by BEECH_LIGHT·v·λ: the maple's RHO_LIGHT taken as the same share of the beech's width (0.04/0.21 of W 0.30), so at v 1 the sun leaf is ~8% narrower and the shade
+// leaf ~8% wider; its smaller size in the sun is SIZE_LIGHT's, as for every species
+const BEECH_LIGHT = 0.057;
 function rowSpec(spec, seed, v, row){
-  if(spec.grammar !== 'palmate') return spec;
   const g = Math.floor(row/VARIETY_COLUMNS), c = row % VARIETY_COLUMNS;
   const gs = mulberry32(hash3((seed>>>0)^GENOTYPE_SALT, spec.species, g)), ls = mulberry32(hash3((seed>>>0)^GENOTYPE_SALT, spec.species, VARIETY_GENOTYPES + row));
+  if(spec.grammar !== 'palmate'){
+    const dWG = 0.03*U(gs), dAG = 0.08*U(gs), dCG = 0.12*U(gs), dWL = 0.02*U(ls), dAL = 0.05*U(ls), dCL = 0.08*U(ls);
+    const lam = (c + 0.5)/VARIETY_COLUMNS - 0.5;
+    return { ...spec, W: spec.W + v*(dWG + dWL) - BEECH_LIGHT*v*lam, aBase: Math.max(0.25, spec.aBase + v*(dAG + dAL)), cApex: Math.max(0.7, spec.cApex + v*(dCG + dCL)) };
+  }
   const dLatG = 5*U(gs), dBasG = 0.15*U(gs), dRhoG = 0.025*U(gs), dLenG = 0.07*U(gs);
   const dLatL = 5*U(ls), dBasL = 0.12*U(ls), dRhoL = 0.02*U(ls), dLenL = 0.06*U(ls), dBasAng = 10*U(ls);
   const lam = (c + 0.5)/VARIETY_COLUMNS - 0.5, lat = spec.angles[3] + v*(dLatG + dLatL), ba = spec.angles[4] + v*dBasAng;
@@ -256,4 +277,4 @@ function leafShape(name, seed, variety = 0){
   return g;
 }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, SIZE_LIGHT, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape };
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, BEECH_LIGHT, SIZE_LIGHT, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape };

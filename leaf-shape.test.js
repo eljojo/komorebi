@@ -145,13 +145,17 @@ test("solidity and width over length: the blade fills its hull (0.66–0.83 on e
   expect(mean(wl)).toBeGreaterThan(1.10); expect(mean(wl)).toBeLessThan(1.45);
 });
 
-test("a truncate base: no blade behind the petiole — mean r(150°) ≤ 0.12 and r(120°) ≤ 0.25 (his 0.03 and 0.11; the star's 0.30 and 0.74) — and exactly: r(θ)·(−cos θ) never passes back·k", () => {
-  expect(MAPLE.back, "the half-plane behind the petiole's insertion, in the grammar's own units").toBeGreaterThan(0);
+// the base (MAPLE.back and its curve, 2026-11-09): a point of the blade at grammar coordinates (x, y) lies in front of x = −B(y); r is in the normalised units, so x = r·cos/k
+const baseB = (spec, y) => spec.back + spec.sag * Math.max(-0.25, 1 - (y / spec.bow) ** 2) - spec.notch * Math.exp(-Math.abs(y) / spec.notchW);
+const behindBase = (spec, r, k, c, s) => (r / k) * -c - baseB(spec, (r / k) * s);   // ≤ 0 for a point on or in front of the base
+test("the base: no blade behind the petiole — mean r(150°) ≤ 0.12 and r(120°) ≤ 0.25 (his 0.03 and 0.11; the star's 0.30 and 0.74) — and exactly: no point of r(θ) behind the curve x = −B(y)", () => {
+  expect(MAPLE.back, "the base behind the petiole's insertion, in the grammar's own units").toBeGreaterThan(0);
+  expect(baseB(MAPLE, 0), "the petiole sits in a sinus: the notch comes forward of the line").toBeLessThan(MAPLE.back);
   const r150 = [], r120 = [];
   for (const seed of SEEDS) for (let v = 0; v < LEAF.LEAF_VARIANTS; v++) {
     const b = LEAF.bladeOf(MAPLE, LEAF.outlineSeed(MAPLE, seed, v));
     r150.push(symAt(b.r, 150)); r120.push(symAt(b.r, 120));
-    for (let i = 0; i < N; i++) { const c = Math.cos(th(i)); if (c < 0) expect(b.r[i] * -c, `seed ${seed} v${v} ray ${i}`).toBeLessThanOrEqual(MAPLE.back * b.k + 1e-12); }
+    for (let i = 0; i < N; i++) { const c = Math.cos(th(i)); if (c < 0) expect(behindBase(MAPLE, b.r[i], b.k, c, Math.sin(th(i))), `seed ${seed} v${v} ray ${i}`).toBeLessThanOrEqual(1e-9); }
   }
   expect(mean(r150)).toBeLessThanOrEqual(0.12);
   expect(mean(r120)).toBeLessThanOrEqual(0.25);
