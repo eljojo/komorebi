@@ -40,7 +40,7 @@ export function makeSource(hub){
     if(params.eclipse){
       for(const p of pts){ if(Math.hypot(p[0]-moonD, p[1])<moonR) p[2]=0; }
       // No renormalisation: the floor dims by the share the moon covers, as a real eclipse does, and each crescent stays as bright per area as the
-      // clear sun's disc (José chose this, 2026-11-09, item 33-B). To bring back the old look, the crescents at the clear sun's total, renormalise here:
+      // clear sun's disc. To bring back the old look, the crescents at the clear sun's total, renormalise here:
       //   let s=0; for(const p of pts) s+=p[2]; if(s>0) for(const p of pts) p[2]/=s;
       // and divide the seen source's Lcore/Lhalo below by the analytic uncovered share again (see there).
     }
@@ -49,11 +49,11 @@ export function makeSource(hub){
     // the very numbers the sampler just used, so the sun you look at and the dapples it throws cannot drift apart:
     // raise cloud_thickness and the disk drains into the aureole by exactly the amount the dapples soften. Absolute
     // scale is authored — see SKY_SUN_GAIN.
-    // The eclipse's seen source is the uncovered disc at its own radiance: the moon removes area, not brightness (33-B, 2026-11-09). The renormalised
+    // The eclipse's seen source is the uncovered disc at its own radiance: the moon removes area, not brightness. The renormalised
     // version divided Lcore/Lhalo by `live`, the analytic share left uncovered (circle-circle overlap via lensArea); `git show 8d75e3b:komorebi-source.js` has it.
     const aCore = Math.PI*coreR*coreR, aHalo = Math.max(Math.PI*(haloR*haloR - coreR*coreR), 1e-12);
     src.coreR = coreR; src.haloR = haloR; src.moonD = moonD; src.moonR = moonR;
-    src.Lcore = SKY_SUN_GAIN * Wcore / aCore;                          // the uncovered surface is as bright as ever; the eclipse removes area, not radiance (33-B)
+    src.Lcore = SKY_SUN_GAIN * Wcore / aCore;                          // the uncovered surface is as bright as ever; the eclipse removes area, not radiance
     src.Lhalo = SKY_SUN_GAIN * Whalo / aHalo;
     const flat=new Float32Array(pts.length*3);
     let mr=1e-9, mw=1e-9;
@@ -84,7 +84,7 @@ export function makeSource(hub){
     // the bulk sun-angle throw is needed for BOTH the standing-scene floor AND the curtain receiver (it's what
     // projects the tree's shadow off to the side / onto the cloth). Off for the overhead park (receiver 0 + no
     // standing scene) → 0, byte-identical.
-    // The overhead park throws only when park_throw asks it to (item 17): the same throw, scaled. 0 is the early return, exactly.
+    // The overhead park throws only when park_throw asks it to: the same throw, scaled. 0 is the early return, exactly.
     const scale = bulkOn() ? 1 : params.park_throw;
     if(!(scale > 0)){ _bulk[0]=0; _bulk[1]=0; return _bulk; }
     const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=scale === 1 ? Math.cos(el)/Math.sin(el) : scale*Math.cos(el)/Math.sin(el);

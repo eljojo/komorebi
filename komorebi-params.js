@@ -15,7 +15,7 @@ const MAX_FILL_DIRS = 64;   // the sky fill's ray cap (§4.7): fill_directions i
 // texels rather than fragment uniform rows (§6) — it is no longer a budget constraint, it is an authored ceiling.
 // It is 256. 'the void' grows 192 level-≤1 segments, which a cap of 64 once truncated; but its wood is shut (branch_tau 0),
 // so it never reads the table, and canopy 1–4 use at most 64: raising the cap to 256 repainted no shipped look (byte-identical
-// frames at 64 and 256, 2026-11-09). Raising it further could still repaint a grove that outgrows it: a look decision.
+// frames at 64 and 256). Raising it further could still repaint a grove that outgrows it: a look decision.
 const MAX_OCC = 256;
 // SKY VIEW (§4.9): the authored radiance scale for the SEEN source. The physical contrast between a sun disk and a
 // blue sky is ~10^6, which neither an ACES tail nor a 13-tap glare kernel can carry — so what ships is a compressed
@@ -188,7 +188,7 @@ const DEFAULTS = {
   drop_start: 0.7,                 // the season at which the first leaf lets go (phenology units; the turn starts at turn_start 0.6). Not read with drop_after_turn: the first leaf then goes when it has turned, turn_start + turn_span − turn_spread + drop_lag + DROP_EPS
   drop_span: 0.3,                  // how long the dropping share takes to fall, in seasons: the last of it is down by drop_start + drop_span
   drop_exposure: 1.0,              // how far light orders the drop (0 = each leaf's own hash, 1 = the sunlit leaves go first). Reads the same exposure turn_exposure does, so it needs no turn_exposure of its own
-  drop_lag: 0.09,                  // after the turn (drop_after_turn 1 only): how long a leaf that has finished turning hangs before it fades, in seasons. 0 = it fades the instant it has turned; 0.09 (a total of 0.10 with DROP_EPS) is José's pick from the sheet (2026-11-09), a little past his beech's half down at 0.9, which is a total of 0.09. It was 0.05 (a total of 0.06 with DROP_EPS), which kept montebello's 66.7 % down at 0.9
+  drop_lag: 0.09,                  // after the turn (drop_after_turn 1 only): how long a leaf that has finished turning hangs before it fades, in seasons. 0 = it fades the instant it has turned; 0.09 (a total of 0.10 with DROP_EPS) puts a little under half the leaves down at 0.9 (his beech's half is a total of 0.09). It was 0.05 (a total of 0.06 with DROP_EPS), which kept montebello's 66.7 % down at 0.9
   drop_after_turn: 0,              // a leaf lets go only after it has turned (§4.5, Abscission): 0|1, a flip (never morphs). 0 = the day is drop_start + drop_span·φ_d/leaf_drop, its own clock beside the turn, bit for bit. 1 = the end of the leaf's own turn window + DROP_EPS + drop_lag, ordered by the turn's own phase, so a sunlit leaf lets go first because it finished first; drop_start/span/exposure are then unread. THE TRADE: the crown turns SOONER mid-turn (each leaf's window is turn_span − turn_spread long, not a smoothstep to the common finish); from turn_start + turn_span on the colour is identical. The carpet is younger (less brown at the same litter_age)
   litter: 0,                       // the carpet (§4.7, P3b): the fallen leaves lie on the floor and the floor reflects off them. THE GATE, separate from leaf_drop so the canopy half can be judged alone: 0 = no texture (1x1), no bake pass, the floor's literal old line. Only the floor reads it
   litter_age: 0.15,                // PROVISIONAL (phenology units): how long a fallen leaf takes to go from its own hue to brown — smoothstep over (phenology − its day) / litter_age. Read by the regrow-time bake only
@@ -206,7 +206,7 @@ const DEFAULTS = {
   // in a shader reads it); 1 = the law, normalised to the zenith, so a look that turns it on re-sits its `exposure` (about ×2.3 at 26°). The sky view never reads it: radiance is invariant, the seen
   // disk takes nothing. The skylight is not a beam and keeps its level. Author only 0 or 1 (an interior value is the law under a higher sun, which a real sun does give).
   sun_cosine: 0.0,
-  // THE AIR'S LOSS (a prototype under the artist's review, 2026-11-09): the beam's broadband transmittance against the zenith's, which atmosphere() divides out to keep
+  // THE AIR'S LOSS: the beam's broadband transmittance against the zenith's, which atmosphere() divides out to keep
   // only the hue. 0 = the old beam, exactly (the factor is 1); 1 = a 12° sun about half as bright as one overhead, on top of the cosine law. A live scale beside sun_cosine's.
   sun_extinction: 0.0,
   // Look
@@ -297,7 +297,7 @@ const DEFAULTS = {
   far_smear: 3.0,                  // far-field dapple smear: extra throw (m) per unit foreshortening; 0 = off, no effect top-down
   park_throw: 0.0,                 // the overhead park's shear (§4.8): each layer thrown down-sun by its height·cot(elevation), the throw a standing scene always has, × this (0..1).
                                    // Physically real (leaves at different heights land at different places under a low sun) but off by default: with far_smear it streaks the floor
-                                   // into sharp down-sun slashes, an artistic look to choose, never to land on (José, 2026-11-09, item 17). 0 = the park as it was, to the bit
+                                   // into sharp down-sun slashes, an artistic look to choose, never to land on. 0 = the park as it was, to the bit
   exposure: 1.3,
   cloud_exposure: 0.0,             // a thicker cloud brightens the frame: exposure × (1 + this·cloud_thickness), as an eye opens up under a passing cloud.
                                    // A look is authored at its own cloud with its exposure re-sat by it, so only a change of cloud shows. 0 = off

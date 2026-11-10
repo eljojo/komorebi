@@ -61,7 +61,7 @@ const MAPLE = Object.freeze({
   lengths: Object.freeze([0.36, 0.85, 1, 0.85, 0.36]), lengthJitter: 0.10,
   hub: 0.12, hold: 0.6, rho: 0.21, taper: 1,
   back: 0.035,   // the base: no blade behind the curve x = −B(y) (the petiole's insertion), in the grammar's units; undefined = no clip
-  sag: 0.035, bow: 0.42, notch: 0.06, notchW: 0.07,   // B(y) = back + sag·max(−¼, 1 − (y/bow)²) − notch·e^(−|y|/notchW): beside the petiole the blade sags back, rounds into the basal lobes by |y| = bow, and a V notch comes forward at the petiole, so it sits in a sinus (José's photographs, DSC_0618/0622; chosen 2026-11-09)
+  sag: 0.035, bow: 0.42, notch: 0.06, notchW: 0.07,   // B(y) = back + sag·max(−¼, 1 − (y/bow)²) − notch·e^(−|y|/notchW): beside the petiole the blade sags back, rounds into the basal lobes by |y| = bow, and a V notch comes forward at the petiole, so it sits in a sinus (matched to José's photographs DSC_0618 and DSC_0622)
   secStep: 0.18, secAngle: 45, secJitter: 0.10,   // alternate secondaries every 0.18 along a primary, at 45° ± 10%
   tooth: 0.02, toothHalf: 0.06,                   // each secondary ends in a 2% radial tooth, 0.06 rad to either side
 });
@@ -210,12 +210,12 @@ function leafJitter(seed, j, k){
 }
 // A leaf's light class from its rank of light u in the grove (0 buried .. 1 most exposed) and its jitter h: V·u, ± VARIETY_JITTER columns of h, clamped to the table — a column is where the rank puts it, not stepped by it
 const leafColumn = (u, h) => Math.min(VARIETY_COLUMNS - 1, Math.max(0, Math.floor(VARIETY_COLUMNS*u + VARIETY_JITTER*(h - 0.5))));
-// The same class, continuous (José chose it over the swap, 2026-11-09): column c sits at c exactly, and a leaf between two columns hangs a blend of
+// The same class, continuous: column c sits at c exactly, and a leaf between two columns hangs a blend of
 // their outlines, so a morph that moves its rank moves its lobes instead of swapping them. leafColumn is its nearest column, which the carpet and the held leaf keep.
 const leafColumnF = (u, h) => Math.min(VARIETY_COLUMNS - 1, Math.max(0, VARIETY_COLUMNS*u + VARIETY_JITTER*(h - 0.5) - 0.5));
 // THE ROW'S SPEC: the species' numbers moved by the spread of the row's genotype g and its own leaf draws, scaled by the variety v, and by its light class c. Palmate (the maple): the lateral angle, the basal length, the lobe breadth and the lateral
 // length each move by a genotype draw plus a leaf draw (and the basal angle by a leaf draw), and the sun cuts deeper (rho − RHO_LIGHT·v·λ, λ = (c + ½)/V − ½, −7/16 in the deepest shade to +7/16 in full sun). THE STREAMS ARE THE CONTRACT: the genotype's
-// four draws in this order, then the leaf's five — reorder them and every row there is regrows. Pinnate (the beech): a genotype draw and then a leaf draw each move the width W, the base's roundness aBase and the taper cApex, scaled by v, and the sun narrows the blade by BEECH_LIGHT·v·λ (chosen 2026-11-09). The beech's
+// four draws in this order, then the leaf's five — reorder them and every row there is regrows. Pinnate (the beech): a genotype draw and then a leaf draw each move the width W, the base's roundness aBase and the taper cApex, scaled by v, and the sun narrows the blade by BEECH_LIGHT·v·λ. The beech's
 // streams are the maple's: the genotype's three draws, then the leaf's three.
 const U = (r) => 2*r() - 1;
 // the sun narrows a beech leaf by BEECH_LIGHT·v·λ: the maple's RHO_LIGHT taken as the same share of the beech's width (0.04/0.21 of W 0.30), so at v 1 the sun leaf is ~8% narrower and the shade

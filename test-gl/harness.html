@@ -274,7 +274,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
       const atm = atmosphere({ sun: [0, 0, 0], ambient: [0, 0, 0] }, p.sun_elevation_deg, p.sky_turbidity, p.ambient_skylight);
       // THE SUN THE LEAVES ARE LIT BY (§3.5, sun_cosine): the beam colour scaled by the floor's cosine, whatever surface reads S — the leaves are near-horizontal. The same scale the bake uploads, restated
       // here from komorebi-math.js rather than read back from the engine, so a bake that forgot it (or scaled by the wrong camera) is a miss of ~1/sin el against this reference. 1 at sun_cosine 0, exactly.
-      // ...and by the air's loss (sun_extinction, 2026-11-09), restated from beamExtinction the same way: 1 at sun_extinction 0, exactly.
+      // ...and by the air's loss (sun_extinction), restated from beamExtinction the same way: 1 at sun_extinction 0, exactly.
       const fsun = atm.sun.map((v) => v * lerp(1, sunIncidence('floor', p.sun_elevation_deg, p.sun_azimuth_deg), p.sun_cosine)
         * lerp(1, beamExtinction(p.sun_elevation_deg, p.sky_turbidity), p.sun_extinction ?? 0));
       // ONE SUN PER CAMERA (§4.7): the fill lights its leaves along the BEAM's path — the bulk shift, 0 in the endless park — never along the real sun

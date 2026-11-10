@@ -414,7 +414,7 @@ const INVARIANTS = [
   // (park 1 and curtain 1 were re-recorded once, from 6b57b555 / 7cad5bb5: the old hashes pinned the frame baked before its own source cloud. The new ones are the
   // rebaked frames — the "shows its real frame unaided" rows above hold the unaided frame equal to the re-baked one, so these cannot drift from it.)
   { name: 'park 1 is the frame it was (faithful floor: wood texture 1x1, unread)', preset: 'park 1', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '75f18f24' },
-  // curtain 1 became a velvet on 2026-11-09 (item 20): the row holds the laws at 0 on the cotton it was pinned on
+  // curtain 1 is a velvet now: the row holds the laws at 0 on the cotton it was pinned on
   { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', a: { sun_cosine: 0, sun_extinction: 0, cloud_exposure: 0, exposure: 1.4, fabric_tt: 0.78, fabric_tint_r: 0.45, fabric_tint_g: 1, fabric_tint_b: 0.28, fold_depth: 0.38, velvet_sheen: 0.02 }, pin: '32ad83b8' },
   // TODO revisit these layer-floor pins: untouched 14a97c2 also gives ea083587 / 8f0a8e8e on this SwiftShader host (2026-11-07); tint-cache renders differ by 0 pixels.
   { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'bdcffc3c' },
@@ -479,11 +479,11 @@ const INVARIANTS = [
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 9668d2f8 on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '894c1749' },
   // ...and the RECALIBRATED MAPLE (leaf diversity, 2026-10-09), pinned the same way at the end of the recalibration and before any leaf_variety edit: its own bits are new, so what leaf_variety must not move is these.
-  // re-pinned 2026-11-09 on this host (macOS, SwiftShader) for the maple's curved base (item 8)
+  // re-pinned on a macOS SwiftShader host for the maple's curved base
   { name: 'the recalibrated maple, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '21f30fcf' },
-  // re-pinned 2026-11-09 on this host (macOS, SwiftShader) for the maple's curved base (item 8)
+  // re-pinned on a macOS SwiftShader host for the maple's curved base
   { name: 'the recalibrated maple, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: 'cb25ef27' },
-  // re-pinned 2026-11-09 on this host (macOS, SwiftShader) for the maple's curved base (item 8)
+  // re-pinned on a macOS SwiftShader host for the maple's curved base
   { name: 'the recalibrated maple, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '2711c9b7' },
   // AREA IS CONSERVED, so the canopy keeps its fullness: the profile is the unit circle's area, so a maple at aspect 1 and 1/√aspect of the size has the leaf the ellipse had (the species
   // bundle's 0.103 = 0.13/√1.6; memories and afternoon 7 sit at 0.1 and 1.75, so 0.0756). The mean level of the frame stays within 5%.
@@ -603,9 +603,9 @@ const INVARIANTS = [
   { name: 'inner_leaves: a hair of the share moves the frame by a hair (layer path)', preset: 'afternoon 7', near: 57,
     a: { inner_leaves: 0.3 }, b: { inner_leaves: 0.301 } },
   // THE SUN'S COSINE LAW (§3.5, `sun_cosine`): the beam lands on each receiver by its incidence, as a CPU scale of the uSunColor upload (komorebi-render.js) and of the fill's sun (komorebi-bake.js); no GLSL
-  // moves. 0 is the gate and the default; most looks carry 1 since 2026-11-09, and the rows below start from 0 at the look's old exposure. Naming it must be the frame before the knob existed, on all four cameras: the floor (layer path: afternoon 7; faithful: park 1), the cloth
+  // moves. 0 is the gate and the default; most looks carry 1, and the rows below start from 0 at the look's old exposure. Naming it must be the frame before the knob existed, on all four cameras: the floor (layer path: afternoon 7; faithful: park 1), the cloth
   // (curtain 1), the enclosure (tent 1) and the sky view (canopy 1). Zero-vs-absent holds the DEFAULTS merge path (a default, or a look, that is not 0 would split the pair) ...
-  // Since 2026-11-09 most looks carry the law (contracts/looks.md, "The cosine law"), so "absent" is a look that kept the old law: memories on the layer floor, park 2 on the faithful one.
+  // Most looks carry the law (contracts/looks.md, "The cosine law"), so "absent" is a look that kept the old law: memories on the layer floor, park 2 on the faithful one.
   // No cloth or enclosure look kept it; for those two the pins on curtain 1 and tent 1, rendered at 0 and their old exposure, are the frame before the law.
   { name: 'sun_cosine 0 == absent (layer path)', preset: 'memories', a: {}, b: { sun_cosine: 0 } },
   { name: 'sun_cosine 0 == absent (faithful path)', preset: 'park 2', rebake: true, a: {}, b: { sun_cosine: 0 } },
@@ -625,7 +625,7 @@ const INVARIANTS = [
   { name: 'sun_cosine 1 moves a fall look (montebello: the fill and S open)', preset: 'montebello', rebake: true, differ: true, a: { sun_cosine: 0 }, b: { sun_cosine: 1 } },
   // ...and the sky view never reads it: radiance is invariant, the seen disk takes nothing, so even at 1 the frame is the same bytes.
   { name: 'sun_cosine 1 does not touch the sky view', preset: 'canopy 1', a: {}, b: { sun_cosine: 1 } },
-  // THE AIR'S LOSS (sun_extinction, 2026-11-09): a CPU scale beside the cosine's, on the beam and on the fill's S. It moves a low sun's floor, and the seen disk takes none.
+  // THE AIR'S LOSS (sun_extinction): a CPU scale beside the cosine's, on the beam and on the fill's S. It moves a low sun's floor, and the seen disk takes none.
   { name: 'sun_extinction 1 dims a low sun (park 1 at 12 degrees, the fill shut and open)', preset: 'park 1', rebake: true, differ: true, a: { sun_elevation_deg: 12, sun_extinction: 0 }, b: { sun_elevation_deg: 12, sun_extinction: 1 } },
   { name: 'sun_extinction 1 moves a fall look (montebello: the fill and S open)', preset: 'montebello', rebake: true, differ: true, a: { sun_extinction: 0 }, b: { sun_extinction: 1 } },
   { name: 'sun_extinction 1 does not touch the sky view', preset: 'canopy 1', a: {}, b: { sun_extinction: 1 } },
@@ -721,7 +721,7 @@ const LIVE_CHANGES = [
   { name: 'park 1 with the fill open, edge_area (faithful: the cast AND the fill)', preset: 'park 1', rebake: true, over: { canopy_fill: 1 }, key: 'edge_area', value: true },
   // THE SUN'S COSINE LAW (§3.5) tweens: the uniform scale follows the live param, and the fill's S re-bakes on fillSig's slot 14 — a gate row alone cannot see a signature that forgot the key, because an engine born
   // with the knob bakes S scaled and a running one would keep the unscaled S it baked at 0.
-  { name: 'montebello (sun_cosine: the day dims the fill\'s S too)', preset: 'montebello', rebake: true, over: { sun_cosine: 0 }, key: 'sun_cosine', value: 1 },   // montebello ships with the law (2026-11-09): born without it, so the knob has something to change
+  { name: 'montebello (sun_cosine: the day dims the fill\'s S too)', preset: 'montebello', rebake: true, over: { sun_cosine: 0 }, key: 'sun_cosine', value: 1 },   // montebello ships with the law: born without it, so the knob has something to change
   // THE CARPET (§4.7) is noticed at draw time, not baked at a regrow the engine does not run when a slider moves: opened on a running engine it must be the
   // frame an engine born with it shows, and the authored wind direction — a MORPH key, tweened in a transition — must carry it there too
   { name: 'afternoon 7 (the carpet bakes when the gate opens)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9 }, key: 'litter', value: 1, litter: true },

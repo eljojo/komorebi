@@ -105,7 +105,7 @@ const SUN_INCIDENCE = {
   viewpoint: () => 1,   // the upward rays see radiance; the floor branch applies its own incidence
 };
 function sunIncidence(camera, elevDeg, azDeg){ return SUN_INCIDENCE[camera](elevDeg, azDeg); }
-// The beam's broadband loss to the air (`sun_extinction`; a prototype under the artist's review, 2026-11-09). atmosphere() divides the beam by its
+// The beam's broadband loss to the air (`sun_extinction`). atmosphere() divides the beam by its
 // brightest channel to keep only its hue, which also divides out how much dimmer a low sun is after the longer path through the air. This is that
 // peak transmittance against the zenith's at the same turbidity: 1 overhead, about 0.5 at 12°, so a 12° floor against a 70° one is ×9.1 with the
 // cosine law rather than ×4.5. The skylight's own fall at dusk is not in it.

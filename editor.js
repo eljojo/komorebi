@@ -205,7 +205,7 @@ const PANEL = [
   ['s','view_center_y','pan y',-25,25,0.1,''],
   ['s','view_fov_deg','fov °',10,110,1,''],
   ['s','far_smear','far smear',0,8,0.25,''],
-  ['s','park_throw','park shear',0,1,0.01,''],   // item 17: off by default; on the overhead park only
+  ['s','park_throw','park shear',0,1,0.01,''],   // the park's shear: off by default; on the overhead park only
   ['s','sky_scatter','foliage glow',0,1,0.01,''],   // §4.9: single-scatter radiance — the sunlit crown lights up instead of only filtering
   ['s','glow_bleed','glow bleed',0,1,0.01,''],       // THE GATE (§4.9): >0 routes the frame through linear HDR + two blur passes + a compositing tone-map
   ['s','glow_bleed_m','bleed (m)',0,0.2,0.005,''],   // how far the weave carries the light, in cloth metres
