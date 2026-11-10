@@ -279,7 +279,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 | Leaf travel faithful↔layer | `komorebi-leaf-travel.js` | `leaf-travel.test.js` (correspondence, area) | `test-gl/leaf-travel.mjs` |
 | Season travel | `komorebi-season-travel.js` | `season-travel.test.js`, `transitions.test.js` | `test-gl/season-travel.mjs` (compiled faithful fragment against the per-leaf reference across both edge modes) |
 | Litter rise and fall | `komorebi-litter-rise.js` | `litter-rise.test.js` | `test-gl/litter-rise.mjs`, `test-gl/litter-fall.mjs` (`--render`) |
-| Shadow rise | `komorebi-litter-rise.js` | `shadow-rise.test.js`, `transitions.test.js` | `test-gl/shadow-rise.mjs` (`--render`) |
+| Shadow rise and fall | `komorebi-litter-rise.js` | `shadow-rise.test.js`, `transitions.test.js` | `test-gl/shadow-rise.mjs`, `test-gl/shadow-fall.mjs` (`--render`) |
 | Grove regroup | `komorebi-grove-travel.js` | `grove-travel.test.js` | `test-gl/grove-travel.mjs` (`--render`) |
 | Key classes | `komorebi-params.js` | `MORPH_KEYS`, `CANOPY_KEYS`, `TOPO_KEYS`, `MODE_KEYS`, `SEASON_KEYS`; `CANOPY_MORPH_MAX` | `transitions.test.js` and the coverage test (every knob classified or explicitly excluded) | — |
 
@@ -426,7 +426,7 @@ Two tiers. The **unit tests** (`*.test.js` at the root, run under `bun test`) ho
 
 ### Route drivers
 
-`test-gl/viewpoint.mjs`, `leaf-travel.mjs`, `season-travel.mjs`, `litter-rise.mjs`, `litter-fall.mjs`, `shadow-rise.mjs` and `grove-travel.mjs` drive one travelling route each on WebGL. Between them they cover:
+`test-gl/viewpoint.mjs`, `leaf-travel.mjs`, `season-travel.mjs`, `litter-rise.mjs`, `litter-fall.mjs`, `shadow-rise.mjs`, `shadow-fall.mjs` and `grove-travel.mjs` drive one travelling route each on WebGL. Between them they cover:
 
 - native endpoint pixels and moving landings;
 - reversal and queued selections;

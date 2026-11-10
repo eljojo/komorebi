@@ -9,7 +9,7 @@ import { TAU, beamExposure, cameraPose, clamp, lerp, lerpAngle, smoothstep } fro
 import { cameraFor } from './komorebi-transport.js';
 import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';
-import {litterRiseEligible,litterFallEligible,shadowRiseEligible} from './komorebi-litter-rise.js';
+import {litterRiseEligible,litterFallEligible,shadowRiseEligible,shadowFallEligible} from './komorebi-litter-rise.js';
 import {groveTravelEligible} from './komorebi-grove-travel.js';
 import {densityEligible, densityKey, densityCount} from './komorebi-grove.js';
 
@@ -43,12 +43,13 @@ export function makeTransitions(hub){
     if(trans.active&&trans.litterRise){hub.retargetLitterRise(to,opts);return;}
     const shadowRise=!trans.active&&shadowRiseEligible(params,to)&&hub.faith?.count!==0;
     const litterFall=!trans.active&&litterFallEligible(params,to)&&hub.beginLitterRise(to,false,true)!==false;
-    if(!trans.active&&(litterFall||shadowRise||hub.grove?.litter?.length&&litterRiseEligible(params,to))){
+    const shadowFall=!trans.active&&shadowFallEligible(params,to)&&hub.beginLitterRise(to,true,true)!==false;
+    if(!trans.active&&(litterFall||shadowFall||shadowRise||hub.grove?.litter?.length&&litterRiseEligible(params,to))){
       hub.warnCut(to);
       Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
-        active:true,litterRise:true,shadowRise,litterFall,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
+        active:true,litterRise:true,shadowRise,litterFall,shadowFall,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
         structDiff:true,canopyMorph:false,crossfade:false,backgroundFade:false,bloom:0,bloomMax:0,irisRadius:1,swapped:false,onEnd:opts.onEnd??null});
-      if(!litterFall){
+      if(!litterFall&&!shadowFall){   // a descent keeps the live sky grove until its floor lands
         hub.beginLitterRise(to,shadowRise);
         for(const k in DEFAULTS)params[k]=to[k];
         hub.rebuildAll();hub.resetPerf();

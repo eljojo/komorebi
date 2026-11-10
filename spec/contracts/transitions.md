@@ -105,14 +105,14 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 | **Duration** | 2*D*. |
 | **Promises** | One leaf field crosses the horizon; no midpoint rebuild, bloom or picture dissolve. A leaf changes from ground-lit to canopy material before it crosses the horizon. The native sky takes over through a handoff that completes before landing. Wind never reverses; both clocks advance once per frame; drift continues; adaptive rendering resumes from landing. The fall installs the floor once at q=0 with its motion copied. Resize and cancellation are safe. |
 
-## Shadow rise (footprints → sky)
+## Shadow rise and fall (footprints ↔ sky)
 
 | | |
 |---|---|
-| **Joins** | `purple eye → look up`, forward only. |
-| **Gate** | Source: faithful, non-standing floor scene, leaf diffusion below 1. Target: layer standing sky scene, three layers, zero leaf diffusion. Both: floor receiver; no wood, canopy fill, litter, abscission, inner leaves, sun-incidence scaling or edge-area mixture; eclipse mode agrees; leaf sizes positive and at most 0.2 m; nonempty populations within budget; each view within its own hemisphere. Seeds, branching, outlines, variety, colours, grade and wind may differ. Bundles keep the flight camera when sky and floor are both kept, even with every seasonal tier cut. |
+| **Joins** | `purple eye → look up` (rise), `look up → purple eye` (fall). |
+| **Gate** | Checked in floor-to-sky order both ways. Floor end: faithful, non-standing floor scene, leaf diffusion below 1. Sky end: layer standing sky scene, three layers, zero leaf diffusion. Both: floor receiver; no wood, canopy fill, litter, abscission, inner leaves, sun-incidence scaling or edge-area mixture; eclipse mode agrees; leaf sizes positive and at most 0.2 m; nonempty populations within budget; each view within its own hemisphere. Seeds, branching, outlines, variety, colours, grade and wind may differ. Bundles keep the flight camera when sky and floor are both kept, even with every seasonal tier cut. |
 | **Duration** | 2*D*. |
-| **Promises** | Optical depth moves from ground cast to filters early in the flight, never doubled. Tone responses interpolate on shared irradiance, the glow included. The native sky takes over before landing. No midpoint rebuild or bloom; zero-time redraw advances nothing. Queue, resize, cancellation and recovery as the litter flight. |
+| **Promises** | Optical depth moves from ground cast to filters early in the flight, never doubled. Tone responses interpolate on shared irradiance, the glow included. The native sky takes over before landing. No midpoint rebuild or bloom; zero-time redraw advances nothing. The fall keeps the sky grove as the engine until it installs the floor once at landing with its motion copied; an empty floor grove declines before commit. Queue, resize, cancellation and recovery as the litter flight. |
 
 ## Grove regrouping (different standing groves)
 

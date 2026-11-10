@@ -110,6 +110,8 @@ export const shadowRiseEligible=FEAT_SKY_FLIGHT ? (a,b)=>{
   &&Math.max(count(a),count(b))*Math.max(Math.ceil(a.leaves_per_cluster*a.foliage_density),Math.ceil(b.leaves_per_cluster*b.foliage_density))<=CANOPY_MORPH_MAX;
 }:()=>false;
 
+export const shadowFallEligible=(a,b)=>shadowRiseEligible(b,a);
+
 function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  const a=source,b={hub},canvas=hub.canvas,h=a.hub,g=hub.gl;
  const read=h=>{
@@ -253,7 +255,8 @@ export const makeLitterRise=FEAT_SKY_FLIGHT ? (hub,createSource)=>{
  let s=null;
  function beginLitterRise(to,footprints=false,reverse=false){
   const source=createSource(reverse?to:undefined);
-  if(reverse&&!source.hub.grove.litter?.length){source.dispose();return false;}
+  // A descent needs somewhere to land: the floor's actual carpet, or the leaves whose shadows it will become.
+  if(reverse&&!(footprints?source.hub.faith?.count:source.hub.grove.litter?.length)){source.dispose();return false;}
   s={source,from:{...(reverse?source.hub.params:hub.params)},to:{...(reverse?hub.params:to)},
    footprints,reverse,progress:reverse?1:0,renderer:null,pending:null};
   return true;
@@ -272,7 +275,7 @@ export const makeLitterRise=FEAT_SKY_FLIGHT ? (hub,createSource)=>{
   if(!s)return;
   const pending=s.pending;
   if(s.renderer)s.renderer.dispose();else s.source.dispose();
-  s=null;hub.trans.shadowRise=false;hub.trans.litterFall=false;return pending;
+  s=null;hub.trans.shadowRise=false;hub.trans.litterFall=false;hub.trans.shadowFall=false;return pending;
  }
  return {beginLitterRise,stepLitterRise,drawLitterRise,retargetLitterRise,finishLitterRise,endLitterRise};
 }:()=>NO_LITTER_RISE;

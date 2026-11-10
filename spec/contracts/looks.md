@@ -247,7 +247,7 @@ The four canopies look up through a grove. Their recorded notes call every numbe
 
 ## Looks named elsewhere that are not built in
 
-The model and evidence mention looks that are not in the built-in set: `fall memories`, `look up`, `purple eye`, `ultraviolet`, `green 2` and `cherry green`. They are the artist's own looks, kept in arboretum or as fixtures for the travel routes (`fall memories ↔ park 2`, `fall memories ↔ look up`, `purple eye → look up`) and the projector routes. `ultraviolet` is named as his maple look, and a "projector look" (maple, aspect 1.75) is named in the same passage; whether they are one look is not recorded. Their intent is not recorded here; an entry is added when one ships.
+The model and evidence mention looks that are not in the built-in set: `fall memories`, `look up`, `purple eye`, `ultraviolet`, `green 2` and `cherry green`. They are the artist's own looks, kept in arboretum or as fixtures for the travel routes (`fall memories ↔ park 2`, `fall memories ↔ look up`, `purple eye ↔ look up`) and the projector routes. `ultraviolet` is named as his maple look, and a "projector look" (maple, aspect 1.75) is named in the same passage; whether they are one look is not recorded. Their intent is not recorded here; an entry is added when one ships.
 
 ## Related
 

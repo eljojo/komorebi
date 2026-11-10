@@ -217,6 +217,28 @@ test('a floor with no dropped leaves keeps its existing transition when descent 
   expect(r.hub.trans.structDiff).toBe(true);
 });
 
+test('look up → purple eye keeps the live sky grove until the footprints land',()=>{
+  const r=transitionRig(shadowFixture.to);let began,ended=0,arrived=0,steps=0;
+  Object.assign(r.hub,{beginLitterRise:(to,footprints,reverse)=>began={to,footprints,reverse},stepLitterRise:()=>steps++,
+    finishLitterRise:()=>{Object.assign(r.params,shadowFixture.from);r.hub.rebuildAll();return null;},endLitterRise:()=>ended++});
+  r.transitionTo(shadowFixture.from,{duration:1,onEnd:()=>arrived++});
+  expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.shadowFall).toBe(true);
+  expect(began).toEqual({to:shadowFixture.from,footprints:true,reverse:true});
+  expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);
+  for(let i=0;i<100;i++){r.tickTransition(1/60);expect(r.params.sky_view).toBe(true);expect(r.swaps).toHaveLength(0);expect(r.hub.trans.bloom).toBe(0);}
+  let cb;while(r.hub.trans.active)cb=r.tickTransition(1/60)||cb;
+  expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(r.params).toEqual(shadowFixture.from);
+  expect(ended).toBe(1);expect(arrived).toBe(0);cb();expect(arrived).toBe(1);
+});
+
+test('a leafless floor keeps the existing transition when the footprint descent declines',()=>{
+  const r=transitionRig(shadowFixture.to);let prepared=0;
+  r.hub.beginLitterRise=()=>{prepared++;return false;};
+  r.transitionTo(shadowFixture.from);
+  expect(prepared).toBe(1);expect(r.hub.trans.litterRise).not.toBe(true);expect(r.hub.trans.shadowFall).not.toBe(true);
+  expect(r.hub.trans.structDiff).toBe(true);
+});
+
 test('cherry blossom ↔ park 2 follows one seasonal grove without a scene dissolve',()=>{
   for(const [from,to] of [[PRESETS['cherry blossom'],PRESETS['park 2']],[PRESETS['park 2'],PRESETS['cherry blossom']]]){
     const r=transitionRig(from);let began=0,steps=0,ended=0,arrived=0;

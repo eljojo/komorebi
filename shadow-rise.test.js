@@ -27,3 +27,23 @@ test('leaf variety, different seeds, grades and wind patterns remain eligible',(
  expect(typeof rise.shadowRiseEligible).toBe('function');
  expect(rise.shadowRiseEligible({...fixture.from,leaf_variety:.8},{...fixture.to,seed:123,leaf_shape:'maple',tone_map:1,wind_pattern:'squally'})).toBe(true);
 });
+
+test('look up → purple eye lowers the canopy into its shadow footprints',()=>{
+ expect(typeof rise.shadowFallEligible).toBe('function');
+ expect(rise.shadowFallEligible(fixture.to,fixture.from)).toBe(true);
+ expect(rise.shadowFallEligible(fixture.from,fixture.to)).toBe(false);
+ for(const [a,b]of[[{sky_view:false},{}],[{},{standing_scene:true}],[{},{litter:1}],[{},{leaf_diffuse:1}],[{branch_tau:1},{}]])
+  expect(rise.shadowFallEligible({...fixture.to,...a},{...fixture.from,...b}),JSON.stringify([a,b])).toBe(false);
+});
+
+test('a floor with no leaves to cast declines the descent and releases the prepared scene',()=>{
+ let released=0;
+ const hub={params:{...fixture.to},trans:{}};
+ const source={hub:{params:{...fixture.from},faith:{count:0},grove:{}},dispose:()=>released++};
+ const flight=rise.makeLitterRise(hub,()=>source);
+ expect(flight.beginLitterRise(fixture.from,true,true)).toBe(false);
+ expect(released).toBe(1);
+ expect(flight.endLitterRise()).toBeUndefined();
+ const cast={hub:{params:{...fixture.from},faith:{count:4},grove:{}},dispose:()=>released++};
+ expect(rise.makeLitterRise(hub,()=>cast).beginLitterRise(fixture.from,true,true)).toBe(true);
+});
