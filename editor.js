@@ -118,7 +118,7 @@ const PANEL = [
   ['s','eclipse_amount','ecl amt',0,1,0.01,'source'],
 
   ['hc','Colour & light'],
-  ['s','exposure','exposure',0,4,0.01,''],
+  ['s','exposure','exposure',0,8,0.01,''],   // reaches every shipped look: the cosine law and the cloud's gain re-sit exposures up to ~5.5 (montebello)
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
   ['s','canopy_fill','canopy fill',0,1,0.01,''],       // §4.7: the shade lit THROUGH the canopy — the gate; 0 is the old floor, byte for byte
