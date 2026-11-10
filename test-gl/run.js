@@ -567,6 +567,9 @@ const INVARIANTS = [
   // The look edge_area made, written down once every row above was green (a pin says the frame itself does not drift; the rows say it moved the right way)
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give f9f447c6 on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'memories with edge_area on is the frame edge_area made', preset: 'memories', a: { edge_area: true }, pin: '0acca242' },
+  // THE PARK'S SHEAR (§4.8, `park_throw`, item 17): 0 is the park as it was; up, each layer is thrown down-sun by its height.
+  { name: 'park_throw 0 == absent (afternoon 5b)', preset: 'afternoon 5b', a: {}, b: { park_throw: 0 } },
+  { name: 'park_throw 1 shears the park (afternoon 5b)', preset: 'afternoon 5b', differ: true, a: {}, b: { park_throw: 1 } },
   // LEAVES ON THE OLDER WOOD (§4.5, `inner_leaves`). 0 is the gate: no path is collected and every leaf is placed where its twig puts it, so naming it is the frame before the knob existed, on every kind of look that hangs leaves
   // (park 1 and curtain 1 are faithful and ride faithData; afternoon 7 and memories are the layer path; canopy 1 is the sky view)...
   { name: 'inner_leaves 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { inner_leaves: 0 } },

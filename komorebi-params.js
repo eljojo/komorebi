@@ -34,7 +34,7 @@ const MORPH_KEYS = [
   'canopy_base_height_m','canopy_thickness_m','branch_tau','sky_scatter',   // layer heights + branch-shadow darkness + the sky view's foliage glow — read live, no rebuild
   // Wood stores radius and layer heights in CPU geometry as well as live uniforms. refreshWood keeps those
   // numbers aligned without regrowing the leaves; a faithful or sky bake refreshes when its wood changes.
-  'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','trunk_radius_m','exposure','contrast',
+  'sun_elevation_deg','sun_azimuth_deg','view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y','far_smear','park_throw','trunk_radius_m','exposure','contrast',
   'ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration',
   'vignette','vignette_shape',                                          // the edge fade (§4.7): two live shader uniforms in the post block every camera runs — the feather (also the gate) and the superellipse exponent — so they tween; a presentation device, not a fall tier
   'sun_cosine','sun_extinction',                                        // the sun's cosine law and the air's loss (§3.5): a live scale of the uploaded sun colour and a fill re-run (fillSig), no bake — so it tweens
@@ -293,6 +293,9 @@ const DEFAULTS = {
   tent_seam: 0.0,                  // panel-junction seam optical depth (0 = none): the dark taped lines at the crown's long edges, the ceiling's centreline spine at the foot, and the cap rims
   tent_mesh: 0.0,                  // how much the side panels ABOVE the shoulder hem are MESH rather than nylon: they pass less light and diffuse almost none of it (0 = one fabric all the way up, byte-identical)
   far_smear: 3.0,                  // far-field dapple smear: extra throw (m) per unit foreshortening; 0 = off, no effect top-down
+  park_throw: 0.0,                 // the overhead park's shear (§4.8): each layer thrown down-sun by its height·cot(elevation), the throw a standing scene always has, × this (0..1).
+                                   // Physically real (leaves at different heights land at different places under a low sun) but off by default: with far_smear it streaks the floor
+                                   // into sharp down-sun slashes, an artistic look to choose, never to land on (José, 2026-11-09, item 17). 0 = the park as it was, to the bit
   exposure: 1.3,
   contrast: 1.0,
   ambient_skylight: 0.5,

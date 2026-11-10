@@ -22,7 +22,7 @@ const FEAT_LEAF_DIFFUSE = true;
 const edgeAreaOn = (params) => (FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);
 // How many slots the fill's signature has (fillSig, below). The engine sizes its `fill.sig` from this: a write past a Float64Array's end is dropped silently, and
 // the fill then re-bakes every frame, so the length is one number in one place.
-export const FILL_SIG_LEN = 16;
+export const FILL_SIG_LEN = 17;
 
 export function makeBake(hub){
   const { gl, params, motion, src, faith, sky, U, bakeFBO, faithFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
@@ -414,6 +414,7 @@ export function makeFill(hub){
     o[13]=edgeAreaOn(params);                // the edge law changes what Tsky and S are made of, and no bake moves when it flips live
     o[14]=params.sun_cosine;                 // S is the leaves' scattered sun and the cosine law scales it, and no bake moves when it tweens
     o[15]=params.sun_extinction;             // ...and so does the air's loss (the turbidity it depends on is o[2])
+    o[16]=hub.bulkOn() ? 0 : params.park_throw;   // the park's shear moves the beam's path the fill bakes along (a standing scene's is the sun's alone)
   }
   function fillStale(){
     if(!fill.ready) return true;

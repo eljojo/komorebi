@@ -516,7 +516,7 @@ test("the endless park's sun path is vertical: gS = 0 lights layer i from the la
 
 // ---- THE BAKE'S WIRING: what the fill pass is handed, and what it does to the layer textures. A stub GL records the calls and a
 // real makeSource supplies the very bulkShift / bulkOn the engine uses — so this holds the wiring, not a restatement of it.
-import { makeBake, makeFill } from "./komorebi-bake.js";
+import { makeBake, makeFill, FILL_SIG_LEN } from "./komorebi-bake.js";
 import { makeSource } from "./komorebi-source.js";
 import { MAX_LAYERS } from "./komorebi-params.js";
 
@@ -527,7 +527,7 @@ function bakeRig(over) {
   const { bulkShift, bulkOn, layerHeights } = makeSource({ gl, params, perf: {}, trans: {}, src: {}, effCloud: () => 0 });
   const U = { layers: Array.from({ length: MAX_LAYERS }, (_, i) => `layer${i}`) };
   for (const k of ["origin", "extent", "frameOrigin", "frameExtent", "sunPath", "open", "sun", "heights", "layerCount", "ray", "turn", "count", "scatter", "beamK"]) U[k] = k;
-  const fill = { tex: [null, null], res: 0, ready: false, sig: new Float64Array(16), K: 0, rays: null };
+  const fill = { tex: [null, null], res: 0, ready: false, sig: new Float64Array(FILL_SIG_LEN), K: 0, rays: null };
   const hub = { gl, params, motion: {}, src: {}, faith: { binH: new Float32Array(MAX_LAYERS) }, sky: {}, U, fill, bakeFBO: {}, faithFBO: {}, fillFBO: {}, emptyVAO: {}, progBake: {}, progFaith: {}, progFaithSeg: {}, progFAcc: {},
     bakeRes: () => 256, faithfulOn: () => false, layerTex: Array.from({ length: MAX_LAYERS }, (_, i) => ({ layer: i })), makeLayerTexture: () => ({}), fail: (m) => { throw new Error(m); },
     fillFor: () => ({ prog: {}, U }), bulkShift, bulkOn, layerHeights };
@@ -620,4 +620,19 @@ test("every fill READ is over the fill's own frame, not the canopy's: the floor,
   }
   expect(buildTransport("floor").includes("vec2 fuv = (world-uFillOrigin)/uFillExtent;")).toBe(true);
   expect(Object.keys(TRANSPORT_GROUPS.fill.locs).sort()).toEqual(["canopyFill", "fillExtent", "fillOrigin", "fillS", "fillT"]);
+});
+
+// The park's shear (park_throw, José 2026-11-09, item 17): the overhead park throws each layer by its height only when asked, by the standing scene's own throw × the knob; 0 is no throw at all,
+// and a standing scene's throw is untouched by the knob, to the bit.
+test("park_throw: the overhead park throws cot(el)·(anti-sun) × the knob, 0 is exactly none, and a standing scene ignores it", () => {
+  const src = (over) => makeSource({ gl: {}, params: { ...DEFAULTS, sun_elevation_deg: 23, sun_azimuth_deg: 40, ...over }, perf: {}, trans: {}, src: {}, effCloud: () => 0 });
+  const cot = Math.cos(23 * DEG) / Math.sin(23 * DEG), ca = Math.cos(40 * DEG), sa = Math.sin(40 * DEG);
+  expect(Array.from(src({ standing_scene: false, receiver: 0 }).bulkShift()), "absent: the park as it was").toEqual([0, 0]);
+  expect(Array.from(src({ standing_scene: false, receiver: 0, park_throw: 0 }).bulkShift()), "0: none").toEqual([0, 0]);
+  const half = src({ standing_scene: false, receiver: 0, park_throw: 0.5 }).bulkShift();
+  expect(half[0]).toBeCloseTo(0.5 * cot * ca, 12); expect(half[1]).toBeCloseTo(0.5 * cot * sa, 12);
+  const standing = Array.from(src({ standing_scene: true }).bulkShift()), standingKnob = Array.from(src({ standing_scene: true, park_throw: 0.3 }).bulkShift());
+  expect(standingKnob, "a standing scene's throw is its own, whatever the knob").toEqual(standing);
+  expect(standing[0], "...and it is the full throw").toBe(cot * ca);
+  expect(src({ standing_scene: false, receiver: 0, park_throw: 1 }).bulkOn(), "the knob throws, it does not turn the park into a finite scene (wrap, fill frame)").toBe(false);
 });

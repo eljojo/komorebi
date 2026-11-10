@@ -205,6 +205,7 @@ const PANEL = [
   ['s','view_center_y','pan y',-25,25,0.1,''],
   ['s','view_fov_deg','fov °',10,110,1,''],
   ['s','far_smear','far smear',0,8,0.25,''],
+  ['s','park_throw','park shear',0,1,0.01,''],   // item 17: off by default; on the overhead park only
   ['s','sky_scatter','foliage glow',0,1,0.01,''],   // §4.9: single-scatter radiance — the sunlit crown lights up instead of only filtering
   ['s','glow_bleed','glow bleed',0,1,0.01,''],       // THE GATE (§4.9): >0 routes the frame through linear HDR + two blur passes + a compositing tone-map
   ['s','glow_bleed_m','bleed (m)',0,0.2,0.005,''],   // how far the weave carries the light, in cloth metres
@@ -367,7 +368,7 @@ function buildPanel(){
 // ===========================================================================
 const CAM_GROUP = {   // knob -> the transport uniform group that carries it to the shader
   view_pitch_deg:'rayView', view_yaw_deg:'rayView', view_fov_deg:'rayView',   // the curtain is seen head-on: no ray camera, so no tilt/orbit/lens
-  far_smear:'floor', ground_r:'floor', ground_g:'floor', ground_b:'floor',    // an albedo needs a floor to reflect off
+  far_smear:'floor', park_throw:'floor', ground_r:'floor', ground_g:'floor', ground_b:'floor',    // an albedo needs a floor to reflect off
   cloth_distance_m:'cloth',
   fabric_tt:'fabric', fabric_tint_r:'fabric', fabric_tint_g:'fabric', fabric_tint_b:'fabric',
   fold_depth:'fabric', fold_scale:'fabric', fold_coarsen:'fabric', fold_warp:'fabric',
@@ -399,6 +400,7 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   receiver: () => !params.sky_view,                       // looking up overrides the receiver outright — there is no surface to pick
   eclipse_amount: () => params.eclipse,
   far_smear: () => params.view_pitch_deg > 0,             // the far-field footprint is exactly 0 at pitch 0 (§4.7)
+  park_throw: () => !params.standing_scene && !params.receiver,   // a standing scene and the cloth always throw: the knob is the overhead park's
   view_extent_m: (cam) => CAMERAS[cam].groups.includes('floor') || CAMERAS[cam].groups.includes('cloth') || glowOn(cam),   // elsewhere it survives only as the glare radius' divisor
   glow_bleed: (cam) => cam !== 'floor',
   glow_bleed_m: (cam) => glowOn(cam),
@@ -848,6 +850,7 @@ const TIPS = {
   standing_scene:"<b>Treat the trees as objects STANDING in the scene, not a canopy hovering overhead.</b> Turns on the TRUNK shadow — a vertical trunk has no flat footprint, so the normal layered model can't cast it; this draws its real swept shadow streak. Best with a low, raking sun so the streak stretches across the floor. (Rooting the trees off to the side with a lit floor is coming next.)",
   trunk_radius_m:"<b>How thick the trunk is</b> — i.e. how wide its shadow streak. The streak softens and widens toward its far end on its own, because the higher part of the trunk is blurred more by the sun's size. 0 = no trunk shadow.",
   view_fov_deg:"<b>Lens — how strong the perspective is.</b> Narrow is flat and telephoto; wide throws the near floor big and rushes the far floor away. Only bites once you've tilted.",
+  park_throw:"<b>Park shear — each canopy layer thrown down-sun by its height.</b> Real under a low sun (leaves at different heights land in different places), but off by default: with far smear up it slashes the floor into sharp down-sun streaks. A mood to choose, not a default.",
   far_smear:"<b>Far-field smear — distance softening.</b> A far pixel covers a big patch of ground, so its dapples should melt into soft down-sun streaks while the near floor stays crisp. Higher = more melt (and less far-field shimmer). Has no effect top-down — it grows with the tilt.",
   exposure:"<b>Brightness.</b> How bright the floor is. Pure look — it never changes the light simulation, just where it lands on screen.",
   contrast:"<b>Punch.</b> Higher = bold, snappy dapples; lower = the flat, milky look of haze.",

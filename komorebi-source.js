@@ -89,8 +89,10 @@ export function makeSource(hub){
     // the bulk sun-angle throw is needed for BOTH the standing-scene floor AND the curtain receiver (it's what
     // projects the tree's shadow off to the side / onto the cloth). Off for the overhead park (receiver 0 + no
     // standing scene) → 0, byte-identical.
-    if(!bulkOn()){ _bulk[0]=0; _bulk[1]=0; return _bulk; }
-    const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=Math.cos(el)/Math.sin(el);
+    // The overhead park throws only when park_throw asks it to (item 17): the same throw, scaled. 0 is the early return, exactly.
+    const scale = bulkOn() ? 1 : params.park_throw;
+    if(!(scale > 0)){ _bulk[0]=0; _bulk[1]=0; return _bulk; }
+    const el=Math.max(params.sun_elevation_deg,6)*DEG, az=params.sun_azimuth_deg*DEG, k=scale === 1 ? Math.cos(el)/Math.sin(el) : scale*Math.cos(el)/Math.sin(el);
     _bulk[0]=k*Math.cos(az); _bulk[1]=k*Math.sin(az); return _bulk;
   }
 
