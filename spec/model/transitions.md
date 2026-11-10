@@ -1,0 +1,206 @@
+# Transitions
+
+*How the piece moves from one look to another: what is kept, what changes, and how a change is made without a cut.*
+
+A look is a place. Stepping from one to the next (the arrow keys in the editor, a playlist's dwell running out, the player cycling on a homepage, one day a MIDI controller) is a walk between two places, and it must feel like one. There is one entry point for every driver: the engine is handed the target look and a duration, and chooses the route itself. The duration belongs to the driver (an editor knob, a playlist's crossfade), never to a look.
+
+## The principle
+
+**Law: retain what you honestly can.** A transition is decided by *what actually differs* between the two looks, never by their names. Whatever the two share stays in place and keeps moving: the grove, its wind, its drift, the sun that lights it. Only what differs is carried across.
+
+**Law: a change of gaps reorganises; it is never cut.** When the leaves themselves must change, the way they change is the piece's own grammar: gaps merge, split and collapse into the new arrangement, as the caustics of the faint wind do (see [`motion.md`](motion.md)). A transition that swaps every dapple for a different dapple between two frames is a cut, however well it is hidden, and the eye reads it as one even when the mean brightness does not move.
+
+**Authored: the bloom is weather used as cover, and it is the last resort.** Where nothing can be carried leaf for leaf, a passing cloud thickens over the sun, the field goes soft and low-contrast, and the swap happens under it. It is modelled, not painted: it is the source's own cloud knob (see [`source.md`](source.md)) used as a passage between looks rather than a state within one. Every route that can avoid it does, and it is capped well short of overcast, because a bloom pushed to full overcast stops dissolving and simply floods the frame toward white: the picture does not dissolve, it disappears, and the new one fades back in out of white. ([`../evidence/dead-ends.md#transitions`](../evidence/dead-ends.md#transitions); the luminance and churn measurements are in [`../evidence/measurements.md#transitions`](../evidence/measurements.md#transitions).)
+
+**Law: nothing pops.** Calm (see [`../experience.md`](../experience.md)) applies to every frame of a transition as to every frame of a look. A gate that a look opens is crossed by fading what it restricts, never by switching it on; a leaf that appears grows from zero area; a leaf that leaves contracts to zero.
+
+## What selects a route
+
+Every parameter belongs to one class, and the class says how it behaves under a transition. The classification itself is [`../contracts/gates-and-rungs.md`](../contracts/gates-and-rungs.md); here is what each class does when it differs.
+
+- **MORPH** (the continuous look: sun, exposure, cloud, wind, colour grade, layer heights, camera). It interpolates. This alone never forces anything heavier than a live morph.
+- **CANOPY** (the grove's continuous shape and colour: branch angle, length ratio and pitch, leaf size, aspect and density, transmittance, canopy extent, tree count, the pigment and drop knobs). It deforms the same grove, if the grove has the same branching and fits the budget.
+- **SEASON**, a subset of CANOPY (transmittance, phenology and the turn, pigments, the drop clocks). When it is the *only* canopy difference, the grove is re-seasoned in place rather than regrown.
+- **TOPO** (the branching itself: seed, branch levels and children, limb count, layer count, texture size; and the gates that allocate or move everything at once, such as the litter carpet, the leaf outline grammar, the edge-area law and drop-after-turn). It cannot interpolate; it flips. A transition across a TOPO key takes a route that reorganises, dissolves or carries, never a bare assignment.
+- **MODE** (the faithful cast, the standing scene, the receiver, the sky view). A mode is a camera or a cast path. Flipping one is not a snap: the faithful flag changes how the canopy is baked, the standing scene resizes the crown, the receiver swaps the whole camera mapping and, at the tent, forces the layer cast. A mode change therefore always runs a full rebuild of the scene, under some route that hides or carries it.
+- **Runtime flags** (auto-quality, the debug toggles). They never trigger anything. They settle at the end.
+
+The route is then the first of the following whose gate the pair meets: one of the **travel routes** (each joins a specific kind of pair and carries the scene across), or else the **tiers**: a live morph when only MORPH keys differ, a grove morph when canopy keys differ on a shared, small enough grove, and otherwise a structural route: the shared-layer crossfade, the fade through the lit ground, the faithful scene dissolve, or the capped cloud dissolve. Each route's full gate is in [`../contracts/transitions.md`](../contracts/transitions.md).
+
+## Live morph
+
+The continuous look interpolates from the current live parameters to the target on an ease-in-out over the driver's duration. Angles take the short way round. Everything it moves is read live or rebuilt cheaply, so it simply tweens. A live morph has no bloom and no longer clock; lengthening an ordinary step would change the feel of every arrow press to no purpose.
+
+**The dapples move straight across the cosine law.** Exposure and the law's factor would each tween on their own, and between a look re-sat for the law and one without it their product, the dapples' level, would rise midway: about 18% in linear light between `cherry blossom` and `park 2`. On one receiver the morph instead moves exposure × the factor (the cosine's, times the air's loss where a look carries it) from one end's level to the other's and lets exposure follow, so only the shade and the sky change with it. With the law off at both ends this is the ordinary tween of exposure ([`light.md`](light.md)).
+
+**Wood across a mode swap.** When only one of the two looks has wood (`branch_tau` above zero), its wood fades out over the outgoing half or in over the incoming half, meeting zero at the midpoint. The woodless look never casts the other look's skeleton: an overhead trunk seen in a look that does not draw one would collapse to a dot with radial limbs. Routes with wood at both ends, or at neither, keep the full-duration tween.
+
+**Live wood follows its numbers.** A change of wood radius or layer height refreshes the wood's stored geometry from the grown skeleton without growing leaves again. A faithful cast or a sky-view wood map is re-baked when those numbers or `branch_tau` change, even in still air. With wood off, nothing is refreshed: a leaf crossfade shares the incoming grove's faithful geometry and must not have it rewritten from the outgoing skeleton.
+
+**A still faithful cast follows its inputs.** The faithful cast is projected along the sun (see [`transport.md`](transport.md)): its frame and every leaf's throw are functions of the sun's elevation and azimuth. So a time-of-day morph between two faithful looks re-casts each frame even with no wind, or the dapples would freeze at the starting sun angle for the whole morph. More generally a still faithful cast compares the source's offsets and weights, the sun's angles, the cloth's plane, the drift, the bake's inputs and its resolution against the last cast, and re-casts once when any moved; regenerating identical source samples re-casts nothing. A sample count alone does not describe the source. The layer path needs none of this: transport reprojects every frame.
+
+## Crossing a gate
+
+Some parameters are gates as well as values: zero means a different law, not a small amount of the same one. A transition that crosses such a gate never grows the feature from its zero.
+
+**Zero remains a feature gate.** A window aperture with zero width or height means unrestricted light. A transition crossing that gate keeps the enabled end's full window geometry and fades its restriction of the light and of the bar grid; it never grows a pinhole out of nothing. The authored dimensions are restored exactly at the end.
+
+**The diffuse gate.** When `leaf_diffuse` crosses zero and the zero end lights its shade through an active single-scatter proxy (see [`fill.md`](fill.md) and [`sky-view.md`](sky-view.md)), the outgoing light contribution fades to zero over the first half before the incoming one grows over the second. This avoids dropping a visible proxy abruptly on the first positive diffuse value. The darker passage is **authored**, a choice of the transition, not a change to either lighting model.
+
+**The iris gate.** A vignette's feather at zero removes the mask entirely. When the mask turns on in a transition, its boundary sweeps in from outside the frame (radius √2 of the authored size, which clears every allowed superellipse) to its authored size over the first quarter, settling before any camera handoff. Turning it off opens the boundary over the last quarter. Feather and shape keep their ordinary morph; an interrupted sweep carries its current radius. The settled mask, its placement before glow and tone mapping, and so the colour of a blue sky's rim, are unchanged (see [`camera.md`](camera.md)). A full scene dissolve keeps each scene's own authored mask instead. A first positive feather once installed the whole ellipse in one frame ([`../evidence/dead-ends.md#transitions`](../evidence/dead-ends.md#transitions)).
+
+None of these rules adds a saved parameter to a look.
+
+## Grove morph
+
+When the two looks share the same branching (the same seed, branch levels and children, limb count and layer count) the grove's draws line up, so interpolating the canopy knobs **deforms the very same grove**, with no bloom. Branch angle, length ratio and pitch fan the branches; leaf size, aspect, density and transmittance resize and recolour the leaves; canopy extent rescales the grown world. A leaf keeps its identity throughout, because every leaf is addressed by its cluster and its slot, never by a running index (see [`../contracts/determinism.md`](../contracts/determinism.md)).
+
+**Tree count is continuous.** A fractional count adds or removes only the *last* tree, faded in by the fraction, and the others keep their structure ([`canopy.md`](canopy.md)). `afternoon 5 → 6` grows its extra tree in instead of popping a new layout.
+
+**The grove morph regrows every frame**, so it runs only while the busier end of the pair (the end with more leaves, counting tree count and per-twig density) is under a leaf-count budget; above it, the pair falls to a structural route. `afternoon 4 → 5` (only branch angle differs) morphs its branches under no cloud.
+
+**The wind is carried across the regrow.** The springs' common prefix carries over from one frame's grove to the next and a newly grown tree starts at rest, so the breeze never resets mid-gust. The transition republishes the bend after each interpolation, a live pitch sway included, so the wind and the idle decision follow the same path as an ordinary frame (see [`motion.md`](motion.md)).
+
+**Re-seasoning.** When every differing canopy key is a season key, the morph re-seasons the existing grove instead of regrowing it, and **the tween's landing tick is the resting state**. A summer grove that keeps no record pays one build to make one; a live framing or height change that invalidates the record regrows. The law is [`season.md`](season.md)'s.
+
+**Density re-weighting.** A density morph on a summer grove (nothing senescing, no drop, no leaf variety, structure otherwise identical) grows once at the larger density and moves the active prefix inside it, re-weighting rather than regrowing. Outside that summer gate a density change regrows. The law is [`season.md`](season.md)'s.
+
+Tree count, leaf size and every other non-season canopy change keep the regrow.
+
+## Shared-layer crossfade
+
+**Where a topology change can be made to reorganise, it stops being a dissolve at all.** Two groves with different branching cannot be morphed leaf for leaf, but they can share light. The incoming grove is grown early, while it is still invisible, and both are baked into the same depth layers at complementary coverage across a window centred where the cut used to be. Because the bake adds optical depth, the blend is exact: at every instant the floor sees one canopy whose leaves are partly the old grove's and partly the new. It is not a new mechanism. Scaling coverage is the same fractional-leaf fade that grows a marginal leaf or a marginal tree in, with the whole grove as its subject.
+
+**No leaf jumps.** Gaps merge, split and collapse into the new arrangement; the grammar of the faint wind covers the change instead of weather hiding it.
+
+**The crossfade adds no bloom.** The two leaf fields already reorganise continuously, so a passing cloud would only send the light through an unnecessary intermediate state. Cloud thickness follows its ordinary eased interpolation between the two looks, and the halo's radius and the core/halo energy follow that cloud directly. The route keeps the structural clock (twice the driver's duration) and its native endpoints. It costs a second bake for the width of the window only.
+
+**The gate is narrow, and every condition is something the crossfade cannot yet do**: the change is topology and not a mode (a camera swap has no second grove, it has a second scene); neither end is faithful (that cast pre-integrates one grove, leaving nothing to blend against); neither end has wood (this blends leaves only); and the two groves share one set of layer textures. Outside it, a topology change takes one of the routes below.
+
+## Cloud dissolve
+
+Only a genuine branching change that no other route can carry, a grove too big to morph live (a large tree-count jump such as `5 → 16`), or a mode change no other route joins, reaches the cloud. The scene is **swapped once, at the transition's midpoint, under a transient bloom**: the source is widened toward overcast and back, so the field goes soft and low-contrast exactly when the grove regrows. A mode change runs its full rebuild there, never a flag assigned over stale geometry.
+
+**Authored: the bloom is capped short of saturation, and it takes twice the clock.** The two kinds of dissolve want different depths, and the reason is what the bloom is for. A mode change changes the camera, so cover buys nothing and depth is pure cost: its bloom is shallow. A topology dissolve has a real grove swap to hide, and spending some depth on it is the point: its bloom sits where the two costs cross, deep enough to hide the swap, shallow enough not to flash.
+What is left after shaping is content. A floor and a sky, or a floor and a tent's interior, do not have the same mean brightness, and no single depth suits every pair, because they pull opposite ways: the blooming floor sweeps *past* a sky look's level and *away* from a tent's. The cap is set where the worst route is best, not where any one route is perfect. So a big jump still dissolves through a passing cloud.
+
+## Fade through the lit ground
+
+A mode change between two floor looks (neither a sky view, both on the floor receiver) that no travel route joins fades its shadows instead of dissolving through cloud: `afternoon 7 ↔ park 1`. The outgoing shadows ease to nothing by the midpoint and the incoming ones ease back to full over the second half. It is a presentation fade in linear irradiance: the beam's transmittance mixes toward one and the canopy fill's share toward zero, before the floor's material and the tone map. At the midpoint the ground is simply lit. There is no bloom and no second scene. Wind continues throughout. Returning from a standing grove to the overhead canopy sets the incoming camera to its final pan, zoom, tilt and rotation at the invisible midpoint, before the grove is rebuilt, so the dapples appear already settled. An interrupted fade starts from its current shadow opacity.
+
+## Faithful scene dissolve
+
+When both looks use the faithful cast, their scene modes match, and the change needs a structural rebuild that neither the seasonal nor the grove-regrouping travel carries, the piece dissolves **two complete moving scenes**. The outgoing scene keeps its own look and its own springs; the engine becomes the incoming scene. Both render under one clock. Their displayed colours are decoded to linear by the display gamma (2.2), mixed on the full-duration smoothstep, and encoded again; each scene keeps its own tone map, so a change of tone curve has no discrete handoff. There is no bloom. The route costs two scenes for its duration and keeps the structural clock. The incoming scene continues after landing without rebuilding or resetting its wind or drift. An interrupted dissolve holds the displayed mixture as the next outgoing image and frees the older moving scene rather than accumulating them. The flash this replaced on the projector routes is in [`../evidence/measurements.md#transitions`](../evidence/measurements.md#transitions).
+
+**Approximation.** This is a dissolve of finished pictures, the one route that mixes images rather than light. It is honest for faithful pairs because the faithful cast has no shared layers to blend; it is the next thing a travel route should replace for any pair that earns one.
+
+## The travel routes
+
+Each travel route joins a specific kind of pair by carrying the scene's own objects across: the camera, the leaves, the wood, the carpet. Each has a narrow gate (in [`../contracts/transitions.md`](../contracts/transitions.md)), takes twice the driver's duration, and has no bloom, no midpoint grove or camera replacement, and no dissolve of finished pictures. Settled looks keep their own native render paths; a route exists only while it is moving.
+
+### The viewpoint: a shared grove turns from sky to ground
+
+When only the camera differs between a sky look and a floor look, the eye moves continuously through the horizon. A transition-only viewpoint carries its eye position and signed elevation from the sky camera's ground-level eye to the floor camera's equivalent height and recentre, keeping the authored pan, yaw, field of view and zoom at both ends. Upward rays read the canopy against the sky (see [`sky-view.md`](sky-view.md)); downward rays meet the ground and read that same canopy's sun cast. Both read one moving layer bake. The horizon meets on the existing distance haze, and the sky's glare recedes with the sky's share of the frame. Automatic drift continues through landing; an interruption starts from the displayed eye and gaze; landing restores the exact target parameters, keeping the running drift, and rebuilds its mode's buffers once. A zoom change is allowed only for a standing grove, since an overhead zoom changes the grove itself.
+
+### Leaf travel: overhead faithful ↔ layer
+
+Switching an overhead scene between the faithful cast and the layer cast moves the leaves rather than replacing them. Clusters are sorted recursively by alternating plan axes, and leaves are paired within those neighbourhoods. **Every endpoint leaf occurs exactly once**: surplus leaves contract to zero area as they meet their new cluster, and new leaves grow out of zero area. Position, height, aspect, angle, optical depth and outline change continuously, area linearly and aspect logarithmically. Each endpoint keeps its own native joint and drift motion until the evaluated leaf positions meet in a shared cast; the incoming scene is the engine after landing. The outgoing grove is kept as it was, with its actual framing, rather than grown again.
+
+The travelling leaves are cast through the current sun samples into a transient transmission map whose bounds include the full projected halo, and the floor reads that map before lighting and grading. Near each end a smooth handoff of transmission reaches the native caster exactly: the moving cast's share is
+
+  smoothstep(0, 0.12, w) · smoothstep(0, 0.12, 1 − w),
+
+with w the spatial travel progress, so native sampling, the far smear and diffraction are present at landing. A native cast is re-cast at the current wind while its share is visible, and keeps its endpoint's authored leaf-diffuse value while the moving cast interpolates it: zero diffusion selects a different texel law (see [`leaf.md`](leaf.md)), so a tiny positive value must not survive to the last frame and then snap to the zero law. The tone response changes continuously on the same irradiance, and the iris uses its sweep. There is no clear-floor interval.
+
+### Season travel: a shared standing grove between floor and canopy
+
+`cherry blossom ↔ park 2`, `montebello ↔ park fall`, `montebello, rain ↔ cherry blossom`. One tree structure is kept, and each leaf keeps its original twig and slot, including leaves compacted out of the settled canopy. An uncompacted season record supplies both ends' transmission, retention and litter. A leaf on the floor only at the source rises to its current, wind-driven twig; one on the floor only at the target descends to its deterministic landing (see [`season.md`](season.md)). The flights are staggered by leaf identity, with continuous height, position and angle and a small curl along the path, and the sun casts them at their changing heights. A leaf in both carpets stays at height zero and slides between its two landings without a lift-and-settle loop. Colours interpolate per leaf with the same identity-based stagger, and partly retained leaves keep their fractional coverage. The wood keeps its skeleton and its live springs. The two ends may differ in the cosine law, the air's loss and exposure, which follow journey progress like the soil and the weather, with the dapples moving straight as in the live morph.
+
+**The camera moves in eye space.** It interpolates its actual eye position and pitch and reconstructs the floor camera's extent and recentre from them; interpolating zoom, tilt and pan independently would make the eye overshoot and come back. Yaw follows the shortest arc. Wind and automatic drift continue on their own clocks, one physics tick per moving frame.
+
+The moving leaves and the unchanged wood are pre-integrated into their own transmission map, read by the floor before illumination and grading. A handoff of transmission,
+
+  smoothstep(0, 0.1, q) · smoothstep(0, 0.1, 1 − q),
+
+meets the native casts at both ends; q runs from the carpet end to the full-canopy end when only one end has litter, and from source to target when both do. Reversing keeps that original coordinate. Visible native casts are refreshed at the current wind pose and keep their authored edge law. The moving cast meets a zero-diffusion endpoint continuously: with the edge-area mixture off it blends the legacy slab into the coverage mixture over smoothstep(0, 0.08, k), k = −ln(1 − `leaf_diffuse`); with it on, it reads the coverage mixture throughout (see [`leaf.md`](leaf.md)). Its sampling and bake size use the larger of the two endpoints' budgets, scaled by the current quality governor, so differing sample counts and bake sizes become a cast handoff rather than a landing pop. One grove holds the colours, the geometry and the native casts; there is no second engine.
+
+**The reflected mark and the shadow trade.** Near the floor a leaf's reflected mark follows the start of the curled path and recedes over the first 18% of its height progression, while its shadow grows in over the first 13%; marginal coverage stays intact. With one carpet, its authored age is held. With two, each mark interpolates the two ends' reflected colour, each evaluated by the native litter law with its own pigment, age and wetness; an end where the leaf is still attached supplies its unaged reflectance. The copied drop day interpolates for the carpet's stacking order and lands on the target's own. Manual drift, soil, wetness and weather follow the same journey progress, so a reversal keeps their displayed state too. The springs keep their active state when the journey is prepared and when it lands, including residual movement after the wind has stopped.
+
+### Litter rise and fall: between the carpet and the sky
+
+**Rise.** `fall memories → look up` starts from the actual carpet: each leaf's deterministic landing, outline, aged colour and fractional coverage. Spatial correspondence spreads those leaves into the target grove, growing extra carriers from zero area where the target has more. **One perspective leaf field crosses the horizon**, instead of revealing a second finished tree above its own shadow. The outgoing grove keeps its native moving sun cast on the floor, with the sun rising as the eye turns; the solid trunk is absent from the upward view. The camera waits briefly for the pickup, then follows the lifting leaves into the sky. Each carrier has a staggered curled path, a small tumble and, where its flight would pass too close to the eye, a deterministic horizontal detour. The destination follows its own live wind; the floor cast keeps the outgoing springs. The carpet's share recedes as the airborne share grows.
+
+**Colour changes with lift, before the horizon.** A leaf starts with the carpet's reflected illumination and aged albedo, and after a short delay becomes a transmitting canopy leaf; the material share is smoothstep(0.015, 0.15, f), with f that leaf's staggered flight progress. A lifted leaf loses its ground shading early, rather than changing only once it is seen from beneath. The eye accumulates the field's optical depth and reflected light at up to twice the canvas resolution, and the final read averages transmittances, not optical depths (see [`fill.md`](fill.md) on Jensen). Background haze is applied before the foreground leaves, keeping the field continuous across the horizon, and three eye-projected depth planes supply the sky's single-scatter glow. Once every carrier has arrived, the native target supplies that glow, and an optical handoff over journey progress 0.9 to 0.995 reaches its native sampling before the temporary field is released.
+
+**Fall.** `look up → fall memories` plays the same canonical field at q = 1 − t. The green canopy leaves descend into their paired carpet landings, gradually taking the floor end's autumn optical depth, maple outlines, aged reflectance and ground illumination; surplus carriers contract as they regroup into fewer carpet leaves. The eye and gaze follow the path in reverse; **the wind does not reverse.** Both wind clocks advance once per frame and automatic drift continues. The live sky grove stays the engine throughout the descent while a companion floor scene supplies the carpet, the floor cast and the retained floor springs. The native sky hands into the moving field over the same 0.995 to 0.9 interval, and the detour planning fits inside that interval, before any detour is visible. At q = 0 the floor is installed once, its live motion, drift and joint positions and velocities copied into the engine before the companion is released; the native floor keeps running after landing. If the floor end's actual carpet is empty, the descent declines before it commits and the ordinary transition runs.
+
+### Shadow rise: footprints lift into the sky
+
+`purple eye → look up` starts from the source grove's actual leaves, read from its faithful geometry at the live wind pose. Their plan footprints become optical filters on the floor, including the ballistic depth the source's diffuse share removes. Cluster correspondence pairs them with the target grove, each endpoint leaf once, surplus carriers contracting or growing. The field lifts from height zero along the litter flight's curled paths and eye-clearance detours, changing outline and optical depth per leaf until it is the green canopy; the camera follows the same eye and gaze path across the horizon.
+
+Over the first tenth of the journey, smoothstep(0, 0.10, t) transfers optical depth from the native ground cast to the moving filters: the native beam's transmission is raised to the complementary exponent while the foreground stamps grow to full depth, so the shadow and its lifting copy never double. Source footprints keep following the source's wind while the destination follows its own. Ground colour, sun, sky, source size, grade and the iris sweep change continuously; the three tone responses interpolate on the shared irradiance, the glow composite included, so turning on sky glare cannot restore the source's tone curve at landing. The airborne field uses the target's zero-diffusion sky reading while the native floor keeps its authored edge law. The native sky takes over during t = 0.9 to 0.995. The route is forward only; the reverse pair takes its ordinary route.
+
+**Authored: a shadow does not become matter.** Its footprints are the starting surface of this morph, chosen for the visual connection the artist approved, not a physical law for picking a shadow up.
+
+### Grove regrouping: different standing groves, leaf by leaf
+
+`fall memoriez ↔ park 2` carries five crowns into two, the fallen maple leaves included.Roots are assigned injectively to minimise the primary trees' total squared travel; surplus trees join their nearest destination. Branches correspond by tree, limb, level and ordinal, with a common subdivision keeping their joints connected while length, height, taper and opacity change. Leaves pair within corresponding twigs. Every destination leaf has one primary carrier; surplus leaf area and wood radius contract to zero as the crowns regroup. Outlines interpolate from maple to ellipse, and each leaf's optical depth and fractional coverage change continuously.
+
+Carpet leaves start at their deterministic landings and rise directly to their destination's live twigs. Pickup is staggered by leaf identity:
+
+  f = smoothstep(0.03 + 0.16 · identity, 1, q),
+
+with the leaf's height f times its destination twig's current height. In reverse, the same field descends into the carpet. The flight carries a small curl and tumble, and the mark-and-shadow trade of the season travel (mark gone over the first 18%, shadow grown over the first 13%). The camera follows the season travel's eye-space path and shortest yaw arc. One changing field of leaves and wood is cast through the interpolated sun into a transmission map that the floor lights and grades, and native casts hand into it with smoothstep(0, 0.06, q) · smoothstep(0, 0.06, 1 − q), reaching the exact endpoint renderer at either end, at the larger endpoint budgets scaled by the governor.
+
+The coordinate q always runs from carpet to full canopy. The live engine keeps its original grove until landing, then installs the requested end once with the carried motion, joint positions and velocities; when the tree counts differ only the common spring prefix is copied. An empty actual carpet declines the route at preparation.
+
+## What every route keeps
+
+These hold for every route above, and are stated as promises in [`../contracts/transitions.md`](../contracts/transitions.md).
+
+**The clocks keep running.** Wind and automatic drift continue through every route on their own clocks; nothing resets a gust. Where a route carries two scenes, each wind advances once per moving frame regardless of the direction of travel, and a redraw that takes no time advances nothing. After landing, adaptive rendering resumes from the landing time.
+
+**Native endpoints are reached exactly.** A route lands on the target look's own parameters and its own render path, so a look arrived at is indistinguishable from the look loaded, apart from the state its wind and drift have reached. Handoffs into native casts happen while the moving field still carries the picture, so no difference of sampling, bake size or edge law survives to the last frame as a pop.
+
+**Reversal keeps what is in flight.** Selecting the look a route came from, while it moves, reverses it from where it is: the same carriers, the displayed progress, the tone response and both winds. Landing back at the outgoing look restores its carried motion.
+
+**The latest selection waits.** A selection that is neither end of the moving route waits for the route's settled frame and starts from there. Only the most recent waiting selection survives; a superseded one is dropped and its completion is never announced.
+
+**Interruption starts from what is shown.** An interrupted morph, fade, sweep or dissolve starts the next from the displayed state: the current eye, the current shadow opacity, the current iris radius, the displayed mixture.
+
+**Nothing accumulates.** Completion, a hard replacement of the parameters, disposal and a lost graphics context release every temporary scene, map and program a route made. A restored context lands on the requested target, a waiting selection included.
+
+**No look learns about transitions.** No route adds a saved parameter. A route is a property of a pair, never of a look.
+
+## Playing a season live
+
+The season macro is not a transition. Restarting an ease per drag event, re-profiling at every landing and falling back to a bloom above budget would all be wrong for a slider, so the macro carries its own tween: it eases toward a stored target on the frame clock, monotone and never overshooting, lands the stop's exact parameters and idles; loading a look cancels it. Its step clamp, which lets the season lag the hand rather than thin the canopy in salt and pepper, is [`season.md`](season.md)'s ([`../contracts/continuity.md`](../contracts/continuity.md)).
+
+## Approximations and limits
+
+- **Approximation: the cloud dissolve swaps.** Under the bloom one grove still replaces another between two frames; the cloud reduces what the eye can read of it but does not make it a reorganisation. It is the route of last resort, and every pair a travel route or the crossfade can carry is taken off it.
+- **Approximation: the bloom's depth is one compromise across pairs.** A floor and a sky, or a floor and a tent, differ in mean brightness, and no single depth suits every pair; the cap is set where the worst route is best.
+- **Approximation: the scene dissolve mixes pictures.** Two finished frames are mixed in linear light. It is a dissolve, used only for faithful structural pairs no travel route joins.
+- **Approximation: the fade through the lit ground is a presentation fade.** The shadows fade in irradiance, not because any physical cause removes the canopy.
+- **Approximation: depth binning stays live in a grove morph.** Each frame re-bins twigs into depth layers by grown height, so a knob that moves heights (branch pitch or angle) can occasionally flip one cluster between blur tiers mid-morph. With the few layers these looks use it is negligible, so the binning is not frozen.
+- **Authored: the travel routes are a reversible grammar, not a simulation.** They do not simulate airborne leaf surfaces, a new season or drop law, biological growth, or a conservation of leaf count. Correspondences, flights, curls, detours and staggers are authored.
+- **Approximation: the travelling material.** A lifted or settling leaf's colour is an authored blend of the native reflected and transmitted laws at each end, not a new wetting or ageing law. Floor pickup in the grove regrouping uses the original carpet reflectance while its mark is visible. The coloured mark uses the rest-space path while the elevated cast meets the live twig pose.
+- **Approximation: the sky fill under travel.** While leaves travel, the fill follows their changing colour and coverage through the existing depth layers (three bins in the regrouping, receding to the target's zero fill), rather than integrating the moving geometry as a full 3D scattering volume.
+- **Law: overlap darkens.** Where travelling shadows overlap, a denser, darker passage appears. It is real overlap in the shared cast, not an exposure envelope.
+- **Approximation: shadow pickup.** A shadow does not become matter; its footprints are the authored starting surface, with a short transmission handoff covering the finite source and the native sampling differences.
+- **Authored: the gates are narrow.** Every travel route and the crossfade join only the pairs whose conditions they can honour; any other pair keeps its ordinary route.
+
+## Not built
+
+- **The wood crossfade.** The shared-layer crossfade blends leaves only; the analytic wood is now stored so it could hold two sets, so crossfading wood is a real next step. A look with wood still takes the honest dissolve. See [`../exploration/open.md`](../exploration/open.md).
+- **A MIDI or event driver.** It is planned to call the same single entry point the arrow keys do. See [`../exploration/open.md`](../exploration/open.md).
+
+## Related
+
+- [`../contracts/transitions.md`](../contracts/transitions.md): each route's gate and promises.
+- [`../contracts/gates-and-rungs.md`](../contracts/gates-and-rungs.md): the parameter classes that select a route.
+- [`../contracts/continuity.md`](../contracts/continuity.md): calm as a contract, the fade windows and step clamps.
+- [`canopy.md`](canopy.md), [`season.md`](season.md), [`motion.md`](motion.md): the grove, the season and the wind the routes carry.
+- [`source.md`](source.md): the cloud the bloom borrows.
+- [`camera.md`](camera.md), [`sky-view.md`](sky-view.md): the views the viewpoint and flights join.
+- [`../evidence/dead-ends.md#transitions`](../evidence/dead-ends.md#transitions) and [`../evidence/measurements.md#transitions`](../evidence/measurements.md#transitions): the uncapped bloom, the crossfade's former bloom, the iris's one-frame install, and the luminance and churn steps.

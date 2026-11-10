@@ -1,8 +1,37 @@
 # CLAUDE.md — the repo map
 
 What each file is and what it owns. The README is for people who put komorebi on a page; this file is for people
-who work on komorebi. The spec ([`komorebi-spec.md`](komorebi-spec.md)) holds the vision, the physics and the
-model. Read the spec before you change what the engine does.
+who work on komorebi. The spec ([`spec/`](spec/README.md)) holds the vision, the physics and the
+model. Read the spec before you change what the engine does: `spec/README.md` (how it is organised and written),
+`spec/experience.md` and `spec/principles.md` first, then `spec/model/overview.md` and the model file for the mechanism
+you are touching.
+
+## Keeping the record clean
+
+- **The spec is current.** A change to what komorebi does updates its home in `spec/` in the same piece of work: the
+  model file, `contracts/looks.md` for a look, a dated row in `evidence/observations.md` for an artist's decision,
+  `exploration/open.md` to close or re-status an item. Follow `spec/README.md`'s conventions.
+- **Uncommitted notes hold only what is pending.** `spec-no-commit/`, `QUESTIONS-FOR-JOSE.md` and the `*-no-commit.md`
+  files are working notes outside git. When something lands, delete it there: what was done lives in git and `spec/`.
+- **Git is a pruned bonsai.** One commit per coherent change. A commit message says what changes in komorebi, from the
+  software's point of view, and makes sense to someone with only the repository: no session context, no "José picked",
+  no item numbers, no paths to files outside git. Code comments follow the same rule: what the code does and why.
+
+## Reviewing work
+
+Anything visual is judged on before/after evidence, kept as an archive under `test-gl/out/review/` (git-ignored), one
+folder per question: `<date>-<topic>/` with the script that rendered it, a `manifest.json` (params, commit, source
+hashes) and a short `README.md` saying what A and B are and what was seen.
+
+- **Sheets** for stills: labelled montages with quotable frame IDs (`nix run .#review -- spec.json` from a commit, or the
+  folder's own script rendering the working tree in headless Chromium, with a candidate change applied to the served
+  module text so A and B differ by exactly that change). A batch of
+  questions gets an `index.html` that leads with the choices that change the image most.
+- **Videos** for motion: side by side, with the per-frame change plotted, a slowed or zoomed replay where the
+  difference is small, lossless masters deleted once the delivery is encoded.
+- **Measure before showing.** Report the difference between options (mean |A−B| over the frame, the share of pixels
+  that visibly move); zoom where it is small; never present a byte-identical pair as a choice; say plainly when an
+  option changes nothing visible.
 
 ## Files
 
@@ -23,6 +52,7 @@ model. Read the spec before you change what the engine does.
   - **`komorebi-litter-rise.js`** — the flights between floor and sky: fall memories ↔ look up carries leaves between carpet and canopy, purple eye → look up lifts shadow footprints, both through a moving 3D leaf field across the horizon, with material change, eye clearance, native endpoint landing, queued selections and cleanup.
   - **`komorebi-render.js`** — one frame onto a target: the transport draw, the per-group uniform upload, the glow tier.
   - **`komorebi-editor-tools.js`** — EDITOR-only: debug overlays, the profiling primitive, the motion mirror.
+  - **`profiler.js`** — EDITOR-only, pure: the auto-profiler's cost taxonomy and its variant and improve proposals (`proposeVariants`, `proposeImprove`); `profiler.test.js` holds it.
   - **`komorebi-transport.js`** — the transport master + camera registry: GLSL snippets `buildTransport()` assembles into one program per camera, including the transition-only viewpoint that joins sky rays to floor casts.
   - **`komorebi-shaders.js`** — the bake / faithful-bake / display shaders, the shared tone tail, and the sky fill's bake (`FS_FILL`) with the per-ray snippet (`GLSL_SKY_RAY`) it shares with the sky view.
   - **`komorebi-params.js`** — `DEFAULTS`, the legacy-name migration, the transition key classification, the engine caps, and the feature registry (`FEATURES`, `featuresFor`, `cutWarnings`: which fall tiers a look opens, so a bundle can cut the rest).
@@ -35,7 +65,7 @@ model. Read the spec before you change what the engine does.
 - **`leaf-preview.js`** — EDITOR-only, DOM: the `L` inset (bottom-left, built on the first press): one grown leaf against the sun with its maze, redrawn only when a signature moves. Imported by `editor.js` alone.
 - **`breathe.js`** — the site's way of leaving a page: an ES module that, once loaded, listens on `document` (bubbling, so an element handler that took the click and called `preventDefault` wins) for a click that will navigate this tab — plain left button, no modifier, no `target` but `_self`, no `download`, an `http(s)` address, not a jump within the page — and breathes `document.body` out with the welcome's own values (opacity 0, blur 10px, scale 1.04, .9s ease, as inline styles, so a page needs no CSS for it) before it goes there. With `prefers-reduced-motion: reduce` it only fades. A page back from the back/forward cache (`pageshow`, `persisted`) is made whole. `breathes(event, link, here)` is the pure decision, which `breathe.test.js` holds with plain objects. Loaded by `index.html`, `about.html` and arboretum's pages (as `/breathe.js`); not by `examples/`, which are the embeds people copy.
 - **`macros.js`** — the control bus: high‑level macros (weather, haze, focus, the wind pad, season, grove, palette, prism), each one input driving an authored multi‑param recipe lifted from the shipped looks. The editor's playful/minimalist modes are its first source; MIDI/audio can drive the same bus later.
-- **`index.html`** — the editor / landing page (opens on a welcome screen): three modes — a minimalist auto‑fading strip (the default), a playful macro sidebar, and the full dev panel (`editor.js`'s `PANEL`: eleven collapsible areas grouped by the pass you make — Sun, Colour & light, Density, Season, Leaves, Tree shape, Scene, Wind, Tune, Debug, Lab — each remembering open or closed in `komorebi.editor`'s `open`; the first three start open) — plus HUD, presets, sun‑drag. The welcome's "about" opens in place, not as a page: `editor.js` fetches `about.html` (on hover or focus, or the click), takes `#aboutCol` and its stylesheet from it, and lays it in `#aboutView` over the same canvas — the welcome breathes out (`#welcome.out`, .9s) and the column breathes in, the reverse; the canvas keeps its look and `body.intro`, so no panel and no D until "feel", and the column's "feel" clicks the welcome's own. A plain click is intercepted; middle and cmd/ctrl-click, and a failed fetch, go to `about.html` itself. Opening pushes the about link's own address (`about.html`) onto the history; Back is the reverse breath (the column out, the welcome back in, the canvas untouched), Forward opens it again, and "feel" from about puts the index's own path back (`replaceState`), so a reload lands in the editor; a reload at `/about` is the standalone page, which is the same text. `#feel` and `#arboretum=` links are unaffected. Loads `breathe.js`. Imports the modules, so it must be **served** (`nix run .#dev`), not opened off the filesystem.
+- **`index.html`** — the editor / landing page (opens on a welcome screen): three modes — a minimalist auto‑fading strip (the default), a playful macro sidebar, and the full dev panel (`editor.js`'s `PANEL`: eleven collapsible areas grouped by the pass you make — Sun, Colour & light, Density, Season, Leaves, Tree shape, Scene, Wind, Tune, Debug, Lab — each remembering open or closed in `komorebi.editor`'s `open`; Colour & light, Density and Season start open) — plus HUD, presets, sun‑drag. The welcome's "about" opens in place, not as a page: `editor.js` fetches `about.html` (on hover or focus, or the click), takes `#aboutCol` and its stylesheet from it, and lays it in `#aboutView` over the same canvas — the welcome breathes out (`#welcome.out`, .9s) and the column breathes in, the reverse; the canvas keeps its look and `body.intro`, so no panel and no D until "feel", and the column's "feel" clicks the welcome's own. A plain click is intercepted; middle and cmd/ctrl-click, and a failed fetch, go to `about.html` itself. Opening pushes the about link's own address (`about.html`) onto the history; Back is the reverse breath (the column out, the welcome back in, the canvas untouched), Forward opens it again, and "feel" from about puts the index's own path back (`replaceState`), so a reload lands in the editor; a reload at `/about` is the standalone page, which is the same text. `#feel` and `#arboretum=` links are unaffected. Loads `breathe.js`. Imports the modules, so it must be **served** (`nix run .#dev`), not opened off the filesystem.
 - **`about.html`** — what komorebi is, for a person who arrives from the welcome's "about" link: the welcome's look (`afternoon 6`) faint behind a centred column of text, loaded as `examples/module.html` loads the engine (ES modules, no bundler). The tagline, José's own words, a short passage on how it is made (drawn only from the spec's vision and physics), the way to embed it (a link to `examples/`, which is why the examples stay reachable), and, only where `detect` answers an origin, a line to `/arboretum`; a closing sentence under "How it's made" that links the spec and the source; "feel" leads back to `./`. Nothing moves but the light. It is the one source of the about text: the column is `#aboutCol`, which the welcome's in-place about takes from this file (see `index.html`), so the prose is never copied elsewhere. Page-level rules (the body, the canvas, the column's first fade) live here; the column's own live in `about.css`. Loads `breathe.js`.
 - **`about.css`** — the about column's styles, scoped under `#aboutCol`, the one place they live. `about.html` links it; `editor.js` adds the same `<link>` (read from the fetched `about.html`) when the welcome opens about in place, so both views look alike.
 - **`player.html`** — minimal viewer‑only reference: a full‑bleed canvas cycling through presets, no UI.
@@ -58,7 +88,8 @@ model. Read the spec before you change what the engine does.
   - **`video.test.mjs`** — `nix shell nixpkgs#nodejs_22 nixpkgs#ffmpeg -c node --test test-gl/video.test.mjs`: needs git on PATH and `cd test-gl && npm install` (the exporter imports playwright; no Chromium is downloaded or started). The downscale, the delivery's frame pairing, the run key and its refusals, the arboretum client against a mock that answers the server's own shapes.
   - **`playlist.test.mjs`** — `node --test test-gl/playlist.test.mjs`: the playlist mode without a browser: the timeline arithmetic (`playlistSchedule`, landings, looping), the spec and file parsers, `checkPlaylistTimes`, and `fetchArboretumPlaylist` against a mock (refusals, no token in any message). The browser half (fades landing, resume from a landing equal to an uninterrupted run) is checked on a GPU host.
 - **`.github/workflows/pages.yml`** — the deploy: builds `dist/` and publishes the repo to GitHub Pages (komorebi.eljojo.net) on a push to `main`, writing `commit.json` (`$GITHUB_SHA`) into the site for the editor's uploads; a local checkout has none. The bundle is there to download; the README tells embedders to serve their own copy.
-- **`komorebi-spec.md`** — the living spec (vision, physics, model). Kept in sync as the engine evolves.
+- **`spec/`** — the living spec, by the question a reader is answering: `experience.md` (what the piece is for), `principles.md` (how decisions are judged, including the preservation policy), `model/` (the world, one file per subsystem, `overview.md` first), `contracts/` (what must remain true: preservation, determinism, conservation, continuity, gates and rungs, transition routes, each shipped look's intent), `evidence/` (dead ends, measurements, the artist's observations and dated decisions), `exploration/` (open questions and the artist's directions), `implementation.md` (the crosswalk from model to module, test and harness) and `glossary.md`. Conventions are in `spec/README.md`. The spec is the work; the code is one implementation of it.
+- **`komorebi-spec.md`** — the single-file spec the folder above replaced, retained as the historical account until José retires it. Not authoritative; nothing in `spec/` cites it.
 
 ## Arboretum
 
