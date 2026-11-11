@@ -378,7 +378,7 @@ test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exact
 
 // ---- the engine: apply('season') decides fast or full -------------------------------------------------------------------
 function engineRig(over) {
-  const counts = { createBuffer: 0, createVertexArray: 0, bufferData: 0 };
+  const counts = { createBuffer: 0, createVertexArray: 0, bufferData: 0, draws: 0 };
   globalThis.requestAnimationFrame = () => 0;
   const gl = new Proxy({}, {
     get(t, name) {
@@ -392,6 +392,7 @@ function engineRig(over) {
       if (name === "createVertexArray") return () => { counts.createVertexArray++; return {}; };
       if (name === "bindBuffer") return (_, b) => { t.cur = b; };
       if (name === "bufferData") return (_, d) => { counts.bufferData++; if (t.cur) t.cur.data = d; };
+      if (name === "drawArraysInstanced" || name === "drawArrays") return () => { counts.draws++; };
       return () => ({});
     },
   });
@@ -549,6 +550,24 @@ test("apply('season'): the first builds with the cache (a full path); a season-s
     expect(eng.apply("season"), `${JSON.stringify(change)}: the cache was used`).toBe("reseason");
     expect(built(counts), `${JSON.stringify(change)}: the fast path builds no buffer`).toBe(b);
   }
+});
+
+test("apply('season') leaves the bake to the frame when the frame will bake (running, the canopy moving, no transition), and bakes itself otherwise", () => {
+  const { eng, counts } = engineRig({ wind_strength: 1 });
+  eng.apply("season");                                   // the cache
+  let d = counts.draws;
+  eng.params.phenology = 0.82;
+  expect(eng.apply("season")).toBe("reseason");
+  expect(counts.draws, "paused: no frame comes, so the apply bakes").toBeGreaterThan(d);
+  eng.setPaused(false);                                  // the rig's requestAnimationFrame never calls back: no frame runs in this test
+  d = counts.draws;
+  eng.params.phenology = 0.84;
+  expect(eng.apply("season")).toBe("reseason");
+  expect(counts.draws, "running with the wind moving: the next frame bakes before it draws").toBe(d);
+  Object.assign(eng.params, { wind_strength: 0, drift_auto: false, phenology: 0.86 });
+  expect(eng.apply("season")).toBe("reseason");
+  expect(counts.draws, "running, the canopy still: no frame will bake, so the apply does").toBeGreaterThan(d);
+  eng.setPaused(true);
 });
 
 test("apply('season'): a param buildGrove reads besides the season set takes the full path", () => {

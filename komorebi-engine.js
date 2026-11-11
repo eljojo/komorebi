@@ -616,12 +616,15 @@ function createEngine(canvas, opts, driven=false){
     publishBend(hub.grove); hub.hier.maxV = 0;   // the editor's canopy apply also republished bends and replaced this activity hint
     return path;
   }
+  // Will the next frame bake before it draws? Only a running loop with the canopy moving and no transition (frame(): a transition's route owns the bake, and an
+  // adaptive frame that is not due re-presents the last picture, which no bake here would change). Otherwise an apply must bake for itself.
+  const frameBakes = () => !driven && alive && !paused && !lost && !trans.active && motionActive();
   function apply(scope){
     if(lost) return;                                  // see setParams
     if(scope==='source') regenSource();
     else if(scope==='bake') bake();                  // drift moves leaves at bake time only
     else if(scope==='canopy'){ regenCanopy(); bake(); }
-    else if(scope==='season'){ const path = reseason(); bake(); return path; }
+    else if(scope==='season'){ const path = reseason(); if(!frameBakes()) bake(); return path; }   // a season step runs many times a second: the frame that shows it bakes anyway when the canopy moves
     else if(scope==='density'){ const path = reweight(); bake(); return path; }
     else if(scope==='textures'){ rebuildTextures(); regenCanopy(); bake(); }
     else if(scope==='perf') resetPerf();
