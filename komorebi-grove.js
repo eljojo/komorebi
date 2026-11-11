@@ -774,12 +774,12 @@ export function makeGrove(hub){
     tau[0] = -Math.log(clamp(P.trans_r,1e-4,0.999));
     tau[1] = -Math.log(clamp(P.trans_g,1e-4,0.999));
     tau[2] = -Math.log(clamp(P.trans_b,1e-4,0.999));
-    const sen = senescing(P), ph = P.phenology, fw = P.wall_fraction, twigs = g.hier.twigs;
+    const sen = senescing(P), ph = P.phenology, fw = (FEAT_PIGMENT || FEAT_EXPOSURE) ? P.wall_fraction : 0, twigs = g.hier.twigs;   // the tiers literally, so a bundle that cuts them folds the read away
     const track = dropping(P) && n > 0;
     // buildGrove's three arms for a leaf's tau: the light's leafTau (FEAT_EXPOSURE && lit), its own clock's (FEAT_PIGMENT && senescing), or the summer tau. `lit` is senescing and
     // turn_exposure > 0, so given senescing the arm is a property of the schedule's keys, and the schedule is built for it.
-    const turning = sen && ((FEAT_EXPOSURE && P.turn_exposure > 0) || FEAT_PIGMENT);
-    const sc = n > 0 && (turning || FEAT_DROP && track) ? scheduleOf(g, P) : null, at = sc?.at;
+    const turning = (FEAT_PIGMENT || FEAT_EXPOSURE) && sen && ((FEAT_EXPOSURE && P.turn_exposure > 0) || FEAT_PIGMENT);
+    const sc = (FEAT_PIGMENT || FEAT_EXPOSURE || FEAT_DROP) && n > 0 && (turning || FEAT_DROP && track) ? scheduleOf(g, P) : null, at = sc?.at;
     if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); S.outP = new Float32Array(n); }
     const outL = S.outL, outF = S.outF, outP = S.outP, wL = new Int32Array(nLayer);
     const fallen = FEAT_DROP && track ? [] : null, leafW = FEAT_DROP && track ? new Float32Array(S.nCluster*nLeaf).fill(1) : null;
@@ -872,9 +872,9 @@ export function makeGrove(hub){
       S.draws = new Float64Array(4*n);
       for(let i=0;i<n;i++){ const o = SREC*i, j = rec[o+6], k = rec[o+7]; leafDraws(P.seed, j, k, S.draws, 4*i); S.draws[4*i+3] = dropHash(P.seed, j, k); }
     }
-    const lit = FEAT_EXPOSURE && P.turn_exposure > 0, after = afterTurn(P), dropOn = FEAT_DROP && P.leaf_drop > 0;
+    const lit = FEAT_EXPOSURE && P.turn_exposure > 0, after = afterTurn(P);
     let u = null;
-    if(FEAT_EXPOSURE && (lit || dropOn && !after && P.drop_exposure > 0)){
+    if(FEAT_EXPOSURE && (lit || FEAT_DROP && P.leaf_drop > 0 && !after && P.drop_exposure > 0)){
       if(!S.rank){
         const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
         for(let i=0;i<n;i++){ const o = SREC*i; X[i]=rec[o]; Y[i]=rec[o+1]; Z[i]=rec[o+2]; Ar[i]=rec[o+5]; K[i]=S.draws[4*i]; }   // K: each leaf's own clock, leafClock (its first draw)
@@ -893,8 +893,8 @@ export function makeGrove(hub){
       const phiE = lit ? turnOrder(u[i]) : undefined;
       const phi = turnPhase(P, d[4*i], phiE);
       turnWindow(P, phi, dT, at, LEAF_SCHED*i);
-      leafPigments(P, d[4*i+1], d[4*i+2], lit ? P.turn_exposure : 0, lit ? redGain(u[i]) : undefined, cT, at, LEAF_SCHED*i);
-      if(dropOn) D[i] = after ? dropDayAfterTurn(P, phi, dT) : dropDay(P, dropPhase(d[4*i+3], u ? u[i] : 0, P.drop_exposure), dT);
+      if(FEAT_PIGMENT || FEAT_EXPOSURE) leafPigments(P, d[4*i+1], d[4*i+2], lit ? P.turn_exposure : 0, lit ? redGain(u[i]) : undefined, cT, at, LEAF_SCHED*i);
+      if(FEAT_DROP && P.leaf_drop > 0) D[i] = after ? dropDayAfterTurn(P, phi, dT) : dropDay(P, dropPhase(d[4*i+3], u ? u[i] : 0, P.drop_exposure), dT);
     }
     sc.key = key; sc.builds++; sc.byDay = null;
     return sc;
