@@ -28,7 +28,7 @@ No shipped look opens `vignette` (the projector's iris), `edge_area` (the texel 
 
 ## The cosine law
 
-On 2026-11-09 the artist judged every look that has a receiver against the cosine law ([`../model/light.md`](../model/light.md)) on one sheet: each as shipped, with the law at its old exposure, and with the law and its exposure re-sat to `exposure / I` (the sheet is `test-gl/out/review/2026-11-09-item2a-sun-cosine`; the decision is in [`../evidence/observations.md`](../evidence/observations.md#decisions)).
+On 2026-11-09 the artist judged every look that has a receiver against the cosine law ([`../model/light.md`](../model/light.md)) on one sheet: each as shipped, with the law at its old exposure, and with the law and its exposure re-sat to `exposure / I` (the sheet is `test-gl/out/review/2026-11-09-item2a-sun-cosine`).
 
 - **Carry the law, exposure re-sat:** `afternoon 4`, `afternoon 4b`, `afternoon 5`, `afternoon 6`, `afternoon 6b`, `afternoon 7`, `forest floor` (under an 84.5° sun the law moves them by less than a level), `park 1`, `montebello`, `park fall`, `the yellow tree`, `montebello, rain`, `cherry blossom`, `acid dreams`, `curtain 1`, `curtain 2`, `tent 1`.
 - **Keep the old law:** `eclipse`, `morning 1`, `morning 2`, `morning 3`, `morning 3b`, `memories`, `the void`, `afternoon 5b`, `prism`, `park 2`. **Authored:** the artist preferred their original contrast to the law's ("i preferred the original look"); this is the purpose [`preservation.md` §4](preservation.md#4-a-retained-older-behaviour-needs-a-named-purpose) asks of a retained older behaviour. Under a low sun the law brings the shade and the sky up against the dapples, and these looks keep their dapples' hold over the shade.
@@ -255,4 +255,4 @@ The model and evidence mention looks that are not in the built-in set: `fall mem
 - [`gates-and-rungs.md`](gates-and-rungs.md): the gates and tiers named above.
 - [`transitions.md`](transitions.md): the routes between these looks.
 - [`../experience.md`](../experience.md): the places these looks serve.
-- [`../evidence/observations.md`](../evidence/observations.md): the review sheets and dated choices behind them.
+- [`../evidence/observations.md`](../evidence/observations.md): what José lived, which the looks draw on.

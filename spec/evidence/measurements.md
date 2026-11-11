@@ -80,7 +80,7 @@ The match between the seen disk and the sampler's weights is under [sky-view](#s
 
 ## camera
 
-No measurement of the camera or the Look's tail is recorded. The projector's iris was judged by eye (see [observations](observations.md#decisions)); the glare's cost to the seen sky is under [sky-view](#sky-view).
+No measurement of the camera or the Look's tail is recorded. The projector's iris was judged by eye on the 2026-10-08 sheets (see [the camera](../model/camera.md)); the glare's cost to the seen sky is under [sky-view](#sky-view).
 
 ## canopy
 
@@ -188,7 +188,7 @@ No measurement of the camera or the Look's tail is recorded. The projector's iri
   | his leaf → nearest of 800 engine maples | 0.17 (0.11–0.43) | — (nearest other of his own: 0.13) | 0.40 (0.29–0.67) |
 
   Solidity is read off the r(θ) profiles, his and the engine's alike; read off his masks it was 0.742. The truncate base took r(150°) from 0.30 to 0.09 (his 0.03). The box of the eight outlines is 6.7 units², the star's 8.6. The stamp's summed coverage is ×1.080–1.084 of the ellipse's at the same edge (variants 0, 3 and 7 of seed 1234), where the star's was ×1.04: the radial ramp loses `½·e·∮r dθ` of the area, and `∮r dθ ≤ 2π` with the area fixed, so the more a profile varies the more a leaf keeps, and a truncate base is a good deal of variation; the harness band was widened from 1..1.06 to 1..1.10 for it. `growLeaf`'s jitter alone (±4°, ±10 %) spreads one leaf's sinus over 0.18–0.40 at any mean, so every leaf cannot sit inside his range on every axis at once; the means sit in his range and each leaf in a wider envelope.
-- **What it established:** the recalibrated grammar's means sit inside José's leaves on every axis. What is left of the 0.17 (his own leaves are 0.13 from one another) is the basal region, his most variable, and the sub-lobes and acuminate tips the grammar does not grow. José, of the sheet: "still good enough to commit as is" (see [observations](observations.md#decisions)).
+- **What it established:** the recalibrated grammar's means sit inside José's leaves on every axis. What is left of the 0.17 (his own leaves are 0.13 from one another) is the basal region, his most variable, and the sub-lobes and acuminate tips the grammar does not grow. The recalibrated maple shipped as it stood, with the natural shape left open ([`../exploration/open.md`](../exploration/open.md)).
 - **Date:** 2026-10-09 (recalibration).
 
 ### The star, read on the leaves it claimed to be
@@ -451,7 +451,7 @@ The red oak is not star-shaped from any point of its midrib: 2–33 re-entrant r
 
   Min/max falls at 0.5 for every test leaf and for brown, so saturation rises. The scattering a soaked leaf keeps, `WET_RHO` ≈ 0.085, is derived from `n_wall` 1.47 and `n_water` 1.333, not measured.
 - **On the sheets:** real soil reflects 0.1–0.2; on park 1's dirt a montebello leaf matched it in chroma and sat at 1.1× its luminance, so the carpet vanished, which is why montebello's dirt came down ×0.6.
-- **What it established:** the opaque-pile reflectance is far less saturated than the transmittance stain it replaced; κ 2 was chosen by eye (see [observations](observations.md#decisions)).
+- **What it established:** the opaque-pile reflectance is far less saturated than the transmittance stain it replaced; κ 2 was chosen by eye on the 2026-10-08 sheets (see [the season](../model/season.md)).
 - **What would replace it:** the grey-card calibration. Photograph the same leaves backlit (for τ), then dry and wet beside a grey card in the Gatineau; that fits κ, F and wetness's effective scale. The protocol for the photographs: a diffuser (tracing paper) on the glass, a white or grey card behind, RAW, fixed white balance and exposure, Active D-Lighting off, wet and dry labelled (from the bot's log, uncommitted source). `litter_age` 0.15 is **Provisional** with it.
 - **Date:** 2026-10-08, sheets in `test-gl/out/review/2026-10-08/`.
 
@@ -856,7 +856,7 @@ José picked T1 (bt709) for the video tags, by a hair (2026-10-10, from the bot'
 
 ## Related
 
-- [`observations.md`](observations.md): what José saw, his photographs, and the dated decisions these numbers fed.
+- [`observations.md`](observations.md): what José saw and the photographs these numbers were taken against.
 - [`dead-ends.md`](dead-ends.md): the approaches these measurements retired.
 - [`../model/overview.md`](../model/overview.md): the model each section evidences.
 - [`../contracts/conservation.md`](../contracts/conservation.md): the energy bounds the fill and sky-view books hold.

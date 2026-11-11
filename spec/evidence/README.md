@@ -8,7 +8,7 @@ The model says what komorebi is in the present tense. This folder keeps what tha
 
 - [`dead-ends.md`](dead-ends.md): every recorded failure, rejected alternative, superseded rule and lesson, with its cause and what replaced it.
 - [`measurements.md`](measurements.md): numbers with their provenance.
-- [`observations.md`](observations.md): what José saw and photographed, and dated decisions.
+- [`observations.md`](observations.md): what José lived and photographed.
 
 ## How to read it
 

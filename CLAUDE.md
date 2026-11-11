@@ -9,8 +9,8 @@ you are touching.
 ## Keeping the record clean
 
 - **The spec is current.** A change to what komorebi does updates its home in `spec/` in the same piece of work: the
-  model file, `contracts/looks.md` for a look, a dated row in `evidence/observations.md` for an artist's decision,
-  `exploration/open.md` to close or re-status an item. Follow `spec/README.md`'s conventions.
+  model file, `contracts/looks.md` for a look, an artist's decision with its reason in the file that carries it,
+  `exploration/open.md` to close or re-status an item. `evidence/observations.md` holds only what José lived. Follow `spec/README.md`'s conventions.
 - **Uncommitted notes hold only what is pending.** `spec-no-commit/`, `QUESTIONS-FOR-JOSE.md` and the `*-no-commit.md`
   files are working notes outside git. When something lands, delete it there: what was done lives in git and `spec/`.
 - **Git is a pruned bonsai.** One commit per coherent change. A commit message says what changes in komorebi, from the

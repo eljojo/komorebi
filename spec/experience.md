@@ -62,5 +62,5 @@ A place. The larger-scale composition of a scene, what surrounds the viewer and 
 
 - [`principles.md`](principles.md): how decisions are judged against this.
 - [`model/overview.md`](model/overview.md): the world that produces it.
-- [`evidence/observations.md`](evidence/observations.md): the observations, photographs and decisions these paragraphs rest on, with their dates.
+- [`evidence/observations.md`](evidence/observations.md): the observations and photographs these paragraphs rest on, with their dates.
 - [`exploration/directions.md`](exploration/directions.md): where the artist wants the piece to go next.

@@ -68,4 +68,3 @@ Equality in pixels is the right tool for §1 (the off state at landing) and §5 
 - [`looks.md`](looks.md): the recorded intent a change is judged against.
 - [`gates-and-rungs.md`](gates-and-rungs.md): what a gate and a rung owe when they land.
 - [`determinism.md`](determinism.md), [`conservation.md`](conservation.md), [`continuity.md`](continuity.md): the invariants of §5.
-- [`../evidence/observations.md`](../evidence/observations.md): review sheets and the artist's decisions.

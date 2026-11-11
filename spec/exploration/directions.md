@@ -248,4 +248,4 @@ Items in the bot's working log that José named for later sessions. They are rec
 - [`../experience.md`](../experience.md): the afternoon these directions serve.
 - [`../principles.md`](../principles.md): how a change toward them is judged.
 - [`../contracts/preservation.md`](../contracts/preservation.md): what a change that moves a look's pixels owes.
-- [`../evidence/observations.md`](../evidence/observations.md): José's observations and dated decisions.
+- [`../evidence/observations.md`](../evidence/observations.md): what José lived and photographed.
