@@ -69,7 +69,7 @@ const perf = eng.perf;
 // time-of-day is an editor-only INPUT method (it writes sun elevation/azimuth); not an engine param.
 if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
-function applyScope(scope){ stopPlay(); eng.captureLook(); chipSoon(); return eng.apply(scope); }   // slider/toggle rebuild — every edit of the look comes through here (or updateSunFromTime, a drag, species, paste, save), stops play and wakes the look's chip
+function applyScope(scope){ stopPlay(); chipSoon(); return eng.apply(scope); }   // slider/toggle rebuild — every edit of the look comes through here (or updateSunFromTime, a drag, species, paste, save), stops play and wakes the look's chip
 function reseed(){ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }   // same grove, grown again
 function applyParams(obj){ endTween(); trySeasonCancel(); eng.setParams(obj); syncAllControls(); chipSoon(); }  // load a whole preset (instant)
 // The chip under the look select (lookChip, built with the presets UI) says "● edited" once the live params leave the entry's, so it is
