@@ -57,6 +57,13 @@
       "when": 1794358988326,
       "tag": "0007_blue_deadpool",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1794429180575,
+      "tag": "0008_brown_thunderbird",
+      "breakpoints": true
     }
   ]
 }

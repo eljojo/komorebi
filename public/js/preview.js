@@ -9,7 +9,7 @@ async function mount() {
     const [res, Komorebi] = await Promise.all([fetch(canvas.dataset.src), loadEngine(canvas.dataset.engine)]);
     if (!res.ok) throw new Error('the look could not be loaded');
     const { params } = await res.json();
-    Komorebi.create(canvas, { params });
+    Komorebi.create(canvas, { params, session:{},environment:{userAgent:navigator.userAgent} });
     fullscreenOnDoubleClick(canvas);
   } catch {
     // Without WebGL2 create() throws (spec §7): the canvas goes and the page stays a plain, readable page.

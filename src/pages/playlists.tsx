@@ -8,6 +8,7 @@ import engine from '../../public/engine/engine.json';
 import { komorebiPlaylistLink } from './links';
 import { Layout, notFound, viewerOf } from './layout';
 import { BASE } from '../config';
+import { PRESENTATION_IDS } from '../generated/engine';
 
 export function registerPlaylistPages(app: Hono<AppEnv>) {
   app.get(`${BASE}/l/:id`, async (c) => {
@@ -36,6 +37,7 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
           by <a href={`${BASE}/u/${row.owner}`}>{row.owner}</a>
         </p>
         {playlist.description ? <p>{playlist.description}</p> : null}
+        {playlist.presentation ? <p class="quiet">presentation: {playlist.presentation}</p> : null}
         {playable.length ? (
           <figure class="preview">
             <canvas id="player" data-src={`/api/playlists/${playlist.id}${k ? `?k=${k}` : ''}`} data-engine={engine.file}></canvas>
@@ -72,6 +74,10 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
         {isOwner ? (
           <section id="owner-controls" data-playlist={playlist.id} data-revision={playlist.revision} hidden>
             <h2>yours</h2>
+            <p><label>presentation{' '}<select name="presentation">
+              <option value="" selected={playlist.presentation === null}>no preference</option>
+              {PRESENTATION_IDS.map(id=><option value={id} selected={id === playlist.presentation}>{id}</option>)}
+            </select></label></p>
             <p>
               <label>
                 visibility{' '}

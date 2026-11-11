@@ -11,6 +11,26 @@ async function owner(scope: 'read' | 'write' = 'write') {
 const playlistCount = async (ownerId: number) =>
   (await env.DB.prepare('SELECT count(*) AS n FROM playlists WHERE owner_id = ?').bind(ownerId).first<{ n: number }>())!.n;
 
+describe('playlist presentation', () => {
+  it('round-trips a shipped presentation default and guards concurrent metadata and item writes', async () => {
+    const o=await owner();
+    const made=await call('POST','/api/playlists',{token:o.token,json:{name:'yard',presentation:'projector'}});
+    expect(made.json.presentation).toBe('projector');
+    const path=`/api/playlists/${made.json.id}`;
+    const changed=await call('PATCH',path,{token:o.token,json:{presentation:'screen',revision:made.json.revision}});
+    expect(changed.status).toBe(200);
+    expect(changed.json.presentation).toBe('screen');
+    expect(changed.json.revision).toBe(made.json.revision+1);
+    expect((await call('PATCH',path,{token:o.token,json:{presentation:'projector',revision:made.json.revision}})).status).toBe(409);
+    expect((await call('PUT',`${path}/items`,{token:o.token,json:{items:[],revision:made.json.revision}})).status).toBe(409);
+    expect((await call('PATCH',path,{token:o.token,json:{presentation:'projector'}})).status).toBe(400);
+    expect((await call('PATCH',path,{token:o.token,json:{presentation:'unknown',revision:changed.json.revision}})).status).toBe(422);
+    expect((await call('PATCH',path,{token:o.token,json:{name:'still compatible'}})).status).toBe(200);
+    const cleared=await call('PATCH',path,{token:o.token,json:{presentation:null,revision:changed.json.revision}});
+    expect(cleared.json.presentation).toBeUndefined();
+  });
+});
+
 describe('POST /api/playlists', () => {
   it('needs a token with write scope', async () => {
     const o = await owner();

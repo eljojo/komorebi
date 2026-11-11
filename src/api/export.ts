@@ -45,6 +45,8 @@ export function registerExport(app: Hono<AppEnv>) {
         id: l.id,
         name: l.name,
         description: l.description,
+        ...(l.presentation === null ? {} : { presentation:l.presentation }),
+        revision:l.revision,
         visibility: l.visibility,
         share_token: l.shareToken,
         created_at: l.createdAt,

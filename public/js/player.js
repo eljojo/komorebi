@@ -11,10 +11,11 @@ async function mount() {
   try {
     const [res, Komorebi] = await Promise.all([fetch(canvas.dataset.src), loadEngine(canvas.dataset.engine)]);
     if (!res.ok) throw new Error('the playlist could not be loaded');
-    const items = playable((await res.json()).items);
+    const playlist=await res.json();
+    const items = playable(playlist.items);
     if (!items.length) throw new Error('nothing to play');
 
-    const engine = Komorebi.create(canvas, { params: items[0].params });
+    const engine = Komorebi.create(canvas, { params: items[0].params, session:{},environment:{presentation:playlist.presentation,userAgent:navigator.userAgent} });
     fullscreenOnDoubleClick(canvas);
     let at = 0;
     let timer;

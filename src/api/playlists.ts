@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql, type SQL } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { type Actor, type AppEnv, type Ctx, secured } from '../auth';
 import { LIMITS } from '../config';
@@ -7,6 +7,7 @@ import { playlistItems, playlists, presetVersions, presets, users } from '../db/
 import { ApiError } from '../errors';
 import { randomBase64Url } from '../random';
 import { validateMeta } from '../validate';
+import { PRESENTATION_IDS } from '../generated/engine';
 import { canSee } from './access';
 import { isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 
@@ -48,6 +49,7 @@ function summary(row: PlaylistRow, viewer: Actor | null) {
     owner: row.owner,
     name: playlist.name,
     description: playlist.description,
+    ...(playlist.presentation === null ? {} : { presentation:playlist.presentation }),
     created_at: playlist.createdAt,
     updated_at: playlist.updatedAt,
     ...(viewer?.userId === playlist.ownerId && { visibility: playlist.visibility, share_token: playlist.shareToken, revision: playlist.revision }),
@@ -105,6 +107,12 @@ function checkedMeta(name: unknown, description: unknown) {
   return meta.meta;
 }
 
+function checkedPresentation(value: unknown): string | null {
+  if(value === undefined || value === null)return null;
+  if(typeof value !== 'string' || !PRESENTATION_IDS.includes(value))throw new ApiError(422,'presentation must be a shipped profile or null');
+  return value;
+}
+
 type ParsedItem = { presetId: number; dwellS: number; crossfadeS: number; style: Style };
 
 function parseItems(raw: unknown): ParsedItem[] {
@@ -137,12 +145,13 @@ export function registerPlaylists(app: Hono<AppEnv>) {
       visibility = body.visibility;
     }
     const meta = checkedMeta(body.name, body.description);
+    const presentation=checkedPresentation(body.presentation);
 
     // The limit is part of the insert, so a burst of parallel requests cannot each pass a count made before the others landed.
     const now = Date.now();
     const [created] = await db.all<{ id: number }>(sql`
-      insert into playlists (owner_id, name, description, visibility, share_token, created_at, updated_at)
-      select ${actor.userId}, ${meta.name}, ${meta.description ?? null}, ${visibility}, ${randomBase64Url(16)}, ${now}, ${now}
+      insert into playlists (owner_id, name, description, visibility, share_token, created_at, updated_at, presentation)
+      select ${actor.userId}, ${meta.name}, ${meta.description ?? null}, ${visibility}, ${randomBase64Url(16)}, ${now}, ${now}, ${presentation}
       where (select count(*) from playlists where owner_id = ${actor.userId}) < ${LIMITS.playlists}
       returning id`);
     if (!created) throw new ApiError(429, `at most ${LIMITS.playlists} playlists per user`, { limit: 'playlists' });
@@ -183,7 +192,14 @@ export function registerPlaylists(app: Hono<AppEnv>) {
     const row = await ownedPlaylist(c, actor);
     const { body } = await readJsonBody(c);
 
-    const patch: Partial<typeof playlists.$inferInsert> = { updatedAt: Date.now() };
+    const patch: Partial<Omit<typeof playlists.$inferInsert,'revision'>> & {revision?:number|SQL} = { updatedAt: Date.now() };
+    const guards=[];
+    if('presentation' in body){
+      patch.presentation=checkedPresentation(body.presentation);
+      if(!Number.isSafeInteger(body.revision) || (body.revision as number)<0)throw new ApiError(400,'revision must be the nonnegative integer returned by GET /api/playlists/:id');
+      guards.push(eq(playlists.revision,body.revision as number));
+      patch.revision=sql`${playlists.revision}+1`;
+    }
     if ('visibility' in body) {
       // Publishing is a person's act (spec §3.3); a token may not even ask.
       if (actor.kind !== 'session') throw new ApiError(403, 'changing visibility needs a person in a browser; a token cannot do it');
@@ -195,8 +211,12 @@ export function registerPlaylists(app: Hono<AppEnv>) {
     if ('name' in body) patch.name = meta.name;
     if ('description' in body) patch.description = meta.description ?? null;
 
-    const updated = await db.update(playlists).set(patch).where(and(eq(playlists.id, row.playlist.id), privateIfToken(actor))).returning({ id: playlists.id });
-    if (!updated.length) throw visibleRefusal();
+    const updated = await db.update(playlists).set(patch).where(and(eq(playlists.id, row.playlist.id), privateIfToken(actor),...guards)).returning({ id: playlists.id });
+    if (!updated.length) {
+      assertTokenMayChange(actor,(await loadPlaylist(db,row.playlist.id))!);
+      if('presentation' in body)throw new ApiError(409,'that playlist changed; reload it before saving presentation');
+      throw visibleRefusal();
+    }
     return c.json(await playlistView(db, (await loadPlaylist(db, row.playlist.id))!, actor));
   });
 

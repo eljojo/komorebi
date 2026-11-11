@@ -54,6 +54,10 @@ The tests run in the Workers runtime, in-process, against a local D1 with the mi
 
 ## The komorebi engine
 
+Playlists may carry an optional `presentation` identifier generated from the engine pin (screen or projector). Omission means no preference. Creation accepts it; changing or clearing it uses `PATCH /api/playlists/:id` with `{ "presentation": "projector", "revision": 0 }` (null clears it). A successful presentation update increments the common item revision; stale writes return 409. Existing name and visibility updates retain their request shape. Device quality and FPS preferences stay outside playlist data.
+
+The editor, previews and playlist player opt into the shared engine session policy. Preset params remain sparse authored data; inherited fidelity is distinct from an explicit request, and legacy FPS keys remain accepted without controlling session-aware playback. This rendering session is separate from an authentication session.
+
 Arboretum renders looks with komorebi's own engine, pinned to one komorebi commit. Its
 validator only accepts the keys that engine knows, within the editor's slider ranges. To move the pin:
 
