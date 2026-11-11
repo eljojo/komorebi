@@ -26,7 +26,7 @@
 //   DENSITY CAPACITY. A fixed summer grove can keep a larger per-cluster prefix and reweight its active leaves. Its separate key excludes density, but its gate excludes pigment, drop and variety;
 //   opening those rebuilds the actual population before any exposure rank is needed. Ordinary builds and season records retain their original keys and arithmetic. The active count and cast bounds follow the prefix.
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, turnWindow, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
 
 // The fall tiers this module owns, as the bundler sees them (embed-build.mjs): each is substituted by a literal, true or false, and the code behind a false one is not
 // in the bundle. A tier is cut only for a look that does not open it (komorebi-params.js FEATURES), so a flag that is false here means the guarded arithmetic was
@@ -36,7 +36,7 @@ const FEAT_PIGMENT = true;
 const FEAT_EXPOSURE = true;
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
-import { MAX_LAYERS, MAX_OCC, TOPO_KEYS, CANOPY_KEYS } from './komorebi-params.js';
+import { MAX_LAYERS, MAX_OCC, TOPO_KEYS, CANOPY_KEYS, SEASON_KEYS } from './komorebi-params.js';
 import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_REAL, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafColumnF, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
 
 // Every param buildGrove reads besides the season set, and so the whole of `season.key` (faithful_canopy and receiver reach it through faithfulOn(), which the key carries
@@ -64,6 +64,10 @@ export const densityCount = (P, density = P.foliage_density) => {
   const pcF = Math.max(0, P.leaves_per_cluster*density), pcInt = Math.floor(pcF);
   return pcInt + (pcF-pcInt > 1e-4 ? 1 : 0);
 };
+// THE TIERS' KEYS (reseasonGrove): the STATE keys move only each leaf's state now; the rest of the season set moves its schedule. drop_after_turn is a grove key (a regrow), named
+// here because the schedule reads it; the seed, which the draws read, is a grove key too and is never reached by a record that still matches.
+const STATE_KEYS = ['phenology', 'trans_r', 'trans_g', 'trans_b', 'wall_fraction'];
+export const SCHEDULE_KEYS = [...SEASON_KEYS.filter(k => !STATE_KEYS.includes(k)), 'drop_after_turn'];
 const SREC = 11;   // a season record: x, y, h, A, B0, area, j, k, cov, layer, start of the leaf's 17 floats in its layer's buffer (the faithful record's first 16 are the same numbers)
 
 // A FULL CROWN (§4.5, `inner_leaves`). Only a terminal twig bears leaves, so from above a grown crown is a wheel: a ring of leaves at the shell, a core a third as dense, bare limbs for spokes. A real crown carries shade
@@ -758,6 +762,10 @@ export function makeGrove(hub){
 
   // The season arithmetic of buildGrove (the hang loop's tau, the rec rewrite, the compaction, the litter, leafW, the faithful AABB), re-run over g.season in ONE pass
   // on typed arrays. It must stay the same arithmetic as buildGrove's, call for call — reseason.test.js holds the bytes.
+  // THE TIERS (komorebi-math.js, "the leaf's season in three tiers"): each leaf's draws (S.draws: its three pigment-stream draws and its drop hash, the grove's) and its
+  // schedule (S.sched: the turn window, the pigment depths and the drop day, a function of the draws and of the season set without the STATE keys) are kept, so a step
+  // of the clock, the summer tint or the wall fraction does only each leaf's state now: s across its window, the mixture, the retention. Any other season key rebuilds
+  // the schedule from the kept draws (no leaf is hashed again). The fallen are listed when the list is READ (g.litter is a getter): a floor with no carpet never asks.
   function reseasonGrove(g, P = params){
     const S = g.season, n = S.n, rec = S.rec, nLeaf = S.density ? densityCount(P) : S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0], leafRow = g.hier.leafRow;   // leafRow: the table of rows the build drew (leaf_variety), which the litter keeps; null at the gate
     const pcF = S.density ? Math.max(0, P.leaves_per_cluster*P.foliage_density) : 0, pcInt = Math.floor(pcF), frac = pcF-pcInt;
@@ -766,48 +774,37 @@ export function makeGrove(hub){
     tau[0] = -Math.log(clamp(P.trans_r,1e-4,0.999));
     tau[1] = -Math.log(clamp(P.trans_g,1e-4,0.999));
     tau[2] = -Math.log(clamp(P.trans_b,1e-4,0.999));
-    const sen = senescing(P), isLit = lit(P), isDropping = dropping(P), after = afterTurn(P);
-    const tShift = (FEAT_PIGMENT || FEAT_EXPOSURE || FEAT_DROP) ? treeShifts(P, S.nTree) : null, tGain = (FEAT_PIGMENT || FEAT_EXPOSURE) ? treeGains(P, S.nTree) : null, twigs = g.hier.twigs;   // the trees' lead and depth: the build's own tables, from the tree count the record kept, guarded by the same tiers
-    let u = null;
-    if(n > 0 && FEAT_EXPOSURE && ordered(P)){   // mirrors buildGrove's gate for the light
-      if(!S.rank){
-        const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
-        for(let i=0;i<n;i++){ const o = SREC*i; X[i]=rec[o]; Y[i]=rec[o+1]; Z[i]=rec[o+2]; Ar[i]=rec[o+5]; K[i]=leafClock(P.seed, rec[o+6], rec[o+7]); }
-        S.ex = exposureGrid(X, Y, Z, Ar, S.E);
-        S.rank = exposureRank(S.ex, K);
-      }
-      if(!S.u) S.u = new Float64Array(n);
-      u = exposureBlend(S.rank, S.ex, P.exposure_absolute, S.u);   // at exposure_absolute 0 this IS the rank: read, never written
-    }
+    const sen = senescing(P), ph = P.phenology, fw = P.wall_fraction, twigs = g.hier.twigs;
+    const track = dropping(P) && n > 0;
+    // buildGrove's three arms for a leaf's tau: the light's leafTau (FEAT_EXPOSURE && lit), its own clock's (FEAT_PIGMENT && senescing), or the summer tau. `lit` is senescing and
+    // turn_exposure > 0, so given senescing the arm is a property of the schedule's keys, and the schedule is built for it.
+    const turning = sen && ((FEAT_EXPOSURE && P.turn_exposure > 0) || FEAT_PIGMENT);
+    const sc = n > 0 && (turning || FEAT_DROP && track) ? scheduleOf(g, P) : null, at = sc?.at;
     if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); S.outP = new Float32Array(n); }
     const outL = S.outL, outF = S.outF, outP = S.outP, wL = new Int32Array(nLayer);
-    const track = isDropping && n > 0;
-    const litter = FEAT_DROP && track ? [] : null, leafW = FEAT_DROP && track ? new Float32Array(S.nCluster*nLeaf).fill(1) : null;
+    const fallen = FEAT_DROP && track ? [] : null, leafW = FEAT_DROP && track ? new Float32Array(S.nCluster*nLeaf).fill(1) : null;
     let wF = 0, px0 = S.seg[0], px1 = S.seg[1], py0 = S.seg[2], py1 = S.seg[3];
     let lx0 = 1e18, ly0 = 1e18, lx1 = -1e18, ly1 = -1e18;   // the survivors' plan extent (doubles, like buildGrove's own scan of faithData)
     for(let i=0;i<n;i++){
       const o = SREC*i, j = rec[o+6], k = rec[o+7];
       if(S.density && k >= nLeaf) continue;
-      const dT = tShift ? tShift[twigs[j].tree] : undefined, cT = tGain ? tGain[twigs[j].tree] : undefined;
-      let w = 1, D = 0;
+      let w = 1;
       if(FEAT_DROP && track){
-        D = after ? dropDayAfterTurn(P, turnPhase(P, leafClock(P.seed, j, k), FEAT_EXPOSURE && isLit ? turnOrder(u[i]) : undefined), dT)
-          : dropDay(P, dropPhase(dropHash(P.seed, j, k), u ? u[i] : 0, P.drop_exposure), dT);
-        w = retention(D, P.phenology);
+        w = retention(sc.D[i], ph);
         leafW[j*nLeaf + k] = w;
       }
-      const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, P, P.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i]), dT, cT) : FEAT_PIGMENT && sen ? leafTau(tau, P, P.seed, j, k, leafT, undefined, undefined, dT, cT) : tau;
       const cov = S.density ? ((k===pcInt) ? frac : 1.0)*twigs[j].tcov : rec[o+8], cf = cov*w;
       if(w === 0){
-        if(FEAT_LITTER) litter.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D, tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: cov, ...(leafRow && { row: leafRow[j*nLeaf + k] }) });
+        if(FEAT_LITTER) fallen.push(i, cov);
         continue;
       }
-      const l = rec[o+9], li = rec[o+10], bl = S.base[l], dl = outL[l], at = wL[l];
-      for(let q=0;q<8;q++){ const v = bl[li+q]; dl[at+q] = v; outF[wF+q] = v; }
-      for(let c=0;c<3;c++){ const v = lt[c]*cf; dl[at+8+c] = v; outF[wF+8+c] = v; }
-      for(let q=11;q<16;q++){ const v = bl[li+q]; dl[at+q] = v; outF[wF+q] = v; }
-      dl[at+16] = cf; outF[wF+16] = rec[o+2]; outF[wF+17] = cf; outP[wF/18] = S.pivot[i];
-      wL[l] = at + 17; wF += 18;
+      const lt = turning ? leafTauAt(tau, smoothstep(at[LEAF_SCHED*i], at[LEAF_SCHED*i+1], ph), at, LEAF_SCHED*i, fw, leafT) : tau;
+      const l = rec[o+9], li = rec[o+10], bl = S.base[l], dl = outL[l], wl = wL[l];
+      for(let q=0;q<8;q++){ const v = bl[li+q]; dl[wl+q] = v; outF[wF+q] = v; }
+      for(let c=0;c<3;c++){ const v = lt[c]*cf; dl[wl+8+c] = v; outF[wF+8+c] = v; }
+      for(let q=11;q<16;q++){ const v = bl[li+q]; dl[wl+q] = v; outF[wF+q] = v; }
+      dl[wl+16] = cf; outF[wF+16] = rec[o+2]; outF[wF+17] = cf; outP[wF/18] = S.pivot[i];
+      wL[l] = wl + 17; wF += 18;
       const x = rec[o], y = rec[o+1];
       if(x<lx0)lx0=x; if(x>lx1)lx1=x; if(y<ly0)ly0=y; if(y>ly1)ly1=y;
       if(S.density){ const z = rec[o+2]; if(z<hMin)hMin=z; if(z>hMax)hMax=z; }
@@ -828,7 +825,65 @@ export function makeGrove(hub){
     if(px0>px1){ const h=P.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
     faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
     if(S.density){ faith.hMin=hMin; faith.hMax=hMax; g.hier.nLeaf=nLeaf; S.key=g.key=seasonKey(P, faithfulOn()); }
-    g.litter = litter; g.hier.leafW = leafW;
+    g.hier.leafW = leafW;
+    if(!(FEAT_LITTER && fallen)){ setLitter(g, fallen && []); return; }   // no drop: the build's null; a bundle without the carpet: its empty list
+    // THE FALLEN, LISTED WHEN READ: buildGrove's own objects, made from this step's numbers (the tint, the clock and the wall fraction are copied now; the schedule is the one
+    // this step read, which only the next re-season rebuilds — and that replaces this getter before anything can read it). Read once, then kept; a route may replace the list.
+    const tint = [tau[0], tau[1], tau[2]];
+    let list = null;
+    Object.defineProperty(g, 'litter', { configurable: true, enumerable: true, set(v){ setLitter(g, v); }, get(){
+      if(list) return list;
+      list = [];
+      const t = [0,0,0];
+      for(let f=0;f<fallen.length;f+=2){
+        const i = fallen[f], o = SREC*i, j = rec[o+6], k = rec[o+7];
+        const lt = turning ? leafTauAt(tint, smoothstep(at[LEAF_SCHED*i], at[LEAF_SCHED*i+1], ph), at, LEAF_SCHED*i, fw, t) : tint;
+        list.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D: sc.D[i], tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: fallen[f+1], ...(leafRow && { row: leafRow[j*nLeaf + k] }) });
+      }
+      return list;
+    } });
+  }
+  const setLitter = (g, v) => Object.defineProperty(g, 'litter', { value: v, writable: true, configurable: true, enumerable: true });
+
+  // A leaf's draws and schedule (THE TIERS, above), rebuilt when a season key outside the state keys moves. The exposure field, its rank and the blend `u` are read here
+  // and only here: what the light orders (the turn, the red, the drop day) is all schedule. Its arms follow buildGrove's: the light's order where the turn is lit
+  // (FEAT_EXPOSURE && turn_exposure > 0), the leaf's own clock otherwise; the drop day by the turn's phase after the turn, by its own hash mixed toward the light before.
+  // After the turn a step can be dropping and not yet senescing (a turn window shorter than the fade); the build's day then takes the leaf's own clock where this takes
+  // the light, but its retention is 1 either way (the day is past the turn's start + ε), so the day is never read there.
+  function scheduleOf(g, P){
+    const S = g.season, n = S.n, rec = S.rec, twigs = g.hier.twigs;
+    const key = SCHEDULE_KEYS.map(k => P[k]).join('|');
+    if(S.sched?.key === key) return S.sched;
+    if(!S.draws){
+      S.draws = new Float64Array(4*n);
+      for(let i=0;i<n;i++){ const o = SREC*i, j = rec[o+6], k = rec[o+7]; leafDraws(P.seed, j, k, S.draws, 4*i); S.draws[4*i+3] = dropHash(P.seed, j, k); }
+    }
+    const lit = FEAT_EXPOSURE && P.turn_exposure > 0, after = afterTurn(P), dropOn = FEAT_DROP && P.leaf_drop > 0;
+    let u = null;
+    if(FEAT_EXPOSURE && (lit || dropOn && !after && P.drop_exposure > 0)){
+      if(!S.rank){
+        const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
+        for(let i=0;i<n;i++){ const o = SREC*i; X[i]=rec[o]; Y[i]=rec[o+1]; Z[i]=rec[o+2]; Ar[i]=rec[o+5]; K[i]=S.draws[4*i]; }   // K: each leaf's own clock, leafClock (its first draw)
+        S.ex = exposureGrid(X, Y, Z, Ar, S.E);
+        S.rank = exposureRank(S.ex, K);
+      }
+      if(!S.u) S.u = new Float64Array(n);
+      u = exposureBlend(S.rank, S.ex, P.exposure_absolute, S.u);   // at exposure_absolute 0 this IS the rank: read, never written
+    }
+    const tShift = (FEAT_PIGMENT || FEAT_EXPOSURE || FEAT_DROP) ? treeShifts(P, S.nTree) : null, tGain = (FEAT_PIGMENT || FEAT_EXPOSURE) ? treeGains(P, S.nTree) : null;   // the trees' lead and depth: the build's own tables, from the tree count the record kept, guarded by the same tiers
+    if(!S.sched) S.sched = { key: null, builds: 0, at: new Float64Array(LEAF_SCHED*n), D: new Float64Array(n) };
+    const sc = S.sched;
+    const d = S.draws, at = sc.at, D = sc.D;
+    for(let i=0;i<n;i++){
+      const tree = twigs[rec[SREC*i+6]].tree, dT = tShift ? tShift[tree] : undefined, cT = tGain ? tGain[tree] : undefined;
+      const phiE = lit ? turnOrder(u[i]) : undefined;
+      const phi = turnPhase(P, d[4*i], phiE);
+      turnWindow(P, phi, dT, at, LEAF_SCHED*i);
+      leafPigments(P, d[4*i+1], d[4*i+2], lit ? P.turn_exposure : 0, lit ? redGain(u[i]) : undefined, cT, at, LEAF_SCHED*i);
+      if(dropOn) D[i] = after ? dropDayAfterTurn(P, phi, dT) : dropDay(P, dropPhase(d[4*i+3], u ? u[i] : 0, P.drop_exposure), dT);
+    }
+    sc.key = key; sc.builds++;
+    return sc;
   }
 
   // Radius and layer height are live look uniforms, but wood stores them in CPU geometry too.

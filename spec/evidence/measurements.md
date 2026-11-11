@@ -421,6 +421,15 @@ The red oak is not star-shaped from any point of its midrib: 2–33 re-entrant r
 - **What it established:** one applied step may not exceed half a fade window; the bus clamps it.
 - **Date:** not recorded.
 
+### What a season step costs
+
+- **What was measured:** one step of the season dial (phenology alone, 0.6 → 0.95 by 0.005, after the dial's first write of the fall capacities), stage by stage, each closed by a GPU fence: the re-season, the cast bake, the sky fill, the litter carpet; then `apply('season')` end to end.
+- **On:** `afternoon 7` (32 175 leaves), `memories` (35 640), `montebello` and `park 1` (6 138; faithful), at 640×360, in Chromium on Metal on an M1 Pro with the main thread throttled ×6 as a stand-in for a phone (the GPU process is not slowed), and in WebKit 26.5 unthrottled. No phone was measured.
+- **Result, before (ms, median per phenology band 0.6 / 0.7 / 0.8 / 0.9, ×6):** the re-season is the step on every look: afternoon 7 29 / 46 / 47 / 48, memories 32 / 53 / 52 / 53, montebello 7 / 10 / 12 / 10, park 1 7 / 11 / 11 / 11. The cast bake 1–2.5, the fill 1.3–1.5, the uploads at most 1.2. Montebello's carpet, re-baked every step and paid in the next frame, 1 / 1 / 6 / 14, almost all on the CPU (sorting the fallen by day, drawing their landings). WebKit agrees unthrottled (re-season 6 ms on the afternoons, the GPU stages under 1). Inside the re-season (afternoon 7): 38 % the loop, which hashed every leaf's streams again each step; 32 % the sieve mixture; 17 % the rest of the pigment arithmetic; and 26 000 of the 32 000 leaves were listed as litter by 0.95 on a floor with no carpet.
+- **Result, with the tiers (×6):** afternoon 7 15 / 21 / 16 / 10, memories 16 / 23 / 17 / 11, montebello 6 / 7 / 7 / 5, park 1 5 / 6 / 6 / 5 for the whole apply. A schedule knob (anthocyanin) moved from 6.4 to 5.3 ms unthrottled on afternoon 7.
+- **What it established:** a season step was CPU, not GPU; what remains is each turning leaf's mixture and the copy into the buffers. The first touch of the dial on a look is still one full build and, at the first step past the turn, one exposure pass (×6: about 170–210 ms each).
+- **Date:** 2026-11-10 (`test-gl/out/review/2026-11-10-season-drag-cost/`).
+
 ### Leaf-off on the faithful cast
 
 - **What was measured:** the floor's level when a faithful canopy reached leaf-off and the bake returned early on an empty leaf set.

@@ -149,6 +149,52 @@ identity("unlit per-tree pigment (the sen-only arm carries the depth)", { tree_p
 identity("unlit per-tree clock and pigment, the old drop clock on the hash alone", { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, turn_exposure: 0, drop_exposure: 0, leaf_drop: 1 });
 identity("unlit per-tree clock and pigment, the old drop clock on the hash alone, faithful", { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, turn_exposure: 0, drop_exposure: 0, leaf_drop: 1 }, { faithful: true });
 identity("unlit per-tree clock and pigment, after the turn", { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, turn_exposure: 0, drop_after_turn: 1, leaf_drop: 1 }, { phs: AFTER_PH });
+// A turn window shorter than the fade: after the turn the drop opens BEFORE the turn does (dropping is one ε ahead of the first fade), so a step can be dropping and not yet senescing,
+// where the build's drop day takes the leaf's own clock and the schedule's takes the light. Every retention there is 1, so the day is never read: held, not assumed.
+identity("a turn window shorter than the fade, after the turn (dropping before senescing)", { drop_after_turn: 1, turn_span: 0.004, turn_spread: 0, drop_lag: 0 }, { phs: [0.5, 0.596, 0.598, 0.6, 0.603, 0.608, 0.612, 0.62, 0.7] });
+
+// ---- the tiers (§4.5 "Re-seasoning"): a leaf's draws are the grove's, its schedule is the season knobs', its state now is phenology, the summer tint and the wall fraction --------
+test("a phenology, tint or wall_fraction step reuses each leaf's draws and schedule; a schedule knob rebuilds the schedule from the same draws; every step is a fresh build", () => {
+  const base = { ...SMALL, phenology: 0.6 };
+  const A = rig({ ...base });
+  const g = A.G.buildGrove(null, { keepSeason: true }), S = g.season;
+  const step = (change) => {
+    Object.assign(A.params, change); A.G.reseasonGrove(g, A.params);
+    const B = rig({ ...A.params }); compare(JSON.stringify(change), snapshot(A, g), snapshot(B, B.G.buildGrove(null)));
+  };
+  step({ phenology: 0.72 });
+  expect(S.sched, "a turning step keeps a schedule").toBeTruthy();
+  const draws = S.draws, builds = S.sched.builds;
+  for (const change of [{ phenology: 0.75 }, { phenology: 0.81 }, { trans_r: 0.094, trans_g: 0.402 }, { trans_b: 0.1 }, { wall_fraction: 0.45 }, { phenology: 0.93, wall_fraction: 0 }, { phenology: 0.66 }]) {
+    step(change);
+    expect(S.sched.builds, `${JSON.stringify(change)}: the schedule is reused`).toBe(builds);
+  }
+  let n = builds;
+  for (const change of [{ anthocyanin: 0.7 }, { tannin: 0.35 }, { turn_start: 0.58 }, { turn_spread: 0.1 }, { turn_exposure: 0.5 }, { exposure_absolute: 0.5 }, { tree_clock_spread: 0.1 }, { tree_pigment_spread: 0.6 },
+    { leaf_drop: 0.6 }, { drop_start: 0.72 }, { drop_span: 0.2 }, { drop_exposure: 0.3 }, { drop_lag: 0.04 }]) {
+    step(change);
+    expect(S.sched.builds, `${JSON.stringify(change)}: the schedule is rebuilt`).toBe(++n);
+    expect(S.draws, `${JSON.stringify(change)}: from the same draws (no leaf is hashed again)`).toBe(draws);
+  }
+});
+
+test("the fallen are listed when read: a re-season builds no litter object until asked, the list read is a fresh build's (once), and a route can still replace it", () => {
+  const A = rig({ ...SMALL, phenology: 0.6 });
+  const g = A.G.buildGrove(null, { keepSeason: true });
+  Object.assign(A.params, { phenology: 0.9 }); A.G.reseasonGrove(g, A.params);
+  expect(typeof Object.getOwnPropertyDescriptor(g, "litter").get, "not listed yet").toBe("function");
+  Object.assign(A.params, { phenology: 0.95 }); A.G.reseasonGrove(g, A.params);   // an unread list is replaced by the next step's, never built
+  const B = rig({ ...A.params }), fresh = B.G.buildGrove(null);
+  const list = g.litter;
+  expect(list.length).toBeGreaterThan(0);
+  expect(JSON.stringify(list), "the list read is the build's (sizes as doubles)").toBe(JSON.stringify(fresh.litter));
+  expect(g.litter, "read once").toBe(list);
+  const carpet = [list[0]];
+  g.litter = carpet;                                                                  // a route lays its own carpet (season, grove and litter travel do)
+  expect(g.litter).toBe(carpet);
+  Object.assign(A.params, { phenology: 0.6 }); A.G.reseasonGrove(g, A.params);   // nothing has fallen: the build's null
+  expect(g.litter).toBe(null);
+});
 
 const tintAt = p => ({ trans_r: 0.21 + (0.094 - 0.21)*p, trans_g: 0.356 + (0.402 - 0.356)*p, trans_b: 0.336 + (0.1 - 0.336)*p });
 test('density capacity: every active leaf and cast bound equals a fresh build, through thinning and return', () => {

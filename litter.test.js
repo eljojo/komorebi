@@ -470,6 +470,17 @@ test("litter 0: no texture beyond the 1×1, no bake pass, nothing scheduled — 
   expect(r.count("createVertexArray")).toBe(0);                                                   // ...nor a VAO: a look that never opens the gate pays nothing
 });
 
+test("litter 0 never reads the grove's list: a re-seasoned grove lists its fallen only when asked, and a floor with no carpet does not ask", () => {
+  const r = litterRig({ litter: 0 });
+  let reads = 0;
+  const list = r.hub.grove.litter;
+  r.hub.grove = { get litter() { reads++; return list; } };
+  for (let i = 0; i < 5; i++) r.lit.refreshLitter();
+  expect(reads).toBe(0);
+  r.params.litter = 1; r.lit.refreshLitter();
+  expect(reads, "the gate open, it is read").toBeGreaterThan(0);
+});
+
 test("litter 1 bakes the carpet: RGBA8 at litter_resolution, premultiplied alpha blend, drop order, one instanced draw, mipped", () => {
   const r = litterRig({ litter: 1, litter_resolution: 512 });
   r.lit.refreshLitter();

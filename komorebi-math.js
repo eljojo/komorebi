@@ -177,11 +177,18 @@ function turnLength(P){
 }
 // ONE TREE AHEAD (`dT`, below): a tree's lead moves the whole clock — the start, and so the finish with it — by shifting `turn_start`. The grove hands no `dT` at tree_clock_spread 0 (and the
 // lead of a tree that draws exactly 0 is 0), and then `start` IS turn_start: the expressions below are today's, literally, with no `+ 0` in them.
-function senescence(P, phi, dT){
+// The window itself, [start, finish) of the turn, written at out[o], out[o+1]: what senescence smoothsteps across, and what the grove's re-season keeps per leaf.
+function turnWindow(P, phi, dT, out, o = 0){
   const span = Math.max(P.turn_span, 1e-4), spread = clamp(P.turn_spread, 0, span*0.95);
   const start = dT ? P.turn_start + dT : P.turn_start;
-  if(afterTurn(P)){ const T0 = start + phi*spread; return smoothstep(T0, T0 + (span - spread), P.phenology); }
-  return smoothstep(start + phi*spread, start + span, P.phenology);
+  if(afterTurn(P)){ const T0 = start + phi*spread; out[o] = T0; out[o+1] = T0 + (span - spread); }
+  else { out[o] = start + phi*spread; out[o+1] = start + span; }
+  return out;
+}
+const _turnWin = [0,0];
+function senescence(P, phi, dT){
+  turnWindow(P, phi, dT, _turnWin);
+  return smoothstep(_turnWin[0], _turnWin[1], P.phenology);
 }
 // The sieve effect (Beer's law is convex): a leaf is bright vein walls (tau_wall) beside dark cells (tau_cell), and
 // light through the whole leaf is the MEAN OF TRANSMITTANCES, not of tau — so a small clear fraction lifts a deep
@@ -218,21 +225,47 @@ function turnPhase(P, phi, phiE){
 // tree, because b is in both tissues. Both absent (the grove hands them over only at tree_clock_spread / tree_pigment_spread above 0) and no arithmetic touches the leaf.
 function leafTau(tauSummer, P, seed, j, k, out = [0,0,0], phiE, gainE, dT, cT){
   const r = mulberry32(hash3((seed>>>0)^LEAF_SALT, j, k));
-  const w = phiE === undefined ? 0 : P.turn_exposure;
-  const phi = turnPhase(P, r(), phiE);                        // mix(phi, f(1 - exposure), w); r() first, so the draws keep their order
-  const s = senescence(P, phi, dT);
+  turnWindow(P, turnPhase(P, r(), phiE), dT, _leafSched);       // mix(phi, f(1 - exposure), w); r() first, so the draws keep their order
+  const s = smoothstep(_leafSched[0], _leafSched[1], P.phenology);
   if(s === 0){ out[0]=tauSummer[0]; out[1]=tauSummer[1]; out[2]=tauSummer[2]; return out; }
-  let a = P.anthocyanin*(0.5 + r());
-  let b = P.tannin*(0.5 + r());
+  leafPigments(P, r(), r(), phiE === undefined ? 0 : P.turn_exposure, gainE, cT, _leafSched);
+  return leafTauAt(tauSummer, s, _leafSched, 0, P.wall_fraction, out);
+}
+// THE LEAF'S SEASON IN THREE TIERS (spec §4.5 "Re-seasoning"). leafTau above is the three in a row; the grove's re-season keeps the first two per leaf, so a
+// step of the clock pays only the third, in the same float order, so the two are one arithmetic:
+//   its DRAWS: the leaf's own stream, (seed, j, k) alone, so the grove's: [turn clock, red, brown] (leafDraws; the first is leafClock);
+//   its SCHEDULE: what the season's knobs make of them, the window it turns in (turnWindow) and the wall and cell pigment depths it turns toward (leafPigments),
+//     written as [start, finish, wall r g b, cell r g b] at out[o] (LEAF_SCHED numbers);
+//   its STATE NOW: phenology, the summer tint and the wall fraction (leafTauAt), with s = smoothstep(start, finish, phenology).
+const LEAF_SCHED = 8;
+const _leafSched = new Float64Array(LEAF_SCHED);
+function leafDraws(seed, j, k, out, o = 0){
+  const r = mulberry32(hash3((seed>>>0)^LEAF_SALT, j, k));
+  out[o] = r(); out[o+1] = r(); out[o+2] = r();
+  return out;
+}
+// `w` is the light's weight on this leaf's red (turn_exposure where the grove handed an order, else 0); `gainE` its red gain by exposure; `cT` its tree's depth.
+function leafPigments(P, d1, d2, w, gainE, cT, out, o = 0){
+  let a = P.anthocyanin*(0.5 + d1);
+  let b = P.tannin*(0.5 + d2);
   if(w > 0) a *= 1 + (gainE - 1)*w;                           // a * mix(1, g(exposure), w)
   if(cT !== undefined){ a *= cT; b *= cT; }                   // the tree's depth, red and brown together
+  for(let c=0;c<3;c++){
+    const pig = TAU_CAROTENOID[c] + b*TAU_TANNIN[c];
+    out[o+2+c] = pig;                                         // the walls: no anthocyanin (vein tissue makes none)
+    out[o+5+c] = pig + a*TAU_ANTHOCYANIN[c];                  // the cells
+  }
+  return out;
+}
+function leafTauAt(tauSummer, s, sched, o, fw, out = [0,0,0]){
+  if(s === 0){ out[0]=tauSummer[0]; out[1]=tauSummer[1]; out[2]=tauSummer[2]; return out; }
   const cell = _leafCell, wall = _leafWall;
   for(let c=0;c<3;c++){
-    const base = tauSummer[c]*(1-s), pig = TAU_CAROTENOID[c] + b*TAU_TANNIN[c];
-    wall[c] = base + s*pig;
-    cell[c] = base + s*(pig + a*TAU_ANTHOCYANIN[c]);
+    const base = tauSummer[c]*(1-s);
+    wall[c] = base + s*sched[o+2+c];
+    cell[c] = base + s*sched[o+5+c];
   }
-  return mixtureTau(wall, cell, P.wall_fraction, out);
+  return mixtureTau(wall, cell, fw, out);
 }
 
 // ---- LIGHT DECIDES WHO TURNS FIRST (spec §4.5, P1). Anthocyanin is made in light, so the leaves that see the sun —
@@ -661,4 +694,4 @@ function irisStep(route, e, p) {
   return lerp(route.from, route.to, e);
 }
 
-export { DEG, TAU, cameraPose, vignetteMask, irisRoute, irisStep, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, cameraPose, vignetteMask, irisRoute, irisStep, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, turnWindow, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

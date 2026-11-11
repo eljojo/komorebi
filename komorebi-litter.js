@@ -214,8 +214,8 @@ function makeLitter(hub){
 
   // Once per frame, before transport draws (and before any target is bound: a bake binds its own).
   function refreshLitter(){
-    const list = hub.grove?.litter;
-    if(!(litterWanted() && list?.length)){ if(litter.ready || litter.res !== 1) releaseLitter(); return; }
+    const list = litterWanted() ? hub.grove?.litter : null;   // asked only when the floor wants a carpet: a re-seasoned grove lists its fallen when read (komorebi-grove.js)
+    if(!list?.length){ if(litter.ready || litter.res !== 1) releaseLitter(); return; }
     const res = litterRes(), fr = hub.fillFrameNow(), wrap = !hub.bulkOn();
     if(litter.ready && litter.grove === hub.grove){
       litterSig(sig, res, fr, wrap, list.length);
