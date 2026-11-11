@@ -586,23 +586,31 @@ function trySeat(){
   const usable = macroUsable('season', params);
   for(const d of tryDials) if(d.name === 'season'){ d.inp.disabled = !usable; d.row.classList.toggle('off', !usable); }
 }
-// THE SEASON DIAL'S APPLIES are paced by what they cost. A re-season is CPU (tens of ms on a phone, a full build on the first), and an input
-// event fires several times a frame, so an event only records where the thumb is and the frame clock lands it: at most once a frame, and after
-// an apply that took c ms the next waits c ms more, so applies take at most half the time and the picture keeps following the finger. It never
-// falls back to release-only (a phone is over the tween's off line on every look, and a dial that answers only on release is no dial); the
-// release lands exactly where the thumb is.
-let trySeasonWant = null, trySeasonWait = 0;
-function trySeasonTick(force){
-  if(trySeasonWant === null) return;
-  const now = performance.now();
-  if(!force && (eng.trans.active || now < trySeasonWait)) return;
-  const dict = { phenology:trySeasonWant }; trySeasonWant = null;
+// THE SEASON DIAL answers like the other dials: a move applies at once. An input event fires several times a frame and each apply is a re-season (§4.5 "Re-seasoning"),
+// so a frame takes one: a move the frame has already spent its apply on is held, and that frame's clock (trySeasonTick, from onFrame) lands the latest, so the picture is
+// never more than a frame behind the finger. A step is as wide as the finger moved. It waits while a transition runs (a route owns the grove); the release lands exactly
+// where the thumb is.
+let trySeasonWant = null, trySeasonSpent = false;
+function trySeasonApply(v){
+  const dict = { phenology:v };
   for(const k in TRY_FALL) if(!tryHome[k]) dict[k] = TRY_FALL[k];
   Object.assign(params, dict);
   for(const k in dict){ maybeClearSpecies(k); syncControl(k); }
   applyScope('season');
-  const done = performance.now();
-  trySeasonWait = done + (done - now);
+}
+function trySeasonMove(v){
+  if(trySeasonSpent || eng.trans.active){ trySeasonWant = v; return; }
+  trySeasonWant = null; trySeasonSpent = true;
+  trySeasonApply(v);
+}
+function trySeasonTick(force){                     // each frame, and the release (force)
+  if(trySeasonWant !== null && (force || !eng.trans.active)){
+    const v = trySeasonWant; trySeasonWant = null;
+    trySeasonApply(v);
+    trySeasonSpent = !force;                       // the frame's own landing spends the next frame's apply; a release spends nothing
+    return;
+  }
+  trySeasonSpent = false;
 }
 function tryWrite(dict, scope){                    // the bus applier's own landing for one dict
   Object.assign(params, dict);
@@ -644,7 +652,7 @@ const TRY_SPECS = {
     write:(d) => { tryTime = d; trySunWrite(); } },
   season: { ends:['green','fallen'], min:0.6, max:0.95, step:0.005,
     seat:() => clamp(params.phenology, 0.6, 0.95), home:() => tryFrac(tryHome.phenology, 0.6, 0.95),
-    write:(v) => { trySeasonWant = v; },             // a re-season is CPU: the frame clock lands it through the cost gate (trySeasonTick)
+    write:(v) => trySeasonMove(v),                   // at once, one a frame (trySeasonMove)
     commit:() => trySeasonTick(true) },              // on release, exactly where the thumb is
 };
 // One sentence while a dial moves, in the world's words, on the surface's caption line (tryCap); it goes quiet a moment after the hand does.

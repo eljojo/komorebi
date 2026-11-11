@@ -219,6 +219,20 @@ try {
   await dial('season', 0.9);
   const ph = await devVal('phenology');
   check('the season dial writes phenology', Math.abs(ph - 0.9) < 1e-6, `phenology ${ph}`);
+  // while the finger moves (input, no release) it answers like the other dials: the first move of a frame applies at once, a second in the same frame is landed by that frame's clock
+  const drag = await page.$eval('#play', async (el) => {
+    const inp = [...el.querySelectorAll('.ctl.try')].find((r) => r.querySelector('.name').textContent === 'season').querySelector('input');
+    const ph = () => parseFloat([...document.querySelectorAll('#dev .ctl')].find((r) => r.querySelector('label')?.textContent === 'phenology').querySelector('input').value);
+    const move = (v) => { inp.value = String(v); inp.dispatchEvent(new Event('input', { bubbles: true })); };
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    move(0.8); const first = ph();
+    move(0.82); const second = ph();
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const landed = ph();
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    return { first, second, landed };
+  });
+  check('a season drag applies at once, and the frame lands the rest', Math.abs(drag.first - 0.8) < 1e-6 && Math.abs(drag.second - 0.8) < 1e-6 && Math.abs(drag.landed - 0.82) < 1e-6, JSON.stringify(drag));
   const dens0 = await devVal('density');
   await dial('density', 0.6);
   const dens1 = await devVal('density');
