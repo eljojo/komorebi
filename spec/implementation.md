@@ -363,7 +363,7 @@ The editor is a tool for exploring the model, not part of it: nothing here reach
 
 **What the strip and the playful sidebar offer.** With a mouse the strip is one bar of three dials: focus, cloudiness and time. On touch it shows one dial at a time above a row of words (focus, clouds, sun, season, time) that picks which, with *as it was* and the way up to the playful sidebar beside them. The playful sidebar leads with focus, cloudiness, sun, season, density and time, then *as it was* and *new leaves* (a new seed); haze, sparkle, the tree count and the wind pad sit one step further, under *more*. Each dial names both of its ends, starts from the look's own value, which a mark on the track shows, and writes only what it names, so a touch at rest changes nothing: focus is the focus macro, cloudiness is `cloud_thickness`, sun turns `sun_azimuth_deg` up to 90° either way, season is `phenology` from the start of the turn, density scales `foliage_density` between 0.6 and 1.4 of the look's. Time here is an offset of up to two hours either way from the look's own sun, moved along the clock model's arc and never below 15° of elevation; it does not write `time_of_day`. While a dial moves, one sentence says what is happening in the world's words and goes quiet a moment after; a dial the look cannot use stays in place, dimmed, and says why when touched. *As it was* returns what these dials wrote to the look's values.
 
-The season dial applies at most once per frame while it moves and lands the exact released value. A moving transition owns the grove, so a release during it waits until its destination has loaded. Loading another look or choosing *as it was* cancels pending input from the previous edit.
+The season dial follows the thumb, updating at most once per frame and applying the exact value on release. During a transition, changes wait until the new look arrives. Loading a different look or choosing *as it was* cancels any waiting change.
 
 **The look in the advanced panel.** The panel opens on the look's name between ‹ and ›; the name is the dropdown of the active list. Under it, the chip, then *save* and, behind ···, *delete* and the JSON pair. The toggle that lists the experimental looks is the panel's last row.
 
@@ -429,7 +429,9 @@ Two tiers. The **unit tests** (`*.test.js` at the root, run under `bun test`) ho
 | **Transition routing** | each tier driven to completion; logic only |
 | **Eyes mode** (`--look "<look>" key=value …`) | a look rendered with overrides, re-baked first, written to `out/`; not a suite, and asserts nothing |
 
-`--only <substring …>` selects rows by suite, name or look across the suites. A filter matching no row fails before filesystem, server or browser setup. `--list [substring …]` lists matching rows without rendering; an empty listing is allowed. `--gate [substring …]` runs only the gate rows whose name matches. It is the fast loop for adding a gate. `--fill`, `--sky` and `--edge` run their suites alone.
+`--only <substring …>` runs rows whose suite, name or look matches a substring. Use `--list [substring …]` to see the matching rows without rendering. If `--only` matches nothing, it reports an error.
+
+`--gate [substring …]` runs only the gate rows whose name matches. It is the fast loop for adding a gate. `--fill`, `--sky` and `--edge` run their suites alone.
 
 ### Route drivers
 
@@ -452,6 +454,8 @@ Most take `--render` to capture the authored pair. What each route promises is i
 | **Editor smoke** (`test-gl/editor.mjs`) | `nix run .#editor` | index.html's mode ladder, the macro bus, saving, playlists, the panel's areas, the look chip and arboretum's tiers, asserted on observable DOM effects the pixel suites cannot see |
 | **Shader validation** | `node glslcheck.mjs` (invocation not recorded) | every GLSL literal compiles under `glslangValidator` |
 | **Video exporter** (`render-video.mjs` and its siblings) | `nix run .#video -- …`; tests via `node --test test-gl/video.test.mjs` and the other test files beside it, each naming its run command in its header | its own tests: downscale, frame pairing, run key and refusals, playlist timeline, parallel claims; GPU checks are separate files; see the map |
+
+Playlist videos use the same transition timing as the editor. A checkpoint is saved after the new look arrives; if a render resumes partway through a fade, it replays from the last settled look.
 
 ### Running and what stays untracked
 
