@@ -4,7 +4,7 @@
 
 The model of these routes is [`../model/transitions.md`](../model/transitions.md). The parameter classes that decide between them (MORPH, CANOPY, SEASON, TOPO, MODE) are [`gates-and-rungs.md`](gates-and-rungs.md). Every route is entered through one engine call, given the target look, the driver's duration *D* and, optionally, the driver's style (`fade`, or `morph`, the same as none); a look never stores a duration or a style. A route's gate below is the gate when no fade is asked for; a fade asked for takes the scene dissolve for any pair but a live morph's. **Why it matters:** a transition that cuts, pops or floods breaks the calm the piece exists to hold, and a gate that admits a pair it cannot honour produces exactly that.
 
-The checks that hold each route are listed in [`../implementation.md`](../implementation.md#the-crosswalk). A route's gate is every condition listed; a pair that fails any of them takes the next route that admits it, ending at the cloud dissolve. "Budget" means the live-morph leaf-count budget, measured at the busier end.
+The checks that hold each route are listed in [`../implementation.md`](../implementation.md#the-crosswalk). A route's gate is every condition listed; a pair that fails any of them takes the next route that admits it, ending at the cloud dissolve. "Budget" means the live-morph leaf-count limit; each route names what it counts.
 
 ## Live morph
 
@@ -83,7 +83,7 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 | | |
 |---|---|
 | **Joins** | The same overhead scene in its faithful and its layer cast; two overhead faithful groves that differ structurally (`cherry green → green 2`, `green 2 → ultraviolet`). |
-| **Gate** | A cast-mode change, or both ends faithful with a TOPO key differing or a canopy change over the grove-morph budget; floor receiver and overhead scene unchanged; wood, canopy fill, litter, leaf drop and inner leaves off at both ends; eclipse and edge-area modes agree; positive leaf sizes; nonempty groves; correspondence within budget. |
+| **Gate** | A cast-mode change, or both ends faithful with a TOPO key differing or a canopy change over the grove-morph budget; floor receiver and overhead scene unchanged; wood, canopy fill, litter, leaf drop and inner leaves off at both ends; eclipse and edge-area modes agree; positive leaf sizes; nonempty groves; actual correspondence within budget. |
 | **Duration** | 2*D*. |
 | **Promises** | Every endpoint leaf occurs once; surplus contracts to zero area, new leaves grow from zero. Each end keeps its native motion until the shared cast. Each native cast is reached exactly through a smooth handoff at its own end, keeping its authored diffuse value. No clear-floor interval, no bloom, no midpoint swap. Between two faithful groves the travel goes patch by patch (authored): each carrier's own clock is at 0 through the first handoff and at 1 through the last and never runs backward on a forward route; leaves pair within half-patch floor cells; each handoff shows its own look's grade exactly, and between them every pixel is a mix of the two looks' finished pictures. A reversal retraces the same carriers on the same clocks. The faithful ↔ layer route keeps the single progress. |
 

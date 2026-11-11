@@ -94,6 +94,32 @@ function transitionRig(from) {
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
 
+for(const waiting of ['none','travel','fade']){
+  test(`an over-budget correspondence dissolves from the restored source and keeps ${waiting} request callbacks`,()=>{
+    const from={...DEFAULTS,faithful_canopy:true,branch_tau:0,canopy_fill:0,litter:0,leaf_drop:0,inner_leaves:0};
+    const to={...from,seed:from.seed+1},next={...from,seed:from.seed+2},r=transitionRig(from);
+    let arrived=0,nextArrived=0,started=0,ended=0;
+    let pending=waiting==='travel'?{to:next,opts:{duration:.1,onEnd:()=>nextArrived++}}:null;
+    Object.assign(r.hub,{transitionTo:r.transitionTo,beginLeafTravel(){},
+      stepLeafTravel(){Object.assign(r.params,from);return false;},finishLeafTravel:()=>{const p=pending;pending=null;return p;},endLeafTravel:()=>{ended++;},
+      beginSceneFade:()=>{started++;},stepSceneFade(){},endSceneFade(){}});
+    r.transitionTo(to,{duration:.4,onEnd:()=>arrived++});
+    if(waiting==='fade')r.transitionTo(next,{style:'fade',duration:.1,onEnd:()=>nextArrived++});
+    r.tickTransition(1/60);
+    expect(r.hub.trans.leafTravel).toBe(false);
+    expect(r.hub.trans.sceneFade).toBe(true);
+    expect(r.hub.trans.bloomMax).toBe(0);
+    expect(r.hub.trans.dur).toBe(.4);
+    expect(r.hub.trans.t).toBe(0);
+    expect(started).toBe(1);expect(ended).toBe(1);
+    let frames=0;while(r.hub.trans.active&&frames++<200)r.tickTransition(1/60)?.();
+    expect(r.hub.trans.active).toBe(false);
+    expect(arrived).toBe(waiting==='none'?1:0);
+    expect(nextArrived).toBe(waiting==='none'?0:1);
+    expect(r.params.seed).toBe(waiting==='none'?to.seed:next.seed);
+  });
+}
+
 test('density routing: summer fixed groves reweight within the peak budget, including a bare source', () => {
   for (const fromDensity of [0, 0.4, 1.65]) for (const density of [0.4, 1.65]) {
     if (fromDensity === density) continue;

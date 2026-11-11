@@ -1,5 +1,5 @@
 import { ballisticK, clamp, lerp, lerpAngle, smoothstep, TAU, turnBack } from './komorebi-math.js';
-import { DEFAULTS, MORPH_KEYS } from './komorebi-params.js';
+import { CANOPY_MORPH_MAX, DEFAULTS, MORPH_KEYS } from './komorebi-params.js';
 import { VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_FULL } from './komorebi-shaders.js';
 const FEAT_LEAF_DIFFUSE = true;
 
@@ -198,6 +198,8 @@ export function makeLeafTravel(hub,createScene){
     s.b=read(hub);s.stride=s.patch?STRIDE_PATCH:12;
     if(s.patch){s.g=meanThrow(hub.projMatrix());s.pairs=patchPairs(s.a,s.b,s.g,PATCH_M/2);}
     else s.pairs=pairLeaves(s.a,s.b);
+    // Local surpluses can require more carriers than either endpoint. Check the actual correspondence before allocating its cast.
+    if(s.pairs.length>CANOPY_MORPH_MAX)return false;
     s.data=new Float32Array(s.pairs.length*s.stride);
     s.prog=s.patch?hub.program(VS_LEAF_TRAVEL_PATCH,FS_LEAF_TRAVEL_PATCH):hub.program(VS_LEAF_TRAVEL,FS_LEAF_TRAVEL);
     s.u=Object.fromEntries(['Origin','Extent','G','Box','LeafA','LeafB','ShapeA','ShapeB','Weight','Edge','BeamK','EdgeArea'].map(k=>[k,gl.getUniformLocation(s.prog,`u${k}`)]));
@@ -235,7 +237,12 @@ export function makeLeafTravel(hub,createScene){
     gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   }
   function stepLeafTravel(dt,e,t){
-    if(!s.b)init();
+    if(!s.b&&init()===false){
+      const from=s.from.hub;
+      if(from.motionActive())from.motionTick(dt);
+      Object.assign(params,s.lookA);s.end=0;
+      return false;
+    }
     const from=s.from.hub,phase=from.params.drift_phase;
     for(const k of MORPH_KEYS)from.params[k]=params[k];
     from.params.drift_phase=phase;

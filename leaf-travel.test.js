@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test';
 import * as travel from './komorebi-leaf-travel.js';
 import { smoothstep } from './komorebi-math.js';
+import { DEFAULTS, CANOPY_MORPH_MAX } from './komorebi-params.js';
 
 function grove(groups){
   const leaves=[],plan=[],twigs=[];
@@ -81,6 +82,38 @@ function scatter(n,seed,x0,x1,y0=0,y1=1){
     params:{faithful_canopy:true,leaf_swing:0,flutter_freq:1,drift_amount:0,drift_phase:0},
     motion:{u:0,time:0,sway:[0,0]},hMax:2,shape:null};
 }
+
+test('travel checks the actual patch correspondence before allocating moving-cast resources',()=>{
+  for(const excess of [0,1]){
+    const heavy=CANOPY_MORPH_MAX/2+excess,n=heavy+10000;
+    const a=scatter(n,1,0,0),b=scatter(n,2,0,0);
+    for(let i=0;i<n;i++){a.leaves[18*i]=i<heavy?.02:.22;b.leaves[18*i]=i<10000?.02:.22;a.leaves[18*i+1]=b.leaves[18*i+1]=.02;}
+    const params={...DEFAULTS,...a.params,seed:1},to={...params,seed:2};
+    let bound,programs=0,restored=0,disposed=0;
+    const gl=new Proxy({}, {get:(_,key)=>{
+      if(key==='bindBuffer')return (_,buffer)=>{bound=buffer;};
+      if(key==='getBufferSubData')return (_,_offset,out)=>out.set(bound);
+      return ()=>{};
+    }});
+    const source={params:{...params},faith:{count:n,buf:a.leaves,hMax:2},hier:a.hier,motion:a.motion,grove:{shape:null},motionActive:()=>false};
+    const hub={gl,params,trans:{},faith:{count:n,buf:b.leaves,hMax:2},hier:b.hier,motion:b.motion,grove:{shape:null},
+      src:{count:1,flat:[0,0,1]},projMatrix:()=>[1,0,0,1],program:()=>{programs++;return {};}};
+    const route=travel.makeLeafTravel(hub,()=>({hub:source,restore:()=>{restored++;},dispose:()=>{disposed++;}}));
+    route.beginLeafTravel(to);Object.assign(params,to);
+    const result=route.stepLeafTravel(0,0,0);
+    if(excess){
+      expect(result).toBe(false);
+      expect(programs).toBe(0);
+      expect(params).toEqual({...DEFAULTS,...a.params,seed:1});
+      route.finishLeafTravel();expect(restored).toBe(1);
+    }else{
+      expect(result).not.toBe(false);
+      expect(programs).toBeGreaterThan(0);
+      route.finishLeafTravel();expect(restored).toBe(0);
+    }
+    route.endLeafTravel();expect(disposed).toBe(1);
+  }
+});
 
 test('only a route between two faithful groves goes patch by patch',()=>{
   expect(travel.patchTravel({faithful_canopy:true},{faithful_canopy:true})).toBe(true);

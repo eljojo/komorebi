@@ -349,7 +349,15 @@ export function makeTransitions(hub){
       const cb=trans.onEnd;trans.onEnd=null;
       return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);
     }else if(trans.leafTravel){
-      hub.regenSource();hub.stepLeafTravel(dt,e,t);
+      hub.regenSource();
+      if(hub.stepLeafTravel(dt,e,t)===false){
+        const {to,dur,onEnd,waiting}=trans,pending=hub.finishLeafTravel();
+        hub.endLeafTravel();trans.active=false;trans.leafTravel=false;
+        transitionTo(to,{duration:dur,style:'fade',onEnd});
+        trans.waiting=waiting??pending;
+        if(trans.waiting)trans.onEnd=null;
+        return null;
+      }
       if(t<1)return null;
       const drift=params.drift_phase;
       for(const k in DEFAULTS)params[k]=trans.to[k];
