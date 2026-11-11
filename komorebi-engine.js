@@ -842,7 +842,6 @@ function createEngine(canvas, opts, driven=false){
   }
   function frame(now){
     if(!alive || paused || lost) return;             // dispose() halts permanently; setPaused(true) / a lost context halt until resumed
-    playbackNow();settleSession();
     const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1; eng.fps=fps;
     if(ownerDocument?.hidden)skipFpsInterval=true;
     else if(skipFpsInterval)skipFpsInterval=false;
@@ -877,7 +876,6 @@ function createEngine(canvas, opts, driven=false){
       if(!trans.groveTravel&&motionActive()) tick(dt); // a grove journey advances both native wind states itself
       if(trans.sceneFade && motionActive()) bake();
       landed = tickTransition(dt);
-      playbackNow();
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
     if(trans.groveTravel)hub.timed('transport',hub.drawGroveTravel);
     else if(trans.litterRise)hub.timed('transport',hub.drawLitterRise);
