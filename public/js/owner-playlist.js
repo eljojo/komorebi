@@ -6,9 +6,11 @@ const box = document.getElementById('owner-controls');
 box.hidden = false;
 const id = box.dataset.playlist;
 const list = document.getElementById('items');
-box.querySelector('[name="presentation"]').addEventListener('change',async event=>{
-  const r=await send('PATCH',`/api/playlists/${id}`,{presentation:event.target.value || null,revision:Number(box.dataset.revision)});
-  if(r.ok)location.reload();else say(box,failure(r));
+const presentation=box.querySelector('[name="presentation"]');
+presentation.addEventListener('change',async()=>{
+  const r=await send('PATCH',`/api/playlists/${id}`,{presentation:presentation.value || null,revision:Number(box.dataset.revision)});
+  if(r.ok)location.reload();
+  else{ presentation.value=presentation.querySelector('option[selected]')?.value ?? ''; say(box,failure(r)); }   // a refused change shows the stored value again
 });
 
 box.querySelector('[name="visibility"]').addEventListener('change', async (event) => {
