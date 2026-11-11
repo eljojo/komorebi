@@ -1,4 +1,10 @@
 // Capture/storage choices leave the engine clock and scene quality to render-video.
+// The four capture plans (--pipeline master|gpu|gpu-main10|browser), output-sized VideoToolbox or VA-API commands (Main8, or
+// direct P010/Main10), browser HEVC muxing, delivery stream copy and encoded disk budgeting. VA-API uses fixed 60M/75M/120M rate
+// control and hardware surfaces on renderD128; its encoder and device are recorded in provenance and in direct run keys.
+// pipeline.test.mjs holds the commands and refusals on the CPU; pipeline-gpu.test.mjs (Mac) and vaapi-gpu.test.mjs (Linux AMD)
+// interrupt after one segment, resume the saved state and check frame counts, dimensions, colour tags, Main10 and that a
+// completed run is skipped.
 import { deliveryArgs, DISK_MARGIN_BYTES } from './video-lib.mjs';
 import { annexBMuxArgs } from './webcodecs.mjs';
 

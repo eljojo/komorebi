@@ -841,7 +841,7 @@ From the bot's log, uncommitted source: memoised renders and eight ticks (from 2
 
 ### The video exporter
 
-From CLAUDE.md, the exporter's working figures:
+The exporter's working figures, from `test-gl/render-video.mjs` and `test-gl/video-lib.mjs`:
 
 | quantity | value |
 |---|---|

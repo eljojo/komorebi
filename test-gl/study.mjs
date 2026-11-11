@@ -1,5 +1,15 @@
 // The quality study: screen real looks, sweep the quality knobs, then compare lossless frames.
 // All GPU work goes through render-video.mjs. Importing this module never launches a browser.
+//   screen  compares built-in and exported/arboretum looks at frames 0 and 60 and proposes ten, with reasons (José confirms).
+//   run     sweeps textures, bake, samples and supersampling through render-video.mjs, keeps the lossless masters and resumes
+//           complete variants.
+//   report  pairs frame indices for PSNR/SSIM and optional VMAF, measures excess Laplacian energy and frame-to-frame shimmer
+//           against max, records cost and proposes the cheapest knee within the stated threshold. Numbered crops of REF's
+//           busiest region at 100% and 200%, the sheets and their provenance/sha256 manifest go under --out/review/<date>/;
+//           José's remarks survive a rerun. ImageMagick is required to complete the sheets.
+//   clean   removes masters only after the complete report's metrics, sheets and crops match.
+// `node test-gl/study.mjs --help` gives the commands and rough M4 wall-time and disk estimates; study.test.mjs uses tiny CPU
+// ffmpeg clips, never a GPU render.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';

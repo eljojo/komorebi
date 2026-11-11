@@ -1,5 +1,11 @@
 // The probe's direct canvas encoder. Playwright serializes encodeCanvasRun into the existing video page;
 // it must depend only on browser globals, never imports or variables in this module's scope.
+// It snapshots inside the page's frame callback, closes each native frame, bounds the encoder queue and the compressed
+// transfer, and muxes Annex B into MP4 without re-encoding. The optional WebGL2 downscale averages a 2x2 box in linear light
+// (the engine's gamma 2.2); raw capture reads only that output for HEVC quality-100, with no lossless intermediate. Completed
+// POSTs release their Blobs through the page's exposed GC. Packet stamps are exact CFR; reordered or missing frames refuse
+// completion. webcodecs.test.mjs exercises capture, queue and transfer failures and real AVC/HEVC muxing on the CPU;
+// webcodecs-gpu.test.mjs checks colours, orientation and dark values against float and the 16-bit FFmpeg chain.
 export function avcConfig({ width, height, fps, bitrate }) {
   return { codec: 'avc1.640034', width, height, framerate: fps, bitrate,
     hardwareAcceleration: 'prefer-hardware', latencyMode: 'quality', bitrateMode: 'variable',
