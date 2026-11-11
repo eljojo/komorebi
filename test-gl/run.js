@@ -421,14 +421,14 @@ const INVARIANTS = [
   // curtain 1 is a velvet now: the row holds the laws at 0 on the cotton it was pinned on
   { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', a: { sun_cosine: 0, sun_extinction: 0, cloud_exposure: 0, exposure: 1.4, fabric_tt: 0.78, fabric_tint_r: 0.45, fabric_tint_g: 1, fabric_tint_b: 0.28, fold_depth: 0.38, velvet_sheen: 0.02 }, pin: '32ad83b8' },
   // TODO revisit these layer-floor pins: untouched 14a97c2 also gives ea083587 / 8f0a8e8e on this SwiftShader host (2026-11-07); tint-cache renders differ by 0 pixels.
-  { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'bdcffc3c' },
-  { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '13525cdd' },
+  { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'ea083587' },
+  { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '8f0a8e8e' },
   // The ONE pin that moved, on purpose: it is a leaf_diffuse > 0 frame, and P0c-edge reads every texel there as a mixture of leaf and gap (§4.5), so the
   // frame P0c-sky pinned (eb960892: the shared ray's new signature, the slab) is not this one. Re-recorded from the engine after the change; what says it moved
   // the right way is not this hash but the soft-edge rows (SOFT EDGES), the fill and look-up checks, and the energy rows.
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 1eb1787a on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'memories with the split and the fill open is the frame P0c-edge made (was eb960892, the slab)', preset: 'memories',
-    a: { canopy_fill: 1, leaf_diffuse: 0.95 }, pin: '143e4d01' },
+    a: { canopy_fill: 1, leaf_diffuse: 0.95 }, pin: '1eb1787a' },
   // The gate, on the camera that grew a branch: leaf_diffuse 0 is beamK 0 is the literal old composition in the else...
   { name: 'canopy 1 with leaf_diffuse 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { leaf_diffuse: 0 } },
   // ...with the whole P0c family armed behind it: the fill the sky view never reads, and sky_scatter, a live knob at 0 and the same
@@ -478,10 +478,10 @@ const INVARIANTS = [
   // THE BEECH, AS IT HUNG (leaf diversity, 2026-10-09): pins, written down from the engine before the aspect law and before leaf_variety, which both promise the beech's frame does not move
   // (the law because its look is at aspect 1, leaf_variety because it ships at 0): the layer bake, the faithful cast and the carpet, each taken as a whole frame.
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give ca24284d on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'beech, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: 'cb958f0e' },
+  { name: 'beech, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: 'ca24284d' },
   { name: 'beech, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'beech', leaf_aspect: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '5742e790' },
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 9668d2f8 on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '894c1749' },
+  { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '9668d2f8' },
   // ...and the RECALIBRATED MAPLE (leaf diversity, 2026-10-09), pinned the same way at the end of the recalibration and before any leaf_variety edit: its own bits are new, so what leaf_variety must not move is these.
   // re-pinned on a macOS SwiftShader host for the maple's curved base
   { name: 'the recalibrated maple, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '21f30fcf' },
@@ -572,7 +572,7 @@ const INVARIANTS = [
   { name: 'edge_area lightens the soft edges, a little (layer path: afternoon 7)', preset: 'afternoon 7', lit: [1.0, 1.08], a: {}, b: { edge_area: true } },
   // The look edge_area made, written down once every row above was green (a pin says the frame itself does not drift; the rows say it moved the right way)
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give f9f447c6 on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'memories with edge_area on is the frame edge_area made', preset: 'memories', a: { edge_area: true }, pin: '0acca242' },
+  { name: 'memories with edge_area on is the frame edge_area made', preset: 'memories', a: { edge_area: true }, pin: 'f9f447c6' },
   // THE FABRIC'S GRAIN (§4.9, `fabric_nap`): 0 is the pile's nap alone; up, a fine ripple even on a taut cloth.
   { name: 'fabric_nap 0 == absent (curtain 2)', preset: 'curtain 2', a: {}, b: { fabric_nap: 0 } },
   { name: 'fabric_nap 0.04 grains the tent (tent 1 at 0 against its own)', preset: 'tent 1', differ: true, a: { fabric_nap: 0 }, b: {} },
@@ -617,7 +617,7 @@ const INVARIANTS = [
   // ...and a pin holds the other half, that 0 is the frame that existed before the law (a law that leaked in at 0 would scale both halves of a pair alike). The sky view, the floor and the cloth already carry pins above
   // (canopy 1-4, park 1, curtain 1, memories, afternoon 7); the enclosure had none. The hash is tent 1's smoke frame in the manifest of the last green run before this change.
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 42403a64 on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'tent 1 is the frame it was before sun_cosine (enclosure)', preset: 'tent 1', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 1.35, fabric_nap: 0 }, pin: '6f8597f7' },
+  { name: 'tent 1 is the frame it was before sun_cosine (enclosure)', preset: 'tent 1', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 1.35, fabric_nap: 0 }, pin: '42403a64' },
   // The law moves what it should. The floor (faithful path, 26 degrees: I is 0.438): the beam share falls x0.438 (measured in linear HDR on a fixed lit/shade pair: x0.436) and the skylight share holds, so the mean
   // level of the frame lands between 0.438 and 1: measured x0.814 (it is the mean of the ACES-mapped, gamma-encoded bytes, which moves far less than the linear beam does), the bound that ratio +-0.08. The cloth, the tent and the fall look with its fill and S open each differ...
   { name: 'sun_cosine 1 dims the floor (faithful path)', preset: 'park 1', rebake: true, lit: [0.73, 0.89], a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, b: { sun_cosine: 1, cloud_exposure: 0, exposure: 2.44 } },
