@@ -185,6 +185,61 @@ try{
   faithful.contextLoss=await page.evaluate(()=>{const {e,stamp,step,n2}=window.__floss;let delta=-1;e.onFrame=()=>{const g=e.gl,b=new Uint8Array(n2.length);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,320,180,g.RGBA,g.UNSIGNED_BYTE,b);delta=b.reduce((m,x,i)=>Math.max(m,Math.abs(x-n2[i])),0);};window.__clock.pump(stamp+step);const error=e.gl.getError();e.dispose();return {delta,error};});
   console.log('faithful',JSON.stringify(faithful,null,1));
   assert.deepEqual(faithful.contextLoss,{delta:0,error:0},'context loss during faithful travel did not land on the target');
+  // At identical geometry, both moving shaders must cut the native blade, including its fractional outline blend.
+  const outlines=await page.evaluate(async()=>{
+    const S=await import('/komorebi-shaders.js'),L=await import('/komorebi-leaf.js'),T=await import('/komorebi-leaf-travel.js');
+    const c=document.createElement('canvas');c.width=c.height=256;document.body.append(c);
+    const gl=c.getContext('webgl2',{preserveDrawingBuffer:true,antialias:false});gl.getExtension('EXT_color_buffer_float');
+    const shader=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
+    function program(v,f){const p=gl.createProgram();gl.attachShader(p,shader(gl.VERTEX_SHADER,v));gl.attachShader(p,shader(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));return p;}
+    const refQ=(side)=>S.GLSL_LEAF_Q.replaceAll('uLeafTex',`uTex${side}`).replaceAll('uLeafRows',`uRows${side}`).replaceAll('leafQ',`leafQ${side}`);
+    const ref=program(S.VS_LEAF_TRAVEL,`#version 300 es
+precision highp float;in vec2 vLocal;out vec4 frag;uniform float uVariantA,uVariantB,uWeight,uEdge;uniform int uShapeA,uShapeB;
+${refQ('A')}
+${refQ('B')}
+void main(){float qa=uShapeA==0?length(vLocal):leafQA(vLocal,uVariantA);float qb=uShapeB==0?length(vLocal):leafQB(vLocal,uVariantB);
+float cov=1.0-smoothstep(1.0-uEdge,1.0,mix(qa,qb,uWeight));frag=vec4(vec3(exp(-cov)),1.0);}`);
+    const nativePrograms=[program(S.VS_LEAF_TRAVEL,S.FS_LEAF_TRAVEL),program(S.VS_LEAF_TRAVEL_PATCH,S.FS_LEAF_TRAVEL_PATCH)];
+    const quad=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+    const vao=gl.createVertexArray();gl.bindVertexArray(vao);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+    const texture=(shape)=>{const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.R16F,shape?256:1,shape?.rows??1,0,gl.RED,gl.FLOAT,shape?.data??new Float32Array([1]));for(const k of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,k,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t;};
+    function q(shape,row){return {shape,leaves:Float32Array.from([0,0,.25,.25,0,0,0,0,1,1,1,row/(shape?.idFrac??32),0,0,0,0,0,1]),hier:{clusterGeom:new Float32Array(4),clusterData:new Float32Array(4)},params:{faithful_canopy:true,leaf_swing:0,flutter_freq:1,drift_amount:0,drift_phase:0},motion:{u:0,time:0,sway:[0,0]},hMax:1};}
+    const rows=[10.49,31.1,47.9,63.1],results=[];
+    for(const [name,a,b] of [
+      ...rows.map(r=>[`varied maple ${r}`,q(L.leafShape('maple',1,1),r),q(L.leafShape('beech',2,.9),r)]),
+      ['unvaried',q(L.leafShape('maple',1),3),q(L.leafShape('beech',2),5)],
+      ['mixed tables',q(L.leafShape('maple',1,1),10.49),q(L.leafShape('beech',2),5)],
+      ['ellipse',q(null,0),q(L.leafShape('maple',1,1),10.49)]]){
+      const textures=[texture(a.shape),texture(b.shape)];
+      for(const w of [0,.5,1]){
+        const data=T.moveLeaves(a,b,[[0,0,true,true]],w,new Float32Array(12));
+        function draw(p,isRef){
+          gl.useProgram(p);gl.viewport(0,0,256,256);gl.clearColor(1,1,1,1);gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.vertexAttrib4f(1,...data.slice(0,4));gl.vertexAttrib4f(2,...data.slice(4,8));gl.vertexAttrib4f(3,...data.slice(8,12));gl.vertexAttrib4f(4,w,.1,0,0);
+          const loc=n=>gl.getUniformLocation(p,n);
+          gl.uniform2f(loc('uOrigin'),-1,-1);gl.uniform2f(loc('uExtent'),2,2);gl.uniform2f(loc('uG'),0,0);gl.uniform4f(loc('uBox'),0,0,4,4);
+          gl.uniform1f(loc('uWeight'),w);gl.uniform1f(loc('uEdge'),.1);gl.uniform1f(loc('uBeamK'),0);gl.uniform1i(loc('uEdgeArea'),0);
+          for(const [unit,end] of [[0,a],[1,b]]){
+            const side=unit?'B':'A';gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,textures[unit]);
+            gl.uniform1i(loc(isRef?`uTex${side}`:`uLeaf${side}`),unit);gl.uniform1i(loc(`uShape${side}`),end.shape?1:0);
+            if(isRef){const raw=(end.leaves[11]%1)*(end.shape?.idFrac??32);gl.uniform1f(loc(`uVariant${side}`),end.shape?.idFrac?raw:Math.floor(raw+.5));gl.uniform1f(loc(`uRows${side}`),end.shape?.idFrac?end.shape.rows:0);}
+          }
+          gl.drawArrays(gl.TRIANGLE_STRIP,0,4);const out=new Uint8Array(256*256*4);gl.readPixels(0,0,256,256,gl.RGBA,gl.UNSIGNED_BYTE,out);if(gl.getError())throw Error('outline probe WebGL error');return out;
+        }
+        const expected=draw(ref,true);
+        if(!expected.some((v,i)=>i%4!==3&&v<250))throw Error('empty native outline reference');
+        for(const [i,p] of nativePrograms.entries()){
+          const actual=draw(p,false);let max=0,sum=0,changed=0;
+          for(let k=0;k<actual.length;k+=4){const d=Math.abs(actual[k]-expected[k]);max=Math.max(max,d);sum+=d;if(d>=2)changed++;}
+          results.push({name,w,cast:i?'patch':'single',max,mean:sum/65536,visible:changed/65536});
+        }
+      }
+      textures.forEach(t=>{gl.deleteTexture(t);});
+    }
+    c.remove();return results;
+  });
+  assert.ok(outlines.every(r=>r.max<=1),`moving outline differs from native: ${JSON.stringify(outlines.filter(r=>r.max>1))}`);
+  console.log('PASS native outline blends',outlines.length,'comparisons, max',Math.max(...outlines.map(r=>r.max)));
   assert.deepEqual(errors,[]);
   for(const r of results)console.log('PASS',JSON.stringify(r));console.log('PASS context recovery',JSON.stringify(recovery));console.log('PASS hood');console.log('PASS faithful travel');
 }finally{await browser.close();}

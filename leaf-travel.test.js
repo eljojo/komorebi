@@ -46,6 +46,30 @@ test('travelling leaves preserve endpoint positions and total area; surplus leav
   }
 });
 
+test('both travel casts retain each varied leaf\'s native outline blend at both ends',()=>{
+  const a=grove([[0,3]]),b=grove([[0,3]]);
+  a.shape={idFrac:128,rows:64};b.shape={idFrac:128,rows:64};
+  for(const [q,variants] of [[a,[10.49,31.1,63.1]],[b,[2.7,47.3,55.9]]]){
+    variants.forEach((v,n)=>{q.leaves[18*n+11]=v/128;});
+  }
+  const pairs=travel.pairLeaves(a,b);
+  for(const w of [0,.5,1]){
+    const ordinary=travel.moveLeaves(a,b,pairs,w,new Float32Array(pairs.length*12));
+    const patch=travel.movePatchLeaves(a,b,pairs,new Float32Array(pairs.length).fill(w),[.1,.1],new Float32Array(pairs.length*16));
+    for(const [data,stride] of [[ordinary,12],[patch,16]])for(let n=0;n<pairs.length;n++)for(const [side,q] of [[0,a],[1,b]]){
+      const native=(q.leaves[pairs[n][side]+11]%1)*128;
+      expect(data[stride*n+10+side]*64).toBe(native);
+    }
+  }
+});
+
+test('unvaried travel still samples the centre of each original outline row',()=>{
+  const a=grove([[0,8]]),b=grove([[0,8]]);
+  for(const q of [a,b])for(let n=0;n<8;n++)q.leaves[18*n+11]=n/32;
+  const pairs=travel.pairLeaves(a,b),data=travel.moveLeaves(a,b,pairs,.5,new Float32Array(pairs.length*12));
+  for(let n=0;n<8;n++)for(const side of [0,1])expect(data[12*n+10+side]).toBe((n+.5)/8);
+});
+
 // ---- between two faithful groves the travel goes patch by patch ----
 
 function scatter(n,seed,x0,x1,y0=0,y1=1){

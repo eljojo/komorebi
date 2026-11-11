@@ -363,11 +363,19 @@ flat in vec2 vTrip;
 #endif
 out vec4 frag;
 ${GLSL_TEXEL_MIX}
+float travelRadius(sampler2D leaf,vec2 uv){
+  float rows=float(textureSize(leaf,0).y);
+  if(rows>${LEAF_VARIANTS}.0){
+    float variant=uv.y*rows,r0=floor(variant),w=clamp((variant-r0-0.1)/0.8,0.0,1.0);
+    return mix(texture(leaf,vec2(uv.x,(r0+0.5)/rows)).r,texture(leaf,vec2(uv.x,(r0+1.5)/rows)).r,w);
+  }
+  return texture(leaf,uv).r;
+}
 void main(){
   vec2 d=dot(vLocal,vLocal)<1e-12?vec2(1.0,0.0):vLocal;
   float u=atan(d.y,d.x)*0.15915494+0.5;
-  float ra=uShapeA==0?1.0:texture(uLeafA,vec2(u,vRows.x)).r;
-  float rb=uShapeB==0?1.0:texture(uLeafB,vec2(u,vRows.y)).r;
+  float ra=uShapeA==0?1.0:travelRadius(uLeafA,vec2(u,vRows.x));
+  float rb=uShapeB==0?1.0:travelRadius(uLeafB,vec2(u,vRows.y));
   float r=length(vLocal)-mix(ra,rb,TRIP_W)+1.0;
   float cov=1.0-smoothstep(1.0-TRIP_EDGE,1.0,r);
   if(cov<=0.0)discard;

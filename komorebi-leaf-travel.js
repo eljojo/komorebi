@@ -145,6 +145,11 @@ export function movePatchLeaves(a,b,pairs,wi,edge,out){
   }
   return out;
 }
+// Varied tables encode a blend between two outlines; rounding it would change the blade during the native handoff.
+function travelRow(q,i){
+  const variant=(q.leaves[i+11]%1)*(q.shape?.idFrac??32);
+  return (q.shape?.idFrac>64?variant:Math.floor(variant+.5)+.5)/(q.shape?.rows??8);
+}
 function carry(a,b,pair,w,out,o){
   const [ia,ib,la,lb]=pair;
   moved(a,ia,aa);moved(b,ib,bb);
@@ -154,8 +159,7 @@ function carry(a,b,pair,w,out,o){
   out[o+2]=Math.sqrt(area*aspect);out[o+3]=Math.sqrt(area/aspect);out[o+4]=lerpAngle(aa[4],bb[4],w,TAU);
   for(let c=0;c<3;c++)out[o+5+c]=lerp(a.leaves[ia+8+c],b.leaves[ib+8+c],w);
   out[o+8]=lerp(aa[5],bb[5],w);out[o+9]=lerp(a.leaves[ia+17],b.leaves[ib+17],w);
-  out[o+10]=(Math.floor((a.leaves[ia+11]%1)*(a.shape?.idFrac??32)+.5)+.5)/(a.shape?.rows??8);
-  out[o+11]=(Math.floor((b.leaves[ib+11]%1)*(b.shape?.idFrac??32)+.5)+.5)/(b.shape?.rows??8);
+  out[o+10]=travelRow(a,ia);out[o+11]=travelRow(b,ib);
 }
 
 export function makeLeafTravel(hub,createScene){
