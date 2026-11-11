@@ -46,12 +46,14 @@ export function mountSettings({ settings, engine, save, account, rows }) {
   const note=document.createElement('p');note.textContent='Projector turns edge-area correction off, darkening the frame slightly. Pacing stays with the playlist.';panel.append(note);
   heading('Arboretum');
   const accountRow=document.createElement('div');accountRow.textContent='Looks are kept in this browser. Online accounts are available where Arboretum is hosted.';panel.append(accountRow);
-  function refreshAll(){
-    for(const refresh of controls)refresh();
+  function refreshStatus(){
     const s=engine.session;
-    resolved.textContent=`${s.quality} · adaptive fps ${s.playback.adaptive_motion?'on':'off'} · idle ${s.playback.adaptive_idle_fps} fps · ${s.presentation}`;
+    const startup=s.automaticAdaptive ? s.startupFps===undefined ? ' · checking first 10 s' : ` · first 10 s: ${Math.round(s.startupFps)} fps` : '';
+    const text=`${s.quality} · adaptive fps ${s.playback.adaptive_motion?'on':'off'} · idle ${s.playback.adaptive_idle_fps} fps · ${s.presentation}${startup}`;
+    if(resolved.textContent!==text)resolved.textContent=text;
     panel.querySelector('[data-setting="adaptive_idle_fps"]').disabled=!s.playback.adaptive_motion;
   }
+  function refreshAll(){for(const refresh of controls)refresh();refreshStatus();}
   document.body.append(panel);
-  return { account:accountRow,open(){refreshAll();panel.showModal();account();} };
+  return { account:accountRow,open(){refreshAll();panel.showModal();account();},refresh(){if(panel.open)refreshStatus();} };
 }

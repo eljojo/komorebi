@@ -1538,6 +1538,7 @@ document.addEventListener('mouseleave',()=>{ treePointer=null; });
 // ---- per-frame overlays: reflect the engine's drift phase, draw the source
 // inset (when the panel is open), and update the HUD. ------------------------
 eng.onFrame = ()=> {
+  sessionPanel.refresh();
   tickTween(); trySeasonTick();
   if(params.drift_auto) syncControl('drift_phase');
   refreshGates();               // a transition, a macro or a preset can flip a mode as readily as the row itself; the signature check makes the miss cheap

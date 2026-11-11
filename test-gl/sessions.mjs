@@ -54,17 +54,29 @@ try{
     engine.setSession({...session,presentation:'screen'});step();const screen=read(engine),screenImage=canvas.toDataURL('image/png');
     engine.setSession(session);step();const projector=read(engine),projectorImage=canvas.toDataURL('image/png');
     const diff=screen.reduce((n,v,i)=>n+Math.abs(v-projector[i]),0)/screen.length;
-    engine.dispose();window.requestAnimationFrame=originalRAF;
+    engine.dispose();
+    const autoCanvas=document.createElement('canvas');autoCanvas.style.cssText='width:96px;height:64px';document.body.append(autoCanvas);
+    const automatic={ceilings:{sample_count:3,tex_resolution:256,bake_resolution:256},playback:{auto_quality:false}};
+    const autoEngine=api.create(autoCanvas,{params:look,session:automatic});now=performance.now();
+    const slowStep=()=>{now+=25;next(now);};
+    for(let i=0;i<399;i++)slowStep();const before=autoEngine.params.adaptive_motion;
+    slowStep();const after=autoEngine.params.adaptive_motion,startupFps=autoEngine.session.startupFps;
+    autoEngine.setSession({...automatic,playback:{auto_quality:false,adaptive_motion:false}});
+    autoEngine.setParams({...look,adaptive_motion:true});slowStep();
+    const automaticFps={simulatedCadence:40,before,after,startupFps,manualOff:autoEngine.params.adaptive_motion,authoredRuntime:Object.hasOwn(autoEngine.authored,'adaptive_motion')};
+    autoEngine.dispose();autoCanvas.remove();window.requestAnimationFrame=originalRAF;
     return {mismatches,quality,layers,authoredSample:authored.sample_count,meanAbsoluteDifference:diff,
-      presentationLook:representative,screenImage,projectorImage};
+      presentationLook:representative,screenImage,projectorImage,automaticFps};
   });
   assert.equal(endpoints.mismatches,0,'arrival agrees with a native load under the same session');
   assert.equal(endpoints.quality,32);assert.equal(endpoints.authoredSample,48);assert.equal(endpoints.layers,3);
+  assert.equal(endpoints.automaticFps.before,false);assert.equal(endpoints.automaticFps.after,true);
+  assert.equal(endpoints.automaticFps.manualOff,false);assert.equal(endpoints.automaticFps.authoredRuntime,false);
   for(const name of ['screen','projector']){
     await writeFile(resolve(output,`${name}.png`),Buffer.from(endpoints[`${name}Image`].split(',')[1],'base64'));
     delete endpoints[`${name}Image`];
   }
-  console.log('WebGL session arrival:',JSON.stringify(endpoints));
+  console.log('WebGL session arrival:',JSON.stringify({mismatches:endpoints.mismatches,quality:endpoints.quality,layers:endpoints.layers,automaticFps:endpoints.automaticFps}));
   await page.addInitScript(()=>{
     if(localStorage.getItem('session-test-initialized'))return;
     const look={tree_count:1,branch_levels:1,branch_children:1,limb_count:1,leaves_per_cluster:3,foliage_density:0.1,layer_count:3,adaptive_motion:true};

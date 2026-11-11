@@ -12,7 +12,9 @@ A look owns artistic appearance. A playlist owns dwell, crossfade and morph/fade
 
 **Law.** Frame-rate policy belongs to the session. Loading a look, playing a playlist, reversing or queueing a transition, and restoring a lost context cannot replace an explicit local choice. In particular, turning adaptive FPS off stays off. Automatic selection preserves explicit overrides. These settings do not travel with a newly saved look.
 
-**Provisional.** The software ships a small set of quality profiles. Phone identification selects the compact baseline and adaptive FPS; other live devices start balanced with adaptive FPS off. Hardware texture limits restrict the ceilings, and the existing governor responds to observed frame times. These are starting policies awaiting device measurements, not calibrated performance guarantees. Offline rendering freezes its selection and disables both governors.
+**Law.** Automatic mode starts at full frame rate. Over its first ten active seconds, a mean cadence below 45 fps enables adaptive FPS once. A cadence of 45 or more leaves it off. Hidden-tab time is excluded. The result survives look and presentation changes but does not become a saved preference; an explicit adaptive-FPS choice overrides it. Manual quality profiles bypass this startup check. Returning to Automatic after a manual choice begins a new observation.
+
+**Provisional.** The software ships a small set of quality profiles. Phone identification selects the compact baseline; other live devices start balanced. Hardware texture limits restrict the ceilings, and the existing governor responds to observed frame times. Quality profile values await device measurements and do not guarantee performance. Offline rendering freezes its selection and disables both governors.
 
 ## Presentation
 

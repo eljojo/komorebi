@@ -52,3 +52,18 @@ test('ordinary built-ins inherit fidelity while preserving authored layer struct
   expect(PRESETS['afternoon 5'].layer_count).toBe(3);
   expect(Object.values(PRESETS).some(look=>look.sky_view && look.bake_resolution===1536)).toBe(true);
 });
+
+test('automatic FPS measures a whole ten-second window, with 45 fps staying full-rate',()=>{
+  expect(typeof sessions.makeFpsProbe).toBe('function');
+  for(const [fps,low] of [[40,true],[45,false],[60,false]]){
+    const probe=sessions.makeFpsProbe();let result=null;
+    for(let i=0;i<fps*10;i++)result=probe.observe(1000/fps)??result;
+    expect(result.low).toBe(low);expect(result.fps).toBeCloseTo(fps,6);
+    expect(probe.observe(1000)).toBeNull();
+  }
+  const probe=sessions.makeFpsProbe();
+  expect(probe.observe(200)).toBeNull();
+  let result;
+  for(let i=0;i<490;i++)result=probe.observe(20)??result;
+  expect(result.low).toBe(false);
+});

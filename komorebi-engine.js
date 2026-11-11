@@ -15,7 +15,7 @@ import { makeLeafTravel } from './komorebi-leaf-travel.js';
 import { makeSeasonTravel } from './komorebi-season-travel.js';
 import { makeLitterRise } from './komorebi-litter-rise.js';
 import { makeGroveTravel } from './komorebi-grove-travel.js';
-import { authoredLook, FIDELITY_KEYS, PLAYBACK_KEYS, resolveParams, resolveSession } from './komorebi-session.js';
+import { authoredLook, FIDELITY_KEYS, PLAYBACK_KEYS, resolveParams, resolveSession, makeFpsProbe } from './komorebi-session.js';
 
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
@@ -60,6 +60,15 @@ function createEngine(canvas, opts, driven=false){
 
   let sessionEnvironment={...opts.environment,maxTextureSize:MAX_TEX};
   let session = opts.session === undefined ? null : resolveSession(opts.session, sessionEnvironment);
+  let fpsProbe=session?.automaticAdaptive?makeFpsProbe():null,startupFps=null,skipFpsInterval=false;
+  const ownerDocument=canvas.ownerDocument;
+  function onVisibilityChange(){skipFpsInterval=true;}
+  function applyStartupFps(){
+    if(!session)return;
+    session.startupFps=startupFps?.fps;
+    session.adaptiveDetected=!!startupFps?.low;
+    if(session.automaticAdaptive && startupFps?.low)session.playback.adaptive_motion=true;
+  }
   let authored = authoredLook(opts.params);
   let pendingSession = false;
   const params = resolveParams(opts.params, session);
@@ -731,7 +740,11 @@ function createEngine(canvas, opts, driven=false){
     setSession(settings,environment){
       const nextEnvironment=environment===undefined?sessionEnvironment:{...sessionEnvironment,...environment,maxTextureSize:MAX_TEX};
       const nextSession=resolveSession(settings,nextEnvironment);
+      if(!session?.automaticAdaptive || !nextSession.automaticAdaptive){
+        fpsProbe=nextSession.automaticAdaptive?makeFpsProbe():null;startupFps=null;
+      }
       sessionEnvironment=nextEnvironment;session=nextSession;
+      applyStartupFps();
       if(!trans.active)captureLook();
       pendingSession=true;playbackNow();settleSession();if(!lost)resetPerf();
     },
@@ -753,6 +766,7 @@ function createEngine(canvas, opts, driven=false){
       hub.endGroveTravel();
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
+      ownerDocument?.removeEventListener('visibilitychange',onVisibilityChange);
       [progBake, progFaith, progFaithPivot, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
       transportCache.forEach(v => { gl.deleteProgram(v.prog); });   // however many cameras this engine actually visited
       transportCache.clear();
@@ -825,6 +839,12 @@ function createEngine(canvas, opts, driven=false){
     if(!alive || paused || lost) return;             // dispose() halts permanently; setPaused(true) / a lost context halt until resumed
     playbackNow();settleSession();
     const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1; eng.fps=fps;
+    if(ownerDocument?.hidden)skipFpsInterval=true;
+    else if(skipFpsInterval)skipFpsInterval=false;
+    else if(fpsProbe && !startupFps){
+      startupFps=fpsProbe.observe(dtms);
+      if(startupFps){applyStartupFps();playbackNow();}
+    }
     if(perf.auto) tunePerf(dtms, fps);               // auto-quality: nudge resolution/samples toward 60 fps
     resize();
     // adaptive frame-rate (opt-in): only off-transition, non-debug. While motion is low, render the heavy passes
@@ -907,6 +927,7 @@ function createEngine(canvas, opts, driven=false){
     step(dt){ if(motionActive()){ tick(dt); bake(); } } };
   canvas.addEventListener('webglcontextlost', onContextLost);
   canvas.addEventListener('webglcontextrestored', onContextRestored);
+  ownerDocument?.addEventListener('visibilitychange',onVisibilityChange);
   startLoop();
   return eng;
 }
