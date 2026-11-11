@@ -104,7 +104,8 @@ try {
   await page.evaluate(() => { window.__glBefore = document.getElementById('gl'); });
   await page.click('#welcome .more a[href="about.html"]');
   await page.waitForSelector('#aboutView:not(.out) #aboutCol', { timeout: 15000 });
-  await page.waitForTimeout(1100);   // the breath in (.9s) has landed
+  // the breath in (.9s) has landed: waited for, not timed, since SwiftShader's long frames stretch a .9s transition to several seconds
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('aboutView')).opacity === '1', null, { timeout: 15000 }).catch(() => {});
   const inPlace = await page.evaluate(() => {
     const w = document.getElementById('welcome'), v = document.getElementById('aboutView'), gl = document.getElementById('gl');
     return {
@@ -124,7 +125,8 @@ try {
   // Back is the reverse of opening: the column breathes out, the welcome breathes back in, the canvas never touched
   await page.evaluate(() => history.back());
   await page.waitForFunction(() => !document.getElementById('aboutView'), null, { timeout: 15000 });
-  await page.waitForTimeout(1100);   // the welcome's breath in (.9s) has landed
+  // the welcome's breath in (.9s) has landed: waited for, as above
+  await page.waitForFunction(() => { const w = document.getElementById('welcome'), cs = getComputedStyle(w); return cs.visibility === 'visible' && cs.opacity === '1' && !w.classList.contains('out'); }, null, { timeout: 15000 }).catch(() => {});
   const backed = await page.evaluate(() => {
     const w = document.getElementById('welcome'), cs = getComputedStyle(w);
     return {
