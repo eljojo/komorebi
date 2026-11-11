@@ -227,6 +227,15 @@ describe('shipped: a walk from the pages', () => {
     expect(out).toEqual(['a.js', 'about.html', 'b.js', 'c.js', 'd.js', 'e.js', 'f.js', 'h.js', 'index.html', 'player.html', 'side.js', 'sub/g.js', 'sub/i.js']);
   });
 
+  it('follows the icons a web manifest names, relative to the manifest', () => {
+    const out = walk({
+      'index.html': '<link rel="manifest" href="app/manifest.webmanifest">',
+      'app/manifest.webmanifest': JSON.stringify({ name: 'x', start_url: '../', icons: [{ src: 'icons/a.png' }, { src: '/b.png' }, { src: 'https://cdn.example/c.png' }] }),
+      'app/icons/a.png': '', 'b.png': '', 'unused.png': '',
+    });
+    expect(out).toEqual(['about.html', 'app/icons/a.png', 'app/manifest.webmanifest', 'b.png', 'index.html', 'player.html']);
+  });
+
   it('follows CSS url() and @import, relative to the stylesheet', () => {
     const out = walk({
       'index.html': '<link rel="stylesheet" href="css/site.css">',

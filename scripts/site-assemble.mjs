@@ -9,12 +9,13 @@ import { dirname, join } from 'node:path';
 //   from HTML: <script src>, <link href>, and the imports of inline scripts; <style> blocks are CSS.
 //   from JS: static `import … from`, `import '…'`, `export … from`, and `import('…')` with a string literal.
 //   from CSS: url(…) and @import.
+//   from a web manifest (.webmanifest): the src of each of its icons.
 // A same-site path counts, relative to the file that names it or root-absolute. A URL with a scheme or a host, a bare
 // module name, a directory, anything under /<base>/ or /api/ (served by the Worker) and commit.json (written by the
 // build) is not looked for. A file that is named and not there fails the build, naming both.
 const ENTRY_PAGES = ['index.html', 'about.html', 'player.html'];
 const GENERATED = ['commit.json'];
-const kindOf = (rel) => (/\.html?$/i.test(rel) ? 'html' : /\.(?:m?js|cjs)$/i.test(rel) ? 'js' : /\.css$/i.test(rel) ? 'css' : null);
+const kindOf = (rel) => (/\.html?$/i.test(rel) ? 'html' : /\.(?:m?js|cjs)$/i.test(rel) ? 'js' : /\.css$/i.test(rel) ? 'css' : /\.webmanifest$/i.test(rel) ? 'manifest' : null);
 
 const attr = (tag, name) => {
   const m = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>"']+))`, 'i').exec(tag);
@@ -40,6 +41,12 @@ function cssRefs(text) {
   return out;
 }
 
+// A manifest that is not JSON fails the build here, rather than ship an app with no icons.
+function manifestRefs(text) {
+  const icons = JSON.parse(text).icons ?? [];
+  return icons.map((icon) => icon.src).filter((src) => typeof src === 'string');
+}
+
 function htmlRefs(text) {
   const out = [];
   const html = text.replace(/<!--[\s\S]*?-->/g, '');
@@ -61,7 +68,7 @@ function htmlRefs(text) {
 // What the file at `rel` names, as written; [] for a kind of file that names nothing.
 export function referencesIn(rel, text) {
   const kind = kindOf(rel);
-  return kind === 'html' ? htmlRefs(text) : kind === 'js' ? jsRefs(text) : kind === 'css' ? cssRefs(text) : [];
+  return kind === 'html' ? htmlRefs(text) : kind === 'js' ? jsRefs(text) : kind === 'css' ? cssRefs(text) : kind === 'manifest' ? manifestRefs(text) : [];
 }
 
 // The site-root-relative path `url` (written in the file at `from`) names, or null where nothing here is to be shipped for it.
