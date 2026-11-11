@@ -1,7 +1,6 @@
-// José's picks from the 2026-10-09 proposals sheet, as the looks that ship. presets.js is data and the pixels are the harness's (the smoke render of every look); what is held here is
-// what each pick IS: the values he picked, that nothing he did not pick moved with them, and that none of it went where he did not put it (the EXPERIMENTAL list, the beech outline).
-// His words: "i like p1 and p3 (make it without the wind drift), p4 was good too. i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4.", and on the picks as they
-// would ship: "i like k3,k4,k6,k8" (P4: "not sure i see the difference").
+// The looks chosen from the 2026-10-09 proposals sheet, as they ship. presets.js is data and the pixels are the harness's (the smoke render of every look); what is held
+// here is what each chosen look IS: the values chosen, that nothing else moved with them, and that none of it went where it was not put (the EXPERIMENTAL list, the beech
+// outline). The picks and the words that chose them are in that sheet's review folder.
 import { test, expect } from "bun:test";
 import { DEFAULTS } from "./komorebi.js";
 import { shownExposure } from "./komorebi-math.js";
