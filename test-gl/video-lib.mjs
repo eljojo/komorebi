@@ -499,13 +499,17 @@ export function checkPlaylistTimes(items, fps) {
 // transitionTo is called before; `land` the pump after which the fade must be over (LAND_MARGIN pumps after the nominal end: the dyadic clock runs 3.8e-8 slow, so a 6 s fade is
 // 359.99999 frames of simulated time and lands one pump late). The landing is where a checkpoint can be taken: a fade in flight is not restorable state.
 export const LAND_MARGIN = 3;
-export function playlistSchedule({ items, fps, preroll, frames }) {
+export function playlistSchedule({ items, fps, preroll, frames, engine }) {
   const end = preroll + frames, events = [];
   if (items.length < 2) return events;
+  // The exported engine owns the key classes and clock; overrides and legacy names must be resolved as that engine will read them.
+  const looks = engine ? items.map((it) => ({ ...engine.DEFAULTS, ...engine.migrateLegacy(it.params) })) : null;
   let cursor = preroll + Math.round(items[0].dwell_s * fps);
   for (let k = 1; cursor < end; k++) {
     const stop = k % items.length, it = items[stop];
-    const start = cursor + 1, land = start + Math.round(it.crossfade_s * fps) + LAND_MARGIN;
+    const previous = (stop + items.length - 1) % items.length;
+    const scale = it.style === 'fade' && looks && engine.CANOPY_KEYS.some((key) => looks[previous][key] !== looks[stop][key]) ? engine.DUR_SCALE.dissolve : 1;
+    const start = cursor + 1, land = start + Math.round(it.crossfade_s * scale * fps) + LAND_MARGIN;
     events.push({ k, stop, start, land, duration_s: it.crossfade_s, style: it.style === 'fade' ? 'fade' : 'morph' });
     cursor = land + Math.round(it.dwell_s * fps);
   }

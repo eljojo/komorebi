@@ -16,7 +16,8 @@
 //   --playlist-json <f>    instead of ONE look, a PLAYLIST: the engine walks its looks with transitionTo, the way arboretum plays one (dwell, then a fade over the NEXT look's own crossfade, looping).
 //   --arboretum-playlist <id>[:<share_token>]   the same, the list and every item's params fetched from arboretum (ARBORETUM_TOKEN as above; an item the token cannot read refuses the run).
 //                          <f> is [{ name?, params, dwell_s?, crossfade_s?, style? }] (defaults 30 s, 5 s and 'morph'; style is 'morph' or 'fade', how that look arrives). --seconds is the length of the video; the playlist repeats to fill it, and the last fade may be cut.
-//                          The looks must share one grove (seed, branching, resolutions, scene mode): anything else is a cloud dissolve on twice the clock, not a morph, and is refused before the render.
+//                          The looks must share one grove (seed, branching, resolutions, scene mode); other pairs are refused before the render. A requested scene fade takes twice crossfade_s;
+//                          a fade between looks differing only in live parameters remains a morph on the ordinary clock. Dwell and checkpoints follow the actual landing.
 //                          A fade in flight is not restorable state, so a playlist's checkpoints are taken where each fade LANDS (ckpt/): a resume restores the last landing before the segment and replays
 //                          the frames in between unrecorded (at most one look's dwell and fade). No --encode-only. The playlist is in the run key (each item's params by hash), look.json is the
 //                          first look and playlist.json the whole list.
@@ -262,9 +263,6 @@ if (PLAYLIST_MODE) {
 const finalParams = { ...lookParams, ...overrides, adaptive_motion: false, auto_quality: false };
 // a playlist's looks, each as rendered (the same overrides and the two governors forced off on every one)
 const STOP_PARAMS = PLAYLIST ? PLAYLIST.items.map((it) => ({ ...it.params, ...overrides, adaptive_motion: false, auto_quality: false })) : [finalParams];
-// the playlist's timeline in absolute pumps (video-lib.mjs playlistSchedule); [] for a single look
-const SCHEDULE = PLAYLIST ? playlistSchedule({ items: PLAYLIST.items, fps: FPS, preroll: PREROLL, frames: N }) : [];
-const PL_EVENTS = SCHEDULE.map((e) => ({ start: e.start, duration: e.duration_s, style: e.style, params: STOP_PARAMS[e.stop] }));
 const nonQuality = Object.keys(overrides).filter((k) => !QUALITY_KEYS.includes(k));
 if (nonQuality.length) console.warn(`render-video: WARNING — overrides outside the quality knobs: ${nonQuality.join(', ')} (the look is NOT as authored)`);
 
@@ -273,11 +271,12 @@ const killers = [];
 onExit(() => { for (const k of killers.splice(0)) { try { k(); } catch { /* already gone */ } } });
 // the engine is exported (and removed again on every way out, signals included: exportEngine registers that) only for a run that renders
 const exp = ENCODE_ONLY ? null : exportEngine({ ...(has('--tree') ? { tree: true } : { commit: flag('--commit') }), keep: has('--keep-export') });
-// A playlist is walked with transitionTo, which is a live MORPH only between looks that share a grove. Anything structural (TOPO_KEYS, MODE_KEYS) takes the cloud-dissolve route on twice
-// the clock, which neither fits the schedule nor can be checkpointed: refused here, from the engine tree's own key lists, before anything renders.
+// Playlist support keeps the same grove topology and mode. Check the exported engine's own key lists before anything renders.
+let playlistEngine;
 if (PLAYLIST && exp) {
   try {
-    const { TOPO_KEYS, MODE_KEYS, DEFAULTS } = await import(pathToFileURL(join(exp.dir, 'komorebi-params.js')).href);
+    playlistEngine = await import(pathToFileURL(join(exp.dir, 'komorebi-params.js')).href);
+    const { TOPO_KEYS, MODE_KEYS, DEFAULTS } = playlistEngine;
     const structural = [...TOPO_KEYS, ...MODE_KEYS];
     for (let i = 0; i < STOP_PARAMS.length; i++) {
       const a = { ...DEFAULTS, ...STOP_PARAMS[i] }, j = (i + 1) % STOP_PARAMS.length, b = { ...DEFAULTS, ...STOP_PARAMS[j] };
@@ -286,6 +285,8 @@ if (PLAYLIST && exp) {
     }
   } catch (e) { if (e.code === 'ERR_MODULE_NOT_FOUND') warn(`could not check the playlist's looks for structural changes (${String(e.message).split('\n')[0]}); a fade that does not land will fail the render instead`); else throw e; }
 }
+const SCHEDULE = PLAYLIST ? playlistSchedule({ items: PLAYLIST.items.map((it, i) => ({ ...it, params: STOP_PARAMS[i] })), fps: FPS, preroll: PREROLL, frames: N, engine: playlistEngine }) : [];
+const PL_EVENTS = SCHEDULE.map((e) => ({ start: e.start, duration: e.duration_s, style: e.style, params: STOP_PARAMS[e.stop] }));
 const EXPORTER = exporterIdentity();
 const FFMPEG_VERSION = ffmpegVersion();   // this invocation's ffmpeg; in the run key, so a run is not resumed under another one
 const OSF = osFacts();

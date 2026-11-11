@@ -4,6 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import * as lib from './video-lib.mjs';
+import * as engine from '../komorebi-params.js';
+import { makeTransitions } from '../komorebi-transitions.js';
+import { restorePoint } from './parallel.mjs';
 
 const FPS = 60, PRE = 1800;
 const items = (n, dwell = 1, cross = 6) => Array.from({ length: n }, () => ({ dwell_s: dwell, crossfade_s: cross }));
@@ -39,6 +42,26 @@ test('playlistSchedule: a zero crossfade is a cut that still lands (the margin c
   const ev = lib.playlistSchedule({ items: items(2, 1, 0), fps: FPS, preroll: PRE, frames: 600 });
   assert.equal(ev[0].land - ev[0].start, lib.LAND_MARGIN);
 });
+
+for (const [style, change, scale] of [['fade', { foliage_density: 1.5 }, 2], ['fade', { exposure: 2 }, 1], ['morph', { foliage_density: 1.5 }, 1]]) {
+  test(`playlistSchedule: ${style} ${Object.keys(change)[0]} checkpoints match the engine clock and resume during the passage`, () => {
+    const a = { ...engine.DEFAULTS }, b = { ...a, ...change }, noop = () => {};
+    const hub = { params: { ...a }, trans: { dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
+      faithfulOn: () => false, warnCut: noop, regenSource: noop, resetPerf: noop, bake: noop, regenCanopy: noop,
+      rebuildAll: noop, motionActive: () => false, beginSceneFade: noop, stepSceneFade: noop, endSceneFade: noop };
+    const router = makeTransitions(hub), items = [{ params: a, dwell_s: 1, crossfade_s: 1 }, { params: b, dwell_s: 1, crossfade_s: 1, style }];
+    const schedule = lib.playlistSchedule({ items, fps: FPS, preroll: 0, frames: 600, engine });
+    const event = schedule[0];
+    router.transitionTo(b, { duration: event.duration_s, style: event.style });
+    for (let pump = event.start; pump <= event.land; pump++) router.tickTransition(lib.stepMsFor(FPS) / 1000);
+    assert.equal(hub.trans.active, false, 'a landing checkpoint must contain a settled engine');
+    assert.equal(event.land - event.start, 60 * scale + lib.LAND_MARGIN);
+    const mid = event.start + 60 * scale - 1;
+    assert.deepEqual(restorePoint({ from: mid, schedule, preroll: 0 }), { at: event.start - 1, stop: 0, replay: mid - event.start + 1 });
+    assert.deepEqual(restorePoint({ from: event.land, schedule, preroll: 0 }), { at: event.land, stop: 1, replay: 0 });
+    assert.equal(schedule[1].start, event.land + 60 + 1, 'the dwell follows the actual landing');
+  });
+}
 
 test('checkPlaylistTimes: arboretum\'s limits, and a whole number of frames', () => {
   lib.checkPlaylistTimes(items(2), FPS);
