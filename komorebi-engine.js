@@ -731,11 +731,16 @@ function createEngine(canvas, opts, driven=false){
     get authored(){ return session ? { ...authored } : { ...params }; },
     get session(){ return session; },
     captureLook,
-    setLookRequest(key,value){
+    setLookRequest(key,value,scope){
       if(!FIDELITY_KEYS.includes(key)) throw new Error(`Not a fidelity request: ${key}`);
       const look=readLook();
       if(value===undefined) delete look[key]; else look[key]=value;
-      setParams(look);
+      // With a rebuild scope the request lands in place, as any other knob does through apply(); without one, or mid-route, it swaps the whole look.
+      if(scope===undefined || trans.active) return setParams(look);
+      const next=resolveParams(look,session);
+      if(session) authored=authoredLook(look);
+      for(const k of FIDELITY_KEYS) params[k]=next[k];
+      return apply(scope);
     },
     setSession(settings,environment){
       const nextEnvironment=environment===undefined?sessionEnvironment:{...sessionEnvironment,...environment,maxTextureSize:MAX_TEX};

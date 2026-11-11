@@ -331,7 +331,7 @@ function buildPanel(){
       const lab=document.createElement('label'); lab.textContent=label;
       const inp=document.createElement('input'); inp.type='range'; inp.min=min; inp.max=max; inp.step=step; inp.value=params[key];
       const val=document.createElement('span'); val.className='val'; val.textContent=fmt(params[key]);
-      inp.addEventListener('input',()=>{ if(FIDELITY_KEYS.includes(key)){ stopPlay();eng.setLookRequest(key,parseFloat(inp.value));syncAllControls();chipSoon();return; } params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]); maybeClearSpecies(key);
+      inp.addEventListener('input',()=>{ if(FIDELITY_KEYS.includes(key)){ stopPlay();eng.setLookRequest(key,parseFloat(inp.value),scope);syncAllControls();chipSoon();return; } params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]); maybeClearSpecies(key);
         if(scope==='suntime') updateSunFromTime(); else applyScope(scope); });
       row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val,row}; row.dataset.tipKey=key;
     } else if(item[0]==='t'){
@@ -346,7 +346,7 @@ function buildPanel(){
       const lab=document.createElement('label'); lab.textContent=label;
       const sel=document.createElement('select');
       for(const [t,v] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; if(v===params[key]) o.selected=true; sel.appendChild(o); }
-      sel.addEventListener('change',()=>{ if(FIDELITY_KEYS.includes(key)){stopPlay();eng.setLookRequest(key,parseInt(sel.value,10));syncAllControls();chipSoon();return;} params[key]=str?sel.value:parseInt(sel.value,10); maybeClearSpecies(key); applyScope(scope); });
+      sel.addEventListener('change',()=>{ if(FIDELITY_KEYS.includes(key)){stopPlay();eng.setLookRequest(key,parseInt(sel.value,10),scope);syncAllControls();chipSoon();return;} params[key]=str?sel.value:parseInt(sel.value,10); maybeClearSpecies(key); applyScope(scope); });
       row.append(lab,sel); controlEls[key]={input:sel,row}; row.dataset.tipKey=key;
     } else if(item[0]==='species'){    // TREE_SPECIES: merge the chosen shape bundle OVER the current look (shape ⟂ scene), stamp the label, rebuild
       const [,label]=item; row.classList.add('select');
@@ -364,8 +364,8 @@ function buildPanel(){
       row.appendChild(b); row.dataset.tipKey=label;
     }
     if(FIDELITY_KEYS.includes(item[1])){
-      const key=item[1];
-      const inherit=mkBtn('use session',()=>{stopPlay();eng.setLookRequest(key,undefined);syncAllControls();chipSoon();});
+      const key=item[1],scope=item[0]==='s'?item[6]:item[4];
+      const inherit=mkBtn('use session',()=>{stopPlay();eng.setLookRequest(key,undefined,scope);syncAllControls();chipSoon();});
       inherit.dataset.inherit=key;
       row.append(inherit);
     }

@@ -7,7 +7,7 @@ afterEach(()=>{globalThis.window=originalWindow;globalThis.requestAnimationFrame
 function engine(session={},environment){
   let next;
   globalThis.window={devicePixelRatio:1};globalThis.requestAnimationFrame=fn=>{next=fn;};
-  const events={}, constants=new Map(),documentEvents={};
+  const events={}, constants=new Map(),documentEvents={},calls={};
   const ownerDocument={hidden:false,addEventListener:(key,fn)=>{documentEvents[key]=fn;},removeEventListener(){}};
   const gl=new Proxy({}, {get(_target,key){
     if(/^[A-Z_\d]+$/.test(key)){if(!constants.has(key))constants.set(key,constants.size+1);return constants.get(key);}
@@ -16,13 +16,13 @@ function engine(session={},environment){
     if(key==='getShaderParameter'||key==='getProgramParameter')return ()=>true;
     if(key==='checkFramebufferStatus')return ()=>gl.FRAMEBUFFER_COMPLETE;
     if(key==='getShaderInfoLog'||key==='getProgramInfoLog')return ()=>'';
-    return ()=>({});
+    return ()=>{calls[key]=(calls[key]??0)+1;return {};};
   }});
   const look={tree_count:1,branch_levels:1,branch_children:1,limb_count:1,leaves_per_cluster:2,foliage_density:0.1,layer_count:2,tex_resolution:1024,bake_resolution:768};
   const e=create({getContext:()=>gl,clientWidth:32,clientHeight:32,width:32,height:32,ownerDocument,
     addEventListener:(key,fn)=>{events[key]=fn;},removeEventListener(){}}, {params:look,environment,...(session===null?{}:{session})});
   let now=performance.now();
-  return {e,look,events,ownerDocument,documentEvents,step(dt=17){now+=dt;next(now);},land(){for(let i=0;i<300&&e.trans.active;i++){now+=17;next(now);}}};
+  return {e,look,events,calls,ownerDocument,documentEvents,step(dt=17){now+=dt;next(now);},land(){for(let i=0;i<300&&e.trans.active;i++){now+=17;next(now);}}};
 }
 
 test('real engine preserves playback preferences across hard load, playlist-style arrival and recovery',()=>{
@@ -49,6 +49,22 @@ test('settings during a transition wait for arrival; authored request survives t
   e.setLookRequest('sample_count',undefined);
   expect(e.authored).not.toHaveProperty('sample_count');
   expect(e.params.layer_count).toBe(2);
+  e.dispose();
+});
+
+test('a fidelity request with a row scope applies in place; without one it swaps the whole look',()=>{
+  const {e,calls}=engine();
+  const textures=()=>calls.createTexture??0,before=textures();
+  e.setLookRequest('fill_directions',8,'');
+  e.setLookRequest('sample_count',20,'source');
+  expect(textures()).toBe(before);
+  expect(e.authored).toMatchObject({fill_directions:8,sample_count:20});
+  expect(e.params).toMatchObject({fill_directions:8,sample_count:20});
+  e.setLookRequest('sample_count',undefined,'source');
+  expect(e.authored).not.toHaveProperty('sample_count');
+  expect(e.params.sample_count).toBe(e.session.ceilings.sample_count);
+  e.setLookRequest('fill_directions',12);
+  expect(textures()).toBeGreaterThan(before);
   e.dispose();
 });
 
