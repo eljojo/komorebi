@@ -438,6 +438,11 @@ export function parsePlaylistSpec(spec) {
 }
 // GET /api/playlists/<id>: { name, revision, items: [{ preset_id, version, name, dwell_s, crossfade_s, params }] } as this viewer may see them. An item this viewer cannot see
 // (`unavailable`) is refused, not skipped: a render that silently drops a look is a different piece. Messages are one line and carry neither token.
+// How an item's look arrives: 'morph' (the engine's own route, the default) or 'fade'.
+export const STYLES = ['morph', 'fade'];
+const styleFromServer = (v) => (v === 'fade' ? 'fade' : 'morph');   // arboretum's answer is read as the editor reads it: anything else is morph
+// The run key's block: what changes frames. `style` enters only for 'fade', so a morph playlist keeps the key it had before styles existed.
+export const playlistRunBlock = (pl, hashParams) => ({ id: pl.id, revision: pl.revision, items: pl.items.map((it) => ({ preset_id: it.preset_id, version: it.version, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, params_sha256: hashParams(it.params), ...(it.style === 'fade' ? { style: 'fade' } : {}) })) });
 export async function fetchArboretumPlaylist({ base = ARBORETUM_BASE, id, share = null, token = null, timeoutMs = 30000 }) {
   const secrets = [token, share, share && encodeURIComponent(share)].filter(Boolean);
   const say = (m) => { let t = String(m); for (const x of secrets) t = t.split(x).join('[redacted]'); return `arboretum playlist ${id}: ${t.replace(/\s+/g, ' ').trim().slice(0, 240)}`; };
@@ -464,18 +469,20 @@ export async function fetchArboretumPlaylist({ base = ARBORETUM_BASE, id, share 
   const items = body.items.map((it, i) => {
     if (it.unavailable) throw fail(`item ${i + 1} (preset ${it.preset_id}) is unavailable to this token; a render does not skip looks`, true);
     if (!it.params || typeof it.params !== 'object' || Array.isArray(it.params)) throw fail(`item ${i + 1} has no params`, false);
-    return { preset_id: it.preset_id, version: it.version ?? null, name: String(it.name ?? `preset ${it.preset_id}`), dwell_s: Number(it.dwell_s), crossfade_s: Number(it.crossfade_s), params: it.params };
+    return { preset_id: it.preset_id, version: it.version ?? null, name: String(it.name ?? `preset ${it.preset_id}`), dwell_s: Number(it.dwell_s), crossfade_s: Number(it.crossfade_s), style: styleFromServer(it.style), params: it.params };
   });
   return { id, name: String(body.name ?? `playlist ${id}`), revision: body.revision ?? null, items, requested: String(id) };
 }
-// Playlist items from a file: [{ name?, params, dwell_s?, crossfade_s? }] or { name?, items: [...] }. Defaults are arboretum's (dwell 30, crossfade 5).
+// Playlist items from a file: [{ name?, params, dwell_s?, crossfade_s?, style? }] or { name?, items: [...] }. Defaults are arboretum's (dwell 30, crossfade 5).
 export function playlistFromJson(json, fallbackName = 'playlist') {
   const list = Array.isArray(json) ? json : json?.items;
   if (!Array.isArray(list) || !list.length) throw new Error('a playlist file is a non-empty list of { params, dwell_s?, crossfade_s? }');
   const items = list.map((it, i) => {
     const params = it?.params ?? null;
     if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error(`playlist item ${i + 1} has no params`);
-    return { preset_id: null, version: null, name: String(it.name ?? `item ${i + 1}`), dwell_s: it.dwell_s ?? 30, crossfade_s: it.crossfade_s ?? 5, params };
+    const style = it.style ?? 'morph';
+    if (!STYLES.includes(style)) throw new Error(`playlist item ${i + 1}: style must be 'morph' or 'fade'`);
+    return { preset_id: null, version: null, name: String(it.name ?? `item ${i + 1}`), dwell_s: it.dwell_s ?? 30, crossfade_s: it.crossfade_s ?? 5, style, params };
   });
   return { id: null, name: String((!Array.isArray(json) && json?.name) || fallbackName), revision: null, items, requested: null };
 }
@@ -499,7 +506,7 @@ export function playlistSchedule({ items, fps, preroll, frames }) {
   for (let k = 1; cursor < end; k++) {
     const stop = k % items.length, it = items[stop];
     const start = cursor + 1, land = start + Math.round(it.crossfade_s * fps) + LAND_MARGIN;
-    events.push({ k, stop, start, land, duration_s: it.crossfade_s });
+    events.push({ k, stop, start, land, duration_s: it.crossfade_s, style: it.style === 'fade' ? 'fade' : 'morph' });
     cursor = land + Math.round(it.dwell_s * fps);
   }
   return events;

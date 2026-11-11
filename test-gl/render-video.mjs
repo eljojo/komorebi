@@ -15,7 +15,7 @@
 //                          komorebi_commit: a rename or a commit stamp on the same version moves no frame, so a resume refreshes them) and how (api_base, requested, head_resolved, ..).
 //   --playlist-json <f>    instead of ONE look, a PLAYLIST: the engine walks its looks with transitionTo, the way arboretum plays one (dwell, then a fade over the NEXT look's own crossfade, looping).
 //   --arboretum-playlist <id>[:<share_token>]   the same, the list and every item's params fetched from arboretum (ARBORETUM_TOKEN as above; an item the token cannot read refuses the run).
-//                          <f> is [{ name?, params, dwell_s?, crossfade_s? }] (defaults 30 s and 5 s). --seconds is the length of the video; the playlist repeats to fill it, and the last fade may be cut.
+//                          <f> is [{ name?, params, dwell_s?, crossfade_s?, style? }] (defaults 30 s, 5 s and 'morph'; style is 'morph' or 'fade', how that look arrives). --seconds is the length of the video; the playlist repeats to fill it, and the last fade may be cut.
 //                          The looks must share one grove (seed, branching, resolutions, scene mode): anything else is a cloud dissolve on twice the clock, not a morph, and is refused before the render.
 //                          A fade in flight is not restorable state, so a playlist's checkpoints are taken where each fade LANDS (ckpt/): a resume restores the last landing before the segment and replays
 //                          the frames in between unrecorded (at most one look's dwell and fade). No --encode-only. The playlist is in the run key (each item's params by hash), look.json is the
@@ -87,7 +87,7 @@ import { checkAgainstTiny, eventsUpTo, parseBlockSegments, parseJobs, restorePoi
 import { captureCanvasRun, encodeCanvasRun, hevcQuantizerConfig, installLinearDownscale } from './webcodecs.mjs';
 import {
   ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VAAPI_BITRATE, VAAPI_DEVICE, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, checkPlaylistTimes, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
-  diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, fetchArboretumPlaylist, ffmpegVersion, ffprobeJson, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, parsePlaylistSpec, pipeRequestTo, playlistFromJson, playlistSchedule, qualityReport,
+  diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, fetchArboretumPlaylist, ffmpegVersion, ffprobeJson, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, parsePlaylistSpec, pipeRequestTo, playlistFromJson, playlistRunBlock, playlistSchedule, qualityReport,
   redactArgv, runBaseline, runFfmpegAsync, runMeasure, scaleRate, sha256, sha256File, spawnFfmpeg, startServer, stepMsFor,
 } from './video-lib.mjs';
 
@@ -232,7 +232,7 @@ if (PLAYLIST_MODE) {
   }
   try { checkPlaylistTimes(pl.items, FPS); } catch (e) { die(e.message); }
   if (pl.items.length < 2) die('a playlist needs at least two looks to transition between');
-  const block = { id: pl.id, revision: pl.revision, items: pl.items.map((it) => ({ preset_id: it.preset_id, version: it.version, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, params_sha256: canonicalSha256(it.params) })) };
+  const block = playlistRunBlock(pl, canonicalSha256);
   PLAYLIST = { name: pl.name, items: pl.items, block,
     fetch: PL_SPEC ? { name: pl.name, page_url: `${ARBORETUM_BASE}/arboretum/l/${pl.id}`, api_base: ARB_BASE, requested: pl.requested, share_token_sha256_prefix: PL_ARB.share ? sha256(PL_ARB.share).slice(0, 8) : null, fetched_at: new Date().toISOString() } : null };
   lookParams = pl.items[0].params;
@@ -264,7 +264,7 @@ const finalParams = { ...lookParams, ...overrides, adaptive_motion: false, auto_
 const STOP_PARAMS = PLAYLIST ? PLAYLIST.items.map((it) => ({ ...it.params, ...overrides, adaptive_motion: false, auto_quality: false })) : [finalParams];
 // the playlist's timeline in absolute pumps (video-lib.mjs playlistSchedule); [] for a single look
 const SCHEDULE = PLAYLIST ? playlistSchedule({ items: PLAYLIST.items, fps: FPS, preroll: PREROLL, frames: N }) : [];
-const PL_EVENTS = SCHEDULE.map((e) => ({ start: e.start, duration: e.duration_s, params: STOP_PARAMS[e.stop] }));
+const PL_EVENTS = SCHEDULE.map((e) => ({ start: e.start, duration: e.duration_s, style: e.style, params: STOP_PARAMS[e.stop] }));
 const nonQuality = Object.keys(overrides).filter((k) => !QUALITY_KEYS.includes(k));
 if (nonQuality.length) console.warn(`render-video: WARNING — overrides outside the quality knobs: ${nonQuality.join(', ')} (the look is NOT as authored)`);
 
@@ -363,7 +363,7 @@ if (ENCODE_ONLY) {
   mkdirSync(P('seg'), { recursive: true });
   mkdirSync(P('ckpt'), { recursive: true });
   writeFileSync(P('look.json'), `${JSON.stringify(finalParams, null, 2)}\n`);
-  if (PLAYLIST) writeFileSync(P('playlist.json'), `${JSON.stringify({ name: PLAYLIST.name, items: PLAYLIST.items.map((it, i) => ({ name: it.name, preset_id: it.preset_id, version: it.version, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, params: STOP_PARAMS[i] })), timeline: SCHEDULE }, null, 2)}\n`);
+  if (PLAYLIST) writeFileSync(P('playlist.json'), `${JSON.stringify({ name: PLAYLIST.name, items: PLAYLIST.items.map((it, i) => ({ name: it.name, preset_id: it.preset_id, version: it.version, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, style: it.style, params: STOP_PARAMS[i] })), timeline: SCHEDULE }, null, 2)}\n`);
 }
 
 const PAGE_SHA = RK.body.exporter?.video_html_sha256;   // the page the key names (an older key without it: nothing to compare, the check then fails loudly)

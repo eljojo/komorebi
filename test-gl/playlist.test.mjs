@@ -12,7 +12,7 @@ test('playlistSchedule: the first look is there for its dwell, then each next lo
   const it = [{ dwell_s: 2, crossfade_s: 9 }, { dwell_s: 1, crossfade_s: 6 }, { dwell_s: 3, crossfade_s: 4 }];
   const ev = lib.playlistSchedule({ items: it, fps: FPS, preroll: PRE, frames: 60 * 60 });
   // look 0 for 2 s (pumps PRE+1..PRE+120), then the fade into look 1 starts BEFORE pump PRE+121 and lasts 6 s (look 1's crossfade)
-  assert.deepEqual(ev[0], { k: 1, stop: 1, start: PRE + 121, land: PRE + 121 + 360 + lib.LAND_MARGIN, duration_s: 6 });
+  assert.deepEqual(ev[0], { k: 1, stop: 1, start: PRE + 121, land: PRE + 121 + 360 + lib.LAND_MARGIN, duration_s: 6, style: 'morph' });
   // look 1's dwell (1 s) is counted from its landing; look 2 then fades in over 4 s
   assert.equal(ev[1].start, ev[0].land + 60 + 1);
   assert.equal(ev[1].land - ev[1].start, 240 + lib.LAND_MARGIN);
@@ -128,4 +128,30 @@ test('fetchArboretumPlaylist: 401 / 403 / 404 / 422 are refusals naming the play
 
 test('fetchArboretumPlaylist: the bearer token is never sent over plain http to another host', async () => {
   await assert.rejects(lib.fetchArboretumPlaylist({ base: 'http://example.com', id: 3, token: TOKEN }), (e) => /must be https/.test(e.message) && !e.message.includes(TOKEN));
+});
+
+// ---- an item's style: how its look arrives ('morph' by default, or 'fade') ----
+test('playlistSchedule: each event carries its item\'s style, morph when absent', () => {
+  const it = [{ dwell_s: 1, crossfade_s: 1 }, { dwell_s: 1, crossfade_s: 1, style: 'fade' }, { dwell_s: 1, crossfade_s: 1, style: 'morph' }];
+  const ev = lib.playlistSchedule({ items: it, fps: FPS, preroll: PRE, frames: 3600 });
+  assert.deepEqual(ev.slice(0, 3).map((e) => [e.stop, e.style]), [[1, 'fade'], [2, 'morph'], [0, 'morph']]);
+});
+
+test('playlistFromJson: an optional style per item, morph by default; anything but morph or fade is refused naming the item', () => {
+  const a = lib.playlistFromJson([{ params: {} }, { params: {}, style: 'fade' }, { params: {}, style: 'morph' }]);
+  assert.deepEqual(a.items.map((i) => i.style), ['morph', 'fade', 'morph']);
+  assert.throws(() => lib.playlistFromJson([{ params: {} }, { params: {}, style: 'wipe' }]), /item 2: style must be 'morph' or 'fade'/);
+});
+
+test('fetchArboretumPlaylist: an item\'s style is read, and an unknown or absent one is morph', async () => {
+  const m = await mock({ id: 3, name: 'x', revision: 1, items: [item(4, { style: 'fade' }), item(5), item(6, { style: 'wipe' })] });
+  try {
+    const pl = await lib.fetchArboretumPlaylist({ base: m.base, id: 3 });
+    assert.deepEqual(pl.items.map((i) => i.style), ['fade', 'morph', 'morph']);
+  } finally { await m.close(); }
+});
+
+test('playlistRunBlock: the run key block holds each item\'s style, and a morph playlist hashes as it did before styles existed', () => {
+  assert.deepEqual(lib.playlistRunBlock({ id: null, revision: null, items: [{ preset_id: null, version: null, dwell_s: 1, crossfade_s: 2, style: 'morph' }] }, () => 'h'), { id: null, revision: null, items: [{ preset_id: null, version: null, dwell_s: 1, crossfade_s: 2, params_sha256: 'h' }] });
+  assert.deepEqual(lib.playlistRunBlock({ id: null, revision: null, items: [{ preset_id: null, version: null, dwell_s: 1, crossfade_s: 2, style: 'fade' }] }, () => 'h'), { id: null, revision: null, items: [{ preset_id: null, version: null, dwell_s: 1, crossfade_s: 2, params_sha256: 'h', style: 'fade' }] });
 });

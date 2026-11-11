@@ -154,3 +154,10 @@ test("commit() is null for anything arboretum would refuse as a commit, and when
   for (const a of [{ body: { commit: "not hex" } }, { body: {} }, { body: { commit: 7 } }, { status: 200, text: "<html>" }, new TypeError("offline")])
     expect(await api(ORIGIN, fake(a).fetchImpl).commit(), JSON.stringify(a)).toBeNull();
 });
+
+test("playlist writes send each item exactly as given, so a 'fade' style rides along and a morph item has no style key", async () => {
+  const f = fake({ body: {} });
+  const items = [{ preset_id: 1, dwell_s: 10, crossfade_s: 2, style: "fade" }, { preset_id: 2, dwell_s: 10, crossfade_s: 2 }];
+  await api(ORIGIN, f.fetchImpl).putItems(7, items, 4);
+  expect(JSON.parse(f.calls[0].init.body).items).toEqual(items);
+});

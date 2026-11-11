@@ -113,10 +113,15 @@ export function playlists(state, mine = [], me = null) {
 // Whether the active playlist plays: only an arboretum playlist carries dwell times (design §3.6).
 export const plays = (state, active) => cloudItems(state, active).length > 0;
 
-// The dwell and crossfade of a cloud entry; all looks has none.
+// How an item's look arrives: 'fade' only when the item says so; absent or anything else is 'morph' (the engine's own route).
+export const styleOf = (it) => (it?.style === "fade" ? "fade" : "morph");
+// A stored/sent item carries `style` only when it is 'fade', so a server that does not know the key keeps accepting playlists.
+const styleKey = (it) => (styleOf(it) === "fade" ? { style: "fade" } : {});
+
+// The dwell, crossfade and style of a cloud entry; all looks has none.
 export function timing(state, active, value) {
   const it = cloudId(active) === null ? undefined : cloudItem(state, active, value);
-  return it ? { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s } : null;
+  return it ? { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, style: styleOf(it) } : null;
 }
 
 // The EXPERIMENTAL looks are hidden unless `showBeta` — but the one you are on (`keep`) always stays listed.
@@ -186,8 +191,10 @@ export function cachePlaylist(state, api) {
     k: api.k ?? state.playlists[api.id]?.k ?? null,
     fetched_at: Date.now(),
     unavailable: api.unavailable ?? gone,
-    items: api.items.filter((i) => !i.unavailable).map(({ preset_id, version, owner, name, dwell_s, crossfade_s, params }) =>
-      ({ preset_id, version, owner, name, dwell_s, crossfade_s, params })),
+    items: api.items.filter((i) => !i.unavailable).map((i) => {
+      const { preset_id, version, owner, name, dwell_s, crossfade_s, params } = i;
+      return { preset_id, version, owner, name, dwell_s, crossfade_s, ...styleKey(i), params };
+    }),
   };
   return { ...state, playlists: { ...state.playlists, [api.id]: entry } };
 }
@@ -291,11 +298,11 @@ function planFrom(params, known, name, me, commit, cam) {
 // `remove_preset` takes out the first playable item of that preset (a chip, which knows the preset and not a place).
 // change: { kind: 'append', preset_id } | { kind: 'remove', at } | { kind: 'replace', at, preset_id } | { kind: 'remove_preset', preset_id }
 // A captured target follows a place across reorders. Identical duplicates retain their occurrence only while their count agrees.
-const matchesTarget = (it, target) => !it.unavailable && it.preset_id === target.preset_id && it.dwell_s === target.dwell_s && it.crossfade_s === target.crossfade_s;
+const matchesTarget = (it, target) => !it.unavailable && it.preset_id === target.preset_id && it.dwell_s === target.dwell_s && it.crossfade_s === target.crossfade_s && styleOf(it) === styleOf(target);
 export function itemTarget(items, at) {
   const it = items[at];
   if (!it || it.preset_id === undefined) return null;
-  const target = { preset_id: it.preset_id, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s };
+  const target = { preset_id: it.preset_id, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, ...styleKey(it) };
   return { ...target, occurrence: items.slice(0, at).filter((i) => matchesTarget(i, target)).length, count: items.filter((i) => matchesTarget(i, target)).length };
 }
 function targetAt(items, target) {
@@ -312,7 +319,7 @@ export function itemsAfter(fresh, change) {
   const out = [];
   let playable = 0, removed = false;
   for (const it of fresh) {
-    const times = { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s };
+    const times = { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, ...styleKey(it) };
     if (change.kind === "remove_preset") {
       if (!it.unavailable && !removed && it.preset_id === change.preset_id) removed = true;
       else out.push({ preset_id: it.preset_id, ...times });
@@ -411,7 +418,7 @@ export function linkPlaylist(state, view, k) {
 }
 
 // ---- playing (design §3.6) ----------------------------------------------------------------------------------------
-// A cloud playlist plays: each look is held for its `dwell_s`, then the next fades in over its own `crossfade_s`.
+// A cloud playlist plays: each look is held for its `dwell_s`, then the next arrives over its own `crossfade_s`, by its own `style` ('morph' or 'fade'; `timing` hands both to the editor's step).
 // The dwell starts when a look has finished fading in, so a long crossfade never eats the time a look is meant to be
 // seen (José's call; arboretum's own player does the same). The look play starts on is simply there: no fade in.
 // The editor owns the engine: `advance` is its step to the next look; it calls `leaving` as that step begins and

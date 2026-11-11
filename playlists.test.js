@@ -2,7 +2,7 @@
 import { test, expect, beforeEach } from "bun:test";
 import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted,
-  uploadPlan, itemsAfter, playlists, plays, timing, starValue, starName, entryName,
+  uploadPlan, itemsAfter, itemTarget, playlists, plays, timing, starValue, starName, entryName,
   fromEntry, onlineId, placeChange, sameLook, lookState, playlistChips,
   emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, isFolder, fromVersion, linkPlaylist, makePlayer } from "./playlists.js";
 import * as builtins from "./presets.js";
@@ -272,7 +272,7 @@ test("plays: only a cached cloud playlist with something in it carries dwell tim
 
 test("timing is the dwell and crossfade of a cloud item; On this browser has none", () => {
   const s = cloud([{ ...item("one"), dwell_s: 12, crossfade_s: 3 }]);
-  expect(timing(s, "arb:7", "0")).toEqual({ dwell_s: 12, crossfade_s: 3 });
+  expect(timing(s, "arb:7", "0")).toEqual({ dwell_s: 12, crossfade_s: 3, style: "morph" });
   expect(timing(s, "arb:7", "4")).toBeNull();
   expect(timing(s, "local", "afternoon 7")).toBeNull();
 });
@@ -1207,4 +1207,41 @@ test("lookState: a waiting save is ⇡ waiting to go up, and the title says when
   expect(lookState(v, {}, "arb:unc", "1", { ...preset(5, "e").params }, "jo", { offline: true }).text).toBe("offline copy · 2026-10-10");
   expect(lookState(v, {}, "arb:unc", "1", preset(5, "e").params, "jo", { offline: true, incomplete: true }).title).toContain("offline copy incomplete");
   expect(lookState(v, {}, "arb:unc", "1", preset(5, "e").params, "jo").title).not.toContain("incomplete");
+});
+
+// ---- an item's style: how its look arrives ('morph' by default, or 'fade') ----
+test("timing carries an item's style: 'fade' only when the item says so, anything else is 'morph'", () => {
+  const s = cloud([{ ...item("a"), style: "fade" }, item("b"), { ...item("c"), style: "wipe" }]);
+  expect(timing(s, "arb:7", "0").style).toBe("fade");
+  expect(timing(s, "arb:7", "1").style).toBe("morph");
+  expect(timing(s, "arb:7", "2").style).toBe("morph");
+  expect(timing(s, "local", "afternoon 7")).toBeNull();
+});
+
+test("cachePlaylist and linkPlaylist keep a fade style, and cache nothing for a morph item", () => {
+  const api = apiList({ items: [{ ...apiItem(1, "one"), style: "fade" }, { ...apiItem(2, "two"), style: "bogus" }] });
+  const s = cachePlaylist(EMPTY, api);
+  expect(s.playlists[7].items[0].style).toBe("fade");
+  expect("style" in s.playlists[7].items[1]).toBe(false);
+  expect(linkPlaylist(EMPTY, api, "k").state.playlists[7].items[0].style).toBe("fade");
+  expect(mirrorPlaylist(emptyMirror(), api).playlists[0].items[0].style).toBe("fade");
+});
+
+test("itemsAfter sends a fade style back on every kept item and replaced place, and no style key for a morph", () => {
+  const list = () => [{ ...fresh()[0], style: "fade" }, { ...fresh()[1], style: "fade" }, fresh()[2]];
+  expect(itemsAfter(list(), { kind: "append", preset_id: 3 })).toEqual([
+    { preset_id: 1, dwell_s: 10, crossfade_s: 2, style: "fade" },
+    { preset_id: 9, dwell_s: 40, crossfade_s: 7, style: "fade" },
+    { preset_id: 2, dwell_s: 20, crossfade_s: 3 },
+    { preset_id: 3 },
+  ]);
+  expect(itemsAfter(list(), { kind: "replace", at: 0, preset_id: 5 })[0]).toEqual({ preset_id: 5, dwell_s: 10, crossfade_s: 2, style: "fade" });
+  expect(itemsAfter(list(), { kind: "remove_preset", preset_id: 2 })).toEqual([
+    { preset_id: 1, dwell_s: 10, crossfade_s: 2, style: "fade" }, { preset_id: 9, dwell_s: 40, crossfade_s: 7, style: "fade" }]);
+});
+
+test("itemTarget tells two items of one preset apart by style", () => {
+  const list = [{ ...fresh()[0], style: "fade" }, fresh()[0]];
+  expect(itemTarget(list, 1).count).toBe(1);
+  expect(itemTarget(list, 0).style).toBe("fade");
 });

@@ -177,7 +177,7 @@ function forceGovernorsOff(params) {
 // pumps whose state is to be handed back (`snapAt`: the landings, where a fade is over and the engine is at rest on its look; a fade in flight is not restorable state).
 // transitionTo reads the same virtual clock as everything else, so a fade is a function of the pump index and nothing else.
 const evMap = (events) => new Map((events || []).map((e) => [e.start, e]));
-const startEvent = (e, eng = S.eng) => eng.transitionTo(forceGovernorsOff({ ...e.params }), { duration: e.duration });
+const startEvent = (e, eng = S.eng) => eng.transitionTo(forceGovernorsOff({ ...e.params }), { duration: e.duration, style: e.style });
 const landing = (n, eng = S.eng) => {
   if (eng.trans.active) throw new Error(`pump ${n}: the fade is still running where it should have landed. A fade between looks that differ in structure (seed, branching, resolutions, scene mode) takes the cloud-dissolve route on twice the clock, or a grove too big to morph falls back to it: keep a playlist's looks to one grove`);
   return { n, snapshot: snapshotOf(eng) };
