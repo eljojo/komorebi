@@ -177,7 +177,7 @@ try {
   check('experimental looks hidden by default', n0 === Object.keys(PRESETS).length - EXPERIMENTAL.length, `built-ins listed: ${n0}`);
 
   // the playful sidebar's rows, top to bottom: the six dials, the caption, the actions, "more" (closed), then the list and the experimental toggle
-  const playRows = await page.$eval('#play', (el) => [...el.children].slice(2).map((c) => c.classList.contains('try') ? c.querySelector('.name').textContent : c.classList.contains('cap') ? 'cap' : c.classList.contains('acts') ? 'acts:' + [...c.querySelectorAll('button')].map((b) => b.textContent).join('|') : c.tagName === 'DETAILS' ? 'more' : c.querySelector('select') ? 'select' : c.querySelector('label')?.textContent.replace(/ \(\+\d+\)$/, '')));
+  const playRows = await page.$eval('#play', (el) => [...el.children].slice(2).map((c) => c.classList.contains('try') ? c.querySelector('.name').textContent : c.classList.contains('cap') ? 'cap' : c.classList.contains('acts') ? `acts:${[...c.querySelectorAll('button')].map((b) => b.textContent).join('|')}` : c.tagName === 'DETAILS' ? 'more' : c.querySelector('select') ? 'select' : c.querySelector('label')?.textContent.replace(/ \(\+\d+\)$/, '')));
   check('the playful sidebar runs the six dials, the caption, the actions, more, the look list and the experimental toggle (no headings)',
     playRows.join() === 'focus,cloudiness,sun,season,density,time,cap,acts:\u21ba as it was|\u2684 new leaves,more,select,experimental looks' && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
   const moreRows = await page.$eval('#play details.more', (d) => [...d.children].slice(1).map((c) => c.classList.contains('pad') ? 'pad' : c.querySelector('label').textContent));
@@ -1595,7 +1595,7 @@ try {
     await ctxT.close();
   }
 } catch (e) {
-  check('smoke run', false, e.message.split('\n')[0] + ' @ ' + (String(e.stack).match(/editor\.mjs:\d+/g) || []).join(' '));
+  check('smoke run', false, `${e.message.split('\n')[0]} @ ${(String(e.stack).match(/editor\.mjs:\d+/g) || []).join(' ')}`);
 }
 
 if (errors.length) { console.log('PAGE ERRORS:'); for (const e of errors) console.log(`  ${e}`); }

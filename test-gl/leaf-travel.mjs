@@ -94,7 +94,7 @@ try{
         const target=fresh(to),source=fresh(from);
         open(from);e.transitionTo(to,{duration:1});window.__clock.pump(stamp);
         const start=diff(source,last),series=[rim()];
-        while(e.trans.active)pump(),series.push(rim());
+        while(e.trans.active){pump();series.push(rim());}
         pump();const landed=diff(target,last);
         // Each frame's step against the median of its ±5 neighbours: a boundary crossing the rim is one large step among small ones.
         const steps=series.slice(1).map((v,i)=>v-series[i]),size=steps.map(Math.abs);
@@ -146,14 +146,14 @@ try{
     }
     const out={};
     for(const [from,to,label] of [[F1,F2,'F1 → F2'],[F2,F1,'F2 → F1']]){
-      const r=out[label]=route(from,to,label);
+      const r=route(from,to,label);out[label]=r;
       need(r.start===0,`${label}: zero-time redraw moved the outgoing look (${r.start})`);need(r.landed===0,`${label}: landed ${r.landed}`);
       need(r.spikes.length===0,`${label}: handoff spikes ${JSON.stringify(r.spikes)}`);
     }
     // Ends of a different quality: the moving cast takes the incoming end's sample count and bake size throughout.
     const Q2={...F2,sample_count:F1.sample_count*2,bake_resolution:F1.bake_resolution*2};
     for(const [from,to,label] of [[F1,Q2,'F1 → F2 at 2× samples and bake'],[Q2,F1,'F2 at 2× samples and bake → F1']]){
-      const r=out[label]=route(from,to,label);
+      const r=route(from,to,label);out[label]=r;
       need(r.start===0&&r.landed===0,`${label}: ends ${r.start}/${r.landed}`);need(r.spikes.length===0,`${label}: handoff spikes ${JSON.stringify(r.spikes)}`);
     }
     // The background the route moves against: the settled ends in wind.
@@ -174,8 +174,8 @@ try{
     {open(F1);let first=0,third=0;e.transitionTo(F2,{duration:1,onEnd:()=>first++});pump(35);e.transitionTo(F3,{duration:.5,onEnd:()=>third++});
       need(e.trans.leafTravel,'a third selection broke the moving route');let n=0;while(e.trans.active&&n++<400)pump();pump();
       out.third={first,third,landed:diff(n3,last)};need(first===0&&third===1&&diff(n3,last)===0,`third look: ${JSON.stringify(out.third)}`);}
-    {open(F1);e.transitionTo(F2,{duration:1});pump(35);e.setParams(F1);pump();out.setParams=diff(n1,last);need(out.setParams===0,'hard replacement');}
-    {open(F1);e.transitionTo(F2,{duration:1});pump(35);e.dispose();e=null;c.remove();c=null;open(F1);out.dispose=diff(n1,last);need(out.dispose===0,'dispose');}
+    open(F1);e.transitionTo(F2,{duration:1});pump(35);e.setParams(F1);pump();out.setParams=diff(n1,last);need(out.setParams===0,'hard replacement');
+    open(F1);e.transitionTo(F2,{duration:1});pump(35);e.dispose();e=null;c.remove();c=null;open(F1);out.dispose=diff(n1,last);need(out.dispose===0,'dispose');
     const n2=fresh(F2);open(F1);e.transitionTo(F2,{duration:1});pump(35);
     window.__floss={e,stamp,step,ext:e.gl.getExtension('WEBGL_lose_context'),n2};
     return out;

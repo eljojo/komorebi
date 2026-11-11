@@ -263,7 +263,7 @@ test('runPool with blocks: concurrency never exceeds jobs; each segment runs onc
     const r = await runPool({ segments: Array.from({ length: 20 }, (_, i) => i), jobs, maxAttempts: 3, maxBlock: 4, runSegment: async ({ segment }) => { active++; max = Math.max(max, active); seen.push(segment); await tick(1); active--; } });
     assert.ok(max <= jobs && max >= Math.min(jobs, 2) - 1, `jobs ${jobs}: ${max}`);
     assert.deepEqual([...seen].sort((a, b) => a - b), Array.from({ length: 20 }, (_, i) => i));
-    assert.deepEqual(r.blocks.map((b) => b.block).flat(), Array.from({ length: 20 }, (_, i) => i), 'claims are in segment order');
+    assert.deepEqual(r.blocks.flatMap((b) => b.block), Array.from({ length: 20 }, (_, i) => i), 'claims are in segment order');
   }
   const r = await runPool({ segments: Array.from({ length: 20 }, (_, i) => i), jobs: 3, maxAttempts: 3, maxBlock: 4, runSegment: async () => tick(1) });
   assert.deepEqual(r.blocks.slice(0, 3).map((b) => b.worker), [1, 2, 3]);
@@ -456,11 +456,10 @@ function makeRun(root, name, over = {}) {
   mkdirSync(join(dir, 'seg'), { recursive: true }); mkdirSync(join(dir, 'ckpt'));
   writeFileSync(join(dir, 'run-key.json'), JSON.stringify({ key: o.key, body: { fps: 30, ...(o.pipeline === 'master' ? {} : { pipeline: o.pipeline }) } }));
   writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ run_key: o.manifestKey ?? o.key }));
-  let first = 0, n = 0;
+  let first = 0;
   o.segs.forEach((s, i) => {
     writeFileSync(join(dir, 'seg', `seg_${String(i).padStart(5, '0')}.json`), JSON.stringify({ segment: i, first_frame: first, frames: s.frames, packets: s.frames, file_sha256: s.sha ?? `sha${i}`, hashes_sha256: s.hashes.join('|'), render_wall_ms: Math.random() }));
     first += s.frames;
-    n += s.hashes.length;
   });
   if (o.pipeline === 'master') writeFileSync(join(dir, 'hashes.txt'), `${o.segs.flatMap((s) => s.hashes).map((h, i) => `${i + 1} ${h}`).join('\n')}\n`);
   for (const [at, state] of Object.entries(o.ckpts)) writeFileSync(join(dir, 'ckpt', `ckpt_${String(at).padStart(9, '0')}.json`), JSON.stringify({ at: Number(at), state, ...(o.tiny ? { tiny: true } : {}) }));
