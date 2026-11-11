@@ -320,6 +320,13 @@ export function makeTransitions(hub){
       params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,w, k==='drift_phase'?TAU:360) : lerp(a,b,w); }
     if(trans.iris) trans.irisOpacity = irisStep(trans.iris, e, params);
     // Same receiver at both ends: the dapples travel straight from one end's level to the other's (beamExposure).
+    // Leaf travel shows one field of dapples in a colour between the two looks. A per-channel tween between two hues has no
+    // channel as bright as either end's, and a steep contrast then clamps every partial shadow to black, leaving round holes.
+    // The hue still tweens; the ground's brightest channel moves straight from one end's to the other's.
+    if(trans.leafTravel){
+      const peak=p=>Math.max(p.ground_r,p.ground_g,p.ground_b), now=peak(params);
+      if(now>0){ const s=lerp(peak(trans.from),peak(trans.to),e)/now; params.ground_r*=s; params.ground_g*=s; params.ground_b*=s; }
+    }
     { const cam=cameraFor(trans.from); if(cam===cameraFor(trans.to)) params.exposure=beamExposure(cam,trans.from,trans.to,e,params); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove
     let rebuilt = false, wake = null;

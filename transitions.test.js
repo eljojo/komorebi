@@ -443,6 +443,23 @@ const faithfulPairs = [{ layer_count: 4, foliage_density: 2.4, tone_map: 0 },
                        { seed: 783609357, leader_strength: 0.55, leaf_shape: "maple", foliage_density: 1 }];
 const faithfulFrom = { ...DEFAULTS, faithful_canopy: true, layer_count: 3, foliage_density: 0.4, tone_map: 2 };
 
+test("leaf travel carries the ground's brightest channel straight between two hues, so a steep contrast keeps its midtones", () => {
+  const green = { ground_r: 0.41, ground_g: 0.96, ground_b: 0.21 }, blue = { ground_r: 0.33, ground_g: 0.22, ground_b: 1 };
+  const r = transitionRig({ ...faithfulFrom, ...green }), target = { ...faithfulFrom, ...faithfulPairs[0], ...blue };
+  Object.assign(r.hub, { beginLeafTravel() {}, stepLeafTravel() {}, finishLeafTravel: () => null, endLeafTravel() {} });
+  r.transitionTo(target, { duration: 1 });
+  expect(r.hub.trans.leafTravel).toBe(true);
+  let lowest = Infinity;
+  while (r.hub.trans.active) {
+    r.tickTransition(1 / 60);
+    const peak = Math.max(r.params.ground_r, r.params.ground_g, r.params.ground_b);
+    lowest = Math.min(lowest, peak);
+    for (const k of ["ground_r", "ground_g", "ground_b"]) expect(r.params[k]).toBeLessThanOrEqual(1);
+  }
+  expect(lowest).toBeGreaterThanOrEqual(0.96 - 1e-9);   // a plain per-channel tween dips to 0.61 midway
+  for (const k of ["ground_r", "ground_g", "ground_b"]) expect(r.params[k]).toBe(blue[k]);
+});
+
 test("two faithful overhead groves that differ structurally travel their leaves, with no bloom and no scene dissolve", () => {
   for (const change of faithfulPairs) {
     const r = transitionRig(faithfulFrom), target = { ...faithfulFrom, ...change };
