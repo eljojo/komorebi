@@ -584,7 +584,7 @@ try {
   });
   check('zen + button clear of the stepper', !overlap);
   const rowOrder = await page.$eval('#strip .preset', (r) => [...r.children].map((c) => c.classList.contains('name') ? 'name' : c.classList.contains('more') ? 'plus' : c.textContent).join(' '));
-  check('zen arrows sit together before the title', rowOrder === '\u2039 \u203a name plus', rowOrder);
+  check('zen arrows sit together before the title, with Settings beside more', rowOrder === '\u2039 \u203a name plus settings', rowOrder);
 
   // desktop zen: one horizontal bar, shown by cursor proximity
   const wide = await page.$eval('#strip', (e) => e.classList.contains('wide') && getComputedStyle(e).display === 'flex');
@@ -1069,6 +1069,8 @@ try {
     const value4 = (i) => dev4((n) => document.querySelectorAll('#dev select')[n].value, i);
     const selectedText4 = (i) => dev4((n) => { const s = document.querySelectorAll('#dev select')[n]; return s.selectedOptions[0]?.textContent ?? ''; }, i);
     const click4 = (sel) => dev4((s) => document.querySelector(s).click(), sel);
+    const openSettings4=()=>click4('#dev [data-open-settings]');
+    const closeSettings4=()=>click4('#sessionSettings > button');
     const btn4 = (text) => dev4((t) => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent === t).click(), text);
     const shown4 = (sel) => dev4((s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && !e.closest('[hidden]'); }, sel);
     const text4 = (sel) => dev4((s) => document.querySelector(s)?.textContent ?? null, sel);
@@ -1107,11 +1109,13 @@ try {
     await page4.goto(`http://127.0.0.1:${port}/editor/index.html`, { waitUntil: 'load' });
     await openAdvanced4();
     await waitCall(/^GET \/api\/me$/);
-    await until(() => shown4('#dev .arb-cta'));
+    await openSettings4();
+    await until(() => shown4('#sessionSettings .arb-cta'));
     check('in the playful sidebar and the zen strip, arboretum is asked nothing but /api/health (and /api/me once the advanced panel opens)', seen.every((c) => c.path === '/api/health' || c.path === '/api/me'), seen.map((c) => c.path).join());
     check('signed out it is local only: all looks lists the two ★ looks, and there is no notice, no chips, no +, no folders',
       (await opts4(1)).join() === 'all looks' && (await opts4(0)).includes('★ local one') && (await opts4(0)).includes('★ local two') && !(await moveBox4())
-      && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row')) && (await text4('#dev .arb-who')) === '' && (await text4('#dev .arb-cta')) === 'keep your looks in arboretum ↗');
+      && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row')) && (await text4('#sessionSettings .arb-who')) === '' && (await text4('#sessionSettings .arb-cta')) === 'keep your looks in arboretum ↗');
+    await closeSettings4();
     check('the look has its chip: a built-in, unchanged', await chipIs4('built-in'), await chip4());
     await pick4(0, 'local one');
     check('and a ★ is "★ saved here"', await chipIs4('★ saved here'), await chip4());
@@ -1119,16 +1123,18 @@ try {
     const preS = await save4('local three');
     check('a save signed out is a ★ here, and asks arboretum nothing', preS === 'local one' && (await stars4()).includes('local three') && calls(/^POST /).length === 0 && seen.every((c) => c.path === '/api/health' || c.path === '/api/me'), JSON.stringify(await stars4()));
     await pick4(0, 'local three'); await btn4('delete');
-    const [popup] = await Promise.all([ctx4.waitForEvent('page'), click4('#dev .arb-cta')]);
+    await openSettings4();
+    const [popup] = await Promise.all([ctx4.waitForEvent('page'), click4('#sessionSettings .arb-cta')]);
     await popup.waitForURL('**/arboretum/login').catch(() => {});
     check('the sign-in button opens arboretum\'s /arboretum/login in a new tab', popup.url() === `http://127.0.0.1:${port}/arboretum/login`, popup.url());
     await popup.close();
+    await closeSettings4();
 
     // SIGNED IN: the first check offers to move the ★ looks in, and mirrors the cloud
     server.signedIn = true;
     await focus4();
-    await until(async () => (await text4('#dev .arb-who')) === 'arboretum · jo' && (await moveBox4()) !== null);
-    check('signed in, the line reads "arboretum · jo" and a notice offers to move the 2 ★ looks, private', (await text4('#dev .arb-who')) === 'arboretum · jo' && JSON.stringify(await moveBox4()) === JSON.stringify({ text: "move your 2 looks into arboretum? they'll be private", buttons: ['move', 'not now'] }), JSON.stringify(await moveBox4()));
+    await until(async () => (await text4('#sessionSettings .arb-who')) === 'arboretum · jo' && (await moveBox4()) !== null);
+    check('signed in, Settings reads "arboretum · jo" and a notice offers to move the 2 ★ looks, private', (await text4('#sessionSettings .arb-who')) === 'arboretum · jo' && JSON.stringify(await moveBox4()) === JSON.stringify({ text: "move your 2 looks into arboretum? they'll be private", buttons: ['move', 'not now'] }), JSON.stringify(await moveBox4()));
     check('the lists are uncategorized, your folders in arboretum\'s order, the built-ins, and on this browser (the ★ looks are not moved yet)', (await opts4(1)).join() === 'uncategorized,morning,evening,built-ins,on this browser', (await opts4(1)).join());
     check('and no all looks, and no ☁ rows', !(await opts4(1)).includes('all looks') && (await opts4(0)).every((t) => !t.includes('☁')), (await opts4(0)).join());
     check('the mirror holds what is mine (dusk, dawn) and both playlists, fetched by version: each preset once', JSON.stringify((await mirror4()).order) === '[21,5]' && (await mirror4()).playlists.map((l) => l.id).join() === '8,7' && calls(/^GET \/api\/presets\/(21|5)$/).length === 2 && calls(/^GET \/api\/presets\/6$/).length === 0, JSON.stringify(await mirror4()).slice(0, 160));
@@ -1306,8 +1312,10 @@ try {
     // SIGNED OUT AGAIN: the mirror is not shown, saves are local ★s; signing back in resumes
     server.signedIn = false;
     await focus4();
-    await until(() => shown4('#dev .arb-cta'));
+    await openSettings4();
+    await until(() => shown4('#sessionSettings .arb-cta'));
     check('a session that has ended brings the sign-in line back; the lists are all looks alone — the mirror is kept but not shown', (await opts4(1)).join() === 'all looks' && (await mirror4()).order.length > 2 && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button')), `${(await opts4(1)).join()} ${(await mirror4()).order.length}`);
+    await closeSettings4();
     const idle2 = seen.length, posts2 = calls(POSTS).length;
     await pick4(0, 'afternoon 7');
     await slider4(0.66);
@@ -1557,8 +1565,8 @@ try {
       tabs: [...el.querySelectorAll('.tabs button')].map((b) => b.textContent).join(),
       presetShown: getComputedStyle(el.querySelector('.preset')).display !== 'none',
     }));
-    check('the touch strip is one dial at a time: a caption, five dials (focus out front), the tab row, no preset row',
-      touchStrip.one && touchStrip.cap && touchStrip.dials === 'focus:in,cloudiness:out,sun:out,season:out,time:out' && touchStrip.tabs === 'focus,clouds,sun,season,time,\u21ba,\uff0b' && !touchStrip.presetShown, JSON.stringify(touchStrip));
+    check('the touch strip is one dial at a time, with Settings in its tab row and no preset row',
+      touchStrip.one && touchStrip.cap && touchStrip.dials === 'focus:in,cloudiness:out,sun:out,season:out,time:out' && touchStrip.tabs === 'focus,clouds,sun,season,time,\u21ba,\uff0b,settings' && !touchStrip.presetShown, JSON.stringify(touchStrip));
     await pgT.evaluate(() => [...document.querySelectorAll('#strip .tabs button')].find((b) => b.textContent === 'clouds').click());
     const afterTab = await pgT.$eval('#strip', (el) => [...el.querySelectorAll('.ctl.try')].filter((r) => !r.classList.contains('out')).map((r) => r.querySelector('.name').textContent).join());
     check('a tab shows its dial', afterTab === 'cloudiness', afterTab);
