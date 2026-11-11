@@ -2,7 +2,7 @@
 
 *Each route between looks: which pairs it joins, the gate that admits a pair, how long it takes, what it promises, and what holds it.*
 
-The model of these routes is [`../model/transitions.md`](../model/transitions.md). The parameter classes that decide between them (MORPH, CANOPY, SEASON, TOPO, MODE) are [`gates-and-rungs.md`](gates-and-rungs.md). Every route is entered through one engine call, given the target look and the driver's duration *D*; a look never stores a duration. **Why it matters:** a transition that cuts, pops or floods breaks the calm the piece exists to hold, and a gate that admits a pair it cannot honour produces exactly that.
+The model of these routes is [`../model/transitions.md`](../model/transitions.md). The parameter classes that decide between them (MORPH, CANOPY, SEASON, TOPO, MODE) are [`gates-and-rungs.md`](gates-and-rungs.md). Every route is entered through one engine call, given the target look, the driver's duration *D* and, optionally, the driver's style (`fade`, or `morph`, the same as none); a look never stores a duration or a style. A route's gate below is the gate when no fade is asked for; a fade asked for takes the scene dissolve for any pair but a live morph's. **Why it matters:** a transition that cuts, pops or floods breaks the calm the piece exists to hold, and a gate that admits a pair it cannot honour produces exactly that.
 
 The checks that hold each route are listed in [`../implementation.md`](../implementation.md#the-crosswalk). A route's gate is every condition listed; a pair that fails any of them takes the next route that admits it, ending at the cloud dissolve. "Budget" means the live-morph leaf-count budget, measured at the busier end.
 
@@ -19,7 +19,7 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 
 | | |
 |---|---|
-| **Joins** | A pair where a gate parameter is zero at one end: window aperture width or height; `leaf_diffuse` with an active scatter proxy at the zero end; vignette feather. A pair where `eclipse` differs, on any route but the faithful scene dissolve: `morning 3b → eclipse`, `eclipse → acid dreams`. |
+| **Joins** | A pair where a gate parameter is zero at one end: window aperture width or height; `leaf_diffuse` with an active scatter proxy at the zero end; vignette feather. A pair where `eclipse` differs, on any route but the scene dissolve: `morning 3b → eclipse`, `eclipse → acid dreams`. |
 | **Gate** | The crossing itself. Not applied inside a full scene dissolve (each scene keeps its own mask). |
 | **Duration** | Aperture: the morph. Diffuse proxy: out over the first half, in over the second. Iris: its opacity, on the route's eased progress across the whole route. Moon: the route's eased progress, four fifths of its path on the visible bite. |
 | **Promises** | The enabled end's geometry is kept and its restriction faded; no pinhole or ellipse grows from zero. The eclipse is held on and the moon moves between the authored bite and clear of every sample, continuous while the radii tween; its limb is soft only while it moves, so a settled eclipse is the hard crescent unchanged. Authored values land exactly. No hood boundary moves: a hood turning on or off keeps the hooded end's feather and shape and fades; two hooded ends morph them at full strength. An interrupted hood fade carries its opacity, an interrupted moon its place and limb. No saved parameter. |
@@ -37,8 +37,8 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 
 | | |
 |---|---|
-| **Joins** | A topology change between two layer groves, layer counts included: `morning 1 ↔ memories`, `morning 3b → eclipse`, `eclipse → acid dreams`. |
-| **Gate** | A TOPO difference and no MODE difference; not admitted as a grove morph; neither end faithful; no wood at either end; same texture size and bake size (one set of layer textures). |
+| **Joins** | A topology change between two layer groves, layer counts included: `morning 1 ↔ memories`, `morning 3b → eclipse`, `eclipse → acid dreams`; a same-branching grove over budget: `morning 3b ↔ the void`. |
+| **Gate** | A TOPO difference, or a CANOPY difference over budget, and no MODE difference; not admitted as a grove morph; neither end faithful; no wood at either end; same texture size and bake size (one set of layer textures). |
 | **Duration** | 2*D*. |
 | **Promises** | No bloom: cloud thickness follows its ordinary interpolation and never overshoots either end. Both groves are baked at complementary coverage across a window around the midpoint; no leaf jumps. The incoming grove is the target's own, cut with its own leaf edge. Across layer counts the route runs at the larger count, the heights move from each end's own, and the count drops only at landing. Native endpoints. Interruption inside the double-bake window is safe; an interruption outside it starts from the shown heights, moon and grove. |
 
@@ -46,7 +46,7 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 
 | | |
 |---|---|
-| **Joins** | Whatever no other route admits: branching changes outside the crossfade's gate, groves over budget (`5 → 16` trees), mode changes no travel or fade route joins (a change of receiver among them). |
+| **Joins** | Whatever no other route admits: branching changes and groves over budget outside the crossfade's gate (wood, a faithful end, different layer texture sizes), mode changes no travel or fade route joins (a change of receiver among them). |
 | **Gate** | None; the last resort. |
 | **Duration** | 2*D*. |
 | **Promises** | The scene swaps once at the midpoint under a bloom capped short of overcast: shallower for a mode change, deeper for a topology change. A mode change runs its full rebuild under the bloom, never a flag over stale buffers. |
@@ -55,17 +55,17 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 
 | | |
 |---|---|
-| **Joins** | Floor-to-floor mode changes: `afternoon 7 ↔ park 1`. |
-| **Gate** | A MODE difference; neither end a sky view; floor receiver at both ends; no travel route admits the pair. |
+| **Joins** | Floor-to-floor mode changes over bare ground: `afternoon 7 ↔ park 1`. |
+| **Gate** | A MODE difference; neither end a sky view; floor receiver at both ends; no litter carpet (litter and leaf drop both above zero) at either end; no travel route admits the pair. |
 | **Duration** | 2*D*.|
 | **Promises** | No bloom, no second scene. Shadows ease out to the midpoint and back in, in linear irradiance before material and tone map. Wind continues. Standing → overhead sets the final camera at the invisible midpoint. Interruption starts from the current shadow opacity. |
 
-## Faithful scene dissolve
+## Scene dissolve
 
 | | |
 |---|---|
-| **Joins** | Faithful structural changes no travel route takes: `park 1` to itself with a new seed, density and tone; `curtain 1` to itself with a new seed and outline. |
-| **Gate** | Both ends faithful; same scene modes; a structural rebuild needed; no travel route (season travel, grove regrouping, leaf travel) admits the pair. |
+| **Joins** | Faithful structural changes no travel route takes: `park 1` to itself with a new seed, density and tone; `curtain 1` to itself with a new seed and outline. Carpeted floor-to-floor mode changes: `park fall ↔ forest floor`, `forest floor ↔ the yellow tree`. Any pair a driver asks to fade that differs in more than MORPH keys and runtime flags. |
+| **Gate** | Either: both ends faithful, same scene modes, a structural rebuild needed; or the fade through the lit ground's gate with a litter carpet at either end, from rest. In both, no travel route (season travel, grove regrouping, leaf travel) admits the pair. Or: a fade asked for, from rest, and a CANOPY, TOPO or MODE difference; no travel route, morph, crossfade or bloom is considered. |
 | **Duration** | 2*D*, mixed on a full-duration smoothstep. |
 | **Promises** | No bloom. Two complete moving scenes, one clock, mixed in linear light, each with its own tone map and mask. The incoming scene continues without rebuild or reset. An interrupted dissolve holds the displayed mixture as the next outgoing image and frees the older scene. |
 

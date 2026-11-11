@@ -34,7 +34,11 @@ export function makeTransitions(hub){
     if(!target || typeof target!=='object') return;
     const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
     if(trans.active&&trans.groveTravel){hub.retargetGroveTravel(to,opts);return;}
-    if(!trans.active&&groveTravelEligible(params,to)&&hub.beginGroveTravel(to)!==false){
+    // A driver may ask for a fade ({ style: 'fade' }): the two looks dissolve as two moving scenes, whatever their modes, cameras or
+    // receivers, and no travel route, morph, crossfade or bloom is taken. Two looks that differ only in live (MORPH) keys and runtime
+    // flags have one grove, so a dissolve of the two would show nothing the live morph does not: they morph.
+    const styleFade = opts.style==='fade' && !trans.active && [...TOPO_KEYS,...MODE_KEYS,...CANOPY_KEYS].some(k => to[k]!==params[k]);
+    if(!styleFade&&!trans.active&&groveTravelEligible(params,to)&&hub.beginGroveTravel(to)!==false){
       hub.warnCut(to);
       Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
         active:true,groveTravel:true,litterRise:false,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
@@ -42,10 +46,10 @@ export function makeTransitions(hub){
       return;
     }
     if(trans.active&&trans.litterRise){hub.retargetLitterRise(to,opts);return;}
-    const shadowRise=!trans.active&&shadowRiseEligible(params,to)&&hub.faith?.count!==0;
-    const litterFall=!trans.active&&litterFallEligible(params,to)&&hub.beginLitterRise(to,false,true)!==false;
-    const shadowFall=!trans.active&&shadowFallEligible(params,to)&&hub.beginLitterRise(to,true,true)!==false;
-    if(!trans.active&&(litterFall||shadowFall||shadowRise||hub.grove?.litter?.length&&litterRiseEligible(params,to))){
+    const shadowRise=!styleFade&&!trans.active&&shadowRiseEligible(params,to)&&hub.faith?.count!==0;
+    const litterFall=!styleFade&&!trans.active&&litterFallEligible(params,to)&&hub.beginLitterRise(to,false,true)!==false;
+    const shadowFall=!styleFade&&!trans.active&&shadowFallEligible(params,to)&&hub.beginLitterRise(to,true,true)!==false;
+    if(!styleFade&&!trans.active&&(litterFall||shadowFall||shadowRise||hub.grove?.litter?.length&&litterRiseEligible(params,to))){
       hub.warnCut(to);
       Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
         active:true,litterRise:true,shadowRise,litterFall,shadowFall,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
@@ -62,14 +66,14 @@ export function makeTransitions(hub){
     // outgoing scene or the half-faded grove would be dropped. Such a selection waits, as it does on a travel route.
     if(trans.active && (trans.crossfade && !trans.swapped && hub.crossW>0
         || trans.sceneFade && (MODE_KEYS.some(k => to[k]!==params[k]) || !faithfulOn() || !to.faithful_canopy))){ wait(to, opts); return; }
-    const seasonTravel=!trans.active&&seasonTravelEligible(params,to);
+    const seasonTravel=!styleFade&&!trans.active&&seasonTravelEligible(params,to);
     trans.seasonTravel=seasonTravel;
     const retarget=trans.active&&trans.leafTravel;
     const turnScale=retarget&&hub.retargetLeafTravel(to,opts);   // a reversal's clock, scaled to the distance it has left
     if(retarget&&!turnScale)return;
     const irisShown = trans.active && trans.iris ? trans.irisOpacity : null;   // an interrupted fade's opacity, read before anything changes
     const movingView=trans.active && trans.viewpoint;
-    const viewpoint=!!((!trans.active || movingView) && (movingView || params.sky_view!==to.sky_view) && !params.faithful_canopy && !to.faithful_canopy
+    const viewpoint=!styleFade && !!((!trans.active || movingView) && (movingView || params.sky_view!==to.sky_view) && !params.faithful_canopy && !to.faithful_canopy
       && params.receiver===0 && to.receiver===0 && params.branch_tau===0 && to.branch_tau===0
       && params.canopy_fill===0 && to.canopy_fill===0 && params.litter===0 && to.litter===0
       && hemisphere(to) && (movingView || hemisphere(params))
@@ -131,7 +135,7 @@ export function makeTransitions(hub){
     // their leaves travel instead, as they do between the faithful and the layer cast.
     const faithfulStructural=params.faithful_canopy&&to.faithful_canopy&&!modeDiff
       &&(topoDiff||canopyDiff&&morphCost>CANOPY_MORPH_MAX);
-    const leafTravel=retarget||(!trans.active&&(params.faithful_canopy!==to.faithful_canopy||faithfulStructural)
+    const leafTravel=retarget||(!styleFade&&!trans.active&&(params.faithful_canopy!==to.faithful_canopy||faithfulStructural)
       && !params.sky_view&&!to.sky_view&&!params.standing_scene&&!to.standing_scene
       && params.receiver===0&&to.receiver===0&&params.branch_tau===0&&to.branch_tau===0
       && params.canopy_fill===0&&to.canopy_fill===0&&params.litter===0&&to.litter===0
@@ -142,7 +146,7 @@ export function makeTransitions(hub){
     if(leafTravel){trans.backgroundFade=false;trans.settleCamera=false;}
     // a mode flip can't morph leaf-for-leaf (the bake path / faithTex size / crown sizing change), so it forces a
     // dissolve+rebuild just like a topology change — never a live grove morph (which only regrows, no realloc).
-    const morphGrove = canopyDiff && !topoDiff && !modeDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching+mode, small enough -> morph it
+    const morphGrove = !styleFade && canopyDiff && !topoDiff && !modeDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching+mode, small enough -> morph it
     trans.canopyMorph = !seasonTravel&&morphGrove;
     trans.seasonMorph = trans.canopyMorph && CANOPY_KEYS.every(k => SEASON_KEYS.includes(k) || to[k]===params[k]);
     trans.densityMorph = trans.canopyMorph && densityMorph;
@@ -156,7 +160,8 @@ export function makeTransitions(hub){
     // route from 4.9 to 2.6, which is not an improvement, it is a different transition.)
     // THE CROSSFADE GATE (§9), v1 and deliberately narrow — every condition is something the crossfade cannot
     // yet do, not something it does badly:
-    //  • a TOPOLOGY change and not a MODE flip — a camera swap has no second grove to blend, it has a second SCENE;
+    //  • a TOPOLOGY change, or a grove of the same branching too big to morph, and not a MODE flip — a camera swap has no second
+    //    grove to blend, it has a second SCENE;
     //  • neither end faithful — that tier pre-integrates one grove into one texture, with nothing to blend against;
     //  • no WOOD at either end — the analytic occluder is one segment table, and this v1 crossfades LEAVES only.
     //    (The table is a texture since the packet before last and can hold two sets, so the wood crossfade is a
@@ -165,13 +170,20 @@ export function makeTransitions(hub){
     //    differ: the route bakes and casts the larger count, each grove in its own bins (trans.layerRoute, below).
     // Anything outside the gate takes the paths it already took.
     const layersShared = to.tex_resolution===params.tex_resolution && to.bake_resolution===params.bake_resolution;
-    const crossOK = topoDiff && !modeDiff && !morphGrove
+    const crossOK = !styleFade && (topoDiff || canopyDiff) && !modeDiff && !morphGrove
                  && !faithfulOn() && !to.faithful_canopy
                  && !(params.branch_tau > 0) && !(to.branch_tau > 0)
                  && layersShared;
     // A moon in flight is not a scene the dissolve of finished pictures can hold (its outgoing scene would show the moon at rest), so it
     // takes the cloud dissolve and the moon carries on.
-    const sceneFade = !seasonTravel && !leafTravel && !moonShown && (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
+    // A floor-to-floor mode change over a litter carpet cannot meet on the lit ground: the carpet is still there at the midpoint, so the
+    // grove swap (and a standing camera's snap overhead) would show as a cut. It dissolves two moving scenes instead.
+    const carpet = p => p.litter>0 && p.leaf_drop>0;
+    const carpetFade = !trans.active && trans.backgroundFade && !seasonTravel && !leafTravel && (carpet(params) || carpet(to));
+    const sceneFade = styleFade || carpetFade
+      || !seasonTravel && !leafTravel && !moonShown && (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
+    // Each dissolving scene draws its own shadows, window and model from its own look: no shared fade of them applies.
+    if(sceneFade){ trans.backgroundFade=false; trans.settleCamera=false; trans.windowFade=false; trans.splitFade=false; }
     if(sceneFade) trans.structDiff=true;   // an interruption still has two different visible scenes to dissolve
     if(!sceneFade && trans.sceneFade) hub.endSceneFade();
     if(sceneFade) hub.beginSceneFade();   // preserve the outgoing scene before params become the incoming look

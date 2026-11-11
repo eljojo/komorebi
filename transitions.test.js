@@ -88,6 +88,8 @@ function transitionRig(from) {
     // so a swap records what the grove is grown from.
     rebuildAll: (look) => swaps.push({ ...params, ...(look ? Object.fromEntries(GROVE_READS.map((k) => [k, look[k]])) : {}) }),
     motionActive: () => false,
+    // A grove too big to morph between looks of one branching is grown beside the shown one for the crossfade.
+    buildTargetGrove: () => ({}), installGrove: noop, freeGrove: noop, sizeLayers: noop,
   };
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
@@ -1046,4 +1048,129 @@ test("the grove grown for a route is grown from the target's value of every key 
   GROVE.growAs(params, look, () => Object.assign(seen, params));
   for (const k of [...GROVE.GROVE_READS, "trans_r", "phenology", "edge_softness"]) expect(seen[k], k).toBe(look[k]);
   expect(params).toEqual(PRESETS["morning 3b"]);
+});
+
+// A grove too big to morph between two looks of one branching (the void's 16 trees against morning 3b's 5) shares the layer bake
+// as a topology change does, so it crossfades rather than dissolving under a cloud.
+const LEAVES = { "morning 3b": 32000, "the void": 103000 };
+function crossRig(from, leaves) {
+  const r = transitionRig(from), target = {}, installed = [];
+  r.hub.layerVAO = [{ count: leaves }];
+  Object.assign(r.hub, { buildTargetGrove: () => target, installGrove: (g) => installed.push(g), freeGrove: () => {}, sizeLayers: () => {} });
+  return { ...r, target, installed };
+}
+for (const [from, to] of [["morning 3b", "the void"], ["the void", "morning 3b"]]) {
+  test(`${from} → ${to}: a same-branching grove too big to morph crossfades`, () => {
+    const r = crossRig(PRESETS[from], LEAVES[from]);
+    r.transitionTo(PRESETS[to], { duration: 1 });
+    expect(r.hub.trans.crossfade).toBe(true);
+    expect(r.hub.trans.canopyMorph).toBe(false);
+    expect(r.hub.trans.bloomMax).toBe(0);
+    expect(r.hub.trans.durScale).toBe(2);
+    expect(r.hub.groveIn).toBe(r.target);
+    for (let n = 0; r.hub.trans.active && n < 200; n++) { r.tickTransition(1 / 60); expect(r.hub.trans.bloom).toBe(0); }
+    expect(r.installed).toEqual([r.target]);
+    expect(r.swaps).toHaveLength(0);
+    expect(r.params).toEqual(PRESETS[to]);
+  });
+}
+
+test("a same-branching grove within the morph budget still grove-morphs; wood or a faithful end keeps the old route", () => {
+  const small = crossRig(PRESETS["morning 3b"], 1000);
+  small.transitionTo(PRESETS["the void"]);
+  expect(small.hub.trans.canopyMorph).toBe(true);
+  expect(small.hub.trans.crossfade).toBe(false);
+  const wood = crossRig({ ...PRESETS["morning 3b"], branch_tau: 0.5 }, LEAVES["morning 3b"]);
+  wood.transitionTo({ ...PRESETS["the void"], branch_tau: 0.5 });
+  expect(wood.hub.trans.crossfade).toBe(false);
+  expect(wood.hub.trans.bloomMax).toBeGreaterThan(0);
+  const faithful = crossRig({ ...PRESETS["morning 3b"], faithful_canopy: true, branch_tau: 0.5 }, LEAVES["morning 3b"]);
+  faithful.hub.beginSceneFade = faithful.hub.stepSceneFade = faithful.hub.endSceneFade = () => {};
+  faithful.transitionTo({ ...PRESETS["the void"], faithful_canopy: true, branch_tau: 0.5 });
+  expect(faithful.hub.trans.crossfade).toBe(false);
+  expect(faithful.hub.trans.sceneFade).toBe(true);
+});
+
+// style 'fade': a driver asks for the dissolve of two moving scenes, whatever the pair's modes or cameras.
+function fadeRig(from) {
+  const r = crossRig(from, 1000), log = { began: 0, ended: 0, steps: 0 };
+  r.hub.beginSceneFade = () => { log.began++; expect(r.params).toEqual(from); };
+  r.hub.stepSceneFade = () => { log.steps++; };
+  r.hub.endSceneFade = () => { log.ended++; };
+  for (const k of ["beginGroveTravel", "beginLitterRise", "beginSeasonTravel", "beginLeafTravel"]) r.hub[k] = () => { throw Error(`unexpected ${k}`); };
+  return { ...r, log };
+}
+const fadePairs = {
+  "layer ↔ layer topology": [PRESETS["morning 1"], PRESETS.memories],
+  "floor ↔ sky": [PRESETS.memories, { ...PRESETS.memories, sky_view: true }],
+  "faithful ↔ layer": [PRESETS["afternoon 7"], PRESETS["park 1"]],
+  "standing carpet": [PRESETS["park fall"], PRESETS["the yellow tree"]],
+};
+for (const [name, [a, b]] of Object.entries(fadePairs)) for (const [from, to] of [[a, b], [b, a]]) {
+  test(`style 'fade' (${name}${from === a ? "" : ", reversed"}) dissolves two moving scenes and lands on the target`, () => {
+    const r = fadeRig(from);
+    let arrived = 0, cb;
+    r.transitionTo(to, { duration: 1, style: "fade", onEnd: () => arrived++ });
+    expect(r.hub.trans.sceneFade).toBe(true);
+    expect(r.hub.trans.crossfade || r.hub.trans.backgroundFade || r.hub.trans.viewpoint || r.hub.trans.leafTravel || r.hub.trans.seasonTravel).toBe(false);
+    expect(r.hub.trans.bloomMax).toBe(0);
+    expect(r.hub.trans.durScale).toBe(2);
+    expect(r.hub.groveIn).toBe(null);
+    expect(r.log.began).toBe(1);
+    expect(r.params).toEqual({ ...DEFAULTS, ...to });
+    for (let n = 0; r.hub.trans.active && n < 200; n++) { cb = r.tickTransition(1 / 60) || cb; expect(r.hub.trans.bloom).toBe(0); }
+    expect(r.hub.trans.active).toBe(false);
+    expect(r.log.ended).toBe(1);
+    expect(r.params).toEqual({ ...DEFAULTS, ...to });
+    cb(); expect(arrived).toBe(1);
+  });
+}
+
+test("style 'fade' on a pair that differs only in MORPH keys takes the plain live morph", () => {
+  const r = fadeRig({ ...DEFAULTS });
+  r.hub.beginSceneFade = () => { throw Error("unexpected scene dissolve"); };
+  r.transitionTo({ ...DEFAULTS, exposure: 2, sun_elevation_deg: 30 }, { style: "fade" });
+  expect(r.hub.trans.sceneFade).toBe(false);
+  expect(r.hub.trans.structDiff).toBe(false);
+});
+
+test("absent or 'morph' style keeps the automatic routes for the same pairs", () => {
+  for (const style of [undefined, "morph"]) {
+    const cross = crossRig(PRESETS["morning 1"], 1000);
+    cross.transitionTo(PRESETS.memories, { style });
+    expect(cross.hub.trans.crossfade).toBe(true);
+    const sky = crossRig(PRESETS.memories, 1000);
+    sky.transitionTo({ ...PRESETS.memories, sky_view: true }, { style });
+    expect(sky.hub.trans.sceneFade || sky.hub.trans.crossfade).toBe(false);
+    expect(sky.hub.trans.bloomMax).toBeGreaterThan(0);
+    const floor = crossRig(PRESETS["afternoon 7"], 1000);
+    floor.transitionTo(PRESETS["park 1"], { style });
+    expect(floor.hub.trans.backgroundFade).toBe(true);
+    expect(floor.hub.trans.sceneFade).toBe(false);
+  }
+});
+
+// Carpeted floor-to-floor mode changes: the litter carpet stays visible through the lit-ground fade's midpoint, where the grove and
+// camera swap would show as a cut, so these pairs dissolve two moving scenes instead.
+for (const [from, to] of [["park fall", "forest floor"], ["forest floor", "park fall"], ["forest floor", "the yellow tree"], ["the yellow tree", "forest floor"]]) {
+  test(`${from} → ${to}: a carpeted floor-to-floor mode change dissolves two moving scenes`, () => {
+    const r = fadeRig(PRESETS[from]);
+    r.transitionTo(PRESETS[to], { duration: 1 });
+    expect(r.hub.trans.sceneFade).toBe(true);
+    expect(r.hub.trans.backgroundFade).toBe(false);
+    expect(r.hub.trans.bloomMax).toBe(0);
+    for (let n = 0; r.hub.trans.active && n < 200; n++) { r.tickTransition(1 / 60); expect(r.hub.trans.bloom).toBe(0); }
+    expect(r.params).toEqual(PRESETS[to]);
+  });
+}
+
+test("montebello ↔ park fall keeps season travel over the carpeted scene dissolve", () => {
+  for (const [from, to] of [["montebello", "park fall"], ["park fall", "montebello"]]) {
+    const r = fadeRig(PRESETS[from]); let began = 0;
+    r.hub.beginSeasonTravel = () => { began++; };
+    r.hub.beginSceneFade = () => { throw Error("unexpected scene dissolve"); };
+    r.transitionTo(PRESETS[to]);
+    expect(r.hub.trans.seasonTravel).toBe(true);
+    expect(began).toBe(1);
+  }
 });

@@ -274,7 +274,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 |---|---|---|---|
 | Live morph, grove morph, shared-layer crossfade, capped bloom | `komorebi-transitions.js` | `transitions.test.js` (routing; through the real sampler) | transition-routing suite in the pixel harness (each tier driven to completion); `test-gl/dissolve-landing.mjs` (the cloud dissolve's landed frame against the target loaded fresh); `test-gl/eclipse-crossfade.mjs` (the crossfade across layer counts and the moon: start, landing, spikes, interruptions, the sky view, the settled `eclipse` against the engine before) |
 | Floor-to-floor fade through the lit ground | `komorebi-transitions.js` | `transitions.test.js` | routing suite; `test-gl/dissolve-landing.mjs` (landed against fresh, both directions) |
-| Faithful scene dissolve (faithful structural pairs leaf travel refuses) | `komorebi-scene-fade.js` | `transitions.test.js` (routing) | routing suite |
+| Scene dissolve (faithful structural pairs leaf travel refuses, carpeted floor-to-floor mode changes, a driver's fade) | `komorebi-scene-fade.js` | `transitions.test.js` (routing) | routing suite |
 | Viewpoint sky↔floor | `komorebi-transitions.js`, `komorebi-transport.js` (fifth camera) | `viewpoint.test.js` | `test-gl/viewpoint.mjs` |
 | Leaf travel faithful↔layer and faithful↔faithful | `komorebi-leaf-travel.js` | `leaf-travel.test.js` (correspondence, area) | `test-gl/leaf-travel.mjs` |
 | Season travel | `komorebi-season-travel.js` | `season-travel.test.js`, `transitions.test.js` | `test-gl/season-travel.mjs` (compiled faithful fragment against the per-leaf reference across both edge modes) |
@@ -290,7 +290,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 
 - **Leaf, season and grove travel** each cast their moving leaves into a transient **RGBA16F** world-space transmission map. The floor reads that map before lighting and grading. The map's bounds include the full projected halo. Season and grove travel use the larger endpoint sample and bake budgets, scaled by the current governor.
 - **The litter flights** accumulate optical depth and reflected-light moments in **two RGBA16F eye targets** at up to twice the canvas dimensions. The final read averages four transmittances, not four optical depths.
-- **The faithful scene dissolve** renders both scenes into canvas-sized **RGBA8** targets in one GL context. It decodes them by gamma 2.2, mixes, and re-encodes.
+- **The scene dissolve** renders both scenes into canvas-sized **RGBA8** targets in one GL context. It decodes them by gamma 2.2, mixes, and re-encodes.
 - **Cleanup.** Every route releases its temporary scene, programs and textures on completion, hard replacement, disposal and context loss.
 
 ## The signatures that decide a re-bake
