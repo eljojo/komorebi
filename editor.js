@@ -847,7 +847,7 @@ function buildStrip(){
   const more=document.createElement('button'); more.className='more'; more.textContent='＋';
   more.title='more';
   more.addEventListener('click',()=>setMode('play'));
-  pr.append(more,settingsButton());                               // rides the preset row's end, clear of the ‹ › stepper
+  pr.appendChild(more);                               // rides the preset row's end, clear of the ‹ › stepper
   strip.appendChild(pr);
   if(coarse){
     // touch: ONE dial at a time, so the picture keeps the screen. A row of words along the bottom picks which dial is out;
@@ -868,7 +868,7 @@ function buildStrip(){
     back.addEventListener('click',tryAsItWas);
     const up=document.createElement('button'); up.className='sm'; up.textContent='＋'; up.title='more';
     up.addEventListener('click',()=>setMode('play'));
-    tabs.append(back,up,settingsButton()); strip.appendChild(tabs);
+    tabs.append(back,up); strip.appendChild(tabs);
     pick('focus');
   } else {
     tryDial('focus', strip);

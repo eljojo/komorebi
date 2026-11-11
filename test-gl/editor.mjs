@@ -584,7 +584,7 @@ try {
   });
   check('zen + button clear of the stepper', !overlap);
   const rowOrder = await page.$eval('#strip .preset', (r) => [...r.children].map((c) => c.classList.contains('name') ? 'name' : c.classList.contains('more') ? 'plus' : c.textContent).join(' '));
-  check('zen arrows sit together before the title, with Settings beside more', rowOrder === '\u2039 \u203a name plus settings', rowOrder);
+  check('zen arrows sit together before the title', rowOrder === '\u2039 \u203a name plus', rowOrder);
 
   // desktop zen: one horizontal bar, shown by cursor proximity
   const wide = await page.$eval('#strip', (e) => e.classList.contains('wide') && getComputedStyle(e).display === 'flex');
@@ -1565,8 +1565,8 @@ try {
       tabs: [...el.querySelectorAll('.tabs button')].map((b) => b.textContent).join(),
       presetShown: getComputedStyle(el.querySelector('.preset')).display !== 'none',
     }));
-    check('the touch strip is one dial at a time, with Settings in its tab row and no preset row',
-      touchStrip.one && touchStrip.cap && touchStrip.dials === 'focus:in,cloudiness:out,sun:out,season:out,time:out' && touchStrip.tabs === 'focus,clouds,sun,season,time,\u21ba,\uff0b,settings' && !touchStrip.presetShown, JSON.stringify(touchStrip));
+    check('the touch strip is one dial at a time: a caption, five dials (focus out front), the tab row, no preset row',
+      touchStrip.one && touchStrip.cap && touchStrip.dials === 'focus:in,cloudiness:out,sun:out,season:out,time:out' && touchStrip.tabs === 'focus,clouds,sun,season,time,\u21ba,\uff0b' && !touchStrip.presetShown, JSON.stringify(touchStrip));
     await pgT.evaluate(() => [...document.querySelectorAll('#strip .tabs button')].find((b) => b.textContent === 'clouds').click());
     const afterTab = await pgT.$eval('#strip', (el) => [...el.querySelectorAll('.ctl.try')].filter((r) => !r.classList.contains('out')).map((r) => r.querySelector('.name').textContent).join());
     check('a tab shows its dial', afterTab === 'cloudiness', afterTab);
