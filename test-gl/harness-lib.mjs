@@ -100,3 +100,12 @@ export function diffInputs(was, now) {
   for (const p of n.keys()) if (!w.has(p)) out.push(`served ${p} newly served`);
   return out;
 }
+
+// THE ROW SELECTOR (`--only` and `--list` in run.js): the arguments after the flag, lower-cased (null when the flag is absent, [] when it is alone).
+export function rowFilters(argv, flag) {
+  const at = argv.indexOf(flag);
+  return at < 0 ? null : argv.slice(at + 1).map((s) => s.toLowerCase());
+}
+// A row is picked when any filter is a substring of its suite, its name or a look it renders, ignoring case. No filters picks every row.
+export const rowMatches = (filters, ...fields) => !filters?.length
+  || fields.some((v) => typeof v === 'string' && filters.some((f) => v.toLowerCase().includes(f)));

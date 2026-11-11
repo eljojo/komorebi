@@ -24,6 +24,9 @@
 // (a look with overrides, for eyes), `--gate [substring ...]` (only the gate invariants — the rows whose
 // name matches, if any are given — the fast loop for a gate you are adding), `--fill` (only the sky fill's
 // shader-vs-reference check), `--sky` (only the look-up ray's) and `--edge` (only the soft-edge rows: rim, halo, stamp).
+// THE ROW SELECTOR: `--only <substring ...>` runs every suite on the rows whose suite, name or look contains one of the substrings
+// (case-insensitive): `--only litter`, `--only memories`, `--only "is the frame it was"`, `--only transition`. `--list [substring ...]`
+// prints those rows without starting a browser, so a filter can be checked before it runs. Neither writes a manifest.
 //
 // THE MANIFEST AND --verify. A full run writes out/harness-manifest.json: every row's result and hashes, and a KEY — the sha256 of
 // every byte the harness served, plus run.js, harness-lib.mjs, harness.html and macros.js, the browser's version, the rasteriser's
@@ -46,7 +49,8 @@ import { extname, join, normalize, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { macroParams } from '../macros.js';
-import { createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, sampleRows } from './harness-lib.mjs';
+import { createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, rowFilters, rowMatches, sampleRows } from './harness-lib.mjs';
+import { PRESETS } from '../presets.js';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served
 const OUT = join(ROOT, 'test-gl', 'out');
@@ -907,6 +911,30 @@ const TRANSITION_ROUTES = [
 // One look per camera: the floor (park 1), the curtain (curtain 1), the layer path (memories), the sky view
 // (canopy 1) — the capture road has to be proven on the branch whose pixels are being read, not only the others.
 const DETERMINISM = ['park 1', 'curtain 1', 'memories', 'canopy 1'];
+// The two inline lists of the soft-edge and litter suites, named here so the row selector can list them.
+const STAMP_ROWS = [{ name: 'FS_FAITH, one leaf at leaf_diffuse 0.95 (the faithful floor and cloth); FS_BAKE, one leaf in each outline', opts: { d: 0.95 } },
+  { name: 'FS_FAITH, one leaf at leaf_diffuse 0 with edge_area on (the stamp is the leaf\'s mixture at k = 0); FS_BAKE, one leaf in each outline', opts: { d: 0, edgeArea: true } }];
+const LITTER_STAMP_ROW = { name: 'stamp: layering, the blend, sub-texel energy and the rim (VS_LITTER/FS_LITTER as compiled)' };
+// THE ROW SELECTOR (`--only <substring ...>`, `--list [substring ...]`; harness-lib.mjs rowMatches): what each row answers to — its suite (as the table prints it), its
+// name and the looks it renders. One table, read by --list and by every suite's filter in main(), so the list says exactly what --only runs.
+const ROWS = {
+  smoke: (name) => ['smoke', name],
+  still: (name) => ['determinism', `${name} holds still`, name],
+  repro: (name) => ['determinism', `${name} reproduces`, name],
+  gate: (r) => ['gate', r.name, r.preset],
+  fill: (c) => ['fill', c.name, c.preset],
+  sky: (c) => ['sky', c.name, c.preset],
+  edge: (c) => ['edge', c.name, c.preset],
+  live: (c) => ['live', c.name, c.preset],
+  litter: (c) => ['litter', c.name, c.preset],
+  transition: (r) => ['transition', r.name, r.from, r.to],
+  robust: () => ['robustness', 'context loss, a throwing onFrame'],
+};
+const CATALOG = () => [['smoke', Object.keys(PRESETS)], ['still', DETERMINISM], ['repro', DETERMINISM], ['gate', INVARIANTS], ['fill', FILL_CHECKS], ['sky', SKY_CHECKS],
+  ['edge', [...RIM_CHECKS, ...HALO_CHECKS, ...STAMP_ROWS]], ['fill', [...FILL_ENERGY, ...FILL_TOGGLES]], ['live', LIVE_CHANGES], ['litter', [...LITTER_CHECKS, LITTER_STAMP_ROW]],
+  ['transition', TRANSITION_ROUTES], ['robust', [{}]]];
+const only = rowFilters(process.argv, '--only');
+const keep = (kind) => (row) => rowMatches(only, ...ROWS[kind](row));
 
 // ---------------------------------------------------------------------------
 // A ~20-line static file server over the repo root. Deliberately not the bun dev server: this harness must
@@ -1082,6 +1110,16 @@ async function robustness(page) {
 }
 
 async function main() {
+  const listing = rowFilters(process.argv, '--list');   // `--list [substring ...]`: the rows --only would run, without a browser
+  if (listing) {
+    let n = 0;
+    for (const [kind, rows] of CATALOG()) for (const r of rows) {
+      const f = ROWS[kind](r);
+      if (rowMatches(listing, ...f)) { n++; const looks = f.slice(2).filter(Boolean); console.log(`${f[0].padEnd(12)} ${f[1]}${looks.length ? `   [${looks.join(' → ')}]` : ''}`); }
+    }
+    console.log(`${n} rows`);
+    process.exit(0);
+  }
   await mkdir(OUT, { recursive: true });
   const t0 = Date.now();
   const { server, port, served } = await serveRoot();
@@ -1208,12 +1246,12 @@ async function main() {
     const fillOnly = process.argv[2] === '--fill';
     const skyOnly = process.argv[2] === '--sky';
     const edgeOnly = process.argv[2] === '--edge';
-    const solo = robustOnly || gateOnly || fillOnly || skyOnly || edgeOnly;   // one suite, nothing else
+    const solo = robustOnly || gateOnly || fillOnly || skyOnly || edgeOnly;   // one suite, nothing else (`--only` is not solo: every suite runs, each on its matching rows)
     const gateFilters = gateOnly ? process.argv.slice(3).map((s) => s.toLowerCase()) : [];
-    const filters = (gateOnly || fillOnly || skyOnly || edgeOnly) ? [] : process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
-    fullRun = !solo && !filters.length;   // only the whole sweep writes a manifest
+    const filters = (only || gateOnly || fillOnly || skyOnly || edgeOnly) ? [] : process.argv.slice(2).filter((a) => a !== '--robust').map((s) => s.toLowerCase());
+    fullRun = !solo && !filters.length && !only;   // only the whole sweep writes a manifest
     const allPresets = await page.evaluate(() => window.__presets());
-    const presets = solo ? [] : filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets;
+    const presets = (solo ? [] : filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets).filter(keep('smoke'));
     if (filters.length && presets.length === 0) { log(`no preset matches: ${filters.join(', ')}`); await browser.close(); server.close(); process.exit(1); }
     if (!solo) log(`\nSMOKE — ${presets.length} presets @ ${SMOKE_FRAMES} frames`);
     const truncated = [];   // groves that outgrew the woody-occluder table (§4.5) — see the note under the loop
@@ -1257,7 +1295,7 @@ async function main() {
     // Two captures forty ticks apart out of ONE engine. If wind, weather, drift, the auto-quality governor
     // or the adaptive-fps present path were still moving anything, this is where it shows.
     if (!solo) log(`\nDETERMINISM — stillness (one engine, captures at ${STILL_FRAMES.join(' and ')})`);
-    for (const name of solo ? [] : DETERMINISM) {
+    for (const name of (solo ? [] : DETERMINISM).filter(keep('still'))) {
       const r = await page.evaluate(([p, f]) => window.__run(p, {}, f), [name, STILL_FRAMES]);
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [r.captures[0].id, r.captures[1].id]);
       record('determinism', `${name} holds still`, d.equal, d.equal ? `hash ${r.captures[0].hash}` : `${d.diffPixels}/${d.total} px differ, max Δ${d.maxDelta}`, { a: r.captures[0].hash, b: r.captures[1].hash });
@@ -1267,7 +1305,7 @@ async function main() {
 
     // ---- suite 3b: two independent engines ----
     if (!solo) log('\nDETERMINISM — two independent engines, same look');
-    for (const name of solo ? [] : DETERMINISM) {
+    for (const name of (solo ? [] : DETERMINISM).filter(keep('repro'))) {
       const a = await renderOnce(page, name, {}, [GATE_FRAMES], undefined, { fresh: true });   // fresh: the claim is two INDEPENDENT engines (see renderOnce)
       const b = await renderOnce(page, name, {}, [GATE_FRAMES], undefined, { fresh: true });
       const d = await page.evaluate(([x, y]) => window.__diff(x, y), [a.captures[0].id, b.captures[0].id]);
@@ -1278,7 +1316,7 @@ async function main() {
 
     // ---- suite 2: the gate invariants ----
     if (!fillOnly && !skyOnly && !edgeOnly) log(`\nGATE INVARIANTS — byte-identical off-paths @ ${GATE_FRAMES} frames`);
-    for (const inv of (fillOnly || skyOnly || edgeOnly) ? [] : INVARIANTS.filter((r) => !gateFilters.length || gateFilters.some((f) => r.name.toLowerCase().includes(f)))) {
+    for (const inv of (fillOnly || skyOnly || edgeOnly) ? [] : INVARIANTS.filter((r) => !gateFilters.length || gateFilters.some((f) => r.name.toLowerCase().includes(f))).filter(keep('gate'))) {
       const { a, b } = await renderRow(page, inv);
       if (inv.pin) {   // a PIN row: one frame, one number written down before the change (see INVARIANTS)
         const got = a.captures[0].hash, ok = !a.glError && got === inv.pin;
@@ -1324,7 +1362,7 @@ async function main() {
 
     // ---- suite 2b: the sky fill's shader against its reference ----
     if (!gateOnly && !robustOnly && !skyOnly && !edgeOnly) log('\nSKY FILL — the shader against komorebi-fill.js, on the layers the engine baked');
-    for (const c of (gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : FILL_CHECKS) {
+    for (const c of ((gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : FILL_CHECKS).filter(keep('fill'))) {
       let r;
       try {
         r = await page.evaluate(([p, o, q]) => window.__fillCheck(p, o, q), [c.preset, c.over, { rebake: !!c.rebake }]);
@@ -1340,7 +1378,7 @@ async function main() {
     }
 
     if (!gateOnly && !robustOnly && !fillOnly && !edgeOnly) log('\nLOOK-UP RAY — the lantern\'s shared ray (wood read) against komorebi-fill.js, on the layers and wood the engine baked');
-    for (const c of (gateOnly || robustOnly || fillOnly || edgeOnly) ? [] : SKY_CHECKS) {
+    for (const c of ((gateOnly || robustOnly || fillOnly || edgeOnly) ? [] : SKY_CHECKS).filter(keep('sky'))) {
       let r;
       try { r = await page.evaluate(([p, o]) => window.__skyCheck(p, o), [c.preset, c.over]); }
       catch (e) { record('sky', c.name, false, e.message.split('\n')[0]); log(`  FAIL  ${c.name} — ${e.message.split('\n')[0]}`); continue; }
@@ -1357,7 +1395,7 @@ async function main() {
     }
 
     if (!gateOnly && !robustOnly && !fillOnly && !skyOnly) log('\nSOFT EDGES — a texel is a mixture, not a slab: the lantern\'s rim, the beam\'s halo, the faithful stamp (§4.5)');
-    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : RIM_CHECKS) {
+    for (const c of ((gateOnly || robustOnly || fillOnly || skyOnly) ? [] : RIM_CHECKS).filter(keep('edge'))) {
       const name = `rim: ${c.name}`;
       let r;
       try { r = await page.evaluate(([p, o]) => window.__rimCheck(p, o), [c.preset, c.over]); }
@@ -1373,7 +1411,7 @@ async function main() {
       record('edge', name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(48)} ${bad.join('; ') || detail}`);
     }
-    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : HALO_CHECKS) {
+    for (const c of ((gateOnly || robustOnly || fillOnly || skyOnly) ? [] : HALO_CHECKS).filter(keep('edge'))) {
       const name = `halo: ${c.name}`;
       let r;
       try { r = await page.evaluate(([p, o]) => window.__haloCheck(p, o), [c.preset, c.over]); }
@@ -1389,8 +1427,7 @@ async function main() {
       record('edge', name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(48)} ${bad.join('; ') || detail}`);
     }
-    for (const c of (gateOnly || robustOnly || fillOnly || skyOnly) ? [] : [{ name: 'FS_FAITH, one leaf at leaf_diffuse 0.95 (the faithful floor and cloth); FS_BAKE, one leaf in each outline', opts: { d: 0.95 } },
-    { name: 'FS_FAITH, one leaf at leaf_diffuse 0 with edge_area on (the stamp is the leaf\'s mixture at k = 0); FS_BAKE, one leaf in each outline', opts: { d: 0, edgeArea: true } }]) {
+    for (const c of ((gateOnly || robustOnly || fillOnly || skyOnly) ? [] : STAMP_ROWS).filter(keep('edge'))) {
       const name = `stamp: ${c.name}`;
       let r;
       try { r = await page.evaluate((o) => window.__stampCheck(o), c.opts); }
@@ -1419,7 +1456,7 @@ async function main() {
     }
 
     if (!gateOnly && !robustOnly && !skyOnly && !edgeOnly) log('\nSKY FILL — the bookkeeping: what the engine\'s fill holds against what the leaves emitted and the beam gave up');
-    for (const c of (gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : FILL_ENERGY) {
+    for (const c of ((gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : FILL_ENERGY).filter(keep('fill'))) {
       let r;
       try { r = await page.evaluate(([p, o, q]) => window.__fillCheck(p, o, q), [c.preset, c.over, { rebake: !!c.rebake, energy: true, samples: 8 }]); }
       catch (e) { record('fill', c.name, false, e.message.split('\n')[0]); log(`  FAIL  ${c.name} — ${e.message.split('\n')[0]}`); continue; }
@@ -1445,7 +1482,7 @@ async function main() {
     }
 
     if (!gateOnly && !robustOnly && !skyOnly && !edgeOnly) log('\nSKY FILL — canopy_fill opened and shut on a running engine');
-    for (const c of (gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : FILL_TOGGLES) {
+    for (const c of ((gateOnly || robustOnly || skyOnly || edgeOnly) ? [] : FILL_TOGGLES).filter(keep('fill'))) {
       const name = `${c.name}: ${c.sky ? 'opening it allocates nothing and moves nothing' : 'shut costs nothing, open bakes, shut again is the old frame'}`;
       let r;
       try { r = await page.evaluate(([p, o, q]) => window.__fillToggle(p, o, q), [c.preset, c.over, { rebake: !!c.rebake }]); }
@@ -1469,7 +1506,7 @@ async function main() {
 
     // (the carpet's own live rows run with `--gate litter` too: a gate row alone cannot see a signature that forgot a number)
     const litterRowsToo = gateOnly && (!gateFilters.length || gateFilters.some((f) => f && 'litter'.includes(f)));
-    const liveRows = (gateOnly || robustOnly || skyOnly || edgeOnly) ? LIVE_CHANGES.filter((c) => (litterRowsToo && c.litter) || (gateOnly && gateFilters.some((f) => f && c.name.toLowerCase().includes(f)))) : LIVE_CHANGES;
+    const liveRows = (gateOnly || robustOnly || skyOnly || edgeOnly) ? LIVE_CHANGES.filter((c) => (litterRowsToo && c.litter) || (gateOnly && gateFilters.some((f) => f && c.name.toLowerCase().includes(f)))).filter(keep('live')) : LIVE_CHANGES.filter(keep('live'));
     if (liveRows.length) log('\nLIVE KNOBS — changed on a running engine, nothing rebuilt (leaf_diffuse tweens; the carpet is noticed at draw time)');
     for (const c of liveRows) {
       const name = `${c.key} live: ${c.name}`;
@@ -1493,7 +1530,7 @@ async function main() {
     // ---- suite 2c: the litter carpet (§4.7). Runs with the full sweep, and alone as `--gate litter`. ----
     const litterRun = !solo || (gateOnly && (!gateFilters.length || gateFilters.some((f) => f && 'litter'.includes(f))));
     if (litterRun) log('\nLITTER — the carpet the engine baked, read back and held to the grove\'s own list');
-    for (const c of litterRun ? LITTER_CHECKS : []) {
+    for (const c of (litterRun ? LITTER_CHECKS : []).filter(keep('litter'))) {
       const name = `carpet: ${c.name}`;
       let r;
       try { r = await page.evaluate(([p, o]) => window.__litterCheck(p, o), [c.preset, c.over]); }
@@ -1532,8 +1569,8 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || detail}`);
       if (bad.length) log(`        ${detail}`);
     }
-    if (litterRun) {
-      const name = 'stamp: layering, the blend, sub-texel energy and the rim (VS_LITTER/FS_LITTER as compiled)';
+    if (litterRun && keep('litter')(LITTER_STAMP_ROW)) {
+      const name = LITTER_STAMP_ROW.name;
       let r;
       try { r = await page.evaluate(() => window.__litterStamp()); }
       catch (e) { record('litter', name, false, e.message.split('\n')[0]); log(`  FAIL  ${name} — ${e.message.split('\n')[0]}`); r = null; }
@@ -1558,7 +1595,7 @@ async function main() {
 
     // ---- suite 4: transition routing ----
     if (!solo) log('\nTRANSITIONS — each routing tier driven to completion (logic-only; no pixels)');
-    for (const route of solo ? [] : TRANSITION_ROUTES) {
+    for (const route of (solo ? [] : TRANSITION_ROUTES).filter(keep('transition'))) {
       let r;
       try {
         r = await page.evaluate(([from, to, over, opts]) => window.__transitionSmoke(from, to, over, opts), [route.from, route.to, route.over, route.interrupt ? { interrupt: route.interrupt } : {}]);
@@ -1592,7 +1629,7 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${route.name.padEnd(50)} ${bad.join('; ') || `${r.ticks} ticks ${r.ms} ms${abortNote}`}`);
     }
     }
-    if (!filters.length && !gateOnly && !fillOnly && !skyOnly && !edgeOnly) await robustness(page);
+    if (!filters.length && !gateOnly && !fillOnly && !skyOnly && !edgeOnly && keep('robust')({})) await robustness(page);
     servedAtEnd = servedList();
   } finally {
     await browser.close();

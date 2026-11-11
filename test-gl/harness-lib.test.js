@@ -2,7 +2,7 @@
 // what can silently go wrong without one is the memo's key (two inputs that are the same engine must collide, two
 // that are not must not), the fresh bypass the "two independent engines" rows stand on, and the manifest's key.
 import { describe, expect, test } from 'bun:test';
-import { canonicalJSON, createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, renderKey, sampleRows, seededRandom } from './harness-lib.mjs';
+import { canonicalJSON, createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, renderKey, rowFilters, rowMatches, sampleRows, seededRandom } from './harness-lib.mjs';
 
 describe('renderKey', () => {
   test('key order and an absent opts do not matter', () => {
@@ -128,5 +128,25 @@ describe('hashVerdict / manifestBodyProblems — what --verify holds the rows to
     expect(p).toContain('missing');
     m.cases = 2;
     expect(manifestBodyProblems(m, ['g1', 'g2']).join('\n')).toContain('g2');
+  });
+});
+
+describe('the row selector (--only, --list)', () => {
+  test('the filters are every argument after the flag, lower-cased; no flag is null, the flag alone is every row', () => {
+    expect(rowFilters(['node', 'run.js', '--only', 'Litter', 'afternoon 7'], '--only')).toEqual(['litter', 'afternoon 7']);
+    expect(rowFilters(['node', 'run.js', 'memories'], '--only')).toBe(null);
+    expect(rowFilters(['node', 'run.js', '--list'], '--list')).toEqual([]);
+  });
+  test('a row is picked when a filter is in its suite, its name or a look it renders, ignoring case', () => {
+    const f = ['litter', 'park 1'];
+    expect(rowMatches(f, 'litter', 'afternoon 7 at 0.9', 'afternoon 7')).toBe(true);       // the suite
+    expect(rowMatches(f, 'gate', 'wet LITTER darkens the carpet', 'memories')).toBe(true);   // the name
+    expect(rowMatches(f, 'determinism', 'reproduces', 'park 1')).toBe(true);                // a look
+    expect(rowMatches(f, 'gate', 'canopy_fill 0 == absent', 'memories')).toBe(false);
+    expect(rowMatches(f, 'transition', 'a route', undefined, null)).toBe(false);            // absent fields are skipped
+  });
+  test('no filters (or an empty list) picks every row', () => {
+    expect(rowMatches(null, 'smoke', 'memories')).toBe(true);
+    expect(rowMatches([], 'smoke', 'memories')).toBe(true);
   });
 });
