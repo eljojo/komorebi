@@ -1004,7 +1004,7 @@ try {
     };
     const server = { signedIn: false, down: false, refuse: null, nextPreset: 12, nextList: 9 };
     const byId = (id) => db.presets.find((p) => p.id === id);
-    const itemView = (i) => { const p = byId(i.preset_id); return p ? { preset_id: p.id, version: p.version, owner: p.owner, name: p.name, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, params: p.params } : { preset_id: i.preset_id, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, unavailable: true }; };
+    const itemView = (i) => { const p = byId(i.preset_id); return p ? { preset_id: p.id, version: p.version, owner: p.owner, name: p.name, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, ...(i.style ? { style: i.style } : {}), params: p.params } : { preset_id: i.preset_id, dwell_s: i.dwell_s ?? 30, crossfade_s: i.crossfade_s ?? 5, unavailable: true }; };
     const view = (l) => { const items = l.items.map(itemView); return { id: l.id, owner: 'jo', name: l.name, description: null, created_at: 1, updated_at: 2, visibility: 'private', share_token: 'sekret', items, unavailable: items.filter((i) => i.unavailable).length }; };
     await page4.route('**/api/**', (route) => {
       const req = route.request(), u = new URL(req.url());
@@ -1217,6 +1217,16 @@ try {
     const preF = await save4('dawn');
     await until(async () => /#5 v2/.test(await toast4()));
     check('save in a folder pre-fills the item\'s name and POSTs a new version of it, with no items written (the playlist already points at it)', preF === 'dawn' && /^kept in arboretum · #5 v2$/.test(await toast4()) && seen.slice(before).every((c) => c.method !== 'PUT') && (await stars4()).length === 0, await toast4());
+    // how an item of yours arrives: the morph / fade row shows on it, and one toggle is an items write of that item's style alone
+    const styleRow4 = () => dev4(() => { const r = document.querySelector('#dev .stylerow'); return r.hidden ? null : [...r.querySelectorAll('button.on')].map((b) => b.textContent).join(); });
+    check('on an item of your folder the "arrives by" row shows, morph lit', await until(async () => (await styleRow4()) === 'morph'), String(await styleRow4()));
+    const st0 = calls(/^PUT \/api\/playlists\/7\/items$/).length;
+    await click4('#dev .stylerow button[data-style=fade]');
+    await waitCall(/^PUT \/api\/playlists\/7\/items$/, st0 + 1);
+    const sf = putAfter('/api/playlists/7/items');
+    check('fade GETs the playlist fresh and PUTs that item with style fade, the others sent back without one, and fade is lit',
+      sf.before.path === '/api/playlists/7' && sf.put.body.items[0].style === 'fade' && sf.put.body.items.length === 4 && sf.put.body.items.slice(1).every((i) => !('style' in i))
+      && await until(async () => (await styleRow4()) === 'fade'), `${JSON.stringify(sf.put.body)} ${await styleRow4()}`);
     await pick4(0, '1');
     await slider4(0.44);
     await save4('ana dusk, mine');
@@ -1230,6 +1240,7 @@ try {
     const rm = putAfter('/api/playlists/7/items');
     check('remove takes the item out of the folder from a fresh GET, the unavailable item kept', rm.before.path === '/api/playlists/7' && JSON.stringify(rm.put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99, freshId]), JSON.stringify(rm.put.body));
     await goList4('uncategorized', 'arb:unc');
+    check('in uncategorized there is no "arrives by" row (it is a playlist item\'s, and uncategorized has none)', (await styleRow4()) === null, String(await styleRow4()));
     check('in uncategorized there is no remove or delete (archiving is on arboretum\'s site)', !(await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => (b.textContent === 'delete' || b.textContent === 'remove') && !b.hidden))));
 
     // a refusal on a save is shown verbatim and is not queued

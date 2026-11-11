@@ -602,6 +602,18 @@ test("itemsAfter an append: the whole list, unavailable item kept, the new prese
   ]);
 });
 
+test("itemsAfter a style change: only that playable item's style moves, 'fade' is named and 'morph' is the absence of it", () => {
+  const faded = itemsAfter(fresh(), { kind: "style", at: 1, style: "fade" });
+  const before = itemsAfter(fresh(), { kind: "remove_preset", preset_id: -1 });   // the list as it would be sent back untouched
+  const at = before.findIndex((it, i) => JSON.stringify(it) !== JSON.stringify(faded[i]));
+  expect(faded.length).toBe(before.length);
+  expect(faded[at]).toEqual({ ...before[at], style: "fade" });
+  expect(faded.filter((it, i) => JSON.stringify(it) !== JSON.stringify(before[i])).length).toBe(1);
+  const kept = fresh(); kept[2].style = "fade";                      // arboretum answers the item with its style
+  const back = itemsAfter(kept, { kind: "style", at: 1, style: "morph" });
+  expect(back.some((it) => "style" in it)).toBe(false);
+});
+
 test("itemsAfter a removal counts places among the playable items and keeps the unavailable one", () => {
   expect(itemsAfter(fresh(), { kind: "remove", at: 1 })).toEqual([
     { preset_id: 1, dwell_s: 10, crossfade_s: 2 },

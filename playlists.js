@@ -325,6 +325,7 @@ export function itemsAfter(fresh, change) {
       else out.push({ preset_id: it.preset_id, ...times });
     } else if (it.unavailable || change.kind === "append" || change.at !== playable++) out.push({ preset_id: it.preset_id, ...times });
     else if (change.kind === "replace") out.push({ preset_id: change.preset_id, ...times });
+    else if (change.kind === "style") out.push({ preset_id: it.preset_id, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, ...styleKey({ style: change.style }) });   // how this item arrives: 'fade' is named, morph is its absence
   }
   if (change.kind === "append") out.push({ preset_id: change.preset_id });
   return out;

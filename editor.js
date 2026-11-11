@@ -1137,6 +1137,11 @@ function syncPlaylistUI(){
     deleteBtn.textContent = cloud ? 'remove' : 'delete';   // in a folder of yours it takes the item out of the playlist
     deleteBtn.hidden = a==='builtins' || (cloud && !arb?.canRemove());   // nothing is removed from the built-ins, from uncategorized, or from someone else's playlist (design §3.5)
   }
+  if(styleRow){
+    const st=arb?.styleNow() ?? null;
+    styleRow.hidden = st===null;
+    for(const b of styleRow.querySelectorAll('button')) b.classList.toggle('on', b.dataset.style===st);
+  }
   syncPlayButtons();
   arb?.changed();
   refreshChip();
@@ -1156,7 +1161,7 @@ function goTo(value){
   const t=timing(stateNow(), activeList(), value);
   endTween();
   player.leaving();
-  eng.transitionTo(resolveEntry(value), { duration: t ? t.crossfade_s : transDur,
+  eng.transitionTo(resolveEntry(value), { duration: t ? t.crossfade_s : transDur, style: t ? t.style : 'morph',
     onEnd:()=>{ endTween(); refreshPresetSelect(value); syncAllControls(); player.arrived(value); } });   // morph from the current live look to the target
   refreshPresetSelect(value);                                               // reflect target in the dropdown = next step's origin
 }
@@ -1200,7 +1205,7 @@ function showCloud(list, match){
   refreshPresetSelect(at<0 ? '' : String(at));      // the look has left this list (it joined a folder): nothing selected
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
-let devBeta=null;
+let devBeta=null, styleRow=null;
 function buildPresetUI(){
   const modes=document.createElement('div'); modes.className='ctl modes';
   const back=document.createElement('button'); back.textContent='less';
@@ -1251,6 +1256,12 @@ function buildPresetUI(){
   });
   plusBtn=mkBtn('+',()=>arb?.create()); plusBtn.title='new playlist'; plusBtn.hidden=true;   // signed in to arboretum only
   playlistRow.append(playlistSel, plusBtn); dev.appendChild(playlistRow);
+  // how the playlist item you are on arrives: morph (the automatic route) or fade. The playlist item's, so it shows only on an item of a playlist of yours.
+  styleRow=document.createElement('div'); styleRow.className='ctl stylerow'; styleRow.hidden=true;
+  const slab=document.createElement('label'); slab.textContent='arrives by';
+  styleRow.appendChild(slab);
+  for(const st of ['morph','fade']){ const b=mkBtn(st,()=>{ if(arb?.styleNow()!==st) arb?.setStyle(st); }); b.dataset.style=st; styleRow.appendChild(b); }
+  dev.appendChild(styleRow);
 
   // the experimental toggle is built here and laid at the very bottom of the panel, under the transition row (where that row is built)
   devBeta=document.createElement('div'); devBeta.className='ctl toggle devbeta';

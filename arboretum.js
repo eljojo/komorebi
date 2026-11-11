@@ -21,7 +21,7 @@ import { cameraFor, migrateLegacy } from "./komorebi.js";
 import { PRESETS } from "./presets.js";
 import { ARBORETUM, cachePlaylist, dequeue, detect, editorWritable, emptyMirror, enqueue, entryName, fromEntry, fromVersion, isFolder, itemsAfter, itemTarget, linkPlaylist, listChoices,
   mirrorDiff, mirrorPlaylist, mirrorPut, mirrorSync, moveCandidates, movePlan, onDeleted, onSaved, onlineId, placeChange, playlistChips, savePlan, savePreset,
-  starValue, uploadPlan, viewState } from "./playlists.js";
+  starValue, styleOf, uploadPlan, viewState } from "./playlists.js";
 
 // ---- storage: the ★ looks, and arboretum's state beside them ----
 export const LS_KEY = "komorebi.presets";
@@ -339,7 +339,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
 
   // Every write to a playlist's items starts from a fresh GET and applies the one change to that, never to the cache.
   async function writeItems(id, change) {
-    if ((change.kind === "remove" || change.kind === "replace") && !change.target)
+    if ((change.kind === "remove" || change.kind === "replace" || change.kind === "style") && !change.target)
       throw { error: "that playlist item changed; reload the playlist before changing it" };
     const fresh = await api.playlist(id);
     const v = await api.putItems(id, itemsAfter(fresh.items, change), fresh.revision);
@@ -434,6 +434,19 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
       const n = view().playlists[pid].items.length;
       say("");
       host.select(n ? String(Math.min(at, n - 1)) : "");
+    } catch (e) { fail(e); }
+  }
+
+  // How the item you are on arrives when the playlist steps to it: 'morph' (the automatic route) or 'fade'. It is the playlist item's,
+  // not the look's, so it is written as any other items write: from a fresh GET, the one item changed, everything else sent back.
+  async function setStyle(style) {
+    const active = host.active(), value = host.value();
+    if (!on || !value) return;
+    const pid = Number(active.slice(4)), at = Number(value);
+    try {
+      await writeItems(pid, { kind: "style", at, style, target: itemTarget(view().playlists[pid]?.items ?? [], at) });
+      say("");
+      host.select(String(at));
     } catch (e) { fail(e); }
   }
 
@@ -539,6 +552,15 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     changed: () => { drawChips(); if (on) drawMove(); },
     advanced: start,
     canRemove: () => signedIn() && isFolder(view(), host.active(), me),
+    // the style of the playlist item you are on, or null where there is no item of yours to keep one on (all looks, uncategorized,
+    // the built-ins, someone else's playlist): those always morph
+    styleNow() {
+      const active = host.active();
+      if (!signedIn() || !isFolder(view(), active, me)) return null;
+      const it = view().playlists[active.slice(4)]?.items[Number(host.value())];
+      return it && it.preset_id !== undefined && !it.pending ? styleOf(it) : null;
+    },
+    setStyle,
     // what the look's chip needs beyond the saved state: who you are, whether this is the copy kept here because arboretum could not
     // be reached, the last refusal for this look, and whether the copy is incomplete
     info: () => ({
