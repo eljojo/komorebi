@@ -211,6 +211,31 @@ const playlistItem = (id, owner = "alice", dwell_s = id * 10) => ({ preset_id: i
 const folderMirror = (items) => ({ ...emptyMirror(), playlists: [{ id: 7, owner: "alice", name: "folder", items }] });
 const wireItems = (items) => items.map(({ preset_id, dwell_s, crossfade_s }) => ({ preset_id, dwell_s, crossfade_s }));
 
+for (const navigate of [false, true]) {
+  test(`a style write preserves ${navigate ? 'a later selection in another list' : 'the selected item across a server reorder'}`, async () => {
+    setState({ v: 1, me: { username: 'alice' }, origin: {}, playlists: {} });
+    const one = playlistItem(1), two = playlistItem(2);
+    setMirror(folderMirror([one, two]));
+    let active = 'local', value = '0', listed, finish;
+    const s = await session(async (_url, init) => {
+      if (init.method === 'PUT') {
+        const items = JSON.parse(init.body).items;
+        await new Promise((resolve) => { finish = resolve; });
+        return json({ id: 7, owner: 'alice', items });
+      }
+      return json({ id: 7, owner: 'alice', items: [two, one] });
+    }, { active: () => active, value: () => value, select: (v) => { value = v; },
+      sync: () => { if (listed) value = model.selectionAfter(listed, s.a.view(), active, value); } });
+    active = 'arb:7'; listed = s.a.view();
+    const writing = s.a.setStyle('fade');
+    while (!finish) await Promise.resolve();
+    if (navigate) { active = 'local'; value = 'afternoon 7'; }
+    finish(); await writing;
+    expect(s.a.view().playlists[7].items.map((it) => [it.preset_id, it.style])).toEqual([[2, undefined], [1, 'fade']]);
+    expect(value).toBe(navigate ? 'afternoon 7' : '1');
+  });
+}
+
 test("removing after a concurrent reorder removes the displayed item, preserving unavailable entries", async () => {
   setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
   const one = playlistItem(1), two = playlistItem(2), unavailable = { preset_id: 9, dwell_s: 40, crossfade_s: 7, unavailable: true };

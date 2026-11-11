@@ -448,7 +448,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     try {
       await writeItems(pid, { kind: "style", at, style, target: itemTarget(view().playlists[pid]?.items ?? [], at) });
       say("");
-      host.select(String(at));
+      host.sync();
     } catch (e) { fail(e); }
   }
 
