@@ -286,7 +286,7 @@ Rain acts on **dead tissue only**: a turned red leaf on the tree is alive and ke
 
 ### The layering and the stamp
 
-The fallen are laid in order of their day, earliest first, ties by address, so the order is a property of the leaves and not of how they were listed: **the last to fall lie on top**. Each leaf is one flat stamp in its own outline, the leaf's own size face-on (lying flat it is not foreshortened), at its own angle on the ground, with a crisp anti-aliased rim (not the soft penumbra mask the canopy's leaves are baked with: that mask is how a leaf throws a shadow, not what it looks like), and its marginal fade multiplying its coverage.
+The fallen are laid in order of their day, earliest first, ties by address, so the order is a property of the leaves and not of how they were listed: **the last to fall lie on top**. The order and where each leaf lands belong to the grove and the season's wind, not to the clock: a step of the season recolours and ages the carpet and adds the leaves whose day has come, and never lays the others again. Each leaf is one flat stamp in its own outline, the leaf's own size face-on (lying flat it is not foreshortened), at its own angle on the ground, with a crisp anti-aliased rim (not the soft penumbra mask the canopy's leaves are baked with: that mask is how a leaf throws a shadow, not what it looks like), and its marginal fade multiplying its coverage.
 
 The carpet stores **coverage-weighted colour and coverage**, composited over: coverage accumulates as `1 − Π(1 − a)`, and because a texel is a mixture, filtering averages coverage-weighted colour rather than darkening every edge toward bare ground, so the far floor of a tilted camera reads a filtered carpet, not a shimmer.
 

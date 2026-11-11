@@ -332,7 +332,7 @@ A change re-casts once even with the wind off. Regenerating identical samples do
 - the size or the frame;
 - `leaf_wetness` (MORPH-class, so only the carpet re-bakes).
 
-It never re-bakes for the live wind, the sun or the fill. It keys on the grove and the litter keys, not the pigment capacities. Every route that grows a grove calls it, including a context restore and an editor slider. The harness measures `passes` at 1 after two dozen frames.
+It never re-bakes for the live wind, the sun or the fill. It keys on the grove and the litter keys, not the pigment capacities. A re-bake does not sort or draw again what the clock did not move: a re-seasoned grove's list carries its drop order (`byDay`, not enumerable, read off `season.sched.byDay`, every leaf in `litterOrder`'s order, sorted once per schedule), and `litterInstances` keeps each landing (`newLitterCache`, per grove, keyed on the seed, the drift and the wind direction, checked against the leaf's own place), writing the instances straight into one typed buffer. Every route that grows a grove calls it, including a context restore and an editor slider. The harness measures `passes` at 1 after two dozen frames.
 
 **The grove's structural key.** It is every param `buildGrove` reads besides the season set, plus `faithfulOn()` (`GROVE_READS`). The list was derived by grepping the grove, and a test greps again. A key mismatch regrows; a change only in `SEASON_KEYS` re-seasons. The density-capacity record has its own key, which excludes density and checks buffer ownership and available slots.
 

@@ -82,8 +82,9 @@ function litterLanding(l, P){
 
 // THE LAYERING: the last to fall lie on top, so the stamps are drawn in ascending D (ties by address, so the order is a property of
 // the leaves and not of how the grove happened to list them) and the alpha-blended instance order IS the layering.
+// A re-seasoned grove hands its list with that order already made (`byDay`, out of sight: komorebi-grove.js), so the clock never sorts the carpet; a copy of the list has none and is sorted.
 function litterOrder(list){
-  return [...list].sort((a, b) => a.D - b.D || a.j - b.j || a.k - b.k);
+  return list.byDay ?? [...list].sort((a, b) => a.D - b.D || a.j - b.j || a.k - b.k);
 }
 
 // The bake's instance buffer: INSTANCE_FLOATS per stamp, in drop order —
@@ -100,26 +101,50 @@ function litterOrder(list){
 // the quad is drawn with round it, is not missed.
 const INSTANCE_FLOATS = 12;
 const wrapInto = (v, o, ext) => o + ((((v - o) % ext) + ext) % ext);
-function litterInstances(list, P, frame, wrap, minHalf = 0){
-  const { ox, oy, ext } = frame, buf = [], rgb = [0, 0, 0], shape = leafShape(P.leaf_shape, P.seed, P.leaf_variety);   // shape: the outline the leaves hung in (the 64-row table, with leaf_variety); null is the ellipse
+// `cache` (newLitterCache, optional): each leaf's landing kept by address for the season wind it was drawn under (seed, drift, direction), checked against the leaf's own place,
+// so a list of another grove's leaves under the same addresses draws its own. The numbers are litterLanding's; only the drawing is saved.
+function litterInstances(list, P, frame, wrap, minHalf = 0, cache = null){
+  const { ox, oy, ext } = frame, rgb = [0, 0, 0], shape = leafShape(P.leaf_shape, P.seed, P.leaf_variety);   // shape: the outline the leaves hung in (the 64-row table, with leaf_variety); null is the ellipse
+  const data = new Float32Array(list.length*(wrap ? 4 : 1)*INSTANCE_FLOATS);   // a wrapped stamp is drawn at most four times (a corner), a clamped one once
+  let lands = null, w = 0;
+  if(cache){
+    const key = `${P.seed}|${P.litter_drift_m}|${P.wind_direction_deg}`;
+    if(cache.key !== key){ cache.key = key; cache.lands.clear(); }
+    lands = cache.lands;
+  }
   for(const l of litterOrder(list)){
     // + the margin the stamp's quad is drawn with (VS_LITTER); and an outline's quad is its box, whose far corner is `reach` leaf units from the base the stamp turns about
     // A seasonal journey supplies the moving floor mark; ordinary litter keeps its deterministic resting place.
-    const land = l.flight ?? litterLanding(l, P), A = l.size[0], B = l.size[1], reach = (Math.max(A, B, minHalf) + 1.5*minHalf)*(shape ? shape.reach : 1);
-    let x = land.x, y = land.y;
+    let x, y, c, s;
+    if(l.flight || !lands){ const land = l.flight ?? litterLanding(l, P); x = land.x; y = land.y; c = Math.cos(land.rot); s = Math.sin(land.rot); }
+    else {
+      const id = l.j*65536 + l.k;
+      let e = lands.get(id);
+      if(!e || e.at[0] !== l.x || e.at[1] !== l.y || e.at[2] !== l.h){
+        const land = litterLanding(l, P);
+        e = { at: [l.x, l.y, l.h], x: land.x, y: land.y, c: Math.cos(land.rot), s: Math.sin(land.rot) };
+        lands.set(id, e);
+      }
+      x = e.x; y = e.y; c = e.c; s = e.s;
+    }
+    const A = l.size[0], B = l.size[1], reach = (Math.max(A, B, minHalf) + 1.5*minHalf)*(shape ? shape.reach : 1);
     const xs = [0], ys = [0];
     if(wrap){
       x = wrapInto(x, ox, ext); y = wrapInto(y, oy, ext);
       if(x - reach < ox) xs.push(ext); if(x + reach > ox + ext) xs.push(-ext);
       if(y - reach < oy) ys.push(ext); if(y + reach > oy + ext) ys.push(-ext);
     } else if(x + reach < ox || x - reach > ox + ext || y + reach < oy || y - reach > oy + ext) continue;
-    if(l.flight?.albedo){ for(let c=0;c<3;c++) rgb[c]=l.flight.albedo[c]; }
+    if(l.flight?.albedo){ for(let q=0;q<3;q++) rgb[q]=l.flight.albedo[q]; }
     else litterAlbedo(l.tau, litterAge(P, l.D), P.leaf_wetness, rgb);
-    const c = Math.cos(land.rot), s = Math.sin(land.rot);
-    for(const dx of xs) for(const dy of ys) buf.push(x + dx, y + dy, A, B, c, s, l.fade, shape ? (l.row ?? leafVariant(P.seed, l.j, l.k)) : 0, rgb[0], rgb[1], rgb[2], 0);
+    const v = shape ? (l.row ?? leafVariant(P.seed, l.j, l.k)) : 0;
+    for(const dx of xs) for(const dy of ys){
+      data[w] = x + dx; data[w+1] = y + dy; data[w+2] = A; data[w+3] = B; data[w+4] = c; data[w+5] = s; data[w+6] = l.fade; data[w+7] = v;
+      data[w+8] = rgb[0]; data[w+9] = rgb[1]; data[w+10] = rgb[2]; data[w+11] = 0; w += INSTANCE_FLOATS;
+    }
   }
-  return { data: Float32Array.from(buf), count: buf.length/INSTANCE_FLOATS };
+  return { data: data.subarray(0, w), count: w/INSTANCE_FLOATS };
 }
+const newLitterCache = () => ({ key: null, lands: new Map() });
 
 // ============================================================================
 // THE BAKE (the GL half). The carpet is a texture over the sky fill's frame — fillFrame(E, h_max, bulkOn), asked of the bake module so the two
@@ -136,7 +161,7 @@ function newLitterState(){
 
 function makeLitter(hub){
   const { gl, params, litter } = hub;
-  const sig = new Float64Array(litter.sig.length);
+  const sig = new Float64Array(litter.sig.length), lands = newLitterCache();   // the landings, kept per grove and season wind: a re-season re-bakes the carpet on every step of the clock
   // only the floor reflects, so only the floor has a carpet to read; the cloth transmits and the sky view has no surface (the registry says so)
   const litterWanted = () => params.litter > 0 && CAMERAS[cameraFor(params)].groups.includes('litter');
   const litterRes = () => clamp(params.litter_resolution|0, 64, Math.min(4096, hub.MAX_TEX || 4096));
@@ -171,7 +196,8 @@ function makeLitter(hub){
   function bakeLitter(list, res, fr, wrap){
     if(litter.res !== res) allocTex(res);
     const e = hub.litterFor(), u = e.U, minHalf = 0.75*fr.ext/res;
-    const inst = litterInstances(list, params, fr, wrap, minHalf);
+    if(lands.grove !== hub.grove){ lands.grove = hub.grove; lands.lands.clear(); }   // a regrow's leaves are other leaves: what the last grove's landed is let go
+    const inst = litterInstances(list, params, fr, wrap, minHalf, lands);
     ensureVAO();
     gl.bindTexture(gl.TEXTURE_2D, litter.tex);
     const mode = wrap ? gl.REPEAT : gl.CLAMP_TO_EDGE;   // the park repeats its carpet like its fill (the box is one period of an endless field); a tree's is empty at the edge of its padded frame
@@ -233,4 +259,4 @@ function makeLitter(hub){
 // What the engine holds in place of the carpet in a bundle that cut it (embed-build.mjs, FEATURES.litter): nothing to bake, nothing to release.
 const NO_LITTER = { refreshLitter: () => {} };
 
-export { NO_LITTER, LITTER_SALT, LITTER_SIGMA, LITTER_KAPPA, F_CUTICLE, TAU_BROWN, ALBEDO_BROWN, N_WALL, N_WATER, WET_RHO, kmInvert, kmReflect, INSTANCE_FLOATS, litterAlbedo, litterAge, litterLanding, litterOrder, litterInstances, newLitterState, makeLitter };
+export { NO_LITTER, LITTER_SALT, LITTER_SIGMA, LITTER_KAPPA, F_CUTICLE, TAU_BROWN, ALBEDO_BROWN, N_WALL, N_WATER, WET_RHO, kmInvert, kmReflect, INSTANCE_FLOATS, litterAlbedo, litterAge, litterLanding, litterOrder, litterInstances, newLitterCache, newLitterState, makeLitter };

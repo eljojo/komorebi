@@ -161,6 +161,49 @@ test("instance order = ascending D: the carpet is laid in the order the leaves f
   }
 });
 
+// A re-season steps the clock over one grove: the order the leaves fall in, and where each lands, are the grove's and the season wind's, never the clock's.
+const cmpDay = (a, b) => a.D - b.D || a.j - b.j || a.k - b.k;
+function reseasoned(over, phs) {
+  const gl = new Proxy({}, { get: (t, name) => name === "createBuffer" ? () => ({}) : name === "bindVertexArray" ? (v) => { t.vao = v; } : () => ({}) });
+  const params = fall({ tree_count: 2, leaves_per_cluster: 8, foliage_density: 1.5, layer_count: 2, ...over, phenology: 0.6 });
+  const G = makeGrove({ gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => false, occ: {}, faith: {}, sky: { start: [], count: [] } });
+  const g = G.buildGrove(null, { keepSeason: true });
+  return phs.map((p) => { params.phenology = p; G.reseasonGrove(g, params); return { params: { ...params }, litter: g.litter }; });
+}
+
+test("a re-seasoned list knows its own drop order: litterOrder hands it back without sorting, it is the sort's, and the list's own bytes are untouched", () => {
+  for (const over of [{ ...PRESETS["afternoon 7"], ...SMALL, ...FALL }, { ...PRESETS["afternoon 7"], ...SMALL, ...FALL, drop_after_turn: 1, tree_clock_spread: 0.1 }, { ...PRESETS["afternoon 7"], ...SMALL, ...FALL, drop_exposure: 0, foliage_density: 1.3 }]) {
+    for (const { litter } of reseasoned(over, [0.8, 0.88, 0.95, 1])) {
+      expect(litter.length).toBeGreaterThan(50);
+      const own = Object.getOwnPropertyDescriptor(litter, "byDay");
+      expect(own, "the list carries its order").toBeDefined();
+      expect(own.enumerable, "...out of sight of a copy or a JSON").toBe(false);
+      const want = [...litter].sort(cmpDay), got = L.litterOrder(litter);
+      expect(got).toHaveLength(want.length);
+      got.forEach((l, i) => { expect(l, `#${i}`).toBe(want[i]); });
+    }
+  }
+});
+
+test("the carpet keeps each landing per grove and season wind: its instances are the uncached ones bit for bit, through a wind change, a seed change and another grove's leaves at the same addresses", () => {
+  const steps = reseasoned({ ...PRESETS["afternoon 7"], ...SMALL, ...FALL }, [0.85, 0.9, 0.95]);
+  const other = grow({ ...PRESETS["afternoon 7"], ...SMALL, ...FALL, seed: 4242 }).litter;   // the same (j, k) addresses, other places
+  const cache = L.newLitterCache(), frame = { ox: -9, oy: -9, ext: 18 };
+  const check = (list, P, wrap, what) => {
+    const want = L.litterInstances(list, P, frame, wrap, 0.01), got = L.litterInstances(list, P, frame, wrap, 0.01, cache);
+    expect(got.count, what).toBe(want.count);
+    expect(Buffer.from(got.data.buffer, got.data.byteOffset, got.data.byteLength).equals(Buffer.from(want.data.buffer, want.data.byteOffset, want.data.byteLength)), what).toBe(true);
+  };
+  for (const wrap of [true, false]) for (const { litter, params } of steps) check(litter, params, wrap, `step ${params.phenology}, wrap ${wrap}`);
+  expect(cache.lands.size, "the landings are kept").toBeGreaterThan(0);
+  const { litter, params } = steps[2];
+  check(litter, { ...params, wind_direction_deg: params.wind_direction_deg + 40 }, true, "the season wind turned");
+  check(litter, { ...params, litter_drift_m: 1.1 }, true, "the drift");
+  check(litter, { ...params, seed: 99 }, true, "the seed");
+  check(other, params, true, "another grove's leaves under the same addresses");
+  check(litter, params, true, "and back");
+});
+
 test("an instance is one leaf's stamp: where, how big, which way, how much of it is there, and the albedo it reflects with", () => {
   const { litter, params } = fallen();
   const inst = L.litterInstances(litter, params, { ox: -50, oy: -50, ext: 100 }, false), F = L.INSTANCE_FLOATS, ord = L.litterOrder(litter);

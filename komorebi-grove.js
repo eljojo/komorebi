@@ -840,8 +840,22 @@ export function makeGrove(hub){
         const lt = turning ? leafTauAt(tint, smoothstep(at[LEAF_SCHED*i], at[LEAF_SCHED*i+1], ph), at, LEAF_SCHED*i, fw, t) : tint;
         list.push({ x: rec[o], y: rec[o+1], h: rec[o+2], D: sc.D[i], tau: [lt[0], lt[1], lt[2]], size: [rec[o+3], rec[o+4]], j, k, fade: fallen[f+1], ...(leafRow && { row: leafRow[j*nLeaf + k] }) });
       }
+      // ...and the order the carpet lays them in (litterOrder: by day, ties by address), read off the schedule's whole-grove order: a leaf has fallen exactly when the
+      // clock has reached its day, so the fallen are that order's survivors of a filter, in place. Out of sight (not enumerable), so the list is the build's list.
+      const byDay = [], slot = new Int32Array(n).fill(-1), order = dayOrder(g, sc);
+      for(let f=0;f<fallen.length;f+=2) slot[fallen[f]] = f/2;
+      for(let q=0;q<n;q++){ const p = slot[order[q]]; if(p >= 0) byDay.push(list[p]); }
+      Object.defineProperty(list, 'byDay', { value: byDay });
       return list;
     } });
+  }
+  // Every leaf of the record in the carpet's order (komorebi-litter.js litterOrder: ascending day, ties by cluster then leaf), with that comparator's own arithmetic. Kept with the
+  // schedule that set the days, so the clock never sorts.
+  function dayOrder(g, sc){
+    if(sc.byDay) return sc.byDay;
+    const rec = g.season.rec, D = sc.D, J = (i) => rec[SREC*i+6], K = (i) => rec[SREC*i+7];
+    sc.byDay = Int32Array.from({ length: g.season.n }, (_, i) => i).sort((a, b) => D[a] - D[b] || J(a) - J(b) || K(a) - K(b));
+    return sc.byDay;
   }
   const setLitter = (g, v) => Object.defineProperty(g, 'litter', { value: v, writable: true, configurable: true, enumerable: true });
 
@@ -882,7 +896,7 @@ export function makeGrove(hub){
       leafPigments(P, d[4*i+1], d[4*i+2], lit ? P.turn_exposure : 0, lit ? redGain(u[i]) : undefined, cT, at, LEAF_SCHED*i);
       if(dropOn) D[i] = after ? dropDayAfterTurn(P, phi, dT) : dropDay(P, dropPhase(d[4*i+3], u ? u[i] : 0, P.drop_exposure), dT);
     }
-    sc.key = key; sc.builds++;
+    sc.key = key; sc.builds++; sc.byDay = null;
     return sc;
   }
 
