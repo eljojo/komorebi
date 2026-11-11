@@ -35,6 +35,54 @@ function seasonDialRig() {
   return { ...dial, params, writes, eng, land() { Object.assign(params, pending.p); eng.trans.active = false; pending.opts.onEnd(); dial.trySeasonTick(); } };
 }
 
+function focusDialRig(look) {
+  const source = readFileSync('editor.js', 'utf8'), params = { ...DEFAULTS, ...look }, scopes = [], noop = () => {};
+  const bus = createBus(() => params, (dict, scope) => { Object.assign(params, dict); scopes.push(scope); });
+  const body = source.slice(source.indexOf('const TRY_FALL ='), source.indexOf('const TRY_SAYS ='));
+  const env = { params, bus, macroValue, macroParams, macroUsable, clamp: (x, lo, hi) => Math.min(hi, Math.max(lo, x)),
+    maybeClearSpecies: noop, syncControl: noop, applyScope: (scope) => scopes.push(scope) };
+  const dial = new Function('env', `with(env){ ${body}\nreturn {capture:tryCapture,focus:TRY_SPECS.focus}; }`)(env);
+  dial.capture();
+  return { ...dial, params, scopes };
+}
+
+test('focus at the displayed home restores each shipped look\'s own light, including after an adjustment', () => {
+  for (const [name, look] of Object.entries(PRESETS)) {
+    const r = focusDialRig(look), original = { ...r.params };
+    const home = Math.round(r.focus.home() / r.focus.step) * r.focus.step;
+    r.focus.write(home);
+    expect(r.params, name).toEqual(original);
+    r.focus.write(home < 0.5 ? 1 : 0);
+    r.focus.write(home);
+    expect(r.params, name).toEqual(original);
+    expect(r.scopes).toEqual(['source', 'source', 'source']);
+  }
+});
+
+test('the first focus step follows the look\'s light without jumping to the absolute recipe', () => {
+  const r = focusDialRig(PRESETS['afternoon 7']), weight = r.params.core_weight_fraction;
+  for (const v of [0.645, 0.655]) {
+    r.focus.write(v);
+    expect(Math.abs(r.params.core_weight_fraction - weight)).toBeLessThan(0.005);
+    expect(r.params.core_angular_radius_deg).toBe(macroParams('focus', v).core_angular_radius_deg);
+  }
+});
+
+test('focus keeps the recipe\'s endpoints away from home and stays inside the physical weight range', () => {
+  for (const look of Object.values(PRESETS)) {
+    const r = focusDialRig(look);
+    for (let i = 0; i <= 200; i++) {
+      const v = i / 200;
+      r.focus.write(v);
+      expect(r.params.core_weight_fraction).toBeGreaterThanOrEqual(0);
+      expect(r.params.core_weight_fraction).toBeLessThanOrEqual(1);
+      expect(r.focus.seat()).toBeCloseTo(v, 2);
+      if ((i === 0 || i === 200) && Math.abs(v - r.focus.home()) > r.focus.step / 2)
+        expect(r.params.core_weight_fraction).toBeCloseTo(macroParams('focus', v).core_weight_fraction, 12);
+    }
+  }
+});
+
 test('the season release waits for a moving route, then applies the exact value after its destination loads', () => {
   const r = seasonDialRig();
   r.goTo({ ...DEFAULTS, phenology: 0.6 });

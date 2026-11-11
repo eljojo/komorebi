@@ -3,7 +3,7 @@ import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
 import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter } from './playlists.js';
-import { MACROS, createBus, macroUsable, macroValue, tweenGateStep } from './macros.js';
+import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
 import { LEAF_SHAPES } from './komorebi-leaf.js';
@@ -635,10 +635,22 @@ function trySunWrite(){                            // the one place the two sun 
   tryWrite({ sun_azimuth_deg:(((tryHome.sun_azimuth_deg + tryAz + t.az) % 360) + 360) % 360, sun_elevation_deg:t.el }, '');
 }
 const tryFrac = (v, lo, hi) => clamp((v - lo) / (hi - lo), 0, 1);
+// Keep the look's own light at home; either side follows the focus recipe toward its crisp or soft end.
+function tryFocusWrite(v){
+  const home = macroValue('focus', tryHome), dict = macroParams('focus', v);
+  if(Math.abs(v - home) <= TRY_SPECS.focus.step/2){
+    for(const k in dict) dict[k] = tryHome[k];
+  } else {
+    const from = macroParams('focus', home).core_weight_fraction;
+    const end = macroParams('focus', v < home ? 0 : 1).core_weight_fraction;
+    dict.core_weight_fraction = tryHome.core_weight_fraction + (end - tryHome.core_weight_fraction)*(dict.core_weight_fraction - from)/(end - from);
+  }
+  tryWrite(dict, 'source');
+}
 const TRY_SPECS = {
   focus: { ends:['crisp','soft'], min:0, max:1, step:0.005,          // the focus macro itself (the sun's core and its share of the light), with a home and a way back
     seat:() => bus.get('focus'), home:() => macroValue('focus', tryHome),
-    write:(v) => { bus.set('focus', v); } },
+    write:tryFocusWrite },
   cloudiness: { ends:['clear','overcast'], min:0, max:0.6, step:0.005,
     seat:() => clamp(params.cloud_thickness, 0, 0.6), home:() => tryFrac(tryHome.cloud_thickness, 0, 0.6),
     write:(v) => tryWrite({ cloud_thickness:v }, 'source') },
