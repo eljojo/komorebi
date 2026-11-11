@@ -718,7 +718,7 @@ No other motion measurement is recorded.
   | P3 | B | +5.9 / −6.6 | 1.89 | 32 175 | 0.73 m / 1.53 m | 27.4 / 38.0 |
 
   Every largest step is within about 1.7× the settled looks' own motion; no step stands out at the handoffs or where the drawn native scene switches. B lands on the target loaded fresh (max 0). Over the 29 faithful overhead looks in arboretum, all 426 ordered pairs the dissolve took pass leaf travel's gate. A target at 8 samples, a 512 bake or texture, or leaf variety 0.9 also lands with no spike (largest steps 1.88, 1.52, 1.45, 1.47 against 1.45).
-- **What it established:** leaf travel joins these pairs without a dissolve of pictures; its motion is busier where the seed changes (a typical leaf moves a quarter of the view), and its middle is softer than either end (the moving cast's texel, about 9.8 mm against a 2.4 mm pixel at a 1024 bake).
+- **What it established:** leaf travel joins these pairs without a dissolve of pictures; its motion is busier where the seed changes (a typical leaf moves a quarter of the view), and its middle reads softer than either end. That softness was first put down to the moving cast's texel; a later measurement on the same pair found the native faithful cast has the same texel (9.7 to 10.3 mm at a 1024 bake, against a 4.3 mm pixel) and the moving cast's transmission no softer mid-route (mean gradient over standard deviation 0.066 settled, 0.083 at full weight, 0.080 settled at the far end), so the cause is open.
 - **Date:** 2026-11-10.
 
 ### The midpoint grove against the look loaded fresh

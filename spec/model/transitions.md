@@ -120,7 +120,7 @@ The travelling leaves are cast through the current sun samples into a transient 
 
 with w the spatial travel progress, so native sampling, the far smear and diffraction are present at landing. A native cast is re-cast at the current wind while its share is visible, and keeps its endpoint's authored leaf-diffuse value while the moving cast interpolates it: zero diffusion selects a different texel law (see [`leaf.md`](leaf.md)), so a tiny positive value must not survive to the last frame and then snap to the zero law. The tone response changes continuously on the same irradiance, and the hood fades as on every route across its gate. There is no clear-floor interval.
 
-**Limit: the moving cast is softer than either end mid-route.** The transient map covers the whole projected grove at the bake's resolution, so where the moving cast carries the whole picture its texel is several screen pixels wide and the dapples go blobby; the sharp leaves return through the handoffs. On a long route this softness lasts for most of it. The moving cast samples the source with the incoming end's count and bakes at its size throughout.
+**Open: the middle of the route reads softer than either end.** Where the moving cast carries the whole picture the dapples look rounder and the fine texture thins, and on a long route that lasts for most of it; the sharp leaves return through the handoffs. The cause is not established. It is not the map's resolution: the transient map and a native faithful cast cover the same ground at the same size. See [`../exploration/open.md`](../exploration/open.md). The moving cast samples the source with the incoming end's count and bakes at its size throughout.
 
 ### Season travel: a shared standing grove between floor and canopy
 
