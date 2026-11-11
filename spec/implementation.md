@@ -429,7 +429,7 @@ Two tiers. The **unit tests** (`*.test.js` at the root, run under `bun test`) ho
 | **Transition routing** | each tier driven to completion; logic only |
 | **Eyes mode** (`--look "<look>" key=value …`) | a look rendered with overrides, re-baked first, written to `out/`; not a suite, and asserts nothing |
 
-`--gate [substring …]` runs only the gate rows whose name matches. It is the fast loop for adding a gate. `--fill`, `--sky` and `--edge` run their suites alone.
+`--only <substring …>` selects rows by suite, name or look across the suites. A filter matching no row fails before filesystem, server or browser setup. `--list [substring …]` lists matching rows without rendering; an empty listing is allowed. `--gate [substring …]` runs only the gate rows whose name matches. It is the fast loop for adding a gate. `--fill`, `--sky` and `--edge` run their suites alone.
 
 ### Route drivers
 

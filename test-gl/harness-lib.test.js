@@ -2,6 +2,7 @@
 // what can silently go wrong without one is the memo's key (two inputs that are the same engine must collide, two
 // that are not must not), the fresh bypass the "two independent engines" rows stand on, and the manifest's key.
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { canonicalJSON, createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, renderKey, rowFilters, rowMatches, sampleRows, seededRandom } from './harness-lib.mjs';
 
 describe('renderKey', () => {
@@ -132,6 +133,23 @@ describe('hashVerdict / manifestBodyProblems — what --verify holds the rows to
 });
 
 describe('the row selector (--only, --list)', () => {
+  const preflight = (filters) => {
+    const source = readFileSync(new URL('./run.js', import.meta.url), 'utf8');
+    const start = source.indexOf('async function main() {') + 'async function main() {'.length;
+    const body = source.slice(start, source.indexOf('  await mkdir(OUT', start));
+    const rows = { smoke: (r) => ['smoke', r], gate: (r) => ['gate', r] };
+    const catalog = () => [['smoke', ['memories']], ['gate', ['litter is inert at zero']]];
+    return new Function('rowFilters', 'process', 'CATALOG', 'ROWS', 'keep', 'only', `return (async () => { ${body} })();`)(
+      rowFilters, { argv: ['bun', 'run.js', '--only', ...filters] }, catalog, rows,
+      (kind) => (row) => rowMatches(filters, ...rows[kind](row)), filters);
+  };
+  test('--only refuses an empty selection before filesystem, server or browser setup', async () => {
+    await expect(preflight(['no-such-row'])).rejects.toThrow(/no row matches.*no-such-row/i);
+  });
+  test('--only accepts a matching non-smoke suite and an unfiltered run', async () => {
+    await expect(preflight(['litter'])).resolves.toBeUndefined();
+    await expect(preflight([])).resolves.toBeUndefined();
+  });
   test('the filters are every argument after the flag, lower-cased; no flag is null, the flag alone is every row', () => {
     expect(rowFilters(['node', 'run.js', '--only', 'Litter', 'afternoon 7'], '--only')).toEqual(['litter', 'afternoon 7']);
     expect(rowFilters(['node', 'run.js', 'memories'], '--only')).toBe(null);

@@ -1120,6 +1120,8 @@ async function main() {
     console.log(`${n} rows`);
     process.exit(0);
   }
+  if (only && !CATALOG().some(([kind, rows]) => rows.some(keep(kind))))
+    throw new Error(`no row matches: ${only.join(', ')}`);
   await mkdir(OUT, { recursive: true });
   const t0 = Date.now();
   const { server, port, served } = await serveRoot();
