@@ -110,7 +110,7 @@ With diffraction on, each colour channel reads each layer at its own wavelength-
 
 The baked canopy is a bounded box, and a view, a shift or a tilted horizon can read past it. What lies past it **follows the scene**, and both the ordinary and the per-channel taps obey the same rule:
 
-- **The endless park repeats.** Its box is one period of an endless field, so a read past one side enters from the other. Nothing reads a border texel stretched into a band across a wide or panned view.
+- **The endless park repeats.** Its box is one period of an endless field, so a read past one side enters from the other. Nothing reads a border texel stretched into a band across a wide or panned view. On 2026-11-10 the artist took the repeat over the band it replaced, which the shipped floor looks and `tent 1` had been pinned with: the two differ only in a thin strip at the far edge and on the tent's lower panels, imperceptibly, and the repeat is this rule.
 - **A finite tree is open sky.** Outside its box there is zero optical depth: the surround of a standing tree, a curtain's tree or a tent's grove is fully lit.
 
 The choice is the same finite-object question that turns the bulk shift on, and it matches the sky fill's domains ([`fill.md`](fill.md)). **Law** for the finite tree; for the park the repetition is of the *texture*, not of a periodically grown grove, so a wide enough view can still reveal the repeat or a seam (below).
