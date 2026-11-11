@@ -38,7 +38,7 @@ export function makeTransitions(hub){
     // flags have one grove, so a dissolve of the two would show nothing the live morph does not: they morph.
     const styleFade = opts.style==='fade' && [...TOPO_KEYS,...MODE_KEYS,...CANOPY_KEYS].some(k => to[k]!==params[k]);
     trans.waiting = null;
-    if(styleFade && trans.active){ wait(to, opts); return; }   // a scene dissolve starts from rest; keep the requested style until the current route lands
+    if(opts.style==='fade' && trans.active){ wait(to, opts); return; }   // a scene dissolve starts from rest; keep the requested style until the current route lands
     if(trans.active&&trans.groveTravel){hub.retargetGroveTravel(to,opts);return;}
     if(!styleFade&&!trans.active&&groveTravelEligible(params,to)&&hub.beginGroveTravel(to)!==false){
       hub.warnCut(to);
