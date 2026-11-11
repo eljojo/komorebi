@@ -1115,7 +1115,7 @@ function refreshPresetSelect(selected){
   const active=activeList(), state=stateNow();
   let keep=selected ?? presetSel.value;
   if(selected===undefined && listedState)
-    keep=listedActive===active ? selectionAfter(listedState, state, active, keep) : '';
+    keep=listedActive===active ? selectionAfter(listedState, state, active, keep, arb?.landings()) : '';
   const list=listEntries(keep);
   for(const sel of presetSelects){
     sel.innerHTML='';

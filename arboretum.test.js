@@ -189,7 +189,7 @@ test("the editor keeps the selected preset across a mirror reorder, so saving up
   const settings = { selected: {} };
   const source = readFileSync("editor.js", "utf8");
   const body = source.slice(source.indexOf("function refreshPresetSelect("), source.indexOf("// the playlist select exists"));
-  const refresh = new Function("presetSel", "presetSelects", "listEntries", "document", "settings", "activeList", "stateNow", "selectionAfter", "saveSettings", "syncPlayPreset", "syncPlaylistUI",
+  const refresh = new Function("presetSel", "presetSelects", "listEntries", "document", "settings", "activeList", "stateNow", "selectionAfter", "saveSettings", "syncPlayPreset", "syncPlaylistUI", "arb",
     `let listedState=null, listedActive=null; ${body}; return refreshPresetSelect;`)(
     select, [select], () => model.entries(state, {}, { PRESETS: {}, EXPERIMENTAL: [] }, false, "arb:unc"), { createElement: () => ({}) },
     settings, () => "arb:unc", () => state, model.selectionAfter, () => {}, () => {}, () => {});

@@ -4,7 +4,7 @@ import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted,
   uploadPlan, itemsAfter, itemTarget, playlists, plays, timing, starValue, starName, entryName,
   fromEntry, onlineId, placeChange, sameLook, lookState, playlistChips,
-  emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, isFolder, fromVersion, linkPlaylist, makePlayer } from "./playlists.js";
+  emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, isFolder, fromVersion, linkPlaylist, makePlayer, selectionAfter } from "./playlists.js";
 import * as builtins from "./presets.js";
 import { DEFAULTS, cameraFor } from "./komorebi.js";
 
@@ -600,6 +600,16 @@ test("itemsAfter an append: the whole list, unavailable item kept, the new prese
     { preset_id: 2, dwell_s: 20, crossfade_s: 3 },
     { preset_id: 3 },
   ]);
+});
+
+test("selectionAfter follows a waiting save to the preset it became when it went up, and only to the latest one its seq became", () => {
+  const list = (items) => ({ playlists: { unc: { items } } });
+  const waiting = { name: "k4 offline", pending: true, seq: 1 }, dusk = { preset_id: 21, name: "dusk" };
+  const before = list([waiting, dusk]), after = list([{ preset_id: 12, name: "k4 offline" }, dusk]);
+  expect(selectionAfter(before, after, "arb:unc", "0", { 1: 12 })).toBe("0");
+  expect(selectionAfter(before, list([dusk, { preset_id: 12, name: "k4 offline" }]), "arb:unc", "0", { 1: 12 })).toBe("1");
+  expect(selectionAfter(before, after, "arb:unc", "0", {})).toBe("");                      // no landing recorded: the save is not followed
+  expect(selectionAfter(before, list([waiting, dusk]), "arb:unc", "0", { 1: 40 })).toBe("0"); // still waiting (its seq was reused): it is itself
 });
 
 test("itemsAfter a style change: only that playable item's style moves, 'fade' is named and 'morph' is the absence of it", () => {

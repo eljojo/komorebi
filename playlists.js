@@ -72,12 +72,17 @@ const starValueOf = (PRESETS, name) => (isBuiltin(PRESETS, name) || name.startsW
 export const starValue = (name) => starValueOf(BUILTINS.PRESETS, name);
 
 // A refresh may reorder a cloud list without changing the live look. Follow its preset (or waiting save), never the old index.
-export function selectionAfter(before, after, active, value) {
+// `landed` maps a waiting save's seq to the preset it became when it went up: once it has, the save is that preset. A seq is
+// reused after the queue empties, so a save still waiting under it is itself, whatever the map says.
+export function selectionAfter(before, after, active, value, landed = {}) {
   if (cloudId(active) === null) return value;
   if (value === "") return "";
   const old = cloudItems(before, active), item = old[Number(value)];
   if (!item) return "";
-  const same = (it) => item.preset_id !== undefined ? it.preset_id === item.preset_id : item.seq !== undefined && it.seq === item.seq;
+  const waiting = item.seq !== undefined && cloudItems(after, active).some((it) => it.seq === item.seq);
+  const became = item.preset_id === undefined && !waiting ? landed[item.seq] : undefined;
+  const same = (it) => item.preset_id !== undefined ? it.preset_id === item.preset_id
+    : became !== undefined ? it.preset_id === became && it.seq === undefined : item.seq !== undefined && it.seq === item.seq;
   const occurrence = old.slice(0, Number(value)).filter(same).length;
   const matches = cloudItems(after, active).map((it, i) => same(it) ? i : -1).filter((i) => i >= 0);
   return matches[occurrence] === undefined ? "" : String(matches[occurrence]);

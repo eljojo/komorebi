@@ -399,6 +399,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   // The saves that waited go up in the order they were made. A network failure or an ended session stops the rest, which waits for
   // the next check; one that arboretum refuses would be refused again, so it becomes a ★ here, with the reason said.
   let pushing = false;
+  const landings = {};   // seq → the preset each waiting save became, so the editor's selection can follow it (selectionAfter)
   async function pushQueue() {
     if (pushing) return;
     pushing = true;
@@ -417,6 +418,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
           say(refusal.text);
           continue;
         }
+        landings[q.seq] = res.id;
         setMirror(dequeue(getMirror(), q.seq));
         try { await landed(q, res); }
         catch (e) { if (e.status === 401 || networkDown(e)) throw e; say(e.error ?? String(e)); }   // it is on arboretum: only its place in a folder failed
@@ -561,6 +563,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
       return it && it.preset_id !== undefined && !it.pending ? styleOf(it) : null;
     },
     setStyle,
+    landings: () => landings,
     // what the look's chip needs beyond the saved state: who you are, whether this is the copy kept here because arboretum could not
     // be reached, the last refusal for this look, and whether the copy is incomplete
     info: () => ({
