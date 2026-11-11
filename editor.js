@@ -1321,7 +1321,7 @@ function buildPresetUI(){
   for(const [value,label] of [['','no preference'],['screen','screen / TV'],['projector','projector']]){
     const option=document.createElement('option');option.value=value;option.textContent=label;playlistPresentation.append(option);
   }
-  playlistPresentation.onchange=()=>arb?.setPresentation(playlistPresentation.value || null);
+  playlistPresentation.onchange=async()=>{ await arb?.setPresentation(playlistPresentation.value || null); syncPlaylistUI(); };   // a refused save shows the stored value again
   playlistPresentationRow.append(presentationLabel,playlistPresentation);dev.append(playlistPresentationRow);
   // how the playlist item you are on arrives: morph (the automatic route) or fade. The playlist item's, so it shows only on an item of a playlist of yours.
   styleRow=document.createElement('div'); styleRow.className='ctl stylerow'; styleRow.hidden=true;
