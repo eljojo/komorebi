@@ -51,7 +51,7 @@ export function registerExport(app: Hono<AppEnv>) {
         updated_at: l.updatedAt,
         items: items
           .filter((i) => i.item.playlistId === l.id)
-          .map((i) => ({ position: i.item.position, preset_id: i.item.presetId, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS })),
+          .map((i) => ({ position: i.item.position, preset_id: i.item.presetId, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, style: i.item.style })),
       })),
     });
   });

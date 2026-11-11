@@ -35,8 +35,8 @@ describe('GET /api/export', () => {
     expect(r.json.playlists).toHaveLength(1);
     expect(r.json.playlists[0]).toMatchObject({ id: pl.id, name: 'list', visibility: 'private', share_token: pl.share_token });
     expect(r.json.playlists[0].items).toEqual([
-      { position: 0, preset_id: a.id, dwell_s: 12, crossfade_s: 5 },
-      { position: 1, preset_id: b.id, dwell_s: 30, crossfade_s: 5 },
+      { position: 0, preset_id: a.id, dwell_s: 12, crossfade_s: 5, style: 'morph' },
+      { position: 1, preset_id: b.id, dwell_s: 30, crossfade_s: 5, style: 'morph' },
     ]);
   });
 

@@ -35,6 +35,7 @@ document.getElementById('save-items').addEventListener('click', async () => {
     preset_id: Number(row.dataset.preset),
     dwell_s: Number(row.fields.dwell.value),
     crossfade_s: Number(row.fields.crossfade.value),
+    style: row.dataset.style,
   }));
   const r = await send('PUT', `/api/playlists/${id}/items`, { revision: Number(box.dataset.revision), items });
   if (r.ok) location.reload();

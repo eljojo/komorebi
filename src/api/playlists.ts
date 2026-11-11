@@ -13,8 +13,10 @@ import { isVisibility, parseId, readJsonBody, visibilityChange } from './util';
 const MAX_ITEMS = 500;
 const DWELL = { min: 1, max: 3600, default: 30 };
 const CROSSFADE = { min: 0, max: 120, default: 5 };
-// D1 allows 100 bound parameters per statement; an item row binds 5.
-const ROWS_PER_INSERT = 19;
+const STYLES = ['morph', 'fade'] as const;
+type Style = (typeof STYLES)[number];
+// D1 allows 100 bound parameters per statement; an item row binds 6.
+const ROWS_PER_INSERT = 16;
 
 type PlaylistRow = { playlist: typeof playlists.$inferSelect; owner: string };
 
@@ -55,8 +57,8 @@ function summary(row: PlaylistRow, viewer: Actor | null) {
 // The playlist with the items as this viewer may see them (spec §4.2). Other people simply get fewer items. The
 // owner gets the unavailable ones too, in their places and with nothing but their times, so the list they edit
 // is whole and saving it does not drop an item that may come back; they are also told how many.
-type PlayableItem = { preset_id: number; version: number; owner: string; name: string; dwell_s: number; crossfade_s: number; params: unknown };
-type UnavailableItem = { preset_id: number; dwell_s: number; crossfade_s: number; unavailable: true };
+type PlayableItem = { preset_id: number; version: number; owner: string; name: string; dwell_s: number; crossfade_s: number; style: Style; params: unknown };
+type UnavailableItem = { preset_id: number; dwell_s: number; crossfade_s: number; style: Style; unavailable: true };
 
 export async function playlistView(db: Db, row: PlaylistRow, viewer: Actor | null) {
   const all = await loadItems(db, row.playlist.id);
@@ -67,9 +69,9 @@ export async function playlistView(db: Db, row: PlaylistRow, viewer: Actor | nul
     ...summary(row, viewer),
     items: all.flatMap((i): (PlayableItem | UnavailableItem)[] => {
       if (available(i)) {
-        return [{ preset_id: i.preset.id, version: i.head.n, owner: i.presetOwner, name: i.head.name, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, params: JSON.parse(i.head.params) }];
+        return [{ preset_id: i.preset.id, version: i.head.n, owner: i.presetOwner, name: i.head.name, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, style: i.item.style, params: JSON.parse(i.head.params) }];
       }
-      return isOwner ? [{ preset_id: i.preset.id, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, unavailable: true }] : [];
+      return isOwner ? [{ preset_id: i.preset.id, dwell_s: i.item.dwellS, crossfade_s: i.item.crossfadeS, style: i.item.style, unavailable: true }] : [];
     }),
     ...(isOwner && { unavailable: all.filter((i) => !available(i)).length }),
   };
@@ -103,7 +105,7 @@ function checkedMeta(name: unknown, description: unknown) {
   return meta.meta;
 }
 
-type ParsedItem = { presetId: number; dwellS: number; crossfadeS: number };
+type ParsedItem = { presetId: number; dwellS: number; crossfadeS: number; style: Style };
 
 function parseItems(raw: unknown): ParsedItem[] {
   if (!Array.isArray(raw)) throw new ApiError(400, 'items must be a list');
@@ -112,11 +114,12 @@ function parseItems(raw: unknown): ParsedItem[] {
   return raw.map((item, i) => {
     const at = `item ${i + 1}`;
     if (typeof item !== 'object' || item === null || Array.isArray(item)) throw new ApiError(422, `${at} must be an object`);
-    const { preset_id, dwell_s = DWELL.default, crossfade_s = CROSSFADE.default } = item as Record<string, unknown>;
+    const { preset_id, dwell_s = DWELL.default, crossfade_s = CROSSFADE.default, style = 'morph' } = item as Record<string, unknown>;
     if (typeof preset_id !== 'number' || !Number.isSafeInteger(preset_id) || preset_id < 1) throw new ApiError(422, `${at}: preset_id must be a preset's id`);
     if (!inRange(dwell_s, DWELL)) throw new ApiError(422, `${at}: dwell_s must be ${DWELL.min} to ${DWELL.max} seconds`);
     if (!inRange(crossfade_s, CROSSFADE)) throw new ApiError(422, `${at}: crossfade_s must be ${CROSSFADE.min} to ${CROSSFADE.max} seconds`);
-    return { presetId: preset_id, dwellS: dwell_s as number, crossfadeS: crossfade_s as number };
+    if (!STYLES.includes(style as Style)) throw new ApiError(422, `${at}: style must be ${STYLES.map((s) => `"${s}"`).join(' or ')}`);
+    return { presetId: preset_id, dwellS: dwell_s as number, crossfadeS: crossfade_s as number, style: style as Style };
   });
 }
 

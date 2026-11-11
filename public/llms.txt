@@ -67,15 +67,15 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
 - `GET /api/playlists?owner=me|<username>`: `{ playlists: [...] }`.
 - `POST /api/playlists`: `{ name, description? }`. Creates a private playlist (201).
 - `GET /api/playlists/:id` (`?k=` when unlisted): the playlist and its `items`, each
-  `{ preset_id, version, owner, name, dwell_s, crossfade_s, params }`, as this viewer may see them (`version` is
+  `{ preset_id, version, owner, name, dwell_s, crossfade_s, style, params }`, as this viewer may see them (`version` is
   the preset's head version, `owner` its owner's username). The owner also gets items
-  that are unavailable now, as `{ preset_id, dwell_s, crossfade_s, unavailable: true }`, and an
+  that are unavailable now, as `{ preset_id, dwell_s, crossfade_s, style, unavailable: true }`, and an
   `unavailable` count.
 - `PATCH /api/playlists/:id` `{ name?, description? }` (owner). A token may do this only on a private
   playlist, and can never send `visibility`.
-- `PUT /api/playlists/:id/items` `{ revision, items: [{ preset_id, dwell_s?, crossfade_s? }] }` replaces the ordered
+- `PUT /api/playlists/:id/items` `{ revision, items: [{ preset_id, dwell_s?, crossfade_s?, style? }] }` replaces the ordered
   list (owner; a token only on a private playlist). `dwell_s` 1–3600, default 30; `crossfade_s` 0–120,
-  default 5; at most 500 items. Each preset must be yours or someone's public one. Send back the unavailable
+  default 5; `style` is how that item's look arrives, `"morph"` (default) or `"fade"`; at most 500 items. Each preset must be yours or someone's public one. Send back the unavailable
   items you were given to keep them. Send the owner-only `revision` from the GET whose items you edited. A
   stale revision is 409 and changes nothing; reload and reconcile your edit before submitting again.
 

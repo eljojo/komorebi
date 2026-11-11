@@ -514,7 +514,7 @@ describe('/arboretum/l/:id', () => {
     it('are rows of their own in the owner’s list, in place and with their times, which the editor can keep or remove', async () => {
       const { o, first, theirs, l } = await hiddenMiddle();
       const r = await asSession(o.user, 'GET', `/arboretum/l/${l.id}`);
-      expect(r.text).toContain(`data-preset="${theirs.id}" data-dwell="77" data-crossfade="3" data-unavailable="true"`);
+      expect(r.text).toContain(`data-preset="${theirs.id}" data-dwell="77" data-crossfade="3" data-style="morph" data-unavailable="true"`);
       expect(r.text.indexOf(`data-preset="${first.id}"`)).toBeLessThan(r.text.indexOf(`data-preset="${theirs.id}"`));
       expect(r.text).not.toContain('their secret name');
       expect(r.text).toMatch(/<li[^>]*data-unavailable[^>]*>[^]*?unavailable[^]*?<\/li>/);

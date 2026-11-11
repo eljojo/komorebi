@@ -240,8 +240,8 @@ describe('PUT /api/playlists/:id/items', () => {
     const r = await put(o.token, p.id, { items: [{ preset_id: b.id }, { preset_id: a.id, dwell_s: 60, crossfade_s: 0 }] });
     expect(r.status).toBe(200);
     expect(r.json.items).toEqual([
-      { preset_id: b.id, version: 1, owner: o.user.username, name: 'b', dwell_s: 30, crossfade_s: 5, params: PARAMS },
-      { preset_id: a.id, version: 1, owner: o.user.username, name: 'a', dwell_s: 60, crossfade_s: 0, params: PARAMS },
+      { preset_id: b.id, version: 1, owner: o.user.username, name: 'b', dwell_s: 30, crossfade_s: 5, style: 'morph', params: PARAMS },
+      { preset_id: a.id, version: 1, owner: o.user.username, name: 'a', dwell_s: 60, crossfade_s: 0, style: 'morph', params: PARAMS },
     ]);
     const swapped = await put(o.token, p.id, { items: [{ preset_id: a.id }] });
     expect(swapped.json.items.map((i: any) => i.preset_id)).toEqual([a.id]);
@@ -294,6 +294,22 @@ describe('PUT /api/playlists/:id/items', () => {
     }
     expect((await put(o.token, p.id, { items: 'nope' })).status).toBe(400);
     expect((await put(o.token, p.id, {})).status).toBe(400);
+  });
+
+  it('gives every item a style: morph unless it says fade, and only those two are taken', async () => {
+    const o = await owner();
+    const a = await makePreset(o.user, o.token);
+    const p = await makePlaylist(o.token);
+    const r = await put(o.token, p.id, { items: [{ preset_id: a.id }, { preset_id: a.id, style: 'fade' }, { preset_id: a.id, style: 'morph' }] });
+    expect(r.status, r.text).toBe(200);
+    expect(r.json.items.map((i: any) => i.style)).toEqual(['morph', 'fade', 'morph']);
+    expect((await get(`/api/playlists/${p.id}`, o.token)).json.items.map((i: any) => i.style)).toEqual(['morph', 'fade', 'morph']);
+    for (const style of ['dissolve', 'FADE', '', null, 3]) {
+      const bad = await put(o.token, p.id, { items: [{ preset_id: a.id }, { preset_id: a.id, style }] });
+      expect(bad.status, JSON.stringify(style)).toBe(422);
+      expect(bad.json.error).toBe('item 2: style must be "morph" or "fade"');
+    }
+    expect((await get(`/api/playlists/${p.id}`, o.token)).json.items.map((i: any) => i.style)).toEqual(['morph', 'fade', 'morph']);
   });
 
   it('takes your own presets and other people\'s public ones, and names the ones it cannot', async () => {
@@ -542,7 +558,7 @@ describe('the owner’s view keeps what is unavailable, in its place (so saving 
     const r = await get(`/api/playlists/${p.id}`, o.token);
     expect(r.json.items).toHaveLength(3);
     expect(r.json.items[0]).toMatchObject({ preset_id: first.id, name: 'first', dwell_s: 10, crossfade_s: 1 });
-    expect(r.json.items[1]).toEqual({ preset_id: theirs.id, dwell_s: 20, crossfade_s: 2, unavailable: true });
+    expect(r.json.items[1]).toEqual({ preset_id: theirs.id, dwell_s: 20, crossfade_s: 2, style: 'morph', unavailable: true });
     expect(r.json.items[2]).toMatchObject({ preset_id: last.id, name: 'last' });
     expect(r.json.unavailable).toBe(1);
   });
@@ -564,17 +580,26 @@ describe('the owner’s view keeps what is unavailable, in its place (so saving 
     const saved = await put(o, p.id, { items: read.map((i: any) => ({ preset_id: i.preset_id, dwell_s: i.dwell_s, crossfade_s: i.crossfade_s })) });
     expect(saved.status, saved.text).toBe(200);
     expect(saved.json.items.map((i: any) => i.preset_id)).toEqual(read.map((i: any) => i.preset_id));
-    expect(saved.json.items[1]).toEqual({ preset_id: theirs.id, dwell_s: 20, crossfade_s: 2, unavailable: true });
+    expect(saved.json.items[1]).toEqual({ preset_id: theirs.id, dwell_s: 20, crossfade_s: 2, style: 'morph', unavailable: true });
     // It is still there when the preset comes back.
     await env.DB.prepare("UPDATE presets SET visibility = 'public' WHERE id = ?").bind(theirs.id).run();
     expect((await get(`/api/playlists/${p.id}`)).json.items.map((i: any) => i.name)).toEqual(['first', 'theirs', 'last']);
+  });
+
+  it('keeps the style of an unavailable item the client sends back, like its times', async () => {
+    const { o, p, theirs } = await withHiddenMiddle();
+    const read = (await get(`/api/playlists/${p.id}`, o.token)).json.items;
+    const saved = await put(o, p.id, { items: read.map((i: any) => ({ preset_id: i.preset_id, dwell_s: i.dwell_s, crossfade_s: i.crossfade_s, style: i.preset_id === theirs.id ? 'fade' : i.style })) });
+    expect(saved.status, saved.text).toBe(200);
+    expect(saved.json.items[1]).toEqual({ preset_id: theirs.id, dwell_s: 20, crossfade_s: 2, style: 'fade', unavailable: true });
+    expect((await get(`/api/playlists/${p.id}`, o.token)).json.items[1].style).toBe('fade');
   });
 
   it('accepts it moved to another place, with other times', async () => {
     const { o, p, first, theirs, last } = await withHiddenMiddle();
     const r = await put(o, p.id, { items: [{ preset_id: theirs.id, dwell_s: 99 }, { preset_id: last.id }, { preset_id: first.id }] });
     expect(r.status, r.text).toBe(200);
-    expect(r.json.items[0]).toEqual({ preset_id: theirs.id, dwell_s: 99, crossfade_s: 5, unavailable: true });
+    expect(r.json.items[0]).toEqual({ preset_id: theirs.id, dwell_s: 99, crossfade_s: 5, style: 'morph', unavailable: true });
   });
 
   it('can be removed, and then it is gone: putting it back is refused like any invisible preset', async () => {

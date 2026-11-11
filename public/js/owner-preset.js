@@ -60,7 +60,7 @@ addForm.addEventListener('submit', async (event) => {
   }
   const list = await send('GET', `/api/playlists/${listId}`);
   if (!list.ok) return say(box, failure(list));
-  const items = list.data.items.map(({ preset_id, dwell_s, crossfade_s }) => ({ preset_id, dwell_s, crossfade_s }));
+  const items = list.data.items.map(({ preset_id, dwell_s, crossfade_s, style }) => ({ preset_id, dwell_s, crossfade_s, style }));
   items.push({ preset_id: Number(id) });
   const put = await send('PUT', `/api/playlists/${listId}/items`, { revision: list.data.revision, items });
   if (!put.ok) return say(box, failure(put));

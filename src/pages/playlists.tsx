@@ -52,17 +52,17 @@ export function registerPlaylistPages(app: Hono<AppEnv>) {
         <ol id="items" class="plain">
           {view.items.map((i) =>
             'unavailable' in i ? (
-              <li data-preset={i.preset_id} data-dwell={i.dwell_s} data-crossfade={i.crossfade_s} data-unavailable="true">
+              <li data-preset={i.preset_id} data-dwell={i.dwell_s} data-crossfade={i.crossfade_s} data-style={i.style} data-unavailable="true">
                 <span class="quiet">unavailable</span>{' '}
                 <span class="when">
-                  {i.dwell_s} s · crossfade {i.crossfade_s} s
+                  {i.dwell_s} s · crossfade {i.crossfade_s} s · {i.style}
                 </span>
               </li>
             ) : (
-              <li data-preset={i.preset_id} data-dwell={i.dwell_s} data-crossfade={i.crossfade_s}>
+              <li data-preset={i.preset_id} data-dwell={i.dwell_s} data-crossfade={i.crossfade_s} data-style={i.style}>
                 <a href={`${BASE}/p/${i.preset_id}`}>{i.name}</a>{' '}
                 <span class="when">
-                  {i.dwell_s} s · crossfade {i.crossfade_s} s
+                  {i.dwell_s} s · crossfade {i.crossfade_s} s · {i.style}
                 </span>
               </li>
             ),

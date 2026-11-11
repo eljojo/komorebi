@@ -95,6 +95,8 @@ export const playlistItems = sqliteTable(
     presetId: integer('preset_id').notNull().references(() => presets.id),
     dwellS: real('dwell_s').notNull(),
     crossfadeS: real('crossfade_s').notNull(),
+    // How this item's look arrives when the playlist plays.
+    style: text('style', { enum: ['morph', 'fade'] }).notNull().default('morph'),
   },
   (t) => [primaryKey({ columns: [t.playlistId, t.position] })],
 );
