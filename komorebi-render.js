@@ -254,6 +254,8 @@ export function makeRender(hub){
       const travel=hub.trans.travelField;
       gl.activeTexture(gl.TEXTURE9);gl.bindTexture(gl.TEXTURE_2D,travel?.tex??hub.layerTex[3]);gl.uniform1i(u.travelCast,9);
       gl.uniform1f(u.travelWeight,travel?.weight??0);gl.uniform2f(u.travelOrigin,travel?.ox??0,travel?.oy??0);gl.uniform1f(u.travelExtent,travel?.ext??1);
+      gl.activeTexture(gl.TEXTURE10);gl.bindTexture(gl.TEXTURE_2D,travel?.progressTex??hub.layerTex[3]);gl.uniform1i(u.travelProgress,10);
+      gl.uniform1i(u.progressOut,travel?.progressOut?1:0);gl.uniform1f(u.progressGlobal,travel?.progressGlobal??0);
       gl.uniform1f(u.shadowOpacity, f.shadowOpacity);
       gl.uniform1f(u.viewExtent, params.view_extent_m);
       gl.uniform1f(u.farSmear, Math.max(0, params.far_smear));          // far-field dapple smear (§4.7); 0 at pitch 0 regardless

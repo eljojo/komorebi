@@ -179,6 +179,9 @@ uniform float uShadowOpacity;    // transition only: 0 is the lit floor, 1 is th
 uniform highp sampler2D uTravelCast;
 uniform vec2 uTravelOrigin;
 uniform float uTravelExtent,uTravelWeight;
+uniform highp sampler2D uTravelProgress;   // leaf travel patch by patch: the blurred (coverage x progress, coverage) map over the moving cast's frame
+uniform int uProgressOut;                  // 1 draws that map's progress at each floor point instead of the picture
+uniform float uProgressGlobal;             // the route's own progress, where no leaf is near
 uniform float uFarSmear;         // far-field dapple smear (m of extra throw per unit foreshortening, §4.7)
 uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)`;
 
@@ -1080,7 +1083,8 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
   faith:     { decls: GLSL_T_FAITH_DECLS,     locs: { faithful:'uFaithful', faithTex:'uFaithTex', faithOrigin:'uFaithOrigin', faithExtent:'uFaithExtent' } },
   sunDir:    { decls: GLSL_T_SUN_DIR_DECLS,   locs: { sunDir:'uSunDir' } },
   floor:     { decls: GLSL_T_FLOOR_DECLS,     locs: { viewExtent:'uViewExtent', farSmear:'uFarSmear', ground:'uGround', shadowOpacity:'uShadowOpacity',
-                                                      travelCast:'uTravelCast',travelOrigin:'uTravelOrigin',travelExtent:'uTravelExtent',travelWeight:'uTravelWeight' } },
+                                                      travelCast:'uTravelCast',travelOrigin:'uTravelOrigin',travelExtent:'uTravelExtent',travelWeight:'uTravelWeight',
+                                                      travelProgress:'uTravelProgress',progressOut:'uProgressOut',progressGlobal:'uProgressGlobal' } },
   cloth:     { decls: GLSL_T_CLOTH_DECLS,     locs: { viewExtent:'uViewExtent', clothY:'uClothY' } },
   fabric:    { decls: GLSL_T_FABRIC_DECLS,    locs: { tt:'uTt', fabricTint:'uFabricTint', scatter:'uScatter', sheen:'uSheen',
                                                       foldDepth:'uFoldDepth', nap:'uNap', foldScale:'uFoldScale', foldCoarsen:'uFoldCoarsen', foldWarp:'uFoldWarp' } },
@@ -1171,6 +1175,7 @@ function buildTransport(camera){
   if(!e) throw new Error(`komorebi: unknown transport camera "${camera}"`);
   const p = e.groups.map(g => TRANSPORT_GROUPS[g].decls);
   p.push('void main(){', e.prologue, e.camera);
+  if(camera==='floor')p.push('  if(uProgressOut==1){vec4 pr=texture(uTravelProgress,(world-uTravelOrigin)/uTravelExtent);frag=vec4(vec3((pr.r+0.02*uProgressGlobal)/(pr.g+0.02)),1.0);return;}');
   if(e.groups.includes('transport') && !e.rayTransport){          // a CAST camera: the faithful tap or the sample loop, then the wood
     if(camera==='floor')p.push('  if(uTravelWeight<1.0){');   // a fully travelling cast has no native contribution to evaluate
     if(e.faith) p.push(e.faith);

@@ -313,12 +313,17 @@ void main(){
 }`;
 
 // The transition carries evaluated wind positions, rather than assigning the new grove's joint ids to old leaves.
-const VS_LEAF_TRAVEL = `#version 300 es
-precision highp float;
+// PATCH_TRIP (two faithful groves, patch by patch): each carrier brings its own outline mix and edge (iD.xy) in place of
+// the route-wide uWeight and uEdge. A separate specialization keeps the single-progress shader's text as it was.
+const GLSL_LEAF_TRAVEL_VERTEX = `precision highp float;
 layout(location=0) in vec2 aCorner;
 layout(location=1) in vec4 iA;
 layout(location=2) in vec4 iB;
 layout(location=3) in vec4 iC;
+#ifdef PATCH_TRIP
+layout(location=4) in vec4 iD;
+flat out vec2 vTrip;
+#endif
 uniform vec2 uOrigin,uExtent,uG;
 uniform vec4 uBox;
 out vec2 vLocal;
@@ -331,9 +336,16 @@ void main(){
   vec2 world=iA.xy+mat2(c,-s,s,c)*(lc*iA.zw)-uG*iC.x;
   gl_Position=vec4(((world-uOrigin)/uExtent)*2.0-1.0,0.0,1.0);
   vLocal=lc;vTau=iB.yzw;vFade=iC.y;vRows=iC.zw;
+#ifdef PATCH_TRIP
+  vTrip=iD.xy;
+#endif
 }`;
-const FS_LEAF_TRAVEL = `#version 300 es
-precision highp float;
+const VS_LEAF_TRAVEL = `#version 300 es
+${GLSL_LEAF_TRAVEL_VERTEX}`;
+const VS_LEAF_TRAVEL_PATCH = `#version 300 es
+#define PATCH_TRIP
+${GLSL_LEAF_TRAVEL_VERTEX}`;
+const GLSL_LEAF_TRAVEL_FRAGMENT = `precision highp float;
 in vec2 vLocal;
 in vec3 vTau;
 in float vFade;
@@ -341,6 +353,14 @@ flat in vec2 vRows;
 uniform highp sampler2D uLeafA,uLeafB;
 uniform int uShapeA,uShapeB,uEdgeArea;
 uniform float uWeight,uEdge,uBeamK;
+#ifdef PATCH_TRIP
+flat in vec2 vTrip;
+#define TRIP_W vTrip.x
+#define TRIP_EDGE vTrip.y
+#else
+#define TRIP_W uWeight
+#define TRIP_EDGE uEdge
+#endif
 out vec4 frag;
 ${GLSL_TEXEL_MIX}
 void main(){
@@ -348,12 +368,52 @@ void main(){
   float u=atan(d.y,d.x)*0.15915494+0.5;
   float ra=uShapeA==0?1.0:texture(uLeafA,vec2(u,vRows.x)).r;
   float rb=uShapeB==0?1.0:texture(uLeafB,vec2(u,vRows.y)).r;
-  float r=length(vLocal)-mix(ra,rb,uWeight)+1.0;
-  float cov=1.0-smoothstep(1.0-uEdge,1.0,r);
+  float r=length(vLocal)-mix(ra,rb,TRIP_W)+1.0;
+  float cov=1.0-smoothstep(1.0-TRIP_EDGE,1.0,r);
   if(cov<=0.0)discard;
   if(uBeamK>0.0||uEdgeArea!=0){
     vec3 T,Tb;texelMix(vTau*cov,cov*vFade,uBeamK,T,Tb);frag=vec4(Tb,1.0);
   }else frag=vec4(exp(-vTau*cov),1.0);
+}`;
+const FS_LEAF_TRAVEL = `#version 300 es
+${GLSL_LEAF_TRAVEL_FRAGMENT}`;
+const FS_LEAF_TRAVEL_PATCH = `#version 300 es
+#define PATCH_TRIP
+${GLSL_LEAF_TRAVEL_FRAGMENT}`;
+// Patch by patch, the colour map: each carrier's footprint adds (its own progress, 1), so after the blur r/g is the
+// coverage-weighted progress of the leaves near a floor point.
+const FS_LEAF_PROGRESS = `#version 300 es
+precision highp float;
+in vec2 vLocal;
+flat in vec2 vTrip;
+out vec4 frag;
+void main(){ if(dot(vLocal,vLocal)>1.0) discard; frag=vec4(vTrip.x,1.0,0.0,0.0); }`;
+// One axis of the colour map's Gaussian blur (uSigma in texels, uDir one texel along the axis).
+const FS_PROGRESS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+uniform float uSigma;
+out vec4 frag;
+void main(){
+  float stepT=max(1.0,3.0*uSigma/24.0);vec4 acc=vec4(0.0);float wsum=0.0;
+  for(int i=-24;i<=24;i++){float x=float(i)*stepT;float w=exp(-x*x/(2.0*uSigma*uSigma));acc+=w*texture(uTex,vUv+uDir*x);wsum+=w;}
+  frag=acc/wsum;
+}`;
+// Two finished pictures of one moving field, the outgoing look's and the incoming one's, mixed per pixel in linear
+// display light by the colour map's progress drawn at each floor point (uP.r).
+const FS_PATCH_MIX = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uA,uB,uP;
+out vec4 frag;
+void main(){
+  vec4 a=texture(uA,vUv),b=texture(uB,vUv);
+  float w=texture(uP,vUv).r;
+  if(w<=0.0){frag=a;return;}
+  if(w>=1.0){frag=b;return;}
+  frag=vec4(pow(mix(pow(a.rgb,vec3(2.2)),pow(b.rgb,vec3(2.2)),w),vec3(1.0/2.2)),1.0);
 }`;
 
 // The litter lift crosses the horizon as one 3D field. Its two targets accumulate optical depth and reflected-light moments.
@@ -969,4 +1029,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
