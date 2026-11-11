@@ -1151,6 +1151,49 @@ test("style 'fade' on a pair that differs only in MORPH keys takes the plain liv
   expect(r.hub.trans.structDiff).toBe(false);
 });
 
+for (const change of [{ exposure: 2 }, { foliage_density: 1.5 }]) {
+  test(`a fade requested during ${'exposure' in change ? 'a live' : 'a grove'} morph waits and keeps its style`, () => {
+    const r = fadeRig({ ...DEFAULTS });
+    r.hub.transitionTo = r.transitionTo;
+    r.hub.beginSceneFade = () => { r.log.began++; };
+    let cancelled = 0, arrived = 0;
+    r.transitionTo({ ...DEFAULTS, ...change }, { duration: 0.1, onEnd: () => cancelled++ });
+    r.tickTransition(1 / 60);
+    const shown = { ...r.params }, target = { ...DEFAULTS, foliage_density: 1.8 };
+    r.transitionTo(target, { duration: 0.1, style: 'fade', onEnd: () => arrived++ });
+    expect(r.params).toEqual(shown);
+    expect(r.hub.trans.waiting?.opts.style).toBe('fade');
+    for (let n = 0; r.hub.trans.active && n < 100; n++) r.tickTransition(1 / 60)?.();
+    expect(r.log.began).toBe(1);
+    expect(r.params).toEqual(target);
+    expect(cancelled).toBe(0);
+    expect(arrived).toBe(1);
+  });
+}
+
+for (const route of ['leafTravel', 'seasonTravel', 'litterRise', 'groveTravel']) {
+  test(`a requested fade waits for ${route} and the latest later selection supersedes it`, () => {
+    const r = fadeRig({ ...DEFAULTS });
+    r.hub.transitionTo = r.transitionTo;
+    r.hub.beginSceneFade = () => { r.log.began++; };
+    r.transitionTo({ ...DEFAULTS, exposure: 2 }, { duration: 0.1 });
+    r.hub.trans[route] = true;
+    const name = route[0].toUpperCase() + route.slice(1);
+    r.hub[`step${name}`] = () => {};
+    r.hub[`finish${name}`] = () => null;
+    r.hub[`end${name}`] = () => {};
+    r.hub[`retarget${name}`] = () => { throw Error('a requested fade must wait'); };
+    let first = 0, latest = 0;
+    r.transitionTo({ ...DEFAULTS, foliage_density: 1.8 }, { duration: 0.1, style: 'fade', onEnd: () => first++ });
+    r.transitionTo({ ...DEFAULTS, foliage_density: 1.9 }, { duration: 0.1, style: 'fade', onEnd: () => latest++ });
+    for (let n = 0; r.hub.trans.active && n < 100; n++) r.tickTransition(1 / 60)?.();
+    expect(r.log.began).toBe(1);
+    expect(r.params.foliage_density).toBe(1.9);
+    expect(first).toBe(0);
+    expect(latest).toBe(1);
+  });
+}
+
 test("absent or 'morph' style keeps the automatic routes for the same pairs", () => {
   for (const style of [undefined, "morph"]) {
     const cross = crossRig(PRESETS["morning 1"], 1000);

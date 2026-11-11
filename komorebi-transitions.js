@@ -33,11 +33,13 @@ export function makeTransitions(hub){
     opts = opts || {};
     if(!target || typeof target!=='object') return;
     const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
-    if(trans.active&&trans.groveTravel){hub.retargetGroveTravel(to,opts);return;}
     // A driver may ask for a fade ({ style: 'fade' }): the two looks dissolve as two moving scenes, whatever their modes, cameras or
     // receivers, and no travel route, morph, crossfade or bloom is taken. Two looks that differ only in live (MORPH) keys and runtime
     // flags have one grove, so a dissolve of the two would show nothing the live morph does not: they morph.
-    const styleFade = opts.style==='fade' && !trans.active && [...TOPO_KEYS,...MODE_KEYS,...CANOPY_KEYS].some(k => to[k]!==params[k]);
+    const styleFade = opts.style==='fade' && [...TOPO_KEYS,...MODE_KEYS,...CANOPY_KEYS].some(k => to[k]!==params[k]);
+    trans.waiting = null;
+    if(styleFade && trans.active){ wait(to, opts); return; }   // a scene dissolve starts from rest; keep the requested style until the current route lands
+    if(trans.active&&trans.groveTravel){hub.retargetGroveTravel(to,opts);return;}
     if(!styleFade&&!trans.active&&groveTravelEligible(params,to)&&hub.beginGroveTravel(to)!==false){
       hub.warnCut(to);
       Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
@@ -270,7 +272,7 @@ export function makeTransitions(hub){
       trans.active=false;trans.groveTravel=false;trans.swapped=true;
       hub.endGroveTravel();hub.resumeAdaptive?.();
       const cb=trans.onEnd;trans.onEnd=null;
-      return pending?()=>hub.transitionTo(pending.to,pending.opts):cb;
+      return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);
     }
     if(trans.litterRise){
       hub.stepLitterRise(dt,t);
@@ -279,7 +281,7 @@ export function makeTransitions(hub){
       trans.active=false;trans.litterRise=false;trans.swapped=true;
       hub.endLitterRise();hub.regenSource();hub.bake();hub.resumeAdaptive?.();
       const cb=trans.onEnd;trans.onEnd=null;
-      return pending?()=>hub.transitionTo(pending.to,pending.opts):cb;
+      return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);
     }
     if(trans.viewpoint){
       for(let i=0;i<3;i++) trans.viewEye[i]=lerp(trans.viewFrom.eye[i],trans.viewTo.eye[i],e);
@@ -345,7 +347,7 @@ export function makeTransitions(hub){
       trans.active=false;trans.seasonTravel=false;hub.endSeasonTravel();
       hub.regenSource();hub.resetPerf();hub.bake();
       const cb=trans.onEnd;trans.onEnd=null;
-      return pending?()=>hub.transitionTo(pending.to,pending.opts):cb;
+      return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);
     }else if(trans.leafTravel){
       hub.regenSource();hub.stepLeafTravel(dt,e,t);
       if(t<1)return null;
@@ -356,7 +358,7 @@ export function makeTransitions(hub){
       trans.active=false;trans.leafTravel=false;trans.travelField=null;trans.travelTone=null;
       hub.endLeafTravel();hub.regenSource();hub.resetPerf();hub.bake();
       const cb=trans.onEnd;trans.onEnd=null;
-      return pending?()=>hub.transitionTo(pending.to,pending.opts):cb;
+      return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);
     }else if(trans.viewpoint){
       trans.swapped=t>=0.5;   // one grove remains in place through the horizon; its mode-specific state lands at the end
     } else if(trans.crossfade){
