@@ -25,14 +25,18 @@ export function makeTransitions(hub){
   // A selection that waits for the moving route's settled frame (the latest one replaces it, and the route's own
   // completion no longer fires), and the start of that selection once the route has settled.
   const wait = (to, opts) => { trans.waiting = { to, opts }; trans.onEnd = null; };
-  const queued = cb => { const w = trans.waiting; trans.waiting = null; return w ? () => hub.transitionTo(w.to, w.opts) : cb; };
+  const queued = cb => {
+    const w = trans.waiting, to = trans.to; trans.waiting = null;
+    const next=w ? () => hub.transitionTo(w.to,w.opts) : cb;
+    return hub.arrived ? () => { hub.arrived(to); next?.(); } : next;
+  };
 
   // ---- preset transitions (spec §9): morph the continuous look, dissolve the structural rebuild behind
   // a transient cloud-bloom. One entry point — the future MIDI/event layer drives this same method. ----
   function transitionTo(target, opts){
     opts = opts || {};
     if(!target || typeof target!=='object') return;
-    const to = Object.assign({}, DEFAULTS, migrateLegacy(target));   // legacy names -> current; missing keys -> defaults (forward-compat, like setParams)
+    const to = hub.resolveTarget ? hub.resolveTarget(target) : Object.assign({}, DEFAULTS, migrateLegacy(target));   // Resolve policy before classifying endpoints, including a queued selection.
     // A driver may ask for a fade ({ style: 'fade' }): the two looks dissolve as two moving scenes, whatever their modes, cameras or
     // receivers, and no travel route, morph, crossfade or bloom is taken. Two looks that differ only in live (MORPH) keys and runtime
     // flags have one grove, so a dissolve of the two would show nothing the live morph does not: they morph.

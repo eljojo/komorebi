@@ -8,6 +8,8 @@ Contracts sit between the principles and the model. The [principles](../principl
 
 ## The contracts
 
+- [`sessions.md`](sessions.md): scene, playlist and showing ownership; fidelity ceilings, persistent FPS policy and presentation.
+
 - [`preservation.md`](preservation.md): what a change owes the pictures that already exist: the off state at landing, a look's recorded intent as the standard after it, review before a shipped look moves, and the invariants that bind regardless.
 - [`determinism.md`](determinism.md): frame-stability and the rule that nothing visible comes from sampling; identity by address and the salts that keep two draws apart.
 - [`conservation.md`](conservation.md): energy bounds and the books: what the leaves give up is what the shade receives.

@@ -43,7 +43,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { EXPERIMENTAL, PRESETS } from './presets.js';
-import { cameraFor, CAMERAS, DEFAULTS, FEATURES, GROUP_UPLOAD_KEYS, featuresFor } from './komorebi.js';
+import { cameraFor, CAMERAS, DEFAULTS, FEATURES, GROUP_UPLOAD_KEYS, featuresFor, resolveParams, resolveSession } from './komorebi.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const ENTRY = 'komorebi.global.js';
@@ -307,7 +307,7 @@ export function keptFeatures(looks, features) {
     for (const f of features) if (!FEATURES[f]) throw new Error(`unknown feature '${f}' — the features are ${all.join(', ')}`);
     return all.filter((f) => features.includes(f));
   }
-  const open = new Set(looks.flatMap((n) => featuresFor({ ...DEFAULTS, ...PRESETS[n] })));
+  const open = new Set(looks.flatMap((n) => [...featuresFor({ ...DEFAULTS, ...PRESETS[n] }),...featuresFor(resolveParams(PRESETS[n],resolveSession({})))]));
   return all.filter((f) => open.has(f));
 }
 

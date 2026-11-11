@@ -13,7 +13,7 @@
         default = pkgs.mkShell {
           # python3 + a bare-`python` alias: node-gyp native builds (headless-gl's vendored ANGLE
           # shells out to plain `python`) need both on PATH — nixpkgs ships only `python3`.
-          packages = [ pkgs.bun pkgs.biome pkgs.python3
+          packages = [ pkgs.bun pkgs.biome pkgs.python3 pkgs.nodejs_22 pkgs.ffmpeg
             (pkgs.writeShellScriptBin "python" ''exec ${pkgs.python3}/bin/python3 "$@"'') ];
           shellHook = ''
             echo "komorebi dev shell — dev: nix run .#dev | lint: nix run .#lint | bundle: nix run .#build"

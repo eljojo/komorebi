@@ -83,6 +83,16 @@ eng.dispose()                                   // free the GL objects and the c
 
 Call `eng.dispose()` when you remove the canvas. An engine that you drop keeps its context.
 
+### Sessions
+
+Opt into device/showing settings with `create(canvas, { params, session: {}, environment: { userAgent: navigator.userAgent } })`.
+Use `eng.setSession({ quality: 'balanced', presentation: 'projector', playback: { adaptive_motion: false } })` to change this showing.
+A look may omit fidelity controls to inherit or request less than the session ceiling. Layer count and tone mapping remain authored.
+
+`eng.authored` is the look's data; `eng.params` is its concrete render configuration. `eng.captureLook()` captures edits of live art controls, and `eng.setLookRequest(key, undefined)` removes a fidelity opinion. Save authored data to preserve inheritance and requests above today's cap. Omitting `session` retains the existing flat-params API. The editor remembers session preferences locally; embeds supply them explicitly.
+
+The [session contract](spec/contracts/sessions.md) explains profiles, FPS persistence, playlist presentation and export compatibility. Profile values are provisional pending hardware calibration.
+
 ### ES modules
 
 The bundle wraps ES modules. Import them if you have a bundler:

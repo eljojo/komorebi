@@ -32,7 +32,7 @@
       try {
         const cycle = ['morning 2', 'afternoon 5b', 'morning 3'];
         const eng = create(document.getElementById('komorebi-bg'),
-          { params: PRESETS[cycle[0]] });
+          { params: PRESETS[cycle[0]], session:{},environment:{userAgent:navigator.userAgent} });
         let i = 0;
         setInterval(() => {
           i = (i + 1) % cycle.length;

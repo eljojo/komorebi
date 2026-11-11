@@ -57,6 +57,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-shaders.js` — the bake and display shaders, the shared tone tail, the sky fill's bake.
 - `komorebi-params.js` — `DEFAULTS`, the legacy-name migration, transition key classes, engine caps, and the feature
   registry (`FEATURES`, `featuresFor`) that tells a bundle which fall tiers it may cut.
+- `komorebi-session.js` — pure session profiles and fidelity/playback/presentation resolution; no device storage or UI.
 - `komorebi-math.js` — CPU math: atmosphere, deterministic RNG, wind noise, skeleton growth.
 - `komorebi-editor-tools.js`, `profiler.js` — EDITOR-only: debug overlays, the profiler and its proposals, the motion mirror.
 
@@ -66,6 +67,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 **The editor** (EDITOR-only; `spec/implementation.md`, "The editor and the player", says how it behaves).
 - `index.html` — the shell: the welcome, the three surfaces and their CSS. Must be served (`nix run .#dev`), not opened as a file.
 - `editor.js` — the body: modes, panels, dials, keys and pointer, the in-place about.
+- `editor-settings.js` — the shared Settings panel for the current device and showing; account controls are lent by `arboretum.js`.
 - `playlists.js` — the playlist model and every rule for lists, the mirror and saves; pure, given its `fetch` and timer.
 - `arboretum.js` — where looks are kept, in tiers (local, read, session; its header sets them out); the only file that
   touches storage or arboretum. `arboretum-api.js` is its wire, imported by it alone.

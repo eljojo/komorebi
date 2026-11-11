@@ -308,8 +308,8 @@ try {
 
   // THE AREAS (Part B): the advanced panel is eleven collapsible areas, grouped by the pass you make, each remembering whether it is open. The first <select> in #dev stays the preset dropdown.
   const areas = await page.$$eval('#dev > details > summary.sec', (ss) => ss.map((s) => ({ name: s.textContent, open: s.parentElement.open })));
-  check('the areas, in order: Sun, Colour & light, Density, Season, Leaves, Tree shape, Scene, Wind, Tune, Debug, Lab',
-    areas.map((a) => a.name).join('|') === 'Sun|Colour & light|Density|Season|Leaves|Tree shape|Scene|Wind|Tune|Debug|Lab', areas.map((a) => a.name).join('|'));
+  check('the areas, in order: Sun, Colour & light, Density, Season, Leaves, Tree shape, Scene, Wind, Quality requests, Debug, Lab',
+    areas.map((a) => a.name).join('|') === 'Sun|Colour & light|Density|Season|Leaves|Tree shape|Scene|Wind|Quality requests|Debug|Lab', areas.map((a) => a.name).join('|'));
   check('Colour & light, Density and Season start open, and every other area closed (Lab included)',
     areas.every((a) => a.open === ['Colour & light', 'Density', 'Season'].includes(a.name)), JSON.stringify(areas.filter((a) => a.open).map((a) => a.name)));
   const areaOf = (lbl) => page.evaluate((l) => {
@@ -321,8 +321,8 @@ try {
   }, lbl);
   const placed = {};
   for (const lbl of ['ground R', 'ground B', 'tonemap', 'faithful tree', 'fabric Tt', 'receiver', 'glow bleed', 'limbs', 'speed', 'phenology', 'fall lag', 'leaf variety', 'density', 'CLOUD']) placed[lbl] = await areaOf(lbl);
-  check('ground rows sit under Colour & light, tone_map under Tune, the faithful tree under Tree shape, the cloth under Lab',
-    placed['ground R'] === 'Colour & light' && placed['ground B'] === 'Colour & light' && placed.tonemap === 'Tune' && placed['faithful tree'] === 'Tree shape' && placed['fabric Tt'] === 'Lab' && placed.receiver === 'Lab', JSON.stringify(placed));
+  check('ground rows and tone_map sit under Colour & light, the faithful tree under Tree shape, the cloth under Lab',
+    placed['ground R'] === 'Colour & light' && placed['ground B'] === 'Colour & light' && placed.tonemap === 'Colour & light' && placed['faithful tree'] === 'Tree shape' && placed['fabric Tt'] === 'Lab' && placed.receiver === 'Lab', JSON.stringify(placed));
   check('and the rest land where they were grouped: glow bleed in Scene, limbs and leaf drift speed in Wind, phenology and fall lag in Season',
     placed['glow bleed'] === 'Scene' && placed.limbs === 'Wind' && placed.speed === 'Wind' && placed.phenology === 'Season' && placed['fall lag'] === 'Season' && placed['leaf variety'] === 'Leaves' && placed.density === 'Density' && placed.CLOUD === 'Sun', JSON.stringify(placed));
   const nested = await page.$$eval('#dev > details > details', (ds) => ds.map((d) => `${d.parentElement.querySelector(':scope > summary').textContent}/${d.querySelector(':scope > summary').textContent}:${d.open}`));
@@ -520,17 +520,17 @@ try {
     const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
   }, v);
   check('the leaf diffuse row is there on the floor, beside a leaf scatter that still works', (await rowShown('leaf diffuse')) === true && (await rowShown('leaf scatter')) === true, `${await rowShown('leaf diffuse')} ${await rowShown('leaf scatter')}`);
-  check('the edge area row is shown at leaf diffuse 0', (await rowShown('edge area')) === true, `${await rowShown('edge area')}`);
+  check('edge area is session presentation, outside the look panel', (await rowShown('edge area')) === null);
   await setSplit(0.7);
   let scatterGone = false;
   for (let i = 0; i < 30 && !scatterGone; i++) { await page.waitForTimeout(400); scatterGone = (await rowShown('leaf scatter')) === false && (await rowShown('leaf diffuse')) === true; }
   check('leaf diffuse above 0 retires the albedo slider it replaces', scatterGone, `${await rowShown('leaf scatter')} ${await rowShown('leaf diffuse')}`);
-  check('...and edge area, whose job every texel already does above 0', (await rowShown('edge area')) === false, `${await rowShown('edge area')}`);
+  check('edge area remains outside the look panel above zero diffusion', (await rowShown('edge area')) === null);
   await setSplit(0);
   let scatterBack = false;
   for (let i = 0; i < 30 && !scatterBack; i++) { await page.waitForTimeout(400); scatterBack = (await rowShown('leaf scatter')) === true; }
   check('and at 0 the albedo is back', scatterBack, `${await rowShown('leaf scatter')}`);
-  check('...and edge area is back with it', (await rowShown('edge area')) === true, `${await rowShown('edge area')}`);
+  check('edge area remains outside the look panel at zero diffusion', (await rowShown('edge area')) === null);
   await setReceiver(1);                                             // the curtain takes Tsky alone: the albedo is a slider that lies there
   let clothFill = false;
   for (let i = 0; i < 30 && !clothFill; i++) { await page.waitForTimeout(400); clothFill = !(await rowShown('leaf scatter')) && (await rowShown('fill rays')) && (await rowShown('canopy fill')); }

@@ -442,7 +442,7 @@ export function parsePlaylistSpec(spec) {
 export const STYLES = ['morph', 'fade'];
 const styleFromServer = (v) => (v === 'fade' ? 'fade' : 'morph');   // arboretum's answer is read as the editor reads it: anything else is morph
 // The run key's block: what changes frames. `style` enters only for 'fade', so a morph playlist keeps the key it had before styles existed.
-export const playlistRunBlock = (pl, hashParams) => ({ id: pl.id, revision: pl.revision, items: pl.items.map((it) => ({ preset_id: it.preset_id, version: it.version, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, params_sha256: hashParams(it.params), ...(it.style === 'fade' ? { style: 'fade' } : {}) })) });
+export const playlistRunBlock = (pl, hashParams) => ({ id: pl.id, revision: pl.revision, ...(pl.presentation==null?{}:{presentation:pl.presentation}), items: pl.items.map((it) => ({ preset_id: it.preset_id, version: it.version, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, params_sha256: hashParams(it.params), ...(it.style === 'fade' ? { style: 'fade' } : {}) })) });
 export async function fetchArboretumPlaylist({ base = ARBORETUM_BASE, id, share = null, token = null, timeoutMs = 30000 }) {
   const secrets = [token, share, share && encodeURIComponent(share)].filter(Boolean);
   const say = (m) => { let t = String(m); for (const x of secrets) t = t.split(x).join('[redacted]'); return `arboretum playlist ${id}: ${t.replace(/\s+/g, ' ').trim().slice(0, 240)}`; };
@@ -471,7 +471,7 @@ export async function fetchArboretumPlaylist({ base = ARBORETUM_BASE, id, share 
     if (!it.params || typeof it.params !== 'object' || Array.isArray(it.params)) throw fail(`item ${i + 1} has no params`, false);
     return { preset_id: it.preset_id, version: it.version ?? null, name: String(it.name ?? `preset ${it.preset_id}`), dwell_s: Number(it.dwell_s), crossfade_s: Number(it.crossfade_s), style: styleFromServer(it.style), params: it.params };
   });
-  return { id, name: String(body.name ?? `playlist ${id}`), revision: body.revision ?? null, items, requested: String(id) };
+  return { id, name: String(body.name ?? `playlist ${id}`), revision: body.revision ?? null, ...(body.presentation==null?{}:{presentation:body.presentation}), items, requested: String(id) };
 }
 // Playlist items from a file: [{ name?, params, dwell_s?, crossfade_s?, style? }] or { name?, items: [...] }. Defaults are arboretum's (dwell 30, crossfade 5).
 export function playlistFromJson(json, fallbackName = 'playlist') {
@@ -484,7 +484,7 @@ export function playlistFromJson(json, fallbackName = 'playlist') {
     if (!STYLES.includes(style)) throw new Error(`playlist item ${i + 1}: style must be 'morph' or 'fade'`);
     return { preset_id: null, version: null, name: String(it.name ?? `item ${i + 1}`), dwell_s: it.dwell_s ?? 30, crossfade_s: it.crossfade_s ?? 5, style, params };
   });
-  return { id: null, name: String((!Array.isArray(json) && json?.name) || fallbackName), revision: null, items, requested: null };
+  return { id: null, name: String((!Array.isArray(json) && json?.name) || fallbackName), revision: null, ...(json?.presentation==null?{}:{presentation:json.presentation}), items, requested: null };
 }
 // dwell 1..3600 s, crossfade 0..120 s (arboretum's limits), and a whole number of frames each: the schedule is in pumps, so a fraction of a frame would be rounded
 export function checkPlaylistTimes(items, fps) {
@@ -576,7 +576,7 @@ export function onExit(fn) {
 // ---- who made the frames: the exporter's own files, the OS, the Chromium (all go into the manifest AND the run key) ----
 export function exporterIdentity() {
   const f = (n) => sha256(readFileSync(join(HERE, n)));
-  return { video_html_sha256: f('video.html'), render_video_sha256: f('render-video.mjs'), video_lib_sha256: f('video-lib.mjs') };
+  return { video_html_sha256: f('video.html'), render_video_sha256: f('render-video.mjs'), video_lib_sha256: f('video-lib.mjs'), session_lib_sha256:f('session-lib.mjs') };
 }
 export function osFacts() {
   const sw = Object.fromEntries((spawnSync('sw_vers', { encoding: 'utf8' }).stdout || '').split('\n').map((l) => l.split(/:\s+/)).filter((p) => p.length === 2));

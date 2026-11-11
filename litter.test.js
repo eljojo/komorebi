@@ -671,7 +671,7 @@ test("the uniforms the bake is handed are the frame it was baked over, and the t
 import { readFileSync } from "node:fs";
 test("the engine frees the carpet on dispose and forgets it on a lost context, like the fill it is built beside", () => {
   const src = readFileSync(new URL("./komorebi-engine.js", import.meta.url), "utf8");
-  const body = (head) => { const at = src.indexOf(head); return src.slice(at, src.indexOf("\n    },\n", at)); };
+  const body = (head) => { const at = src.indexOf(head,src.indexOf('const eng =')); return src.slice(at, src.indexOf("\n    },\n", at)); };
   const dispose = body("dispose(){"), restored = src.slice(src.indexOf("function onContextRestored"), src.indexOf("canvas.addEventListener('webglcontextlost'"));
   expect(dispose).toContain("litter.tex");
   expect(dispose).toContain("litterEntry");

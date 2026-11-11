@@ -408,7 +408,7 @@ function welcomeGate(hash, opened) {
     applyParams: (p) => loaded.push(p), resolveEntry: (value) => ({ value }), getPreset: () => ({}), DEFAULT_PRESET: "default",
     settings: {}, saveSettings() {}, landing: () => "default", showHint: (s) => hints.push(s),
     endTween() {}, refreshPresetSelect() {}, syncAllControls() {}, slideInPanel() {}, stripWake() {}, player: { start() {} }, coarse: false,
-    parseHash, mount: () => ({ open: () => opened, ready: Promise.resolve(null) }), params: {}, presetRows: {}, activeList: () => "local",
+    parseHash, mount: () => ({ open: () => opened, ready: Promise.resolve(null) }), params: {}, presetRows: {}, sessionPanel: { account: {} }, activeList: () => "local",
     presetSel: { value: "" }, resumeAt() {}, setActive() {}, showCloud() {}, saveStar() {}, dev: { classList: { contains: () => true } }, syncPlaylistUI() {},
   };
   const source = readFileSync("editor.js", "utf8");

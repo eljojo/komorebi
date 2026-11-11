@@ -105,7 +105,7 @@ The fade enters the mixture as the leaf's **area**, `f·cov`, in both stored num
 
 At `d = 0` there is no split, and by default the beam keeps the old reading: the depth-averaged slab, `e^(−τ)`. That soft edge is a **pre-existing approximation, named and kept**. It is Jensen-dark: an edge texel reads darker than the leaf and gap it holds.
 
-`edge_area` is the rung that removes it (decision 33). On, every reader takes the mixture at `k = 0` too, where `T_b` is exactly `T` and the beam becomes `(1−a) + a·e^(−τ/a)`. The faithful stamp becomes the exact one-leaf mixture as well. No new physics: the same two numbers, the same reading. It brightens every leaf edge by the factor the slab was darkening it, and lifts a frame's mean level by a few percent ([`../evidence/measurements.md#leaf`](../evidence/measurements.md#leaf)). That is a change of look, so it is José's to take, and it ships **off**.
+`edge_area` is the rung that removes it (decision 33). On, every reader takes the mixture at `k = 0` too, where `T_b` is exactly `T` and the beam becomes `(1−a) + a·e^(−τ/a)`. The faithful stamp becomes the exact one-leaf mixture as well. No new physics: the same two numbers, the same reading. It brightens every leaf edge by the factor the slab was darkening it, and lifts a frame's mean level by a few percent ([`../evidence/measurements.md#leaf`](../evidence/measurements.md#leaf)). Session-aware playback enables it for screens and disables it for projectors, where the slightly darker frame is preferred ([sessions](../contracts/sessions.md#presentation)). Flat-params playback retains its explicit switch.
 It is a **boolean**, because a blend of two readings of one texel is a transmittance no texel has. It is **one knob for every reader**: the cast taps, the faithful stamp, the sky view's ray and the fill all read one texel by one rule. It is inert above `d = 0`, where the split already reads the mixture. The litter, which is already a coverage mixture, is unaffected.
 
 ## The gates
@@ -234,7 +234,7 @@ The engine carries that maze only as a mean, the sieve, and must stay so: the fe
 ## Approximations and limits
 
 - **The texel holds one representative leaf and a gap.** *Approximation.* Exact for one leaf and for leaves stacked over the whole texel; a bounded residue for a partial overlap; blind to two edges in one texel. Absent where the faithful stamp draws one leaf at a time.
-- **The depth-averaged soft edge at `d = 0`.** *Approximation, kept by default*: Jensen-dark at every leaf edge. Absent with `edge_area` on, or with the split open.
+- **The depth-averaged soft edge at `d = 0`.** *Approximation, retained for projector presentation*: Jensen-dark at every leaf edge. Absent with `edge_area` on, or with the split open.
 - **Single scatter.** *Approximation.* A leaf's diffuse light goes down through the layers below on their true transmittance; none of it glows sideways out of the leaves beside it, and none bounces.
 - **The ballistic residue carries the leaf's hue.** *Approximation, and visible:* at `d` 0.95 it is five percent of the light, so a faint coloured sun-image of each leaf remains; a stack of three is gone.- **The uniform-sky identity is first order.** *Approximation*: diffuse equals ballistic transmission only for a uniform sky through Lambertian leaves, which is why the skylight is not split.
 - **`d` is one number for every leaf.** *Authored* in a look; physically about 0.95.

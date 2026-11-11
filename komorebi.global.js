@@ -14,6 +14,7 @@
 // touch this file — it exists only for classic-script consumers.
 // ============================================================================
 import { create, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG } from "./komorebi.js";
+import { FIDELITY_KEYS, PLAYBACK_KEYS, QUALITY_PROFILES, PRESENTATION_PROFILES, resolveSession, resolveParams, authoredLook } from './komorebi.js';
 import { PRESETS } from "./presets.js";
 
-window.Komorebi = { create, PRESETS, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG };
+window.Komorebi = { create, PRESETS, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG, FIDELITY_KEYS, PLAYBACK_KEYS, QUALITY_PROFILES, PRESENTATION_PROFILES, resolveSession, resolveParams, authoredLook };

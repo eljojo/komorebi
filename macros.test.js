@@ -23,7 +23,7 @@ function seasonDialRig() {
     setParams: (p) => Object.assign(params, p),
     transitionTo: (p, opts) => { eng.trans.active = true; pending = { p, opts }; } };
   const env = { params, eng, macroUsable: () => true, maybeClearSpecies: noop, syncControl: noop,
-    applyScope: () => writes.push(params.phenology), endTween: noop, chipSoon: noop, stopPlay: noop,
+    applyScope: () => writes.push(params.phenology), applySession:noop, endTween: noop, chipSoon: noop, stopPlay: noop,
     syncAllControls: () => dial.tryCapture(), timing: () => null, stateNow: noop, activeList: noop,
     resolveEntry: (p) => p, transDur: 1, player: { leaving: noop, arrived: noop }, refreshPresetSelect: noop };
   const body = source.slice(source.indexOf('const TRY_FALL ='), source.indexOf('function tryWrite('));

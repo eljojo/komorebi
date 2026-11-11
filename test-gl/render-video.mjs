@@ -21,6 +21,7 @@
 //                          A fade in flight is not restorable state, so a playlist's checkpoints are taken where each fade LANDS (ckpt/): a resume restores the last landing before the segment and replays
 //                          the frames in between unrecorded (at most one look's dwell and fade). No --encode-only. The playlist is in the run key (each item's params by hash), look.json is the
 //                          first look and playlist.json the whole list.
+//   --session-json <f>     fixed quality/presentation session, resolved by the pinned engine. Incompatible with --set. --ss remains a capture option.
 //   --set key=value        override a look param (JSON value, or a bare string). Repeatable. adaptive_motion / auto_quality are refused: they are forced off. Only bake_resolution /
 //                          tex_resolution / sample_count keep the look as authored: any other key is accepted with a warning and the manifest says NOT as authored.
 //   --commit <sha>         the engine from `git archive <sha>` in a temp tree        --tree  a SNAPSHOT of the working tree, recorded dirty (git diff --stat + a hash of the diff)
@@ -82,6 +83,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
+import { exportSession } from './session-lib.mjs';
 import os from 'node:os';
 import { directDiskPlan, directJoinArgs, directSegmentArgs, pipelinePlan } from './pipeline.mjs';
 import { checkAgainstTiny, eventsUpTo, parseBlockSegments, parseJobs, restorePoint, runPool, tinyEvents, tinyPlan, todoSegments } from './parallel.mjs';
@@ -111,6 +113,9 @@ if (has('--help') || has('-h')) {   // the header comment IS the usage
 const LOOK = flag('--look-json'), ARB_SPEC = flag('--arboretum'), PL_JSON = flag('--playlist-json'), PL_SPEC = flag('--arboretum-playlist');
 if ([LOOK, ARB_SPEC, PL_JSON, PL_SPEC].filter(Boolean).length !== 1) die('exactly one of --look-json <path>, --arboretum <id>[@<version>][:<share_token>], --playlist-json <path> or --arboretum-playlist <id>[:<share_token>]');
 const PLAYLIST_MODE = Boolean(PL_JSON || PL_SPEC);
+const SESSION_FILE=flag('--session-json');
+let SESSION_INPUT;
+if(SESSION_FILE){try{SESSION_INPUT=JSON.parse(readFileSync(SESSION_FILE,'utf8'));}catch(e){die(`--session-json: ${e.message}`);}}
 let ARB = null, PL_ARB = null;   // the parsed --arboretum / --arboretum-playlist
 if (ARB_SPEC) { try { ARB = parseArboretumSpec(ARB_SPEC); } catch (e) { die(e.message); } }
 if (PL_SPEC) { try { PL_ARB = parsePlaylistSpec(PL_SPEC); } catch (e) { die(e.message); } }
@@ -175,6 +180,7 @@ const QUALITY_KEYS = ['bake_resolution', 'tex_resolution', 'sample_count'];
 const MAX_ATTEMPTS = 3;   // per segment
 
 const overrides = {};
+if(SESSION_FILE && flagAll('--set').length)die('--session-json and --set are separate compatibility paths; choose one');
 for (const kv of flagAll('--set')) {
   const i = kv.indexOf('=');
   if (i < 1) die(`--set ${kv}: expected key=value`);
@@ -234,7 +240,7 @@ if (PLAYLIST_MODE) {
   try { checkPlaylistTimes(pl.items, FPS); } catch (e) { die(e.message); }
   if (pl.items.length < 2) die('a playlist needs at least two looks to transition between');
   const block = playlistRunBlock(pl, canonicalSha256);
-  PLAYLIST = { name: pl.name, items: pl.items, block,
+  PLAYLIST = { name: pl.name, presentation:pl.presentation, items: pl.items, block,
     fetch: PL_SPEC ? { name: pl.name, page_url: `${ARBORETUM_BASE}/arboretum/l/${pl.id}`, api_base: ARB_BASE, requested: pl.requested, share_token_sha256_prefix: PL_ARB.share ? sha256(PL_ARB.share).slice(0, 8) : null, fetched_at: new Date().toISOString() } : null };
   lookParams = pl.items[0].params;
   lookBytes = Buffer.from(canonicalJson(block));
@@ -260,9 +266,9 @@ if (PLAYLIST_MODE) {
     fetch: { name: preset.name, page_url: `${ARBORETUM_BASE}/arboretum/p/${preset.id}`, komorebi_commit: preset.komorebi_commit, api_base: ARB_BASE, requested: preset.requested, head_resolved: ARB.version === null, share_token_sha256_prefix: ARB.share ? sha256(ARB.share).slice(0, 8) : null, fetched_at: new Date().toISOString() },
   };
 }
-const finalParams = { ...lookParams, ...overrides, adaptive_motion: false, auto_quality: false };
+let finalParams = { ...lookParams, ...overrides, adaptive_motion: false, auto_quality: false };
 // a playlist's looks, each as rendered (the same overrides and the two governors forced off on every one)
-const STOP_PARAMS = PLAYLIST ? PLAYLIST.items.map((it) => ({ ...it.params, ...overrides, adaptive_motion: false, auto_quality: false })) : [finalParams];
+let STOP_PARAMS = PLAYLIST ? PLAYLIST.items.map((it) => ({ ...it.params, ...overrides, adaptive_motion: false, auto_quality: false })) : [finalParams];
 const nonQuality = Object.keys(overrides).filter((k) => !QUALITY_KEYS.includes(k));
 if (nonQuality.length) console.warn(`render-video: WARNING — overrides outside the quality knobs: ${nonQuality.join(', ')} (the look is NOT as authored)`);
 
@@ -271,6 +277,14 @@ const killers = [];
 onExit(() => { for (const k of killers.splice(0)) { try { k(); } catch { /* already gone */ } } });
 // the engine is exported (and removed again on every way out, signals included: exportEngine registers that) only for a run that renders
 const exp = ENCODE_ONLY ? null : exportEngine({ ...(has('--tree') ? { tree: true } : { commit: flag('--commit') }), keep: has('--keep-export') });
+let SESSION_RECORD=null;
+if(SESSION_FILE && exp){
+  try{
+    const engine=await import(pathToFileURL(join(exp.dir,'komorebi.js')).href);
+    SESSION_RECORD=exportSession(engine,SESSION_INPUT,PLAYLIST?PLAYLIST.items.map(it=>it.params):[lookParams],PLAYLIST?.presentation);
+    STOP_PARAMS=SESSION_RECORD.effective;finalParams=STOP_PARAMS[0];
+  }catch(e){die(`--session-json: ${e.message}`);}
+}
 // Playlist support keeps the same grove topology and mode. Check the exported engine's own key lists before anything renders.
 let playlistEngine;
 if (PLAYLIST && exp) {
@@ -298,6 +312,7 @@ const runKeyBody = () => ({
   os: { kernel_release: OSF.kernel_release, product_version: OSF.product_version, build_version: OSF.build_version },
   chromium: CHROMIUM,
   look_sha256: sha256(lookBytes), overrides, forced: { adaptive_motion: false, auto_quality: false },
+  ...(SESSION_RECORD?{session:SESSION_RECORD}:{}),
   fps: FPS, step_ms: STEP, t0_ms: T0_MS, size: [OW, OH], ss: SS, ss_space: SS === 1 ? 'n/a' : SS_SPACE, preroll_frames: PREROLL, segment_frames: SEG_FRAMES,
   master: MASTER, master_chain: masterChain(), chrome: CHROME, ffmpeg_version: FFMPEG_VERSION,
   ...(PLAN.direct ? { pipeline: PIPELINE, master: null, master_chain: null, pipeline_identity: { pipeline_sha256: sha256(readFileSync(join(HERE, 'pipeline.mjs'))), webcodecs_sha256: sha256(readFileSync(join(HERE, 'webcodecs.mjs'))) }, delivery_settings: { vt_bitrate: PIPELINE === 'browser' || DELIVERY === 'hevc_vaapi' || VT_QUALITY ? null : VT_BITRATE, vt_quality: PIPELINE === 'browser' ? null : VT_QUALITY ?? null, quantizer: PIPELINE === 'browser' ? 1 : null, gop: PIPELINE === 'browser' ? FPS * 2 : GOP, ...(DELIVERY === 'hevc_vaapi' ? { encoder: DELIVERY, vaapi_device: VAAPI_DEVICE, bitrate: VAAPI_BITRATE } : {}) } } : {}),
@@ -320,6 +335,7 @@ if (ENCODE_ONLY) {
   if (existsSync(P('complete.json')) && readJson(P('complete.json')).master_discarded) refuse('the master was discarded (--discard-master); re-render with --restart');
   const flags = { look_sha256: lookBytes ? sha256(lookBytes) : RK.body.look_sha256, overrides, fps: FPS, size: [OW, OH], ss: SS, ss_space: SS === 1 ? 'n/a' : SS_SPACE, preroll_frames: PREROLL, segment_frames: SEG_FRAMES, master: MASTER };
   const differs = Object.keys(flags).filter((k) => !isDeepStrictEqual(RK.body[k], flags[k]));
+  if(SESSION_FILE && !isDeepStrictEqual(RK.body.session?.requested,SESSION_INPUT))differs.push('session');
   const onDisk = (existsSync(P('seg')) ? readdirSync(P('seg')) : []).filter((f) => /^seg_\d+\.json$/.test(f)).map((f) => readJson(P('seg', f)));
   const framesOnDisk = onDisk.reduce((a, j) => a + j.frames, 0);
   const lines = differs.map((k) => `  ${k}: run-key.json says ${JSON.stringify(RK.body[k])}, the flags say ${JSON.stringify(flags[k])}`);
@@ -834,7 +850,8 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
     ...(K.playlist ? { playlist: { ...K.playlist, ...RK.playlist_fetch, timeline: SCHEDULE, file: 'playlist.json' } } : {}),
     // the preset the look came from (the key's block, and how it was fetched); the token and the share token are in neither
     ...(K.arboretum ? { arboretum: { ...K.arboretum, ...RK.arboretum_fetch } } : {}),
-    overrides: kOverrides, look_changes_are_quality_only: nonQuality.length === 0,
+    overrides: kOverrides, look_changes_are_quality_only: nonQuality.length === 0 && !K.session,
+    ...(K.session?{session:K.session}:{}),
     look_statement: nonQuality.length ? `NOT as authored: ${nonQuality.join(', ')} changed` : `the look is as authored; only the quality knobs ${Object.keys(kOverrides).join(', ') || '(none)'} are overridden, plus the two governors forced off (adaptive_motion=false, auto_quality=false)`,
     output: {
       fps: kOut.fps, frames: N, seconds: N / kOut.fps, size: kOut.size, render_size: [kOut.size[0] * kOut.ss, kOut.size[1] * kOut.ss], ss: kOut.ss,

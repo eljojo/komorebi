@@ -3,21 +3,24 @@
 // komorebi.js so the engine stays a pure renderer. Imported by the editor and the
 // player; each look merges over the engine's DEFAULTS. (spec §9)
 // ============================================================================
-import { DEFAULTS } from "./komorebi.js";
+import { DEFAULTS, FIDELITY_KEYS, PLAYBACK_KEYS } from "./komorebi.js";
+
+// Standard machine tuning is inherited; exceptional requests below remain authored.
+const LOOK_DEFAULTS = Object.fromEntries(Object.entries(DEFAULTS).filter(([key]) => !FIDELITY_KEYS.includes(key) && !PLAYBACK_KEYS.includes(key)));
 
 export const PRESETS = {
   // The built-in looks. Definition order below IS the dropdown / ← → order — there is no separate
   // order list to keep in sync. The editor boots into 'afternoon 7'; 'test 1'/'test 2' sit commented
   // at the foot of this object. Any saved (★) look lives in local storage; DEFAULTS is the merge base.
   // 'afternoon 4' — windy predecessor; now a 3-tree grove with wider (52°) branching.
-  'afternoon 4': Object.assign({}, DEFAULTS, {
-    sample_count:32, core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
+  'afternoon 4': Object.assign({}, LOOK_DEFAULTS, {
+    core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
     core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
     layer_count:3, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
     tree_count:3, branch_angle_deg:52,
     clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
     leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
-    canopy_extent_m:6, tex_resolution:1024, seed:290626672,
+    canopy_extent_m:6, seed:290626672,
     sun_elevation_deg:84.5, sun_azimuth_deg:201,
     view_extent_m:3.1, exposure:1.7382978723404257, sun_cosine:1, contrast:0.98, ambient_skylight:0.97, tone_map:2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
     wind_strength:1.34, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:2.5,
@@ -27,129 +30,116 @@ export const PRESETS = {
     cloud_exposure: 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
   }),
   // 'afternoon 4b' — afternoon 4 under haze: turbid sky (β 0.23), lower exposure, a touch more contrast.
-  'afternoon 4b': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+  'afternoon 4b': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 52,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 85.1984375, "sun_azimuth_deg": 185.1914062500001,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 85.1984375, "sun_azimuth_deg": 185.1914062500001,
     "view_extent_m": 3.1, "exposure": 0.9184397163120568, "sun_cosine": 1, "contrast": 1.11, "ambient_skylight": 0.83, "sky_turbidity": 0.23, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 1.29/sin 85.2°
     "wind_strength": 1.34, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 2.5,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.25, "backlash_gain": 1, "sway_height_gain": 1.6,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.35, "stem_length": 0.14, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 0.1618908759004459, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": false,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 1.295 there, and a thicker cloud opens it up
   }),
   // 'afternoon 5' — calm near-overhead spring scene, now a 3-tree grove.
-  'afternoon 5': Object.assign({}, DEFAULTS, {
-    sample_count:32, core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
+  'afternoon 5': Object.assign({}, LOOK_DEFAULTS, {
+    core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
     core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
     layer_count:3, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
     tree_count:3,
     clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
     leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
-    canopy_extent_m:6, tex_resolution:1024, seed:290626672,
+    canopy_extent_m:6, seed:290626672,
     sun_elevation_deg:84.5, sun_azimuth_deg:201,
     view_extent_m:3.1, exposure:1.7382978723404257, sun_cosine:1, contrast:0.98, ambient_skylight:0.97, tone_map:2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
     wind_strength:0.07, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:1.3,
     sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.65, backlash_gain:1, sway_height_gain:0.75,
     limb_count:11, limb_flex:0.25, twig_flex:0.18, stem_length:0.18, leaf_swing:1.35, flutter_freq:1.4,
-    drift_amount:0.145, drift_phase:1.403, drift_auto:true, drift_speed:0.04, auto_quality:true,
-    ground_r:0.33, ground_g:0.21, ground_b:0.12,   // warm Mount-Royal dirt floor
+    drift_amount:0.145, drift_phase:1.403, drift_auto:true, drift_speed:0.04, ground_r:0.33, ground_g:0.21, ground_b:0.12,   // warm Mount-Royal dirt floor
     cloud_exposure: 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
   }),
   // 'afternoon 5b' — afternoon 5 dropped to a low (23°) sun swung round to the west.
-  'afternoon 5b': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+  'afternoon 5b': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 23.233203125002493, "sun_azimuth_deg": 254.1128906249312,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 23.233203125002493, "sun_azimuth_deg": 254.1128906249312,
     "view_extent_m": 3.1, "exposure": 1.7304964539007093, "contrast": 1.32, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "tone_map": 2,
     "wind_strength": 0.07, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 0.30115210461684433, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.44 there, and a thicker cloud opens it up
   }),
   // 'prism' — afternoon 5b's low west sun, now surfacing leaf-edge diffraction: red & blue split at every
   // dapple edge (θ∝λ). Same topology as 5b (seed/branching/layers), so 5b↔prism is a clean live morph.
-  'prism': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+  'prism': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 23.233203125002493, "sun_azimuth_deg": 254.1128906249312,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 23.233203125002493, "sun_azimuth_deg": 254.1128906249312,
     "view_extent_m": 3.1, "exposure": 1.7304964539007093, "contrast": 1.32, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "tone_map": 2,
     "chromatic_aberration": 3.0,
     "wind_strength": 0.07, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 0.30115210461684433, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.44 there, and a thicker cloud opens it up
   }),
-  'afternoon 6': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+  'afternoon 6': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,   // five trees: the welcome grows two more in from afternoon 5
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
     "view_extent_m": 3.1, "exposure": 1.7382978723404257, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.1025121046151725, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
   }),
   // 'afternoon 6b' — afternoon 6 with steeper leaf tilt (max_tilt 0.87 -> more footprint foreshortening).
-  'afternoon 6b': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+  'afternoon 6b': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 4, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.87, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
     "view_extent_m": 3.1, "exposure": 1.7382978723404257, "sun_cosine": 1, "contrast": 1.14, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 0.8278467974359008, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
   }),
-  'afternoon 7': Object.assign({}, DEFAULTS, {
+  'afternoon 7': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
     "view_extent_m": 3.1, "exposure": 1.8853846153846154, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
     "view_pitch_deg": 24, "view_fov_deg": 64,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 2.451 there, and a thicker cloud opens it up
@@ -159,14 +149,14 @@ export const PRESETS = {
   // canopy hovering overhead (the park model). Two things make it: standing_scene adds the bulk lateral shadow
   // offset the park model omits (so a LOW sun casts the shadow to the side); and a wide view_extent over a small
   // canopy_extent leaves the grove a finite blob with lit floor around it. Orient via sun azimuth / camera orbit.
-  'park 1': Object.assign({}, DEFAULTS, {
+  'park 1': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
     "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
     "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 28.50000000000159,
     "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
@@ -177,7 +167,7 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "auto_quality": true,   // park 1 is faithful_canopy (the heaviest path) — without the governor a weak device has no recovery; matches every sibling look
+    // park 1 is faithful_canopy (the heaviest path) — without the governor a weak device has no recovery; matches every sibling look
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
   }),
   // 'montebello' — the first FALL look (spec §4.5 senescence, §4.7 the litter): park 1's grove, the same seed, seen from
@@ -195,14 +185,14 @@ export const PRESETS = {
   // the grey card), far less saturated than the stain it replaced; so the dirt is park 1's ×0.6 (2026-10-08, José, from the
   // review sheets): real soil reflects 0.1–0.2, and on park 1's dirt a montebello leaf matched it in chroma and sat at 1.1× its
   // luminance, so the carpet vanished into the ground.
-  'montebello': Object.assign({}, DEFAULTS, {
+  'montebello': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
     "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
     "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
     "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie damp on the floor (§4.5, §4.7); José: "yes turn it on for both"
@@ -216,19 +206,19 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
     "tree_pigment_spread": 0.6,   // each tree its own colour
     "tree_clock_spread": 0.05,   // and its own clock
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 7.116 there, and a thicker cloud opens it up
   }),
-  'park fall': Object.assign({}, DEFAULTS, {   // José's mid-turn look on montebello's grove (2026-10-08): the crown still turning, the sunlit leaves already down and damp (every leaf falls by drop_start + drop_span = 1.0; at 0.79 those with exposure u ≥ 0.7 have), the park seen wide from the far side
+  'park fall': Object.assign({}, LOOK_DEFAULTS, {   // José's mid-turn look on montebello's grove (2026-10-08): the crown still turning, the sunlit leaves already down and damp (every leaf falls by drop_start + drop_span = 1.0; at 0.79 those with exposure u ≥ 0.7 have), the park seen wide from the far side
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
     "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
     "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.79, "turn_exposure": 0.71, "exposure_absolute": 0.93, "anthocyanin": 0.82, "tannin": 0.48, "wall_fraction": 0.13,   // mid-turn, deep red capacity, the raw light ordering the turn (§4.5)
     "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.36, "drop_after_turn": 1,                                                          // the whole drop has let go, each leaf after its own turn, and lies damp on the floor (§4.5, §4.7): his pd3 over 0.71 and 0.85
@@ -242,7 +232,7 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 2.18909165230681, "drift_auto": true, "drift_speed": 0.02,
-    "auto_quality": true,   // the faithful path under squally wind, as montebello: the governor stays on
+    // the faithful path under squally wind, as montebello: the governor stays on
     "tree_pigment_spread": 0.6,   // each tree its own colour
     "tree_clock_spread": 0.05,   // and its own clock
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
@@ -254,21 +244,19 @@ export const PRESETS = {
   // 0 and ta4's 0.1) and the carpet wet (0.5: a2 over a1, w8, a6). At ta's 0.78 with the default lag almost nothing has fallen, so a wet carpet would not show: phenology 0.8 with drop_lag 0 lays
   // the leaves whose turn phase is under 0.39 (the sunlit ones, each fully turned, 39%) and the buried interior stays green. The sun, the camera and the grove are afternoon 7's. canopy_fill and
   // leaf_diffuse stay 0, as there.
-  'forest floor': Object.assign({}, DEFAULTS, {
+  'forest floor': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
     "view_extent_m": 3.1, "exposure": 1.8853846153846154, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "phenology": 0.8, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // montebello's capacity, mid-turn, the exposed leaves first (§4.5)
     "leaf_drop": 1, "drop_after_turn": 1, "drop_lag": 0, "litter": 1, "leaf_wetness": 0.5,           // each leaf lets go the moment its own turn ends and lies damp on the floor (§4.5, §4.7): at 0.8 the sunlit 39% are down
     "tree_clock_spread": 0.05, "tree_pigment_spread": 0.6,                                           // the trees differ: one ahead of its neighbour by a hair, and not in the same red (§4.5)
@@ -285,14 +273,14 @@ export const PRESETS = {
   // glass he called the ultimate goal ("i like the dark patches of the left one", "yes the dapples were coloured"); canopy_fill stays 1. tree_pigment_spread 0.3 keeps the two trees from being one colour.
   // Everything else is montebello's but the camera: the feet behind the eye (view_center -1.75, -4.93), his k8 over k5 on the picks sheet ("i like k3,k4,k6,k8", 2026-10-09). The same
   // move on montebello itself (k1, P3 without the drift) left no carpet in frame and was not picked, so montebello keeps its own camera.
-  'the yellow tree': Object.assign({}, DEFAULTS, {
+  'the yellow tree': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
     "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
     "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.2, "tannin": 0.35, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
     "leaf_drop": 0.5, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the half that turns first has let go AFTER turning and lies damp on the floor, the half that turns last stays on (§4.5, §4.7): at 0.9 half the leaves are down
@@ -308,7 +296,7 @@ export const PRESETS = {
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "tree_pigment_spread": 0.3,   // the two trees are not one colour (§4.5)
-    "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
   }),
   // 'montebello, rain' — WORKING NAME: José has not named it. P7 on the 2026-10-09 proposals sheet: montebello on a rain day. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." He asked for the
@@ -316,14 +304,14 @@ export const PRESETS = {
   // cause: "one day after rain many leaves fell on the ground" — drop_lag 0 (the same lag as park fall's), so every leaf that has finished turning lets go at once. The rest: the leaves soaked to 0.75
   // (w4), wet soil at ×0.4 (c9's dirt), the weather macro's own overcast stop (cloud_thickness 0.55, halo 8, from canopy 4), and morning 2's humid haze (sky_turbidity 0.2). The exposure stays montebello's
   // 2.44, although the haze macro lowers it under haze. Everything else is montebello's, the camera as the sheet showed it.
-  'montebello, rain': Object.assign({}, DEFAULTS, {
+  'montebello, rain': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.55, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
     "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
     "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
     "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.75, "drop_after_turn": 1,                        // the leaves have let go AFTER turning and lie soaked on the floor (§4.5, §4.7); wetness 0.75 is his w4
@@ -339,7 +327,7 @@ export const PRESETS = {
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "drop_lag": 0,   // no wait after the turn: every leaf that has finished turning lets go at once, so at 0.9 about 94% are down, not 67% (the cause of "one day after rain many leaves fell on the ground", §4.5)
-    "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.55): it shows at 5.566 there, and a thicker cloud opens it up
   }),
   // 'cherry blossom' — WORKING NAME, from his own words: José has not named it. P8 on the 2026-10-09 proposals sheet. "d9 is the most beautiful, is that spring? i love it omg cherry blossoms????" (2026-10-07), and r3
@@ -347,14 +335,14 @@ export const PRESETS = {
   // pink in the sun") and on park 1's own paler dirt. Two changes answer his two objections to these pigments: tree_pigment_spread 0.6 so the crown is not "too uniformly red" (the trees differ, as
   // on his per-tree sheet), and litter_age 0.3 so the fallen leaves stay fresh, not browned. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." Everything else is montebello's, the camera
   // as the sheet showed it.
-  'cherry blossom': Object.assign({}, DEFAULTS, {
+  'cherry blossom': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
     "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
     "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
     "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.8, "tannin": 0, "wall_fraction": 0,   // the redhead pigments, no russet and no sieve, and who turns first (§4.5)
     "leaf_drop": 1, "litter": 1, "leaf_wetness": 0, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie DRY on the floor (§4.5, §4.7): d9 and a4 were dry
@@ -370,10 +358,10 @@ export const PRESETS = {
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
     "tree_pigment_spread": 0.6, "litter_age": 0.3,   // not one red across the crown, and the fallen leaves fresh, not browned (§4.5, §4.7)
-    "auto_quality": true,   // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
   }),
-  'park 2': Object.assign({}, DEFAULTS, {
+  'park 2': Object.assign({}, LOOK_DEFAULTS, {
   "sample_count": 48,
   "core_angular_radius_deg": 0.56,
   "halo_angular_radius_deg": 4.8,
@@ -409,7 +397,6 @@ export const PRESETS = {
   "trans_g": 0.356,
   "trans_b": 0.001,
   "canopy_extent_m": 6.5,
-  "tex_resolution": 1024,
   "bake_resolution": 0,
   "seed": 290626672,
   "sun_elevation_deg": 26,
@@ -497,9 +484,6 @@ export const PRESETS = {
   "drift_phase": 1.2240983189735037,
   "drift_auto": true,
   "drift_speed": 0.02,
-  "auto_quality": true,
-  "adaptive_motion": true,
-  "adaptive_idle_fps": 48,
   "show_source": true,
   "show_layer": false,
   "show_layer_index": 0,
@@ -560,10 +544,10 @@ export const PRESETS = {
   //    re-judge it against the twigs, which are the finest thing in the frame for it to smear.
   //  • exposure 1.3 / contrast 1.0: the sun clips to white and must, and any contrast above 1 clips the backlit
   //    leaves to black (the 'tent 1' finding — the tail stretches about 0.5).
-  'canopy 1': Object.assign({}, DEFAULTS, {
+  'canopy 1': Object.assign({}, LOOK_DEFAULTS, {
     "sky_view": true, "standing_scene": false, "faithful_canopy": false,   // sky view forces the layer tier anyway (no cast frame to pre-bake into) — written false to say so
     "sky_scatter": 0.5,
-    "sample_count": 32, "core_angular_radius_deg": 0.27, "halo_angular_radius_deg": 6,
+    "core_angular_radius_deg": 0.27, "halo_angular_radius_deg": 6,
     "core_weight_fraction": 0.95, "cloud_thickness": 0.2, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 4, "canopy_thickness_m": 6, "foliage_density": 1.4,
     "tree_count": 7, "limb_count": 8, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 38,
@@ -571,7 +555,7 @@ export const PRESETS = {
     "crown_aspect": 1.6, "leaves_per_cluster": 26, "cluster_spread_m": 0.28, "leaf_size_m": 0.13, "leaf_aspect": 1.75,
     "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.5, "trans_b": 0.16,   // chlorophyll: the glow's hue comes from here, normalized to unit peak by the scatter term
-    "canopy_extent_m": 34, "tex_resolution": 1024, "bake_resolution": 1536,   // 34 m over 1536 is 2.2 cm/texel — a 0.13 m leaf is 6 texels across, and leaf silhouettes ARE the picture here
+    "canopy_extent_m": 34, "bake_resolution": 1536,   // 34 m over 1536 is 2.2 cm/texel — a 0.13 m leaf is 6 texels across, and leaf silhouettes ARE the picture here
     "seed": 290626672, "sun_elevation_deg": 55, "sun_azimuth_deg": 140,
     "view_extent_m": 9, "view_pitch_deg": 90, "view_fov_deg": 60, "view_yaw_deg": 0,
     "view_center_x": 1.6, "view_center_y": 1.1, "trunk_radius_m": 0.14, "far_smear": 0,
@@ -582,7 +566,7 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 1.6,
     "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 2.1, "drift_auto": true, "drift_speed": 0.02,
-    "auto_quality": true,   // the layer tier is the cheap path, but seven trees over a 1536 bake plus the three glare passes is real work
+    // the layer tier is the cheap path, but seven trees over a 1536 bake plus the three glare passes is real work
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.2): it shows at 1.3 there, and a thicker cloud opens it up
   }),
   // ---- THE CANOPIES, 2-4. Three siblings of 'canopy 1', each keyed to ONE look-up photograph's structural
@@ -610,10 +594,10 @@ export const PRESETS = {
   // Coverage: Rfill 8 m and crown0 3.63 give a reach of 11.6 m, so the canopy is full above 50°, thins from 43°, and
   // is open below it — and the frame runs 13° to 90°. Most of the picture is therefore honest open sky between the
   // culms, which is the composition.
-  'canopy 2': Object.assign({}, DEFAULTS, {
+  'canopy 2': Object.assign({}, LOOK_DEFAULTS, {
     "sky_view": true, "standing_scene": false, "faithful_canopy": false,
     "sky_scatter": 0.6,
-    "sample_count": 32, "core_angular_radius_deg": 0.27, "halo_angular_radius_deg": 5,
+    "core_angular_radius_deg": 0.27, "halo_angular_radius_deg": 5,
     "core_weight_fraction": 0.95, "cloud_thickness": 0.08, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 10, "canopy_thickness_m": 6.5, "foliage_density": 3.4,
     "tree_count": 16, "limb_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 18,
@@ -621,7 +605,7 @@ export const PRESETS = {
     "crown_aspect": 3, "leaves_per_cluster": 60, "cluster_spread_m": 0.35, "leaf_size_m": 0.14, "leaf_aspect": 3.4,
     "max_tilt": 0.5, "edge_softness": 0.26,
     "trans_r": 0.34, "trans_g": 0.52, "trans_b": 0.14,   // bamboo is a YELLOW-green: more red than a pine, and the glow takes its hue from here
-    "canopy_extent_m": 22, "tex_resolution": 1024, "bake_resolution": 1536,   // 1.7 cm/texel
+    "canopy_extent_m": 22, "bake_resolution": 1536,   // 1.7 cm/texel
     "seed": 290626672, "sun_elevation_deg": 78, "sun_azimuth_deg": 150,
     "view_extent_m": 8, "view_pitch_deg": 58, "view_fov_deg": 70, "view_yaw_deg": 0,
     "view_center_x": 0.9, "view_center_y": 0.7, "trunk_radius_m": 0.04, "far_smear": 0,
@@ -632,7 +616,6 @@ export const PRESETS = {
     "sway_stiffness": 2.2, "sway_ceiling": 0.4, "damping_ratio": 0.5, "backlash_gain": 1, "sway_height_gain": 1.6,
     "limb_flex": 0.35, "twig_flex": 0.3, "stem_length": 0.14, "leaf_swing": 1.5, "flutter_freq": 1.8,
     "drift_amount": 0.12, "drift_phase": 0.7, "drift_auto": true, "drift_speed": 0.03,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.08): it shows at 1.35 there, and a thicker cloud opens it up
   }),
   // 'canopy 3' — THE RED-PINE COLONNADE. Walking a lane of old pines and tipping your head back: long bare boles
@@ -644,10 +627,10 @@ export const PRESETS = {
   // 64 occluder segments. Coverage: reach 18.6 m gives a full canopy above 46°, thinning from 37°, against a frame
   // that runs 12° to 90° — so the bottom of the picture is open sky down the lane, which is the depth cue the
   // reference is built on, and the crowns close over only near the top.
-  'canopy 3': Object.assign({}, DEFAULTS, {
+  'canopy 3': Object.assign({}, LOOK_DEFAULTS, {
     "sky_view": true, "standing_scene": false, "faithful_canopy": false,
     "sky_scatter": 0.55,
-    "sample_count": 32, "core_angular_radius_deg": 0.3, "halo_angular_radius_deg": 6,
+    "core_angular_radius_deg": 0.3, "halo_angular_radius_deg": 6,
     "core_weight_fraction": 0.92, "cloud_thickness": 0.25, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 14, "canopy_thickness_m": 7, "foliage_density": 2.4,
     "tree_count": 15, "limb_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 55,
@@ -655,7 +638,7 @@ export const PRESETS = {
     "crown_aspect": 0.8, "leaves_per_cluster": 56, "cluster_spread_m": 0.4, "leaf_size_m": 0.22, "leaf_aspect": 2.6,
     "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.2, "trans_g": 0.42, "trans_b": 0.14,   // pine needles: darker and bluer than a broadleaf
-    "canopy_extent_m": 30, "tex_resolution": 1024, "bake_resolution": 1536,   // 2.7 cm/texel
+    "canopy_extent_m": 30, "bake_resolution": 1536,   // 2.7 cm/texel
     "seed": 290626672, "sun_elevation_deg": 40, "sun_azimuth_deg": 200,
     "view_extent_m": 11, "view_pitch_deg": 62, "view_fov_deg": 60, "view_yaw_deg": 35,
     "view_center_x": 1.4, "view_center_y": 1.0, "trunk_radius_m": 0.17, "far_smear": 0,
@@ -666,7 +649,6 @@ export const PRESETS = {
     "sway_stiffness": 1.0, "sway_ceiling": 0.4, "damping_ratio": 0.6, "backlash_gain": 1, "sway_height_gain": 1.6,
     "limb_flex": 0.22, "twig_flex": 0.2, "stem_length": 0.2, "leaf_swing": 1.2, "flutter_freq": 1.2,
     "drift_amount": 0.12, "drift_phase": 1.8, "drift_auto": true, "drift_speed": 0.02,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.25): it shows at 1.35 there, and a thicker cloud opens it up
   }),
   // 'canopy 4' — THE RAINFOREST ZENITH. Flat on your back on the forest floor, looking straight up: enormous dark
@@ -681,10 +663,10 @@ export const PRESETS = {
   // 23.7 m puts the full canopy above 44° and the thinning edge at 34°, against frame corners at 36° — so the crowns
   // close over the middle of the frame and thin at its very corners, which is what a real canopy does. That is why
   // view_extent_m is 14 and the box is 54 m: neither frames anything, both exist to make the grove wide enough.
-  'canopy 4': Object.assign({}, DEFAULTS, {
+  'canopy 4': Object.assign({}, LOOK_DEFAULTS, {
     "sky_view": true, "standing_scene": false, "faithful_canopy": false,
     "sky_scatter": 0.12,
-    "sample_count": 32, "core_angular_radius_deg": 0.4, "halo_angular_radius_deg": 8,
+    "core_angular_radius_deg": 0.4, "halo_angular_radius_deg": 8,
     "core_weight_fraction": 0.7, "cloud_thickness": 0.55, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 16, "canopy_thickness_m": 7, "foliage_density": 2.2,
     "tree_count": 6, "limb_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 48,
@@ -692,7 +674,7 @@ export const PRESETS = {
     "crown_aspect": 1, "leaves_per_cluster": 34, "cluster_spread_m": 0.34, "leaf_size_m": 0.22, "leaf_aspect": 1.6,
     "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.16, "trans_g": 0.3, "trans_b": 0.12,   // thick tropical leaves pass little: the crowns are meant to go dark
-    "canopy_extent_m": 54, "tex_resolution": 1024, "bake_resolution": 2048,   // 2.6 cm/texel over the widest box in the set
+    "canopy_extent_m": 54, "bake_resolution": 2048,   // 2.6 cm/texel over the widest box in the set
     "seed": 290626672, "sun_elevation_deg": 70, "sun_azimuth_deg": 120,
     "view_extent_m": 14, "view_pitch_deg": 90, "view_fov_deg": 68, "view_yaw_deg": 0,
     "view_center_x": 1.8, "view_center_y": 1.3, "trunk_radius_m": 0.3, "far_smear": 0,
@@ -703,7 +685,6 @@ export const PRESETS = {
     "sway_stiffness": 0.8, "sway_ceiling": 0.4, "damping_ratio": 0.7, "backlash_gain": 1, "sway_height_gain": 1.6,
     "limb_flex": 0.2, "twig_flex": 0.18, "stem_length": 0.22, "leaf_swing": 1.0, "flutter_freq": 0.9,
     "drift_amount": 0.1, "drift_phase": 2.6, "drift_auto": true, "drift_speed": 0.015,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.55): it shows at 1.3 there, and a thicker cloud opens it up
   }),
   // 'curtain 1' — a moss-green velvet, the plant at the glass (spec §4.9). It was a sunlit sheer cotton (high Tt, warm dye, matte)
@@ -712,14 +693,14 @@ export const PRESETS = {
   // the near-contact shape regime, wanted here: leaves print as leaves and the deep fold warp S-bends them.
   // Broad pleats, tight strong glow, low warm sun far off-axis so the flanks split lit/dark.
   // Hand-tuned by the author; the grove seed is its own (938460877, 4 trees).
-  'curtain 1': Object.assign({}, DEFAULTS, {
+  'curtain 1': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.28, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.4,
     "tree_count": 4, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
     "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.15, "leader_strength": 0.15, "droop": -0.23, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.16, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 938460877, "sun_elevation_deg": 13, "sun_azimuth_deg": 62,
     "receiver": 1, "standing_scene": true, "faithful_canopy": true,
     "cloth_distance_m": 0.6, "fabric_tt": 0.25, "fabric_tint_r": 0.35, "fabric_tint_g": 1, "fabric_tint_b": 0.3,   // a moss-green velvet: little light through the pile, the moss dye
@@ -735,7 +716,6 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 2.43, "drift_auto": true, "drift_speed": 0.02,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.28): it shows at 1.627 there, and a thicker cloud opens it up
   }),
   // 'curtain 2' — the same room at BLUE HOUR. curtain 1's grove, seed and window, so the pair live-morphs;
@@ -744,14 +724,14 @@ export const PRESETS = {
   // 1.8 m so BOTH regimes share the frame (near limbs crisp, crown melted soft — §3.2); the glow widens into
   // bloom and the Purkinje shift runs deep: hot gold sun-blobs floating on rod-blue dim cloth. Lazy last-light
   // wind. Authored as the direction's next step; every number is a starting point.
-  'curtain 2': Object.assign({}, DEFAULTS, {
+  'curtain 2': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.22, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.4,
     "tree_count": 4, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
     "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.15, "leader_strength": 0.15, "droop": -0.23, "leaves_per_cluster": 20,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.16, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "tex_resolution": 1024, "bake_resolution": 768,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 938460877, "sun_elevation_deg": 7, "sun_azimuth_deg": 55,
     "receiver": 1, "standing_scene": true, "faithful_canopy": true,
     "cloth_distance_m": 1.8, "fabric_tt": 0.85, "fabric_tint_r": 0.95, "fabric_tint_g": 0.97, "fabric_tint_b": 1,
@@ -767,7 +747,6 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 2.43, "drift_auto": true, "drift_speed": 0.02,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.22): it shows at 1.845 there, and a thicker cloud opens it up
   }),
   // 'tent 1' — komorebi from INSIDE a tent (spec §4.9): the ENCLOSURE receiver, receiver 2, now a CLOSED tent.
@@ -800,8 +779,8 @@ export const PRESETS = {
   // evenness back for dapple on both sides; (c) the floor-of-shade block below;
   // (d) the cast read stays inside the 10 m baked canopy, with only the far bottom corner grazing its edge —
   // canopy_extent_m is the lever if that corner shows.
-  'tent 1': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.5, "halo_angular_radius_deg": 4.8,
+  'tent 1': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.5, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.9, "cloud_thickness": 0.16, "eclipse": false, "eclipse_amount": 0.42,
     // a low crown running well up: 2.6–6.2 m clears the 1.15 m ridge by a comfortable margin, so the tent really is
     // UNDER the canopy. On the layer tier this band is also what the leaves are binned into and what the analytic
@@ -816,7 +795,7 @@ export const PRESETS = {
     "branch_length_ratio": 0.66, "branch_pitch_deg": 14, "branch_tau": 1.8, "leader_strength": 0.15, "droop": 0.14, "leaves_per_cluster": 28,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.14, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.34, "trans_g": 0.4, "trans_b": 0.26,   // MUTED gray-green, and PALER than the curtain's: the reference's shade is pale neutral, not saturated leaf-green — on white nylon the mixing of many soft layers washes the hue out, and a leaf that passes more light is half of keeping the shade off the floor (below)
-    "canopy_extent_m": 10, "tex_resolution": 1024, "bake_resolution": 768,
+    "canopy_extent_m": 10, "bake_resolution": 768,
     // MIDDAY, and standing OFF one side of the ridge. Elevation 55° drops the canopy's cast almost straight down
     // onto the panels the way the reference's does; azimuth 205° (with view_yaw 0, so the ridge runs along +Y) puts
     // the sun well out of the ridge's vertical plane, which is what makes the two slopes differ — beamF 1.15 on the
@@ -903,132 +882,118 @@ export const PRESETS = {
     // the governor matters LESS here than on its faithful siblings: the enclosure runs the layer tier, which is the
     // cheap path (a per-pixel sample loop over four small textures, no per-sample geometry bake). Left on because
     // the lateral-diffusion tier's three extra full-frame passes are still the expensive thing in this look.
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.16): it shows at 1.648 there, and a thicker cloud opens it up
   }),
   // 'memories' — the §1 north-star look: a sparse early-spring grove (foliage 0.45, so individual leaves
   // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
   // (phenology 0.15 here and 0.40 on 'morning 1' are stamps for the season macro's probe: both sit below turn_start, where every reader of phenology is gated, so the frames are the same bytes)
-  'memories': Object.assign({}, DEFAULTS, {
+  'memories': Object.assign({}, LOOK_DEFAULTS, {
     "phenology": 0.15,
-    "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 0.45,
     "tree_count": 5, "branch_levels": 3, "branch_children": 6, "branch_angle_deg": 34,
     "branch_length_ratio": 0.91, "branch_pitch_deg": 45, "clusters_per_layer": 60, "leaves_per_cluster": 39,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.376, "trans_g": 0.247, "trans_b": 0.113, "canopy_extent_m": 7, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 35.964062500001056, "sun_azimuth_deg": 355.9855468749904,
+    "trans_r": 0.376, "trans_g": 0.247, "trans_b": 0.113, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 35.964062500001056, "sun_azimuth_deg": 355.9855468749904,
     "view_extent_m": 3.1, "exposure": 3.01, "contrast": 1.23, "ambient_skylight": 0.93, "sky_turbidity": 0.05, "tone_map": 2, "view_pitch_deg": 24,
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 5.568307189744262, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0): it shows at 3.01 there, and a thicker cloud opens it up
   }),
-  'morning 1': Object.assign({}, DEFAULTS, {
+  'morning 1': Object.assign({}, LOOK_DEFAULTS, {
     "phenology": 0.40,
-    "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.195, "canopy_extent_m": 7, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 29.5, "sun_azimuth_deg": 83,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.195, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 29.5, "sun_azimuth_deg": 83,
     "view_extent_m": 3.1, "exposure": 1.7553956834532372, "contrast": 0.98, "ambient_skylight": 0.97, "tone_map": 2, "chromatic_aberration": 0.10,
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.8099656994860664, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.39): it shows at 2.44 there, and a thicker cloud opens it up
   }),
-  'morning 2': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+  'morning 2': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
     "view_extent_m": 3.1, "exposure": 1.7553956834532372, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.2, "mesopic_strength": 1, "tone_map": 2,
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.97071372563982, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.39): it shows at 2.44 there, and a thicker cloud opens it up
   }),
-  'morning 3': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
+  'morning 3': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.72, "cloud_thickness": 0.18, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.336, "canopy_extent_m": 7, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 30, "sun_azimuth_deg": 125.26438968275465,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.336, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 30, "sun_azimuth_deg": 125.26438968275465,
     "view_extent_m": 3.1, "exposure": 2.067796610169492, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2,
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 0.18025113743438262, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.18): it shows at 2.44 there, and a thicker cloud opens it up
   }),
   // 'morning 3b' — morning 3's crisp clear-sky low sun pushed hard into diffraction (strength 6): the tight
   // pinhole sun-images split into full red/blue rims. Same topology as morning 3, so 3↔3b is a clean morph.
-  'morning 3b': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
+  'morning 3b': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.72, "cloud_thickness": 0.18, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.336, "canopy_extent_m": 7, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 30, "sun_azimuth_deg": 125.26438968275465,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.336, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 30, "sun_azimuth_deg": 125.26438968275465,
     "view_extent_m": 3.1, "exposure": 2.067796610169492, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2, "chromatic_aberration": 6.0,
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 0.18025113743438262, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.18): it shows at 2.44 there, and a thicker cloud opens it up
   }),
   // 'the void' — a dense 16-tree grove pulled wide (view 6.8 m), deep-green and low-sun.
-  'the void': Object.assign({}, DEFAULTS, {
-    "sample_count": 32, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+  'the void': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0.27, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
     "tree_count": 16, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
     "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
     "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
     "view_extent_m": 6.8, "exposure": 1.921259842519685, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2, "view_pitch_deg": 0,
     "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 1.2709150851268554, "drift_auto": true, "drift_speed": 0.04,
-    "auto_quality": true,
     "ground_r": 0.12, "ground_g": 0.16, "ground_b": 0.19,   // cool stone-grey floor
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.27): it shows at 2.44 there, and a thicker cloud opens it up
   }),
   // 'eclipse' — a single tree's gaps imaging a partially-eclipsed sun: every dapple becomes the same
   // crescent (the moon disk zeroes part of the source cloud). Tiny crisp source, low far-smear and dim
   // ambient keep the crescents sharp and eerie; only a barely-there wind stirs it (auto-drift off).
-  'eclipse': Object.assign({}, DEFAULTS, {
+  'eclipse': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 48, "core_angular_radius_deg": 0.3, "halo_angular_radius_deg": 1,
     "core_weight_fraction": 1, "cloud_thickness": 0, "eclipse": true, "eclipse_amount": 0.6,
     "layer_count": 2, "canopy_base_height_m": 4.9, "canopy_thickness_m": 2.5, "foliage_density": 0.7,
     "tree_count": 1, "branch_levels": 4, "branch_children": 3, "branch_angle_deg": 49,
     "branch_length_ratio": 0.63, "branch_pitch_deg": 51, "clusters_per_layer": 60, "leaves_per_cluster": 49,
     "cluster_spread_m": 0.25, "leaf_size_m": 0.175, "leaf_aspect": 1.75, "max_tilt": 0.84, "edge_softness": 0.09,
-    "trans_r": 0.488, "trans_g": 0.611, "trans_b": 0.494, "canopy_extent_m": 8.5, "tex_resolution": 1024,
-    "seed": 290626672, "sun_elevation_deg": 19.5, "sun_azimuth_deg": 109.22399419024259,
+    "trans_r": 0.488, "trans_g": 0.611, "trans_b": 0.494, "canopy_extent_m": 8.5, "seed": 290626672, "sun_elevation_deg": 19.5, "sun_azimuth_deg": 109.22399419024259,
     "view_extent_m": 4.2, "exposure": 2.1, "contrast": 0.98, "ambient_skylight": 0.4, "sky_turbidity": 0.05,
     "mesopic_strength": 0.6, "tone_map": 2, "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,
     "view_pitch_deg": 36, "view_fov_deg": 51, "far_smear": 1.0,
@@ -1036,10 +1001,9 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 21, "limb_flex": 0.39, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 0.5, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 5.430132496921517, "drift_auto": false, "drift_speed": 0.04,
-    "auto_quality": true,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0): it shows at 2.1 there, and a thicker cloud opens it up
   }),
-  'acid dreams': Object.assign({}, DEFAULTS, {
+  'acid dreams': Object.assign({}, LOOK_DEFAULTS, {
   "sample_count": 48,
   "core_angular_radius_deg": 0.19457142857142862,
   "halo_angular_radius_deg": 4.371428571428571,
@@ -1075,8 +1039,6 @@ export const PRESETS = {
   "trans_g": 0.356,
   "trans_b": 0.19317777777777778,
   "canopy_extent_m": 7,
-  "tex_resolution": 1024,
-  "bake_resolution": 1024,
   "seed": 290626672,
   "sun_elevation_deg": 20.704811054635435,
   "sun_azimuth_deg": 247.79234570140352,
@@ -1163,9 +1125,6 @@ export const PRESETS = {
   "drift_phase": 0.12165903281940274,
   "drift_auto": true,
   "drift_speed": 0.04,
-  "auto_quality": true,
-  "adaptive_motion": true,
-  "adaptive_idle_fps": 30,
   "show_source": true,
   "show_layer": false,
   "show_layer_index": 0,
@@ -1174,7 +1133,7 @@ export const PRESETS = {
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.025714285714285717): it shows at 4.624 there, and a thicker cloud opens it up
   }),
   /* 'test 1' / 'test 2' — hidden for now, kept for the future. Uncomment this block to restore them to the preset list.
-  'test 1': Object.assign({}, DEFAULTS, {
+  'test 1': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 21, "core_angular_radius_deg": 0.18, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 1, "cloud_thickness": 0.27, "eclipse": false, "eclipse_amount": 0.55,
     "layer_count": 3, "canopy_base_height_m": 3.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
@@ -1188,9 +1147,8 @@ export const PRESETS = {
     "sway_stiffness": 5, "sway_ceiling": 0.4, "damping_ratio": 0.25, "backlash_gain": 1, "sway_height_gain": 0,
     "limb_count": 8, "limb_flex": 0.25, "twig_flex": 0.35, "stem_length": 0.5, "leaf_swing": 0.7, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.6079756994865377, "drift_auto": true, "drift_speed": 0.08,
-    "auto_quality": false,
-  }),
-  'test 2': Object.assign({}, DEFAULTS, {
+    }),
+  'test 2': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 21, "core_angular_radius_deg": 0.18, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 1, "cloud_thickness": 0.27, "eclipse": false, "eclipse_amount": 0.55,
     "layer_count": 3, "canopy_base_height_m": 3.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
@@ -1204,8 +1162,7 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.25, "backlash_gain": 1, "sway_height_gain": 1.6,
     "limb_count": 8, "limb_flex": 0.25, "twig_flex": 0.35, "stem_length": 0.5, "leaf_swing": 0.7, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.0914450851278223, "drift_auto": true, "drift_speed": 0.08,
-    "auto_quality": false,
-  }),
+    }),
   */
 };
 

@@ -165,7 +165,9 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     who = make("span", "arb-who");
     who.style.cssText = "font-size:11px;color:#9fb89f";
     line.append(cta, who);
-    host.rows.tools.after(moveBox, line);
+    host.rows.tools.after(moveBox);
+    if(host.rows.account){ host.rows.account.textContent='';host.rows.account.append(line); }
+    else host.rows.tools.after(line);
     cta.addEventListener("click", () => window.open(`${origin}/arboretum/login`, "_blank", "noopener"));
     moveYes.addEventListener("click", moveLocal);
     moveNo.addEventListener("click", () => { movePrompt = false; render(); });
@@ -452,6 +454,17 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     } catch (e) { fail(e); }
   }
 
+  async function setPresentation(presentation){
+    const active=host.active();
+    if(!signedIn() || !isFolder(view(),active,me))return;
+    const pid=Number(active.slice(4)),list=view().playlists[pid];
+    try{
+      const updated=await api.patchPlaylist(pid,{presentation,revision:list.revision});
+      setMirror(mirrorPlaylist(getMirror(),updated));
+      host.sync();
+    }catch(e){fail(e);}
+  }
+
   // A ★ look that has gone up leaves local storage: it is a preset of yours now, and the mirror has it.
   function adopt(name, p, res) {
     const stored = getStored();
@@ -553,6 +566,8 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     lists: (active) => listChoices(view(), { me: signedIn() ? me : null, stored: getStored(), mirror: getMirror(), active }),
     changed: () => { drawChips(); if (on) drawMove(); },
     advanced: start,
+    settings: start,
+    setPresentation,
     canRemove: () => signedIn() && isFolder(view(), host.active(), me),
     // the style of the playlist item you are on, or null where there is no item of yours to keep one on (all looks, uncategorized,
     // the built-ins, someone else's playlist): those always morph

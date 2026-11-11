@@ -3,7 +3,7 @@
 // look between them (editor-integration-design §3–§6). No DOM, no storage and no network beyond the `fetch` that `detect`
 // is handed: the state is passed in and handed back (arboretum.js keeps it in localStorage, and the ★ looks beside it).
 // ============================================================================
-import { DEFAULTS, migrateLegacy } from "./komorebi.js";
+import { DEFAULTS, FIDELITY_KEYS, PLAYBACK_KEYS, migrateLegacy } from "./komorebi.js";
 import * as BUILTINS from "./presets.js";
 
 // ---- where arboretum is on (design §1). The only function here that may reach the network, and only on a
@@ -162,7 +162,7 @@ export function step(list, value, dir) {
 // ---- the built-in guard (design §3.8) ----------------------------------------------
 // The debug overlays do not change the art, so flipping one must not make a built-in "modified". drift_phase is an
 // animated state (the engine moves it with drift_auto), so it would mark every look edited.
-const NOT_THE_LOOK = new Set(["show_source", "show_layer", "show_layer_index", "drift_phase"]);
+const NOT_THE_LOOK = new Set(["show_source", "show_layer", "show_layer_index", "drift_phase", "edge_area", ...PLAYBACK_KEYS]);
 const LOOK_KEYS = Object.keys(DEFAULTS).filter((k) => !NOT_THE_LOOK.has(k));
 const close = (a, b) => a === b || (typeof a === "number" && typeof b === "number" && Math.abs(a - b) <= 1e-6);   // absolute: a seed is a large integer, a slider step is never under 0.001
 
@@ -170,7 +170,7 @@ const close = (a, b) => a === b || (typeof a === "number" && typeof b === "numbe
 // `time_of_day` / `latitude` are not in DEFAULTS: they only write the sun knobs, which are compared.
 export function sameLook(a, b) {
   const A = migrateLegacy(a), B = migrateLegacy(b);
-  return LOOK_KEYS.every((k) => close(A[k], B[k]));
+  return LOOK_KEYS.every((k) => FIDELITY_KEYS.includes(k) ? close(A[k], B[k]) : close(A[k] ?? DEFAULTS[k], B[k] ?? DEFAULTS[k]));
 }
 
 // The name of the built-in that `params` still is, or null.
@@ -191,6 +191,7 @@ export function cachePlaylist(state, api) {
   const gone = api.items.filter((i) => i.unavailable).length;
   const entry = {
     id: api.id, name: api.name, owner: api.owner,
+    ...(api.presentation == null ? {} : { presentation: api.presentation }),
     ...visibilityOf(api),
     ...(api.revision === undefined ? {} : { revision: api.revision }),
     k: api.k ?? state.playlists[api.id]?.k ?? null,

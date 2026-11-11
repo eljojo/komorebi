@@ -6,6 +6,11 @@
 <title>Komorebi — editor</title>
 <style>
   :root { color-scheme: dark; }
+  .session-panel { position:fixed; max-height:85vh; width:min(360px,85vw); overflow:auto; background:#10180f; color:#cfe0cf; border:1px solid #243; border-radius:8px; font:12px/1.5 ui-monospace,Menlo,monospace; }
+  .session-panel::backdrop { background:rgba(0,0,0,.5); }
+  .session-panel h2 { margin:0 0 8px; }.session-panel h3 { color:#9fb89f; margin-bottom:6px; }
+  .session-panel .ctl span { flex:1; }.session-panel .ctl select { flex:1; }
+  .session-panel button { background:#182518; color:#cfe0cf; border:1px solid #354; padding:4px 10px; cursor:pointer; }
   html,body { margin:0; height:100%; background:#0a0d0a; overflow:hidden; }
   #gl { display:block; width:100vw; height:100vh; cursor:crosshair; touch-action:none;   /* none: let swipe gestures through, no scroll/pull-to-refresh */
         -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }   /* and no iOS text-selection callout on a held finger */

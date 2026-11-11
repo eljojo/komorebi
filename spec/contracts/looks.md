@@ -14,17 +14,19 @@ Intent is the artist's words, his choices on review sheets and the notes written
 
 ## Roles some looks carry
 
-- **The editor's default:** `afternoon 7`, with the runtime governor on. It is the look the editor boots into and falls back to.
+- **The editor's default:** `afternoon 7`; the live session enables the runtime governor. It is the look the editor boots into and falls back to.
 - **The welcome:** `afternoon 6`, shown faint behind the welcome screen and behind the about page.
 - **The season macro's stops:** spring → summer → fall runs `memories` → `morning 1` → `afternoon 4` → the last green day (no look) → `montebello`. Its fall pigment capacities are `montebello`'s.
 - **The homepage embed:** `morning 2` → `afternoon 5b` → `morning 3`, cycled with transitions.
 - **The look that opens every fall tier:** `montebello` (also `montebello, rain` and `cherry blossom`). It is why the general player carries all six, which the artist accepted.
 
+**Machine tuning.** Standard sample/texture requests and inherited fidelity defaults are omitted from built-ins. Exceptional sample requests and explicitly chosen bake sizes remain, including the sky looks whose silhouettes need their recorded bake resolution. Layer counts and all scene parameters remain authored. Old saved local looks and remote versions are not rewritten.
+
 ## Gates no shipped look opens
 
-No shipped look opens `vignette` (the projector's iris), `edge_area` (the texel read as a mixture), an outline (`leaf_shape` other than the ellipse), `leaf_variety` or `inner_leaves`.
+The authored look data opens neither `vignette` (the projector's iris), `edge_area` (the texel read as a mixture), an outline (`leaf_shape` other than the ellipse), `leaf_variety` or `inner_leaves`.
 
-**Open.** For each of these, the look's off state is the older behaviour. Under [`preservation.md` §4](preservation.md#4-a-retained-older-behaviour-needs-a-named-purpose) an older behaviour kept on a shipped look needs a named purpose, and none is recorded per look. The iris is a presentation device for the projector and belongs to a showing, not to a look. The area-correct texel and the full crown are corrections to the model's causes; whether each shipped look should adopt them, be re-authored around them, or keep the old law as an authored departure is the artist's decision and is not yet recorded.
+**Open.** For each of these, the look's off state is the older behaviour. Under [`preservation.md` §4](preservation.md#4-a-retained-older-behaviour-needs-a-named-purpose) an older behaviour kept on a shipped look needs a named purpose, and none is recorded per look. The iris is a presentation device for the projector and belongs to a showing, not to a look. The area-correct texel and the full crown are corrections to the model's causes; the edge law is selected by presentation ([sessions](sessions.md#presentation)); the full crown remains an artistic decision.
 
 ## The cosine law
 
@@ -92,7 +94,7 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 
 ### afternoon 7
 - **Camera and mode:** floor, layered.
-- **For:** the editor's default look, which ships with the governor on. What it is for beyond that is not recorded.
+- **For:** the editor's default look, played under the session's FPS policy. What it is for beyond that is not recorded.
 - **Authored departures:** the warm Mount-Royal dirt floor.
 - **Gates:** `sun_cosine`, exposure re-sat ([the cosine law](#the-cosine-law)).
 
@@ -155,7 +157,7 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 
 ### park 1
 - **Camera and mode:** floor, standing, faithful. Formerly named `afternoon 8`.
-- **For:** the first standing-scene look: the tree stands in the scene and its whole shadow, trunk streak to branches to crown dapples, is thrown across a lit floor, not an infinite canopy hovering overhead. A wide view over a small grove leaves the grove a finite blob with lit floor around it. It ships with the governor on because the faithful path is the heaviest.
+- **For:** the first standing-scene look: the tree stands in the scene and its whole shadow, trunk streak to branches to crown dapples, is thrown across a lit floor, not an infinite canopy hovering overhead. A wide view over a small grove leaves the grove a finite blob with lit floor around it. The faithful path is the heaviest; runtime quality policy belongs to the showing.
 - **Authored departures:** the warm dirt floor.
 - **Gates:** `faithful_canopy`, `standing_scene`, wood, `sun_cosine` with exposure re-sat ([the cosine law](#the-cosine-law)).
 

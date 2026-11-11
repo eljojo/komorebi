@@ -31,8 +31,8 @@ beforeAll(() => {
 }, 120000);
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-test("the homepage set opens none of the six, so it drops every one of them", () => {
-  expect(home.cut.sort()).toEqual(Object.keys(MARKERS).sort());
+test("the homepage retains the screen session's edge law and drops unused fall tiers", () => {
+  expect(home.cut.sort()).toEqual(Object.keys(MARKERS).filter(k=>k!=='leafDiffuse').sort());
 });
 
 test("every marker is in a bundle that keeps its tier, and gone from the homepage build", () => {
@@ -40,7 +40,7 @@ test("every marker is in a bundle that keeps its tier, and gone from the homepag
   for (const [feature, ms] of Object.entries(MARKERS))
     for (const m of ms) {
       expect(w.includes(m), `${feature}: '${m}' is in the all-features bundle`).toBe(true);
-      expect(h.includes(m), `${feature}: '${m}' is still in the homepage bundle`).toBe(false);
+      expect(h.includes(m), `${feature}: '${m}' in the homepage bundle`).toBe(feature==='leafDiffuse');
     }
 });
 
@@ -103,7 +103,7 @@ const buildCut = (src, name) => {
 };
 
 test("const BUILD says which bundle this is and what it cut — the engine's warning reads it", () => {
-  expect(buildCut(text(home), "komorebi.embed.min.js (morning 2, afternoon 5b, morning 3)"), "the homepage bundle's BUILD").toEqual(Object.keys(MARKERS).sort());
+  expect(buildCut(text(home), "komorebi.embed.min.js (morning 2, afternoon 5b, morning 3)"), "the homepage bundle's BUILD").toEqual(Object.keys(MARKERS).filter(k=>k!=='leafDiffuse').sort());
   expect(buildCut(text(whole), "komorebi.embed.min.js (morning 2, afternoon 5b, morning 3)"), "--features all cuts nothing").toEqual([]);
   expect(buildCut(text(player), "komorebi.player.min.js (every shipped look)"), "the player keeps every tier").toEqual([]);
 });

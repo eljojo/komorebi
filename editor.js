@@ -1,4 +1,5 @@
-import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor } from './komorebi.js';
+import { create, DEG, MAX_LAYERS, CAMERAS, cameraFor, FIDELITY_KEYS, PLAYBACK_KEYS, authoredLook, resolveSession } from './komorebi.js';
+import { mountSettings } from './editor-settings.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
@@ -47,17 +48,28 @@ const settings = (() => {
   return s;
 })();
 function saveSettings(){ try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* storage disabled — the mode just doesn't stick */ } }
+const sessionEnvironment = { userAgent: navigator.userAgent };
+try { resolveSession(settings.session ?? {}, sessionEnvironment); } catch { delete settings.session; }
+settings.session ??= { version: 1 };
+let sessionSignature='';
+function applySession(){
+  const presentation=stateNow().playlists[activeList().slice(4)]?.presentation;
+  const signature=JSON.stringify([settings.session,presentation]);
+  if(signature===sessionSignature) return;
+  sessionSignature=signature;
+  eng.setSession(settings.session,{...sessionEnvironment,presentation});
+}
 
 // ---- boot the engine on the canvas ------------------------------------------
 let eng;
-try { eng = create(canvas, { params: getPreset(WELCOME_PRESET) }); }
+try { eng = create(canvas, { params: getPreset(WELCOME_PRESET), session: settings.session, environment: sessionEnvironment }); }
 catch(e){ document.body.innerHTML = `<div class="err">${e.message}</div>`; throw e; }
 const params = eng.params;   // live params the panel edits in place
 const perf = eng.perf;
 // time-of-day is an editor-only INPUT method (it writes sun elevation/azimuth); not an engine param.
 if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
-function applyScope(scope){ stopPlay(); chipSoon(); return eng.apply(scope); }   // slider/toggle rebuild — every edit of the look comes through here (or updateSunFromTime, a drag, species, paste, save), stops play and wakes the look's chip
+function applyScope(scope){ stopPlay(); eng.captureLook(); chipSoon(); return eng.apply(scope); }   // slider/toggle rebuild — every edit of the look comes through here (or updateSunFromTime, a drag, species, paste, save), stops play and wakes the look's chip
 function reseed(){ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }   // same grove, grown again
 function applyParams(obj){ endTween(); trySeasonCancel(); eng.setParams(obj); syncAllControls(); chipSoon(); }  // load a whole preset (instant)
 // The chip under the look select (lookChip, built with the presets UI) says "● edited" once the live params leave the entry's, so it is
@@ -117,6 +129,7 @@ const PANEL = [
   ['s','eclipse_amount','ecl amt',0,1,0.01,'source'],
 
   ['hc','Colour & light'],
+  ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
   ['s','exposure','exposure',0,8,0.01,''],   // reaches every shipped look: the cosine law and the cloud's gain re-sit exposures up to ~5.5 (montebello)
   ['s','contrast','contrast',0.3,2,0.01,''],
   ['s','ambient_skylight','ambient',0,3,0.01,''],
@@ -240,8 +253,7 @@ const PANEL = [
   ['t','drift_auto','auto',''],
   ['s','drift_speed','speed',0,2,0.01,''],
 
-  ['hc','Tune'],
-  ['sel','tone_map','tonemap',[['none',0],['reinhard',1],['aces',2]],''],
+  ['hc','Quality requests'],
   ['s','sample_count','samples',16,48,1,'source'],
   ['sel','tex_resolution','res',[['1024',1024],['2048',2048],['4096',4096]],'textures'],
   ['s','layer_count','layers',1,MAX_LAYERS,1,'textures'],
@@ -305,6 +317,7 @@ function buildPanel(){
   const group=(text,cls,parent)=>{ const d=document.createElement('details'); const s=document.createElement('summary');
     s.textContent=text; s.dataset.tipKey=text; s.className=cls; d.appendChild(s); parent.appendChild(d); return d; };
   for(const item of PANEL){
+    if(['auto_quality','adaptive_motion','adaptive_idle_fps','edge_area'].includes(item[1])) continue;
     if(item[0]==='hc'){                                        // an area: a collapsible section whose state is remembered
       const name=item[1], d=group(name,'sec',dev);
       d.open = settings.open[name] ?? OPEN_AREAS.has(name);
@@ -318,7 +331,7 @@ function buildPanel(){
       const lab=document.createElement('label'); lab.textContent=label;
       const inp=document.createElement('input'); inp.type='range'; inp.min=min; inp.max=max; inp.step=step; inp.value=params[key];
       const val=document.createElement('span'); val.className='val'; val.textContent=fmt(params[key]);
-      inp.addEventListener('input',()=>{ params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]); maybeClearSpecies(key);
+      inp.addEventListener('input',()=>{ if(FIDELITY_KEYS.includes(key)){ stopPlay();eng.setLookRequest(key,parseFloat(inp.value));syncAllControls();chipSoon();return; } params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]); maybeClearSpecies(key);
         if(scope==='suntime') updateSunFromTime(); else applyScope(scope); });
       row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val,row}; row.dataset.tipKey=key;
     } else if(item[0]==='t'){
@@ -333,7 +346,7 @@ function buildPanel(){
       const lab=document.createElement('label'); lab.textContent=label;
       const sel=document.createElement('select');
       for(const [t,v] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; if(v===params[key]) o.selected=true; sel.appendChild(o); }
-      sel.addEventListener('change',()=>{ params[key]=str?sel.value:parseInt(sel.value,10); maybeClearSpecies(key); applyScope(scope); });
+      sel.addEventListener('change',()=>{ if(FIDELITY_KEYS.includes(key)){stopPlay();eng.setLookRequest(key,parseInt(sel.value,10));syncAllControls();chipSoon();return;} params[key]=str?sel.value:parseInt(sel.value,10); maybeClearSpecies(key); applyScope(scope); });
       row.append(lab,sel); controlEls[key]={input:sel,row}; row.dataset.tipKey=key;
     } else if(item[0]==='species'){    // TREE_SPECIES: merge the chosen shape bundle OVER the current look (shape ⟂ scene), stamp the label, rebuild
       const [,label]=item; row.classList.add('select');
@@ -342,13 +355,19 @@ function buildPanel(){
       const o0=document.createElement('option'); o0.value=''; o0.textContent='— custom'; sel.appendChild(o0);
       for(const name of Object.keys(TREE_SPECIES)){ const o=document.createElement('option'); o.value=name; o.textContent=name; if(name===params.tree_species) o.selected=true; sel.appendChild(o); }
       sel.addEventListener('change',()=>{ const b=TREE_SPECIES[sel.value]; stopPlay();
-        if(b) applyParams(Object.assign({}, params, b, { tree_species:sel.value }));   // bundle over the live params, keep the scene
+        if(b) applyParams(Object.assign({}, eng.captureLook(), b, { tree_species:sel.value }));   // bundle over the live params, keep the scene
         else params.tree_species=''; });
       row.append(lab,sel); controlEls.tree_species={input:sel,row}; row.dataset.tipKey='tree_species';
     } else if(item[0]==='btn'){
       const [,label,fn]=item;
       const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn);
       row.appendChild(b); row.dataset.tipKey=label;
+    }
+    if(FIDELITY_KEYS.includes(item[1])){
+      const key=item[1];
+      const inherit=mkBtn('use session',()=>{stopPlay();eng.setLookRequest(key,undefined);syncAllControls();chipSoon();});
+      inherit.dataset.inherit=key;
+      row.append(inherit);
     }
     container.appendChild(row);
   }
@@ -459,6 +478,15 @@ function refreshGates(){
 }
 
 function syncControl(key){ const c=controlEls[key]; if(!c)return;
+  if(FIDELITY_KEYS.includes(key)){
+    const request=eng.authored[key];
+    c.input.value=request??params[key];
+    if(c.valEl)c.valEl.textContent=fmt(request??params[key]);
+    const inherit=c.row.querySelector('[data-inherit]');
+    inherit.textContent=request===undefined?'session':'use session';
+    inherit.title=`effective ${params[key]} · ceiling ${eng.session.ceilings[key]}`;
+    return;
+  }
   if(c.input.type==='checkbox') c.input.checked=!!params[key]; else c.input.value=params[key];
   if(c.valEl) c.valEl.textContent=fmt(params[key]); }
 function syncAllControls(){ for(const k in controlEls) syncControl(k); tryCapture(); syncMacroControls(); }   // every load of a look lands here: the try-out's home is the look's own values
@@ -734,7 +762,7 @@ function modeButton(mode, label){
 }
 function buildPlayPanel(){
   const modes=document.createElement('div'); modes.className='modes';
-  modes.append(modeButton('min','less'), modeButton('adv','everything'));
+  modes.append(modeButton('min','less'), modeButton('adv','everything'), settingsButton());
   play.appendChild(modes);
   play.appendChild(presetRow(true));
 
@@ -819,7 +847,7 @@ function buildStrip(){
   const more=document.createElement('button'); more.className='more'; more.textContent='＋';
   more.title='more';
   more.addEventListener('click',()=>setMode('play'));
-  pr.appendChild(more);                               // rides the preset row's end, clear of the ‹ › stepper
+  pr.append(more,settingsButton());                               // rides the preset row's end, clear of the ‹ › stepper
   strip.appendChild(pr);
   if(coarse){
     // touch: ONE dial at a time, so the picture keeps the screen. A row of words along the bottom picks which dial is out;
@@ -840,7 +868,7 @@ function buildStrip(){
     back.addEventListener('click',tryAsItWas);
     const up=document.createElement('button'); up.className='sm'; up.textContent='＋'; up.title='more';
     up.addEventListener('click',()=>setMode('play'));
-    tabs.append(back,up); strip.appendChild(tabs);
+    tabs.append(back,up,settingsButton()); strip.appendChild(tabs);
     pick('focus');
   } else {
     tryDial('focus', strip);
@@ -880,6 +908,7 @@ function buildStrip(){
 // ---- tooltips: lead with a plain "this does that", then build up to the why. Hover any knob or
 // heading. Different people think differently, so each starts simple and goes deeper underneath. ----
 const TIPS = {
+  'Quality requests':'Optional look requests below the session ceiling. Use session removes the request. Layers remain part of the look.',
   // area headings (and the nested groups); the row tips follow
   'Sun':"<b>Where the sun is, and how sharp it is.</b> Its place in the sky (by clock or by angle) and the cloud that softens it: a small sun is crisp, a big hazy one melts every dapple.",
   'Colour & light':"<b>How the light is shown and what it is made of.</b> Brightness, contrast, the sky that fills the shadows, the colour a leaf passes, the ground the light lands on, and the projector's edge fade — the passes you set for a screen.",
@@ -1144,6 +1173,7 @@ function refreshPresetSelect(selected){
 // the playlist select exists once there is a second playlist to swap to — or at once, with a `+` beside it, when arboretum is
 // mounted and you are signed in; until then no row, and no ▶
 function syncPlaylistUI(){
+  applySession();
   if(playlistSel){
     const lists=arb ? arb.lists(settings.playlist) : playlists(getState());
     const signedIn=!!arb?.signedIn();
@@ -1164,6 +1194,11 @@ function syncPlaylistUI(){
     styleRow.hidden = st===null;
     for(const b of styleRow.querySelectorAll('button')) b.classList.toggle('on', b.dataset.style===st);
   }
+  if(playlistPresentationRow){
+    const list=stateNow().playlists[activeList().slice(4)];
+    playlistPresentationRow.hidden=!arb?.canRemove();
+    playlistPresentation.value=list?.presentation??'';
+  }
   syncPlayButtons();
   arb?.changed();
   refreshChip();
@@ -1173,13 +1208,14 @@ function syncPlaylistUI(){
 function refreshChip(){
   if(!lookChip) return;
   const i=arb?.info() ?? {};
-  const c=lookState(stateNow(), getStored(), activeList(), presetSel.value, eng.trans.active ? null : params, i.me ?? null, i);
+  const c=lookState(stateNow(), getStored(), activeList(), presetSel.value, eng.trans.active ? null : eng.authored, i.me ?? null, i);
   lookChip.textContent=c.text; lookChip.title=c.title; lookChip.hidden=c.text==='';
 }
 // Select an entry and ease to it: the arrows, the swipe, and a playlist swap. A cloud entry brings its own crossfade.
 // While playing, a look's dwell starts when it has arrived (onEnd), and nothing waits while it fades in; a step by hand
 // is the same, so it restarts the dwell.
 function goTo(value){
+  applySession();
   const t=timing(stateNow(), activeList(), value);
   endTween();
   trySeasonCancel();
@@ -1218,7 +1254,7 @@ function promptSave(){
   const here=entryName(stateNow(), getStored(), activeList(), presetSel.value);
   const fromBuiltin=['local','builtins'].includes(activeList()) && starName(getStored(), 'local', presetSel.value)===null;
   const n=(prompt('Save preset as:', fromBuiltin ? '' : here)||'').trim(); if(!n) return;   // a ★ or a cloud item offers its own name; a built-in's is not yours to reuse
-  saveLook(n, params);
+  saveLook(n, eng.captureLook());
 }
 // Arboretum has filed a look in a list (or queued it there): go to that list, on that look, without loading it — it is already on screen.
 function showCloud(list, match){
@@ -1228,12 +1264,12 @@ function showCloud(list, match){
   refreshPresetSelect(at<0 ? '' : String(at));      // the look has left this list (it joined a folder): nothing selected
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
-let devBeta=null, styleRow=null;
+let devBeta=null, styleRow=null, playlistPresentationRow=null, playlistPresentation=null;
 function buildPresetUI(){
   const modes=document.createElement('div'); modes.className='ctl modes';
   const back=document.createElement('button'); back.textContent='less';
   back.addEventListener('click',()=>setMode('play'));
-  modes.appendChild(back); dev.appendChild(modes);
+  modes.append(back,settingsButton()); dev.appendChild(modes);
   // THE LOOK, as the panel's heading: ‹ name ›. The name is the dropdown: the select lies over it, transparent, so a click on the
   // name opens the full list (and the select stays the first one in #dev, the single source of the stepping origin).
   const head=document.createElement('div'); head.className='lookhead'; head.dataset.tipKey='Presets';
@@ -1262,7 +1298,7 @@ function buildPresetUI(){
   presetRows.save=r2;
   r3.append(
     deleteBtn,
-    mkBtn('copy JSON',()=>{ const txt=JSON.stringify(params,null,2);
+    mkBtn('copy JSON',()=>{ const txt=JSON.stringify(eng.captureLook(),null,2);
       if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).catch(()=>prompt('Copy JSON:',txt));
       else prompt('Copy JSON:',txt); }),
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
@@ -1279,6 +1315,14 @@ function buildPresetUI(){
   });
   plusBtn=mkBtn('+',()=>arb?.create()); plusBtn.title='new playlist'; plusBtn.hidden=true;   // signed in to arboretum only
   playlistRow.append(playlistSel, plusBtn); dev.appendChild(playlistRow);
+  playlistPresentationRow=document.createElement('div');playlistPresentationRow.className='ctl select';
+  const presentationLabel=document.createElement('label');presentationLabel.textContent='playlist display';
+  playlistPresentation=document.createElement('select');
+  for(const [value,label] of [['','no preference'],['screen','screen / TV'],['projector','projector']]){
+    const option=document.createElement('option');option.value=value;option.textContent=label;playlistPresentation.append(option);
+  }
+  playlistPresentation.onchange=()=>arb?.setPresentation(playlistPresentation.value || null);
+  playlistPresentationRow.append(presentationLabel,playlistPresentation);dev.append(playlistPresentationRow);
   // how the playlist item you are on arrives: morph (the automatic route) or fade. The playlist item's, so it shows only on an item of a playlist of yours.
   styleRow=document.createElement('div'); styleRow.className='ctl stylerow'; styleRow.hidden=true;
   const slab=document.createElement('label'); slab.textContent='arrives by';
@@ -1534,6 +1578,11 @@ buildPanel();
 refreshGates();
 buildPlayPanel();
 buildStrip();
+const sessionPanel=mountSettings({
+  settings, engine:eng, rows:PANEL, save:()=>{saveSettings();applySession();syncAllControls();},
+  account:()=>arb?.settings(),
+});
+function settingsButton(){ const button=mkBtn('settings',()=>sessionPanel.open());button.dataset.openSettings='';return button; }
 syncMacroControls();
 
 // ===========================================================================
@@ -1588,11 +1637,13 @@ async function measureAdaptiveFrac(){
   return idleFraction * skipShare;
 }
 
+let profilerAuthored;
 async function runProfile(){
   if(profiling || !eng.profiler) return;
   profiling = true;
   if(eng.profiler.hasTimer) eng.profiler.setInstrument(true);
   const snap = snapshot();
+  profilerAuthored=eng.captureLook();
   enterProfilerQuality();
   showMeasuring('base');
   const base = await measureCost();
@@ -1637,7 +1688,7 @@ async function runProfile(){
     }
   }
   profiling = false;                                            // params are back to snap; auto stays off until closeProfile
-  const costs = Object.fromEntries(rows.filter(r=>!r.na).map(r => [r.axis.key, r.frac]));
+  const costs = Object.fromEntries(rows.filter(r=>!r.na && !PLAYBACK_KEYS.includes(r.axis.key)).map(r => [r.axis.key, r.frac]));
   const improve = proposeImprove(snap, upCostsMs, FRAME_BUDGET_MS - baseTotal);
   showBreakdown(base, rows, proposeVariants(snap, costs), improve, snap);
 }
@@ -1704,7 +1755,7 @@ function showVariants(variants, _snap){
   cmpVariants=variants; cmpIdx=0; cmpX=0.5;
   cmp.classList.add('show'); cmpInfo.style.display='flex'; cmpFps.classList.add('show');
   cmpCanvasEl = document.createElement('canvas'); cmpCanvasEl.id='cmpCanvas'; cmp.insertBefore(cmpCanvasEl, cmpBar);   // fresh, disposable canvas (CSS #cmpCanvas fills + positions it)
-  try { cmpEng = create(cmpCanvasEl, { params: variants[0].params }); }
+  try { cmpEng = create(cmpCanvasEl, { params: variants[0].params, session:{...settings.session,playback:{auto_quality:false,adaptive_motion:false}},environment:sessionEnvironment }); }
   catch(e){ alert(`A/B unavailable: ${e.message}`); closeCmp(); return; }
   setClip();
   cmpEng.setMotionSource(eng);                                         // mirror the main look's wind EXACTLY (same skeleton)
@@ -1727,7 +1778,9 @@ function saveVariant(){
   const v=cmpVariants[cmpIdx];
   const name=(prompt('Save variant as:', `${entryName(stateNow(), getStored(), activeList(), presetSel.value)} · ${v.name}`)||'').trim();
   if(!name) return;
-  saveLook(name, v.params);
+  const look={...profilerAuthored};
+  for(const change of v.applied) look[change.key]=v.params[change.key];
+  saveLook(name, authoredLook(look));
   closeCmp();
 }
 function closeCmp(){ cmp.classList.remove('show'); cmpInfo.style.display='none'; cmpFps.classList.remove('show');
@@ -1888,7 +1941,7 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
 const link = parseHash(location.hash);
 // What the editor lends arboretum.js, and nothing else of itself.
 const arbHost = {
-  params, rows: presetRows,
+  get params(){ return eng.authored; }, rows: {...presetRows,account:sessionPanel.account},
   active: activeList, value: () => presetSel.value,
   sync: () => refreshPresetSelect(),                            // re-list (your looks follow the mirror), then the playlist select, the chip and the buttons that follow the active list
   select: refreshPresetSelect,                                  // re-list the active playlist, on this entry

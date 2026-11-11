@@ -7,7 +7,9 @@ import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komor
 import { CANOPY_MORPH_MAX } from "./komorebi-params.js";
 import { makeTransitions } from "./komorebi-transitions.js";
 import { GROVE_READS } from "./komorebi-grove.js";
-import { PRESETS } from "./presets.js";
+import { PRESETS as AUTHORED_PRESETS } from "./presets.js";
+// The transition coordinator receives concrete render params; authored looks may inherit fidelity.
+const PRESETS=Object.fromEntries(Object.entries(AUTHORED_PRESETS).map(([name,look])=>[name,{...DEFAULTS,...look}]));
 import { makeSource } from "./komorebi-source.js";
 import { DEG, clamp, lerp, turnBack } from "./komorebi-math.js";
 import riseFixture from './test-gl/fixtures/fall-look-up.json';

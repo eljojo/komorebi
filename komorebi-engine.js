@@ -15,6 +15,7 @@ import { makeLeafTravel } from './komorebi-leaf-travel.js';
 import { makeSeasonTravel } from './komorebi-season-travel.js';
 import { makeLitterRise } from './komorebi-litter-rise.js';
 import { makeGroveTravel } from './komorebi-grove-travel.js';
+import { authoredLook, FIDELITY_KEYS, PLAYBACK_KEYS, resolveParams, resolveSession } from './komorebi-session.js';
 
 // Build flag. Raw/dev ES-module loads keep EDITOR=true; the player deploy bundle sets it false via
 // `bun build --define:KOMOREBI_EDITOR=false`, which const-folds and dead-strips the editor-only debug
@@ -57,7 +58,30 @@ function createEngine(canvas, opts, driven=false){
   // burst). EXT_disjoint_timer_query_webgl2 measures TIME_ELAPSED over a range of GL commands.
   let extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;   // mutable: extensions are per-context-incarnation, re-fetched by initGPU() after a context restore
 
-  const params = Object.assign({}, DEFAULTS, migrateLegacy(opts.params) || {});
+  let sessionEnvironment={...opts.environment,maxTextureSize:MAX_TEX};
+  let session = opts.session === undefined ? null : resolveSession(opts.session, sessionEnvironment);
+  let authored = authoredLook(opts.params);
+  let pendingSession = false;
+  const params = resolveParams(opts.params, session);
+  function captureLook(){
+    if(!session) return { ...params };
+    for(const key in DEFAULTS) if(!FIDELITY_KEYS.includes(key) && !PLAYBACK_KEYS.includes(key) && key!=='edge_area') authored[key]=params[key];
+    return { ...authored };
+  }
+  function playbackNow(){
+    if(!session) return;
+    Object.assign(params, session.playback);
+    for(const end of [trans.from, trans.to]) if(end) Object.assign(end, session.playback);
+  }
+  function settleSession(){
+    if(!pendingSession || trans.active) return;
+    pendingSession=false;
+    const next=resolveParams(authored,session);
+    const changed=[...FIDELITY_KEYS,'edge_area'].some(key=>params[key]!==next[key]);
+    for(const key of [...FIDELITY_KEYS,'edge_area',...PLAYBACK_KEYS]) params[key]=next[key];
+    warnCut(params);
+    if(!lost && changed){rebuildAll();resetPerf();}
+  }
   // A tier the host opens that this build cut stays off, and is said so once per engine: at the three doors params come through (here, setParams, transitionTo).
   const warned = new Set();
   const warnCut = (P) => { for(const m of cutWarnings(P, BUILD, warned)) console.warn(m); };
@@ -427,6 +451,19 @@ function createEngine(canvas, opts, driven=false){
   const { regenSource, bulkShift, bulkOn, projMatrix, layerHeights } = makeSource(hub);
   Object.assign(hub, { regenSource, bulkShift, bulkOn, projMatrix, layerHeights });
 
+  const targetLooks = new WeakMap();
+  hub.resolveTarget = target => {
+    if(!session) return resolveParams(target);
+    const look=targetLooks.get(target) ?? authoredLook(target);
+    const resolved=resolveParams(look,session);
+    targetLooks.set(resolved,look);
+    return resolved;
+  };
+  hub.arrived = target => {
+    authored=targetLooks.get(target) ?? authoredLook(target);
+    playbackNow();settleSession();
+  };
+
 
   const { tickHierarchy, publishBend, motionActive, tick } = makeMotion(hub);
   Object.assign(hub, { tickHierarchy, publishBend, motionActive, tick });
@@ -620,6 +657,7 @@ function createEngine(canvas, opts, driven=false){
   // adaptive frame that is not due re-presents the last picture, which no bake here would change). Otherwise an apply must bake for itself.
   const frameBakes = () => !driven && alive && !paused && !lost && !trans.active && motionActive();
   function apply(scope){
+    if(session && !trans.active)captureLook();
     if(lost) return;                                  // see setParams
     if(scope==='source') regenSource();
     else if(scope==='bake') bake();                  // drift moves leaves at bake time only
@@ -631,6 +669,9 @@ function createEngine(canvas, opts, driven=false){
   }
   function setParams(obj){
     if(!obj || typeof obj!=='object') return;
+    authored=authoredLook(obj);
+    obj=resolveParams(obj,session);
+    pendingSession=false;
     // an in-flight transition must not outlive the swap: its morph would keep writing params over the new
     // look, and mid-CROSSFADE the incoming grove would keep baking against layer state rebuildAll is about
     // to replace (the observed crash: bake reading a dangling grove's VAOs). Abort it cleanly first —
@@ -672,7 +713,26 @@ function createEngine(canvas, opts, driven=false){
   const schedule = () => { const id = loop; requestAnimationFrame(now => { if(id === loop) frame(now); }); };
   const startLoop = () => { loop++; last = performance.now(); schedule(); };
   const eng = { canvas, gl, params, perf, motion, src, trans, occ, fps:60, apply, setParams, onFrame:opts.onFrame||null,
-    transitionTo: (target, o) => { if(!lost) return transitionTo(target, o); setParams(target); if(o?.onEnd) o.onEnd(); },   // nothing to animate on a lost context: land on the target
+    get authored(){ return session ? { ...authored } : { ...params }; },
+    get session(){ return session; },
+    captureLook,
+    setLookRequest(key,value){
+      if(!FIDELITY_KEYS.includes(key)) throw new Error(`Not a fidelity request: ${key}`);
+      captureLook();
+      if(value===undefined) delete authored[key]; else authored[key]=value;
+      setParams(authored);
+    },
+    setSession(settings,environment){
+      if(!trans.active)captureLook();
+      if(environment!==undefined)sessionEnvironment={...sessionEnvironment,...environment,maxTextureSize:MAX_TEX};
+      session=resolveSession(settings,sessionEnvironment);
+      pendingSession=true;playbackNow();settleSession();if(!lost)resetPerf();
+    },
+    transitionTo: (target, o) => {
+      if(!target || typeof target!=='object') return;
+      if(lost){setParams(target);o?.onEnd?.();return;}
+      return transitionTo(target,o);
+    },   // nothing to animate on a lost context: land on the target
     // pause the rAF loop so a second engine instance idles at zero GPU when off-screen (the editor's A/B picker)
     setPaused(on){ on=!!on; if(on===paused) return; paused=on; loop++; if(!on && !lost) startLoop(); },   // a loss in progress leaves the restart to the restore
     // dispose: stop the loop and free EVERY GL object + the context, so a disposable second instance (the A/B
@@ -756,6 +816,7 @@ function createEngine(canvas, opts, driven=false){
   }
   function frame(now){
     if(!alive || paused || lost) return;             // dispose() halts permanently; setPaused(true) / a lost context halt until resumed
+    playbackNow();settleSession();
     const dtms=now-last; last=now; fps += ((1000/Math.max(dtms,1))-fps)*0.1; eng.fps=fps;
     if(perf.auto) tunePerf(dtms, fps);               // auto-quality: nudge resolution/samples toward 60 fps
     resize();
@@ -784,6 +845,7 @@ function createEngine(canvas, opts, driven=false){
       if(!trans.groveTravel&&motionActive()) tick(dt); // a grove journey advances both native wind states itself
       if(trans.sceneFade && motionActive()) bake();
       landed = tickTransition(dt);
+      playbackNow();
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
     if(trans.groveTravel)hub.timed('transport',hub.drawGroveTravel);
     else if(trans.litterRise)hub.timed('transport',hub.drawLitterRise);
@@ -828,8 +890,8 @@ function createEngine(canvas, opts, driven=false){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = trans.active ? trans.onEnd : null;
-    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.groveTravel=false; trans.bloom=0; trans.shadowOpacity=1; trans.swapped=false; trans.onEnd=null; trans.moon=null; trans.layerRoute=null; for(const k in DEFAULTS) params[k] = trans.to[k]; }
-    rebuildAll(); resetPerf();
+    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.groveTravel=false; trans.bloom=0; trans.shadowOpacity=1; trans.swapped=false; trans.onEnd=null; trans.moon=null; trans.layerRoute=null; for(const k in DEFAULTS) params[k] = trans.to[k]; hub.arrived(trans.to); }
+    playbackNow();settleSession();rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)
     if(cb) cb();                                       // after the restart: a throwing onEnd must not leave a restored engine with no loop

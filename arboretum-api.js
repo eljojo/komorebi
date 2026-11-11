@@ -47,6 +47,7 @@ export function api(origin, fetchImpl, { credentials = "include" } = {}) {
     playlists: () => call("GET", "/api/playlists?owner=me"),
     playlist: (id, { k } = {}) => call("GET", `/api/playlists/${id}${query(k)}`),
     createPlaylist: (body) => call("POST", "/api/playlists", body),
+    patchPlaylist: (id, body) => call("PATCH", `/api/playlists/${id}`, body),
     putItems: (id, items, revision) => call("PUT", `/api/playlists/${id}/items`, { revision, items }),
     commit: () => (commit ??= readCommit()),
   };
