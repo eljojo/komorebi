@@ -5,6 +5,7 @@
 // fail silently in the UI — so the table is data and this reads it.
 // ============================================================================
 import { test, expect } from "bun:test";
+import { readFileSync } from "node:fs";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep, TWEEN_OFF_MS, TWEEN_SLOW_MS, TWEEN_BUDGET } from "./macros.js";
 import { DROP_EPS, TWEEN_STEP, beamExtinction, shownExposure } from "./komorebi-math.js";
@@ -12,6 +13,50 @@ import { PRESETS } from "./presets.js";
 
 const MORPH = new Set(MORPH_KEYS), CANOPY = new Set(CANOPY_KEYS);
 const REBUILD = new Set([...TOPO_KEYS, ...MODE_KEYS]);
+
+// Run the editor's actual dial and load handlers; only the engine and DOM boundary are supplied here.
+function seasonDialRig() {
+  const source = readFileSync('editor.js', 'utf8'), noop = () => {};
+  const params = { ...DEFAULTS }, writes = [];
+  let pending, dial;
+  const eng = { trans: { active: false },
+    setParams: (p) => Object.assign(params, p),
+    transitionTo: (p, opts) => { eng.trans.active = true; pending = { p, opts }; } };
+  const env = { params, eng, macroUsable: () => true, maybeClearSpecies: noop, syncControl: noop,
+    applyScope: () => writes.push(params.phenology), endTween: noop, chipSoon: noop, stopPlay: noop,
+    syncAllControls: () => dial.tryCapture(), timing: () => null, stateNow: noop, activeList: noop,
+    resolveEntry: (p) => p, transDur: 1, player: { leaving: noop, arrived: noop }, refreshPresetSelect: noop };
+  const body = source.slice(source.indexOf('const TRY_FALL ='), source.indexOf('function tryWrite('));
+  const load = source.match(/^function applyParams\(obj\).*$/m)[0];
+  const go = source.slice(source.indexOf('function goTo('), source.indexOf('function loadEntry('));
+  const reset = source.slice(source.indexOf('function tryAsItWas('), source.indexOf('// Touch: a finger'));
+  dial = new Function('env', `with(env){ ${body}\n${load}\n${go}\n${reset}\nreturn {tryCapture,trySeasonMove,trySeasonTick,applyParams,goTo,tryAsItWas}; }`)(env);
+  dial.tryCapture();
+  return { ...dial, params, writes, eng, land() { Object.assign(params, pending.p); eng.trans.active = false; pending.opts.onEnd(); dial.trySeasonTick(); } };
+}
+
+test('the season release waits for a moving route, then applies the exact value after its destination loads', () => {
+  const r = seasonDialRig();
+  r.goTo({ ...DEFAULTS, phenology: 0.6 });
+  r.trySeasonMove(0.91); r.trySeasonTick(true);
+  expect(r.writes).toEqual([]);
+  r.land();
+  expect(r.writes).toEqual([0.91]);
+  expect(r.params.phenology).toBe(0.91);
+});
+
+for (const action of ['applyParams', 'goTo', 'tryAsItWas']) {
+  test(`${action} cancels pending season input from the previous look`, () => {
+    const r = seasonDialRig(), home = r.params.phenology;
+    r.trySeasonMove(0.8); r.trySeasonMove(0.91);
+    r[action]({ ...DEFAULTS, phenology: 0.4 });
+    if (action === 'goTo') r.land(); else r.trySeasonTick();
+    expect(r.writes).not.toContain(0.91);
+    expect(r.params.phenology).toBe(action === 'tryAsItWas' ? home : 0.4);
+    r.trySeasonMove(0.7);
+    expect(r.params.phenology).toBe(0.7);
+  });
+}
 
 test("every macro target is a real engine param", () => {
   for (const [key, m] of Object.entries(MACROS))

@@ -59,7 +59,7 @@ if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
 function applyScope(scope){ stopPlay(); chipSoon(); return eng.apply(scope); }   // slider/toggle rebuild — every edit of the look comes through here (or updateSunFromTime, a drag, species, paste, save), stops play and wakes the look's chip
 function reseed(){ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }   // same grove, grown again
-function applyParams(obj){ endTween(); eng.setParams(obj); syncAllControls(); chipSoon(); }  // load a whole preset (instant)
+function applyParams(obj){ endTween(); trySeasonCancel(); eng.setParams(obj); syncAllControls(); chipSoon(); }  // load a whole preset (instant)
 // The chip under the look select (lookChip, built with the presets UI) says "● edited" once the live params leave the entry's, so it is
 // looked at again after each edit: at most every 200 ms, the last edit always read.
 let lookChip=null, chipTimer=0;
@@ -591,6 +591,7 @@ function trySeat(){
 // never more than a frame behind the finger. A step is as wide as the finger moved. It waits while a transition runs (a route owns the grove); the release lands exactly
 // where the thumb is.
 let trySeasonWant = null, trySeasonSpent = false;
+function trySeasonCancel(){ trySeasonWant = null; trySeasonSpent = false; }
 function trySeasonApply(v){
   const dict = { phenology:v };
   for(const k in TRY_FALL) if(!tryHome[k]) dict[k] = TRY_FALL[k];
@@ -604,7 +605,7 @@ function trySeasonMove(v){
   trySeasonApply(v);
 }
 function trySeasonTick(force){                     // each frame, and the release (force)
-  if(trySeasonWant !== null && (force || !eng.trans.active)){
+  if(trySeasonWant !== null && !eng.trans.active){
     const v = trySeasonWant; trySeasonWant = null;
     trySeasonApply(v);
     trySeasonSpent = !force;                       // the frame's own landing spends the next frame's apply; a release spends nothing
@@ -692,6 +693,7 @@ function tryDial(name, container){
 }
 function tryAsItWas(){                              // every dial's parameters back to the look's own values
   stopPlay(); chipSoon();
+  trySeasonCancel();
   const moved = (ks) => ks.some((k) => params[k] !== tryHome[k]);
   const scopes = [moved(['cloud_thickness', 'core_angular_radius_deg', 'core_weight_fraction']) && 'source', moved(['foliage_density']) && 'density', moved(['phenology', ...Object.keys(TRY_FALL)]) && 'season'];
   Object.assign(params, tryHome);
@@ -1168,6 +1170,7 @@ function refreshChip(){
 function goTo(value){
   const t=timing(stateNow(), activeList(), value);
   endTween();
+  trySeasonCancel();
   player.leaving();
   eng.transitionTo(resolveEntry(value), { duration: t ? t.crossfade_s : transDur, style: t ? t.style : 'morph',
     onEnd:()=>{ endTween(); refreshPresetSelect(value); syncAllControls(); player.arrived(value); } });   // morph from the current live look to the target
