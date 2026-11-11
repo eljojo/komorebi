@@ -21,8 +21,8 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 |---|---|
 | **Joins** | A pair where a gate parameter is zero at one end: window aperture width or height; `leaf_diffuse` with an active scatter proxy at the zero end; vignette feather. A pair where `eclipse` differs, on any route but the faithful scene dissolve: `morning 3b → eclipse`, `eclipse → acid dreams`. |
 | **Gate** | The crossing itself. Not applied inside a full scene dissolve (each scene keeps its own mask). |
-| **Duration** | Aperture: the morph. Diffuse proxy: out over the first half, in over the second. Iris: closes in from radius √2 over the first quarter, opens over the last quarter. Moon: the route's eased progress, four fifths of its path on the visible bite. |
-| **Promises** | The enabled end's geometry is kept and its restriction faded; no pinhole or ellipse grows from zero. The eclipse is held on and the moon moves between the authored bite and clear of every sample, continuous while the radii tween; its limb is soft only while it moves, so a settled eclipse is the hard crescent unchanged. Authored values land exactly. An interrupted iris sweep carries its radius, an interrupted moon its place and limb. No saved parameter. |
+| **Duration** | Aperture: the morph. Diffuse proxy: out over the first half, in over the second. Iris: its opacity, on the route's eased progress across the whole route. Moon: the route's eased progress, four fifths of its path on the visible bite. |
+| **Promises** | The enabled end's geometry is kept and its restriction faded; no pinhole or ellipse grows from zero. The eclipse is held on and the moon moves between the authored bite and clear of every sample, continuous while the radii tween; its limb is soft only while it moves, so a settled eclipse is the hard crescent unchanged. Authored values land exactly. No hood boundary moves: a hood turning on or off keeps the hooded end's feather and shape and fades; two hooded ends morph them at full strength. An interrupted hood fade carries its opacity, an interrupted moon its place and limb. No saved parameter. |
 
 ## Grove morph (incl. re-season, density)
 

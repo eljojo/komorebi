@@ -1099,7 +1099,15 @@ Replaced, inside a narrow gate, by growing the incoming grove early and baking b
 
 ### The iris installed in one frame
 
-A first positive vignette feather installed the whole ellipse in one frame. The boundary now sweeps in from outside the frame over the first quarter, and opens over the last when turned off.
+A first positive vignette feather installed the whole ellipse in one frame. The sweep below replaced it, and the fade replaced the sweep.
+
+### The iris swept across the frame
+
+**What was tried.** Crossing the vignette's gate by moving its boundary: turning on, the mask's edge swept in from outside the frame (radius √2 of the authored size, clear of every allowed superellipse) to its authored size over the first quarter of the route, while feather and shape tweened from the bare end's values; turning off, it opened out again over the last quarter. An interrupted sweep carried its radius.
+
+**What went wrong.** The edge was a moving thing in the picture. A rim pixel held full light and then fell to about 40% within a few frames as the boundary passed it. The artist: "i find the closing in on the zoom lens super distracting... i don't want it animated, i want it to fade in." It drew the eye to the edge of the frame and away from the leaves. Expanding or contracting a hood that is already there was never the problem: "the only problem with the hood is when we go from nothing to hooded".
+
+**What replaced it.** The aperture's grammar: the hooded end's full geometry for the whole route, its darkening faded in or out on the route's eased progress ([`../model/transitions.md`](../model/transitions.md#crossing-a-gate)).
 
 ### Wood across a mode swap
 

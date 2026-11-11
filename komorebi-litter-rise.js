@@ -1,6 +1,6 @@
 // Litter or shadow footprints become the overhead grove through one leaf field.
 // Flight is an authored transition path, with live destination wind and a deterministic detour around the eye.
-import {cameraPose,lerp,lerpAngle,smoothstep,DEG,TAU,leafClock,atmosphere,ballisticK} from './komorebi-math.js';
+import {cameraPose,lerp,lerpAngle,smoothstep,DEG,TAU,leafClock,atmosphere,ballisticK,irisRoute,irisStep} from './komorebi-math.js';
 import {CANOPY_KEYS,TOPO_KEYS,SEASON_KEYS,DEFAULTS,CANOPY_MORPH_MAX} from './komorebi-params.js';
 import {pairLeaves,moveLeaves} from './komorebi-leaf-travel.js';
 import {VS_RISE,FS_RISE,VS_RISE_SKY,FS_RISE_SKY} from './komorebi-shaders.js';
@@ -170,6 +170,8 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  const heights=Array.from(b.hub.layerHeights()).slice(0,3),atm={sun:[0,0,0],ambient:[0,0,0]};
  const shapes=u=>{for(const [unit,q]of[[0,A],[1,B]]){g.activeTexture(g.TEXTURE0+unit);g.bindTexture(g.TEXTURE_2D,q.texture??b.hub.layerTex[3]);g.uniform1i(unit===0?u.LeafA:u.LeafB,unit);g.uniform1i(unit===0?u.ShapeA:u.ShapeB,q.shape?1:0);}g.uniform4fv(u.Box,box);};
  let bypasses=null,planner=null,planEnds=null,planned=0;
+ // The footprints carry both looks' hoods: across the gate the hooded end's geometry is held and its opacity fades on the flight's weight.
+ const iris=footprints?irisRoute(from,to):null;
  function carriers(t){
   if(footprints)moveLeaves(A,B,pairs,0,starts);
   moveLeaves(A,B,pairs,1,ends);
@@ -227,8 +229,6 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
   if(footprints){
    for(const k of ['core_weight_fraction','halo_angular_radius_deg','cloud_thickness','exposure','contrast','ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration','vignette','vignette_shape','ground_r','ground_g','ground_b','sky_scatter','glow_bleed','glow_bleed_m'])p[k]=lerp(from[k],to[k],q.weight);
    h.trans.travelTone=[0,0,0];h.trans.travelTone[from.tone_map]+=1-q.weight;h.trans.travelTone[to.tone_map]+=q.weight;
-   h.trans.irisRadius=from.vignette>0&&to.vignette===0?lerp(1,Math.SQRT2,smoothstep(.75,1,t))
-    :from.vignette===0&&to.vignette>0?lerp(Math.SQRT2,1,smoothstep(0,.25,t)):1;
   }
   for(const k of ['view_extent_m','view_center_x','view_center_y','view_pitch_deg','sun_elevation_deg','sun_azimuth_deg','sky_turbidity','core_angular_radius_deg'])p[k]=lerp(from[k],to[k],q.weight);
   p.view_fov_deg=q.fov;p.view_yaw_deg=q.yaw;
@@ -239,7 +239,8 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
    // The native target atlas takes over only after the moving carriers arrive.
    const atlas=t>=.9?{textures:hub.layerTex,heights:hub.layerHeights(),extent:to.canopy_extent_m}:bakeSky(q);
    h.trans.riseField={depth:eyeTex[0],emission:eyeTex[1],shadow:footprints,weight:footprints?smoothstep(0,.10,t):0,native:smoothstep(.9,.995,t),step:[.5/fieldW,.5/fieldH],atlas};
-   Object.assign(h.trans,{active:true,viewpoint:true,t,viewEye:q.eye,viewElevation:q.elevation,viewSkyWeight:q.skyWeight});
+   Object.assign(h.trans,{active:true,viewpoint:true,t,viewEye:q.eye,viewElevation:q.elevation,viewSkyWeight:q.skyWeight,iris});
+   if(iris)h.trans.irisOpacity=irisStep(iris,q.weight,p);
   }else{h.trans.active=false;h.trans.riseField=null;}
  }
  function draw(){a.draw(null,canvas.width,canvas.height);}

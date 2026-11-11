@@ -636,14 +636,29 @@ function growNode(g, rng, out, base, dir, len, level, limb, chain){
 
 // THE EDGE (§4.7), as the shader computes it (GLSL_T_POST): a superellipse mask on the frame, 1 inside radius
 // (1 − feather), 0 at the frame's edge and in the corners beyond the curve. u, v in 0..1. The reference the
-// vignette test holds the shader's formula to; feather 0 is the gate shut. The transition's radius scales the
-// boundary from outside the frame to the authored mask; radius 1 keeps the settled formula exactly.
-function vignetteMask(u, v, feather, shape, radius = 1) {
+// vignette test holds the shader's formula to; feather 0 is the gate shut. A transition crossing that gate scales
+// what the mask removes by its opacity; opacity 1 keeps the settled formula exactly.
+function vignetteMask(u, v, feather, shape, opacity = 1) {
   if (!(feather > 0)) return 1;
   const qx = Math.abs(u * 2 - 1), qy = Math.abs(v * 2 - 1);
-  let d = Math.pow(Math.pow(qx, shape) + Math.pow(qy, shape), 1 / shape);
-  if(radius !== 1) d /= radius;
-  return 1 - smoothstep(1 - feather, 1, d);
+  const d = Math.pow(Math.pow(qx, shape) + Math.pow(qy, shape), 1 / shape);
+  return 1 - opacity * smoothstep(1 - feather, 1, d);
 }
 
-export { DEG, TAU, cameraPose, vignetteMask, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+// THE IRIS GATE (§9), one rule for every route that crosses it: when only one end has a hood, no boundary moves. The
+// hood keeps that end's own feather and shape for the whole route and its opacity runs between 0 and 1. `shown` is
+// the opacity an interrupted fade shows, where the next route starts. Null when nothing fades: two hooded ends morph
+// their feather and shape at full opacity, two bare ends have no mask.
+function irisRoute(a, b, shown = null) {
+  const on = a.vignette > 0, to = Number(b.vignette > 0), from = shown ?? Number(on);
+  if (from === to) return null;
+  const end = on === (b.vignette > 0) ? null : on ? a : b;
+  return { from, to, shape: end && { vignette: end.vignette, vignette_shape: end.vignette_shape } };
+}
+// One step at the route's eased progress e: holds the hooded end's geometry in p, returns the opacity to draw with.
+function irisStep(route, e, p) {
+  if (route.shape) Object.assign(p, route.shape);
+  return lerp(route.from, route.to, e);
+}
+
+export { DEG, TAU, cameraPose, vignetteMask, irisRoute, irisStep, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

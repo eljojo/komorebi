@@ -1,4 +1,4 @@
-import {TAU,lerp,lerpAngle,smoothstep,leafClock,turnBack} from './komorebi-math.js';
+import {TAU,lerp,lerpAngle,smoothstep,leafClock,turnBack,irisRoute,irisStep} from './komorebi-math.js';
 import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from './komorebi-params.js';
 import {seasonCamera} from './komorebi-season-travel.js';
 import {litterLanding,litterAlbedo,litterAge} from './komorebi-litter.js';
@@ -111,11 +111,14 @@ function createGroveRenderer(h,a,b,from,to,host){
  h.motion.u=0;h.motion.sway=[0,0];h.hier.clusterData.fill(0);for(let j=0;j<h.hier.nClusterTotal;j++)h.hier.clusterData[j*4+3]=1;
  gl.bindTexture(gl.TEXTURE_2D,h.clusterTex);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,h.hier.nClusterTotal,1,gl.RGBA,gl.FLOAT,h.hier.clusterData);
  const nativeA={...from},nativeB={...to};let lastTime=0;
+ // Across the hood's gate the moving picture holds the hooded end's geometry and fades its opacity, as every route does.
+ const iris=irisRoute(nativeA,nativeB);h.trans.iris=iris;
  function step(t,dt){
   if(dt>0){if(a.hub.motionActive())a.hub.tick(dt);if(b.hub.motionActive())b.hub.tick(dt);}
   if(t<=0||t>=1){lastTime=t;return;}
   const w=smoothstep(0,1,t),p=h.params;
   for(const key of MORPH_KEYS)p[key]=ANGLE_SET.has(key)?lerpAngle(nativeA[key],nativeB[key],w,key==='drift_phase'?TAU:360):lerp(nativeA[key],nativeB[key],w);
+  if(iris)h.trans.irisOpacity=irisStep(iris,w,p);
   Object.assign(p,seasonCamera(nativeA,nativeB,w));p.canopy_extent_m=lerp(from.canopy_extent_m,to.canopy_extent_m,w);p.layer_count=3;p.litter=1;p.leaf_shape=from.leaf_shape;p.phenology=from.phenology;p.leaf_wetness=from.leaf_wetness;
   h.perf.auto=host.perf.auto;h.perf.quality=host.perf.quality;h.perf.sampleCount=host.perf.auto?host.faithfulSamples(maxSamples):maxSamples;p.sample_count=maxSamples;h.regenSource();
   const size=host.bakeRes(maxRes);if(res!==size){res=size;for(let i=0;i<2;i++){if(textures[i])gl.deleteTexture(textures[i]);textures[i]=h.makeLayerTexture(res);gl.bindFramebuffer(gl.FRAMEBUFFER,fbos[i]);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,textures[i],0);}field.tex=textures[0];}

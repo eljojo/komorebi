@@ -5,7 +5,7 @@
 // transitionTo classifies the route; tickTransition drives it each frame.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { TAU, beamExposure, cameraPose, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { TAU, beamExposure, cameraPose, clamp, irisRoute, irisStep, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
 import { cameraFor } from './komorebi-transport.js';
 import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';
@@ -38,7 +38,7 @@ export function makeTransitions(hub){
       hub.warnCut(to);
       Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
         active:true,groveTravel:true,litterRise:false,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
-        structDiff:true,canopyMorph:false,crossfade:false,backgroundFade:false,bloom:0,bloomMax:0,irisRadius:1,swapped:false,onEnd:opts.onEnd??null});
+        structDiff:true,canopyMorph:false,crossfade:false,backgroundFade:false,bloom:0,bloomMax:0,iris:null,swapped:false,onEnd:opts.onEnd??null});
       return;
     }
     if(trans.active&&trans.litterRise){hub.retargetLitterRise(to,opts);return;}
@@ -49,7 +49,7 @@ export function makeTransitions(hub){
       hub.warnCut(to);
       Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
         active:true,litterRise:true,shadowRise,litterFall,shadowFall,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
-        structDiff:true,canopyMorph:false,crossfade:false,backgroundFade:false,bloom:0,bloomMax:0,irisRadius:1,swapped:false,onEnd:opts.onEnd??null});
+        structDiff:true,canopyMorph:false,crossfade:false,backgroundFade:false,bloom:0,bloomMax:0,iris:null,swapped:false,onEnd:opts.onEnd??null});
       if(!litterFall&&!shadowFall){   // a descent keeps the live sky grove until its floor lands
         hub.beginLitterRise(to,shadowRise);
         for(const k in DEFAULTS)params[k]=to[k];
@@ -67,7 +67,7 @@ export function makeTransitions(hub){
     const retarget=trans.active&&trans.leafTravel;
     const turnScale=retarget&&hub.retargetLeafTravel(to,opts);   // a reversal's clock, scaled to the distance it has left
     if(retarget&&!turnScale)return;
-    const irisFrom = trans.active ? (trans.irisRadius ?? 1) : 1;
+    const irisShown = trans.active && trans.iris ? trans.irisOpacity : null;   // an interrupted fade's opacity, read before anything changes
     const movingView=trans.active && trans.viewpoint;
     const viewpoint=!!((!trans.active || movingView) && (movingView || params.sky_view!==to.sky_view) && !params.faithful_canopy && !to.faithful_canopy
       && params.receiver===0 && to.receiver===0 && params.branch_tau===0 && to.branch_tau===0
@@ -172,10 +172,10 @@ export function makeTransitions(hub){
     if(!sceneFade && trans.sceneFade) hub.endSceneFade();
     if(sceneFade) hub.beginSceneFade();   // preserve the outgoing scene before params become the incoming look
     trans.sceneFade = sceneFade;
-    // Feather zero removes the entire mask. Move its boundary across the frame before crossing that gate.
-    trans.irisFrom = !sceneFade && params.vignette===0 && to.vignette>0 ? Math.SQRT2 : irisFrom;
-    trans.irisClosing = !sceneFade && params.vignette>0 && to.vignette===0;
-    trans.irisRadius = sceneFade ? 1 : trans.irisFrom;
+    // Feather zero removes the entire mask. Across that gate the hood keeps its own geometry and fades (irisRoute); the
+    // dissolving scenes each keep their own.
+    trans.iris = sceneFade ? null : irisRoute(params, to, irisShown);
+    trans.irisOpacity = trans.iris ? trans.iris.from : 1;
     const tier = modeDiff ? 'mode' : crossOK ? 'cross' : 'dissolve';
     trans.crossfade = crossOK;
     trans.bloomMax = trans.backgroundFade || viewpoint || leafTravel || seasonTravel ? 0 : BLOOM_MAX[tier];
@@ -197,7 +197,7 @@ export function makeTransitions(hub){
     if(trans.layerRoute || layersShown) hub.sizeLayers(params.layer_count);
     // THE ECLIPSE GATE is crossed by the moon, never switched: `eclipse` is held on for the whole route and the moon moves between the
     // eclipsed look's own bite (x = 0) and clear of the whole source (x = 1), placed each frame by regenSource. An interrupted route's
-    // moon starts the next from where it is shown, limb included, as an interrupted iris sweep carries its radius.
+    // moon starts the next from where it is shown, limb included, as an interrupted hood fade carries its opacity.
     const xTo = to.eclipse ? 0 : 1;
     trans.moon = null;
     if(!travel && (moonShown || params.eclipse!==to.eclipse)){
@@ -284,9 +284,6 @@ export function makeTransitions(hub){
       const cb=trans.onEnd; trans.onEnd=null;
       return queued(cb);
     }
-    trans.irisRadius = trans.irisClosing
-      ? lerp(trans.irisFrom ?? 1, Math.SQRT2, smoothstep(0.75,1,t))
-      : lerp(trans.irisFrom ?? 1, 1, smoothstep(0,0.25,t));
     // 0 at the ends, deepest at the midpoint — where the swap fires. Both structural tiers stop short of full
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
     trans.bloom = Math.max(trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0, carried);
@@ -305,6 +302,7 @@ export function makeTransitions(hub){
       if(trans.settleCamera && t>=0.5 && CAMERA_KEYS.has(k)){ params[k] = b; continue; }
       const w = k==='branch_tau' && trans.woodFade ? smoothstep(a>0 ? 0 : 0.5, a>0 ? 0.5 : 1, t) : e;
       params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,w, k==='drift_phase'?TAU:360) : lerp(a,b,w); }
+    if(trans.iris) trans.irisOpacity = irisStep(trans.iris, e, params);
     // Same receiver at both ends: the dapples travel straight from one end's level to the other's (beamExposure).
     { const cam=cameraFor(trans.from); if(cam===cameraFor(trans.to)) params.exposure=beamExposure(cam,trans.from,trans.to,e,params); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove

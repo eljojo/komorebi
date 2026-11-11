@@ -366,42 +366,74 @@ test("leaf travel leaves other modes, empty groves, inner leaves, drop and overs
   }
 });
 
-test("an iris turning on sweeps inward during the first quarter, before the scene swap", () => {
+const eased=t=>t*t*(3-2*t);
+test("a hood turning on keeps the incoming geometry for the whole route and fades in on the eased progress", () => {
   const r=transitionRig({...DEFAULTS,vignette:0,vignette_shape:2});
   r.transitionTo({...r.params,vignette:0.24,vignette_shape:3.1});
-  expect(r.hub.trans.irisRadius).toBe(Math.SQRT2);
-  let radius=r.hub.trans.irisRadius;
-  for(let i=0;i<15;i++) {
-    r.tickTransition(1/60);
-    expect(r.hub.trans.irisRadius).toBeLessThanOrEqual(radius);
-    radius=r.hub.trans.irisRadius;
+  expect(r.hub.trans.irisOpacity).toBe(0);
+  expect(r.params.vignette).toBe(0);   // nothing moves before the first step: a zero-time redraw is the outgoing look
+  let shown=0,frames=0;
+  while(r.hub.trans.active){
+    r.tickTransition(1/60); frames++;
+    expect(r.params.vignette).toBe(0.24); expect(r.params.vignette_shape).toBe(3.1);
+    expect(r.hub.trans.irisOpacity).toBeCloseTo(eased(r.hub.trans.t),12);
+    expect(r.hub.trans.irisOpacity).toBeGreaterThanOrEqual(shown); shown=r.hub.trans.irisOpacity;
   }
-  expect(radius).toBe(1);
-  expect(r.params.vignette).toBeCloseTo(0.24*0.15625,12);
+  expect(frames).toBe(60);
+  expect(shown).toBe(1);
+  expect("irisRadius" in r.hub.trans).toBe(false);
 });
 
-test("an iris turning off opens beyond the frame during the last quarter", () => {
+test("a hood turning off keeps the outgoing geometry for the whole route and fades out, landing on the target exactly", () => {
   const r=transitionRig({...DEFAULTS,vignette:0.24,vignette_shape:3.1});
-  r.transitionTo({...r.params,vignette:0});
-  for(let i=0;i<45;i++) r.tickTransition(1/60);
-  expect(r.hub.trans.irisRadius).toBe(1);
-  for(let i=0;i<14;i++) r.tickTransition(1/60);
-  expect(r.hub.trans.irisRadius).toBeGreaterThan(1.4);
+  r.transitionTo({...r.params,vignette:0,vignette_shape:2});
+  expect(r.hub.trans.irisOpacity).toBe(1);
+  let shown=1;
+  for(let i=0;i<59;i++){
+    r.tickTransition(1/60);
+    expect(r.params.vignette).toBe(0.24); expect(r.params.vignette_shape).toBe(3.1);
+    expect(r.hub.trans.irisOpacity).toBeCloseTo(1-eased(r.hub.trans.t),12);
+    expect(r.hub.trans.irisOpacity).toBeLessThanOrEqual(shown); shown=r.hub.trans.irisOpacity;
+  }
   r.tickTransition(1/60);
   expect(r.hub.trans.active).toBe(false);
-  expect(r.params.vignette).toBe(0);
+  expect(r.hub.trans.irisOpacity).toBe(0);
+  expect(r.params.vignette).toBe(0); expect(r.params.vignette_shape).toBe(2);
 });
 
-test("interrupting an iris sweep carries its visible radius into the new morph", () => {
-  const r=transitionRig({...DEFAULTS,vignette:0});
-  r.transitionTo({...r.params,vignette:0.24});
-  for(let i=0;i<6;i++) r.tickTransition(1/60);
-  const radius=r.hub.trans.irisRadius;
-  expect(radius).toBeGreaterThan(1);
-  r.transitionTo({...r.params,vignette:0.4});
-  expect(r.hub.trans.irisRadius).toBe(radius);
-  r.tickTransition(0);
-  expect(r.hub.trans.irisRadius).toBe(radius);
+test("two hooded looks morph feather and shape at full opacity, as before", () => {
+  const r=transitionRig({...DEFAULTS,vignette:0.24,vignette_shape:3.1});
+  r.transitionTo({...r.params,vignette:0.4,vignette_shape:5});
+  expect(r.hub.trans.iris).toBe(null);
+  for(let i=0;i<30;i++) r.tickTransition(1/60);
+  const e=eased(r.hub.trans.t);
+  expect(r.params.vignette).toBeCloseTo(0.24+(0.4-0.24)*e,12);
+  expect(r.params.vignette_shape).toBeCloseTo(3.1+(5-3.1)*e,12);
+  expect(r.hub.trans.irisOpacity).toBe(1);
+});
+
+test("an interrupted fade starts the next route from the opacity it shows", () => {
+  for(const [next,end] of [[{vignette:0.4,vignette_shape:5},1],[{vignette:0},0]]){
+    const r=transitionRig({...DEFAULTS,vignette:0});
+    r.transitionTo({...r.params,vignette:0.24,vignette_shape:3.1});
+    for(let i=0;i<20;i++) r.tickTransition(1/60);
+    const shown=r.hub.trans.irisOpacity;
+    expect(shown).toBeGreaterThan(0); expect(shown).toBeLessThan(1);
+    r.transitionTo({...r.params,...next});
+    expect(r.hub.trans.irisOpacity).toBe(shown);
+    r.tickTransition(0);
+    expect(r.hub.trans.irisOpacity).toBe(shown);
+    expect(r.params.vignette).toBe(0.24);
+    let last=shown;
+    while(r.hub.trans.active){
+      r.tickTransition(1/60);
+      const o=r.hub.trans.irisOpacity;
+      if(end) expect(o).toBeGreaterThanOrEqual(last); else { expect(o).toBeLessThanOrEqual(last); if(r.hub.trans.active) expect(r.params.vignette).toBe(0.24); }
+      last=o;
+    }
+    expect(last).toBe(end);
+    expect(r.params.vignette).toBe(next.vignette);
+  }
 });
 
 test("faithful structural changes dissolve complete moving scenes without a midpoint rebuild or bloom", () => {

@@ -3,7 +3,7 @@
 // tests hold the shader and the registry to the same sentence. Run: `bun test vignette.test.js`.
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, TRANSPORT_GROUPS, buildTransport } from "./komorebi.js";
-import { vignetteMask } from "./komorebi-math.js";
+import { vignetteMask, irisRoute, irisStep } from "./komorebi-math.js";
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -13,28 +13,43 @@ test("feather 0 is off: the mask is 1 everywhere, corners included, whatever the
       expect(vignetteMask(u, v, 0, shape)).toBe(1);
 });
 
-test("an iris outside the frame keeps the corners lit on the first positive feather", () => {
-  const t=1/180, e=t*t*(3-2*t), feather=0.24*e, shape=2+1.1*e;
-  const radius=Math.SQRT2+(1-Math.SQRT2)*ss(0,0.25,t);
-  for(const [u,v] of [[0.02,0.02],[0.1,0.1],[0.9,0.9]]) {
-    expect(vignetteMask(u,v,feather,shape)).toBe(0);
-    expect(vignetteMask(u,v,feather,shape,radius)).toBe(1);
-  }
+test("at opacity 0 the hood removes nothing, at any feather and shape", () => {
+  for(const shape of [2,3.1,8]) for(const feather of [0.001,0.24,1])
+    for(let i=0;i<=20;i++) for(let j=0;j<=20;j++) expect(vignetteMask(i/20,j/20,feather,shape,0)).toBe(1);
 });
 
-test("the moving iris reaches the authored mask exactly at radius one", () => {
+test("the opacity scales what the hood removes, and opacity one is the authored mask exactly", () => {
   for(const shape of [2,3.1,8]) for(const feather of [0,0.001,0.24,1])
-    for(let i=0;i<=20;i++) for(let j=0;j<=20;j++)
-      expect(vignetteMask(i/20,j/20,feather,shape,1)).toBe(vignetteMask(i/20,j/20,feather,shape));
+    for(let i=0;i<=20;i++) for(let j=0;j<=20;j++){
+      const m=vignetteMask(i/20,j/20,feather,shape);
+      expect(vignetteMask(i/20,j/20,feather,shape,1)).toBe(m);
+      for(const o of [0.25,0.5,0.9]) expect(vignetteMask(i/20,j/20,feather,shape,o)).toBeCloseTo(1-o*(1-m),12);
+    }
 });
 
-test("every camera scales the iris radius before masking linear light", () => {
-  expect(TRANSPORT_GROUPS.post.locs.irisRadius).toBe("uIrisRadius");
+test("crossing the gate keeps the hooded end's geometry and fades its opacity; two hooded ends morph at full opacity", () => {
+  const off={vignette:0,vignette_shape:2}, on={vignette:0.24,vignette_shape:3.1}, other={vignette:0.4,vignette_shape:5};
+  expect(irisRoute(off,on)).toEqual({from:0,to:1,shape:{vignette:0.24,vignette_shape:3.1}});
+  expect(irisRoute(on,off)).toEqual({from:1,to:0,shape:{vignette:0.24,vignette_shape:3.1}});
+  expect(irisRoute(on,other)).toBe(null);
+  expect(irisRoute(off,off)).toBe(null);
+  // An interrupted fade starts from the opacity it shows; with two hooded ends the geometry morphs while it finishes.
+  expect(irisRoute(on,other,0.3)).toEqual({from:0.3,to:1,shape:null});
+  expect(irisRoute(on,off,0.3)).toEqual({from:0.3,to:0,shape:{vignette:0.24,vignette_shape:3.1}});
+  const p={...off}, route=irisRoute(off,on);
+  for(const e of [0,0.1,0.5,0.9,1]){ expect(irisStep(route,e,p)).toBeCloseTo(e,12); expect(p).toEqual(on); }
+});
+
+test("every camera scales the hood's darkening by the iris opacity before the tail, and no radius scales the mask", () => {
+  expect(TRANSPORT_GROUPS.post.locs.irisOpacity).toBe("uIrisOpacity");
+  expect(TRANSPORT_GROUPS.post.locs.irisRadius).toBeUndefined();
   for(const cam of ["floor","cloth","enclosure","sky"]) {
-    const src=buildTransport(cam), radius=src.indexOf("if(uIrisRadius != 1.0) d /= uIrisRadius;");
-    expect(src).toContain("uniform float uIrisRadius;");
-    expect(radius).toBeGreaterThan(0);
-    expect(radius).toBeLessThan(src.indexOf("col *= 1.0 - smoothstep(1.0 - uVignette, 1.0, d);"));
+    const src=buildTransport(cam);
+    expect(src).toContain("uniform float uIrisOpacity;");
+    expect(src).not.toContain("uIrisRadius");
+    const fade=src.indexOf("col *= 1.0 - uIrisOpacity*smoothstep(1.0 - uVignette, 1.0, d);");
+    expect(fade).toBeGreaterThan(0);
+    expect(fade).toBeLessThan(src.indexOf("if(uLinearOut == 0) col = toneTail(col);"));
   }
 });
 
@@ -104,7 +119,7 @@ test("the post group declares and locates both uniforms, and every camera's prog
       "if(uVignette > 0.0){",                                                                           // if (!(feather > 0)) return 1
       "vec2 q = abs(vUv*2.0 - 1.0);",                                                                    // qx, qy = |u·2 − 1|, |v·2 − 1|
       "float d = pow(pow(q.x, uVignetteShape) + pow(q.y, uVignetteShape), 1.0/uVignetteShape);",        // d = (qx^n + qy^n)^(1/n)
-      "col *= 1.0 - smoothstep(1.0 - uVignette, 1.0, d);",                                               // 1 − smoothstep(1 − feather, 1, d)
+      "col *= 1.0 - uIrisOpacity*smoothstep(1.0 - uVignette, 1.0, d);",                                  // 1 − opacity·smoothstep(1 − feather, 1, d)
     ];
     for (const l of lines) expect(src.split(l).length - 1, `${cam}: ${l}`).toBe(1);
     const at = lines.map((l) => src.indexOf(l)), tail = src.indexOf("if(uLinearOut == 0) col = toneTail(col);");

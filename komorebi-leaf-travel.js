@@ -164,7 +164,7 @@ export function makeLeafTravel(hub,createScene){
   }
   function drawLeafTravel(){
     const outgoing=s.progress<.5,h=outgoing?s.from.hub:hub;
-    if(outgoing)Object.assign(h.trans,{active:true,irisRadius:trans.irisRadius,travelField:s.field,travelTone:trans.travelTone});
+    if(outgoing)Object.assign(h.trans,{active:true,iris:trans.iris,irisOpacity:trans.irisOpacity,travelField:s.field,travelTone:trans.travelTone});
     const diffuse=h.params.leaf_diffuse;
     // Zero selects a different native texel law. Let the moving cast carry that change, rather than snapping it at landing.
     h.params.leaf_diffuse=(outgoing?s.lookA:s.lookB).leaf_diffuse;

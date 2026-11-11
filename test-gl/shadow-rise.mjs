@@ -39,15 +39,20 @@ try{
   need(e.trans.shadowRise&&e.trans.litterRise,'shadow pickup still falls back to a grove swap');
   window.__clock.pump(stamp);const source=diff(nativeA,last);need(source.max===0,'native source changed');
   const grove=e.grove?.().hier;let maxStep=0,previous=last.slice();
+  // The outgoing hood blacks the frame's corners. It keeps its geometry and fades out over the flight, so by mid-route the corners are lit.
+  const corners=()=>Math.max(...[[0,0],[W-1,0],[0,H-1],[W-1,H-1]].map(([x,y])=>{const o=(y*W+x)*4;return last[o]+last[o+1]+last[o+2];}));
+  const hood=[corners()];
   for(let i=0;i<120;i++){
    pump();need(e.trans.bloom===0,'extra cloud bloom');need(e.trans.shadowRise&&!e.trans.swapped,'midpoint scene swap');
    if(grove)need(e.grove().hier===grove,'midpoint grove rebuild');
    maxStep=Math.max(maxStep,diff(previous,last).mean);previous=last.slice();
+   if(i===59)hood.push(corners());
   }
+  need(hood[0]===0&&hood[1]>60,`the hood did not fade: corners ${hood}`);
   need(e.trans.active,'expected final moving frame');const flying=last.slice();
   e.setParams(B);window.__clock.pump(stamp);const handoff=diff(flying,last);need(handoff.mean<.05,`native sky handoff ${handoff.mean}`);
   need(diff(nativeB,last).max===0,'target differs from its native frame');need(maxStep<40,`scene-sized frame step ${maxStep}`);
-  results.push({source,handoff,maxStep});
+  results.push({source,handoff,maxStep,corners:hood});
   open(A);e.transitionTo(B,{duration:.25,onEnd:()=>arrived++});while(e.trans.active)pump();
   need(arrived===1,'completion callback');need(!e.trans.shadowRise,'pickup state survived landing');need(diff(nativeB,last).max===0,'natural native landing');
   open(A);e.transitionTo(B,{duration:1});pump(40);const still=last.slice();window.__clock.pump(stamp);need(diff(still,last).max===0,'zero-time redraw moved leaves');

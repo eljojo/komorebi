@@ -150,7 +150,7 @@ uniform int   uLinearOut;         // 0 = end the Look here and write display-enc
                                   // instead: the lateral-diffusion tier (§4.9) must spread light BEFORE the curve, so it runs toneTail itself after the blur.
 uniform float uVignette;          // the edge fade (§4.7): the outer fraction of the frame's half-extent the light fades to black over. 0 = off, byte-identical
 uniform float uVignetteShape;     // its superellipse exponent, 2..8: 2 an ellipse touching all four edges, 8 a rounded rectangle. Inert at uVignette 0
-uniform float uIrisRadius;        // transition only: 1 is the authored mask, sqrt(2) puts its boundary beyond the corners
+uniform float uIrisOpacity;       // transition only: the share of the mask's darkening drawn while a route crosses the gate. 1 is the authored mask
 ${GLSL_TONE_TAIL}`;
 
 // ---- THE SKY FILL's receiver half (§4.7): what the three surface cameras read. The bake (FS_FILL, run per bake by
@@ -985,8 +985,7 @@ const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (§3.5): as the sun
   if(uVignette > 0.0){
     vec2 q = abs(vUv*2.0 - 1.0);                                   // 0 at frame centre, 1 at each edge, aspect-free: the mask touches all four edges
     float d = pow(pow(q.x, uVignetteShape) + pow(q.y, uVignetteShape), 1.0/uVignetteShape);   // superellipse radius: 2 an ellipse, 8 a rounded rectangle
-    if(uIrisRadius != 1.0) d /= uIrisRadius;
-    col *= 1.0 - smoothstep(1.0 - uVignette, 1.0, d);
+    col *= 1.0 - uIrisOpacity*smoothstep(1.0 - uVignette, 1.0, d);
   }
   // The Look's tail (exposure/curve/contrast/gamma) is toneTail() — shared verbatim with the diffusion composite.
   // Skipping it is the ONLY thing uLinearOut changes: what leaves here is then the same linear HDR radiance the
@@ -1097,7 +1096,7 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
   sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
                                                       exposure:'uExposure', contrast:'uContrast', tone:'uToneMap', travelTone:'uTravelTone',
-                                                      vignette:'uVignette', vignetteShape:'uVignetteShape', irisRadius:'uIrisRadius' } },
+                                                      vignette:'uVignette', vignetteShape:'uVignetteShape', irisOpacity:'uIrisOpacity' } },
 };
 
 // ---- THE SENTENCES. One entry per camera. `groups` is ORDERED and that order is the emitted declaration order —

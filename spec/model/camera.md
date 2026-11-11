@@ -91,7 +91,7 @@ Fully lit inside, black at the frame's edge and in the corners beyond the curve.
 
 ### Crossing the iris's gate
 
-Turning the iris on or off in a transition never installs or removes the whole mask in one frame: its boundary sweeps in from outside the frame, or opens out again, while the settled mask and its place before the tail stay as authored. The sweep is [`transitions.md`](transitions.md)'s and its promise [`../contracts/transitions.md`](../contracts/transitions.md)'s.
+Turning the iris on or off in a transition never installs or removes the whole mask in one frame, and never moves its edge: the hood keeps its authored shape and fades in or out, while the settled mask and its place before the tail stay as authored. The fade is [`transitions.md`](transitions.md)'s and its promise [`../contracts/transitions.md`](../contracts/transitions.md)'s.
 
 ## Approximations and limits
 
@@ -113,5 +113,5 @@ Turning the iris on or off in a transition never installs or removes the whole m
 - [`receivers.md`](receivers.md): the floor's albedo, the cloth and tent geometry, the lateral diffusion.
 - [`sky-view.md`](sky-view.md): the upward camera and its veiling glare.
 - [`transitions.md`](transitions.md): the eye travelling between sky and floor.
-- [`../contracts/transitions.md`](../contracts/transitions.md): the iris sweep's promises.
+- [`../contracts/transitions.md`](../contracts/transitions.md): the iris fade's promises.
 - [`../evidence/dead-ends.md#camera`](../evidence/dead-ends.md#camera): the camera that followed the crown's shadow.
