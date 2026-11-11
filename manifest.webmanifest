@@ -1,0 +1,14 @@
+{
+  "name": "komorebi",
+  "short_name": "komorebi",
+  "description": "Sunlight that leaks through the trees, and the soft, breathing dapples it casts on the ground.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "background_color": "#0a0d0a",
+  "theme_color": "#0a0d0a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

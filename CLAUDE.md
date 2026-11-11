@@ -74,7 +74,8 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `leaf-maze.js` (pure) and `leaf-preview.js` — the held leaf (`L`); `leaf-preview.js` is imported by `editor.js` alone.
 
 **The site.** `about.html` + `about.css` — the one source of the about text, which the welcome also opens in place.
-`breathe.js` — how a page is left (not loaded by `examples/`). `player.html` — viewer-only. `examples/` — the embeds the
+`breathe.js` — how a page is left (not loaded by `examples/`). `player.html` — viewer-only. `manifest.webmanifest` + `icons/` —
+the installed app (fullscreen, from the editor), linked by the three pages; the icon is a frame of cherry blossom. `examples/` — the embeds the
 README points at. `komorebi.global.js` — the `window.Komorebi` shim for no-build embeds. `.github/workflows/pages.yml` —
 the deploy on a push to `main`, which writes `commit.json`.
 
