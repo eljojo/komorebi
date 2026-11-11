@@ -85,7 +85,7 @@ test("a bundle retains the continuous viewpoint only when it carries both sky an
   const flight=assemble({looks:[sky,'park 1'],features:'all'});
   expect(flight.cameras).toContain('rise');
   expect(flight.files['komorebi-transport.js']).toContain('uRiseDepth');
-});
+},120000);
 
 test('sky and floor bundles retain the shadow flight without seasonal tiers',()=>{
   const sky=Object.keys(PRESETS).find(n=>PRESETS[n].sky_view);

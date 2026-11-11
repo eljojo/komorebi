@@ -66,3 +66,31 @@ test('callers omitting session retain the flat-params playback contract',()=>{
   e.transitionTo({...look,adaptive_motion:true},{duration:0.1});land();
   expect(e.params.adaptive_motion).toBe(true);e.dispose();
 });
+
+test('opting an existing flat engine into sessions retains live art and inherited fidelity',()=>{
+  const {e}=engine(null);
+  e.params.exposure=4;e.apply('');
+  e.setSession({quality:'compact'});
+  expect(e.authored.exposure).toBe(4);
+  expect(e.authored).not.toHaveProperty('sample_count');
+  e.dispose();
+});
+
+test('a refused look or fidelity request leaves authored data intact',()=>{
+  const {e}=engine();const before=e.authored;
+  expect(()=>e.setParams({sample_count:null})).toThrow();
+  expect(e.authored).toEqual(before);
+  expect(()=>e.setLookRequest('sample_count',NaN)).toThrow();
+  expect(e.authored).toEqual(before);
+  e.dispose();
+});
+
+test('the live governor never raises an authored sample request below its usual floor',()=>{
+  const {e,look}=engine();
+  for(const faithful_canopy of [false,true]){
+    e.setParams({...look,faithful_canopy,sample_count:1});
+    expect(e.params.sample_count).toBe(1);
+    expect(e.perf.sampleCount).toBeLessThanOrEqual(1);
+  }
+  e.dispose();
+});

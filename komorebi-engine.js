@@ -63,10 +63,16 @@ function createEngine(canvas, opts, driven=false){
   let authored = authoredLook(opts.params);
   let pendingSession = false;
   const params = resolveParams(opts.params, session);
-  function captureLook(){
+  function readLook(){
     if(!session) return { ...params };
-    for(const key in DEFAULTS) if(!FIDELITY_KEYS.includes(key) && !PLAYBACK_KEYS.includes(key) && key!=='edge_area') authored[key]=params[key];
-    return { ...authored };
+    const look={...authored};
+    for(const key in DEFAULTS) if(!FIDELITY_KEYS.includes(key) && !PLAYBACK_KEYS.includes(key) && key!=='edge_area') look[key]=params[key];
+    return look;
+  }
+  function captureLook(){
+    const look=readLook();
+    if(session)authored=look;
+    return {...look};
   }
   function playbackNow(){
     if(!session) return;
@@ -106,7 +112,7 @@ function createEngine(canvas, opts, driven=false){
     if(!perf.auto || perf.quality >= 0.5) return full;
     return clamp(Math.round(lerp(BAKE_MIN, full, perf.quality/0.5)/256)*256, BAKE_MIN, full);
   };
-  const faithfulSamples = (full=params.sample_count) => clamp(Math.round(lerp(6,full,perf.quality)),3,Math.max(3,full));
+  const faithfulSamples = (full=params.sample_count) => clamp(Math.round(lerp(6,full,perf.quality)),session?Math.min(3,full):3,session?full:Math.max(3,full));
   // IS THE FAITHFUL TIER ACTUALLY RUNNING? The flag alone no longer answers it, so nothing reads the flag directly:
   // the faithful bake pre-integrates the whole cast into ONE texture in ONE frame — floor (x,y) or cloth (u,v) — and
   // the ENCLOSURE's receiver is neither, it is a per-pixel ray cast onto sloped panels. So receiver 2 forces the
@@ -577,7 +583,7 @@ function createEngine(canvas, opts, driven=false){
     } else if(q >= KNEE){ res = lerp(RES_MIN, 1, (q-KNEE)/(1-KNEE)); samp = params.sample_count; }   // resolution first (on the floor and the enclosure the per-pixel transport sample loop IS the cost)
     else                { res = RES_MIN; samp = Math.round(lerp(SAMP_MIN, params.sample_count, q/KNEE)); } // then samples (and bake, below)
     perf.resScale = res;
-    samp = clamp(samp, 3, Math.max(3, params.sample_count));
+    samp = clamp(samp, session?Math.min(3,params.sample_count):3, session?params.sample_count:Math.max(3, params.sample_count));
     if(samp !== perf.sampleCount){ perf.sampleCount = samp; regenSource(); }
     if(bakeRes() !== perf.bres){ rebuildTextures(); bake(); }     // bake_resolution trims with quality below the knee (§9); realloc only at a snapped boundary
   }
@@ -669,8 +675,8 @@ function createEngine(canvas, opts, driven=false){
   }
   function setParams(obj){
     if(!obj || typeof obj!=='object') return;
-    authored=authoredLook(obj);
-    obj=resolveParams(obj,session);
+    const nextAuthored=authoredLook(obj),nextParams=resolveParams(obj,session);
+    authored=nextAuthored;obj=nextParams;
     pendingSession=false;
     // an in-flight transition must not outlive the swap: its morph would keep writing params over the new
     // look, and mid-CROSSFADE the incoming grove would keep baking against layer state rebuildAll is about
@@ -718,14 +724,15 @@ function createEngine(canvas, opts, driven=false){
     captureLook,
     setLookRequest(key,value){
       if(!FIDELITY_KEYS.includes(key)) throw new Error(`Not a fidelity request: ${key}`);
-      captureLook();
-      if(value===undefined) delete authored[key]; else authored[key]=value;
-      setParams(authored);
+      const look=readLook();
+      if(value===undefined) delete look[key]; else look[key]=value;
+      setParams(look);
     },
     setSession(settings,environment){
+      const nextEnvironment=environment===undefined?sessionEnvironment:{...sessionEnvironment,...environment,maxTextureSize:MAX_TEX};
+      const nextSession=resolveSession(settings,nextEnvironment);
+      sessionEnvironment=nextEnvironment;session=nextSession;
       if(!trans.active)captureLook();
-      if(environment!==undefined)sessionEnvironment={...sessionEnvironment,...environment,maxTextureSize:MAX_TEX};
-      session=resolveSession(settings,sessionEnvironment);
       pendingSession=true;playbackNow();settleSession();if(!lost)resetPerf();
     },
     transitionTo: (target, o) => {
