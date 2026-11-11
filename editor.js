@@ -3,7 +3,7 @@ import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
 import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter } from './playlists.js';
-import { MACROS, createBus, macroUsable, tweenGateStep } from './macros.js';
+import { MACROS, createBus, macroUsable, macroValue, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
 import { LEAF_SHAPES } from './komorebi-leaf.js';
@@ -37,7 +37,7 @@ const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro
 // stands alone; ＋ climbs the ladder when you want more); the choice sticks thereafter. ----
 const SETTINGS_KEY = 'komorebi.editor';
 const settings = (() => {
-  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {} };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name
+  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {}, sawTouchHint: false };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name
   let s = base;
   try { s = Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch { /* unreadable: the defaults */ }
@@ -79,7 +79,6 @@ function maybeClearSpecies(key){
   if(SHAPE_KEYS.has(key) && params.tree_species){
     params.tree_species='';
     if(controlEls.tree_species) controlEls.tree_species.input.value='';   // select the empty "— custom" option
-    if(playSpeciesSel) playSpeciesSel.value='';                           // ...and the playful surface's copy
   }
 }
 // frame shadow (spec §4.8 / #56): one-time camera move that centres the view on where the tree's CROWN shadow lands,
@@ -462,7 +461,7 @@ function refreshGates(){
 function syncControl(key){ const c=controlEls[key]; if(!c)return;
   if(c.input.type==='checkbox') c.input.checked=!!params[key]; else c.input.value=params[key];
   if(c.valEl) c.valEl.textContent=fmt(params[key]); }
-function syncAllControls(){ for(const k in controlEls) syncControl(k); syncMacroControls(); }
+function syncAllControls(){ for(const k in controlEls) syncControl(k); tryCapture(); syncMacroControls(); }   // every load of a look lands here: the try-out's home is the look's own values
 
 // ===========================================================================
 // The playful + minimalist surfaces (the mode ladder's upper rungs) and the
@@ -520,18 +519,6 @@ function macroSlider(busKey, label){
   macroEls[busKey].push(inp);
   return row;
 }
-// time is on the bus in spirit but routed through the editor's own sun model (the original macro)
-function timeSlider(){
-  const row=document.createElement('div'); row.className='ctl';
-  const lab=document.createElement('label'); lab.textContent='time';
-  const inp=document.createElement('input'); inp.type='range'; inp.min=5; inp.max=19; inp.step=0.25;
-  inp.value=params.time_of_day;
-  inp.addEventListener('input', ()=>{ params.time_of_day=parseFloat(inp.value); updateSunFromTime(); syncControl('time_of_day'); });
-  row.append(lab,inp);
-  if(!macroEls.time) macroEls.time=[];
-  macroEls.time.push(inp);
-  return row;
-}
 function presetRow(withPlay){
   const row=document.createElement('div'); row.className='preset';
   const prev=document.createElement('button'); prev.textContent='‹';
@@ -563,9 +550,10 @@ function syncPlayButtons(){
   for(const b of playBtns){ b.hidden=!on; b.textContent=p?'■':'▶'; b.title=p?'stop':'play'; }
 }
 function syncMacroControls(){
+  trySeat();
   for(const key in macroEls){
-    const t = key==='time' ? params.time_of_day : bus.get(key);
-    const usable = key==='time' ? true : macroUsable(key, params);
+    const t = bus.get(key);
+    const usable = macroUsable(key, params);
     for(const inp of macroEls[key]){
       inp.value = t;
       inp.disabled = !usable;                       // a gated macro greys out rather than trampling a hand-tuned look
@@ -578,6 +566,145 @@ function syncMacroControls(){
     padDot.style.left=`${x*100}%`; padDot.style.top=`${(1-y)*100}%`;
   }
 }
+// ---- try-out: dials that each write only their own parameter(s), starting from the
+// look's own value ("home", captured whenever a look has loaded — a drag never re-captures it), so touching one at rest
+// changes nothing. The thumbs are derived from the live params, so a mode switch re-seats them where they were left.
+// A dial can be built into any surface (tryDial): the playful sidebar and the zen strip each hold their own instances.
+const TRY_FALL = { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1 };   // inert at phenology <= 0.6: the left end stays the look's own picture
+const TRY_KEYS = ['core_angular_radius_deg', 'core_weight_fraction', 'cloud_thickness', 'foliage_density', 'sun_azimuth_deg', 'sun_elevation_deg', 'phenology', ...Object.keys(TRY_FALL)];
+let tryHome = null;
+let tryAz = 0, tryTime = 0;   // the sun dial's offset (degrees) and the time dial's (hours) from home; both write the sun, so both live here (reset with home)
+const tryDials = [];     // every instance: {name, inp, tick, row, seat(), home()}
+function tryCapture(){
+  tryHome = {}; for(const k of TRY_KEYS) tryHome[k] = params[k] ?? 0;
+  tryAz = 0; tryTime = 0;
+  trySeat();
+}
+function trySeat(){
+  if(!tryHome) return;
+  for(const d of tryDials){ d.inp.value = d.seat(); d.tick.style.left = `${d.home()*100}%`; }
+  const usable = macroUsable('season', params);
+  for(const d of tryDials) if(d.name === 'season'){ d.inp.disabled = !usable; d.row.classList.toggle('off', !usable); }
+}
+// THE SEASON DIAL'S APPLIES are paced by what they cost. A re-season is CPU (tens of ms on a phone, a full build on the first), and an input
+// event fires several times a frame, so an event only records where the thumb is and the frame clock lands it: at most once a frame, and after
+// an apply that took c ms the next waits c ms more, so applies take at most half the time and the picture keeps following the finger. It never
+// falls back to release-only (a phone is over the tween's off line on every look, and a dial that answers only on release is no dial); the
+// release lands exactly where the thumb is.
+let trySeasonWant = null, trySeasonWait = 0;
+function trySeasonTick(force){
+  if(trySeasonWant === null) return;
+  const now = performance.now();
+  if(!force && (eng.trans.active || now < trySeasonWait)) return;
+  const dict = { phenology:trySeasonWant }; trySeasonWant = null;
+  for(const k in TRY_FALL) if(!tryHome[k]) dict[k] = TRY_FALL[k];
+  Object.assign(params, dict);
+  for(const k in dict){ maybeClearSpecies(k); syncControl(k); }
+  applyScope('season');
+  const done = performance.now();
+  trySeasonWait = done + (done - now);
+}
+function tryWrite(dict, scope){                    // the bus applier's own landing for one dict
+  Object.assign(params, dict);
+  for(const k in dict){ maybeClearSpecies(k); syncControl(k); }
+  applyScope(scope);
+}
+// The time dial moves the sun along the editor's own clock model (updateSunFromTime's el(H), az(H)) from where the look's sun already is:
+// the look's home sun fixes an hour angle H0 (afternoon when it sits west of south), d hours later H = H0 + 15°·d, and the sun moves by the
+// model's change in elevation and azimuth between the two. d = 0 is the look's own sun exactly; time_of_day is never written.
+function timeSunDelta(d){
+  if(!d) return { el: tryHome.sun_elevation_deg, az: 0 };
+  const lat = (params.latitude || 0) * DEG, cl = Math.cos(lat) || 1e-9;
+  const el = (H) => Math.asin(clamp(cl * Math.cos(H), -1, 1)) / DEG;
+  const az = (H) => 180 + Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(lat)) / DEG;
+  const a0 = tryHome.sun_azimuth_deg, e0 = tryHome.sun_elevation_deg;
+  const H0 = Math.acos(clamp(Math.sin(e0 * DEG) / cl, -1, 1)) * (a0 >= 180 ? 1 : -1), H = H0 + 15 * DEG * d;
+  return { el: clamp(e0 + (el(H) - el(H0)), 15, 90), az: az(H) - az(H0) };
+}
+function trySunWrite(){                            // the one place the two sun dials land: home + sun-dial offset + the time dial's azimuth delta
+  const t = timeSunDelta(tryTime);
+  tryWrite({ sun_azimuth_deg:(((tryHome.sun_azimuth_deg + tryAz + t.az) % 360) + 360) % 360, sun_elevation_deg:t.el }, '');
+}
+const tryFrac = (v, lo, hi) => clamp((v - lo) / (hi - lo), 0, 1);
+const TRY_SPECS = {
+  focus: { ends:['crisp','soft'], min:0, max:1, step:0.005,          // the focus macro itself (the sun's core and its share of the light), with a home and a way back
+    seat:() => bus.get('focus'), home:() => macroValue('focus', tryHome),
+    write:(v) => { bus.set('focus', v); } },
+  cloudiness: { ends:['clear','overcast'], min:0, max:0.6, step:0.005,
+    seat:() => clamp(params.cloud_thickness, 0, 0.6), home:() => tryFrac(tryHome.cloud_thickness, 0, 0.6),
+    write:(v) => tryWrite({ cloud_thickness:v }, 'source') },
+  density: { ends:['sparse','full'], min:0.6, max:1.4, step:0.01,
+    seat:() => tryHome.foliage_density ? params.foliage_density / tryHome.foliage_density : 1, home:() => 0.5,
+    write:(m) => tryWrite({ foliage_density:tryHome.foliage_density * m }, 'density') },
+  sun: { ends:['←','→'], min:-90, max:90, step:1,
+    seat:() => tryAz, home:() => 0.5,
+    write:(d) => { tryAz = d; trySunWrite(); } },
+  time: { ends:['earlier','later'], min:-2, max:2, step:0.05,
+    seat:() => tryTime, home:() => 0.5,
+    write:(d) => { tryTime = d; trySunWrite(); } },
+  season: { ends:['green','fallen'], min:0.6, max:0.95, step:0.005,
+    seat:() => clamp(params.phenology, 0.6, 0.95), home:() => tryFrac(tryHome.phenology, 0.6, 0.95),
+    write:(v) => { trySeasonWant = v; },             // a re-season is CPU: the frame clock lands it through the cost gate (trySeasonTick)
+    commit:() => trySeasonTick(true) },              // on release, exactly where the thumb is
+};
+// One sentence while a dial moves, in the world's words, on the surface's caption line (tryCap); it goes quiet a moment after the hand does.
+const TRY_SAYS = {
+  focus: [[.33,'a small, sharp sun: every gap is a crisp image of it'],[.66,'the edges soften'],[2,'out of focus, like an old lens']],
+  cloudiness: [[.2,'a bare sun: crisp dapples'],[.6,'thin cloud: the dapples soften'],[2,'overcast: the pattern melts into glow']],
+  sun: [[.42,'the light comes from further one way'],[.58,'the sun where this place has it'],[2,'the light comes from further the other way']],
+  time: [[.42,'earlier in the day'],[.58,'this place\'s own hour'],[2,'later in the day']],
+  season: [[.15,'the last green days'],[.6,'the crown is turning'],[2,'the leaves let go']],
+  density: [[.42,'fewer leaves, wider openings'],[.58,'as full as this place is'],[2,'a fuller canopy, smaller gaps']],
+};
+const TRY_WHY_OFF = 'this place is seen from below: its season is its own';
+function tryCap(container){ const c=document.createElement('div'); c.className='cap'; container.appendChild(c); container._cap=c; }
+function trySay(container, text){
+  const c=container._cap; if(!c) return;
+  c.textContent=text; c.classList.add('on');
+  clearTimeout(c._t); c._t=setTimeout(()=>c.classList.remove('on'), 2600);
+}
+function tryDial(name, container){
+  const d = { name, ...TRY_SPECS[name] };
+  const row=document.createElement('div'); row.className='ctl try';
+  const nm=document.createElement('span'); nm.className='name'; nm.textContent=name;
+  const ends=document.createElement('div'); ends.className='ends';
+  const l=document.createElement('span'), r=document.createElement('span'); l.textContent=d.ends[0]; r.textContent=d.ends[1];
+  ends.append(l,r);
+  const track=document.createElement('div'); track.className='track';
+  const inp=document.createElement('input'); inp.type='range'; inp.min=d.min; inp.max=d.max; inp.step=d.step;
+  const tick=document.createElement('div'); tick.className='tick';
+  row.addEventListener('pointerdown',()=>{ if(row.classList.contains('off')) trySay(container, TRY_WHY_OFF); });   // a dial this look cannot use says why
+  inp.addEventListener('input',()=>{ stopPlay(); chipSoon(); d.write(parseFloat(inp.value));
+    const f=(parseFloat(inp.value)-d.min)/(d.max-d.min); trySay(container, TRY_SAYS[name].find(([t])=>f<=t)[1]);
+    for(const o of tryDials) if(o !== d && o.name === name) o.inp.value = inp.value; });   // the same dial on the other surface follows
+  if(d.commit) inp.addEventListener('change',()=>d.commit());
+  track.append(inp,tick); row.append(nm,ends,track);
+  Object.assign(d, { inp, tick, row }); tryDials.push(d); container.appendChild(row);
+  return d;
+}
+function tryAsItWas(){                              // every dial's parameters back to the look's own values
+  stopPlay(); chipSoon();
+  const moved = (ks) => ks.some((k) => params[k] !== tryHome[k]);
+  const scopes = [moved(['cloud_thickness', 'core_angular_radius_deg', 'core_weight_fraction']) && 'source', moved(['foliage_density']) && 'density', moved(['phenology', ...Object.keys(TRY_FALL)]) && 'season'];
+  Object.assign(params, tryHome);
+  tryAz = 0; tryTime = 0;
+  for(const k of TRY_KEYS){ maybeClearSpecies(k); syncControl(k); }
+  for(const sc of scopes) if(sc) applyScope(sc);   // density before season: the reseason reads the regrown set
+  trySeat();
+}
+// Touch: a finger on a slider clears the rest of its panel so the picture shows. The row under the finger stays; the panel's
+// own backdrop goes too (CSS, .holding / .held). The strip's fade timer already waits out a hold (stripDragging).
+function holdToSee(panel){
+  if(!coarse) return;
+  panel.addEventListener('pointerdown',(e)=>{
+    const inp = e.target.closest?.('input[type=range]');
+    if(!inp) return;
+    panel.classList.add('holding'); inp.closest('.ctl')?.classList.add('held');
+  });
+  const release = ()=>{ panel.classList.remove('holding'); for(const r of panel.querySelectorAll('.held')) r.classList.remove('held'); };
+  window.addEventListener('pointerup',release);
+  window.addEventListener('pointercancel',release);
+}
 function modeButton(mode, label){
   const b=document.createElement('button'); b.textContent=label;
   b.addEventListener('click', ()=>setMode(mode));
@@ -585,21 +712,29 @@ function modeButton(mode, label){
 }
 function buildPlayPanel(){
   const modes=document.createElement('div'); modes.className='modes';
-  modes.append(modeButton('min','· zen'), modeButton('adv','⚙ advanced'));
+  modes.append(modeButton('min','less'), modeButton('adv','everything'));
   play.appendChild(modes);
   play.appendChild(presetRow(true));
 
-  const h=(t)=>{ const e=document.createElement('h2'); e.textContent=t; play.appendChild(e); };
-  h('light');
-  play.appendChild(timeSlider());
-  play.appendChild(macroSlider('weather'));
-  play.appendChild(macroSlider('haze'));
-  play.appendChild(macroSlider('focus'));
+  tryCapture();
+  for(const n of ['focus','cloudiness','sun','season','density','time']) tryDial(n, play);
+  tryCap(play);
+  const acts=document.createElement('div'); acts.className='ctl acts';
+  const rb=document.createElement('button'); rb.className='tryreset'; rb.textContent='↺ as it was';
+  rb.addEventListener('click',tryAsItWas);
+  const db=document.createElement('button'); db.textContent='⚄ new leaves';
+  db.addEventListener('click',reseed);
+  acts.append(rb,db); play.appendChild(acts);
 
-  h('wind');
+  // "more": the controls that are a second idea each, one tap further
+  const more=document.createElement('details'); more.className='more';
+  const sum=document.createElement('summary'); sum.textContent='more'; more.appendChild(sum);
+  more.appendChild(macroSlider('haze'));
+  more.appendChild(macroSlider('prism','sparkle'));
+  more.appendChild(macroSlider('grove','trees'));
   padEl=document.createElement('div'); padEl.className='pad';
   padDot=document.createElement('div'); padDot.className='dot';
-  const padlab=document.createElement('span'); padlab.className='padlab'; padlab.textContent='calm ⌁ squally · still ↑ strong';
+  const padlab=document.createElement('span'); padlab.className='padlab'; padlab.textContent='wind · calm ⌁ squally · still ↑ strong';
   padEl.append(padDot,padlab);
   const padWrite=(e)=>{
     const r=padEl.getBoundingClientRect();
@@ -612,30 +747,8 @@ function buildPlayPanel(){
   padEl.addEventListener('pointermove',(e)=>{ if(padDown) padWrite(e); });
   padEl.addEventListener('pointerup',()=>{ padDown=false; });
   padEl.addEventListener('pointercancel',()=>{ padDown=false; });
-  play.appendChild(padEl);
-
-  h('grove');
-  play.appendChild(macroSlider('season'));
-  play.appendChild(macroSlider('grove'));
-  // species: the same bundle-merge the advanced select does, on its own element
-  const sr=document.createElement('div'); sr.className='ctl select';
-  const slab=document.createElement('label'); slab.textContent='species';
-  const ssel=document.createElement('select');
-  const o0=document.createElement('option'); o0.value=''; o0.textContent='— custom'; ssel.appendChild(o0);
-  for(const n of Object.keys(TREE_SPECIES)){ const o=document.createElement('option'); o.value=n; o.textContent=n; ssel.appendChild(o); }
-  ssel.addEventListener('change',()=>{ const b=TREE_SPECIES[ssel.value]; stopPlay();
-    if(b) applyParams(Object.assign({}, params, b, { tree_species:ssel.value }));
-    else params.tree_species=''; });
-  sr.append(slab,ssel); play.appendChild(sr);
-  playSpeciesSel=ssel;
-  const dice=document.createElement('div'); dice.className='ctl';
-  const db=document.createElement('button'); db.textContent='⚄ new arrangement';
-  db.addEventListener('click',reseed);
-  dice.appendChild(db); play.appendChild(dice);
-
-  h('look');
-  play.appendChild(macroSlider('palette'));
-  play.appendChild(macroSlider('prism'));
+  more.appendChild(padEl);
+  play.appendChild(more);
 
   // the full list, down here by the toggle that grows it — the stepper above flicks, this jumps
   // (◦ marks an experimental look)
@@ -652,6 +765,7 @@ function buildPlayPanel(){
   beta.append(blab,binp); play.appendChild(beta);
   betaToggles.push(binp);
   refreshPresetSelect(presetSel.value);              // fill this surface's dropdown (it was born after the first refresh)
+  holdToSee(play);
 }
 // one handler for every surface's experimental toggle, kept in step with each other
 function setShowBeta(on){
@@ -659,7 +773,6 @@ function setShowBeta(on){
   for(const t of betaToggles) t.checked=on;
   refreshPresetSelect(presetSel.value);
 }
-let playSpeciesSel=null;
 const betaToggles=[];
 
 // the minimalist strip. Two visibility models by pointer kind:
@@ -675,24 +788,49 @@ function stripWake(){
   strip.classList.remove('faded');
   if(coarse){
     clearTimeout(stripFadeTimer);
-    stripFadeTimer=setTimeout(()=>strip.classList.add('faded'), 5000);
+    stripFadeTimer=setTimeout(()=>{ if(stripDragging) stripWake(); else strip.classList.add('faded'); }, 5000);   // a finger held on a slider keeps it
   } else stripHoldUntil=performance.now()+STRIP_HOLD_MS;
 }
 function buildStrip(){
   if(!coarse) strip.classList.add('wide');            // desktop: one horizontal bar
   const pr=presetRow();
   const more=document.createElement('button'); more.className='more'; more.textContent='＋';
-  more.title='playful editor';
+  more.title='more';
   more.addEventListener('click',()=>setMode('play'));
   pr.appendChild(more);                               // rides the preset row's end, clear of the ‹ › stepper
   strip.appendChild(pr);
-  strip.appendChild(timeSlider());
-  strip.appendChild(macroSlider('weather'));
-  strip.appendChild(macroSlider('wind_y','wind'));
+  if(coarse){
+    // touch: ONE dial at a time, so the picture keeps the screen. A row of words along the bottom picks which dial is out;
+    // ↺ is "as it was" and ＋ the playful sidebar. The preset row stays in the DOM (the name's source) but is not shown:
+    // a swipe changes the look and its name passes across the top.
+    strip.classList.add('one');
+    tryCap(strip);
+    const rows = {};
+    for(const n of ['focus','cloudiness','sun','season','time']) rows[n] = tryDial(n, strip).row;
+    const tabs=document.createElement('div'); tabs.className='tabs';
+    const pick=(name)=>{ for(const n in rows) rows[n].classList.toggle('out', n!==name);
+      for(const b of tabs.children) b.classList.toggle('on', b.dataset.dial===name); };
+    for(const [n,label] of [['focus','focus'],['cloudiness','clouds'],['sun','sun'],['season','season'],['time','time']]){
+      const b=document.createElement('button'); b.textContent=label; b.dataset.dial=n;
+      b.addEventListener('click',()=>pick(n)); tabs.appendChild(b);
+    }
+    const back=document.createElement('button'); back.className='sm'; back.textContent='↺'; back.title='as it was';
+    back.addEventListener('click',tryAsItWas);
+    const up=document.createElement('button'); up.className='sm'; up.textContent='＋'; up.title='more';
+    up.addEventListener('click',()=>setMode('play'));
+    tabs.append(back,up); strip.appendChild(tabs);
+    pick('focus');
+  } else {
+    tryDial('focus', strip);
+    tryDial('cloudiness', strip);
+    tryDial('time', strip);
+  }
+  trySeat();
+  holdToSee(strip);
   strip.addEventListener('pointerdown',()=>{ stripDragging=true; stripWake(); });
   window.addEventListener('pointerup',()=>{ stripDragging=false; });
   strip.addEventListener('input',stripWake);
-  canvas.addEventListener('pointerdown',stripWake);   // a tap on the art summons the strip back (touch)
+  canvas.addEventListener('pointerdown',(e)=>{ if(e.pointerType!=='touch') stripWake(); });   // a click on the art keeps the strip (mouse); a touch tap goes through toggleControls alone, or it would re-wake what the tap hides
   if(!coarse){
     let lastMove=performance.now(), lastPos=null;
     window.addEventListener('pointermove',(e)=>{
@@ -1062,26 +1200,49 @@ function showCloud(list, match){
   refreshPresetSelect(at<0 ? '' : String(at));      // the look has left this list (it joined a folder): nothing selected
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
+let devBeta=null;
 function buildPresetUI(){
-  const modes=document.createElement('div'); modes.className='ctl';
-  const back=document.createElement('button'); back.textContent='◂ playful';
+  const modes=document.createElement('div'); modes.className='ctl modes';
+  const back=document.createElement('button'); back.textContent='less';
   back.addEventListener('click',()=>setMode('play'));
   modes.appendChild(back); dev.appendChild(modes);
-  const h=document.createElement('h2'); h.textContent='Presets'; h.dataset.tipKey='Presets'; dev.appendChild(h);
-  const beta=document.createElement('div'); beta.className='ctl toggle';
-  const blab=document.createElement('label'); blab.textContent='experimental';
-  const binp=document.createElement('input'); binp.type='checkbox'; binp.checked=settings.showBeta;
-  binp.addEventListener('change',()=>setShowBeta(binp.checked));
-  beta.append(blab,binp); dev.appendChild(beta); betaToggles.push(binp);
-  const r1=document.createElement('div'); r1.className='ctl select';
+  // THE LOOK, as the panel's heading: ‹ name ›. The name is the dropdown: the select lies over it, transparent, so a click on the
+  // name opens the full list (and the select stays the first one in #dev, the single source of the stepping origin).
+  const head=document.createElement('div'); head.className='lookhead'; head.dataset.tipKey='Presets';
+  const prev=mkBtn('‹',()=>stepPreset(-1)), next=mkBtn('›',()=>stepPreset(1));
+  const pick=document.createElement('div'); pick.className='pick';
+  const name=document.createElement('span'); name.className='name'; presetNameEls.push(name);
   presetSel=document.createElement('select');
   presetSel.addEventListener('change',()=>loadEntry(presetSel.value));
   presetSelects.push(presetSel);
-  r1.appendChild(presetSel); dev.appendChild(r1);
-  lookChip=document.createElement('div'); lookChip.className='look-chip';   // directly under the look select, in every editor
-  lookChip.style.cssText='font-size:11px;color:#9fb89f;margin:-1px 0 4px;word-break:break-word';
+  pick.append(name,presetSel); head.append(prev,pick,next); dev.appendChild(head);
+  lookChip=document.createElement('div'); lookChip.className='look-chip';   // directly under the look's name, in every editor
   dev.appendChild(lookChip);
-  // below the preset select, not above it: the first select in #dev stays the preset dropdown
+
+  // one main action; the rare ones (delete, the JSON pair) fold behind ···
+  const r2=document.createElement('div'); r2.className='ctl lookacts';
+  deleteBtn=mkBtn('delete',()=>{
+    if(activeList().startsWith('arb:')){ arb?.remove(); return; }     // taking a look out of an arboretum playlist is written to arboretum
+    const n=starName(getStored(), 'local', presetSel.value);
+    if(n===null){ alert("Built-in presets can't be deleted."); return; }
+    arb.deleteStar(n); refreshPresetSelect(DEFAULT_PRESET); });
+  const r3=document.createElement('div'); r3.className='ctl'; r3.hidden=true;
+  const rare=mkBtn('···',()=>{ r3.hidden=!r3.hidden; }); rare.title='delete, copy JSON, paste JSON';
+  const save=mkBtn('save',promptSave); save.className='main';
+  r2.append(save, playButton(), rare);
+  dev.appendChild(r2);
+  presetRows.save=r2;
+  r3.append(
+    deleteBtn,
+    mkBtn('copy JSON',()=>{ const txt=JSON.stringify(params,null,2);
+      if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).catch(()=>prompt('Copy JSON:',txt));
+      else prompt('Copy JSON:',txt); }),
+    mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
+      try{ const o=JSON.parse(txt); stopPlay(); applyParams(o.params||o); refreshPresetSelect(); }catch(_e){ alert('Invalid JSON'); } }));
+  dev.appendChild(r3);
+  presetRows.tools=r3;
+
+  // the playlist row comes after the look select in the DOM: the first select in #dev stays the look's
   playlistRow=document.createElement('div'); playlistRow.className='ctl select playlist-row'; playlistRow.hidden=true;
   playlistSel=document.createElement('select');
   playlistSel.addEventListener('change',()=>{
@@ -1091,43 +1252,26 @@ function buildPresetUI(){
   plusBtn=mkBtn('+',()=>arb?.create()); plusBtn.title='new playlist'; plusBtn.hidden=true;   // signed in to arboretum only
   playlistRow.append(playlistSel, plusBtn); dev.appendChild(playlistRow);
 
-  const r2=document.createElement('div'); r2.className='ctl';
-  deleteBtn=mkBtn('delete',()=>{
-    if(activeList().startsWith('arb:')){ arb?.remove(); return; }     // taking a look out of an arboretum playlist is written to arboretum
-    const n=starName(getStored(), 'local', presetSel.value);
-    if(n===null){ alert("Built-in presets can't be deleted."); return; }
-    arb.deleteStar(n); refreshPresetSelect(DEFAULT_PRESET); });
-  r2.append(
-    mkBtn('save',promptSave),
-    deleteBtn,
-    playButton());
-  dev.appendChild(r2);
-  presetRows.save=r2;
-
-  const r3=document.createElement('div'); r3.className='ctl';
-  r3.append(
-    mkBtn('copy JSON',()=>{ const txt=JSON.stringify(params,null,2);
-      if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).catch(()=>prompt('Copy JSON:',txt));
-      else prompt('Copy JSON:',txt); }),
-    mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
-      try{ const o=JSON.parse(txt); stopPlay(); applyParams(o.params||o); refreshPresetSelect(); }catch(_e){ alert('Invalid JSON'); } }));
-  dev.appendChild(r3);
-  presetRows.tools=r3;
+  // the experimental toggle is built here and laid at the very bottom of the panel, under the transition row (where that row is built)
+  devBeta=document.createElement('div'); devBeta.className='ctl toggle devbeta';
+  const blab=document.createElement('label'); blab.textContent=`show experimental looks (+${EXPERIMENTAL.length})`;
+  const binp=document.createElement('input'); binp.type='checkbox'; binp.checked=settings.showBeta;
+  binp.addEventListener('change',()=>setShowBeta(binp.checked));
+  devBeta.append(blab,binp); betaToggles.push(binp);
   refreshPresetSelect(landing());
 }
 
-// ---- dev panel reveal / dismiss / transient peek ---------------------------
+// ---- dev panel reveal / dismiss ---------------------------
 // On desktop the panel slides in after "feel" and D toggles it. On TOUCH there's no keyboard, so it
-// arrives hidden (the art stands alone) and is driven by canvas gestures: a double-tap toggles it, and a
-// press-and-hold "peeks" it away to glance at the art, sliding back on release. The slide reuses the
-// #dev.offscreen transform transition; the peek never sets `hidden`, so the panel's shown/dismissed
-// state survives a peek.
+// arrives hidden (the art stands alone) and a tap on the canvas toggles it (the zen strip fades and wakes instead,
+// as with D). The slide uses the #dev.offscreen transform transition.
 const coarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);   // touch / phone
+holdToSee(dev);                                    // the advanced panel clears for a held slider too
 const hint = document.getElementById('hint');
 // the mode ladder's three surfaces; everything below drives whichever one the mode says is active
 const MODE_ELS = { adv: dev, play, min: strip };
 function panelEl(){ return MODE_ELS[settings.mode] || play; }
-let peeking=false, panelTimer=0;
+let panelTimer=0;
 function slideInPanel(){
   if(document.body.classList.contains('intro')) return;   // the welcome owns the screen — no surface (D key included) until "feel"
   const el = panelEl();
@@ -1160,11 +1304,13 @@ function slideOutPanel(){
   panelTimer=setTimeout(()=>{ el.classList.add('hidden'); }, 600);  // ...then drop it once the .6s slide ends
 }
 function togglePanel(){ panelEl().classList.contains('hidden') ? slideInPanel() : slideOutPanel(); }
-function peekPanel(on){                            // transient: slide away to glance at the art, restore on release
-  const el = panelEl();
-  if(on){ if(el.classList.contains('hidden')) return;   // nothing to peek away when already dismissed
-          peeking=true; el.classList.add('offscreen'); }
-  else if(peeking){ peeking=false; el.classList.remove('offscreen'); }
+// D and a touch tap: in zen the strip lives by proximity, so toggling speaks that language: show = wake (as if hovered, with
+// the same short hold), hide = fade. Toggling `hidden` there would gate out the proximity/tap machinery (stripWake ignores
+// a hidden strip) and leave the strip unreachable by pointer.
+function toggleControls(){
+  if(settings.mode==='min' && !strip.classList.contains('hidden')){
+    if(strip.classList.contains('faded')) stripWake(); else strip.classList.add('faded');
+  } else togglePanel();
 }
 // step the ladder: hide whatever is up, swap the mode, slide the new surface in
 function setMode(mode){
@@ -1183,48 +1329,34 @@ function setMode(mode){
 }
 
 // Canvas pointer input. A MOUSE drags the sun (azimuth from x, elevation from y). A finger can't do that
-// and swipe, so TOUCH is swipe-nav instead: a vertical swipe steps presets (like ↑/↓), a horizontal drag
-// scrubs time-of-day live (the sun arcs across the day). Axis locks once the gesture clears a deadzone.
-// On TOUCH the panel is also gesture-driven: double-tap toggles it, press-and-hold peeks it away (above).
-const SWIPE_DEAD=12, SWIPE_STEP=45;                            // px: ignore taps; min vertical throw to count as a preset step
-const HOLD_MS=350, DOUBLE_MS=300;                              // ms: press-and-hold = peek; two taps within this = toggle
+// and swipe, so TOUCH is swipe-nav instead: a swipe on either axis steps presets on release (up/left = next,
+// down/right = previous, like ↑/↓ ← →) and a clean tap toggles the controls (the D key's own toggle). Axis locks
+// once the gesture clears a deadzone; nothing on touch writes the look but the step itself.
+const SWIPE_DEAD=12, SWIPE_STEP=45;                            // px: ignore taps; min throw on the locked axis to count as a preset step
 let dragging=false, px=0, py=0;
 let swipe=null;                                                // touch gesture in progress: {sx, sy, axis:null|'x'|'y'}
-let holdTimer=0, holdFired=false, lastTap=0;                   // touch panel gestures: peek timer + double-tap clock
 canvas.addEventListener('pointerdown',e=>{
   // tap the tree preview to PIN it big (tap again to unpin); otherwise begin a gesture
   if(showTree){ const r=canvas.getBoundingClientRect();
     if(eng.treeInsetHit({ x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height })){ treePinned=!treePinned; return; } }
-  if(e.pointerType==='touch'){
-    swipe={ sx:e.clientX, sy:e.clientY, axis:null }; holdFired=false;
-    holdTimer=setTimeout(()=>{ holdFired=true; if(swipe&&!swipe.axis) peekPanel(true); }, HOLD_MS);   // held still = peek
-  } else dragging=true;
-  px=e.clientX; py=e.clientY; canvas.setPointerCapture(e.pointerId); });
+  if(e.pointerType==='touch') swipe={ sx:e.clientX, sy:e.clientY, axis:null };
+  else dragging=true;
+  px=e.clientX; py=e.clientY;
+  try{ canvas.setPointerCapture(e.pointerId); }catch{ /* synthetic pointers (tests) have no active id — the gesture state above is already set */ } });
 canvas.addEventListener('pointerup',e=>{
   if(swipe){
-    clearTimeout(holdTimer); holdTimer=0;
-    if(peeking) peekPanel(false);                              // end a peek: slide the panel back
-    else if(swipe.axis==='y'){ const dy=e.clientY-swipe.sy; if(Math.abs(dy)>SWIPE_STEP) stepPreset(dy<0 ? 1 : -1); }  // vertical swipe = preset step
-    else if(!swipe.axis && !holdFired) handleTap();            // a clean quick tap → double-tap candidate (toggles the panel)
+    if(swipe.axis){ const d = swipe.axis==='x' ? e.clientX-swipe.sx : e.clientY-swipe.sy;
+      if(Math.abs(d)>SWIPE_STEP){ stepPreset(d<0 ? 1 : -1); showLookName(); } }   // up/left = next, down/right = previous
+    else toggleControls();                                     // a clean tap
     swipe=null;
   }
   dragging=false; });
-canvas.addEventListener('pointercancel',()=>{ clearTimeout(holdTimer); holdTimer=0; if(peeking) peekPanel(false); swipe=null; dragging=false; });
-function handleTap(){                                           // two taps within DOUBLE_MS toggle the panel (touch)
-  const now=Date.now();
-  if(now-lastTap < DOUBLE_MS){ lastTap=0; togglePanel(); } else lastTap=now;
-}
+canvas.addEventListener('pointercancel',()=>{ swipe=null; dragging=false; });
 canvas.addEventListener('pointermove',e=>{
   if(swipe){
-    if(peeking) return;                                        // mid-peek: hold still to look, ignore motion
-    const dx=e.clientX-swipe.sx, dy=e.clientY-swipe.sy;
-    if(!swipe.axis){ if(Math.hypot(dx,dy)<SWIPE_DEAD) return;
-      swipe.axis = Math.abs(dx)>Math.abs(dy) ? 'x' : 'y'; clearTimeout(holdTimer); holdTimer=0; }   // a swipe, not a hold
-    if(swipe.axis==='x'){                                      // scrub time of day live (~70% of the screen = a full day)
-      params.time_of_day = clamp(params.time_of_day + (e.clientX-px)*((19-5)/(window.innerWidth*0.7)), 5, 19);
-      updateSunFromTime(); syncControl('time_of_day');
-    }
-    px=e.clientX; py=e.clientY; return;                        // vertical is committed on release
+    if(!swipe.axis){ const dx=e.clientX-swipe.sx, dy=e.clientY-swipe.sy;
+      if(Math.hypot(dx,dy)>=SWIPE_DEAD) swipe.axis = Math.abs(dx)>Math.abs(dy) ? 'x' : 'y'; }
+    return;                                                    // the step is committed on release
   }
   if(!dragging) return;
   stopPlay(); chipSoon();
@@ -1251,8 +1383,8 @@ canvas.addEventListener('wheel', e=>{
   params.view_extent_m = clamp(params.view_extent_m * Math.exp(e.deltaY*0.0015), 0.5, 40);
   syncControl('view_extent_m');
 }, { passive:false });
-// browser fullscreen, on and off (webkit fallback for Safari): F, and a double-click on the picture. On touch a double-tap is the
-// panel's gesture, so there the double-click (which a double-tap also fires) is left alone.
+// browser fullscreen, on and off (webkit fallback for Safari): F, and a double-click on the picture. On touch a tap is the
+// controls' toggle, so there the double-click (which a double-tap also fires) is left alone.
 function toggleFullscreen(){
   const el=document.documentElement, fsEl=document.fullscreenElement||document.webkitFullscreenElement;
   if(fsEl){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
@@ -1266,9 +1398,18 @@ function pointerMoved(){ canvas.classList.remove('still'); clearTimeout(stillTim
 canvas.addEventListener('pointermove', pointerMoved);
 canvas.addEventListener('pointerdown', pointerMoved);
 canvas.addEventListener('pointerleave', () => { clearTimeout(stillTimer); canvas.classList.remove('still'); });
-// on a touch device the keyboard / drag hints don't apply — show the swipe + panel gestures instead
+// on a touch device the keyboard / drag hints don't apply — the legend is the two gestures (shown once, on the first arrival: arrive())
 if(coarse)
-  hint.innerHTML = 'swipe <b>↕</b> scenes · <b>↔</b> time · <b>double-tap</b> panel · <b>hold</b> peek';
+  hint.innerHTML = 'swipe · another place &nbsp;·&nbsp; tap · the light';
+// the name of the look a swipe landed on passes across the top (touch has no preset row in sight)
+const lookNameEl = document.getElementById('lookName');
+let lookNameTimer=0;
+function showLookName(){
+  if(!coarse || !lookNameEl) return;
+  lookNameEl.textContent = entryName(stateNow(), getStored(), activeList(), presetSel.value);
+  lookNameEl.classList.add('show');
+  clearTimeout(lookNameTimer); lookNameTimer=setTimeout(()=>lookNameEl.classList.remove('show'), 2500);
+}
 // ---- arrow-key scene stepping: prev/next preset with a cloud-bloom transition (spec §9). The dropdown
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
@@ -1284,12 +1425,7 @@ let showLeaf=false, leaf=null;
 window.addEventListener('keydown',e=>{
   const k=e.key;
   if(k==='d'||k==='D'){
-    // in zen the strip lives by proximity, so D speaks that language: show = wake (as if hovered, with the
-    // same short hold), hide = fade. Toggling `hidden` here would gate out the proximity/tap machinery and
-    // leave the strip unreachable by pointer.
-    if(settings.mode==='min' && !strip.classList.contains('hidden')){
-      if(strip.classList.contains('faded')) stripWake(); else strip.classList.add('faded');
-    } else togglePanel();
+    toggleControls();
     return;
   }
   if((e.metaKey||e.ctrlKey) && (k==='s'||k==='S')){                         // ⌘S / Ctrl+S: save, not the browser's save-page
@@ -1324,7 +1460,7 @@ document.addEventListener('mouseleave',()=>{ treePointer=null; });
 // ---- per-frame overlays: reflect the engine's drift phase, draw the source
 // inset (when the panel is open), and update the HUD. ------------------------
 eng.onFrame = ()=> {
-  tickTween();
+  tickTween(); trySeasonTick();
   if(params.drift_auto) syncControl('drift_phase');
   refreshGates();               // a transition, a macro or a preset can flip a mode as readily as the row itself; the signature check makes the miss cheap
   const devUp = !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');   // a sliding-out panel counts as gone
@@ -1578,6 +1714,7 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
   const val=document.createElement('span'); val.className='val'; val.textContent=transDur.toFixed(1);
   inp.addEventListener('input',()=>{ transDur=parseFloat(inp.value); val.textContent=transDur.toFixed(1); });
   r.append(lab,inp,val); dev.appendChild(r);
+  dev.appendChild(devBeta);                        // the experimental toggle (buildPresetUI), under everything
 })();
 
 // ===========================================================================
@@ -1585,7 +1722,7 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
 // star look) under an intro overlay. "feel" un-dims the canvas and cloud-bloom
 // crossfades to the editor's default look. On desktop the dev panel then slides
 // in (D toggles it thereafter); on TOUCH it stays hidden — the art stands alone
-// until a double-tap brings it up (press-and-hold peeks; spec §9).
+// until a tap brings it up (spec §9).
 // An arboretum link (#arboretum=…, #arboretum-playlist=…) changes where it lands: on the look the link brought in, or on
 // the first item of the playlist it opened, which then plays (editor-integration-design §5). The link's fetch starts as
 // soon as arboretum mounts, so it is usually done by "feel"; if not, the crossfade waits for it, five seconds at most.
@@ -1598,6 +1735,7 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
   function arrive(){                                 // reveal the mode's surface — only once the welcome crossfade has SETTLED
     if(eng.trans.active && performance.now()<arriveBy){ setTimeout(arrive, 500); return; }   // the tier clock is frame-clamped, so wall time can stretch; wait it out, don't guess it
     slideInPanel(); stripWake();
+    if(coarse && !settings.sawTouchHint){ settings.sawTouchHint=true; saveSettings(); showHint(); }   // the touch legend, once ever
   }
   // `opened` is what arboretum.js made of the link: { value } (a ★ in all looks) | { list, value, play } | { failed } | null (no link, or arboretum is off)
   function land(opened){

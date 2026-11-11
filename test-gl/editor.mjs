@@ -174,16 +174,22 @@ try {
   const n0 = await optCount();
   check('experimental looks hidden by default', n0 === Object.keys(PRESETS).length - EXPERIMENTAL.length, `built-ins listed: ${n0}`);
 
-  // the playful weather macro drives cloud_thickness (visible in the advanced slider)
+  // the playful sidebar's rows, top to bottom: the six dials, the caption, the actions, "more" (closed), then the list and the experimental toggle
+  const playRows = await page.$eval('#play', (el) => [...el.children].slice(2).map((c) => c.classList.contains('try') ? c.querySelector('.name').textContent : c.classList.contains('cap') ? 'cap' : c.classList.contains('acts') ? 'acts:' + [...c.querySelectorAll('button')].map((b) => b.textContent).join('|') : c.tagName === 'DETAILS' ? 'more' : c.querySelector('select') ? 'select' : c.querySelector('label')?.textContent.replace(/ \(\+\d+\)$/, '')));
+  check('the playful sidebar runs the six dials, the caption, the actions, more, the look list and the experimental toggle (no headings)',
+    playRows.join() === 'focus,cloudiness,sun,season,density,time,cap,acts:\u21ba as it was|\u2684 new leaves,more,select,experimental looks' && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
+  const moreRows = await page.$eval('#play details.more', (d) => [...d.children].slice(1).map((c) => c.classList.contains('pad') ? 'pad' : c.querySelector('label').textContent));
+  check('"more" holds haze, sparkle, trees and the wind pad, and starts closed', moreRows.join() === 'haze,sparkle,trees,pad' && (await page.$eval('#play details.more', (d) => !d.open)), moreRows.join());
+  await page.$eval('#play details.more', (d) => { d.open = true; });   // the pad and the macro sliders live inside it
+  // the cloudiness dial drives cloud_thickness (visible in the advanced slider)
   await page.$eval('#play', (el) => {
-    const rows = [...el.querySelectorAll('.ctl')];
-    const row = rows.find((r) => r.querySelector('label')?.textContent === 'weather');
+    const row = [...el.querySelectorAll('.ctl.try')].find((r) => r.querySelector('.name').textContent === 'cloudiness');
     const inp = row.querySelector('input');
-    inp.value = '1';
+    inp.value = '0.55';
     inp.dispatchEvent(new Event('input', { bubbles: true }));
   });
   const cv = await cloudVal();
-  check('weather macro writes cloud_thickness', Math.abs(parseFloat(cv) - 0.55) < 1e-6, `cloud slider now ${cv}`);
+  check('the cloudiness dial writes cloud_thickness', Math.abs(parseFloat(cv) - 0.55) < 1e-6, `cloud slider now ${cv}`);
 
   // the wind pad writes strength + pattern
   const windVal = () => page.$eval('#dev', (dev) => {
@@ -192,6 +198,7 @@ try {
     return row.querySelector('input').value;
   });
   const pad = await page.$('#play .pad');
+  await pad.scrollIntoViewIfNeeded();   // the dials above push the pad below a 480px-tall sidebar's fold
   const box = await pad.boundingBox();
   let wv = '';
   for (let tries = 0; tries < 5; tries++) {   // input dispatch is main-thread; a long GL frame can swallow a single click
@@ -203,25 +210,23 @@ try {
   }
   check('wind pad writes wind_strength', parseFloat(wv) > 1.5, `strength now ${wv}`);
 
-  // season macro: the slider is a TARGET the bus eases toward on the frame clock (no snap, no transition, no error)
-  const densNow = () => page.$eval('#dev', (dev) => {
-    const rows = [...dev.querySelectorAll('.ctl')];
-    return parseFloat(rows.find((r) => r.querySelector('label')?.textContent === 'density').querySelector('input').value);
-  });
-  const dens0 = await densNow();
-  await page.$eval('#play', (el) => {
-    const rows = [...el.querySelectorAll('.ctl')];
-    const row = rows.find((r) => r.querySelector('label')?.textContent === 'season');
-    const inp = row.querySelector('input');
-    inp.value = '0';
-    inp.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  const densRight = await densNow();
-  check('season macro tweens: right after the input the density has not snapped', Math.abs(densRight - 0.45) > 1e-6 && Math.abs(densRight - dens0) < 0.5, `density ${dens0} -> ${densRight} (target 0.45)`);
-  // the ease advances at most 0.1 s of clock per frame (a slept tab must not jump it), and SwiftShader frames are long: wait out the frames, not the seconds
-  let dens = await densNow();
-  for (let tries = 0; tries < 240 && Math.abs(dens - 0.45) > 1e-6; tries++) { await page.waitForTimeout(500); dens = await densNow(); }
-  check('season macro (input) tweens to sparse spring', Math.abs(dens - 0.45) < 1e-6, `density ${dens}`);
+  // the season dial writes phenology (paced by the frame clock while it moves, exact on release); the density dial scales foliage_density from the look's own
+  const devVal = (lab) => page.$eval('#dev', (dev, l) => parseFloat([...dev.querySelectorAll('.ctl')].find((r) => r.querySelector('label')?.textContent === l).querySelector('input').value), lab);
+  const dial = (name, v) => page.$eval('#play', (el, [n, val]) => {
+    const inp = [...el.querySelectorAll('.ctl.try')].find((r) => r.querySelector('.name').textContent === n).querySelector('input');
+    inp.value = String(val); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));   // the release: the season dial lands exactly there
+  }, [name, v]);
+  await dial('season', 0.9);
+  const ph = await devVal('phenology');
+  check('the season dial writes phenology', Math.abs(ph - 0.9) < 1e-6, `phenology ${ph}`);
+  const dens0 = await devVal('density');
+  await dial('density', 0.6);
+  const dens1 = await devVal('density');
+  check('the density dial scales foliage density down', dens1 < dens0, `density ${dens0} -> ${dens1}`);
+  // moving a dial says a sentence on the panel's caption, lit for a moment
+  await dial('cloudiness', 0.3);
+  const cap = await page.$eval('#play .cap', (c) => ({ text: c.textContent, on: c.classList.contains('on') }));
+  check('moving the cloudiness dial puts a sentence in the playful caption, lit', cap.text.length > 0 && cap.on, JSON.stringify(cap));
 
   // experimental toggle reveals every built-in look
   await page.$eval('#play', (el) => {
@@ -243,10 +248,10 @@ try {
   await page.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); s.value = 'canopy 1'; s.dispatchEvent(new Event('change', { bubbles: true })); });
   const gates = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('#play .ctl')];
-    const state = (lbl) => { const r = rows.find((q) => q.querySelector('label')?.textContent === lbl); return r.querySelector('input').disabled; };
-    return { haze: state('haze'), weather: state('weather') };
+    const state = (lbl) => { const r = rows.find((q) => (q.querySelector('label') ?? q.querySelector('.name'))?.textContent === lbl); return r.querySelector('input').disabled; };
+    return { haze: state('haze'), cloudiness: state('cloudiness') };
   });
-  check('haze gates off on the sky look, weather stays live', gates.haze === true && gates.weather === false, JSON.stringify(gates));
+  check('haze gates off on the sky look, cloudiness stays live', gates.haze === true && gates.cloudiness === false, JSON.stringify(gates));
   await page.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); s.value = 'memories'; s.dispatchEvent(new Event('change', { bubbles: true })); });
 
   // preset stepper advances and the name label follows
@@ -258,9 +263,32 @@ try {
 
   // the ladder: advanced, back to playful, down to zen
   await page.$eval('#dev', () => {});
-  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('advanced')).click());
+  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('everything')).click());
   await page.waitForSelector('#dev:not(.hidden)');
   check('ladder: playful -> advanced', await page.$eval('#play', (e) => e.classList.contains('hidden')));
+
+  // THE LOOK HEAD (advanced): ‹ name › over the look select, whose name text follows the select; the rare actions fold behind ···
+  const headStruct = await page.$eval('#dev', (dev) => ({
+    kids: [...dev.children].slice(0, 4).map((c) => c.className.split(' ')[0] || c.tagName),
+    beta: !!dev.querySelector(':scope > .devbeta label')?.textContent.startsWith('show experimental looks'),
+    h2: [...dev.querySelectorAll(':scope > h2')].filter((h) => h.textContent === 'Presets').length,   // the Transition heading further down is not the presets'
+    firstSelectInPick: dev.querySelector('select').parentElement.classList.contains('pick'),
+    acts: [...dev.querySelectorAll('.lookacts button')].map((b) => b.textContent + (b.classList.contains('main') ? '*' : '')).join('|'),
+  }));
+  check('advanced: no Presets heading, the look head, chip and actions row lead, the experimental toggle (show experimental looks) sits in the panel',
+    headStruct.h2 === 0 && headStruct.beta && headStruct.firstSelectInPick && headStruct.kids.join() === 'ctl,lookhead,look-chip,ctl' && /^save\*\|.*\|\u00b7\u00b7\u00b7$/.test(headStruct.acts), JSON.stringify(headStruct));
+  const headName = () => page.$eval('#dev', (dev) => ({ name: dev.querySelector('.lookhead .name').textContent, sel: dev.querySelector('select').selectedOptions[0].textContent, value: dev.querySelector('select').value }));
+  const hn0 = await headName();
+  check('the look head names the selected look', hn0.name === hn0.sel.replace(/^[\u2022\u25e6] /, '') || hn0.name === hn0.sel, JSON.stringify(hn0));
+  await page.$eval('#dev .lookhead button:last-child', (b) => b.click());
+  let headStepped = false; for (let i = 0; i < 30 && !headStepped; i++) { await page.waitForTimeout(400); headStepped = (await headName()).value !== hn0.value; }
+  const hn1 = await headName();
+  check('clicking \u203a in the look head changes the select and the name follows', headStepped && hn1.name !== hn0.name, JSON.stringify({ hn0, hn1 }));
+  const toolsHidden = () => page.$eval('#dev .lookacts', (r) => r.nextElementSibling.hidden);
+  const toolsBefore = await toolsHidden();
+  await page.$eval('#dev .lookacts', (r) => [...r.querySelectorAll('button')].find((b) => b.textContent === '\u00b7\u00b7\u00b7').click());
+  const toolsTexts = await page.$eval('#dev .lookacts', (r) => ({ hidden: r.nextElementSibling.hidden, texts: [...r.nextElementSibling.querySelectorAll('button')].map((b) => b.textContent).join('|') }));
+  check('\u00b7\u00b7\u00b7 reveals the row holding delete, copy JSON and paste JSON (hidden before)', toolsBefore === true && toolsTexts.hidden === false && toolsTexts.texts === 'delete|copy JSON|paste JSON', JSON.stringify({ toolsBefore, toolsTexts }));
 
   // THE AREAS (Part B): the advanced panel is eleven collapsible areas, grouped by the pass you make, each remembering whether it is open. The first <select> in #dev stays the preset dropdown.
   const areas = await page.$$eval('#dev > details > summary.sec', (ss) => ss.map((s) => ({ name: s.textContent, open: s.parentElement.open })));
@@ -520,13 +548,13 @@ try {
   let fillShut = false;
   for (let i = 0; i < 30 && !fillShut; i++) { await page.waitForTimeout(400); fillShut = (await fillShown()).every((v) => v === false); }
   check('and shutting it hides them again', fillShut, `${await fillShown()}`);
-  await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('playful')).click());
+  await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('less')).click());
   await page.waitForSelector('#play:not(.hidden)');
   check('ladder: advanced -> playful', await page.$eval('#dev', (e) => e.classList.contains('hidden')));
-  await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('playful')).click());
+  await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('less')).click());
   await page.waitForSelector('#play:not(.hidden)');
   check('strip painted gone while in playful', await page.$eval('#strip', (e) => getComputedStyle(e).display === 'none'));
-  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('zen')).click());
+  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('less')).click());
   await page.waitForSelector('#strip:not(.hidden)');
   await page.waitForTimeout(700);
   check('ladder: playful -> zen strip', true);
@@ -546,6 +574,8 @@ try {
   const wide = await page.$eval('#strip', (e) => e.classList.contains('wide') && getComputedStyle(e).display === 'flex');
   const stripH = await page.$eval('#strip', (e) => e.offsetHeight);
   check('desktop strip is one horizontal bar', wide && stripH < 70, `flex=${wide} h=${stripH}px`);
+  const stripRows = await page.$eval('#strip', (el) => [...el.children].slice(1).map((c) => (c.querySelector('label') ?? c.querySelector('.name'))?.textContent));
+  check('the zen strip holds focus, cloudiness and the time dial after the preset row', stripRows.join() === 'focus,cloudiness,time', stripRows.join());
 
   // after the arrival hold, moving the cursor far fades it; coming near revives it
   await page.waitForTimeout(2700);                                  // outlast STRIP_HOLD_MS
@@ -728,15 +758,15 @@ try {
   const playRow = await lowestRow('#play');
   const playTop = playRow && await topAt(playRow.x, playRow.y);
   check('the playful panel\'s lowest row under the inset is the control, not #leaf', playTop === 'play', JSON.stringify({ ...playRow, top: playTop }));
-  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('advanced')).click());
+  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('everything')).click());
   await page.waitForSelector('#dev:not(.hidden)', { timeout: 15000 });
   await slidIn('dev');
   const devRow = await lowestRow('#dev');
   const devTop = devRow && await topAt(devRow.x, devRow.y);
   check('the advanced panel\'s lowest row under the inset is the control, not #leaf', devTop === 'dev', JSON.stringify({ ...devRow, top: devTop }));
-  await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('playful')).click());
+  await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('less')).click());
   await page.waitForSelector('#play:not(.hidden)');
-  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('zen')).click());
+  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('less')).click());
   await page.waitForSelector('#strip:not(.hidden)');
   await page.waitForTimeout(700);
   await page.mouse.click(big.l + 40, big.t + 30);
@@ -1049,7 +1079,7 @@ try {
       await page4.click('#feel');
       await page4.waitForSelector('#play:not(.hidden), #dev:not(.hidden)', { timeout: 60000 });   // the mode you left is the mode you come back to
       await page4.waitForTimeout(800);
-      if (await page4.$eval('#dev', (e) => e.classList.contains('hidden'))) await page4.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('advanced')).click());
+      if (await page4.$eval('#dev', (e) => e.classList.contains('hidden'))) await page4.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('everything')).click());
       await page4.waitForSelector('#dev:not(.hidden)', { timeout: 15000 });
     };
     // switching list is asynchronous (a folder is fetched first): the select shows the new value at once, so wait for the editor to have moved
@@ -1404,15 +1434,15 @@ try {
       check('play starts by itself: within the dwell the next item is on', second, await devValue(pg));
       const surfaces = await pg.evaluate(() => Object.fromEntries(['play', 'dev', 'strip'].map((id) => [id, [...document.querySelectorAll(`#${id} .playstop`)].map((b) => `${getComputedStyle(b).display !== 'none'}:${b.textContent}`)])));
       check('while it plays the ■ is in the playful sidebar and the advanced panel, and the zen strip has none', surfaces.play.length === 1 && surfaces.play[0] === 'true:■' && surfaces.dev.length === 1 && surfaces.dev[0] === 'true:■' && surfaces.strip.length === 0, JSON.stringify(surfaces));
-      // a weather-slider edit stops it
+      // a cloudiness-dial edit stops it
       await pg.$eval('#play', (el) => {
-        const inp = [...el.querySelectorAll('.ctl')].find((r) => r.querySelector('label')?.textContent === 'weather').querySelector('input');
+        const inp = [...el.querySelectorAll('.ctl.try')].find((r) => r.querySelector('.name').textContent === 'cloudiness').querySelector('input');
         inp.value = '0.3'; inp.dispatchEvent(new Event('input', { bubbles: true }));
       });
       const at = await devValue(pg);
       await pg.waitForTimeout(3800);
       const btns = await pg.evaluate(() => [...document.querySelectorAll('.playstop')].map((b) => b.textContent).join());
-      check('a weather-slider edit stops play: the item stays, and the buttons read ▶', (await devValue(pg)) === at && btns === '▶,▶', `${at} -> ${await devValue(pg)} ${btns}`);
+      check('a cloudiness-dial edit stops play: the item stays, and the buttons read ▶', (await devValue(pg)) === at && btns === '▶,▶', `${at} -> ${await devValue(pg)} ${btns}`);
       // ‹ steps back, and the dev select follows
       await pg.$eval('#play .preset button:nth-child(1)', (b) => b.click());
       const back = at === '1' ? '0' : '1';
@@ -1448,8 +1478,89 @@ try {
       await ctx.close();
     }
   }
+  // ---- TOUCH: a context whose (pointer: coarse) matches. Swipes on either axis step the look and write nothing else, a clean tap toggles
+  // the strip's fade (never `hidden`), the swiped-to look's name passes across the top, and the legend shows once on the first arrival ----
+  {
+    const ctxT = await browser.newContext({ viewport: { width: 390, height: 700 }, hasTouch: true, isMobile: true });
+    const pgT = await ctxT.newPage();
+    pgT.setDefaultTimeout(30000);
+    pgT.on('pageerror', (e) => errors.push(`[after check ${results.length}] touch page: ${e.message}`));
+    pgT.on('console', (m) => { if (m.type() === 'error') errors.push(`[after check ${results.length}] touch page console: ${m.text()}`); });
+    await pgT.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'load' });
+    check('the touch context is coarse', await pgT.evaluate(() => matchMedia('(pointer: coarse)').matches));
+    await pgT.click('#feel');
+    await pgT.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
+    const legend = await pgT.evaluate(() => ({ gone: document.getElementById('hint').classList.contains('gone'), text: document.getElementById('hint').textContent, saw: JSON.parse(localStorage.getItem('komorebi.editor') || '{}').sawTouchHint }));
+    check('on first arrival the touch legend is shown, and remembered', !legend.gone && legend.text === 'swipe · another place \u00a0·\u00a0 tap · the light' && legend.saw === true, JSON.stringify(legend));
+    await pgT.waitForTimeout(1200);
+    // a touch gesture as real pointer events on #gl (synthetic pointers have no active id: the handler's setPointerCapture is guarded)
+    const gesture = (from, to) => pgT.evaluate(([a, b]) => {
+      const gl = document.getElementById('gl'), ev = (type, p) => gl.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: 7, isPrimary: true, bubbles: true, cancelable: true, clientX: p[0], clientY: p[1] }));
+      ev('pointerdown', a);
+      for (let i = 1; i <= 4; i++) ev('pointermove', [a[0] + (b[0] - a[0]) * i / 4, a[1] + (b[1] - a[1]) * i / 4]);
+      ev('pointerup', b);
+    }, [from, to]);
+    const look = () => pgT.$eval('#dev select', (s) => s.value);
+    const timeH = () => pgT.$eval('#dev', (dev) => [...dev.querySelectorAll('.ctl')].find((r) => r.querySelector('label')?.textContent === 'time (h)').querySelector('input').value);
+    const t0 = await timeH(), look0 = await look();
+    await gesture([300, 350], [100, 350]);   // left = next
+    const movedX = await poll(async () => (await look()) !== look0);
+    check('a horizontal swipe steps the look and leaves time_of_day as it was', movedX && (await timeH()) === t0, `${look0} -> ${await look()}, time ${t0} -> ${await timeH()}`);
+    const nameShown = await pgT.evaluate(() => { const n = document.getElementById('lookName'); return { show: n.classList.contains('show'), text: n.textContent, row: document.querySelector('#strip .preset .name').textContent }; });
+    check('and the look\'s name passes across the top, the name the preset row shows', nameShown.show && nameShown.text !== '' && nameShown.text === nameShown.row, JSON.stringify(nameShown));
+    const look1 = await look();
+    await gesture([200, 500], [200, 250]);   // up = next
+    check('a vertical swipe steps the look', await poll(async () => (await look()) !== look1), `${look1} -> ${await look()}`);
+    const look2 = await look();
+    await gesture([100, 350], [300, 350]);   // right = previous
+    check('a swipe to the right steps back', await poll(async () => (await look()) === look1), `${look2} -> ${await look()}, wanted ${look1}`);
+    // a tap toggles the strip's fade, never `hidden`
+    const stripState = () => pgT.$eval('#strip', (e) => ({ faded: e.classList.contains('faded'), hidden: e.classList.contains('hidden') }));
+    if ((await stripState()).faded) await gesture([200, 150], [200, 150]);
+    const shown = await stripState();
+    await gesture([200, 150], [200, 150]);
+    const hid = await stripState();
+    await gesture([200, 150], [200, 150]);
+    const back = await stripState();
+    check('a single tap hides the visible strip and a second brings it back, never `hidden`',
+      !shown.faded && hid.faded && !back.faded && !shown.hidden && !hid.hidden && !back.hidden, JSON.stringify({ shown, hid, back }));
+    const touchStrip = await pgT.$eval('#strip', (el) => ({
+      one: el.classList.contains('one'), cap: !!el.querySelector(':scope > .cap'),
+      dials: [...el.querySelectorAll('.ctl.try')].map((r) => r.querySelector('.name').textContent + (r.classList.contains('out') ? ':out' : ':in')).join(),
+      tabs: [...el.querySelectorAll('.tabs button')].map((b) => b.textContent).join(),
+      presetShown: getComputedStyle(el.querySelector('.preset')).display !== 'none',
+    }));
+    check('the touch strip is one dial at a time: a caption, five dials (focus out front), the tab row, no preset row',
+      touchStrip.one && touchStrip.cap && touchStrip.dials === 'focus:in,cloudiness:out,sun:out,season:out,time:out' && touchStrip.tabs === 'focus,clouds,sun,season,time,\u21ba,\uff0b' && !touchStrip.presetShown, JSON.stringify(touchStrip));
+    await pgT.evaluate(() => [...document.querySelectorAll('#strip .tabs button')].find((b) => b.textContent === 'clouds').click());
+    const afterTab = await pgT.$eval('#strip', (el) => [...el.querySelectorAll('.ctl.try')].filter((r) => !r.classList.contains('out')).map((r) => r.querySelector('.name').textContent).join());
+    check('a tab shows its dial', afterTab === 'cloudiness', afterTab);
+    // a finger held on a slider in the strip or the playful sidebar clears the rest of that panel (.holding on the panel, .held on its row), and lifting restores it
+    const holdCheck = async (sel) => {
+      const fire = (type) => pgT.evaluate(([q, t]) => { const i = document.querySelector(`${q} input[type=range]`); i.dispatchEvent(new PointerEvent(t, { pointerType: 'touch', pointerId: 9, isPrimary: true, bubbles: true, cancelable: true })); return i.closest('.ctl').classList.contains('held'); }, [sel, type]);
+      const state = () => pgT.$eval(sel, (e) => e.classList.contains('holding'));
+      const downHeld = await fire('pointerdown'), during = await state();
+      await fire('pointerup');
+      return { during, downHeld, after: await state() };
+    };
+    const hs = await holdCheck('#strip');
+    check('holding a strip slider adds .holding (and .held on its row) and lifting removes it', hs.during && hs.downHeld && !hs.after, JSON.stringify(hs));
+    await pgT.evaluate(() => [...document.querySelectorAll('#strip .preset .more')][0].click());
+    await pgT.waitForSelector('#play:not(.hidden)');
+    const hp = await holdCheck('#play');
+    check('holding a play slider adds .holding (and .held on its row) and lifting removes it', hp.during && hp.downHeld && !hp.after, JSON.stringify(hp));
+    // the guarded time dial: at 0 it writes the look's own sun exactly; at its left end the elevation stays at or above 15
+    const sunNow = () => pgT.$eval('#dev', (dev) => { const v = (l) => parseFloat([...dev.querySelectorAll('.ctl')].find((r) => r.querySelector('label')?.textContent === l).querySelector('input').value); return { az: v('azim °'), el: v('elev °') }; }).catch(() => null);
+    const timeDial = (v) => pgT.evaluate((val) => { const i = [...document.querySelectorAll('#play .ctl.try')].find((r) => r.querySelector('.name').textContent === 'time').querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+    const sun0 = await sunNow();
+    await timeDial(-2); const sunL = await sunNow();
+    await timeDial(0); const sun00 = await sunNow();
+    check('the time dial at 0 leaves the look\'s sun as it was, and at its left end keeps elevation at 15 or more',
+      sun0 && sun00 && sun0.az === sun00.az && sun0.el === sun00.el && sunL.el >= 15 - 1e-9 && sunL.az !== sun0.az, JSON.stringify({ sun0, sunL, sun00 }));
+    await ctxT.close();
+  }
 } catch (e) {
-  check('smoke run', false, e.message.split('\n')[0]);
+  check('smoke run', false, e.message.split('\n')[0] + ' @ ' + (String(e.stack).match(/editor\.mjs:\d+/g) || []).join(' '));
 }
 
 if (errors.length) { console.log('PAGE ERRORS:'); for (const e of errors) console.log(`  ${e}`); }

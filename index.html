@@ -8,7 +8,7 @@
   :root { color-scheme: dark; }
   html,body { margin:0; height:100%; background:#0a0d0a; overflow:hidden; }
   #gl { display:block; width:100vw; height:100vh; cursor:crosshair; touch-action:none;   /* none: let swipe gestures through, no scroll/pull-to-refresh */
-        -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }   /* and no iOS text-selection callout on the press-and-hold peek */
+        -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }   /* and no iOS text-selection callout on a held finger */
   #hud {                                              /* bottom-right, above #hint — clear of the left dev panel */
     position:fixed; right:10px; bottom:38px; text-align:right; font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;
     color:#9fb89f; background:rgba(0,0,0,.35); padding:6px 8px; border-radius:6px;
@@ -34,6 +34,20 @@
   #dev details[open] > summary::before { content:'▾ '; }
   #dev summary.sec { font-size:11px; margin:14px 0 4px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
   #dev summary.adv { font-size:11px; margin:8px 0 3px; color:#6f8a6f; }
+  /* the look as the advanced panel's heading: ‹ name ›, the name being the dropdown (the select lies over it, unseen) */
+  #dev .lookhead { display:flex; align-items:center; gap:8px; margin:10px 0 2px; }
+  #dev .lookhead button { flex:0 0 auto; background:none; color:#aab5a2; border:1px solid rgba(241,231,207,.18); border-radius:16px; padding:3px 12px; font-size:15px; cursor:pointer; }
+  #dev .lookhead .pick { position:relative; flex:1; min-width:0; text-align:center; }
+  #dev .lookhead .name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f1e7cf;
+    font:italic 400 18px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
+  #dev .lookhead .name::after { content:' ▾'; font-size:11px; font-style:normal; color:#6f7a6b; }
+  #dev .lookhead select { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+  #dev .look-chip { font-size:11px; color:#9fb89f; margin:0 0 8px; text-align:center; word-break:break-word; }
+  #dev .lookacts button.main { flex:1; background:rgba(241,231,207,.1); color:#f1e7cf; border-color:rgba(241,231,207,.35); padding:5px 8px; }
+  #dev .modes button { background:none; color:#aab5a2; border:1px solid rgba(241,231,207,.18); border-radius:16px; padding:4px 12px; cursor:pointer;
+    font:italic 13px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }   /* the same "less" as the playful sidebar's */
+  #dev .modes button:hover { color:#f1e7cf; background:rgba(241,231,207,.08); }
+  #dev .devbeta { margin:22px 0 6px; } #dev .devbeta label { flex:1; color:#6f8a6f; }
   .ctl { display:flex; align-items:center; gap:6px; margin:3px 0; }
   /* an INERT row (one this look's camera never reads) hides itself; .ctl's display:flex would otherwise
      out-rank the UA's [hidden] rule, and an empty section takes its heading with it */
@@ -54,7 +68,7 @@
     overflow-y:auto; padding:12px 14px 40px; background:rgba(8,12,8,.78);
     backdrop-filter:blur(6px); border-right:1px solid #1c2a1c;
     font:12px ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
-    transition: transform .6s cubic-bezier(.22,.61,.36,1);
+    transition: transform .6s cubic-bezier(.22,.61,.36,1), background-color .2s, border-color .2s;
   }
   #play.hidden { display:none; }
   #play.offscreen { transform:translateX(-100%); }
@@ -72,6 +86,17 @@
   #play .preset .name { flex:1; text-align:left; color:#e8d9a8; font-size:13px; overflow:hidden;
     text-overflow:ellipsis; white-space:nowrap; }
   #play .preset button { flex:0 0 auto; font-size:14px; padding:4px 12px; }
+  /* the try-out dials: end words above, a tick at the look's own value on the track; in the playful sidebar and the zen strip */
+  :is(#play,#strip) .try .ends { display:flex; justify-content:space-between; font-style:italic; font-size:10px; color:#6f8a6f; }
+  :is(#play,#strip) .try .name { color:#9fb89f; }
+  :is(#play,#strip) .try .track { position:relative; }
+  :is(#play,#strip) .try .track input { display:block; width:100%; }
+  :is(#play,#strip) .try .tick { position:absolute; top:50%; width:2px; height:8px; margin:-4px 0 0 -1px; background:#e8d9a8; pointer-events:none; }
+  #play .ctl.try { display:block; }
+  #strip .ctl.try { display:grid; grid-template-columns:auto 1fr; align-items:center; column-gap:8px; }   /* name and end words share a line, so the strip stays one slim row */
+  #strip .ctl.try .track { grid-column:1 / -1; }
+  :is(#play,#strip) .try.off input { pointer-events:none; }
+  #play .tryreset { background:rgba(26,42,26,.7); color:#9fb89f; border:1px solid #2c452c; border-radius:6px; padding:4px 10px; cursor:pointer; }
   /* the wind pad: x = gust character, y = strength */
   #play .pad { position:relative; height:120px; margin:6px 0; border-radius:8px;
     background:linear-gradient(to top, rgba(28,42,28,.7), rgba(16,24,15,.7)); border:1px solid #243;
@@ -87,8 +112,39 @@
     background:rgba(8,12,8,.55); backdrop-filter:blur(8px);
     border:1px solid rgba(28,42,28,.8); border-radius:14px;
     font:12px ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
-    transition: opacity .3s ease, transform .6s cubic-bezier(.22,.61,.36,1);   /* appears quickly... */
+    transition: opacity .3s ease, transform .6s cubic-bezier(.22,.61,.36,1), background-color .2s, border-color .2s;   /* appears quickly... */
   }
+  /* touch: a finger on a slider clears the rest of the panel so the picture shows (children keep their place; only the held row stays) */
+  /* the playful sidebar and the dials speak in the welcome's face and warm light, not the terminal's */
+  #play { font:14px/1.3 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; color:#e9ecdf; background:rgba(14,17,13,.76); border-right:1px solid rgba(241,231,207,.14); }
+  #play .ctl label { color:#aab5a2; font-style:italic; }
+  #play input[type=range] { accent-color:#f1e7cf; height:26px; }
+  #play .modes button, #play .preset button, #play .ctl button, #play .tryreset { background:none; color:#aab5a2; border:1px solid rgba(241,231,207,.18);
+    border-radius:16px; padding:4px 12px; cursor:pointer; font:italic 13px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
+  #play .modes button:hover, #play .ctl button:hover { color:#f1e7cf; background:rgba(241,231,207,.08); }
+  #play .preset .name { color:#f1e7cf; font-style:italic; font-size:16px; }
+  #play .ctl.try { display:grid; grid-template-columns:1fr auto 1fr; align-items:baseline; margin:12px 0 4px; }
+  #play .try .ends { display:contents; font-size:12.5px; color:#aab5a2; }
+  #play .try .ends span:first-child { grid-column:1; grid-row:1; }
+  #play .try .ends span:last-child { grid-column:3; grid-row:1; text-align:right; }
+  #play .try .name { grid-column:2; grid-row:1; color:#e9ecdf; font-size:14px; }
+  #play .try .track { grid-column:1 / -1; }
+  :is(#play,#strip) .try .tick { background:#f1e7cf; opacity:.75; }
+  #play .acts { display:flex; gap:8px; justify-content:space-between; }
+  #play details.more { margin:14px 0 10px; }
+  #play details.more summary { cursor:pointer; color:#aab5a2; font-style:italic; list-style:none; }
+  #play details.more summary::before { content:'▸ '; } #play details.more[open] summary::before { content:'▾ '; }
+  #play select { font:inherit; }
+  /* the one sentence a moving dial says: it holds its line so nothing shifts when it speaks */
+  :is(#play,#strip) .cap { min-height:2.5em; display:flex; align-items:center; justify-content:center; text-align:center; font-style:italic; font-size:13px;
+    line-height:1.25; color:#f1e7cf; text-shadow:0 1px 10px rgba(0,0,0,.7); opacity:0; transition:opacity .5s ease; pointer-events:none; }
+  :is(#play,#strip) .cap.on { opacity:1; }
+  #strip.wide .cap { display:none; }
+  #strip.one .cap { position:absolute; left:0; right:0; bottom:100%; margin-bottom:8px; min-height:0; font-size:15px; }   /* above the card, so the card is only the dial and the words */
+  #play > *, #strip > * { transition: opacity .2s; }
+  :is(#play,#strip,#dev).holding { background:transparent; border-color:transparent; backdrop-filter:none; }
+  /* everything goes but the held row, what is inside it, what contains it, and the caption line */
+  :is(#play,#strip,#dev).holding *:not(.held):not(.held *):not(:has(.held)):not(.cap) { opacity:0; }
   #strip.offscreen { transform:translate(-50%, 200%); }
   #strip.faded { opacity:0; pointer-events:none; transition: opacity .9s ease, transform .6s cubic-bezier(.22,.61,.36,1); }   /* ...retires gently */
   /* desktop (fine pointer): one horizontal bar, shown by cursor PROXIMITY rather than a timer */
@@ -104,6 +160,18 @@
   #strip .ctl label { flex:0 0 56px; color:#9fb89f; }
   #strip .ctl input[type=range] { flex:1; min-width:0; height:20px; accent-color:#c99; }
   #strip .preset .more { flex:0 0 auto; margin-left:10px; padding:2px 9px; color:#7fae7f; }   /* rides the preset row, clear of ‹ › */
+  /* touch: one dial at a time above a row of words (the welcome's face, not the terminal's) */
+  #strip.one { padding:10px 12px 9px; border-radius:20px; font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
+  #strip.one .preset, #strip.one .ctl.out, #strip.one .ctl label, #strip.one .try .name { display:none; }
+  #strip.one .ctl { margin:0 0 6px; }
+  #strip.one .ctl.try:not(.out) { display:block; }
+  #strip.one .try .ends { font-size:13px; color:#aab5a2; }
+  #strip.one input[type=range] { height:32px; accent-color:#f1e7cf; }
+  #strip.one .tabs { display:flex; gap:5px; }
+  #strip.one .tabs button { flex:1 1 0; min-width:0; padding:7px 0; border-radius:16px; background:none; color:#aab5a2;
+    border:1px solid rgba(241,231,207,.16); font:italic 14px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
+  #strip.one .tabs button.on { color:#14170f; background:#f1e7cf; border-color:#f1e7cf; }
+  #strip.one .tabs button.sm { flex:0 0 34px; font-style:normal; }
   #tip {
     position:fixed; max-width:300px; z-index:10; pointer-events:none; display:none;
     font:11px/1.55 ui-monospace,Menlo,Consolas,monospace; color:#dfe9df;
@@ -193,6 +261,11 @@
   /* key hints fade in once the editor arrives */
   #hint { transition: opacity .8s ease; }
   #hint.gone { opacity: 0; pointer-events: none; }
+  /* the name of the look a touch swipe landed on, across the top (the welcome's own face) */
+  #lookName { position:fixed; top:22px; left:50%; transform:translateX(-50%); z-index:9; max-width:calc(100vw - 32px); text-align:center;
+    font: italic 400 17px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; color:#f1e7cf; text-shadow:0 1px 12px rgba(0,0,0,.6);
+    opacity:0; transition:opacity .6s ease; pointer-events:none; }
+  #lookName.show { opacity:1; }
 </style>
 </head>
 <body class="intro">
@@ -201,6 +274,7 @@
 <div id="play" class="hidden"></div>
 <div id="strip" class="hidden"></div>
 <div id="hud"></div>
+<div id="lookName"></div>
 <div id="hint" class="gone"><b>← →</b> change scene · <b>D</b> panel · <b>R</b> new grove · <b>T</b> tree view · <b>L</b> leaf · <b>F</b> full · drag = orbit · shift-drag = pan · wheel = zoom · <b>H</b> hints</div>
 <div id="tip"></div>
 <div id="prof"></div>
