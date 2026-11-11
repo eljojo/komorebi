@@ -702,6 +702,25 @@ No other motion measurement is recorded.
 
 - **Date:** not recorded.
 
+### Leaf travel between faithful groves, against the scene dissolve
+
+- **What was measured:** the same three pairs by the scene dissolve (A) and by leaf travel (B): the frame's mean luma (Rec.709 on sRGB, 0–255) against the straight line between the settled ends, the largest frame-to-frame step (mean |Δ| over RGB), each carrier's plan travel, and the frame cost.
+- **On:** José's projector and rainbow looks (arboretum, faithful overhead floor looks, as authored), 1280×720 at 60 fps on Metal, a pumped clock, `auto_quality` and `adaptive_motion` off, a 10 s route; the engine before the hood faded, so P1's hood swept in (it accounts for B's dip there). P1: a sparse three-layer grove to a dense four-layer one, with a tone change and the hood turning on. P2: a new seed, leader and maple outline, density down from 2.4 to 1. P3: the maple back to the ellipse outline, four layers to three, with a sun and tone change. Cost on a GPU shared with another render: upper bounds.
+- **Result:**
+
+  | pair | route | excursion above / below the line | largest step | carriers | travel median / p95 (of a 3.1 m view) | route ms, median / p95 |
+  |---|---|---|---|---|---|---|
+  | P1 | A | +26.4 / −0.2 | 3.96 | | | 27.2 / 33.9 |
+  | P1 | B | +9.2 / −26.1 | 3.94 | 46 530 | 0.31 m / 0.76 m | 29.0 / 46.3 |
+  | P2 | A | +7.2 / −0.2 | 1.25 | | | 28.0 / 38.3 |
+  | P2 | B | +4.8 / −7.4 | 1.45 | 46 530 | 0.73 m / 1.55 m | 34.4 / 53.6 |
+  | P3 | A | +10.1 / 0.0 | 1.50 | | | 20.8 / 33.9 |
+  | P3 | B | +5.9 / −6.6 | 1.89 | 32 175 | 0.73 m / 1.53 m | 27.4 / 38.0 |
+
+  Every largest step is within about 1.7× the settled looks' own motion; no step stands out at the handoffs or where the drawn native scene switches. B lands on the target loaded fresh (max 0). Over the 29 faithful overhead looks in arboretum, all 426 ordered pairs the dissolve took pass leaf travel's gate. A target at 8 samples, a 512 bake or texture, or leaf variety 0.9 also lands with no spike (largest steps 1.88, 1.52, 1.45, 1.47 against 1.45).
+- **What it established:** leaf travel joins these pairs without a dissolve of pictures; its motion is busier where the seed changes (a typical leaf moves a quarter of the view), and its middle is softer than either end (the moving cast's texel, about 9.8 mm against a 2.4 mm pixel at a 1024 bake).
+- **Date:** 2026-11-10.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).

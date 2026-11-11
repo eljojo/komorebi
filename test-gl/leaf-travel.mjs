@@ -1,6 +1,7 @@
 // The production route on WebGL, supplied through Playwright routes without a local server. Its two looks differ in the hood
 // (vignette .24 against 0), so the last block also holds the hood's gate on a still live morph of the hooded look, against the
-// engine before the hood faded (served from `git show`).
+// engine before the hood faded (served from `git show`). The faithful block holds the same route between two faithful overhead groves
+// that differ structurally (seed, outline, leader, layer count, density, tone), which the scene dissolve took before.
 import {chromium} from 'playwright';
 import {readFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
@@ -115,6 +116,75 @@ try{
     assert.ok(r.monotone,`hood ${name}: the rim does not move one way`);
     assert.ok(r.worst.excess<=0,`hood ${name}: a single-frame rim step stands out of its neighbours ${JSON.stringify(r.worst)}`);
   }
+  // ---- two faithful groves: the route, its handoffs, its interruptions, and ends that differ in sample count and bake size ----
+  const faithful=await page.evaluate(async()=>{
+    const {create}=await import('/komorebi.js');
+    const F1={...window.__hooded,drift_amount:0},F2={...F1,seed:123,leaf_shape:'maple',leader_strength:.55,layer_count:4,foliage_density:1,tone_map:2,leaf_diffuse:0};
+    const F3={...F1,seed:77,leaf_shape:'ellipse',layer_count:3,foliage_density:1.2,exposure:F1.exposure+.2};
+    let e,c,last,stamp=0;const step=Math.floor(1000/60*2**20)/2**20;
+    function pump(n=1){for(let i=0;i<n;i++){stamp+=step;window.__clock.pump(stamp);}}
+    function open(p){e?.dispose();c?.remove();window.__clock.drain();window.__clock.set(0);stamp=0;c=document.createElement('canvas');document.body.appendChild(c);e=create(c,{params:p});
+      e.onFrame=()=>{const g=e.gl;last=new Uint8Array(320*180*4);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,320,180,g.RGBA,g.UNSIGNED_BYTE,last);if(g.getError())throw Error('WebGL error');};pump();}
+    const diff=(a,b)=>a.reduce((m,x,i)=>Math.max(m,Math.abs(x-b[i])),0);
+    const mean=(a,b)=>a.reduce((s,x,i)=>s+(i%4===3?0:Math.abs(x-b[i])),0)/(a.length/4*3);
+    const need=(ok,msg)=>{if(!ok)throw Error(msg);};
+    const fresh=p=>{open(p);return last.slice();};
+    // A cleared floor or a doubled shadow at a handoff is one frame whose change stands out of its ±5 neighbours.
+    const spikes=steps=>{const med=i=>{const s=steps.slice(Math.max(0,i-5),i+6).filter((_,j)=>j!==Math.min(i,5)).sort((x,y)=>x-y);return s[s.length>>1];};
+      return steps.map((v,i)=>({i,step:+v.toFixed(3),neighbours:+med(i).toFixed(3)})).filter(f=>f.step>0.5+3*f.neighbours);};
+    // A whole route from a settled look: the zero-time redraw, every frame's step with the route's eased progress, the landing.
+    function route(from,to,label){
+      const target=fresh(to),source=fresh(from);open(from);let ended=0;
+      e.transitionTo(to,{duration:1,onEnd:()=>ended++});
+      need(e.trans.leafTravel&&!e.trans.sceneFade&&e.trans.bloomMax===0&&e.trans.durScale===2,`${label}: not leaf travel`);
+      window.__clock.pump(stamp);const start=diff(source,last);
+      const steps=[],t=[];let prev=last.slice();
+      while(e.trans.active){pump();need(e.trans.bloom===0,`${label}: bloom`);steps.push(mean(prev,last));t.push(e.trans.t);prev=last.slice();}
+      pump();const landed=diff(target,last);need(ended===1,`${label}: onEnd`);
+      const at=(a,b)=>Math.max(...steps.filter((_,i)=>t[i]>=a&&t[i]<b));
+      return {start,landed,frames:steps.length,largestStep:+Math.max(...steps).toFixed(3),handoffIn:+at(0,.25).toFixed(3),middle:+at(.25,.75).toFixed(3),handoffOut:+at(.75,1.01).toFixed(3),spikes:spikes(steps)};
+    }
+    const out={};
+    for(const [from,to,label] of [[F1,F2,'F1 → F2'],[F2,F1,'F2 → F1']]){
+      const r=out[label]=route(from,to,label);
+      need(r.start===0,`${label}: zero-time redraw moved the outgoing look (${r.start})`);need(r.landed===0,`${label}: landed ${r.landed}`);
+      need(r.spikes.length===0,`${label}: handoff spikes ${JSON.stringify(r.spikes)}`);
+    }
+    // Ends of a different quality: the moving cast takes the incoming end's sample count and bake size throughout.
+    const Q2={...F2,sample_count:F1.sample_count*2,bake_resolution:F1.bake_resolution*2};
+    for(const [from,to,label] of [[F1,Q2,'F1 → F2 at 2× samples and bake'],[Q2,F1,'F2 at 2× samples and bake → F1']]){
+      const r=out[label]=route(from,to,label);
+      need(r.start===0&&r.landed===0,`${label}: ends ${r.start}/${r.landed}`);need(r.spikes.length===0,`${label}: handoff spikes ${JSON.stringify(r.spikes)}`);
+    }
+    // The background the route moves against: the settled ends in wind.
+    const wind={wind_strength:1,drift_auto:true,drift_amount:.145};
+    const settled=p=>{open(p);let m=0,prev=last.slice();for(let i=0;i<60;i++){pump();m=Math.max(m,mean(prev,last));prev=last.slice();}return m;};
+    const W1={...F1,...wind},W2={...F2,...wind};
+    out.wind={settledOut:+settled(W1).toFixed(3),settledIn:+settled(W2).toFixed(3)};
+    open(W1);e.transitionTo(W2,{duration:1});{let m=0,prev=last.slice(),steps=[];while(e.trans.active){pump();const d=mean(prev,last);steps.push(d);m=Math.max(m,d);prev=last.slice();}
+      out.wind.largestStep=+m.toFixed(3);out.wind.spikes=spikes(steps);}
+    need(out.wind.spikes.length===0,`wind: spikes ${JSON.stringify(out.wind.spikes)}`);
+    // Interruptions: reversal, a third faithful grove arriving in flight, a hard replacement, dispose.
+    const n1=fresh(F1),n3=fresh(F3);
+    for(const at of [45,110]){
+      open(F1);e.transitionTo(F2,{duration:1});pump(at);const shown=last.slice();e.transitionTo(F1,{duration:1});need(e.trans.leafTravel,'reversal left leaf travel');
+      window.__clock.pump(stamp);const jump=diff(shown,last);while(e.trans.active)pump();pump();
+      out[`reverse at ${at}`]={jump,landed:diff(n1,last)};need(jump<=1&&diff(n1,last)===0,`reverse at ${at}: ${JSON.stringify(out[`reverse at ${at}`])}`);
+    }
+    {open(F1);let first=0,third=0;e.transitionTo(F2,{duration:1,onEnd:()=>first++});pump(35);e.transitionTo(F3,{duration:.5,onEnd:()=>third++});
+      need(e.trans.leafTravel,'a third selection broke the moving route');let n=0;while(e.trans.active&&n++<400)pump();pump();
+      out.third={first,third,landed:diff(n3,last)};need(first===0&&third===1&&diff(n3,last)===0,`third look: ${JSON.stringify(out.third)}`);}
+    {open(F1);e.transitionTo(F2,{duration:1});pump(35);e.setParams(F1);pump();out.setParams=diff(n1,last);need(out.setParams===0,'hard replacement');}
+    {open(F1);e.transitionTo(F2,{duration:1});pump(35);e.dispose();e=null;c.remove();c=null;open(F1);out.dispose=diff(n1,last);need(out.dispose===0,'dispose');}
+    const n2=fresh(F2);open(F1);e.transitionTo(F2,{duration:1});pump(35);
+    window.__floss={e,stamp,step,ext:e.gl.getExtension('WEBGL_lose_context'),n2};
+    return out;
+  });
+  await page.evaluate(()=>window.__floss.ext.loseContext());await page.waitForFunction(()=>window.__floss.e.gl.isContextLost());
+  await page.waitForTimeout(100);await page.evaluate(()=>window.__floss.ext.restoreContext());await page.waitForFunction(()=>!window.__floss.e.gl.isContextLost());
+  faithful.contextLoss=await page.evaluate(()=>{const {e,stamp,step,n2}=window.__floss;let delta=-1;e.onFrame=()=>{const g=e.gl,b=new Uint8Array(n2.length);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,320,180,g.RGBA,g.UNSIGNED_BYTE,b);delta=b.reduce((m,x,i)=>Math.max(m,Math.abs(x-n2[i])),0);};window.__clock.pump(stamp+step);const error=e.gl.getError();e.dispose();return {delta,error};});
+  console.log('faithful',JSON.stringify(faithful,null,1));
+  assert.deepEqual(faithful.contextLoss,{delta:0,error:0},'context loss during faithful travel did not land on the target');
   assert.deepEqual(errors,[]);
-  for(const r of results)console.log('PASS',JSON.stringify(r));console.log('PASS context recovery',JSON.stringify(recovery));console.log('PASS hood');
+  for(const r of results)console.log('PASS',JSON.stringify(r));console.log('PASS context recovery',JSON.stringify(recovery));console.log('PASS hood');console.log('PASS faithful travel');
 }finally{await browser.close();}

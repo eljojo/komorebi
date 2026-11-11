@@ -436,10 +436,75 @@ test("an interrupted fade starts the next route from the opacity it shows", () =
   }
 });
 
-test("faithful structural changes dissolve complete moving scenes without a midpoint rebuild or bloom", () => {
-  for (const change of [{ layer_count: 4, foliage_density: 2.4, tone_map: 0 },
-                         { seed: 783609357, leader_strength: 0.55, leaf_shape: "maple", foliage_density: 1 }]) {
-    const from = { ...DEFAULTS, faithful_canopy: true, layer_count: 3, foliage_density: 0.4, tone_map: 2 };
+// Two faithful overhead groves that differ structurally: P1 a layer count, density and tone; P2 a seed, leader and outline.
+const faithfulPairs = [{ layer_count: 4, foliage_density: 2.4, tone_map: 0 },
+                       { seed: 783609357, leader_strength: 0.55, leaf_shape: "maple", foliage_density: 1 }];
+const faithfulFrom = { ...DEFAULTS, faithful_canopy: true, layer_count: 3, foliage_density: 0.4, tone_map: 2 };
+
+test("two faithful overhead groves that differ structurally travel their leaves, with no bloom and no scene dissolve", () => {
+  for (const change of faithfulPairs) {
+    const r = transitionRig(faithfulFrom), target = { ...faithfulFrom, ...change };
+    let began = 0, steps = 0, ended = 0;
+    Object.assign(r.hub, { beginLeafTravel: () => began++, stepLeafTravel: () => steps++, finishLeafTravel: () => null, endLeafTravel: () => ended++,
+      beginSceneFade: () => { throw Error("unexpected scene dissolve"); } });
+    r.transitionTo(target, { duration: 1 });
+    expect(r.hub.trans.leafTravel).toBe(true);
+    expect(r.hub.trans.sceneFade).toBe(false);
+    expect(r.hub.trans.bloomMax).toBe(0);
+    expect(r.hub.trans.durScale).toBe(2);
+    expect(began).toBe(1);
+    while (r.hub.trans.active) { r.tickTransition(1 / 60); expect(r.hub.trans.bloom).toBe(0); }
+    expect(steps).toBeGreaterThan(110); expect(ended).toBe(1);
+    for (const k in DEFAULTS) if (k !== "drift_phase") expect(r.params[k], k).toBe(target[k]);
+  }
+});
+
+test("faithful overhead pairs a gentler route joins keep it: live morph, grove morph, re-season", () => {
+  for (const [change, route] of [[{ exposure: 2 }, null], [{ leaf_size_m: DEFAULTS.leaf_size_m * 1.2 }, "canopyMorph"], [{ phenology: 0.8 }, "seasonMorph"]]) {
+    const r = transitionRig(faithfulFrom);
+    Object.assign(r.hub, { beginLeafTravel: () => { throw Error("unexpected leaf travel"); }, beginSceneFade: () => { throw Error("unexpected scene dissolve"); } });
+    r.transitionTo({ ...faithfulFrom, ...change });
+    expect(r.hub.trans.leafTravel, JSON.stringify(change)).toBe(false);
+    if (route) expect(r.hub.trans[route], JSON.stringify(change)).toBe(true);
+  }
+});
+
+test("a faithful structural pair leaf travel refuses still takes the scene dissolve", () => {
+  for (const both of [{ branch_tau: 0.5 }, { standing_scene: true }, { litter: 1 }, { inner_leaves: 0.5 }, { canopy_fill: 0.5 }]) {
+    const r = transitionRig({ ...faithfulFrom, ...both });
+    r.hub.beginLeafTravel = () => { throw Error("unexpected leaf travel"); };
+    Object.assign(r.hub, { beginSceneFade: () => {}, stepSceneFade: () => {}, endSceneFade: () => {} });
+    r.transitionTo({ ...faithfulFrom, ...both, ...faithfulPairs[1] });
+    expect(r.hub.trans.leafTravel, JSON.stringify(both)).toBe(false);
+    expect(r.hub.trans.sceneFade, JSON.stringify(both)).toBe(true);
+  }
+  for (const differ of [{ eclipse: true }, { edge_area: true }]) {
+    const r = transitionRig(faithfulFrom);
+    r.hub.beginLeafTravel = () => { throw Error("unexpected leaf travel"); };
+    Object.assign(r.hub, { beginSceneFade: () => {}, stepSceneFade: () => {}, endSceneFade: () => {} });
+    r.transitionTo({ ...faithfulFrom, ...faithfulPairs[1], ...differ });
+    expect(r.hub.trans.leafTravel, JSON.stringify(differ)).toBe(false);
+    expect(r.hub.trans.sceneFade, JSON.stringify(differ)).toBe(true);
+    expect(r.hub.trans.moon, JSON.stringify(differ)).toBe(null);   // each scene keeps its own source: no moon crosses inside a dissolve
+  }
+});
+
+test("a faithful structural selection arriving during a scene dissolve continues the dissolve: two mixed pictures have no leaves to carry", () => {
+  const r = transitionRig(faithfulFrom);
+  let began = 0;
+  r.hub.beginLeafTravel = () => { throw Error("unexpected leaf travel"); };
+  Object.assign(r.hub, { beginSceneFade: () => began++, stepSceneFade: () => {}, endSceneFade: () => {} });
+  r.transitionTo({ ...faithfulFrom, ...faithfulPairs[1], eclipse: true });
+  for (let i = 0; i < 30; i++) r.tickTransition(1 / 60);
+  r.transitionTo({ ...faithfulFrom, ...faithfulPairs[0], eclipse: true });
+  expect(r.hub.trans.sceneFade).toBe(true);
+  expect(r.hub.trans.leafTravel).toBe(false);
+  expect(began).toBe(2);
+});
+
+test("faithful structural changes leaf travel refuses dissolve complete moving scenes without a midpoint rebuild or bloom", () => {
+  for (const change of faithfulPairs) {
+    const from = { ...faithfulFrom, branch_tau: 0.5 };
     const r = transitionRig(from), target = { ...from, ...change };
     let began = 0, steps = 0, ended = 0, callback = 0;
     r.hub.beginSceneFade = () => { began++; expect(r.params).toEqual(from); };
@@ -476,7 +541,7 @@ test("ordinary faithful look morphs and other receiver changes keep their existi
 });
 
 test("a look-only edit interrupting a faithful scene dissolve starts another scene dissolve", () => {
-  const r = transitionRig({ ...DEFAULTS, faithful_canopy: true });
+  const r = transitionRig({ ...DEFAULTS, faithful_canopy: true, branch_tau: 0.5 });   // wood: leaf travel refuses the pair
   let began=0, ended=0;
   r.hub.beginSceneFade=()=>began++;
   r.hub.stepSceneFade=()=>{};
@@ -713,7 +778,7 @@ test('a selection inside the crossfade window waits for the window to close, kee
 });
 
 test('a selection the faithful dissolve cannot take waits for its landing instead of dropping the outgoing scene', () => {
-  const from = { ...DEFAULTS, faithful_canopy: true }, r = linked(from); let ends = 0;
+  const from = { ...DEFAULTS, faithful_canopy: true, branch_tau: 0.5 }, r = linked(from); let ends = 0;   // wood: leaf travel refuses the pair
   Object.assign(r.hub, { beginSceneFade: () => {}, stepSceneFade: () => {}, endSceneFade: () => ends++ });
   r.transitionTo({ ...from, seed: 77 });
   expect(r.hub.trans.sceneFade).toBe(true);

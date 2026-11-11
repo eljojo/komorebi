@@ -222,7 +222,7 @@ These are the words the other documents use without stopping to explain. Each en
 
 **transport.** How the sun's light is carried from the source through the canopy to a surface: many sharp shadows, each shifted by height times angle, summed. The soft shadow is the sum, and higher foliage blurs more for free. [`model/transport.md`](model/transport.md)
 
-**travel routes.** Transitions in which leaves actually fly: **viewpoint** (a shared grove turns from sky to ground), **leaf travel** (overhead faithful to layer), **season travel** (a shared standing grove between floor and canopy), **litter rise and fall** (carpet to sky and back), **shadow rise and fall** (footprints lift into the sky and come back down) and **grove regrouping** (different standing groves, leaf by leaf). Each lands exactly on its native end, reverses from where it is, and keeps the winds running. [`model/transitions.md`](model/transitions.md), [`contracts/transitions.md`](contracts/transitions.md)
+**travel routes.** Transitions in which leaves actually fly: **viewpoint** (a shared grove turns from sky to ground), **leaf travel** (overhead faithful to layer, or between two overhead faithful groves), **season travel** (a shared standing grove between floor and canopy), **litter rise and fall** (carpet to sky and back), **shadow rise and fall** (footprints lift into the sky and come back down) and **grove regrouping** (different standing groves, leaf by leaf). Each lands exactly on its native end, reverses from where it is, and keeps the winds running. [`model/transitions.md`](model/transitions.md), [`contracts/transitions.md`](contracts/transitions.md)
 
 **trunk.** See *cluster, twig, limb, trunk, bole*.
 

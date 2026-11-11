@@ -117,15 +117,6 @@ export function makeTransitions(hub){
     const leavesFrom=hub.hier?.nLeaf??Math.ceil(params.leaves_per_cluster*params.foliage_density),leavesTo=Math.ceil(to.leaves_per_cluster*to.foliage_density);
     const targetClusters=Math.ceil(Math.max(1,to.tree_count))*to.limb_count*Math.max(1,to.branch_children)**Math.max(0,to.branch_levels-1);
     const carrierCount=Math.max(leafCount/Math.max(1,leavesFrom),targetClusters)*Math.max(leavesFrom,leavesTo);
-    const leafTravel=retarget||(!trans.active&&params.faithful_canopy!==to.faithful_canopy
-      && !params.sky_view&&!to.sky_view&&!params.standing_scene&&!to.standing_scene
-      && params.receiver===0&&to.receiver===0&&params.branch_tau===0&&to.branch_tau===0
-      && params.canopy_fill===0&&to.canopy_fill===0&&params.litter===0&&to.litter===0
-      && params.leaf_drop===0&&to.leaf_drop===0&&params.inner_leaves===0&&to.inner_leaves===0&&params.leaf_size_m>0&&to.leaf_size_m>0
-      && params.edge_area===to.edge_area&&params.eclipse===to.eclipse
-      && leafCount>0&&leavesTo>0&&carrierCount<=CANOPY_MORPH_MAX);
-    trans.leafTravel=!!leafTravel;
-    if(leafTravel){trans.backgroundFade=false;trans.settleCamera=false;}
     // a grove morph scales the leaf count by tree_count AND per-twig density (leaves_per_cluster*foliage_density);
     // budget against the busier (more-leaves) end so a dense/many-tree target falls back to the cheap dissolve.
     const densFrom   = Math.max(1e-6, params.leaves_per_cluster*params.foliage_density);
@@ -136,6 +127,19 @@ export function makeTransitions(hub){
       && CANOPY_KEYS.every(k => k==='foliage_density' || SEASON_KEYS.includes(k) || to[k]===params[k]);
     // Count the capacity, including the marginal leaf: a bare source's zero draw count must not bypass the peak budget.
     const morphCost  = Math.max(leafCount * Math.max(1, morphScale), densityMorph ? hub.hier.nClusterTotal*Math.max(densityCount(params), densityCount(to)) : 0);
+    // Two faithful overhead looks that no live or grove morph joins would otherwise dissolve two finished pictures;
+    // their leaves travel instead, as they do between the faithful and the layer cast.
+    const faithfulStructural=params.faithful_canopy&&to.faithful_canopy&&!modeDiff
+      &&(topoDiff||canopyDiff&&morphCost>CANOPY_MORPH_MAX);
+    const leafTravel=retarget||(!trans.active&&(params.faithful_canopy!==to.faithful_canopy||faithfulStructural)
+      && !params.sky_view&&!to.sky_view&&!params.standing_scene&&!to.standing_scene
+      && params.receiver===0&&to.receiver===0&&params.branch_tau===0&&to.branch_tau===0
+      && params.canopy_fill===0&&to.canopy_fill===0&&params.litter===0&&to.litter===0
+      && params.leaf_drop===0&&to.leaf_drop===0&&params.inner_leaves===0&&to.inner_leaves===0&&params.leaf_size_m>0&&to.leaf_size_m>0
+      && params.edge_area===to.edge_area&&params.eclipse===to.eclipse
+      && leafCount>0&&leavesTo>0&&carrierCount<=CANOPY_MORPH_MAX);
+    trans.leafTravel=!!leafTravel;
+    if(leafTravel){trans.backgroundFade=false;trans.settleCamera=false;}
     // a mode flip can't morph leaf-for-leaf (the bake path / faithTex size / crown sizing change), so it forces a
     // dissolve+rebuild just like a topology change — never a live grove morph (which only regrows, no realloc).
     const morphGrove = canopyDiff && !topoDiff && !modeDiff && morphCost <= CANOPY_MORPH_MAX;   // same branching+mode, small enough -> morph it

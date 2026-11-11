@@ -64,8 +64,8 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 
 | | |
 |---|---|
-| **Joins** | Faithful structural changes: `cherry green → green 2`, `green 2 → ultraviolet`. |
-| **Gate** | Both ends faithful; same scene modes; a structural rebuild needed; neither season travel nor grove regrouping (nor leaf travel) admits the pair. |
+| **Joins** | Faithful structural changes no travel route takes: `park 1` to itself with a new seed, density and tone; `curtain 1` to itself with a new seed and outline. |
+| **Gate** | Both ends faithful; same scene modes; a structural rebuild needed; no travel route (season travel, grove regrouping, leaf travel) admits the pair. |
 | **Duration** | 2*D*, mixed on a full-duration smoothstep. |
 | **Promises** | No bloom. Two complete moving scenes, one clock, mixed in linear light, each with its own tone map and mask. The incoming scene continues without rebuild or reset. An interrupted dissolve holds the displayed mixture as the next outgoing image and frees the older scene. |
 
@@ -78,12 +78,12 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 | **Duration** | 2*D*. |
 | **Promises** | No bloom, no second scene, no midpoint rebuild. Eye and elevation move continuously through the horizon; authored pan, yaw, field of view and zoom kept at both ends. Drift continues through landing. Interruption starts from the displayed eye and gaze. Landing restores exact target params and rebuilds its buffers once. A bundle keeps this camera only when it keeps both sky and floor. |
 
-## Leaf travel (overhead faithful ↔ layer)
+## Leaf travel (overhead faithful ↔ layer, and between faithful groves)
 
 | | |
 |---|---|
-| **Joins** | The same overhead scene in its faithful and its layer cast. |
-| **Gate** | A cast-mode change only; floor receiver and overhead scene unchanged; wood, canopy fill, litter, leaf drop and inner leaves off at both ends; eclipse and edge-area modes agree; positive leaf sizes; nonempty groves; correspondence within budget. |
+| **Joins** | The same overhead scene in its faithful and its layer cast; two overhead faithful groves that differ structurally (`cherry green → green 2`, `green 2 → ultraviolet`). |
+| **Gate** | A cast-mode change, or both ends faithful with a TOPO key differing or a canopy change over the grove-morph budget; floor receiver and overhead scene unchanged; wood, canopy fill, litter, leaf drop and inner leaves off at both ends; eclipse and edge-area modes agree; positive leaf sizes; nonempty groves; correspondence within budget. |
 | **Duration** | 2*D*. |
 | **Promises** | Every endpoint leaf occurs once; surplus contracts to zero area, new leaves grow from zero. Each end keeps its native motion until the shared cast. Each native cast is reached exactly through a smooth handoff at its own end, keeping its authored diffuse value. No clear-floor interval, no bloom, no midpoint swap. |
 

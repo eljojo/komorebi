@@ -274,9 +274,9 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 |---|---|---|---|
 | Live morph, grove morph, shared-layer crossfade, capped bloom | `komorebi-transitions.js` | `transitions.test.js` (routing; through the real sampler) | transition-routing suite in the pixel harness (each tier driven to completion); `test-gl/dissolve-landing.mjs` (the cloud dissolve's landed frame against the target loaded fresh); `test-gl/eclipse-crossfade.mjs` (the crossfade across layer counts and the moon: start, landing, spikes, interruptions, the sky view, the settled `eclipse` against the engine before) |
 | Floor-to-floor fade through the lit ground | `komorebi-transitions.js` | `transitions.test.js` | routing suite; `test-gl/dissolve-landing.mjs` (landed against fresh, both directions) |
-| Faithful scene dissolve | `komorebi-scene-fade.js` | not recorded | routing suite |
+| Faithful scene dissolve (faithful structural pairs leaf travel refuses) | `komorebi-scene-fade.js` | `transitions.test.js` (routing) | routing suite |
 | Viewpoint sky↔floor | `komorebi-transitions.js`, `komorebi-transport.js` (fifth camera) | `viewpoint.test.js` | `test-gl/viewpoint.mjs` |
-| Leaf travel faithful↔layer | `komorebi-leaf-travel.js` | `leaf-travel.test.js` (correspondence, area) | `test-gl/leaf-travel.mjs` |
+| Leaf travel faithful↔layer and faithful↔faithful | `komorebi-leaf-travel.js` | `leaf-travel.test.js` (correspondence, area) | `test-gl/leaf-travel.mjs` |
 | Season travel | `komorebi-season-travel.js` | `season-travel.test.js`, `transitions.test.js` | `test-gl/season-travel.mjs` (compiled faithful fragment against the per-leaf reference across both edge modes) |
 | Litter rise and fall | `komorebi-litter-rise.js` | `litter-rise.test.js` | `test-gl/litter-rise.mjs`, `test-gl/litter-fall.mjs` (`--render`) |
 | Shadow rise and fall | `komorebi-litter-rise.js` | `shadow-rise.test.js`, `transitions.test.js` | `test-gl/shadow-rise.mjs`, `test-gl/shadow-fall.mjs` (`--render`) |
