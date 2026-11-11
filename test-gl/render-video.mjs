@@ -335,10 +335,12 @@ if (ENCODE_ONLY) {
   if (existsSync(P('complete.json')) && readJson(P('complete.json')).master_discarded) refuse('the master was discarded (--discard-master); re-render with --restart');
   const flags = { look_sha256: lookBytes ? sha256(lookBytes) : RK.body.look_sha256, overrides, fps: FPS, size: [OW, OH], ss: SS, ss_space: SS === 1 ? 'n/a' : SS_SPACE, preroll_frames: PREROLL, segment_frames: SEG_FRAMES, master: MASTER };
   const differs = Object.keys(flags).filter((k) => !isDeepStrictEqual(RK.body[k], flags[k]));
-  if(SESSION_FILE && !isDeepStrictEqual(RK.body.session?.requested,SESSION_INPUT))differs.push('session');
   const onDisk = (existsSync(P('seg')) ? readdirSync(P('seg')) : []).filter((f) => /^seg_\d+\.json$/.test(f)).map((f) => readJson(P('seg', f)));
   const framesOnDisk = onDisk.reduce((a, j) => a + j.frames, 0);
   const lines = differs.map((k) => `  ${k}: run-key.json says ${JSON.stringify(RK.body[k])}, the flags say ${JSON.stringify(flags[k])}`);
+  // A run rendered under a session and one rendered without must not share frames, whichever side the flags are on.
+  const keySession = RK.body.session?.requested ?? null, flagSession = SESSION_INPUT ?? null;
+  if (!isDeepStrictEqual(keySession, flagSession)) lines.push(`  session: run-key.json says ${JSON.stringify(keySession)}, the flags say ${JSON.stringify(flagSession)}`);
   if (ARB) {   // no fetch: --arboretum only has to NAME the preset the key holds (without a version, the key's)
     const k = RK.body.arboretum, asked = `${ARB.id}${ARB.version ? `@${ARB.version}` : ''}`;
     if (!k) lines.push(`  arboretum: run-key.json says the look was a file, the flags say preset ${asked}`);
@@ -852,7 +854,7 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
     ...(K.arboretum ? { arboretum: { ...K.arboretum, ...RK.arboretum_fetch } } : {}),
     overrides: kOverrides, look_changes_are_quality_only: nonQuality.length === 0 && !K.session,
     ...(K.session?{session:K.session}:{}),
-    look_statement: nonQuality.length ? `NOT as authored: ${nonQuality.join(', ')} changed` : `the look is as authored; only the quality knobs ${Object.keys(kOverrides).join(', ') || '(none)'} are overridden, plus the two governors forced off (adaptive_motion=false, auto_quality=false)`,
+    look_statement: nonQuality.length ? `NOT as authored: ${nonQuality.join(', ')} changed` : K.session ? `the look is as authored, rendered under the ${K.session.resolved.quality} quality profile (its ceilings cap the look's fidelity requests) for a ${K.session.resolved.presentation} presentation (which sets the leaf-edge law), with the two governors forced off (adaptive_motion=false, auto_quality=false)` : `the look is as authored; only the quality knobs ${Object.keys(kOverrides).join(', ') || '(none)'} are overridden, plus the two governors forced off (adaptive_motion=false, auto_quality=false)`,
     output: {
       fps: kOut.fps, frames: N, seconds: N / kOut.fps, size: kOut.size, render_size: [kOut.size[0] * kOut.ss, kOut.size[1] * kOut.ss], ss: kOut.ss,
       ss_downscale: kOut.ss === 1 ? null : {
