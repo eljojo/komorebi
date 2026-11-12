@@ -1537,6 +1537,36 @@ try {
     }, [from, to]);
     const look = () => pgT.$eval('#dev select', (s) => s.value);
     const timeH = () => pgT.$eval('#dev', (dev) => [...dev.querySelectorAll('.ctl')].find((r) => r.querySelector('label')?.textContent === 'time (h)').querySelector('input').value);
+    // two fingers move the camera (zoom, orbit, pan) and nothing else: no step, no tap, on any of their lifts
+    const fingers = (a0, a1, b0, b1) => pgT.evaluate(([p0, p1, q0, q1]) => {
+      const gl = document.getElementById('gl'), ev = (type, id, p) => gl.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: id, isPrimary: id === 11, bubbles: true, cancelable: true, clientX: p[0], clientY: p[1] }));
+      const at = (from, to, i) => [from[0] + (to[0] - from[0]) * i / 8, from[1] + (to[1] - from[1]) * i / 8];
+      ev('pointerdown', 11, p0); ev('pointerdown', 12, q0);
+      for (let i = 1; i <= 8; i++) { ev('pointermove', 11, at(p0, p1, i)); ev('pointermove', 12, at(q0, q1, i)); }
+      ev('pointerup', 11, p1); ev('pointerup', 12, q1);
+    }, [a0, a1, b0, b1]);
+    const view = () => pgT.$eval('#dev', (dev) => Object.fromEntries(['view (m)', 'orbit °', 'pan x', 'pan y', 'tilt °'].map((name) =>
+      [name, Number([...dev.querySelectorAll('.ctl')].find((r) => r.querySelector('label')?.textContent === name).querySelector('input').value)])));
+    const camLook = await look(), strip0 = await pgT.$eval('#strip', (e) => e.classList.contains('faded'));
+    // before any swipe: a look still arriving owns the camera keys and would ease them under the fingers
+    const v0 = await view();
+    await fingers([150, 350], [100, 350], [250, 350], [300, 350]);   // spread from 100 to 200 px about the same midpoint
+    const v1 = await view();
+    check('a pinch apart halves the view and leaves the pan and orbit where they were',
+      Math.abs(v1['view (m)'] - Math.max(0.5, v0['view (m)'] / 2)) <= 0.1 && Math.abs(v1['pan x'] - v0['pan x']) <= 0.1 && Math.abs(v1['pan y'] - v0['pan y']) <= 0.1 && v1['orbit °'] === v0['orbit °'], JSON.stringify({ v0, v1 }));
+    await fingers([150, 300], [150, 300], [250, 300], [150, 400]);   // the second finger turns a quarter clockwise about the first
+    const v2 = await view(), turned = ((v2['orbit °'] - v1['orbit °'] + 540) % 360) - 180;
+    check('a quarter twist clockwise orbits the view a quarter back', Math.abs(turned + 90) <= 1, JSON.stringify({ v1, v2, turned }));
+    const k = v2['view (m)'] / 700;
+    await fingers([150, 350], [300, 350], [250, 350], [400, 350]);   // both fingers 150 px to the right
+    const v3 = await view(), moved = Math.hypot(v3['pan x'] - v2['pan x'], v3['pan y'] - v2['pan y']);
+    check('dragging two fingers pans the view by the ground they crossed, at the same zoom and orbit',
+      Math.abs(moved - 150 * k) <= 0.15 && v3['view (m)'] === v2['view (m)'] && v3['orbit °'] === v2['orbit °'], JSON.stringify({ v2, v3, moved, want: 150 * k }));
+    await fingers([150, 450], [150, 350], [250, 450], [250, 350]);   // side by side, both 100 px up: a tilt, not a pan
+    const v4 = await view();
+    check('two fingers side by side sliding up tilt the view more side-on, and move nothing else',
+      Math.abs(v4['tilt °'] - Math.min(80, v3['tilt °'] + 30)) <= 1 && v4['view (m)'] === v3['view (m)'] && v4['orbit °'] === v3['orbit °'] && v4['pan x'] === v3['pan x'] && v4['pan y'] === v3['pan y'], JSON.stringify({ v3, v4 }));
+    check('and none of it steps the look or toggles the strip', (await look()) === camLook && (await pgT.$eval('#strip', (e) => e.classList.contains('faded'))) === strip0, `${camLook} -> ${await look()}`);
     const t0 = await timeH(), look0 = await look();
     await gesture([300, 350], [100, 350]);   // left = next
     const movedX = await poll(async () => (await look()) !== look0);

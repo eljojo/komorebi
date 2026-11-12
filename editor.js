@@ -1409,19 +1409,82 @@ function setMode(mode){
 // Canvas pointer input. A MOUSE drags the sun (azimuth from x, elevation from y). A finger can't do that
 // and swipe, so TOUCH is swipe-nav instead: a swipe on either axis steps presets on release (up/left = next,
 // down/right = previous, like ↑/↓ ← →) and a clean tap toggles the controls (the D key's own toggle). Axis locks
-// once the gesture clears a deadzone; nothing on touch writes the look but the step itself.
+// once the gesture clears a deadzone. TWO fingers move the camera, and their first movement decides how. Side by side
+// and sliding up or down together, they tilt it (up = more side-on, like a mouse drag), the way a map tilts. Anything
+// else moves it the way a map moves: pinch zooms, twist orbits, and dragging both pans, with the floor point under the
+// fingers held under them. A second finger cancels the swipe, and nothing that touch ends steps the look or toggles
+// the controls until every finger is off.
 const SWIPE_DEAD=12, SWIPE_STEP=45;                            // px: ignore taps; min throw on the locked axis to count as a preset step
 let dragging=false, px=0, py=0;
 let swipe=null;                                                // touch gesture in progress: {sx, sy, axis:null|'x'|'y'}
+const touches=new Map();                                       // fingers on the picture: pointerId -> {x, y}
+let pinch=null;                                                // two fingers down: their last frame (pinchFrame) and the gesture's mode
+let multi=false;                                               // a second finger joined this touch; cleared when the last one lifts
+function pinchFrame(){
+  const [p,q]=touches.values();
+  return { p, q, x:(p.x+q.x)/2, y:(p.y+q.y)/2, d:Math.max(1,Math.hypot(q.x-p.x,q.y-p.y)), a:Math.atan2(q.y-p.y,q.x-p.x), mode:null };
+}
+// 'tilt' when both fingers, side by side, slid the same way up or down; 'map' otherwise; null until it can tell. Each
+// finger reports its own move, so one that has barely moved may only be behind: the call waits for it, and gives up on
+// it (a twist or pinch about a still finger) once the other is three deadzones out.
+function pinchMode(f){
+  const dp=[f.p.x-pinch.p.x, f.p.y-pinch.p.y], dq=[f.q.x-pinch.q.x, f.q.y-pinch.q.y];
+  const lp=Math.hypot(dp[0],dp[1]), lq=Math.hypot(dq[0],dq[1]), big=Math.max(lp,lq);
+  if(big < SWIPE_DEAD) return null;
+  if(Math.min(lp,lq) < SWIPE_DEAD/2) return big < 3*SWIPE_DEAD ? null : 'map';
+  const upright=(d)=>Math.abs(d[1]) > 2*Math.abs(d[0]);
+  const sideBySide=Math.abs(Math.cos(pinch.a)) > Math.SQRT1_2;   // the line between the fingers is nearer level than upright
+  return sideBySide && upright(dp) && upright(dq) && dp[1]*dq[1] > 0 ? 'tilt' : 'map';
+}
+// The camera follows the fingers. The floor point under their old midpoint is found through the floor shader's own
+// map (world = R(yaw)·screen·extent/height + view_center), zoom and orbit change, and the pan is solved to put that
+// point under the new midpoint. Exact top-down (pitch 0); with a tilt the pan is the top-down one, near enough.
+function pinchMove(){
+  const f=pinchFrame();
+  f.mode = pinch.mode ?? pinchMode(f);
+  if(!f.mode) return;                                          // undecided: the frame stays where the gesture began
+  if(f.mode==='tilt'){
+    params.view_pitch_deg = clamp(params.view_pitch_deg + (pinch.y-f.y)*0.3, 0, 80);   // the mouse drag's rate and range
+    pinch=f; stopPlay(); chipSoon(); syncControl('view_pitch_deg');
+    return;
+  }
+  const r=canvas.getBoundingClientRect(), H=Math.max(1,r.height), mx=r.left+r.width/2, my=r.top+r.height/2;
+  const ground=(x,y)=>{ const k=params.view_extent_m/H, sx=(x-mx)*k, sy=(my-y)*k, a=params.view_yaw_deg*Math.PI/180, c=Math.cos(a), s=Math.sin(a);
+    return [c*sx+s*sy, -s*sx+c*sy]; };
+  const w=ground(pinch.x,pinch.y), wx=w[0]+params.view_center_x, wy=w[1]+params.view_center_y;
+  const turn=Math.atan2(Math.sin(f.a-pinch.a),Math.cos(f.a-pinch.a));   // clockwise on screen is positive (y points down)
+  params.view_extent_m = clamp(params.view_extent_m*pinch.d/f.d, 0.5, 40);
+  params.view_yaw_deg = ((params.view_yaw_deg - turn*180/Math.PI + 180)%360+360)%360 - 180;   // the floor turns with the fingers
+  const v=ground(f.x,f.y);
+  params.view_center_x = clamp(wx-v[0], -25, 25);              // the pan slider's range, so its thumb stays in sync
+  params.view_center_y = clamp(wy-v[1], -25, 25);
+  pinch=f;
+  stopPlay(); chipSoon();
+  for(const key of ['view_extent_m','view_yaw_deg','view_center_x','view_center_y']) syncControl(key);
+}
+// Safari's own pinch would zoom the page: the picture takes the gesture whole
+canvas.addEventListener('gesturestart',e=>e.preventDefault());
 canvas.addEventListener('pointerdown',e=>{
   // tap the tree preview to PIN it big (tap again to unpin); otherwise begin a gesture
   if(showTree){ const r=canvas.getBoundingClientRect();
     if(eng.treeInsetHit({ x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height })){ treePinned=!treePinned; return; } }
-  if(e.pointerType==='touch') swipe={ sx:e.clientX, sy:e.clientY, axis:null };
+  if(e.pointerType==='touch'){
+    touches.set(e.pointerId,{ x:e.clientX, y:e.clientY });
+    if(touches.size===1){ swipe={ sx:e.clientX, sy:e.clientY, axis:null }; multi=false; }
+    else { swipe=null; multi=true; pinch=pinchFrame(); }
+  }
   else dragging=true;
   px=e.clientX; py=e.clientY;
   try{ canvas.setPointerCapture(e.pointerId); }catch{ /* synthetic pointers (tests) have no active id — the gesture state above is already set */ } });
+// a finger off: with two still down the pinch goes on from them, with one left it rests until that one lifts too
+function liftFinger(id){
+  touches.delete(id);
+  pinch = touches.size>=2 ? pinchFrame() : null;
+  if(!touches.size) multi=false;
+}
 canvas.addEventListener('pointerup',e=>{
+  if(multi){ liftFinger(e.pointerId); return; }
+  touches.delete(e.pointerId);
   if(swipe){
     if(swipe.axis){ const d = swipe.axis==='x' ? e.clientX-swipe.sx : e.clientY-swipe.sy;
       if(Math.abs(d)>SWIPE_STEP){ stepPreset(d<0 ? 1 : -1); showLookName(); } }   // up/left = next, down/right = previous
@@ -1429,8 +1492,13 @@ canvas.addEventListener('pointerup',e=>{
     swipe=null;
   }
   dragging=false; });
-canvas.addEventListener('pointercancel',()=>{ swipe=null; dragging=false; });
+canvas.addEventListener('pointercancel',e=>{ liftFinger(e.pointerId); swipe=null; dragging=false; });
 canvas.addEventListener('pointermove',e=>{
+  if(touches.has(e.pointerId)){
+    touches.set(e.pointerId,{ x:e.clientX, y:e.clientY });
+    if(pinch){ pinchMove(); return; }
+    if(multi) return;                                          // the one finger left of a pinch moves nothing
+  }
   if(swipe){
     if(!swipe.axis){ const dx=e.clientX-swipe.sx, dy=e.clientY-swipe.sy;
       if(Math.hypot(dx,dy)>=SWIPE_DEAD) swipe.axis = Math.abs(dx)>Math.abs(dy) ? 'x' : 'y'; }
