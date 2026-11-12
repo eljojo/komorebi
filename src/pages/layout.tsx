@@ -24,9 +24,9 @@ export function Layout(props: { title: string; home?: boolean; viewer: Actor | n
           <meta name="color-scheme" content="dark" />
           <title>{`${props.title} · komorebi`}</title>
           <link rel="stylesheet" href={`${BASE}/arboretum.css`} />
-          {/* komorebi's own manifest, at the site root: arboretum is part of the one installed app */}
-          <link rel="manifest" href="/manifest.webmanifest" />
-          <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+          {/* komorebi's own manifest, at the site root: arboretum is part of the one installed app; ?v= follows komorebi's index.html */}
+          <link rel="manifest" href="/manifest.webmanifest?v=2" />
+          <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2" />
         </head>
         <body>
           <header>
