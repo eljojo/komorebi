@@ -72,6 +72,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `arboretum.js` — where looks are kept, in tiers (local, read, session; its header sets them out); the only file that
   touches storage or arboretum. `arboretum-api.js` is its wire, imported by it alone.
 - `leaf-maze.js` (pure) and `leaf-preview.js` — the held leaf (`L`); `leaf-preview.js` is imported by `editor.js` alone.
+- `midi.js` — an AKAI MIDImix over Web MIDI (`M` shows its console): writes only through what the editor lends it, imported by `editor.js` alone.
 
 **The site.** `about.html` + `about.css` — the one source of the about text, which the welcome also opens in place.
 `breathe.js` — how a page is left (not loaded by `examples/`). `player.html` — viewer-only. `manifest.webmanifest` + `icons/` —

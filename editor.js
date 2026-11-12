@@ -8,6 +8,7 @@ import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep 
 import { makeLeafPreview } from './leaf-preview.js';
 import { senescing } from './komorebi-math.js';
 import { LEAF_SHAPES } from './komorebi-leaf.js';
+import { mountMidi } from './midi.js';
 // ============================================================================
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
@@ -76,6 +77,7 @@ function applyParams(obj){ endTween(); trySeasonCancel(); eng.setParams(obj); sy
 // looked at again after each edit: at most every 200 ms, the last edit always read.
 let lookChip=null, chipTimer=0;
 function chipSoon(){ if(!chipTimer) chipTimer=setTimeout(()=>{ chipTimer=0; refreshChip(); }, 200); }
+let midi=null;                   // the MIDImix prototype (midi.js), mounted once everything it borrows exists
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
 
 // ===========================================================================
@@ -489,7 +491,7 @@ function syncControl(key){ const c=controlEls[key]; if(!c)return;
   }
   if(c.input.type==='checkbox') c.input.checked=!!params[key]; else c.input.value=params[key];
   if(c.valEl) c.valEl.textContent=fmt(params[key]); }
-function syncAllControls(){ for(const k in controlEls) syncControl(k); tryCapture(); syncMacroControls(); }   // every load of a look lands here: the try-out's home is the look's own values
+function syncAllControls(){ for(const k in controlEls) syncControl(k); tryCapture(); syncMacroControls(); midi?.look(); }   // every load of a look lands here: the try-out's home is the look's own values
 
 // ===========================================================================
 // The playful + minimalist surfaces (the mode ladder's upper rungs) and the
@@ -1584,6 +1586,7 @@ window.addEventListener('keydown',e=>{
   if(k==='l'||k==='L'){ showLeaf=!showLeaf; leaf??=makeLeafPreview(params, () => eng.grove().hier); leaf.show(showLeaf); return; }
   if(showLeaf && (k==='['||k===']')){ leaf.step(k===']'?1:-1); return; }
   if(k==='f'||k==='F'){ toggleFullscreen(); return; }
+  if(k==='m'||k==='M'){ midi?.toggle(); return; }
   if(k==='ArrowLeft'||k==='ArrowRight'||k==='ArrowUp'||k==='ArrowDown'){
     const tag=(document.activeElement?.tagName)||'';
     if(tag==='INPUT'||tag==='SELECT') return;                               // let a focused panel control use the arrows
@@ -1607,7 +1610,7 @@ document.addEventListener('mouseleave',()=>{ treePointer=null; });
 // inset (when the panel is open), and update the HUD. ------------------------
 eng.onFrame = ()=> {
   sessionPanel.refresh();
-  tickTween(); trySeasonTick();
+  tickTween(); trySeasonTick(); midi?.frame();
   if(params.drift_auto) syncControl('drift_phase');
   refreshGates();               // a transition, a macro or a preset can flip a mode as readily as the row itself; the signature check makes the miss cheap
   const devUp = !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');   // a sliding-out panel counts as gone
@@ -1874,6 +1877,16 @@ window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setCl
 })();
 
 // ===========================================================================
+midi = mountMidi({
+  params, PANEL, MACROS, TRY_SPECS, bus, macroUsable, tryWrite, stepPreset, reseed, stopPlay,
+  toggleControls: () => { if(document.body.classList.contains('intro')) document.getElementById('feel').click(); else toggleControls(); },   // on the welcome, the panel button is "feel"
+  tryReady: () => tryHome !== null,
+  syncUI: () => syncMacroControls(),                           // the sliders and dials follow the hand (syncMacroControls seats the dials too)
+  transActive: () => eng.trans.active,
+  getTransDur: () => transDur, setTransDur: (v) => { transDur = v; },
+  playing: () => player.playing,
+  togglePlay: () => { if(!plays(stateNow(), activeList())) return; if(player.playing) player.stop(); else player.start(presetSel.value); },
+});
 // Welcome gate — the page opens on a faint 'memories' background (the §1 north-
 // star look) under an intro overlay. "feel" un-dims the canvas and cloud-bloom
 // crossfades to the editor's default look. On desktop the dev panel then slides

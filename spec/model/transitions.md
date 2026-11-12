@@ -2,7 +2,7 @@
 
 *How the piece moves from one look to another: what is kept, what changes, and how a change is made without a cut.*
 
-A look is a place. Stepping from one to the next (the arrow keys in the editor, a playlist's dwell running out, the player cycling on a homepage, one day a MIDI controller) is a walk between two places, and it must feel like one. There is one entry point for every driver: the engine is handed the target look, a duration and, optionally, a style, and chooses the route itself. The duration and the style belong to the driver (an editor knob, a playlist's crossfade), never to a look.
+A look is a place. Stepping from one to the next (the arrow keys in the editor, a playlist's dwell running out, the player cycling on a homepage, a MIDI controller's bank buttons) is a walk between two places, and it must feel like one. There is one entry point for every driver: the engine is handed the target look, a duration and, optionally, a style, and chooses the route itself. The duration and the style belong to the driver (an editor knob, a playlist's crossfade), never to a look.
 
 ## The principle
 
@@ -216,7 +216,7 @@ The season macro is not a transition. Restarting an ease per drag event, re-prof
 ## Not built
 
 - **The wood crossfade.** The shared-layer crossfade blends leaves only; the analytic wood is now stored so it could hold two sets, so crossfading wood is a real next step. A look with wood still takes the honest dissolve. See [`../exploration/open.md`](../exploration/open.md).
-- **A MIDI or event driver.** It is planned to call the same single entry point the arrow keys do. See [`../exploration/open.md`](../exploration/open.md).
+- **An event driver.** Audio or another event source is planned to call the same single entry point the arrow keys and the MIDImix's bank buttons do. See [`../exploration/open.md`](../exploration/open.md).
 
 ## Related
 

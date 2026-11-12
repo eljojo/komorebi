@@ -128,7 +128,7 @@ The founding seven questions were left deliberately unresolved, to be tuned in t
 - **The Metal harness backend** · **[José's call]** · Listed for a later session, "first, your pick" *(from the bot's log, uncommitted)*. [`../implementation.md`](../implementation.md).
 - **Parallel video rendering, on a GPU host** · **[provisional value]** · Rendering segments in parallel is unproven until two runs compare equal on a GPU host: the tiny engine's state across fades, memory at several sessions, and the speed-up. A playlist's browser half is likewise checked only on a GPU host. [`../implementation.md`](../implementation.md).
 - **A timing assertion in the unit tests** · **[José's call]** · The held leaf's maze test asserts a wall-clock limit that failed on a loaded machine; report instead of assert, or loosen it for CI *(from the bot's log, uncommitted)*. [`../implementation.md`](../implementation.md).
-- **Other drivers** · **[idea]** · A MIDI or audio layer calling the same control bus and the same transition entry point the arrow keys call; and a touch to move the sun in the viewer-only player. [`../implementation.md`](../implementation.md).
+- **Other drivers** · **[idea]** · An audio layer calling the same control bus and the same transition entry point the arrow keys call, as the MIDImix now does; and a touch to move the sun in the viewer-only player. [`../implementation.md`](../implementation.md#the-editor-and-the-player).
 
 ## Related
 
