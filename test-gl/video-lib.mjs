@@ -163,7 +163,9 @@ export function masterChain({ ow, oh, ss, space, master }) {
 export const INDEX_PTS = (fps) => `settb=1/${fps},setpts=N`;
 // What a player does to a yuv420p/bt709/tv file on its way to RGB: the chroma is upsampled with a real filter, in the file's matrix and range.
 export const PLAYER_RGB = 'scale=in_range=tv:in_color_matrix=bt709:out_range=pc:flags=accurate_rnd+full_chroma_int';
-export const deliveryFilter = ({ fps, trc }) => `${INDEX_PTS(fps)},scale=out_color_matrix=bt709:out_range=tv:flags=accurate_rnd+full_chroma_int,setparams=colorspace=bt709:color_primaries=bt709:color_trc=${trc}:range=tv,format=yuv420p`;
+// the colour tags every delivery carries; GPU YUV capture arrives already converted and gets only these
+export const deliveryTags = (trc) => `setparams=colorspace=bt709:color_primaries=bt709:color_trc=${trc}:range=tv`;
+export const deliveryFilter = ({ fps, trc }) => `${INDEX_PTS(fps)},scale=out_color_matrix=bt709:out_range=tv:flags=accurate_rnd+full_chroma_int,${deliveryTags(trc)},format=yuv420p`;
 // ---- rates: the delivery's bitrate with its cap, the FAT32 file limit, and what a run costs on disk ----
 // hevc_videotoolbox's -b:v is an average. Beside it -maxrate (1.25x) and -bufsize (2x) make a ceiling a projector's own player can count on: 60M gives 75M / 120M,
 // about 2 GB for 5 minutes. -q:v 100 is the explicit choice for the best picture and measured 157 Mbit/s (5.9 GB for 5 minutes) on a lit look.

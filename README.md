@@ -128,7 +128,7 @@ The Mac exporter uses the same scene and deterministic frame clock with four cap
 | `--pipeline` | When to use it | How the MP4 is made |
 | --- | --- | --- |
 | `master` (default) | Lossless archives, studies, later re-encoding | Lossless RGB segments, then eight-bit HEVC. |
-| `gpu` | Everyday production | GPU resize when supersampling, output-sized RGB readback, VideoToolbox eight-bit HEVC. |
+| `gpu` | Everyday production | GPU resize when supersampling, YUV 4:2:0 conversion on the GPU, VideoToolbox eight-bit HEVC. |
 | `gpu-main10` | Highest measured fidelity, especially faint colours | GPU capture, direct P010 conversion, VideoToolbox HEVC Main10. Source RGB remains eight-bit, SDR BT709. |
 | `browser` | Short scene-planning tests | Native browser HEVC QP1 from VideoFrame, then MP4 muxing. Fastest in the local comparison, with a small measured fidelity loss. |
 
@@ -140,6 +140,11 @@ it is 4K down to 1080p. Selecting a GPU pipeline does not force supersampling. D
 nix run .#video -- --look-json look.json --commit <sha> --out test-gl/out/video/preview --seconds 5 --pipeline browser
 nix run .#video -- --look-json look.json --commit <sha> --out test-gl/out/video/final --seconds 30 --pipeline gpu-main10 --vt-quality 100 --ss 2
 ```
+
+`gpu` converts each frame to BT.709 limited-range 4:2:0 on the GPU, within a code of ffmpeg's own conversion, and reads
+back 1.5 bytes a pixel instead of 4. It helps where the CPU is the limit: on an M1 Pro, 4K went from 67.5 to 38.0 ms/frame
+and 1080p from 25.0 to 19.1, with PSNR against a lossless master unchanged. On a host whose GPU is already the limit the
+conversion costs about 1.5 ms a frame at 1080p and 3 ms at 4K; `--cpu-yuv` reads back RGBA and lets ffmpeg convert, as before.
 
 GPU and master pipelines keep the existing 60M bitrate default; `--vt-quality 100` chooses highest-fidelity encoding with
 larger files. Browser QP1 is fixed and refuses VT delivery controls. Main10 is ten-bit YUV 4:2:0, not HDR.

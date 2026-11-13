@@ -31,6 +31,9 @@
 //                          gpu-main10 converts output RGB directly to 10-bit P010 then HEVC Main10; browser feeds VideoFrame to native HEVC QP1, transferring only compressed bytes.
 //                          Scene quality and --ss are independent: --ss 1 renders output size directly, --ss 2 renders 4K for a 1080p delivery. Direct pipelines support ss 1/2,
 //                          linear downscale only, SDR bt709 and HEVC. GPU modes accept --vt-bitrate/--vt-quality; browser uses fixed QP1 (no VT delivery controls).
+//                          gpu converts to BT.709 limited-range I420 on the GPU (webcodecs.mjs installYuvConverter, within a code of ffmpeg's conversion) and reads
+//                          back 1.5 bytes a pixel instead of 4; ffmpeg then only tags and encodes. A width not divisible by 4 falls back to ffmpeg's conversion.
+//   --cpu-yuv              with --pipeline gpu: read back RGBA and let ffmpeg convert, as before GPU conversion (for a host where the GPU is the limit)
 //                          All modes checkpoint each segment. Direct modes keep encoded MP4 segments until delivery is stream-copied and verified, then delete them;
 //                          they have no lossless master or raw pixel hashes and refuse --measure, --stills, --encode-only, --merge-master and --drop-segments.
 //   --preroll 30           seconds of discarded motion before frame 0 (integrated on a tiny engine, see video.html cheapPreroll)
@@ -87,7 +90,7 @@ import { exportSession } from './session-lib.mjs';
 import os from 'node:os';
 import { directDiskPlan, directJoinArgs, directSegmentArgs, pipelinePlan } from './pipeline.mjs';
 import { checkAgainstTiny, eventsUpTo, parseBlockSegments, parseJobs, restorePoint, runPool, tinyEvents, tinyPlan, todoSegments } from './parallel.mjs';
-import { captureCanvasRun, encodeCanvasRun, hevcQuantizerConfig, installLinearDownscale } from './webcodecs.mjs';
+import { captureCanvasRun, encodeCanvasRun, hevcQuantizerConfig, installLinearDownscale, installYuvConverter } from './webcodecs.mjs';
 import {
   ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VAAPI_BITRATE, VAAPI_DEVICE, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, checkPlaylistTimes, chromiumIdentity, concatListText, countFrames, countFramesAsync, countPackets, countPacketsAsync, deliveryArgs, exportEngine,
   diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, fetchArboretumPlaylist, ffmpegVersion, ffprobeJson, ffprobeJsonAsync, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, parsePlaylistSpec, pipeRequestTo, playlistFromJson, playlistRunBlock, playlistSchedule, qualityReport,
@@ -130,6 +133,7 @@ const [OW, OH] = flag('--size', '1920x1080').split('x').map(Number);
 const SS = Number(flag('--ss', 1));
 const SS_SPACE = flag('--ss-space', 'linear');
 const PIPELINE = flag('--pipeline', 'master');
+const CPU_YUV = has('--cpu-yuv');
 const PREROLL_S = Number(flag('--preroll', 30));
 const SEG_S = Number(flag('--segment-seconds', 10));
 const MASTER = flag('--master', 'ffv1');
@@ -161,7 +165,7 @@ if (!GPU_VARIANTS[CHROME]) die(`--chrome ${CHROME}: not one of ${Object.keys(GPU
 const DISCARD = has('--discard-master');
 if (DISCARD) for (const f of ['--merge-master', '--drop-segments', '--encode-only']) if (has(f)) die(`--discard-master and ${f} are incompatible: ${f === '--encode-only' ? 'it re-encodes from the master that --discard-master deletes' : 'it keeps a master that --discard-master deletes'}`);
 let PLAN;
-try { PLAN = pipelinePlan({ pipeline: PIPELINE, ow: OW, oh: OH, ss: SS, space: SS_SPACE }); } catch (e) { die(e.message); }
+try { PLAN = pipelinePlan({ pipeline: PIPELINE, ow: OW, oh: OH, ss: SS, space: SS_SPACE, yuv: CPU_YUV ? 'cpu' : undefined }); } catch (e) { die(CPU_YUV ? `--cpu-yuv: ${e.message}` : e.message); }
 if (PLAN.direct) {
   for (const f of ['--measure', '--stills', '--encode-only', '--merge-master', '--drop-segments']) if (has(f)) die(`--pipeline ${PIPELINE} and ${f} are incompatible: direct pipelines have no lossless master`);
   if (!(DELIVERY === 'hevc_videotoolbox' || (DELIVERY === 'hevc_vaapi' && PIPELINE !== 'browser')) || TRC !== 'bt709')
@@ -210,7 +214,7 @@ const mergedPresent = () => existsSync(P('master.mkv'));
 const masterInput = () => (segsPresent() ? CONCAT_INPUT(LIST) : ['-i', P('master.mkv')]);
 
 if (has('--print-ffmpeg')) {   // dry run: the commands, nothing launched, nothing written
-  console.log(JSON.stringify({ segment: [FFMPEG, ...(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, codec: DELIVERY, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file: 'seg.mp4' }) : segArgs('seg.mkv', SEG_FRAMES))], delivery: [FFMPEG, ...(PLAN.direct ? directJoinArgs({ input: CONCAT_INPUT('seg/list.txt'), out: 'delivery.mp4', fps: FPS }) : deliveryArgv(CONCAT_INPUT('seg/list.txt'), 'delivery.mp4'))] }));
+  console.log(JSON.stringify({ segment: [FFMPEG, ...(PLAN.direct ? directSegmentArgs({ input: PLAN.yuv === 'gpu' ? 'yuv420p' : 'rgba', pipeline: PIPELINE, codec: DELIVERY, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file: 'seg.mp4' }) : segArgs('seg.mkv', SEG_FRAMES))], delivery: [FFMPEG, ...(PLAN.direct ? directJoinArgs({ input: CONCAT_INPUT('seg/list.txt'), out: 'delivery.mp4', fps: FPS }) : deliveryArgv(CONCAT_INPUT('seg/list.txt'), 'delivery.mp4'))] }));
   process.exit(0);
 }
 // ------------------------------------------------------------------ files
@@ -316,6 +320,7 @@ const runKeyBody = () => ({
   fps: FPS, step_ms: STEP, t0_ms: T0_MS, size: [OW, OH], ss: SS, ss_space: SS === 1 ? 'n/a' : SS_SPACE, preroll_frames: PREROLL, segment_frames: SEG_FRAMES,
   master: MASTER, master_chain: masterChain(), chrome: CHROME, ffmpeg_version: FFMPEG_VERSION,
   ...(PLAN.direct ? { pipeline: PIPELINE, master: null, master_chain: null, pipeline_identity: { pipeline_sha256: sha256(readFileSync(join(HERE, 'pipeline.mjs'))), webcodecs_sha256: sha256(readFileSync(join(HERE, 'webcodecs.mjs'))) }, delivery_settings: { vt_bitrate: PIPELINE === 'browser' || DELIVERY === 'hevc_vaapi' || VT_QUALITY ? null : VT_BITRATE, vt_quality: PIPELINE === 'browser' ? null : VT_QUALITY ?? null, quantizer: PIPELINE === 'browser' ? 1 : null, gop: PIPELINE === 'browser' ? FPS * 2 : GOP, ...(DELIVERY === 'hevc_vaapi' ? { encoder: DELIVERY, vaapi_device: VAAPI_DEVICE, bitrate: VAAPI_BITRATE } : {}) } } : {}),
+  ...(PLAN.yuv === 'gpu' ? { capture_yuv: 'gpu-i420-bt709-tv' } : {}),   // only a GPU-converted run carries it: --cpu-yuv and the other pipelines keep their keys
   ...(ARB_RECORD ? { arboretum: ARB_RECORD.block } : {}),   // a look from a file has no such key, so its run keys are what they were
   ...(PLAYLIST ? { playlist: PLAYLIST.block } : {}),         // likewise a single look has no playlist key
 });
@@ -458,7 +463,8 @@ async function renderAll(firstTodo) {
     try { assertServedPage(srv.served, PAGE_SHA); } catch (e) { await b.browser.close(); throw fatal(e.message); }
     session = { browser: b.browser, page, launch: b, pageSha: srv.served.get(PAGE_KEY) };
     const info = await page.evaluate((o) => window.__v.open(o), { params: STOP_PARAMS[stop], rw: RW, rh: RH, step: STEP, T0: T0_MS, at: atPump, state, overrideKeys: Object.keys(overrides) });
-    if (PLAN.downscale) await page.evaluate(installLinearDownscale, { width: OW, height: OH });
+    if (PLAN.yuv === 'gpu') await page.evaluate(installYuvConverter, { width: OW, height: OH, ss: SS });
+    else if (PLAN.downscale) await page.evaluate(installLinearDownscale, { width: OW, height: OH });
     return info;
   };
 
@@ -510,7 +516,7 @@ async function renderAll(firstTodo) {
         assertHardwareRenderer(openInfo.renderer, CHROME);
       }
       const file = segFile(i);
-      ff = spawnFfmpeg(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, codec: DELIVERY, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file }) : segArgs(file, frames));
+      ff = spawnFfmpeg(PLAN.direct ? directSegmentArgs({ input: PLAN.yuv === 'gpu' ? 'yuv420p' : 'rgba', pipeline: PIPELINE, codec: DELIVERY, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file }) : segArgs(file, frames));
       const thisFf = ff;
       killers.push(() => thisFf.kill());
       if ((injected.get(i) ?? 0) < (INJECT[i] ?? 0)) { injected.set(i, (injected.get(i) ?? 0) + 1); throw new Error(`injected failure in segment ${i}`); }
@@ -651,7 +657,8 @@ async function renderParallel() {
         try { assertServedPage(srv.served, PAGE_SHA); } catch (e) { throw fatal(e.message); }   // video.html is read live at every page load: it must be the page the key names
         opened.pageSha = srv.served.get(PAGE_KEY);
         const openInfo = await opened.page.evaluate((o) => window.__v.open(o), { params: STOP_PARAMS[rp.stop], rw: RW, rh: RH, step: STEP, T0: T0_MS, at: rp.at, state: readJson(ckptFile(rp.at)).state, overrideKeys: Object.keys(overrides) });
-        if (PLAN.downscale) await opened.page.evaluate(installLinearDownscale, { width: OW, height: OH });
+        if (PLAN.yuv === 'gpu') await opened.page.evaluate(installYuvConverter, { width: OW, height: OH, ss: SS });
+        else if (PLAN.downscale) await opened.page.evaluate(installLinearDownscale, { width: OW, height: OH });
         const setupS = (Date.now() - tSetup) / 1000;
         setupSum += setupS;
         slog(w, `setup ${fmt(setupS)} s (browser launch + engine build)`);
@@ -670,7 +677,7 @@ async function renderParallel() {
       const sess = live.get(w);
       if (sess.at !== from) throw new Error(`internal: session ${w}'s engine is at pump ${sess.at}, segment ${i} starts at ${from}`);
       const file = segFile(i), sink = `seg-${i}`;
-      ff = spawnFfmpeg(PLAN.direct ? directSegmentArgs({ pipeline: PIPELINE, codec: DELIVERY, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file }) : segArgs(file, frames));
+      ff = spawnFfmpeg(PLAN.direct ? directSegmentArgs({ input: PLAN.yuv === 'gpu' ? 'yuv420p' : 'rgba', pipeline: PIPELINE, codec: DELIVERY, ow: OW, oh: OH, fps: FPS, trc: TRC, vtQuality: VT_QUALITY, vtBitrate: VT_BITRATE, gop: GOP, file }) : segArgs(file, frames));
       const thisFf = ff;
       killers.push(() => thisFf.kill());
       if ((injected.get(i) ?? 0) < (INJECT[i] ?? 0)) { injected.set(i, (injected.get(i) ?? 0) + 1); throw new Error(`injected failure in segment ${i}`); }
@@ -907,6 +914,9 @@ function buildManifest({ segs, mpackets, masterProbe, mergedSha }) {
     manifest.master_probe = null;
     manifest.encoded_segments = { codec: 'hevc', lossless: false, segments: segs, segments_on_disk: segsPresent(), list: 'seg/list.txt', checksums: 'seg/SHA256SUMS', set_sha256: setSha };
     manifest.output.ss_downscale = PLAN.downscale ? { space: 'linear', filter: 'GPU highp float 2x2 box average in pow(2.2) linear light, rounded to RGBA8' } : null;
+    manifest.output.yuv_conversion = PLAN.yuv === 'gpu'
+      ? { where: 'GPU', format: 'I420 BT.709 limited range', method: 'luma per pixel; chroma: horizontal pair average, then 8-tap vertical filter (-231 -687 1968 7142 7142 1968 -687 -231)/16384 fitted to swscale, edges repeated', held_to: 'within 1 code of ffmpeg deliveryFilter per plane (webcodecs-gpu.test.mjs)' }
+      : { where: 'ffmpeg (swscale)', filter: 'deliveryFilter' };
     manifest.frame_accounting = { frames_requested: N, frames_captured: frameCount, encoded_packets: mpackets, delivery_decoded_frames: man.delivery_probe?.decoded_frames ?? null, exact: fa.exact };
     manifest.delivery = { ...man.delivery, source: 'encoded MP4 segments, stream copied without re-encoding', pipeline: PIPELINE, codec: 'hevc', ...(PIPELINE === 'browser' ? { quantizer: 1, gop: FPS * 2, bitrate_arg: null, maxrate_arg: null, bufsize_arg: null, quality_arg: null } : {}) };
     manifest.ffmpeg.delivery_command = [FFMPEG, ...directJoinArgs({ input: CONCAT_INPUT('seg/list.txt'), out: 'delivery.mp4', fps: FPS })].join(' ');

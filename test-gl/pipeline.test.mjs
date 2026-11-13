@@ -9,7 +9,7 @@ test('four pipeline plans preserve the requested render size and distinguish los
   for (const pipeline of ['master', 'gpu', 'gpu-main10', 'browser']) {
     const p = lib.pipelinePlan({ ...base, pipeline });
     assert.equal(p.direct, pipeline !== 'master');
-    assert.equal(p.frameBytes, (pipeline === 'master' ? 3840 * 2160 : 1920 * 1080) * 4);
+    assert.equal(p.frameBytes, pipeline === 'master' ? 3840 * 2160 * 4 : pipeline === 'gpu' ? 1920 * 1080 * 3 / 2 : 1920 * 1080 * 4);
     assert.equal(p.extension, pipeline === 'master' ? 'mkv' : 'mp4');
   }
   assert.equal(lib.pipelinePlan({ ...base, pipeline: 'gpu', ss: 1 }).downscale, false);
@@ -24,6 +24,45 @@ test('GPU delivery goes directly from output-sized RGBA to HEVC, with Main10 con
     assert.match(argv[argv.indexOf('-vf') + 1], /^vflip,/);
     assert.match(argv[argv.indexOf('-vf') + 1], pipeline === 'gpu' ? /format=yuv420p/ : /format=p010le/);
     assert.ok(!argv.includes('ffv1'));
+  }
+});
+
+test('GPU YUV: the gpu pipeline reads back 4:2:0 made on the GPU by default, 1.5 bytes a pixel, which ffmpeg only tags and encodes', () => {
+  const p = lib.pipelinePlan({ ...base, pipeline: 'gpu' });
+  assert.equal(p.yuv, 'gpu');
+  assert.equal(p.frameBytes, 1920 * 1080 * 3 / 2);
+  const cpu = lib.pipelinePlan({ ...base, pipeline: 'gpu', yuv: 'cpu' });   // --cpu-yuv: ffmpeg converts the RGBA, as before
+  assert.equal(cpu.yuv, 'cpu');
+  assert.equal(cpu.frameBytes, 1920 * 1080 * 4);
+  // a width the packing cannot take falls back to ffmpeg's conversion, decided by the size alone
+  assert.equal(lib.pipelinePlan({ ...base, pipeline: 'gpu', ow: 1922 }).yuv, 'cpu');
+  for (const pipeline of ['master', 'gpu-main10', 'browser']) assert.equal(lib.pipelinePlan({ ...base, pipeline }).yuv, 'cpu');
+  for (const codec of ['hevc_videotoolbox', 'hevc_vaapi']) {
+    const args = lib.directSegmentArgs({ ...base, ...(codec === 'hevc_vaapi' ? { vtQuality: undefined } : {}), codec, pipeline: 'gpu', input: 'yuv420p', file: 'seg.mp4' });
+    const vf = args[args.indexOf('-vf') + 1];
+    assert.deepEqual(args.flatMap((arg, i) => arg === '-pix_fmt' ? [args[i + 1]] : []), ['yuv420p']);
+    assert.equal(args[args.indexOf('-s') + 1], '1920x1080');
+    assert.doesNotMatch(vf, /vflip|scale=/, 'the planes arrive top-down and already in BT.709 limited range');
+    assert.match(vf, /setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv/);
+    if (codec === 'hevc_vaapi') assert.match(vf, /format=nv12,hwupload$/);
+    else assert.doesNotMatch(vf, /format=/);
+    assert.equal(args[args.indexOf('-profile:v') + 1], 'main');
+  }
+});
+
+test('GPU YUV is refused where it does not apply', () => {
+  for (const options of [{ pipeline: 'gpu-main10' }, { pipeline: 'master' }, { pipeline: 'browser' }, { pipeline: 'gpu', ow: 1922 }]) {
+    assert.throws(() => lib.pipelinePlan({ ...base, ...options, yuv: 'gpu' }), /YUV/);
+  }
+  assert.throws(() => lib.pipelinePlan({ ...base, pipeline: 'gpu', yuv: 'other' }), /yuv/);
+  const refused = spawnSync(process.execPath, ['test-gl/render-video.mjs', '--look-json', '/missing.json', '--tree', '--out', '/missing-output', '--pipeline', 'gpu-main10', '--cpu-yuv'], { encoding: 'utf8' });
+  assert.equal(refused.status, 2);
+  assert.match(refused.stderr, /--cpu-yuv/);
+  for (const [extra, pixFmt] of [[[], 'yuv420p'], [['--cpu-yuv'], 'rgba']]) {
+    const printed = spawnSync(process.execPath, ['test-gl/render-video.mjs', '--look-json', '/missing.json', '--tree', '--out', '/missing-output', '--pipeline', 'gpu', ...extra, '--print-ffmpeg'], { encoding: 'utf8' });
+    assert.equal(printed.status, 0, printed.stderr);
+    const segment = JSON.parse(printed.stdout).segment;
+    assert.equal(segment[segment.indexOf('-pix_fmt') + 1], pixFmt);
   }
 });
 
