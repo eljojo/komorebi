@@ -584,6 +584,29 @@ test('seg/list.txt holds names relative to the list: a copy of the folder plays 
   assert.equal(lib.countPackets(list, ['-f', 'concat', '-safe', '0']), 60);
 }));
 
+// ---------------------------------------------------------------- a segment's checks leave the event loop free
+// With --jobs N every session's frames reach this one process through its sink. A blocking ffprobe stops them all while one segment is decoded back
+// from the output folder (on a NAS, seconds per 1080p segment), so the GPU waits; the async checks let the other sessions keep rendering.
+test('countFramesAsync, countPacketsAsync and ffprobeJsonAsync answer what the blocking ones do, with timers still firing while ffprobe runs', () => withDir(async (dir) => {
+  const fake = join(dir, 'ffprobe');
+  writeFileSync(fake, `#!/bin/sh\nsleep 0.5\ncase "$*" in *print_format*) echo '{"streams":[{"codec_type":"video"}],"format":{}}' ;; *) echo 60 ;; esac\n`);
+  chmodSync(fake, 0o755);
+  const child = `
+    const lib = await import(${JSON.stringify(join(HERE, 'video-lib.mjs'))});
+    let ticks = 0; const t = setInterval(() => ticks++, 20);
+    const sync = lib.countFrames('seg.mp4'); const syncTicks = ticks;
+    const r = await Promise.all([lib.countFramesAsync('seg.mp4'), lib.countPacketsAsync('seg.mp4'), lib.ffprobeJsonAsync('seg.mp4')]);
+    clearInterval(t);
+    console.log(JSON.stringify({ sync, syncTicks, r, ticks }));`;
+  const p = spawnSync(process.execPath, ['--input-type=module', '-e', child], { encoding: 'utf8', env: { ...process.env, FFPROBE: fake } });
+  assert.equal(p.status, 0, p.stderr);
+  const o = JSON.parse(p.stdout);
+  assert.equal(o.sync, 60);
+  assert.equal(o.syncTicks, 0, 'the blocking count lets no timer fire: this is what stalled the other sessions');
+  assert.deepEqual(o.r, [60, 60, { streams: [{ codec_type: 'video' }], format: {} }]);
+  assert.ok(o.ticks >= 10, `timers fired ${o.ticks} times during the async checks; expected the loop to stay free for ~0.5 s`);
+}));
+
 // ---------------------------------------------------------------- what the manifest states of the downscale and of the measure
 test('the manifest states the linear downscale error as measured (ss 2 within 1 code of the rounded reference, float 1.07 on real frames, ss 3-4 up to 2), not as a bound', () => run((f) => {
   assert.equal(exporter(encodeArgs(f)).status, 0);

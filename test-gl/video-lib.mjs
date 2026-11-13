@@ -305,6 +305,27 @@ export function countFrames(file) {
   if (r.status !== 0) throw new Error(`ffprobe -count_frames ${file}: ${r.stderr}`);
   return Number(r.stdout.trim());
 }
+// The same three probes without blocking the event loop: a segment's checks run while other --jobs sessions are still piping frames into this process,
+// and a spawnSync here would stall every one of them for as long as the segment takes to decode.
+function ffprobeAsync(args, what) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(FFPROBE, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '';
+    p.stdout.on('data', (d) => { out += d; });
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('error', reject);
+    p.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`${what}: ${err}`))));
+  });
+}
+export async function ffprobeJsonAsync(file, inputOpts = []) {
+  return JSON.parse(await ffprobeAsync(['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', ...inputOpts, file], `ffprobe ${file}`));
+}
+export async function countPacketsAsync(file, inputOpts = []) {
+  return Number((await ffprobeAsync(['-v', 'error', '-count_packets', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_packets', '-of', 'csv=p=0', ...inputOpts, file], `ffprobe -count_packets ${file}`)).trim());
+}
+export async function countFramesAsync(file) {
+  return Number((await ffprobeAsync(['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', file], `ffprobe -count_frames ${file}`)).trim());
+}
 
 // A running ffmpeg fed through stdin. write() honours back-pressure; end() resolves with { code, stderrTail }.
 export function spawnFfmpeg(args) {

@@ -89,8 +89,8 @@ import { directDiskPlan, directJoinArgs, directSegmentArgs, pipelinePlan } from 
 import { checkAgainstTiny, eventsUpTo, parseBlockSegments, parseJobs, restorePoint, runPool, tinyEvents, tinyPlan, todoSegments } from './parallel.mjs';
 import { captureCanvasRun, encodeCanvasRun, hevcQuantizerConfig, installLinearDownscale } from './webcodecs.mjs';
 import {
-  ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VAAPI_BITRATE, VAAPI_DEVICE, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, checkPlaylistTimes, chromiumIdentity, concatListText, countFrames, countPackets, deliveryArgs, exportEngine,
-  diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, fetchArboretumPlaylist, ffmpegVersion, ffprobeJson, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, parsePlaylistSpec, pipeRequestTo, playlistFromJson, playlistRunBlock, playlistSchedule, qualityReport,
+  ARBORETUM_BASE, ArboretumError, CONCAT_INPUT, FFMPEG, GPU_VARIANTS, HERE, PAGE_KEY, PLAYER_RGB, T0_MS, VAAPI_BITRATE, VAAPI_DEVICE, VT_BUFSIZE_X, VT_MAXRATE_X, assertHardwareRenderer, assertServedPage, browserFacts, canonicalJson, canonicalSha256, checkPlaylistTimes, chromiumIdentity, concatListText, countFrames, countFramesAsync, countPackets, countPacketsAsync, deliveryArgs, exportEngine,
+  diskPlan, estimateDeliveryMbit, exporterIdentity, fat32Forecast, fat32Report, fetchArboretum, fetchArboretumPlaylist, ffmpegVersion, ffprobeJson, ffprobeJsonAsync, fmt, launchBrowser, linearKnownLimits, masterChain as masterChainOf, onExit, openPage, osFacts, parseArboretumSpec, parsePlaylistSpec, pipeRequestTo, playlistFromJson, playlistRunBlock, playlistSchedule, qualityReport,
   redactArgv, runBaseline, runFfmpegAsync, runMeasure, scaleRate, sha256, sha256File, spawnFfmpeg, startServer, stepMsFor,
 } from './video-lib.mjs';
 
@@ -533,11 +533,11 @@ async function renderAll(firstTodo) {
       if (done.code !== 0) throw new Error(`ffmpeg segment ${i} exited ${done.code}: ${done.stderrTail}`);
       if (PIPELINE === 'browser' ? counter.bytes !== r.bytes || r.frames !== frames : counter.bytes !== frames * frameBytes || (PLAN.direct && r.frames !== frames)) throw new Error(`segment ${i}: capture frame/byte accounting mismatch`);
       if (!PLAN.direct && r.hashes.length !== frames) throw new Error(`segment ${i}: ${r.hashes.length} hashes for ${frames} frames`);
-      const packets = countPackets(file);
+      const packets = await countPacketsAsync(file);
       if (packets !== frames) throw new Error(`segment ${i}: ffprobe counts ${packets} packets, expected ${frames}`);
       if (PLAN.direct) {
-        if (countFrames(file) !== frames) throw new Error(`segment ${i}: decoded frame count mismatch`);
-        const s = ffprobeJson(file).streams.find((x) => x.codec_type === 'video');
+        if (await countFramesAsync(file) !== frames) throw new Error(`segment ${i}: decoded frame count mismatch`);
+        const s = (await ffprobeJsonAsync(file)).streams.find((x) => x.codec_type === 'video');
         if (s.width !== OW || s.height !== OH || s.r_frame_rate !== `${FPS}/1` || (PIPELINE === 'gpu-main10' && (s.profile !== 'Main 10' || s.pix_fmt !== 'yuv420p10le'))) throw new Error(`segment ${i}: wrong delivery dimensions, clock or Main10 profile`);
       }
       // commit: hashes, checkpoint, then the json that says "done"
@@ -689,11 +689,11 @@ async function renderParallel() {
       if (done.code !== 0) throw new Error(`ffmpeg segment ${i} exited ${done.code}: ${done.stderrTail}`);
       if (PIPELINE === 'browser' ? counter.bytes !== r.bytes || r.frames !== frames : counter.bytes !== frames * frameBytes || (PLAN.direct && r.frames !== frames)) throw new Error(`segment ${i}: capture frame/byte accounting mismatch`);
       if (!PLAN.direct && r.hashes.length !== frames) throw new Error(`segment ${i}: ${r.hashes.length} hashes for ${frames} frames`);
-      const packets = countPackets(file);
+      const packets = await countPacketsAsync(file);
       if (packets !== frames) throw new Error(`segment ${i}: ffprobe counts ${packets} packets, expected ${frames}`);
       if (PLAN.direct) {
-        if (countFrames(file) !== frames) throw new Error(`segment ${i}: decoded frame count mismatch`);
-        const s = ffprobeJson(file).streams.find((x) => x.codec_type === 'video');
+        if (await countFramesAsync(file) !== frames) throw new Error(`segment ${i}: decoded frame count mismatch`);
+        const s = (await ffprobeJsonAsync(file)).streams.find((x) => x.codec_type === 'video');
         if (s.width !== OW || s.height !== OH || s.r_frame_rate !== `${FPS}/1` || (PIPELINE === 'gpu-main10' && (s.profile !== 'Main 10' || s.pix_fmt !== 'yuv420p10le'))) throw new Error(`segment ${i}: wrong delivery dimensions, clock or Main10 profile`);
       }
       // commit: hashes, the states (checked against the tiny pass's where it wrote one), then the json that says "done"
