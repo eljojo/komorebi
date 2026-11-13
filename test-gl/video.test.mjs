@@ -587,10 +587,12 @@ test('seg/list.txt holds names relative to the list: a copy of the folder plays 
 // ---------------------------------------------------------------- a segment's checks leave the event loop free
 // With --jobs N every session's frames reach this one process through its sink. A blocking ffprobe stops them all while one segment is decoded back
 // from the output folder (on a NAS, seconds per 1080p segment), so the GPU waits; the async checks let the other sessions keep rendering.
-test('countFramesAsync, countPacketsAsync and ffprobeJsonAsync answer what the blocking ones do, with timers still firing while ffprobe runs', () => withDir(async (dir) => {
-  const fake = join(dir, 'ffprobe');
-  writeFileSync(fake, `#!/bin/sh\nsleep 0.5\ncase "$*" in *print_format*) echo '{"streams":[{"codec_type":"video"}],"format":{}}' ;; *) echo 60 ;; esac\n`);
-  chmodSync(fake, 0o755);
+test('countFramesAsync, countPacketsAsync and ffprobeJsonAsync answer what the blocking ones do, with timers still firing while they run', () => withDir(async (dir) => {
+  const probe = join(dir, 'ffprobe'), ff = join(dir, 'ffmpeg'), argv = join(dir, 'ffmpeg-argv');
+  // ffprobe answers packets and the stream probe; asked to count frames it fails, because frames are counted by ffmpeg's decode
+  writeFileSync(probe, `#!/bin/sh\nsleep 0.5\ncase "$*" in *count_frames*) exit 1 ;; *print_format*) echo '{"streams":[{"codec_type":"video"}],"format":{}}' ;; *) echo 60 ;; esac\n`);
+  writeFileSync(ff, `#!/bin/sh\necho "$*" >> ${argv}\nsleep 0.5\nprintf 'frame=30\\nprogress=continue\\nframe=60\\nprogress=end\\n'\n`);
+  for (const f of [probe, ff]) chmodSync(f, 0o755);
   const child = `
     const lib = await import(${JSON.stringify(join(HERE, 'video-lib.mjs'))});
     let ticks = 0; const t = setInterval(() => ticks++, 20);
@@ -598,13 +600,30 @@ test('countFramesAsync, countPacketsAsync and ffprobeJsonAsync answer what the b
     const r = await Promise.all([lib.countFramesAsync('seg.mp4'), lib.countPacketsAsync('seg.mp4'), lib.ffprobeJsonAsync('seg.mp4')]);
     clearInterval(t);
     console.log(JSON.stringify({ sync, syncTicks, r, ticks }));`;
-  const p = spawnSync(process.execPath, ['--input-type=module', '-e', child], { encoding: 'utf8', env: { ...process.env, FFPROBE: fake } });
+  const p = spawnSync(process.execPath, ['--input-type=module', '-e', child], { encoding: 'utf8', env: { ...process.env, FFPROBE: probe, FFMPEG: ff } });
   assert.equal(p.status, 0, p.stderr);
   const o = JSON.parse(p.stdout);
-  assert.equal(o.sync, 60);
+  assert.equal(o.sync, 60, 'the count is the last frame= ffmpeg reports');
   assert.equal(o.syncTicks, 0, 'the blocking count lets no timer fire: this is what stalled the other sessions');
   assert.deepEqual(o.r, [60, 60, { streams: [{ codec_type: 'video' }], format: {} }]);
   assert.ok(o.ticks >= 10, `timers fired ${o.ticks} times during the async checks; expected the loop to stay free for ~0.5 s`);
+  // every frame decoded, none duplicated or dropped to fit a clock, nothing written
+  for (const line of readFileSync(argv, 'utf8').trim().split('\n')) {
+    assert.match(line, /-map 0:v:0/);
+    assert.match(line, /-fps_mode passthrough/);
+    assert.match(line, /-f null -$/);
+    assert.match(line, /-progress pipe:1/);
+  }
+}));
+
+// ffprobe -count_frames decodes on one thread (165 s for a 5-minute 1080p delivery on an M4); ffmpeg's decode uses every core (45 s)
+test('countFrames decodes with ffmpeg and agrees with ffprobe -count_frames on a real file', () => withDir(async (dir) => {
+  const f = join(dir, 'clip.mp4');
+  assert.equal(lib.runFfmpeg(['-f', 'lavfi', '-i', 'testsrc2=size=128x72:rate=60', '-frames:v', '97', '-c:v', 'libx264', '-g', '30', '-bf', '2', f]).code, 0);
+  const probe = spawnSync(lib.FFPROBE, ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', f], { encoding: 'utf8' });
+  assert.equal(Number(probe.stdout.trim()), 97);
+  assert.equal(lib.countFrames(f), 97);
+  assert.equal(await lib.countFramesAsync(f), 97);
 }));
 
 // ---------------------------------------------------------------- what the manifest states of the downscale and of the measure

@@ -301,17 +301,25 @@ export function countPackets(file, inputOpts = []) {
   if (r.status !== 0) throw new Error(`ffprobe -count_packets ${file}: ${r.stderr}`);
   return Number(r.stdout.trim());
 }
-// decoded frames, actually counted (-count_frames decodes the stream)
+// decoded frames, actually counted: ffmpeg decodes the whole stream with its threaded decoder (ffprobe -count_frames decodes on one thread,
+// 165 s against 45 s for a 5-minute 1080p delivery on an M4), passthrough so no frame is duplicated or dropped to fit a clock, into the null muxer;
+// the count is the last frame= of -progress. A decode error fails the count rather than skipping the frame.
+const COUNT_FRAMES_ARGS = (file) => ['-hide_banner', '-nostats', '-v', 'error', '-xerror', '-i', file, '-map', '0:v:0', '-fps_mode', 'passthrough', '-progress', 'pipe:1', '-f', 'null', '-'];
+const lastFrame = (progress, file) => {
+  const n = [...progress.matchAll(/^frame=(\d+)$/gm)].at(-1)?.[1];
+  if (n === undefined) throw new Error(`ffmpeg frame count ${file}: no progress reported`);
+  return Number(n);
+};
 export function countFrames(file) {
-  const r = spawnSync(FFPROBE, ['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', file], { encoding: 'utf8' });
-  if (r.status !== 0) throw new Error(`ffprobe -count_frames ${file}: ${r.stderr}`);
-  return Number(r.stdout.trim());
+  const r = spawnSync(FFMPEG, COUNT_FRAMES_ARGS(file), { encoding: 'utf8', maxBuffer: 64 << 20 });
+  if (r.status !== 0) throw new Error(`ffmpeg frame count ${file}: ${r.stderr}`);
+  return lastFrame(r.stdout, file);
 }
 // The same three probes without blocking the event loop: a segment's checks run while other --jobs sessions are still piping frames into this process,
 // and a spawnSync here would stall every one of them for as long as the segment takes to decode.
-function ffprobeAsync(args, what) {
+function ffprobeAsync(args, what, tool = FFPROBE) {
   return new Promise((resolve, reject) => {
-    const p = spawn(FFPROBE, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(tool, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = '';
     p.stdout.on('data', (d) => { out += d; });
     p.stderr.on('data', (d) => { err += d; });
@@ -326,7 +334,7 @@ export async function countPacketsAsync(file, inputOpts = []) {
   return Number((await ffprobeAsync(['-v', 'error', '-count_packets', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_packets', '-of', 'csv=p=0', ...inputOpts, file], `ffprobe -count_packets ${file}`)).trim());
 }
 export async function countFramesAsync(file) {
-  return Number((await ffprobeAsync(['-v', 'error', '-count_frames', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_frames', '-of', 'csv=p=0', file], `ffprobe -count_frames ${file}`)).trim());
+  return lastFrame(await ffprobeAsync(COUNT_FRAMES_ARGS(file), `ffmpeg frame count ${file}`, FFMPEG), file);
 }
 
 // A running ffmpeg fed through stdin. write() honours back-pressure; end() resolves with { code, stderrTail }.
