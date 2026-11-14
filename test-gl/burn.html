@@ -1,0 +1,89 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>komorebi — burn test</title>
+<!--
+  The page half of the burn test (driven by burn.mjs through Playwright, which launches the browser with vsync and the
+  frame-rate cap off). The engine runs live, on its own requestAnimationFrame loop, with auto-quality and adaptive motion
+  off and the export quality profile (no fidelity ceiling below the editor's maxima).
+
+  Two numbers per frame:
+    interval   onFrame's dt: with nothing waiting on a display, what the frame cost, CPU and GPU together
+    cpu        how long the engine's requestAnimationFrame callback ran (requestAnimationFrame is wrapped before any module
+               loads). It includes the time Chrome blocks the script while the GPU catches up, so it is recorded, not used
+               to say which side is the limit.
+
+  API (all on window.__burn):
+    resolved(names)                 each preset as the engine resolves it (DEFAULTS under the preset, legacy names migrated)
+    open(params)                    one engine on the full-window canvas; resolves with the renderer and backing size
+    setLook(params)                 swap the look (a rebuild when the canopy changes) and let it settle
+    measure(seconds)                { intervals, cpu } over that long
+    transitions({ looks, seconds, duration })   a chain of transitions, each to the next look: { intervals, cpu, routes }
+    hud(text)                       a line in the corner, for whoever watches a headed run
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+  #hud { position: fixed; left: 12px; bottom: 10px; font: 12px ui-monospace, Menlo, monospace; color: rgba(255,255,255,0.7); pointer-events: none; white-space: pre; }
+</style>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<script>
+  // before the engine: every animation-frame callback timed, the latest duration kept for onFrame to collect
+  window.__cpuMs = 0;
+  const raf = window.requestAnimationFrame.bind(window);
+  window.requestAnimationFrame = (cb) => raf((ts) => { const t = performance.now(); try { cb(ts); } finally { window.__cpuMs = performance.now() - t; } });
+</script>
+<script type="module">
+import { create, DEFAULTS, migrateLegacy } from '../komorebi.js';
+import { PRESETS } from '../presets.js';
+import { routeOf } from './burn-lib.mjs';
+
+const canvas = document.getElementById('c');
+let eng = null, sink = null, cpuSink = null;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const frames = (n) => new Promise((r) => { let k = 0; const t = () => (++k >= n ? r() : requestAnimationFrame(t)); requestAnimationFrame(t); });
+// a rebuild is synchronous inside setParams; the frames after it warm the caches before anything is measured
+const settle = async () => { await frames(30); await sleep(1000); };
+const start = () => { sink = []; cpuSink = []; };
+const take = () => { const out = { intervals: sink, cpu: cpuSink }; sink = cpuSink = null; return out; };
+
+window.__burn = {
+  resolved: (names) => Object.fromEntries(names.map((n) => {
+    if (!PRESETS[n]) throw new Error(`no preset named ${n}`);
+    return [n, { ...DEFAULTS, ...migrateLegacy(PRESETS[n]) }];
+  })),
+  async open(params) {
+    eng = create(canvas, {
+      params,
+      session: { quality: 'export', playback: { auto_quality: false, adaptive_motion: false } },
+      // onFrame runs inside the frame's callback, so the duration it can read is the PREVIOUS callback's: one frame late,
+      // which a distribution does not mind
+      onFrame(dt) { sink?.push(dt); cpuSink?.push(window.__cpuMs); },
+    });
+    await settle();
+    const gl = eng.gl, dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    return { renderer: dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+      backing: [canvas.width, canvas.height], dpr: devicePixelRatio, userAgent: navigator.userAgent };
+  },
+  async setLook(params) { eng.setParams(params); await settle(); },
+  async measure(seconds) { start(); await sleep(seconds * 1000); return take(); },
+  async transitions({ looks, seconds, duration }) {
+    start();
+    const routes = [];
+    let i = 0;
+    const end = performance.now() + seconds * 1000;
+    while (performance.now() < end) {
+      const target = looks[i++ % looks.length];
+      const t0 = performance.now(), f0 = sink.length;
+      const how = await new Promise((done) => {
+        const guard = setTimeout(() => done('timed out'), (duration * 3 + 10) * 1000);   // a route that never reports its end still ends the shuttle
+        eng.transitionTo(target.params, { duration, onEnd: () => { clearTimeout(guard); done('ended'); } });
+        routes.push({ to: target.name, route: routeOf(eng.trans) });
+      });
+      Object.assign(routes.at(-1), { ms: Math.round(performance.now() - t0), frames: sink.length - f0, how });
+    }
+    return { ...take(), routes };
+  },
+  hud(text) { document.getElementById('hud').textContent = text; },
+};
+</script>

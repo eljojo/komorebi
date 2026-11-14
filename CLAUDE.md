@@ -94,6 +94,8 @@ the deploy on a push to `main`, which writes `commit.json`.
 - `render-video.mjs` — the video exporter, `nix run .#video -- …` (`--help` lists everything), with its siblings
   `video-lib.mjs`, `video.html`, `pipeline.mjs`, `parallel.mjs` (`--jobs`), `compare-runs.mjs`, `webcodecs.mjs`,
   `gpu-probe.mjs` and `study.mjs`. Each test file's header says how to run it.
+- `burn.mjs` — the burn test, `nix run .#burn`: live playback on the machine under test, uncapped, climbed level by level
+  to every load slider's maximum and graded per resolution; `burn.html` is its page, `burn-lib.mjs` its pure half.
 
 **The spec.** `spec/` is the work; the code is one implementation of it (see the top of this file). `komorebi-spec.md` is
 the single-file spec it replaced, kept as history until José retires it; nothing cites it.

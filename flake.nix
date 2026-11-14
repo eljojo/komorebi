@@ -138,6 +138,24 @@
               exec node test-gl/render-video.mjs "$@"
             '';
           };
+          # `nix run .#burn -- [--tiers 1080p,1440p,4k] [--quick] [--browser <chrome>]` — the burn test: live playback climbed
+          # level by level to every load slider's maximum, graded comfortable / holding / breaking at 60 fps per resolution.
+          # Run it on the machine under test, in its desktop session with a display: the browser is headed. Same first-run setup
+          # as pixels; on NixOS pass --browser with the system's Chrome. `test-gl/burn.mjs`'s header lists every option.
+          burn = pkgs.writeShellApplication {
+            name = "burn";
+            runtimeInputs = [ pkgs.nodejs_22 ];
+            text = ''
+              if [ ! -d test-gl/node_modules ]; then
+                echo "first run: cd test-gl && npm install && npx playwright install chromium" >&2
+                exit 1
+              fi
+              if command -v caffeinate >/dev/null; then
+                exec caffeinate -di node test-gl/burn.mjs "$@"
+              fi
+              exec node test-gl/burn.mjs "$@"
+            '';
+          };
         in {
           dev = { type = "app"; program = "${dev}/bin/dev"; };
           lint = { type = "app"; program = "${lint}/bin/lint"; };
@@ -147,6 +165,7 @@
           embed = { type = "app"; program = "${embed}/bin/embed"; };
           review = { type = "app"; program = "${review}/bin/review"; };
           video = { type = "app"; program = "${video}/bin/video"; };
+          burn = { type = "app"; program = "${burn}/bin/burn"; };
           embed-check = { type = "app"; program = "${embed-check}/bin/embed-check"; };
           default = self.apps.${pkgs.system}.dev;
         });
