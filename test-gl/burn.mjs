@@ -7,9 +7,10 @@
 // A multi-stage fitness test (burn-lib.mjs says how a level loads the look and how a shuttle is graded): each resolution tier
 // climbs from the look as authored to every load slider at its editor maximum. Each level runs three shuttles: steady wind, a
 // storm, and a chain of transitions between looks that take different routes. A shuttle is comfortable when even its slowest
-// 1% of frames leave a quarter of the 16.7 ms budget spare, holding when 95% fit, breaking otherwise. A tier stops after two
-// breaking levels in a row. The worst single frame of each shuttle is reported apart: a rebuild or a first transition freezes
-// the picture for that long, which a live set feels whatever the averages say.
+// 1% of frames leave a quarter of the 16.7 ms budget spare, holding when 95% fit, breaking otherwise. Each shuttle climbs on
+// its own and sits out once it has broken at two levels in a row; a tier ends when all three have. The worst single frame of
+// each shuttle is reported apart: a rebuild or a first transition freezes the picture for that long, which a live set feels
+// whatever the averages say.
 //
 //   --tiers      which backing sizes, from one 1920x1080 window (default 1080p,1440p,4k)
 //   --levels     rungs from the authored look to the maxima (default 8)
@@ -27,7 +28,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
-import { frameStats, grade, levelLook, shouldStop, TIERS, tierSummary, worst } from './burn-lib.mjs';
+import { frameStats, grade, levelLook, SHUTTLES, shouldStop, stillRunning, TIERS, tierSummary } from './burn-lib.mjs';
 import { assertHardwareRenderer, GPU_VARIANTS, HERE, startServer } from './video-lib.mjs';
 
 const argv = process.argv.slice(2);
@@ -86,31 +87,41 @@ try {
     const tier = { tier: tierName, info, levels: [] };
     results.tiers.push(tier);
     console.log(`\n== ${tierName}: ${info.backing.join('x')} on ${info.renderer}`);
-    const grades = [];
+    const history = Object.fromEntries(SHUTTLES.map((n) => [n, []]));
     for (let level = 0; level < LEVELS; level++) {
+      const running = stillRunning(history);
+      if (!running.length) { console.log(`   every shuttle has broken twice: ${tierName} ends here`); break; }
       const look = levelLook(looks[LOOK], level, LEVELS);
       const started = new Date().toISOString();
       const label = `${tierName} L${level}`;
-      await page.evaluate((t) => window.__burn.hud(t), `${label}  steady`);
-      await page.evaluate((p) => window.__burn.setLook(p), look);
-      const steady = shuttle(await page.evaluate((s) => window.__burn.measure(s), SECONDS));
-      await page.evaluate((t) => window.__burn.hud(t), `${label}  storm`);
-      await page.evaluate((p) => window.__burn.setLook(p), { ...look, wind_strength: 1.6, wind_gustiness: 0.5 });
-      const storm = shuttle(await page.evaluate((s) => window.__burn.measure(s), SECONDS));
-      await page.evaluate((t) => window.__burn.hud(t), `${label}  transitions`);
-      const chain = CHAIN.map((name) => ({ name, params: levelLook(looks[name], level, LEVELS) }));
-      const t = await page.evaluate((o) => window.__burn.transitions(o), { looks: chain, seconds: SECONDS, duration: DURATION });
-      const transitions = { ...shuttle(t), routes: t.routes };
-      const g = worst([steady.grade, storm.grade, transitions.grade]);
-      grades.push(g);
+      const shuttles = {};
+      if (running.includes('steady')) {
+        await page.evaluate((t) => window.__burn.hud(t), `${label}  steady`);
+        await page.evaluate((p) => window.__burn.setLook(p), look);
+        shuttles.steady = shuttle(await page.evaluate((s) => window.__burn.measure(s), SECONDS));
+      }
+      if (running.includes('storm')) {
+        await page.evaluate((t) => window.__burn.hud(t), `${label}  storm`);
+        await page.evaluate((p) => window.__burn.setLook(p), { ...look, wind_strength: 1.6, wind_gustiness: 0.5 });
+        shuttles.storm = shuttle(await page.evaluate((s) => window.__burn.measure(s), SECONDS));
+      }
+      if (running.includes('transitions')) {
+        await page.evaluate((t) => window.__burn.hud(t), `${label}  transitions`);
+        const chain = CHAIN.map((name) => ({ name, params: levelLook(looks[name], level, LEVELS) }));
+        const t = await page.evaluate((o) => window.__burn.transitions(o), { looks: chain, seconds: SECONDS, duration: DURATION });
+        shuttles.transitions = { ...shuttle(t), routes: t.routes };
+      }
+      for (const [name, sh] of Object.entries(shuttles)) history[name].push(sh.grade);
       const load = Object.fromEntries(['tree_count', 'foliage_density', 'leaves_per_cluster', 'layer_count', 'sample_count', 'tex_resolution'].map((k) => [k, look[k]]));
-      tier.levels.push({ level, started, ended: new Date().toISOString(), load, shuttles: { steady, storm, transitions }, grade: g });
-      tier.summary = tierSummary(grades);
+      tier.levels.push({ level, started, ended: new Date().toISOString(), load, shuttles });
+      tier.summary = Object.fromEntries(SHUTTLES.map((n) => [n, tierSummary(history[n])]));
       save();
-      console.log(`${label} ${g.toUpperCase()}  trees ${load.tree_count} density ${load.foliage_density} leaves ${load.leaves_per_cluster} layers ${load.layer_count} samples ${load.sample_count} tex ${load.tex_resolution}`);
-      console.log(`   ${line('steady', steady)} | ${line('storm', storm)}`);
-      console.log(`   ${line('transitions', transitions)}: ${t.routes.map((r) => `${r.route} ${(r.ms / 1000).toFixed(1)} s`).join(', ')}`);
-      if (shouldStop(grades)) { console.log(`   two breaking levels in a row: ${tierName} stops here`); break; }
+      console.log(`${label}  trees ${load.tree_count} density ${load.foliage_density} leaves ${load.leaves_per_cluster} layers ${load.layer_count} samples ${load.sample_count} tex ${load.tex_resolution}`);
+      for (const [name, sh] of Object.entries(shuttles)) {
+        const routes = sh.routes ? `: ${sh.routes.map((r) => `${r.route} ${(r.ms / 1000).toFixed(1)} s`).join(', ')}` : '';
+        console.log(`   ${line(name, sh)}${routes}`);
+        if (shouldStop(history[name])) console.log(`   ${name} has broken twice in a row and sits out the rest of ${tierName}`);
+      }
     }
     await page.close();
   }
@@ -123,14 +134,14 @@ try {
 // the ladder against the tiers: a level whose frame time barely grows from 1080p to 4K is not spending it on pixels
 const rows = Math.max(...results.tiers.map((t) => t.levels.length));
 console.log(`\nsteady p50 frame time in ms (grade), by level and tier`);
-console.log(`level  ${results.tiers.map((t) => t.tier.padEnd(20)).join('')}`);
+console.log(`level  ${results.tiers.map((t) => t.tier.padEnd(24)).join('')}`);
 for (let l = 0; l < rows; l++) {
-  console.log(`L${l}`.padEnd(7) + results.tiers.map((t) => { const x = t.levels[l]; return (x ? `${f1(x.shuttles.steady.frames.p50)} (${x.grade})` : '-').padEnd(20); }).join(''));
+  console.log(`L${l}`.padEnd(7) + results.tiers.map((t) => { const x = t.levels[l]?.shuttles.steady; return (x ? `${f1(x.frames.p50)} (${x.grade})` : '-').padEnd(24); }).join(''));
 }
-console.log(`\n${'tier'.padEnd(7)}${'comfortable to'.padEnd(17)}${'holds to'.padEnd(11)}breaks at`);
-for (const t of results.tiers) {
-  const s = t.summary ?? {};
+console.log(`\n${'tier'.padEnd(7)}${'shuttle'.padEnd(13)}${'comfortable to'.padEnd(17)}${'holds to'.padEnd(11)}breaks at`);
+for (const t of results.tiers) for (const n of SHUTTLES) {
+  const s = t.summary?.[n] ?? {};
   const at = (i) => (i == null ? '-' : `L${i}`);
-  console.log(`${t.tier.padEnd(7)}${at(s.comfortableTo).padEnd(17)}${at(s.holdsTo).padEnd(11)}${s.breaksAt == null ? 'never' : `L${s.breaksAt}`}`);
+  console.log(`${t.tier.padEnd(7)}${n.padEnd(13)}${at(s.comfortableTo).padEnd(17)}${at(s.holdsTo).padEnd(11)}${s.breaksAt == null ? 'never' : `L${s.breaksAt}`}`);
 }
 console.log(`\nresults: ${join(OUT, 'results.json')}`);

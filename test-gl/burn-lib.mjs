@@ -3,8 +3,9 @@
 //
 // The test is a multi-stage fitness test for live playback at 60 fps. Each LEVEL loads the look a step further, from the
 // look as authored (level 0) to every load slider at its editor maximum (the last level). Each level runs three SHUTTLES:
-// steady wind, a storm, and a chain of transitions between looks that take different routes. Each shuttle is graded, the
-// level takes its worst grade, and a resolution tier stops after two breaking levels in a row.
+// steady wind, a storm, and a chain of transitions between looks that take different routes. Each shuttle climbs on its own:
+// one that breaks at two levels in a row sits out the rest of the tier, so a transition that breaks early does not hide how far
+// steady playback goes. A resolution tier ends when every shuttle has stopped.
 //
 // The browser runs with vsync and the frame-rate cap off, so the interval between two frames is what a frame COST, CPU and
 // GPU together: a display would hide everything under 16.7 ms behind its refresh. An off-screen burst of repeated frames was
@@ -65,7 +66,10 @@ export function grade(frames) {
 
 export const worst = (grades) => grades.reduce((a, g) => (ORDER.indexOf(g) > ORDER.indexOf(a) ? g : a), 'comfortable');
 
+export const SHUTTLES = ['steady', 'storm', 'transitions'];
 export const shouldStop = (levelGrades) => levelGrades.length >= 2 && levelGrades.slice(-2).every((g) => g === 'breaking');
+// the shuttles still climbing, given each one's grades so far
+export const stillRunning = (history) => SHUTTLES.filter((name) => !shouldStop(history[name] ?? []));
 
 export function tierSummary(levelGrades) {
   const upTo = (ok) => { let i = -1; while (i + 1 < levelGrades.length && ok(levelGrades[i + 1])) i++; return i < 0 ? null : i; };

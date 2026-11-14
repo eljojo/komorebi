@@ -50,6 +50,12 @@ test('the stop rule ends a tier after two breaking levels in a row, as a beep te
   assert.equal(lib.shouldStop(['comfortable', 'breaking', 'breaking']), true);
 });
 
+test('each shuttle climbs on its own: one that has broken twice in a row sits out the rest of the tier, and the tier ends when all have', () => {
+  assert.deepEqual(lib.stillRunning({ steady: ['comfortable', 'holding'], storm: ['comfortable', 'breaking'], transitions: ['breaking', 'breaking'] }), ['steady', 'storm']);
+  assert.deepEqual(lib.stillRunning({ steady: [], storm: [], transitions: [] }), ['steady', 'storm', 'transitions']);
+  assert.deepEqual(lib.stillRunning({ steady: ['breaking', 'breaking'], storm: ['breaking', 'breaking'], transitions: ['breaking', 'breaking'] }), []);
+});
+
 test('a tier reads as how far it stayed comfortable, how far it held, and where it first broke', () => {
   assert.deepEqual(lib.tierSummary(['comfortable', 'comfortable', 'holding', 'comfortable', 'breaking', 'breaking']), { comfortableTo: 1, holdsTo: 3, breaksAt: 4 });
   assert.deepEqual(lib.tierSummary(['comfortable', 'comfortable']), { comfortableTo: 1, holdsTo: 1, breaksAt: null });
