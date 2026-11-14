@@ -7,7 +7,8 @@
   off and the export quality profile (no fidelity ceiling below the editor's maxima).
 
   Two numbers per frame:
-    interval   onFrame's dt: with nothing waiting on a display, what the frame cost, CPU and GPU together
+    interval   onFrame's dt: with nothing waiting on a display and every frame fenced (a one-pixel read waits for its GPU
+               work), what one frame cost, CPU and GPU together
     cpu        how long the engine's requestAnimationFrame callback ran (requestAnimationFrame is wrapped before any module
                loads). It includes the time Chrome blocks the script while the GPU catches up, so it is recorded, not used
                to say which side is the limit.
@@ -40,6 +41,7 @@ import { routeOf } from './burn-lib.mjs';
 
 const canvas = document.getElementById('c');
 let eng = null, sink = null, cpuSink = null;
+const fencePx = new Uint8Array(4);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const frames = (n) => new Promise((r) => { let k = 0; const t = () => (++k >= n ? r() : requestAnimationFrame(t)); requestAnimationFrame(t); });
 // a rebuild is synchronous inside setParams; the frames after it warm the caches before anything is measured
@@ -58,7 +60,11 @@ window.__burn = {
       session: { quality: 'export', playback: { auto_quality: false, adaptive_motion: false } },
       // onFrame runs inside the frame's callback, so the duration it can read is the PREVIOUS callback's: one frame late,
       // which a distribution does not mind
-      onFrame(dt) { sink?.push(dt); cpuSink?.push(window.__cpuMs); },
+      // The one-pixel read waits for this frame's GPU work. Without a cap, Chrome on Linux (ANGLE on Vulkan) queues frames far
+      // ahead of the GPU and then stalls when the queue fills, so intervals read 1 ms with a 120 ms stall every few dozen frames
+      // and say nothing about one frame; with the fence each interval is one frame's CPU and GPU work. It costs the overlap
+      // of the two (slightly pessimistic), the same on every machine.
+      onFrame(dt) { sink?.push(dt); cpuSink?.push(window.__cpuMs); eng.gl.readPixels(0, 0, 1, 1, eng.gl.RGBA, eng.gl.UNSIGNED_BYTE, fencePx); },
     });
     await settle();
     const gl = eng.gl, dbg = gl.getExtension('WEBGL_debug_renderer_info');
