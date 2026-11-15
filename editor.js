@@ -2049,4 +2049,5 @@ if(link?.preset || devKept) document.getElementById('feel').click();   // a kept
 else if(location.hash==='#feel'){ history.replaceState(null, '', location.pathname+location.search); document.getElementById('feel').click(); }
 // The dev server's bridge (dev-server.js): a tool outside the browser reads and sets this tab's look and sees its frame. Only that
 // server defines __komorebiDev, so anywhere else this line does nothing. A set loads the merged look the way a pasted one loads.
-globalThis.__komorebiDev?.attach({ eng, look: () => eng.captureLook(), set: (patch) => applyParams({ ...eng.captureLook(), ...patch }), value: () => presetSel.value });
+globalThis.__komorebiDev?.attach({ eng, look: () => eng.captureLook(), set: (patch) => applyParams({ ...eng.captureLook(), ...patch }), value: () => presetSel.value,
+  tree: (on) => { const was = [showTree, treePinned]; showTree = treePinned = on; return was; }, untree: ([s, p]) => { showTree = s; treePinned = p; } });   // the tree preview (T), shown pinned for a capture and put back after

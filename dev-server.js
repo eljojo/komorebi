@@ -12,9 +12,10 @@
 //   GET  /__dev/params   the look as the tab holds it (JSON)
 //   POST /__dev/params   merge a JSON object of params into it (content-type application/json); answers the new look
 //   GET  /__dev/frame    the tab's next drawn frame (PNG), insets included
+//   GET  /__dev/tree     the tree preview (the editor's T), shown big for the capture and put back after (PNG, the preview alone)
 // The tab that answers is the one most recently focused or connected. It exists only where this server injects it:
-// editor.js attaches through `window.__komorebiDev`, which nothing else defines, so a deployed page never has it.
-// A hidden tab draws no frames, so /__dev/frame times out there. A live reload keeps the editor's look (pageBridge says how).
+// editor.js attaches through `globalThis.__komorebiDev`, which nothing else defines, so a deployed page never has it.
+// A hidden tab draws no frames, so /__dev/frame answers 503 there after 8 s. A live reload keeps the editor's look (pageBridge says how).
 // ============================================================================
 import { watch } from "node:fs";
 import { resolve, extname } from "node:path";
@@ -45,18 +46,36 @@ function pageBridge() {
   try { kept = JSON.parse(sessionStorage.getItem(KEY)); } catch (e) { console.error(e); }
   window.__komorebiDev = {
     kept,
-    attach({ eng, look, set, value }) {
+    attach({ eng, look, set, value, tree, untree }) {
       sessionStorage.removeItem(KEY);
       window.__komorebiDev.keep = () => sessionStorage.setItem(KEY, JSON.stringify({ look: look(), value: value() }));
-      const frames = [];   // resolvers waiting for the next drawn frame
+      // captures waiting for a frame: { n frames still to wait, crop (a GL-pixel rect, iy from the bottom) or null, resolve }
+      const frames = [];
       const prev = eng.onFrame;
       // read the canvas inside the frame's own callback, after the editor drew its insets: outside it the WebGL
       // drawing buffer may already have been cleared for compositing
-      eng.onFrame = (dt) => { prev?.(dt); if (frames.length) { const url = eng.canvas.toDataURL("image/png"); for (const r of frames.splice(0)) r(url); } };
+      const grab = (crop) => {
+        const c = eng.canvas;
+        if (!crop) return c.toDataURL("image/png");
+        const o = document.createElement("canvas"); o.width = crop.S; o.height = crop.S;
+        o.getContext("2d").drawImage(c, crop.ix, c.height - crop.iy - crop.S, crop.S, crop.S, 0, 0, crop.S, crop.S);
+        return o.toDataURL("image/png");
+      };
+      eng.onFrame = (dt) => {
+        prev?.(dt);
+        for (let i = frames.length - 1; i >= 0; i--) {
+          const f = frames[i];
+          if (--f.n > 0) continue;
+          frames.splice(i, 1); f.resolve(grab(f.crop?.()));
+        }
+      };
+      const after = (n, crop) => new Promise((resolve) => frames.push({ n, crop, resolve }));
       const ops = {
         params: () => look(),
         set: (patch) => { set(patch); return look(); },
-        frame: () => new Promise((r) => frames.push(r)),
+        frame: () => after(1, null),
+        // the preview eases to full size over a few dozen frames once pinned, so the capture waits for it
+        tree: async () => { const was = tree(true); try { return await after(45, () => eng.treeInsetRect()); } finally { untree(was); } },
       };
       const connect = () => {
         const s = new WebSocket(`ws://${location.host}/__dev`);
@@ -86,7 +105,7 @@ function ask(op, arg) {
   if (!ws) return Promise.reject(new Error("no editor tab is connected: open the editor from this server"));
   return new Promise((resolve, reject) => {
     const id = nextId++;
-    const timer = setTimeout(() => { waiting.delete(id); reject(new Error("the tab did not answer in 10 s (a hidden tab draws no frames)")); }, 10000);
+    const timer = setTimeout(() => { waiting.delete(id); reject(new Error("the tab did not answer in 8 s (a hidden tab draws no frames)")); }, 8000);   // inside Bun's 10 s idle timeout, which would drop the request unanswered
     waiting.set(id, { resolve, reject, timer });
     ws.send(JSON.stringify({ id, op, arg }));
   });
@@ -103,8 +122,8 @@ async function bridge(req, path) {
       if (!patch || typeof patch !== "object" || Array.isArray(patch)) return json({ error: "send a JSON object of params" }, 400);
       return json(await ask("set", patch));
     }
-    if (path === "/__dev/frame" && req.method === "GET") {
-      const url = await ask("frame");
+    if ((path === "/__dev/frame" || path === "/__dev/tree") && req.method === "GET") {
+      const url = await ask(path === "/__dev/frame" ? "frame" : "tree");
       return new Response(Buffer.from(url.slice(url.indexOf(",") + 1), "base64"), { headers: { "content-type": MIME[".png"] } });
     }
     return json({ error: "not a bridge route" }, 404);

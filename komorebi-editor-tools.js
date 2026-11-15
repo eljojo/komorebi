@@ -98,6 +98,7 @@ export function makeEditorTools(hub){
     const S = Math.round(base + (big-base)*treeGrow);
     return { S, ix: canvas.width-S-8, iy: 8 };        // anchored bottom-right; grows up-left
   }
+  hub.treeInsetRect = treeInsetGeom;                     // where the inset is drawn now, in GL pixels (iy from the bottom): the dev bridge crops it
   hub.treeInsetHit = (ptr) => {                          // is the normalised pointer over the current inset?
     if(!ptr) return false;
     const {S,ix,iy}=treeInsetGeom();

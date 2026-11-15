@@ -291,7 +291,7 @@ function createEngine(canvas, opts, driven=false){
     motionTick: null,       // the per-frame physics tick; set below, swapped by the editor's motion mirror
     profiler: null,         // the measurement primitive (EDITOR)
     snapshotMotion: null, applyMotion: null, setMotionSource: null,   // motion mirror (EDITOR)
-    drawSourceInset: null, drawTreeInset: null, treeInsetHit: null,   // editor debug overlays (EDITOR)
+    drawSourceInset: null, drawTreeInset: null, treeInsetHit: null, treeInsetRect: null,   // editor debug overlays (EDITOR)
   });
 
 
@@ -796,7 +796,7 @@ function createEngine(canvas, opts, driven=false){
       if(!driven) gl.getExtension('WEBGL_lose_context')?.loseContext();
     },
     ...(EDITOR ? { fill, litter, faith, layers: () => hub.layerTex, woods: () => hub.woodTex,   // the sky fill's state + the layers it reads (and the sky view's wood beside them), for the pixel harness's shader-vs-reference checks (test-gl/); stripped from the player build
-                   drawSourceInset: hub.drawSourceInset, drawTreeInset: hub.drawTreeInset, treeInsetHit: hub.treeInsetHit, profiler: hub.profiler, snapshotMotion: hub.snapshotMotion, applyMotion: hub.applyMotion, setMotionSource: hub.setMotionSource,
+                   drawSourceInset: hub.drawSourceInset, drawTreeInset: hub.drawTreeInset, treeInsetHit: hub.treeInsetHit, treeInsetRect: () => hub.treeInsetRect(), profiler: hub.profiler, snapshotMotion: hub.snapshotMotion, applyMotion: hub.applyMotion, setMotionSource: hub.setMotionSource,
                    isLowMotion: () => motionMagnitude() < ADAPT_LO,
                    grove: () => hub.grove } : {}) };   // editor-only handles, stripped from the player build (grove: the one on screen: the held leaf walks its hier; reseason.test.js reads its season record)
   // ---- adaptive frame-rate helpers (TUNE §9) ----
