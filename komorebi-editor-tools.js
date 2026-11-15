@@ -114,7 +114,7 @@ export function makeEditorTools(hub){
     // grove bounds for the fit scale
     let R=1e-3, maxZ=1e-3;
     for(const s of segs){ R=Math.max(R, Math.hypot(s.a[0],s.a[1]), Math.hypot(s.b[0],s.b[1])); maxZ=Math.max(maxZ, s.a[2], s.b[2]); }
-    const fit = 0.72/Math.max(R, maxZ*1.4);
+    const fit = 0.72/Math.max(R, maxZ);
     const tt = performance.now()/1000;
     const yaw = tt*0.25, cyw=Math.cos(yaw), syw=Math.sin(yaw);     // slow turntable so it reads as 3D
     const pitch = 24*DEG, hk=Math.cos(pitch), dk=Math.sin(pitch);
@@ -126,7 +126,7 @@ export function makeEditorTools(hub){
     const offY = -0.4;
     const P = (p) => {                                   // 3D world (+wind) -> inset NDC
       const lf = lean*(p[2]/maxZ);                       // taller points lean more downwind
-      const ax=p[0]+wx*lf+sx0, ay=p[1]+wy*lf+sy0, az=p[2]*1.4;
+      const ax=p[0]+wx*lf+sx0, ay=p[1]+wy*lf+sy0, az=p[2];   // true height: the preview is where a tree's proportions are judged
       const u=ax*cyw-ay*syw, depth=ax*syw+ay*cyw;
       return [ u*fit, (az*hk - depth*dk)*fit + offY ];
     };
@@ -166,7 +166,7 @@ export function makeEditorTools(hub){
     const leafAlpha=0.85;
     for(let i=0;i<nLf;i++){                                  // inline P() — no per-leaf array alloc (there can be tens of thousands)
       const b5=6*i, bx=treeLeafBase[b5], by=treeLeafBase[b5+1], bz=treeLeafBase[b5+2], cv=treeLeafBase[b5+3], w=treeLeafBase[b5+4];
-      const lf=lean*(bz/maxZ), ax=bx+wx*lf+sx0, ay=by+wy*lf+sy0, az=bz*1.4;
+      const lf=lean*(bz/maxZ), ax=bx+wx*lf+sx0, ay=by+wy*lf+sy0, az=bz;
       const u=ax*cyw-ay*syw, depth=ax*syw+ay*cyw, f=bz/maxZ, o=6*i, vv=1.0+w*0.10;   // w: per-tree warmth -> hue + value shift
       treeLeafProj[o]=u*fit; treeLeafProj[o+1]=(az*hk-depth*dk)*fit+offY;
       treeLeafProj[o+2]=lerp(0.05,0.18+0.12*f,cv)*(1.0+w*0.28)*vv;   // warm trees redder...

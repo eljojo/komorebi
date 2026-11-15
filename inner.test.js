@@ -686,7 +686,7 @@ function previewLeaves(over, faithful, live = {}) {   // `live`: params set AFTE
   const segs = g.hier.segments;
   let R = 1e-3, maxZ = 1e-3;
   for (const s of segs) { R = Math.max(R, Math.hypot(s.a[0], s.a[1]), Math.hypot(s.b[0], s.b[1])); maxZ = Math.max(maxZ, s.a[2], s.b[2]); }
-  return { pts: calls[0], fit: 0.72 / Math.max(R, maxZ * 1.4), F: Float32Array.from(faith.buf.data), g };
+  return { pts: calls[0], fit: 0.72 / Math.max(R, maxZ), F: Float32Array.from(faith.buf.data), g };
 }
 test("the preview and the cast share one placement: at 0.5 the preview draws one point per kept leaf, at the faithful buffer's x, y and z — and at 0 too, now that it walks the grove's draw order", () => {
   for (const inner of [0, 0.5]) for (const [name, cfg, faithful] of [["park 1", PARK, true], ["small, marginal tree, layer", small({ tree_count: 2.4 }), false]]) {
@@ -695,7 +695,7 @@ test("the preview and the cast share one placement: at 0.5 the preview draws one
     const pitch = 24 * Math.PI / 180, hk = Math.cos(pitch), dk = Math.sin(pitch);
     let worstXY = 0, worstZ = 0;
     for (let i = 0; i < n; i++) {
-      const x = pts[6 * i] / fit, y = F[i * SF + 1], z = ((pts[6 * i + 1] + 0.4) / fit + y * dk) / (1.4 * hk);
+      const x = pts[6 * i] / fit, y = F[i * SF + 1], z = ((pts[6 * i + 1] + 0.4) / fit + y * dk) / hk;
       worstXY = Math.max(worstXY, Math.abs(x - F[i * SF])); worstZ = Math.max(worstZ, Math.abs(z - F[i * SF + 16]));
     }
     expect(worstXY, `${name} @ ${inner}: x`).toBeLessThan(1e-4);
@@ -705,7 +705,7 @@ test("the preview and the cast share one placement: at 0.5 the preview draws one
   const { pts, fit, F, g } = previewLeaves({ ...PARK, inner_leaves: 0.5 }, true);
   const pitch = 24 * Math.PI / 180, hk = Math.cos(pitch), dk = Math.sin(pitch);
   let off = 0;
-  for (let i = 0; i < F.length / SF; i++) { const z = ((pts[6 * i + 1] + 0.4) / fit + F[i * SF + 1] * dk) / (1.4 * hk), t = g.hier.twigs[Math.floor(F[i * SF + 11])]; if (Math.abs(z - t.z) > 1e-3) off++; }
+  for (let i = 0; i < F.length / SF; i++) { const z = ((pts[6 * i + 1] + 0.4) / fit + F[i * SF + 1] * dk) / hk, t = g.hier.twigs[Math.floor(F[i * SF + 11])]; if (Math.abs(z - t.z) > 1e-3) off++; }
   expect(off, "the preview's leaves hang at their own heights").toBeGreaterThan(1000);
 });
 
@@ -731,7 +731,7 @@ test("a live inner_leaves over a hier that recorded no path (the preview reads t
     const pitch = 24 * Math.PI / 180, hk = Math.cos(pitch), dk = Math.sin(pitch);
     let worst = 0;
     for (let i = 0; i < n; i++) {
-      const x = pts[6 * i] / fit, y = F[i * SF + 1], z = ((pts[6 * i + 1] + 0.4) / fit + y * dk) / (1.4 * hk);
+      const x = pts[6 * i] / fit, y = F[i * SF + 1], z = ((pts[6 * i + 1] + 0.4) / fit + y * dk) / hk;
       worst = Math.max(worst, Math.abs(x - F[i * SF]), Math.abs(z - F[i * SF + 16]));
     }
     expect(worst, `${name}: the preview's leaves are the cast's`).toBeLessThan(1e-4);
