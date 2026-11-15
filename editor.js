@@ -2045,3 +2045,6 @@ const linkReady = link ? arb.open(link) : null;
 if(link?.preset) document.getElementById('feel').click();
 // `/#feel` ("open komorebi" on arboretum's pages) is the welcome's own feel, pressed for you: the same arrival, without the intro text.
 else if(location.hash==='#feel'){ history.replaceState(null, '', location.pathname+location.search); document.getElementById('feel').click(); }
+// The dev server's bridge (dev-server.js): a tool outside the browser reads and sets this tab's look and sees its frame. Only that
+// server defines __komorebiDev, so anywhere else this line does nothing. A set loads the merged look the way a pasted one loads.
+window.__komorebiDev?.attach({ eng, look: () => eng.captureLook(), set: (patch) => applyParams({ ...eng.captureLook(), ...patch }) });

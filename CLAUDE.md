@@ -86,7 +86,8 @@ the deploy on a push to `main`, which writes `commit.json`.
 - `embed-build.mjs` — both bundles: `nix run .#build` (the player, every look) and `nix run .#embed -- '<look>'...`
   (only those looks, with their unused cameras and fall tiers cut). Check a bundle with `nix run .#embed-check`.
 - `glslcheck.mjs` — every shader compiled offline, so a typo fails here and not on a black canvas.
-- `dev-server.js` — `nix run .#dev`, with live reload.
+- `dev-server.js` — `nix run .#dev`, with live reload, and the bridge: `/__dev` reads and sets an open editor tab's look
+  and returns its frame (dev only; the header lists the routes).
 
 **`test-gl/`** — real renders in headless Chromium (first run: `cd test-gl && npm install && npx playwright install chromium`).
 - `run.js` — the pixel harness: `nix run .#pixels` (about an hour); `--only <substring>...` runs the matching rows,
