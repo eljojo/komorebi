@@ -8,13 +8,13 @@
 //
 // THE BRIDGE (dev only): a second injected script lets a tool outside the browser read and change the look in an open
 // editor tab and see its frame, over plain HTTP:
-//   GET  /__dev          the editor tabs connected, the one answering first
+//   GET  /__dev          the editor tabs connected, the one answering first, and whether each landed on a kept look
 //   GET  /__dev/params   the look as the tab holds it (JSON)
 //   POST /__dev/params   merge a JSON object of params into it (content-type application/json); answers the new look
 //   GET  /__dev/frame    the tab's next drawn frame (PNG), insets included
 // The tab that answers is the one most recently focused or connected. It exists only where this server injects it:
 // editor.js attaches through `window.__komorebiDev`, which nothing else defines, so a deployed page never has it.
-// A hidden tab draws no frames, so /__dev/frame times out there.
+// A hidden tab draws no frames, so /__dev/frame times out there. A live reload keeps the editor's look (pageBridge says how).
 // ============================================================================
 import { watch } from "node:fs";
 import { resolve, extname } from "node:path";
@@ -29,15 +29,25 @@ const MIME = {
   ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".ico": "image/x-icon",
 };
 
-// auto-reconnecting reload socket, injected before </body>
+// auto-reconnecting reload socket, injected before </body>. Before a live reload an attached editor keeps its look (the bridge's keep).
 const RELOAD = `<script>(()=>{const c=()=>{const s=new WebSocket("ws://"+location.host+"/__reload");`
-  + `s.onmessage=()=>location.reload();s.onclose=()=>setTimeout(c,500);};c();})();</script>`;
+  + `s.onmessage=()=>{try{window.__komorebiDev?.keep?.();}catch(e){console.error(e);}location.reload();};s.onclose=()=>setTimeout(c,500);};c();})();</script>`;
 
 // The bridge's page half, injected as source (it runs in the tab, not here). It defines the attach point and does
 // nothing else until a page attaches to it; the editor hands it its engine and its own way of loading a look.
+// THE KEPT LOOK: a live reload (a saved file) stores the editor's look and the entry it was on in this tab's
+// sessionStorage, and the reloaded page takes them back as `kept`, which the editor lands on instead of the
+// welcome. The store is cleared only once an editor has attached, having landed on it: one save can send two reloads,
+// and the second may come before the first page's editor runs. A reload by hand stores nothing, so it starts fresh.
 function pageBridge() {
+  const KEY = "komorebi-dev-kept";
+  let kept = null;
+  try { kept = JSON.parse(sessionStorage.getItem(KEY)); } catch (e) { console.error(e); }
   window.__komorebiDev = {
-    attach({ eng, look, set }) {
+    kept,
+    attach({ eng, look, set, value }) {
+      sessionStorage.removeItem(KEY);
+      window.__komorebiDev.keep = () => sessionStorage.setItem(KEY, JSON.stringify({ look: look(), value: value() }));
       const frames = [];   // resolvers waiting for the next drawn frame
       const prev = eng.onFrame;
       // read the canvas inside the frame's own callback, after the editor drew its insets: outside it the WebGL
@@ -50,7 +60,7 @@ function pageBridge() {
       };
       const connect = () => {
         const s = new WebSocket(`ws://${location.host}/__dev`);
-        const hello = () => { if (s.readyState === 1) s.send(JSON.stringify({ hello: location.pathname + location.search })); };
+        const hello = () => { if (s.readyState === 1) s.send(JSON.stringify({ hello: location.pathname + location.search, kept: !!kept })); };
         s.onopen = hello;
         s.onmessage = async (e) => {
           const { id, op, arg } = JSON.parse(e.data);
@@ -131,7 +141,7 @@ Bun.serve({
     message(ws, raw) {
       if (ws.data.kind !== "/__dev") return;
       const m = JSON.parse(String(raw));
-      if (m.hello !== undefined) { tabs.set(ws, { page: m.hello, at: Date.now() }); return; }
+      if (m.hello !== undefined) { tabs.set(ws, { page: m.hello, kept: !!m.kept, at: Date.now() }); return; }
       const w = waiting.get(m.id);
       if (!w) return;   // answered after its timeout
       waiting.delete(m.id); clearTimeout(w.timer);

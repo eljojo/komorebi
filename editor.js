@@ -1912,6 +1912,7 @@ midi = mountMidi({
   }
   // `opened` is what arboretum.js made of the link: { value } (a ★ in all looks) | { list, value, play } | { failed } | null (no link, or arboretum is off)
   function land(opened){
+    if(devKept){ applyParams(devKept.look); refreshPresetSelect(devKept.value); syncAllControls(); arrive(); return; }   // a live reload's kept look (dev-server.js), on the entry it was on
     let at, playOnce=false;
     if(opened?.failed) showHint(`arboretum: ${opened.failed}`);    // a first-run visitor is in zen and would see nothing else; the look is the usual landing
     else if(opened){
@@ -2011,10 +2012,10 @@ midi = mountMidi({
     document.body.classList.remove('intro');        // un-dim the canvas to full strength
     welcome.classList.add('out');                   // dissolve the intro text
     if(aboutView){ const v=aboutView; v.classList.add('out'); setTimeout(()=>v.remove(), 1000); aboutView=null; }   // ...and the about column, if it is what is showing
-    if(link?.preset) welcome.style.display='none';
+    if(link?.preset || devKept) welcome.style.display='none';
     else setTimeout(()=>{ welcome.style.display='none'; }, 1000);
     endTween();
-    if(!link){ land(null); return; }
+    if(!link || devKept){ land(null); return; }
     Promise.race([linkReady, new Promise((ok)=>setTimeout(()=>ok({ failed:'no answer in time' }), 5000))])
       .catch((e)=>{ console.error(e); return null; }).then(land);
   });
@@ -2025,6 +2026,7 @@ midi = mountMidi({
 // `detect` names its origin (komorebi.eljojo.net, or arboretum's own dev server) does it add the session: sign-in, the cloud
 // playlists and the controls for them. ----
 const link = parseHash(location.hash);
+const devKept = window.__komorebiDev?.kept ?? null;   // the look a live reload kept (dev-server.js); null anywhere but its dev server
 // What the editor lends arboretum.js, and nothing else of itself.
 const arbHost = {
   get params(){ return eng.authored; }, rows: {...presetRows,account:sessionPanel.account},
@@ -2042,9 +2044,9 @@ arb.ready.then((origin)=>{ if(origin) document.getElementById('arbLink').hidden=
 syncPlaylistUI();
 // A link is opened as soon as arboretum is up; `linkReady` is what the welcome gate waits on (null without a link).
 const linkReady = link ? arb.open(link) : null;
-if(link?.preset) document.getElementById('feel').click();
+if(link?.preset || devKept) document.getElementById('feel').click();   // a kept look skips the welcome, as a permalink does
 // `/#feel` ("open komorebi" on arboretum's pages) is the welcome's own feel, pressed for you: the same arrival, without the intro text.
 else if(location.hash==='#feel'){ history.replaceState(null, '', location.pathname+location.search); document.getElementById('feel').click(); }
 // The dev server's bridge (dev-server.js): a tool outside the browser reads and sets this tab's look and sees its frame. Only that
 // server defines __komorebiDev, so anywhere else this line does nothing. A set loads the merged look the way a pasted one loads.
-window.__komorebiDev?.attach({ eng, look: () => eng.captureLook(), set: (patch) => applyParams({ ...eng.captureLook(), ...patch }) });
+window.__komorebiDev?.attach({ eng, look: () => eng.captureLook(), set: (patch) => applyParams({ ...eng.captureLook(), ...patch }), value: () => presetSel.value });
