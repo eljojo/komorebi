@@ -736,6 +736,22 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **What it established:** leaf travel joins these pairs without a dissolve of pictures; its motion is busier where the seed changes (a typical leaf moves a quarter of the view), and its middle reads softer than either end. That softness was first put down to the moving cast's texel; a later measurement on the same pair found the native faithful cast has the same texel (9.7 to 10.3 mm at a 1024 bake, against a 4.3 mm pixel) and the moving cast's transmission no softer mid-route (mean gradient over standard deviation 0.066 settled, 0.083 at full weight, 0.080 settled at the far end), so resolution is not the cause. Stills of the same pair with one thing held at a time found it: with the ground colour held at either end the mid-route frame keeps its grey leaf shapes (share of lit pixels in the midtones at half way and at 0.7 of the way: 0.75 and 0.70 held, 0.66 and 0.48 tweened), while holding the outline, the area and aspect, the surplus leaves' contraction, the per-leaf height or the optical depth leaves it as it was. Both looks have contrast 2; the tweened ground between (0.41, 0.96, 0.21) and (0.33, 0.22, 1) has no channel above 0.61 midway, and the per-channel clamp sends transmission below about a quarter to black.
 - **Date:** 2026-11-10.
 
+### The dissolve's first frame
+
+- **What was measured:** the CPU time of the frame a scene dissolve starts on (the outgoing scene built and drawn), before and after a driven scene took its host's linked programs instead of linking its own; every frame of each route compared byte for byte between the two engines.
+- **On:** an M4 (Chromium on Metal), 960×540, a pumped clock at 60 fps, `auto_quality` and `adaptive_motion` off, a 1 s route; the median of three runs.
+- **Result:**
+
+  | route | before | after |
+  |---|---|---|
+  | `montebello` → `afternoon 6` | 114 ms | 78 ms |
+  | `park 1` → `park 1`, a new seed | 50 ms | 33 ms |
+  | `curtain 1` → `curtain 1`, a new seed and the maple | 64 ms | 41 ms |
+
+  The dissolve linked 13 programs before and links 1 (its mix) after. All 86 frames of every route are byte-identical between the two. What is left of the first frame is mostly growing the outgoing scene's grove. `canopy 2` → `afternoon 6`, which does not dissolve, starts in 10 ms and has a 53 ms frame later in the route either way.
+- **What it established:** the outgoing scene's own compile was a third of the freeze, and nothing it rendered depended on owning its programs.
+- **Date:** 2026-11-15.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).

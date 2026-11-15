@@ -35,6 +35,19 @@ const BUILD = { name: 'modules', cut: [] };
 // ===========================================================================
 function create(canvas, opts){ return createEngine(canvas, opts); }
 
+// THE CONTEXT'S PROGRAMS. A program belongs to the GL context that linked it, not to the engine, and a driven scene (a
+// dissolve's outgoing look, a litter rise's source, a grove travel's other end) draws on its host's canvas, so on its
+// context. So the scene takes the programs its host has already linked instead of linking them again: compiling them
+// was most of the frame a dissolve froze on. Each program is counted by the engines holding it and deleted when the
+// last one lets go. Sharing a program shares its uniform values, which is safe because every draw uploads each uniform
+// its program reads before it draws. Keyed by the two sources, vertex then fragment, so equal text is one program.
+const CONTEXT_PROGRAMS = new WeakMap();   // gl -> Map<vs, Map<fs, { prog, users }>>
+function contextPrograms(gl){
+  let t = CONTEXT_PROGRAMS.get(gl);
+  if(!t){ t = new Map(); CONTEXT_PROGRAMS.set(gl, t); }
+  return t;
+}
+
 // A driven scene shares this canvas's context but owns no animation loop, events or context lifetime.
 function createEngine(canvas, opts, driven=false){
   opts = opts || {};
@@ -151,6 +164,28 @@ function createEngine(canvas, opts, driven=false){
     if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail(`Link: ${gl.getProgramInfoLog(p)}`);
     return p;
   }
+  // The engine's own programs come from the context's table (above); the routes' short-lived ones stay hub.program's and
+  // are deleted by the route. `held` lists what this engine took, once per take, for releasePrograms to give back.
+  const held = [];
+  function shared(vs,fs){
+    const table = contextPrograms(gl);
+    let byFs = table.get(vs);
+    if(!byFs){ byFs = new Map(); table.set(vs, byFs); }
+    let e = byFs.get(fs);
+    if(!e){ e = { prog: program(vs,fs), users: 0 }; byFs.set(fs, e); }
+    e.users++; held.push([vs, fs]);
+    return e.prog;
+  }
+  function releasePrograms(){
+    const table = contextPrograms(gl);
+    for(const [vs, fs] of held){
+      const byFs = table.get(vs), e = byFs?.get(fs);
+      if(!e || --e.users > 0) continue;
+      gl.deleteProgram(e.prog); byFs.delete(fs);
+      if(!byFs.size) table.delete(vs);
+    }
+    held.length = 0;
+  }
   // initGPU() creates the eager handles — create() calls it once, and a webglcontextrestored calls it again, because
   // a lost context kills all of them. Hence `let`, not `const`. The handles made lazily outside it and held outside the
   // subsystems it rebuilds (the transport cache, the fill's and the litter's programs and textures, the present target,
@@ -174,8 +209,8 @@ function createEngine(canvas, opts, driven=false){
   // FIRST USE and then kept for the engine's life. The four authored cameras move on a MODE
   // flip (sky_view / receiver), which already tears the grove down and rebuilds it under the transition bloom — so
   // the one first-compile a camera ever costs lands inside that bloom, where a frame's hitch is already hidden, and
-  // never recurs. Nothing is shared across engines: an A/B wipe's second instance has its own GL context and builds
-  // its own cache, because a program belongs to the context that linked it. A fifth program carries sky↔floor
+  // never recurs. The programs come from the context's table, so a driven scene on this canvas reuses them; an A/B
+  // wipe's second instance has its own GL context and links its own. A fifth program carries sky↔floor
   // transitions through the horizon, using the same grove and the two endpoint cameras' reads. ----
   const transportCache = new Map();
   // Which variant this draw runs — the registry's own selector (§4.9), bound to these params. It can only change
@@ -200,7 +235,7 @@ function createEngine(canvas, opts, driven=false){
   function transportFor(camera){
     let e = transportCache.get(camera);
     if(!e){
-      const prog = program(VS_FULL, buildTransport(camera));
+      const prog = shared(VS_FULL, buildTransport(camera));
       e = { prog, U: transportLocs(prog, camera) };
       transportCache.set(camera, e);
     }
@@ -213,7 +248,7 @@ function createEngine(canvas, opts, driven=false){
   let fillEntry = null;
   const fillFor = FEAT_FILL ? () => {
     if(!fillEntry){
-      const prog = program(VS_FULL, FS_FILL);
+      const prog = shared(VS_FULL, FS_FILL);
       fillEntry = { prog, U: { origin:loc(prog,'uCanopyOrigin'), extent:loc(prog,'uCanopyExtent'), sun:loc(prog,'uSunColor'),   // origin/extent: the box the LAYERS were baked over; frameOrigin/frameExtent: the plan square the FILL is baked over
         layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'].map(n => loc(prog,n)), heights:loc(prog,'uLayerHeight[0]'), layerCount:loc(prog,'uLayerCount'),
         frameOrigin:loc(prog,'uFillOrigin'), frameExtent:loc(prog,'uFillExtent'), sunPath:loc(prog,'uFillG'), open:loc(prog,'uFillOpen'),
@@ -226,7 +261,7 @@ function createEngine(canvas, opts, driven=false){
   let litterEntry = null;
   const litterFor = FEAT_LITTER ? () => {
     if(!litterEntry){
-      const prog = program(VS_LITTER, FS_LITTER);
+      const prog = shared(VS_LITTER, FS_LITTER);
       litterEntry = { prog, U: { origin:loc(prog,'uLitterOrigin'), extent:loc(prog,'uLitterExtent'), minHalf:loc(prog,'uLitterMinHalf'),
         leafTex:loc(prog,'uLeafTex'), leafShape:loc(prog,'uLeafShape'), shapeBox:loc(prog,'uShapeBox'), leafIdFrac:loc(prog,'uLeafIdFrac'), leafRows:loc(prog,'uLeafRows') } };   // the carpet's VS has no packing to read: its uLeafIdFrac is a null, and uploading to a null is a no-op
     }
@@ -299,17 +334,17 @@ function createEngine(canvas, opts, driven=false){
     // a restored context starts with its extensions off again
     gl.getExtension('EXT_color_buffer_float'); gl.getExtension('EXT_float_blend');
     extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
-    progBake = program(VS_BAKE, FS_BAKE);
-    progFaith = program(VS_FAITH, FS_FAITH);   // FAITHFUL leaf bake (§4.5): per-sample transmittance at continuous heights
-    progFaithPivot = program(VS_FAITH_PIVOT, FS_FAITH);   // ...for a grove with leaves on older wood: the pivot weight (inner_leaves)
-    progFaithSeg = program(VS_FAITH_SEG, FS_FAITH_SEG);   // FAITHFUL skeleton bake (§4.5): trunk+branches+twigs as geometry
-    progFAcc = program(VS_FULL, FS_FACC);      // FAITHFUL accumulate: Σ w_i·transmittance_i
-    progBlit = program(VS_FULL, FS_BLIT);
-    progPresent = program(VS_FULL, FS_PRESENT);                   // adaptive frame-rate: offscreen frame -> screen
-    progGlowBlur = program(VS_FULL, FS_GLOW_BLUR);                // lateral diffusion (§4.9): one axis of the separable spread
-    progGlowMix = program(VS_FULL, FS_GLOW_MIX);                  // lateral diffusion: the sharp/blurred split + the relocated tone-map tail
-    progPoints = EDITOR ? program(VS_POINTS, FS_POINTS) : null;   // editor-only debug-overlay programs
-    progViz = EDITOR ? program(VS_VIZ, FS_VIZ) : null;
+    progBake = shared(VS_BAKE, FS_BAKE);
+    progFaith = shared(VS_FAITH, FS_FAITH);   // FAITHFUL leaf bake (§4.5): per-sample transmittance at continuous heights
+    progFaithPivot = shared(VS_FAITH_PIVOT, FS_FAITH);   // ...for a grove with leaves on older wood: the pivot weight (inner_leaves)
+    progFaithSeg = shared(VS_FAITH_SEG, FS_FAITH_SEG);   // FAITHFUL skeleton bake (§4.5): trunk+branches+twigs as geometry
+    progFAcc = shared(VS_FULL, FS_FACC);      // FAITHFUL accumulate: Σ w_i·transmittance_i
+    progBlit = shared(VS_FULL, FS_BLIT);
+    progPresent = shared(VS_FULL, FS_PRESENT);                   // adaptive frame-rate: offscreen frame -> screen
+    progGlowBlur = shared(VS_FULL, FS_GLOW_BLUR);                // lateral diffusion (§4.9): one axis of the separable spread
+    progGlowMix = shared(VS_FULL, FS_GLOW_MIX);                  // lateral diffusion: the sharp/blurred split + the relocated tone-map tail
+    progPoints = EDITOR ? shared(VS_POINTS, FS_POINTS) : null;   // editor-only debug-overlay programs
+    progViz = EDITOR ? shared(VS_VIZ, FS_VIZ) : null;
     U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
                morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'),
                windLevel:loc(progBake,'uWindLevel'), air:loc(progBake,'uAir'), depth:loc(progBake,'uDepth'), windTime:loc(progBake,'uWindTime'),
@@ -774,11 +809,8 @@ function createEngine(canvas, opts, driven=false){
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       ownerDocument?.removeEventListener('visibilitychange',onVisibilityChange);
-      [progBake, progFaith, progFaithPivot, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz].forEach(p => { if(p) gl.deleteProgram(p); });
-      transportCache.forEach(v => { gl.deleteProgram(v.prog); });   // however many cameras this engine actually visited
-      transportCache.clear();
-      if(fillEntry){ gl.deleteProgram(fillEntry.prog); fillEntry = null; }   // the sky fill's bake, if a look ever opened it
-      if(litterEntry){ gl.deleteProgram(litterEntry.prog); litterEntry = null; }   // the litter carpet's, likewise
+      releasePrograms();                             // initGPU's, every camera this engine visited, the fill's and the litter's: deleted once no engine on the context holds them
+      transportCache.clear(); fillEntry = null; litterEntry = null;
       hub.layerTex.forEach(t => { gl.deleteTexture(t); });
       hub.woodTex.forEach(t => { gl.deleteTexture(t); });
       [hub.clusterTex, hub.clusterGeomTex, hub.grove?.leafTex, occTex, hub.faithTex, hub.faithScratch, hub.benchTex, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
@@ -913,6 +945,7 @@ function createEngine(canvas, opts, driven=false){
     if(!alive) return;
     lost = false;
     transportCache.clear(); presentTex = null;         // dead handles: forgotten, never deleted
+    contextPrograms(gl).clear(); held.length = 0;      // every program the context held died with it, whichever engine linked it
     fillEntry = null; fill.tex = [null, null]; fill.res = 0; fill.ready = false;   // the sky fill's program and textures died with the context; the first draw that wants it rebuilds both
     litterEntry = null; Object.assign(litter, newLitterState());                   // ...and so did the carpet's: initGPU() makes the fresh 1×1, and the first draw that has fallen leaves to show bakes it again
     Object.assign(hub, { layerTex:[], woodTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,

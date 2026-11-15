@@ -1140,6 +1140,7 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
   const t0 = performance.now();
   let eng = null, ticks = 0, started = false, onEndFired = false, route = null, done = false;
   let interrupted = false, tailLeft = -1, progressAtInterrupt = -1, bloomAtInterrupt = -1, bloomAfter = -1, afterId = null;
+  let links = 0;   // programs linked on this context from transitionTo to the route's end: what the switch compiled
   const finish = (err) => {
     if (done) return;
     done = true;
@@ -1148,7 +1149,7 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
     try { eng?.setPaused(true); eng?.dispose(); } catch { /* a disposed/failed engine has nothing to stop */ }
     canvas.remove();
     if (err) reject(err);
-    else resolve({ ...route, onEndFired, interrupted, progressAtInterrupt, bloomAtInterrupt, bloomAfter, afterId, glError, ticks, ms: Math.round(performance.now() - t0) });
+    else resolve({ ...route, links, onEndFired, interrupted, progressAtInterrupt, bloomAtInterrupt, bloomAfter, afterId, glError, ticks, ms: Math.round(performance.now() - t0) });
   };
   const timer = setTimeout(() => finish(new Error(`route did not finish within 120 s (tick ${ticks})`)), 120000);
 
@@ -1162,6 +1163,8 @@ window.__transitionSmoke = (fromName, toName, over, opts) => new Promise((resolv
       if (!started) {
         if (ticks < o.warm) return;
         started = true;
+        const gl = eng.gl, link = gl.linkProgram.bind(gl);
+        gl.linkProgram = (p) => { links++; link(p); };
         eng.transitionTo(Object.assign({}, B, over || {}, FREEZE), { duration: o.duration, onEnd: () => { onEndFired = true; } });
         // trans.* is set synchronously by transitionTo — read the routing verdict now, before it runs
         route = { crossfade: eng.trans.crossfade, structDiff: eng.trans.structDiff, canopyMorph: eng.trans.canopyMorph,
