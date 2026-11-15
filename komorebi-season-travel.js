@@ -40,7 +40,8 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
   const {gl,params,trans,faith}=hub;
   let s=null;
   const bounds=['pminx','pmaxx','pminy','pmaxy'];
-  const read=()=>{const a=new Float32Array(faith.count*18);gl.bindBuffer(gl.ARRAY_BUFFER,faith.buf);gl.getBufferSubData(gl.ARRAY_BUFFER,0,a);return a;};
+  // What the re-season just uploaded to faith.buf, from its own CPU copy: reading the buffer back would wait for the GPU to finish the frame before.
+  const read=()=>hub.grove.season.outF.slice(0,faith.count*18);
   function snapshot(p){
     hub.reseasonGrove(hub.grove,{...p,leaf_drop:0});
     const full=read(),data=full.slice(),S=hub.grove.season;
@@ -83,7 +84,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
       field:{tex:null,ox:0,oy:0,ext:1,weight:0},res:0,maxRes:Math.max(aParams.bake_resolution||aParams.tex_resolution,bParams.bake_resolution||bParams.tex_resolution),maxSamples:Math.max(aParams.sample_count,bParams.sample_count)};
     const cast={...hub,params:{...params},perf:{auto:false},src:{},srcDbgBuf:null,trans:{bloom:0},seasonCast:true,faithTex:null,faithScratch:null,
       faith:{...faith,gx:new Float32Array(faith.gx.length),gy:new Float32Array(faith.gy.length)},bakeRes:()=>s.res};
-    cast.progFaith=hub.program(VS_SEASON_TRAVEL,FS_FAITH);cast.U={...hub.U,faith:hub.faithLocs(cast.progFaith)};
+    cast.progFaith=hub.sharedProgram(VS_SEASON_TRAVEL,FS_FAITH);cast.U={...hub.U,faith:hub.faithLocs(cast.progFaith)};
     cast.effCloud=()=>cast.params.cloud_thickness;
     Object.assign(cast,makeSource(cast));Object.assign(cast,makeBake(cast));s.cast=cast;
     trans.travelField=s.field;
@@ -174,7 +175,6 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     if(!s)return;
     const pending=s.pending;
     gl.deleteBuffer(s.buf);
-    gl.deleteProgram(s.cast.progFaith);
     if(s.res){gl.deleteTexture(s.cast.faithTex);gl.deleteTexture(s.cast.faithScratch);}
     s=null;trans.travelField=null;
     return pending;

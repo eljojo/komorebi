@@ -45,7 +45,7 @@ export function makeSceneFade(hub, createScene){
     }
     incoming=sized(incoming);
     if(!prog){
-      prog=hub.program(VS_FULL,FS_SCENE_MIX);
+      prog=hub.sharedProgram(VS_FULL,FS_SCENE_MIX);   // the engine's for the context's life: a dissolve no longer links it at its start
       uniforms={a:gl.getUniformLocation(prog,'uOutgoing'),b:gl.getUniformLocation(prog,'uIncoming'),w:gl.getUniformLocation(prog,'uWeight')};
     }
   }
@@ -59,7 +59,7 @@ export function makeSceneFade(hub, createScene){
   function endSceneFade(){
     scene?.dispose(); scene=null;
     free(outgoing); free(incoming); outgoing=incoming=null;
-    if(prog) gl.deleteProgram(prog); prog=null; uniforms=null;
+    prog=null; uniforms=null;   // asked again at the next dissolve: a context restored since has a new table
   }
   return { beginSceneFade, stepSceneFade, drawSceneFade, endSceneFade };
 }

@@ -799,6 +799,23 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
   - The real-tree looks keep a few milliseconds of season and exposure arithmetic that does not scale with their leaf count.
 - **Date:** 2026-11-15.
 
+### A switch's first frame, warm
+
+- **What was measured:** the frame a switch starts on, after the same switch had already run there and back once in the page, so every program and the JIT were warm. This was measured before and after the dissolve and season travel kept their programs and the travel's snapshot stopped reading the faithful buffer back.
+- **On:** an M4 (Chromium on Metal), 1920×1080, a pumped clock at 60 fps, every frame read back (so a frame's time includes its GPU work), a CPU profile around the switch.
+- **Result:**
+
+  | route | before (CPU / whole frame) | after |
+  |---|---|---|
+  | `montebello` → `afternoon 6` (dissolve) | 31.6 / 58.2 ms | 27.7 / 50.7 ms |
+  | `montebello` → `park fall` (season travel) | 39.3 / 59.5 ms | 37.4 / 51.6 ms |
+
+  What is left of the dissolve's CPU is growing the incoming grove (12 ms), the litter's carpet (4 ms) and the outgoing scene's setup (6 ms). What is left of the season travel's is the regrow that keeps a season record (11 ms), the two snapshots and their re-seasons (10 ms) and the carpet (10 ms). Every frame of three complete switches each way is byte-identical before and after.
+
+  Handing a grown grove from a worker would still cost the page the clone of its hierarchy and records (1.7–4.3 ms in node, copying the typed arrays; transferring them would copy nothing) and the uploads, against a build of 10–21 ms.
+- **What it established:** with growth this fast, a grove grown on a thread of its own would take about 8 ms off a dissolve's first frame of about 50, for a worker the bundles would have to carry and a synchronous path the video export would still need.
+- **Date:** 2026-11-15.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).

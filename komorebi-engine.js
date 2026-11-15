@@ -164,27 +164,29 @@ function createEngine(canvas, opts, driven=false){
     if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail(`Link: ${gl.getProgramInfoLog(p)}`);
     return p;
   }
-  // The engine's own programs come from the context's table (above); the routes' short-lived ones stay hub.program's and
-  // are deleted by the route. `held` lists what this engine took, once per take, for releasePrograms to give back.
-  const held = [];
+  // The engine's own programs come from the context's table (above), and so do the programs of the routes that run on every
+  // switch (the dissolve's mix, the season travel's cast), which a route used to link at its start and delete at its end. The
+  // other routes' programs stay hub.program's and are deleted by the route. `held` maps each entry this engine took to its key,
+  // one hold per program however often it is asked for, for releasePrograms to give back.
+  const held = new Map();
   function shared(vs,fs){
     const table = contextPrograms(gl);
     let byFs = table.get(vs);
     if(!byFs){ byFs = new Map(); table.set(vs, byFs); }
     let e = byFs.get(fs);
     if(!e){ e = { prog: program(vs,fs), users: 0 }; byFs.set(fs, e); }
-    e.users++; held.push([vs, fs]);
+    if(!held.has(e)){ e.users++; held.set(e, [vs, fs]); }
     return e.prog;
   }
   function releasePrograms(){
     const table = contextPrograms(gl);
-    for(const [vs, fs] of held){
-      const byFs = table.get(vs), e = byFs?.get(fs);
-      if(!e || --e.users > 0) continue;
+    for(const [e, [vs, fs]] of held){
+      const byFs = table.get(vs);
+      if(byFs?.get(fs) !== e || --e.users > 0) continue;
       gl.deleteProgram(e.prog); byFs.delete(fs);
       if(!byFs.size) table.delete(vs);
     }
-    held.length = 0;
+    held.clear();
   }
   // initGPU() creates the eager handles — create() calls it once, and a webglcontextrestored calls it again, because
   // a lost context kills all of them. Hence `let`, not `const`. The handles made lazily outside it and held outside the
@@ -305,7 +307,7 @@ function createEngine(canvas, opts, driven=false){
     // stable plumbing (never reassigned)
     gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, fill, litter, U,
     // (the GL handles — programs, buffers, FBOs, occTex, extTimer — and the subsystems over them are set by initGPU())
-    effCloud, bakeBaseline, bakeRes, faithfulSamples, faithfulOn, transportFor, transportCamera, fillFor, litterFor, warnCut, program, faithLocs,
+    effCloud, bakeBaseline, bakeRes, faithfulSamples, faithfulOn, transportFor, transportCamera, fillFor, litterFor, warnCut, program, sharedProgram: shared, faithLocs,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
     woodTex: [],            // SKY VIEW (§4.9): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)
@@ -961,7 +963,7 @@ function createEngine(canvas, opts, driven=false){
     if(!alive) return;
     lost = false;
     transportCache.clear(); presentTex = null;         // dead handles: forgotten, never deleted
-    contextPrograms(gl).clear(); held.length = 0;      // every program the context held died with it, whichever engine linked it
+    contextPrograms(gl).clear(); held.clear();     // every program the context held died with it, whichever engine linked it
     fillEntry = null; fill.tex = [null, null]; fill.res = 0; fill.ready = false;   // the sky fill's program and textures died with the context; the first draw that wants it rebuilds both
     litterEntry = null; Object.assign(litter, newLitterState());                   // ...and so did the carpet's: initGPU() makes the fresh 1×1, and the first draw that has fallen leaves to show bakes it again
     Object.assign(hub, { layerTex:[], woodTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
