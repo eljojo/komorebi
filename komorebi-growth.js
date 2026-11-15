@@ -20,7 +20,7 @@
 // Approximation: one growth sky straight overhead, one internode length, no reiteration or epicormic shoots, and a shoot
 // is straight between its nodes. Provisional: every constant in GROWTH, set by eye on one tree.
 // ============================================================================
-import { GOLDEN, TAU } from './komorebi-math.js';
+import { GOLDEN, TAU, bendDown } from './komorebi-math.js';
 
 export const GROWTH = {
   alpha: 4,       // resource per unit of light the tree gathers
@@ -34,6 +34,7 @@ export const GROWTH = {
   setpoint: 1.5,  // how hard a side branch is held at its set angle (spec.pitch above the horizontal); 0 = not held. It must
                   // outweigh the turn toward light (xi), or every side shoot ends up vertical and a branch ends in an upward fan
   bole: 0.2,      // the share of the trunk's height kept clear of branches, as a park or street tree is pruned up as it grows
+  sag: 0.004,     // how far a year's load bends a joint (radians per unit of moment over stiffness), at droop 0
   maxShoot: 6,    // the longest shoot one bud grows in a year, in internodes
   shed: 0.2,      // light per internode below which a side branch dies
   cap: 60000,     // internodes: growth stops past this
@@ -153,6 +154,27 @@ export function growBuds(spec, rng, out){
         metas.push(m); prev = m;
       }
       if(metas.length){ addBud(prev, d, b.ord, phi); shoots.push({ metas, yr: y, ord: b.ord }); }
+    }
+    // 5. WEIGHT. Every joint of a side branch bends a little more each year under the load it carries: the moment of
+    // everything beyond it (its internodes, about their centre, at the horizontal distance of that centre from the joint)
+    // over the joint's stiffness, which grows as the square of the twigs it feeds (a pipe-model wood's EI ∝ r⁴ ∝ twigs²).
+    // A joint's bend turns everything beyond it down, so a limb's old wood sags while its new shoots, set by the growth
+    // above, turn back up: the arch. droop scales how pliant the wood is (0 is the base; above it weeps, below it is stiff).
+    const pliant = G.sag*Math.max(0, 1 + 2*droop);
+    if(pliant > 0){
+      const n = M.length, W = new Float64Array(n), SX = new Float64Array(n), SY = new Float64Array(n), TP = new Float64Array(n);
+      for(let m = n - 1; m >= 0; m--){ const x = M[m]; if(!x.alive) continue;
+        W[m] = 1; SX[m] = x.b[0]; SY[m] = x.b[1]; let tips = 0;
+        for(const k of x.kids) if(M[k].alive){ W[m] += W[k]; SX[m] += SX[k]; SY[m] += SY[k]; tips += TP[k]; }
+        TP[m] = Math.max(1, tips); }
+      const turn = new Float64Array(n);   // the bend accumulated from the branch's base out to this joint, this year
+      for(let m = 0; m < n; m++){ const x = M[m]; if(!x.alive || x.ord === 0) continue;
+        const lever = Math.hypot(SX[m]/W[m] - x.a[0], SY[m]/W[m] - x.a[1]);
+        turn[m] = (M[x.par].ord > 0 ? turn[x.par] : 0) + pliant*W[m]*lever/(TP[m]*TP[m] + 1);
+        x.d = bendDown(x.d, turn[m]); }
+      for(let m = 0; m < n; m++){ const x = M[m]; const a = x.par < 0 ? [0, 0, 0] : M[x.par].b;   // the wood moves with its joints
+        x.a = a; x.b = [a[0] + x.d[0], a[1] + x.d[1], a[2] + x.d[2]]; }
+      for(const b of B) if(b.alive && b.m >= 0 && M[b.m].ord > 0) b.d = bendDown(b.d, turn[b.m]);   // a terminal bud keeps its shoot's heading
     }
   }
 
