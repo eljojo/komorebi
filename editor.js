@@ -2026,7 +2026,7 @@ midi = mountMidi({
 // `detect` names its origin (komorebi.eljojo.net, or arboretum's own dev server) does it add the session: sign-in, the cloud
 // playlists and the controls for them. ----
 const link = parseHash(location.hash);
-const devKept = window.__komorebiDev?.kept ?? null;   // the look a live reload kept (dev-server.js); null anywhere but its dev server
+const devKept = globalThis.__komorebiDev?.kept ?? null;   // the look a live reload kept (dev-server.js); null anywhere but its dev server
 // What the editor lends arboretum.js, and nothing else of itself.
 const arbHost = {
   get params(){ return eng.authored; }, rows: {...presetRows,account:sessionPanel.account},
@@ -2049,4 +2049,4 @@ if(link?.preset || devKept) document.getElementById('feel').click();   // a kept
 else if(location.hash==='#feel'){ history.replaceState(null, '', location.pathname+location.search); document.getElementById('feel').click(); }
 // The dev server's bridge (dev-server.js): a tool outside the browser reads and sets this tab's look and sees its frame. Only that
 // server defines __komorebiDev, so anywhere else this line does nothing. A set loads the merged look the way a pasted one loads.
-window.__komorebiDev?.attach({ eng, look: () => eng.captureLook(), set: (patch) => applyParams({ ...eng.captureLook(), ...patch }), value: () => presetSel.value });
+globalThis.__komorebiDev?.attach({ eng, look: () => eng.captureLook(), set: (patch) => applyParams({ ...eng.captureLook(), ...patch }), value: () => presetSel.value });
