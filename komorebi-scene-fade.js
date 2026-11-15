@@ -40,7 +40,7 @@ export function makeSceneFade(hub, createScene){
       mix(held.fbo,smoothstep(0,1,hub.trans.t));
       scene?.dispose(); scene=null; free(outgoing); outgoing=held;
     } else {
-      scene=createScene(); outgoing=target();
+      scene=createScene(undefined,true); outgoing=target();   // the outgoing look takes this engine's grove: transitionTo regrows the incoming one right after
       scene.draw(outgoing.fbo,outgoing.w,outgoing.h);
     }
     incoming=sized(incoming);

@@ -295,7 +295,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 
 - **Leaf, season and grove travel** each cast their moving leaves into a transient **RGBA16F** world-space transmission map. The floor reads that map before lighting and grading. The map's bounds include the full projected halo. Season and grove travel use the larger endpoint sample and bake budgets, scaled by the current governor.
 - **The litter flights** accumulate optical depth and reflected-light moments in **two RGBA16F eye targets** at up to twice the canvas dimensions. The final read averages four transmittances, not four optical depths.
-- **The scene dissolve** renders both scenes into canvas-sized **RGBA8** targets in one GL context. It decodes them by gamma 2.2, mixes, and re-encodes.
+- **The scene dissolve** renders both scenes into canvas-sized **RGBA8** targets in one GL context. It decodes them by gamma 2.2, mixes, and re-encodes. Its outgoing scene is the look on screen, so it takes the engine's grove (the leaves, the faithful leaves and wood, the wood's table, the sky view's binned wood) instead of growing it again, and the engine grows only the incoming look's; the scene frees that grove when it is released. The routing suite holds the handover: the faithful leaves' buffer on screen when a dissolve starts lives on in the outgoing scene, and is gone once the dissolve ends.
 - **Cleanup.** Every route releases its temporary scene, programs and textures on completion, hard replacement, disposal and context loss.
 
 ## The signatures that decide a re-bake

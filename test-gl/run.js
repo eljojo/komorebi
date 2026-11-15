@@ -861,10 +861,10 @@ const OUTLINE_BANDS = { maple: OUTLINE_AREA, beech: BEECH_AREA, 'maple-varied': 
 const TRANSITION_ROUTES = [
   { name: 'faithful topology and tone changes dissolve complete scenes', from: 'park 1', to: 'park 1',
     over: { seed: 1234567, foliage_density: 2.4, tone_map: 0 },
-    expect: { crossfade: false, structDiff: true, sceneFade: true, bloomMax: 0, links: 1 } },
+    expect: { crossfade: false, structDiff: true, sceneFade: true, bloomMax: 0, links: 1, outgoingKept: true, outgoingFreed: true } },
   { name: 'faithful curtain topology changes dissolve complete scenes', from: 'curtain 1', to: 'curtain 1',
     over: { seed: 1234567, leaf_shape: 'maple' },
-    expect: { crossfade: false, structDiff: true, sceneFade: true, bloomMax: 0, links: 1 } },
+    expect: { crossfade: false, structDiff: true, sceneFade: true, bloomMax: 0, links: 1, outgoingKept: true, outgoingFreed: true } },
   { name: 'setParams mid-scene dissolve frees the outgoing scene and keeps the context', from: 'park 1', to: 'park 1',
     over: { seed: 1234567 }, interrupt: { at: 0.35, with: 'morning 1' },
     expect: { crossfade: false, structDiff: true, sceneFade: true, bloomMax: 0 } },

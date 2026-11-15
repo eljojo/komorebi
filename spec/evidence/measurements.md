@@ -752,6 +752,22 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **What it established:** the outgoing scene's own compile was a third of the freeze, and nothing it rendered depended on owning its programs.
 - **Date:** 2026-11-15.
 
+### The dissolve's outgoing grove
+
+- **What was measured:** the CPU time of the frame each switch starts on, before and after a dissolve's outgoing scene took the engine's grove instead of growing it again; each pair switched out, back and out again, every frame compared byte for byte between the two engines.
+- **On:** an M4 (Chromium on Metal), 960×540, a pumped clock at 60 fps, `auto_quality` and `adaptive_motion` off, 1 s routes, three runs each in a fresh browser, the median.
+- **Result:**
+
+  | route | before (out / back / again) | after |
+  |---|---|---|
+  | `montebello` → `afternoon 6` (dissolve) | 97 / 108 / 82 ms | 62 / 52 / 71 ms |
+  | `park 1` → `park 1`, a new seed (dissolve) | 27 / 33 / 29 ms | 27 / 26 / 28 ms |
+  | `montebello` → `park fall` (season travel) | 71 / 61 / 50 ms | 74 / 53 / 56 ms |
+
+  All 600 frames of every pair are byte-identical between the two. `park 1`'s grove is small enough that growing it twice cost little. The routes that do not dissolve are unchanged. Compiling every program in the background at start (`KHR_parallel_shader_compile`), tried before this and on the same machine, changed none of these by more than the runs' own spread, because the browser already reuses a program it has compiled once: it was not kept.
+- **What it established:** what is left of a dissolve's first frame is growing the incoming look's grove; ahead of the switch that would need a thread of its own.
+- **Date:** 2026-11-15.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).

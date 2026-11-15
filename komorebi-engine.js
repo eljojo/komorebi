@@ -487,6 +487,20 @@ function createEngine(canvas, opts, driven=false){
     if(params.wind_air > 0) publishAir(g);   // ...and the air, or the fresh texture's flutter reads still for a frame
   }
   function regenCanopy(){ installGrove(buildGrove(hub.hier)); }   // the old shape: grow one, make it the one
+  // THE HANDOVER. A dissolve's outgoing scene is the look on screen, whose grove the host is about to replace: the scene takes it,
+  // with what the grove build put beside it (the faithful leaves and wood, the analytic wood's table, the sky view's binned wood),
+  // instead of growing the same grove again. The host forgets the GL handles, so its rebuild makes its own and frees none of these;
+  // everything else a build writes it writes afresh. sky.start and sky.count are filled in place, so they are copied.
+  const GROVE_FAITH = ['vao','buf','count','hMin','hMax','pminx','pmaxx','pminy','pmaxy','binH','pivot','pivotBuf','pivotOn','segRest','segCount','segArr','segVAO','segBuf'];
+  function adoptGrove(h){
+    for(const k of GROVE_FAITH) faith[k] = h.faith[k];
+    for(const k of ['rest','ht','count','want','hRef']) occ[k] = h.occ[k];
+    Object.assign(sky, { segVAO:h.sky.segVAO, segBuf:h.sky.segBuf, segRest:h.sky.segRest, segArr:h.sky.segArr, start:[...h.sky.start], count:[...h.sky.count] });
+    installGrove(h.grove);
+    Object.assign(h.faith, { vao:null, buf:null, pivotBuf:null, segVAO:null, segBuf:null });
+    Object.assign(h.sky, { segVAO:null, segBuf:null });
+    Object.assign(h, { grove:null, layerVAO:[], clusterTex:null, clusterGeomTex:null });   // hier stays: the host's regrow carries its springs from it
+  }
   // Grow the grove the TARGET look describes, without becoming it (growAs: every key the build reads is the target's, MORPH ones
   // included, for the length of the build). No prevHier — the incoming springs start at rest, which is what a newly grown tree has
   // always done. Its leaf edge is recorded with it: the crossfade's bake cuts the incoming grove's leaves with its own look's edge.
@@ -533,8 +547,9 @@ function createEngine(canvas, opts, driven=false){
     to.publishBend(to.grove);
     if(to.params.wind_air > 0) to.publishAir(to.grove);
   }
-  const createScene=(look=params)=>{
-    const scene = createEngine(canvas, { params:{...look} }, true);
+  // adopt: the scene is this engine's look as it stands, and takes its grove (see adoptGrove); this engine must regrow its own next.
+  const createScene=(look=params, adopt=false)=>{
+    const scene = createEngine(canvas, { params:{...look}, adopt:adopt?hub:null }, true);
     copyMotion(hub,scene.hub);
     scene.hub.bake();
     return scene;
@@ -753,7 +768,8 @@ function createEngine(canvas, opts, driven=false){
   hub.motionTick = tick;   // default: this engine runs its own physics. EDITOR can swap it to mirror another instance.
 
   // ---- init + frame loop ----
-  rebuildAll();
+  if(opts.adopt){ rebuildTextures(); adoptGrove(opts.adopt); regenSource(); bake(); }   // rebuildAll, with the host's grove for the grown one
+  else rebuildAll();
   resetPerf();
   let last=performance.now(), fps=60, paused=false, alive=true, lost=false;
   // The journey bypasses the cached present frame; refresh it at the landing clock even in still air.
