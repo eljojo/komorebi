@@ -37,13 +37,14 @@ const FEAT_EXPOSURE = true;
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
 import { MAX_LAYERS, MAX_OCC, TOPO_KEYS, CANOPY_KEYS, SEASON_KEYS } from './komorebi-params.js';
+import { growBuds, limbs as budLimbs } from './komorebi-growth.js';
 import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_REAL, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafColumnF, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
 
 // Every param buildGrove reads besides the season set, and so the whole of `season.key` (faithful_canopy and receiver reach it through faithfulOn(), which the key carries
 // as the boolean it is). Held against a grep of this file in reseason.test.js.
 export const GROVE_READS = [
   'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
-  'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_variety','leaves_per_cluster',
+  'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','growth_years','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_variety','leaves_per_cluster',
   'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','tree_count','trunk_radius_m','view_extent_m',
 ];
 // Grow a grove as `look` would, on the live params: every key the build reads (the grove's own, the season set within the canopy keys,
@@ -230,6 +231,7 @@ export function makeGrove(hub){
     const L = clamp(params.leader_strength, 0, 1);   // 0 = legacy single-hub; >0 = monopodial leader (limbs ALONG a trunk)
     const droop = clamp(params.droop, -1, 1);        // signed gravitropic curve: >0 sag down (willow/birch), <0 upsweep (conifer); 0 = straight rays
     const phyllo = params.phyllotaxis==='opposite' ? 2 : params.phyllotaxis==='whorled' ? 1 : 0;   // child-azimuth rule (§4.5)
+    const years = Math.max(0, Math.round(params.growth_years));   // > 0: each tree grown year by year from buds (komorebi-growth.js) instead of by the grammar
 
     const grammar = { levels, kids, lenRatio, coneA, droop, phyllo, leader:L>0 };   // the tree's grammar, whole (math.growSkeleton): everything a node needs to grow its children, bar the root
 
@@ -243,7 +245,12 @@ export function makeGrove(hub){
       const out = { seg:[], tw:[], path: wantPath ? [] : null };
       const limbBase = tt*lpt, limbRaw = new Float32Array(lpt*2);
       let leaderTop = 0, limbTop = 0;   // limbTop = highest limb-attach height (local); the trunk must at least reach it
-      if(L>0){
+      if(years>0){
+        // GROWN FROM BUDS (komorebi-growth.js): apical control from the leader, side buds at the fork's angle, on a stream of the tree's own
+        // (never `gr`, so a tree's growth moves no other tree). It hands back the grammar's records; the limbs are sectors of a balanced fan.
+        const grown = growBuds({ years, lambda: 0.5 + 0.1*L, angle: coneA, phyllo, droop, kids }, mulberry32(hash3(params.seed>>>0, 0xB0D5, tt)), out);
+        budLimbs(grown, out, lpt, limbBase, limbDir, limbRaw, limbAttach);
+      } else if(L>0){
         // MONOPODIAL (spec §4.5): limbs attach at staggered heights ALONG a continuing trunk axis (plan-centre),
         // so the branches actually MEET the trunk. leader_strength sends the origins UP the bole and shortens
         // limbs toward the top (acrotony → excurrent cone); low values keep them low (a few near-base forks →
@@ -298,7 +305,7 @@ export function makeGrove(hub){
       // scale the legacy-hub lift by aspect too, so an L=0 tree is a TRUE uniform z-scale: otherwise crown_aspect
       // leaks into the layer-mode wood (floorH's bole division assumes a pure scale), breaking the "invisible to the
       // layer cast" invariant for hub trees. aspect=1 (the default and every shipped look) → byte-identical. (§4.5)
-      const zLift = (L>0) ? 0 : trunkH*aspect;
+      const zLift = (L>0 || years>0) ? 0 : trunkH*aspect;   // a grown tree stands on the ground on its own trunk
       const sc = (p) => [ p[0]*s+tx, p[1]*s+ty, p[2]*sV*aspect+zLift ];
       const twBase = twigs.length;   // this tree's first global twig index — turns grow()'s per-tree tw into the global clump id
       if(wantPath) for(const pts of out.path){
@@ -315,7 +322,7 @@ export function makeGrove(hub){
       for(const w of out.tw){ const q=sc([w.x,w.y,w.z]); w.x=q[0]; w.y=q[1]; w.z=q[2]; w.bx=w.bx*s+tx; w.by=w.by*s+ty; w.tx=tx; w.ty=ty; w.tcov=treeCov; w.tree=tt; twigs.push(w); }
       for(const sg of out.seg){ segments.push({ a:sc(sg.a), b:sc(sg.b), level:sg.level, cov:treeCov, tree:tt, limb:sg.limb, px:tx, py:ty, f0:sg.f0||0, f1:(sg.f1!=null?sg.f1:1), clump:(sg.tw>=0 ? twBase+sg.tw : -1) }); }
       const trunkTop = (L>0) ? leaderTop*sV*aspect : trunkH*aspect;
-      segments.push({ a:[tx,ty,0], b:[tx,ty,trunkTop], level:0, cov:treeCov, tree:tt, limb:-1, px:tx, py:ty, f0:0, f1:1, clump:-1 });   // the continuing trunk axis
+      if(!years) segments.push({ a:[tx,ty,0], b:[tx,ty,trunkTop], level:0, cov:treeCov, tree:tt, limb:-1, px:tx, py:ty, f0:0, f1:1, clump:-1 });   // the continuing trunk axis (a tree grown from buds grew its own)
       for(let i=0;i<lpt;i++){ const gi=limbBase+i;
         limbPlan[2*gi]=limbRaw[2*i]*s*0.6+tx; limbPlan[2*gi+1]=limbRaw[2*i+1]*s*0.6+ty;
         limbAttach[gi]=limbAttach[gi]*sV*aspect+zLift; }   // the attach height must ride the IDENTICAL z transform sc() gives every twig/segment, or the anchor sits off the wood it is meant to hold onto
@@ -368,7 +375,7 @@ export function makeGrove(hub){
       // here (trees append, so the prefix still lines up — that's the morph); branch_angle/length/pitch/droop aren't
       // either (same indices, just bent differently — carrying their sway is the desired no-reset). But seed / depth /
       // children / limb_count / phyllotaxis / the leader↔hub azimuth flip re-mean every index, so the carry is invalid.
-      topoSig: `${params.seed>>>0}|${levels}|${kids}|${lpt}|${phyllo}|${L>0?1:0}`,
+      topoSig: `${params.seed>>>0}|${levels}|${kids}|${lpt}|${phyllo}|${L>0?1:0}${years ? `|y${years}` : ''}`,
       segments, twigs, maxV:0,   // twigs (one per leaf cluster) for the 3D preview — so it scatters per twig like the bake, not per terminal segment (droop sub-segments)
       twigPath: wantPath ? twigPath : null, twigPathLen: wantPath ? Float64Array.from(twigPathLen) : null,   // inner_leaves (placeLeaf): each twig's ancestor path and its arc, by twig index; null while the knob is 0
     };

@@ -219,7 +219,7 @@ Follow identifiable leaves through small edits, the held leaf included; then loo
 
 ### Trees grown year by year, from buds, under light
 
-**Status: [direction].** Recorded 2026-11-15; a prototype is the next step.
+**Status: [direction].** Recorded 2026-11-15. A prototype is built behind `growth_years` and no shipped look uses it ([`open.md`](open.md#canopy)).
 
 José, looking down at one tree with a bare middle: *"this tree is weird as fuck … why is the crown of the tree bald?"*, and of the comparison with real growth below: *"i really like the point that 'Real trees grow year by year, from buds, and light decides which buds grow', we need that in our software."*
 
