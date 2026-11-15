@@ -217,6 +217,37 @@ Follow identifiable leaves through small edits, the held leaf included; then loo
 
 **Model files.** [`../model/leaf.md`](../model/leaf.md) (variety, the light class), [`../model/canopy.md`](../model/canopy.md), [`../model/season.md`](../model/season.md) (the fallen leaf keeps its outline), [`../contracts/determinism.md`](../contracts/determinism.md), [`../contracts/continuity.md`](../contracts/continuity.md). The decision waiting on it is *the outline swap* in [`open.md`](open.md#leaf).
 
+### Trees grown year by year, from buds, under light
+
+**Status: [direction].** Recorded 2026-11-15; a prototype is the next step.
+
+José, looking down at one tree with a bare middle: *"this tree is weird as fuck … why is the crown of the tree bald?"*, and of the comparison with real growth below: *"i really like the point that 'Real trees grow year by year, from buds, and light decides which buds grow', we need that in our software."*
+
+**What should become more true.** A tree is the record of its own growth. Each year every living bud on it either grows a shoot, waits, or dies, and what decides is the light reaching it and how strongly the axis above it dominates. Shaded branches die back and fall, so foliage gathers in a shell over the whole crown, its top included, around bare wood inside. The crown's shape, its bole, its gaps and its density follow from that history instead of being set.
+
+**Where the grown tree differs from a real one today.** Read against the botany (Hallé, Oldeman & Tomlinson's architectural models; Barthélémy & Caraglio on growth units and buds; Horn on the shell of leaves; Wilson on apical control; Palubicki and colleagues' self-organising trees, which grow exactly this way), in order of how much of the bare crown each explains:
+
+1. **A branch forks only at its tip.** A real shoot carries a bud in the axil of every leaf, so side branches leave all along it. The grammar's children start only at a node's end, which makes bare spokes with tufts on them: the wheel that `inner_leaves` answered by hanging leaves back along the wood, which lines the spokes and leaves the space between them empty.
+2. **Light plays no part in growth.** Real bud fate and shoot vigour follow light, and self-pruning removes what the shell shades. The grammar puts foliage wherever its recursion ends, and the crown's top, which is most of what is seen from below and above, carries none of its own.
+3. **The scale of the shoot is wrong.** A grown tree has about a hundred terminal twigs of about a hundred leaves each, three orders deep; a real crown of the same size has thousands of shoots of five to fifteen leaves, five to eight orders deep. Tufts stand where a real crown has an even texture.
+4. **There is no time.** A real crown is many years of growth units stacked, old wood inside and this year's shoots outside; the grammar grows in one pass.
+5. **The shape is imposed.** The plan is stretched until the widest twig reaches a set radius and the height is scaled separately; a real crown's outline comes out of apical control, light and gravity.
+6. **Leaves ignore light.** Their tilt is drawn at random; real sun leaves at the top are smaller and steeper and shade leaves inside larger and flatter. The smallest of the six.
+
+What the grown tree already has right: the pipe model's taper, gravitropic droop compounding toward the tips, the phyllotaxis types, and apical control as the axis between species (`leader_strength`), though only on the trunk.
+
+**Why it is more komorebi.** The canopy's first law is that gaps are leftovers of a structure, never drawn. A structure that grows the way a tree grows leaves the gaps a tree leaves: openings where branches died back, density where light was, a top that shades its own interior. It is the piece's causal habit applied to the tree itself, and it gives the place direction a grove whose trees differ for reasons.
+
+**Acceptance criteria.**
+- Seen from above and from below, one tree reads as a tree, with no bare hub, spokes or tufts.
+- Its foliage sits where a real crown's does, a shell over the top and sides around sparser, older wood, and the share of leaves near the trunk is measured, not assumed.
+- Species still differ, by the growth they follow (apical control, branch angle, phyllotaxis, how branches bend), not by a stretched outline.
+- The tree is a pure function of its seed and knobs, and the scene's sun never changes it: growth reads a fixed growth sky of its own, as the season's light already does.
+- The wind keeps what it needs from a grown tree: its main limbs, each twig's real base, and branches that lean rather than spin.
+- Every shipped look's trees change, and each change is shown side by side and judged, as [`../contracts/preservation.md`](../contracts/preservation.md) asks.
+
+**Model files.** [`../model/canopy.md`](../model/canopy.md) (the grown grove, the leader, a full crown), [`../model/motion.md`](../model/motion.md) (limbs, twigs and their joints), [`../model/season.md`](../model/season.md) (the exposure the season reads), [`../contracts/determinism.md`](../contracts/determinism.md), [`../contracts/continuity.md`](../contracts/continuity.md).
+
 ## How work toward a direction is judged
 
 Bring back a concrete comparison:
