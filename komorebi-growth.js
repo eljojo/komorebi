@@ -33,7 +33,8 @@ export const GROWTH = {
   droopPull: 0.3, // a side branch's pull down per unit of droop (negative droop sweeps up)
   setpoint: 1.5,  // how hard a side branch is held at its set angle (spec.pitch above the horizontal); 0 = not held. It must
                   // outweigh the turn toward light (xi), or every side shoot ends up vertical and a branch ends in an upward fan
-  bole: 0.2,      // the share of the trunk's height kept clear of branches, as a park or street tree is pruned up as it grows
+  clear: 6,       // the clear trunk, in internodes: a park or street tree is pruned clear to a fixed height while young and its
+                  // limbs above are kept for life (a line at a share of the growing height kept climbing and cut the lower limbs away)
   sag: 0.004,     // how far a year's load bends a joint (radians per unit of moment over stiffness), at droop 0
   maxShoot: 6,    // the longest shoot one bud grows in a year, in internodes
   shed: 0.2,      // light per internode below which a side branch dies
@@ -104,10 +105,9 @@ export function growBuds(spec, rng, out){
       for(const bi of n.buds) B[bi].alive = false; for(const k of n.kids) st.push(k); } };
     if(y >= 2) for(let m = 0; m < M.length; m++){ const n = M[m];
       if(n.alive && n.ord > 0 && (n.par < 0 || M[n.par].ord < n.ord) && n.yr <= y - 2 && Q[m]/N[m] < G.shed) kill(m); }
-    // the clear trunk: side branches leaving the trunk below a share of its height are pruned, year by year as it grows
-    if(G.bole > 0){
-      let top = 0; for(const n of M) if(n.alive && n.ord === 0) top = Math.max(top, n.b[2]);
-      for(let m = 0; m < M.length; m++){ const n = M[m]; if(!n.alive || n.ord !== 0 || n.b[2] >= G.bole*top) continue;
+    // the clear trunk: side branches leaving the trunk below a fixed height are pruned, year by year
+    if(G.clear > 0){
+      for(let m = 0; m < M.length; m++){ const n = M[m]; if(!n.alive || n.ord !== 0 || n.b[2] >= G.clear) continue;
         for(const bi of n.buds) if(B[bi].ord > 0) B[bi].alive = false;
         for(const k of n.kids) if(M[k].ord > 0) kill(k); }
     }
