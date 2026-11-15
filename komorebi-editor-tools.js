@@ -77,18 +77,19 @@ export function makeEditorTools(hub){
       const rng=mulberry32(hash3(params.seed>>>0, j, 101)), gauss=makeGauss(rng);   // the grove's own arrangement stream for this twig (j = twig index == the bake's seed)
       for(let k=0;k<nLeaf;k++){
         const g1=gauss(), g2=gauss();   // leaves hug the twig — must match the bake (§4.5)
-        for(let q=0;q<7;q++) rng();     // ...and the seven draws the grove makes per leaf after them (size, tilt, angle, the orbit pair, orient, phase), so this leaf's two gaussians ARE the grove's: the preview shows the cast's leaf
+        const sz=0.6+0.8*rng();         // ...and the seven draws the grove makes per leaf after them (size, tilt, angle, the orbit pair, orient, phase), so this leaf's two gaussians ARE the grove's: the preview shows the cast's leaf.
+        for(let q=1;q<7;q++) rng();     // The first is the leaf's size (× leaf_size_m), which the preview draws it at.
         // (EDITOR-ONLY CHANGE, and at inner_leaves 0 too: this inset used to walk the gaussian stream alone, so its leaf k was another draw of the same count and spread, not the cast's leaf, and its scatter
         // at 0 was not the cast's; walking the grove's draw order makes it the cast's. No frame the engine renders moves; only the T inset's blobs sit elsewhere than they did at 9d8f3ad, where the cast has them.)
         const w = lw ? lw[j*nLeaf+k] : 1;                // a leaf the grove has compacted out is gone here too (the draws above still run: the next leaf's scatter must not move)
         if(w === 0) continue;
         const cov = ((k===pcInt) ? frac : 1.0) * tcov * w;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast — × the leaf's fade out (§5.3)
         placeLeaf(hub.hier, j, g1, g2, k, params, faithful, pos);   // the grove's own placement, one function (komorebi-grove.js): the twig hug off the tip and, with inner_leaves up, the leaves on the older wood, at their own heights
-        base.push(pos[0], pos[1], pos[2], cov, tnt);
+        base.push(pos[0], pos[1], pos[2], cov, tnt, sz);
       }
     }
     treeLeafBase=new Float32Array(base);
-    treeLeafProj=new Float32Array(base.length/5*6);   // base: x,y,z,cov,tint (5) -> proj: x,y,r,g,b,size (6)
+    treeLeafProj=new Float32Array(base.length);   // base: x,y,z,cov,tint,size (6) -> proj: x,y,r,g,b,size (6)
     treeLeafHier=hub.hier; treeLeafW=lw;
   }
   function treeInsetGeom(){
@@ -157,19 +158,20 @@ export function makeEditorTools(hub){
       pushQuad(s.a, s.b, wpx, lerp(0.05,0.30+0.20*f,cv), lerp(0.07,0.22+0.16*f,cv), lerp(0.09,0.12+0.06*f,cv)); }
     // leaf blobs: the scatter on every terminal twig, so the density slider fills/thins the preview.
     if(treeLeafHier!==hub.hier || treeLeafW!==hub.hier.leafW) buildTreeLeaves();   // a re-season (§4.5) keeps the hier and makes a new leafW
-    const lsz=S*0.04, nLf=treeLeafBase.length/5;
-    // per-leaf opacity falls as the per-twig count climbs, so a dense canopy reads as a translucent haze the
-    // branches show through (option 3) instead of an opaque green wall — density stays legible as coverage.
-    const leafAlpha=clamp(1.8/Math.sqrt(Math.max(1,Math.round(params.leaves_per_cluster*params.foliage_density))),0.12,0.6);
+    // each leaf at its own size, as the cast has it: its length in the inset's pixels (an NDC unit is S/2 px), never under 1.5 px.
+    // (EDITOR-ONLY CHANGE: it was a blob 4% of the inset wide whatever the leaf, which made a crown of a few thousand small leaves
+    // a solid bush the cast never showed; at its true size a leaf needs no haze to let the branches through, so it is drawn near opaque.)
+    const lpx=params.leaf_size_m*fit*S*0.5, nLf=treeLeafBase.length/6;
+    const leafAlpha=0.85;
     for(let i=0;i<nLf;i++){                                  // inline P() — no per-leaf array alloc (there can be tens of thousands)
-      const b5=5*i, bx=treeLeafBase[b5], by=treeLeafBase[b5+1], bz=treeLeafBase[b5+2], cv=treeLeafBase[b5+3], w=treeLeafBase[b5+4];
+      const b5=6*i, bx=treeLeafBase[b5], by=treeLeafBase[b5+1], bz=treeLeafBase[b5+2], cv=treeLeafBase[b5+3], w=treeLeafBase[b5+4];
       const lf=lean*(bz/maxZ), ax=bx+wx*lf+sx0, ay=by+wy*lf+sy0, az=bz*1.4;
       const u=ax*cyw-ay*syw, depth=ax*syw+ay*cyw, f=bz/maxZ, o=6*i, vv=1.0+w*0.10;   // w: per-tree warmth -> hue + value shift
       treeLeafProj[o]=u*fit; treeLeafProj[o+1]=(az*hk-depth*dk)*fit+offY;
       treeLeafProj[o+2]=lerp(0.05,0.18+0.12*f,cv)*(1.0+w*0.28)*vv;   // warm trees redder...
       treeLeafProj[o+3]=lerp(0.07,0.42+0.18*f,cv)*(1.0+w*0.05)*vv;
       treeLeafProj[o+4]=lerp(0.09,0.16+0.10*f,cv)*(1.0-w*0.28)*vv;   // ...and cooler trees bluer
-      treeLeafProj[o+5]=lsz;
+      treeLeafProj[o+5]=Math.max(1.5, lpx*treeLeafBase[b5+5]);
     }
     // ---- draw: framed sky, ground+arrow lines, branches (solid), leaf haze, branches again (faint, over) ----
     gl.disable(gl.BLEND);
