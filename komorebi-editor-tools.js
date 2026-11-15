@@ -268,7 +268,7 @@ export function makeEditorTools(hub){
   // changes — so the mirror stays sound for that axis as well. snapshotMotion exposes
   // live refs (read-only); applyMotion copies them in + re-uploads the bend texture; setMotionSource swaps the
   // per-frame tick for a copy-from-source. The bake only reads angles + sway + time, so velocities aren't needed. ----
-    hub.snapshotMotion = () => ({ m:motion, dphase:params.drift_phase, lA:hub.hier?.limbAngle, lP:hub.hier?.limbPitch, tA:hub.hier?.twigAngle });
+    hub.snapshotMotion = () => ({ m:motion, dphase:params.drift_phase, lA:hub.hier?.limbAngle, lP:hub.hier?.limbPitch, tA:hub.hier?.twigAngle, air:hub.hier?.airData });
     hub.applyMotion = (s) => {
       if(!s) return;
       const sm=s.m;
@@ -279,6 +279,7 @@ export function makeEditorTools(hub){
       if(hub.hier && s.lA && hub.hier.limbAngle.length===s.lA.length){
         hub.hier.limbAngle.set(s.lA); hub.hier.limbPitch.set(s.lP); hub.hier.twigAngle.set(s.tA);   // BOTH limb DOFs, or the wipe's two engines foreshorten differently
         hub.publishBend(hub.grove);                                // push the mirrored bend into the texture the bake reads
+        if(s.air && hub.hier.airData.length===s.air.length){ hub.hier.airData.set(s.air); hub.uploadAir(hub.grove); }   // and the air at each clump, the leaves' flutter under wind_air
       }
     };
     hub.setMotionSource = (src) => { hub.motionTick = src ? () => hub.applyMotion(src.snapshotMotion()) : hub.tick; };

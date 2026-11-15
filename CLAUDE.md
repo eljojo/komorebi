@@ -49,6 +49,8 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-leaf.js` — the leaf's outline, grown as a vein skeleton (`growLeaf`, `leafShape`, `leafVariant`); pure, with `GLSL_LEAF_Q` its shader half.
 - `komorebi-source.js` — the point-sun cloud, the shared cast geometry and the eclipse moon, as pure functions.
 - `komorebi-motion.js` — the wind signal and the trunk/limb/twig springs.
+- `komorebi-air.js` — the air, pure: the wind's force as a function of time, the air at a place, how deep into a crown it
+  reaches; the motion, the travel routes' CPU leaves and the shaders' constants read it.
 - `komorebi-transitions.js` — the routes between looks, and which one a pair takes. Each long route has its own module:
   `komorebi-scene-fade.js` (the dissolve), `komorebi-leaf-travel.js` (faithful↔layer and faithful↔faithful, patch by
   patch), `komorebi-season-travel.js`, `komorebi-grove-travel.js` and `komorebi-litter-rise.js` (floor↔sky).

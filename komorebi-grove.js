@@ -128,6 +128,27 @@ export function placeLeaf(hier, j, g1, g2, k, params, faithful, out){
   return out;
 }
 
+// each clump's depth in its own tree's crown, into airData's .y: the share of its tree's clumps more exposed than it,
+// 0 on the skin, toward 1 at the core, so a wind that reaches depth R moves the outer R of every crown whatever its
+// shape. A clump is exposed as far out from its trunk as the crown reaches (r / rMax) or as high in it (z over the tree's
+// own height range), whichever is more: the rim and the top take the wind first, the low inner clumps near the trunk
+// last. Approximation: a dome, not the crown's real hull, and the same from every side whatever the wind's direction.
+export function crownDepth(twigs, out){
+  const trees = new Map();
+  for(let j=0;j<twigs.length;j++){ const t = twigs[j], k = `${t.tx},${t.ty}`; if(!trees.has(k)) trees.set(k, []); trees.get(k).push(j); }
+  for(const js of trees.values()){
+    let rMax = 0, zLo = Infinity, zHi = -Infinity;
+    for(const j of js){ const t = twigs[j]; rMax = Math.max(rMax, Math.hypot(t.x - t.tx, t.y - t.ty)); zLo = Math.min(zLo, t.z); zHi = Math.max(zHi, t.z); }
+    const ex = js.map(j => { const t = twigs[j];
+      return Math.max(rMax > 1e-6 ? Math.hypot(t.x - t.tx, t.y - t.ty)/rMax : 1, zHi - zLo > 1e-6 ? (t.z - zLo)/(zHi - zLo) : 1); });
+    const sorted = Float64Array.from(ex).sort(), n = js.length;
+    js.forEach((j, i) => {
+      let lo = 0, hi = n;   // the first exposure above this one's: everything from there on is more exposed
+      while(lo < hi){ const m = (lo + hi) >> 1; if(sorted[m] > ex[i]) hi = m; else lo = m + 1; }
+      out[4*j+1] = n > 1 ? (n - lo)/(n - 1) : 0;
+    });
+  }
+}
 export function makeGrove(hub){
   const { gl, params, MAX_TEX, quadBuf, faithfulOn, occ, faith, sky } = hub;
 
@@ -341,6 +362,7 @@ export function makeGrove(hub){
       clusterPhase:new Float32Array(nClusterTotal),
       twigAngle:new Float32Array(nClusterTotal), twigVel:new Float32Array(nClusterTotal),
       clusterData:new Float32Array(nClusterTotal*4),   // dynamic: (limb bend, twig bend, .z per MODE — layer's stem seed / faithful's sway_pitch anchor offset, sway_pitch foreshorten factor) — see publishBend
+      airData:new Float32Array(nClusterTotal*4),      // .x dynamic: the air's level at the clump (komorebi-air.js), the leaves' flutter under wind_air; .y static: the clump's depth in its crown (crownDepth), how far wind_depth's wind must reach; .zw spare
       clusterGeom:new Float32Array(nClusterTotal*4),   // static: (leaf pivot anchor.xy — twig tip on the layer path, real twig base in faithful; tree trunk pivot.xy)
       // topology signature: what makes limb/cluster index i mean the SAME branch across a regrow. tree_count is NOT
       // here (trees append, so the prefix still lines up — that's the morph); branch_angle/length/pitch/droop aren't
@@ -385,6 +407,7 @@ export function makeGrove(hub){
     const pos = [0,0,0,0];   // placeLeaf's scratch: one leaf's x, y, z and its pivot weight
     let pivotData = [];      // FAITHFUL: each leaf's pivot weight (placeLeaf's out[3]), in record order, before the fade (let: abscission compacts it with faithData)
     let zLow = Infinity, zHigh = -Infinity;   // the lowest and the highest height any leaf hangs at (past faith.hMin / faith.hMax only when inner_leaves hangs one on wood beyond every twig tip)
+    crownDepth(twigs, hier.airData);
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const dT = tShift ? tShift[t.tree] : undefined, cT = tGain ? tGain[t.tree] : undefined;   // this cluster's tree's lead and depth
@@ -595,18 +618,20 @@ export function makeGrove(hub){
     // branch quads were retired because layer quantization shattered continuous lines at a low sun.)
 
     // ---- (re)build the per-clump data textures sampled by the bake VS ----
-    const makeDataTex = (old, data) => {
+    const makeDataTex = (old, data, rows = 1) => {
       if(old) gl.deleteTexture(old);
       const tx = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tx);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, Math.max(1,nClusterTotal), 1, 0, gl.RGBA, gl.FLOAT, data);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, Math.max(1,nClusterTotal), rows, 0, gl.RGBA, gl.FLOAT, data);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       return tx;
     };
-    const clusterTex     = makeDataTex(null, hier.clusterData);      // dynamic bend angles — a NEW texture per grove (the old one is freed at install)
+    // dynamic: row 0 the bend angles (publishBend), row 1 the air at each clump (publishAir) — a NEW texture per grove (the old one is freed at install)
+    const clusterRows = new Float32Array(Math.max(1,nClusterTotal)*8); clusterRows.set(hier.clusterData); clusterRows.set(hier.airData, Math.max(1,nClusterTotal)*4);
+    const clusterTex     = makeDataTex(null, clusterRows, 2);
     const clusterGeomTex = makeDataTex(null, hier.clusterGeom);      // static geometry
     // the outline's own texture, R16F: LEAF_SAMPLES θ across, one row per variant down. θ REPEATs (±π are one place), the variants CLAMP (a read between two rows is no leaf),
     // LINEAR in θ and no mips — a profile is read at its own resolution. 1×1 for the ellipse: bound and never sampled, because the shader's gate is a uniform branch.

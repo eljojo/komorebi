@@ -42,7 +42,7 @@ The trunk's sway translates the whole field: this is the **bulk drift**, the one
 **The leaves rock.** The wind tilts each leaf, and a tilting leaf's footprint foreshortens (the stamp itself is [`canopy.md`](canopy.md)'s), so the dapple *changes shape* as well as position and returns to rest when the gust passes. A real part of the glisten lives here, in the stamp, not in transport. The rock has two parts:
 
 - a **quasi-static** part: the leaf flags with the wind, in proportion to the signed sway `u`;
-- a **flutter**: an oscillation whose amplitude grows with wind strength, in proportion to `|u|`, at the flutter rate, with its phase decorrelated leaf to leaf.
+- a **flutter**: an oscillation whose amplitude grows with wind strength, in proportion to `|u|` (or to the air where the leaf hangs, *The air among the leaves* below), at the flutter rate, with its phase decorrelated leaf to leaf.
 
 At zero wind both vanish and the still image is untouched. `leaf_swing` scales the rock and `flutter_freq` sets the flutter's rate.
 
@@ -159,13 +159,28 @@ Above the gusts sits the slowest band: a **self-evolving weather state**, a low-
 
 The broadband signal subsumes the single gust, and the deep lulls and the crosswind retire the "leans downwind and never comes back" tell on their own.
 
+## The air among the leaves
+
+The trunk feels the gust where it stands, now. The leaves hang in air that is somewhere else, and two things follow from that.
+
+**The air at a place.** A gust is not everywhere at once: the mean wind carries it through the grove, so a clump downwind feels it later than one upwind (Taylor's frozen turbulence). With `wind_air`, a leaf's flutter follows the air where its clump hangs instead of the trunk's sway: the gust force that drives the trunk's spring, met earlier or later by the clump's distance along the wind, times a small **eddy** that varies from place to place, mean one, never below zero, drawn from the same −5/3 noise sampled across the wind so that clumps side by side feel unrelated stretches of it. The trunk is still driven by the force at the grove's origin, now; upwind of it the gust has reached the leaves and not yet the trunk, so the air keeps the force's recent past and runs it ahead. What it gives: the trembling no longer stills everywhere at once each time the trunk swings back through rest, and patches of leaves tremble harder or softer as eddies pass. `wind_air` blends from the sway (0) to the air (1).
+
+- **Approximation:** one carried signal and one eddy field, not a simulated flow. The carried speed is a constant, not the wind's speed, which the model does not have.
+- **Provisional:** the carried speed (3 m/s), the eddies' spread, lowest rate and correlation length: the values a sound prototype first read as wind with, not measured.
+- **Approximation:** the canopy repeats and this air does not, so where a repeat's seam is in view the air on its two sides differs.
+
+**How deep the wind reaches.** A faint wind trembles only the outside of a crown. A deeper one reaches the inner leaves without moving the branches, and only a strong one moves everything, the branches in proportion. With `wind_depth`, each clump has a **depth** in its own tree's crown, the share of that tree's clumps more exposed than it: 0 on the skin, toward 1 at the core. A clump is exposed as far out from its trunk as the crown reaches, or as high in the crown, whichever is more, so the rim and the top take the wind first and the low clumps near the trunk last. The flutter's own level says how deep the wind reaches: at level L, the leaves to depth L / (0.7 · `wind_depth`) rock in full and the next quarter of the crown fades to still. The skin always rocks with whatever wind there is. A higher `wind_depth` needs a stronger wind to reach as deep. The branches are left to their springs, which already hold still in a faint wind and swing in a strong one. At 0 every leaf rocks, as without it.
+
+- **Approximation:** the crown is a dome, not its real hull, and a clump's depth is the same from every side whatever the wind's direction.
+- **Authored:** the reach at full level (0.7) and the fade's width (a quarter of the crown).
+
 ## The incoherent band
 
 A **fast, spatially incoherent** forcing, faint and from every direction, kicks individual leaves and petioles slightly differently, with almost no correlation between neighbours. **That decorrelation is the entire difference** from the coherent band. There, neighbours move together and shape is preserved; here, neighbours move independently, and the gaps **reorganise**.
 
 Its visible effect runs from a faint **glisten** to full **caustic-like reorganisation**, and what sets the scale is foliage density, below.
 
-**What is built of it is two parts, not one.** The **drift phase** below moves each leaf's position around its own orbit, on a clock. The **flutter** of the rock (*The leaves rock*, above) turns each leaf's orientation on its own phase, at one frequency (`flutter_freq`), with an amplitude that grows with the wind (`leaf_swing` · |u|): that is an incoherent forcing already, with no correlation between neighbours, on the stamp's shape rather than its place. Afternoon 7 visibly shimmers from it alone. What neither gives is a sideways kick that rises with the gusts, a correlation length, or a spectrum; a prototype that adds them is `test-gl/out/review/2026-11-09-item16-incoherent-band` (2026-11-09).
+**What is built of it is two parts, not one.** The **drift phase** below moves each leaf's position around its own orbit, on a clock. The **flutter** of the rock (*The leaves rock*, above) turns each leaf's orientation on its own phase, at one frequency (`flutter_freq`), with an amplitude that grows with the wind (`leaf_swing` · |u|, or the air at its clump under `wind_air`): that is an incoherent forcing already, with no correlation between neighbours, on the stamp's shape rather than its place. Afternoon 7 visibly shimmers from it alone. What neither gives is a sideways kick that rises with the gusts, a correlation length, or a spectrum; a prototype that adds them is `test-gl/out/review/2026-11-09-item16-incoherent-band` (2026-11-09).
 
 **The caustics reference is model, not mood.** Pool caustics are bright features that move by **merging, splitting and collapsing** rather than sliding. The same visual grammar is what reorganises here: small gaps drifting in and out of the pinhole regime, neighbouring sun-images overlapping and separating, brightness gathering and dispersing as apertures breathe. It is not literal optical focusing, as water's is; the felt behaviour, the smooth birth, merge and collapse of bright shapes, is shared, and it tells an implementer what the second motion must feel like in a way no equation does.
 
@@ -220,7 +235,7 @@ The bands coexist and sum, and the coherent band is itself broadband, a fractal 
 - **Approximation: the pitch response is even.** `1 − cos θ` is even, so an upwind limb pitched *up* foreshortens its cast slightly instead of lifting it. A signed response needs each limb's rest elevation carried into the motion, since up and down only mean something relative to the elevation the limb already sits at. The upward case is the smaller effect.
 - **Approximation: the layer path's twig joint is synthesised.** It stands at `stem_length` toward the trunk with a small angular spread, not at a real twig base; the layer path has no wood to borrow one from.
 - **Inner leaves follow their wood.** A leaf hung back on older wood (`inner_leaves`) drops its twig's bend by its pivot weight, so it no longer slides off the limb under the medium band ([`canopy.md`](canopy.md); built 2026-11-09).
-- **Approximation: the incoherent band is a periodic orbit and a one-frequency flutter, not a wind.** The drift phase reproduces the reorganisation's grammar and its exact return, and does not respond to gusts; its rate is constant. The flutter does follow the wind's strength, but on orientation only, at one rate.
+- **Approximation: the incoherent band is a periodic orbit and a one-frequency flutter, not a wind.** The drift phase reproduces the reorganisation's grammar and its exact return, and does not respond to gusts; its rate is constant. The flutter does follow the wind's strength, and under `wind_air` the air's eddies from place to place, but on orientation only, at one rate.
 - **Approximation: adaptive frame rate excludes slow drift.** While the canopy is nearly still (a deep lull, or a look whose only motion is slow drift) the heavy bake and transport run at a reduced idle cadence and the frames between re-present the last one; full rate returns the instant the springs move. The signal that decides it is the springs' sway and velocity, not the drift phase, so the slow shimmer of a drift-only look **visibly steps** at the idle cadence. That is a known cost to the glisten, paid for a large power saving; its session policy (`adaptive_motion`) is explicit or selected from startup cadence in Automatic mode. Off restores rendering every frame ([sessions](../contracts/sessions.md#rendering)). See [`../exploration/directions.md`](../exploration/directions.md).
 - **Open:** how the two wind bands are finally authored: noise type, spatial correlation length, temporal spectra.
 - **Open:** the shape of the stiffening and the damping ratio that make the backlash read right.

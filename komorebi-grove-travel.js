@@ -1,4 +1,5 @@
 import {TAU,lerp,lerpAngle,smoothstep,leafClock,turnBack,irisRoute,irisStep} from './komorebi-math.js';
+import {flutterLevel, depthGate} from './komorebi-air.js';
 import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from './komorebi-params.js';
 import {seasonCamera} from './komorebi-season-travel.js';
 import {litterLanding,litterAlbedo,litterAge} from './komorebi-litter.js';
@@ -28,7 +29,7 @@ function leaf(q,i,o){
  const d=q.data,h=q.hub,H=h.hier,j=Math.round(d[i+11]),k=j*4,D=H.clusterData,G=H.clusterGeom,m=h.motion,p=h.params;
  const L=D[k],T=D[k+1],cl=Math.cos(L),sl=Math.sin(L),ct=Math.cos(T),st=Math.sin(T),px=G[k+2],py=G[k+3];
  const dx=d[i]-G[k],dy=d[i+1]-G[k+1],xx=G[k]+ct*dx-st*dy,yy=G[k+1]+st*dx+ct*dy;
- const sw=p.leaf_swing*d[i+6]*(.5*m.u+Math.abs(m.u)*Math.sin(m.time*p.flutter_freq*TAU+d[i+7]));
+ const wm=flutterLevel(m.u,H.airData?.[k]||0,p.wind_air),sw=p.leaf_swing*d[i+6]*(.5*m.u+wm*Math.sin(m.time*p.flutter_freq*TAU+d[i+7]))*depthGate(wm,H.airData?.[k+1]||0,p.wind_depth);
  const z=D[k+2]+d[i+16]*D[k+3],gain=z/Math.max(h.faith.hMax,.001),th=p.drift_phase+d[i+15];
  const ox=d[i+12]*Math.cos(th),oy=d[i+13]*Math.sin(th),co=Math.cos(d[i+14]),so=Math.sin(d[i+14]);
  o[0]=px+cl*(xx-px)-sl*(yy-py)+m.sway[0]*gain+p.drift_amount*(co*ox+so*oy);

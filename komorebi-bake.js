@@ -49,6 +49,7 @@ export function makeBake(hub){
     gl.uniform1f(U.bake.morph, params.drift_phase);
     gl.uniform1f(U.bake.morphAmount, params.drift_amount);
     gl.uniform1f(U.bake.windLevel, motion.u);
+    gl.uniform1f(U.bake.air, Math.max(0, params.wind_air)); gl.uniform1f(U.bake.depth, Math.max(0, params.wind_depth || 0));
     gl.uniform1f(U.bake.windTime, motion.time);
     gl.uniform1f(U.bake.leafSwing, params.leaf_swing);
     gl.uniform1f(U.bake.flutterFreq, params.flutter_freq);
@@ -288,6 +289,7 @@ export function makeBake(hub){
     gl.uniform1f(UF.morph, params.drift_phase);
     gl.uniform1f(UF.morphAmount, params.drift_amount);
     gl.uniform1f(UF.windLevel, motion.u);
+    gl.uniform1f(UF.air, Math.max(0, params.wind_air)); gl.uniform1f(UF.depth, Math.max(0, params.wind_depth || 0));
     gl.uniform1f(UF.windTime, motion.time);
     gl.uniform1f(UF.leafSwing, params.leaf_swing);
     gl.uniform1f(UF.flutterFreq, params.flutter_freq);

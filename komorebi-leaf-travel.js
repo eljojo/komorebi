@@ -1,4 +1,5 @@
 import { ballisticK, clamp, lerp, lerpAngle, smoothstep, TAU, turnBack } from './komorebi-math.js';
+import { flutterLevel, depthGate } from './komorebi-air.js';
 import { CANOPY_MORPH_MAX, DEFAULTS, MORPH_KEYS } from './komorebi-params.js';
 import { VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_FULL } from './komorebi-shaders.js';
 const FEAT_LEAF_DIFFUSE = true;
@@ -82,7 +83,7 @@ function moved(q,i,out){
     tx-=len*(cs*dx+sn*dy)/r;ty-=len*(-sn*dx+cs*dy)/r;
   }
   const dx=d[i]-tx,dy=d[i+1]-ty,xx=tx+ct*dx-st*dy,yy=ty+st*dx+ct*dy;
-  const sw=p.leaf_swing*d[i+6]*(.5*m.u+Math.abs(m.u)*Math.sin(m.time*p.flutter_freq*6.2831853+d[i+7]));
+  const wm=flutterLevel(m.u,H.airData?.[o]||0,p.wind_air), sw=p.leaf_swing*d[i+6]*(.5*m.u+wm*Math.sin(m.time*p.flutter_freq*6.2831853+d[i+7]))*depthGate(wm,H.airData?.[o+1]||0,p.wind_depth);
   const z=p.faithful_canopy ? D[o+2]+d[i+16]*D[o+3] : p.canopy_base_height_m+H.twigs[j].layer/Math.max(1,p.layer_count-1)*p.canopy_thickness_m;
   const gain=p.faithful_canopy ? z/Math.max(q.hMax,.001) : 1+p.sway_height_gain*(z/p.canopy_base_height_m-1);
   const phase=p.drift_phase+d[i+15],ox=d[i+12]*Math.cos(phase),oy=d[i+13]*Math.sin(phase),co=Math.cos(d[i+14]),so=Math.sin(d[i+14]);

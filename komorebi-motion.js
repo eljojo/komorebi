@@ -4,10 +4,12 @@
 // spring integrator (tickHierarchy), and the bend-texture upload the bake
 // reads (publishBend). A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, TAU, WIND_PATTERNS, clamp, fbm1, windNoise } from './komorebi-math.js';
+import { DEG, TAU, clamp, windNoise } from './komorebi-math.js';
+import { weatherAt, leanForce, crossForce, gustEdge, advanceAir, airForce, airLevel, makeAirTrack } from './komorebi-air.js';
 
 export function makeMotion(hub){
   const { gl, params, motion, faithfulOn } = hub;
+  if(motion && !motion.air) motion.air = makeAirTrack();   // the air's kept past, which belongs to the weather like the clocks, not to a grove
 
   // ---- motion: integrate the limb and twig springs (children inherit parents) ----
   // Both take the GROVE they drive rather than reading the active one, because during a crossfade there are two
@@ -101,6 +103,22 @@ export function makeMotion(hub){
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, hier.nClusterTotal, 1, gl.RGBA, gl.FLOAT, hier.clusterData);
   }
 
+  // the air at every clump, at the motion's present (komorebi-air.js): its level into the cluster texture's second row,
+  // which the bake reads as each leaf's flutter when wind_air is up
+  const forceAt = (tau) => airForce(motion.air, tau);
+  function publishAir(g){
+    const hier = g?.hier;
+    if(!hier) return;
+    const t = motion.time, wx = motion.windX, wy = motion.windY, A = hier.airData;
+    for(let j=0;j<hier.nClusterTotal;j++) A[4*j] = airLevel(forceAt, t, hier.clusterPlan[2*j], hier.clusterPlan[2*j+1], wx, wy);
+    uploadAir(g);
+  }
+  function uploadAir(g){
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, g.clusterTex);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 1, g.hier.nClusterTotal, 1, gl.RGBA, gl.FLOAT, g.hier.airData);
+  }
+
   function motionActive(){
     return params.wind_strength>0 || (params.drift_auto && params.drift_amount>0)
         || Math.abs(motion.u)>1e-3 || Math.abs(motion.v)>1e-3   // keep simulating until settled
@@ -111,35 +129,25 @@ export function makeMotion(hub){
   function tick(dt){
     dt = clamp(dt, 0, 1/15);                                  // guard tab-switch spikes
     const t = motion.time;
-    const pat = WIND_PATTERNS[params.wind_pattern] || WIND_PATTERNS.gusty;
     // ---- weather (minutes, spec §5.1): slow deterministic drift of overall STRENGTH and DIRECTION. At
     // weather_variability 0 it is identity (weatherS=1, no veer), so presets are untouched. Driven by low-
     // frequency noise-of-time, not stochastic OU — naturally bounded & mean-reverting, and keeps the whole
-    // signal a reproducible function of t (no per-frame RNG). This is "calm day vs gusty day", evolving. ----
-    const wv = params.weather_variability, wt = t*0.012*Math.max(1e-3, params.weather_speed);
-    const weatherS = clamp(1 + wv*0.85*fbm1(wt, 1, 3, 0.6), 0, 2.5);   // strength swells & lulls over minutes
-    const dirVeer  = wv*30*DEG*fbm1(wt+13.1, 1, 3, 0.6);               // ±~30° slow veer/back at full variability
-    const effStrength = params.wind_strength*weatherS;
+    // signal a reproducible function of t (no per-frame RNG). This is "calm day vs gusty day", evolving.
+    // The force laws are komorebi-air.js's, pure in time, so the air can run them ahead of the trunk. ----
+    const { weatherS, dirVeer } = weatherAt(params, t);
     const effDir = params.wind_direction_deg*DEG + dirVeer;
     motion.windX = Math.cos(effDir); motion.windY = Math.sin(effDir); motion.weatherS = weatherS;   // weatherS exposed for the HUD
     // ---- broadband gust force (seconds): the longitudinal channel carries a steady downwind LEAN plus a
     // gustiness-scaled fluctuation that can dip below zero in deep lulls (so the spring recoils back THROUGH
     // rest — the "comes back" fix); the lateral channel is pure decorrelated crosswind (so it is never a
     // 1-D slide). gust_frequency = the lowest-octave rate; `burst` waveshapes for clustered/squally gusts. --
-    const rate = Math.max(1e-3, params.gust_frequency);
-    let gL = fbm1(t, rate, pat.octaves, pat.H);
-    let gT = fbm1(t+101.7, rate, pat.octaves, pat.H);         // decorrelated lateral stream
-    if(pat.burst>0){ const e=1+pat.burst*2;                   // spike peaks, deepen lulls (intermittency)
-      gL=Math.sign(gL)*Math.pow(Math.abs(gL),e); gT=Math.sign(gT)*Math.pow(Math.abs(gT),e); }
-    const ti = params.wind_gustiness;                         // turbulence intensity σ/U (gL,gT are unit-std)
-    const rawL = effStrength*(pat.lean + ti*gL);              // mean lean + fluctuation; <0 in strong lulls → springback through rest
-    const driveT = effStrength*(ti*pat.lat*gT);               // zero-mean crosswind — deliberately NOT slewed: the
+    const rawL = leanForce(params, t, weatherS);              // mean lean + fluctuation; <0 in strong lulls → springback through rest
+    const driveT = crossForce(params, t, weatherS);           // zero-mean crosswind — deliberately NOT slewed: the
                                                               // rise-sharp/decay-soft gust-EDGE envelope below is a
                                                               // longitudinal (lean) phenomenon; crosswind has no preferred
                                                               // sign, so an asymmetric slew would bias a zero-mean channel.
     // gust-edge asymmetry: rise sharper than decay (validated). Reuses gust_attack/gust_decay as the slew (LONGITUDINAL only). -
-    const tc = (rawL>motion.driveEnv) ? params.gust_attack : params.gust_decay;
-    motion.driveEnv += (rawL - motion.driveEnv) * (1 - Math.exp(-dt/Math.max(tc,1e-3)));
+    motion.driveEnv = gustEdge(motion.driveEnv, rawL, dt, params);
     const driveL = motion.driveEnv;
     // ---- two springs (longitudinal u, lateral uLat): underdamped, nonlinear stiffening at the ceiling,
     // backlash (under-damped return stroke). rest = 0 → exact relaxation. wind is a force, not a target. ----
@@ -166,11 +174,16 @@ export function makeMotion(hub){
     tickHierarchy(steps, h, hub.grove);                           // limb + twig springs (medium band)
     if(hub.groveIn) tickHierarchy(steps, h, hub.groveIn);             // ...and the incoming grove during a crossfade, on the same clocks
     motion.time += dt;
+    // the air: G kept on its grid always (cheap, and turning wind_air on then finds a past); run ahead and read at each
+    // clump only while wind_air is up, so a look without it pays nothing and draws exactly as before
+    const air = params.wind_air > 0;
+    advanceAir(motion.air, params, motion.time, motion.driveEnv, air);
+    if(air){ publishAir(hub.grove); if(hub.groveIn) publishAir(hub.groveIn); }
     // incoherent band: advance the drift phase (periodic in 2π). The editor reflects it in its slider.
     if(params.drift_auto && params.drift_amount>0){
       params.drift_phase = (params.drift_phase + params.drift_speed*dt) % TAU;
     }
   }
 
-  return { tickHierarchy, publishBend, motionActive, tick };
+  return { tickHierarchy, publishBend, publishAir, uploadAir, motionActive, tick };
 }

@@ -1,5 +1,6 @@
 import { MAX_LAYERS, MAX_FILL_DIRS } from './komorebi-params.js';
 import { LEAF_VARIANTS } from './komorebi-leaf.js';
+import { DEPTH_L0, DEPTH_W } from './komorebi-air.js';
 
 // ===========================================================================
 // Shaders
@@ -62,6 +63,8 @@ uniform vec2  uSway;                  // trunk (coherent) translation for this l
 uniform highp sampler2D uClusterTex;  // per-clump dynamic bend angles (limb, twig) — radians
 uniform highp sampler2D uClusterGeom; // per-clump static geometry: clump centre + trunk pivot
 uniform float uWindLevel;             // signed sway fraction u(t) — drives leaf swing intensity
+uniform float uAir;                   // wind_air: 0 the flutter follows the sway |u|, 1 the air at each clump (the cluster texture's row 1)
+uniform float uDepth;                 // wind_depth: 0 every leaf rocks, >0 only as deep into its crown as the wind reaches (depthGate)
 uniform float uWindTime;              // seconds, for leaf flutter
 uniform float uLeafSwing;             // master: how far leaves rock as wind blows
 uniform float uFlutterFreq;           // leaf flutter rate (Hz)
@@ -82,8 +85,12 @@ void main(){
   vec2 leafRest = iA.xy; float A = iA.z, B0 = iA.w;
   float angle = iB.x, restTilt = iB.y, swingGain = iB.z, swingPhase = iB.w;
   // ---- leaf rocks with the wind: footprint foreshortens -> dapple changes SHAPE (§4.5) ----
-  float wm = abs(uWindLevel);
+  float wm = uAir > 0.0 ? abs(uWindLevel)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uWindLevel);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
   float swing = uLeafSwing*swingGain*(0.5*uWindLevel + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
+  if(uDepth > 0.0){   // depthGate (komorebi-air.js): only as deep into the crown as the wind reaches, at this clump's depth (row 1 .y)
+    float dg = clamp((wm/(uDepth*${DEPTH_L0}) - texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).y)/${DEPTH_W} + 1.0, 0.0, 1.0);
+    swing *= dg*dg*(3.0 - 2.0*dg);
+  }
   float B = B0 * max(0.05, abs(cos(restTilt + swing)));
   // ---- incoherent drift orbit (fast, periodic) ----
   float th = uMorph + iD.w;
@@ -176,6 +183,8 @@ uniform float uHRef;                  // reference height: the coherent sway sca
 uniform highp sampler2D uClusterTex;
 uniform highp sampler2D uClusterGeom;
 uniform float uWindLevel;
+uniform float uAir;
+uniform float uDepth;
 uniform float uWindTime;
 uniform float uLeafSwing;
 uniform float uFlutterFreq;
@@ -188,8 +197,12 @@ flat out float vVariant;
 void main(){
   vec2 leafRest = iA.xy; float A = iA.z, B0 = iA.w;
   float angle = iB.x, restTilt = iB.y, swingGain = iB.z, swingPhase = iB.w;
-  float wm = abs(uWindLevel);
+  float wm = uAir > 0.0 ? abs(uWindLevel)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uWindLevel);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
   float swing = uLeafSwing*swingGain*(0.5*uWindLevel + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
+  if(uDepth > 0.0){   // depthGate (komorebi-air.js): only as deep into the crown as the wind reaches, at this clump's depth (row 1 .y)
+    float dg = clamp((wm/(uDepth*${DEPTH_L0}) - texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).y)/${DEPTH_W} + 1.0, 0.0, 1.0);
+    swing *= dg*dg*(3.0 - 2.0*dg);
+  }
   float B = B0 * max(0.05, abs(cos(restTilt + swing)));
   float th = uMorph + iD.w;
   vec2 lp = vec2(iD.x*cos(th), iD.y*sin(th));

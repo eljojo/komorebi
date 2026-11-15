@@ -51,6 +51,8 @@ const MORPH_KEYS = [
   'wind_strength','wind_gustiness','wind_direction_deg','gust_frequency','weather_variability','weather_speed','gust_attack','gust_decay',
   'sway_stiffness','sway_ceiling','damping_ratio','backlash_gain','sway_height_gain',
   'limb_flex','twig_flex','stem_length','sway_pitch','leaf_swing','flutter_freq',
+  'wind_air',                                                           // the leaves flutter in the air where they hang (komorebi-air.js): continuous, so it eases in a transition
+  'wind_depth',                                                         // how far into a crown the wind reaches (komorebi-air.js, depthGate): continuous too
   'drift_amount','drift_phase','drift_speed',
 ];
 const MORPH_SET = new Set(MORPH_KEYS);
@@ -349,6 +351,8 @@ const DEFAULTS = {
   stem_length: 0.5,
   leaf_swing: 0.7,
   flutter_freq: 1.4,
+  wind_depth: 0.0,                 // a faint wind rocks only a crown's skin, a stronger one reaches the inner leaves, a strong one every leaf (komorebi-air.js, depthGate); 0 = off, every leaf rocks as before
+  wind_air: 0.0,                   // the leaves flutter in the AIR where they hang, a gust carried through the grove with its eddies (komorebi-air.js), instead of with the trunk's sway |u|; 0 = off, the flutter exactly as before
   // Leaf drift — incoherent band preview (spec §5.2)
   drift_amount: 0.0,
   drift_phase: 0.0,

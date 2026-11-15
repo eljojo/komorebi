@@ -166,7 +166,7 @@ function createEngine(canvas, opts, driven=false){
     return { origin:loc(prog,'uFaithOrigin'), extent:loc(prog,'uFaithExtent'), g:loc(prog,'uG'), edge:loc(prog,'uEdge'),
       seasonCast:loc(prog,'uSeasonCast'),curtainBake:loc(prog,'uCurtainBake'),clothY:loc(prog,'uClothY'),
       morph:loc(prog,'uMorph'),morphAmount:loc(prog,'uMorphAmount'),sway:loc(prog,'uSway'),hRef:loc(prog,'uHRef'),
-      windLevel:loc(prog,'uWindLevel'),windTime:loc(prog,'uWindTime'),leafSwing:loc(prog,'uLeafSwing'),flutterFreq:loc(prog,'uFlutterFreq'),
+      windLevel:loc(prog,'uWindLevel'),air:loc(prog,'uAir'),depth:loc(prog,'uDepth'),windTime:loc(prog,'uWindTime'),leafSwing:loc(prog,'uLeafSwing'),flutterFreq:loc(prog,'uFlutterFreq'),
       clusterTex:loc(prog,'uClusterTex'),clusterGeom:loc(prog,'uClusterGeom'),beamK:loc(prog,'uBeamK'),edgeArea:loc(prog,'uEdgeArea'),
       leafTex:loc(prog,'uLeafTex'),leafShape:loc(prog,'uLeafShape'),shapeBox:loc(prog,'uShapeBox'),leafIdFrac:loc(prog,'uLeafIdFrac'),leafRows:loc(prog,'uLeafRows')};
   }
@@ -312,7 +312,7 @@ function createEngine(canvas, opts, driven=false){
     progViz = EDITOR ? program(VS_VIZ, FS_VIZ) : null;
     U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
                morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'),
-               windLevel:loc(progBake,'uWindLevel'), windTime:loc(progBake,'uWindTime'),
+               windLevel:loc(progBake,'uWindLevel'), air:loc(progBake,'uAir'), depth:loc(progBake,'uDepth'), windTime:loc(progBake,'uWindTime'),
                leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
                clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
                coverage:loc(progBake,'uCoverage'),
@@ -449,6 +449,7 @@ function createEngine(canvas, opts, driven=false){
     hub.grove = g;
     hub.hier = g.hier; hub.layerVAO = g.layerVAO; hub.clusterTex = g.clusterTex; hub.clusterGeomTex = g.clusterGeomTex;
     publishBend(g);   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
+    if(params.wind_air > 0) publishAir(g);   // ...and the air, or the fresh texture's flutter reads still for a frame
   }
   function regenCanopy(){ installGrove(buildGrove(hub.hier)); }   // the old shape: grow one, make it the one
   // Grow the grove the TARGET look describes, without becoming it (growAs: every key the build reads is the target's, MORPH ones
@@ -480,21 +481,22 @@ function createEngine(canvas, opts, driven=false){
   };
 
 
-  const { tickHierarchy, publishBend, motionActive, tick } = makeMotion(hub);
-  Object.assign(hub, { tickHierarchy, publishBend, motionActive, tick });
+  const { tickHierarchy, publishBend, publishAir, uploadAir, motionActive, tick } = makeMotion(hub);
+  Object.assign(hub, { tickHierarchy, publishBend, publishAir, uploadAir, motionActive, tick });
 
   // the engine-resident coordinators the transition route drives (hoisted function declarations)
   Object.assign(hub, { freeGrove, installGrove, regenCanopy, reseason, reweight, buildTargetGrove, rebuildAll, sizeLayers, resetPerf, applyQuality, allocLayers, makeLayerTexture });
   const { transitionTo, tickTransition } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
   function copyMotion(from,to){
-    for(const k in from.motion)to.motion[k]=Array.isArray(from.motion[k])?[...from.motion[k]]:from.motion[k];
+    for(const k in from.motion)to.motion[k]=Array.isArray(from.motion[k])?[...from.motion[k]]:k==='air'?structuredClone(from.motion[k]):from.motion[k];   // the air's kept past is state: each scene advances its own
     if(from.hier.topoSig===to.hier.topoSig){
       for(const k of ['limbAngle','limbVel','limbPitch','limbPitchVel','twigAngle','twigVel'])to.hier[k].set(from.hier[k].subarray(0,to.hier[k].length));
       to.hier.maxV=from.hier.maxV;
     }
     if(to.params.drift_auto)to.params.drift_phase=from.params.drift_phase;
     to.publishBend(to.grove);
+    if(to.params.wind_air > 0) to.publishAir(to.grove);
   }
   const createScene=(look=params)=>{
     const scene = createEngine(canvas, { params:{...look} }, true);
@@ -507,7 +509,7 @@ function createEngine(canvas, opts, driven=false){
   function retainTravelSource(){
     // This route has no wood, fill, litter or glow. Keep its actual grove and cast; share only the stateless GL plumbing.
     const outgoing={...hub,params:{...params},perf:{...perf},trans:{active:false,bloom:0},
-      motion:Object.fromEntries(Object.entries(motion).map(([k,v])=>[k,Array.isArray(v)?[...v]:v])),
+      motion:Object.fromEntries(Object.entries(motion).map(([k,v])=>[k,Array.isArray(v)?[...v]:k==='air'?structuredClone(v):v])),   // the air's kept past is state: the outgoing scene advances its own
       src:{...src},faith:{...faith},occ:{...occ},srcDbgBuf:null};
     outgoing.faithfulOn=()=>outgoing.params.faithful_canopy;
     outgoing.bakeRes=()=>outgoing.perf.bres;

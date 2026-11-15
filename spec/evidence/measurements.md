@@ -671,7 +671,13 @@ From the literature, not measured here: a Kolmogorov −5/3 spectrum in the gust
 
 The slip of an inner leaf from its limb is under [canopy](#canopy).
 
-No other motion measurement is recorded.
+### The air and the crown's depth, off
+
+- **What was measured:** whether `wind_air` and `wind_depth` at 0 leave a moving look as it was, against the commit before them.
+- **On:** four seconds of `afternoon 7`, `memories`, `park 1` and `forest floor`, 640×360 at 30 fps, after the exporter's 30 s pre-roll, on Apple M1 Pro (ANGLE Metal).
+- **Result:** `afternoon 7` and `memories` are identical frame for frame. `park 1` and `forest floor` differ on every frame by 1/255 in one channel, on 9 to 12 pixels out of 230,400. The difference comes from the crown depths written into the grove when it grows: with them left at zero, both are identical. It does not depend on what the depths are, and the GPU's copy of them plays no part (left at zero, the frames still differ). What reads them with both dials at 0 was not found.
+- **What it established:** the off state is not pixel-identical at landing, by an invisible margin; José accepted it ("i take the difference").
+- **Date:** 2026-11-15.
 
 ## transitions
 

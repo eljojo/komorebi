@@ -261,7 +261,9 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 
 | Mechanism | Module | Named | Unit | Harness |
 |---|---|---|---|---|
-| Broadband wind signal; patterns and weather | `komorebi-motion.js`, `komorebi-math.js` (wind noise) | `WIND_PATTERNS` | not recorded | determinism under frozen motion |
+| Broadband wind signal; patterns and weather | `komorebi-air.js` (the force laws, pure in time), `komorebi-motion.js`, `komorebi-math.js` (wind noise) | `WIND_PATTERNS`, `weatherAt`, `leanForce`, `gustEdge` | `air.test.js` | determinism under frozen motion |
+| The air at a place (`wind_air`) | `komorebi-air.js` (`advanceAir`, `airLevel`, `flutterLevel`), `komorebi-motion.js` (`publishAir`: the cluster texture's row 1 .x), both leaf shaders, the travel routes' CPU leaves | the air's kept past is `motion.air`, cloned with the motion | `air.test.js` | not recorded |
+| How deep the wind reaches (`wind_depth`) | `komorebi-grove.js` (`crownDepth`: row 1 .y, static), `komorebi-air.js` (`depthGate`, `DEPTH`), both leaf shaders, the travel routes' CPU leaves | `DEPTH_L0`, `DEPTH_W` inlined into the GLSL | `air.test.js` | not recorded |
 | Trunk/limb/twig spring hierarchy; rotations | `komorebi-motion.js` | joint rotations as `mat2(c,s,-s,c)` in both leaf shaders and the CPU wood | not recorded | not recorded (a still frame cannot expose a wrong sign) |
 | Drift phase (incoherent band) | `komorebi-motion.js` | `drift_phase`, `auto` | not recorded | transition suites (drift continues through landing) |
 | Spring state across a regrow | `komorebi-engine.js`, `komorebi-motion.js` | common prefix carried over | `grove-travel.test.js` | `test-gl/grove-travel.mjs`, `test-gl/season-travel.mjs` (residual springs) |
