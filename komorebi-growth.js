@@ -124,15 +124,19 @@ export function growBuds(spec, rng, out){
     for(const b of B) b.v = 0;
     split(G.alpha*Qroot, 0, rootKids, rootBuds);
     for(let m = 0; m < M.length; m++) if(M[m].alive) split(vIn[m], M[m].ord, M[m].kids, M[m].buds);
-    // 4. growth
+    // 4. growth. A year that would pass the cap is grown whole, every shoot shortened by one factor (but none below one
+    // internode), and is the last: cut off partway, the buds grown first (the oldest, low in the crown) would have their
+    // shoots and the rest none, and the leaves, which hang on the last year's shoots, would be missing from the top.
     const grow = B.length;
+    let planned = 0; for(let bi = 0; bi < grow; bi++){ const b = B[bi]; if(b.alive && b.v >= 1) planned += Math.min(G.maxShoot, Math.floor(b.v)); }
+    const budget = M.length + planned > G.cap ? Math.max(0, G.cap - M.length)/planned : 1;
     for(let bi = 0; bi < grow; bi++){
       const b = B[bi]; if(!b.alive || b.v < 1) continue;
-      const n = Math.min(G.maxShoot, Math.floor(b.v));
+      const n = Math.max(1, Math.round(Math.min(G.maxShoot, Math.floor(b.v))*budget));
       b.alive = false;
       let prev = b.m, d = b.d, phi = b.phi;
       const metas = [];
-      for(let s = 0; s < n && M.length < G.cap; s++){
+      for(let s = 0; s < n; s++){
         const a = tipOf(prev);
         // toward less shade: the grid's gradient at the shoot's tip; the trunk also takes the sky's pull upward, a side
         // shoot only the shade around it (with no shade to steer by it keeps its heading)
