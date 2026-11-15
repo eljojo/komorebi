@@ -10,7 +10,7 @@ import { makeGrove } from "./komorebi-grove.js";
 import { DEFAULTS, TOPO_KEYS } from "./komorebi.js";
 import { mulberry32 } from "./komorebi-math.js";
 
-const spec = { years: 12, lambda: 0.52, angle: Math.PI/4, phyllo: 0, droop: -0.2, kids: 3 };
+const spec = { years: 12, lambda: 0.52, angle: Math.PI/4, pitch: Math.PI/7, phyllo: 0, droop: -0.2, kids: 3 };
 const grow = (over = {}, seed = 7) => { const out = { seg: [], tw: [], path: [] }; growBuds({ ...spec, ...over }, mulberry32(seed), out); return out; };
 
 function grove(over) {

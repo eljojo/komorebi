@@ -248,7 +248,7 @@ export function makeGrove(hub){
       if(years>0){
         // GROWN FROM BUDS (komorebi-growth.js): apical control from the leader, side buds at the fork's angle, on a stream of the tree's own
         // (never `gr`, so a tree's growth moves no other tree). It hands back the grammar's records; the limbs are sectors of a balanced fan.
-        const grown = growBuds({ years, lambda: 0.5 + 0.1*L, angle: coneA, phyllo, droop, kids }, mulberry32(hash3(params.seed>>>0, 0xB0D5, tt)), out);
+        const grown = growBuds({ years, lambda: 0.5 + 0.1*L, angle: coneA, pitch: limbEl, phyllo, droop, kids }, mulberry32(hash3(params.seed>>>0, 0xB0D5, tt)), out);
         budLimbs(grown, out, lpt, limbBase, limbDir, limbRaw, limbAttach);
       } else if(L>0){
         // MONOPODIAL (spec §4.5): limbs attach at staggered heights ALONG a continuing trunk axis (plan-centre),
@@ -297,11 +297,13 @@ export function makeGrove(hub){
       // (steep branches → tiny mr → s of 6+), which — now that the faithful cast uses real z — made columnar ~47m,
       // palm ~16m. Floor the plan radius at mz/RATIO for the HEIGHT scale only: a broad tree (mr above the floor) is
       // UNCHANGED (sV == s, height preserved), a narrow tree is clamped to height = crown·RATIO·aspect. x/y keep s.
-      const sV = crown/Math.max(mr, mz/FAITH_MAX_RATIO);
+      // a tree grown from buds keeps the proportions it grew to: its height scales with its plan, uncapped, and crown_aspect is not
+      // laid over it (the shape is the growth's, not set after it)
+      const sV = years>0 ? s : crown/Math.max(mr, mz/FAITH_MAX_RATIO);
       // trunk top scales with leader_strength (§4.5): a weak leader (decurrent) ends DOWN in the crown at the highest
       // limb attach; a strong leader (excurrent) reaches the foliage apex. Always ≥ limbTop so every limb meets the trunk.
       if(L>0) leaderTop = limbTop + (mz - limbTop)*L;
-      const aspect = clamp(params.crown_aspect, 0.4, 3);   // crown height factor (§4.5): scales crown height (narrow trees capped via sV above). Drives the faithful cast + 3D preview; the LAYER cast normalises height away (invariant).
+      const aspect = years>0 ? 1 : clamp(params.crown_aspect, 0.4, 3);   // crown height factor (§4.5): scales crown height (narrow trees capped via sV above). Drives the faithful cast + 3D preview; the LAYER cast normalises height away (invariant).
       // scale the legacy-hub lift by aspect too, so an L=0 tree is a TRUE uniform z-scale: otherwise crown_aspect
       // leaks into the layer-mode wood (floorH's bole division assumes a pure scale), breaking the "invisible to the
       // layer cast" invariant for hub trees. aspect=1 (the default and every shipped look) → byte-identical. (§4.5)

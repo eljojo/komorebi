@@ -31,8 +31,9 @@ export const GROWTH = {
   xi: 0.3,        // how hard a shoot turns toward less shade
   trunkUp: 0.35,  // the trunk's pull upward
   droopPull: 0.3, // a side branch's pull down per unit of droop (negative droop sweeps up)
+  setpoint: 0.6,  // how hard a side branch is held at its set angle (spec.pitch above the horizontal); 0 = not held
   maxShoot: 6,    // the longest shoot one bud grows in a year, in internodes
-  shed: 0.12,     // light per internode below which a side branch dies
+  shed: 0.2,      // light per internode below which a side branch dies
   cap: 60000,     // internodes: growth stops past this
   half: 64,       // the shade grid: ±half voxels across, 0..height up
   height: 128,
@@ -48,7 +49,8 @@ function turnOff(d, theta, phi){
   return norm([c*d[0] + s*(cp*u[0] + sp*w[0]), c*d[1] + s*(cp*u[1] + sp*w[1]), c*d[2] + s*(cp*u[2] + sp*w[2])]);
 }
 
-// spec: { years, lambda (apical control), angle (rad, a side bud off its axis), phyllo (0 spiral, 1 whorled, 2 opposite), droop,
+// spec: { years, lambda (apical control), angle (rad, a side bud off its axis), pitch (rad, the set angle a side branch is held at
+// above the horizontal), phyllo (0 spiral, 1 whorled, 2 opposite), droop,
 // kids (the grammar's branch_children, which the wood's taper is expressed in) }
 // rng: this tree's own stream. Fills out.seg, out.tw and (when out.path is an array) out.path exactly as growSkeleton does,
 // in local units (one internode = 1), the tree standing at the origin. Returns { sector(m) } for the main limbs: see limbs().
@@ -127,7 +129,12 @@ export function growBuds(spec, rng, out){
         const gx = shadeAt(ci + 1, cj, cz) - shadeAt(ci - 1, cj, cz), gy = shadeAt(ci, cj + 1, cz) - shadeAt(ci, cj - 1, cz), gz = shadeAt(ci, cj, cz + 1) - shadeAt(ci, cj, cz - 1);
         const opt = norm([-gx, -gy, -gz + 0.5]);
         const trop = b.ord === 0 ? G.trunkUp : -droop*G.droopPull;
-        d = norm([d[0] + G.xi*opt[0], d[1] + G.xi*opt[1], d[2] + G.xi*opt[2] + trop]);
+        // a side branch's set angle (the gravitropic setpoint the axis above it holds it to): pulled toward the direction
+        // at spec.pitch above the horizontal along its own heading, so it cannot curl up into a second trunk
+        let hx = 0, hy = 0, hz = 0;
+        if(b.ord > 0 && G.setpoint > 0){ const h = Math.hypot(d[0], d[1]) || 1, cp = Math.cos(spec.pitch), sp = Math.sin(spec.pitch);
+          hx = G.setpoint*(cp*d[0]/h - d[0]); hy = G.setpoint*(cp*d[1]/h - d[1]); hz = G.setpoint*(sp - d[2]); }
+        d = norm([d[0] + G.xi*opt[0] + hx, d[1] + G.xi*opt[1] + hy, d[2] + G.xi*opt[2] + trop + hz]);
         const m = M.length;
         M.push({ a, b: [a[0] + d[0], a[1] + d[1], a[2] + d[2]], d, par: prev, ord: b.ord, yr: y, alive: true, kids: [], buds: [], shoot: shoots.length });
         (prev < 0 ? rootKids : M[prev].kids).push(m);
