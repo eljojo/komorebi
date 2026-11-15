@@ -31,7 +31,8 @@ export const GROWTH = {
   xi: 0.3,        // how hard a shoot turns toward less shade
   trunkUp: 0.35,  // the trunk's pull upward
   droopPull: 0.3, // a side branch's pull down per unit of droop (negative droop sweeps up)
-  setpoint: 0.6,  // how hard a side branch is held at its set angle (spec.pitch above the horizontal); 0 = not held
+  setpoint: 1.5,  // how hard a side branch is held at its set angle (spec.pitch above the horizontal); 0 = not held. It must
+                  // outweigh the turn toward light (xi), or every side shoot ends up vertical and a branch ends in an upward fan
   maxShoot: 6,    // the longest shoot one bud grows in a year, in internodes
   shed: 0.2,      // light per internode below which a side branch dies
   cap: 60000,     // internodes: growth stops past this
@@ -124,10 +125,11 @@ export function growBuds(spec, rng, out){
       const metas = [];
       for(let s = 0; s < n && M.length < G.cap; s++){
         const a = tipOf(prev);
-        // toward less shade: the grid's gradient at the shoot's tip, with the sky's pull upward
+        // toward less shade: the grid's gradient at the shoot's tip; the trunk also takes the sky's pull upward, a side
+        // shoot only the shade around it (with no shade to steer by it keeps its heading)
         const ci = Math.round(a[0]), cj = Math.round(a[1]), cz = Math.round(a[2]);
         const gx = shadeAt(ci + 1, cj, cz) - shadeAt(ci - 1, cj, cz), gy = shadeAt(ci, cj + 1, cz) - shadeAt(ci, cj - 1, cz), gz = shadeAt(ci, cj, cz + 1) - shadeAt(ci, cj, cz - 1);
-        const opt = norm([-gx, -gy, -gz + 0.5]);
+        const opt = b.ord === 0 ? norm([-gx, -gy, -gz + 0.5]) : Math.hypot(gx, gy, gz) > 1e-6 ? norm([-gx, -gy, -gz]) : [0, 0, 0];
         const trop = b.ord === 0 ? G.trunkUp : -droop*G.droopPull;
         // a side branch's set angle (the gravitropic setpoint the axis above it holds it to): pulled toward the direction
         // at spec.pitch above the horizontal along its own heading, so it cannot curl up into a second trunk
