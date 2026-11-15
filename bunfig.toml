@@ -1,0 +1,5 @@
+[test]
+# Other checkouts (git worktrees under .claude/) and the review archives' exported trees under test-gl/out/ carry
+# their own copies of every test; a bare `bun test` would run them all, against code that is not this checkout's.
+# test-gl's *.test.mjs are node:test suites, run with `node --test` as each one's header says.
+pathIgnorePatterns = [".claude/**", "test-gl/out/**", "test-gl/*.test.mjs"]

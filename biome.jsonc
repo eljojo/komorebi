@@ -3,9 +3,9 @@
   // Lint all hand-written JS. Exclude the generated bundle (dist/, *.min.js) and the HTML pages (their
   // embedded CSS isn't what we're linting here — this is a JS lint). test-gl/out holds the git-ignored review
   // archives, whose exported trees carry their own biome.jsonc: `!!` keeps biome from even scanning them, where a
-  // nested root configuration would stop the whole run.
+  // nested root configuration would stop the whole run. .claude/ holds other checkouts (git worktrees), the same.
   "files": {
-    "includes": ["**", "!dist", "!**/*.min.js", "!**/*.html", "!!test-gl/out"]
+    "includes": ["**", "!dist", "!**/*.min.js", "!**/*.html", "!!test-gl/out", "!!.claude"]
   },
   "linter": {
     "enabled": true,
