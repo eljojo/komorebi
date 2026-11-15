@@ -768,6 +768,37 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **What it established:** what is left of a dissolve's first frame is growing the incoming look's grove; ahead of the switch that would need a thread of its own.
 - **Date:** 2026-11-15.
 
+### The grove's build
+
+- **What was measured:** the CPU time of one `buildGrove`, before and after the leaf records became typed runs written by index and each cluster's draws were kept between regrows. Also the live frame times of the routes that regrow.
+- **On:**
+  - The build: node 22 (V8), a stub GL, the best of nine.
+  - The morph: thirteen steps of a canopy morph regrown by one grove maker.
+  - The routes: an M4, Chromium on Metal at 1920×1080, the `balanced` quality profile with `auto_quality` off, no vsync, and a one-pixel read each frame so an interval is that frame's CPU and GPU work. Each pair was switched out, back, out and back, twice.
+- **Result:**
+
+  | look | leaves | before | after |
+  |---|---|---|---|
+  | `prism` | 29 k | 21.7 ms | 9.0 ms |
+  | `afternoon 6` | 49 k | 20.5 ms | 11.8 ms |
+  | `canopy 2` | 88 k | 38.3 ms | 24.6 ms |
+  | `the void` | 103 k | 48.5 ms | 28.1 ms |
+  | `montebello` | 3 k | 16.3 ms | 10.2 ms |
+  | all 39 looks, summed | | 526 ms | 309 ms |
+
+  A step of the `morning 3b` → `prism` morph regrows in 6.2 ms on the maker that grew the step before, against 9.2 ms on a fresh one.
+
+  Live, `prism` ↔ `morning 3b` (the canopy morph) went from a typical 26–29 ms a frame to 16.4–17.2 ms; the frame each switch starts on went from 26–49 ms to 16–18 ms after the first. A dissolve's first frame (`montebello` → `afternoon 6`) went from 57–79 ms to 51–70 ms. The dissolve itself stays at about 18–19 ms a frame, because it draws two scenes.
+
+  Every grove digests the same before and after: its uploads, its hierarchy, its records and its litter. So does every morph step against a fresh maker's grove. Every frame of six switch pairs is byte-identical, 760 frames each on a pumped clock at 960×540.
+
+  Taking the generator's state out of its closure into an `Int32Array` was tried and measured no faster: it was not kept.
+- **What it established:**
+  - A grove morph now runs at about 60 fps on an M4 at 1080p.
+  - The hang loop's cost was mostly growing JavaScript arrays a number at a time, and redrawing numbers it had drawn the frame before.
+  - The real-tree looks keep a few milliseconds of season and exposure arithmetic that does not scale with their leaf count.
+- **Date:** 2026-11-15.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).

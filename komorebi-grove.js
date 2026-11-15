@@ -153,6 +153,33 @@ export function crownDepth(twigs, out){
 export function makeGrove(hub){
   const { gl, params, MAX_TEX, quadBuf, faithfulOn, occ, faith, sky } = hub;
 
+  // THE DRAWS, KEPT. A cluster's arrangement and wind streams are functions of (seed, cluster) alone, and the hang loop takes
+  // them in one fixed order whatever the other knobs say, so the numbers cluster j's first n leaves draw are the same on every
+  // regrow under that seed. They are drawn once and read back: a grove morph regrows every frame (§9), and its frames pay for
+  // hanging the leaves, not for drawing them. Per cluster its two wind draws (sway, stem); per leaf, in stream order, the two
+  // gaussians and seven arrangement draws, then its two wind draws. Held for the engine's life, as large as the busiest grove
+  // grown under the seed; a new seed starts over.
+  const DRAW = 11;
+  let drawSeed = null, drawn = [];
+  function clusterDraws(j, nLeaf){
+    const seed = params.seed>>>0;
+    if(seed !== drawSeed){ drawSeed = seed; drawn = []; }
+    const had = drawn[j];
+    if(had && had.n >= nLeaf) return had;
+    const n = Math.max(nLeaf, had ? 2*had.n : 0), a = new Float64Array(n*DRAW);
+    const rng  = mulberry32(hash3(seed, j, 101));               // arrangement stream
+    const rng2 = mulberry32(hash3(seed^0x5bd1e995, j, 101));    // wind-identity stream (separate)
+    const gauss = makeGauss(rng);
+    const sway = rng2(), stem = rng2();
+    for(let k=0, b=0;k<n;k++, b+=DRAW){
+      a[b] = gauss(); a[b+1] = gauss();
+      for(let i=2;i<9;i++) a[b+i] = rng();
+      a[b+9] = rng2(); a[b+10] = rng2();
+    }
+    drawn[j] = { n, a, sway, stem };
+    return drawn[j];
+  }
+
   // ---- canopy generation: grow a real recursive skeleton, hang one leaf cluster on each
   // terminal twig, and bin them into depth layers by the height they grew to (spec §4.5) ----
   // ---- BUILD A GROVE (spec §4.5/§9). Pure in the sense that matters: it allocates and returns a grove, it does
@@ -393,9 +420,13 @@ export function makeGrove(hub){
     }
 
     // ---- hang a leaf cluster on each twig, accumulating one instance buffer per depth layer ----
-    const layerData = [];
-    for(let l=0;l<nLayer;l++) layerData.push([]);   // 17 floats/leaf — see attribute layout below
-    let faithData = [];                             // FAITHFUL: ALL leaves in one buffer, + the continuous height (§4.5) before the fade: 18 floats/leaf (let: abscission compacts it)
+    // The leaf records are typed runs of DOUBLES, written by index: an Array grown a number at a time was most of a regrow at tens of thousands
+    // of leaves. They hold the very doubles the Arrays held, so every pass below that reads them back (the variety's sizes, the season's slots,
+    // the plan AABB) sees the same numbers, and the Float32Array made at upload rounds them as it always did.
+    const nAll = nClusterTotal*nLeaf;
+    const layerRun = [];
+    for(let l=0;l<nLayer;l++) layerRun.push({ a: new Float64Array(17*Math.max(1, Math.ceil(nAll/nLayer))), n: 0 });   // 17 floats/leaf — see attribute layout below; a layer that takes more than its share doubles
+    let faithData = new Float64Array(nAll*18);      // FAITHFUL: ALL leaves in one buffer, + the continuous height (§4.5) before the fade: 18 floats/leaf (let: abscission compacts it)
     const faithful = faithfulOn();                  // hoisted: the packing convention below must be ONE decision for the whole grove, not re-asked per leaf
     // Autumn senescence (§4.5): per-leaf pigment state. Every s_j is exactly 0 until phenology passes turn_start, so
     // below it the authored `tau` goes through untouched — the gate that keeps every shipped look byte-identical.
@@ -408,23 +439,22 @@ export function makeGrove(hub){
     // leaf that has is compacted out of both buffers. `dropping` is its gate: at leaf_drop 0, or in a season before the first leaf's fade
     // can begin (drop_start - DROP_EPS), rec, the retention arithmetic, the compaction and the litter are never made — P1's buffers to the bit.
     const isLit = lit(params), isDropping = dropping(params), after = afterTurn(params);
-    const rec = ((FEAT_EXPOSURE && isLit) || (FEAT_DROP && isDropping) || vary) ? [] : null;   // vary: the rows are drawn by the light, over the same record
     const REC = 10;
+    const rec = ((FEAT_EXPOSURE && isLit) || (FEAT_DROP && isDropping) || vary) ? new Float64Array(nAll*REC) : null;   // vary: the rows are drawn by the light, over the same record
     const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
     let sEx = null, sRank = null;   // the exposure field and keyed rank, when this build ran the pass: the record keeps them, so the first re-season does not pay it again
     let sAt = 0;
     const pos = [0,0,0,0];   // placeLeaf's scratch: one leaf's x, y, z and its pivot weight
-    let pivotData = [];      // FAITHFUL: each leaf's pivot weight (placeLeaf's out[3]), in record order, before the fade (let: abscission compacts it with faithData)
+    let pivotData = new Float64Array(nAll);   // FAITHFUL: each leaf's pivot weight (placeLeaf's out[3]), in record order, before the fade (let: abscission compacts it with faithData)
     let zLow = Infinity, zHigh = -Infinity;   // the lowest and the highest height any leaf hangs at (past faith.hMin / faith.hMax only when inner_leaves hangs one on wood beyond every twig tip)
+    let q = 0;   // the leaf's place in record order: every leaf of every cluster takes one, in the faithful run, the pivots and rec
     crownDepth(twigs, hier.airData);
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const dT = tShift ? tShift[t.tree] : undefined, cT = tGain ? tGain[t.tree] : undefined;   // this cluster's tree's lead and depth
-      const rng  = mulberry32(hash3(params.seed>>>0, j, 101));               // arrangement stream
-      const rng2 = mulberry32(hash3((params.seed>>>0)^0x5bd1e995, j, 101));  // wind-identity stream (separate)
-      const gauss = makeGauss(rng);
+      const dr = clusterDraws(j, nLeaf), D = dr.a;   // this cluster's arrangement and wind draws, in stream order (THE DRAWS, KEPT)
       const cx=t.x, cy=t.y;
-      const swayRand = rng2()*2-1; const stemRand = rng2()*2-1;
+      const swayRand = dr.sway*2-1; const stemRand = dr.stem*2-1;
       hier.clusterPlan[2*j]=cx; hier.clusterPlan[2*j+1]=cy; hier.clusterPhase[j]=swayRand*Math.PI;
       hier.clusterLimb[j]=t.limb;                                    // grown level-1 ancestor (no search needed)
       // .xy is the LEAF PIVOT ANCHOR, and it means different things per path. LAYER/park: the twig tip (= the clump
@@ -437,23 +467,23 @@ export function makeGrove(hub){
       for(let k=0;k<nLeaf;k++){
         const cov = ((k===pcInt) ? frac : 1.0) * t.tcov;   // marginal-leaf fade × marginal-tree fade (§4.5)
         // where it hangs (placeLeaf): the twig hug off the tip, and with inner_leaves up a share of the leaves on the wood behind it. Same two draws → other attributes unchanged.
-        const g1 = gauss(), g2 = gauss();
-        placeLeaf(hier, j, g1, g2, k, params, faithful, pos); pivotData.push(pos[3]);
+        const b = k*DRAW, g1 = D[b], g2 = D[b+1];
+        placeLeaf(hier, j, g1, g2, k, params, faithful, pos); pivotData[q] = pos[3];
         const x = pos[0], y = pos[1], z = pos[2];
         if(z < zLow) zLow = z;
         if(z > zHigh) zHigh = z;
-        const li = z === t.z ? t.layer : layerOf(z), data = layerData[li];   // a leaf at its twig's height is on its twig's layer; one on the wood is on the layer of its own height
-        const size = params.leaf_size_m*(0.6+0.8*rng());
+        const li = z === t.z ? t.layer : layerOf(z), run = layerRun[li];   // a leaf at its twig's height is on its twig's layer; one on the wood is on the layer of its own height
+        const size = params.leaf_size_m*(0.6+0.8*D[b+2]);
         // An outline has its own width-to-length (komorebi-leaf.js), so the look's aspect is not its to squash: it takes the leaf AREA the ellipse would have, π·A·B0 = π·size²/(4·aspect), with A = B0 = size/(2√aspect) —
         // the fullness stays where the look had it, and a maple at 1.75 is a smaller maple, never a thin one. At aspect 1 Math.sqrt(1) is exactly 1 and x/1 is x, so both are the old bits; the ellipse keeps its literal line.
         const A  = shape ? size*0.5/Math.sqrt(params.leaf_aspect) : size*0.5;   // long half-axis
         const B0 = shape ? A : size*0.5/params.leaf_aspect;                     // face-on short half (shader foreshortens)
-        const restTilt = rng()*params.max_tilt*(Math.PI*0.5);
-        let angle = rng()*Math.PI;
+        const restTilt = D[b+3]*params.max_tilt*(Math.PI*0.5);
+        let angle = D[b+4]*Math.PI;
         if(shape && leafFlip(params.seed, j, k)) angle += Math.PI;   // an outline is not the same leaf a half turn on: half of them take the other half-plane (komorebi-leaf.js)
-        const ax = 0.4+0.6*rng(), ay = 0.4+0.6*rng();    // incoherent orbit
-        const orient = rng()*TAU2, phase = rng()*TAU2;
-        const swingGain = 0.6+0.8*rng2(), swingPhase = rng2()*TAU2;
+        const ax = 0.4+0.6*D[b+5], ay = 0.4+0.6*D[b+6];    // incoherent orbit
+        const orient = D[b+7]*TAU2, phase = D[b+8]*TAU2;
+        const swingGain = 0.6+0.8*D[b+9], swingPhase = D[b+10]*TAU2;
         // this leaf's own tau: a leaf not yet turning gets `tau` itself (leafTau's s=0 branch copies it, no arithmetic).
         // The hashes inside leafTau are pure functions of (seed, j, k) — they must never draw from rng/rng2/gr above,
         // or every shipped grove reshuffles.
@@ -463,14 +493,19 @@ export function makeGrove(hub){
         // iFade: the very `cov` folded into tau above. The bake writes it into alpha (coverage) so the leaf's BALLISTIC shadow (§4.5) fades out
         // with its tau — the mixture reads (tau·cov, cov·fade) as the same leaf over fade·cov of the area — instead of keeping its full footprint
         // on a leaf that is not there yet; alpha has no other reader.
-        data.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                  lt[0]*cov,lt[1]*cov,lt[2]*cov, cid, ax,ay,orient,phase, cov);
-        faithData.push(x,y,A,B0, angle,restTilt,swingGain,swingPhase,
-                  lt[0]*cov,lt[1]*cov,lt[2]*cov, cid, ax,ay,orient,phase, z, cov);   // + REAL grown height (attr 5) — cast == preview — then the fade (attr 6)
-        if(rec) rec.push(x, y, z, Math.PI*A*B0*cov, j, k, cov, li, data.length-9, faithData.length-10);   // flat area (the ellipse), orientation ignored; the two slots are where this leaf's tau starts
-        if(sRec){ sRec[sAt]=x; sRec[sAt+1]=y; sRec[sAt+2]=z; sRec[sAt+3]=A; sRec[sAt+4]=B0; sRec[sAt+5]=Math.PI*A*B0*cov; sRec[sAt+6]=j; sRec[sAt+7]=k; sRec[sAt+8]=cov; sRec[sAt+9]=li; sRec[sAt+10]=data.length-17; sAt += SREC; }
+        if(run.n + 17 > run.a.length){ const grown = new Float64Array(run.a.length*2); grown.set(run.a); run.a = grown; }
+        const d = run.a, o = run.n, f = q*18; run.n += 17;
+        d[o]=x; d[o+1]=y; d[o+2]=A; d[o+3]=B0; d[o+4]=angle; d[o+5]=restTilt; d[o+6]=swingGain; d[o+7]=swingPhase;
+        d[o+8]=lt[0]*cov; d[o+9]=lt[1]*cov; d[o+10]=lt[2]*cov; d[o+11]=cid; d[o+12]=ax; d[o+13]=ay; d[o+14]=orient; d[o+15]=phase; d[o+16]=cov;
+        faithData[f]=x; faithData[f+1]=y; faithData[f+2]=A; faithData[f+3]=B0; faithData[f+4]=angle; faithData[f+5]=restTilt; faithData[f+6]=swingGain; faithData[f+7]=swingPhase;
+        faithData[f+8]=lt[0]*cov; faithData[f+9]=lt[1]*cov; faithData[f+10]=lt[2]*cov; faithData[f+11]=cid; faithData[f+12]=ax; faithData[f+13]=ay; faithData[f+14]=orient; faithData[f+15]=phase;
+        faithData[f+16]=z; faithData[f+17]=cov;   // + REAL grown height (attr 5) — cast == preview — then the fade (attr 6)
+        if(rec){ const r = q*REC; rec[r]=x; rec[r+1]=y; rec[r+2]=z; rec[r+3]=Math.PI*A*B0*cov; rec[r+4]=j; rec[r+5]=k; rec[r+6]=cov; rec[r+7]=li; rec[r+8]=o+8; rec[r+9]=f+8; }   // flat area (the ellipse), orientation ignored; the two slots are where this leaf's tau starts
+        if(sRec){ sRec[sAt]=x; sRec[sAt+1]=y; sRec[sAt+2]=z; sRec[sAt+3]=A; sRec[sAt+4]=B0; sRec[sAt+5]=Math.PI*A*B0*cov; sRec[sAt+6]=j; sRec[sAt+7]=k; sRec[sAt+8]=cov; sRec[sAt+9]=li; sRec[sAt+10]=o; sAt += SREC; }
+        q++;
       }
     }
+    const layerData = layerRun.map(r => r.a.subarray(0, r.n));   // each layer's leaves, in hang order
     // The faithful cast's frame is swept over [hLo, hHi] = [hMin, hMax] when there is no wood to reach the ground (komorebi-bake.js), and both ends are the TWIG TIPS' (above): a leaf hung on wood beyond them would cast outside
     // the frame. Below the lowest tip is where a limb that falls to the trunk puts them; ABOVE the highest it is the droop, which bends a twig's tip below the joints behind it, so a leaf on that wood is higher than every tip
     // (measured: the willow at droop 0.8 puts 427 leaves up to 0.26 m over its highest tip, droop 1 / pitch 70 / no leader on afternoon 7 up to 0.40 m). So both ends are widened to the lowest and the highest leaf. Neither moves at
@@ -559,14 +594,16 @@ export function makeGrove(hub){
       // A leaf with w = 0 is not a faint leaf, it is no leaf: compacted out of both buffers in one pass over the records, so a bare canopy
       // is not a bake of ten thousand empty quads (a zero-tau quad still costs one in the bake). Survivors keep their order, in both.
       if(gone){
-        const keepL = layerData.map(() => []), keepF = [];
-        const keepP = [];
-        for(let i=0;i<n;i++){
+        const per = new Int32Array(nLayer);
+        for(let i=0;i<n;i++) if(alive[i]) per[rec[REC*i+7]]++;
+        const keepL = Array.from(per, (c) => new Float64Array(c*17)), keepF = new Float64Array((n-gone)*18), keepP = new Float64Array(n-gone);
+        const atL = new Int32Array(nLayer);
+        for(let i=0, s=0;i<n;i++){
           if(!alive[i]) continue;
-          const o = REC*i, li = rec[o+8] - 8, fi = rec[o+9] - 8, kl = keepL[rec[o+7]];
-          for(let q=0;q<17;q++) kl.push(layerData[rec[o+7]][li+q]);
-          for(let q=0;q<18;q++) keepF.push(faithData[fi+q]);
-          keepP.push(pivotData[fi/18]);
+          const o = REC*i, l = rec[o+7], li = rec[o+8] - 8, fi = rec[o+9] - 8;
+          keepL[l].set(layerData[l].subarray(li, li+17), atL[l]); atL[l] += 17;
+          keepF.set(faithData.subarray(fi, fi+18), s*18);
+          keepP[s++] = pivotData[fi/18];
         }
         for(let l=0;l<nLayer;l++) layerData[l] = keepL[l];
         faithData = keepF; pivotData = keepP;
