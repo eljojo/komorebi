@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateSpec, SpecError } from '../src/spec.js';
-import { resolveQuality, msPerFrame, estimateSeconds, QUALITY_FIELDS, QUALITY_CHOICES } from '../src/quality.js';
+import { resolveQuality, msPerFrame, estimateSeconds, QUALITY_FIELDS, QUALITY_CHOICES, qualityRows } from '../src/quality.js';
 import { exporterArgs } from '../src/exporter.js';
 import { jobView } from '../src/view.js';
 
@@ -103,4 +103,13 @@ test('once segments finish the ETA is measured; finished jobs have none', () => 
 test('the fields and allowed values the validator knows are exported, for the docs that must list them', () => {
   assert.deepEqual(QUALITY_FIELDS, ['tex_resolution', 'bake_resolution', 'sample_count', 'ss']);
   assert.deepEqual(QUALITY_CHOICES, { tex_resolution: [1024, 2048, 4096], bake_resolution: [0, 768, 1024, 1536, 2048], ss: [1, 2], sample_count: [16, 48] });
+});
+
+test('the quality rows are the engine registry\'s: the select values and the slider range its rows hold', () => {
+  const PARAMS = {
+    tex_resolution: { default: 1024, row: { kind: 'sel', label: 'res', choices: [['1024', 1024], ['2048', 2048], ['4096', 4096]], rebuild: 'textures' } },
+    bake_resolution: { default: 0, row: { kind: 'sel', label: 'bake res', choices: [['follow tex', 0], ['768', 768], ['1024', 1024], ['1536', 1536], ['2048', 2048]], rebuild: 'textures' } },
+    sample_count: { default: 32, row: { kind: 's', label: 'samples', min: 16, max: 48, step: 1, rebuild: 'source' } },
+  };
+  assert.deepEqual(qualityRows(PARAMS), { tex_resolution: [1024, 2048, 4096], bake_resolution: [0, 768, 1024, 1536, 2048], sample_count: [16, 48] });
 });

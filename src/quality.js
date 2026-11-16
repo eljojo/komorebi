@@ -5,15 +5,23 @@ import { readFileSync } from 'node:fs';
 const pin=JSON.parse(readFileSync(new URL('../komorebi.json',import.meta.url),'utf8'));
 export const SESSION_PROFILES=pin.sessions ?? {quality:[],presentation:[]};
 export const QUALITY_KEYS = ['tex_resolution', 'bake_resolution', 'sample_count'];
+// The editor's own rows for the three engine keys, from komorebi's parameter registry (PARAMS in komorebi-params.js): the pin
+// (scripts/pin.mjs) copies them into komorebi.json with qualityRows. A pin older than the registry carries none, and these are
+// the rows komorebi had then.
+export function qualityRows(PARAMS) {
+  const values = (k) => PARAMS[k].row.choices.map(([, v]) => v);
+  return { tex_resolution: values('tex_resolution'), bake_resolution: values('bake_resolution'), sample_count: [PARAMS.sample_count.row.min, PARAMS.sample_count.row.max] };
+}
+const ROWS = pin.quality ?? { tex_resolution: [1024, 2048, 4096], bake_resolution: [0, 768, 1024, 1536, 2048], sample_count: [16, 48] };
 const CHOICES = {
-  tex_resolution: [1024, 2048, 4096],
-  bake_resolution: [0, 768, 1024, 1536, 2048],   // 0 follows tex_resolution
+  tex_resolution: ROWS.tex_resolution,
+  bake_resolution: ROWS.bake_resolution,   // 0 follows tex_resolution
   ss: [1, 2],
 };
-const SAMPLES = [16, 48];   // the editor's own range (editor.js PANEL)
+const SAMPLES = ROWS.sample_count;
 export const QUALITY_FIELDS = [...QUALITY_KEYS, 'ss'];
 export const QUALITY_CHOICES = { ...CHOICES, sample_count: SAMPLES };   // sample_count is a range: [min, max]
-const MAX_SET = { tex_resolution: 4096, bake_resolution: 0, sample_count: 48 };
+const MAX_SET = { tex_resolution: Math.max(...CHOICES.tex_resolution), bake_resolution: 0, sample_count: SAMPLES[1] };
 const FULL_HD = [1920, 1080];
 
 // Returns { value, errors }: value is 'authored', 'max' or a normalised object; {} is "authored".

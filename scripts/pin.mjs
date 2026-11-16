@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, loadPin } from '../src/config.js';
 import { resolveCommit } from '../src/engine.js';
+import { qualityRows } from '../src/quality.js';
 
 const file = fileURLToPath(new URL('../komorebi.json', import.meta.url));
 const pin = loadPin(file);
@@ -26,6 +27,9 @@ try{
     const {QUALITY_PROFILES,PRESENTATION_PROFILES}=await import(pathToFileURL(join(stage,'komorebi-session.js')).href);
     next.sessions={quality:Object.keys(QUALITY_PROFILES),presentation:Object.keys(PRESENTATION_PROFILES)};
   }else delete next.sessions;
+  // the quality keys' rows, from the engine's parameter registry (src/quality.js, qualityRows); an engine from before it has none
+  const {PARAMS}=await import(pathToFileURL(join(stage,'komorebi-params.js')).href);
+  if(PARAMS) next.quality=qualityRows(PARAMS); else delete next.quality;
 }finally{rmSync(stage,{recursive:true,force:true});}
 writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
 console.log(sha === pin.commit ? `already pinned to ${sha}` : `pinned ${pin.commit.slice(0, 12)} -> ${sha}`);
