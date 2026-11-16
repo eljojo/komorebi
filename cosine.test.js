@@ -5,6 +5,7 @@
 // the shader and contracts differently at 1. The pure table and the exactness at 0 are held here; the pixels are the harness's.
 import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
+import { GRANDFATHERED } from "./komorebi-params.js";
 import { PARAMS, DEFAULTS, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, FEATURES, CAMERAS, TRANSPORT_CAMERAS, buildTransport, cameraFor } from "./komorebi.js";
 import * as MATH from "./komorebi-math.js";
 import { DEG, atmosphere, beamExposure, sunDirection, sunIncidence } from "./komorebi-math.js";
@@ -12,6 +13,8 @@ import { makeRender } from "./komorebi-render.js";
 import { FILL_SIG_LEN, makeFill } from "./komorebi-bake.js";
 import { PRESETS } from "./presets.js";
 
+// the defaults the laws were built against (both off): what these tests vary one law from
+const BASE = { ...DEFAULTS, ...GRANDFATHERED };
 const read = (f) => readFileSync(new URL(`./${f}`, import.meta.url), "utf8");
 const ELEVS = [-3, 0, 2, 4, 6, 7, 12, 13, 26, 36, 45, 55, 70, 84.5, 90];
 const AZS = [0, 62, 90, 140, 180, 254.1, 359];
@@ -69,7 +72,7 @@ test("the table's numbers, to 3 places: park 1 .438, curtain 1 .860, curtain 2 .
 function renderRig(over = {}) {
   const calls = [];
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : (...a) => { calls.push([name, ...a]); return name === "checkFramebufferStatus" ? "FRAMEBUFFER_COMPLETE" : {}; }) });
-  const params = { ...DEFAULTS, ...over };
+  const params = { ...BASE, ...over };
   const U = new Proxy({}, { get: (_t, k) => (k === "layers" || k === "woods" ? [0, 1, 2, 3].map((i) => `${k}${i}`) : k) });
   const hub = {
     gl, canvas: { width: 320, height: 180 }, params, trans: { active: false }, perf: {}, motion: { sway: [0, 0] }, occ: { count: 0 }, occTex: {}, faith: {}, U, emptyVAO: {},
@@ -153,52 +156,59 @@ test("komorebi-render.js: sun colour is scaled on the CPU, with a separate surfa
 });
 
 // ---- the gate and its class ------------------------------------------------------------------------------------------------
-test("sun_cosine: 0 in DEFAULTS, MORPH class (a live uniform scale and a fill re-run, no bake), none of the others, and not a FEATURE", () => {
-  expect(DEFAULTS.sun_cosine).toBe(0);
+test("sun_cosine: on in DEFAULTS and off for a look from before it was, MORPH class (a live uniform scale and a fill re-run, no bake), none of the others, and not a FEATURE", () => {
+  expect(DEFAULTS.sun_cosine).toBe(1);
+  expect(DEFAULTS.sun_extinction).toBe(1);
+  expect(GRANDFATHERED.sun_cosine).toBe(0);
+  expect(GRANDFATHERED.sun_extinction).toBe(0);
   expect(MORPH_KEYS).toContain("sun_cosine");
   for (const [name, set] of Object.entries({ CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS })) expect(set.includes("sun_cosine"), name).toBe(false);
-  for (const [name, f] of Object.entries(FEATURES)) expect(f.open({ ...DEFAULTS, sun_cosine: 1 }), `${name} is not opened by sun_cosine`).toBe(f.open({ ...DEFAULTS }));   // there is no GLSL to cut
+  for (const [name, f] of Object.entries(FEATURES)) expect(f.open({ ...DEFAULTS, sun_cosine: 1 }), `${name} is not opened by sun_cosine`).toBe(f.open({ ...DEFAULTS, sun_cosine: 0 }));   // there is no GLSL to cut
 });
 
-// ---- which looks carry the law, and which keep the old one for their original contrast ------------------------------------------------
-// "i think in general I can work with "C" … i think these are the ones i want to keep with the "legacy" look: 17A, 13A, 14A, 15A, 16A, 6A, 5A, 4A, 3A, 1A".
-// C is the law with exposure re-sat to exposure/I (I the look's own incidence), rounded to the sheet's three places; the sky views take 1 and are not on it.
-// The air's loss (sun_extinction): the curtains carry it with exposure held, montebello with exposure re-sat by 1/E on top of the cosine re-sit;
-// every other look is off.
-const AIR_LOSS = { "curtain 1": "held", "curtain 2": "held", montebello: "re-sat" };
-const KEEP_OLD_LAW = ["eclipse", "morning 2", "the void", "afternoon 5b", "prism", "park 2", "morning 1", "morning 3", "morning 3b", "memories"];
-const SHIPPED_EXPOSURE = {   // each C look's exposure before the law, the numerator of its re-sit
+// ---- which looks carry the laws, and which keep the old ones ---------------------------------------------------------------------
+// The laws were first taken by the looks José picked as "C", others kept "with the "legacy" look" for their contrast. That contrast
+// was the shade: with the exposure re-sat over the law alone, a low sun's look lifted its shade with its sunflecks. With the shade
+// held (exposure ÷ the law's factor, the skylight × it) every look keeps its light, measured look by look on the GPU (2026-11-16,
+// the review folder's adopting-features), so every look carries both laws but park 2 (kept on the old law, its sunflecks rose
+// 6-10 %) and montebello, rain (the air's loss lifted its sunflecks); park fall, the yellow tree and cherry blossom keep the air's loss
+// off because montebello's season family travels between its looks only while they share one skylight, which the held shade moves. The curtains carry the air's loss with exposure held, as they
+// were made; every other look re-sits its exposure over each law. The sky views take 1 from the cosine.
+const OLD_LAW = { "park 2": ["sun_cosine", "sun_extinction"], "park 1": ["sun_extinction"], "montebello, rain": ["sun_extinction"], "park fall": ["sun_extinction"], "the yellow tree": ["sun_extinction"], "cherry blossom": ["sun_extinction"] };
+const AIR_HELD = ["curtain 1", "curtain 2"];
+const SHIPPED_EXPOSURE = {   // each look's exposure before either law, as shown at its own cloud: the numerator of its re-sit
   "acid dreams": 1.635, "park 1": 2.44, montebello: 2.44, "park fall": 2.44, "the yellow tree": 2.44, "montebello, rain": 2.44, "cherry blossom": 2.44,
   "curtain 2": 1.5, "tent 1": 1.35, "curtain 1": 1.4, "afternoon 4": 2.44, "afternoon 5": 2.44, "afternoon 6": 2.44, "afternoon 6b": 2.44, "afternoon 7": 2.44,
-  "forest floor": 2.44, "afternoon 4b": 1.29,
+  "forest floor": 2.44, "afternoon 4b": 1.29, eclipse: 2.1, "morning 2": 2.44, "the void": 2.44, "afternoon 5b": 2.44, prism: 2.44, "park 2": 2.44,
+  "morning 1": 2.44, "morning 3": 2.44, "morning 3b": 2.44, memories: 3.01, "canopy 1": 1.3, "canopy 2": 1.35, "canopy 3": 1.35, "canopy 4": 1.3,
 };
-test("sun_cosine: the looks José picked as C carry the law at exposure/I; the ones he kept stay off; the sky views are untouched", () => {
-  const r3 = (x) => Math.round(x * 1000) / 1000;
-  for (const [name, p] of Object.entries(PRESETS)) {
-    if (KEEP_OLD_LAW.includes(name) || p.sky_view) { expect(p.sun_cosine ?? 0, `${name} keeps the old law`).toBe(0); continue; }
-    expect(p.sun_cosine, `${name} carries the law`).toBe(1);
-    const I = sunIncidence(cameraFor(p), p.sun_elevation_deg, p.sun_azimuth_deg), E = MATH.beamExtinction(p.sun_elevation_deg, p.sky_turbidity);
-    const want = AIR_LOSS[name] === "re-sat" ? r3(r3(SHIPPED_EXPOSURE[name] / I) / E) : r3(SHIPPED_EXPOSURE[name] / I);
-    expect(r3(MATH.shownExposure({ ...DEFAULTS, ...p })), `${name}'s exposure is re-sat (as shown, at its own cloud)`).toBe(want);
+test("sun_cosine and sun_extinction: every look carries both but park 2 and montebello's season family keep theirs, its exposure re-sat over each (the curtains hold theirs over the air's loss)", () => {
+  for (const [name, look] of Object.entries(PRESETS)) {
+    const p = { ...DEFAULTS, ...look }, old = OLD_LAW[name] ?? [];
+    expect(p.sun_cosine, `${name}: the cosine law`).toBe(old.includes("sun_cosine") ? 0 : 1);
+    expect(p.sun_extinction, `${name}: the air's loss`).toBe(old.includes("sun_extinction") ? 0 : 1);
+    const I = p.sun_cosine ? sunIncidence(cameraFor(p), p.sun_elevation_deg, p.sun_azimuth_deg) : 1;
+    const E = p.sun_extinction && !AIR_HELD.includes(name) ? MATH.beamExtinction(p.sun_elevation_deg, p.sky_turbidity) : 1;
+    if (p.sky_view) expect(I, `${name}: the sky view takes 1`).toBe(1);
+    expect(Math.abs(MATH.shownExposure(p) - SHIPPED_EXPOSURE[name] / I / E), `${name}'s exposure is re-sat (as shown, at its own cloud)`).toBeLessThan(0.006);
   }
-  for (const [name, p] of Object.entries(PRESETS)) expect(p.sun_extinction ?? 0, `${name}: the air's loss as José picked it`).toBe(AIR_LOSS[name] ? 1 : 0);
-  expect(Object.keys(SHIPPED_EXPOSURE).length + KEEP_OLD_LAW.length + Object.values(PRESETS).filter((p) => p.sky_view).length).toBe(Object.keys(PRESETS).length);
+  expect(Object.keys(SHIPPED_EXPOSURE).sort()).toEqual(Object.keys(PRESETS).sort());
 });
 
 // ---- a morph across the law: the dapples move straight, only the shade and sky follow exposure ---------------------------------
 test("beamExposure: exactly lerp with the law off at both ends; otherwise exposure × the law's factor moves linearly between the ends", () => {
   const ends = [[0, 0, 26, 84.5], [1, 0, 26, 26], [1, 1, 26, 84.5], [0.3, 1, 12, 55]];
   for (const [ca, cb, ea, eb] of ends) for (const cam of ["floor", "cloth", "enclosure"]) for (const w of [0, 0.25, 0.5, 0.9, 1]) {
-    const a = { ...DEFAULTS, sun_cosine: ca, sun_elevation_deg: ea, sun_azimuth_deg: 140, exposure: 2.44 };
-    const b = { ...DEFAULTS, sun_cosine: cb, sun_elevation_deg: eb, sun_azimuth_deg: 140, exposure: 5.566 };
+    const a = { ...BASE, sun_cosine: ca, sun_elevation_deg: ea, sun_azimuth_deg: 140, exposure: 2.44 };
+    const b = { ...BASE, sun_cosine: cb, sun_elevation_deg: eb, sun_azimuth_deg: 140, exposure: 5.566 };
     const now = { ...a, sun_cosine: a.sun_cosine + (b.sun_cosine - a.sun_cosine) * w, sun_elevation_deg: ea + (eb - ea) * w };
     const irr = (p) => 1 + (sunIncidence(cam, p.sun_elevation_deg, p.sun_azimuth_deg) - 1) * p.sun_cosine;
     const e = beamExposure(cam, a, b, w, now);
     if (ca === 0 && cb === 0) expect(e, `${cam} law off: plain lerp`).toBe(a.exposure + (b.exposure - a.exposure) * w);
     else expect(e * irr(now)).toBeCloseTo(a.exposure * irr(a) + (b.exposure * irr(b) - a.exposure * irr(a)) * w, 12);
   }
-  // cherry blossom → park 2, halfway: the separate lerps lit the dapples 18% over both ends; the product holds them where both ends have them
-  const cb = { ...DEFAULTS, ...PRESETS["cherry blossom"] }, p2 = { ...DEFAULTS, ...PRESETS["park 2"] }, mid = { ...cb, sun_cosine: 0.5 };
+  // cherry blossom → park 2, halfway (the cosine alone: cherry blossom's air's loss held off): the separate lerps lit the dapples 18% over both ends; the product holds them where both ends have them
+  const cb = { ...DEFAULTS, ...PRESETS["cherry blossom"], sun_extinction: 0 }, p2 = { ...DEFAULTS, ...PRESETS["park 2"] }, mid = { ...cb, sun_cosine: 0.5 };
   const I = sunIncidence("floor", 26, cb.sun_azimuth_deg);
   expect(((cb.exposure + p2.exposure) / 2) * (1 + (I - 1) * 0.5) / p2.exposure).toBeGreaterThan(1.17);
   expect(beamExposure("floor", cb, p2, 0.5, mid) * (1 + (I - 1) * 0.5)).toBeCloseTo((cb.exposure * I + p2.exposure) / 2, 12);
@@ -208,7 +218,7 @@ test("beamExposure: exactly lerp with the law off at both ends; otherwise exposu
 function fillRig(over = {}) {
   let draws = 0; const calls = [];
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : (...a) => { if (name === "drawArrays") draws++; calls.push([name, ...a]); return name === "checkFramebufferStatus" ? "FRAMEBUFFER_COMPLETE" : {}; }) });
-  const params = { ...DEFAULTS, canopy_fill: 1, sun_elevation_deg: 26, ...over };
+  const params = { ...BASE, canopy_fill: 1, sun_elevation_deg: 26, ...over };
   const fill = { tex: [null, null], res: 0, ready: false, sig: new Float64Array(FILL_SIG_LEN), K: 0, rays: null, ox: 0, oy: 0, ext: 1 };
   const U = new Proxy({}, { get: (_t, name) => (name === "layers" ? [0, 1, 2, 3] : name) });
   const hub = {
@@ -368,9 +378,9 @@ test("the editor offers it: a row right after the azimuth, in a group the surfac
 // ---- the air's loss (sun_extinction): the peak transmittance atmosphere() divides out, against the zenith's ---------------------------------
 test("sun_extinction: exactly 1 at 0 on every camera; at 1 the zenith is 1, a 12° floor with the cosine law is ×9.1 under a 70° one, and the seen disk takes none", () => {
   const { beamExtinction, beamLoss, beamIrr } = MATH;
-  for (const cam of ["floor", "cloth", "enclosure", "sky"]) for (const el of ELEVS) expect(beamLoss(cam, { ...DEFAULTS, sun_elevation_deg: el }), `${cam} ${el}`).toBe(1);
+  for (const cam of ["floor", "cloth", "enclosure", "sky"]) for (const el of ELEVS) expect(beamLoss(cam, { ...BASE, sun_elevation_deg: el }), `${cam} ${el}`).toBe(1);
   expect(beamExtinction(90, 0.05)).toBe(1);
-  const p = (el) => ({ ...DEFAULTS, sun_cosine: 1, sun_extinction: 1, sun_elevation_deg: el, sky_turbidity: 0.05 });
+  const p = (el) => ({ ...BASE, sun_cosine: 1, sun_extinction: 1, sun_elevation_deg: el, sky_turbidity: 0.05 });
   expect(beamIrr("floor", p(70)) / beamIrr("floor", p(12))).toBeCloseTo(9.1, 1);
   expect(beamIrr("floor", { ...p(70), sun_extinction: 0 }) / beamIrr("floor", { ...p(12), sun_extinction: 0 })).toBeCloseTo(4.5, 1);
   for (const el of [5, 12, 26, 45]) expect(beamExtinction(el, 0.2), `haze takes more at ${el}°`).toBeLessThan(beamExtinction(el, 0.05));

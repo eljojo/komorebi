@@ -19,7 +19,8 @@ import { EXPERIMENTAL, PRESETS } from "./presets.js";
 import { assemble, dropTagged, templateLiterals, writeTree } from "./embed-build.mjs";
 
 const ROOT = import.meta.dir;
-const P = (over = {}) => ({ ...DEFAULTS, ...over });
+// the probes start from a plain summer: the defaults with soft edges off (on by default, they open the leaf-diffuse tier, which owns their GLSL)
+const P = (over = {}) => ({ ...DEFAULTS, edge_area: false, ...over });
 const open = (over) => [...featuresFor(P(over))].sort();
 const ALL = Object.keys(FEATURES);
 const merged = (look, over = {}) => ({ ...DEFAULTS, ...PRESETS[look], ...over });
@@ -45,7 +46,8 @@ test("lit needs a turn AND turn_exposure; ordered is lit, or a drop that follows
 
 // ---- 2. one-key probes over DEFAULTS ------------------------------------------------------------------------------------
 test("each table key opens its feature, and a feature that needs a season does not open without one", () => {
-  expect(open({})).toEqual([]);                                              // the defaults are a summer with nothing special in it
+  expect([...featuresFor(DEFAULTS)]).toEqual(["leafDiffuse"]);               // the defaults' soft edges (edge_area) are the leaf-diffuse tier's GLSL
+  expect(open({})).toEqual([]);                                              // without them, a summer with nothing special in it
   expect(open({ canopy_fill: 0.5 })).toEqual(["fill"]);
   expect(open({ leaf_diffuse: 0.3 })).toEqual(["leafDiffuse"]);
   expect(open({ edge_area: true })).toEqual(["leafDiffuse"]);                // the edge law is GLSL the leaf-diffuse tier owns (tagged lines, the beam group): a bundle without the tier cannot read it
@@ -69,9 +71,11 @@ test("the drop consumes the exposure rank even at turn_exposure 0 — and not at
 });
 
 // ---- 4. the shipped looks ------------------------------------------------------------------------------------------------
-test("montebello opens all six; the summer looks open none (nothing is asserted about the other looks: presets.js is live)", () => {
-  expect(open(PRESETS.montebello)).toEqual([...ALL].sort());
-  for (const look of ["morning 2", "afternoon 5b", "morning 3"]) expect(open(PRESETS[look]), look).toEqual([]);
+test("montebello opens all six; the summer looks open only their soft edges' tier, or none without them (nothing is asserted about the other looks: presets.js is live)", () => {
+  const look = (n) => [...featuresFor({ ...DEFAULTS, ...PRESETS[n] })].sort();
+  expect(look("montebello")).toEqual([...ALL].sort());
+  for (const n of ["morning 2", "morning 3"]) expect(look(n), n).toEqual(["leafDiffuse"]);
+  expect(look("afternoon 5b"), "afternoon 5b keeps its edges as they were").toEqual([]);
 });
 
 // ---- 5. the tags -----------------------------------------------------------------------------------------------------------
@@ -245,7 +249,7 @@ const ROWS = [
 test("rows 1-10 of the combination table are exactly featuresFor of their merged params, on every look they are run over", () => {
   for (const [row, set, over] of ROWS) {
     const want = set === "none" ? [] : set.split(",");
-    for (const look of ["memories", "park 1", "afternoon 7"]) expect([...featuresFor(merged(look, over))].sort(), `row ${row} on ${look}`).toEqual(want.sort());
+    for (const look of ["memories", "park 1", "afternoon 7"]) expect([...featuresFor(merged(look, { edge_area: false, ...over }))].sort(), `row ${row} on ${look}`).toEqual(want.sort());   // the looks' own soft edges held off: the row says what opens
   }
   // row 11 cuts what its params open (the drop consumes the rank), and row 12 cuts the fill that its params open: both must fail in pixels
   expect(featuresFor(merged("memories", B))).toContain("exposure");

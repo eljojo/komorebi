@@ -126,9 +126,10 @@ const grow = (over, faithful = false) => {   // the dense groves cost a moment: 
 const SF = 18, SL = 17;   // faithful record: [x,y,A,B0, angle,tilt,swingGain,swingPhase, tau.rgb,cluster, orbit×4, z, fade]; layer: the same 16 floats, then the fade
 const firstDiff = (a, b) => (a.length !== b.length ? Math.min(a.length, b.length) : a.findIndex((v, i) => !Object.is(v, b[i])));
 // a grove with a crown worth shading itself (exposure.test.js's), whole leaves only
-const dense = (over) => ({ ...PRESETS["afternoon 7"], leaves_per_cluster: 40, foliage_density: 1, tree_count: 3, ...over });
+// the groves these were measured on hang every leaf at its twig tip (inner_leaves 0, as afternoon 7 shipped before it took them)
+const dense = (over) => ({ ...PRESETS["afternoon 7"], inner_leaves: 0, leaves_per_cluster: 40, foliage_density: 1, tree_count: 3, ...over });
 // the small default grove, which carries marginal leaves (7.5 a twig: the eighth is half a leaf) — the fade in the records is worth checking on
-const small = (over) => ({ ...PRESETS["afternoon 7"], tree_count: 2, leaves_per_cluster: 5, foliage_density: 1.5, ...over });
+const small = (over) => ({ ...PRESETS["afternoon 7"], inner_leaves: 0, tree_count: 2, leaves_per_cluster: 5, foliage_density: 1.5, ...over });
 const DS = 0.7, SPAN = 0.3;
 // every leaf of a grove that has NOT dropped any: its address (j, k — k is its place in its twig, which the grove pushes in order)
 function leavesOf(faithLeaves) {
@@ -177,7 +178,8 @@ const fnv = (arrs) => {
   }
   return h.toString(16).padStart(8, "0");
 };
-const BASE = { ...PRESETS["afternoon 7"], tree_count: 2, leaves_per_cluster: 6, foliage_density: 1.3, layer_count: 3 };
+// inner_leaves 0: the grove the hashes below were taken from
+const BASE = { ...PRESETS["afternoon 7"], inner_leaves: 0, tree_count: 2, leaves_per_cluster: 6, foliage_density: 1.3, layer_count: 3 };
 const PIG = { phenology: 0.95, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2 };
 const FROZEN = {
   "summer/layer": "8913d117", "summer/faith": "dad14bc3",

@@ -190,7 +190,8 @@ function leavesOf(faithLeaves) {
   return L;
 }
 // a grove with a crown worth shading itself: the afternoon look's own leaves, whole (no marginal leaf or tree, so every one counts)
-const dense = (over) => ({ ...PRESETS["afternoon 7"], leaves_per_cluster: 40, foliage_density: 1, tree_count: 3, ...over });
+// inner_leaves 0: the grove the digests below were recorded on, afternoon 7 as it shipped before it took inner leaves
+const dense = (over) => ({ ...PRESETS["afternoon 7"], inner_leaves: 0, leaves_per_cluster: 40, foliage_density: 1, tree_count: 3, ...over });
 function exposedGrove(over) {
   const { faithLeaves, params } = growWith(dense({ phenology: 0.5, ...over }), true);
   const leaves = leavesOf(faithLeaves);

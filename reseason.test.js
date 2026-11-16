@@ -66,7 +66,8 @@ function compare(label, got, want) {
 
 // a grove worth shading itself, small enough to be built a few dozen times: the afternoons' leaf and structure, 3 depth layers,
 // a marginal leaf (6 × 1.25 = 7.5 a twig) and a fall that turns, lights the ranking and lets go
-const SMALL = { ...PRESETS["afternoon 7"], tree_count: 2, leaves_per_cluster: 6, foliage_density: 1.25, layer_count: 3,
+// inner_leaves 0: afternoon 7 as it shipped when these were written, every leaf at its twig tip (the rigs stub the tip-leaf program alone)
+const SMALL = { ...PRESETS["afternoon 7"], inner_leaves: 0, tree_count: 2, leaves_per_cluster: 6, foliage_density: 1.25, layer_count: 3,
   leaf_drop: 1, turn_exposure: 1, anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2 };
 const PH = [0.5, 0.6, 0.65, 0.7, 0.742, 0.8, 0.9, 1.0];
 
@@ -472,7 +473,7 @@ test("branch springs settle after wind is switched off", () => {
 
 for (const mode of ['faithful', 'analytic', 'sky']) {
   test(`a marginal tree carries its fade through the ${mode} wood path`, () => {
-    const R = rig({ ...DEFAULTS, ...PRESETS['park 1'], tree_count: 2.001, sky_view: mode === 'sky', sway_pitch: 0 }, mode === 'faithful');
+    const R = rig({ ...DEFAULTS, ...PRESETS['park 1'], inner_leaves: 0, tree_count: 2.001, sky_view: mode === 'sky', sway_pitch: 0 }, mode === 'faithful');
     const g = R.G.buildGrove(null), H = g.hier, F = R.faith;
     for (const [i, sg] of H.segments.entries()) expect(F.segRest[i].cov, 'the geometry keeps its tree coverage').toBe(sg.cov);
     const main = H.segments.filter(s => s.level <= 1).slice(0, R.hub.occ.count);

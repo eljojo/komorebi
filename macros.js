@@ -151,7 +151,7 @@ export const MACROS = {
     label: 'season', scope: 'season', live: false, tween: 0.8, probe: 'phenology', gate: 'floor',
     stops: [
       { t: 0.0, from: 'memories', set: { phenology: 0.15, foliage_density: 0.45, branch_length_ratio: 0.91, branch_pitch_deg: 45, trans_r: 0.376, trans_g: 0.247, trans_b: 0.113, ...FALL_CAPACITY } },
-      { t: 0.35, from: 'morning 1', set: { phenology: 0.40, foliage_density: 1.65, branch_length_ratio: 0.62, branch_pitch_deg: 26, trans_r: 0.26, trans_g: 0.356, trans_b: 0.195, ...FALL_CAPACITY } },
+      { t: 0.35, from: 'morning 1', set: { phenology: 0.40, foliage_density: 1.5131, branch_length_ratio: 0.62, branch_pitch_deg: 26, trans_r: 0.26, trans_g: 0.356, trans_b: 0.195, ...FALL_CAPACITY } },
       { t: 0.55, from: 'afternoon 4', set: { phenology: 0.50, ...AFTERNOON, ...FALL_CAPACITY } },
       { t: 0.62, from: null, set: { phenology: 0.60, ...AFTERNOON, ...FALL_CAPACITY } },   // the last green day (= turn_start); no look
       { t: 1.0, from: 'montebello', set: { phenology: 0.90, ...AFTERNOON, ...FALL_CAPACITY } },

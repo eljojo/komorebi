@@ -257,8 +257,9 @@ const firstDiff = (a, b) => {
   return null;
 };
 // a grove with a crown worth shading itself (exposure.test.js's), whole leaves only; and the small one, which carries marginal leaves (7.5 a twig, and a marginal tree at 2.4)
-const dense = (over) => ({ ...PRESETS["afternoon 7"], leaves_per_cluster: 40, foliage_density: 1, tree_count: 3, ...over });
-const small = (over) => ({ ...PRESETS["afternoon 7"], tree_count: 2, leaves_per_cluster: 5, foliage_density: 1.5, ...over });
+// the groves these were measured on hang every leaf at its twig tip (inner_leaves 0, as afternoon 7 shipped before it took them)
+const dense = (over) => ({ ...PRESETS["afternoon 7"], inner_leaves: 0, leaves_per_cluster: 40, foliage_density: 1, tree_count: 3, ...over });
+const small = (over) => ({ ...PRESETS["afternoon 7"], inner_leaves: 0, tree_count: 2, leaves_per_cluster: 5, foliage_density: 1.5, ...over });
 const FALL = { phenology: 0.85, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1 };   // mid-turn and mid-fade: lit, ordered, dropping
 function sameGrove(label, a, b) {
   for (const [i, l] of a.layers.entries()) expect(firstDiff(l, b.layers[i]), `${label}: layer ${i}`).toBe(null);

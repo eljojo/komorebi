@@ -125,6 +125,7 @@ const PANEL_LAYOUT = [
   'sun_elevation_deg',
   'sun_azimuth_deg',
   'sun_cosine',
+  'sun_extinction',
   'cloud_thickness',
   'core_weight_fraction',
   'core_angular_radius_deg',

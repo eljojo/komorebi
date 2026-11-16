@@ -369,7 +369,8 @@ function groveRig(over, faithful = false) {
   const on = (tx, name) => calls.filter((c) => c.tex === tx && c.name === name).map((c) => c.a);
   return { params, g, on, layers: g.layerVAO.map((l) => l.buf.data), faithLeaves: faith.buf.data, litter: g.litter };
 }
-const MAPLE_LOOK = { ...PRESETS["afternoon 7"], leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.103, seed: 4242 };
+// inner_leaves 0: afternoon 7 as it shipped when this was measured, every leaf at its twig tip
+const MAPLE_LOOK = { ...PRESETS["afternoon 7"], inner_leaves: 0, leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.103, seed: 4242 };
 // the leaves of a buffer in the order they were pushed: (cluster, place in it) and the 12th float, which is the cluster id and — for an outline — its variant in the fraction
 const slots = (buf, stride) => {
   const n = new Map(), out = [];

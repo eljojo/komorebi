@@ -8,6 +8,7 @@
 import { test, expect } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { CANOPY_KEYS, DEFAULTS, PARAMS, SEASON_KEYS, TOPO_KEYS } from "./komorebi.js";
+import { GRANDFATHERED } from "./komorebi-params.js";
 import * as math from "./komorebi-math.js";
 import * as LEAF from "./komorebi-leaf.js";
 import * as MAZE from "./leaf-maze.js";
@@ -50,7 +51,8 @@ const firstDiff = (a, b) => {
   for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return `first bit difference at ${i}`;
   return null;
 };
-const PARK = { ...PRESETS["park 1"] }, AFT = { ...PRESETS["afternoon 7"] }, MONTE = { ...PRESETS.montebello };
+// afternoon 7 at the density it shipped with before it took inner leaves (1.65, thinned to 1.5131 with them): the brief's ring is its
+const PARK = { ...PRESETS["park 1"] }, AFT = { ...PRESETS["afternoon 7"], foliage_density: 1.65 }, MONTE = { ...PRESETS.montebello };
 const small = (over) => ({ ...PRESETS["afternoon 7"], tree_count: 2, leaves_per_cluster: 5, foliage_density: 1.5, ...over });
 const dense = (over) => ({ ...PRESETS["afternoon 7"], leaves_per_cluster: 40, foliage_density: 1, tree_count: 3, ...over });
 function sameGrove(label, a, b) {
@@ -63,8 +65,9 @@ function sameGrove(label, a, b) {
 }
 
 // ---- 1. the knob ships off, a canopy knob the cache key carries ---------------------------------------------------------------------
-test("ships off: inner_leaves 0 in DEFAULTS; a canopy knob (it moves leaves, so it morphs) the cache key carries; not a season key, not topology (the smoothstep morphs the indices)", () => {
-  expect(DEFAULTS.inner_leaves).toBe(0);
+test("on in DEFAULTS (0.35) and off for a look from before it was; a canopy knob (it moves leaves, so it morphs) the cache key carries; not a season key, not topology (the smoothstep morphs the indices)", () => {
+  expect(DEFAULTS.inner_leaves).toBe(0.35);
+  expect(GRANDFATHERED.inner_leaves).toBe(0);
   expect(CANOPY_KEYS).toContain("inner_leaves");
   expect(GROVE.GROVE_READS).toContain("inner_leaves");
   expect(SEASON_KEYS).not.toContain("inner_leaves");

@@ -271,8 +271,8 @@ test("the bus routes set() through the mapping and the applier", () => {
 test("haze re-sits its exposure on a look carrying the cosine law and the cloud's gain, so the stop shows as authored", () => {
   // shownExposure is what reaches the frame: exposure × the cloud's gain (cloud_exposure). The stop is what the frame should show at the stop's cloud.
   const drive = (look, t) => { const params = { ...DEFAULTS, ...PRESETS[look] }; createBus(() => params, (d) => Object.assign(params, d)).set("haze", t); return shownExposure(params); };
-  expect(drive("prism", 0)).toBeCloseTo(2.44, 12);                              // the old law: afternoon 4's stop, shown as it was
-  expect(drive("prism", 1)).toBeCloseTo(1.29, 12);
+  expect(drive("park 2", 0)).toBeCloseTo(2.44, 12);                             // the old law: afternoon 4's stop, shown as it was
+  expect(drive("park 2", 1)).toBeCloseTo(1.29, 12);
   const I = Math.sin(26 * Math.PI / 180), E = beamExtinction(26, PRESETS.montebello.sky_turbidity);   // montebello carries the law and the air's loss
   expect(drive("montebello", 0)).toBeCloseTo(2.44 / (I * E), 12);               // montebello's own re-sit, not the dark 2.44
   expect(drive("montebello", 1)).toBeCloseTo(1.29 / (I * E), 12);

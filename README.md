@@ -70,6 +70,8 @@ Komorebi.create(canvas, { params: { ...Komorebi.PRESETS['morning 2'], wind_stren
 
 `Komorebi.DEFAULTS` holds every parameter at its default value. The editor has a tooltip for each one.
 
+A look saved before November 2026 that leaves out `sun_cosine`, `sun_extinction`, `edge_area`, `inner_leaves`, `exposure` or `ambient_skylight` now takes their new defaults, and may look different: the sun-angle law, the air's loss, soft leaf edges and leaves inside the crown are on by default. To keep it as it was, give it the old values of the ones it leaves out: `sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, exposure: 1.3, ambient_skylight: 0.5`. The built-in looks already name what they keep.
+
 ### The engine handle
 
 ```js

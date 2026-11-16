@@ -89,6 +89,41 @@ const FABRIC_FAMILY = {
   window_w_m: 2, window_h_m: 2, window_cx_m: 0.3, window_cy_m: 1.2, window_wall: 0.4,
 };
 
+// THE LOOKS AS KEPT. Since 2026-11-16 sun_cosine, sun_extinction, edge_area and inner_leaves are on by default and most shipped looks
+// carry them (spec/contracts/looks.md, "Four laws on by default"). The rows below were written, and their pins recorded, on the looks as
+// they were before; KEPT is each look's values then, where they differ from now (the previous merged look, DEFAULTS included), and
+// asKept() spreads them under every row's own overrides, so each row keeps its meaning and each pin is still the frame it was. An
+// "off == absent" row of one of the four now holds because the look names the old value, not because the default is off: that the new
+// defaults are what DEFAULTS says is the unit tests' (cosine, diffuse, inner). The SMOKE suite renders the looks as they ship.
+const KEPT = {
+  'park 1': { inner_leaves: 0, edge_area: false },
+  memories: { inner_leaves: 0, sun_cosine: 0, sun_extinction: 0, exposure: 3.01, ambient_skylight: 0.93, edge_area: false },
+  'afternoon 7': { foliage_density: 1.65, inner_leaves: 0, sun_extinction: 0, exposure: 1.8853846153846154, ambient_skylight: 0.97, edge_area: false },
+  'canopy 1': { inner_leaves: 0, sun_cosine: 0, sun_extinction: 0, exposure: 1.0833333333333335, ambient_skylight: 1.5, edge_area: false },
+  'canopy 2': { inner_leaves: 0, sun_cosine: 0, sun_extinction: 0, exposure: 1.25, ambient_skylight: 2, edge_area: false },
+  'canopy 3': { inner_leaves: 0, sun_cosine: 0, sun_extinction: 0, exposure: 1.08, ambient_skylight: 1.6, edge_area: false },
+  'canopy 4': { inner_leaves: 0, sun_cosine: 0, sun_extinction: 0, exposure: 0.8387096774193549, ambient_skylight: 2.5, edge_area: false },
+  'curtain 1': { inner_leaves: 0, edge_area: false },
+  'curtain 2': { inner_leaves: 0, edge_area: false },
+  'tent 1': { foliage_density: 2, inner_leaves: 0, sun_extinction: 0, exposure: 1.4206896551724137, ambient_skylight: 2.2, edge_area: false },
+  montebello: { inner_leaves: 0, edge_area: false },
+  'afternoon 4': { sun_extinction: 0, exposure: 1.7382978723404257, ambient_skylight: 0.97 },
+  'afternoon 5b': { sun_cosine: 0, sun_extinction: 0, exposure: 1.7304964539007093, ambient_skylight: 0.97 },
+  'park 2': { inner_leaves: 0, edge_area: false },
+  'morning 1': { foliage_density: 1.65, inner_leaves: 0, sun_cosine: 0, sun_extinction: 0, exposure: 1.7553956834532372, ambient_skylight: 0.97, edge_area: false },
+};
+function asKept(rows) {
+  for (const r of rows) {
+    const k = KEPT[r.preset];
+    if (!k || r.shipped) continue;   // shipped: the row compares a look with a macro's stop, both as they ship
+    if (r.over || !('a' in r || 'b' in r || 'pin' in r)) r.over = { ...k, ...r.over };
+    if ('a' in r || 'b' in r || 'pin' in r) r.a = { ...k, ...r.a };
+    if (r.b) r.b = { ...k, ...r.b };
+    if (r.from?.preset && KEPT[r.from.preset]) r.from = { ...r.from, over: { ...KEPT[r.from.preset], ...r.from.over } };
+  }
+  return rows;
+}
+
 const INVARIANTS = [
   // The whole receiver=1 fabric surface, cranked, against a floor look that never asks for it.
   { name: 'floor look ignores the entire fabric family', preset: 'park 1',
@@ -339,9 +374,9 @@ const INVARIANTS = [
   // THE SEASON MACRO (macros.js). Its stops are recipes lifted from the looks they sit on, so each is those looks' own frame to the byte —
   // the pigment capacities and the phenology it writes are inert below turn_start, and the looks that stamp a phenology (0.15, 0.40) only
   // for its probe's sake are the same bytes as the absent one. A stop that drifted, or a stamp that leaked into a frame, fails here.
-  { name: 'season macro t 0 == memories', preset: 'memories', a: {}, b: { ...macroParams('season', 0) } },
-  { name: 'season macro t 0.35 == morning 1', preset: 'morning 1', a: {}, b: { ...macroParams('season', 0.35) } },
-  { name: 'season macro t 0.55 == afternoon 4', preset: 'afternoon 4', a: {}, b: { ...macroParams('season', 0.55) } },
+  { name: 'season macro t 0 == memories', shipped: true, preset: 'memories', a: {}, b: { ...macroParams('season', 0) } },
+  { name: 'season macro t 0.35 == morning 1', shipped: true, preset: 'morning 1', a: {}, b: { ...macroParams('season', 0.35) } },
+  { name: 'season macro t 0.55 == afternoon 4', shipped: true, preset: 'afternoon 4', a: {}, b: { ...macroParams('season', 0.55) } },
   { name: 'season stamp: morning 1 phenology 0.40 == absent', preset: 'morning 1', a: {}, b: { phenology: 0.5 } },
   { name: 'season stamp: memories phenology 0.15 == absent', preset: 'memories', a: {}, b: { phenology: 0.5 } },
   // ...and the other half: the fall end is a real switch (else stops that never reached the leaves would pass every row above)
@@ -975,6 +1010,7 @@ const record = (suite, name, pass, detail, hashes) => { results.push({ suite, na
 // EXT_color_buffer_float, and a software rasteriser, so the same bytes come out on any machine.
 // --enable-unsafe-swiftshader is what recent Chrome requires to allow the software fallback for WebGL.
 // (A constant, not inline: the manifest key holds the flags the hashes were taken under.)
+for (const rows of [INVARIANTS, FILL_CHECKS, FILL_ENERGY, LIVE_CHANGES, FILL_TOGGLES, LITTER_CHECKS, SKY_CHECKS, RIM_CHECKS, HALO_CHECKS]) asKept(rows);   // the looks as kept (KEPT, above)
 const LAUNCH_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--force-color-profile=srgb'];
 // `--gpu`, with --look only: the looks on this machine's GPU (Chrome on Metal, video-lib.mjs's launcher) instead of SwiftShader, for eyes
 // on many looks or heavy ones fast. Its pixels are the GPU's, not the hashes' bytes, so no suite runs under it.

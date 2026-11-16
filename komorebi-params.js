@@ -174,7 +174,7 @@ const PARAMS = {
     row: { kind: 's', label: 'spread (m)', min: 0.02, max: 1, step: 0.01, rebuild: 'canopy' },
     travels: 'canopy',
     means: "<b>How tightly leaves bunch on a twig.</b> Tight = distinct clumps with clear gaps between them; loose = a more even leaf carpet." },
-  inner_leaves: { default: 0,   // leaves on the older wood, so the crown is full (§4.5): 0..1, the share of each twig's leaves hung back along the wood it grew from instead of at its tip — shade leaves, thinning inward and never to zero, as a real crown carries them. A share, not more leaves: the count and the area are the look's. 0 = every leaf at its twig, the old placement to the bit (no path is even collected). A canopy key (it moves leaves), not a season key
+  inner_leaves: { default: 0.35,   // on by default (a look from before it was keeps 0: GRANDFATHERED, below); leaves on the older wood, so the crown is full (§4.5): 0..1, the share of each twig's leaves hung back along the wood it grew from instead of at its tip — shade leaves, thinning inward and never to zero, as a real crown carries them. A share, not more leaves: the count and the area are the look's. 0 = every leaf at its twig, the old placement to the bit (no path is even collected). A canopy key (it moves leaves), not a season key
     row: { kind: 's', label: 'inner leaves', min: 0, max: 1, step: 0.01, rebuild: 'canopy' },   // §4.5: leaves on the older wood, so the crown is full — the share of each twig's leaves hung back along the limbs it grew from; 0 = the hollow crown, leaves at the twigs only
     travels: 'canopy',
     means: "<b>A full crown: sun leaves at the shell, shade leaves inside.</b> A tree only grows leaves at the ends of its twigs, so from above it reads as a wheel — a ring of leaves, a thin core, and bare limbs for spokes. A real crown also carries leaves on the older wood, thinning toward the trunk and never to none. This hangs that share of every twig's leaves back along the limbs it grew from, at the height they hang. 0 = the hollow crown, leaves at the twig tips only. It moves leaves, it adds none: the count and the leaf area stay the look's." },
@@ -326,16 +326,16 @@ const PARAMS = {
   // atmosphere's spectrum never carried, so a 12° floor was as bright as a 70° one. 0..1, a blend: 0 = the old full-strength beam, byte-identical (the factor is exactly 1 and nothing
   // in a shader reads it); 1 = the law, normalised to the zenith, so a look that turns it on re-sits its `exposure` (about ×2.3 at 26°). The sky view never reads it: radiance is invariant, the seen
   // disk takes nothing. The skylight is not a beam and keeps its level. Author only 0 or 1 (an interior value is the law under a higher sun, which a real sun does give).
-  sun_cosine: { default: 0.0,
+  sun_cosine: { default: 1,   // on by default; a look from before it was keeps 0 (GRANDFATHERED, below)
     row: { kind: 's', label: 'cosine', min: 0, max: 1, step: 0.01, rebuild: '' },   // §3.5: the beam lands by the cosine of its incidence on every receiver — 0 is the old full-strength beam, byte for byte; a look that opens it re-sits its exposure
     travels: 'morph',   // the sun's cosine law and the air's loss (§3.5): a live scale of the uploaded sun colour and a fill re-run (fillSig), no bake — so it tweens
     means: "<b>Let the sun's height light the ground.</b> A low sun spreads its light thin across the floor, the way a torch held at a slant does, so with this up the day brightens toward noon and dims toward dusk at a fixed exposure. At 0 every sun lands at full strength whatever its height (what every look has always done); at 1 the floor takes the cosine of the sun's angle, the curtain and the tent theirs. A look that turns it on re-sits its exposure — about ×2.3 higher for a 26° sun — because the law is measured from a sun straight overhead. The sun you see is unchanged: the disk looks as bright at any height, and the skylight is not sunlight, so it keeps its level. Not shown when looking up." },
   // THE AIR'S LOSS: the beam's broadband transmittance against the zenith's, which atmosphere() divides out to keep
   // only the hue. 0 = the old beam, exactly (the factor is 1); 1 = a 12° sun about half as bright as one overhead, on top of the cosine law. A live scale beside sun_cosine's.
-  sun_extinction: { default: 0.0,
-    noRow: 'authored per look, 0 or 1',
+  sun_extinction: { default: 1,   // on by default; a look from before it was keeps 0 (GRANDFATHERED, below)
+    row: { kind: 'sel', label: 'air loss', choices: [['off', 0], ['on', 1]], rebuild: '' },
     travels: 'morph',   // the sun's cosine law and the air's loss (§3.5): a live scale of the uploaded sun colour and a fill re-run (fillSig), no bake — so it tweens
-    means: "<b>Does a low sun come through dimmer?</b> The air's loss: the sunbeam crosses more air the lower the sun, and arrives weaker. 0 = the sun as bright at any height; 1 = a 12° sun about half as bright as one overhead, on top of the cosine law. Authored per look, 0 or 1." },
+    means: "<b>Does a low sun come through dimmer?</b> The air's loss: the sunbeam crosses more air the lower the sun, and arrives weaker. 0 = the sun as bright at any height; 1 = a 12° sun about half as bright as one overhead, on top of the cosine law." },
   // Look
   view_extent_m: { default: 4.0,   // vertical span of the visible ground (zoom = on-axis span, any tilt)
     row: { kind: 's', label: 'view (m)', min: 0.5, max: 40, step: 0.1, rebuild: '' },
@@ -588,8 +588,8 @@ const PARAMS = {
     means: "<b>Park shear — each canopy layer thrown down-sun by its height.</b> Real under a low sun (leaves at different heights land in different places), but off by default: with far smear up it slashes the floor into sharp down-sun streaks. A mood to choose, not a default." },
                                    // Physically real (leaves at different heights land at different places under a low sun) but off by default: with far_smear it streaks the floor
                                    // into sharp down-sun slashes, an artistic look to choose, never to land on. 0 = the park as it was, to the bit
-  exposure: { default: 1.3,
-    row: { kind: 's', label: 'exposure', min: 0, max: 8, step: 0.01, rebuild: '' },   // reaches every shipped look: the cosine law and the cloud's gain re-sit exposures up to ~5.5 (montebello)
+  exposure: { default: 1.656,   // 1.3 re-sat over the default sun's cosine law and air's loss (× 0.819 × 0.958), so the default floor shows as it did
+    row: { kind: 's', label: 'exposure', min: 0, max: 12, step: 0.01, rebuild: '' },   // reaches every shipped look: the cosine law and the air's loss re-sit a low or raking sun's exposure up to ~10 (trippy shadow)
     travels: 'morph',   // Wood stores radius and layer heights in CPU geometry as well as live uniforms. refreshWood keeps those numbers aligned without regrowing the leaves; a faithful or sky bake refreshes when its wood changes.
     means: "<b>Brightness.</b> How bright the floor is. Pure look — it never changes the light simulation, just where it lands on screen." },
   cloud_exposure: { default: 0.0,   // a thicker cloud brightens the frame: exposure × (1 + this·cloud_thickness), as an eye opens up under a passing cloud.
@@ -601,7 +601,7 @@ const PARAMS = {
     row: { kind: 's', label: 'contrast', min: 0.3, max: 2, step: 0.01, rebuild: '' },
     travels: 'morph',   // Wood stores radius and layer heights in CPU geometry as well as live uniforms. refreshWood keeps those numbers aligned without regrowing the leaves; a faithful or sky bake refreshes when its wood changes.
     means: "<b>Punch.</b> Higher = bold, snappy dapples; lower = the flat, milky look of haze." },
-  ambient_skylight: { default: 0.5,
+  ambient_skylight: { default: 0.3925,   // 0.5 brought down by as much as exposure went up, so the default shade stays where it was
     row: { kind: 's', label: 'ambient', min: 0, max: 3, step: 0.01, rebuild: '' },
     travels: 'morph',
     means: "<b>How much the sky fills the shadows.</b> The light that isn't direct sun — now coloured for real (blue by day, warmer at dusk). Up = softer, lifted shade; down = deep, moody shadows." },
@@ -627,7 +627,7 @@ const PARAMS = {
     row: { kind: 's', label: 'leaf diffuse', min: 0, max: 1, step: 0.01, rebuild: '' },   // §4.5: a leaf is not a window — the share of what it passes that is diffuse, not a beam; 0 = the old ballistic leaf, byte for byte
     travels: 'morph',   // a leaf is not a window (§4.5): k = −ln(1−d) is a live uniform on both paths (the layer tap reads it, the faithful cast re-bakes on it), so it tweens — except across 0: the authored scatter proxy (sky_scatter, fill_scatter) is dropped the moment k > 0, so a tween out of 0 snaps that term off (counting both would count the light twice, §4.9)
     means: "<b>A leaf is frosted glass, not stained glass.</b> The light a leaf passes is almost all <i>diffuse</i> — scattered inside the leaf and sent on in every direction — not a sharp coloured picture of the leaf. This is how much: 0 = the old leaf, which paints its colour as a crisp copy of itself inside its own shadow (and overlapping leaves of opposite colours go mud-dark); ~0.95 is a real leaf. Up, the sun-images keep only what travels straight through, so a leaf a few metres up throws a <i>dark</i> shadow, and the rest lands in the shade in the leaf's own colour, spread over the floor under it. It needs <i>canopy fill</i> to land anywhere — with that shut the diffuse light just leaves the sun-images — and it switches <i>leaf scatter</i> off. The curtain and the tent take it too. Looking up, it is the difference between a window and a lantern: with it up the sun's disk no longer shows through a leaf (only through a gap), and each leaf instead glows with the light it took out of your line of sight, in its own colour — it needs no canopy fill, and it switches <i>foliage glow</i> off." },
-  edge_area: { default: false,   // the texel read as a mixture at d = 0 too (§4.5): the depth-averaged soft edge is Jensen-dark, and this reads it as part leaf, part sky. A boolean, because a 0..1 blend of two readings of one texel is a transmittance no texel has. INERT above leaf_diffuse 0: the split is already area-correct
+  edge_area: { default: true,   // on by default; a look from before it was keeps false (GRANDFATHERED, below). the texel read as a mixture at d = 0 too (§4.5): the depth-averaged soft edge is Jensen-dark, and this reads it as part leaf, part sky. A boolean, because a 0..1 blend of two readings of one texel is a transmittance no texel has. INERT above leaf_diffuse 0: the split is already area-correct
     row: { kind: 't', label: 'edge area', rebuild: '' },   // §4.5: the texel read as a mixture at leaf diffuse 0 too (above it every texel already is). A live uniform plus the two signatures (the faithful cast, the fill), so nothing rebuilds
     travels: 'topo',   // a flip moves every soft edge at once; snap it under the bloom.
     means: "<b>Where a leaf's edge is part leaf, part sky.</b> The bake averages a leaf's depth over a soft edge and reads the average as one thin dark leaf, which darkens every edge a little too much. On, the edge is read as it really is — part leaf, part open sky. Rims brighten a touch and the warm fringe cools; it is subtle everywhere. Only while <i>leaf diffuse</i> is 0: above it every edge is already read this way." },
@@ -889,6 +889,15 @@ const DUR_SCALE = { mode: 2.0,  dissolve: 2.0, cross: 2.0 };    // ...and how mu
 // so old/partial JSON stays forward-compatible as new knobs are added. ----------
 const DEFAULTS = Object.fromEntries(Object.entries(PARAMS).filter(([, d]) => !('input' in d)).map(([k, d]) => [k, d.default]));
 
+// ---- GRANDFATHERED. A look fills every key it does not name from DEFAULTS, so turning a default on changes every look that never
+// named that key. Four were turned on together, because each makes the light truer and none costs a measurable frame: sun_cosine
+// (0 → 1), sun_extinction (0 → 1), edge_area (false → true) and inner_leaves (0 → 0.35); exposure and ambient_skylight moved with
+// the two laws so the default floor and shade show as before. Every built-in look and every look kept online that keeps a feature
+// off names its old value; a look that took the laws carries its own re-sat exposure and skylight. The drawback: a look kept
+// anywhere else (a browser's local saves, an exported JSON, a page that embeds komorebi with its own params) and saved before
+// these were on takes them on the next load, and its sun may read dimmer. Turn them off in the advanced panel to get it back.
+const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
+
 // ---- legacy parameter names (spec §9). A ★ look saved to local storage, or a JSON exported from any
 // earlier build, is data the engine does not get to re-author — so a renamed knob has to keep loading
 // forever. One map, applied at every door external params come through (create / setParams / transitionTo,
@@ -939,4 +948,4 @@ function cutWarnings(P, build, warned){
   return out;
 }
 
-export { PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, LEGACY_KEYS, migrateLegacy };
+export { PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, GRANDFATHERED, LEGACY_KEYS, migrateLegacy };

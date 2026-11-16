@@ -65,7 +65,7 @@ test("a second tree moves no leaf of the first", () => {
 test("it fills the middle of the crown the grammar leaves bare", () => {
   const share = (leaves, R) => { let inner = 0; const n = leaves.length/18; for (let i = 0; i < n; i++) if (Math.hypot(leaves[18*i], leaves[18*i + 1]) < 0.3*R) inner++; return inner/n; };
   const radius = (g) => g.hier.twigs.reduce((r, t) => Math.max(r, Math.hypot(t.x, t.y)), 0);
-  const one = { tree_count: 1, limb_count: 11, leader_strength: 0, branch_levels: 3, branch_children: 3 };
+  const one = { tree_count: 1, limb_count: 11, leader_strength: 0, branch_levels: 3, branch_children: 3, inner_leaves: 0 };   // the grammar's own leaves, at the tips
   const grammar = grove({ ...one, growth_years: 0 }), buds = grove({ ...one, growth_years: 12 });
   const sg = share(grammar.leaves, radius(grammar.g)), sb = share(buds.leaves, radius(buds.g));
   console.log(`leaves within 0.3 of the crown radius: grammar ${(100*sg).toFixed(1)}%, grown from buds ${(100*sb).toFixed(1)}% (an even disk: 9%)`);

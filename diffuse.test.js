@@ -11,6 +11,7 @@
 // komorebi-fill.js is the reference the pixel harness holds the shader to; bun holds the reference to the laws.
 // ============================================================================
 import { test, expect } from "bun:test";
+import { GRANDFATHERED } from "./komorebi-params.js";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, buildTransport } from "./komorebi.js";
 import { readFileSync } from "node:fs";
 import * as M from "./komorebi-math.js";
@@ -626,8 +627,9 @@ const sameBits = (a, b, what) => {
   walk(a, b);
 };
 
-test("edge_area: ships false, is a TOPO key (a flip moves every soft edge at once), and no other class", () => {
-  expect(DEFAULTS.edge_area).toBe(false);
+test("edge_area: on in DEFAULTS and off for a look from before it was, a TOPO key (a flip moves every soft edge at once), and no other class", () => {
+  expect(DEFAULTS.edge_area).toBe(true);
+  expect(GRANDFATHERED.edge_area).toBe(false);
   expect(TOPO_KEYS).toContain("edge_area");
   expect(MORPH_KEYS).not.toContain("edge_area");
   expect(CANOPY_KEYS).not.toContain("edge_area");
@@ -739,7 +741,7 @@ import { makeFill, FILL_SIG_LEN } from "./komorebi-bake.js";
 function fillRig(over = {}) {
   let draws = 0;
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : () => { if (name === "drawArrays") draws++; return name === "checkFramebufferStatus" ? "FRAMEBUFFER_COMPLETE" : {}; }) });
-  const params = { ...DEFAULTS, canopy_fill: 1, ...over };
+  const params = { ...DEFAULTS, ...GRANDFATHERED, canopy_fill: 1, ...over };   // from edge_area off, as it was built
   const fill = { tex: [null, null], res: 0, ready: false, sig: new Float64Array(FILL_SIG_LEN), K: 0, rays: null, ox: 0, oy: 0, ext: 1 };
   const U = new Proxy({}, { get: (_t, name) => (name === "layers" ? [0, 1, 2, 3] : 1) });
   const hub = {
