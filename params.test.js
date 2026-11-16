@@ -75,8 +75,8 @@ test("a row asks for a regrow when the grove's build reads its key, and only the
   const REGROWS = ["canopy", "density", "textures"];
   const SIZES_TEXTURES = ["tex_resolution", "bake_resolution"];   // a choice, not a drag: the scope that reallocates the textures regrows too, and none reallocates alone
   const WITHOUT_A_REGROW = {
-    trunk_radius_m: "bake",        // the build reads these three for the wood alone, and refreshWood re-reads them from the grown skeleton:
-    canopy_base_height_m: "",      // the radius at the bake its row asks for, the heights with the frame
+    trunk_radius_m: "",            // the build reads these three for the wood alone, and refreshWood re-reads them from the grown skeleton
+    canopy_base_height_m: "",      // with the frame (refreshFaith), re-baking the casts that hold the wood
     canopy_thickness_m: "",
     view_extent_m: "",             // read only by a look that names no reach, at a build; a zoom is no build, and the engine names the reach before the next one (holdReach)
   };

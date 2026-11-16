@@ -83,6 +83,21 @@
               exec node test-gl/cost.mjs "$@"
             '';
           };
+          # `nix run .#rows [-- key...]` — the advanced panel's rows, audited on the GPU: each row moved on a running
+          # engine by the scope it asks for, held to a look born with the value, and every cheaper scope tried in its
+          # place (test-gl/rows.mjs; its header says what a finding means). Chrome on Metal; same first-run setup as pixels.
+          rows = pkgs.writeShellApplication {
+            name = "rows";
+            runtimeInputs = [ pkgs.nodejs_22 ];
+            text = ''
+              if [ ! -d test-gl/node_modules ]; then
+                echo "first run: cd test-gl && npm install && npx playwright install chromium" >&2
+                exit 1
+              fi
+              cd test-gl
+              exec node rows.mjs "$@"
+            '';
+          };
           # `nix run .#embed -- '<look>'...` — the one-page bundle: only the named looks, only the cameras
           # they select, only the fall tiers they open (`--features a,b|all|none` overrides that set).
           # Writes dist/komorebi.embed.min.js. Verify it with `nix run .#embed-check`.
@@ -155,6 +170,7 @@
           dev = { type = "app"; program = "${dev}/bin/dev"; };
           lint = { type = "app"; program = "${lint}/bin/lint"; };
           cost = { type = "app"; program = "${cost}/bin/cost"; };
+          rows = { type = "app"; program = "${rows}/bin/rows"; };
           build = { type = "app"; program = "${build}/bin/build"; };
           pixels = { type = "app"; program = "${pixels}/bin/pixels"; };
           editor = { type = "app"; program = "${editor}/bin/editor"; };

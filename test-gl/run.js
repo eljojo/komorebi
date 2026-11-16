@@ -805,6 +805,8 @@ const LIVE_CHANGES = [
   // the canopy's base and depth move nothing on park 1, so the heights have no faithful row.)
   ...[['memories', 'edge_softness', 0.6, 'the layer bake re-cuts the rim'], ['park 1', 'edge_softness', 0.6, 'the faithful cast re-cuts the rim'],
       ['park 1', 'trunk_radius_m', 0.3, 'the faithful wood'], ['tent 1', 'trunk_radius_m', 0.2, 'the analytic wood on the layer cast'], ['canopy 1', 'trunk_radius_m', 0.3, 'the binned wood, looking up'],
+      ['park 1', 'branch_tau', 0.6, 'the faithful cast re-bakes its wood'], ['tent 1', 'branch_tau', 4, 'the analytic wood\'s depth, a uniform'], ['canopy 1', 'branch_tau', 0.8, 'the binned wood, looking up'],
+      ['memories', 'canopy_extent_m', 18, 'the baked patch grows: a regrow, no texture resized'], ['park 1', 'canopy_extent_m', 22, 'a standing tree in a wider patch'],
       ['memories', 'canopy_base_height_m', 6, 'the layers\' heights'], ['tent 1', 'canopy_base_height_m', 5, 'the analytic wood follows the layers'],
       ['memories', 'canopy_thickness_m', 3, 'the layers\' heights'], ['tent 1', 'canopy_thickness_m', 2.5, 'the analytic wood follows the layers']].map(([preset, key, value, what]) =>
     ({ name: `${preset} (the ${PARAMS[key].row.label} row, ${what})`, preset, rebake: PRESETS[preset].faithful_canopy === true, over: {}, key, value, apply: PARAMS[key].row.rebuild || null })),

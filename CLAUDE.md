@@ -99,6 +99,8 @@ the deploy on a push to `main`, which writes `commit.json`.
   `--list` prints them.
 - `cost.mjs` + `cost.html` — `nix run .#cost -- <look>... [--vs key=value ...]`: what a look costs on this machine's GPU (Chrome on Metal),
   and what a change adds; its header says how it measures. `run.js --look … --gpu` renders looks on the same GPU, for eyes.
+- `rows.mjs` — `nix run .#rows [-- key...]`: every panel row moved on a running engine by the scope it asks for, on this machine's GPU, held to a look
+  born with the value, and each cheaper scope tried in its place; its header says what a finding means. About a quarter of an hour for all of them.
 - `editor.mjs` — the editor smoke, `nix run .#editor`: the DOM effects the pixel suites cannot see.
 - `embed.mjs` — the bundle against the raw modules, byte for byte. `review.mjs` — review sheets from a clean export of a commit.
 - `render-video.mjs` — the video exporter, `nix run .#video -- …` (`--help` lists everything), with its siblings

@@ -127,7 +127,7 @@ const PARAMS = {
     travels: 'canopy',
     means: "<b>How steeply the limbs tilt upward.</b> This spreads the leaves out in height — and height is what sorts them into the sharp vs. soft slices." },
   branch_tau: { default: 0.0,   // trunk+branch shadow (spec §4.5): per-channel optical depth stamped for the woody skeleton. 0 = OFF — leaves-only, byte-identical to the pre-branch looks (no geometry drawn); >0 = the tree casts its own silhouette. Wood is ~opaque & neutral, so one scalar covers RGB.
-    row: { kind: 's', label: 'branches', min: 0, max: 5, step: 0.05, rebuild: 'bake' },
+    row: { kind: 's', label: 'branches', min: 0, max: 5, step: 0.05, rebuild: '' },   // the floor and the tent read it as a uniform; the casts that bake the wood in (faithful, the sky view) re-bake when it moves (refreshFaith)
     travels: 'morph',   // layer heights + branch-shadow darkness + the sky view's foliage glow — read live, no rebuild
     means: "<b>Whether the tree shows its own branches &amp; trunk — not just its leaf-gaps.</b> The trunk and main limbs cast one connected shadow — a continuous-height analytic occluder, not stamped into the leaf layers — swaying with the canopy. 0 = off (just dapples, byte-identical); turn it up for denser, darker wood. Wood blocks every colour, so the branch shadow is dark and neutral, never green." },
   leader_strength: { default: 0.0,   // monopodial growth (spec §4.5): 0 = legacy single-hub (all limbs from one point — a palm/lollipop); >0 = limbs attach ALONG a continuing trunk, shorter toward the top → excurrent cone (high) vs decurrent dome (low). The excurrent↔decurrent axis (apical control).
@@ -301,7 +301,7 @@ const PARAMS = {
     travels: 'morph',   // the rain day (§4.7): read by the carpet bake only — refreshLitter's signature notices it and only the carpet re-bakes; no regrow (a CANOPY key would regrow the whole grove per frame to re-tint the carpet, and macros may never write CANOPY keys, which P8's rain, a live writer, will need)
     means: "<b>How soaked the fallen leaves lie.</b> A dead leaf on the ground drinks the rain: water fills the air in its tissue, it scatters less light back, and it goes darker and richer in one move — a red leaf gets redder and deeper, a brown one near black. A day after rain is about 0.5; 1 is a leaf under water, an overstatement. It is an <i>effective</i> number that the grey-card photo of dry against wet litter will set, not a measured wetness. Leaves still on the tree are alive and are untouched. The ground itself stays dry, so lower its colour by hand for a rain look. Only shows while litter is on." },
   canopy_extent_m: { default: 12.0,   // world size of baked layers (>= view + 2*max shift)
-    row: { kind: 's', label: 'extent (m)', min: 6, max: 80, step: 0.5, rebuild: 'textures' },   // the sky view needs boxes a floor look never did: the grove must reach far enough sideways to fill an upward frame
+    row: { kind: 's', label: 'extent (m)', min: 6, max: 80, step: 0.5, rebuild: 'canopy' },   // the sky view needs boxes a floor look never did: the grove must reach far enough sideways to fill an upward frame. A regrow and a re-bake: no texture is sized by it
     travels: 'canopy',   // baked world size — only a regrow + re-bake (NO texture realloc), so it morphs continuously
     means: "<b>How big the simulated patch of ground is.</b> It has to be bigger than what you're viewing (with room for the sun to shift things), or dapples run off the edge. The grove auto-fits inside it." },
   tex_resolution: { default: 2048,
@@ -389,7 +389,7 @@ const PARAMS = {
     travels: 'mode',
     means: "<b>Treat the trees as objects STANDING in the scene, not a canopy hovering overhead.</b> Turns on the TRUNK shadow — a vertical trunk has no flat footprint, so the normal layered model can't cast it; this draws its real swept shadow streak. Best with a low, raking sun so the streak stretches across the floor. (Rooting the trees off to the side with a lit floor is coming next.)" },
   trunk_radius_m: { default: 0.1,   // trunk thickness (m) → width of its shadow streak; the area light softens it along its length
-    row: { kind: 's', label: 'trunk r', min: 0, max: 0.5, step: 0.01, rebuild: 'bake' },   // the bake's refreshWood re-reads the radius from the grown skeleton: no leaf moves
+    row: { kind: 's', label: 'trunk r', min: 0, max: 0.5, step: 0.01, rebuild: '' },   // refreshWood re-reads the radius from the grown skeleton with the frame (refreshFaith), and the casts that bake the wood in re-bake on its change: no leaf moves
     travels: 'morph',   // Wood stores radius and layer heights in CPU geometry as well as live uniforms. refreshWood keeps those numbers aligned without regrowing the leaves; a faithful or sky bake refreshes when its wood changes.
     means: "<b>How thick the trunk is</b> — i.e. how wide its shadow streak. The streak softens and widens toward its far end on its own, because the higher part of the trunk is blurred more by the sun's size. 0 = no trunk shadow." },
   faithful_canopy: { default: false,   // FAITHFUL TREE (spec §4.5): opt out of the depth-layer leaf cheat. Off = leaves binned to a
