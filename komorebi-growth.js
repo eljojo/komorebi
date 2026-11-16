@@ -14,8 +14,8 @@
 //      every node it splits between the axis that continues (weight λ·Q) and each side branch (weight (1−λ)·Q), so apical
 //      control is λ and a well-lit branch draws more.
 //   4. GROWTH. A bud given v ≥ 1 grows a shoot of ⌊v⌋ internodes (at most maxShoot), each turned a little toward less shade
-//      and by its tropism (the trunk up, a side branch by the look's droop). Each new node carries dormant side buds set by
-//      the phyllotaxis; the last carries the axis's terminal bud.
+//      and by its tropism (the trunk up; a side branch by the look's droop, its finer shoots' tips turning up). Each new node
+//      carries dormant side buds set by the phyllotaxis; the last carries the axis's terminal bud.
 // The leaves hang on the shoots grown in the last year, one cluster per shoot, as the grammar hangs one per twig: along the
 // shoot's own wood (placeLeaf in komorebi-grove.js), not at its tip.
 // Approximation: one growth sky straight overhead, one internode length, no reiteration or epicormic shoots, and a shoot
@@ -32,6 +32,8 @@ export const GROWTH = {
   xi: 0.3,        // how hard a shoot turns toward less shade
   trunkUp: 0.35,  // the trunk's pull upward
   droopPull: 0.3, // a side branch's pull down per unit of droop (negative droop sweeps up)
+  shootUp: 0.2,   // a growing tip's turn upward (negative gravitropism), on the shoots the set angle does not hold: without it
+                  // they curled down under droop and hung in limp strands and masses below the crown
   setpoint: 1.5,  // how hard a side branch is held at its set angle (spec.pitch above the horizontal); 0 = not held. It must
                   // outweigh the turn toward light (xi), or every side shoot ends up vertical and a branch ends in an upward fan
   setOrders: 2,   // ...the orders it holds: the main limbs and the branches off them. The finer shoots steer by light and droop
@@ -146,7 +148,7 @@ export function growBuds(spec, rng, out){
         const ci = Math.round(a[0]), cj = Math.round(a[1]), cz = Math.round(a[2]);
         const gx = shadeAt(ci + 1, cj, cz) - shadeAt(ci - 1, cj, cz), gy = shadeAt(ci, cj + 1, cz) - shadeAt(ci, cj - 1, cz), gz = shadeAt(ci, cj, cz + 1) - shadeAt(ci, cj, cz - 1);
         const opt = b.ord === 0 ? norm([-gx, -gy, -gz + 0.5]) : Math.hypot(gx, gy, gz) > 1e-6 ? norm([-gx, -gy, -gz]) : [0, 0, 0];
-        const trop = b.ord === 0 ? G.trunkUp : -droop*G.droopPull;
+        const trop = b.ord === 0 ? G.trunkUp : -droop*G.droopPull + (b.ord > G.setOrders ? G.shootUp : 0);
         // a side branch's set angle (the gravitropic setpoint the axis above it holds it to): pulled toward the direction
         // at spec.pitch above the horizontal along its own heading, so it cannot curl up into a second trunk; the finer
         // orders are free, and fill the crown's volume
