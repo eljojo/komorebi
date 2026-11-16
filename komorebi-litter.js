@@ -36,7 +36,7 @@ const ALBEDO_BROWN = [0.12, 0.08, 0.05];
 // red leaf still on the tree is alive and keeps its frost, so the carpet is the only reader of this.
 const N_WALL = 1.47, N_WATER = 1.333;
 const WET_RHO = ((N_WALL - N_WATER)/(N_WALL - 1))**2;   // ≈ 0.085: the share of its scattering a fully soaked leaf keeps
-// Kubelka–Munk for an opaque pile. kmReflect is the STABLE inverse (not the textbook 1 + X − √(X² + 2X), which is NaN at R = 0 and cancels badly below R ≈ 1e-4):
+// Kubelka–Munk for an opaque pile (Kubelka & Munk 1931, Z. Tech. Phys. 12; R∞ as in Kubelka 1948, JOSA 38). kmReflect is the STABLE inverse (not the textbook 1 + X − √(X² + 2X), which is NaN at R = 0 and cancels badly below R ≈ 1e-4):
 // X = Infinity lands on 0 cleanly and small R stays exact.
 const kmInvert = (R) => (1 - R)*(1 - R)/(2*R);
 const kmReflect = (X) => 1/(1 + X + Math.sqrt(X*X + 2*X));

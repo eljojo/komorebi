@@ -21,6 +21,10 @@
 // leaves when its trees are grown.
 // Approximation: one growth sky straight overhead, one internode length, no reiteration or epicormic shoots, and a shoot
 // is straight between its nodes. Provisional: every constant in GROWTH, set by eye on one tree.
+// SOURCES. The method is Pałubicki, Horel, Longay, Runions, Lane, Měch & Prusinkiewicz, "Self-organizing tree models for
+// image synthesis" (ACM TOG 28(3), SIGGRAPH 2009): the metamer and bud fates, the shade pyramid (shadow propagation, after
+// Pałubicki 2007), the extended Borchert–Honda resource split (Borchert & Honda 1984, Botanical Gazette 145), shedding by
+// light per internode (Takenaka 1994, Journal of Plant Research 107) and the turn toward light and by tropism (ξ, η).
 // ============================================================================
 import { GOLDEN, TAU, bendDown } from './komorebi-math.js';
 

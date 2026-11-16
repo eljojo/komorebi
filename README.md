@@ -190,3 +190,30 @@ nix run .#embed-check                                       # ...and check it re
 ```
 
 [`CLAUDE.md`](CLAUDE.md) is the repo map. A push to `main` builds `dist/` and publishes the site.
+
+## Credits
+
+Komorebi stands on research into how real trees grow and how real leaves handle light.
+
+**In the engine**
+- Trees grown year by year from buds (`komorebi-growth.js`): W. Pałubicki, K. Horel, S. Longay, A. Runions, B. Lane,
+  R. Měch and P. Prusinkiewicz, "Self-organizing tree models for image synthesis", *ACM Transactions on Graphics* 28(3),
+  SIGGRAPH 2009; with R. Borchert and H. Honda (1984), *Botanical Gazette* 145, for the resource split, and A. Takenaka
+  (1994), *Journal of Plant Research* 107, for shedding.
+- Fallen leaves' colour (`komorebi-litter.js`): P. Kubelka and F. Munk (1931), *Zeitschrift für technische Physik* 12, and
+  P. Kubelka (1948), *Journal of the Optical Society of America* 38.
+
+**Informing the work in progress** (seeing the tree, and real shoots and leaves)
+- S. Jacquemoud and F. Baret (1990), PROSPECT, *Remote Sensing of Environment* 34; J.-B. Féret, A. A. Gitelson, S. D. Noble and
+  S. Jacquemoud (2017), PROSPECT-D, *Remote Sensing of Environment* 193: how a leaf reflects and passes light, and what its pigments absorb.
+- M. Hébert and J.-M. Becker (2008), *Journal of Optics A* 10, 035006: Kubelka–Munk layers and their stacking.
+- L. Bousquet, S. Lachérade, S. Jacquemoud and I. Moya (2005), *Remote Sensing of Environment* 98: a leaf's sheen.
+- T. Brakke (1994), *Agricultural and Forest Meteorology* 71: the two faces of a leaf.
+- R. A. Gregory (1980), *Canadian Journal of Forest Research* 10: sugar maple's shoots.
+- S. Dupré, B. Thiébaut and E. Teissier du Cros (1986), *Annales des Sciences Forestières* 43: beech's short and long shoots.
+- I. Planchais and H. Sinoquet (1998), *Agricultural and Forest Meteorology* 89: leaf angle in sun and shade.
+- H. A. Bahamonde, L. Gil and V. Fernández (2018), *Frontiers in Plant Science* 9: sun and shade leaves of beech and oak.
+- A. Hovi, P. Forsström, G. Ghielmetti, M. E. Schaepman and M. Rautiainen (2020), *ISPRS Journal of Photogrammetry and
+  Remote Sensing* 169: light scattered within a crown.
+- J. Juola, A. Hovi and M. Rautiainen (2020), *Silva Fennica* 54(4): the colour of bark.
+- F. E. Putz, G. G. Parker and R. M. Archibald (1984), *American Midland Naturalist* 112: crown shyness.
