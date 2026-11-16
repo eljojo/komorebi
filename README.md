@@ -210,6 +210,7 @@ Komorebi stands on research into how real trees grow and how real leaves handle 
 - L. Bousquet, S. Lachérade, S. Jacquemoud and I. Moya (2005), *Remote Sensing of Environment* 98: a leaf's sheen.
 - T. W. Brakke, J. A. Smith and J. M. Harnden (1989), *Remote Sensing of Environment* 29, and T. Brakke (1994),
   *Agricultural and Forest Meteorology* 71: the two faces of a leaf.
+- R. Habel, A. Kusternig and M. Wimmer (2007), Eurographics Symposium on Rendering: a leaf's translucency.
 - R. A. Gregory (1980), *Canadian Journal of Forest Research* 10: sugar maple's shoots.
 - S. Dupré, B. Thiébaut and E. Teissier du Cros (1986), *Annales des Sciences Forestières* 43: beech's short and long shoots.
 - D. Lemoine, S. Jacquemin and A. Granier (2002), *Annals of Forest Science* 59: beech shoots in sun and shade.
