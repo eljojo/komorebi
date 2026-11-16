@@ -630,8 +630,28 @@ test("a tint-only grove morph builds its lazy record once, then retains buffers 
   } finally { globalThis.window = savedWindow; globalThis.requestAnimationFrame = savedRaf; }
 });
 
-test("the editor tint sliders request the season scope", () => {
-  for (const key of ['trans_r', 'trans_g', 'trans_b']) expect(PARAMS[key].row.rebuild, key).toBe('season');
+// A row asks for the scope the editor runs when its slider moves. A season key that asked for 'canopy' would regrow the grove on every tick of a drag,
+// for the picture a re-season gives. Each key is moved the way the slider moves it, on a grove that already keeps its record.
+test("every season key's editor row requests the season scope, and a move of it re-seasons the grove on screen", () => {
+  const MOVE = { trans_r: 0.094, trans_g: 0.402, trans_b: 0.1, phenology: 0.86, turn_start: 0.58, turn_span: 0.24, turn_spread: 0.1, anthocyanin: 0.7, tannin: 0.35,
+    wall_fraction: 0.45, turn_exposure: 0.5, exposure_absolute: 0.5, tree_clock_spread: 0.1, tree_pigment_spread: 0.6, leaf_drop: 0.6, drop_start: 0.72, drop_span: 0.2,
+    drop_exposure: 0.3, drop_lag: 0.04 };
+  expect(Object.keys(MOVE).sort(), "a move for every season key").toEqual([...paramsMod.SEASON_KEYS].sort());
+  for (const key of paramsMod.SEASON_KEYS) expect(PARAMS[key].row.rebuild, key).toBe('season');
+  for (const drop_after_turn of [0, 1]) {   // drop_start is read on the first clock, drop_lag on the second
+    const { eng, counts } = engineRig({ drop_after_turn });
+    expect(eng.apply('season'), "the first apply builds the record").toBe('build');
+    const last = built(counts);
+    for (const key of paramsMod.SEASON_KEYS) {
+      expect(eng.params[key], `${key}: the move changes it`).not.toBe(MOVE[key]);
+      eng.params[key] = MOVE[key];
+      expect(eng.apply(PARAMS[key].row.rebuild), key).toBe('reseason');
+      expect(built(counts), `${key}: no buffer is made`).toBe(last);
+      const B = rig({ ...eng.params });
+      compare(`${key}, drop_after_turn ${drop_after_turn}`, snapshot(eng, eng.grove()), snapshot(B, B.G.buildGrove(null)));
+    }
+    eng.dispose();
+  }
 });
 
 test("density editor scope: capacity grows once, smaller edits reuse it, and autumn rebuilds", () => {
