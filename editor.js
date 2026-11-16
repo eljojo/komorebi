@@ -1286,7 +1286,8 @@ function wsStatTick(){
 }
 const paneOf = () => (treePane ??= makeTreePane(params, { hier: () => eng.grove().hier, leaves: () => eng.treeLeaves() }));
 // The right-hand pane is the tree or the active list (playlist-pane.js), one tab each over its top; which one sticks across reloads.
-// The list pane draws the list as the dropdown has it, and on a playlist of yours writes through arboretum.js.
+// The list pane draws the list as the dropdown has it, with the playlist select, save and the folder chips over it, and on a playlist
+// of yours writes through arboretum.js.
 const wsTabs=document.getElementById('wsTabs'), plistEl=document.getElementById('plist');
 let listPane=null;
 const listPaneOf = () => (listPane ??= makePlaylistPane(plistEl, {
@@ -1294,12 +1295,16 @@ const listPaneOf = () => (listPane ??= makePlaylistPane(plistEl, {
   move: (at, to) => arb.move(at, to),
   times: (at, t) => arb.setTimes(at, t),
   style: (at, st) => arb.setStyle(st, at),
+  pick: (list) => { if(arb) arb.activate(list); else setActive(list); },
+  create: () => arb?.create(),
+  save: promptSave,
+  toggle: (id, lit) => arb.toggle(id, lit),
 }));
 function listModel(){
   const a=activeList(), cloud=a.startsWith('arb:') ? stateNow().playlists[a.slice(4)] : null;
   const choices=arb ? arb.lists(settings.playlist) : playlists(getState());
   return {
-    title: choices.find(l=>l.value===a)?.label ?? '', editable: !!arb?.canRemove(), current: presetSel.value,
+    lists: choices, active: a, canCreate: !!arb?.signedIn(), chips: arb?.chips() ?? [], editable: !!arb?.canRemove(), current: presetSel.value,
     rows: listEntries(presetSel.value).map(e=>{
       const it=cloud?.items[Number(e.value)];
       if(!it) return { value:e.value, label:e.label };

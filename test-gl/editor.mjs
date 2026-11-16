@@ -832,6 +832,11 @@ try {
   check('a click turns it to the turntable: no sky, leaves still there, drawn frame after frame', turnB.view === 'turn' && turnB.sky < 0.01 && turnB.leaf > 0.01 && turnB.draws > turnA.draws, JSON.stringify({ turnA, turnB }));
   await page.click('#tree');
   check('and another click back to the side', (await paneShare()).view === 'side');
+  await page.evaluate(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'playlist').click());
+  const loosePane = await page.evaluate(() => ({ rows: document.querySelectorAll('#plist .pl-row').length, grips: document.querySelectorAll('#plist .pl-grip').length,
+    save: !!document.querySelector('#plist .pl-save'), plus: !document.querySelector('#plist .pl-new').hidden, chips: !document.querySelector('#plist .pl-chips').hidden }));
+  check('signed out, the playlist tab lists all looks with save over them, and no grip, no +, no chips (nothing here has an order or a folder to change)',
+    loosePane.rows > 3 && loosePane.grips === 0 && loosePane.save && !loosePane.plus && !loosePane.chips, JSON.stringify(loosePane));
   // CURSORS (index.html): over the surfaces' words an arrow, never the I-beam; a hand over what acts; the I-beam only in a typed field
   const cursors = await page.evaluate(() => {
     const bad = [];
@@ -845,6 +850,7 @@ try {
     return bad;
   });
   check('every word on the surfaces shows an arrow and every control a hand', cursors.length === 0, cursors.slice(0, 8).join(' | '));
+  await page.evaluate(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'tree').click());
   await page.keyboard.press('m');
   await page.waitForSelector('#midi:not([hidden])', { timeout: 15000 });
   const withMidi = await page.evaluate(() => Object.fromEntries(['dev', 'gl', 'midi'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, { l: r.left, r: r.right, t: r.top, b: r.bottom }]; })));
@@ -1338,10 +1344,11 @@ try {
     await dev4(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'playlist').click());
     const pane4 = () => dev4(() => ({
       tree: getComputedStyle(document.getElementById('tree')).display, shown: getComputedStyle(document.getElementById('plist')).display !== 'none',
-      title: document.querySelector('#plist .pl-title')?.textContent,
+      list: document.querySelector('#plist .pl-lists').selectedOptions[0]?.textContent, plus: !document.querySelector('#plist .pl-new').hidden,
+      chips: [...document.querySelectorAll('#plist .pl-chip')].map((b) => `${b.textContent}:${b.getAttribute('aria-pressed')}`).join(), grips: document.querySelectorAll('#plist .pl-grip[draggable=true]').length,
       rows: [...document.querySelectorAll('#plist .pl-row')].map((r) => [r.querySelector('.pl-name').textContent, ...[...r.querySelectorAll('input')].map((i) => i.value), r.querySelector('.pl-style')?.textContent, r.classList.contains('on')].join(':')) }));
     check('the playlist tab puts the list where the tree was: each item with its hold, arrive and route, the one you are on marked',
-      await until(async () => { const p = await pane4(); return p.tree === 'none' && p.shown && p.title === 'evening' && p.rows.join() === 'dawn:11:2:fade:false,k4 fresh:30:5:morph:true'; }), JSON.stringify(await pane4()));
+      await until(async () => { const p = await pane4(); return p.tree === 'none' && p.shown && p.list === 'evening' && p.rows.join() === 'dawn:11:2:fade:false,k4 fresh:30:5:morph:true'; }), JSON.stringify(await pane4()));
     const t0 = calls(/^PUT \/api\/playlists\/7\/items$/).length;
     await dev4(() => { const i = document.querySelectorAll('#plist .pl-row')[1].querySelector('input'); i.value = '45'; i.dispatchEvent(new Event('change', { bubbles: true })); });
     await waitCall(/^PUT \/api\/playlists\/7\/items$/, t0 + 1);
@@ -1362,6 +1369,17 @@ try {
       && await until(async () => (await opts4(0)).join() === 'dawn,k4 fresh' && (await selectedText4(0)) === 'k4 fresh'), `${(await opts4(0)).join()} ${await selectedText4(0)}`);
     await dev4(() => document.querySelectorAll('#plist .pl-row .pl-name')[0].click());
     check('a click on a name goes to that look', await until(async () => (await selectedText4(0)) === 'dawn' && (await pane4()).rows[0].endsWith(':true')), JSON.stringify(await pane4()));
+    check('over the list: the playlist select with its +, and the advanced panel\'s chips for the look on screen', await until(async () => { const p = await pane4(); return p.plus && p.chips !== '' && p.chips === await chips4(); }), `${JSON.stringify(await pane4())} ${await chips4()}`);
+    const pc0 = calls(/^PUT \/api\/playlists\/8\/items$/).length;
+    await dev4(() => [...document.querySelectorAll('#plist .pl-chip')].find((b) => b.textContent === 'morning').click());
+    await waitCall(/^PUT \/api\/playlists\/8\/items$/, pc0 + 1);
+    check('a chip in the pane adds the look to that playlist, as the panel\'s does', JSON.stringify(putAfter('/api/playlists/8/items').put.body.items.map((i) => i.preset_id)) === JSON.stringify([5])
+      && await until(async () => (await pane4()).chips.includes('morning:true')), JSON.stringify(await pane4()));
+    await dev4(() => { const s = document.querySelector('#plist .pl-lists'); s.value = 'builtins'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await until(async () => (await editorList4()) === 'builtins');
+    check('the pane\'s select switches the list; the built-ins have no order of yours to change, so no grip', await until(async () => { const p = await pane4(); return p.list === 'built-ins' && p.rows.length > 3 && p.grips === 0; }), JSON.stringify({ ...(await pane4()), rows: (await pane4()).rows.length }));
+    await dev4(() => { const s = document.querySelector('#plist .pl-lists'); s.value = 'arb:7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await until(async () => (await editorList4()) === 'arb:7');
     await dev4(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'tree').click());
     check('the tree tab brings the tree back', (await pane4()).tree !== 'none' && !(await pane4()).shown);
     await dev4(() => [...document.querySelectorAll('#dev .modes button')].find((b) => b.textContent === 'leave workspace').click());

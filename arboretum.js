@@ -186,12 +186,17 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
 
   // The chips under the save row: one per playlist of yours (a folder), lit where this look's preset is an item. They follow the
   // look selected and the mirror's copy of your playlists.
+  // The workspace's playlist pane draws the same chips (chipList, toggle).
+  function chipList() {
+    const mine = signedIn() ? getMirror().playlists.filter((p) => p.owner === me && editorWritable(p)) : [];
+    return mine.length ? playlistChips(view(), getStored(), host.active(), host.value(), mine) : [];
+  }
   function drawChips() {
     if (!on) return;
-    const mine = signedIn() ? getMirror().playlists.filter((p) => p.owner === me && editorWritable(p)) : [];
-    inRow.hidden = mine.length === 0;
-    if (!mine.length) return;
-    chips.replaceChildren(...playlistChips(view(), getStored(), host.active(), host.value(), mine).map((c) => {
+    const list = chipList();
+    inRow.hidden = list.length === 0;
+    if (!list.length) return;
+    chips.replaceChildren(...list.map((c) => {
       const b = make("button", "arb-in", c.name);
       b.setAttribute("aria-pressed", String(c.lit));
       if (c.lit) b.style.cssText = "background:#2c4a2c;border-color:#7fae7f;color:#e8d9a8";
@@ -605,6 +610,8 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     setStyle,
     move,
     setTimes,
+    chips: () => (on ? chipList() : []),
+    toggle,
     landings: () => landings,
     // what the look's chip needs beyond the saved state: who you are, whether this is the copy kept here because arboretum could not
     // be reached, the last refusal for this look, and whether the copy is incomplete
