@@ -93,7 +93,7 @@ const PARAMS = {
     travels: 'morph',   // layer heights + branch-shadow darkness + the sky view's foliage glow — read live, no rebuild
     means: "<b>How deep the leafy layer is, top to bottom.</b> More depth = a wider mix of sharp (low) and soft (high) dapples." },
   foliage_density: { default: 1.0,
-    row: { kind: 's', label: 'density', min: 0.1, max: 3, step: 0.05, rebuild: 'density' },
+    row: { kind: 's', label: 'density', min: 0.1, max: 40, step: 0.05, rebuild: 'density' },   // a grown tree carries tens of thousands of leaves, as a real one does: up to 40 times the grammar's
     travels: 'canopy',
     means: "<b>How full the canopy is — sparse spring vs. thick summer.</b> The big mood knob. Sparse: every leaf matters, so the faint wind can totally reshuffle the gaps. Thick: the same flutter only makes them twinkle." },
   // grown skeleton (spec §4.5): a GROVE of tree_count trees, each trunk -> limb_count arms ->
@@ -133,7 +133,7 @@ const PARAMS = {
   growth_years: { default: 0,   // a tree grown year by year from buds, the light deciding which grow (komorebi-growth.js; exploration/directions.md): the years it grows. 0 = the fork-at-the-tip grammar, the old tree to the bit. A prototype: above 0 the grammar's limb_count only sorts the wind's limbs, and branch_levels and branch_length_ratio are not read
     row: { kind: 's', label: 'years', min: 0, max: 20, step: 1, rebuild: 'canopy' },
     travels: 'topo',   // the grown tree (komorebi-growth.js): a year more or less is a different tree, not a deformed one
-    means: "<b>How many years the trees grew, from buds.</b> 0 = the branching grammar: every tree drawn in one pass, forking only at branch tips. Above 0, each tree grows that many years: every year each bud grows, waits or dies by the light reaching it, shaded branches fall, and the crown's shape, gaps and density follow from that history. More years = a bigger, older tree with more leaves (and a heavier cast). A prototype." },
+    means: "<b>How many years the trees grew, from buds.</b> 0 = the branching grammar: every tree drawn in one pass, forking only at branch tips. Above 0, each tree grows that many years: every year each bud grows, waits or dies by the light reaching it, shaded branches fall, and the crown's shape, gaps and density follow from that history. More years = an older tree, its wood finer and its leaves shared out over more shoots: it hangs the leaves the grammar would for the same knobs, so density and leaves per cluster mean the same in both. A prototype." },
   droop: { default: 0.0,   // gravitropic curve (spec §4.5): branches bend over sub-segments along their length. >0 = sag DOWN (willow/birch trailing twigs), <0 = upsweep (conifer/elm); stronger on outer orders, compounding toward the tips. 0 = straight rays (byte-identical).
     row: { kind: 's', label: 'droop', min: -1, max: 1, step: 0.01, rebuild: 'canopy' },
     travels: 'canopy',

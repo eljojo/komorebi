@@ -95,18 +95,16 @@ function woodHeading(path, i, n, e){
   return false;
 }
 const _heading = [0,0];
-// A GROWN SHOOT'S LEAVES (growth_years > 0). A tree grown from buds hands each leafy shoot's own wood (the twig's path, tip back to
-// the shoot's base at t.bx, t.by), and a real shoot carries its leaves along its whole length, each on its own stalk, pointing any
-// way about the stem: the leaf's TIP place is a point at a uniform arc distance along that wood, off it by a stalk across the wood's
-// own 3-D direction at a uniform azimuth. Held level at the twig's tip, every shoot's leaves were a flat line, and the crown, seen
-// from the side, rows of dots. The (d, azimuth, stalk) draws are a hash of (seed, j, k) on a salt of their own, like inner_leaves'.
+// A GROWN SHOOT'S LEAVES (growth_years > 0). A grown tree's cluster is a bundle of neighbouring shoots (komorebi-growth.js, THE LEAF
+// BUDGET), and hier.twigShoots[j] holds each one's own wood, tip first. Leaf k of cluster j hangs on shoot k mod the bundle's size, so
+// every shoot carries its share, at a uniform arc distance along that shoot's wood, off it by a stalk across the wood's 3-D
+// direction at a uniform azimuth: a real shoot carries its leaves along its whole length, each on its own stalk, pointing any way
+// about the stem. Held level at the twig's tip, every cluster was a flat line, and the crown, seen from the side, rows of dots.
+// The (d, azimuth, stalk) draws are a hash of (seed, j, k) on a salt of their own, like inner_leaves'.
 export const SHOOT_SALT = 0x78DDE6E4;   // 4·0x9E3779B9 mod 2^32: the golden gamma's next multiple after the inner leaves' salt, in no other stream
-function shootPlace(path, n, t, params, j, k, o){
-  // segments 0..m-1: the shoot's own wood, to the first node after the tip at its base's plan place, and on down while the
-  // wood stays there (a vertical shoot, the leader's, has every node at its base's plan place)
-  let m = 1; while(m < n && !(path[3*m] === t.bx && path[3*m+1] === t.by)) m++;
-  if(path[3*m] !== t.bx || path[3*m+1] !== t.by) return false;
-  while(m < n && path[3*m+3] === t.bx && path[3*m+4] === t.by) m++;
+function shootPlace(bundle, params, j, k, o){
+  const path = bundle[k % bundle.length], m = path.length/3 - 1;   // segments 0..m-1: the shoot's own wood
+  if(m < 1) return false;
   let len = 0; for(let i=0;i<m;i++) len += Math.hypot(path[3*i]-path[3*i+3], path[3*i+1]-path[3*i+4], path[3*i+2]-path[3*i+5]);
   if(!(len > 0)) return false;
   const r = mulberry32(hash3((params.seed>>>0)^SHOOT_SALT, j, k));
@@ -133,7 +131,8 @@ export function placeLeaf(hier, j, g1, g2, k, params, faithful, out){
   let y = hug ? t.y - Math.abs(g1)*params.cluster_spread_m*1.5*tdy + g2*params.cluster_spread_m*0.4*tdx : t.y + g2*params.cluster_spread_m;
   let z = t.z;
   const path = hier.twigPath ? hier.twigPath[j] : undefined, n = path ? path.length/3 - 1 : 0;
-  if(faithful && Math.round(params.growth_years) > 0 && n >= 1 && shootPlace(path, n, t, params, j, k, _shoot)){ x = _shoot[0]; y = _shoot[1]; z = _shoot[2]; }
+  const bundle = hier.twigShoots ? hier.twigShoots[j] : undefined;
+  if(faithful && bundle && shootPlace(bundle, params, j, k, _shoot)){ x = _shoot[0]; y = _shoot[1]; z = _shoot[2]; }
   out[0] = x; out[1] = y; out[2] = z; out[3] = 0;
   if(!(params.inner_leaves > 0)) return out;
   if(n < 1) return out;
@@ -270,7 +269,9 @@ export function makeGrove(hub){
     const twigs = [];        // terminal nodes: {x,y,z, limb, tx,ty} — plan x,y, height z, global limb, tree trunk
     // `inner_leaves` (placeLeaf): the path each twig grew along, collected only while the knob is up — a PARALLEL structure to twigs (hier.twigPath, hier.twigPathLen), never a key of a twig record, which the skeleton pin digests whole.
     // A flat run of doubles per twig, tip first, through the very sc() that scales the twig and the segments; its 3-D arc.
-    const wantPath = params.inner_leaves > 0 || Math.round(params.growth_years) > 0, twigPath = [], twigPathLen = [];   // a grown tree's shoots carry their leaves along their own wood (shootPlace)
+    const wantPath = params.inner_leaves > 0, twigPath = [], twigPathLen = [];
+    // a grown tree's cluster is a bundle of shoots, each carrying its share of the leaves along its own wood (shootPlace): per twig, each shoot's wood, tip first, through sc()
+    const twigShoots = Math.round(params.growth_years) > 0 ? [] : null;
     const limbDir  = new Float32Array(nLimb*2);         // plan unit direction (drives wind torque)
     const limbPlan = new Float32Array(nLimb*2);         // an outboard wind-sample point near each limb
     const limbAttach = new Float32Array(nLimb);         // the height at which each limb MEETS its trunk — sway_pitch anchors its depth-foreshorten here so the join can't open (§5.1). Filled LOCAL in the growth loops, then scaled into world height units with the rest of the tree.
@@ -300,13 +301,15 @@ export function makeGrove(hub){
       const aa = tt*GOLDEN + (gr()-0.5)*0.6;
       const tx = rr*Math.cos(aa), ty = rr*Math.sin(aa);
       const crown = crown0*(0.7+0.6*gr());               // per-tree size variation (smaller -> denser)
-      const out = { seg:[], tw:[], path: wantPath ? [] : null };
+      const out = { seg:[], tw:[], path: wantPath ? [] : null, shoots: twigShoots ? [] : null };
       const limbBase = tt*lpt, limbRaw = new Float32Array(lpt*2);
       let leaderTop = 0, limbTop = 0;   // limbTop = highest limb-attach height (local); the trunk must at least reach it
       if(years>0){
         // GROWN FROM BUDS (komorebi-growth.js): apical control from the leader, side buds at the fork's angle, on a stream of the tree's own
         // (never `gr`, so a tree's growth moves no other tree). It hands back the grammar's records; the limbs are sectors of a balanced fan.
-        const grown = growBuds({ years, lambda: 0.5 + 0.1*L, angle: coneA, pitch: limbEl, phyllo, droop, kids }, mulberry32(hash3(params.seed>>>0, 0xB0D5, tt)), out);
+        // bearing: the grammar's twig count for the same knobs (limbs × children^(levels − 1), two children at opposite phyllotaxis), so the tree hangs the leaves the grammar would
+        const bearing = lpt*Math.pow(phyllo===2 ? 2 : kids, levels - 1);
+        const grown = growBuds({ years, lambda: 0.5 + 0.1*L, angle: coneA, pitch: limbEl, phyllo, droop, kids, bearing }, mulberry32(hash3(params.seed>>>0, 0xB0D5, tt)), out);
         budLimbs(grown, out, lpt, limbBase, limbDir, limbRaw, limbAttach);
       } else if(L>0){
         // MONOPODIAL (spec §4.5): limbs attach at staggered heights ALONG a continuing trunk axis (plan-centre),
@@ -368,6 +371,7 @@ export function makeGrove(hub){
       const zLift = (L>0 || years>0) ? 0 : trunkH*aspect;   // a grown tree stands on the ground on its own trunk
       const sc = (p) => [ p[0]*s+tx, p[1]*s+ty, p[2]*sV*aspect+zLift ];
       const twBase = twigs.length;   // this tree's first global twig index — turns grow()'s per-tree tw into the global clump id
+      if(twigShoots) for(const bundle of out.shoots) twigShoots.push(bundle.map((pts) => Float64Array.from(pts.flatMap((q) => sc(q)))));
       if(wantPath) for(const pts of out.path){
         const flat = new Float64Array(pts.length*3); let arc = 0, px = 0, py = 0, pz = 0;
         for(let i=0;i<pts.length;i++){
@@ -388,7 +392,8 @@ export function makeGrove(hub){
         limbAttach[gi]=limbAttach[gi]*sV*aspect+zLift; }   // the attach height must ride the IDENTICAL z transform sc() gives every twig/segment, or the anchor sits off the wood it is meant to hold onto
     }
     if(twigs.length > MAX_TEX) twigs.length = MAX_TEX;   // cap the per-clump data-texture width to the GPU limit
-    if(twigPath.length > MAX_TEX){ twigPath.length = MAX_TEX; twigPathLen.length = MAX_TEX; }   // ...and the paths with the twigs they belong to
+    if(twigPath.length > MAX_TEX){ twigPath.length = MAX_TEX; twigPathLen.length = MAX_TEX; }
+    if(twigShoots && twigShoots.length > MAX_TEX) twigShoots.length = MAX_TEX;   // ...and the paths with the twigs they belong to
 
     // ---- map grown heights into the layer band: bin each twig to a layer by its height ----
     let zMin=1e18, zMax=-1e18;
@@ -437,7 +442,7 @@ export function makeGrove(hub){
       // children / limb_count / phyllotaxis / the leader↔hub azimuth flip re-mean every index, so the carry is invalid.
       topoSig: `${params.seed>>>0}|${levels}|${kids}|${lpt}|${phyllo}|${L>0?1:0}${years ? `|y${years}` : ''}`,
       segments, twigs, maxV:0,   // twigs (one per leaf cluster) for the 3D preview — so it scatters per twig like the bake, not per terminal segment (droop sub-segments)
-      twigPath: wantPath ? twigPath : null, twigPathLen: wantPath ? Float64Array.from(twigPathLen) : null,   // inner_leaves (placeLeaf): each twig's ancestor path and its arc, by twig index; null while the knob is 0
+      twigPath: wantPath ? twigPath : null, twigPathLen: wantPath ? Float64Array.from(twigPathLen) : null, twigShoots,   // twigShoots: a grown tree's clusters' shoots (placeLeaf), null for the grammar   // inner_leaves (placeLeaf): each twig's ancestor path and its arc, by twig index; null while the knob is 0
     };
     // carry the in-flight sway across a regrow so the wind doesn't reset (an editor tweak or a grove-morph
     // transition). Trees/limbs are appended at the end, so indices 0..min are the same twig: copy the common

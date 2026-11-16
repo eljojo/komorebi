@@ -16,8 +16,9 @@
 //   4. GROWTH. A bud given v ≥ 1 grows a shoot of ⌊v⌋ internodes (at most maxShoot), each turned a little toward less shade
 //      and by its tropism (the trunk up; a side branch by the look's droop, its finer shoots' tips turning up). Each new node
 //      carries dormant side buds set by the phyllotaxis; the last carries the axis's terminal bud.
-// The leaves hang on the shoots grown in the last year, one cluster per shoot, as the grammar hangs one per twig: along the
-// shoot's own wood (placeLeaf in komorebi-grove.js), not at its tip.
+// The leaves hang on the shoots grown in the last year, along each shoot's own wood (placeLeaf in komorebi-grove.js), not at
+// its tip; and the tree hangs as many as the grammar would for the same knobs (THE LEAF BUDGET, below), so a look keeps its
+// leaves when its trees are grown.
 // Approximation: one growth sky straight overhead, one internode length, no reiteration or epicormic shoots, and a shoot
 // is straight between its nodes. Provisional: every constant in GROWTH, set by eye on one tree.
 // ============================================================================
@@ -60,8 +61,11 @@ function turnOff(d, theta, phi){
 
 // spec: { years, lambda (apical control), angle (rad, a side bud off its axis), pitch (rad, the set angle a side branch is held at
 // above the horizontal), phyllo (0 spiral, 1 whorled, 2 opposite), droop,
-// kids (the grammar's branch_children, which the wood's taper is expressed in) }
-// rng: this tree's own stream. Fills out.seg, out.tw and (when out.path is an array) out.path exactly as growSkeleton does,
+// kids (the grammar's branch_children, which the wood's taper is expressed in), bearing (how many leaf clusters the tree hangs: the
+// grammar's twig count for the same knobs, so foliage_density and leaves_per_cluster mean the same leaves in both; absent = a cluster
+// a shoot) }
+// rng: this tree's own stream. Fills out.seg, out.tw and (when out.path is an array) out.path exactly as growSkeleton does, and
+// (when out.shoots is an array) each cluster's shoots, parallel to out.tw: every shoot's own wood, tip first, as a list of points;
 // in local units (one internode = 1), the tree standing at the origin. Returns { sector(m) } for the main limbs: see limbs().
 export function growBuds(spec, rng, out){
   const G = GROWTH, { years, lambda, angle, phyllo, droop } = spec, kids = Math.max(1.001, spec.kids);
@@ -190,12 +194,26 @@ export function growBuds(spec, rng, out){
 
   // ---- hand the tree back as the grammar does ----
   const last = shoots.reduce((y, s) => s.metas.some((m) => M[m].alive) ? Math.max(y, s.yr) : y, -1);
-  const leafy = [], twigOf = new Map();   // the shoots of the last year, which carry the leaves; shoot index → twig index
-  shoots.forEach((s, i) => { if(s.yr === last && M[s.metas[0]].alive){ twigOf.set(i, leafy.length); leafy.push(s); } });
-  // the twigs each metamer carries, for the pipe model's widths
+  const newest = [];   // the shoots of the last year, which carry the leaves (indices into shoots)
+  shoots.forEach((s, i) => { if(s.yr === last && M[s.metas[0]].alive) newest.push(i); });
+  // THE LEAF BUDGET. A grown tree has tens of times the grammar's twigs for the same knobs, so a cluster on each of its shoots hung tens
+  // of times the leaves and a look grew dark and slow the moment it was grown; a cluster on only some of them left the rest bare and the
+  // leaves in clumps. So a cluster is a BUNDLE of neighbouring shoots, as many bundles as the grammar has twigs, and its leaves are shared
+  // out along all of them: every shoot leafs, and the tree hangs the grammar's leaves. Neighbours are runs of the shoots in the order
+  // the wood is walked from the trunk out, each side branch whole before the next, cut into bundles of as near one size as can be.
+  // A tree with fewer shoots than that bears one cluster a shoot. Nothing is drawn: the bundles are the tree's own structure.
+  const order = [], isNewest = new Set(newest), walk = [...rootKids].reverse();
+  while(walk.length){ const m = walk.pop(), n = M[m]; if(!n.alive) continue;
+    if(isNewest.has(n.shoot) && shoots[n.shoot].metas[0] === m) order.push(n.shoot);   // a shoot, where the walk enters it
+    for(let i = n.kids.length - 1; i >= 0; i--) walk.push(n.kids[i]); }
+  const bundles = [], nb = spec.bearing > 0 ? Math.min(spec.bearing, order.length) : order.length;
+  for(let c = 0; c < nb; c++) bundles.push(order.slice(Math.floor(c*order.length/nb), Math.floor((c + 1)*order.length/nb)));
+  const leafy = [], twigOf = new Map(), newestSet = isNewest;   // shoot index → the cluster its bundle is
+  bundles.forEach((b, c) => { for(const i of b) twigOf.set(i, c); leafy.push(b); });
+  // the twigs each metamer carries, for the pipe model's widths: every newest shoot's, whether it bears or not
   const T = new Float64Array(M.length);
   for(let m = M.length - 1; m >= 0; m--){ const n = M[m]; if(!n.alive) continue;
-    if(n.kids.every((k) => !M[k].alive) && twigOf.has(n.shoot)) T[m] = 1;
+    if(n.kids.every((k) => !M[k].alive) && newestSet.has(n.shoot)) T[m] = 1;
     for(const k of n.kids) if(M[k].alive) T[m] += T[k]; }
   const total = Math.max(1, rootKids.reduce((t, k) => t + (M[k].alive ? T[k] : 0), 0));
   // the main limb each metamer belongs to: the first side axis off the trunk it grew on (−1 on the trunk itself)
@@ -209,7 +227,8 @@ export function growBuds(spec, rng, out){
     // taper^(level + f) with taper = kids^(−1/Δ), so level + f = log_kids(all twigs / twigs carried); `level` stays the axis order
     const f = Math.log(total/Math.max(1, T[m]))/Math.log(kids) - n.ord;
     out.seg.push({ a: n.a, b: n.b, level: n.ord, limb: -1, m, f0: f, f1: f, tw }); }
-  for(const s of leafy){
+  for(const bundle of leafy){
+    const s = shoots[bundle[0]];   // the bundle's first shoot stands for it: the cluster's tip, heading and joint
     const tip = M[s.metas[s.metas.length - 1]], base = M[s.metas[0]];
     out.tw.push({ x: tip.b[0], y: tip.b[1], z: tip.b[2], limb: -1, m: s.metas[s.metas.length - 1], dx: tip.d[0], dy: tip.d[1], bx: base.a[0], by: base.a[1] });
     if(out.path){   // tip first, back along the wood to where its limb leaves the trunk; a shoot of the trunk's own, along itself only
@@ -218,6 +237,8 @@ export function growBuds(spec, rng, out){
       else for(let i = s.metas.length - 1; i >= 0; i--) pts.push(M[s.metas[i]].a);
       out.path.push(pts);
     }
+    if(out.shoots) out.shoots.push(bundle.map((i) => { const ms = shoots[i].metas;   // each shoot's own wood, tip first
+      return [M[ms[ms.length - 1]].b, ...ms.slice().reverse().map((m) => M[m].a)]; }));
   }
   return { limbRoot, M };
 }
