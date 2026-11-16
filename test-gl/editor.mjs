@@ -832,6 +832,19 @@ try {
   check('a click turns it to the turntable: no sky, leaves still there, drawn frame after frame', turnB.view === 'turn' && turnB.sky < 0.01 && turnB.leaf > 0.01 && turnB.draws > turnA.draws, JSON.stringify({ turnA, turnB }));
   await page.click('#tree');
   check('and another click back to the side', (await paneShare()).view === 'side');
+  // CURSORS (index.html): over the surfaces' words an arrow, never the I-beam; a hand over what acts; the I-beam only in a typed field
+  const cursors = await page.evaluate(() => {
+    const bad = [];
+    for (const root of ['dev', 'play', 'strip', 'plist', 'wsTabs', 'sessionSettings']) for (const e of document.getElementById(root)?.querySelectorAll('*') ?? []) {
+      const c = getComputedStyle(e).cursor, tag = e.tagName;
+      if (tag === 'INPUT' && (e.type === 'number' || e.type === 'text')) { if (c !== 'text') bad.push(`${root} input ${c}`); continue; }
+      if (['BUTTON', 'SELECT', 'SUMMARY'].includes(tag) || (tag === 'INPUT' && ['checkbox', 'range'].includes(e.type))) { if (!e.disabled && c !== 'pointer') bad.push(`${root} ${tag} "${e.textContent.slice(0, 20)}" ${c}`); continue; }
+      const words = [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+      if (words && (c === 'auto' || c === 'text')) bad.push(`${root} ${tag}.${e.className} "${e.textContent.slice(0, 20)}" ${c}`);
+    }
+    return bad;
+  });
+  check('every word on the surfaces shows an arrow and every control a hand', cursors.length === 0, cursors.slice(0, 8).join(' | '));
   await page.keyboard.press('m');
   await page.waitForSelector('#midi:not([hidden])', { timeout: 15000 });
   const withMidi = await page.evaluate(() => Object.fromEntries(['dev', 'gl', 'midi'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, { l: r.left, r: r.right, t: r.top, b: r.bottom }]; })));

@@ -126,6 +126,13 @@
   .ctl select { flex:1; background:#10180f; color:#cfe0cf; border:1px solid #243; }
   .ctl button { background:#1a2a1a; color:#cfe0cf; border:1px solid #2c452c; border-radius:4px; padding:3px 8px; cursor:pointer; }
   .ctl button:hover { background:#243c24; }
+  /* CURSORS. The editor's surfaces are controls, not text: an arrow over their words, a hand over what acts, the I-beam only in a
+     field that takes typing, and a drag across them selects nothing. Arboretum's status line stays selectable: it is a message to copy. */
+  :is(#dev,#play,#strip,#plist,#wsTabs,.session-panel,#midi,#welcome) { cursor:default; -webkit-user-select:none; user-select:none; }
+  :is(#dev,#play,#strip,#plist,#wsTabs,.session-panel,#midi,#welcome) :is(button,select,summary,a,input[type=checkbox],input[type=range]) { cursor:pointer; }
+  :is(#dev,#play,#strip,#plist,.session-panel,#midi) :is(button,select,input):disabled { cursor:default; }
+  :is(#dev,#plist,.session-panel,#midi) :is(input[type=number],input[type=text],textarea) { cursor:text; -webkit-user-select:text; user-select:text; }
+  #dev .arb-status { -webkit-user-select:text; user-select:text; }
   .err { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
          color:#e88; font:14px ui-monospace,monospace; text-align:center; padding:40px; }
 
