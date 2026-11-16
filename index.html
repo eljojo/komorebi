@@ -111,6 +111,7 @@
   #play .ctl label { flex:0 0 64px; }
   #play input[type=range] { height:22px; }        /* finger-sized */
   #play .ctl.off { opacity:.35; }
+  #play .ctl[hidden] { display:none; }   /* the playlist row, until there is a second list to swap to */
   #play .ctl.off input { pointer-events:none; }
   #play .modes { display:flex; gap:6px; margin-bottom:4px; }
   #play .modes button, #strip button { background:rgba(26,42,26,.7); color:#9fb89f; border:1px solid #2c452c;

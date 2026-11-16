@@ -816,6 +816,12 @@ function buildPlayPanel(){
   more.appendChild(padEl);
   play.appendChild(more);
 
+  // which list the stepper walks, directly above that list; shown where the advanced panel's is (a second list to swap to, or signed in)
+  const plr=document.createElement('div'); plr.className='ctl select'; plr.hidden=true;
+  const plsel=playlistSelect();
+  playlistSelects.push({ sel:plsel, row:plr });
+  plr.appendChild(plsel); play.appendChild(plr);
+
   // the full list, down here by the toggle that grows it — the stepper above flicks, this jumps
   // (◦ marks an experimental look)
   const pr=document.createElement('div'); pr.className='ctl select';
@@ -976,6 +982,15 @@ function updateSunFromTime(){
 // settings toggle shows them, but the one you're ON always stays listed (flipping the toggle mid-look must not
 // strand you).
 let presetSel, playlistSel, playlistRow, plusBtn, deleteBtn;
+const playlistSelects=[];                          // every surface's playlist select and the row it hides with: the advanced panel's, the playful sidebar's
+function playlistSelect(){
+  const sel=document.createElement('select');
+  sel.addEventListener('change',()=>{
+    const v=sel.value;
+    if(arb) arb.activate(v); else setActive(v);
+  });
+  return sel;
+}
 const presetRows={};                               // where arboretum.js puts its controls: the save row and the copy/paste row
 let arb=null;                                      // arboretum.js's hooks, set at the end of the file; null only while the panel is being built
 const BUILTINS = { PRESETS, EXPERIMENTAL };
@@ -1029,12 +1044,14 @@ function syncPlaylistUI(){
   if(playlistSel){
     const lists=arb ? arb.lists(settings.playlist) : playlists(getState());
     const signedIn=!!arb?.signedIn();
-    playlistSel.innerHTML='';
-    for(const l of lists){ const o=document.createElement('option'); o.value=l.value; o.textContent=l.label; playlistSel.appendChild(o); }
-    if(arb?.info().offline){ const o=document.createElement('option'); o.value='~offline'; o.textContent='offline'; o.disabled=true; playlistSel.appendChild(o); }   // arboretum could not be reached: these lists are the copy kept here
-    playlistSel.value=activeList();
+    for(const {sel,row} of playlistSelects){
+      sel.innerHTML='';
+      for(const l of lists){ const o=document.createElement('option'); o.value=l.value; o.textContent=l.label; sel.appendChild(o); }
+      if(arb?.info().offline){ const o=document.createElement('option'); o.value='~offline'; o.textContent='offline'; o.disabled=true; sel.appendChild(o); }   // arboretum could not be reached: these lists are the copy kept here
+      sel.value=activeList();
+      row.hidden = !signedIn && lists.length<2;
+    }
     plusBtn.hidden = !signedIn;
-    playlistRow.hidden = !signedIn && lists.length<2;
   }
   if(deleteBtn){
     const a=activeList(), cloud=a.startsWith('arb:');
@@ -1162,11 +1179,8 @@ function buildPresetUI(){
 
   // the playlist row comes after the look select in the DOM: the first select in #dev stays the look's
   playlistRow=document.createElement('div'); playlistRow.className='ctl select playlist-row'; playlistRow.hidden=true;
-  playlistSel=document.createElement('select');
-  playlistSel.addEventListener('change',()=>{
-    const v=playlistSel.value;
-    if(arb) arb.activate(v); else setActive(v);
-  });
+  playlistSel=playlistSelect();
+  playlistSelects.push({ sel:playlistSel, row:playlistRow });
   plusBtn=mkBtn('+',()=>arb?.create()); plusBtn.title='new playlist'; plusBtn.hidden=true;   // signed in to arboretum only
   playlistRow.append(playlistSel, plusBtn); dev.appendChild(playlistRow);
   playlistPresentationRow=document.createElement('div');playlistPresentationRow.className='ctl select';

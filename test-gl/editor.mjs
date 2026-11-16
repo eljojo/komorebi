@@ -176,10 +176,10 @@ try {
   const n0 = await optCount();
   check('experimental looks hidden by default', n0 === Object.keys(PRESETS).length - EXPERIMENTAL.length, `built-ins listed: ${n0}`);
 
-  // the playful sidebar's rows, top to bottom: the six dials, the caption, the actions, "more" (closed), then the list and the experimental toggle
+  // the playful sidebar's rows, top to bottom: the six dials, the caption, the actions, "more" (closed), then the playlist and look lists and the experimental toggle
   const playRows = await page.$eval('#play', (el) => [...el.children].slice(2).map((c) => c.classList.contains('try') ? c.querySelector('.name').textContent : c.classList.contains('cap') ? 'cap' : c.classList.contains('acts') ? `acts:${[...c.querySelectorAll('button')].map((b) => b.textContent).join('|')}` : c.tagName === 'DETAILS' ? 'more' : c.querySelector('select') ? 'select' : c.querySelector('label')?.textContent.replace(/ \(\+\d+\)$/, '')));
-  check('the playful sidebar runs the six dials, the caption, the actions, more, the look list and the experimental toggle (no headings)',
-    playRows.join() === 'focus,cloudiness,sun,season,density,time,cap,acts:\u21ba as it was|\u2684 new leaves,more,select,experimental looks' && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
+  check('the playful sidebar runs the six dials, the caption, the actions, more, the playlist and look lists and the experimental toggle (no headings)',
+    playRows.join() === 'focus,cloudiness,sun,season,density,time,cap,acts:\u21ba as it was|\u2684 new leaves,more,select,select,experimental looks' && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
   const moreRows = await page.$eval('#play details.more', (d) => [...d.children].slice(1).map((c) => c.classList.contains('pad') ? 'pad' : c.querySelector('label').textContent));
   check('"more" holds haze, sparkle, trees and the wind pad, and starts closed', moreRows.join() === 'haze,sparkle,trees,pad' && (await page.$eval('#play details.more', (d) => !d.open)), moreRows.join());
   await page.$eval('#play details.more', (d) => { d.open = true; });   // the pad and the macro sliders live inside it
@@ -863,6 +863,7 @@ try {
 
   const rowDisplay = await page.evaluate(() => getComputedStyle(document.querySelector('#dev .playlist-row')).display);
   check('with one playlist there is no playlist row', rowDisplay === 'none', rowDisplay);
+  check('nor one in the playful sidebar', await page.evaluate(() => getComputedStyle(document.querySelector('#play .ctl.select')).display === 'none'));
   check('and no \u25b6 anywhere', (await displayOf(page, '.playstop')).every((x) => x === 'none') && (await page.$$('#strip .playstop')).length === 0, (await displayOf(page, '.playstop')).join());
 
   // THE LOOK'S CHIP (every editor, arboretum or not): one muted line under the look select that says where the look lives
@@ -966,8 +967,13 @@ try {
     await page2.$eval('#play .preset button:nth-child(2)', (b) => b.click());
     check('› steps to the next item, by index', (await sel2()).value === '1' && (await page2.$eval('#play .preset .name', (e) => e.textContent)) === 'two');
     await page2.waitForTimeout(400);
-    await page2.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'local'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    check('the playful sidebar has its own playlist select, above the look list, on the active one', await page2.evaluate(() => {
+      const rows = [...document.querySelectorAll('#play .ctl.select')], s = rows[0]?.querySelector('select');
+      return rows.length === 2 && getComputedStyle(rows[0]).display !== 'none' && [...s.options].map((o) => o.textContent).join() === 'all looks,k2 list' && s.value === 'arb:7';
+    }));
+    await page2.evaluate(() => { const s = document.querySelector('#play .ctl.select select'); s.value = 'local'; s.dispatchEvent(new Event('change', { bubbles: true })); });
     const back = await sel2();
+    check('the playful select swaps the list: the advanced one follows', (await page2.evaluate(() => document.querySelectorAll('#dev select')[1].value)) === 'local');
     check('swapping to all looks lists the built-ins again and the ▶ goes', back.opts.length > 3 && back.value === Object.keys(PRESETS)[0]
       && (await displayOf(page2, '.playstop')).every((x) => x === 'none'), JSON.stringify({ n: back.opts.length, v: back.value }));
     await ctx.close();
@@ -1380,8 +1386,12 @@ try {
 
     check('no request ever carried visibility', seen.every((c) => !/visibility/i.test(`${c.path} ${JSON.stringify(c.body ?? '')}`)), seen.find((c) => /visibility/i.test(JSON.stringify(c.body ?? '')))?.path);
     check('and arboretum raised no alert', alerts.length === 0, alerts.join(' | '));
-    const elsewhere = await dev4(() => ['play', 'strip'].filter((id) => /arboretum|☁|uncategorized/i.test(document.getElementById(id).textContent) || document.getElementById(id).querySelector('.arb-inrow, .arb-cta, .arb-status, .arb-who, .arb-move, .look-chip, .arb-in')));
-    check('and nothing of it is in the playful sidebar or the zen strip', elsewhere.length === 0, elsewhere.join());
+    const elsewhere = await dev4(() => ['play', 'strip'].filter((id) => {
+      const el = document.getElementById(id).cloneNode(true);
+      el.querySelector('.ctl.select')?.remove();   // the playful sidebar's playlist select names the lists, as the advanced panel's does
+      return /arboretum|☁|uncategorized/i.test(el.textContent) || el.querySelector('.arb-inrow, .arb-cta, .arb-status, .arb-who, .arb-move, .look-chip, .arb-in');
+    }));
+    check('and nothing of it but the playlist select is in the playful sidebar, and nothing in the zen strip', elsewhere.length === 0, elsewhere.join());
     await ctx4.close();
   }
 
