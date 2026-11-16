@@ -85,6 +85,8 @@ export const INNER_SALT = 0xDAA66D2B;   // 3·0x9E3779B9 mod 2^32: the golden ga
 const INNER_GLIDE = 0.05;        // the smoothstep's width in `inner_leaves`: a leaf is wholly on the wood this far past its own h
 // A height's layer over a grove's band [zMin, dz, nLayer] (hier.layerBand): higher foliage, higher layer. The hang loop bins twigs and leaves by it, and leaf travel a layered leaf.
 export const layerOfHeight = (z, [zMin, dz, nLayer]) => nLayer>1 ? clamp(Math.round((z-zMin)/dz*(nLayer-1)), 0, nLayer-1) : 0;
+// The layer leaf j's leaf at height z hangs in, as the hang loop binned it: one at its twig's height (to the float a leaf record keeps) is on its twig's layer, one on the wood on its own height's.
+export const leafLayerOf = (hier, j, z) => { const t = hier.twigs[j]; return hier.layerBand && z !== Math.fround(t.z) ? layerOfHeight(z, hier.layerBand) : t.layer; };
 // The outward plan heading (older end -> nearer the tip) of segment i of a path of n segments into `e`, or of the nearest segment that has one: a vertical step has no direction in plan. False when none does.
 function woodHeading(path, i, n, e){
   for(let o=0;o<n;o++) for(let side=0;side<2;side++){

@@ -4,9 +4,11 @@ import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from './komorebi-params.
 import {seasonCamera} from './komorebi-season-travel.js';
 import {litterLanding,litterAlbedo,litterAge} from './komorebi-litter.js';
 import {VS_LEAF_TRAVEL,FS_LEAF_TRAVEL,VS_FAITH_SEG,FS_FAITH_SEG} from './komorebi-shaders.js';
+import {leafLayerOf} from './komorebi-grove.js';
 
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
+const FEAT_LEAF_DIFFUSE = true;
 export const groveFlightProgress=(t,identity)=>smoothstep(.03+.16*identity,1,t);
 
 // Correspondence uses one rooted grammar; a different seed or child count has no matching branch addresses.
@@ -16,8 +18,8 @@ export const groveTravelEligible=FEAT_LITTER?(a,b)=>{
  const floor=a.litter>0&&a.leaf_drop>0?a:b,canopy=floor===a?b:a;
  if(!(floor.litter>0&&floor.leaf_drop>0&&canopy.litter===0&&canopy.leaf_drop===0&&canopy.canopy_fill===0))return false;
  if(floor.layer_count!==3||canopy.layer_count!==4||floor.seed!==canopy.seed||floor.branch_levels!==canopy.branch_levels||floor.branch_children!==canopy.branch_children||floor.limb_count!==canopy.limb_count)return false;
- if((floor.leader_strength>0)!==(canopy.leader_strength>0)||floor.tone_map!==canopy.tone_map||floor.eclipse!==canopy.eclipse)return false;
- for(const p of[a,b])if(p.inner_leaves!==0||p.leaf_variety!==0||p.leaf_diffuse!==0||p.edge_area||p.sway_pitch!==0||p.sun_cosine!==0||p.leaf_size_m<=0||p.branch_tau<=0||!Number.isInteger(p.tree_count)||p.tree_count<1)return false;
+ if((floor.leader_strength>0)!==(canopy.leader_strength>0)||floor.tone_map!==canopy.tone_map||floor.eclipse!==canopy.eclipse||floor.edge_area!==canopy.edge_area)return false;
+ for(const p of[a,b])if(p.leaf_variety!==0||p.leaf_diffuse!==0||p.sway_pitch!==0||p.sun_cosine!==0||p.leaf_size_m<=0||p.branch_tau<=0||!Number.isInteger(p.tree_count)||p.tree_count<1)return false;
  if(floor.tree_count>5||canopy.tree_count>2||floor.tree_count<canopy.tree_count)return false;
  const na=Math.ceil(floor.leaves_per_cluster*floor.foliage_density),nb=Math.ceil(canopy.leaves_per_cluster*canopy.foliage_density);
  const count=floor.tree_count*floor.limb_count*Math.max(1,floor.branch_children)**Math.max(0,floor.branch_levels-1)*na;
@@ -25,9 +27,12 @@ export const groveTravelEligible=FEAT_LITTER?(a,b)=>{
 }:()=>false;
 
 const read=h=>{const d=new Float32Array(h.faith.count*18);h.gl.bindBuffer(h.gl.ARRAY_BUFFER,h.faith.buf);h.gl.getBufferSubData(h.gl.ARRAY_BUFFER,0,d);return d;};
-function leaf(q,i,o){
+// The pivot weights beside the leaves, as the bake reads them; null where no leaf has one (inner_leaves 0), which keeps the old arithmetic.
+const readPivot=h=>{if(!h.faith.pivotOn)return null;const w=new Float32Array(h.faith.count);h.gl.bindBuffer(h.gl.ARRAY_BUFFER,h.faith.pivotBuf);h.gl.getBufferSubData(h.gl.ARRAY_BUFFER,0,w);return w;};
+// Where a carried leaf is at its end, as the bake draws it there: a leaf hung on older wood drops its twig's bend by its pivot weight (VS_FAITH's PIVOT).
+export function carriedLeaf(q,i,o){
  const d=q.data,h=q.hub,H=h.hier,j=Math.round(d[i+11]),k=j*4,D=H.clusterData,G=H.clusterGeom,m=h.motion,p=h.params;
- const L=D[k],T=D[k+1],cl=Math.cos(L),sl=Math.sin(L),ct=Math.cos(T),st=Math.sin(T),px=G[k+2],py=G[k+3];
+ const L=D[k],T=q.pivot?D[k+1]*(1-q.pivot[i/18]):D[k+1],cl=Math.cos(L),sl=Math.sin(L),ct=Math.cos(T),st=Math.sin(T),px=G[k+2],py=G[k+3];
  const dx=d[i]-G[k],dy=d[i+1]-G[k+1],xx=G[k]+ct*dx-st*dy,yy=G[k+1]+st*dx+ct*dy;
  const wm=flutterLevel(m.u,H.airData?.[k]||0,p.wind_air),sw=p.leaf_swing*d[i+6]*(.5*m.u+wm*Math.sin(m.time*p.flutter_freq*TAU+d[i+7]))*depthGate(wm,H.airData?.[k+1]||0,p.wind_depth);
  const z=D[k+2]+d[i+16]*D[k+3],gain=z/Math.max(h.faith.hMax,.001),th=p.drift_phase+d[i+15];
@@ -73,7 +78,7 @@ function segmentPoint(data,parts,t,out){
 }
 
 function createGroveRenderer(h,a,b,from,to,host){
- const gl=h.gl,A={hub:a.hub,data:read(h)},B={hub:b.hub,data:read(b.hub)},trees=matchGroveTrees(a.hub,b.hub);
+ const gl=h.gl,A={hub:a.hub,data:read(h),pivot:readPivot(h)},B={hub:b.hub,data:read(b.hub),pivot:readPivot(b.hub)},trees=matchGroveTrees(a.hub,b.hub);
  const ga=groups(a.hub),gb=groups(b.hub),woodPairs=[];
  for(let t=0;t<ga.length;t++)for(const [key,aa]of ga[t]){
   const bb=gb[trees[t].target].get(key);if(!bb)throw Error(`Missing destination branch ${t}/${key}`);
@@ -93,7 +98,7 @@ function createGroveRenderer(h,a,b,from,to,host){
   for(let k=0;k<aa.length;k++){
    const slot=Math.min(bb.length-1,Math.floor((k+.5)*bb.length/aa.length)),primary=map.primary&&k===Math.min(aa.length-1,Math.floor((slot+.5)*aa.length/bb.length));
    const l=sourceCarpet.get(`${j}/${k}`),floor=l?{...l,albedo:litterAlbedo(l.tau,litterAge(from,l.D),from.leaf_wetness),land:litterLanding(l,from),baseFade:l.fade}:null;
-   paths.push({ia:aa[k],ib:bb[slot],primary,floor,clock:leafClock(from.seed,j,k),retained:a.hub.hier.leafW?.[j*h.hier.nLeaf+k]??1,layer:h.hier.twigs[j].layer});
+   paths.push({ia:aa[k],ib:bb[slot],primary,floor,clock:leafClock(from.seed,j,k),retained:a.hub.hier.leafW?.[j*h.hier.nLeaf+k]??1,layer:leafLayerOf(h.hier,j,A.data[aa[k]+16])});
   }
  }
  if(paths.filter(p=>p.primary).length!==B.data.length/18||new Set(paths.filter(p=>p.primary).map(p=>p.ib)).size!==B.data.length/18)throw Error('Destination leaves must each occur exactly once');
@@ -126,7 +131,7 @@ function createGroveRenderer(h,a,b,from,to,host){
   layerCount.fill(0);const carpet=[];let minx=Infinity,miny=Infinity,maxx=-Infinity,maxy=-Infinity,minH=Infinity,maxH=-Infinity,pad=.2;
   const bulk=h.bulkShift();
   for(let i=0;i<n;i++){
-   const path=paths[i],o=i*12,ia=path.ia,ib=path.ib;leaf(A,ia,ap);leaf(B,ib,bp);
+   const path=paths[i],o=i*12,ia=path.ia,ib=path.ib;carriedLeaf(A,ia,ap);carriedLeaf(B,ib,bp);
    const liveA=path.floor?1:path.retained,fade=lerp(A.data[ia+17]*liveA,B.data[ib+17],w),area=lerp(ap[2]*ap[3],path.primary?bp[2]*bp[3]:0,w),aspect=Math.exp(lerp(Math.log(ap[2]/ap[3]),Math.log(bp[2]/bp[3]),w));
    let x=lerp(ap[0],bp[0],w),y=lerp(ap[1],bp[1],w),z=lerp(ap[5],bp[5],w),angle=lerpAngle(ap[4],bp[4],w,TAU),cast=1,minor=Math.sqrt(area/aspect);
    if(path.floor){
@@ -158,7 +163,7 @@ function createGroveRenderer(h,a,b,from,to,host){
   for(let i=0;i<h.src.count;i++){
    const sx=h.src.flat[i*3],sy=h.src.flat[i*3+1],gx=proj[0]*sx+proj[2]*sy+bulk[0],gy=proj[1]*sx+proj[3]*sy+bulk[1];
    gl.bindFramebuffer(gl.FRAMEBUFFER,fbos[1]);gl.disable(gl.BLEND);gl.clearColor(1,1,1,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.enable(gl.BLEND);gl.blendFunc(gl.ZERO,gl.SRC_COLOR);
-   gl.useProgram(leafProg);gl.bindVertexArray(leaves.vao);gl.uniform2f(lu.Origin,field.ox,field.oy);gl.uniform2f(lu.Extent,field.ext,field.ext);gl.uniform2f(lu.G,gx,gy);gl.uniform4fv(lu.Box,box);gl.uniform1f(lu.Weight,w);gl.uniform1f(lu.Edge,lerp(from.edge_softness,to.edge_softness,w));gl.uniform1f(lu.BeamK,0);gl.uniform1i(lu.EdgeArea,0);
+   gl.useProgram(leafProg);gl.bindVertexArray(leaves.vao);gl.uniform2f(lu.Origin,field.ox,field.oy);gl.uniform2f(lu.Extent,field.ext,field.ext);gl.uniform2f(lu.G,gx,gy);gl.uniform4fv(lu.Box,box);gl.uniform1f(lu.Weight,w);gl.uniform1f(lu.Edge,lerp(from.edge_softness,to.edge_softness,w));gl.uniform1f(lu.BeamK,0);gl.uniform1i(lu.EdgeArea,FEAT_LEAF_DIFFUSE&&from.edge_area?1:0);
    for(const [unit,q,grove]of [[0,h,h.grove],[1,b.hub,b.hub.grove]]){gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,grove.leafTex??q.layerTex[3]);gl.uniform1i(unit===0?lu.LeafA:lu.LeafB,unit);gl.uniform1i(unit===0?lu.ShapeA:lu.ShapeB,grove.shape?1:0);}
    gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,n);
    gl.useProgram(woodProg);gl.bindVertexArray(woodBuf.vao);gl.uniform2f(wu.FaithOrigin,field.ox,field.oy);gl.uniform2f(wu.FaithExtent,field.ext,field.ext);gl.uniform2f(wu.G,gx,gy);gl.uniform2f(wu.SegSway,0,0);gl.uniform1i(wu.CurtainBake,0);gl.uniform1i(wu.SegTau,0);gl.uniform1f(wu.WoodTau,lerp(from.branch_tau,to.branch_tau,w));gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,woodPairs.length);
