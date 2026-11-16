@@ -59,7 +59,8 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-render.js` — one frame onto a target.
 - `komorebi-transport.js` — the camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.
 - `komorebi-shaders.js` — the bake and display shaders, the shared tone tail, the sky fill's bake.
-- `komorebi-params.js` — `DEFAULTS`, the legacy-name migration, transition key classes, engine caps, and the feature
+- `komorebi-params.js` — `PARAMS`, every parameter defined once (default, panel row, how it travels, what it means; its header sets
+  the fields out), and what is derived from it: `DEFAULTS`, the legacy-name migration, transition key classes. Also engine caps, and the feature
   registry (`FEATURES`, `featuresFor`) that tells a bundle which fall tiers it may cut.
 - `komorebi-session.js` — pure session profiles and fidelity/playback/presentation resolution; no device storage or UI.
 - `komorebi-math.js` — CPU math: atmosphere, deterministic RNG, wind noise, skeleton growth.

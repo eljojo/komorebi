@@ -25,6 +25,8 @@
 //   • THE ORPHAN SWEEP — a shader string nothing references is deleted, whatever cut it loose (see sweepOrphans). A minifier will not do it for a literal with a `${}`.
 //   • GLSL PROSE — a template literal is opaque to a minifier, so the shader design notes ship as bytes.
 //     Comments outside `${}` are removed here. The source keeps its notes.
+//   • THE EDITOR'S FIELDS — a parameter's `row`, `noRow` and `means` in PARAMS (komorebi-params.js) are the editor's panel row and hover
+//     text, which no bundle shows: each is dropped (dropEditorFields), and a build that finds one it cannot drop throws.
 //   • THE EDITOR TIER — `--define KOMOREBI_EDITOR=false` does not fold: bun and esbuild both refuse to
 //     inline `const EDITOR = <ternary>` into its use sites, so the overlays, the timer-query extension and
 //     the inset shaders shipped in every bundle before this (7.6 kB raw, 3.1 kB gzip, measured). This
@@ -233,6 +235,17 @@ function hardcodeEditorOff(src) {
   return src.replace(decl, '').replace(/(?<![\w$])EDITOR(?![\w$])/g, 'false');
 }
 
+// ---- THE EDITOR'S FIELDS (komorebi-params.js PARAMS): a parameter's `row` and `noRow` are a line each, and its `means` is the last field of
+// its entry, one double-quoted line. Each is dropped; one written any other way is not silently kept, the build throws.
+export function dropEditorFields(src) {
+  const out = src
+    .replace(/^\s+row: \{.*\},(?:\s*\/\/.*)?\n/gm, '')
+    .replace(/^\s+noRow: '(?:[^'\\\n]|\\.)*',\n/gm, '')
+    .replace(/^(\s+)means: "(?:[^"\\\n]|\\.)*" \},$/gm, '$1},');
+  if (/^\s+(?:row|noRow|means):/m.test(out)) throw new Error('embed: a `row`, `noRow` or `means` in PARAMS is not written as one line, so it cannot be dropped');
+  return out;
+}
+
 // ---- THE ORPHAN SWEEP. A shader string that nothing references still ships, when its literal carries a `${}` the minifier will not prove
 // free of side effects (GLSL_T_SKY_DECLS interpolates an imported cap, so a floor-only bundle kept the sky view's whole shader). So: a top-level
 // `const GLSL_|VS_|FS_ = \`...\`` whose name is referenced nowhere in the assembled tree except its own declaration and the import/export
@@ -360,6 +373,7 @@ export function assemble({ looks, features, strip = true, name } = {}) {
       s = s.replace(buildDecl, `const BUILD = ${JSON.stringify({ name: label, cut })};`);
     }
     s = hardcodeEditorOff(foldDeadTernaries(s));
+    if (f === 'komorebi-params.js') s = dropEditorFields(s);
     if (f === 'komorebi-transport.js' || f === 'komorebi-shaders.js') s = strip ? stripGlslComments(s, cut) : dropTagged(s, cut);
     files.set(f, s);
   }

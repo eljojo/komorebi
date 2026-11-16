@@ -7,7 +7,7 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
-import { CANOPY_KEYS, DEFAULTS, SEASON_KEYS, TOPO_KEYS } from "./komorebi.js";
+import { CANOPY_KEYS, DEFAULTS, PARAMS, SEASON_KEYS, TOPO_KEYS } from "./komorebi.js";
 import * as math from "./komorebi-math.js";
 import * as LEAF from "./komorebi-leaf.js";
 import * as MAZE from "./leaf-maze.js";
@@ -827,12 +827,12 @@ test("the wind slip, pinned to what the spec quotes: park 1's squally wind from 
 
 // ---- 13. the editor ------------------------------------------------------------------------------------------------------------------------
 test("the editor offers it: a canopy row in the Density area, just before the spread, and a help text in the editor's voice", () => {
-  const src = read("./editor.js");
-  const row = src.indexOf("['s','inner_leaves','inner leaves',0,1,0.01,'canopy']"), spread = src.indexOf("['s','cluster_spread_m'");
-  expect(row, "the row").toBeGreaterThan(-1);
-  expect(row).toBeLessThan(spread);
-  expect(spread - row, "right before cluster_spread_m").toBeLessThan(500);
-  expect(src, "its help").toMatch(/\n {2}inner_leaves:"<b>/);
+  const src = read("./editor.js"), at = src.indexOf("const PANEL_LAYOUT = ["), layout = src.slice(at, src.indexOf("\n];", at));
+  expect(PARAMS.inner_leaves.row, "the row").toEqual({ kind: "s", label: "inner leaves", min: 0, max: 1, step: 0.01, rebuild: "canopy" });
+  const row = layout.indexOf("'inner_leaves',"), spread = layout.indexOf("'cluster_spread_m',");
+  expect(row, "in the panel").toBeGreaterThan(-1);
+  expect(layout.slice(row, spread).trim(), "right before cluster_spread_m").toBe("'inner_leaves',");
+  expect(PARAMS.inner_leaves.means, "its help").toMatch(/^<b>/);
 });
 
 // ---- the pivot weight: a leaf hung on older wood follows that wood, not its twig's bend -----------------------------------------------------

@@ -1,24 +1,16 @@
 // Every shipped look can be saved in arboretum. Arboretum holds a saved look to the editor's slider ranges, each stretched by a quarter
-// of its span at both ends (komorebi-arboretum src/validate.ts, RANGE_LEEWAY), angles exempt because they wrap; its pin reads editor.js's
-// PANEL as text, as this test does. A look whose value lands past that stretch is refused on save, so a look change that moves a value
+// of its span at both ends (komorebi-arboretum src/validate.ts, RANGE_LEEWAY), angles exempt because they wrap; the ranges are the
+// sliders' rows in PARAMS (komorebi-params.js), which the editor builds its panel from and arboretum's pin reads. A look whose value lands past that stretch is refused on save, so a look change that moves a value
 // (a re-sit of exposure, say) has to move the slider with it.
 import { test, expect } from "bun:test";
-import { readFileSync } from "node:fs";
 import { PRESETS } from "./presets.js";
-import { MAX_LAYERS } from "./komorebi-params.js";
+import { PARAMS } from "./komorebi-params.js";
 
 const LEEWAY = 0.25;
 const CLUSTERS_PER_LAYER_MAX = 82;   // arboretum's own bound: clusters_per_layer has no slider
 
-// The slider rows of editor.js's PANEL: ['s', key, label, min, max, step, ...]; min and max may name MAX_LAYERS.
-export function sliderRows(text) {
-  const rows = [];
-  for (const m of text.matchAll(/\['s',\s*'(\w+)',\s*'[^']*',\s*([^,\]]+),\s*([^,\]]+),\s*([^,\]]+)/g)) {
-    const num = (s) => Function("MAX_LAYERS", `return (${s});`)(MAX_LAYERS);
-    rows.push({ key: m[1], min: num(m[2]), max: num(m[3]), step: num(m[4]) });
-  }
-  return rows;
-}
+// The sliders' rows: { key, min, max, step } for every parameter whose row is a slider.
+export const sliderRows = () => Object.entries(PARAMS).filter(([, d]) => d.row?.kind === "s").map(([key, d]) => ({ key, min: d.row.min, max: d.row.max, step: d.row.step }));
 
 // Arboretum's bounds for one slider, leeway included, as validate.ts's boundsOf computes them; undefined for an angle.
 export function boundsOf(row) {
@@ -44,9 +36,9 @@ export function outOfRange(look, rows) {
   return out;
 }
 
-const ROWS = sliderRows(readFileSync(new URL("./editor.js", import.meta.url), "utf8"));
+const ROWS = sliderRows();
 
-test("the panel's slider rows parse: exposure among them, every range ordered", () => {
+test("the sliders' rows: exposure among them, every range ordered", () => {
   expect(ROWS.length).toBeGreaterThan(100);
   expect(ROWS.find((r) => r.key === "exposure")).toBeDefined();
   for (const r of ROWS) expect(r.max, r.key).toBeGreaterThan(r.min);

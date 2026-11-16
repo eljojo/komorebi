@@ -8,7 +8,8 @@ import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assemble, build } from "./embed-build.mjs";
+import { assemble, build, dropEditorFields } from "./embed-build.mjs";
+import { PARAMS } from "./komorebi-params.js";
 import { PRESETS } from "./presets.js";
 
 const HOME = ["morning 2", "afternoon 5b", "morning 3"];   // the three-look set the homepage loads
@@ -110,4 +111,18 @@ test("const BUILD says which bundle this is and what it cut — the engine's war
 
 test("a bundle with fewer tiers is the smaller bundle", () => {
   expect(home.gzip).toBeLessThan(whole.gzip);
+});
+
+test("no bundle carries the editor's fields of a parameter (its row, its noRow, its meaning), yet every bundle keeps the parameters themselves", () => {
+  const sample = PARAMS.sun_cosine.means.slice(3, 40);   // a phrase from one meaning, past its <b>
+  for (const r of [whole, home, player]) {
+    const t = text(r);
+    expect(t.includes(sample), `${r.out}: a meaning is still in it`).toBe(false);
+    expect(/\b(?:means|noRow):|row:\{kind:/.test(t), `${r.out}: an editor field`).toBe(false);   // a bare row: is the grove's own (a leaf's outline row)
+    expect(t.includes(`label:"${PARAMS.sun_cosine.row.label}"`) || t.includes(`label:'${PARAMS.sun_cosine.row.label}'`), `${r.out}: a row's label`).toBe(false);
+    expect(t.includes("sun_cosine"), `${r.out}: the parameter itself`).toBe(true);
+  }
+  expect(() => dropEditorFields("  x: { default: 1,\n    means: 'single quoted' },\n")).toThrow();
+  expect(dropEditorFields('  x: { default: 1,   // c\n    row: { kind: \'s\', label: \'x\', min: 0, max: 1, step: 0.1, rebuild: \'\' },   // r\n    noRow: \'it\\\'s none\',\n    travels: \'morph\',\n    means: "a \\"quoted\\" word" },\n'))
+    .toBe("  x: { default: 1,   // c\n    travels: 'morph',\n    },\n");
 });

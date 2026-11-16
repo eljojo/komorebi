@@ -5,7 +5,7 @@
 // the shader and contracts differently at 1. The pure table and the exactness at 0 are held here; the pixels are the harness's.
 import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
-import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, FEATURES, CAMERAS, TRANSPORT_CAMERAS, buildTransport, cameraFor } from "./komorebi.js";
+import { PARAMS, DEFAULTS, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, FEATURES, CAMERAS, TRANSPORT_CAMERAS, buildTransport, cameraFor } from "./komorebi.js";
 import * as MATH from "./komorebi-math.js";
 import { DEG, atmosphere, beamExposure, sunDirection, sunIncidence } from "./komorebi-math.js";
 import { makeRender } from "./komorebi-render.js";
@@ -349,15 +349,16 @@ test("foldIncidence's comment says it is relative to the flat cloth and that the
 // ---- the editor ------------------------------------------------------------------------------------------------------------------
 test("the editor offers it: a row right after the azimuth, in a group the surface cameras speak and the sky view does not, and a help text in the editor's voice", () => {
   const src = read("editor.js");
-  const row = src.indexOf("['s','sun_cosine','cosine',0,1,0.01,'']"), az = src.indexOf("['s','sun_azimuth_deg'");
-  expect(row, "the row").toBeGreaterThan(-1);
-  expect(row).toBeGreaterThan(az);
-  expect(row - az, "right after sun_azimuth_deg").toBeLessThan(120);
+  expect(PARAMS.sun_cosine.row, "the row").toEqual({ kind: "s", label: "cosine", min: 0, max: 1, step: 0.01, rebuild: "" });
+  const layout = src.slice(src.indexOf("const PANEL_LAYOUT = ["), src.indexOf("\n];", src.indexOf("const PANEL_LAYOUT = [")));
+  const at = (k) => layout.indexOf(`'${k}',`), row = at("sun_cosine"), az = at("sun_azimuth_deg");
+  expect(row, "in the panel").toBeGreaterThan(-1);
+  expect(layout.slice(az, row).trim(), "right after sun_azimuth_deg").toBe("'sun_azimuth_deg',");
   const group = src.match(/\bsun_cosine:'(\w+)'/)?.[1];
   expect(group, "its CAM_GROUP entry").toBeDefined();
   for (const cam of ["floor", "cloth", "enclosure"]) expect(CAMERAS[cam].groups, `${cam} speaks ${group}`).toContain(group);
   expect(CAMERAS.sky.groups, "the sky view never reads it, so its row is hidden there").not.toContain(group);
-  const help = src.match(/\n {2}sun_cosine:"(<b>[^\n]*)",?\n/)?.[1];
+  const help = PARAMS.sun_cosine.means;
   expect(help, "its help").toBeDefined();
   expect(/noon/.test(help) && /dusk/.test(help), "the day brightens to noon and dims to dusk").toBe(true);
   expect(/exposure/.test(help) && /2\.3/.test(help), "a look that turns it on re-sits its exposure, about x2.3 at 26 degrees").toBe(true);

@@ -9,7 +9,7 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
-import { CANOPY_KEYS, DEFAULTS, create, buildTransport } from "./komorebi.js";
+import { CANOPY_KEYS, DEFAULTS, PARAMS, create, buildTransport } from "./komorebi.js";
 import * as paramsMod from "./komorebi-params.js";
 import * as groveMod from "./komorebi-grove.js";
 import { makeGrove } from "./komorebi-grove.js";
@@ -630,12 +630,11 @@ test("a tint-only grove morph builds its lazy record once, then retains buffers 
 });
 
 test("the editor tint sliders request the season scope", () => {
-  const editor = read('./editor.js');
-  for (const key of ['trans_r', 'trans_g', 'trans_b']) expect(new RegExp(`\\['s','${key}'[^\\n]+,'season'\\]`).test(editor), key).toBe(true);
+  for (const key of ['trans_r', 'trans_g', 'trans_b']) expect(PARAMS[key].row.rebuild, key).toBe('season');
 });
 
 test("density editor scope: capacity grows once, smaller edits reuse it, and autumn rebuilds", () => {
-  expect(/\['s','foliage_density'[^\n]+,'density'\]/.test(read('./editor.js'))).toBe(true);
+  expect(PARAMS.foliage_density.row.rebuild).toBe('density');
   const { eng, counts } = engineRig({ phenology: 0.5, leaf_drop: 0, foliage_density: 0.4, faithful_canopy: true });
   let last = built(counts);
   for (const [density, path] of [[1.65, 'build'], [0.4, 'reseason'], [1.4, 'reseason'], [2, 'build'], [0, 'reseason'], [0.4, 'reseason']]) {

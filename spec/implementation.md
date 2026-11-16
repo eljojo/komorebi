@@ -31,7 +31,9 @@ The engine runs its own `requestAnimationFrame` loop on the canvas it is handed.
 
 **Looks are data.** The built-in looks live in `presets.js` (`export const PRESETS`, plus `EXPERIMENTAL`, the looks the editor hides behind its toggle). Each is merged over the engine's `DEFAULTS`. Their order in that file *is* the dropdown and arrow-key order; there is no separate list. `DEFAULTS` is the merge base. It is exported, but it is not itself a look. Each look's intent is recorded in [`contracts/looks.md`](contracts/looks.md).
 
-**Old spellings keep working.** One alias map, `LEGACY_KEYS` (defined in `komorebi-params.js` beside `migrateLegacy`, re-exported through `komorebi.js`), translates retired param names to current ones. It is applied at every door external params come through: `create`, `setParams`, `transitionTo` and the ★ store. A current name that is already present wins, and nothing the engine writes back out uses an old name. `legacy-keys.test.js` is the test for it by name.
+**Every parameter is defined once.** `PARAMS` in `komorebi-params.js` is the registry: one entry for each parameter komorebi has, with its default, its row in the editor's advanced panel (kind, label, range or choices, what a change rebuilds) or the reason it has none, how a transition carries it (`travels`), whether it wraps, its older names, and what it means in the editor's hover. `DEFAULTS`, the key classes and `LEGACY_KEYS` are derived from it; the editor builds its panel rows and hover texts from it, keeping only where each row sits and when it shows; the tools that hold a saved look to the editor's ranges read it. Two editor inputs a look does not store (`time_of_day`, `latitude`) are in it as inputs, with no default. `params.test.js` guards it: every parameter means something, travels some way and has a row or a reason, and the panel names every row once. The bundles drop the editor's fields (`row`, `noRow`, `means`; `embed-build.mjs`), so a page pays for none of it.
+
+**Old spellings keep working.** One alias map, `LEGACY_KEYS` (derived in `komorebi-params.js` from each parameter's older names, beside `migrateLegacy`, re-exported through `komorebi.js`), translates retired param names to current ones. It is applied at every door external params come through: `create`, `setParams`, `transitionTo` and the ★ store. A current name that is already present wins, and nothing the engine writes back out uses an old name. `legacy-keys.test.js` is the test for it by name.
 
 **The consumers.**
 
@@ -288,7 +290,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 | Shadow rise and fall | `komorebi-litter-rise.js` | `shadow-rise.test.js`, `transitions.test.js` | `test-gl/shadow-rise.mjs`, `test-gl/shadow-fall.mjs` (`--render`) |
 | Grove regroup | `komorebi-grove-travel.js` | `grove-travel.test.js` | `test-gl/grove-travel.mjs` (`--render`) |
 | Eclipse gate (the moon crosses) | `komorebi-transitions.js` (`trans.moon`), `komorebi-source.js` (`moonSpacing`, `moonClear`, `moonDistance`, `moonX`, `moonCover`) | `transitions.test.js` | `test-gl/eclipse-crossfade.mjs` |
-| Key classes | `komorebi-params.js` | `MORPH_KEYS`, `CANOPY_KEYS`, `TOPO_KEYS`, `MODE_KEYS`, `SEASON_KEYS`; `CANOPY_MORPH_MAX` | `transitions.test.js` and the coverage test (every knob classified or explicitly excluded) | — |
+| Key classes | `komorebi-params.js` | `MORPH_KEYS`, `CANOPY_KEYS`, `TOPO_KEYS`, `MODE_KEYS`, `SEASON_KEYS`, derived from each parameter's `travels` in `PARAMS`; `CANOPY_MORPH_MAX` | `transitions.test.js` and the coverage test (every knob classified or explicitly excluded) | — |
 
 `test-gl/fixtures/` holds four route fixtures (`fall-look-up.json`, `fall-park.json`, `look-up-fall.json`, `purple-look-up.json`); what each holds is not recorded. The gates themselves are [`contracts/transitions.md`](contracts/transitions.md).
 

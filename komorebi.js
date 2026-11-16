@@ -15,7 +15,7 @@
 // with the shared foundations imported by all of them:
 //   komorebi-transport.js     the transport master + camera registry (spec §4.6/§4.9)
 //   komorebi-shaders.js       the bake / faithful / display shaders + the tone tail
-//   komorebi-params.js        DEFAULTS, legacy migration, transition keys, engine caps
+//   komorebi-params.js        PARAMS (every parameter, defined once), DEFAULTS, legacy migration, transition keys, engine caps
 //   komorebi-math.js          CPU math: atmosphere, RNG, wind noise, growth helpers
 //   komorebi-fill.js          the sky fill's quadrature as pure functions (spec §4.7)
 // Pipeline: Source (point-sun cloud) -> Canopy (leaves baked to optical-depth
@@ -50,6 +50,6 @@
 // when a host opens one its bundle cut.
 export { create } from './komorebi-engine.js';
 export { FIDELITY_KEYS, PLAYBACK_KEYS, QUALITY_PROFILES, PRESENTATION_PROFILES, resolveSession, resolveParams, authoredLook } from './komorebi-session.js';
-export { DEFAULTS, LEGACY_KEYS, migrateLegacy, FEATURES, featuresFor, cutWarnings, MAX_LAYERS, MAX_SAMPLES, MAX_OCC, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS } from './komorebi-params.js';
+export { PARAMS, DEFAULTS, LEGACY_KEYS, migrateLegacy, FEATURES, featuresFor, cutWarnings, MAX_LAYERS, MAX_SAMPLES, MAX_OCC, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS } from './komorebi-params.js';
 export { DEG } from './komorebi-math.js';
 export { TRANSPORT_CAMERAS, TRANSPORT_GROUPS, CAMERAS, GROUP_UPLOAD_KEYS, cameraFor, buildTransport } from './komorebi-transport.js';
