@@ -11,11 +11,11 @@
 //   test/fixtures/looks.json      every shipped look, the validator's golden fixtures
 //   public/engine/*               the browser bundle (every camera, every feature tier) + engine.json
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { extractRows } from './editor-rows.mjs';
+import { inputKeys, rowsOf } from './editor-rows.mjs';
 import { install } from './stage.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,7 +30,7 @@ try {
   const archive = execFileSync('git', ['-C', KOMOREBI, 'archive', commit], { maxBuffer: 1 << 30 });
   execFileSync('tar', ['-x', '-C', tmp], { input: archive });
 
-  const { DEFAULTS, LEGACY_KEYS, MAX_LAYERS } = await import(pathToFileURL(join(tmp, 'komorebi-params.js')).href);
+  const { DEFAULTS, LEGACY_KEYS, PARAMS } = await import(pathToFileURL(join(tmp, 'komorebi-params.js')).href);
   const { PRESETS, EXPERIMENTAL } = await import(pathToFileURL(join(tmp, 'presets.js')).href);
   const { PRESENTATION_PROFILES, FIDELITY_KEYS, PLAYBACK_KEYS } = await import(pathToFileURL(join(tmp,'komorebi-session.js')).href);
 
@@ -39,9 +39,9 @@ try {
     return [k, typeof v];
   });
 
-  // The editor's own knobs are the bound on a look (brief 07). editor.js is a DOM module, so its PANEL table is read as text.
-  const rows = extractRows(readFileSync(join(tmp, 'editor.js'), 'utf8'), { MAX_LAYERS });
-  const editorKeys = ['time_of_day', 'latitude']; // helpers the editor's export carries; DEFAULTS has no entry for them
+  // The editor's own knobs are the bound on a look (brief 07): each parameter's row in komorebi's registry, PARAMS.
+  const rows = rowsOf(PARAMS);
+  const editorKeys = inputKeys(PARAMS); // the editor's inputs a look carries (time_of_day, latitude); DEFAULTS has no entry for them
   const ranges = new Map();
   const choices = new Map();
   for (const row of rows) {
