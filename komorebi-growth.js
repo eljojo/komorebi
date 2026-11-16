@@ -16,7 +16,8 @@
 //   4. GROWTH. A bud given v ≥ 1 grows a shoot of ⌊v⌋ internodes (at most maxShoot), each turned a little toward less shade
 //      and by its tropism (the trunk up, a side branch by the look's droop). Each new node carries dormant side buds set by
 //      the phyllotaxis; the last carries the axis's terminal bud.
-// The leaves hang on the shoots grown in the last year, one cluster per shoot, as the grammar hangs one per twig.
+// The leaves hang on the shoots grown in the last year, one cluster per shoot, as the grammar hangs one per twig: along the
+// shoot's own wood (placeLeaf in komorebi-grove.js), not at its tip.
 // Approximation: one growth sky straight overhead, one internode length, no reiteration or epicormic shoots, and a shoot
 // is straight between its nodes. Provisional: every constant in GROWTH, set by eye on one tree.
 // ============================================================================

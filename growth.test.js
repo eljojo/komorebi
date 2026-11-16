@@ -72,3 +72,32 @@ test("it fills the middle of the crown the grammar leaves bare", () => {
   expect(sg).toBeLessThan(0.05);
   expect(sb).toBeGreaterThan(0.15);
 });
+
+test("a grown shoot's leaves hang along its own wood, on stalks about it, not in a level line at its tip", () => {
+  const params = { tree_count: 1, limb_count: 11, leader_strength: 0, branch_levels: 3, branch_children: 3, growth_years: 10, inner_leaves: 0, cluster_spread_m: 0.2 };
+  const { g, leaves } = grove(params);
+  const byCluster = new Map();
+  for (let i = 0; i < leaves.length/18; i++) { const j = Math.floor(leaves[18*i + 11]); if (!byCluster.has(j)) byCluster.set(j, []); byCluster.get(j).push(i); }
+  let level = 0, far = 0, n = 0;
+  for (const [j, is] of byCluster) {
+    const t = g.hier.twigs[j], path = g.hier.twigPath[j];
+    if (is.every((i) => leaves[18*i + 16] === t.z)) level++;
+    let m = 1; while (!(path[3*m] === t.bx && path[3*m + 1] === t.by)) m++;   // the shoot's own wood: segments 0..m-1 (a vertical one runs on down)
+    while (m < path.length/3 - 1 && path[3*m + 3] === t.bx && path[3*m + 4] === t.by) m++;
+    for (const i of is) {
+      const p = [leaves[18*i], leaves[18*i + 1], leaves[18*i + 16]];
+      let d = Infinity;
+      for (let s = 0; s < m; s++) {   // distance to segment s
+        const a = [path[3*s], path[3*s + 1], path[3*s + 2]], b = [path[3*s + 3], path[3*s + 4], path[3*s + 5]];
+        const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]], L2 = ab[0]**2 + ab[1]**2 + ab[2]**2;
+        const u = L2 > 0 ? Math.max(0, Math.min(1, (ap[0]*ab[0] + ap[1]*ab[1] + ap[2]*ab[2])/L2)) : 0;
+        d = Math.min(d, Math.hypot(ap[0] - u*ab[0], ap[1] - u*ab[1], ap[2] - u*ab[2]));
+      }
+      if (d > 0.7*params.cluster_spread_m + 1e-9) far++;
+      n++;
+    }
+  }
+  console.log(`grown clusters with every leaf at its twig's height: ${level} of ${byCluster.size}; leaves beyond a stalk's reach of their shoot: ${far} of ${n}`);
+  expect(level).toBe(0);
+  expect(far).toBe(0);
+});

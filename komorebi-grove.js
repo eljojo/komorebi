@@ -95,16 +95,47 @@ function woodHeading(path, i, n, e){
   return false;
 }
 const _heading = [0,0];
+// A GROWN SHOOT'S LEAVES (growth_years > 0). A tree grown from buds hands each leafy shoot's own wood (the twig's path, tip back to
+// the shoot's base at t.bx, t.by), and a real shoot carries its leaves along its whole length, each on its own stalk, pointing any
+// way about the stem: the leaf's TIP place is a point at a uniform arc distance along that wood, off it by a stalk across the wood's
+// own 3-D direction at a uniform azimuth. Held level at the twig's tip, every shoot's leaves were a flat line, and the crown, seen
+// from the side, rows of dots. The (d, azimuth, stalk) draws are a hash of (seed, j, k) on a salt of their own, like inner_leaves'.
+export const SHOOT_SALT = 0x78DDE6E4;   // 4·0x9E3779B9 mod 2^32: the golden gamma's next multiple after the inner leaves' salt, in no other stream
+function shootPlace(path, n, t, params, j, k, o){
+  // segments 0..m-1: the shoot's own wood, to the first node after the tip at its base's plan place, and on down while the
+  // wood stays there (a vertical shoot, the leader's, has every node at its base's plan place)
+  let m = 1; while(m < n && !(path[3*m] === t.bx && path[3*m+1] === t.by)) m++;
+  if(path[3*m] !== t.bx || path[3*m+1] !== t.by) return false;
+  while(m < n && path[3*m+3] === t.bx && path[3*m+4] === t.by) m++;
+  let len = 0; for(let i=0;i<m;i++) len += Math.hypot(path[3*i]-path[3*i+3], path[3*i+1]-path[3*i+4], path[3*i+2]-path[3*i+5]);
+  if(!(len > 0)) return false;
+  const r = mulberry32(hash3((params.seed>>>0)^SHOOT_SALT, j, k));
+  let rem = r()*len, i = 0, L = 0;
+  for(;i<m;i++){ L = Math.hypot(path[3*i]-path[3*i+3], path[3*i+1]-path[3*i+4], path[3*i+2]-path[3*i+5]); if(rem <= L || i === m-1) break; rem -= L; }
+  const f = L > 0 ? Math.min(rem/L, 1) : 0;
+  const ex = (path[3*i]-path[3*i+3])/(L||1), ey = (path[3*i+1]-path[3*i+4])/(L||1), ez = (path[3*i+2]-path[3*i+5])/(L||1);   // toward the tip
+  const rx = Math.abs(ez) < 0.9 ? 0 : 1, rz = Math.abs(ez) < 0.9 ? 1 : 0;   // a reference off the wood's direction
+  let ux = ey*rz, uy = ez*rx - ex*rz, uz = -ey*rx; const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;   // e × ref
+  const wx = ey*uz - ez*uy, wy = ez*ux - ex*uz, wz = ex*uy - ey*ux;   // e × u
+  const th = r()*Math.PI*2, st = params.cluster_spread_m*(0.3 + 0.4*r()), c = Math.cos(th)*st, sn = Math.sin(th)*st;
+  o[0] = path[3*i] + (path[3*i+3]-path[3*i])*f + c*ux + sn*wx;
+  o[1] = path[3*i+1] + (path[3*i+4]-path[3*i+1])*f + c*uy + sn*wy;
+  o[2] = path[3*i+2] + (path[3*i+5]-path[3*i+2])*f + c*uz + sn*wz;
+  return true;
+}
+const _shoot = [0,0,0];
 export function placeLeaf(hier, j, g1, g2, k, params, faithful, out){
   const t = hier.twigs[j];
   let tdx=t.dx||0, tdy=t.dy||0; const tdl=Math.hypot(tdx,tdy), tHasDir=tdl>1e-4; if(tHasDir){ tdx/=tdl; tdy/=tdl; }   // unit twig heading (plan): the GROWN heading the bake stores on the twig (t.dx, t.dy, the end tangent), so the hug matches even on a drooped twig, in the grove and in the editor's preview (which calls this too) alike; leaves hug it
   // leaves HUG the twig (§4.5): trail back from the tip ALONG the twig heading (1.5×spread) with a tight perpendicular jitter (0.4×spread), instead of an isotropic blob. Same two draws → other attributes unchanged.
   const hug = faithful && tHasDir;   // twig-hug only in faithful mode; the layer/park scatter stays byte-identical
-  const x = hug ? t.x - Math.abs(g1)*params.cluster_spread_m*1.5*tdx - g2*params.cluster_spread_m*0.4*tdy : t.x + g1*params.cluster_spread_m;
-  const y = hug ? t.y - Math.abs(g1)*params.cluster_spread_m*1.5*tdy + g2*params.cluster_spread_m*0.4*tdx : t.y + g2*params.cluster_spread_m;
-  out[0] = x; out[1] = y; out[2] = t.z; out[3] = 0;
-  if(!(params.inner_leaves > 0)) return out;
+  let x = hug ? t.x - Math.abs(g1)*params.cluster_spread_m*1.5*tdx - g2*params.cluster_spread_m*0.4*tdy : t.x + g1*params.cluster_spread_m;
+  let y = hug ? t.y - Math.abs(g1)*params.cluster_spread_m*1.5*tdy + g2*params.cluster_spread_m*0.4*tdx : t.y + g2*params.cluster_spread_m;
+  let z = t.z;
   const path = hier.twigPath ? hier.twigPath[j] : undefined, n = path ? path.length/3 - 1 : 0;
+  if(faithful && Math.round(params.growth_years) > 0 && n >= 1 && shootPlace(path, n, t, params, j, k, _shoot)){ x = _shoot[0]; y = _shoot[1]; z = _shoot[2]; }
+  out[0] = x; out[1] = y; out[2] = z; out[3] = 0;
+  if(!(params.inner_leaves > 0)) return out;
   if(n < 1) return out;
   const r = mulberry32(hash3((params.seed>>>0)^INNER_SALT, j, k)), h = r(), u = r();
   const s = smoothstep(h, h + INNER_GLIDE, params.inner_leaves);
@@ -123,7 +154,7 @@ export function placeLeaf(hier, j, g1, g2, k, params, faithful, out){
     const ex = _heading[0], ey = _heading[1];
     wx = qx - Math.abs(g1)*sp*0.5*ex - g2*sp*0.4*ey; wy = qy - Math.abs(g1)*sp*0.5*ey + g2*sp*0.4*ex;
   } else { wx = qx + g1*sp*0.4; wy = qy + g2*sp*0.4; }    // the layer path's blob, tighter about the wood
-  out[0] = x + (wx - x)*s; out[1] = y + (wy - y)*s; out[2] = t.z + (qz - t.z)*s;
+  out[0] = x + (wx - x)*s; out[1] = y + (wy - y)*s; out[2] = z + (qz - z)*s;
   let m = 0; while(m < n && !(path[3*m] === t.bx && path[3*m+1] === t.by)) m++;   // segments 0..m-1: the twig's own wood, tip back to its grown base
   out[3] = i >= m ? s : 0;                                // PIVOT WEIGHT: on older wood the leaf drops its twig's bend, by its share on the wood
   return out;
@@ -239,7 +270,7 @@ export function makeGrove(hub){
     const twigs = [];        // terminal nodes: {x,y,z, limb, tx,ty} — plan x,y, height z, global limb, tree trunk
     // `inner_leaves` (placeLeaf): the path each twig grew along, collected only while the knob is up — a PARALLEL structure to twigs (hier.twigPath, hier.twigPathLen), never a key of a twig record, which the skeleton pin digests whole.
     // A flat run of doubles per twig, tip first, through the very sc() that scales the twig and the segments; its 3-D arc.
-    const wantPath = params.inner_leaves > 0, twigPath = [], twigPathLen = [];
+    const wantPath = params.inner_leaves > 0 || Math.round(params.growth_years) > 0, twigPath = [], twigPathLen = [];   // a grown tree's shoots carry their leaves along their own wood (shootPlace)
     const limbDir  = new Float32Array(nLimb*2);         // plan unit direction (drives wind torque)
     const limbPlan = new Float32Array(nLimb*2);         // an outboard wind-sample point near each limb
     const limbAttach = new Float32Array(nLimb);         // the height at which each limb MEETS its trunk — sway_pitch anchors its depth-foreshorten here so the join can't open (§5.1). Filled LOCAL in the growth loops, then scaled into world height units with the rest of the tree.
