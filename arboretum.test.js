@@ -251,6 +251,43 @@ test("removing after a concurrent reorder removes the displayed item, preserving
   expect(writes).toEqual([wireItems([two, unavailable])]);
 });
 
+test("a move from the workspace's pane reorders a fresh copy, keeps the unavailable item, and the selection follows its look", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const one = playlistItem(1), two = playlistItem(2), three = playlistItem(3), unavailable = { preset_id: 9, dwell_s: 40, crossfade_s: 7, unavailable: true };
+  setMirror(folderMirror([one, two, three]));
+  let active = "local", value = "1";
+  const writes = [];
+  const s = await session(async (_url, init) => {
+    if (init.method === "PUT") { const body = JSON.parse(init.body); writes.push(body.items); return json({ id: 7, owner: "alice", items: body.items }); }
+    return json({ id: 7, owner: "alice", items: [one, unavailable, two, three] });
+  }, { active: () => active, value: () => value, select: (v) => { value = v; } });
+  active = "arb:7";
+  await s.a.move(0, 2);
+  expect(writes).toEqual([wireItems([two, unavailable, three, one])]);
+  expect(value).toBe("0");   // the look you were on (two) now stands first
+  await s.a.move(1, 1);
+  expect(writes.length).toBe(1);   // in place: nothing is written
+});
+
+test("a times change from the pane writes that item's dwell or crossfade alone; outside a folder of yours nothing is written", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const one = playlistItem(1), two = playlistItem(2);
+  setMirror(folderMirror([one, two]));
+  let active = "local";
+  const writes = [];
+  const s = await session(async (_url, init) => {
+    if (init.method === "PUT") { const body = JSON.parse(init.body); writes.push(body.items); return json({ id: 7, owner: "alice", items: body.items }); }
+    return json({ id: 7, owner: "alice", items: [one, two] });
+  }, { active: () => active, value: () => "0" });
+  await s.a.setTimes(1, { dwell_s: 90 });
+  expect(writes).toEqual([]);                  // all looks is not a playlist of yours
+  active = "arb:7";
+  await s.a.setTimes(1, { dwell_s: 90 });
+  await s.a.setTimes(0, { crossfade_s: 0 });
+  expect(writes[0]).toEqual(wireItems([one, { ...two, dwell_s: 90 }]));
+  expect(writes[1][0]).toEqual({ preset_id: 1, dwell_s: 10, crossfade_s: 0 });
+});
+
 test("a fork replaces its original playlist item after a concurrent reorder", async () => {
   setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
   const one = playlistItem(1, "bob"), two = playlistItem(2);

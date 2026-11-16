@@ -1318,6 +1318,40 @@ try {
     await until(async () => (await opts4(0)).join() === 'dawn,k4 fresh');
     const rm = putAfter('/api/playlists/7/items');
     check('remove takes the item out of the folder from a fresh GET, the unavailable item kept', rm.before.path === '/api/playlists/7' && JSON.stringify(rm.put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99, freshId]), JSON.stringify(rm.put.body));
+    // THE WORKSPACE'S PLAYLIST PANE (playlist-pane.js): a tab beside the tree's, every item of the active list, and on a folder of yours
+    // its hold, arrive and route, each an items write; a drag on a grip moves an item
+    await dev4(() => [...document.querySelectorAll('#dev .modes button')].find((b) => b.textContent === 'workspace').click());
+    await page4.waitForSelector('body.workspace');
+    await dev4(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'playlist').click());
+    const pane4 = () => dev4(() => ({
+      tree: getComputedStyle(document.getElementById('tree')).display, shown: getComputedStyle(document.getElementById('plist')).display !== 'none',
+      title: document.querySelector('#plist .pl-title')?.textContent,
+      rows: [...document.querySelectorAll('#plist .pl-row')].map((r) => [r.querySelector('.pl-name').textContent, ...[...r.querySelectorAll('input')].map((i) => i.value), r.querySelector('.pl-style')?.textContent, r.classList.contains('on')].join(':')) }));
+    check('the playlist tab puts the list where the tree was: each item with its hold, arrive and route, the one you are on marked',
+      await until(async () => { const p = await pane4(); return p.tree === 'none' && p.shown && p.title === 'evening' && p.rows.join() === 'dawn:11:2:fade:false,k4 fresh:30:5:morph:true'; }), JSON.stringify(await pane4()));
+    const t0 = calls(/^PUT \/api\/playlists\/7\/items$/).length;
+    await dev4(() => { const i = document.querySelectorAll('#plist .pl-row')[1].querySelector('input'); i.value = '45'; i.dispatchEvent(new Event('change', { bubbles: true })); });
+    await waitCall(/^PUT \/api\/playlists\/7\/items$/, t0 + 1);
+    const tw = putAfter('/api/playlists/7/items');
+    check('a hold typed on an item is an items write from a fresh GET of that item\'s dwell alone, the unavailable item kept in its place',
+      tw.before.path === '/api/playlists/7' && JSON.stringify(tw.put.body.items.map((i) => [i.preset_id, i.dwell_s, i.crossfade_s])) === JSON.stringify([[5, 11, 2], [99, 40, 7], [freshId, 45, 5]])
+      && await until(async () => (await pane4()).rows[1] === 'k4 fresh:45:5:morph:true'), JSON.stringify(tw.put.body));
+    await page4.dragAndDrop('#plist .pl-row:nth-child(2) .pl-grip', '#plist .pl-row:nth-child(1)', { targetPosition: { x: 20, y: 2 } });
+    await waitCall(/^PUT \/api\/playlists\/7\/items$/, t0 + 2);
+    const moved4 = putAfter('/api/playlists/7/items');
+    check('dragging the second item above the first moves it there, the unavailable item where it was, and the selection stays on the look it was on',
+      JSON.stringify(moved4.put.body.items.map((i) => i.preset_id)) === JSON.stringify([freshId, 99, 5]) && await until(async () => (await opts4(0)).join() === 'k4 fresh,dawn' && (await selectedText4(0)) === 'k4 fresh'),
+      `${JSON.stringify(moved4.put.body)} ${(await opts4(0)).join()} ${await selectedText4(0)}`);
+    const lowRow = await page4.$eval('#plist .pl-row:nth-child(2)', (r) => r.getBoundingClientRect().height);
+    await page4.dragAndDrop('#plist .pl-row:nth-child(1) .pl-grip', '#plist .pl-row:nth-child(2)', { targetPosition: { x: 20, y: Math.round(lowRow * 0.75) } });   // its lower half: after it
+    await waitCall(/^PUT \/api\/playlists\/7\/items$/, t0 + 3);
+    check('and dragging it below the second puts it back', JSON.stringify(putAfter('/api/playlists/7/items').put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99, freshId])
+      && await until(async () => (await opts4(0)).join() === 'dawn,k4 fresh' && (await selectedText4(0)) === 'k4 fresh'), `${(await opts4(0)).join()} ${await selectedText4(0)}`);
+    await dev4(() => document.querySelectorAll('#plist .pl-row .pl-name')[0].click());
+    check('a click on a name goes to that look', await until(async () => (await selectedText4(0)) === 'dawn' && (await pane4()).rows[0].endsWith(':true')), JSON.stringify(await pane4()));
+    await dev4(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'tree').click());
+    check('the tree tab brings the tree back', (await pane4()).tree !== 'none' && !(await pane4()).shown);
+    await dev4(() => [...document.querySelectorAll('#dev .modes button')].find((b) => b.textContent === 'leave workspace').click());
     await goList4('uncategorized', 'arb:unc');
     check('in uncategorized there is no "arrives by" row (it is a playlist item\'s, and uncategorized has none)', (await styleRow4()) === null, String(await styleRow4()));
     check('in uncategorized there is no remove or delete (archiving is on arboretum\'s site)', !(await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => (b.textContent === 'delete' || b.textContent === 'remove') && !b.hidden))));

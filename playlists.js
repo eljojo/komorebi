@@ -302,7 +302,10 @@ function planFrom(params, known, name, me, commit, cam) {
 // `at` counts the playable items only — the numbering `entries` uses. An appended preset carries no times, so
 // arboretum's defaults apply; a replacement keeps the times of the place it takes.
 // `remove_preset` takes out the first playable item of that preset (a chip, which knows the preset and not a place).
+// `move` takes the playable item at `at` to playable place `to`; the unavailable items keep their own places. `times` sets one
+// item's dwell or crossfade or both; what it does not name, the item keeps.
 // change: { kind: 'append', preset_id } | { kind: 'remove', at } | { kind: 'replace', at, preset_id } | { kind: 'remove_preset', preset_id }
+//       | { kind: 'move', at, to } | { kind: 'times', at, dwell_s?, crossfade_s? }
 // A captured target follows a place across reorders. Identical duplicates retain their occurrence only while their count agrees.
 const matchesTarget = (it, target) => !it.unavailable && it.preset_id === target.preset_id && it.dwell_s === target.dwell_s && it.crossfade_s === target.crossfade_s && styleOf(it) === styleOf(target);
 export function itemTarget(items, at) {
@@ -322,6 +325,16 @@ export function itemsAfter(fresh, change) {
     if (at < 0) throw { error: "that playlist item changed; reload the playlist before changing it" };
     change = { ...change, at };
   }
+  if (change.kind === "move") {
+    const kept = fresh.map((it) => ({ preset_id: it.preset_id, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, ...styleKey(it) }));
+    const places = fresh.map((it, i) => (it.unavailable ? -1 : i)).filter((i) => i >= 0);
+    const ok = (n) => Number.isInteger(n) && n >= 0 && n < places.length;
+    if (!ok(change.at) || !ok(change.to)) throw { error: "that playlist item changed; reload the playlist before changing it" };
+    const order = places.map((i) => kept[i]);
+    order.splice(change.to, 0, ...order.splice(change.at, 1));
+    places.forEach((i, n) => { kept[i] = order[n]; });
+    return kept;
+  }
   const out = [];
   let playable = 0, removed = false;
   for (const it of fresh) {
@@ -332,6 +345,7 @@ export function itemsAfter(fresh, change) {
     } else if (it.unavailable || change.kind === "append" || change.at !== playable++) out.push({ preset_id: it.preset_id, ...times });
     else if (change.kind === "replace") out.push({ preset_id: change.preset_id, ...times });
     else if (change.kind === "style") out.push({ preset_id: it.preset_id, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, ...styleKey({ style: change.style }) });   // how this item arrives: 'fade' is named, morph is its absence
+    else if (change.kind === "times") out.push({ preset_id: it.preset_id, dwell_s: change.dwell_s ?? it.dwell_s, crossfade_s: change.crossfade_s ?? it.crossfade_s, ...styleKey(it) });
   }
   if (change.kind === "append") out.push({ preset_id: change.preset_id });
   return out;

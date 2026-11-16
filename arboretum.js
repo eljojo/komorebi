@@ -341,7 +341,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
 
   // Every write to a playlist's items starts from a fresh GET and applies the one change to that, never to the cache.
   async function writeItems(id, change) {
-    if ((change.kind === "remove" || change.kind === "replace" || change.kind === "style") && !change.target)
+    if (["remove", "replace", "style", "move", "times"].includes(change.kind) && !change.target)
       throw { error: "that playlist item changed; reload the playlist before changing it" };
     const fresh = await api.playlist(id);
     const v = await api.putItems(id, itemsAfter(fresh.items, change), fresh.revision);
@@ -443,15 +443,40 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
 
   // How the item you are on arrives when the playlist steps to it: 'morph' (the automatic route) or 'fade'. It is the playlist item's,
   // not the look's, so it is written as any other items write: from a fresh GET, the one item changed, everything else sent back.
-  async function setStyle(style) {
-    const active = host.active(), value = host.value();
-    if (!on || !value) return;
-    const pid = Number(active.slice(4)), at = Number(value);
+  // `at` is the item you are on unless the workspace's playlist pane names another.
+  async function setStyle(style, at = host.value() === "" ? null : Number(host.value())) {
+    const active = host.active();
+    if (!on || at === null) return;
+    const pid = Number(active.slice(4));
     try {
       await writeItems(pid, { kind: "style", at, style, target: itemTarget(view().playlists[pid]?.items ?? [], at) });
       say("");
       host.sync();
     } catch (e) { fail(e); }
+  }
+
+  // The workspace's playlist pane: any item of a folder of yours, not only the one you are on. A move keeps the selection on the look it
+  // was on, wherever that look now stands; a times change is the item's, as a style is.
+  async function move(at, to) {
+    const active = host.active();
+    if (!signedIn() || !isFolder(view(), active, me) || at === to) return;
+    const pid = Number(active.slice(4)), cur = Number(host.value());
+    try {
+      await writeItems(pid, { kind: "move", to, target: itemTarget(view().playlists[pid]?.items ?? [], at) });
+      say("");
+      const now = cur === at ? to : cur > at && cur <= to ? cur - 1 : cur < at && cur >= to ? cur + 1 : cur;
+      host.select(host.value() === "" ? "" : String(now));
+    } catch (e) { fail(e); host.sync(); }
+  }
+  async function setTimes(at, times) {
+    const active = host.active();
+    if (!signedIn() || !isFolder(view(), active, me)) return;
+    const pid = Number(active.slice(4));
+    try {
+      await writeItems(pid, { kind: "times", ...times, target: itemTarget(view().playlists[pid]?.items ?? [], at) });
+      say("");
+    } catch (e) { fail(e); }
+    host.sync();   // a refused value shows the stored one again
   }
 
   async function setPresentation(presentation){
@@ -578,6 +603,8 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
       return it && it.preset_id !== undefined && !it.pending ? styleOf(it) : null;
     },
     setStyle,
+    move,
+    setTimes,
     landings: () => landings,
     // what the look's chip needs beyond the saved state: who you are, whether this is the copy kept here because arboretum could not
     // be reached, the last refusal for this look, and whether the copy is incomplete

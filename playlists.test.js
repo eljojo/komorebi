@@ -639,6 +639,32 @@ test("itemsAfter a replacement puts the new preset in the place, with that place
   ]);
 });
 
+test("itemsAfter a move reorders the playable items and leaves the unavailable one in its place", () => {
+  const four = () => [...fresh(), { preset_id: 3, version: 1, owner: "jo", name: "c", dwell_s: 30, crossfade_s: 5, style: "fade", params: {} }];
+  expect(itemsAfter(four(), { kind: "move", at: 2, to: 0 })).toEqual([
+    { preset_id: 3, dwell_s: 30, crossfade_s: 5, style: "fade" },
+    { preset_id: 9, dwell_s: 40, crossfade_s: 7 },
+    { preset_id: 1, dwell_s: 10, crossfade_s: 2 },
+    { preset_id: 2, dwell_s: 20, crossfade_s: 3 },
+  ]);
+  expect(itemsAfter(four(), { kind: "move", at: 0, to: 1 }).map((i) => i.preset_id)).toEqual([2, 9, 1, 3]);
+  expect(itemsAfter(four(), { kind: "move", at: 1, to: 1 })).toEqual(itemsAfter(four(), { kind: "remove_preset", preset_id: -1 }));   // in place: sent back as it was
+  expect(() => itemsAfter(four(), { kind: "move", at: 0, to: 3 })).toThrow();   // three playable places: there is no fourth
+  const shown = four().filter((i) => !i.unavailable);                                       // the view the editor numbers its items in
+  const moved = itemsAfter(four(), { kind: "move", to: 0, target: itemTarget(shown, 1) });   // the target finds the item wherever it now is
+  expect(moved[0].preset_id).toBe(2);
+});
+
+test("itemsAfter a times change sets only what it names on that item, keeping its style", () => {
+  const list = fresh(); list[2].style = "fade";
+  expect(itemsAfter(list, { kind: "times", at: 1, dwell_s: 90 })).toEqual([
+    { preset_id: 1, dwell_s: 10, crossfade_s: 2 },
+    { preset_id: 9, dwell_s: 40, crossfade_s: 7 },
+    { preset_id: 2, dwell_s: 90, crossfade_s: 3, style: "fade" },
+  ]);
+  expect(itemsAfter(list, { kind: "times", at: 0, crossfade_s: 0 })[0]).toEqual({ preset_id: 1, dwell_s: 10, crossfade_s: 0 });
+});
+
 test("itemsAfter does not touch the list it was given", () => {
   const list = fresh();
   itemsAfter(list, { kind: "remove", at: 0 });

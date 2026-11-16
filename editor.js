@@ -2,10 +2,11 @@ import { create, DEG, PARAMS, CAMERAS, cameraFor, FIDELITY_KEYS, resolveSession 
 import { mountSettings } from './editor-settings.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
-import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter } from './playlists.js';
+import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf } from './playlists.js';
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { makeTreePane } from './tree-pane.js';
+import { makePlaylistPane } from './playlist-pane.js';
 import { senescing } from './komorebi-math.js';
 import { LEAF_SHAPES } from './komorebi-leaf.js';
 import { mountMidi } from './midi.js';
@@ -14,7 +15,7 @@ import { mountMidi } from './midi.js';
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
 // the playful macro sidebar, and the advanced dev panel (three depths of one control tree) — plus the HUD,
 // insets, preset management, sun-drag input and scene-transition stepping. Pure
-// sub-concerns are split into siblings: arboretum.js (where every preset is kept: the ★ looks in localStorage, and arboretum online where the browser allows), playlists.js (the lists the dropdown shows and the arrows step), macros.js (the control-bus
+// sub-concerns are split into siblings: arboretum.js (where every preset is kept: the ★ looks in localStorage, and arboretum online where the browser allows), playlists.js (the lists the dropdown shows and the arrows step), playlist-pane.js (the workspace's list of them), macros.js (the control-bus
 // macro mappings the upper rungs drive). The
 // viewer-only player (player.html) is a separate, UI-less consumer of the same engine. ES modules — must be
 // SERVED over http(s) (`nix run .#dev`), not opened off the filesystem.
@@ -39,7 +40,7 @@ const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro
 // stands alone; ＋ climbs the ladder when you want more); the choice sticks thereafter. ----
 const SETTINGS_KEY = 'komorebi.editor';
 const settings = (() => {
-  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {}, sawTouchHint: false, workspace: false };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name
+  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {}, sawTouchHint: false, workspace: false, wsPane: 'tree' };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name; wsPane: the workspace's right-hand pane, 'tree' | 'playlist'
   let s = base;
   try { s = Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch { /* unreadable: the defaults */ }
@@ -1071,6 +1072,7 @@ function syncPlaylistUI(){
   syncPlayButtons();
   arb?.changed();
   refreshChip();
+  renderListPane();
 }
 // The chip under the look select: where this look lives, in a few words (playlists.js lookState). Live params stand aside while a
 // transition carries them, so a look fading in is not "edited".
@@ -1283,6 +1285,42 @@ function wsStatTick(){
   wsStat.textContent=`${eng.fps>0 ? eng.fps.toFixed(0) : '–'} fps · res ${perf.resScale.toFixed(2)}×`;
 }
 const paneOf = () => (treePane ??= makeTreePane(params, { hier: () => eng.grove().hier, leaves: () => eng.treeLeaves() }));
+// The right-hand pane is the tree or the active list (playlist-pane.js), one tab each over its top; which one sticks across reloads.
+// The list pane draws the list as the dropdown has it, and on a playlist of yours writes through arboretum.js.
+const wsTabs=document.getElementById('wsTabs'), plistEl=document.getElementById('plist');
+let listPane=null;
+const listPaneOf = () => (listPane ??= makePlaylistPane(plistEl, {
+  go: (value) => { if(value!==presetSel.value) goTo(value); },
+  move: (at, to) => arb.move(at, to),
+  times: (at, t) => arb.setTimes(at, t),
+  style: (at, st) => arb.setStyle(st, at),
+}));
+function listModel(){
+  const a=activeList(), cloud=a.startsWith('arb:') ? stateNow().playlists[a.slice(4)] : null;
+  const choices=arb ? arb.lists(settings.playlist) : playlists(getState());
+  return {
+    title: choices.find(l=>l.value===a)?.label ?? '', editable: !!arb?.canRemove(), current: presetSel.value,
+    rows: listEntries(presetSel.value).map(e=>{
+      const it=cloud?.items[Number(e.value)];
+      if(!it) return { value:e.value, label:e.label };
+      if(it.pending) return { value:e.value, label:e.label, pending:true };
+      return { value:e.value, label:e.label, dwell_s:it.dwell_s, crossfade_s:it.crossfade_s, style:styleOf(it) };
+    }),
+  };
+}
+function renderListPane(){ if(settings.workspace && settings.wsPane==='playlist' && presetSel) listPaneOf().render(listModel()); }
+function setWsPane(which){
+  settings.wsPane=which; saveSettings();
+  const list=which==='playlist';
+  document.body.classList.toggle('ws-playlist', list);
+  for(const b of wsTabs.children) b.classList.toggle('on', b.dataset.pane===which);
+  const tree=settings.workspace && !list;
+  if(tree || treePane) paneOf().show(tree);
+  renderListPane();
+}
+for(const [which,label] of [['tree','tree'],['playlist','playlist']]){
+  const b=mkBtn(label,()=>setWsPane(which)); b.dataset.pane=which; wsTabs.appendChild(b);
+}
 function setWorkspace(on){
   if(coarse || document.body.classList.contains('intro')) return;
   if(on && settings.mode!=='adv') setMode('adv');
@@ -1293,7 +1331,7 @@ function setWorkspace(on){
     const shape=[...dev.querySelectorAll('summary.sec')].find(h=>h.textContent==='Tree shape')?.parentElement;   // an area is a <details> under its summary.sec heading
     if(shape) shape.open=true;
   }
-  if(on || treePane) paneOf().show(on);
+  setWsPane(settings.wsPane==='playlist' ? 'playlist' : 'tree');   // the pane it was left on; shows the tree pane, or not, with it
   if(wsButton) wsButton.textContent = on ? 'leave workspace' : 'workspace';
 }
 
