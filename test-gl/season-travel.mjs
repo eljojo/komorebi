@@ -72,8 +72,11 @@ void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0
       wind_strength:0,drift_auto:false,auto_quality:false,adaptive_motion:false};
     const journey=()=>{
       const g=e.gl,vao=g.getParameter(g.VERTEX_ARRAY_BINDING);g.bindVertexArray(e.faith.vao);
-      const buf=g.getVertexAttrib(7,g.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING);g.bindVertexArray(vao);
+      const buf=g.getVertexAttrib(7,g.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING),pivot=g.getVertexAttrib(8,g.VERTEX_ATTRIB_ARRAY_BUFFER_BINDING);g.bindVertexArray(vao);
       need(buf,'the travelling leaf attribute is absent');const data=new Float32Array(e.faith.count*4);
+      // One pivot weight a leaf in the buffer (inner_leaves). A shorter list is a draw a GPU refuses, with no leaf cast; this rasteriser reads past the end and draws.
+      g.bindBuffer(g.ARRAY_BUFFER,pivot);const weights=g.getBufferParameter(g.ARRAY_BUFFER,g.BUFFER_SIZE)/4;
+      need(weights===e.faith.count,`${weights} pivot weights for ${e.faith.count} travelling leaves`);
       g.bindBuffer(g.ARRAY_BUFFER,buf);g.getBufferSubData(g.ARRAY_BUFFER,0,data);return data;
     };
     for(const [an,bn] of [['montebello','park fall'],['montebello, rain','cherry blossom']]){
@@ -81,6 +84,7 @@ void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0
         const from={...PRESETS[fromName],...tune},to={...PRESETS[toName],...tune},id=l=>`${l.j}/${l.k}`;
         open(from);const first=last.slice(),floorA=new Set(e.grove().litter.map(id));
         open(to);const final=last.slice(),floorB=new Set(e.grove().litter.map(id));
+        need(from.inner_leaves>0&&to.inner_leaves>0,'the shipped pair must hang leaves on older wood, or the pivot weights go unchecked');
         open(from);e.transitionTo(to,{duration:1});need(e.trans.seasonTravel,`${fromName} -> ${toName} used an ordinary grove morph`);
         window.__clock.pump(stamp);const sourceDelta=diff(first,last);need(sourceDelta<=1,`two-carpet source changed: ${sourceDelta}`);
         const S=e.grove().season,aa=cameraPose(from).eye,bb=cameraPose(to).eye;let previous=journey(),shared=0,moving=0;

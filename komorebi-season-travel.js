@@ -51,7 +51,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
       const r=11*i,o=18*i,w=hub.hier.leafW?.[S.rec[r+6]*S.nLeaf+S.rec[r+7]]??1;
       retained[i]=w;data[o+17]*=w;for(let c=0;c<3;c++)data[o+8+c]*=w;
     }
-    return {params:p,full,data,retained,bounds:bounds.map(k=>faith[k]),litter:(hub.grove.litter??[]).map(l=>({...l}))};
+    return {params:p,full,data,retained,pivotOn:faith.pivotOn,bounds:bounds.map(k=>faith[k]),litter:(hub.grove.litter??[]).map(l=>({...l}))};
   }
   function beginSeasonTravel(to){
     const from={...params},aParams=from.litter>0?from:{...to},bParams=from.litter>0?{...to}:from;
@@ -74,6 +74,9 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     });
     const data=a.full.slice(),journey=new Float32Array(S.n*4),layerData=S.base.map(a=>a.slice());
     gl.bindBuffer(gl.ARRAY_BUFFER,faith.buf);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);faith.count=S.n;
+    // The pivot weights ride beside the leaves, one a leaf (inner_leaves): the re-season left the survivors' list, shorter than the record now in faith.buf,
+    // and a draw that reads an instanced attribute past its buffer's end is refused, so no leaf would be cast. The record's own weights, in its order.
+    gl.bindBuffer(gl.ARRAY_BUFFER,faith.pivotBuf);gl.bufferData(gl.ARRAY_BUFFER,S.pivot,gl.DYNAMIC_DRAW);
     for(let l=0;l<layerData.length;l++){
       gl.bindBuffer(gl.ARRAY_BUFFER,hub.layerVAO[l].buf);gl.bufferData(gl.ARRAY_BUFFER,layerData[l],gl.DYNAMIC_DRAW);hub.layerVAO[l].count=layerData[l].length/17;
     }
@@ -83,7 +86,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     s={a,b,S,paths,carpet,bothCarpets,data,journey,layerData,buf,start:q,end:1-q,q,side:q,pending:null,
       field:{tex:null,ox:0,oy:0,ext:1,weight:0},res:0,maxRes:Math.max(aParams.bake_resolution||aParams.tex_resolution,bParams.bake_resolution||bParams.tex_resolution),maxSamples:Math.max(aParams.sample_count,bParams.sample_count)};
     const cast={...hub,params:{...params},perf:{auto:false},src:{},srcDbgBuf:null,trans:{bloom:0},seasonCast:true,faithTex:null,faithScratch:null,
-      faith:{...faith,gx:new Float32Array(faith.gx.length),gy:new Float32Array(faith.gy.length)},bakeRes:()=>s.res};
+      faith:{...faith,pivotOn:false,gx:new Float32Array(faith.gx.length),gy:new Float32Array(faith.gy.length)},bakeRes:()=>s.res};   // pivotOn false: the flight reads no pivot weight, and the bake would take that specialization over this cast's own program
     cast.progFaith=hub.sharedProgram(VS_SEASON_TRAVEL,FS_FAITH);cast.U={...hub.U,faith:hub.faithLocs(cast.progFaith)};
     cast.effCloud=()=>cast.params.cloud_thickness;
     Object.assign(cast,makeSource(cast));Object.assign(cast,makeBake(cast));s.cast=cast;
@@ -160,7 +163,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     if(s.field.weight<1){
       const native=s.side===0?s.a:s.b,diffuse=params.leaf_diffuse;
       gl.bindBuffer(gl.ARRAY_BUFFER,faith.buf);gl.bufferSubData(gl.ARRAY_BUFFER,0,native.data);
-      bounds.forEach((k,i)=>{faith[k]=native.bounds[i];});params.leaf_diffuse=native.params.leaf_diffuse;
+      bounds.forEach((k,i)=>{faith[k]=native.bounds[i];});params.leaf_diffuse=native.params.leaf_diffuse;faith.pivotOn=native.pivotOn;   // the shader this end rests on
       hub.bakeFaithful();params.leaf_diffuse=diffuse;
       gl.bindBuffer(gl.ARRAY_BUFFER,faith.buf);gl.bufferSubData(gl.ARRAY_BUFFER,0,s.data);
     }
