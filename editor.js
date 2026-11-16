@@ -157,6 +157,7 @@ const PANEL_LAYOUT = [
   ['hc','Density'],
   'foliage_density',
   'tree_count',
+  'grove_reach_m',
   'leaves_per_cluster',
   'inner_leaves',
   'cluster_spread_m',

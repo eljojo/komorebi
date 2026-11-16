@@ -122,7 +122,12 @@ export function makeTransitions(hub){
     // Wood must meet zero at the mode swap when only one look has it: otherwise the woodless grove briefly
     // casts the other look's skeleton (an overhead trunk becomes a dot with radial limbs).
     trans.woodFade = modeDiff && ((params.branch_tau > 0) !== (to.branch_tau > 0));
-    const canopyDiff = CANOPY_KEYS.some(k => to[k]!==params[k]);   // branch/leaf knobs differ
+    // THE REACH (grove_reach_m) is not tweened by name: 0 stands for the view, so a look and its zoomed copy are one grove under two values. Where either
+    // end names one, the route goes by the reach each end GROWS for: equal, and only the camera moves; different, and the grove is regrown along it like a
+    // canopy key (tickTransition). Two looks that both follow their view are left as they were: a regrow in flight reads the tweening view.
+    const reachOf = p => p.grove_reach_m > 0 ? p.grove_reach_m : p.view_extent_m;
+    trans.reach = params.grove_reach_m > 0 || to.grove_reach_m > 0 ? [reachOf(params), reachOf(to)] : null;
+    const canopyDiff = CANOPY_KEYS.some(k => to[k]!==params[k]) || !!trans.reach && trans.reach[0]!==trans.reach[1];   // branch/leaf knobs differ, or the reach they grow for
     const leafCount  = hub.layerVAO.reduce((s,L)=>s+L.count, 0);       // current grove size
     const leavesFrom=hub.hier?.nLeaf??Math.ceil(params.leaves_per_cluster*params.foliage_density),leavesTo=Math.ceil(to.leaves_per_cluster*to.foliage_density);
     const targetClusters=Math.ceil(Math.max(1,to.tree_count))*to.limb_count*Math.max(1,to.branch_children)**Math.max(0,to.branch_levels-1);
@@ -336,6 +341,7 @@ export function makeTransitions(hub){
     }
     { const cam=cameraFor(trans.from); if(cam===cameraFor(trans.to)) params.exposure=beamExposure(cam,trans.from,trans.to,e,params); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove
+    if(trans.canopyMorph && trans.reach) params.grove_reach_m = e>=1 ? trans.reach[1] : lerp(trans.reach[0], trans.reach[1], e);   // ...along the reach each end grows for: named while it moves (the landing writes the target's own value, which grows the same grove)
     let rebuilt = false, wake = null;
     // THE CROSSFADE WINDOW replaces the cut where it is gated on: coverage eases 0 -> 1 across [0.5-HW, 0.5+HW],
     // and the arrangement reorganizes instead of being replaced. The incoming grove is installed as the engine's

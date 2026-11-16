@@ -795,6 +795,10 @@ const LIVE_CHANGES = [
   ...[['park 1', 2, 'faithful to the tent: the layer cast is built'], ['park 1', 1, 'faithful to the curtain: the cast re-aims at the cloth'], ['memories', 2, 'the layer cast to the tent'], ['memories', 1, 'the layer cast to the curtain'],
       ['tent 1', 0, 'the tent to the floor'], ['curtain 1', 0, 'the curtain to the floor'], ['park 1', 0, 'a faithful look in the tent back to the floor: the faithful cast is built', { receiver: 2 }]].map(([preset, value, what, over = {}]) =>
     ({ name: `${preset} (the receiver row, ${what})`, preset, rebake: PRESETS[preset].faithful_canopy === true, over, key: 'receiver', value, apply: PARAMS.receiver.row.rebuild || null })),
+  // THE GROVE'S REACH (§4.5): a look that names its reach is grown for it, so a zoom on the running engine and the look loaded at that zoom are one frame. (A look that
+  // names none takes it from the view at each build; the engine names it the first time the view moves, which reach.test.js holds.)
+  { name: 'afternoon 7 (a zoom in under a named reach: the camera moves, the grove stands)', preset: 'afternoon 7', over: { grove_reach_m: 3.1 }, key: 'view_extent_m', value: 1.55, apply: PARAMS.view_extent_m.row.rebuild || null },
+  { name: 'memories (a zoom out under a named reach: the camera moves, the grove stands)', preset: 'memories', over: { grove_reach_m: 3.1 }, key: 'view_extent_m', value: 6.2, apply: PARAMS.view_extent_m.row.rebuild || null },
   // ROWS THAT ASK FOR LESS THAN A REGROW, or for none: the bake reads the leaf's rim, and the wood's radius and the canopy's heights are re-read from the grown skeleton
   // (refreshWood), so their rows move them without growing the grove again. Each is moved by the scope its row in PARAMS asks for, on the layer cast, the faithful cast and
   // (for the wood) a camera whose wood is the analytic table; a row that asked for too little would show the frame from before. (A standing tree carries its own height:

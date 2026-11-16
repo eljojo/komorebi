@@ -127,7 +127,7 @@ test("non-live macros stay inside MORPH ∪ CANOPY (no TOPO/MODE)", () => {
   for (const [key, m] of Object.entries(MACROS)) {
     if (m.live) continue;
     for (const p of Object.keys(m.stops[0].set))
-      expect(MORPH.has(p) || CANOPY.has(p), `macro '${key}' target '${p}' is neither MORPH nor CANOPY`).toBe(true);
+      expect(MORPH.has(p) || CANOPY.has(p) || p === 'grove_reach_m', `macro '${key}' target '${p}' is neither MORPH nor CANOPY`).toBe(true);   // the reach: a canopy quantity whose name is not tweened (0 stands for the view), written beside the view it had at each stop
   }
 });
 

@@ -158,16 +158,17 @@ export const MACROS = {
     ],
   },
   // one tree → a deep grove, the 'the void' recipe: tree_count with the view widening alongside so the frame
-  // stays filled (the void raised view 3.1 → 6.8 with its 16 trees). Regrows: written on release. FLOOR-gated:
+  // stays filled (the void raised view 3.1 → 6.8 with its 16 trees). Each stop names the reach its view had (grove_reach_m): the trees are
+  // sized for the stop, whatever the camera did before. Regrows: written on release. FLOOR-gated:
   // in the sky view view_extent_m is not zoom at all — it sets the grove's plan reach in canopy 1's coverage
   // arithmetic, and this pairing would silently rewrite it.
   grove: {
     label: 'grove', scope: 'canopy', live: false, probe: 'tree_count', gate: 'floor',
     stops: [
-      { t: 0.0, set: { tree_count: 1, view_extent_m: 4.2 } },    // eclipse: a single tree
-      { t: 0.4, set: { tree_count: 4, view_extent_m: 3.1 } },    // the intimate afternoons
-      { t: 0.7, set: { tree_count: 8, view_extent_m: 4.5 } },
-      { t: 1.0, set: { tree_count: 16, view_extent_m: 6.8 } },   // the void
+      { t: 0.0, set: { tree_count: 1, view_extent_m: 4.2, grove_reach_m: 4.2 } },    // eclipse: a single tree
+      { t: 0.4, set: { tree_count: 4, view_extent_m: 3.1, grove_reach_m: 3.1 } },    // the intimate afternoons
+      { t: 0.7, set: { tree_count: 8, view_extent_m: 4.5, grove_reach_m: 4.5 } },
+      { t: 1.0, set: { tree_count: 16, view_extent_m: 6.8, grove_reach_m: 6.8 } },   // the void
     ],
   },
 };

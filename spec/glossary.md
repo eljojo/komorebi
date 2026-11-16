@@ -184,6 +184,8 @@ These are the words the other documents use without stopping to explain. Each en
 
 **recvZ, receiver-relative read.** `z_p`, the height of the receiver point. Each layer is read shifted by `(h − z_p)·g`, so the same equation serves a floor (`z_p = 0`), a cloth (height up the plane) and a tent, with no receiver-specific code in transport. [`model/transport.md`](model/transport.md)
 
+**reach.** The span of ground a grove fills: its trees are spaced across it and an overhead park's crowns sized to it. A look names it or takes it from its view when the grove is grown; a zoom never changes it. [`model/canopy.md`](model/canopy.md#the-grown-grove)
+
 **re-season.** Replacing a grove's colour, retained weights and litter in place, in one pass over a stored record of its leaves, when only season keys differ. It does not regrow the grove. [`model/season.md`](model/season.md)
 
 **rung.** A quality upgrade as a step on a ladder. It owes a gate whose off state is the look before it, a cheaper rung to degrade to, a cost-audit entry and a statement of who may cross it. A correction to how the model works is not a rung. [`contracts/gates-and-rungs.md`](contracts/gates-and-rungs.md)

@@ -65,6 +65,8 @@ When the two looks share the same branching (the same seed, branch levels and ch
 
 **The grove morph regrows every frame**, so it runs only while the busier end of the pair (the end with more leaves, counting tree count and per-twig density) is under a leaf-count budget; above it, the pair falls to a structural route. `afternoon 4 → 5` (only branch angle differs) morphs its branches under no cloud.
 
+**The reach.** A look and its zoomed copy grow one grove under two values of the reach, so between them only the camera moves and nothing regrows. Where either end names a reach and the two ends grow for different ones, the grove is regrown along it like any canopy key, and the landing is the look's own grove. **Open:** two looks that both take their reach from their view, and differ in it, tween the view and regrow nothing, so the grove that lands is the outgoing one's ([`measurements`](../evidence/measurements.md#the-midpoint-grove-against-the-look-loaded-fresh)).
+
 **The wind is carried across the regrow.** The springs' common prefix carries over from one frame's grove to the next and a newly grown tree starts at rest, so the breeze never resets mid-gust. The transition republishes the bend after each interpolation, a live pitch sway included, so the wind and the idle decision follow the same path as an ordinary frame (see [`motion.md`](motion.md)).
 
 **Re-seasoning.** When every differing canopy key is a season key, the morph re-seasons the existing grove instead of regrowing it, and **the tween's landing tick is the resting state**. A summer grove that keeps no record pays one build to make one; a live framing or height change that invalidates the record regrows. The law is [`season.md`](season.md)'s.

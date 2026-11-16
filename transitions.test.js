@@ -21,6 +21,7 @@ import descentFixture from './test-gl/fixtures/look-up-fall.json';
 const KNOWN_EXCLUDED = [
   "clusters_per_layer", "tone_map", "wind_pattern",
   "tree_species",   // inert label: the editor expands a TREE_SPECIES bundle into the shape knobs; the engine never reads it
+  "grove_reach_m",  // 0 stands for the view, so the name is never tweened: a route goes by the reach each end grows for (reach.test.js)
   "drift_auto", "auto_quality", "adaptive_motion", "adaptive_idle_fps", "show_source", "show_layer", "show_layer_index",
 ];
 // standing_scene / faithful_canopy / receiver used to sit in KNOWN_EXCLUDED — but they are NOT inert: flipping one

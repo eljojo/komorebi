@@ -29,7 +29,7 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 | | |
 |---|---|
 | **Joins** | Same branching, different canopy shape or colour: `afternoon 5 → 6` (tree count), `afternoon 4 → 5` (branch angle). |
-| **Gate** | CANOPY keys differ; no TOPO or MODE key differs (seed, branch levels and children, limb count, layer count equal); peak leaf count within budget. **Re-season:** every differing canopy key is a SEASON key. **Density:** only density and season keys differ, neither end senescing, no leaf drop, no leaf variety, identical structure otherwise. |
+| **Gate** | CANOPY keys differ, or the reach the two ends grow for where either names one; no TOPO or MODE key differs (seed, branch levels and children, limb count, layer count equal); peak leaf count within budget. **Re-season:** every differing canopy key is a SEASON key. **Density:** only density and season keys differ, neither end senescing, no leaf drop, no leaf variety, identical structure otherwise. |
 | **Duration** | *D*. |
 | **Promises** | No bloom. The same grove deforms; leaves keep identity by address. Tree count is continuous: only the last tree grows or fades, the others keep their structure. The springs' common prefix carries across each regrow; a new tree starts at rest. Re-seasoning lands on exactly the resting grove, so nothing regrows on landing. A density reversal reuses or grows a sufficient capacity once. |
 

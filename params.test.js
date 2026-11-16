@@ -78,7 +78,7 @@ test("a row asks for a regrow when the grove's build reads its key, and only the
     trunk_radius_m: "bake",        // the build reads these three for the wood alone, and refreshWood re-reads them from the grown skeleton:
     canopy_base_height_m: "",      // the radius at the bake its row asks for, the heights with the frame
     canopy_thickness_m: "",
-    view_extent_m: "",             // sizes an overhead park's crowns, and a zoom does not regrow them: measured, still open (spec/evidence/measurements.md, the midpoint grove)
+    view_extent_m: "",             // read only by a look that names no reach, at a build; a zoom is no build, and the engine names the reach before the next one (holdReach)
   };
   for (const [k, d] of Object.entries(PARAMS)) {
     if (!d.row) continue;

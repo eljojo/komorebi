@@ -13,7 +13,7 @@ The Look's place in the spine: the elliptical projection comes from transport, t
 The overhead and tilted looks see the floor through a **tilted perspective camera**: a pinhole that casts each pixel's ray onto the ground plane, then asks transport what landed at that ground point.
 
 - **Pitch** (`view_pitch_deg`) tilts the gaze from straight down. **At pitch 0 the camera reduces exactly to the original orthographic top-down map**, so tilt is opt-in per look. Tilting drops the near floor to the bottom of the frame, recedes the far floor, and dissolves it into haze toward the horizon.
-- **Zoom** (`view_extent_m`) is the on-axis ground span: the vertical span of floor the frame shows along its centre line, held fixed at any tilt.
+- **Zoom** (`view_extent_m`) is the on-axis ground span: the vertical span of floor the frame shows along its centre line, held fixed at any tilt. It frames and does nothing else: the grove is grown for its reach, not for the zoom ([`canopy.md`](canopy.md#the-grown-grove)).
 - **Lens** (`view_fov_deg`) is the vertical field of view, the strength of the perspective.
 - **Orbit** (`view_yaw_deg`) rotates the sampled floor about the frame's centre, a true orbit for a flat floor: the tilt axis stays put while the world turns under it. The rotation is applied to the ground point **before** transport's sun shift, so the shift stays in world space and the shadows remain physically cast as the gaze turns. 0 is no rotation.
 - **Pan** (`view_center_x`, `view_center_y`) slides the world point the screen centre looks at, added after the orbit. It walks the view across the floor: push the tree out of frame and watch only what it casts.

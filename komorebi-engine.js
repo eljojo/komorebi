@@ -85,7 +85,15 @@ function createEngine(canvas, opts, driven=false){
   let authored = authoredLook(opts.params);
   let pendingSession = false;
   const params = resolveParams(opts.params, session);
+  // A ZOOM MOVES THE CAMERA, NEVER THE TREES. The grove fills a reach, which a look that names none takes from its view when the grove is grown
+  // (komorebi-grove.js). Once the view has moved under a grown grove the two differ, and the look takes the reach its grove has, so a later regrow
+  // and a saved look grow the grove that is on screen. Asked wherever the params are re-applied or read back; a route owns the view while it runs.
+  function holdReach(){
+    const g = hub.grove;
+    if(g && !trans.active && !(params.grove_reach_m > 0) && g.reach !== params.view_extent_m) params.grove_reach_m = g.reach;
+  }
   function readLook(){
+    holdReach();
     if(!session) return { ...params };
     const look={...authored};
     for(const key in DEFAULTS) if(!FIDELITY_KEYS.includes(key) && !PLAYBACK_KEYS.includes(key) && key!=='edge_area') look[key]=params[key];
@@ -725,6 +733,7 @@ function createEngine(canvas, opts, driven=false){
   // adaptive frame that is not due re-presents the last picture, which no bake here would change). Otherwise an apply must bake for itself.
   const frameBakes = () => !driven && alive && !paused && !lost && !trans.active && motionActive();
   function apply(scope){
+    holdReach();
     if(session && !trans.active)captureLook();
     if(lost) return;                                  // see setParams
     if(scope==='source') regenSource();

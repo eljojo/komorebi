@@ -840,6 +840,25 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **Still open, measured under the same conditions:** the shared-layer crossfade grows its incoming grove at the start from the outgoing MORPH values (`morning 1 → memories` with the target's `view_extent_m` at 2.5: max 206, mean 23.0; 27 shipped pairs differ in the crown this sets). A live morph that changes only `view_extent_m` never regrows (`afternoon 7` to itself at 2.5: max 170, mean 16.6). In still air with automatic drift off and `drift_amount` up, the layer bake made at the midpoint keeps that frame's `drift_phase` through landing (`morning 3b → eclipse` max 109, `park 1 → afternoon 7` max 140); one re-bake after landing makes each equal.
 - **Date:** 2026-11-10.
 
+### A park look zoomed against the same look loaded at that zoom
+
+- **What was measured:** a look zoomed on the running engine (A), against an engine born with that view (B), and, after the look carried its reach, against the zoomed look captured and loaded on a new engine (C). Mean |difference| over RGB (0–255) and the share of pixels differing by more than 8.
+- **On:** an M1 Pro, Chromium on Metal, 960×540, wind off, `auto_quality` off; `view_extent_m` 3.1 as authored, shown at half and at twice.
+- **Result, A against B:**
+
+  | look | zoomed in ×0.5 | zoomed out ×2 |
+  |---|---|---|
+  | `afternoon 7` | mean 17.6, 71% | mean 16.4, 66% |
+  | `memories` | mean 27.9, 88% | mean 7.4, 39% |
+  | `morning 2` | mean 27.0, 91% | mean 6.0, 28% |
+  | `forest floor` | mean 27.0, 94% | mean 24.1, 83% |
+
+  Zoomed in, B's crowns had shrunk to the smaller view and the middle of the frame was one dense shade where A kept its dapples. Zoomed out, the two kept one structure to the eye and differed in leaf-scale detail. José chose A: the look zoomed on screen is the look.
+- **Result, A against C,** once a look carried the reach its grove was grown for: no byte differs, in all eight. Every shipped look's frame is byte-identical before and after the change (31 looks, the harness's smoke frames).
+- **What it established:** the grove had been a function of the camera's zoom at whatever moment it was last grown, so a save, a reload or any later regrow could change the picture. It is now a function of the look.
+- **Still open:** a route between two looks that both take their reach from their view and differ in it (the live morph above this entry).
+- **Date:** 2026-11-16.
+
 ### The eclipse pairs: the cloud dissolve against the moon
 
 - **What was measured:** for `morning 3b → eclipse` (P1) and `eclipse → acid dreams` (P2), the route as shipped before (the cloud dissolve, bloom 0.55, `eclipse` flipped at the midpoint) against the variant José chose (B3: the crossfade across layer counts, each grove with its own leaf edge and grown from its own look, the moon on a path giving the visible bite four fifths of it, its limb soft while it moves). Excursion is the mean luminance's departure from the straight line between the two ends; steps are mean |frame n − frame n−1| in 8-bit levels.

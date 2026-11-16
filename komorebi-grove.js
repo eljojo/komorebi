@@ -44,7 +44,7 @@ import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_REAL, 
 // as the boolean it is). Held against a grep of this file in reseason.test.js.
 export const GROVE_READS = [
   'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
-  'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','growth_years','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_variety','leaves_per_cluster',
+  'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','grove_reach_m','growth_years','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_variety','leaves_per_cluster',
   'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','tree_count','trunk_radius_m','view_extent_m',
 ];
 // Grow a grove as `look` would, on the live params: every key the build reads (the grove's own, the season set within the canopy keys,
@@ -280,9 +280,11 @@ export function makeGrove(hub){
     const limbPlan = new Float32Array(nLimb*2);         // an outboard wind-sample point near each limb
     const limbAttach = new Float32Array(nLimb);         // the height at which each limb MEETS its trunk — sway_pitch anchors its depth-foreshorten here so the join can't open (§5.1). Filled LOCAL in the growth loops, then scaled into world height units with the rest of the tree.
 
-    // crowns overlap so the canopy fills the VIEW (not just the baked extent): the fill radius is tied
-    // to view_extent (so the grove fills the frame regardless of zoom), capped to fit inside the bake.
-    const Rfill = Math.min(E*0.46, Math.max(0.5, params.view_extent_m));
+    // crowns overlap so the canopy fills a span of ground (not just the baked extent), capped to fit inside the bake. The span is the
+    // look's reach; a look that names none (0) takes the view's extent as it stands at this build, so its grove fills the frame it loads in.
+    // The grove keeps what it was grown for (grove.reach): the engine names it for the look once the view has moved (holdReach).
+    const reach = params.grove_reach_m > 0 ? params.grove_reach_m : params.view_extent_m;
+    const Rfill = Math.min(E*0.46, Math.max(0.5, reach));
     // crown radius. PARK model: tied to the view so crowns fill the frame. STANDING scene (§4.8): a natural,
     // fixed fraction of the bake extent instead — so a single tree's crown fits the texture (the view-tied size
     // overflows and clips it) and the tree reads as a discrete object, not a frame-filling canopy.
@@ -846,7 +848,7 @@ export function makeGrove(hub){
       faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
     }
     hier.leafW = leafW;   // abscission (§4.5): each leaf's retained weight by (twig, slot) for the tree preview, which scatters its own leaves; null at the gate
-    const grove = { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter, key: seasonKey(params, faithful) };   // key: the structure it was grown for (see THE KEY)
+    const grove = { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter, reach, key: seasonKey(params, faithful) };   // key: the structure it was grown for (see THE KEY)
     grove.wood = { radius: params.trunk_radius_m, base: _cb, thickness: _th, zMin, dz,
                    taper: Math.pow(Math.max(1.001, kids), -1/clamp(params.taper_delta,1,4)) };
     if(vary) grove.scaleMax = scaleMax;   // the largest shift leaf_variety gave a leaf: the faithful cast frame's pad grows by it (komorebi-bake.js); absent at the gate
