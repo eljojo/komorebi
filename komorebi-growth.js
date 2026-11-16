@@ -33,6 +33,8 @@ export const GROWTH = {
   droopPull: 0.3, // a side branch's pull down per unit of droop (negative droop sweeps up)
   setpoint: 1.5,  // how hard a side branch is held at its set angle (spec.pitch above the horizontal); 0 = not held. It must
                   // outweigh the turn toward light (xi), or every side shoot ends up vertical and a branch ends in an upward fan
+  setOrders: 2,   // ...the orders it holds: the main limbs and the branches off them. The finer shoots steer by light and droop
+                  // alone; held too, every shoot of a limb lay at one angle and the crown was a pagoda of flat shelves
   clear: 6,       // the clear trunk, in internodes: a park or street tree is pruned clear to a fixed height while young and its
                   // limbs above are kept for life (a line at a share of the growing height kept climbing and cut the lower limbs away)
   sag: 0.004,     // how far a year's load bends a joint (radians per unit of moment over stiffness), at droop 0
@@ -145,9 +147,10 @@ export function growBuds(spec, rng, out){
         const opt = b.ord === 0 ? norm([-gx, -gy, -gz + 0.5]) : Math.hypot(gx, gy, gz) > 1e-6 ? norm([-gx, -gy, -gz]) : [0, 0, 0];
         const trop = b.ord === 0 ? G.trunkUp : -droop*G.droopPull;
         // a side branch's set angle (the gravitropic setpoint the axis above it holds it to): pulled toward the direction
-        // at spec.pitch above the horizontal along its own heading, so it cannot curl up into a second trunk
+        // at spec.pitch above the horizontal along its own heading, so it cannot curl up into a second trunk; the finer
+        // orders are free, and fill the crown's volume
         let hx = 0, hy = 0, hz = 0;
-        if(b.ord > 0 && G.setpoint > 0){ const h = Math.hypot(d[0], d[1]) || 1, cp = Math.cos(spec.pitch), sp = Math.sin(spec.pitch);
+        if(b.ord > 0 && b.ord <= G.setOrders && G.setpoint > 0){ const h = Math.hypot(d[0], d[1]) || 1, cp = Math.cos(spec.pitch), sp = Math.sin(spec.pitch);
           hx = G.setpoint*(cp*d[0]/h - d[0]); hy = G.setpoint*(cp*d[1]/h - d[1]); hz = G.setpoint*(sp - d[2]); }
         d = norm([d[0] + G.xi*opt[0] + hx, d[1] + G.xi*opt[1] + hy, d[2] + G.xi*opt[2] + trop + hz]);
         const m = M.length;
