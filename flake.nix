@@ -70,6 +70,19 @@
               exec node run.js "$@"
             '';
           };
+          # `nix run .#cost -- <look>... [key=value ...] [--vs key=value ...]` — what a look costs on this machine's GPU, and what a
+          # change adds (test-gl/cost.mjs; its header says how it measures). Chrome on Metal; same first-run setup as pixels.
+          cost = pkgs.writeShellApplication {
+            name = "cost";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
+            text = ''
+              if [ ! -d test-gl/node_modules ]; then
+                echo "first run: cd test-gl && npm install && npx playwright install chromium" >&2
+                exit 1
+              fi
+              exec node test-gl/cost.mjs "$@"
+            '';
+          };
           # `nix run .#embed -- '<look>'...` — the one-page bundle: only the named looks, only the cameras
           # they select, only the fall tiers they open (`--features a,b|all|none` overrides that set).
           # Writes dist/komorebi.embed.min.js. Verify it with `nix run .#embed-check`.
@@ -141,6 +154,7 @@
         in {
           dev = { type = "app"; program = "${dev}/bin/dev"; };
           lint = { type = "app"; program = "${lint}/bin/lint"; };
+          cost = { type = "app"; program = "${cost}/bin/cost"; };
           build = { type = "app"; program = "${build}/bin/build"; };
           pixels = { type = "app"; program = "${pixels}/bin/pixels"; };
           editor = { type = "app"; program = "${editor}/bin/editor"; };

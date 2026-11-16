@@ -51,6 +51,7 @@ import { chromium } from 'playwright';
 import { macroParams } from '../macros.js';
 import { createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, rowFilters, rowMatches, sampleRows } from './harness-lib.mjs';
 import { PRESETS } from '../presets.js';
+import { launchBrowser } from './video-lib.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served
 const OUT = join(ROOT, 'test-gl', 'out');
@@ -975,6 +976,13 @@ const record = (suite, name, pass, detail, hashes) => { results.push({ suite, na
 // --enable-unsafe-swiftshader is what recent Chrome requires to allow the software fallback for WebGL.
 // (A constant, not inline: the manifest key holds the flags the hashes were taken under.)
 const LAUNCH_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--force-color-profile=srgb'];
+// `--gpu`, with --look only: the looks on this machine's GPU (Chrome on Metal, video-lib.mjs's launcher) instead of SwiftShader, for eyes
+// on many looks or heavy ones fast. Its pixels are the GPU's, not the hashes' bytes, so no suite runs under it.
+const GPU = process.argv.includes('--gpu');
+if (GPU) {
+  process.argv.splice(process.argv.indexOf('--gpu'), 1);
+  if (process.argv[2] !== '--look') throw new Error('--gpu renders looks for eyes (--look); the suites hash SwiftShader\'s bytes');
+}
 
 // One engine render, once per run per distinct input (harness-lib.mjs: createRenderMemo). The same (preset, overrides, frames, opts) is the
 // same frame — the determinism rows prove exactly that — and memories `{}` alone is asked for ~24 times. `{ fresh: true }` is for the
@@ -1125,7 +1133,7 @@ async function main() {
   await mkdir(OUT, { recursive: true });
   const t0 = Date.now();
   const { server, port, served } = await serveRoot();
-  const browser = await chromium.launch({
+  const browser = GPU ? (await launchBrowser(chromium, 'chromium+angle-metal+enable-gpu')).browser : await chromium.launch({
     args: LAUNCH_ARGS,   // (why these: see LAUNCH_ARGS)
   });
   const page = await browser.newPage({ deviceScaleFactor: 1, viewport: { width: 640, height: 400 } });
@@ -1217,7 +1225,7 @@ async function main() {
       process.exit(0);
     }
 
-    // ---- opt-in: LOOKS — `node run.js --look "<preset>" [--as <name>] key=value ... [--look ...]` (repeatable) ----
+    // ---- opt-in: LOOKS — `node run.js --look "<preset>" [--as <name>] key=value ... [--look ...] [--gpu]` (repeatable; --gpu: on Metal) ----
     // For eyes, not proof: one PNG per spec, the preset with the overrides merged on (values are JSON, so
     // phenology=0.75 and faithful_canopy=true both work), written to out/<name>.png. Unlike the suites it
     // re-bakes first (`rebake`), so a faithful look's frame is the settled one (the first bake is now the real one too: see "shows its real frame unaided").

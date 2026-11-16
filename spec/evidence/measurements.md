@@ -254,6 +254,14 @@ The red oak is not star-shaped from any point of its midrib: 2–33 re-entrant r
 - **What it established:** a canopy morph at variety > 0 swaps the outline of leaves whose light class it crosses, a pop of lobes but never of size. Whether to accept this was put to José and not answered.
 - **Date:** not recorded.
 
+### What variety costs to draw
+
+- **What was measured:** each look's whole frame (every frame closed by a one-pixel read, no vsync) and a regrow of its grove, `leaf_variety` 0 against 1, by `nix run .#cost` (test-gl/out/cost/leaf-variety-maples.json, -purple-eye.json).
+- **On:** an M1 Pro, Chrome on Metal, 1920×1080, auto-quality off; three runs each side, alternated. José's eleven online looks with maple or beech outlines (the only ones variety acts on: every built-in look has ellipse leaves), ten at 0 and `purple eye` at 0.9.
+- **Result:** a frame costs 0 to +0.9 ms more with variety (0–7 %), inside the run-to-run spread on seven of the ten; the three `fall memories` versions (48 k leaves) pay +0.7 to +0.9 ms (5–7 %). A regrow costs ×1.1 to ×3.4 (+2 to +12 ms; `projector U3` 7.6 → 19.1 ms, `fall memories` 60 → 71 ms). `purple eye` without its variety: the regrow 29 → 13 ms, the frame −0.7 ms (inside the spread).
+- **What it established:** variety's price is paid in regrows (a density change, and every step of a canopy morph), not in frames; on a still look it is near free.
+- **Date:** 2026-11-16.
+
 ### The texel as a slab: rims, halos and the mixture
 
 - **What was measured:** what each reader made of a soft-edge texel when it took the stored depth and coverage for a slab, before and after reading it as a mixture of one leaf and a gap.
@@ -920,6 +928,10 @@ The four-in-one shader declared 246 vec4 rows of uniforms against WebGL2's guara
 - On `faithful_canopy` looks the per-sample geometry bake is the whole cost and resolution buys almost nothing.
 
 Per-look figures are not recorded.
+
+### Timer queries on Metal
+
+On an M1 Pro, Chrome on Metal, the engine's GPU timer queries (transport plus bake) read 20–40 ms a frame on the faithful maple looks whose frames, each closed by a one-pixel read, take 9–15 ms; on `morning 2` they read 5.2 ms against a 6.3 ms frame. They rank passes but do not measure a frame there, so `nix run .#cost` reports the whole frame first (2026-11-16). Measured against itself (B the same look, five runs), a frame's median moves by 0 to 1.6 % (`morning 2` 6.40 → 6.30 ms, `montebello` 6.80 → 6.80 ms).
 
 ### The harness itself
 

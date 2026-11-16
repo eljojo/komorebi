@@ -97,6 +97,8 @@ the deploy on a push to `main`, which writes `commit.json`.
 **`test-gl/`** — real renders in headless Chromium (first run: `cd test-gl && npm install && npx playwright install chromium`).
 - `run.js` — the pixel harness: `nix run .#pixels` (about an hour); `--only <substring>...` runs the matching rows,
   `--list` prints them.
+- `cost.mjs` + `cost.html` — `nix run .#cost -- <look>... [--vs key=value ...]`: what a look costs on this machine's GPU (Chrome on Metal),
+  and what a change adds; its header says how it measures. `run.js --look … --gpu` renders looks on the same GPU, for eyes.
 - `editor.mjs` — the editor smoke, `nix run .#editor`: the DOM effects the pixel suites cannot see.
 - `embed.mjs` — the bundle against the raw modules, byte for byte. `review.mjs` — review sheets from a clean export of a commit.
 - `render-video.mjs` — the video exporter, `nix run .#video -- …` (`--help` lists everything), with its siblings

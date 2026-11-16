@@ -1,0 +1,60 @@
+<!doctype html>
+<!-- The cost page (test-gl/cost.mjs drives it): one look at a time on the page's GPU, timed by the engine's own profiler.
+     Served from the repository by video-lib.mjs's server, so it loads the engine's modules as they are on disk. -->
+<meta charset="utf-8">
+<title>komorebi cost</title>
+<style>html, body { margin: 0; background: #000; } canvas { display: block; }</style>
+<script type="module">
+import { create, DEFAULTS, migrateLegacy } from '/komorebi.js';
+import { PRESETS } from '/presets.js';
+
+const median = (xs) => { const s = xs.filter(Number.isFinite).sort((a, b) => a - b); return s.length ? s[s.length >> 1] : NaN; };
+
+window.__cost = {
+  presets: () => Object.keys(PRESETS),
+  preset: (name) => PRESETS[name] ?? null,
+  // One look, measured: `settle` frames to let the bake and the profiler's queries come up, then `frames` frames, each closed by a
+  // one-pixel read so the interval between two is that frame's whole work (CPU and GPU; the browser runs without vsync). The GPU
+  // passes come from the timer queries (transport: the frame drawn; bake: the leaves' shadow, when the look re-bakes each frame).
+  // `builds` times a regrow of the grove (apply('canopy')), the CPU cost a canopy change or a morph step pays.
+  async measure(params, { w = 1920, h = 1080, settle = 40, frames = 200, builds = 5 } = {}) {
+    const canvas = document.createElement('canvas');
+    canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
+    document.body.appendChild(canvas);
+    const p = { ...DEFAULTS, ...migrateLegacy({ ...params }), auto_quality: false, adaptive_motion: false };
+    const eng = create(canvas, { params: p });
+    try {
+      eng.perf.auto = false; eng.perf.resScale = 1;
+      const pr = eng.profiler;
+      if (!pr?.hasTimer) throw new Error('this GPU has no timer queries (EXT_disjoint_timer_query_webgl2)');
+      pr.setInstrument(true);
+      const px = new Uint8Array(4), wall = [], transport = [], bake = [];
+      let last = 0, n = 0, done;
+      const finished = new Promise((r) => { done = r; });
+      eng.onFrame = () => {
+        const gl = eng.gl;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        const now = performance.now();
+        if (n >= settle) { wall.push(now - last); transport.push(pr.transportMs); bake.push(pr.bakeMs); }
+        last = now;
+        if (++n >= settle + frames) done();
+      };
+      await finished;
+      eng.onFrame = null;
+      pr.setInstrument(false);
+      const build = [];
+      for (let i = 0; i < builds; i++) { const t0 = performance.now(); eng.apply('canopy'); build.push(performance.now() - t0); }
+      return {
+        size: [canvas.width, canvas.height], leaves: eng.faith?.count ?? null,
+        wallMs: median(wall), transportMs: median(transport.filter((x) => x > 0)), bakeMs: median(bake.filter((x) => x > 0)),
+        buildMs: median(build), samples: { wall, transport, bake, build },
+      };
+    } finally {
+      eng.dispose();
+      canvas.remove();
+    }
+  },
+};
+window.__ready = true;
+</script>

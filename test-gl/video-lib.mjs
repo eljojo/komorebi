@@ -88,11 +88,12 @@ export function assertHardwareRenderer(renderer, variantName) {
     throw new Error(`renderer is not hardware ${backend}: ${renderer}`);
 }
 
-export async function launchBrowser(chromium, variantName) {
+export async function launchBrowser(chromium, variantName, extra = []) {
   const v = GPU_VARIANTS[variantName];
   if (!v) throw new Error(`unknown GPU variant ${variantName}`);
   // --js-flags=--expose-gc: the page calls gc() after each POST so the Blob it sent is released at once (see video.html), else the browser's blob store fills at ~2 GB
-  const args = [...v.args, '--js-flags=--expose-gc'];
+  // extra: a caller's own flags (cost.mjs: no vsync, so a frame's interval is its work)
+  const args = [...v.args, '--js-flags=--expose-gc', ...extra];
   const browser = await chromium.launch({ ...(v.channel ? { channel: v.channel } : {}), args });
   return { browser, variant: variantName, channel: v.channel || 'chromium_headless_shell', args };
 }
