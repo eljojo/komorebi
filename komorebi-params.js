@@ -191,7 +191,7 @@ const PARAMS = {
     travels: 'canopy',
     means: "<b>How tilted the leaves sit at rest.</b> A tilted leaf is seen more edge-on, so it blocks less — this thins the canopy and gives the wind something to foreshorten." },
   edge_softness: { default: 0.25,
-    row: { kind: 's', label: 'edge', min: 0.01, max: 1, step: 0.01, rebuild: 'canopy' },
+    row: { kind: 's', label: 'edge', min: 0.01, max: 1, step: 0.01, rebuild: 'bake' },   // the bakes cut the rim; the grove's build never reads it
     travels: 'canopy',
     means: "<b>How fuzzy each leaf's own edge is.</b> Small = crisp, detailed leaves; large = softer blobs. (It's honest blur from a leaf only half-covering a pixel.)" },
   // per-channel transmittance (green passes)
@@ -385,7 +385,7 @@ const PARAMS = {
     travels: 'mode',
     means: "<b>Treat the trees as objects STANDING in the scene, not a canopy hovering overhead.</b> Turns on the TRUNK shadow — a vertical trunk has no flat footprint, so the normal layered model can't cast it; this draws its real swept shadow streak. Best with a low, raking sun so the streak stretches across the floor. (Rooting the trees off to the side with a lit floor is coming next.)" },
   trunk_radius_m: { default: 0.1,   // trunk thickness (m) → width of its shadow streak; the area light softens it along its length
-    row: { kind: 's', label: 'trunk r', min: 0, max: 0.5, step: 0.01, rebuild: 'canopy' },
+    row: { kind: 's', label: 'trunk r', min: 0, max: 0.5, step: 0.01, rebuild: 'bake' },   // the bake's refreshWood re-reads the radius from the grown skeleton: no leaf moves
     travels: 'morph',   // Wood stores radius and layer heights in CPU geometry as well as live uniforms. refreshWood keeps those numbers aligned without regrowing the leaves; a faithful or sky bake refreshes when its wood changes.
     means: "<b>How thick the trunk is</b> — i.e. how wide its shadow streak. The streak softens and widens toward its far end on its own, because the higher part of the trunk is blurred more by the sun's size. 0 = no trunk shadow." },
   faithful_canopy: { default: false,   // FAITHFUL TREE (spec §4.5): opt out of the depth-layer leaf cheat. Off = leaves binned to a
@@ -402,7 +402,7 @@ const PARAMS = {
   // panels ray-cast per pixel, each lit by its own incidence on the sun. Only read when receiver≠0; the floor
   // stays the cheap fast path. Off → every look unchanged.
   receiver: { default: 0,
-    row: { kind: 'sel', label: 'receiver', choices: [['floor',0],['curtain',1],['tent',2]], rebuild: '' },   // curtain handoff: the surface the light lands on — floor reflects, curtain transmits (moss velvet), tent stands that same cloth around you
+    row: { kind: 'sel', label: 'receiver', choices: [['floor',0],['curtain',1],['tent',2]], rebuild: 'textures' },   // curtain handoff: the surface the light lands on — floor reflects, curtain transmits (moss velvet), tent stands that same cloth around you. 'textures': the tent forces the layer cast (faithfulOn), so a faithful look's layer textures and its grove's packing are made anew, as the faithful toggle's are
     travels: 'mode',
     means: "<b>What surface the light lands on.</b> <i>Floor</i> — the light reflects off the ground (every existing look; unchanged). <i>Curtain</i> — the light passes THROUGH a translucent woven moss-velvet curtain, lit from behind, the way sunset glows through a bedroom drape. (Shipped: transmission, the standing-plane projection, the aperiodic drape folds with their warp of the cast pattern, the velvet sheen, the forward-scatter glow, and the window — mullion grid + aperture with dark wall beyond. Still to come: the lateral glow blur and the directional nap.) <i>Tent</i> — the same cloth, but stood AROUND you: a pitched A-frame with its ridge overhead, seen from inside, sloped panels running off into the distance. Each panel catches the sun at its own angle, so one side is bright and the other dim — the thing a flat wall can never do. The tent knobs below shape it; the window and the mullion bars are curtain-only and switch themselves off here." },
   fabric_tt: { default: 0.5,   // fabric total throughput Tt∈[0,1] = BRIGHTNESS (sheer→~0.6, dark terciopelo→~0.1); hue is separate

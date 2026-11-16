@@ -6,6 +6,7 @@
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { PARAMS, DEFAULTS, LEGACY_KEYS } from "./komorebi-params.js";
+import { GROVE_READS } from "./komorebi-grove.js";
 
 const WAYS = ["morph", "canopy", "season", "topo", "mode", "none"];
 const KINDS = ["s", "t", "sel", "sels"];
@@ -52,4 +53,38 @@ test("the editor's panel names every parameter that has a row, once, and nothing
 test("DEFAULTS is every parameter but the editor's inputs, in the registry's order; an old name is not a parameter", () => {
   expect(Object.keys(DEFAULTS)).toEqual(Object.keys(PARAMS).filter((k) => !("input" in PARAMS[k])));
   for (const [old, now] of Object.entries(LEGACY_KEYS)) { expect(old in PARAMS, old).toBe(false); expect(now in DEFAULTS, now).toBe(true); }
+});
+
+// Which cast the engine runs (the faithful cast or the depth layers) is one predicate over the scene modes. A panel row that flips it
+// has to rebuild what that choice allocates and packs: the layer textures are 1×1 while the faithful cast runs, and the grove's
+// buffers are packed for one cast or the other. A row that asked for less would leave the new cast reading the old one's buffers.
+test("every row the cast's choice reads asks for the scope that rebuilds its textures and its grove", () => {
+  const src = readFileSync(new URL("./komorebi-engine.js", import.meta.url), "utf8");
+  const predicate = src.match(/const faithfulOn = \(\) => ([^;]+);/);
+  expect(predicate, "komorebi-engine.js defines faithfulOn in one line").toBeTruthy();
+  const keys = [...predicate[1].matchAll(/params\.([a-z_0-9]+)/g)].map((m) => m[1]);
+  expect(keys.sort()).toEqual(["faithful_canopy", "receiver", "sky_view"]);
+  for (const k of keys) expect(PARAMS[k].row.rebuild, k).toBe("textures");
+});
+
+// A row's scope is what the editor rebuilds when its slider moves. Growing the grove is the dearest of them (tens of milliseconds on a
+// full look, on every tick of a drag), so a row asks for it exactly when the grove's build reads its key: GROVE_READS, which
+// reseason.test.js holds to the build's own source. Asking for it otherwise regrows for nothing; not asking when the build reads the key
+// shows a stale grove. The exceptions are named, with what stands in for the regrow.
+test("a row asks for a regrow when the grove's build reads its key, and only then", () => {
+  const REGROWS = ["canopy", "density", "textures"];
+  const SIZES_TEXTURES = ["tex_resolution", "bake_resolution"];   // a choice, not a drag: the scope that reallocates the textures regrows too, and none reallocates alone
+  const WITHOUT_A_REGROW = {
+    trunk_radius_m: "bake",        // the build reads these three for the wood alone, and refreshWood re-reads them from the grown skeleton:
+    canopy_base_height_m: "",      // the radius at the bake its row asks for, the heights with the frame
+    canopy_thickness_m: "",
+    view_extent_m: "",             // sizes an overhead park's crowns, and a zoom does not regrow them: measured, still open (spec/evidence/measurements.md, the midpoint grove)
+  };
+  for (const [k, d] of Object.entries(PARAMS)) {
+    if (!d.row) continue;
+    const reads = GROVE_READS.includes(k), asks = REGROWS.includes(d.row.rebuild);
+    if (k in WITHOUT_A_REGROW) { expect(reads, `${k}: listed as read by the build`).toBe(true); expect(d.row.rebuild, k).toBe(WITHOUT_A_REGROW[k]); continue; }
+    if (SIZES_TEXTURES.includes(k)) { expect(d.row.rebuild, k).toBe("textures"); continue; }
+    expect(asks, `${k}: the build ${reads ? "reads it" : "does not read it"}, and its row asks for '${d.row.rebuild}'`).toBe(reads);
+  }
 });

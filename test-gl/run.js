@@ -51,6 +51,7 @@ import { chromium } from 'playwright';
 import { macroParams } from '../macros.js';
 import { createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, rowFilters, rowMatches, sampleRows } from './harness-lib.mjs';
 import { PRESETS } from '../presets.js';
+import { PARAMS } from '../komorebi-params.js';
 import { launchBrowser } from './video-lib.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served
@@ -789,6 +790,20 @@ const LIVE_CHANGES = [
   { name: 'afternoon 7 (a pigment capacity on a built cache, the re-season itself: the carpet is re-laid in another colour)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9, litter: 1, anthocyanin: 0.8, turn_exposure: 1 }, key: 'anthocyanin', value: 0.2, apply: 'season', prime: 0.5, litter: true },
   { name: 'afternoon 7 (the fall\'s share on a built cache, the re-season itself: fewer leaves down)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.9 }, key: 'leaf_drop', value: 0.6, apply: 'season', prime: 0.8, litter: true },
   { name: 'park 1 (the fall\'s share, faithful, on a built cache: the cast is re-cast from the leaves still hanging)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, drop_after_turn: 0, phenology: 0.9 }, key: 'leaf_drop', value: 0.6, apply: 'season', prime: 0.8, litter: true },
+  // THE RECEIVER (§4.9) is a scene mode: the tent forces the layer cast, so a faithful look's layer textures and its grove's packing are made anew, and the cloth re-aims the cast.
+  // The row is moved the way the panel moves it: assigned, then the scope its row in PARAMS asks for. A frame born on the new surface is what it has to show.
+  ...[['park 1', 2, 'faithful to the tent: the layer cast is built'], ['park 1', 1, 'faithful to the curtain: the cast re-aims at the cloth'], ['memories', 2, 'the layer cast to the tent'], ['memories', 1, 'the layer cast to the curtain'],
+      ['tent 1', 0, 'the tent to the floor'], ['curtain 1', 0, 'the curtain to the floor'], ['park 1', 0, 'a faithful look in the tent back to the floor: the faithful cast is built', { receiver: 2 }]].map(([preset, value, what, over = {}]) =>
+    ({ name: `${preset} (the receiver row, ${what})`, preset, rebake: PRESETS[preset].faithful_canopy === true, over, key: 'receiver', value, apply: PARAMS.receiver.row.rebuild || null })),
+  // ROWS THAT ASK FOR LESS THAN A REGROW, or for none: the bake reads the leaf's rim, and the wood's radius and the canopy's heights are re-read from the grown skeleton
+  // (refreshWood), so their rows move them without growing the grove again. Each is moved by the scope its row in PARAMS asks for, on the layer cast, the faithful cast and
+  // (for the wood) a camera whose wood is the analytic table; a row that asked for too little would show the frame from before. (A standing tree carries its own height:
+  // the canopy's base and depth move nothing on park 1, so the heights have no faithful row.)
+  ...[['memories', 'edge_softness', 0.6, 'the layer bake re-cuts the rim'], ['park 1', 'edge_softness', 0.6, 'the faithful cast re-cuts the rim'],
+      ['park 1', 'trunk_radius_m', 0.3, 'the faithful wood'], ['tent 1', 'trunk_radius_m', 0.2, 'the analytic wood on the layer cast'], ['canopy 1', 'trunk_radius_m', 0.3, 'the binned wood, looking up'],
+      ['memories', 'canopy_base_height_m', 6, 'the layers\' heights'], ['tent 1', 'canopy_base_height_m', 5, 'the analytic wood follows the layers'],
+      ['memories', 'canopy_thickness_m', 3, 'the layers\' heights'], ['tent 1', 'canopy_thickness_m', 2.5, 'the analytic wood follows the layers']].map(([preset, key, value, what]) =>
+    ({ name: `${preset} (the ${PARAMS[key].row.label} row, ${what})`, preset, rebake: PRESETS[preset].faithful_canopy === true, over: {}, key, value, apply: PARAMS[key].row.rebuild || null })),
 ];
 // canopy_fill crossed on a RUNNING engine (it tweens, so nothing rebuilds when it does). `sky: true` = the camera has no
 // surface to light, so the fill must stay unallocated and the frame must not move.
