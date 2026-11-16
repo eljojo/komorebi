@@ -1,7 +1,6 @@
-import { create, DEG, PARAMS, CAMERAS, cameraFor, FIDELITY_KEYS, PLAYBACK_KEYS, authoredLook, resolveSession } from './komorebi.js';
+import { create, DEG, PARAMS, CAMERAS, cameraFor, FIDELITY_KEYS, resolveSession } from './komorebi.js';
 import { mountSettings } from './editor-settings.js';
 import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
-import { AXES, axisValue, upValue, proposeVariants, proposeImprove, FRAME_BUDGET_MS } from './profiler.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
 import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter } from './playlists.js';
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep } from './macros.js';
@@ -14,9 +13,9 @@ import { mountMidi } from './midi.js';
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
 // the playful macro sidebar, and the advanced dev panel (three depths of one control tree) — plus the HUD,
-// insets, preset management, sun-drag input, scene-transition stepping, and the auto-profiler UI. Pure
+// insets, preset management, sun-drag input and scene-transition stepping. Pure
 // sub-concerns are split into siblings: arboretum.js (where every preset is kept: the ★ looks in localStorage, and arboretum online where the browser allows), playlists.js (the lists the dropdown shows and the arrows step), macros.js (the control-bus
-// macro mappings the upper rungs drive) and profiler.js (the cost taxonomy + variant algorithm). The
+// macro mappings the upper rungs drive). The
 // viewer-only player (player.html) is a separate, UI-less consumer of the same engine. ES modules — must be
 // SERVED over http(s) (`nix run .#dev`), not opened off the filesystem.
 // ============================================================================
@@ -277,7 +276,6 @@ const PANEL_LAYOUT = [
   'show_source',
   'show_layer',
   'show_layer_index',
-  ['btn','profile · measure & lighten', ()=>runProfile()],
 
   ['hc','Lab'],
   'receiver',
@@ -938,7 +936,7 @@ const TIPS = {
   'Lab':"<b>Curtain, tent and window experiments.</b> The receiver, the cloth it is made of, the window and the tent — kept apart from the floor looks.",
   'spring mechanics':"<b>How the branches feel in the wind — tuned once.</b> The gust envelope, spring stiffness / ceiling / damping / backlash, and the per-level limb &amp; twig flex. Per scene you really only change strength and direction above.",
   'leaf drift':"<b>The faint, fidgety wind from all sides at once.</b> Each leaf jiggles on its own, so gaps reshuffle — merging and splitting like light on the floor of a pool — instead of sliding. (A preview of the second kind of wind.)",
-  'Tune':"<b>Performance vs. quality — set once for the machine, not the look.</b> Sample count, texture &amp; bake resolution, depth layers, the auto-60fps governor, and the adaptive-fps idle saver. Two opt-in optimizations live here (bake res, adaptive fps) that trade a little fidelity for speed — the profiler (<b>profile</b> below) measures them and can both lighten a heavy look and spend spare budget on quality.",
+  'Tune':"<b>Performance vs. quality — set once for the machine, not the look.</b> Sample count, texture &amp; bake resolution, depth layers, the auto-60fps governor, and the adaptive-fps idle saver. Two opt-in optimizations live here (bake res, adaptive fps) that trade a little fidelity for speed.",
   'Debug':"<b>Tools for peeking under the hood.</b> These don't change the art.",
   'Presets':"<b>Saved looks.</b> Built-in ones are marked •, your own ★ (saved in this browser). Copy/paste JSON to share a look with someone. Step between them live with the <b>← →</b> arrow keys.",
   'fade':"<b>How long a scene change takes.</b> Stepping presets with ← → cross-dissolves over this many seconds: the look morphs while a soft cloud drifts over to hide the trees and branches regrowing behind it. 0 = instant cut.",
@@ -1248,10 +1246,6 @@ function toggleControls(){
 function setMode(mode){
   if(!(mode in MODE_ELS) || mode === settings.mode) return;
   if(settings.workspace) setWorkspace(false);       // the workspace is the advanced surface's: another rung leaves it
-  if(settings.mode==='adv'){                       // the profiler + A/B wipe belong to the advanced surface — don't orphan them
-    if(prof.classList.contains('show')) closeProfile();
-    if(cmp.classList.contains('show')) closeCmp();
-  }
   padDown=false;                                   // a drag can't outlive the surface it started on
   const from = panelEl();
   clearTimeout(panelTimer);
@@ -1499,15 +1493,10 @@ eng.onFrame = ()=> {
   if(showTree) eng.drawTreeInset(treePointer, treePinned);
   if(showLeaf) leaf.draw();
   if(settings.workspace){ treePane?.draw(); wsStatTick(); }
-  const cmpOpen = cmp.classList.contains('show');
-  // profiler breakdown: the live whole-frame fps at full quality — the honest 'is it holding 60' number the
-  // misleading offscreen 'headroom' used to obscure. (The A/B picker shows each engine's fps separately.)
-  if(profFpsEl) profFpsEl.textContent = fpsLabel(eng.fps);
-  if(cmpOpen) updateCmpFps();
-  // HUD: debug info, shown only while the dev panel is open AND not in the A/B (which has its own per-engine fps).
+  // HUD: debug info, shown only while the dev panel is open.
   const devOpen = devUp;
-  hud.style.display = (devOpen && !cmpOpen && !settings.workspace) ? '' : 'none';   // the workspace has its own quiet counter instead
-  if(!devOpen || cmpOpen) return;
+  hud.style.display = (devOpen && !settings.workspace) ? '' : 'none';   // the workspace has its own quiet counter instead
+  if(!devOpen) return;
   const m=eng.motion;
   // perf is a WARNING line, absent when nominal: fps only once it slips below 60 (<55), and AUTO res only
   // while it's compensating below full — so you always know when auto-quality is buying speed with resolution.
@@ -1538,213 +1527,6 @@ const sessionPanel=mountSettings({
 });
 function settingsButton(){ const button=mkBtn('settings',()=>sessionPanel.open());button.dataset.openSettings='';return button; }
 syncMacroControls();
-
-// ===========================================================================
-// Auto-profiler (spec §9). Measure the look's cost from REAL on-screen frames — GPU timer queries averaged over
-// many live frames, the actual passes under real conditions (not an offscreen burst the driver can collapse) —
-// ablate each axis to read its share, then propose lighter variants and A/B them on a draggable wipe. Runs at
-// MAX quality with auto-quality held off. Editor-only; the engine (eng.profiler) only measures.
-// ===========================================================================
-const MEASURE_FRAMES = 90, MEASURE_SETTLE = 12;   // per config: drop the first SETTLE (config change + 2-frame timer ring), average the rest (~1.5s)
-let profiling = false;
-const animates = () => params.wind_strength>0 || (params.drift_auto && params.drift_amount>0);
-const snapshot = () => JSON.parse(JSON.stringify(params));
-const nextFrame = () => new Promise(r => requestAnimationFrame(r));
-
-// profiler-mode quality: the cost of each STYLISTIC decision at MAX quality, so while the profiler is open we
-// hold the engine at full resolution + full samples with the auto-scaler OFF (it would mask the params —
-// regenSource reads perf.sampleCount when auto is on — and re-trim under load). exitProfilerQuality (from
-// closeProfile) restores it from the look's own auto_quality flag.
-// hold MAX quality with the auto-scaler off: full resolution, full samples, AND full bake res (auto_quality now
-// also trims bake below the knee, §9 — so a trimmed bake must be restored or the base cost reads low). apply('textures')
-// reallocates the layer textures to baseline (auto off → bakeRes() = baseline); apply('source') restores the sample cloud.
-function enterProfilerQuality(){ perf.auto = false; perf.resScale = 1; perf.sampleCount = params.sample_count; eng.apply('textures'); eng.apply('source'); }
-function exitProfilerQuality(){ eng.apply('perf'); }
-
-// the in-situ per-pass GPU cost of the CURRENT config: average the engine's timer-query ms over MEASURE_FRAMES
-// real frames (high quality, real conditions). Falls back to the offscreen stress burst only where timer queries
-// don't exist (Firefox/Safari) — coarser, flagged in the UI. bake counts only when the look re-bakes every frame.
-async function measureCost(){
-  if(eng.profiler.hasTimer){
-    let tSum=0,tN=0,bSum=0,bN=0;
-    for(let i=0;i<MEASURE_FRAMES;i++){
-      await nextFrame();
-      if(i<MEASURE_SETTLE) continue;
-      const t=eng.profiler.transportMs, b=eng.profiler.bakeMs;
-      if(t>0){ tSum+=t; tN++; }
-      if(animates() && b>0){ bSum+=b; bN++; }
-    }
-    return { transportMs: tN?tSum/tN:0, bakeMs: bN?bSum/bN:0, approx:false };
-  }
-  const t = eng.profiler.bench('transport', 60).ms, b = animates() ? eng.profiler.bench('bake', 60).ms : 0;
-  return { transportMs:t, bakeMs:b, approx:true };
-}
-
-// adaptive_motion's saving is temporal, not a per-pass ablation: sample the look's motion over the window and
-// report the fraction of frame cost the idle cadence would skip (idle-frame share × the part it doesn't render).
-async function measureAdaptiveFrac(){
-  if(!eng.isLowMotion) return 0;
-  let low=0, m=0;
-  for(let i=0;i<MEASURE_FRAMES;i++){ await nextFrame(); if(i<MEASURE_SETTLE) continue; if(eng.isLowMotion()) low++; m++; }
-  const idleFraction = m ? low/m : 0;
-  const skipShare = 1 - clamp(params.adaptive_idle_fps,1,60)/60;   // of an idle frame's heavy work, the part re-presented not rendered
-  return idleFraction * skipShare;
-}
-
-let profilerAuthored;
-async function runProfile(){
-  if(profiling || !eng.profiler) return;
-  profiling = true;
-  if(eng.profiler.hasTimer) eng.profiler.setInstrument(true);
-  const snap = snapshot();
-  profilerAuthored=eng.captureLook();
-  enterProfilerQuality();
-  showMeasuring('base');
-  const base = await measureCost();
-  const baseTotal = base.transportMs + base.bakeMs;
-  const hasSpare = baseTotal < FRAME_BUDGET_MS;                  // only chase quality upgrades when there's budget to spend
-  const passCost = (axis, after) => {                           // reuse the baseline for the pass this axis DOESN'T touch (noise isolation)
-    const t = (axis.pass==='transport'||axis.pass==='both') ? after.transportMs : base.transportMs;
-    const b = (axis.pass==='bake'||axis.pass==='both') ? after.bakeMs : base.bakeMs;
-    return t + b;
-  };
-  const rows = [];             // per-feature CUT share — the breakdown bars + lighter variants
-  const upCostsMs = {};        // per-axis measured ADDED ms — the 'improve' (spend-the-spare) direction
-  let n = 0;
-  for(const axis of AXES){
-    n++;
-    if(axis.measure==='skipfrac'){                              // adaptive: temporal skip fraction, sampled (no ablation)
-      showMeasuring(`${axis.label}  (${n}/${AXES.length})`);
-      rows.push({ axis, frac: await measureAdaptiveFrac() });
-      continue;
-    }
-    // --- cut: lighten this axis, read the saving (axisValue resolves levels/rel/follows/toggle) ---
-    const cutVal = axis.proposable ? axisValue(axis, params)
-                 : (axis.measureLevel!=null && axis.measureLevel < params[axis.key]) ? axis.measureLevel : null;
-    if(cutVal==null){ rows.push({ axis, frac:0, na:true }); }
-    else {
-      showMeasuring(`${axis.label}  (${n}/${AXES.length})`);
-      const orig = params[axis.key];
-      params[axis.key] = cutVal; eng.apply(axis.scope);
-      const after = await measureCost();
-      rows.push({ axis, frac: baseTotal>0 ? Math.max(0, baseTotal-passCost(axis,after))/baseTotal : 0 });
-      params[axis.key] = orig; eng.apply(axis.scope);            // restore this axis (engine stays at profiler quality)
-    }
-    // --- upgrade: push this quality axis richer, read the ADDED ms (only worth measuring with spare to spend) ---
-    const upVal = hasSpare ? upValue(axis, params) : null;
-    if(upVal!=null){
-      showMeasuring(`${axis.label} ↑  (${n}/${AXES.length})`);
-      const orig = params[axis.key];
-      params[axis.key] = upVal; eng.apply(axis.scope);
-      const after = await measureCost();
-      upCostsMs[axis.key] = Math.max(0, passCost(axis,after) - baseTotal);
-      params[axis.key] = orig; eng.apply(axis.scope);
-    }
-  }
-  profiling = false;                                            // params are back to snap; auto stays off until closeProfile
-  const costs = Object.fromEntries(rows.filter(r=>!r.na && !PLAYBACK_KEYS.includes(r.axis.key)).map(r => [r.axis.key, r.frac]));
-  const improve = proposeImprove(snap, upCostsMs, FRAME_BUDGET_MS - baseTotal);
-  showBreakdown(base, rows, proposeVariants(snap, costs), improve, snap);
-}
-
-// ---- level 1: the cost breakdown overlay ----
-const prof = document.getElementById('prof');
-let profFpsEl = null;                                           // live whole-frame fps element; null when the breakdown is closed
-const fpsLabel = (fps) => `${fps.toFixed(0)} fps${fps>0&&fps<58 ? ' · over budget at full quality' : ''}`;
-function showMeasuring(what){
-  prof.innerHTML = `<h3>profiling</h3><div class="row">measuring <b style="color:#cbe6a8">${what}</b> …</div>`
-    + `<div class="row" style="color:#7a8a7a">averaging real frames at full quality — a few seconds.</div>`;
-  prof.classList.add('show'); profFpsEl = null;
-}
-function showBreakdown(base, rows, variants, improve, snap){
-  const ms = v => `${v.toFixed(2)} ms`, total = base.transportMs + base.bakeMs;
-  const spare = FRAME_BUDGET_MS - total;   // honest budget headroom at full quality — what the 'improve' direction can spend
-  // per-pass GPU cost is from real on-screen frames (in-situ timer queries) where available; the live FRAME RATE
-  // below it is the honest whole-frame truth the old offscreen 'headroom ×' obscured — at full quality, < 60 means
-  // the real frame is over budget (exactly what makes auto-quality trim), which a 'plenty of headroom' burst hid.
-  let html = `<h3>frame cost <span style="color:#7a8a7a">${base.approx?'(approx — no timer queries)':'(in-situ)'}</span></h3>`;
-  html += `<div class="row"><span class="k">transport</span><span class="v">${ms(base.transportMs)}</span></div>`;
-  html += `<div class="row"><span class="k">bake (wind)</span><span class="v">${base.bakeMs>0?ms(base.bakeMs):'—'}</span></div>`;
-  html += `<div class="row"><span class="k">frame rate</span><span class="v" id="prof-fps">…</span></div>`;
-  html += `<div class="row"><span class="k">spare budget</span><span class="v">${spare>=0?ms(spare):`over by ${ms(-spare)}`}</span></div>`;
-  if(base.bakeMs > base.transportMs*0.5)
-    html += `<div class="warn">bake is ${Math.round(100*base.bakeMs/Math.max(total,1e-3))}% of the frame — auto-quality can't trim it. Lighten texture res / foliage for weak hardware.</div>`;
-  html += `<h3>per feature</h3>`;
-  const sorted = rows.slice().sort((a,b)=>b.frac-a.frac);
-  const max = Math.max(...sorted.map(r=>r.frac), 1e-3);
-  for(const r of sorted){
-    const tag = r.na ? ' · already min' : r.axis.cls==='style' ? ' · style, measure only'
-              : r.axis.cls==='risky' ? ' · risky' : r.axis.cls==='tune' ? ' · opt-in' : '';
-    html += `<div class="row"><span class="k">${r.axis.label}${tag}</span><span class="v">${r.na?'—':`${Math.round(100*r.frac)}%`}</span></div>`;
-    html += `<div class="bar"><i style="width:${(100*r.frac/max).toFixed(1)}%"></i></div>`;
-  }
-  const canCompare = variants.some(v=>v.applied.length>0);
-  const canImprove = improve && improve.applied.length>0;
-  html += `<div class="row" style="margin-top:10px">`
-       + (canCompare ? `<button id="prof-compare">lighten ▸</button> ` : ``)
-       + (canImprove ? `<button id="prof-improve">improve ▸</button> ` : ``)
-       + `<button id="prof-close">close</button></div>`;
-  prof.innerHTML = html; prof.classList.add('show');
-  profFpsEl = document.getElementById('prof-fps');
-  document.getElementById('prof-close').onclick = closeProfile;
-  if(canCompare) document.getElementById('prof-compare').onclick = ()=>showVariants(variants, snap);
-  if(canImprove) document.getElementById('prof-improve').onclick = ()=>showVariants([improve], snap);   // the single richer variant, same A/B wipe
-}
-function closeProfile(){ prof.classList.remove('show'); profFpsEl=null; if(eng.profiler.hasTimer) eng.profiler.setInstrument(false); exitProfilerQuality(); }
-
-// ---- level 2: the A/B wipe. A second engine on its own stacked canvas, revealed left of a draggable divider;
-// its wind is mirrored EXACTLY from the main look (setMotionSource) so only the quality differs across the seam.
-// The engine + its canvas are created per comparison and DISPOSED on close, so the editor holds no second GL
-// context whenever you're not actively comparing. ----
-let cmpEng=null, cmpCanvasEl=null, cmpVariants=null, cmpIdx=0, cmpX=0.5;
-const cmp=document.getElementById('cmp'), cmpBar=document.getElementById('cmpBar'), cmpInfo=document.getElementById('cmpInfo');
-const cmpFps=document.getElementById('cmpFps'), cmpFpsV=document.getElementById('cmpFpsV'), cmpFpsM=document.getElementById('cmpFpsM');
-// per-engine fps: the variant (left of the wipe) vs the current look (right). With vsync both read ~60 while the
-// GPU keeps up; the variant only pulls ahead once the full look can't hold the refresh — exactly the weak-hw case.
-function updateCmpFps(){ if(!cmpEng) return;
-  cmpFpsV.textContent=`variant  ${cmpEng.fps.toFixed(0)} fps`; cmpFpsM.textContent=`current  ${eng.fps.toFixed(0)} fps`; }
-function setClip(){ if(!cmpCanvasEl) return; const w=window.innerWidth; cmpBar.style.left=`${cmpX*w}px`;
-  cmpCanvasEl.style.clipPath=`inset(0 ${((1-cmpX)*100).toFixed(2)}% 0 0)`; }
-function showVariants(variants, _snap){
-  cmpVariants=variants; cmpIdx=0; cmpX=0.5;
-  cmp.classList.add('show'); cmpInfo.style.display='flex'; cmpFps.classList.add('show');
-  cmpCanvasEl = document.createElement('canvas'); cmpCanvasEl.id='cmpCanvas'; cmp.insertBefore(cmpCanvasEl, cmpBar);   // fresh, disposable canvas (CSS #cmpCanvas fills + positions it)
-  try { cmpEng = create(cmpCanvasEl, { params: variants[0].params, session:{...settings.session,playback:{auto_quality:false,adaptive_motion:false}},environment:sessionEnvironment }); }
-  catch(e){ alert(`A/B unavailable: ${e.message}`); closeCmp(); return; }
-  setClip();
-  cmpEng.setMotionSource(eng);                                         // mirror the main look's wind EXACTLY (same skeleton)
-  loadVariant(0);
-}
-function loadVariant(i){
-  cmpIdx=i; const v=cmpVariants[i];
-  cmpEng.setParams(v.params);
-  cmpEng.perf.auto=false; cmpEng.perf.resScale=1;               // show the variant at MAX resolution too (profiler mode)
-  const cuts = v.applied.length ? v.applied.map(s=>`${s.label} → ${fmt(s.value)}`).join(' · ') : 'no change available';
-  const badge = (vv) => vv.estReduction!=null ? `−${Math.round(vv.estReduction*100)}%` : `+${vv.estAddedCost.toFixed(1)}ms`;   // cut vs. improve
-  cmpInfo.innerHTML =
-    cmpVariants.map((vv,j)=>`<span class="pill ${j===i?'on':''}" data-i="${j}">${vv.name} ${badge(vv)}</span>`).join('')
-    + `<span class="cuts">${cuts}</span><button id="cmpSave">save ★</button><button id="cmpClose">done</button>`;
-  for(const p of cmpInfo.querySelectorAll('.pill')) p.onclick=()=>loadVariant(+p.dataset.i);
-  document.getElementById('cmpSave').onclick=saveVariant;
-  document.getElementById('cmpClose').onclick=closeCmp;
-}
-function saveVariant(){
-  const v=cmpVariants[cmpIdx];
-  const name=(prompt('Save variant as:', `${entryName(stateNow(), getStored(), activeList(), presetSel.value)} · ${v.name}`)||'').trim();
-  if(!name) return;
-  const look={...profilerAuthored};
-  for(const change of v.applied) look[change.key]=v.params[change.key];
-  saveLook(name, authoredLook(look));
-  closeCmp();
-}
-function closeCmp(){ cmp.classList.remove('show'); cmpInfo.style.display='none'; cmpFps.classList.remove('show');
-  if(cmpEng){ cmpEng.dispose(); cmpEng=null; }                        // free the whole second GL context, not just pause it
-  if(cmpCanvasEl){ cmpCanvasEl.remove(); cmpCanvasEl=null; } }
-cmpBar.addEventListener('pointerdown',e=>{ cmpBar.setPointerCapture(e.pointerId);
-  const move=ev=>{ cmpX=Math.max(0,Math.min(1,ev.clientX/window.innerWidth)); setClip(); };
-  const up=()=>{ window.removeEventListener('pointermove',move); window.removeEventListener('pointerup',up); };
-  window.addEventListener('pointermove',move); window.addEventListener('pointerup',up); });
-window.addEventListener('resize', ()=>{ if(cmp.classList.contains('show')) setClip(); });
 
 // ---- transition fade: its own row at the very bottom of the panel ----
 (()=> {

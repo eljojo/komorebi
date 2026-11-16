@@ -67,8 +67,8 @@ function createEngine(canvas, opts, driven=false){
   if (!extCBF) fail('EXT_color_buffer_float is required (float render targets).');
   const MAX_TEX = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 2048;  // caps the per-clump data-texture width
   // profiling (EDITOR only): GPU timer queries for absolute per-pass ms. The extension is often absent or
-  // coarsened by browsers for privacy — callers must tolerate null (the editor falls back to the stress
-  // burst). EXT_disjoint_timer_query_webgl2 measures TIME_ELAPSED over a range of GL commands.
+  // coarsened by browsers for privacy — callers must tolerate null (test-gl/cost.mjs requires it).
+  // EXT_disjoint_timer_query_webgl2 measures TIME_ELAPSED over a range of GL commands.
   let extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;   // mutable: extensions are per-context-incarnation, re-fetched by initGPU() after a context restore
 
   let sessionEnvironment={...opts.environment,maxTextureSize:MAX_TEX};
@@ -321,7 +321,6 @@ function createEngine(canvas, opts, driven=false){
     grove: null,            // the ACTIVE grove value (hier + layerVAO + its two data textures); the views above point into it
     clusterTex: null,       // per-clump dynamic bend angles (limb, twig), updated each frame
     clusterGeomTex: null,   // per-clump static geometry (clump centre + trunk pivot)
-    benchFBO: null, benchTex: null,   // profiler stress-burst target (EDITOR; here so dispose() can free it)
     presentFBO: null, presentW: 0, presentH: 0,   // adaptive frame-rate present target (TUNE §9), allocated lazily
     srcDbgBuf: null, srcDbgVAO: null, vizBuf: null, vizVAO: null,   // editor-only debug-overlay buffers
     timed: (_pass, draw) => draw(),   // profiling hook: the editor swaps in real GPU timer queries (EDITOR)
@@ -831,9 +830,9 @@ function createEngine(canvas, opts, driven=false){
       transportCache.clear(); fillEntry = null; litterEntry = null;
       hub.layerTex.forEach(t => { gl.deleteTexture(t); });
       hub.woodTex.forEach(t => { gl.deleteTexture(t); });
-      [hub.clusterTex, hub.clusterGeomTex, hub.grove?.leafTex, occTex, hub.faithTex, hub.faithScratch, hub.benchTex, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
+      [hub.clusterTex, hub.clusterGeomTex, hub.grove?.leafTex, occTex, hub.faithTex, hub.faithScratch, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
       freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
-      [bakeFBO, faithFBO, fillFBO, hub.benchFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
+      [bakeFBO, faithFBO, fillFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       hub.layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
       if(faith.pivotBuf) gl.deleteBuffer(faith.pivotBuf);

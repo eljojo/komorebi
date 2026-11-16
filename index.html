@@ -214,40 +214,6 @@
   }
   #tip b { color:#cbe6a8; font-weight:600; }
 
-  /* ---- auto-profiler: cost breakdown panel (sits beside the dev panel) ---- */
-  #prof { position:fixed; left:300px; top:8px; width:300px; max-height:92vh; overflow:auto; z-index:20;
-    font:11px/1.45 ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
-    background:rgba(8,12,8,.95); border:1px solid #2c452c; border-radius:8px; padding:10px 12px; display:none; }
-  #prof.show { display:block; }
-  #prof h3 { margin:6px 0 8px; color:#7fae7f; font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
-  #prof h3:first-child { margin-top:0; }
-  #prof .row { margin:5px 0; overflow:hidden; }
-  #prof .k { color:#9fb89f; } #prof .v { color:#e8d9a8; float:right; }
-  #prof .bar { height:6px; background:#1c2a1c; border-radius:3px; margin:2px 0 7px; overflow:hidden; }
-  #prof .bar i { display:block; height:100%; background:#c99; }
-  #prof .warn { color:#e8b06a; margin:8px 0; line-height:1.5; }
-  #prof button { background:#1a2a1a; color:#cfe0cf; border:1px solid #2c452c; border-radius:4px; padding:3px 8px; cursor:pointer; }
-  /* ---- auto-profiler: A/B wipe (variant on a stacked canvas, current beneath, draggable divider) ---- */
-  #cmp { position:fixed; inset:0; z-index:25; display:none; }
-  #cmp.show { display:block; }
-  #cmpCanvas { position:absolute; inset:0; width:100vw; height:100vh; display:block; }   /* variant, clipped left of the divider */
-  #cmpBar { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:#f0e0a8; cursor:ew-resize; z-index:26;
-    box-shadow:0 0 12px rgba(240,224,168,.6); touch-action:none; }
-  #cmpBar::after { content:'↔'; position:absolute; top:50%; left:-9px; color:#0a0d0a; background:#f0e0a8; border-radius:10px;
-    width:16px; height:16px; line-height:16px; text-align:center; font:11px monospace; transform:translateY(-50%); }
-  #cmpInfo { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:27; display:none; gap:8px; align-items:center;
-    font:11px ui-monospace,monospace; color:#cfe0cf; background:rgba(8,12,8,.92); border:1px solid #2c452c; border-radius:8px; padding:8px 10px; }
-  #cmpInfo .cuts { color:#9fb89f; max-width:42vw; }
-  #cmpInfo button { background:#1a2a1a; color:#cfe0cf; border:1px solid #2c452c; border-radius:4px; padding:4px 9px; cursor:pointer; }
-  #cmpInfo .pill { padding:4px 9px; border-radius:12px; background:#10180f; cursor:pointer; border:1px solid #243; }
-  #cmpInfo .pill.on { background:#243c24; color:#e8d9a8; border-color:#3c5c3c; }
-  /* per-engine fps, one each side of the wipe: variant (left, gold like the divider) vs current (right) */
-  #cmpFps { position:fixed; top:10px; left:0; right:0; z-index:27; display:none; justify-content:space-between;
-    padding:0 14px; font:12px ui-monospace,monospace; color:#cfe0cf; pointer-events:none; }
-  #cmpFps.show { display:flex; }
-  #cmpFps span { background:rgba(8,12,8,.85); border:1px solid #2c452c; border-radius:6px; padding:4px 9px; }
-  #cmpFps .vlabel { color:#f0e0a8; }
-
   /* ---- welcome gate: a faint 'memories' background under an intro overlay ---- */
   #gl { transition: opacity 1.6s ease; }
   #gl.still { cursor: none; }                       /* the pointer has rested on the picture: it steps out of the way until it moves */
@@ -312,10 +278,6 @@
 <div id="lookName"></div>
 <div id="hint" class="gone"><b>← →</b> change scene · <b>D</b> panel · <b>R</b> new grove · <b>T</b> tree view · <b>L</b> leaf · <b>F</b> full · <b>W</b> workspace · drag = orbit · shift-drag = pan · wheel = zoom · <b>H</b> hints</div>
 <div id="tip"></div>
-<div id="prof"></div>
-<div id="cmp"><div id="cmpBar"></div></div>
-<div id="cmpFps"><span class="vlabel" id="cmpFpsV"></span><span id="cmpFpsM"></span></div>
-<div id="cmpInfo"></div>
 <div id="welcome">
   <div class="w">
     <h1>Komorebi<span class="jp">木漏れ日</span></h1>

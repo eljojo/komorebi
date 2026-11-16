@@ -11,7 +11,7 @@
 //   komorebi-motion.js        wind + the spring hierarchy (spec §5)
 //   komorebi-transitions.js   the cloud-bloom crossfade between looks (spec §9)
 //   komorebi-render.js        the frame draw + uniform upload + glow tier (spec §4.6/§4.7)
-//   komorebi-editor-tools.js  debug overlays, profiler, motion mirror (EDITOR only)
+//   komorebi-editor-tools.js  debug overlays, GPU timer queries, motion mirror (EDITOR only)
 // with the shared foundations imported by all of them:
 //   komorebi-transport.js     the transport master + camera registry (spec §4.6/§4.9)
 //   komorebi-shaders.js       the bake / faithful / display shaders + the tone tail

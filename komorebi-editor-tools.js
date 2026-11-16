@@ -1,8 +1,8 @@
 // ============================================================================
 // Editor tools (EDITOR only, spec §9) — everything the dev pages use and the
-// player build strips: the source + tree-preview debug overlays, the profiling
-// primitive (GPU timer ring + the stress-burst bench target), and the motion
-// mirror that drives one engine's wind from another. One factory, called under
+// player build strips: the source + tree-preview debug overlays, the GPU timer
+// queries test-gl/cost.mjs reads, and the motion mirror that drives one engine's
+// wind from another. One factory, called under
 // if(EDITOR), that hangs its surface on the engine's shared internals (hub).
 // ============================================================================
 import { DEG, clamp, hash3, lerp, makeGauss, mulberry32 } from './komorebi-math.js';
@@ -44,7 +44,6 @@ export function groveLeaves(hier, params, faithful){
 
 export function makeEditorTools(hub){
   const { gl, canvas, params, motion, src, U, faithfulOn } = hub;   // the GL handles (programs, extTimer) are read as hub.x: initGPU() replaces them on a context restore
-  let benchW = 0, benchH = 0;      // profiler stress-burst size (the FBO/texture live on hub so dispose() can free them)
 
   // the debug overlays' buffers + the profiler's GPU objects: created here, and again by initGPU() after a context restore
   function initEditorGL(){
@@ -65,7 +64,6 @@ export function makeEditorTools(hub){
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,8);
     gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,1,gl.FLOAT,false,24,20);
     gl.bindVertexArray(null);
-    hub.benchFBO = null; hub.benchTex = null; benchW = benchH = 0;   // dead after a loss; ensureBenchTarget() rebuilds on demand
     tq.bake.q = [null,null]; tq.transport.q = [null,null];           // dead timer queries must not be polled
   }
 
@@ -209,7 +207,7 @@ export function makeEditorTools(hub){
   };
 
   // ---- profiling primitive (spec §9). The engine owns measurement because it owns the GL passes; the
-  // editor's profiler.js + UI orchestrate. hub.timed defaults to a passthrough (so frame() is unaffected in
+  // cost tool (test-gl/cost.mjs) reads it. hub.timed defaults to a passthrough (so frame() is unaffected in
   // the player build, where this whole module dead-strips); this swaps in real GPU timer queries. ----
     let instrumenting = false;
     const TIME_ELAPSED = 0x88BF, GPU_DISJOINT = 0x8FBB;   // EXT_disjoint_timer_query_webgl2 enums
@@ -226,56 +224,13 @@ export function makeEditorTools(hub){
       gl.beginQuery(TIME_ELAPSED, q); draw(); gl.endQuery(TIME_ELAPSED);
       r.q[r.i&1] = q; r.i++;                               // self-advance: each pass flips its own ring per frame
     };
-    // offscreen stress burst: render a pass n times into an off-screen RGBA8 target at the live backing size,
-    // then readPixels one texel to fence — so wall-clock spans real GPU work uncapped by vsync (one synchronous
-    // burst, not one-per-rAF). headroom = a 60fps frame budget / per-render ms. Works even where timer queries don't.
-    function ensureBenchTarget(){
-      // measure transport at MAX resolution (resScale=1), NOT the live auto-quality-trimmed backing — the
-      // profiler exists to show the cost of each stylistic decision at full quality (spec §9), and on a weak
-      // device the live canvas may already be downscaled, which would understate the true cost.
-      const dpr=Math.min(2, window.devicePixelRatio||1);
-      const w=Math.max(1,Math.round(canvas.clientWidth*dpr)), h=Math.max(1,Math.round(canvas.clientHeight*dpr));
-      if(hub.benchFBO && benchW===w && benchH===h) return;
-      if(hub.benchTex) gl.deleteTexture(hub.benchTex);
-      if(!hub.benchFBO) hub.benchFBO=gl.createFramebuffer();
-      hub.benchTex=gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, hub.benchTex);
-      gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, hub.benchFBO);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.benchTex, 0);
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      benchW=w; benchH=h;
-    }
-    function bench(pass, n){
-      n = Math.max(1, n|0);
-      // fence the burst with gl.finish() (drains ALL queued GL work). The old readPixels fence was a RGBA/UNSIGNED_BYTE
-      // read of an RGBA16F target (layerTex[0]) — an invalid combo that errors instead of flushing, and in faithful
-      // mode bake() writes faithTex (layerTex[0] is a 1×1 dummy), so the fence read the wrong/unwritten texture. (E#35)
-      if(pass==='transport'){
-        ensureBenchTarget();
-        const t0=performance.now();
-        for(let i=0;i<n;i++) hub.drawFrameInto(hub.benchFBO, benchW, benchH);   // the whole frame, diffusion included — the tier's cost is the thing the axis measures
-        gl.finish();
-        const ms=(performance.now()-t0)/n;
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        return { ms, headroom: 16.67/Math.max(ms,1e-3) };
-      }
-      if(pass==='bake'){
-        const t0=performance.now();
-        for(let i=0;i<n;i++) hub.bake();                            // bake targets its own layer/faith FBOs
-        gl.finish();                                            // fence: drains the bake passes (layer or faithful)
-        const ms=(performance.now()-t0)/n;
-        return { ms, headroom: 16.67/Math.max(ms,1e-3) };
-      }
-      return { ms:0, headroom:Infinity };
-    }
-    hub.profiler = { hasTimer: !!hub.extTimer, bakeMs:0, transportMs:0, setInstrument(on){ instrumenting=!!on; }, bench };
+    hub.profiler = { hasTimer: !!hub.extTimer, bakeMs:0, transportMs:0, setInstrument(on){ instrumenting=!!on; } };   // read by test-gl/cost.mjs
 
   // ---- motion mirror: drive this engine's wind EXACTLY from another instance instead of its own
-  // physics, so the A/B picker's two engines animate in lockstep. Safe because the profiler's variants never
-  // change the grove skeleton (tree/limb/branch/seed), so the spring arrays line up 1:1. Holds for faithful_canopy
-  // too: flipping it keeps the same grown grove and spring arrays — only the cast path (layer vs per-sample bake)
-  // changes — so the mirror stays sound for that axis as well. snapshotMotion exposes
+  // physics, so two engines animate in lockstep (the test tools that drive two). Sound only while the two share the
+  // grove skeleton (tree/limb/branch/seed), so the spring arrays line up 1:1. Holds across faithful_canopy too:
+  // flipping it keeps the same grown grove and spring arrays — only the cast path (layer vs per-sample bake)
+  // changes. snapshotMotion exposes
   // live refs (read-only); applyMotion copies them in + re-uploads the bend texture; setMotionSource swaps the
   // per-frame tick for a copy-from-source. The bake only reads angles + sway + time, so velocities aren't needed. ----
     hub.snapshotMotion = () => ({ m:motion, dphase:params.drift_phase, lA:hub.hier?.limbAngle, lP:hub.hier?.limbPitch, tA:hub.hier?.twigAngle, air:hub.hier?.airData });

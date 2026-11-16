@@ -1,7 +1,7 @@
 // ============================================================================
 // The held leaf's physics (spec §4.5, "The held leaf"): ONE grown leaf, rasterised with the areole maze at full resolution — walls beside cells — so the
 // sieve effect can be seen where the engine only carries its mean (`wall_fraction`, Decision 10: the vibe at no performance cost). A pure editor sibling
-// like macros.js and profiler.js: leaf-preview.js draws it, editor.js owns the key, and NO engine module imports it, so nothing here can reach a bundle.
+// like macros.js: leaf-preview.js draws it, editor.js owns the key, and NO engine module imports it, so nothing here can reach a bundle.
 //
 // THE MAZE IS SUCCESSIVE DOMAIN DIVISION (Bohn, Andreotti & Douady), not Voronoi: a leaf's higher veins do not grow at random sites but in the domains the
 // older veins left, each ending where it meets an older wall — a T-junction, never the 120° Y a Voronoi diagram makes — and a hierarchy of widths falls out

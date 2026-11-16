@@ -64,7 +64,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
   registry (`FEATURES`, `featuresFor`) that tells a bundle which fall tiers it may cut.
 - `komorebi-session.js` — pure session profiles and fidelity/playback/presentation resolution; no device storage or UI.
 - `komorebi-math.js` — CPU math: atmosphere, deterministic RNG, wind noise, skeleton growth.
-- `komorebi-editor-tools.js`, `profiler.js` — EDITOR-only: debug overlays, the profiler and its proposals, the motion mirror.
+- `komorebi-editor-tools.js` — EDITOR-only: debug overlays, the GPU timer queries `nix run .#cost` reads, the motion mirror.
 
 **Looks.** `presets.js` — the built-in looks (`PRESETS`, and `EXPERIMENTAL`, which the editor hides behind its toggle).
 `macros.js` — the control bus: one input drives an authored recipe lifted from the shipped looks.

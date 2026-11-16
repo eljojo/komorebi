@@ -25,7 +25,7 @@ export function makeRender(hub){
   const _atm = { sun:[0,0,0], ambient:[0,0,0] }, _sd = [0,0,0];
 
   // ---- render ----
-  // ONE whole rendered frame into `fbo` at w×h — the only entry the frame loop (and the profiler's burst) uses, so
+  // ONE whole rendered frame into `fbo` at w×h — the only entry the frame loop uses, so
   // the diffusion decision is made in exactly one place. Gate OFF (floor, or glow_bleed 0, or the 16F targets
   // came back incomplete): bind the caller's target and draw transport into it — the literal old path, one extra
   // uniform and an untaken shader branch. Gate ON: transport writes LINEAR HDR into the sharp target instead, and
@@ -121,8 +121,7 @@ export function makeRender(hub){
     gl.drawArrays(gl.TRIANGLES,0,3);
   }
 
-  // the transport draw, assuming a framebuffer + viewport are already bound — so the profiler's stress burst
-  // (eng.profiler.bench) can aim it at an offscreen target without flipping to screen. drawFrameInto above owns
+  // the transport draw, assuming a framebuffer + viewport are already bound. drawFrameInto above owns
   // both callers. linearOut: skip the tone-map tail and write linear HDR for the diffusion tier to spread (§4.9).
   // ---- THE UPLOAD HALF OF THE REGISTRY. One function per uniform GROUP, under the same key TRANSPORT_GROUPS
   // declares it by, so the GLSL that declares a uniform and the JS that fills it are named together and a camera

@@ -13,7 +13,7 @@ Looks are named as the engine names them. Seed 290626672 is the seed every look 
 - **What was measured:** how many point-suns a fragment shader can sum and hold 60 fps.
 - **On:** not recorded (the founding design).
 - **Result:** about 16–48 samples holds 60 fps.
-- **What it established:** the sampler's working range; the auto-profiler now measures it per look.
+- **What it established:** the sampler's working range.
 - **Date:** not recorded.
 
 ### The eclipse's bite in the sampler
@@ -922,7 +922,7 @@ The four-in-one shader declared 246 vec4 rows of uniforms against WebGL2's guara
 
 ### The profiler's findings
 
-- An offscreen stress burst measured idealised GPU throughput the driver can collapse, and over-reported spare capacity; it was abandoned for timer queries over real on-screen frames, and survives only as a fallback.
+- An offscreen stress burst measured idealised GPU throughput the driver can collapse, and over-reported spare capacity; it was abandoned for timer queries over real on-screen frames.
 - The bake is co-dominant with transport on the windy looks, so a capable machine could sit at 60 fps and still run hot; `auto_quality` now trims bake resolution below the knee.
 - The adaptive frame-rate's win, as a frame-skip fraction, is about 0 on a genuinely windy look and high on a calm one.
 - On `faithful_canopy` looks the per-sample geometry bake is the whole cost and resolution buys almost nothing.
