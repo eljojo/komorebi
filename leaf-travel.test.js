@@ -205,3 +205,32 @@ test('carriers on their own clocks: each takes its own progress, outline mix and
     expect(own[16*i+2]*own[16*i+3]).toBeCloseTo(live?q.leaves[j+2]*q.leaves[j+3]:0,6);
   }
 });
+
+// ---- leaves on older wood (inner_leaves) travel from where they are drawn ----
+
+test('a faithful leaf on older wood leaves and lands where the bake draws it: its pivot weight drops its twig\'s bend',()=>{
+  const a=grove([[1,2]]),b=grove([[1,2]]);
+  for(const q of [a,b]){q.hier.clusterData[1]=.5;q.pivot=Float32Array.from([1,.25]);delete q.hier.twigs;}   // twig bend .5 about the twig base (0,0); leaf 0 wholly on the wood, leaf 1 a quarter; the faithful path reads no twig record
+  const pairs=travel.pairLeaves(a,b),out=new Float32Array(pairs.length*12);
+  for(const w of [0,1]){
+    travel.moveLeaves(a,b,pairs,w,out);
+    for(let n=0;n<pairs.length;n++){
+      const i=pairs[n][w],q=w?b:a,T=.5*(1-q.pivot[i/18]),x=q.leaves[i],y=q.leaves[i+1];   // VS_FAITH: thT *= 1 - iPivotDrop, about TB, then the leaf's angle less thT
+      expect(out[12*n]).toBeCloseTo(Math.cos(T)*x-Math.sin(T)*y,6);
+      expect(out[12*n+1]).toBeCloseTo(Math.sin(T)*x+Math.cos(T)*y,6);
+      expect(out[12*n+4]).toBeCloseTo(-T,6);
+    }
+  }
+});
+
+test('a layered leaf hung off its twig\'s height travels from its own layer, not its twig\'s',()=>{
+  const a=grove([[0,2]]),b=grove([[0,2]]);
+  for(const q of [a,b]){
+    q.params.faithful_canopy=false;q.params.stem_length=0;
+    q.hier.twigs=[{layer:0,z:1}];q.hier.layerBand=[1,1,2];   // heights 1..2 over two layers: the twig on the lower, a leaf at 2 on the upper
+    q.leaves[16]=1;q.leaves[18+16]=2;
+  }
+  const pairs=travel.pairLeaves(a,b),out=travel.moveLeaves(a,b,pairs,0,new Float32Array(pairs.length*12));
+  const heights=pairs.map((p,n)=>[p[0],out[12*n+8]]).sort((p,q)=>p[0]-q[0]).map(p=>p[1]);
+  expect(heights).toEqual([2,4]);   // canopy_base_height_m 2 + layer/(layer_count−1) · canopy_thickness_m 2
+});

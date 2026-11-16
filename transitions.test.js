@@ -387,10 +387,10 @@ test("a woodless overhead faithful↔layer switch moves leaves without clearing 
   expect(r.params.faithful_canopy).toBe(false);
 });
 
-test("leaf travel leaves other modes, empty groves, inner leaves, drop and oversized correspondences on their existing routes",()=>{
+test("leaf travel leaves other modes, empty groves, drop and oversized correspondences on their existing routes",()=>{
   const from={...DEFAULTS,faithful_canopy:true};
   for(const change of [{branch_tau:1},{canopy_fill:.5},{standing_scene:true},{sky_view:true},{receiver:1},
-    {litter:1},{leaf_drop:1},{inner_leaves:.5},{leaf_size_m:0},{foliage_density:0},{tree_count:1000}]){
+    {litter:1},{leaf_drop:1},{leaf_size_m:0},{foliage_density:0},{tree_count:1000}]){
     const r=transitionRig(from);r.hub.beginLeafTravel=()=>{throw Error('unsupported leaf travel');};
     r.transitionTo({...from,faithful_canopy:false,...change});expect(r.hub.trans.leafTravel,JSON.stringify(change)).toBe(false);
   }
@@ -506,6 +506,18 @@ test("two faithful overhead groves that differ structurally travel their leaves,
   }
 });
 
+test("leaves on older wood travel like any other: inner leaves at either end or both keep leaf travel", () => {
+  const layered = { ...faithfulFrom, faithful_canopy: false, seed: 123 };
+  for (const [from, to] of [[{ inner_leaves: 0.5 }, { inner_leaves: 0.5 }], [{ inner_leaves: 0 }, { inner_leaves: 0.35 }], [{ inner_leaves: 0.35 }, { inner_leaves: 0 }]])
+    for (const target of [{ ...faithfulFrom, ...faithfulPairs[1] }, layered]) {
+      const r = transitionRig({ ...faithfulFrom, ...from });
+      Object.assign(r.hub, { beginLeafTravel() {}, stepLeafTravel() {}, finishLeafTravel: () => null, endLeafTravel() {},
+        beginSceneFade: () => { throw Error("unexpected scene dissolve"); } });
+      r.transitionTo({ ...target, ...to });
+      expect(r.hub.trans.leafTravel, JSON.stringify([from, to, target.faithful_canopy])).toBe(true);
+    }
+});
+
 test("faithful overhead pairs a gentler route joins keep it: live morph, grove morph, re-season", () => {
   for (const [change, route] of [[{ exposure: 2 }, null], [{ leaf_size_m: DEFAULTS.leaf_size_m * 1.2 }, "canopyMorph"], [{ phenology: 0.8 }, "seasonMorph"]]) {
     const r = transitionRig(faithfulFrom);
@@ -517,7 +529,7 @@ test("faithful overhead pairs a gentler route joins keep it: live morph, grove m
 });
 
 test("a faithful structural pair leaf travel refuses still takes the scene dissolve", () => {
-  for (const both of [{ branch_tau: 0.5 }, { standing_scene: true }, { litter: 1 }, { inner_leaves: 0.5 }, { canopy_fill: 0.5 }]) {
+  for (const both of [{ branch_tau: 0.5 }, { standing_scene: true }, { litter: 1 }, { canopy_fill: 0.5 }]) {
     const r = transitionRig({ ...faithfulFrom, ...both });
     r.hub.beginLeafTravel = () => { throw Error("unexpected leaf travel"); };
     Object.assign(r.hub, { beginSceneFade: () => {}, stepSceneFade: () => {}, endSceneFade: () => {} });
@@ -525,7 +537,7 @@ test("a faithful structural pair leaf travel refuses still takes the scene disso
     expect(r.hub.trans.leafTravel, JSON.stringify(both)).toBe(false);
     expect(r.hub.trans.sceneFade, JSON.stringify(both)).toBe(true);
   }
-  for (const differ of [{ eclipse: true }, { edge_area: true }]) {
+  for (const differ of [{ eclipse: !faithfulFrom.eclipse }, { edge_area: !faithfulFrom.edge_area }]) {
     const r = transitionRig(faithfulFrom);
     r.hub.beginLeafTravel = () => { throw Error("unexpected leaf travel"); };
     Object.assign(r.hub, { beginSceneFade: () => {}, stepSceneFade: () => {}, endSceneFade: () => {} });

@@ -83,6 +83,8 @@ const SREC = 11;   // a season record: x, y, h, A, B0, area, j, k, cov, layer, s
 // needs a per-leaf pivot weight and a shader slot).
 export const INNER_SALT = 0xDAA66D2B;   // 3·0x9E3779B9 mod 2^32: the golden gamma's next multiple after the per-tree salt's 2· (komorebi-math.js), in no other stream
 const INNER_GLIDE = 0.05;        // the smoothstep's width in `inner_leaves`: a leaf is wholly on the wood this far past its own h
+// A height's layer over a grove's band [zMin, dz, nLayer] (hier.layerBand): higher foliage, higher layer. The hang loop bins twigs and leaves by it, and leaf travel a layered leaf.
+export const layerOfHeight = (z, [zMin, dz, nLayer]) => nLayer>1 ? clamp(Math.round((z-zMin)/dz*(nLayer-1)), 0, nLayer-1) : 0;
 // The outward plan heading (older end -> nearer the tip) of segment i of a path of n segments into `e`, or of the nearest segment that has one: a vertical step has no direction in plan. False when none does.
 function woodHeading(path, i, n, e){
   for(let o=0;o<n;o++) for(let side=0;side<2;side++){
@@ -401,7 +403,8 @@ export function makeGrove(hub){
     const dz = (zMax-zMin) > 1e-4 ? (zMax-zMin) : 1;
     const nLayer = Math.max(1, params.layer_count|0);
     // a height's layer: higher foliage -> higher layer -> blurs more. The twigs bin by it, and so does each leaf by ITS height (inner_leaves hangs a leaf off its twig's height, so off its twig's layer); a leaf at its twig's height keeps t.layer
-    const layerOf = (z) => nLayer>1 ? clamp(Math.round((z-zMin)/dz*(nLayer-1)), 0, nLayer-1) : 0;
+    const layerBand = [zMin, dz, nLayer];   // kept on hier: leaf travel bins a leaf by its own height as this loop does
+    const layerOf = (z) => layerOfHeight(z, layerBand);
     for(const t of twigs) t.layer = layerOf(t.z);
     // LAYER/park height band (spec §2): bole 0→canopy_base, crown canopy_base→+thickness, NORMALISED by [zMin,zMax].
     // Used ONLY by the analytic woody occluder (non-faithful). This normalisation is invariant to a uniform z-scale —
@@ -442,6 +445,7 @@ export function makeGrove(hub){
       // children / limb_count / phyllotaxis / the leader↔hub azimuth flip re-mean every index, so the carry is invalid.
       topoSig: `${params.seed>>>0}|${levels}|${kids}|${lpt}|${phyllo}|${L>0?1:0}${years ? `|y${years}` : ''}`,
       segments, twigs, maxV:0,   // twigs (one per leaf cluster) for the 3D preview — so it scatters per twig like the bake, not per terminal segment (droop sub-segments)
+      layerBand,   // [zMin, dz, nLayer]: the heights the twigs bin over (layerOfHeight)
       twigPath: wantPath ? twigPath : null, twigPathLen: wantPath ? Float64Array.from(twigPathLen) : null, twigShoots,   // twigShoots: a grown tree's clusters' shoots (placeLeaf), null for the grammar   // inner_leaves (placeLeaf): each twig's ancestor path and its arc, by twig index; null while the knob is 0
     };
     // carry the in-flight sway across a regrow so the wind doesn't reset (an editor tweak or a grove-morph

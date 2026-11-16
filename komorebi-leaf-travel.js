@@ -1,6 +1,7 @@
 import { ballisticK, clamp, lerp, lerpAngle, smoothstep, TAU, turnBack } from './komorebi-math.js';
 import { flutterLevel, depthGate } from './komorebi-air.js';
 import { CANOPY_MORPH_MAX, DEFAULTS, MORPH_KEYS } from './komorebi-params.js';
+import { layerOfHeight } from './komorebi-grove.js';
 import { VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_FULL } from './komorebi-shaders.js';
 const FEAT_LEAF_DIFFUSE = true;
 
@@ -73,10 +74,13 @@ export function pairLeaves(a,b){
   return pairs;
 }
 
-// Evaluate the native wind joints before interpolation; a leaf keeps moving while its destination changes.
+// Evaluate the native wind joints before interpolation; a leaf keeps moving while its destination changes. A leaf hung on older wood
+// (inner_leaves) is drawn as the bake draws it: faithful, it drops its twig's bend by its pivot weight (VS_FAITH's PIVOT); layered,
+// it is cast from the layer of its own height, as the hang loop binned it. A leaf at its twig's height keeps the twig's layer.
+const leafLayer=(H,j,z)=>{const t=H.twigs[j];return H.layerBand&&z!==Math.fround(t.z) ? layerOfHeight(z,H.layerBand) : t.layer;};
 function moved(q,i,out){
   const d=q.leaves,j=Math.round(d[i+11]),p=q.params,m=q.motion,H=q.hier,G=H.clusterGeom,D=H.clusterData,o=4*j;
-  const L=D[o],T=D[o+1],cl=Math.cos(L),sl=Math.sin(L),ct=Math.cos(T),st=Math.sin(T);
+  const L=D[o],T=p.faithful_canopy&&q.pivot ? D[o+1]*(1-q.pivot[i/18]) : D[o+1],cl=Math.cos(L),sl=Math.sin(L),ct=Math.cos(T),st=Math.sin(T);
   let tx=G[o],ty=G[o+1];const px=G[o+2],py=G[o+3];
   if(!p.faithful_canopy){
     const dx=tx-px,dy=ty-py,r=Math.max(Math.hypot(dx,dy),.001),sa=D[o+2]*.6,cs=Math.cos(sa),sn=Math.sin(sa),len=Math.min(p.stem_length,r*.9);
@@ -84,7 +88,7 @@ function moved(q,i,out){
   }
   const dx=d[i]-tx,dy=d[i+1]-ty,xx=tx+ct*dx-st*dy,yy=ty+st*dx+ct*dy;
   const wm=flutterLevel(m.u,H.airData?.[o]||0,p.wind_air), sw=p.leaf_swing*d[i+6]*(.5*m.u+wm*Math.sin(m.time*p.flutter_freq*6.2831853+d[i+7]))*depthGate(wm,H.airData?.[o+1]||0,p.wind_depth);
-  const z=p.faithful_canopy ? D[o+2]+d[i+16]*D[o+3] : p.canopy_base_height_m+H.twigs[j].layer/Math.max(1,p.layer_count-1)*p.canopy_thickness_m;
+  const z=p.faithful_canopy ? D[o+2]+d[i+16]*D[o+3] : p.canopy_base_height_m+leafLayer(H,j,d[i+16])/Math.max(1,p.layer_count-1)*p.canopy_thickness_m;
   const gain=p.faithful_canopy ? z/Math.max(q.hMax,.001) : 1+p.sway_height_gain*(z/p.canopy_base_height_m-1);
   const phase=p.drift_phase+d[i+15],ox=d[i+12]*Math.cos(phase),oy=d[i+13]*Math.sin(phase),co=Math.cos(d[i+14]),so=Math.sin(d[i+14]);
   out[0]=px+cl*(xx-px)-sl*(yy-py)+m.sway[0]*gain+p.drift_amount*(co*ox+so*oy);
@@ -169,7 +173,10 @@ export function makeLeafTravel(hub,createScene){
   const read=h=>{
     const leaves=new Float32Array(h.faith.count*18);
     gl.bindBuffer(gl.ARRAY_BUFFER,h.faith.buf);gl.getBufferSubData(gl.ARRAY_BUFFER,0,leaves);
-    return {leaves,hier:h.hier,params:h.params,motion:h.motion,hMax:h.faith.hMax,shape:h.grove.shape,texture:h.grove.leafTex};
+    // The pivot weights as the bake reads them, beside the leaves in the same order; null where no leaf has one, which keeps the old arithmetic.
+    let pivot=null;
+    if(h.faith.pivotOn){pivot=new Float32Array(h.faith.count);gl.bindBuffer(gl.ARRAY_BUFFER,h.faith.pivotBuf);gl.getBufferSubData(gl.ARRAY_BUFFER,0,pivot);}
+    return {leaves,pivot,hier:h.hier,params:h.params,motion:h.motion,hMax:h.faith.hMax,shape:h.grove.shape,texture:h.grove.leafTex};
   };
   function beginLeafTravel(to){
     const from=createScene();

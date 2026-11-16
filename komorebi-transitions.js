@@ -145,7 +145,7 @@ export function makeTransitions(hub){
       && !params.sky_view&&!to.sky_view&&!params.standing_scene&&!to.standing_scene
       && params.receiver===0&&to.receiver===0&&params.branch_tau===0&&to.branch_tau===0
       && params.canopy_fill===0&&to.canopy_fill===0&&params.litter===0&&to.litter===0
-      && params.leaf_drop===0&&to.leaf_drop===0&&params.inner_leaves===0&&to.inner_leaves===0&&params.leaf_size_m>0&&to.leaf_size_m>0
+      && params.leaf_drop===0&&to.leaf_drop===0&&params.leaf_size_m>0&&to.leaf_size_m>0
       && params.edge_area===to.edge_area&&params.eclipse===to.eclipse
       && leafCount>0&&leavesTo>0&&carrierCount<=CANOPY_MORPH_MAX);
     trans.leafTravel=!!leafTravel;
