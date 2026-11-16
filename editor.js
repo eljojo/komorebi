@@ -6,6 +6,7 @@ import { mount, getStored, getPreset, getState } from './arboretum.js';
 import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter } from './playlists.js';
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep } from './macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
+import { makeTreePane } from './tree-pane.js';
 import { senescing } from './komorebi-math.js';
 import { LEAF_SHAPES } from './komorebi-leaf.js';
 import { mountMidi } from './midi.js';
@@ -39,7 +40,7 @@ const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro
 // stands alone; ＋ climbs the ladder when you want more); the choice sticks thereafter. ----
 const SETTINGS_KEY = 'komorebi.editor';
 const settings = (() => {
-  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {}, sawTouchHint: false };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name
+  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {}, sawTouchHint: false, workspace: false };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name
   let s = base;
   try { s = Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch { /* unreadable: the defaults */ }
@@ -1270,12 +1271,14 @@ function showCloud(list, match){
   refreshPresetSelect(at<0 ? '' : String(at));      // the look has left this list (it joined a folder): nothing selected
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
-let devBeta=null, styleRow=null, playlistPresentationRow=null, playlistPresentation=null;
+let devBeta=null, styleRow=null, playlistPresentationRow=null, playlistPresentation=null, wsButton=null;
 function buildPresetUI(){
   const modes=document.createElement('div'); modes.className='ctl modes';
   const back=document.createElement('button'); back.textContent='less';
   back.addEventListener('click',()=>setMode('play'));
-  modes.append(back,settingsButton()); dev.appendChild(modes);
+  modes.append(back,settingsButton());
+  if(!coarse){ wsButton=mkBtn('workspace',()=>setWorkspace(!settings.workspace)); modes.append(wsButton); }   // the workspace is a desktop's: a phone has no room beside the picture
+  dev.appendChild(modes);
   // THE LOOK, as the panel's heading: ‹ name ›. The name is the dropdown: the select lies over it, transparent, so a click on the
   // name opens the full list (and the select stays the first one in #dev, the single source of the stepping origin).
   const head=document.createElement('div'); head.className='lookhead'; head.dataset.tipKey='Presets';
@@ -1399,6 +1402,7 @@ function toggleControls(){
 // step the ladder: hide whatever is up, swap the mode, slide the new surface in
 function setMode(mode){
   if(!(mode in MODE_ELS) || mode === settings.mode) return;
+  if(settings.workspace) setWorkspace(false);       // the workspace is the advanced surface's: another rung leaves it
   if(settings.mode==='adv'){                       // the profiler + A/B wipe belong to the advanced surface — don't orphan them
     if(prof.classList.contains('show')) closeProfile();
     if(cmp.classList.contains('show')) closeCmp();
@@ -1410,6 +1414,32 @@ function setMode(mode){
   settings.mode = mode; saveSettings();
   syncMacroControls(); syncPlayPreset();
   slideInPanel();
+}
+
+// THE WORKSPACE (W, or the panel's button; desktop only): the picture becomes a viewer with nothing over it, the tree pane
+// (tree-pane.js) stands beside it, and the advanced panel docks in the band below, opening its Tree shape area. The layout is index.html's (body.workspace); the engine sizes its backing store from the canvas's box every frame,
+// so a smaller box is all the viewer needs. Leaving puts everything back. It sticks across reloads like the mode.
+let treePane=null;
+// the workspace's counter: the frame rate and the resolution auto-quality is drawing at, always, quietly, four times a second
+const wsStat=document.getElementById('wsStat');
+let wsStatAt=0;
+function wsStatTick(){
+  const now=performance.now(); if(now-wsStatAt<250) return; wsStatAt=now;
+  wsStat.textContent=`${eng.fps>0 ? eng.fps.toFixed(0) : '–'} fps · res ${perf.resScale.toFixed(2)}×`;
+}
+const paneOf = () => (treePane ??= makeTreePane(params, { hier: () => eng.grove().hier, leaves: () => eng.treeLeaves() }));
+function setWorkspace(on){
+  if(coarse || document.body.classList.contains('intro')) return;
+  if(on && settings.mode!=='adv') setMode('adv');
+  settings.workspace=on; saveSettings();
+  document.body.classList.toggle('workspace', on);
+  if(on){
+    if(dev.classList.contains('hidden')) slideInPanel();
+    const shape=[...dev.querySelectorAll('summary.sec')].find(h=>h.textContent==='Tree shape')?.parentElement;   // an area is a <details> under its summary.sec heading
+    if(shape) shape.open=true;
+  }
+  if(on || treePane) paneOf().show(on);
+  if(wsButton) wsButton.textContent = on ? 'leave workspace' : 'workspace';
 }
 
 // Canvas pointer input. A MOUSE drags the sun (azimuth from x, elevation from y). A finger can't do that
@@ -1577,9 +1607,11 @@ let showLeaf=false, leaf=null;
 window.addEventListener('keydown',e=>{
   const k=e.key;
   if(k==='d'||k==='D'){
+    if(settings.workspace){ showHint('the panel is docked in the workspace: W leaves it'); return; }
     toggleControls();
     return;
   }
+  if((k==='w'||k==='W') && !e.metaKey && !e.ctrlKey){ setWorkspace(!settings.workspace); return; }
   if((e.metaKey||e.ctrlKey) && (k==='s'||k==='S')){                         // ⌘S / Ctrl+S: save, not the browser's save-page
     e.preventDefault();
     if(!document.body.classList.contains('intro')) promptSave();
@@ -1618,9 +1650,10 @@ eng.onFrame = ()=> {
   if(params.drift_auto) syncControl('drift_phase');
   refreshGates();               // a transition, a macro or a preset can flip a mode as readily as the row itself; the signature check makes the miss cheap
   const devUp = !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');   // a sliding-out panel counts as gone
-  if(params.show_source && devUp) eng.drawSourceInset();
+  if(params.show_source && devUp && !settings.workspace) eng.drawSourceInset();   // the sun's inset is the floating panel's, not the workspace's
   if(showTree) eng.drawTreeInset(treePointer, treePinned);
   if(showLeaf) leaf.draw();
+  if(settings.workspace){ treePane?.draw(); wsStatTick(); }
   const cmpOpen = cmp.classList.contains('show');
   // profiler breakdown: the live whole-frame fps at full quality — the honest 'is it holding 60' number the
   // misleading offscreen 'headroom' used to obscure. (The A/B picker shows each engine's fps separately.)
@@ -1628,7 +1661,7 @@ eng.onFrame = ()=> {
   if(cmpOpen) updateCmpFps();
   // HUD: debug info, shown only while the dev panel is open AND not in the A/B (which has its own per-engine fps).
   const devOpen = devUp;
-  hud.style.display = (devOpen && !cmpOpen) ? '' : 'none';
+  hud.style.display = (devOpen && !cmpOpen && !settings.workspace) ? '' : 'none';   // the workspace has its own quiet counter instead
   if(!devOpen || cmpOpen) return;
   const m=eng.motion;
   // perf is a WARNING line, absent when nominal: fps only once it slips below 60 (<55), and AUTO res only
@@ -1908,6 +1941,7 @@ midi = mountMidi({
   function arrive(){                                 // reveal the mode's surface — only once the welcome crossfade has SETTLED
     if(eng.trans.active && performance.now()<arriveBy){ setTimeout(arrive, 500); return; }   // the tier clock is frame-clamped, so wall time can stretch; wait it out, don't guess it
     slideInPanel(); stripWake();
+    if(settings.workspace) setWorkspace(true);       // the workspace a reload left on
     if(coarse && !settings.sawTouchHint){ settings.sawTouchHint=true; saveSettings(); showHint(); }   // the touch legend, once ever
   }
   // `opened` is what arboretum.js made of the link: { value } (a ★ in all looks) | { list, value, play } | { failed } | null (no link, or arboretum is off)
@@ -2050,4 +2084,5 @@ else if(location.hash==='#feel'){ history.replaceState(null, '', location.pathna
 // The dev server's bridge (dev-server.js): a tool outside the browser reads and sets this tab's look and sees its frame. Only that
 // server defines __komorebiDev, so anywhere else this line does nothing. A set loads the merged look the way a pasted one loads.
 globalThis.__komorebiDev?.attach({ eng, look: () => eng.captureLook(), set: (patch) => applyParams({ ...eng.captureLook(), ...patch }), value: () => presetSel.value,
-  tree: (on) => { const was = [showTree, treePinned]; showTree = treePinned = on; return was; }, untree: ([s, p]) => { showTree = s; treePinned = p; } });   // the tree preview (T), shown pinned for a capture and put back after
+  tree: (on) => { const was = [showTree, treePinned]; showTree = treePinned = on; return was; }, untree: ([s, p]) => { showTree = s; treePinned = p; },
+  pane: (size) => paneOf().png(size?.w, size?.h) });   // the workspace's tree pane, drawn now at w×h whether or not the workspace is up   // the tree preview (T), shown pinned for a capture and put back after

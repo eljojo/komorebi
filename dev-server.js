@@ -13,6 +13,7 @@
 //   POST /__dev/params   merge a JSON object of params into it (content-type application/json); answers the new look
 //   GET  /__dev/frame    the tab's next drawn frame (PNG), insets included
 //   GET  /__dev/tree     the tree preview (the editor's T), shown big for the capture and put back after (PNG, the preview alone)
+//   GET  /__dev/pane     the workspace's tree pane in the view it is on, drawn at ?w=&h= (920×1120) whether or not the workspace is up (PNG)
 // The tab that answers is the one most recently focused or connected. It exists only where this server injects it:
 // editor.js attaches through `globalThis.__komorebiDev`, which nothing else defines, so a deployed page never has it.
 // A hidden tab draws no frames, so /__dev/frame answers 503 there after 8 s. A live reload keeps the editor's look (pageBridge says how).
@@ -46,7 +47,7 @@ function pageBridge() {
   try { kept = JSON.parse(sessionStorage.getItem(KEY)); } catch (e) { console.error(e); }
   window.__komorebiDev = {
     kept,
-    attach({ eng, look, set, value, tree, untree }) {
+    attach({ eng, look, set, value, tree, untree, pane }) {
       sessionStorage.removeItem(KEY);
       window.__komorebiDev.keep = () => sessionStorage.setItem(KEY, JSON.stringify({ look: look(), value: value() }));
       // captures waiting for a frame: { n frames still to wait, crop (a GL-pixel rect, iy from the bottom) or null, resolve }
@@ -76,6 +77,7 @@ function pageBridge() {
         frame: () => after(1, null),
         // the preview eases to full size over a few dozen frames once pinned, so the capture waits for it
         tree: async () => { const was = tree(true); try { return await after(45, () => eng.treeInsetRect()); } finally { untree(was); } },
+        pane: (size) => pane(size),
       };
       const connect = () => {
         const s = new WebSocket(`ws://${location.host}/__dev`);
@@ -122,8 +124,9 @@ async function bridge(req, path) {
       if (!patch || typeof patch !== "object" || Array.isArray(patch)) return json({ error: "send a JSON object of params" }, 400);
       return json(await ask("set", patch));
     }
-    if ((path === "/__dev/frame" || path === "/__dev/tree") && req.method === "GET") {
-      const url = await ask(path === "/__dev/frame" ? "frame" : "tree");
+    if ((path === "/__dev/frame" || path === "/__dev/tree" || path === "/__dev/pane") && req.method === "GET") {
+      const q = new URL(req.url).searchParams, dim = (k) => Math.min(4096, Math.max(16, Number(q.get(k)) || 0)) || undefined;
+      const url = await ask(path.slice("/__dev/".length), path === "/__dev/pane" ? { w: q.has("w") ? dim("w") : undefined, h: q.has("h") ? dim("h") : undefined } : undefined);
       return new Response(Buffer.from(url.slice(url.indexOf(",") + 1), "base64"), { headers: { "content-type": MIME[".png"] } });
     }
     return json({ error: "not a bridge route" }, 404);

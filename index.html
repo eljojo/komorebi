@@ -34,6 +34,30 @@
     font:11px/1.3 ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
   }
   #dev.hidden { display:none; }
+  /* THE WORKSPACE (editor.js, setWorkspace): the picture a viewer at the top left with nothing over it, the tree pane
+     (tree-pane.js) beside it, and the advanced panel docked in the band below, its rows flowing in columns across the screen
+     and scrolling sideways. */
+  #tree { display:none; }
+  body.workspace { background:#070a07; }
+  body.workspace #gl { position:fixed; left:0; top:0; width:62vw; height:62vh; }
+  body.workspace #tree { display:block; position:fixed; top:0; right:0; width:38vw; height:62vh;
+    border-left:1px solid #1c2a1c; box-sizing:border-box; cursor:pointer; }
+  body.workspace #dev { top:62vh; left:0; width:100vw; height:38vh; padding:8px 12px; background:#080c08; backdrop-filter:none;
+    border-right:none; border-top:1px solid #1c2a1c; overflow-x:auto; overflow-y:hidden;
+    column-width:250px; column-gap:22px; column-fill:auto; column-rule:1px solid #142014; }
+  body.workspace #dev .ctl, body.workspace #dev summary, body.workspace #dev h2 { break-inside:avoid; }
+  body.workspace #dev.offscreen { transform: translateY(100%); }
+  body.workspace #hint { bottom:auto; top:8px; right:auto; left:8px; }   /* over the viewer's top left, clear of the panel and the counter */
+  #wsStat { display:none; }
+  body.workspace #wsStat { display:block; position:fixed; right:calc(38vw + 8px); top:8px; pointer-events:none; padding:2px 6px; border-radius:4px;
+    font:10px ui-monospace,Menlo,monospace; color:rgba(225,235,225,.75); background:rgba(0,0,0,.28); }   /* the frame rate and resolution, quiet, in the viewer's top right, on any picture */
+  /* the MIDI console (M, midi.js) docks at the right end of the band, the panel taking the rest; its caption rides the viewer */
+  body.workspace #midi { inset:62vh 0 0 auto; width:min(820px, 55vw); max-width:none; max-height:none; height:38vh; box-sizing:border-box;
+    border-radius:0; border-top:1px solid #1c2a1c; border-left:1px solid #1c2a1c; background:#0e0c08; z-index:auto; }
+  body.workspace #midi .grid { grid-template-columns:repeat(9, minmax(64px, 1fr)); gap:8px; }
+  body.workspace:has(#midi:not([hidden])) #dev { width:calc(100vw - min(820px, 55vw)); }
+  body.workspace #midiCap { bottom:auto; top:calc(62vh - 70px); left:31vw; }
+  body.workspace #play, body.workspace #strip { display:none !important; }
   #dev h2 { font-size:11px; margin:14px 0 4px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
   #dev h2:first-child { margin-top:2px; }
   #dev details { margin:0; }
@@ -284,8 +308,9 @@
 <div id="play" class="hidden"></div>
 <div id="strip" class="hidden"></div>
 <div id="hud"></div>
+<div id="wsStat"></div>
 <div id="lookName"></div>
-<div id="hint" class="gone"><b>← →</b> change scene · <b>D</b> panel · <b>R</b> new grove · <b>T</b> tree view · <b>L</b> leaf · <b>F</b> full · drag = orbit · shift-drag = pan · wheel = zoom · <b>H</b> hints</div>
+<div id="hint" class="gone"><b>← →</b> change scene · <b>D</b> panel · <b>R</b> new grove · <b>T</b> tree view · <b>L</b> leaf · <b>F</b> full · <b>W</b> workspace · drag = orbit · shift-drag = pan · wheel = zoom · <b>H</b> hints</div>
 <div id="tip"></div>
 <div id="prof"></div>
 <div id="cmp"><div id="cmpBar"></div></div>

@@ -800,6 +800,57 @@ try {
   await page.keyboard.press('x');
   check('any unmapped key resurfaces them too', await page.$eval('#hint', (h) => !h.classList.contains('gone')));
 
+  // ---- THE WORKSPACE (W, editor.js setWorkspace; tree-pane.js): the panel docked at the left, the picture a viewer beside it, the tree pane beside that.
+  // The pane's pixels are read off its own WebGL canvas (preserveDrawingBuffer), so the checks see what it drew, not that it was asked to.
+  const glWide = await page.$eval('#gl', (c) => c.width);
+  await page.keyboard.press('w');
+  await page.waitForSelector('body.workspace', { timeout: 15000 });
+  await page.waitForSelector('#dev:not(.hidden)', { timeout: 15000 });
+  await slidIn('dev');
+  const wsBoxes = () => page.evaluate(() => Object.fromEntries(['dev', 'gl', 'tree'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, { l: r.left, r: r.right, t: r.top, b: r.bottom, shown: getComputedStyle(document.getElementById(id)).display !== 'none' }]; })));
+  const ws = await wsBoxes();
+  const vw = await page.evaluate(() => innerWidth);
+  check('W docks the advanced panel in the band across the bottom, under the viewer', ws.dev.shown && ws.dev.l === 0 && Math.abs(ws.dev.r - vw) < 2 && Math.abs(ws.dev.t - ws.gl.b) < 2, JSON.stringify(ws));
+  check('the viewer starts at the left, the tree pane stands beside it, neither over the other', ws.gl.l === 0 && ws.tree.shown && Math.abs(ws.tree.l - ws.gl.r) < 2 && ws.tree.r <= vw + 1 && Math.abs(ws.tree.b - ws.gl.b) < 2, JSON.stringify(ws));
+  check('the panel flows sideways in columns', await page.$eval('#dev', (d) => d.scrollWidth > d.clientWidth * 1.2 || getComputedStyle(d).columnWidth !== 'auto'), await page.$eval('#dev', (d) => `${d.scrollWidth} ${d.clientWidth} ${getComputedStyle(d).columnWidth}`));
+  check('the zen strip and the playful sidebar are out of the way', await page.evaluate(() => ['strip', 'play'].every((id) => getComputedStyle(document.getElementById(id)).display === 'none')));
+  check('the HUD steps aside, and a quiet counter shows the frame rate and the resolution', await poll(async () => page.evaluate(() => getComputedStyle(document.getElementById('hud')).display === 'none' && /\d+ fps · res \d\.\d\d×/.test(document.getElementById('wsStat').textContent))), await page.$eval('#wsStat', (e) => e.textContent));
+  check('the panel opens on Tree shape', await page.evaluate(() => [...document.querySelectorAll('#dev summary.sec')].find((h) => h.textContent === 'Tree shape')?.parentElement.open === true));
+  check('the engine draws the viewer at its own size: the backing store shrank', await poll(async () => (await page.$eval('#gl', (c) => c.width)) < glWide * 0.8), `${glWide} -> ${await page.$eval('#gl', (c) => c.width)}`);
+  const paneShare = () => page.$eval('#tree', (c) => {
+    const o = document.createElement('canvas'); o.width = c.width; o.height = c.height; const x = o.getContext('2d'); x.drawImage(c, 0, 0);
+    const d = x.getImageData(0, 0, c.width, c.height).data; let leaf = 0, sky = 0;
+    for (let i = 0; i < d.length; i += 4) { if (d[i + 1] > d[i] * 1.4 && d[i + 1] > d[i + 2] * 1.4 && d[i + 1] > 20) leaf++; if (d[i + 2] > 150 && d[i + 2] > d[i]) sky++; }
+    return { leaf: leaf / (d.length / 4), sky: sky / (d.length / 4), view: c.dataset.view, draws: Number(c.dataset.draws), discs: Number(c.dataset.discs) };
+  });
+  check('the pane draws the grove, side on: leaves against a sky', await poll(async () => { const p = await paneShare(); return p.discs > 0 && p.leaf > 0.02 && p.sky > 0.2 && p.view === 'side'; }), JSON.stringify(await paneShare()));
+  await page.screenshot({ path: new URL('out/editor-workspace.png', import.meta.url).pathname });   // for the eye: the layout as the checks above found it
+  await page.click('#tree');
+  const turnA = await paneShare();
+  await page.waitForTimeout(1500);
+  const turnB = await paneShare();
+  check('a click turns it to the turntable: no sky, leaves still there, drawn frame after frame', turnB.view === 'turn' && turnB.sky < 0.01 && turnB.leaf > 0.01 && turnB.draws > turnA.draws, JSON.stringify({ turnA, turnB }));
+  await page.click('#tree');
+  check('and another click back to the side', (await paneShare()).view === 'side');
+  await page.keyboard.press('m');
+  await page.waitForSelector('#midi:not([hidden])', { timeout: 15000 });
+  const withMidi = await page.evaluate(() => Object.fromEntries(['dev', 'gl', 'midi'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, { l: r.left, r: r.right, t: r.top, b: r.bottom }]; })));
+  check('M docks the MIDI console at the band\'s right end, the panel beside it', Math.abs(withMidi.midi.t - withMidi.gl.b) < 2 && Math.abs(withMidi.midi.r - vw) < 2 && Math.abs(withMidi.dev.r - withMidi.midi.l) < 2, JSON.stringify(withMidi));
+  await page.keyboard.press('m');
+  check('and M again gives the panel the whole band back', await poll(async () => Math.abs((await page.$eval('#dev', (d) => d.getBoundingClientRect().right)) - vw) < 2));
+  await page.keyboard.press('d');
+  await page.waitForTimeout(700);
+  check('D leaves the docked panel where it is', await page.$eval('#dev', (e) => !e.classList.contains('hidden') && !e.classList.contains('offscreen')));
+  await page.keyboard.press('w');
+  await page.waitForFunction(() => !document.body.classList.contains('workspace'), null, { timeout: 15000 });
+  const back = await wsBoxes();
+  check('W again leaves it: the picture fills the window and the pane is gone', back.gl.l === 0 && !back.tree.shown, JSON.stringify(back));
+  check('and the workspace is remembered as off', await page.evaluate(() => JSON.parse(localStorage.getItem('komorebi.editor')).workspace === false));
+  await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent.includes('less')).click());   // back down the ladder to the strip the checks below start from
+  await page.waitForSelector('#play:not(.hidden)');
+  await page.evaluate(() => [...document.querySelectorAll('#play .modes button')].find((b) => b.textContent.includes('less')).click());
+  await page.waitForSelector('#strip:not(.hidden)');
+
   // ---- PLAYLISTS (playlists.js): the save prompt, a ★ that shares a built-in's name, and the rows that wait for a second playlist ----
   const devPick = (value) => page.evaluate((v) => { const s = document.querySelector('#dev select'); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); }, value);
   const devOpts = () => page.$eval('#dev select', (s) => [...s.options].map((o) => [o.value, o.textContent]));

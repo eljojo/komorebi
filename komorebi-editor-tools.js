@@ -8,6 +8,40 @@
 import { DEG, clamp, hash3, lerp, makeGauss, mulberry32 } from './komorebi-math.js';
 import { placeLeaf } from './komorebi-grove.js';
 
+// One blob per LEAF of the grove (count = leaves_per_cluster × foliage_density), each at the grove's own place for it: per leaf x, y, z, cov, the
+// tree's warmth, and its size. The tree inset and the workspace's tree pane (tree-pane.js) both draw these.
+export function groveLeaves(hier, params, faithful){
+  // Drive the preview off the grove's TWIGS (one cluster per leaf-bearing node) — NOT terminal segments. With droop,
+  // a twig is split into sub-segments all tagged level≥levels, so the old segment-filter over-drew nSub×nLeaf clusters
+  // at mid-twig joints and mis-keyed the per-twig seed by segment index. Iterating twigs[] matches the bake's count,
+  // per-twig seed (hash3(seed,j,101)), hug heading (t.dx/t.dy) and marginal-leaf fade. (spec §9 — preview ≈ bake)
+  const tws = hier.twigs || [];
+  const pcF = Math.max(0, params.leaves_per_cluster*params.foliage_density);
+  const pcInt = Math.floor(pcF), frac = pcF - pcInt;
+  const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
+  const base=[];
+  const lw = hier.leafW;       // abscission (§4.5): each leaf's retained weight by (twig, slot), the grove's own; null while nothing can have dropped
+  const pos = [0,0,0];
+  for(let j=0;j<tws.length;j++){
+    const t=tws[j], tcov=(t.tcov===undefined?1:t.tcov);
+    const ti=(t.tree===undefined?0:t.tree), tnt=((ti*0.61803398875)%1)*2-1;   // per-tree warmth [-1,1], golden-spread so neighbours differ
+    const rng=mulberry32(hash3(params.seed>>>0, j, 101)), gauss=makeGauss(rng);   // the grove's own arrangement stream for this twig (j = twig index == the bake's seed)
+    for(let k=0;k<nLeaf;k++){
+      const g1=gauss(), g2=gauss();   // leaves hug the twig — must match the bake (§4.5)
+      const sz=0.6+0.8*rng();         // ...and the seven draws the grove makes per leaf after them (size, tilt, angle, the orbit pair, orient, phase), so this leaf's two gaussians ARE the grove's: the preview shows the cast's leaf.
+      for(let q=1;q<7;q++) rng();     // The first is the leaf's size (× leaf_size_m), which the preview draws it at.
+      // (EDITOR-ONLY CHANGE, and at inner_leaves 0 too: this inset used to walk the gaussian stream alone, so its leaf k was another draw of the same count and spread, not the cast's leaf, and its scatter
+      // at 0 was not the cast's; walking the grove's draw order makes it the cast's. No frame the engine renders moves; only the T inset's blobs sit elsewhere than they did at 9d8f3ad, where the cast has them.)
+      const w = lw ? lw[j*nLeaf+k] : 1;                // a leaf the grove has compacted out is gone here too (the draws above still run: the next leaf's scatter must not move)
+      if(w === 0) continue;
+      const cov = ((k===pcInt) ? frac : 1.0) * tcov * w;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast — × the leaf's fade out (§5.3)
+      placeLeaf(hier, j, g1, g2, k, params, faithful, pos);   // the grove's own placement, one function (komorebi-grove.js): the twig hug off the tip and, with inner_leaves up, the leaves on the older wood, at their own heights
+      base.push(pos[0], pos[1], pos[2], cov, tnt, sz);
+    }
+  }
+  return new Float32Array(base);
+}
+
 export function makeEditorTools(hub){
   const { gl, canvas, params, motion, src, U, faithfulOn } = hub;   // the GL handles (programs, extTimer) are read as hub.x: initGPU() replaces them on a context restore
   let benchW = 0, benchH = 0;      // profiler stress-burst size (the FBO/texture live on hub so dispose() can free them)
@@ -59,39 +93,12 @@ export function makeEditorTools(hub){
   // identity — every canopy knob makes a new hier) and reprojected each frame; the proj buffer is reused.
   let treeLeafHier=null, treeLeafW=null, treeLeafBase=null, treeLeafProj=null;
   function buildTreeLeaves(){
-    // Drive the preview off the grove's TWIGS (one cluster per leaf-bearing node) — NOT terminal segments. With droop,
-    // a twig is split into sub-segments all tagged level≥levels, so the old segment-filter over-drew nSub×nLeaf clusters
-    // at mid-twig joints and mis-keyed the per-twig seed by segment index. Iterating twigs[] matches the bake's count,
-    // per-twig seed (hash3(seed,j,101)), hug heading (t.dx/t.dy) and marginal-leaf fade. (spec §9 — preview ≈ bake)
-    const tws = hub.hier.twigs || [];
-    const pcF = Math.max(0, params.leaves_per_cluster*params.foliage_density);
-    const pcInt = Math.floor(pcF), frac = pcF - pcInt;
-    const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
-    const base=[];
-    const faithful = faithfulOn();   // hoisted, and it must be the SAME answer regenCanopy packed the bake with
-    const lw = hub.hier.leafW;       // abscission (§4.5): each leaf's retained weight by (twig, slot), the grove's own; null while nothing can have dropped
-    const pos = [0,0,0];
-    for(let j=0;j<tws.length;j++){
-      const t=tws[j], tcov=(t.tcov===undefined?1:t.tcov);
-      const ti=(t.tree===undefined?0:t.tree), tnt=((ti*0.61803398875)%1)*2-1;   // per-tree warmth [-1,1], golden-spread so neighbours differ
-      const rng=mulberry32(hash3(params.seed>>>0, j, 101)), gauss=makeGauss(rng);   // the grove's own arrangement stream for this twig (j = twig index == the bake's seed)
-      for(let k=0;k<nLeaf;k++){
-        const g1=gauss(), g2=gauss();   // leaves hug the twig — must match the bake (§4.5)
-        const sz=0.6+0.8*rng();         // ...and the seven draws the grove makes per leaf after them (size, tilt, angle, the orbit pair, orient, phase), so this leaf's two gaussians ARE the grove's: the preview shows the cast's leaf.
-        for(let q=1;q<7;q++) rng();     // The first is the leaf's size (× leaf_size_m), which the preview draws it at.
-        // (EDITOR-ONLY CHANGE, and at inner_leaves 0 too: this inset used to walk the gaussian stream alone, so its leaf k was another draw of the same count and spread, not the cast's leaf, and its scatter
-        // at 0 was not the cast's; walking the grove's draw order makes it the cast's. No frame the engine renders moves; only the T inset's blobs sit elsewhere than they did at 9d8f3ad, where the cast has them.)
-        const w = lw ? lw[j*nLeaf+k] : 1;                // a leaf the grove has compacted out is gone here too (the draws above still run: the next leaf's scatter must not move)
-        if(w === 0) continue;
-        const cov = ((k===pcInt) ? frac : 1.0) * tcov * w;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast — × the leaf's fade out (§5.3)
-        placeLeaf(hub.hier, j, g1, g2, k, params, faithful, pos);   // the grove's own placement, one function (komorebi-grove.js): the twig hug off the tip and, with inner_leaves up, the leaves on the older wood, at their own heights
-        base.push(pos[0], pos[1], pos[2], cov, tnt, sz);
-      }
-    }
-    treeLeafBase=new Float32Array(base);
-    treeLeafProj=new Float32Array(base.length);   // base: x,y,z,cov,tint,size (6) -> proj: x,y,r,g,b,size (6)
-    treeLeafHier=hub.hier; treeLeafW=lw;
+    treeLeafBase=groveLeaves(hub.hier, params, faithfulOn());   // faithful hoisted: it must be the SAME answer regenCanopy packed the bake with
+    treeLeafProj=new Float32Array(treeLeafBase.length);   // base: x,y,z,cov,tint,size (6) -> proj: x,y,r,g,b,size (6)
+    treeLeafHier=hub.hier; treeLeafW=hub.hier.leafW;
   }
+  // the grove's leaves as the inset and the workspace's tree pane draw them (x, y, z, cov, tint, size per leaf), rebuilt only for a new grove
+  hub.treeLeaves = () => { if(treeLeafHier!==hub.hier || treeLeafW!==hub.hier.leafW) buildTreeLeaves(); return treeLeafBase; };
   function treeInsetGeom(){
     const base = Math.min(300, canvas.width*0.32, canvas.height*0.42);
     const big  = Math.min(canvas.width*0.62, canvas.height*0.72);
