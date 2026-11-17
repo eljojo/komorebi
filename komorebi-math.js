@@ -153,11 +153,15 @@ function hash3(a,b,c){ let h=(a^0x9E3779B1)>>>0;
 // ---- autumn senescence (spec §4.5): a leaf's pigment state, per leaf. Chlorophyll is dismantled and the carotenoid
 // that was always there shows; anthocyanin is synthesised (red); tannin browns. Optical depth is ADDITIVE, so each
 // pigment is a basis vector of per-channel tau (R,G,B), and a leaf is its summer tau faded out plus these faded in.
-// PROVISIONAL until backlit measurements (tau = -ln(leaf / diffuser), one leaf per pigment state) replace them;
-// what is held honest meanwhile is their ORDERING (leaf.test.js), and the shape of the story they tell:
-const TAU_CAROTENOID  = [0.30, 0.55, 2.8];   // absorbs blue, passes red+green -> gold (T .74/.58/.06). Always present, hidden by chlorophyll until it goes
-const TAU_ANTHOCYANIN = [0.10, 2.8, 1.0];    // absorbs green, a little blue: on top of the gold it turns orange -> red -> maroon as a rises (T_g .33 / .06 / .02 at a = .2 / .8 / 1.2)
-const TAU_TANNIN      = [0.8, 1.2, 1.9];     // broad, warm-leaning (b > g > r): the russet of beech and oak (T .33/.17/.01 at b = 1, over the gold)
+// FITTED to the PROSPECT-D leaf model (Féret et al. 2017; computed from the `prospect` R package, Féret & de Boissieu 2024) in OKLab, D65, over 77 turned leaves spanning the autumn Norway-maple
+// set's measured range (anthocyanin 0-22 ug/cm2, carotenoid at its mean 5.25 ug/cm2, brown 0-1.5 units), every component held
+// >= 0 so no leaf adds light (leaf.test.js holds the fit). The units keep each knob's green depth per unit (2.8, 1.2): a = 1 is
+// about 23 ug/cm2 of anthocyanin, b = 1 about 1.7 PROSPECT brown units. The real gold's red lies past the sRGB primary, which a
+// non-negative depth cannot paint: carotenoid's red is capped at the light's own, the fit's worst leaf. Backlit leaves against a
+// diffuser (tau = -ln(leaf / diffuser), one per pigment state) would replace the model with José's own maples.
+const TAU_CAROTENOID  = [0, 0.514, 2.243];       // absorbs blue and some green, no red -> gold (T 1/.60/.11). Always present, hidden by chlorophyll until it goes
+const TAU_ANTHOCYANIN = [0.519, 2.8, 1.685];     // absorbs green, then blue, a little red: on top of the gold it turns orange -> red -> maroon as a rises (T_g .34 / .064 / .021 at a = .2 / .8 / 1.2)
+const TAU_TANNIN      = [0.883, 1.2, 1.398];     // broad, warm-leaning (b > g > r): the russet of beech and oak (T .41/.18/.026 at b = 1, over the gold)
 // A leaf's identity is its OWN stream, seeded from (seed, cluster, leaf) and never the growth RNG, so drawing from it
 // cannot move one twig or one leaf of any shipped grove. The salt keeps it independent of the arrangement stream
 // (hash3(seed, j, 101), made from the same ingredients).

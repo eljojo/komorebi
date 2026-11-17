@@ -202,10 +202,13 @@ Komorebi stands on research into how real trees grow and how real leaves handle 
   (1994), *Journal of Plant Research* 107, for shedding.
 - Fallen leaves' colour (`komorebi-litter.js`): P. Kubelka and F. Munk (1931), *Zeitschrift für technische Physik* 12, and
   P. Kubelka (1948), *Journal of the Optical Society of America* 38.
+- The autumn pigments (`komorebi-math.js`), fitted to how a leaf reflects and passes light and what its pigments absorb:
+  S. Jacquemoud and F. Baret (1990), PROSPECT, *Remote Sensing of Environment* 34; J.-B. Féret, A. A. Gitelson, S. D. Noble
+  and S. Jacquemoud (2017), PROSPECT-D, *Remote Sensing of Environment* 193; computed from the `prospect` R package,
+  J.-B. Féret and F. de Boissieu (2024), *Journal of Open Source Software* 9(94), 6027. PROSPECT also informs the leaf
+  material in progress below.
 
 **Informing the work in progress** (seeing the tree, and real shoots and leaves)
-- S. Jacquemoud and F. Baret (1990), PROSPECT, *Remote Sensing of Environment* 34; J.-B. Féret, A. A. Gitelson, S. D. Noble and
-  S. Jacquemoud (2017), PROSPECT-D, *Remote Sensing of Environment* 193: how a leaf reflects and passes light, and what its pigments absorb.
 - M. Hébert and J.-M. Becker (2008), *Journal of Optics A* 10, 035006: Kubelka–Munk layers and their stacking.
 - L. Bousquet, S. Lachérade, S. Jacquemoud and I. Moya (2005), *Remote Sensing of Environment* 98: a leaf's sheen.
 - T. W. Brakke, J. A. Smith and J. M. Harnden (1989), *Remote Sensing of Environment* 29, and T. Brakke (1994),

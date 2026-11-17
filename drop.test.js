@@ -183,9 +183,10 @@ const BASE = { ...PRESETS["afternoon 7"], inner_leaves: 0, tree_count: 2, leaves
 const PIG = { phenology: 0.95, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2 };
 const FROZEN = {
   "summer/layer": "8913d117", "summer/faith": "dad14bc3",
-  "pigment/layer": "610ecb09", "pigment/faith": "487265f1",
+  "pigment/layer": "1b9c24a9", "pigment/faith": "977ae311",
   // lit/* re-recorded when the tie-break landed (exposureRank's key): the fully lit shell is ordered by each leaf's own clock, not stacked on one mid-rank. summer/* and pigment/* did not move.
-  "lit/layer": "c26ff213", "lit/faith": "1ef35281",
+  // pigment/* and lit/* re-recorded when the pigment basis was fitted to PROSPECT-D (reviewed on the six fall looks, accepted); summer/* did not move.
+  "lit/layer": "2b6be693", "lit/faith": "821b4213",
 };
 test("leaf_drop 0 is P1 to the bit — summer, fall, and fall with sun first — with the rest of the family armed", () => {
   const armed = { drop_start: 0.5, drop_span: 0.1, drop_exposure: 1, leaf_drop: 0 };

@@ -56,6 +56,10 @@ On 2026-11-09 the artist judged the air's loss ([`../model/light.md`](../model/l
 - **Off:** the rest of `montebello`'s season family ([above](#four-laws-on-by-default-and-the-looks-kept-as-made)).
 - **Every other look:** the loss with the shade held.
 
+## The fitted pigment basis
+
+On 2026-11-16 the artist judged the pigment basis fitted to PROSPECT-D ([`../model/season.md`](../model/season.md#the-pigment-basis)) on the six looks that open the pigment tier, the season macro's fall half on `afternoon 4` and the held leaf (`test-gl/out/review/2026-11-16-pigment-refit`), with each capacity keeping its strength in green. He accepted it on all six as they are, nothing re-authored. The turned shade and the carpet pass about a fifth more red: `forest floor`, nearly all carpet, warms over the whole frame; `montebello`, `the yellow tree` (its crown shade now orange-red), `montebello, rain` and `cherry blossom` warm in the crown's shade and the carpet patch; `park fall`'s deep red barely moves. Summer looks are untouched.
+
 ## Exposure under cloud
 
 Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to exposure / (1 + its own `cloud_thickness`): it shows as it always did at its own cloud, and a thicker cloud, from a transition, the weather macro or the editor, opens the exposure up instead of only blurring the dapples. A look saved without the key keeps exposure fixed.

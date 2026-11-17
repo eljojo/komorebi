@@ -168,7 +168,7 @@ These are the words the other documents use without stopping to explain. Each en
 
 **phenology.** The season as one number: 0 spring bud, 0.5 summer, 1 the end of the fall. Leaves turn between `turn_start` and `turn_start + turn_span`; at 1 every leaf has fully turned, which is not leaf-off. The same look at the same phenology is the same autumn. [`model/season.md`](model/season.md)
 
-**pigment basis.** Optical depth adds, so each pigment (carotenoid, anthocyanin, tannin) is a vector of per-channel optical depth, and a turned leaf is the summer leaf with green taken away and pigments added. The vectors are chosen from known absorption, not fitted. [`model/season.md`](model/season.md)
+**pigment basis.** Optical depth adds, so each pigment (carotenoid, anthocyanin, tannin) is a vector of per-channel optical depth, and a turned leaf is the summer leaf with green taken away and pigments added. The vectors are fitted to the PROSPECT-D leaf model over the range autumn maples were measured in. [`model/season.md`](model/season.md)
 
 **pinhole regime.** A gap small against `h·θ` washes out its own shape and the surface shows an image of the sun. The other pole is the *shadow regime*, a gap large against `h·θ` throwing its own shape. [`model/source.md`](model/source.md)
 

@@ -174,7 +174,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 | Mechanism | Module | Named | Unit | Harness |
 |---|---|---|---|---|
 | The four predicates | `komorebi-math.js` (read by the grove, the feature registry and the editor) | `senescing`, `lit`, `dropping`, `ordered`; `turnOpens`, `dropOpens`; `DROP_EPS` | `features.test.js` | gate rows |
-| Pigment basis | `komorebi-math.js` | `TAU_CAROTENOID`, `TAU_ANTHOCYANIN`, `TAU_TANNIN` (provisional) | not recorded | gate rows (every summer unchanged) |
+| Pigment basis | `komorebi-math.js` | `TAU_CAROTENOID`, `TAU_ANTHOCYANIN`, `TAU_TANNIN` | `leaf.test.js` (the fit to PROSPECT-D's leaves, and the ordering) | gate rows (every summer unchanged) |
 | Per-leaf clocks, turn order | `komorebi-math.js` | `leafClock`, `turnOrder`, `turnPhase`, `redGain` | `drop.test.js` | gate rows |
 | Light orders the turn | `komorebi-math.js` | `exposureGrid`, `exposureRank`, `groundShade`, `SEASON_SUN`, `EXPOSURE_K` | `exposure.test.js` (by name); the planted-ray test (a leaf under an up-sun crown, with and without the neighbour); `drop.test.js` (equal raw light falls on `drop_start` together) | gate rows |
 | One tree ahead | `komorebi-math.js` | `treeDraws`, `tree_clock_spread` | `tree.test.js` | gate rows |

@@ -110,7 +110,45 @@ test("Jensen: the mixture is never deeper than the mean of its tau (the sieve ef
       }
 });
 
-test("the pigment basis keeps its physical ordering (constants are PROVISIONAL, the ordering is not)", () => {
+// PROSPECT-D's turned leaf (Féret et al. 2017, from the `prospect` R package, Féret & de Boissieu 2024; no chlorophyll, N 1.5, EWT 0.01, LMA 0.009, carotenoid 5.25 ug/cm2), D65,
+// normalised by the same leaf bleached of all four pigments, as OKLab. Rows: anthocyanin 0, 2.2 ... 22 ug/cm2; columns: brown
+// 0, 0.25 ... 1.5 PROSPECT units. In the basis's units a = ug / 23.103 and b = units / 1.7007.
+const PROSPECT_OKLAB = [
+  [0.92116, 0.01609, 0.16525], [0.84608, 0.02305, 0.14696], [0.78743, 0.02766, 0.1342], [0.739, 0.03098, 0.12466], [0.6976, 0.03352, 0.11719], [0.66137, 0.03554, 0.11114], [0.62913, 0.0372, 0.1061],
+  [0.83941, 0.05639, 0.14194], [0.78233, 0.05529, 0.13017], [0.73493, 0.05466, 0.12131], [0.69427, 0.05428, 0.11434], [0.6586, 0.05405, 0.10867], [0.6268, 0.05391, 0.10394], [0.59807, 0.05383, 0.09989],
+  [0.78179, 0.08297, 0.12784], [0.73421, 0.0783, 0.1192], [0.69353, 0.07496, 0.11244], [0.65791, 0.07245, 0.10696], [0.62618, 0.07049, 0.1024], [0.59754, 0.06893, 0.0985], [0.57144, 0.06765, 0.0951],
+  [0.737, 0.10238, 0.11838], [0.69546, 0.09584, 0.11152], [0.65934, 0.09093, 0.10603], [0.62731, 0.08709, 0.10149], [0.59848, 0.08399, 0.09764], [0.57226, 0.08145, 0.0943], [0.54821, 0.0793, 0.09135],
+  [0.70036, 0.11731, 0.11167], [0.66307, 0.10973, 0.10593], [0.63029, 0.10385, 0.10126], [0.60097, 0.09914, 0.09734], [0.5744, 0.09526, 0.09397], [0.5501, 0.092, 0.09101], [0.5277, 0.08921, 0.08836],
+  [0.6694, 0.12917, 0.10674], [0.63531, 0.12099, 0.10174], [0.60511, 0.11449, 0.09762], [0.57793, 0.10918, 0.09413], [0.55318, 0.10474, 0.0911], [0.53045, 0.10095, 0.0884], [0.50942, 0.09768, 0.08597],
+  [0.64267, 0.13878, 0.10304], [0.6111, 0.13024, 0.09855], [0.58297, 0.12334, 0.09482], [0.55754, 0.11762, 0.09162], [0.5343, 0.11277, 0.08882], [0.51288, 0.10859, 0.08632], [0.49302, 0.10493, 0.08404],
+  [0.61924, 0.14664, 0.10022], [0.58972, 0.1379, 0.09609], [0.56329, 0.13075, 0.09263], [0.53932, 0.12473, 0.08964], [0.51736, 0.11958, 0.08701], [0.49707, 0.1151, 0.08463], [0.47821, 0.11115, 0.08247],
+  [0.59846, 0.15311, 0.09803], [0.57064, 0.14428, 0.09417], [0.54566, 0.13696, 0.0909], [0.52294, 0.13074, 0.08807], [0.50207, 0.12537, 0.08555], [0.48275, 0.12066, 0.08327], [0.46477, 0.11647, 0.08118],
+  [0.57986, 0.15845, 0.09632], [0.55349, 0.1496, 0.09266], [0.52976, 0.14217, 0.08953], [0.50811, 0.13581, 0.0868], [0.4882, 0.13028, 0.08437], [0.46973, 0.12539, 0.08215], [0.45252, 0.12102, 0.08011],
+  [0.56309, 0.16286, 0.09497], [0.53798, 0.15401, 0.09145], [0.51532, 0.14653, 0.08844], [0.49463, 0.14008, 0.08578], [0.47555, 0.13443, 0.0834], [0.45785, 0.1294, 0.08123], [0.44132, 0.12489, 0.07922],
+];
+function oklab([r, g, b]) {                                         // Ottosson 2020, from linear sRGB
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+}
+
+test("the pigment basis is PROSPECT-D's turned leaf over the measured maple range, and adds no light", () => {
+  const [car, ant, brn] = [math.TAU_CAROTENOID, math.TAU_ANTHOCYANIN, math.TAU_TANNIN];
+  for (const v of [car, ant, brn]) for (const x of v) expect(x).toBeGreaterThanOrEqual(0);
+  const dE = PROSPECT_OKLAB.map((q, n) => {
+    const a = 2.2 * Math.floor(n / 7) / 23.103, b = 0.25 * (n % 7) / 1.7007;
+    const p = oklab([0, 1, 2].map((c) => Math.exp(-(car[c] + a * ant[c] + b * brn[c]))));
+    return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  });
+  expect(dE.reduce((s, x) => s + x, 0) / dE.length).toBeLessThan(0.01);
+  expect(Math.max(...dE)).toBeLessThan(0.065);                      // the worst is the pure gold, whose red lies past sRGB's
+  // José's yellow blades, backlit: tau_r - tau_g from -0.44 to -0.72 (evidence/measurements.md, season)
+  expect(car[0] - car[1]).toBeGreaterThan(-0.72);
+  expect(car[0] - car[1]).toBeLessThan(-0.44);
+});
+
+test("the pigment basis keeps its physical ordering", () => {
   const [car, ant, brn] = [math.TAU_CAROTENOID, math.TAU_ANTHOCYANIN, math.TAU_TANNIN];
   expect(car[2] > car[1] && car[2] > car[0]).toBe(true);            // carotenoid absorbs blue; red and green pass
   expect(ant[1] > ant[0] && ant[1] > ant[2]).toBe(true);            // anthocyanin absorbs green

@@ -426,7 +426,7 @@ test("on a real grove the key splits exactly what the rank could not: the sunlit
 // scale of leaf area. Regenerate only when P1's own maps, or the growth stream, change on purpose.)
 const digest = (taus) => { const w = new Uint32Array(Float32Array.from(taus).buffer); let h = 0x811c9dc5; for (const v of w) { h ^= v; h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; };
 // Re-recorded when the tie-break landed (exposureRank's key): the fully lit shell (e = 1) is ordered by each leaf's own clock, not stacked on one mid-rank.
-const P1_DIGEST = { 0.75: 0x4ee012b8, 1: 0xf3dcd7fb };
+const P1_DIGEST = { 0.75: 0x0c241900, 1: 0x2ebf9fd3 };   // re-recorded when the pigment basis was fitted to PROSPECT-D (reviewed on the six fall looks, accepted)
 
 test("exposure_absolute 0 is P1 for every leaf, to the bit: turn_exposure 1 at phenology 0.75 (and 1)", () => {
   for (const ph of [0.75, 1]) {
