@@ -1,9 +1,9 @@
 # Plans, specs, scratch and review renders: local only, never committed and never deployed.
 # The Worker deploys only its bundled code and the static assets directory, which artifacts/ is not part of.
-arboretum/artifacts/
+/artifacts/
 # The deployed site, built by scripts/site.mjs at deploy time: komorebi's static site with public/ under arboretum/.
-arboretum/.site/
-arboretum/.site.tmp/
-arboretum/node_modules/
-arboretum/.wrangler/
-arboretum/.dev.vars*
+/.site/
+/.site.tmp/
+/node_modules/
+/.wrangler/
+/.dev.vars*
