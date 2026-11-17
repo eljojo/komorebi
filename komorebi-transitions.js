@@ -328,7 +328,7 @@ export function makeTransitions(hub){
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
     trans.bloom = Math.max(trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0, carried);
     trans.windowOpacity=lerp(trans.windowFrom, trans.windowTo, e);
-    if(trans.treeFade) trans.treeOpacity=lerp(trans.treeFrom, trans.treeTo, e);
+    if(trans.treeFade) trans.treeOpacity=lerp(trans.treeFrom, trans.treeTo, trans.treeTo<trans.treeFrom ? smoothstep(0,0.5,t) : smoothstep(0.5,1,t));   // out over the first half, before the camera has swung far; in over the second
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
       if((trans.viewpoint||trans.leafTravel||trans.seasonTravel) && k==='drift_phase' && params.drift_auto) continue;
       if(trans.windowFade && WINDOW_KEYS.has(k)){ params[k]=trans.windowShape[k]; continue; }
