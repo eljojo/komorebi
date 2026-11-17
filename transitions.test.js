@@ -291,6 +291,16 @@ test('a leafless floor keeps the existing transition when the footprint descent 
   expect(r.hub.trans.structDiff).toBe(true);
 });
 
+test('afternoon 4, 4b, 5, 5b and prism → afternoon 6b do not morph their leaves onto the older wood: a leaf flew 2.5 of its lengths a frame and gaps flickered, so the inner leaves cross as two groves',()=>{
+  for(const n of ['afternoon 4','afternoon 4b','afternoon 5','afternoon 5b','prism']) for(const [from,to] of [[PRESETS[n],PRESETS['afternoon 6b']],[PRESETS['afternoon 6b'],PRESETS[n]]]){
+    const r=transitionRig(from);
+    Object.assign(r.hub,{beginSceneFade:()=>{},endSceneFade:()=>{},stepSceneFade:()=>{}});
+    r.transitionTo(to,{duration:1});
+    expect(r.hub.trans.canopyMorph,`${n}: no leaf-by-leaf morph across inner_leaves`).toBe(false);
+    expect(r.hub.trans.crossfade,`${n}: the two groves crossfade`).toBe(true);
+  }
+});
+
 test('morning 3b → morning 3 does not morph its leaves between their shoots and their old places: the two arrangements cross as two groves, so no leaf flies (the leaves flickered)',()=>{
   for(const [from,to] of [[PRESETS['morning 3b'],PRESETS['morning 3']],[PRESETS['morning 3'],PRESETS['morning 3b']]]){
     const r=transitionRig(from);

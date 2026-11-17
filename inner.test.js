@@ -67,16 +67,15 @@ function sameGrove(label, a, b) {
 }
 
 // ---- 1. the knob ships off, a canopy knob the cache key carries ---------------------------------------------------------------------
-test("on in DEFAULTS (0.35) and off for a look from before it was; a canopy knob (it moves leaves, so it morphs) the cache key carries; not a season key, not topology (the smoothstep morphs the indices)", () => {
+test("on in DEFAULTS (0.35) and off for a look from before it was; read by the grove's build, which the cache key carries; not a season key; and between looks it travels as topology (a transition's morph flew its leaves: transitions.test.js)", () => {
   expect(DEFAULTS.inner_leaves).toBe(0.35);
   expect(GRANDFATHERED.inner_leaves).toBe(0);
-  expect(CANOPY_KEYS).toContain("inner_leaves");
+  expect(TOPO_KEYS).toContain("inner_leaves");
+  expect(CANOPY_KEYS).not.toContain("inner_leaves");
   expect(GROVE.GROVE_READS).toContain("inner_leaves");
   expect(SEASON_KEYS).not.toContain("inner_leaves");
-  expect(TOPO_KEYS).not.toContain("inner_leaves");
   const reads = GROVE.GROVE_READS, at = reads.indexOf("inner_leaves");
   expect(reads[at - 1] < "inner_leaves" && "inner_leaves" < reads[at + 1], "the key list is kept in order: foliage_density < inner_leaves < layer_count").toBe(true);
-  expect(CANOPY_KEYS.indexOf("inner_leaves"), "beside cluster_spread_m, the knob it extends").toBe(CANOPY_KEYS.indexOf("cluster_spread_m") + 1);
 });
 
 test("INNER_SALT is 3·0x9E3779B9 mod 2^32 (the golden gamma's next multiple after TREE_SALT's 2·), differs from every other stream's salt, and is named in komorebi-grove.js alone", () => {

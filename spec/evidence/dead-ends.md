@@ -156,6 +156,16 @@ The vignette iris that appeared whole in one frame is told under [transitions](#
 
 **What replaced it.** A switch that travels as a topology change: the two arrangements cross as two groves, the crossfade on the layer path, where no leaf travels (0 flickering pixels either way) ([`../model/canopy.md`](../model/canopy.md#leaves-on-shoots)).
 
+### The inner leaves morphed between looks
+
+**What was tried.** `inner_leaves` travelled as a canopy key, so two looks that differ in it morphed the share, and each leaf glided from its twig tip to the wood over a twentieth of it.
+
+**What it looked like.** `afternoon 5` → `afternoon 6b` (0 → 0.35, with the tree count and the tilt) flickered: 6 829 pixels jumped and came back over 51 frames of a one-second switch; held equal, 0. The same for `afternoon 4`, `afternoon 4b`, `afternoon 5b` and `prism` against `afternoon 6b` (`test-gl/out/review/2026-11-17-inner-leaves-flicker`).
+
+**Why.** As the shoots' share: a morph ran each leaf's glide in a few frames, over a distance up to its whole path to the trunk; the fastest leaf flew 2.5 of its own lengths a frame.
+
+**What replaced it.** Between looks it travels as topology, so they cross as two groves (all five pairs crossfade; 0 flickering pixels from the leaves either way). The slider still moves it as a share. What remains on `afternoon 5b` and `prism` against `afternoon 6b` is the sun swinging 61° in the switch, which races every dapple across the floor: a transition's timing, not a leaf.
+
 ### The clustered-point scatter
 
 **What was tried.** Before the grove, the canopy was a stand-in: leaf clusters scattered as points around the canopy centre, a fake skeleton the motion system drove as if it had joints.
