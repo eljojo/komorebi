@@ -202,6 +202,8 @@ These are the words the other documents use without stopping to explain. Each en
 
 **shadow regime.** See *pinhole regime*.
 
+**shoot.** This year's growth from a twig's node: a short shoot in shade bunches its few leaves, a long one in sun spaces them and rises. `shoot_leaves` hangs a cluster's leaves at its shoots' nodes. [`model/canopy.md`](model/canopy.md#leaves-on-shoots)
+
 **shared ray.** The one ray routine the sky view's eye ray and each of the fill's hemisphere rays run, with the sun's path as an argument, so the piece cannot answer *what does this ray see* two ways. [`model/sky-view.md`](model/sky-view.md), [`model/fill.md`](model/fill.md)
 
 **sieve.** A leaf is bright vein walls beside darker cells, and Beer's law is convex, so its mean transmittance is `f_w·e^(−τ_wall) + (1−f_w)·e^(−τ_cell)`. The engine places no veins; the sieve is a mean. The maze is drawn only in the held leaf. [`model/leaf.md`](model/leaf.md)

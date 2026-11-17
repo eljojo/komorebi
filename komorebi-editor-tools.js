@@ -21,7 +21,7 @@ export function groveLeaves(hier, params, faithful){
   const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
   const base=[];
   const lw = hier.leafW;       // abscission (§4.5): each leaf's retained weight by (twig, slot), the grove's own; null while nothing can have dropped
-  const pos = [0,0,0];
+  const pos = [0,0,0,0,0,0];
   for(let j=0;j<tws.length;j++){
     const t=tws[j], tcov=(t.tcov===undefined?1:t.tcov);
     const ti=(t.tree===undefined?0:t.tree), tnt=((ti*0.61803398875)%1)*2-1;   // per-tree warmth [-1,1], golden-spread so neighbours differ
@@ -35,7 +35,7 @@ export function groveLeaves(hier, params, faithful){
       const w = lw ? lw[j*nLeaf+k] : 1;                // a leaf the grove has compacted out is gone here too (the draws above still run: the next leaf's scatter must not move)
       if(w === 0) continue;
       const cov = ((k===pcInt) ? frac : 1.0) * tcov * w;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast — × the leaf's fade out (§5.3)
-      placeLeaf(hier, j, g1, g2, k, params, faithful, pos);   // the grove's own placement, one function (komorebi-grove.js): the twig hug off the tip and, with inner_leaves up, the leaves on the older wood, at their own heights
+      placeLeaf(hier, j, g1, g2, k, params, faithful, pos, sz*params.leaf_size_m);   // the grove's own placement, one function (komorebi-grove.js): the twig hug off the tip and, with inner_leaves up, the leaves on the older wood, at their own heights
       base.push(pos[0], pos[1], pos[2], cov, tnt, sz);
     }
   }

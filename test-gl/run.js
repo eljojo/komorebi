@@ -149,6 +149,11 @@ const INVARIANTS = [
   { name: 'vignette 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { vignette: 0, vignette_shape: 7 } },
   { name: 'vignette 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { vignette: 0, vignette_shape: 7 } },
   { name: 'vignette 0.3 darkens the frame (layer path)', preset: 'memories', differ: true, a: {}, b: { vignette: 0.3 } },
+  // LEAVES ON SHOOTS, DISPLAYED BY LIGHT (komorebi-shoots.js): each changes the frame on every path the grove's leaves reach (on by default: the rows hold them off in a)
+  ...[['memories', 'layered floor'], ['park 1', 'faithful floor'], ['curtain 1', 'the cloth'], ['canopy 1', 'the sky view']].flatMap(([preset, path]) => [
+    { name: `shoot_leaves moves the leaves (${path})`, preset, rebake: preset === 'park 1', differ: true, a: { shoot_leaves: 0, tilt_light: 0 }, b: { shoot_leaves: 1, tilt_light: 0 } },
+    { name: `tilt_light moves the footprints (${path})`, preset, rebake: preset === 'park 1', differ: true, a: { shoot_leaves: 0, tilt_light: 0 }, b: { shoot_leaves: 0, tilt_light: 1 } },
+  ]),
   // THE TREE VIEW (komorebi-tree-view.js): off is the floor as it was, the bark is dead code until the tree is seen, and on the tree changes the frame at every framing
   { name: 'tree_view false == absent (faithful standing)', preset: 'park 1', rebake: true, a: {}, b: { tree_view: false } },
   { name: 'tree_view false ignores the bark (faithful standing)', preset: 'park 1', rebake: true, a: {}, b: { tree_view: false, bark_r: 0.9, bark_g: 0.1, bark_b: 0.5 } },

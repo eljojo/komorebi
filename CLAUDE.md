@@ -44,6 +44,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-engine.js` — `create()`: GL plumbing, the shared-internals hub, rebuild coordinators, auto-quality, the frame loop.
 - `komorebi-grove.js` — the grown canopy (`buildGrove`: `growGrove`, the arithmetic, then `uploadGrove`, the GPU and the shared state) and where one leaf
   hangs (`placeLeaf`, also the editor's tree preview's).
+- `komorebi-shoots.js` — leaves on this year's shoots and tilted by their light (`clusterLight`, `clusterShoots`, `shootLeaf`), pure; `placeLeaf` (the grove) asks it.
 - `komorebi-growth.js` — a tree grown year by year from buds, light deciding which grow (`growBuds`), pure; the grove calls it in place of the
   grammar when `growth_years` is above 0. A prototype.
 - `komorebi-bake.js` — the per-frame bakes: optical depth per layer, the faithful soft shadow, the sky fill.

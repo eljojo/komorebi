@@ -98,6 +98,13 @@ No measurement of the floor camera's framing or the Look's tail is recorded. The
 
 ## canopy
 
+### Leaves on shoots and by light
+
+- **What was measured:** the tilt law against Planchais & Sinoquet (1998), Table 3; what the shoots and the tilt change in each look; what they cost.
+- **On:** the law's own numbers; every look that takes them, today (both 0) against both at 1, Chrome on Metal (Apple M1 Pro), wind off (`test-gl/out/review/2026-11-17-shoots-by-default`); `nix run .#cost` at 1920×1080.
+- **Result:** a uniform tilt over [0, 2μ] gives ⟨cos⟩ 0.905 at 22° and 0.781 at 34°, against their leaf-inclination effect 0.91 / 0.80 (vertical). The overhead looks rearrange their dapples entirely (`memories` 74 % of pixels, the mornings 67–89 %, `prism` 79 %, `acid dreams` 55 %): leaves gather into clumps with floor between. The artist kept `morning 1`, `morning 2`, `morning 3` and `prism` as they were; `memories`, `morning 3b` and `acid dreams` take the shoots. The standing looks move 5–22 % (`park 1` 5 %, `montebello` 22 %), the curtains 7–8 %, the sky views 16–48 %, `tent 1` 62 %. A frame costs the same (every look inside its run-to-run spread); the grove's build does not: `morning 2` 10.6 → 20.5 ms, `park 1` 6.8 → 8.6 ms, `montebello` 13.9 → 13.3 ms. With both at 0 `park 1`'s faithful floor and `memories`' layered floor render the bytes they did before (harness hashes `ddf421f7`, `ea083587`).
+- **Date:** 2026-11-17.
+
 ### The woody shadow shattered in the layers
 
 - **What was measured:** the shadow shift between adjacent depth layers at a low sun, when branches were first stamped into the leaf layers.

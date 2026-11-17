@@ -162,6 +162,8 @@ const PANEL_LAYOUT = [
   'leaves_per_cluster',
   'inner_leaves',
   'cluster_spread_m',
+  'shoot_leaves',
+  'tilt_light',
   'canopy_extent_m',
   'canopy_thickness_m',
   ['btn','reseed', reseed],

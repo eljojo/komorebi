@@ -26,6 +26,8 @@ The glisten is the most fragile thing in the piece: a fine twinkle in place, und
    | pigment clock | seed, cluster, leaf | the leaf's own turn phase and its red and brown capacity | [`season.md`](../model/season.md) |
    | drop day | seed, cluster, leaf | the leaf's own share of the drop order where light does not decide it | [`season.md`](../model/season.md) |
    | inner leaves | seed, cluster, leaf | whether and where along the older wood the leaf hangs | [`canopy.md`](../model/canopy.md) |
+   | shoots | seed, cluster, shoot | a shoot's leaf count, its threshold for going long, its share of `shoot_leaves`, and an inner shoot's place on the wood | [`canopy.md`](../model/canopy.md#leaves-on-shoots) |
+   | leaf side | seed, cluster, leaf | which way the leaf rolls about its long axis, which only the seen tree reads | [`leaf.md`](../model/leaf.md#a-leaf-seen) |
    | tree draws | seed, tree | the tree's clock lead, its pigment depth, and then its leaf genotype | [`season.md`](../model/season.md), [`leaf.md`](../model/leaf.md) |
    | genotype spread | seed, genotype, light class | how a genotype's and a row's outlines depart from the species' | [`leaf.md`](../model/leaf.md) |
    | leaf variant and flip | seed, cluster, leaf | which outline variant the leaf takes, and whether it hangs a half turn past the grove's angle | [`leaf.md`](../model/leaf.md) |

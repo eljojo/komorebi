@@ -52,7 +52,9 @@ const firstDiff = (a, b) => {
   return null;
 };
 // afternoon 7 at the density it shipped with before it took inner leaves (1.65, thinned to 1.5131 with them): the brief's ring is its
-const PARK = { ...PRESETS["park 1"] }, AFT = { ...PRESETS["afternoon 7"], foliage_density: 1.65 }, MONTE = { ...PRESETS.montebello };
+// inner_leaves' own law, held with the shoots and tilt by light off (komorebi-shoots.js has its own tests): the shoots move leaves too.
+const NO_SHOOTS = { shoot_leaves: 0, tilt_light: 0 };
+const PARK = { ...PRESETS["park 1"], ...NO_SHOOTS }, AFT = { ...PRESETS["afternoon 7"], foliage_density: 1.65 }, MONTE = { ...PRESETS.montebello, ...NO_SHOOTS };
 const small = (over) => ({ ...PRESETS["afternoon 7"], tree_count: 2, leaves_per_cluster: 5, foliage_density: 1.5, ...over });
 const dense = (over) => ({ ...PRESETS["afternoon 7"], leaves_per_cluster: 40, foliage_density: 1, tree_count: 3, ...over });
 function sameGrove(label, a, b) {
@@ -156,8 +158,9 @@ test("the gate is a gate: at 0 (or absent) placeLeaf never touches the path, and
     expect(Object.is(out[0], x) && Object.is(out[1], y)).toBe(true);
   }
   const src = read("./komorebi-grove.js");
-  const at = src.indexOf("export function placeLeaf(");
-  expect(at, "placeLeaf is exported from the grove").toBeGreaterThan(-1);
+  expect(src.indexOf("export function placeLeaf("), "placeLeaf is exported from the grove").toBeGreaterThan(-1);
+  const at = src.indexOf("function placeLeafOnWood(");   // the twig hug and the inner leaves; placeLeaf adds the shoots over it (komorebi-shoots.js)
+  expect(at, "the placement on the wood is its own function").toBeGreaterThan(-1);
   const body = src.slice(at, src.indexOf("\n}\n", at));
   const gate = body.indexOf("params.inner_leaves > 0"), hash = body.indexOf("hash3(");
   expect(gate, "the gate is in the function").toBeGreaterThan(-1);
@@ -165,7 +168,7 @@ test("the gate is a gate: at 0 (or absent) placeLeaf never touches the path, and
   expect(body.slice(gate, hash), "...with a return between them: the gate's else is the old placement").toContain("return");
   expect(body.slice(0, gate), "nothing before the gate names the salt").not.toContain("INNER_SALT");
   expect([...src.matchAll(/INNER_SALT/g)].length, "the declaration and the one hash").toBe(2);
-  expect(src.slice(0, at).match(/hash3\([^)]*INNER_SALT/), "no hash with the salt outside placeLeaf").toBe(null);
+  expect(src.slice(0, at).match(/hash3\([^)]*INNER_SALT/), "no hash with the salt outside the placement").toBe(null);
 });
 
 // ---- 3. no growth draw ----------------------------------------------------------------------------------------------------------------

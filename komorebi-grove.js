@@ -26,7 +26,7 @@
 //   DENSITY CAPACITY. A fixed summer grove can keep a larger per-cluster prefix and reweight its active leaves. Its separate key excludes density, but its gate excludes pigment, drop and variety;
 //   opening those rebuilds the actual population before any exposure rank is needed. Ordinary builds and season records retain their original keys and arithmetic. The active count and cast bounds follow the prefix.
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafSide, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, turnWindow, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafSide, leafTau, lerpAngle, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, turnWindow, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
 
 // The fall tiers this module owns, as the bundler sees them (embed-build.mjs): each is substituted by a literal, true or false, and the code behind a false one is not
 // in the bundle. A tier is cut only for a look that does not open it (komorebi-params.js FEATURES), so a flag that is false here means the guarded arithmetic was
@@ -38,14 +38,15 @@ const FEAT_DROP = true;
 const FEAT_LITTER = true;
 import { MAX_LAYERS, MAX_OCC, TOPO_KEYS, CANOPY_KEYS, SEASON_KEYS } from './komorebi-params.js';
 import { growBuds, limbs as budLimbs } from './komorebi-growth.js';
-import { LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_REAL, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafColumnF, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
+import { SHOOT, clusterLight, clusterShoots, lightTilt, shootLeaf } from './komorebi-shoots.js';
+import { LEAF_SHAPES, LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_REAL, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafColumnF, leafFlip, leafJitter, leafShape, leafVariant } from './komorebi-leaf.js';
 
 // Every param buildGrove reads besides the season set, and so the whole of `season.key` (faithful_canopy and receiver reach it through faithfulOn(), which the key carries
 // as the boolean it is). Held against a grep of this file in reseason.test.js.
 export const GROVE_READS = [
   'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
   'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','grove_reach_m','growth_years','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_variety','leaves_per_cluster',
-  'limb_count','max_tilt','phyllotaxis','receiver','seed','sky_view','standing_scene','taper_delta','tree_count','trunk_radius_m','view_extent_m',
+  'limb_count','max_tilt','phyllotaxis','receiver','seed','shoot_leaves','sky_view','standing_scene','taper_delta','tilt_light','tree_count','trunk_radius_m','view_extent_m',
 ];
 // Grow a grove as `look` would, on the live params: every key the build reads (the grove's own, the season set within the canopy keys,
 // the topology) is the look's for the length of `build` and is put straight back after, so nothing else in the frame notices. A route
@@ -126,7 +127,23 @@ function shootPlace(bundle, params, j, k, o){
   return true;
 }
 const _shoot = [0,0,0];
-export function placeLeaf(hier, j, g1, g2, k, params, faithful, out){
+// LEAVES ON SHOOTS (komorebi-shoots.js, shoot_leaves): with the grove's shoots in hand (hier.leafShoots, hier.leafLight; null at shoot_leaves 0), leaf k
+// moves from where the twig hug and the inner leaves put it toward its node on its shoot, by its shoot's own share, and out[4] is its blade's heading,
+// out[5] that share. `lt` is the leaf's length (the grove's per-leaf size; the editor's preview hands the same). At 0 nothing below the old placement runs.
+const _shootLeaf = [0,0,0,0,0,0];
+export function placeLeaf(hier, j, g1, g2, k, params, faithful, out, lt = params.leaf_size_m){
+  placeLeafOnWood(hier, j, g1, g2, k, params, faithful, out);
+  out[5] = 0;
+  const cs = hier.leafShoots ? hier.leafShoots[j] : null;
+  if(!cs) return out;
+  const spec = LEAF_SHAPES[params.leaf_shape], origin = spec ? (spec.origin ?? 0) : 0.5;   // where the stamp is placed from along the blade: the ellipse's middle, the outline's own origin
+  shootLeaf(cs, j, k, hier.twigs[j], hier.leafLight[j], params, lt, origin, _shootLeaf, hier.twigPath ? hier.twigPath[j] : null, hier.twigPathLen ? hier.twigPathLen[j] : 0);
+  const w = _shootLeaf[5];
+  for(let c = 0; c < 4; c++) out[c] += (_shootLeaf[c] - out[c])*w;
+  out[4] = _shootLeaf[4]; out[5] = w;
+  return out;
+}
+function placeLeafOnWood(hier, j, g1, g2, k, params, faithful, out){
   const t = hier.twigs[j];
   let tdx=t.dx||0, tdy=t.dy||0; const tdl=Math.hypot(tdx,tdy), tHasDir=tdl>1e-4; if(tHasDir){ tdx/=tdl; tdy/=tdl; }   // unit twig heading (plan): the GROWN heading the bake stores on the twig (t.dx, t.dy, the end tangent), so the hug matches even on a drooped twig, in the grove and in the editor's preview (which calls this too) alike; leaves hug it
   // leaves HUG the twig (§4.5): trail back from the tip ALONG the twig heading (1.5×spread) with a tight perpendicular jitter (0.4×spread), instead of an isotropic blob. Same two draws → other attributes unchanged.
@@ -493,12 +510,17 @@ export function makeGrove(hub){
     const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
     let sEx = null, sRank = null;   // the exposure field and keyed rank, when this build ran the pass: the record keeps them, so the first re-season does not pay it again
     let sAt = 0;
-    const pos = [0,0,0,0];   // placeLeaf's scratch: one leaf's x, y, z and its pivot weight
+    const pos = [0,0,0,0,0,0];   // placeLeaf's scratch: one leaf's x, y, z, its pivot weight, and on a shoot its blade's heading and its share
     let sideData = new Float64Array(nAll);   // FAITHFUL: each leaf's side (leafSide), in record order, compacted with pivotData
     let pivotData = new Float64Array(nAll);   // FAITHFUL: each leaf's pivot weight (placeLeaf's out[3]), in record order, before the fade (let: abscission compacts it with faithData)
     let zLow = Infinity, zHigh = -Infinity;   // the lowest and the highest height any leaf hangs at (past faith.hMin / faith.hMax only when inner_leaves hangs one on wood beyond every twig tip)
     let q = 0;   // the leaf's place in record order: every leaf of every cluster takes one, in the faithful run, the pivots and rec
     crownDepth(twigs, hier.airData);
+    // SHOOTS AND LIGHT (komorebi-shoots.js): each cluster's light, from the growth sky, when a leaf reads it (tilt_light, shoot_leaves), and each cluster's
+    // shoots when leaves hang on them. Both null at 0, and then nothing below reads them.
+    const tiltOn = params.tilt_light > 0, shootsOn = params.shoot_leaves > 0 && !(params.growth_years > 0);   // a tree grown year by year hangs its leaves on its own grown shoots
+    hier.leafLight = tiltOn || shootsOn ? clusterLight(twigs, params) : null;
+    hier.leafShoots = shootsOn ? Array.from({ length: nClusterTotal }, (_, j) => clusterShoots(params.seed, j, nLeaf, params.phyllotaxis === 'opposite')) : null;
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const dT = tShift ? tShift[t.tree] : undefined, cT = tGain ? tGain[t.tree] : undefined;   // this cluster's tree's lead and depth
@@ -518,19 +540,21 @@ export function makeGrove(hub){
         const cov = ((k===pcInt) ? frac : 1.0) * t.tcov;   // marginal-leaf fade × marginal-tree fade (§4.5)
         // where it hangs (placeLeaf): the twig hug off the tip, and with inner_leaves up a share of the leaves on the wood behind it. Same two draws → other attributes unchanged.
         const b = k*DRAW, g1 = D[b], g2 = D[b+1];
-        placeLeaf(hier, j, g1, g2, k, params, faithful, pos); pivotData[q] = pos[3]; sideData[q] = leafSide(params.seed, j, k);
+        const size = params.leaf_size_m*(0.6+0.8*D[b+2]);
+        placeLeaf(hier, j, g1, g2, k, params, faithful, pos, size); pivotData[q] = pos[3]; sideData[q] = leafSide(params.seed, j, k);
         const x = pos[0], y = pos[1], z = pos[2];
         if(z < zLow) zLow = z;
         if(z > zHigh) zHigh = z;
         const li = z === t.z ? t.layer : layerOf(z), run = layerRun[li];   // a leaf at its twig's height is on its twig's layer; one on the wood is on the layer of its own height
-        const size = params.leaf_size_m*(0.6+0.8*D[b+2]);
         // An outline has its own width-to-length (komorebi-leaf.js), so the look's aspect is not its to squash: it takes the leaf AREA the ellipse would have, π·A·B0 = π·size²/(4·aspect), with A = B0 = size/(2√aspect) —
         // the fullness stays where the look had it, and a maple at 1.75 is a smaller maple, never a thin one. At aspect 1 Math.sqrt(1) is exactly 1 and x/1 is x, so both are the old bits; the ellipse keeps its literal line.
         const A  = shape ? size*0.5/Math.sqrt(params.leaf_aspect) : size*0.5;   // long half-axis
         const B0 = shape ? A : size*0.5/params.leaf_aspect;                     // face-on short half (shader foreshortens)
-        const restTilt = D[b+3]*params.max_tilt*(Math.PI*0.5);
+        let restTilt = D[b+3]*params.max_tilt*(Math.PI*0.5);
+        if(tiltOn) restTilt += (lightTilt(D[b+3], hier.leafLight[j]) - restTilt)*params.tilt_light;   // TILT BY LIGHT: toward Planchais's law by tilt_light, from the same draw; max_tilt is the look's at 0 only
         let angle = D[b+4]*Math.PI;
         if(shape && leafFlip(params.seed, j, k)) angle += Math.PI;   // an outline is not the same leaf a half turn on: half of them take the other half-plane (komorebi-leaf.js)
+        if(pos[5] > 0) angle = lerpAngle(angle, pos[4] + (D[b+4] - 0.5)*SHOOT.azJitter, pos[5], 2*Math.PI);   // on a shoot the blade points away from its node, the leaf's own draw a jitter about it
         const ax = 0.4+0.6*D[b+5], ay = 0.4+0.6*D[b+6];    // incoherent orbit
         const orient = D[b+7]*TAU2, phase = D[b+8]*TAU2;
         const swingGain = 0.6+0.8*D[b+9], swingPhase = D[b+10]*TAU2;

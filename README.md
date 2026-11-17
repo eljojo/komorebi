@@ -212,13 +212,14 @@ Komorebi stands on research into how real trees grow and how real leaves handle 
   I. Moya (2005), *Remote Sensing of Environment* 98; its two faces measured, T. W. Brakke, J. A. Smith and J. M. Harnden (1989), *Remote
   Sensing of Environment* 29, and T. Brakke (1994), *Agricultural and Forest Meteorology* 71; the bark's reflectance, J. Juola,
   A. Hovi and M. Rautiainen (2022), *Ecology and Evolution* 12, e8718.
+- Leaves on shoots, by light (`komorebi-shoots.js`): R. A. Gregory (1980), *Canadian Journal of Forest Research* 10, sugar
+  maple's shoots; S. Dupré, B. Thiébaut and E. Teissier du Cros (1986), *Annales des Sciences Forestières* 43, and D. Lemoine,
+  S. Jacquemin and A. Granier (2002), *Annals of Forest Science* 59, beech's short and long shoots in sun and shade; I. Planchais
+  and H. Sinoquet (1998), *Agricultural and Forest Meteorology* 89, leaf angle in sun and shade; the light from above, after
+  Pałubicki et al. (2009).
 
-**Informing the work in progress** (real shoots and leaves, and the light inside a crown)
+**Informing the work in progress** (sun and shade leaves, and the light inside a crown)
 - R. Habel, A. Kusternig and M. Wimmer (2007), Eurographics Symposium on Rendering: a leaf's translucency.
-- R. A. Gregory (1980), *Canadian Journal of Forest Research* 10: sugar maple's shoots.
-- S. Dupré, B. Thiébaut and E. Teissier du Cros (1986), *Annales des Sciences Forestières* 43: beech's short and long shoots.
-- D. Lemoine, S. Jacquemin and A. Granier (2002), *Annals of Forest Science* 59: beech shoots in sun and shade.
-- I. Planchais and H. Sinoquet (1998), *Agricultural and Forest Meteorology* 89: leaf angle in sun and shade.
 - H. A. Bahamonde, L. Gil and V. Fernández (2018), *Frontiers in Plant Science* 9: sun and shade leaves of beech and oak.
 - A. Hovi, P. Forsström, G. Ghielmetti, M. E. Schaepman and M. Rautiainen (2020), *ISPRS Journal of Photogrammetry and
   Remote Sensing* 169: light scattered within a crown.

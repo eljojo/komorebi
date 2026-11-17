@@ -182,6 +182,14 @@ const PARAMS = {
     row: { kind: 's', label: 'inner leaves', min: 0, max: 1, step: 0.01, rebuild: 'canopy' },   // §4.5: leaves on the older wood, so the crown is full — the share of each twig's leaves hung back along the limbs it grew from; 0 = the hollow crown, leaves at the twigs only
     travels: 'canopy',
     means: "<b>A full crown: sun leaves at the shell, shade leaves inside.</b> A tree only grows leaves at the ends of its twigs, so from above it reads as a wheel — a ring of leaves, a thin core, and bare limbs for spokes. A real crown also carries leaves on the older wood, thinning toward the trunk and never to none. This hangs that share of every twig's leaves back along the limbs it grew from, at the height they hang. 0 = the hollow crown, leaves at the twig tips only. It moves leaves, it adds none: the count and the leaf area stay the look's." },
+  shoot_leaves: { default: 1,   // on by default (a look from before it was keeps 0: GRANDFATHERED, below); a twig's leaves on this year's shoots (komorebi-shoots.js, §canopy "Shoots"): 0..1, the share of each cluster's shoots its leaves hang at the nodes of, short in shade and long in sun, in pairs where the tree's phyllotaxis is opposite. Each shoot glides by its own draw, so a change is a morph. 0 = the twig hug and the inner leaves, the old placement to the bit. Not read by a tree grown year by year (growth_years), whose leaves hang on its own grown shoots. A canopy key (it moves leaves)
+    row: { kind: 's', label: 'shoots', min: 0, max: 1, step: 0.01, rebuild: 'canopy' },
+    travels: 'canopy',
+    means: "<b>Leaves on shoots, the way a twig carries them.</b> This year's shoots leave last year's twig at its nodes, and each carries a few leaves, one a node, or in pairs on a tree whose branches pair. A shoot in shade stays short, its leaves bunched; one in sun grows long and rises. The blades point along the branch. So a crown gathers into clumps with sky between, rather than a haze of leaves around every twig tip. 0 = the old scatter around each twig. It moves leaves, it adds none." },
+  tilt_light: { default: 1,   // on by default (a look from before it was keeps 0: GRANDFATHERED, below); leaves lie by their light (komorebi-shoots.js, §leaf "What one leaf stamps"): 0..1, from the look's own tilt (max_tilt) toward Planchais & Sinoquet's beech, 22° in shade to 34° in the open, from the same tilt draw. At 1 max_tilt is not read. 0 = the old tilt to the bit. A canopy key (it moves a leaf's footprint)
+    row: { kind: 's', label: 'tilt by light', min: 0, max: 1, step: 0.01, rebuild: 'canopy' },
+    travels: 'canopy',
+    means: "<b>Sun leaves stand steeper, shade leaves lie flat.</b> A leaf in full sun tilts up out of the light it has too much of; one in the shade spreads flat to catch what reaches it. Measured on beech: 34° in the open, 22° in deep shade. At 1 every leaf lies by its own light and <i>max tilt</i> no longer applies; at 0 every leaf takes the look's own tilt." },
   leaf_size_m: { default: 0.09,
     row: { kind: 's', label: 'leaf (m)', min: 0.01, max: 0.4, step: 0.005, rebuild: 'canopy' },
     travels: 'canopy',
@@ -916,7 +924,10 @@ const DEFAULTS = Object.fromEntries(Object.entries(PARAMS).filter(([, d]) => !('
 // off names its old value; a look that took the laws carries its own re-sat exposure and skylight. The drawback: a look kept
 // anywhere else (a browser's local saves, an exported JSON, a page that embeds komorebi with its own params) and saved before
 // these were on takes them on the next load, and its sun may read dimmer. Turn them off in the advanced panel to get it back.
-const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
+// Two more were turned on later, together: shoot_leaves (0 → 1) and tilt_light (0 → 1), leaves on botanical shoots, lying by their light. The
+// afternoon looks, forest floor, morning 1, 2 and 3 and prism keep both at 0, as the artist chose; a look kept elsewhere from before takes them, and its
+// crowns gather into clumps.
+const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, shoot_leaves: 0, tilt_light: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
 
 // ---- legacy parameter names (spec §9). A ★ look saved to local storage, or a JSON exported from any
 // earlier build, is data the engine does not get to re-author — so a renamed knob has to keep loading

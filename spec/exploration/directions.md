@@ -232,7 +232,7 @@ José, looking down at one tree with a bare middle: *"this tree is weird as fuck
 3. **The scale of the shoot is wrong.** A grown tree has about a hundred terminal twigs of about a hundred leaves each, three orders deep; a real crown of the same size has thousands of shoots of five to fifteen leaves, five to eight orders deep. Tufts stand where a real crown has an even texture.
 4. **There is no time.** A real crown is many years of growth units stacked, old wood inside and this year's shoots outside; the grammar grows in one pass.
 5. **The shape is imposed.** The plan is stretched until the widest twig reaches a set radius and the height is scaled separately; a real crown's outline comes out of apical control, light and gravity.
-6. **Leaves ignore light.** Their tilt is drawn at random; real sun leaves at the top are smaller and steeper and shade leaves inside larger and flatter. The smallest of the six.
+6. **Leaves ignore light in their size.** Their tilt and their shoots follow light since 2026-11-17 ([`../model/canopy.md`](../model/canopy.md#leaves-on-shoots)); a sun leaf is still the size of a shade leaf, where a real one is smaller and thicker. Sunny branches overlapping more than shaded ones is branching by light, this direction's. The smallest of the six.
 
 What the grown tree already has right: the pipe model's taper, gravitropic droop compounding toward the tips, the phyllotaxis types, and apical control as the axis between species (`leader_strength`), though only on the trunk.
 

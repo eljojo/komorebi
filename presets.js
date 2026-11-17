@@ -14,6 +14,7 @@ export const PRESETS = {
   // at the foot of this object. Any saved (★) look lives in local storage; DEFAULTS is the merge base.
   // 'afternoon 4' — windy predecessor; now a 3-tree grove with wider (52°) branching.
   'afternoon 4': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
     core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
     core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
     layer_count:3, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
@@ -34,6 +35,7 @@ export const PRESETS = {
   }),
   // 'afternoon 4b' — afternoon 4 under haze: turbid sky (β 0.23), lower exposure, a touch more contrast.
   'afternoon 4b': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
     "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
@@ -53,6 +55,7 @@ export const PRESETS = {
   }),
   // 'afternoon 5' — calm near-overhead spring scene, now a 3-tree grove.
   'afternoon 5': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
     core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
     core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
     layer_count:3, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
@@ -73,6 +76,7 @@ export const PRESETS = {
   }),
   // 'afternoon 5b' — afternoon 5 dropped to a low (23°) sun swung round to the west.
   'afternoon 5b': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
     "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
@@ -93,6 +97,7 @@ export const PRESETS = {
   // 'prism' — afternoon 5b's low west sun, now surfacing leaf-edge diffraction: red & blue split at every
   // dapple edge (θ∝λ). Same topology as 5b (seed/branching/layers), so 5b↔prism is a clean live morph.
   'prism': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
     "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
@@ -112,6 +117,7 @@ export const PRESETS = {
     // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
   }),
   'afternoon 6': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
     "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
@@ -130,6 +136,7 @@ export const PRESETS = {
   }),
   // 'afternoon 6b' — afternoon 6 with steeper leaf tilt (max_tilt 0.87 -> more footprint foreshortening).
   'afternoon 6b': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
     "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
     "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
@@ -148,6 +155,7 @@ export const PRESETS = {
     // kept as made, from before edge_area was on by default (GRANDFATHERED in komorebi-params.js)
   }),
   'afternoon 7': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
     "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
@@ -321,6 +329,7 @@ export const PRESETS = {
   // the leaves whose turn phase is under 0.39 (the sunlit ones, each fully turned, 39%) and the buried interior stays green. The sun, the camera and the grove are afternoon 7's. canopy_fill and
   // leaf_diffuse stay 0, as there.
   'forest floor': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // afternoon 7's grove, kept as made with it (GRANDFATHERED in komorebi-params.js)
     "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
@@ -997,6 +1006,7 @@ export const PRESETS = {
     // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
   }),
   'morning 1': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
     "phenology": 0.40,
     "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
@@ -1015,6 +1025,7 @@ export const PRESETS = {
     // leaves inside the crown, density ×0.917 so as much floor stays in sun
   }),
   'morning 2': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
     "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
@@ -1032,6 +1043,7 @@ export const PRESETS = {
     // leaves inside the crown, density ×0.917 so as much floor stays in sun
   }),
   'morning 3': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
     "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.72, "cloud_thickness": 0.18, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,

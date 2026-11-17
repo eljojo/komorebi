@@ -138,6 +138,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 | Faithful cast of the real geometry | `komorebi-bake.js`, `komorebi-shaders.js` | `bakeFaithful`, `VS_FAITH` (`VS_FAITH_PIVOT` for a grove with leaves on older wood: the pivot weight, a separate buffer at attribute 8), `FS_FAITH`, `refreshFaith` | not recorded | gate rows (`faithful_canopy` off is the layer path); still-cast re-cast rows |
 | Continuous tree count | `komorebi-grove.js` | marginal tree appended at the end of the stream | `transitions.test.js` | `afternoon 5→6` route |
 | Tree inset (`T`) | `komorebi-editor-tools.js` | `placeLeaf`, `hier.segments`, `hier.leafW` (see [The editor](#the-editor-and-the-player)) | not recorded | editor smoke |
+| Leaves on shoots and by light: the cluster light (the growth sky's cone), the shoots, a leaf's node and blade, the tilt | `komorebi-shoots.js` (pure), `komorebi-grove.js` (`placeLeaf` over `placeLeafOnWood`; `hier.leafLight`, `hier.leafShoots`) | `shoot_leaves`, `tilt_light`, `SHOOT`, `SHOOT_LEAF_SALT`, `clusterLight`, `clusterShoots`, `shootLeaf`, `lightTilt` | `shoots.test.js`; `inner.test.js` holds `inner_leaves` with them off | live rows: `shoot_leaves` and `tilt_light` on the layered floor, the faithful floor, the cloth and the sky view |
 
 *Representation.*
 
