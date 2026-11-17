@@ -117,4 +117,11 @@ the deploy on a push to `main`, which writes `commit.json`.
 
 Arboretum is where the editor keeps looks, online or not; `arboretum.js`'s header describes its tiers. Signed out, or on a
 fork or `nix run .#dev`, it works locally and asks the network for nothing unless a link is opened. To develop the session
-half, run arboretum's `nix run .#dev -- <this checkout>` from the arboretum repo and open `https://localhost:8787/`.
+half, run `nix run .#arboretum-dev` and open `https://localhost:8787/`.
+
+**`arboretum/`** is the session half: the Cloudflare Worker (with D1) that serves komorebi.eljojo.net — komorebi's static site
+at the root, arboretum's pages under `/arboretum`, the API at `/api`. It is its own project, TypeScript with its own
+`package.json`, vitest suite and `tsc` (`cd arboretum && nix develop -c npm test`), and its README is its map. It is not
+pinned to an engine: `arboretum/scripts/engine.mjs` generates its validator tables and engine bundle from this tree,
+gitignored, before its tests, typecheck and dev mode, and `nix run .#arboretum-deploy` deploys HEAD. The engine's tools
+(bun test, biome, `nix run .#dev`, the Pages site) leave `arboretum/` alone; the engine never imports from it.

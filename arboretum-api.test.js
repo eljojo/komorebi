@@ -109,7 +109,7 @@ test("a 401 rejects with its status and arboretum's sentence", async () => {
 });
 
 test("a 422 keeps the error verbatim with its reason and keys", async () => {
-  const body = { error: "arboretum is pinned to komorebi abc1234; unknown keys: foo, bar", reason: "unknown_keys", keys: ["foo", "bar"] };
+  const body = { error: "arboretum runs komorebi abc1234; unknown keys: foo, bar", reason: "unknown_keys", keys: ["foo", "bar"] };
   const e = await rejection(api(ORIGIN, fake({ status: 422, body }).fetchImpl).create({ name: "x", params: { foo: 1, bar: 2 } }));
   expect(e).toEqual({ status: 422, ...body });
 });

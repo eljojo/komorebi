@@ -1,6 +1,6 @@
 // Every shipped look can be saved in arboretum. Arboretum holds a saved look to the editor's slider ranges, each stretched by a quarter
-// of its span at both ends (komorebi-arboretum src/validate.ts, RANGE_LEEWAY), angles exempt because they wrap; the ranges are the
-// sliders' rows in PARAMS (komorebi-params.js), which the editor builds its panel from and arboretum's pin reads. A look whose value lands past that stretch is refused on save, so a look change that moves a value
+// of its span at both ends (arboretum/src/validate.ts, RANGE_LEEWAY), angles exempt because they wrap; the ranges are the
+// sliders' rows in PARAMS (komorebi-params.js), which the editor builds its panel from and arboretum/scripts/engine.mjs reads. A look whose value lands past that stretch is refused on save, so a look change that moves a value
 // (a re-sit of exposure, say) has to move the slider with it.
 import { test, expect } from "bun:test";
 import { PRESETS } from "./presets.js";
