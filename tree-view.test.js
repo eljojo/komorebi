@@ -121,7 +121,7 @@ test("the tree's light reads every layer there can be, one constant index each",
 });
 
 // ---- A TILTED LEAF'S SHADOW (tilt_shadow): the cast throws each corner from its own height, so the quad is the leaf's true shadow along the sun ----
-import { leafShadowCorner } from "./komorebi-source.js";
+import { leafShadowCorner } from "./komorebi-cast.js";
 import { VS_FAITH } from "./komorebi-shaders.js";
 import { DEFAULTS as DEF, GRANDFATHERED as GF, PARAMS as PR } from "./komorebi-params.js";
 

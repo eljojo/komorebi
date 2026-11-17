@@ -6,6 +6,7 @@ import {CANOPY_MORPH_MAX, DEFAULTS, SEASON_KEYS} from './komorebi-params.js';
 import {litterAlbedo,litterAge,litterLanding} from './komorebi-litter.js';
 import {makeBake} from './komorebi-bake.js';
 import {makeSource} from './komorebi-source.js';
+import {makeCast} from './komorebi-cast.js';
 import {VS_SEASON_TRAVEL,FS_FAITH} from './komorebi-shaders.js';
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
@@ -94,7 +95,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
       faith:{...faith,pivotOn:false,gx:new Float32Array(faith.gx.length),gy:new Float32Array(faith.gy.length)},bakeRes:()=>s.res};   // pivotOn false: the flight reads no pivot weight, and the bake would take that specialization over this cast's own program
     cast.progFaith=hub.sharedProgram(VS_SEASON_TRAVEL,FS_FAITH);cast.U={...hub.U,faith:hub.faithLocs(cast.progFaith)};
     cast.effCloud=()=>cast.params.cloud_thickness;
-    Object.assign(cast,makeSource(cast));Object.assign(cast,makeBake(cast));s.cast=cast;
+    Object.assign(cast,makeSource(cast),makeCast(cast));Object.assign(cast,makeBake(cast));s.cast=cast;
     trans.travelField=s.field;
   }
   function retargetSeasonTravel(to,opts){

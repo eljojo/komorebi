@@ -11,6 +11,7 @@ import { PRESETS as AUTHORED_PRESETS } from "./presets.js";
 // The transition coordinator receives concrete render params; authored looks may inherit fidelity.
 const PRESETS=Object.fromEntries(Object.entries(AUTHORED_PRESETS).map(([name,look])=>[name,{...DEFAULTS,...look}]));
 import { makeSource } from "./komorebi-source.js";
+import { makeCast } from "./komorebi-cast.js";
 import { DEG, clamp, lerp, turnBack } from "./komorebi-math.js";
 import riseFixture from './test-gl/fixtures/fall-look-up.json';
 import shadowFixture from './test-gl/fixtures/purple-look-up.json';
@@ -953,8 +954,9 @@ test('turnBack: momentum is spent, then the route eases home; the farther out, t
 });
 
 // ---- THE ECLIPSE PAIRS: the shared-layer crossfade across layer counts, and the moon crossing the eclipse gate ----
-// The source module's pure moon and height functions, read through the namespace so a missing one fails its test rather than the file.
+// The source and cast modules' pure moon and height functions, read through the namespace so a missing one fails its test rather than the file.
 import * as SOURCE from "./komorebi-source.js";
+import * as CAST from "./komorebi-cast.js";
 import * as GROVE from "./komorebi-grove.js";
 
 // The transition rig with the real sampler and layer heights wired in, the way the engine wires them.
@@ -965,7 +967,7 @@ function sourceRig(from, over = {}) {
     sizeLayers: (n) => sized.push(n),
     effCloud: () => clamp(lerp(r.params.cloud_thickness, 1, r.hub.trans.bloom), 0, 1), ...over });
   r.hub.trans.bloom = 0;
-  Object.assign(r.hub, makeSource(r.hub));
+  Object.assign(r.hub, makeSource(r.hub), makeCast(r.hub));
   r.hub.transitionTo = r.transitionTo;
   return r;
 }
@@ -1016,15 +1018,15 @@ for (const [a, b] of [["morning 3b", "eclipse"], ["eclipse", "acid dreams"]]) {
 }
 
 test("the route's layer heights: each end exactly, and for equal counts the heights a tween of base and thickness gives", () => {
-  expect(typeof SOURCE.routeHeights).toBe("function");
+  expect(typeof CAST.routeHeights).toBe("function");
   for (const n of [1, 2, 3, 4]) {
-    const h = SOURCE.routeHeights(n, 4.2, 2.6), lh = native({ ...DEFAULTS, layer_count: n, canopy_base_height_m: 4.2, canopy_thickness_m: 2.6 }).heights;
+    const h = CAST.routeHeights(n, 4.2, 2.6), lh = native({ ...DEFAULTS, layer_count: n, canopy_base_height_m: 4.2, canopy_thickness_m: 2.6 }).heights;
     for (let i = 0; i < n; i++) expect(Math.fround(h[i])).toBe(lh[i]);
     for (let i = n; i < 4; i++) expect(h[i], "padded with the top layer").toBe(h[n - 1]);
   }
-  const a = SOURCE.routeHeights(3, 4.2, 2.6), b = SOURCE.routeHeights(3, 4.9, 2.5);
+  const a = CAST.routeHeights(3, 4.2, 2.6), b = CAST.routeHeights(3, 4.9, 2.5);
   for (const e of [0.25, 0.5, 0.75]) for (let i = 0; i < 3; i++)
-    expect(lerp(a[i], b[i], e)).toBeCloseTo(SOURCE.routeHeights(3, lerp(4.2, 4.9, e), lerp(2.6, 2.5, e))[i], 12);
+    expect(lerp(a[i], b[i], e)).toBeCloseTo(CAST.routeHeights(3, lerp(4.2, 4.9, e), lerp(2.6, 2.5, e))[i], 12);
 });
 
 test("equal layer counts keep today's heights through a crossfade", () => {

@@ -14,7 +14,8 @@ import {seasonTravelEligible} from './komorebi-season-travel.js';
 import {litterRiseEligible,litterFallEligible,shadowRiseEligible,shadowFallEligible} from './komorebi-litter-rise.js';
 import {groveTravelEligible} from './komorebi-grove-travel.js';
 import {densityEligible, densityKey, densityCount} from './komorebi-grove.js';
-import {routeHeights, moonX} from './komorebi-source.js';
+import {moonX} from './komorebi-source.js';
+import {routeHeights} from './komorebi-cast.js';
 
 const CAMERA_KEYS = new Set(['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y']);
 const WINDOW_KEYS = new Set(['window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall']);

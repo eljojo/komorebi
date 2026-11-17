@@ -518,16 +518,16 @@ test("the endless park's sun path is vertical: gS = 0 lights layer i from the la
 });
 
 // ---- THE BAKE'S WIRING: what the fill pass is handed, and what it does to the layer textures. A stub GL records the calls and a
-// real makeSource supplies the very bulkShift / bulkOn the engine uses — so this holds the wiring, not a restatement of it.
+// real makeCast supplies the very bulkShift / bulkOn the engine uses — so this holds the wiring, not a restatement of it.
 import { makeBake, makeFill, FILL_SIG_LEN } from "./komorebi-bake.js";
-import { makeSource } from "./komorebi-source.js";
+import { makeCast } from "./komorebi-cast.js";
 import { MAX_LAYERS } from "./komorebi-params.js";
 
 function bakeRig(over) {
   const calls = [];
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : (...a) => { calls.push([name, ...a]); return name === "checkFramebufferStatus" ? "FRAMEBUFFER_COMPLETE" : {}; }) });
   const params = { ...DEFAULTS, canopy_fill: 1, ground_bounce: 0, canopy_extent_m: 28, layer_count: 3, canopy_base_height_m: 5, canopy_thickness_m: 3, sun_elevation_deg: 36, sun_azimuth_deg: 30, ...over };
-  const { bulkShift, bulkOn, layerHeights } = makeSource({ gl, params, perf: {}, trans: {}, src: {}, effCloud: () => 0 });
+  const { bulkShift, bulkOn, layerHeights } = makeCast({ params, trans: {} });
   const U = { layers: Array.from({ length: MAX_LAYERS }, (_, i) => `layer${i}`) };
   for (const k of ["origin", "extent", "frameOrigin", "frameExtent", "sunPath", "open", "sun", "heights", "layerCount", "ray", "turn", "count", "scatter", "beamK"]) U[k] = k;
   const fill = { tex: [null, null], res: 0, ready: false, sig: new Float64Array(FILL_SIG_LEN), K: 0, rays: null };
@@ -628,7 +628,7 @@ test("every fill READ is over the fill's own frame, not the canopy's: the floor,
 // The park's shear (park_throw): the overhead park throws each layer by its height only when asked, by the standing scene's own throw × the knob; 0 is no throw at all,
 // and a standing scene's throw is untouched by the knob, to the bit.
 test("park_throw: the overhead park throws cot(el)·(anti-sun) × the knob, 0 is exactly none, and a standing scene ignores it", () => {
-  const src = (over) => makeSource({ gl: {}, params: { ...DEFAULTS, sun_elevation_deg: 23, sun_azimuth_deg: 40, ...over }, perf: {}, trans: {}, src: {}, effCloud: () => 0 });
+  const src = (over) => makeCast({ params: { ...DEFAULTS, sun_elevation_deg: 23, sun_azimuth_deg: 40, ...over }, trans: {} });
   const cot = Math.cos(23 * DEG) / Math.sin(23 * DEG), ca = Math.cos(40 * DEG), sa = Math.sin(40 * DEG);
   expect(Array.from(src({ standing_scene: false, receiver: 0 }).bulkShift()), "absent: the park as it was").toEqual([0, 0]);
   expect(Array.from(src({ standing_scene: false, receiver: 0, park_throw: 0 }).bulkShift()), "0: none").toEqual([0, 0]);

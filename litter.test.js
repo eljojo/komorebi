@@ -467,18 +467,18 @@ test("the carpet's bake: a stamp in a unit quad, premultiplied, sized and turned
 });
 
 // ============================================================================
-// THE BAKE'S WIRING: what the carpet is handed, when it is baked, and when it is not. A stub GL records the calls, and a real makeSource /
+// THE BAKE'S WIRING: what the carpet is handed, when it is baked, and when it is not. A stub GL records the calls, and a real makeCast /
 // makeBake supply the very bulkOn, layerHeights and fill frame the engine uses — so this holds the wiring, not a restatement of it.
 // ============================================================================
 import { makeBake, makeFill } from "./komorebi-bake.js";
-import { makeSource } from "./komorebi-source.js";
+import { makeCast } from "./komorebi-cast.js";
 import { MAX_LAYERS } from "./komorebi-params.js";
 
 function litterRig(over = {}, { list = fallen().litter, faithful = false } = {}) {
   const calls = [];
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : (...a) => { calls.push([name, ...a]); return name === "checkFramebufferStatus" ? "FRAMEBUFFER_COMPLETE" : {}; }) });
   const params = { ...fallen().params, litter: 1, canopy_fill: 0, canopy_extent_m: 12, layer_count: 3, canopy_base_height_m: 5, canopy_thickness_m: 3, sun_elevation_deg: 36, sun_azimuth_deg: 30, ...over };
-  const { bulkShift, bulkOn, layerHeights } = makeSource({ gl, params, perf: {}, trans: {}, src: {}, effCloud: () => 0 });
+  const { bulkShift, bulkOn, layerHeights } = makeCast({ params, trans: {} });
   const U = { layers: Array.from({ length: MAX_LAYERS }, (_, i) => `layer${i}`) };
   for (const k of ["origin", "extent", "frameOrigin", "frameExtent", "sunPath", "open", "sun", "heights", "layerCount", "ray", "turn", "count", "scatter", "beamK"]) U[k] = k;
   const fill = { tex: [null, null], res: 0, ready: false, sig: new Float64Array(16), K: 0, rays: null };

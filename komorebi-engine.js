@@ -3,6 +3,7 @@ import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, DEFAULTS, migrateLegacy, cu
 import { VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
 import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi-transport.js';
 import { makeSource } from './komorebi-source.js';
+import { makeCast } from './komorebi-cast.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
 import { makeGrove, seasonKey, densityEligible, densityCount, growAs } from './komorebi-grove.js';
@@ -544,7 +545,8 @@ function createEngine(canvas, opts, driven=false){
 
 
 
-  const { regenSource, bulkShift, bulkOn, projMatrix, layerHeights } = makeSource(hub);
+  const { regenSource } = makeSource(hub);
+  const { bulkShift, bulkOn, projMatrix, layerHeights } = makeCast(hub);
   Object.assign(hub, { regenSource, bulkShift, bulkOn, projMatrix, layerHeights });
 
   const targetLooks = new WeakMap();
@@ -598,7 +600,7 @@ function createEngine(canvas, opts, driven=false){
     outgoing.transportCamera=()=>cameraFor(outgoing.params);
     outgoing.fillWanted=()=>false;
     outgoing.refreshFill=outgoing.refreshLitter=outgoing.refreshWood=()=>{};
-    Object.assign(outgoing,makeSource(outgoing),makeMotion(outgoing));
+    Object.assign(outgoing,makeSource(outgoing),makeCast(outgoing),makeMotion(outgoing));
     outgoing.motionTick=outgoing.tick;   // the copied parent tick closes over the incoming scene
     Object.assign(outgoing,makeBake(outgoing));
     Object.assign(outgoing,makeRender(outgoing));
