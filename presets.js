@@ -12,174 +12,9 @@ export const PRESETS = {
   // The built-in looks. Definition order below IS the dropdown / ← → order — there is no separate
   // order list to keep in sync. The editor boots into 'afternoon 7'; 'test 1'/'test 2' sit commented
   // at the foot of this object. Any saved (★) look lives in local storage; DEFAULTS is the merge base.
-  // 'afternoon 4' — windy predecessor; now a 3-tree grove with wider (52°) branching.
-  'afternoon 4': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
-    core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
-    core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
-    layer_count:3, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
-    tree_count:3, branch_angle_deg:52,
-    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
-    leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
-    canopy_extent_m:6, seed:290626672,
-    sun_elevation_deg:84.5, sun_azimuth_deg:201,
-    view_extent_m:3.1, exposure:1.7398, sun_cosine:1, contrast:0.98, ambient_skylight:0.9691, tone_map:2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
-    wind_strength:1.34, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:2.5,
-    sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.25, backlash_gain:1, sway_height_gain:1.6,
-    limb_count:11, limb_flex:0.25, twig_flex:0.35, stem_length:0.14, leaf_swing:1.35, flutter_freq:1.4,
-    drift_amount:0.145, drift_phase:2.876, drift_auto:true, drift_speed:0.04,
-    cloud_exposure: 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
-    "edge_area": false, "inner_leaves": 0,
-    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
-  }),
-  // 'afternoon 4b' — afternoon 4 under haze: turbid sky (β 0.23), lower exposure, a touch more contrast.
-  'afternoon 4b': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
-    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
-    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
-    "tree_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 52,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 85.1984375, "sun_azimuth_deg": 185.1914062500001,
-    "view_extent_m": 3.1, "exposure": 0.9201, "sun_cosine": 1, "contrast": 1.11, "ambient_skylight": 0.8285, "sky_turbidity": 0.23, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 1.29/sin 85.2°
-    "wind_strength": 1.34, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 2.5,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.25, "backlash_gain": 1, "sway_height_gain": 1.6,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.35, "stem_length": 0.14, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 0.1618908759004459, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 1.295 there, and a thicker cloud opens it up
-    "edge_area": false, "inner_leaves": 0,
-    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
-  }),
-  // 'afternoon 5' — calm near-overhead spring scene, now a 3-tree grove.
-  'afternoon 5': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
-    core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
-    core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
-    layer_count:3, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
-    tree_count:3,
-    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
-    leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
-    canopy_extent_m:6, seed:290626672,
-    sun_elevation_deg:84.5, sun_azimuth_deg:201,
-    view_extent_m:3.1, exposure:1.7398, sun_cosine:1, contrast:0.98, ambient_skylight:0.9691, tone_map:2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
-    wind_strength:0.07, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:1.3,
-    sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.65, backlash_gain:1, sway_height_gain:0.75,
-    limb_count:11, limb_flex:0.25, twig_flex:0.18, stem_length:0.18, leaf_swing:1.35, flutter_freq:1.4,
-    drift_amount:0.145, drift_phase:1.403, drift_auto:true, drift_speed:0.04, ground_r:0.33, ground_g:0.21, ground_b:0.12,   // warm Mount-Royal dirt floor
-    cloud_exposure: 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
-    "edge_area": false, "inner_leaves": 0,
-    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
-  }),
-  // 'afternoon 5b' — afternoon 5 dropped to a low (23°) sun swung round to the west.
-  'afternoon 5b': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
-    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
-    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
-    "tree_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 23.233203125002493, "sun_azimuth_deg": 254.1128906249312,
-    "view_extent_m": 3.1, "exposure": 5.8857, "contrast": 1.32, "ambient_skylight": 0.2852, "sky_turbidity": 0.05, "tone_map": 2,
-    "wind_strength": 0.07, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 0.30115210461684433, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.44 there, and a thicker cloud opens it up
-    "edge_area": false, "inner_leaves": 0,
-    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
-  }),
-  // 'prism' — afternoon 5b's low west sun, now surfacing leaf-edge diffraction: red & blue split at every
-  // dapple edge (θ∝λ). Same topology as 5b (seed/branching/layers), so 5b↔prism is a clean live morph.
-  'prism': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
-    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
-    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
-    "tree_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 23.233203125002493, "sun_azimuth_deg": 254.1128906249312,
-    "view_extent_m": 3.1, "exposure": 5.8857, "contrast": 1.32, "ambient_skylight": 0.2852, "sky_turbidity": 0.05, "tone_map": 2,
-    "chromatic_aberration": 3.0,
-    "wind_strength": 0.07, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 0.30115210461684433, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.44 there, and a thicker cloud opens it up
-    "edge_area": false, "inner_leaves": 0,
-    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
-  }),
-  'afternoon 6': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
-    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
-    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
-    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,   // five trees: the welcome grows two more in from afternoon 5
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
-    "view_extent_m": 3.1, "exposure": 1.7398, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.9691, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
-    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 4.1025121046151725, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
-    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // leaves inside the crown, density ×0.917 so as much floor stays in sun
-  }),
-  // 'afternoon 6b' — afternoon 6 with steeper leaf tilt (max_tilt 0.87 -> more footprint foreshortening).
-  'afternoon 6b': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
-    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
-    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
-    "tree_count": 4, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.87, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
-    "view_extent_m": 3.1, "exposure": 1.7398, "sun_cosine": 1, "contrast": 1.14, "ambient_skylight": 0.9691, "sky_turbidity": 0.05, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
-    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 0.8278467974359008, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
-    "edge_area": false,
-    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // kept as made, from before edge_area was on by default (GRANDFATHERED in komorebi-params.js)
-  }),
-  'afternoon 7': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
-    "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
-    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
-    "view_extent_m": 3.1, "exposure": 1.8871, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.9691, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
-    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
-    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
-    "view_pitch_deg": 24, "view_fov_deg": 64,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 2.451 there, and a thicker cloud opens it up
-    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // leaves inside the crown, density ×0.917 so as much floor stays in sun
-  }),
-  // 'park 1' — (was 'afternoon 8') the first STANDING-SCENE look (spec §4.8): the tree STANDS in the scene and
-  // its whole SHADOW (trunk streak → branches → crown dapples) is thrown ACROSS a lit floor — not an infinite
-  // canopy hovering overhead (the park model). Two things make it: standing_scene adds the bulk lateral shadow
-  // offset the park model omits (so a LOW sun casts the shadow to the side); and a wide view_extent over a small
-  // canopy_extent leaves the grove a finite blob with lit floor around it. Orient via sun azimuth / camera orbit.
-  'park 1': Object.assign({}, LOOK_DEFAULTS, {
+  // 'park 1, the scene' — WORKING NAME. park 1 with its tree seen (tree_view, 2026-11-16): the grove and its shadow from 12.3 m up, the far scene José called
+  // "such a vibe sometimes" (zoom 20 m, tilt 55°, lens 30°). Everything else is park 1's.
+  'park 1, the scene': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
@@ -188,8 +23,8 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 28.50000000000159,
-    "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "view_extent_m": 20, "view_pitch_deg": 55, "view_fov_deg": 30, "view_yaw_deg": 28.50000000000159,
+    "view_center_x": 0, "view_center_y": -2, "standing_scene": true, "faithful_canopy": true, "tree_view": true, "trunk_radius_m": 0.12, "far_smear": 0,
     "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
@@ -227,9 +62,12 @@ export const PRESETS = {
     "sun_extinction": 0,
     // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js), like its season family: the season travel needs one skylight across it
   }),
-  // 'park 1, the scene' — WORKING NAME. park 1 with its tree seen (tree_view, 2026-11-16): the grove and its shadow from 12.3 m up, the far scene José called
-  // "such a vibe sometimes" (zoom 20 m, tilt 55°, lens 30°). Everything else is park 1's.
-  'park 1, the scene': Object.assign({}, LOOK_DEFAULTS, {
+  // 'park 1' — (was 'afternoon 8') the first STANDING-SCENE look (spec §4.8): the tree STANDS in the scene and
+  // its whole SHADOW (trunk streak → branches → crown dapples) is thrown ACROSS a lit floor — not an infinite
+  // canopy hovering overhead (the park model). Two things make it: standing_scene adds the bulk lateral shadow
+  // offset the park model omits (so a LOW sun casts the shadow to the side); and a wide view_extent over a small
+  // canopy_extent leaves the grove a finite blob with lit floor around it. Orient via sun azimuth / camera orbit.
+  'park 1': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
@@ -238,8 +76,8 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "view_extent_m": 20, "view_pitch_deg": 55, "view_fov_deg": 30, "view_yaw_deg": 28.50000000000159,
-    "view_center_x": 0, "view_center_y": -2, "standing_scene": true, "faithful_canopy": true, "tree_view": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 28.50000000000159,
+    "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
     "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
@@ -251,208 +89,6 @@ export const PRESETS = {
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
     "sun_extinction": 0,
     // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js), like its season family: the season travel needs one skylight across it
-  }),
-  // 'montebello' — the first FALL look (spec §4.5 senescence, §4.7 the litter): park 1's grove, the same seed, seen from
-  // the FAR side with the sun behind us (the camera orbited 180° and reframed on the trees), late in the season. José
-  // named it after the dry river valley at Dhamma Suttama, Montebello QC, where he sat under the turning trees in
-  // early fall 2026, and he chose its recipe frame by frame from the park-1 sheets (review 2026-10-07: grid #5 + #8 + #9
-  // in the A2 framing, "k2"): phenology 0.9 with the exposed leaves turned first, a maple's sieve (wall_fraction 0.2),
-  // SOFT pigments — anthocyanin 0.4, not the 0.8 "redhead" he turned down, with a little tannin for russet among the
-  // red — the blend of glass (leaf_diffuse 0.5), the shade lit THROUGH the canopy (canopy_fill 1), the sunlit leaves
-  // dropped (leaf_drop 1) and lying as a carpet round the trees' feet (litter 1), the shadows running away from us.
-  // Exposure is park 1's own. It carries the fall tiers into the player bundle, which he accepted; and it is the look
-  // the season macro's fall stops are lifted from (macros.js). A rain day as shipped: leaf_wetness 0.5 (José, 2026-10-08, m2 on
-  // the brief 02 sheet, the third sheet where the wet carpet won), with the dirt already lowered by hand until the rain writes
-  // both. The carpet is the honest reflectance (§4.7: an opaque pile, κ provisional until
-  // the grey card), far less saturated than the stain it replaced; so the dirt is park 1's ×0.6 (2026-10-08, José, from the
-  // review sheets): real soil reflects 0.1–0.2, and on park 1's dirt a montebello leaf matched it in chroma and sat at 1.1× its
-  // luminance, so the carpet vanished into the ground.
-  'montebello': Object.assign({}, LOOK_DEFAULTS, {
-    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
-    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
-    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
-    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie damp on the floor (§4.5, §4.7); José: "yes turn it on for both"
-    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
-    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
-    "view_center_x": -0.7, "view_center_y": -3, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 5.473846153846154, "sun_cosine": 1, "sun_extinction": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law and the air's loss, exposure re-sat to 2.44/(sin 26° × 0.782)
-    "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
-    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
-    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
-    "tree_pigment_spread": 0.6,   // each tree its own colour
-    "tree_clock_spread": 0.05,   // and its own clock
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 7.116 there, and a thicker cloud opens it up
-  }),
-  'park fall': Object.assign({}, LOOK_DEFAULTS, {   // José's mid-turn look on montebello's grove (2026-10-08): the crown still turning, the sunlit leaves already down and damp (every leaf falls by drop_start + drop_span = 1.0; at 0.79 those with exposure u ≥ 0.7 have), the park seen wide from the far side
-    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
-    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
-    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
-    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.79, "turn_exposure": 0.71, "exposure_absolute": 0.93, "anthocyanin": 0.82, "tannin": 0.48, "wall_fraction": 0.13,   // mid-turn, deep red capacity, the raw light ordering the turn (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.36, "drop_after_turn": 1,                                                          // the whole drop has let go, each leaf after its own turn, and lies damp on the floor (§4.5, §4.7): his pd3 over 0.71 and 0.85
-    "drop_lag": 0.05,   // a shorter lag than the default 0.09 (it was 0, "i like p1", which let a leaf go the moment its turn ended)
-    "view_extent_m": 39.28644129433203, "view_pitch_deg": 73.99882812500043, "view_fov_deg": 60, "view_yaw_deg": -161.79726562499684,
-    "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
-    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor, as park 1 (montebello's is ×0.6 of it)
-    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
-    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 2.18909165230681, "drift_auto": true, "drift_speed": 0.02,
-    // the faithful path under squally wind, as montebello: the governor stays on
-    "tree_pigment_spread": 0.6,   // each tree its own colour
-    "tree_clock_spread": 0.05,   // and its own clock
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
-    "sun_extinction": 0,
-    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
-  }),
-  // 'forest floor' — WORKING NAME: José has not named it. P5 on the 2026-10-09 proposals sheet: afternoon 7 at full fall, the view from under the canopy — a dark crown shadow with warm dapples and green
-  // flecks filling the frame, the carpet laid damp beneath it; the 'komorebi on the ground' half of his valley memory. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." Built from what he
-  // kept choosing on afternoon 7 in fall: "w8 and w6 are my fav" (wet litter), a4 and a6 (litter colour), "a2 more than a1" (the litter law) and ta1, ta3, ta4 (the per-tree sheet). The recipe is ta's —
-  // montebello's capacity (anthocyanin 0.4, tannin 0.2, wall_fraction 0.2), mid-turn, drop after turn — with the trees differing (tree_pigment_spread 0.6 from ta3/ta4, tree_clock_spread 0.05 between ta3's
-  // 0 and ta4's 0.1) and the carpet wet (0.5: a2 over a1, w8, a6). At ta's 0.78 with the default lag almost nothing has fallen, so a wet carpet would not show: phenology 0.8 with drop_lag 0 lays
-  // the leaves whose turn phase is under 0.39 (the sunlit ones, each fully turned, 39%) and the buried interior stays green. The sun, the camera and the grove are afternoon 7's. canopy_fill and
-  // leaf_diffuse stay 0, as there.
-  'forest floor': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // afternoon 7's grove, kept as made with it (GRANDFATHERED in komorebi-params.js)
-    "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
-    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
-    "view_extent_m": 3.1, "exposure": 1.8871, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.9691, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
-    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
-    "phenology": 0.8, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // montebello's capacity, mid-turn, the exposed leaves first (§4.5)
-    "leaf_drop": 1, "drop_after_turn": 1, "drop_lag": 0, "litter": 1, "leaf_wetness": 0.5,           // each leaf lets go the moment its own turn ends and lies damp on the floor (§4.5, §4.7): at 0.8 the sunlit 39% are down
-    "tree_clock_spread": 0.05, "tree_pigment_spread": 0.6,                                           // the trees differ: one ahead of its neighbour by a hair, and not in the same red (§4.5)
-    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
-    "view_pitch_deg": 24, "view_fov_deg": 64,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 2.451 there, and a thicker cloud opens it up
-    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // leaves inside the crown, density ×0.917 so as much floor stays in sun
-  }),
-  // 'the yellow tree' — WORKING NAME: José has not named it. P6 on the 2026-10-09 proposals sheet, where it was called 'the beech'; the name is changed here because brief 07 adds a beech LEAF SHAPE
-  // (leaf_shape 'beech') and this look uses montebello's own leaves, not that outline. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." A place memory of his that was never made a look:
-  // "there was this one tree at the beginning of theretreat all yellow, by the end of the trip half of its leaves were on the ground", and of IMG_0404 "the tree that was all yellow by the end, it ended up
-  // being so oragne" (2026-10-06). No other look is gold: montebello is rose-russet and park fall deep red. He liked gold when it was offered ("i like y1, 2, and 3", the stained-glass sheet; the gold
-  // litter-law carpet a1/a2): anthocyanin 0.2 tips it toward orange, tannin 0.35 is the beech russet between montebello's 0.2 and park fall's 0.48 (the leaves he collected all measured warmer than the
-  // engine's gold). leaf_drop 0.5 is the engine's provisional beech value: the half that turns last stays on, so at 0.9 half the leaves are on the ground, as he counted. leaf_diffuse 0 is the stained
-  // glass he called the ultimate goal ("i like the dark patches of the left one", "yes the dapples were coloured"); canopy_fill stays 1. tree_pigment_spread 0.3 keeps the two trees from being one colour.
-  // Everything else is montebello's but the camera: the feet behind the eye (view_center -1.75, -4.93), his k8 over k5 on the picks sheet ("i like k3,k4,k6,k8", 2026-10-09). The same
-  // move on montebello itself (k1, P3 without the drift) left no carpet in frame and was not picked, so montebello keeps its own camera.
-  'the yellow tree': Object.assign({}, LOOK_DEFAULTS, {
-    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
-    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
-    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
-    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.2, "tannin": 0.35, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
-    "leaf_drop": 0.5, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the half that turns first has let go AFTER turning and lies damp on the floor, the half that turns last stays on (§4.5, §4.7): at 0.9 half the leaves are down
-    "leaf_diffuse": 0, "canopy_fill": 1,                                                          // stained glass, not the blend: the dapples are coloured; the shade lit through the leaves (§4.5, §4.7)
-    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
-    "view_center_x": -1.75, "view_center_y": -4.93,   // the trunk feet behind the eye (his k8, picked over k5 on the old camera): the half-down crown's carpet still lies in view
-    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
-    "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
-    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
-    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "tree_pigment_spread": 0.3,   // the two trees are not one colour (§4.5)
-    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
-    "sun_extinction": 0,
-    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
-  }),
-  // 'montebello, rain' — WORKING NAME: José has not named it. P7 on the 2026-10-09 proposals sheet: montebello on a rain day. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." He asked for the
-  // set: "we could have a few variations to showcase various weather styles" (2026-10-08), and wet is the choice that has won every time it was offered (w6, w8, c13, c15, a6, m2). His memory gives the
-  // cause: "one day after rain many leaves fell on the ground" — drop_lag 0 (the same lag as park fall's), so every leaf that has finished turning lets go at once. The rest: the leaves soaked to 0.75
-  // (w4), wet soil at ×0.4 (c9's dirt), the weather macro's own overcast stop (cloud_thickness 0.55, halo 8, from canopy 4), and morning 2's humid haze (sky_turbidity 0.2). The exposure stays montebello's
-  // 2.44, although the haze macro lowers it under haze. Everything else is montebello's, the camera as the sheet showed it.
-  'montebello, rain': Object.assign({}, LOOK_DEFAULTS, {
-    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 8,
-    "core_weight_fraction": 0.88, "cloud_thickness": 0.55, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
-    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
-    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
-    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.75, "drop_after_turn": 1,                        // the leaves have let go AFTER turning and lie soaked on the floor (§4.5, §4.7); wetness 0.75 is his w4
-    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
-    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
-    "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
-    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 3.5909677419354837, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.2, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
-    "ground_r": 0.132, "ground_g": 0.084, "ground_b": 0.048,   // park 1's warm Mount-Royal dirt ×0.4, wet soil (his c9, dirt ×0.4)
-    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
-    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "drop_lag": 0,   // no wait after the turn: every leaf that has finished turning lets go at once, so at 0.9 about 94% are down, not 67% (the cause of "one day after rain many leaves fell on the ground", §4.5)
-    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.55): it shows at 5.566 there, and a thicker cloud opens it up
-    "sun_extinction": 0,
-    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
-  }),
-  // 'cherry blossom' — WORKING NAME, from his own words: José has not named it. P8 on the 2026-10-09 proposals sheet. "d9 is the most beautiful, is that spring? i love it omg cherry blossoms????" (2026-10-07), and r3
-  // was among his top picks on 2026-10-08. The pink is the redhead pigments (anthocyanin 0.8, no tannin, no sieve) on the honest carpet: d9's recipe on today's montebello, dry (d9 and a4 were dry, "pale
-  // pink in the sun") and on park 1's own paler dirt. Two changes answer his two objections to these pigments: tree_pigment_spread 0.6 so the crown is not "too uniformly red" (the trees differ, as
-  // on his per-tree sheet), and litter_age 0.3 so the fallen leaves stay fresh, not browned. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." Everything else is montebello's, the camera
-  // as the sheet showed it.
-  'cherry blossom': Object.assign({}, LOOK_DEFAULTS, {
-    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
-    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
-    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
-    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.8, "tannin": 0, "wall_fraction": 0,   // the redhead pigments, no russet and no sieve, and who turns first (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie DRY on the floor (§4.5, §4.7): d9 and a4 were dry
-    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
-    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
-    "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
-    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
-    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // park 1's own warm Mount-Royal dirt, as in d9
-    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
-    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "tree_pigment_spread": 0.6, "litter_age": 0.3,   // not one red across the crown, and the fallen leaves fresh, not browned (§4.5, §4.7)
-    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
-    "sun_extinction": 0,
-    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
   }),
   'park 2': Object.assign({}, LOOK_DEFAULTS, {
   "sample_count": 48,
@@ -585,6 +221,614 @@ export const PRESETS = {
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 2.44 there, and a thicker cloud opens it up
     "sun_cosine": 0, "sun_extinction": 0,
     // kept as made, from before sun_cosine, sun_extinction were on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  // 'cherry blossom' — WORKING NAME, from his own words: José has not named it. P8 on the 2026-10-09 proposals sheet. "d9 is the most beautiful, is that spring? i love it omg cherry blossoms????" (2026-10-07), and r3
+  // was among his top picks on 2026-10-08. The pink is the redhead pigments (anthocyanin 0.8, no tannin, no sieve) on the honest carpet: d9's recipe on today's montebello, dry (d9 and a4 were dry, "pale
+  // pink in the sun") and on park 1's own paler dirt. Two changes answer his two objections to these pigments: tree_pigment_spread 0.6 so the crown is not "too uniformly red" (the trees differ, as
+  // on his per-tree sheet), and litter_age 0.3 so the fallen leaves stay fresh, not browned. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." Everything else is montebello's, the camera
+  // as the sheet showed it.
+  'cherry blossom': Object.assign({}, LOOK_DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.8, "tannin": 0, "wall_fraction": 0,   // the redhead pigments, no russet and no sieve, and who turns first (§4.5)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie DRY on the floor (§4.5, §4.7): d9 and a4 were dry
+    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
+    "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
+    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // park 1's own warm Mount-Royal dirt, as in d9
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    "tree_pigment_spread": 0.6, "litter_age": 0.3,   // not one red across the crown, and the fallen leaves fresh, not browned (§4.5, §4.7)
+    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
+    "sun_extinction": 0,
+    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  // 'the yellow tree' — WORKING NAME: José has not named it. P6 on the 2026-10-09 proposals sheet, where it was called 'the beech'; the name is changed here because brief 07 adds a beech LEAF SHAPE
+  // (leaf_shape 'beech') and this look uses montebello's own leaves, not that outline. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." A place memory of his that was never made a look:
+  // "there was this one tree at the beginning of theretreat all yellow, by the end of the trip half of its leaves were on the ground", and of IMG_0404 "the tree that was all yellow by the end, it ended up
+  // being so oragne" (2026-10-06). No other look is gold: montebello is rose-russet and park fall deep red. He liked gold when it was offered ("i like y1, 2, and 3", the stained-glass sheet; the gold
+  // litter-law carpet a1/a2): anthocyanin 0.2 tips it toward orange, tannin 0.35 is the beech russet between montebello's 0.2 and park fall's 0.48 (the leaves he collected all measured warmer than the
+  // engine's gold). leaf_drop 0.5 is the engine's provisional beech value: the half that turns last stays on, so at 0.9 half the leaves are on the ground, as he counted. leaf_diffuse 0 is the stained
+  // glass he called the ultimate goal ("i like the dark patches of the left one", "yes the dapples were coloured"); canopy_fill stays 1. tree_pigment_spread 0.3 keeps the two trees from being one colour.
+  // Everything else is montebello's but the camera: the feet behind the eye (view_center -1.75, -4.93), his k8 over k5 on the picks sheet ("i like k3,k4,k6,k8", 2026-10-09). The same
+  // move on montebello itself (k1, P3 without the drift) left no carpet in frame and was not picked, so montebello keeps its own camera.
+  'the yellow tree': Object.assign({}, LOOK_DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.2, "tannin": 0.35, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
+    "leaf_drop": 0.5, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the half that turns first has let go AFTER turning and lies damp on the floor, the half that turns last stays on (§4.5, §4.7): at 0.9 half the leaves are down
+    "leaf_diffuse": 0, "canopy_fill": 1,                                                          // stained glass, not the blend: the dapples are coloured; the shade lit through the leaves (§4.5, §4.7)
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
+    "view_center_x": -1.75, "view_center_y": -4.93,   // the trunk feet behind the eye (his k8, picked over k5 on the old camera): the half-down crown's carpet still lies in view
+    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
+    "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    "tree_pigment_spread": 0.3,   // the two trees are not one colour (§4.5)
+    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
+    "sun_extinction": 0,
+    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  'park fall': Object.assign({}, LOOK_DEFAULTS, {   // José's mid-turn look on montebello's grove (2026-10-08): the crown still turning, the sunlit leaves already down and damp (every leaf falls by drop_start + drop_span = 1.0; at 0.79 those with exposure u ≥ 0.7 have), the park seen wide from the far side
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.79, "turn_exposure": 0.71, "exposure_absolute": 0.93, "anthocyanin": 0.82, "tannin": 0.48, "wall_fraction": 0.13,   // mid-turn, deep red capacity, the raw light ordering the turn (§4.5)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.36, "drop_after_turn": 1,                                                          // the whole drop has let go, each leaf after its own turn, and lies damp on the floor (§4.5, §4.7): his pd3 over 0.71 and 0.85
+    "drop_lag": 0.05,   // a shorter lag than the default 0.09 (it was 0, "i like p1", which let a leaf go the moment its turn ended)
+    "view_extent_m": 39.28644129433203, "view_pitch_deg": 73.99882812500043, "view_fov_deg": 60, "view_yaw_deg": -161.79726562499684,
+    "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor, as park 1 (montebello's is ×0.6 of it)
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 2.18909165230681, "drift_auto": true, "drift_speed": 0.02,
+    // the faithful path under squally wind, as montebello: the governor stays on
+    "tree_pigment_spread": 0.6,   // each tree its own colour
+    "tree_clock_spread": 0.05,   // and its own clock
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
+    "sun_extinction": 0,
+    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  // 'montebello' — the first FALL look (spec §4.5 senescence, §4.7 the litter): park 1's grove, the same seed, seen from
+  // the FAR side with the sun behind us (the camera orbited 180° and reframed on the trees), late in the season. José
+  // named it after the dry river valley at Dhamma Suttama, Montebello QC, where he sat under the turning trees in
+  // early fall 2026, and he chose its recipe frame by frame from the park-1 sheets (review 2026-10-07: grid #5 + #8 + #9
+  // in the A2 framing, "k2"): phenology 0.9 with the exposed leaves turned first, a maple's sieve (wall_fraction 0.2),
+  // SOFT pigments — anthocyanin 0.4, not the 0.8 "redhead" he turned down, with a little tannin for russet among the
+  // red — the blend of glass (leaf_diffuse 0.5), the shade lit THROUGH the canopy (canopy_fill 1), the sunlit leaves
+  // dropped (leaf_drop 1) and lying as a carpet round the trees' feet (litter 1), the shadows running away from us.
+  // Exposure is park 1's own. It carries the fall tiers into the player bundle, which he accepted; and it is the look
+  // the season macro's fall stops are lifted from (macros.js). A rain day as shipped: leaf_wetness 0.5 (José, 2026-10-08, m2 on
+  // the brief 02 sheet, the third sheet where the wet carpet won), with the dirt already lowered by hand until the rain writes
+  // both. The carpet is the honest reflectance (§4.7: an opaque pile, κ provisional until
+  // the grey card), far less saturated than the stain it replaced; so the dirt is park 1's ×0.6 (2026-10-08, José, from the
+  // review sheets): real soil reflects 0.1–0.2, and on park 1's dirt a montebello leaf matched it in chroma and sat at 1.1× its
+  // luminance, so the carpet vanished into the ground.
+  'montebello': Object.assign({}, LOOK_DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie damp on the floor (§4.5, §4.7); José: "yes turn it on for both"
+    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
+    "view_center_x": -0.7, "view_center_y": -3, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 5.473846153846154, "sun_cosine": 1, "sun_extinction": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law and the air's loss, exposure re-sat to 2.44/(sin 26° × 0.782)
+    "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    "tree_pigment_spread": 0.6,   // each tree its own colour
+    "tree_clock_spread": 0.05,   // and its own clock
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 7.116 there, and a thicker cloud opens it up
+  }),
+  // 'montebello, rain' — WORKING NAME: José has not named it. P7 on the 2026-10-09 proposals sheet: montebello on a rain day. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." He asked for the
+  // set: "we could have a few variations to showcase various weather styles" (2026-10-08), and wet is the choice that has won every time it was offered (w6, w8, c13, c15, a6, m2). His memory gives the
+  // cause: "one day after rain many leaves fell on the ground" — drop_lag 0 (the same lag as park fall's), so every leaf that has finished turning lets go at once. The rest: the leaves soaked to 0.75
+  // (w4), wet soil at ×0.4 (c9's dirt), the weather macro's own overcast stop (cloud_thickness 0.55, halo 8, from canopy 4), and morning 2's humid haze (sky_turbidity 0.2). The exposure stays montebello's
+  // 2.44, although the haze macro lowers it under haze. Everything else is montebello's, the camera as the sheet showed it.
+  'montebello, rain': Object.assign({}, LOOK_DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.55, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.75, "drop_after_turn": 1,                        // the leaves have let go AFTER turning and lie soaked on the floor (§4.5, §4.7); wetness 0.75 is his w4
+    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
+    "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
+    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 3.5909677419354837, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.2, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
+    "ground_r": 0.132, "ground_g": 0.084, "ground_b": 0.048,   // park 1's warm Mount-Royal dirt ×0.4, wet soil (his c9, dirt ×0.4)
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    "drop_lag": 0,   // no wait after the turn: every leaf that has finished turning lets go at once, so at 0.9 about 94% are down, not 67% (the cause of "one day after rain many leaves fell on the ground", §4.5)
+    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.55): it shows at 5.566 there, and a thicker cloud opens it up
+    "sun_extinction": 0,
+    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  // 'forest floor' — WORKING NAME: José has not named it. P5 on the 2026-10-09 proposals sheet: afternoon 7 at full fall, the view from under the canopy — a dark crown shadow with warm dapples and green
+  // flecks filling the frame, the carpet laid damp beneath it; the 'komorebi on the ground' half of his valley memory. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." Built from what he
+  // kept choosing on afternoon 7 in fall: "w8 and w6 are my fav" (wet litter), a4 and a6 (litter colour), "a2 more than a1" (the litter law) and ta1, ta3, ta4 (the per-tree sheet). The recipe is ta's —
+  // montebello's capacity (anthocyanin 0.4, tannin 0.2, wall_fraction 0.2), mid-turn, drop after turn — with the trees differing (tree_pigment_spread 0.6 from ta3/ta4, tree_clock_spread 0.05 between ta3's
+  // 0 and ta4's 0.1) and the carpet wet (0.5: a2 over a1, w8, a6). At ta's 0.78 with the default lag almost nothing has fallen, so a wet carpet would not show: phenology 0.8 with drop_lag 0 lays
+  // the leaves whose turn phase is under 0.39 (the sunlit ones, each fully turned, 39%) and the buried interior stays green. The sun, the camera and the grove are afternoon 7's. canopy_fill and
+  // leaf_diffuse stay 0, as there.
+  'forest floor': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // afternoon 7's grove, kept as made with it (GRANDFATHERED in komorebi-params.js)
+    "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "view_extent_m": 3.1, "exposure": 1.8871, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.9691, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
+    "phenology": 0.8, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // montebello's capacity, mid-turn, the exposed leaves first (§4.5)
+    "leaf_drop": 1, "drop_after_turn": 1, "drop_lag": 0, "litter": 1, "leaf_wetness": 0.5,           // each leaf lets go the moment its own turn ends and lies damp on the floor (§4.5, §4.7): at 0.8 the sunlit 39% are down
+    "tree_clock_spread": 0.05, "tree_pigment_spread": 0.6,                                           // the trees differ: one ahead of its neighbour by a hair, and not in the same red (§4.5)
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
+    "view_pitch_deg": 24, "view_fov_deg": 64,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 2.451 there, and a thicker cloud opens it up
+    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // leaves inside the crown, density ×0.917 so as much floor stays in sun
+  }),
+  'afternoon 7': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
+    "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "view_extent_m": 3.1, "exposure": 1.8871, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.9691, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
+    "view_pitch_deg": 24, "view_fov_deg": 64,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 2.451 there, and a thicker cloud opens it up
+    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // leaves inside the crown, density ×0.917 so as much floor stays in sun
+  }),
+  'afternoon 6': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,   // five trees: the welcome grows two more in from afternoon 5
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "view_extent_m": 3.1, "exposure": 1.7398, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.9691, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.1025121046151725, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
+    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // leaves inside the crown, density ×0.917 so as much floor stays in sun
+  }),
+  // 'afternoon 6b' — afternoon 6 with steeper leaf tilt (max_tilt 0.87 -> more footprint foreshortening).
+  'afternoon 6b': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 4, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.87, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 84.5, "sun_azimuth_deg": 201,
+    "view_extent_m": 3.1, "exposure": 1.7398, "sun_cosine": 1, "contrast": 1.14, "ambient_skylight": 0.9691, "sky_turbidity": 0.05, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 0.8278467974359008, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
+    "edge_area": false,
+    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // kept as made, from before edge_area was on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  // 'afternoon 5' — calm near-overhead spring scene, now a 3-tree grove.
+  'afternoon 5': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
+    core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
+    core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
+    layer_count:3, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
+    tree_count:3,
+    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
+    leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
+    canopy_extent_m:6, seed:290626672,
+    sun_elevation_deg:84.5, sun_azimuth_deg:201,
+    view_extent_m:3.1, exposure:1.7398, sun_cosine:1, contrast:0.98, ambient_skylight:0.9691, tone_map:2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
+    wind_strength:0.07, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:1.3,
+    sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.65, backlash_gain:1, sway_height_gain:0.75,
+    limb_count:11, limb_flex:0.25, twig_flex:0.18, stem_length:0.18, leaf_swing:1.35, flutter_freq:1.4,
+    drift_amount:0.145, drift_phase:1.403, drift_auto:true, drift_speed:0.04, ground_r:0.33, ground_g:0.21, ground_b:0.12,   // warm Mount-Royal dirt floor
+    cloud_exposure: 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
+    "edge_area": false, "inner_leaves": 0,
+    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  // 'afternoon 5b' — afternoon 5 dropped to a low (23°) sun swung round to the west.
+  'afternoon 5b': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 23.233203125002493, "sun_azimuth_deg": 254.1128906249312,
+    "view_extent_m": 3.1, "exposure": 5.8857, "contrast": 1.32, "ambient_skylight": 0.2852, "sky_turbidity": 0.05, "tone_map": 2,
+    "wind_strength": 0.07, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 0.30115210461684433, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.44 there, and a thicker cloud opens it up
+    "edge_area": false, "inner_leaves": 0,
+    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  // 'prism' — afternoon 5b's low west sun, now surfacing leaf-edge diffraction: red & blue split at every
+  // dapple edge (θ∝λ). Same topology as 5b (seed/branching/layers), so 5b↔prism is a clean live morph.
+  'prism': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 23.233203125002493, "sun_azimuth_deg": 254.1128906249312,
+    "view_extent_m": 3.1, "exposure": 5.8857, "contrast": 1.32, "ambient_skylight": 0.2852, "sky_turbidity": 0.05, "tone_map": 2,
+    "chromatic_aberration": 3.0,
+    "wind_strength": 0.07, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 0.30115210461684433, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.44 there, and a thicker cloud opens it up
+    "edge_area": false, "inner_leaves": 0,
+    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  // 'afternoon 4' — windy predecessor; now a 3-tree grove with wider (52°) branching.
+  'afternoon 4': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
+    core_angular_radius_deg:0.77, halo_angular_radius_deg:4.3,
+    core_weight_fraction:0.78, cloud_thickness:0.41, eclipse:false, eclipse_amount:0.42,
+    layer_count:3, canopy_base_height_m:2, canopy_thickness_m:2.6, foliage_density:1.65,
+    tree_count:3, branch_angle_deg:52,
+    clusters_per_layer:82, leaves_per_cluster:59, cluster_spread_m:0.28, leaf_size_m:0.1,
+    leaf_aspect:1.75, max_tilt:0.54, edge_softness:0.26, trans_r:0.26, trans_g:0.356, trans_b:0.001,
+    canopy_extent_m:6, seed:290626672,
+    sun_elevation_deg:84.5, sun_azimuth_deg:201,
+    view_extent_m:3.1, exposure:1.7398, sun_cosine:1, contrast:0.98, ambient_skylight:0.9691, tone_map:2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 84.5°
+    wind_strength:1.34, wind_direction_deg:132, gust_frequency:0.125, gust_attack:1.2, gust_decay:2.5,
+    sway_stiffness:1.2, sway_ceiling:0.4, damping_ratio:0.25, backlash_gain:1, sway_height_gain:1.6,
+    limb_count:11, limb_flex:0.25, twig_flex:0.35, stem_length:0.14, leaf_swing:1.35, flutter_freq:1.4,
+    drift_amount:0.145, drift_phase:2.876, drift_auto:true, drift_speed:0.04,
+    cloud_exposure: 1,   // exposure re-sat by its own cloud (0.41): it shows at 2.451 there, and a thicker cloud opens it up
+    "edge_area": false, "inner_leaves": 0,
+    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  // 'afternoon 4b' — afternoon 4 under haze: turbid sky (β 0.23), lower exposure, a touch more contrast.
+  'afternoon 4b': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
+    "core_angular_radius_deg": 0.77, "halo_angular_radius_deg": 4.3,
+    "core_weight_fraction": 0.78, "cloud_thickness": 0.41, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 3, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 52,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 82, "leaves_per_cluster": 59,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6, "seed": 290626672, "sun_elevation_deg": 85.1984375, "sun_azimuth_deg": 185.1914062500001,
+    "view_extent_m": 3.1, "exposure": 0.9201, "sun_cosine": 1, "contrast": 1.11, "ambient_skylight": 0.8285, "sky_turbidity": 0.23, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 1.29/sin 85.2°
+    "wind_strength": 1.34, "wind_direction_deg": 132, "gust_frequency": 0.125, "gust_attack": 1.2, "gust_decay": 2.5,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.25, "backlash_gain": 1, "sway_height_gain": 1.6,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.35, "stem_length": 0.14, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 0.1618908759004459, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.41): it shows at 1.295 there, and a thicker cloud opens it up
+    "edge_area": false, "inner_leaves": 0,
+    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // kept as made, from before edge_area, inner_leaves were on by default (GRANDFATHERED in komorebi-params.js)
+  }),
+  'morning 1': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
+    "phenology": 0.40,
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.195, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 29.5, "sun_azimuth_deg": 83,
+    "view_extent_m": 3.1, "exposure": 4.3449, "contrast": 0.98, "ambient_skylight": 0.3919, "tone_map": 2, "chromatic_aberration": 0.10,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.8099656994860664, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.39): it shows at 2.44 there, and a thicker cloud opens it up
+    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // leaves inside the crown, density ×0.917 so as much floor stays in sun
+  }),
+  'morning 2': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
+    "view_extent_m": 3.1, "exposure": 9.3241, "contrast": 0.98, "ambient_skylight": 0.1826, "sky_turbidity": 0.2, "mesopic_strength": 1, "tone_map": 2,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 4.97071372563982, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.39): it shows at 2.44 there, and a thicker cloud opens it up
+    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // leaves inside the crown, density ×0.917 so as much floor stays in sun
+  }),
+  'morning 3': Object.assign({}, LOOK_DEFAULTS, {
+    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
+    "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.72, "cloud_thickness": 0.18, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.336, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 30, "sun_azimuth_deg": 125.26438968275465,
+    "view_extent_m": 3.1, "exposure": 5.011, "contrast": 0.98, "ambient_skylight": 0.4003, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 0.18025113743438262, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.18): it shows at 2.44 there, and a thicker cloud opens it up
+    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+  }),
+  // 'morning 3b' — morning 3's crisp clear-sky low sun pushed hard into diffraction (strength 6): the tight
+  // pinhole sun-images split into full red/blue rims. Same topology as morning 3, so 3↔3b is a clean morph.
+  'morning 3b': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.72, "cloud_thickness": 0.18, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.336, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 30, "sun_azimuth_deg": 125.26438968275465,
+    "view_extent_m": 3.1, "exposure": 5.011, "contrast": 0.98, "ambient_skylight": 0.4003, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2, "chromatic_aberration": 6.0,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 0.18025113743438262, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.18): it shows at 2.44 there, and a thicker cloud opens it up
+    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+  }),
+  // 'memories' — the §1 north-star look: a sparse early-spring grove (foliage 0.45, so individual leaves
+  // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
+  // (phenology 0.15 here and 0.40 on 'morning 1' are stamps for the season macro's probe: both sit below turn_start, where every reader of phenology is gated, so the frames are the same bytes)
+  'memories': Object.assign({}, LOOK_DEFAULTS, {
+    "phenology": 0.15,
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.61, "cloud_thickness": 0, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 0.45,
+    "tree_count": 5, "branch_levels": 3, "branch_children": 6, "branch_angle_deg": 34,
+    "branch_length_ratio": 0.91, "branch_pitch_deg": 45, "clusters_per_layer": 60, "leaves_per_cluster": 39,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.376, "trans_g": 0.247, "trans_b": 0.113, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 35.964062500001056, "sun_azimuth_deg": 355.9855468749904,
+    "view_extent_m": 3.1, "exposure": 5.8668, "contrast": 1.23, "ambient_skylight": 0.4771, "sky_turbidity": 0.05, "tone_map": 2, "view_pitch_deg": 24,
+    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 5.568307189744262, "drift_auto": true, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0): it shows at 3.01 there, and a thicker cloud opens it up
+    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+  }),
+  'acid dreams': Object.assign({}, LOOK_DEFAULTS, {
+  "sample_count": 48,
+  "core_angular_radius_deg": 0.19457142857142862,
+  "halo_angular_radius_deg": 4.371428571428571,
+  "core_weight_fraction": 0.9671428571428571,
+  "cloud_thickness": 0.025714285714285717,
+  "eclipse": false,
+  "eclipse_amount": 0.42,
+  "layer_count": 3,
+  "canopy_base_height_m": 2,
+  "canopy_thickness_m": 2.6,
+  "foliage_density": 1.2838,
+  "tree_count": 1.4125,
+  "branch_levels": 1,
+  "branch_children": 1,
+  "branch_angle_deg": 18,
+  "branch_length_ratio": 1,
+  "branch_pitch_deg": 60,
+  "branch_tau": 0,
+  "leader_strength": 0.85,
+  "droop": 0.55,
+  "taper_delta": 1.3,
+  "crown_aspect": 1.3,
+  "phyllotaxis": "spiral",
+  "tree_species": "palm",
+  "clusters_per_layer": 60,
+  "leaves_per_cluster": 39,
+  "cluster_spread_m": 0.28,
+  "leaf_size_m": 0.2,
+  "leaf_aspect": 1.75,
+  "max_tilt": 0.54,
+  "edge_softness": 0.26,
+  "trans_r": 0.2588888888888889,
+  "trans_g": 0.356,
+  "trans_b": 0.19317777777777778,
+  "canopy_extent_m": 7,
+  "seed": 290626672,
+  "sun_elevation_deg": 20.704811054635435,
+  "sun_azimuth_deg": 247.79234570140352,
+  "view_extent_m": 4.04875,
+  "view_pitch_deg": 24,
+  "view_fov_deg": 64,
+  "view_yaw_deg": 0,
+  "view_center_x": 0,
+  "view_center_y": 0,
+  "sky_view": false,
+  "sky_scatter": 0,
+  "standing_scene": false,
+  "trunk_radius_m": 0.1,
+  "faithful_canopy": false,
+  "receiver": 0,
+  "fabric_tt": 0.5,
+  "fabric_tint_r": 0.35,
+  "fabric_tint_g": 1,
+  "fabric_tint_b": 0.3,
+  "cloth_distance_m": 0,
+  "fold_depth": 0,
+  "fold_scale": 2.5,
+  "fold_coarsen": 0.25,
+  "fold_warp": 0,
+  "velvet_sheen": 0,
+  "fabric_scatter": 0,
+  "glow_bleed": 0,
+  "glow_bleed_m": 0.08,
+  "mullion_tau": 0,
+  "mullion_pitch_m": 0.35,
+  "mullion_bar_m": 0.025,
+  "mullion_depth_m": 0.04,
+  "window_w_m": 0,
+  "window_h_m": 0,
+  "window_cx_m": 0,
+  "window_cy_m": 1.3,
+  "window_wall": 0.03,
+  "tent_ridge_h_m": 1.15,
+  "tent_half_w_m": 1.1,
+  "tent_crown_w_m": 0.35,
+  "tent_shoulder_h_m": 0.62,
+  "tent_shoulder_w_m": 0.92,
+  "tent_len_m": 2.3,
+  "tent_end_lean": 0.6,
+  "tent_end_apex_h_m": 0.55,
+  "tent_hip_rake": 0.45,
+  "tent_eye_h_m": 0.5,
+  "tent_fade": 0.06,
+  "tent_seam": 0,
+  "tent_mesh": 0,
+  "far_smear": 3,
+  "exposure": 9.7747, "sun_cosine": 1,   // the receiver's cosine law, exposure re-sat to 1.635/sin 20.7°
+  "contrast": 1.0710000000000002,
+  "ambient_skylight": 0.4022,
+  "sky_turbidity": 0.176,
+  "mesopic_strength": 0.6,
+  "chromatic_aberration": 3.5999999999999996,
+  "tone_map": 2,
+  "ground_r": 0.23,
+  "ground_g": 0.2,
+  "ground_b": 0.3,
+  "wind_pattern": "gusty",
+  "wind_strength": 1.7,
+  "wind_gustiness": 0.25,
+  "wind_direction_deg": 0,
+  "gust_frequency": 0.04,
+  "weather_variability": 0,
+  "weather_speed": 1,
+  "gust_attack": 1.2,
+  "gust_decay": 1.3,
+  "sway_stiffness": 1.2,
+  "sway_ceiling": 0.4,
+  "damping_ratio": 0.65,
+  "backlash_gain": 1,
+  "sway_height_gain": 0.75,
+  "sway_pitch": 0,
+  "limb_count": 14,
+  "limb_flex": 0.25,
+  "twig_flex": 0.18,
+  "stem_length": 0.18,
+  "leaf_swing": 1.35,
+  "flutter_freq": 1.4,
+  "drift_amount": 0.145,
+  "drift_phase": 0.12165903281940274,
+  "drift_auto": true,
+  "drift_speed": 0.04,
+  "show_source": true,
+  "show_layer": false,
+  "show_layer_index": 0,
+  "time_of_day": 9,
+  "latitude": 45,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.025714285714285717): it shows at 4.624 there, and a thicker cloud opens it up
+    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
+    // leaves inside the crown, density ×0.917 so as much floor stays in sun
+  }),
+  // 'eclipse' — a single tree's gaps imaging a partially-eclipsed sun: every dapple becomes the same
+  // crescent (the moon disk zeroes part of the source cloud). Tiny crisp source, low far-smear and dim
+  // ambient keep the crescents sharp and eerie; only a barely-there wind stirs it (auto-drift off).
+  'eclipse': Object.assign({}, LOOK_DEFAULTS, {
+    "sample_count": 48, "core_angular_radius_deg": 0.3, "halo_angular_radius_deg": 1,
+    "core_weight_fraction": 1, "cloud_thickness": 0, "eclipse": true, "eclipse_amount": 0.6,
+    "layer_count": 2, "canopy_base_height_m": 4.9, "canopy_thickness_m": 2.5, "foliage_density": 0.7,
+    "tree_count": 1, "branch_levels": 4, "branch_children": 3, "branch_angle_deg": 49,
+    "branch_length_ratio": 0.63, "branch_pitch_deg": 51, "clusters_per_layer": 60, "leaves_per_cluster": 49,
+    "cluster_spread_m": 0.25, "leaf_size_m": 0.175, "leaf_aspect": 1.75, "max_tilt": 0.84, "edge_softness": 0.09,
+    "trans_r": 0.488, "trans_g": 0.611, "trans_b": 0.494, "canopy_extent_m": 8.5, "seed": 290626672, "sun_elevation_deg": 19.5, "sun_azimuth_deg": 109.22399419024259,
+    "view_extent_m": 4.2, "exposure": 9.2087, "contrast": 0.98, "ambient_skylight": 0.0912, "sky_turbidity": 0.05,
+    "mesopic_strength": 0.6, "tone_map": 2, "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,
+    "view_pitch_deg": 36, "view_fov_deg": 51, "far_smear": 1.0,
+    "wind_strength": 0.4, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 21, "limb_flex": 0.39, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 0.5, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 5.430132496921517, "drift_auto": false, "drift_speed": 0.04,
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0): it shows at 2.1 there, and a thicker cloud opens it up
+    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
   }),
   // 'canopy 1' — THE HAMMOCK (spec §4.9, sky view). Lying on your back at a festival: tall trunks converging
   // overhead, crowns lit from behind against a bright sky, the whole grove leaning together on the gusts. It is
@@ -985,98 +1229,6 @@ export const PRESETS = {
     // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
     // leaves inside the crown, density ×0.841 so as much floor stays in sun
   }),
-  // 'memories' — the §1 north-star look: a sparse early-spring grove (foliage 0.45, so individual leaves
-  // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
-  // (phenology 0.15 here and 0.40 on 'morning 1' are stamps for the season macro's probe: both sit below turn_start, where every reader of phenology is gated, so the frames are the same bytes)
-  'memories': Object.assign({}, LOOK_DEFAULTS, {
-    "phenology": 0.15,
-    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.61, "cloud_thickness": 0, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 0.45,
-    "tree_count": 5, "branch_levels": 3, "branch_children": 6, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.91, "branch_pitch_deg": 45, "clusters_per_layer": 60, "leaves_per_cluster": 39,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.376, "trans_g": 0.247, "trans_b": 0.113, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 35.964062500001056, "sun_azimuth_deg": 355.9855468749904,
-    "view_extent_m": 3.1, "exposure": 5.8668, "contrast": 1.23, "ambient_skylight": 0.4771, "sky_turbidity": 0.05, "tone_map": 2, "view_pitch_deg": 24,
-    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 5.568307189744262, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0): it shows at 3.01 there, and a thicker cloud opens it up
-    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-  }),
-  'morning 1': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
-    "phenology": 0.40,
-    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
-    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.195, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 29.5, "sun_azimuth_deg": 83,
-    "view_extent_m": 3.1, "exposure": 4.3449, "contrast": 0.98, "ambient_skylight": 0.3919, "tone_map": 2, "chromatic_aberration": 0.10,
-    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 4.8099656994860664, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.39): it shows at 2.44 there, and a thicker cloud opens it up
-    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // leaves inside the crown, density ×0.917 so as much floor stays in sun
-  }),
-  'morning 2': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
-    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.61, "cloud_thickness": 0.39, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.5131,
-    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.113, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 23, "sun_azimuth_deg": 164,
-    "view_extent_m": 3.1, "exposure": 9.3241, "contrast": 0.98, "ambient_skylight": 0.1826, "sky_turbidity": 0.2, "mesopic_strength": 1, "tone_map": 2,
-    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 4.97071372563982, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.39): it shows at 2.44 there, and a thicker cloud opens it up
-    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // leaves inside the crown, density ×0.917 so as much floor stays in sun
-  }),
-  'morning 3': Object.assign({}, LOOK_DEFAULTS, {
-    "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the artist kept its previous look over the shoots (GRANDFATHERED in komorebi-params.js; 2026-11-17)
-    "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.72, "cloud_thickness": 0.18, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
-    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.336, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 30, "sun_azimuth_deg": 125.26438968275465,
-    "view_extent_m": 3.1, "exposure": 5.011, "contrast": 0.98, "ambient_skylight": 0.4003, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2,
-    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 0.18025113743438262, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.18): it shows at 2.44 there, and a thicker cloud opens it up
-    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-  }),
-  // 'morning 3b' — morning 3's crisp clear-sky low sun pushed hard into diffraction (strength 6): the tight
-  // pinhole sun-images split into full red/blue rims. Same topology as morning 3, so 3↔3b is a clean morph.
-  'morning 3b': Object.assign({}, LOOK_DEFAULTS, {
-    "core_angular_radius_deg": 0.05, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.72, "cloud_thickness": 0.18, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 3, "canopy_base_height_m": 4.2, "canopy_thickness_m": 2.6, "foliage_density": 1.65,
-    "tree_count": 5, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 34,
-    "branch_length_ratio": 0.62, "branch_pitch_deg": 26, "clusters_per_layer": 60, "leaves_per_cluster": 39,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.1, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.21, "trans_g": 0.356, "trans_b": 0.336, "canopy_extent_m": 7, "seed": 290626672, "sun_elevation_deg": 30, "sun_azimuth_deg": 125.26438968275465,
-    "view_extent_m": 3.1, "exposure": 5.011, "contrast": 0.98, "ambient_skylight": 0.4003, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "tone_map": 2, "chromatic_aberration": 6.0,
-    "wind_strength": 1.29, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 0.18025113743438262, "drift_auto": true, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.18): it shows at 2.44 there, and a thicker cloud opens it up
-    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-  }),
   // 'the void' — a dense 16-tree grove pulled wide (view 6.8 m), deep-green and low-sun.
   'the void': Object.assign({}, LOOK_DEFAULTS, {
     "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
@@ -1094,158 +1246,6 @@ export const PRESETS = {
     "ground_r": 0.12, "ground_g": 0.16, "ground_b": 0.19,   // cool stone-grey floor
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.27): it shows at 2.44 there, and a thicker cloud opens it up
     // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-  }),
-  // 'eclipse' — a single tree's gaps imaging a partially-eclipsed sun: every dapple becomes the same
-  // crescent (the moon disk zeroes part of the source cloud). Tiny crisp source, low far-smear and dim
-  // ambient keep the crescents sharp and eerie; only a barely-there wind stirs it (auto-drift off).
-  'eclipse': Object.assign({}, LOOK_DEFAULTS, {
-    "sample_count": 48, "core_angular_radius_deg": 0.3, "halo_angular_radius_deg": 1,
-    "core_weight_fraction": 1, "cloud_thickness": 0, "eclipse": true, "eclipse_amount": 0.6,
-    "layer_count": 2, "canopy_base_height_m": 4.9, "canopy_thickness_m": 2.5, "foliage_density": 0.7,
-    "tree_count": 1, "branch_levels": 4, "branch_children": 3, "branch_angle_deg": 49,
-    "branch_length_ratio": 0.63, "branch_pitch_deg": 51, "clusters_per_layer": 60, "leaves_per_cluster": 49,
-    "cluster_spread_m": 0.25, "leaf_size_m": 0.175, "leaf_aspect": 1.75, "max_tilt": 0.84, "edge_softness": 0.09,
-    "trans_r": 0.488, "trans_g": 0.611, "trans_b": 0.494, "canopy_extent_m": 8.5, "seed": 290626672, "sun_elevation_deg": 19.5, "sun_azimuth_deg": 109.22399419024259,
-    "view_extent_m": 4.2, "exposure": 9.2087, "contrast": 0.98, "ambient_skylight": 0.0912, "sky_turbidity": 0.05,
-    "mesopic_strength": 0.6, "tone_map": 2, "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,
-    "view_pitch_deg": 36, "view_fov_deg": 51, "far_smear": 1.0,
-    "wind_strength": 0.4, "wind_direction_deg": 0, "gust_frequency": 0.04, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 21, "limb_flex": 0.39, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 0.5, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 5.430132496921517, "drift_auto": false, "drift_speed": 0.04,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0): it shows at 2.1 there, and a thicker cloud opens it up
-    // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-  }),
-  'acid dreams': Object.assign({}, LOOK_DEFAULTS, {
-  "sample_count": 48,
-  "core_angular_radius_deg": 0.19457142857142862,
-  "halo_angular_radius_deg": 4.371428571428571,
-  "core_weight_fraction": 0.9671428571428571,
-  "cloud_thickness": 0.025714285714285717,
-  "eclipse": false,
-  "eclipse_amount": 0.42,
-  "layer_count": 3,
-  "canopy_base_height_m": 2,
-  "canopy_thickness_m": 2.6,
-  "foliage_density": 1.2838,
-  "tree_count": 1.4125,
-  "branch_levels": 1,
-  "branch_children": 1,
-  "branch_angle_deg": 18,
-  "branch_length_ratio": 1,
-  "branch_pitch_deg": 60,
-  "branch_tau": 0,
-  "leader_strength": 0.85,
-  "droop": 0.55,
-  "taper_delta": 1.3,
-  "crown_aspect": 1.3,
-  "phyllotaxis": "spiral",
-  "tree_species": "palm",
-  "clusters_per_layer": 60,
-  "leaves_per_cluster": 39,
-  "cluster_spread_m": 0.28,
-  "leaf_size_m": 0.2,
-  "leaf_aspect": 1.75,
-  "max_tilt": 0.54,
-  "edge_softness": 0.26,
-  "trans_r": 0.2588888888888889,
-  "trans_g": 0.356,
-  "trans_b": 0.19317777777777778,
-  "canopy_extent_m": 7,
-  "seed": 290626672,
-  "sun_elevation_deg": 20.704811054635435,
-  "sun_azimuth_deg": 247.79234570140352,
-  "view_extent_m": 4.04875,
-  "view_pitch_deg": 24,
-  "view_fov_deg": 64,
-  "view_yaw_deg": 0,
-  "view_center_x": 0,
-  "view_center_y": 0,
-  "sky_view": false,
-  "sky_scatter": 0,
-  "standing_scene": false,
-  "trunk_radius_m": 0.1,
-  "faithful_canopy": false,
-  "receiver": 0,
-  "fabric_tt": 0.5,
-  "fabric_tint_r": 0.35,
-  "fabric_tint_g": 1,
-  "fabric_tint_b": 0.3,
-  "cloth_distance_m": 0,
-  "fold_depth": 0,
-  "fold_scale": 2.5,
-  "fold_coarsen": 0.25,
-  "fold_warp": 0,
-  "velvet_sheen": 0,
-  "fabric_scatter": 0,
-  "glow_bleed": 0,
-  "glow_bleed_m": 0.08,
-  "mullion_tau": 0,
-  "mullion_pitch_m": 0.35,
-  "mullion_bar_m": 0.025,
-  "mullion_depth_m": 0.04,
-  "window_w_m": 0,
-  "window_h_m": 0,
-  "window_cx_m": 0,
-  "window_cy_m": 1.3,
-  "window_wall": 0.03,
-  "tent_ridge_h_m": 1.15,
-  "tent_half_w_m": 1.1,
-  "tent_crown_w_m": 0.35,
-  "tent_shoulder_h_m": 0.62,
-  "tent_shoulder_w_m": 0.92,
-  "tent_len_m": 2.3,
-  "tent_end_lean": 0.6,
-  "tent_end_apex_h_m": 0.55,
-  "tent_hip_rake": 0.45,
-  "tent_eye_h_m": 0.5,
-  "tent_fade": 0.06,
-  "tent_seam": 0,
-  "tent_mesh": 0,
-  "far_smear": 3,
-  "exposure": 9.7747, "sun_cosine": 1,   // the receiver's cosine law, exposure re-sat to 1.635/sin 20.7°
-  "contrast": 1.0710000000000002,
-  "ambient_skylight": 0.4022,
-  "sky_turbidity": 0.176,
-  "mesopic_strength": 0.6,
-  "chromatic_aberration": 3.5999999999999996,
-  "tone_map": 2,
-  "ground_r": 0.23,
-  "ground_g": 0.2,
-  "ground_b": 0.3,
-  "wind_pattern": "gusty",
-  "wind_strength": 1.7,
-  "wind_gustiness": 0.25,
-  "wind_direction_deg": 0,
-  "gust_frequency": 0.04,
-  "weather_variability": 0,
-  "weather_speed": 1,
-  "gust_attack": 1.2,
-  "gust_decay": 1.3,
-  "sway_stiffness": 1.2,
-  "sway_ceiling": 0.4,
-  "damping_ratio": 0.65,
-  "backlash_gain": 1,
-  "sway_height_gain": 0.75,
-  "sway_pitch": 0,
-  "limb_count": 14,
-  "limb_flex": 0.25,
-  "twig_flex": 0.18,
-  "stem_length": 0.18,
-  "leaf_swing": 1.35,
-  "flutter_freq": 1.4,
-  "drift_amount": 0.145,
-  "drift_phase": 0.12165903281940274,
-  "drift_auto": true,
-  "drift_speed": 0.04,
-  "show_source": true,
-  "show_layer": false,
-  "show_layer_index": 0,
-  "time_of_day": 9,
-  "latitude": 45,
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.025714285714285717): it shows at 4.624 there, and a thicker cloud opens it up
-    // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
-    // leaves inside the crown, density ×0.917 so as much floor stays in sun
   }),
   /* 'test 1' / 'test 2' — hidden for now, kept for the future. Uncomment this block to restore them to the preset list.
   'test 1': Object.assign({}, LOOK_DEFAULTS, {

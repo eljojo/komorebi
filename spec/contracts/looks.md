@@ -14,6 +14,7 @@ Intent is the artist's words, his choices on review sheets and the notes written
 
 ## Roles some looks carry
 
+- **The order:** the built-ins are listed, and the arrows and the swipe walk them, as a story told by showing. First the tree: `park 1, the scene` and `park 1, under the trees` show it, `park 1` and `park 2` leave only its shadow. Then its year: `cherry blossom`, `the yellow tree`, `park fall`, `montebello`, `montebello, rain`. Then the floor going abstract: `forest floor`, which is `afternoon 7`'s grove in fall, then the afternoons from 7 down to 4 and the mornings, to `memories`. The set pieces close it: `acid dreams`, `eclipse`. The experimental looks follow. The order is the order of `PRESETS` in `presets.js`; `looks.test.js` holds it.
 - **The editor's default:** `afternoon 7`; the live session enables the runtime governor. It is the look the editor boots into and falls back to.
 - **The welcome:** `afternoon 6`, shown faint behind the welcome screen and behind the about page.
 - **The season macro's stops:** spring → summer → fall runs `memories` → `morning 1` → `afternoon 4` → the last green day (no look) → `montebello`. Its fall pigment capacities are `montebello`'s.

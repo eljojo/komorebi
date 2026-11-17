@@ -34,10 +34,20 @@ const NEW_LOOKS = {
   "cherry blossom": { base: SHEET_MONTEBELLO, over: { anthocyanin: 0.8, tannin: 0, wall_fraction: 0, leaf_wetness: 0, ground_r: 0.33, ground_g: 0.21, ground_b: 0.12, tree_pigment_spread: 0.6, litter_age: 0.3 } },
 };
 
-test("the four new looks (P5-P8) follow park fall, in the sheet's order, and none is experimental", () => {
-  const names = Object.keys(PRESETS);
-  expect(names.slice(names.indexOf("park fall") + 1, names.indexOf("park fall") + 5)).toEqual(Object.keys(NEW_LOOKS));
+test("the four new looks (P5-P8) are none of them experimental", () => {
   for (const n of Object.keys(NEW_LOOKS)) expect(EXPERIMENTAL.includes(n), `${n}: he likes it more than the tweaks`).toBe(false);
+});
+
+// The list a person walks is a story: the tree seen and then only its shadow, its year from blossom to the rain day, the floor going abstract
+// through the afternoons and mornings to the founding afternoon, and the set pieces last. The experimental looks follow, hidden by the editor.
+test("the shipped looks run in the story's order", () => {
+  expect(Object.keys(PRESETS).filter((n) => !EXPERIMENTAL.includes(n))).toEqual([
+    "park 1, the scene", "park 1, under the trees", "park 1", "park 2",
+    "cherry blossom", "the yellow tree", "park fall", "montebello", "montebello, rain",
+    "forest floor", "afternoon 7", "afternoon 6", "afternoon 6b", "afternoon 5", "afternoon 5b", "prism", "afternoon 4", "afternoon 4b",
+    "morning 1", "morning 2", "morning 3", "morning 3b", "memories",
+    "acid dreams", "eclipse",
+  ]);
 });
 
 for (const [name, { base, over }] of Object.entries(NEW_LOOKS)) {
