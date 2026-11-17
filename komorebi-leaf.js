@@ -19,7 +19,8 @@
 // a fan of fixed angles.
 //
 // THE LEAF AS MATERIAL AND SIDE (spec/model/leaf.md), the laws that are about the leaf and not about when it turns: the sieve mixture of its walls and cells (mixtureTau), the
-// ballistic share of what it passes (ballisticK) and which way it rolls about its long axis (leafSide).
+// ballistic share of what it passes (ballisticK) and which way it rolls about its long axis (leafSide); the leaf seen as a finite two-faced slab
+// (SLAB, slabLeaf, slabK, slabTable: the table the tree view and the ground bounce read); and bindLeafShape, which hands a bake program the outline's texture.
 // ============================================================================
 import { DEG, TAU, hash3, mulberry32 } from './komorebi-math.js';
 
@@ -309,4 +310,54 @@ function mixtureTau(tauWall, tauCell, fw, out = [0,0,0]){
 const BEAM_K_MAX = 6;
 function ballisticK(d){ return d > 0 ? Math.min(-Math.log1p(-Math.min(d, 1)), BEAM_K_MAX) : 0; }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, BEECH_LIGHT, SIZE_LIGHT, VARIETY_REAL, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape, leafSide, SIDE_SALT, mixtureTau, ballisticK, BEAM_K_MAX };
+const SLAB_N = 64;   // the tree view's leaf table (slabTable): how many samples of √T it holds per channel
+
+// ---- THE LEAF AS A FINITE SLAB (Approximation). A Kubelka–Munk slab per channel behind an entry coat F0: its scattering s fitted to a PROSPECT-D green
+// leaf, its absorption k solved so the leaf passes the look's own T. Two faces: the scattering split between an upper and a lower half-slab by δ (more in the
+// lower, the spongy mesophyll), the absorption shared, the halves added by the adding equations (Hébert & Becker 2008). So the top reflects little and the
+// underside more, and the leaf passes exactly what the look says it does. s, δ and F0 are provisional (spec model/leaf.md). ----
+const SLAB = { s: [0.1411, 0.4353, 0.02191], delta: 0.5, f0: 0.04 };
+function slabLayer(k, s){                   // one symmetric slab: [reflectance, transmittance], e^x factored out so it holds at large k
+  if(s < 1e-9) return [0, Math.exp(-k)];
+  if(k < 1e-12) return [s/(1 + s), 1/(1 + s)];
+  const a = 1 + k/s, b = Math.sqrt(a*a - 1), x = b*s, e = Math.exp(-2*x);
+  const sh = (1 - e)/2, ch = (1 + e)/2, den = a*sh + b*ch;
+  return [sh/den, b*Math.exp(-x)/den];
+}
+// The two-face tissue: [reflectance from the top, from the underside, transmittance].
+function slabLeaf(k, s, delta = SLAB.delta){
+  const [r1, t1] = slabLayer(k/2, s*(1 - delta)/2), [r2, t2] = slabLayer(k/2, s*(1 + delta)/2), g = 1/(1 - r1*r2);
+  return [r1 + t1*t1*r2*g, r2 + t2*t2*r1*g, t1*t2*g];
+}
+// k ≥ 0 such that (1 − F0)·T_tissue = T. A T brighter than a clear slab of this scattering can pass takes k = 0 (named: the slab then passes less than asked).
+function slabK(T, s, delta = SLAB.delta, f0 = SLAB.f0){
+  const want = T/(1 - f0);
+  if(want >= slabLeaf(0, s, delta)[2]) return 0;
+  let lo = 0, hi = 1; while(slabLeaf(hi, s, delta)[2] > want) hi *= 2;
+  for(let i = 0; i < 60; i++){ const m = (lo + hi)/2; if(slabLeaf(m, s, delta)[2] > want) lo = m; else hi = m; }
+  return (lo + hi)/2;
+}
+// The table the shader reads: per channel (one row each), at √T = i/(n − 1), the top's reflectance, the underside's and the tissue's transmittance.
+function slabTable(n = SLAB_N){
+  const out = new Float32Array(n*3*4);
+  for(let c = 0; c < 3; c++) for(let i = 0; i < n; i++){
+    const T = (i/(n - 1))**2, m = slabLeaf(slabK(T, SLAB.s[c]), SLAB.s[c]), o = (c*n + i)*4;
+    out[o] = m[0]; out[o + 1] = m[1]; out[o + 2] = m[2]; out[o + 3] = 1;
+  }
+  return out;
+}
+
+// What a bake hands its program to draw a grove's leaves in THEIR shape: the outline's texture (unit 6: 0-3 are the layers, 4 and 5 the cluster textures), the
+// gate (a uniform, per grove — a crossfade bakes an ellipse grove and a maple one in one pass) and the box the quad covers. The ellipse's box is (0, 0, 1, 1), which
+// leaves the corner it scales to the bit (x·1 + 0), so the off state is the quad it always was. `u` is a program's own table: bake, faith and litter name them alike.
+const NO_BOX = [0, 0, 1, 1];
+function bindLeafShape(gl, u, g){
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, g.leafTex); gl.uniform1i(u.leafTex, 6);
+  gl.uniform1i(u.leafShape, g.shape ? 1 : 0);
+  gl.uniform4fv(u.shapeBox, g.shape ? g.shape.box : NO_BOX);
+  // leaf_variety's packing: the cluster id's fraction is j + row/idFrac, and a varied grove's table has `rows` rows to read it in. An eight-row grove and the ellipse send 32 and 0: the VS's multiply by 32 is the same IEEE op as a literal ·32 (x·32 is exact), and the FS keeps its literal /8.
+  gl.uniform1f(u.leafIdFrac, g.shape?.idFrac ?? LEAF_ID_FRAC);
+  gl.uniform1f(u.leafRows, g.shape?.idFrac ? g.shape.rows : 0);
+}
+
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, BEECH_LIGHT, SIZE_LIGHT, VARIETY_REAL, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape, leafSide, SIDE_SALT, mixtureTau, ballisticK, BEAM_K_MAX, SLAB, SLAB_N, slabLeaf, slabK, slabTable, bindLeafShape };

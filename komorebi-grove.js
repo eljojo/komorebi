@@ -1145,16 +1145,3 @@ export function makeGrove(hub){
 
   return { buildGrove, growGrove, uploadGrove, reseasonGrove, reseasonable, refreshWood };
 }
-
-// What a bake hands its program to draw a grove's leaves in THEIR shape: the outline's texture (unit 6: 0-3 are the layers, 4 and 5 the cluster textures), the
-// gate (a uniform, per grove — a crossfade bakes an ellipse grove and a maple one in one pass) and the box the quad covers. The ellipse's box is (0, 0, 1, 1), which
-// leaves the corner it scales to the bit (x·1 + 0), so the off state is the quad it always was. `u` is a program's own table: bake, faith and litter name them alike.
-const NO_BOX = [0, 0, 1, 1];
-export function bindLeafShape(gl, u, g){
-  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, g.leafTex); gl.uniform1i(u.leafTex, 6);
-  gl.uniform1i(u.leafShape, g.shape ? 1 : 0);
-  gl.uniform4fv(u.shapeBox, g.shape ? g.shape.box : NO_BOX);
-  // leaf_variety's packing: the cluster id's fraction is j + row/idFrac, and a varied grove's table has `rows` rows to read it in. An eight-row grove and the ellipse send 32 and 0: the VS's multiply by 32 is the same IEEE op as a literal ·32 (x·32 is exact), and the FS keeps its literal /8.
-  gl.uniform1f(u.leafIdFrac, g.shape?.idFrac ?? LEAF_ID_FRAC);
-  gl.uniform1f(u.leafRows, g.shape?.idFrac ? g.shape.rows : 0);
-}

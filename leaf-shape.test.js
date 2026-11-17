@@ -600,7 +600,7 @@ test("the program's uniforms are named alike in the bake, the faithful bake and 
 // the carpet with the one the leaves fell from. A recording stub GL reads what each draw was handed.
 // ============================================================================
 import { makeBake } from "./komorebi-bake.js";
-import { bindLeafShape } from "./komorebi-grove.js";
+import { bindLeafShape } from "./komorebi-leaf.js";
 
 const rec = () => {
   const calls = [];

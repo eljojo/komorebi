@@ -11,13 +11,10 @@
 // ============================================================================
 import { clamp, lerp } from './komorebi-math.js';
 import { atmosphere, beamLoss, sunIncidence } from './komorebi-light.js';
-import { ballisticK } from './komorebi-leaf.js';
+import { SLAB, SLAB_N, ballisticK, bindLeafShape, slabTable } from './komorebi-leaf.js';
 import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES } from './komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
-import { SLAB, slabTable } from './komorebi-tree-view.js';
-import { SLAB_N } from './komorebi-shaders.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
-import { bindLeafShape } from './komorebi-grove.js';
 
 // The tier this module owns besides the fill (which is its own factory below, so a bundle that cuts it cuts the factory): the leaf's diffuse share. The bundler substitutes
 // it by a literal (embed-build.mjs); false means no look in the bundle opens leaf_diffuse, and the beam's k is 0 wherever it is read.

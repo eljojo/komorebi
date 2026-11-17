@@ -50,7 +50,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-bake.js` — the per-frame bakes: optical depth per layer, the faithful soft shadow, the sky fill.
 - `komorebi-fill.js` — the sky fill's CPU half, pure; the reference `fill.test.js` and the harness hold the shader to.
 - `komorebi-litter.js` — fallen leaves as a floor material: the pure laws and the once-per-regrow carpet bake.
-- `komorebi-leaf.js` — the leaf: its outline, grown as a vein skeleton (`growLeaf`, `leafShape`, `leafVariant`), and the leaf as material and side (`mixtureTau`, `ballisticK`, `leafSide`); pure, with `GLSL_LEAF_Q` its shader half. Stays out of the season: when a leaf turns or falls is `komorebi-season.js`'s.
+- `komorebi-leaf.js` — the leaf: its outline, grown as a vein skeleton (`growLeaf`, `leafShape`, `leafVariant`), the leaf as material and side (`mixtureTau`, `ballisticK`, `leafSide`) and as a finite two-faced slab (`SLAB`, `slabLeaf`, `slabK`, `slabTable`, `SLAB_N`), and `bindLeafShape`, which hands a bake program an outline's texture; pure but for that one GL bind, with `GLSL_LEAF_Q` its shader half. Stays out of the season: when a leaf turns or falls is `komorebi-season.js`'s.
 - `komorebi-source.js` — the point-sun cloud, the shared cast geometry and the eclipse moon, as pure functions.
 - `komorebi-motion.js` — the wind signal and the trunk/limb/twig springs.
 - `komorebi-air.js` — the air, pure: the broadband wind signal and its patterns (`fbm1`, `WIND_PATTERNS`, `windNoise`), the wind's force as a function of time, the air at a place, how deep into a crown it
@@ -59,7 +59,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
   `komorebi-scene-fade.js` (the dissolve), `komorebi-leaf-travel.js` (faithful↔layer and faithful↔faithful, patch by
   patch), `komorebi-season-travel.js`, `komorebi-grove-travel.js` and `komorebi-litter-rise.js` (floor↔sky).
 - `komorebi-render.js` — one frame onto a target.
-- `komorebi-tree-view.js` — the tree seen from the floor camera: the faithful cast's own leaves and wood, stood up, lit and laid over the floor; the seen leaf's slab, pure. Behind `FEAT_TREE_VIEW`.
+- `komorebi-tree-view.js` — the tree seen from the floor camera: the faithful cast's own leaves and wood, stood up, lit and laid over the floor; the projection the shader runs, pure. Behind `FEAT_TREE_VIEW`.
 - `komorebi-transport.js` — the camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.
 - `komorebi-shaders.js` — the bake and display shaders, the shared tone tail, the sky fill's bake.
 - `komorebi-params.js` — `PARAMS`, every parameter defined once (default, panel row, how it travels, what it means; its header sets

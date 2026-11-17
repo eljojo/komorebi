@@ -10,8 +10,9 @@ import { PRESETS } from "./presets.js";
 import { hash3 } from "./komorebi-math.js";
 import { leafSide, SIDE_SALT } from "./komorebi-leaf.js";
 import { cameraPose } from "./komorebi-camera.js";
-import { SLAB, slabLeaf, slabK, slabTable, treeProject, floorRay } from "./komorebi-tree-view.js";
-import { FS_TREE, FS_TREE_WOOD, VS_TREE, SLAB_N } from "./komorebi-shaders.js";
+import { treeProject, floorRay } from "./komorebi-tree-view.js";
+import { SLAB, SLAB_N, slabLeaf, slabK, slabTable } from "./komorebi-leaf.js";
+import { FS_TREE, FS_TREE_WOOD, VS_TREE } from "./komorebi-shaders.js";
 import { makeGrove } from "./komorebi-grove.js";
 
 const FRAMINGS = [

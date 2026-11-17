@@ -3,54 +3,18 @@
 // faithfully, the tilted floor camera sees the leaves and wood the shadow is cast from: the faithful cast's own leaf records, stood back up by the same
 // vertex code that casts them (VS_TREE is GLSL_FAITH_VERTEX with its TREE_VIEW stage), and its own swayed wood, drawn after the floor in the floor camera's
 // perspective. A leaf is lit as a receiver, by the sun through the leaves above it and by the sky above it, read from the low-res layer set the sky fill
-// bakes on the faithful path; it is one finite two-faced leaf that passes the look's own transmittance (the slab, below). The pass draws into its own
+// bakes on the faithful path; it is one finite two-faced leaf that passes the look's own transmittance (the slab, komorebi-leaf.js). The pass draws into its own
 // multisampled colour and depth, its leaves' outlines turned into sample coverage, and is laid over the frame: every step the floor takes after its light
 // (the dusk shift, the haze, the iris, the Look's tail) is per pixel, so the tree takes the same steps in its own shader.
-// Pure exports first (the slab, the table, the projection the shader runs), then the GL factory, which the engine holds behind FEAT_TREE_VIEW.
+// Pure exports first (the projection the shader runs), then the GL factory, which the engine holds behind FEAT_TREE_VIEW.
 // ============================================================================
 import { DEG, clamp, smoothstep } from './komorebi-math.js';
 import { atmosphere, beamLoss, shownExposure, sunDirection } from './komorebi-light.js';
-import { ballisticK } from './komorebi-leaf.js';
+import { ballisticK, bindLeafShape, SLAB_N, slabTable } from './komorebi-leaf.js';
 import { cameraPose } from './komorebi-camera.js';
 import { MAX_LAYERS } from './komorebi-params.js';
-import { SLAB_N, VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_FULL } from './komorebi-shaders.js';
+import { VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_FULL } from './komorebi-shaders.js';
 import { cameraFor } from './komorebi-transport.js';
-import { bindLeafShape } from './komorebi-grove.js';
-
-// ---- THE LEAF AS A FINITE SLAB (Approximation). A Kubelka–Munk slab per channel behind an entry coat F0: its scattering s fitted to a PROSPECT-D green
-// leaf, its absorption k solved so the leaf passes the look's own T. Two faces: the scattering split between an upper and a lower half-slab by δ (more in the
-// lower, the spongy mesophyll), the absorption shared, the halves added by the adding equations (Hébert & Becker 2008). So the top reflects little and the
-// underside more, and the leaf passes exactly what the look says it does. s, δ and F0 are provisional (spec model/leaf.md). ----
-export const SLAB = { s: [0.1411, 0.4353, 0.02191], delta: 0.5, f0: 0.04 };
-function slabLayer(k, s){                   // one symmetric slab: [reflectance, transmittance], e^x factored out so it holds at large k
-  if(s < 1e-9) return [0, Math.exp(-k)];
-  if(k < 1e-12) return [s/(1 + s), 1/(1 + s)];
-  const a = 1 + k/s, b = Math.sqrt(a*a - 1), x = b*s, e = Math.exp(-2*x);
-  const sh = (1 - e)/2, ch = (1 + e)/2, den = a*sh + b*ch;
-  return [sh/den, b*Math.exp(-x)/den];
-}
-// The two-face tissue: [reflectance from the top, from the underside, transmittance].
-export function slabLeaf(k, s, delta = SLAB.delta){
-  const [r1, t1] = slabLayer(k/2, s*(1 - delta)/2), [r2, t2] = slabLayer(k/2, s*(1 + delta)/2), g = 1/(1 - r1*r2);
-  return [r1 + t1*t1*r2*g, r2 + t2*t2*r1*g, t1*t2*g];
-}
-// k ≥ 0 such that (1 − F0)·T_tissue = T. A T brighter than a clear slab of this scattering can pass takes k = 0 (named: the slab then passes less than asked).
-export function slabK(T, s, delta = SLAB.delta, f0 = SLAB.f0){
-  const want = T/(1 - f0);
-  if(want >= slabLeaf(0, s, delta)[2]) return 0;
-  let lo = 0, hi = 1; while(slabLeaf(hi, s, delta)[2] > want) hi *= 2;
-  for(let i = 0; i < 60; i++){ const m = (lo + hi)/2; if(slabLeaf(m, s, delta)[2] > want) lo = m; else hi = m; }
-  return (lo + hi)/2;
-}
-// The table the shader reads: per channel (one row each), at √T = i/(n − 1), the top's reflectance, the underside's and the tissue's transmittance.
-export function slabTable(n = SLAB_N){
-  const out = new Float32Array(n*3*4);
-  for(let c = 0; c < 3; c++) for(let i = 0; i < n; i++){
-    const T = (i/(n - 1))**2, m = slabLeaf(slabK(T, SLAB.s[c]), SLAB.s[c]), o = (c*n + i)*4;
-    out[o] = m[0]; out[o + 1] = m[1]; out[o + 2] = m[2]; out[o + 3] = 1;
-  }
-  return out;
-}
 
 // ---- THE FLOOR CAMERA RUN FORWARDS: GLSL_TREE_CAMERA's treeClip, on the CPU, for the tests. Returns normalised device x, y and the depth along the gaze in
 // eye heights; a point on the floor lands where the floor camera's own ray from that pixel meets the floor. ----

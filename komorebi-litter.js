@@ -11,8 +11,7 @@
 // ============================================================================
 import { DEG, TAU, clamp, hash3, makeGauss, mulberry32, smoothstep } from './komorebi-math.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
-import { bindLeafShape } from './komorebi-grove.js';
-import { leafShape, leafVariant } from './komorebi-leaf.js';
+import { bindLeafShape, leafShape, leafVariant } from './komorebi-leaf.js';
 
 // A leaf's landing and its angle on the ground are its OWN draws, from a stream seeded by (seed, cluster, leaf) on a salt of its own —
 // never the growth RNG, so laying litter cannot move a twig or a leaf of any shipped grove, and independent of the pigment, drop-day,

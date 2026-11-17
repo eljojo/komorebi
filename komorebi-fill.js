@@ -272,7 +272,7 @@ export function fillRef(layers, x, K, { gS, sun, scatter, tile, k = 0, edgeArea 
 //   B(x)    = (1/K) Σ_k Σ_L thr_kL · W_L(x + h_L·s_k)                    what reaches the floor, through the layers below each on their true T
 // B_g is the beam along the beam's own path (Tb: the leaves' ballistic share). The ground's diffuse term is the OPEN sky, not the fill's own
 // T_sky and S (a named approximation, −1 to +3 % of the term, which keeps the passes free of each other). Rb is the leaf's underside by the slab
-// law (komorebi-tree-view.js, slabLeaf): the coat's F0 plus what the tissue's lower face returns, at the leaf's own T = e^(−τ̄). R + T ≤ 1 holds
+// law (komorebi-leaf.js, slabLeaf): the coat's F0 plus what the tissue's lower face returns, at the leaf's own T = e^(−τ̄). R + T ≤ 1 holds
 // in the slab, so a·Rb ≤ 1 − T per texel. Only reflection paths are new: light the crown passes on by transmission is already in T_sky and S.
 // ⟨⟩ is the mean over a BOUNCE_BOX² grid of taps across the underside pass's texel: the emitter is a texel average (its pass is coarse; U is
 // a hemisphere of the ground and varies over metres), the walk below it is exact per ray.

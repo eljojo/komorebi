@@ -1,13 +1,10 @@
 import { MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX } from './komorebi-params.js';
-import { LEAF_VARIANTS } from './komorebi-leaf.js';
+import { LEAF_VARIANTS, SLAB_N } from './komorebi-leaf.js';
 import { DEPTH_L0, DEPTH_W } from './komorebi-air.js';
 
 // ===========================================================================
 // Shaders
 // ===========================================================================
-
-// The tree view's leaf table (komorebi-tree-view.js slabTable): how many samples of √T it holds per channel.
-const SLAB_N = 64;
 
 // ---- A TEXEL IS A MIXTURE, NOT A SLAB (spec/model/leaf.md): ONE snippet, carried by every program that reads a baked texel as a mixture (above leaf_diffuse 0, and at 0 under edge_area) — the cast taps
 // (tap, tapCA), the faithful stamp (FS_FAITH) and the shared ray (GLSL_SKY_RAY: the sky camera and the fill). The bake ADDS: rgb = τ = Σ τ_i·cov_i, alpha
@@ -1246,7 +1243,7 @@ ${GLSL_WOOD_FIELD}
 ${GLSL_FILL_DIRS}
 uniform highp sampler2D uFillGround;   // G over the fill's frame
 uniform vec3  uOpenGround;             // G past a finite tree's frame: open ground
-uniform highp sampler2D uSlab;         // the leaf's slab, one row per channel: (top R, underside R, tissue T) against √T (komorebi-tree-view.js slabTable)
+uniform highp sampler2D uSlab;         // the leaf's slab, one row per channel: (top R, underside R, tissue T) against √T (komorebi-leaf.js slabTable)
 uniform float uF0;
 uniform float uCell;                   // this pass's texel, in metres: the box the emitter is averaged over
 ${GLSL_SKY_RAY}
@@ -1440,4 +1437,4 @@ void main(){
 }`;
 
 
-export { SLAB_N, GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
