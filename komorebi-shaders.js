@@ -196,8 +196,9 @@ layout(location=8) in float iPivotDrop;   // the share of its twig's bend a leaf
 layout(location=7) in vec4 iJourney;  // floor landing.xy, clockwise angle, height fraction
 uniform highp int uSeasonCast;
 #endif
+layout(location=9) in float iSide;    // which way this leaf rolls about its long axis, ±1 (komorebi-grove.js): which corners stand above its centre and which below
+uniform float uTiltShadow;            // tilt_shadow: the share of each corner's height about the centre the cast throws along the sun. 0 = the plan footprint, to the bit
 #ifdef TREE_VIEW
-layout(location=9) in float iSide;    // which way this leaf rolls about its long axis, ±1 (komorebi-grove.js): the cast's footprint is the same either way
 ${GLSL_TREE_CAMERA}
 out vec3 vWorld;                      // where this corner is, in the world (m)
 out vec3 vNormal;                     // the leaf's top face, in the world: n.z ≥ 0
@@ -272,6 +273,10 @@ void main(){
   mat2 R=mat2(c,-s,s,c);
   vec2 lc = aCorner*uShapeBox.zw + uShapeBox.xy;                                 // the corner in the leaf's own frame: the ellipse's square to the bit, or the outline's box (see VS_BAKE)
   vec2 world = base + uSway*(hEff/uHRef) + drift + R*(lc*vec2(A,B));   // coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
+  // THE LEAF'S SHADOW ALONG THE SUN (tilt_shadow). The plan footprint is the leaf flattened: its short half B = B0·|cos(roll)|, every corner at the centre's
+  // height. Stood up, a corner sits lc.y·B0·sin(roll) above or below the centre (the tree view's own leaf, below), and projected along the sun from there the
+  // quad is the leaf's true shadow, area A·B0·|n·s|/s_z: long for a leaf rolled toward a low sun, thin for one rolled away. A corner keeps its plan point.
+  float dz = uTiltShadow > 0.0 ? uTiltShadow*lc.y*B0*sin(iSide*(restTilt + swing)) : 0.0;
 #ifdef SEASON_TRAVEL
   if(uSeasonCast!=0){
     float lift=iJourney.w;
@@ -282,6 +287,7 @@ void main(){
     vec2 curl=0.22*sin(3.14159265359*lift)*vec2(cos(iB.w+2.0*lift),sin(iB.w+2.0*lift));
     world=mix(iJourney.xy,centre,lift)+curl+turning*(lc*vec2(A,mix(B0,B,lift)));
     hEff*=lift;
+    dz*=lift;   // a leaf lying on the floor stands no corner up
   }
 #endif
 #ifdef TREE_VIEW
@@ -308,12 +314,13 @@ void main(){
   // (vertical plane Y=uClothY, §4.9): drop onto the cloth → u = px - r·gx, v = h - r with r=(py-cy)/gy, so a
   // vertical trunk (constant py) casts a vertical line and the whole tree STANDS UP the cloth. Floor byte-identical.
   vec2 recvPt;
+  float hc = uTiltShadow > 0.0 ? hEff + dz : hEff;   // this corner's height: the centre's, or its own once the shadow is thrown along the sun
   if(uCurtainBake != 0){
     float gy = abs(uG.y) < 1e-3 ? (uG.y < 0.0 ? -1e-3 : 1e-3) : uG.y;   // guard: the sun must FACE the cloth (azimuth not ∥ to it)
     float rr = (world.y - uClothY) / gy;
-    recvPt = vec2(world.x - rr*uG.x, hEff - rr);
+    recvPt = vec2(world.x - rr*uG.x, hc - rr);
   } else {
-    recvPt = world - uG * hEff;
+    recvPt = world - uG * hc;
   }
   vec2 uv = (recvPt - uFaithOrigin)/uFaithExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);

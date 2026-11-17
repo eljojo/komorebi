@@ -189,6 +189,13 @@ No measurement of the floor camera's framing or the Look's tail is recorded. The
 
 ## leaf
 
+### A tilted leaf's shadow under a low sun
+
+- **The plan footprint against the true shadow**, on a faithful grove of 45,936 leaves (median tilt 24°, p90 44°), each leaf's side drawn by its hash: the canopy's total leaf shadow, true over cast, is 1.000 at 80° of sun, 1.002 at 45°, 1.052 at 30°, 1.213 at 20° and 1.885 at 10°. Per leaf, p10–p90 of the ratio is 0.90–1.10 at 80°, 0.45–1.54 at 45° and 0.27–2.49 at 20° (from the integration plan's prototype, uncommitted source).
+- **The engine, `tilt_shadow` 0 against 1** (Chrome on Metal, 960×540, wind off; the share of the frame darker than 0.6 of its median). `park 1` at 20°: 2.8 % → 4.5 % of the frame in shade, 11 % of pixels move by more than 8 of 255. `park 1, the scene`: 5.0 → 6.7 % at 15°, 4.9 → 6.1 % at 20°, 4.5 → 4.8 % at 30°, 3.3 → 3.3 % at 64°. The standing looks at their own 26° sun: 3–13 % of pixels move, the shade 5–35 % wider; `montebello, rain` barely moves (its crown has dropped).
+- **Under wind**: frame-to-frame change 0.233 off, 0.236 on (`park 1, the scene` at 20°).
+- **Date:** 2026-11-17 (`test-gl/out/review/2026-11-17-low-sun-shadow/`, git-ignored).
+
 ### The recalibrated maple against José's thirteen
 
 - **What was measured:** the engine's sugar maple outline against José's photographed maples, by one measure applied to both: each leaf's radial profile r(θ) from a hand-placed petiole base along the base-to-central-tip axis, area-normalised to π, read with the leaf-shape test's own `measure`.

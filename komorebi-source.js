@@ -127,6 +127,18 @@ export function makeSource(hub){
   return { regenSource, bulkShift, bulkOn, projMatrix, layerHeights };
 }
 
+// ---- A TILTED LEAF'S SHADOW (spec model/leaf.md, "What one leaf stamps"; tilt_shadow). GLSL_FAITH_VERTEX's cast of one corner, on the CPU: the corner `lc`
+// (the leaf's own frame, the unit square's corners for its box) of a leaf of halves A and B0 at plan centre `c`, turned clockwise by `ang`, rolled by
+// `roll` (its side times its tilt plus swing), at height `h`, thrown onto the floor along the sun's plan travel per metre of height `g`. Its plan point is
+// the flattened leaf's, short half B0·|cos(roll)|; its height is the centre's plus `share` of lc.y·B0·sin(roll). At share 1 the four corners are the
+// leaf's true shadow along the sun; at 0 the plan footprint every corner at the centre's height. ----
+export function leafShadowCorner(lc, { c, A, B0, ang, roll, h, g, share = 1 }){
+  const B = B0*Math.max(0.05, Math.abs(Math.cos(roll))), co = Math.cos(ang), si = Math.sin(ang);
+  const x = lc[0]*A, y = lc[1]*B, wx = c[0] + co*x + si*y, wy = c[1] - si*x + co*y;   // R = mat2(c, −s, s, c), column-major: R·v = (c·x + s·y, −s·x + c·y)
+  const hc = share > 0 ? h + share*lc[1]*B0*Math.sin(roll) : h;
+  return [wx - g[0]*hc, wy - g[1]*hc];
+}
+
 // The heights a route between layer counts starts or ends at: the look's own n heights over [base, base+thick], the layers above
 // its top padded with the top one, so a layer only one look fills moves to or from the nearest layer the other has.
 export function routeHeights(n, base, thick){

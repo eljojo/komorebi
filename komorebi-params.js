@@ -191,6 +191,10 @@ const PARAMS = {
     row: { kind: 's', label: 'tilt by light', min: 0, max: 1, step: 0.01, rebuild: 'canopy' },
     travels: 'canopy',
     means: "<b>Sun leaves stand steeper, shade leaves lie flat.</b> A leaf in full sun tilts up out of the light it has too much of; one in the shade spreads flat to catch what reaches it. Measured on beech: 34° in the open, 22° in deep shade. At 1 every leaf lies by its own light and <i>max tilt</i> no longer applies; at 0 every leaf takes the look's own tilt." },
+  tilt_shadow: { default: 1,   // on by default (a look from before it was keeps 0: GRANDFATHERED, below); the faithful cast throws a tilted leaf's shadow along the sun from each corner's own height (§leaf "What one leaf stamps"): 0..1, the share of the corner's height above or below the leaf's centre that is cast. 0 = every corner at the centre's height, the plan footprint the old cast stamped, to the bit. Faithful path only
+    row: { kind: 's', label: 'tilt shadow', min: 0, max: 1, step: 0.01, rebuild: '' },   // a live uniform of the faithful cast, in its re-bake snapshot: no regrow
+    travels: 'morph',   // corner heights scale continuously, so the shadow's shape tweens
+    means: "<b>A tilted leaf throws its shadow along the sun, not straight down.</b> A leaf rolled toward a low sun throws a long shadow; one rolled away from it throws a thin one. At 0 every leaf throws the footprint it would under a sun straight overhead, which leaves a low-sun canopy too open (a fifth too little shade at 20°, nearly half at 10°) and makes every leaf's shadow the wrong size. Above about 45° of sun the total hardly changes but the dapples' texture does. Only on a faithful tree." },
   leaf_size_m: { default: 0.09,
     row: { kind: 's', label: 'leaf (m)', min: 0.01, max: 0.4, step: 0.005, rebuild: 'canopy' },
     travels: 'canopy',
@@ -938,7 +942,9 @@ const DEFAULTS = Object.fromEntries(Object.entries(PARAMS).filter(([, d]) => !('
 // Then ground_bounce (0 → 1), the ground returned by the undersides into the shade. It reads only where canopy_fill is open; the four built-in looks that
 // open it take it (their shade moves by under 0.02 of a stop). A look kept elsewhere from before, with the fill open, takes it too; on a white floor
 // (ground 1) its shade lifts about five times what dirt gives.
-const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, shoot_leaves: 0, tilt_light: 0, ground_bounce: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
+// Then tilt_shadow (0 → 1): the faithful cast throws each tilted leaf along the sun from its corners' own heights instead of stamping its plan footprint.
+// It moves every faithful look, most at a low sun; a look kept elsewhere from before takes it.
+const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, shoot_leaves: 0, tilt_light: 0, ground_bounce: 0, tilt_shadow: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
 
 // ---- legacy parameter names (spec §9). A ★ look saved to local storage, or a JSON exported from any
 // earlier build, is data the engine does not get to re-author — so a renamed knob has to keep loading

@@ -187,7 +187,7 @@ export function makeBake(hub){
   }
 
   // Source offsets and weights matter even at an unchanged count. Snapshot the numeric inputs without per-frame strings or allocations.
-  const faithKeys = ['sun_elevation_deg','sun_azimuth_deg','receiver','cloth_distance_m','drift_phase','drift_amount','leaf_swing','flutter_freq','edge_softness'];
+  const faithKeys = ['sun_elevation_deg','sun_azimuth_deg','receiver','cloth_distance_m','drift_phase','drift_amount','leaf_swing','flutter_freq','edge_softness','tilt_shadow'];
   const faithInputs = new Float64Array(faithKeys.length+1), faithSource = new Float32Array(MAX_SAMPLES*3);
   let faithReady = false;
   function faithfulInputsMatch(record){
@@ -238,11 +238,16 @@ export function makeBake(hub){
     // the foreshorten is anchored at the limb's attach height (§5.1), so h' = 0.1·h + 0.9·attachH ≥ 0.1·h with
     // attachH ≥ 0. Kept as-is — the slack costs frame padding, nothing else. (A leaf hanging BELOW its attach rises
     // instead, but only toward attachH, a height the trunk wood already occupies — so hHi needs no matching widening.)
-    const hLo = woodOn ? 0 : faith.hMin*(params.sway_pitch>0 ? 0.1 : 1), hHi = faith.hMax;
+    let hLo = woodOn ? 0 : faith.hMin*(params.sway_pitch>0 ? 0.1 : 1), hHi = faith.hMax;
     // pad: the leaf quad half-extent, the incoherent drift orbit, and the live coherent sway (leaves+wood translate
     // by up to |sway| at the crown) — none of which are in the rest plan AABB. (The twig-hug trail-back already is.)
     // A leaf's long half-axis is at most 0.7·leaf_size_m, which an ellipse's pad of 1 covers with room to spare; a lobed outline reaches rmax of it from its base, and leaf_variety's size shift (scaleMax, up to ~1.15 of the look's) grows the half-axis by as much (×1 is exact when there is none).
-    const pad = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)*(hub.grove?.scaleMax ?? 1)) + params.drift_amount + Math.hypot(motion.sway[0],motion.sway[1]) + 0.05;
+    const leafR = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)*(hub.grove?.scaleMax ?? 1));
+    const pad = leafR + params.drift_amount + Math.hypot(motion.sway[0],motion.sway[1]) + 0.05;
+    // tilt_shadow throws a corner from up to a leaf's half-extent above or below its centre's height: the frame takes the heights that far out
+    // (shut, the heights the frame always took)
+    const tz = params.tilt_shadow > 0 ? leafR : 0;
+    if(tz > 0){ hLo -= tz; hHi += tz; }
     let minx,maxx,miny,maxy;
     if(params.receiver){
       // CURTAIN cast frame (§4.9): occluders project onto the VERTICAL cloth (Y=cy), not the floor — the projection is
@@ -296,6 +301,7 @@ export function makeBake(hub){
     gl.uniform1f(UF.windTime, motion.time);
     gl.uniform1f(UF.leafSwing, params.leaf_swing);
     gl.uniform1f(UF.flutterFreq, params.flutter_freq);
+    gl.uniform1f(UF.tiltShadow, clamp(params.tilt_shadow, 0, 1));   // each corner thrown from its own height along the sun (0: the plan footprint)
     gl.uniform2f(UF.sway, motion.sway[0], motion.sway[1]);
     gl.uniform1f(UF.hRef, Math.max(faith.hMax, 1e-3));   // height-scale the coherent sway → base anchored, crown sways (matches the wood)
     bindLeafShape(gl, UF, hub.grove);   // the active grove's outline (unit 6), first, so the unit left active is the cluster geometry's (see bakeLayers)

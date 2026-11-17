@@ -116,3 +116,47 @@ test("the tree's light reads every layer there can be, one constant index each",
     for (let i = 0; i < MAX_LAYERS; i++) expect(src).toContain(`treeTap(uLayer[${i}], uLayerHeight[${i}]`);
   }
 });
+
+// ---- A TILTED LEAF'S SHADOW (tilt_shadow): the cast throws each corner from its own height, so the quad is the leaf's true shadow along the sun ----
+import { leafShadowCorner } from "./komorebi-source.js";
+import { VS_FAITH } from "./komorebi-shaders.js";
+import { DEFAULTS as DEF, GRANDFATHERED as GF, PARAMS as PR } from "./komorebi-params.js";
+
+const shoelace = (q) => Math.abs(q.reduce((a, p, i) => { const r = q[(i + 1) % q.length]; return a + p[0] * r[1] - r[0] * p[1]; }, 0)) / 2;
+const QUAD = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+
+test("the cast quad at tilt_shadow 1 is the leaf's true shadow, |(u×v)·s|/s_z, for any tilt, side, heading and sun", () => {
+  for (let k = 0; k < 2000; k++) {
+    const u = (i) => hash3(k, i, 991) / 4294967296;
+    const el = (5 + 85 * u(0)) * Math.PI / 180, az = 2 * Math.PI * u(1), s = [Math.cos(el) * Math.cos(az), Math.cos(el) * Math.sin(az), Math.sin(el)];
+    const g = [s[0] / s[2], s[1] / s[2]], A = 0.02 + 0.1 * u(2), B0 = 0.01 + 0.06 * u(3), ang = 2 * Math.PI * u(4), roll = (u(5) * 2 - 1) * 1.45, h = 1 + 8 * u(6);
+    const leaf = { c: [u(7) * 4 - 2, u(8) * 4 - 2], A, B0, ang, roll, h, g };
+    const area = shoelace(QUAD.map((lc) => leafShadowCorner(lc, leaf)));
+    // the stood-up leaf's two edges: the long axis 2A along R(1, 0), the short one 2·(R(0, B), B0·sin roll); R turns clockwise by ang
+    const co = Math.cos(ang), si = Math.sin(ang), B = B0 * Math.abs(Math.cos(roll));
+    const e1 = [2 * A * co, -2 * A * si, 0], e2 = [2 * B * si, 2 * B * co, 2 * B0 * Math.sin(roll)];
+    const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    expect(Math.hypot(...n)).toBeCloseTo(4 * A * B0, 10);                                             // a leaf of the record's size, stood up
+    expect(area).toBeCloseTo(Math.abs(n[0] * s[0] + n[1] * s[1] + n[2] * s[2]) / s[2], 10);
+  }
+});
+
+test("at tilt_shadow 0 the cast is the plan footprint, whatever the sun: the old stamp", () => {
+  const leaf = { c: [0.3, -0.2], A: 0.06, B0: 0.04, ang: 0.7, roll: 0.6, h: 4, share: 0 };
+  for (const g of [[0, 0], [1.8, -0.4], [5.6, 2]]) expect(shoelace(QUAD.map((lc) => leafShadowCorner(lc, { ...leaf, g })))).toBeCloseTo(4 * 0.06 * 0.04 * Math.cos(0.6), 12);
+});
+
+test("a low sun: a leaf rolled toward it throws a longer shadow than its footprint, one rolled away a thinner one, and a canopy's total grows", () => {
+  const g = [1 / Math.tan(15 * Math.PI / 180), 0], base = { c: [0, 0], A: 0.05, B0: 0.04, ang: Math.PI / 2, h: 3, g };   // the short axis along x, toward the sun's plan direction
+  const area = (roll, share) => shoelace(QUAD.map((lc) => leafShadowCorner(lc, { ...base, roll, share })));
+  const toward = area(-0.3, 1), away = area(0.3, 1), flat = area(0.3, 0);   // away is thinner only while tan(roll) < 2·tan(el); steeper, a low sun lengthens every leaf
+  expect(Math.max(toward, away)).toBeGreaterThan(flat); expect(Math.min(toward, away)).toBeLessThan(flat);
+  expect((toward + away) / 2).toBeGreaterThan(flat);   // the mean over sides: a low sun closes the canopy, the plan footprint keeps it open
+});
+
+test("the shader casts each corner from its own height only under tilt_shadow, and the shut gate is the old line; it ships on, kept off for looks from before", () => {
+  expect(VS_FAITH).toContain("float dz = uTiltShadow > 0.0 ? uTiltShadow*lc.y*B0*sin(iSide*(restTilt + swing)) : 0.0;");
+  expect(VS_FAITH).toContain("float hc = uTiltShadow > 0.0 ? hEff + dz : hEff;");
+  expect(VS_FAITH).toContain("recvPt = world - uG * hc;");
+  expect(DEF.tilt_shadow).toBe(1); expect(GF.tilt_shadow).toBe(0); expect(PR.tilt_shadow.travels).toBe("morph");
+});

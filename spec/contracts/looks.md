@@ -68,6 +68,10 @@ Since 2026-11-17 `shoot_leaves` 1 and `tilt_light` 1 are the defaults ([`../mode
 
 Since 2026-11-17 `ground_bounce` 1 is the default ([`../model/fill.md`](../model/fill.md#the-ground-returned-by-the-undersides)): the artist's rule is that a new feature is on unless a look is kept as made. It reads only where `canopy_fill` is open, so of the shipped looks it reaches `montebello`, `montebello, rain`, `the yellow tree` and `cherry blossom`, which take it; their shade moves by under 0.02 of a stop at their 26° sun, nothing the eye can see side by side. It shows where a closed canopy's shade is lit by diffuse light alone, as under the endless park with the fill open (`test-gl/out/review/2026-11-16-ground-bounce`). A look kept elsewhere from before takes it on its next load, if its fill is open.
 
+## A tilted leaf's shadow along the sun, by default
+
+Since 2026-11-17 `tilt_shadow` 1 is the default ([`../model/leaf.md`](../model/leaf.md#what-one-leaf-stamps)): the faithful cast throws each tilted leaf along the sun from its corners' own heights instead of stamping the footprint an overhead sun would. Every look cast faithfully takes it; the artist kept none as made ("None, all take it"). At their own 26° sun the standing looks' shade grows 5–35 % and fills in under the crown; under a low sun a canopy closes up as a real one does; `montebello, rain`, nearly bare, barely moves (`test-gl/out/review/2026-11-17-low-sun-shadow`). The layer-path looks never read it. A look kept elsewhere from before takes it on its next load.
+
 ## Exposure under cloud
 
 Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to exposure / (1 + its own `cloud_thickness`): it shows as it always did at its own cloud, and a thicker cloud, from a transition, the weather macro or the editor, opens the exposure up instead of only blurring the dapples. A look saved without the key keeps exposure fixed.

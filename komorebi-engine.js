@@ -213,7 +213,7 @@ function createEngine(canvas, opts, driven=false){
     return { origin:loc(prog,'uFaithOrigin'), extent:loc(prog,'uFaithExtent'), g:loc(prog,'uG'), edge:loc(prog,'uEdge'),
       seasonCast:loc(prog,'uSeasonCast'),curtainBake:loc(prog,'uCurtainBake'),clothY:loc(prog,'uClothY'),
       morph:loc(prog,'uMorph'),morphAmount:loc(prog,'uMorphAmount'),sway:loc(prog,'uSway'),hRef:loc(prog,'uHRef'),
-      windLevel:loc(prog,'uWindLevel'),air:loc(prog,'uAir'),depth:loc(prog,'uDepth'),windTime:loc(prog,'uWindTime'),leafSwing:loc(prog,'uLeafSwing'),flutterFreq:loc(prog,'uFlutterFreq'),
+      windLevel:loc(prog,'uWindLevel'),air:loc(prog,'uAir'),depth:loc(prog,'uDepth'),windTime:loc(prog,'uWindTime'),leafSwing:loc(prog,'uLeafSwing'),flutterFreq:loc(prog,'uFlutterFreq'),tiltShadow:loc(prog,'uTiltShadow'),
       clusterTex:loc(prog,'uClusterTex'),clusterGeom:loc(prog,'uClusterGeom'),beamK:loc(prog,'uBeamK'),edgeArea:loc(prog,'uEdgeArea'),
       leafTex:loc(prog,'uLeafTex'),leafShape:loc(prog,'uLeafShape'),shapeBox:loc(prog,'uShapeBox'),leafIdFrac:loc(prog,'uLeafIdFrac'),leafRows:loc(prog,'uLeafRows')};
   }
