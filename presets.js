@@ -255,43 +255,6 @@ export const PRESETS = {
     "sun_extinction": 0,
     // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
   }),
-  // 'the yellow tree' — WORKING NAME: José has not named it. P6 on the 2026-10-09 proposals sheet, where it was called 'the beech'; the name is changed here because brief 07 adds a beech LEAF SHAPE
-  // (leaf_shape 'beech') and this look uses montebello's own leaves, not that outline. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." A place memory of his that was never made a look:
-  // "there was this one tree at the beginning of theretreat all yellow, by the end of the trip half of its leaves were on the ground", and of IMG_0404 "the tree that was all yellow by the end, it ended up
-  // being so oragne" (2026-10-06). No other look is gold: montebello is rose-russet and park fall deep red. He liked gold when it was offered ("i like y1, 2, and 3", the stained-glass sheet; the gold
-  // litter-law carpet a1/a2): anthocyanin 0.2 tips it toward orange, tannin 0.35 is the beech russet between montebello's 0.2 and park fall's 0.48 (the leaves he collected all measured warmer than the
-  // engine's gold). leaf_drop 0.5 is the engine's provisional beech value: the half that turns last stays on, so at 0.9 half the leaves are on the ground, as he counted. leaf_diffuse 0 is the stained
-  // glass he called the ultimate goal ("i like the dark patches of the left one", "yes the dapples were coloured"); canopy_fill stays 1. tree_pigment_spread 0.3 keeps the two trees from being one colour.
-  // Everything else is montebello's but the camera: the feet behind the eye (view_center -1.75, -4.93), his k8 over k5 on the picks sheet ("i like k3,k4,k6,k8", 2026-10-09). The same
-  // move on montebello itself (k1, P3 without the drift) left no carpet in frame and was not picked, so montebello keeps its own camera.
-  'the yellow tree': Object.assign({}, LOOK_DEFAULTS, {
-    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
-    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
-    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
-    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
-    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
-    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
-    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
-    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.2, "tannin": 0.35, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
-    "leaf_drop": 0.5, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the half that turns first has let go AFTER turning and lies damp on the floor, the half that turns last stays on (§4.5, §4.7): at 0.9 half the leaves are down
-    "leaf_diffuse": 0, "canopy_fill": 1,                                                          // stained glass, not the blend: the dapples are coloured; the shade lit through the leaves (§4.5, §4.7)
-    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
-    "view_center_x": -1.75, "view_center_y": -4.93,   // the trunk feet behind the eye (his k8, picked over k5 on the old camera): the half-down crown's carpet still lies in view
-    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
-    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
-    "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
-    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
-    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
-    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
-    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
-    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "tree_pigment_spread": 0.3,   // the two trees are not one colour (§4.5)
-    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
-    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
-    "sun_extinction": 0,
-    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
-  }),
   // 'montebello' — the first FALL look (spec §4.5 senescence, §4.7 the litter): park 1's grove, the same seed, seen from
   // the FAR side with the sun behind us (the camera orbited 180° and reframed on the trees), late in the season. José
   // named it after the dry river valley at Dhamma Suttama, Montebello QC, where he sat under the turning trees in
@@ -830,6 +793,43 @@ export const PRESETS = {
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0): it shows at 2.1 there, and a thicker cloud opens it up
     // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
   }),
+  // 'the yellow tree' — WORKING NAME: José has not named it. P6 on the 2026-10-09 proposals sheet, where it was called 'the beech'; the name is changed here because brief 07 adds a beech LEAF SHAPE
+  // (leaf_shape 'beech') and this look uses montebello's own leaves, not that outline. "i like p5, p6, p7, p8, and p9; > more than p1 and p3 and p4." A place memory of his that was never made a look:
+  // "there was this one tree at the beginning of theretreat all yellow, by the end of the trip half of its leaves were on the ground", and of IMG_0404 "the tree that was all yellow by the end, it ended up
+  // being so oragne" (2026-10-06). No other look is gold: montebello is rose-russet and park fall deep red. He liked gold when it was offered ("i like y1, 2, and 3", the stained-glass sheet; the gold
+  // litter-law carpet a1/a2): anthocyanin 0.2 tips it toward orange, tannin 0.35 is the beech russet between montebello's 0.2 and park fall's 0.48 (the leaves he collected all measured warmer than the
+  // engine's gold). leaf_drop 0.5 is the engine's provisional beech value: the half that turns last stays on, so at 0.9 half the leaves are on the ground, as he counted. leaf_diffuse 0 is the stained
+  // glass he called the ultimate goal ("i like the dark patches of the left one", "yes the dapples were coloured"); canopy_fill stays 1. tree_pigment_spread 0.3 keeps the two trees from being one colour.
+  // Everything else is montebello's but the camera: the feet behind the eye (view_center -1.75, -4.93), his k8 over k5 on the picks sheet ("i like k3,k4,k6,k8", 2026-10-09). The same
+  // move on montebello itself (k1, P3 without the drift) left no carpet in frame and was not picked, so montebello keeps its own camera.
+  'the yellow tree': Object.assign({}, LOOK_DEFAULTS, {
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.23, "clusters_per_layer": 60, "leaves_per_cluster": 20,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
+    "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.2, "tannin": 0.35, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
+    "leaf_drop": 0.5, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the half that turns first has let go AFTER turning and lies damp on the floor, the half that turns last stays on (§4.5, §4.7): at 0.9 half the leaves are down
+    "leaf_diffuse": 0, "canopy_fill": 1,                                                          // stained glass, not the blend: the dapples are coloured; the shade lit through the leaves (§4.5, §4.7)
+    "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
+    "view_center_x": -1.75, "view_center_y": -4.93,   // the trunk feet behind the eye (his k8, picked over k5 on the old camera): the half-down crown's carpet still lies in view
+    "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
+    "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
+    "tree_pigment_spread": 0.3,   // the two trees are not one colour (§4.5)
+    // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
+    "sun_extinction": 0,
+    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
+  }),
   // 'canopy 1' — THE HAMMOCK (spec §4.9, sky view). Lying on your back at a festival: tall trunks converging
   // overhead, crowns lit from behind against a bright sky, the whole grove leaning together on the gusts. It is
   // 'park 1's afternoon with the eyes turned the other way — same physics, read along the eye's rays instead of the
@@ -1287,7 +1287,7 @@ export const PRESETS = {
 // the tests all ignore this list and keep covering every look. UI curation, not engine data — which is why it
 // is a list beside PRESETS and never a key inside one (a look's params travel through JSON export / ★ saves,
 // and a visibility flag doesn't belong in them). ----
-export const EXPERIMENTAL = ['park 1', 'acid dreams', 'eclipse', 'canopy 1', 'canopy 2', 'canopy 3', 'canopy 4', 'curtain 1', 'curtain 2', 'tent 1', 'the void'];
+export const EXPERIMENTAL = ['park 1', 'acid dreams', 'eclipse', 'the yellow tree', 'canopy 1', 'canopy 2', 'canopy 3', 'canopy 4', 'curtain 1', 'curtain 2', 'tent 1', 'the void'];
 
 // ---- PRIORITY: the dials a look leads with, in order — the settings most worth playing with in that place. The zen strip
 // and the playful sidebar show these first and the usual dials after them; a name the look cannot use (its gate is shut)
