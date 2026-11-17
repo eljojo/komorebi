@@ -2,7 +2,7 @@
 
 *木漏れ日 — sunlight that leaks through the trees, and the soft, breathing dapples it casts on the ground.*
 
-A standalone WebGL2 engine that renders komorebi from physics rather than painting it: a point-sun source seen through canopy layers (shift‑multiply‑summed into dappled light), with two wind bands driving a trunk/limb/twig spring hierarchy. See [`komorebi-spec.md`](komorebi-spec.md) for the full vision, physics, and model.
+A standalone WebGL2 engine that renders komorebi from physics rather than painting it: a point-sun source seen through canopy layers (shift‑multiply‑summed into dappled light), with two wind bands driving a trunk/limb/twig spring hierarchy. See [`spec/`](spec/README.md) for the full vision, physics, and model.
 
 Editor: [komorebi.eljojo.net](https://komorebi.eljojo.net). Examples: [`examples/`](examples/) ([see live](https://komorebi.eljojo.net/examples/)).
 

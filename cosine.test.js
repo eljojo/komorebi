@@ -317,37 +317,42 @@ test("the tent's per-panel comment no longer claims the floor and curtain absorb
 
 // beamF·sin el is dot(n, sun) only while beamF's two limits are clear of it, and the sentence that said "exactly above the divisor floor ... at every elevation" was false in both: the cap at 2 binds on a panel
 // turned into a sun below 30° (the true dot is 1, the cap lands 2·sin el: 0.845 at 25°, 0.416 at 12°), and the 0.15 floor binds below ≈8.6° on EVERY panel, the crown included (it lands sin el/0.15 of the floor's
-// level, so it is anchored to the floor only above that). Three places say it (the table's own comment, the shader's, the spec's §4.9), and each has to name both limits and say tent 1 (55°) clears them.
-test("the tent claim names both of beamF's limits wherever it is made — the math table, the shader's PER-PANEL LIGHT comment and the spec's §4.9 — and no longer says 'at every elevation'", () => {
+// level, so it is anchored to the floor only above that). Three places say it (the table's own comment, the shader's, the spec's: receivers.md states the limits and measurements.md the numbers), and each has to name both limits and say tent 1 (55°) clears them.
+test("the tent claim names both of beamF's limits wherever it is made — the math table, the shader's PER-PANEL LIGHT comment and the spec — and no longer says 'at every elevation'", () => {
   const flat = (t) => t.replace(/\s*\n\s*(\/\/)?\s*/g, " ");
-  const math = read("komorebi-math.js"), transport = read("komorebi-transport.js"), spec = read("komorebi-spec.md");
-  const mAt = math.indexOf("//   enclosure"), tAt = transport.indexOf("PER-PANEL LIGHT"), sAt = spec.indexOf("The normalization is the load-bearing part");
-  expect(mAt, "the table's enclosure row").toBeGreaterThan(0); expect(tAt, "the shader's comment").toBeGreaterThan(0); expect(sAt, "the spec's §4.9 paragraph").toBeGreaterThan(0);
+  const math = read("komorebi-math.js"), transport = read("komorebi-transport.js"), receivers = read("spec/model/receivers.md"), measured = read("spec/evidence/measurements.md");
+  const mAt = math.indexOf("//   enclosure"), tAt = transport.indexOf("PER-PANEL LIGHT"), rAt = receivers.indexOf("**The crown anchors the normalisation.**"), eAt = measured.indexOf("- **Result, per-panel light:**");
+  expect(mAt, "the table's enclosure row").toBeGreaterThan(0); expect(tAt, "the shader's comment").toBeGreaterThan(0);
+  expect(rAt, "receivers.md's normalisation paragraph").toBeGreaterThan(0); expect(eAt, "measurements.md's per-panel result").toBeGreaterThan(0);
   const paras = {
     "komorebi-math.js": flat(math.slice(mAt, math.indexOf("//   cloth", mAt))),
     "komorebi-transport.js": flat(transport.slice(tAt, transport.indexOf("beamF = clamp(", tAt))),
-    "komorebi-spec.md": spec.slice(sAt, spec.indexOf("\n\n", sAt)),
+    "spec/": receivers.slice(rAt, receivers.indexOf("It is the fold incidence's discipline", rAt)) + " " + measured.slice(eAt, measured.indexOf("\n", eAt)),
   };
   for (const [where, para] of Object.entries(paras)) {
     expect(/every elevation/i.test(para), `${where} still claims the crown holds at every elevation`).toBe(false);
     expect(para.includes("0.845") && para.includes("0.416"), `${where} names the cap at 2 (0.845 at 25°, 0.416 at 12°)`).toBe(true);
-    expect(/sin(?:\(el\)| el)\/0\.15/.test(para) && para.includes("8.6"), `${where} names the 0.15 floor (below ≈8.6° every panel lands sin el/0.15 of its dot)`).toBe(true);
+    expect(/sin(?:\(el\)| el) ?\/ ?0\.15/.test(para) && para.includes("8.6"), `${where} names the 0.15 floor (below ≈8.6° every panel lands sin el/0.15 of its dot)`).toBe(true);
     expect(/tent 1/.test(para) && para.includes("55°"), `${where} says tent 1 (55°) is clear of both`).toBe(true);
   }
 });
 
-// A code span does not shield a pipe in a GFM table: §3.5's cloth row once read `cos el·|sin az|` and the row split into seven cells, so the incidence table rendered with its last row's law cut off. Every table in the
-// spec holds its header's cell count in every row (a pipe inside a cell is written \|).
-test("the spec's pipe tables render: every row has the header's cell count, so a pipe inside a code span is escaped (§3.5's cloth row)", () => {
+// A code span does not shield a pipe in a GFM table: the incidence table's cloth row once read `cos el·|sin az|` and the row split into seven cells, so the table rendered with its last row's law cut off. Every table in
+// spec/ holds its header's cell count in every row (a pipe inside a cell is written \|).
+test("the spec's pipe tables render: every row has the header's cell count, so a pipe inside a code span is escaped (light.md's cloth row)", () => {
   const cells = (l) => l.trim().replace(/^\||\|$/g, "").split(/(?<!\\)\|/).length;
-  const blocks = []; let cur = [];
-  for (const l of read("komorebi-spec.md").split("\n")) { if (/^\s*\|/.test(l)) cur.push(l); else if (cur.length) { blocks.push(cur); cur = []; } }
-  if (cur.length) blocks.push(cur);
+  const files = readdirSync(new URL("./spec/", import.meta.url), { recursive: true }).filter((f) => f.endsWith(".md"));
+  const blocks = [];
+  for (const f of files) {
+    let cur = [];
+    for (const l of read(`spec/${f}`).split("\n")) { if (/^\s*\|/.test(l)) cur.push(l); else if (cur.length) { blocks.push(cur); cur = []; } }
+    if (cur.length) blocks.push(cur);
+  }
   expect(blocks.length, "the spec's tables").toBeGreaterThanOrEqual(5);
   for (const b of blocks) for (const row of b) expect(cells(row), `a table row of '${b[0].trim().slice(0, 40)}...' splits into ${cells(row)} cells, the header's are ${cells(b[0])}: ${row.trim().slice(0, 80)}`).toBe(cells(b[0]));
-  const cloth = blocks.flat().find((l) => l.includes("cloth (the curtain)"));
+  const cloth = read("spec/model/light.md").split("\n").find((l) => l.startsWith("| cloth (the curtain)"));
   expect(cloth, "the incidence table's cloth row").toBeDefined();
-  expect(cloth.includes("\\|sin az\\|") && cloth.includes("\\|sunDir.y\\|"), "both of its pipe pairs are escaped").toBe(true);
+  expect(cloth.includes("\\|sin az\\|"), "its pipe pair is escaped").toBe(true);
 });
 
 test("foldIncidence's comment says it is relative to the flat cloth and that the flat cloth's own sy arrives with uSunColor", () => {

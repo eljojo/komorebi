@@ -20,7 +20,7 @@
 //   komorebi-fill.js          the sky fill's quadrature as pure functions (spec §4.7)
 // Pipeline: Source (point-sun cloud) -> Canopy (leaves baked to optical-depth
 // layers) -> Transport (shift-multiply-sum) -> Look (tonemap). Motion: two wind
-// bands over a trunk/limb/twig spring hierarchy. See komorebi-spec.md.
+// bands over a trunk/limb/twig spring hierarchy. See spec/README.md.
 //
 // The editor (index.html) and the reference player (player.html) both build
 // on this. create() THROWS on missing WebGL2/float targets so callers can

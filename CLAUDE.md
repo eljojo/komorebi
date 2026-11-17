@@ -111,8 +111,7 @@ the deploy on a push to `main`, which writes `commit.json`.
   `video-lib.mjs`, `video.html`, `pipeline.mjs`, `parallel.mjs` (`--jobs`), `compare-runs.mjs`, `webcodecs.mjs`,
   `gpu-probe.mjs` and `study.mjs`. Each test file's header says how to run it.
 
-**The spec.** `spec/` is the work; the code is one implementation of it (see the top of this file). `komorebi-spec.md` is
-the single-file spec it replaced, kept as history until José retires it; nothing cites it.
+**The spec.** `spec/` is the work; the code is one implementation of it (see the top of this file).
 
 ## Arboretum
 

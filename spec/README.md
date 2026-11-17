@@ -60,4 +60,4 @@ Before adding a gate, a knob, a schema or a tool to this spec, ask whether the p
 
 ## Provenance
 
-This folder replaces the single `komorebi-spec.md`, which grew from the founding afternoon through a year of amendments into a document that could not be read in one sitting and in which a buffer layout could stand beside a law of optics with the same apparent authority. That file is retained in the repository as the historical account until the artist retires it. Nothing here cites it as authority; where its history matters, it has been moved into `evidence/`.
+This folder replaces the single `komorebi-spec.md`, which grew from the founding afternoon through a year of amendments into a document that could not be read in one sitting and in which a buffer layout could stand beside a law of optics with the same apparent authority. That file is retired; git history keeps it as the historical account. Nothing here cites it as authority; where its history matters, it has been moved into `evidence/`.
