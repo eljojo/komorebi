@@ -1721,8 +1721,15 @@ try {
     }, [a0, a1, b0, b1]);
     const view = () => pgT.$eval('#dev', (dev) => Object.fromEntries(['view (m)', 'orbit °', 'pan x', 'pan y', 'tilt °'].map((name) =>
       [name, Number([...dev.querySelectorAll('.ctl')].find((r) => r.querySelector('label')?.textContent === name).querySelector('input').value)])));
-    const camLook = await look(), strip0 = await pgT.$eval('#strip', (e) => e.classList.contains('faded'));
-    // before any swipe: a look still arriving owns the camera keys and would ease them under the fingers
+    const camLook = await look();
+    // A look still arriving owns the camera keys and eases them under the fingers. The welcome crossfade runs on a frame-clamped
+    // clock, so under SwiftShader it can outlast the strip's arrival, and the editor's fallback landing has by then seated the
+    // sliders mid-way. Wait until the sliders show the look's own camera, which they do once it has landed.
+    const arrived = async () => { const v = await view(); return Math.abs(v['tilt °'] - PRESETS[camLook].view_pitch_deg) < 0.5 && Math.abs(v['view (m)'] - PRESETS[camLook].view_extent_m) < 0.05; };
+    let landedCam = false;
+    for (let i = 0; i < 150 && !(landedCam = await arrived()); i++) await pgT.waitForTimeout(400);
+    check('the look has arrived before the fingers move the camera', landedCam, JSON.stringify({ look: camLook, view: await view() }));
+    const strip0 = await pgT.$eval('#strip', (e) => e.classList.contains('faded'));   // after the wait: a still strip fades on its own clock, which the fingers must not move
     const v0 = await view();
     await fingers([150, 350], [100, 350], [250, 350], [300, 350]);   // spread from 100 to 200 px about the same midpoint
     const v1 = await view();
@@ -1743,9 +1750,10 @@ try {
     check('and none of it steps the look or toggles the strip', (await look()) === camLook && (await pgT.$eval('#strip', (e) => e.classList.contains('faded'))) === strip0, `${camLook} -> ${await look()}`);
     const t0 = await timeH(), look0 = await look();
     await gesture([300, 350], [100, 350]);   // left = next
+    // read the name at once: the swipe's release puts it up for 2.5 s, and the look it starts loading can keep the page busy longer than that
+    const nameShown = await pgT.evaluate(() => { const n = document.getElementById('lookName'); return { show: n.classList.contains('show'), text: n.textContent, row: document.querySelector('#strip .preset .name').textContent }; });
     const movedX = await poll(async () => (await look()) !== look0);
     check('a horizontal swipe steps the look and leaves time_of_day as it was', movedX && (await timeH()) === t0, `${look0} -> ${await look()}, time ${t0} -> ${await timeH()}`);
-    const nameShown = await pgT.evaluate(() => { const n = document.getElementById('lookName'); return { show: n.classList.contains('show'), text: n.textContent, row: document.querySelector('#strip .preset .name').textContent }; });
     check('and the look\'s name passes across the top, the name the preset row shows', nameShown.show && nameShown.text !== '' && nameShown.text === nameShown.row, JSON.stringify(nameShown));
     const look1 = await look();
     await gesture([200, 500], [200, 250]);   // up = next
