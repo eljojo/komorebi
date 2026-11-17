@@ -840,6 +840,22 @@ const PARAMS = {
     row: { kind: 's', label: 'air', min: 0, max: 1, step: 0.01, rebuild: '' },
     travels: 'morph',   // the leaves flutter in the air where they hang (komorebi-air.js): continuous, so it eases in a transition
     means: "<b>The leaves flutter in the air where they hang.</b> Off, every leaf trembles with the trunk's sway, so the whole canopy stills at once each time it swings back through rest. On, a gust is carried through the grove at a walking pace, downwind leaves feeling it after upwind ones, and small eddies make neighbours tremble differently. The air keeps moving while a branch recoils." },
+  sway_spread: { default: 0.0,   // each tree's springs at its own pace (komorebi-grove.js treePace, komorebi-motion.js paceOf): size^-1/2 and ±10 % of its own; 0 = off, every tree at the look's stiffness
+    row: { kind: 's', label: 'tree pace', min: 0, max: 1, step: 0.01, rebuild: '' },
+    travels: 'morph',
+    means: "<b>Each tree sways at its own pace.</b> Off, every tree is the same spring and only the moment a gust reaches it tells them apart. On, a bigger tree sways slower and each differs a little from its neighbours, so after a gust the grove falls out of step. A tree's natural frequency falls as its height to the −½: trunks thicken as trees grow taller." },
+  gust_width_m: { default: 0.0,   // the gust across the wind (komorebi-air.js laneNoise): how wide a gust is; 0 = off, one gust across the whole grove
+    row: { kind: 's', label: 'gust width (m)', min: 0, max: 20, step: 0.1, rebuild: '' },
+    travels: 'morph',
+    means: "<b>How wide a gust is.</b> Off, trees side by side across the wind take every gust together. On, a gust is a patch about this wide: trees further apart across the wind than that take different gusts." },
+  wind_shelter: { default: 0.0,   // a tree in other crowns' wake gets less wind (komorebi-air.js shelter); 0 = off, every tree in the open
+    row: { kind: 's', label: 'shelter', min: 0, max: 1, step: 0.01, rebuild: '' },
+    travels: 'morph',
+    means: "<b>Trees shelter each other.</b> Behind a crown the wind is slower. On, the trees on the windward edge lean hardest and the ones in their lee lean less and take softer gusts, the shelter fading as the wake mixes out downwind." },
+  gust_carry: { default: 0.0,   // the speed a gust crosses the grove follows the wind (komorebi-air.js carrySpeed); 0 = off, a constant 3 m/s
+    row: { kind: 's', label: 'gust speed', min: 0, max: 1, step: 0.01, rebuild: '' },
+    travels: 'morph',
+    means: "<b>A stronger wind carries its gusts across the grove faster.</b> Off, a gust always crosses at a walking pace (3 m/s). On, its speed follows the wind's: the trees take a strong gust almost together and a faint one one after another." },
   // Leaf drift — incoherent band preview (spec §5.2)
   drift_amount: { default: 0.0,
     row: { kind: 's', label: 'amount (m)', min: 0, max: 0.4, step: 0.005, rebuild: 'bake' },

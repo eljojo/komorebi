@@ -37,18 +37,32 @@ export function weatherAt(params, t){
   const dirVeer  = wv*30*DEG*fbm1(wt+13.1, 1, 3, 0.6);               // ±~30° slow veer/back at full variability
   return { weatherS, dirVeer };
 }
-const shaped = (g, pat) => { if(pat.burst>0){ const e=1+pat.burst*2; return Math.sign(g)*Math.pow(Math.abs(g),e); } return g; };   // spike peaks, deepen lulls
-// the longitudinal force before its gust edges: the mean lean plus the gustiness-scaled fluctuation
-export function leanForce(params, t, weatherS){
-  const pat = WIND_PATTERNS[params.wind_pattern] || WIND_PATTERNS.gusty;
-  const gL = shaped(fbm1(t, Math.max(1e-3, params.gust_frequency), pat.octaves, pat.H), pat);
-  return params.wind_strength*weatherS*(pat.lean + params.wind_gustiness*gL);
+// THE GUST ACROSS THE WIND (gust_width_m). A gust has a width: trees side by side across the wind share only part of it. The gust
+// noise at across-wind position y is read from independent LANES of the same noise of time, a lane every gust_width_m, blended
+// between the two lanes y falls between and rescaled to keep its spread, so two places correlate fully at the same y and fade
+// apart over about a width. y = 0 is lane 0, the noise as it always was; 0 width = one lane everywhere (off).
+// Approximation: lanes blended across the wind, not a 2-D turbulent field. Provisional: the width is the look's.
+const LANE = 211.3;   // s: how far apart in the noise's time two lanes are read, so they are unrelated
+function laneNoise(t, freq, octaves, H, y, L){
+  if(!(L > 0) || y === 0) return fbm1(t, freq, octaves, H);
+  const x = y/L, i = Math.floor(x), f = x - i, w = f*f*(3 - 2*f);
+  return (fbm1(t + LANE*i, freq, octaves, H)*(1 - w) + fbm1(t + LANE*(i + 1), freq, octaves, H)*w)/Math.hypot(1 - w, w);
 }
-// the zero-mean crosswind, on its own decorrelated stream
-export function crossForce(params, t, weatherS){
+const shaped = (g, pat) => { if(pat.burst>0){ const e=1+pat.burst*2; return Math.sign(g)*Math.pow(Math.abs(g),e); } return g; };   // spike peaks, deepen lulls
+// the longitudinal force before its gust edges: the mean lean plus the gustiness-scaled fluctuation; at y across the wind
+// (THE GUST ACROSS THE WIND), and in shelter S, the share of the wind's speed a tree in other crowns' wake still gets (shelter,
+// below): drag goes as the speed squared, so the mean takes S² and the gusts S (their spread kept). y 0, S 1: as it always was.
+export function leanForce(params, t, weatherS, y = 0, S = 1){
   const pat = WIND_PATTERNS[params.wind_pattern] || WIND_PATTERNS.gusty;
-  const gT = shaped(fbm1(t+101.7, Math.max(1e-3, params.gust_frequency), pat.octaves, pat.H), pat);
-  return params.wind_strength*weatherS*(params.wind_gustiness*pat.lat*gT);
+  const gL = shaped(laneNoise(t, Math.max(1e-3, params.gust_frequency), pat.octaves, pat.H, y, params.gust_width_m), pat);
+  return S === 1 ? params.wind_strength*weatherS*(pat.lean + params.wind_gustiness*gL)
+                 : params.wind_strength*weatherS*(pat.lean*S*S + params.wind_gustiness*gL*S);
+}
+// the zero-mean crosswind, on its own decorrelated stream (the same y and S: a crosswind gust is the speed times its spread)
+export function crossForce(params, t, weatherS, y = 0, S = 1){
+  const pat = WIND_PATTERNS[params.wind_pattern] || WIND_PATTERNS.gusty;
+  const gT = shaped(laneNoise(t+101.7, Math.max(1e-3, params.gust_frequency), pat.octaves, pat.H, y, params.gust_width_m), pat);
+  return S === 1 ? params.wind_strength*weatherS*(params.wind_gustiness*pat.lat*gT) : params.wind_strength*weatherS*(params.wind_gustiness*pat.lat*gT)*S;
 }
 // the gust edges: one step of the asymmetric one-pole, the rise sharper than the decay
 export function gustEdge(G, raw, dt, params){
@@ -99,16 +113,49 @@ export function curveForce(curve, tau0, tau){
 }
 
 // ---- the air at a place ----
+// THE SPEED A GUST IS CARRIED AT (gust_carry). Gusts travel with the mean wind, so a strong wind carries them through the grove
+// faster. The force goes as the speed squared, so with gust_carry 1 the speed is U·√(force), U at a force of 1 (wind_strength ×
+// the weather), never under 1 m/s; between, the exponent eases from 0 (U, constant: off) to ½. Provisional: U at a force of 1.
+export function carrySpeed(params, weatherS){
+  const a = params.gust_carry;
+  return a > 0 ? Math.max(1, AIR.U*Math.pow(Math.max(0, params.wind_strength*weatherS), a/2)) : AIR.U;
+}
 // where along and across the wind (wx, wy) a plan point lies, from the grove's origin
-export function airDelay(x, y, wx, wy){ return (x*wx + y*wy)/AIR.U; }
-export function eddy(t, x, y, wx, wy){
+export function airDelay(x, y, wx, wy, U = AIR.U){ return (x*wx + y*wy)/U; }
+export function airAcross(x, y, wx, wy){ return -x*wy + y*wx; }
+export function eddy(t, x, y, wx, wy, U = AIR.U){
   const along = x*wx + y*wy, across = -x*wy + y*wx;
-  const n = fbm1(t - along/AIR.U + across*17.3/AIR.L + 1000, AIR.rate, 4, 1/3);
+  const n = fbm1(t - along/U + across*17.3/AIR.L + 1000, AIR.rate, 4, 1/3);
   return Math.exp(AIR.sigma*n - AIR.sigma*AIR.sigma/2);
 }
 // the air's level at (x, y), time t, given G there (force(τ) for τ = t − delay)
-export function airLevel(force, t, x, y, wx, wy){
-  return Math.abs(force(t - airDelay(x, y, wx, wy)))*eddy(t, x, y, wx, wy);
+export function airLevel(force, t, x, y, wx, wy, U = AIR.U){
+  return Math.abs(force(t - airDelay(x, y, wx, wy, U)))*eddy(t, x, y, wx, wy, U);
+}
+
+// SHELTER (wind_shelter). A crown is a porous obstacle: behind it the wind is slower, the deficit widening and fading downwind as
+// the wake mixes out. Each upwind crown j of plan radius r_j costs a tree d downwind and dy across a deficit
+//   δ = δ0·(r_j/b)²·exp(−(dy/b)²),   b = r_j + k·d   (the wake's half-width, growing as it goes; δ·b² kept: the momentum it lost)
+// and the wakes add as a root sum of squares; the tree keeps the share S = 1 − wind_shelter·√Σδ² of the wind's speed, never under
+// S_MIN. The most upwind trees stand in the open (S 1). Out: S by tree, into `out`. 0 = off, every S 1.
+// Approximation: a plan wake behind a disc, not a flow; its depth δ0 (a crown about half open) and its spread k are Provisional.
+const WAKE = { d0: 0.5, k: 0.15, sMin: 0.2 };
+export function shelter(pos, crown, n, wx, wy, amount, out){
+  for(let k=0;k<n;k++){
+    if(!(amount > 0)){ out[k] = 1; continue; }
+    const ak = pos[2*k]*wx + pos[2*k+1]*wy, ck = -pos[2*k]*wy + pos[2*k+1]*wx;
+    let sum = 0;
+    for(let j=0;j<n;j++){
+      if(j === k) continue;
+      const d = ak - (pos[2*j]*wx + pos[2*j+1]*wy);
+      if(!(d > 0)) continue;
+      const dy = ck - (-pos[2*j]*wy + pos[2*j+1]*wx), r = crown[j], b = r + WAKE.k*d, q = r/b;
+      const delta = WAKE.d0*q*q*Math.exp(-(dy/b)*(dy/b));
+      sum += delta*delta;
+    }
+    out[k] = Math.max(WAKE.sMin, 1 - amount*Math.sqrt(sum));
+  }
+  return out;
 }
 // how hard a leaf flutters: the trunk's sway |u| as the light has always drawn it, or, with wind_air, the air where it
 // hangs. The shaders' `wm` and the travel routes compute exactly this.

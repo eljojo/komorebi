@@ -241,6 +241,7 @@ export function makeEditorTools(hub){
       motion.env=sm.env; motion.driveEnv=sm.driveEnv; motion.windX=sm.windX; motion.windY=sm.windY; motion.weatherS=sm.weatherS;
       motion.sway[0]=sm.sway[0]; motion.sway[1]=sm.sway[1];
       motion.trunks = sm.trunks ? structuredClone(sm.trunks) : null;   // every tree's trunk but tree 0's, which publishBend reads
+      motion.airEnv = sm.airEnv;                                      // the open air's G beside a sheltered tree 0 (wind_shelter)
       params.drift_phase = s.dphase;                       // incoherent band rides a param the source advances
       if(hub.hier && s.lA && hub.hier.limbAngle.length===s.lA.length){
         hub.hier.limbAngle.set(s.lA); hub.hier.limbPitch.set(s.lP); hub.hier.twigAngle.set(s.tA);   // BOTH limb DOFs, or the wipe's two engines foreshorten differently

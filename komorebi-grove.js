@@ -108,6 +108,7 @@ const _heading = [0,0];
 // about the stem. Held level at the twig's tip, every cluster was a flat line, and the crown, seen from the side, rows of dots.
 // The (d, azimuth, stalk) draws are a hash of (seed, j, k) on a salt of their own, like inner_leaves'.
 export const SHOOT_SALT = 0x78DDE6E4;   // 4·0x9E3779B9 mod 2^32: the golden gamma's next multiple after the inner leaves' salt, in no other stream
+export const TREE_PACE_SALT = 0xF1BBCDC8;   // 8·0x9E3779B9 mod 2^32: the golden gamma's first multiple no stream holds (5· is the leaf's side, 6· the shoots' own, 7· the leaves' emergence): a tree's own pace (sway_spread)
 function shootPlace(bundle, params, j, k, o){
   const path = bundle[k % bundle.length], m = path.length/3 - 1;   // segments 0..m-1: the shoot's own wood
   if(m < 1) return false;
@@ -301,6 +302,7 @@ export function makeGrove(hub){
     const limbDir  = new Float32Array(nLimb*2);         // plan unit direction (drives wind torque)
     const limbPlan = new Float32Array(nLimb*2);         // an outboard wind-sample point near each limb
     const treePos = new Float32Array(nTree*2);          // each tree's trunk in plan: where the gust reaches it (komorebi-motion.js, the trunks)
+    const treeCrown = new Float32Array(nTree), treePace = new Float32Array(nTree);   // its crown's plan radius (m), the wake it casts (komorebi-air.js, shelter); and its own pace (TREE_PACE_SALT, below)
     const limbAttach = new Float32Array(nLimb);         // the height at which each limb MEETS its trunk — sway_pitch anchors its depth-foreshorten here so the join can't open (§5.1). Filled LOCAL in the growth loops, then scaled into world height units with the rest of the tree.
 
     // crowns overlap so the canopy fills a span of ground (not just the baked extent), capped to fit inside the bake. The span is the
@@ -331,6 +333,12 @@ export function makeGrove(hub){
       const tx = rr*Math.cos(aa), ty = rr*Math.sin(aa);
       treePos[2*tt] = tx; treePos[2*tt+1] = ty;
       const crown = crown0*(0.7+0.6*gr());               // per-tree size variation (smaller -> denser)
+      // ITS OWN PACE (sway_spread): how fast this tree sways against the look's sway_stiffness, at sway_spread 1. A tree's natural
+      // frequency is f ∝ d/H², and trees grow their trunks thicker as they grow taller (elastic similarity, d ∝ H^1.5), so
+      // f ∝ H^−½: a bigger crown sways slower, as its size^−½. Same-sized trees differ too (wood, form): ±10 % on a draw of the
+      // tree's own (seed, tree), never the growth stream, so the grove grows as it did. Provisional: the ±10 %.
+      treeCrown[tt] = crown;
+      treePace[tt] = Math.pow(crown/crown0, -0.5)*(1 + 0.1*(2*mulberry32(hash3((params.seed>>>0)^TREE_PACE_SALT, tt, 0))() - 1));
       const out = { seg:[], tw:[], path: wantPath ? [] : null, shoots: twigShoots ? [] : null };
       const limbBase = tt*lpt, limbRaw = new Float32Array(lpt*2);
       let leaderTop = 0, limbTop = 0;   // limbTop = highest limb-attach height (local); the trunk must at least reach it
@@ -457,7 +465,7 @@ export function makeGrove(hub){
     const nClusterTotal = twigs.length;
     const hier = {
       nLimb, limbDir, limbPlan, limbAttach,
-      nTree, treePos,   // the trees, by index: tree 0 stands at the grove's origin, where the motion's own trunk (motion.u) is
+      nTree, treePos, treeCrown, treePace,   // the trees, by index: tree 0 stands at the grove's origin, where the motion's own trunk (motion.u) is
       limbTree: Int32Array.from({ length: nLimb }, (_, i) => Math.floor(i/lpt)), clusterTree: new Int32Array(nClusterTotal),   // which tree a limb, a clump, belongs to
       treeDelta: new Float32Array(nTree*4),           // dynamic, by tree: its trunk's sway and u less tree 0's (publishBend), what each tree's wood adds to the shared sway
       swayData: new Float32Array(nClusterTotal*4),    // dynamic, by clump: its tree's treeDelta, the cluster texture's row 2
