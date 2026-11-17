@@ -146,6 +146,16 @@ The vignette iris that appeared whole in one frame is told under [transitions](#
 
 ## canopy
 
+### The shoots as a share
+
+**What was tried.** `shoot_leaves` as a share from 0 to 1, each shoot gliding from its leaves' old places to its nodes by its own threshold over a twentieth of the share, so a change between looks would morph (2026-11-17).
+
+**What it looked like.** The switch from `morning 3b` to `morning 3` flickered: small sun-images opened and closed for a frame, 38 304 such pixels over 54 frames of a one-second switch (`test-gl/out/review/2026-11-17-morning-flicker`).
+
+**Why.** A leaf's old place and its node are unrelated, as far apart as a limb when the shoot hangs on the older wood, and each shoot made the move in about three frames: the fastest leaf flew 19.5 of its own lengths in one frame, and the gaps it crossed flickered. No glide would make that calm.
+
+**What replaced it.** A switch that travels as a topology change: the two arrangements cross as two groves, the crossfade on the layer path, where no leaf travels (0 flickering pixels either way) ([`../model/canopy.md`](../model/canopy.md#leaves-on-shoots)).
+
 ### The clustered-point scatter
 
 **What was tried.** Before the grove, the canopy was a stand-in: leaf clusters scattered as points around the canopy centre, a fake skeleton the motion system drove as if it had joints.

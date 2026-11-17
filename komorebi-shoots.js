@@ -18,7 +18,9 @@
 // blades point along the branch (Planchais Fig. 4B). Lengths are in the look's blade lengths, botanical: a beech blade is 50 mm.
 //
 // CONTINUITY. A leaf's shoot and node are fixed by (seed, j, k) alone, never by the light, so a density step adds leaves at the end of the last shoot
-// and moves no one; the light moves only continuous things (the internode, the rise, the tilt). With inner_leaves up, a share of the SHOOTS hangs back
+// and moves no one; the light moves only continuous things (the internode, the rise, the tilt). Turning the shoots on or off is not a morph: a leaf's
+// old place and its node can be a limb apart, so stepped through a share it would fly (a one-second morph flew one 19.5 of its own lengths in a
+// frame, and the gaps it crossed flickered). shoot_leaves is a switch, and the two arrangements cross as two groves (komorebi-params.js). With inner_leaves up, a share of the SHOOTS hangs back
 // on the older wood, whole, by each shoot's own draws and the u² arc law placeLeaf gives single leaves: spurs on old wood.
 // PROVISIONAL: every constant in SHOOT not marked cited. APPROXIMATIONS: a shoot's leaf count does not follow its type; a cluster has one light; the
 // twig's plan heading stands for its 3-D axis; a leaf sits at its node's height.
@@ -37,7 +39,6 @@ export const SHOOT = {
   longMax: 0.35,            // a long shoot's internode at full vigour, in blade lengths (the 11 mm floor is 0.22)
   parentInternode: 0.35,    // the twig's own internodes, where the laterals leave it, in blade lengths
   glide: 0.05,              // the smoothstep's half-width in long share, as INNER_GLIDE
-  shareGlide: 0.05,         // ...and of a shoot's own share of shoot_leaves
   rise: 0.7,                // how far a long shoot in full light turns upright (0 flat, 1 vertical)
   petiole: [0.15, 0.7],     // petiole over blade length: alternate (beech, short) / opposite (maple, long)
   fan: [100, 25],           // degrees a blade turns off its shoot's axis, at its first node / its last
@@ -77,22 +78,22 @@ export function clusterLight(twigs, P, cone = 1, G = 0.5){
   return out;
 }
 
-// Cluster j's shoots, enough for nLeaf leaves: for each leaf its shoot s, node and side; for each shoot its leaf count n, its type threshold h and its
-// share threshold g. Draws: hash3(seed ^ SHOOT_LEAF_SALT, j, s). Prefix-stable in nLeaf.
+// Cluster j's shoots, enough for nLeaf leaves: for each leaf its shoot s, node and side; for each shoot its leaf count n and its type threshold h.
+// Draws: hash3(seed ^ SHOOT_LEAF_SALT, j, s). Prefix-stable in nLeaf.
 export function clusterShoots(seed, j, nLeaf, opposite){
   const shoot = [], leaf = [];
   for(let s = 0; leaf.length < nLeaf; s++){
     const r = mulberry32(hash3((seed>>>0)^SHOOT_LEAF_SALT, j, s));
     const n = opposite ? 2*(2 + Math.floor(3*r())) : 3 + Math.floor(3*r());
-    const h = r(), g = r();
-    shoot.push({ n, h, g });
+    const h = r();
+    shoot.push({ n, h });
     for(let i = 0; i < n && leaf.length < nLeaf; i++) leaf.push(opposite ? { s, node: i >> 1, side: (i & 1) ? -1 : 1 } : { s, node: i, side: (i & 1) ? -1 : 1 });
   }
   return { shoot, leaf };
 }
 
 // Where leaf k of cluster j hangs on its shoot: o[0..2] its place, o[3] its pivot weight (as placeLeaf's), o[4] its blade's heading in the record's
-// clockwise basis (the blade's apex points away from its node), o[5] the leaf's share of the shoots (its shoot's own glide on shoot_leaves).
+// clockwise basis (the blade's apex points away from its node), o[5] how much of it hangs there: 1 while the shoots are on.
 // t: the twig; e: the cluster's light; lt: the leaf's own length; origin: where along the blade its stamp is placed from (0.5 the ellipse's middle,
 // the outline's own origin); path, pathLen: the twig's wood back to the trunk (inner shoots).
 export function shootLeaf(cs, j, k, t, e, P, lt, origin, o, path = null, pathLen = 0){
@@ -132,7 +133,6 @@ export function shootLeaf(cs, j, k, t, e, P, lt, origin, o, path = null, pathLen
   const reach = SHOOT.petiole[opposite ? 1 : 0]*L0 + lt*origin;
   o[0] = nx + bx*reach; o[1] = ny + by*reach; o[2] = nz;
   o[4] = -Math.atan2(by, bx);
-  const g = sh.g*(1 - SHOOT.shareGlide);   // its threshold, room left for the glide: every shoot is hung at 1, none at 0
-  o[5] = smoothstep(g, g + SHOOT.shareGlide, P.shoot_leaves);
+  o[5] = P.shoot_leaves > 0 ? 1 : 0;
   return o;
 }

@@ -128,8 +128,8 @@ function shootPlace(bundle, params, j, k, o){
 }
 const _shoot = [0,0,0];
 // LEAVES ON SHOOTS (komorebi-shoots.js, shoot_leaves): with the grove's shoots in hand (hier.leafShoots, hier.leafLight; null at shoot_leaves 0), leaf k
-// moves from where the twig hug and the inner leaves put it toward its node on its shoot, by its shoot's own share, and out[4] is its blade's heading,
-// out[5] that share. `lt` is the leaf's length (the grove's per-leaf size; the editor's preview hands the same). At 0 nothing below the old placement runs.
+// hangs at its node on its shoot instead of where the twig hug and the inner leaves put it, and out[4] is its blade's heading, out[5] how much of it hangs
+// there (1: the shoots are a switch). `lt` is the leaf's length (the grove's per-leaf size; the editor's preview hands the same). At 0 nothing below the old placement runs.
 const _shootLeaf = [0,0,0,0,0,0];
 export function placeLeaf(hier, j, g1, g2, k, params, faithful, out, lt = params.leaf_size_m){
   placeLeafOnWood(hier, j, g1, g2, k, params, faithful, out);

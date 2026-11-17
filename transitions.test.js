@@ -291,6 +291,16 @@ test('a leafless floor keeps the existing transition when the footprint descent 
   expect(r.hub.trans.structDiff).toBe(true);
 });
 
+test('morning 3b → morning 3 does not morph its leaves between their shoots and their old places: the two arrangements cross as two groves, so no leaf flies (the leaves flickered)',()=>{
+  for(const [from,to] of [[PRESETS['morning 3b'],PRESETS['morning 3']],[PRESETS['morning 3'],PRESETS['morning 3b']]]){
+    const r=transitionRig(from);
+    Object.assign(r.hub,{beginSceneFade:()=>{},endSceneFade:()=>{},stepSceneFade:()=>{}});
+    r.transitionTo(to,{duration:1});
+    expect(r.hub.trans.canopyMorph,'no leaf-by-leaf morph across shoot_leaves').toBe(false);
+    expect(r.hub.trans.crossfade||r.hub.trans.structDiff,'the two groves cross').toBe(true);
+  }
+});
+
 test('a pair that sees its tree keeps the cast: cherry blossom ↔ park 2 with tree_view takes no season travel, which would draw its own leaves and not the tree',()=>{
   const tree={tree_view:true};
   for(const [from,to] of [[{...PRESETS['cherry blossom'],...tree},{...PRESETS['park 2'],...tree}],[{...PRESETS['park 2'],...tree},{...PRESETS['cherry blossom'],...tree}]]){

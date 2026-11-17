@@ -5,7 +5,7 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
-import { DEFAULTS } from "./komorebi-params.js";
+import { DEFAULTS, PARAMS } from "./komorebi-params.js";
 import { PRESETS } from "./presets.js";
 import { SHOOT, SHOOT_LEAF_SALT, clusterShoots, lightTilt, longShare, shootLeaf, tiltMeanDeg } from "./komorebi-shoots.js";
 import { makeGrove } from "./komorebi-grove.js";
@@ -37,14 +37,13 @@ test("a leaf's shoot and node are its own: a cluster's shoots are prefix-stable 
   }
 });
 
-test("the share glides: at 1 every shoot is hung, at 0 none is, between each shoot by its own draw", () => {
+test("a switch: on, every leaf hangs at its node; off, none does", () => {
   const t = { x: 0, y: 0, z: 3, dx: 1, dy: 0, bx: -0.3, by: 0 }, o = [0, 0, 0, 0, 0, 0];
   for (const opposite of [false, true]) {
     const cs = clusterShoots(77, 3, 200, opposite), P = { ...DEFAULTS, phyllotaxis: opposite ? "opposite" : "spiral", inner_leaves: 0 };
     const share = (x) => cs.leaf.map((_, k) => shootLeaf(cs, 3, k, t, 0.5, { ...P, shoot_leaves: x }, 0.1, 0.5, o)[5]);
     expect(share(1).every((w) => w === 1)).toBe(true);
     expect(share(0).every((w) => w === 0)).toBe(true);
-    const half = share(0.5); expect(half.some((w) => w === 0) && half.some((w) => w === 1)).toBe(true);
   }
 });
 
@@ -85,6 +84,11 @@ test("the shoots and the tilt move leaves, at 0 they read nothing, and the looks
 test("a grove grown year by year hangs its leaves on its own grown shoots: shoot_leaves stands aside", () => {
   const g = grow({ growth_years: 3 });
   expect(g.hier.leafShoots).toBeNull();
+});
+
+test("shoot_leaves travels as a different arrangement of the same leaves, never a morph: a leaf's old place and its place on a shoot can be a limb apart", () => {
+  expect(PARAMS.shoot_leaves.travels).toBe("topo");
+  // and the measured reason: a one-second morph of the share, stepped as the engine steps it, flew a leaf 19.5 of its own lengths in a frame
 });
 
 test("the shoots' salt is its own", () => {
