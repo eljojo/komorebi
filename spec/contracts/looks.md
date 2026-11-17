@@ -14,7 +14,7 @@ Intent is the artist's words, his choices on review sheets and the notes written
 
 ## Roles some looks carry
 
-- **The order:** the built-ins are listed, and the arrows and the swipe walk them, as a story told by showing. First the tree: `park 1, the scene` and `park 1, under the trees` show it, `park 1` and `park 2` leave only its shadow. Then its year: `cherry blossom`, `the yellow tree`, `park fall`, `montebello`, `montebello, rain`. Then the floor going abstract: `forest floor`, which is `afternoon 7`'s grove in fall, then the afternoons from 7 down to 4 and the mornings, to `memories`. The set pieces close it: `acid dreams`, `eclipse`. The experimental looks follow. The order is the order of `PRESETS` in `presets.js`; `looks.test.js` holds it.
+- **The order:** the built-ins are listed, and the arrows and the swipe walk them, as a story told by showing. First the tree: `park 1, the scene` and `park 1, under the trees` show it, `park 2` leaves only its shadow. Then its year: `cherry blossom`, `park fall`, `the yellow tree`, `montebello`, `montebello, rain`. Then the floor going abstract: `forest floor`, which is `afternoon 7`'s grove in fall, then the afternoons from 7 down to 4 and the mornings, to `memories`. The experimental looks follow, `park 1`, `acid dreams` and `eclipse` among them since 2026-11-17 (the artist: under the trees goes straight to `park 2`). The order is the order of `PRESETS` in `presets.js`; `looks.test.js` holds it.
 - **The editor's default:** `afternoon 7`; the live session enables the runtime governor. It is the look the editor boots into and falls back to.
 - **The welcome:** `afternoon 6`, shown faint behind the welcome screen and behind the about page.
 - **The season macro's stops:** spring → summer → fall runs `memories` → `morning 1` → `afternoon 4` → the last green day (no look) → `montebello`. Its fall pigment capacities are `montebello`'s.
@@ -175,13 +175,13 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 - **Open, needs José:** this grove (sixteen trees) outgrows the old 64-segment analytic occluder table, and the table has since grown to 256. Whether that repainted the look is not recorded. Its wood is shut, and the table only reaches a picture with wood open, so it should not have; José should confirm against his memory of the look.
 
 ### eclipse
-- **Camera and mode:** floor, layered.
+- **Camera and mode:** floor, layered. Experimental since 2026-11-17.
 - **For:** a set piece: a single tree's gaps imaging a partially eclipsed sun, so every dapple becomes the same crescent. A tiny crisp source, low far smear and dim ambient keep the crescents sharp and eerie; only a barely-there wind stirs it, with automatic drift off.
 - **Authored departures:** the warm dirt floor. The eclipse dims the day by the share the moon covers, as a real one does (since 2026-11-10; the crescents had kept the clear sun's total). The exposure is the one it had, so it reads darker than before; the renormalised version is a comment at the sampler away. The eclipse's shape is a source property; see [`../model/source.md`](../model/source.md).
 - **Gates:** `eclipse`.
 
 ### acid dreams
-- **Camera and mode:** floor, layered.
+- **Camera and mode:** floor, layered. Experimental since 2026-11-17.
 - **For:** not recorded.
 - **Authored departures:** not recorded. It is authored with a fractional tree count (one tree and a partly faded-in second), the palm species, strong diffraction and a violet-grey floor; whether each is intent is not recorded.
 - **Gates:** `chromatic_aberration` (3.6, between `prism` and `morning 3b`).
@@ -189,7 +189,7 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 ## The floor, standing
 
 ### park 1
-- **Camera and mode:** floor, standing, faithful. Formerly named `afternoon 8`.
+- **Camera and mode:** floor, standing, faithful. Formerly named `afternoon 8`. Experimental since 2026-11-17: it stays the base its family is built on, out of the walk.
 - **For:** the first standing-scene look: the tree stands in the scene and its whole shadow, trunk streak to branches to crown dapples, is thrown across a lit floor, not an infinite canopy hovering overhead. A wide view over a small grove leaves the grove a finite blob with lit floor around it. The faithful path is the heaviest; runtime quality policy belongs to the showing.
 - **Authored departures:** the warm dirt floor.
 - **Gates:** `faithful_canopy`, `standing_scene`, wood.
@@ -209,7 +209,7 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 ### park 2
 - **Camera and mode:** floor, standing, faithful.
 - **For:** not recorded. It is a partner on two travel routes: `cherry blossom ↔ park 2` (leaves carried between floor and canopy on one grove) and the regrouping journey from `fall memories`.
-- **Quality:** `park 1`'s requests, 29 samples and a 768 bake, since 2026-11-17 (the artist), so that `park 1 → park 2`, next to each other in the order, morphs instead of dissolving. It asked for 48 samples and the session's bake before.
+- **Quality:** `park 1`'s requests, 29 samples and a 768 bake, since 2026-11-17 (the artist), so that the step from `park 1`'s family to `park 2` rebuilds nothing on account of quality: `park 1 → park 2` morphs, and `park 1, under the trees → park 2`, next to each other in the order, differs only in its camera, its light and the tree it sees. It asked for 48 samples and the session's bake before.
 - **Authored departures:** the warm dirt floor. It keeps the old receiver law, without the cosine, and no air's loss ([the defaults](#four-laws-on-by-default-and-the-looks-kept-as-made)).
 - **Gates:** `faithful_canopy`, `standing_scene`, wood.
 

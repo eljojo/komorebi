@@ -47,9 +47,9 @@ background. Test `window.Komorebi` too, in case the script did not load.
 
 `Komorebi.PRESETS` holds the looks:
 
-`morning 1` · `morning 2` · `morning 3` · `morning 3b` · `afternoon 4` · `afternoon 4b` · `afternoon 5` · `afternoon 5b` · `afternoon 6` · `afternoon 6b` · `afternoon 7` · `park 1` · `prism` · `memories` · `eclipse`
+`morning 1` · `morning 2` · `morning 3` · `morning 3b` · `afternoon 4` · `afternoon 4b` · `afternoon 5` · `afternoon 5b` · `afternoon 6` · `afternoon 6b` · `afternoon 7` · `park 2` · `prism` · `memories`
 
-Most looks are bright, and dark text stays readable on them. `memories` and `eclipse` are dark. `park 1` shows the
+Most looks are bright, and dark text stays readable on them. `memories` is dark. `park 2` shows the
 trees. Open the editor and step with ← → to compare them.
 
 ### Change the look

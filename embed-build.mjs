@@ -13,8 +13,8 @@
 //
 // WHAT IT CUTS. Each cut comes from a table, not from a decision:
 //   • LOOKS — presets.js keeps the named looks. The default set is PRESETS minus EXPERIMENTAL, which is
-//     the line the editor already draws: the experimental looks are the receiver, enclosure and sky-view
-//     work, and they are the only looks that select a camera other than the floor.
+//     the line the editor already draws: a look out of the walk is out of the bundle. Every look that
+//     selects a camera other than the floor (the receiver, enclosure and sky-view work) is among them.
 //   • CAMERAS — cameraFor() reads the kept looks and returns the cameras they select. CAMERAS,
 //     TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS and render.js's GROUP_UPLOAD are pruned to that set, in the
 //     same agreement registry.test.js guards.

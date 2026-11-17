@@ -39,14 +39,13 @@ test("the four new looks (P5-P8) are none of them experimental", () => {
 });
 
 // The list a person walks is a story: the tree seen and then only its shadow, its year from blossom to the rain day, the floor going abstract
-// through the afternoons and mornings to the founding afternoon, and the set pieces last. The experimental looks follow, hidden by the editor.
+// through the afternoons and mornings to the founding afternoon. The experimental looks follow, hidden by the editor.
 test("the shipped looks run in the story's order", () => {
   expect(Object.keys(PRESETS).filter((n) => !EXPERIMENTAL.includes(n))).toEqual([
-    "park 1, the scene", "park 1, under the trees", "park 1", "park 2",
-    "cherry blossom", "the yellow tree", "park fall", "montebello", "montebello, rain",
+    "park 1, the scene", "park 1, under the trees", "park 2",
+    "cherry blossom", "park fall", "the yellow tree", "montebello", "montebello, rain",
     "forest floor", "afternoon 7", "afternoon 6", "afternoon 6b", "afternoon 5", "afternoon 5b", "prism", "afternoon 4", "afternoon 4b",
     "morning 1", "morning 2", "morning 3", "morning 3b", "memories",
-    "acid dreams", "eclipse",
   ]);
 });
 
