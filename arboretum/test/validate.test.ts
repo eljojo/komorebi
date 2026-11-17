@@ -29,12 +29,12 @@ describe('validateParams: the shipped looks are the golden fixtures', () => {
     const r = refusal(mutated);
     expect(r.reason).toBe('unknown_keys');
     expect(r.keys).toEqual(['not_a_knob']);
-    expect(r.message).toBe(`arboretum is pinned to komorebi ${SHORT}; unknown keys: not_a_knob`);
+    expect(r.message).toBe(`arboretum runs komorebi ${SHORT}; unknown keys: not_a_knob`);
   });
 
   it('lists every unknown key', () => {
     const r = refusal({ a: 1, b: 2 });
-    expect(r.message).toBe(`arboretum is pinned to komorebi ${SHORT}; unknown keys: a, b`);
+    expect(r.message).toBe(`arboretum runs komorebi ${SHORT}; unknown keys: a, b`);
   });
 
   it('does not take inherited object properties for knobs', () => {

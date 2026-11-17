@@ -5,7 +5,7 @@
 // One entry per slider (`s`), numeric select (`sel`) and string select (`sels`) row, in the registry's order. A toggle (`t`) is
 // bounded by its type alone, and a parameter with no row (`noRow`) by nothing here.
 export function rowsOf(PARAMS) {
-  if (!PARAMS || typeof PARAMS !== 'object') throw new Error('komorebi-params.js has no PARAMS: pin a komorebi commit that defines its parameters there');
+  if (!PARAMS || typeof PARAMS !== 'object') throw new Error('komorebi-params.js has no PARAMS');
   const rows = [];
   for (const [key, d] of Object.entries(PARAMS)) {
     const r = d.row;

@@ -1,4 +1,4 @@
-// The pinned engine is a classic script that sets window.Komorebi. The page passes the file name from engine.json.
+// The engine is a classic script that sets window.Komorebi. The page passes the file name from engine.json.
 import { BASE } from './base.js';
 
 let loading;

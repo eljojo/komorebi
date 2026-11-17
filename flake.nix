@@ -172,19 +172,20 @@
           # It runs from arboretum/, because it builds into .wrangler there and uses node_modules' wrangler.
           arboretum-dev = pkgs.writeShellApplication {
             name = "arboretum-dev";
-            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git pkgs.bun pkgs.gzip ];
             text = ''
               cd "$(git rev-parse --show-toplevel)/arboretum"
               exec node scripts/dev.mjs "$@"
             '';
           };
-          # `nix run .#arboretum-deploy` — the deploy, start to finish: install exactly the lockfile, typecheck and test, build
-          # the site (komorebi at the pinned commit at the root, public/ under arboretum/, into the gitignored .site/), apply
-          # the D1 migrations to the live database, then let wrangler build and upload the Worker and that site. Any failing
-          # step stops it before anything reaches Cloudflare; the migration step asks before it touches the live database.
+          # `nix run .#arboretum-deploy` — the deploy, start to finish, of this checkout's HEAD (uncommitted changes are refused):
+          # install exactly the lockfile, typecheck and test (each generating the engine from this tree first), build the site
+          # (komorebi at the root, public/ under arboretum/, into the gitignored .site/), apply the D1 migrations to the live
+          # database, then let wrangler build and upload the Worker and that site. Any failing step stops it before anything
+          # reaches Cloudflare; the migration step asks before it touches the live database.
           arboretum-deploy = pkgs.writeShellApplication {
             name = "arboretum-deploy";
-            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git pkgs.bun pkgs.gzip ];
             text = ''
               cd "$(git rev-parse --show-toplevel)/arboretum"
               npm ci

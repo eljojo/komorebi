@@ -7,3 +7,7 @@
 /node_modules/
 /.wrangler/
 /.dev.vars*
+# What scripts/engine.mjs generates from the komorebi beside arboretum, before tests, typecheck and the dev mode.
+/src/generated/
+/test/fixtures/looks.json
+/public/engine/

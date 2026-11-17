@@ -155,7 +155,7 @@ describe('the never-deployable guard', () => {
     expect(published.filter((p) => p === 'editor' || p.startsWith('editor/'))).toEqual([]);
   });
 
-  it('holds no komorebi or editor source outside public/engine/ (the pinned bundle)', () => {
+  it('holds no komorebi or editor source outside public/engine/ (the generated bundle)', () => {
     const stray = published.filter((p) => !p.startsWith('engine/')).filter((p) => /(^|\/)(komorebi[^/]*\.js|editor\.js|presets\.js|macros\.js)$/.test(p));
     expect(stray).toEqual([]);
   });

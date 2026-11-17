@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "engine": "node scripts/engine.mjs",
+    "pretest": "node scripts/engine.mjs",
     "test": "vitest run",
+    "pretypecheck": "node scripts/engine.mjs",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate"
   },

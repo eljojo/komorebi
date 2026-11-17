@@ -94,7 +94,7 @@ export function validateParams(params: unknown): { ok: true } | ParamsRefusal {
     return {
       ok: false,
       reason: 'unknown_keys',
-      message: `arboretum is pinned to komorebi ${ENGINE_COMMIT.slice(0, 7)}; unknown keys: ${unknown.join(', ')}`,
+      message: `arboretum runs komorebi ${ENGINE_COMMIT.slice(0, 7)}; unknown keys: ${unknown.join(', ')}`,
       keys: unknown,
     };
   }

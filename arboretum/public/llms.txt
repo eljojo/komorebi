@@ -30,15 +30,15 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
 
 ## What a preset's params may contain
 
-- Only keys the pinned komorebi engine knows (its DEFAULTS, plus old spellings and the editor's `time_of_day`
+- Only keys the deployed komorebi engine knows (its DEFAULTS, plus old spellings and the editor's `time_of_day`
   and `latitude`), each with its own type: finite numbers, booleans, strings of at most 64 characters.
 - Numbers must stay within the komorebi editor's slider ranges, with a quarter of each range as leeway, and a
   select's value must be one of its choices. An out-of-range look is refused with 422, reason `out_of_range`,
   naming the key and its range: `branch_levels must be 1–4`.
 - At most 16 KB of JSON, no duplicate keys.
 - Keys left out take komorebi's defaults when the look loads, so a partial object is a valid look.
-- An unknown key is refused with 422, naming it: `arboretum is pinned to komorebi <sha>; unknown keys: …`.
-  A key newer than the pin can't be stored until arboretum's pin moves; don't rename or drop keys to get past it.
+- An unknown key is refused with 422, naming it: `arboretum runs komorebi <sha>; unknown keys: …`.
+  A key newer than the deployed engine can't be stored until komorebi is deployed with it; don't rename or drop keys to get past it.
 - Komorebi's own built-in looks are not stored: a look that is an unchanged copy of one (the debug overlays,
   `time_of_day` and `latitude` ignored, keys left out at their defaults) is refused with 422, reason `builtin`,
   naming the look. Change something first.

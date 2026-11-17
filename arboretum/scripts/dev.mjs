@@ -3,7 +3,7 @@
 // arboretum's pages under /arboretum. The checkout is only ever read: it is copied into .wrangler/editor-assets, which
 // is gitignored and is never what `wrangler deploy` ships (wrangler.jsonc ships the built site, ./.site; --assets
 // below is a dev-command override that keeps the config's run_worker_first, so `/` still passes the Worker).
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { watch } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const komorebiDir = resolve(process.argv[2] ?? join(ROOT, '..'));
 const outDir = join(ROOT, '.wrangler', 'editor-assets');
 const ORIGIN = 'https://localhost:8787';
+
+execFileSync('node', [join(ROOT, 'scripts', 'engine.mjs')], { stdio: 'inherit' });
 
 const run = (args) => spawn('npx', ['wrangler', ...args], { cwd: ROOT, stdio: 'inherit' });
 
