@@ -1,4 +1,4 @@
-// Guards the camera registry's three halves (spec §4.9/§9). Transport is assembled from a table: CAMERAS says which
+// Guards the camera registry's three halves (spec/implementation.md). Transport is assembled from a table: CAMERAS says which
 // uniform GROUPS a camera speaks, TRANSPORT_GROUPS says what each group declares and what its locations are called,
 // and GROUP_UPLOAD (inside create(), enumerated at module level by GROUP_UPLOAD_KEYS) says how each group is filled
 // per frame. Those three must name the same things, and the failure when they don't is SILENT: a group a camera
@@ -57,7 +57,7 @@ test("an unknown camera is refused rather than silently assembled empty", () => 
   expect(() => buildTransport("periscope")).toThrow();
 });
 
-// ---- THE SKY FILL (§4.7). A uniform group like any other, plus two couplings that would otherwise fail silently:
+// ---- THE SKY FILL (spec/model/fill.md). A uniform group like any other, plus two couplings that would otherwise fail silently:
 // the sky view must never read what it has no surface to light, and the per-ray physics the fill integrates must be
 // the SAME source the sky view runs, so the two cannot drift into two answers to "what does this ray see".
 test("the sky fill is a registry group: declared, uploaded, spoken by the cameras that light a surface and not by the sky view", () => {
@@ -75,7 +75,7 @@ test("the sky view never reads the fill: no uniform, no tap, no branch in its pr
 test("a shut canopy_fill runs the OLD expression verbatim, on the floor and on both cloth receivers", () => {
   // the gate's whole claim is that off is the bytes it always was; the pixel harness executes it, this pins that
   // the literal line is still in the source (as the else of a uniform branch — canopy_fill tweens, so a program
-  // cannot be selected by it: programs are chosen by MODE flags only, §4.6)
+  // cannot be selected by it: programs are chosen by MODE flags only, spec/model/transport.md)
   expect(buildTransport("floor")).toContain("col = (acc*uSunColor + uAmbient) * uGround;");
   for (const cam of ["cloth", "enclosure"]) expect(buildTransport(cam), cam).toContain("E = acc*uSunColor*beamF + uAmbient*skyF;");
   for (const cam of ["floor", "cloth", "enclosure"]) {
@@ -99,7 +99,7 @@ test("the per-ray physics is ONE source: the sky view and the fill both carry GL
 });
 
 test("the shared per-ray snippet never reads the skylight: its passage is T·sky, so a source term of it counts it twice", () => {
-  // the source term is the SUN's light scattered by the lit leaves (§4.9). uAmbient inside it re-radiates skylight
+  // the source term is the SUN's light scattered by the lit leaves (spec/model/sky-view.md). uAmbient inside it re-radiates skylight
   // that the transmission term (the eye ray's T·sky, the fill's Tsky) already carries.
   expect(GLSL_SKY_RAY.replace(/\/\/.*$/gm, "").includes("uAmbient")).toBe(false);
 });
@@ -128,7 +128,7 @@ test("the fill is READ from a coarser mip: K rays point-sampled per texel are an
   expect(buildTransport("floor").includes("const float FILL_LOD")).toBe(true);
 });
 
-// ---- THE BEAM (§4.5). The beam's k is read by the taps, and by the receivers' fill share: it is a group of its own so that a bundle which cuts
+// ---- THE BEAM (spec/model/leaf.md). The beam's k is read by the taps, and by the receivers' fill share: it is a group of its own so that a bundle which cuts
 // the leaf's diffuse share (embed-build.mjs, FEATURES.leafDiffuse) drops the uniform and keeps the taps as the functions they are.
 test("the beam's k is a group of its own, spoken before the taps that read it, and the taps are functions only", () => {
   expect(Object.keys(TRANSPORT_GROUPS.beam.locs)).toEqual(["beamK", "edgeArea"]);

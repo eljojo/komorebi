@@ -1,10 +1,10 @@
 // ============================================================================
-// The sky fill's CPU half (spec §4.7, "What the shade is lit by"). The shade between the dapples is lit by the
+// The sky fill's CPU half (spec/model/fill.md, "What the shade is lit by"). The shade between the dapples is lit by the
 // skylight that came THROUGH the canopy and by sunlight the lit leaves scatter downward:
 //
 //     E_shade(x) = uAmbient · T̄_sky(x) + ∫ L_scat(x, ω) cosθ dω
 //
-// and the second integrand IS the sky view's scattered radiance along a ray (§4.9). The fill shader (FS_FILL) evaluates both
+// and the second integrand IS the sky view's scattered radiance along a ray (spec/model/sky-view.md). The fill shader (FS_FILL) evaluates both
 // over K fixed, cosine-weighted directions; these are the same directions and the same per-ray sum as pure
 // functions, so the laws (weights, the Jensen direction, the energy bound) are held by `bun test` without a GPU.
 // The shader is the authority on the numbers; the GLSL both cameras run (GLSL_SKY_RAY) is what keeps the sky view
@@ -12,7 +12,7 @@
 // ============================================================================
 import { BOUNCE_BOX } from './komorebi-params.js';
 
-export const FILL_GOLDEN = Math.PI * (3 - Math.sqrt(5));   // the golden angle, the source cloud's own azimuth step (§4.4)
+export const FILL_GOLDEN = Math.PI * (3 - Math.sqrt(5));   // the golden angle, the source cloud's own azimuth step (spec/model/source.md)
 const TAU = 2 * Math.PI;
 
 // INTERLEAVED SAMPLING. If every fill texel integrated the SAME K directions, neighbouring texels would hit correlated
@@ -60,11 +60,11 @@ export function fillTurns(){
   return out;
 }
 
-// THE BOX IS NOT THE WORLD (§4.7). The layers are baked over the canopy box, and a hemisphere ray from a floor point leaves it
+// THE BOX IS NOT THE WORLD (spec/model/fill.md). The layers are baked over the canopy box, and a hemisphere ray from a floor point leaves it
 // within a few metres of height — an 8 m layer at 60° is 14 m sideways. What a tap outside the box reads is the question the
 // first fill answered with CLAMP_TO_EDGE: the border texel, repeated to the horizon, which lost about half of the glow spreading
 // past the box. Two honest answers, chosen by whether the look has a beam bulk shift (bulkOn: standing_scene or a receiver):
-//   'wrap'  the ENDLESS PARK. The beam has no bulk shift because the canopy is a field without an edge (§4.8), so the box is one
+//   'wrap'  the ENDLESS PARK. The beam has no bulk shift because the canopy is a field without an edge (spec/model/transport.md), so the box is one
 //           period of it: light leaving one side enters from the other (REPEAT on the layer textures for the fill pass).
 //   'open'  the FINITE TREE. Outside the box is open sky (t = 1, nothing to glow), over a frame PADDED so the glow can decay across
 //           the floor instead of being cut at the box: 3·h_max on every side, since a cosine-weighted ray travels beyond 3 h
@@ -117,10 +117,10 @@ export function texelTap(data, n, frame, mode, x, y){
     data[a + 2] * w00 + data[b + 2] * w10 + data[c + 2] * w01 + data[d + 2] * w11, data[a + 3] * w00 + data[b + 3] * w10 + data[c + 3] * w01 + data[d + 3] * w11];
 }
 
-// leafHue: a transmittance normalized to unit peak — the spectrum with its brightness divided out (§3.5's idiom).
+// leafHue: a transmittance normalized to unit peak — the spectrum with its brightness divided out (spec/model/light.md's idiom).
 export const leafHue = (t) => { const m = Math.max(t[0], t[1], t[2], 1e-4); return [t[0] / m, t[1] / m, t[2] / m]; };
 
-// A TEXEL IS A MIXTURE, NOT A SLAB (§4.5). A layer texel holds Σ τ_i·cov_i in rgb and Σ cov_i in alpha: the bake ADDS, which is exact for leaves
+// A TEXEL IS A MIXTURE, NOT A SLAB (spec/model/leaf.md). A layer texel holds Σ τ_i·cov_i in rgb and Σ cov_i in alpha: the bake ADDS, which is exact for leaves
 // that fill the texel and stack, and at an edge Jensen-dark if the pair is read as a slab of depth τ (t = e^−τ): a texel 30% under a leaf of
 // depth 2.8 is 70% open sky and 30% dark leaf (T 0.72), not a thin bright leaf of depth 0.84 (t 0.43). At d > 0 every reader reconstructs the
 // mixture from the same two numbers, with a = min(c, 1) the leaf AREA of the texel:
@@ -134,7 +134,7 @@ export const leafHue = (t) => { const m = Math.max(t[0], t[1], t[2], 1e-4); retu
 // second leaf only partly overlaps, it is a bounded slab residue (luminance of the emission within 15% where one leaf covers the texel and another's
 // edge crosses it; two edges inside ONE texel are outside it). Emit ≡ T − Tb by construction, so the telescoping sums close exactly. A texel with
 // c < 1e-4 is empty: T = Tb = 1. k ≤ 0 is no split: Tb IS T (the same array) and nothing is emitted. At c ≥ 1, T and Tb are the old slab to the bit.
-// d = 0 does not call this unless edge_area is on: its soft edges stay depth-averaged, a named approximation kept for byte-identity (§4.5). With edge_area every reader
+// d = 0 does not call this unless edge_area is on: its soft edges stay depth-averaged, a named approximation kept for byte-identity (spec/model/leaf.md). With edge_area every reader
 // takes the mixture at k = 0 too (Tb is T there), and the callers below pass it as `edgeArea`.
 // `tau` is the texel's rgb depth as the bake wrote it (Σ τ·cov), the same numbers GLSL_TEXEL_MIX is handed.
 export function texelMix(tau, c, k){
@@ -145,7 +145,7 @@ export function texelMix(tau, c, k){
   return { T, Tb: [0, 1, 2].map((ch) => (1 - a) + a * Math.exp(-tau[ch] / a - kappa)) };
 }
 
-// The BEAM through one texel (§4.5): Tb of the mixture, from the transmittance t a layer closure hands (the texture holds τ = −ln t). k = 0 hands
+// The BEAM through one texel (spec/model/leaf.md): Tb of the mixture, from the transmittance t a layer closure hands (the texture holds τ = −ln t). k = 0 hands
 // the input back (the gate: the same array, no arithmetic), like leafTau's s = 0 — unless edgeArea, which reads the texel as its mixture at k = 0 too (Tb is T there,
 // so this is the mixture's T). NOT t·e^(−k·c): that slab is the Jensen-dark halo; and
 // t − ballistic(t, c, k) is not the emission either, because the sky a partial texel passes is its mixture T, not t.
@@ -155,22 +155,22 @@ export function ballistic(t, c, k, edgeArea = false){
 }
 
 // What ONE leaf leaves in a layer texel, as the bake writes it (VS_BAKE/FS_BAKE): rgb = its depth, which the grove has already
-// scaled by the marginal fade (§5.3), and alpha = its coverage with that SAME fade (iFade), both × the leaf mask at this
+// scaled by the marginal fade (spec/contracts/continuity.md), and alpha = its coverage with that SAME fade (iFade), both × the leaf mask at this
 // texel (`edge`) and the grove's crossfade share (`grove`, uCoverage). Alpha carrying the fade is what lets the ballistic
 // shadow fade with its leaf: k·alpha is then a depth that goes to 0 as f does, where coverage alone would keep k·edge of
 // beam-dimming on a leaf that is not there yet and pop it in.
 export const leafTexel = (tau, fade, edge = 1, grove = 1) => ({ rgb: tau.map((v) => v * fade * grove * edge), a: edge * fade * grove });
 
-// ONE ray through the layer stack — the sky view's per-ray formula (§4.9), line for line with GLSL_SKY_RAY.
+// ONE ray through the layer stack — the sky view's per-ray formula (spec/model/sky-view.md), line for line with GLSL_SKY_RAY.
 //   layers: [{ h, t(x, y) -> [r,g,b], c(x, y) -> coverage, w?(x, y) -> wood }], lowest first; t is the layer's FOLIAGE transmittance at
 //   a plan point (the texture's e^−τ), c its coverage (read when k > 0 or edgeArea), w the layer-stamped WOOD's transmittance there (neutral: one number for all
 //   three channels). A layer with no w is read with no wood — what the fill does (readWood false: its hemisphere ignores wood by
 //   design); the sky camera's layers carry it.
 //   p: where the ray starts (plan); shift: its plan travel per metre of rise; gS: the SUN PATH's, the same per-metre travel — the BEAM's
-//   (the bulk shift: [0, 0] in the endless park) for the fill, the real sun's for the sky view, which has no beam (§4.7, one sun per camera)
-//   edgeArea: edge_area (§4.5). At k = 0 it reads every texel as its MIXTURE (texelMix at k = 0: Tb is T), so the P0b sum runs on the mixture t and the sun's path A reads the
+//   (the bulk shift: [0, 0] in the endless park) for the fill, the real sun's for the sky view, which has no beam (spec/model/fill.md, one sun per camera)
+//   edgeArea: edge_area (spec/model/leaf.md). At k = 0 it reads every texel as its MIXTURE (texelMix at k = 0: Tb is T), so the P0b sum runs on the mixture t and the sun's path A reads the
 //   mixture too — the split's emission and the Tb product keep keying on k, so at k = 0 nothing else moves. Above 0 it is a no-op: the split is already area-correct.
-//   k: the beam's neutral depth (ballisticK). 0 runs the P0b sum, ŝ-weighted, on the slab t (or the mixture's, under edgeArea). k > 0 is the split (§4.5), and every texel is read as a
+//   k: the beam's neutral depth (ballisticK). 0 runs the P0b sum, ŝ-weighted, on the slab t (or the mixture's, under edgeArea). k > 0 is the split (spec/model/leaf.md), and every texel is read as a
 //   MIXTURE of leaf and gap (texelMix): the layer passes T (the sky, the hue, what the glow descends through), its beam only Tb, and it emits the light
 //   its beam lost, T − Tb, in its own hue (no ŝ, no albedo), lit by the sun's BALLISTIC path to it, A_L = Π_{M>L} Tb_M·w_M, and
 //   carried down through the layers below by their TRUE T (and the wood: wood blocks the glow, it never makes any).
@@ -221,7 +221,7 @@ export function skyRayRef(layers, p, shift, gS, sun, k = 0, edgeArea = false){
   return { T, Tb, L };
 }
 
-// THE SKY VIEW'S EYE RAY, composed (§4.9): the sky camera's whole per-pixel sum, line for line with GLSL_T_SKY_CAMERA. `wood` is the
+// THE SKY VIEW'S EYE RAY, composed (spec/model/sky-view.md): the sky camera's whole per-pixel sum, line for line with GLSL_T_SKY_CAMERA. `wood` is the
 // analytic occluder's transmittance (trunk and main limbs, one neutral number along this ray: the camera's loop of `T *= e`),
 // `ambient` is uAmbient·SKY_SKY_GAIN, `disk` the sampler's angular radiance at this ray (core / halo / moon, L), `skyScatter` the
 // retired proxy's knob. k = 0 is the sky camera as it was: (ambient + sun·L)·T + sky_scatter·Lsc, character for character. Above 0 the

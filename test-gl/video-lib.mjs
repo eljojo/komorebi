@@ -527,7 +527,7 @@ export function checkPlaylistTimes(items, fps) {
   });
 }
 // The timeline, in absolute pump indexes (frame n is pumped at T0 + n*step; the video's first frame is pump preroll+1). The first look is simply there for its dwell; then each next look
-// (wrapping, so it loops) is faded in over ITS OWN crossfade, and its dwell is counted from the moment it has landed: arboretum's own playing rule (spec §9). `start` is the pump the
+// (wrapping, so it loops) is faded in over ITS OWN crossfade, and its dwell is counted from the moment it has landed: arboretum's own playing rule (spec/model/transitions.md). `start` is the pump the
 // transitionTo is called before; `land` the pump after which the fade must be over (LAND_MARGIN pumps after the nominal end: the dyadic clock runs 3.8e-8 slow, so a 6 s fade is
 // 359.99999 frames of simulated time and lands one pump late). The landing is where a checkpoint can be taken: a fade in flight is not restorable state.
 export const LAND_MARGIN = 3;

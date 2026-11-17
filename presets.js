@@ -1,7 +1,7 @@
 // ============================================================================
 // Komorebi built-in looks — the shipped presets. Data, not engine: split out of
 // komorebi.js so the engine stays a pure renderer. Imported by the editor and the
-// player; each look merges over the engine's DEFAULTS. (spec §9)
+// player; each look merges over the engine's DEFAULTS. (spec/implementation.md)
 // ============================================================================
 import { DEFAULTS, FIDELITY_KEYS, PLAYBACK_KEYS } from "./komorebi.js";
 
@@ -203,8 +203,8 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.79, "turn_exposure": 0.71, "exposure_absolute": 0.93, "anthocyanin": 0.82, "tannin": 0.48, "wall_fraction": 0.13,   // mid-turn, deep red capacity, the raw light ordering the turn (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.36, "drop_after_turn": 1,                                                          // the whole drop has let go, each leaf after its own turn, and lies damp on the floor (§4.5, §4.7): his pd3 over 0.71 and 0.85
+    "phenology": 0.79, "turn_exposure": 0.71, "exposure_absolute": 0.93, "anthocyanin": 0.82, "tannin": 0.48, "wall_fraction": 0.13,   // mid-turn, deep red capacity, the raw light ordering the turn (spec/model/season.md)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.36, "drop_after_turn": 1,                                                          // the whole drop has let go, each leaf after its own turn, and lies damp on the floor (spec/model/season.md): his pd3 over 0.71 and 0.85
     "drop_lag": 0.05,   // a shorter lag than the default 0.09 (it was 0, "i like p1", which let a leaf go the moment its turn ended)
     "view_extent_m": 39.28644129433203, "view_pitch_deg": 73.99882812500043, "view_fov_deg": 60, "view_yaw_deg": -161.79726562499684,
     "view_center_x": -1.4862983633911613, "view_center_y": -6.504920223431666, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
@@ -236,9 +236,9 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.8, "tannin": 0, "wall_fraction": 0,   // the redhead pigments, no russet and no sieve, and who turns first (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie DRY on the floor (§4.5, §4.7): d9 and a4 were dry
-    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.8, "tannin": 0, "wall_fraction": 0,   // the redhead pigments, no russet and no sieve, and who turns first (spec/model/season.md)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie DRY on the floor (spec/model/season.md): d9 and a4 were dry
+    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (spec/model/leaf.md, spec/model/fill.md)
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
     "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
@@ -249,13 +249,13 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "tree_pigment_spread": 0.6, "litter_age": 0.3,   // not one red across the crown, and the fallen leaves fresh, not browned (§4.5, §4.7)
+    "tree_pigment_spread": 0.6, "litter_age": 0.3,   // not one red across the crown, and the fallen leaves fresh, not browned (spec/model/season.md)
     // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
     "sun_extinction": 0,
     // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
   }),
-  // 'montebello' — the first FALL look (spec §4.5 senescence, §4.7 the litter): park 1's grove, the same seed, seen from
+  // 'montebello' — the first FALL look (spec/model/season.md senescence, spec/model/season.md the litter): park 1's grove, the same seed, seen from
   // the FAR side with the sun behind us (the camera orbited 180° and reframed on the trees), late in the season. José
   // named it after the dry river valley at Dhamma Suttama, Montebello QC, where he sat under the turning trees in
   // early fall 2026, and he chose its recipe frame by frame from the park-1 sheets (review 2026-10-07: grid #5 + #8 + #9
@@ -266,7 +266,7 @@ export const PRESETS = {
   // Exposure is park 1's own. It carries the fall tiers into the player bundle, which he accepted; and it is the look
   // the season macro's fall stops are lifted from (macros.js). A rain day as shipped: leaf_wetness 0.5 (José, 2026-10-08, m2 on
   // the brief 02 sheet, the third sheet where the wet carpet won), with the dirt already lowered by hand until the rain writes
-  // both. The carpet is the honest reflectance (§4.7: an opaque pile, κ provisional until
+  // both. The carpet is the honest reflectance (spec/model/season.md: an opaque pile, κ provisional until
   // the grey card), far less saturated than the stain it replaced; so the dirt is park 1's ×0.6 (2026-10-08, José, from the
   // review sheets): real soil reflects 0.1–0.2, and on park 1's dirt a montebello leaf matched it in chroma and sat at 1.1× its
   // luminance, so the carpet vanished into the ground.
@@ -279,9 +279,9 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie damp on the floor (§4.5, §4.7); José: "yes turn it on for both"
-    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (spec/model/season.md)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie damp on the floor (spec/model/season.md); José: "yes turn it on for both"
+    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (spec/model/leaf.md, spec/model/fill.md)
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -0.7, "view_center_y": -3, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
     "exposure": 5.473846153846154, "sun_cosine": 1, "sun_extinction": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law and the air's loss, exposure re-sat to 2.44/(sin 26° × 0.782)
@@ -310,9 +310,9 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
-    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.75, "drop_after_turn": 1,                        // the leaves have let go AFTER turning and lie soaked on the floor (§4.5, §4.7); wetness 0.75 is his w4
-    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (§4.5, §4.7)
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (spec/model/season.md)
+    "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.75, "drop_after_turn": 1,                        // the leaves have let go AFTER turning and lie soaked on the floor (spec/model/season.md); wetness 0.75 is his w4
+    "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (spec/model/leaf.md, spec/model/fill.md)
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -0.7, "view_center_y": -3,   // montebello's own camera, the trunk feet in the frame, as the sheet showed it
     "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
@@ -323,7 +323,7 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "drop_lag": 0,   // no wait after the turn: every leaf that has finished turning lets go at once, so at 0.9 about 94% are down, not 67% (the cause of "one day after rain many leaves fell on the ground", §4.5)
+    "drop_lag": 0,   // no wait after the turn: every leaf that has finished turning lets go at once, so at 0.9 about 94% are down, not 67% (the cause of "one day after rain many leaves fell on the ground", spec/model/season.md)
     // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.55): it shows at 5.566 there, and a thicker cloud opens it up
     "sun_extinction": 0,
@@ -350,9 +350,9 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 4.873668287691452, "drift_auto": true, "drift_speed": 0.04,
-    "phenology": 0.8, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // montebello's capacity, mid-turn, the exposed leaves first (§4.5)
-    "leaf_drop": 1, "drop_after_turn": 1, "drop_lag": 0, "litter": 1, "leaf_wetness": 0.5,           // each leaf lets go the moment its own turn ends and lies damp on the floor (§4.5, §4.7): at 0.8 the sunlit 39% are down
-    "tree_clock_spread": 0.05, "tree_pigment_spread": 0.6,                                           // the trees differ: one ahead of its neighbour by a hair, and not in the same red (§4.5)
+    "phenology": 0.8, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // montebello's capacity, mid-turn, the exposed leaves first (spec/model/season.md)
+    "leaf_drop": 1, "drop_after_turn": 1, "drop_lag": 0, "litter": 1, "leaf_wetness": 0.5,           // each leaf lets go the moment its own turn ends and lies damp on the floor (spec/model/season.md): at 0.8 the sunlit 39% are down
+    "tree_clock_spread": 0.05, "tree_pigment_spread": 0.6,                                           // the trees differ: one ahead of its neighbour by a hair, and not in the same red (spec/model/season.md)
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
     "view_pitch_deg": 24, "view_fov_deg": 64,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 2.451 there, and a thicker cloud opens it up
@@ -593,7 +593,7 @@ export const PRESETS = {
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.18): it shows at 2.44 there, and a thicker cloud opens it up
     // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
   }),
-  // 'memories' — the §1 north-star look: a sparse early-spring grove (foliage 0.45, so individual leaves
+  // 'memories' — the north-star look of spec/experience.md: a sparse early-spring grove (foliage 0.45, so individual leaves
   // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
   // (phenology 0.15 here and 0.40 on 'morning 1' are stamps for the season macro's probe: both sit below turn_start, where every reader of phenology is gated, so the frames are the same bytes)
   'memories': Object.assign({}, LOOK_DEFAULTS, {
@@ -613,7 +613,7 @@ export const PRESETS = {
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0): it shows at 3.01 there, and a thicker cloud opens it up
     // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
   }),
-  // 'park 1' — (was 'afternoon 8') the first STANDING-SCENE look (spec §4.8): the tree STANDS in the scene and
+  // 'park 1' — (was 'afternoon 8') the first STANDING-SCENE look (spec/model/transport.md): the tree STANDS in the scene and
   // its whole SHADOW (trunk streak → branches → crown dapples) is thrown ACROSS a lit floor — not an infinite
   // canopy hovering overhead (the park model). Two things make it: standing_scene adds the bulk lateral shadow
   // offset the park model omits (so a LOW sun casts the shadow to the side); and a wide view_extent over a small
@@ -811,9 +811,9 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.2, "tannin": 0.35, "wall_fraction": 0.2,   // the season, and who turns first (§4.5)
-    "leaf_drop": 0.5, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the half that turns first has let go AFTER turning and lies damp on the floor, the half that turns last stays on (§4.5, §4.7): at 0.9 half the leaves are down
-    "leaf_diffuse": 0, "canopy_fill": 1,                                                          // stained glass, not the blend: the dapples are coloured; the shade lit through the leaves (§4.5, §4.7)
+    "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.2, "tannin": 0.35, "wall_fraction": 0.2,   // the season, and who turns first (spec/model/season.md)
+    "leaf_drop": 0.5, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the half that turns first has let go AFTER turning and lies damp on the floor, the half that turns last stays on (spec/model/season.md): at 0.9 half the leaves are down
+    "leaf_diffuse": 0, "canopy_fill": 1,                                                          // stained glass, not the blend: the dapples are coloured; the shade lit through the leaves (spec/model/leaf.md, spec/model/fill.md)
     "view_extent_m": 13.489433156286438, "view_pitch_deg": 61.39999999999994, "view_fov_deg": 60, "view_yaw_deg": 208.5,
     "view_center_x": -1.75, "view_center_y": -4.93,   // the trunk feet behind the eye (his k8, picked over k5 on the old camera): the half-down crown's carpet still lies in view
     "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
@@ -824,13 +824,13 @@ export const PRESETS = {
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
     "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
     "drift_amount": 0.145, "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02,
-    "tree_pigment_spread": 0.3,   // the two trees are not one colour (§4.5)
+    "tree_pigment_spread": 0.3,   // the two trees are not one colour (spec/model/season.md)
     // faithful + the fill every frame under wind: the heaviest shipped path, so the governor stays on
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
     "sun_extinction": 0,
     // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js)
   }),
-  // 'canopy 1' — THE HAMMOCK (spec §4.9, sky view). Lying on your back at a festival: tall trunks converging
+  // 'canopy 1' — THE HAMMOCK (spec/model/sky-view.md, sky view). Lying on your back at a festival: tall trunks converging
   // overhead, crowns lit from behind against a bright sky, the whole grove leaning together on the gusts. It is
   // 'park 1's afternoon with the eyes turned the other way — same physics, read along the eye's rays instead of the
   // sun's — so there is no receiver at all here and the whole fabric/ground family switches itself off.
@@ -839,7 +839,7 @@ export const PRESETS = {
   // them. Silhouette is the exception — the trunks, and the deepest stacks. Every number below serves that.
   // EVERY NUMBER IS A STARTING POINT: none of this has been seen on a GPU.
   // WHAT EACH LOAD-BEARING CHOICE SERVES:
-  //  • sky_scatter 0.5 is what makes a crown a light source instead of a filter (§4.9). Derived against the Look's
+  //  • sky_scatter 0.5 is what makes a crown a light source instead of a filter (spec/model/sky-view.md). Derived against the Look's
   //    tail rather than dialled — and through the VEIL, because the glare mixes in linear HDR before the tone curve,
   //    so it is part of what ships. At ambient 1.5 / exposure 1.3 / diffuse 0.15: open sky (184,208,232), a crown one
   //    leaf-layer thick (177,206,173), two layers (125,195,91), four (42,148,38), a trunk against sky (43,60,95).
@@ -852,12 +852,12 @@ export const PRESETS = {
   //    halos the sun and leaves the rest of the frame alone.
   //  • the LEAF TRANSMITTANCE carries the colour, not the scatter knob: (0.26, 0.50, 0.16) is a chlorophyll green
   //    where the old muted gray-green had nothing for the glow to be made of. The scatter term normalizes it to unit
-  //    peak (§3.5), so this sets the HUE of the glow and sky_scatter sets its level.
+  //    peak (spec/model/light.md), so this sets the HUE of the glow and sky_scatter sets its level.
   //  • the GROVE is a near-conifer: leader 0.85 sends limbs up a continuing bole (the tall bare trunks that converge
   //    are the reference's whole structure), crown_aspect 1.6 stretches them, droop −0.2 upsweeps the branches and
   //    branch_pitch 30 keeps them climbing rather than reaching out. branch_tau 2.2 with a 0.14 m trunk makes that
   //    wood actually read — in this view the analytic occluder is not a shadow, it IS the columns. The FINE wood
-  //    (level ≥ 2) now stamps into the seen layers too, so the leaves hang on visible twigs (§4.9).
+  //    (level ≥ 2) now stamps into the seen layers too, so the leaves hang on visible twigs (spec/model/sky-view.md).
   //  • ANGULAR COVERAGE is the arithmetic this view adds, and it is about the GROVE's reach, not the box's. A grove
   //    of plan reach R is FULL above elevation atan(h_top/R) and thins from there down to atan(h_base/R), below
   //    which it is open sky. Here Rfill = 9 m (view_extent_m, since it is under canopy_extent·0.46) and
@@ -877,8 +877,8 @@ export const PRESETS = {
   //    so the composition is canopy-with-a-sun-in-it, not a lens-flare portrait. cloud 0.2 gives it a small aureole
   //    without draining the disk. Elevation 55 keeps it well inside a 60° lens pointed at the zenith.
   //  • the WIND is the soul: sway_height_gain 1.6 puts the crowns on long levers so a gust leans the whole grove
-  //    together — §5.1's coherent band, watched directly for the first time instead of read off a floor pattern.
-  //  • glow_bleed is the eye's VEILING GLARE here, not a weave (§4.9). With view_extent_m 9 the pair below is
+  //    together — spec/model/motion.md's coherent band, watched directly for the first time instead of read off a floor pattern.
+  //  • glow_bleed is the eye's VEILING GLARE here, not a weave (spec/model/sky-view.md). With view_extent_m 9 the pair below is
   //    about an 11 px radius on a 1000-tall frame — a screen-space number, so re-judge it if either knob moves, and
   //    re-judge it against the twigs, which are the finest thing in the frame for it to smear.
   //  • exposure 1.3 / contrast 1.0: the sun clips to white and must, and any contrast above 1 clips the backlit
@@ -899,7 +899,7 @@ export const PRESETS = {
     "view_extent_m": 9, "view_pitch_deg": 90, "view_fov_deg": 60, "view_yaw_deg": 0,
     "view_center_x": 1.6, "view_center_y": 1.1, "trunk_radius_m": 0.14, "far_smear": 0,
     "exposure": 1.1304, "contrast": 1.0, "ambient_skylight": 1.4376, "sky_turbidity": 0.05, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,
-    "glow_bleed": 0.15, "glow_bleed_m": 0.04,   // the eye's veiling glare (§4.9), tight enough to halo the SUN and not veil the frame: the mix is linear-HDR, so a wide one drags the sky down toward the canopy's own mean
+    "glow_bleed": 0.15, "glow_bleed_m": 0.04,   // the eye's veiling glare (spec/model/sky-view.md), tight enough to halo the SUN and not veil the frame: the mix is linear-HDR, so a wide one drags the sky down toward the canopy's own mean
     "wind_pattern": "gusty", "wind_strength": 1.3, "wind_gustiness": 0.3, "wind_direction_deg": 0, "gust_frequency": 0.11,
     "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
     "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 1.6,
@@ -1030,7 +1030,7 @@ export const PRESETS = {
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.55): it shows at 1.3 there, and a thicker cloud opens it up
     // the beam dimmed by the receiver's cosine law and the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
   }),
-  // 'curtain 1' — a moss-green velvet, the plant at the glass (spec §4.9). It was a sunlit sheer cotton (high Tt, warm dye, matte)
+  // 'curtain 1' — a moss-green velvet, the plant at the glass (spec/model/receivers.md). It was a sunlit sheer cotton (high Tt, warm dye, matte)
   // until José chose the velvet; its pile still reads as satin, and its texture is open. In a dark room: one huge window (4.5 x 3.05 m, wall 0 = black surround), a faint translucent
   // mullion grid, and the grove nearly TOUCHING the cloth (0.6 m) so the cast is crisp botanical shadow-play —
   // the near-contact shape regime, wanted here: leaves print as leaves and the deep fold warp S-bends them.
@@ -1064,7 +1064,7 @@ export const PRESETS = {
   // 'curtain 2' — the same room at BLUE HOUR. curtain 1's grove, seed and window, so the pair live-morphs;
   // what changes is the hour and the cloth. The sun sinks to 7 deg and reddens through haze; the fabric is
   // near-white VOILE (Tt 0.85, neutral tint — at dusk the LIGHT carries the colour); the grove steps back to
-  // 1.8 m so BOTH regimes share the frame (near limbs crisp, crown melted soft — §3.2); the glow widens into
+  // 1.8 m so BOTH regimes share the frame (near limbs crisp, crown melted soft — spec/model/receivers.md); the glow widens into
   // bloom and the Purkinje shift runs deep: hot gold sun-blobs floating on rod-blue dim cloth. Lazy last-light
   // wind. Authored as the direction's next step; every number is a starting point.
   'curtain 2': Object.assign({}, LOOK_DEFAULTS, {
@@ -1092,7 +1092,7 @@ export const PRESETS = {
     "drift_amount": 0.145, "drift_phase": 2.43, "drift_auto": true, "drift_speed": 0.02,
     "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.22): it shows at 1.845 there, and a thicker cloud opens it up
   }),
-  // 'tent 1' — komorebi from INSIDE a tent (spec §4.9): the ENCLOSURE receiver, receiver 2, now a CLOSED tent.
+  // 'tent 1' — komorebi from INSIDE a tent (spec/model/receivers.md): the ENCLOSURE receiver, receiver 2, now a CLOSED tent.
   // Reference: a NEMO Dragonfly 2P pitched under trees, photographed from inside lying down.
   // THE TWO EARLIER ROUNDS, HONESTLY. First it spent two tuning passes on the flat vertical curtain, which no preset
   // could rescue: a plane has ONE normal, so every part of it takes the light at the same angle, and the reference's
@@ -1110,7 +1110,7 @@ export const PRESETS = {
   // dye, matte, heavy forward scatter) where the velvet is dark, saturated, pile-sheened. NO window and NO mullion
   // grid — both are curtain-only and the engine gates them off here anyway; the tent stands UNDER the canopy, so
   // every panel is lit and the field is continuous dapples.
-  // BOTH §3.2 REGIMES, from the tree's own depth spread: the panels sit 0.5–1.7 m from the eye under a canopy banded
+  // BOTH REGIMES (spec/model/receivers.md), from the tree's own depth spread: the panels sit 0.5–1.7 m from the eye under a canopy banded
   // 2.6–6.2 m up, so the dapple blur (h − recvZ)·θ runs ~2–5 cm — pinhole, soft overlapping sun-images — while the
   // grove's lowest limbs, metres nearer, keep soft shape. The crossover is set purely by occluder distance.
   // EVERY NUMBER BELOW IS A STARTING POINT for a pass on the real thing — none of it has been seen on a GPU.
@@ -1153,13 +1153,13 @@ export const PRESETS = {
     "fabric_tt": 0.6, "fabric_tint_r": 0.92, "fabric_tint_g": 0.9, "fabric_tint_b": 0.82,
     "velvet_sheen": 0,   // MATTE — nylon has no pile, and the satin ridge glow is the one curtain cue that would break the read
     "fabric_scatter": 0.7,   // most of the transmit diffuses in the weave: shade lifts toward pale gray (never black), the glowy-haze half of the reference
-    // THE MESH BAND (§4.9), the first per-panel material: solid nylon to the shoulder, no-see-um mesh above it. At
+    // THE MESH BAND (spec/model/receivers.md), the first per-panel material: solid nylon to the shoulder, no-see-um mesh above it. At
     // 0.6 the upper band passes ~73 % of what the nylon does and keeps only 40 % of the scatter above, so it reads
     // darker AND crisper — which is the delineation the smooth arch shading took away when the shoulder crease went.
     // The hem line itself is drawn by the seam knob, because the two bands are now separate panel groups.
     "tent_mesh": 0.6,
     "fabric_nap": 0.04,   // a fine grain on the nylon: radial lines toward the far end, fine vertical ones on the lit end wall
-    // LATERAL DIFFUSION (§4.9), the tier this look motivates: the wrap above softens each pixel's own fold, but only
+    // LATERAL DIFFUSION (spec/model/receivers.md), the tier this look motivates: the wrap above softens each pixel's own fold, but only
     // this bleeds a hot dapple's glow ACROSS its cast-shadow edge — the reference's spotlight-versus-haze contrast.
     // The one look that opts into the expensive rung; 8 cm of bleed is about right for thin nylon. Both taste calls.
     "glow_bleed": 0.45, "glow_bleed_m": 0.07,
@@ -1194,7 +1194,7 @@ export const PRESETS = {
     // the far cap's rim at ~35° and the crown sweeping overhead out of the top of frame; 78° is a wide enough lens
     // to hold both slopes and the crown at once, which is the whole composition. view_extent_m no longer frames
     // anything here (the fov and the tent do) — it survives only as the lateral-diffusion tier's px/m reference,
-    // which is approximate on a receding panel (§4.9).
+    // which is approximate on a receding panel (spec/model/receivers.md).
     "view_extent_m": 4.9, "view_pitch_deg": 42.5, "view_fov_deg": 88, "view_yaw_deg": -130,   // -115.34 was the hand-tuned light; -130 keeps that character AND brings the near vent triangle into frame (measured: 2.6% of frame, upright) — pull it back if the light mattered more   // the user's hand-tuned framing: the yawed gaze re-aims the sun across the panels — most of what un-churched the look
     "view_center_x": 0, "view_center_y": 0, "trunk_radius_m": 0.06, "far_smear": 0,
     // ---- THE FLOOR OF SHADE IS LOAD-BEARING. Do not "restore contrast" here without re-deriving it. ----
@@ -1210,7 +1210,7 @@ export const PRESETS = {
     //    shaded slope) against ~224 in a full dapple: a dim blue-gray you can read the seams through, not a hole.
     //    At the old 0.9 it is 13 %, and at 1.1 it is 15 % — dark enough next to a 224 dapple to still read as black.
     //    It is also standing in for something real the model lacks: a white tent's shaded side is mostly lit by
-    //    bounce off the lit side opposite, and there is no interreflection here (§4.9's honesty list).
+    //    bounce off the lit side opposite, and there is no interreflection here (spec/model/receivers.md's honesty list).
     //  • THE LEAVES, above: paler trans lifts the mid-shade the ambient floor does not reach.
     "exposure": 1.4763, "sun_cosine": 1, "contrast": 1.0, "ambient_skylight": 2.1171, "sky_turbidity": 0.04, "mesopic_strength": 0, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 1.35/the crown's sin 55°
     "wind_pattern": "gusty", "wind_strength": 0.9, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
@@ -1323,7 +1323,7 @@ export const PRIORITY = {
   'eclipse': ['eclipse', 'focus'],
 };
 
-// ---- TREE_SPECIES (spec §4.5): named SHAPE bundles, the inverse of WIND_PATTERNS — each a partial set of the
+// ---- TREE_SPECIES (spec/model/canopy.md): named SHAPE bundles, the inverse of WIND_PATTERNS — each a partial set of the
 // growth/shape knobs (leader, droop, taper, crown_aspect, phyllotaxis + the structural knobs). The editor merges
 // the chosen bundle OVER the current look's params (shape ⟂ scene: lighting/camera/wind are untouched), stamps
 // `tree_species` as an inert label, and rebuilds. So one click turns the standing tree into an oak / spruce /

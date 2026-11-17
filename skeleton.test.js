@@ -1,5 +1,5 @@
 // ============================================================================
-// The tree's grammar as a function (spec §4.5, P4a-1): growSkeleton(spec, rng, out) in komorebi-math.js, lifted out of
+// The tree's grammar as a function (spec/model/canopy.md, P4a-1): growSkeleton(spec, rng, out) in komorebi-math.js, lifted out of
 // buildGrove (with a flat `plane` mode no engine caller uses yet). The claim worth holding loudly is the one that
 // fails SILENTLY: this is a pure refactor, so the grove is the SAME grove — every segment and twig of every species,
 // bit for bit — because one reordered draw from the growth stream reshuffles every look there is. The fixtures below

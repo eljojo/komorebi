@@ -1,8 +1,8 @@
 // ============================================================================
-// Abscission (spec §4.5, P3a): a leaf lets go on its own day, the sunlit ones first, and a marcescent share (beech)
+// Abscission (spec/model/season.md, P3a): a leaf lets go on its own day, the sunlit ones first, and a marcescent share (beech)
 // never does within the season. The claims worth holding loudly are the ones that fail SILENTLY: a gate that leaks
 // arithmetic into a summer look, a drop day drawn from a stream that reshuffles every shipped grove, a leaf that
-// pops out instead of fading (§5.3), two buffers that disagree about who is left, an exposure that forgot the
+// pops out instead of fading (spec/contracts/continuity.md), two buffers that disagree about who is left, an exposure that forgot the
 // leaves already gone. (The exposure.test.js pattern: pure laws, then the one place that applies them.)
 // ============================================================================
 import { test, expect } from "bun:test";
@@ -458,7 +458,7 @@ test("the litter: exactly the leaves with w = 0, each with what the next phase n
     expect(l.j).toBe(f.j); expect(l.k).toBe(f.k);
     expect(l.D).toBeLessThanOrEqual(p);                                                       // it has had its day
     expect(l.D).toBeGreaterThanOrEqual(DS);
-    expect(l.fade).toBeCloseTo(f.fade, 6);                                                    // a marginal leaf's litter is marginal too (§5.3)
+    expect(l.fade).toBeCloseTo(f.fade, 6);                                                    // a marginal leaf's litter is marginal too (spec/contracts/continuity.md)
     expect(l.tau).toHaveLength(3);
     for (const c of l.tau) expect(Number.isFinite(c) && c > 0).toBe(true);
   }
@@ -528,7 +528,7 @@ test("the tree preview scatters one point per leaf still on the tree: dropped le
 });
 
 // ============================================================================
-// After the turn (`drop_after_turn`, `drop_lag`; spec §4.5, Abscission): a leaf lets go only once it has turned, a lag after the end of
+// After the turn (`drop_after_turn`, `drop_lag`; spec/model/season.md, Abscission): a leaf lets go only once it has turned, a lag after the end of
 // ITS OWN window. Off (the default) none of this exists, to the bit; the claims below are the on state, and the exactness of the off one.
 // ============================================================================
 const CAP = { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1 };   // montebello's capacity, FALL_CAPACITY (macros.js)

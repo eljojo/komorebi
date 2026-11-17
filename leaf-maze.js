@@ -1,5 +1,5 @@
 // ============================================================================
-// The held leaf's physics (spec §4.5, "The held leaf"): ONE grown leaf, rasterised with the areole maze at full resolution — walls beside cells — so the
+// The held leaf's physics (spec/model/leaf.md, "The held leaf"): ONE grown leaf, rasterised with the areole maze at full resolution — walls beside cells — so the
 // sieve effect can be seen where the engine only carries its mean (`wall_fraction`, Decision 10: the vibe at no performance cost). A pure editor sibling
 // like macros.js: leaf-preview.js draws it, editor.js owns the key, and NO engine module imports it, so nothing here can reach a bundle.
 //

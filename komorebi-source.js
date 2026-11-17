@@ -1,7 +1,7 @@
 // ============================================================================
-// The Source (spec §4.4) — the area light as a Vogel-spiral cloud of weighted
+// The Source (spec/model/source.md) — the area light as a Vogel-spiral cloud of weighted
 // point-suns, plus the three per-frame geometry helpers every camera shares:
-// the bulk shadow offset (§4.8), the ellipse projection (§3.5/§4.6) and the
+// the bulk shadow offset (spec/model/transport.md), the ellipse projection (spec/model/transport.md) and the
 // per-layer heights. A factory over the engine's shared internals (hub).
 // ============================================================================
 import { DEG, clamp, lerp } from './komorebi-math.js';
@@ -55,7 +55,7 @@ export function makeSource(hub){
       //   let s=0; for(const p of pts) s+=p[2]; if(s>0) for(const p of pts) p[2]/=s;
       // and divide the seen source's Lcore/Lhalo below by the analytic uncovered share again (see there).
     }
-    // THE SEEN SOURCE (§4.9, sky view): the same distribution these samples approximate, expressed as RADIANCE — the
+    // THE SEEN SOURCE (spec/model/sky-view.md, sky view): the same distribution these samples approximate, expressed as RADIANCE — the
     // core disk and the halo annulus, each carrying its post-cloud weight over its own solid angle. Derived HERE, from
     // the very numbers the sampler just used, so the sun you look at and the dapples it throws cannot drift apart:
     // raise cloud_thickness and the disk drains into the aureole by exactly the amount the dapples soften. Absolute
@@ -83,10 +83,10 @@ export function makeSource(hub){
   const _bulk = [0,0];
 
   // Is the canopy a finite OBJECT with a bulk throw (a standing tree, the curtain, the tent) rather than the endless park? The one
-  // question the beam's bulk shift and the sky fill's domain (§4.7: wrap the box, or open sky over a padded frame) both ask.
+  // question the beam's bulk shift and the sky fill's domain (spec/model/fill.md: wrap the box, or open sky over a padded frame) both ask.
   const bulkOn = () => !!(params.standing_scene || params.receiver);
 
-  // STANDING-SCENE bulk shadow offset (§4.8): cot(elev)·(anti-sun direction) per unit height — the lateral throw the
+  // STANDING-SCENE bulk shadow offset (spec/model/transport.md): cot(elev)·(anti-sun direction) per unit height — the lateral throw the
   // park model omits. ONE helper, shared by transport's analytic occluder AND the faithful bake, so the two throws
   // can't silently drift apart. Floored at 6° — deliberately HIGHER than projMatrix's 4° ellipse floor: cot(elev)
   // diverges faster than the ellipse's 1/sin² as the sun nears the horizon, so the throw wants the tighter clamp.

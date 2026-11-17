@@ -1,5 +1,5 @@
 // ============================================================================
-// The sky fill (spec §4.7, "What the shade is lit by"): the shade between the dapples is lit by the skylight that
+// The sky fill (spec/model/fill.md, "What the shade is lit by"): the shade between the dapples is lit by the skylight that
 // came THROUGH the canopy and by the sunlight the lit leaves scatter downward. The fill shader runs a fixed
 // cosine-weighted quadrature over a layer stack; komorebi-fill.js is that quadrature as pure functions, and these
 // tests hold its laws. The ones worth holding loudly are the ones that would otherwise fail SILENTLY: weights that
@@ -154,7 +154,7 @@ test("energy: the scattered light never exceeds scatter * (1 - Tsky) * sun, over
   expect(strict).toBeGreaterThan(100);
 });
 
-// ---- THE AMBIENT TERM WAS A DOUBLE COUNT (§4.9, §4.7). The source term is the SUN's light scattered by the lit leaves.
+// ---- THE AMBIENT TERM WAS A DOUBLE COUNT (spec/model/sky-view.md, spec/model/fill.md). The source term is the SUN's light scattered by the lit leaves.
 // The skylight's own passage through a layer is already the T·sky term (the eye ray's, the fill's Tsky): for a uniform
 // sky, diffuse transmission through Lambertian leaves equals the ballistic T·L_sky to first order, so a leaf that also
 // "re-radiated" the sky that fell on it counted that skylight twice. Leaf-top reflection goes up, never to an eye
@@ -199,7 +199,7 @@ test("the scatter albedo is a pure gain: 0 turns the term off exactly, and Tsky 
   for (let c = 0; c < 3; c++) { expect(on.S[c]).toBeGreaterThan(0); expect(on.S[c]).toBeCloseTo(0.5 * full.S[c], 12); }
 });
 
-test("one direction IS the sky view's per-ray formula (§4.9), on the same stack", () => {
+test("one direction IS the sky view's per-ray formula (spec/model/sky-view.md), on the same stack", () => {
   // The formula as the spec states it, spelled out here independently of komorebi-fill.js:
   //   L = sum_L thr_L (1 - t_L) shat_L (sun A_L),  thr_L = prod_{M<L} t_M,  A_L = prod_{M>L} t_M(p_L + g (h_M - h_L)),
   //   shat = t / max(t) (unit-peak hue), p_L = where the ray crosses layer L.
@@ -256,7 +256,7 @@ function grow(over) {
 
 test("the faithful path's low-res layers sit where the twigs really grew: each bin's height is its twigs' mean grown z", () => {
   // the park band (canopy_base_height_m + thickness) is a normalisation the faithful cast ignores — it casts from the
-  // grown z. The fill's hemisphere has to be read at the heights the leaves REALLY hang at (§4.7), bottom to top.
+  // grown z. The fill's hemisphere has to be read at the heights the leaves REALLY hang at (spec/model/fill.md), bottom to top.
   const { g, faith } = grow({ layer_count: 3, crown_aspect: 2 });
   expect(faith.binH.length).toBeGreaterThanOrEqual(3);
   const tw = g.hier.twigs;
@@ -271,7 +271,7 @@ test("the faithful path's low-res layers sit where the twigs really grew: each b
   expect(faith.binH[0]).toBeGreaterThanOrEqual(faith.hMin);
 });
 
-// ---- INTERLEAVED SAMPLING (§4.7). Every texel integrating the SAME 16 directions makes neighbouring texels hit
+// ---- INTERLEAVED SAMPLING (spec/model/fill.md). Every texel integrating the SAME 16 directions makes neighbouring texels hit
 // correlated leaves, so the mip's box average smooths only 16 directions' worth of noise and the bilinear read of that
 // shows facets. Each texel of a 4x4 tile gets its own rotation of the set from a fixed ordered pattern, so the 16
 // texels the mip-2 box averages together cover 256 distinct directions. Fixed, never time-varying: byte-stable.
@@ -365,7 +365,7 @@ test("interleaving holds for the scattered light too", () => {
   expect(Math.sqrt(eR) * 1.8).toBeLessThanOrEqual(Math.sqrt(eU));
 });
 
-// ---- THE BOX IS NOT THE WORLD, AND THERE IS ONE SUN PER CAMERA (§4.7). The fill used to light its leaves along the REAL sun
+// ---- THE BOX IS NOT THE WORLD, AND THERE IS ONE SUN PER CAMERA (spec/model/fill.md). The fill used to light its leaves along the REAL sun
 // while the beam it was balancing walks its own path (the bulk shift: none at all in the endless park), and it read its
 // hemisphere through a texture bounded by the canopy box — CLAMP_TO_EDGE, so half the glow that spreads past the box was lost
 // and the border texel was repeated to the horizon. The reference now takes the sun path as an argument and reads the layers

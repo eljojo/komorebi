@@ -1,5 +1,5 @@
 // ============================================================================
-// Re-seasoning (spec §4.5, P2b): the season is a function of the grove, not a regrow. Everything a phenology change moves
+// Re-seasoning (spec/model/season.md, P2b): the season is a function of the grove, not a regrow. Everything a phenology change moves
 // (τ_j, including the authored summer tint, the retained weight, which leaves are compacted out, the litter list, leafW, the faithful AABB) is re-run over the
 // per-leaf record a grove built with `keepSeason` keeps, and it must land BIT FOR BIT where a fresh buildGrove at the same
 // params lands — the tween's landing tick is the resting state, and nothing regrows on release. Held loudly because every way
@@ -163,7 +163,7 @@ identity("leaf-out starting in the spring (the build compacts and shrinks)", { l
 identity("leaf-out with a red flush, maple outline, inner leaves", { leaf_drop: 0, young_red: 0.4, leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756, inner_leaves: 0.4 }, { phs: SPRING_PH });
 identity("leaf-out with its shape moving", { leaf_drop: 0 }, { phs: SPRING_PH, move: (p) => ({ leaf_out_end: 0.1 + 0.1 * p, leaf_out_span: 0.05 + 0.08 * p, leaf_out_spread: 0.1 * (1 - p), leaf_green_span: 0.1 + 0.2 * p, young_depth: 0.2 + 0.6 * p }) });
 
-// ---- the tiers (§4.5 "Re-seasoning"): a leaf's draws are the grove's, its schedule is the season knobs', its state now is phenology, the summer tint and the wall fraction --------
+// ---- the tiers (spec/model/season.md "Re-seasoning"): a leaf's draws are the grove's, its schedule is the season knobs', its state now is phenology, the summer tint and the wall fraction --------
 test("a phenology, tint or wall_fraction step reuses each leaf's draws and schedule; a schedule knob rebuilds the schedule from the same draws; every step is a fresh build", () => {
   const base = { ...SMALL, phenology: 0.6 };
   const A = rig({ ...base });

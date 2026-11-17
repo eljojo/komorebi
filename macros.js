@@ -40,7 +40,7 @@ const FALL_CAPACITY = { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_
 const AFTERNOON = { foliage_density: 1.65, branch_length_ratio: 0.62, branch_pitch_deg: 26, trans_r: 0.26, trans_g: 0.356, trans_b: 0.001 };   // afternoon 4's structure and leaf hue
 
 export const MACROS = {
-  // clear sky → veiled → overcast. cloud_thickness is the spec's "single most expressive parameter" (§3.4)
+  // clear sky → veiled → overcast. cloud_thickness is the spec's "single most expressive parameter" (spec/model/source.md)
   // and the source model does the physics (energy drains core → halo on its own); the halo widens with it the
   // way the overcast looks do. Shipped range tops at 0.55 (canopy 4) — full 1.0 is transition-bloom
   // territory, deliberately out of reach here.
@@ -80,7 +80,7 @@ export const MACROS = {
   // height gain, twig/leaf response) deliberately STAY the look's own — the panel's own guidance ("spring
   // mechanics — tuned once. Per scene you really only change strength and direction") and the sky looks'
   // hand-tuned levers (canopy 1's sway_height_gain 1.6 is called its soul) both say a wind knob must not
-  // touch them. The bottom quarter is NOT stillness — it is afternoon 5's drift-dominant glisten (§1's
+  // touch them. The bottom quarter is NOT stillness — it is afternoon 5's drift-dominant glisten (spec/experience.md's
   // faint wind). scope 'bake': drift_amount stamps into the leaves, so a still frame re-bakes to show it.
   wind_y: {
     label: 'wind', scope: 'bake', live: true, probe: 'wind_strength',
@@ -113,7 +113,7 @@ export const MACROS = {
       { t: 1.0, set: { ground_r: 0.12, ground_g: 0.16, ground_b: 0.19 } },   // the void's cool stone
     ],
   },
-  // leaf-edge diffraction (§3.6): 0 is byte-identical off, 3 is 'prism', 6 is 'morning 3b'. Pure sparkle.
+  // leaf-edge diffraction (spec/model/light.md): 0 is byte-identical off, 3 is 'prism', 6 is 'morning 3b'. Pure sparkle.
   // CAST-gated: diffraction rides the cast cameras (floor/curtain/tent); the sky view never reads it.
   prism: {
     label: 'prism', scope: '', live: true, probe: 'chromatic_aberration', gate: 'cast',

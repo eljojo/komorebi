@@ -127,16 +127,16 @@ function createEngine(canvas, opts, driven=false){
   // Auto-quality runtime throttle (driven by the params.auto_quality toggle). Holds the live
   // resolution / sample-count it trims to. Never touches the artistic params.
   const perf = { auto:false, quality:1, resScale:1, sampleCount:params.sample_count, bres:0, acc:0, lowCount:0, hiCount:0, upWait:20, glow:false };  // bres = size the layer textures are currently built at (so applyQuality knows when to reallocate); glow = the lateral-diffusion tier actually ran this frame (false when gated off OR when its 16F targets came back incomplete)
-  // Motion — one time-driven state, two bands (spec §5). u = longitudinal sway fraction (signed, along the
+  // Motion — one time-driven state, two bands (spec/model/motion.md). u = longitudinal sway fraction (signed, along the
   // effective wind), uLat = lateral (crosswind) sway fraction; each its own spring. windX/Y = the effective
   // wind direction after the weather veer; weatherS = the live weather strength multiplier (read by the HUD);
   // driveEnv = the asymmetric-edged longitudinal force; env = [0,1] gust intensity for the hierarchy breathing.
   const motion = { time:0, u:0, v:0, uLat:0, vLat:0, env:0, driveEnv:0, sway:[0,0], windX:1, windY:0, weatherS:1 };
-  // Transition — cloud-bloom crossfade between looks (spec §9). t walks 0->1 over dur: the continuous
+  // Transition — cloud-bloom crossfade between looks (spec/model/transitions.md). t walks 0->1 over dur: the continuous
   // params morph, the grove swaps once at the bloom peak, and `bloom` is a transient overcast that hides it.
   const trans = { active:false, t:0, dur:1.5, durScale:1, bloomMax:1, crossfade:false, from:null, to:null, swapped:false, structDiff:false, canopyMorph:false, bloom:0, onEnd:null };
   const effCloud = () => clamp(lerp(params.cloud_thickness, 1, trans.bloom), 0, 1);  // cloud, swollen toward overcast mid-transition
-  const bakeBaseline = () => (params.bake_resolution > 0 ? params.bake_resolution|0 : params.tex_resolution|0);  // TUNE §9: decoupled bake size; 0 follows tex_resolution.
+  const bakeBaseline = () => (params.bake_resolution > 0 ? params.bake_resolution|0 : params.tex_resolution|0);  // TUNE spec/implementation.md: decoupled bake size; 0 follows tex_resolution.
   // Live bake / layer-texture size. Pure function of quality + params: when auto_quality is engaged it trims the
   // bake below the knee (q<0.5) alongside samples, snapped to 256 so the textures only reallocate at a level
   // boundary — not on every fps nudge. rebuildTextures/bake both read this (transport samples by UV → smaller = softer).
@@ -217,7 +217,7 @@ function createEngine(canvas, opts, driven=false){
       clusterTex:loc(prog,'uClusterTex'),clusterGeom:loc(prog,'uClusterGeom'),beamK:loc(prog,'uBeamK'),edgeArea:loc(prog,'uEdgeArea'),
       leafTex:loc(prog,'uLeafTex'),leafShape:loc(prog,'uLeafShape'),shapeBox:loc(prog,'uShapeBox'),leafIdFrac:loc(prog,'uLeafIdFrac'),leafRows:loc(prog,'uLeafRows')};
   }
-  // ---- THE TRANSPORT PROGRAM CACHE (spec §4.6/§4.9). One program per camera, built by buildTransport, compiled on
+  // ---- THE TRANSPORT PROGRAM CACHE (spec/model/transport.md). One program per camera, built by buildTransport, compiled on
   // FIRST USE and then kept for the engine's life. The four authored cameras move on a MODE
   // flip (sky_view / receiver), which already tears the grove down and rebuilds it under the transition bloom — so
   // the one first-compile a camera ever costs lands inside that bloom, where a frame's hitch is already hidden, and
@@ -225,7 +225,7 @@ function createEngine(canvas, opts, driven=false){
   // wipe's second instance has its own GL context and links its own. A fifth program carries sky↔floor
   // transitions through the horizon, using the same grove and the two endpoint cameras' reads. ----
   const transportCache = new Map();
-  // Which variant this draw runs — the registry's own selector (§4.9), bound to these params. It can only change
+  // Which variant this draw runs — the registry's own selector (spec/implementation.md), bound to these params. It can only change
   // across a structural rebuild (sky_view and receiver are MODE_KEYS), or along the continuous viewpoint route.
   const transportCamera = () => trans.active && trans.riseField ? 'rise' : trans.active && trans.viewpoint && (trans.t>0 || trans.viewInterrupted) ? 'viewpoint' : cameraFor(params);
   // The per-variant location table, read straight off the registry: a variant's table holds exactly the keys its
@@ -253,7 +253,7 @@ function createEngine(canvas, opts, driven=false){
     }
     return e;
   }
-  // THE SKY FILL's bake program (§4.7): compiled on first use like a transport variant, so a look that never opens
+  // THE SKY FILL's bake program (spec/model/fill.md): compiled on first use like a transport variant, so a look that never opens
   // canopy_fill (every shipped one but the fall looks) pays neither the compile nor the textures. A program belongs to the context that
   // linked it, so a restore forgets it (see onContextRestored) and the next fill compiles afresh. A const behind its flag and not a function declaration: a bundle that
   // cut the fill must not be left holding the shader this names (a minifier keeps an unused function declaration, and the string with it).
@@ -287,7 +287,7 @@ function createEngine(canvas, opts, driven=false){
     }
     return bounceEntry;
   } : null;
-  // THE LITTER CARPET's bake program (§4.7): compiled on the first carpet, like the fill's, so a look that never lays litter (every shipped one but the fall looks) pays
+  // THE LITTER CARPET's bake program (spec/model/season.md): compiled on the first carpet, like the fill's, so a look that never lays litter (every shipped one but the fall looks) pays
   // neither the compile nor the buffer. A program belongs to the context that linked it, so a restore forgets it too. Behind its flag for the same reason as the fill's.
   let litterEntry = null;
   const litterFor = FEAT_LITTER ? () => {
@@ -298,31 +298,31 @@ function createEngine(canvas, opts, driven=false){
     }
     return litterEntry;
   } : null;
-  // adaptive frame-rate (TUNE §9): offscreen present target + cadence state. presentFBO/presentTex are canvas-sized
+  // adaptive frame-rate (TUNE spec/implementation.md): offscreen present target + cadence state. presentFBO/presentTex are canvas-sized
   // and allocated lazily on first use (so a look that never enables adaptive_motion pays nothing).
   let presentTex=null, adaptiveLastRender=0, adaptiveHot=true, adaptiveResume=false;
   const ADAPT_HI=0.05, ADAPT_LO=0.02;   // hysteresis on the motion magnitude: above HI render every frame, below LO drop to idle_fps
-  // lateral diffusion (§4.9): [0] = transport's LINEAR-HDR frame (the sharp one), [1]/[2] = the separable blur's
+  // lateral diffusion (spec/model/receivers.md): [0] = transport's LINEAR-HDR frame (the sharp one), [1]/[2] = the separable blur's
   // ping/pong. RGBA16F at the render size, one FBO each (attached once at allocation, so no per-frame re-attach),
   // allocated lazily on first use and reallocated on resize — a look that never opens the gate holds no VRAM.
   const src = { flat:new Float32Array(0), count:0, maxR:1, maxW:1, haloR:0.01,
-                coreR:0.005, moonD:0, moonR:0, Lcore:0, Lhalo:0 };   // + the SEEN source (§4.9 sky view): angular radii, the eclipse moon, and the radiance in each region — all filled by regenSource from the sampler's own numbers
-  const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0, want:0, hRef:1 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend, `hRef` = tallest floor height for the drift's height-scale (spec §4.5)
-  const faith = { vao:null, buf:null, count:0, hMin:0, hMax:1, ox:0, oy:0, ext:1,   // FAITHFUL leaf geometry (all leaves, continuous height) + the cast-region frame, computed in bakeFaithful (§4.5)
+                coreR:0.005, moonD:0, moonR:0, Lcore:0, Lhalo:0 };   // + the SEEN source (spec/model/sky-view.md sky view): angular radii, the eclipse moon, and the radiance in each region — all filled by regenSource from the sampler's own numbers
+  const occ = { rest:[], ht:new Float32Array(0), segBuf:new Float32Array(MAX_OCC*4), count:0, want:0, hRef:1 };   // woody occluder (trunk + main limbs): `rest` segments {ax..py} regrown, `ht` static (heights+radius), `segBuf` refilled per frame with the limb bend, `hRef` = tallest floor height for the drift's height-scale (spec/model/canopy.md)
+  const faith = { vao:null, buf:null, count:0, hMin:0, hMax:1, ox:0, oy:0, ext:1,   // FAITHFUL leaf geometry (all leaves, continuous height) + the cast-region frame, computed in bakeFaithful (spec/model/canopy.md)
                   pminx:0, pmaxx:0, pminy:0, pmaxy:0,                                // real plan AABB of leaves+wood (regenCanopy) → cast-frame bound, so a wide grove's outer crown isn't clipped
                   gx:new Float32Array(MAX_SAMPLES), gy:new Float32Array(MAX_SAMPLES),// per-sample ground-shift scratch (hoisted; no per-bake alloc)
-                  k:0,                                                               // the beam's neutral depth the cast was last baked with (§4.5): the cast pre-integrates it, so a live leaf_diffuse re-bakes it (refreshFaith)
-                  edgeArea:0,                                                        // the edge law the cast was last baked with (§4.5): edge_area is baked into each stamp at k = 0, so flipping it re-casts (refreshFaith)
+                  k:0,                                                               // the beam's neutral depth the cast was last baked with (spec/model/leaf.md): the cast pre-integrates it, so a live leaf_diffuse re-bakes it (refreshFaith)
+                  edgeArea:0,                                                        // the edge law the cast was last baked with (spec/model/leaf.md): edge_area is baked into each stamp at k = 0, so flipping it re-casts (refreshFaith)
                   n:0,                                                               // the sample count the cast was last baked over: the cast IS its samples, so a governor step or a resetPerf that re-cuts the cloud re-bakes it (refreshFaith)
                   segVAO:null, segBuf:null, segRest:[], segArr:null, segCount:0 };   // + the woody skeleton (trunk+branches+twigs): rest segments, the per-bake swayed instance array, its VAO
-  // SKY VIEW's share of that skeleton (§4.9): the FINE wood (level > 1) the analytic occluder never carries, sorted
+  // SKY VIEW's share of that skeleton (spec/model/sky-view.md): the FINE wood (level > 1) the analytic occluder never carries, sorted
   // into the leaves' own depth layers so a twig and the leaves hanging on it stamp into the SAME texture. Built
   // only when the look-up camera is on; empty otherwise, and the layer bake then draws nothing extra.
   const sky = { segVAO:null, segBuf:null, segRest:[], segArr:null, start:[], count:[] };
-  // THE SKY FILL's state (§4.7): Tsky and S over the fill's frame, allocated lazily when canopy_fill opens and freed when
+  // THE SKY FILL's state (spec/model/fill.md): Tsky and S over the fill's frame, allocated lazily when canopy_fill opens and freed when
   // it shuts. `ready` = the textures hold a bake of what `sig` records, so the receiver may believe them.
   const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(FILL_SIG_LEN), K:0, rays:null, ox:0, oy:0, ext:1, bounce:null, gb:0 };   // sig: what the bake was made of, sized by komorebi-bake.js's FILL_SIG_LEN, which fillSig is held to — a slot written past a Float64Array's end is silently dropped, and the fill then re-bakes every frame. ox/oy/ext: the plan square the textures cover (the box, or the padded frame of a finite tree), which every receiver reads them by
-  // THE LITTER's state (§4.7): the carpet texture (a 1×1 until a leaf has fallen and the floor asks), the square it covers, and what it was baked of.
+  // THE LITTER's state (spec/model/season.md): the carpet texture (a 1×1 until a leaf has fallen and the floor asks), the square it covers, and what it was baked of.
   // komorebi-litter.js owns the shape, so a context restore can put it back to the fresh one in a line.
   const litter = newLitterState();
 
@@ -339,18 +339,18 @@ function createEngine(canvas, opts, driven=false){
     effCloud, bakeBaseline, bakeRes, faithfulSamples, faithfulOn, transportFor, transportCamera, fillFor, bounceFor, litterFor, warnCut, program, sharedProgram: shared, faithLocs,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
-    woodTex: [],            // SKY VIEW (§4.9): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)
+    woodTex: [],            // SKY VIEW (spec/model/sky-view.md): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)
     layerSize: 0,           // the size the active layer textures were last allocated at (allocLayers) — the faithful path's sky fill resizes them in place
     layerVAO: [],           // per-layer leaf instance VAOs {vao,count,buf}
-    faithTex: null,         // FAITHFUL path (§4.5): pre-integrated soft shadow (RGBA16F); 1×1 when faithful_canopy off
+    faithTex: null,         // FAITHFUL path (spec/model/canopy.md): pre-integrated soft shadow (RGBA16F); 1×1 when faithful_canopy off
     faithScratch: null,     // FAITHFUL path: per-sample transmittance scratch (RGBA16F); 1×1 when off
     hier: null,             // branch hierarchy: limb + twig spring state (built in regenCanopy)
-    groveIn: null,          // the INCOMING grove during a crossfade (§9): grown early, baked alongside the active one, installed when the window closes
+    groveIn: null,          // the INCOMING grove during a crossfade (spec/model/transitions.md): grown early, baked alongside the active one, installed when the window closes
     crossW: 0,              // its coverage share, 0 -> 1 across the window
     grove: null,            // the ACTIVE grove value (hier + layerVAO + its two data textures); the views above point into it
     clusterTex: null,       // per-clump dynamic bend angles (limb, twig), updated each frame
     clusterGeomTex: null,   // per-clump static geometry (clump centre + trunk pivot)
-    presentFBO: null, presentW: 0, presentH: 0,   // adaptive frame-rate present target (TUNE §9), allocated lazily
+    presentFBO: null, presentW: 0, presentH: 0,   // adaptive frame-rate present target (TUNE spec/implementation.md), allocated lazily
     srcDbgBuf: null, srcDbgVAO: null, vizBuf: null, vizVAO: null,   // editor-only debug-overlay buffers
     timed: (_pass, draw) => draw(),   // profiling hook: the editor swaps in real GPU timer queries (EDITOR)
     motionTick: null,       // the per-frame physics tick; set below, swapped by the editor's motion mirror
@@ -365,13 +365,13 @@ function createEngine(canvas, opts, driven=false){
     gl.getExtension('EXT_color_buffer_float'); gl.getExtension('EXT_float_blend');
     extTimer = EDITOR ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
     progBake = shared(VS_BAKE, FS_BAKE);
-    progFaith = shared(VS_FAITH, FS_FAITH);   // FAITHFUL leaf bake (§4.5): per-sample transmittance at continuous heights
+    progFaith = shared(VS_FAITH, FS_FAITH);   // FAITHFUL leaf bake (spec/model/canopy.md): per-sample transmittance at continuous heights
     progFaithPivot = shared(VS_FAITH_PIVOT, FS_FAITH);   // ...for a grove with leaves on older wood: the pivot weight (inner_leaves)
-    progFaithSeg = shared(VS_FAITH_SEG, FS_FAITH_SEG);   // FAITHFUL skeleton bake (§4.5): trunk+branches+twigs as geometry
+    progFaithSeg = shared(VS_FAITH_SEG, FS_FAITH_SEG);   // FAITHFUL skeleton bake (spec/model/canopy.md): trunk+branches+twigs as geometry
     progFAcc = shared(VS_FULL, FS_FACC);      // FAITHFUL accumulate: Σ w_i·transmittance_i
     progBlit = shared(VS_FULL, FS_BLIT);
     progPresent = shared(VS_FULL, FS_PRESENT);                   // adaptive frame-rate: offscreen frame -> screen
-    progGlowBlur = shared(VS_FULL, FS_GLOW_BLUR);                // lateral diffusion (§4.9): one axis of the separable spread
+    progGlowBlur = shared(VS_FULL, FS_GLOW_BLUR);                // lateral diffusion (spec/model/receivers.md): one axis of the separable spread
     progGlowMix = shared(VS_FULL, FS_GLOW_MIX);                  // lateral diffusion: the sharp/blurred split + the relocated tone-map tail
     progPoints = EDITOR ? shared(VS_POINTS, FS_POINTS) : null;   // editor-only debug-overlay programs
     progViz = EDITOR ? shared(VS_VIZ, FS_VIZ) : null;
@@ -404,10 +404,10 @@ function createEngine(canvas, opts, driven=false){
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
 
     bakeFBO = gl.createFramebuffer();
-    fillFBO = gl.createFramebuffer();    // the sky fill's two-target pass (§4.7): the textures are attached when the fill allocates them
-    faithFBO = gl.createFramebuffer();   // FAITHFUL scratch target (§4.5): faithScratch attached here once per bake so the per-sample loop swaps FBOs instead of re-attaching (was 2N framebufferTexture2D/frame)
+    fillFBO = gl.createFramebuffer();    // the sky fill's two-target pass (spec/model/fill.md): the textures are attached when the fill allocates them
+    faithFBO = gl.createFramebuffer();   // FAITHFUL scratch target (spec/model/canopy.md): faithScratch attached here once per bake so the per-sample loop swaps FBOs instead of re-attaching (was 2N framebufferTexture2D/frame)
 
-    // ...and the GPU side of that table (§4.5/§6): one RGBA32F, MAX_OCC wide and 2 tall — row 0 the swung plan
+    // ...and the GPU side of that table (spec/model/canopy.md, spec/implementation.md): one RGBA32F, MAX_OCC wide and 2 tall — row 0 the swung plan
     // endpoints, row 1 the static heights + radius. Allocated once at the cap and never resized, because the cap is a
     // compile-time constant on both sides of the wire. This is the clusterTex idiom, for the same reason: a per-frame
     // table that every transport variant reads has no business sitting in the fragment uniform budget.
@@ -443,7 +443,7 @@ function createEngine(canvas, opts, driven=false){
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
     return t;
   }
-  // THE WOOD'S TEXTURE (§4.9): one half-float channel, because the wood's optical depth is accumulated additively by the stamp and has to
+  // THE WOOD'S TEXTURE (spec/model/sky-view.md): one half-float channel, because the wood's optical depth is accumulated additively by the stamp and has to
   // round as it did when it shared the layer texture's alpha. Half float for the same reason as everything here it is blended into;
   // R16F is colour-renderable and linearly filterable with EXT_color_buffer_float, like the RGBA16F beside it.
   function makeWoodTexture(size){
@@ -486,9 +486,9 @@ function createEngine(canvas, opts, driven=false){
     perf.bres = res;                                 // remember the built size; applyQuality reallocates when bakeRes() crosses it
     // faithful mode never bakes or samples the layer textures (transport taps faithTex once), so size them 1×1
     // there too — saves ~layer_count·res²·8 bytes of dead VRAM (≈16 MB at defaults). Reallocated full when faithful off.
-    // The one exception is the sky fill (§4.7): with canopy_fill open it reads a LOW-RES layer bake on that path too.
+    // The one exception is the sky fill (spec/model/fill.md): with canopy_fill open it reads a LOW-RES layer bake on that path too.
     allocLayers(!faithfulOn() ? res : hub.fillWanted() ? hub.fillLayerRes() : hub.treeWanted() ? hub.treeLayerRes() : 1);   // ...and so does the tree view, at the same size
-    // FAITHFUL path (§4.5): the soft-shadow accumulator + per-sample scratch. 1×1 when off, so the park / layer
+    // FAITHFUL path (spec/model/canopy.md): the soft-shadow accumulator + per-sample scratch. 1×1 when off, so the park / layer
     // path allocates nothing extra; full bake-res when faithful_canopy is on.
     if(hub.faithTex) gl.deleteTexture(hub.faithTex);
     if(hub.faithScratch) gl.deleteTexture(hub.faithScratch);
@@ -668,7 +668,7 @@ function createEngine(canvas, opts, driven=false){
     // reach the faithful branch above. That is the right branch for both, for the branch's own reason — the cost
     // is per PIXEL, so resolution is the cheapest thing to spend first. What differs is what the second lever
     // buys: the enclosure runs the sample loop, so trimming samples below the knee relieves it exactly as it does
-    // the floor; the SKY camera declares no sample loop at all (§4.6), so samples are inert there and its
+    // the floor; the SKY camera declares no sample loop at all (spec/model/transport.md), so samples are inert there and its
     // below-knee relief comes entirely from bakeRes() shrinking the layer textures it reads. Harmless either way —
     // a lever with no effect costs nothing — and the seen source is derived analytically, not from the sample
     // sums, so trimming them cannot shift the sun the sky camera is looking at.
@@ -677,7 +677,7 @@ function createEngine(canvas, opts, driven=false){
     perf.resScale = res;
     samp = clamp(samp, session?Math.min(3,params.sample_count):3, session?params.sample_count:Math.max(3, params.sample_count));
     if(samp !== perf.sampleCount){ perf.sampleCount = samp; regenSource(); }
-    if(bakeRes() !== perf.bres){ rebuildTextures(); bake(); }     // bake_resolution trims with quality below the knee (§9); realloc only at a snapped boundary
+    if(bakeRes() !== perf.bres){ rebuildTextures(); bake(); }     // bake_resolution trims with quality below the knee (spec/implementation.md); realloc only at a snapped boundary
   }
   function tunePerf(dtms, fps){
     perf.acc += dtms;
@@ -704,7 +704,7 @@ function createEngine(canvas, opts, driven=false){
   if(EDITOR && !driven) makeEditorTools(hub);   // debug overlays + profiler + motion mirror; EDITOR=false strips the call (and its module with it)
 
   // ---- the rebuild scopes the editor drives, plus a full param swap ----
-  // The cloud is cut BEFORE the bake: the faithful cast pre-integrates its soft shadow over the source's samples (§4.5), so a bake made first casts
+  // The cloud is cut BEFORE the bake: the faithful cast pre-integrates its soft shadow over the source's samples (spec/model/canopy.md), so a bake made first casts
   // against whatever cloud came before — empty on a born engine (a dark frame), the previous look's after setParams — and with still air nothing re-bakes it.
   // regenSource reads only params, perf and the transition's bloom; nothing the textures or the grove set up.
   // Given a look, the grove is grown from that look's value of every key it reads and the live params are put straight back: a
@@ -716,7 +716,7 @@ function createEngine(canvas, opts, driven=false){
     regenSource(); bake();
   }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
-  // The season axis (§4.5 "Re-seasoning"): a change to the season set alone is re-run over the grove's cached leaves; anything else the grove reads, or a grove the cache
+  // The season axis (spec/model/season.md "Re-seasoning"): a change to the season set alone is re-run over the grove's cached leaves; anything else the grove reads, or a grove the cache
   // does not describe, regrows (with the cache once the structure holds still, so the NEXT one is the fast one). Only a season-only grove morph may re-season during a
   // transition: the other routes may share engine-global faith.* with an incoming grove. The carpet's signature keys on the grove's identity plus phenology and the litter keys, NOT the capacities, so an anthocyanin-only
   // re-season would leave it stale: dropping the grove it was baked from makes the next refreshLitter bake it.
@@ -882,7 +882,7 @@ function createEngine(canvas, opts, driven=false){
                    drawSourceInset: hub.drawSourceInset, drawTreeInset: hub.drawTreeInset, treeInsetHit: hub.treeInsetHit, treeInsetRect: () => hub.treeInsetRect(), treeLeaves: () => hub.treeLeaves(), profiler: hub.profiler, snapshotMotion: hub.snapshotMotion, applyMotion: hub.applyMotion, setMotionSource: hub.setMotionSource,
                    isLowMotion: () => motionMagnitude() < ADAPT_LO,
                    grove: () => hub.grove } : {}) };   // editor-only handles, stripped from the player build (grove: the one on screen: the held leaf walks its hier; reseason.test.js reads its season record)
-  // ---- adaptive frame-rate helpers (TUNE §9) ----
+  // ---- adaptive frame-rate helpers (TUNE spec/implementation.md) ----
   function ensureFrameTarget(){                       // lazy canvas-sized RGBA8 present target; reallocated on resize
     const w=canvas.width, h=canvas.height;
     if(hub.presentFBO && hub.presentW===w && hub.presentH===h) return;

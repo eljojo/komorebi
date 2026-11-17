@@ -40,7 +40,7 @@ export function setStored(o) {
 
 // resolve a look by name: a saved ★ look shadows a built-in of the same name; otherwise the built-in.
 // A ★ look saved before a knob was renamed still carries the old key, so it comes back through the engine's alias map —
-// the caller only ever sees current names (spec §9).
+// the caller only ever sees current names (spec/implementation.md).
 export function getPreset(name) {
   const s = getStored();
   return migrateLegacy(name in s ? s[name] : PRESETS[name]);

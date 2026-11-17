@@ -14,7 +14,7 @@
 //
 // TRANSPORT is the exception, and it is why this file also IMPORTS the engine. Transport is no longer a single
 // literal: it is a set of snippets that buildTransport() assembles into one straight-line program per camera
-// (§4.6/§4.9), so the text alone holds no compilable transport shader at all. Asking the module for each
+// (spec/model/transport.md, receivers.md), so the text alone holds no compilable transport shader at all. Asking the module for each
 // variant's assembled source is the only honest check — and it is the check that matters, because a snippet
 // that lands in a variant missing the uniform it reads fails HERE rather than as a black canvas.
 //

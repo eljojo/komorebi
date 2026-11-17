@@ -2,7 +2,7 @@ import { MAX_SAMPLES, MAX_OCC } from './komorebi-params.js';
 import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_TEXEL_MIX, GLSL_GROUND_ALBEDO } from './komorebi-shaders.js';
 
 // ============================================================================
-// THE TRANSPORT MASTER (spec §4.6 / §4.9) — ONE source, FOUR straight-line programs.
+// THE TRANSPORT MASTER (spec/model/transport.md) — ONE source, FOUR straight-line programs.
 //
 // Transport answers one question — how much of the source reached this point, and what does the surface it
 // reached do with it — for four different cameras: the floor ray-cast, the cloth seen head-on, the enclosure
@@ -36,7 +36,7 @@ uniform float uFov;              // vertical full FOV (rad) — perspective stre
 uniform float uViewYaw;          // camera orbit about vertical (rad); rotates the sampled floor about frame centre. 0 = unchanged`;
 
 // ---- the layer read every CAST camera makes (floor, cloth, enclosure): optical depth -> transmittance. A LEAF IS NOT A
-// WINDOW (§4.5): a texel holds the leaves' true depth in rgb and their COVERAGE in alpha, and the BEAM is only the ballistic
+// WINDOW (spec/model/leaf.md): a texel holds the leaves' true depth in rgb and their COVERAGE in alpha, and the BEAM is only the ballistic
 // share. The texel is a MIXTURE of leaf and gap, not a slab (GLSL_TEXEL_MIX, one text, shared with the sky ray and the faithful stamp):
 // the beam passes the gap whole and a leaf at e^(-τ̄ - k) of it, where k = −ln(1−leaf_diffuse) is neutral depth per leaf and τ̄ the
 // leaf's own depth, so an edge texel no longer reads as a thin dark leaf and every ballistic shadow loses its halo. k tweens, so the
@@ -49,7 +49,7 @@ uniform float uViewYaw;          // camera orbit about vertical (rad); rotates t
 // in this file: the bundler finds the shader literals by pairing them.)
 // The beam's k is a group of its own, so that the taps below can stay when the uniform goes: they are functions, and without the uniform they are the old reads.
 const GLSL_T_BEAM = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per leaf. 0 = the old leaf, byte-identical
-uniform int uEdgeArea;   // edge_area (§4.5): 1 = the taps read a texel as its mixture at k = 0 too (inert above it: the split already does). 0 = the slab, byte-identical`;
+uniform int uEdgeArea;   // edge_area (spec/model/leaf.md): 1 = the taps read a texel as its mixture at k = 0 too (inert above it: the split already does). 0 = the slab, byte-identical`;
 const GLSL_T_TAP = `${GLSL_TEXEL_MIX}   // @feature leafDiffuse
 vec4 layerDepth(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
@@ -68,7 +68,7 @@ vec3 tap(highp sampler2D t, vec2 world){
   }   // @feature leafDiffuse
 }`;
 
-// ---- THE SOURCE SAMPLES and the per-unit-height ground shift: the many-suns integral of §4.2/§4.6. The sky
+// ---- THE SOURCE SAMPLES and the per-unit-height ground shift: the many-suns integral of spec/model/transport.md. The sky
 // view is the one camera that never runs it — it reads the field along the EYE's rays, not the sun's — and
 // dropping this block is most of why that variant costs 88 fewer uniform rows than the floor. ----
 const GLSL_T_TRANSPORT_DECLS = `#define MAX_SAMPLES ${MAX_SAMPLES}
@@ -76,14 +76,14 @@ uniform vec3  uSamples[MAX_SAMPLES];   // xy = angular offset (rad), z = weight 
 uniform int   uSampleCount;
 uniform mat2  uProj;                    // angular->ground per unit height (ellipse + shear)
 uniform int   uCanopyOpen;              // finite tree: no optical depth outside the canopy box
-uniform vec2  uBulkShift;               // STANDING SCENE (§4.8): bulk lateral shadow offset per unit height = cot(elev)·(anti-sun dir).
+uniform vec2  uBulkShift;               // STANDING SCENE (spec/model/transport.md): bulk lateral shadow offset per unit height = cot(elev)·(anti-sun dir).
                                         // The park model omits this (shadows sit directly under the canopy, only stretched) — invisible for
                                         // an infinite canopy, but a discrete tree needs its shadow CAST to the side. 0 = park model, unchanged.`;
 
 // ---- the woody occluder's segment table. Read by all four cameras: three cast it as a shadow, the sky view
-// reads the very same segments as GEOMETRY (§4.9). 128 vec4 rows — the single biggest item in every
+// reads the very same segments as GEOMETRY (spec/model/sky-view.md). 128 vec4 rows — the single biggest item in every
 // variant's footprint, and the reason none of them gets small. ----
-const GLSL_T_OCC_DECLS = `// WOODY OCCLUDER (spec §4.5): the trunk + main limbs as CONTINUOUS-height analytic segments. Each carries its two
+const GLSL_T_OCC_DECLS = `// WOODY OCCLUDER (spec/model/canopy.md): the trunk + main limbs as CONTINUOUS-height analytic segments. Each carries its two
 // endpoints' plan positions and their HEIGHTS above the floor; the per-sample shadow runs from a's projection to b's,
 // so a limb's base meets the trunk at a shared height and the whole skeleton shadow stays CONNECTED — unlike the
 // layer-stamped branches (now retired), whose discrete-height quantization shattered continuous lines at a low sun.
@@ -101,14 +101,14 @@ uniform float uOccHRef;              // reference height: the drift scales by H/
 
 const GLSL_T_WOOD_CAST_DECLS = `uniform float uOccPenumbra;          // soft-edge growth per unit height (fakes the area-light penumbra for the once-per-pixel eval)`;
 
-// ---- leaf-edge diffraction (§3.6), a per-channel re-read of the same layers. Cast cameras only. ----
+// ---- leaf-edge diffraction (spec/model/transport.md), a per-channel re-read of the same layers. Cast cameras only. ----
 const GLSL_T_CA_DECLS = `uniform vec3  uChroma;            // per-channel diffraction spread of the transport shift (θ∝λ); (1,1,1) = off
-// edge diffraction (spec §3.6): light bends round each leaf edge by an angle ∝ λ, so red spreads wider than
+// edge diffraction (spec/model/transport.md): light bends round each leaf edge by an angle ∝ λ, so red spreads wider than
 // blue — each channel reads its sun-image at a shift scaled by its own wavelength (cs = per-channel scale,
 // green=1). The colour fringe lands at every leaf/dapple edge and rides the same H*g shift, so it grows with
 // canopy height and the low-sun ellipse for free. Three single-channel taps; only taken when diffraction is on.
 vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
-  if(uBeamK > 0.0 || uEdgeArea != 0){   // the beam's mixture rides each channel's own dispersed read (§4.5) @feature leafDiffuse
+  if(uBeamK > 0.0 || uEdgeArea != 0){   // the beam's mixture rides each channel's own dispersed read (spec/model/leaf.md) @feature leafDiffuse
     vec4 qR = layerDepth(t, world + H*g*cs.r);   // @feature leafDiffuse
     vec4 qG = layerDepth(t, world + H*g*cs.g);   // @feature leafDiffuse
     vec4 qB = layerDepth(t, world + H*g*cs.b);   // @feature leafDiffuse
@@ -125,10 +125,10 @@ vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
   }   // @feature leafDiffuse
 }`;
 
-// ---- the FAITHFUL tap (§4.5): one pre-integrated texture instead of the sample loop. Floor and cloth only —
+// ---- the FAITHFUL tap (spec/model/canopy.md): one pre-integrated texture instead of the sample loop. Floor and cloth only —
 // the pre-bake needs ONE flat cast frame, which the enclosure's panels and the sky view's rays are not. That
 // used to be a runtime guard inside the mega-shader; here those two variants simply do not carry it. ----
-const GLSL_T_FAITH_DECLS = `// FAITHFUL path (spec §4.5): the opt-out from the depth-layer leaf cheat. uFaithTex is the per-sample bake's
+const GLSL_T_FAITH_DECLS = `// FAITHFUL path (spec/model/canopy.md): the opt-out from the depth-layer leaf cheat. uFaithTex is the per-sample bake's
 // pre-integrated soft shadow (transmittance), in the CAST frame (covers where the shadow lands, offset by the bulk
 // throw). uFaithful 0 = the layer loop below runs, byte-identical (park / overhead default).
 uniform highp sampler2D uFaithTex;
@@ -142,18 +142,18 @@ vec3 tapFaith(vec2 world){ return texture(uFaithTex, (world-uFaithOrigin)/uFaith
 // sky fill's bake (shaders.js), which walks the BEAM's path instead (uFillG) and so declares none. ----
 const GLSL_T_SUN_DIR_DECLS = GLSL_SUN_DIR_DECLS;
 
-// ---- the tail every variant shares: the mesopic shift, the distance haze, and the Look (§4.7). ----
-const GLSL_T_POST_DECLS = `uniform float uTwilight;          // global "sun is low" rod weight (from elevation, §3.5)
+// ---- the tail every variant shares: the mesopic shift, the distance haze, and the Look (spec/model/camera.md). ----
+const GLSL_T_POST_DECLS = `uniform float uTwilight;          // global "sun is low" rod weight (from elevation, spec/model/light.md)
 uniform float uMesopic;           // Purkinje strength (the mesopic_strength knob)
-uniform vec3  uHazeColor;        // linear-HDR distance haze the far floor dissolves into (§4.7)
+uniform vec3  uHazeColor;        // linear-HDR distance haze the far floor dissolves into (spec/model/camera.md)
 uniform int   uLinearOut;         // 0 = end the Look here and write display-encoded colour (every look, unchanged). 1 = write LINEAR HDR
-                                  // instead: the lateral-diffusion tier (§4.9) must spread light BEFORE the curve, so it runs toneTail itself after the blur.
-uniform float uVignette;          // the edge fade (§4.7): the outer fraction of the frame's half-extent the light fades to black over. 0 = off, byte-identical
+                                  // instead: the lateral-diffusion tier (spec/model/receivers.md) must spread light BEFORE the curve, so it runs toneTail itself after the blur.
+uniform float uVignette;          // the edge fade (spec/model/camera.md): the outer fraction of the frame's half-extent the light fades to black over. 0 = off, byte-identical
 uniform float uVignetteShape;     // its superellipse exponent, 2..8: 2 an ellipse touching all four edges, 8 a rounded rectangle. Inert at uVignette 0
 uniform float uIrisOpacity;       // transition only: the share of the mask's darkening drawn while a route crosses the gate. 1 is the authored mask
 ${GLSL_TONE_TAIL}`;
 
-// ---- THE SKY FILL's receiver half (§4.7): what the three surface cameras read. The bake (FS_FILL, run per bake by
+// ---- THE SKY FILL's receiver half (spec/model/fill.md): what the three surface cameras read. The bake (FS_FILL, run per bake by
 // komorebi-bake.js) integrates the canopy's hemisphere over the floor; this is only the two textures it leaves and the
 // gate that says how much of them to believe. The sky view has no surface to light and does not speak this group. ----
 const GLSL_T_FILL_DECLS = `uniform float uCanopyFill;      // canopy_fill: the share of the shade that is lit THROUGH the canopy. 0 = the old unfiltered sky, byte-identical (every shipped look)
@@ -174,7 +174,7 @@ uniform vec2  uFillExtent;
 // blurs away is small (crown gaps are metres), and it scales with the texel: fill_resolution is the spatial knob.
 const float FILL_LOD = 3.0;`;
 
-// ---- FLOOR camera (§4.7) ----
+// ---- FLOOR camera (spec/model/camera.md) ----
 const GLSL_T_FLOOR_DECLS = `uniform float uViewExtent;
 uniform float uShadowOpacity;    // transition only: 0 is the lit floor, 1 is the canopy's full shadow
 uniform highp sampler2D uTravelCast;
@@ -183,10 +183,10 @@ uniform float uTravelExtent,uTravelWeight;
 uniform highp sampler2D uTravelProgress;   // leaf travel patch by patch: the blurred (coverage x progress, coverage) map over the moving cast's frame
 uniform int uProgressOut;                  // 1 draws that map's progress at each floor point instead of the picture
 uniform float uProgressGlobal;             // the route's own progress, where no leaf is near
-uniform float uFarSmear;         // far-field dapple smear (m of extra throw per unit foreshortening, §4.7)
+uniform float uFarSmear;         // far-field dapple smear (m of extra throw per unit foreshortening, spec/model/camera.md)
 uniform vec3  uGround;            // ground albedo (floor reflectance); (1,1,1) = white floor (old look)`;
 
-// ---- THE LITTER CARPET (§4.7), the floor's alone: the receiver that REFLECTS is the one that has fallen leaves to reflect off. The cloth and the
+// ---- THE LITTER CARPET (spec/model/season.md), the floor's alone: the receiver that REFLECTS is the one that has fallen leaves to reflect off. The cloth and the
 // tent transmit through fabric and the sky view has no surface, so none of them speaks this group (the registry holds it). The bake
 // (VS_LITTER, komorebi-litter.js) writes the texture once per regrow; this is only the flag that says it is ready and the read's frame. ----
 const GLSL_T_LITTER_DECLS = `uniform int   uLitterOn;         // the carpet is baked and ready (litter 1, and a leaf has fallen). 0 = nothing is read at all: the floor's old material, byte-identical
@@ -194,7 +194,7 @@ uniform highp sampler2D uLitter;   // the fallen leaves' reflectance, PREMULTIPL
 uniform vec2  uLitterOrigin;       // the plan square it covers: the same frame as the sky fill's (fillFrame) but the carpet's own uniforms — the fill may be shut, and the carpet is read either way
 uniform vec2  uLitterExtent;`;
 
-const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fragment -> ground point on z=0, plus a far-field haze factor.
+const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec/model/camera.md): fragment -> ground point on z=0, plus a far-field haze factor.
     // At uPitch=0 this reduces EXACTLY to the old orthographic map (vUv-0.5)*uViewExtent*[aspect,1] for any
     // fov (a flat plane seen straight-on is linear), so presets are untouched until tilted. ----
     float cp=cos(uPitch), sp=sin(uPitch);
@@ -205,7 +205,7 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fra
     // below cancels exactly), so it's fixed at 1 rather than exposed — eye height would have no effect.
     float scale = uViewExtent*cp*cp / max(2.0*kf, 1e-4);               // hold the on-axis vertical span = uViewExtent
     float targetY = sp/max(cp,1e-4);                                    // recenter: screen centre -> world (0,0)
-    // far-field smear (spec §4.7): under a tilted gaze a pixel covers a growing patch of ground toward the
+    // far-field smear (spec/model/camera.md): under a tilted gaze a pixel covers a growing patch of ground toward the
     // horizon; point-sampling it aliases the dapple, so we widen the soft-shadow throw by that ground footprint.
     // det(dworld/dvUv) = uViewExtent^2 * cp^4 * aspect / D^3 with D=-d.z, so the footprint's linear size goes as
     // 1/D^1.5; referenced to the nearest row (D_ref=cp+kf*sp) it is exactly 0 at pitch 0 (uniform footprint, so
@@ -226,7 +226,7 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fra
     if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); world = mat2(cy,-sy,sy,cy)*world; }
     world += uViewCenter;            // camera pan: shift the looked-at floor point (0 = unchanged)`;
 
-// THE SHADE IS LIT THROUGH THE CANOPY (§4.7). The floor is lit by the sun's beam through the gaps (acc), by the skylight
+// THE SHADE IS LIT THROUGH THE CANOPY (spec/model/fill.md). The floor is lit by the sun's beam through the gaps (acc), by the skylight
 // that ALSO had to come through the canopy (Tsky, forestry's diffuse gap fraction), and by the sunlight the lit leaves
 // scatter downward (S). Only the beam used to be filtered; under a red fall canopy that is a red beam on a blue-lit
 // floor, and the shade goes magenta. Both fill reads sit at the floor's own world point — the point the beam is read
@@ -234,9 +234,9 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec §4.7): fra
 // the physical shade, 0 the old unfiltered sky.
 // THE GATE is a uniform branch whose else IS the old expression, character for character, so a look that never asks
 // for the fill is the bytes it always was. A branch rather than a separate program because canopy_fill TWEENS in a
-// transition, and a program is selected by MODE flags only (§4.6): the one first-compile a camera costs must land
+// transition, and a program is selected by MODE flags only (spec/model/transport.md): the one first-compile a camera costs must land
 // inside a bloom, not on a slider.
-// THE FLOOR IS A MAP (§4.7, the litter). Where a leaf has fallen the floor reflects off the leaf, not off the ground: the albedo is the
+// THE FLOOR IS A MAP (spec/model/season.md, the litter). Where a leaf has fallen the floor reflects off the leaf, not off the ground: the albedo is the
 // carpet's, composed OVER the ground's (the carpet is stored premultiplied, so this is mix(uGround, rgb/a, a) with no division). Nothing
 // else changes — it is the SAME irradiance, so the fill's Tsky and S light the carpet for free (they are in `amb`) and the beam's suns land
 // on it in whatever colour the canopy let through. The carpet branch is the outer one and the old material is its else, verbatim, so a look
@@ -262,20 +262,20 @@ const GLSL_T_FLOOR_MATERIAL = `    if(uShadowOpacity < 1.0) acc = mix(vec3(1.0),
       }   // @feature fill
     }   // @feature litter`;
 
-// ---- CLOTH camera (§4.9): the curtain, seen head-on ----
+// ---- CLOTH camera (spec/model/receivers.md): the curtain, seen head-on ----
 const GLSL_T_CLOTH_DECLS = `uniform float uViewExtent;
 uniform float uClothY;            // curtain receiver: the cloth plane's world-Y (its distance behind the tree) — where on the occluder field the shadow lands`;
 
-const GLSL_T_CLOTH_CAMERA = `    // ---- CURTAIN receiver (spec §4.9): the receiver is a VERTICAL plane viewed head-on, NOT the floor. Screen
+const GLSL_T_CLOTH_CAMERA = `    // ---- CURTAIN receiver (spec/model/receivers.md): the receiver is a VERTICAL plane viewed head-on, NOT the floor. Screen
     // maps straight to the cloth's own coords — u across, v up. The tree's shadow is then projected onto the plane
     // by the (layerHeight - recvZ) height factor in the sample loop below: an occluder a height (h-v) ABOVE this
     // cloth point throws its shadow here, so the pattern stands UP the curtain instead of lying flat on the floor.
     // recvZ = 0 is the floor and leaves that loop byte-identical. TWO cloth coords from here on: clothUV is where
     // this point IS on the cloth (the pleats are attached to it — all shading reads this), castUV is where the
-    // pleat's displacement makes the incoming light field arrive from (§4.9's fold warp — every occluder read). ----
+    // pleat's displacement makes the incoming light field arrive from (spec/model/receivers.md's fold warp — every occluder read). ----
     vec2 cuv = (vUv-0.5)*uViewExtent*vec2(uAspect,1.0) + uViewCenter;  // pan/zoom frame the cloth (view_center, view_extent)
-    clothUV = cuv;                       // cloth (u across, v up) — the faithTex is baked in THESE coords (§4.9), tapped once below
-    foldF = foldField(cuv);              // the drape, once (§4.9)
+    clothUV = cuv;                       // cloth (u across, v up) — the faithTex is baked in THESE coords (spec/model/receivers.md), tapped once below
+    foldF = foldField(cuv);              // the drape, once (spec/model/receivers.md)
     castUV = cuv + foldThrow(foldF.x);   // fold warp: the same point's read into the FLAT-baked cast (== cuv when fold_warp 0)
     // the layer path is a PLAN-space read, so carrying the warp in (world.x, recvZ) is exact rather than a stand-in:
     // sliding the receiver point along its own ray lands the occluder lookup world.xy + (h-recvZ)·g on the identical
@@ -284,12 +284,12 @@ const GLSL_T_CLOTH_CAMERA = `    // ---- CURTAIN receiver (spec §4.9): the rece
     recvZ = castUV.y;                    // height up the cloth (layer-path fallback; the faithful curtain uses castUV)`;
 
 // ---- the pleat WARP and the cloth-facing throw it shares with the window: curtain-only, because both are
-// cast against a flat plane at world-Y cy — an object the enclosure does not have (§4.9). ----
-const GLSL_T_WARP_DECLS = `// the sun's cloth-facing throw component, guarded (§4.9). Sun ∥ to the cloth ⇒ gy→0 and every cloth-space throw
+// cast against a flat plane at world-Y cy — an object the enclosure does not have (spec/model/receivers.md). ----
+const GLSL_T_WARP_DECLS = `// the sun's cloth-facing throw component, guarded (spec/model/receivers.md). Sun ∥ to the cloth ⇒ gy→0 and every cloth-space throw
 // (mullion bars, fold warp) diverges; the clamp keeps the sign so the throw still rakes the right way. Shared so
 // the two consumers can't clamp differently.
 float clothGy(){ return abs(uBulkShift.y) < 1e-3 ? (uBulkShift.y < 0.0 ? -1e-3 : 1e-3) : uBulkShift.y; }
-// FOLD WARP (spec §4.9) — pleat displacement bends the arriving cast. The whole light field (faithful tap, layer
+// FOLD WARP (spec/model/receivers.md) — pleat displacement bends the arriving cast. The whole light field (faithful tap, layer
 // reads, mullion) is baked/derived against a FLAT cloth at Y=cy. A pleated point sits Δy out of that plane, so it
 // intercepts a different ray: the flat-cast plane is then Δy of DEPTH away from it, and the throw is literally
 // mullionT's — cloth + (depth/gy)·(gx,1), one central ray up-sun, with Δy standing in for the bar depth. Sign
@@ -301,15 +301,15 @@ vec2 foldThrow(float shape){
   return (dy / clothGy()) * vec2(uBulkShift.x, 1.0);
 }`;
 
-// ---- the WINDOW (§4.9): mullion grid + aperture, both curtain-only for the same reason as the warp. ----
-const GLSL_T_WINDOW_DECLS = `uniform vec4  uMullion;           // window mullion grid (§4.9): pitch, bar width, depth in FRONT of the cloth (m), tau. .w = 0 = off
+// ---- the WINDOW (spec/model/receivers.md): mullion grid + aperture, both curtain-only for the same reason as the warp. ----
+const GLSL_T_WINDOW_DECLS = `uniform vec4  uMullion;           // window mullion grid (spec/model/receivers.md): pitch, bar width, depth in FRONT of the cloth (m), tau. .w = 0 = off
 uniform float uMullPenumbra;      // mullion soft edge (m on the cloth) = depth × the source's angular width, CPU-side
-uniform vec4  uWindow;            // window aperture (§4.9): HALF width, HALF height, centre x, centre y — cloth metres. .x*.y = 0 = infinite light, off
+uniform vec4  uWindow;            // window aperture (spec/model/receivers.md): HALF width, HALF height, centre x, centre y — cloth metres. .x*.y = 0 = infinite light, off
 uniform float uWindowWall;        // light landing outside the aperture (the room's own dim front-side leak; the wall itself is opaque)
 uniform float uWindowOpacity;     // transition only: fade a full-sized aperture from unrestricted light
-// window MULLION GRID (spec §4.9): the authored near-cloth occluder — a rigid grid of vertical + horizontal bars
+// window MULLION GRID (spec/model/receivers.md): the authored near-cloth occluder — a rigid grid of vertical + horizontal bars
 // standing uMullion.z metres in FRONT of the cloth (sun side), evaluated analytically per pixel in cloth (u,v).
-// It is §4.5's woody occluder at centimetre range instead of metres, which is the whole point: at this d the
+// It is spec/model/canopy.md's woody occluder at centimetre range instead of metres, which is the whole point: at this d the
 // aperture beats d·θ by orders of magnitude, so the grid lands in the SHAPE regime — sharp bars — inside the same
 // frame where the leaf-gaps metres away are pinhole sun-images. The grid is bounded by the window APERTURE below
 // (conf), because the bars are part of the window: past its frame there is wall, and a wall carries no glazing bars.
@@ -328,8 +328,8 @@ float mullionT(vec2 cloth, float conf){
   vec2 cov = 1.0 - smoothstep(vec2(hw), vec2(hw + pen), d);              // soft edge grows OUTWARD, like the wood's
   return exp(-uMullion.w * max(cov.x, cov.y) * conf);                    // union of the two bar sets: a crossing is still one bar deep. conf = 1 with no aperture, so the infinite grid is byte-identical
 }
-// THE WINDOW APERTURE (spec §4.9) — the light gets an EDGE. Behind the cloth is not an infinite lit field but a
-// finite bright rectangle of sky in an opaque wall, and that macro contrast is most of the §1 composition. Evaluated
+// THE WINDOW APERTURE (spec/model/receivers.md) — the light gets an EDGE. Behind the cloth is not an infinite lit field but a
+// finite bright rectangle of sky in an opaque wall, and that macro contrast is most of the experience's composition (spec/experience.md). Evaluated
 // at the SAME warped cast coordinate and the SAME bar-plane throw the mullion uses, because the aperture IS the
 // window's outermost frame member: its edge S-bends across the pleats exactly as the glazing bars do, and that
 // consistency is what makes the wall read as being behind the same cloth. Soft edge = the mullion penumbra, the same
@@ -345,7 +345,7 @@ vec2 windowMask(vec2 cloth){
   return vec2(uWindowWall + (1.0 - uWindowWall)*inside, inside);
 }`;
 
-const GLSL_T_WINDOW_APPLY = `    // The window grid attenuates the WHOLE landed irradiance, not just the beam. A bar metres away (the wood, §4.5)
+const GLSL_T_WINDOW_APPLY = `    // The window grid attenuates the WHOLE landed irradiance, not just the beam. A bar metres away (the wood, spec/model/canopy.md)
     // blocks only the sun's small disk, so it multiplies acc alone and the skylight still reaches around it. A bar
     // CENTIMETRES off the cloth subtends nearly the entire hemisphere seen from the point behind it — beam and
     // skylight both — so it scales E. That distinction is the physics of a near-contact occluder, not a shortcut.
@@ -366,7 +366,7 @@ const GLSL_T_WINDOW_APPLY = `    // The window grid attenuates the WHOLE landed 
       }
       if(uMullion.w > 0.0) E *= mullionT(castUV, barConf);`;
 
-// ---- THE FABRIC (§4.9), shared by the two cloth receivers: the same material answering on a hanging
+// ---- THE FABRIC (spec/model/receivers.md), shared by the two cloth receivers: the same material answering on a hanging
 // curtain and on a tent stood around the viewer. ----
 const GLSL_T_FABRIC_DECLS = `uniform float uTt;                // curtain total throughput Tt∈[0,1] — carries BRIGHTNESS (hue is uFabricTint)
 uniform vec3  uFabricTint;        // moss dye — HUE only; normalized to unit peak in-shader so it can't smuggle brightness past Tt
@@ -378,12 +378,12 @@ uniform float uFoldWarp;          // pleat DISPLACEMENT amplitude (m) out of the
 uniform float uSheen;             // velvet grazing sheen strength on the fold ridges (the cut-pile glow)
 uniform float uScatter;           // fraction of the transmitted light that FORWARD-SCATTERS through the pile (0 = all ballistic, today's look)`;
 
-const GLSL_T_FOLD_DECLS = `// THE PLEAT FIELD, in one place (§4.9) — one displacement, one derivative, one function. Both the shading (which
+const GLSL_T_FOLD_DECLS = `// THE PLEAT FIELD, in one place (spec/model/receivers.md) — one displacement, one derivative, one function. Both the shading (which
 // flank is edge-on) and the geometry (where that flank sits in depth) read the SAME values here, so the shared-phase
 // invariant is structural rather than a convention two call sites have to keep: the warp bends the cast around
 // exactly the flanks the velvet shades.
 // GRAVITY IS THE CONSTRAINT: hanging cloth has VERTICAL ridges at every height. Each harmonic's phase is therefore a
-// function of x ALONE. Coarsening cannot be a frequency chirp (see §4.9's recorded dead end — a k(y) tilts the
+// function of x ALONE. Coarsening cannot be a frequency chirp (see spec/evidence/dead-ends.md's recorded dead end — a k(y) tilts the
 // constant-phase ridges into a diagonal fan, x ∝ √(1+c·y), the literal pool-caustic look); it is a spectral
 // REWEIGHTING, an octave crossfade — fine gathers at the rod fading out into broad waves at the hem.
 // Three harmonics at pairwise irrational ratios: the sum is almost-periodic, so no pleat ever repeats and there is no
@@ -405,7 +405,7 @@ vec3 foldField(vec2 cloth){
               6.2831853*dot(wa*k, cos(ph))/N,
               max(6.2831853*dot(wa, k)/N, 1e-6));                          // the sup the almost-periodic derivative approaches (every |cos| → 1 together)
 }
-// FOLD INCIDENCE (spec §4.9) — the lit/dark banding on a tilted flank is an incidence COSINE, so it takes the real
+// FOLD INCIDENCE (spec/model/receivers.md) — the lit/dark banding on a tilted flank is an incidence COSINE, so it takes the real
 // sun direction and NOT uProj/uBulkShift: those carry 1/sin(elevation) and blow up at a low sun, where incidence on
 // a vertical cloth does the opposite — it PEAKS as the sun lowers head-on toward the window. The slope handed in is
 // foldField's own dΔy/du (the one field, scaled to metres), and with Δy measured toward the room the two unit
@@ -423,7 +423,7 @@ float foldIncidence(float slope){
   float sx = sgn*uSunDir.x, sy = sgn*uSunDir.y;                            // sun, in the frame where the cloth's sun-facing normal is +Y
   return max(slope*sx + sy, 0.0) / (max(sy, 1e-3) * sqrt(1.0 + slope*slope));
 }
-// curtain drape + velvet (spec §4.9). A real curtain is not flat — it hangs in vertical PLEATS that coarsen toward
+// curtain drape + velvet (spec/model/receivers.md). A real curtain is not flat — it hangs in vertical PLEATS that coarsen toward
 // the hem (foldField above: fine octaves fading out, ridges vertical throughout). This is the SHADING half — uFoldDepth is authored pile thickness on
 // a flat plane, NOT the displacement (that is uFoldWarp above, and it deliberately does not enter here: the pleats
 // are attached to the cloth, so only the ARRIVING pattern warps). The pleats do two things that read as thick
@@ -431,7 +431,7 @@ float foldIncidence(float slope){
 //  • backlit THICKNESS — the edge-on fold flanks present more cut-pile, so they transmit LESS → dark vertical bands;
 //  • a grazing SHEEN — the face-on ridges catch a soft pale glow, the signature of a standing-fibre pile.
 // body is the transmitted moss; sheenCol the pale glow tint. Keyed to the cloth's own (u,v) so it stays on the cloth.
-// FORWARD-SCATTER WRAP (uScatter = s, §4.9). Backlit cut pile transmits two ways: a BALLISTIC component that threads
+// FORWARD-SCATTER WRAP (uScatter = s, spec/model/receivers.md). Backlit cut pile transmits two ways: a BALLISTIC component that threads
 // the pile directly — highly directional, so the edge-on flanks extinguish it (that is band) — and a component that
 // DIFFUSES among the fibres and leaves in a broad forward lobe, near-isotropic, so fold orientation barely attenuates
 // it. s is the SPLIT of the same transmitted energy between the two, a mix and never an add: both bands are ≤ 1, so
@@ -441,9 +441,9 @@ float foldIncidence(float slope){
 // the sun really does collect more than that.) The dye acts on
 // scattered light too (it crossed the same pile), so the hue stays tint̂ — no second tint. s=0 collapses to band.
 // LIMIT of this per-pixel tier: it redistributes light ANGULARLY at one point, so it wraps the glow around the FOLDS
-// but cannot bleed a dapple's glow across a CAST-SHADOW edge — that is the lateral 2-D diffusion tier (§4.9), staged.
+// but cannot bleed a dapple's glow across a CAST-SHADOW edge — that is the lateral 2-D diffusion tier (spec/model/receivers.md), staged.
 // The scatter argument is the forward-scatter share at THIS pixel rather than the uniform, because the mesh band
-// (§4.9) is a per-panel MATERIAL: mesh barely diffuses what passes it, so its share drops toward 0 while the nylon
+// (spec/model/receivers.md) is a per-panel MATERIAL: mesh barely diffuses what passes it, so its share drops toward 0 while the nylon
 // below the hem keeps the whole knob. Every other receiver passes uScatter straight through, byte-identically.
 vec3 velvetCloth(vec2 cloth, vec3 fold, vec3 body, vec3 sheenCol, float scatter){
   float facing = clamp(abs(fold.y)/fold.z, 0.0, 1.0);                    // slope against the field's own peak slope: 1 = edge-on flank, 0 = face-on ridge/valley. Unit shape, so fold_depth's banding is there on an undisplaced cloth too
@@ -464,14 +464,14 @@ vec3 velvetCloth(vec2 cloth, vec3 fold, vec3 body, vec3 sheenCol, float scatter)
 }`;
 
 const GLSL_T_FABRIC_MATERIAL = `    // The landed irradiance the fabric answers. On the ENCLOSURE the beam and the sky are resolved SEPARATELY
-    // against this panel's own normal (§4.9): a directional beam takes an incidence cosine, a hemisphere of sky
+    // against this panel's own normal (spec/model/receivers.md): a directional beam takes an incidence cosine, a hemisphere of sky
     // takes how much of the hemisphere the panel sees. beamF/skyF/recvAtten are all 1 on the floor and the curtain,
     // so what those two evaluate is the old expression exactly.
-    // THE SKY FILL's cloth half (§4.7): the skylight that reaches this point also came through the canopy, so the sky
+    // THE SKY FILL's cloth half (spec/model/fill.md): the skylight that reaches this point also came through the canopy, so the sky
     // term takes Tsky at the point's plan position (world, which both receivers set above) — read from the floor's
     // hemisphere. A NAMED APPROXIMATION on both counts: a vertical cloth's hemisphere is half ground-bounce, which the
     // engine has no term for, and the fill is baked at floor height, so a point high up the cloth reads the hemisphere
-    // a floor point under it would see. The scattered light S is read only once a leaf is not a window (§4.5): the P0b
+    // a floor point under it would see. The scattered light S is read only once a leaf is not a window (spec/model/leaf.md): the P0b
     // proxy was the floor's alone, but the diffuse light a leaf passes is the other half of what the beam no longer carries,
     // so with leaf_diffuse up the cloth and the tent take it too — through the view of the hemisphere THEIR panel has (skyS), since
     // it is hemispherical light — or the energy leaks the moment the beam goes dark. skyS is the tent's skyF; the curtain, a vertical
@@ -495,13 +495,13 @@ const GLSL_T_FABRIC_TAIL = `    vec3 tintHat = uFabricTint / max(max(uFabricTint
     // nothing, which is what makes the band read DARKER and its dapples CRISPER at the same time. meshF is 0 on every
     // other panel and every other receiver, so both lines collapse to the old ones exactly.
     vec3 body = E * (uTt * tintHat) * mix(1.0, 0.55, meshF);   // transmitted moss: brightness × hue; ambient rides through Tt·tint̂ (gated, not free)
-    // drape + velvet (§4.9): pleats + grazing sheen on the cloth's own (u=clothUV.x, v=clothUV.y) coords. The sheen
+    // drape + velvet (spec/model/receivers.md): pleats + grazing sheen on the cloth's own (u=clothUV.x, v=clothUV.y) coords. The sheen
     // is a pale warm tint of the dye (two-tone velvet), brightened a touch where the backlight is hot.
     vec3 sheenCol = mix(tintHat, vec3(1.0,0.96,0.88), 0.7) * (0.4 + 0.6*dot(body, vec3(0.33)));
     col = velvetCloth(clothUV, foldF, body, sheenCol, uScatter * (1.0 - meshF));`;
 
-// ---- ENCLOSURE camera (§4.9): the tent as a convex polytope, ray-cast from inside ----
-const GLSL_T_TENT_DECLS = `uniform float uTentRidge;         // ENCLOSURE (§4.9): crown height (m) — the flat top panel's plane; the slopes rise to its long edges
+// ---- ENCLOSURE camera (spec/model/receivers.md): the tent as a convex polytope, ray-cast from inside ----
+const GLSL_T_TENT_DECLS = `uniform float uTentRidge;         // ENCLOSURE (spec/model/receivers.md): crown height (m) — the flat top panel's plane; the slopes rise to its long edges
 uniform float uTentHalfW;         // ENCLOSURE: half the floor width (m); with the crown height and width it IS the slope pitch
 uniform float uTentCrownW;        // ENCLOSURE: half the CROWN panel's width (m) — 0 collapses it to a ridge line and the shape degenerates to an A-frame
 uniform float uTentShoulderH;     // ENCLOSURE: height (m) of the arch profile's WAYPOINT — the Bézier's mid control point, where the vault bulges widest
@@ -514,13 +514,13 @@ uniform float uTentEye;           // ENCLOSURE: eye height (m), clamped strictly
 uniform float uTentFade;          // ENCLOSURE: interior depth fade (1/m) — the ridge is infinite, so distance is the only thing that closes it off
 uniform float uTentSeam;          // ENCLOSURE: ridge-seam optical depth (0 = no seam)
 uniform float uTentMesh;          // ENCLOSURE: how much the panels ABOVE the shoulder hem are mesh rather than nylon (0 = one fabric everywhere, byte-identical)
-// THE ENCLOSURE's two hard numbers (§4.9). The tent is a CLOSED convex polytope, so every ray inside it leaves
+// THE ENCLOSURE's two hard numbers (spec/model/receivers.md). The tent is a CLOSED convex polytope, so every ray inside it leaves
 // through some panel and TENT_TMAX is a safety clamp, not a horizon: the one direction with no exit is straight
 // down (the polytope is open below the floor plane the model does not have), which no frame at a sane pitch
 // contains. TENT_SEAM_HW is the panel-junction seam's half-width — 24 mm of taped, doubled fabric.
 const float TENT_TMAX = 12.0;
 const float TENT_SEAM_HW = 0.012;
-// ---- THE ENCLOSURE's side profile (spec §4.9): ONE ARC, not two facets. The reference tent is tensioned fabric on
+// ---- THE ENCLOSURE's side profile (spec/model/receivers.md): ONE ARC, not two facets. The reference tent is tensioned fabric on
 // PRE-BENT pole arcs, so its cross-section is a rounded vault; two flat panels per side read as a barn. The curve is
 // a quadratic Bézier through the three authored control points — base (halfW, 0), shoulder (shoulderW, shoulderH),
 // crown edge (crownW, ridge) — with the middle one hit exactly at t = 0.5, which pins the control point at
@@ -547,7 +547,7 @@ float tentTAtHeight(vec2 C, float h){
 // Which PANEL GROUP a plane belongs to: 0 crown, 1/2 side +x below/above the hem, 3/4 side −x below/above,
 // 5 far END WALL (the foot vent), 6/7 the two far HIPS, 8 near END WALL (the head vent), 9/10 the two near HIPS. The seam pass reads this and nothing else: a
 // junction between two planes of the SAME group is an artefact of faceting the arc, not a pole line, and drawing it
-// is what turned the vault into masonry ribbing (§4.9's recorded dead end). The far cap's three planes are three
+// is what turned the vault into masonry ribbing (spec/evidence/dead-ends.md's recorded dead end). The far cap's three planes are three
 // SEPARATE groups precisely because their junctions ARE edges — the spine where the hips meet, and the vent
 // triangle's two rising sides. Both caps carry that, so the spine runs the ceiling's whole centreline: it comes in
 // over your head from behind, crosses the crown, and forks again at the far vent. Each arch splits at its middle strip boundary for the same reason: that junction is
@@ -556,7 +556,7 @@ int tentGroup(int i){ return i == 0 ? 0 : i < 3 ? 1 : i < 5 ? 2 : i < 7 ? 3 : i 
 // Is this an UPPER (mesh) side panel? The two strips tangent at t = ⅔ and 1 — everything above the hem.
 bool tentMeshPanel(int i){ return (i >= 3 && i <= 4) || (i >= 7 && i <= 8); }`;
 
-const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec §4.9): the receiver stops being a plane the camera stares AT and becomes a
+const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec/model/receivers.md): the receiver stops being a plane the camera stares AT and becomes a
     // CLOSED TENT stood around the eye, ray-cast per pixel. It is the hip/brow shape the reference actually is: a
     // flat rectangular CROWN along the top; per side a rounded ARCH — tensioned fabric on a pre-bent pole, sampled
     // as four tangent strips of one convex profile curve and shaded off the SMOOTH normal, so the light rounds
@@ -565,7 +565,7 @@ const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec §4.9): the rec
     // the ground at x = ±uTentHalfW, the eye sits 30 % down the tent at uTentEye, gazing along +Y pitched UP by
     // uPitch (in THIS branch the pitch uniform means elevation above horizontal, not the floor camera's tilt from
     // straight-down). What happens downstream is the point of the whole thing: the hit's plan point and height go
-    // into (world, recvZ) and §4.9's height-minus-recvZ read casts the canopy onto whichever panel this pixel
+    // into (world, recvZ) and spec/model/receivers.md's height-minus-recvZ read casts the canopy onto whichever panel this pixel
     // landed on with ZERO further changes — that generalization was written for a flat cloth and turns out to have
     // been geometry-free all along. ----
     float cp=cos(uPitch), sp=sin(uPitch);
@@ -660,7 +660,7 @@ const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec §4.9): the rec
     // THE POLE LINES, from one measurement: the inside-distance to each non-winning plane of a DIFFERENT PANEL GROUP.
     // The group filter is the whole point. A junction between two strips of the same arch is an artefact of faceting
     // a curve — there is no seam there on a real tent, and drawing one is exactly what turned the vault into
-    // masonry ribbing (§4.9's recorded dead end: the user's word was "church"). What survives the filter is the set
+    // masonry ribbing (spec/evidence/dead-ends.md's recorded dead end: the user's word was "church"). What survives the filter is the set
     // of real pole lines: the crown's two long edges, the SPINE down the ceiling's centreline where the two hips
     // meet, the foot triangle's two rising sides, and the rims where a cap meets the arches and the crown.
     // MEASURED TO THE EDGE LINE, not to the neighbouring plane, and the difference is a real one. The perpendicular
@@ -688,7 +688,7 @@ const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec §4.9): the rec
     // cap panels, and across it on the crown, whose plan normal is degenerate and needs the explicit fallback.
     vec2 tang = (abs(n.x) + abs(n.y) > 1e-4) ? normalize(vec2(-n.y, n.x)) : vec2(1.0, 0.0);
     clothUV = vec2(dot(hit.xy, tang), uTentRidge - hit.z);
-    castUV = clothUV;              // nothing to warp: there is no flat-plane cast here, the read IS the real geometry, so fold_warp is inert in this branch (§4.9)
+    castUV = clothUV;              // nothing to warp: there is no flat-plane cast here, the read IS the real geometry, so fold_warp is inert in this branch (spec/model/receivers.md)
     foldF = foldField(clothUV);    // the drape, once — velvetCloth needs the field's peak-slope divisor even on a taut tent
     // the tent stands wherever the look places it: uViewYaw turns it about the eye (the floor camera's own orbit
     // matrix, so the two cameras agree on which way is round), uViewCenter walks it across the grove. The canopy and
@@ -725,15 +725,15 @@ const GLSL_T_TENT_CAMERA = `    // ---- ENCLOSURE receiver (spec §4.9): the rec
       recvAtten *= exp(-uTentSeam * (1.0 - smoothstep(TENT_SEAM_HW, TENT_SEAM_HW + pen, dSeam)));
     }`;
 
-// ---- SKY VIEW camera (§4.9): the retina as the receiver ----
-const GLSL_T_SKY_DECLS = `uniform float uSkyScatter;        // SKY VIEW (§4.9): single-scatter foliage radiance — how brightly a lit crown glows in its own right (0 = pure transmission, byte-identical). Superseded, and inert, once the leaf is a lantern (uBeamK > 0)
-uniform float uBeamK;             // k = −ln(1−leaf_diffuse) (§4.5): above 0 the leaf is a lantern, not a window — the disk is only the beam a leaf lets through, and what it took out of the line of sight is its glow. 0 = the old window, byte-identical. (The cast cameras carry it in their beam group; this camera casts nothing, so it has none)
-uniform int uEdgeArea;   // edge_area (§4.5): at k = 0 the sky ray reads each texel as its mixture too (the shared ray reads this by name). 0 = the slab, byte-identical
+// ---- SKY VIEW camera (spec/model/sky-view.md): the retina as the receiver ----
+const GLSL_T_SKY_DECLS = `uniform float uSkyScatter;        // SKY VIEW (spec/model/sky-view.md): single-scatter foliage radiance — how brightly a lit crown glows in its own right (0 = pure transmission, byte-identical). Superseded, and inert, once the leaf is a lantern (uBeamK > 0)
+uniform float uBeamK;             // k = −ln(1−leaf_diffuse) (spec/model/leaf.md): above 0 the leaf is a lantern, not a window — the disk is only the beam a leaf lets through, and what it took out of the line of sight is its glow. 0 = the old window, byte-identical. (The cast cameras carry it in their beam group; this camera casts nothing, so it has none)
+uniform int uEdgeArea;   // edge_area (spec/model/leaf.md): at k = 0 the sky ray reads each texel as its mixture too (the shared ray reads this by name). 0 = the slab, byte-identical
 ${GLSL_WOOD_FIELD}
 uniform vec2  uSrcAngR;           // the SEEN source's angular radii (core, halo) — the very two the sampler draws its offsets from
 uniform vec2  uSrcAngL;           // its radiance in each region (core, halo). CPU-derived from the sampler's own post-cloud weight split, so the sun you look at and the dapples it throws cannot drift apart
 uniform vec2  uSrcMoon;           // eclipse: the moon disk's (centre offset, radius) in the sampler's own source plane; .y = 0 = no eclipse
-// SKY VIEW's two constants (§4.9). SKY_AA is one angular soft edge, standing in for both a pixel's own angular
+// SKY VIEW's two constants (spec/model/sky-view.md). SKY_AA is one angular soft edge, standing in for both a pixel's own angular
 // footprint (≈3 px on an 85° frame ~1000 tall) and the penumbra a silhouette really has against the sun's disk.
 // SKY_SKY_GAIN converts uAmbient — an authored IRRADIANCE, what the sky delivers ONTO a surface — into the RADIANCE
 // you get when you look straight at it. Those are different quantities and the engine only ever had the first, so
@@ -744,7 +744,7 @@ uniform vec2  uSrcMoon;           // eclipse: the moon disk's (centre offset, ra
 const float SKY_AA = 0.004;
 const float SKY_SKY_GAIN = 7.5;
 // leafHue, the layer tap along a ray (tapSky), and skyRay itself — the single-scatter sum and the lantern — live in ONE shared snippet
-// (shaders.js), because the sky fill's bake (§4.7) integrates the very same ray over the floor's hemisphere.
+// (shaders.js), because the sky fill's bake (spec/model/fill.md) integrates the very same ray over the floor's hemisphere.
 ${GLSL_SKY_RAY}
 // Closest approach between the upward view ray (origin O, UNIT direction U, t ≥ 0) and the wood segment Pa→Pb.
 // Returns (distance, distance along the ray to the closest point) — the second feeds the angular soft edge, since an
@@ -784,13 +784,13 @@ const GLSL_T_SKY_COMPOSE = `      // COMPOSITION. No receiver material of any ki
         skyRad = (uAmbient*SKY_SKY_GAIN + uSunColor*L) * T + Lsc;   // transmitted source + sky, plus what the leaves themselves radiate. At sky_scatter 0, Lsc is exactly 0.
       }`;
 const GLSL_T_SKY_READ = `    if(dir.z <= 1e-3){
-      fog = 1.0;                     // at or under the horizon there is no canopy and no sky model: hand it to the same distance haze the floor path uses over its horizon (§4.7). One behaviour, one colour.
+      fog = 1.0;                     // at or under the horizon there is no canopy and no sky model: hand it to the same distance haze the floor path uses over its horizon (spec/model/camera.md). One behaviour, one colour.
     } else {
       // LAYERS AS ANGULAR SILHOUETTE. The ray crosses layer L's plane at plan eye + dir.xy·((h_L-eye.z)/dir.z) — the same
       // texture, the same tap, and deliberately NO shift by g: g is where the SUN's rays land, and this is the EYE's
       // ray. No recvZ either — these are absolute heights, with eye.z zero in the native sky view. Per-channel Beer's law then
       // comes along for free, because tap() exponentiates a per-channel optical depth: a leaf between us and the sun
-      // passes its own green-gold and the canopy GLOWS instead of silhouetting flat. That is the §4.5 leaf
+      // passes its own green-gold and the canopy GLOWS instead of silhouetting flat. That is the spec/model/leaf.md leaf
       // transmittance finally seen head-on rather than inferred from a dapple's colour.
       // A moving eye can rise above a layer. An upward ray misses it; an outside-box tap is exactly clear sky.
       vec2 miss=uCanopyOrigin+2.0*uCanopyExtent;
@@ -798,18 +798,18 @@ const GLSL_T_SKY_READ = `    if(dir.z <= 1e-3){
       vec2 pL1 = uLayerHeight[1]>eye.z ? eye.xy + dir.xy*((uLayerHeight[1]-eye.z)/dir.z) : miss;
       vec2 pL2 = uLayerHeight[2]>eye.z ? eye.xy + dir.xy*((uLayerHeight[2]-eye.z)/dir.z) : miss;
       vec2 pL3 = uLayerHeight[3]>eye.z ? eye.xy + dir.xy*((uLayerHeight[3]-eye.z)/dir.z) : miss;
-      // The whole read — the four layer taps, the transmittance, and the single-scatter foliage radiance of §4.9 (the proxy
+      // The whole read — the four layer taps, the transmittance, and the single-scatter foliage radiance of spec/model/sky-view.md (the proxy
       // sky_scatter scales, or, above leaf_diffuse 0, the lantern) — is skyRay (shaders.js, GLSL_SKY_RAY): one source, which the sky
-      // fill's bake (§4.7) runs along its own hemisphere rays. Here the eye's rays leave the box onto open sky and the wood is read
+      // fill's bake (spec/model/fill.md) runs along its own hemisphere rays. Here the eye's rays leave the box onto open sky and the wood is read
       // from each layer's own R16F texture (readWood true). T is the SKY's transmittance (leaves × wood); Tsrc the BEAM's, the
-      // disk's: a leaf kills it (§4.5), so the sun burns through the gaps and never through a leaf.
+      // disk's: a leaf kills it (spec/model/canopy.md), so the sun burns through the gaps and never through a leaf.
       vec3 T, Tsrc, Lsc;
       skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0 || uBeamK > 0.0, true, true, uBeamK, T, Tsrc, Lsc);   // the sun it looks at is the sun that lights what it sees: it has no beam to share one with
       if(uBeamK <= 0.0 && uSkyScatter > 0.0) Lsc *= uSkyScatter;   // the retired proxy, exactly as fill_scatter is on the floor: above leaf_diffuse 0 the measured glow replaces it, and it is the same light counted once
-      // WOOD AS SILHOUETTE. The same segments the floor casts shadows with (§4.5), read as GEOMETRY this time: no
+      // WOOD AS SILHOUETTE. The same segments the floor casts shadows with (spec/model/canopy.md), read as GEOMETRY this time: no
       // uBulkShift term anywhere here, because that vector is where the wood's shadow FALLS and we are looking at the
       // wood itself. The sway is kept, each endpoint drifting by its own height fraction exactly as the cast does, so
-      // the trunks lean in unison with the crowns — §5.1's coherent band watched directly instead of read off a floor.
+      // the trunks lean in unison with the crowns — spec/model/motion.md's coherent band watched directly instead of read off a floor.
       // Perspective alone converges them on the zenith; nothing draws a column.
       if(uOccCount>0){
         for(int k=0;k<${MAX_OCC};k++){
@@ -836,7 +836,7 @@ const GLSL_T_SKY_READ = `    if(dir.z <= 1e-3){
         }
       }
       acc = T;   // the SAME quantity acc has always been — "how much of the light got through here" — so the mesopic hook at the tail reads it unchanged, now cued by canopy density instead of shade depth
-      // THE SOURCE, SEEN. §3.1 said the sun is not a point and §3.2 said every dapple is its image; this is the
+      // THE SOURCE, SEEN. spec/model/source.md said the sun is not a point and spec/model/source.md said every dapple is its image; this is the
       // first time the thing being imaged is in frame. Both regions come straight from the sampler: a core disk of
       // uSrcAngR.x and a halo annulus out to uSrcAngR.y, each at the radiance its own post-cloud weight spread over
       // its own solid angle gives — so raising cloud_thickness drains the disk into the aureole HERE by exactly the
@@ -848,7 +848,7 @@ const GLSL_T_SKY_READ = `    if(dir.z <= 1e-3){
       float inSrc  = 1.0 - smoothstep(uSrcAngR.y - aa, uSrcAngR.y + aa, ang);
       float L = mix(uSrcAngL.y, uSrcAngL.x, inCore) * inSrc;
       if(uSrcMoon.y > 0.0){
-        // ECLIPSE (§3.4): the same moon disk the sampler punches out of its weights, applied angularly in the SAME
+        // ECLIPSE (spec/model/source.md): the same moon disk the sampler punches out of its weights, applied angularly in the SAME
         // source plane — so the crescent you look at is the crescent the dapples image. Reconstructing that plane is
         // what makes it the same: uProj's eigenvectors say the sampler's offsets run along the sun's own AZIMUTH
         // direction (an ELEVATION offset in the sky, stretched 1/sin²) and perpendicular to it (a horizontal
@@ -864,7 +864,7 @@ ${GLSL_T_SKY_COMPOSE}
     }`;
 const GLSL_T_RISE_SKY_READ = `${GLSL_T_SKY_READ.replace(GLSL_T_SKY_COMPOSE,'      skyRad=uAmbient*SKY_SKY_GAIN+uSunColor*L; riseT=T; riseScatter=Lsc;')}`;
 
-const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, and the amendment to "we never see the tree, only what it casts".
+const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec/model/sky-view.md): the THIRD camera, and the amendment to "we never see the tree, only what it casts".
     // The eye lies on the ground at uViewCenter and looks UP; the surface the light reaches is the RETINA. Nothing
     // new is invented — it is the same occluder field against the same source, read along upward rays instead of
     // sun rays, which is why the whole thing is one branch and no new physics. uPitch here is gaze ELEVATION (90° =
@@ -879,17 +879,17 @@ const GLSL_T_SKY_CAMERA = `    // ---- SKY VIEW (spec §4.9): the THIRD camera, 
     // to keep the shared 'world' defined for the cast blocks after it; this variant emits none of them, so it has none.)
 ${GLSL_T_SKY_READ}`;
 
-const GLSL_T_SKY_MATERIAL = `    col = skyRad;                                          // SKY VIEW: no receiver at all — the branch above already answered with radiance (§4.9)`;
+const GLSL_T_SKY_MATERIAL = `    col = skyRad;                                          // SKY VIEW: no receiver at all — the branch above already answered with radiance (spec/model/sky-view.md)`;
 
-// ---- the layer sample loop (§4.6), the general-geometry occluder tier: every cast camera runs it, and the
+// ---- the layer sample loop (spec/model/transport.md), the general-geometry occluder tier: every cast camera runs it, and the
 // receiver enters only as recvZ (0 on the floor, height up the cloth, the hit's height on a tent panel). ----
 const GLSL_T_LAYERS = `  bool ca = (uChroma.r!=1.0 || uChroma.g!=1.0 || uChroma.b!=1.0);   // diffraction on? else the byte-identical single-tap path
   // the per-layer shift uses the occluder's height RELATIVE TO THE RECEIVER point, (uLayerHeight - recvZ): on the
   // floor recvZ=0 so this is the plain layer height (byte-identical); on the vertical curtain recvZ is the height
-  // up the cloth, so an occluder above the cloth point projects its shadow onto it — the pattern stands up (§4.9).
+  // up the cloth, so an occluder above the cloth point projects its shadow onto it — the pattern stands up (spec/model/receivers.md).
   for(int i=0;i<MAX_SAMPLES;i++){
     if(i>=uSampleCount) break;
-    vec2 g = uProj * uSamples[i].xy + uBulkShift;   // ground displacement per unit height: ellipse/shear of the sample + the bulk sun-angle offset (§4.8)
+    vec2 g = uProj * uSamples[i].xy + uBulkShift;   // ground displacement per unit height: ellipse/shear of the sample + the bulk sun-angle offset (spec/model/transport.md)
     float w = uSamples[i].z;
     // light must clear EVERY layer -> multiply transmittance; shift grows with height
     vec3 T = vec3(1.0);
@@ -907,9 +907,9 @@ const GLSL_T_LAYERS = `  bool ca = (uChroma.r!=1.0 || uChroma.g!=1.0 || uChroma.
     acc += w*T;                              // sum of shifted sharp shadows == soft shadow
   }`;
 
-// ---- the woody occluder as a CAST (§4.5). Not emitted in the sky variant, which reads the same segments as
+// ---- the woody occluder as a CAST (spec/model/canopy.md). Not emitted in the sky variant, which reads the same segments as
 // geometry inside its own camera block instead. ----
-const GLSL_T_WOOD_CAST = `  // woody occluder (spec §4.5), evaluated ONCE per pixel (NOT per sample — that stalled). The trunk + main limbs
+const GLSL_T_WOOD_CAST = `  // woody occluder (spec/model/canopy.md), evaluated ONCE per pixel (NOT per sample — that stalled). The trunk + main limbs
   // cast one CONNECTED shadow using the central sun direction (uBulkShift), with a soft edge that GROWS with height
   // to fake the area-light penumbra. Multiplies the SUN term only (wood blocks the beam, not the ambient sky).
   if(uOccCount>0){
@@ -917,7 +917,7 @@ const GLSL_T_WOOD_CAST = `  // woody occluder (spec §4.5), evaluated ONCE per p
     for(int k=0;k<${MAX_OCC};k++){
       if(k>=uOccCount) break;
       vec4 P = texelFetch(uOccTex, ivec2(k,0), 0); vec4 H = texelFetch(uOccTex, ivec2(k,1), 0);
-      vec2 A = P.xy + uOccSway*(H.x/uOccHRef) - (H.x-recvZ)*uBulkShift;   // a's shadow at its height RELATIVE to the receiver (recvZ=0 floor → unchanged; curtain → projected up the cloth, §4.9)
+      vec2 A = P.xy + uOccSway*(H.x/uOccHRef) - (H.x-recvZ)*uBulkShift;   // a's shadow at its height RELATIVE to the receiver (recvZ=0 floor → unchanged; curtain → projected up the cloth, spec/model/receivers.md)
       vec2 B = P.zw + uOccSway*(H.y/uOccHRef) - (H.y-recvZ)*uBulkShift;   // b's below — segment shadow runs a→b, connecting neighbours
       vec2 ab = B - A, ap = world - A;
       float seg = clamp(dot(ap,ab)/max(dot(ab,ab),1e-7), 0.0, 1.0);
@@ -976,7 +976,7 @@ const GLSL_T_RISE_MATERIAL = `    col=mix(skyRad,uHazeColor,fog); fog=0.0;
     col=col*travelT+reflection+riseScatter;`;
 
 
-const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (§3.5): as the sun sets the eye's rods take over the dim shade —
+const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (spec/model/light.md): as the sun sets the eye's rods take over the dim shade —
   // colour desaturates toward a blue-green grey and saturated reds darken first, while the bright dapples
   // stay photopic and warm. Two REAL cues drive it (no absolute luminance exists here): global duskness
   // from elevation (uTwilight) × the local shade darkness (acc — exposure-independent). Linear HDR. ----
@@ -984,8 +984,8 @@ const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (§3.5): as the sun
   const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
   float rod = (1.0 - smoothstep(0.15, 0.6, dot(acc, LUMA))) * uTwilight * uMesopic;  // 1 deep shade, 0 dapples
   col = mix(col, dot(col, LUMA)*ROD_BLUE, rod*0.6);     // cap 0.6 so the deepest shade keeps a hint of green
-  col = mix(col, uHazeColor, fog);                       // far floor dissolves into atmospheric haze (§4.7); fog==0 at pitch 0
-  // ---- THE EDGE (§4.7): the projector's soft iris — a mask on the LIGHT, before the tail, so the glow tier spreads
+  col = mix(col, uHazeColor, fog);                       // far floor dissolves into atmospheric haze (spec/model/camera.md); fog==0 at pitch 0
+  // ---- THE EDGE (spec/model/camera.md): the projector's soft iris — a mask on the LIGHT, before the tail, so the glow tier spreads
   // masked light and the fade dims as a real throw would. A presentation device, not physics: named, and 0 is off. ----
   if(uVignette > 0.0){
     vec2 q = abs(vUv*2.0 - 1.0);                                   // 0 at frame centre, 1 at each edge, aspect-free: the mask touches all four edges
@@ -994,7 +994,7 @@ const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (§3.5): as the sun
   }
   // The Look's tail (exposure/curve/contrast/gamma) is toneTail() — shared verbatim with the diffusion composite.
   // Skipping it is the ONLY thing uLinearOut changes: what leaves here is then the same linear HDR radiance the
-  // fabric produced, which is the space a lateral spread has to happen in (§4.9).
+  // fabric produced, which is the space a lateral spread has to happen in (spec/model/receivers.md).
   if(uLinearOut == 0) col = toneTail(col);
   frag = vec4(col,1.0);`;
 
@@ -1002,7 +1002,7 @@ const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (§3.5): as the sun
 const GLSL_T_PRO_FLOOR = `  vec2 world; float fog = 0.0; float extraThrow = 0.0; float recvZ = 0.0;
   vec3 acc = vec3(0.0);      // "how much of the light got through here" — the quantity the whole pipeline is about
   // recvZ stays 0 here and the shared occluder reads below spell it out anyway: the floor IS the recvZ = 0 case
-  // of §4.9's height-minus-recvZ generalization, so those lines are the same lines the cloth and the tent run.`;
+  // of spec/model/receivers.md's height-minus-recvZ generalization, so those lines are the same lines the cloth and the tent run.`;
 
 const GLSL_T_PRO_CLOTH = `  vec2 world; float fog = 0.0; float extraThrow = 0.0; float recvZ = 0.0; vec2 clothUV = vec2(0.0), castUV = vec2(0.0);
   vec3 foldF = vec3(0.0);   // the pleat field at this cloth point, evaluated ONCE: the warp below and the velvet shading later read the very same (ŝ, dŝ/dx, peak) — that is the shared-phase invariant, structural
@@ -1023,31 +1023,31 @@ const GLSL_T_PRO_SKY = `  float fog = 0.0;
   vec3 acc = vec3(0.0);      // "how much of the light got through here" — the sky view fills it with its own upward transmittance (see below), so the mesopic hook at the tail reads it unchanged`;
 
 const GLSL_T_FAITH_FLOOR = `  if(uFaithful != 0){
-    // FAITHFUL (§4.5/§4.9): the disk convolution at continuous per-leaf heights, pre-integrated as geometry at bake
+    // FAITHFUL (spec/model/canopy.md, receivers.md): the disk convolution at continuous per-leaf heights, pre-integrated as geometry at bake
     // time -> one tap. The receiver/sky guards this condition used to carry are gone: the enclosure and the sky view
     // are separate programs that never emit this branch at all (see buildTransport).
     acc = tapFaith(world);           // FLOOR: cast in floor (x,y), tap at world
   } else {`;
 
 const GLSL_T_FAITH_CLOTH = `  if(uFaithful != 0){
-    // FAITHFUL (§4.5/§4.9): the disk convolution at continuous per-leaf heights, pre-integrated as geometry at bake
+    // FAITHFUL (spec/model/canopy.md, receivers.md): the disk convolution at continuous per-leaf heights, pre-integrated as geometry at bake
     // time -> one tap. The receiver/sky guards this condition used to carry are gone: the enclosure and the sky view
     // are separate programs that never emit this branch at all (see buildTransport).
     acc = tapFaith(castUV);          // CURTAIN: cast onto the vertical cloth (u,v), tap at the warped coord
   } else {`;
 
-const GLSL_T_COL_DECL = `  // ---- Receiver (§4.x/§4.9). The landed irradiance (acc·uSunColor + uAmbient, linear HDR) is answered by the
+const GLSL_T_COL_DECL = `  // ---- Receiver (spec/model/receivers.md). The landed irradiance (acc·uSunColor + uAmbient, linear HDR) is answered by the
   // surface: the floor REFLECTS off its albedo, the two cloth receivers TRANSMIT through woven fabric, and the
   // sky view has no surface to answer with and already holds its radiance. One line per variant, chosen at build. ----
   vec3 col;`;
 
 // ============================================================================
-// THE CAMERA REGISTRY (spec §4.9 / §9). B1 made a camera a compile-time selection; this makes it DATA.
+// THE CAMERA REGISTRY (spec/implementation.md). B1 made a camera a compile-time selection; this makes it DATA.
 //
 // The three consumers below — the shader assembler, the uniform-location table and the per-frame upload — all
 // used to carry their own copy of the same four-way question, as three predicate chains that had to be kept in
 // agreement by hand. They now read ONE table. A camera is an entry; adding a receiver is writing an entry, not
-// editing three chains, and the extension contract in §9 is the rest of what an entry owes.
+// editing three chains, and the extension contract in spec/contracts/gates-and-rungs.md is the rest of what an entry owes.
 //
 // Two tables, deliberately: TRANSPORT_GROUPS is the vocabulary (what a uniform group DECLARES and what its
 // locations are called), CAMERAS is the sentence (which groups a camera speaks, in what order, and which body
@@ -1057,7 +1057,7 @@ const GLSL_T_COL_DECL = `  // ---- Receiver (§4.x/§4.9). The landed irradiance
 //
 // MATERIALS RIDE THE CAMERA for now — each entry names its own material snippets. That is honest while every
 // camera has exactly one material. The moment a real look wants a camera×material pair that does not exist
-// (§4.9's named future: the enclosure's mesh panels read as sky, a sky view with a surface in it), materials
+// (spec/model/sky-view.md's named future: the enclosure's mesh panels read as sky, a sky view with a surface in it), materials
 // become the second axis. Inventing that axis before a look needs it would be inventing a combination.
 // ============================================================================
 
@@ -1132,35 +1132,35 @@ vec3 acc=vec3(0.0), skyRad=vec3(0.0);`,
     prologue: GLSL_T_PRO_FLOOR, camera: GLSL_T_FLOOR_CAMERA, faith: GLSL_T_FAITH_FLOOR,
     material: [GLSL_T_FLOOR_MATERIAL],
     params: ['ground_*', 'far_smear', 'view_*', 'canopy_fill', 'fill_*', 'litter*'],
-    note: 'the light lands on the ground and REFLECTS (§4.7) — the park default, and the only camera with an albedo',
+    note: 'the light lands on the ground and REFLECTS (spec/model/receivers.md) — the park default, and the only camera with an albedo',
   },
   cloth: {
     groups: ['head','occ','transport','woodCast','beam','tap','ca','faith','sunDir','cloth','fabric','fold','warp','window','fill','post'],
     prologue: GLSL_T_PRO_CLOTH, camera: GLSL_T_CLOTH_CAMERA, faith: GLSL_T_FAITH_CLOTH,
     material: [GLSL_T_FABRIC_MATERIAL, GLSL_T_WINDOW_APPLY, GLSL_T_FABRIC_TAIL],
     params: ['fabric_*', 'fold_*', 'velvet_sheen', 'cloth_distance_m', 'mullion_*', 'window_*', 'view_extent_m', 'view_center_*', 'canopy_fill'],
-    note: 'a standing curtain seen head-on, TRANSMITTING (§4.9); the only camera with a flat plane behind it, so the window and the pleat warp are its alone',
+    note: 'a standing curtain seen head-on, TRANSMITTING (spec/model/receivers.md); the only camera with a flat plane behind it, so the window and the pleat warp are its alone',
   },
   enclosure: {
     groups: ['head','rayView','occ','transport','woodCast','beam','tap','ca','sunDir','fabric','fold','tent','fill','post'],
     prologue: GLSL_T_PRO_TENT, camera: GLSL_T_TENT_CAMERA, faith: null,
     material: [GLSL_T_FABRIC_MATERIAL, GLSL_T_FABRIC_TAIL],
     params: ['fabric_*', 'fold_*', 'velvet_sheen', 'tent_*', 'view_*', 'canopy_fill'],
-    note: 'the same fabric as a closed tent stood AROUND the viewer, ray-cast per pixel (§4.9). No faithful tier: the pre-bake needs one flat cast frame and a polytope has none',
+    note: 'the same fabric as a closed tent stood AROUND the viewer, ray-cast per pixel (spec/model/receivers.md). No faithful tier: the pre-bake needs one flat cast frame and a polytope has none',
   },
   sky: {
     groups: ['head','rayView','occ','sunDir','sky','post'],
     prologue: GLSL_T_PRO_SKY, camera: GLSL_T_SKY_CAMERA, faith: null,
     material: [GLSL_T_SKY_MATERIAL],
     params: ['sky_*', 'view_pitch_deg', 'view_fov_deg', 'view_yaw_deg', 'view_center_*'],
-    note: 'no surface at all — the RETINA receives, so the field is read along the eye\'s rays instead of the sun\'s (§4.9). The one camera that runs no cast, which is why it declares neither the sample integral nor a material',
+    note: 'no surface at all — the RETINA receives, so the field is read along the eye\'s rays instead of the sun\'s (spec/model/sky-view.md). The one camera that runs no cast, which is why it declares neither the sample integral nor a material',
   },
 };
 const TRANSPORT_CAMERAS = Object.keys(CAMERAS);
 // WHICH entry a look selects. The chain lived in create(), where it was the engine's private business; it moved
 // here the moment a second reader wanted it (the editor hides the knobs a camera's groups never read), because two
 // copies of a four-way mode chain is exactly the drift this registry exists to stop. sky_view overrides the
-// receiver outright — there is no surface, so the receiver has nothing to select (§4.9).
+// receiver outright — there is no surface, so the receiver has nothing to select (spec/model/sky-view.md).
 const cameraFor = (p) => p.sky_view ? 'sky' : (p.receiver|0) === 2 ? 'enclosure' : (p.receiver|0) !== 0 ? 'cloth' : 'floor';
 // The groups that carry a per-frame UPLOAD, named at module level because that is the only half of the upload
 // registry anything outside an engine can see: the functions themselves live in create()'s GROUP_UPLOAD, since

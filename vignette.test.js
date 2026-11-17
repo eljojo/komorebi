@@ -1,4 +1,4 @@
-// The edge fade (§4.7, "the projector's soft iris"): a mask on the LIGHT, `vignette` the gate and the feather,
+// The edge fade (spec/model/camera.md, "the projector's soft iris"): a mask on the LIGHT, `vignette` the gate and the feather,
 // `vignette_shape` the superellipse exponent. vignetteMask is the shader's formula as a pure function; the string
 // tests hold the shader and the registry to the same sentence. Run: `bun test vignette.test.js`.
 import { test, expect } from "bun:test";
@@ -112,7 +112,7 @@ test("the post group declares and locates both uniforms, and every camera's prog
   expect(TRANSPORT_GROUPS.post.locs.vignetteShape).toBe("uVignetteShape");
   for (const cam of ["floor", "cloth", "enclosure", "sky"]) {
     const src = buildTransport(cam);
-    expect(src.split("THE EDGE (§4.7)").length - 1, cam).toBe(1);
+    expect(src.split("THE EDGE (spec/model/camera.md)").length - 1, cam).toBe(1);
     // The mask's own lines, each once, pinned by text: they are vignetteMask (komorebi-math.js) line for line — the gate, q, the
     // superellipse radius, the fade — so the shader cannot drift from the reference the numbers above hold, and a missing line fails here.
     const lines = [

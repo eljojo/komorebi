@@ -1,13 +1,13 @@
 // ============================================================================
 // CPU math & physics substrate — pure functions, no GL, no engine state.
-// Constants and interpolation helpers, the 3-band atmosphere (spec §3.5), the
+// Constants and interpolation helpers, the 3-band atmosphere (spec/model/light.md), the
 // deterministic RNG that keeps the canopy frame-stable, the broadband wind
-// signal (spec §5.1), and the skeleton-growth grammar and its vector helpers (spec §4.5).
+// signal (spec/model/motion.md), and the skeleton-growth grammar and its vector helpers (spec/model/canopy.md).
 // ============================================================================
 const DEG = Math.PI / 180, TAU = Math.PI*2;
-const GOLDEN = Math.PI*(3 - Math.sqrt(5));   // the golden angle (rad), the step of every spiral in the growth: trees about the grove, limbs up the trunk, children about a node (§4.5)
+const GOLDEN = Math.PI*(3 - Math.sqrt(5));   // the golden angle (rad), the step of every spiral in the growth: trees about the grove, limbs up the trunk, children about a node (spec/model/canopy.md)
 // Area shared by two circles, radii r1/r2, centres d apart — the eclipse's moon against the source's core disk and
-// against its whole extent. Used only to renormalize the SEEN source's radiance (§4.9); the cast's own crescent comes
+// against its whole extent. Used only to renormalize the SEEN source's radiance (spec/model/sky-view.md); the cast's own crescent comes
 // from zeroing sample weights, which is a discrete estimate of this same area.
 function lensArea(r1, r2, d){
   if(r2 <= 0 || r1 <= 0) return 0;
@@ -17,7 +17,7 @@ function lensArea(r1, r2, d){
   const a2 = Math.acos(clamp((d*d + r2*r2 - r1*r1)/(2*d*r2), -1, 1));
   return r1*r1*(a1 - Math.sin(2*a1)/2) + r2*r2*(a2 - Math.sin(2*a2)/2);
 }
-const FAITH_MAX_RATIO = 1.7;   // faithful-tree height cap (spec §4.5): max crown height:radius before crown_aspect. A broad tree (mr above mz/RATIO) keeps its natural height untouched; a NARROW tree (steep branches → tiny mr → runaway plan-fill scale → tens of metres tall) gets its height clamped to crown·RATIO·aspect. Lower = shorter narrow trees.
+const FAITH_MAX_RATIO = 1.7;   // faithful-tree height cap (spec/model/canopy.md): max crown height:radius before crown_aspect. A broad tree (mr above mz/RATIO) keeps its natural height untouched; a NARROW tree (steep branches → tiny mr → runaway plan-fill scale → tens of metres tall) gets its height clamped to crown·RATIO·aspect. Lower = shorter narrow trees.
 const clamp = (x,a,b) => Math.min(b, Math.max(a, x));
 const lerp = (a,b,t) => a + (b-a)*t;
 const smoothstep = (a,b,x) => { const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); };
@@ -45,7 +45,7 @@ const turnBack = (p, v, to, full) => {
     rate: u => { const s = u*T; if(s < td) return v*(1 - s/td); const x = (s-td)/back; return (to-turn)*6*x*(1-x)/back; } };
 };
 
-// ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec §3.5). A cheap
+// ---- atmospheric colour: physical sun-disk + sky tint from solar elevation (spec/model/light.md). A cheap
 // 3-band (R=620, G=555, B=470 nm) Beer's-law model. As the sun lowers, air mass grows and Rayleigh
 // (∝ λ⁻⁴) reddens the direct beam; the ozone Chappuis band absorbs red, so the SCATTERED sky stays
 // blue (the "blue hour"). Returns LINEAR RGB — the renderer's exposure/ACES/gamma stay downstream. --
@@ -77,16 +77,16 @@ function atmosphere(out, hDeg, beta, ambientSky){
 }
 
 // The sun's UNIT direction (cos el·cos az, cos el·sin az, sin el), written into `out`. Deliberately unclamped in
-// elevation (§4.9): incidence on a vertical cloth peaks as the sun lowers, where the 1/sin(el) throws diverge. ONE
+// elevation (spec/model/receivers.md): incidence on a vertical cloth peaks as the sun lowers, where the 1/sin(el) throws diverge. ONE
 // helper because every reader needs the same vector — transport's uSunDir upload (the cloth's and tent's incidence, the sky view's seen source) and the harness.
-// The sky fill does not read it: its sun path is the beam's bulk shift (ONE SUN PER CAMERA, komorebi-bake.js, §4.7).
+// The sky fill does not read it: its sun path is the beam's bulk shift (ONE SUN PER CAMERA, komorebi-bake.js, spec/model/fill.md).
 function sunDirection(out, elevDeg, azDeg){
   const el=elevDeg*DEG, az=azDeg*DEG;
   out[0]=Math.cos(el)*Math.cos(az); out[1]=Math.cos(el)*Math.sin(az); out[2]=Math.sin(el);
   return out;
 }
 
-// The beam lands on a surface by the cosine of its incidence (`sun_cosine`, §3.5): the geometric factor the atmosphere's spectrum never carried. A pure function of the
+// The beam lands on a surface by the cosine of its incidence (`sun_cosine`, spec/model/light.md): the geometric factor the atmosphere's spectrum never carried. A pure function of the
 // sun's angles and the receiver, ONE table, unclamped in elevation like sunDirection above (the 4° of the editor's clock and the 6° of the throws are floors on those, not
 // on the surface: at 2° the floor gets sin 2°, not sin 4°). Radiance is invariant, so the seen disk takes nothing and the sky view gets 1 — the law belongs to the receiver.
 //   floor      horizontal, normal +z: sin el.
@@ -150,7 +150,7 @@ function hash3(a,b,c){ let h=(a^0x9E3779B1)>>>0;
   h=Math.imul(h^b,0x85EBCA6B)>>>0; h=Math.imul(h^c,0xC2B2AE35)>>>0;
   return (h^(h>>>15))>>>0; }
 
-// ---- autumn senescence (spec §4.5): a leaf's pigment state, per leaf. Chlorophyll is dismantled and the carotenoid
+// ---- autumn senescence (spec/model/season.md): a leaf's pigment state, per leaf. Chlorophyll is dismantled and the carotenoid
 // that was always there shows; anthocyanin is synthesised (red); tannin browns. Optical depth is ADDITIVE, so each
 // pigment is a basis vector of per-channel tau (R,G,B), and a leaf is its summer tau faded out plus these faded in.
 // FITTED to the PROSPECT-D leaf model (Féret et al. 2017; computed from the `prospect` R package, Féret & de Boissieu 2024) in OKLab, D65, over 77 turned leaves spanning the autumn Norway-maple
@@ -175,7 +175,7 @@ const leafSide = (seed, j, k) => (hash3((seed>>>0)^SIDE_SALT, j, k) & 1) ? 1 : -
 const _leafCell=[0,0,0], _leafWall=[0,0,0];   // scratch for leafTau, written and read within one synchronous call
 // s_j: how far leaf (stream value phi in [0,1)) has turned. smoothstep from its own start to the common finish; the
 // spread is clamped under the span so the transition keeps a floor of width and the smoothstep a positive one.
-// DROP AFTER THE TURN (`drop_after_turn`, spec §4.5 Abscission): the common finish above leaves a leaf no turn of its own to wait for (every leaf ends at
+// DROP AFTER THE TURN (`drop_after_turn`, spec/model/season.md Abscission): the common finish above leaves a leaf no turn of its own to wait for (every leaf ends at
 // turn_start + turn_span), so a drop bound to the turn would have no order. At 1 each leaf's window is its own LENGTH L = span − spread from its own start, and
 // the last leaf (phi -> 1) still ends at turn_start + span. The start is the same expression, so s = 0 below turn_start and every summer byte survive. THE TRADE:
 // the mid-turn crown turns sooner at 1 (a turn change inside a drop knob; from turn_start + turn_span on the colour is identical). At 0 the branch is not
@@ -231,7 +231,7 @@ function turnPhase(P, phi, phiE){
 // LIGHT (below): `phiE` and `gainE` = this leaf's turn order and red gain by exposure, given only by a grove that has
 // laid itself out. Absent `phiE`, or turn_exposure 0, no arithmetic touches phi or a: P0's leaf, to the bit. The draws
 // keep their order either way (phi, then a, then b), so the hash never moves.
-// ONE TREE AHEAD (§4.5): `dT` (<= 0) is the leaf's tree's lead, which shifts its clock (senescence); `cT` is the tree's depth, which scales red AND brown after the light's gain — the walls brown with the
+// ONE TREE AHEAD (spec/model/season.md): `dT` (<= 0) is the leaf's tree's lead, which shifts its clock (senescence); `cT` is the tree's depth, which scales red AND brown after the light's gain — the walls brown with the
 // tree, because b is in both tissues. Both absent (the grove hands them over only at tree_clock_spread / tree_pigment_spread above 0) and no arithmetic touches the leaf.
 function leafTau(tauSummer, P, seed, j, k, out = [0,0,0], phiE, gainE, dT, cT){
   const r = mulberry32(hash3((seed>>>0)^LEAF_SALT, j, k));
@@ -241,7 +241,7 @@ function leafTau(tauSummer, P, seed, j, k, out = [0,0,0], phiE, gainE, dT, cT){
   leafPigments(P, r(), r(), phiE === undefined ? 0 : P.turn_exposure, gainE, cT, _leafSched);
   return leafTauAt(tauSummer, s, _leafSched, 0, P.wall_fraction, out);
 }
-// THE LEAF'S SEASON IN THREE TIERS (spec §4.5 "Re-seasoning"). leafTau above is the three in a row; the grove's re-season keeps the first two per leaf, so a
+// THE LEAF'S SEASON IN THREE TIERS (spec/model/season.md "Re-seasoning"). leafTau above is the three in a row; the grove's re-season keeps the first two per leaf, so a
 // step of the clock pays only the third, in the same float order, so the two are one arithmetic:
 //   its DRAWS: the leaf's own stream, (seed, j, k) alone, so the grove's: [turn clock, red, brown] (leafDraws; the first is leafClock);
 //   its SCHEDULE: what the season's knobs make of them, the window it turns in (turnWindow) and the wall and cell pigment depths it turns toward (leafPigments),
@@ -278,7 +278,7 @@ function leafTauAt(tauSummer, s, sched, o, fw, out = [0,0,0]){
   return mixtureTau(wall, cell, fw, out);
 }
 
-// ---- LIGHT DECIDES WHO TURNS FIRST (spec §4.5, P1). Anthocyanin is made in light, so the leaves that see the sun —
+// ---- LIGHT DECIDES WHO TURNS FIRST (spec/model/season.md, P1). Anthocyanin is made in light, so the leaves that see the sun —
 // the crown's top, its sun side, its outer shell, a tree with no shading neighbour — turn first and turn reddest,
 // while the shaded interior and underside go later and stay yellow. A leaf's exposure is the fraction of a sun ray
 // that reaches it through the leaves in the way: Beer-Lambert up a representative sun ray over a plan grid of leaf
@@ -424,7 +424,7 @@ function exposureBlend(rank, ex, w, out = new Float64Array(rank.length)){
   return out;
 }
 
-// ---- ABSCISSION (spec §4.5, P3a). A leaf lets go on its own day, the sunlit ones first, and a marcescent share (beech
+// ---- ABSCISSION (spec/model/season.md, P3a). A leaf lets go on its own day, the sunlit ones first, and a marcescent share (beech
 // keeps about half its brown leaves) never does within the season. Per leaf: a drop PHASE phi_d = mix(hash_d, 1 - u,
 // drop_exposure) — hash_d its own draw, u its exposure as P1/P1b leave it (the rank, or the blend with raw light; consumed,
 // never recomputed) — and a drop DAY D = drop_start + drop_span . phi_d / leaf_drop for phi_d < leaf_drop, else never.
@@ -442,19 +442,19 @@ function dropPhase(hashD, u, w){
 function dropDay(P, phiD, dT){ return phiD < P.leaf_drop ? (dT ? P.drop_start + dT : P.drop_start) + P.drop_span*phiD/P.leaf_drop : Infinity; }
 // AFTER THE TURN (drop_after_turn 1): the day is the end of the leaf's OWN window, T0 + L, plus the fade's DROP_EPS (so s_j is 1 where the fade BEGINS, D − ε, not
 // only at D) plus drop_lag (0 = it fades the instant it has turned). `phiTurn` is the leaf's turn phase (turnPhase): one order for the colour and the day, no hash
-// of its own (a third clock, §4.5). leaf_drop stays the share: marcescent = the last to turn. drop_start/span/exposure are not read.
+// of its own (a third clock, spec/model/season.md). leaf_drop stays the share: marcescent = the last to turn. drop_start/span/exposure are not read.
 function dropDayAfterTurn(P, phiTurn, dT){
   if(!(phiTurn < P.leaf_drop)) return Infinity;
   const span = Math.max(P.turn_span, 1e-4), spread = clamp(P.turn_spread, 0, span*0.95);
   const start = dT ? P.turn_start + dT : P.turn_start;        // the tree's lead (see senescence): the same start the colour was turned by, so the day still follows the turn
   return start + phiTurn*spread + (span - spread) + DROP_EPS + P.drop_lag;
 }
-// §5.3's continuity rule: a leaf leaves by fading, never popping. w falls from 1 to 0 over the DROP_EPS (phenology units)
+// spec/contracts/continuity.md's continuity rule: a leaf leaves by fading, never popping. w falls from 1 to 0 over the DROP_EPS (phenology units)
 // ending at the leaf's day, so a season that moves by a hair moves the canopy by a hair. cov <- cov . w scales the leaf's
 // tau and the fade its ballistic shadow rides on together. GATE: before the fade begins w is 1 with no arithmetic at all.
 const DROP_EPS = 0.01;
 // CALM, for a season that is played live (macros.js): no applied step of the phenology may be wider than half a fade window, or it jumps the fade of every
-// leaf whose window it spans and pops it (salt-and-pepper thinning, §5.3). A full-speed drag moves ~0.006 a frame at 60 Hz, inside the clamp; a rate-gated
+// leaf whose window it spans and pops it (salt-and-pepper thinning, spec/contracts/continuity.md). A full-speed drag moves ~0.006 a frame at 60 Hz, inside the clamp; a rate-gated
 // catch-up after a slow regrow moves ~0.018, which is not. THE TRADE: while the clamp binds the season moves slower than the hand, at most
 // TWEEN_STEP per apply, and arrives a beat late (the landing still snaps to the stop's exact dict).
 const TWEEN_STEP = DROP_EPS/2;
@@ -513,7 +513,7 @@ const dropping = (P) => P.leaf_drop > 0 && P.phenology > (afterTurn(P) ? turnOpe
 const ordered = (P) => lit(P) || (dropping(P) && !afterTurn(P) && P.drop_exposure > 0);
 function retention(D, p){ return p > D - DROP_EPS ? 1 - smoothstep(D - DROP_EPS, D, p) : 1; }
 
-// ---- ONE TREE AHEAD OF ITS NEIGHBOURS (spec §4.5, `tree_clock_spread`, `tree_pigment_spread`). Within one kind the INDIVIDUAL shifts the clock by days to two weeks (a stressed tree runs early, a long tail) and its
+// ---- ONE TREE AHEAD OF ITS NEIGHBOURS (spec/model/season.md, `tree_clock_spread`, `tree_pigment_spread`). Within one kind the INDIVIDUAL shifts the clock by days to two weeks (a stressed tree runs early, a long tail) and its
 // red depth about two to one between neighbours; within a crown it is the light (above). So each tree t (the twig's `tree`) draws two numbers, on a salt of its own and never the growth, arrangement or
 // leaf streams — the lead first, then the depth — and the grove asks two tables, null at the gate. TREE_SALT = 2·0x9E3779B9 mod 2^32: the next multiple of the golden gamma, in no other stream.
 //   the lead   Δ_t = −S·v³ <= 0 (S = tree_clock_spread): SKEWED — most trees near the look's schedule, a few early. Mean S/4, median S/8, sd 0.283·S, one in five (1 − 2^(−1/3) = 0.206) beyond S/2. S is the REACH,
@@ -529,7 +529,7 @@ function treeDraws(seed, t, out = [0,0]){
   out[0] = r(); out[1] = r();
   return out;
 }
-// THE TREE'S LEAF GENOTYPE (`leaf_variety`, §4.5): the same stream's THIRD draw, floor(r()·G) — an individual holds its clock, its red depth and its leaf form in one place. The first two stay treeDraws' (the lead, the depth), so
+// THE TREE'S LEAF GENOTYPE (`leaf_variety`, spec/model/leaf.md): the same stream's THIRD draw, floor(r()·G) — an individual holds its clock, its red depth and its leaf form in one place. The first two stay treeDraws' (the lead, the depth), so
 // tree_clock_spread and tree_pigment_spread keep their bits, and the growth stream is never touched. Pure per (seed, t): the same at any tree_count, the marginal tree's included; two trees may share one (siblings). Nothing here is
 // gated: the grove asks only while leaf_variety is up.
 function treeGenotype(seed, t, G){
@@ -553,21 +553,21 @@ function treeGains(P, nTree){
   return out;
 }
 
-// A LEAF IS NOT A WINDOW (§4.5). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
+// A LEAF IS NOT A WINDOW (spec/model/leaf.md). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
 // diffuse share (d = leaf_diffuse) is scattered by the mesophyll and leaves in every direction. The beam sees (1−d)·T, which
-// is NEUTRAL depth on top of the leaf's own: k = −ln(1−d) per leaf (a texel is a mixture of one, §4.5, texelMix), the same in every channel because the split is
+// is NEUTRAL depth on top of the leaf's own: k = −ln(1−d) per leaf (a texel is a mixture of one, spec/model/leaf.md, texelMix), the same in every channel because the split is
 // set by the leaf's scattering structure and not by its pigments (so the beam keeps the leaf's hue and the diffuse share
 // is simply t − tb). d → 1 is −ln 0, so k is capped where the beam is already dark (e^−6 = 0.25 %). d = 0 is exactly 0 —
 // the gate, no log round trip — and so is anything that is not a positive number.
 const BEAM_K_MAX = 6;
 function ballisticK(d){ return d > 0 ? Math.min(-Math.log1p(-Math.min(d, 1)), BEAM_K_MAX) : 0; }
 
-// ---- broadband wind signal (spec §5.1). Real wind is BROADBAND, not a single frequency — a single sine
+// ---- broadband wind signal (spec/model/motion.md). Real wind is BROADBAND, not a single frequency — a single sine
 // reads as a machine because all its energy sits at one period. A frame-stable fractal sum of octaves over
 // TIME with per-octave amplitude gain G=2^(-H) gives a power spectrum ∝ f^-(2H+1): the Kolmogorov inertial
 // subrange is -5/3, i.e. H=1/3 → G≈0.794 (the number that makes a noise sum *feel* like wind — between
 // "pink" H=0 choppy and "brown" H=0.5 sluggish). Pure function of t → no per-frame RNG (all engine motion
-// is deterministic-of-time & reproducible, spec §4.4). H is the per-pattern "character" knob below. -------
+// is deterministic-of-time & reproducible, spec/model/source.md). H is the per-pattern "character" knob below. -------
 const VNOISE_STD = 0.496;                  // measured std of vnoise1 — normalizes fbm1 to ~unit std
 function vnoise1(x){                       // smooth 1-D value noise -> [-1,1]
   const i=Math.floor(x), f=x-i, u=f*f*(3-2*f);
@@ -583,7 +583,7 @@ function fbm1(t, freq, octaves, H){
   for(let i=0;i<octaves;i++){ sum+=amp*vnoise1(t*fr + i*19.7); a2+=amp*amp; amp*=G; fr*=2; }
   return a2>0 ? sum/(Math.sqrt(a2)*VNOISE_STD) : 0;
 }
-// ---- wind PATTERNS (spec §5.1): a few broadband CHARACTERS, all reading the SAME shared knobs (strength,
+// ---- wind PATTERNS (spec/model/motion.md): a few broadband CHARACTERS, all reading the SAME shared knobs (strength,
 // gustiness, gust rate, direction, weather) but shaped differently inside. `H` = spectral slope (choppy↔
 // silky), `octaves` = detail depth, `lean` = steady downwind mean fraction (low → deeper lulls that drive
 // the springback through rest), `lat` = crosswind fraction (breaks the 1-D slide), `burst` = waveshape that
@@ -602,7 +602,7 @@ function windNoise(x, y, t, k){
   return 0.7*(Math.sin(x*k + t*0.9) + 0.5*Math.sin(y*k*1.3 - t*1.4 + 1.7));
 }
 
-// ---- skeleton growth (spec §4.5): grow real 3D branch segments from a seed ----
+// ---- skeleton growth (spec/model/canopy.md): grow real 3D branch segments from a seed ----
 function normalize3(v){ const m=Math.hypot(v[0],v[1],v[2])||1e-9; return [v[0]/m, v[1]/m, v[2]/m]; }
 // a child direction deviating from unit parent dir `d` by `spread` radians, at azimuth `az`
 // around d (in the plane perpendicular to it). Builds an orthonormal basis around d.
@@ -616,7 +616,7 @@ function coneDir(d, az, spread){
                       cs*d[2]+sn*(ca*s[2]+sa*u[2]) ]);
 }
 // tilt a unit direction toward straight-down (−z) by `dth` rad, IN ITS OWN VERTICAL PLANE (azimuth fixed) — the
-// gravitropic droop of a branch (spec §4.5). dth<0 lifts it (upsweep). Guards a ~vertical heading (no plane to droop in).
+// gravitropic droop of a branch (spec/model/canopy.md). dth<0 lifts it (upsweep). Guards a ~vertical heading (no plane to droop in).
 function bendDown(dir, dth){
   const horiz = Math.hypot(dir[0], dir[1]);
   if(horiz < 1e-4) return dir;
@@ -635,14 +635,14 @@ function coneDirPlane(d, az, spread){
   return [ c*hx + s*hy, c*hy - s*hx, 0 ];
 }
 
-// ---- THE GRAMMAR (spec §4.5): a skeleton grown from a spec, a stream and an `out` — trunk, limb, branch, twig by one
+// ---- THE GRAMMAR (spec/model/canopy.md): a skeleton grown from a spec, a stream and an `out` — trunk, limb, branch, twig by one
 // recursive rule — a function and not a closure, pure and testable on its own.
 // The caller owns `out` ({ seg:[], tw:[] }) and may grow many roots into one: a twig's index is the count in `out.tw` before
 // it, which the segments of its own wood carry (`tw`, -1 for wood that bears nothing) so the faithful bake swings them about
-// the twig's joint (§5.4). Pure: nothing is read but the arguments, nothing written but `out`. THE STREAM IS THE CONTRACT —
+// the twig's joint (spec/model/motion.md). Pure: nothing is read but the arguments, nothing written but `out`. THE STREAM IS THE CONTRACT —
 // three draws per child, in the order azimuth, spread, length; reorder one and every grove there is regrows differently.
 // spec: levels (depth; level >= levels bears a twig), kids (children per node; `opposite` is always 2), lenRatio, coneA
-// (the child cone's half-angle), droop (signed gravitropic curve, §4.5), phyllo (0 spiral / 1 whorled / 2 opposite),
+// (the child cone's half-angle), droop (signed gravitropic curve, spec/model/canopy.md), phyllo (0 spiral / 1 whorled / 2 opposite),
 // leader (monopodial: the spiral steps by the golden angle), and the root: base, dir (unit), len, level, limb.
 // plane: a flat 2-D sheet — every z is 0, no droop, children turn by coneDirPlane. The draws are the same, so a plane
 // run is the same topology as the 3-D one. No engine caller: it was meant for the leaf's veins, which grow by growLeaf
@@ -661,9 +661,9 @@ function growSkeleton(spec, rng, out){
 function growNode(g, rng, out, base, dir, len, level, limb, chain){
   const { levels, plane } = g;
   // index the twig this call will bear, if it is a terminal one — the segments pushed below are that twig's
-  // OWN wood, and the faithful bake must swing them about the same joint, by the same angle, as its leaves (§5.4).
+  // OWN wood, and the faithful bake must swing them about the same joint, by the same angle, as its leaves (spec/model/motion.md).
   const twIdx = (level >= levels) ? out.tw.length : -1;
-  // droop/upsweep (spec §4.5): curve the branch toward gravity over a few SUB-SEGMENTS — a smooth arc, not a
+  // droop/upsweep (spec/model/canopy.md): curve the branch toward gravity over a few SUB-SEGMENTS — a smooth arc, not a
   // straight ray and not a single kink. Stronger on outer orders (level/levels), and children inherit the
   // curved END-TANGENT, so the sag compounds toward the tips (the willow cascade / birch trail). 0 = straight.
   const dLevel = plane ? 0 : g.droop * (level/levels);
@@ -694,13 +694,13 @@ function growNode(g, rng, out, base, dir, len, level, limb, chain){
   const here = chain ? chain.concat(joints) : undefined;   // root-first: the trunk end of the wood, then every joint out to this branch's tip
   // bx,by = the twig's REAL base: where this terminal branch attaches to its parent. It is the joint the whole
   // twig (wood + the leaves on it) turns about under the medium band, and — being offset from the clump toward
-  // the parent by GROWTH — it is a genuine stem joint, so §5.1's anti-vortex property holds without uStemLen.
+  // the parent by GROWTH — it is a genuine stem joint, so spec/model/motion.md's anti-vortex property holds without uStemLen.
   if(level >= levels){
     out.tw.push({ x:tip[0], y:tip[1], z:tip[2], limb, dx:endDir[0], dy:endDir[1], bx:base[0], by:base[1] });   // dx,dy = twig heading (plan) so leaves can hug the twig, not scatter as a blob
     if(here) out.path.push(here.reverse());   // tip first (here is this twig's own list, concatenated: the chain its parents hold is untouched)
     return;
   }
-  // phyllotaxis (§4.5): how children fan around the parent. opposite forces PAIRED forks; whorled an even ring; spiral the golden angle.
+  // phyllotaxis (spec/model/canopy.md): how children fan around the parent. opposite forces PAIRED forks; whorled an even ring; spiral the golden angle.
   const { phyllo, coneA, lenRatio, leader } = g;
   const nKids = (phyllo===2) ? 2 : g.kids;
   for(let c=0;c<nKids;c++){
@@ -713,7 +713,7 @@ function growNode(g, rng, out, base, dir, len, level, limb, chain){
 }
 
 
-// THE EDGE (§4.7), as the shader computes it (GLSL_T_POST): a superellipse mask on the frame, 1 inside radius
+// THE EDGE (spec/model/camera.md), as the shader computes it (GLSL_T_POST): a superellipse mask on the frame, 1 inside radius
 // (1 − feather), 0 at the frame's edge and in the corners beyond the curve. u, v in 0..1. The reference the
 // vignette test holds the shader's formula to; feather 0 is the gate shut. A transition crossing that gate scales
 // what the mask removes by its opacity; opacity 1 keeps the settled formula exactly.
@@ -724,7 +724,7 @@ function vignetteMask(u, v, feather, shape, opacity = 1) {
   return 1 - opacity * smoothstep(1 - feather, 1, d);
 }
 
-// THE IRIS GATE (§9), one rule for every route that crosses it: when only one end has a hood, no boundary moves. The
+// THE IRIS GATE (spec/model/transitions.md), one rule for every route that crosses it: when only one end has a hood, no boundary moves. The
 // hood keeps that end's own feather and shape for the whole route and its opacity runs between 0 and 1. `shown` is
 // the opacity an interrupted fade shows, where the next route starts. Null when nothing fades: two hooded ends morph
 // their feather and shape at full opacity, two bare ends have no mask.

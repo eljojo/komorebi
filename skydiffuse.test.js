@@ -1,5 +1,5 @@
 // ============================================================================
-// The leaf is a lantern, not a window (spec §4.9, P0c-sky). Looking UP at a backlit leaf you see its diffuse transmission, a
+// The leaf is a lantern, not a window (spec/model/sky-view.md, P0c-sky). Looking UP at a backlit leaf you see its diffuse transmission, a
 // glowing lamina, never the sun's disk through it. With leaf_diffuse d the disk is the BALLISTIC share only (a leaf kills it),
 // and the light the leaf took out of the line of sight reappears as that leaf's glow: the canopy as sunglasses, with leaks
 // through the gaps. Per eye ray, per channel (w = the layer-stamped wood; W = the analytic wood the camera multiplies on):
@@ -67,7 +67,7 @@ test("off the sun's ray the glow is bounded by the light the leaves took out of 
   for (let seed = 0; seed < 4000; seed++) {
     const k = kOf(seed) || 2, layers = stack(seed, 2 + (seed % 3)), p = pt(seed, 19), s = dir(seed, 21), g = dir(seed, 23);
     const r = F.skyRayRef(layers, p, s, g, SUN, k);
-    const at = layers.map((l) => [p[0] + s[0] * l.h, p[1] + s[1] * l.h]), m = layers.map((l, L) => F.texelMix(l.t(...at[L]).map((v) => -Math.log(v)), l.c(...at[L]), k));   // a texel is a mixture, not a slab (§4.5)
+    const at = layers.map((l) => [p[0] + s[0] * l.h, p[1] + s[1] * l.h]), m = layers.map((l, L) => F.texelMix(l.t(...at[L]).map((v) => -Math.log(v)), l.c(...at[L]), k));   // a texel is a mixture, not a slab (spec/model/leaf.md)
     const thr = [1, 1, 1], cap = [0, 0, 0];
     layers.forEach((_l, L) => { for (let c = 0; c < 3; c++) { cap[c] += thr[c] * (m[L].T[c] - m[L].Tb[c]) * SUN[c]; thr[c] *= m[L].T[c]; } });
     for (let c = 0; c < 3; c++) {

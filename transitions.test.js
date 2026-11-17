@@ -1,4 +1,4 @@
-// Guards the one transition coupling that otherwise fails SILENTLY (spec §9): every knob in DEFAULTS must be
+// Guards the one transition coupling that otherwise fails SILENTLY (spec/model/transitions.md): every knob in DEFAULTS must be
 // classified by the scene-transition tables — it MORPHS live, deforms the CANOPY, or forces a TOPO rebuild —
 // or be intentionally non-transitioning. A knob added to DEFAULTS without classifying it would just mis-morph
 // with no error; these tests turn that into a loud `bun test` failure. Run: `bun test transitions.test.js`.

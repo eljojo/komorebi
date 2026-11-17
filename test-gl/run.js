@@ -9,7 +9,7 @@
 // and all — and compares actual framebuffer bytes.
 //
 // The point is suite 2. Every gated feature on this engine ships with the same claim: "off is byte-identical
-// to the look before it" (the quality-rung contract, spec §9). That claim has always been argued from the
+// to the look before it" (the quality-rung contract, spec/contracts/gates-and-rungs.md). That claim has always been argued from the
 // source. Here it is executed: two engines, same frozen look, one with the gate's whole knob family cranked
 // behind a zero gate — and the frames must match to the byte.
 //
@@ -143,7 +143,7 @@ const INVARIANTS = [
   // value would show up here and nowhere else.
   { name: 'sway_pitch 0 == absent (layer path)', preset: 'memories', a: {}, b: { sway_pitch: 0 } },
   { name: 'chromatic_aberration 0 == absent (layer path)', preset: 'memories', a: {}, b: { chromatic_aberration: 0 } },
-  // The edge fade (§4.7) lives in the post block every camera runs. vignette 0 is the gate: the shape, set to something
+  // The edge fade (spec/model/camera.md) lives in the post block every camera runs. vignette 0 is the gate: the shape, set to something
   // that would bite, must be dead code on all three kinds of program.
   { name: 'vignette 0 == absent (layer path)', preset: 'memories', a: {}, b: { vignette: 0, vignette_shape: 7 } },
   { name: 'vignette 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { vignette: 0, vignette_shape: 7 } },
@@ -166,7 +166,7 @@ const INVARIANTS = [
   { name: 'vignette_shape is live at vignette 0.3 (layer path)', preset: 'memories', differ: true,
     a: { vignette: 0.3, vignette_shape: 2 }, b: { vignette: 0.3, vignette_shape: 8 } },
   { name: 'branch_tau 0 == absent (layer path)', preset: 'memories', a: {}, b: { branch_tau: 0 } },
-  // Autumn senescence (§4.5). The shipped looks sit at phenology 0.5, below turn_start, so no leaf has begun to turn
+  // Autumn senescence (spec/model/season.md). The shipped looks sit at phenology 0.5, below turn_start, so no leaf has begun to turn
   // and the whole pigment family — capacity, clock, vein share — has to be dead code: not "close", the same bytes.
   { name: 'pigment family inert at summer (layer path)', preset: 'memories',
     a: {}, b: { phenology: 0.5, anthocyanin: 1, tannin: 1, turn_span: 0.3, wall_fraction: 0 } },
@@ -179,7 +179,7 @@ const INVARIANTS = [
   // row compared two dark frames and could never fail; the "shows its real frame unaided" rows now hold that, and the flag stays.
   { name: 'pigment family inert at summer (faithful path)', preset: 'park 1', rebake: true,
     a: {}, b: { phenology: 0.5, anthocyanin: 1, tannin: 1, turn_span: 0.3, wall_fraction: 0.3 } },
-  // LIGHT DECIDES WHO TURNS FIRST (§4.5). turn_exposure 0 is P0's per-leaf hash and nothing else: the same bytes as a look that
+  // LIGHT DECIDES WHO TURNS FIRST (spec/model/season.md). turn_exposure 0 is P0's per-leaf hash and nothing else: the same bytes as a look that
   // never heard of the knob — at the shipped summer, and in a FALL frame, where the pass would have something to move (phenology 1,
   // anthocyanin 0.8, the frame P0 shipped), on the layer path and on the faithful path (rebake: see above)...
   { name: 'turn_exposure 0 == absent (layer path)', preset: 'memories', a: {}, b: { turn_exposure: 0 } },
@@ -195,7 +195,7 @@ const INVARIANTS = [
     a: { phenology: 0.8, anthocyanin: 0.8 }, b: { phenology: 0.8, anthocyanin: 0.8, turn_exposure: 1 } },
   { name: 'turn_exposure 1 changes a fall frame (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { phenology: 0.8, anthocyanin: 0.8 }, b: { phenology: 0.8, anthocyanin: 0.8, turn_exposure: 1 } },
-  // RANKED VS ABSOLUTE, AS A BLEND (§4.5). exposure_absolute 0 is the rank and nothing else: the P1 frame, byte for byte, on both paths —
+  // RANKED VS ABSOLUTE, AS A BLEND (spec/model/season.md). exposure_absolute 0 is the rank and nothing else: the P1 frame, byte for byte, on both paths —
   // a leaf-off frame (phenology 1: every leaf fully turned, so the red gain the blend moves is all that shows) under turn_exposure 1...
   { name: 'exposure_absolute 0 keeps the P1 frame (layer path)', preset: 'memories',
     a: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1, exposure_absolute: 0 } },
@@ -206,7 +206,7 @@ const INVARIANTS = [
     a: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1, exposure_absolute: 1 } },
   { name: 'exposure_absolute 1 changes the P1 frame (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1 }, b: { phenology: 1, anthocyanin: 0.8, turn_exposure: 1, exposure_absolute: 1 } },
-  // ABSCISSION (§4.5). leaf_drop 0 is the gate: with it down the whole family (when it starts, how long it takes, how far light orders it)
+  // ABSCISSION (spec/model/season.md). leaf_drop 0 is the gate: with it down the whole family (when it starts, how long it takes, how far light orders it)
   // is dead code, and the frame is the one before the family existed — at the shipped summer, where the season would keep it dead anyway,
   // and in a FALL frame (phenology 0.9, past drop_start − ε), where only the gate itself does. Layer path and faithful path (rebake: see above)...
   { name: 'drop family inert at leaf_drop 0 (layer path)', preset: 'memories',
@@ -225,7 +225,7 @@ const INVARIANTS = [
     a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
   { name: 'leaf_drop 1 thins the canopy (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { phenology: 0.9 }, b: { phenology: 0.9, leaf_drop: 1 } },
-  // DROP AFTER THE TURN (§4.5, `drop_after_turn`): the flag is a gate. Off it is dead code and the fall frame is the one before it existed (zero-vs-absent, in a frame that
+  // DROP AFTER THE TURN (spec/model/season.md, `drop_after_turn`): the flag is a gate. Off it is dead code and the fall frame is the one before it existed (zero-vs-absent, in a frame that
   // drops: at 0.85 the leaves are mid-fade on the layer path and the faithful one), and below turn_start it is inert whatever it and the lag say...
   { name: 'drop_after_turn 0 == absent (layer path)', preset: 'afternoon 7',
     a: { phenology: 0.85, leaf_drop: 1, turn_exposure: 1 }, b: { phenology: 0.85, leaf_drop: 1, turn_exposure: 1, drop_after_turn: 0 } },
@@ -238,7 +238,7 @@ const INVARIANTS = [
     a: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1 }, b: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1, drop_after_turn: 1 } },
   { name: 'drop_after_turn 1 holds the leaves until they have turned (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1 }, b: { phenology: 0.8, leaf_drop: 1, turn_exposure: 1, drop_after_turn: 1 } },
-  // ONE TREE AHEAD OF ITS NEIGHBOURS (§4.5, `tree_clock_spread`, `tree_pigment_spread`). Both knobs ship at 0: every tree on the look's schedule and capacity, and the frame is the one before they
+  // ONE TREE AHEAD OF ITS NEIGHBOURS (spec/model/season.md, `tree_clock_spread`, `tree_pigment_spread`). Both knobs ship at 0: every tree on the look's schedule and capacity, and the frame is the one before they
   // existed, bit for bit (zero-vs-absent pins the DEFAULTS merge path, so it too is taken in a FALL frame where a tree's lead and depth would bite: leaves mid-turn, mid-fall and red) —
   // on the layer path, the faithful one (rebake: see above) and the sky view...
   { name: 'tree_clock_spread 0 == absent (layer path)', preset: 'afternoon 7',
@@ -280,7 +280,7 @@ const INVARIANTS = [
     a: {}, b: { phenology: 1, leaf_drop: 1 } },
   { name: 'a bare canopy is a lit cloth, not an unbaked one (curtain)', preset: 'curtain 1', rebake: true, lit: [1.05, 1.6],
     a: {}, b: { phenology: 1, leaf_drop: 1 } },
-  // THE LITTER (§4.7, P3b). `litter` is the carpet's own gate, separate from leaf_drop so the canopy half can be judged alone: at 0 the whole family (how fast
+  // THE LITTER (spec/model/season.md, P3b). `litter` is the carpet's own gate, separate from leaf_drop so the canopy half can be judged alone: at 0 the whole family (how fast
   // it browns, how far the season's wind carries it, how big its texture is) is dead code and the floor is the one before it existed — taken in a FALL frame where
   // leaves have fallen and the carpet would bite (phenology 0.9, leaf_drop 1: two thirds of the span, so there is plenty to lay), on the layer path and the
   // faithful one (rebake: see above)...
@@ -311,7 +311,7 @@ const INVARIANTS = [
     a: { leaf_drop: 1, phenology: 0.9, litter: 1, litter_drift_m: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, litter_drift_m: 2 } },
   { name: 'the authored wind direction carries the litter (faithful path)', preset: 'park 1', rebake: true, differ: true,
     a: { leaf_drop: 1, phenology: 0.9, litter: 1, wind_direction_deg: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, wind_direction_deg: 180 } },
-  // THE RAIN DAY (§4.7, `leaf_wetness`): the carpet's wetness is MORPH-class and gated by the carpet itself. 0 is the dry law with no arithmetic, taken in a frame the carpet
+  // THE RAIN DAY (spec/model/season.md, `leaf_wetness`): the carpet's wetness is MORPH-class and gated by the carpet itself. 0 is the dry law with no arithmetic, taken in a frame the carpet
   // would bite (a default of 0.5 would show here and nowhere else)...
   { name: 'leaf_wetness 0 == absent (layer path)', preset: 'afternoon 7',
     a: { leaf_drop: 1, phenology: 0.9, litter: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_wetness: 0 } },
@@ -341,7 +341,7 @@ const INVARIANTS = [
     a: { leaf_drop: 1, phenology: 0.9, litter: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1 } },
   { name: 'the sky view does not read the litter', preset: 'canopy 1',
     a: { leaf_drop: 1, phenology: 0.9, litter: 0 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1 } },
-  // THE SKY FILL (§4.7): the shade lit through the canopy. canopy_fill 0 is the old floor, so the whole family behind it —
+  // THE SKY FILL (spec/model/fill.md): the shade lit through the canopy. canopy_fill 0 is the old floor, so the whole family behind it —
   // the leaf albedo, the ray count, the texture size — has to be dead code on every camera that could read it...
   { name: 'sky fill family inert at canopy_fill 0 (layer path)', preset: 'memories',
     a: {}, b: { canopy_fill: 0, fill_scatter: 0.8, fill_directions: 32, fill_resolution: 128 } },
@@ -374,7 +374,7 @@ const INVARIANTS = [
   { name: 'ground_bounce 1 changes the cloth above leaf_diffuse 0 (tent)', preset: 'tent 1', differ: true, a: { canopy_fill: 1, leaf_diffuse: 0.95, ground_bounce: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95, ground_bounce: 1 } },
   { name: 'fill_scatter is live at canopy_fill 1 (layer path)', preset: 'memories', differ: true,
     a: { canopy_fill: 1, fill_scatter: 0 }, b: { canopy_fill: 1, fill_scatter: 0.8 } },
-  // A LEAF IS NOT A WINDOW (§4.5). leaf_diffuse 0 is k = 0: tap()'s else, FS_FAITH's else, the P0b proxy verbatim and a
+  // A LEAF IS NOT A WINDOW (spec/model/leaf.md). leaf_diffuse 0 is k = 0: tap()'s else, FS_FAITH's else, the P0b proxy verbatim and a
   // sky view compiled with the literal 0.0 — the same bytes as a look that never heard of the knob, on every camera...
   { name: 'leaf_diffuse 0 == absent (layer path)', preset: 'memories', a: {}, b: { leaf_diffuse: 0 } },
   { name: 'leaf_diffuse 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { leaf_diffuse: 0 } },
@@ -385,7 +385,7 @@ const INVARIANTS = [
     a: { canopy_fill: 1, fill_scatter: 0.15 }, b: { canopy_fill: 1, fill_scatter: 0.15, leaf_diffuse: 0 } },
   { name: 'leaf_diffuse 0 keeps the P0b fill (curtain)', preset: 'curtain 1', a: { canopy_fill: 1 }, b: { canopy_fill: 1, leaf_diffuse: 0 } },
   { name: 'leaf_diffuse 0 keeps the P0b fill (tent)', preset: 'tent 1', a: { canopy_fill: 1 }, b: { canopy_fill: 1, leaf_diffuse: 0 } },
-  // ...and the sky view, which reads the split from P0c-sky on (§4.9): at 0 it is the frame it was (rows below).
+  // ...and the sky view, which reads the split from P0c-sky on (spec/model/sky-view.md): at 0 it is the frame it was (rows below).
   // Above 0 the P0b proxy is OFF: its albedo is the authored stand-in for exactly the light the split measures, and counting
   // both would count it twice. The knob is inert, not merely small.
   { name: 'fill_scatter is inert once leaf_diffuse is up (layer path)', preset: 'memories',
@@ -415,7 +415,7 @@ const INVARIANTS = [
   // ...and the lead is continuous: a hair of tree_clock_spread moves each tree's whole clock by at most a hair (Δ = −S·v³ moves its fade windows, each DROP_EPS wide, by v³ of it), never a leaf's whole shadow
   { name: 'tree_clock_spread: a hair of the lead moves the fall frame by a hair (layer path)', preset: 'afternoon 7', near: 12,
     a: { phenology: 0.8, anthocyanin: 0.4, turn_exposure: 1, leaf_drop: 1, drop_after_turn: 1, tree_clock_spread: 0.1 }, b: { phenology: 0.8, anthocyanin: 0.4, turn_exposure: 1, leaf_drop: 1, drop_after_turn: 1, tree_clock_spread: 0.101 } },
-  // THE MARGINAL FADE (§5.3). A leaf — or a whole tree — fading in has its fade folded into tau on the CPU, so the beam's neutral depth
+  // THE MARGINAL FADE (spec/contracts/continuity.md). A leaf — or a whole tree — fading in has its fade folded into tau on the CPU, so the beam's neutral depth
   // k·coverage has to carry the same fade (iFade) or the ballistic shadow pops to full the instant the leaf exists. Step the count
   // from "none" to 0.005 of one: the fade is 0.005, and the picture must move by about that much — not by a whole leaf's shadow per twig.
   // (Measured: a faded-in leaf moves the frame by 2 and 1 grey levels; a bake whose alpha ignores the fade, by 39 and 46.)
@@ -445,7 +445,7 @@ const INVARIANTS = [
     a: { canopy_fill: 1, leaf_diffuse: 0, sun_cosine: 0, sun_extinction: 0, cloud_exposure: 0, exposure: 1.4 }, b: { canopy_fill: 1, leaf_diffuse: 0.95, sun_cosine: 0, sun_extinction: 0, cloud_exposure: 0, exposure: 1.4 } },
   { name: 'the diffuse light lands on the cloth (tent)', preset: 'tent 1', lit: [0.9, 1.3],
     a: { canopy_fill: 1, leaf_diffuse: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95 } },
-  // A FAITHFUL LOOK SHOWS ITS REAL FRAME UNAIDED (§4.5). The cast pre-integrates the soft shadow over the source cloud, so the bake has to come after
+  // A FAITHFUL LOOK SHOWS ITS REAL FRAME UNAIDED (spec/model/canopy.md). The cast pre-integrates the soft shadow over the source cloud, so the bake has to come after
   // the cloud is cut: rebuildAll once baked first — against an empty cloud (a born engine: a dark frame) or the previous look's (setParams: a lit, wrong one) —
   // and with motion frozen nothing re-baked it. a is what the engine shows by itself; b is the same look re-baked, the frame the `rebake` workaround always took.
   { name: 'park 1 shows its real frame unaided (born)', preset: 'park 1', rebakeB: true, a: {}, b: {} },
@@ -461,7 +461,7 @@ const INVARIANTS = [
     from: { preset: 'park 2', auto: true }, a: {}, b: {} },
   { name: 'park 1 shows its real frame unaided (setParams from a trimmed governor)', preset: 'park 1', rebakeB: true,
     from: { preset: 'park 1', auto: true, perf: { quality: 0.7, sampleCount: 22 } }, a: {}, b: {} },
-  // THE LEAF IS A LANTERN (§4.9, P0c-sky). The sky view's wood moved out of the layer texture's alpha into a texture of its own
+  // THE LEAF IS A LANTERN (spec/model/sky-view.md, P0c-sky). The sky view's wood moved out of the layer texture's alpha into a texture of its own
   // (R16F per layer), and the leaf bake stopped masking alpha, so coverage rides it on every camera. At leaf_diffuse 0 none of that may
   // be visible: every look, canopy 1-4 above all (the only looks with a sky camera), is the frame it was before the move. These are
   // PINS, hashes written down from the engine before the change (the rest of the file's rows compare two frames of one engine,
@@ -495,7 +495,7 @@ const INVARIANTS = [
   // TODO revisit these layer-floor pins: untouched 14a97c2 also gives ea083587 / 8f0a8e8e on this SwiftShader host (2026-11-07); tint-cache renders differ by 0 pixels.
   { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'f0d0e6bc' },   // re-pinned when memories took the spring (its phenology 0.15 is mid-greening), which moved it on purpose
   { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '8f0a8e8e' },
-  // The ONE pin that moved, on purpose: it is a leaf_diffuse > 0 frame, and P0c-edge reads every texel there as a mixture of leaf and gap (§4.5), so the
+  // The ONE pin that moved, on purpose: it is a leaf_diffuse > 0 frame, and P0c-edge reads every texel there as a mixture of leaf and gap (spec/model/leaf.md), so the
   // frame P0c-sky pinned (eb960892: the shared ray's new signature, the slab) is not this one. Re-recorded from the engine after the change; what says it moved
   // the right way is not this hash but the soft-edge rows (SOFT EDGES), the fill and look-up checks, and the energy rows.
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 1eb1787a on this SwiftShader host (2026-11-07), with 0 pixel difference.
@@ -520,7 +520,7 @@ const INVARIANTS = [
   // frame at any leaf_diffuse (an eye ray that meets only wood emits exactly 0, and its disk is the sky's: tb = t).
   { name: 'a bare grove is one frame at any leaf_diffuse (sky view: wood never glows)', preset: 'canopy 1',
     a: { foliage_density: 0, leaf_diffuse: 0 }, b: { foliage_density: 0, leaf_diffuse: 0.95 } },
-  // THE LEAF'S OUTLINE (§4.5, P4a-2). leaf_shape 'ellipse' is the stamp the engine has always cut: the literal `float r = length(vLocal)` line, a uniform branch round the outline,
+  // THE LEAF'S OUTLINE (spec/model/leaf.md, P4a-2). leaf_shape 'ellipse' is the stamp the engine has always cut: the literal `float r = length(vLocal)` line, a uniform branch round the outline,
   // a 1x1 texture never sampled and a quad of (0, 0, 1, 1) that leaves its corners to the bit — so naming it is the frame before the knob existed, on every camera and path (the
   // pins above are the same claim for the looks themselves). The faithful and curtain rows re-bake (see `rebake`), the carpet row is taken in a fall frame where it has leaves to cut...
   { name: "leaf_shape 'ellipse' == absent (layer path)", preset: 'memories', a: {}, b: { leaf_shape: 'ellipse' } },
@@ -539,7 +539,7 @@ const INVARIANTS = [
   { name: "leaf_shape 'maple' changes the canopy (curtain)", preset: 'curtain 1', rebake: true, differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'maple' } },
   { name: "leaf_shape 'maple' lays another carpet (litter)", preset: 'afternoon 7', differ: true,
     a: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1 }, b: { leaf_drop: 1, phenology: 0.9, litter: 1, leaf_aspect: 1, leaf_shape: 'maple' } },
-  // THE BEECH (§4.5, P4a-3): a pinnate blade through the same texture and the same three masks, read from a point on its midrib. 'beech' is as real a switch as 'maple' on every camera that cuts a
+  // THE BEECH (spec/model/leaf.md, P4a-3): a pinnate blade through the same texture and the same three masks, read from a point on its midrib. 'beech' is as real a switch as 'maple' on every camera that cuts a
   // leaf's mask and on the carpet, or an outline that never reached a mask would satisfy every row above (aspect 1 on both sides, as for the maple).
   { name: "leaf_shape 'beech' changes the canopy (layer path)", preset: 'memories', differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'beech' } },
   { name: "leaf_shape 'beech' changes the canopy (faithful path)", preset: 'park 1', rebake: true, differ: true, a: { leaf_aspect: 1 }, b: { leaf_aspect: 1, leaf_shape: 'beech' } },
@@ -572,7 +572,7 @@ const INVARIANTS = [
     a: {}, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 } },
   { name: "leaf_shape 'beech' of the same leaf area keeps the canopy as full (layer path: afternoon 7)", preset: 'afternoon 7', lit: [0.95, 1.05],
     a: {}, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.0756 } },
-  // THE ASPECT LAW (§4.5, leaf diversity): an outline takes the look's leaf AREA, never its aspect (A = B0 = size/(2√aspect)). It is not a knob, so there is no a/b to hold byte-identical: the proof is
+  // THE ASPECT LAW (spec/model/leaf.md, leaf diversity): an outline takes the look's leaf AREA, never its aspect (A = B0 = size/(2√aspect)). It is not a knob, so there is no a/b to hold byte-identical: the proof is
   // CONTINUITY — a maple at the look's 1.75 IS a maple at aspect 1 and leaf_size_m/√1.75 to a float's last bit (before the law it was a squashed leaf, far off) — and a differ row that the ellipse is still
   // stretched (the law is the outline's alone). The faithful cast is not a row of these: its pad reads leaf_size_m, so the two frames would be framed differently.
   { name: 'the aspect law: a maple at aspect 1.75 is a maple at 1 and leaf_size_m/√1.75 (layer: memories)', preset: 'memories', near: 2,
@@ -586,7 +586,7 @@ const INVARIANTS = [
   // ...and the canopy is as full as the look had it: a maple at the look's own aspect (no hand-set 1, no hand-set size) holds its mean level, as the ellipse of the same leaf area did above
   { name: "the aspect law keeps the canopy as full: a maple at the look's own 1.75 (layer: memories)", preset: 'memories', lit: [0.95, 1.05], a: {}, b: { leaf_shape: 'maple' } },
   { name: "the aspect law keeps the canopy as full: a maple at the look's own 1.75 (layer: afternoon 7)", preset: 'afternoon 7', lit: [0.95, 1.05], a: {}, b: { leaf_shape: 'maple' } },
-  // LEAF VARIETY (§4.5, P4a-4): a tree's family of outlines, each leaf a member under its light. Off (0 or absent) it is the old arithmetic and the old shader lines — the cluster id's fraction j + v/32 multiplied by a uniform that says 32,
+  // LEAF VARIETY (spec/model/leaf.md, P4a-4): a tree's family of outlines, each leaf a member under its light. Off (0 or absent) it is the old arithmetic and the old shader lines — the cluster id's fraction j + v/32 multiplied by a uniform that says 32,
   // the literal /8 for the row — so naming it is the frame before the knob existed, on every camera that cuts a leaf's mask and on the carpet (the pins above are the same claim for the looks themselves); the ellipse has no rows to vary.
   { name: "leaf_variety 0 == absent (layer path, maple)", preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 0 } },
   { name: "leaf_variety 0 == absent (faithful path, maple)", preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 0 } },
@@ -616,7 +616,7 @@ const INVARIANTS = [
     a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1.01 } },
   { name: "a density step at leaf_variety 1 (foliage_density 1.5 vs 1.51, layer: afternoon 7)", preset: 'afternoon 7', near: 24,
     a: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1, foliage_density: 1.5 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_variety: 1, foliage_density: 1.51 } },
-  // EDGE_AREA (§4.5, decision 33): the soft edge read as a mixture at d = 0 too. Off it is the depth-averaged slab the engine has always read — the literal else of the four
+  // EDGE_AREA (spec/model/leaf.md, decision 33): the soft edge read as a mixture at d = 0 too. Off it is the depth-averaged slab the engine has always read — the literal else of the four
   // widened conditions — so naming it false is the frame before the knob existed, on every camera and path (the pins above are the same claim for the looks themselves)...
   { name: 'edge_area false == absent (layer path)', preset: 'memories', a: {}, b: { edge_area: false } },
   { name: 'edge_area false == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { edge_area: false } },
@@ -645,13 +645,13 @@ const INVARIANTS = [
   // The look edge_area made, written down once every row above was green (a pin says the frame itself does not drift; the rows say it moved the right way)
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give f9f447c6 on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'memories with edge_area on is the frame edge_area made', preset: 'memories', a: { edge_area: true }, pin: '4fadb2a4' },   // re-pinned when memories took the spring (its phenology 0.15 is mid-greening), which moved it on purpose
-  // THE FABRIC'S GRAIN (§4.9, `fabric_nap`): 0 is the pile's nap alone; up, a fine ripple even on a taut cloth.
+  // THE FABRIC'S GRAIN (spec/model/receivers.md, `fabric_nap`): 0 is the pile's nap alone; up, a fine ripple even on a taut cloth.
   { name: 'fabric_nap 0 == absent (curtain 2)', preset: 'curtain 2', a: {}, b: { fabric_nap: 0 } },
   { name: 'fabric_nap 0.04 grains the tent (tent 1 at 0 against its own)', preset: 'tent 1', differ: true, a: { fabric_nap: 0 }, b: {} },
-  // THE PARK'S SHEAR (§4.8, `park_throw`): 0 is the park as it was; up, each layer is thrown down-sun by its height.
+  // THE PARK'S SHEAR (spec/model/transport.md, `park_throw`): 0 is the park as it was; up, each layer is thrown down-sun by its height.
   { name: 'park_throw 0 == absent (afternoon 5b)', preset: 'afternoon 5b', a: {}, b: { park_throw: 0 } },
   { name: 'park_throw 1 shears the park (afternoon 5b)', preset: 'afternoon 5b', differ: true, a: {}, b: { park_throw: 1 } },
-  // LEAVES ON THE OLDER WOOD (§4.5, `inner_leaves`). 0 is the gate: no path is collected and every leaf is placed where its twig puts it, so naming it is the frame before the knob existed, on every kind of look that hangs leaves
+  // LEAVES ON THE OLDER WOOD (spec/model/canopy.md, `inner_leaves`). 0 is the gate: no path is collected and every leaf is placed where its twig puts it, so naming it is the frame before the knob existed, on every kind of look that hangs leaves
   // (park 1 and curtain 1 are faithful and ride faithData; afternoon 7 and memories are the layer path; canopy 1 is the sky view)...
   { name: 'inner_leaves 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { inner_leaves: 0 } },
   { name: 'inner_leaves 0 == absent (layer path: afternoon 7)', preset: 'afternoon 7', a: {}, b: { inner_leaves: 0 } },
@@ -667,7 +667,7 @@ const INVARIANTS = [
   // the shell opens a little). Park 1 at 70 degrees, where the crown is seen from nearly above and the wheel is plain. Measured x1.0002 (201.75 -> 201.80, 4477 of 57600 pixels differ): the bound is that ratio +-0.1.
   { name: 'inner_leaves 0.5 keeps the light (faithful path, sun at 70 degrees)', preset: 'park 1', rebake: true, lit: [0.9, 1.1],
     a: { sun_elevation_deg: 70 }, b: { sun_elevation_deg: 70, inner_leaves: 0.5 } },
-  // THE GLIDE IS CONTINUOUS (§5.3). A drag moves inner_leaves by a hair per input event, and each leaf slides along its own line on a smoothstep of the share, its place AND its height, so the frame must move by a hair. In a step
+  // THE GLIDE IS CONTINUOUS (spec/contracts/continuity.md). A drag moves inner_leaves by a hair per input event, and each leaf slides along its own line on a smoothstep of the share, its place AND its height, so the frame must move by a hair. In a step
   // of 0.001 a leaf in the glide moves at most 0.03 of its tip-to-wood reach (inner.test.js holds that per leaf, in plan and in height: the steepest slope of the 0.05-wide smoothstep is 30), and a reach runs to 2-3 m, so the
   // fastest leaf is carried a fraction of a leaf's width across the floor (afternoon 7: 0.079 m) and the frame moves by what that leaf's dapple does. Measured max Δ32 on park 1 (1256 of 57600 px differ) and Δ38 on
   // afternoon 7 (29970 differ); the bound is 1.5x, as the rows above. THIS ROW IS A FLOOR AND NOT A POP DETECTOR: the worst Δ is the fastest honest leaf, and a leaf that pops (the glide shut with INNER_GLIDE 1e-9, or the height
@@ -678,7 +678,7 @@ const INVARIANTS = [
     a: { inner_leaves: 0.3 }, b: { inner_leaves: 0.301 } },
   { name: 'inner_leaves: a hair of the share moves the frame by a hair (layer path)', preset: 'afternoon 7', near: 57,
     a: { inner_leaves: 0.3 }, b: { inner_leaves: 0.301 } },
-  // THE SUN'S COSINE LAW (§3.5, `sun_cosine`): the beam lands on each receiver by its incidence, as a CPU scale of the uSunColor upload (komorebi-render.js) and of the fill's sun (komorebi-bake.js); no GLSL
+  // THE SUN'S COSINE LAW (spec/model/light.md, `sun_cosine`): the beam lands on each receiver by its incidence, as a CPU scale of the uSunColor upload (komorebi-render.js) and of the fill's sun (komorebi-bake.js); no GLSL
   // moves. 0 is the gate and the default; most looks carry 1, and the rows below start from 0 at the look's old exposure. Naming it must be the frame before the knob existed, on all four cameras: the floor (layer path: afternoon 7; faithful: park 1), the cloth
   // (curtain 1), the enclosure (tent 1) and the sky view (canopy 1). Zero-vs-absent holds the DEFAULTS merge path (a default, or a look, that is not 0 would split the pair) ...
   // Most looks carry the law (contracts/looks.md, "The cosine law"), so "absent" is a look that kept the old law: memories on the layer floor, park 2 on the faithful one.
@@ -709,7 +709,7 @@ const INVARIANTS = [
   { name: 'sun_cosine 1 barely moves a near-zenith look (afternoon 7)', preset: 'afternoon 7', near: 3, a: {}, b: { sun_cosine: 1 } },
 ];
 
-// THE SKY FILL vs ITS REFERENCE (§4.7). The bun tests hold komorebi-fill.js's laws; this holds the GLSL to it. Each row
+// THE SKY FILL vs ITS REFERENCE (spec/model/fill.md). The bun tests hold komorebi-fill.js's laws; this holds the GLSL to it. Each row
 // lets the engine bake a real fill, reads back the layers it read and the Tsky / S it wrote, rebuilds both at a scatter
 // of texels in JS (bilinear taps, the bake's own heights, atmosphere and sun) and compares. The tolerance is the
 // storage, not the algorithm: both targets are RGBA16F, whose rounding is ~2.4e-4 near 1 (half a ulp, and what is
@@ -722,7 +722,7 @@ const FILL_CHECKS = [
   { name: 'park 1 — faithful: a low-res layer set at the grown heights', preset: 'park 1', rebake: true, over: { canopy_fill: 1, fill_scatter: 0.5 } },
   { name: 'curtain 1 — Tsky only, S handed albedo 0', preset: 'curtain 1', over: { canopy_fill: 1, fill_scatter: 0.5 } },
   { name: 'tent 1 — the enclosure forces the layer tier; Tsky only', preset: 'tent 1', over: { canopy_fill: 1, fill_scatter: 0.5 } },
-  // A LEAF IS NOT A WINDOW (§4.5): the same checks with the split on — S is now the emitted t − tb, from the coverage in alpha, the
+  // A LEAF IS NOT A WINDOW (spec/model/leaf.md): the same checks with the split on — S is now the emitted t − tb, from the coverage in alpha, the
   // albedo knob is off (it is set here on purpose: if it leaked, the reference would not see it), and the cloth and the tent read S
   { name: 'memories, leaf_diffuse 0.95 — the emission from alpha, albedo ignored', preset: 'memories', over: { canopy_fill: 1, fill_scatter: 0.5, leaf_diffuse: 0.95 } },
   { name: 'memories, leaf_diffuse 0.5 — K 7 at 128 px', preset: 'memories', over: { canopy_fill: 1, leaf_diffuse: 0.5, fill_directions: 7, fill_resolution: 128 } },
@@ -730,11 +730,11 @@ const FILL_CHECKS = [
   { name: 'park 1, leaf_diffuse 0.95 — faithful: coverage from the low-res layer set', preset: 'park 1', rebake: true, over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'curtain 1, leaf_diffuse 0.95 — S is computed for the cloth too', preset: 'curtain 1', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'tent 1, leaf_diffuse 0.95 — and for the tent', preset: 'tent 1', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
-  // EDGE_AREA (§4.5): at d = 0 every texel is read as its mixture too, so Tsky is the mixture's and the albedo's P0b proxy runs on it (the albedo stays ON: only the split retires it)
+  // EDGE_AREA (spec/model/leaf.md): at d = 0 every texel is read as its mixture too, so Tsky is the mixture's and the albedo's P0b proxy runs on it (the albedo stays ON: only the split retires it)
   { name: 'memories, edge_area — the mixture at d 0, the albedo kept', preset: 'memories', over: { canopy_fill: 1, fill_scatter: 0.5, edge_area: true } },
   { name: 'park 1, edge_area — faithful: the mixture from the low-res layer set', preset: 'park 1', rebake: true, over: { canopy_fill: 1, fill_scatter: 0.5, edge_area: true } },
   { name: 'curtain 1, edge_area — Tsky is the mixture\'s for the cloth too', preset: 'curtain 1', over: { canopy_fill: 1, fill_scatter: 0.5, edge_area: true } },
-  // SUN_COSINE (§3.5): the leaves are lit by the floor's cosine, so S is scaled by sin el (x0.438 at montebello's 26 degrees) and Tsky, the skylight, is not. The reference is built from the unscaled atmosphere
+  // SUN_COSINE (spec/model/light.md): the leaves are lit by the floor's cosine, so S is scaled by sin el (x0.438 at montebello's 26 degrees) and Tsky, the skylight, is not. The reference is built from the unscaled atmosphere
   // and the same scale restated in harness.html: a bake that forgot it would be ~2.3x off in S.
   { name: 'montebello, sun_cosine 1 — S takes the leaves\' own sin el, Tsky does not', preset: 'montebello', rebake: true, over: { sun_cosine: 1 } },
   // THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md): G, W and B each against komorebi-fill.js fed the GPU's previous pass, and S with ground_bounce·B in it
@@ -745,7 +745,7 @@ const FILL_CHECKS = [
 ];
 // the bounce's three passes: each a 16F target read through bilinear taps of the pass before it, so the tolerance is relative to what the pass holds
 const BOUNCE_TOL = 0.01;
-// THE FILL'S BOOKKEEPING (§4.7), measured on the layers the engine really baked (__fillCheck's `energy`). No light is made or lost
+// THE FILL'S BOOKKEEPING (spec/model/fill.md), measured on the layers the engine really baked (__fillCheck's `energy`). No light is made or lost
 // globally — what a frame shows is DISPLACEMENT (glow under the crown, shadow down-sun) — but the fill had two real breaks, and these
 // rows are what they looked like: the fill lit its leaves along the REAL sun while the beam it balances has no bulk shift in the park
 // (it emitted ~14% more than the beam gave up at a 36° sun), and it read its hemisphere through a box with CLAMP_TO_EDGE (it lost a
@@ -773,7 +773,7 @@ const FILL_ENERGY = [
   { name: 'afternoon 7, one layer — the bottom layer received what it emitted (wrap)', preset: 'afternoon 7', kind: 'bottom', over: { canopy_fill: 1, leaf_diffuse: 0.95, layer_count: 1 } },
   { name: 'memories — the fill holds what the leaves sent down, and what the beam gave up (park, one sun)', preset: 'memories', kind: 'park', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
   { name: 'afternoon 7 — the fill holds what the leaves sent down, and what the beam gave up (park, one sun)', preset: 'afternoon 7', kind: 'park', over: { canopy_fill: 1, leaf_diffuse: 0.95 } },
-  // SUN_COSINE (§3.5): the books close under the law too. The leaves are lit by the floor's sin el, so S (baked from a scaled sun) and the beam the leaves give up (scaled at transport) fall by one factor
+  // SUN_COSINE (spec/model/light.md): the books close under the law too. The leaves are lit by the floor's sin el, so S (baked from a scaled sun) and the beam the leaves give up (scaled at transport) fall by one factor
   // and Reng/D_beam must stay 1. harness.html builds the reference's `sun` as atm.sun x the same factor (`fsun`), and no other row here sets sun_cosine — so a reference that went back to atm.sun could
   // not fail. memories' 36 degrees (I = 0.588) is far enough from 1 that a reference that forgot the scale lands the ratios at x0.59 (measured 0.5876 and 0.585) and a bake that forgot it at x1.70 (1.704, 1.696).
   { name: 'memories, sun_cosine 1 — the fill holds what the leaves sent down, and what the beam gave up (park, one sun)', preset: 'memories', kind: 'park', over: { canopy_fill: 1, leaf_diffuse: 0.95, sun_cosine: 1 } },
@@ -797,15 +797,15 @@ const LIVE_CHANGES = [
   { name: 'memories (layer path: the tap reads it, the fill re-bakes)', preset: 'memories', over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
   { name: 'park 1 with the fill shut (faithful: the cast is re-cast, nothing else moves)', preset: 'park 1', rebake: true, over: { canopy_fill: 0 }, key: 'leaf_diffuse', value: 0.95 },
   { name: 'park 1 with the fill open (faithful: the cast AND the fill)', preset: 'park 1', rebake: true, over: { canopy_fill: 1 }, key: 'leaf_diffuse', value: 0.95 },
-  // EDGE_AREA (§4.5) is a TOPO key, yet a bare assignment on a running engine still changes it live: the tap reads the uniform, the fill re-bakes on its signature slot,
+  // EDGE_AREA (spec/model/leaf.md) is a TOPO key, yet a bare assignment on a running engine still changes it live: the tap reads the uniform, the fill re-bakes on its signature slot,
   // and the faithful cast is re-cast (the edge law is baked into each stamp)
   { name: 'memories, edge_area (layer path: the tap reads it, the fill re-bakes on its signature)', preset: 'memories', over: { canopy_fill: 1 }, key: 'edge_area', value: true },
   { name: 'park 1 with the fill shut, edge_area (faithful: the cast is re-cast)', preset: 'park 1', rebake: true, over: { canopy_fill: 0 }, key: 'edge_area', value: true },
   { name: 'park 1 with the fill open, edge_area (faithful: the cast AND the fill)', preset: 'park 1', rebake: true, over: { canopy_fill: 1 }, key: 'edge_area', value: true },
-  // THE SUN'S COSINE LAW (§3.5) tweens: the uniform scale follows the live param, and the fill's S re-bakes on fillSig's slot 14 — a gate row alone cannot see a signature that forgot the key, because an engine born
+  // THE SUN'S COSINE LAW (spec/model/light.md) tweens: the uniform scale follows the live param, and the fill's S re-bakes on fillSig's slot 14 — a gate row alone cannot see a signature that forgot the key, because an engine born
   // with the knob bakes S scaled and a running one would keep the unscaled S it baked at 0.
   { name: 'montebello (sun_cosine: the day dims the fill\'s S too)', preset: 'montebello', rebake: true, over: { sun_cosine: 0 }, key: 'sun_cosine', value: 1 },   // montebello ships with the law: born without it, so the knob has something to change
-  // THE CARPET (§4.7) is noticed at draw time, not baked at a regrow the engine does not run when a slider moves: opened on a running engine it must be the
+  // THE CARPET (spec/model/season.md) is noticed at draw time, not baked at a regrow the engine does not run when a slider moves: opened on a running engine it must be the
   // frame an engine born with it shows, and the authored wind direction — a MORPH key, tweened in a transition — must carry it there too
   { name: 'afternoon 7 (the carpet bakes when the gate opens)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9 }, key: 'litter', value: 1, litter: true },
   { name: 'park 1 (faithful: the carpet bakes when the gate opens)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, phenology: 0.9 }, key: 'litter', value: 1, litter: true },
@@ -815,14 +815,14 @@ const LIVE_CHANGES = [
   { name: 'afternoon 7 (the season moves and the grove regrows: the carpet follows it, fresher and more of it)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.8, litter: 1 }, key: 'phenology', value: 0.95, apply: 'canopy', litter: true },
   // (the same leaves, fallen on the same days, in another colour: nothing the carpet's signature holds has moved but the grove itself, which a regrow makes anew)
   { name: 'afternoon 7 (the grove regrows with the same leaves fallen in another colour: the carpet is re-laid)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9, litter: 1, anthocyanin: 0.8, turn_exposure: 1 }, key: 'anthocyanin', value: 0.2, apply: 'canopy', litter: true },
-  // THE SEASON SCOPE (§4.5 "Re-seasoning"): the season set moved on a running engine and re-run over the grove's cached leaves must show the frame an engine born at the new
+  // THE SEASON SCOPE (spec/model/season.md "Re-seasoning"): the season set moved on a running engine and re-run over the grove's cached leaves must show the frame an engine born at the new
   // season shows. The first row is the lazy path (the engine was born without a cache, so the apply is one full build with keepSeason); `prime` first moves the season by
   // a little at tick 10 so the apply that is measured at tick 15 is the FAST path, the re-season itself, on a cache that is already built.
   { name: 'afternoon 7 (the season scope: a phenology change on a running engine shows the frame an engine born at it shows)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', litter: true },
   { name: 'afternoon 7 (the season scope, on a built cache: the re-season itself)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', prime: 0.85, litter: true },
   { name: 'park 1 (the season scope, faithful: the cast is re-cast from the re-seasoned leaves)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, drop_after_turn: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', litter: true },
   { name: 'park 1 (the season scope, faithful, on a built cache: the re-season itself)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, drop_after_turn: 1, phenology: 0.8 }, key: 'phenology', value: 0.9, apply: 'season', prime: 0.85, litter: true },
-  // ONE TREE AHEAD (§4.5): both knobs are season keys, so a slider moves them by the re-season, and the frame must be the one an engine born with the knob shows — the lead moves every tree's days
+  // ONE TREE AHEAD (spec/model/season.md): both knobs are season keys, so a slider moves them by the re-season, and the frame must be the one an engine born with the knob shows — the lead moves every tree's days
   // (the carpet too: it is laid from the days), the depth only the colour. `prime` as above, so the measured apply is the re-season itself; the pigment rows carry a capacity, or the depth has no red to scale.
   { name: 'afternoon 7 (a tree ahead: the lead on a built cache, the re-season itself)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, anthocyanin: 0.8, phenology: 0.8 }, key: 'tree_clock_spread', value: 0.1, apply: 'season', prime: 0.05, litter: true },
   { name: 'afternoon 7 (a tree ahead: the depth on a built cache, the re-season itself)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, anthocyanin: 0.8, tannin: 0.3, phenology: 0.8 }, key: 'tree_pigment_spread', value: 0.6, apply: 'season', prime: 0.3, litter: true },
@@ -832,12 +832,12 @@ const LIVE_CHANGES = [
   { name: 'afternoon 7 (a pigment capacity on a built cache, the re-season itself: the carpet is re-laid in another colour)', preset: 'afternoon 7', over: { leaf_drop: 1, phenology: 0.9, litter: 1, anthocyanin: 0.8, turn_exposure: 1 }, key: 'anthocyanin', value: 0.2, apply: 'season', prime: 0.5, litter: true },
   { name: 'afternoon 7 (the fall\'s share on a built cache, the re-season itself: fewer leaves down)', preset: 'afternoon 7', over: { leaf_drop: 1, turn_exposure: 1, litter: 1, phenology: 0.9 }, key: 'leaf_drop', value: 0.6, apply: 'season', prime: 0.8, litter: true },
   { name: 'park 1 (the fall\'s share, faithful, on a built cache: the cast is re-cast from the leaves still hanging)', preset: 'park 1', rebake: true, over: { leaf_drop: 1, turn_exposure: 1, litter: 1, drop_after_turn: 0, phenology: 0.9 }, key: 'leaf_drop', value: 0.6, apply: 'season', prime: 0.8, litter: true },
-  // THE RECEIVER (§4.9) is a scene mode: the tent forces the layer cast, so a faithful look's layer textures and its grove's packing are made anew, and the cloth re-aims the cast.
+  // THE RECEIVER (spec/model/receivers.md) is a scene mode: the tent forces the layer cast, so a faithful look's layer textures and its grove's packing are made anew, and the cloth re-aims the cast.
   // The row is moved the way the panel moves it: assigned, then the scope its row in PARAMS asks for. A frame born on the new surface is what it has to show.
   ...[['park 1', 2, 'faithful to the tent: the layer cast is built'], ['park 1', 1, 'faithful to the curtain: the cast re-aims at the cloth'], ['memories', 2, 'the layer cast to the tent'], ['memories', 1, 'the layer cast to the curtain'],
       ['tent 1', 0, 'the tent to the floor'], ['curtain 1', 0, 'the curtain to the floor'], ['park 1', 0, 'a faithful look in the tent back to the floor: the faithful cast is built', { receiver: 2 }]].map(([preset, value, what, over = {}]) =>
     ({ name: `${preset} (the receiver row, ${what})`, preset, rebake: PRESETS[preset].faithful_canopy === true, over, key: 'receiver', value, apply: PARAMS.receiver.row.rebuild || null })),
-  // THE GROVE'S REACH (§4.5): a look that names its reach is grown for it, so a zoom on the running engine and the look loaded at that zoom are one frame. (A look that
+  // THE GROVE'S REACH (spec/model/canopy.md): a look that names its reach is grown for it, so a zoom on the running engine and the look loaded at that zoom are one frame. (A look that
   // names none takes it from the view at each build; the engine names it the first time the view moves, which reach.test.js holds.)
   { name: 'afternoon 7 (a zoom in under a named reach: the camera moves, the grove stands)', preset: 'afternoon 7', over: { grove_reach_m: 3.1 }, key: 'view_extent_m', value: 1.55, apply: PARAMS.view_extent_m.row.rebuild || null },
   { name: 'memories (a zoom out under a named reach: the camera moves, the grove stands)', preset: 'memories', over: { grove_reach_m: 3.1 }, key: 'view_extent_m', value: 6.2, apply: PARAMS.view_extent_m.row.rebuild || null },
@@ -864,7 +864,7 @@ const FILL_TOGGLES = [
 ];
 const FILL_TOL = 2e-3;
 
-// THE LITTER CARPET vs THE GROVE'S OWN LIST (§4.7, P3b). Each row lets the engine bake a real carpet (frozen motion), reads the RGBA8 texture back, and holds it to the
+// THE LITTER CARPET vs THE GROVE'S OWN LIST (spec/model/season.md, P3b). Each row lets the engine bake a real carpet (frozen motion), reads the RGBA8 texture back, and holds it to the
 // same leaves through komorebi-litter.js's pure functions (see __litterCheck for what each number is): the FRAME (the fill's, recomputed from the params), the STAMPS the
 // bake was handed (every one of them), the RASTER (a CPU painting of those stamps in drop order, against the GPU's, with the reverse order's painting as the yardstick: the
 // last to fall lie on top, and the GPU must agree with the right order by far less than the two orders disagree with each other), the closed forms on a SPARSE carpet
@@ -879,7 +879,7 @@ const LITTER_CHECKS = [
   { name: 'afternoon 7 on the first day of the fall — a sparse carpet: the closed forms', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71 }, sparse: true },
   { name: 'park 1 at 0.9 — a finite tree: the padded frame, clamped, and the drift down-wind', preset: 'park 1', over: { ...FALL_LOOK }, drift: true },
   { name: 'park 1 at 0.9, the season blowing the other way', preset: 'park 1', over: { ...FALL_LOOK, wind_direction_deg: 215, litter_drift_m: 0.8 }, drift: true },
-  // THE OUTLINE ON THE GROUND (§4.5, P4a-2): the same carpet, its leaves cut by q' = |l| − r(θ) + 1 in the variant they hung in. The CPU painting uses the same law over the same profile
+  // THE OUTLINE ON THE GROUND (spec/model/leaf.md, P4a-2): the same carpet, its leaves cut by q' = |l| − r(θ) + 1 in the variant they hung in. The CPU painting uses the same law over the same profile
   // (half-float rounded, read linearly), so what is held is that the GPU turned the instance buffer — outline slot, enlarged quad, box and all — into the carpet.
   { name: 'afternoon 7 at 0.9, maple — the lobed stamps painted by the same q\' law', preset: 'afternoon 7', over: { ...FALL_LOOK, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 } },
   { name: 'afternoon 7 on the first day of the fall, maple — a sparse carpet: the closed forms (area is conserved)', preset: 'afternoon 7', over: { ...FALL_LOOK, phenology: 0.71, leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.0756 }, sparse: true },
@@ -897,7 +897,7 @@ const LITTER_RASTER = { alpha: 0.02, rgb: 0.02, area: [0.97, 1.03], vsOrder: 0.2
 // THE STAMP (VS_LITTER/FS_LITTER as the engine compiles them) against arithmetic: see __litterStamp.
 const LITTER_STAMP_TOL = 0.02;
 
-// THE LANTERN's RAY vs ITS REFERENCE (§4.9). The same GLSL snippet the fill check holds, but the sky camera's half of it: readWood TRUE, the
+// THE LANTERN's RAY vs ITS REFERENCE (spec/model/sky-view.md). The same GLSL snippet the fill check holds, but the sky camera's half of it: readWood TRUE, the
 // wood read from the layer's own R16F texture, T_src (the beam: a leaf kills the disk) and the glow through wood, on the layers and wood the
 // engine really baked (__skyCheck). Every sky look at the three d that matter: 0 (the window: Tb is T, L is the P0b proxy), 0.5, and the
 // physical 0.95 (k ~ 3: a unit of coverage keeps 5% of the disk). The tolerance is the storage, as FILL_TOL is: the layers are half float and
@@ -905,11 +905,11 @@ const LITTER_STAMP_TOL = 0.02;
 // 0.06-0.8 off (each is mutation-tested: wood in the emission, the beam ignoring coverage, a sun path that ignores wood). Each row also has to MEASURE something: rays whose disk a leaf killed, rays with a lit leaf, rays
 // the wood is in the way of, and wood in the texture at all.
 const SKY_CHECKS = ['canopy 1', 'canopy 2', 'canopy 3', 'canopy 4'].flatMap((preset) => [0, 0.5, 0.95].map((d) => ({ name: `${preset}, leaf_diffuse ${d}`, preset, over: { leaf_diffuse: d } })));
-// EDGE_AREA (§4.5): the same ray with the d = 0 mixture on (d 0: P0b on the mixture t; 0.95: the knob is inert, and the rows must say so)
+// EDGE_AREA (spec/model/leaf.md): the same ray with the d = 0 mixture on (d 0: P0b on the mixture t; 0.95: the knob is inert, and the rows must say so)
 SKY_CHECKS.push(...[0, 0.95].map((d) => ({ name: `canopy 1, leaf_diffuse ${d}, edge_area`, preset: 'canopy 1', over: { leaf_diffuse: d, edge_area: true } })));
 const SKY_TOL = 1e-3;
 
-// A TEXEL IS A MIXTURE, NOT A SLAB (§4.5, P0c-edge). The bake stores Σ τ·cov and Σ cov; read as a slab of depth τ the pair is Jensen-dark at a soft edge, and
+// A TEXEL IS A MIXTURE, NOT A SLAB (spec/model/leaf.md, P0c-edge). The bake stores Σ τ·cov and Σ cov; read as a slab of depth τ the pair is Jensen-dark at a soft edge, and
 // nearly half of every leaf's area is soft edge (edge_softness 0.26 → 44%). It showed in two places, and each has a row that is a MEASUREMENT of the shader the
 // engine compiles, on the layers it baked, never a restatement of the formula:
 //   THE RIM (the lantern, sky view): a leaf's edge glowed up to x2.3 (blue) of its own interior — a cream outline round every leaf on canopy 1 at leaf_diffuse
@@ -937,7 +937,7 @@ const HALO_CHECKS = [
   { name: 'memories, edge_area at d 0 (the layer floor)', preset: 'memories', over: { edge_area: true } },
 ];
 const HALO_TOL = 2e-3, HALO_BAND = [0.99, 1.01], HALO_MIN_TEXELS = 500, STAMP_TOL = 2e-5;
-// THE OUTLINE'S EDGE LAW (§4.5, P4a-2), FS_BAKE drawn for one leaf: the gate shut keeps the ellipse's own tolerance, the gate open is held to the CPU's q' over the same profile at the GPU's own
+// THE OUTLINE'S EDGE LAW (spec/model/leaf.md, P4a-2), FS_BAKE drawn for one leaf: the gate shut keeps the ellipse's own tolerance, the gate open is held to the CPU's q' over the same profile at the GPU's own
 // (half-float storage, fixed-point filter weights, atan: the design allowed ~1e-2 across the ramp; measured 1e-5, so the bar is 1e-3). Σalpha, a lobed leaf's coverage against the ellipse's at the same uEdge: the profile is area-normalised, but the
 // ramp is RADIAL (q' = |l| − r(θ) + 1), so it is thinner across a flank by the cosine of the flank's tilt and a lobed leaf keeps MORE of its area than the ellipse does — measured x1.04 for the first maple, the
 // five-pointed star (three variants, 1.038-1.042) where the design said 1%, and x1.080-1.084 for the RECALIBRATED one (variants 0, 3, 7 of seed 1234; leaf diversity, 2026-10-09). To first order a ramp of width e loses ½·e·∮r dθ of
@@ -1168,11 +1168,11 @@ async function robustness(page) {
   }
   const LOSS = [
     ...DETERMINISM.map((p) => ({ name: `${p} recovers byte-identical`, preset: p, opts: {} })),
-    // the sky fill (§4.7) owns GL objects no shipped look ever creates — a program, two textures, an FBO, and on the
+    // the sky fill (spec/model/fill.md) owns GL objects no shipped look ever creates — a program, two textures, an FBO, and on the
     // faithful path a resized layer set — so a restore that forgot them would pass every row above
     { name: 'memories with the sky fill open recovers byte-identical', preset: 'memories', opts: { over: { canopy_fill: 1, fill_scatter: 0.5 } } },
     { name: 'park 1 (faithful) with the sky fill open recovers byte-identical', preset: 'park 1', opts: { over: { canopy_fill: 1, fill_scatter: 0.5 } } },
-    // the litter carpet (§4.7) owns a texture, a program, a VAO and a buffer that a lost context kills too — and its bake is NOTICED at draw time, so a
+    // the litter carpet (spec/model/season.md) owns a texture, a program, a VAO and a buffer that a lost context kills too — and its bake is NOTICED at draw time, so a
     // restore that forgot them would only show as a floor without its leaves: the pre-loss frame has the carpet, so the post-restore one must
     { name: 'afternoon 7 with the litter carpet recovers byte-identical', preset: 'afternoon 7', opts: { over: { leaf_drop: 1, phenology: 0.9, litter: 1 } } },
     { name: 'park 1 (faithful) with the litter carpet and the fill recovers byte-identical', preset: 'park 1', opts: { over: { leaf_drop: 1, phenology: 0.9, litter: 1, canopy_fill: 1 } } },
@@ -1368,7 +1368,7 @@ async function main() {
     const presets = (solo ? [] : filters.length ? allPresets.filter((n) => filters.some((f) => n.toLowerCase().includes(f))) : allPresets).filter(keep('smoke'));
     if (filters.length && presets.length === 0) { log(`no preset matches: ${filters.join(', ')}`); await browser.close(); server.close(); process.exit(1); }
     if (!solo) log(`\nSMOKE — ${presets.length} presets @ ${SMOKE_FRAMES} frames`);
-    const truncated = [];   // groves that outgrew the woody-occluder table (§4.5) — see the note under the loop
+    const truncated = [];   // groves that outgrew the woody-occluder table (spec/model/canopy.md) — see the note under the loop
     for (const name of presets) {
       let r;
       try {
@@ -1386,7 +1386,7 @@ async function main() {
       if (s.blackFrac === 1) bad.push('all-black frame');
       if (s.whiteFrac === 1) bad.push('all-white frame');
       if (!s.opaque) bad.push('non-opaque readback (alpha:false context should read 255)');
-      // THE OCCLUDER CAP (§4.5). A grove that grows more level-≤1 segments than the table holds loses the tail of
+      // THE OCCLUDER CAP (spec/model/canopy.md). A grove that grows more level-≤1 segments than the table holds loses the tail of
       // the grow order — whole later trees render with no bole and no limbs. Nothing looks broken; there is just
       // less wood than the parameters asked for, which is why it went unnoticed for as long as it did. A pixel
       // cannot report it, so the engine does: `want` is what grew, `count` is what fits.
@@ -1519,7 +1519,7 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(32)} ${bad.join('; ') || detail}`);
     }
 
-    if (!gateOnly && !robustOnly && !fillOnly && !skyOnly) log('\nSOFT EDGES — a texel is a mixture, not a slab: the lantern\'s rim, the beam\'s halo, the faithful stamp (§4.5)');
+    if (!gateOnly && !robustOnly && !fillOnly && !skyOnly) log('\nSOFT EDGES — a texel is a mixture, not a slab: the lantern\'s rim, the beam\'s halo, the faithful stamp (spec/model/leaf.md)');
     for (const c of ((gateOnly || robustOnly || fillOnly || skyOnly) ? [] : RIM_CHECKS).filter(keep('edge'))) {
       const name = `rim: ${c.name}`;
       let r;
@@ -1652,7 +1652,7 @@ async function main() {
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${name.padEnd(100)} ${bad.join('; ') || a.captures[0].hash}`);
     }
 
-    // ---- suite 2c: the litter carpet (§4.7). Runs with the full sweep, and alone as `--gate litter`. ----
+    // ---- suite 2c: the litter carpet (spec/model/season.md). Runs with the full sweep, and alone as `--gate litter`. ----
     const litterRun = !solo || (gateOnly && (!gateFilters.length || gateFilters.some((f) => f && 'litter'.includes(f))));
     if (litterRun) log('\nLITTER — the carpet the engine baked, read back and held to the grove\'s own list');
     for (const c of (litterRun ? LITTER_CHECKS : []).filter(keep('litter'))) {

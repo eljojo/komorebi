@@ -1,5 +1,5 @@
 // ============================================================================
-// LEAF VARIETY (spec §4.5, `leaf_variety`, P4a-4). José, 2026-10-09: "we need much more leaf diversity, more species and more variability within species, i showed you so many
+// LEAF VARIETY (spec/model/leaf.md, `leaf_variety`, P4a-4). José, 2026-10-09: "we need much more leaf diversity, more species and more variability within species, i showed you so many
 // different maple leaves from my reference photos and looking at those sheets, they all look the same to me." A species is a distribution, a tree is a family, and a leaf is a member
 // under its light: each tree draws a GENOTYPE (8 to a species and seed), each genotype grows eight outlines, one per light class, shade to sun — 64 rows of the outline texture instead of
 // 8 — and a leaf hangs in the row its tree's genotype and its own light (the grove's rank of exposure, the one that reddens the sun side) pick, smaller and more deeply cut in the sun.

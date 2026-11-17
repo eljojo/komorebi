@@ -1,5 +1,5 @@
 // ============================================================================
-// Per-leaf pigment state (spec §4.5, autumn senescence): the pure laws in komorebi-math.js and the one place
+// Per-leaf pigment state (spec/model/season.md, autumn senescence): the pure laws in komorebi-math.js and the one place
 // the grove applies them. The claims worth holding loudly are the ones that would otherwise fail SILENTLY:
 // a summer look that drifts by a ulp, a per-leaf hash that eats the growth RNG and reshuffles every shipped
 // grove, a sieve law that stops being a mean of transmittances. (The macros.test.js pattern: data + laws.)

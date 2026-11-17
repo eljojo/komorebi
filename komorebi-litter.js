@@ -1,5 +1,5 @@
 // ============================================================================
-// The litter (spec §4.7, "The floor is a map"). A leaf that has let go (§4.5, P3a) lies ON the receiver: h = 0, so it casts
+// The litter (spec/model/season.md, "The floor is a map"). A leaf that has let go (spec/model/season.md, P3a) lies ON the receiver: h = 0, so it casts
 // nothing — no throw, no blur — and it is SEEN BY REFLECTION. The same red leaf that glows backlit in the canopy reads tan-brown
 // and desaturated lying face up under a sky it did not filter, so the carpet is not the canopy's transmittance on the ground: it
 // is an albedo, a texture the floor's material reads. And it is a function of (phenology, seed), never of the run: nothing here
@@ -20,7 +20,7 @@ import { leafShape, leafVariant } from './komorebi-leaf.js';
 const LITTER_SALT = 0x2B9D4F6E;
 const LITTER_SIGMA = 0.3;   // the scatter about the drift, as a share of it: a leaf is carried, not aimed (σ = 0.3·h·litter_drift_m)
 
-// THE COLOUR (spec §4.7, "What colour it lies in"). A fallen leaf is seen by REFLECTION, and a leaf reflects because it scatters: the strongly absorbed
+// THE COLOUR (spec/model/season.md, "What colour it lies in"). A fallen leaf is seen by REFLECTION, and a leaf reflects because it scatters: the strongly absorbed
 // channel comes back from the shallowest scatterings, so a reflectance saturates far less than the transmittance e^(−τ) does. The first law here was the
 // transmittance's hue laid on the ground (0.35·leafHue(e^(−τ))): maximally saturated, an orange-yellow stain, and the dead end this replaces — the carpet is
 // not the canopy's cast laid on the floor. The carpet is several leaves deep where it shows, so the honest object is the opaque pile, Kubelka–Munk R∞, whose
@@ -30,7 +30,7 @@ const LITTER_KAPPA = 2;
 const F_CUTICLE = 0.04;   // the cuticle's surface share, dry: frost that reflects whatever the pigments do
 const ALBEDO_BROWN = [0.12, 0.08, 0.05];
 
-// THE RAIN DAY (`leaf_wetness`; spec §4.7). José: "one day after rain many leaves fell on the ground". A dead leaf on the ground soaks: water fills the air spaces of
+// THE RAIN DAY (`leaf_wetness`; spec/model/season.md). José: "one day after rain many leaves fell on the ground". A dead leaf on the ground soaks: water fills the air spaces of
 // its tissue, the index contrast at every cell-wall/air interface falls from (n_wall − 1) to (n_wall − n_water), and scattering goes as Δn². Less scattering lets
 // light travel deeper before it returns, so more is absorbed: the leaf darkens AND saturates in one move, the strongly absorbed channel most. Dead tissue only: a
 // red leaf still on the tree is alive and keeps its frost, so the carpet is the only reader of this.
@@ -89,7 +89,7 @@ function litterOrder(list){
 
 // The bake's instance buffer: INSTANCE_FLOATS per stamp, in drop order —
 //   [x, y, A, B0]        where it lies (metres) and the leaf's own half-axes (the grove's A and the face-on B0: lying flat it is not foreshortened)
-//   [cos, sin, fade, v]  its angle on the ground as a unit vector (no trig on the GPU), the fade it carries (§5.3: a marginal leaf or
+//   [cos, sin, fade, v]  its angle on the ground as a unit vector (no trig on the GPU), the fade it carries (spec/contracts/continuity.md: a marginal leaf or
 //                        tree lies at its fade, so a density morph does not pop its litter in at full weight), and its outline — the row the grove hung it in,
 //                        which the leaf carries (`row`, leaf_variety: the genotype × light table's, not a function of its address) or, without one, leafVariant(seed, j, k),
 //                        so a fallen leaf keeps its shape; 0 for the ellipse, which has none

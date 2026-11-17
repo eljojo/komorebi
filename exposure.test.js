@@ -1,5 +1,5 @@
 // ============================================================================
-// Light decides who turns first (spec §4.5, P1): a CPU twin of the layer bake — a plan grid of leaf area per
+// Light decides who turns first (spec/model/season.md, P1): a CPU twin of the layer bake — a plan grid of leaf area per
 // height band, walked up a representative sun ray — hands every leaf an exposure, and exposure orders the turn
 // (earlier) and scales the red (more). Held loudly because every way it breaks is silent: a ray walked down-sun,
 // a grove that reshuffles because the exposure pass ate the growth RNG, a knob at 0 that is not P0, a grove that
@@ -323,7 +323,7 @@ test("the look's own turn schedule survives: exposure decides WHO turns, not how
   expect(p0).toBeLessThan(0.31);
   expect(Math.abs(began({ turn_exposure: 1 }) - p0), "turn_exposure 1").toBeLessThan(0.02);
   // (Between 0 and 1 the mix of two independent uniforms keeps P0's MEAN start time but narrows its spread — the tail share at
-  // one half is 0.12 off — so the leaves turn a little more together than the hash alone. Documented in §4.5, not held here.)
+  // one half is 0.12 off — so the leaves turn a little more together than the hash alone. Documented in spec/model/season.md, not held here.)
 });
 
 test("the grove's mean red capacity does not drift: within 0.5 % at any strength", () => {

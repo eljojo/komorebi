@@ -1,4 +1,4 @@
-// Guards the one promise a rename makes to data the engine doesn't own (spec §9): a ★ look in local storage, or a
+// Guards the one promise a rename makes to data the engine doesn't own (spec/implementation.md): a ★ look in local storage, or a
 // JSON exported years ago, keeps loading forever. LEGACY_KEYS + migrateLegacy are the whole mechanism, applied at
 // every door external params come through — create(), setParams, transitionTo, and the editor's preset store — so
 // these tests cover the pure map and the store; the engine doors need a GL context and are exercised by test-gl.

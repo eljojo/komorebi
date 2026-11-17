@@ -1,9 +1,9 @@
 // ============================================================================
-// The bake (spec §4.5) — the per-frame snapshot of the moving canopy in the
+// The bake (spec/model/canopy.md) — the per-frame snapshot of the moving canopy in the
 // form transport reads fast: leaves stamped as per-layer optical depth
 // (additive, order-independent), and the FAITHFUL path's per-sample geometry
 // bake into one pre-integrated soft-shadow texture (the opt-out from the
-// depth-layer cheat). Then the SKY FILL (§4.7): the hemisphere integral of
+// depth-layer cheat). Then the SKY FILL (spec/model/fill.md): the hemisphere integral of
 // those layers that lights the shade the beam does not reach. fillSwayedSegs
 // is the swayed skeleton both cast bakes share. Two factories over the engine's
 // shared internals (hub): makeBake, and makeFill — the sky fill on its own, so a
@@ -20,7 +20,7 @@ import { bindLeafShape } from './komorebi-grove.js';
 // The tier this module owns besides the fill (which is its own factory below, so a bundle that cuts it cuts the factory): the leaf's diffuse share. The bundler substitutes
 // it by a literal (embed-build.mjs); false means no look in the bundle opens leaf_diffuse, and the beam's k is 0 wherever it is read.
 const FEAT_LEAF_DIFFUSE = true;
-// edge_area (§4.5) as the 0/1 every reader takes it as. Behind the flag for the reason k is: a bundle that cut the leaf's diffuse share has no GLSL that reads it.
+// edge_area (spec/model/leaf.md) as the 0/1 every reader takes it as. Behind the flag for the reason k is: a bundle that cut the leaf's diffuse share has no GLSL that reads it.
 const edgeAreaOn = (params) => (FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);
 // How many slots the fill's signature has (fillSig, below). The engine sizes its `fill.sig` from this: a write past a Float64Array's end is dropped silently, and
 // the fill then re-bakes every frame, so the length is one number in one place.
@@ -32,7 +32,7 @@ export function makeBake(hub){
   // ---- one bake: the cast the camera reads, then (if the shade is lit through the canopy) the fill ----------------
   function bake(){
     hub.refreshWood();
-    if(faithfulOn()) bakeFaithful();   // FAITHFUL path (§4.5): cast the real tree, not the layer slabs
+    if(faithfulOn()) bakeFaithful();   // FAITHFUL path (spec/model/canopy.md): cast the real tree, not the layer slabs
     else bakeLayers(bakeRes(), hub.layerHeights(), false);
     if(hub.fillWanted()) hub.bakeFill(true);   // true: on the faithful path the layers are not otherwise baked, so the fill bakes its own low-res set (a bundle without the fill holds a fillWanted that is false)
     else hub.bakeTreeLayers?.();         // the tree view lights its leaves by the same low-res set: without the fill it bakes the set itself (only while it is wanted)
@@ -41,7 +41,7 @@ export function makeBake(hub){
   // ---- bake leaves into per-layer optical-depth textures ---------------------
   // `H` is the heights the layers sit at and `faithfulSway` says which sway rule rides them: the layer path's
   // sway_height_gain lever, or the faithful path's own (coherent sway grows with the real height / hMax — the
-  // rule VS_FAITH gives the leaves, §5.1), which the sky fill's low-res layers follow so the two stay registered.
+  // rule VS_FAITH gives the leaves, spec/model/motion.md), which the sky fill's low-res layers follow so the two stay registered.
   function bakeLayers(res, H, faithfulSway){
     if(params.sky_view) sky.branchTau=params.branch_tau;
     const E = params.canopy_extent_m;
@@ -57,7 +57,7 @@ export function makeBake(hub){
     gl.uniform1f(U.bake.leafSwing, params.leaf_swing);
     gl.uniform1f(U.bake.flutterFreq, params.flutter_freq);
     gl.uniform1f(U.bake.stemLen, params.stem_length);
-    // WHICH GROVES ARE IN THIS BAKE. Normally one, at full coverage. During a crossfade (§9) two, at
+    // WHICH GROVES ARE IN THIS BAKE. Normally one, at full coverage. During a crossfade (spec/model/transitions.md) two, at
     // complementary coverage into the SAME layer texture — which the additive optical-depth bake makes exact:
     // the depths sum, so at w the picture is (1-w) of the old arrangement plus w of the new, and no leaf ever
     // jumps. Their cluster textures are per-grove, so the binds move inside the loop with them.
@@ -67,9 +67,9 @@ export function makeBake(hub){
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);          // optical depth accumulates additively
     const base=params.canopy_base_height_m;
-    // ALPHA IS THE LEAVES' COVERAGE, ON EVERY CAMERA (§4.5/§4.9). The layer texture's rgb is the foliage's per-channel optical depth;
+    // ALPHA IS THE LEAVES' COVERAGE, ON EVERY CAMERA (spec/model/leaf.md, sky-view.md). The layer texture's rgb is the foliage's per-channel optical depth;
     // its alpha is Σ of the leaf masks over the texel, fade included: with the depth beside it, the pair texelMix reads a texel as a MIXTURE of
-    // leaf and gap by (§4.5), and so the beam's neutral depth, the fill's emission and the sky camera's glow. At k = 0 nothing reads it. The sky view's fine wood used
+    // leaf and gap by (spec/model/leaf.md), and so the beam's neutral depth, the fill's emission and the sky camera's glow. At k = 0 nothing reads it. The sky view's fine wood used
     // to claim that channel (a colour mask kept the leaves from writing their coverage there); it has a texture of its own now (woodTex,
     // below), so this bake is the same bake on every camera.
     for(let l=0;l<params.layer_count;l++){
@@ -94,8 +94,8 @@ export function makeBake(hub){
       }
     }
     // The woody TRUNK and MAIN LIMBS are never stamped here — they are the continuous-height analytic occluder in
-    // transport (§4.5), because a long segment cut into layer bands casts a shadow that shatters into a staircase.
-    // The SKY VIEW adds back the FINE wood only (§4.9): it is read along the eye's ray rather than cast, it is short
+    // transport (spec/model/canopy.md), because a long segment cut into layer bands casts a shadow that shatters into a staircase.
+    // The SKY VIEW adds back the FINE wood only (spec/model/sky-view.md): it is read along the eye's ray rather than cast, it is short
     // enough to sit inside one band, and it carries the same per-layer sway the leaves in that band get — so the
     // leaves have visible twigs to hang on instead of floating in clouds around bare limb tips. It goes in the layer's OWN wood texture
     // (R16F, woodTex[l], cleared to 0 every bake: a layer with no twigs, or a branch_tau tweened to 0, reads as no wood), beside the
@@ -142,13 +142,13 @@ export function makeBake(hub){
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
 
-  // ---- FAITHFUL leaf bake (spec §4.5): the opt-out from the depth-layer cheat. Each leaf casts from its OWN
+  // ---- FAITHFUL leaf bake (spec/model/canopy.md): the opt-out from the depth-layer cheat. Each leaf casts from its OWN
   // continuous grown height, so the cast IS the preview tree (leaves on their twigs, aligned with the wood). The
   // "many suns" convolution is done as GEOMETRY: for each source sample, draw every leaf shifted to its floor
   // landing (world - height·g_i) with MULTIPLICATIVE blend → transmittance_i in a scratch buffer, then add
   // w_i·transmittance_i into the accumulator. The result is one soft-shadow texture transport taps ONCE. Cost moves
   // from the per-pixel sample loop to per-sample bake passes — gated, so the park / layer path pays nothing. ----
-  // ---- the swayed skeleton, filled ONCE and read by two bakes (§4.5/§4.9). Each segment is rotated by its limb's
+  // ---- the swayed skeleton, filled ONCE and read by two bakes (spec/model/canopy.md, sky-view.md). Each segment is rotated by its limb's
   // bend about its tree pivot, and a TERMINAL segment first swings about its own twig base by that clump's twig bend —
   // the same pivot, angle and order VS_FAITH gives the leaves hanging on it, so they ride the twig instead of sliding
   // off it. `swx/swy` is the coherent whole-tree translation: the CAST wants it height-scaled and folded in here; the
@@ -156,14 +156,14 @@ export function makeBake(hub){
   // swx, swy: tree 0's sway, which grows with height; T (the grove's treeDelta, or null) what each segment's own tree adds to it
   function fillSwayedSegs(R, sa, swx, swy, T){
     const la = hub.hier ? hub.hier.limbAngle : null, ta = hub.hier ? hub.hier.twigAngle : null;
-    const lat = hub.hier ? hub.hier.limbAttach : null;   // per-limb attach height: where the sway_pitch foreshorten is anchored (§5.1)
-    const lp = hub.hier ? hub.hier.limbPitch : null;     // per-limb pitch DOF: the angle the foreshorten is taken from (§5.1)
+    const lat = hub.hier ? hub.hier.limbAttach : null;   // per-limb attach height: where the sway_pitch foreshorten is anchored (spec/model/motion.md)
+    const lp = hub.hier ? hub.hier.limbPitch : null;     // per-limb pitch DOF: the angle the foreshorten is taken from (spec/model/motion.md)
     const hRef = Math.max(faith.hMax, 1e-3);
-    const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): foreshorten the wood heights by the SAME factor the leaves use, so leaf-on-wood registration holds
+    const sp = Math.max(0, params.sway_pitch);   // 3-D lean (spec/model/motion.md): foreshorten the wood heights by the SAME factor the leaves use, so leaf-on-wood registration holds
     for(let k=0;k<R.length;k++){
       const s = R[k];
       const th = (la && s.limb>=0 && s.limb<la.length) ? la[s.limb] : 0;
-      // MEDIUM band (§5.4): terminal wood first swings about its OWN twig base by that clump's twig bend, before
+      // MEDIUM band (spec/model/motion.md): terminal wood first swings about its OWN twig base by that clump's twig bend, before
       // the limb rotation — the same pivot, angle and order VS_FAITH gives the leaves hanging on it, so they ride
       // the twig instead of sliding off it. Interior wood (clump<0) is untouched. sway_pitch meets the band here
       // and stays orthogonal: `fore` scales HEIGHTS off the limb bend, this is a plan-plane yaw. tf=0 → tt=0 → rest.
@@ -177,11 +177,11 @@ export function makeBake(hub){
       }
       const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*9;
       // the SAME expression publishBend gives this limb's clumps, off the SAME pitch DOF — leaf-on-wood
-      // registration is only kept by the two staying literally in lockstep (§5.1). The plan rotation above
+      // registration is only kept by the two staying literally in lockstep (spec/model/motion.md). The plan rotation above
       // is the yaw DOF; this is the elevation one, and the two compose orthogonally.
       const ph = (sp>0 && lp && s.limb>=0 && s.limb<lp.length) ? lp[s.limb] : 0;
       const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(ph)), 0.1, 1) : 1;
-      // ANCHOR the foreshorten at the limb's attach height (§5.1): h' = at + (h−at)·fore, so at the join h' = at
+      // ANCHOR the foreshorten at the limb's attach height (spec/model/motion.md): h' = at + (h−at)·fore, so at the join h' = at
       // exactly and the pitching limb cannot part from the trunk axis, which does not pitch. Same sign for a droop
       // tip hanging BELOW the attach — rotating a limb down about its joint moves every point toward the attach
       // plane. Trunk wood (limb<0) never pitches, and at=0 with fore=1 reproduces h' = h exactly (byte-identical).
@@ -222,7 +222,7 @@ export function makeBake(hub){
     const k = FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0;
     faith.k = k; faith.n = src.count;   // recorded even for an empty grove: refreshFaith compares against them
     faith.edgeArea = edgeAreaOn(params);   // the cast has the edge law baked in, like k
-    // Only "no grove built yet" returns early. A grove with no leaves — leaf_drop 1 at leaf-off, §4.5 abscission, or no foliage at all — still has
+    // Only "no grove built yet" returns early. A grove with no leaves — leaf_drop 1 at leaf-off, spec/model/season.md abscission, or no foliage at all — still has
     // its shadow to bake: the wood if there is any, and otherwise Σw·1 = 1, a lit floor. (An instanced draw of zero leaves is a no-op.) Returning
     // on an empty leaf set left faithTex at zero, which transport reads as a floor in total shade.
     if(!faith.vao){ gl.bindFramebuffer(gl.FRAMEBUFFER, null); return; }
@@ -246,7 +246,7 @@ export function makeBake(hub){
     // wood reaches the ground (trunk base h=0); without wood, leaves start at hMin — BUT sway_pitch foreshortens
     // heights, so widen the low bound there so a foreshortened leaf's (closer-in) cast isn't clipped out of the
     // frame. 0.1× is publishBend's clamp floor applied from the GROUND, which is now merely CONSERVATIVE padding:
-    // the foreshorten is anchored at the limb's attach height (§5.1), so h' = 0.1·h + 0.9·attachH ≥ 0.1·h with
+    // the foreshorten is anchored at the limb's attach height (spec/model/motion.md), so h' = 0.1·h + 0.9·attachH ≥ 0.1·h with
     // attachH ≥ 0. Kept as-is — the slack costs frame padding, nothing else. (A leaf hanging BELOW its attach rises
     // instead, but only toward attachH, a height the trunk wood already occupies — so hHi needs no matching widening.)
     let hLo = woodOn ? 0 : faith.hMin*(params.sway_pitch>0 ? 0.1 : 1), hHi = faith.hMax;
@@ -263,7 +263,7 @@ export function makeBake(hub){
     if(tz > 0){ hLo -= tz; hHi += tz; }
     let minx,maxx,miny,maxy;
     if(params.receiver){
-      // CURTAIN cast frame (§4.9): occluders project onto the VERTICAL cloth (Y=cy), not the floor — the projection is
+      // CURTAIN cast frame (spec/model/receivers.md): occluders project onto the VERTICAL cloth (Y=cy), not the floor — the projection is
       // nonlinear in g (÷gy), so sweep the plan-AABB corners × the height range through each sample's cloth map
       // (u = px − r·gx, v = h − r; r = (py−cy)/gy) and bound the (u,v) span. (8 corners × N samples — cheap.)
       const cy = params.cloth_distance_m;
@@ -303,9 +303,9 @@ export function makeBake(hub){
     gl.uniform2f(UF.origin, faith.ox, faith.oy);
     gl.uniform2f(UF.extent, faith.ext, faith.ext);
     gl.uniform1f(UF.edge, params.edge_softness);   // soft leaf rim (same as the layer bake); 0 here = hard ellipses
-    gl.uniform1f(UF.beamK, k);                     // the BEAM's neutral depth (§4.5), pre-integrated into the cast like everything else the leaves do to it
+    gl.uniform1f(UF.beamK, k);                     // the BEAM's neutral depth (spec/model/leaf.md), pre-integrated into the cast like everything else the leaves do to it
     gl.uniform1i(UF.edgeArea, faith.edgeArea);     // ...and so is the edge law: at k = 0 each stamp is the leaf's mixture, not the slab of its mask
-    gl.uniform1i(UF.curtainBake, params.receiver ? 1 : 0);   // §4.9: project onto the vertical cloth (curtain) vs the floor
+    gl.uniform1i(UF.curtainBake, params.receiver ? 1 : 0);   // spec/model/receivers.md: project onto the vertical cloth (curtain) vs the floor
     gl.uniform1f(UF.clothY, params.cloth_distance_m);
     gl.uniform1f(UF.morph, params.drift_phase);
     gl.uniform1f(UF.morphAmount, params.drift_amount);
@@ -321,7 +321,7 @@ export function makeBake(hub){
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex);     gl.uniform1i(UF.clusterTex, 4);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(UF.clusterGeom, 5);
 
-    // FAITHFUL skeleton (§4.5): refill the instance array with the live limb SWING + whole-tree drift, so the wood
+    // FAITHFUL skeleton (spec/model/canopy.md): refill the instance array with the live limb SWING + whole-tree drift, so the wood
     // sways WITH the leaves; then upload + set its statics once.
     if(woodOn){
       fillSwayedSegs(faith.segRest, faith.segArr, motion.sway[0], motion.sway[1], hub.hier?.nTree > 1 ? hub.hier.treeDelta : null);
@@ -333,7 +333,7 @@ export function makeBake(hub){
       gl.uniform2f(U.faithSeg.origin, faith.ox, faith.oy);
       gl.uniform2f(U.faithSeg.extent, faith.ext, faith.ext);
       gl.uniform1f(U.faithSeg.woodTau, params.branch_tau);
-      gl.uniform1i(U.faithSeg.curtainBake, params.receiver ? 1 : 0);   // §4.9: cloth vs floor projection (matches the leaves)
+      gl.uniform1i(U.faithSeg.curtainBake, params.receiver ? 1 : 0);   // spec/model/receivers.md: cloth vs floor projection (matches the leaves)
       gl.uniform1f(U.faithSeg.clothY, params.cloth_distance_m);
     }
 
@@ -380,7 +380,7 @@ export function makeBake(hub){
     return fillFrame(params.canopy_extent_m, hMax, hub.bulkOn(), _frame);
   }
 
-  // Once per frame, before transport draws: the faithful cast carries the beam's k pre-integrated (§4.5), so unlike the layer
+  // Once per frame, before transport draws: the faithful cast carries the beam's k pre-integrated (spec/model/leaf.md), so unlike the layer
   // path — which reads k at the tap — it must be re-cast when leaf_diffuse moves without anything else having baked: a
   // tween, a slider. Under wind the bake runs every frame anyway and has already recorded the current k.
   // edge_area is baked into the cast the same way (each stamp's law at k = 0), so flipping it re-casts too; a live toggle rebuilds nothing else.
@@ -397,13 +397,13 @@ export function makeBake(hub){
 }
 
 // ============================================================================
-// The sky fill as a factory of its own (spec §4.7): a bundle whose looks never open canopy_fill leaves it out whole (embed-build.mjs, FEATURES.fill), so the engine
+// The sky fill as a factory of its own (spec/model/fill.md): a bundle whose looks never open canopy_fill leaves it out whole (embed-build.mjs, FEATURES.fill), so the engine
 // builds it as `FEAT_FILL ? makeFill(hub) : NO_FILL` and reaches it only through the hub. NO_FILL is what the engine holds instead: a fill that is never wanted.
 // ============================================================================
 export function makeFill(hub){
   const { gl, params, fill, fillFBO, emptyVAO, bakeRes, faithfulOn, faith } = hub;
 
-  // ---- THE SKY FILL (spec §4.7, "What the shade is lit by"). The floor is lit by the beam through the gaps, by the
+  // ---- THE SKY FILL (spec/model/fill.md, "What the shade is lit by"). The floor is lit by the beam through the gaps, by the
   // skylight that ALSO had to come through the canopy, and by sunlight the lit leaves scatter downward; the cast
   // filtered only the first. This bakes the other two: Tsky(x) and S(x), the cosine-weighted hemisphere of the layer
   // field, into two low-res textures (komorebi-shaders.js, FS_FILL, runs the very ray the sky view runs). Off (canopy_fill
@@ -620,7 +620,7 @@ export function makeFill(hub){
     gl.uniform1i(u.count, K);
     gl.uniform1f(u.scatter, fillAlbedo());
     gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the albedo is off and every surface camera reads S (the shader says so)
-    gl.uniform1i(u.edgeArea, edgeAreaOn(params));                                      // at k = 0 the rays read each texel as its mixture (§4.5)
+    gl.uniform1i(u.edgeArea, edgeAreaOn(params));                                      // at k = 0 the rays read each texel as its mixture (spec/model/leaf.md)
     gl.uniform1f(u.groundBounce, gb);
     gl.activeTexture(gl.TEXTURE12); gl.bindTexture(gl.TEXTURE_2D, gb > 0 ? fill.bounce.B : null); gl.uniform1i(u.bounce, 12);
     for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]); gl.uniform1i(u.layers[i], i); }

@@ -11,7 +11,7 @@
     __run(preset, overrides, frames, opts)  one engine, captured at the given rAF tick counts (opts.rebake: see below)
     __fillCheck(preset, overrides)      the sky fill's shader against komorebi-fill.js, on the layers the engine really baked
     __skyCheck(preset, overrides)       the sky view's shared ray (the lantern, wood read) against komorebi-fill.js's skyRayRef, on the layers and wood textures the engine really baked
-    __rimCheck(preset, overrides)       the lantern's RIM: leaf glow at a soft edge against the same leaf's interior, through the shared ray, on the layers the engine baked (§4.5, a texel is a mixture)
+    __rimCheck(preset, overrides)       the lantern's RIM: leaf glow at a soft edge against the same leaf's interior, through the shared ray, on the layers the engine baked (spec/model/leaf.md, a texel is a mixture)
     __haloCheck(preset, overrides)      the cast tap's HALO: the beam through a soft-edge texel (tap and tapCA, as the engine compiles them) against the mixture, on the layers the engine baked
     __stampCheck(opts)                  the faithful stamp's edge band: FS_FAITH, as the engine compiles it, drawn for one leaf and held to the per-leaf mixture — and FS_BAKE's edge law, ellipse and outline, held to the CPU's
     __litterCheck(preset, overrides)    the litter carpet the engine baked, read back and held to the grove's own list: frame, coverage, colour, drift, once per regrow
@@ -169,7 +169,7 @@ window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, re
     if (done) return;
     done = true;
     clearTimeout(timer);
-    // The woody occluder's cap (§4.5) is read BEFORE dispose, while the grove is still standing: `want` is what
+    // The woody occluder's cap (spec/model/canopy.md) is read BEFORE dispose, while the grove is still standing: `want` is what
     // this grove grew, `count` what the table could hold. They differ silently — a truncated grove renders with
     // its later trees simply having no wood — so the runner is handed both and says so.
     const occ = eng ? { count: eng.occ.count, want: eng.occ.want, cap: MAX_OCC } : null;
@@ -209,7 +209,7 @@ window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, re
 });
 
 // ---------------------------------------------------------------------------
-// THE SKY FILL, SHADER vs REFERENCE (spec §4.7). komorebi-fill.js holds the quadrature's laws under `bun test`, but a
+// THE SKY FILL, SHADER vs REFERENCE (spec/model/fill.md). komorebi-fill.js holds the quadrature's laws under `bun test`, but a
 // law about a JS function says nothing about the GLSL that ships. So: let the engine bake a real fill (frozen motion),
 // read back the layer textures it read and the Tsky / S it wrote, rebuild the SAME quantity at sampled texels in JS from
 // the readback — bilinear taps through the fill's own domain (REPEAT in the endless park, open sky past the box of a finite
@@ -218,7 +218,7 @@ window.__run = (presetName, overrides, frames, opts) => new Promise((resolve, re
 // Returns the worst absolute error on each of Tsky and S over the sampled texels, and the scale of each, so the runner
 // can say how big the error is against the thing it measures.
 //
-// opts.energy adds the BOOKKEEPING (§4.7), on the very layers the engine baked, in the units of one fill-frame area:
+// opts.energy adds the BOOKKEEPING (spec/model/fill.md), on the very layers the engine baked, in the units of one fill-frame area:
 //   E[L]   what layer L emits, summed over its own texels:  Σ (t − tb)·sun·A_L   (A_L = the beam's sun path through the layers above)
 //   Dbeam  what the beam gives up, summed over the floor's columns (the endless park only: its columns are the box, sun path vertical)
 //   Reng   what the ENGINE's fill texture holds, Σ S·texel area over the whole fill frame
@@ -266,19 +266,19 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
         : Array.from({ length: nL }, (_, i) => (nL > 1 ? p.canopy_base_height_m + (i / (nL - 1)) * p.canopy_thickness_m : p.canopy_base_height_m));
       const data = lt.slice(0, nL).map((t) => read(t, lres));
       const canopy = { ox: -E / 2, oy: -E / 2, ext: E };   // the box the layers were baked over
-      const bulkOn = !!p.standing_scene || (p.receiver | 0) !== 0;   // a beam with a bulk shift = a finite tree (§4.8); none = the endless park
+      const bulkOn = !!p.standing_scene || (p.receiver | 0) !== 0;   // a beam with a bulk shift = a finite tree (spec/model/transport.md); none = the endless park
       const mode = bulkOn ? 'open' : 'wrap';               // the fill's domain: open sky past a tree's box, the box repeating for the park
       const fr = fill.ext ? { ox: fill.ox, oy: fill.oy, ext: fill.ext } : canopy;   // the plan square the fill texture covers (an engine without a fill frame bakes over the box)
       const at4 = (L, x, y) => texelTap(data[L], lres, canopy, mode, x, y);
       const layers = heights.map((h, L) => ({ h, t: (x, y) => at4(L, x, y).slice(0, 3).map((tau) => Math.exp(-tau)), c: (x, y) => at4(L, x, y)[3] }));
-      const beamK = ballisticK(p.leaf_diffuse);   // the split (§4.5): above 0 the reference emits t − tb from coverage, with the albedo off
+      const beamK = ballisticK(p.leaf_diffuse);   // the split (spec/model/leaf.md): above 0 the reference emits t − tb from coverage, with the albedo off
       const atm = atmosphere({ sun: [0, 0, 0], ambient: [0, 0, 0] }, p.sun_elevation_deg, p.sky_turbidity, p.ambient_skylight);
-      // THE SUN THE LEAVES ARE LIT BY (§3.5, sun_cosine): the beam colour scaled by the floor's cosine, whatever surface reads S — the leaves are near-horizontal. The same scale the bake uploads, restated
+      // THE SUN THE LEAVES ARE LIT BY (spec/model/light.md, sun_cosine): the beam colour scaled by the floor's cosine, whatever surface reads S — the leaves are near-horizontal. The same scale the bake uploads, restated
       // here from komorebi-math.js rather than read back from the engine, so a bake that forgot it (or scaled by the wrong camera) is a miss of ~1/sin el against this reference. 1 at sun_cosine 0, exactly.
       // ...and by the air's loss (sun_extinction), restated from beamExtinction the same way: 1 at sun_extinction 0, exactly.
       const fsun = atm.sun.map((v) => v * lerp(1, sunIncidence('floor', p.sun_elevation_deg, p.sun_azimuth_deg), p.sun_cosine)
         * lerp(1, beamExtinction(p.sun_elevation_deg, p.sky_turbidity), p.sun_extinction ?? 0));
-      // ONE SUN PER CAMERA (§4.7): the fill lights its leaves along the BEAM's path — the bulk shift, 0 in the endless park — never along the real sun
+      // ONE SUN PER CAMERA (spec/model/fill.md): the fill lights its leaves along the BEAM's path — the bulk shift, 0 in the endless park — never along the real sun
       const elB = Math.max(p.sun_elevation_deg, 6) * Math.PI / 180, azB = p.sun_azimuth_deg * Math.PI / 180, cotB = Math.cos(elB) / Math.sin(elB);
       const gS = bulkOn ? [cotB * Math.cos(azB), cotB * Math.sin(azB)] : [0, 0];
       const floorCam = (p.receiver | 0) === 0 && !p.sky_view;
@@ -370,7 +370,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
           const px = canopy.ox + (i + 0.5) * cell, py = canopy.oy + (j + 0.5) * cell;
           if (!bulkOn && beamK > 0) {                                 // the park's columns ARE the box and its sun path is vertical: the beam's deficit at a column is Π t − Π tb
             const Pt = [1, 1, 1], Pb = [1, 1, 1];
-            for (let L = 0; L < nL; L++) { const r = at4(L, px, py), m = texelMix(r, r[3], beamK); for (let c = 0; c < 3; c++) { Pt[c] *= m.T[c]; Pb[c] *= m.Tb[c]; } }   // every texel a mixture of leaf and gap (§4.5), through the engine's own interpolation
+            for (let L = 0; L < nL; L++) { const r = at4(L, px, py), m = texelMix(r, r[3], beamK); for (let c = 0; c < 3; c++) { Pt[c] *= m.T[c]; Pb[c] *= m.Tb[c]; } }   // every texel a mixture of leaf and gap (spec/model/leaf.md), through the engine's own interpolation
             for (let c = 0; c < 3; c++) Dbeam[c] += (Pt[c] - Pb[c]) * sun[c] * w;
           }
           for (let L = 0; L < nL; L++) {
@@ -410,7 +410,7 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
 });
 
 // ---------------------------------------------------------------------------
-// THE LANTERN's RAY, SHADER vs REFERENCE (spec §4.9). The sky camera's per-pixel work is the shared GLSL ray (GLSL_SKY_RAY) with readWood
+// THE LANTERN's RAY, SHADER vs REFERENCE (spec/model/sky-view.md). The sky camera's per-pixel work is the shared GLSL ray (GLSL_SKY_RAY) with readWood
 // TRUE: the leaf's beam and glow, the sun's ballistic path, and the layer-stamped wood read from its own R16F texture. The fill check above
 // holds that snippet to komorebi-fill.js at readWood FALSE; this holds the other half — the wood reads, T_src, and the lantern's emission
 // through wood — on the textures the engine really baked. The camera itself cannot be compared this way (its output is tone-mapped to 8 bits,
@@ -476,7 +476,7 @@ precision highp float;
 layout(location=0) out vec4 oT; layout(location=1) out vec4 oTb; layout(location=2) out vec4 oL;
 ${GLSL_LAYER_FIELD}
 ${GLSL_WOOD_FIELD}
-uniform int uEdgeArea;   // edge_area (§4.5): the shared ray reads it by name, so the program declares it first
+uniform int uEdgeArea;   // edge_area (spec/model/leaf.md): the shared ray reads it by name, so the program declares it first
 ${GLSL_SKY_RAY}
 uniform highp sampler2D uRays;
 uniform float uBeamK;
@@ -545,7 +545,7 @@ void main(){
 });
 
 // ---------------------------------------------------------------------------
-// A texel is a MIXTURE, not a slab (§4.5): the three probes below hold the three places the slab showed. Each compiles a program out of exactly
+// A texel is a MIXTURE, not a slab (spec/model/leaf.md): the three probes below hold the three places the slab showed. Each compiles a program out of exactly
 // the engine's own snippets (never a copy: a probe that restated the shader would pass whatever the shader did), runs it over the layers the
 // engine really baked, and reads the result back as float32. `probe` is the one runner: a fullscreen draw into `targets` RGBA32F textures.
 // ---------------------------------------------------------------------------
@@ -607,7 +607,7 @@ const withEngine = (presetName, overrides, frames, body) => new Promise((resolve
   };
 });
 
-// THE LANTERN'S RIM (§4.5 / §4.9). A leaf's soft edge used to glow brighter than its own interior (up to x2.3 in blue on canopy 1: a cream outline round every
+// THE LANTERN'S RIM (spec/model/leaf.md, sky-view.md). A leaf's soft edge used to glow brighter than its own interior (up to x2.3 in blue on canopy 1: a cream outline round every
 // leaf), because the bake's averaged depth over a partly covered texel read as a thin bright leaf. This runs the shared ray (readWood false: the rim is
 // the foliage's, wood only multiplies it) straight up from every texel centre of a window of the baked layers, and measures only rays whose glow is ONE
 // leaf's alone: the top layer carries coverage and every layer under it carries none, so thr = 1 and the sun path A = 1 (nothing stacks above the top), and
@@ -627,7 +627,7 @@ precision highp float;
 layout(location=0) out vec4 oL;
 ${GLSL_LAYER_FIELD}
 ${GLSL_WOOD_FIELD}
-uniform int uEdgeArea;   // edge_area (§4.5): the shared ray reads it by name, so the program declares it first
+uniform int uEdgeArea;   // edge_area (spec/model/leaf.md): the shared ray reads it by name, so the program declares it first
 ${GLSL_SKY_RAY}
 uniform float uBeamK;
 uniform vec2 uGS, uCrop0;
@@ -671,7 +671,7 @@ void main(){
   return { k, n, crop, nIn, nRim, interior, rimMax, rimAt, byC, interiorGlow, glError };
 });
 
-// THE CAST TAP'S HALO (§4.5). The beam through a leaf's soft edge used to be e^(−τ − k·c) of a texel that is 70% open sky at c = 0.3: a dark halo round every
+// THE CAST TAP'S HALO (spec/model/leaf.md). The beam through a leaf's soft edge used to be e^(−τ − k·c) of a texel that is 70% open sky at c = 0.3: a dark halo round every
 // ballistic shadow (0.18 against the mixture's 0.70 in blue on a deep leaf). This compiles `tap` and `tapCA` exactly as the cast cameras carry them (the
 // tap group's own declarations, then the diffraction group's), reads them at the texel centres of the layers the engine baked, and holds them to the mixture
 // the readback gives (texelMix at k, Tb). Band = the soft edge, 0.05 ≤ c ≤ 0.95 by the readback's own coverage. `slab` is the answer the old read gave
@@ -740,7 +740,7 @@ void main(){
   return res;
 });
 
-// THE FAITHFUL STAMP'S EDGE BAND (§4.5). FS_FAITH draws ONE leaf per quad into the multiplicative scratch; at leaf_diffuse > 0 its pixel is the leaf's mixture,
+// THE FAITHFUL STAMP'S EDGE BAND (spec/model/leaf.md). FS_FAITH draws ONE leaf per quad into the multiplicative scratch; at leaf_diffuse > 0 its pixel is the leaf's mixture,
 // (1 − cf) + cf·e^(−τ_leaf − k) with cf = cov·fade, where it used to be e^(−(τ + k·fade)·cov): a dark halo ring round every faithful leaf (0.18 against 0.70
 // at cov 0.3 in blue). This compiles FS_FAITH as the engine ships it behind a trivial vertex shader (vLocal over [-1.2, 1.2]², vTau and vFade constants), draws
 // one leaf, and holds every pixel to the mixture computed here from the mask's own formula. The leaf is the grove's: vTau is τ_leaf·fade (the fade folded in)
@@ -780,7 +780,7 @@ void main(){
     }
     rows.push({ name: cs.name, err, nBand, nIn, nOut, finite, glError, bandOverMix: bandMean.map((v, ch) => v / Math.max(mixMean[ch], 1e-12)), slabOverMix: slabMean.map((v, ch) => v / Math.max(mixMean[ch], 1e-12)) });
   }
-  // THE OUTLINE'S EDGE LAW (§4.5, P4a-2): FS_BAKE as the engine compiles it, drawn for ONE leaf behind a trivial vertex shader (vLocal over the leaf's own quad box, a constant variant, vTau 1
+  // THE OUTLINE'S EDGE LAW (spec/model/leaf.md, P4a-2): FS_BAKE as the engine compiles it, drawn for ONE leaf behind a trivial vertex shader (vLocal over the leaf's own quad box, a constant variant, vTau 1
   // and vFade 1: the pixel is (cov, cov, cov, cov)). The ellipse is the gate shut — uLeafShape 0 — and keeps the old law to the old tolerance (2e-5). The maple is the gate open over the REAL
   // profile texture the grove makes (R16F, REPEAT in θ, LINEAR), held to the CPU's q' = |l| − r(θ) + 1 over the same profile rounded to half float and read linearly: the tolerance is the
   // GPU's own (half-float storage, fixed-point filter weights, atan), ~1e-2 across the ramp. Σalpha — the leaf's area to the ramp — is held to the ellipse's at the same uEdge: the profile is
@@ -837,7 +837,7 @@ void main(){
 });
 
 // ---------------------------------------------------------------------------
-// THE LITTER CARPET (§4.7, P3b), measured on the texture the engine really baked. The bun tests hold komorebi-litter.js's laws and the wiring over a stub GL;
+// THE LITTER CARPET (spec/model/season.md, P3b), measured on the texture the engine really baked. The bun tests hold komorebi-litter.js's laws and the wiring over a stub GL;
 // this reads the RGBA8 carpet back and holds it to the grove's own litter list through the same pure functions, so a bake that landed the wrong frame, lost
 // leaves, dropped the layering or mis-composed its colour is a number and not a feeling. The things worth a number:
 //   frame    the carpet covers the square the fill covers — fillFrame(E, h_max, bulkOn) — recomputed HERE from the params (the heights as transport has them: the
@@ -981,7 +981,7 @@ window.__litterStamp = () => withEngine('memories', {}, 2, (eng, gl) => {
 });
 
 // ---------------------------------------------------------------------------
-// THE SKY FILL, OPENED AND SHUT ON A RUNNING ENGINE (§4.7). canopy_fill is a MORPH key: it tweens, so it crosses 0 in the
+// THE SKY FILL, OPENED AND SHUT ON A RUNNING ENGINE (spec/model/fill.md). canopy_fill is a MORPH key: it tweens, so it crosses 0 in the
 // middle of a transition or a slider drag, and nothing rebuilds when it does. The fill therefore allocates lazily on the
 // first draw that wants it (on the faithful path, a low-res layer set with it) and frees on the first that does not.
 // This runs that crossing: a frame with the gate shut, a frame with it open, a frame shut again — and reports what was
@@ -1029,7 +1029,7 @@ window.__fillToggle = (presetName, overrides, opts) => new Promise((resolve, rej
 });
 
 // ---------------------------------------------------------------------------
-// A KNOB MOVED ON A RUNNING ENGINE (§4.5). leaf_diffuse is a MORPH key: it tweens, so in a transition or under a slider it changes
+// A KNOB MOVED ON A RUNNING ENGINE (spec/model/leaf.md). leaf_diffuse is a MORPH key: it tweens, so in a transition or under a slider it changes
 // every frame and NOTHING rebuilds — no apply(), no setParams. Whatever depends on it has to notice by itself: the layer tap reads it as
 // a uniform, the fill's signature carries it so S re-bakes, and the faithful cast (which has it baked in) re-casts. This engine is
 // born without the change, settles, takes it at tick 15 with a bare assignment, and the frame at tick 36 is returned for the runner to
@@ -1072,7 +1072,7 @@ window.__liveChange = (presetName, overrides, key, value, opts) => new Promise((
 });
 
 // ---------------------------------------------------------------------------
-// A TRANSITION, WATCHED (spec §9). Everything above this line is byte-stable by construction — motion frozen,
+// A TRANSITION, WATCHED (spec/model/transitions.md). Everything above this line is byte-stable by construction — motion frozen,
 // same bytes every run. This is not, and cannot be: a transition's whole point MOVES, and the bloom rides the
 // same clock the wind does, so two runs of the same route differ pixel for pixel. What is stable enough to
 // judge is the SHAPE of the mean luminance over the transition — so the metric below is statistical (per-frame
@@ -1160,7 +1160,7 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
   };
 });
 
-// A TRANSITION ROUTE, DRIVEN TO COMPLETION (spec §9) — the smoke half of the transition story, and unlike
+// A TRANSITION ROUTE, DRIVEN TO COMPLETION (spec/model/transitions.md) — the smoke half of the transition story, and unlike
 // __transition above it IS part of the default run. No pixels and no metrics: a transition isn't byte-stable
 // by design, but its ROUTING is pure logic — transitionTo classifies the diff into a tier (live morph /
 // grove crossfade / dissolve / mode flip) and each tier drives different code (the crossfade grows a second

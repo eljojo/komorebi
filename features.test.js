@@ -1,5 +1,5 @@
 // ============================================================================
-// The feature registry (spec §9, "What a bundle cuts"). The fall tiers (the sky fill, the leaf's diffuse share, the autumn pigment,
+// The feature registry (spec/contracts/gates-and-rungs.md, "What a bundle cuts"). The fall tiers (the sky fill, the leaf's diffuse share, the autumn pigment,
 // the exposure pass, abscission, the litter carpet) are cut from a bundle by a registry derived per look, as the camera is
 // (cameraFor): FEATURES says what opens each one, featuresFor(P) reads a look, embed-build.mjs cuts what no kept look opens.
 // Every way this breaks is silent in a bundle (a tier that is cut but needed paints a different tree and throws nothing), so it is
@@ -203,7 +203,7 @@ const PROBES = {
   "drop, litter 1": { ...B, turn_exposure: 0, litter: 1 },
   "drop, litter 0 (the compaction counts the leaves that went, not the carpet)": { ...B, litter: 0 },
   "marcescent": { phenology: 0.95, leaf_drop: 0.5, turn_exposure: 0.5 },
-  // One tree ahead (§4.5): the grove builds a tree's lead for the arms that read it and its depth for the pigment and the exposure, behind the same flags as the arms. With the knobs UP a table
+  // One tree ahead (spec/model/season.md): the grove builds a tree's lead for the arms that read it and its depth for the pigment and the exposure, behind the same flags as the arms. With the knobs UP a table
   // the cut grove wrongly lost, or a guard the bundler's text fold mangled (`true || true || null`: a table that is the boolean `true`), is a different tree here and nowhere else.
   "pigment, trees ahead": { phenology: 0.75, tree_clock_spread: 0.1, tree_pigment_spread: 0.6 },
   "pigment + exposure, trees ahead": { phenology: 0.75, turn_exposure: 1, tree_clock_spread: 0.1, tree_pigment_spread: 0.6 },

@@ -1,5 +1,5 @@
 // ============================================================================
-// The held leaf (spec §4.5, "The held leaf"): an editor-only proof fixture that grows ONE leaf's areole maze at full resolution — walls gold, cells red —
+// The held leaf (spec/model/leaf.md, "The held leaf"): an editor-only proof fixture that grows ONE leaf's areole maze at full resolution — walls gold, cells red —
 // against the sun. The engine carries that maze only as a mean (`wall_fraction`), and must stay so; this holds the fixture to the engine's own numbers:
 // the veins are the outline's veins (bladeOf), the tissues are leafTau's (to the bit), the walls' share is wall_fraction, and so the picture's mean is the
 // mixture the engine computes. The claims worth holding loudly are the ones that fail silently: a maze whose cells do not tile the leaf, a wall that ends in

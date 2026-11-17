@@ -1,5 +1,5 @@
 // ============================================================================
-// One tree ahead of its neighbours (spec §4.5, `tree_clock_spread`, `tree_pigment_spread`): a tree draws its own lead (how much sooner its whole clock runs: start,
+// One tree ahead of its neighbours (spec/model/season.md, `tree_clock_spread`, `tree_pigment_spread`): a tree draws its own lead (how much sooner its whole clock runs: start,
 // finish and both drop clocks) and its own depth (its red AND brown capacity, together), from (seed, tree index) on a salt of its own — never the growth RNG,
 // never the leaf's streams. The claims worth holding loudly are the ones that fail SILENTLY: a knob at 0 that leaks one ulp into a shipped look, a draw that
 // reshuffles the skeleton, a lead that moves the cached rank (and so is not a season key), a re-season that forgets a tree, a gate that opens late and skips a

@@ -1,5 +1,5 @@
 // ============================================================================
-// Editor tools (EDITOR only, spec §9) — everything the dev pages use and the
+// Editor tools (EDITOR only, spec/implementation.md) — everything the dev pages use and the
 // player build strips: the source + tree-preview debug overlays, the GPU timer
 // queries test-gl/cost.mjs reads, and the motion mirror that drives one engine's
 // wind from another. One factory, called under
@@ -14,27 +14,27 @@ export function groveLeaves(hier, params, faithful){
   // Drive the preview off the grove's TWIGS (one cluster per leaf-bearing node) — NOT terminal segments. With droop,
   // a twig is split into sub-segments all tagged level≥levels, so the old segment-filter over-drew nSub×nLeaf clusters
   // at mid-twig joints and mis-keyed the per-twig seed by segment index. Iterating twigs[] matches the bake's count,
-  // per-twig seed (hash3(seed,j,101)), hug heading (t.dx/t.dy) and marginal-leaf fade. (spec §9 — preview ≈ bake)
+  // per-twig seed (hash3(seed,j,101)), hug heading (t.dx/t.dy) and marginal-leaf fade. (spec/implementation.md — preview ≈ bake)
   const tws = hier.twigs || [];
   const pcF = Math.max(0, params.leaves_per_cluster*params.foliage_density);
   const pcInt = Math.floor(pcF), frac = pcF - pcInt;
   const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
   const base=[];
-  const lw = hier.leafW;       // abscission (§4.5): each leaf's retained weight by (twig, slot), the grove's own; null while nothing can have dropped
+  const lw = hier.leafW;       // abscission (spec/model/season.md): each leaf's retained weight by (twig, slot), the grove's own; null while nothing can have dropped
   const pos = [0,0,0,0,0,0];
   for(let j=0;j<tws.length;j++){
     const t=tws[j], tcov=(t.tcov===undefined?1:t.tcov);
     const ti=(t.tree===undefined?0:t.tree), tnt=((ti*0.61803398875)%1)*2-1;   // per-tree warmth [-1,1], golden-spread so neighbours differ
     const rng=mulberry32(hash3(params.seed>>>0, j, 101)), gauss=makeGauss(rng);   // the grove's own arrangement stream for this twig (j = twig index == the bake's seed)
     for(let k=0;k<nLeaf;k++){
-      const g1=gauss(), g2=gauss();   // leaves hug the twig — must match the bake (§4.5)
+      const g1=gauss(), g2=gauss();   // leaves hug the twig — must match the bake (spec/model/canopy.md)
       const sz=0.6+0.8*rng();         // ...and the seven draws the grove makes per leaf after them (size, tilt, angle, the orbit pair, orient, phase), so this leaf's two gaussians ARE the grove's: the preview shows the cast's leaf.
       for(let q=1;q<7;q++) rng();     // The first is the leaf's size (× leaf_size_m), which the preview draws it at.
       // (EDITOR-ONLY CHANGE, and at inner_leaves 0 too: this inset used to walk the gaussian stream alone, so its leaf k was another draw of the same count and spread, not the cast's leaf, and its scatter
       // at 0 was not the cast's; walking the grove's draw order makes it the cast's. No frame the engine renders moves; only the T inset's blobs sit elsewhere than they did at 9d8f3ad, where the cast has them.)
       const w = lw ? lw[j*nLeaf+k] : 1;                // a leaf the grove has compacted out is gone here too (the draws above still run: the next leaf's scatter must not move)
       if(w === 0) continue;
-      const cov = ((k===pcInt) ? frac : 1.0) * tcov * w;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast — × the leaf's fade out (§5.3)
+      const cov = ((k===pcInt) ? frac : 1.0) * tcov * w;   // marginal-leaf fade × marginal-tree fade — matches the bake (E#54), so a density morph tracks the cast — × the leaf's fade out (spec/contracts/continuity.md)
       placeLeaf(hier, j, g1, g2, k, params, faithful, pos, sz*params.leaf_size_m);   // the grove's own placement, one function (komorebi-grove.js): the twig hug off the tip and, with inner_leaves up, the leaves on the older wood, at their own heights
       base.push(pos[0], pos[1], pos[2], cov, tnt, sz);
     }
@@ -127,7 +127,7 @@ export function makeEditorTools(hub){
     const lean = motion.u*0.9, sx0=motion.sway[0], sy0=motion.sway[1];   // wind: lean + trunk drift (drift carries the lateral channel)
     // NOTE: motion.u is intentionally applied TWICE here — as the height-weighted `lean` (a cheap proxy for the bake's
     // per-joint limb/twig rotation, which the preview doesn't re-derive) and again inside motion.sway (the trunk drift).
-    // So the preview leans a touch harder than the bake translates; that's by design (spec §9 — preview ≈ bake, not =).
+    // So the preview leans a touch harder than the bake translates; that's by design (spec/implementation.md — preview ≈ bake, not =).
     const offY = -0.4;
     const P = (p) => {                                   // 3D world (+wind) -> inset NDC
       const lf = lean*(p[2]/maxZ);                       // taller points lean more downwind
@@ -163,7 +163,7 @@ export function makeEditorTools(hub){
       const wpx=Math.max(0.6, 4.4*Math.pow(ptf, s.level));   // trunk (level 0) thick -> twig thin, by Δ
       pushQuad(s.a, s.b, wpx, lerp(0.05,0.30+0.20*f,cv), lerp(0.07,0.22+0.16*f,cv), lerp(0.09,0.12+0.06*f,cv)); }
     // leaf blobs: the scatter on every terminal twig, so the density slider fills/thins the preview.
-    if(treeLeafHier!==hub.hier || treeLeafW!==hub.hier.leafW) buildTreeLeaves();   // a re-season (§4.5) keeps the hier and makes a new leafW
+    if(treeLeafHier!==hub.hier || treeLeafW!==hub.hier.leafW) buildTreeLeaves();   // a re-season (spec/model/season.md) keeps the hier and makes a new leafW
     // each leaf at its own size, as the cast has it: its length in the inset's pixels (an NDC unit is S/2 px), never under 1.5 px.
     // (EDITOR-ONLY CHANGE: it was a blob 4% of the inset wide whatever the leaf, which made a crown of a few thousand small leaves
     // a solid bush the cast never showed; at its true size a leaf needs no haze to let the branches through, so it is drawn near opaque.)
@@ -206,7 +206,7 @@ export function makeEditorTools(hub){
     gl.viewport(0,0,canvas.width,canvas.height);
   };
 
-  // ---- profiling primitive (spec §9). The engine owns measurement because it owns the GL passes; the
+  // ---- profiling primitive (spec/implementation.md). The engine owns measurement because it owns the GL passes; the
   // cost tool (test-gl/cost.mjs) reads it. hub.timed defaults to a passthrough (so frame() is unaffected in
   // the player build, where this whole module dead-strips); this swaps in real GPU timer queries. ----
     let instrumenting = false;

@@ -4,20 +4,20 @@
 // komorebi-engine.js is create() itself — GL plumbing, the shared-internals hub,
 // the rebuild coordinators, auto-quality and the frame loop — and each subsystem
 // is a factory module over that hub:
-//   komorebi-grove.js         buildGrove — the grown canopy (spec §4.5)
-//   komorebi-bake.js          the layer + faithful bakes, and the sky fill that lights the shade (spec §4.5/§4.7)
-//   komorebi-litter.js        the fallen leaves as an albedo carpet the floor reads (spec §4.7)
-//   komorebi-source.js        the point-sun cloud + shared cast geometry (spec §4.4)
-//   komorebi-motion.js        wind + the spring hierarchy (spec §5)
-//   komorebi-transitions.js   the cloud-bloom crossfade between looks (spec §9)
-//   komorebi-render.js        the frame draw + uniform upload + glow tier (spec §4.6/§4.7)
+//   komorebi-grove.js         buildGrove — the grown canopy (spec/model/canopy.md)
+//   komorebi-bake.js          the layer + faithful bakes, and the sky fill that lights the shade (spec/model/canopy.md, fill.md)
+//   komorebi-litter.js        the fallen leaves as an albedo carpet the floor reads (spec/model/season.md)
+//   komorebi-source.js        the point-sun cloud + shared cast geometry (spec/model/source.md)
+//   komorebi-motion.js        wind + the spring hierarchy (spec/model/motion.md)
+//   komorebi-transitions.js   the cloud-bloom crossfade between looks (spec/model/transitions.md)
+//   komorebi-render.js        the frame draw + uniform upload + glow tier (spec/model/transport.md, fill.md)
 //   komorebi-editor-tools.js  debug overlays, GPU timer queries, motion mirror (EDITOR only)
 // with the shared foundations imported by all of them:
-//   komorebi-transport.js     the transport master + camera registry (spec §4.6/§4.9)
+//   komorebi-transport.js     the transport master + camera registry (spec/implementation.md)
 //   komorebi-shaders.js       the bake / faithful / display shaders + the tone tail
 //   komorebi-params.js        PARAMS (every parameter, defined once), DEFAULTS, legacy migration, transition keys, engine caps
 //   komorebi-math.js          CPU math: atmosphere, RNG, wind noise, growth helpers
-//   komorebi-fill.js          the sky fill's quadrature as pure functions (spec §4.7)
+//   komorebi-fill.js          the sky fill's quadrature as pure functions (spec/model/fill.md)
 // Pipeline: Source (point-sun cloud) -> Canopy (leaves baked to optical-depth
 // layers) -> Transport (shift-multiply-sum) -> Look (tonemap). Motion: two wind
 // bands over a trunk/limb/twig spring hierarchy. See spec/README.md.
@@ -30,7 +30,7 @@
 //   eng.params / .perf / .motion / .src / .fps   live state (read for a HUD)
 //   eng.apply(scope)        re-run a rebuild: 'source'|'canopy'|'season'|'density'|'textures'|'bake'|'perf'|''
 //   eng.setParams(obj)      merge a full param set and rebuild (no UI side effects)
-//   eng.transitionTo(obj, {duration, onEnd})  cloud-bloom crossfade to a look (spec §9 "Scene transitions")
+//   eng.transitionTo(obj, {duration, onEnd})  cloud-bloom crossfade to a look (spec/model/transitions.md "Scene transitions")
 //   eng.trans               live transition state (active, t) — read for a HUD
 //   eng.drawSourceInset()   debug overlay: the source point-sun cloud (editor only)
 //   eng.drawTreeInset()     debug overlay: a 3D preview of the grown grove, swaying (editor only)
@@ -38,14 +38,14 @@
 // ============================================================================
 
 // The export surface, and why each group is on it. `create` + `DEFAULTS` are the engine; LEGACY_KEYS/migrateLegacy
-// are the params contract (§9); the MAX_* caps and DEG are shared constants consumers size buffers against.
+// are the params contract (spec/implementation.md); the MAX_* caps and DEG are shared constants consumers size buffers against.
 // MORPH/CANOPY/TOPO/MODE_KEYS and CAMERAS/TRANSPORT_GROUPS/GROUP_UPLOAD_KEYS are exported for the SAME reason and
 // only that reason: they are couplings that would otherwise fail silently, so a `bun test` reads them and fails
 // loudly instead (transitions.test.js classifies every knob, registry.test.js keeps the camera registry's three
 // halves in agreement). TRANSPORT_CAMERAS/buildTransport are glslcheck's door onto the assembled variants.
 // cameraFor is the registry's selector: the editor asks it which camera a look runs so it can hide the knobs that
-// camera's groups never read (§4.9), rather than keeping a second copy of the receiver/sky_view chain.
-// FEATURES/featuresFor/cutWarnings are cameraFor's twin for the fall tiers (§9, "What a bundle cuts"): which of the sky fill, the leaf's diffuse share, the
+// camera's groups never read (spec/model/sky-view.md), rather than keeping a second copy of the receiver/sky_view chain.
+// FEATURES/featuresFor/cutWarnings are cameraFor's twin for the fall tiers (spec/contracts/gates-and-rungs.md, "What a bundle cuts"): which of the sky fill, the leaf's diffuse share, the
 // autumn pigment, the exposure pass, abscission and the litter carpet a look opens. The bundler cuts what no kept look opens, and the engine warns once
 // when a host opens one its bundle cut.
 export { create } from './komorebi-engine.js';

@@ -1,7 +1,7 @@
 // ============================================================================
-// Litter (spec §4.7, P3b): the floor is a map. A fallen leaf lies ON the receiver — it casts nothing (h = 0: no throw, no
+// Litter (spec/model/season.md, P3b): the floor is a map. A fallen leaf lies ON the receiver — it casts nothing (h = 0: no throw, no
 // blur) and is SEEN BY REFLECTION, so the carpet is a texture the floor reads its albedo from, baked once per regrow from
-// the grove's litter list (§4.5, P3a). The claims worth holding loudly are the ones that fail SILENTLY: a landing that moves
+// the grove's litter list (spec/model/season.md, P3a). The claims worth holding loudly are the ones that fail SILENTLY: a landing that moves
 // with a stream it should not share, a drift that follows the live wind instead of the season's, a carpet laid in the wrong
 // order, a colour law that cannot be replaced by the browning process behind the same signature, a gate that leaks a pass
 // into a look that never asked, a receiver that reads what it must not. (The drop.test.js pattern: pure laws first, then
@@ -408,7 +408,7 @@ test("a finite tree's carpet is clamped on its padded frame: what lands off it i
 });
 
 // ============================================================================
-// THE FLOOR READS IT, AND ONLY THE FLOOR (§4.7). One uniform group on one camera; everything else is the program it was.
+// THE FLOOR READS IT, AND ONLY THE FLOOR (spec/model/season.md). One uniform group on one camera; everything else is the program it was.
 // ============================================================================
 import { CAMERAS, GROUP_UPLOAD_KEYS, TRANSPORT_CAMERAS, TRANSPORT_GROUPS, buildTransport } from "./komorebi.js";
 import { FS_LITTER, VS_LITTER } from "./komorebi-shaders.js";
@@ -418,7 +418,7 @@ test("the floor's else is the old line: with the carpet unread the material is t
   expect(floor).toContain("col = (acc*uSunColor + uAmbient) * uGround;");                       // canopy_fill 0, litter 0: the literal expression
   expect(floor).toContain("col = (acc*uSunColor + amb) * uGround;");                            // canopy_fill 1, litter 0: the fill's own line
   // ...both of them in the else of the carpet's uniform branch, the way the fill's gate is a branch and not a program (litter is read
-  // per frame; a camera program is chosen by MODE flags alone, §4.6)
+  // per frame; a camera program is chosen by MODE flags alone, spec/model/transport.md)
   const at = floor.indexOf("if(uLitterOn != 0){"), els = floor.indexOf("} else {", at);
   expect(at).toBeGreaterThan(0);
   expect(floor.indexOf("col = (acc*uSunColor + uAmbient) * uGround;")).toBeGreaterThan(els);
@@ -684,7 +684,7 @@ test("the engine frees the carpet on dispose and forgets it on a lost context, l
   expect(render.search(/^\s*hub\.refreshLitter\(\);/m)).toBeLessThan(render.indexOf("gl.bindFramebuffer(gl.FRAMEBUFFER, glow ? glowFBO[0] : fbo);"));
 });
 
-// ---- the rain day (spec §4.7, "Wet litter"): a dead leaf on the ground soaks, scattering falls as Δn², the leaf darkens and saturates. It is
+// ---- the rain day (spec/model/season.md, "Wet litter"): a dead leaf on the ground soaks, scattering falls as Δn², the leaf darkens and saturates. It is
 // applied LAST, to the dry law's output, so the honest reflectance that replaces the dry law later is untouched. 0 is no arithmetic at all.
 test("the rain day: WET_RHO is the share of scattering water leaves standing, ((n_wall − n_water)/(n_wall − 1))²", () => {
   expect(L.N_WALL).toBe(1.47); expect(L.N_WATER).toBe(1.333);

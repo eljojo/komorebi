@@ -1,12 +1,12 @@
 // ============================================================================
-// The Canopy, grown (spec §4.5) — buildGrove: a grove of recursive trees
+// The Canopy, grown (spec/model/canopy.md) — buildGrove: a grove of recursive trees
 // (leader, droop, taper, phyllotaxis), leaves hung on terminal twigs and
 // binned to depth layers, the woody occluder segments, the faithful-path
 // geometry, and the per-clump data textures — allocated and RETURNED as one
 // grove value (installGrove, in the engine, makes one active). A factory over
 // the engine's shared internals (hub).
 //
-// RE-SEASONING (§4.5, P2b). The season is a function of the grove, not a regrow: a phenology change moves each leaf's tau, the retained weight w, which leaves
+// RE-SEASONING (spec/model/season.md, P2b). The season is a function of the grove, not a regrow: a phenology change moves each leaf's tau, the retained weight w, which leaves
 // are compacted out, the litter list and leafW — and nothing else. The skeleton, every leaf's place, size, orientation, height and cluster address, the exposure field
 // and its keyed rank are the GROVE's. So a grove built with `keepSeason` keeps a per-leaf record (`g.season`), and reseasonGrove re-runs the season arithmetic
 // over it in one pass on typed arrays, landing BIT FOR BIT where a fresh buildGrove at the same params lands (reseason.test.js holds it, over every variant): the
@@ -73,12 +73,12 @@ const STATE_KEYS = ['phenology', 'trans_r', 'trans_g', 'trans_b', 'wall_fraction
 export const SCHEDULE_KEYS = [...SEASON_KEYS.filter(k => !STATE_KEYS.includes(k)), 'drop_after_turn'];
 const SREC = 11;   // a season record: x, y, h, A, B0, area, j, k, cov, layer, start of the leaf's 17 floats in its layer's buffer (the faithful record's first 16 are the same numbers)
 
-// A FULL CROWN (§4.5, `inner_leaves`). Only a terminal twig bears leaves, so from above a grown crown is a wheel: a ring of leaves at the shell, a core a third as dense, bare limbs for spokes. A real crown carries shade
+// A FULL CROWN (spec/model/canopy.md, `inner_leaves`). Only a terminal twig bears leaves, so from above a grown crown is a wheel: a ring of leaves at the shell, a core a third as dense, bare limbs for spokes. A real crown carries shade
 // leaves on the older wood too, thinning inward and never to zero. So each leaf has TWO places, and the knob is the share that takes the second: its TIP place (today's, verbatim: the hug or the blob off the twig's
 // tip, at the twig's height) and a WOOD place, a point on the twig's whole ancestor path back to the trunk (math.growSkeleton's `out.path`, hier.twigPath) at the arc distance d = u²·pathLen from the tip — a density
 // that falls as d^(-1/2) — with the twig hug's own scatter, tighter, about the wood (back along its heading, or an isotropic blob on the layer path), at the HEIGHT of that point. (h, u) are the leaf's own two draws, from
 // a hash on a salt of its own: nothing is drawn from the growth, arrangement or wind streams, and a leaf's (h, u) is a pure function of (seed, j, k), so a tree_count or density morph moves nobody. The leaf is on the
-// wood by the smoothstep s = (inner_leaves − h) over INNER_GLIDE: a slider moves each leaf inward along its own line and pops none (§5.3), and `inner_leaves` is a share — the count and the area are the look's.
+// wood by the smoothstep s = (inner_leaves − h) over INNER_GLIDE: a slider moves each leaf inward along its own line and pops none (spec/contracts/continuity.md), and `inner_leaves` is a share — the count and the area are the look's.
 // THE GATE: at 0 (or without a recorded path) the else is the literal old placement and the hash is never reached; the grove records no path then either. ONE FUNCTION for the hang loop and the editor's tree preview,
 // which draws the same two gaussians, so what the preview shows is what the cast was handed. Writes [x, y, z] into `out`. (The params are named `params` here as in buildGrove: the key's grep, reseason.test.js, reads this file for `params.<key>`.)
 // WIND, named: a faithful leaf pivots about its twig's base (clusterGeom), so a leaf on older wood swings with its twig and slides off the limb under the medium band (measured in inner.test.js; not fixed here — it
@@ -148,7 +148,7 @@ export function placeLeaf(hier, j, g1, g2, k, params, faithful, out, lt = params
 function placeLeafOnWood(hier, j, g1, g2, k, params, faithful, out){
   const t = hier.twigs[j];
   let tdx=t.dx||0, tdy=t.dy||0; const tdl=Math.hypot(tdx,tdy), tHasDir=tdl>1e-4; if(tHasDir){ tdx/=tdl; tdy/=tdl; }   // unit twig heading (plan): the GROWN heading the bake stores on the twig (t.dx, t.dy, the end tangent), so the hug matches even on a drooped twig, in the grove and in the editor's preview (which calls this too) alike; leaves hug it
-  // leaves HUG the twig (§4.5): trail back from the tip ALONG the twig heading (1.5×spread) with a tight perpendicular jitter (0.4×spread), instead of an isotropic blob. Same two draws → other attributes unchanged.
+  // leaves HUG the twig (spec/model/canopy.md): trail back from the tip ALONG the twig heading (1.5×spread) with a tight perpendicular jitter (0.4×spread), instead of an isotropic blob. Same two draws → other attributes unchanged.
   const hug = faithful && tHasDir;   // twig-hug only in faithful mode; the layer/park scatter stays byte-identical
   let x = hug ? t.x - Math.abs(g1)*params.cluster_spread_m*1.5*tdx - g2*params.cluster_spread_m*0.4*tdy : t.x + g1*params.cluster_spread_m;
   let y = hug ? t.y - Math.abs(g1)*params.cluster_spread_m*1.5*tdy + g2*params.cluster_spread_m*0.4*tdx : t.y + g2*params.cluster_spread_m;
@@ -208,7 +208,7 @@ export function makeGrove(hub){
 
   // THE DRAWS, KEPT. A cluster's arrangement and wind streams are functions of (seed, cluster) alone, and the hang loop takes
   // them in one fixed order whatever the other knobs say, so the numbers cluster j's first n leaves draw are the same on every
-  // regrow under that seed. They are drawn once and read back: a grove morph regrows every frame (§9), and its frames pay for
+  // regrow under that seed. They are drawn once and read back: a grove morph regrows every frame (spec/model/transitions.md), and its frames pay for
   // hanging the leaves, not for drawing them. Per cluster its two wind draws (sway, stem); per leaf, in stream order, the two
   // gaussians and seven arrangement draws, then its two wind draws. Held for the engine's life, as large as the busiest grove
   // grown under the seed; a new seed starts over.
@@ -234,8 +234,8 @@ export function makeGrove(hub){
   }
 
   // ---- canopy generation: grow a real recursive skeleton, hang one leaf cluster on each
-  // terminal twig, and bin them into depth layers by the height they grew to (spec §4.5) ----
-  // ---- BUILD A GROVE (spec §4.5/§9). Pure in the sense that matters: it allocates and returns a grove, it does
+  // terminal twig, and bin them into depth layers by the height they grew to (spec/model/canopy.md) ----
+  // ---- BUILD A GROVE (spec/model/canopy.md, spec/implementation.md). Pure in the sense that matters: it allocates and returns a grove, it does
   // not install one. That is what lets a transition hold TWO — the outgoing one still drawing while the incoming
   // one is grown — instead of the midpoint swap being the only way a topology change can happen.
   // (occ and faith are still written straight to engine state below. They belong to the ACTIVE grove, and the
@@ -260,26 +260,26 @@ export function makeGrove(hub){
     const frac = pcF - pcInt;                         // marginal leaf fades in by this
     const nLeaf = pcInt + (frac>1e-4 ? 1 : 0);
     const TAU2 = Math.PI*2;
-    // THE LEAF'S OUTLINE (§4.5, P4a-2): null is the ellipse — the stamp's own line, and nothing below is asked of it. A grove OWNS its outline (like its cluster
+    // THE LEAF'S OUTLINE (spec/model/leaf.md, P4a-2): null is the ellipse — the stamp's own line, and nothing below is asked of it. A grove OWNS its outline (like its cluster
     // textures), because a transition's crossfade bakes two groves into one layer texture and they may not share one.
     const shape = leafShape(params.leaf_shape, params.seed, params.leaf_variety);
-    // LEAF VARIETY (§4.5): only an outline varies — the ellipse has no outlines to choose among — and only above 0. Below it every line of this function is the one it always was.
+    // LEAF VARIETY (spec/model/leaf.md): only an outline varies — the ellipse has no outlines to choose among — and only above 0. Below it every line of this function is the one it always was.
     const vary = !!shape && params.leaf_variety > 0;
 
     // ---- grow a GROVE: tree_count trees whose trunks spread across the view region with overlapping
     // crowns. Each tree is a trunk -> limb_count arms (rising by branch_pitch, fanned around the
     // circle) -> branch_children sub-branches per node (cone-fanned, shrunk by branch_length_ratio)
     // recursing branch_levels deep; TERMINAL branches are twigs, each carrying one leaf cluster. Big
-    // gaps fall between limbs, small gaps between leaves — multi-scale, for free (spec §4.5). A grove
+    // gaps fall between limbs, small gaps between leaves — multi-scale, for free (spec/model/canopy.md). A grove
     // (not one centred tree) fills the centre and matches the park: several trees, the smaller ones
     // reading denser (the same cluster packed into a smaller crown). ----
-    // tree_count is CONTINUOUS so a tree-count transition can morph (spec §4.5/§9): floor(count) full trees
+    // tree_count is CONTINUOUS so a tree-count transition can morph (spec/model/canopy.md, transitions.md): floor(count) full trees
     // plus a marginal tree faded in by the fraction. At an integer count it's exactly floor trees, no partial.
     const treeCountF = Math.max(1, params.tree_count);
     const nFull  = Math.floor(treeCountF);
     const tFrac  = treeCountF - nFull;                  // marginal-tree coverage; 0 at integer counts
     const nTree  = nFull + (tFrac>1e-4 ? 1 : 0);        // trees actually built this frame
-    // One tree ahead of its neighbours (§4.5): each tree's lead (its clocks run Δ sooner) and depth (its red and brown × c), drawn from (seed, tree index) on a salt of their own, so a tree keeps its numbers
+    // One tree ahead of its neighbours (spec/model/season.md): each tree's lead (its clocks run Δ sooner) and depth (its red and brown × c), drawn from (seed, tree index) on a salt of their own, so a tree keeps its numbers
     // as the grove grows and the marginal tree has its own. Tables of nTree, or null while the knob is 0 (no draw, nothing handed on). They touch only a leaf's tau and day; the growth stream is never drawn from.
     // Each table is built only where a tier that reads it is in the bundle: the lead by leafTau (pigment, exposure) and by the two drop days (drop), the depth by leafTau alone. The parentheses are load-bearing: the bundler
     // folds a dead `false ? A : B` as TEXT (embed-build.mjs foldDeadTernaries) and would take the last operand of a bare `||` for the whole condition.
@@ -303,14 +303,14 @@ export function makeGrove(hub){
     const limbPlan = new Float32Array(nLimb*2);         // an outboard wind-sample point near each limb
     const treePos = new Float32Array(nTree*2);          // each tree's trunk in plan: where the gust reaches it (komorebi-motion.js, the trunks)
     const treeCrown = new Float32Array(nTree), treePace = new Float32Array(nTree);   // its crown's plan radius (m), the wake it casts (komorebi-air.js, shelter); and its own pace (TREE_PACE_SALT, below)
-    const limbAttach = new Float32Array(nLimb);         // the height at which each limb MEETS its trunk — sway_pitch anchors its depth-foreshorten here so the join can't open (§5.1). Filled LOCAL in the growth loops, then scaled into world height units with the rest of the tree.
+    const limbAttach = new Float32Array(nLimb);         // the height at which each limb MEETS its trunk — sway_pitch anchors its depth-foreshorten here so the join can't open (spec/model/motion.md). Filled LOCAL in the growth loops, then scaled into world height units with the rest of the tree.
 
     // crowns overlap so the canopy fills a span of ground (not just the baked extent), capped to fit inside the bake. The span is the
     // look's reach; a look that names none (0) takes the view's extent as it stands at this build, so its grove fills the frame it loads in.
     // The grove keeps what it was grown for (grove.reach): the engine names it for the look once the view has moved (holdReach).
     const reach = params.grove_reach_m > 0 ? params.grove_reach_m : params.view_extent_m;
     const Rfill = Math.min(E*0.46, Math.max(0.5, reach));
-    // crown radius. PARK model: tied to the view so crowns fill the frame. STANDING scene (§4.8): a natural,
+    // crown radius. PARK model: tied to the view so crowns fill the frame. STANDING scene (spec/model/transport.md): a natural,
     // fixed fraction of the bake extent instead — so a single tree's crown fits the texture (the view-tied size
     // overflows and clips it) and the tree reads as a discrete object, not a frame-filling canopy.
     const crown0 = params.standing_scene ? E*0.26 : (Rfill/Math.sqrt(treeCountF))*1.7;
@@ -320,7 +320,7 @@ export function makeGrove(hub){
 
     const L = clamp(params.leader_strength, 0, 1);   // 0 = legacy single-hub; >0 = monopodial leader (limbs ALONG a trunk)
     const droop = clamp(params.droop, -1, 1);        // signed gravitropic curve: >0 sag down (willow/birch), <0 upsweep (conifer); 0 = straight rays
-    const phyllo = params.phyllotaxis==='opposite' ? 2 : params.phyllotaxis==='whorled' ? 1 : 0;   // child-azimuth rule (§4.5)
+    const phyllo = params.phyllotaxis==='opposite' ? 2 : params.phyllotaxis==='whorled' ? 1 : 0;   // child-azimuth rule (spec/model/canopy.md)
     const years = Math.max(0, Math.round(params.growth_years));   // > 0: each tree grown year by year from buds (komorebi-growth.js) instead of by the grammar
 
     const grammar = { levels, kids, lenRatio, coneA, droop, phyllo, leader:L>0 };   // the tree's grammar, whole (math.growSkeleton): everything a node needs to grow its children, bar the root
@@ -350,7 +350,7 @@ export function makeGrove(hub){
         const grown = growBuds({ years, lambda: 0.5 + 0.1*L, angle: coneA, pitch: limbEl, phyllo, droop, kids, bearing }, mulberry32(hash3(params.seed>>>0, 0xB0D5, tt)), out);
         budLimbs(grown, out, lpt, limbBase, limbDir, limbRaw, limbAttach);
       } else if(L>0){
-        // MONOPODIAL (spec §4.5): limbs attach at staggered heights ALONG a continuing trunk axis (plan-centre),
+        // MONOPODIAL (spec/model/canopy.md): limbs attach at staggered heights ALONG a continuing trunk axis (plan-centre),
         // so the branches actually MEET the trunk. leader_strength sends the origins UP the bole and shortens
         // limbs toward the top (acrotony → excurrent cone); low values keep them low (a few near-base forks →
         // decurrent dome). This replaces the single-origin hub AND the de-dandelion hack with the real mechanism.
@@ -367,7 +367,7 @@ export function makeGrove(hub){
           const ce = Math.cos(pitch), se = Math.sin(pitch);
           const len = (0.4+0.2*gr())*(1 - 0.45*L*f);     // limbs SHORTER than the crown is tall → narrow crown on a tall trunk, not a bush; acrotony shortens toward the apex
           const dir = [ce*Math.cos(azGeo), ce*Math.sin(azGeo), se];
-          // wind torque rides a BALANCED fan (decoupled from the spiral) so a gust still LEANS, never spins (§5.1)
+          // wind torque rides a BALANCED fan (decoupled from the spiral) so a gust still LEANS, never spins (spec/model/motion.md)
           const azBal = (i+0.5)/lpt*TAU2 + (gr()-0.5)*(TAU2/lpt)*0.6;
           limbDir[2*gi]=Math.cos(azBal); limbDir[2*gi+1]=Math.sin(azBal);
           limbRaw[2*i]=Math.cos(azGeo)*len; limbRaw[2*i+1]=Math.sin(azGeo)*len;
@@ -392,20 +392,20 @@ export function makeGrove(hub){
       // lifts its whole crown by trunkH.
       let mr=1e-3, mz=1e-3; for(const w of out.tw){ mr=Math.max(mr, Math.hypot(w.x,w.y)); mz=Math.max(mz, w.z); }
       const s = crown/mr;   // PLAN fill (x,y): the widest twig → crown radius
-      // HEIGHT scale (§4.5): the old code scaled z by this same s, but s = crown/mr EXPLODES for a narrow-plan tree
+      // HEIGHT scale (spec/model/canopy.md): the old code scaled z by this same s, but s = crown/mr EXPLODES for a narrow-plan tree
       // (steep branches → tiny mr → s of 6+), which — now that the faithful cast uses real z — made columnar ~47m,
       // palm ~16m. Floor the plan radius at mz/RATIO for the HEIGHT scale only: a broad tree (mr above the floor) is
       // UNCHANGED (sV == s, height preserved), a narrow tree is clamped to height = crown·RATIO·aspect. x/y keep s.
       // a tree grown from buds keeps the proportions it grew to: its height scales with its plan, uncapped, and crown_aspect is not
       // laid over it (the shape is the growth's, not set after it)
       const sV = years>0 ? s : crown/Math.max(mr, mz/FAITH_MAX_RATIO);
-      // trunk top scales with leader_strength (§4.5): a weak leader (decurrent) ends DOWN in the crown at the highest
+      // trunk top scales with leader_strength (spec/model/canopy.md): a weak leader (decurrent) ends DOWN in the crown at the highest
       // limb attach; a strong leader (excurrent) reaches the foliage apex. Always ≥ limbTop so every limb meets the trunk.
       if(L>0) leaderTop = limbTop + (mz - limbTop)*L;
-      const aspect = years>0 ? 1 : clamp(params.crown_aspect, 0.4, 3);   // crown height factor (§4.5): scales crown height (narrow trees capped via sV above). Drives the faithful cast + 3D preview; the LAYER cast normalises height away (invariant).
+      const aspect = years>0 ? 1 : clamp(params.crown_aspect, 0.4, 3);   // crown height factor (spec/model/canopy.md): scales crown height (narrow trees capped via sV above). Drives the faithful cast + 3D preview; the LAYER cast normalises height away (invariant).
       // scale the legacy-hub lift by aspect too, so an L=0 tree is a TRUE uniform z-scale: otherwise crown_aspect
       // leaks into the layer-mode wood (floorH's bole division assumes a pure scale), breaking the "invisible to the
-      // layer cast" invariant for hub trees. aspect=1 (the default and every shipped look) → byte-identical. (§4.5)
+      // layer cast" invariant for hub trees. aspect=1 (the default and every shipped look) → byte-identical. (spec/model/canopy.md)
       const zLift = (L>0 || years>0) ? 0 : trunkH*aspect;   // a grown tree stands on the ground on its own trunk
       const sc = (p) => [ p[0]*s+tx, p[1]*s+ty, p[2]*sV*aspect+zLift ];
       const twBase = twigs.length;   // this tree's first global twig index — turns grow()'s per-tree tw into the global clump id
@@ -442,19 +442,19 @@ export function makeGrove(hub){
     const layerBand = [zMin, dz, nLayer];   // kept on hier: leaf travel bins a leaf by its own height as this loop does
     const layerOf = (z) => layerOfHeight(z, layerBand);
     for(const t of twigs) t.layer = layerOf(t.z);
-    // LAYER/park height band (spec §2): bole 0→canopy_base, crown canopy_base→+thickness, NORMALISED by [zMin,zMax].
+    // LAYER/park height band (spec/model/canopy.md): bole 0→canopy_base, crown canopy_base→+thickness, NORMALISED by [zMin,zMax].
     // Used ONLY by the analytic woody occluder (non-faithful). This normalisation is invariant to a uniform z-scale —
     // correct for the depth cheat, but it would erase crown_aspect (and the real tree shape) from a faithful cast.
     const _cb = params.canopy_base_height_m, _th = params.canopy_thickness_m, _zb = Math.max(zMin, 1e-3);
     const floorH = (z) => z<=zMin ? _cb*(Math.max(0,z)/_zb) : _cb + (z-zMin)/dz*_th;
-    // FAITHFUL cast (spec §4.5): leaves & skeleton cast from their REAL grown height — the very z the 3D preview draws,
+    // FAITHFUL cast (spec/model/canopy.md): leaves & skeleton cast from their REAL grown height — the very z the 3D preview draws,
     // so the shadow IS the preview tree. Any shape change (crown_aspect, droop, taper…) now flows into the shadow.
     let hMin=1e18, hMax=-1e18;
     for(const t of twigs){ if(t.z<hMin)hMin=t.z; if(t.z>hMax)hMax=t.z; }
     let castMin = hMin<=hMax ? hMin : 0, castMax = hMax>hMin ? hMax : (castMin+1);   // faith.hMin / faith.hMax, set at the upload
     let binH;   // faith.binH
     // Where each depth bin REALLY grew (the mean grown z of its twigs). The faithful cast ignores the park band, but the
-    // sky fill's low-res layers (§4.7) are depth bins on that path too, and a hemisphere read at the park band's heights
+    // sky fill's low-res layers (spec/model/fill.md) are depth bins on that path too, and a hemisphere read at the park band's heights
     // would be the wrong tree's. An empty bin falls back to its even share of the grown range.
     {
       const nb = Math.max(nLayer, MAX_LAYERS), sumZ = new Float64Array(nb), cnt = new Float64Array(nb);
@@ -470,10 +470,10 @@ export function makeGrove(hub){
       treeDelta: new Float32Array(nTree*4),           // dynamic, by tree: its trunk's sway and u less tree 0's (publishBend), what each tree's wood adds to the shared sway
       swayData: new Float32Array(nClusterTotal*4),    // dynamic, by clump: its tree's treeDelta, the cluster texture's row 2
       limbAngle:new Float32Array(nLimb), limbVel:new Float32Array(nLimb),   // scalar YAW bend (radians): rotation about the vertical
-      limbPitch:new Float32Array(nLimb), limbPitchVel:new Float32Array(nLimb),   // second DOF (§5.1): ELEVATION bend in the limb's own vertical plane — what sway_pitch foreshortens by. Same spring constants as the yaw.
+      limbPitch:new Float32Array(nLimb), limbPitchVel:new Float32Array(nLimb),   // second DOF (spec/model/motion.md): ELEVATION bend in the limb's own vertical plane — what sway_pitch foreshortens by. Same spring constants as the yaw.
       nClusterTotal,
       nLeaf,   // the leaves hung on each cluster, the marginal one counted where there is one: the grove's own record, which the editor's held leaf walks instead of rebuilding it from the params
-      leafRow: null, leafVariety: 0,   // leaf_variety (§4.5): each leaf's row in the outline table by (cluster, leaf) — j·nLeaf + k — and the variety the table was made for; the held leaf and the litter read them, never the params, which run ahead of the picture. null and 0 at the gate
+      leafRow: null, leafVariety: 0,   // leaf_variety (spec/model/leaf.md): each leaf's row in the outline table by (cluster, leaf) — j·nLeaf + k — and the variety the table was made for; the held leaf and the litter read them, never the params, which run ahead of the picture. null and 0 at the gate
       clusterPlan:new Float32Array(nClusterTotal*2), clusterLimb:new Int32Array(nClusterTotal),
       clusterPhase:new Float32Array(nClusterTotal),
       twigAngle:new Float32Array(nClusterTotal), twigVel:new Float32Array(nClusterTotal),
@@ -492,7 +492,7 @@ export function makeGrove(hub){
     // carry the in-flight sway across a regrow so the wind doesn't reset (an editor tweak or a grove-morph
     // transition). Trees/limbs are appended at the end, so indices 0..min are the same twig: copy the common
     // PREFIX — existing trees keep their sway, a newly-grown tree starts at rest. ONLY when the topology signature
-    // matches; a leader/phyllotaxis/depth edit re-means the indices, so we start at rest there (no wrong-twig bend). (§9)
+    // matches; a leader/phyllotaxis/depth edit re-means the indices, so we start at rest there (no wrong-twig bend). (spec/model/transitions.md)
     if(prevHier && prevHier.topoSig === hier.topoSig){
       const nL=Math.min(prevHier.nLimb,nLimb), nC=Math.min(prevHier.nClusterTotal,nClusterTotal);
       hier.limbAngle.set(prevHier.limbAngle.subarray(0,nL)); hier.limbVel.set(prevHier.limbVel.subarray(0,nL));
@@ -507,20 +507,20 @@ export function makeGrove(hub){
     const nAll = nClusterTotal*nLeaf;
     const layerRun = [];
     for(let l=0;l<nLayer;l++) layerRun.push({ a: new Float64Array(17*Math.max(1, Math.ceil(nAll/nLayer))), n: 0 });   // 17 floats/leaf — see attribute layout below; a layer that takes more than its share doubles
-    let faithData = new Float64Array(nAll*18);      // FAITHFUL: ALL leaves in one buffer, + the continuous height (§4.5) before the fade: 18 floats/leaf (let: abscission compacts it)
+    let faithData = new Float64Array(nAll*18);      // FAITHFUL: ALL leaves in one buffer, + the continuous height (spec/model/canopy.md) before the fade: 18 floats/leaf (let: abscission compacts it)
     const faithful = faithfulOn();                  // hoisted: the packing convention below must be ONE decision for the whole grove, not re-asked per leaf
-    // Autumn senescence (§4.5): per-leaf pigment state. Every s_j is exactly 0 until phenology passes turn_start, so
+    // Autumn senescence (spec/model/season.md): per-leaf pigment state. Every s_j is exactly 0 until phenology passes turn_start, so
     // below it the authored `tau` goes through untouched — the gate that keeps every shipped look byte-identical.
     const sen = senescing(params), leafT = [0,0,0];
-    // Light decides who turns first (§4.5): exposure is a property of the STAND, not of the leaf — it needs every leaf's place
+    // Light decides who turns first (spec/model/season.md): exposure is a property of the STAND, not of the leaf — it needs every leaf's place
     // and height — so with turn_exposure up each leaf notes where its tau went (rec: x, y, z, area, j, k, fade, layer,
     // slot in its layer buffer, slot in the faithful one) and the loop below rewrites them once the grove is laid out.
     // Off (the default, and every look that never asks) rec is never made and the loop is P0's, bit for bit.
-    // Abscission (§4.5) is a second reason to look back: who has let go is decided over the whole stand too (the light orders it), and a
+    // Abscission (spec/model/season.md) is a second reason to look back: who has let go is decided over the whole stand too (the light orders it), and a
     // leaf that has is compacted out of both buffers. `dropping` is its gate: at leaf_drop 0, or in a season before the first leaf's fade
     // can begin (drop_start - DROP_EPS), rec, the retention arithmetic, the compaction and the litter are never made — P1's buffers to the bit.
     const isLit = lit(params), isDropping = dropping(params), after = afterTurn(params);
-    // Leaf-out (§4.5, the spring half) is a third: a leaf still growing is shrunk and tinted after the hang, and one not yet out is compacted. The hang writes every
+    // Leaf-out (spec/model/season.md, the spring half) is a third: a leaf still growing is shrunk and tinted after the hang, and one not yet out is compacted. The hang writes every
     // leaf full-grown, so the re-season's record is the summer grove's and a step of the spring scales from it.
     const isSpring = FEAT_SPRING && springing(params), spr = [0,0], sprD = [0,0];
     const REC = 10;
@@ -550,12 +550,12 @@ export function makeGrove(hub){
       // .xy is the LEAF PIVOT ANCHOR, and it means different things per path. LAYER/park: the twig tip (= the clump
       // centre), from which VS_BAKE offsets a SYNTHETIC stem joint by uStemLen — no wood is drawn there, so a made-up
       // joint costs nothing. FAITHFUL: the twig's REAL grown base, which is also what the wood twig turns about in
-      // bakeFaithful's refill — one shared joint, so the medium band can't slide leaves off their visible twigs (§4.5).
+      // bakeFaithful's refill — one shared joint, so the medium band can't slide leaves off their visible twigs (spec/model/canopy.md).
       hier.clusterGeom[4*j]=faithful?t.bx:cx; hier.clusterGeom[4*j+1]=faithful?t.by:cy;
       hier.clusterGeom[4*j+2]=t.tx; hier.clusterGeom[4*j+3]=t.ty;    // limb pivot = this tree's trunk
       hier.clusterData[4*j+2]=stemRand;                             // static stem-angle seed (.z); tick writes .x/.y
       for(let k=0;k<nLeaf;k++){
-        const cov = ((k===pcInt) ? frac : 1.0) * t.tcov;   // marginal-leaf fade × marginal-tree fade (§4.5)
+        const cov = ((k===pcInt) ? frac : 1.0) * t.tcov;   // marginal-leaf fade × marginal-tree fade (spec/model/canopy.md)
         // where it hangs (placeLeaf): the twig hug off the tip, and with inner_leaves up a share of the leaves on the wood behind it. Same two draws → other attributes unchanged.
         const b = k*DRAW, g1 = D[b], g2 = D[b+1];
         const size = params.leaf_size_m*(0.6+0.8*D[b+2]);
@@ -582,7 +582,7 @@ export function makeGrove(hub){
         const lt = FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT, undefined, undefined, dT, cT) : tau;
         // the cluster id the VS reads: j, and for an outline its row in the FRACTION (j + v/32) — a pure hash of (seed, j, k) on the leaf's own salt, like the pigment above
         const cid = shape ? j + leafVariant(params.seed, j, k)/LEAF_ID_FRAC : j;
-        // iFade: the very `cov` folded into tau above. The bake writes it into alpha (coverage) so the leaf's BALLISTIC shadow (§4.5) fades out
+        // iFade: the very `cov` folded into tau above. The bake writes it into alpha (coverage) so the leaf's BALLISTIC shadow (spec/model/leaf.md) fades out
         // with its tau — the mixture reads (tau·cov, cov·fade) as the same leaf over fade·cov of the area — instead of keeping its full footprint
         // on a leaf that is not there yet; alpha has no other reader.
         if(run.n + 17 > run.a.length){ const grown = new Float64Array(run.a.length*2); grown.set(run.a); run.a = grown; }
@@ -613,7 +613,7 @@ export function makeGrove(hub){
       const ex = exposureGrid(X, Y, Z, Ar, E);   // K: the leaves nothing shades (e = 1) are ordered by their own clocks, not stacked on one rank
       return { ex, rank: exposureRank(ex, K) };
     };
-    // LEAF VARIETY (§4.5, `leaf_variety`): which row of the outline table each leaf hangs in, and how big it is, from the grove's own light. The rank is the SUMMER set's, keyed by the leaf's clock as the season's is, and never exposureBlend's
+    // LEAF VARIETY (spec/model/leaf.md, `leaf_variety`): which row of the outline table each leaf hangs in, and how big it is, from the grove's own light. The rank is the SUMMER set's, keyed by the leaf's clock as the season's is, and never exposureBlend's
     // (exposure_absolute is a season key; shape is not season) — so it is the season's rank to the bit, and a leaf's colour, day and fall order are the variety-0 grove's. THE ROW is its tree's genotype (treeGenotype: a pure function of (seed, t))
     // and its light class, the rank in columns jittered by the leaf's own leafJitter draw, so no stream is drawn from. THE SIZE shifts with the rank itself, continuous and not stepped by the column: m = 1 + SIZE_LIGHT·v·(1 − 2u), sun leaves
     // smaller, and is renormalised once per grove, weighted by each leaf's cover, so that Σ cov·A·B0 is the look's: the canopy is as full as it was, and the marginal leaf and tree count only as much as they fade in. The area the LIGHT reads
@@ -680,7 +680,7 @@ export function makeGrove(hub){
         }
         if(!(FEAT_EXPOSURE && isLit) && w === 1 && !(isSpring && (spr[0] < 1 || spr[1] < 1))) continue;   // nothing about this leaf changed: it is already in the buffers, full-grown
         const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, params, params.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i]), dT, cT) : FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT, undefined, undefined, dT, cT) : FEAT_SPRING && isSpring ? springTau(tau, params, spr[1], sprD[1], leafT) : tau;
-        const cov = rec[o+6], cf = cov*w;                                    // §5.3: a leaf leaves by fading — cov <- cov.w scales its tau and the fade its ballistic shadow rides on together
+        const cov = rec[o+6], cf = cov*w;                                    // spec/contracts/continuity.md: a leaf leaves by fading — cov <- cov.w scales its tau and the fade its ballistic shadow rides on together
         const d = layerData[rec[o+7]], li = rec[o+8], fi = rec[o+9];
         if(FEAT_SPRING && isSpring && spr[0] < 1){ for(let a=6;a>=5;a--){ const v = d[li-a]*spr[0]; d[li-a] = v; faithData[fi-a] = v; } }   // still growing: its half-axes are its length's share of the grown leaf's
         for(let c=0;c<3;c++){ d[li+c] = lt[c]*cf; faithData[fi+c] = lt[c]*cf; }
@@ -714,7 +714,7 @@ export function makeGrove(hub){
     const faithArr = new Float32Array(faithData);               // 18 floats a leaf, every leaf
     // dynamic: row 0 the bend angles (publishBend), row 1 the air at each clump (publishAir), row 2 its tree's trunk less tree 0's (publishBend) — a NEW texture per grove (the old one is freed at install)
     const clusterRows = new Float32Array(Math.max(1,nClusterTotal)*12); clusterRows.set(hier.clusterData); clusterRows.set(hier.airData, Math.max(1,nClusterTotal)*4); clusterRows.set(hier.swayData, Math.max(1,nClusterTotal)*8);
-    // ---- woody occluder (spec §4.5): trunk + MAIN LIMBS (level<=1) as CONTINUOUS-height analytic segments. Map
+    // ---- woody occluder (spec/model/canopy.md): trunk + MAIN LIMBS (level<=1) as CONTINUOUS-height analytic segments. Map
     // each grown z to a floor height with the SAME crown mapping the leaves bin by (zMin->canopy_base,
     // zMax->base+thickness), and the bole linearly to 0 — so a limb's base lands at the trunk's height and the
     // shadow CONNECTS (no layer-quantization snowflake). Fine sub-branches are dropped; the leaf dapples carry the
@@ -739,7 +739,7 @@ export function makeGrove(hub){
       let hRef = 1e-3; for(let i=0;i<segH.length;i+=4) hRef = Math.max(hRef, segH[i], segH[i+1]);   // tallest floor-height → the drift's height-scale reference (foot planted, crown sways)
       occOut.hRef = hRef;
     }
-    // ---- FAITHFUL skeleton (§4.5): EVERY segment (trunk + branches + TWIGS) as a tapered capsule at continuous
+    // ---- FAITHFUL skeleton (spec/model/canopy.md): EVERY segment (trunk + branches + TWIGS) as a tapered capsule at continuous
     // heights (the same floorH). Unlike the analytic occluder (level<=1, capped at MAX_OCC), this is a vertex buffer
     // with no level/count cap — so the twigs cast too and the leaves sit on VISIBLE wood. Used only in faithful mode. ----
     const woodRest = [];
@@ -760,7 +760,7 @@ export function makeGrove(hub){
                         level:sg.level, mz:0.5*(sg.a[2]+sg.b[2]) });   // REAL grown heights (cast == preview); level + midpoint height pick the SKY view's layer bin below
       }
     }
-    // ---- SKY VIEW's layer-stamped wood (§4.9). The look-up camera reads the layer textures as ANGULAR SILHOUETTES,
+    // ---- SKY VIEW's layer-stamped wood (spec/model/sky-view.md). The look-up camera reads the layer textures as ANGULAR SILHOUETTES,
     // so wood binned into a layer is drawn at that layer's plan and read at the ray's crossing of that layer's height
     // — which is exactly where the leaves in the same bin are drawn and read. Registration therefore holds by
     // CONSTRUCTION for a terminal segment: it takes its own clump's layer, the very bin its leaves went into.
@@ -780,7 +780,7 @@ export function makeGrove(hub){
         for(let l=0;l<nL;l++){ skyStart[l] = skyRest.length; skyCount[l] = byLayer[l].length; for(const s0 of byLayer[l]) skyRest.push(s0); }
       }
     }
-    // FAITHFUL cast-frame plan AABB (spec §4.5 / A5): the REAL plan extent of every leaf (faithData x,y) + every wood
+    // FAITHFUL cast-frame plan AABB (spec/model/canopy.md / A5): the REAL plan extent of every leaf (faithData x,y) + every wood
     // endpoint, so bakeFaithful's cast frame covers a wide grove's OUTER crown. (Was bounded by ±canopy_extent/2, which
     // clipped it — park 1's crown reaches ~4.3 m vs half=3.25 m.) Rest positions; the per-bake pad covers sway+drift.
     let px0=1e18,py0=1e18,px1=-1e18,py1=-1e18;
@@ -790,7 +790,7 @@ export function makeGrove(hub){
       if(s.bx<px0)px0=s.bx; if(s.bx>px1)px1=s.bx; if(s.by<py0)py0=s.by; if(s.by>py1)py1=s.by;
     }
     if(px0>px1){ const h=params.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
-    hier.leafW = leafW;   // abscission (§4.5): each leaf's retained weight by (twig, slot) for the tree preview, which scatters its own leaves; null at the gate
+    hier.leafW = leafW;   // abscission (spec/model/season.md): each leaf's retained weight by (twig, slot) for the tree preview, which scatters its own leaves; null at the gate
     const key = seasonKey(params, faithful);   // the structure it was grown for (see THE KEY)
     const wood = { radius: params.trunk_radius_m, base: _cb, thickness: _th, zMin, dz,
                    taper: Math.pow(Math.max(1.001, kids), -1/clamp(params.taper_delta,1,4)) };
@@ -842,7 +842,7 @@ export function makeGrove(hub){
     const layerVAO = G.layers.map(buildLayerVAO);   // this grove's own
     faith.hMin = G.faith.hMin; faith.hMax = G.faith.hMax; faith.binH = G.faith.binH;
 
-    // ---- FAITHFUL path (§4.5): one combined VAO of EVERY leaf, each carrying its continuous floor-height (attr 5),
+    // ---- FAITHFUL path (spec/model/canopy.md): one combined VAO of EVERY leaf, each carrying its continuous floor-height (attr 5),
     // for the per-sample geometry bake. Built always (cheap); only DRAWN when faithful_canopy is on. ----
     if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
     {
@@ -874,7 +874,7 @@ export function makeGrove(hub){
       faith.vao=vao; faith.buf=buf; faith.count=arr.length/18;
     }
 
-    // (the woody shadow is now the CONTINUOUS-height analytic occluder built below, §4.5 — the old layer-stamped
+    // (the woody shadow is now the CONTINUOUS-height analytic occluder built below, spec/model/canopy.md — the old layer-stamped
     // branch quads were retired because layer quantization shattered continuous lines at a low sun.)
 
     // ---- (re)build the per-clump data textures sampled by the bake VS ----

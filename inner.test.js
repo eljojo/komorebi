@@ -1,9 +1,9 @@
 // ============================================================================
-// Leaves on the older wood, so the crown is full (`inner_leaves`, spec §4.5 "A full crown"). From above a grown crown is a wheel: a ring of leaves at the shell,
+// Leaves on the older wood, so the crown is full (`inner_leaves`, spec/model/canopy.md "A full crown"). From above a grown crown is a wheel: a ring of leaves at the shell,
 // a core a third as dense, bare limbs for spokes, because only a terminal twig bears leaves. Real crowns carry shade leaves on the wood behind (short shoots),
 // thinning inward and never to zero. The claims worth holding loudly are the ones that fail SILENTLY: a gate that leaks into every shipped look, a hash that
 // reaches the growth stream, a leaf that moves without its height and layer, a preview that places leaves somewhere the cast does not, a share that pops
-// instead of gliding (§5.3). (The drop.test.js and tree.test.js pattern: the stub-GL rig, then the laws, then the one place that applies them.)
+// instead of gliding (spec/contracts/continuity.md). (The drop.test.js and tree.test.js pattern: the stub-GL rig, then the laws, then the one place that applies them.)
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
@@ -463,7 +463,7 @@ test("the faithful cast frame reaches the highest leaf too: heavy droop bends a 
 });
 
 // ---- 6b. an inner leaf keeps its tree ---------------------------------------------------------------------------------------------------------
-// The tree is the TWIG's, whatever wood the leaf hangs on: a leaf on a limb another tree's crown overlaps is still its own tree's, with its tree's lead and depth (§4.5). Held the way tree.test.js holds the tip
+// The tree is the TWIG's, whatever wood the leaf hangs on: a leaf on a limb another tree's crown overlaps is still its own tree's, with its tree's lead and depth (spec/model/season.md). Held the way tree.test.js holds the tip
 // leaves: every tau in every buffer, the litter's, and each leaf's retained weight against leafTau (and the drop day) called by hand with the pair the twig's tree draws (treeDraws, not the grove's tables).
 // Four places hand a leaf its tree's pair — the hang loop's own tau, the rewrite's light arm, its sen-only arm (a leaf letting go), and the re-season's copy of the rewrite — and each reads it off the twig the
 // leaf belongs to, so each is held apart: unlit with nothing dropping (the hang loop's tau is the only tau there is), unlit and dropping, lit, lit and dropping, both clocks; on the layer cast and the faithful one.
@@ -599,7 +599,7 @@ test("the ring (reported): park 1 and afternoon 7 at 0, 0.3, 0.6 — leaf share 
   }
 });
 
-// ---- 8. continuity (§5.3) ---------------------------------------------------------------------------------------------------------------
+// ---- 8. continuity (spec/contracts/continuity.md) ---------------------------------------------------------------------------------------------------------------
 test("a slider move glides: from 0.30 to 0.301 no leaf moves, in place or in height, more than a smoothstep's steepest slope allows (30 per unit of the share, over its tip-to-wood distance in each); on park 1 and its species none moves 0.05 m in plan", () => {
   const worsts = [];
   for (const [name, cfg, faithful, absolute] of [["park 1", PARK, true, true], ["oak on park 1", { ...PARK, ...TREE_SPECIES.oak }, true, true], ["spruce on park 1", { ...PARK, ...TREE_SPECIES.spruce }, true, true], ["afternoon 7", AFT, false, false]]) {

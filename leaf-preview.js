@@ -1,5 +1,5 @@
 // ============================================================================
-// The held leaf's inset (spec §4.5 "The held leaf", §9): DOM only. One canvas fixed at the bottom-left (the tree inset holds the bottom-right), showing ONE
+// The held leaf's inset (spec/model/leaf.md "The held leaf", spec/implementation.md): DOM only. One canvas fixed at the bottom-left (the tree inset holds the bottom-right), showing ONE
 // grown leaf of the grove against the sun with its areole maze at full resolution (leaf-maze.js does the physics; this draws it). Built on first show and
 // never otherwise, so nothing exists until `L`; imported by editor.js alone.
 //

@@ -1,4 +1,4 @@
-// The sun's cosine law (spec §3.5/§4.7/§4.9, `sun_cosine`): the beam lands on a surface by the cosine of its incidence, and the
+// The sun's cosine law (spec/model/light.md, receivers.md, `sun_cosine`): the beam lands on a surface by the cosine of its incidence, and the
 // receiver is where that lives — the floor takes sin(el), the flat cloth cos(el)·|sin(az)|, each tent panel sin(el) (times its
 // own beamF), the sky view nothing. Every way this breaks is silent: a table row that drifts from the sun vector, a 0 that is
 // 1.0000000000000002, a factor that also dims the skylight, a fill that goes stale on a live tween, a multiply that sneaks into
@@ -357,7 +357,7 @@ test("the spec's pipe tables render: every row has the header's cell count, so a
 
 test("foldIncidence's comment says it is relative to the flat cloth and that the flat cloth's own sy arrives with uSunColor", () => {
   const src = read("komorebi-transport.js");
-  const head = src.slice(src.indexOf("// FOLD INCIDENCE (spec §4.9)"), src.indexOf("float foldIncidence("));
+  const head = src.slice(src.indexOf("// FOLD INCIDENCE (spec/model/receivers.md)"), src.indexOf("float foldIncidence("));
   expect(head.length).toBeGreaterThan(100);
   expect(/relative to the flat cloth/i.test(head.replace(/\s*\n\s*\/\/\s*/g, " "))).toBe(true);
   expect(head.includes("uSunColor") && head.includes("sun_cosine")).toBe(true);

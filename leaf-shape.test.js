@@ -1,5 +1,5 @@
 // ============================================================================
-// The leaf's outline (spec §4.5, P4a-2): a sugar maple's blade as a radial profile r(θ), area-normalised, from the petiole base. The claims
+// The leaf's outline (spec/model/leaf.md, P4a-2): a sugar maple's blade as a radial profile r(θ), area-normalised, from the petiole base. The claims
 // worth holding loudly are the ones that fail SILENTLY: an outline that grows a mitten instead of a maple (the wrong number of lobes, a sinus
 // that is a notch or a gap), a stream that shares a salt with a draw that reshuffles every shipped grove, a gate that leaks an outline into a look
 // that never asked, a fallen leaf that lies in another shape than the one it hung in. (The litter.test.js pattern: the pure laws first, then
@@ -48,7 +48,7 @@ function measure(r) {
   return { sm, lobes, lobeR, sinus, c, flanked, asym };
 }
 // The blade's SOLIDITY (its area over its convex hull's: a star is low, a mitten high) and its WIDTH OVER LENGTH, (max y − min y)/max x, from the origin — the petiole base — along the axis; and r(θ) symmetrised, the
-// mean of the profile at θ and −θ, which is how the six angles of the table in spec §4.5 are read.
+// mean of the profile at θ and −θ, which is how the six angles of the table in spec/model/leaf.md are read.
 function hullArea(p) {
   const q = [...p].sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
   const lo = [], up = [];

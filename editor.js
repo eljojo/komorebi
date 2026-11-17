@@ -88,7 +88,7 @@ const controlEls={};   // key -> {input, valEl}
 let dragSun=false;     // desktop canvas-drag mode: false = orbit the camera (the default — "make sense of things"), true = drag the sun (the novelty). Toggled by the Scene area's button.
 // shape knobs the TREE_SPECIES bundles set — editing one means you've diverged from the picked species, so the
 // dropdown drops back to "— custom" (the tree_species label clears). Scene knobs (light/camera/wind) aren't here:
-// species is shape-only, so tweaking those keeps the species name (§4.5).
+// species is shape-only, so tweaking those keeps the species name (spec/model/canopy.md).
 const SHAPE_KEYS = new Set(Object.values(TREE_SPECIES).flatMap(b => Object.keys(b)));
 function maybeClearSpecies(key){
   if(SHAPE_KEYS.has(key) && params.tree_species){
@@ -96,7 +96,7 @@ function maybeClearSpecies(key){
     if(controlEls.tree_species) controlEls.tree_species.input.value='';   // select the empty "— custom" option
   }
 }
-// frame shadow (spec §4.8 / #56): one-time camera move that centres the view on where the tree's CROWN shadow lands,
+// frame shadow (spec/model/camera.md / #56): one-time camera move that centres the view on where the tree's CROWN shadow lands,
 // so the trunk foot sits up-sun (toward / off the frame edge) and the cast shadow fills the view — the "shadow-only"
 // composition. Derived from params (the standing-scene bulk throw cot(elev)·anti-sun, × a representative crown height),
 // NOT a per-frame auto-track (the spec records auto-centring on the crown as a dead end — the trunk foot doesn't
@@ -244,7 +244,7 @@ const PANEL_LAYOUT = [
   'glow_bleed',
   'glow_bleed_m',
   ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
-  ['btn','frame shadow', ()=>frameShadow()],   // one-time camera framing onto the cast shadow (the off-frame-tree / shadow-only composition, spec §4.8) — a starting point to nudge, NOT an auto-track
+  ['btn','frame shadow', ()=>frameShadow()],   // one-time camera framing onto the cast shadow (the off-frame-tree / shadow-only composition, spec/model/camera.md) — a starting point to nudge, NOT an auto-track
 
   ['hc','Wind'],
   'wind_pattern',
@@ -408,7 +408,7 @@ function buildPanel(){
   }
 }
 // ===========================================================================
-// INERT ROWS (§4.9). A knob the current look never reads is a slider that lies: you drag it and the frame does
+// INERT ROWS (spec/model/receivers.md). A knob the current look never reads is a slider that lies: you drag it and the frame does
 // not move. Those rows go away instead. Two kinds of gate, and they compose.
 //
 // THE CAMERA GATE asks the transport registry rather than restating it. A camera speaks a fixed list of uniform
@@ -434,11 +434,11 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
   tent_len_m:'tent', tent_end_lean:'tent', tent_end_apex_h_m:'tent', tent_hip_rake:'tent', tent_eye_h_m:'tent',
   tent_fade:'tent', tent_seam:'tent', tent_mesh:'tent',
   sky_scatter:'sky',
-  sun_cosine:'transport',          // the uniform rides every camera's head group (the sky view's too, where the factor is always 1: radiance has no surface), so head cannot tell the sky view apart; 'transport' stands in for "has a cast": the floor, the cloth and the tent speak it and the sky view (head, not transport) does not, so the row is live where the beam lands on a receiver (§3.5)
-  canopy_fill:'fill', fill_scatter:'fill', ground_bounce:'fill', fill_directions:'fill', fill_resolution:'fill',   // the sky view lights no surface, so it speaks no fill group (§4.7)
-  litter:'litter', litter_age:'litter', litter_drift_m:'litter', leaf_wetness:'litter', litter_resolution:'litter',   // only the floor reflects, so only the floor has fallen leaves to reflect off (§4.7): the cloth transmits and the sky view has no surface
+  sun_cosine:'transport',          // the uniform rides every camera's head group (the sky view's too, where the factor is always 1: radiance has no surface), so head cannot tell the sky view apart; 'transport' stands in for "has a cast": the floor, the cloth and the tent speak it and the sky view (head, not transport) does not, so the row is live where the beam lands on a receiver (spec/model/light.md)
+  canopy_fill:'fill', fill_scatter:'fill', ground_bounce:'fill', fill_directions:'fill', fill_resolution:'fill',   // the sky view lights no surface, so it speaks no fill group (spec/model/fill.md)
+  litter:'litter', litter_age:'litter', litter_drift_m:'litter', leaf_wetness:'litter', litter_resolution:'litter',   // only the floor reflects, so only the floor has fallen leaves to reflect off (spec/model/season.md): the cloth transmits and the sky view has no surface
   edge_area:['beam','sky'],        // the same two groups carry its uniform: the cast cameras' beam group and the sky view's own
-  leaf_diffuse:['beam','sky'],     // the beam's k is read at the cast cameras' taps (their beam group) and, as the lantern's disk and glow (§4.9), by the sky view's own group — any one of them
+  leaf_diffuse:['beam','sky'],     // the beam's k is read at the cast cameras' taps (their beam group) and, as the lantern's disk and glow (spec/model/sky-view.md), by the sky view's own group — any one of them
   chromatic_aberration:'ca',       // the sky view runs no cast, so there is no transport shift to split by wavelength
   faithful_canopy:'faith',         // the enclosure and the sky view force the layer tier and bake no faith texture
 };
@@ -446,18 +446,18 @@ const faithLive = (cam) => params.faithful_canopy && !!CAMERAS[cam].faith;   // 
 const apertureOn = () => params.window_w_m*params.window_h_m > 0;
 const turning = () => senescing(params);                                     // the grove's own senescing gate (komorebi-math.js): past turn_start, or past the earliest tree's turn when tree_clock_spread opens it sooner
 const dropping = () => turning() && params.leaf_drop > 0;                    // abscission's own gate (leaf_drop > 0, komorebi-grove.js), behind the season's
-const carpeted = () => dropping() && params.litter > 0;                      // the litter carpet's own gate (§4.7): it lays the leaves leaf fall lets go of, so with none falling there is nothing to bake
+const carpeted = () => dropping() && params.litter > 0;                      // the litter carpet's own gate (spec/model/season.md): it lays the leaves leaf fall lets go of, so with none falling there is nothing to bake
 const glowOn = (cam) => cam !== 'floor' && params.glow_bleed > 0;            // the diffusion tier's own gate (render.js drawFrameInto)
-const fillOpen = () => params.canopy_fill > 0;                               // the sky fill's own gate (§4.7): until it opens nothing bakes
-const splitOn = () => params.leaf_diffuse > 0;                               // a leaf is not a window (§4.5): the P0b albedo is the proxy this replaces, and is off above 0
+const fillOpen = () => params.canopy_fill > 0;                               // the sky fill's own gate (spec/model/fill.md): until it opens nothing bakes
+const splitOn = () => params.leaf_diffuse > 0;                               // a leaf is not a window (spec/model/leaf.md): the P0b albedo is the proxy this replaces, and is off above 0
 const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that does carry it
   tilt_shadow: faithLive,                                 // the faithful cast's own: the layer bake stamps plan footprints
   tree_view: (cam) => params.standing_scene && faithLive(cam),   // a tree standing in the scene, cast faithfully: the overhead park's canopy is endless and above the frame
   bark_r: (cam) => params.tree_view && params.standing_scene && faithLive(cam), bark_g: (cam) => params.tree_view && params.standing_scene && faithLive(cam), bark_b: (cam) => params.tree_view && params.standing_scene && faithLive(cam),
-  edge_area: () => !splitOn(),                            // above leaf diffuse 0 every texel is already a mixture (§4.5): the knob has nothing left to change
+  edge_area: () => !splitOn(),                            // above leaf diffuse 0 every texel is already a mixture (spec/model/leaf.md): the knob has nothing left to change
   receiver: () => !params.sky_view,                       // looking up overrides the receiver outright — there is no surface to pick
   eclipse_amount: () => params.eclipse,
-  far_smear: () => params.view_pitch_deg > 0,             // the far-field footprint is exactly 0 at pitch 0 (§4.7)
+  far_smear: () => params.view_pitch_deg > 0,             // the far-field footprint is exactly 0 at pitch 0 (spec/model/camera.md)
   park_throw: () => !params.standing_scene && !params.receiver,   // a standing scene and the cloth always throw: the knob is the overhead park's
   view_extent_m: (cam) => CAMERAS[cam].groups.includes('floor') || CAMERAS[cam].groups.includes('cloth') || glowOn(cam),   // elsewhere it survives only as the glare radius' divisor
   glow_bleed: (cam) => cam !== 'floor',
@@ -468,20 +468,20 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   window_cx_m: apertureOn, window_cy_m: apertureOn, window_wall: apertureOn,
   drift_speed: () => params.drift_auto && params.drift_amount > 0,
   adaptive_idle_fps: () => params.adaptive_motion,
-  leaf_variety: () => !!LEAF_SHAPES[params.leaf_shape],      // only an outline has rows to vary (§4.5): the ellipse's leaf is one stamp, so the knob would act on nothing
-  anthocyanin: turning, tannin: turning, wall_fraction: turning, turn_exposure: turning,   // senescence (§4.5): until a leaf has begun to turn (phenology past turn_start) its tau is the authored summer one, whatever these say
+  leaf_variety: () => !!LEAF_SHAPES[params.leaf_shape],      // only an outline has rows to vary (spec/model/leaf.md): the ellipse's leaf is one stamp, so the knob would act on nothing
+  anthocyanin: turning, tannin: turning, wall_fraction: turning, turn_exposure: turning,   // senescence (spec/model/season.md): until a leaf has begun to turn (phenology past turn_start) its tau is the authored summer one, whatever these say
   turn_span: turning, turn_spread: turning,
-  leaf_out_span: () => params.leaf_out_end > 0, leaf_out_spread: () => params.leaf_out_end > 0, leaf_green_span: () => params.leaf_out_end > 0,   // the spring (§4.5 Leaf-out): its shape, shown while it is on
+  leaf_out_span: () => params.leaf_out_end > 0, leaf_out_spread: () => params.leaf_out_end > 0, leaf_green_span: () => params.leaf_out_end > 0,   // the spring (spec/model/season.md Leaf-out): its shape, shown while it is on
   young_depth: () => params.leaf_out_end > 0, young_red: () => params.leaf_out_end > 0,
-  tree_clock_spread: turning, tree_pigment_spread: turning,   // §4.5: a tree's lead and depth act on a leaf that can be turning — the same gate the pigments sit behind, which opens by the lead's own reach
-  leaf_drop: turning,                                     // abscission (§4.5): the same season gate the pigments sit behind — before a leaf can be turning, no leaf is about to fall
+  tree_clock_spread: turning, tree_pigment_spread: turning,   // spec/model/season.md: a tree's lead and depth act on a leaf that can be turning — the same gate the pigments sit behind, which opens by the lead's own reach
+  leaf_drop: turning,                                     // abscission (spec/model/season.md): the same season gate the pigments sit behind — before a leaf can be turning, no leaf is about to fall
   drop_exposure: () => dropping() && !(params.drop_after_turn > 0), drop_start: () => dropping() && !(params.drop_after_turn > 0), drop_span: () => dropping() && !(params.drop_after_turn > 0),   // ride on leaf fall: with it at 0 nothing drops, so when and in what order are moot; after its turn the day is the turn's end plus the lag and these are not read
-  drop_after_turn: dropping,                              // a leaf lets go after it has turned (§4.5): with nothing falling there is no day to bind to the turn
+  drop_after_turn: dropping,                              // a leaf lets go after it has turned (spec/model/season.md): with nothing falling there is no day to bind to the turn
   drop_lag: () => dropping() && params.drop_after_turn > 0,
-  litter: dropping,                                       // the carpet (§4.7): the leaves it lays are the ones leaf fall lets go of
+  litter: dropping,                                       // the carpet (spec/model/season.md): the leaves it lays are the ones leaf fall lets go of
   litter_age: carpeted, litter_drift_m: carpeted, leaf_wetness: carpeted, litter_resolution: carpeted,   // sliders on a bake that does not run until the gate is open and a leaf can have fallen
   exposure_absolute: () => (turning() && params.turn_exposure > 0) || (dropping() && !(params.drop_after_turn > 0) && params.drop_exposure > 0),   // it chooses what the exposure order is made of, and two read that order: sun first, and the fall while leaves let go by the light (the engine's ordered(), komorebi-math.js, read through this panel's own turning()/dropping() like the drop rows) — with neither there is no order for it to change
-  sky_scatter: () => !splitOn(),                          // the sky view's twin of fill_scatter (§4.9): above leaf_diffuse 0 the leaf is a lantern and its measured glow replaces this authored one — counting both would count it twice
+  sky_scatter: () => !splitOn(),                          // the sky view's twin of fill_scatter (spec/model/sky-view.md): above leaf_diffuse 0 the leaf is a lantern and its measured glow replaces this authored one — counting both would count it twice
   fill_scatter: (cam) => fillOpen() && !splitOn() && CAMERAS[cam].groups.includes('floor'),   // the floor alone reads the proxy's scattered light; the cloth and the tent take the skylight through the canopy and nothing else. Above leaf_diffuse 0 the measured diffuse light replaces it, so the slider would lie
   ground_bounce: fillOpen,                               // part of S, which only a fill bakes
   fill_directions: fillOpen, fill_resolution: fillOpen,   // sliders on a bake that does not run while canopy_fill is 0
@@ -545,7 +545,7 @@ function syncAllControls(){ for(const k in controlEls) syncControl(k); tryCaptur
 // time (applies take at most ~30% of it) — the ease keeps running on the clock meanwhile (tickTween hands the bus the
 // summed dt, which a one-pole composes exactly, until the bus's step clamp binds), so the catch-up is a bigger step, not a stall. Over 50 ms on the EMA
 // the look falls back to the old behaviour: no live applies, one exact apply on release. The cost is the look's own, and the engine decides what an apply is:
-// the fall half of the axis only moves the season set, so the engine re-runs the season arithmetic over the grove's cached leaves (§4.5 "Re-seasoning");
+// the fall half of the axis only moves the season set, so the engine re-runs the season arithmetic over the grove's cached leaves (spec/model/season.md "Re-seasoning");
 // the spring half moves structure and regrows. Measured with bun at t 0.9 (median of 11), regrow -> re-season: afternoon 7 62 -> ~6 ms (summer's own regrow is
 // 15), the void 154 -> ~14 (47), montebello 12 -> ~1 (3.3). Both big looks stay under the 50 ms line, which used to take them out of the live half. The first apply
 // of a drag on a grove without the cache is a full build (the regrow's cost, plus the record): a one-off the next tick never pays again, so it is NOT measured —
@@ -666,7 +666,7 @@ function trySeat(){
   }
 }
 // A DIAL THAT REGROWS OR RE-SEASONS answers like the others: a move applies at once. An input event fires several times a frame and each apply is a regrow
-// or a re-season (§4.5 "Re-seasoning"), so a frame takes one: a move the frame has already spent its apply on is held, and that frame's clock (tryFrameTick,
+// or a re-season (spec/model/season.md "Re-seasoning"), so a frame takes one: a move the frame has already spent its apply on is held, and that frame's clock (tryFrameTick,
 // from onFrame) lands the latest, so the picture is never more than a frame behind the finger. A step is as wide as the finger moved. It waits while a
 // transition runs (a route owns the grove); the release lands exactly where the thumb is. What a held move writes is made when it lands (`make`), so a
 // move held across a route reads the arrived look's home. Two such dials held at once share the frame's apply: their writes merge, under a regrow if
@@ -1635,7 +1635,7 @@ function showLookName(){
   lookNameEl.classList.add('show');
   clearTimeout(lookNameTimer); lookNameTimer=setTimeout(()=>lookNameEl.classList.remove('show'), 2500);
 }
-// ---- arrow-key scene stepping: prev/next preset with a cloud-bloom transition (spec §9). The dropdown
+// ---- arrow-key scene stepping: prev/next preset with a cloud-bloom transition (spec/model/transitions.md). The dropdown
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
 function stepPreset(dir){
@@ -1708,7 +1708,7 @@ eng.onFrame = ()=> {
   const perfLine = (lowFps||downRes)
     ? `${lowFps?`${eng.fps.toFixed(0)} fps`:''}${lowFps&&downRes?'   ':''}${downRes?`res ${perf.resScale.toFixed(2)}×`:''}\n`
     : '';
-  // blur h·θ — the §3.2 softness scale (canopy height × the sun's angular size); a derived number, kept.
+  // blur h·θ — the spec/model/source.md softness scale (canopy height × the sun's angular size); a derived number, kept.
   const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
   // wind score — one LIVE number that breathes with the gusts (driveEnv folds in base strength × the weather
   // spell × the broadband gust force), plus a slow character word. Subsumes the old str/gust/weather/sway.
@@ -1755,11 +1755,11 @@ midi = mountMidi({
   playing: () => player.playing,
   togglePlay: () => { if(!plays(stateNow(), activeList())) return; if(player.playing) player.stop(); else player.start(presetSel.value); },
 });
-// Welcome gate — the page opens on a faint 'memories' background (the §1 north-
-// star look) under an intro overlay. "feel" un-dims the canvas and cloud-bloom
+// Welcome gate — the page opens on a faint 'memories' background (the north-star
+// look of spec/experience.md) under an intro overlay. "feel" un-dims the canvas and cloud-bloom
 // crossfades to the editor's default look. On desktop the dev panel then slides
 // in (D toggles it thereafter); on TOUCH it stays hidden — the art stands alone
-// until a tap brings it up (spec §9).
+// until a tap brings it up (spec/implementation.md).
 // An arboretum link (#arboretum=…, #arboretum-playlist=…) changes where it lands: on the look the link brought in, or on
 // the first item of the playlist it opened, which then plays (editor-integration-design §5). The link's fetch starts as
 // soon as arboretum mounts, so it is usually done by "feel"; if not, the crossfade waits for it, five seconds at most.
@@ -1789,7 +1789,7 @@ midi = mountMidi({
     let settled=false;
     const landed=()=>{ refreshPresetSelect(target); syncAllControls(); if(playOnce){ playOnce=false; player.start(target); } };   // the first look has no fade in: its dwell starts here
     if(link?.preset){ applyParams(resolveEntry(target) ?? getPreset(DEFAULT_PRESET)); landed(); arrive(); return; }
-    eng.transitionTo(resolveEntry(target) ?? getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec §9)
+    eng.transitionTo(resolveEntry(target) ?? getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec/model/transitions.md)
       onEnd:()=>{ settled=true; endTween(); landed(); setTimeout(arrive,300); } });
     setTimeout(()=>{ if(!settled) landed(); arrive(); }, 5500);  // fallback if onEnd never fires
   }

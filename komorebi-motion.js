@@ -1,5 +1,5 @@
 // ============================================================================
-// Motion (spec §5) — the broadband wind signal driving the trunk/limb/twig
+// Motion (spec/model/motion.md) — the broadband wind signal driving the trunk/limb/twig
 // spring hierarchy: the per-frame weather + gust integration (tick), the
 // spring integrator (tickHierarchy), and the bend-texture upload the bake
 // reads (publishBend). A factory over the engine's shared internals (hub).
@@ -44,7 +44,7 @@ export function makeMotion(hub){
     const springsOf = (k) => { const ws = params.sway_stiffness*paceOf(hier, k), wL = Math.max(0.3, ws*0.5), wT = Math.max(0.3, ws*2.0);
       kL=wL*wL; kT=wT*wT; cL=2*dz*wL; cT=2*dz*wT; };
     let maxv=0;
-    const wx=motion.windX, wy=motion.windY;   // effective downwind direction (after the weather veer, §5.1)
+    const wx=motion.windX, wy=motion.windY;   // effective downwind direction (after the weather veer, spec/model/motion.md)
     const sp = Math.max(0, params.sway_pitch);   // gate on the second DOF: off → it never integrates and its state is held at rest
     for(let i=0;i<hier.nLimb;i++){             // limbs pivot about the trunk; bend = wind TORQUE about it
       const tr = trunkOf(hier.limbTree[i]), u = tr.u, eb = (0.25 + 0.75*tr.env)*wind;
@@ -57,11 +57,11 @@ export function makeMotion(hub){
       for(let s=0;s<steps;s++){ const a = kL*(target - hier.limbAngle[i]) - cL*hier.limbVel[i];
         hier.limbVel[i]+=a*h; hier.limbAngle[i]+=hier.limbVel[i]*h; }
       maxv=Math.max(maxv, Math.abs(hier.limbVel[i]));
-      // ---- the SECOND rotational DOF (sway_pitch, §5.1): elevation, in the limb's own vertical plane ----
+      // ---- the SECOND rotational DOF (sway_pitch, spec/model/motion.md): elevation, in the limb's own vertical plane ----
       // One wind force, resolved two ways about the same joint. The drag PERPENDICULAR to the limb's plan
       // direction has a moment arm about the vertical and yaws it (the cross above); the drag PARALLEL to it
       // has none — it cannot yaw the limb at all, so it loads it end-on and pitches it. Hence dot where the
-      // yaw takes cross, on the same balanced mechanical fan (limbDir, decoupled from the drawn azimuth §4.5)
+      // yaw takes cross, on the same balanced mechanical fan (limbDir, decoupled from the drawn azimuth spec/model/canopy.md)
       // — but rotated by the limb's LIVE yaw bend, which is what makes STREAMLINING emergent: a broadside limb
       // is all cross and no dot, so it swings downwind first; that swing turns its live direction INTO the
       // wind's line, the dot grows, and only then does it pitch flat. No alignment special case anywhere.
@@ -97,7 +97,7 @@ export function makeMotion(hub){
   function publishBend(g){
     const hier = g?.hier;
     if(!hier) return;
-    const sp = Math.max(0, params.sway_pitch);   // 3-D lean (§5): the limb's PITCH DOF → foreshorten factor in .w (faithful only); 0 → factor 1, byte-identical
+    const sp = Math.max(0, params.sway_pitch);   // 3-D lean (spec/model/motion.md): the limb's PITCH DOF → foreshorten factor in .w (faithful only); 0 → factor 1, byte-identical
     const faithful = faithfulOn();
     for(let j=0;j<hier.nClusterTotal;j++){
       const li = hier.clusterLimb[j];
@@ -106,12 +106,12 @@ export function makeMotion(hub){
       hier.clusterData[4*j+1] = hier.twigAngle[j];                     // its own twig bend
       // foreshorten from the PITCH DOF, not the yaw: a limb pitched by θ carries its points to cos θ of their
       // elevation. 1−cos is EVEN, so an upwind limb pitched UP foreshortens too instead of lifting its cast —
-      // the approximation named in §5.1; a signed model needs each limb's rest elevation in the motion state.
+      // the approximation named in spec/model/motion.md; a signed model needs each limb's rest elevation in the motion state.
       const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(hier.limbPitch[li])), 0.1, 1) : 1;
       hier.clusterData[4*j+3] = fore;
       // GOTCHA — .z is packed per MODE and the shader that unpacks it must agree (VS_FAITH vs VS_BAKE; neither
       // side can see the other's convention). LAYER: .z keeps the static stem-angle seed regen wrote, untouched
-      // here. FAITHFUL: .z is the OFFSET half of the anchored foreshorten (§5.1) — hEff = attachH·(1−fore) +
+      // here. FAITHFUL: .z is the OFFSET half of the anchored foreshorten (spec/model/motion.md) — hEff = attachH·(1−fore) +
       // h·fore, i.e. heights shrink toward the limb's ATTACH height, not toward the ground, so the limb↔trunk
       // join stays closed. Safe because faithful_canopy is a MODE_KEYS flag: a flip rebuilds and republishes both.
       if(faithful) hier.clusterData[4*j+2] = hier.limbAttach[li]*(1-fore);   // sp=0 → fore=1 → exactly 0 → hEff = iHeight, byte-identical
@@ -163,7 +163,7 @@ export function makeMotion(hub){
   function tick(dt){
     dt = clamp(dt, 0, 1/15);                                  // guard tab-switch spikes
     const t = motion.time;
-    // ---- weather (minutes, spec §5.1): slow deterministic drift of overall STRENGTH and DIRECTION. At
+    // ---- weather (minutes, spec/model/motion.md): slow deterministic drift of overall STRENGTH and DIRECTION. At
     // weather_variability 0 it is identity (weatherS=1, no veer), so presets are untouched. Driven by low-
     // frequency noise-of-time, not stochastic OU — naturally bounded & mean-reverting, and keeps the whole
     // signal a reproducible function of t (no per-frame RNG). This is "calm day vs gusty day", evolving.

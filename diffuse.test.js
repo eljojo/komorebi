@@ -1,5 +1,5 @@
 // ============================================================================
-// A leaf is not a window (spec §4.5/§4.6/§4.7). A real leaf's transmitted light is almost entirely DIFFUSE: the
+// A leaf is not a window (spec/model/leaf.md, transport.md, fill.md). A real leaf's transmitted light is almost entirely DIFFUSE: the
 // mesophyll scatters it, like frosted glass, so a leaf four metres up throws a dark shadow and its colour spreads
 // over the floor beneath. The engine used to treat each leaf's transmittance as BALLISTIC, painting every leaf's
 // colour as a sharp image inside its own shadow and multiplying complementary filters (green over red goes near
@@ -232,7 +232,7 @@ test("floor-average conservation: with the sun at zenith, beam + the fill's emit
   }
 });
 
-// ---- P0c-edge: a texel is a MIXTURE, not a slab (spec §4.5) --------------------------------------------------------------------
+// ---- P0c-edge: a texel is a MIXTURE, not a slab (spec/model/leaf.md) --------------------------------------------------------------------
 // The bake stores Σ τ_i·cov_i (rgb) and Σ cov_i (alpha). Every reader used to take that pair for a SLAB of depth τ (t = e^−τ), which is exact for
 // leaves that fill the texel and stack, and Jensen-dark at an edge: a texel 30% under a leaf of depth 2.8 read as a thin bright leaf (t 0.43), not
 // 70% gap and 30% dark leaf (T 0.72). The mixture, from the same two numbers, with a = min(c, 1) the leaf area of the texel:
@@ -410,7 +410,7 @@ test("edge: the telescoping identity on the mixture — Π Tb + Σ thr·(T − T
 });
 
 // ---- the marginal leaf -------------------------------------------------------------------------------------------
-test("a leaf fading in (§5.3) fades its BALLISTIC shadow with it: Tb is continuous in the fade f, and 1 at f = 0", () => {
+test("a leaf fading in (spec/contracts/continuity.md) fades its BALLISTIC shadow with it: Tb is continuous in the fade f, and 1 at f = 0", () => {
   // The grove folds the fade into τ on the CPU, so alpha has to carry it too (iFade): the texel's pair is (τ·f·edge, edge·f), which
   // the mixture reads as a leaf of its own depth over edge·f of the area. Without the fade in alpha it would read the same τ as a
   // leaf over `edge` of it, the full footprint at depth τ·f, and its beam's k would keep full weight on a leaf that is not there yet.
@@ -617,7 +617,7 @@ test("registry: the beam's k is a declared, uploaded uniform of the beam group �
   expect(code(FS_FILL).includes("uniform float uFillBeamK;")).toBe(true);
 });
 
-// ---- edge_area: the soft edge is a mixture at d = 0 too (spec §4.5, decision 33) -------------------------------------------------------
+// ---- edge_area: the soft edge is a mixture at d = 0 too (spec/model/leaf.md, decision 33) -------------------------------------------------------
 // The depth-averaged edge at d = 0 is a named approximation kept for byte-identity: every reader takes the bake's pair as a SLAB. edge_area is the knob that
 // lets a look read it as the mixture it is, at k = 0 (where Tb is T bit for bit). Off, every reference and every shader is the code it was.
 const sameBits = (a, b, what) => {

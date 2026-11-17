@@ -1,5 +1,5 @@
 // ============================================================================
-// Scene transitions (spec §9) — the cloud-bloom crossfade between looks: MORPH
+// Scene transitions (spec/model/transitions.md) — the cloud-bloom crossfade between looks: MORPH
 // knobs tween live, STRUCTURAL ones snap under the bloom peak (dissolve), a
 // same-topology grove change morphs, and a mode flip takes the widest bloom.
 // transitionTo classifies the route; tickTransition drives it each frame.
@@ -35,7 +35,7 @@ export function makeTransitions(hub){
     return hub.arrived ? () => { hub.arrived(to); next?.(); } : next;
   };
 
-  // ---- preset transitions (spec §9): morph the continuous look, dissolve the structural rebuild behind
+  // ---- preset transitions (spec/model/transitions.md): morph the continuous look, dissolve the structural rebuild behind
   // a transient cloud-bloom. One entry point — the future MIDI/event layer drives this same method. ----
   function transitionTo(target, opts){
     opts = opts || {};
@@ -174,7 +174,7 @@ export function makeTransitions(hub){
     // cost being paid for — lengthening an ordinary look-to-look step would change the feel of every arrow press
     // for nothing. (Caught by measurement: applying the stretch to every non-mode route took the tier-1 reference
     // route from 4.9 to 2.6, which is not an improvement, it is a different transition.)
-    // THE CROSSFADE GATE (§9), v1 and deliberately narrow — every condition is something the crossfade cannot
+    // THE CROSSFADE GATE (spec/model/transitions.md), v1 and deliberately narrow — every condition is something the crossfade cannot
     // yet do, not something it does badly:
     //  • a TOPOLOGY change, or a grove of the same branching too big to morph, and not a MODE flip — a camera swap has no second
     //    grove to blend, it has a second SCENE;

@@ -1,5 +1,5 @@
 // ============================================================================
-// The pinnate grammar and the beech (spec §4.5, "Pinnate blades", P4a-3 step A). A beech's secondaries leave its midrib ALONG its length, and growSkeleton spawns children
+// The pinnate grammar and the beech (spec/model/leaf.md, "Pinnate blades", P4a-3 step A). A beech's secondaries leave its midrib ALONG its length, and growSkeleton spawns children
 // only at a tip, so the grammar is dedicated, like growLeaf's (komorebi-leaf.js). The radial profile holds the beech because it is star-shaped from a point on its midrib
 // (0.45 of the way along): the same r(θ) texture, the same shaders, only another origin and another blade. The claims worth holding loudly are the ones that fail SILENTLY: a
 // maple that moved by a bit, a stream drawn in another order (every beech there is regrows), a blade that is not star-shaped from its origin (the profile would be a lie about it),
@@ -326,7 +326,7 @@ test("leafShape('beech'): eight rows of 256 float32s, the very profiles above, a
 
 // ---- the maple does not move -----------------------------------------------------------------------------------------------------------
 // leaf-shape.test.js, leaf.test.js and maze.test.js hold the maple's features. This holds its BITS: the profiles, the skeletons and the texture of the maple, as the RECALIBRATION made them (2026-10-09, to
-// José's thirteen leaves: spec §4.5). The first set, taken at 9fc0d90 before the pinnate grammar was added and kept through it, was the star: prof 97ae2efe0a1a41d0, skel b8e55a7e7b023d4d, tex 08d268769edf3009
+// José's thirteen leaves: spec/model/leaf.md). The first set, taken at 9fc0d90 before the pinnate grammar was added and kept through it, was the star: prof 97ae2efe0a1a41d0, skel b8e55a7e7b023d4d, tex 08d268769edf3009
 // quantised, and 1a0cce67…, 48c49276…, f1c56d34… exact on darwin-arm64 — calibrated before his leaves were measured. A DIGEST IS A PIN AGAINST DRIFT, NOT A PROOF: it says nothing was moved by accident, and
 // the bands in leaf-shape.test.js are the calibration. The exact digests are a claim about ONE platform (JavaScriptCore's Math.sin/cos/atan2/sqrt come from the system libm: skeleton.test.js says the
 // same of the grove), so they are keyed like its fixtures; the quantised ones (1e-7: a ulp never reaches them, a changed draw moves them by 1e-2) hold everywhere.

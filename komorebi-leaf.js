@@ -1,9 +1,9 @@
 // ============================================================================
-// The leaf's outline (spec §4.5, "the grown leaf"). A leaf is not an ellipse, and this is the CPU half of the one that is not, as
+// The leaf's outline (spec/model/leaf.md, "the grown leaf"). A leaf is not an ellipse, and this is the CPU half of the one that is not, as
 // komorebi-fill.js is the fill's: the grammar as pure functions, which `bun test` holds without a GPU, and the radial profile r(θ) the
 // grove hands the bake as a texture. The shaders (GLSL_LEAF_Q, komorebi-shaders.js) are the authority on the pixels.
 //
-// THE SHAPE IS A RADIAL PROFILE, NOT AN ATLAS. A stamp may vary its OUTLINE and nothing finer: texelMix (§4.5) is exact only while a
+// THE SHAPE IS A RADIAL PROFILE, NOT AN ATLAS. A stamp may vary its OUTLINE and nothing finer: texelMix (spec/model/leaf.md) is exact only while a
 // leaf's depth is uniform inside a bake texel (7-22 mm), so a vein or a tooth baked into the stamp's depth would be averaged in τ and
 // come out Jensen-dark. The outline is the one thing a coverage mask can carry honestly, so it is r(θ) from the leaf's ORIGIN — the one
 // point the blade is star-shaped from, where the centroid is not: the PETIOLE BASE of a maple, a point 0.45 of the way along a beech's midrib
@@ -30,7 +30,7 @@ const LEAF_ID_FRAC = 32;    // a leaf's outline rides its cluster id's FRACTION 
 const OUTLINE_SALT = 0x4C3AF001;   // grows the outlines
 const VARIANT_SALT = 0x6E1B35D7;   // picks a leaf's outline
 const FLIP_SALT = 0x3D8C5A21;      // turns half the hanging leaves through a half turn
-// LEAF VARIETY (`leaf_variety`, spec §4.5): a species is a distribution, a tree a family, a leaf a member under its light. Rows of the outline texture are g·V + c: G genotypes (a tree draws one, math.js treeGenotype) of V light
+// LEAF VARIETY (`leaf_variety`, spec/model/leaf.md): a species is a distribution, a tree a family, a leaf a member under its light. Rows of the outline texture are g·V + c: G genotypes (a tree draws one, math.js treeGenotype) of V light
 // classes (column 0 the deepest shade, V − 1 full sun) — 64 rows where the species has 8 — and a leaf hangs in the row its tree's genotype and its own rank of light pick. The packing is j + row/128, exact in float32 for any
 // cluster below 2^17 (the GPU's MAX_TEXTURE_SIZE, which the engine does not cap, is 2^14 on most and 2^15 on desktop GL); the eight-row grove keeps LEAF_ID_FRAC above, which is why the shader takes the packing as a uniform.
 const VARIETY_GENOTYPES = 8;       // G

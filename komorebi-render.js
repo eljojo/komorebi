@@ -1,5 +1,5 @@
 // ============================================================================
-// The render half (spec §4.6/§4.7/§9) — one frame onto a target: the transport
+// The render half (spec/model/transport.md, fill.md, spec/implementation.md) — one frame onto a target: the transport
 // draw with its per-group uniform upload (GROUP_UPLOAD, the upload half of the
 // camera registry), the lateral-diffusion glow tier, and the layer-debug blit.
 // A factory over the engine's shared internals (hub).
@@ -19,7 +19,7 @@ export function makeRender(hub){
   let glowW=0, glowH=0, glowFail=false;   // glowFail LATCHES an incomplete FBO: the tier then silently stops being offered (perf.glow stays false) and every frame takes the direct path
   const GLOW_TAPS = 6;                    // 13 taps: centre + this many each side. NOT independently tunable — FS_GLOW_BLUR's weight table is computed for exactly this count; change one and recompute the other
   const GLOW_STEP_MAX = 6.0;              // px between taps — the cap that trades reach for a clean kernel (see FS_GLOW_BLUR)
-  // per-frame scratch for the atmosphere's two colour vectors (§3.5), recomputed fresh each call so a static
+  // per-frame scratch for the atmosphere's two colour vectors (spec/model/light.md), recomputed fresh each call so a static
   // frame allocates nothing (no stale-cache risk: the sun-drag path mutates params without an apply(), which
   // a dirty-flag cache would miss; the recompute itself is sub-microsecond).
   const _atm = { sun:[0,0,0], ambient:[0,0,0] }, _sd = [0,0,0];
@@ -29,13 +29,13 @@ export function makeRender(hub){
   // the diffusion decision is made in exactly one place. Gate OFF (floor, or glow_bleed 0, or the 16F targets
   // came back incomplete): bind the caller's target and draw transport into it — the literal old path, one extra
   // uniform and an untaken shader branch. Gate ON: transport writes LINEAR HDR into the sharp target instead, and
-  // drawDiffusion spreads it and composites into the caller's target (§4.9).
+  // drawDiffusion spreads it and composites into the caller's target (spec/model/receivers.md).
   function drawFrameInto(fbo, w, h){
     // Seasonal travel owns both visible casts, including the native handoff's authored edge law.
-    if(!hub.trans.seasonTravel&&hub.trans.travelField?.weight!==1)hub.refreshFaith();   // the faithful cast has k baked in (§4.5): current for THIS frame's leaf_diffuse, or untouched
-    hub.refreshFill();   // the sky fill (§4.7) is current for THIS frame's sun and sky, or not wanted — before any target is bound, because a re-bake binds its own
-    hub.refreshLitter(); // the litter carpet (§4.7) is current for THIS grove, or nothing has fallen / the gate is shut — same reason: its bake binds its own target
-    // the SKY VIEW joins the diffusion gate (§4.9): the very same linear-HDR spread reads there as the eye's own
+    if(!hub.trans.seasonTravel&&hub.trans.travelField?.weight!==1)hub.refreshFaith();   // the faithful cast has k baked in (spec/model/leaf.md): current for THIS frame's leaf_diffuse, or untouched
+    hub.refreshFill();   // the sky fill (spec/model/fill.md) is current for THIS frame's sun and sky, or not wanted — before any target is bound, because a re-bake binds its own
+    hub.refreshLitter(); // the litter carpet (spec/model/season.md) is current for THIS grove, or nothing has fallen / the gate is shut — same reason: its bake binds its own target
+    // the SKY VIEW joins the diffusion gate (spec/model/sky-view.md): the very same linear-HDR spread reads there as the eye's own
     // VEILING GLARE — the wash around a bright source seen through gaps, which is scatter in the eye rather than in
     // a weave, but the same operator on the same quantity. A perception-tier reading of a transport pass, the same
     // honesty class as the mesopic shift below.
@@ -54,7 +54,7 @@ export function makeRender(hub){
 
   function drawTransportPresent(){ drawFrameInto(hub.presentFBO, hub.presentW, hub.presentH); }             // adaptive frame-rate: to the offscreen frame
 
-  // LATERAL DIFFUSION targets (§4.9). Returns false — silently, one frame at a time — if the driver won't give us a
+  // LATERAL DIFFUSION targets (spec/model/receivers.md). Returns false — silently, one frame at a time — if the driver won't give us a
   // complete RGBA16F target, and the caller then takes the direct path. That should not happen (create() already
   // fails without EXT_color_buffer_float, and every blend target in the engine is 16F), but the fallback costs three
   // lines and the alternative is a black screen on the one device that disagrees.
@@ -123,7 +123,7 @@ export function makeRender(hub){
   }
 
   // the transport draw, assuming a framebuffer + viewport are already bound. drawFrameInto above owns
-  // both callers. linearOut: skip the tone-map tail and write linear HDR for the diffusion tier to spread (§4.9).
+  // both callers. linearOut: skip the tone-map tail and write linear HDR for the diffusion tier to spread (spec/model/receivers.md).
   // ---- THE UPLOAD HALF OF THE REGISTRY. One function per uniform GROUP, under the same key TRANSPORT_GROUPS
   // declares it by, so the GLSL that declares a uniform and the JS that fills it are named together and a camera
   // that does not speak a group cannot half-speak it. `u` is the variant's location table; `f` is the handful of
@@ -148,10 +148,10 @@ export function makeRender(hub){
     head: (u, f) => {
       const atlas=hub.trans.riseField?.atlas,E=atlas?.extent??f.E;
       gl.uniform1f(u.aspect, canvas.width/canvas.height);
-      gl.uniform2f(u.viewCenter, params.view_center_x, params.view_center_y);   // camera pan (world m) — frames the off-frame tree; no auto-centre (§4.8)
+      gl.uniform2f(u.viewCenter, params.view_center_x, params.view_center_y);   // camera pan (world m) — frames the off-frame tree; no auto-centre (spec/model/camera.md)
       gl.uniform2f(u.origin, -E/2, -E/2);
       gl.uniform2f(u.extent, E, E);
-      // physical sun + sky colour from solar elevation (spec §3.5): warm/red low sun, ozone-blue shadows. On the floor, the cloth and the tent uSunColor feeds the beam and nothing else, so the
+      // physical sun + sky colour from solar elevation (spec/model/light.md): warm/red low sun, ozone-blue shadows. On the floor, the cloth and the tent uSunColor feeds the beam and nothing else, so the
       // cosine law (sun_cosine) is a scale of THIS upload and never a multiply in a shader (acc*uSunColor*f could contract into another FMA than today's line and break byte-identity even at f = 1).
       // f.sunIrr is exactly 1 at sun_cosine 0, where x*1 is exact; the sky view's is always 1, because its uSunColor is the disk's radiance.
       gl.uniform3f(u.sun, f.atm.sun[0]*f.sunIrr, f.atm.sun[1]*f.sunIrr, f.atm.sun[2]*f.sunIrr);
@@ -172,7 +172,7 @@ export function makeRender(hub){
       gl.uniform1f(u.yaw, params.view_yaw_deg*DEG);                     // camera orbit (rad); 0 = unchanged
       gl.uniform1f(u.fov, clamp(params.view_fov_deg,5,140)*DEG);        // vertical full FOV (rad)
     },
-    // woody occluder (§4.5): trunk + main limbs, continuous heights → connected shadow. Gated by branch_tau (the wood
+    // woody occluder (spec/model/canopy.md): trunk + main limbs, continuous heights → connected shadow. Gated by branch_tau (the wood
     // knob): 0 = no wood, byte-identical. The bulk sun-offset (standing scene) rides in `g`, so it casts to the side too.
     // In FAITHFUL mode the whole skeleton (incl. twigs) is baked into the leaf shadow instead, so the analytic occluder is off.
     // The table's texture is bound for every camera (all four read it); its rows are only rewritten when there is
@@ -214,7 +214,7 @@ export function makeRender(hub){
       gl.uniform3fv(u.samples, src.flat.subarray(0, src.count*3));
       gl.uniform1i(u.count, src.count);
       gl.uniformMatrix2fv(u.proj, false, hub.projMatrix());
-      // standing-scene bulk shadow offset (§4.8): cast the shadow to the SIDE by cot(elev) per unit height (the
+      // standing-scene bulk shadow offset (spec/model/transport.md): cast the shadow to the SIDE by cot(elev) per unit height (the
       // park model omits this — fine for an infinite canopy, wrong for a standing tree). Applied to EVERY occluder
       // (trunk, branches, leaves) via g, so the whole tree shadow stays one connected thing and sweeps together as
       // the sun moves — real physics, no camera tricks. Framing the tree off-frame is the camera's job (a fixed
@@ -227,28 +227,28 @@ export function makeRender(hub){
       const el = Math.max(params.sun_elevation_deg,6)*DEG;            // penumbra/height: source angular core projected to ground (~/sin elev), widened by cloud
       gl.uniform1f(u.occPenumbra, (params.core_angular_radius_deg*DEG)/Math.sin(el)*(1.0+3.0*params.cloud_thickness));
     },
-    // THE BEAM's neutral depth (§4.5): k = −ln(1−leaf_diffuse), the share of a leaf's transmitted light that is diffuse and so is no
-    // longer in the beam; edge_area (§4.5) rides beside it as a 0/1, the same texel read as a mixture at k = 0. Every cast camera reads it at the tap (the layer path), and the receivers that read S gate on it too.
+    // THE BEAM's neutral depth (spec/model/leaf.md): k = −ln(1−leaf_diffuse), the share of a leaf's transmitted light that is diffuse and so is no
+    // longer in the beam; edge_area (spec/model/leaf.md) rides beside it as a 0/1, the same texel read as a mixture at k = 0. Every cast camera reads it at the tap (the layer path), and the receivers that read S gate on it too.
     // On the faithful path the tap is not where k lives — the cast has it baked in (bake.js) — but the receivers' gate is.
     // Its own group (the taps that read it are functions only): a bundle that cut the leaf's diffuse share drops the uniform and keeps the taps.
     beam: (u) => { gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0); gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0); },
     ca: (u) => {
-      // edge diffraction (§3.6): per-channel λ-proportional spread of the transport shift. Green (555nm) is the
+      // edge diffraction (spec/model/light.md): per-channel λ-proportional spread of the transport shift. Green (555nm) is the
       // reference; red(620) spreads more, blue(470) less. 0 -> (1,1,1), the byte-identical single-tap path.
       const d = Math.max(0, params.chromatic_aberration), LR = 620/555, LB = 470/555;
       gl.uniform3f(u.chroma, 1+d*(LR-1), 1, Math.max(0, 1+d*(LB-1)));   // floor blue ≥0: diffraction shrinks the spread to zero, never reverses it
     },
     faith: (u) => {
-      // FAITHFUL path (§4.5): tap the pre-integrated soft shadow ONCE instead of the sample loop. The faith texture
+      // FAITHFUL path (spec/model/canopy.md): tap the pre-integrated soft shadow ONCE instead of the sample loop. The faith texture
       // lives in the cast frame (computed in bakeFaithful, this frame). Off → uFaithful 0 → the layer path, byte-identical.
-      // faithfulOn(), not the flag: the enclosure forces the layer tier and never bakes one (§4.9).
+      // faithfulOn(), not the flag: the enclosure forces the layer tier and never bakes one (spec/model/receivers.md).
       gl.uniform1i(u.faithful, faithfulOn() ? 1 : 0);
       if(!faithfulOn()) return;
       gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.faithTex); gl.uniform1i(u.faithTex, 4);   // unit 4 free in transport (layers use 0-3)
       gl.uniform2f(u.faithOrigin, faith.ox, faith.oy);
       gl.uniform2f(u.faithExtent, faith.ext, faith.ext);
     },
-    // UNIT sun direction — the fold flanks' incidence basis (§4.9), the enclosure's per-panel beam, and the seen
+    // UNIT sun direction — the fold flanks' incidence basis (spec/model/receivers.md), the enclosure's per-panel beam, and the seen
     // source. GOTCHA, and the reason this uniform exists at all: the shader already has two sun vectors, and BOTH
     // are wrong for incidence. uProj and uBulkShift are throw rates per unit height — they carry 1/sin(elevation)
     // and diverge as the sun nears the horizon, so they are floored at 4°/6° to stay finite. Incidence on a VERTICAL
@@ -266,14 +266,14 @@ export function makeRender(hub){
       gl.uniform1i(u.progressOut,travel?.progressOut?1:0);gl.uniform1f(u.progressGlobal,travel?.progressGlobal??0);
       gl.uniform1f(u.shadowOpacity, f.shadowOpacity);
       gl.uniform1f(u.viewExtent, params.view_extent_m);
-      gl.uniform1f(u.farSmear, Math.max(0, params.far_smear));          // far-field dapple smear (§4.7); 0 at pitch 0 regardless
-      gl.uniform3f(u.ground, params.ground_r, params.ground_g, params.ground_b);   // dirt-floor albedo (spec §4.7)
+      gl.uniform1f(u.farSmear, Math.max(0, params.far_smear));          // far-field dapple smear (spec/model/camera.md); 0 at pitch 0 regardless
+      gl.uniform3f(u.ground, params.ground_r, params.ground_g, params.ground_b);   // dirt-floor albedo (spec/model/receivers.md)
     },
     cloth: (u) => {
       gl.uniform1f(u.viewExtent, params.view_extent_m);
       gl.uniform1f(u.clothY, params.cloth_distance_m);
     },
-    // THE FABRIC (§4.9), the material both cloth receivers answer with: Tt carries brightness, the dye only hue.
+    // THE FABRIC (spec/model/receivers.md), the material both cloth receivers answer with: Tt carries brightness, the dye only hue.
     fabric: (u) => {
       gl.uniform1f(u.tt, params.fabric_tt);
       gl.uniform3f(u.fabricTint, params.fabric_tint_r, params.fabric_tint_g, params.fabric_tint_b);
@@ -281,29 +281,29 @@ export function makeRender(hub){
       gl.uniform1f(u.nap, params.fabric_nap);
       gl.uniform1f(u.foldScale, params.fold_scale);
       gl.uniform1f(u.foldCoarsen, params.fold_coarsen);
-      // fold WARP (§4.9): the pleats' out-of-plane displacement in metres — GEOMETRY, feeding transport's read, where
+      // fold WARP (spec/model/receivers.md): the pleats' out-of-plane displacement in metres — GEOMETRY, feeding transport's read, where
       // fold_depth above is authored shading on a flat plane. 0 leaves every cast read at its flat coordinate.
       gl.uniform1f(u.foldWarp, params.fold_warp);
       gl.uniform1f(u.sheen, params.velvet_sheen);
-      // forward-scatter wrap (§4.9): the ballistic/scattered SPLIT of the transmit, not an extra term — energy-bounded
+      // forward-scatter wrap (spec/model/receivers.md): the ballistic/scattered SPLIT of the transmit, not an extra term — energy-bounded
       // by construction, and 0 leaves the pleat shading exactly as it was.
       gl.uniform1f(u.scatter, params.fabric_scatter);
     },
     window: (u) => {
       gl.uniform1f(u.windowOpacity, hub.trans.active && hub.trans.windowFade ? hub.trans.windowOpacity : 1);
-      // window mullion grid (§4.9): the near-cloth authored occluder, analytic in cloth space. tau 0 = off (the shader
+      // window mullion grid (spec/model/receivers.md): the near-cloth authored occluder, analytic in cloth space. tau 0 = off (the shader
       // skips it), and only the curtain declares it, so no other camera pays. The penumbra is the woody occluder's
       // idiom MINUS its 1/sin(elevation) ground-obliquity term — the cloth is seen head-on — so it is just depth ×
-      // the source's angular width, cloud widening the source exactly as it does for the wood (§3.4).
+      // the source's angular width, cloud widening the source exactly as it does for the wood (spec/model/source.md).
       gl.uniform4f(u.mullion, params.mullion_pitch_m, params.mullion_bar_m, params.mullion_depth_m, Math.max(0, params.mullion_tau));
       gl.uniform1f(u.mullPenumbra, params.mullion_depth_m * (params.core_angular_radius_deg*DEG) * (1.0+3.0*params.cloud_thickness));
-      // the window APERTURE (§4.9): half-extents, so the shader's rect test is one abs()-minus-half. w·h = 0 is the gate
+      // the window APERTURE (spec/model/receivers.md): half-extents, so the shader's rect test is one abs()-minus-half. w·h = 0 is the gate
       // (an infinite lit field — every look before this one, byte-identical); the aperture shares the bars' plane and
       // penumbra above because it IS the window's outermost frame member.
       gl.uniform4f(u.window, 0.5*Math.max(0, params.window_w_m), 0.5*Math.max(0, params.window_h_m), params.window_cx_m, params.window_cy_m);
       gl.uniform1f(u.windowWall, clamp(params.window_wall, 0, 1));
     },
-    // THE ENCLOSURE's polytope (§4.9). TWO INVARIANTS THE SHADER RELIES ON, both enforced here and nowhere else.
+    // THE ENCLOSURE's polytope (spec/model/receivers.md). TWO INVARIANTS THE SHADER RELIES ON, both enforced here and nowhere else.
     // (1) THE EYE SITS STRICTLY INSIDE every half-space, which is what makes every exit distance positive and lets
     // the intersection be a bare min() with no sign handling. Five constraints bind it — the crown overhead
     // (z < ridge), each end wall, which the eye approaches as lean·eye grows toward the clearance the wall leaves at
@@ -358,7 +358,7 @@ export function makeRender(hub){
       gl.uniform1f(u.tentSeam, Math.max(0, params.tent_seam));
       gl.uniform1f(u.tentMesh, clamp(params.tent_mesh, 0, 1));
     },
-    // THE SKY FILL (§4.7): the receiver half — the two textures the bake leaves, and the share of the shade that is
+    // THE SKY FILL (spec/model/fill.md): the receiver half — the two textures the bake leaves, and the share of the shade that is
     // lit through the canopy. Units 6 and 7 (0-3 the layers, 4 the faith texture, 5 the wood table). `ready` is the
     // bake's own say-so that the textures hold what the current sun and layers imply; without it the gate reads shut
     // for the frame, which is the old expression, never an empty or stale texture. Shut = nothing is bound at all.
@@ -374,7 +374,7 @@ export function makeRender(hub){
       gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[0]);
       gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, hub.fill.tex[1]);
     },
-    // THE LITTER CARPET (§4.7): the floor's reflectance where a leaf has fallen. Unit 8 (0-3 the layers, 4 the faith texture, 5 the wood table, 6-7 the fill; the
+    // THE LITTER CARPET (spec/model/season.md): the floor's reflectance where a leaf has fallen. Unit 8 (0-3 the layers, 4 the faith texture, 5 the wood table, 6-7 the fill; the
     // sky view's wood textures also sit on 8+, but that camera speaks neither this group nor the floor). `ready` is the bake's own say-so, as the fill's is: a shut
     // gate, or a grove with nothing fallen, reads 0 and the floor takes its old material; the 1×1 beside it is bound and never sampled.
     litter: (u) => {
@@ -387,11 +387,11 @@ export function makeRender(hub){
       gl.uniform2f(u.litterExtent, L.ext, L.ext);
     },
     // THE SKY VIEW's own: regenSource's numbers (the seen source), so the sun you look at and the dapples it throws are drawn
-    // from one distribution, and the lantern (§4.9): the beam's k, and the per-layer wood textures on units 8-11 (0-3 the layers, 5 the
+    // from one distribution, and the lantern (spec/model/sky-view.md): the beam's k, and the per-layer wood textures on units 8-11 (0-3 the layers, 5 the
     // wood table; the fill and faith units are not spoken here). No other camera declares them — there is no seen source anywhere else.
     sky: (u) => {
       gl.uniform1f(u.skyScatter, clamp(params.sky_scatter, 0, 1));
-      gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);          // at k = 0 the sky ray reads each texel as its mixture (§4.5)
+      gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);          // at k = 0 the sky ray reads each texel as its mixture (spec/model/leaf.md)
       gl.uniform1f(u.beamK, hub.trans.riseField?.shadow ? 0 : FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
       const base=hub.trans.riseField?10:8;   // the rising litter still speaks the floor's carpet on unit 8
       for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+base+i); gl.bindTexture(gl.TEXTURE_2D, hub.woodTex[i]); gl.uniform1i(u.woods[i], base+i); }
@@ -406,7 +406,7 @@ export function makeRender(hub){
       gl.uniform3f(u.haze, a[0]/m*hb, a[1]/m*hb, a[2]/m*hb);
       gl.uniform1f(u.irisOpacity, hub.trans.active && hub.trans.iris ? hub.trans.irisOpacity : 1);
       gl.uniform1f(u.vignette, clamp(params.vignette, 0, 1)); gl.uniform1f(u.vignetteShape, clamp(params.vignette_shape, 2, 8));   // the shader divides by the shape, and past 1 the edge dims the centre: held to the documented ranges
-      // Purkinje (§3.5): rods take over the dim shade as the sun lowers. The global weight rides the same
+      // Purkinje (spec/model/light.md): rods take over the dim shade as the sun lowers. The global weight rides the same
       // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
       gl.uniform1f(u.twilight, smoothstep(30, 4, params.sun_elevation_deg));
       gl.uniform1f(u.mesopic, params.mesopic_strength);
@@ -414,7 +414,7 @@ export function makeRender(hub){
       gl.uniform1f(u.contrast, params.contrast);
       gl.uniform1i(u.tone, params.tone_map);
       gl.uniform3fv(u.travelTone,hub.trans.travelTone??[0,0,0]);
-      gl.uniform1i(u.linearOut, f.linearOut);   // 0 = end the Look here (every look); 1 = hand linear HDR to the diffusion passes (§4.9)
+      gl.uniform1i(u.linearOut, f.linearOut);   // 0 = end the Look here (every look); 1 = hand linear HDR to the diffusion passes (spec/model/receivers.md)
     },
   };
   // The seam, closed from this side: GROUP_UPLOAD_KEYS is what the coherence test reads, this is what the engine
@@ -424,7 +424,7 @@ export function makeRender(hub){
 
   function drawTransportInto(linearOut){
     gl.disable(gl.BLEND);
-    // THE CAMERA IS THE PROGRAM (§4.6/§4.9), and the registry is what says so once. Which variant runs is a MODE
+    // THE CAMERA IS THE PROGRAM (spec/implementation.md), and the registry is what says so once. Which variant runs is a MODE
     // decision resolved here per draw; what it uploads is its entry's group list, walked in order. There is no
     // predicate chain left to keep in agreement with the shader's — the entry IS the agreement.
     const cam = transportCamera(), variant = transportFor(cam), tp = variant.U;
@@ -434,7 +434,7 @@ export function makeRender(hub){
       shadowOpacity: hub.trans.active ? (hub.trans.shadowOpacity ?? 1) : 1,   // the lit-ground fade's, or what an interrupted one carries into the next route
       atm: atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight),
       sunIrr: lerp(1, sunIncidence(cam, params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1))*beamLoss(cam, params),   // × the air's loss (sun_extinction), exactly 1 at 0
-        // the beam's cosine of incidence on THIS receiver (sun_cosine, §3.5); the sky view's is 1. Held to 0..1 like canopy_fill and vignette: past 1 the blend turns the sun colour negative
+        // the beam's cosine of incidence on THIS receiver (sun_cosine, spec/model/light.md); the sky view's is 1. Held to 0..1 like canopy_fill and vignette: past 1 the blend turns the sun colour negative
       wood: !faithfulOn() && params.branch_tau > 0 && occ.count > 0,   // read by the table upload and the penumbra alike, so they cannot disagree
       linearOut: linearOut ? 1 : 0,
     };

@@ -360,7 +360,7 @@ try {
     return s ? getComputedStyle(s.parentElement).display !== 'none' : null;
   }, txt);
 
-  // INERT ROWS: the advanced panel hides the knobs the current camera never reads (§4.9), and an emptied
+  // INERT ROWS: the advanced panel hides the knobs the current camera never reads (spec/model/receivers.md), and an emptied
   // section takes its heading with it. Computed style, not the property — the point is that the CSS lands.
   const rowShown = (lbl) => page.evaluate((l) => {
     const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === l);
@@ -380,7 +380,7 @@ try {
   let floor = false;
   for (let i = 0; i < 30 && !floor; i++) { await page.waitForTimeout(400); floor = (await rowShown('ground R')) && !(await rowShown('fabric Tt')); }
   check('back on the floor the ground returns and the cloth goes', floor);
-  // SENESCENCE ROWS (§4.5): the season row is always there; the pigment rows hang off it. At summer (phenology under
+  // SENESCENCE ROWS (spec/model/season.md): the season row is always there; the pigment rows hang off it. At summer (phenology under
   // turn_start) no leaf has begun to turn, so capacity, vein share and the turn clock are sliders that lie — hidden
   // until the season passes the threshold, and gone again when it returns.
   const setSeason = (v) => page.evaluate((val) => {
@@ -398,7 +398,7 @@ try {
   let summer = false;
   for (let i = 0; i < 30 && !summer; i++) { await page.waitForTimeout(400); summer = (await pigmentShown()).every((v) => v === false); }
   check('and go again when the season comes back', summer, `${await pigmentShown()}`);
-  // ABSOLUTE LIGHT (§4.5) chooses what the exposure order is made of, so it needs the season past the turn AND an order to choose for:
+  // ABSOLUTE LIGHT (spec/model/season.md) chooses what the exposure order is made of, so it needs the season past the turn AND an order to choose for:
   // sun first up, or (below) leaves falling by the light. Turning alone (the look under test ships sun first at 0 and leaf fall at 0) leaves none.
   const setSunFirst = (val) => page.evaluate((v) => {
     const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === 'sun first');
@@ -417,14 +417,14 @@ try {
   for (let i = 0; i < 30 && !absGone; i++) { await page.waitForTimeout(400); absGone = (await rowShown('absolute light')) === false; }
   check('back at summer it goes again, whatever sun first says', absGone && (await rowShown('sun first')) === false, `${await rowShown('absolute light')} ${await rowShown('sun first')}`);
   await setSunFirst(0);
-  // LEAF FALL (§4.5, abscission) is the gate of its own family and sits behind the same season as the pigments: before a leaf can be turning
+  // LEAF FALL (spec/model/season.md, abscission) is the gate of its own family and sits behind the same season as the pigments: before a leaf can be turning
   // none is about to fall, so the row hides at summer. Its followers (what order, when, how long) are sliders that lie while leaf fall is 0 —
   // nothing drops — so they hide until it is up, and go again with it.
   const setSlider = (label, v) => page.evaluate(([lab, val]) => {
     const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === lab);
     const i = r.querySelector('input'); i.value = String(val); i.dispatchEvent(new Event('input', { bubbles: true }));
   }, [label, v]);
-  // THE REACH (§4.5, early trees): the earliest tree begins up to its reach sooner, so the season rows open by it — with early trees at 0.15 the pigment rows are there at phenology 0.5 (0.5 > 0.6 − 0.15), and
+  // THE REACH (spec/model/season.md, early trees): the earliest tree begins up to its reach sooner, so the season rows open by it — with early trees at 0.15 the pigment rows are there at phenology 0.5 (0.5 > 0.6 − 0.15), and
   // shut again with it. (The row itself waits for the season like the pigments, so it is raised from a turning one first.)
   await setSeason(0.8);
   let reachRows = false;
@@ -477,7 +477,7 @@ try {
   let fallGone = false;
   for (let i = 0; i < 30 && !fallGone; i++) { await page.waitForTimeout(400); fallGone = (await rowShown('leaf fall')) === false; }
   check('back at summer leaf fall goes too', fallGone, `${await rowShown('leaf fall')}`);
-  // THE LITTER ROWS (§4.7). `litter` is the carpet's own gate beside leaf fall: the leaves it lays are the ones leaf fall lets go of, so it hides at summer and
+  // THE LITTER ROWS (spec/model/season.md). `litter` is the carpet's own gate beside leaf fall: the leaves it lays are the ones leaf fall lets go of, so it hides at summer and
   // while leaf fall is 0; its followers (how it browns, how far the season's wind carries it, how big its texture is) are sliders on a bake that does not run
   // while it is off, so they hide until it is on. Only the floor has leaves to lie on: on the curtain there is none of the four.
   const LITTER_FOLLOWERS = ['browns over', 'carried', 'wet', 'litter res'];
@@ -501,7 +501,7 @@ try {
   check('and with leaf fall back at 0 litter goes too', await poll(async () => (await rowShown('litter')) === false), `${await rowShown('litter')}`);
   await setSeason(0.5);
   await poll(async () => (await rowShown('leaf fall')) === false);
-  // THE LEAF'S OUTLINE (§4.5, P4a-2). The species picker merges a bundle over the live look, and every bundle names its outline — the maple's is 'maple', every other 'ellipse' — so the
+  // THE LEAF'S OUTLINE (spec/model/leaf.md, P4a-2). The species picker merges a bundle over the live look, and every bundle names its outline — the maple's is 'maple', every other 'ellipse' — so the
   // 'leaf shape' select follows the pick both ways: a maple -> oak pick has to take the lobes off, or the oak is lobed.
   const selVal = (label) => page.evaluate((lab) => { const r = [...document.querySelectorAll('#dev .ctl.select')].find((q) => q.querySelector('label')?.textContent === lab); return r.querySelector('select').value; }, label);
   check("the leaf shape row is there and reads the look's own outline: ellipse", (await rowShown('leaf shape')) === true && (await selVal('leaf shape')) === 'ellipse', `${await rowShown('leaf shape')} ${await selVal('leaf shape')}`);
@@ -514,7 +514,7 @@ try {
   await poll(async () => (await selVal('leaf shape')) === 'maple');
   await setSelect('leaf shape', 'ellipse');
   check("changing the outline by hand is a divergence from the picked species: the picker drops back to custom", await poll(async () => (await selVal('species')) === ''), `species reads '${await selVal('species')}'`);
-  // THE SKY FILL ROWS (§4.7): canopy_fill is the gate and sits on every camera that lights a surface; its three followers
+  // THE SKY FILL ROWS (spec/model/fill.md): canopy_fill is the gate and sits on every camera that lights a surface; its three followers
   // (the leaf albedo, the ray count, the texture size) are sliders that lie while it is shut — nothing bakes — so they hide
   // until it opens. The albedo is the floor's alone (the cloth and the tent take Tsky only), and the sky view, which has
   // no surface to light, has none of the four.
@@ -534,7 +534,7 @@ try {
   let fillOpen = false;
   for (let i = 0; i < 30 && !fillOpen; i++) { await page.waitForTimeout(400); fillOpen = (await fillShown()).every((v) => v === true); }
   check('opening canopy_fill brings its followers', fillOpen, `${await fillShown()}`);
-  // A LEAF IS NOT A WINDOW (§4.5): leaf_diffuse measures the light the P0b albedo guessed at, so above 0 the albedo slider would lie
+  // A LEAF IS NOT A WINDOW (spec/model/leaf.md): leaf_diffuse measures the light the P0b albedo guessed at, so above 0 the albedo slider would lie
   // and goes; at 0 it is back. The knob rides the cast cameras' tap group and the sky view's own group (below).
   const setSplit = (v) => page.evaluate((val) => {
     const r = [...document.querySelectorAll('#dev .ctl')].find((q) => q.querySelector('label')?.textContent === 'leaf diffuse');
@@ -556,7 +556,7 @@ try {
   let clothFill = false;
   for (let i = 0; i < 30 && !clothFill; i++) { await page.waitForTimeout(400); clothFill = !(await rowShown('leaf scatter')) && (await rowShown('fill rays')) && (await rowShown('canopy fill')); }
   check('on the curtain the leaf albedo goes but the gate and the fill itself stay', clothFill, `${await rowShown('leaf scatter')} ${await rowShown('fill rays')} ${await rowShown('canopy fill')}`);
-  // THE SUN'S COSINE LAW (§3.5): the beam lands on the cloth by its own incidence, so the row is there on the curtain as it is on the floor; the sky view's factor is always 1, so it has no row there
+  // THE SUN'S COSINE LAW (spec/model/light.md): the beam lands on the cloth by its own incidence, so the row is there on the curtain as it is on the floor; the sky view's factor is always 1, so it has no row there
   check('the cosine row is there on the curtain (the cloth takes its own incidence)', (await rowShown('cosine')) === true, `${await rowShown('cosine')}`);
   await setReceiver(0);
   await page.evaluate(() => { const r = [...document.querySelectorAll('#dev .ctl.toggle')].find((q) => q.querySelector('label')?.textContent === 'look up'); r.querySelector('input').click(); });
@@ -565,7 +565,7 @@ try {
   check('the sky view has none of the four fill rows', skyFill, `${await rowShown('canopy fill')} ${await fillShown()}`);
   check('and an emptied area takes its heading with it: looking up leaves Lab nothing, so Lab goes', (await summaryShown('Lab')) === false && (await summaryShown('Wind')) === true, `${await summaryShown('Lab')} ${await summaryShown('Wind')}`);
   check('the sky view never reads sun_cosine: radiance is invariant, so its row is hidden', (await rowShown('cosine')) === false, `${await rowShown('cosine')}`);
-  // THE LEAF IS A LANTERN (§4.9): the look-up view reads the split through its own group, so the row is there, and above 0 the authored
+  // THE LEAF IS A LANTERN (spec/model/sky-view.md): the look-up view reads the split through its own group, so the row is there, and above 0 the authored
   // foliage glow is the proxy it replaces (the sky view's twin of the floor's leaf scatter) and goes; at 0 it is back.
   check('the sky view reads the split: leaf diffuse is there, beside the foliage glow it replaces', (await rowShown('leaf diffuse')) === true && (await rowShown('foliage glow')) === true, `${await rowShown('leaf diffuse')} ${await rowShown('foliage glow')}`);
   await setSplit(0.7);
@@ -647,7 +647,7 @@ try {
   await page.waitForTimeout(900);
   check('D wakes it again (hover-equivalent)', await page.$eval('#strip', (e) => !e.classList.contains('faded')));
 
-  // THE HELD LEAF (L, leaf-preview.js §4.5): one grown leaf against the sun, off until summoned. Its lamina's mean colour is read off the canvas itself:
+  // THE HELD LEAF (L, leaf-preview.js spec/model/leaf.md): one grown leaf against the sun, off until summoned. Its lamina's mean colour is read off the canvas itself:
   // green at summer, red at the end of the turn with anthocyanin up — and it must follow the sliders without a regrow.
   await page.$eval('#hint', (h) => h.classList.add('gone'));
   check('the held leaf is not in the page until L', await page.$('#leaf') === null);
@@ -739,7 +739,7 @@ try {
   const upToSparse = await walk(']', '1·0', sparse.perCluster + 5);
   check(`on ${sparse.name} (density 0.45, ${sparse.perCluster} leaves a cluster) no address past leaf 0·${sparse.perCluster - 1} is ever shown`, upToSparse[upToSparse.length - 1] === '1·0' && upToSparse[upToSparse.length - 2] === `0·${sparse.perCluster - 1}`, upToSparse.slice(-3).join(' '));
 
-  // SETTLE (§4.5). A regrow is about 0.13 s in bun and a re-raster most of that, so a slider drag, or a canopy morph that lerps leaf_size_m every tick, must not pay one per frame: the picture
+  // SETTLE (spec/model/leaf.md). A regrow is about 0.13 s in bun and a re-raster most of that, so a slider drag, or a canopy morph that lerps leaf_size_m every tick, must not pay one per frame: the picture
   // keeps showing the last leaf until its inputs have been still for 250 ms, then makes the one it was asked for. `data-grows` / `data-rasters` count the makes; `data-size` /
   // `data-wall` are what the picture on show was made with.
   const dataOf = (name) => page.$eval('#leaf', (c, n) => c.dataset[n], name);
