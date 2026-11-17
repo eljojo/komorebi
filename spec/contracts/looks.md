@@ -209,6 +209,7 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 ### park 2
 - **Camera and mode:** floor, standing, faithful.
 - **For:** not recorded. It is a partner on two travel routes: `cherry blossom ↔ park 2` (leaves carried between floor and canopy on one grove) and the regrouping journey from `fall memories`.
+- **Quality:** `park 1`'s requests, 29 samples and a 768 bake, since 2026-11-17 (the artist), so that `park 1 → park 2`, next to each other in the order, morphs instead of dissolving. It asked for 48 samples and the session's bake before.
 - **Authored departures:** the warm dirt floor. It keeps the old receiver law, without the cosine, and no air's loss ([the defaults](#four-laws-on-by-default-and-the-looks-kept-as-made)).
 - **Gates:** `faithful_canopy`, `standing_scene`, wood.
 

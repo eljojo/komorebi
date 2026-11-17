@@ -91,7 +91,7 @@ export const PRESETS = {
     // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js), like its season family: the season travel needs one skylight across it
   }),
   'park 2': Object.assign({}, LOOK_DEFAULTS, {
-  "sample_count": 48,
+  "sample_count": 29,
   "core_angular_radius_deg": 0.56,
   "halo_angular_radius_deg": 4.8,
   "core_weight_fraction": 0.88,
@@ -126,7 +126,7 @@ export const PRESETS = {
   "trans_g": 0.356,
   "trans_b": 0.001,
   "canopy_extent_m": 6.5,
-  "bake_resolution": 0,
+  "bake_resolution": 768,
   "seed": 290626672,
   "sun_elevation_deg": 26,
   "sun_azimuth_deg": 90,
