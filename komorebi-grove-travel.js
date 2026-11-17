@@ -34,22 +34,23 @@ export function carriedLeaf(q,i,o){
  const d=q.data,h=q.hub,H=h.hier,j=Math.round(d[i+11]),k=j*4,D=H.clusterData,G=H.clusterGeom,m=h.motion,p=h.params;
  const L=D[k],T=q.pivot?D[k+1]*(1-q.pivot[i/18]):D[k+1],cl=Math.cos(L),sl=Math.sin(L),ct=Math.cos(T),st=Math.sin(T),px=G[k+2],py=G[k+3];
  const dx=d[i]-G[k],dy=d[i+1]-G[k+1],xx=G[k]+ct*dx-st*dy,yy=G[k+1]+st*dx+ct*dy;
- const wm=flutterLevel(m.u,H.airData?.[k]||0,p.wind_air),sw=p.leaf_swing*d[i+6]*(.5*m.u+wm*Math.sin(m.time*p.flutter_freq*TAU+d[i+7]))*depthGate(wm,H.airData?.[k+1]||0,p.wind_depth);
+ const S=H.swayData,u=S?m.u+S[k+2]:m.u,swx=S?m.sway[0]+S[k]:m.sway[0],swy=S?m.sway[1]+S[k+1]:m.sway[1];   // its tree's trunk (row 2, as the shaders read it)
+ const wm=flutterLevel(u,H.airData?.[k]||0,p.wind_air),sw=p.leaf_swing*d[i+6]*(.5*u+wm*Math.sin(m.time*p.flutter_freq*TAU+d[i+7]))*depthGate(wm,H.airData?.[k+1]||0,p.wind_depth);
  const z=D[k+2]+d[i+16]*D[k+3],gain=z/Math.max(h.faith.hMax,.001),th=p.drift_phase+d[i+15];
  const ox=d[i+12]*Math.cos(th),oy=d[i+13]*Math.sin(th),co=Math.cos(d[i+14]),so=Math.sin(d[i+14]);
- o[0]=px+cl*(xx-px)-sl*(yy-py)+m.sway[0]*gain+p.drift_amount*(co*ox+so*oy);
- o[1]=py+sl*(xx-px)+cl*(yy-py)+m.sway[1]*gain+p.drift_amount*(-so*ox+co*oy);
+ o[0]=px+cl*(xx-px)-sl*(yy-py)+swx*gain+p.drift_amount*(co*ox+so*oy);
+ o[1]=py+sl*(xx-px)+cl*(yy-py)+swy*gain+p.drift_amount*(-so*ox+co*oy);
  o[2]=d[i+2];o[3]=d[i+3]*Math.max(.05,Math.abs(Math.cos(d[i+5]+sw)));o[4]=d[i+4]-L-T+.2*sw;o[5]=z;
 }
 function wood(h,out){
- const H=h.hier,m=h.motion,ref=Math.max(h.faith.hMax,.001);
+ const H=h.hier,m=h.motion,ref=Math.max(h.faith.hMax,.001),T=H.nTree>1?H.treeDelta:null;
  for(let i=0;i<h.faith.segRest.length;i++){
-  const s=h.faith.segRest[i],o=i*9,th=s.limb>=0?H.limbAngle[s.limb]:0,tt=s.clump>=0?H.twigAngle[s.clump]:0;
+  const s=h.faith.segRest[i],o=i*9,th=s.limb>=0?H.limbAngle[s.limb]:0,tt=s.clump>=0?H.twigAngle[s.clump]:0,swx=T?m.sway[0]+T[4*s.tree]:m.sway[0],swy=T?m.sway[1]+T[4*s.tree+1]:m.sway[1];   // its own tree's sway
   let ax=s.ax,ay=s.ay,bx=s.bx,by=s.by;
   if(tt!==0){const c=Math.cos(tt),sn=Math.sin(tt),dx=ax-s.tbx,dy=ay-s.tby,ex=bx-s.tbx,ey=by-s.tby;ax=s.tbx+c*dx-sn*dy;ay=s.tby+sn*dx+c*dy;bx=s.tbx+c*ex-sn*ey;by=s.tby+sn*ex+c*ey;}
   const c=Math.cos(th),sn=Math.sin(th);
-  out[o]=s.px+c*(ax-s.px)-sn*(ay-s.py)+m.sway[0]*s.ha/ref;out[o+1]=s.py+sn*(ax-s.px)+c*(ay-s.py)+m.sway[1]*s.ha/ref;
-  out[o+2]=s.px+c*(bx-s.px)-sn*(by-s.py)+m.sway[0]*s.hb/ref;out[o+3]=s.py+sn*(bx-s.px)+c*(by-s.py)+m.sway[1]*s.hb/ref;
+  out[o]=s.px+c*(ax-s.px)-sn*(ay-s.py)+swx*s.ha/ref;out[o+1]=s.py+sn*(ax-s.px)+c*(ay-s.py)+swy*s.ha/ref;
+  out[o+2]=s.px+c*(bx-s.px)-sn*(by-s.py)+swx*s.hb/ref;out[o+3]=s.py+sn*(bx-s.px)+c*(by-s.py)+swy*s.hb/ref;
   out[o+4]=s.ha;out[o+5]=s.hb;out[o+6]=s.ra;out[o+7]=s.rb;out[o+8]=s.cov;
  }
 }
@@ -116,6 +117,7 @@ function createGroveRenderer(h,a,b,from,to,host){
  const field={tex:textures[0],ox:0,oy:0,ext:1,weight:0};h.trans.active=true;h.trans.seasonTravel=true;h.trans.travelField=field;
  h.motion.u=0;h.motion.sway=[0,0];h.hier.clusterData.fill(0);for(let j=0;j<h.hier.nClusterTotal;j++)h.hier.clusterData[j*4+3]=1;
  gl.bindTexture(gl.TEXTURE_2D,h.clusterTex);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,h.hier.nClusterTotal,1,gl.RGBA,gl.FLOAT,h.hier.clusterData);
+ h.motion.trunks=null;if(h.hier.nTree>1){h.hier.treeDelta.fill(0);h.hier.swayData.fill(0);gl.texSubImage2D(gl.TEXTURE_2D,0,0,2,h.hier.nClusterTotal,1,gl.RGBA,gl.FLOAT,h.hier.swayData);}   // every tree's trunk at rest with tree 0's
  const nativeA={...from},nativeB={...to};let lastTime=0;
  // Across the hood's gate the moving picture holds the hooded end's geometry and fades its opacity, as every route does.
  const iris=irisRoute(nativeA,nativeB);h.trans.iris=iris;

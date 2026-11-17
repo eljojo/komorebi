@@ -192,6 +192,14 @@ export function makeRender(hub){
         buf[o+2] = px + c*(s.bx-px) - sn*(s.by-py);
         buf[o+3] = py + sn*(s.bx-px) + c*(s.by-py);
       }
+      // uOccSway is tree 0's sway; what each segment's own tree adds to it goes into its endpoints here, by the same height lever
+      if(hub.hier?.nTree > 1){
+        const T = hub.hier.treeDelta, ht = occ.ht, ref = Math.max(occ.hRef, 1e-3);
+        for(let k=0;k<occ.count;k++){
+          const t = 4*occ.rest[k].tree, ka = ht[4*k]/ref, kb = ht[4*k+1]/ref, o = k*4;
+          buf[o] += T[t]*ka; buf[o+1] += T[t+1]*ka; buf[o+2] += T[t]*kb; buf[o+3] += T[t+1]*kb;
+        }
+      }
       // perf todo — occTex is single-buffered, the same tradeoff clusterTex carries and for the same reason: these
       // two rows are rewritten and then fetched by the draw below in the SAME frame, so next frame's upload can
       // stall on this one still draining. A 2-deep ring would break the write-after-read.

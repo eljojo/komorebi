@@ -33,7 +33,11 @@ The whole tree's coherent response is one spring per horizontal axis, its displa
 
 The knobs are the spring's stiffness (`sway_stiffness`), its ceiling (`sway_ceiling`, which sets how far the full sway reaches), the damping ratio (`damping_ratio`), how much the return stroke is under-damped (`backlash_gain`), and the gust edges (`gust_attack`, `gust_decay`). **Open:** the shape of the stiffening and the damping that makes the backlash read right, a visible overshoot that never looks rubbery, are tuned by eye.
 
-The trunk's sway translates the whole field: this is the **bulk drift**, the one translation in the model. Everything below the trunk is rotation.
+The trunk's sway translates its tree's part of the field: this is the **bulk drift**, the one translation in the model. Everything below the trunk is rotation.
+
+### Each tree in its own gust
+
+**Law: a gust reaches each tree at its own time.** Each tree of the grove has its own trunk, the same spring, driven by the gust as it arrives where that tree stands: the force at `t − s/U`, with `s` the trunk's distance along the wind from the grove's origin and `U` the speed the air carries a gust at (*The air among the leaves*, below). A tree downwind leans after one upwind and recoils after it; trees side by side across the wind move together. One trunk for the whole grove made every tree lean and recoil at the same instant, which reads as trees mechanically linked, and the eye can tell ([`../evidence/dead-ends.md#motion`](../evidence/dead-ends.md#motion)). The first tree stands at the grove's origin, so a grove of one tree moves exactly as it did with one trunk.
 
 ## Translation alone is not wind
 
@@ -86,11 +90,11 @@ Limbs broadside to the wind swing hardest, limbs end-on barely move, and the two
 
 ## The joints are grown
 
-The joints are the grove's own ([`canopy.md`](canopy.md)). Each tree's limbs pivot about **its own** trunk, and the torque is taken about that trunk, so a gust leans every tree about its own base, not about the centre of the frame. A leaf inherits its tree's limb swing ∘ twig swing ∘ the global trunk drift. The core motion is **yaw in the ground plane**: branches turn about vertical axes at their joints.
+The joints are the grove's own ([`canopy.md`](canopy.md)). Each tree's limbs pivot about **its own** trunk, and the torque is taken about that trunk, so a gust leans every tree about its own base, not about the centre of the frame. Its limbs and twigs are driven by its own trunk's response, and their forcing breathes with its own gusts, so a tree's whole crown takes the gust when it arrives there. A leaf inherits its tree's limb swing ∘ twig swing ∘ its tree's trunk drift, and its rock follows its own tree's sway. The core motion is **yaw in the ground plane**: branches turn about vertical axes at their joints.
 
 On the faithful path, where the wood is drawn and seen, the twig's joint is the **real base** recorded at growth, the point where a terminal twig attaches to its parent. **Law:** the leaves and that twig's own wood swing about that one point, by the same per-twig angle, in the same order, so the leaves stay on their twigs under motion by construction. A grown twig's base is offset from its clump toward its parent by definition, so it already *is* a stem joint; `stem_length` is inert on the faithful path. The faithful canopy therefore carries all three bands. An earlier faithful cast dropped the medium band to keep leaves registered on visible wood, which bought registration with stillness ([`../evidence/dead-ends.md#motion`](../evidence/dead-ends.md#motion)).
 
-The motion clocks (the gust signal, the weather, the drift phase) are functions of time and belong to the weather, not to any grove. A newly grown tree starts with its springs at rest and joins the running wind.
+The motion clocks (the gust signal, the weather, the drift phase) are functions of time and belong to the weather, not to any grove. So do the trunks, one per tree by its place in the grove's order: two groves crossing in a transition share them. A newly grown tree starts with its limb and twig springs at rest and joins the running wind; its trunk starts as the first tree's is at that moment and parts from it as its own gusts arrive.
 
 ## Pitch, the second degree of freedom
 
@@ -119,7 +123,7 @@ Two constructions are refused, each for a reason. The foreshortening is not driv
 
 **Law: real wind is broadband.** Its energy is spread across every timescale at once: a minute-long surge carrying second-scale gusts carrying sub-second flutter, falling off in the gust range with the **Kolmogorov −5/3 power spectrum**. A single frequency puts all its energy at one period; the eye locks onto it and reads a machine ([`../evidence/dead-ends.md#motion`](../evidence/dead-ends.md#motion)).
 
-So the coherent spring is driven by a **fractal sum of octaves over time**, a noise of time with no sampling randomness ([`../contracts/determinism.md`](../contracts/determinism.md)). The per-octave amplitude gain `G = 2^(−H)` sets the spectral slope. `H = 1/3` is the physically right value for wind, between "pink" `H = 0`, choppy and nervous, and "brown" `H = 0.5`, smooth and sluggish. `H` is the wind's **character**.
+So the coherent spring is driven by a **fractal sum of octaves over time**, each tree's read at the time the gust reaches it (*Each tree in its own gust*, above), a noise of time with no sampling randomness ([`../contracts/determinism.md`](../contracts/determinism.md)). The per-octave amplitude gain `G = 2^(−H)` sets the spectral slope. `H = 1/3` is the physically right value for wind, between "pink" `H = 0`, choppy and nervous, and "brown" `H = 0.5`, smooth and sluggish. `H` is the wind's **character**.
 
 **Law of this model: the first primitive was wrong, not just mis-tuned.** Wind is not a frequency with an amplitude; it is a spectrum across timescales, with a mean that itself drifts. The controls below are that spectrum made controllable.
 
@@ -161,9 +165,9 @@ The broadband signal subsumes the single gust, and the deep lulls and the crossw
 
 ## The air among the leaves
 
-The trunk feels the gust where it stands, now. The leaves hang in air that is somewhere else, and two things follow from that.
+Each trunk feels the gust where it stands. The leaves hang in air that is somewhere else, and two things follow from that.
 
-**The air at a place.** A gust is not everywhere at once: the mean wind carries it through the grove, so a clump downwind feels it later than one upwind (Taylor's frozen turbulence). With `wind_air`, a leaf's flutter follows the air where its clump hangs instead of the trunk's sway: the gust force that drives the trunk's spring, met earlier or later by the clump's distance along the wind, times a small **eddy** that varies from place to place, mean one, never below zero, drawn from the same −5/3 noise sampled across the wind so that clumps side by side feel unrelated stretches of it. The trunk is still driven by the force at the grove's origin, now; upwind of it the gust has reached the leaves and not yet the trunk, so the air keeps the force's recent past and runs it ahead. What it gives: the trembling no longer stills everywhere at once each time the trunk swings back through rest, and patches of leaves tremble harder or softer as eddies pass. `wind_air` blends from the sway (0) to the air (1).
+**The air at a place.** A gust is not everywhere at once: the mean wind carries it through the grove, so a clump downwind feels it later than one upwind (Taylor's frozen turbulence). With `wind_air`, a leaf's flutter follows the air where its clump hangs instead of the trunk's sway: the gust force that drives the trunk's spring, met earlier or later by the clump's distance along the wind, times a small **eddy** that varies from place to place, mean one, never below zero, drawn from the same −5/3 noise sampled across the wind so that clumps side by side feel unrelated stretches of it. It is the same carried force each trunk is driven by where it stands; upwind of the grove's origin the gust reaches leaves before it reaches the first tree's trunk, so the air keeps the force's recent past and runs it ahead. What it gives: the trembling no longer stills everywhere at once each time the trunk swings back through rest, and patches of leaves tremble harder or softer as eddies pass. `wind_air` blends from the sway (0) to the air (1).
 
 - **Approximation:** one carried signal and one eddy field, not a simulated flow. The carried speed is a constant, not the wind's speed, which the model does not have.
 - **Provisional:** the carried speed (3 m/s), the eddies' spread, lowest rate and correlation length: the values a sound prototype first read as wind with, not measured.
@@ -210,7 +214,7 @@ Motion ends where the bake begins. It hands [`canopy.md`](canopy.md) and [`trans
 - **positions**: each leaf's place after its twig swing, limb swing, drift orbit and the trunk's sway;
 - **orientations**: each leaf's plan angle rotated by its limb and twig bends, and its tilt from the rock, which foreshortens its stamp;
 - **heights**, on the faithful path: each leaf's and each wood segment's height foreshortened by its limb's pitch;
-- **the coherent drift, scaled by height.**
+- **the coherent drift, scaled by height**: each tree's own.
 
 The last differs between the two cast paths. On the faithful path the sway **scales with real height**, from zero at the ground to full at the crown, for leaves and wood alike, so the tree bends as one piece anchored at its foot rather than sliding bodily. On the layer path each depth layer moves as a rigid plan translation by the sway times `1 + sway_height_gain·(h_L/base − 1)`: higher layers ride longer levers, and at `sway_height_gain` 0 the coherent drift is pure translation. Wood stamped into a layer takes its layer's factor, so a twig and its leaves move together.
 
@@ -233,6 +237,8 @@ The bands coexist and sum, and the coherent band is itself broadband, a fractal 
 
 - **Approximation: the motion is plan yaw plus one limb pitch.** Branches turn about vertical axes at their joints; only the limb has a depth degree of freedom, and only on the faithful path. Twigs and finer orders do not pitch. Absent state: `sway_pitch` 0 is pure yaw.
 - **Approximation: the pitch response is even.** `1 − cos θ` is even, so an upwind limb pitched *up* foreshortens its cast slightly instead of lifting it. A signed response needs each limb's rest elevation carried into the motion, since up and down only mean something relative to the elevation the limb already sits at. The upward case is the smaller effect.
+- **Approximation: the trees differ only in when the gust reaches them.** Every trunk is the same spring, with the same stiffness, ceiling and damping, fed the same carried force; a tree's size does not change how it answers. The distance along the wind is taken from the wind's direction now, so as the weather veers, the order in which the trees take a gust turns with it. The carried speed is the air's constant (3 m/s, **Provisional**), not the wind's speed.
+- **Approximation: the editor's tree inset** leans every tree with the first tree's trunk ([`../implementation.md`](../implementation.md)).
 - **Approximation: the layer path's twig joint is synthesised.** It stands at `stem_length` toward the trunk with a small angular spread, not at a real twig base; the layer path has no wood to borrow one from.
 - **Inner leaves follow their wood.** A leaf hung back on older wood (`inner_leaves`) drops its twig's bend by its pivot weight, so it no longer slides off the limb under the medium band ([`canopy.md`](canopy.md); built 2026-11-09).
 - **Approximation: the incoherent band is a periodic orbit and a one-frequency flutter, not a wind.** The drift phase reproduces the reorganisation's grammar and its exact return, and does not respond to gusts; its rate is constant. The flutter does follow the wind's strength, and under `wind_air` the air's eddies from place to place, but on orientation only, at one rate.

@@ -10,9 +10,10 @@
 // G the wind's longitudinal force after its gust edges (the trunk spring's own drive, motion.driveEnv), and eddy a
 // log-normal factor, mean 1, never below zero, from the engine's −5/3 noise of time sampled at the same carried time
 // and offset across the wind, so clumps side by side feel unrelated stretches of it.
-// The trunk spring stays driven by G at the origin, now; the air elsewhere is G earlier (downwind) or later (upwind).
-// Upwind of the origin the gust has not reached the trunk yet but has reached those leaves, so the air keeps G's
-// recent past (a ring) and runs it ahead (the same edges applied to the same pure force), over `reach` metres.
+// Each tree's trunk spring is driven by the same law where it stands (komorebi-motion.js, the trunks: its own edges on the
+// force at its carried time); the first tree's, at the origin, by G now. The air elsewhere is G earlier (downwind) or later
+// (upwind). Upwind of the origin the gust has not reached the first trunk yet but has reached those leaves, so the air keeps
+// G's recent past (a ring) and runs it ahead (the same edges applied to the same pure force), over `reach` metres.
 // Approximation: one carried signal and one eddy field, not a simulated flow; U is not the wind's real speed (the
 // model has none) but a constant. U, sigma, rate and L are Provisional: they are what the prototype that first made
 // the sound read as wind used. The canopy repeats every canopy_extent_m and this air does not, so where a repeat's

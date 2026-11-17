@@ -376,7 +376,7 @@ function createEngine(canvas, opts, driven=false){
     progPoints = EDITOR ? shared(VS_POINTS, FS_POINTS) : null;   // editor-only debug-overlay programs
     progViz = EDITOR ? shared(VS_VIZ, FS_VIZ) : null;
     U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
-               morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'),
+               morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'), swayGain:loc(progBake,'uSwayGain'),
                windLevel:loc(progBake,'uWindLevel'), air:loc(progBake,'uAir'), depth:loc(progBake,'uDepth'), windTime:loc(progBake,'uWindTime'),
                leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), stemLen:loc(progBake,'uStemLen'),
                clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
@@ -569,7 +569,7 @@ function createEngine(canvas, opts, driven=false){
   const { transitionTo, tickTransition } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
   function copyMotion(from,to){
-    for(const k in from.motion)to.motion[k]=Array.isArray(from.motion[k])?[...from.motion[k]]:k==='air'?structuredClone(from.motion[k]):from.motion[k];   // the air's kept past is state: each scene advances its own
+    for(const k in from.motion)to.motion[k]=k==='air'||k==='trunks'?structuredClone(from.motion[k]):Array.isArray(from.motion[k])?[...from.motion[k]]:from.motion[k];   // the air's kept past and the trees' trunks are state: each scene advances its own
     if(from.hier.topoSig===to.hier.topoSig){
       for(const k of ['limbAngle','limbVel','limbPitch','limbPitchVel','twigAngle','twigVel'])to.hier[k].set(from.hier[k].subarray(0,to.hier[k].length));
       to.hier.maxV=from.hier.maxV;

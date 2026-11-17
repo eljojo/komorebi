@@ -300,6 +300,7 @@ export function makeGrove(hub){
     const twigShoots = Math.round(params.growth_years) > 0 ? [] : null;
     const limbDir  = new Float32Array(nLimb*2);         // plan unit direction (drives wind torque)
     const limbPlan = new Float32Array(nLimb*2);         // an outboard wind-sample point near each limb
+    const treePos = new Float32Array(nTree*2);          // each tree's trunk in plan: where the gust reaches it (komorebi-motion.js, the trunks)
     const limbAttach = new Float32Array(nLimb);         // the height at which each limb MEETS its trunk — sway_pitch anchors its depth-foreshorten here so the join can't open (§5.1). Filled LOCAL in the growth loops, then scaled into world height units with the rest of the tree.
 
     // crowns overlap so the canopy fills a span of ground (not just the baked extent), capped to fit inside the bake. The span is the
@@ -328,6 +329,7 @@ export function makeGrove(hub){
       const rr = Rfill*Math.sqrt(tt/treeCountF);         // normalise by the continuous count -> trees re-space smoothly as it morphs
       const aa = tt*GOLDEN + (gr()-0.5)*0.6;
       const tx = rr*Math.cos(aa), ty = rr*Math.sin(aa);
+      treePos[2*tt] = tx; treePos[2*tt+1] = ty;
       const crown = crown0*(0.7+0.6*gr());               // per-tree size variation (smaller -> denser)
       const out = { seg:[], tw:[], path: wantPath ? [] : null, shoots: twigShoots ? [] : null };
       const limbBase = tt*lpt, limbRaw = new Float32Array(lpt*2);
@@ -455,6 +457,10 @@ export function makeGrove(hub){
     const nClusterTotal = twigs.length;
     const hier = {
       nLimb, limbDir, limbPlan, limbAttach,
+      nTree, treePos,   // the trees, by index: tree 0 stands at the grove's origin, where the motion's own trunk (motion.u) is
+      limbTree: Int32Array.from({ length: nLimb }, (_, i) => Math.floor(i/lpt)), clusterTree: new Int32Array(nClusterTotal),   // which tree a limb, a clump, belongs to
+      treeDelta: new Float32Array(nTree*4),           // dynamic, by tree: its trunk's sway and u less tree 0's (publishBend), what each tree's wood adds to the shared sway
+      swayData: new Float32Array(nClusterTotal*4),    // dynamic, by clump: its tree's treeDelta, the cluster texture's row 2
       limbAngle:new Float32Array(nLimb), limbVel:new Float32Array(nLimb),   // scalar YAW bend (radians): rotation about the vertical
       limbPitch:new Float32Array(nLimb), limbPitchVel:new Float32Array(nLimb),   // second DOF (§5.1): ELEVATION bend in the limb's own vertical plane — what sway_pitch foreshortens by. Same spring constants as the yaw.
       nClusterTotal,
@@ -532,7 +538,7 @@ export function makeGrove(hub){
       const cx=t.x, cy=t.y;
       const swayRand = dr.sway*2-1; const stemRand = dr.stem*2-1;
       hier.clusterPlan[2*j]=cx; hier.clusterPlan[2*j+1]=cy; hier.clusterPhase[j]=swayRand*Math.PI;
-      hier.clusterLimb[j]=t.limb;                                    // grown level-1 ancestor (no search needed)
+      hier.clusterLimb[j]=t.limb; hier.clusterTree[j]=t.tree;      // grown level-1 ancestor (no search needed)
       // .xy is the LEAF PIVOT ANCHOR, and it means different things per path. LAYER/park: the twig tip (= the clump
       // centre), from which VS_BAKE offsets a SYNTHETIC stem joint by uStemLen — no wood is drawn there, so a made-up
       // joint costs nothing. FAITHFUL: the twig's REAL grown base, which is also what the wood twig turns about in
@@ -698,8 +704,8 @@ export function makeGrove(hub){
     // ---- what the upload is handed: every array as the GPU takes it, every number the shared state takes ----
     const layers = layerData.map((a) => new Float32Array(a));   // 17 floats a leaf, a layer
     const faithArr = new Float32Array(faithData);               // 18 floats a leaf, every leaf
-    // dynamic: row 0 the bend angles (publishBend), row 1 the air at each clump (publishAir) — a NEW texture per grove (the old one is freed at install)
-    const clusterRows = new Float32Array(Math.max(1,nClusterTotal)*8); clusterRows.set(hier.clusterData); clusterRows.set(hier.airData, Math.max(1,nClusterTotal)*4);
+    // dynamic: row 0 the bend angles (publishBend), row 1 the air at each clump (publishAir), row 2 its tree's trunk less tree 0's (publishBend) — a NEW texture per grove (the old one is freed at install)
+    const clusterRows = new Float32Array(Math.max(1,nClusterTotal)*12); clusterRows.set(hier.clusterData); clusterRows.set(hier.airData, Math.max(1,nClusterTotal)*4); clusterRows.set(hier.swayData, Math.max(1,nClusterTotal)*8);
     // ---- woody occluder (spec §4.5): trunk + MAIN LIMBS (level<=1) as CONTINUOUS-height analytic segments. Map
     // each grown z to a floor height with the SAME crown mapping the leaves bin by (zMin->canopy_base,
     // zMax->base+thickness), and the bole linearly to 0 — so a limb's base lands at the trunk's height and the
@@ -715,7 +721,7 @@ export function makeGrove(hub){
         want++;
         if(rest.length >= MAX_OCC) continue;           // table full: keep counting rather than break, so the shortfall is a number instead of nothing
         const r = Math.max(0.01, params.trunk_radius_m*Math.pow(tf, sg.level));
-        rest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], limb:sg.limb, px:sg.px, py:sg.py });   // limb+pivot for the per-frame swing
+        rest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], limb:sg.limb, px:sg.px, py:sg.py, tree:sg.tree });   // limb+pivot for the per-frame swing, tree for its trunk's sway
         segH.push(floorH(sg.a[2]), floorH(sg.b[2]), r, sg.cov);
       }
       // want > count means this grove is TRUNCATED: the tail of the grow order — whole later trees' boles and limbs —
@@ -741,7 +747,7 @@ export function makeGrove(hub){
         // as one. -1 = trunk/limb/interior wood (no clump), and also any twig past the MAX_TEX cluster cap, which
         // bears no leaves at all. (twigs[] is already capped and scaled by here.)
         const cj = (sg.clump>=0 && sg.clump<twigs.length) ? sg.clump : -1;
-        woodRest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], ha:sg.a[2], hb:sg.b[2], ra, rb, limb:sg.limb, px:sg.px, py:sg.py,
+        woodRest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], ha:sg.a[2], hb:sg.b[2], ra, rb, limb:sg.limb, px:sg.px, py:sg.py, tree:sg.tree,
                         cov:sg.cov, clump:cj, tbx:(cj>=0?twigs[cj].bx:0), tby:(cj>=0?twigs[cj].by:0),
                         level:sg.level, mz:0.5*(sg.a[2]+sg.b[2]) });   // REAL grown heights (cast == preview); level + midpoint height pick the SKY view's layer bin below
       }
@@ -875,7 +881,7 @@ export function makeGrove(hub){
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       return tx;
     };
-    const clusterTex     = makeDataTex(null, G.clusterRows, 2);
+    const clusterTex     = makeDataTex(null, G.clusterRows, 3);
     const clusterGeomTex = makeDataTex(null, hier.clusterGeom);      // static geometry
     // the outline's own texture, R16F: LEAF_SAMPLES θ across, one row per variant down. θ REPEATs (±π are one place), the variants CLAMP (a read between two rows is no leaf),
     // LINEAR in θ and no mips — a profile is read at its own resolution. 1×1 for the ellipse: bound and never sampled, because the shader's gate is a uniform branch.

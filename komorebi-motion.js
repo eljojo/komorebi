@@ -5,11 +5,20 @@
 // reads (publishBend). A factory over the engine's shared internals (hub).
 // ============================================================================
 import { DEG, TAU, clamp, windNoise } from './komorebi-math.js';
-import { weatherAt, leanForce, crossForce, gustEdge, advanceAir, airForce, airLevel, makeAirTrack } from './komorebi-air.js';
+import { weatherAt, leanForce, crossForce, gustEdge, advanceAir, airForce, airLevel, airDelay, makeAirTrack } from './komorebi-air.js';
 
 export function makeMotion(hub){
   const { gl, params, motion, faithfulOn } = hub;
   if(motion && !motion.air) motion.air = makeAirTrack();   // the air's kept past, which belongs to the weather like the clocks, not to a grove
+
+  // THE TRUNKS (motion.md, "The coherent band"): each tree's coherent spring is driven by the gust as it reaches that tree, the
+  // force at τ = t − s/U with s its trunk's distance along the wind from the grove's origin (komorebi-air.js, airDelay): a tree
+  // downwind leans after one upwind. Tree 0 stands at the origin, so its trunk is the motion's own (motion.u, motion.sway), the
+  // one every look with one tree has always had; motion.trunks[k] is tree k's ({ driveEnv, u, v, uLat, vLat, env, sway }),
+  // [0] unused. The forces are pure in time, so each tree runs its own gust edges and springs on them, upwind trees included,
+  // and its G is the air's G(t − s/U) up to the step. They are the weather's, not a grove's: in a crossfade both groves read
+  // tree k's, and a tree newly grown takes tree 0's state and parts from it as its own gusts arrive.
+  const trunkOf = (k) => (k && motion.trunks?.[k]) || motion;
 
   // ---- motion: integrate the limb and twig springs (children inherit parents) ----
   // Both take the GROVE they drive rather than reading the active one, because during a crossfade there are two
@@ -21,8 +30,8 @@ export function makeMotion(hub){
     if(!hier) return;
     const t = motion.time;
     const wind = clamp(params.wind_strength*motion.weatherS, 0, 1);
-    const eb = (0.25 + 0.75*motion.env)*wind;   // branch noise needs wind too; the springs can relax while leaf drift keeps ticking
-    const u = motion.u;                       // coherent gust sense (signed, stiffened/backlashed)
+    // each limb and twig takes its own tree's trunk: its coherent gust sense u (signed, stiffened/backlashed) and its gust
+    // intensity, which scales the branch noise (branch noise needs wind too; the springs can relax while leaf drift keeps ticking)
     const dz = params.damping_ratio;
     const wL = Math.max(0.3, params.sway_stiffness*0.5), wT = Math.max(0.3, params.sway_stiffness*2.0);
     const kL=wL*wL, kT=wT*wT, cL=2*dz*wL, cT=2*dz*wT, lf=params.limb_flex, tf=params.twig_flex;
@@ -30,6 +39,7 @@ export function makeMotion(hub){
     const wx=motion.windX, wy=motion.windY;   // effective downwind direction (after the weather veer, §5.1)
     const sp = Math.max(0, params.sway_pitch);   // gate on the second DOF: off → it never integrates and its state is held at rest
     for(let i=0;i<hier.nLimb;i++){             // limbs pivot about the trunk; bend = wind TORQUE about it
+      const tr = trunkOf(hier.limbTree[i]), u = tr.u, eb = (0.25 + 0.75*tr.env)*wind;
       const dx=hier.limbDir[2*i], dy=hier.limbDir[2*i+1];
       const torque = dx*wy - dy*wx;            // cross(limbDir,wind): tip swings downwind, sign by side —
                                                // so a uniform gust LEANS the whole canopy, never spins it
@@ -58,6 +68,7 @@ export function makeMotion(hub){
       } else { hier.limbPitch[i]=0; hier.limbPitchVel[i]=0; }   // zeroed while off so re-enabling the knob starts from rest
     }
     for(let j=0;j<hier.nClusterTotal;j++){     // twigs: stiffer, faster, mostly decorrelated
+      const tr = trunkOf(hier.clusterTree[j]), u = tr.u, eb = (0.25 + 0.75*tr.env)*wind;
       const cxj=hier.clusterPlan[2*j], cyj=hier.clusterPlan[2*j+1];
       const rx=cxj-hier.clusterGeom[4*j+2], ry=cyj-hier.clusterGeom[4*j+3], cl=Math.hypot(rx,ry)||1e-3;  // offset from THIS tree's trunk
       const tq=(rx*wy - ry*wx)/cl;             // downwind torque about the twig's own tree trunk (same lean sense as the limb)
@@ -101,6 +112,18 @@ export function makeMotion(hub){
     // SAME texture the same frame, so next frame's upload can stall on the prior bake still draining it (a
     // per-frame GPU sync bubble). Ping-pong a 2-deep ring of cluster textures to break the write-after-read.
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, hier.nClusterTotal, 1, gl.RGBA, gl.FLOAT, hier.clusterData);
+    // each tree's trunk, as what it adds to tree 0's (the shared uSway and uWindLevel): row 2, which the vertex shaders add to
+    // the sway and the leaves' u. Tree 0's adds exactly 0, so one tree never writes the row and draws as it always has.
+    if(hier.nTree > 1){
+      const T = hier.treeDelta, S = hier.swayData;
+      for(let k=0;k<hier.nTree;k++){
+        const tr = k ? motion?.trunks?.[k] : null;   // none for tree 0, nor for a tree the motion has not ticked yet: it is tree 0's
+        if(!tr){ T[4*k] = 0; T[4*k+1] = 0; T[4*k+2] = 0; continue; }
+        T[4*k] = tr.sway[0] - motion.sway[0]; T[4*k+1] = tr.sway[1] - motion.sway[1]; T[4*k+2] = tr.u - motion.u;
+      }
+      for(let j=0;j<hier.nClusterTotal;j++){ const k = 4*hier.clusterTree[j]; S[4*j] = T[k]; S[4*j+1] = T[k+1]; S[4*j+2] = T[k+2]; }
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 2, hier.nClusterTotal, 1, gl.RGBA, gl.FLOAT, S);
+    }
   }
 
   // the air at every clump, at the motion's present (komorebi-air.js): its level into the cluster texture's second row,
@@ -123,6 +146,7 @@ export function makeMotion(hub){
     return params.wind_strength>0 || (params.drift_auto && params.drift_amount>0)
         || Math.abs(motion.u)>1e-3 || Math.abs(motion.v)>1e-3   // keep simulating until settled
         || Math.abs(motion.uLat)>1e-3 || Math.abs(motion.vLat)>1e-3
+        || (motion.trunks || []).some(s => s && (Math.abs(s.u)>1e-3 || Math.abs(s.v)>1e-3 || Math.abs(s.uLat)>1e-3 || Math.abs(s.vLat)>1e-3))
         || (hub.hier && hub.hier.maxV>2e-4);
   }
 
@@ -141,14 +165,6 @@ export function makeMotion(hub){
     // gustiness-scaled fluctuation that can dip below zero in deep lulls (so the spring recoils back THROUGH
     // rest — the "comes back" fix); the lateral channel is pure decorrelated crosswind (so it is never a
     // 1-D slide). gust_frequency = the lowest-octave rate; `burst` waveshapes for clustered/squally gusts. --
-    const rawL = leanForce(params, t, weatherS);              // mean lean + fluctuation; <0 in strong lulls → springback through rest
-    const driveT = crossForce(params, t, weatherS);           // zero-mean crosswind — deliberately NOT slewed: the
-                                                              // rise-sharp/decay-soft gust-EDGE envelope below is a
-                                                              // longitudinal (lean) phenomenon; crosswind has no preferred
-                                                              // sign, so an asymmetric slew would bias a zero-mean channel.
-    // gust-edge asymmetry: rise sharper than decay (validated). Reuses gust_attack/gust_decay as the slew (LONGITUDINAL only). -
-    motion.driveEnv = gustEdge(motion.driveEnv, rawL, dt, params);
-    const driveL = motion.driveEnv;
     // ---- two springs (longitudinal u, lateral uLat): underdamped, nonlinear stiffening at the ceiling,
     // backlash (under-damped return stroke). rest = 0 → exact relaxation. wind is a force, not a target. ----
     const w = params.sway_stiffness;
@@ -160,17 +176,40 @@ export function makeMotion(hub){
       let damp = dz; if(u*v < 0) damp /= (1 + bl);            // whip-back: under-damp the return stroke
       return v + (w*w*(drive - u/denom) - 2*damp*w*v)*h;      // new velocity
     };
-    for(let i=0;i<steps;i++){
-      motion.v = spring(motion.u, motion.v, driveL);     motion.u    += motion.v*h;
-      motion.vLat = spring(motion.uLat, motion.vLat, driveT); motion.uLat += motion.vLat*h;
-    }
-    motion.u = clamp(motion.u, -1.5, 1.5);                    // safety; stiffening keeps it near ±1
-    motion.uLat = clamp(motion.uLat, -1.5, 1.5);
-    // env: a [0,1] "current gust intensity" for the hierarchy breathing (replaces the old gust envelope)
-    motion.env += (clamp(Math.abs(motion.u), 0, 1) - motion.env) * (1 - Math.exp(-dt/0.6));
-    // compose world sway: u along the (veered) wind, uLat across it, scaled by the ceiling
     const cx = motion.windX, cy = motion.windY, ceil = params.sway_ceiling;
-    motion.sway = [ (cx*motion.u - cy*motion.uLat)*ceil, (cy*motion.u + cx*motion.uLat)*ceil ];
+    // one trunk s, driven by rawL (mean lean + fluctuation; <0 in strong lulls → springback through rest) and driveT, the
+    // zero-mean crosswind — deliberately NOT slewed: the rise-sharp/decay-soft gust-EDGE envelope is a longitudinal (lean)
+    // phenomenon; crosswind has no preferred sign, so an asymmetric slew would bias a zero-mean channel
+    const trunk = (s, rawL, driveT) => {
+      // gust-edge asymmetry: rise sharper than decay (validated). Reuses gust_attack/gust_decay as the slew (LONGITUDINAL only).
+      s.driveEnv = gustEdge(s.driveEnv, rawL, dt, params);
+      const driveL = s.driveEnv;
+      for(let i=0;i<steps;i++){
+        s.v = spring(s.u, s.v, driveL);     s.u    += s.v*h;
+        s.vLat = spring(s.uLat, s.vLat, driveT); s.uLat += s.vLat*h;
+      }
+      s.u = clamp(s.u, -1.5, 1.5);                            // safety; stiffening keeps it near ±1
+      s.uLat = clamp(s.uLat, -1.5, 1.5);
+      // env: a [0,1] "current gust intensity" for the hierarchy breathing (replaces the old gust envelope)
+      s.env += (clamp(Math.abs(s.u), 0, 1) - s.env) * (1 - Math.exp(-dt/0.6));
+      // compose world sway: u along the (veered) wind, uLat across it, scaled by the ceiling
+      s.sway = [ (cx*s.u - cy*s.uLat)*ceil, (cy*s.u + cx*s.uLat)*ceil ];
+    };
+    // the other trees' trunks (THE TRUNKS, above), each at its own carried time; a tree with none yet starts as tree 0 is now
+    const gA = hub.grove?.hier, gB = hub.groveIn?.hier, nTree = Math.max(gA?.nTree || 1, gB?.nTree || 1);
+    if(nTree > 1 || motion.trunks){
+      if(!motion.trunks) motion.trunks = [];
+      const trunks = motion.trunks;
+      trunks.length = nTree; trunks[0] = null;
+      for(let k=1;k<nTree;k++){
+        const P = (gA && k < gA.nTree ? gA : gB).treePos;
+        if(!trunks[k]) trunks[k] = { driveEnv: motion.driveEnv, u: motion.u, v: motion.v, uLat: motion.uLat, vLat: motion.vLat, env: motion.env };
+        const s = trunks[k];
+        const tau = t - airDelay(P[2*k], P[2*k+1], cx, cy), ws = weatherAt(params, tau).weatherS;
+        trunk(s, leanForce(params, tau, ws), crossForce(params, tau, ws));
+      }
+    }
+    trunk(motion, leanForce(params, t, weatherS), crossForce(params, t, weatherS));   // tree 0's, at the origin, now
     tickHierarchy(steps, h, hub.grove);                           // limb + twig springs (medium band)
     if(hub.groveIn) tickHierarchy(steps, h, hub.groveIn);             // ...and the incoming grove during a crossfade, on the same clocks
     motion.time += dt;

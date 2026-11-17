@@ -62,8 +62,9 @@ uniform vec2  uCanopyOrigin;          // -extent/2
 uniform vec2  uCanopyExtent;          // (extent, extent)
 uniform float uMorph;                 // drift phase (incoherent band, §5.2)
 uniform float uMorphAmount;           // orbit radius scale (m)
-uniform vec2  uSway;                  // trunk (coherent) translation for this layer (§5.1)
-uniform highp sampler2D uClusterTex;  // per-clump dynamic bend angles (limb, twig) — radians
+uniform vec2  uSway;                  // tree 0's trunk (coherent) translation for this layer (§5.1); a clump's own tree adds row 2 of uClusterTex, times uSwayGain
+uniform float uSwayGain;              // this layer's lever on the trunk's sway (uSway is tree 0's times it)
+uniform highp sampler2D uClusterTex;  // per-clump dynamic: row 0 the bend angles (limb, twig) — radians; row 1 the air; row 2 its tree's trunk less tree 0's (sway.xy, u)
 uniform highp sampler2D uClusterGeom; // per-clump static geometry: clump centre + trunk pivot
 uniform float uWindLevel;             // signed sway fraction u(t) — drives leaf swing intensity
 uniform float uAir;                   // wind_air: 0 the flutter follows the sway |u|, 1 the air at each clump (the cluster texture's row 1)
@@ -88,8 +89,10 @@ void main(){
   vec2 leafRest = iA.xy; float A = iA.z, B0 = iA.w;
   float angle = iB.x, restTilt = iB.y, swingGain = iB.z, swingPhase = iB.w;
   // ---- leaf rocks with the wind: footprint foreshortens -> dapple changes SHAPE (§4.5) ----
-  float wm = uAir > 0.0 ? abs(uWindLevel)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uWindLevel);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
-  float swing = uLeafSwing*swingGain*(0.5*uWindLevel + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
+  vec3 trunk = texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 2), 0).xyz;   // this leaf's tree's trunk less tree 0's (komorebi-motion.js publishBend): 0 for tree 0, so one tree reads uSway and uWindLevel to the bit
+  float uk = uWindLevel + trunk.z;                                          // its tree's signed sway u
+  float wm = uAir > 0.0 ? abs(uk)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uk);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
+  float swing = uLeafSwing*swingGain*(0.5*uk + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
   if(uDepth > 0.0){   // depthGate (komorebi-air.js): only as deep into the crown as the wind reaches, at this clump's depth (row 1 .y)
     float dg = clamp((wm/(uDepth*${DEPTH_L0}) - texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).y)/${DEPTH_W} + 1.0, 0.0, 1.0);
     swing *= dg*dg*(3.0 - 2.0*dg);
@@ -124,7 +127,7 @@ void main(){
   float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
   vec2 lc = aCorner*uShapeBox.zw + uShapeBox.xy;   // the corner in the leaf's own frame: aCorner·1 + 0 for the ellipse (the same bits), the outline's box for a lobed leaf
-  vec2 world = base + uSway + drift + R*(lc*vec2(A,B));
+  vec2 world = base + (uSway + uSwayGain*trunk.xy) + drift + R*(lc*vec2(A,B));
   vec2 uv = (world - uCanopyOrigin)/uCanopyExtent;
   gl_Position = vec4(uv*2.0-1.0, 0.0, 1.0);
   vLocal = lc;
@@ -210,7 +213,7 @@ uniform int   uCurtainBake;           // 1 = project onto the VERTICAL curtain p
 uniform float uClothY;                // curtain plane world-Y (cy) when uCurtainBake
 uniform float uMorph;
 uniform float uMorphAmount;
-uniform vec2  uSway;
+uniform vec2  uSway;                  // tree 0's trunk sway; a leaf's own tree adds row 2 of uClusterTex
 uniform float uHRef;                  // reference height: the coherent sway scales by iHeight/uHRef so the canopy bends as ONE piece anchored at the ground (matches the wood)
 uniform highp sampler2D uClusterTex;
 uniform highp sampler2D uClusterGeom;
@@ -229,8 +232,10 @@ flat out float vVariant;
 void main(){
   vec2 leafRest = iA.xy; float A = iA.z, B0 = iA.w;
   float angle = iB.x, restTilt = iB.y, swingGain = iB.z, swingPhase = iB.w;
-  float wm = uAir > 0.0 ? abs(uWindLevel)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uWindLevel);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
-  float swing = uLeafSwing*swingGain*(0.5*uWindLevel + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
+  vec3 trunk = texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 2), 0).xyz;   // this leaf's tree's trunk less tree 0's (komorebi-motion.js publishBend): 0 for tree 0, so one tree reads uSway and uWindLevel to the bit
+  float uk = uWindLevel + trunk.z;                                          // its tree's signed sway u
+  float wm = uAir > 0.0 ? abs(uk)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uk);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
+  float swing = uLeafSwing*swingGain*(0.5*uk + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
   if(uDepth > 0.0){   // depthGate (komorebi-air.js): only as deep into the crown as the wind reaches, at this clump's depth (row 1 .y)
     float dg = clamp((wm/(uDepth*${DEPTH_L0}) - texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).y)/${DEPTH_W} + 1.0, 0.0, 1.0);
     swing *= dg*dg*(3.0 - 2.0*dg);
@@ -272,7 +277,7 @@ void main(){
   float c=cos(ang), s=sin(ang);
   mat2 R=mat2(c,-s,s,c);
   vec2 lc = aCorner*uShapeBox.zw + uShapeBox.xy;                                 // the corner in the leaf's own frame: the ellipse's square to the bit, or the outline's box (see VS_BAKE)
-  vec2 world = base + uSway*(hEff/uHRef) + drift + R*(lc*vec2(A,B));   // coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
+  vec2 world = base + (uSway + trunk.xy)*(hEff/uHRef) + drift + R*(lc*vec2(A,B));   // its tree's coherent sway grows with height (0 at the ground) — leaves stay on their twigs, base anchored
   // THE LEAF'S SHADOW ALONG THE SUN (tilt_shadow). The plan footprint is the leaf flattened: its short half B = B0·|cos(roll)|, every corner at the centre's
   // height. Stood up, a corner sits lc.y·B0·sin(roll) above or below the centre (the tree view's own leaf, below), and projected along the sun from there the
   // quad is the leaf's true shadow, area A·B0·|n·s|/s_z: long for a leaf rolled toward a low sun, thin for one rolled away. A corner keeps its plan point.
@@ -280,7 +285,7 @@ void main(){
 #ifdef SEASON_TRAVEL
   if(uSeasonCast!=0){
     float lift=iJourney.w;
-    vec2 centre=base+uSway*(hEff/uHRef)+drift;
+    vec2 centre=base+(uSway+trunk.xy)*(hEff/uHRef)+drift;
     float angleDelta=mod(ang-iJourney.z+3.14159265359,6.28318530718)-3.14159265359;
     float travelingAngle=iJourney.z+angleDelta*lift+0.20*sin(6.28318530718*lift+iB.w)*sin(3.14159265359*lift);
     mat2 turning=mat2(cos(travelingAngle),-sin(travelingAngle),sin(travelingAngle),cos(travelingAngle));

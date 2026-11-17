@@ -75,7 +75,7 @@ export function makeBake(hub){
     for(let l=0;l<params.layer_count;l++){
       // higher layers ride longer levers -> sway more when height gain > 0 (else pure translation)
       const f = faithfulSway ? H[l]/Math.max(faith.hMax,1e-3) : 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
-      gl.uniform2f(U.bake.sway, motion.sway[0]*f, motion.sway[1]*f);
+      gl.uniform2f(U.bake.sway, motion.sway[0]*f, motion.sway[1]*f); gl.uniform1f(U.bake.swayGain, f);   // tree 0's sway; each clump's own tree adds its share (row 2) by the same lever
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.layerTex[l], 0);
       gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);   // depth 0 -> transmittance 1, coverage 0: alpha has to reset too, or it accumulates across bakes
       for(const [g, cov] of baking){
@@ -103,7 +103,16 @@ export function makeBake(hub){
     if(params.sky_view){
       const woodOn = params.branch_tau > 0 && sky.segRest.length > 0;
       if(woodOn){
-        fillSwayedSegs(sky.segRest, sky.segArr, 0, 0);   // the coherent translation arrives per LAYER below, exactly as the leaves take it
+        fillSwayedSegs(sky.segRest, sky.segArr, 0, 0, null);   // the coherent translation arrives per LAYER below, exactly as the leaves take it:
+        // tree 0's by the uniform, and what a segment's own tree adds to it here, by its layer's lever, as VS_BAKE adds it to that tree's leaves
+        const hr = hub.hier;
+        if(hr?.nTree > 1) for(let l=0;l<params.layer_count;l++){
+          const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
+          for(let k=sky.start[l]|0, e=k+(sky.count[l]|0); k<e; k++){
+            const t = 4*sky.segRest[k].tree, dx = hr.treeDelta[t]*f, dy = hr.treeDelta[t+1]*f, o = 9*k;
+            sky.segArr[o] += dx; sky.segArr[o+1] += dy; sky.segArr[o+2] += dx; sky.segArr[o+3] += dy;
+          }
+        }
         gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
         gl.bufferSubData(gl.ARRAY_BUFFER, 0, sky.segArr);
         gl.useProgram(progFaithSeg);
@@ -144,7 +153,8 @@ export function makeBake(hub){
   // the same pivot, angle and order VS_FAITH gives the leaves hanging on it, so they ride the twig instead of sliding
   // off it. `swx/swy` is the coherent whole-tree translation: the CAST wants it height-scaled and folded in here; the
   // SKY view's layer stamp wants the leaf bake's own per-layer factor instead and passes 0, taking it as a uniform. ----
-  function fillSwayedSegs(R, sa, swx, swy){
+  // swx, swy: tree 0's sway, which grows with height; T (the grove's treeDelta, or null) what each segment's own tree adds to it
+  function fillSwayedSegs(R, sa, swx, swy, T){
     const la = hub.hier ? hub.hier.limbAngle : null, ta = hub.hier ? hub.hier.twigAngle : null;
     const lat = hub.hier ? hub.hier.limbAttach : null;   // per-limb attach height: where the sway_pitch foreshorten is anchored (§5.1)
     const lp = hub.hier ? hub.hier.limbPitch : null;     // per-limb pitch DOF: the angle the foreshorten is taken from (§5.1)
@@ -178,10 +188,11 @@ export function makeBake(hub){
       const at = (sp>0 && lat && s.limb>=0 && s.limb<lat.length) ? lat[s.limb] : 0;
       const ha = at + (s.ha-at)*fore, hb = at + (s.hb-at)*fore;
       const kA = ha/hRef, kB = hb/hRef;   // sway grows with height: 0 at the ground → the trunk base stays PLANTED, the crown sways; same fraction for a limb & the trunk at its height, so they stay joined
-      sa[o]   = px + c*(ax-px) - sn*(ay-py) + swx*kA;
-      sa[o+1] = py + sn*(ax-px) + c*(ay-py) + swy*kA;
-      sa[o+2] = px + c*(bx-px) - sn*(by-py) + swx*kB;
-      sa[o+3] = py + sn*(bx-px) + c*(by-py) + swy*kB;
+      const tx = T ? swx + T[4*s.tree] : swx, ty = T ? swy + T[4*s.tree+1] : swy;   // its own tree's sway, as VS_FAITH gives that tree's leaves
+      sa[o]   = px + c*(ax-px) - sn*(ay-py) + tx*kA;
+      sa[o+1] = py + sn*(ax-px) + c*(ay-py) + ty*kA;
+      sa[o+2] = px + c*(bx-px) - sn*(by-py) + tx*kB;
+      sa[o+3] = py + sn*(bx-px) + c*(by-py) + ty*kB;
       sa[o+4]=ha; sa[o+5]=hb; sa[o+6]=s.ra; sa[o+7]=s.rb; sa[o+8]=s.cov;
     }
   }
@@ -243,7 +254,9 @@ export function makeBake(hub){
     // by up to |sway| at the crown) — none of which are in the rest plan AABB. (The twig-hug trail-back already is.)
     // A leaf's long half-axis is at most 0.7·leaf_size_m, which an ellipse's pad of 1 covers with room to spare; a lobed outline reaches rmax of it from its base, and leaf_variety's size shift (scaleMax, up to ~1.15 of the look's) grows the half-axis by as much (×1 is exact when there is none).
     const leafR = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)*(hub.grove?.scaleMax ?? 1));
-    const pad = leafR + params.drift_amount + Math.hypot(motion.sway[0],motion.sway[1]) + 0.05;
+    let swayMax = Math.hypot(motion.sway[0],motion.sway[1]);   // the furthest any tree's crown has swayed
+    if(hub.hier?.nTree > 1){ const T = hub.hier.treeDelta; for(let k=1;k<hub.hier.nTree;k++) swayMax = Math.max(swayMax, Math.hypot(motion.sway[0]+T[4*k], motion.sway[1]+T[4*k+1])); }
+    const pad = leafR + params.drift_amount + swayMax + 0.05;
     // tilt_shadow throws a corner from up to a leaf's half-extent above or below its centre's height: the frame takes the heights that far out
     // (shut, the heights the frame always took)
     const tz = params.tilt_shadow > 0 ? leafR : 0;
@@ -311,7 +324,7 @@ export function makeBake(hub){
     // FAITHFUL skeleton (§4.5): refill the instance array with the live limb SWING + whole-tree drift, so the wood
     // sways WITH the leaves; then upload + set its statics once.
     if(woodOn){
-      fillSwayedSegs(faith.segRest, faith.segArr, motion.sway[0], motion.sway[1]);
+      fillSwayedSegs(faith.segRest, faith.segArr, motion.sway[0], motion.sway[1], hub.hier?.nTree > 1 ? hub.hier.treeDelta : null);
       gl.bindBuffer(gl.ARRAY_BUFFER, faith.segBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, faith.segArr);
       gl.useProgram(progFaithSeg);

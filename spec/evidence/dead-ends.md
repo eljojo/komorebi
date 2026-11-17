@@ -1102,6 +1102,14 @@ Carried, not fixed: `1 − cos` is even, so an upwind limb pitched up foreshorte
 
 **The lesson.** *The first primitive was wrong, not just mis-tuned.*
 
+### One trunk for the whole grove
+
+**What was tried.** The coherent sway was one vector for the whole grove, and every limb and twig spring was driven by the one gust value at the grove's origin; only the leaves' flutter was carried downwind (`wind_air`).
+
+**What it looked like.** In an eight-tree standing scene in squally wind (José, a screen recording, 2026-11-17), every tree leaned and recoiled at the same instant: the trees read as mechanically linked, "like Age of Empires 2", and the eye could tell.
+
+**What replaced it.** Each tree has its own trunk, driven by the gust as it arrives where it stands, and its limbs and twigs take that trunk's response ([`../model/motion.md`](../model/motion.md)).
+
 ### A random walk for the weather
 
 Rejected: an Ornstein–Uhlenbeck walk would do the job but break the no-RNG rule; deterministic noise of time does it instead.

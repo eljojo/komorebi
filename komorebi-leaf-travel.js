@@ -86,12 +86,14 @@ function moved(q,i,out){
     tx-=len*(cs*dx+sn*dy)/r;ty-=len*(-sn*dx+cs*dy)/r;
   }
   const dx=d[i]-tx,dy=d[i+1]-ty,xx=tx+ct*dx-st*dy,yy=ty+st*dx+ct*dy;
-  const wm=flutterLevel(m.u,H.airData?.[o]||0,p.wind_air), sw=p.leaf_swing*d[i+6]*(.5*m.u+wm*Math.sin(m.time*p.flutter_freq*6.2831853+d[i+7]))*depthGate(wm,H.airData?.[o+1]||0,p.wind_depth);
+  const S=H.swayData,u=S?m.u+S[o+2]:m.u;   // its tree's trunk: tree 0's plus what its own adds (row 2, as the shaders read it)
+  const wm=flutterLevel(u,H.airData?.[o]||0,p.wind_air), sw=p.leaf_swing*d[i+6]*(.5*u+wm*Math.sin(m.time*p.flutter_freq*6.2831853+d[i+7]))*depthGate(wm,H.airData?.[o+1]||0,p.wind_depth);
   const z=p.faithful_canopy ? D[o+2]+d[i+16]*D[o+3] : p.canopy_base_height_m+leafLayerOf(H,j,d[i+16])/Math.max(1,p.layer_count-1)*p.canopy_thickness_m;
   const gain=p.faithful_canopy ? z/Math.max(q.hMax,.001) : 1+p.sway_height_gain*(z/p.canopy_base_height_m-1);
   const phase=p.drift_phase+d[i+15],ox=d[i+12]*Math.cos(phase),oy=d[i+13]*Math.sin(phase),co=Math.cos(d[i+14]),so=Math.sin(d[i+14]);
-  out[0]=px+cl*(xx-px)-sl*(yy-py)+m.sway[0]*gain+p.drift_amount*(co*ox+so*oy);
-  out[1]=py+sl*(xx-px)+cl*(yy-py)+m.sway[1]*gain+p.drift_amount*(-so*ox+co*oy);
+  const swx=S?m.sway[0]+S[o]:m.sway[0],swy=S?m.sway[1]+S[o+1]:m.sway[1];
+  out[0]=px+cl*(xx-px)-sl*(yy-py)+swx*gain+p.drift_amount*(co*ox+so*oy);
+  out[1]=py+sl*(xx-px)+cl*(yy-py)+swy*gain+p.drift_amount*(-so*ox+co*oy);
   out[2]=d[i+2];out[3]=d[i+3]*Math.max(.05,Math.abs(Math.cos(d[i+5]+sw)));out[4]=d[i+4]-L-T+.2*sw;out[5]=z;
 }
 // Patch by patch the correspondence respects the floor. Every endpoint leaf's cast point (plan point - g*h, at the
