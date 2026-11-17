@@ -43,7 +43,7 @@ test("the four new looks (P5-P8) are none of them experimental", () => {
 test("the shipped looks run in the story's order", () => {
   expect(Object.keys(PRESETS).filter((n) => !EXPERIMENTAL.includes(n))).toEqual([
     "park 1, the scene", "park 1, under the trees", "park 2",
-    "cherry blossom", "park fall", "the yellow tree", "montebello", "montebello, rain",
+    "park fall", "cherry blossom", "the yellow tree", "montebello", "montebello, rain",
     "forest floor", "afternoon 7", "afternoon 6", "afternoon 6b", "afternoon 5", "afternoon 5b", "prism", "afternoon 4", "afternoon 4b",
     "morning 1", "morning 2", "morning 3", "morning 3b", "memories",
   ]);
