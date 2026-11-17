@@ -180,6 +180,7 @@ ES‑module dev needs http (not `file://`). With Nix:
 
 ```
 nix run .#dev      # serve + live‑reload at http://localhost:8000
+nix run .#test     # the unit tests (bun, no browser)
 nix run .#lint     # biome
 nix run .#build    # bundle dist/komorebi.player.min.js (every shipped look, no experimental ones)
 node glslcheck.mjs # offline shader validation — compiles every GLSL literal in the engine modules (glslangValidator, no GPU)
@@ -187,6 +188,9 @@ nix run .#pixels   # the pixel harness — render every look + pixel suites (fir
 nix run .#editor   # the editor smoke — mode ladder + macro bus driven in headless Chromium (same first-run setup)
 nix run .#embed -- 'morning 2' 'afternoon 5b' 'morning 3'   # a one-page bundle: only those looks, only the cameras they use
 nix run .#embed-check                                       # ...and check it renders them byte-identically
+nix run .#arboretum-dev     # arboretum (arboretum/) and this checkout on https://localhost:8787 (first run: cd arboretum && nix develop -c npm ci)
+nix run .#arboretum-test    # arboretum's typecheck and tests
+nix run .#arboretum-deploy  # deploy komorebi.eljojo.net (the Worker and the site) from HEAD
 ```
 
 [`CLAUDE.md`](CLAUDE.md) is the repo map. A push to `main` builds `dist/` and publishes the site.

@@ -121,7 +121,7 @@ half, run `nix run .#arboretum-dev` and open `https://localhost:8787/`.
 
 **`arboretum/`** is the session half: the Cloudflare Worker (with D1) that serves komorebi.eljojo.net — komorebi's static site
 at the root, arboretum's pages under `/arboretum`, the API at `/api`. It is its own project, TypeScript with its own
-`package.json`, vitest suite and `tsc` (`cd arboretum && nix develop -c npm test`), and its README is its map. It is not
+`package.json`, vitest suite and `tsc` (`nix run .#arboretum-test`), and its README is its map. It is not
 pinned to an engine: `arboretum/scripts/engine.mjs` generates its validator tables and engine bundle from this tree,
 gitignored, before its tests, typecheck and dev mode, and `nix run .#arboretum-deploy` deploys HEAD. The engine's tools
 (bun test, biome, `nix run .#dev`, the Pages site) leave `arboretum/` alone; the engine never imports from it.

@@ -196,7 +196,30 @@
               npx wrangler deploy
             '';
           };
+          # `nix run .#test [-- bun test args]` — the engine's unit tests, as pages.yml runs them (no browser, seconds).
+          test = pkgs.writeShellApplication {
+            name = "test";
+            runtimeInputs = [ pkgs.bun ];
+            text = ''exec bun test ./*.test.js "$@"'';
+          };
+          # `nix run .#arboretum-test [-- vitest args]` — arboretum's typecheck, then its tests in the Workers runtime; each
+          # generates the engine from this tree first. First run: cd arboretum && nix develop -c npm ci.
+          arboretum-test = pkgs.writeShellApplication {
+            name = "arboretum-test";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git pkgs.bun pkgs.gzip ];
+            text = ''
+              cd "$(git rev-parse --show-toplevel)/arboretum"
+              if [ ! -d node_modules ]; then
+                echo "first run: cd arboretum && nix develop -c npm ci" >&2
+                exit 1
+              fi
+              npm run typecheck
+              exec npm test -- "$@"
+            '';
+          };
         in {
+          test = { type = "app"; program = "${test}/bin/test"; };
+          arboretum-test = { type = "app"; program = "${arboretum-test}/bin/arboretum-test"; };
           arboretum-dev = { type = "app"; program = "${arboretum-dev}/bin/arboretum-dev"; };
           arboretum-deploy = { type = "app"; program = "${arboretum-deploy}/bin/arboretum-deploy"; };
           dev = { type = "app"; program = "${dev}/bin/dev"; };

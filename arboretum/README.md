@@ -48,9 +48,7 @@ arboretum.eljojo.net stays attached for now: its `/api` answers as before and ev
 ## Test
 
 ```sh
-cd arboretum
-nix develop -c npm test
-nix develop -c npm run typecheck
+nix run .#arboretum-test        # typecheck, then the tests; `-- <vitest args>` narrows them
 ```
 
 The tests run in the Workers runtime, in-process, against a local D1 with the migrations applied.
