@@ -72,6 +72,10 @@ Since 2026-11-17 `ground_bounce` 1 is the default ([`../model/fill.md`](../model
 
 Since 2026-11-17 `tilt_shadow` 1 is the default ([`../model/leaf.md`](../model/leaf.md#what-one-leaf-stamps)): the faithful cast throws each tilted leaf along the sun from its corners' own heights instead of stamping the footprint an overhead sun would. Every look cast faithfully takes it; the artist kept none as made ("None, all take it"). At their own 26° sun the standing looks' shade grows 5–35 % and fills in under the crown; under a low sun a canopy closes up as a real one does; `montebello, rain`, nearly bare, barely moves (`test-gl/out/review/2026-11-17-low-sun-shadow`). The layer-path looks never read it. A look kept elsewhere from before takes it on its next load.
 
+## Leaf-out, by default
+
+Since 2026-11-17 `leaf_out_end` 0.14 is the default ([`../model/season.md`](../model/season.md#leaf-out-the-spring-half)): the season opens with leaf-out below phenology ~0.22. Of the shipped looks only `memories` sits there (0.15); the artist chose for it to take the spring, so its leaves are mid-greening, and its shade is 0.11 stop lighter and paler (`test-gl/out/review/2026-11-17-spring`). Every other look sits at 0.4 or above and does not move. A look kept elsewhere from before keeps `leaf_out_end` 0.
+
 ## Exposure under cloud
 
 Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to exposure / (1 + its own `cloud_thickness`): it shows as it always did at its own cloud, and a thicker cloud, from a transition, the weather macro or the editor, opens the exposure up instead of only blurring the dapples. A look saved without the key keeps exposure fixed.
@@ -135,7 +139,7 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 ### memories
 - **Camera and mode:** floor, layered.
 - **For:** the north-star look of the founding afternoon in [`../experience.md`](../experience.md): a sparse early-spring grove, so individual leaves still matter, a clear sky, open branching, bright exposure. The spring stop of the season macro.
-- **Authored departures:** none recorded. Its `phenology` is a stamp for the season macro to read, and sits below the turn, where nothing reads it.
+- **Authored departures:** none recorded. Its `phenology` 0.15 sits inside the spring: its leaves are full-grown and still greening, a little paler and more translucent than summer (the artist: "Memories takes it").
 - **Gates:** none.
 
 ### morning 1

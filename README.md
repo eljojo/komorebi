@@ -217,6 +217,11 @@ Komorebi stands on research into how real trees grow and how real leaves handle 
   S. Jacquemin and A. Granier (2002), *Annals of Forest Science* 59, beech's short and long shoots in sun and shade; I. Planchais
   and H. Sinoquet (1998), *Agricultural and Forest Meteorology* 89, leaf angle in sun and shade; the light from above, after
   Pałubicki et al. (2009).
+- Leaf-out, the spring half (`komorebi-math.js`): R. A. Gregory (1980), *Canadian Journal of Forest Research* 10, a sugar
+  maple leaf's growth; the University of Vermont's Forest Ecosystem Monitoring Cooperative, sugar maple bud break and leaf-out
+  at Proctor Maple Research Center; X. Yang, J. Tang, J. F. Mustard et al. (2016), *Remote Sensing of Environment* 179, a young
+  leaf's pigments over the spring; M. N. Merzlyak, O. B. Chivkunova, A. E. Solovchenko and K. R. Naqvi (2008), *Journal of
+  Experimental Botany* 59, the red of young Norway maple leaves.
 
 **Informing the work in progress** (sun and shade leaves, and the light inside a crown)
 - R. Habel, A. Kusternig and M. Wimmer (2007), Eurographics Symposium on Rendering: a leaf's translucency.

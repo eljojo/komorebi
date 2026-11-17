@@ -477,6 +477,14 @@ const INVARIANTS = [
   { name: 'park 1 is the frame it was (faithful floor: wood texture 1x1, unread)', preset: 'park 1', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '6c495c41' },   // re-pinned when each tilted leaf's shadow was thrown along the sun, which moved it on purpose
   // curtain 1 is a velvet now: the row holds the laws at 0 on the cotton it was pinned on
   { name: 'curtain 1 is the frame it was (cloth)', preset: 'curtain 1', a: { sun_cosine: 0, sun_extinction: 0, cloud_exposure: 0, exposure: 1.4, fabric_tt: 0.78, fabric_tint_r: 0.45, fabric_tint_g: 1, fabric_tint_b: 0.28, fold_depth: 0.38, velvet_sheen: 0.02 }, pin: '1c221f6c' },   // re-pinned when each tilted leaf's shadow was thrown along the sun, which moved it on purpose
+  // LEAF-OUT (the spring half, spec model/season.md): nothing past the spring, on every path; below it the canopy thins, shrinks and pales, on the layered floor, the faithful floor and the sky view
+  { name: 'memories at leaf_out_end 0 is the frame it was (layer floor)', preset: 'memories', a: { leaf_out_end: 0 }, pin: '6120f018' },
+  { name: 'leaf_out_end is inert past the spring (afternoon 7, layer floor)', preset: 'afternoon 7', a: { leaf_out_end: 0 }, b: { leaf_out_end: 0.14 } },
+  { name: 'leaf_out_end is inert past the spring (park 1, faithful)', preset: 'park 1', rebake: true, a: { leaf_out_end: 0 }, b: { leaf_out_end: 0.14 } },
+  { name: 'leaf-out moves a leafing-out canopy (afternoon 7 at 0.04, layer floor)', preset: 'afternoon 7', differ: true, a: { phenology: 0.04, leaf_out_end: 0 }, b: { phenology: 0.04 } },
+  { name: 'leaf-out moves a leafing-out canopy (park 1 at 0.04, faithful)', preset: 'park 1', rebake: true, differ: true, a: { phenology: 0.04, leaf_out_end: 0 }, b: { phenology: 0.04 } },
+  { name: 'leaf-out moves a leafing-out canopy (canopy 1 at 0.04, sky view)', preset: 'canopy 1', differ: true, a: { phenology: 0.04, leaf_out_end: 0 }, b: { phenology: 0.04 } },
+  { name: 'young_red 0.4 flushes the new leaves (park 1 at 0.08, faithful)', preset: 'park 1', rebake: true, differ: true, a: { phenology: 0.08 }, b: { phenology: 0.08, young_red: 0.4 } },
   // A TILTED LEAF'S SHADOW (tilt_shadow, spec model/leaf.md): shut, the faithful cast is the plan footprint it always stamped, to the bit; open, it moves a faithful cast
   // (most at a low sun) and the curtain's; the layer path stamps plan footprints and never reads it
   { name: 'tilt_shadow 0 is the cast it was (faithful floor: park 1)', preset: 'park 1', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44, tilt_shadow: 0 }, pin: 'a72ea5d5' },
@@ -485,14 +493,14 @@ const INVARIANTS = [
   { name: 'tilt_shadow 1 moves the cloth (curtain 1)', preset: 'curtain 1', differ: true, a: { tilt_shadow: 0 }, b: { tilt_shadow: 1 } },
   { name: 'tilt_shadow is inert on the layer path (memories)', preset: 'memories', a: { tilt_shadow: 0 }, b: { tilt_shadow: 1 } },
   // TODO revisit these layer-floor pins: untouched 14a97c2 also gives ea083587 / 8f0a8e8e on this SwiftShader host (2026-11-07); tint-cache renders differ by 0 pixels.
-  { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: '6120f018' },   // re-pinned when leaves were hung on shoots and tilted by their light, which moved it on purpose
+  { name: 'memories is the frame it was (layer floor)', preset: 'memories', pin: 'f0d0e6bc' },   // re-pinned when memories took the spring (its phenology 0.15 is mid-greening), which moved it on purpose
   { name: 'afternoon 7 is the frame it was (layer floor)', preset: 'afternoon 7', a: { sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '8f0a8e8e' },
   // The ONE pin that moved, on purpose: it is a leaf_diffuse > 0 frame, and P0c-edge reads every texel there as a mixture of leaf and gap (§4.5), so the
   // frame P0c-sky pinned (eb960892: the shared ray's new signature, the slab) is not this one. Re-recorded from the engine after the change; what says it moved
   // the right way is not this hash but the soft-edge rows (SOFT EDGES), the fill and look-up checks, and the energy rows.
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 1eb1787a on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'memories with the split and the fill open is the frame P0c-edge made (was eb960892, the slab)', preset: 'memories',
-    a: { canopy_fill: 1, leaf_diffuse: 0.95 }, pin: 'ee23d077' },   // re-pinned when leaves were hung on shoots and the ground's light was returned off the undersides, which moved it on purpose
+    a: { canopy_fill: 1, leaf_diffuse: 0.95 }, pin: 'c8cf9f40' },   // re-pinned when memories took the spring (its phenology 0.15 is mid-greening), which moved it on purpose
   // The gate, on the camera that grew a branch: leaf_diffuse 0 is beamK 0 is the literal old composition in the else...
   { name: 'canopy 1 with leaf_diffuse 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { leaf_diffuse: 0 } },
   // ...with the whole P0c family armed behind it: the fill the sky view never reads, and sky_scatter, a live knob at 0 and the same
@@ -542,13 +550,13 @@ const INVARIANTS = [
   // THE BEECH, AS IT HUNG (leaf diversity, 2026-10-09): pins, written down from the engine before the aspect law and before leaf_variety, which both promise the beech's frame does not move
   // (the law because its look is at aspect 1, leaf_variety because it ships at 0): the layer bake, the faithful cast and the carpet, each taken as a whole frame.
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give ca24284d on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'beech, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: '78d4bd50' },   // re-pinned when leaves were hung on shoots and tilted by their light, which moved it on purpose
+  { name: 'beech, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'beech', leaf_aspect: 1 }, pin: 'd4d834d9' },   // re-pinned when memories took the spring (its phenology 0.15 is mid-greening), which moved it on purpose
   { name: 'beech, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'beech', leaf_aspect: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: 'd96eff40' },   // re-pinned when each tilted leaf's shadow was thrown along the sun, which moved it on purpose
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give 9668d2f8 on this SwiftShader host (2026-11-07), with 0 pixel difference.
   { name: 'beech, as it hung before leaf_variety (litter: afternoon 7)', preset: 'afternoon 7', a: { leaf_shape: 'beech', leaf_aspect: 1, leaf_drop: 1, phenology: 0.9, litter: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: '18df2f12' },   // re-pinned when the pigment basis was fitted to PROSPECT-D, which recoloured the carpet on purpose
   // ...and the RECALIBRATED MAPLE (leaf diversity, 2026-10-09), pinned the same way at the end of the recalibration and before any leaf_variety edit: its own bits are new, so what leaf_variety must not move is these.
   // re-pinned on a macOS SwiftShader host for the maple's curved base
-  { name: 'the recalibrated maple, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: 'a3f309b1' },   // re-pinned when leaves were hung on shoots and tilted by their light, which moved it on purpose
+  { name: 'the recalibrated maple, as it hung before leaf_variety (layer: memories)', preset: 'memories', a: { leaf_shape: 'maple', leaf_aspect: 1 }, pin: '1c0b2cd9' },   // re-pinned when memories took the spring (its phenology 0.15 is mid-greening), which moved it on purpose
   // re-pinned on a macOS SwiftShader host for the maple's curved base
   { name: 'the recalibrated maple, as it hung before leaf_variety (faithful: park 1, rebake)', preset: 'park 1', rebake: true, a: { leaf_shape: 'maple', leaf_aspect: 1, sun_cosine: 0, cloud_exposure: 0, exposure: 2.44 }, pin: 'e7932f2c' },   // re-pinned when each tilted leaf's shadow was thrown along the sun, which moved it on purpose
   // re-pinned on a macOS SwiftShader host for the maple's curved base
@@ -636,7 +644,7 @@ const INVARIANTS = [
   { name: 'edge_area lightens the soft edges, a little (layer path: afternoon 7)', preset: 'afternoon 7', lit: [1.0, 1.08], a: {}, b: { edge_area: true } },
   // The look edge_area made, written down once every row above was green (a pin says the frame itself does not drift; the rows say it moved the right way)
   // TODO revisit this pin: untouched 14a97c2 and the tint-cache render both give f9f447c6 on this SwiftShader host (2026-11-07), with 0 pixel difference.
-  { name: 'memories with edge_area on is the frame edge_area made', preset: 'memories', a: { edge_area: true }, pin: '9813a14e' },   // re-pinned when leaves were hung on shoots and tilted by their light, which moved it on purpose
+  { name: 'memories with edge_area on is the frame edge_area made', preset: 'memories', a: { edge_area: true }, pin: '4fadb2a4' },   // re-pinned when memories took the spring (its phenology 0.15 is mid-greening), which moved it on purpose
   // THE FABRIC'S GRAIN (§4.9, `fabric_nap`): 0 is the pile's nap alone; up, a fine ripple even on a taut cloth.
   { name: 'fabric_nap 0 == absent (curtain 2)', preset: 'curtain 2', a: {}, b: { fabric_nap: 0 } },
   { name: 'fabric_nap 0.04 grains the tent (tent 1 at 0 against its own)', preset: 'tent 1', differ: true, a: { fabric_nap: 0 }, b: {} },

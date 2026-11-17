@@ -10,7 +10,7 @@ None of it is simulated over time: the same look at the same phenology is the sa
 
 `phenology` is the season, one number: **0** spring bud, **0.5** summer, **1** the end of the fall. A leaf's colour turns between `turn_start` (**0.6**) and `turn_start + turn_span` (**0.9**); its letting go is a separate law, abscission, behind its own gate. So phenology 1 is every leaf fully turned, not a bare tree; a bare tree is what abscission makes of it.
 
-There is **no spring half** yet: below the turn, the season is simply summer and the leaf is its authored self.
+Below the turn the season opens with **leaf-out** (below): each leaf emerges on its own day, grows to its full size and greens from a pale young leaf, and the last is full-grown at `leaf_out_end` (**0.14**). Between the spring and the turn the leaf is its authored self.
 
 ## Senescence: every leaf runs its own clock
 
@@ -48,6 +48,26 @@ A leaf begins at `turn_start` plus its own share of `turn_spread` and has finish
 The gate is `s_j = 0` and not `wall_fraction = 0`: at `s_j = 0` wall and cell are one tissue and the sieve is the identity in exact arithmetic; the gate makes it the identity in practice, which is what lets a vein share ride along on a summer look and change nothing. What a gate's off state owes is [`../contracts/preservation.md`](../contracts/preservation.md).
 
 The pigment knobs are grove-wide leaf colour: they morph the same grove under a transition, and with the rest of the season set they re-season it rather than regrow it ([below](#re-seasoning-the-season-is-a-function-of-the-grove)).
+
+## Leaf-out: the spring half
+
+Each leaf emerges on its own day, grows from nothing to its full size and greens from a pale, see-through young leaf to its summer self.
+
+> `E_j = leaf_out_end − leaf_out_span − (1 − ψ_j)·leaf_out_spread`    its emergence; the last leaf (ψ → 1) is full-grown at `leaf_out_end`
+> `ℓ_j = smoothstep(E_j, E_j + leaf_out_span, phenology)`    its length's share of the grown leaf: its half-axes × ℓ, its area × ℓ²
+> `q_j = smoothstep(E_j, E_j + leaf_green_span, phenology)`    how far it has greened
+> `τ_j = (young_depth + (1 − young_depth)·q_j)·τ_summer + (1 − q_j)·young_red·(0.5 + h_j)·τ_anthocyanin`
+
+- **The timing** (Gregory 1980, sugar maple at Proctor, Vermont): one leaf's midrib grows to full length over about three weeks, and a smoothstep of its length from bud opening passes through his Fig. 19's points; `leaf_out_span` **0.09**. The stand's first bud break to its full leaf-out is about 12 days at the same site (UVM FEMC long-term monitoring); `leaf_out_spread` **0.05**. Both are read at about **230 days a phenology unit**, an inference from the season's own spreads, not a measurement (**Provisional**). With them `leaf_out_end` 0.14 puts the first bud break at phenology 0.
+- **The colour** (Yang et al. 2016, Harvard Forest): chlorophyll rises from about 10 µg cm⁻² at the start of the season to about 40, carotenoids from 3 to 10, plateauing about 40 days after bud opening; `leaf_green_span` **0.17** (**Provisional**: two sites, two years). In PROSPECT the young leaf at a quarter of the summer chlorophyll is the summer leaf at **0.36** of its optical depth to 0.007 in OKLab; `young_depth` 0.36: a pale, very translucent lime (**Provisional**).
+- **The red flush** (`young_red`, anthocyanin units, the fall's own basis): juvenile Norway maple carries about 0.4 (Merzlyak et al. 2008, read through a summary of its Table 1); no sugar-maple figure was found, so the default is 0. It fades as the leaf greens. `h_j` is the leaf's own share of it.
+- **Not out is no leaf.** ℓ = 0 compacts the leaf out of both bakes, as a fallen one is, but it lies on no carpet; at bud break a grove is its wood.
+- **Calm by construction.** Size starts from nothing and colour from the young depth, both continuous, so a leaf needs no fade to appear.
+- **The spring closes before the turn.** It is open while `phenology < leaf_out_end + max(0, leaf_green_span − leaf_out_span)`, and `leaf_out_end` is held so that this is no later than the earliest tree's turn: a leaf is in spring or in fall, never both. **The summer gate holds:** a leaf full-grown and green carries its authored τ and its grown size literally, and `leaf_out_end` 0 is no spring at any phenology.
+- **Exposure, variety and the drop are the grove's at full size**: the exposure grid keeps the summer set, as it keeps the fallen.
+- **The stream.** ψ and h are the leaf's own draws on a salt of their own ([`../contracts/determinism.md`](../contracts/determinism.md)).
+
+On by default; a look from before it keeps `leaf_out_end` 0 ([`../contracts/looks.md`](../contracts/looks.md)). The six keys are season keys: a step re-seasons the grove, as the fall's do.
 
 ## Light decides who turns first
 
@@ -310,6 +330,11 @@ with `amb` exactly the fill's term, one expression for both, so the bare floor a
 
 ## Approximations and limits
 
+- **Leaf-out's calendar** (Provisional). About 230 days a phenology unit, inferred; the timing and the colour come from three sites, years and species mixes (Gregory, FEMC, Yang).
+- **A young leaf's translucency is its depth alone** (Approximation): its diffuse share is the summer leaf's; no source here quantifies a young leaf's scattering.
+- **Leaf-out keeps the outline** (Approximation): a leaf grows by scaling, not by unfolding.
+- **The season flight carries grown leaves** (Approximation): a route between two looks with a leafing-out end does not fly; it crosses another way.
+
 - **One representative sun** (Approximation). Exposure is to a fixed 45° ray from the south, the turn's and the drop's alike; a season's sun over many directions would shade the up-sun face and re-rank every leaf. Absent: `turn_exposure` 0 and no light-ordered drop.
 - **A coarse grid, one ray** (Approximation). Exposure is binned on a plan grid of about 48 cells and 24 height bands; the cell stands in for the clump, leaf orientation is ignored (a leaf is its flat area, `kx` fixed at the spherical value), and clumping within a cell is not modelled.
 - **Rank amplifies** (Authored). In a wholly open canopy the rank still orders the leaves over their whole span, magnifying differences a stand that sunny would barely have, and it discards absolute light; `exposure_absolute` gives it back as far as it is turned up.
@@ -334,7 +359,7 @@ with `amb` exactly the fill's term, one expression for both, so the bare floor a
 
 ## Not built
 
-- The **spring half** of the season: below the turn it is summer ([`../exploration/open.md`](../exploration/open.md)).
+- The spring's **shape**: the leaf keeps its outline as it grows; limp young leaves, hairs, the shoot's own elongation and the smaller late leaves of a vigorous shoot are not modelled. A young leaf's diffuse share is the summer leaf's ([`../exploration/open.md`](../exploration/open.md)).
 - A **patchy turn**, which would reshape the turn clock and so the order inside a tie ([`../exploration/open.md`](../exploration/open.md)).
 - A **species** clock and palette, and clonal patches that turn together (the mixed grove), where the provisional drop shares would live ([`../exploration/open.md`](../exploration/open.md)).
 - The **valley's terrain** into `groundShade`, and a **site field** correlating neighbours ([`../exploration/open.md`](../exploration/open.md)).

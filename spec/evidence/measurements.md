@@ -189,6 +189,13 @@ No measurement of the floor camera's framing or the Look's tail is recorded. The
 
 ## leaf
 
+### Leaf-out
+
+- **The young leaf in PROSPECT** (Chl 40, Car 10 the mature leaf): a young leaf with chlorophyll at 0.25 of it (Chl 10, Car 3, Yang et al. 2016's start of season) is the summer leaf at 0.363 of its optical depth, ΔE 0.007 in OKLab; at 0.125, 0.216 (0.011); at 0.5, 0.613 (0.017); at 0.75, 0.814 (0.026, mostly the summer leaf's blue held at 0.001). The share goes about as the chlorophyll fraction to the 0.72. Juvenile Norway maple, red: the summer leaf at 0.6 of its depth plus 0.40 of the anthocyanin basis is within 0.021 of PROSPECT. `memories`' authored gold-brown leaf is nearest a red-flushed young leaf, not a chlorophyll-limited one (ΔE 0.06) (from the integration plan's prototype, uncommitted source).
+- **The timing.** Gregory (1980), sugar maple, Fig. 19 read off the page image (midrib mm, ±3): long shoots' node 1 at 39 / 94 / 123 on days 137 / 144 / 151, node 4 at 6 / 25 / 60; a 21-day smoothstep of length from day 129 passes through node 1's. FEMC, Proctor: first bud break DOY 125, full leaf-out DOY 137 (long-term means).
+- **The engine** (Chrome on Metal, 960×540, wind off). `park 1, the scene`: bare at 0.02, the first leaves at 0.04, every leaf out and growing at 0.08, full-grown and still pale at 0.14, summer at 0.5; the shade under the crown covers 1.8 % of the frame at bud break and 5.3 % in summer. `memories`, at its own phenology 0.15, with the spring against without: the shade 0.11 stop lighter and paler, 42 % of pixels move by more than 8 of 255. `young_red` 0.4 at 0.08 reddens a standing crown's shade (G/B 1.50 → 1.24).
+- **Date:** 2026-11-17 (`test-gl/out/review/2026-11-17-spring/`, git-ignored).
+
 ### A tilted leaf's shadow under a low sun
 
 - **The plan footprint against the true shadow**, on a faithful grove of 45,936 leaves (median tilt 24°, p90 44°), each leaf's side drawn by its hash: the canopy's total leaf shadow, true over cast, is 1.000 at 80° of sun, 1.002 at 45°, 1.052 at 30°, 1.213 at 20° and 1.885 at 10°. Per leaf, p10–p90 of the ratio is 0.90–1.10 at 80°, 0.45–1.54 at 45° and 0.27–2.49 at 20° (from the integration plan's prototype, uncommitted source).

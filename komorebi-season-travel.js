@@ -1,4 +1,4 @@
-import {DEG, TAU, beamExposure, cameraPose, leafClock, lerp, lerpAngle, smoothstep, turnBack} from './komorebi-math.js';
+import {DEG, TAU, beamExposure, cameraPose, leafClock, lerp, lerpAngle, smoothstep, springing, turnBack} from './komorebi-math.js';
 import {CANOPY_MORPH_MAX, DEFAULTS, SEASON_KEYS} from './komorebi-params.js';
 import {litterAlbedo,litterAge,litterLanding} from './komorebi-litter.js';
 import {makeBake} from './komorebi-bake.js';
@@ -27,6 +27,7 @@ export function seasonCamera(a,b,w){
 export const seasonTravelEligible=FEAT_LITTER ? (a,b)=>{
   if(!FEAT_DROP)return false;
   if(!a.faithful_canopy||!b.faithful_canopy||!a.standing_scene||!b.standing_scene||a.sky_view||b.sky_view||a.receiver!==0||b.receiver!==0||a.leaf_variety!==0||b.leaf_variety!==0)return false;
+  if(springing(a)||springing(b))return false;   // the flight carries every leaf at its grown size at both ends; a leaf still coming out is neither, so a spring pair takes another route
   const fallenA=a.litter>0&&a.leaf_drop>0,fallenB=b.litter>0&&b.leaf_drop>0;
   const supported=fallenA&&(fallenB||b.litter===0&&b.leaf_drop===0)||fallenB&&a.litter===0&&a.leaf_drop===0;
   if(!supported||Object.keys(DEFAULTS).some(k=>!SEASON_ROUTE_KEYS.has(k)&&a[k]!==b[k]))return false;

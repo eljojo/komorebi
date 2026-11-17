@@ -36,7 +36,7 @@ test('season travel requires a shared standing grove with a carpet at one end an
   const a=PRESETS['cherry blossom'],b=PRESETS['park 2'];
   expect(travel.seasonTravelEligible(a,b)).toBe(true);expect(travel.seasonTravelEligible(b,a)).toBe(true);
   for(const change of [{seed:1},{branch_angle_deg:20},{leaf_variety:.9},{standing_scene:false},{faithful_canopy:false},
-    {sky_view:true},{receiver:1},{sun_elevation_deg:45},{tone_map:0},{foliage_density:100},{leaf_drop:.2},{litter:1},{trans_r:.1},{trans_g:.1},{trans_b:.1}]){
+    {sky_view:true},{receiver:1},{sun_elevation_deg:45},{tone_map:0},{foliage_density:100},{leaf_drop:.2},{litter:1},{trans_r:.1},{trans_g:.1},{trans_b:.1},{phenology:.05,leaf_out_end:.14}]){   // a leafing-out end: the flight carries grown leaves only
     expect(travel.seasonTravelEligible(a,{...b,...change}),JSON.stringify(change)).toBe(false);
   }
 });

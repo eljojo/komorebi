@@ -469,6 +469,42 @@ const TWEEN_STEP = DROP_EPS/2;
 const turnOpens = (P) => P.tree_clock_spread > 0 ? P.turn_start - P.tree_clock_spread : P.turn_start;
 const dropOpens = (P) => P.tree_clock_spread > 0 ? P.drop_start - P.tree_clock_spread : P.drop_start;
 const senescing = (P) => P.phenology > turnOpens(P);
+// ---- THE SPRING HALF (spec model/season.md, "Leaf-out"). Below the turn the season opens with leaf-out: each leaf emerges on its own day and grows to its
+// full size over leaf_out_span (one leaf's midrib, a 21-day smoothstep in Gregory 1980's sugar maple, area as its square), the leaves' days scattered over
+// leaf_out_spread (12 days, first bud break to full leaf-out, at the same site), so the last is full-grown at leaf_out_end. A new leaf is the summer leaf at a
+// share of its optical depth, young_depth (chlorophyll a quarter of summer's, Yang et al. 2016, read through PROSPECT), greening to it over leaf_green_span, and
+// optionally flushed red (young_red, anthocyanin units; juvenile Norway maple ≈ 0.4, Merzlyak et al. 2008). The calendar is inferred: about 230 days a
+// phenology unit (Provisional). A leaf's emergence draws from a stream of its own, SPRING_SALT = 7·0x9E3779B9 mod 2^32, the golden gamma's next multiple
+// after the shoots' 6·: no other leaf stream moves. The spring closes before the turn can open, so a leaf is in spring or in fall, never both.
+const SPRING_SALT = 0x5384540F;
+function springDraws(seed, j, k, out, o = 0){   // [emergence order ψ, red share h]
+  const r = mulberry32(hash3((seed>>>0)^SPRING_SALT, j, k));
+  out[o] = r(); out[o+1] = r();
+  return out;
+}
+// The spring's span and the leaf_out_end it can have: held so the last leaf is full-grown and green before the turn's earliest start.
+function springShape(P, out){
+  const span = Math.max(P.leaf_out_span, 1e-4), green = Math.max(P.leaf_green_span, 1e-4), spread = clamp(P.leaf_out_spread, 0, span*0.95);
+  const tail = Math.max(0, green - span);
+  out[0] = Math.min(P.leaf_out_end, turnOpens(P) - tail); out[1] = span; out[2] = spread; out[3] = green; out[4] = out[0] + tail;   // end, span, spread, green, closes
+  return out;
+}
+const _springShape = new Float64Array(5);
+const springing = (P) => P.leaf_out_end > 0 && P.phenology < springShape(P, _springShape)[4];
+// A leaf's state now: out[0] its length's share of the full leaf (its half-axes scale by it), out[1] how far it has greened. Both 1 once grown: the summer leaf.
+function leafSpring(P, psi, out){
+  const sh = springShape(P, _springShape), E = sh[0] - sh[1] - (1 - psi)*sh[2];
+  out[0] = smoothstep(E, E + sh[1], P.phenology); out[1] = smoothstep(E, E + sh[3], P.phenology);
+  return out;
+}
+// The young leaf's depth: the summer depth at g = young_depth + (1 − young_depth)·q, plus the red that fades as it greens. q = 1 returns the summer leaf's own numbers.
+function springTau(tauSummer, P, q, h, out = [0,0,0]){
+  if(q === 1){ out[0]=tauSummer[0]; out[1]=tauSummer[1]; out[2]=tauSummer[2]; return out; }
+  const yd = clamp(P.young_depth, 0, 1), g = yd + (1 - yd)*q, red = (1 - q)*Math.max(0, P.young_red)*(0.5 + h);
+  for(let c=0;c<3;c++) out[c] = g*tauSummer[c] + red*TAU_ANTHOCYANIN[c];
+  return out;
+}
+
 const lit = (P) => senescing(P) && P.turn_exposure > 0;
 // After the turn the first fade begins at turn_start + L + drop_lag (the earliest leaf, phi' 0, D − ε), and `dropping` opens ONE ε before it on purpose: (x + ε) − ε is not x
 // in float, an early open is free (retention returns exactly 1), and a late one would skip a fade. It may never be later than the first fade.
@@ -704,4 +740,4 @@ function irisStep(route, e, p) {
   return lerp(route.from, route.to, e);
 }
 
-export { DEG, TAU, cameraPose, vignetteMask, irisRoute, irisStep, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, mulberry32, makeGauss, hash3, leafSide, SIDE_SALT, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, turnWindow, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, cameraPose, vignetteMask, irisRoute, irisStep, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, mulberry32, makeGauss, hash3, leafSide, SIDE_SALT, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, turnWindow, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, SPRING_SALT, springDraws, springShape, springing, leafSpring, springTau, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

@@ -21,6 +21,7 @@ const MARKERS = {
   drop: [".drop_span"],
   litter: ["uLitterMinHalf", ".litter_age", ".litter_drift_m"],
   treeView: ["uTreeCover", "uSlab", ".bark_r"],
+  spring: [".young_depth", ".young_red"],   // springTau alone reads them; the gate (`springing`) is a predicate every bundle keeps
 };
 let dir, whole, home, player;
 const text = (r) => readFileSync(r.out, "utf8");

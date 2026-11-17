@@ -4,7 +4,7 @@
 // knob (spec §9 "Scene transitions"), DEFAULTS (the editor edits a live copy;
 // presets merge over it), and the legacy-name migration (spec §9).
 // ============================================================================
-import { senescing, dropping, ordered } from './komorebi-math.js';
+import { senescing, dropping, ordered, springing } from './komorebi-math.js';
 
 const MAX_SAMPLES = 48;
 const BAKE_MIN = 768;   // floor auto_quality trims bake_resolution to below the knee (§9)
@@ -233,6 +233,32 @@ const PARAMS = {
     row: { kind: 's', label: 'phenology', min: 0, max: 1, step: 0.01, rebuild: 'season' },   // §4.5: the season — 0.5 is summer, where the three below (and the turn clock) are inert and hidden
     travels: 'season',   // leaf colour, like trans_rgb: each is a per-leaf tau read at regrow, so it morphs the SAME grove (spec §4.5); the last two are per TREE, the same tau and day by a tree's own draw
     means: "<b>The season — spring bud, summer, leaf-off.</b> 0.5 is summer and the leaves are exactly the look's own colour. Past the turn the leaves change, each on its own clock: the green is dismantled, the yellow that was always there shows, red is made. On the ground it's the <i>shade</i> that goes warm — the suns stay white-gold. With <i>leaf fall</i> up it also lets the leaves go, each on its own day." },
+  // THE SPRING HALF (spec model/season.md, "Leaf-out"): below leaf_out_end + the green's tail the leaves are emerging, growing and greening, each on its own day.
+  // On by default (a look from before it was keeps leaf_out_end 0: GRANDFATHERED, below); it only shows below phenology ~0.22, where no look but those that ask sits.
+  leaf_out_end: { default: 0.14,   // the season by which the last leaf is full-grown: span + spread, so the first bud breaks at phenology 0 (≈230 days a unit, Provisional). 0 = no spring, every leaf its grown self at any phenology, to the bit. Held under the turn
+    row: { kind: 's', label: 'leaf-out end', min: 0, max: 0.5, step: 0.01, rebuild: 'season' },
+    travels: 'season',   // the spring (§4.5 Leaf-out): a per-leaf size and depth read at re-season, so it morphs the SAME grove,
+    means: "<b>Spring: when the last leaf is full-grown.</b> Below this the canopy is leafing out: buds break, each leaf grows from nothing to its full size and greens from a pale, see-through lime. 0 = no spring: the leaves are their grown selves at any season. The first leaves break a little before this minus the two below." },
+  leaf_out_span: { default: 0.09,   // one leaf's growth to full size: Gregory 1980, sugar maple, 21 days (≈230 days a unit)
+    row: { kind: 's', label: 'leaf grows', min: 0.02, max: 0.3, step: 0.01, rebuild: 'season' },
+    travels: 'season',   // the spring (§4.5 Leaf-out): a per-leaf size and depth read at re-season, so it morphs the SAME grove,
+    means: "<b>How long one leaf takes to grow to full size.</b> About three weeks in a sugar maple. Its length grows smoothly from nothing; its area as the square of that." },
+  leaf_out_spread: { default: 0.05,   // how far the leaves' emergence scatters: 12 days, first bud break to full leaf-out (UVM FEMC, Proctor Maple Research Center). Clamped under the span
+    row: { kind: 's', label: 'leaf-out spread', min: 0, max: 0.3, step: 0.01, rebuild: 'season' },
+    travels: 'season',   // the spring (§4.5 Leaf-out): a per-leaf size and depth read at re-season, so it morphs the SAME grove,
+    means: "<b>How scattered the leaves' emergence is.</b> 0 = every bud breaks together; up = some leaves are well grown while others are just breaking." },
+  leaf_green_span: { default: 0.17,   // how long a young leaf takes to reach the summer green: ≈40 days, bud opening (Gregory) to the chlorophyll plateau (Yang et al. 2016). Provisional: two sites, two years
+    row: { kind: 's', label: 'greening', min: 0.02, max: 0.4, step: 0.01, rebuild: 'season' },
+    travels: 'season',   // the spring (§4.5 Leaf-out): a per-leaf size and depth read at re-season, so it morphs the SAME grove,
+    means: "<b>How long a new leaf takes to reach the summer green.</b> Longer than it takes to grow: a full-size leaf is still pale for a few weeks." },
+  young_depth: { default: 0.36,   // a new leaf's share of the summer leaf's optical depth: chlorophyll ~10 against ~40 µg/cm² (Yang et al. 2016), through PROSPECT. Provisional
+    row: { kind: 's', label: 'young pale', min: 0.05, max: 1, step: 0.01, rebuild: 'season' },
+    travels: 'season',   // the spring (§4.5 Leaf-out): a per-leaf size and depth read at re-season, so it morphs the SAME grove,
+    means: "<b>How pale and see-through a new leaf is.</b> The share of the summer leaf's colour it starts with: low = a bright, translucent lime; 1 = new leaves already summer green." },
+  young_red: { default: 0,   // red in the new leaves, anthocyanin units (strength, as the fall's); juvenile Norway maple ≈ 0.4 (Merzlyak et al. 2008). It fades as the leaf greens
+    row: { kind: 's', label: 'young red', min: 0, max: 1, step: 0.01, rebuild: 'season' },
+    travels: 'season',   // the spring (§4.5 Leaf-out): a per-leaf size and depth read at re-season, so it morphs the SAME grove,
+    means: "<b>A red flush in the new leaves.</b> Some maples open their leaves red and green them over the following weeks. 0 = none (a sugar maple's lime); about 0.4 is a Norway maple's." },
   turn_start: { default: 0.6,   // phenology at which the EARLIEST leaf begins to turn (an early tree begins up to tree_clock_spread sooner)
     row: { kind: 's', label: 'turn start', min: 0, max: 1, step: 0.01, rebuild: 'season' },
     travels: 'season',   // leaf colour, like trans_rgb: each is a per-leaf tau read at regrow, so it morphs the SAME grove (spec §4.5); the last two are per TREE, the same tau and day by a tree's own draw
@@ -944,7 +970,8 @@ const DEFAULTS = Object.fromEntries(Object.entries(PARAMS).filter(([, d]) => !('
 // (ground 1) its shade lifts about five times what dirt gives.
 // Then tilt_shadow (0 → 1): the faithful cast throws each tilted leaf along the sun from its corners' own heights instead of stamping its plan footprint.
 // It moves every faithful look, most at a low sun; a look kept elsewhere from before takes it.
-const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, shoot_leaves: 0, tilt_light: 0, ground_bounce: 0, tilt_shadow: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
+// Then leaf_out_end (0 → 0.14), the spring: below phenology ~0.22 the leaves emerge, grow and green. A look kept elsewhere from before, at a spring phenology, takes it.
+const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, shoot_leaves: 0, tilt_light: 0, ground_bounce: 0, tilt_shadow: 0, leaf_out_end: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
 
 // ---- legacy parameter names (spec §9). A ★ look saved to local storage, or a JSON exported from any
 // earlier build, is data the engine does not get to re-author — so a renamed knob has to keep loading
@@ -979,6 +1006,7 @@ const FEATURES = {
   // edge_area opens this tier too: its mixture read lives in the same tagged GLSL and the same beam group, so a bundle that cut the tier would silently ignore the knob
   leafDiffuse: { open: (P) => P.leaf_diffuse > 0 || P.edge_area,   group: 'beam',   flag: 'FEAT_LEAF_DIFFUSE' },
   pigment:     { open: senescing,                          group: null,     flag: 'FEAT_PIGMENT' },
+  spring:      { open: springing,                          group: null,     flag: 'FEAT_SPRING' },
   exposure:    { open: ordered,                            group: null,     flag: 'FEAT_EXPOSURE' },
   drop:        { open: dropping,                           group: null,     flag: 'FEAT_DROP' },
   litter:      { open: (P) => P.litter > 0 && dropping(P), group: 'litter', flag: 'FEAT_LITTER' },

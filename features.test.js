@@ -73,7 +73,7 @@ test("the drop consumes the exposure rank even at turn_exposure 0 — and not at
 // ---- 4. the shipped looks ------------------------------------------------------------------------------------------------
 test("montebello opens all six; the summer looks open only their soft edges' tier, or none without them (nothing is asserted about the other looks: presets.js is live)", () => {
   const look = (n) => [...featuresFor({ ...DEFAULTS, ...PRESETS[n] })].sort();
-  expect(look("montebello")).toEqual(ALL.filter((f) => f !== "treeView").sort());   // the six fall tiers; the tree view is the standing scene's, opened by a look that asks to see its tree
+  expect(look("montebello")).toEqual(ALL.filter((f) => f !== "treeView" && f !== "spring").sort());   // the six fall tiers; the tree view is the standing scene's, opened by a look that asks to see its tree; the spring is below the summer
   for (const n of ["morning 2", "morning 3"]) expect(look(n), n).toEqual(["leafDiffuse"]);
   expect(look("afternoon 5b"), "afternoon 5b keeps its edges as they were").toEqual([]);
 });
@@ -249,7 +249,7 @@ const ROWS = [
 test("rows 1-10 of the combination table are exactly featuresFor of their merged params, on every look they are run over", () => {
   for (const [row, set, over] of ROWS) {
     const want = set === "none" ? [] : set.split(",");
-    for (const look of ["memories", "park 1", "afternoon 7"]) expect([...featuresFor(merged(look, { edge_area: false, ...over }))].sort(), `row ${row} on ${look}`).toEqual(want.sort());   // the looks' own soft edges held off: the row says what opens
+    for (const look of ["memories", "park 1", "afternoon 7"]) expect([...featuresFor(merged(look, { edge_area: false, leaf_out_end: 0, ...over }))].sort(), `row ${row} on ${look}`).toEqual(want.sort());   // the looks' own soft edges and spring held off: the row says what opens
   }
   // row 11 cuts what its params open (the drop consumes the rank), and row 12 cuts the fill that its params open: both must fail in pixels
   expect(featuresFor(merged("memories", B))).toContain("exposure");

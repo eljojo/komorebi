@@ -26,13 +26,14 @@
 //   DENSITY CAPACITY. A fixed summer grove can keep a larger per-cluster prefix and reweight its active leaves. Its separate key excludes density, but its gate excludes pigment, drop and variety;
 //   opening those rebuilds the actual population before any exposure rank is needed. Ordinary builds and season records retain their original keys and arithmetic. The active count and cast bounds follow the prefix.
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafSide, leafTau, lerpAngle, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, turnWindow, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, springing, springDraws, leafSpring, springTau, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafSide, leafTau, lerpAngle, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, turnWindow, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
 
 // The fall tiers this module owns, as the bundler sees them (embed-build.mjs): each is substituted by a literal, true or false, and the code behind a false one is not
 // in the bundle. A tier is cut only for a look that does not open it (komorebi-params.js FEATURES), so a flag that is false here means the guarded arithmetic was
 // already unreachable for every look the bundle carries. The flags sit in the SAME expression as the call they guard, never in a predicate function or a local that
 // holds one (`const sen = FEAT_X && ...`): a minifier inlines neither, and the arithmetic behind a guard it cannot fold stays in the bundle.
 const FEAT_PIGMENT = true;
+const FEAT_SPRING = true;
 const FEAT_EXPOSURE = true;
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
@@ -59,7 +60,7 @@ export function growAs(params, look, build){
 }
 export const seasonKey = (params, faithful) => `${GROVE_READS.map(k => params[k]).join('|')}|${faithful ? 1 : 0}`;
 // Density can reuse a prefix only without population-dependent pigment, drop or outline work. It remains a structural key for ordinary re-seasoning.
-export const densityEligible = P => !senescing(P) && P.leaf_drop === 0 && P.leaf_variety === 0;
+export const densityEligible = P => !senescing(P) && !(FEAT_SPRING && springing(P)) && P.leaf_drop === 0 && P.leaf_variety === 0;
 const DENSITY_READS = GROVE_READS.filter(k => k !== 'foliage_density');
 export const densityKey = (P, faithful) => `${DENSITY_READS.map(k => P[k]).join('|')}|${faithful ? 1 : 0}`;
 export const densityCount = (P, density = P.foliage_density) => {
@@ -505,8 +506,11 @@ export function makeGrove(hub){
     // leaf that has is compacted out of both buffers. `dropping` is its gate: at leaf_drop 0, or in a season before the first leaf's fade
     // can begin (drop_start - DROP_EPS), rec, the retention arithmetic, the compaction and the litter are never made — P1's buffers to the bit.
     const isLit = lit(params), isDropping = dropping(params), after = afterTurn(params);
+    // Leaf-out (§4.5, the spring half) is a third: a leaf still growing is shrunk and tinted after the hang, and one not yet out is compacted. The hang writes every
+    // leaf full-grown, so the re-season's record is the summer grove's and a step of the spring scales from it.
+    const isSpring = FEAT_SPRING && springing(params), spr = [0,0], sprD = [0,0];
     const REC = 10;
-    const rec = ((FEAT_EXPOSURE && isLit) || (FEAT_DROP && isDropping) || vary) ? new Float64Array(nAll*REC) : null;   // vary: the rows are drawn by the light, over the same record
+    const rec = ((FEAT_EXPOSURE && isLit) || (FEAT_DROP && isDropping) || vary || isSpring) ? new Float64Array(nAll*REC) : null;   // vary: the rows are drawn by the light, over the same record
     const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
     let sEx = null, sRank = null;   // the exposure field and keyed rank, when this build ran the pass: the record keeps them, so the first re-season does not pay it again
     let sAt = 0;
@@ -645,6 +649,7 @@ export function makeGrove(hub){
       }
       let alive = null, gone = 0;
       if(FEAT_DROP && isDropping){ litter = []; leafW = new Float32Array(nClusterTotal*nLeaf).fill(1); alive = new Uint8Array(n).fill(1); }
+      if(isSpring && !alive) alive = new Uint8Array(n).fill(1);
       for(let i=0;i<n;i++){
         const o = REC*i, j = rec[o+4], k = rec[o+5];
         const dT = tShift ? tShift[twigs[j].tree] : undefined, cT = tGain ? tGain[twigs[j].tree] : undefined;   // this leaf's tree: the hang loop's own pair
@@ -655,10 +660,15 @@ export function makeGrove(hub){
           w = retention(D, params.phenology);
           leafW[j*nLeaf + k] = w;
         }
-        if(!(FEAT_EXPOSURE && isLit) && w === 1) continue;                   // nothing about this leaf changed: its tau is already in the buffers
-        const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, params, params.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i]), dT, cT) : FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT, undefined, undefined, dT, cT) : tau;
+        if(FEAT_SPRING && isSpring){
+          leafSpring(params, springDraws(params.seed, j, k, sprD)[0], spr);
+          if(spr[0] === 0){ alive[i] = 0; gone++; continue; }                // not out yet: no leaf, and nothing for the carpet
+        }
+        if(!(FEAT_EXPOSURE && isLit) && w === 1 && !(isSpring && (spr[0] < 1 || spr[1] < 1))) continue;   // nothing about this leaf changed: it is already in the buffers, full-grown
+        const lt = FEAT_EXPOSURE && isLit ? leafTau(tau, params, params.seed, j, k, leafT, turnOrder(u[i]), redGain(u[i]), dT, cT) : FEAT_PIGMENT && sen ? leafTau(tau, params, params.seed, j, k, leafT, undefined, undefined, dT, cT) : FEAT_SPRING && isSpring ? springTau(tau, params, spr[1], sprD[1], leafT) : tau;
         const cov = rec[o+6], cf = cov*w;                                    // §5.3: a leaf leaves by fading — cov <- cov.w scales its tau and the fade its ballistic shadow rides on together
         const d = layerData[rec[o+7]], li = rec[o+8], fi = rec[o+9];
+        if(FEAT_SPRING && isSpring && spr[0] < 1){ for(let a=6;a>=5;a--){ const v = d[li-a]*spr[0]; d[li-a] = v; faithData[fi-a] = v; } }   // still growing: its half-axes are its length's share of the grown leaf's
         for(let c=0;c<3;c++){ d[li+c] = lt[c]*cf; faithData[fi+c] = lt[c]*cf; }
         d[li+8] = cf; faithData[fi+9] = cf;
         if(w === 0){
@@ -960,6 +970,9 @@ export function makeGrove(hub){
     tau[2] = -Math.log(clamp(P.trans_b,1e-4,0.999));
     const sen = senescing(P), ph = P.phenology, fw = (FEAT_PIGMENT || FEAT_EXPOSURE) ? P.wall_fraction : 0, twigs = g.hier.twigs;   // the tiers literally, so a bundle that cuts them folds the read away
     const track = dropping(P) && n > 0;
+    // leaf-out: each leaf's two spring draws, kept with the grove the first time a step reaches the spring (its draws tier); its state is asked each step
+    const isSpring = FEAT_SPRING && springing(P) && n > 0, spr = [0,0];
+    if(FEAT_SPRING && isSpring && !S.springD){ S.springD = new Float64Array(2*n); for(let i=0;i<n;i++) springDraws(P.seed, rec[SREC*i+6], rec[SREC*i+7], S.springD, 2*i); }
     // buildGrove's three arms for a leaf's tau: the light's leafTau (FEAT_EXPOSURE && lit), its own clock's (FEAT_PIGMENT && senescing), or the summer tau. `lit` is senescing and
     // turn_exposure > 0, so given senescing the arm is a property of the schedule's keys, and the schedule is built for it.
     const turning = (FEAT_PIGMENT || FEAT_EXPOSURE) && sen && ((FEAT_EXPOSURE && P.turn_exposure > 0) || FEAT_PIGMENT);
@@ -982,9 +995,11 @@ export function makeGrove(hub){
         if(FEAT_LITTER) fallen.push(i, cov);
         continue;
       }
-      const lt = turning ? leafTauAt(tau, smoothstep(at[LEAF_SCHED*i], at[LEAF_SCHED*i+1], ph), at, LEAF_SCHED*i, fw, leafT) : tau;
+      if(FEAT_SPRING && isSpring){ leafSpring(P, S.springD[2*i], spr); if(spr[0] === 0) continue; }   // not out yet: no leaf
+      const lt = turning ? leafTauAt(tau, smoothstep(at[LEAF_SCHED*i], at[LEAF_SCHED*i+1], ph), at, LEAF_SCHED*i, fw, leafT) : FEAT_SPRING && isSpring ? springTau(tau, P, spr[1], S.springD[2*i+1], leafT) : tau;
       const l = rec[o+9], li = rec[o+10], bl = S.base[l], dl = outL[l], wl = wL[l];
       for(let q=0;q<8;q++){ const v = bl[li+q]; dl[wl+q] = v; outF[wF+q] = v; }
+      if(FEAT_SPRING && isSpring && spr[0] < 1){ for(let a=2;a<=3;a++){ const v = rec[o+1+a]*spr[0]; dl[wl+a] = v; outF[wF+a] = v; } }   // still growing: the grown half-axes (the record's A, B0) × its length's share, as the build scales them
       for(let c=0;c<3;c++){ const v = lt[c]*cf; dl[wl+8+c] = v; outF[wF+8+c] = v; }
       for(let q=11;q<16;q++){ const v = bl[li+q]; dl[wl+q] = v; outF[wF+q] = v; }
       dl[wl+16] = cf; outF[wF+16] = rec[o+2]; outF[wF+17] = cf; outP[wF/18] = S.pivot[i]; outS[wF/18] = S.side[i];

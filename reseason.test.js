@@ -154,6 +154,15 @@ identity("unlit per-tree clock and pigment, after the turn", { tree_clock_spread
 // where the build's drop day takes the leaf's own clock and the schedule's takes the light. Every retention there is 1, so the day is never read: held, not assumed.
 identity("a turn window shorter than the fade, after the turn (dropping before senescing)", { drop_after_turn: 1, turn_span: 0.004, turn_spread: 0, drop_lag: 0 }, { phs: [0.5, 0.596, 0.598, 0.6, 0.603, 0.608, 0.612, 0.62, 0.7] });
 
+// LEAF-OUT (the spring half; spring.test.js holds the laws): a leaf not yet out is compacted from the full-grown record, one growing is that record's half-axes times its length's
+// share, its tau the young leaf's; a re-season lands where a fresh build lands, from summer into the spring and back, starting in it, on both paths, with the shape moving.
+const SPRING_PH = [0.5, 0, 0.01, 0.03, 0.06, 0.09, 0.12, 0.15, 0.2, 0.24, 0.5];
+identity("leaf-out from summer into the spring and back", { leaf_drop: 0 }, { phs: SPRING_PH });
+identity("leaf-out, faithful", { leaf_drop: 0 }, { faithful: true, phs: SPRING_PH });
+identity("leaf-out starting in the spring (the build compacts and shrinks)", { leaf_drop: 0 }, { phs: [0.04, 0.08, 0, 0.13, 0.5, 0.07] });
+identity("leaf-out with a red flush, maple outline, inner leaves", { leaf_drop: 0, young_red: 0.4, leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756, inner_leaves: 0.4 }, { phs: SPRING_PH });
+identity("leaf-out with its shape moving", { leaf_drop: 0 }, { phs: SPRING_PH, move: (p) => ({ leaf_out_end: 0.1 + 0.1 * p, leaf_out_span: 0.05 + 0.08 * p, leaf_out_spread: 0.1 * (1 - p), leaf_green_span: 0.1 + 0.2 * p, young_depth: 0.2 + 0.6 * p }) });
+
 // ---- the tiers (§4.5 "Re-seasoning"): a leaf's draws are the grove's, its schedule is the season knobs', its state now is phenology, the summer tint and the wall fraction --------
 test("a phenology, tint or wall_fraction step reuses each leaf's draws and schedule; a schedule knob rebuilds the schedule from the same draws; every step is a fresh build", () => {
   const base = { ...SMALL, phenology: 0.6 };
@@ -358,9 +367,9 @@ test("leaf variety: the build keeps the rank of light its rows were drawn by, a 
 const read = (f) => readFileSync(new URL(f, import.meta.url), "utf8");
 test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exactly what buildGrove reads besides the season set", () => {
   const SEASON = paramsMod.SEASON_KEYS;
-  expect(SEASON.length).toBe(19);
+  expect(SEASON.length).toBe(25);
   for (const k of SEASON) expect(CANOPY_KEYS, k).toContain(k);
-  expect([...SEASON].sort()).toEqual(["anthocyanin", "drop_exposure", "drop_lag", "drop_span", "drop_start", "exposure_absolute", "leaf_drop", "phenology", "tannin", "trans_r", "trans_g", "trans_b", "tree_clock_spread", "tree_pigment_spread", "turn_exposure", "turn_spread", "turn_span", "turn_start", "wall_fraction"].sort());
+  expect([...SEASON].sort()).toEqual(["anthocyanin", "leaf_green_span", "leaf_out_end", "leaf_out_span", "leaf_out_spread", "young_depth", "young_red", "drop_exposure", "drop_lag", "drop_span", "drop_start", "exposure_absolute", "leaf_drop", "phenology", "tannin", "trans_r", "trans_g", "trans_b", "tree_clock_spread", "tree_pigment_spread", "turn_exposure", "turn_spread", "turn_span", "turn_start", "wall_fraction"].sort());
   const src = read("./komorebi-grove.js").split("  function refreshWood(){")[0];   // the live wood gate does not affect what buildGrove stores
   const reads = new Set([...src.matchAll(/params\.([a-z_0-9]+)/g)].map((m) => m[1]).filter((k) => k in DEFAULTS));
   const season = new Set(SEASON), listed = new Set(groveMod.GROVE_READS);
@@ -635,7 +644,7 @@ test("a tint-only grove morph builds its lazy record once, then retains buffers 
 test("every season key's editor row requests the season scope, and a move of it re-seasons the grove on screen", () => {
   const MOVE = { trans_r: 0.094, trans_g: 0.402, trans_b: 0.1, phenology: 0.86, turn_start: 0.58, turn_span: 0.24, turn_spread: 0.1, anthocyanin: 0.7, tannin: 0.35,
     wall_fraction: 0.45, turn_exposure: 0.5, exposure_absolute: 0.5, tree_clock_spread: 0.1, tree_pigment_spread: 0.6, leaf_drop: 0.6, drop_start: 0.72, drop_span: 0.2,
-    drop_exposure: 0.3, drop_lag: 0.04 };
+    drop_exposure: 0.3, drop_lag: 0.04, leaf_out_end: 0.2, leaf_out_span: 0.12, leaf_out_spread: 0.08, leaf_green_span: 0.2, young_depth: 0.5, young_red: 0.3 };
   expect(Object.keys(MOVE).sort(), "a move for every season key").toEqual([...paramsMod.SEASON_KEYS].sort());
   for (const key of paramsMod.SEASON_KEYS) expect(PARAMS[key].row.rebuild, key).toBe('season');
   for (const drop_after_turn of [0, 1]) {   // drop_start is read on the first clock, drop_lag on the second

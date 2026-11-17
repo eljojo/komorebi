@@ -25,6 +25,7 @@ The glisten is the most fragile thing in the piece: a fine twinkle in place, und
    | wind identity | seed, clump | each clump's and leaf's own share of the incoherent band | [`motion.md`](../model/motion.md) |
    | pigment clock | seed, cluster, leaf | the leaf's own turn phase and its red and brown capacity | [`season.md`](../model/season.md) |
    | drop day | seed, cluster, leaf | the leaf's own share of the drop order where light does not decide it | [`season.md`](../model/season.md) |
+   | leaf-out | seed, cluster, leaf | the leaf's own place in the emergence order and its share of the red flush | [`season.md`](../model/season.md#leaf-out-the-spring-half) |
    | inner leaves | seed, cluster, leaf | whether and where along the older wood the leaf hangs | [`canopy.md`](../model/canopy.md) |
    | shoots | seed, cluster, shoot | a shoot's leaf count, its threshold for going long, its share of `shoot_leaves`, and an inner shoot's place on the wood | [`canopy.md`](../model/canopy.md#leaves-on-shoots) |
    | leaf side | seed, cluster, leaf | which way the leaf rolls about its long axis, which only the seen tree reads | [`leaf.md`](../model/leaf.md#a-leaf-seen) |

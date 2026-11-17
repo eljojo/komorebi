@@ -172,6 +172,12 @@ const PANEL_LAYOUT = [
 
   ['hc','Season'],
   'phenology',
+  'leaf_out_end',
+  'leaf_out_span',
+  'leaf_out_spread',
+  'leaf_green_span',
+  'young_depth',
+  'young_red',
   'turn_start',
   'turn_span',
   'turn_spread',
@@ -461,6 +467,8 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   leaf_variety: () => !!LEAF_SHAPES[params.leaf_shape],      // only an outline has rows to vary (§4.5): the ellipse's leaf is one stamp, so the knob would act on nothing
   anthocyanin: turning, tannin: turning, wall_fraction: turning, turn_exposure: turning,   // senescence (§4.5): until a leaf has begun to turn (phenology past turn_start) its tau is the authored summer one, whatever these say
   turn_span: turning, turn_spread: turning,
+  leaf_out_span: () => params.leaf_out_end > 0, leaf_out_spread: () => params.leaf_out_end > 0, leaf_green_span: () => params.leaf_out_end > 0,   // the spring (§4.5 Leaf-out): its shape, shown while it is on
+  young_depth: () => params.leaf_out_end > 0, young_red: () => params.leaf_out_end > 0,
   tree_clock_spread: turning, tree_pigment_spread: turning,   // §4.5: a tree's lead and depth act on a leaf that can be turning — the same gate the pigments sit behind, which opens by the lead's own reach
   leaf_drop: turning,                                     // abscission (§4.5): the same season gate the pigments sit behind — before a leaf can be turning, no leaf is about to fall
   drop_exposure: () => dropping() && !(params.drop_after_turn > 0), drop_start: () => dropping() && !(params.drop_after_turn > 0), drop_span: () => dropping() && !(params.drop_after_turn > 0),   // ride on leaf fall: with it at 0 nothing drops, so when and in what order are moot; after its turn the day is the turn's end plus the lag and these are not read
