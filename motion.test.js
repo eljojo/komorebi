@@ -8,7 +8,8 @@ import { makeMotion } from "./komorebi-motion.js";
 import { DEFAULTS } from "./komorebi-params.js";
 import { DEG, clamp } from "./komorebi-math.js";
 
-const WIND = { ...DEFAULTS, wind_strength: 1.61, wind_gustiness: 0.25, gust_frequency: 0.13, wind_pattern: "squally", gust_attack: 1.2, gust_decay: 1.3, sway_stiffness: 1.2, damping_ratio: 0.65, backlash_gain: 1, sway_ceiling: 0.4, wind_direction_deg: 0, weather_variability: 0.4, wind_air: 0, drift_auto: false };
+// the four that set the trees apart off (GRANDFATHERED): each test below turns on the one it is about
+const WIND = { ...DEFAULTS, sway_spread: 0, gust_width_m: 0, wind_shelter: 0, gust_carry: 0, wind_strength: 1.61, wind_gustiness: 0.25, gust_frequency: 0.13, wind_pattern: "squally", gust_attack: 1.2, gust_decay: 1.3, sway_stiffness: 1.2, damping_ratio: 0.65, backlash_gain: 1, sway_ceiling: 0.4, wind_direction_deg: 0, weather_variability: 0.4, wind_air: 0, drift_auto: false };
 const FPS = 60, DT = 1 / FPS;
 
 // a grove of nothing but trees: their trunks in plan and one limb and one clump on each, which is all the trunks read

@@ -77,6 +77,10 @@ Since 2026-11-17 `tilt_shadow` 1 is the default ([`../model/leaf.md`](../model/l
 
 Since 2026-11-17 `leaf_out_end` 0.14 is the default ([`../model/season.md`](../model/season.md#leaf-out-the-spring-half)): the season opens with leaf-out below phenology ~0.22. Of the shipped looks only `memories` sits there (0.15); the artist chose for it to take the spring, so its leaves are mid-greening, and its shade is 0.11 stop lighter and paler (`test-gl/out/review/2026-11-17-spring`). Every other look sits at 0.4 or above and does not move. A look kept elsewhere from before keeps `leaf_out_end` 0.
 
+## The trees apart, by default
+
+Since 2026-11-17 `sway_spread` 1, `gust_width_m` 4, `wind_shelter` 1 and `gust_carry` 1 are the defaults ([`../model/motion.md`](../model/motion.md#each-tree-in-its-own-gust)): each tree at its own pace, in gusts 4 m wide, sheltered by the crowns upwind of it, the gusts carried at the wind's speed. The artist kept all four on an eight-tree standing scene and asked for them on by default (`test-gl/out/review/2026-11-17-wind-physics`). They move only a look with wind, and only in motion: of the shipped looks, the 33 with wind take them, `eclipse` (one tree, no air among its leaves) by its pace alone. A look kept elsewhere from before, with wind, takes them too.
+
 ## Exposure under cloud
 
 Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to exposure / (1 + its own `cloud_thickness`): it shows as it always did at its own cloud, and a thicker cloud, from a transition, the weather macro or the editor, opens the exposure up instead of only blurring the dapples. A look saved without the key keeps exposure fixed.
