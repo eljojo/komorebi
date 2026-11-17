@@ -36,7 +36,7 @@ On a standing scene cast faithfully, `tree_view` lets the floor camera see the t
 
 A leaf and a piece of bark are **receivers of the beam** ([`transport.md`](transport.md#the-receiver-relative-read)): each names a plan point and a height, and the sun reaching it is read through the leaves above it along the beam, the sky through the leaf area above it. What a leaf then does with that light is [`leaf.md`](leaf.md#a-leaf-seen). Everything the floor does after its light (the dusk shift, the haze, the iris, the Look's tail) is per pixel, so a tree pixel takes the same steps the floor pixel beside it takes.
 
-The overhead park has no tree to see: its canopy is endless and above the frame. The tree view is opened per look, and off it is the floor as it was.
+The overhead park has no tree to see: its canopy is endless and above the frame. The tree view is opened per look, and off it is the floor as it was. Between a look that sees its tree and one that does not, the tree fades and nothing else changes on its account: it is not a scene mode, since nothing the grove, the cast or the floor holds reads it ([`../contracts/transitions.md`](../contracts/transitions.md#gate-crossings-within-any-morph)).
 
 ### The far-field smear
 

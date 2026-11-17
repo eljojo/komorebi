@@ -204,6 +204,14 @@ export function makeTransitions(hub){
     if(!sceneFade && trans.sceneFade) hub.endSceneFade();
     if(sceneFade) hub.beginSceneFade();   // preserve the outgoing scene before params become the incoming look
     trans.sceneFade = sceneFade;
+    // THE SEEN TREE fades, never switches. A look that sees its tree and one that does not share the grove, the shadow and the floor, so the route
+    // runs as it would between the two framings alone (the camera glides, the shadow stays on the ground) while the tree's opacity moves from one
+    // end's to the other's. tree_view is held on until landing; an interrupted fade starts from the opacity it shows. Two dissolving scenes keep
+    // each its own tree.
+    const treeShown = trans.active && trans.treeFade ? trans.treeOpacity : Number(seesTree(params)), treeTo = Number(seesTree(to));
+    trans.treeFade = !sceneFade && treeShown !== treeTo;
+    trans.treeFrom = treeShown; trans.treeTo = treeTo; trans.treeOpacity = treeShown;
+    if(trans.treeFade && to.tree_view) params.tree_view = true;   // a tree fading in is drawn from the route's first frame
     // Feather zero removes the entire mask. Across that gate the hood keeps its own geometry and fades (irisRoute); the
     // dissolving scenes each keep their own.
     trans.iris = sceneFade ? null : irisRoute(params, to, irisShown);
@@ -262,8 +270,8 @@ export function makeTransitions(hub){
     }
   }
 
-  // The keys a route holds until landing rather than snapping at its swap: the raised layer count, and the eclipse while the moon moves.
-  const held = k => k==='layer_count' && !!trans.layerRoute || k==='eclipse' && !!trans.moon;
+  // The keys a route holds until landing rather than snapping at its swap: the raised layer count, the eclipse while the moon moves, and the seen tree while it fades.
+  const held = k => k==='layer_count' && !!trans.layerRoute || k==='eclipse' && !!trans.moon || k==='tree_view' && !!trans.treeFade;
 
   function tickTransition(dt){
     if(!trans.active) return;
@@ -320,6 +328,7 @@ export function makeTransitions(hub){
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
     trans.bloom = Math.max(trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0, carried);
     trans.windowOpacity=lerp(trans.windowFrom, trans.windowTo, e);
+    if(trans.treeFade) trans.treeOpacity=lerp(trans.treeFrom, trans.treeTo, e);
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
       if((trans.viewpoint||trans.leafTravel||trans.seasonTravel) && k==='drift_phase' && params.drift_auto) continue;
       if(trans.windowFade && WINDOW_KEYS.has(k)){ params[k]=trans.windowShape[k]; continue; }
@@ -422,7 +431,7 @@ export function makeTransitions(hub){
     }
     if(t>=1){                                              // land exactly on the target; clear the bloom
       const drift=params.drift_phase;
-      trans.active = false; trans.bloom = 0;
+      trans.active = false; trans.bloom = 0; trans.treeFade = false;
       for(const k in DEFAULTS) params[k] = trans.to[k];
       if(trans.layerRoute){ hub.sizeLayers(params.layer_count); trans.layerRoute = null; }
       trans.moon = null;

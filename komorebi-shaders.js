@@ -950,8 +950,9 @@ precision highp float;
 in vec2 vUv;
 uniform highp sampler2D uTreeCol;
 uniform highp sampler2D uTreeCover;
+uniform float uTreeOpacity;   // the route's fade of the seen tree (1 at rest); the colour is weighed by its coverage, so both scale
 out vec4 frag;
-void main(){ frag = vec4(texture(uTreeCol, vUv).rgb, texture(uTreeCover, vUv).r); }`;
+void main(){ frag = vec4(texture(uTreeCol, vUv).rgb, texture(uTreeCover, vUv).r)*uTreeOpacity; }`;
 
 
 

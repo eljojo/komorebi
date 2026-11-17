@@ -114,7 +114,7 @@ export function makeTreeView(hub){
     });
     UL = { ...common(progLeaf), ...hub.faithLocs(progLeaf), slab: L(progLeaf, 'uSlab'), f0: L(progLeaf, 'uF0') };
     UW = { ...common(progWood), eyeW: L(progWood, 'uEyeW'), bark: L(progWood, 'uBark') };
-    UC = { col: L(progComp, 'uTreeCol'), cover: L(progComp, 'uTreeCover') };
+    UC = { col: L(progComp, 'uTreeCol'), cover: L(progComp, 'uTreeCover'), opacity: L(progComp, 'uTreeOpacity') };
     slabTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, slabTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, SLAB_N, 3, 0, gl.RGBA, gl.FLOAT, slabTable(SLAB_N));
@@ -203,7 +203,7 @@ export function makeTreeView(hub){
 
   // Draw the tree over the frame already in `fbo` (w × h).
   function draw(fbo, w, h){
-    if(!wanted()) return;
+    if(!wanted() || trans.active && trans.treeFade && !(trans.treeOpacity > 0)) return;   // nothing to lay over at a fade's zero
     compile(); targets(w, h); ensureLayers();
     gl.bindFramebuffer(gl.FRAMEBUFFER, msFBO);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
@@ -247,6 +247,7 @@ export function makeTreeView(hub){
     gl.useProgram(progComp);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, rsCol); gl.uniform1i(UC.col, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, rsCover); gl.uniform1i(UC.cover, 1);
+    gl.uniform1f(UC.opacity, trans.active && trans.treeFade ? trans.treeOpacity : 1);   // a route fading the tree in or out
     gl.bindVertexArray(emptyVAO);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.BLEND);

@@ -22,6 +22,7 @@ const KNOWN_EXCLUDED = [
   "clusters_per_layer", "tone_map", "wind_pattern",
   "tree_species",   // inert label: the editor expands a TREE_SPECIES bundle into the shape knobs; the engine never reads it
   "grove_reach_m",  // 0 stands for the view, so the name is never tweened: a route goes by the reach each end grows for (reach.test.js)
+  "tree_view",      // the seen tree fades over the route (treeFade), held on until it lands: nothing it reads is rebuilt
   "drift_auto", "auto_quality", "adaptive_motion", "adaptive_idle_fps", "show_source", "show_layer", "show_layer_index",
 ];
 // standing_scene / faithful_canopy / receiver used to sit in KNOWN_EXCLUDED — but they are NOT inert: flipping one
@@ -322,6 +323,30 @@ test('a pair that sees its tree keeps the cast: cherry blossom ↔ park 2 with t
     expect(r.hub.trans.seasonTravel).toBe(false);expect(began).toBe(0);
     let n=0;while(r.hub.trans.active&&n++<10000)r.tickTransition(1/60);
     for(const k in DEFAULTS)expect(r.params[k],k).toBe(k==='drift_phase'?r.params[k]:to[k]);
+  }
+});
+
+test('under the trees ↔ park 2 keeps the grove and the shadow: the camera glides and the seen tree fades, with no bloom and no rebuild',()=>{
+  for(const [from,to] of [[PRESETS['park 1, under the trees'],PRESETS['park 2']],[PRESETS['park 2'],PRESETS['park 1, under the trees']]]){
+    const r=transitionRig(from),out=!!from.tree_view;
+    Object.assign(r.hub,{beginSceneFade:()=>{throw Error('unexpected scene fade');},beginSeasonTravel:()=>{throw Error('unexpected season travel');},
+      beginGroveTravel:()=>{throw Error('unexpected grove travel');},beginLitterRise:()=>{throw Error('unexpected litter rise');}});
+    r.transitionTo(to,{duration:1});
+    expect(r.hub.trans.treeFade,'the tree fades').toBe(true);
+    expect(r.hub.trans.structDiff,'nothing is rebuilt').toBe(false);
+    expect(r.hub.trans.backgroundFade,'the shadow does not fade to the ground').toBe(false);
+    const shown=[];
+    while(r.hub.trans.active){
+      expect(r.params.tree_view,'the tree is held on while it fades').toBe(true);
+      expect(r.hub.trans.bloom,'no bloom').toBe(0);
+      shown.push(r.hub.trans.treeOpacity);
+      r.tickTransition(1/60);
+    }
+    expect(shown[0]).toBe(out?1:0);
+    for(let i=1;i<shown.length;i++) expect(out?shown[i]<=shown[i-1]:shown[i]>=shown[i-1],`step ${i}`).toBe(true);
+    expect(r.swaps.length,'no grove rebuilt').toBe(0);
+    for(const k in DEFAULTS)expect(r.params[k],k).toBe(k==='drift_phase'?r.params[k]:to[k]);
+    expect(r.hub.trans.treeFade,'a landed route fades nothing').toBe(false);
   }
 });
 
