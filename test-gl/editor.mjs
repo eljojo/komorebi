@@ -48,7 +48,8 @@ function serveRoot() {
 
 // What a look hangs, counted off the grove the engine's own code builds for it (over a stub GL): how many clusters it has and how many leaves hang on each. The leaves are
 // the instance buffers' own count, not leaves_per_cluster × foliage_density: the held leaf's [ / ] must walk exactly these, and an oracle that restated the formula would agree
-// with a preview that restated it too. phenology 0 so no leaf has let go.
+// with a preview that restated it too. Summer (phenology 0.5): every leaf grown out of its bud (leaf-out ends by leaf_out_end) and none yet let go (the drop
+// waits for the turn).
 function hungBy(look) {
   const gl = new Proxy({}, {
     get(t, name) {
@@ -58,7 +59,7 @@ function hungBy(look) {
       return () => ({});
     },
   });
-  const params = { ...DEFAULTS, ...migrateLegacy(PRESETS[look]), phenology: 0 };
+  const params = { ...DEFAULTS, ...migrateLegacy(PRESETS[look]), phenology: 0.5 };
   const hub = { gl, params, MAX_TEX: 8192, quadBuf: {}, faithfulOn: () => false, occ: {}, faith: {}, sky: { start: [], count: [] } };
   const g = makeGrove(hub).buildGrove(null);
   const clusters = g.hier.twigs.length;
