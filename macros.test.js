@@ -26,20 +26,20 @@ function seasonDialRig() {
     applyScope: () => writes.push(params.phenology), applySession:noop, endTween: noop, chipSoon: noop, stopPlay: noop,
     syncAllControls: () => dial.tryCapture(), timing: () => null, stateNow: noop, activeList: noop,
     resolveEntry: (p) => p, transDur: 1, player: { leaving: noop, arrived: noop }, refreshPresetSelect: noop };
-  const body = source.slice(source.indexOf('const TRY_FALL ='), source.indexOf('function tryWrite('));
+  const body = source.slice(source.indexOf('const TRY_FALL ='), source.indexOf('// The time dial moves'));
   const load = source.match(/^function applyParams\(obj\).*$/m)[0];
   const go = source.slice(source.indexOf('function goTo('), source.indexOf('function loadEntry('));
   const reset = source.slice(source.indexOf('function tryAsItWas('), source.indexOf('// Touch: a finger'));
-  dial = new Function('env', `with(env){ ${body}\n${load}\n${go}\n${reset}\nreturn {tryCapture,trySeasonMove,trySeasonTick,applyParams,goTo,tryAsItWas}; }`)(env);
+  dial = new Function('env', `with(env){ ${body}\n${load}\n${go}\n${reset}\nreturn {tryCapture,seasonMove:(v) => tryFrameMove(() => trySeasonDict(v), 'season'),tryFrameTick,applyParams,goTo,tryAsItWas}; }`)(env);
   dial.tryCapture();
-  return { ...dial, params, writes, eng, land() { Object.assign(params, pending.p); eng.trans.active = false; pending.opts.onEnd(); dial.trySeasonTick(); } };
+  return { ...dial, params, writes, eng, land() { Object.assign(params, pending.p); eng.trans.active = false; pending.opts.onEnd(); dial.tryFrameTick(); } };
 }
 
 function focusDialRig(look) {
   const source = readFileSync('editor.js', 'utf8'), params = { ...DEFAULTS, ...look }, scopes = [], noop = () => {};
   const bus = createBus(() => params, (dict, scope) => { Object.assign(params, dict); scopes.push(scope); });
   const body = source.slice(source.indexOf('const TRY_FALL ='), source.indexOf('const TRY_SAYS ='));
-  const env = { params, bus, macroValue, macroParams, macroUsable, clamp: (x, lo, hi) => Math.min(hi, Math.max(lo, x)),
+  const env = { params, bus, MACROS, tryArrange: noop, macroValue, macroParams, macroUsable, clamp: (x, lo, hi) => Math.min(hi, Math.max(lo, x)),
     maybeClearSpecies: noop, syncControl: noop, applyScope: (scope) => scopes.push(scope) };
   const dial = new Function('env', `with(env){ ${body}\nreturn {capture:tryCapture,focus:TRY_SPECS.focus}; }`)(env);
   dial.capture();
@@ -86,7 +86,7 @@ test('focus keeps the recipe\'s endpoints away from home and stays inside the ph
 test('the season release waits for a moving route, then applies the exact value after its destination loads', () => {
   const r = seasonDialRig();
   r.goTo({ ...DEFAULTS, phenology: 0.6 });
-  r.trySeasonMove(0.91); r.trySeasonTick(true);
+  r.seasonMove(0.91); r.tryFrameTick(true);
   expect(r.writes).toEqual([]);
   r.land();
   expect(r.writes).toEqual([0.91]);
@@ -96,12 +96,12 @@ test('the season release waits for a moving route, then applies the exact value 
 for (const action of ['applyParams', 'goTo', 'tryAsItWas']) {
   test(`${action} cancels pending season input from the previous look`, () => {
     const r = seasonDialRig(), home = r.params.phenology;
-    r.trySeasonMove(0.8); r.trySeasonMove(0.91);
+    r.seasonMove(0.8); r.seasonMove(0.91);
     r[action]({ ...DEFAULTS, phenology: 0.4 });
-    if (action === 'goTo') r.land(); else r.trySeasonTick();
+    if (action === 'goTo') r.land(); else r.tryFrameTick();
     expect(r.writes).not.toContain(0.91);
     expect(r.params.phenology).toBe(action === 'tryAsItWas' ? home : 0.4);
-    r.trySeasonMove(0.7);
+    r.seasonMove(0.7);
     expect(r.params.phenology).toBe(0.7);
   });
 }

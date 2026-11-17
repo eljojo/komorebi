@@ -22,7 +22,11 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeGrove } from '../komorebi-grove.js';
 import { DEFAULTS, migrateLegacy } from '../komorebi-params.js';
-import { EXPERIMENTAL, PRESETS } from '../presets.js';
+import { EXPERIMENTAL, PRESETS, PRIORITY } from '../presets.js';
+// the dials a surface holds on a look: the look's PRIORITY first, then the surface's usual ones, up to its count (editor.js tryNames;
+// every look these checks visit can use each dial it names)
+const dialsOn = (look, usual, n = Infinity) => { const lead = PRIORITY[look] ?? []; return [...lead, ...usual.filter((d) => !lead.includes(d))].slice(0, n); };
+const PLAY_USUAL = ['focus', 'cloudiness', 'sun', 'season', 'density', 'time'], TOUCH_USUAL = ['focus', 'cloudiness', 'sun', 'season', 'time'], DESK_USUAL = ['focus', 'cloudiness', 'time'];
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served
 const require = createRequire(join(ROOT, 'test-gl', 'package.json'));
@@ -176,10 +180,10 @@ try {
   const n0 = await optCount();
   check('experimental looks hidden by default', n0 === Object.keys(PRESETS).length - EXPERIMENTAL.length, `built-ins listed: ${n0}`);
 
-  // the playful sidebar's rows, top to bottom: the six dials, the caption, the actions, "more" (closed), then the playlist and look lists and the experimental toggle
+  // the playful sidebar's rows, top to bottom: the look's dials (its own lead, then the six usual ones), the caption, the actions, "more" (closed), then the playlist and look lists and the experimental toggle
   const playRows = await page.$eval('#play', (el) => [...el.children].slice(2).map((c) => c.classList.contains('try') ? c.querySelector('.name').textContent : c.classList.contains('cap') ? 'cap' : c.classList.contains('acts') ? `acts:${[...c.querySelectorAll('button')].map((b) => b.textContent).join('|')}` : c.tagName === 'DETAILS' ? 'more' : c.querySelector('select') ? 'select' : c.querySelector('label')?.textContent.replace(/ \(\+\d+\)$/, '')));
-  check('the playful sidebar runs the six dials, the caption, the actions, more, the playlist and look lists and the experimental toggle (no headings)',
-    playRows.join() === 'focus,cloudiness,sun,season,density,time,cap,acts:\u21ba as it was|\u2684 new leaves,more,select,select,experimental looks' && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
+  check('the playful sidebar runs the look\'s dials, the caption, the actions, more, the playlist and look lists and the experimental toggle (no headings)',
+    playRows.join() === [...dialsOn('afternoon 7', PLAY_USUAL), 'cap', 'acts:\u21ba as it was|\u2684 new leaves', 'more', 'select', 'select', 'experimental looks'].join() && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
   const moreRows = await page.$eval('#play details.more', (d) => [...d.children].slice(1).map((c) => c.classList.contains('pad') ? 'pad' : c.querySelector('label').textContent));
   check('"more" holds haze, sparkle, trees and the wind pad, and starts closed', moreRows.join() === 'haze,sparkle,trees,pad' && (await page.$eval('#play details.more', (d) => !d.open)), moreRows.join());
   await page.$eval('#play details.more', (d) => { d.open = true; });   // the pad and the macro sliders live inside it
@@ -243,6 +247,21 @@ try {
   await dial('cloudiness', 0.3);
   const cap = await page.$eval('#play .cap', (c) => ({ text: c.textContent, on: c.classList.contains('on') }));
   check('moving the cloudiness dial puts a sentence in the playful caption, lit', cap.text.length > 0 && cap.on, JSON.stringify(cap));
+
+  // each look leads with its own dials (presets.js PRIORITY); a dial of one setting writes that setting, and "as it was" puts it back
+  const playDials = () => page.$eval('#play', (el) => [...el.querySelectorAll(':scope > .ctl.try')].map((r) => r.querySelector('.name').textContent).join());
+  const pickLook = (n) => page.evaluate((v) => { const s = [...document.querySelectorAll('#play select')].pop(); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); }, n);
+  await pickLook('park fall');
+  check('park fall leads with leaf fall, red and the season, then the usual dials', (await playDials()) === dialsOn('park fall', PLAY_USUAL).join(), await playDials());
+  await pickLook('park 1, the scene');
+  check('the scene leads with droop and wind', (await playDials()) === dialsOn('park 1, the scene', PLAY_USUAL).join(), await playDials());
+  const droop0 = await devVal('droop');
+  await dial('droop', 0.4);
+  const droop1 = await devVal('droop');
+  await page.$eval('#play .tryreset', (b) => b.click());
+  const droop2 = await devVal('droop');
+  check('the droop dial writes droop, and "as it was" puts the look\'s own back', Math.abs(droop1 - 0.4) < 1e-6 && droop2 === droop0 && droop0 === PRESETS['park 1, the scene'].droop, `droop ${droop0} -> ${droop1} -> ${droop2}`);
+  await pickLook('afternoon 7');
 
   // experimental toggle reveals every built-in look
   await page.$eval('#play', (el) => {
@@ -592,7 +611,8 @@ try {
   const stripH = await page.$eval('#strip', (e) => e.offsetHeight);
   check('desktop strip is one horizontal bar', wide && stripH < 70, `flex=${wide} h=${stripH}px`);
   const stripRows = await page.$eval('#strip', (el) => [...el.children].slice(1).map((c) => (c.querySelector('label') ?? c.querySelector('.name'))?.textContent));
-  check('the zen strip holds focus, cloudiness and the time dial after the preset row', stripRows.join() === 'focus,cloudiness,time', stripRows.join());
+  const stripLook = await page.$eval('#dev select', (s) => s.value);
+  check('the zen strip holds the look\'s first three dials after the preset row', stripRows.join() === dialsOn(stripLook, DESK_USUAL, 3).join(), `${stripLook}: ${stripRows.join()}`);
 
   // after the arrival hold, moving the cursor far fades it; coming near revives it
   await page.waitForTimeout(2700);                                  // outlast STRIP_HOLD_MS
@@ -1777,11 +1797,12 @@ try {
       tabs: [...el.querySelectorAll('.tabs button')].map((b) => b.textContent).join(),
       presetShown: getComputedStyle(el.querySelector('.preset')).display !== 'none',
     }));
-    check('the touch strip is one dial at a time: a caption, five dials (focus out front), the tab row, no preset row',
-      touchStrip.one && touchStrip.cap && touchStrip.dials === 'focus:in,cloudiness:out,sun:out,season:out,time:out' && touchStrip.tabs === 'focus,clouds,sun,season,time,\u21ba,\uff0b' && !touchStrip.presetShown, JSON.stringify(touchStrip));
-    await pgT.evaluate(() => [...document.querySelectorAll('#strip .tabs button')].find((b) => b.textContent === 'clouds').click());
+    const touchLook = await look(), touchDials = dialsOn(touchLook, TOUCH_USUAL, 5);
+    check('the touch strip is one dial at a time: a caption, the look\'s five dials (its first out front), the tab row, no preset row',
+      touchStrip.one && touchStrip.cap && touchStrip.dials === touchDials.map((d, i) => `${d}:${i ? 'out' : 'in'}`).join() && touchStrip.tabs === [...touchDials.map((d) => (d === 'cloudiness' ? 'clouds' : d)), '\u21ba', '\uff0b'].join() && !touchStrip.presetShown, JSON.stringify({ touchLook, ...touchStrip }));
+    await pgT.evaluate(() => document.querySelectorAll('#strip .tabs button')[1].click());
     const afterTab = await pgT.$eval('#strip', (el) => [...el.querySelectorAll('.ctl.try')].filter((r) => !r.classList.contains('out')).map((r) => r.querySelector('.name').textContent).join());
-    check('a tab shows its dial', afterTab === 'cloudiness', afterTab);
+    check('a tab shows its dial', afterTab === touchDials[1], afterTab);
     // a finger held on a slider in the strip or the playful sidebar clears the rest of that panel (.holding on the panel, .held on its row), and lifting restores it
     const holdCheck = async (sel) => {
       const fire = (type) => pgT.evaluate(([q, t]) => { const i = document.querySelector(`${q} input[type=range]`); i.dispatchEvent(new PointerEvent(t, { pointerType: 'touch', pointerId: 9, isPrimary: true, bubbles: true, cancelable: true })); return i.closest('.ctl').classList.contains('held'); }, [sel, type]);

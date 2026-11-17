@@ -1289,6 +1289,40 @@ export const PRESETS = {
 // and a visibility flag doesn't belong in them). ----
 export const EXPERIMENTAL = ['canopy 1', 'canopy 2', 'canopy 3', 'canopy 4', 'curtain 1', 'curtain 2', 'tent 1', 'the void'];
 
+// ---- PRIORITY: the dials a look leads with, in order — the settings most worth playing with in that place. The zen strip
+// and the playful sidebar show these first and the usual dials after them; a name the look cannot use (its gate is shut)
+// is passed over, and a look not named here shows the usual dials alone. Each name is one of the editor's dials (editor.js
+// TRY_SPECS). Walked in PRESETS' order they reveal a little at a time: the tree's shape and the wind while the tree is seen,
+// the leaf's chemistry through its year, then the light itself as the floor goes abstract. UI curation like EXPERIMENTAL,
+// so a list beside PRESETS and never a key inside a look. ----
+export const PRIORITY = {
+  'park 1, the scene': ['droop', 'wind'],
+  'park 1, under the trees': ['leaves', 'droop', 'wind'],
+  'park 1': ['time', 'droop', 'leaves'],
+  'park 2': ['reach', 'time', 'wind'],
+  'cherry blossom': ['season', 'red', 'wind'],
+  'the yellow tree': ['russet', 'season', 'leaf fall'],
+  'park fall': ['leaf fall', 'red', 'season'],
+  'montebello': ['each tree', 'red', 'season'],
+  'montebello, rain': ['wet', 'cloudiness', 'season'],
+  'forest floor': ['focus', 'season', 'wet'],
+  'afternoon 7': ['focus', 'wind', 'gusts'],
+  'afternoon 6': ['focus', 'cloudiness', 'density'],
+  'afternoon 6b': ['focus', 'cloudiness', 'density'],
+  'afternoon 5': ['wind', 'time'],
+  'afternoon 5b': ['sparkle', 'sun'],
+  'prism': ['sparkle', 'sun'],
+  'afternoon 4': ['haze', 'wind', 'limbs'],
+  'afternoon 4b': ['haze', 'wind', 'limbs'],
+  'morning 1': ['focus', 'cloudiness', 'sun'],
+  'morning 2': ['focus', 'cloudiness', 'sun'],
+  'morning 3': ['focus', 'cloudiness', 'sun'],
+  'morning 3b': ['focus', 'cloudiness', 'sun', 'sparkle'],
+  'memories': ['focus', 'density', 'wind'],
+  'acid dreams': ['sparkle', 'droop'],
+  'eclipse': ['eclipse', 'focus'],
+};
+
 // ---- TREE_SPECIES (spec §4.5): named SHAPE bundles, the inverse of WIND_PATTERNS — each a partial set of the
 // growth/shape knobs (leader, droop, taper, crown_aspect, phyllotaxis + the structural knobs). The editor merges
 // the chosen bundle OVER the current look's params (shape ⟂ scene: lighting/camera/wind are untouched), stamps

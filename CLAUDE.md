@@ -69,7 +69,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-math.js` — CPU math: atmosphere, deterministic RNG, wind noise, skeleton growth.
 - `komorebi-editor-tools.js` — EDITOR-only: debug overlays, the GPU timer queries `nix run .#cost` reads, the motion mirror.
 
-**Looks.** `presets.js` — the built-in looks (`PRESETS`, and `EXPERIMENTAL`, which the editor hides behind its toggle).
+**Looks.** `presets.js` — the built-in looks (`PRESETS`, in the order a person walks them; `EXPERIMENTAL`, which the editor hides behind its toggle; and `PRIORITY`, the dials each look leads with).
 `macros.js` — the control bus: one input drives an authored recipe lifted from the shipped looks.
 
 **The editor** (EDITOR-only; `spec/implementation.md`, "The editor and the player", says how it behaves).

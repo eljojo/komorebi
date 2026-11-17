@@ -1,6 +1,6 @@
 import { create, DEG, PARAMS, CAMERAS, cameraFor, FIDELITY_KEYS, resolveSession } from './komorebi.js';
 import { mountSettings } from './editor-settings.js';
-import { EXPERIMENTAL, PRESETS, TREE_SPECIES } from './presets.js';
+import { EXPERIMENTAL, PRESETS, PRIORITY, TREE_SPECIES } from './presets.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
 import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf } from './playlists.js';
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep } from './macros.js';
@@ -73,7 +73,7 @@ if(params.time_of_day===undefined) params.time_of_day = 9;
 if(params.latitude===undefined) params.latitude = 45;   // ~Montreal, where this began
 function applyScope(scope){ stopPlay(); chipSoon(); return eng.apply(scope); }   // slider/toggle rebuild — every edit of the look comes through here (or updateSunFromTime, a drag, species, paste, save), stops play and wakes the look's chip
 function reseed(){ params.seed=Math.floor(Math.random()*1e9); applyScope('canopy'); }   // same grove, grown again
-function applyParams(obj){ endTween(); trySeasonCancel(); eng.setParams(obj); syncAllControls(); chipSoon(); }  // load a whole preset (instant)
+function applyParams(obj){ endTween(); tryFrameCancel(); eng.setParams(obj); syncAllControls(); chipSoon(); }  // load a whole preset (instant)
 // The chip under the look select (lookChip, built with the presets UI) says "● edited" once the live params leave the entry's, so it is
 // looked at again after each edit: at most every 200 ms, the last edit always read.
 let lookChip=null, chipTimer=0;
@@ -598,7 +598,10 @@ function presetRow(withPlay){
   return row;
 }
 const presetNameEls=[];
-function syncPlayPreset(){ if(presetSel) for(const el of presetNameEls) el.textContent = entryName(stateNow(), getStored(), activeList(), presetSel.value); }
+function syncPlayPreset(){   // the stepper labels mirror the name, and the dials follow the look it names
+  if(presetSel) for(const el of presetNameEls) el.textContent = entryName(stateNow(), getStored(), activeList(), presetSel.value);
+  tryArrange();
+}
 // ▶/■ shows only while the active playlist carries dwell times (a cloud playlist); all looks has none. Playing
 // (playlists.js makePlayer) holds each look for its dwell and then steps to the next, which fades in over its own
 // crossfade; the dwell starts once that look has arrived (goTo), and the look play starts on has no fade in.
@@ -635,49 +638,59 @@ function syncMacroControls(){
 // ---- try-out: dials that each write only their own parameter(s), starting from the
 // look's own value ("home", captured whenever a look has loaded — a drag never re-captures it), so touching one at rest
 // changes nothing. The thumbs are derived from the live params, so a mode switch re-seats them where they were left.
-// A dial can be built into any surface (tryDial): the playful sidebar and the zen strip each hold their own instances.
+// A dial can be built into any surface (tryDial): the playful sidebar and the zen strip each hold their own instances, and which
+// dials a surface holds follows the look (tryArrange).
 const TRY_FALL = { anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, turn_exposure: 1, leaf_drop: 1 };   // inert at phenology <= 0.6: the left end stays the look's own picture
-const TRY_KEYS = ['core_angular_radius_deg', 'core_weight_fraction', 'cloud_thickness', 'foliage_density', 'sun_azimuth_deg', 'sun_elevation_deg', 'phenology', ...Object.keys(TRY_FALL)];
+// every parameter a dial writes, and the rebuild it needs: home is captured for each, and "as it was" re-applies the scopes of what moved
+const TRY_SCOPE = { core_angular_radius_deg:'source', core_weight_fraction:'source', cloud_thickness:'source', foliage_density:'density',
+  sun_azimuth_deg:'', sun_elevation_deg:'', phenology:'season', ...Object.fromEntries(Object.keys(TRY_FALL).map((k) => [k, 'season'])) };
 let tryHome = null;
 let tryAz = 0, tryTime = 0;   // the sun dial's offset (degrees) and the time dial's (hours) from home; both write the sun, so both live here (reset with home)
-const tryDials = [];     // every instance: {name, inp, tick, row, seat(), home()}
+const tryDials = [];     // every instance: {name, inp, tick, row, seat(), home(), usable()?, surface}
 function tryCapture(){
-  tryHome = {}; for(const k of TRY_KEYS) tryHome[k] = params[k] ?? 0;
+  tryHome = {}; for(const k in TRY_SCOPE) tryHome[k] = params[k] ?? 0;
   tryAz = 0; tryTime = 0;
+  tryArrange();
   trySeat();
 }
 function trySeat(){
   if(!tryHome) return;
-  for(const d of tryDials){ d.inp.value = d.seat(); d.tick.style.left = `${d.home()*100}%`; }
-  const usable = macroUsable('season', params);
-  for(const d of tryDials) if(d.name === 'season'){ d.inp.disabled = !usable; d.row.classList.toggle('off', !usable); }
+  for(const d of tryDials){
+    d.inp.value = d.seat(); d.tick.style.left = `${d.home()*100}%`;
+    const off = d.usable ? !d.usable() : false;    // a dial this look cannot use stays in place, dimmed, and says why when touched
+    d.inp.disabled = off; d.row.classList.toggle('off', off);
+  }
 }
-// THE SEASON DIAL answers like the other dials: a move applies at once. An input event fires several times a frame and each apply is a re-season (§4.5 "Re-seasoning"),
-// so a frame takes one: a move the frame has already spent its apply on is held, and that frame's clock (trySeasonTick, from onFrame) lands the latest, so the picture is
-// never more than a frame behind the finger. A step is as wide as the finger moved. It waits while a transition runs (a route owns the grove); the release lands exactly
-// where the thumb is.
-let trySeasonWant = null, trySeasonSpent = false;
-function trySeasonCancel(){ trySeasonWant = null; trySeasonSpent = false; }
-function trySeasonApply(v){
-  const dict = { phenology:v };
-  for(const k in TRY_FALL) if(!tryHome[k]) dict[k] = TRY_FALL[k];
-  Object.assign(params, dict);
-  for(const k in dict){ maybeClearSpecies(k); syncControl(k); }
-  applyScope('season');
-}
-function trySeasonMove(v){
-  if(trySeasonSpent || eng.trans.active){ trySeasonWant = v; return; }
-  trySeasonWant = null; trySeasonSpent = true;
-  trySeasonApply(v);
-}
-function trySeasonTick(force){                     // each frame, and the release (force)
-  if(trySeasonWant !== null && !eng.trans.active){
-    const v = trySeasonWant; trySeasonWant = null;
-    trySeasonApply(v);
-    trySeasonSpent = !force;                       // the frame's own landing spends the next frame's apply; a release spends nothing
+// A DIAL THAT REGROWS OR RE-SEASONS answers like the others: a move applies at once. An input event fires several times a frame and each apply is a regrow
+// or a re-season (§4.5 "Re-seasoning"), so a frame takes one: a move the frame has already spent its apply on is held, and that frame's clock (tryFrameTick,
+// from onFrame) lands the latest, so the picture is never more than a frame behind the finger. A step is as wide as the finger moved. It waits while a
+// transition runs (a route owns the grove); the release lands exactly where the thumb is. What a held move writes is made when it lands (`make`), so a
+// move held across a route reads the arrived look's home. Two such dials held at once share the frame's apply: their writes merge, under a regrow if
+// either regrows.
+let tryWant = null, trySpent = false;
+function tryFrameCancel(){ tryWant = null; trySpent = false; }
+function tryFrameMove(make, scope){
+  if(trySpent || eng.trans.active){
+    const was = tryWant;
+    tryWant = was ? { make:() => ({ ...was.make(), ...make() }), scope: was.scope === scope ? scope : 'canopy' } : { make, scope };
     return;
   }
-  trySeasonSpent = false;
+  tryWant = null; trySpent = true;
+  tryWrite(make(), scope);
+}
+function tryFrameTick(force){                      // each frame, and the release (force)
+  if(tryWant !== null && !eng.trans.active){
+    const w = tryWant; tryWant = null;
+    tryWrite(w.make(), w.scope);
+    trySpent = !force;                             // the frame's own landing spends the next frame's apply; a release spends nothing
+    return;
+  }
+  trySpent = false;
+}
+function trySeasonDict(v){                         // the season's clock, and montebello's capacities wherever the look has none, so a summer look turns too
+  const dict = { phenology:v };
+  for(const k in TRY_FALL) if(!tryHome[k]) dict[k] = TRY_FALL[k];
+  return dict;
 }
 function tryWrite(dict, scope){                    // the bus applier's own landing for one dict
   Object.assign(params, dict);
@@ -717,7 +730,7 @@ const TRY_SPECS = {
   focus: { ends:['crisp','soft'], min:0, max:1, step:0.005,          // the focus macro itself (the sun's core and its share of the light), with a home and a way back
     seat:() => bus.get('focus'), home:() => macroValue('focus', tryHome),
     write:tryFocusWrite },
-  cloudiness: { ends:['clear','overcast'], min:0, max:0.6, step:0.005,
+  cloudiness: { tab:'clouds', ends:['clear','overcast'], min:0, max:0.6, step:0.005,
     seat:() => clamp(params.cloud_thickness, 0, 0.6), home:() => tryFrac(tryHome.cloud_thickness, 0, 0.6),
     write:(v) => tryWrite({ cloud_thickness:v }, 'source') },
   density: { ends:['sparse','full'], min:0.6, max:1.4, step:0.01,
@@ -731,9 +744,45 @@ const TRY_SPECS = {
     write:(d) => { tryTime = d; trySunWrite(); } },
   season: { ends:['green','fallen'], min:0.6, max:0.95, step:0.005,
     seat:() => clamp(params.phenology, 0.6, 0.95), home:() => tryFrac(tryHome.phenology, 0.6, 0.95),
-    write:(v) => trySeasonMove(v),                   // at once, one a frame (trySeasonMove)
-    commit:() => trySeasonTick(true) },              // on release, exactly where the thumb is
+    usable:() => macroUsable('season', params), why:'this place is seen from below: its season is its own',
+    write:(v) => tryFrameMove(() => trySeasonDict(v), 'season'),   // at once, one a frame (tryFrameMove)
+    commit:() => tryFrameTick(true) },              // on release, exactly where the thumb is
+  // the air's haze, the macro's own recipe (afternoon 4 → 4b), with the look's own air kept at home as the focus dial keeps its light
+  haze: { ends:['clear','hazy'], min:0, max:1, step:0.005,
+    seat:() => macroValue('haze', params), home:() => macroValue('haze', tryHome),
+    usable:() => macroUsable('haze', params), why:'this place keeps its own air',
+    write:(v) => { const dict = macroParams('haze', v);
+      if(Math.abs(v - macroValue('haze', tryHome)) <= 0.0025) for(const k in dict) dict[k] = tryHome[k];
+      tryWrite(dict, MACROS.haze.scope); } },
 };
+for(const k in MACROS.haze.stops[0].set) TRY_SCOPE[k] = MACROS.haze.scope;
+// THE DIALS OF ONE SETTING: the setting itself across a range of its own, the two ends in words, the rebuild it needs. A look leads with them where
+// presets.js PRIORITY names them. The advanced panel's own gate for the row (rowLive) says whether this look can use one: a pigment before the
+// leaves can turn, the wet with no carpet laid, the moon with no eclipse. A regrow or a re-season lands one a frame, as the season does.
+const TRY_PARAM = {
+  droop:       { key:'droop', ends:['reaching up','weeping'], min:-0.6, max:0.8, step:0.01, scope:'canopy' },
+  leaves:      { key:'leaves_per_cluster', ends:['few','many'], min:4, max:60, step:1, scope:'canopy' },
+  reach:       { key:'branch_length_ratio', ends:['compact','reaching'], min:0.45, max:0.88, step:0.01, scope:'canopy' },
+  limbs:       { key:'branch_pitch_deg', ends:['flat','steep'], min:5, max:70, step:1, scope:'canopy' },
+  red:         { key:'anthocyanin', ends:['gold','red'], min:0, max:1.5, step:0.01, scope:'season', why:'the leaves have not begun to turn' },
+  russet:      { key:'tannin', ends:['bright','russet'], min:0, max:1.2, step:0.01, scope:'season', why:'the leaves have not begun to turn' },
+  'leaf fall': { key:'leaf_drop', ends:['holding on','let go'], min:0, max:1, step:0.01, scope:'season', why:'the leaves have not begun to turn' },
+  'each tree': { key:'tree_pigment_spread', ends:['alike','each its own'], min:0, max:1, step:0.01, scope:'season', why:'the leaves have not begun to turn' },
+  wet:         { key:'leaf_wetness', ends:['dry','soaked'], min:0, max:1, step:0.01, scope:'', why:'no leaves lie on the ground here' },
+  wind:        { key:'wind_strength', ends:['still','strong'], min:0, max:2, step:0.01, scope:'' },
+  gusts:       { key:'wind_gustiness', ends:['steady','gusty'], min:0, max:0.6, step:0.01, scope:'' },
+  sparkle:     { key:'chromatic_aberration', ends:['clean','split'], min:0, max:6, step:0.05, scope:'', why:'this place is seen from below: no edge splits the light' },
+  eclipse:     { key:'eclipse_amount', ends:['a bite','a crescent'], min:0, max:1, step:0.01, scope:'source', why:'no moon crosses this sun' },
+};
+for(const [name, p] of Object.entries(TRY_PARAM)){
+  TRY_SCOPE[p.key] = p.scope;
+  const frame = p.scope === 'canopy' || p.scope === 'season';
+  TRY_SPECS[name] = { ends:p.ends, min:p.min, max:p.max, step:p.step, why:p.why ?? 'this place cannot use it',
+    seat:() => clamp(params[p.key], p.min, p.max), home:() => tryFrac(tryHome[p.key], p.min, p.max),
+    usable:() => rowLive(p.key, cameraFor(params)),
+    write: frame ? (v) => tryFrameMove(() => ({ [p.key]:v }), p.scope) : (v) => tryWrite({ [p.key]:v }, p.scope),
+    ...(frame ? { commit:() => tryFrameTick(true) } : {}) };
+}
 // One sentence while a dial moves, in the world's words, on the surface's caption line (tryCap); it goes quiet a moment after the hand does.
 const TRY_SAYS = {
   focus: [[.33,'a small, sharp sun: every gap is a crisp image of it'],[.66,'the edges soften'],[2,'out of focus, like an old lens']],
@@ -742,15 +791,28 @@ const TRY_SAYS = {
   time: [[.42,'earlier in the day'],[.58,'this place\'s own hour'],[2,'later in the day']],
   season: [[.15,'the last green days'],[.6,'the crown is turning'],[2,'the leaves let go']],
   density: [[.42,'fewer leaves, wider openings'],[.58,'as full as this place is'],[2,'a fuller canopy, smaller gaps']],
+  haze: [[.3,'clear air'],[.7,'the air thickens'],[2,'hazy: the light goes soft and pale']],
+  droop: [[.38,'the branches sweep up toward the light'],[.48,'the branches grow straight'],[2,'the branches weep toward the ground']],
+  leaves: [[.3,'a few leaves to a twig: the light pours through'],[.65,'the twigs fill out'],[2,'every twig crowded with leaves']],
+  reach: [[.35,'short branches, a compact crown'],[.65,'the branches reach out'],[2,'long branches, the crown opens wide']],
+  limbs: [[.33,'the limbs spread flat'],[.66,'the limbs climb'],[2,'the limbs stand steep, the crown narrows']],
+  red: [[.15,'a plain gold turn'],[.5,'orange, then red'],[2,'deep red, almost maroon']],
+  russet: [[.2,'clear, bright colour'],[.55,'a russet comes in under the colour'],[2,'brown, like a beech holding on']],
+  'leaf fall': [[.2,'the leaves hold on'],[.7,'leaves let go, each on its own day'],[2,'the crown lets go, the carpet thickens']],
+  'each tree': [[.2,'the trees turn alike'],[.6,'each tree a little its own'],[2,'neighbours turn as differently as they can']],
+  wet: [[.2,'dry leaves on the ground'],[.6,'damp: the carpet darkens'],[2,'soaked after rain, the colours run deep']],
+  wind: [[.05,'still air'],[.5,'a breeze: the light slides'],[2,'a strong wind: the branches fight it and spring back']],
+  gusts: [[.25,'a steady push'],[.6,'the wind surges and drops'],[2,'squalls: the branches swing back through rest']],
+  sparkle: [[.05,'clean edges'],[.5,'colour at the edges of the light'],[2,'every dapple split into red and blue']],
+  eclipse: [[.3,'the moon takes a bite of the sun'],[.7,'every dapple becomes the same crescent'],[2,'a thin crescent, everywhere at once']],
 };
-const TRY_WHY_OFF = 'this place is seen from below: its season is its own';
 function tryCap(container){ const c=document.createElement('div'); c.className='cap'; container.appendChild(c); container._cap=c; }
 function trySay(container, text){
   const c=container._cap; if(!c) return;
   c.textContent=text; c.classList.add('on');
   clearTimeout(c._t); c._t=setTimeout(()=>c.classList.remove('on'), 2600);
 }
-function tryDial(name, container){
+function tryDial(name, container, before = null){
   const d = { name, ...TRY_SPECS[name] };
   const row=document.createElement('div'); row.className='ctl try';
   const nm=document.createElement('span'); nm.className='name'; nm.textContent=name;
@@ -760,26 +822,49 @@ function tryDial(name, container){
   const track=document.createElement('div'); track.className='track';
   const inp=document.createElement('input'); inp.type='range'; inp.min=d.min; inp.max=d.max; inp.step=d.step;
   const tick=document.createElement('div'); tick.className='tick';
-  row.addEventListener('pointerdown',()=>{ if(row.classList.contains('off')) trySay(container, TRY_WHY_OFF); });   // a dial this look cannot use says why
+  row.addEventListener('pointerdown',()=>{ if(row.classList.contains('off')) trySay(container, d.why); });   // a dial this look cannot use says why
   inp.addEventListener('input',()=>{ stopPlay(); chipSoon(); d.write(parseFloat(inp.value));
     const f=(parseFloat(inp.value)-d.min)/(d.max-d.min); trySay(container, TRY_SAYS[name].find(([t])=>f<=t)[1]);
     for(const o of tryDials) if(o !== d && o.name === name) o.inp.value = inp.value; });   // the same dial on the other surface follows
   if(d.commit) inp.addEventListener('change',()=>d.commit());
   track.append(inp,tick); row.append(nm,ends,track);
-  Object.assign(d, { inp, tick, row }); tryDials.push(d); container.appendChild(row);
+  Object.assign(d, { inp, tick, row }); tryDials.push(d); container.insertBefore(row, before);
   return d;
 }
 function tryAsItWas(){                              // every dial's parameters back to the look's own values
   stopPlay(); chipSoon();
-  trySeasonCancel();
-  const moved = (ks) => ks.some((k) => params[k] !== tryHome[k]);
-  const scopes = [moved(['cloud_thickness', 'core_angular_radius_deg', 'core_weight_fraction']) && 'source', moved(['foliage_density']) && 'density', moved(['phenology', ...Object.keys(TRY_FALL)]) && 'season'];
+  tryFrameCancel();
+  const moved = new Set(Object.keys(TRY_SCOPE).filter((k) => params[k] !== tryHome[k]).map((k) => TRY_SCOPE[k]));
   Object.assign(params, tryHome);
   tryAz = 0; tryTime = 0;
-  for(const k of TRY_KEYS){ maybeClearSpecies(k); syncControl(k); }
-  for(const sc of scopes) if(sc) applyScope(sc);   // density before season: the reseason reads the regrown set
+  for(const k in TRY_SCOPE){ maybeClearSpecies(k); syncControl(k); }
+  for(const sc of ['source', 'density', 'canopy', 'season', '']) if(moved.has(sc)) applyScope(sc);   // a regrow before the re-season, which reads the regrown set
   trySeat();
 }
+// ---- WHICH DIALS A SURFACE HOLDS, in what order: the look's PRIORITY first (presets.js), then the surface's usual dials, up to the surface's
+// count. A named dial the look cannot use is passed over; a usual one keeps its place and dims. The look is the one the stepper names, so a
+// look reached by any route (the arrows, a swipe, the dropdown, a playlist, a link) leads with its own; a look PRIORITY does not name shows
+// the usual dials alone. A surface is laid again only when what it would hold changes, so loading a look with the same dials moves nothing. ----
+const trySurfaces = [];   // { el, at() — the node its dials go before, usual, n, after(names)? }
+let tryLaid = null;
+const tryLookName = () => presetSel ? entryName(stateNow(), getStored(), activeList(), presetSel.value) : DEFAULT_PRESET;
+function tryNames(s){
+  const lead = (PRIORITY[tryLookName()] ?? []).filter((n) => TRY_SPECS[n] && (TRY_SPECS[n].usable?.() ?? true));
+  return [...lead, ...s.usual.filter((n) => !lead.includes(n))].slice(0, s.n);
+}
+function tryArrange(){
+  const lay = trySurfaces.map(tryNames), key = JSON.stringify(lay);
+  if(key === tryLaid) return;
+  tryLaid = key;
+  trySurfaces.forEach((s, i) => {
+    for(const d of tryDials.filter((o) => o.surface === s)){ d.row.remove(); tryDials.splice(tryDials.indexOf(d), 1); }
+    const at = s.at();
+    for(const n of lay[i]) tryDial(n, s.el, at).surface = s;
+    s.after?.(lay[i]);
+  });
+  if(tryHome) trySeat();
+}
+function trySurface(s){ trySurfaces.push(s); tryLaid = null; tryArrange(); }
 // Touch: a finger on a slider clears the rest of its panel so the picture shows. The row under the finger stays; the panel's
 // own backdrop goes too (CSS, .holding / .held). The strip's fade timer already waits out a hold (stripDragging).
 function holdToSee(panel){
@@ -804,9 +889,9 @@ function buildPlayPanel(){
   play.appendChild(modes);
   play.appendChild(presetRow(true));
 
-  tryCapture();
-  for(const n of ['focus','cloudiness','sun','season','density','time']) tryDial(n, play);
   tryCap(play);
+  trySurface({ el:play, at:() => play._cap, usual:['focus','cloudiness','sun','season','density','time'], n:Infinity });
+  tryCapture();
   const acts=document.createElement('div'); acts.className='ctl acts';
   const rb=document.createElement('button'); rb.className='tryreset'; rb.textContent='↺ as it was';
   rb.addEventListener('click',tryAsItWas);
@@ -897,27 +982,29 @@ function buildStrip(){
     // touch: ONE dial at a time, so the picture keeps the screen. A row of words along the bottom picks which dial is out;
     // ↺ is "as it was" and ＋ the playful sidebar. The preset row stays in the DOM (the name's source) but is not shown:
     // a swipe changes the look and its name passes across the top.
+    // Which five follow the look (tryArrange): its own lead first, and out front.
     strip.classList.add('one');
     tryCap(strip);
-    const rows = {};
-    for(const n of ['focus','cloudiness','sun','season','time']) rows[n] = tryDial(n, strip).row;
     const tabs=document.createElement('div'); tabs.className='tabs';
-    const pick=(name)=>{ for(const n in rows) rows[n].classList.toggle('out', n!==name);
-      for(const b of tabs.children) b.classList.toggle('on', b.dataset.dial===name); };
-    for(const [n,label] of [['focus','focus'],['cloudiness','clouds'],['sun','sun'],['season','season'],['time','time']]){
-      const b=document.createElement('button'); b.textContent=label; b.dataset.dial=n;
-      b.addEventListener('click',()=>pick(n)); tabs.appendChild(b);
-    }
     const back=document.createElement('button'); back.className='sm'; back.textContent='↺'; back.title='as it was';
     back.addEventListener('click',tryAsItWas);
     const up=document.createElement('button'); up.className='sm'; up.textContent='＋'; up.title='more';
     up.addEventListener('click',()=>setMode('play'));
     tabs.append(back,up); strip.appendChild(tabs);
-    pick('focus');
+    const pick=(name)=>{
+      for(const d of tryDials) if(d.surface===touch) d.row.classList.toggle('out', d.name!==name);
+      for(const b of tabs.children) b.classList.toggle('on', b.dataset.dial===name); };
+    const touch={ el:strip, at:() => tabs, usual:['focus','cloudiness','sun','season','time'], n:5, after:(names)=>{
+      for(const b of [...tabs.children]) if(b.dataset.dial) b.remove();
+      for(const n of names){
+        const b=document.createElement('button'); b.textContent=TRY_SPECS[n].tab ?? n; b.dataset.dial=n;
+        b.addEventListener('click',()=>pick(n)); tabs.insertBefore(b, back);
+      }
+      pick(names[0]);
+    } };
+    trySurface(touch);
   } else {
-    tryDial('focus', strip);
-    tryDial('cloudiness', strip);
-    tryDial('time', strip);
+    trySurface({ el:strip, at:() => null, usual:['focus','cloudiness','time'], n:3 });
   }
   trySeat();
   holdToSee(strip);
@@ -1111,7 +1198,7 @@ function goTo(value){
   applySession();
   const t=timing(stateNow(), activeList(), value);
   endTween();
-  trySeasonCancel();
+  tryFrameCancel();
   player.leaving();
   eng.transitionTo(resolveEntry(value), { duration: t ? t.crossfade_s : transDur, style: t ? t.style : 'morph',
     onEnd:()=>{ endTween(); refreshPresetSelect(value); syncAllControls(); player.arrived(value); } });   // morph from the current live look to the target
@@ -1598,7 +1685,7 @@ document.addEventListener('mouseleave',()=>{ treePointer=null; });
 // inset (when the panel is open), and update the HUD. ------------------------
 eng.onFrame = ()=> {
   sessionPanel.refresh();
-  tickTween(); trySeasonTick(); midi?.frame();
+  tickTween(); tryFrameTick(); midi?.frame();
   if(params.drift_auto) syncControl('drift_phase');
   refreshGates();               // a transition, a macro or a preset can flip a mode as readily as the row itself; the signature check makes the miss cheap
   const devUp = !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');   // a sliding-out panel counts as gone
