@@ -85,7 +85,7 @@ No measurement of the floor camera's framing or the Look's tail is recorded. The
 ### The tree seen from the floor camera
 
 - **What was measured:** what the tree view adds to the frame and what it costs; whether its leaves need a side.
-- **On:** `park 1`, Chrome on Metal (Apple M1 Pro), wind off, at its shipped framing, at a 1.6 m eye 4.5 m from the trunks (zoom 39 m, tilt 70°, lens 110°) and over the grove from 12.3 m (zoom 20 m, tilt 55°, lens 30°) (`test-gl/out/review/2026-11-16-tree-view/`).
+- **On:** `park 1`, Chrome on Metal (Apple M1 Pro), wind off, at its shipped framing, at a 1.6 m eye 4.5 m from the trunks (zoom 39 m, tilt 70°, lens 110°) and over the grove from 12.3 m (zoom 20 m, tilt 55°, lens 30°) (`archive/reviews/2026-11-16-tree-view/`).
 - **Result:** with the gate off, `park 1`, `montebello`, `the yellow tree`, `afternoon 7` and `curtain 1` render byte for byte as before. On, the tree changes 2.6–3.5 % of the frame (mean |Δ| 3.3–3.7 of 255). The measured leaf (Brakke 1994's red maple in July, T 0.0345 / 0.0993 / 0.0034, in the tree and its shadow) against the look's (0.26 / 0.356 / 0.001) moves 5–17 % of the frame, mean 1.0–2.7, most under the tree looking into the sun, where the look's leaf glows yellow-green and the measured one is a darker green. A specular sheen on the leaf's top moved 0.3–2.2 % of the frame, most from above the crown, where it read as snow; the leaf ships without it ([dead-ends](dead-ends.md#leaf)). Cost at 1920×1080: 6.4 → 7.4 ms a frame (+1.0 ms, inside the run-to-run spread; 6 138 leaves). As stored, every leaf tilted toward one half of the sky (headings in [0, π), tilt ≥ 0); drawing the sides at random changed 5.1 % of a 3-D mockup's frame, thinning its glints.
 - **What it established:** the tree view is registered with the cast by construction and costs about one more draw of the leaves; leaves need a side.
 - **Date:** 2026-11-16.
@@ -101,7 +101,7 @@ No measurement of the floor camera's framing or the Look's tail is recorded. The
 ### Leaves on shoots and by light
 
 - **What was measured:** the tilt law against Planchais & Sinoquet (1998), Table 3; what the shoots and the tilt change in each look; what they cost.
-- **On:** the law's own numbers; every look that takes them, today (both 0) against both at 1, Chrome on Metal (Apple M1 Pro), wind off (`test-gl/out/review/2026-11-17-shoots-by-default`); `nix run .#cost` at 1920×1080.
+- **On:** the law's own numbers; every look that takes them, today (both 0) against both at 1, Chrome on Metal (Apple M1 Pro), wind off (`archive/reviews/2026-11-17-shoots-by-default`); `nix run .#cost` at 1920×1080.
 - **Result:** a uniform tilt over [0, 2μ] gives ⟨cos⟩ 0.905 at 22° and 0.781 at 34°, against their leaf-inclination effect 0.91 / 0.80 (vertical). The overhead looks rearrange their dapples entirely (`memories` 74 % of pixels, the mornings 67–89 %, `prism` 79 %, `acid dreams` 55 %): leaves gather into clumps with floor between. The artist kept `morning 1`, `morning 2`, `morning 3` and `prism` as they were; `memories`, `morning 3b` and `acid dreams` take the shoots. The standing looks move 5–22 % (`park 1` 5 %, `montebello` 22 %), the curtains 7–8 %, the sky views 16–48 %, `tent 1` 62 %. A frame costs the same (every look inside its run-to-run spread); the grove's build does not: `morning 2` 10.6 → 20.5 ms, `park 1` 6.8 → 8.6 ms, `montebello` 13.9 → 13.3 ms. With both at 0 `park 1`'s faithful floor and `memories`' layered floor render the bytes they did before (harness hashes `ddf421f7`, `ea083587`).
 - **Date:** 2026-11-17.
 
@@ -194,14 +194,14 @@ No measurement of the floor camera's framing or the Look's tail is recorded. The
 - **The young leaf in PROSPECT** (Chl 40, Car 10 the mature leaf): a young leaf with chlorophyll at 0.25 of it (Chl 10, Car 3, Yang et al. 2016's start of season) is the summer leaf at 0.363 of its optical depth, ΔE 0.007 in OKLab; at 0.125, 0.216 (0.011); at 0.5, 0.613 (0.017); at 0.75, 0.814 (0.026, mostly the summer leaf's blue held at 0.001). The share goes about as the chlorophyll fraction to the 0.72. Juvenile Norway maple, red: the summer leaf at 0.6 of its depth plus 0.40 of the anthocyanin basis is within 0.021 of PROSPECT. `memories`' authored gold-brown leaf is nearest a red-flushed young leaf, not a chlorophyll-limited one (ΔE 0.06) (from the integration plan's prototype, uncommitted source).
 - **The timing.** Gregory (1980), sugar maple, Fig. 19 read off the page image (midrib mm, ±3): long shoots' node 1 at 39 / 94 / 123 on days 137 / 144 / 151, node 4 at 6 / 25 / 60; a 21-day smoothstep of length from day 129 passes through node 1's. FEMC, Proctor: first bud break DOY 125, full leaf-out DOY 137 (long-term means).
 - **The engine** (Chrome on Metal, 960×540, wind off). `park 1, the scene`: bare at 0.02, the first leaves at 0.04, every leaf out and growing at 0.08, full-grown and still pale at 0.14, summer at 0.5; the shade under the crown covers 1.8 % of the frame at bud break and 5.3 % in summer. `memories`, at its own phenology 0.15, with the spring against without: the shade 0.11 stop lighter and paler, 42 % of pixels move by more than 8 of 255. `young_red` 0.4 at 0.08 reddens a standing crown's shade (G/B 1.50 → 1.24).
-- **Date:** 2026-11-17 (`test-gl/out/review/2026-11-17-spring/`, git-ignored).
+- **Date:** 2026-11-17 (`archive/reviews/2026-11-17-spring/`, git-ignored).
 
 ### A tilted leaf's shadow under a low sun
 
 - **The plan footprint against the true shadow**, on a faithful grove of 45,936 leaves (median tilt 24°, p90 44°), each leaf's side drawn by its hash: the canopy's total leaf shadow, true over cast, is 1.000 at 80° of sun, 1.002 at 45°, 1.052 at 30°, 1.213 at 20° and 1.885 at 10°. Per leaf, p10–p90 of the ratio is 0.90–1.10 at 80°, 0.45–1.54 at 45° and 0.27–2.49 at 20° (from the integration plan's prototype, uncommitted source).
 - **The engine, `tilt_shadow` 0 against 1** (Chrome on Metal, 960×540, wind off; the share of the frame darker than 0.6 of its median). `park 1` at 20°: 2.8 % → 4.5 % of the frame in shade, 11 % of pixels move by more than 8 of 255. `park 1, the scene`: 5.0 → 6.7 % at 15°, 4.9 → 6.1 % at 20°, 4.5 → 4.8 % at 30°, 3.3 → 3.3 % at 64°. The standing looks at their own 26° sun: 3–13 % of pixels move, the shade 5–35 % wider; `montebello, rain` barely moves (its crown has dropped).
 - **Under wind**: frame-to-frame change 0.233 off, 0.236 on (`park 1, the scene` at 20°).
-- **Date:** 2026-11-17 (`test-gl/out/review/2026-11-17-low-sun-shadow/`, git-ignored).
+- **Date:** 2026-11-17 (`archive/reviews/2026-11-17-low-sun-shadow/`, git-ignored).
 
 ### The recalibrated maple against José's thirteen
 
@@ -474,7 +474,7 @@ The red oak is not star-shaped from any point of its midrib: 2–33 re-entrant r
 - **Result, before (ms, median per phenology band 0.6 / 0.7 / 0.8 / 0.9, ×6):** the re-season is the step on every look: afternoon 7 29 / 46 / 47 / 48, memories 32 / 53 / 52 / 53, montebello 7 / 10 / 12 / 10, park 1 7 / 11 / 11 / 11. The cast bake 1–2.5, the fill 1.3–1.5, the uploads at most 1.2. Montebello's carpet, re-baked every step and paid in the next frame, 1 / 1 / 6 / 14, almost all on the CPU (sorting the fallen by day, drawing their landings). WebKit agrees unthrottled (re-season 6 ms on the afternoons, the GPU stages under 1). Inside the re-season (afternoon 7): 38 % the loop, which hashed every leaf's streams again each step; 32 % the sieve mixture; 17 % the rest of the pigment arithmetic; and 26 000 of the 32 000 leaves were listed as litter by 0.95 on a floor with no carpet.
 - **Result, with the tiers (×6):** afternoon 7 15 / 21 / 16 / 10, memories 16 / 23 / 17 / 11, montebello 6 / 7 / 7 / 5, park 1 5 / 6 / 6 / 5 for the whole apply. A schedule knob (anthocyanin) moved from 6.4 to 5.3 ms unthrottled on afternoon 7. Montebello's carpet with its drop order and landings kept, by 0.85 / 0.9 / 0.95 (1 149 / 2 961 / 4 868 fallen): 5.7 / 8.6 / 17.4 → 3.3 / 2.7 / 3.8. An apply that leaves the bake to the frame (a running loop, the canopy moving) saves the cast and the fill again: 1.0–2.5 ms on the afternoons and 2.7–3.6 on montebello at ×6.
 - **What it established:** a season step was CPU, not GPU; what remains is each turning leaf's mixture and the copy into the buffers. The first touch of the dial on a look is still one full build and, at the first step past the turn, one exposure pass (×6: about 170–210 ms each).
-- **Date:** 2026-11-10 (`test-gl/out/review/2026-11-10-season-drag-cost/`).
+- **Date:** 2026-11-10 (`archive/reviews/2026-11-10-season-drag-cost/`).
 
 ### Leaf-off on the faithful cast
 
@@ -499,7 +499,7 @@ The red oak is not star-shaped from any point of its midrib: 2–33 re-entrant r
 - **On the sheets:** real soil reflects 0.1–0.2; on park 1's dirt a montebello leaf matched it in chroma and sat at 1.1× its luminance, so the carpet vanished, which is why montebello's dirt came down ×0.6.
 - **What it established:** the opaque-pile reflectance is far less saturated than the transmittance stain it replaced; κ 2 was chosen by eye on the 2026-10-08 sheets (see [the season](../model/season.md)).
 - **What would replace it:** the grey-card calibration. Photograph the same leaves backlit (for τ), then dry and wet beside a grey card in the Gatineau; that fits κ, F and wetness's effective scale. The protocol for the photographs: a diffuser (tracing paper) on the glass, a white or grey card behind, RAW, fixed white balance and exposure, Active D-Lighting off, wet and dry labelled (from the bot's log, uncommitted source). `litter_age` 0.15 is **Provisional** with it.
-- **Date:** 2026-10-08, sheets in `test-gl/out/review/2026-10-08/`.
+- **Date:** 2026-10-08, sheets in `archive/reviews/2026-10-08/`.
 
 ### The carpet against its painting
 
@@ -598,7 +598,7 @@ No transport measurement is recorded. What the beam sees of a leaf is measured u
 - **Against the law.** Each pass (`G`, `W`, `B`) against `komorebi-fill.js` fed the GPU's own previous pass: within 3·10⁻⁴ of what it holds, on the park (wrapped), a faithful finite tree (open), the measured leaf with `edge_area`, and the curtain. A wrong ray in the undersides' pass is 0.6 of it.
 - **Under wind.** `park 1, the scene` at 60°: frame-to-frame change 0.186 without, 0.185 with: no shimmer from the coarse pass.
 - **Cost.** Chrome on Metal, Apple M1 Pro, 1920×1080, the fill open: a frame changes by −0.3 ms on `montebello` and +0.1 ms on `park 1, the scene`, both inside the run-to-run spread; a regrow costs +4.9 ms and +1.7 ms.
-- **Date:** 2026-11-16 (`test-gl/out/review/2026-11-16-ground-bounce/`, git-ignored).
+- **Date:** 2026-11-16 (`archive/reviews/2026-11-16-ground-bounce/`, git-ignored).
 
 ### The fill's GPU cost
 
@@ -910,7 +910,7 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 ### The eclipse pairs: the cloud dissolve against the moon
 
 - **What was measured:** for `morning 3b → eclipse` (P1) and `eclipse → acid dreams` (P2), the route as shipped before (the cloud dissolve, bloom 0.55, `eclipse` flipped at the midpoint) against the variant José chose (B3: the crossfade across layer counts, each grove with its own leaf edge and grown from its own look, the moon on a path giving the visible bite four fifths of it, its limb soft while it moves). Excursion is the mean luminance's departure from the straight line between the two ends; steps are mean |frame n − frame n−1| in 8-bit levels.
-- **On:** the prototype review (`test-gl/out/review/2026-11-10-eclipse-transitions/pass2/`, git-ignored): 1280×720 at 60 fps on Metal, the looks as authored with automatic quality and adaptive motion off, the route called at frame 120 with a 5 s driver (a 10 s route), landing at frame 720. These are the prototype's numbers, not the engine's as built.
+- **On:** the prototype review (`archive/reviews/2026-11-10-eclipse-transitions/pass2/`, git-ignored): 1280×720 at 60 fps on Metal, the looks as authored with automatic quality and adaptive motion off, the route called at frame 120 with a 5 s driver (a 10 s route), landing at frame 720. These are the prototype's numbers, not the engine's as built.
 - **Result:**
 
   | pair | route | excursion above / below the line | largest step (frame) |

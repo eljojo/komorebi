@@ -20,7 +20,7 @@ Each file is organised under the model's subsystem slugs, so a model file links 
 
 ## Renders and review sheets
 
-The pixel harness renders every shipped look headlessly and writes a PNG per preset under `test-gl/out/`. Review folders, the sheets José judges changes by, live under `test-gl/out/review/<date>/` with a `manifest.json` recording what each sheet shows (for example `test-gl/out/review/2026-10-08/`, where the litter's κ was chosen). Renders are evidence, not source: they stay untracked.
+The pixel harness renders every shipped look headlessly and writes a PNG per preset under `test-gl/out/`. Review folders, the sheets José judges changes by, live under `archive/reviews/<date>/` with a `manifest.json` recording what each sheet shows (for example `archive/reviews/2026-10-08/`, where the litter's κ was chosen). Renders are evidence, not source: they stay untracked.
 
 ## Related
 

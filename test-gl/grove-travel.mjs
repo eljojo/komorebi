@@ -79,7 +79,7 @@ try{
  },{fixture,W,H,render});
  for(const r of results)console.log('PASS',JSON.stringify(r));
  if(render){
-  const out=resolve(root,'test-gl/out/review/2026-11-07-fall-memoriez-to-park-2/integrated');await mkdir(resolve(out,'frames'),{recursive:true});const frames=[];
+  const out=resolve(root,'archive/reviews/2026-11-07-fall-memoriez-to-park-2/integrated');await mkdir(resolve(out,'frames'),{recursive:true});const frames=[];
   for(let n=0;n<600;n++){const f=await page.evaluate(n=>window.__render(n),n);await writeFile(resolve(out,'frames',`${String(n).padStart(4,'0')}.png`),Buffer.from(f.png.split(',')[1],'base64'));delete f.png;frames.push({frame:n,...f});if(n%60===0)console.log('FRAME',n,JSON.stringify(f));}
   await writeFile(resolve(out,'frames.json'),JSON.stringify(frames,null,2));await page.evaluate(()=>window.__dispose());
  }else{

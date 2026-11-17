@@ -572,7 +572,7 @@ function exportInto(tmp, { commit, tree }) {
   }
   if (!tree) throw new Error('exportEngine needs { commit } or { tree: true }');
   const listed = git(['ls-files', '-z', '--cached', '--others', '--exclude-standard']).stdout.split('\0').filter(Boolean)
-    .filter((f) => !f.startsWith('reference-photos-do-not-commit/') && !f.startsWith('test-gl/out/') && !f.startsWith('test-gl/node_modules/'));
+    .filter((f) => !f.startsWith('test-gl/out/') && !f.startsWith('test-gl/node_modules/'));
   for (const f of listed) {
     const src = join(REPO, f);
     if (!existsSync(src)) continue;   // tracked and deleted in the working tree
@@ -581,11 +581,11 @@ function exportInto(tmp, { commit, tree }) {
   }
   const diff = git(['diff', 'HEAD']).stdout;
   const stat = git(['diff', '--stat', 'HEAD']).stdout;
-  const untracked = git(['ls-files', '-z', '--others', '--exclude-standard']).stdout.split('\0').filter((f) => f && !f.startsWith('reference-photos-do-not-commit/') && existsSync(join(REPO, f)));
+  const untracked = git(['ls-files', '-z', '--others', '--exclude-standard']).stdout.split('\0').filter((f) => f && existsSync(join(REPO, f)));
   return {
     dir, tmp,
     provenance: {
-      kind: 'working-tree', commit: head, dirty: true, ...engineIdentity(dir), snapshot_of: 'the working tree at launch, copied (tracked + untracked-not-ignored, minus reference-photos and test-gl/out)',
+      kind: 'working-tree', commit: head, dirty: true, ...engineIdentity(dir), snapshot_of: 'the working tree at launch, copied (tracked + untracked-not-ignored, minus test-gl/out)',
       diff_stat: stat.trim().split('\n'), diff_sha256: sha256(diff), diff_bytes: diff.length,
       untracked: untracked.map((f) => ({ path: f, sha256: sha256(spawnSync('cat', [join(REPO, f)]).stdout) })),
     },

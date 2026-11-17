@@ -23,7 +23,7 @@ const errors=[];
 const page=await browser.newPage({viewport:{width:640,height:480}});
 page.setDefaultTimeout(60000);
 page.on('pageerror',error=>errors.push(error.message));
-const output=resolve(root,'test-gl/out/review/2026-11-11-sessions');
+const output=resolve(root,'archive/reviews/2026-11-11-sessions');
 await mkdir(output,{recursive:true});
 try{
   await page.goto(`${origin}/__sessions`);

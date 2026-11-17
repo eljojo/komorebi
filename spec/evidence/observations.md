@@ -41,7 +41,7 @@ Lying back in a hammock at a festival: tall trunks converging overhead, crowns l
 
 ### The projector in the yard
 
-José throws the piece onto the backyard at night with a real projector (a TOPTRO A2, from the bot's log, uncommitted source). A projector is a hard rectangle; nothing in a canopy has a frame; the light should pool in the yard. Photographs of the projection are in `reference-photos-do-not-commit/outside-projection/`. Carried by [`../model/camera.md`](../model/camera.md), [`../contracts/looks.md`](../contracts/looks.md).
+José throws the piece onto the backyard at night with a real projector (a TOPTRO A2, from the bot's log, uncommitted source). A projector is a hard rectangle; nothing in a canopy has a frame; the light should pool in the yard. Photographs of the projection are in `archive/references/outside-projection/`. Carried by [`../model/camera.md`](../model/camera.md), [`../contracts/looks.md`](../contracts/looks.md).
 
 ### The fall
 
@@ -58,7 +58,7 @@ The trees were watched through a fall (2026-10).
 
 ## Reference photographs
 
-All of these live in `reference-photos-do-not-commit/`, which is untracked and must stay so. File names are given where the record names them.
+All of these live in `archive/references/`, which is git-ignored and must stay so. File names are given where the record names them.
 
 - **The thirteen maples.** DSC_0617–0622, DSCF1667 (three leaves), DSC_0656 (five leaves): sugar maples, measured as the engine's leaves are (radial profile from a hand-placed petiole base, area-normalised). They recalibrated the maple on 2026-10-09; their numbers are in [measurements](measurements.md#leaf). Of DSC_0656: "looks like a proper maple leaf" (from the bot's log, uncommitted source). One folded leaf is excluded from the pairwise spread (0.19 without it, 0.24 with).
 - **DSC_0626.** A backlit maple crop in which the primary and secondary veins read *dark* (thick tissue), where the held leaf draws every wall bright: a named limit.

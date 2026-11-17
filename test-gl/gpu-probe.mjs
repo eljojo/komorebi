@@ -17,7 +17,7 @@ import { annexBMuxArgs, avcConfig, captureCanvasRun, encodeCanvasRun, hevcConfig
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
-const PRESET_DIR = '/Users/jojo/code/komorebi/reference-photos-do-not-commit/outside-projection/presets';
+const PRESET_DIR = '/Users/jojo/code/komorebi/archive/references/outside-projection/presets';
 const CHERRY = flag('--cherry', join(PRESET_DIR, 'projector-cherry.json'));
 const ULTRA = flag('--look', join(PRESET_DIR, 'projector-ultraviolet.json'));
 const OUT = resolve(flag('--out', join(REPO, 'test-gl/out/video/probe')));

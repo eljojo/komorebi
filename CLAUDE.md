@@ -19,7 +19,7 @@ you are touching.
 
 ## Reviewing work
 
-Anything visual is judged on before/after evidence, kept as an archive under `test-gl/out/review/` (git-ignored), one
+Anything visual is judged on before/after evidence, kept as an archive under `archive/reviews/` (git-ignored), one
 folder per question: `<date>-<topic>/` with the script that rendered it, a `manifest.json` (params, commit, source
 hashes) and a short `README.md` saying what A and B are, what was seen, and José's picks and comments on it, once, as said.
 

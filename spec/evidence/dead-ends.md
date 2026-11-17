@@ -150,7 +150,7 @@ The vignette iris that appeared whole in one frame is told under [transitions](#
 
 **What was tried.** `shoot_leaves` as a share from 0 to 1, each shoot gliding from its leaves' old places to its nodes by its own threshold over a twentieth of the share, so a change between looks would morph (2026-11-17).
 
-**What it looked like.** The switch from `morning 3b` to `morning 3` flickered: small sun-images opened and closed for a frame, 38 304 such pixels over 54 frames of a one-second switch (`test-gl/out/review/2026-11-17-morning-flicker`).
+**What it looked like.** The switch from `morning 3b` to `morning 3` flickered: small sun-images opened and closed for a frame, 38 304 such pixels over 54 frames of a one-second switch (`archive/reviews/2026-11-17-morning-flicker`).
 
 **Why.** A leaf's old place and its node are unrelated, as far apart as a limb when the shoot hangs on the older wood, and each shoot made the move in about three frames: the fastest leaf flew 19.5 of its own lengths in one frame, and the gaps it crossed flickered. No glide would make that calm.
 
@@ -160,7 +160,7 @@ The vignette iris that appeared whole in one frame is told under [transitions](#
 
 **What was tried.** `inner_leaves` travelled as a canopy key, so two looks that differ in it morphed the share, and each leaf glided from its twig tip to the wood over a twentieth of it.
 
-**What it looked like.** `afternoon 5` → `afternoon 6b` (0 → 0.35, with the tree count and the tilt) flickered: 6 829 pixels jumped and came back over 51 frames of a one-second switch; held equal, 0. The same for `afternoon 4`, `afternoon 4b`, `afternoon 5b` and `prism` against `afternoon 6b` (`test-gl/out/review/2026-11-17-inner-leaves-flicker`).
+**What it looked like.** `afternoon 5` → `afternoon 6b` (0 → 0.35, with the tree count and the tilt) flickered: 6 829 pixels jumped and came back over 51 frames of a one-second switch; held equal, 0. The same for `afternoon 4`, `afternoon 4b`, `afternoon 5b` and `prism` against `afternoon 6b` (`archive/reviews/2026-11-17-inner-leaves-flicker`).
 
 **Why.** As the shoots' share: a morph ran each leaf's glide in a few frames, over a distance up to its whole path to the trunk; the fastest leaf flew 2.5 of its own lengths a frame.
 
@@ -605,7 +605,7 @@ José (2026-10-08) asked for one tree to turn ahead of its own kind (photo 0631:
 
 **Why.** A fallen leaf is seen by reflection, and a leaf reflects because it scatters: the strongly absorbed channel comes back from the shallowest scatterings, so reflectance saturates far less than transmittance. What a backlit leaf passes and what a face-up leaf returns are different objects; the carpet is not the canopy's cast laid on the ground.
 
-**What replaced it.** The opaque pile, Kubelka–Munk `R∞`, with one provisional unknown κ (2, chosen by José on 2026-10-08 from the review sheets in `test-gl/out/review/2026-10-08/`, comparing κ 1, 2, 4 and the stain law on `montebello`, `afternoon 7` and the redhead) ([`../model/season.md`](../model/season.md)).
+**What replaced it.** The opaque pile, Kubelka–Munk `R∞`, with one provisional unknown κ (2, chosen by José on 2026-10-08 from the review sheets in `archive/reviews/2026-10-08/`, comparing κ 1, 2, 4 and the stain law on `montebello`, `afternoon 7` and the redhead) ([`../model/season.md`](../model/season.md)).
 
 ### Browning mixed in reflectance, or by adding optical depths
 

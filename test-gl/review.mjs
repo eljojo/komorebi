@@ -152,7 +152,7 @@ function main(argv) {
     throw new Error(`commit ${JSON.stringify(rev)} is not a resolvable rev in ${REPO}`);
   }
   const date = spec.date ?? today();
-  const dir = resolve(dirArg ?? join(REPO, 'test-gl/out/review', date));
+  const dir = resolve(dirArg ?? join(REPO, 'archive/reviews', date));
   const mpath = join(dir, 'manifest.json'), spath = join(dir, 'review-spec.json');
   const old = existsSync(mpath) ? JSON.parse(readFileSync(mpath, 'utf8')) : null;
   const clash = folderProblems(old, spec, sha);
@@ -202,7 +202,7 @@ function main(argv) {
 
     const fresh = {
       folder: relative(REPO, dir).startsWith('..') ? dir : relative(REPO, dir),
-      purpose: spec.purpose ?? 'Render sheets for José to review, archived so a future session can tell what each image is. Gitignored (test-gl/out/), never overwritten by the harness.',
+      purpose: spec.purpose ?? 'Render sheets for José to review, archived so a future session can tell what each image is. Git-ignored (archive/), never overwritten by the harness.',
       made_by: spec.made_by ?? '',
       how_rendered: {
         tool: 'test-gl/run.js --look "<preset>" --as <id> --size WxH key=value... (re-bakes before the capture, so faithful looks show their real cast)',

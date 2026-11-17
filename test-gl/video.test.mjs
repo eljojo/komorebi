@@ -205,7 +205,7 @@ function decodeFixture(file, idx) {
 }
 for (const space of ['linear', 'gamma']) {
   test(`downscale ${space} ss 2: three real 4K frames within 1 code of the box average`, async (t) => {
-    if (!FIXTURES.every(existsSync)) return t.skip('no 4K fixtures: for L in ultraviolet cherry; do node test-gl/render-video.mjs --look-json reference-photos-do-not-commit/outside-projection/presets/projector-$L.json --tree --out test-gl/out/video/chain-fixtures/$L --seconds 0.1 --size 3840x2160 --ss 1 --preroll 60 --set bake_resolution=4096 --set tex_resolution=4096 --set sample_count=48 --delivery none; done');
+    if (!FIXTURES.every(existsSync)) return t.skip('no 4K fixtures: for L in ultraviolet cherry; do node test-gl/render-video.mjs --look-json archive/references/outside-projection/presets/projector-$L.json --tree --out test-gl/out/video/chain-fixtures/$L --seconds 0.1 --size 3840x2160 --ss 1 --preroll 60 --set bake_resolution=4096 --set tex_resolution=4096 --set sample_count=48 --delivery none; done');
     const ss = 2, ow = W / ss, oh = H / ss;
     const frames = [decodeFixture(FIXTURES[0], 0), decodeFixture(FIXTURES[0], 5), decodeFixture(FIXTURES[1], 3)];
     const outs = await runChain(masterChain({ ow, oh, ss, space, master: 'ffv1' }), frames, W, H, ow, oh);
