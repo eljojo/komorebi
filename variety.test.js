@@ -12,6 +12,7 @@ import { expect, test } from "bun:test";
 import { DEFAULTS, TOPO_KEYS, CANOPY_KEYS } from "./komorebi.js";
 import * as paramsMod from "./komorebi-params.js";
 import * as math from "./komorebi-math.js";
+import * as seasonMod from "./komorebi-season.js";
 import * as LEAF from "./komorebi-leaf.js";
 import * as MAZE from "./leaf-maze.js";
 import * as L from "./komorebi-litter.js";
@@ -38,10 +39,10 @@ test("GENOTYPE_SALT is 4·0x9E3779B9 mod 2^32, distinct from every salt in the r
   const GOLD = 0x9E3779B9;
   expect(LEAF.GENOTYPE_SALT).toBe(0x78DDE6E4);
   expect(LEAF.GENOTYPE_SALT, "the golden gamma's next multiple after the inner-leaves salt's 3·").toBe((4 * GOLD) % 2 ** 32);
-  const others = { variant: LEAF.VARIANT_SALT, outline: LEAF.OUTLINE_SALT, flip: LEAF.FLIP_SALT, litter: L.LITTER_SALT, leaf: 0x51ED270B, drop: 0x7A3C91D5, wind: 0x5bd1e995, growth: 0x5EED, tree: math.TREE_SALT, inner: 0xDAA66D2B, areole: MAZE.AREOLE_SALT };
+  const others = { variant: LEAF.VARIANT_SALT, outline: LEAF.OUTLINE_SALT, flip: LEAF.FLIP_SALT, litter: L.LITTER_SALT, leaf: 0x51ED270B, drop: 0x7A3C91D5, wind: 0x5bd1e995, growth: 0x5EED, tree: seasonMod.TREE_SALT, inner: 0xDAA66D2B, areole: MAZE.AREOLE_SALT };
   const all = [LEAF.GENOTYPE_SALT, ...Object.values(others)];
   expect(new Set(all).size, "no two salts alike").toBe(all.length);
-  expect(math.TREE_SALT).toBe((2 * GOLD) % 2 ** 32);
+  expect(seasonMod.TREE_SALT).toBe((2 * GOLD) % 2 ** 32);
   expect(others.inner).toBe((3 * GOLD) % 2 ** 32);
   const corr = (u, w) => {
     const n = u.length, mu = mean(u), mw = mean(w);
@@ -58,18 +59,18 @@ test("GENOTYPE_SALT is 4·0x9E3779B9 mod 2^32, distinct from every salt in the r
 // ---- 3.3 level 1: the tree's genotype -------------------------------------------------------------------------------------------
 test("treeGenotype is the tree stream's THIRD draw — draws 1 and 2 stay the lead and the depth, so tree_clock_spread and tree_pigment_spread keep their bits", () => {
   for (const seed of [290626672, 4242, 77]) for (let t = 0; t < 12; t++) {
-    const r = math.mulberry32(math.hash3((seed >>> 0) ^ math.TREE_SALT, t, 0));
+    const r = math.mulberry32(math.hash3((seed >>> 0) ^ seasonMod.TREE_SALT, t, 0));
     const lead = r(), depth = r(), third = r();
-    expect(math.treeGenotype(seed, t, G), `seed ${seed} tree ${t}`).toBe(Math.floor(third * G));
-    expect(math.treeDraws(seed, t), "the first two are treeDraws' own").toEqual([lead, depth]);
+    expect(seasonMod.treeGenotype(seed, t, G), `seed ${seed} tree ${t}`).toBe(Math.floor(third * G));
+    expect(seasonMod.treeDraws(seed, t), "the first two are treeDraws' own").toEqual([lead, depth]);
   }
-  expect(Array.from({ length: 8 }, (_, t) => math.treeGenotype(290626672, t, G)), "the shipped seed's eight trees, frozen").toEqual([6, 0, 1, 0, 1, 2, 3, 2]);
-  expect(Array.from({ length: 8 }, (_, t) => math.treeGenotype(4242, t, G))).toEqual([0, 1, 4, 4, 4, 7, 1, 3]);
+  expect(Array.from({ length: 8 }, (_, t) => seasonMod.treeGenotype(290626672, t, G)), "the shipped seed's eight trees, frozen").toEqual([6, 0, 1, 0, 1, 2, 3, 2]);
+  expect(Array.from({ length: 8 }, (_, t) => seasonMod.treeGenotype(4242, t, G))).toEqual([0, 1, 4, 4, 4, 7, 1, 3]);
   // pure per (seed, t): the same at any tree count, the marginal tree included — nothing to advance
-  expect(math.treeGenotype(290626672, 5, G)).toBe(math.treeGenotype(290626672, 5, G));
-  expect(Array.from({ length: 4 }, (_, t) => math.treeGenotype(1, t, 16)).every((g) => g >= 0 && g < 16)).toBe(true);
+  expect(seasonMod.treeGenotype(290626672, 5, G)).toBe(seasonMod.treeGenotype(290626672, 5, G));
+  expect(Array.from({ length: 4 }, (_, t) => seasonMod.treeGenotype(1, t, 16)).every((g) => g >= 0 && g < 16)).toBe(true);
   // uniform over the eight (4000 trees, ±3.6σ), and no tree's genotype is its lead or its depth in disguise
-  const trees = Array.from({ length: 4000 }, (_, t) => t), geno = trees.map((t) => math.treeGenotype(77, t, G)), draws = trees.map((t) => math.treeDraws(77, t));
+  const trees = Array.from({ length: 4000 }, (_, t) => t), geno = trees.map((t) => seasonMod.treeGenotype(77, t, G)), draws = trees.map((t) => seasonMod.treeDraws(77, t));
   const counts = new Array(G).fill(0);
   for (const g of geno) counts[g]++;
   for (const c of counts) expect(Math.abs(c - 500)).toBeLessThan(80);
@@ -384,9 +385,9 @@ test("ON (layer and faithful): the same grove but for each leaf's size and its r
     expect(S1.n).toBe(S0.n);
     // (d) the row by hand, from the doubles of the variety-0 build's record (x, y, h, the PRE-shift area) — never from the float32 buffers, whose rounding re-ranks ties
     const n = S0.n, X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), Ar = new Float64Array(n), K = new Float64Array(n);
-    for (let i = 0; i < n; i++) { const o = SREC * i; X[i] = S0.rec[o]; Y[i] = S0.rec[o + 1]; Z[i] = S0.rec[o + 2]; Ar[i] = S0.rec[o + 5]; K[i] = math.leafClock(seed, S0.rec[o + 6], S0.rec[o + 7]); }
-    const rank = math.exposureRank(math.exposureGrid(X, Y, Z, Ar, S0.E), K);
-    const geno = Array.from({ length: S0.nTree }, (_, t) => math.treeGenotype(seed, t, G)), m = (u) => 1 + LEAF.SIZE_LIGHT * LEAF.VARIETY_REAL * (1 - 2 * u);
+    for (let i = 0; i < n; i++) { const o = SREC * i; X[i] = S0.rec[o]; Y[i] = S0.rec[o + 1]; Z[i] = S0.rec[o + 2]; Ar[i] = S0.rec[o + 5]; K[i] = seasonMod.leafClock(seed, S0.rec[o + 6], S0.rec[o + 7]); }
+    const rank = seasonMod.exposureRank(seasonMod.exposureGrid(X, Y, Z, Ar, S0.E), K);
+    const geno = Array.from({ length: S0.nTree }, (_, t) => seasonMod.treeGenotype(seed, t, G)), m = (u) => 1 + LEAF.SIZE_LIGHT * LEAF.VARIETY_REAL * (1 - 2 * u);
     let s0 = 0, s1 = 0;
     for (let i = 0; i < n; i++) { const o = SREC * i, w = S0.rec[o + 8] * S0.rec[o + 3] * S0.rec[o + 4]; s0 += w; s1 += w * m(rank[i]) ** 2; }
     const kappa = Math.sqrt(s0 / s1);
@@ -444,7 +445,7 @@ test("a marginal tree hangs in its own genotype: at tree_count 2.4 every leaf of
     for (let i = 0; i < S.n; i++) {
       const o = SREC * i, j = S.rec[o + 6], k = S.rec[o + 7], tree = hier.twigs[j].tree, row = hier.leafRow[j * nLeaf + k];
       if (tree === 2) marginal++;
-      expect(Math.floor(row / V), `${tag} leaf ${j}/${k} on tree ${tree}: its family is treeGenotype's`).toBe(math.treeGenotype(seed, tree, G));
+      expect(Math.floor(row / V), `${tag} leaf ${j}/${k} on tree ${tree}: its family is treeGenotype's`).toBe(seasonMod.treeGenotype(seed, tree, G));
       for (const w of [R.layers[S.rec[o + 9]][S.rec[o + 10] + 11], R.faithLeaves[18 * i + 11]]) {
         expect(Number.isFinite(w), `${tag} leaf ${j}/${k}: the cluster id is a number`).toBe(true);
         expect(Math.floor((w - j) * 128 / V), `${tag} leaf ${j}/${k}: the packed row is in its family`).toBe(Math.floor(row / V));

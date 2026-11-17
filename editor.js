@@ -7,7 +7,7 @@ import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep 
 import { makeLeafPreview } from './leaf-preview.js';
 import { makeTreePane } from './tree-pane.js';
 import { makePlaylistPane } from './playlist-pane.js';
-import { senescing } from './komorebi-math.js';
+import { senescing } from './komorebi-season.js';
 import { LEAF_SHAPES } from './komorebi-leaf.js';
 import { mountMidi } from './midi.js';
 // ============================================================================
@@ -444,7 +444,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
 };
 const faithLive = (cam) => params.faithful_canopy && !!CAMERAS[cam].faith;   // faithfulOn(), read off the registry
 const apertureOn = () => params.window_w_m*params.window_h_m > 0;
-const turning = () => senescing(params);                                     // the grove's own senescing gate (komorebi-math.js): past turn_start, or past the earliest tree's turn when tree_clock_spread opens it sooner
+const turning = () => senescing(params);                                     // the grove's own senescing gate (komorebi-season.js): past turn_start, or past the earliest tree's turn when tree_clock_spread opens it sooner
 const dropping = () => turning() && params.leaf_drop > 0;                    // abscission's own gate (leaf_drop > 0, komorebi-grove.js), behind the season's
 const carpeted = () => dropping() && params.litter > 0;                      // the litter carpet's own gate (spec/model/season.md): it lays the leaves leaf fall lets go of, so with none falling there is nothing to bake
 const glowOn = (cam) => cam !== 'floor' && params.glow_bleed > 0;            // the diffusion tier's own gate (render.js drawFrameInto)
@@ -480,7 +480,7 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   drop_lag: () => dropping() && params.drop_after_turn > 0,
   litter: dropping,                                       // the carpet (spec/model/season.md): the leaves it lays are the ones leaf fall lets go of
   litter_age: carpeted, litter_drift_m: carpeted, leaf_wetness: carpeted, litter_resolution: carpeted,   // sliders on a bake that does not run until the gate is open and a leaf can have fallen
-  exposure_absolute: () => (turning() && params.turn_exposure > 0) || (dropping() && !(params.drop_after_turn > 0) && params.drop_exposure > 0),   // it chooses what the exposure order is made of, and two read that order: sun first, and the fall while leaves let go by the light (the engine's ordered(), komorebi-math.js, read through this panel's own turning()/dropping() like the drop rows) — with neither there is no order for it to change
+  exposure_absolute: () => (turning() && params.turn_exposure > 0) || (dropping() && !(params.drop_after_turn > 0) && params.drop_exposure > 0),   // it chooses what the exposure order is made of, and two read that order: sun first, and the fall while leaves let go by the light (the engine's ordered(), komorebi-season.js, read through this panel's own turning()/dropping() like the drop rows) — with neither there is no order for it to change
   sky_scatter: () => !splitOn(),                          // the sky view's twin of fill_scatter (spec/model/sky-view.md): above leaf_diffuse 0 the leaf is a lantern and its measured glow replaces this authored one — counting both would count it twice
   fill_scatter: (cam) => fillOpen() && !splitOn() && CAMERAS[cam].groups.includes('floor'),   // the floor alone reads the proxy's scattered light; the cloth and the tent take the skylight through the canopy and nothing else. Above leaf_diffuse 0 the measured diffuse light replaces it, so the slider would lie
   ground_bounce: fillOpen,                               // part of S, which only a fill bakes

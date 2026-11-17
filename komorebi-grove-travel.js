@@ -1,4 +1,5 @@
-import {TAU,lerp,lerpAngle,smoothstep,leafClock,turnBack,irisRoute,irisStep} from './komorebi-math.js';
+import { TAU, lerp, lerpAngle, smoothstep, turnBack, irisRoute, irisStep } from './komorebi-math.js';
+import { leafClock } from './komorebi-season.js';
 import {flutterLevel, depthGate} from './komorebi-air.js';
 import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from './komorebi-params.js';
 import {seasonCamera} from './komorebi-season-travel.js';

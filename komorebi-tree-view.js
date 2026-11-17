@@ -8,7 +8,10 @@
 // (the dusk shift, the haze, the iris, the Look's tail) is per pixel, so the tree takes the same steps in its own shader.
 // Pure exports first (the slab, the table, the projection the shader runs), then the GL factory, which the engine holds behind FEAT_TREE_VIEW.
 // ============================================================================
-import { DEG, atmosphere, ballisticK, beamLoss, cameraPose, clamp, shownExposure, smoothstep, sunDirection } from './komorebi-math.js';
+import { DEG, clamp, smoothstep } from './komorebi-math.js';
+import { atmosphere, beamLoss, shownExposure, sunDirection } from './komorebi-light.js';
+import { ballisticK } from './komorebi-leaf.js';
+import { cameraPose } from './komorebi-camera.js';
 import { MAX_LAYERS } from './komorebi-params.js';
 import { SLAB_N, VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_FULL } from './komorebi-shaders.js';
 import { cameraFor } from './komorebi-transport.js';

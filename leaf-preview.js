@@ -16,7 +16,7 @@
 // STACKING: the controls win. The canvas is positioned and has no z-index on purpose, so it stacks by DOM order — it sits right after the art canvas (a positioned
 // element over a plain one) and before #dev, #play and everything else, and the strip's z-index 8 puts the strip above it too. It stops click and pointer events only on itself.
 // ============================================================================
-import { TAU_ANTHOCYANIN, TAU_CAROTENOID, TAU_TANNIN, leafClock, senescence, treeGains, treeShifts } from './komorebi-math.js';
+import { TAU_ANTHOCYANIN, TAU_CAROTENOID, TAU_TANNIN, leafClock, senescence, treeGains, treeShifts } from './komorebi-season.js';
 import { LEAF_SHAPES, MAPLE, VARIETY_COLUMNS } from './komorebi-leaf.js';
 import { leafMaze, paintLeaf, rasterLeaf, tissues } from './leaf-maze.js';
 

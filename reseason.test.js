@@ -375,15 +375,15 @@ test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exact
   const season = new Set(SEASON), listed = new Set(groveMod.GROVE_READS);
   for (const k of reads) expect(season.has(k) || listed.has(k), `buildGrove reads params.${k}: it is neither in the season set nor in the key`).toBe(true);
   // the listed keys buildGrove does not name itself reach it through faithfulOn() — which the key also carries, as the boolean it is
-  // ...or through the math it hands params to: drop_after_turn is a flip the key must carry (it moves every leaf's day and its mid-turn colour) and is read as P.drop_after_turn in komorebi-math.js
-  const mathSrc = read("./komorebi-math.js"), mathReads = new Set([...mathSrc.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
+  // ...or through the math it hands params to: drop_after_turn is a flip the key must carry (it moves every leaf's day and its mid-turn colour) and is read as P.drop_after_turn in komorebi-season.js
+  const mathSrc = read("./komorebi-season.js"), mathReads = new Set([...mathSrc.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
   for (const k of listed) expect(reads.has(k) || ["faithful_canopy", "receiver"].includes(k) || mathReads.has(k), `${k} is in the key but buildGrove never reads it`).toBe(true);
   expect(listed.has("drop_after_turn"), "a flip of the flag invalidates the cache").toBe(true);
   for (const k of listed) { expect(k in DEFAULTS, k).toBe(true); expect(season.has(k), `${k} is a season key`).toBe(false); }
   // and what the math functions it hands params to read (leafTau, senescence, dropDay) is the season set, nothing else
-  const math = read("./komorebi-math.js");
+  const math = read("./komorebi-season.js");
   const P = new Set([...math.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
-  for (const k of P) expect(season.has(k) || listed.has(k), `komorebi-math.js reads P.${k}, a season-set key (or one the cache key carries)?`).toBe(true);
+  for (const k of P) expect(season.has(k) || listed.has(k), `komorebi-season.js reads P.${k}, a season-set key (or one the cache key carries)?`).toBe(true);
 });
 
 // ---- the engine: apply('season') decides fast or full -------------------------------------------------------------------

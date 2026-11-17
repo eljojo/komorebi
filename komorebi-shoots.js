@@ -27,7 +27,7 @@
 // ============================================================================
 import { DEG, clamp, hash3, mulberry32, smoothstep } from './komorebi-math.js';
 
-// 6·0x9E3779B9 mod 2^32: the golden gamma's next multiple after the leaf's side (5·, komorebi-math.js), in no other stream
+// 6·0x9E3779B9 mod 2^32: the golden gamma's next multiple after the leaf's side (5·, komorebi-leaf.js), in no other stream
 export const SHOOT_LEAF_SALT = 0xB54CDA56;
 export const SHOOT = {
   // cited

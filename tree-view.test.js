@@ -7,7 +7,9 @@ import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEFAULTS, MAX_LAYERS } from "./komorebi-params.js";
 import { PRESETS } from "./presets.js";
-import { hash3, leafSide, SIDE_SALT, cameraPose } from "./komorebi-math.js";
+import { hash3 } from "./komorebi-math.js";
+import { leafSide, SIDE_SALT } from "./komorebi-leaf.js";
+import { cameraPose } from "./komorebi-camera.js";
 import { SLAB, slabLeaf, slabK, slabTable, treeProject, floorRay } from "./komorebi-tree-view.js";
 import { FS_TREE, FS_TREE_WOOD, VS_TREE, SLAB_N } from "./komorebi-shaders.js";
 import { makeGrove } from "./komorebi-grove.js";
@@ -71,7 +73,7 @@ test("a leaf's side is ±1, its own pure hash on a salt no other stream uses, an
     if (s > 0) up++;
   }
   expect(up / 1e4).toBeGreaterThan(0.48); expect(up / 1e4).toBeLessThan(0.52);
-  const salts = readFileSync(new URL("./komorebi-math.js", import.meta.url), "utf8") + readFileSync(new URL("./komorebi-grove.js", import.meta.url), "utf8")
+  const salts = readFileSync(new URL("./komorebi-season.js", import.meta.url), "utf8") + readFileSync(new URL("./komorebi-grove.js", import.meta.url), "utf8")
     + readFileSync(new URL("./komorebi-leaf.js", import.meta.url), "utf8") + readFileSync(new URL("./komorebi-litter.js", import.meta.url), "utf8");
   const all = [...salts.matchAll(/_SALT\s*=\s*(0x[0-9A-Fa-f]+)/g)].map((m) => Number(m[1]));
   expect(all.filter((v) => v === SIDE_SALT)).toHaveLength(1);

@@ -19,7 +19,48 @@
 // the sound read as wind used. The canopy repeats every canopy_extent_m and this air does not, so where a repeat's
 // seam is in view the air on its two sides differs.
 // ============================================================================
-import { DEG, clamp, fbm1, WIND_PATTERNS } from './komorebi-math.js';
+import { DEG, clamp, hash3 } from './komorebi-math.js';
+
+// ---- broadband wind signal (spec/model/motion.md). Real wind is BROADBAND, not a single frequency — a single sine
+// reads as a machine because all its energy sits at one period. A frame-stable fractal sum of octaves over
+// TIME with per-octave amplitude gain G=2^(-H) gives a power spectrum ∝ f^-(2H+1): the Kolmogorov inertial
+// subrange is -5/3, i.e. H=1/3 → G≈0.794 (the number that makes a noise sum *feel* like wind — between
+// "pink" H=0 choppy and "brown" H=0.5 sluggish). Pure function of t → no per-frame RNG (all engine motion
+// is deterministic-of-time & reproducible, spec/model/source.md). H is the per-pattern "character" knob below. -------
+const VNOISE_STD = 0.496;                  // measured std of vnoise1 — normalizes fbm1 to ~unit std
+function vnoise1(x){                       // smooth 1-D value noise -> [-1,1]
+  const i=Math.floor(x), f=x-i, u=f*f*(3-2*f);
+  const a=(hash3(i>>>0,0x9E37,0x85EB)>>>0)/4294967296;
+  const b=(hash3((i+1)>>>0,0x9E37,0x85EB)>>>0)/4294967296;
+  return (a+(b-a)*u)*2-1;
+}
+// fractal Brownian motion in time, normalized to ~UNIT STANDARD DEVIATION (octaves are decorrelated, so
+// var(sum)=Σ amp²·var(vnoise); dividing by √(Σamp²)·VNOISE_STD gives σ≈1). Unit std is what makes the
+// gustiness knob mean turbulence-intensity (σ/U) honestly — without it, gustiness was nearly inert.
+function fbm1(t, freq, octaves, H){
+  const G=Math.pow(2,-H); let sum=0, amp=1, a2=0, fr=freq;
+  for(let i=0;i<octaves;i++){ sum+=amp*vnoise1(t*fr + i*19.7); a2+=amp*amp; amp*=G; fr*=2; }
+  return a2>0 ? sum/(Math.sqrt(a2)*VNOISE_STD) : 0;
+}
+// ---- wind PATTERNS (spec/model/motion.md): a few broadband CHARACTERS, all reading the SAME shared knobs (strength,
+// gustiness, gust rate, direction, weather) but shaped differently inside. `H` = spectral slope (choppy↔
+// silky), `octaves` = detail depth, `lean` = steady downwind mean fraction (low → deeper lulls that drive
+// the springback through rest), `lat` = crosswind fraction (breaks the 1-D slide), `burst` = waveshape that
+// spikes peaks & deepens lulls (clustered/intermittent gusts). Selected by name (`wind_pattern`). ----------
+const WIND_PATTERNS = {
+  steady:  { H:0.72, octaves:4, lean:0.55, lat:0.45, burst:0.0 },   // smooth rolling directional breeze
+  gusty:   { H:0.34, octaves:5, lean:0.35, lat:0.75, burst:0.35 },  // Kolmogorov-ish, the natural default
+  squally: { H:0.24, octaves:5, lean:0.22, lat:0.85, burst:0.7 },   // bursty, sharp rises, deep clustered lulls
+  choppy:  { H:0.12, octaves:6, lean:0.30, lat:0.80, burst:0.25 },  // nervous fine high-freq, cold-front edge
+  lazy:    { H:0.88, octaves:3, lean:0.62, lat:0.40, burst:0.0 },   // very slow faint stir (pairs with glisten)
+};
+// a smooth, spatially-varying, slowly-evolving wind force — sampled at each node's position. Returns the scalar
+// downwind component (the only one the limb/twig loops ever read); the crosswind term it used to also compute
+// and box into an array was always discarded, so this is the same number with half the trig and no per-node alloc.
+function windNoise(x, y, t, k){
+  return 0.7*(Math.sin(x*k + t*0.9) + 0.5*Math.sin(y*k*1.3 - t*1.4 + 1.7));
+}
+export { fbm1, WIND_PATTERNS, windNoise };
 
 export const AIR = {
   U: 3,          // m/s: how fast a gust is carried through the grove

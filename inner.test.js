@@ -10,6 +10,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { CANOPY_KEYS, DEFAULTS, PARAMS, SEASON_KEYS, TOPO_KEYS } from "./komorebi.js";
 import { GRANDFATHERED } from "./komorebi-params.js";
 import * as math from "./komorebi-math.js";
+import * as seasonMod from "./komorebi-season.js";
+import * as grammar from "./komorebi-grammar.js";
 import * as LEAF from "./komorebi-leaf.js";
 import * as MAZE from "./leaf-maze.js";
 import * as GROVE from "./komorebi-grove.js";   // a namespace, not names: placeLeaf and INNER_SALT arrive with the change, and a missing named import would fail this whole file at link time instead of test by test
@@ -81,7 +83,7 @@ test("on in DEFAULTS (0.35) and off for a look from before it was; read by the g
 test("INNER_SALT is 3·0x9E3779B9 mod 2^32 (the golden gamma's next multiple after TREE_SALT's 2·), differs from every other stream's salt, and is named in komorebi-grove.js alone", () => {
   expect(GROVE.INNER_SALT).toBe((3 * 0x9E3779B9) % 2 ** 32);
   expect(GROVE.INNER_SALT).toBe(0xDAA66D2B);
-  const salts = [MAZE.AREOLE_SALT, LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, LEAF.FLIP_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* pigment */, 0x7A3C91D5 /* drop */, 0x5bd1e995 /* wind */, 0x5EED /* growth */, math.TREE_SALT, GROVE.INNER_SALT];
+  const salts = [MAZE.AREOLE_SALT, LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, LEAF.FLIP_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* pigment */, 0x7A3C91D5 /* drop */, 0x5bd1e995 /* wind */, 0x5EED /* growth */, seasonMod.TREE_SALT, GROVE.INNER_SALT];
   expect(new Set(salts).size).toBe(salts.length);
   const files = readdirSync(".").filter((f) => /\.(js|mjs|html)$/.test(f) && !/\.test\.js$/.test(f));
   expect(files.length).toBeGreaterThan(20);
@@ -199,14 +201,14 @@ test("the same draws: growing a root with a path collected consumes the stream e
   const spec = { levels: 4, kids: 3, lenRatio: 0.7, coneA: 0.6, droop: 0.3, phyllo: 0, leader: true, plane: false, base: [0, 0, 0.8], dir: [0.8, 0.3, 0.5], len: 1, level: 1, limb: 0 };
   const counting = (seed) => { const r = math.mulberry32(seed), draws = []; const rng = () => { const v = r(); draws.push(v); return v; }; rng.draws = draws; return rng; };
   const a = counting(11), b = counting(11), without = { seg: [], tw: [] }, withPath = { seg: [], tw: [], path: [] };
-  math.growSkeleton(spec, a, without);
-  math.growSkeleton(spec, b, withPath);
+  grammar.growSkeleton(spec, a, without);
+  grammar.growSkeleton(spec, b, withPath);
   expect(b.draws).toEqual(a.draws);
   expect(withPath.seg).toEqual(without.seg);
   expect(withPath.tw).toEqual(without.tw);
   expect(withPath.path.length, "a path for every twig, in the twig's own order").toBe(without.tw.length);
   const flat = { seg: [], tw: [], path: [] };
-  math.growSkeleton({ ...spec, plane: true }, counting(5), flat);
+  grammar.growSkeleton({ ...spec, plane: true }, counting(5), flat);
   expect(flat.tw.length).toBeGreaterThan(10);
   expect(flat.path, "plane mode passes no chain").toEqual([]);
 });
@@ -476,24 +478,24 @@ function reseasoned(build, to, faithful) {   // a grove built at one season and 
 }
 function innerByHand(snap, label) {
   const P = snap.params, S = snap.season, rec = S.rec, { twigs, nLeaf } = snap.g.hier, nTree = Math.ceil(P.tree_count);
-  const isLit = math.lit(P), dropping = math.dropping(P), after = math.afterTurn(P);
-  expect(math.senescing(P), `${label}: the leaves are turning`).toBe(true);
+  const isLit = seasonMod.lit(P), dropping = seasonMod.dropping(P), after = seasonMod.afterTurn(P);
+  expect(seasonMod.senescing(P), `${label}: the leaves are turning`).toBe(true);
   const lead = [], depth = [];
-  for (let t = 0; t < nTree; t++) { const [v, w] = math.treeDraws(P.seed, t); lead.push(math.treeShift(v, P.tree_clock_spread)); depth.push(math.treeGain(w, P.tree_pigment_spread)); }
+  for (let t = 0; t < nTree; t++) { const [v, w] = seasonMod.treeDraws(P.seed, t); lead.push(seasonMod.treeShift(v, P.tree_clock_spread)); depth.push(seasonMod.treeGain(w, P.tree_pigment_spread)); }
   expect(nTree, `${label}: a grove of at least three trees`).toBeGreaterThanOrEqual(3);
   expect(new Set(lead).size, `${label}: the trees draw different leads`).toBe(nTree);
   expect(new Set(depth).size, `${label}: ...and different depths`).toBe(nTree);
-  const u = isLit ? math.exposureBlend(S.rank, S.ex, P.exposure_absolute) : null;   // the grove's own order of light, read: the exposure is not what is under test, the pair each leaf is handed is
-  if (!isLit) expect(math.ordered(P), `${label}: no light anywhere, no rank`).toBe(false);
-  const tauOf = (i, j, k, dT, cT) => Array.from(isLit ? math.leafTau(S.tau, P, P.seed, j, k, [0, 0, 0], math.turnOrder(u[i]), math.redGain(u[i]), dT, cT) : math.leafTau(S.tau, P, P.seed, j, k, [0, 0, 0], undefined, undefined, dT, cT));
+  const u = isLit ? seasonMod.exposureBlend(S.rank, S.ex, P.exposure_absolute) : null;   // the grove's own order of light, read: the exposure is not what is under test, the pair each leaf is handed is
+  if (!isLit) expect(seasonMod.ordered(P), `${label}: no light anywhere, no rank`).toBe(false);
+  const tauOf = (i, j, k, dT, cT) => Array.from(isLit ? seasonMod.leafTau(S.tau, P, P.seed, j, k, [0, 0, 0], seasonMod.turnOrder(u[i]), seasonMod.redGain(u[i]), dT, cT) : seasonMod.leafTau(S.tau, P, P.seed, j, k, [0, 0, 0], undefined, undefined, dT, cT));
   const wantL = snap.layers.map(() => []), wantF = [], litter = new Map();
   let inner = 0, tip = 0, differs = 0, differsFading = 0, gone = 0, mid = 0;
   for (let i = 0; i < S.n; i++) {
     const o = SREC * i, j = rec[o + 6], k = rec[o + 7], t = twigs[j].tree, onWood = rec[o + 2] !== twigs[j].z, cov = rec[o + 8], layer = rec[o + 9];
     let w = 1, D = 0;
     if (dropping) {
-      D = after ? math.dropDayAfterTurn(P, math.turnPhase(P, math.leafClock(P.seed, j, k), isLit ? math.turnOrder(u[i]) : undefined), lead[t]) : math.dropDay(P, math.dropPhase(math.dropHash(P.seed, j, k), u ? u[i] : 0, P.drop_exposure), lead[t]);
-      w = math.retention(D, P.phenology);
+      D = after ? seasonMod.dropDayAfterTurn(P, seasonMod.turnPhase(P, seasonMod.leafClock(P.seed, j, k), isLit ? seasonMod.turnOrder(u[i]) : undefined), lead[t]) : seasonMod.dropDay(P, seasonMod.dropPhase(seasonMod.dropHash(P.seed, j, k), u ? u[i] : 0, P.drop_exposure), lead[t]);
+      w = seasonMod.retention(D, P.phenology);
       if (!Object.is(snap.leafW[j * nLeaf + k], Math.fround(w))) throw new Error(`${label}: leaf ${j}/${k} (${onWood ? "on the wood" : "at its tip"}) retains ${snap.leafW[j * nLeaf + k]}, its tree's pair says ${w}`);
     }
     const own = tauOf(i, j, k, lead[t], depth[t]);
@@ -638,7 +640,7 @@ test("deterministic: two builds at 0.5 are the same bytes, whatever was built be
   // a leaf's first two draws are not the arrangement stream's, nor the pigment's, nor the drop's: uncorrelated over a grid of addresses
   const cells = Array.from({ length: 2000 }, (_, i) => [Math.floor(i / 25), i % 25]);
   const mine = cells.map(([j, k]) => hOf(77, j, k).h);
-  const other = { arrangement: cells.map(([j]) => math.mulberry32(math.hash3(77, j, 101))()), wind: cells.map(([j]) => math.mulberry32(math.hash3(77 ^ 0x5bd1e995, j, 101))()), pigment: cells.map(([j, k]) => math.leafClock(77, j, k)), drop: cells.map(([j, k]) => math.dropHash(77, j, k)) };
+  const other = { arrangement: cells.map(([j]) => math.mulberry32(math.hash3(77, j, 101))()), wind: cells.map(([j]) => math.mulberry32(math.hash3(77 ^ 0x5bd1e995, j, 101))()), pigment: cells.map(([j, k]) => seasonMod.leafClock(77, j, k)), drop: cells.map(([j, k]) => seasonMod.dropHash(77, j, k)) };
   const corr = (u, v) => { const n = u.length, mu = u.reduce((s, x) => s + x, 0) / n, mv = v.reduce((s, x) => s + x, 0) / n; let suv = 0, suu = 0, svv = 0; for (let i = 0; i < n; i++) { suv += (u[i] - mu) * (v[i] - mv); suu += (u[i] - mu) ** 2; svv += (v[i] - mv) ** 2; } return suv / Math.sqrt(suu * svv); };
   for (const [name, v] of Object.entries(other)) expect(Math.abs(corr(mine, v)), name).toBeLessThan(0.1);
   const mean = mine.reduce((s, x) => s + x, 0) / mine.length;
@@ -766,8 +768,8 @@ test("a leaf is lit and falls from the height it hangs at: the order of light is
   const over = { ...dense({ ...FALL }), inner_leaves: 0.5 };
   const r = grow(over, false, { keep: true }), S = r.season, n = S.n;
   const X = new Float64Array(n), Y = new Float64Array(n), Z = new Float64Array(n), A = new Float64Array(n), K = new Float64Array(n);
-  for (let i = 0; i < n; i++) { const o = SREC * i; X[i] = S.rec[o]; Y[i] = S.rec[o + 1]; Z[i] = S.rec[o + 2]; A[i] = S.rec[o + 5]; K[i] = math.leafClock(r.params.seed, S.rec[o + 6], S.rec[o + 7]); }
-  const rank = math.exposureRank(math.exposureGrid(X, Y, Z, A, S.E), K);   // what reseasonGrove builds from the record when the build kept none
+  for (let i = 0; i < n; i++) { const o = SREC * i; X[i] = S.rec[o]; Y[i] = S.rec[o + 1]; Z[i] = S.rec[o + 2]; A[i] = S.rec[o + 5]; K[i] = seasonMod.leafClock(r.params.seed, S.rec[o + 6], S.rec[o + 7]); }
+  const rank = seasonMod.exposureRank(seasonMod.exposureGrid(X, Y, Z, A, S.E), K);   // what reseasonGrove builds from the record when the build kept none
   expect(firstDiff(rank, S.rank), "the build's rank is the record's").toBe(null);
   const flat = grow({ ...over, inner_leaves: 0 }, false, { keep: true });
   expect(firstDiff(S.rank, flat.season.rank), "...and it is not the tip-only grove's: the wood leaves changed who shades whom").not.toBe(null);

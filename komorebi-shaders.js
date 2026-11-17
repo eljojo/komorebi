@@ -159,7 +159,7 @@ void main(){
 
 // ---- THE FLOOR CAMERA, run forwards (the tree seen from the floor camera). GLSL_T_FLOOR_CAMERA (komorebi-transport.js) casts a ray from each pixel to the floor
 // from an eye at unit height that the zoom hold scales to `scale` metres: the eye stands H = view_extent·cos²pitch/(2·tan(fov/2)) above the floor, H·tan(pitch)
-// back from the looked-at point, turned by the orbit and moved by the pan (cameraPose, komorebi-math.js, says the same). treeClip is that pinhole the other
+// back from the looked-at point, turned by the orbit and moved by the pan (cameraPose, komorebi-camera.js, says the same). treeClip is that pinhole the other
 // way round: a world point to the pixel whose ray passes through it, so a point on the floor lands on the floor's own pixel, and a leaf above it in perspective.
 // The depth is the distance along the gaze, near 2 % and far 200 eye heights. ----
 const GLSL_TREE_CAMERA = `uniform float uViewExtent;

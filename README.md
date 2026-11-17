@@ -206,7 +206,7 @@ Komorebi stands on research into how real trees grow and how real leaves handle 
   (1994), *Journal of Plant Research* 107, for shedding.
 - Fallen leaves' colour (`komorebi-litter.js`): P. Kubelka and F. Munk (1931), *Zeitschrift für technische Physik* 12, and
   P. Kubelka (1948), *Journal of the Optical Society of America* 38.
-- The autumn pigments (`komorebi-math.js`), fitted to how a leaf reflects and passes light and what its pigments absorb:
+- The autumn pigments (`komorebi-season.js`), fitted to how a leaf reflects and passes light and what its pigments absorb:
   S. Jacquemoud and F. Baret (1990), PROSPECT, *Remote Sensing of Environment* 34; J.-B. Féret, A. A. Gitelson, S. D. Noble
   and S. Jacquemoud (2017), PROSPECT-D, *Remote Sensing of Environment* 193; computed from the `prospect` R package,
   J.-B. Féret and F. de Boissieu (2024), *Journal of Open Source Software* 9(94), 6027. PROSPECT-D also gives the seen
@@ -221,7 +221,7 @@ Komorebi stands on research into how real trees grow and how real leaves handle 
   S. Jacquemin and A. Granier (2002), *Annals of Forest Science* 59, beech's short and long shoots in sun and shade; I. Planchais
   and H. Sinoquet (1998), *Agricultural and Forest Meteorology* 89, leaf angle in sun and shade; the light from above, after
   Pałubicki et al. (2009).
-- Leaf-out, the spring half (`komorebi-math.js`): R. A. Gregory (1980), *Canadian Journal of Forest Research* 10, a sugar
+- Leaf-out, the spring half (`komorebi-season.js`): R. A. Gregory (1980), *Canadian Journal of Forest Research* 10, a sugar
   maple leaf's growth; the University of Vermont's Forest Ecosystem Monitoring Cooperative, sugar maple bud break and leaf-out
   at Proctor Maple Research Center; X. Yang, J. Tang, J. F. Mustard et al. (2016), *Remote Sensing of Environment* 179, a young
   leaf's pigments over the spring; M. N. Merzlyak, O. B. Chivkunova, A. E. Solovchenko and K. R. Naqvi (2008), *Journal of

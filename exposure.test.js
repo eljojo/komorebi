@@ -9,6 +9,9 @@
 import { test, expect } from "bun:test";
 import { CANOPY_KEYS, DEFAULTS } from "./komorebi.js";
 import * as math from "./komorebi-math.js";
+import * as seasonMod from "./komorebi-season.js";
+import * as lightMod from "./komorebi-light.js";
+import * as leafMod from "./komorebi-leaf.js";
 import { makeGrove } from "./komorebi-grove.js";
 import { PRESETS } from "./presets.js";
 
@@ -29,14 +32,14 @@ function crown(c, r, n) {
   }
   return out;
 }
-const expose = (pts, area = AREA) => math.exposureGrid(pts.map((p) => p[0]), pts.map((p) => p[1]), pts.map((p) => p[2]), pts.map(() => area), E);
+const expose = (pts, area = AREA) => seasonMod.exposureGrid(pts.map((p) => p[0]), pts.map((p) => p[1]), pts.map((p) => p[2]), pts.map(() => area), E);
 // the unit step toward the sun, in the engine's own frame (the ONE place that convention lives is sunDirection)
-const SUN = math.sunDirection([0, 0, 0], 45, 180);
+const SUN = lightMod.sunDirection([0, 0, 0], 45, 180);
 const along = (p, d) => [p[0] + (SUN[0] / SUN[2]) * d, p[1] + (SUN[1] / SUN[2]) * d, p[2] + d];   // d metres up the 45° ray (d metres horizontal, d metres up)
 
 test("the representative sun is the season's: 45° up, due south — and south is azimuth 180° in this engine", () => {
   // updateSunFromTime (editor.js): solar noon at az 180, "east → south → west" is 90 → 180 → 270. A sun at 180 stands at -x.
-  expect(math.SEASON_SUN).toEqual({ el: 45, az: 180 });
+  expect(seasonMod.SEASON_SUN).toEqual({ el: 45, az: 180 });
   expect(SUN[0]).toBeLessThan(-0.7);
   expect(Math.abs(SUN[1])).toBeLessThan(1e-12);
   expect(SUN[2]).toBeCloseTo(Math.SQRT1_2, 12);
@@ -89,26 +92,26 @@ test("between-tree shading: a leaf a neighbour's crown stands up-sun of is darke
 });
 
 test("the ground-shade hook is the identity until a valley supplies one", () => {
-  expect(math.groundShade(0, 0)).toBe(1);
-  expect(math.groundShade(-3.7, 11.2)).toBe(1);
+  expect(seasonMod.groundShade(0, 0)).toBe(1);
+  expect(seasonMod.groundShade(-3.7, 11.2)).toBe(1);
 });
 
 test("a leaf's rank in its grove is its percentile: monotone, ties alike, the mean exactly one half", () => {
   const ex = Float64Array.from([0.9, 0.1, 0.5, 0.5, 1, 0.01, 0.5, 0.3]);
-  const u = math.exposureRank(ex);
+  const u = seasonMod.exposureRank(ex);
   expect(Math.abs(u.reduce((s, v) => s + v, 0) / u.length - 0.5)).toBeLessThan(1e-12);   // so a grove's mean turn time and mean red gain are P0's, not "about"
   expect(u[2]).toBe(u[3]); expect(u[3]).toBe(u[6]);
   for (let i = 0; i < ex.length; i++) {
     expect(u[i] > 0 && u[i] < 1, `rank ${u[i]}`).toBe(true);
     for (let j = 0; j < ex.length; j++) if (ex[i] < ex[j]) expect(u[i], `${ex[i]} below ${ex[j]}`).toBeLessThan(u[j]);
   }
-  expect(math.exposureRank(new Float64Array(0)).length).toBe(0);
+  expect(seasonMod.exposureRank(new Float64Array(0)).length).toBe(0);
 });
 
 test("a keyed rank spreads a tie over its own slice, the earlier clock on top — and moves nothing that was not tied", () => {
   const ex = Float64Array.from([0.9, 0.1, 0.5, 0.5, 1, 0.01, 0.5, 0.3]), n = ex.length;
   const key = Float64Array.from([0.8, 0.8, 0.7, 0.1, 0.3, 0.3, 0.35, 0.3]);   // read only inside the tie (leaves 2, 3, 6): the other keys are decoys, some of them equal, and must move nothing
-  const keyless = math.exposureRank(ex), u = math.exposureRank(ex, key);
+  const keyless = seasonMod.exposureRank(ex), u = seasonMod.exposureRank(ex, key);
   // the tie holds slots 3, 4, 5 of the sorted order; a SMALLER key (an earlier turn) is the higher rank, so key 0.7 takes slot 3 and key 0.1 slot 5
   expect([u[2], u[6], u[3]]).toEqual([3.5 / n, 4.5 / n, 5.5 / n]);
   const byKey = [2, 3, 6].sort((a, b) => key[a] - key[b]);
@@ -117,26 +120,26 @@ test("a keyed rank spreads a tie over its own slice, the earlier clock on top �
   expect(Array.from(u).sort((a, b) => a - b), "still a permutation of (i + 1/2)/n").toEqual(Array.from({ length: n }, (_, i) => (i + 0.5) / n));
   expect(Math.abs(u.reduce((s, v) => s + v, 0) / n - 0.5)).toBeLessThan(1e-12);   // P1's mean-red invariant survives the tie-break
   // two leaves equal in BOTH (a 32-bit collision of the clock) cannot be told apart: they keep the mid-rank, the one slot-pair they hold
-  const twin = math.exposureRank(Float64Array.from([0.5, 0.5, 0.5, 0.2]), Float64Array.from([0.3, 0.3, 0.8, 0.1]));
+  const twin = seasonMod.exposureRank(Float64Array.from([0.5, 0.5, 0.5, 0.2]), Float64Array.from([0.3, 0.3, 0.8, 0.1]));
   expect(Array.from(twin)).toEqual([0.75, 0.75, 1.5 / 4, 0.5 / 4]);
   // `out` is the third argument, keyed or not
   const out = new Float64Array(n);
-  expect(math.exposureRank(ex, key, out)).toBe(out);
+  expect(seasonMod.exposureRank(ex, key, out)).toBe(out);
   expect(Array.from(out)).toEqual(Array.from(u));
-  expect(math.exposureRank(ex, undefined, out)).toBe(out);
+  expect(seasonMod.exposureRank(ex, undefined, out)).toBe(out);
   expect(Array.from(out)).toEqual(Array.from(keyless));
-  expect(math.exposureRank(new Float64Array(0), new Float64Array(0)).length).toBe(0);
+  expect(seasonMod.exposureRank(new Float64Array(0), new Float64Array(0)).length).toBe(0);
 });
 
 test("leafClock is the leaf's own turn clock — the first draw of leafTau's stream — so a leaf handed it as its order does not move", () => {
   for (const [seed, j, k] of [[0, 0, 0], [7, 3, 5], [1234567, 41, 7], [3000000000, 9, 0], [-5, 2, 1]])   // the stream's salt is frozen here (drop.test.js's idiom): the clock must never become another stream
-    expect(math.leafClock(seed, j, k), `${seed}/${j}/${k}`).toBe(math.mulberry32(math.hash3(seed ^ 0x51ED270B, j, k))());
+    expect(seasonMod.leafClock(seed, j, k), `${seed}/${j}/${k}`).toBe(math.mulberry32(math.hash3(seed ^ 0x51ED270B, j, k))());
   // handed back as the leaf's own order, with a gain of 1, turn_exposure 1 is the hash's leaf — to the bit, for every leaf
   const P = fall({ phenology: 0.75, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2 }), tau = tauOf(P), out = [0, 0, 0], want = [0, 0, 0];
   let turning = 0;
   for (let j = 0; j < 40; j++) for (let k = 0; k < 8; k++) {
-    math.leafTau(tau, { ...P, turn_exposure: 0 }, P.seed, j, k, want);
-    math.leafTau(tau, { ...P, turn_exposure: 1 }, P.seed, j, k, out, math.leafClock(P.seed, j, k), 1);
+    seasonMod.leafTau(tau, { ...P, turn_exposure: 0 }, P.seed, j, k, want);
+    seasonMod.leafTau(tau, { ...P, turn_exposure: 1 }, P.seed, j, k, out, seasonMod.leafClock(P.seed, j, k), 1);
     for (let c = 0; c < 3; c++) expect(Object.is(out[c], want[c]), `leaf ${j}/${k}, channel ${c}: ${out[c]} vs ${want[c]}`).toBe(true);
     if (want[1] !== tau[1]) turning++;
   }
@@ -146,14 +149,14 @@ test("leafClock is the leaf's own turn clock — the first draw of leafTau's str
 test("the two maps are monotone and keep their ranges: turn order in [0,1), red gain 0.5..1.5 and mean 1", () => {
   let prevPhi = Infinity, prevGain = -Infinity, sum = 0;
   for (let i = 0; i <= 20; i++) {
-    const u = i / 20, phi = math.turnOrder(u), gain = math.redGain(u);
+    const u = i / 20, phi = seasonMod.turnOrder(u), gain = seasonMod.redGain(u);
     expect(phi >= 0 && phi < 1, `turnOrder(${u}) = ${phi}`).toBe(true);
     expect(phi <= prevPhi, `a more exposed leaf must turn no later (u ${u})`).toBe(true);
     expect(gain > prevGain && gain >= 0.5 && gain <= 1.5, `redGain(${u}) = ${gain}`).toBe(true);
     prevPhi = phi; prevGain = gain; sum += gain;
   }
-  expect(math.turnOrder(1)).toBe(0);                                  // the most exposed turns at turn_start, the earliest a leaf can
-  expect(math.turnOrder(0)).toBeLessThan(1);                          // the least turns with the last: still a valid hash value
+  expect(seasonMod.turnOrder(1)).toBe(0);                                  // the most exposed turns at turn_start, the earliest a leaf can
+  expect(seasonMod.turnOrder(0)).toBeLessThan(1);                          // the least turns with the last: still a valid hash value
   expect(sum / 21).toBeCloseTo(1, 12);                                // an evenly spread rank averages gain 1
 });
 
@@ -195,7 +198,7 @@ const dense = (over) => ({ ...PRESETS["afternoon 7"], inner_leaves: 0, leaves_pe
 function exposedGrove(over) {
   const { faithLeaves, params } = growWith(dense({ phenology: 0.5, ...over }), true);
   const leaves = leavesOf(faithLeaves);
-  return { leaves, e: math.exposureGrid(leaves.x, leaves.y, leaves.z, leaves.a, params.canopy_extent_m), params };
+  return { leaves, e: seasonMod.exposureGrid(leaves.x, leaves.y, leaves.z, leaves.a, params.canopy_extent_m), params };
 }
 const corr = (u, v) => {
   const n = u.length, mu = u.reduce((s, x) => s + x, 0) / n, mv = v.reduce((s, x) => s + x, 0) / n;
@@ -240,15 +243,15 @@ test("exposure never touches a leaf's own hash: a whisper of turn_exposure is a 
 // a leafTau edited for exposure that quietly changed the zero case would still agree with itself.
 function leafTauP0(tauSummer, P, seed, j, k) {
   const r = math.mulberry32(math.hash3((seed >>> 0) ^ 0x51ED270B, j, k));
-  const s = math.senescence(P, r());
+  const s = seasonMod.senescence(P, r());
   if (s === 0) return [tauSummer[0], tauSummer[1], tauSummer[2]];
   const a = P.anthocyanin * (0.5 + r()), b = P.tannin * (0.5 + r());
   const cell = [0, 0, 0], wall = [0, 0, 0];
   for (let c = 0; c < 3; c++) {
-    const base = tauSummer[c] * (1 - s), pig = math.TAU_CAROTENOID[c] + b * math.TAU_TANNIN[c];
-    wall[c] = base + s * pig; cell[c] = base + s * (pig + a * math.TAU_ANTHOCYANIN[c]);
+    const base = tauSummer[c] * (1 - s), pig = seasonMod.TAU_CAROTENOID[c] + b * seasonMod.TAU_TANNIN[c];
+    wall[c] = base + s * pig; cell[c] = base + s * (pig + a * seasonMod.TAU_ANTHOCYANIN[c]);
   }
-  return Array.from(math.mixtureTau(wall, cell, P.wall_fraction));
+  return Array.from(leafMod.mixtureTau(wall, cell, P.wall_fraction));
 }
 
 test("turn_exposure 0 is P0 for every leaf, at phenology 0.75 and 1.0", () => {
@@ -290,10 +293,10 @@ test("with turn_exposure 1 at mid-turn, the sunlit turn first and the red goes t
   // anthocyanin 0 makes tau_r = summer*(1-s) + s*car_r: s_j is recoverable from the red channel, exactly.
   const plain = growWith({ ...MID, anthocyanin: 0, turn_exposure: 1 }, true);
   const lv = leavesOf(plain.faithLeaves);
-  const e = math.exposureGrid(lv.x, lv.y, lv.z, lv.a, plain.params.canopy_extent_m);
+  const e = seasonMod.exposureGrid(lv.x, lv.y, lv.z, lv.a, plain.params.canopy_extent_m);
   const tau = tauOf(plain.params);
   const full = [...lv.fade.keys()].filter((i) => lv.fade[i] === 1);   // whole leaves only: tau is stored times the fade
-  const sOf = (buf, i) => (tau[0] - buf[i * STRIDE + 8]) / (tau[0] - math.TAU_CAROTENOID[0]);
+  const sOf = (buf, i) => (tau[0] - buf[i * STRIDE + 8]) / (tau[0] - seasonMod.TAU_CAROTENOID[0]);
   const s = full.map((i) => sOf(plain.faithLeaves, i));
   expect(Math.min(...s), "mid-turn: some have not begun").toBeLessThan(0.02);
   expect(Math.max(...s), "mid-turn: some are well on").toBeGreaterThan(0.4);
@@ -332,7 +335,7 @@ test("the grove's mean red capacity does not drift: within 0.5 % at any strength
   const cap = (over) => {
     const { faithLeaves, params } = growWith(dense({ phenology: 1, anthocyanin: 0.8, tannin: 0, wall_fraction: 0, ...over }), true);
     const m = [];
-    for (let i = 0; i + STRIDE <= faithLeaves.length; i += STRIDE) m.push((faithLeaves[i + 9] - math.TAU_CAROTENOID[1]) / math.TAU_ANTHOCYANIN[1] / params.anthocyanin);
+    for (let i = 0; i + STRIDE <= faithLeaves.length; i += STRIDE) m.push((faithLeaves[i + 9] - seasonMod.TAU_CAROTENOID[1]) / seasonMod.TAU_ANTHOCYANIN[1] / params.anthocyanin);
     return m.reduce((s, x) => s + x, 0) / m.length;
   };
   const p0 = cap({ turn_exposure: 0 });
@@ -362,11 +365,11 @@ test("exposure_absolute ships off, and is a canopy knob: it morphs the same grov
 
 test("exposureBlend: the rank itself at 0 (no arithmetic), the raw exposure at 1, the straight line between", () => {
   const ex = Float64Array.from([0.9, 0.1, 0.5, 0.5, 1, 0.01, 0.5, 0.3]);
-  const rank = math.exposureRank(ex), before = [Array.from(ex), Array.from(rank)];
-  expect(math.exposureBlend(rank, ex, 0), "off is the very array, untouched").toBe(rank);
-  const one = math.exposureBlend(rank, ex, 1);
+  const rank = seasonMod.exposureRank(ex), before = [Array.from(ex), Array.from(rank)];
+  expect(seasonMod.exposureBlend(rank, ex, 0), "off is the very array, untouched").toBe(rank);
+  const one = seasonMod.exposureBlend(rank, ex, 1);
   for (let i = 0; i < ex.length; i++) expect(Object.is(one[i], ex[i]), `leaf ${i}: ${one[i]} vs ${ex[i]}`).toBe(true);   // exactly, not close: rank*0 + ex*1
-  const half = math.exposureBlend(rank, ex, 0.5), q = math.exposureBlend(rank, ex, 0.25);
+  const half = seasonMod.exposureBlend(rank, ex, 0.5), q = seasonMod.exposureBlend(rank, ex, 0.25);
   for (let i = 0; i < ex.length; i++) {
     expect(half[i]).toBeCloseTo(0.5 * (rank[i] + ex[i]), 14);
     expect(q[i]).toBeCloseTo(0.75 * rank[i] + 0.25 * ex[i], 14);
@@ -378,13 +381,13 @@ test("exposureBlend: the rank itself at 0 (no arithmetic), the raw exposure at 1
 test("u is monotone in exposure_absolute for a leaf whose raw exposure differs from its rank — and so are the two maps", () => {
   const rank = 0.5, steps = Array.from({ length: 11 }, (_, i) => i / 10);
   for (const e of [0.05, 0.3, 0.8, 1]) {                              // below its rank (shaded grove) and above it (open one)
-    const us = steps.map((w) => math.exposureBlend(Float64Array.of(rank), Float64Array.of(e), w)[0]);
+    const us = steps.map((w) => seasonMod.exposureBlend(Float64Array.of(rank), Float64Array.of(e), w)[0]);
     const dir = Math.sign(e - rank);
     expect(us[0]).toBe(rank); expect(us[10]).toBe(e);
     for (let i = 1; i < us.length; i++) {
       expect(Math.sign(us[i] - us[i - 1]), `exposure ${e}, w ${steps[i]}`).toBe(dir);   // strictly, the same way every step
-      expect(Math.sign(math.redGain(us[i]) - math.redGain(us[i - 1]))).toBe(dir);        // more light, more red
-      expect(Math.sign(math.turnOrder(us[i - 1]) - math.turnOrder(us[i])), "more light, earlier").toBe(dir);
+      expect(Math.sign(seasonMod.redGain(us[i]) - seasonMod.redGain(us[i - 1]))).toBe(dir);        // more light, more red
+      expect(Math.sign(seasonMod.turnOrder(us[i - 1]) - seasonMod.turnOrder(us[i])), "more light, earlier").toBe(dir);
     }
   }
 });
@@ -392,9 +395,9 @@ test("u is monotone in exposure_absolute for a leaf whose raw exposure differs f
 // the tau each leaf must carry, recomputed OUTSIDE the grove from the leaves it laid out: exposure -> u -> the two maps -> leafTau.
 // (Deliberately the long way round, through the pieces this phase does not touch, so a grove that mishandled u cannot agree with it.)
 function wantTaus(faithLeaves, params, uOf) {
-  const L = leavesOf(faithLeaves), tau = tauOf(params), ex = math.exposureGrid(L.x, L.y, L.z, L.a, params.canopy_extent_m), u = uOf(ex);
+  const L = leavesOf(faithLeaves), tau = tauOf(params), ex = seasonMod.exposureGrid(L.x, L.y, L.z, L.a, params.canopy_extent_m), u = uOf(ex);
   const want = [];
-  for (let i = 0; i < L.x.length; i++) for (const v of math.leafTau(tau, params, params.seed, L.j[i], L.k[i], [0, 0, 0], math.turnOrder(u[i]), math.redGain(u[i]))) want.push(Math.fround(v * L.fade[i]));
+  for (let i = 0; i < L.x.length; i++) for (const v of seasonMod.leafTau(tau, params, params.seed, L.j[i], L.k[i], [0, 0, 0], seasonMod.turnOrder(u[i]), seasonMod.redGain(u[i]))) want.push(Math.fround(v * L.fade[i]));
   return { L, ex, u, want };
 }
 const tausOf = (faithLeaves) => { const t = []; for (let i = 0; i + STRIDE <= faithLeaves.length; i += STRIDE) t.push(faithLeaves[i + 8], faithLeaves[i + 9], faithLeaves[i + 10]); return t; };
@@ -406,9 +409,9 @@ const FALL = { ...CROWD, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2, turn
 test("on a real grove the key splits exactly what the rank could not: the sunlit shell (e = 1) spreads, every other leaf's rank is the keyless one to the bit", () => {
   // from the float32 buffer, as wantTaus does: the claim is about the functions on a real stand, not about the grove's own pass
   const { params, faithLeaves } = growWith({ ...FALL, exposure_absolute: 0 }, true);
-  const L = leavesOf(faithLeaves), ex = math.exposureGrid(L.x, L.y, L.z, L.a, params.canopy_extent_m);
-  const key = Float64Array.from(L.j, (j, i) => math.leafClock(params.seed, j, L.k[i]));
-  const keyless = math.exposureRank(ex), keyed = math.exposureRank(ex, key);
+  const L = leavesOf(faithLeaves), ex = seasonMod.exposureGrid(L.x, L.y, L.z, L.a, params.canopy_extent_m);
+  const key = Float64Array.from(L.j, (j, i) => seasonMod.leafClock(params.seed, j, L.k[i]));
+  const keyless = seasonMod.exposureRank(ex), keyed = seasonMod.exposureRank(ex, key);
   let shell = 0, split = 0, moved = -1;
   for (let i = 0; i < ex.length; i++) {
     if (ex[i] === 1) { shell++; if (!Object.is(keyed[i], keyless[i])) split++; }
@@ -446,13 +449,13 @@ test("exposure_absolute 1: u is the raw exposure — every leaf carries the tau 
   // is the discontinuity (the rank test above is a digest for that reason)
   const worst = (a, b) => a.reduce((m, v, i) => Math.max(m, Math.abs(v - b[i])), 0);
   expect(worst(got, want), "the grove's tau vs the raw-exposure maps").toBeLessThan(1e-4);   // measured 1e-5
-  const rank = wantTaus(faithLeaves, params, (e) => math.exposureRank(e)).want;
+  const rank = wantTaus(faithLeaves, params, (e) => seasonMod.exposureRank(e)).want;
   expect(worst(got, rank), "not vacuous: the rank's tau is another one").toBeGreaterThan(0.05);
   expect(got.filter((v, i) => Math.abs(v - rank[i]) > 1e-6).length, "for most leaves").toBeGreaterThan(got.length * 0.5);
   // the raw exposure is what the maps were built to take: a probability-like (0, 1], and the maps are defined over all of it — even
   // where it is NOT uniform, which is the point (a dense grove's mean is ~0.3: it turns later, with less red, than its rank would)
   expect(Math.min(...ex)).toBeGreaterThan(0); expect(Math.max(...ex)).toBeLessThanOrEqual(1);
-  const phi = Array.from(ex, math.turnOrder), gain = Array.from(ex, math.redGain), mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const phi = Array.from(ex, seasonMod.turnOrder), gain = Array.from(ex, seasonMod.redGain), mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
   expect(Math.min(...phi) >= 0 && Math.max(...phi) < 1, "turn order stays in [0,1)").toBe(true);
   expect(Math.min(...gain) > 0.5 && Math.max(...gain) <= 1.5).toBe(true);
   expect(mean(ex), "a crowded grove sits in its own shade").toBeLessThan(0.5);
@@ -471,7 +474,7 @@ test("one leaf, between 0 and 1: its red depth moves monotonically toward the ra
   // phenology 1, no tannin, no vein share: tau_g = car_g + a_j ant_g, a_j = anthocyanin (0.5 + r_j) gain(u_j) — strictly rising in u
   const ws = [0, 0.25, 0.5, 0.75, 1], base = { ...CROWD, phenology: 1, anthocyanin: 0.8, tannin: 0, wall_fraction: 0, turn_exposure: 1 };
   const runs = ws.map((w) => growWith({ ...base, exposure_absolute: w }, true).faithLeaves);
-  const L = leavesOf(runs[0]), ex = math.exposureGrid(L.x, L.y, L.z, L.a, CROWD.canopy_extent_m), rank = math.exposureRank(ex);
+  const L = leavesOf(runs[0]), ex = seasonMod.exposureGrid(L.x, L.y, L.z, L.a, CROWD.canopy_extent_m), rank = seasonMod.exposureRank(ex);
   let n = 0;
   for (let i = 0; i < L.x.length; i++) {
     if (L.fade[i] !== 1 || Math.abs(ex[i] - rank[i]) < 0.15) continue;   // whole leaves whose exposure and rank disagree
@@ -485,12 +488,12 @@ test("one leaf, between 0 and 1: its red depth moves monotonically toward the ra
 // the shaded grove, outside the engine: leaves are (x, y, z) points of one area, each with a hash address, so the grove with a
 // neighbour and the same grove without it give the shared leaves the same hash
 function season(pts, ids, w) {
-  const ex = math.exposureGrid(pts.map((p) => p[0]), pts.map((p) => p[1]), pts.map((p) => p[2]), pts.map(() => AREA), E);
-  const u = math.exposureBlend(math.exposureRank(ex), ex, w), summer = [-Math.log(0.12), -Math.log(0.22), -Math.log(0.1)];
+  const ex = seasonMod.exposureGrid(pts.map((p) => p[0]), pts.map((p) => p[1]), pts.map((p) => p[2]), pts.map(() => AREA), E);
+  const u = seasonMod.exposureBlend(seasonMod.exposureRank(ex), ex, w), summer = [-Math.log(0.12), -Math.log(0.22), -Math.log(0.1)];
   const mid = fall({ phenology: 0.75, anthocyanin: 0 }), deep = fall({ phenology: 1, anthocyanin: 0.8, tannin: 0, wall_fraction: 0 }), mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
-  const tauOfLeaf = (P, te, i) => math.leafTau(summer, { ...P, turn_exposure: te }, 7, ids[i], 0, [0, 0, 0], math.turnOrder(u[i]), math.redGain(u[i]));
-  const s = (te) => mean(pts.map((_, i) => (summer[0] - tauOfLeaf(mid, te, i)[0]) / (summer[0] - math.TAU_CAROTENOID[0])));         // mean turned state, from the red channel (no anthocyanin)
-  const cap = (te) => mean(pts.map((_, i) => (tauOfLeaf(deep, te, i)[1] - math.TAU_CAROTENOID[1]) / math.TAU_ANTHOCYANIN[1] / deep.anthocyanin));   // mean red capacity, from tau_g
+  const tauOfLeaf = (P, te, i) => seasonMod.leafTau(summer, { ...P, turn_exposure: te }, 7, ids[i], 0, [0, 0, 0], seasonMod.turnOrder(u[i]), seasonMod.redGain(u[i]));
+  const s = (te) => mean(pts.map((_, i) => (summer[0] - tauOfLeaf(mid, te, i)[0]) / (summer[0] - seasonMod.TAU_CAROTENOID[0])));         // mean turned state, from the red channel (no anthocyanin)
+  const cap = (te) => mean(pts.map((_, i) => (tauOfLeaf(deep, te, i)[1] - seasonMod.TAU_CAROTENOID[1]) / seasonMod.TAU_ANTHOCYANIN[1] / deep.anthocyanin));   // mean red capacity, from tau_g
   return { ex: mean(Array.from(ex)), s: s(1), s0: s(0), red: cap(1), red0: cap(0) };   // *0: the same grove on the hash alone — the baseline each is read against, as in P1
 }
 

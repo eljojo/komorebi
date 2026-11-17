@@ -26,7 +26,12 @@
 //   DENSITY CAPACITY. A fixed summer grove can keep a larger per-cluster prefix and reweight its active leaves. Its separate key excludes density, but its gate excludes pigment, drop and variety;
 //   opening those rebuilds the actual population before any exposure rank is needed. Ordinary builds and season records retain their original keys and arithmetic. The active count and cast bounds follow the prefix.
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, springing, springDraws, leafSpring, springTau, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafSide, leafTau, lerpAngle, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, turnWindow, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
+import { DEG, GOLDEN, clamp, hash3, lerpAngle, makeGauss, mulberry32, smoothstep } from './komorebi-math.js';
+import { afterTurn, springing, springDraws, leafSpring, springTau, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, leafClock, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, turnWindow, lit, ordered, redGain, retention, senescing, dropping, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-season.js';
+import { growSkeleton } from './komorebi-grammar.js';
+import { leafSide } from './komorebi-leaf.js';
+
+const FAITH_MAX_RATIO = 1.7;   // faithful-tree height cap (spec/model/canopy.md): max crown height:radius before crown_aspect. A broad tree (mr above mz/RATIO) keeps its natural height untouched; a NARROW tree (steep branches → tiny mr → runaway plan-fill scale → tens of metres tall) gets its height clamped to crown·RATIO·aspect. Lower = shorter narrow trees.
 
 // The fall tiers this module owns, as the bundler sees them (embed-build.mjs): each is substituted by a literal, true or false, and the code behind a false one is not
 // in the bundle. A tier is cut only for a look that does not open it (komorebi-params.js FEATURES), so a flag that is false here means the guarded arithmetic was
@@ -83,7 +88,7 @@ const SREC = 11;   // a season record: x, y, h, A, B0, area, j, k, cov, layer, s
 // which draws the same two gaussians, so what the preview shows is what the cast was handed. Writes [x, y, z] into `out`. (The params are named `params` here as in buildGrove: the key's grep, reseason.test.js, reads this file for `params.<key>`.)
 // WIND, named: a faithful leaf pivots about its twig's base (clusterGeom), so a leaf on older wood swings with its twig and slides off the limb under the medium band (measured in inner.test.js; not fixed here — it
 // needs a per-leaf pivot weight and a shader slot).
-export const INNER_SALT = 0xDAA66D2B;   // 3·0x9E3779B9 mod 2^32: the golden gamma's next multiple after the per-tree salt's 2· (komorebi-math.js), in no other stream
+export const INNER_SALT = 0xDAA66D2B;   // 3·0x9E3779B9 mod 2^32: the golden gamma's next multiple after the per-tree salt's 2· (komorebi-season.js), in no other stream
 const INNER_GLIDE = 0.05;        // the smoothstep's width in `inner_leaves`: a leaf is wholly on the wood this far past its own h
 // A height's layer over a grove's band [zMin, dz, nLayer] (hier.layerBand): higher foliage, higher layer. The hang loop bins twigs and leaves by it, and leaf travel a layered leaf.
 export const layerOfHeight = (z, [zMin, dz, nLayer]) => nLayer>1 ? clamp(Math.round((z-zMin)/dz*(nLayer-1)), 0, nLayer-1) : 0;
@@ -652,7 +657,7 @@ export function makeGrove(hub){
     let litter = null, leafW = null;
     if(rec?.length){
       const n = rec.length/REC;
-      // each leaf's place in the grove's order of light — and, as far as exposure_absolute says, its raw light — what the two maps in math.js
+      // each leaf's place in the grove's order of light — and, as far as exposure_absolute says, its raw light — what the two maps in komorebi-season.js
       // (and the drop day) take. It is the FULL summer set whatever has dropped: exposure is a season integral, not a function of who is
       // still hanging, so a leaf's day does not move as the season is read at another phenology.
       let u = null;
@@ -970,7 +975,7 @@ export function makeGrove(hub){
 
   // The season arithmetic of buildGrove (the hang loop's tau, the rec rewrite, the compaction, the litter, leafW, the faithful AABB), re-run over g.season in ONE pass
   // on typed arrays. It must stay the same arithmetic as buildGrove's, call for call — reseason.test.js holds the bytes.
-  // THE TIERS (komorebi-math.js, "the leaf's season in three tiers"): each leaf's draws (S.draws: its three pigment-stream draws and its drop hash, the grove's) and its
+  // THE TIERS (komorebi-season.js, "the leaf's season in three tiers"): each leaf's draws (S.draws: its three pigment-stream draws and its drop hash, the grove's) and its
   // schedule (S.sched: the turn window, the pigment depths and the drop day, a function of the draws and of the season set without the STATE keys) are kept, so a step
   // of the clock, the summer tint or the wall fraction does only each leaf's state now: s across its window, the mixture, the retention. Any other season key rebuilds
   // the schedule from the kept draws (no leaf is hashed again). The fallen are listed when the list is READ (g.litter is a getter): a floor with no carpet never asks.

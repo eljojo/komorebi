@@ -1,4 +1,5 @@
-import { ballisticK, clamp, lerp, lerpAngle, smoothstep, TAU, turnBack } from './komorebi-math.js';
+import { clamp, lerp, lerpAngle, smoothstep, TAU, turnBack } from './komorebi-math.js';
+import { ballisticK } from './komorebi-leaf.js';
 import { flutterLevel, depthGate } from './komorebi-air.js';
 import { CANOPY_MORPH_MAX, DEFAULTS, MORPH_KEYS } from './komorebi-params.js';
 import { leafLayerOf } from './komorebi-grove.js';

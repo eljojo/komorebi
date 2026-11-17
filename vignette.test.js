@@ -3,7 +3,8 @@
 // tests hold the shader and the registry to the same sentence. Run: `bun test vignette.test.js`.
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, TRANSPORT_GROUPS, buildTransport } from "./komorebi.js";
-import { vignetteMask, irisRoute, irisStep } from "./komorebi-math.js";
+import { irisRoute, irisStep } from "./komorebi-math.js";
+import { vignetteMask } from "./komorebi-camera.js";
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -113,7 +114,7 @@ test("the post group declares and locates both uniforms, and every camera's prog
   for (const cam of ["floor", "cloth", "enclosure", "sky"]) {
     const src = buildTransport(cam);
     expect(src.split("THE EDGE (spec/model/camera.md)").length - 1, cam).toBe(1);
-    // The mask's own lines, each once, pinned by text: they are vignetteMask (komorebi-math.js) line for line — the gate, q, the
+    // The mask's own lines, each once, pinned by text: they are vignetteMask (komorebi-camera.js) line for line — the gate, q, the
     // superellipse radius, the fade — so the shader cannot drift from the reference the numbers above hold, and a missing line fails here.
     const lines = [
       "if(uVignette > 0.0){",                                                                           // if (!(feather > 0)) return 1

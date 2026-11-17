@@ -4,7 +4,9 @@
 // camera registry), the lateral-diffusion glow tier, and the layer-debug blit.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, atmosphere, ballisticK, beamLoss, clamp, lerp, smoothstep, sunDirection, sunIncidence, shownExposure } from './komorebi-math.js';
+import { DEG, clamp, lerp, smoothstep } from './komorebi-math.js';
+import { atmosphere, beamLoss, sunDirection, sunIncidence, shownExposure } from './komorebi-light.js';
+import { ballisticK } from './komorebi-leaf.js';
 import { MAX_LAYERS } from './komorebi-params.js';
 import { CAMERAS, GROUP_UPLOAD_KEYS } from './komorebi-transport.js';
 

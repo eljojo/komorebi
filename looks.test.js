@@ -3,7 +3,7 @@
 // outline). The picks and the words that chose them are in that sheet's review folder.
 import { test, expect } from "bun:test";
 import { DEFAULTS } from "./komorebi.js";
-import { shownExposure } from "./komorebi-math.js";
+import { shownExposure } from "./komorebi-light.js";
 import { EXPERIMENTAL, PRESETS } from "./presets.js";
 
 test("park fall: drop_lag 0.05, under the default 0.09", () => {

@@ -1,5 +1,5 @@
 // ============================================================================
-// The spring half: leaf-out (komorebi-math.js leafSpring, springTau; komorebi-grove.js; spec model/season.md "Leaf-out"). What must hold: each leaf grows from
+// The spring half: leaf-out (komorebi-season.js leafSpring, springTau; komorebi-grove.js; spec model/season.md "Leaf-out"). What must hold: each leaf grows from
 // nothing to its full size and greens from the young depth, on its own day, and the last is full-grown at leaf_out_end; the gate (leaf_out_end 0, or a phenology
 // past the spring) is the summer leaf to the bit; the spring closes before the turn; the emergence stream is its own; a bare grove at bud break.
 // ============================================================================
@@ -7,7 +7,7 @@ import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { DEFAULTS, GRANDFATHERED, PARAMS, SEASON_KEYS } from "./komorebi-params.js";
 import { PRESETS } from "./presets.js";
-import { SPRING_SALT, TAU_ANTHOCYANIN, leafSpring, springShape, springTau, springing } from "./komorebi-math.js";
+import { SPRING_SALT, TAU_ANTHOCYANIN, leafSpring, springShape, springTau, springing } from "./komorebi-season.js";
 import { makeGrove } from "./komorebi-grove.js";
 
 const P = { ...DEFAULTS };

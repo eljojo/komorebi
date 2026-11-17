@@ -4,7 +4,8 @@
 // spring integrator (tickHierarchy), and the bend-texture upload the bake
 // reads (publishBend). A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, TAU, clamp, windNoise } from './komorebi-math.js';
+import { DEG, TAU, clamp } from './komorebi-math.js';
+import { windNoise } from './komorebi-air.js';
 import { weatherAt, leanForce, crossForce, gustEdge, advanceAir, airForce, airLevel, airDelay, airAcross, carrySpeed, shelter, makeAirTrack } from './komorebi-air.js';
 
 export function makeMotion(hub){

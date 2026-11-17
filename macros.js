@@ -23,7 +23,8 @@
 // macros.test.js holds these claims to the engine's own key classification.
 // ============================================================================
 
-import { TWEEN_STEP, beamIrr, cloudGain } from './komorebi-math.js';
+import { TWEEN_STEP } from './komorebi-season.js';
+import { beamIrr, cloudGain } from './komorebi-light.js';
 import { cameraFor } from './komorebi-transport.js';
 
 const clamp01 = (t) => Math.min(1, Math.max(0, t));
@@ -277,7 +278,7 @@ export function createBus(getParams, apply) {
         if (landed) st.x = st.target;
         let dict = macroParams(key, st.x);
         if (!landed) {
-          // CALM: an applied step of the probe is at most TWEEN_STEP (komorebi-math.js, beside DROP_EPS, with the trade it makes). The ease is held back to
+          // CALM: an applied step of the probe is at most TWEEN_STEP (komorebi-season.js, beside DROP_EPS, with the trade it makes). The ease is held back to
           // the clamped place, so the remainder is still owed to the next tick and the season simply lags the clock while the clamp binds; the landing above
           // is never clamped, so the resting state is the stop's own bytes (and a release's tick(1e9) lands in one apply). Measured from the last apply, or the look.
           const from = st.last ? st.last[m.probe] : getParams()[m.probe], to = dict[m.probe];

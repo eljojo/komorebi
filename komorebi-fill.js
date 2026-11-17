@@ -128,7 +128,7 @@ export const leafHue = (t) => { const m = Math.max(t[0], t[1], t[2], 1e-4); retu
 //                    and bilinear-safe (the pair interpolates as a coverage-weighted mean of the leaves' depths, never a blend toward 0)
 //     κ = k·c/a      k per leaf; c/a leaves deep where leaves stack (a = 1: κ = k·c)
 //     T  = (1 − a) + a·e^−τ̄          what the texel truly passes: the hue, the skylight, the light a leaf sends on downward
-//     Tb = (1 − a) + a·e^(−τ̄ − κ)    the BALLISTIC share, the part that still travels as a beam (k is neutral depth, math.js ballisticK)
+//     Tb = (1 − a) + a·e^(−τ̄ − κ)    the BALLISTIC share, the part that still travels as a beam (k is neutral depth, komorebi-leaf.js ballisticK)
 //     emit = T − Tb                  the diffuse light the leaf sends on, per unit of its own area × a: the gap emits nothing
 // Exact for one leaf at any c ≤ 1, and for any number of leaves stacked over the whole texel (c = 2: T = T1·T2, Tb = T1·T2·(1−d)²); between, where a
 // second leaf only partly overlaps, it is a bounded slab residue (luminance of the emission within 15% where one leaf covers the texel and another's

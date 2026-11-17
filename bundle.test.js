@@ -50,7 +50,7 @@ test("every marker is in a bundle that keeps its tier, and gone from the homepag
 // ONE TREE AHEAD (spec/model/season.md): the grove builds a tree's lead for the arms that read it (the pigment, the exposure and the drop) and its depth for the pigment and the exposure alone, and nothing
 // otherwise, so a bundle that cuts them carries neither draw. The markers are the salt the draws are made on (TREE_SALT 0x3C6EF372, in a minified bundle its decimal) and the depth's one
 // property read, chosen like the tiers' above: in the bundle with everything, gone from the one with nothing.
-// LEAF VARIETY (spec/model/leaf.md, P4a-4) IS A THIRD READER OF THE STREAM, AND IT IS NOT A TIER: an outline's genotype is its tree's third draw (math.js treeGenotype), asked by the grove of every bundle because leaf_variety is a plain
+// LEAF VARIETY (spec/model/leaf.md, P4a-4) IS A THIRD READER OF THE STREAM, AND IT IS NOT A TIER: an outline's genotype is its tree's third draw (komorebi-season.js treeGenotype), asked by the grove of every bundle because leaf_variety is a plain
 // param — as leaf_shape is, whose grammar is in every bundle too — so the salt is in every bundle and says nothing about the colour tiers. The depth table is still theirs alone, and is the marker that does.
 const TREE_SALT = "1013904242", TREE_DEPTH = ".tree_pigment_spread";
 test("the per-tree depth table is carried by a bundle that keeps a tier reading it, and by no other: the homepage set has none; the salt is every bundle's, because an outline's genotype is the stream's third draw", () => {

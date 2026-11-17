@@ -8,7 +8,8 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { DEFAULTS } from "./komorebi.js";
-import { hash3, sunDirection, DEG } from "./komorebi-math.js";
+import { hash3, DEG } from "./komorebi-math.js";
+import { sunDirection } from "./komorebi-light.js";
 import { FILL_GOLDEN, FILL_TILE, fillTile, fillDirections, fillRays, fillTurns, skyRayRef, fillRef, texelMix, slabUnder, groundRef, undersideRef, bounceRef } from "./komorebi-fill.js";
 import { FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO, SLAB_N } from "./komorebi-shaders.js";
 import { SLAB, slabLeaf, slabK, slabTable } from "./komorebi-tree-view.js";

@@ -7,8 +7,9 @@ import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { GRANDFATHERED } from "./komorebi-params.js";
 import { PARAMS, DEFAULTS, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, FEATURES, CAMERAS, TRANSPORT_CAMERAS, buildTransport, cameraFor } from "./komorebi.js";
-import * as MATH from "./komorebi-math.js";
-import { DEG, atmosphere, beamExposure, sunDirection, sunIncidence } from "./komorebi-math.js";
+import * as lightMod from "./komorebi-light.js";
+import { DEG } from "./komorebi-math.js";
+import { atmosphere, beamExposure, sunDirection, sunIncidence } from "./komorebi-light.js";
 import { makeRender } from "./komorebi-render.js";
 import { FILL_SIG_LEN, makeFill } from "./komorebi-bake.js";
 import { PRESETS } from "./presets.js";
@@ -188,9 +189,9 @@ test("sun_cosine and sun_extinction: every look carries both but park 2 and mont
     expect(p.sun_cosine, `${name}: the cosine law`).toBe(old.includes("sun_cosine") ? 0 : 1);
     expect(p.sun_extinction, `${name}: the air's loss`).toBe(old.includes("sun_extinction") ? 0 : 1);
     const I = p.sun_cosine ? sunIncidence(cameraFor(p), p.sun_elevation_deg, p.sun_azimuth_deg) : 1;
-    const E = p.sun_extinction && !AIR_HELD.includes(name) ? MATH.beamExtinction(p.sun_elevation_deg, p.sky_turbidity) : 1;
+    const E = p.sun_extinction && !AIR_HELD.includes(name) ? lightMod.beamExtinction(p.sun_elevation_deg, p.sky_turbidity) : 1;
     if (p.sky_view) expect(I, `${name}: the sky view takes 1`).toBe(1);
-    expect(Math.abs(MATH.shownExposure(p) - SHIPPED_EXPOSURE[name] / I / E), `${name}'s exposure is re-sat (as shown, at its own cloud)`).toBeLessThan(0.006);
+    expect(Math.abs(lightMod.shownExposure(p) - SHIPPED_EXPOSURE[name] / I / E), `${name}'s exposure is re-sat (as shown, at its own cloud)`).toBeLessThan(0.006);
   }
   expect(Object.keys(SHIPPED_EXPOSURE).sort()).toEqual(Object.keys(PRESETS).sort());
 });
@@ -320,12 +321,12 @@ test("the tent's per-panel comment no longer claims the floor and curtain absorb
 // level, so it is anchored to the floor only above that). Three places say it (the table's own comment, the shader's, the spec's: receivers.md states the limits and measurements.md the numbers), and each has to name both limits and say tent 1 (55°) clears them.
 test("the tent claim names both of beamF's limits wherever it is made — the math table, the shader's PER-PANEL LIGHT comment and the spec — and no longer says 'at every elevation'", () => {
   const flat = (t) => t.replace(/\s*\n\s*(\/\/)?\s*/g, " ");
-  const math = read("komorebi-math.js"), transport = read("komorebi-transport.js"), receivers = read("spec/model/receivers.md"), measured = read("spec/evidence/measurements.md");
+  const math = read("komorebi-light.js"), transport = read("komorebi-transport.js"), receivers = read("spec/model/receivers.md"), measured = read("spec/evidence/measurements.md");
   const mAt = math.indexOf("//   enclosure"), tAt = transport.indexOf("PER-PANEL LIGHT"), rAt = receivers.indexOf("**The crown anchors the normalisation.**"), eAt = measured.indexOf("- **Result, per-panel light:**");
   expect(mAt, "the table's enclosure row").toBeGreaterThan(0); expect(tAt, "the shader's comment").toBeGreaterThan(0);
   expect(rAt, "receivers.md's normalisation paragraph").toBeGreaterThan(0); expect(eAt, "measurements.md's per-panel result").toBeGreaterThan(0);
   const paras = {
-    "komorebi-math.js": flat(math.slice(mAt, math.indexOf("//   cloth", mAt))),
+    "komorebi-light.js": flat(math.slice(mAt, math.indexOf("//   cloth", mAt))),
     "komorebi-transport.js": flat(transport.slice(tAt, transport.indexOf("beamF = clamp(", tAt))),
     "spec/": receivers.slice(rAt, receivers.indexOf("It is the fold incidence's discipline", rAt)) + " " + measured.slice(eAt, measured.indexOf("\n", eAt)),
   };
@@ -384,7 +385,7 @@ test("the editor offers it: a row right after the azimuth, in a group the surfac
 
 // ---- the air's loss (sun_extinction): the peak transmittance atmosphere() divides out, against the zenith's ---------------------------------
 test("sun_extinction: exactly 1 at 0 on every camera; at 1 the zenith is 1, a 12° floor with the cosine law is ×9.1 under a 70° one, and the seen disk takes none", () => {
-  const { beamExtinction, beamLoss, beamIrr } = MATH;
+  const { beamExtinction, beamLoss, beamIrr } = lightMod;
   for (const cam of ["floor", "cloth", "enclosure", "sky"]) for (const el of ELEVS) expect(beamLoss(cam, { ...BASE, sun_elevation_deg: el }), `${cam} ${el}`).toBe(1);
   expect(beamExtinction(90, 0.05)).toBe(1);
   const p = (el) => ({ ...BASE, sun_cosine: 1, sun_extinction: 1, sun_elevation_deg: el, sky_turbidity: 0.05 });
@@ -397,15 +398,15 @@ test("sun_extinction: exactly 1 at 0 on every camera; at 1 the zenith is 1, a 12
 // ---- exposure under cloud (cloud_exposure): a thicker cloud opens the exposure up; each look is re-sat at its own cloud ------------------------
 test("cloud_exposure: 0 is exposure itself; up, the frame shows exposure × (1 + cloud); every shipped look carries it, re-sat, and brightens only past its own cloud", () => {
   const p = { ...DEFAULTS, exposure: 2, cloud_thickness: 0.4 };
-  expect(MATH.shownExposure(p), "off: the exposure itself").toBe(2);
-  expect(MATH.shownExposure({ ...p, cloud_exposure: 1 })).toBeCloseTo(2.8, 12);
-  expect(MATH.shownExposure({ ...p, cloud_exposure: 1, cloud_thickness: 3 }), "the cloud is held to 1").toBeCloseTo(4, 12);
+  expect(lightMod.shownExposure(p), "off: the exposure itself").toBe(2);
+  expect(lightMod.shownExposure({ ...p, cloud_exposure: 1 })).toBeCloseTo(2.8, 12);
+  expect(lightMod.shownExposure({ ...p, cloud_exposure: 1, cloud_thickness: 3 }), "the cloud is held to 1").toBeCloseTo(4, 12);
   expect(DEFAULTS.cloud_exposure, "off by default: a look saved without it keeps its exposure").toBe(0);
   expect(MORPH_KEYS).toContain("cloud_exposure");
   for (const [name, look] of Object.entries(PRESETS)) {
     const L = { ...DEFAULTS, ...look };
     expect(L.cloud_exposure, `${name} carries the coupling`).toBe(1);
-    const at = MATH.shownExposure(L), thicker = MATH.shownExposure({ ...L, cloud_thickness: Math.min(L.cloud_thickness + 0.3, 1) });
+    const at = lightMod.shownExposure(L), thicker = lightMod.shownExposure({ ...L, cloud_thickness: Math.min(L.cloud_thickness + 0.3, 1) });
     expect(Math.abs(at - L.exposure * (1 + Math.min(L.cloud_thickness, 1))), `${name}: re-sat by its own cloud`).toBeLessThan(1e-12);
     if (L.cloud_thickness < 1) expect(thicker, `${name}: a thicker cloud opens it up`).toBeGreaterThan(at);
   }

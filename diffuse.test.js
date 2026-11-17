@@ -15,6 +15,7 @@ import { GRANDFATHERED } from "./komorebi-params.js";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, buildTransport } from "./komorebi.js";
 import { readFileSync } from "node:fs";
 import * as M from "./komorebi-math.js";
+import * as leafMod from "./komorebi-leaf.js";
 import * as F from "./komorebi-fill.js";
 import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FILL, GLSL_SKY_RAY } from "./komorebi-shaders.js";
 import * as SH from "./komorebi-shaders.js";
@@ -32,7 +33,7 @@ const covStack = (seed, nL = 3) => H4.slice(0, nL).map((h, L) => ({
   t: (x, y) => { const cx = Math.floor(x * 7), cy = Math.floor(y * 7); return [0, 1, 2].map((c) => 0.05 + 0.95 * u01(seed, c, cx, cy, L)); },
   c: (x, y) => 2 * u01(seed, 3, Math.floor(x * 7), Math.floor(y * 7), L),
 }));
-const kOf = (seed) => M.ballisticK((hash(seed, 7, 7) % 1000) / 1000);   // d anywhere in [0, 0.999]: k from 0 up to the cap
+const kOf = (seed) => leafMod.ballisticK((hash(seed, 7, 7) % 1000) / 1000);   // d anywhere in [0, 0.999]: k from 0 up to the cap
 
 // ---- the knob ---------------------------------------------------------------------------------------------------
 test("leaf_diffuse ships at 0 and tweens: a live shader uniform on both paths, classified MORPH", () => {
@@ -41,23 +42,23 @@ test("leaf_diffuse ships at 0 and tweens: a live shader uniform on both paths, c
 });
 
 test("ballisticK: the neutral depth of the diffuse share — 0 at 0, monotone, −ln(1−d), capped at 6", () => {
-  expect(M.ballisticK(0)).toBe(0);                                      // exactly: the gate, not a small number
-  expect(M.BEAM_K_MAX).toBe(6);
+  expect(leafMod.ballisticK(0)).toBe(0);                                      // exactly: the gate, not a small number
+  expect(leafMod.BEAM_K_MAX).toBe(6);
   let prev = -1;
   for (let i = 0; i <= 1000; i++) {
-    const d = i / 1000, k = M.ballisticK(d);
+    const d = i / 1000, k = leafMod.ballisticK(d);
     expect(k, `d=${d}`).toBeGreaterThanOrEqual(prev);
     expect(k).toBeLessThanOrEqual(6);
     prev = k;
   }
-  expect(M.ballisticK(0.5)).toBeCloseTo(Math.LN2, 14);
-  expect(M.ballisticK(0.95)).toBeCloseTo(-Math.log(0.05), 14);          // the physical value: ~3 of neutral depth per unit coverage
-  expect(M.ballisticK(1)).toBe(6);                                      // d = 1 is −ln 0: the cap is what keeps it finite
-  expect(M.ballisticK(2)).toBe(6);                                      // out of range reads as the top, not NaN
-  expect(M.ballisticK(-1)).toBe(0);
-  expect(M.ballisticK(NaN)).toBe(0);
+  expect(leafMod.ballisticK(0.5)).toBeCloseTo(Math.LN2, 14);
+  expect(leafMod.ballisticK(0.95)).toBeCloseTo(-Math.log(0.05), 14);          // the physical value: ~3 of neutral depth per unit coverage
+  expect(leafMod.ballisticK(1)).toBe(6);                                      // d = 1 is −ln 0: the cap is what keeps it finite
+  expect(leafMod.ballisticK(2)).toBe(6);                                      // out of range reads as the top, not NaN
+  expect(leafMod.ballisticK(-1)).toBe(0);
+  expect(leafMod.ballisticK(NaN)).toBe(0);
   // and it IS the split: the ballistic share of a unit-coverage leaf, e^−k, is the 1−d that was asked for
-  for (const d of [0.1, 0.5, 0.95]) expect(Math.exp(-M.ballisticK(d))).toBeCloseTo(1 - d, 14);
+  for (const d of [0.1, 0.5, 0.95]) expect(Math.exp(-leafMod.ballisticK(d))).toBeCloseTo(1 - d, 14);
 });
 
 // ---- the per-tap law ----------------------------------------------------------------------------------------------
@@ -188,7 +189,7 @@ test("fillRef at d = 0 IS the P0b reference, bit for bit — absent, k: 0, and w
 });
 
 test("the P0b proxy is OFF once d > 0: the albedo knob is inert and the light is the emitted t − tb, hue its own", () => {
-  const layers = covStack(11), x = [0.3, -0.2], k = M.ballisticK(0.95), base = { gS: [0.5, -0.3], sun: SUN, k, tile: 3 };
+  const layers = covStack(11), x = [0.3, -0.2], k = leafMod.ballisticK(0.95), base = { gS: [0.5, -0.3], sun: SUN, k, tile: 3 };
   const a = F.fillRef(layers, x, 16, { ...base, scatter: 0 }), b = F.fillRef(layers, x, 16, { ...base, scatter: 0.8 });
   expect(b).toEqual(a);                                                   // two albedos, one fill: it is not the albedo's light any more
   expect(sum(a.S)).toBeGreaterThan(0);
@@ -214,7 +215,7 @@ test("floor-average conservation: with the sun at zenith, beam + the fill's emit
   // thing being measured — and the emitted light over a patch of the same stack.
   const PITCH = 0.15, WIDE = 200, N = 40, K = 32;
   for (const d of [0.5, 0.95]) for (const seed of [3, 41]) {
-    const k = M.ballisticK(d), layers = covStack(seed, 3);
+    const k = leafMod.ballisticK(d), layers = covStack(seed, 3);
     let beam = 0, total = 0;
     for (let j = 0; j < WIDE; j++) for (let i = 0; i < WIDE; i++) {
       const x = -15 + i * PITCH, y = -15 + j * PITCH;
@@ -259,7 +260,7 @@ const firstM = (n, m) => Array.from({ length: n * n }, (_, i) => i < m);   // a 
 test("edge: one leaf over a fraction c of the texel — the bake's pair through texelMix is the supersample's mean T, Tb and emit, to 1e-12, for every c in (0, 1]", () => {
   let worst = 0, n_c = 0;
   for (const n of [4, 7, 12]) for (let m = 1; m <= n * n; m++) for (let rep = 0; rep < 3; rep++) {
-    const seed = n * 1000 + m * 3 + rep, k = kOf(seed) || M.ballisticK(0.95), leaf = { tau: leafDepth(seed, 1), mask: firstM(n, m) };
+    const seed = n * 1000 + m * 3 + rep, k = kOf(seed) || leafMod.ballisticK(0.95), leaf = { tau: leafDepth(seed, 1), mask: firstM(n, m) };
     const truth = supersample(n, [leaf], k), { tau, c } = bakePair(n, [leaf]), got = F.texelMix(tau, c, k);
     for (let ch = 0; ch < 3; ch++) {
       worst = Math.max(worst, Math.abs(got.T[ch] - truth.T[ch]), Math.abs(got.Tb[ch] - truth.Tb[ch]), Math.abs(got.T[ch] - got.Tb[ch] - truth.emit[ch]));
@@ -273,7 +274,7 @@ test("edge: one leaf over a fraction c of the texel — the bake's pair through 
 test("edge: two leaves stacked over the WHOLE texel (c = 2) — exact: T = T1·T2, Tb = T1·T2·(1−d)², emit = T1·T2·(1 − (1−d)²)", () => {
   let worst = 0;
   for (let seed = 0; seed < 400; seed++) {
-    const d = [0.5, 0.9, 0.95, 0.99][seed % 4], k = M.ballisticK(d), n = 6, t1 = leafDepth(seed, 1), t2 = leafDepth(seed, 2);
+    const d = [0.5, 0.9, 0.95, 0.99][seed % 4], k = leafMod.ballisticK(d), n = 6, t1 = leafDepth(seed, 1), t2 = leafDepth(seed, 2);
     const full = Array.from({ length: n * n }, () => true), leaves = [{ tau: t1, mask: full }, { tau: t2, mask: full }];
     const { tau, c } = bakePair(n, leaves), got = F.texelMix(tau, c, k), truth = supersample(n, leaves, k);
     expect(c).toBe(2);
@@ -294,7 +295,7 @@ function halfPlane(n, seed) {   // a leaf edge through the texel at a random ang
   return Array.from({ length: n * n }, (_, i) => ((((i % n) + 0.5) / n - 0.5) * nx + ((Math.floor(i / n) + 0.5) / n - 0.5) * ny) > off);
 }
 test("edge: a texel inside one leaf with another's EDGE across it (c in 1..2) — the emission's luminance within 15%, blue alone within 45%: the bounded residue", () => {
-  const n = 24, full = Array.from({ length: n * n }, () => true), k = M.ballisticK(0.95);
+  const n = 24, full = Array.from({ length: n * n }, () => true), k = leafMod.ballisticK(0.95);
   let worstLum = 0, worstBlue = 0, tested = 0;
   for (let seed = 0; seed < 600; seed++) {
     const a = { tau: [1.35, 0.69, 1.83].map((v, c) => v * (0.8 + 0.4 * u01(seed, c, 1, 1, 1))), mask: full }, b = { tau: [1.35, 0.69, 1.83].map((v, c) => v * (0.8 + 0.4 * u01(seed, c, 2, 2, 2))), mask: halfPlane(n, seed) };
@@ -315,7 +316,7 @@ test("edge: the slab's error, pinned as the dead end — at c = 0.3 on a blue le
   // The numbers P0c-sky wrote down for the rim and the halo. A leaf of depth τ over 30% of the texel is the pair (0.3·τ, 0.3): the slab took it for a leaf
   // of depth 0.84 over ALL of it (t = 0.43, Jensen), so its glow t·(1 − e^−kc) is the cream rim (0.256 against the true 0.0173), and its beam e^(−τ − kc) the
   // dark halo (0.176 against the true 0.701: 70% of the texel is open sky).
-  const tau = 2.8, c = 0.3, k = M.ballisticK(0.95);
+  const tau = 2.8, c = 0.3, k = leafMod.ballisticK(0.95);
   const slabT = Math.exp(-tau * c), slabEmit = slabT * (1 - Math.exp(-k * c)), slabBeam = Math.exp(-tau * c - k * c);
   const leaf = { tau: [tau, tau, tau], mask: firstM(10, 30) }, truth = supersample(10, [leaf], k), { tau: pair, c: cc } = bakePair(10, [leaf]), got = F.texelMix(pair, cc, k);
   expect(cc).toBeCloseTo(0.3, 14);
@@ -362,7 +363,7 @@ test("edge: a FULL texel (c ≥ 1) is the old slab, to the bit — the mixture c
 });
 
 test("edge: τ/c is fade-invariant — a leaf at fade f is the same leaf over f of the area, so emission per unit leaf area never moves, and it vanishes with f", () => {
-  const tau = [0.9, 0.5, 1.4], k = M.ballisticK(0.95);
+  const tau = [0.9, 0.5, 1.4], k = leafMod.ballisticK(0.95);
   for (const edge of [0.15, 0.6, 1]) {
     for (let i = 200; i >= 1; i--) {
       const f = i / 200, s = F.leafTexel(tau, f, edge), m = F.texelMix(s.rgb, s.a, k);
@@ -378,7 +379,7 @@ test("edge: τ/c is fade-invariant — a leaf at fade f is the same leaf over f 
 });
 
 test("edge: a bilinear read of one leaf's own edge never changes the leaf — τ̄ stays the leaf's depth at any weight, where a depth alone would blend toward 0", () => {
-  const tau = [2.8, 1.2, 0.6], k = M.ballisticK(0.9);
+  const tau = [2.8, 1.2, 0.6], k = leafMod.ballisticK(0.9);
   for (let seed = 0; seed < 300; seed++) {
     const c1 = 0.05 + 0.9 * u01(seed, 1, 1, 1, 1), c2 = 0.05 + 0.9 * u01(seed, 2, 1, 1, 1), w = u01(seed, 3, 1, 1, 1);
     const pair = (c) => ({ tau: tau.map((v) => v * c), c });
@@ -392,7 +393,7 @@ test("edge: the telescoping identity on the mixture — Π Tb + Σ thr·(T − T
   // The identity is by construction (emit ≡ T − Tb), and this holds it so: every term spelled out here from texelMix alone, against skyRayRef's own sums.
   let worst = 0, glowed = 0;
   for (let seed = 0; seed < 10000; seed++) {
-    const nL = 1 + (seed % 4), k = kOf(seed) || M.ballisticK(0.95), layers = covStack(seed, nL), p = [(hash(seed, 19, 0) % 4000) / 1000 - 2, (hash(seed, 19, 1) % 4000) / 1000 - 2];
+    const nL = 1 + (seed % 4), k = kOf(seed) || leafMod.ballisticK(0.95), layers = covStack(seed, nL), p = [(hash(seed, 19, 0) % 4000) / 1000 - 2, (hash(seed, 19, 1) % 4000) / 1000 - 2];
     const m = layers.map((l) => F.texelMix(l.t(p[0], p[1]).map((v) => -Math.log(v)), l.c(p[0], p[1]), k));
     const T = [1, 1, 1], Tb = [1, 1, 1], glow = [0, 0, 0], thr = [1, 1, 1];
     for (let L = 0; L < nL; L++) for (let c = 0; c < 3; c++) {
@@ -414,7 +415,7 @@ test("a leaf fading in (spec/contracts/continuity.md) fades its BALLISTIC shadow
   // The grove folds the fade into τ on the CPU, so alpha has to carry it too (iFade): the texel's pair is (τ·f·edge, edge·f), which
   // the mixture reads as a leaf of its own depth over edge·f of the area. Without the fade in alpha it would read the same τ as a
   // leaf over `edge` of it, the full footprint at depth τ·f, and its beam's k would keep full weight on a leaf that is not there yet.
-  const tau = [0.9, 0.5, 1.4], k = M.ballisticK(0.95), edge = 0.8;
+  const tau = [0.9, 0.5, 1.4], k = leafMod.ballisticK(0.95), edge = 0.8;
   const beam = (f, withFade) => { const s = F.leafTexel(tau, f, edge); return F.texelMix(s.rgb, withFade ? s.a : edge, k).Tb; };
   expect(beam(0, true)).toEqual([1, 1, 1]);                                  // f = 0: no coverage at all, the texel is empty
   let prev = beam(0, true);

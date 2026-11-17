@@ -9,7 +9,9 @@
 // shared internals (hub): makeBake, and makeFill — the sky fill on its own, so a
 // bundle whose looks never open canopy_fill can leave it out whole.
 // ============================================================================
-import { atmosphere, ballisticK, beamLoss, clamp, lerp, sunIncidence } from './komorebi-math.js';
+import { clamp, lerp } from './komorebi-math.js';
+import { atmosphere, beamLoss, sunIncidence } from './komorebi-light.js';
+import { ballisticK } from './komorebi-leaf.js';
 import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES } from './komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
 import { SLAB, slabTable } from './komorebi-tree-view.js';

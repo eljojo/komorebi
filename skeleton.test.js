@@ -1,5 +1,5 @@
 // ============================================================================
-// The tree's grammar as a function (spec/model/canopy.md, P4a-1): growSkeleton(spec, rng, out) in komorebi-math.js, lifted out of
+// The tree's grammar as a function (spec/model/canopy.md, P4a-1): growSkeleton(spec, rng, out) in komorebi-grammar.js, lifted out of
 // buildGrove (with a flat `plane` mode no engine caller uses yet). The claim worth holding loudly is the one that
 // fails SILENTLY: this is a pure refactor, so the grove is the SAME grove — every segment and twig of every species,
 // bit for bit — because one reordered draw from the growth stream reshuffles every look there is. The fixtures below
@@ -16,6 +16,7 @@ import { expect, test } from "bun:test";
 import { DEFAULTS } from "./komorebi.js";
 import { makeGrove } from "./komorebi-grove.js";
 import * as math from "./komorebi-math.js";
+import * as grammarMod from "./komorebi-grammar.js";
 import { PRESETS, TREE_SPECIES } from "./presets.js";
 
 // ---- a digest of a grove's skeleton: FNV-1a over the bytes of every number, record by record, keys in sorted order,
@@ -153,7 +154,7 @@ if (FIXTURES) for (const [key, over] of Object.entries(CASES)) {   // no table: 
 const deepFreeze = (o) => { Object.values(o).forEach((v) => { if (v && typeof v === "object") deepFreeze(v); }); return Object.freeze(o); };
 const specOf = (over) => ({ levels: 4, kids: 3, lenRatio: 0.7, coneA: 0.6, droop: 0, phyllo: 0, leader: false, plane: false, base: [0, 0, 0], dir: [1, 0, 0], len: 1, level: 1, limb: 0, ...over });
 const fresh = () => ({ seg: [], tw: [] });
-const grown = (spec, seed = 7) => { const out = fresh(); math.growSkeleton(spec, math.mulberry32(seed), out); return out; };
+const grown = (spec, seed = 7) => { const out = fresh(); grammarMod.growSkeleton(spec, math.mulberry32(seed), out); return out; };
 const counting = (seed) => { const r = math.mulberry32(seed), draws = []; const rng = () => { const v = r(); draws.push(v); return v; }; rng.draws = draws; return rng; };
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const unit = (v) => { const m = Math.hypot(v[0], v[1], v[2]); return [v[0] / m, v[1] / m, v[2] / m]; };
@@ -178,7 +179,7 @@ test("the grammar, read off a stream that always says 0.5: each child is lenRati
   for (const [phyllo, spreadK, kids] of [[0, 1.0, 3], [1, 0.95, 3], [2, 0.96, 2]]) {   // spiral coneA·(0.55+0.9·½), whorled ·(0.7+0.5·½), opposite ·(0.9+0.12·½)
     const spec = specOf({ phyllo, kids, levels: 3 });
     const out = fresh();
-    math.growSkeleton(spec, HALF, out);
+    grammarMod.growSkeleton(spec, HALF, out);
     expect(out.seg.length).toBe(phyllo === 2 ? 7 : 13);   // 1 + 2 + 4, or 1 + 3 + 9
     for (const s of out.seg.slice(1)) {
       const p = parentOf(out, s);
@@ -193,7 +194,7 @@ test("the stream is drawn three times per child — azimuth, spread, length — 
   for (const [phyllo, kids, nodes] of [[0, 3, 40], [1, 3, 40], [2, 3, 15]]) {   // opposite forks are pairs whatever `kids` says
     for (const leader of [false, true]) {
       const rng = counting(11), out = fresh();
-      math.growSkeleton(specOf({ phyllo, kids, leader }), rng, out);
+      grammarMod.growSkeleton(specOf({ phyllo, kids, leader }), rng, out);
       expect(out.seg.length).toBe(nodes);
       expect(rng.draws.length, `phyllo ${phyllo} leader ${leader}`).toBe(3 * (nodes - 1));
     }
@@ -202,7 +203,7 @@ test("the stream is drawn three times per child — azimuth, spread, length — 
 
 test("one `out` collects every call into it: a twig's index is the count before it, which the segments of its own wood point back at", () => {
   const out = fresh(), rng = math.mulberry32(3);
-  for (let i = 0; i < 3; i++) math.growSkeleton(specOf({ dir: [Math.cos(i), Math.sin(i), 0.4], limb: i }), rng, out);
+  for (let i = 0; i < 3; i++) grammarMod.growSkeleton(specOf({ dir: [Math.cos(i), Math.sin(i), 0.4], limb: i }), rng, out);
   expect(out.tw.length).toBe(3 * 27);   // 3 limbs, 3^3 terminal twigs each (levels 4)
   const terminal = out.seg.filter((s) => s.tw >= 0);
   expect(terminal.map((s) => s.tw)).toEqual(Array.from({ length: out.tw.length }, (_, i) => i));
@@ -225,19 +226,19 @@ test("coneDirPlane is coneDir with the out-of-plane part dropped: unit, z = 0, a
   for (const hd of [0, 0.7, 2.1, -1.3, 3.0]) {
     const d = [Math.cos(hd), Math.sin(hd), 0];
     for (const az of [0, 0.4, 1.57, 2.5, Math.PI, 4.4, 6.0]) for (const spread of [0, 0.3, 0.9, 1.4]) {
-      const c = math.coneDirPlane(d, az, spread);
+      const c = grammarMod.coneDirPlane(d, az, spread);
       expect(c[2]).toBe(0);
       expect(Math.hypot(c[0], c[1])).toBeCloseTo(1, 14);
-      const full = math.coneDir(d, az, spread), m = Math.hypot(full[0], full[1]);
+      const full = grammarMod.coneDir(d, az, spread), m = Math.hypot(full[0], full[1]);
       expect(c[0]).toBeCloseTo(full[0] / m, 12);
       expect(c[1]).toBeCloseTo(full[1] / m, 12);
     }
   }
   const d = [0, 1, 0];
-  const held = math.coneDirPlane(d, Math.PI / 2, 0.8);                // az at the plane's normal: the whole cone offset points out of it, so the heading holds
+  const held = grammarMod.coneDirPlane(d, Math.PI / 2, 0.8);                // az at the plane's normal: the whole cone offset points out of it, so the heading holds
   expect(held[0]).toBeCloseTo(0, 12);
   expect(held[1]).toBeCloseTo(1, 12);
-  const left = math.coneDirPlane(d, 0, 0.5), right = math.coneDirPlane(d, Math.PI, 0.5);
+  const left = grammarMod.coneDirPlane(d, 0, 0.5), right = grammarMod.coneDirPlane(d, Math.PI, 0.5);
   expect(left[0] * -right[0]).toBeGreaterThan(0);                     // az 0 and π fork to opposite sides
   expect(angle(left, d)).toBeCloseTo(0.5, 12);
 });
@@ -252,13 +253,13 @@ test("plane: every z is 0, every heading is a unit vector in the plane, and the 
     expect(flat.seg.length, tag).toBe(tree.seg.length);            // droop is 0 here, so a node is one segment in both
     expect(flat.tw.length, tag).toBe(tree.tw.length);
     const a = counting(5), b = counting(5);
-    math.growSkeleton({ ...spec, plane: true }, a, fresh());
-    math.growSkeleton(spec, b, fresh());
+    grammarMod.growSkeleton({ ...spec, plane: true }, a, fresh());
+    grammarMod.growSkeleton(spec, b, fresh());
     expect(a.draws, tag).toEqual(b.draws);                         // the same draws in the same order: the plane changes where a child points, not what is asked of the stream
   }
   // headings unit: with the stream pinned at ½ every branch is exactly lenRatio^(level−1) long, which a heading of any other length would not give
   const out = fresh();
-  math.growSkeleton(specOf({ plane: true, droop: 0.5 }), HALF, out);
+  grammarMod.growSkeleton(specOf({ plane: true, droop: 0.5 }), HALF, out);
   for (const s of out.seg) expect(Math.hypot(...sub(s.b, s.a))).toBeCloseTo(0.7 ** (s.level - 1), 12);
 });
 

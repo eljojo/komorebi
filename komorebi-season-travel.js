@@ -1,4 +1,7 @@
-import {DEG, TAU, beamExposure, cameraPose, leafClock, lerp, lerpAngle, smoothstep, springing, turnBack} from './komorebi-math.js';
+import { DEG, TAU, lerp, lerpAngle, smoothstep, turnBack } from './komorebi-math.js';
+import { beamExposure } from './komorebi-light.js';
+import { cameraPose } from './komorebi-camera.js';
+import { leafClock, springing } from './komorebi-season.js';
 import {CANOPY_MORPH_MAX, DEFAULTS, SEASON_KEYS} from './komorebi-params.js';
 import {litterAlbedo,litterAge,litterLanding} from './komorebi-litter.js';
 import {makeBake} from './komorebi-bake.js';

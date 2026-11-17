@@ -17,6 +17,7 @@ import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEFAULTS, CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, TRANSPORT_CAMERAS, buildTransport } from "./komorebi.js";
 import * as M from "./komorebi-math.js";
+import * as leafMod from "./komorebi-leaf.js";
 import * as F from "./komorebi-fill.js";
 import { FS_FILL, FS_FAITH_SEG, GLSL_SKY_RAY } from "./komorebi-shaders.js";
 
@@ -35,7 +36,7 @@ const stack = (seed, nL = 3, wood = false) => H4.slice(0, nL).map((h, L) => ({
   c: (x, y) => 2 * u01(seed, 3, Math.floor(x * 7), Math.floor(y * 7), L),
   ...(wood ? { w: (x, y) => 0.1 + 0.9 * u01(seed, 5, Math.floor(x * 7), Math.floor(y * 7), L) } : {}),
 }));
-const kOf = (seed) => M.ballisticK((hash(seed, 7, 7) % 1000) / 1000);          // d anywhere in [0, 0.999]
+const kOf = (seed) => leafMod.ballisticK((hash(seed, 7, 7) % 1000) / 1000);          // d anywhere in [0, 0.999]
 const pt = (seed, a) => [(hash(seed, a, 0) % 4000) / 1000 - 2, (hash(seed, a, 1) % 4000) / 1000 - 2];
 const dir = (seed, a) => [((hash(seed, a, 0) % 3000) - 1500) / 1000, ((hash(seed, a, 1) % 3000) - 1500) / 1000];   // a plan travel per metre of rise, up to ~56° off the zenith
 const zero = [0, 0, 0];
@@ -85,7 +86,7 @@ test("what does NOT hold off the sun's ray: Π tb + glow can exceed Π t — a l
   // upper layer, and the eye looks at it through a dense leaf in the upper layer, at another plan point. Both are in the model: the
   // sun's path to the lower leaf is clear (A = 1), the eye ray's own beam is nearly dead. The glow is real light — a lit leaf IS
   // visible through a leaf in front of it — and it is more than the eye ray's Π t − Π tb, which counts the SAME column both ways.
-  const k = M.ballisticK(0.95);
+  const k = leafMod.ballisticK(0.95);
   const layers = [
     { h: 2, t: () => [0.5, 0.5, 0.5], c: () => 1 },
     { h: 3, t: () => [1, 1, 1], c: (x) => (x < 0.5 ? 3 : 0) },              // dense at the eye's point (x 0), a gap at the sun's (x 1)
@@ -100,7 +101,7 @@ test("what does NOT hold off the sun's ray: Π tb + glow can exceed Π t — a l
 });
 
 test("a wood-only ray emits exactly 0 — at any d, at any sky_scatter — and wood only ever takes light away", () => {
-  const k = M.ballisticK(0.95);
+  const k = leafMod.ballisticK(0.95);
   const bare = (seed) => H4.slice(0, 3).map((h, L) => ({ h, t: () => [1, 1, 1], c: () => 0, w: (x, y) => 0.05 + 0.9 * u01(seed, 5, Math.floor(x * 7), Math.floor(y * 7), L) }));
   for (let seed = 0; seed < 300; seed++) {
     const layers = bare(seed), p = pt(seed, 3), s = dir(seed, 5), g = dir(seed, 7);
@@ -185,7 +186,7 @@ test("skyRayRef at k = 0 IS the d = 0 ray of 679c748, bit for bit — wood in th
 });
 
 test("at d > 0 sky_scatter is retired: the frame is one frame whatever it says — and at d = 0 it is a live knob (the control)", () => {
-  const AMB = [2.3, 2.8, 3.9], k = M.ballisticK(0.9);
+  const AMB = [2.3, 2.8, 3.9], k = leafMod.ballisticK(0.9);
   for (let seed = 0; seed < 300; seed++) {
     const layers = stack(seed, 1 + (seed % 4), true), p = pt(seed, 3), s = dir(seed, 5), g = dir(seed, 7);
     const at = (skyScatter, kk) => F.skySeenRef(layers, p, s, g, { sun: SUN, ambient: AMB, disk: 40, k: kk, skyScatter, wood: 0.7 });
@@ -201,15 +202,15 @@ test("the mesopic cue keeps its meaning: acc is the sky's transmittance, and no 
   for (let seed = 0; seed < 300; seed++) {
     const layers = stack(seed, 1 + (seed % 4), true), p = pt(seed, 3), s = dir(seed, 5), g = dir(seed, 7);
     const at = (kk) => F.skySeenRef(layers, p, s, g, { sun: SUN, ambient: [1, 1, 1], disk: 9, k: kk, skyScatter: 0, wood: 0.6 });
-    expect(at(M.ballisticK(0.95)).acc, `seed ${seed}`).toEqual(at(M.ballisticK(0.4)).acc);   // the uniform-sky identity: T never reads k
-    expect(at(M.ballisticK(0.95)).T, `seed ${seed}`).toEqual(at(M.ballisticK(0.4)).T);
+    expect(at(leafMod.ballisticK(0.95)).acc, `seed ${seed}`).toEqual(at(leafMod.ballisticK(0.4)).acc);   // the uniform-sky identity: T never reads k
+    expect(at(leafMod.ballisticK(0.95)).T, `seed ${seed}`).toEqual(at(leafMod.ballisticK(0.4)).T);
   }
 });
 
 test("...and between d = 0 and d > 0 the sky moves only where a texel has a GAP: full texels (c ≥ 1) are the d = 0 sky, partial ones the mixture, lighter than the slab", () => {
   // d = 0 keeps the slab (soft edges depth-averaged: the named approximation, kept for byte-identity); d > 0 reconstructs the mixture, which Jensen
   // says is never darker. A stack of full texels cannot tell the two apart.
-  const k = M.ballisticK(0.95);
+  const k = leafMod.ballisticK(0.95);
   const fullStack = (seed, nL) => stack(seed, nL, true).map((l, L) => ({ ...l, c: (x, y) => 1 + u01(seed, 3, Math.floor(x * 7), Math.floor(y * 7), L) }));
   let lighter = 0;
   for (let seed = 0; seed < 400; seed++) {
@@ -229,7 +230,7 @@ test("monotone in d along the sun's ray: T_src falls, the glow rises, and their 
     const layers = stack(seed, 1 + (seed % 4)), p = pt(seed, 3), s = dir(seed, 5);
     let prevB = null, prevL = null, first = null;
     for (let i = 1; i <= 40; i++) {
-      const r = F.skyRayRef(layers, p, s, s, [1, 1, 1], M.ballisticK(i / 41));
+      const r = F.skyRayRef(layers, p, s, s, [1, 1, 1], leafMod.ballisticK(i / 41));
       first ||= r;
       for (let c = 0; c < 3; c++) {
         expect(r.Tb[c] + r.L[c], `seed ${seed} d ${i / 41}`).toBeCloseTo(r.T[c], 12);
@@ -247,7 +248,7 @@ test("monotone in d along the sun's ray: T_src falls, the glow rises, and their 
 });
 
 test("sunglasses with leaks: one unit of coverage keeps (1−d) of the disk and gives its glow; a gap keeps all of it", () => {
-  const d = 0.95, k = M.ballisticK(d), t = [0.2, 0.6, 0.1];
+  const d = 0.95, k = leafMod.ballisticK(d), t = [0.2, 0.6, 0.1];
   const leaf = [{ h: 3, t: () => t, c: () => 1 }], gap = [{ h: 3, t: () => [1, 1, 1], c: () => 0 }];
   const a = F.skySeenRef(leaf, [0, 0], [0, 0], [0, 0], { sun: [1, 1, 1], ambient: [0, 0, 0], disk: 10, k, wood: 1 });
   for (let c = 0; c < 3; c++) {
@@ -262,7 +263,7 @@ test("sunglasses with leaks: one unit of coverage keeps (1−d) of the disk and 
 });
 
 test("srcSeen is the leaked disk ALONE and is added last: rad = (sky + glow) + srcSeen", () => {
-  const AMB = [2.3, 2.8, 3.9], k = M.ballisticK(0.95);
+  const AMB = [2.3, 2.8, 3.9], k = leafMod.ballisticK(0.95);
   for (let seed = 0; seed < 200; seed++) {
     const layers = stack(seed, 3, true), p = pt(seed, 3), s = dir(seed, 5), g = dir(seed, 7);
     const r = F.skySeenRef(layers, p, s, g, { sun: SUN, ambient: AMB, disk: 55, k, wood: 0.9 });

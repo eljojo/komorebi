@@ -1,6 +1,10 @@
 // Litter or shadow footprints become the overhead grove through one leaf field.
 // Flight is an authored transition path, with live destination wind and a deterministic detour around the eye.
-import {cameraPose,lerp,lerpAngle,smoothstep,DEG,TAU,leafClock,atmosphere,ballisticK,irisRoute,irisStep} from './komorebi-math.js';
+import { lerp, lerpAngle, smoothstep, DEG, TAU, irisRoute, irisStep } from './komorebi-math.js';
+import { cameraPose } from './komorebi-camera.js';
+import { leafClock } from './komorebi-season.js';
+import { atmosphere } from './komorebi-light.js';
+import { ballisticK } from './komorebi-leaf.js';
 import {CANOPY_KEYS,TOPO_KEYS,SEASON_KEYS,DEFAULTS,CANOPY_MORPH_MAX} from './komorebi-params.js';
 import {pairLeaves,moveLeaves} from './komorebi-leaf-travel.js';
 import {VS_RISE,FS_RISE,VS_RISE_SKY,FS_RISE_SKY} from './komorebi-shaders.js';

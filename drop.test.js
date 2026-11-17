@@ -8,13 +8,15 @@
 import { test, expect } from "bun:test";
 import { CANOPY_KEYS, DEFAULTS } from "./komorebi.js";
 import * as math from "./komorebi-math.js";
+import * as seasonMod from "./komorebi-season.js";
+import * as leafMod from "./komorebi-leaf.js";
 import { makeEditorTools } from "./komorebi-editor-tools.js";
 import { makeGrove } from "./komorebi-grove.js";
 import { PRESETS } from "./presets.js";
 
 const fall = (over) => ({ ...DEFAULTS, ...over });
 const tauOf = (p) => [-Math.log(p.trans_r), -Math.log(p.trans_g), -Math.log(p.trans_b)];
-const { DROP_EPS: EPS } = math;
+const { DROP_EPS: EPS } = seasonMod;
 
 // ---- the pure laws --------------------------------------------------------------------------------------------
 test("the family ships off: leaf_drop 0 is the gate, and all four are canopy knobs (they morph the same grove)", () => {
@@ -28,12 +30,12 @@ test("the family ships off: leaf_drop 0 is the gate, and all four are canopy kno
 
 test("dropHash: a pure function of (seed, cluster, leaf) in [0,1), uniform, and nobody else's stream", () => {
   const cells = Array.from({ length: 2000 }, (_, i) => [Math.floor(i / 25), i % 25]);
-  const h = cells.map(([j, k]) => math.dropHash(77, j, k));
+  const h = cells.map(([j, k]) => seasonMod.dropHash(77, j, k));
   for (let i = 0; i < 2000; i++) {
     expect(h[i] >= 0 && h[i] < 1).toBe(true);
-    expect(math.dropHash(77, ...cells[i])).toBe(h[i]);                      // pure: same address, same number
+    expect(seasonMod.dropHash(77, ...cells[i])).toBe(h[i]);                      // pure: same address, same number
   }
-  expect(math.dropHash(78, 5, 3)).not.toBe(math.dropHash(77, 5, 3));       // the seed is in it
+  expect(seasonMod.dropHash(78, 5, 3)).not.toBe(seasonMod.dropHash(77, 5, 3));       // the seed is in it
   expect(new Set(h).size).toBe(2000);                                       // and so is each leaf
   const mean = h.reduce((s, v) => s + v, 0) / h.length;
   expect(Math.abs(mean - 0.5)).toBeLessThan(0.03);                          // uniform: ~4σ of the mean of 2000 draws
@@ -57,49 +59,49 @@ test("dropHash: a pure function of (seed, cluster, leaf) in [0,1), uniform, and 
 
 test("dropPhase: mix(hash, 1 − u, drop_exposure) — the hash itself at 0, the exposed-first order at 1", () => {
   for (const [hsh, u] of [[0.13, 0.9], [0.77, 0.02], [0.5, 1], [0.999, 0.5]]) {
-    expect(Object.is(math.dropPhase(hsh, u, 0), hsh)).toBe(true);           // no arithmetic: the hash to the bit
-    expect(math.dropPhase(hsh, u, 1)).toBe(math.turnOrder(u));              // the same 1 − u the turn uses, clamped under 1
-    const mid = math.dropPhase(hsh, u, 0.5);
+    expect(Object.is(seasonMod.dropPhase(hsh, u, 0), hsh)).toBe(true);           // no arithmetic: the hash to the bit
+    expect(seasonMod.dropPhase(hsh, u, 1)).toBe(seasonMod.turnOrder(u));              // the same 1 − u the turn uses, clamped under 1
+    const mid = seasonMod.dropPhase(hsh, u, 0.5);
     expect(mid).toBeGreaterThanOrEqual(Math.min(hsh, 1 - u) - 1e-12);
     expect(mid).toBeLessThanOrEqual(Math.max(hsh, 1 - u) + 1e-12);
   }
   for (const w of [0.3, 1]) {                                               // exposed first: a brighter leaf never gets a LATER phase
     let prev = Infinity;
-    for (let i = 1; i <= 20; i++) { const phi = math.dropPhase(0.4, i / 20, w); expect(phi <= prev).toBe(true); expect(phi >= 0 && phi < 1).toBe(true); prev = phi; }
+    for (let i = 1; i <= 20; i++) { const phi = seasonMod.dropPhase(0.4, i / 20, w); expect(phi <= prev).toBe(true); expect(phi >= 0 && phi < 1).toBe(true); prev = phi; }
   }
-  expect(math.dropPhase(0.4, 0, 1)).toBeLessThan(1);                        // a leaf with no light at all still has a day
+  expect(seasonMod.dropPhase(0.4, 0, 1)).toBeLessThan(1);                        // a leaf with no light at all still has a day
 });
 
 test("dropDay: drop_start + drop_span·φ/leaf_drop below leaf_drop, never at or above it", () => {
   const P = fall({ leaf_drop: 0.6, drop_start: 0.7, drop_span: 0.3 });
-  for (const phi of [0, 0.1, 0.3, 0.59]) expect(math.dropDay(P, phi)).toBeCloseTo(0.7 + 0.3 * phi / 0.6, 12);
-  expect(math.dropDay(P, 0)).toBe(0.7);                                     // the first leaf goes at drop_start, the last of the dropping share at start + span
-  expect(math.dropDay(P, 0.6)).toBe(Infinity);                              // the retention floor 1 − leaf_drop: the marcescent tail
-  expect(math.dropDay(P, 0.99)).toBe(Infinity);
-  expect(math.dropDay(fall({ leaf_drop: 0 }), 0)).toBe(Infinity);           // the gate: nothing ever drops
-  expect(math.dropDay(fall({ leaf_drop: 1 }), 0.999999)).toBeLessThan(1);   // leaf_drop 1: every leaf has a day, inside the span
+  for (const phi of [0, 0.1, 0.3, 0.59]) expect(seasonMod.dropDay(P, phi)).toBeCloseTo(0.7 + 0.3 * phi / 0.6, 12);
+  expect(seasonMod.dropDay(P, 0)).toBe(0.7);                                     // the first leaf goes at drop_start, the last of the dropping share at start + span
+  expect(seasonMod.dropDay(P, 0.6)).toBe(Infinity);                              // the retention floor 1 − leaf_drop: the marcescent tail
+  expect(seasonMod.dropDay(P, 0.99)).toBe(Infinity);
+  expect(seasonMod.dropDay(fall({ leaf_drop: 0 }), 0)).toBe(Infinity);           // the gate: nothing ever drops
+  expect(seasonMod.dropDay(fall({ leaf_drop: 1 }), 0.999999)).toBeLessThan(1);   // leaf_drop 1: every leaf has a day, inside the span
   let prev = -1;
-  for (let i = 0; i < 60; i++) { const D = math.dropDay(P, i / 100); expect(D >= prev).toBe(true); prev = D; }
+  for (let i = 0; i < 60; i++) { const D = seasonMod.dropDay(P, i / 100); expect(D >= prev).toBe(true); prev = D; }
 });
 
 test("retention: exactly 1 until a leaf's fade begins, w(D − ε) = 1, w(D) = 0, continuous, never rises", () => {
   for (const D of [0.7, 0.7123, 0.85, 0.999, 1]) {
-    for (let p = 0; p <= D - EPS + 1e-12; p += 0.013) expect(Object.is(math.retention(D, p), 1), `D ${D} p ${p}`).toBe(true);
-    expect(Object.is(math.retention(D, D - EPS), 1)).toBe(true);
-    expect(math.retention(D, D)).toBe(0);
-    expect(math.retention(D, D + 0.5)).toBe(0);
+    for (let p = 0; p <= D - EPS + 1e-12; p += 0.013) expect(Object.is(seasonMod.retention(D, p), 1), `D ${D} p ${p}`).toBe(true);
+    expect(Object.is(seasonMod.retention(D, D - EPS), 1)).toBe(true);
+    expect(seasonMod.retention(D, D)).toBe(0);
+    expect(seasonMod.retention(D, D + 0.5)).toBe(0);
     let prev = 1, worst = 0;
     const dp = 1e-4;
     for (let p = D - 2 * EPS; p <= D + EPS; p += dp) {
-      const w = math.retention(D, p);
+      const w = seasonMod.retention(D, p);
       expect(w >= 0 && w <= 1).toBe(true);
       expect(w <= prev + 1e-15, `w rose at p ${p}`).toBe(true);
       worst = Math.max(worst, Math.abs(w - prev)); prev = w;
     }
     expect(worst).toBeLessThan(1.5 / EPS * dp * 1.001);                     // smoothstep's steepest slope is 1.5/ε: no step anywhere
   }
-  for (const p of [0, 0.5, 1, 7]) expect(Object.is(math.retention(Infinity, p), 1)).toBe(true);   // a leaf that never drops never feels it
-  expect(math.retention(0.8, 0.8 - EPS / 2)).toBeCloseTo(0.5, 12);          // the fade is a smoothstep: half way at the middle
+  for (const p of [0, 0.5, 1, 7]) expect(Object.is(seasonMod.retention(Infinity, p), 1)).toBe(true);   // a leaf that never drops never feels it
+  expect(seasonMod.retention(0.8, 0.8 - EPS / 2)).toBeCloseTo(0.5, 12);          // the fade is a smoothstep: half way at the middle
 });
 
 // ---- the grove: one place applies the laws, and must not touch the growth RNG ------------------------------------
@@ -153,7 +155,7 @@ function phasesOf(over, faithful = false) {
 const weightsAt = (leaves, phases, P, L, p) => leaves.map((l) => {
   const phi = phases.get(l.key);
   const D = phi < L ? P.drop_start + P.drop_span * phi / L : Infinity;
-  return math.retention(D, p);
+  return seasonMod.retention(D, p);
 });
 
 test("below the first fade the grove is P1's to the bit: phenology ≤ drop_start − ε, whatever leaf_drop says", () => {
@@ -246,8 +248,8 @@ test("exposed first: at drop_exposure 1 the leaves that let go are the lit ones;
   const full = grow(dense({ phenology: 0.5 }), true), leaves = leavesOf(full.faithLeaves);
   const n = leaves.length;
   // the grid, from the buffer: float32 positions re-rank a few dozen leaves in ten thousand, which a MEAN comparison does not feel
-  const ex = math.exposureGrid(leaves.map((l) => l.x), leaves.map((l) => l.y), leaves.map((l) => l.z), leaves.map((l) => Math.PI * full.faithLeaves[l.i + 2] * full.faithLeaves[l.i + 3] * l.fade), full.params.canopy_extent_m);
-  const u = math.exposureRank(ex);
+  const ex = seasonMod.exposureGrid(leaves.map((l) => l.x), leaves.map((l) => l.y), leaves.map((l) => l.z), leaves.map((l) => Math.PI * full.faithLeaves[l.i + 2] * full.faithLeaves[l.i + 3] * l.fade), full.params.canopy_extent_m);
+  const u = seasonMod.exposureRank(ex);
   const gap = (over) => {
     const phases = phasesOf({ ...dense({}), ...over }, true);
     const w = weightsAt(leaves, phases, full.params, 0.5, 0.9);
@@ -268,8 +270,8 @@ test("exposed first: at drop_exposure 1 the leaves that let go are the lit ones;
 test("turn_exposure 0 does not switch the light off: the grid still runs for drop_exposure, and the leaf colour is P0's", () => {
   const over = dense({ phenology: 0.9, anthocyanin: 0.8, tannin: 0.3, turn_exposure: 0, drop_exposure: 1, leaf_drop: 0.5 });
   const full = grow({ ...over, leaf_drop: 0 }, true), leaves = leavesOf(full.faithLeaves);
-  const ex = math.exposureGrid(leaves.map((l) => l.x), leaves.map((l) => l.y), leaves.map((l) => l.z), leaves.map((l) => Math.PI * full.faithLeaves[l.i + 2] * full.faithLeaves[l.i + 3] * l.fade), full.params.canopy_extent_m);
-  const u = math.exposureRank(ex);
+  const ex = seasonMod.exposureGrid(leaves.map((l) => l.x), leaves.map((l) => l.y), leaves.map((l) => l.z), leaves.map((l) => Math.PI * full.faithLeaves[l.i + 2] * full.faithLeaves[l.i + 3] * l.fade), full.params.canopy_extent_m);
+  const u = seasonMod.exposureRank(ex);
   const phases = phasesOf({ ...over, leaf_drop: 1 }, true);
   const w = weightsAt(leaves, phases, full.params, 0.5, 0.9);
   let sd = 0, nd = 0, sr = 0, nr = 0;
@@ -282,14 +284,14 @@ test("turn_exposure 0 does not switch the light off: the grid still runs for dro
     if (!(w[s] > 0)) continue;
     const off = k++ * SF;
     if (w[s] !== 1) continue;
-    const want = math.leafTau(tau, r.params, r.params.seed, leaves[s].j, leaves[s].k, out);
+    const want = seasonMod.leafTau(tau, r.params, r.params.seed, leaves[s].j, leaves[s].k, out);
     for (let c = 0; c < 3; c++) expect(r.faithLeaves[off + 8 + c]).toBe(Math.fround(want[c] * leaves[s].fade));
     seen++;
   }
   expect(seen).toBeGreaterThan(1000);
   // and with both knobs at 0 nothing needs the light: no hash of it can matter, the drop is the hash alone
   const flat = phasesOf({ ...over, drop_exposure: 0 }, true);
-  for (const l of leaves.slice(0, 300)) expect(flat.get(l.key)).toBeCloseTo(math.dropHash(r.params.seed, l.j, l.k), 12);
+  for (const l of leaves.slice(0, 300)) expect(flat.get(l.key)).toBeCloseTo(seasonMod.dropHash(r.params.seed, l.j, l.k), 12);
 });
 
 test("the drop day is the leaf's own: at drop_exposure 0 it is dropHash(seed, j, k), whatever the grove around it does", () => {
@@ -298,7 +300,7 @@ test("the drop day is the leaf's own: at drop_exposure 0 it is dropHash(seed, j,
     const full = grow({ ...over, leaf_drop: 0 }, faithful), r = grow({ ...over, leaf_drop: 1 }, faithful);
     const phases = phasesOf(over, faithful);
     expect(phases.size).toBe(full.faithLeaves.length / SF);
-    for (const l of leavesOf(full.faithLeaves)) expect(phases.get(l.key), l.key).toBeCloseTo(math.dropHash(r.params.seed, l.j, l.k), 12);
+    for (const l of leavesOf(full.faithLeaves)) expect(phases.get(l.key), l.key).toBeCloseTo(seasonMod.dropHash(r.params.seed, l.j, l.k), 12);
     // a different seed grows a different grove AND different days; the same seed two ways grows the same days
     const again = phasesOf(over, faithful);
     for (const [key, v] of phases) expect(again.get(key)).toBe(v);
@@ -325,7 +327,7 @@ test("exposure is the season's: a leaf's day does not depend on the phenology it
 // The litter carries the grove's own doubles (x, y, h, the half-axes, the fade), so exposureGrid over them IS the grove's exposure, bit for bit,
 // and the claims below can be exact.
 const TIES = { phenology: 1, leaf_drop: 1, drop_exposure: 1, exposure_absolute: 0 };
-const litterExposure = (r) => math.exposureGrid(
+const litterExposure = (r) => seasonMod.exposureGrid(
   Float64Array.from(r.litter, (l) => l.x), Float64Array.from(r.litter, (l) => l.y), Float64Array.from(r.litter, (l) => l.h),
   Float64Array.from(r.litter, (l) => Math.PI * l.size[0] * l.size[1] * l.fade), r.params.canopy_extent_m);
 
@@ -341,7 +343,7 @@ test("no two leaves share a day: at drop_exposure 1 the days are exactly drop_st
 
 test("inside the sunlit shell the leaf that started turning first lets go first", () => {
   const r = grow(dense(TIES), true), ex = litterExposure(r);
-  const shell = r.litter.filter((_, i) => ex[i] === 1).map((l) => ({ D: l.D, phi: math.leafClock(r.params.seed, l.j, l.k) })).sort((a, b) => a.phi - b.phi);
+  const shell = r.litter.filter((_, i) => ex[i] === 1).map((l) => ({ D: l.D, phi: seasonMod.leafClock(r.params.seed, l.j, l.k) })).sort((a, b) => a.phi - b.phi);
   expect(shell.length, "not vacuous: a real shell, a tenth of the grove").toBeGreaterThan(500);
   expect(new Set(shell.map((s) => s.phi)).size, "no two clocks collide").toBe(shell.length);
   for (let i = 1; i < shell.length; i++) expect(shell[i - 1].D < shell[i].D, `clock ${shell[i - 1].phi} (day ${shell[i - 1].D}) vs ${shell[i].phi} (day ${shell[i].D})`).toBe(true);
@@ -354,7 +356,7 @@ test("one u: the litter's colour is leafTau at the order its DAY implies — the
     expect(r.litter.length, `phenology ${phenology}`).toBeGreaterThan(phenology === 1 ? 10000 : 5000);
     let worst = 0;
     for (const l of r.litter) {
-      const u = 1 - (l.D - P.drop_start) / P.drop_span, want = math.leafTau(tau, P, P.seed, l.j, l.k, out, math.turnOrder(u), math.redGain(u));
+      const u = 1 - (l.D - P.drop_start) / P.drop_span, want = seasonMod.leafTau(tau, P, P.seed, l.j, l.k, out, seasonMod.turnOrder(u), seasonMod.redGain(u));
       for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(l.tau[c] - want[c]));
     }
     expect(worst, `phenology ${phenology}`).toBeLessThan(1e-9);
@@ -429,7 +431,7 @@ test("w multiplies the leaf's coverage: tau and the fade it rides on scale toget
     expect(fading.length, "leaves are mid-fade at this phenology").toBeGreaterThan(10);
     const out = [0, 0, 0];
     alive.forEach((s, n) => {
-      const f = leaves[s], o = n * SF, lt = math.leafTau(tau, P, P.seed, f.j, f.k, out), cf = f.fade * w[s];
+      const f = leaves[s], o = n * SF, lt = seasonMod.leafTau(tau, P, P.seed, f.j, f.k, out), cf = f.fade * w[s];
       expect(r.faithLeaves[o + 17]).toBeCloseTo(cf, 6);                                     // the fade the bake writes into alpha
       for (let c = 0; c < 3; c++) expect(r.faithLeaves[o + 8 + c]).toBeCloseTo(lt[c] * cf, 5);   // the optical depth, scaled by the SAME factor
     });
@@ -471,7 +473,7 @@ test("the litter's colour is the leaf's own tau: leafTau at this season, before 
   const r = grow({ ...over, leaf_drop: 0.7 }, true), tau = tauOf(r.params), out = [0, 0, 0];
   expect(r.litter.length).toBeGreaterThan(10);
   for (const l of r.litter) {
-    const want = math.leafTau(tau, r.params, r.params.seed, l.j, l.k, out);
+    const want = seasonMod.leafTau(tau, r.params, r.params.seed, l.j, l.k, out);
     for (let c = 0; c < 3; c++) expect(l.tau[c]).toBe(want[c]);
   }
 });
@@ -552,18 +554,18 @@ function oldLeafTau(tauSummer, P, seed, j, k, out, phiE, gainE) {
   if (w > 0) a *= 1 + (gainE - 1) * w;
   const wall = [0, 0, 0], cell = [0, 0, 0];
   for (let c = 0; c < 3; c++) {
-    const base = tauSummer[c] * (1 - s), pig = math.TAU_CAROTENOID[c] + b * math.TAU_TANNIN[c];
+    const base = tauSummer[c] * (1 - s), pig = seasonMod.TAU_CAROTENOID[c] + b * seasonMod.TAU_TANNIN[c];
     wall[c] = base + s * pig;
-    cell[c] = base + s * (pig + a * math.TAU_ANTHOCYANIN[c]);
+    cell[c] = base + s * (pig + a * seasonMod.TAU_ANTHOCYANIN[c]);
   }
-  return math.mixtureTau(wall, cell, P.wall_fraction, out);
+  return leafMod.mixtureTau(wall, cell, P.wall_fraction, out);
 }
 
 // each leaf's own turn phase φ′, by address, off a reference grove that lets every leaf go on today's drop (after the turn off, drop_exposure 1: D = drop_start +
 // drop_span·turnOrder(u)), so the u is the grove's own and the claim under test does not mark its own homework
 function turnPhases(over, faithful = false) {
   const ref = grow({ ...over, leaf_drop: 1, phenology: 1, drop_after_turn: 0, drop_exposure: 1 }, faithful), P = ref.params, m = new Map();
-  for (const l of ref.litter) m.set(`${l.j}/${l.k}`, math.turnPhase(P, math.leafClock(P.seed, l.j, l.k), P.turn_exposure > 0 ? (l.D - P.drop_start) / P.drop_span : undefined));
+  for (const l of ref.litter) m.set(`${l.j}/${l.k}`, seasonMod.turnPhase(P, seasonMod.leafClock(P.seed, l.j, l.k), P.turn_exposure > 0 ? (l.D - P.drop_start) / P.drop_span : undefined));
   return m;
 }
 const at = (P, p) => ({ ...P, phenology: p });
@@ -585,13 +587,13 @@ test("after the turn off: senescence is today's expression to the bit, leafTau i
     for (const [turn_span, turn_spread] of [[0.3, 0.18], [0.3, 0.29], [0.3, 0.5], [0.3, -1], [0.3, 0], [1e-6, 0.1], [0, 0], [0.05, 0.05]]) grid.push([phi, p, turn_span, turn_spread]);
   for (const flag of [undefined, 0]) for (const [phi, p, turn_span, turn_spread] of grid) {
     const P = { ...DEFAULTS, phenology: p, turn_span, turn_spread, ...(flag === undefined ? {} : { drop_after_turn: flag }) };
-    expect(Object.is(math.senescence(P, phi), oldSenescence(P, phi)), JSON.stringify([phi, p, turn_span, turn_spread, flag])).toBe(true);
+    expect(Object.is(seasonMod.senescence(P, phi), oldSenescence(P, phi)), JSON.stringify([phi, p, turn_span, turn_spread, flag])).toBe(true);
   }
   const tau = [0.9, 0.7, 2.1];
   for (const flag of [undefined, 0]) for (const p of [0.6, 0.7, 0.8, 0.95]) for (const te of [0, 0.5, 1]) for (const [j, k] of [[0, 0], [3, 9], [41, 2]]) {
     const P = { ...DEFAULTS, ...CAP, turn_exposure: te, phenology: p, ...(flag === undefined ? {} : { drop_after_turn: flag }) };
     for (const [phiE, gainE] of [[undefined, undefined], [0.31, 1.2], [0.97, 0.6]]) {
-      const got = math.leafTau(tau, P, 7, j, k, [0, 0, 0], phiE, gainE), want = oldLeafTau(tau, P, 7, j, k, [0, 0, 0], phiE, gainE);
+      const got = seasonMod.leafTau(tau, P, 7, j, k, [0, 0, 0], phiE, gainE), want = oldLeafTau(tau, P, 7, j, k, [0, 0, 0], phiE, gainE);
       for (let c = 0; c < 3; c++) expect(Object.is(got[c], want[c]), JSON.stringify([flag, p, te, j, k, phiE, c])).toBe(true);
     }
   }
@@ -600,22 +602,22 @@ test("after the turn off: senescence is today's expression to the bit, leafTau i
 test("turnPhase is leafTau's phase, in leafTau's float order, and the window at 1 is each leaf's own: L = span − spread from its own start", () => {
   const P = { ...DEFAULTS, turn_exposure: 0.37 };
   for (const [phi, phiE] of [[0.2, 0.9], [0.77, 0.1], [0.5, 0.5]]) {
-    expect(Object.is(math.turnPhase(P, phi, phiE), phi + (phiE - phi) * 0.37)).toBe(true);
-    expect(Object.is(math.turnPhase(P, phi, undefined), phi)).toBe(true);        // no exposure handed: the clock itself
-    expect(Object.is(math.turnPhase({ ...P, turn_exposure: 0 }, phi, phiE), phi)).toBe(true);
+    expect(Object.is(seasonMod.turnPhase(P, phi, phiE), phi + (phiE - phi) * 0.37)).toBe(true);
+    expect(Object.is(seasonMod.turnPhase(P, phi, undefined), phi)).toBe(true);        // no exposure handed: the clock itself
+    expect(Object.is(seasonMod.turnPhase({ ...P, turn_exposure: 0 }, phi, phiE), phi)).toBe(true);
   }
   const on = { ...DEFAULTS, drop_after_turn: 1 }, span = 0.3, spread = 0.18, L = span - spread;
   for (const phi of [0, 0.25, 0.6, 0.999]) {
     const T0 = 0.6 + phi * spread;
-    expect(math.senescence(at(on, T0), phi)).toBe(0);                            // s = 0 at its own start
-    expect(math.senescence(at(on, T0 + L / 2), phi)).toBeCloseTo(0.5, 12);
-    expect(math.senescence(at(on, T0 + L), phi)).toBe(1);                        // finished L after it started
+    expect(seasonMod.senescence(at(on, T0), phi)).toBe(0);                            // s = 0 at its own start
+    expect(seasonMod.senescence(at(on, T0 + L / 2), phi)).toBeCloseTo(0.5, 12);
+    expect(seasonMod.senescence(at(on, T0 + L), phi)).toBe(1);                        // finished L after it started
   }
-  expect(math.senescence(at(on, 0.9), 0.999999)).toBeCloseTo(1, 9);              // the last leaf still ends at turn_start + span
-  expect(math.senescence(at(on, 0.6), 0)).toBe(0);                               // and nothing has begun at turn_start
+  expect(seasonMod.senescence(at(on, 0.9), 0.999999)).toBeCloseTo(1, 9);              // the last leaf still ends at turn_start + span
+  expect(seasonMod.senescence(at(on, 0.6), 0)).toBe(0);                               // and nothing has begun at turn_start
   // L keeps a floor: the spread is clamped under the span, as at 0
   const tight = { ...on, turn_spread: 0.5 };
-  expect(math.senescence(at(tight, 0.6 + 0.285 + 0.0149), 1)).toBeLessThan(1);
+  expect(seasonMod.senescence(at(tight, 0.6 + 0.285 + 0.0149), 1)).toBeLessThan(1);
 });
 
 test("no leaf falls before its turn ends: s_j(D − ε) = 1 for every leaf in the litter, both paths, turn_exposure 0/½/1, leaf_drop 1/½, lag 0/0.05", () => {
@@ -628,7 +630,7 @@ test("no leaf falls before its turn ends: s_j(D − ε) = 1 for every leaf in th
       for (const l of r.litter) {
         const phi = phases.get(`${l.j}/${l.k}`);
         expect(phi < leaf_drop, "only the dropping share falls").toBe(true);
-        expect(math.senescence(at(r.params, l.D - EPS), phi), `${l.j}/${l.k}: day ${l.D}`).toBe(1);
+        expect(seasonMod.senescence(at(r.params, l.D - EPS), phi), `${l.j}/${l.k}: day ${l.D}`).toBe(1);
         checked++;
       }
     }
@@ -651,15 +653,15 @@ test("the order is the turn's: D follows φ′ (the leaf that turned first lets 
   const off = grow(dense({ ...ON, drop_after_turn: 0 }), true), on = grow(dense(ON), true);
   const byD = (r) => r.litter.map((l) => ({ k: `${l.j}/${l.k}`, D: l.D })).sort((a, b) => a.D - b.D).map((x) => x.k);
   expect(byD(on), "the same leaves in the same order as the sun-first drop at turn_exposure 1").toEqual(byD(off));
-  const ex = litterExposure(on), shell = on.litter.filter((_, i) => ex[i] === 1).map((l) => ({ D: l.D, phi: math.leafClock(on.params.seed, l.j, l.k) })).sort((a, b) => a.phi - b.phi);
+  const ex = litterExposure(on), shell = on.litter.filter((_, i) => ex[i] === 1).map((l) => ({ D: l.D, phi: seasonMod.leafClock(on.params.seed, l.j, l.k) })).sort((a, b) => a.phi - b.phi);
   expect(shell.length, "not vacuous: a real shell").toBeGreaterThan(500);
   for (let i = 1; i < shell.length; i++) expect(shell[i - 1].D < shell[i].D, `clock ${shell[i - 1].phi} vs ${shell[i].phi}`).toBe(true);
   // turn_exposure 0: no light in the turn, so none in the drop — the exposure pass is not even asked for
   const P0 = { ...DEFAULTS, ...CAP, turn_exposure: 0, drop_after_turn: 1, drop_lag: LAG, phenology: 0.99 };
-  expect(math.ordered(P0), "drop_exposure 1 does not open the pass when the drop follows the turn and the turn is not lit").toBe(false);
+  expect(seasonMod.ordered(P0), "drop_exposure 1 does not open the pass when the drop follows the turn and the turn is not lit").toBe(false);
   const z = grow(small({ ...CAP, turn_exposure: 0, drop_after_turn: 1, drop_lag: LAG, phenology: 0.99 }), true);
   expect(z.litter.length).toBeGreaterThan(100);
-  for (const l of z.litter) expect(Math.abs(l.D - (0.6 + 0.12 + EPS + LAG + 0.18 * math.leafClock(z.params.seed, l.j, l.k))), `${l.j}/${l.k}`).toBeLessThan(1e-9);
+  for (const l of z.litter) expect(Math.abs(l.D - (0.6 + 0.12 + EPS + LAG + 0.18 * seasonMod.leafClock(z.params.seed, l.j, l.k))), `${l.j}/${l.k}`).toBeLessThan(1e-9);
 });
 
 test("calm: the worst sliding ε window of days is within 1.2× of uniform, on the dense grove and on park 1", () => {
@@ -688,10 +690,10 @@ test("marcescence: at leaf_drop ½ half the leaves hang after the last day, and 
 test("convergence: from turn_start + turn_span on every leaf's tau is the same whether the drop follows the turn or not", () => {
   const P0 = { ...DEFAULTS, ...CAP }, out0 = [0, 0, 0], out1 = [0, 0, 0], tau = [0.9, 0.7, 2.1];
   for (const p of [0.9, 0.95, 1.2]) for (const phi of [0, 0.3, 0.8, 0.999]) {
-    for (const f of [0, 1]) expect(math.senescence({ ...P0, drop_after_turn: f, phenology: p }, phi), `p ${p} phi ${phi} flag ${f}`).toBe(1);
+    for (const f of [0, 1]) expect(seasonMod.senescence({ ...P0, drop_after_turn: f, phenology: p }, phi), `p ${p} phi ${phi} flag ${f}`).toBe(1);
     for (const te of [0, 1]) for (const [j, k] of [[0, 0], [5, 3]]) {
-      const a = math.leafTau(tau, { ...P0, turn_exposure: te, phenology: p, drop_after_turn: 0 }, 9, j, k, out0, 0.4, 1.1);
-      const b = math.leafTau(tau, { ...P0, turn_exposure: te, phenology: p, drop_after_turn: 1 }, 9, j, k, out1, 0.4, 1.1);
+      const a = seasonMod.leafTau(tau, { ...P0, turn_exposure: te, phenology: p, drop_after_turn: 0 }, 9, j, k, out0, 0.4, 1.1);
+      const b = seasonMod.leafTau(tau, { ...P0, turn_exposure: te, phenology: p, drop_after_turn: 1 }, 9, j, k, out1, 0.4, 1.1);
       for (let c = 0; c < 3; c++) expect(Object.is(a[c], b[c])).toBe(true);
     }
   }
@@ -707,19 +709,19 @@ test("`dropping` at 1 is never later than the first fade (sweep by 1e-4), the re
   for (const [drop_lag, leaf_drop] of [[0, 1], [LAG, 1], [0.2, 0.5], [0.05, 0.01]]) {
     const base = { ...DEFAULTS, ...CAP, drop_after_turn: 1, drop_lag, leaf_drop };
     const firstFade = 0.6 + 0.12 + drop_lag;                       // the earliest leaf (φ′ = 0): D − ε
-    expect(math.dropping(at(base, 0.6)), "summer").toBe(false);
-    expect(math.dropping(at(base, firstFade - EPS - 1e-9))).toBe(false);
-    expect(math.dropping(at(base, firstFade - EPS + 1e-9)), "one ε early, on purpose").toBe(true);
+    expect(seasonMod.dropping(at(base, 0.6)), "summer").toBe(false);
+    expect(seasonMod.dropping(at(base, firstFade - EPS - 1e-9))).toBe(false);
+    expect(seasonMod.dropping(at(base, firstFade - EPS + 1e-9)), "one ε early, on purpose").toBe(true);
     for (let p = 0.5; p < 1.3; p += 1e-4) {
       const P = at(base, p);
-      if (p > firstFade) { expect(math.dropping(P), `p ${p}`).toBe(true); expect(FEATURES.drop.open(P)).toBe(true); expect(featuresFor({ ...P, litter: 1 })).toContain("litter"); }
-      expect(FEATURES.drop.open(P)).toBe(math.dropping(P));
+      if (p > firstFade) { expect(seasonMod.dropping(P), `p ${p}`).toBe(true); expect(FEATURES.drop.open(P)).toBe(true); expect(featuresFor({ ...P, litter: 1 })).toContain("litter"); }
+      expect(FEATURES.drop.open(P)).toBe(seasonMod.dropping(P));
     }
   }
-  expect(math.dropping({ ...DEFAULTS, ...CAP, drop_after_turn: 1, leaf_drop: 0, phenology: 1 })).toBe(false);
-  expect(math.ordered({ ...DEFAULTS, drop_after_turn: 1, turn_exposure: 0, leaf_drop: 1, drop_exposure: 1, phenology: 1 })).toBe(false);
-  expect(math.ordered({ ...DEFAULTS, drop_after_turn: 0, turn_exposure: 0, leaf_drop: 1, drop_exposure: 1, phenology: 1 })).toBe(true);   // today's
-  expect(math.ordered({ ...DEFAULTS, drop_after_turn: 1, turn_exposure: 1, leaf_drop: 1, phenology: 1 })).toBe(true);                      // the turn itself is lit
+  expect(seasonMod.dropping({ ...DEFAULTS, ...CAP, drop_after_turn: 1, leaf_drop: 0, phenology: 1 })).toBe(false);
+  expect(seasonMod.ordered({ ...DEFAULTS, drop_after_turn: 1, turn_exposure: 0, leaf_drop: 1, drop_exposure: 1, phenology: 1 })).toBe(false);
+  expect(seasonMod.ordered({ ...DEFAULTS, drop_after_turn: 0, turn_exposure: 0, leaf_drop: 1, drop_exposure: 1, phenology: 1 })).toBe(true);   // today's
+  expect(seasonMod.ordered({ ...DEFAULTS, drop_after_turn: 1, turn_exposure: 1, leaf_drop: 1, phenology: 1 })).toBe(true);                      // the turn itself is lit
 });
 
 // ---- the baseline and the effect, on real groves (montebello's capacity). afternoon 7 (32 175 leaves) and park 1 (6 138) give the same shares: the rank is uniform. ----
@@ -729,8 +731,8 @@ function table(look, flag) {
   const rows = {};
   for (const p of [0.75, 0.8, 0.85, 0.9]) {
     const fell = r.litter.filter((l) => l.D <= p), hang = r.litter.filter((l) => l.D > p);
-    const sAtD = fell.map((l) => math.senescence(at(r.params, l.D), phases.get(`${l.j}/${l.k}`)));
-    const sNow = (ls) => ls.reduce((s, l) => s + math.senescence(at(r.params, p), phases.get(`${l.j}/${l.k}`)), 0) / ls.length;
+    const sAtD = fell.map((l) => seasonMod.senescence(at(r.params, l.D), phases.get(`${l.j}/${l.k}`)));
+    const sNow = (ls) => ls.reduce((s, l) => s + seasonMod.senescence(at(r.params, p), phases.get(`${l.j}/${l.k}`)), 0) / ls.length;
     const frac = (f) => (fell.length ? sAtD.filter(f).length / fell.length : 0);
     rows[p] = { down: fell.length / n, lt05: frac((s) => s < 0.5), lt09: frac((s) => s < 0.9), lt1: frac((s) => s < 1), min: Math.min(...sAtD), crown: sNow(hang), n };
   }

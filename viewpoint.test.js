@@ -1,15 +1,15 @@
 import { test, expect } from 'bun:test';
-import * as math from './komorebi-math.js';
+import * as camera from './komorebi-camera.js';
 import { DEFAULTS, CAMERAS, TRANSPORT_GROUPS, buildTransport } from './komorebi.js';
 
 test('cameraPose expresses the authored sky and floor frames in one world coordinate system',()=>{
-  expect(typeof math.cameraPose).toBe('function');
-  const sky=math.cameraPose({...DEFAULTS,sky_view:true,view_pitch_deg:80,view_center_x:0.3,view_center_y:-0.2});
+  expect(typeof camera.cameraPose).toBe('function');
+  const sky=camera.cameraPose({...DEFAULTS,sky_view:true,view_pitch_deg:80,view_center_x:0.3,view_center_y:-0.2});
   expect(sky.eye).toEqual([0.3,-0.2,0]);
   expect(sky.elevation).toBeCloseTo(80*Math.PI/180,12);
   for(const pitch of [0,16,40])for(const yaw of [-35,0,125])for(const fov of [35,64,100]) {
     const p={...DEFAULTS,sky_view:false,view_pitch_deg:pitch,view_yaw_deg:yaw,view_fov_deg:fov,view_extent_m:3.1,view_center_x:.3,view_center_y:-.2};
-    const pose=math.cameraPose(p),a=pitch*Math.PI/180,k=Math.tan(fov*Math.PI/360),y=yaw*Math.PI/180;
+    const pose=camera.cameraPose(p),a=pitch*Math.PI/180,k=Math.tan(fov*Math.PI/360),y=yaw*Math.PI/180;
     const h=3.1*Math.cos(a)**2/(2*k);
     expect(pose.eye[2]).toBeCloseTo(h,12);
     for(const [u,v] of [[0,0],[.5,.5],[1,.2],[.1,1]]) {

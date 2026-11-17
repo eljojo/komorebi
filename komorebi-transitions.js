@@ -5,7 +5,9 @@
 // transitionTo classifies the route; tickTransition drives it each frame.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { TAU, beamExposure, cameraPose, clamp, irisRoute, irisStep, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { TAU, clamp, irisRoute, irisStep, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { beamExposure } from './komorebi-light.js';
+import { cameraPose } from './komorebi-camera.js';
 import { cameraFor } from './komorebi-transport.js';
 import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy } from './komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';

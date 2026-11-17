@@ -16,7 +16,11 @@
 //   komorebi-transport.js     the transport master + camera registry (spec/implementation.md)
 //   komorebi-shaders.js       the bake / faithful / display shaders + the tone tail
 //   komorebi-params.js        PARAMS (every parameter, defined once), DEFAULTS, legacy migration, transition keys, engine caps
-//   komorebi-math.js          CPU math: atmosphere, RNG, wind noise, growth helpers
+//   komorebi-math.js          CPU math the organs share: constants, interpolation, RNG
+//   komorebi-season.js        the season's laws: pigment, light ordering the turn, abscission, leaf-out, per-tree draws (spec/model/season.md)
+//   komorebi-light.js         the sun and the air: atmosphere, the receivers' cosine, exposure (spec/model/light.md)
+//   komorebi-camera.js        the floor's gauge as an eye, the vignette's mask (spec/model/camera.md)
+//   komorebi-grammar.js       the skeleton grammar (spec/model/canopy.md)
 //   komorebi-fill.js          the sky fill's quadrature as pure functions (spec/model/fill.md)
 // Pipeline: Source (point-sun cloud) -> Canopy (leaves baked to optical-depth
 // layers) -> Transport (shift-multiply-sum) -> Look (tonemap). Motion: two wind

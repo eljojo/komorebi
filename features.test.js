@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULTS, FEATURES, TRANSPORT_CAMERAS, buildTransport, cutWarnings, featuresFor } from "./komorebi.js";
-import { DROP_EPS, dropping, lit, ordered, senescing } from "./komorebi-math.js";
+import { DROP_EPS, dropping, lit, ordered, senescing } from "./komorebi-season.js";
 import { makeGrove } from "./komorebi-grove.js";
 import { EXPERIMENTAL, PRESETS } from "./presets.js";
 import { assemble, dropTagged, templateLiterals, writeTree } from "./embed-build.mjs";
@@ -225,9 +225,9 @@ test("a grove with the features its look does not open cut uploads the bytes the
     const dirRef = mkdtempSync(join(tmpdir(), "komorebi-ref-")), dirCut = mkdtempSync(join(tmpdir(), "komorebi-cut-"));
     try {
       await treeOf(dirRef, (f) => {
-        const m = f["komorebi-math.js"], n = m.replace(/const ordered = [^\n]*\n/, "const ordered = () => true;\n");
-        expect(n, "math.js declares ordered on one line").not.toBe(m);
-        f["komorebi-math.js"] = n;
+        const m = f["komorebi-season.js"], n = m.replace(/const ordered = [^\n]*\n/, "const ordered = () => true;\n");
+        expect(n, "season.js declares ordered on one line").not.toBe(m);
+        f["komorebi-season.js"] = n;
       });
       writeTree(assemble({ looks: ["park 1"], features: keep, strip: false }).files, dirCut);
       const whole = rig(makeGrove, params);

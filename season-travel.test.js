@@ -2,7 +2,7 @@ import {test,expect} from 'bun:test';
 import {PRESETS} from './presets.js';
 import * as travel from './komorebi-season-travel.js';
 import {create} from './komorebi.js';
-import {cameraPose} from './komorebi-math.js';
+import { cameraPose } from './komorebi-camera.js';
 
 test('seasonal leaf journeys are monotone, staggered and settle at their own endpoints',()=>{
   expect(typeof travel.flightProgress).toBe('function');

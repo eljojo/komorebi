@@ -9,6 +9,8 @@ import { expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { DEFAULTS } from "./komorebi.js";
 import * as math from "./komorebi-math.js";
+import * as leafMod from "./komorebi-leaf.js";
+import * as season from "./komorebi-season.js";
 import * as LEAF from "./komorebi-leaf.js";
 import * as MAZE from "./leaf-maze.js";
 
@@ -43,7 +45,7 @@ test("two calls to leafTau give the tissues, and mixtureTau of them is leafTau's
   for (let n = 0; n < 200; n++) {
     const P = { ...DEFAULTS, phenology: 0.5 + 0.5 * rnd(), turn_start: 0.3, turn_span: 0.3, turn_spread: 0.2 * rnd(), anthocyanin: 1.2 * rnd(), tannin: rnd(), wall_fraction: 0.01 + 0.5 * rnd() };
     const seed = Math.floor(rnd() * 1e6), j = Math.floor(rnd() * 40), k = Math.floor(rnd() * 22), { wall, cell } = MAZE.tissues(P, seed, j, k);
-    const mix = math.mixtureTau(wall, cell, P.wall_fraction), tau = math.leafTau(tauOf(P), P, seed, j, k);
+    const mix = leafMod.mixtureTau(wall, cell, P.wall_fraction), tau = season.leafTau(tauOf(P), P, seed, j, k);
     for (let c = 0; c < 3; c++) expect(Object.is(mix[c], tau[c])).toBe(true);
   }
 });
@@ -54,7 +56,7 @@ test("tissues with a tree's lead and depth are leafTau's with the same, to the b
     const P = { ...DEFAULTS, phenology: 0.5 + 0.5 * rnd(), turn_start: 0.3, turn_span: 0.3, turn_spread: 0.2 * rnd(), anthocyanin: 1.2 * rnd(), tannin: rnd(), wall_fraction: 0.01 + 0.5 * rnd(), drop_after_turn: n % 2 };
     const seed = Math.floor(rnd() * 1e6), j = Math.floor(rnd() * 40), k = Math.floor(rnd() * 22), dT = -0.15 * rnd() ** 3, cT = 1 + 0.9 * (2 * rnd() - 1);
     const { wall, cell } = MAZE.tissues(P, seed, j, k, dT, cT);
-    const mix = math.mixtureTau(wall, cell, P.wall_fraction), tau = math.leafTau(tauOf(P), P, seed, j, k, undefined, undefined, undefined, dT, cT);
+    const mix = leafMod.mixtureTau(wall, cell, P.wall_fraction), tau = season.leafTau(tauOf(P), P, seed, j, k, undefined, undefined, undefined, dT, cT);
     for (let c = 0; c < 3; c++) expect(Object.is(mix[c], tau[c])).toBe(true);
     const bare = MAZE.tissues(P, seed, j, k), none = MAZE.tissues(P, seed, j, k, undefined, undefined);
     for (let c = 0; c < 3; c++) { expect(Object.is(bare.wall[c], none.wall[c])).toBe(true); expect(Object.is(bare.cell[c], none.cell[c])).toBe(true); }
@@ -212,7 +214,7 @@ test("the raster's wall share is wall_fraction at N = 512 (to 0.01), and no wall
 
 test("the picture's mean is the engine's mixture: lamina-weighted transmittance = exp(-mixtureTau) per channel within 2 %", () => {
   const P = { ...DEFAULTS, phenology: 1, turn_start: 0.6, turn_span: 0.3, anthocyanin: 0.8, wall_fraction: 0.2 };
-  const { wall, cell } = MAZE.tissues(P, 1234, 2, 5), mix = math.mixtureTau(wall, cell, 0.2), r = MAZE.rasterLeaf(blade0, maze, 0.2, 512);
+  const { wall, cell } = MAZE.tissues(P, 1234, 2, 5), mix = leafMod.mixtureTau(wall, cell, 0.2), r = MAZE.rasterLeaf(blade0, maze, 0.2, 512);
   for (let c = 0; c < 3; c++) {
     let t = 0, l = 0;
     for (let i = 0; i < r.lam.length; i++) { t += r.lam[i] * (r.wall[i] * Math.exp(-wall[c]) + (1 - r.wall[i]) * Math.exp(-cell[c])); l += r.lam[i]; }

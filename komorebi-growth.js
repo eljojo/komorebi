@@ -26,7 +26,8 @@
 // Pałubicki 2007), the extended Borchert–Honda resource split (Borchert & Honda 1984, Botanical Gazette 145), shedding by
 // light per internode (Takenaka 1994, Journal of Plant Research 107) and the turn toward light and by tropism (ξ, η).
 // ============================================================================
-import { GOLDEN, TAU, bendDown } from './komorebi-math.js';
+import { GOLDEN, TAU } from './komorebi-math.js';
+import { bendDown } from './komorebi-grammar.js';
 
 export const GROWTH = {
   alpha: 4,       // resource per unit of light the tree gathers

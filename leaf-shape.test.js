@@ -8,6 +8,7 @@
 import { expect, test } from "bun:test";
 import { DEFAULTS, TOPO_KEYS } from "./komorebi.js";
 import * as math from "./komorebi-math.js";
+import * as season from "./komorebi-season.js";
 import * as LEAF from "./komorebi-leaf.js";
 
 const DEG = math.DEG, TAU = math.TAU, N = 256;
@@ -331,7 +332,7 @@ test("the leaf's streams never touch the growth RNG: their own salts, uncorrelat
     arrangement: cells.map(([j]) => first(seed, j, 101)),
     wind: cells.map(([j]) => first(seed ^ 0x5bd1e995, j, 101)),
     pigment: cells.map(([j, k]) => first(seed ^ 0x51ED270B, j, k)),
-    drop: cells.map(([j, k]) => math.dropHash(seed, j, k)),
+    drop: cells.map(([j, k]) => season.dropHash(seed, j, k)),
     litter: cells.map(([j, k]) => first(seed ^ 0x2B9D4F6E, j, k)),
     flip: cells.map(([j, k]) => (LEAF.leafFlip(seed, j, k) ? 1 : 0)),   // the half turn: not tied to the outline a leaf hangs in
   };

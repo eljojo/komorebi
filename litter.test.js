@@ -10,6 +10,7 @@
 import { test, expect } from "bun:test";
 import { CANOPY_KEYS, DEFAULTS, MORPH_KEYS, TOPO_KEYS } from "./komorebi.js";
 import * as math from "./komorebi-math.js";
+import * as seasonMod from "./komorebi-season.js";
 import { fillFrame, leafHue } from "./komorebi-fill.js";
 import { makeGrove } from "./komorebi-grove.js";
 import { PRESETS } from "./presets.js";
@@ -125,7 +126,7 @@ test("the litter's hashes never touch the growth RNG: their own salt, uncorrelat
     arrangement: cells.map(([j]) => first(seed, j, 101)),
     wind: cells.map(([j]) => first(seed ^ 0x5bd1e995, j, 101)),
     pigment: cells.map(([j, k]) => first(seed ^ 0x51ED270B, j, k)),
-    drop: cells.map(([j, k]) => math.dropHash(seed, j, k)),
+    drop: cells.map(([j, k]) => seasonMod.dropHash(seed, j, k)),
   };
   for (const [name, v] of Object.entries(streams)) expect(Math.abs(corr(rot, v)), name).toBeLessThan(0.1);
   // and the grove is the grove however much litter is laid: nothing it draws from is shared with the litter's functions
@@ -237,7 +238,7 @@ const TAUS = {
   russet: [1.1, 1.75, 4.7],
 };
 // The redhead (anthocyanin .8, no wall fraction, fully turned): the saturated end of what a maple lays down.
-const REDHEAD = math.leafTau(TAUS.summer, { ...DEFAULTS, phenology: 1, anthocyanin: 0.8, tannin: 0, wall_fraction: 0, turn_exposure: 0 }, 290626672, 3, 4);
+const REDHEAD = seasonMod.leafTau(TAUS.summer, { ...DEFAULTS, phenology: 1, anthocyanin: 0.8, tannin: 0, wall_fraction: 0, turn_exposure: 0 }, 290626672, 3, 4);
 const sat = (a) => Math.min(...a) / Math.max(...a);                                                                  // min/max: 1 is grey, 0 is a pure primary
 // today's law (0.35·leafHue(e^−τ)), frozen here only to say the honest one is less saturated than it
 const oldLaw = (tau) => { const h = leafHue(tau.map((t) => Math.exp(-t))); return h.map((v) => 0.35 * v); };

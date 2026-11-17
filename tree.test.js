@@ -9,12 +9,14 @@ import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { CANOPY_KEYS, DEFAULTS, FEATURES, SEASON_KEYS, TOPO_KEYS, featuresFor } from "./komorebi.js";
 import * as math from "./komorebi-math.js";
+import * as seasonMod from "./komorebi-season.js";
+import * as leafMod from "./komorebi-leaf.js";
 import * as LEAF from "./komorebi-leaf.js";
 import * as MAZE from "./leaf-maze.js";
 import { GROVE_READS, makeGrove } from "./komorebi-grove.js";
 import { PRESETS } from "./presets.js";
 
-const { DROP_EPS: EPS } = math;
+const { DROP_EPS: EPS } = seasonMod;
 const fall = (over) => ({ ...DEFAULTS, ...over });
 const read = (f) => readFileSync(new URL(f, import.meta.url), "utf8");
 const at = (P, p) => ({ ...P, phenology: p });
@@ -35,14 +37,14 @@ test("the family ships off: both knobs 0, canopy AND season keys (they move only
 });
 
 test("TREE_SALT is 2·0x9E3779B9 mod 2^32, differs from every other stream's salt, and is named nowhere else in the repo", () => {
-  expect(math.TREE_SALT).toBe((2 * 0x9E3779B9) % 2 ** 32);
-  expect(math.TREE_SALT).toBe(0x3C6EF372);
-  const salts = [MAZE.AREOLE_SALT, LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, LEAF.FLIP_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* pigment */, 0x7A3C91D5 /* drop */, 0x5bd1e995 /* wind */, 0x5EED /* growth */, math.TREE_SALT];
+  expect(seasonMod.TREE_SALT).toBe((2 * 0x9E3779B9) % 2 ** 32);
+  expect(seasonMod.TREE_SALT).toBe(0x3C6EF372);
+  const salts = [MAZE.AREOLE_SALT, LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, LEAF.FLIP_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* pigment */, 0x7A3C91D5 /* drop */, 0x5bd1e995 /* wind */, 0x5EED /* growth */, seasonMod.TREE_SALT];
   expect(new Set(salts).size).toBe(salts.length);
   const files = readdirSync(".").filter((f) => /\.(js|mjs|html)$/.test(f) && !/\.test\.js$/.test(f));
   expect(files.length).toBeGreaterThan(20);
   const named = files.filter((f) => /3C6EF372/i.test(readFileSync(f, "utf8")));
-  expect(named, "one place names the salt").toEqual(["komorebi-math.js"]);
+  expect(named, "one place names the salt").toEqual(["komorebi-season.js"]);
 });
 
 // ---- 2. the laws ---------------------------------------------------------------------------------------------------------------
@@ -54,15 +56,15 @@ const corr = (u, v) => {
 };
 test("treeDraws: a pure function of (seed, tree) in [0,1), uniform, distinct, and nobody else's stream", () => {
   const T = 3000, ts = Array.from({ length: T }, (_, i) => i);
-  const d = ts.map((t) => math.treeDraws(77, t));
+  const d = ts.map((t) => seasonMod.treeDraws(77, t));
   for (let t = 0; t < T; t++) {
     for (const x of d[t]) expect(x >= 0 && x < 1).toBe(true);
-    expect(math.treeDraws(77, t)).toEqual(d[t]);                              // pure: the same tree, the same two numbers
+    expect(seasonMod.treeDraws(77, t)).toEqual(d[t]);                              // pure: the same tree, the same two numbers
   }
   const out = [9, 9];
-  expect(math.treeDraws(77, 5, out), "fills the caller's array").toBe(out);
+  expect(seasonMod.treeDraws(77, 5, out), "fills the caller's array").toBe(out);
   expect(out).toEqual(d[5]);
-  expect(math.treeDraws(78, 5)).not.toEqual(d[5]);                              // the seed is in it
+  expect(seasonMod.treeDraws(78, 5)).not.toEqual(d[5]);                              // the seed is in it
   const v = d.map((x) => x[0]), w = d.map((x) => x[1]);
   expect(new Set(v).size, "every tree its own lead").toBe(T);
   expect(new Set(w).size, "…and its own depth").toBe(T);
@@ -77,7 +79,7 @@ test("treeDraws: a pure function of (seed, tree) in [0,1), uniform, distinct, an
   const arr = ts.map((t) => math.mulberry32(math.hash3(77, t, 101))());
   const wind = ts.map((t) => math.mulberry32(math.hash3(77 ^ 0x5bd1e995, t, 101))());
   const growth = math.mulberry32(math.hash3(77, 0x5EED, 7)), gro = ts.map(() => growth());
-  const pig = ts.map((t) => math.leafClock(77, t, 0)), drop = ts.map((t) => math.dropHash(77, t, 0));
+  const pig = ts.map((t) => seasonMod.leafClock(77, t, 0)), drop = ts.map((t) => seasonMod.dropHash(77, t, 0));
   for (const [name, other] of Object.entries({ arr, wind, gro, pig, drop, w })) expect(Math.abs(corr(v, other)), `lead vs ${name}`).toBeLessThan(0.1);
   for (const [name, other] of Object.entries({ arr, wind, gro, pig, drop })) expect(Math.abs(corr(w, other)), `depth vs ${name}`).toBeLessThan(0.1);
   // one in five trees runs beyond half the reach: 1 − 2^(−1/3) of a uniform draw cubed
@@ -89,7 +91,7 @@ test("treeShift: -S·v³ — on a 10^5 quantile grid the mean lead is S/4, the s
   const N = 100000, S = 1;
   let sum = 0, sum2 = 0, beyond = 0, prev = 0;
   for (let i = 0; i < N; i++) {
-    const v = (i + 0.5) / N, dT = math.treeShift(v, S);
+    const v = (i + 0.5) / N, dT = seasonMod.treeShift(v, S);
     expect(dT <= 0 && dT > -S).toBe(true);                                      // the lead only: never late, never a whole reach
     expect(dT <= prev).toBe(true);                                             // monotone in the draw
     prev = dT; sum += -dT; sum2 += dT * dT;
@@ -100,7 +102,7 @@ test("treeShift: -S·v³ — on a 10^5 quantile grid the mean lead is S/4, the s
   expect(sd).toBeCloseTo(0.2835, 3);
   expect(Math.abs(beyond / N - (1 - 2 ** (-1 / 3)))).toBeLessThan(0.003);
   expect(Math.abs(beyond / N - 0.206)).toBeLessThan(0.003);
-  expect(math.treeShift(0.5, 0.1)).toBeCloseTo(-0.1 * 0.125, 15);               // linear in the reach
+  expect(seasonMod.treeShift(0.5, 0.1)).toBeCloseTo(-0.1 * 0.125, 15);               // linear in the reach
 });
 
 test("treeGain: 1 + s(2w − 1) — mean 1, in [1 − s, 1 + s), sd s/√3, monotone", () => {
@@ -108,7 +110,7 @@ test("treeGain: 1 + s(2w − 1) — mean 1, in [1 − s, 1 + s), sd s/√3, mono
   for (const s of [0.3, 0.6, 1]) {
     let sum = 0, sum2 = 0, prev = -Infinity;
     for (let i = 0; i < N; i++) {
-      const c = math.treeGain((i + 0.5) / N, s);
+      const c = seasonMod.treeGain((i + 0.5) / N, s);
       expect(c >= 1 - s && c < 1 + s).toBe(true);
       expect(c >= prev).toBe(true);
       prev = c; sum += c; sum2 += c * c;
@@ -117,34 +119,34 @@ test("treeGain: 1 + s(2w − 1) — mean 1, in [1 − s, 1 + s), sd s/√3, mono
     expect(mean).toBeCloseTo(1, 6);
     expect(Math.sqrt(sum2 / N - mean * mean)).toBeCloseTo(s / Math.sqrt(3), 4);
   }
-  expect(math.treeGain(0, 1)).toBe(0);                                          // s = 1 lets a tree go without red
+  expect(seasonMod.treeGain(0, 1)).toBe(0);                                          // s = 1 lets a tree go without red
 });
 
 test("the shipped seed, frozen: 290626672 trees 0–4 lead by v³ = 0.3355, 0.0015, 0.5572, 0.1894, 0.0002 and carry c = 0.718, 1.241, 1.273, 0.821, 0.561 at 0.6", () => {
   const v3 = [0.3355, 0.0015, 0.5572, 0.1894, 0.0002], c06 = [0.718, 1.241, 1.273, 0.821, 0.561];
   for (let t = 0; t < 5; t++) {
-    const [v, w] = math.treeDraws(290626672, t);
+    const [v, w] = seasonMod.treeDraws(290626672, t);
     expect(v * v * v, `tree ${t} v³`).toBeCloseTo(v3[t], 4);
-    expect(math.treeGain(w, 0.6), `tree ${t} c at 0.6`).toBeCloseTo(c06[t], 3);
+    expect(seasonMod.treeGain(w, 0.6), `tree ${t} c at 0.6`).toBeCloseTo(c06[t], 3);
   }
   const P = { ...DEFAULTS, seed: 290626672, tree_clock_spread: 0.1, tree_pigment_spread: 0.6 };
-  expect(math.treeShifts(P, 5)[0], "tree 0's lead at 0.1").toBeCloseTo(-0.03355, 5);
-  expect(math.treeGains(P, 5)[0]).toBeCloseTo(0.718, 3);
+  expect(seasonMod.treeShifts(P, 5)[0], "tree 0's lead at 0.1").toBeCloseTo(-0.03355, 5);
+  expect(seasonMod.treeGains(P, 5)[0]).toBeCloseTo(0.718, 3);
 });
 
 test("treeShifts / treeGains: the gate is the table — null unless the knob is above 0 — and a tree's number is the same at any tree count", () => {
   const P = fall({ seed: 290626672 });
   for (const q of [P, absent(P), { ...P, tree_clock_spread: -0.1, tree_pigment_spread: -1 }]) {
-    expect(math.treeShifts(q, 5), "no draw, nothing handed on").toBeNull();
-    expect(math.treeGains(q, 5)).toBeNull();
+    expect(seasonMod.treeShifts(q, 5), "no draw, nothing handed on").toBeNull();
+    expect(seasonMod.treeGains(q, 5)).toBeNull();
   }
   const on = { ...P, tree_clock_spread: 0.12, tree_pigment_spread: 0.7 };
-  const a = math.treeShifts(on, 3), b = math.treeShifts(on, 16), c = math.treeGains(on, 3), d = math.treeGains(on, 16);
+  const a = seasonMod.treeShifts(on, 3), b = seasonMod.treeShifts(on, 16), c = seasonMod.treeGains(on, 3), d = seasonMod.treeGains(on, 16);
   expect(a).toBeInstanceOf(Float64Array); expect(a.length).toBe(3); expect(b.length).toBe(16);
   for (let t = 0; t < 3; t++) { expect(Object.is(a[t], b[t]), `lead of tree ${t}`).toBe(true); expect(Object.is(c[t], d[t]), `depth of tree ${t}`).toBe(true); }
-  expect(math.treeShifts({ ...on, tree_pigment_spread: 0 }, 3)).toEqual(a);        // each knob its own table
-  expect(math.treeGains({ ...on, tree_clock_spread: 0 }, 3)).toEqual(c);
-  expect(math.treeShifts({ ...on, tree_clock_spread: 0.12, seed: 5 }, 3)).not.toEqual(a);
+  expect(seasonMod.treeShifts({ ...on, tree_pigment_spread: 0 }, 3)).toEqual(a);        // each knob its own table
+  expect(seasonMod.treeGains({ ...on, tree_clock_spread: 0 }, 3)).toEqual(c);
+  expect(seasonMod.treeShifts({ ...on, tree_clock_spread: 0.12, seed: 5 }, 3)).not.toEqual(a);
 });
 
 // ---- 3. the gate, to the bit -------------------------------------------------------------------------------------------------
@@ -160,7 +162,7 @@ function senescence0(P, phi) {
 function leafTau0(tauSummer, P, seed, j, k, out, phiE, gainE) {
   const r = math.mulberry32(math.hash3((seed >>> 0) ^ 0x51ED270B, j, k));
   const w = phiE === undefined ? 0 : P.turn_exposure;
-  const phi = math.turnPhase(P, r(), phiE);
+  const phi = seasonMod.turnPhase(P, r(), phiE);
   const s = senescence0(P, phi);
   if (s === 0) { out[0] = tauSummer[0]; out[1] = tauSummer[1]; out[2] = tauSummer[2]; return out; }
   let a = P.anthocyanin * (0.5 + r());
@@ -168,11 +170,11 @@ function leafTau0(tauSummer, P, seed, j, k, out, phiE, gainE) {
   if (w > 0) a *= 1 + (gainE - 1) * w;
   const wall = [0, 0, 0], cell = [0, 0, 0];
   for (let c = 0; c < 3; c++) {
-    const base = tauSummer[c] * (1 - s), pig = math.TAU_CAROTENOID[c] + b * math.TAU_TANNIN[c];
+    const base = tauSummer[c] * (1 - s), pig = seasonMod.TAU_CAROTENOID[c] + b * seasonMod.TAU_TANNIN[c];
     wall[c] = base + s * pig;
-    cell[c] = base + s * (pig + a * math.TAU_ANTHOCYANIN[c]);
+    cell[c] = base + s * (pig + a * seasonMod.TAU_ANTHOCYANIN[c]);
   }
-  return math.mixtureTau(wall, cell, P.wall_fraction, out);
+  return leafMod.mixtureTau(wall, cell, P.wall_fraction, out);
 }
 const dropDay0 = (P, phiD) => phiD < P.leaf_drop ? P.drop_start + P.drop_span * phiD / P.leaf_drop : Infinity;
 function dropDayAfterTurn0(P, phiTurn) {
@@ -197,29 +199,29 @@ test("at 0 and absent the laws are today's, to the bit: senescence, leafTau, dro
     const base = (over) => mk({ ...DEFAULTS, ...CAP, ...(flag === undefined ? {} : { drop_after_turn: flag }), ...over });
     for (const p of PS) for (const [turn_span, turn_spread] of SPANS) {
       const P = base({ phenology: p, turn_span, turn_spread });
-      for (const phi of PHIS) { expect(Object.is(math.senescence(P, phi), senescence0(P, phi)), JSON.stringify([flag, p, turn_span, turn_spread, phi])).toBe(true); n++; }
+      for (const phi of PHIS) { expect(Object.is(seasonMod.senescence(P, phi), senescence0(P, phi)), JSON.stringify([flag, p, turn_span, turn_spread, phi])).toBe(true); n++; }
     }
     for (const p of PS) for (const te of [0, 0.5, 1]) for (const wf of [0, 0.2]) for (const [j, k] of [[0, 0], [3, 9], [41, 2]]) {
       const P = base({ phenology: p, turn_exposure: te, wall_fraction: wf });
       for (const [phiE, gainE] of [[undefined, undefined], [0.31, 1.2], [0.97, 0.6]]) {
-        const got = math.leafTau(tau, P, 7, j, k, [0, 0, 0], phiE, gainE), want = leafTau0(tau, P, 7, j, k, [0, 0, 0], phiE, gainE);
+        const got = seasonMod.leafTau(tau, P, 7, j, k, [0, 0, 0], phiE, gainE), want = leafTau0(tau, P, 7, j, k, [0, 0, 0], phiE, gainE);
         for (let c = 0; c < 3; c++) { expect(Object.is(got[c], want[c]), JSON.stringify([flag, p, te, wf, j, k, phiE, c])).toBe(true); n++; }
       }
     }
     for (const ld of [0, 0.3, 0.6, 1]) for (const phi of [0, 0.1, 0.29, 0.59, 0.6, 0.99]) {
       const P = base({ leaf_drop: ld });
-      expect(Object.is(math.dropDay(P, phi), dropDay0(P, phi)), JSON.stringify(["dropDay", ld, phi])).toBe(true);
+      expect(Object.is(seasonMod.dropDay(P, phi), dropDay0(P, phi)), JSON.stringify(["dropDay", ld, phi])).toBe(true);
       for (const drop_lag of [0, 0.05, 0.2]) {
         const Q = base({ leaf_drop: ld, drop_lag });
-        expect(Object.is(math.dropDayAfterTurn(Q, phi), dropDayAfterTurn0(Q, phi)), JSON.stringify(["after", ld, phi, drop_lag])).toBe(true);
+        expect(Object.is(seasonMod.dropDayAfterTurn(Q, phi), dropDayAfterTurn0(Q, phi)), JSON.stringify(["after", ld, phi, drop_lag])).toBe(true);
       }
     }
     for (const p of PS) for (const ld of [0, 1]) for (const te of [0, 1]) for (const de of [0, 1]) for (const drop_lag of [0, 0.05]) {
       const P = base({ phenology: p, leaf_drop: ld, turn_exposure: te, drop_exposure: de, drop_lag });
-      expect(math.senescing(P), "senescing").toBe(senescing0(P));
-      expect(math.lit(P), "lit").toBe(lit0(P));
-      expect(math.dropping(P), "dropping").toBe(dropping0(P));
-      expect(math.ordered(P), "ordered").toBe(ordered0(P));
+      expect(seasonMod.senescing(P), "senescing").toBe(senescing0(P));
+      expect(seasonMod.lit(P), "lit").toBe(lit0(P));
+      expect(seasonMod.dropping(P), "dropping").toBe(dropping0(P));
+      expect(seasonMod.ordered(P), "ordered").toBe(ordered0(P));
       expect(FEATURES.pigment.open(P) === senescing0(P) && FEATURES.exposure.open(P) === ordered0(P) && FEATURES.drop.open(P) === dropping0(P), "the registry").toBe(true);
     }
   }
@@ -315,7 +317,7 @@ test("the lead is a block shift: every litter leaf's day is the (0, 0) grove's +
   for (const tree_count of [3, 2.4]) for (const flag of [0, 1]) {
     const over = dense({ tree_count, phenology: 1, leaf_drop: 1, drop_after_turn: flag, turn_exposure: 1, anthocyanin: 0.4 });
     const off = grow(over, false, { keep: true }), on = grow({ ...over, tree_clock_spread: 0.1 }, false, { keep: true });
-    const nTree = Math.ceil(tree_count), shifts = math.treeShifts(on.params, nTree), A = byAddr(off);
+    const nTree = Math.ceil(tree_count), shifts = seasonMod.treeShifts(on.params, nTree), A = byAddr(off);
     expect(on.litter.length, `tree_count ${tree_count}`).toBe(off.litter.length);
     expect(on.litter.length).toBeGreaterThan(5000);
     const seen = new Set();
@@ -338,13 +340,13 @@ test("the lead is a block shift: every litter leaf's day is the (0, 0) grove's +
 test("at its shifted start s is exactly 0, and at its shifted finish exactly 1 — for every tree's lead, both turn laws", () => {
   const P = fall({ ...CAP, seed: 290626672, tree_clock_spread: 0.15 });
   for (const flag of [0, 1]) {
-    const Q = { ...P, drop_after_turn: flag }, shifts = math.treeShifts(Q, 16), span = 0.3, spread = 0.18;
+    const Q = { ...P, drop_after_turn: flag }, shifts = seasonMod.treeShifts(Q, 16), span = 0.3, spread = 0.18;
     for (const dT of shifts) for (const phi of [0, 0.25, 0.6, 0.999]) {
       const start = Q.turn_start + dT, T0 = start + phi * spread, end = flag ? T0 + (span - spread) : start + span;
-      expect(math.senescence(at(Q, T0), phi, dT), `flag ${flag} dT ${dT} phi ${phi}: start`).toBe(0);
-      expect(math.senescence(at(Q, T0 + 1e-6), phi, dT) > 0, "…and moving just after it").toBe(true);
-      expect(math.senescence(at(Q, end), phi, dT), `flag ${flag} dT ${dT} phi ${phi}: finish`).toBe(1);
-      expect(math.senescence(at(Q, end - 1e-6), phi, dT) < 1).toBe(true);
+      expect(seasonMod.senescence(at(Q, T0), phi, dT), `flag ${flag} dT ${dT} phi ${phi}: start`).toBe(0);
+      expect(seasonMod.senescence(at(Q, T0 + 1e-6), phi, dT) > 0, "…and moving just after it").toBe(true);
+      expect(seasonMod.senescence(at(Q, end), phi, dT), `flag ${flag} dT ${dT} phi ${phi}: finish`).toBe(1);
+      expect(seasonMod.senescence(at(Q, end - 1e-6), phi, dT) < 1).toBe(true);
     }
   }
 });
@@ -352,12 +354,12 @@ test("at its shifted start s is exactly 0, and at its shifted finish exactly 1 �
 test("the old drop clock shifts too: dropDay and dropDayAfterTurn are the unshifted day + dT", () => {
   const P = fall({ ...CAP, leaf_drop: 0.7 });
   for (const dT of [-0.15, -0.0335, -1e-9]) for (const phi of [0, 0.2, 0.69]) {
-    expect(math.dropDay(P, phi, dT)).toBeCloseTo(math.dropDay(P, phi) + dT, 12);
-    expect(math.dropDayAfterTurn(P, phi, dT)).toBeCloseTo(math.dropDayAfterTurn(P, phi) + dT, 12);
+    expect(seasonMod.dropDay(P, phi, dT)).toBeCloseTo(seasonMod.dropDay(P, phi) + dT, 12);
+    expect(seasonMod.dropDayAfterTurn(P, phi, dT)).toBeCloseTo(seasonMod.dropDayAfterTurn(P, phi) + dT, 12);
   }
-  expect(math.dropDay(P, 0.7, -0.1), "a leaf that never drops, never drops").toBe(Infinity);
-  expect(math.dropDayAfterTurn(P, 0.7, -0.1)).toBe(Infinity);
-  expect(Object.is(math.dropDay(P, 0.2, 0), math.dropDay(P, 0.2)), "dT 0 is no shift").toBe(true);
+  expect(seasonMod.dropDay(P, 0.7, -0.1), "a leaf that never drops, never drops").toBe(Infinity);
+  expect(seasonMod.dropDayAfterTurn(P, 0.7, -0.1)).toBe(Infinity);
+  expect(Object.is(seasonMod.dropDay(P, 0.2, 0), seasonMod.dropDay(P, 0.2)), "dT 0 is no shift").toBe(true);
 });
 
 // ---- 6. the depth -------------------------------------------------------------------------------------------------------------------
@@ -367,8 +369,8 @@ test("leafTau(…, cT) is leafTau at anthocyanin·cT and tannin·cT, to 1e-12, f
   for (const p of [0.62, 0.7, 0.8, 0.9, 1]) for (const wf of [0, 0.2]) for (const cT of [0, 0.3, 0.718, 1.273, 1.9]) for (const [j, k] of [[0, 0], [3, 9], [41, 2], [7, 7]]) {
     const P = fall({ ...CAP, wall_fraction: wf, phenology: p }), Q = { ...P, anthocyanin: P.anthocyanin * cT, tannin: P.tannin * cT };
     for (const [phiE, gainE] of [[undefined, undefined], [0.31, 1.2], [0.97, 0.6]]) {
-      const got = math.leafTau(tau, P, 7, j, k, [0, 0, 0], phiE, gainE, undefined, cT), want = math.leafTau(tau, Q, 7, j, k, [0, 0, 0], phiE, gainE);
-      const s = math.senescence(P, math.turnPhase(P, math.leafClock(7, j, k), phiE));
+      const got = seasonMod.leafTau(tau, P, 7, j, k, [0, 0, 0], phiE, gainE, undefined, cT), want = seasonMod.leafTau(tau, Q, 7, j, k, [0, 0, 0], phiE, gainE);
+      const s = seasonMod.senescence(P, seasonMod.turnPhase(P, seasonMod.leafClock(7, j, k), phiE));
       if (s > 0) checked++;
       for (let c = 0; c < 3; c++) expect(Math.abs(got[c] - want[c]), JSON.stringify([p, wf, cT, j, k, phiE, c])).toBeLessThan(1e-12);
     }
@@ -376,12 +378,12 @@ test("leafTau(…, cT) is leafTau at anthocyanin·cT and tannin·cT, to 1e-12, f
   expect(checked).toBeGreaterThan(300);
   // before the leaf has begun it is the authored tau, whatever its depth
   const early = fall({ ...CAP, phenology: 0.55 });
-  expect(Array.from(math.leafTau(tau, early, 7, 3, 3, [0, 0, 0], undefined, undefined, undefined, 1.9))).toEqual(tau);
+  expect(Array.from(seasonMod.leafTau(tau, early, 7, 3, 3, [0, 0, 0], undefined, undefined, undefined, 1.9))).toEqual(tau);
 });
 
 // the pigment state a litter leaf carries, solved: at leaf-off with wall_fraction 0 tau = carotenoid + b·tannin + a·anthocyanin per channel (s = 1)
 function pigmentsOf(tau) {
-  const A = math.TAU_ANTHOCYANIN, B = math.TAU_TANNIN, y = tau.map((t, c) => t - math.TAU_CAROTENOID[c]);
+  const A = seasonMod.TAU_ANTHOCYANIN, B = seasonMod.TAU_TANNIN, y = tau.map((t, c) => t - seasonMod.TAU_CAROTENOID[c]);
   const aa = A[0] * A[0] + A[1] * A[1] + A[2] * A[2], bb = B[0] * B[0] + B[1] * B[1] + B[2] * B[2], ab = A[0] * B[0] + A[1] * B[1] + A[2] * B[2];
   const ya = A[0] * y[0] + A[1] * y[1] + A[2] * y[2], yb = B[0] * y[0] + B[1] * y[1] + B[2] * y[2], det = aa * bb - ab * ab;
   const a = (ya * bb - yb * ab) / det, b = (aa * yb - ab * ya) / det;
@@ -391,7 +393,7 @@ function pigmentsOf(tau) {
 test("the depth: the litter's tau solves to a_j/a_j0 = b_j/b_j0 = c of its tree, red AND brown, and the day does not move", () => {
   for (const tree_count of [3, 2.4]) {
     const over = dense({ tree_count, phenology: 1, leaf_drop: 1, turn_exposure: 0, anthocyanin: 0.8, tannin: 0.5, wall_fraction: 0, drop_exposure: 1 });
-    const off = grow(over), on = grow({ ...over, tree_pigment_spread: 0.6 }), A = byAddr(off), nTree = Math.ceil(tree_count), gains = math.treeGains(on.params, nTree);
+    const off = grow(over), on = grow({ ...over, tree_pigment_spread: 0.6 }), A = byAddr(off), nTree = Math.ceil(tree_count), gains = seasonMod.treeGains(on.params, nTree);
     expect(on.litter.length).toBe(off.litter.length);
     const seen = new Set();
     for (const l of on.litter) {
@@ -414,15 +416,15 @@ test("the depth: the litter's tau solves to a_j/a_j0 = b_j/b_j0 = c of its tree,
 // leafTau called by hand with the lead and the depth the leaf's own tree draws (treeDraws, not the tables the grove asks), a grove of four trees that draw four different pairs.
 const TAU_OF = ["trans_r", "trans_g", "trans_b"];
 function byHand(on) {
-  const P = on.params, { twigs, nLeaf, nClusterTotal } = on.g.hier, nTree = Math.ceil(P.tree_count), dropping = math.dropping(P), after = math.afterTurn(P);
+  const P = on.params, { twigs, nLeaf, nClusterTotal } = on.g.hier, nTree = Math.ceil(P.tree_count), dropping = seasonMod.dropping(P), after = seasonMod.afterTurn(P);
   const lead = [], depth = [];
-  for (let t = 0; t < nTree; t++) { const [v, w] = math.treeDraws(P.seed, t); lead.push(math.treeShift(v, P.tree_clock_spread)); depth.push(math.treeGain(w, P.tree_pigment_spread)); }
+  for (let t = 0; t < nTree; t++) { const [v, w] = seasonMod.treeDraws(P.seed, t); lead.push(seasonMod.treeShift(v, P.tree_clock_spread)); depth.push(seasonMod.treeGain(w, P.tree_pigment_spread)); }
   expect(new Set(lead).size, "the trees draw different leads").toBe(nTree);
   expect(new Set(depth).size, "…and different depths").toBe(nTree);
   const tau = TAU_OF.map((k) => -Math.log(math.clamp(P[k], 1e-4, 0.999)));
   // what a leaf of tree t would get from each way of being wrong: nobody's pair, the lead alone, the depth alone, tree 0's pair for every tree
   const pair = { own: (t) => [lead[t], depth[t]], none: () => [undefined, undefined], dTonly: (t) => [lead[t], undefined], cTonly: (t) => [undefined, depth[t]], tree0: () => [lead[0], depth[0]] };
-  const tauOf = (alt, t, j, k) => { const [dT, cT] = pair[alt](t); return Array.from(math.leafTau(tau, P, P.seed, j, k, [0, 0, 0], undefined, undefined, dT, cT)); };
+  const tauOf = (alt, t, j, k) => { const [dT, cT] = pair[alt](t); return Array.from(seasonMod.leafTau(tau, P, P.seed, j, k, [0, 0, 0], undefined, undefined, dT, cT)); };
   const wantL = on.layers.map(() => []), wantF = [], litter = new Map(), diff = {}, diffFading = {};
   for (const alt of Object.keys(pair)) if (alt !== "own") diff[alt] = diffFading[alt] = 0;
   let fading = 0, gone = 0, mid = 0;
@@ -430,8 +432,8 @@ function byHand(on) {
     const t = twigs[j].tree, dT = lead[t], lt = tauOf("own", t, j, k);
     let w = 1, D = 0;
     if (dropping) {
-      D = after ? math.dropDayAfterTurn(P, math.turnPhase(P, math.leafClock(P.seed, j, k)), dT) : math.dropDay(P, math.dropPhase(math.dropHash(P.seed, j, k), 0, P.drop_exposure), dT);
-      w = math.retention(D, P.phenology);
+      D = after ? seasonMod.dropDayAfterTurn(P, seasonMod.turnPhase(P, seasonMod.leafClock(P.seed, j, k)), dT) : seasonMod.dropDay(P, seasonMod.dropPhase(seasonMod.dropHash(P.seed, j, k), 0, P.drop_exposure), dT);
+      w = seasonMod.retention(D, P.phenology);
     }
     for (const alt of Object.keys(diff)) {
       const other = tauOf(alt, t, j, k), differs = other.some((x, c) => !Object.is(x, lt[c]));
@@ -467,7 +469,7 @@ test("neither lit nor dropping: the hang loop's leafTau takes each cluster's own
   const seen = { none: 0, dTonly: 0, cTonly: 0, tree0: 0 };
   for (const flag of [0, 1]) for (const phenology of [0.78, 1]) {
     const on = grow(small({ ...UNLIT, leaf_drop: 0, drop_after_turn: flag, phenology }));
-    expect(math.lit(on.params) || math.dropping(on.params), "the hang loop's tau is the grove's tau").toBe(false);
+    expect(seasonMod.lit(on.params) || seasonMod.dropping(on.params), "the hang loop's tau is the grove's tau").toBe(false);
     expect(on.litter, "nothing dropped").toBe(null);
     const r = byHand(on);
     for (const alt of Object.keys(seen)) seen[alt] += r.diff[alt];
@@ -479,8 +481,8 @@ test("neither lit nor dropping: the hang loop's leafTau takes each cluster's own
 test("unlit and dropping: the rewrite's sen-only arm takes each leaf's own tree's lead and depth — for the leaves mid-fade and the leaves that have gone, both clocks", () => {
   for (const flag of [0, 1]) {
     const on = grow(small({ ...UNLIT, leaf_drop: 1, drop_exposure: 0, drop_after_turn: flag, drop_lag: 0.05, phenology: 0.85 }));   // the lag it was written at: at 0.85 some leaves are mid-fade
-    expect(math.lit(on.params) || math.ordered(on.params), "no light anywhere: no rank, no exposure arm").toBe(false);
-    expect(math.dropping(on.params)).toBe(true);
+    expect(seasonMod.lit(on.params) || seasonMod.ordered(on.params), "no light anywhere: no rank, no exposure arm").toBe(false);
+    expect(seasonMod.dropping(on.params)).toBe(true);
     const r = byHand(on);
     expect(r.gone, `after-turn ${flag}: leaves have gone`).toBeGreaterThan(20);
     expect(r.mid, `after-turn ${flag}: some are mid-fade`).toBeGreaterThan(0);
@@ -497,19 +499,19 @@ test("the gates open with the reach: any leaf that has begun, or has begun to fa
     let begun = 0, fading = 0;
     for (let i = 0; i <= 10000; i++) {
       const p = 0.3 + i * 1e-4, P = at(base, p);
-      const sen = math.senescing(P), dropping = math.dropping(P);
+      const sen = seasonMod.senescing(P), dropping = seasonMod.dropping(P);
       let anyBegun = false, anyFading = false;
       for (const v of VS) {
-        const dT = math.treeShift(v, S);
+        const dT = seasonMod.treeShift(v, S);
         for (const phi of PHIS) {
-          if (math.senescence(P, phi, dT) > 0) anyBegun = true;
-          const D = flag ? math.dropDayAfterTurn(P, phi, dT) : math.dropDay(P, phi, dT);
-          if (math.retention(D, p) < 1) anyFading = true;
+          if (seasonMod.senescence(P, phi, dT) > 0) anyBegun = true;
+          const D = flag ? seasonMod.dropDayAfterTurn(P, phi, dT) : seasonMod.dropDay(P, phi, dT);
+          if (seasonMod.retention(D, p) < 1) anyFading = true;
         }
       }
       if (anyBegun) { begun++; if (!sen) bad.push(`p ${p}: a leaf has begun to turn, senescing is shut`); }
       if (anyFading) { fading++; if (!dropping) bad.push(`p ${p}: a leaf has begun to fade, dropping is shut`); }
-      if (FEATURES.pigment.open(P) !== sen || FEATURES.exposure.open(P) !== math.ordered(P) || FEATURES.drop.open(P) !== dropping || FEATURES.litter.open(P) !== dropping) bad.push(`p ${p}: the registry disagrees with the predicates`);
+      if (FEATURES.pigment.open(P) !== sen || FEATURES.exposure.open(P) !== seasonMod.ordered(P) || FEATURES.drop.open(P) !== dropping || FEATURES.litter.open(P) !== dropping) bad.push(`p ${p}: the registry disagrees with the predicates`);
       if (dropping && !(sen)) bad.push(`p ${p}: dropping is open while senescing is shut`);
       if (dropping && !featuresFor(P).includes("litter")) bad.push(`p ${p}: litter is not offered once dropping opens`);
     }
@@ -518,11 +520,11 @@ test("the gates open with the reach: any leaf that has begun, or has begun to fa
     expect(fading, "not vacuous").toBeGreaterThan(500);
     // the reach, exactly: nothing has begun at turn_start − S, the gate opens just above it, and (one ε early, on purpose) the drop's opens ε before the first possible fade
     const edge = base.turn_start - S;
-    expect(math.senescing(at(base, edge)), "shut at the reach").toBe(false);
-    expect(math.senescing(at(base, edge + 1e-9)), "open just above it").toBe(true);
+    expect(seasonMod.senescing(at(base, edge)), "shut at the reach").toBe(false);
+    expect(seasonMod.senescing(at(base, edge + 1e-9)), "open just above it").toBe(true);
     const first = flag ? edge + (0.3 - 0.18) + base.drop_lag - EPS : base.drop_start - S - EPS;
-    expect(math.dropping(at(base, first - 1e-9))).toBe(false);
-    expect(math.dropping(at(base, first + 1e-9))).toBe(true);
+    expect(seasonMod.dropping(at(base, first - 1e-9))).toBe(false);
+    expect(seasonMod.dropping(at(base, first + 1e-9))).toBe(true);
   }
 });
 
@@ -532,11 +534,11 @@ test("at the reach no leaf has begun: every tree, every phase, both laws — s i
     const P = fall({ ...CAP, tree_clock_spread: S, tree_pigment_spread: 1, drop_after_turn: flag });
     P.phenology = P.turn_start - S;
     for (const v of [0, 0.3, 0.7, 0.99, 1 - 2 ** -24]) for (const phi of [0, 0.5, 0.999999]) {
-      const dT = math.treeShift(v, S);
-      expect(math.senescence(P, phi, dT), `S ${S} v ${v} phi ${phi}`).toBe(0);
+      const dT = seasonMod.treeShift(v, S);
+      expect(seasonMod.senescence(P, phi, dT), `S ${S} v ${v} phi ${phi}`).toBe(0);
     }
     for (const [j, k] of [[0, 0], [5, 3], [12, 9]]) for (const cT of [0, 1, 1.9]) {
-      const got = math.leafTau(tau, P, 7, j, k, [0, 0, 0], undefined, undefined, math.treeShift(1 - 2 ** -24, S), cT);
+      const got = seasonMod.leafTau(tau, P, 7, j, k, [0, 0, 0], undefined, undefined, seasonMod.treeShift(1 - 2 ** -24, S), cT);
       expect(Array.from(got)).toEqual(tau);
     }
   }
@@ -548,11 +550,11 @@ test("armed past the reach and short of the earliest tree's start the build is t
   for (const S of [0.05, 0.1, 0.15]) for (const flag of [0, 1]) for (const faithful of [false, true]) {
     const armed = small({ ...FALL, anthocyanin: 0.8, tannin: 0.5, tree_clock_spread: S, tree_pigment_spread: 1, drop_after_turn: flag });
     // the least Δ, from the draws and the cube by hand — not asked of treeShift, so the window stands (and the build comparison below is what fails) whatever treeShift says
-    const P = fall(armed), reach = P.turn_start - S, best = Math.max(...Array.from({ length: Math.ceil(P.tree_count) }, (_, t) => math.treeDraws(P.seed, t)[0] ** 3)), earliest = P.turn_start - S * best;
+    const P = fall(armed), reach = P.turn_start - S, best = Math.max(...Array.from({ length: Math.ceil(P.tree_count) }, (_, t) => seasonMod.treeDraws(P.seed, t)[0] ** 3)), earliest = P.turn_start - S * best;
     const phenology = (reach + earliest) / 2;
     expect(phenology > reach && phenology < earliest, `S ${S}: inside the window`).toBe(true);
-    expect(math.senescing(at(P, phenology)) && math.lit(at(P, phenology)), `S ${S}: the gates are open`).toBe(true);
-    expect(math.senescence(at(P, phenology), 0, earliest - P.turn_start), `S ${S}: the earliest tree's earliest leaf has not begun`).toBe(0);
+    expect(seasonMod.senescing(at(P, phenology)) && seasonMod.lit(at(P, phenology)), `S ${S}: the gates are open`).toBe(true);
+    expect(seasonMod.senescence(at(P, phenology), 0, earliest - P.turn_start), `S ${S}: the earliest tree's earliest leaf has not begun`).toBe(0);
     const on = growWith({ ...armed, phenology }, faithful, { keep: true });
     expect(on.g.season.rank, `S ${S}: the exposure pass ran`).not.toBe(null);
     sameGrove(`S ${S}, after-turn ${flag}, faithful ${faithful}`, on, grow({ ...armed, phenology, tree_clock_spread: 0, tree_pigment_spread: 0 }, faithful));
@@ -564,8 +566,8 @@ test("armed past the reach and short of the earliest tree's start the build is t
 test("armed at summer the earliest tree is still to come: afternoon 7 at (0.11, 1), phenology 0.5 — the predicates open, the pass runs, and the frame is its summer", () => {
   const over = { ...PRESETS["afternoon 7"], phenology: 0.5, anthocyanin: 0.8, tannin: 0.5, turn_exposure: 1, tree_clock_spread: 0.11, tree_pigment_spread: 1 };
   const P = fall(over);
-  expect(math.senescing(P) && math.lit(P) && math.ordered(P), "open").toBe(true);
-  const earliest = (count) => P.turn_start + Math.min(...math.treeShifts(P, count));
+  expect(seasonMod.senescing(P) && seasonMod.lit(P) && seasonMod.ordered(P), "open").toBe(true);
+  const earliest = (count) => P.turn_start + Math.min(...seasonMod.treeShifts(P, count));
   expect(earliest(2), "the two-tree looks' earliest T0: tree 0 leads by a third of the reach").toBeCloseTo(0.563, 3);
   expect(earliest(P.tree_count), "afternoon 7 has five trees, and the third leads by more than half").toBeCloseTo(0.6 - 0.11 * 0.5572, 3);
   expect(earliest(P.tree_count)).toBeGreaterThan(0.5);
@@ -577,10 +579,10 @@ test("armed at summer the earliest tree is still to come: afternoon 7 at (0.11, 
 });
 
 // ---- the predicates exist once ---------------------------------------------------------------------------------------------------------
-test("the registry's pigment tier and the grove's gate read one predicate: the reach is in math.js, once", () => {
+test("the registry's pigment tier and the grove's gate read one predicate: the reach is in season.js, once", () => {
   const files = readdirSync(".").filter((f) => /\.(js|mjs)$/.test(f) && !/\.test\.js$/.test(f));
   const stating = files.filter((f) => /\b(turnOpens|dropOpens)\s*=/.test(readFileSync(f, "utf8")));
-  expect(stating, "the reach-aware predicates are stated in komorebi-math.js and nowhere else").toEqual(["komorebi-math.js"]);
+  expect(stating, "the reach-aware predicates are stated in komorebi-season.js and nowhere else").toEqual(["komorebi-season.js"]);
   for (const f of ["komorebi-grove.js", "komorebi-params.js", "editor.js"]) expect(/\.turn_start\s*-\s*\w+\.tree_clock_spread/.test(read(`./${f}`)), `${f} does not restate the reach`).toBe(false);
   expect(/params\.phenology\s*>\s*params\.turn_start/.test(read("./editor.js")), "editor.js does not restate the gate").toBe(false);
 });
@@ -615,23 +617,23 @@ test("the held leaf: its tree is the one the grove hangs its cluster on, its lea
     const a0 = +/ a ([\d.]+) /.exec(H.canvas.dataset.label)[1];
     Object.assign(params, { tree_clock_spread: 0.1, tree_pigment_spread: 0.6 });
     H.tick();
-    const [v1, w1] = math.treeDraws(290626672, 1), label = H.canvas.dataset.label;   // cluster 0 is on tree 1: v³ 0.0015, c 1.241
-    expect(label).toContain(` · tree 1 Δ ${math.treeShift(v1, 0.1).toFixed(3)} c ${math.treeGain(w1, 0.6).toFixed(2)}`);
-    expect(+/ a ([\d.]+) /.exec(label)[1], "a is c times the tree-less leaf's, live and with no regrow").toBeCloseTo(a0 * math.treeGain(w1, 0.6), 1);
+    const [v1, w1] = seasonMod.treeDraws(290626672, 1), label = H.canvas.dataset.label;   // cluster 0 is on tree 1: v³ 0.0015, c 1.241
+    expect(label).toContain(` · tree 1 Δ ${seasonMod.treeShift(v1, 0.1).toFixed(3)} c ${seasonMod.treeGain(w1, 0.6).toFixed(2)}`);
+    expect(+/ a ([\d.]+) /.exec(label)[1], "a is c times the tree-less leaf's, live and with no regrow").toBeCloseTo(a0 * seasonMod.treeGain(w1, 0.6), 1);
     expect(H.canvas.dataset.grows, "the recolour paid no regrow").toBe("1");
     // a regrow that waits (the seed moved a moment ago): the picture is still the leaf of the seed it was made with, so are its tree's numbers
     params.seed = 5;
     H.tick(10);
     expect(H.canvas.dataset.grows, "deferred, not dropped").toBe("1");
-    expect(H.canvas.dataset.label).toContain(` · tree 1 Δ ${math.treeShift(v1, 0.1).toFixed(3)} c ${math.treeGain(w1, 0.6).toFixed(2)}`);
+    expect(H.canvas.dataset.label).toContain(` · tree 1 Δ ${seasonMod.treeShift(v1, 0.1).toFixed(3)} c ${seasonMod.treeGain(w1, 0.6).toFixed(2)}`);
     Object.assign(params, { tree_clock_spread: 0.12 });
     H.tick(10);
-    expect(H.canvas.dataset.label, "the lead follows the slider, from the made seed").toContain(` Δ ${math.treeShift(v1, 0.12).toFixed(3)} `);
+    expect(H.canvas.dataset.label, "the lead follows the slider, from the made seed").toContain(` Δ ${seasonMod.treeShift(v1, 0.12).toFixed(3)} `);
     // the grove regrew: cluster 0 is on another tree now, and the leaf follows it
     hier.twigs[0].tree = 0;
     H.tick(10);
-    const [v0, w0] = math.treeDraws(290626672, 0);
-    expect(H.canvas.dataset.label).toContain(` · tree 0 Δ ${math.treeShift(v0, 0.12).toFixed(3)} c ${math.treeGain(w0, 0.6).toFixed(2)}`);
+    const [v0, w0] = seasonMod.treeDraws(290626672, 0);
+    expect(H.canvas.dataset.label).toContain(` · tree 0 Δ ${seasonMod.treeShift(v0, 0.12).toFixed(3)} c ${seasonMod.treeGain(w0, 0.6).toFixed(2)}`);
     Object.assign(params, { tree_clock_spread: 0, tree_pigment_spread: 0 });
     H.tick(10);
     expect(H.canvas.dataset.label, "both back at 0: the tree-less label again").toMatch(/^leaf 0·0 · outline \d+ · s [\d.]+ a [\d.]+ b [\d.]+$/);
@@ -655,8 +657,8 @@ const firstByte = (a, b) => { if (a.length !== b.length) return -2; for (let i =
 test("the held leaf mid-turn: its s and colours are its tree's lead and depth; stepping the address while a regrow waits leaves the picture on the tree it was made for", async () => {
   const seed = 290626672, hier = { nClusterTotal: 4, nLeaf: 3, twigs: [{ tree: 0 }, { tree: 2 }, { tree: 1 }, { tree: 0 }] };   // cluster 0 on tree 0, cluster 1 on tree 2
   const params = fall({ seed, phenology: 0.78, anthocyanin: 0.8, tannin: 0.3, wall_fraction: 0.2, tree_clock_spread: 0.12, tree_pigment_spread: 0.6, leaf_shape: "maple", leaf_size_m: 0.0756, leaf_aspect: 1 });
-  const ofTree = (t) => { const [v, w] = math.treeDraws(seed, t); return [math.treeShift(v, params.tree_clock_spread), math.treeGain(w, params.tree_pigment_spread)]; };
-  const sOf = (j, k, dT) => math.senescence(params, math.leafClock(seed, j, k), dT);
+  const ofTree = (t) => { const [v, w] = seasonMod.treeDraws(seed, t); return [seasonMod.treeShift(v, params.tree_clock_spread), seasonMod.treeGain(w, params.tree_pigment_spread)]; };
+  const sOf = (j, k, dT) => seasonMod.senescence(params, seasonMod.leafClock(seed, j, k), dT);
   const H = await heldLeaf(params, hier);
   try {
     H.preview.show(true); H.tick();

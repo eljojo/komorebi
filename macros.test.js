@@ -8,7 +8,8 @@ import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "./komorebi.js";
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep, TWEEN_OFF_MS, TWEEN_SLOW_MS, TWEEN_BUDGET } from "./macros.js";
-import { DROP_EPS, TWEEN_STEP, beamExtinction, shownExposure } from "./komorebi-math.js";
+import { DROP_EPS, TWEEN_STEP } from "./komorebi-season.js";
+import { beamExtinction, shownExposure } from "./komorebi-light.js";
 import { PRESETS } from "./presets.js";
 
 const MORPH = new Set(MORPH_KEYS), CANOPY = new Set(CANOPY_KEYS);

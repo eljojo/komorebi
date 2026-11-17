@@ -17,6 +17,9 @@
 // only decides where the margin is toothed (the teeth are sub-texel everywhere, kept as process and never tuned for). growSkeleton cannot grow
 // either: it spawns children at a node's tip, by phyllotaxis, and a maple's laterals (a beech's secondaries) leave the vein along its length at
 // a fan of fixed angles.
+//
+// THE LEAF AS MATERIAL AND SIDE (spec/model/leaf.md), the laws that are about the leaf and not about when it turns: the sieve mixture of its walls and cells (mixtureTau), the
+// ballistic share of what it passes (ballisticK) and which way it rolls about its long axis (leafSide).
 // ============================================================================
 import { DEG, TAU, hash3, mulberry32 } from './komorebi-math.js';
 
@@ -30,7 +33,7 @@ const LEAF_ID_FRAC = 32;    // a leaf's outline rides its cluster id's FRACTION 
 const OUTLINE_SALT = 0x4C3AF001;   // grows the outlines
 const VARIANT_SALT = 0x6E1B35D7;   // picks a leaf's outline
 const FLIP_SALT = 0x3D8C5A21;      // turns half the hanging leaves through a half turn
-// LEAF VARIETY (`leaf_variety`, spec/model/leaf.md): a species is a distribution, a tree a family, a leaf a member under its light. Rows of the outline texture are g·V + c: G genotypes (a tree draws one, math.js treeGenotype) of V light
+// LEAF VARIETY (`leaf_variety`, spec/model/leaf.md): a species is a distribution, a tree a family, a leaf a member under its light. Rows of the outline texture are g·V + c: G genotypes (a tree draws one, komorebi-season.js treeGenotype) of V light
 // classes (column 0 the deepest shade, V − 1 full sun) — 64 rows where the species has 8 — and a leaf hangs in the row its tree's genotype and its own rank of light pick. The packing is j + row/128, exact in float32 for any
 // cluster below 2^17 (the GPU's MAX_TEXTURE_SIZE, which the engine does not cap, is 2^14 on most and 2^15 on desktop GL); the eight-row grove keeps LEAF_ID_FRAC above, which is why the shader takes the packing as a uniform.
 const VARIETY_GENOTYPES = 8;       // G
@@ -281,4 +284,29 @@ function leafShape(name, seed, variety = 0){
   return g;
 }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, BEECH_LIGHT, SIZE_LIGHT, VARIETY_REAL, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape };
+// THE LEAF'S SIDE: which way it rolls about its long axis, +1 or −1. A leaf record keeps its heading in [0, π) and its tilt ≥ 0, which is all the cast needs,
+// since a leaf rolled either way throws the same footprint; a leaf stood up in 3-D needs the side, or every leaf in the grove tilts toward one half of the sky.
+// A pure hash of the leaf's address on a salt of its own (SIDE_SALT = 5·0x9E3779B9 mod 2^32, the golden gamma's next multiple after the shoots' 4·), so it
+// draws from no stream and moves no other leaf's draw.
+const SIDE_SALT = 0x1715609D;
+const leafSide = (seed, j, k) => (hash3((seed>>>0)^SIDE_SALT, j, k) & 1) ? 1 : -1;
+// The sieve effect (Beer's law is convex): a leaf is bright vein walls (tau_wall) beside dark cells (tau_cell), and
+// light through the whole leaf is the MEAN OF TRANSMITTANCES, not of tau — so a small clear fraction lifts a deep
+// leaf far more than the mean tau suggests, and tau_j <= f_w*tau_wall + (1-f_w)*tau_cell (Jensen). f_w = 0 is the
+// cell, bit for bit, via its own branch (no exp/log round trip) — that is what keeps the off state exact.
+function mixtureTau(tauWall, tauCell, fw, out = [0,0,0]){
+  if(!(fw > 0)){ out[0]=tauCell[0]; out[1]=tauCell[1]; out[2]=tauCell[2]; return out; }
+  const f = Math.min(fw, 1);
+  for(let c=0;c<3;c++) out[c] = -Math.log(f*Math.exp(-tauWall[c]) + (1-f)*Math.exp(-tauCell[c]));
+  return out;
+}
+// A LEAF IS NOT A WINDOW (spec/model/leaf.md). What a leaf passes is T = T_b + T_d: the ballistic share keeps travelling as a beam, the
+// diffuse share (d = leaf_diffuse) is scattered by the mesophyll and leaves in every direction. The beam sees (1−d)·T, which
+// is NEUTRAL depth on top of the leaf's own: k = −ln(1−d) per leaf (a texel is a mixture of one, spec/model/leaf.md, texelMix), the same in every channel because the split is
+// set by the leaf's scattering structure and not by its pigments (so the beam keeps the leaf's hue and the diffuse share
+// is simply t − tb). d → 1 is −ln 0, so k is capped where the beam is already dark (e^−6 = 0.25 %). d = 0 is exactly 0 —
+// the gate, no log round trip — and so is anything that is not a positive number.
+const BEAM_K_MAX = 6;
+function ballisticK(d){ return d > 0 ? Math.min(-Math.log1p(-Math.min(d, 1)), BEAM_K_MAX) : 0; }
+
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, BEECH_LIGHT, SIZE_LIGHT, VARIETY_REAL, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape, leafSide, SIDE_SALT, mixtureTau, ballisticK, BEAM_K_MAX };

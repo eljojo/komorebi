@@ -50,10 +50,10 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-bake.js` — the per-frame bakes: optical depth per layer, the faithful soft shadow, the sky fill.
 - `komorebi-fill.js` — the sky fill's CPU half, pure; the reference `fill.test.js` and the harness hold the shader to.
 - `komorebi-litter.js` — fallen leaves as a floor material: the pure laws and the once-per-regrow carpet bake.
-- `komorebi-leaf.js` — the leaf's outline, grown as a vein skeleton (`growLeaf`, `leafShape`, `leafVariant`); pure, with `GLSL_LEAF_Q` its shader half.
+- `komorebi-leaf.js` — the leaf: its outline, grown as a vein skeleton (`growLeaf`, `leafShape`, `leafVariant`), and the leaf as material and side (`mixtureTau`, `ballisticK`, `leafSide`); pure, with `GLSL_LEAF_Q` its shader half. Stays out of the season: when a leaf turns or falls is `komorebi-season.js`'s.
 - `komorebi-source.js` — the point-sun cloud, the shared cast geometry and the eclipse moon, as pure functions.
 - `komorebi-motion.js` — the wind signal and the trunk/limb/twig springs.
-- `komorebi-air.js` — the air, pure: the wind's force as a function of time, the air at a place, how deep into a crown it
+- `komorebi-air.js` — the air, pure: the broadband wind signal and its patterns (`fbm1`, `WIND_PATTERNS`, `windNoise`), the wind's force as a function of time, the air at a place, how deep into a crown it
   reaches; the motion, the travel routes' CPU leaves and the shaders' constants read it.
 - `komorebi-transitions.js` — the routes between looks, and which one a pair takes. Each long route has its own module:
   `komorebi-scene-fade.js` (the dissolve), `komorebi-leaf-travel.js` (faithful↔layer and faithful↔faithful, patch by
@@ -66,7 +66,12 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
   the fields out), and what is derived from it: `DEFAULTS`, the legacy-name migration, transition key classes. Also engine caps, and the feature
   registry (`FEATURES`, `featuresFor`) that tells a bundle which fall tiers it may cut.
 - `komorebi-session.js` — pure session profiles and fidelity/playback/presentation resolution; no device storage or UI.
-- `komorebi-math.js` — CPU math: atmosphere, deterministic RNG, wind noise, skeleton growth.
+- `komorebi-season.js` — the season, pure: pigment through the autumn turn, the light that orders it, abscission, leaf-out, the per-leaf and per-tree draws, and the predicates the grove and the feature registry
+  ask of the same params (`senescing`, `lit`, `dropping`, `ordered`). Stays out of GL and of `komorebi-params.js`, which imports it.
+- `komorebi-light.js` — the sun and the air, pure: the 3-band atmosphere, the sun's direction, the cosine law each receiver takes the beam by, the air's loss, the exposure the frame is shown at.
+- `komorebi-camera.js` — the camera, pure: the floor's gauge as a real eye (`cameraPose`) and the edge of the frame as the shader computes it (`vignetteMask`).
+- `komorebi-grammar.js` — the tree's skeleton grown from a spec and a stream (`growSkeleton`) and the direction helpers it turns a child by; pure. The grove and `komorebi-growth.js` call it.
+- `komorebi-math.js` — what the organs share, and nothing of their laws: constants, interpolation, the two-circle overlap area, the deterministic RNG, and the helpers the routes between looks share (`turnBack`, `irisRoute`, `irisStep`).
 - `komorebi-editor-tools.js` — EDITOR-only: debug overlays, the GPU timer queries `nix run .#cost` reads, the motion mirror.
 
 **Looks.** `presets.js` — the built-in looks (`PRESETS`, in the order a person walks them; `EXPERIMENTAL`, which the editor hides behind its toggle; and `PRIORITY`, the dials each look leads with).
