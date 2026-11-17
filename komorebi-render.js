@@ -47,6 +47,7 @@ export function makeRender(hub){
     gl.viewport(0,0,w,h);
     drawTransportInto(glow);
     if(glow) drawDiffusion(fbo, w, h);
+    hub.drawTree?.(fbo, w, h);   // the tree seen from the floor camera, over the floor (komorebi-tree-view.js): nothing unless a look asks for it
   }
 
   function drawTransport(){ drawFrameInto(null, canvas.width, canvas.height); }                 // to screen

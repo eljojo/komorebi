@@ -73,7 +73,7 @@ test("the drop consumes the exposure rank even at turn_exposure 0 — and not at
 // ---- 4. the shipped looks ------------------------------------------------------------------------------------------------
 test("montebello opens all six; the summer looks open only their soft edges' tier, or none without them (nothing is asserted about the other looks: presets.js is live)", () => {
   const look = (n) => [...featuresFor({ ...DEFAULTS, ...PRESETS[n] })].sort();
-  expect(look("montebello")).toEqual([...ALL].sort());
+  expect(look("montebello")).toEqual(ALL.filter((f) => f !== "treeView").sort());   // the six fall tiers; the tree view is the standing scene's, opened by a look that asks to see its tree
   for (const n of ["morning 2", "morning 3"]) expect(look(n), n).toEqual(["leafDiffuse"]);
   expect(look("afternoon 5b"), "afternoon 5b keeps its edges as they were").toEqual([]);
 });

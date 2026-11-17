@@ -80,7 +80,21 @@ The match between the seen disk and the sampler's weights is under [sky-view](#s
 
 ## camera
 
-No measurement of the camera or the Look's tail is recorded. The projector's iris was judged by eye on the 2026-10-08 sheets (see [the camera](../model/camera.md)); the glare's cost to the seen sky is under [sky-view](#sky-view).
+No measurement of the floor camera's framing or the Look's tail is recorded. The projector's iris was judged by eye on the 2026-10-08 sheets (see [the camera](../model/camera.md)); the glare's cost to the seen sky is under [sky-view](#sky-view).
+
+### The tree seen from the floor camera
+
+- **What was measured:** what the tree view adds to the frame and what it costs; whether its leaves need a side.
+- **On:** `park 1`, Chrome on Metal (Apple M1 Pro), wind off, at its shipped framing, at a 1.6 m eye 4.5 m from the trunks (zoom 39 m, tilt 70°, lens 110°) and over the grove from 12.3 m (zoom 20 m, tilt 55°, lens 30°) (`test-gl/out/review/2026-11-16-tree-view/`).
+- **Result:** with the gate off, `park 1`, `montebello`, `the yellow tree`, `afternoon 7` and `curtain 1` render byte for byte as before. On, the tree changes 2.6–3.5 % of the frame (mean |Δ| 3.3–3.7 of 255). The measured leaf (Brakke 1994's red maple in July, T 0.0345 / 0.0993 / 0.0034, in the tree and its shadow) against the look's (0.26 / 0.356 / 0.001) moves 5–17 % of the frame, mean 1.0–2.7, most under the tree looking into the sun, where the look's leaf glows yellow-green and the measured one is a darker green. A specular sheen on the leaf's top moved 0.3–2.2 % of the frame, most from above the crown, where it read as snow; the leaf ships without it ([dead-ends](dead-ends.md#leaf)). Cost at 1920×1080: 6.4 → 7.4 ms a frame (+1.0 ms, inside the run-to-run spread; 6 138 leaves). As stored, every leaf tilted toward one half of the sky (headings in [0, π), tilt ≥ 0); drawing the sides at random changed 5.1 % of a 3-D mockup's frame, thinning its glints.
+- **What it established:** the tree view is registered with the cast by construction and costs about one more draw of the leaves; leaves need a side.
+- **Date:** 2026-11-16.
+
+### Bark
+
+- **What was measured:** not measured here; read off Juola, Hovi & Rautiainen (2022), *Ecology and Evolution* 12, e8718, Fig. 3a: the mean stem-bark reflectance of 20 trees per species in the field, 415–925 nm.
+- **Result:** Norway maple 0.08 / 0.10 / 0.13 / 0.14 / 0.15 at 415 / 500 / 550 / 600 / 650 nm (read by eye, ±0.01), linear sRGB under D65 with the CIE 1931 observer **0.154 / 0.123 / 0.082**, the default `bark_r/g/b`; English oak 0.193 / 0.152 / 0.105. Visible bark spectra are close across the ten species measured; within one species the standard deviation is 0.01–0.06. No sugar maple and no beech were measured.
+- **Date:** 2026-11-16.
 
 ## canopy
 

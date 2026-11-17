@@ -26,7 +26,7 @@
 //   DENSITY CAPACITY. A fixed summer grove can keep a larger per-cluster prefix and reweight its active leaves. Its separate key excludes density, but its gate excludes pigment, drop and variety;
 //   opening those rebuilds the actual population before any exposure rank is needed. Ordinary builds and season records retain their original keys and arithmetic. The active count and cast bounds follow the prefix.
 // ============================================================================
-import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, turnWindow, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
+import { DEG, FAITH_MAX_RATIO, GOLDEN, afterTurn, clamp, dropDay, dropDayAfterTurn, dropHash, dropPhase, exposureBlend, exposureGrid, exposureRank, growSkeleton, hash3, leafClock, leafSide, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, turnWindow, lit, makeGauss, mulberry32, ordered, redGain, retention, senescing, dropping, smoothstep, treeGains, treeGenotype, treeShifts, turnOrder, turnPhase } from './komorebi-math.js';
 
 // The fall tiers this module owns, as the bundler sees them (embed-build.mjs): each is substituted by a literal, true or false, and the code behind a false one is not
 // in the bundle. A tier is cut only for a look that does not open it (komorebi-params.js FEATURES), so a flag that is false here means the guarded arithmetic was
@@ -494,6 +494,7 @@ export function makeGrove(hub){
     let sEx = null, sRank = null;   // the exposure field and keyed rank, when this build ran the pass: the record keeps them, so the first re-season does not pay it again
     let sAt = 0;
     const pos = [0,0,0,0];   // placeLeaf's scratch: one leaf's x, y, z and its pivot weight
+    let sideData = new Float64Array(nAll);   // FAITHFUL: each leaf's side (leafSide), in record order, compacted with pivotData
     let pivotData = new Float64Array(nAll);   // FAITHFUL: each leaf's pivot weight (placeLeaf's out[3]), in record order, before the fade (let: abscission compacts it with faithData)
     let zLow = Infinity, zHigh = -Infinity;   // the lowest and the highest height any leaf hangs at (past faith.hMin / faith.hMax only when inner_leaves hangs one on wood beyond every twig tip)
     let q = 0;   // the leaf's place in record order: every leaf of every cluster takes one, in the faithful run, the pivots and rec
@@ -517,7 +518,7 @@ export function makeGrove(hub){
         const cov = ((k===pcInt) ? frac : 1.0) * t.tcov;   // marginal-leaf fade × marginal-tree fade (§4.5)
         // where it hangs (placeLeaf): the twig hug off the tip, and with inner_leaves up a share of the leaves on the wood behind it. Same two draws → other attributes unchanged.
         const b = k*DRAW, g1 = D[b], g2 = D[b+1];
-        placeLeaf(hier, j, g1, g2, k, params, faithful, pos); pivotData[q] = pos[3];
+        placeLeaf(hier, j, g1, g2, k, params, faithful, pos); pivotData[q] = pos[3]; sideData[q] = leafSide(params.seed, j, k);
         const x = pos[0], y = pos[1], z = pos[2];
         if(z < zLow) zLow = z;
         if(z > zHigh) zHigh = z;
@@ -605,6 +606,7 @@ export function makeGrove(hub){
     }
     const seasonBase = keepSeason ? layerData.map(a => Float32Array.from(a)) : null;   // the UNCOMPACTED layer records, before the rewrite below touches a tau
     const seasonPivot = keepSeason ? Float32Array.from(pivotData) : null;              // ...and the pivot weights, in the same record order (one push site)
+    const seasonSide = keepSeason ? Float32Array.from(sideData) : null;                // ...and the sides
     let litter = null, leafW = null;
     if(rec?.length){
       const n = rec.length/REC;
@@ -645,17 +647,17 @@ export function makeGrove(hub){
       if(gone){
         const per = new Int32Array(nLayer);
         for(let i=0;i<n;i++) if(alive[i]) per[rec[REC*i+7]]++;
-        const keepL = Array.from(per, (c) => new Float64Array(c*17)), keepF = new Float64Array((n-gone)*18), keepP = new Float64Array(n-gone);
+        const keepL = Array.from(per, (c) => new Float64Array(c*17)), keepF = new Float64Array((n-gone)*18), keepP = new Float64Array(n-gone), keepS = new Float64Array(n-gone);
         const atL = new Int32Array(nLayer);
         for(let i=0, s=0;i<n;i++){
           if(!alive[i]) continue;
           const o = REC*i, l = rec[o+7], li = rec[o+8] - 8, fi = rec[o+9] - 8;
           keepL[l].set(layerData[l].subarray(li, li+17), atL[l]); atL[l] += 17;
           keepF.set(faithData.subarray(fi, fi+18), s*18);
-          keepP[s++] = pivotData[fi/18];
+          keepS[s] = sideData[fi/18]; keepP[s++] = pivotData[fi/18];
         }
         for(let l=0;l<nLayer;l++) layerData[l] = keepL[l];
-        faithData = keepF; pivotData = keepP;
+        faithData = keepF; pivotData = keepP; sideData = keepS;
       }
     }
 
@@ -751,7 +753,7 @@ export function makeGrove(hub){
         if(s.ax<sx0)sx0=s.ax; if(s.ax>sx1)sx1=s.ax; if(s.ay<sy0)sy0=s.ay; if(s.ay>sy1)sy1=s.ay;
         if(s.bx<sx0)sx0=s.bx; if(s.bx>sx1)sx1=s.bx; if(s.by<sy0)sy0=s.by; if(s.by>sy1)sy1=s.by;
       }
-      season = { key, rec: sRec, base: seasonBase, pivot: seasonPivot, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, nTree, E, tau, seg: [sx0, sx1, sy0, sy1],
+      season = { key, rec: sRec, base: seasonBase, pivot: seasonPivot, side: seasonSide, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, nTree, E, tau, seg: [sx0, sx1, sy0, sy1],
                  faithBuf: null, ex: sEx, rank: sRank, u: null, outL: null, outF: null };   // faithBuf: the upload's (the buffer this record is beside)
     }
     let density = null;
@@ -760,7 +762,7 @@ export function makeGrove(hub){
       const tipMin = hMin<=hMax ? hMin : 0;
       density = { key: densityKey(params, faithful), hMin: tipMin, hMax: hMax>hMin ? hMax : tipMin+1 };
     }
-    return { hier, layers, faithArr, pivot: pivotData, clusterRows, nClusterTotal, shape, litter, reach, key, wood, vary, scaleMax, season, density,
+    return { hier, layers, faithArr, pivot: pivotData, side: sideData, clusterRows, nClusterTotal, shape, litter, reach, key, wood, vary, scaleMax, season, density,
              under: cacheDensity ? { ...params } : null,   // the params a density capacity re-seasons under at the upload: the ones it was grown under
              occ: occOut, sky: { start: skyStart, count: skyCount, rest: skyRest },
              faith: { hMin: castMin, hMax: castMax, binH, rest: woodRest, box: [px0, px1, py0, py1] } };
@@ -815,6 +817,9 @@ export function makeGrove(hub){
       if(faith.pivotBuf) gl.deleteBuffer(faith.pivotBuf);
       faith.pivotBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, faith.pivotBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.pivot), gl.STATIC_DRAW);
       gl.enableVertexAttribArray(8); gl.vertexAttribPointer(8,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(8,1);   // the pivot weight, one float a leaf
+      if(faith.sideBuf) gl.deleteBuffer(faith.sideBuf);
+      faith.sideBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, faith.sideBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.side), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(9); gl.vertexAttribPointer(9,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(9,1);   // the leaf's side, one float a leaf: read by the tree view alone
       faith.pivot = G.pivot;   // the survivors' weights, as uploaded
       faith.pivotOn = G.pivot.some((w) => w > 0);   // the bake's specialization: VS_FAITH_PIVOT only where a leaf has one
       gl.bindVertexArray(null);
@@ -935,8 +940,8 @@ export function makeGrove(hub){
     // turn_exposure > 0, so given senescing the arm is a property of the schedule's keys, and the schedule is built for it.
     const turning = (FEAT_PIGMENT || FEAT_EXPOSURE) && sen && ((FEAT_EXPOSURE && P.turn_exposure > 0) || FEAT_PIGMENT);
     const sc = (FEAT_PIGMENT || FEAT_EXPOSURE || FEAT_DROP) && n > 0 && (turning || FEAT_DROP && track) ? scheduleOf(g, P) : null, at = sc?.at;
-    if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); S.outP = new Float32Array(n); }
-    const outL = S.outL, outF = S.outF, outP = S.outP, wL = new Int32Array(nLayer);
+    if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); S.outP = new Float32Array(n); S.outS = new Float32Array(n); }
+    const outL = S.outL, outF = S.outF, outP = S.outP, outS = S.outS, wL = new Int32Array(nLayer);
     const fallen = FEAT_DROP && track ? [] : null, leafW = FEAT_DROP && track ? new Float32Array(S.nCluster*nLeaf).fill(1) : null;
     let wF = 0, px0 = S.seg[0], px1 = S.seg[1], py0 = S.seg[2], py1 = S.seg[3];
     let lx0 = 1e18, ly0 = 1e18, lx1 = -1e18, ly1 = -1e18;   // the survivors' plan extent (doubles, like buildGrove's own scan of faithData)
@@ -958,7 +963,7 @@ export function makeGrove(hub){
       for(let q=0;q<8;q++){ const v = bl[li+q]; dl[wl+q] = v; outF[wF+q] = v; }
       for(let c=0;c<3;c++){ const v = lt[c]*cf; dl[wl+8+c] = v; outF[wF+8+c] = v; }
       for(let q=11;q<16;q++){ const v = bl[li+q]; dl[wl+q] = v; outF[wF+q] = v; }
-      dl[wl+16] = cf; outF[wF+16] = rec[o+2]; outF[wF+17] = cf; outP[wF/18] = S.pivot[i];
+      dl[wl+16] = cf; outF[wF+16] = rec[o+2]; outF[wF+17] = cf; outP[wF/18] = S.pivot[i]; outS[wF/18] = S.side[i];
       wL[l] = wl + 17; wF += 18;
       const x = rec[o], y = rec[o+1];
       if(x<lx0)lx0=x; if(x>lx1)lx1=x; if(y<ly0)ly0=y; if(y>ly1)ly1=y;
@@ -976,6 +981,8 @@ export function makeGrove(hub){
     gl.bindBuffer(gl.ARRAY_BUFFER, faith.pivotBuf);                                    // the survivors' pivot weights, beside them in the same order
     gl.bufferData(gl.ARRAY_BUFFER, outP.subarray(0, wF/18), gl.DYNAMIC_DRAW);
     faith.pivotOn = outP.subarray(0, wF/18).some((w) => w > 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, faith.sideBuf);                                     // ...and their sides
+    gl.bufferData(gl.ARRAY_BUFFER, outS.subarray(0, wF/18), gl.DYNAMIC_DRAW);
     if(lx0<px0)px0=lx0; if(lx1>px1)px1=lx1; if(ly0<py0)py0=ly0; if(ly1>py1)py1=ly1;
     if(px0>px1){ const h=P.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
     faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;

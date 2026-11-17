@@ -24,6 +24,10 @@ export function makeTransitions(hub){
   const { params, trans, faithfulOn } = hub;
   // A selection that waits for the moving route's settled frame (the latest one replaces it, and the route's own
   // completion no longer fires), and the start of that selection once the route has settled.
+  // A look that sees its tree (tree_view, komorebi-tree-view.js) is drawn by the cast's own leaves; the routes that carry those leaves themselves (the grove's,
+  // the litter's and the season's travels) do not draw the tree. Such a pair takes the routes that keep the cast: a morph, a re-season, or the scene fade,
+  // under which the tree comes and goes whole.
+  const seesTree = (P) => !!(P.tree_view && P.standing_scene && P.faithful_canopy);
   const wait = (to, opts) => { trans.waiting = { to, opts }; trans.onEnd = null; };
   const queued = cb => {
     const w = trans.waiting, to = trans.to; trans.waiting = null;
@@ -44,7 +48,8 @@ export function makeTransitions(hub){
     trans.waiting = null;
     if(opts.style==='fade' && trans.active){ wait(to, opts); return; }   // a scene dissolve starts from rest; keep the requested style until the current route lands
     if(trans.active&&trans.groveTravel){hub.retargetGroveTravel(to,opts);return;}
-    if(!styleFade&&!trans.active&&groveTravelEligible(params,to)&&hub.beginGroveTravel(to)!==false){
+    const castOwned = !seesTree(params) && !seesTree(to);   // a route that draws its own leaves may run
+    if(!styleFade&&!trans.active&&castOwned&&groveTravelEligible(params,to)&&hub.beginGroveTravel(to)!==false){
       hub.warnCut(to);
       Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
         active:true,groveTravel:true,litterRise:false,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
@@ -52,10 +57,10 @@ export function makeTransitions(hub){
       return;
     }
     if(trans.active&&trans.litterRise){hub.retargetLitterRise(to,opts);return;}
-    const shadowRise=!styleFade&&!trans.active&&shadowRiseEligible(params,to)&&hub.faith?.count!==0;
-    const litterFall=!styleFade&&!trans.active&&litterFallEligible(params,to)&&hub.beginLitterRise(to,false,true)!==false;
-    const shadowFall=!styleFade&&!trans.active&&shadowFallEligible(params,to)&&hub.beginLitterRise(to,true,true)!==false;
-    if(!styleFade&&!trans.active&&(litterFall||shadowFall||shadowRise||hub.grove?.litter?.length&&litterRiseEligible(params,to))){
+    const shadowRise=!styleFade&&!trans.active&&castOwned&&shadowRiseEligible(params,to)&&hub.faith?.count!==0;
+    const litterFall=!styleFade&&!trans.active&&castOwned&&litterFallEligible(params,to)&&hub.beginLitterRise(to,false,true)!==false;
+    const shadowFall=!styleFade&&!trans.active&&castOwned&&shadowFallEligible(params,to)&&hub.beginLitterRise(to,true,true)!==false;
+    if(!styleFade&&!trans.active&&castOwned&&(litterFall||shadowFall||shadowRise||hub.grove?.litter?.length&&litterRiseEligible(params,to))){
       hub.warnCut(to);
       Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
         active:true,litterRise:true,shadowRise,litterFall,shadowFall,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
@@ -72,7 +77,7 @@ export function makeTransitions(hub){
     // outgoing scene or the half-faded grove would be dropped. Such a selection waits, as it does on a travel route.
     if(trans.active && (trans.crossfade && !trans.swapped && hub.crossW>0
         || trans.sceneFade && (MODE_KEYS.some(k => to[k]!==params[k]) || !faithfulOn() || !to.faithful_canopy))){ wait(to, opts); return; }
-    const seasonTravel=!styleFade&&!trans.active&&seasonTravelEligible(params,to);
+    const seasonTravel=!styleFade&&!trans.active&&castOwned&&seasonTravelEligible(params,to);
     trans.seasonTravel=seasonTravel;
     const retarget=trans.active&&trans.leafTravel;
     const turnScale=retarget&&hub.retargetLeafTravel(to,opts);   // a reversal's clock, scaled to the distance it has left

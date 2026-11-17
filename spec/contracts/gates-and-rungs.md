@@ -87,6 +87,8 @@ A page that embeds the piece downloads only what its looks use. What may be left
 | **drop** | leaves are dropping |
 | **litter** | `litter` > 0 and leaves are dropping (a carpet needs a fallen leaf) |
 
+**The tree view** is a seventh tier, the standing scene's, not the season's: it opens when `tree_view` is on over a standing scene cast faithfully, and a bundle with no such look leaves out its pass and its shaders.
+
 **Law.** The season's predicates (senescing, lit, dropping, ordered) are defined once and read by the grove and the registry alike, never restated.
 
 **The dependency that is easy to miss.** *Ordered* is *lit*, or *dropping* while the drop is ordered by exposure and does not wait for the turn. The drop consumes the exposure rank (the sunlit leaves go first) even when the turn is not ordered by light, so a look that drops by light opens the exposure tier without turning by it. A bundle that cut exposure under such a look would drop its leaves in another order and paint a different tree without saying so.

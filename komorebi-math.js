@@ -166,6 +166,12 @@ const TAU_TANNIN      = [0.883, 1.2, 1.398];     // broad, warm-leaning (b > g >
 // cannot move one twig or one leaf of any shipped grove. The salt keeps it independent of the arrangement stream
 // (hash3(seed, j, 101), made from the same ingredients).
 const LEAF_SALT = 0x51ED270B;
+// THE LEAF'S SIDE: which way it rolls about its long axis, +1 or −1. A leaf record keeps its heading in [0, π) and its tilt ≥ 0, which is all the cast needs,
+// since a leaf rolled either way throws the same footprint; a leaf stood up in 3-D needs the side, or every leaf in the grove tilts toward one half of the sky.
+// A pure hash of the leaf's address on a salt of its own (SIDE_SALT = 5·0x9E3779B9 mod 2^32, the golden gamma's next multiple after the shoots' 4·), so it
+// draws from no stream and moves no other leaf's draw.
+const SIDE_SALT = 0x1715609D;
+const leafSide = (seed, j, k) => (hash3((seed>>>0)^SIDE_SALT, j, k) & 1) ? 1 : -1;
 const _leafCell=[0,0,0], _leafWall=[0,0,0];   // scratch for leafTau, written and read within one synchronous call
 // s_j: how far leaf (stream value phi in [0,1)) has turned. smoothstep from its own start to the common finish; the
 // spread is clamped under the span so the transition keeps a floor of width and the smoothstep a positive one.
@@ -698,4 +704,4 @@ function irisStep(route, e, p) {
   return lerp(route.from, route.to, e);
 }
 
-export { DEG, TAU, cameraPose, vignetteMask, irisRoute, irisStep, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, mulberry32, makeGauss, hash3, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, turnWindow, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };
+export { DEG, TAU, cameraPose, vignetteMask, irisRoute, irisStep, lensArea, FAITH_MAX_RATIO, clamp, lerp, smoothstep, lerpAngle, turnBack, atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, mulberry32, makeGauss, hash3, leafSide, SIDE_SALT, TAU_CAROTENOID, TAU_ANTHOCYANIN, TAU_TANNIN, senescence, turnWindow, mixtureTau, leafClock, turnPhase, afterTurn, leafTau, LEAF_SCHED, leafDraws, leafPigments, leafTauAt, TREE_SALT, treeDraws, treeGenotype, treeShift, treeGain, treeShifts, treeGains, SEASON_SUN, EXPOSURE_K, exposureGrid, exposureRank, exposureBlend, groundShade, turnOrder, redGain, DROP_EPS, TWEEN_STEP, senescing, lit, dropping, ordered, dropHash, dropPhase, dropDay, dropDayAfterTurn, retention, BEAM_K_MAX, ballisticK, fbm1, WIND_PATTERNS, windNoise, coneDir, coneDirPlane, bendDown, GOLDEN, growSkeleton };

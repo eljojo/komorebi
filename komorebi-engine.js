@@ -7,6 +7,7 @@ import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
 import { makeGrove, seasonKey, densityEligible, densityCount, growAs } from './komorebi-grove.js';
 import { makeBake, makeFill, NO_FILL, FILL_SIG_LEN } from './komorebi-bake.js';
+import { makeTreeView, NO_TREE_VIEW } from './komorebi-tree-view.js';
 import { makeLitter, newLitterState, NO_LITTER } from './komorebi-litter.js';
 import { makeRender } from './komorebi-render.js';
 import { makeEditorTools } from './komorebi-editor-tools.js';
@@ -26,6 +27,7 @@ const EDITOR = (typeof KOMOREBI_EDITOR !== "undefined") ? KOMOREBI_EDITOR : true
 // and a false one removes the sky fill's factory and program, or the litter carpet's, from the bundle altogether. Raw modules keep both true.
 const FEAT_FILL = true;
 const FEAT_LITTER = true;
+const FEAT_TREE_VIEW = true;
 // WHICH BUILD THIS IS and what it cut. The raw modules cut nothing; a bundle's build rewrites this line (verbatim, or it throws) with its file name, the looks it was
 // made for and the tiers it left out, so that a host which opens one of those gets told once (warnCut) rather than a quietly different picture.
 const BUILD = { name: 'modules', cut: [] };
@@ -405,7 +407,8 @@ function createEngine(canvas, opts, driven=false){
     hub.refreshWood = groveSystem.refreshWood;
     ({ bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow });
     ({ bakeFill, refreshFill, fillWanted, fillLayerRes } = FEAT_FILL ? makeFill(hub) : NO_FILL); Object.assign(hub, { bakeFill, refreshFill, fillWanted, fillLayerRes });   // the fill reads the layers and the frame the bake just put on the hub
-    ({ refreshLitter } = FEAT_LITTER ? makeLitter(hub) : NO_LITTER); hub.refreshLitter = refreshLitter;   // after the bake: the carpet is read over the fill's frame, and asks the bake module for it
+    ({ refreshLitter } = FEAT_LITTER ? makeLitter(hub) : NO_LITTER); hub.refreshLitter = refreshLitter;
+    Object.assign(hub, FEAT_TREE_VIEW ? makeTreeView(hub) : NO_TREE_VIEW);   // the tree seen from the floor camera: it reads the fill's low-res layers, or keeps them itself   // after the bake: the carpet is read over the fill's frame, and asks the bake module for it
     ({ drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));
     Object.assign(hub, { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit });
     if(EDITOR) hub.initEditorGL?.();   // the debug overlays' buffers (absent on the very first call: makeEditorTools runs later and calls it itself)
@@ -465,7 +468,7 @@ function createEngine(canvas, opts, driven=false){
     // faithful mode never bakes or samples the layer textures (transport taps faithTex once), so size them 1×1
     // there too — saves ~layer_count·res²·8 bytes of dead VRAM (≈16 MB at defaults). Reallocated full when faithful off.
     // The one exception is the sky fill (§4.7): with canopy_fill open it reads a LOW-RES layer bake on that path too.
-    allocLayers(!faithfulOn() ? res : hub.fillWanted() ? hub.fillLayerRes() : 1);
+    allocLayers(!faithfulOn() ? res : hub.fillWanted() ? hub.fillLayerRes() : hub.treeWanted() ? hub.treeLayerRes() : 1);   // ...and so does the tree view, at the same size
     // FAITHFUL path (§4.5): the soft-shadow accumulator + per-sample scratch. 1×1 when off, so the park / layer
     // path allocates nothing extra; full bake-res when faithful_canopy is on.
     if(hub.faithTex) gl.deleteTexture(hub.faithTex);
@@ -500,13 +503,13 @@ function createEngine(canvas, opts, driven=false){
   // with what the grove build put beside it (the faithful leaves and wood, the analytic wood's table, the sky view's binned wood),
   // instead of growing the same grove again. The host forgets the GL handles, so its rebuild makes its own and frees none of these;
   // everything else a build writes it writes afresh. sky.start and sky.count are filled in place, so they are copied.
-  const GROVE_FAITH = ['vao','buf','count','hMin','hMax','pminx','pmaxx','pminy','pmaxy','binH','pivot','pivotBuf','pivotOn','segRest','segCount','segArr','segVAO','segBuf'];
+  const GROVE_FAITH = ['vao','buf','count','hMin','hMax','pminx','pmaxx','pminy','pmaxy','binH','pivot','pivotBuf','pivotOn','sideBuf','segRest','segCount','segArr','segVAO','segBuf'];
   function adoptGrove(h){
     for(const k of GROVE_FAITH) faith[k] = h.faith[k];
     for(const k of ['rest','ht','count','want','hRef']) occ[k] = h.occ[k];
     Object.assign(sky, { segVAO:h.sky.segVAO, segBuf:h.sky.segBuf, segRest:h.sky.segRest, segArr:h.sky.segArr, start:[...h.sky.start], count:[...h.sky.count] });
     installGrove(h.grove);
-    Object.assign(h.faith, { vao:null, buf:null, pivotBuf:null, segVAO:null, segBuf:null });
+    Object.assign(h.faith, { vao:null, buf:null, pivotBuf:null, sideBuf:null, segVAO:null, segBuf:null });
     Object.assign(h.sky, { segVAO:null, segBuf:null });
     Object.assign(h, { grove:null, layerVAO:[], clusterTex:null, clusterGeomTex:null });   // hier stays: the host's regrow carries its springs from it
   }
@@ -584,7 +587,7 @@ function createEngine(canvas, opts, driven=false){
       freeGrove(h.grove);
       for(const t of [...h.layerTex,...h.woodTex,h.faithTex,h.faithScratch])if(t)gl.deleteTexture(t);
       for(const v of [h.faith.vao,h.faith.segVAO])if(v)gl.deleteVertexArray(v);
-      for(const b of [h.faith.buf,h.faith.segBuf,h.faith.pivotBuf])if(b)gl.deleteBuffer(b);
+      for(const b of [h.faith.buf,h.faith.segBuf,h.faith.pivotBuf,h.faith.sideBuf])if(b)gl.deleteBuffer(b);
     };
     Object.assign(hub,{grove:null,layerVAO:[],clusterTex:null,clusterGeomTex:null,layerTex:[],woodTex:[],faithTex:null,faithScratch:null});
     Object.assign(faith,{vao:null,buf:null,segVAO:null,segBuf:null});
@@ -842,9 +845,11 @@ function createEngine(canvas, opts, driven=false){
       [hub.clusterTex, hub.clusterGeomTex, hub.grove?.leafTex, occTex, hub.faithTex, hub.faithScratch, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
       freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
       [bakeFBO, faithFBO, fillFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
+      hub.disposeTree();                              // the tree view's targets and its leaf table
       hub.layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
       if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
       if(faith.pivotBuf) gl.deleteBuffer(faith.pivotBuf);
+      if(faith.sideBuf) gl.deleteBuffer(faith.sideBuf);
       if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
       if(sky.segVAO){ gl.deleteVertexArray(sky.segVAO); gl.deleteBuffer(sky.segBuf); }
       if(litter.vao){ gl.deleteVertexArray(litter.vao); gl.deleteBuffer(litter.buf); }
@@ -976,7 +981,7 @@ function createEngine(canvas, opts, driven=false){
     litterEntry = null; Object.assign(litter, newLitterState());                   // ...and so did the carpet's: initGPU() makes the fresh 1×1, and the first draw that has fallen leaves to show bakes it again
     Object.assign(hub, { layerTex:[], woodTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
                          clusterTex:null, clusterGeomTex:null, presentFBO:null, presentW:0, presentH:0 });
-    faith.vao = faith.buf = faith.segVAO = faith.segBuf = faith.pivotBuf = null;
+    faith.vao = faith.buf = faith.segVAO = faith.segBuf = faith.pivotBuf = faith.sideBuf = null;
     sky.segVAO = sky.segBuf = null;
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded

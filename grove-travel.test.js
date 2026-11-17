@@ -1,6 +1,7 @@
 import {test,expect} from 'bun:test';
 import {makeTransitions} from './komorebi-transitions.js';
 import {PRESETS} from './presets.js';
+import {DEFAULTS} from './komorebi-params.js';
 import fixture from './test-gl/fixtures/fall-look-up.json';
 import {groveTravelEligible,groveFlightProgress,matchGroveTrees,makeGroveTravel,carriedLeaf} from './komorebi-grove-travel.js';
 
@@ -71,7 +72,7 @@ test('a grove journey lands before handing its callback back to the frame loop',
 test('retargeting an active grove journey retains its carried geometry',()=>{
  const r=rig(fall),calls=[];r.hub.retargetGroveTravel=(to,opts)=>calls.push({to,opts});
  r.transitionTo(PRESETS['park 2']);r.tickTransition(.02);r.transitionTo(fall,{duration:2});
- expect(calls).toHaveLength(1);expect(calls[0].to).toEqual(fall);
+ expect(calls).toHaveLength(1);expect(calls[0].to).toEqual({...DEFAULTS,...fall});   // the target as the engine resolves it: every key, the saved look's own over the defaults
  expect(r.events.filter(x=>x==='prepare')).toHaveLength(1);expect(r.events).not.toContain('rebuild');
 });
 

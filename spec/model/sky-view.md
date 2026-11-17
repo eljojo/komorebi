@@ -227,7 +227,7 @@ The tent's mesh panels ([`receivers.md`](receivers.md)) are windows onto precise
 
 ## Not built
 
-- **The tree as a shaded body**: lit bark, sun on a trunk's near flank, visible-surface shading. See [`../exploration/open.md`](../exploration/open.md).
+- **The tree as a shaded body**, looking up: lit bark, sun on a trunk's near flank, visible-surface shading. The floor camera has it ([`camera.md`](camera.md#the-tree-seen-from-the-floor-camera)): its lit leaf and bark are this view's to take. See [`../exploration/open.md`](../exploration/open.md).
 - **The eye's own glare for the leaked disk**, taking `srcSeen` out of the frame-wide veiling glare. See [`../exploration/open.md`](../exploration/open.md).
 - **Mesh panels as sky view**: the tent's upper panels running this transport. See [`../exploration/open.md`](../exploration/open.md).
 - **A sky model** with horizon brightening and aerosol forward-scatter, to replace the flat radiance. See [`../exploration/open.md`](../exploration/open.md).

@@ -205,14 +205,15 @@ Komorebi stands on research into how real trees grow and how real leaves handle 
 - The autumn pigments (`komorebi-math.js`), fitted to how a leaf reflects and passes light and what its pigments absorb:
   S. Jacquemoud and F. Baret (1990), PROSPECT, *Remote Sensing of Environment* 34; J.-B. Féret, A. A. Gitelson, S. D. Noble
   and S. Jacquemoud (2017), PROSPECT-D, *Remote Sensing of Environment* 193; computed from the `prospect` R package,
-  J.-B. Féret and F. de Boissieu (2024), *Journal of Open Source Software* 9(94), 6027. PROSPECT also informs the leaf
-  material in progress below.
+  J.-B. Féret and F. de Boissieu (2024), *Journal of Open Source Software* 9(94), 6027. PROSPECT-D also gives the seen
+  leaf below its scattering.
+- The tree seen from the floor camera (`komorebi-tree-view.js`): a leaf as two faces of one Kubelka–Munk slab, M. Hébert and
+  J.-M. Becker (2008), *Journal of Optics A* 10, 035006; its surface's index, L. Bousquet, S. Lachérade, S. Jacquemoud and
+  I. Moya (2005), *Remote Sensing of Environment* 98; its two faces measured, T. W. Brakke, J. A. Smith and J. M. Harnden (1989), *Remote
+  Sensing of Environment* 29, and T. Brakke (1994), *Agricultural and Forest Meteorology* 71; the bark's reflectance, J. Juola,
+  A. Hovi and M. Rautiainen (2022), *Ecology and Evolution* 12, e8718.
 
-**Informing the work in progress** (seeing the tree, and real shoots and leaves)
-- M. Hébert and J.-M. Becker (2008), *Journal of Optics A* 10, 035006: Kubelka–Munk layers and their stacking.
-- L. Bousquet, S. Lachérade, S. Jacquemoud and I. Moya (2005), *Remote Sensing of Environment* 98: a leaf's sheen.
-- T. W. Brakke, J. A. Smith and J. M. Harnden (1989), *Remote Sensing of Environment* 29, and T. Brakke (1994),
-  *Agricultural and Forest Meteorology* 71: the two faces of a leaf.
+**Informing the work in progress** (real shoots and leaves, and the light inside a crown)
 - R. Habel, A. Kusternig and M. Wimmer (2007), Eurographics Symposium on Rendering: a leaf's translucency.
 - R. A. Gregory (1980), *Canadian Journal of Forest Research* 10: sugar maple's shoots.
 - S. Dupré, B. Thiébaut and E. Teissier du Cros (1986), *Annales des Sciences Forestières* 43: beech's short and long shoots.

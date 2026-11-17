@@ -58,6 +58,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
   `komorebi-scene-fade.js` (the dissolve), `komorebi-leaf-travel.js` (faithful↔layer and faithful↔faithful, patch by
   patch), `komorebi-season-travel.js`, `komorebi-grove-travel.js` and `komorebi-litter-rise.js` (floor↔sky).
 - `komorebi-render.js` — one frame onto a target.
+- `komorebi-tree-view.js` — the tree seen from the floor camera: the faithful cast's own leaves and wood, stood up, lit and laid over the floor; the seen leaf's slab, pure. Behind `FEAT_TREE_VIEW`.
 - `komorebi-transport.js` — the camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.
 - `komorebi-shaders.js` — the bake and display shaders, the shared tone tail, the sky fill's bake.
 - `komorebi-params.js` — `PARAMS`, every parameter defined once (default, panel row, how it travels, what it means; its header sets

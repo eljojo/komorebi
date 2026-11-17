@@ -35,7 +35,7 @@ On 2026-11-15 the artist judged every shipped look, built-in and online, with ea
 Since 2026-11-16 `sun_cosine` 1, `sun_extinction` 1, `edge_area` true and `inner_leaves` 0.35 are the defaults. The default `exposure` (1.656) and `ambient_skylight` (0.3925) are the old 1.3 and 0.5 re-sat over the default sun's two laws (× 0.819 × 0.958), so the default scene shows as it did. `GRANDFATHERED` in `komorebi-params.js` holds the values from before, and every built-in look that keeps one names it, with its reason beside it:
 
 - **The old receiver law, without the cosine:** `park 2`. Under its cloud the law raises its sunflecks by 6 to 10 % and no exposure takes that back without darkening the shade; the artist had kept its original contrast before.
-- **No air's loss:** `montebello`'s season family: `park 1`, `park 2`, `park fall`, `the yellow tree`, `montebello, rain` and `cherry blossom`. The season travel joins them only while they share one skylight, which the shade-held loss would move. `montebello` keeps the loss as it was chosen ([below](#the-airs-loss)).
+- **No air's loss:** `montebello`'s season family: `park 1`, `park 2`, `park fall`, `the yellow tree`, `montebello, rain` and `cherry blossom`; and `park 1`'s two tree-view looks, which are its light. The season travel joins them only while they share one skylight, which the shade-held loss would move. `montebello` keeps the loss as it was chosen ([below](#the-airs-loss)).
 - **No soft edges:** `afternoon 4b`, `afternoon 5b`, `prism` and `afternoon 6b`, whose colour soft edges move by 6 to 8 levels; and `afternoon 4` and `afternoon 5`, which share a grove with them, since soft edges travel as topology.
 - **No inner leaves:** `prism` and `afternoon 5b`, where they fill the bright middle of the crown dark (the artist: "leave it off on 01-03"), and `afternoon 4`, whose middle goes dark too; `afternoon 5` and `afternoon 4b` share those groves.
 
@@ -176,6 +176,18 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 - **For:** the first standing-scene look: the tree stands in the scene and its whole shadow, trunk streak to branches to crown dapples, is thrown across a lit floor, not an infinite canopy hovering overhead. A wide view over a small grove leaves the grove a finite blob with lit floor around it. The faithful path is the heaviest; runtime quality policy belongs to the showing.
 - **Authored departures:** the warm dirt floor.
 - **Gates:** `faithful_canopy`, `standing_scene`, wood.
+
+### park 1, under the trees
+- **Camera and mode:** floor, standing, faithful, the tree seen.
+- **For:** a working name; the artist has not named it. `park 1` with its tree in view, from where a person stands on the lawn: the eye 1.6 m up and 4.5 m from the trunks, looking into the sun, the leaves glowing with what they pass and the shadows running toward the viewer. The artist asked for the choice between this first-person framing, "under the tree with tree above and shadow below", and the far one below, and chose a look for each (2026-11-16). Its leaf is `park 1`'s own. Everything else is `park 1`'s.
+- **Authored departures:** as `park 1`.
+- **Gates:** as `park 1`, and `tree_view`.
+
+### park 1, the scene
+- **For:** a working name. `park 1`'s grove and its shadow seen from 12.3 m up, "the farther away videogame scene kind too, it can be such a vibe sometimes". Its leaf is `park 1`'s own. Everything else is `park 1`'s.
+- **Camera and mode:** floor, standing, faithful, the tree seen.
+- **Authored departures:** as `park 1`.
+- **Gates:** as `park 1`, and `tree_view`.
 
 ### park 2
 - **Camera and mode:** floor, standing, faithful.

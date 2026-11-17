@@ -140,6 +140,8 @@ These are the words the other documents use without stopping to explain. Each en
 
 **layer.** One of the depth-binned sheets of the bake, holding per-channel optical depth and coverage at a height. [`model/canopy.md`](model/canopy.md)
 
+**leaf side.** Which way a leaf rolls about its long axis, ±1, a pure hash of its address. The stamp is the same either way; the tree seen from the floor camera stands the leaf up by it. [`model/leaf.md`](model/leaf.md#a-leaf-seen)
+
 **leaf address (j, k).** A leaf named by its cluster *k* and its place *j* in it, with the grove's seed. Every per-leaf draw is a pure function of the address on a salt of its own, so a leaf is itself whatever else changes. [`contracts/determinism.md`](contracts/determinism.md)
 
 **limb.** See *cluster, twig, limb, trunk, bole*.
@@ -218,13 +220,15 @@ These are the words the other documents use without stopping to explain. Each en
 
 **T, T_b, thr, A_L.** `T` is what a texel truly passes (hue, skylight, the light sent on); `T_b` its ballistic share (the beam); `T − T_b` the diffuse emission. Along a fill or sky ray, `thr_L` is what light emitted by layer *L* finds below it and `A_L` the sunlight reaching it. Together they make beam plus emission equal total transmitted. [`model/leaf.md`](model/leaf.md), [`model/fill.md`](model/fill.md)
 
-**tier (layer vs faithful).** The two evaluations of transport. The *layer tier* runs the sum per pixel over depth layers and serves any receiver that can name a point and a height. The *faithful tier* pre-integrates once into a single texture and needs one flat frame. The **fall tiers** are the six season features (fill, diffuse share, pigment, exposure, drop, litter) a bundle may cut. [`model/transport.md`](model/transport.md), [`contracts/gates-and-rungs.md`](contracts/gates-and-rungs.md)
+**tier (layer vs faithful).** The two evaluations of transport. The *layer tier* runs the sum per pixel over depth layers and serves any receiver that can name a point and a height. The *faithful tier* pre-integrates once into a single texture and needs one flat frame. The **fall tiers** are the six season features (fill, diffuse share, pigment, exposure, drop, litter) a bundle may cut; the tree view is a seventh tier a bundle may cut. [`model/transport.md`](model/transport.md), [`contracts/gates-and-rungs.md`](contracts/gates-and-rungs.md)
 
 **torque (about the trunk).** Each limb bends by `cross(limb_dir, wind)` about its own trunk, so broadside limbs swing hardest, the two sides swing in opposite senses, and the canopy leans rather than spins. A shared angle gives one giant pinwheel. [`model/motion.md`](model/motion.md)
 
 **transport.** How the sun's light is carried from the source through the canopy to a surface: many sharp shadows, each shifted by height times angle, summed. The soft shadow is the sum, and higher foliage blurs more for free. [`model/transport.md`](model/transport.md)
 
 **travel routes.** Transitions in which leaves actually fly: **viewpoint** (a shared grove turns from sky to ground), **leaf travel** (overhead faithful to layer, or between two overhead faithful groves), **season travel** (a shared standing grove between floor and canopy), **litter rise and fall** (carpet to sky and back), **shadow rise and fall** (footprints lift into the sky and come back down) and **grove regrouping** (different standing groves, leaf by leaf). Each lands exactly on its native end, reverses from where it is, and keeps the winds running. [`model/transitions.md`](model/transitions.md), [`contracts/transitions.md`](contracts/transitions.md)
+
+**tree view.** The floor camera seeing the tree itself (`tree_view`): the faithful cast's own leaves and wood, stood up, lit as receivers and drawn in the floor camera's perspective over the floor they shade. [`model/camera.md`](model/camera.md#the-tree-seen-from-the-floor-camera)
 
 **trunk.** See *cluster, twig, limb, trunk, bole*.
 

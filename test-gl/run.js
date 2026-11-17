@@ -149,6 +149,13 @@ const INVARIANTS = [
   { name: 'vignette 0 == absent (faithful path)', preset: 'park 1', rebake: true, a: {}, b: { vignette: 0, vignette_shape: 7 } },
   { name: 'vignette 0 == absent (sky view)', preset: 'canopy 1', a: {}, b: { vignette: 0, vignette_shape: 7 } },
   { name: 'vignette 0.3 darkens the frame (layer path)', preset: 'memories', differ: true, a: {}, b: { vignette: 0.3 } },
+  // THE TREE VIEW (komorebi-tree-view.js): off is the floor as it was, the bark is dead code until the tree is seen, and on the tree changes the frame at every framing
+  { name: 'tree_view false == absent (faithful standing)', preset: 'park 1', rebake: true, a: {}, b: { tree_view: false } },
+  { name: 'tree_view false ignores the bark (faithful standing)', preset: 'park 1', rebake: true, a: {}, b: { tree_view: false, bark_r: 0.9, bark_g: 0.1, bark_b: 0.5 } },
+  { name: 'tree_view on an overhead park is inert (no standing scene: no tree to see)', preset: 'memories', a: {}, b: { tree_view: true } },
+  ...[[0, 64], [55, 64], [75, 64], [55, 20]].map(([pitch, sun]) => ({ name: `tree_view shows the tree, park 1 at pitch ${pitch}°, sun ${sun}°`, preset: 'park 1', rebake: true, differ: true,
+    a: { view_pitch_deg: pitch, view_extent_m: 20, view_fov_deg: 30, view_center_x: 0, view_center_y: -2, sun_elevation_deg: sun },
+    b: { view_pitch_deg: pitch, view_extent_m: 20, view_fov_deg: 30, view_center_x: 0, view_center_y: -2, sun_elevation_deg: sun, tree_view: true } })),
   { name: 'vignette 0.3 darkens the frame (sky view)', preset: 'canopy 1', differ: true, a: {}, b: { vignette: 0.3 } },
   // ...and the shape is live once the gate is open.
   { name: 'vignette_shape is live at vignette 0.3 (layer path)', preset: 'memories', differ: true,

@@ -82,7 +82,7 @@ test("a landing route's onEnd is handed back by tickTransition, not called", () 
 
 function transitionRig(from) {
   const noop = () => {};
-  const params = { ...from }, swaps = [], bakes = [];
+  const params = { ...DEFAULTS, ...from }, swaps = [], bakes = [];   // as the engine holds a look: every key, the saved look's own over the defaults
   const hub = {
     params, trans: { dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
     faithfulOn: () => params.faithful_canopy && (params.receiver | 0) !== 2 && !params.sky_view,
@@ -239,7 +239,7 @@ test('purple eye → look up carries its shadow footprints without a midpoint sw
   Object.assign(r.hub,{beginLitterRise:(to,footprints)=>began={to,footprints},stepLitterRise:()=>steps++,finishLitterRise:()=>null,endLitterRise:()=>ended++});
   r.transitionTo(shadowFixture.to,{duration:1,onEnd:()=>arrived++});
   expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.shadowRise).toBe(true);
-  expect(began).toEqual({to:shadowFixture.to,footprints:true});
+  expect(began).toEqual({to:{...DEFAULTS,...shadowFixture.to},footprints:true});
   expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);
   expect(r.swaps).toHaveLength(1);
   let cb;while(r.hub.trans.active)cb=r.tickTransition(1/60)||cb;
@@ -253,11 +253,11 @@ test('look up → fall memories keeps the live sky grove until the carpet landin
     finishLitterRise:()=>{Object.assign(r.params,descentFixture.to);r.hub.rebuildAll();return null;},endLitterRise:()=>ended++});
   r.transitionTo(descentFixture.to,{duration:1,onEnd:()=>arrived++});
   expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.litterFall).toBe(true);
-  expect(began).toEqual({to:descentFixture.to,footprints:false,reverse:true});
+  expect(began).toEqual({to:{...DEFAULTS,...descentFixture.to},footprints:false,reverse:true});
   expect(r.params.sky_view).toBe(true);expect(r.swaps).toHaveLength(0);
   for(let i=0;i<100;i++){r.tickTransition(1/60);expect(r.params.sky_view).toBe(true);expect(r.swaps).toHaveLength(0);expect(r.hub.trans.bloom).toBe(0);}
   let cb;while(r.hub.trans.active)cb=r.tickTransition(1/60)||cb;
-  expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(r.params).toEqual(descentFixture.to);
+  expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(r.params).toEqual({...DEFAULTS,...descentFixture.to});
   expect(ended).toBe(1);expect(arrived).toBe(0);cb();expect(arrived).toBe(1);
 });
 
@@ -275,11 +275,11 @@ test('look up → purple eye keeps the live sky grove until the footprints land'
     finishLitterRise:()=>{Object.assign(r.params,shadowFixture.from);r.hub.rebuildAll();return null;},endLitterRise:()=>ended++});
   r.transitionTo(shadowFixture.from,{duration:1,onEnd:()=>arrived++});
   expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.shadowFall).toBe(true);
-  expect(began).toEqual({to:shadowFixture.from,footprints:true,reverse:true});
+  expect(began).toEqual({to:{...DEFAULTS,...shadowFixture.from},footprints:true,reverse:true});
   expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);
   for(let i=0;i<100;i++){r.tickTransition(1/60);expect(r.params.sky_view).toBe(true);expect(r.swaps).toHaveLength(0);expect(r.hub.trans.bloom).toBe(0);}
   let cb;while(r.hub.trans.active)cb=r.tickTransition(1/60)||cb;
-  expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(r.params).toEqual(shadowFixture.from);
+  expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(r.params).toEqual({...DEFAULTS,...shadowFixture.from});
   expect(ended).toBe(1);expect(arrived).toBe(0);cb();expect(arrived).toBe(1);
 });
 
@@ -289,6 +289,20 @@ test('a leafless floor keeps the existing transition when the footprint descent 
   r.transitionTo(shadowFixture.from);
   expect(prepared).toBe(1);expect(r.hub.trans.litterRise).not.toBe(true);expect(r.hub.trans.shadowFall).not.toBe(true);
   expect(r.hub.trans.structDiff).toBe(true);
+});
+
+test('a pair that sees its tree keeps the cast: cherry blossom ↔ park 2 with tree_view takes no season travel, which would draw its own leaves and not the tree',()=>{
+  const tree={tree_view:true};
+  for(const [from,to] of [[{...PRESETS['cherry blossom'],...tree},{...PRESETS['park 2'],...tree}],[{...PRESETS['park 2'],...tree},{...PRESETS['cherry blossom'],...tree}]]){
+    const r=transitionRig(from);let began=0;
+    Object.assign(r.hub,{beginSeasonTravel:()=>began++,stepSeasonTravel:()=>{},finishSeasonTravel:()=>null,endSeasonTravel:()=>{},
+      beginGroveTravel:()=>{throw Error('unexpected beginGroveTravel');},beginLitterRise:()=>{throw Error('unexpected beginLitterRise');},
+      beginSceneFade:()=>{},endSceneFade:()=>{},stepSceneFade:()=>{}});
+    r.transitionTo(to,{duration:1});
+    expect(r.hub.trans.seasonTravel).toBe(false);expect(began).toBe(0);
+    let n=0;while(r.hub.trans.active&&n++<10000)r.tickTransition(1/60);
+    for(const k in DEFAULTS)expect(r.params[k],k).toBe(k==='drift_phase'?r.params[k]:to[k]);
+  }
 });
 
 test('cherry blossom ↔ park 2 follows one seasonal grove without a scene dissolve',()=>{

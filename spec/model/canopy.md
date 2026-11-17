@@ -118,7 +118,7 @@ Once per frame the current leaf positions, moved by the wind, are rasterised int
 
 **Law. Soft edges are area-averaging.** A leaf edge crossing a texel covers only part of it, so the texel takes a fraction of the depth. How that texel is read back, as one slab or as a mixture of leaf and gap, is [`leaf.md`](leaf.md)'s.
 
-**Law. The footprint follows orientation.** A leaf's stamp is its true shape foreshortened by its tilt, so a fluttering leaf winks small gaps open and shut: a real share of the glisten lives in the stamp, not in transport ([`leaf.md`](leaf.md)).
+**Law. The footprint follows orientation.** A leaf's stamp is its true shape foreshortened by its tilt, so a fluttering leaf winks small gaps open and shut: a real share of the glisten lives in the stamp, not in transport ([`leaf.md`](leaf.md)). A leaf's record keeps its heading, its tilt and its **side**, which way it rolls: the stamp is the same either way, and the tree seen from the floor camera stands each leaf up by it ([`leaf.md`](leaf.md#a-leaf-seen)).
 
 **Approximation.** Depth discretisation, the collapse of the canopy's continuous depth into a few layers, is the one approximation every frame pays ([`principles.md`](../principles.md) §5). It is the right place to approximate: it is where performance bites and where the eye forgives. The eye needs some dapples crisp and some soft; it cannot count the layers. Its opt-out is the faithful cast below.
 

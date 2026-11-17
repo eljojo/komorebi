@@ -20,6 +20,7 @@ const MARKERS = {
   exposure: [".exposure_absolute"],
   drop: [".drop_span"],
   litter: ["uLitterMinHalf", ".litter_age", ".litter_drift_m"],
+  treeView: ["uTreeCover", "uSlab", ".bark_r"],
 };
 let dir, whole, home, player;
 const text = (r) => readFileSync(r.out, "utf8");
@@ -66,7 +67,7 @@ test("the lead is drawn for the drop alone, the depth for the pigment and the ex
   expect(t.includes(TREE_DEPTH), "nothing in it reads the depth").toBe(false);
 });
 
-test("the general player keeps every tier, because montebello ships and opens all six", () => {
+test("the general player keeps every tier: montebello ships and opens the six fall tiers, and park 1's tree looks the tree view", () => {
   expect(player.cut).toEqual([]);
   const p = text(player);
   for (const [feature, ms] of Object.entries(MARKERS)) for (const m of ms) expect(p.includes(m), `${feature}: '${m}'`).toBe(true);

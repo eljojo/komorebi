@@ -18,7 +18,7 @@ The overhead and tilted looks see the floor through a **tilted perspective camer
 - **Orbit** (`view_yaw_deg`) rotates the sampled floor about the frame's centre, a true orbit for a flat floor: the tilt axis stays put while the world turns under it. The rotation is applied to the ground point **before** transport's sun shift, so the shift stays in world space and the shadows remain physically cast as the gaze turns. 0 is no rotation.
 - **Pan** (`view_center_x`, `view_center_y`) slides the world point the screen centre looks at, added after the orbit. It walks the view across the floor: push the tree out of frame and watch only what it casts.
 
-**Law: there is no camera height.** For a flat floor, eye height only rescales the view, which the zoom hold cancels exactly; it has no independent effect, so it is not a control.
+**Law: the eye's height is derived, not a control.** The eye stands `H = view_extent·cos²pitch / (2·tan(fov/2))` above the floor, `H·tan(pitch)` back from the looked-at point along the gaze, turned by the orbit and moved by the pan. For a flat floor that height only rescales the view, which the zoom hold cancels exactly. Once the tree is seen ([below](#the-tree-seen-from-the-floor-camera)) it sets the perspective, and it is still not a control: zoom, pitch and lens decide it, so every framing is also a place to stand. `park 1`'s shipped framing stands the eye 2.7 m up; a wide lens tilted toward the horizon at a long zoom brings it to a person's 1.6 m, and a steep tilt at a narrow lens lifts it over the grove.
 
 Pitch, orbit, pan and zoom together let a person walk around the structure to make sense of it.
 
@@ -27,6 +27,16 @@ Pitch, orbit, pan and zoom together let a person walk around the structure to ma
 In a standing scene the tree is grown at the world's origin and its shadow is thrown down-sun across the floor ([`transport.md`](transport.md)). **Framing that shadow is the camera's job.** A fixed pan looks at the patch of floor in front of the tree, so the tree's foot sits off the frame and only its cast lies in view; orbit and pan pivot on that floor patch, not on the trunk. As the sun moves, the shadow sweeps across the fixed view, and raised past overhead it retreats under the off-frame tree, leaving lit floor, which is correct. Physics moves the shadow; the camera is only where you stand.
 
 **The camera never follows the shadow.** The trunk's foot is at height 0 and never shifts; the crown is high and shifts most. A camera centred on the crown's shadow makes the trunk slide out from under its own crown as the sun moves. The whole shadow is one connected object and sweeps together because every occluder shares one shift; the camera stays still. This was tried and rejected: [`../evidence/dead-ends.md#camera`](../evidence/dead-ends.md#camera). A one-time convenience that computes a pan and zoom near the shadow, to nudge from, is a camera move, not a per-frame follow.
+
+### The tree seen from the floor camera
+
+On a standing scene cast faithfully, `tree_view` lets the floor camera see the tree itself: the leaves and wood the shadow is cast from, where they really hang, over the floor their shadow falls on. **Nothing new is grown.** The tree is the faithful cast's own leaf records and its own swayed wood, drawn in the floor camera's own perspective from the derived eye, after the floor and before the Look's tail. A point on the floor lands on the floor's own pixel, so the tree stands exactly on the ground it shades.
+
+**Law. The leaf and its shadow are one placement.** Each leaf is stood back up from the corner its footprint is stamped at, by the same vertex code in the same frame, so the stood-up leaf projects straight down onto exactly the footprint the cast throws. The wood is the cast's swayed skeleton, each segment a cylinder turned to the eye. Gusts move the leaves and their shadows together by construction.
+
+A leaf and a piece of bark are **receivers of the beam** ([`transport.md`](transport.md#the-receiver-relative-read)): each names a plan point and a height, and the sun reaching it is read through the leaves above it along the beam, the sky through the leaf area above it. What a leaf then does with that light is [`leaf.md`](leaf.md#a-leaf-seen). Everything the floor does after its light (the dusk shift, the haze, the iris, the Look's tail) is per pixel, so a tree pixel takes the same steps the floor pixel beside it takes.
+
+The overhead park has no tree to see: its canopy is endless and above the frame. The tree view is opened per look, and off it is the floor as it was.
 
 ### The far-field smear
 
@@ -100,11 +110,13 @@ Turning the iris on or off in a transition never installs or removes the whole m
 - **Approximation: the mesopic shift before the diffusion**, the inverse of the physical order, negligible because the two barely overlap.
 - **Authored: the tone curve and contrast.** The curve is a display choice, not a model of the eye's adaptation. Exposure follows the cloud (`cloud_exposure`: × (1 + cloud), each look re-sat at its own cloud), as an eye opens up under a passing cloud; contrast does not, and whether it should grey toward flat in real overcast is **Open**.
 - **Authored: the iris**, a presentation device, keystoned on a tilted floor by design.
-- **Law, held: no camera height and no focal plane.** Neither has an effect the model could show ([`source.md`](source.md)).
+- **Law, held: no camera-height control and no focal plane.** The height is derived from the framing ([above](#the-floor-camera)); a focal plane has no effect the model could show ([`source.md`](source.md)).
+- **The tree view's light** (Approximation). A leaf's sun is read along the beam's central direction through the low-res layer set the sky fill bakes, each layer standing for a slab a layer thick and shading the leaf by as much of the slab as lies above it: none at the leaf's own height, so a leaf never shades itself, all of it a layer above, so the light changes continuously up the crown; its sky goes as e^(−½·leaf area above), the season's spherical leaf. A penumbra the size of one leaf is not resolved. Absent: `tree_view` 0.
 
 ## Open
 
 - The tone curve, and whether and how exposure and contrast should couple to the source's width. Recorded in [`../exploration/open.md`](../exploration/open.md).
+- **The tree view's reach.** The floor camera tilts at most 80° from straight down and zooms to at most 40 m, so at a person's 1.6 m eye its frame reaches about 35° above the horizon: a small tree a few metres off stands in the frame whole, but its crown overhead is out of it. Whether the floor camera should look further up, or that view stays the sky view's, is the artist's ([`../exploration/open.md`](../exploration/open.md)).
 
 ## Related
 

@@ -33,6 +33,7 @@ export function makeBake(hub){
     if(faithfulOn()) bakeFaithful();   // FAITHFUL path (§4.5): cast the real tree, not the layer slabs
     else bakeLayers(bakeRes(), hub.layerHeights(), false);
     if(hub.fillWanted()) hub.bakeFill(true);   // true: on the faithful path the layers are not otherwise baked, so the fill bakes its own low-res set (a bundle without the fill holds a fillWanted that is false)
+    else hub.bakeTreeLayers?.();         // the tree view lights its leaves by the same low-res set: without the fill it bakes the set itself (only while it is wanted)
   }
 
   // ---- bake leaves into per-layer optical-depth textures ---------------------

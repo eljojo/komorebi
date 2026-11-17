@@ -388,6 +388,22 @@ const PARAMS = {
     row: { kind: 't', label: 'standing scene', rebuild: 'canopy' },   // changes crown sizing (crown0 in regenCanopy) — needs a regrow, not just the live bulk-offset read
     travels: 'mode',
     means: "<b>Treat the trees as objects STANDING in the scene, not a canopy hovering overhead.</b> Turns on the TRUNK shadow — a vertical trunk has no flat footprint, so the normal layered model can't cast it; this draws its real swept shadow streak. Best with a low, raking sun so the streak stretches across the floor. (Rooting the trees off to the side with a lit floor is coming next.)" },
+  tree_view: { default: false,   // the tree seen from the floor camera (komorebi-tree-view.js): the faithful cast's own leaves and wood, stood up and lit, drawn over the floor
+    row: { kind: 't', label: 'see the tree', rebuild: '' },   // nothing the grove grows reads it: the pass keeps its own targets and the low-res layer set it lights by, allocated when first drawn
+    travels: 'mode',   // the tree appears or leaves whole: a structural change, under the bloom
+    means: "<b>See the tree itself, not only its shadow.</b> On a standing scene with the faithful tree, the tilted floor camera shows the leaves and wood the shadow is cast from, where they really hang, lit by the sun that reaches them and the sky above them. Each leaf keeps the look's own colour: its top and underside reflect, and seen from the shaded side it glows with what it lets through. Zoom, tilt and lens decide where you stand: tight and tilted up you are under the tree, wide and steep you see the whole grove from above." },
+  bark_r: { default: 0.154,   // Norway maple stem bark (Juola, Hovi & Rautiainen 2022, Fig. 3a, 20 trees), taken to linear sRGB under D65
+    row: { kind: 's', label: 'bark R', min: 0, max: 1, step: 0.005, rebuild: '' },
+    travels: 'morph',   // the wood's reflectance in the tree view: a live uniform
+    means: "<b>How much RED the bark reflects, when you see the tree.</b> The default is measured: Norway maple bark, a dark grey-brown. Oak's is a little lighter (0.19 / 0.15 / 0.11)." },
+  bark_g: { default: 0.123,
+    row: { kind: 's', label: 'bark G', min: 0, max: 1, step: 0.005, rebuild: '' },
+    travels: 'morph',   // the wood's reflectance in the tree view: a live uniform
+    means: "<b>How much GREEN the bark reflects, when you see the tree.</b> Measured on Norway maple, like red and blue." },
+  bark_b: { default: 0.082,
+    row: { kind: 's', label: 'bark B', min: 0, max: 1, step: 0.005, rebuild: '' },
+    travels: 'morph',   // the wood's reflectance in the tree view: a live uniform
+    means: "<b>How much BLUE the bark reflects, when you see the tree.</b> Bark is soil-like: it reflects least in blue." },
   trunk_radius_m: { default: 0.1,   // trunk thickness (m) → width of its shadow streak; the area light softens it along its length
     row: { kind: 's', label: 'trunk r', min: 0, max: 0.5, step: 0.01, rebuild: '' },   // refreshWood re-reads the radius from the grown skeleton with the frame (refreshFaith), and the casts that bake the wood in re-bake on its change: no leaf moves
     travels: 'morph',   // Wood stores radius and layer heights in CPU geometry as well as live uniforms. refreshWood keeps those numbers aligned without regrowing the leaves; a faithful or sky bake refreshes when its wood changes.
@@ -938,6 +954,7 @@ const FEATURES = {
   exposure:    { open: ordered,                            group: null,     flag: 'FEAT_EXPOSURE' },
   drop:        { open: dropping,                           group: null,     flag: 'FEAT_DROP' },
   litter:      { open: (P) => P.litter > 0 && dropping(P), group: 'litter', flag: 'FEAT_LITTER' },
+  treeView:    { open: (P) => !!P.tree_view && !!P.standing_scene && !!P.faithful_canopy, group: null, flag: 'FEAT_TREE_VIEW' },
 };
 const featuresFor = (P) => Object.keys(FEATURES).filter((f) => FEATURES[f].open(P));
 // What a host is told when it opens a tier its bundle cut: the tier stays off (the cut code is not there to run), and a look that depends on it would otherwise

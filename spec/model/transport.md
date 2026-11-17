@@ -79,7 +79,7 @@ The floor read shifts each layer by `h_L · g`. For any receiver, the only chang
 
 On the floor `z_p = 0` and it is the plain read. On a vertical cloth `z_p` is the height up the cloth, so the dapples and the trunk's streak stand up the plane instead of lying on the floor, and the bulk shift is what rakes them up it: a low sun is what makes the shadow climb. On the tent each pixel lands on one of its panels and contributes that hit's plan point and height. The transport is the same line in every case.
 
-So the read is **geometry-free**: valid for any receiver that can name a plan point and a height per pixel. This is the "geometry up" half of the receiver interface — the receiver's shape enters the very shift that casts the shadow, so occluder and receiver share one geometry and the shadow cannot come apart from what casts it. The surfaces themselves, and what each does with the landed light, are [`receivers.md`](receivers.md).
+So the read is **geometry-free**: valid for any receiver that can name a plan point and a height per pixel. A leaf and a piece of bark seen from the floor camera are such receivers: each reads the leaves above it along the beam from its own height ([`camera.md`](camera.md#the-tree-seen-from-the-floor-camera)). This is the "geometry up" half of the receiver interface — the receiver's shape enters the very shift that casts the shadow, so occluder and receiver share one geometry and the shadow cannot come apart from what casts it. The surfaces themselves, and what each does with the landed light, are [`receivers.md`](receivers.md).
 
 ## Two tiers: the layer loop and the faithful tap
 

@@ -77,6 +77,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     // The pivot weights ride beside the leaves, one a leaf (inner_leaves): the re-season left the survivors' list, shorter than the record now in faith.buf,
     // and a draw that reads an instanced attribute past its buffer's end is refused, so no leaf would be cast. The record's own weights, in its order.
     gl.bindBuffer(gl.ARRAY_BUFFER,faith.pivotBuf);gl.bufferData(gl.ARRAY_BUFFER,S.pivot,gl.DYNAMIC_DRAW);
+    if(faith.sideBuf&&S.side){gl.bindBuffer(gl.ARRAY_BUFFER,faith.sideBuf);gl.bufferData(gl.ARRAY_BUFFER,S.side,gl.DYNAMIC_DRAW);}   // ...and so do the sides (the tree view's), for the same reason
     for(let l=0;l<layerData.length;l++){
       gl.bindBuffer(gl.ARRAY_BUFFER,hub.layerVAO[l].buf);gl.bufferData(gl.ARRAY_BUFFER,layerData[l],gl.DYNAMIC_DRAW);hub.layerVAO[l].count=layerData[l].length/17;
     }

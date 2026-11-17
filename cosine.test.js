@@ -172,12 +172,12 @@ test("sun_cosine: on in DEFAULTS and off for a look from before it was, MORPH cl
 // held (exposure ÷ the law's factor, the skylight × it) every look keeps its light, measured look by look on the GPU (2026-11-16,
 // the review folder's adopting-features), so every look carries both laws but park 2 (kept on the old law, its sunflecks rose
 // 6-10 %) and montebello, rain (the air's loss lifted its sunflecks); park fall, the yellow tree and cherry blossom keep the air's loss
-// off because montebello's season family travels between its looks only while they share one skylight, which the held shade moves. The curtains carry the air's loss with exposure held, as they
+// off because montebello's season family travels between its looks only while they share one skylight, which the held shade moves. park 1's two tree-view looks are park 1's light, so they keep it as park 1 does. The curtains carry the air's loss with exposure held, as they
 // were made; every other look re-sits its exposure over each law. The sky views take 1 from the cosine.
-const OLD_LAW = { "park 2": ["sun_cosine", "sun_extinction"], "park 1": ["sun_extinction"], "montebello, rain": ["sun_extinction"], "park fall": ["sun_extinction"], "the yellow tree": ["sun_extinction"], "cherry blossom": ["sun_extinction"] };
+const OLD_LAW = { "park 2": ["sun_cosine", "sun_extinction"], "park 1": ["sun_extinction"], "park 1, under the trees": ["sun_extinction"], "park 1, the scene": ["sun_extinction"], "montebello, rain": ["sun_extinction"], "park fall": ["sun_extinction"], "the yellow tree": ["sun_extinction"], "cherry blossom": ["sun_extinction"] };
 const AIR_HELD = ["curtain 1", "curtain 2"];
 const SHIPPED_EXPOSURE = {   // each look's exposure before either law, as shown at its own cloud: the numerator of its re-sit
-  "acid dreams": 1.635, "park 1": 2.44, montebello: 2.44, "park fall": 2.44, "the yellow tree": 2.44, "montebello, rain": 2.44, "cherry blossom": 2.44,
+  "acid dreams": 1.635, "park 1": 2.44, "park 1, under the trees": 2.44, "park 1, the scene": 2.44, montebello: 2.44, "park fall": 2.44, "the yellow tree": 2.44, "montebello, rain": 2.44, "cherry blossom": 2.44,
   "curtain 2": 1.5, "tent 1": 1.35, "curtain 1": 1.4, "afternoon 4": 2.44, "afternoon 5": 2.44, "afternoon 6": 2.44, "afternoon 6b": 2.44, "afternoon 7": 2.44,
   "forest floor": 2.44, "afternoon 4b": 1.29, eclipse: 2.1, "morning 2": 2.44, "the void": 2.44, "afternoon 5b": 2.44, prism: 2.44, "park 2": 2.44,
   "morning 1": 2.44, "morning 3": 2.44, "morning 3b": 2.44, memories: 3.01, "canopy 1": 1.3, "canopy 2": 1.35, "canopy 3": 1.35, "canopy 4": 1.3,
@@ -297,7 +297,9 @@ test("no GLSL literal names sun_cosine or sunIrr in code (a comment may name the
     }
   }
   expect(programs.length).toBeGreaterThan(20);
-  for (const [name, src] of programs) expect(/sun_?cosine|sunirr/i.test(stripGlslComments(src)), `${name} reads the knob`).toBe(false);
+  // The tree view's leaves and wood (komorebi-tree-view.js) face every way, so each face takes the law at its own incidence, mix(1, |n·s|, sun_cosine), in the
+  // fragment: no CPU scale can say it. They are off by default and no receiver reads them, so the receivers' law above stays a CPU scale.
+  for (const [name, src] of programs) if (!/_TREE/.test(name)) expect(/sun_?cosine|sunirr/i.test(stripGlslComments(src)), `${name} reads the knob`).toBe(false);
   // ...and the beam's lines are the ones they always were, character for character (the registry tests hold the same; this is the law's own pin)
   expect(buildTransport("floor")).toContain("col = (acc*uSunColor + uAmbient) * uGround;");
   for (const cam of ["cloth", "enclosure"]) expect(buildTransport(cam)).toContain("E = acc*uSunColor*beamF + uAmbient*skyF;");

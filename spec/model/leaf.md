@@ -219,6 +219,16 @@ cover-weighted so the marginal leaf and tree count as much as they are present, 
 
 **1 is reality.** At `leaf_variety` 1 two outlines of a grove are about as far apart as two of José's thirteen, read on the whole outline: the spreads above are read through `VARIETY_REAL` = 1.5, the point on their own scale where they reach his spread (at their own 1, where they were calibrated and every outline keeps a central lobe flanked by two, they were three quarters of it). Above 1 the leaves are more varied than nature, on purpose, and an occasional outline loses its central lobe. Decided 2026-11-10.
 
+## A leaf, seen
+
+When the tree is seen from the floor camera ([`camera.md`](camera.md#the-tree-seen-from-the-floor-camera)), each leaf stands at its own height, its long axis a horizontal chord at the heading its record keeps, rolled about that axis by its tilt plus the wind's rock. **Its side** is which way it rolls: a footprint is the same either way, so the cast never needed it, but a leaf in 3-D does, or every leaf in the grove would tilt toward one half of the sky. The side is a pure hash of the leaf's address on a stream of its own, half each way.
+
+**Approximation. A finite leaf with two faces.** The seen leaf is one slab per channel behind a thin coat that reflects 4 % (Kubelka–Munk, the halves added as Hébert & Becker add layers): its scattering fitted to a PROSPECT-D green leaf, its absorption solved so the leaf passes **exactly the look's own transmittance** for that leaf, turned by the season if it has turned. So a look keeps its leaf: a look with an authored leaf sees that leaf, a look with a measured one sees that. The scattering is split unevenly between an upper and a lower half (more in the lower, the spongy tissue), so the underside reflects more than the top, as Brakke measured on real leaves. The sun lights the face it falls on; the eye sees the reflection of the face it looks at when the sun is on that face, and what the leaf lets through when it is on the other. The sky lights each face by the share of the sky that face sees.
+
+**Not built: the sheen.** The cuticle reflects a white share of the light off its surface (the exact Fresnel of a surface of index 1.56; Bousquet et al. 2005). The seen leaf takes that share out of what enters and leaves its tissue and does not draw it. Drawn as a specular lobe it read as snow over a crown seen toward the sun, flat or undulating (review of 2026-11-16, [`../evidence/dead-ends.md`](../evidence/dead-ends.md#leaf)); the artist chose the leaf without it. See [`../exploration/open.md`](../exploration/open.md).
+
+**Provisional:** the scattering, the split between the halves (0.5) and the coat's share, fitted to one model leaf, not to these species' measured faces.
+
 ## The held leaf
 
 José, holding a maple leaf to the sun: *"it looks like a maze… cells with white walls in between… like lizard skin. the colour i dig too, the darkening of it."*
@@ -244,6 +254,7 @@ The engine carries that maze only as a mean, the sieve, and must stay so: the fe
 - **The sun's deeper cut** is extrapolated from the oaks and unmeasured for maple and beech. *Provisional.*
 - **Teeth, veins, sub-lobes and acuminate tips** do not reach the surface; the grammars grow no sub-lobes or acuminate tips at all. *Approximation.*
 - **The held leaf.** *Approximation.* Primaries and secondaries read dark in the photograph (thick tissue) and bright here like every wall; cells darken toward their centres in the photograph, and here there are two tissues only; there is no exposure order; the wall-width multipliers by order (4, 3, 2, 1.5, 1) are *Provisional*.
+- **The seen leaf** (Approximation). One slab per channel, two faces, a flat lamina with no curl or relief and no sheen; the scattering and the face split Provisional. Absent: `tree_view` 0.
 
 ## Not built
 

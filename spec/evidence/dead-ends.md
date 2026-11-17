@@ -122,7 +122,7 @@ The headings are the model's subsystems, in the model's order, so a model file's
 
 **Why.** For a flat floor, camera height only rescales the view, which the zoom hold cancels; it has no independent effect.
 
-**What replaced it.** Zoom (`view_extent_m`), pitch, yaw and pan are the camera's controls ([`../model/camera.md`](../model/camera.md)).
+**What replaced it.** Zoom (`view_extent_m`), pitch, yaw and pan are the camera's controls ([`../model/camera.md`](../model/camera.md)). Once the tree could be seen from the floor camera (2026-11-16) the height gained an effect, the perspective on the tree, and it stayed out of the controls: it is derived from zoom, pitch and lens, so each framing is a place to stand and no knob has to agree with the zoom.
 
 ### Blurring the glow after the tone curve
 
@@ -321,6 +321,16 @@ The vignette iris that appeared whole in one frame is told under [transitions](#
 **What replaced it.** Density reweights a cached capacity inside a deliberately summer-only gate; tree count still regrows ([`../model/season.md`](../model/season.md)).
 
 ## leaf
+
+### The seen leaf's sheen as a lobe on the whole leaf
+
+**What was tried.** When the tree was first seen from the floor camera (2026-11-16), each leaf's top carried the cuticle's specular reflection as a white Beckmann lobe with the exact Fresnel of n 1.56 and σ 0.29 (Bousquet et al. 2005, beech), split out of the tissue's light; then the same lobe on a blade that cups and waves (slopes to 25°), widened by each pixel's spread of normals.
+
+**What it looked like.** Over `park 1`'s crown seen from 12 m toward the sun: snow. First whole leaves flashing white, then a finer white speckle. Under the tree looking into the sun, neither showed much.
+
+**Why.** Not settled. The lobe's strength matched the measured beech peak; the first version lit whole flat leaves at once, which the undulation answered, and the speckle stayed. How much of a real leaf glints at once at that distance, and the tail whitening every glint, are the open suspects ([`../exploration/open.md`](../exploration/open.md)).
+
+**What replaced it.** The seen leaf without a sheen: the surface's share is taken out of the tissue's light and not drawn (the artist: "S1 and S2 look like it snowed"; he chose the leaf without it). [`../model/leaf.md`](../model/leaf.md#a-leaf-seen).
 
 ### The leaf as stained glass (the mid-fall mud)
 
@@ -1183,7 +1193,7 @@ The founding rule: depth discretisation is the *only* place the piece cheats. Am
 
 ### We never see the tree
 
-The founding fourth commitment: model only what reaches the surface; we never see the tree, only its cast, viewed from below. Amended first for the backlit curtain (trunk and branches as silhouette), second for the sky view (the surface is the retina), and third, reversing it: in the canopy looks we should see the tree, dark connected wood that is never luminous. The budget rule earned its keep while the ground was the only surface. Its successor is "model what reaches the eye" (§6); the tree as a lit body is not built.
+The founding fourth commitment: model only what reaches the surface; we never see the tree, only its cast, viewed from below. Amended first for the backlit curtain (trunk and branches as silhouette), second for the sky view (the surface is the retina), and third, reversing it: in the canopy looks we should see the tree, dark connected wood that is never luminous. The budget rule earned its keep while the ground was the only surface. Its successor is "model what reaches the eye" (§6). The tree as a lit body was built for the floor camera on 2026-11-16 (`tree_view`, [`../model/camera.md`](../model/camera.md#the-tree-seen-from-the-floor-camera)); looking up, it is not built.
 
 ### Byte identity as a law
 
