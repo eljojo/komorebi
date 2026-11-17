@@ -143,6 +143,7 @@ const PANEL_LAYOUT = [
   'leaf_diffuse',
   'edge_area',
   'fill_scatter',
+  'ground_bounce',
   'sky_turbidity',
   'mesopic_strength',
   'chromatic_aberration',
@@ -423,7 +424,7 @@ const CAM_GROUP = {   // knob -> the transport uniform group that carries it to 
   tent_fade:'tent', tent_seam:'tent', tent_mesh:'tent',
   sky_scatter:'sky',
   sun_cosine:'transport',          // the uniform rides every camera's head group (the sky view's too, where the factor is always 1: radiance has no surface), so head cannot tell the sky view apart; 'transport' stands in for "has a cast": the floor, the cloth and the tent speak it and the sky view (head, not transport) does not, so the row is live where the beam lands on a receiver (§3.5)
-  canopy_fill:'fill', fill_scatter:'fill', fill_directions:'fill', fill_resolution:'fill',   // the sky view lights no surface, so it speaks no fill group (§4.7)
+  canopy_fill:'fill', fill_scatter:'fill', ground_bounce:'fill', fill_directions:'fill', fill_resolution:'fill',   // the sky view lights no surface, so it speaks no fill group (§4.7)
   litter:'litter', litter_age:'litter', litter_drift_m:'litter', leaf_wetness:'litter', litter_resolution:'litter',   // only the floor reflects, so only the floor has fallen leaves to reflect off (§4.7): the cloth transmits and the sky view has no surface
   edge_area:['beam','sky'],        // the same two groups carry its uniform: the cast cameras' beam group and the sky view's own
   leaf_diffuse:['beam','sky'],     // the beam's k is read at the cast cameras' taps (their beam group) and, as the lantern's disk and glow (§4.9), by the sky view's own group — any one of them
@@ -468,6 +469,7 @@ const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that 
   exposure_absolute: () => (turning() && params.turn_exposure > 0) || (dropping() && !(params.drop_after_turn > 0) && params.drop_exposure > 0),   // it chooses what the exposure order is made of, and two read that order: sun first, and the fall while leaves let go by the light (the engine's ordered(), komorebi-math.js, read through this panel's own turning()/dropping() like the drop rows) — with neither there is no order for it to change
   sky_scatter: () => !splitOn(),                          // the sky view's twin of fill_scatter (§4.9): above leaf_diffuse 0 the leaf is a lantern and its measured glow replaces this authored one — counting both would count it twice
   fill_scatter: (cam) => fillOpen() && !splitOn() && CAMERAS[cam].groups.includes('floor'),   // the floor alone reads the proxy's scattered light; the cloth and the tent take the skylight through the canopy and nothing else. Above leaf_diffuse 0 the measured diffuse light replaces it, so the slider would lie
+  ground_bounce: fillOpen,                               // part of S, which only a fill bakes
   fill_directions: fillOpen, fill_resolution: fillOpen,   // sliders on a bake that does not run while canopy_fill is 0
   show_layer: (cam) => !faithLive(cam),                   // faithful mode taps one texture; the layer slices aren't baked
   show_layer_index: (cam) => params.show_layer && !faithLive(cam),

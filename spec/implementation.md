@@ -228,12 +228,14 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 | How each receiver reads it | `komorebi-transport.js` | `amb = mix(uAmbient, uAmbient·T_sky + S, canopy_fill)` | the registry (the sky program does not declare the fill group) | gate rows on each camera |
 | Faithful path with the fill open | `komorebi-bake.js` | a low-resolution layer bake kept alive, sized by `fill_resolution` | not recorded | gate rows |
 | Retired proxy | shaders | `fill_scatter` (inert above `leaf_diffuse` 0) | not recorded | row holding `fill_scatter` inert |
+| The ground returned by the undersides | `komorebi-shaders.js` (`FS_FILL_GROUND`, `FS_FILL_UP`, `FS_FILL_BOUNCE`; the floor's albedo `GLSL_GROUND_ALBEDO`), `komorebi-bake.js` (`bakeBounce`), CPU twin in `komorebi-fill.js` | `ground_bounce`; `groundRef`, `undersideRef`, `bounceRef`, `slabUnder` | `fill.test.js` (closed form on uniform layers to 1e−12; the bound over 10⁴ stacks; sun off; the gate and its signature slots) | fill check rows with `ground_bounce` (each pass against its law, fed the GPU's previous pass, within 1 % of what it holds); gate rows |
 
 *Representation.*
 
 - **Two targets in one pass.** The fill writes `T_sky` and `S` into **two RGBA16F** textures, two render targets of one pass, so the K·L layer taps are read once. The pass runs after the layer bake, every frame under wind. It runs again on its own when the sun or the sky moves without a bake. The cost is `K·(L + L(L−1)/2)` bilinear half-float taps per texel with the scatter term on and `K·L` without.
 - **The mip read.** The 4×4 tile is aligned to the mip chain, so a level-2 box is exactly one tile's 16·K directions. The receiver reads **level 3**, four tiles. That is the one place a mip touches the fill. It is lawful because `T_sky` is already a transmittance and `S` a radiance. Why level 3 rather than level 2 is in [`evidence/measurements.md#fill`](evidence/measurements.md#fill).
 - **Divide, don't scale.** The sum is divided by K, not multiplied by `1/K`, so K rays of exactly 1 give exactly 1.
+- **The ground bounce's three passes.** With `ground_bounce` above 0 the bake runs, before the fill pass, `G` into an RGBA16F at half `fill_resolution`, `W` into an RGBA16F **2D array** of `MAX_LAYERS` slices at a quarter (one MRT target per slice, four draw buffers, which WebGL2 guarantees), and `B` into an RGBA16F at half; all three over the fill's frame, repeating in the park and clamped with an explicit open outside on a finite tree. The slab's table (`slabTable`) is uploaded once as an RGBA16F 64×3. The fill pass adds `ground_bounce·B` to `S`, so no camera binds another texture (the rise camera already uses all sixteen units). Units during the bake: 8 the carpet, 9 `G`, 10 the slab, 11 `W`, 12 `B`. At 256 and K 16 the three add about 3.9 M bilinear taps to the fill pass's 10.5 M. At 0 nothing is allocated and the fill pass's line is the one it was.
 - **The literal off line.** At `canopy_fill` 0 the floor is the literal `(acc·uSunColor + uAmbient)·uGround`, in the else of a uniform branch. It is a branch rather than a separate program because `canopy_fill` tweens, and programs are selected by MODE flags only. The fill's textures, program and FBO are not allocated.
 
 ### Receivers — [`model/receivers.md`](model/receivers.md)
@@ -310,7 +312,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 
 Several passes do not run on a schedule. Each frame they compare a numeric snapshot of their inputs and re-run only when it has moved. Each signature carries exactly the inputs that change a bake's output without some other bake running. A missing entry freezes a picture while its knob tweens. A spurious entry re-bakes every frame.
 
-**The fill's signature** (`fillSig`, length `FILL_SIG_LEN` = 17, exported, and the engine sizes its array from it). It re-runs the fill alone when the sky or the sun moves and no bake does. Its slots, in order (`komorebi-bake.js`):
+**The fill's signature** (`fillSig`, length `FILL_SIG_LEN` = 23, exported, and the engine sizes its array from it). It re-runs the fill alone when the sky or the sun moves and no bake does. Its slots, in order (`komorebi-bake.js`):
 
 0. the sun's elevation, 1. its azimuth, 2. the turbidity (the sun's colour and the sky's);
 3. the leaf albedo the fill pass reads (`fill_scatter`, on a floor camera), 4. the ray count, 5. the fill texture's resolution;
@@ -319,9 +321,11 @@ Several passes do not run on a schedule. Each frame they compare a numeric snaps
 12. whether the canopy wraps (the open box and the padded frame of a finite tree);
 13. the edge law (`edge_area`): it changes what both `T_sky` and `S` are made of;
 14. the receiver's cosine (`sun_cosine`) and 15. the air's loss (`sun_extinction`): live scales of the sun colour that `S` reads;
-16. the park's shear (`park_throw`, 0 on a finite scene): it moves the beam's path the fill bakes along.
+16. the park's shear (`park_throw`, 0 on a finite scene): it moves the beam's path the fill bakes along;
+17. `ground_bounce`, the share of `B` the fill pass adds to `S`;
+18–20. the ground's albedo, 21. `ambient_skylight`, 22. the carpet's bake count (a new carpet per regrow): what the ground's light is made of. Each is 0 (the carpet −1) while `ground_bounce` is 0.
 
-The skylight's level is not in it: `ambient_skylight` scales the fill where a receiver reads it, not where it is made.
+The skylight's level is otherwise not in it: `ambient_skylight` scales the fill where a receiver reads it, not where it is made; only the ground's light, which reads the open sky, is made of it.
 
 **The faithful cast's snapshot** (`refreshFaith`). A still faithful cast compares a reusable snapshot before drawing:
 

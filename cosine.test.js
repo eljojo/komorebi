@@ -229,12 +229,12 @@ function fillRig(over = {}) {
   return { f: makeFill(hub), params, fill, draws: () => draws, sun: () => calls.filter((c) => c[0] === "uniform3f" && c[1] === "sun").map((c) => c.slice(2)) };
 }
 
-test("fillSig notices sun_cosine (slot 14), sun_extinction (slot 15) and park_throw (slot 16, the last of FILL_SIG_LEN): a change re-bakes the fill once, an unrelated key (exposure) does not", () => {
+test("fillSig notices sun_cosine (slot 14), sun_extinction (slot 15) and park_throw (slot 16): a change re-bakes the fill once, an unrelated key (exposure) does not", () => {
   const r = fillRig();
   r.f.refreshFill();
   expect(r.fill.ready).toBe(true);
   expect(r.fill.sig.length, "the signature array has room for the slot").toBe(FILL_SIG_LEN);
-  expect(FILL_SIG_LEN, "slot 16 is park_throw, so the array holds 17").toBe(17);
+  expect(FILL_SIG_LEN, "slots 17-22 are the ground bounce's (fill.test.js), so the array holds 23").toBe(23);
   expect(r.fill.sig[14], "sun_cosine 0").toBe(0);
   const base = r.draws();
   r.f.refreshFill();

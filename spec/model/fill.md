@@ -151,9 +151,44 @@ At `canopy_fill` 0 this is the floor without the fill; at 1 the shade is lit ent
 - the tent: its own `skyF`, so `skyS = skyF`;
 - the curtain, a vertical plane that sees half the hemisphere: **`skyS = 0.5`**. That is a factor of its own, because the curtain's *sky* term keeps the floor's `skyF = 1`, the convention it was authored under. The choice of 0.5 comes from the cloth's real hemisphere, half canopy and half ground.
 
-With the split shut (`leaf_diffuse` 0) the cloth and the tent read `T_sky` and no `S`; the proxy's `S` is the floor's alone. The beam that still gets through the gaps is most of the cloth's light; the leaves' diffuse light adds a little ([`../evidence/measurements.md#fill`](../evidence/measurements.md#fill)). The cloth's and the tent's own laws are [`receivers.md`](receivers.md)'s.
+With the split shut (`leaf_diffuse` 0) the cloth and the tent read `T_sky` and no `S`; the proxy's `S` is the floor's alone. The one exception is the ground the undersides return (below): it is in `S`, so with `ground_bounce` up they read `S` at `leaf_diffuse` 0 too, where it holds that light and nothing else. The beam that still gets through the gaps is most of the cloth's light; the leaves' diffuse light adds a little ([`../evidence/measurements.md#fill`](../evidence/measurements.md#fill)). The cloth's and the tent's own laws are [`receivers.md`](receivers.md)'s.
 
 **The sky view** reads nothing of the fill. It splits the same leaf on its own terms: one eye ray where the fill averages a hemisphere, and what it shows is the glow itself, not a floor's share of it ([`sky-view.md`](sky-view.md)).
+
+## The ground, returned by the undersides
+
+Sunlit ground lights the crown from below, and the pale undersides of the leaves send part of that light back down. That is a fourth light in the shade, beside the beam through the gaps, the skylight through the canopy and the leaves' own diffuse light, and it is a *reflection* path: everything the crown passes on by transmission is already in `T_sky` and `S`. One bounce, ground → underside → down, in three factors:
+
+> `G(p) = ρ(p)·(sun·B_g(p) + ambient)`
+
+> `W_L(q) = ⟨a·R_b⟩_L(q) · (1/K) Σ_k Π_{M<L} T_M(q − (h_L − h_M)·s_k) · G(q − h_L·s_k)`
+
+> `B(x) = (1/K) Σ_k Σ_L thr_kL · W_L(x + h_L·s_k)`
+
+- `G` is what the ground sends up: its albedo `ρ` (the floor's own, the ground composed with the carpet where a leaf has fallen, one expression shared with the floor the eye sees) under the beam `B_g` that reaches it along the beam's path and the open sky.
+- `W_L` is what layer `L`'s undersides send down at `q`: the ground's light reaching them through the layers below on their true `T`, times their leaf area `a` and the underside's reflectance `R_b`. `R_b` is the leaf's slab ([`leaf.md`](leaf.md), *A leaf, seen*) at the leaf's own `T = e^(−τ̄)`: the coat's `F0` plus what the tissue's lower face returns, held to `R_b ≤ 1 − T`. It turns with the season because the leaf's `T` does.
+- `B` reaches the floor through the layers below each, on their true `T`, as `S` does.
+- `x`, `q` and `p` are plan points; `s_k` are the fill's own rays, interleaved per texel as the fill's are.
+
+**Law:** the fill adds `ground_bounce·B` to `S`. Every surface that reads `S` takes it at `S`'s own share, so the floor's line is unchanged and the cloth and the tent take it through their `skyS`.
+
+**Bound** (structural, no clamp): `a·R_b ≤ a·(1 − e^(−τ̄)) = 1 − T` per texel, so on any stack of uniform layers `B ≤ (1 − Π T)·max G`. The emitter is a texel average (below), so on a real crown the bound holds per layer.
+
+**Approximation — one bounce.** The second order was measured equal to the first to two decimals ([`../evidence/measurements.md#fill`](../evidence/measurements.md#fill)).
+
+**Approximation — the ground reads the open sky.** Its diffuse light is `ambient`, not the fill's own `ambient·T_sky + S`: −1 to +3 % of the term, and the three passes then need nothing from the fill's.
+
+**Approximation — the beam on the ground is the layers'.** `B_g` is read from the fill's own layer set along the beam's path, so on the faithful path the ground under a crown is lit by the low-resolution layers, not by the faithful shadow.
+
+**Approximation — the emitter is a texel mean.** The undersides' pass runs at a quarter of `fill_resolution`, and each texel averages `a·R_b` over a 4×4 grid of taps; the walk down to the ground, and the walk from the emitter to the floor, are exact per ray.
+
+**Approximation — Lambertian, and the tops take no part.** Reflections are diffuse. Leaf tops lit from below by other leaves' undersides is 0.06 % of the sun.
+
+**Not built: the crown's own bounce** (leaf → leaf → down). In a crown lit from above the sunlit leaves are on top, and their reflection goes up to the sky; at most 0.15 % of the sun reaches the floor that way, under 2 % of the shade. Applying Hovi's `1/(1 − p·ω)` to `S` would count the transmission chains twice: light a leaf passes on already crosses the leaves below at their true `T`.
+
+**The gate.** `ground_bounce` 0 bakes nothing and adds nothing: the three passes are not allocated and `S` is the leaves' light alone. 1 is physical, and the default; a look from before it keeps 0 ([`../contracts/looks.md`](../contracts/looks.md)). It needs `canopy_fill`, because it is part of `S`. It tweens: a step re-bakes the fill, as a tween of `sun_cosine` does, and crossing 0 allocates the passes lazily. A floor of albedo 1 (most looks keep `ground` at the white default) returns about five times what dirt does, so a look that opens the bounce gives its ground a real colour first.
+
+**Where it matters.** Where the shade is closed and lit by diffuse light alone. Under a high sun, in a crown's own shade, the bounce is a fifth of the shade's diffuse light (`park 1` at 60°, the measured leaf: 0.6 % of the sun in green, against 2.2 % of sky through the canopy and 0.5 % from the leaves), about what a measured leaf transmits. But a standing crown's shade is mostly sun, through its gaps and its soft shadow's edges, so there the picture moves 2–4 % and the eye cannot see it; the four looks that open the fill, at their 26° sun, move less still. Under the endless park's closed canopy the shade has no sun in it, and the bounce lifts it by a sixth of a stop at `memories`' own sun and nearly half a stop at 60° with the measured leaf, once the look is exposed so its shade is not crushed. Under a low sun a crown's shadow lands under open sky, where the bounce is 0.2 % of the sun against 12 % of sky ([`../evidence/measurements.md#fill`](../evidence/measurements.md#fill)).
 
 ## The gate
 
@@ -163,7 +198,7 @@ With the split shut (`leaf_diffuse` 0) the cloth and the tent read `T_sky` and n
 
 ## When the fill is made again
 
-The fill is a function of the layers, the sun's colour and its path through them, and the leaf's law. **Law:** it is made again whenever any of those move: after every layer bake (every frame under wind), and on its own when the sun or the sky moves without a bake (a time-of-day morph, a dragged sun), because `S` reads the sun's colour, which the sky's turbidity moves. It is also made again when a knob that changes what `T_sky` or `S` are made of tweens without moving the layers: `leaf_diffuse`, `edge_area`, `sun_cosine`. On the faithful path the cast is re-cast on a change of the leaf's law too, because each stamp has that law baked in. A knob assigned on a running engine must show the frame an engine born with it shows ([`../contracts/determinism.md`](../contracts/determinism.md)).
+The fill is a function of the layers, the sun's colour and its path through them, and the leaf's law. **Law:** it is made again whenever any of those move: after every layer bake (every frame under wind), and on its own when the sun or the sky moves without a bake (a time-of-day morph, a dragged sun), because `S` reads the sun's colour, which the sky's turbidity moves. It is also made again when a knob that changes what `T_sky` or `S` are made of tweens without moving the layers: `leaf_diffuse`, `edge_area`, `sun_cosine`. With `ground_bounce` up, `S` is also made of the ground's light, so the fill is made again when `ground_bounce`, the ground's albedo, `ambient_skylight` or the carpet (a new one per regrow) moves; with it at 0 none of those is the fill's. On the faithful path the cast is re-cast on a change of the leaf's law too, because each stamp has that law baked in. A knob assigned on a running engine must show the frame an engine born with it shows ([`../contracts/determinism.md`](../contracts/determinism.md)).
 
 ## The faithful path
 
@@ -187,11 +222,11 @@ At `canopy_fill` 1 the shade **dims and takes the leaves' colour**: greener in s
 
 - **Approximation — a flat sky.** The sky is one radiance with no gradient, so `ambient = π·L_sky` exactly. Shared with [`sky-view.md`](sky-view.md).
 - **Approximation — K fixed rays.** They estimate the continuous hemisphere. The interleave spreads 16·K directions over each tile, and the receiver's four-tile read filters the leaf-scale residue; `fill_directions` trades the residue for cost.
-- **Approximation — single scatter.** A leaf's emitted light passes the layers below on their true `t` and is not scattered again; no ground bounce.
+- **Approximation — single scatter, one ground bounce.** A leaf's emitted light passes the layers below on their true `t` and is not scattered again. The ground's light comes back once, off the undersides (`ground_bounce`); the crown's own leaf-to-leaf bounce and a second ground bounce are not built.
 - **Approximation — no wood in the hemisphere.** The woody occluder takes the beam only; a limb's share of the sky is thin. The sky view, which looks at the tree, reads the wood.
 - **Approximation — the padded frame's tail.** On a finite tree, the light that travels beyond 3·`h_max` is given up: 10 % of a cosine-weighted leaf's light at the very edge of the box, a few percent of all of it.
 - **Approximation — the fill is baked at floor height.** A point high up the cloth reads the hemisphere of the floor point beneath it.
-- **Approximation — the cloth's hemisphere is half ground.** A vertical cloth sees half canopy and half ground; the piece has no ground-bounce term for that half, and the curtain's `skyS = 0.5` is the canopy half.
+- **Approximation — the cloth's hemisphere is half ground.** A vertical cloth sees half canopy and half ground; the ground's half is not built (the bounce reaches the cloth only off the undersides, through `S`), and the curtain's `skyS = 0.5` is the canopy half.
 - **Approximation — the faithful path's low-resolution layers.** They are drawn from the faithful cast's packed cluster data, so a twig's synthetic joint stands in for its grown one under wind. Exact at rest; a diffuse quantity does not see the difference.
 - **Approximation — the fill's resolution.** The fill varies at crown-gap scale; the receiver's read blurs anything finer, by design.
 - **Authored — `fill_scatter`.** The retired proxy, live only at `leaf_diffuse` 0.

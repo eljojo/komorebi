@@ -20,7 +20,7 @@ The floor is an opaque diffuse surface reflecting the landed light off an albedo
 
 `ground` is the floor albedo (`ground_r`, `ground_g`, `ground_b`), white by default, a warm dirt-brown on the looks that want their shade to read as earth so that only the hottest dapples burn back toward white. **Law** in form, **Authored** in value.
 
-What the floor reads beyond that line belongs elsewhere. Its beam takes the cosine of its incidence, `sin el`, under `sun_cosine` ([`light.md`](light.md)). Its `ambient` becomes the canopy-filtered sky plus the light the leaves scatter down when `canopy_fill` opens ([`fill.md`](fill.md)). Its albedo becomes a carpet of fallen leaves when `litter` opens ([`season.md`](season.md)); only the floor reads the litter. The floor is the reference every other receiver collapses to in its untilted, undyed case.
+What the floor reads beyond that line belongs elsewhere. Its beam takes the cosine of its incidence, `sin el`, under `sun_cosine` ([`light.md`](light.md)). Its `ambient` becomes the canopy-filtered sky plus the light the leaves scatter down when `canopy_fill` opens, and the ground's light returned by the undersides when `ground_bounce` opens too ([`fill.md`](fill.md)). Its albedo becomes a carpet of fallen leaves when `litter` opens ([`season.md`](season.md)); only the floor reads the litter. The floor is the reference every other receiver collapses to in its untilted, undyed case.
 
 ## The curtain
 
@@ -192,7 +192,7 @@ The energy bound is exact: a normalised kernel moves light and cannot make any, 
 
 ### How the curtain reads the fill
 
-With `canopy_fill` open the curtain's sky term is the canopy-filtered sky at the point's plan position, with its view factor kept at the floor's 1; the leaves' scattered light, when the leaf's diffuse split opens it, enters through a view factor of its own, ½, the half-hemisphere a vertical plane sees ([`fill.md`](fill.md)).
+With `canopy_fill` open the curtain's sky term is the canopy-filtered sky at the point's plan position, with its view factor kept at the floor's 1; the leaves' scattered light, when the leaf's diffuse split opens it, enters through a view factor of its own, ½, the half-hemisphere a vertical plane sees ([`fill.md`](fill.md)). The ground the undersides return (`ground_bounce`) is part of that scattered light, and reaches the cloth with the split shut too; the cloth's direct view of the ground, the other half of its hemisphere, is not built.
 
 ## The tent
 
@@ -301,7 +301,7 @@ It is the fold incidence's discipline one dimension up, with the crown where the
 
 The two sides are equal **only** when the sun lies in the tent's long vertical plane, `sunDir.x = 0`. With the long axis along +Y those azimuths are **90° and 270°**; `az` 0 or 180 is the sun standing square to the tent, the case of greatest contrast. `skyF` is common to a mirrored pair, as it should be: a hemisphere of sky has no azimuth to favour.
 
-**How the tent reads the fill.** With `canopy_fill` open its sky term is the canopy-filtered sky at the hit's plan position times `skyF`, and the leaves' scattered light, when the diffuse split opens it, enters through the same `skyF` ([`fill.md`](fill.md)).
+**How the tent reads the fill.** With `canopy_fill` open its sky term is the canopy-filtered sky at the hit's plan position times `skyF`, and the leaves' scattered light, when the diffuse split opens it, enters through the same `skyF`, with the ground the undersides return (`ground_bounce`) in it, split open or not ([`fill.md`](fill.md)).
 
 ### Depth and seams
 

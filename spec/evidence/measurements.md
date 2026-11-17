@@ -576,6 +576,16 @@ No transport measurement is recorded. What the beam sees of a leaf is measured u
 - **Result:** 151.8 → 126.1 (from the bot's log, uncommitted source). The spec's guidance for authors, about half a stop more `ambient_skylight` or `exposure`, has no recorded measurement behind it.
 - **Date:** overnight 2026-10-06 → 07 (from the bot's log, uncommitted source).
 
+### The ground returned by the undersides
+
+- **The budget, before any GL.** A CPU radiosity on the fill's own functions (one tree in montebello's band: four layers 2.0–3.6 m, LAI 2.7, clumped leaves; open padded domain, `d` 0.95; the engine's atmosphere at turbidity 0.05, `ambient_skylight` 0.97). Under a 60° sun over grey ground at 0.2, the ground returned by the undersides is 1.0–1.6 % of the sun's horizontal irradiance in green, 13–27 % of the floor's green in the crown's shade, about the leaves' own diffuse light for a measured leaf. One bounce equals the converged value to two decimals. The crown's own bounce (leaf → leaf → down) is at most 0.15 % of the sun. Under a 26° sun the shadow lands under open sky and the bounce is about 2 % of the floor's light there (from the integration plan's prototype, uncommitted source).
+- **The engine, read from the fill's textures.** `park 1, the scene` at 60°, the measured leaf (`trans` .034/.099/.003, `leaf_diffuse` 0.95), `canopy_fill` 1, its own dirt: at the crown's darkest fill boxes, `B` 0.0057 against skylight through the canopy 0.022 and the leaves' diffuse light 0.005 (green, the sun 0.96): a fifth of the diffuse light.
+- **The picture.** The same frame: the shade (pixels under 0.6 of the frame's median) moves +0.02 stop, its deepest pockets +0.035; no pixel by more than 8 of 255. The four looks that open the fill, at their own 26° sun: at most +0.015 stop. The endless park (`memories`, the fill and the split open, grey ground 0.2) exposed so its shade is not crushed: +0.16 stop in the shade at its own 36° sun, +0.42 at 60° with the measured leaf, with 36–45 % of the frame moving by more than 8 of 255. The standing crown's shade is mostly sun through its gaps and its soft edges, which is why the fifth of the diffuse light is a few percent of the picture there.
+- **Against the law.** Each pass (`G`, `W`, `B`) against `komorebi-fill.js` fed the GPU's own previous pass: within 3·10⁻⁴ of what it holds, on the park (wrapped), a faithful finite tree (open), the measured leaf with `edge_area`, and the curtain. A wrong ray in the undersides' pass is 0.6 of it.
+- **Under wind.** `park 1, the scene` at 60°: frame-to-frame change 0.186 without, 0.185 with: no shimmer from the coarse pass.
+- **Cost.** Chrome on Metal, Apple M1 Pro, 1920×1080, the fill open: a frame changes by −0.3 ms on `montebello` and +0.1 ms on `park 1, the scene`, both inside the run-to-run spread; a regrow costs +4.9 ms and +1.7 ms.
+- **Date:** 2026-11-16 (`test-gl/out/review/2026-11-16-ground-bounce/`, git-ignored).
+
 ### The fill's GPU cost
 
 Not recorded. The fill runs every frame under wind and was timed only on the software rasteriser; the measurement on José's machine was asked for and not reported (from the bot's log, uncommitted source).

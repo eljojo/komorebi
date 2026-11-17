@@ -357,6 +357,7 @@ export function makeRender(hub){
     fill: (u, f) => {
       const on = hub.fill.ready ? clamp(params.canopy_fill, 0, 1)*f.shadowOpacity : 0;
       gl.uniform1f(u.canopyFill, on);
+      gl.uniform1f(u.fillReturn, hub.fill.ready && hub.fill.gb > 0 && !(FEAT_LEAF_DIFFUSE && ballisticK(params.leaf_diffuse) > 0) ? 1 : 0);   // S holds the ground the undersides return; at leaf_diffuse 0 the cloth and the tent read S for it alone (the beam group's own uBeamK opens it above)
       gl.uniform1i(u.fillT, 6);
       gl.uniform1i(u.fillS, 7);
       if(!(on > 0)) return;

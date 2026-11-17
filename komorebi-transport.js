@@ -1,5 +1,5 @@
 import { MAX_SAMPLES, MAX_OCC } from './komorebi-params.js';
-import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_TEXEL_MIX } from './komorebi-shaders.js';
+import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_TEXEL_MIX, GLSL_GROUND_ALBEDO } from './komorebi-shaders.js';
 
 // ============================================================================
 // THE TRANSPORT MASTER (spec §4.6 / §4.9) — ONE source, FOUR straight-line programs.
@@ -159,6 +159,7 @@ ${GLSL_TONE_TAIL}`;
 const GLSL_T_FILL_DECLS = `uniform float uCanopyFill;      // canopy_fill: the share of the shade that is lit THROUGH the canopy. 0 = the old unfiltered sky, byte-identical (every shipped look)
 uniform highp sampler2D uFillT;   // Tsky(x): the skylight's transmittance through the canopy over the point's hemisphere, per channel (1 = open sky)
 uniform highp sampler2D uFillS;   // S(x): the irradiance the lit leaves scatter DOWN onto it, linear HDR (read by the floor, and by the cloth and the tent once a leaf is not a window)
+uniform float uFillReturn;        // 1: S holds the ground the undersides return (ground_bounce) and the leaf is a window (leaf_diffuse 0), so the cloth and the tent read S for it alone; above leaf_diffuse 0 they read S anyway
 uniform vec2  uFillOrigin;        // the plan square the two textures cover: the canopy box in the endless park, the box PADDED by 3·h_max for a finite tree (komorebi-fill.js fillFrame). A fill read is by THIS frame, never the canopy's
 uniform vec2  uFillExtent;
 // WHY A MIP LEVEL. The bake is K rays per texel, a point estimate of a field that is smooth at the scale of crown gaps
@@ -244,7 +245,7 @@ const GLSL_T_FLOOR_FILL_SHARE = `mix(uAmbient, uAmbient*textureLod(uFillT, fuv, 
 const GLSL_T_FLOOR_MATERIAL = `    if(uShadowOpacity < 1.0) acc = mix(vec3(1.0), acc, uShadowOpacity);
     if(uLitterOn != 0){   // @feature litter
       vec4 L = texture(uLitter, (world-uLitterOrigin)/uLitterExtent);   // @feature litter
-      vec3 ground = uGround*(1.0-L.a) + L.rgb;   // @feature litter
+      vec3 ground = ${GLSL_GROUND_ALBEDO};   // @feature litter
       vec3 amb = uAmbient;   // @feature litter
       if(uCanopyFill > 0.0){   // @feature litter fill
         vec2 fuv = (world-uFillOrigin)/uFillExtent;   // @feature litter fill
@@ -481,6 +482,7 @@ const GLSL_T_FABRIC_MATERIAL = `    // The landed irradiance the fabric answers.
       vec3 skyT = mix(vec3(1.0), textureLod(uFillT, (world-uFillOrigin)/uFillExtent, FILL_LOD).rgb, uCanopyFill);   // @feature fill
       E = acc*uSunColor*beamF + uAmbient*skyF*skyT;   // @feature fill
       if(uBeamK > 0.0) E += textureLod(uFillS, (world-uFillOrigin)/uFillExtent, FILL_LOD).rgb*skyS*uCanopyFill;   // mix(a, b + S, w) = mix(a, b, w) + S·w: the floor's own share @feature fill leafDiffuse
+      if(uFillReturn > 0.0) E += textureLod(uFillS, (world-uFillOrigin)/uFillExtent, FILL_LOD).rgb*skyS*uCanopyFill;   // at leaf_diffuse 0, S holds only the ground the undersides return (the proxy is the floor's) @feature fill
     } else {   // @feature fill
       E = acc*uSunColor*beamF + uAmbient*skyF;
     }   // @feature fill
@@ -1095,7 +1097,7 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
                                                       tentEndLean:'uTentEndLean', tentShoulderH:'uTentShoulderH', tentShoulderW:'uTentShoulderW',
                                                       tentEndApex:'uTentEndApex', tentHipRake:'uTentHipRake', tentEye:'uTentEye',
                                                       tentFade:'uTentFade', tentSeam:'uTentSeam', tentMesh:'uTentMesh' } },
-  fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillT:'uFillT', fillS:'uFillS', fillOrigin:'uFillOrigin', fillExtent:'uFillExtent' } },
+  fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillReturn:'uFillReturn', fillT:'uFillT', fillS:'uFillS', fillOrigin:'uFillOrigin', fillExtent:'uFillExtent' } },
   litter:    { decls: GLSL_T_LITTER_DECLS,    locs: { litterOn:'uLitterOn', litter:'uLitter', litterOrigin:'uLitterOrigin', litterExtent:'uLitterExtent' } },
   sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',

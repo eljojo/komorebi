@@ -1,6 +1,6 @@
 import { clamp, lerp } from './komorebi-math.js';
 import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, DEFAULTS, migrateLegacy, cutWarnings } from './komorebi-params.js';
-import { VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, FS_FILL, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
+import { VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './komorebi-shaders.js';
 import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './komorebi-transport.js';
 import { makeSource } from './komorebi-source.js';
 import { makeMotion } from './komorebi-motion.js';
@@ -264,9 +264,28 @@ function createEngine(canvas, opts, driven=false){
       fillEntry = { prog, U: { origin:loc(prog,'uCanopyOrigin'), extent:loc(prog,'uCanopyExtent'), sun:loc(prog,'uSunColor'),   // origin/extent: the box the LAYERS were baked over; frameOrigin/frameExtent: the plan square the FILL is baked over
         layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'].map(n => loc(prog,n)), heights:loc(prog,'uLayerHeight[0]'), layerCount:loc(prog,'uLayerCount'),
         frameOrigin:loc(prog,'uFillOrigin'), frameExtent:loc(prog,'uFillExtent'), sunPath:loc(prog,'uFillG'), open:loc(prog,'uFillOpen'),
-        ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter'), beamK:loc(prog,'uFillBeamK'), edgeArea:loc(prog,'uEdgeArea') } };
+        ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount'), scatter:loc(prog,'uFillScatter'), beamK:loc(prog,'uFillBeamK'), edgeArea:loc(prog,'uEdgeArea'),
+        bounce:loc(prog,'uFillBounce'), groundBounce:loc(prog,'uGroundBounce') } };
     }
     return fillEntry;
+  } : null;
+  // THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md): the fill's three bounce passes, compiled on the first ground_bounce above 0, as the fill's own
+  // program is on the first canopy_fill. Behind the fill's flag, for the same reason.
+  let bounceEntry = null;
+  const bounceFor = FEAT_FILL ? () => {
+    if(!bounceEntry){
+      const common = (prog) => ({ prog, origin:loc(prog,'uCanopyOrigin'), extent:loc(prog,'uCanopyExtent'), sun:loc(prog,'uSunColor'), ambient:loc(prog,'uAmbient'),
+        layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'].map(n => loc(prog,n)), heights:loc(prog,'uLayerHeight[0]'), layerCount:loc(prog,'uLayerCount'),
+        frameOrigin:loc(prog,'uFillOrigin'), frameExtent:loc(prog,'uFillExtent'), open:loc(prog,'uFillOpen'), beamK:loc(prog,'uFillBeamK'), edgeArea:loc(prog,'uEdgeArea'),
+        ray:loc(prog,'uFillRay[0]'), turn:loc(prog,'uFillTurn[0]'), count:loc(prog,'uFillCount') });
+      const g = common(shared(VS_FULL, FS_FILL_GROUND)), up = common(shared(VS_FULL, FS_FILL_UP)), b = common(shared(VS_FULL, FS_FILL_BOUNCE));
+      Object.assign(g, { sunPath:loc(g.prog,'uFillG'), ground:loc(g.prog,'uGround'), litterOn:loc(g.prog,'uLitterOn'), litter:loc(g.prog,'uLitter'),
+        litterOrigin:loc(g.prog,'uLitterOrigin'), litterExtent:loc(g.prog,'uLitterExtent') });
+      Object.assign(up, { groundTex:loc(up.prog,'uFillGround'), openGround:loc(up.prog,'uOpenGround'), slab:loc(up.prog,'uSlab'), f0:loc(up.prog,'uF0'), cell:loc(up.prog,'uCell') });
+      b.under = loc(b.prog,'uUnder');
+      bounceEntry = { g, up, b };
+    }
+    return bounceEntry;
   } : null;
   // THE LITTER CARPET's bake program (§4.7): compiled on the first carpet, like the fill's, so a look that never lays litter (every shipped one but the fall looks) pays
   // neither the compile nor the buffer. A program belongs to the context that linked it, so a restore forgets it too. Behind its flag for the same reason as the fill's.
@@ -302,7 +321,7 @@ function createEngine(canvas, opts, driven=false){
   const sky = { segVAO:null, segBuf:null, segRest:[], segArr:null, start:[], count:[] };
   // THE SKY FILL's state (§4.7): Tsky and S over the fill's frame, allocated lazily when canopy_fill opens and freed when
   // it shuts. `ready` = the textures hold a bake of what `sig` records, so the receiver may believe them.
-  const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(FILL_SIG_LEN), K:0, rays:null, ox:0, oy:0, ext:1 };   // sig: what the bake was made of, sized by komorebi-bake.js's FILL_SIG_LEN, which fillSig is held to — a slot written past a Float64Array's end is silently dropped, and the fill then re-bakes every frame. ox/oy/ext: the plan square the textures cover (the box, or the padded frame of a finite tree), which every receiver reads them by
+  const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(FILL_SIG_LEN), K:0, rays:null, ox:0, oy:0, ext:1, bounce:null, gb:0 };   // sig: what the bake was made of, sized by komorebi-bake.js's FILL_SIG_LEN, which fillSig is held to — a slot written past a Float64Array's end is silently dropped, and the fill then re-bakes every frame. ox/oy/ext: the plan square the textures cover (the box, or the padded frame of a finite tree), which every receiver reads them by
   // THE LITTER's state (§4.7): the carpet texture (a 1×1 until a leaf has fallen and the floor asks), the square it covers, and what it was baked of.
   // komorebi-litter.js owns the shape, so a context restore can put it back to the fresh one in a line.
   const litter = newLitterState();
@@ -317,7 +336,7 @@ function createEngine(canvas, opts, driven=false){
     // stable plumbing (never reassigned)
     gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, fill, litter, U,
     // (the GL handles — programs, buffers, FBOs, occTex, extTimer — and the subsystems over them are set by initGPU())
-    effCloud, bakeBaseline, bakeRes, faithfulSamples, faithfulOn, transportFor, transportCamera, fillFor, litterFor, warnCut, program, sharedProgram: shared, faithLocs,
+    effCloud, bakeBaseline, bakeRes, faithfulSamples, faithfulOn, transportFor, transportCamera, fillFor, bounceFor, litterFor, warnCut, program, sharedProgram: shared, faithLocs,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
     woodTex: [],            // SKY VIEW (§4.9): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)
@@ -839,10 +858,11 @@ function createEngine(canvas, opts, driven=false){
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       ownerDocument?.removeEventListener('visibilitychange',onVisibilityChange);
       releasePrograms();                             // initGPU's, every camera this engine visited, the fill's and the litter's: deleted once no engine on the context holds them
-      transportCache.clear(); fillEntry = null; litterEntry = null;
+      transportCache.clear(); fillEntry = null; bounceEntry = null; litterEntry = null;
       hub.layerTex.forEach(t => { gl.deleteTexture(t); });
       hub.woodTex.forEach(t => { gl.deleteTexture(t); });
       [hub.clusterTex, hub.clusterGeomTex, hub.grove?.leafTex, occTex, hub.faithTex, hub.faithScratch, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
+      if(fill.bounce){ gl.deleteFramebuffer(fill.bounce.fbo); [fill.bounce.G, fill.bounce.W, fill.bounce.B, fill.bounce.slab].forEach(t => { gl.deleteTexture(t); }); fill.bounce = null; }
       freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
       [bakeFBO, faithFBO, fillFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       hub.disposeTree();                              // the tree view's targets and its leaf table
@@ -977,7 +997,7 @@ function createEngine(canvas, opts, driven=false){
     lost = false;
     transportCache.clear(); presentTex = null;         // dead handles: forgotten, never deleted
     contextPrograms(gl).clear(); held.clear();     // every program the context held died with it, whichever engine linked it
-    fillEntry = null; fill.tex = [null, null]; fill.res = 0; fill.ready = false;   // the sky fill's program and textures died with the context; the first draw that wants it rebuilds both
+    fillEntry = null; bounceEntry = null; fill.tex = [null, null]; fill.res = 0; fill.ready = false; fill.bounce = null; fill.gb = 0;   // the sky fill's programs and textures died with the context; the first draw that wants it rebuilds them
     litterEntry = null; Object.assign(litter, newLitterState());                   // ...and so did the carpet's: initGPU() makes the fresh 1×1, and the first draw that has fallen leaves to show bakes it again
     Object.assign(hub, { layerTex:[], woodTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
                          clusterTex:null, clusterGeomTex:null, presentFBO:null, presentW:0, presentH:0 });

@@ -579,7 +579,7 @@ test("the shared per-ray snippet: alpha is COVERAGE on every camera, the wood is
   expect(src.includes("uAmbient")).toBe(false);                               // the skylight is Tsky's, and its passage needs no split (the uniform-sky identity)
   expect(src.includes("thr*(1.0-tL0)*leafHue(thL0)*uSunColor*A0")).toBe(true);  // the P0b term, still there as the else
   // the fill's own gain: the albedo at d = 0 (the literal old product), 1 above it
-  expect(FS_FILL.includes("fillS = vec4(Lsum/K*(uFillBeamK > 0.0 ? 1.0 : uFillScatter), 1.0);")).toBe(true);
+  expect(FS_FILL.includes("vec3 S = Lsum/K*(uFillBeamK > 0.0 ? 1.0 : uFillScatter);")).toBe(true);
   expect(FS_FILL.includes("bool scatter = uFillScatter > 0.0 || uFillBeamK > 0.0;")).toBe(true);
 });
 
@@ -752,8 +752,8 @@ function fillRig(over = {}) {
   return { f: makeFill(hub), params, fill, draws: () => draws };
 }
 
-test("fillSig: 17 slots, edge_area is slot 13 (sun_cosine and sun_extinction, slots 14 and 15, are cosine.test.js's) — a flip re-bakes the fill once, and exposure does not", () => {
-  expect(FILL_SIG_LEN).toBe(17);
+test("fillSig: 23 slots, edge_area is slot 13 (sun_cosine and sun_extinction, slots 14 and 15, are cosine.test.js's) — a flip re-bakes the fill once, and exposure does not", () => {
+  expect(FILL_SIG_LEN).toBe(23);
   const r = fillRig();
   r.f.refreshFill();
   expect(r.fill.ready, "the first refresh bakes").toBe(true);

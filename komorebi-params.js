@@ -10,6 +10,7 @@ const MAX_SAMPLES = 48;
 const BAKE_MIN = 768;   // floor auto_quality trims bake_resolution to below the knee (§9)
 const MAX_LAYERS = 4;
 const MAX_FILL_DIRS = 64;   // the sky fill's ray cap (§4.7): fill_directions is clamped to it, and it sizes the fill shader's uniform array
+const BOUNCE_BOX = 4;        // the ground bounce's underside pass averages each texel's leaves over BOUNCE_BOX² taps (komorebi-fill.js undersideArea, FS_FILL_UP)
 // Woody occluder segments (trunk + main limbs incl. droop sub-segments); continuous-height analytic shadow,
 // evaluated once per pixel (spec §4.5). The table is a TEXTURE now, not a uniform array, so this number costs
 // texels rather than fragment uniform rows (§6) — it is no longer a budget constraint, it is an authored ceiling.
@@ -645,6 +646,13 @@ const PARAMS = {
     row: { kind: 's', label: 'leaf scatter', min: 0, max: 1, step: 0.01, rebuild: '' },   // the leaf's albedo: the floor's twin of 'foliage glow'; the floor alone reads it, and not at all once leaf diffuse is up
     travels: 'morph',   // the sky fill (§4.7): two live shader uniforms — the receiver's mix and the leaf albedo the fill pass reads — so they tween; the canopy_fill gate crossing 0 allocates the fill lazily, mid-tween, which is not a look pop
     means: "<b>How much sunlight a leaf bounces back down — an authored stand-in for the light it passes.</b> Keep it low: 0.1–0.25 sat right against a beam that was already carrying the leaf's light. The shade is coloured by what the leaves <i>pass</i>, not by how bright they are. 0 = the shade is the filtered sky and nothing else. Only the floor reads it; it can never lift the shade past the light that landed on the leaves. Shown while canopy fill is up — and only until <i>leaf diffuse</i> is: that measures this light instead of guessing it, and counting both would count it twice." },
+  // THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md): sunlit ground lights the crown from below and the pale undersides send part of it
+  // back down — about as much as the leaves transmit, under a high sun in the crown's own shade. On by default (a look from before it was keeps 0:
+  // GRANDFATHERED, below). 0 = not baked, S is the leaves' light alone. 1 is physical. It needs canopy_fill: it is part of S, the canopy's diffuse light.
+  ground_bounce: { default: 1,
+    row: { kind: 's', label: 'ground bounce', min: 0, max: 1, step: 0.01, rebuild: '' },   // the fill's fourth light: the ground returned by the undersides; 0 bakes nothing
+    travels: 'morph',   // a scale of what the fill adds to S, re-baked with the fill (fillSig); crossing 0 allocates the three passes lazily, mid-tween, as canopy_fill does
+    means: "<b>The ground's light, sent back down by the pale undersides of the leaves.</b> Sunlit ground lights the crown from below, and the undersides return some of it into the shade: under a high sun, about as much as the leaves themselves let through. The shade then takes the ground's colour a little — warm over dirt, greener over grass, red over a red carpet of fallen leaves — and a crown over dark ground stays darker than one over sunlit dirt. 1 is physical, and the default; 0 is off. Under a single tree it is hard to see, because that shade is mostly sun through the gaps; under a closed canopy it lifts the shade a sixth to half a stop. A white floor (ground 1) returns far too much: give the ground a real colour first. Shown while canopy fill is up." },
   // A LEAF IS NOT A WINDOW (spec §4.5/§4.6/§4.7): the share d of a leaf's transmitted light that is DIFFUSE — scattered
   // by the mesophyll like frosted glass, not passed like stained glass. The beam keeps only (1−d)·T, as neutral depth
   // k = −ln(1−d) per leaf (a texel is a mixture of one: κ = k·c/a, §4.5 texelMix); the rest is the light the canopy fill hands to the shade (canopy_fill), in the leaf's
@@ -927,7 +935,10 @@ const DEFAULTS = Object.fromEntries(Object.entries(PARAMS).filter(([, d]) => !('
 // Two more were turned on later, together: shoot_leaves (0 → 1) and tilt_light (0 → 1), leaves on botanical shoots, lying by their light. The
 // afternoon looks, forest floor, morning 1, 2 and 3 and prism keep both at 0, as the artist chose; a look kept elsewhere from before takes them, and its
 // crowns gather into clumps.
-const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, shoot_leaves: 0, tilt_light: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
+// Then ground_bounce (0 → 1), the ground returned by the undersides into the shade. It reads only where canopy_fill is open; the four built-in looks that
+// open it take it (their shade moves by under 0.02 of a stop). A look kept elsewhere from before, with the fill open, takes it too; on a white floor
+// (ground 1) its shade lifts about five times what dirt gives.
+const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, shoot_leaves: 0, tilt_light: 0, ground_bounce: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
 
 // ---- legacy parameter names (spec §9). A ★ look saved to local storage, or a JSON exported from any
 // earlier build, is data the engine does not get to re-author — so a renamed knob has to keep loading
@@ -980,4 +991,4 @@ function cutWarnings(P, build, warned){
   return out;
 }
 
-export { PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, GRANDFATHERED, LEGACY_KEYS, migrateLegacy };
+export { PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, GRANDFATHERED, LEGACY_KEYS, migrateLegacy };

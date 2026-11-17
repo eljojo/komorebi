@@ -12,6 +12,8 @@
 import { atmosphere, ballisticK, beamLoss, clamp, lerp, sunIncidence } from './komorebi-math.js';
 import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES } from './komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
+import { SLAB, slabTable } from './komorebi-tree-view.js';
+import { SLAB_N } from './komorebi-shaders.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
 import { bindLeafShape } from './komorebi-grove.js';
 
@@ -22,7 +24,7 @@ const FEAT_LEAF_DIFFUSE = true;
 const edgeAreaOn = (params) => (FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);
 // How many slots the fill's signature has (fillSig, below). The engine sizes its `fill.sig` from this: a write past a Float64Array's end is dropped silently, and
 // the fill then re-bakes every frame, so the length is one number in one place.
-export const FILL_SIG_LEN = 17;
+export const FILL_SIG_LEN = 23;
 
 export function makeBake(hub){
   const { gl, params, motion, src, faith, sky, U, bakeFBO, faithFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
@@ -422,7 +424,97 @@ export function makeFill(hub){
     o[14]=params.sun_cosine;                 // S is the leaves' scattered sun and the cosine law scales it, and no bake moves when it tweens
     o[15]=params.sun_extinction;             // ...and so does the air's loss (the turbidity it depends on is o[2])
     o[16]=hub.bulkOn() ? 0 : params.park_throw;   // the park's shear moves the beam's path the fill bakes along (a standing scene's is the sun's alone)
+    // the ground the undersides return (S holds ground_bounce·B): its level, and what the ground's light is made of — the floor's albedo, the
+    // carpet (a new one per regrow), the open sky. Each 0 while the bounce is shut, so a look without it never re-bakes on them.
+    const gb = bounceOn();
+    o[17]=gb;
+    o[18]=gb > 0 ? params.ground_r : 0; o[19]=gb > 0 ? params.ground_g : 0; o[20]=gb > 0 ? params.ground_b : 0;
+    o[21]=gb > 0 ? params.ambient_skylight : 0;
+    o[22]=gb > 0 && hub.litter.ready ? hub.litter.passes : -1;
   }
+  // ---- THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md; the law in komorebi-fill.js, the passes in komorebi-shaders.js). With
+  // ground_bounce up the bake runs three passes before the fill's own: G, the ground's light (half the fill's resolution); W, what each layer's
+  // undersides send down (a quarter, one array slice per layer, one MRT target each); B, what reaches the floor (half). The fill pass adds
+  // ground_bounce·B to S, so every surface that reads S takes it at S's own share and no camera binds another texture. Allocated when the
+  // gate opens, freed when it shuts.
+  const bounceOn = () => (params.ground_bounce > 0 ? clamp(params.ground_bounce, 0, 1) : 0);
+  const bounceSizes = (res) => ({ g: Math.max(res >> 1, 16), w: Math.max(res >> 2, 8), b: Math.max(res >> 1, 16) });
+  function texParams(target, filter){
+    gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  function allocBounce(res){
+    releaseBounce();
+    const n = bounceSizes(res), W = gl.createTexture(), slab = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, W);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA16F, n.w, n.w, MAX_LAYERS, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    texParams(gl.TEXTURE_2D_ARRAY, gl.LINEAR);
+    gl.bindTexture(gl.TEXTURE_2D, slab);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, SLAB_N, 3, 0, gl.RGBA, gl.FLOAT, slabTable(SLAB_N));
+    texParams(gl.TEXTURE_2D, gl.LINEAR);
+    fill.bounce = { G: hub.makeLayerTexture(n.g), W, B: hub.makeLayerTexture(n.b), slab, fbo: gl.createFramebuffer(), res, n };
+  }
+  function releaseBounce(){
+    const b = fill.bounce;
+    if(!b) return;
+    gl.deleteFramebuffer(b.fbo);   // first: a texture still attached to a framebuffer is not freed
+    for(const t of [b.G, b.W, b.B, b.slab]) gl.deleteTexture(t);
+    fill.bounce = null; fill.gb = 0;
+  }
+  // The uniforms all three passes share: the layers, the frame, the rays, how a layer is read.
+  function bounceCommon(e, c){
+    gl.useProgram(e.prog);
+    gl.uniform2f(e.origin, -c.E/2, -c.E/2); gl.uniform2f(e.extent, c.E, c.E);
+    gl.uniform2f(e.frameOrigin, c.fr.ox, c.fr.oy); gl.uniform2f(e.frameExtent, c.fr.ext, c.fr.ext);
+    gl.uniform3f(e.sun, c.sun[0], c.sun[1], c.sun[2]); gl.uniform3f(e.ambient, c.amb[0], c.amb[1], c.amb[2]);
+    gl.uniform1fv(e.heights, c.H); gl.uniform1i(e.layerCount, params.layer_count);
+    gl.uniform1i(e.open, c.wrap ? 0 : 1); gl.uniform1f(e.beamK, c.beamK); gl.uniform1i(e.edgeArea, edgeAreaOn(params));
+    gl.uniform3fv(e.ray, fill.rays); gl.uniform2fv(e.turn, FILL_TURNS); gl.uniform1i(e.count, c.K);
+    for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]); gl.uniform1i(e.layers[i], i); }
+  }
+  function bakeBounce(c){
+    const b = fill.bounce, e = hub.bounceFor(), wrapMode = c.wrap ? gl.REPEAT : gl.CLAMP_TO_EDGE, L = hub.litter;
+    for(const [target, t] of [[gl.TEXTURE_2D, b.G], [gl.TEXTURE_2D_ARRAY, b.W], [gl.TEXTURE_2D, b.B]]){   // the park repeats all three, as it repeats the fill
+      gl.bindTexture(target, t); gl.texParameteri(target, gl.TEXTURE_WRAP_S, wrapMode); gl.texParameteri(target, gl.TEXTURE_WRAP_T, wrapMode);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b.fbo);
+    gl.bindVertexArray(emptyVAO);
+    const target = (n, ...tex) => {   // attach this pass's targets, and nothing of the last pass's: a texture this pass samples must not be one it draws into
+      for(let i=0;i<MAX_LAYERS;i++){
+        if(i >= tex.length) gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0+i, gl.TEXTURE_2D, null, 0);
+        else if(tex[i].layer == null) gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0+i, gl.TEXTURE_2D, tex[i].t, 0);
+        else gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0+i, tex[i].t, 0, tex[i].layer);
+      }
+      gl.drawBuffers(tex.map((_, i) => gl.COLOR_ATTACHMENT0+i));
+      if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) hub.fail("the ground bounce's float targets are incomplete");
+      gl.viewport(0, 0, n, n);
+    };
+    // G: the ground's light. Unit 8 the carpet (the floor's own unit for it)
+    target(b.n.g, { t: b.G });
+    bounceCommon(e.g, c);
+    gl.uniform2f(e.g.sunPath, c.g[0], c.g[1]);
+    gl.uniform3f(e.g.ground, params.ground_r, params.ground_g, params.ground_b);
+    gl.uniform1i(e.g.litterOn, L.ready ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, L.tex); gl.uniform1i(e.g.litter, 8);
+    gl.uniform2f(e.g.litterOrigin, L.ox, L.oy); gl.uniform2f(e.g.litterExtent, L.ext, L.ext);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // W: the undersides, one array slice per layer. Unit 9 G, 10 the slab
+    target(b.n.w, { t: b.W, layer: 0 }, { t: b.W, layer: 1 }, { t: b.W, layer: 2 }, { t: b.W, layer: 3 });
+    bounceCommon(e.up, c);
+    gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, b.G); gl.uniform1i(e.up.groundTex, 9);
+    gl.activeTexture(gl.TEXTURE10); gl.bindTexture(gl.TEXTURE_2D, b.slab); gl.uniform1i(e.up.slab, 10);
+    gl.uniform3f(e.up.openGround, params.ground_r*(c.sun[0] + c.amb[0]), params.ground_g*(c.sun[1] + c.amb[1]), params.ground_b*(c.sun[2] + c.amb[2]));   // past a finite tree's frame: open ground, no carpet
+    gl.uniform1f(e.up.f0, SLAB.f0);
+    gl.uniform1f(e.up.cell, c.fr.ext/b.n.w);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // B: down to the floor. Unit 11 W
+    target(b.n.b, { t: b.B });
+    bounceCommon(e.b, c);
+    gl.activeTexture(gl.TEXTURE11); gl.bindTexture(gl.TEXTURE_2D_ARRAY, b.W); gl.uniform1i(e.b.under, 11);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.activeTexture(gl.TEXTURE11); gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+  }
+
   function fillStale(){
     if(!fill.ready) return true;
     fillSig(_sig);
@@ -477,11 +569,23 @@ export function makeFill(hub){
     const fr = hub.fillFrameNow(H);
     fill.ox = fr.ox; fill.oy = fr.oy; fill.ext = fr.ext;   // what every receiver reads the textures by
     const e = hub.fillFor(), u = e.U;
+    gl.disable(gl.BLEND);
+    atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);   // the same atmosphere transport lights the frame with
+    if(fill.K !== K){ fill.rays = fillRays(K); fill.K = K; }   // cached: the plain set is a function of K alone (each texel rotates it itself)
+    // The leaves are near-horizontal (max_tilt), so the sunlight they take is the floor's cosine whatever surface reads S: the beam the leaves remove (scaled at transport) and the S they send down
+    // (scaled here) then stay one split of one energy. T_sky is the skylight and keeps its level. GLSL_SKY_RAY is untouched — its input is scaled — so fill.test.js's reference still applies.
+    const sunIrr = lerp(1, sunIncidence('floor', params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1))*beamLoss('floor', params);   // held to 0..1 like the upload that scales the beam (komorebi-render.js), or the two halves of the split would disagree past 1
+    const gb = bounceOn();
+    if(gb > 0){   // the ground returned by the undersides, baked first: the fill pass adds it to S. The ground is lit by the same sun the leaves are (the floor's cosine)
+      if(!fill.bounce || fill.bounce.res !== res) allocBounce(res);
+      if(wrap) setLayerWrap(nL, gl.REPEAT);
+      bakeBounce({ E, fr, H, K, wrap, g: hub.bulkShift(), sun: _atm.sun.map((v) => v*sunIrr), amb: _atm.ambient, beamK: FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0 });
+      if(wrap) setLayerWrap(nL, gl.CLAMP_TO_EDGE);
+    } else if(fill.bounce) releaseBounce();
+    fill.gb = gb;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fillFBO);
     gl.viewport(0,0,res,res);
-    gl.disable(gl.BLEND);
     gl.useProgram(e.prog);
-    atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);   // the same atmosphere transport lights the frame with
     gl.uniform2f(u.origin, -E/2, -E/2);
     gl.uniform2f(u.extent, E, E);
     gl.uniform2f(u.frameOrigin, fr.ox, fr.oy);
@@ -489,19 +593,17 @@ export function makeFill(hub){
     const g = hub.bulkShift();
     gl.uniform2f(u.sunPath, g[0], g[1]);                   // ONE SUN PER CAMERA: the beam's path, not the sun's direction
     gl.uniform1i(u.open, wrap ? 0 : 1);
-    // The leaves are near-horizontal (max_tilt), so the sunlight they take is the floor's cosine whatever surface reads S: the beam the leaves remove (scaled at transport) and the S they send down
-    // (scaled here) then stay one split of one energy. T_sky is the skylight and keeps its level. GLSL_SKY_RAY is untouched — its input is scaled — so fill.test.js's reference still applies.
-    const sunIrr = lerp(1, sunIncidence('floor', params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1))*beamLoss('floor', params);   // held to 0..1 like the upload that scales the beam (komorebi-render.js), or the two halves of the split would disagree past 1
     gl.uniform3f(u.sun, _atm.sun[0]*sunIrr, _atm.sun[1]*sunIrr, _atm.sun[2]*sunIrr);
     gl.uniform1fv(u.heights, H);
     gl.uniform1i(u.layerCount, params.layer_count);
-    if(fill.K !== K){ fill.rays = fillRays(K); fill.K = K; }   // cached: the plain set is a function of K alone (each texel rotates it itself)
     gl.uniform3fv(u.ray, fill.rays);
     gl.uniform2fv(u.turn, FILL_TURNS);
     gl.uniform1i(u.count, K);
     gl.uniform1f(u.scatter, fillAlbedo());
     gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the albedo is off and every surface camera reads S (the shader says so)
     gl.uniform1i(u.edgeArea, edgeAreaOn(params));                                      // at k = 0 the rays read each texel as its mixture (§4.5)
+    gl.uniform1f(u.groundBounce, gb);
+    gl.activeTexture(gl.TEXTURE12); gl.bindTexture(gl.TEXTURE_2D, gb > 0 ? fill.bounce.B : null); gl.uniform1i(u.bounce, 12);
     for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+i); gl.bindTexture(gl.TEXTURE_2D, hub.layerTex[i]); gl.uniform1i(u.layers[i], i); }
     if(wrap) setLayerWrap(nL, gl.REPEAT);
     gl.bindVertexArray(emptyVAO);
@@ -523,6 +625,7 @@ export function makeFill(hub){
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     for(const t of fill.tex) if(t) gl.deleteTexture(t);
     fill.tex = [null, null]; fill.res = 0; fill.ready = false;
+    releaseBounce();
     if(faithfulOn() && hub.layerSize > 1) hub.allocLayers(1);   // the faithful layers go back to the 1×1 they are without the fill
   }
 

@@ -10,6 +10,7 @@
 // The shader is the authority on the numbers; the GLSL both cameras run (GLSL_SKY_RAY) is what keeps the sky view
 // and the fill from drifting, and test-gl's fill check holds this file to the shader on real layers (and its sky check the look-up half: wood read, the beam's T_src, the lantern's glow).
 // ============================================================================
+import { BOUNCE_BOX } from './komorebi-params.js';
 
 export const FILL_GOLDEN = Math.PI * (3 - Math.sqrt(5));   // the golden angle, the source cloud's own azimuth step (§4.4)
 const TAU = 2 * Math.PI;
@@ -259,4 +260,81 @@ export function fillRef(layers, x, K, { gS, sun, scatter, tile, k = 0, edgeArea 
     for(let c = 0; c < 3; c++){ T[c] += r.T[c]; S[c] += r.L[c]; tau[c] -= Math.log(Math.max(r.T[c], 1e-300)); }
   }
   return { T: T.map((v) => v / K), S: S.map((v) => (v / K) * (split ? 1 : scatter)), meanTau: tau.map((v) => v / K) };
+}
+
+// ---- THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md). Sunlit ground lights the crown from below, and the pale undersides send
+// part of it back down: a fourth light in the shade, beside the beam, the skylight through the canopy and the leaves' own diffuse light. One
+// bounce (ground → underside → down), in three factored steps, each the law of one bake pass (komorebi-shaders.js FS_FILL_GROUND, FS_FILL_UP,
+// FS_FILL_BOUNCE):
+//   G(p)    = ρ(p)·(sun·B_g(p) + ambient)                               what the ground sends up: its albedo × the beam reaching it and the open sky
+//   W_L(q)  = ⟨a·Rb⟩_L(q) · (1/K) Σ_k Π_{M<L} T_M(q − (h_L − h_M)·s_k) · G(q − h_L·s_k)
+//             what layer L's undersides send down at q: the ground's light reaching them through the layers below, × their leaf area and reflectance
+//   B(x)    = (1/K) Σ_k Σ_L thr_kL · W_L(x + h_L·s_k)                    what reaches the floor, through the layers below each on their true T
+// B_g is the beam along the beam's own path (Tb: the leaves' ballistic share). The ground's diffuse term is the OPEN sky, not the fill's own
+// T_sky and S (a named approximation, −1 to +3 % of the term, which keeps the passes free of each other). Rb is the leaf's underside by the slab
+// law (komorebi-tree-view.js, slabLeaf): the coat's F0 plus what the tissue's lower face returns, at the leaf's own T = e^(−τ̄). R + T ≤ 1 holds
+// in the slab, so a·Rb ≤ 1 − T per texel. Only reflection paths are new: light the crown passes on by transmission is already in T_sky and S.
+// ⟨⟩ is the mean over a BOUNCE_BOX² grid of taps across the underside pass's texel: the emitter is a texel average (its pass is coarse; U is
+// a hemisphere of the ground and varies over metres), the walk below it is exact per ray.
+
+// What a ray passes at a layer, as the fill reads it (the same rule as skyRayRef's: the mixture's T once the split is on or edge_area, else the slab's t).
+const passT = (l, x, y, k, edgeArea) => ((k > 0 || edgeArea) ? texelMix(l.t(x, y).map((v) => -Math.log(v)), l.c(x, y), k).T : l.t(x, y));
+
+// The slab's underside reflectance at transmittance T, channel c, read from slabTable's rows (top R, underside R, tissue T against √T) as the
+// GPU reads its RGBA16F copy: linear between the two entries either side, the table spaced in √T. R_b = F0 + (1 − F0)·R_tissue, held to 1 − T:
+// a leaf brighter than a clear slab of this scattering can pass (the slab's named limit) would otherwise reflect and pass more than it receives,
+// and the table's interpolation is not R + T ≤ 1 between its nodes.
+export function slabUnder(T, c, table, n, f0){
+  const t = Math.min(Math.max(T, 0), 1), u = Math.sqrt(t) * (n - 1), i = Math.min(Math.floor(u), n - 2), f = u - i;
+  const a = table[(c * n + i) * 4 + 1], b = table[(c * n + i + 1) * 4 + 1];
+  return Math.min(f0 + (1 - f0) * (a + (b - a) * f), 1 - t);
+}
+
+// G at plan point p. `albedo(x, y)` is the floor's reflectance there (the ground composed with the carpet); `sun` the leaves' sun (the fill's
+// own, cosine and air's loss applied); `gS` the beam's path per metre of rise.
+export function groundRef(layers, p, { gS, sun, ambient, albedo, k = 0, edgeArea = false }){
+  const Bg = skyRayRef(layers, p, gS, null, sun, k, edgeArea).Tb, rho = albedo(p[0], p[1]);
+  return [0, 1, 2].map((c) => rho[c] * (sun[c] * Bg[c] + ambient[c]));
+}
+
+// The emitter's leaf part at q for layer L: ⟨a·Rb⟩ over the box of side `cell` (the underside pass's texel) centred on q. A tap that holds
+// no leaf (c < 1e-4) adds nothing.
+export function undersideArea(layer, q, cell, { under, n = BOUNCE_BOX }){
+  const out = [0, 0, 0];
+  for(let j = 0; j < n; j++) for(let i = 0; i < n; i++){
+    const x = q[0] + ((i + 0.5) / n - 0.5) * cell, y = q[1] + ((j + 0.5) / n - 0.5) * cell, c = layer.c(x, y);
+    if(!(c >= 1e-4)) continue;
+    const a = Math.min(c, 1), t = layer.t(x, y);
+    for(let ch = 0; ch < 3; ch++) out[ch] += a * under(Math.exp(Math.log(t[ch]) / a), ch);   // the leaf's own T = e^(−τ̄), τ̄ = τ/a
+  }
+  return out.map((v) => v / (n * n));
+}
+
+// W_L at q: the undersides' downward light. `G(x, y)` is the ground's light (groundRef, or the G texture read through its domain).
+export function undersideRef(layers, q, L, K, { G, cell, under, tile, k = 0, edgeArea = false, n = BOUNCE_BOX }){
+  const U = [0, 0, 0], hL = layers[L].h;
+  for(const d of fillDirections(K, tile)){
+    const thr = [1, 1, 1];
+    for(let M = 0; M < L; M++){
+      const dh = hL - layers[M].h, t = passT(layers[M], q[0] - d.shift[0] * dh, q[1] - d.shift[1] * dh, k, edgeArea);
+      for(let c = 0; c < 3; c++) thr[c] *= t[c];
+    }
+    const g = G(q[0] - d.shift[0] * hL, q[1] - d.shift[1] * hL);
+    for(let c = 0; c < 3; c++) U[c] += thr[c] * g[c];
+  }
+  const aR = undersideArea(layers[L], q, cell, { under, n });
+  return [0, 1, 2].map((c) => aR[c] * (U[c] / K));
+}
+
+// B at floor point x. `W(L, x, y)` is layer L's emitter (undersideRef, or the W texture read through its domain).
+export function bounceRef(layers, x, K, { W, tile, k = 0, edgeArea = false }){
+  const B = [0, 0, 0];
+  for(const d of fillDirections(K, tile)){
+    const thr = [1, 1, 1];
+    for(let L = 0; L < layers.length; L++){
+      const px = x[0] + d.shift[0] * layers[L].h, py = x[1] + d.shift[1] * layers[L].h, w = W(L, px, py), t = passT(layers[L], px, py, k, edgeArea);
+      for(let c = 0; c < 3; c++){ B[c] += thr[c] * w[c]; thr[c] *= t[c]; }
+    }
+  }
+  return B.map((v) => v / K);
 }

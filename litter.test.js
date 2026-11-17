@@ -636,7 +636,7 @@ test("the carpet's frame IS the fill's: fillFrame(E, hMax, bulkOn) — computed 
   expect({ ox: f.litter.ox, oy: f.litter.oy, ext: f.litter.ext }).toEqual(fillFrame(E, 9, true));   // max(binH[0..3)) = 9, not the park band's 8
   // both open on one rig: the two textures cover the same square, so a receiver may read one by the other's coordinates
   for (const over of [{}, { standing_scene: true }]) {
-    const b = litterRig({ litter: 1, canopy_fill: 1, ...over });
+    const b = litterRig({ litter: 1, canopy_fill: 1, ground_bounce: 0, ...over });   // the frame is the question, not the bounce's passes (fill.test.js holds those)
     b.lit.refreshLitter(); b.bake.bakeFill(false);
     expect([b.litter.ox, b.litter.oy, b.litter.ext], JSON.stringify(over)).toEqual([b.fill.ox, b.fill.oy, b.fill.ext]);
   }

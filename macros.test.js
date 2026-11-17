@@ -145,7 +145,7 @@ test("a tweened macro is never `live` (the editor branches on truthiness), rides
 // ---- the season axis: spring -> summer -> fall, every stop a recipe lifted from a look ------------------------------------
 const CAPACITY = ["anthocyanin", "tannin", "wall_fraction", "turn_exposure", "leaf_drop"];
 const STRUCTURE = ["foliage_density", "branch_length_ratio", "branch_pitch_deg", "trans_r", "trans_g", "trans_b"];
-const NEVER_TARGETS = ["canopy_fill", "leaf_diffuse", "exposure_absolute", "litter", "litter_resolution", "litter_age", "litter_drift_m", "leaf_wetness"];
+const NEVER_TARGETS = ["canopy_fill", "ground_bounce", "leaf_diffuse", "exposure_absolute", "litter", "litter_resolution", "litter_age", "litter_drift_m", "leaf_wetness"];
 
 test("season stops: phenology is the probe; every stop carries the same keys, annotated with the look it was lifted from", () => {
   const m = MACROS.season;

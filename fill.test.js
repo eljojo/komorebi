@@ -9,8 +9,10 @@
 import { test, expect } from "bun:test";
 import { DEFAULTS } from "./komorebi.js";
 import { hash3, sunDirection, DEG } from "./komorebi-math.js";
-import { FILL_GOLDEN, FILL_TILE, fillTile, fillDirections, fillRays, fillTurns, skyRayRef, fillRef } from "./komorebi-fill.js";
-import { FS_FILL, GLSL_SKY_RAY } from "./komorebi-shaders.js";
+import { FILL_GOLDEN, FILL_TILE, fillTile, fillDirections, fillRays, fillTurns, skyRayRef, fillRef, texelMix, slabUnder, groundRef, undersideRef, bounceRef } from "./komorebi-fill.js";
+import { FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO, SLAB_N } from "./komorebi-shaders.js";
+import { SLAB, slabLeaf, slabK, slabTable } from "./komorebi-tree-view.js";
+import { PARAMS, BOUNCE_BOX, GRANDFATHERED } from "./komorebi-params.js";
 import { TRANSPORT_GROUPS, buildTransport } from "./komorebi.js";
 import { makeGrove } from "./komorebi-grove.js";
 
@@ -523,7 +525,7 @@ import { MAX_LAYERS } from "./komorebi-params.js";
 function bakeRig(over) {
   const calls = [];
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : (...a) => { calls.push([name, ...a]); return name === "checkFramebufferStatus" ? "FRAMEBUFFER_COMPLETE" : {}; }) });
-  const params = { ...DEFAULTS, canopy_fill: 1, canopy_extent_m: 28, layer_count: 3, canopy_base_height_m: 5, canopy_thickness_m: 3, sun_elevation_deg: 36, sun_azimuth_deg: 30, ...over };
+  const params = { ...DEFAULTS, canopy_fill: 1, ground_bounce: 0, canopy_extent_m: 28, layer_count: 3, canopy_base_height_m: 5, canopy_thickness_m: 3, sun_elevation_deg: 36, sun_azimuth_deg: 30, ...over };
   const { bulkShift, bulkOn, layerHeights } = makeSource({ gl, params, perf: {}, trans: {}, src: {}, effCloud: () => 0 });
   const U = { layers: Array.from({ length: MAX_LAYERS }, (_, i) => `layer${i}`) };
   for (const k of ["origin", "extent", "frameOrigin", "frameExtent", "sunPath", "open", "sun", "heights", "layerCount", "ray", "turn", "count", "scatter", "beamK"]) U[k] = k;
@@ -619,7 +621,7 @@ test("every fill READ is over the fill's own frame, not the canopy's: the floor,
     for (const r of reads) { expect(r.includes("uFillOrigin") && r.includes("uFillExtent") || r.includes("fuv"), `${cam}: ${r}`).toBe(true); expect(r.includes("uCanopy"), `${cam}: ${r}`).toBe(false); }
   }
   expect(buildTransport("floor").includes("vec2 fuv = (world-uFillOrigin)/uFillExtent;")).toBe(true);
-  expect(Object.keys(TRANSPORT_GROUPS.fill.locs).sort()).toEqual(["canopyFill", "fillExtent", "fillOrigin", "fillS", "fillT"]);
+  expect(Object.keys(TRANSPORT_GROUPS.fill.locs).sort()).toEqual(["canopyFill", "fillExtent", "fillOrigin", "fillReturn", "fillS", "fillT"]);
 });
 
 // The park's shear (park_throw): the overhead park throws each layer by its height only when asked, by the standing scene's own throw × the knob; 0 is no throw at all,
@@ -635,4 +637,122 @@ test("park_throw: the overhead park throws cot(el)·(anti-sun) × the knob, 0 is
   expect(standingKnob, "a standing scene's throw is its own, whatever the knob").toEqual(standing);
   expect(standing[0], "...and it is the full throw").toBe(cot * ca);
   expect(src({ standing_scene: false, receiver: 0, park_throw: 1 }).bulkOn(), "the knob throws, it does not turn the park into a finite scene (wrap, fill frame)").toBe(false);
+});
+
+// ---- THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md): G, W and B, the three passes' laws (komorebi-fill.js). ----
+const TABLE = slabTable(SLAB_N), UNDER = (T, c) => slabUnder(T, c, TABLE, SLAB_N, SLAB.f0);
+// a leafy layer: per 0.3 m cell a leaf of coverage c (0, part or whole) and depth τ, held as the bake holds it (t = e^(−τ·c), coverage c)
+const leafy = (seed, h) => {
+  const cell = (x, y) => [Math.floor(x / 0.3), Math.floor(y / 0.3)], u = (i, j, s) => hash3(seed * 8 + s, i, j) / 4294967296;
+  const c = (x, y) => { const [i, j] = cell(x, y), v = u(i, j, 0); return v < 0.35 ? 0 : v < 0.6 ? v : 1; };
+  const tau = (x, y) => { const [i, j] = cell(x, y); return [0.4 + 2 * u(i, j, 1), 0.2 + 1.5 * u(i, j, 2), 2 + 4 * u(i, j, 3)]; };
+  return { h, c, t: (x, y) => tau(x, y).map((v) => Math.exp(-v * c(x, y))) };
+};
+const uniformLayer = (h, c, tau) => ({ h, c: () => c, t: () => tau.map((v) => Math.exp(-v * c)) });
+const AMB = [0.03, 0.05, 0.11];
+
+test("the slab's underside, as the GPU reads its table: the coat plus the lower face, and never more than the leaf does not pass", () => {
+  for (let c = 0; c < 3; c++) for (let i = 0; i < SLAB_N; i++) {
+    const T = (i / (SLAB_N - 1)) ** 2, m = slabLeaf(slabK(T, SLAB.s[c]), SLAB.s[c]);
+    expect(UNDER(T, c)).toBeCloseTo(Math.min(SLAB.f0 + (1 - SLAB.f0) * m[1], 1 - T), 6);   // at a node, the table's own entry, held to 1 − T where the look's leaf is brighter than the slab can pass
+  }
+  for (let q = 0; q < 2000; q++) { const T = q / 1999; for (let c = 0; c < 3; c++) expect(UNDER(T, c) + T).toBeLessThanOrEqual(1 + 1e-6); }   // R + T ≤ 1: a·Rb ≤ 1 − T per texel
+});
+
+test("no canopy, a black ground: the ground returned is exactly 0", () => {
+  const layers = [0, 1, 2].map((L) => leafy(11 + L, HEIGHTS[L])), bare = HEIGHTS.map((h) => uniformLayer(h, 0, [1, 1, 1]));
+  const G = (rho) => (x, y) => groundRef(layers, [x, y], { gS: G_SUN, sun: SUN, ambient: AMB, albedo: () => rho });
+  for (const [ls, rho] of [[bare, [0.3, 0.2, 0.1]], [layers, [0, 0, 0]]]) {
+    const W = (L, x, y) => undersideRef(ls, [x, y], L, 8, { G: G(rho), cell: 0.4, under: UNDER, tile: 3 });
+    for (const x of grid.slice(0, 12)) expect(bounceRef(ls, x, 8, { W, tile: 5 })).toEqual([0, 0, 0]);
+  }
+});
+
+test("a uniform canopy over uniform ground: the passes give the closed form, Σ_L Π_{M<L} T_M² · a_L·Rb_L · G", () => {
+  const ls = [uniformLayer(2, 0.7, [1.2, 0.8, 3]), uniformLayer(3, 1, [0.9, 0.5, 2.5]), uniformLayer(4.5, 0.4, [2, 1, 4])], G0 = [0.2, 0.15, 0.08];
+  const W = (L, x, y) => undersideRef(ls, [x, y], L, 16, { G: () => G0, cell: 0.5, under: UNDER, tile: 7 });
+  const B = bounceRef(ls, [0.3, -0.2], 16, { W, tile: 2 });
+  const want = [0, 0, 0], thr = [1, 1, 1];
+  for (const l of ls) {
+    const a = l.c(), T = l.t(), Tleaf = l.t().map((v) => Math.exp(Math.log(v) / a));   // the ray passes the layer as the fill reads it (the slab's t at d = 0, edge_area off); the leaf is its own
+    for (let c = 0; c < 3; c++) { want[c] += thr[c] * thr[c] * a * UNDER(Tleaf[c], c) * G0[c]; thr[c] *= T[c]; }
+  }
+  for (let c = 0; c < 3; c++) expect(B[c]).toBeCloseTo(want[c], 12);
+});
+
+test("the bound, on uniform stacks: the undersides return at most (1 − Π T)·G, over 10^4 random stacks, the layers read as slabs or as mixtures", () => {
+  for (let s = 0; s < 10000; s++) {
+    const edgeArea = s % 2 === 1;
+    const u = (k) => hash3(s, k, 77) / 4294967296;
+    const ls = HEIGHTS.map((h, L) => uniformLayer(h, u(L * 4) < 0.2 ? 0 : u(L * 4) * 2, [4 * u(L * 4 + 1), 4 * u(L * 4 + 2), 6 * u(L * 4 + 3)]));
+    const G0 = [u(20), u(21), u(22)];
+    const W = (L, x, y) => undersideRef(ls, [x, y], L, 4, { G: () => G0, cell: 0.5, under: UNDER, tile: s & 15, n: 1, edgeArea });
+    const B = bounceRef(ls, [0, 0], 4, { W, tile: (s >> 4) & 15, edgeArea }), col = [1, 1, 1];
+    for (const l of ls) { const T = edgeArea ? texelMix(l.t().map((v) => -Math.log(v)), l.c(), 0).T : l.t(); for (let c = 0; c < 3; c++) col[c] *= T[c]; }
+    for (let c = 0; c < 3; c++) expect(B[c]).toBeLessThanOrEqual((1 - col[c]) * G0[c] + 1e-12);
+  }
+});
+
+test("sun off: the ground returns the open sky it reflects, and nothing else — a second event, not the skylight counted twice", () => {
+  const layers = [0, 1, 2].map((L) => leafy(40 + L, HEIGHTS[L])), rho = [0.2, 0.13, 0.07];
+  const G = (x, y) => groundRef(layers, [x, y], { gS: G_SUN, sun: [0, 0, 0], ambient: AMB, albedo: () => rho });
+  expect(G(0.1, 0.2)).toEqual(rho.map((r, c) => r * AMB[c]));
+  const W = (L, x, y) => undersideRef(layers, [x, y], L, 8, { G, cell: 0.4, under: UNDER, tile: 1 });
+  const B = bounceRef(layers, [0.2, 0.1], 8, { W, tile: 9 });
+  for (let c = 0; c < 3; c++) { expect(B[c]).toBeGreaterThan(0); expect(B[c]).toBeLessThan(rho[c] * AMB[c]); }
+});
+
+test("the ground's light: its albedo × the beam along the beam's path and the open sky; a carpet tints it where it lies", () => {
+  const layers = [0, 1, 2].map((L) => leafy(60 + L, HEIGHTS[L]));
+  for (const p of grid.slice(0, 20)) {
+    const Tb = skyRayRef(layers, p, G_SUN, null, SUN).Tb, g = groundRef(layers, p, { gS: G_SUN, sun: SUN, ambient: AMB, albedo: () => [0.5, 0.4, 0.3] });
+    for (let c = 0; c < 3; c++) expect(g[c]).toBeCloseTo([0.5, 0.4, 0.3][c] * (SUN[c] * Tb[c] + AMB[c]), 12);
+  }
+});
+
+test("the shaders: the fill adds the bounce to S only behind ground_bounce, the shared ray is untouched, and the floor and the ground light read one albedo", () => {
+  expect(FS_FILL).toContain("if(uGroundBounce > 0.0) S += uGroundBounce*texture(uFillBounce, vUv).rgb;");
+  expect(FS_FILL).toContain("vec3 S = Lsum/K*(uFillBeamK > 0.0 ? 1.0 : uFillScatter);");
+  expect(GLSL_SKY_RAY).not.toMatch(/Under|Bounce|Ground/);
+  for (const fs of [FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE]) expect(fs).toContain(GLSL_SKY_RAY);   // a layer is read as the fill reads it
+  expect(FS_FILL_GROUND).toContain(`rho = ${GLSL_GROUND_ALBEDO};`);
+  expect(buildTransport("floor")).toContain("vec3 ground = uGround*(1.0-L.a) + L.rgb;   // @feature litter");   // the floor's line, character for character
+  expect(FS_FILL_UP).toContain(`for(int j = 0; j < ${BOUNCE_BOX}; j++)`);
+});
+
+test("ground_bounce ships on, a look from before it keeps 0, and it travels as a live share", () => {
+  expect(DEFAULTS.ground_bounce).toBe(1);
+  expect(GRANDFATHERED.ground_bounce).toBe(0);
+  expect(PARAMS.ground_bounce.travels).toBe("morph");
+});
+
+test("the bake: ground_bounce 0 runs the fill's one pass and allocates nothing; up, three passes run first and re-bake on what the ground's light is made of, and only then", () => {
+  let draws = 0; const calls = [];
+  const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : (...a) => { if (name === "drawArrays") draws++; calls.push([name, ...a]); return name === "checkFramebufferStatus" ? "FRAMEBUFFER_COMPLETE" : {}; }) });
+  const params = { ...DEFAULTS, canopy_fill: 1, ground_bounce: 0, sun_elevation_deg: 60 };
+  const fill = { tex: [null, null], res: 0, ready: false, sig: new Float64Array(FILL_SIG_LEN), K: 0, rays: null, ox: 0, oy: 0, ext: 1, bounce: null, gb: 0 };
+  const U = new Proxy({}, { get: (_t, name) => (name === "layers" ? [0, 1, 2, 3] : name) });
+  const E = () => new Proxy({}, { get: (_t, name) => (name === "layers" ? [0, 1, 2, 3] : name) });
+  const litter = { ready: false, passes: 0, tex: {}, ox: -5, oy: -5, ext: 10 };
+  const hub = {
+    gl, params, fill, litter, fillFBO: {}, emptyVAO: {}, bakeRes: () => 256, faithfulOn: () => false, faith: {}, layerTex: [{}, {}, {}, {}], layerSize: 256,
+    makeLayerTexture: () => ({}), layerHeights: () => [2, 3, 4, 5], bulkOn: () => false, bulkShift: () => [0, 0], fillFor: () => ({ prog: {}, U }),
+    bounceFor: () => ({ g: E(), up: E(), b: E() }), allocLayers() {}, bakeLayers() {}, fillFrameNow: () => ({ ox: -5, oy: -5, ext: 10 }), fail(m) { throw new Error(m); },
+  };
+  const f = makeFill(hub), step = () => { const d0 = draws; f.refreshFill(); return draws - d0; };
+  expect(step(), "shut: the fill's one pass").toBe(1);
+  expect(fill.bounce).toBeNull();
+  expect(calls.some((c) => c[0] === "uniform1f" && c[1] === "groundBounce" && c[2] === 0)).toBe(true);
+  params.ground_bounce = 1;
+  expect(step(), "open: G, W, B, then the fill").toBe(4);
+  expect(fill.bounce).not.toBeNull(); expect(fill.gb).toBe(1);
+  expect(step(), "nothing moved").toBe(0);
+  for (const [k, v] of [["ground_g", 0.3], ["ambient_skylight", 0.5], ["ground_bounce", 0.5]]) { params[k] = v; expect(step(), k).toBe(4); }
+  litter.ready = true; litter.passes = 3;
+  expect(step(), "a new carpet").toBe(4);
+  params.ground_bounce = 0;
+  expect(step(), "shut again: the fill alone").toBe(1);
+  expect(fill.bounce).toBeNull();
+  params.ground_g = 0.6; litter.passes = 4;
+  expect(step(), "shut: the ground and the carpet are not the fill's").toBe(0);
 });

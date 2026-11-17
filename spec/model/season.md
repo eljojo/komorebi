@@ -300,9 +300,9 @@ The carpet covers the sky fill's own frame ([`fill.md`](fill.md)), computed whet
 
 > `ground = ground·(1 − a) + rgb` (coverage-weighted, so this is `mix(ground, leaf colour, a)`, `ground` the floor albedo `ground_r`, `ground_g`, `ground_b`)    `col = (acc·sun + amb)·ground`
 
-with `amb` exactly the fill's term, one expression for both, so the bare floor and the carpet cannot drift. The carpet is lit by what lights the ground beside it: the beam's suns in whatever colour the canopy let through, and the skylight and scattered light of the fill. How the fill reads it is [`fill.md`](fill.md); the floor itself is [`receivers.md`](receivers.md).
+with `amb` exactly the fill's term, one expression for both, so the bare floor and the carpet cannot drift. The same albedo expression is what the ground sends up into the crown when `ground_bounce` is open ([`fill.md`](fill.md)), so a red carpet tints the shade above it. The carpet is lit by what lights the ground beside it: the beam's suns in whatever colour the canopy let through, and the skylight and scattered light of the fill. How the fill reads it is [`fill.md`](fill.md); the floor itself is [`receivers.md`](receivers.md).
 
-**Only the floor reads it.** The curtain and the tent transmit through fabric and have no ground; the sky view has no surface. None of them knows the carpet exists. The faithful floor shares the material, so a standing tree has its carpet too.
+**Only the floor reads it.** The curtain and the tent transmit through fabric and have no ground; the sky view has no surface. None of them reads the carpet; with `ground_bounce` open the cloth and the tent take what the carpet returns off the undersides, through the fill. The faithful floor shares the material, so a standing tree has its carpet too.
 
 ### The litter gate
 
@@ -326,7 +326,7 @@ with `amb` exactly the fill's term, one expression for both, so the bare floor a
 - **Effective wetness** (Approximation). The film's other optics (light trapped by total internal reflection at its surface, after Lekner and Dorf) are the same size as the index law at half wetness and flatter in hue; one grey card cannot separate them, so `w` absorbs them. Full soaking at 1 overstates a fresh leaf.
 - **The dirt stays dry** (Approximation). The floor albedo (`ground_r`, `ground_g`, `ground_b`) is authored, and wet leaves on dry dirt raise leaf-to-soil contrast, the opposite of a real rain day; a rain look lowers the dirt by hand.
 - **No gloss** (Not built). The floor is matte, which is why the film's mirror lobe is dropped rather than kept.
-- **No ground bounce** (Not built). A red carpet should tint the shade above it; there is no term for a bounce.
+- **One ground bounce** (Approximation). With `ground_bounce` open the carpet's reflected light comes back down off the undersides, once ([`fill.md`](fill.md)); it is a few percent of the sun under a high sun in the crown's shade, and almost nothing at the fall looks' 26°.
 - **One flat stamp** (Approximation) per fallen leaf: no curl, no relief, no thickness where leaves pile, one reflectance across its face. Leaves are lit by the beam and the fill but not shaded by each other.
 - **One age for every leaf** (Approximation): `litter_age` is a single number, and a fallen leaf's colour is its colour now, not at its day.
 - **A leaf smaller than a carpet texel** (Approximation) is drawn at a minimum size with its coverage reduced to keep its area, which over-counts so small a leaf slightly ([`../evidence/measurements.md#season`](../evidence/measurements.md#season)).
@@ -342,7 +342,6 @@ with `amb` exactly the fill's term, one expression for both, so the bare floor a
 - A **browning process** replacing the age mix, with a per-leaf dead fraction that rain could also act on in the crown ([`../exploration/open.md`](../exploration/open.md)).
 - **Rain** as a live writer of wetness and of the dirt, and a wet leaf's gloss ([`../exploration/open.md`](../exploration/open.md)).
 - **Falling leaves** in the air, gusts that shake a tree bare, a carpet that accumulates or moves ([`../exploration/open.md`](../exploration/open.md)).
-- A **ground bounce** from the carpet into the shade above ([`../exploration/open.md`](../exploration/open.md)).
 
 ## Related
 

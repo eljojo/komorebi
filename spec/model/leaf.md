@@ -245,7 +245,7 @@ The engine carries that maze only as a mean, the sieve, and must stay so: the fe
 
 - **The texel holds one representative leaf and a gap.** *Approximation.* Exact for one leaf and for leaves stacked over the whole texel; a bounded residue for a partial overlap; blind to two edges in one texel. Absent where the faithful stamp draws one leaf at a time.
 - **The depth-averaged soft edge at `d = 0`.** *Approximation, retained for projector presentation*: Jensen-dark at every leaf edge. Absent with `edge_area` on, or with the split open.
-- **Single scatter.** *Approximation.* A leaf's diffuse light goes down through the layers below on their true transmittance; none of it glows sideways out of the leaves beside it, and none bounces.
+- **Single scatter.** *Approximation.* A leaf's diffuse light goes down through the layers below on their true transmittance; none of it glows sideways out of the leaves beside it, and none bounces. The ground's light does come back once, off the undersides, by the slab's underside reflectance held to `R_b ≤ 1 − T` ([`fill.md`](fill.md), *The ground, returned by the undersides*).
 - **The ballistic residue carries the leaf's hue.** *Approximation, and visible:* at `d` 0.95 it is five percent of the light, so a faint coloured sun-image of each leaf remains; a stack of three is gone.- **The uniform-sky identity is first order.** *Approximation*: diffuse equals ballistic transmission only for a uniform sky through Lambertian leaves, which is why the skylight is not split.
 - **`d` is one number for every leaf.** *Authored* in a look; physically about 0.95.
 - **The sieve is a mean**, with no vein geometry; overlapping leaves multiply independent means. *Approximation.*

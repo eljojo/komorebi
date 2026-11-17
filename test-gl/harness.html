@@ -33,9 +33,10 @@
 <body></body>
 <script type="module">
 import { create, MAX_OCC, TRANSPORT_GROUPS } from '/komorebi.js';
-import { VS_FULL, FS_BAKE, FS_FAITH, VS_LITTER, FS_LITTER, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/komorebi-shaders.js';
+import { VS_FULL, FS_BAKE, FS_FAITH, VS_LITTER, FS_LITTER, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY, SLAB_N } from '/komorebi-shaders.js';
 import { PRESETS } from '/presets.js';
-import { fillDirections, fillFrame, fillRef, fillTile, texelTap, skyRayRef, texelMix } from '/komorebi-fill.js';
+import { fillDirections, fillFrame, fillRef, fillTile, texelTap, skyRayRef, texelMix, groundRef, undersideRef, bounceRef, slabUnder } from '/komorebi-fill.js';
+import { SLAB, slabTable } from '/komorebi-tree-view.js';
 import { litterAge, litterAlbedo, litterInstances } from '/komorebi-litter.js';
 import { LEAF_SAMPLES, leafShape } from '/komorebi-leaf.js';
 import { atmosphere, ballisticK, beamExtinction, lerp, sunDirection, sunIncidence } from '/komorebi-math.js';
@@ -283,6 +284,47 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
       const floorCam = (p.receiver | 0) === 0 && !p.sky_view;
       const n = fill.res, K = Math.min(Math.max(p.fill_directions | 0, 1), 64);
       const T = read(fill.tex[0], n), S = read(fill.tex[1], n);
+      // THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md): each of the three passes against its law, fed the GPU's own output of the pass before it
+      // (so a miss names its pass), and S against fillRef's plus ground_bounce·B read where the fill pass reads it
+      const gb = p.ground_bounce > 0 ? Math.min(p.ground_bounce, 1) : 0, bo = fill.bounce;
+      if (gb > 0 && !bo) return finish(new Error('ground_bounce is up and the fill holds no bounce'));
+      const readSlice = (tex, nn, L) => {
+        const fb = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, tex, 0, L);
+        const out = new Float32Array(nn * nn * 4);
+        gl.readPixels(0, 0, nn, nn, gl.RGBA, gl.FLOAT, out);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb);
+        return out;
+      };
+      const Bd = gb > 0 ? read(bo.B, bo.n.b) : null;
+      let bounce = null;
+      if (gb > 0) {
+        const nG = bo.n.g, nW = bo.n.w, nB = bo.n.b, Gd = read(bo.G, nG), Wd = [0, 1, 2, 3].map((L) => readSlice(bo.W, nW, L));
+        const rho = [p.ground_r, p.ground_g, p.ground_b], openGround = rho.map((r, c) => r * (fsun[c] + atm.ambient[c])), edgeArea = !!p.edge_area;
+        const outside = (x, y) => x < fr.ox || x > fr.ox + fr.ext || y < fr.oy || y > fr.oy + fr.ext;
+        const Gat = (x, y) => (mode === 'open' && outside(x, y) ? openGround : texelTap(Gd, nG, fr, mode, x, y).slice(0, 3));
+        const Wat = (L, x, y) => texelTap(Wd[L], nW, fr, mode, x, y).slice(0, 3);
+        const table = slabTable(SLAB_N), under = (Tv, c) => slabUnder(Tv, c, table, SLAB_N, SLAB.f0);
+        const pick = (q, nn) => {   // a fixed scatter of texels; on a finite tree's frame every other one from the canopy box
+          const u0 = (q * 0.6180339887) % 1, v0 = (q * 0.7548776662 + 0.3) % 1, box = q % 2 === 1 && fr.ext > E;
+          const i = Math.min(nn - 1, Math.floor((box ? ((canopy.ox - fr.ox) + u0 * E) / fr.ext : u0) * nn)), j = Math.min(nn - 1, Math.floor((box ? ((canopy.oy - fr.oy) + v0 * E) / fr.ext : v0) * nn));
+          return [i, j, [fr.ox + ((i + 0.5) / nn) * fr.ext, fr.oy + ((j + 0.5) / nn) * fr.ext]];
+        };
+        const m = { errG: 0, maxG: 0, errW: 0, maxW: 0, errB: 0, maxB: 0 };
+        const litter = !!eng.litter?.ready;   // a carpet: the albedo is the carpet's where it lies, which this check does not rebuild — G is then not compared
+        for (let q = 0; q < 32; q++) {
+          if (!litter) {
+            const [i, j, x] = pick(q, nG), ref = groundRef(layers, x, { gS, sun: fsun, ambient: atm.ambient, albedo: () => rho, k: beamK, edgeArea });
+            for (let c = 0; c < 3; c++) { m.errG = Math.max(m.errG, Math.abs(Gd[(j * nG + i) * 4 + c] - ref[c])); m.maxG = Math.max(m.maxG, ref[c]); }
+          }
+          { const L = q % nL, [i, j, x] = pick(q, nW), ref = undersideRef(layers, x, L, K, { G: Gat, cell: fr.ext / nW, under, tile: fillTile(i, j), k: beamK, edgeArea });
+            for (let c = 0; c < 3; c++) { m.errW = Math.max(m.errW, Math.abs(Wd[L][(j * nW + i) * 4 + c] - ref[c])); m.maxW = Math.max(m.maxW, ref[c]); } }
+          { const [i, j, x] = pick(q, nB), ref = bounceRef(layers, x, K, { W: Wat, tile: fillTile(i, j), k: beamK, edgeArea });
+            for (let c = 0; c < 3; c++) { m.errB = Math.max(m.errB, Math.abs(Bd[(j * nB + i) * 4 + c] - ref[c])); m.maxB = Math.max(m.maxB, ref[c]); } }
+        }
+        bounce = { ...m, gb, nG, nW, nB, litter };
+      }
       let eT = 0, eS = 0, sT = 0, sS = 0, minT = 1, maxT = 0, maxS = 0, k = 0;
       for (let q = 0; q < o.samples; q++) {              // a fixed scatter of texels, interior and border alike
         const u0 = (q * 0.6180339887) % 1, v0 = (q * 0.7548776662 + 0.3) % 1;
@@ -290,9 +332,10 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
         const i = Math.min(n - 1, Math.floor((box ? ((canopy.ox - fr.ox) + u0 * E) / fr.ext : u0) * n)), j = Math.min(n - 1, Math.floor((box ? ((canopy.oy - fr.oy) + v0 * E) / fr.ext : v0) * n));
         const x = [fr.ox + ((i + 0.5) / n) * fr.ext, fr.oy + ((j + 0.5) / n) * fr.ext];
         const ref = fillRef(layers, x, K, { gS, sun: fsun, scatter: floorCam ? p.fill_scatter : 0, tile: fillTile(i, j), k: beamK, edgeArea: !!p.edge_area });   // the proxy's albedo is the floor's alone (the cloth and the tent are handed 0) and is off above k = 0; each texel carries its own slot of the 4x4 interleaving tile
+        const bAdd = gb > 0 ? texelTap(Bd, bo.n.b, fr, mode, x[0], x[1]) : [0, 0, 0];   // the fill pass reads B at its own texel's centre
         for (let c = 0; c < 3; c++) {
           const gT = T[(j * n + i) * 4 + c], gSv = S[(j * n + i) * 4 + c];
-          eT = Math.max(eT, Math.abs(gT - ref.T[c])); eS = Math.max(eS, Math.abs(gSv - ref.S[c]));
+          eT = Math.max(eT, Math.abs(gT - ref.T[c])); eS = Math.max(eS, Math.abs(gSv - (ref.S[c] + gb * bAdd[c])));
           sT += ref.T[c]; sS += ref.S[c]; k++;
           minT = Math.min(minT, gT); maxT = Math.max(maxT, gT); maxS = Math.max(maxS, gSv);
         }
@@ -349,14 +392,19 @@ window.__fillCheck = (presetName, overrides, opts) => new Promise((resolve, reje
           }
         }
         const areaF = (fr.ext / n) ** 2, Reng = [0, 0, 0], g = new Float64Array(n * n);
-        for (let i = 0; i < n * n; i++) { for (let c = 0; c < 3; c++) Reng[c] += S[i * 4 + c] * areaF; g[i] = S[i * 4 + 1]; }
+        const leafS = (i, c) => {   // S holds the leaves' light and, with ground_bounce up, ground_bounce·B: the books are the leaves', so the bounce comes out where the fill pass put it in
+          if (!(gb > 0)) return S[i * 4 + c];
+          const x = fr.ox + ((i % n + 0.5) / n) * fr.ext, y = fr.oy + ((Math.floor(i / n) + 0.5) / n) * fr.ext;
+          return S[i * 4 + c] - gb * texelTap(Bd, bo.n.b, fr, mode, x, y)[c];
+        };
+        for (let i = 0; i < n * n; i++) { for (let c = 0; c < 3; c++) Reng[c] += leafS(i, c) * areaF; g[i] = leafS(i, 1); }
         const ringW = Math.max(2, Math.round(n / 64)), B = 16;      // the outermost ring, and the brightest 16-texel block
         let ringSum = 0, ringN = 0, crown = 0;
         for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (x < ringW || y < ringW || x >= n - ringW || y >= n - ringW) { ringSum += g[y * n + x]; ringN++; }
         for (let by = 0; by + B <= n; by += B) for (let bx = 0; bx + B <= n; bx += B) { let m = 0; for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) m += g[(by + y) * n + bx + x]; crown = Math.max(crown, m / (B * B)); }
         energy = { E: per, Etot: per.reduce((a, v) => a.map((x, c) => x + v[c]), [0, 0, 0]), Ropen, Rin, Dbeam, Reng, edge: ringSum / Math.max(ringN, 1), crown, frame: fr, bulkOn, gS, mode, lres, nL };
       }
-      finish(null, { errT: eT, errS: eS, meanT: sT / k, meanS: sS / k, minT, maxT, maxS, res: n, K, layerRes: lres, faithful, heights, rough, beamK, energy });
+      finish(null, { errT: eT, errS: eS, meanT: sT / k, meanS: sS / k, minT, maxT, maxS, res: n, K, layerRes: lres, faithful, heights, rough, beamK, energy, bounce });
     } catch (e) { finish(e); }
   };
 });

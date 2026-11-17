@@ -364,6 +364,14 @@ const INVARIANTS = [
   { name: 'canopy_fill 1 changes the shade (faithful path)', preset: 'park 1', rebake: true, differ: true, a: { canopy_fill: 0 }, b: { canopy_fill: 1 } },
   { name: 'canopy_fill 1 changes the cloth (curtain)', preset: 'curtain 1', differ: true, a: { canopy_fill: 0 }, b: { canopy_fill: 1 } },
   { name: 'canopy_fill 1 changes the cloth (tent)', preset: 'tent 1', differ: true, a: { canopy_fill: 0 }, b: { canopy_fill: 1 } },
+  // THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md): part of S, so nothing at all while the fill is shut, nothing on the sky view, and live where S is read
+  { name: 'ground_bounce inert at canopy_fill 0 (layer path)', preset: 'memories', a: { ground_bounce: 0 }, b: { canopy_fill: 0, ground_bounce: 1 } },
+  { name: 'ground_bounce inert at canopy_fill 0 (faithful path)', preset: 'park 1', rebake: true, a: { ground_bounce: 0 }, b: { canopy_fill: 0, ground_bounce: 1 } },
+  { name: 'the sky view ignores ground_bounce', preset: 'canopy 1', a: { canopy_fill: 1, ground_bounce: 0 }, b: { canopy_fill: 1, ground_bounce: 1 } },
+  { name: 'ground_bounce 1 changes the shade (layer path)', preset: 'memories', differ: true, a: { canopy_fill: 1, ground_bounce: 0, ground_r: 0.2, ground_g: 0.2, ground_b: 0.2 }, b: { canopy_fill: 1, ground_r: 0.2, ground_g: 0.2, ground_b: 0.2, ground_bounce: 1 } },
+  { name: 'ground_bounce 1 changes the shade (faithful path)', preset: 'montebello', rebake: true, differ: true, a: { sun_elevation_deg: 60, ground_bounce: 0 }, b: { sun_elevation_deg: 60, ground_bounce: 1 } },
+  { name: 'ground_bounce 1 changes the cloth at leaf_diffuse 0 (curtain)', preset: 'curtain 1', differ: true, a: { canopy_fill: 1, leaf_diffuse: 0, ground_bounce: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0, ground_bounce: 1 } },
+  { name: 'ground_bounce 1 changes the cloth above leaf_diffuse 0 (tent)', preset: 'tent 1', differ: true, a: { canopy_fill: 1, leaf_diffuse: 0.95, ground_bounce: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.95, ground_bounce: 1 } },
   { name: 'fill_scatter is live at canopy_fill 1 (layer path)', preset: 'memories', differ: true,
     a: { canopy_fill: 1, fill_scatter: 0 }, b: { canopy_fill: 1, fill_scatter: 0.8 } },
   // A LEAF IS NOT A WINDOW (§4.5). leaf_diffuse 0 is k = 0: tap()'s else, FS_FAITH's else, the P0b proxy verbatim and a
@@ -714,7 +722,14 @@ const FILL_CHECKS = [
   // SUN_COSINE (§3.5): the leaves are lit by the floor's cosine, so S is scaled by sin el (x0.438 at montebello's 26 degrees) and Tsky, the skylight, is not. The reference is built from the unscaled atmosphere
   // and the same scale restated in harness.html: a bake that forgot it would be ~2.3x off in S.
   { name: 'montebello, sun_cosine 1 — S takes the leaves\' own sin el, Tsky does not', preset: 'montebello', rebake: true, over: { sun_cosine: 1 } },
+  // THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md): G, W and B each against komorebi-fill.js fed the GPU's previous pass, and S with ground_bounce·B in it
+  { name: 'memories, ground_bounce 1 — the park wraps all three passes; d 0, the proxy beside it', preset: 'memories', over: { canopy_fill: 1, fill_scatter: 0.3, ground_bounce: 1, ground_r: 0.2, ground_g: 0.2, ground_b: 0.2 } },
+  { name: 'montebello at 60°, ground_bounce 1 — faithful, a finite tree open past its frame', preset: 'montebello', rebake: true, over: { sun_elevation_deg: 60, ground_bounce: 1 } },
+  { name: 'park 1, ground_bounce 0.5 — the measured leaf, edge_area', preset: 'park 1', rebake: true, over: { canopy_fill: 1, leaf_diffuse: 0.95, edge_area: true, ground_bounce: 0.5, ground_r: 0.2, ground_g: 0.2, ground_b: 0.2 } },
+  { name: 'curtain 1, ground_bounce 1 — at d 0 S is the bounce alone', preset: 'curtain 1', over: { canopy_fill: 1, ground_bounce: 1, ground_r: 0.2, ground_g: 0.2, ground_b: 0.2 } },
 ];
+// the bounce's three passes: each a 16F target read through bilinear taps of the pass before it, so the tolerance is relative to what the pass holds
+const BOUNCE_TOL = 0.01;
 // THE FILL'S BOOKKEEPING (§4.7), measured on the layers the engine really baked (__fillCheck's `energy`). No light is made or lost
 // globally — what a frame shows is DISPLACEMENT (glow under the crown, shadow down-sun) — but the fill had two real breaks, and these
 // rows are what they looked like: the fill lit its leaves along the REAL sun while the beam it balances has no bulk shift in the park
@@ -1456,7 +1471,18 @@ async function main() {
       if (r.errS > FILL_TOL) bad.push(`S off by ${r.errS.toExponential(2)}`);
       if (!(r.maxT > r.minT + 1e-3)) bad.push(`Tsky is flat (${r.minT.toFixed(4)}..${r.maxT.toFixed(4)}): nothing was measured`);
       if (c.over.leaf_diffuse > 0 && !(r.maxS > 0.01)) bad.push(`S is empty (max ${r.maxS.toFixed(4)}) with the split on: nothing was measured`);
-      const detail = `${r.beamK > 0 ? `k ${r.beamK.toFixed(2)}  ` : ''}errT ${r.errT.toExponential(1)} errS ${r.errS.toExponential(1)}  Tsky ${r.minT.toFixed(2)}..${r.maxT.toFixed(2)} mean ${r.meanT.toFixed(3)}  S mean ${r.meanS.toFixed(3)}  texel-to-texel rms by mip ${r.rough.map((v) => v.toFixed(3)).join('/')}  ${r.res}px K${r.K}${r.faithful ? `  layers ${r.layerRes}px @ ${r.heights.map((h) => h.toFixed(2)).join('/')} m` : ''}`;
+      if (c.over.ground_bounce > 0) {
+        const b = r.bounce;
+        if (!b) bad.push('no bounce was read back');
+        else {
+          for (const [q, e, mx] of [['G', b.errG, b.maxG], ['W', b.errW, b.maxW], ['B', b.errB, b.maxB]]) {
+            if (q === 'G' && b.litter) continue;
+            if (!(mx > 0)) bad.push(`${q} is empty: nothing was measured`);
+            else if (e > BOUNCE_TOL * mx + 1e-5) bad.push(`${q} off by ${e.toExponential(2)} of ${mx.toExponential(2)}`);
+          }
+        }
+      }
+      const detail = `${r.bounce ? `bounce G ${r.bounce.errG.toExponential(1)}/${r.bounce.maxG.toFixed(3)} W ${r.bounce.errW.toExponential(1)}/${r.bounce.maxW.toFixed(4)} B ${r.bounce.errB.toExponential(1)}/${r.bounce.maxB.toFixed(4)} at ${r.bounce.nG}/${r.bounce.nW}/${r.bounce.nB}px  ` : ''}${r.beamK > 0 ? `k ${r.beamK.toFixed(2)}  ` : ''}errT ${r.errT.toExponential(1)} errS ${r.errS.toExponential(1)}  Tsky ${r.minT.toFixed(2)}..${r.maxT.toFixed(2)} mean ${r.meanT.toFixed(3)}  S mean ${r.meanS.toFixed(3)}  texel-to-texel rms by mip ${r.rough.map((v) => v.toFixed(3)).join('/')}  ${r.res}px K${r.K}${r.faithful ? `  layers ${r.layerRes}px @ ${r.heights.map((h) => h.toFixed(2)).join('/')} m` : ''}`;
       record('fill', c.name, bad.length === 0, bad.join('; ') || detail);
       log(`  ${bad.length ? 'FAIL' : 'ok  '}  ${c.name.padEnd(62)} ${bad.join('; ') || detail}`);
     }

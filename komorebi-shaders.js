@@ -1,4 +1,4 @@
-import { MAX_LAYERS, MAX_FILL_DIRS } from './komorebi-params.js';
+import { MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX } from './komorebi-params.js';
 import { LEAF_VARIANTS } from './komorebi-leaf.js';
 import { DEPTH_L0, DEPTH_W } from './komorebi-air.js';
 
@@ -959,6 +959,11 @@ uniform highp sampler2D uLayer[${MAX_LAYERS}];   // highp: optical depth exceeds
 uniform float uLayerHeight[${MAX_LAYERS}];
 uniform int   uLayerCount;`;
 
+// ---- THE FLOOR'S ALBEDO where a leaf has fallen: the carpet (premultiplied: rgb·coverage, coverage in alpha, read as `L`) composed over the ground.
+// One expression for the floor the eye sees (komorebi-transport.js) and the floor that lights the crown from below (FS_FILL_GROUND), so the two
+// cannot disagree. ----
+const GLSL_GROUND_ALBEDO = `uGround*(1.0-L.a) + L.rgb`;
+
 // ---- THE WOOD FIELD (§4.9): the layer-stamped fine wood, one R16F texture per layer, beside the layers it was stamped with. The sky camera
 // declares it, and the sky fill's bake carries the same line because it runs the same shared ray — whose wood reads sit behind
 // `readWood`, a literal false in the fill, so the four samplers are declared there and never sampled. No cast camera declares it. ----
@@ -1027,8 +1032,9 @@ vec3 sunPass(vec3 tb, float w, bool readWood){ return readWood ? tb*w : tb; }
 //    and nothing else — the field already holds everything they need.
 //    NOT the skylight, which would count it twice: its passage through the leaves is already T·sky (the eye ray's
 //    transmission, the fill's Tsky), and for a uniform sky diffuse transmission through Lambertian leaves equals
-//    that ballistic T·L_sky to first order. Leaf-top reflection goes up, never to an eye below, and an underside has
-//    no light to send on (the model has no ground bounce). With the sun off, Lsc is exactly 0.
+//    that ballistic T·L_sky to first order. Leaf-top reflection goes up, never to an eye below, and what an underside
+//    sends down is the ground's light, which the fill's own bounce passes carry (FS_FILL_UP), never this ray. With the
+//    sun off, Lsc is exactly 0.
 //  • ŝ_L is the layer's own transmittance normalized to unit peak: HUE only (§3.5), so the knob carries
 //    brightness and the chlorophyll spectrum carries colour. Taking the LAYER's rather than one leaf's also
 //    accounts to first order for the scattered light filtering back out through the layer that made it.
@@ -1133,6 +1139,8 @@ const int TILE[16] = int[16](0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5);   // the te
 uniform float uFillScatter;                 // the leaves' albedo (the P0b proxy): 0 skips the scatter branch unless the split is on (the cloth and the tent are handed 0 there, and read S only through it)
 uniform float uFillBeamK;                   // k = −ln(1−leaf_diffuse) (§4.5): above 0 the leaf's diffuse share is the emission, the albedo is off, and every surface camera reads S
 uniform int uEdgeArea;   // edge_area (§4.5): at k = 0 every texel is still read as its mixture (the shared ray reads this by name). 0 = the slab
+uniform highp sampler2D uFillBounce;        // B, the ground returned by the undersides (FS_FILL_BOUNCE), over this same frame at half the resolution
+uniform float uGroundBounce;                // ground_bounce: 0 reads nothing, and S is the leaves' light alone
 ${GLSL_SKY_RAY}
 void main(){
   vec2 x = uFillOrigin + vUv*uFillExtent;       // the floor point this texel is (recvZ = 0)
@@ -1154,7 +1162,143 @@ void main(){
     Tsum += T; Lsum += Lsc;
   }
   fillT = vec4(Tsum/K, 1.0);
-  fillS = vec4(Lsum/K*(uFillBeamK > 0.0 ? 1.0 : uFillScatter), 1.0);   // the albedo is the proxy's; the emitted light is already at its own level
+  vec3 S = Lsum/K*(uFillBeamK > 0.0 ? 1.0 : uFillScatter);   // the albedo is the proxy's; the emitted light is already at its own level
+  if(uGroundBounce > 0.0) S += uGroundBounce*texture(uFillBounce, vUv).rgb;   // the canopy's other downward diffuse light: every reader of S takes it at S's own share
+  fillS = vec4(S, 1.0);
+}`;
+
+// ---- THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md; komorebi-fill.js holds the law: groundRef, undersideRef, bounceRef). Three
+// passes over the fill's own frame, run before FS_FILL when ground_bounce is up, which adds their result to S:
+//   FS_FILL_GROUND  G(p)   = ρ(p)·(sun·B_g(p) + ambient): the floor's albedo (the ground composed with the carpet, the floor's own expression),
+//                          lit by the beam along the beam's path and by the OPEN sky (not T_sky: the passes stay free of the fill's output)
+//   FS_FILL_UP      W_L(q) = ⟨a·Rb⟩_L(q)·U_L(q): the ground's light reaching layer L's undersides from below (K rays down through the layers
+//                          under it), × their leaf area and the slab's underside reflectance, one MRT target per layer
+//   FS_FILL_BOUNCE  B(x)   = (1/K) Σ_k Σ_L thr_kL·W_L(x + h_L·s_k): down to the floor through the layers below each, on their true T
+// Each texel takes its own slot of the fill's 4x4 interleaving tile, as FS_FILL's texels do. A layer is read as the fill reads it (tapSky,
+// readWood false); the emitter is a texel mean over a BOUNCE_BOX² grid of taps. Past a finite tree's frame the ground is open ground, ρ·(sun +
+// ambient), and the undersides are none; the endless park repeats all three textures. ----
+const GLSL_FILL_DIRS = `uniform vec3  uFillRay[${MAX_FILL_DIRS}];   // the fill's own rays and slot turns (FS_FILL says what they are)
+uniform vec2  uFillTurn[16];
+uniform int   uFillCount;
+uniform vec2  uFillOrigin;
+uniform vec2  uFillExtent;
+uniform bool  uFillOpen;
+uniform float uFillBeamK;
+uniform int   uEdgeArea;
+const int TILE[16] = int[16](0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5);
+// ray k of this texel's slot, as plan travel per metre of rise (FS_FILL's own lines)
+vec2 fillShift(int k, int b, float K){
+  vec3 r = uFillRay[k];
+  float sub = (float(15 - b) + 0.5)/16.0 - 0.5, c2 = r.x - sub/K;
+  vec2 turn = uFillTurn[b], u = vec2(r.y*turn.x - r.z*turn.y, r.z*turn.x + r.y*turn.y);
+  return sqrt((1.0 - c2)/c2)*u;
+}
+int fillSlot(){ ivec2 q = ivec2(gl_FragCoord.xy) & ivec2(3); return TILE[q.x + 4*q.y]; }
+bool pastFrame(vec2 p){ vec2 uv = (p - uFillOrigin)/uFillExtent; return uFillOpen && (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))); }`;
+// what a ray passes at a layer, as the fill reads it
+const GLSL_FILL_PASS = `vec3 passAt(highp sampler2D layer, highp sampler2D wood, vec2 p){ vec3 t, tb, th; float w; tapSky(layer, wood, p, uFillOpen, false, uFillBeamK, t, tb, th, w); return t; }`;
+
+const FS_FILL_GROUND = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 frag;
+${GLSL_LAYER_FIELD}
+${GLSL_WOOD_FIELD}
+${GLSL_FILL_DIRS}
+uniform vec2  uFillG;          // the beam's path (FS_FILL's)
+uniform vec3  uGround;
+uniform int   uLitterOn;
+uniform highp sampler2D uLitter;
+uniform vec2  uLitterOrigin;
+uniform vec2  uLitterExtent;
+${GLSL_SKY_RAY}
+void main(){
+  vec2 p = uFillOrigin + vUv*uFillExtent;
+  vec3 T, Tb, Lsc;
+  skyRay(p + uFillG*uLayerHeight[0], p + uFillG*uLayerHeight[1], p + uFillG*uLayerHeight[2], p + uFillG*uLayerHeight[3], uFillG, false, uFillOpen, false, uFillBeamK, T, Tb, Lsc);
+  vec3 rho = uGround;
+  if(uLitterOn != 0){ vec4 L = texture(uLitter, (p-uLitterOrigin)/uLitterExtent); rho = ${GLSL_GROUND_ALBEDO}; }
+  frag = vec4(rho*(uSunColor*Tb + uAmbient), 1.0);
+}`;
+
+const FS_FILL_UP = `#version 300 es
+precision highp float;
+in vec2 vUv;
+layout(location=0) out vec4 w0;
+layout(location=1) out vec4 w1;
+layout(location=2) out vec4 w2;
+layout(location=3) out vec4 w3;
+${GLSL_LAYER_FIELD}
+${GLSL_WOOD_FIELD}
+${GLSL_FILL_DIRS}
+uniform highp sampler2D uFillGround;   // G over the fill's frame
+uniform vec3  uOpenGround;             // G past a finite tree's frame: open ground
+uniform highp sampler2D uSlab;         // the leaf's slab, one row per channel: (top R, underside R, tissue T) against √T (komorebi-tree-view.js slabTable)
+uniform float uF0;
+uniform float uCell;                   // this pass's texel, in metres: the box the emitter is averaged over
+${GLSL_SKY_RAY}
+${GLSL_FILL_PASS}
+vec3 groundAt(vec2 p){ return pastFrame(p) ? uOpenGround : texture(uFillGround, (p - uFillOrigin)/uFillExtent).rgb; }
+// ⟨a·Rb⟩ over this texel: each tap's leaf area a = min(c, 1) and its own T = e^(−τ/a), its underside by the slab (komorebi-fill.js slabUnder)
+vec3 underArea(highp sampler2D layer, vec2 q){
+  vec3 s = vec3(0.0);
+  for(int j = 0; j < ${BOUNCE_BOX}; j++) for(int i = 0; i < ${BOUNCE_BOX}; i++){
+    vec2 uv = (q + ((vec2(float(i), float(j)) + 0.5)/${BOUNCE_BOX}.0 - 0.5)*uCell - uCanopyOrigin)/uCanopyExtent;
+    if(uFillOpen && (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))) continue;
+    vec4 d = texture(layer, uv);
+    if(!(d.a >= 1e-4)) continue;
+    float a = min(d.a, 1.0);
+    vec3 T = exp(-d.rgb/a);
+    for(int c = 0; c < 3; c++) s[c] += a*min(uF0 + (1.0 - uF0)*texture(uSlab, vec2((sqrt(clamp(T[c], 0.0, 1.0))*(${SLAB_N}.0 - 1.0) + 0.5)/${SLAB_N}.0, (float(c) + 0.5)/3.0)).g, 1.0 - clamp(T[c], 0.0, 1.0));   // R ≤ 1 − T (slabUnder says why)
+  }
+  return s/float(${BOUNCE_BOX}*${BOUNCE_BOX});
+}
+void main(){
+  vec2 q = uFillOrigin + vUv*uFillExtent;
+  int b = fillSlot();
+  float K = float(uFillCount), h0 = uLayerHeight[0], h1 = uLayerHeight[1], h2 = uLayerHeight[2], h3 = uLayerHeight[3];
+  vec3 U0 = vec3(0.0), U1 = vec3(0.0), U2 = vec3(0.0), U3 = vec3(0.0);
+  for(int k=0;k<${MAX_FILL_DIRS};k++){
+    if(k>=uFillCount) break;
+    vec2 s = fillShift(k, b, K);
+    U0 += groundAt(q - s*h0);
+    if(uLayerCount>1) U1 += passAt(uLayer[0], uWood[0], q - s*(h1 - h0))*groundAt(q - s*h1);
+    if(uLayerCount>2) U2 += passAt(uLayer[0], uWood[0], q - s*(h2 - h0))*passAt(uLayer[1], uWood[1], q - s*(h2 - h1))*groundAt(q - s*h2);
+    if(uLayerCount>3) U3 += passAt(uLayer[0], uWood[0], q - s*(h3 - h0))*passAt(uLayer[1], uWood[1], q - s*(h3 - h1))*passAt(uLayer[2], uWood[2], q - s*(h3 - h2))*groundAt(q - s*h3);
+  }
+  w0 = vec4(underArea(uLayer[0], q)*(U0/K), 1.0);
+  w1 = vec4(uLayerCount>1 ? underArea(uLayer[1], q)*(U1/K) : vec3(0.0), 1.0);
+  w2 = vec4(uLayerCount>2 ? underArea(uLayer[2], q)*(U2/K) : vec3(0.0), 1.0);
+  w3 = vec4(uLayerCount>3 ? underArea(uLayer[3], q)*(U3/K) : vec3(0.0), 1.0);
+}`;
+
+const FS_FILL_BOUNCE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 frag;
+${GLSL_LAYER_FIELD}
+${GLSL_WOOD_FIELD}
+${GLSL_FILL_DIRS}
+uniform highp sampler2DArray uUnder;   // W, one layer per canopy layer
+${GLSL_SKY_RAY}
+${GLSL_FILL_PASS}
+vec3 underAt(float L, vec2 p){ return pastFrame(p) ? vec3(0.0) : texture(uUnder, vec3((p - uFillOrigin)/uFillExtent, L)).rgb; }
+void main(){
+  vec2 x = uFillOrigin + vUv*uFillExtent;
+  int b = fillSlot();
+  float K = float(uFillCount);
+  vec3 B = vec3(0.0);
+  for(int k=0;k<${MAX_FILL_DIRS};k++){
+    if(k>=uFillCount) break;
+    vec2 s = fillShift(k, b, K);
+    vec3 thr = vec3(1.0);
+    vec2 p = x + s*uLayerHeight[0];
+    B += thr*underAt(0.0, p); thr *= passAt(uLayer[0], uWood[0], p);
+    if(uLayerCount>1){ p = x + s*uLayerHeight[1]; B += thr*underAt(1.0, p); thr *= passAt(uLayer[1], uWood[1], p); }
+    if(uLayerCount>2){ p = x + s*uLayerHeight[2]; B += thr*underAt(2.0, p); thr *= passAt(uLayer[2], uWood[2], p); }
+    if(uLayerCount>3){ p = x + s*uLayerHeight[3]; B += thr*underAt(3.0, p); }
+  }
+  frag = vec4(B/K, 1.0);
 }`;
 
 
@@ -1283,4 +1427,4 @@ void main(){
 }`;
 
 
-export { SLAB_N, GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, FS_FILL, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { SLAB_N, GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
