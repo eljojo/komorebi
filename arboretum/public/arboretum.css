@@ -1,0 +1,154 @@
+/* Arboretum is a part of komorebi, so this is komorebi's own language, taken from its welcome and its about page:
+   a dark ground, the serif type, muted green for what is quiet and warm sunlight for the one thing that glows.
+   Dark only, on a plain ground: a canvas appears only where a look is being highlighted. The page does not move,
+   but for one slow fade in. */
+:root {
+  color-scheme: dark;
+  --ground: #0a0d0a;
+  --ink: #cedcc5;        /* body text, as the welcome sets it */
+  --bright: #f2f6ee;     /* headings */
+  --quiet: #9fb89f;      /* muted green: links at rest, secondary text */
+  --sun: #f1e7cf;        /* warm sunlight: hovers and the one pill */
+  --sun-hot: #fff8e6;
+  --line: rgba(159, 184, 159, 0.22);
+  --field: rgba(20, 28, 20, 0.7);
+  --glow: rgba(240, 224, 168, 0.28);
+  --display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --text: ui-serif, Georgia, "Times New Roman", serif;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html { background: var(--ground); color: var(--ink); }
+body {
+  margin: 0 auto;
+  padding: 2rem 1.25rem 5rem;
+  max-width: 40rem;
+  font: 400 clamp(15px, 2.2vw, 18px)/1.65 var(--text);
+  overflow-wrap: anywhere;
+}
+main { animation: arrive 1.4s ease both; }
+@keyframes arrive { from { opacity: 0; } to { opacity: 1; } }
+main.wide { margin: 0 -10rem; }
+@media (max-width: 62rem) { main.wide { margin: 0; } }
+
+a { color: var(--quiet); text-decoration-color: rgba(159, 184, 159, 0.4); text-underline-offset: 0.2em; transition: color 0.45s ease, text-decoration-color 0.45s ease; }
+a:hover, a:focus-visible { color: var(--sun); text-decoration-color: rgba(241, 231, 207, 0.5); }
+
+h1, h2 { font-family: var(--display); font-weight: 300; line-height: 1.25; color: var(--bright); }
+h1 { font-size: clamp(30px, 5.5vw, 44px); letter-spacing: 0.02em; margin: 2.5rem 0 0.75rem; }
+h2 { font-size: clamp(16px, 2.2vw, 19px); font-style: italic; font-weight: 400; letter-spacing: 0.02em; color: var(--quiet); margin: 2.25rem 0 0.5rem; }
+p { margin: 0.75rem 0; }
+strong { color: var(--bright); font-weight: 600; }
+
+/* The head: komorebi's name, then the quiet row of links the welcome keeps beneath "feel", then the one warm pill. */
+header { display: flex; flex-direction: column; align-items: center; gap: 0.7rem; text-align: center; }
+header .name { font: 300 clamp(26px, 5vw, 34px)/1 var(--display); letter-spacing: 0.03em; color: var(--bright); text-decoration: none; }
+header .name:hover, header .name:focus-visible { color: var(--sun); }
+nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.2rem 0.7em; font: italic 400 clamp(15px, 2vw, 16px)/1.4 var(--display); letter-spacing: 0.015em; }
+nav a { text-decoration: none; }
+nav a + a::before { content: "·"; margin-right: 0.7em; color: var(--quiet); display: inline-block; }
+
+/* "feel", as the welcome has it; small in the head, larger at the foot of the front page. */
+.feel, .primary {
+  color: var(--sun); text-decoration: none; cursor: pointer;
+  font: italic 400 clamp(19px, 2.7vw, 23px)/1 var(--display); letter-spacing: 0.015em;
+  padding: 10px 32px; border-radius: 40px; display: inline-block;
+  background: rgba(240, 224, 168, 0.05); border: 1px solid rgba(232, 217, 168, 0.3);
+  transition: color 0.45s ease, background 0.45s ease, border-color 0.45s ease, box-shadow 0.55s ease, transform 0.35s ease;
+}
+header .feel { font-size: 15px; padding: 6px 20px; }
+.feel:hover, .feel:focus-visible, .primary:hover, .primary:focus-visible {
+  color: var(--sun-hot); background: rgba(240, 224, 168, 0.11); border-color: rgba(240, 224, 168, 0.6);
+  box-shadow: 0 0 34px var(--glow); transform: translateY(-1px);
+}
+.feel:active, .primary:active { transform: translateY(0); }
+/* an action in running text is a pill of the same kind, a little smaller */
+.primary { font-size: clamp(16px, 2.2vw, 18px); padding: 7px 22px; }
+
+.meta, .quiet, .when { color: var(--quiet); font-size: 0.92em; }
+.meta a, .when a { color: inherit; }
+.n { display: inline-block; min-width: 1.5rem; color: var(--quiet); }
+.tags { display: inline-flex; gap: 0.5rem; }
+.tag { color: var(--quiet); font-size: 0.85em; }
+.tag::before { content: "#"; }
+.label { color: var(--quiet); font-size: 0.85em; font-style: italic; }
+.note { border-left: 2px solid var(--line); padding-left: 0.75rem; color: var(--quiet); font-style: italic; }
+
+ul.plain, ol.plain { list-style: none; padding: 0; margin: 0.5rem 0; }
+ul.plain li, ol.plain li { padding: 0.35rem 0; border-bottom: 1px solid var(--line); }
+ol.plain li[aria-current] { border-bottom-color: rgba(232, 217, 168, 0.55); }
+
+/* A modest preview, not a viewing room (spec §2.1). */
+.preview { margin: 1.25rem 0; }
+.preview canvas { display: block; width: 100%; max-width: 32rem; aspect-ratio: 16 / 10; background: var(--field); border-radius: 12px; }
+.preview canvas:fullscreen { width: 100vw; height: 100vh; max-width: none; aspect-ratio: auto; border-radius: 0; }
+.preview figcaption { margin-top: 0.5rem; }
+
+/* Forms: legible in the same quiet palette. */
+label { display: block; margin: 0.9rem 0; }
+label.inline { display: inline-block; margin-right: 1rem; }
+input, textarea, select, button { font: inherit; color: inherit; }
+input:not([type="checkbox"]), textarea, select {
+  display: block; width: 100%; max-width: 100%; margin-top: 0.25rem; padding: 0.45rem 0.6rem;
+  color: var(--bright); background: var(--field); border: 1px solid var(--line); border-radius: 8px;
+  transition: border-color 0.45s ease;
+}
+input:focus, textarea:focus, select:focus { outline: none; border-color: rgba(240, 224, 168, 0.6); }
+input::placeholder, textarea::placeholder { color: var(--quiet); opacity: 0.7; }
+input[type="checkbox"] { accent-color: var(--sun); }
+label select, label input.seconds { display: inline-block; width: auto; }
+input.seconds { width: 5rem; }
+input.share { font-size: 0.9em; }
+textarea { font-family: ui-monospace, Menlo, monospace; font-size: 0.88em; }
+fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 0.9rem 0; }
+legend { color: var(--quiet); font-style: italic; }
+button {
+  padding: 0.35rem 1.1rem; font-family: var(--display); font-style: italic; letter-spacing: 0.015em;
+  color: var(--sun); background: rgba(240, 224, 168, 0.05); border: 1px solid rgba(232, 217, 168, 0.3); border-radius: 40px; cursor: pointer;
+  transition: color 0.45s ease, background 0.45s ease, border-color 0.45s ease, box-shadow 0.55s ease;
+}
+button:hover, button:focus-visible { color: var(--sun-hot); background: rgba(240, 224, 168, 0.11); border-color: rgba(240, 224, 168, 0.6); box-shadow: 0 0 24px var(--glow); outline: none; }
+.controls { display: block; margin-top: 0.25rem; }
+.controls label { display: inline-block; margin: 0 1rem 0 0; }
+.controls button { margin-right: 0.35rem; padding: 0.15rem 0.8rem; font-size: 0.9em; }
+
+details { margin: 0.75rem 0; }
+summary { cursor: pointer; color: var(--quiet); font-style: italic; }
+summary:hover { color: var(--sun); }
+code { word-break: break-all; color: var(--bright); background: var(--field); padding: 0.05em 0.35em; border-radius: 4px; }
+#minted { border: 1px solid rgba(232, 217, 168, 0.3); border-radius: 10px; background: var(--field); padding: 0.5rem 1rem; margin: 1rem 0; }
+.msg { min-height: 1.65em; color: var(--quiet); }
+section#owner-controls { margin-top: 3rem; border-top: 1px solid var(--line); }
+
+/* The front page reads as the about page continued: a centred column, and the garden between. */
+.column { max-width: 30rem; margin: 0 auto; text-align: center; }
+.column > h1 { margin-bottom: 1.25rem; }
+.column h1 .sub { display: block; margin-top: 0.5em; font-size: 0.4em; letter-spacing: 0.3em; text-indent: 0.3em; color: var(--quiet); font-weight: 400; }
+.column .feel { margin-top: 1rem; }
+/* The home's closing: a quiet italic "about" above the one warm pill. */
+.closing { display: flex; flex-direction: column; align-items: center; gap: 1.1rem; margin: 3rem 0 2rem; font: italic 400 clamp(15px, 2vw, 16px)/1.4 var(--display); letter-spacing: 0.015em; }
+.closing a:not(.feel) { color: var(--quiet); text-decoration: none; }
+.closing a:not(.feel):hover, .closing a:not(.feel):focus-visible { color: var(--sun); }
+.closing .feel { margin-top: 0; }
+.garden-section { margin-top: 3rem; text-align: center; }
+.garden-section > h2 { margin-bottom: 0.25rem; }
+.garden-empty { text-align: center; color: var(--quiet); font-style: italic; margin: 2rem 0; }
+
+/* The garden: one generous player, and beside it (above, when narrow) the looks it moves between. */
+.garden { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 2rem; align-items: center; margin-top: 2rem; text-align: left; }
+@media (max-width: 50rem) { .garden { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; } }
+.stage { margin: 0; }
+.stage canvas { display: block; width: 100%; aspect-ratio: 16 / 10; border-radius: 14px; background: var(--field); border: 1px solid var(--line); }
+.looks { list-style: none; padding: 0; margin: 0; }
+.look { padding: 0.55rem 0 0.55rem 1rem; border-left: 2px solid var(--line); cursor: default; transition: border-color 0.7s ease; }
+.look + .look { margin-top: 0.35rem; }
+.look p { margin: 0; }
+.look .name { font: 400 1.1em/1.35 var(--display); }
+.look { user-select: none; }   /* a double-click takes the player fullscreen; it must not select the name */
+.look .name { color: var(--ink); cursor: pointer; }
+.look .by { font-size: 0.9em; color: var(--quiet); }
+.look:hover, .look:focus-within { border-left-color: rgba(159, 184, 159, 0.6); }
+.look[aria-current] { border-left-color: rgba(240, 224, 168, 0.7); }
+.look[aria-current] .name { color: var(--sun); }

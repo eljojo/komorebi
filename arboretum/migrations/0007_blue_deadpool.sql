@@ -1,0 +1,1 @@
+ALTER TABLE `playlist_items` ADD `style` text DEFAULT 'morph' NOT NULL;

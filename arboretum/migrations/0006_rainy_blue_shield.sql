@@ -1,0 +1,1 @@
+CREATE INDEX `preset_versions_created` ON `preset_versions` (`preset_id`,`created_at`);

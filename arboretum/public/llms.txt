@@ -1,0 +1,108 @@
+# arboretum
+
+> A place where komorebi looks (presets) are kept, versioned, and grouped into playlists. Komorebi is a WebGL2
+> rendering of sunlight through leaves (https://komorebi.eljojo.net). This file is how an agent uses
+> arboretum's JSON API at https://komorebi.eljojo.net/api.
+
+A preset is a komorebi param set: the same flat JSON object the komorebi editor's "copy JSON" button produces.
+Arboretum stores it verbatim, keeps every version, and hands it back to the editor.
+
+## Authentication
+
+- Agents use a bearer token: `Authorization: Bearer <token>`. The person mints one at
+  https://komorebi.eljojo.net/arboretum/settings, with scope `read` or `write` (write includes read).
+- Read the token from the environment variable `ARBORETUM_TOKEN`. Never print, echo, log or commit it.
+- A token acts as its person, with limits: anything it creates is **private**, it can change only private
+  things, and it can never make anything public or unlisted, archive, or manage tokens and passkeys. Publishing
+  is the person's act, in a browser.
+- Every version records how it arrived; a token's versions say `token:<its label>`.
+- The komorebi editor (https://komorebi.eljojo.net) is on the same origin as arboretum and uses the person's browser
+  session, so it acts as the person, with no token.
+
+## Rules for every request
+
+- Writes (POST, PUT, PATCH, DELETE) must send `Content-Type: application/json`, or they get 415. A write with
+  nothing to say sends `{}`.
+- Request bodies are capped at 64 KB.
+- Errors are JSON: `{ "error": "<plain sentence>", ...details }`. Anything you may not see is 404.
+- Visibility is `public`, `unlisted` (readable with `?k=<share_token>`) or `private` (the owner only).
+  Archived presets are visible only to their owner.
+
+## What a preset's params may contain
+
+- Only keys the pinned komorebi engine knows (its DEFAULTS, plus old spellings and the editor's `time_of_day`
+  and `latitude`), each with its own type: finite numbers, booleans, strings of at most 64 characters.
+- Numbers must stay within the komorebi editor's slider ranges, with a quarter of each range as leeway, and a
+  select's value must be one of its choices. An out-of-range look is refused with 422, reason `out_of_range`,
+  naming the key and its range: `branch_levels must be 1–4`.
+- At most 16 KB of JSON, no duplicate keys.
+- Keys left out take komorebi's defaults when the look loads, so a partial object is a valid look.
+- An unknown key is refused with 422, naming it: `arboretum is pinned to komorebi <sha>; unknown keys: …`.
+  A key newer than the pin can't be stored until arboretum's pin moves; don't rename or drop keys to get past it.
+- Komorebi's own built-in looks are not stored: a look that is an unchanged copy of one (the debug overlays,
+  `time_of_day` and `latitude` ignored, keys left out at their defaults) is refused with 422, reason `builtin`,
+  naming the look. Change something first.
+- Metadata: `name` (1–80 characters, required), `description` (at most 500), `tags` (from `projector`,
+  `experimental`).
+
+## Presets
+
+- `GET /api/me`: `{ username, kind }`. Use it to check the token.
+- `GET /api/presets?owner=me` (yours, private included; add `&archived=1` for archived ones too) or
+  `?owner=<username>` (their public presets). Returns `{ presets: [...] }`, newest first, without params.
+- `POST /api/presets`: `{ name, description?, tags?, params, komorebi_commit?, parent? }`. Creates a private
+  preset and returns it (201). `komorebi_commit` is the 7–40 hex komorebi commit the look was made on.
+  `parent` is what it started from: `look:<built-in look name>` or `preset:<id>@<version>`.
+- `GET /api/presets/:id` (`?k=` when unlisted): the head version, with `params` as an object. The owner also
+  sees `visibility`, `share_token` and `archived`.
+- `POST /api/presets/:id/versions` (owner): any of the create fields; a field left out carries over from the
+  head, so a rename is a version. Appends a new version (201). A token may do this only on a private preset.
+- `GET /api/presets/:id/versions`: `{ versions: [{ n, name, via, created_at }] }`.
+- `GET /api/presets/:id/versions/:n`: one version, whole.
+- `PATCH /api/presets/:id` `{ visibility }`, `POST /api/presets/:id/archive` and
+  `POST /api/presets/:id/unarchive`: browser only; a token gets 403.
+
+## Playlists
+
+- `GET /api/playlists?owner=me|<username>`: `{ playlists: [...] }`.
+- `POST /api/playlists`: `{ name, description? }`. Creates a private playlist (201).
+- `GET /api/playlists/:id` (`?k=` when unlisted): the playlist and its `items`, each
+  `{ preset_id, version, owner, name, dwell_s, crossfade_s, style, params }`, as this viewer may see them (`version` is
+  the preset's head version, `owner` its owner's username). The owner also gets items
+  that are unavailable now, as `{ preset_id, dwell_s, crossfade_s, style, unavailable: true }`, and an
+  `unavailable` count.
+- `PATCH /api/playlists/:id` `{ name?, description? }` (owner). A token may do this only on a private
+  playlist, and can never send `visibility`.
+- `PUT /api/playlists/:id/items` `{ revision, items: [{ preset_id, dwell_s?, crossfade_s?, style? }] }` replaces the ordered
+  list (owner; a token only on a private playlist). `dwell_s` 1–3600, default 30; `crossfade_s` 0–120,
+  default 5; `style` is how that item's look arrives, `"morph"` (default) or `"fade"`; at most 500 items. Each preset must be yours or someone's public one. Send back the unavailable
+  items you were given to keep them. Send the owner-only `revision` from the GET whose items you edited. A
+  stale revision is 409 and changes nothing; reload and reconcile your edit before submitting again.
+
+## Your data, and tokens
+
+- `GET /api/export`: everything the person owns, every version of every preset included, as one JSON. Each
+  version carries `params_text`, its exact stored text, beside the parsed `params`.
+- `POST /api/tokens`, `GET /api/tokens` and `DELETE /api/tokens/:id` mint, list and revoke tokens. Browser
+  only; a token gets 403.
+
+## Limits
+
+Per person: 1,000 presets, 100 playlists, 200 new versions per rolling 24 hours, 10 live tokens. Over a limit
+is 429, naming it.
+
+## Handing a look to the person
+
+- Open a preset in komorebi: `https://komorebi.eljojo.net/#arboretum=<id>` (`@<n>` for one version,
+  `&k=<share_token>` when unlisted).
+- Play a playlist in komorebi: `https://komorebi.eljojo.net/#arboretum-playlist=<id>`.
+- Its page on arboretum: `https://komorebi.eljojo.net/arboretum/p/<id>` and `https://komorebi.eljojo.net/arboretum/l/<id>`.
+
+## Example
+
+```
+curl -s https://komorebi.eljojo.net/api/presets \
+  -H "Authorization: Bearer $ARBORETUM_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"morning, softer","parent":"look:morning 2","params":{"cloud_thickness":0.5,"exposure":2.2}}'
+```
