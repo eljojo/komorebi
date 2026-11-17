@@ -147,6 +147,8 @@ Bun.serve({
     if (path.endsWith("/")) path += "index.html";
     const file = resolve(ROOT, `.${path}`);
     if (file !== ROOT && !file.startsWith(`${ROOT}/`)) return new Response("forbidden", { status: 403 });
+    // arboretum/ is the Worker's source, its local secrets (.dev.vars) among it; its pages are served by its own dev mode
+    if (file.startsWith(`${ROOT}/arboretum/`)) return new Response("forbidden", { status: 403 });
     const f = Bun.file(file);
     if (!(await f.exists())) return new Response("not found", { status: 404 });
     const ext = extname(file).toLowerCase();

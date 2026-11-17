@@ -55,17 +55,12 @@ describe('buildEditorAssets: the komorebi checkout at the root and public/ under
     expect(Object.keys(snapshot(outDir)).sort()).toEqual(['/arboretum/engine/engine.json', '/arboretum/llms.txt', '/editor.js', '/examples/one.json', '/index.html']);
   });
 
-  it('refuses a checkout that has its own arboretum/ path, before writing anything', () => {
+  it("leaves out the checkout's own arboretum/, so public/ alone is served there", () => {
     const { args, outDir, komorebiDir, put } = setup();
-    put(join(komorebiDir, 'arboretum', 'llms.txt'), 'theirs');
-    expect(() => buildEditorAssets(args)).toThrow(/arboretum\/llms\.txt: written twice/);
-    expect(existsSync(join(outDir, 'index.html'))).toBe(false);
-  });
-
-  it('refuses a checkout whose file stands where the arboretum/ folder goes', () => {
-    const { args, komorebiDir, put } = setup();
-    put(join(komorebiDir, 'arboretum'), 'a file');
-    expect(() => buildEditorAssets(args)).toThrow(/arboretum: is a file and also holds arboretum\/llms\.txt/);
+    put(join(komorebiDir, 'arboretum', 'public', 'llms.txt'), 'source');
+    put(join(komorebiDir, 'arboretum', '.dev.vars'), 'secret');
+    buildEditorAssets(args);
+    expect(Object.keys(snapshot(outDir)).sort()).toEqual(['/arboretum/engine/engine.json', '/arboretum/llms.txt', '/editor.js', '/examples/one.json', '/index.html']);
   });
 
   it('puts public/ at the path the pages link to (BASE)', () => {
@@ -138,6 +133,16 @@ describe('syncKomorebiFile: the watcher keeps one changed file current', () => {
     expect(existsSync(join(outDir, 'maze.test.js'))).toBe(false);
     expect(existsSync(join(outDir, 'node_modules'))).toBe(false);
   });
+
+  it("ignores the checkout's own arboretum/", () => {
+    const { args, outDir, komorebiDir, put } = setup();
+    buildEditorAssets(args);
+    put(join(komorebiDir, 'arboretum', '.dev.vars'), 'secret');
+    syncKomorebiFile({ komorebiDir, outDir, rel: join('arboretum', '.dev.vars') });
+    syncKomorebiFile({ komorebiDir, outDir, rel: join('arboretum', 'llms.txt') });
+    expect(existsSync(join(outDir, 'arboretum', '.dev.vars'))).toBe(false);
+    expect(readFileSync(join(outDir, 'arboretum', 'llms.txt'), 'utf8')).toBe('llms');
+  });
 });
 
 // The dev server serves komorebi's files with `wrangler dev --assets`, a command-line override. A deploy ships
@@ -164,6 +169,6 @@ describe('the never-deployable guard', () => {
   // uploads is the built one, which does not exist until scripts/site.mjs has run.
   it('keeps wrangler.jsonc deploying the built, gitignored site and never public/ alone or the repo root', () => {
     expect(wranglerConfig).toMatch(/"directory"\s*:\s*"\.\/\.site"/);
-    expect(gitignore.split('\n')).toContain('.site/');
+    expect(gitignore.split('\n')).toContain('/.site/');
   });
 });

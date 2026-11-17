@@ -1,5 +1,5 @@
 {
-  description = "Komorebi — WebGL2 komorebi engine: bun dev server + lint + bundle helpers";
+  description = "Komorebi — WebGL2 komorebi engine: bun dev server + lint + bundle helpers; arboretum, the Worker that keeps looks";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -8,15 +8,16 @@
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in {
-      # `nix develop` — bun (dev server + bundler) + biome (lint) on PATH.
+      # `nix develop` — bun (dev server + bundler) + biome (lint) on PATH; node and git for arboretum, whose wrangler
+      # and vitest come from arboretum/package.json.
       devShells = forAll (pkgs: {
         default = pkgs.mkShell {
           # python3 + a bare-`python` alias: node-gyp native builds (headless-gl's vendored ANGLE
           # shells out to plain `python`) need both on PATH — nixpkgs ships only `python3`.
-          packages = [ pkgs.bun pkgs.biome pkgs.python3 pkgs.nodejs_22 pkgs.ffmpeg
+          packages = [ pkgs.bun pkgs.biome pkgs.python3 pkgs.nodejs_22 pkgs.ffmpeg pkgs.git
             (pkgs.writeShellScriptBin "python" ''exec ${pkgs.python3}/bin/python3 "$@"'') ];
           shellHook = ''
-            echo "komorebi dev shell — dev: nix run .#dev | lint: nix run .#lint | bundle: nix run .#build"
+            echo "komorebi dev shell — dev: nix run .#dev | lint: nix run .#lint | bundle: nix run .#build | arboretum: nix run .#arboretum-dev"
           '';
         };
       });
@@ -166,7 +167,37 @@
               exec node test-gl/render-video.mjs "$@"
             '';
           };
+          # `nix run .#arboretum-dev [komorebi-checkout]` — arboretum's dev mode: this checkout (or another, such as a
+          # worktree) at the root and arboretum's pages under /arboretum, on one https origin (arboretum/scripts/dev.mjs).
+          # It runs from arboretum/, because it builds into .wrangler there and uses node_modules' wrangler.
+          arboretum-dev = pkgs.writeShellApplication {
+            name = "arboretum-dev";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
+            text = ''
+              cd "$(git rev-parse --show-toplevel)/arboretum"
+              exec node scripts/dev.mjs "$@"
+            '';
+          };
+          # `nix run .#arboretum-deploy` — the deploy, start to finish: install exactly the lockfile, typecheck and test, build
+          # the site (komorebi at the pinned commit at the root, public/ under arboretum/, into the gitignored .site/), apply
+          # the D1 migrations to the live database, then let wrangler build and upload the Worker and that site. Any failing
+          # step stops it before anything reaches Cloudflare; the migration step asks before it touches the live database.
+          arboretum-deploy = pkgs.writeShellApplication {
+            name = "arboretum-deploy";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
+            text = ''
+              cd "$(git rev-parse --show-toplevel)/arboretum"
+              npm ci
+              npm run typecheck
+              npm test
+              node scripts/site.mjs
+              npx wrangler d1 migrations apply komorebi-arboretum --remote
+              npx wrangler deploy
+            '';
+          };
         in {
+          arboretum-dev = { type = "app"; program = "${arboretum-dev}/bin/arboretum-dev"; };
+          arboretum-deploy = { type = "app"; program = "${arboretum-deploy}/bin/arboretum-deploy"; };
           dev = { type = "app"; program = "${dev}/bin/dev"; };
           lint = { type = "app"; program = "${lint}/bin/lint"; };
           cost = { type = "app"; program = "${cost}/bin/cost"; };

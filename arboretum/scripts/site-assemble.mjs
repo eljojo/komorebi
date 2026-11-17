@@ -114,9 +114,9 @@ export function shipped({ paths, read }, { base = 'arboretum' } = {}) {
 // Every file under `dir` as a '/'-separated path relative to it, skipping what `skip` names.
 export function files(dir, skip, rel = '') {
   return readdirSync(dir).flatMap((name) => {
-    if (skip(name)) return [];
-    const path = join(dir, name);
     const childRel = rel ? `${rel}/${name}` : name;
+    if (skip(name, childRel)) return [];
+    const path = join(dir, name);
     return statSync(path).isDirectory() ? files(path, skip, childRel) : [{ rel: childRel, path }];
   });
 }

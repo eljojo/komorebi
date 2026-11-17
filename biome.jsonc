@@ -4,8 +4,9 @@
   // embedded CSS isn't what we're linting here — this is a JS lint). test-gl/out holds the git-ignored review
   // archives, whose exported trees carry their own biome.jsonc: `!!` keeps biome from even scanning them, where a
   // nested root configuration would stop the whole run. .claude/ holds other checkouts (git worktrees), the same.
+  // arboretum/ is TypeScript checked by its own `tsc`, with a node_modules of its own.
   "files": {
-    "includes": ["**", "!dist", "!**/*.min.js", "!**/*.html", "!!test-gl/out", "!!.claude"]
+    "includes": ["**", "!dist", "!**/*.min.js", "!**/*.html", "!!test-gl/out", "!!.claude", "!!arboretum"]
   },
   "linter": {
     "enabled": true,

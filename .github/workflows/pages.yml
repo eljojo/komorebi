@@ -48,12 +48,12 @@ jobs:
       - name: Build the homepage bundle
         run: nix run .#embed -- 'morning 2' 'afternoon 5b' 'morning 3'      # writes dist/komorebi.embed.min.js
 
-      # The site is the repo without the git data, this workflow and the pixel harness. New files ship
-      # automatically, because the list is exclusions and not inclusions.
+      # The site is the repo without the git data, this workflow, the pixel harness and arboretum (the Worker's
+      # source; the Worker's own deploy serves it). New files ship automatically, because the list is exclusions and not inclusions.
       - name: Assemble the site
         run: |
           mkdir -p _site
-          rsync -a --exclude '.git' --exclude '.github' --exclude 'test-gl' --exclude 'flake.*' ./ _site/
+          rsync -a --exclude '.git' --exclude '.github' --exclude 'test-gl' --exclude 'flake.*' --exclude '/arboretum' ./ _site/
 
       # The editor tells arboretum which komorebi commit a look was made on (arboretum-api.js reads this file). It exists only on the
       # deployed site, so a local checkout and the dev mode send no commit.
