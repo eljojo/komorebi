@@ -20,7 +20,7 @@ import { api as makeApi } from "./arboretum-api.js";
 import { cameraFor, migrateLegacy } from "./komorebi.js";
 import { PRESETS } from "./presets.js";
 import { ARBORETUM, cachePlaylist, dequeue, detect, editorWritable, emptyMirror, enqueue, entryName, fromEntry, fromVersion, isFolder, itemsAfter, itemTarget, linkPlaylist, listChoices,
-  mirrorDiff, mirrorPlaylist, mirrorPut, mirrorSync, moveCandidates, movePlan, onDeleted, onSaved, onlineId, placeChange, playlistChips, savePlan, savePreset,
+  mirrorDiff, mirrorPlaylist, mirrorPut, mirrorSync, moveCandidates, movePlan, onDeleted, onSaved, onlineId, placeChange, playlistChips, saveNewPlan, savePlan, savePreset,
   starValue, styleOf, uploadPlan, viewState } from "./playlists.js";
 
 // ---- storage: the ★ looks, and arboretum's state beside them ----
@@ -186,17 +186,12 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
 
   // The chips under the save row: one per playlist of yours (a folder), lit where this look's preset is an item. They follow the
   // look selected and the mirror's copy of your playlists.
-  // The workspace's playlist pane draws the same chips (chipList, toggle).
-  function chipList() {
-    const mine = signedIn() ? getMirror().playlists.filter((p) => p.owner === me && editorWritable(p)) : [];
-    return mine.length ? playlistChips(view(), getStored(), host.active(), host.value(), mine) : [];
-  }
   function drawChips() {
     if (!on) return;
-    const list = chipList();
-    inRow.hidden = list.length === 0;
-    if (!list.length) return;
-    chips.replaceChildren(...list.map((c) => {
+    const mine = signedIn() ? getMirror().playlists.filter((p) => p.owner === me && editorWritable(p)) : [];
+    inRow.hidden = mine.length === 0;
+    if (!mine.length) return;
+    chips.replaceChildren(...playlistChips(view(), getStored(), host.active(), host.value(), mine).map((c) => {
       const b = make("button", "arb-in", c.name);
       b.setAttribute("aria-pressed", String(c.lit));
       if (c.lit) b.style.cssText = "background:#2c4a2c;border-color:#7fae7f;color:#e8d9a8";
@@ -346,13 +341,15 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
 
   // Every write to a playlist's items starts from a fresh GET and applies the one change to that, never to the cache.
   async function writeItems(id, change) {
-    if (["remove", "replace", "style", "move", "times"].includes(change.kind) && !change.target)
+    if (["remove", "replace", "style", "move", "times", "insert_after"].includes(change.kind) && !change.target)
       throw { error: "that playlist item changed; reload the playlist before changing it" };
     const fresh = await api.playlist(id);
     const v = await api.putItems(id, itemsAfter(fresh.items, change), fresh.revision);
     cacheView(v);
     return v;
   }
+
+  const listName = (list) => (list === "arb:unc" ? "uncategorized" : view().playlists[list.slice(4)]?.name ?? "a playlist");
 
   // ---- uploads ----
   const send = (p) => {
@@ -371,9 +368,10 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   // Save, signed in: every save goes to arboretum, private. A new version when the look is a preset of yours, else a new preset;
   // in a folder of yours it is placed there, anywhere else it lands in uncategorized and the editor goes to it. When arboretum
   // cannot be reached the save waits in the mirror, shown as such, and is sent in order on the next successful check.
-  async function saveCloud(name, live) {
+  // `asNew` is save as new (saveNewPlan): always a new preset, placed after the item you are on in a folder of yours.
+  async function saveCloud(name, live, { asNew = false } = {}) {
     const active = host.active(), value = host.value();
-    const p = savePlan(view(), getStored(), active, value, clone(live), me, await api.commit(), cameraFor, name);
+    const p = (asNew ? saveNewPlan : savePlan)(view(), getStored(), active, value, clone(live), me, await api.commit(), cameraFor, name);
     if (p.refused) { say(p.refused); return; }
     const list = p.into ? `arb:${p.into.playlist}` : "arb:unc";
     let res;
@@ -398,7 +396,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     if (refusal?.key === keyOf(active, value)) refusal = null;
     try { await landed(p, res); }
     catch (e) { fail(e); host.showCloud(p.kind === "preset" ? "arb:unc" : list, { id: res.id }); return; }
-    say(`kept in arboretum · #${res.id} v${res.version}`);
+    say(`kept in arboretum · #${res.id} v${res.version} · in ${listName(list)}`);   // where it went, which is where the editor goes
     render();
     host.showCloud(list, { id: res.id });
   }
@@ -433,17 +431,68 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     } finally { pushing = false; }
   }
 
-  // Remove: the playlist without the item. The preset itself stays on arboretum.
-  async function remove() {
-    const active = host.active(), value = host.value();
-    if (!on || !value) return;
-    const pid = Number(active.slice(4)), at = Number(value);
+  // Remove: the playlist without the item (the one you are on, or any row of the workspace's pane). The preset itself stays on
+  // arboretum. Taking out the look on screen goes on to the item that took its place, so the selection is always what is shown;
+  // taking out another keeps you on yours wherever it now stands.
+  async function remove(at = host.value() === "" ? null : Number(host.value())) {
+    const active = host.active(), cur = host.value() === "" ? null : Number(host.value());
+    if (!signedIn() || !isFolder(view(), active, me) || at === null) return;
+    const pid = Number(active.slice(4));
     try {
+      const name = view().playlists[pid]?.items[at]?.name ?? "the look";
       await writeItems(pid, { kind: "remove", at, target: itemTarget(view().playlists[pid]?.items ?? [], at) });
       const n = view().playlists[pid].items.length;
+      say(`took ${name} out of ${listName(active)}; it is still in arboretum`);
+      if (at === cur) host.go(n ? String(Math.min(at, n - 1)) : "");
+      else host.select(cur === null ? "" : String(cur > at ? cur - 1 : cur));
+    } catch (e) { fail(e); host.sync(); }
+  }
+
+  // Rename the playlist you are in, when it is yours.
+  async function rename() {
+    const active = host.active();
+    if (!signedIn() || !isFolder(view(), active, me)) return;
+    const pid = Number(active.slice(4)), was = view().playlists[pid]?.name ?? "";
+    const name = (prompt("Rename playlist:", was) || "").trim();
+    if (!name || name === was) return;
+    try {
+      cacheView(await api.patchPlaylist(pid, { name }));
       say("");
-      host.select(n ? String(Math.min(at, n - 1)) : "");
+      render();
     } catch (e) { fail(e); }
+  }
+
+  // The looks a playlist of yours can take without leaving it: every preset of yours in arboretum, then the ★ looks on this
+  // browser not yet there (which go up first, private, as a chip sends them). A built-in goes in only once it is changed and saved.
+  function addable() {
+    if (!signedIn()) return [];
+    const m = getMirror(), here = new Set((view().playlists[host.active().slice(4)]?.items ?? []).map((it) => it.preset_id));
+    const yours = m.order.map((id) => m.presets[id]).filter((p) => p && p.owner === me)
+      .map((p) => ({ value: `p:${p.id}`, label: here.has(p.id) ? `${p.name} · in it` : p.name }));   // a playlist may hold a look twice; this says it already does
+    const stars = moveCandidates(getState(), getStored()).map((name) => ({ value: `s:${name}`, label: `★ ${name}` }));
+    return [...(yours.length ? [{ label: "your looks", options: yours }] : []), ...(stars.length ? [{ label: "on this browser", options: stars }] : [])];
+  }
+  // Add one of them (`p:<id>` or `s:<★ name>`) at the end of the playlist you are in; you stay on the look you are on.
+  async function add(pick) {
+    const active = host.active();
+    if (!signedIn() || !isFolder(view(), active, me)) return;
+    const pid = Number(active.slice(4));
+    try {
+      const star = pick.startsWith("s:") ? pick.slice(2) : null;
+      const preset = star === null ? Number(pick.slice(2)) : await upStar(star);
+      if (preset === null) return;
+      await writeItems(pid, { kind: "append", preset_id: preset });
+      say(`added ${view().playlists[pid].items.at(-1)?.name ?? "the look"} to ${listName(active)}`);
+      render();
+    } catch (e) { fail(e); host.sync(); }
+  }
+  // A ★ goes up as the move sends it (uploadPlan) and is a preset of yours from then on; null when arboretum refuses it, said why.
+  async function upStar(name) {
+    const p = uploadPlan(getState(), getStored(), "local", starValue(name), null, me, await api.commit(), cameraFor);
+    if (p.refused) { say(p.refused); return null; }
+    const res = await send(p);
+    adopt(name, p, res);
+    return res.id;
   }
 
   // How the item you are on arrives when the playlist steps to it: 'morph' (the automatic route) or 'fade'. It is the playlist item's,
@@ -610,8 +659,10 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     setStyle,
     move,
     setTimes,
-    chips: () => (on ? chipList() : []),
-    toggle,
+    rename,
+    addable,
+    add,
+    online: () => on,
     landings: () => landings,
     // what the look's chip needs beyond the saved state: who you are, whether this is the copy kept here because arboretum could not
     // be reached, the last refusal for this look, and whether the copy is incomplete

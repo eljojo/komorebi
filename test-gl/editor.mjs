@@ -285,14 +285,15 @@ try {
 
   // THE LOOK HEAD (advanced): ‹ name › over the look select, whose name text follows the select; the rare actions fold behind ···
   const headStruct = await page.$eval('#dev', (dev) => ({
-    kids: [...dev.children].slice(0, 4).map((c) => c.className.split(' ')[0] || c.tagName),
+    kids: [...dev.children].slice(0, 2).map((c) => c.className.split(' ')[0] || c.tagName),
+    looks: [...dev.querySelector('.looks').children].slice(0, 4).map((c) => c.className.split(' ')[0] || c.tagName),
     beta: !!dev.querySelector(':scope > .devbeta label')?.textContent.startsWith('show experimental looks'),
     h2: [...dev.querySelectorAll(':scope > h2')].filter((h) => h.textContent === 'Presets').length,   // the Transition heading further down is not the presets'
     firstSelectInPick: dev.querySelector('select').parentElement.classList.contains('pick'),
     acts: [...dev.querySelectorAll('.lookacts button')].map((b) => b.textContent + (b.classList.contains('main') ? '*' : '')).join('|'),
   }));
-  check('advanced: no Presets heading, the look head, chip and actions row lead, the experimental toggle (show experimental looks) sits in the panel',
-    headStruct.h2 === 0 && headStruct.beta && headStruct.firstSelectInPick && headStruct.kids.join() === 'ctl,lookhead,look-chip,ctl' && /^save\*\|.*\|\u00b7\u00b7\u00b7$/.test(headStruct.acts), JSON.stringify(headStruct));
+  check('advanced: no Presets heading, the look head, chip and actions row lead (in the box the workspace\'s playlist pane borrows), save as new beside save, the experimental toggle (show experimental looks) sits in the panel',
+    headStruct.h2 === 0 && headStruct.beta && headStruct.firstSelectInPick && headStruct.kids.join() === 'ctl,looks' && headStruct.looks.join() === 'lookhead,look-chip,look-note,ctl' && /^save\*\|save as new\|.*\|\u00b7\u00b7\u00b7$/.test(headStruct.acts), JSON.stringify(headStruct));
   const headName = () => page.$eval('#dev', (dev) => ({ name: dev.querySelector('.lookhead .name').textContent, sel: dev.querySelector('select').selectedOptions[0].textContent, value: dev.querySelector('select').value }));
   const hn0 = await headName();
   check('the look head names the selected look', hn0.name === hn0.sel.replace(/^[\u2022\u25e6] /, '') || hn0.name === hn0.sel, JSON.stringify(hn0));
@@ -834,9 +835,13 @@ try {
   check('and another click back to the side', (await paneShare()).view === 'side');
   await page.evaluate(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'playlist').click());
   const loosePane = await page.evaluate(() => ({ rows: document.querySelectorAll('#plist .pl-row').length, grips: document.querySelectorAll('#plist .pl-grip').length,
-    save: !!document.querySelector('#plist .pl-save'), plus: !document.querySelector('#plist .pl-new').hidden, chips: !document.querySelector('#plist .pl-chips').hidden }));
-  check('signed out, the playlist tab lists all looks with save over them, and no grip, no +, no chips (nothing here has an order or a folder to change)',
-    loosePane.rows > 3 && loosePane.grips === 0 && loosePane.save && !loosePane.plus && !loosePane.chips, JSON.stringify(loosePane));
+    xs: document.querySelectorAll('#plist .pl-remove').length, picker: !document.querySelector('#plist .pl-add').hidden,
+    inPane: !!document.querySelector('#plist .looks .lookhead select') && [...document.querySelectorAll('#plist .looks button')].some((b) => b.textContent === 'save as new'),
+    below: !!document.querySelector('#dev .looks, #dev .lookhead, #dev .playlist-row') }));
+  check('the playlist tab takes the look and playlist controls out of the panel below and holds them over the list: none left below, none copied',
+    loosePane.inPane && !loosePane.below && (await page.$$('.lookhead')).length === 1, JSON.stringify(loosePane));
+  check('signed out it lists all looks, with no grip, no x, no picker (nothing here has an order of yours to change)',
+    loosePane.rows > 3 && loosePane.grips === 0 && loosePane.xs === 0 && !loosePane.picker, JSON.stringify(loosePane));
   // CURSORS (index.html): over the surfaces' words an arrow, never the I-beam; a hand over what acts; the I-beam only in a typed field
   const cursors = await page.evaluate(() => {
     const bad = [];
@@ -851,6 +856,7 @@ try {
   });
   check('every word on the surfaces shows an arrow and every control a hand', cursors.length === 0, cursors.slice(0, 8).join(' | '));
   await page.evaluate(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'tree').click());
+  check('the tree tab puts them back in the panel, in their place: the look select first in it again', await page.evaluate(() => !document.querySelector('#plist .looks') && document.querySelector('#dev select') === document.querySelector('#dev .lookhead select')));
   await page.keyboard.press('m');
   await page.waitForSelector('#midi:not([hidden])', { timeout: 15000 });
   const withMidi = await page.evaluate(() => Object.fromEntries(['dev', 'gl', 'midi'].map((id) => { const r = document.getElementById(id).getBoundingClientRect(); return [id, { l: r.left, r: r.right, t: r.top, b: r.bottom }]; })));
@@ -1129,6 +1135,10 @@ try {
         db.lists[l.id] = l;
         return json(201, view(l));
       }
+      if (pl && req.method() === 'PATCH') {
+        if ('name' in body) db.lists[pl[1]].name = body.name;
+        return json(200, view(db.lists[pl[1]]));
+      }
       if (items && req.method() === 'PUT') {
         db.lists[items[1]].items = body.items;
         return json(200, view(db.lists[items[1]]));
@@ -1214,7 +1224,7 @@ try {
     check('the lists are uncategorized, your folders in arboretum\'s order, the built-ins, and on this browser (the ★ looks are not moved yet)', (await opts4(1)).join() === 'uncategorized,morning,evening,built-ins,on this browser', (await opts4(1)).join());
     check('and no all looks, and no ☁ rows', !(await opts4(1)).includes('all looks') && (await opts4(0)).every((t) => !t.includes('☁')), (await opts4(0)).join());
     check('the mirror holds what is mine (dusk, dawn) and both playlists, fetched by version: each preset once', JSON.stringify((await mirror4()).order) === '[21,5]' && (await mirror4()).playlists.map((l) => l.id).join() === '8,7' && calls(/^GET \/api\/presets\/(21|5)$/).length === 2 && calls(/^GET \/api\/presets\/6$/).length === 0, JSON.stringify(await mirror4()).slice(0, 160));
-    check('with a + beside the playlist select', await shown4('#dev .playlist-row button'));
+    check('with a + beside the playlist select', await shown4('#dev .playlist-row button[title="new playlist"]'));
 
     // not now: the ★ looks stay as their own list, with a button; the notice is not asked again on every focus
     await click4('#dev .arb-move-no');
@@ -1265,7 +1275,7 @@ try {
     const freshId = server.nextPreset - 1;
     await until(async () => (await value4(1)) === 'arb:unc' && (await selectedText4(0)) === 'k4 fresh');
     check('the editor goes to uncategorized, on the new look, and no ★ was written here', (await value4(1)) === 'arb:unc' && (await selectedText4(0)) === 'k4 fresh' && (await stars4()).length === 0, `${await value4(1)} ${await selectedText4(0)}`);
-    check(`the chip reads ☁ #${freshId} v1 and the toast says what landed`, await chipIs4(`☁ #${freshId} v1`) && (await toast4()) === `kept in arboretum · #${freshId} v1`, `${await chip4()} / ${await toast4()}`);
+    check(`the chip reads ☁ #${freshId} v1 and the toast says what landed`, await chipIs4(`☁ #${freshId} v1`) && (await toast4()) === `kept in arboretum · #${freshId} v1 · in uncategorized`, `${await chip4()} / ${await toast4()}`);
     check('uncategorized lists it first, newest first', (await opts4(0))[0] === 'k4 fresh', (await opts4(0)).join());
 
     // saving a preset of yours is a new version of it, in place
@@ -1301,7 +1311,7 @@ try {
 
     // a + makes a private playlist, which becomes the active folder and gets a chip
     reply = 'night';
-    await click4('#dev .playlist-row button');
+    await click4('#dev .playlist-row button[title="new playlist"]');
     reply = null;
     await until(async () => (await value4(1)) === `arb:${server.nextList - 1}`);
     check('+ prompts, POSTs only the name, and makes the new folder active, with its chip', JSON.stringify(lastCall(/^POST \/api\/playlists$/)?.body) === '{"name":"night"}' && (await opts4(0)).length === 0 && (await chips4()).includes('night:false'), `${await chips4()}`);
@@ -1314,7 +1324,7 @@ try {
     const before = seen.length;
     const preF = await save4('dawn');
     await until(async () => /#5 v2/.test(await toast4()));
-    check('save in a folder pre-fills the item\'s name and POSTs a new version of it, with no items written (the playlist already points at it)', preF === 'dawn' && /^kept in arboretum · #5 v2$/.test(await toast4()) && seen.slice(before).every((c) => c.method !== 'PUT') && (await stars4()).length === 0, await toast4());
+    check('save in a folder pre-fills the item\'s name and POSTs a new version of it, with no items written (the playlist already points at it)', preF === 'dawn' && /^kept in arboretum · #5 v2 · in evening$/.test(await toast4()) && seen.slice(before).every((c) => c.method !== 'PUT') && (await stars4()).length === 0, await toast4());
     // how an item of yours arrives: the morph / fade row shows on it, and one toggle is an items write of that item's style alone
     const styleRow4 = () => dev4(() => { const r = document.querySelector('#dev .stylerow'); return r.hidden ? null : [...r.querySelectorAll('button.on')].map((b) => b.textContent).join(); });
     check('on an item of your folder the "arrives by" row shows, morph lit', await until(async () => (await styleRow4()) === 'morph'), String(await styleRow4()));
@@ -1342,46 +1352,84 @@ try {
     await dev4(() => [...document.querySelectorAll('#dev .modes button')].find((b) => b.textContent === 'workspace').click());
     await page4.waitForSelector('body.workspace');
     await dev4(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'playlist').click());
+    // while the pane is up the look and playlist controls are in it, not in #dev: these read them there
     const pane4 = () => dev4(() => ({
       tree: getComputedStyle(document.getElementById('tree')).display, shown: getComputedStyle(document.getElementById('plist')).display !== 'none',
-      list: document.querySelector('#plist .pl-lists').selectedOptions[0]?.textContent, plus: !document.querySelector('#plist .pl-new').hidden,
-      chips: [...document.querySelectorAll('#plist .pl-chip')].map((b) => `${b.textContent}:${b.getAttribute('aria-pressed')}`).join(), grips: document.querySelectorAll('#plist .pl-grip[draggable=true]').length,
+      list: document.querySelector('#plist .playlist-row select')?.selectedOptions[0]?.textContent, below: !!document.querySelector('#dev .lookhead, #dev .playlist-row, #dev .arb-inrow'),
+      chips: [...document.querySelectorAll('#plist .arb-inrow .arb-in')].map((b) => `${b.textContent}:${b.getAttribute('aria-pressed')}`).join(), grips: document.querySelectorAll('#plist .pl-grip[draggable=true]').length,
+      picker: document.querySelector('#plist .pl-add').hidden ? null : [...document.querySelectorAll('#plist .pl-add option')].map((o) => o.textContent).join('|'),
       rows: [...document.querySelectorAll('#plist .pl-row')].map((r) => [r.querySelector('.pl-name').textContent, ...[...r.querySelectorAll('input')].map((i) => i.value), r.querySelector('.pl-style')?.textContent, r.classList.contains('on')].join(':')) }));
-    check('the playlist tab puts the list where the tree was: each item with its hold, arrive and route, the one you are on marked',
-      await until(async () => { const p = await pane4(); return p.tree === 'none' && p.shown && p.list === 'evening' && p.rows.join() === 'dawn:11:2:fade:false,k4 fresh:30:5:morph:true'; }), JSON.stringify(await pane4()));
-    const t0 = calls(/^PUT \/api\/playlists\/7\/items$/).length;
+    const looks4 = () => dev4(() => ({ opts: [...document.querySelectorAll('#plist .lookhead select option')].map((o) => o.textContent).join(), on: document.querySelector('#plist .lookhead select')?.selectedOptions[0]?.textContent ?? '' }));
+    const looksAre4 = (opts, on) => until(async () => { const l = await looks4(); return l.opts === opts && l.on === on; });
+    const paneBtn4 = (text) => dev4((t) => [...document.querySelectorAll('#plist button')].find((b) => b.textContent === t).click(), text);
+    const paneList4 = async (value) => { await dev4((v) => { const s = document.querySelector('#plist .playlist-row select'); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); }, value); await until(async () => (await editorList4()) === value); };
+    const rowBtn4 = (name, cls) => dev4(([n, c]) => [...document.querySelectorAll('#plist .pl-row')].find((r) => r.querySelector('.pl-name').textContent === n).querySelector(c).click(), [name, cls]);
+    const PUT7 = /^PUT \/api\/playlists\/7\/items$/;
+    check('the playlist tab puts the list where the tree was, with the look and playlist controls over it and none left below: each item with its hold, arrive and route, the one you are on marked',
+      await until(async () => { const p = await pane4(); return p.tree === 'none' && p.shown && !p.below && p.list === 'evening' && p.rows.join() === 'dawn:11:2:fade:false,k4 fresh:30:5:morph:true'; }), JSON.stringify(await pane4()));
+    const t0 = calls(PUT7).length;
     await dev4(() => { const i = document.querySelectorAll('#plist .pl-row')[1].querySelector('input'); i.value = '45'; i.dispatchEvent(new Event('change', { bubbles: true })); });
-    await waitCall(/^PUT \/api\/playlists\/7\/items$/, t0 + 1);
+    await waitCall(PUT7, t0 + 1);
     const tw = putAfter('/api/playlists/7/items');
     check('a hold typed on an item is an items write from a fresh GET of that item\'s dwell alone, the unavailable item kept in its place',
       tw.before.path === '/api/playlists/7' && JSON.stringify(tw.put.body.items.map((i) => [i.preset_id, i.dwell_s, i.crossfade_s])) === JSON.stringify([[5, 11, 2], [99, 40, 7], [freshId, 45, 5]])
       && await until(async () => (await pane4()).rows[1] === 'k4 fresh:45:5:morph:true'), JSON.stringify(tw.put.body));
     await page4.dragAndDrop('#plist .pl-row:nth-child(2) .pl-grip', '#plist .pl-row:nth-child(1)', { targetPosition: { x: 20, y: 2 } });
-    await waitCall(/^PUT \/api\/playlists\/7\/items$/, t0 + 2);
+    await waitCall(PUT7, t0 + 2);
     const moved4 = putAfter('/api/playlists/7/items');
     check('dragging the second item above the first moves it there, the unavailable item where it was, and the selection stays on the look it was on',
-      JSON.stringify(moved4.put.body.items.map((i) => i.preset_id)) === JSON.stringify([freshId, 99, 5]) && await until(async () => (await opts4(0)).join() === 'k4 fresh,dawn' && (await selectedText4(0)) === 'k4 fresh'),
-      `${JSON.stringify(moved4.put.body)} ${(await opts4(0)).join()} ${await selectedText4(0)}`);
+      JSON.stringify(moved4.put.body.items.map((i) => i.preset_id)) === JSON.stringify([freshId, 99, 5]) && await looksAre4('k4 fresh,dawn', 'k4 fresh'), `${JSON.stringify(moved4.put.body)} ${JSON.stringify(await looks4())}`);
     const lowRow = await page4.$eval('#plist .pl-row:nth-child(2)', (r) => r.getBoundingClientRect().height);
     await page4.dragAndDrop('#plist .pl-row:nth-child(1) .pl-grip', '#plist .pl-row:nth-child(2)', { targetPosition: { x: 20, y: Math.round(lowRow * 0.75) } });   // its lower half: after it
-    await waitCall(/^PUT \/api\/playlists\/7\/items$/, t0 + 3);
+    await waitCall(PUT7, t0 + 3);
     check('and dragging it below the second puts it back', JSON.stringify(putAfter('/api/playlists/7/items').put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99, freshId])
-      && await until(async () => (await opts4(0)).join() === 'dawn,k4 fresh' && (await selectedText4(0)) === 'k4 fresh'), `${(await opts4(0)).join()} ${await selectedText4(0)}`);
+      && await looksAre4('dawn,k4 fresh', 'k4 fresh'), JSON.stringify(await looks4()));
     await dev4(() => document.querySelectorAll('#plist .pl-row .pl-name')[0].click());
-    check('a click on a name goes to that look', await until(async () => (await selectedText4(0)) === 'dawn' && (await pane4()).rows[0].endsWith(':true')), JSON.stringify(await pane4()));
-    check('over the list: the playlist select with its +, and the advanced panel\'s chips for the look on screen', await until(async () => { const p = await pane4(); return p.plus && p.chips !== '' && p.chips === await chips4(); }), `${JSON.stringify(await pane4())} ${await chips4()}`);
+    check('a click on a name goes to that look', await until(async () => (await looks4()).on === 'dawn' && (await pane4()).rows[0].endsWith(':true')), JSON.stringify(await pane4()));
+    // SAVE AS NEW: a new look, parented on the one you were on, right after it in this playlist, and the editor on it there
+    await slider4(0.52);
+    const sn0 = calls(PUT7).length;
+    prompts.length = 0; reply = 'dawn, again'; await paneBtn4('save as new'); reply = null;
+    await waitCall(PUT7, sn0 + 1);
+    const againId = server.nextPreset - 1;
+    check('save as new asks a name of its own, POSTs a new preset parented on the item, and places it right after that item, the unavailable one kept',
+      prompts[0] === '' && lastCall(POSTS).path === '/api/presets' && lastCall(POSTS).body.parent === 'preset:5@2' && JSON.stringify(putAfter('/api/playlists/7/items').put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, againId, 99, freshId]),
+      `${JSON.stringify(lastCall(POSTS).body.parent)} ${JSON.stringify(putAfter('/api/playlists/7/items').put.body.items)}`);
+    check('and the editor is on it there, the status line saying where it went', await looksAre4('dawn,dawn, again,k4 fresh', 'dawn, again')
+      && await until(async () => (await dev4(() => document.querySelector('#plist .arb-status')?.textContent)) === `kept in arboretum · #${againId} v1 · in evening`), `${JSON.stringify(await looks4())} ${await dev4(() => document.querySelector('#plist .arb-status')?.textContent)}`);
+    // × on the look on screen goes on to the item that took its place; × on another keeps you where you are
+    const x0 = calls(PUT7).length;
+    await rowBtn4('dawn, again', '.pl-remove');
+    await waitCall(PUT7, x0 + 1);
+    check('× on the look on screen takes it out (it stays in arboretum) and goes on to the item now in its place',
+      JSON.stringify(putAfter('/api/playlists/7/items').put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99, freshId]) && await looksAre4('dawn,k4 fresh', 'k4 fresh'), JSON.stringify(await looks4()));
+    // THE PICKER: one of your looks, added at the end without leaving the playlist
+    check('the picker offers your looks, saying which are already in this playlist', await until(async () => /dusk/.test((await pane4()).picker ?? '') && /dawn · in it/.test((await pane4()).picker ?? '')), String((await pane4()).picker));
+    const ad0 = calls(PUT7).length;
+    await dev4(() => { const s = document.querySelector('#plist .pl-add'); s.value = 'p:21'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await waitCall(PUT7, ad0 + 1);
+    check('picking dusk appends it to this playlist, and you stay on the look you were on', JSON.stringify(putAfter('/api/playlists/7/items').put.body.items.map((i) => i.preset_id)) === JSON.stringify([5, 99, freshId, 21])
+      && await looksAre4('dawn,k4 fresh,dusk', 'k4 fresh'), JSON.stringify(await looks4()));
+    await rowBtn4('dusk', '.pl-remove');
+    await waitCall(PUT7, ad0 + 2);
+    check('× on another row takes that one out and keeps you on yours', await looksAre4('dawn,k4 fresh', 'k4 fresh'), JSON.stringify(await looks4()));
+    // RENAME, the chips and the list select, all in the pane
+    prompts.length = 0; reply = 'evening light'; await paneBtn4('✎'); reply = null;
+    check('✎ renames the playlist: a PATCH of the name alone, offering the old one', await until(async () => (await pane4()).list === 'evening light') && prompts[0] === 'evening' && JSON.stringify(lastCall(/^PATCH \/api\/playlists\/7$/)?.body) === '{"name":"evening light"}', JSON.stringify(lastCall(/^PATCH /)?.body));
+    reply = 'evening'; await paneBtn4('✎'); reply = null;
+    await until(async () => (await pane4()).list === 'evening');
     const pc0 = calls(/^PUT \/api\/playlists\/8\/items$/).length;
-    await dev4(() => [...document.querySelectorAll('#plist .pl-chip')].find((b) => b.textContent === 'morning').click());
+    await dev4(() => [...document.querySelectorAll('#plist .arb-inrow .arb-in')].find((b) => b.textContent === 'morning').click());
     await waitCall(/^PUT \/api\/playlists\/8\/items$/, pc0 + 1);
-    check('a chip in the pane adds the look to that playlist, as the panel\'s does', JSON.stringify(putAfter('/api/playlists/8/items').put.body.items.map((i) => i.preset_id)) === JSON.stringify([5])
+    check('the chips are in the pane: one adds the look on screen to that playlist', JSON.stringify(putAfter('/api/playlists/8/items').put.body.items.map((i) => i.preset_id)) === JSON.stringify([freshId])
       && await until(async () => (await pane4()).chips.includes('morning:true')), JSON.stringify(await pane4()));
-    await dev4(() => { const s = document.querySelector('#plist .pl-lists'); s.value = 'builtins'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-    await until(async () => (await editorList4()) === 'builtins');
-    check('the pane\'s select switches the list; the built-ins have no order of yours to change, so no grip', await until(async () => { const p = await pane4(); return p.list === 'built-ins' && p.rows.length > 3 && p.grips === 0; }), JSON.stringify({ ...(await pane4()), rows: (await pane4()).rows.length }));
-    await dev4(() => { const s = document.querySelector('#plist .pl-lists'); s.value = 'arb:7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-    await until(async () => (await editorList4()) === 'arb:7');
+    await paneList4('builtins');
+    check('the pane\'s playlist select switches the list; the built-ins have no order of yours to change, so no grip, no ×, no picker',
+      await until(async () => { const p = await pane4(); return p.list === 'built-ins' && p.rows.length > 3 && p.grips === 0 && p.picker === null; }) && (await dev4(() => document.querySelectorAll('#plist .pl-remove').length)) === 0, JSON.stringify({ ...(await pane4()), rows: (await pane4()).rows.length }));
+    await paneList4('arb:7');
+    await page4.waitForTimeout(400);
     await dev4(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'tree').click());
-    check('the tree tab brings the tree back', (await pane4()).tree !== 'none' && !(await pane4()).shown);
+    check('the tree tab brings the tree back, and the controls back below', (await pane4()).tree !== 'none' && !(await pane4()).shown && (await pane4()).below);
     await dev4(() => [...document.querySelectorAll('#dev .modes button')].find((b) => b.textContent === 'leave workspace').click());
     await goList4('uncategorized', 'arb:unc');
     check('in uncategorized there is no "arrives by" row (it is a playlist item\'s, and uncategorized has none)', (await styleRow4()) === null, String(await styleRow4()));
@@ -1436,7 +1484,7 @@ try {
     await focus4();
     await openSettings4();
     await until(() => shown4('#sessionSettings .arb-cta'));
-    check('a session that has ended brings the sign-in line back; the lists are all looks alone — the mirror is kept but not shown', (await opts4(1)).join() === 'all looks' && (await mirror4()).order.length > 2 && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button')), `${(await opts4(1)).join()} ${(await mirror4()).order.length}`);
+    check('a session that has ended brings the sign-in line back; the lists are all looks alone — the mirror is kept but not shown', (await opts4(1)).join() === 'all looks' && (await mirror4()).order.length > 2 && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button[title="new playlist"]')), `${(await opts4(1)).join()} ${(await mirror4()).order.length}`);
     await closeSettings4();
     const idle2 = seen.length, posts2 = calls(POSTS).length;
     await pick4(0, 'afternoon 7');

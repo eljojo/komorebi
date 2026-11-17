@@ -4,7 +4,7 @@ import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted,
   uploadPlan, itemsAfter, itemTarget, playlists, plays, timing, starValue, starName, entryName,
   fromEntry, onlineId, placeChange, sameLook, lookState, playlistChips,
-  emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, isFolder, fromVersion, linkPlaylist, makePlayer, selectionAfter } from "./playlists.js";
+  emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, saveNewPlan, isFolder, fromVersion, linkPlaylist, makePlayer, selectionAfter } from "./playlists.js";
 import * as builtins from "./presets.js";
 import { DEFAULTS, cameraFor } from "./komorebi.js";
 
@@ -665,6 +665,16 @@ test("itemsAfter a times change sets only what it names on that item, keeping it
   expect(itemsAfter(list, { kind: "times", at: 0, crossfade_s: 0 })[0]).toEqual({ preset_id: 1, dwell_s: 10, crossfade_s: 0 });
 });
 
+test("itemsAfter an insert_after puts the new preset right after that item with arboretum's defaults, the unavailable one kept", () => {
+  expect(itemsAfter(fresh(), { kind: "insert_after", at: 0, preset_id: 3 })).toEqual([
+    { preset_id: 1, dwell_s: 10, crossfade_s: 2 },
+    { preset_id: 3 },
+    { preset_id: 9, dwell_s: 40, crossfade_s: 7 },
+    { preset_id: 2, dwell_s: 20, crossfade_s: 3 },
+  ]);
+  expect(itemsAfter(fresh(), { kind: "insert_after", at: 1, preset_id: 3 }).map((i) => i.preset_id)).toEqual([1, 9, 2, 3]);
+});
+
 test("itemsAfter does not touch the list it was given", () => {
   const list = fresh();
   itemsAfter(list, { kind: "remove", at: 0 });
@@ -1239,6 +1249,20 @@ test("savePlan from an un-moved ★ carries its parent; an unchanged built-in is
   expect(savePlan(EMPTY, {}, "builtins", "afternoon 7", afternoon, "jo", null, cameraFor, "same").refused).toMatch(/afternoon 7/);
   const pasted = savePlan(EMPTY, {}, "builtins", "memories", { ...edited, seed: 5 }, "jo", null, cameraFor, "pasted");
   expect(pasted.kind).toBe("preset");
+});
+
+test("saveNewPlan is always a new preset, parented on where it started: after the item you are on in a folder of yours, else in uncategorized", () => {
+  const m = mirrorOf([preset(5, "e", { version: 3 })], [{ id: 8, name: "morning", ids: [5] }]);
+  const v = viewState(EMPTY, m, "jo");
+  const p = saveNewPlan(v, {}, "arb:8", "0", edited, "jo", null, cameraFor, "e, again");
+  expect(p).toMatchObject({ kind: "preset", path: "/api/presets", target: "folder", body: { name: "e, again", parent: "preset:5@1" }, into: { playlist: 8, at: 0, after: true } });
+  expect(p.into.target).toMatchObject({ preset_id: 5 });
+  expect(placeChange(p.into, 12)).toMatchObject({ kind: "insert_after", at: 0, preset_id: 12 });
+  expect(saveNewPlan(v, {}, "arb:8", "", edited, "jo", null, cameraFor, "x").into).toEqual({ playlist: 8, at: null });   // on no item: at the end
+  const loose = viewState(EMPTY, mirrorOf([preset(5, "e", { version: 3 })]), "jo");   // in no folder: uncategorized
+  expect(saveNewPlan(loose, {}, "arb:unc", "0", edited, "jo", null, cameraFor, "x")).toMatchObject({ kind: "preset", target: "unc", body: { parent: "preset:5@3" } });
+  expect(saveNewPlan(loose, {}, "arb:unc", "0", edited, "jo", null, cameraFor, "x").into).toBeUndefined();
+  expect(saveNewPlan(EMPTY, {}, "builtins", "afternoon 7", afternoon, "jo", null, cameraFor, "same").refused).toMatch(/afternoon 7/);
 });
 
 test("savePlan tags a look experimental when its camera is not the floor", () => {

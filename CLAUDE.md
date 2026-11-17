@@ -79,7 +79,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
   touches storage or arboretum. `arboretum-api.js` is its wire, imported by it alone.
 - `leaf-maze.js` (pure) and `leaf-preview.js` — the held leaf (`L`); `leaf-preview.js` is imported by `editor.js` alone.
 - `tree-pane.js` — the workspace's tree pane (`W`): the grove from the side or on the T inset's turntable, its own WebGL2 canvas; imported by `editor.js` alone.
-- `playlist-pane.js` — the workspace's playlist pane, the tree pane's other tab: the playlist select, save and the folder chips over the active list's items, and on a playlist of yours their times, routes and order, written through what `editor.js` lends it; imported by `editor.js` alone.
+- `playlist-pane.js` — the workspace's playlist pane, the tree pane's other tab: while up, the home of the advanced panel's look and playlist controls (moved in by `editor.js`), over the active list's items; on a playlist of yours their times, routes, order and removal, and a picker that adds a look, written through what `editor.js` lends it; imported by `editor.js` alone.
 - `midi.js` — an AKAI MIDImix over Web MIDI (`M` shows its console): writes only through what the editor lends it, imported by `editor.js` alone.
 
 **The site.** `about.html` + `about.css` — the one source of the about text, which the welcome also opens in place.

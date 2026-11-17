@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "./embed-build.mjs";
 import { api } from "./arboretum-api.js";
-import { getStored, getMirror, MIRROR_KEY, mount, setMirror, setState } from "./arboretum.js";
+import { getStored, getMirror, MIRROR_KEY, mount, setMirror, setState, setStored } from "./arboretum.js";
 import { emptyMirror, enqueue, parseHash, starValue } from "./playlists.js";
 import * as model from "./playlists.js";
 
@@ -44,7 +44,7 @@ beforeEach(() => {
   };
 });
 const at = (hostname, pathname = "/index.html") => ({ hostname, pathname, origin: `https://${hostname}` });
-const host = { params: {}, rows: {}, active: () => "local", value: () => "", sync() {}, select() {}, reload() {}, activate() {}, show() {}, advancedShown: () => false };
+const host = { params: {}, rows: {}, active: () => "local", value: () => "", sync() {}, select() {}, go() {}, reload() {}, activate() {}, show() {}, advancedShown: () => false };
 const spy = (answer) => {
   const calls = [];
   return { calls, fetchImpl: async (url, init) => { calls.push({ url, init }); return new Response(JSON.stringify(answer), { status: 200 }); } };
@@ -286,6 +286,89 @@ test("a times change from the pane writes that item's dwell or crossfade alone; 
   await s.a.setTimes(0, { crossfade_s: 0 });
   expect(writes[0]).toEqual(wireItems([one, { ...two, dwell_s: 90 }]));
   expect(writes[1][0]).toEqual({ preset_id: 1, dwell_s: 10, crossfade_s: 0 });
+});
+
+test("save as new in a folder is a new preset parented on the item, placed right after it, and the editor goes to it there", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const one = playlistItem(1), two = playlistItem(2);
+  setMirror(folderMirror([one, two]));
+  let active = "local", shown = null;
+  const posts = [], writes = [];
+  const s = await session(async (url, init) => {
+    if (url === "./commit.json") return new Response("{}", { status: 404 });
+    if (init.method === "POST") { posts.push(JSON.parse(init.body)); return json({ id: 3, version: 1, owner: "alice" }); }
+    if (init.method === "PUT") { const body = JSON.parse(init.body); writes.push(body.items); return json({ id: 7, owner: "alice", name: "folder", items: body.items }); }
+    return json({ id: 7, owner: "alice", name: "folder", items: [one, two] });
+  }, { active: () => active, value: () => "0", showCloud: (list, match) => { shown = [list, match]; } });
+  active = "arb:7";
+  await s.a.saveCloud("one, again", { exposure: 99 }, { asNew: true });
+  expect(posts[0]).toMatchObject({ name: "one, again", parent: "preset:1@1", params: { exposure: 99 } });
+  expect(writes).toEqual([[...wireItems([one]), { preset_id: 3 }, ...wireItems([two])]]);
+  expect(shown).toEqual(["arb:7", { id: 3 }]);
+});
+
+test("taking out a row that is not the look on screen keeps you on yours; taking out yours goes on to the item in its place", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  const items = [playlistItem(1), playlistItem(2), playlistItem(3)];
+  setMirror(folderMirror(items));
+  let active = "local", value = "2", went = null;
+  const s = await session(async (_url, init) => {
+    if (init.method === "PUT") { const body = JSON.parse(init.body); return json({ id: 7, owner: "alice", items: body.items.map((i) => items.find((x) => x.preset_id === i.preset_id)) }); }
+    return json({ id: 7, owner: "alice", items: s.a.view().playlists[7].items });
+  }, { active: () => active, value: () => value, select: (v) => { value = v; }, go: (v) => { went = v; value = v; } });
+  active = "arb:7";
+  await s.a.remove(0);
+  expect(s.a.view().playlists[7].items.map((i) => i.preset_id)).toEqual([2, 3]);
+  expect([value, went]).toEqual(["1", null]);   // look 3, now second
+  await s.a.remove(1);
+  expect(went).toBe("0");                        // look 3 is gone from the list: on to look 2
+});
+
+test("the picker offers your looks (marking those already in) and the ★ not yet up; adding a ★ sends it up first and appends it", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  setStored({ mine: { exposure: 7 } });
+  const one = playlistItem(1);
+  setMirror({ ...folderMirror([one]), order: [1, 2], presets: { 1: { id: 1, version: 1, owner: "alice", name: "look 1", params: {} }, 2: { id: 2, version: 1, owner: "alice", name: "look 2", params: {} } } });
+  let active = "local";
+  const writes = [], posts = [];
+  const s = await session(async (url, init) => {
+    if (url === "./commit.json") return new Response("{}", { status: 404 });
+    if (init.method === "POST") { posts.push(JSON.parse(init.body)); return json({ id: 4, version: 1, owner: "alice" }); }
+    if (init.method === "PUT") { const body = JSON.parse(init.body); writes.push(body.items); return json({ id: 7, owner: "alice", items: [one] }); }
+    return json({ id: 7, owner: "alice", items: [one] });
+  }, { active: () => active, value: () => "0" });
+  active = "arb:7";
+  expect(s.a.addable()).toEqual([
+    { label: "your looks", options: [{ value: "p:1", label: "look 1 · in it" }, { value: "p:2", label: "look 2" }] },
+    { label: "on this browser", options: [{ value: "s:mine", label: "★ mine" }] },
+  ]);
+  await s.a.add("p:2");
+  await s.a.add("s:mine");
+  expect(writes.map((w) => w.at(-1).preset_id)).toEqual([2, 4]);
+  expect(posts[0]).toMatchObject({ name: "mine", params: { exposure: 7 } });
+  expect(getStored()).toEqual({});              // the ★ is a preset of yours now
+  active = "builtins";
+  expect(s.a.addable().length).toBeGreaterThan(0);
+  await s.a.add("p:2");
+  expect(writes.length).toBe(2);                // not a playlist of yours: nothing is written
+});
+
+test("rename sends the playlist's new name alone, and only for a playlist of yours", async () => {
+  setState({ v: 1, me: { username: "alice" }, origin: {}, playlists: {} });
+  setMirror(folderMirror([playlistItem(1)]));
+  let active = "local";
+  const patches = [];
+  globalThis.prompt = () => "dusk";
+  const s = await session(async (_url, init) => {
+    if (init.method === "PATCH") { patches.push(JSON.parse(init.body)); return json({ id: 7, owner: "alice", name: "dusk", items: [playlistItem(1)] }); }
+    return json({ id: 7, owner: "alice", items: [] });
+  }, { active: () => active, value: () => "0" });
+  await s.a.rename();
+  active = "arb:7";
+  await s.a.rename();
+  expect(patches).toEqual([{ name: "dusk" }]);
+  expect(s.a.view().playlists[7].name).toBe("dusk");
+  delete globalThis.prompt;
 });
 
 test("a fork replaces its original playlist item after a concurrent reorder", async () => {

@@ -1053,6 +1053,7 @@ function syncPlaylistUI(){
       row.hidden = !signedIn && lists.length<2;
     }
     plusBtn.hidden = !signedIn;
+    renameBtn.hidden = !arb?.canRemove();
   }
   if(deleteBtn){
     const a=activeList(), cloud=a.startsWith('arb:');
@@ -1109,9 +1110,21 @@ function setActive(list){
 }
 // A ★ is written to all looks whatever playlist you were on; the list then shows it.
 function saveStar(name, p){
+  const from=activeList();
   arb.writeStar(name, p);                            // before the selection moves: it is where this ★ came from
   settings.playlist='local'; saveSettings();
   refreshPresetSelect(starValue(name));
+  // the editor has moved to all looks, where the ★ is: say so, and why it is not in the playlist you were in
+  const why = !from.startsWith('arb:') ? '' : arb.online() ? ' — sign in to arboretum to add looks to a playlist' : ' — playlists live in arboretum, where a look can be added to one';
+  const here=(arb.lists('local')).find(l=>l.value==='local')?.label ?? 'all looks';   // "all looks" signed out, "on this browser" signed in
+  note(`kept as ★ ${name} in this browser, in ${here}${why}`);
+}
+let noteTimer=0;
+function note(text){
+  if(!lookNote) return;
+  clearTimeout(noteTimer);
+  lookNote.textContent=text; lookNote.hidden=!text;
+  if(text) noteTimer=setTimeout(()=>{ lookNote.hidden=true; }, 8000);
 }
 // Save is the one way to keep a look. Signed in to arboretum, every save goes to arboretum, private, and never asks where: into
 // the folder you are in, else uncategorized (arboretum.js). Otherwise it is a ★ in this browser, whatever list you were on.
@@ -1119,6 +1132,15 @@ function saveLook(name, p){
   stopPlay();
   if(arb?.signedIn()){ arb.saveCloud(name, p); return; }   // signed in, every save goes to arboretum (private) and none is kept here
   saveStar(name, p);
+}
+// Save as new: always a new look, asked a name of its own. Signed in, a new preset placed after this item in a playlist of yours,
+// else in uncategorized (arboretum.js); otherwise a new ★, which never quietly replaces one already here.
+function promptSaveNew(){
+  const n=(prompt('Save as a new look, named:', '')||'').trim(); if(!n) return;
+  stopPlay();
+  if(arb?.signedIn()){ arb.saveCloud(n, eng.captureLook(), { asNew:true }); return; }
+  if(Object.hasOwn(getStored(), n) && !confirm(`A look named ${n} is already kept in this browser. Replace it?`)) return;
+  saveStar(n, eng.captureLook());
 }
 // The save button and ⌘S / Ctrl+S: ask for a name, then keep the look.
 function promptSave(){
@@ -1135,7 +1157,7 @@ function showCloud(list, match){
   refreshPresetSelect(at<0 ? '' : String(at));      // the look has left this list (it joined a folder): nothing selected
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
-let devBeta=null, styleRow=null, playlistPresentationRow=null, playlistPresentation=null, wsButton=null;
+let devBeta=null, styleRow=null, playlistPresentationRow=null, playlistPresentation=null, wsButton=null, renameBtn=null, looks=null, looksHome=null, lookNote=null;
 function buildPresetUI(){
   const modes=document.createElement('div'); modes.className='ctl modes';
   const back=document.createElement('button'); back.textContent='less';
@@ -1143,6 +1165,11 @@ function buildPresetUI(){
   modes.append(back,settingsButton());
   if(!coarse){ wsButton=mkBtn('workspace',()=>setWorkspace(!settings.workspace)); modes.append(wsButton); }   // the workspace is a desktop's: a phone has no room beside the picture
   dev.appendChild(modes);
+  // THE LOOKS: every look and playlist control, in one box, which the workspace's playlist pane takes while it is up (setWsPane) so
+  // that none is left below and none is a copy; it comes back here, to its own place, when the pane goes.
+  looks=document.createElement('div'); looks.className='looks';
+  looksHome=document.createComment('looks');
+  dev.append(looks, looksHome);
   // THE LOOK, as the panel's heading: ‹ name ›. The name is the dropdown: the select lies over it, transparent, so a click on the
   // name opens the full list (and the select stays the first one in #dev, the single source of the stepping origin).
   const head=document.createElement('div'); head.className='lookhead'; head.dataset.tipKey='Presets';
@@ -1152,9 +1179,11 @@ function buildPresetUI(){
   presetSel=document.createElement('select');
   presetSel.addEventListener('change',()=>loadEntry(presetSel.value));
   presetSelects.push(presetSel);
-  pick.append(name,presetSel); head.append(prev,pick,next); dev.appendChild(head);
+  pick.append(name,presetSel); head.append(prev,pick,next); looks.appendChild(head);
   lookChip=document.createElement('div'); lookChip.className='look-chip';   // directly under the look's name, in every editor
-  dev.appendChild(lookChip);
+  looks.appendChild(lookChip);
+  lookNote=document.createElement('div'); lookNote.className='look-note'; lookNote.hidden=true;   // the editor's own word on where a save went, when arboretum's status line is not there to say it
+  looks.appendChild(lookNote);
 
   // one main action; the rare ones (delete, the JSON pair) fold behind ···
   const r2=document.createElement('div'); r2.className='ctl lookacts';
@@ -1162,12 +1191,14 @@ function buildPresetUI(){
     if(activeList().startsWith('arb:')){ arb?.remove(); return; }     // taking a look out of an arboretum playlist is written to arboretum
     const n=starName(getStored(), 'local', presetSel.value);
     if(n===null){ alert("Built-in presets can't be deleted."); return; }
-    arb.deleteStar(n); refreshPresetSelect(DEFAULT_PRESET); });
+    arb.deleteStar(n); goTo(DEFAULT_PRESET); });   // on to the default look, so what is shown is what is selected
   const r3=document.createElement('div'); r3.className='ctl'; r3.hidden=true;
   const rare=mkBtn('···',()=>{ r3.hidden=!r3.hidden; }); rare.title='delete, copy JSON, paste JSON';
   const save=mkBtn('save',promptSave); save.className='main';
-  r2.append(save, playButton(), rare);
-  dev.appendChild(r2);
+  save.title='keep the look: a new version of it when it is yours, else a new look (⌘S)';
+  const saveNew=mkBtn('save as new',promptSaveNew); saveNew.title='keep it as a new look, beside this one when this is a playlist of yours';
+  r2.append(save, saveNew, playButton(), rare);
+  looks.appendChild(r2);
   presetRows.save=r2;
   r3.append(
     deleteBtn,
@@ -1176,7 +1207,7 @@ function buildPresetUI(){
       else prompt('Copy JSON:',txt); }),
     mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
       try{ const o=JSON.parse(txt); stopPlay(); applyParams(o.params||o); refreshPresetSelect(); }catch(_e){ alert('Invalid JSON'); } }));
-  dev.appendChild(r3);
+  looks.appendChild(r3);
   presetRows.tools=r3;
 
   // the playlist row comes after the look select in the DOM: the first select in #dev stays the look's
@@ -1184,21 +1215,22 @@ function buildPresetUI(){
   playlistSel=playlistSelect();
   playlistSelects.push({ sel:playlistSel, row:playlistRow });
   plusBtn=mkBtn('+',()=>arb?.create()); plusBtn.title='new playlist'; plusBtn.hidden=true;   // signed in to arboretum only
-  playlistRow.append(playlistSel, plusBtn); dev.appendChild(playlistRow);
-  playlistPresentationRow=document.createElement('div');playlistPresentationRow.className='ctl select';
+  renameBtn=mkBtn('✎',()=>arb?.rename()); renameBtn.title='rename this playlist'; renameBtn.hidden=true;   // a playlist of yours only
+  playlistRow.append(playlistSel, renameBtn, plusBtn); looks.appendChild(playlistRow);
+  playlistPresentationRow=document.createElement('div');playlistPresentationRow.className='ctl select presentation-row';
   const presentationLabel=document.createElement('label');presentationLabel.textContent='playlist display';
   playlistPresentation=document.createElement('select');
   for(const [value,label] of [['','no preference'],['screen','screen / TV'],['projector','projector']]){
     const option=document.createElement('option');option.value=value;option.textContent=label;playlistPresentation.append(option);
   }
   playlistPresentation.onchange=async()=>{ await arb?.setPresentation(playlistPresentation.value || null); syncPlaylistUI(); };   // a refused save shows the stored value again
-  playlistPresentationRow.append(presentationLabel,playlistPresentation);dev.append(playlistPresentationRow);
+  playlistPresentationRow.append(presentationLabel,playlistPresentation);looks.append(playlistPresentationRow);
   // how the playlist item you are on arrives: morph (the automatic route) or fade. The playlist item's, so it shows only on an item of a playlist of yours.
   styleRow=document.createElement('div'); styleRow.className='ctl stylerow'; styleRow.hidden=true;
   const slab=document.createElement('label'); slab.textContent='arrives by';
   styleRow.appendChild(slab);
   for(const st of ['morph','fade']){ const b=mkBtn(st,()=>{ if(arb?.styleNow()!==st) arb?.setStyle(st); }); b.dataset.style=st; styleRow.appendChild(b); }
-  dev.appendChild(styleRow);
+  looks.appendChild(styleRow);
 
   // the experimental toggle is built here and laid at the very bottom of the panel, under the transition row (where that row is built)
   devBeta=document.createElement('div'); devBeta.className='ctl toggle devbeta';
@@ -1286,8 +1318,8 @@ function wsStatTick(){
 }
 const paneOf = () => (treePane ??= makeTreePane(params, { hier: () => eng.grove().hier, leaves: () => eng.treeLeaves() }));
 // The right-hand pane is the tree or the active list (playlist-pane.js), one tab each over its top; which one sticks across reloads.
-// The list pane draws the list as the dropdown has it, with the playlist select, save and the folder chips over it, and on a playlist
-// of yours writes through arboretum.js.
+// While the list pane is up it holds the panel's look and playlist controls (the `looks` box, moved, not copied) over the list as
+// the dropdown has it; on a playlist of yours its rows write through arboretum.js.
 const wsTabs=document.getElementById('wsTabs'), plistEl=document.getElementById('plist');
 let listPane=null;
 const listPaneOf = () => (listPane ??= makePlaylistPane(plistEl, {
@@ -1295,16 +1327,13 @@ const listPaneOf = () => (listPane ??= makePlaylistPane(plistEl, {
   move: (at, to) => arb.move(at, to),
   times: (at, t) => arb.setTimes(at, t),
   style: (at, st) => arb.setStyle(st, at),
-  pick: (list) => { if(arb) arb.activate(list); else setActive(list); },
-  create: () => arb?.create(),
-  save: promptSave,
-  toggle: (id, lit) => arb.toggle(id, lit),
+  remove: (at) => arb.remove(at),
+  add: (pick) => arb.add(pick),
 }));
 function listModel(){
-  const a=activeList(), cloud=a.startsWith('arb:') ? stateNow().playlists[a.slice(4)] : null;
-  const choices=arb ? arb.lists(settings.playlist) : playlists(getState());
+  const a=activeList(), cloud=a.startsWith('arb:') ? stateNow().playlists[a.slice(4)] : null, editable=!!arb?.canRemove();
   return {
-    lists: choices, active: a, canCreate: !!arb?.signedIn(), chips: arb?.chips() ?? [], editable: !!arb?.canRemove(), current: presetSel.value,
+    editable, current: presetSel.value, addable: editable ? arb.addable() : [],
     rows: listEntries(presetSel.value).map(e=>{
       const it=cloud?.items[Number(e.value)];
       if(!it) return { value:e.value, label:e.label };
@@ -1321,6 +1350,10 @@ function setWsPane(which){
   for(const b of wsTabs.children) b.classList.toggle('on', b.dataset.pane===which);
   const tree=settings.workspace && !list;
   if(tree || treePane) paneOf().show(tree);
+  if(looks){
+    if(settings.workspace && list) listPaneOf().slot.append(looks);
+    else if(looks.parentElement!==dev) looksHome.before(looks);
+  }
   renderListPane();
 }
 for(const [which,label] of [['tree','tree'],['playlist','playlist']]){
@@ -1753,6 +1786,7 @@ const arbHost = {
   active: activeList, value: () => presetSel.value,
   sync: () => refreshPresetSelect(),                            // re-list (your looks follow the mirror), then the playlist select, the chip and the buttons that follow the active list
   select: refreshPresetSelect,                                  // re-list the active playlist, on this entry
+  go: (value) => { if(value==='') refreshPresetSelect(''); else goTo(value); },   // ...or go to it, when the look on screen has left the list
   reload: () => refreshPresetSelect(resumeAt()),                // ...after its items changed under it
   activate: setActive,
   showCloud,

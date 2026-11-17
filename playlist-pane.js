@@ -1,13 +1,14 @@
 // ============================================================================
 // The workspace's playlist pane (spec/implementation.md, "The editor and the player"): EDITOR only, imported by editor.js alone.
-// It stands where the tree pane stands, one tab over, and lists every item of the active list: a click on a name goes to that look
-// the way the arrows do. Over the list are what working through playlists needs to hand: the playlist select (and, signed in to
-// arboretum, + for a new one), save, and the chips that put the look on screen in a playlist of yours or take it out — the advanced
-// panel's own controls, lent. On a playlist of yours each item also carries how long it is held (dwell), how long it takes to arrive
-// (crossfade) and by which route (morph or fade), and a drag on its grip moves it; a list with no order of its own to change (all
-// looks, the built-ins, someone else's playlist) has no grip. Every write goes through what the editor lends
-// (`act`), which arboretum.js answers; the pane keeps no copy of the list and draws the model it is handed on each `render`.
-// A row being typed into is not redrawn under the hand: the pane waits for the input to let go.
+// It stands where the tree pane stands, one tab over, and while it is up it is the one home of looks and playlists: the editor moves
+// the advanced panel's own look and playlist controls into its `slot` (the playlist select, + and rename, the look, save and save
+// as new, the chips, arboretum's status line), so none are left in the panel below and none are copies. Under them it lists every
+// item of the active list: a click on a name goes to that look the way the arrows do. On a playlist of yours each item also carries
+// how long it is held (dwell), how long it takes to arrive (crossfade), its route (morph or fade) and an × that takes it out, a drag
+// on its grip moves it, and a picker at the foot adds one of your looks without leaving the playlist; a list with no order of yours
+// to change (all looks, the built-ins, uncategorized, someone else's playlist) has no grip, no × and no picker. Every write goes
+// through what the editor lends (`act`), which arboretum.js answers; the pane keeps no copy of the list and draws the model it is
+// handed on each `render`. A row being typed into is not redrawn under the hand: the pane waits for the input to let go.
 // ============================================================================
 
 const DWELL = { min: 1, max: 3600 }, CROSSFADE = { min: 0, max: 120 };   // arboretum's limits; a value outside them is refused there, and the stored one comes back
@@ -20,27 +21,21 @@ function el(tag, cls, text){
 }
 
 // root: the pane's element. act: { go(value), move(at, to), times(at, {dwell_s} | {crossfade_s}), style(at, 'morph' | 'fade'),
-// pick(list), create(), save(), toggle(id, lit) }; move, times, style and toggle are promises, and none of them is called while another
-// is under way. A model: { lists: [{ value, label }], active, canCreate, chips: [{ id, name, lit }], editable, current,
-// rows: [{ value, label, dwell_s?, crossfade_s?, style?, pending? }] } — the times and style present only on a cloud playlist's items.
+// remove(at), add(pick) }, all but go promises, none of which is called while another is under way. A model: { editable, current,
+// addable: [{ label, options: [{ value, label }] }], rows: [{ value, label, dwell_s?, crossfade_s?, style?, pending? }] } — the times
+// and style present only on a cloud playlist's items.
 export function makePlaylistPane(root, act){
   let model = null, wanted = false, busy = false, dragFrom = null, shownAt;   // shownAt: the item last scrolled into view
 
-  const bar = el('div', 'pl-bar'), lists = el('select', 'pl-lists'), plus = el('button', 'pl-new', '+');
-  lists.title = 'the playlist the arrows step through';
-  plus.title = 'new playlist';
-  lists.addEventListener('change', () => act.pick(lists.value));
-  plus.addEventListener('click', () => act.create());
-  bar.append(lists, plus);
-  const acts = el('div', 'pl-acts'), save = el('button', 'pl-save', 'save look'), chips = el('span', 'pl-chips');
-  save.title = 'keep the look on screen: into this playlist when it is yours (arboretum), else as a ★ here';
-  save.addEventListener('click', () => act.save());
-  acts.append(save, chips);
+  const slot = el('div', 'pl-slot');
   const head = el('div', 'pl-head'), list = el('ol', 'pl-list');
-  root.append(bar, acts, head, list);
-  let listsKey = '';
+  const picker = el('select', 'pl-add');
+  picker.title = 'add one of your looks at the end of this playlist';
+  picker.addEventListener('change', () => { const v = picker.value; picker.value = ''; if(v) write(() => act.add(v)); });
+  root.append(slot, head, list, picker);
+  let pickerKey = '';
 
-  const typing = () => root.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+  const typing = () => root.contains(document.activeElement) && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'number';
   root.addEventListener('focusout', () => { setTimeout(() => { if(wanted && !typing()) draw(); }, 0); });
 
   async function write(p){
@@ -82,6 +77,13 @@ export function makePlaylistPane(root, act){
       st.addEventListener('click', () => write(() => act.style(at, row.style === 'fade' ? 'morph' : 'fade')));
       li.append(st);
     }
+    if(model.editable){
+      const x = el('button', 'pl-remove', '×');
+      x.title = 'take it out of this playlist (it stays in arboretum)';
+      x.disabled = !movable;
+      x.addEventListener('click', () => write(() => act.remove(at)));
+      li.append(x);
+    }
     if(movable){
       grip.draggable = true;
       grip.title = 'drag to move';
@@ -109,22 +111,6 @@ export function makePlaylistPane(root, act){
 
   function draw(){
     wanted = false;
-    const key = JSON.stringify(model.lists);
-    if(key !== listsKey){   // rebuilt only when the lists change, so an open dropdown is not closed under the hand
-      listsKey = key;
-      lists.replaceChildren(...model.lists.map((l) => { const o = el('option', '', l.label); o.value = l.value; return o; }));
-    }
-    lists.value = model.active;
-    plus.hidden = !model.canCreate;
-    chips.hidden = model.chips.length === 0;
-    chips.replaceChildren(el('span', 'pl-in', 'in:'), ...model.chips.map((c) => {
-      const b = el('button', 'pl-chip', c.name);
-      b.classList.toggle('lit', c.lit);
-      b.setAttribute('aria-pressed', String(c.lit));
-      b.title = c.lit ? `take this look out of ${c.name}` : `add this look to ${c.name}`;
-      b.addEventListener('click', () => write(() => act.toggle(c.id, c.lit)));
-      return b;
-    }));
     head.replaceChildren(el('span', 'pl-count', `${model.rows.length} look${model.rows.length === 1 ? '' : 's'}`));
     const timed = model.rows.some((r) => r.dwell_s !== undefined);
     if(timed){
@@ -135,10 +121,22 @@ export function makePlaylistPane(root, act){
     root.classList.toggle('timed', timed);
     root.classList.toggle('editable', model.editable);
     list.replaceChildren(...model.rows.map(rowEl));
+    const key = JSON.stringify(model.addable);
+    if(key !== pickerKey){   // rebuilt only when what it offers changes, so an open dropdown is not closed under the hand
+      pickerKey = key;
+      const first = el('option', '', '+ add a look…'); first.value = '';
+      picker.replaceChildren(first, ...model.addable.map((g) => {
+        const og = el('optgroup'); og.label = g.label;
+        og.append(...g.options.map((o) => { const e = el('option', '', o.label); e.value = o.value; return e; }));
+        return og;
+      }));
+    }
+    picker.hidden = !model.editable || model.addable.length === 0;
     if(model.current !== shownAt){ shownAt = model.current; list.querySelector('.on')?.scrollIntoView({ block: 'nearest' }); }   // only when the look moves: a list scrolled by hand stays put
   }
 
   return {
+    slot,
     render(m){
       model = m;
       if(typing()) { wanted = true; return; }

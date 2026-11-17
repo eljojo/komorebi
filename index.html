@@ -55,22 +55,21 @@
     font:10px ui-monospace,Menlo,monospace; }
   #wsTabs button.on { color:#f1e7cf; border-color:rgba(241,231,207,.45); background:rgba(241,231,207,.1); }
   body.workspace.ws-playlist #tree { display:none; }
-  body.workspace.ws-playlist #plist { display:flex; flex-direction:column; position:fixed; top:0; right:0; width:38vw; height:62vh; box-sizing:border-box;
+  body.workspace.ws-playlist #plist { display:flex; flex-direction:column; overflow-y:auto; position:fixed; top:0; right:0; width:38vw; height:62vh; box-sizing:border-box;
     padding:34px 10px 8px; border-left:1px solid #1c2a1c; background:#080c08; color:#cfe0cf; font:11px/1.3 ui-monospace,Menlo,Consolas,monospace; }
-  #plist .pl-bar { display:flex; gap:6px; align-items:center; margin:0 4px 6px; }
-  #plist .pl-lists { flex:1; min-width:0; background:#10180f; color:#f1e7cf; border:1px solid #243; border-radius:4px; padding:3px 4px;
-    font:italic 15px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
-  #plist .pl-acts { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin:0 4px 8px; }
-  #plist .pl-chips { display:contents; }
-  #plist .pl-chips[hidden] { display:none; }
-  #plist .pl-in { color:#6f8a6f; margin-left:6px; }
-  #plist :is(.pl-new,.pl-save,.pl-chip) { background:#1a2a1a; color:#cfe0cf; border:1px solid #2c452c; border-radius:4px; padding:2px 8px; font:inherit; }
-  #plist :is(.pl-new,.pl-save,.pl-chip):hover { background:#243c24; }
-  #plist .pl-chip.lit { background:#2c4a2c; border-color:#7fae7f; color:#e8d9a8; }   /* the look is in this playlist (the advanced panel's chip colours) */
+  #plist .pl-slot .looks { display:flex; flex-direction:column; padding:0 4px 8px; }
+  #plist .pl-slot .playlist-row { order:-2; } #plist .pl-slot .presentation-row { order:-1; }   /* in the pane the playlist leads, then the look */
+  #plist .pl-slot .lookhead { margin-top:2px; }
+  #plist :is(.pl-remove) { flex:0 0 22px; background:none; color:#6f8a6f; border:1px solid transparent; border-radius:4px; padding:0; font:13px/1 ui-monospace,Menlo,monospace; }
+  #plist .pl-remove:hover:not(:disabled) { color:#e8a0a0; border-color:#4a2c2c; }
+  #plist .pl-remove:disabled { visibility:hidden; }
+  #plist .pl-add { margin:8px 4px 0; background:#10180f; color:#cfe0cf; border:1px solid #243; border-radius:4px; padding:3px 4px; font:inherit; }
+  #plist .pl-add[hidden] { display:none; }
   #plist .pl-head { display:flex; align-items:baseline; gap:10px; padding:0 4px 6px; border-bottom:1px solid #142014; }
   #plist .pl-count { color:#6f8a6f; flex:1; }
   #plist .pl-cols { display:grid; grid-template-columns:62px 62px 52px; gap:6px; color:#6f8a6f; text-align:center; }
-  #plist .pl-list { list-style:none; margin:0; padding:0; overflow-y:auto; flex:1; }
+  #plist.editable .pl-cols { margin-right:28px; }   /* clear of the × column */
+  #plist .pl-list { list-style:none; margin:0; padding:0; }   /* the whole pane scrolls: the looks box over the list may be tall */
   #plist .pl-row { display:flex; align-items:center; gap:6px; padding:3px 4px; border-top:2px solid transparent; border-bottom:2px solid transparent; }
   #plist .pl-row.on { background:rgba(241,231,207,.08); }
   #plist .pl-row.on .pl-name { color:#f1e7cf; }
@@ -111,24 +110,25 @@
   #dev summary.sec { font-size:11px; margin:14px 0 4px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
   #dev summary.adv { font-size:11px; margin:8px 0 3px; color:#6f8a6f; }
   /* the look as the advanced panel's heading: ‹ name ›, the name being the dropdown (the select lies over it, unseen) */
-  #dev .lookhead { display:flex; align-items:center; gap:8px; margin:10px 0 2px; }
-  #dev .lookhead button { flex:0 0 auto; background:none; color:#aab5a2; border:1px solid rgba(241,231,207,.18); border-radius:16px; padding:3px 12px; font-size:15px; cursor:pointer; }
-  #dev .lookhead .pick { position:relative; flex:1; min-width:0; text-align:center; }
-  #dev .lookhead .name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f1e7cf;
+  .looks .lookhead { display:flex; align-items:center; gap:8px; margin:10px 0 2px; }
+  .looks .lookhead button { flex:0 0 auto; background:none; color:#aab5a2; border:1px solid rgba(241,231,207,.18); border-radius:16px; padding:3px 12px; font-size:15px; cursor:pointer; }
+  .looks .lookhead .pick { position:relative; flex:1; min-width:0; text-align:center; }
+  .looks .lookhead .name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f1e7cf;
     font:italic 400 18px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
-  #dev .lookhead .name::after { content:' ▾'; font-size:11px; font-style:normal; color:#6f7a6b; }
-  #dev .lookhead select { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
-  #dev .look-chip { font-size:11px; color:#9fb89f; margin:0 0 8px; text-align:center; word-break:break-word; }
-  #dev .lookacts button.main { flex:1; background:rgba(241,231,207,.1); color:#f1e7cf; border-color:rgba(241,231,207,.35); padding:5px 8px; }
+  .looks .lookhead .name::after { content:' ▾'; font-size:11px; font-style:normal; color:#6f7a6b; }
+  .looks .lookhead select { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+  .looks .look-note { font-size:11px; color:#e8d9a8; margin:-4px 0 8px; text-align:center; word-break:break-word; -webkit-user-select:text; user-select:text; }   /* where a save went */
+  .looks .look-chip { font-size:11px; color:#9fb89f; margin:0 0 8px; text-align:center; word-break:break-word; }
+  .looks .lookacts button.main { flex:1; background:rgba(241,231,207,.1); color:#f1e7cf; border-color:rgba(241,231,207,.35); padding:5px 8px; }
   #dev .modes button { background:none; color:#aab5a2; border:1px solid rgba(241,231,207,.18); border-radius:16px; padding:4px 12px; cursor:pointer;
     font:italic 13px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }   /* the same "less" as the playful sidebar's */
   #dev .modes button:hover { color:#f1e7cf; background:rgba(241,231,207,.08); }
-  #dev .stylerow button.on { background:rgba(241,231,207,.14); color:#f1e7cf; border-color:rgba(241,231,207,.45); }   /* which of morph / fade this playlist item has */
+  .looks .stylerow button.on { background:rgba(241,231,207,.14); color:#f1e7cf; border-color:rgba(241,231,207,.45); }   /* which of morph / fade this playlist item has */
   #dev .devbeta { margin:22px 0 6px; } #dev .devbeta label { flex:1; color:#6f8a6f; }
   .ctl { display:flex; align-items:center; gap:6px; margin:3px 0; }
   /* an INERT row (one this look's camera never reads) hides itself; .ctl's display:flex would otherwise
      out-rank the UA's [hidden] rule, and an empty section takes its heading with it */
-  #dev .ctl[hidden], #dev h2[hidden], #dev details[hidden] { display:none; }
+  #dev .ctl[hidden], #dev h2[hidden], #dev details[hidden], .looks .ctl[hidden] { display:none; }
   .ctl label { flex:0 0 96px; color:#9fb89f; }
   .ctl input[type=range] { flex:1; min-width:0; height:14px; accent-color:#c99; }
   .ctl .val { flex:0 0 46px; text-align:right; color:#e8d9a8; }
@@ -142,7 +142,7 @@
   :is(#dev,#play,#strip,#plist,#wsTabs,.session-panel,#midi,#welcome) :is(button,select,summary,a,input[type=checkbox],input[type=range]) { cursor:pointer; }
   :is(#dev,#play,#strip,#plist,.session-panel,#midi) :is(button,select,input):disabled { cursor:default; }
   :is(#dev,#plist,.session-panel,#midi) :is(input[type=number],input[type=text],textarea) { cursor:text; -webkit-user-select:text; user-select:text; }
-  #dev .arb-status { -webkit-user-select:text; user-select:text; }
+  .looks .arb-status { -webkit-user-select:text; user-select:text; }
   .err { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
          color:#e88; font:14px ui-monospace,monospace; text-align:center; padding:40px; }
 

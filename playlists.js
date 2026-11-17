@@ -283,8 +283,8 @@ const refusedTwin = (twin) => `this is the built-in '${twin}', unchanged — cha
 
 // The upload itself, from what the look is known to be: a new version of your private preset, else a new preset
 // with the version or look it started from as its parent.
-function planFrom(params, known, name, me, commit, cam) {
-  const out = known?.id !== undefined && known.owner === me && editorWritable(known)
+function planFrom(params, known, name, me, commit, cam, asNew = false) {
+  const out = !asNew && known?.id !== undefined && known.owner === me && editorWritable(known)
     ? { kind: "version", path: `/api/presets/${known.id}/versions`, label: `↑ new version of #${known.id}`, body: { name, params } }
     : { kind: "preset", path: "/api/presets", label: "↑ new preset", body: { name, params } };
   if (commit) out.body.komorebi_commit = commit;
@@ -305,7 +305,8 @@ function planFrom(params, known, name, me, commit, cam) {
 // `move` takes the playable item at `at` to playable place `to`; the unavailable items keep their own places. `times` sets one
 // item's dwell or crossfade or both; what it does not name, the item keeps.
 // change: { kind: 'append', preset_id } | { kind: 'remove', at } | { kind: 'replace', at, preset_id } | { kind: 'remove_preset', preset_id }
-//       | { kind: 'move', at, to } | { kind: 'times', at, dwell_s?, crossfade_s? }
+//       | { kind: 'move', at, to } | { kind: 'times', at, dwell_s?, crossfade_s? } | { kind: 'insert_after', at, preset_id }
+// `insert_after` puts a new preset right after the item at `at`, with arboretum's default times, as an append does.
 // A captured target follows a place across reorders. Identical duplicates retain their occurrence only while their count agrees.
 const matchesTarget = (it, target) => !it.unavailable && it.preset_id === target.preset_id && it.dwell_s === target.dwell_s && it.crossfade_s === target.crossfade_s && styleOf(it) === styleOf(target);
 export function itemTarget(items, at) {
@@ -346,6 +347,7 @@ export function itemsAfter(fresh, change) {
     else if (change.kind === "replace") out.push({ preset_id: change.preset_id, ...times });
     else if (change.kind === "style") out.push({ preset_id: it.preset_id, dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, ...styleKey({ style: change.style }) });   // how this item arrives: 'fade' is named, morph is its absence
     else if (change.kind === "times") out.push({ preset_id: it.preset_id, dwell_s: change.dwell_s ?? it.dwell_s, crossfade_s: change.crossfade_s ?? it.crossfade_s, ...styleKey(it) });
+    else if (change.kind === "insert_after") out.push({ preset_id: it.preset_id, ...times }, { preset_id: change.preset_id });
   }
   if (change.kind === "append") out.push({ preset_id: change.preset_id });
   return out;
@@ -422,7 +424,8 @@ export function lookState(state, stored, active, value, live, me, { offline = fa
 
 // An upload's `into` (uploadPlan) as the change itemsAfter applies to a fresh copy of the playlist.
 export function placeChange(into, preset_id) {
-  return into.at === null ? { kind: "append", preset_id } : { kind: "replace", at: into.at, preset_id, ...(into.target ? { target: into.target } : {}) };
+  if (into.at === null) return { kind: "append", preset_id };
+  return { kind: into.after ? "insert_after" : "replace", at: into.at, preset_id, ...(into.target ? { target: into.target } : {}) };
 }
 
 // ---- the links (design §5) -------------------------------------------------------------------------------------
@@ -605,10 +608,27 @@ export function savePlan(view, stored, active, value, live, me, commit, cam, nam
   }
   const twin = builtinTwin(live, BUILTINS);
   if (twin !== null) return { refused: refusedTwin(twin) };
+  return { ...planFrom(live, knownAs(view, stored, active, value), name, me, commit, cam), target: "unc" };
+}
+// What the entry is known to be on arboretum, for a save's provenance: a cloud item's preset, a ★'s origin, a built-in's name.
+function knownAs(view, stored, active, value) {
   const it = cloudId(active) === null ? undefined : cloudItem(view, active, value);
   const star = starName(stored, active, value);
-  const known = it ? { id: it.preset_id, version: it.version, owner: it.owner, ...visibilityOf(it) }
+  return it ? { id: it.preset_id, version: it.version, owner: it.owner, ...visibilityOf(it) }
     : star !== null ? view.origin[star]
     : isBuiltin(BUILTINS.PRESETS, value) ? { parent: `look:${value}` } : undefined;
-  return { ...planFrom(live, known, name, me, commit, cam), target: "unc" };
+}
+
+// Save as new: always a new preset, never a version, its parent the entry it started from. In a folder of yours it is placed
+// right after the item you are on (at the end when you are on none); anywhere else it lands in uncategorized.
+export function saveNewPlan(view, stored, active, value, live, me, commit, cam, name) {
+  const twin = builtinTwin(live, BUILTINS);
+  if (twin !== null) return { refused: refusedTwin(twin) };
+  const out = planFrom(live, knownAs(view, stored, active, value), name, me, commit, cam, true);
+  if (!isFolder(view, active, me)) return { ...out, target: "unc" };
+  const items = cloudItems(view, active), at = cloudItem(view, active, value) ? Number(value) : null;
+  const target = at === null ? null : itemTarget(items, at);   // none on a save still waiting to go up: the new look goes at the end
+  out.target = "folder";
+  out.into = target ? { playlist: Number(cloudId(active)), at, after: true, target } : { playlist: Number(cloudId(active)), at: null };
+  return out;
 }
