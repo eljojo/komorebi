@@ -196,9 +196,10 @@
               npx wrangler deploy
             '';
           };
-          # `nix run .#test [-- bun test args]` — the engine's unit tests, as pages.yml runs them (no browser, about 40 s for the
-          # suite). With no path or name pattern among the arguments it runs every `test/*.test.js` (flags such as `--bail` pass
-          # through); with one or more, only those: `nix run .#test -- test/air.test.js`.
+          # `nix run .#test [-- bun test args]` — the engine's unit tests (no browser). With no path or name pattern among the
+          # arguments it runs every `test/*.test.js` in 4 parallel workers, one isolated process per file (about 16 s; 37 s
+          # sequentially; more workers than 4 gain nothing); flags such as `--bail` pass through. With one or more, only those, in
+          # one process: `nix run .#test -- test/air.test.js`.
           test = pkgs.writeShellApplication {
             name = "test";
             runtimeInputs = [ pkgs.bun ];
@@ -208,7 +209,7 @@
                 case "$a" in -*) ;; *) named=1 ;; esac
               done
               if [ "$named" = 1 ]; then exec bun test "$@"; fi
-              exec bun test ./test/*.test.js "$@"
+              exec bun test --parallel=4 ./test/*.test.js "$@"
             '';
           };
           # `nix run .#arboretum-test [-- vitest args]` — arboretum's typecheck, then its tests in the Workers runtime; each
