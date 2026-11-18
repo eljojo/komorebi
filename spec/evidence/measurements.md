@@ -885,7 +885,7 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
   | sky view, with wood | 7 / 5 / 3 | 0 / 0 / 0 |
 
   Every frame is byte-identical between the two: 24 shipped canopy-morph pairs (1512 frames, wind off and on), 40 season-travel pairs (4920, both), 532 dissolve pairs (65 436, wind off), and the pixel harness's transition, smoke and determinism suites (51 hashes).
-- **What it established:** a morph frame no longer allocates. Its wall time is **unmeasured**: the machine was not quiet.
+- **What it established:** a morph frame no longer allocates. What that is worth in wall time is in "The five changes in wall time", below: inside the spread on most rows.
 - **Date:** 2026-11-18.
 
 ### A route's programs, the second time
@@ -945,6 +945,30 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 
   Every frame is byte-identical between the two: 40 travel pairs, 198 scene-dissolve pairs and 24 canopy-morph pairs, wind off and on.
 - **What it established:** the scene's grove is the grove the landing would grow, but for the springs, which the landing copies from the scene either way.
+- **Date:** 2026-11-18.
+
+### The five changes in wall time
+
+- **What was measured:** the wall time of the frames the five entries above count, on the engine before them and on the engine with all five. The five were not timed one by one.
+- **On:** an M4 (headless Chromium on Metal), 1280×720, a pumped clock at 60 fps, `auto_quality` and `adaptive_motion` off but for the look switch, wind off but where said. A frame is a pump, `gl.finish()`, a one-pixel read-back and `gl.finish()`, timed on the real clock. Nine runs of each engine, interleaved, each in a browser of its own; a cell is the median (lowest–highest) in ms, and a difference counts when the two ranges do not overlap. The machine carried a background load of about 1.5. No shipped faithful look with wood has 50 000 leaves, so the faithful and sky-view morphs are a shipped look with `foliage_density` raised on both ends and `branch_angle_deg` 45 on the target.
+- **Result, the frames that moved:**
+
+  | frame | before | after |
+  |---|---|---|
+  | a faithful grove morph's landing (`park 1, the scene`, 59 400 leaves, with wood), calm | 51.7 (50.8–53.0) | 38.1 (37.7–43.1) |
+  | the same, wind on | 52.1 (50.2–57.9) | 39.8 (38.2–41.5) |
+  | grove travel's landing, park fall to park (48 998 leaves landing) | 40.3 (40.0–44.1) | 19.7 (19.5–20.4) |
+  | grove travel's landing, the way back | 122.7 (111.1–127.3) | 30.3 (29.6–31.5) |
+  | a litter ascent, the call and its first frame | 178.4 (175.1–183.7) | 91.4 (90.1–110.4) |
+  | a litter descent, the call and its first frame | 182.4 (180.4–188.8) | 157.3 (154.5–165.6) |
+  | a litter descent's landing | 125.0 (123.8–131.8) | 64.3 (64.0–68.8) |
+  | a look switch, `forest floor` to `curtain 2`, the call through its first frame, governor at rest | 28.9 (28.3–29.9) | 21.3 (20.1–22.1) |
+  | the same, governor stepped down to quality 0.44 | 32.5 (31.3–33.9) | 25.7 (24.8–26.4) |
+
+  The routes are their second run there and back, 181 frames each; the litter flights measured the same from the other end.
+- **Result, the frames that did not:** a grove morph's ordinary frame is 0.3 to 0.6 ms shorter (39.1 to 38.5 faithful with wood, 12.1 to 11.8 layered at 44 550 leaves, 31.0 to 30.6 sky view with wood), outside the spread on three of five rows and 1 to 2.5% on all. Its longest frame, the first, is unchanged (58.3 against 58.2). A scene dissolve's first frame is inside the spread on both pairs timed (32.6 against 31.6 at 6 138 leaves; 25.3 against 20.2 at 44 550, the ranges overlapping). Leaf travel's second run is inside the spread at its start, its landing and its sum, plain and patch by patch. A litter ascent's landing is unchanged (47.1 against 46.8). Five of the six look switches timed are inside the spread, at rest and stepped down; one of them (`canopy 2` to `afternoon 6`, stepped down) ran 37.8 before in most runs and 25.7 after in most, with both engines reaching both values. The sum of a whole route's frames is inside the spread for every route (0 to 2% shorter over about 8 s of pumped frames).
+- **What it established:** what the five buy is on single frames: a landing loses a bake or a grown grove (12 to 92 ms), and a litter flight's start loses a grown grove (25 to 87 ms). Making no GL objects in a morph frame is worth half a millisecond at most on this GPU, and keeping a route's programs is not visible in a second run's first frame here.
+- **Still open:** which change shortened the `forest floor` to `curtain 2` switch from a governor at rest (the governor change does not act there); a faithful look at a 2048 bake stepped below the knee, which the count above describes and no timed pair isolated; any GPU but this one.
 - **Date:** 2026-11-18.
 
 ### The midpoint grove against the look loaded fresh
