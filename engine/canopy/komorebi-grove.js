@@ -284,10 +284,13 @@ export function makeGrove(hub){
   // (grove-build.test.js holds both properties). buildGrove is the two in a row, attached to this hub: the grove attached before it is detached, not freed, because
   // the engine's installGrove frees the grove it replaces, whole, in one place. A crossfade's incoming grove is grown and uploaded without attaching, and stays
   // detached until the swap installs it.
+  // THE REGROW IN PLACE. The grove a regrow replaces is about to be freed, and a grove morph regrows every frame with the same layout, so the new grove TAKES the
+  // old one's GL objects (uploadGrove's `from`) and writes its own data into them: the old value is left owning only what the new one had no use for, which
+  // installGrove's free then deletes. The grove VALUE is still new per regrow: its identity is what the carpet, the tree preview and the tests read as "regrew".
   function buildGrove(prevHier, opts){
-    const g = uploadGrove(growGrove(prevHier, opts));
-    detachGrove(hub, attachedGrove(hub));
-    return attachGrove(hub, g);
+    const G = growGrove(prevHier, opts);
+    const old = detachGrove(hub, attachedGrove(hub));
+    return attachGrove(hub, uploadGrove(G, old));
   }
   function growGrove(prevHier, { keepSeason = false, densityCapacity = null } = {}){
     const cacheDensity = densityCapacity !== null && densityEligible(params);
@@ -861,10 +864,21 @@ export function makeGrove(hub){
 
   // The other half: the grown grove onto the GPU, as a DETACHED grove holding its own state (g.own; see ONE GROVE AT A TIME IS ATTACHED). It reads `G` and
   // nothing else, so the live params may be another look's by now, and it writes and frees nothing of any hub's.
-  function uploadGrove(G){
+  // `from`, a detached grove about to be freed (THE REGROW IN PLACE): its GL objects are taken where they fit — a buffer is re-specified under its own name,
+  // so a vertex array kept with it keeps its pointers; a texture of the same size is rewritten, the leaf outline's not at all when it is the same outline.
+  // Whatever is not taken stays `from`'s, for its free.
+  function uploadGrove(G, from = null){
     const { hier, shape, nClusterTotal } = G;
+    const was = from ? takeGL(from) : null;
     // ---- one instanced VAO per depth layer from its accumulated leaves ----
-    const buildLayerVAO = (arr) => {
+    const buildLayerVAO = (arr, l) => {
+      const kept = was?.layers[l];
+      if(kept){
+        was.layers[l] = null;
+        gl.bindBuffer(gl.ARRAY_BUFFER,kept.buf);
+        gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
+        return { vao: kept.vao, count: arr.length/17, buf: kept.buf };
+      }
       const buf=gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER,buf);
       gl.bufferData(gl.ARRAY_BUFFER,arr,gl.STATIC_DRAW);
@@ -887,7 +901,15 @@ export function makeGrove(hub){
 
     // ---- FAITHFUL path (spec/model/canopy.md): one combined VAO of EVERY leaf, each carrying its continuous floor-height (attr 5),
     // for the per-sample geometry bake. Built always (cheap); only DRAWN when faithful_canopy is on. ----
-    {
+    if(was?.faith.vao){
+      const F = was.faith, arr = G.faithArr;
+      gl.bindBuffer(gl.ARRAY_BUFFER, F.buf); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, F.pivotBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.pivot), gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, F.sideBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.side), gl.STATIC_DRAW);
+      faith.vao = F.vao; faith.buf = F.buf; faith.pivotBuf = F.pivotBuf; faith.sideBuf = F.sideBuf; faith.count = arr.length/18;
+      faith.pivot = G.pivot; faith.pivotOn = G.pivot.some((w) => w > 0);
+      F.vao = F.buf = F.pivotBuf = F.sideBuf = null;
+    } else {
       const arr = G.faithArr;
       const buf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -918,8 +940,14 @@ export function makeGrove(hub){
     // branch quads were retired because layer quantization shattered continuous lines at a low sun.)
 
     // ---- (re)build the per-clump data textures sampled by the bake VS ----
-    const makeDataTex = (old, data, rows = 1) => {
-      if(old) gl.deleteTexture(old);
+    const nCluster = Math.max(1,nClusterTotal);
+    const makeDataTex = (field, data, rows = 1) => {
+      if(was?.[field] && was.nCluster === nCluster){
+        const tx = was[field]; was[field] = null;
+        gl.bindTexture(gl.TEXTURE_2D, tx);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, nCluster, rows, gl.RGBA, gl.FLOAT, data);
+        return tx;
+      }
       const tx = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tx);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, Math.max(1,nClusterTotal), rows, 0, gl.RGBA, gl.FLOAT, data);
@@ -929,11 +957,18 @@ export function makeGrove(hub){
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       return tx;
     };
-    const clusterTex     = makeDataTex(null, G.clusterRows, 3);
-    const clusterGeomTex = makeDataTex(null, hier.clusterGeom);      // static geometry
+    const clusterTex     = makeDataTex('clusterTex', G.clusterRows, 3);
+    const clusterGeomTex = makeDataTex('clusterGeomTex', hier.clusterGeom);      // static geometry
     // the outline's own texture, R16F: LEAF_SAMPLES θ across, one row per variant down. θ REPEATs (±π are one place), the variants CLAMP (a read between two rows is no leaf),
     // LINEAR in θ and no mips — a profile is read at its own resolution. 1×1 for the ellipse: bound and never sampled, because the shader's gate is a uniform branch.
+    // The outlines are memoised (leafShape), so the same species and seed is the same object, and its texture is kept as it is.
     const leafTex = (() => {
+      const old = was?.leafTex;
+      if(old && (was.shape === shape || shape && was.shape?.rows === shape.rows)){
+        was.leafTex = null;
+        if(was.shape !== shape){ gl.bindTexture(gl.TEXTURE_2D, old); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, LEAF_SAMPLES, shape.rows, gl.RED, gl.FLOAT, shape.data); }
+        return old;
+      }
       const tx = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, tx);
       if(shape) gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, LEAF_SAMPLES, shape.rows, 0, gl.RED, gl.FLOAT, shape.data);
@@ -951,26 +986,35 @@ export function makeGrove(hub){
       const segRest = G.faith.rest;
       faith.segRest = segRest; faith.segCount = segRest.length;
       faith.segArr = new Float32Array(segRest.length*9);   // 9 floats/seg (last: marginal-tree coverage): iSeg(ax,ay,bx,by) + iSegH(ha,hb,ra,rb); positions refilled per bake with the sway
-      const buf = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      gl.bufferData(gl.ARRAY_BUFFER, faith.segArr, gl.DYNAMIC_DRAW);
-      const vao = gl.createVertexArray();
-      gl.bindVertexArray(vao);
-      gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      const S=36;
-      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
-      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
-      gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
-      gl.bindVertexArray(null);
-      faith.segVAO=vao; faith.segBuf=buf;
+      const kept = was?.faith;
+      if(kept?.segVAO){
+        gl.bindBuffer(gl.ARRAY_BUFFER, kept.segBuf); gl.bufferData(gl.ARRAY_BUFFER, faith.segArr, gl.DYNAMIC_DRAW);
+        faith.segVAO = kept.segVAO; faith.segBuf = kept.segBuf; kept.segVAO = kept.segBuf = null;
+      } else {
+        const buf = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        gl.bufferData(gl.ARRAY_BUFFER, faith.segArr, gl.DYNAMIC_DRAW);
+        const vao = gl.createVertexArray();
+        gl.bindVertexArray(vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+        gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+        const S=36;
+        gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
+        gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
+        gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,1,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
+        gl.bindVertexArray(null);
+        faith.segVAO=vao; faith.segBuf=buf;
+      }
     }
     // the SKY VIEW's layer-stamped wood: each layer's slice of it (start, count) and the segments (their element objects are faith.segRest's: refreshWood reaches both)
     const sky = { segVAO: null, segBuf: null, segRest: G.sky.rest, segArr: new Float32Array(G.sky.rest.length*9), start: Array.from(G.sky.start), count: Array.from(G.sky.count) };
     {
-      const segRest = sky.segRest;
-      if(segRest.length){
+      const segRest = sky.segRest, kept = was?.sky;
+      if(segRest.length && kept?.segVAO){
+        gl.bindBuffer(gl.ARRAY_BUFFER, kept.segBuf); gl.bufferData(gl.ARRAY_BUFFER, sky.segArr, gl.DYNAMIC_DRAW);
+        sky.segVAO = kept.segVAO; sky.segBuf = kept.segBuf; kept.segVAO = kept.segBuf = null;
+      } else if(segRest.length){
         sky.segBuf = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
         gl.bufferData(gl.ARRAY_BUFFER, sky.segArr, gl.DYNAMIC_DRAW);
@@ -989,6 +1033,8 @@ export function makeGrove(hub){
     const grove = { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter: G.litter, reach: G.reach, key: G.key };   // key: the structure it was grown for (see THE KEY)
     grove.own = { faith, occ, sky };   // its state, while it is detached
     grove.host = null;                 // the hub it is attached to
+    grove.nCluster = nCluster;         // the width its data textures were made at: a regrow in place rewrites them only at the same width
+    if(was) giveBack(from, was);
     grove.wood = G.wood;
     if(G.vary) grove.scaleMax = G.scaleMax;   // the largest shift leaf_variety gave a leaf: the faithful cast frame's pad grows by it (komorebi-bake.js); absent at the gate
     if(G.season) grove.season = G.season;
@@ -997,6 +1043,22 @@ export function makeGrove(hub){
       reseasonGrove(grove, G.under);
     }
     return grove;
+  }
+
+  // THE REGROW IN PLACE's two halves: every GL object of a detached grove moved out of it, and what the new grove did not take handed back, for the grove's free.
+  function takeGL(g){
+    const F = g.own.faith, S = g.own.sky;
+    const was = { layers: [...g.layerVAO], clusterTex: g.clusterTex, clusterGeomTex: g.clusterGeomTex, leafTex: g.leafTex, shape: g.shape, nCluster: g.nCluster,
+                  faith: { vao: F.vao, buf: F.buf, pivotBuf: F.pivotBuf, sideBuf: F.sideBuf, segVAO: F.segVAO, segBuf: F.segBuf },
+                  sky: { segVAO: S.segVAO, segBuf: S.segBuf } };
+    g.layerVAO = []; g.clusterTex = g.clusterGeomTex = g.leafTex = null;
+    F.vao = F.buf = F.pivotBuf = F.sideBuf = F.segVAO = F.segBuf = null; S.segVAO = S.segBuf = null;
+    return was;
+  }
+  function giveBack(g, was){
+    g.layerVAO = was.layers.filter(Boolean);
+    g.clusterTex = was.clusterTex; g.clusterGeomTex = was.clusterGeomTex; g.leafTex = was.leafTex;
+    Object.assign(g.own.faith, was.faith); Object.assign(g.own.sky, was.sky);
   }
 
   // Is this grove the one attached to this hub, and does its cache still describe the params? (see the header: THE KEY)

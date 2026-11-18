@@ -389,7 +389,7 @@ test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exact
 
 // ---- the engine: apply('season') decides fast or full -------------------------------------------------------------------
 function engineRig(over) {
-  const counts = { createBuffer: 0, createVertexArray: 0, bufferData: 0, draws: 0 };
+  const counts = { createBuffer: 0, createVertexArray: 0, bufferData: 0, groveUploads: 0, draws: 0 };
   globalThis.requestAnimationFrame = () => 0;
   const gl = new Proxy({}, {
     get(t, name) {
@@ -402,7 +402,8 @@ function engineRig(over) {
       if (name === "createBuffer") return () => { counts.createBuffer++; return { data: null }; };
       if (name === "createVertexArray") return () => { counts.createVertexArray++; return {}; };
       if (name === "bindBuffer") return (_, b) => { t.cur = b; };
-      if (name === "bufferData") return (_, d) => { counts.bufferData++; if (t.cur) t.cur.data = d; };
+      if (name === "STATIC_DRAW") return name;
+      if (name === "bufferData") return (_, d, usage) => { counts.bufferData++; if (usage === "STATIC_DRAW") counts.groveUploads++; if (t.cur) t.cur.data = d; };
       if (name === "drawArraysInstanced" || name === "drawArrays") return () => { counts.draws++; };
       return () => ({});
     },
@@ -412,7 +413,9 @@ function engineRig(over) {
   eng.setPaused(true);
   return { eng, counts };
 }
-const built = (counts) => counts.createBuffer + counts.createVertexArray;
+// A grove built: its leaves uploaded whole, which only uploadGrove does with STATIC_DRAW (a re-season rewrites them DYNAMIC_DRAW). Not the buffers made: a regrow takes the
+// GL objects of the grove it replaces (komorebi-grove.js, THE REGROW IN PLACE) and makes none.
+const built = (counts) => counts.groveUploads;
 
 // GLSL constructors fill columns: evaluate the shader's own coefficients instead of assuming its rotation sign.
 function shaderTurn(source, cosine, sine, x, y, angle) {
@@ -557,7 +560,7 @@ test("apply('season'): the first builds with the cache (a full path); a season-s
     b = built(counts);
     Object.assign(eng.params, change);
     expect(eng.apply("season"), `${JSON.stringify(change)}: the cache was used`).toBe("reseason");
-    expect(built(counts), `${JSON.stringify(change)}: the fast path builds no buffer`).toBe(b);
+    expect(built(counts), `${JSON.stringify(change)}: the fast path builds no grove`).toBe(b);
   }
 });
 
@@ -628,7 +631,7 @@ test("a tint-only grove morph builds its lazy record once, then retains buffers 
           cached = { grove: eng.grove(), buffers: built(counts) };
         } else {
           expect(eng.grove()).toBe(cached.grove);
-          expect(built(counts), 'no new buffers after the first tick').toBe(cached.buffers);
+          expect(built(counts), 'no build after the first tick').toBe(cached.buffers);
         }
       }
       expect(eng.trans.active).toBe(false);
@@ -654,7 +657,7 @@ test("every season key's editor row requests the season scope, and a move of it 
       expect(eng.params[key], `${key}: the move changes it`).not.toBe(MOVE[key]);
       eng.params[key] = MOVE[key];
       expect(eng.apply(PARAMS[key].row.rebuild), key).toBe('reseason');
-      expect(built(counts), `${key}: no buffer is made`).toBe(last);
+      expect(built(counts), `${key}: nothing is built`).toBe(last);
       const B = rig({ ...eng.params });
       compare(`${key}, drop_after_turn ${drop_after_turn}`, snapshot(eng, eng.grove()), snapshot(B, B.G.buildGrove(null)));
     }

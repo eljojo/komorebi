@@ -17,7 +17,7 @@ const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture
 
 function makeLedger() {
   let seq = 0, lost = false;
-  const live = new Set(), deleted = new Set(), dead = new Set(), faults = [];
+  const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {};
   const at = { array: null, vao: null, fb: null, prog: null, rb: null, unit: "TEXTURE0", units: {} };
   const label = (o) => `${o.kind} #${o.id}`;
   const fault = (m) => { if (!faults.includes(m)) faults.push(m); };   // each fault once, however many frames repeat it
@@ -26,7 +26,7 @@ function makeLedger() {
     if (deleted.has(o)) fault(`${label(o)} ${how} after its deletion`);
     else if (dead.has(o)) fault(`${label(o)} ${how} after its context was lost`);
   };
-  const make = (kind) => () => { const o = { kind, id: ++seq }; if (kind === "vertex array") o.attrs = {}; live.add(o); return o; };
+  const make = (kind) => () => { const o = { kind, id: ++seq }; if (kind === "vertex array") o.attrs = {}; live.add(o); made[kind] = (made[kind] ?? 0) + 1; return o; };
   // GL's own rule: deleting an object unbinds it from the context's binding points and detaches a buffer from the BOUND vertex array only.
   const remove = (o) => {
     if (!o) return;
@@ -85,6 +85,7 @@ function makeLedger() {
     lose() { lost = true; for (const o of live) dead.add(o); live.clear(); Object.assign(at, { array: null, vao: null, fb: null, prog: null, rb: null, units: {} }); },
     restore() { lost = false; },
     alive: () => [...live],
+    made: () => ({ ...made }),   // every object created so far, by kind
     // what is left alive, by kind; shaders aside: the engine links each into its program and lets the program hold it
     leaks: () => { const n = {}; for (const o of live) if (o.kind !== "shader") n[o.kind] = (n[o.kind] ?? 0) + 1; return n; },
   };
@@ -195,5 +196,21 @@ for (const [name, from, to, opts] of ROUTES) {
     start(R, to, name, opts); R.pump(20);
     R.lose(); R.pump(2); R.restore(); R.pump(3);
     expect(R.eng.trans.active, "the restore lands the route").toBe(false);
+  });
+}
+
+// A grove morph regrows every frame with one layout: the regrow takes the GL objects of the grove it replaces (komorebi-grove.js, THE REGROW IN PLACE),
+// so a morph frame makes no buffer, vertex array or texture, with the faithful leaves and wood, the layers, and the sky view's wood each in play.
+const made = (R) => { const m = R.L.made(); return ["buffer", "vertex array", "texture"].map((k) => m[k] ?? 0); };
+for (const [name, look] of [["faithful, with wood", { ...FAITHFUL, branch_tau: 2 }], ["layered", LAYERED], ["sky view, with wood", { ...LAYERED, sky_view: true, branch_tau: 2 }]]) {
+  scenario(`a grove morph frame makes no GL object: ${name}`, look, (R) => {
+    R.eng.transitionTo({ ...look, leaf_size_m: look.leaf_size_m * 1.5 }, { duration: 1 });
+    expect(R.eng.trans.canopyMorph && !R.eng.trans.seasonMorph && !R.eng.trans.densityMorph, "the pair regrows its grove each frame").toBe(true);
+    R.pump();
+    const before = made(R), g = R.eng.grove();
+    R.pump(5);
+    expect(R.eng.grove(), "the grove regrew").not.toBe(g);
+    expect(made(R), "buffers, vertex arrays and textures made over five morph frames").toEqual(before);
+    R.land();
   });
 }

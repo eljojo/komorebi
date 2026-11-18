@@ -184,6 +184,8 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
   function endSeasonTravel(){
     if(!s)return;
     const pending=s.pending;
+    // The journey's attribute leaves the faithful vertex array with its buffer: a regrow in place (komorebi-grove.js) keeps that vertex array for the next grove.
+    if(faith.vao){gl.bindVertexArray(faith.vao);gl.disableVertexAttribArray(7);gl.bindVertexArray(null);}
     gl.deleteBuffer(s.buf);
     if(s.res){gl.deleteTexture(s.cast.faithTex);gl.deleteTexture(s.cast.faithScratch);}
     s=null;trans.travelField=null;trans.castHeld=false;

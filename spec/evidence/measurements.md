@@ -872,6 +872,22 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **What it established:** with growth this fast, a grove grown on a thread of its own would take about 8 ms off a dissolve's first frame of about 50, for a worker the bundles would have to carry and a synchronous path the video export would still need.
 - **Date:** 2026-11-15.
 
+### The regrow in place
+
+- **What was measured:** the GL objects a grove morph frame makes, before and after a regrow took the GL objects of the grove it replaces; every frame of the routes that regrow compared byte for byte between the two engines.
+- **On:** the objects: `gl-ledger.test.js`'s ledger GL, small groves, five morph frames. The frames: an M4 (Chromium on Metal), 480×270, a pumped clock at 60 fps, `auto_quality` and `adaptive_motion` off, wind off and on.
+- **Result:**
+
+  | grove morph | made a frame, before (buffers / vertex arrays / textures) | after |
+  |---|---|---|
+  | faithful, with wood | 6 / 4 / 3 | 0 / 0 / 0 |
+  | layered | 6 / 4 / 3 | 0 / 0 / 0 |
+  | sky view, with wood | 7 / 5 / 3 | 0 / 0 / 0 |
+
+  Every frame is byte-identical between the two: 24 shipped canopy-morph pairs (1512 frames, wind off and on), 40 season-travel pairs (4920, both), 532 dissolve pairs (65 436, wind off), and the pixel harness's transition, smoke and determinism suites (51 hashes).
+- **What it established:** a morph frame no longer allocates. Its wall time is **unmeasured**: the machine was not quiet.
+- **Date:** 2026-11-18.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).
