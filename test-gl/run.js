@@ -168,9 +168,10 @@ const INVARIANTS = [
   { name: 'branch_tau 0 == absent (layer path)', preset: 'memories', a: {}, b: { branch_tau: 0 } },
   // Autumn senescence (spec/model/season.md). The shipped looks sit at phenology 0.5, below turn_start, so no leaf has begun to turn
   // and the whole pigment family — capacity, clock, vein share — has to be dead code: not "close", the same bytes.
+  // 'memories' sits at phenology 0.15, inside the spring (leaf_out_end 0.14 by default), so these two hold it with no spring: what is left to tell 0.15 from 0.5 is the turn alone.
   { name: 'pigment family inert at summer (layer path)', preset: 'memories',
-    a: {}, b: { phenology: 0.5, anthocyanin: 1, tannin: 1, turn_span: 0.3, wall_fraction: 0 } },
-  { name: 'phenology 0.5 == absent (layer path)', preset: 'memories', a: {}, b: { phenology: 0.5 } },
+    a: { leaf_out_end: 0 }, b: { leaf_out_end: 0, phenology: 0.5, anthocyanin: 1, tannin: 1, turn_span: 0.3, wall_fraction: 0 } },
+  { name: 'phenology 0.5 == absent (layer path)', preset: 'memories', a: { leaf_out_end: 0 }, b: { leaf_out_end: 0, phenology: 0.5 } },
   // The sieve tier is not gated by wall_fraction alone: at s_j = 0 wall and cell are one tissue, so a vein share
   // must still change nothing (it is what lets a species bundle carry one without touching a summer look)...
   { name: 'wall_fraction at summer == absent (layer path)', preset: 'memories', a: {}, b: { wall_fraction: 0.3, anthocyanin: 0.8 } },
@@ -393,13 +394,14 @@ const INVARIANTS = [
   { name: 'fill_scatter is inert once leaf_diffuse is up (faithful path)', preset: 'park 1', rebake: true,
     a: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0 }, b: { canopy_fill: 1, leaf_diffuse: 0.5, fill_scatter: 0.8 } },
   // THE SEASON MACRO (macros.js). Its stops are recipes lifted from the looks they sit on, so each is those looks' own frame to the byte —
-  // the pigment capacities and the phenology it writes are inert below turn_start, and the looks that stamp a phenology (0.15, 0.40) only
-  // for its probe's sake are the same bytes as the absent one. A stop that drifted, or a stamp that leaked into a frame, fails here.
+  // the pigment capacities and the phenology it writes are inert below turn_start, and 'morning 1', which stamps a phenology (0.40) only
+  // for its probe's sake, is the same bytes as the absent one. A stop that drifted, or a stamp that leaked into a frame, fails here.
   { name: 'season macro t 0 == memories', shipped: true, preset: 'memories', a: {}, b: { ...macroParams('season', 0) } },
   { name: 'season macro t 0.35 == morning 1', shipped: true, preset: 'morning 1', a: {}, b: { ...macroParams('season', 0.35) } },
   { name: 'season macro t 0.55 == afternoon 4', shipped: true, preset: 'afternoon 4', a: {}, b: { ...macroParams('season', 0.55) } },
   { name: 'season stamp: morning 1 phenology 0.40 == absent', preset: 'morning 1', a: {}, b: { phenology: 0.5 } },
-  { name: 'season stamp: memories phenology 0.15 == absent', preset: 'memories', a: {}, b: { phenology: 0.5 } },
+  // 'memories' at 0.15 is no stamp any more: it sits in the spring and takes it (spec/contracts/looks.md, "Leaf-out, by default"), so its frame is NOT the summer one
+  { name: 'memories at phenology 0.15 takes the spring: not the look at 0.5', preset: 'memories', differ: true, a: {}, b: { phenology: 0.5 } },
   // ...and the other half: the fall end is a real switch (else stops that never reached the leaves would pass every row above)
   { name: 'season macro t 1 changes memories', preset: 'memories', differ: true, a: {}, b: { ...macroParams('season', 1) } },
   // THE SLIDER IS CONTINUOUS. A drag moves t by a hair per input event; the frame must move by a hair. Measured on afternoon 4 (a step of
@@ -575,12 +577,13 @@ const INVARIANTS = [
   // THE ASPECT LAW (spec/model/leaf.md, leaf diversity): an outline takes the look's leaf AREA, never its aspect (A = B0 = size/(2√aspect)). It is not a knob, so there is no a/b to hold byte-identical: the proof is
   // CONTINUITY — a maple at the look's 1.75 IS a maple at aspect 1 and leaf_size_m/√1.75 to a float's last bit (before the law it was a squashed leaf, far off) — and a differ row that the ellipse is still
   // stretched (the law is the outline's alone). The faithful cast is not a row of these: its pad reads leaf_size_m, so the two frames would be framed differently.
+  // Nor is a look with leaves on shoots (shoot_leaves, tilt_light: 'memories' takes both by default): a shoot is measured in leaf_size_m, so the two sides would hang their leaves in different places. Those rows hold both at 0.
   { name: 'the aspect law: a maple at aspect 1.75 is a maple at 1 and leaf_size_m/√1.75 (layer: memories)', preset: 'memories', near: 2,
-    a: { leaf_shape: 'maple', leaf_aspect: 1.75 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75) } },
+    a: { leaf_shape: 'maple', leaf_aspect: 1.75, shoot_leaves: 0, tilt_light: 0 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75), shoot_leaves: 0, tilt_light: 0 } },
   { name: 'the aspect law: a maple at aspect 1.75 is a maple at 1 and leaf_size_m/√1.75 (layer: afternoon 7)', preset: 'afternoon 7', near: 2,
     a: { leaf_shape: 'maple', leaf_aspect: 1.75 }, b: { leaf_shape: 'maple', leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75) } },
   { name: 'the aspect law: a beech at aspect 1.75 is a beech at 1 and leaf_size_m/√1.75 (layer: memories)', preset: 'memories', near: 2,
-    a: { leaf_shape: 'beech', leaf_aspect: 1.75 }, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75) } },
+    a: { leaf_shape: 'beech', leaf_aspect: 1.75, shoot_leaves: 0, tilt_light: 0 }, b: { leaf_shape: 'beech', leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75), shoot_leaves: 0, tilt_light: 0 } },
   { name: "the aspect law is the outline's: an ellipse at 1.75 is still not one at 1 and leaf_size_m/√1.75 (memories)", preset: 'memories', differ: true,
     a: { leaf_aspect: 1.75 }, b: { leaf_aspect: 1, leaf_size_m: 0.1/Math.sqrt(1.75) } },
   // ...and the canopy is as full as the look had it: a maple at the look's own aspect (no hand-set 1, no hand-set size) holds its mean level, as the ellipse of the same leaf area did above
@@ -928,7 +931,6 @@ const RIM_CHECKS = [
   { name: 'canopy 1, leaf_diffuse 0, edge_area on (the P0b proxy on the mixture)', preset: 'canopy 1', over: { leaf_diffuse: 0, edge_area: true } },
 ];
 const RIM_MAX = 1.1, RIM_MIN_TEXELS = 300;
-// TODO revisit all four probes: untouched 14a97c2 also fails to compile (2026-11-07). __haloCheck embeds GLSL_LAYER_FIELD without uCanopyOpen's transport declaration.
 const HALO_CHECKS = [
   { name: 'afternoon 7, leaf_diffuse 0.95 (the layer floor, blue τ 6.9)', preset: 'afternoon 7', over: { leaf_diffuse: 0.95 } },
   { name: 'memories, leaf_diffuse 0.95 (the layer floor)', preset: 'memories', over: { leaf_diffuse: 0.95 } },

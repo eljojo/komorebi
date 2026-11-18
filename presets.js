@@ -594,7 +594,8 @@ export const PRESETS = {
   }),
   // 'memories' — the north-star look of spec/experience.md: a sparse early-spring grove (foliage 0.45, so individual leaves
   // still matter), clear sky (cloud 0), open branching (children 6, length 0.91, pitch 45°), bright exposure.
-  // (phenology 0.15 here and 0.40 on 'morning 1' are stamps for the season macro's probe: both sit below turn_start, where every reader of phenology is gated, so the frames are the same bytes)
+  // (phenology 0.15 puts it in the spring, which it takes: its leaves are mid-greening (spec/contracts/looks.md, "Leaf-out, by default"). 0.40 on 'morning 1' is a stamp for
+  // the season macro's probe: past the spring and below turn_start, where every reader of phenology is gated, so that frame is the same bytes)
   'memories': Object.assign({}, LOOK_DEFAULTS, {
     "phenology": 0.15,
     "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
