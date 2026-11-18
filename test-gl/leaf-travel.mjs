@@ -86,7 +86,10 @@ try{
     // The rim: the mean RGB of the frame's left edge (x 0..2) about the middle row, where the hood removes nearly all the light.
     const rim=()=>{let s=0,n=0;for(let y=80;y<100;y++)for(let x=0;x<3;x++)for(let k=0;k<3;k++){s+=last[(y*320+x)*4+k];n++;}return s/n;};
     const out={};
-    make=createBase;const before=fresh(H);make=create;const now=fresh(H);
+    // The engine before the fade hangs and casts leaves only the old way: the settled look is held to it with leaves off their shoots,
+    // untilted by their light and cast as plan footprints (shoot_leaves, tilt_light and tilt_shadow 0, the old placement and cast to the bit).
+    const Hold={...H,shoot_leaves:0,tilt_light:0,tilt_shadow:0};
+    make=createBase;const before=fresh(Hold);make=create;const now=fresh(Hold);
     out.settledHooded=diff(now,before);
     for(const engine of ['base','now']){
       make=engine==='base'?createBase:create;
