@@ -7,7 +7,8 @@
 // transmittance (Jensen), a scatter term that out-glows the light that landed on the leaves.
 // ============================================================================
 import { test, expect } from "bun:test";
-import { DEFAULTS } from "../komorebi.js";
+import { DEFAULTS, create } from "../komorebi.js";
+import { PRESETS } from "../presets.js";
 import { hash3, DEG } from "../engine/komorebi-math.js";
 import { sunDirection } from "../engine/light/komorebi-light.js";
 import { FILL_GOLDEN, FILL_TILE, fillTile, fillDirections, fillRays, fillTurns, skyRayRef, fillRef, texelMix, slabUnder, groundRef, undersideRef, bounceRef } from "../engine/transport/komorebi-fill.js";
@@ -756,4 +757,42 @@ test("the bake: ground_bounce 0 runs the fill's one pass and allocates nothing; 
   expect(fill.bounce).toBeNull();
   params.ground_g = 0.6; litter.passes = 4;
   expect(step(), "shut: the ground and the carpet are not the fill's").toBe(0);
+});
+
+// The bounce reads the carpet, so on a look with fallen leaves the fill must be baked after the carpet or it is baked again a frame later.
+// The whole engine on a stub GL; a fullscreen triangle is one pass of the fill's bake (or the frame's one transport pass).
+test("an engine's first frame bakes the fill over the carpet it will keep: with the ground bounce on and leaves fallen, the second frame bakes nothing", () => {
+  let fullscreen = 0, instanced = 0;
+  const gl = new Proxy({}, { get(_t, name) {
+    if (typeof name !== "string") return undefined;
+    if (name === "FRAMEBUFFER_COMPLETE") return 0x8cd5;
+    if (name === "getParameter") return () => 4096;
+    if (name === "getShaderParameter" || name === "getProgramParameter") return () => true;
+    if (name === "getExtension") return () => ({ loseContext() {} });
+    if (name === "checkFramebufferStatus") return () => 0x8cd5;
+    if (name === "drawArrays") return () => { fullscreen++; };
+    if (name === "drawArraysInstanced") return () => { instanced++; };
+    return () => ({});
+  } });
+  const savedWindow = globalThis.window, savedRaf = globalThis.requestAnimationFrame;
+  globalThis.window = { devicePixelRatio: 1 };
+  try {
+    let next, now = 1000;
+    globalThis.requestAnimationFrame = (cb) => { next = cb; return 0; };
+    const canvas = { getContext: () => gl, addEventListener() {}, removeEventListener() {}, clientWidth: 64, clientHeight: 36, width: 64, height: 36 };
+    const look = { ...PRESETS.montebello, wind_strength: 0, weather_variability: 0, drift_auto: false, auto_quality: false, adaptive_motion: false };
+    expect(look.litter, "leaves have fallen").toBeGreaterThan(0);
+    expect(look.ground_bounce, "the bounce is on").toBeGreaterThan(0);
+    const eng = create(canvas, { params: look });
+    const frames = [];
+    for (let f = 0; f < 4; f++) {
+      const d = fullscreen, i = instanced;
+      now += 1000 / 60; next(now);
+      frames.push([fullscreen - d, instanced - i]);
+    }
+    expect(frames[0][1], "the first frame bakes the carpet").toBeGreaterThan(0);
+    expect(frames.slice(1).map((c) => c[1]), "and no later frame does").toEqual([0, 0, 0]);
+    expect(frames.slice(1).map((c) => c[0]), "a settled frame is the transport pass alone").toEqual([1, 1, 1]);
+    eng.dispose();
+  } finally { globalThis.window = savedWindow; globalThis.requestAnimationFrame = savedRaf; }
 });

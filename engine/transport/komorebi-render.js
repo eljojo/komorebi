@@ -35,8 +35,8 @@ export function makeRender(hub){
   function drawFrameInto(fbo, w, h){
     // Seasonal travel owns both visible casts, including the native handoff's authored edge law.
     if(!hub.trans.castHeld&&hub.trans.travelField?.weight!==1)hub.refreshFaith();   // the faithful cast has k baked in (spec/model/leaf.md): current for THIS frame's leaf_diffuse, or untouched
-    hub.refreshFill();   // the sky fill (spec/model/fill.md) is current for THIS frame's sun and sky, or not wanted — before any target is bound, because a re-bake binds its own
-    hub.refreshLitter(); // the litter carpet (spec/model/season.md) is current for THIS grove, or nothing has fallen / the gate is shut — same reason: its bake binds its own target
+    hub.refreshLitter(); // the litter carpet (spec/model/season.md) is current for THIS grove, or nothing has fallen / the gate is shut — before any target is bound, because a re-bake binds its own; before the fill, whose ground bounce reads the carpet
+    hub.refreshFill();   // the sky fill (spec/model/fill.md) is current for THIS frame's sun and sky and the carpet just baked, or not wanted — same reason: its bake binds its own target
     // the SKY VIEW joins the diffusion gate (spec/model/sky-view.md): the very same linear-HDR spread reads there as the eye's own
     // VEILING GLARE — the wash around a bright source seen through gaps, which is scatter in the eye rather than in
     // a weave, but the same operator on the same quantity. A perception-tier reading of a transport pass, the same
