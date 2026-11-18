@@ -5,7 +5,7 @@
 // Run: `bun test legacy-keys.test.js`.
 import { test, expect } from "bun:test";
 import { DEFAULTS, LEGACY_KEYS, migrateLegacy } from "../komorebi.js";
-import { getPreset, setStored } from "../arboretum.js";
+import { getPreset, setStored } from "../editor/arboretum.js";
 
 test("the map points retired names at knobs that actually exist", () => {
   for (const [old, now] of Object.entries(LEGACY_KEYS)) {

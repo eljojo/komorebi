@@ -51,7 +51,7 @@ import { chromium } from 'playwright';
 import { macroParams } from '../macros.js';
 import { createRenderMemo, diffInputs, hashVerdict, manifestBodyProblems, manifestKey, rowFilters, rowMatches, sampleRows } from './harness-lib.mjs';
 import { PRESETS } from '../presets.js';
-import { PARAMS } from '../komorebi-params.js';
+import { PARAMS } from '../engine/komorebi-params.js';
 import { launchBrowser } from './video-lib.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));   // the repo root — what gets served

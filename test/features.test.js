@@ -13,8 +13,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULTS, FEATURES, TRANSPORT_CAMERAS, buildTransport, cutWarnings, featuresFor } from "../komorebi.js";
-import { DROP_EPS, dropping, lit, ordered, senescing } from "../komorebi-season.js";
-import { makeGrove } from "../komorebi-grove.js";
+import { DROP_EPS, dropping, lit, ordered, senescing } from "../engine/season/komorebi-season.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { EXPERIMENTAL, PRESETS } from "../presets.js";
 import { assemble, dropTagged, templateLiterals, writeTree } from "../embed-build.mjs";
 
@@ -79,7 +79,7 @@ test("montebello opens all six; the summer looks open only their soft edges' tie
 });
 
 // ---- 5. the tags -----------------------------------------------------------------------------------------------------------
-const SOURCES = readdirSync(ROOT).filter((f) => /^komorebi.*\.js$/.test(f));
+const SOURCES = [...readdirSync(ROOT).filter((f) => /^komorebi.*\.js$/.test(f)), ...readdirSync(join(ROOT, "engine"), { recursive: true }).filter((f) => f.endsWith(".js")).map((f) => `engine/${f}`)];
 const subsets = (xs) => xs.reduce((acc, x) => acc.concat(acc.map((s) => [...s, x])), [[]]);
 const delta = (s) => (s.match(/\{/g) || []).length - (s.match(/\}/g) || []).length;
 
@@ -98,7 +98,7 @@ test("every @feature tag ends its comment, and names only features the registry 
 });
 
 test("dropping the tagged lines of any subset of {fill, leafDiffuse, litter} leaves every literal as balanced as it was", () => {
-  for (const file of ["komorebi-transport.js", "komorebi-shaders.js"]) {
+  for (const file of ["engine/transport/komorebi-transport.js", "engine/transport/komorebi-shaders.js"]) {
     const src = readFileSync(join(ROOT, file), "utf8");
     const raw = templateLiterals(src).map(([a, b]) => delta(src.slice(a, b)));
     for (const cut of subsets(["fill", "leafDiffuse", "litter"])) {
@@ -126,7 +126,7 @@ test("a program assembled with a feature cut names no uniform of that feature's 
     const keep = ALL.filter((f) => !cut.includes(f));
     const dir = treeIn({ looks, features: keep, strip: false });
     try {
-      const T = await import(`${pathToFileURL(join(dir, "komorebi-transport.js")).href}?${cut.join("-")}`);
+      const T = await import(`${pathToFileURL(join(dir, "engine/transport/komorebi-transport.js")).href}?${cut.join("-")}`);
       expect(T.TRANSPORT_CAMERAS).toEqual(TRANSPORT_CAMERAS);   // shadow pickup needs the flight camera even without a carpet
       for (const cam of T.TRANSPORT_CAMERAS) {
         const src = T.buildTransport(cam);
@@ -143,7 +143,7 @@ test("a program assembled with a feature cut names no uniform of that feature's 
 test("with nothing cut, buildTransport is the program the repo builds, character for character", async () => {
   const dir = treeIn({ looks: [...EXPERIMENTAL, "park 1"], features: "all", strip: false });
   try {
-    const T = await import(`${pathToFileURL(join(dir, "komorebi-transport.js")).href}?whole`);
+    const T = await import(`${pathToFileURL(join(dir, "engine/transport/komorebi-transport.js")).href}?whole`);
     for (const cam of TRANSPORT_CAMERAS) expect(T.buildTransport(cam), cam).toBe(buildTransport(cam));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -174,7 +174,7 @@ test('summer tint re-season works with every autumn feature cut', async () => {
   expect(featuresFor(params)).toEqual([]);
   const dir = treeIn({ looks: ['morning 2'], features: 'none', strip: false });
   try {
-    const cut = (await import(pathToFileURL(join(dir, 'komorebi-grove.js')).href)).makeGrove;
+    const cut = (await import(pathToFileURL(join(dir, "engine/canopy/komorebi-grove.js")).href)).makeGrove;
     const fresh = rig(makeGrove, { ...params, ...tint });
     expect(JSON.stringify(rig(cut, { ...params }, tint)) === JSON.stringify(fresh), 'feature-cut tint matches fresh bytes').toBe(true);
     expect(JSON.stringify(rig(makeGrove, { ...params }, tint)) === JSON.stringify(fresh), 'uncut tint matches fresh bytes').toBe(true);
@@ -185,7 +185,7 @@ test('summer density reweight works with every autumn feature cut', async () => 
   expect(featuresFor(params)).toEqual([]);
   const dir = treeIn({ looks: ['morning 2'], features: 'none', strip: false });
   try {
-    const cut = (await import(pathToFileURL(join(dir, 'komorebi-grove.js')).href)).makeGrove;
+    const cut = (await import(pathToFileURL(join(dir, "engine/canopy/komorebi-grove.js")).href)).makeGrove;
     for (const density of [0, 0.4, 1.65, 2]) {
       const step = { foliage_density: density, trans_r: 0.1 };
       const fresh = rig(makeGrove, { ...params, ...step });
@@ -216,7 +216,7 @@ async function treeOf(dir, mutate) {
   if (mutate) mutate(files);
   writeTree(files, dir);
 }
-const grove = async (dir, tag) => (await import(`${pathToFileURL(join(dir, "komorebi-grove.js")).href}?${tag}`)).makeGrove;
+const grove = async (dir, tag) => (await import(`${pathToFileURL(join(dir, "engine/canopy/komorebi-grove.js")).href}?${tag}`)).makeGrove;
 
 test("a grove with the features its look does not open cut uploads the bytes the whole grove uploads", async () => {
   for (const [name, over] of Object.entries(PROBES)) {
@@ -225,9 +225,9 @@ test("a grove with the features its look does not open cut uploads the bytes the
     const dirRef = mkdtempSync(join(tmpdir(), "komorebi-ref-")), dirCut = mkdtempSync(join(tmpdir(), "komorebi-cut-"));
     try {
       await treeOf(dirRef, (f) => {
-        const m = f["komorebi-season.js"], n = m.replace(/const ordered = [^\n]*\n/, "const ordered = () => true;\n");
+        const m = f["engine/season/komorebi-season.js"], n = m.replace(/const ordered = [^\n]*\n/, "const ordered = () => true;\n");
         expect(n, "season.js declares ordered on one line").not.toBe(m);
-        f["komorebi-season.js"] = n;
+        f["engine/season/komorebi-season.js"] = n;
       });
       writeTree(assemble({ looks: ["park 1"], features: keep, strip: false }).files, dirCut);
       const whole = rig(makeGrove, params);

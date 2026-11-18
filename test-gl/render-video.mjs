@@ -293,7 +293,7 @@ if(SESSION_FILE && exp){
 let playlistEngine;
 if (PLAYLIST && exp) {
   try {
-    playlistEngine = await import(pathToFileURL(join(exp.dir, 'komorebi-params.js')).href);
+    playlistEngine = await import(pathToFileURL(join(exp.dir, 'engine/komorebi-params.js')).href);
     const { TOPO_KEYS, MODE_KEYS, DEFAULTS } = playlistEngine;
     const structural = [...TOPO_KEYS, ...MODE_KEYS];
     for (let i = 0; i < STOP_PARAMS.length; i++) {

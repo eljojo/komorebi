@@ -3,10 +3,10 @@
 // downwind takes the same gusts later by its distance along the wind over U, and one upwind sooner; calm air leaves every tree at rest;
 // and what each tree adds to tree 0's sway is what its clumps read (the cluster texture's row 2), exactly 0 for tree 0's.
 import { expect, test } from "bun:test";
-import { AIR, carrySpeed, crossForce, gustEdge, leanForce, weatherAt } from "../komorebi-air.js";
-import { makeMotion } from "../komorebi-motion.js";
-import { DEFAULTS } from "../komorebi-params.js";
-import { DEG, clamp } from "../komorebi-math.js";
+import { AIR, carrySpeed, crossForce, gustEdge, leanForce, weatherAt } from "../engine/motion/komorebi-air.js";
+import { makeMotion } from "../engine/motion/komorebi-motion.js";
+import { DEFAULTS } from "../engine/komorebi-params.js";
+import { DEG, clamp } from "../engine/komorebi-math.js";
 
 // the four that set the trees apart off (GRANDFATHERED): each test below turns on the one it is about
 const WIND = { ...DEFAULTS, sway_spread: 0, gust_width_m: 0, wind_shelter: 0, gust_carry: 0, wind_strength: 1.61, wind_gustiness: 0.25, gust_frequency: 0.13, wind_pattern: "squally", gust_attack: 1.2, gust_decay: 1.3, sway_stiffness: 1.2, damping_ratio: 0.65, backlash_gain: 1, sway_ceiling: 0.4, wind_direction_deg: 0, weather_variability: 0.4, wind_air: 0, drift_auto: false };

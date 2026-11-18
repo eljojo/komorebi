@@ -8,15 +8,15 @@
 import { test, expect } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { CANOPY_KEYS, DEFAULTS, PARAMS, SEASON_KEYS, TOPO_KEYS } from "../komorebi.js";
-import { GRANDFATHERED } from "../komorebi-params.js";
-import * as math from "../komorebi-math.js";
-import * as seasonMod from "../komorebi-season.js";
-import * as grammar from "../komorebi-grammar.js";
-import * as LEAF from "../komorebi-leaf.js";
-import * as MAZE from "../leaf-maze.js";
-import * as GROVE from "../komorebi-grove.js";   // a namespace, not names: placeLeaf and INNER_SALT arrive with the change, and a missing named import would fail this whole file at link time instead of test by test
-import { makeEditorTools } from "../komorebi-editor-tools.js";
-import { makeMotion } from "../komorebi-motion.js";
+import { GRANDFATHERED } from "../engine/komorebi-params.js";
+import * as math from "../engine/komorebi-math.js";
+import * as seasonMod from "../engine/season/komorebi-season.js";
+import * as grammar from "../engine/canopy/komorebi-grammar.js";
+import * as LEAF from "../engine/leaf/komorebi-leaf.js";
+import * as MAZE from "../editor/leaf-maze.js";
+import * as GROVE from "../engine/canopy/komorebi-grove.js";   // a namespace, not names: placeLeaf and INNER_SALT arrive with the change, and a missing named import would fail this whole file at link time instead of test by test
+import { makeEditorTools } from "../engine/komorebi-editor-tools.js";
+import { makeMotion } from "../engine/motion/komorebi-motion.js";
 import { PRESETS, TREE_SPECIES } from "../presets.js";
 
 const read = (f) => readFileSync(new URL(f, new URL("../", import.meta.url)), "utf8");
@@ -85,9 +85,9 @@ test("INNER_SALT is 3·0x9E3779B9 mod 2^32 (the golden gamma's next multiple aft
   expect(GROVE.INNER_SALT).toBe(0xDAA66D2B);
   const salts = [MAZE.AREOLE_SALT, LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, LEAF.FLIP_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* pigment */, 0x7A3C91D5 /* drop */, 0x5bd1e995 /* wind */, 0x5EED /* growth */, seasonMod.TREE_SALT, GROVE.INNER_SALT];
   expect(new Set(salts).size).toBe(salts.length);
-  const files = readdirSync(".").filter((f) => /\.(js|mjs|html)$/.test(f) && !/\.test\.js$/.test(f));
+  const files = [...readdirSync(".").filter((f) => /\.(js|mjs|html)$/.test(f)), ...["engine", "editor"].flatMap((d) => readdirSync(d, { recursive: true }).map((f) => `${d}/${f}`)).filter((f) => /\.(js|mjs|html)$/.test(f))];
   expect(files.length).toBeGreaterThan(20);
-  expect(files.filter((f) => /DAA66D2B/i.test(readFileSync(f, "utf8"))), "one place names the salt").toEqual(["komorebi-grove.js"]);
+  expect(files.filter((f) => /DAA66D2B/i.test(readFileSync(f, "utf8"))), "one place names the salt").toEqual(["engine/canopy/komorebi-grove.js"]);
 });
 
 // ---- 2. the gate, to the bit ----------------------------------------------------------------------------------------------------------
@@ -158,7 +158,7 @@ test("the gate is a gate: at 0 (or absent) placeLeaf never touches the path, and
     expect([out[0], out[1], out[2]], `inner_leaves ${inner}, faithful ${faithful}: the old placement, the poisoned path unread`).toEqual([x, y, 3]);
     expect(Object.is(out[0], x) && Object.is(out[1], y)).toBe(true);
   }
-  const src = read("./komorebi-grove.js");
+  const src = read("./engine/canopy/komorebi-grove.js");
   expect(src.indexOf("export function placeLeaf("), "placeLeaf is exported from the grove").toBeGreaterThan(-1);
   const at = src.indexOf("function placeLeafOnWood(");   // the twig hug and the inner leaves; placeLeaf adds the shoots over it (komorebi-shoots.js)
   expect(at, "the placement on the wood is its own function").toBeGreaterThan(-1);
@@ -834,7 +834,7 @@ test("the wind slip, pinned to what the spec quotes: park 1's squally wind from 
 
 // ---- 13. the editor ------------------------------------------------------------------------------------------------------------------------
 test("the editor offers it: a canopy row in the Density area, just before the spread, and a help text in the editor's voice", () => {
-  const src = read("./editor.js"), at = src.indexOf("const PANEL_LAYOUT = ["), layout = src.slice(at, src.indexOf("\n];", at));
+  const src = read("./editor/editor.js"), at = src.indexOf("const PANEL_LAYOUT = ["), layout = src.slice(at, src.indexOf("\n];", at));
   expect(PARAMS.inner_leaves.row, "the row").toEqual({ kind: "s", label: "inner leaves", min: 0, max: 1, step: 0.01, rebuild: "canopy" });
   const row = layout.indexOf("'inner_leaves',"), spread = layout.indexOf("'cluster_spread_m',");
   expect(row, "in the panel").toBeGreaterThan(-1);

@@ -3,7 +3,7 @@
 // smoke's (test-gl/editor.mjs), which reads them off the pane's own canvas.
 // ============================================================================
 import { test, expect } from "bun:test";
-import { paneScene, paneCamera } from "../tree-pane.js";
+import { paneScene, paneCamera } from "../editor/tree-pane.js";
 
 const look = { leaf_size_m: 0.1, trunk_radius_m: 0.2, branch_children: 3, taper_delta: 2 };
 // a trunk 4 m up, one limb out to +x, and three leaves (one faded out entirely)

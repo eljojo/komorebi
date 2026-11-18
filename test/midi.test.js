@@ -1,7 +1,7 @@
 // Tests for midi.js's pure half: the MIDImix's wire (what a message is, and where on the desk it comes from) and the takeover
 // steps (catch and glide). The Web MIDI wiring, the layers and the console are browser-only. Run: `bun test midi.test.js`.
 import { expect, test } from "bun:test";
-import { catchStep, ccSlot, decode, glideStep, noteSlot } from "../midi.js";
+import { catchStep, ccSlot, decode, glideStep, noteSlot } from "../editor/midi.js";
 
 test("a control change is a CC with its value as a fraction, on any channel", () => {
   expect(decode([0xb0, 19, 0])).toEqual({ kind: "cc", cc: 19, u: 0 });

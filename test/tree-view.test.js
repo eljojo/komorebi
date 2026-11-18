@@ -5,15 +5,15 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
-import { DEFAULTS, MAX_LAYERS } from "../komorebi-params.js";
+import { DEFAULTS, MAX_LAYERS } from "../engine/komorebi-params.js";
 import { PRESETS } from "../presets.js";
-import { hash3 } from "../komorebi-math.js";
-import { leafSide, SIDE_SALT } from "../komorebi-leaf.js";
-import { cameraPose } from "../komorebi-camera.js";
-import { treeProject, floorRay } from "../komorebi-tree-view.js";
-import { SLAB, SLAB_N, slabLeaf, slabK, slabTable } from "../komorebi-leaf.js";
-import { FS_TREE, FS_TREE_WOOD, VS_TREE } from "../komorebi-shaders.js";
-import { makeGrove } from "../komorebi-grove.js";
+import { hash3 } from "../engine/komorebi-math.js";
+import { leafSide, SIDE_SALT } from "../engine/leaf/komorebi-leaf.js";
+import { cameraPose } from "../engine/transport/komorebi-camera.js";
+import { treeProject, floorRay } from "../engine/transport/komorebi-tree-view.js";
+import { SLAB, SLAB_N, slabLeaf, slabK, slabTable } from "../engine/leaf/komorebi-leaf.js";
+import { FS_TREE, FS_TREE_WOOD, VS_TREE } from "../engine/transport/komorebi-shaders.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 
 const FRAMINGS = [
   { view_extent_m: 13.49, view_pitch_deg: 61.4, view_fov_deg: 60, view_yaw_deg: 28.5, view_center_x: -1.49, view_center_y: -6.5 },   // park 1 as shipped
@@ -74,8 +74,8 @@ test("a leaf's side is ±1, its own pure hash on a salt no other stream uses, an
     if (s > 0) up++;
   }
   expect(up / 1e4).toBeGreaterThan(0.48); expect(up / 1e4).toBeLessThan(0.52);
-  const salts = readFileSync(new URL("../komorebi-season.js", import.meta.url), "utf8") + readFileSync(new URL("../komorebi-grove.js", import.meta.url), "utf8")
-    + readFileSync(new URL("../komorebi-leaf.js", import.meta.url), "utf8") + readFileSync(new URL("../komorebi-litter.js", import.meta.url), "utf8");
+  const salts = readFileSync(new URL("../engine/season/komorebi-season.js", import.meta.url), "utf8") + readFileSync(new URL("../engine/canopy/komorebi-grove.js", import.meta.url), "utf8")
+    + readFileSync(new URL("../engine/leaf/komorebi-leaf.js", import.meta.url), "utf8") + readFileSync(new URL("../engine/season/komorebi-litter.js", import.meta.url), "utf8");
   const all = [...salts.matchAll(/_SALT\s*=\s*(0x[0-9A-Fa-f]+)/g)].map((m) => Number(m[1]));
   expect(all.filter((v) => v === SIDE_SALT)).toHaveLength(1);
   expect(leafSide(1, 2, 3)).toBe((hash3(1 ^ SIDE_SALT, 2, 3) & 1) ? 1 : -1);
@@ -121,9 +121,9 @@ test("the tree's light reads every layer there can be, one constant index each",
 });
 
 // ---- A TILTED LEAF'S SHADOW (tilt_shadow): the cast throws each corner from its own height, so the quad is the leaf's true shadow along the sun ----
-import { leafShadowCorner } from "../komorebi-cast.js";
-import { VS_FAITH } from "../komorebi-shaders.js";
-import { DEFAULTS as DEF, GRANDFATHERED as GF, PARAMS as PR } from "../komorebi-params.js";
+import { leafShadowCorner } from "../engine/transport/komorebi-cast.js";
+import { VS_FAITH } from "../engine/transport/komorebi-shaders.js";
+import { DEFAULTS as DEF, GRANDFATHERED as GF, PARAMS as PR } from "../engine/komorebi-params.js";
 
 const shoelace = (q) => Math.abs(q.reduce((a, p, i) => { const r = q[(i + 1) % q.length]; return a + p[0] * r[1] - r[0] * p[1]; }, 0)) / 2;
 const QUAD = [[-1, -1], [1, -1], [1, 1], [-1, 1]];

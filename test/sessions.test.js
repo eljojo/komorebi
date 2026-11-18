@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
-import * as sessions from '../komorebi-session.js';
-import { DEFAULTS } from '../komorebi-params.js';
-import { makeTransitions } from '../komorebi-transitions.js';
-import { restTrans } from '../komorebi-routes.js';
+import * as sessions from '../engine/komorebi-session.js';
+import { DEFAULTS } from '../engine/komorebi-params.js';
+import { makeTransitions } from '../engine/transitions/komorebi-transitions.js';
+import { restTrans } from '../engine/transitions/komorebi-routes.js';
 import { keptFeatures } from '../embed-build.mjs';
 import { PRESETS } from '../presets.js';
 

@@ -44,7 +44,7 @@
   // The same route as examples/module.html: the engine's ES modules, served as they are.
   import { create } from './komorebi.js';
   import { PRESETS } from './presets.js';
-  import { detect } from './playlists.js';
+  import { detect } from './editor/playlists.js';
 
   try {
     const eng = create(document.getElementById('gl'), { params: PRESETS['afternoon 6'] });   // the look the welcome shows behind its intro

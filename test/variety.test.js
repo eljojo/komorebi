@@ -10,13 +10,13 @@
 // ============================================================================
 import { expect, test } from "bun:test";
 import { DEFAULTS, TOPO_KEYS, CANOPY_KEYS } from "../komorebi.js";
-import * as paramsMod from "../komorebi-params.js";
-import * as math from "../komorebi-math.js";
-import * as seasonMod from "../komorebi-season.js";
-import * as LEAF from "../komorebi-leaf.js";
-import * as MAZE from "../leaf-maze.js";
-import * as L from "../komorebi-litter.js";
-import { GROVE_READS, makeGrove } from "../komorebi-grove.js";
+import * as paramsMod from "../engine/komorebi-params.js";
+import * as math from "../engine/komorebi-math.js";
+import * as seasonMod from "../engine/season/komorebi-season.js";
+import * as LEAF from "../engine/leaf/komorebi-leaf.js";
+import * as MAZE from "../editor/leaf-maze.js";
+import * as L from "../engine/season/komorebi-litter.js";
+import { GROVE_READS, makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS } from "../presets.js";
 
 const DEG = math.DEG, TAU = math.TAU, N = LEAF.LEAF_SAMPLES;
@@ -506,7 +506,7 @@ test("the carpet lies a leaf in the row it hung in: slot 7 is the leaf's own `ro
 // ---- 3.14 the held leaf ---------------------------------------------------------------------------------------------------------
 // (pinnate.test.js's and tree.test.js's rig, copied: a stub DOM is enough to run draw())
 async function heldLeaf(params, hier) {
-  const { makeLeafPreview } = await import("../leaf-preview.js");
+  const { makeLeafPreview } = await import("../editor/leaf-preview.js");
   const ctx = new Proxy({}, { get: (t, name) => (name in t ? t[name] : () => {}), set: (t, name, v) => { t[name] = v; return true; } });
   const canvas = { style: {}, dataset: {}, width: 0, height: 0, clientWidth: 420, getContext: () => ctx, addEventListener() {}, after() {} };
   const saved = { document: globalThis.document, window: globalThis.window, ImageData: globalThis.ImageData }, now = performance.now;

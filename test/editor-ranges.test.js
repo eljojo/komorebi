@@ -4,7 +4,7 @@
 // (a re-sit of exposure, say) has to move the slider with it.
 import { test, expect } from "bun:test";
 import { PRESETS } from "../presets.js";
-import { PARAMS } from "../komorebi-params.js";
+import { PARAMS } from "../engine/komorebi-params.js";
 
 const LEEWAY = 0.25;
 const CLUSTERS_PER_LAYER_MAX = 82;   // arboretum's own bound: clusters_per_layer has no slider

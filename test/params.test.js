@@ -5,8 +5,8 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
-import { PARAMS, DEFAULTS, LEGACY_KEYS } from "../komorebi-params.js";
-import { GROVE_READS } from "../komorebi-grove.js";
+import { PARAMS, DEFAULTS, LEGACY_KEYS } from "../engine/komorebi-params.js";
+import { GROVE_READS } from "../engine/canopy/komorebi-grove.js";
 
 const WAYS = ["morph", "canopy", "season", "topo", "mode", "none"];
 const KINDS = ["s", "t", "sel", "sels"];
@@ -41,7 +41,7 @@ test("every parameter has a row in the panel or says why it has none", () => {
 });
 
 test("the editor's panel names every parameter that has a row, once, and nothing else", () => {
-  const src = readFileSync(new URL("../editor.js", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../editor/editor.js", import.meta.url), "utf8");
   const at = src.indexOf("const PANEL_LAYOUT = [");
   const named = [...src.slice(at, src.indexOf("\n];", at)).matchAll(/^ {2}'([a-z_0-9]+)',/gm)].map((m) => m[1]);
   const withRow = Object.keys(PARAMS).filter((k) => PARAMS[k].row);
@@ -59,7 +59,7 @@ test("DEFAULTS is every parameter but the editor's inputs, in the registry's ord
 // has to rebuild what that choice allocates and packs: the layer textures are 1×1 while the faithful cast runs, and the grove's
 // buffers are packed for one cast or the other. A row that asked for less would leave the new cast reading the old one's buffers.
 test("every row the cast's choice reads asks for the scope that rebuilds its textures and its grove", () => {
-  const src = readFileSync(new URL("../komorebi-engine.js", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../engine/komorebi-engine.js", import.meta.url), "utf8");
   const predicate = src.match(/const faithfulOn = \(\) => ([^;]+);/);
   expect(predicate, "komorebi-engine.js defines faithfulOn in one line").toBeTruthy();
   const keys = [...predicate[1].matchAll(/params\.([a-z_0-9]+)/g)].map((m) => m[1]);

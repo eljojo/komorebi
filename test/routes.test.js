@@ -6,11 +6,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { assemble, writeTree } from "../embed-build.mjs";
-import { cutRoute, restTrans } from "../komorebi-routes.js";
+import { cutRoute, restTrans } from "../engine/transitions/komorebi-routes.js";
 
-const MODULES = { sceneFade: ["komorebi-scene-fade.js", "makeSceneFade"], leafTravel: ["komorebi-leaf-travel.js", "makeLeafTravel"],
-  seasonTravel: ["komorebi-season-travel.js", "makeSeasonTravel"], litterRise: ["komorebi-litter-rise.js", "makeLitterRise"],
-  groveTravel: ["komorebi-grove-travel.js", "makeGroveTravel"] };
+const MODULES = { sceneFade: ["engine/transitions/komorebi-scene-fade.js", "makeSceneFade"], leafTravel: ["engine/transitions/komorebi-leaf-travel.js", "makeLeafTravel"],
+  seasonTravel: ["engine/transitions/komorebi-season-travel.js", "makeSeasonTravel"], litterRise: ["engine/transitions/komorebi-litter-rise.js", "makeLitterRise"],
+  groveTravel: ["engine/transitions/komorebi-grove-travel.js", "makeGroveTravel"] };
 const POLICY = ["ownsWind", "hostBakes", "tweens", "keepsDrift", "groundPeak", "swaps"];
 const LANDING = ["regenSource", "resetPerf", "bake", "resumeAdaptive"];   // the hub's coordinators a landing may run
 

@@ -8,11 +8,11 @@
 import { expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { DEFAULTS } from "../komorebi.js";
-import * as math from "../komorebi-math.js";
-import * as leafMod from "../komorebi-leaf.js";
-import * as season from "../komorebi-season.js";
-import * as LEAF from "../komorebi-leaf.js";
-import * as MAZE from "../leaf-maze.js";
+import * as math from "../engine/komorebi-math.js";
+import * as leafMod from "../engine/leaf/komorebi-leaf.js";
+import * as season from "../engine/season/komorebi-season.js";
+import * as LEAF from "../engine/leaf/komorebi-leaf.js";
+import * as MAZE from "../editor/leaf-maze.js";
 
 const { MAPLE, growLeaf, profile, bladeOf, outlineSeed, leafVariant, LEAF_SAMPLES } = LEAF;
 const TAU = math.TAU;
@@ -295,7 +295,7 @@ test("the stamp is the box scan's buffer, to the byte, on walls that are all edg
 
 // ---- the gate --------------------------------------------------------------------------------------------------------------
 test("nothing ships: no engine module, bundle shim, preset or macro names the fixture", () => {
-  const files = [...readdirSync(".").filter((f) => /^komorebi-.*\.js$/.test(f)), "komorebi.js", "komorebi.global.js", "presets.js", "macros.js"];
+  const files = [...readdirSync("engine", { recursive: true }).filter((f) => f.endsWith(".js")).map((f) => `engine/${f}`), "komorebi.js", "komorebi.global.js", "presets.js", "macros.js"];
   for (const f of files) { const src = readFileSync(f, "utf8"); expect(src.includes("leaf-maze"), f).toBe(false); expect(src.includes("leaf-preview"), f).toBe(false); }
 });
 

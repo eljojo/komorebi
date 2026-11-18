@@ -1,11 +1,11 @@
 import {test,expect} from 'bun:test';
-import {makeTransitions} from '../komorebi-transitions.js';
-import {restTrans} from '../komorebi-routes.js';
-import {makeSceneFade} from '../komorebi-scene-fade.js';
+import {makeTransitions} from '../engine/transitions/komorebi-transitions.js';
+import {restTrans} from '../engine/transitions/komorebi-routes.js';
+import {makeSceneFade} from '../engine/transitions/komorebi-scene-fade.js';
 import {PRESETS} from '../presets.js';
-import {DEFAULTS} from '../komorebi-params.js';
+import {DEFAULTS} from '../engine/komorebi-params.js';
 import fixture from '../test-gl/fixtures/fall-look-up.json';
-import {groveTravelEligible,groveFlightProgress,matchGroveTrees,makeGroveTravel,carriedLeaf} from '../komorebi-grove-travel.js';
+import {groveTravelEligible,groveFlightProgress,matchGroveTrees,makeGroveTravel,carriedLeaf} from '../engine/transitions/komorebi-grove-travel.js';
 
 // fall memories with inner leaves, and park 2's soft edges, which the route needs on at both ends or neither: the fixture predates both.
 const fall={...fixture.from,edge_area:PRESETS['park 2'].edge_area??false,inner_leaves:.35};

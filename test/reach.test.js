@@ -8,7 +8,7 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { create, DEFAULTS, PARAMS } from "../komorebi.js";
-import { GROVE_READS } from "../komorebi-grove.js";
+import { GROVE_READS } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS } from "../presets.js";
 import { MACROS, macroParams } from "../macros.js";
 

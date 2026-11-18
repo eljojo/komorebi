@@ -8,8 +8,8 @@ import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "../komorebi.js";
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep, TWEEN_OFF_MS, TWEEN_SLOW_MS, TWEEN_BUDGET } from "../macros.js";
-import { DROP_EPS, TWEEN_STEP } from "../komorebi-season.js";
-import { beamExtinction, shownExposure } from "../komorebi-light.js";
+import { DROP_EPS, TWEEN_STEP } from "../engine/season/komorebi-season.js";
+import { beamExtinction, shownExposure } from "../engine/light/komorebi-light.js";
 import { PRESETS } from "../presets.js";
 
 const MORPH = new Set(MORPH_KEYS), CANOPY = new Set(CANOPY_KEYS);
@@ -17,7 +17,7 @@ const REBUILD = new Set([...TOPO_KEYS, ...MODE_KEYS]);
 
 // Run the editor's actual dial and load handlers; only the engine and DOM boundary are supplied here.
 function seasonDialRig() {
-  const source = readFileSync('editor.js', 'utf8'), noop = () => {};
+  const source = readFileSync('editor/editor.js', 'utf8'), noop = () => {};
   const params = { ...DEFAULTS }, writes = [];
   let pending, dial;
   const eng = { trans: { active: false },
@@ -37,7 +37,7 @@ function seasonDialRig() {
 }
 
 function focusDialRig(look) {
-  const source = readFileSync('editor.js', 'utf8'), params = { ...DEFAULTS, ...look }, scopes = [], noop = () => {};
+  const source = readFileSync('editor/editor.js', 'utf8'), params = { ...DEFAULTS, ...look }, scopes = [], noop = () => {};
   const bus = createBus(() => params, (dict, scope) => { Object.assign(params, dict); scopes.push(scope); });
   const body = source.slice(source.indexOf('const TRY_FALL ='), source.indexOf('const TRY_SAYS ='));
   const env = { params, bus, MACROS, tryArrange: noop, macroValue, macroParams, macroUsable, clamp: (x, lo, hi) => Math.min(hi, Math.max(lo, x)),

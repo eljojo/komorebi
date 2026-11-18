@@ -8,11 +8,11 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { CANOPY_KEYS, DEFAULTS } from "../komorebi.js";
-import * as math from "../komorebi-math.js";
-import * as seasonMod from "../komorebi-season.js";
-import * as lightMod from "../komorebi-light.js";
-import * as leafMod from "../komorebi-leaf.js";
-import { makeGrove } from "../komorebi-grove.js";
+import * as math from "../engine/komorebi-math.js";
+import * as seasonMod from "../engine/season/komorebi-season.js";
+import * as lightMod from "../engine/light/komorebi-light.js";
+import * as leafMod from "../engine/leaf/komorebi-leaf.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS } from "../presets.js";
 
 const E = DEFAULTS.canopy_extent_m;

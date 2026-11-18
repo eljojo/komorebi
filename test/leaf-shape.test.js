@@ -7,9 +7,9 @@
 // ============================================================================
 import { expect, test } from "bun:test";
 import { DEFAULTS, TOPO_KEYS } from "../komorebi.js";
-import * as math from "../komorebi-math.js";
-import * as season from "../komorebi-season.js";
-import * as LEAF from "../komorebi-leaf.js";
+import * as math from "../engine/komorebi-math.js";
+import * as season from "../engine/season/komorebi-season.js";
+import * as LEAF from "../engine/leaf/komorebi-leaf.js";
 
 const DEG = math.DEG, TAU = math.TAU, N = 256;
 const sum = (a) => a.reduce((s, v) => s + v, 0), mean = (a) => sum(a) / a.length;
@@ -347,7 +347,7 @@ test("the leaf's streams never touch the growth RNG: their own salts, uncorrelat
 // ============================================================================
 // THE GROVE: the one place that hangs an outline on a leaf. A recording stub GL keeps the floats buildGrove uploads and the texture it makes.
 // ============================================================================
-import { makeGrove } from "../komorebi-grove.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS, TREE_SPECIES } from "../presets.js";
 
 function groveRig(over, faithful = false) {
@@ -526,7 +526,7 @@ test("the faithful cast's pad still covers a leaf: the longest half-axis in the 
 // the contract (the pixel harness holds the pixels): the ellipse's own line must survive in each, because the gate is a uniform branch and not a program.
 // ============================================================================
 import { readFileSync } from "node:fs";
-import * as SH from "../komorebi-shaders.js";
+import * as SH from "../engine/transport/komorebi-shaders.js";
 const code = (s) => s.replace(/\/\/.*$/gm, "");
 
 test("the three masks keep the ellipse's own line and take the outline through ONE snippet, behind a uniform branch — not a program variant", () => {
@@ -582,7 +582,7 @@ test("the quad grows with the outline: every VS places a corner at aCorner·box.
 });
 
 test("the program's uniforms are named alike in the bake, the faithful bake and the carpet, and the engine looks every one of them up and frees the texture", () => {
-  const engine = readFileSync(new URL("../komorebi-engine.js", import.meta.url), "utf8");
+  const engine = readFileSync(new URL("../engine/komorebi-engine.js", import.meta.url), "utf8");
   const names = [["leafTex", "uLeafTex"], ["leafShape", "uLeafShape"], ["shapeBox", "uShapeBox"], ["leafIdFrac", "uLeafIdFrac"], ["leafRows", "uLeafRows"]];   // the last two: the grove's packing (the VS) and its row count (the FS) — the litter's program has no uLeafIdFrac, and its lookup is a null that an upload ignores
   for (const [key, name] of names) expect(engine.includes(`${key}:loc(progBake,'${name}')`), `progBake ${name}`).toBe(true);
   const faithLocs = new Function("loc", "prog", engine.match(/function faithLocs\(prog\)\{([\s\S]*?)\n {2}\}/)[1]);
@@ -599,8 +599,8 @@ test("the program's uniforms are named alike in the bake, the faithful bake and 
 // THE BAKES: each grove is drawn in its OWN shape — the layer bake per grove (a crossfade bakes two into one pass), the faithful bake with the active one,
 // the carpet with the one the leaves fell from. A recording stub GL reads what each draw was handed.
 // ============================================================================
-import { makeBake } from "../komorebi-bake.js";
-import { bindLeafShape } from "../komorebi-leaf.js";
+import { makeBake } from "../engine/transport/komorebi-bake.js";
+import { bindLeafShape } from "../engine/leaf/komorebi-leaf.js";
 
 const rec = () => {
   const calls = [];
@@ -661,7 +661,7 @@ test("the layer bake binds each grove's own outline before each of its draws —
 });
 
 test("the faithful bake draws the ACTIVE grove in its outline, and pads its cast frame by the longest radius that outline reaches (a lobe is not an ellipse's quad)", () => {
-  const src = readFileSync(new URL("../komorebi-bake.js", import.meta.url), "utf8"), fn = src.slice(src.indexOf("function bakeFaithful"), src.indexOf("function bakeFaithful") + 12000);
+  const src = readFileSync(new URL("../engine/transport/komorebi-bake.js", import.meta.url), "utf8"), fn = src.slice(src.indexOf("function bakeFaithful"), src.indexOf("function bakeFaithful") + 12000);
   expect(fn).toContain("bindLeafShape(gl, UF, hub.grove);");
   expect(fn.indexOf("bindLeafShape(gl, UF, hub.grove);")).toBeLessThan(fn.indexOf("gl.drawArraysInstanced"));
   expect(fn).toContain("const leafR = params.leaf_size_m*Math.max(1, 0.7*(hub.grove?.shape?.rmax ?? 0)*(hub.grove?.scaleMax ?? 1));");
@@ -669,7 +669,7 @@ test("the faithful bake draws the ACTIVE grove in its outline, and pads its cast
 });
 
 // ---- the carpet: the leaf lies in the shape it hung in ----
-import * as L from "../komorebi-litter.js";
+import * as L from "../engine/season/komorebi-litter.js";
 const fallenLeaf = (over) => ({ x: 1.5, y: -2.25, h: 0, D: 0.8, tau: [0.2, 1.4, 2.5], size: [0.05, 0.05], j: 17, k: 3, fade: 1, ...over });
 const F = L.INSTANCE_FLOATS;
 

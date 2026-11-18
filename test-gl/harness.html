@@ -33,14 +33,14 @@
 <body></body>
 <script type="module">
 import { create, MAX_OCC, TRANSPORT_GROUPS } from '/komorebi.js';
-import { VS_FULL, FS_BAKE, FS_FAITH, VS_LITTER, FS_LITTER, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/komorebi-shaders.js';
+import { VS_FULL, FS_BAKE, FS_FAITH, VS_LITTER, FS_LITTER, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SKY_RAY } from '/engine/transport/komorebi-shaders.js';
 import { PRESETS } from '/presets.js';
-import { fillDirections, fillFrame, fillRef, fillTile, texelTap, skyRayRef, texelMix, groundRef, undersideRef, bounceRef, slabUnder } from '/komorebi-fill.js';
-import { litterAge, litterAlbedo, litterInstances } from '/komorebi-litter.js';
-import { LEAF_SAMPLES, leafShape } from '/komorebi-leaf.js';
-import { lerp } from '/komorebi-math.js';
-import { atmosphere, beamExtinction, sunDirection, sunIncidence } from '/komorebi-light.js';
-import { SLAB, SLAB_N, ballisticK, slabTable } from '/komorebi-leaf.js';
+import { fillDirections, fillFrame, fillRef, fillTile, texelTap, skyRayRef, texelMix, groundRef, undersideRef, bounceRef, slabUnder } from '/engine/transport/komorebi-fill.js';
+import { litterAge, litterAlbedo, litterInstances } from '/engine/season/komorebi-litter.js';
+import { LEAF_SAMPLES, leafShape } from '/engine/leaf/komorebi-leaf.js';
+import { lerp } from '/engine/komorebi-math.js';
+import { atmosphere, beamExtinction, sunDirection, sunIncidence } from '/engine/light/komorebi-light.js';
+import { SLAB, SLAB_N, ballisticK, slabTable } from '/engine/leaf/komorebi-leaf.js';
 
 const W = 320, H = 180;           // small on purpose: SwiftShader is a software rasteriser, not a GPU
 // The freeze set. Wind is deterministic noise-of-TIME (no RNG), so the only way to get a reproducible frame

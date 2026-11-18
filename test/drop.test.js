@@ -7,11 +7,11 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { CANOPY_KEYS, DEFAULTS } from "../komorebi.js";
-import * as math from "../komorebi-math.js";
-import * as seasonMod from "../komorebi-season.js";
-import * as leafMod from "../komorebi-leaf.js";
-import { makeEditorTools } from "../komorebi-editor-tools.js";
-import { makeGrove } from "../komorebi-grove.js";
+import * as math from "../engine/komorebi-math.js";
+import * as seasonMod from "../engine/season/komorebi-season.js";
+import * as leafMod from "../engine/leaf/komorebi-leaf.js";
+import { makeEditorTools } from "../engine/komorebi-editor-tools.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS } from "../presets.js";
 
 const fall = (over) => ({ ...DEFAULTS, ...over });
@@ -571,7 +571,7 @@ function turnPhases(over, faithful = false) {
 const at = (P, p) => ({ ...P, phenology: p });
 
 test("after the turn: DEFAULTS ships it off with a lag of 0.09; the flag is a flip (TOPO) and the lag a season canopy knob", async () => {
-  const { TOPO_KEYS, SEASON_KEYS } = await import("../komorebi-params.js");
+  const { TOPO_KEYS, SEASON_KEYS } = await import("../engine/komorebi-params.js");
   expect(DEFAULTS.drop_after_turn).toBe(0);
   expect(DEFAULTS.drop_lag, "a little under half the leaves down at 0.9").toBe(0.09);
   expect(TOPO_KEYS).toContain("drop_after_turn");
@@ -705,7 +705,7 @@ test("convergence: from turn_start + turn_span on every leaf's tau is the same w
 });
 
 test("`dropping` at 1 is never later than the first fade (sweep by 1e-4), the registry agrees, and it is one ε early", async () => {
-  const { FEATURES, featuresFor } = await import("../komorebi-params.js");
+  const { FEATURES, featuresFor } = await import("../engine/komorebi-params.js");
   for (const [drop_lag, leaf_drop] of [[0, 1], [LAG, 1], [0.2, 0.5], [0.05, 0.01]]) {
     const base = { ...DEFAULTS, ...CAP, drop_after_turn: 1, drop_lag, leaf_drop };
     const firstFade = 0.6 + 0.12 + drop_lag;                       // the earliest leaf (φ′ = 0): D − ε

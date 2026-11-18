@@ -42,13 +42,20 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, posix } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { EXPERIMENTAL, PRESETS } from './presets.js';
 import { cameraFor, CAMERAS, DEFAULTS, FEATURES, GROUP_UPLOAD_KEYS, featuresFor, resolveParams, resolveSession } from './komorebi.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const ENTRY = 'komorebi.global.js';
+// Where the modules a build rewrites by name live, as paths from the root: the assembled tree keeps the repo's layout.
+const TRANSPORT = 'engine/transport/komorebi-transport.js';
+const RENDER = 'engine/transport/komorebi-render.js';
+const ENGINE = 'engine/komorebi-engine.js';
+const PARAMS = 'engine/komorebi-params.js';
+const SHADERS = 'engine/transport/komorebi-shaders.js';
+const LITTER_RISE = 'engine/transitions/komorebi-litter-rise.js';
 
 // ---- GLSL comment strip. Template literals only; `${}` interpolations are JS and are left alone. Comment
 // lines go, trailing comments go, indentation goes — every one of those is whitespace to a GLSL compiler,
@@ -297,14 +304,14 @@ export function sweepOrphans(files) {
 
 // ---- which modules a bundle reaches: the entry and everything it imports, transitively. The sweep reads only these, so a script nothing bundles
 // (the editor's, the macro bus) cannot keep a string alive, and the tree a test imports from is the tree the bundle is made of. ----
-const IMPORT = /\bfrom\s*(['"])(\.\/[^'"]+)\1/g;
+const IMPORT = /\bfrom\s*(['"])(\.{1,2}\/[^'"]+)\1/g;
 function reachable(all, entry) {
   const seen = new Map();
   const walk = (f) => {
     if (seen.has(f)) return;
     if (!all.has(f)) throw new Error(`embed: ${entry} reaches ${f}, which is not in the tree`);
     seen.set(f, all.get(f));
-    for (const m of all.get(f).matchAll(IMPORT)) walk(m[2].slice(2));
+    for (const m of all.get(f).matchAll(IMPORT)) walk(posix.join(posix.dirname(f), m[2]));
   };
   walk(entry);
   return seen;
@@ -343,22 +350,23 @@ export function assemble({ looks, features, strip = true, name } = {}) {
   const uploads = GROUP_UPLOAD_KEYS.filter((g) => groups.includes(g));
 
   const all = new Map();
-  for (const f of readdirSync(ROOT)) if (f.endsWith('.js') && !f.endsWith('.test.js')) all.set(f, readFileSync(join(ROOT, f), 'utf8'));
+  for (const f of readdirSync(ROOT)) if (f.endsWith('.js')) all.set(f, readFileSync(join(ROOT, f), 'utf8'));
+  for (const f of readdirSync(join(ROOT, 'engine'), { recursive: true })) if (f.endsWith('.js')) all.set(`engine/${f}`, readFileSync(join(ROOT, 'engine', f), 'utf8'));
   const files = reachable(all, ENTRY);
 
   const p = pruneObject(files.get('presets.js'), 'export const PRESETS = {\n', 2, kept);
   files.set('presets.js', p.src);
 
-  const c = pruneObject(files.get('komorebi-transport.js'), 'const CAMERAS = {\n', 2, cameras);
+  const c = pruneObject(files.get(TRANSPORT), 'const CAMERAS = {\n', 2, cameras);
   const g = pruneObject(c.src, 'const TRANSPORT_GROUPS = {\n', 2, groups);
   const speaks = (list) => list.split(',').map((x) => x.trim()).filter((x) => !cutGroups.includes(x.replace(/'/g, ''))).join(',');
   const transport = g.src
     .replace(/(groups: \[)([^\]]*)(\])/g, (_, a, list, z) => `${a}${speaks(list)}${z}`)
     .replace(/const GROUP_UPLOAD_KEYS = \[[^\]]*\]/, `const GROUP_UPLOAD_KEYS = [${uploads.map((k) => `'${k}'`).join(',')}]`);
-  files.set('komorebi-transport.js', transport);
+  files.set(TRANSPORT, transport);
 
-  const u = pruneObject(files.get('komorebi-render.js'), '  const GROUP_UPLOAD = {\n', 4, uploads);
-  files.set('komorebi-render.js', u.src);
+  const u = pruneObject(files.get(RENDER), '  const GROUP_UPLOAD = {\n', 4, uploads);
+  files.set(RENDER, u.src);
 
   // THE BUILD'S OWN NAME, for the warning (komorebi-engine.js): the file, the looks it was made for and what it left out. Verbatim or it throws, like the flags.
   const buildDecl = "const BUILD = { name: 'modules', cut: [] };";
@@ -366,15 +374,15 @@ export function assemble({ looks, features, strip = true, name } = {}) {
   const flags = Object.fromEntries(Object.keys(FEATURES).map((f) => [FEATURES[f].flag, keep.includes(f)]));
   for (const [f, src] of files) {
     // The camera serves both carpet flights and shadow pickup; the latter needs no seasonal tiers.
-    const localFlags=f==='komorebi-litter-rise.js'?{...flags,...(!cameras.includes('rise')?{FEAT_LITTER:false}:{}),FEAT_SKY_FLIGHT:cameras.includes('rise')}:flags;
+    const localFlags=f===LITTER_RISE?{...flags,...(!cameras.includes('rise')?{FEAT_LITTER:false}:{}),FEAT_SKY_FLIGHT:cameras.includes('rise')}:flags;
     let s = substituteFlags(src, f, localFlags);
-    if (f === 'komorebi-engine.js') {
+    if (f === ENGINE) {
       if (!s.includes(buildDecl)) throw new Error(`embed: ${f} does not declare BUILD as '${buildDecl}'`);
       s = s.replace(buildDecl, `const BUILD = ${JSON.stringify({ name: label, cut })};`);
     }
     s = hardcodeEditorOff(foldDeadTernaries(s));
-    if (f === 'komorebi-params.js') s = dropEditorFields(s);
-    if (f === 'komorebi-transport.js' || f === 'komorebi-shaders.js') s = strip ? stripGlslComments(s, cut) : dropTagged(s, cut);
+    if (f === PARAMS) s = dropEditorFields(s);
+    if (f === TRANSPORT || f === SHADERS) s = strip ? stripGlslComments(s, cut) : dropTagged(s, cut);
     files.set(f, s);
   }
   const swept = sweepOrphans(files);
@@ -383,7 +391,10 @@ export function assemble({ looks, features, strip = true, name } = {}) {
 
 export function writeTree(files, dir) {
   mkdirSync(dir, { recursive: true });
-  for (const [f, src] of Object.entries(files)) writeFileSync(join(dir, f), src);
+  for (const [f, src] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, f)), { recursive: true });
+    writeFileSync(join(dir, f), src);
+  }
 }
 
 // ---- bundle (the player build's own line, minus the define that never worked) ----

@@ -28,9 +28,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 // The engine's source modules, scanned as text for shader literals and the numeric-constant substitution
-// table. Structural, not a hand-kept list: every komorebi*.js at the root is scanned (the barrel and the
-// global shim carry no literals today, but a literal added to ANY of them is found rather than skipped).
-const SOURCES = readdirSync(ROOT).filter((f) => /^komorebi.*\.js$/.test(f)).sort();
+// table. Structural, not a hand-kept list: every komorebi*.js at the root and every module under engine/ is scanned (the
+// barrel and the global shim carry no literals today, but a literal added to ANY of them is found rather than skipped).
+const SOURCES = [
+  ...readdirSync(ROOT).filter((f) => /^komorebi.*\.js$/.test(f)),
+  ...readdirSync(join(ROOT, "engine"), { recursive: true }).filter((f) => f.endsWith(".js")).map((f) => `engine/${f}`),
+].sort();
 
 // ---- pull one backtick-delimited literal out of the source, given the index just past its opening backtick.
 // The shaders contain no nested template expressions and no escaped backticks; the escape check is there so a

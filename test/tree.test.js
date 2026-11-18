@@ -8,12 +8,12 @@
 import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { CANOPY_KEYS, DEFAULTS, FEATURES, SEASON_KEYS, TOPO_KEYS, featuresFor } from "../komorebi.js";
-import * as math from "../komorebi-math.js";
-import * as seasonMod from "../komorebi-season.js";
-import * as leafMod from "../komorebi-leaf.js";
-import * as LEAF from "../komorebi-leaf.js";
-import * as MAZE from "../leaf-maze.js";
-import { GROVE_READS, makeGrove } from "../komorebi-grove.js";
+import * as math from "../engine/komorebi-math.js";
+import * as seasonMod from "../engine/season/komorebi-season.js";
+import * as leafMod from "../engine/leaf/komorebi-leaf.js";
+import * as LEAF from "../engine/leaf/komorebi-leaf.js";
+import * as MAZE from "../editor/leaf-maze.js";
+import { GROVE_READS, makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS } from "../presets.js";
 
 const { DROP_EPS: EPS } = seasonMod;
@@ -41,10 +41,10 @@ test("TREE_SALT is 2·0x9E3779B9 mod 2^32, differs from every other stream's sal
   expect(seasonMod.TREE_SALT).toBe(0x3C6EF372);
   const salts = [MAZE.AREOLE_SALT, LEAF.VARIANT_SALT, LEAF.OUTLINE_SALT, LEAF.FLIP_SALT, 0x2B9D4F6E /* litter */, 0x51ED270B /* pigment */, 0x7A3C91D5 /* drop */, 0x5bd1e995 /* wind */, 0x5EED /* growth */, seasonMod.TREE_SALT];
   expect(new Set(salts).size).toBe(salts.length);
-  const files = readdirSync(".").filter((f) => /\.(js|mjs|html)$/.test(f) && !/\.test\.js$/.test(f));
+  const files = [...readdirSync(".").filter((f) => /\.(js|mjs|html)$/.test(f)), ...["engine", "editor"].flatMap((d) => readdirSync(d, { recursive: true }).map((f) => `${d}/${f}`)).filter((f) => /\.(js|mjs|html)$/.test(f))];
   expect(files.length).toBeGreaterThan(20);
   const named = files.filter((f) => /3C6EF372/i.test(readFileSync(f, "utf8")));
-  expect(named, "one place names the salt").toEqual(["komorebi-season.js"]);
+  expect(named, "one place names the salt").toEqual(["engine/season/komorebi-season.js"]);
 });
 
 // ---- 2. the laws ---------------------------------------------------------------------------------------------------------------
@@ -283,7 +283,7 @@ test("at 0 and absent every buffer is the same grove: layers, faithful, litter, 
 });
 
 test("the grove never names treeDraws: it asks the tables (treeShifts / treeGains), which are null at the gate", () => {
-  const src = read("./komorebi-grove.js");
+  const src = read("./engine/canopy/komorebi-grove.js");
   expect(src.includes("treeDraws")).toBe(false);
   expect(src.includes("treeShifts") && src.includes("treeGains")).toBe(true);
   expect(src.includes("TREE_SALT")).toBe(false);
@@ -580,17 +580,17 @@ test("armed at summer the earliest tree is still to come: afternoon 7 at (0.11, 
 
 // ---- the predicates exist once ---------------------------------------------------------------------------------------------------------
 test("the registry's pigment tier and the grove's gate read one predicate: the reach is in season.js, once", () => {
-  const files = readdirSync(".").filter((f) => /\.(js|mjs)$/.test(f) && !/\.test\.js$/.test(f));
+  const files = [...readdirSync(".").filter((f) => /\.(js|mjs)$/.test(f)), ...["engine", "editor"].flatMap((d) => readdirSync(d, { recursive: true }).map((f) => `${d}/${f}`)).filter((f) => /\.(js|mjs)$/.test(f))];
   const stating = files.filter((f) => /\b(turnOpens|dropOpens)\s*=/.test(readFileSync(f, "utf8")));
-  expect(stating, "the reach-aware predicates are stated in komorebi-season.js and nowhere else").toEqual(["komorebi-season.js"]);
-  for (const f of ["komorebi-grove.js", "komorebi-params.js", "editor.js"]) expect(/\.turn_start\s*-\s*\w+\.tree_clock_spread/.test(read(`./${f}`)), `${f} does not restate the reach`).toBe(false);
-  expect(/params\.phenology\s*>\s*params\.turn_start/.test(read("./editor.js")), "editor.js does not restate the gate").toBe(false);
+  expect(stating, "the reach-aware predicates are stated in komorebi-season.js and nowhere else").toEqual(["engine/season/komorebi-season.js"]);
+  for (const f of ["engine/canopy/komorebi-grove.js", "engine/komorebi-params.js", "editor/editor.js"]) expect(/\.turn_start\s*-\s*\w+\.tree_clock_spread/.test(read(`./${f}`)), `${f} does not restate the reach`).toBe(false);
+  expect(/params\.phenology\s*>\s*params\.turn_start/.test(read("./editor/editor.js")), "editor.js does not restate the gate").toBe(false);
 });
 
 // ---- the held leaf (leaf-preview.js, DOM): it sits on a tree of the grove, and its lead and depth are the picture's own seed's ----------------------------------------------
 // A stub DOM is enough to run draw(): the canvas keeps its dataset (the label the editor smoke reads), the clock is the test's, and the grove is the one hierOf hands over.
 async function heldLeaf(params, hier) {
-  const { makeLeafPreview } = await import("../leaf-preview.js");
+  const { makeLeafPreview } = await import("../editor/leaf-preview.js");
   const ctx = new Proxy({}, { get: (t, name) => (name in t ? t[name] : () => {}), set: (t, name, v) => { t[name] = v; return true; } });
   const painted = [];   // the bytes of every leaf the inset painted, in order: the colours the picture shows
   ctx.putImageData = (img) => { painted.push(img.data); };

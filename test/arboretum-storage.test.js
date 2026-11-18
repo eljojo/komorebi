@@ -2,8 +2,8 @@
 // (komorebi.presets) and arboretum's state (komorebi.arboretum: origin records, cached playlists, who you were).
 // Run: `bun test arboretum-storage.test.js`. bun has no localStorage, so each test installs a fresh in-memory shim.
 import { test, expect, beforeEach } from "bun:test";
-import { ARB_KEY, LS_KEY, MIRROR_KEY, getMirror, getPreset, getState, getStored, setMirror, setState, setStored } from "../arboretum.js";
-import { emptyMirror } from "../playlists.js";
+import { ARB_KEY, LS_KEY, MIRROR_KEY, getMirror, getPreset, getState, getStored, setMirror, setState, setStored } from "../editor/arboretum.js";
+import { emptyMirror } from "../editor/playlists.js";
 import { PRESETS } from "../presets.js";
 
 beforeEach(() => {

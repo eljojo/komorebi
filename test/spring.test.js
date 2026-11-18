@@ -5,10 +5,11 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
-import { DEFAULTS, GRANDFATHERED, PARAMS, SEASON_KEYS } from "../komorebi-params.js";
+import { DEFAULTS, GRANDFATHERED, PARAMS, SEASON_KEYS } from "../engine/komorebi-params.js";
 import { PRESETS } from "../presets.js";
-import { SPRING_SALT, TAU_ANTHOCYANIN, leafSpring, springShape, springTau, springing } from "../komorebi-season.js";
-import { makeGrove } from "../komorebi-grove.js";
+import { SPRING_SALT, TAU_ANTHOCYANIN, leafSpring, springShape, springTau, springing } from "../engine/season/komorebi-season.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
+const ENGINE_SOURCES = [...readdirSync(new URL("../", import.meta.url)).filter((n) => /^komorebi.*\.js$/.test(n)), ...readdirSync(new URL("../engine/", import.meta.url), { recursive: true }).filter((n) => n.endsWith(".js")).map((n) => `engine/${n}`)];   // every module of the engine, as a path from the root
 
 const P = { ...DEFAULTS };
 function grow(over) {
@@ -69,7 +70,7 @@ test("a grove at bud break is bare; leafing out its leaves are fewer and smaller
 
 test("the emergence stream's salt is 7·0x9E3779B9 mod 2^32 and no other stream's", () => {
   expect(SPRING_SALT).toBe((7 * 0x9E3779B9) % 2 ** 32);
-  const src = readdirSync(new URL("../", import.meta.url)).filter((f) => /^komorebi.*\.js$/.test(f)).map((f) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8")).join("\n");
+  const src = ENGINE_SOURCES.map((f) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8")).join("\n");
   const all = [...src.matchAll(/_SALT\s*=\s*(0x[0-9A-Fa-f]+)/g)].map((m) => Number(m[1]));
   expect(all.filter((v) => v === SPRING_SALT)).toHaveLength(1);
 });

@@ -27,9 +27,9 @@ const komorebi = (file) => import(pathToFileURL(join(KOMOREBI, file)).href);
 
 const tmp = mkdtempSync(join(tmpdir(), 'arboretum-engine-'));
 try {
-  const { DEFAULTS, LEGACY_KEYS, PARAMS } = await komorebi('komorebi-params.js');
+  const { DEFAULTS, LEGACY_KEYS, PARAMS } = await komorebi('engine/komorebi-params.js');
   const { PRESETS, EXPERIMENTAL } = await komorebi('presets.js');
-  const { PRESENTATION_PROFILES, FIDELITY_KEYS, PLAYBACK_KEYS } = await komorebi('komorebi-session.js');
+  const { PRESENTATION_PROFILES, FIDELITY_KEYS, PLAYBACK_KEYS } = await komorebi('engine/komorebi-session.js');
   // Every look name keeps every camera, and `all` keeps every fall tier. Built into tmp, so komorebi's dist/ is left alone.
   const { build } = await komorebi('embed-build.mjs');
 

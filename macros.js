@@ -23,9 +23,9 @@
 // macros.test.js holds these claims to the engine's own key classification.
 // ============================================================================
 
-import { TWEEN_STEP } from './komorebi-season.js';
-import { beamIrr, cloudGain } from './komorebi-light.js';
-import { cameraFor } from './komorebi-transport.js';
+import { TWEEN_STEP } from './engine/season/komorebi-season.js';
+import { beamIrr, cloudGain } from './engine/light/komorebi-light.js';
+import { cameraFor } from './engine/transport/komorebi-transport.js';
 
 const clamp01 = (t) => Math.min(1, Math.max(0, t));
 const lerp = (a, b, t) => a + (b - a) * t;

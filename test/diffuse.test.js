@@ -11,15 +11,15 @@
 // komorebi-fill.js is the reference the pixel harness holds the shader to; bun holds the reference to the laws.
 // ============================================================================
 import { test, expect } from "bun:test";
-import { GRANDFATHERED } from "../komorebi-params.js";
+import { GRANDFATHERED } from "../engine/komorebi-params.js";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS, CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, buildTransport } from "../komorebi.js";
 import { readFileSync } from "node:fs";
-import * as M from "../komorebi-math.js";
-import * as leafMod from "../komorebi-leaf.js";
-import * as F from "../komorebi-fill.js";
-import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FILL, GLSL_SKY_RAY } from "../komorebi-shaders.js";
-import * as SH from "../komorebi-shaders.js";
-import { makeGrove } from "../komorebi-grove.js";
+import * as M from "../engine/komorebi-math.js";
+import * as leafMod from "../engine/leaf/komorebi-leaf.js";
+import * as F from "../engine/transport/komorebi-fill.js";
+import { VS_BAKE, FS_BAKE, VS_FAITH, FS_FAITH, FS_FILL, GLSL_SKY_RAY } from "../engine/transport/komorebi-shaders.js";
+import * as SH from "../engine/transport/komorebi-shaders.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 
 const sum = (a) => a.reduce((s, v) => s + v, 0);
 const H4 = [2, 3, 4, 5];                                               // a synthetic stack, lowest first
@@ -500,7 +500,7 @@ test("the faithful cast takes k at the bake, per stamp: the leaf's mixture over 
 
 // refreshFaith is what keeps the cast current for a frame that nothing else baked. A recording stub GL and no grove (faith.vao null: bakeFaithful
 // records what it was made of and stops there) are enough to read WHEN it casts; the pixels of the cast are the harness's.
-import { makeBake } from "../komorebi-bake.js";
+import { makeBake } from "../engine/transport/komorebi-bake.js";
 function castRig(over = {}) {
   let casts = 0;
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : () => { if (name === "bindFramebuffer") casts++; return {}; }) });
@@ -738,7 +738,7 @@ test("edge_area: refreshFaith re-casts when it flips and flips back — the cast
 
 // The fill signature: a stub-GL rig on makeFill (the fill is its own factory), in castRig's style. bakeFill reads the hub for its textures, heights and program;
 // the stubs below are everything it touches. Whether the fill re-bakes is read off drawArrays: one fullscreen triangle per bake.
-import { makeFill, FILL_SIG_LEN } from "../komorebi-bake.js";
+import { makeFill, FILL_SIG_LEN } from "../engine/transport/komorebi-bake.js";
 function fillRig(over = {}) {
   let draws = 0;
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : () => { if (name === "drawArrays") draws++; return name === "checkFramebufferStatus" ? "FRAMEBUFFER_COMPLETE" : {}; }) });
@@ -774,7 +774,7 @@ test("fillSig: 23 slots, edge_area is slot 13 (sun_cosine and sun_extinction, sl
 });
 
 test("fillSig: the signature array is sized from FILL_SIG_LEN in both places (a write past a Float64Array's end is dropped silently, and the fill re-bakes every frame)", () => {
-  const bake = readFileSync(new URL("../komorebi-bake.js", import.meta.url), "utf8"), engine = readFileSync(new URL("../komorebi-engine.js", import.meta.url), "utf8");
+  const bake = readFileSync(new URL("../engine/transport/komorebi-bake.js", import.meta.url), "utf8"), engine = readFileSync(new URL("../engine/komorebi-engine.js", import.meta.url), "utf8");
   expect(bake.includes("new Float64Array(FILL_SIG_LEN)")).toBe(true);
   expect(engine.includes("new Float64Array(FILL_SIG_LEN)")).toBe(true);
   const slots = [...bake.match(/function fillSig\(o\)\{[\s\S]*?\n {2}\}/)[0].matchAll(/o\[(\d+)\]/g)].map((m) => +m[1]);

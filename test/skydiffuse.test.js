@@ -16,10 +16,10 @@
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { DEFAULTS, CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, TRANSPORT_CAMERAS, buildTransport } from "../komorebi.js";
-import * as M from "../komorebi-math.js";
-import * as leafMod from "../komorebi-leaf.js";
-import * as F from "../komorebi-fill.js";
-import { FS_FILL, FS_FAITH_SEG, GLSL_SKY_RAY } from "../komorebi-shaders.js";
+import * as M from "../engine/komorebi-math.js";
+import * as leafMod from "../engine/leaf/komorebi-leaf.js";
+import * as F from "../engine/transport/komorebi-fill.js";
+import { FS_FILL, FS_FAITH_SEG, GLSL_SKY_RAY } from "../engine/transport/komorebi-shaders.js";
 
 const H4 = [2, 3, 4, 5];
 const SUN = [1.1, 0.95, 0.8];
@@ -321,7 +321,7 @@ test("both programs that run the shared ray declare the wood field with the SAME
 });
 
 // ---- the data move: coverage in alpha on every bake, the wood in its own R16F texture per layer -------------------------
-const bakeSrc = src("komorebi-bake.js"), engineSrc = src("komorebi-engine.js"), renderSrc = src("komorebi-render.js");
+const bakeSrc = src("engine/transport/komorebi-bake.js"), engineSrc = src("engine/komorebi-engine.js"), renderSrc = src("engine/transport/komorebi-render.js");
 
 test("the leaf bake is the same on every camera: alpha is coverage everywhere, no colour mask for the sky view", () => {
   expect(code(bakeSrc).includes("colorMask")).toBe(false);

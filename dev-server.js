@@ -175,8 +175,9 @@ Bun.serve({
 });
 
 let timer = null;                                        // debounce a burst of fs events into one reload
-watch(ROOT, (_event, name) => {
-  if (!name || !/\.(js|mjs|html|css)$/.test(name)) return;
+// The modules sit in subfolders (engine/, editor/), so the watch is recursive; what the harness and the review archives write is not the site.
+watch(ROOT, { recursive: true }, (_event, name) => {
+  if (!name || !/\.(js|mjs|html|css)$/.test(name) || /(^|\/)(node_modules|\.git|archive|arboretum|spec-no-commit|out)\//.test(name)) return;
   clearTimeout(timer);
   timer = setTimeout(() => { for (const ws of sockets) ws.send("reload"); }, 80);
 });

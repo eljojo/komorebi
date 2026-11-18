@@ -4,23 +4,23 @@
 // with no error; these tests turn that into a loud `bun test` failure. Run: `bun test transitions.test.js`.
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "../komorebi.js";
-import { CANOPY_MORPH_MAX } from "../komorebi-params.js";
-import { makeTransitions } from "../komorebi-transitions.js";
-import { GROVE_READS } from "../komorebi-grove.js";
+import { CANOPY_MORPH_MAX } from "../engine/komorebi-params.js";
+import { makeTransitions } from "../engine/transitions/komorebi-transitions.js";
+import { GROVE_READS } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS as AUTHORED_PRESETS } from "../presets.js";
 // The transition coordinator receives concrete render params; authored looks may inherit fidelity.
 const PRESETS=Object.fromEntries(Object.entries(AUTHORED_PRESETS).map(([name,look])=>[name,{...DEFAULTS,...look}]));
-import { makeSource } from "../komorebi-source.js";
-import { makeCast } from "../komorebi-cast.js";
-import { DEG, clamp, lerp, smoothstep } from "../komorebi-math.js";
-import { beamExposure } from "../komorebi-light.js";
+import { makeSource } from "../engine/light/komorebi-source.js";
+import { makeCast } from "../engine/transport/komorebi-cast.js";
+import { DEG, clamp, lerp, smoothstep } from "../engine/komorebi-math.js";
+import { beamExposure } from "../engine/light/komorebi-light.js";
 import { cameraFor } from "../komorebi.js";
-import { restTrans, turnBack } from "../komorebi-routes.js";
-import { makeSceneFade } from "../komorebi-scene-fade.js";
-import { makeLeafTravel } from "../komorebi-leaf-travel.js";
-import { makeSeasonTravel } from "../komorebi-season-travel.js";
-import { makeLitterRise } from "../komorebi-litter-rise.js";
-import { makeGroveTravel } from "../komorebi-grove-travel.js";
+import { restTrans, turnBack } from "../engine/transitions/komorebi-routes.js";
+import { makeSceneFade } from "../engine/transitions/komorebi-scene-fade.js";
+import { makeLeafTravel } from "../engine/transitions/komorebi-leaf-travel.js";
+import { makeSeasonTravel } from "../engine/transitions/komorebi-season-travel.js";
+import { makeLitterRise } from "../engine/transitions/komorebi-litter-rise.js";
+import { makeGroveTravel } from "../engine/transitions/komorebi-grove-travel.js";
 import riseFixture from '../test-gl/fixtures/fall-look-up.json';
 import shadowFixture from '../test-gl/fixtures/purple-look-up.json';
 import descentFixture from '../test-gl/fixtures/look-up-fall.json';
@@ -966,9 +966,9 @@ test('turnBack: momentum is spent, then the route eases home; the farther out, t
 
 // ---- THE ECLIPSE PAIRS: the shared-layer crossfade across layer counts, and the moon crossing the eclipse gate ----
 // The source and cast modules' pure moon and height functions, read through the namespace so a missing one fails its test rather than the file.
-import * as SOURCE from "../komorebi-source.js";
-import * as CAST from "../komorebi-cast.js";
-import * as GROVE from "../komorebi-grove.js";
+import * as SOURCE from "../engine/light/komorebi-source.js";
+import * as CAST from "../engine/transport/komorebi-cast.js";
+import * as GROVE from "../engine/canopy/komorebi-grove.js";
 
 // The transition rig with the real sampler and layer heights wired in, the way the engine wires them.
 function sourceRig(from, over = {}) {

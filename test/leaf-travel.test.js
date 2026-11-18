@@ -1,8 +1,8 @@
 import { test, expect } from 'bun:test';
-import * as travel from '../komorebi-leaf-travel.js';
-import { restTrans } from '../komorebi-routes.js';
-import { smoothstep } from '../komorebi-math.js';
-import { DEFAULTS, CANOPY_MORPH_MAX } from '../komorebi-params.js';
+import * as travel from '../engine/transitions/komorebi-leaf-travel.js';
+import { restTrans } from '../engine/transitions/komorebi-routes.js';
+import { smoothstep } from '../engine/komorebi-math.js';
+import { DEFAULTS, CANOPY_MORPH_MAX } from '../engine/komorebi-params.js';
 
 function grove(groups){
   const leaves=[],plan=[],twigs=[];

@@ -8,14 +8,14 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { DEFAULTS } from "../komorebi.js";
-import { hash3, DEG } from "../komorebi-math.js";
-import { sunDirection } from "../komorebi-light.js";
-import { FILL_GOLDEN, FILL_TILE, fillTile, fillDirections, fillRays, fillTurns, skyRayRef, fillRef, texelMix, slabUnder, groundRef, undersideRef, bounceRef } from "../komorebi-fill.js";
-import { FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO } from "../komorebi-shaders.js";
-import { SLAB, SLAB_N, slabLeaf, slabK, slabTable } from "../komorebi-leaf.js";
-import { PARAMS, BOUNCE_BOX, GRANDFATHERED } from "../komorebi-params.js";
+import { hash3, DEG } from "../engine/komorebi-math.js";
+import { sunDirection } from "../engine/light/komorebi-light.js";
+import { FILL_GOLDEN, FILL_TILE, fillTile, fillDirections, fillRays, fillTurns, skyRayRef, fillRef, texelMix, slabUnder, groundRef, undersideRef, bounceRef } from "../engine/transport/komorebi-fill.js";
+import { FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO } from "../engine/transport/komorebi-shaders.js";
+import { SLAB, SLAB_N, slabLeaf, slabK, slabTable } from "../engine/leaf/komorebi-leaf.js";
+import { PARAMS, BOUNCE_BOX, GRANDFATHERED } from "../engine/komorebi-params.js";
 import { TRANSPORT_GROUPS, buildTransport } from "../komorebi.js";
-import { makeGrove } from "../komorebi-grove.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 
 const SUN = [1.1, 0.95, 0.8], G_SUN = [0.5, -0.3];   // sun colour, the sun's plan travel per metre of rise
 const HEIGHTS = [2, 3, 4];                                                    // a synthetic 3-layer stack, lowest first
@@ -372,7 +372,7 @@ test("interleaving holds for the scattered light too", () => {
 // and the border texel was repeated to the horizon. The reference now takes the sun path as an argument and reads the layers
 // through a DOMAIN: wrap (the endless park: light leaving one side enters from the other), open (the finite tree: outside
 // the box is open sky, over a frame padded to hold the glow) or clamp (what it used to be).
-import * as FILL from "../komorebi-fill.js";
+import * as FILL from "../engine/transport/komorebi-fill.js";
 
 const P = 6, FRAME = { ox: -P / 2, oy: -P / 2, ext: P };
 // a field periodic over the frame: integer wavenumbers, so the torus is exactly the field's own period and an analytic sum over a grid is exact
@@ -519,9 +519,9 @@ test("the endless park's sun path is vertical: gS = 0 lights layer i from the la
 
 // ---- THE BAKE'S WIRING: what the fill pass is handed, and what it does to the layer textures. A stub GL records the calls and a
 // real makeCast supplies the very bulkShift / bulkOn the engine uses — so this holds the wiring, not a restatement of it.
-import { makeBake, makeFill, FILL_SIG_LEN } from "../komorebi-bake.js";
-import { makeCast } from "../komorebi-cast.js";
-import { MAX_LAYERS } from "../komorebi-params.js";
+import { makeBake, makeFill, FILL_SIG_LEN } from "../engine/transport/komorebi-bake.js";
+import { makeCast } from "../engine/transport/komorebi-cast.js";
+import { MAX_LAYERS } from "../engine/komorebi-params.js";
 
 function bakeRig(over) {
   const calls = [];

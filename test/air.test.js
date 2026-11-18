@@ -3,9 +3,9 @@
 // trunk with; a clump downwind feels the gust later by its distance over U; the eddies are a factor of mean 1. The wind's
 // reach: off, every leaf rocks; on, the skin always, the core only once the wind is strong enough, deeper as it rises.
 import { expect, test } from "bun:test";
-import { AIR, DEPTH, advanceAir, airCurve, airDelay, airForce, airLevel, crossForce, curveForce, depthGate, eddy, flutterLevel, gustEdge, leanForce, makeAirTrack, shelter, weatherAt } from "../komorebi-air.js";
-import { crownDepth } from "../komorebi-grove.js";
-import { DEFAULTS } from "../komorebi-params.js";
+import { AIR, DEPTH, advanceAir, airCurve, airDelay, airForce, airLevel, crossForce, curveForce, depthGate, eddy, flutterLevel, gustEdge, leanForce, makeAirTrack, shelter, weatherAt } from "../engine/motion/komorebi-air.js";
+import { crownDepth } from "../engine/canopy/komorebi-grove.js";
+import { DEFAULTS } from "../engine/komorebi-params.js";
 
 const P = { ...DEFAULTS, wind_strength: 0.6, wind_gustiness: 0.5, wind_pattern: "squally", weather_variability: 0.7 };
 const h = 1 / AIR.hz;

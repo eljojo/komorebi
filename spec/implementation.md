@@ -8,10 +8,12 @@ The map of the repository is [`../CLAUDE.md`](../CLAUDE.md): what each file is a
 
 ## The engine's shape
 
-**One door.** The renderer is a standalone ES module. `komorebi.js` is the public door: it re-exports the sibling `komorebi-*.js` modules and has no UI of its own. Its surface is `export { create, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG }`. It also exports a few couplings for one reason only, so that a test can read them. Without that, a disagreement between them would fail silently:
+**One door.** The renderer is a standalone ES module. `komorebi.js` is the public door: it re-exports the modules under `engine/` and has no UI of its own. Its surface is `export { create, DEFAULTS, MAX_LAYERS, MAX_SAMPLES, DEG }`. It also exports a few couplings for one reason only, so that a test can read them. Without that, a disagreement between them would fail silently:
 
 - the transition key sets `MORPH_KEYS`, `CANOPY_KEYS`, `TOPO_KEYS` and `MODE_KEYS`, which let a test assert that every knob is classified;
 - the camera registry's `CAMERAS`, `TRANSPORT_GROUPS` and `GROUP_UPLOAD_KEYS`, which let a test assert that its three halves name the same groups.
+
+**Where the modules sit.** The engine's modules are under `engine/`: `komorebi-engine.js`, the parameter registry, the session profiles, the shared maths and the editor-only tools at its top, and the rest in a folder named for the model file that owns the mechanism (`light/`, `canopy/`, `leaf/`, `season/`, `motion/`, `transport/`, `transitions/`). The editor's modules are under `editor/`. `komorebi.js`, `presets.js` and `macros.js` stay at the root beside the pages, so the address a page imports does not move. The map names every file.
 
 **The subsystem factories.** `komorebi-engine.js` is `create()` itself. It holds the GL plumbing, the shared-internals hub, the rebuild coordinators, auto-quality and the frame loop. Each subsystem is a factory module that closes over the hub: the grove (`komorebi-grove.js`), the bake and the sky fill (`komorebi-bake.js`), the source (`komorebi-source.js`), the cast geometry (`komorebi-cast.js`), the motion (`komorebi-motion.js`), the litter (`komorebi-litter.js`), the tree view (`komorebi-tree-view.js`), the transitions (`komorebi-transitions.js`, which picks the route between two looks and runs every long route's lifecycle), the five modules that each hold one long route and return its entry (`komorebi-scene-fade.js`, `komorebi-leaf-travel.js`, `komorebi-season-travel.js`, `komorebi-grove-travel.js`, `komorebi-litter-rise.js`; see [Transitions as a registry](#transitions-as-a-registry)), the render (`komorebi-render.js`) and the editor tools (`komorebi-editor-tools.js`). They stand on four foundations: shaders (`komorebi-shaders.js`), transport (`komorebi-transport.js`), params (`komorebi-params.js`) and the shared math (`komorebi-math.js`: constants, interpolation, the RNG). The routes stand on one more, pure: what a route is (`komorebi-routes.js`). The laws live in pure modules, with no GL, so a unit test can run them without a GPU: the season (`komorebi-season.js`), the light (`komorebi-light.js`), the camera (`komorebi-camera.js`), the skeleton grammar (`komorebi-grammar.js`), the air (`komorebi-air.js`), the leaf's outline, material and side (`komorebi-leaf.js`), the fill's quadrature (`komorebi-fill.js`), the litter's laws (`komorebi-litter.js`), the shoots (`komorebi-shoots.js`) and the year-by-year growth (`komorebi-growth.js`). See the map for each module's ownership.
 
@@ -37,7 +39,7 @@ The engine runs its own `requestAnimationFrame` loop on the canvas it is handed.
 
 **The consumers.**
 
-- **The editor.** `index.html` is a thin shell over `editor.js`: the dev panel, the HUD, the insets, preset management, sun-drag and scene stepping. Its pure parts are siblings with their own tests:
+- **The editor.** `index.html` is a thin shell over `editor/editor.js`: the dev panel, the HUD, the insets, preset management, sun-drag and scene stepping. Its pure parts have their own tests:
   - `playlists.js`, `arboretum.js` and `arboretum-api.js`: look storage and arboretum;
   - `macros.js`: the control bus (`createBus`);
   - `leaf-maze.js` and `leaf-preview.js`: the held leaf.
@@ -410,7 +412,7 @@ The piece's preservation and determinism contracts are executed by equality in p
 
 ## The editor and the player
 
-The editor is a tool for exploring the model, not part of it: nothing here reaches a look's frame, a bundle or the engine. `index.html` is its shell and `editor.js` its body; the map names the pure siblings.
+The editor is a tool for exploring the model, not part of it: nothing here reaches a look's frame, a bundle or the engine. `index.html` is its shell and `editor/editor.js` its body; the map names the pure modules beside it.
 
 **Three surfaces.** The mode ladder runs from a zen strip (the default, which fades after stillness) to the playful macro sidebar and the advanced panel. After "feel" the active surface slides in, on a touch screen as on a desktop. **D** toggles it (in zen it wakes or fades the strip); **F**, or a double-click on the picture with a mouse, toggles fullscreen. On touch there is no keyboard: a **tap** on the picture toggles the surface as D does, and yields to a swipe once the finger passes a 12 px deadzone. The first arrival on a touch screen shows the two gestures once, in the key-hint line. While a finger holds a slider on any of the three surfaces, everything but that slider's row fades out so the picture shows, and returns on release.
 
@@ -476,7 +478,7 @@ CPU policy/lifecycle tests are `sessions.test.js`, `sessions-engine.test.js` and
 
 ## The harness
 
-Two tiers. The **unit tests** (`*.test.js` at the root, run under `bun test`) hold the pure laws, plus the wiring over a stub GL. The **pixel harness** (`test-gl/`, run by `test-gl/run.js` through `test-gl/harness.html`, with helpers in `harness-lib.mjs`) renders real frames in headless Chromium on WebGL2 via SwiftShader. Under frozen motion its captures are stable to the byte, so the assertion is equality rather than a tolerance. Renders are evidence, not source.
+Two tiers. The **unit tests** (`*.test.js` in `test/`, run under `bun test`) hold the pure laws, plus the wiring over a stub GL. The **pixel harness** (`test-gl/`, run by `test-gl/run.js` through `test-gl/harness.html`, with helpers in `harness-lib.mjs`) renders real frames in headless Chromium on WebGL2 via SwiftShader. Under frozen motion its captures are stable to the byte, so the assertion is equality rather than a tolerance. Renders are evidence, not source.
 
 ### Pixel harness suites (`nix run .#pixels`)
 
@@ -543,7 +545,7 @@ Playlist videos use the same transition timing as the editor. A checkpoint is sa
 - `nix run .#build` keeps every shipped look and writes `dist/komorebi.player.min.js`;
 - `nix run .#embed -- '<look>'…` keeps the named looks and writes `dist/komorebi.embed.min.js`.
 
-The functions are exported, and the command line runs only when the file is the entry script (`bundle.test.js`, `features.test.js`). Every cut is read from a table, never decided by hand.
+The functions are exported, and the command line runs only when the file is the entry script (`bundle.test.js`, `features.test.js`). The assembled tree keeps the repository's layout, so every import in it resolves as it does here and a test names a module of it by its path (`engine/transport/komorebi-transport.js`). Every cut is read from a table, never decided by hand.
 
 **Camera pruning.** `cameraFor()` reads the kept looks and names the cameras they select. `CAMERAS`, `TRANSPORT_GROUPS`, `GROUP_UPLOAD_KEYS` and the per-frame `GROUP_UPLOAD` are pruned to that set, keeping the three-halves agreement `registry.test.js` guards. An unreachable camera takes its GLSL, its uniform groups and its upload with it, and the orphan sweep removes its shader strings. Only the experimental looks select a camera other than the floor, so the player bundle carries the floor camera alone.
 

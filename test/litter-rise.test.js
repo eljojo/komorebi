@@ -1,8 +1,8 @@
 import {test,expect} from 'bun:test';
 import fixture from '../test-gl/fixtures/fall-look-up.json';
 import descent from '../test-gl/fixtures/look-up-fall.json';
-import * as rise from '../komorebi-litter-rise.js';
-import {restTrans} from '../komorebi-routes.js';
+import * as rise from '../engine/transitions/komorebi-litter-rise.js';
+import {restTrans} from '../engine/transitions/komorebi-routes.js';
 test('the authored fall memories → look up pair takes the litter rise route',()=>{
  expect(typeof rise.litterRiseEligible).toBe('function');
  expect(rise.litterRiseEligible(fixture.from,fixture.to)).toBe(true);

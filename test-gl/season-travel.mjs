@@ -16,7 +16,7 @@ try{
   });
   await page.goto('http://season.test/');
   const edgeChecks=await page.evaluate(async()=>{
-    const {FS_FAITH}=await import('/komorebi-shaders.js'),{texelMix}=await import('/komorebi-fill.js');
+    const {FS_FAITH}=await import('/engine/transport/komorebi-shaders.js'),{texelMix}=await import('/engine/transport/komorebi-fill.js');
     const g=document.createElement('canvas').getContext('webgl2');
     if(!g?.getExtension('EXT_color_buffer_float'))throw Error('Float WebGL2 unavailable');
     const shader=(type,source)=>{const s=g.createShader(type);g.shaderSource(s,source);g.compileShader(s);if(!g.getShaderParameter(s,g.COMPILE_STATUS))throw Error(g.getShaderInfoLog(s));return s;};
@@ -66,7 +66,7 @@ void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0
     const diff=(a,b)=>a.reduce((m,x,i)=>Math.max(m,Math.abs(x-b[i])),0);
     function pump(n){for(let i=0;i<n;i++){stamp+=step;window.__clock.pump(stamp);}}
     function open(p){e?.dispose();c?.remove();window.__clock.drain();window.__clock.set(0);stamp=0;c=document.createElement('canvas');document.body.appendChild(c);e=create(c,{params:p});e.onFrame=()=>{const g=e.gl;last=new Uint8Array(320*180*4);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,320,180,g.RGBA,g.UNSIGNED_BYTE,last);const error=g.getError();need(!error,`WebGL ${error}`);};pump(1);}
-    const {cameraPose}=await import('/komorebi-camera.js'),{smoothstep}=await import('/komorebi-math.js');
+    const {cameraPose}=await import('/engine/transport/komorebi-camera.js'),{smoothstep}=await import('/engine/komorebi-math.js');
     const tune={tree_count:1,branch_levels:2,branch_children:2,limb_count:4,leaves_per_cluster:6,
       sample_count:5,tex_resolution:256,bake_resolution:128,fill_directions:4,fill_resolution:64,litter_resolution:256,
       wind_strength:0,drift_auto:false,auto_quality:false,adaptive_motion:false};

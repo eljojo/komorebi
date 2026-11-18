@@ -1,6 +1,6 @@
 import {test,expect} from 'bun:test';
-import * as rise from '../komorebi-litter-rise.js';
-import {restTrans} from '../komorebi-routes.js';
+import * as rise from '../engine/transitions/komorebi-litter-rise.js';
+import {restTrans} from '../engine/transitions/komorebi-routes.js';
 import fixture from '../test-gl/fixtures/purple-look-up.json';
 
 test('the approved purple eye → look up pair lifts its shadow footprints',()=>{

@@ -10,23 +10,23 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "../embed-build.mjs";
-import { api } from "../arboretum-api.js";
-import { getStored, getMirror, MIRROR_KEY, mount, setMirror, setState, setStored } from "../arboretum.js";
-import { emptyMirror, enqueue, parseHash, starValue } from "../playlists.js";
-import * as model from "../playlists.js";
+import { api } from "../editor/arboretum-api.js";
+import { getStored, getMirror, MIRROR_KEY, mount, setMirror, setState, setStored } from "../editor/arboretum.js";
+import { emptyMirror, enqueue, parseHash, starValue } from "../editor/playlists.js";
+import * as model from "../editor/playlists.js";
 
 const HOME = ["morning 2", "afternoon 5b", "morning 3"];   // the three-look set the homepage loads
-const engine = () => [...readdirSync(".").filter((f) => /^komorebi-.*\.js$/.test(f)), "komorebi.js", "komorebi.global.js", "presets.js", "macros.js"];
+const engine = () => [...readdirSync("engine", { recursive: true }).filter((f) => f.endsWith(".js")).map((f) => `engine/${f}`), "komorebi.js", "komorebi.global.js", "presets.js", "macros.js"];
 
 test("nothing ships: no engine module, bundle shim, preset or macro names arboretum", () => {
   for (const f of engine()) expect(/arboretum/i.test(readFileSync(f, "utf8")), f).toBe(false);
 });
 
 test("the wire is reached through arboretum.js alone: only arboretum.js imports arboretum-api.js", () => {
-  const files = [".", "test"].flatMap((d) => readdirSync(d).map((f) => (d === "." ? f : `${d}/${f}`)));
+  const files = [...readdirSync("."), ...["test", "editor", "engine"].flatMap((d) => readdirSync(d, { recursive: true }).map((f) => `${d}/${f}`))];
   for (const f of files.filter((f) => /\.(js|mjs)$/.test(f) && !/(^|\/)arboretum(-api)?(\.test)?\.js$/.test(f))) {
     for (const line of readFileSync(f, "utf8").split("\n"))
-      if (/^\s*(import|export)\b/.test(line) && /['"]\.{1,2}\/arboretum-api(\.js)?['"]/.test(line)) throw new Error(`${f} imports the wire: ${line.trim()}`);
+      if (/^\s*(import|export)\b/.test(line) && /['"]\.{1,2}\/(?:[\w-]+\/)*arboretum-api(\.js)?['"]/.test(line)) throw new Error(`${f} imports the wire: ${line.trim()}`);
   }
 });
 
@@ -188,7 +188,7 @@ test("the editor keeps the selected preset across a mirror reorder, so saving up
   let state = model.viewState({ origin: {}, playlists: {} }, m, "alice");
   const select = { value: "", appendChild() {} };
   const settings = { selected: {} };
-  const source = readFileSync("editor.js", "utf8");
+  const source = readFileSync("editor/editor.js", "utf8");
   const body = source.slice(source.indexOf("function refreshPresetSelect("), source.indexOf("// the playlist select exists"));
   const refresh = new Function("presetSel", "presetSelects", "listEntries", "document", "settings", "activeList", "stateNow", "selectionAfter", "saveSettings", "syncPlayPreset", "syncPlaylistUI", "arb",
     `let listedState=null, listedActive=null; ${body}; return refreshPresetSelect;`)(
@@ -532,7 +532,7 @@ function welcomeGate(hash, opened) {
     parseHash, mount: () => ({ open: () => opened, ready: Promise.resolve(null) }), params: {}, presetRows: {}, sessionPanel: { account: {} }, activeList: () => "local",
     presetSel: { value: "" }, resumeAt() {}, setActive() {}, showCloud() {}, saveStar() {}, dev: { classList: { contains: () => true } }, syncPlaylistUI() {},
   };
-  const source = readFileSync("editor.js", "utf8");
+  const source = readFileSync("editor/editor.js", "utf8");
   const start = source.indexOf("(()=> {", source.indexOf("// Welcome gate"));
   new Function(...Object.keys(scope), source.slice(start))(...Object.values(scope));
   return { classes, welcome, feel, loaded, transitions, hints };

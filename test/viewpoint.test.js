@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import * as camera from '../komorebi-camera.js';
+import * as camera from '../engine/transport/komorebi-camera.js';
 import { DEFAULTS, CAMERAS, TRANSPORT_GROUPS, buildTransport } from '../komorebi.js';
 
 test('cameraPose expresses the authored sky and floor frames in one world coordinate system',()=>{

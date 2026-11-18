@@ -6,9 +6,9 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { DEFAULTS } from "../komorebi.js";
-import * as seasonMod from "../komorebi-season.js";
-import * as leafMod from "../komorebi-leaf.js";
-import { makeGrove } from "../komorebi-grove.js";
+import * as seasonMod from "../engine/season/komorebi-season.js";
+import * as leafMod from "../engine/leaf/komorebi-leaf.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 
 const tauOf = (p) => [-Math.log(p.trans_r), -Math.log(p.trans_g), -Math.log(p.trans_b)];
 const TAU_SUMMER = tauOf(DEFAULTS);

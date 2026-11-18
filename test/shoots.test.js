@@ -5,10 +5,11 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
-import { DEFAULTS, PARAMS } from "../komorebi-params.js";
+import { DEFAULTS, PARAMS } from "../engine/komorebi-params.js";
 import { PRESETS } from "../presets.js";
-import { SHOOT, SHOOT_LEAF_SALT, clusterShoots, lightTilt, longShare, shootLeaf, tiltMeanDeg } from "../komorebi-shoots.js";
-import { makeGrove } from "../komorebi-grove.js";
+import { SHOOT, SHOOT_LEAF_SALT, clusterShoots, lightTilt, longShare, shootLeaf, tiltMeanDeg } from "../engine/canopy/komorebi-shoots.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
+const ENGINE_SOURCES = [...readdirSync(new URL("../", import.meta.url)).filter((n) => /^komorebi.*\.js$/.test(n)), ...readdirSync(new URL("../engine/", import.meta.url), { recursive: true }).filter((n) => n.endsWith(".js")).map((n) => `engine/${n}`)];   // every module of the engine, as a path from the root
 
 function grow(over) {
   const gl = new Proxy({}, { get(t, name) {
@@ -92,7 +93,7 @@ test("shoot_leaves travels as a different arrangement of the same leaves, never 
 });
 
 test("the shoots' salt is its own", () => {
-  const src = readdirSync(new URL("../", import.meta.url)).filter((f) => /^komorebi.*\.js$/.test(f)).map((f) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8")).join("\n");
+  const src = ENGINE_SOURCES.map((f) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8")).join("\n");
   const all = [...src.matchAll(/_SALT\s*=\s*(0x[0-9A-Fa-f]+)/g)].map((m) => Number(m[1]));
   expect(all.filter((v) => v === SHOOT_LEAF_SALT)).toHaveLength(1);
   expect(SHOOT.longShare[0][1]).toBe(0.4);

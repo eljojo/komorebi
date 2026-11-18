@@ -20,8 +20,8 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { makeGrove } from '../komorebi-grove.js';
-import { DEFAULTS, migrateLegacy } from '../komorebi-params.js';
+import { makeGrove } from '../engine/canopy/komorebi-grove.js';
+import { DEFAULTS, migrateLegacy } from '../engine/komorebi-params.js';
 import { EXPERIMENTAL, PRESETS, PRIORITY } from '../presets.js';
 // the dials a surface holds on a look: the look's PRIORITY first, then the surface's usual ones, up to its count (editor.js tryNames;
 // every look these checks visit can use each dial it names)
@@ -36,7 +36,9 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 function serveRoot() {
   const server = createServer(async (req, res) => {
     // arboretum's dev server serves the site at its root; under /editor/ the same files answer here, over plain http, which is how the smoke reaches the session tier
-    const path = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/editor\//, '/');
+    // `/editor/` is also the folder of the editor's modules: a file that exists as written is served as written, and only otherwise does the mount come off
+    const raw = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const path = raw.startsWith('/editor/') && !(await stat(join(ROOT, normalize(raw))).then((s) => s.isFile(), () => false)) ? raw.replace(/^\/editor\//, '/') : raw;
     const file = join(ROOT, normalize(path === '/' ? '/index.html' : path).replace(/^(\.\.[/\\])+/, ''));
     if (file !== ROOT && !file.startsWith(`${ROOT}/`)) { res.writeHead(403).end(); return; }
     try { if (!(await stat(file)).isFile()) throw 0; } catch { res.writeHead(404).end(); return; }

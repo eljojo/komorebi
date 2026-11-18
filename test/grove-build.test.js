@@ -6,8 +6,8 @@
 // halves giving anything but the grove one build gives; the upload reading the live parameters, which may be another look's by then.
 // ============================================================================
 import { test, expect } from "bun:test";
-import { makeGrove } from "../komorebi-grove.js";
-import { DEFAULTS } from "../komorebi-params.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
+import { DEFAULTS } from "../engine/komorebi-params.js";
 import { PRESETS } from "../presets.js";
 
 // a stand-in GL that counts every call and keeps what each buffer and texture was given

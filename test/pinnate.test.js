@@ -10,11 +10,11 @@ import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { DEFAULTS } from "../komorebi.js";
-import * as math from "../komorebi-math.js";
-import * as LEAF from "../komorebi-leaf.js";
-import * as MAZE from "../leaf-maze.js";
-import * as L from "../komorebi-litter.js";
-import { makeGrove } from "../komorebi-grove.js";
+import * as math from "../engine/komorebi-math.js";
+import * as LEAF from "../engine/leaf/komorebi-leaf.js";
+import * as MAZE from "../editor/leaf-maze.js";
+import * as L from "../engine/season/komorebi-litter.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS } from "../presets.js";
 
 const DEG = math.DEG, TAU = math.TAU, N = LEAF.LEAF_SAMPLES;
@@ -436,13 +436,13 @@ test("leafMaze(beech, ...) is the grove's own beech at that address: its variant
   expect(a.blade.grammar).toBe("pinnate");
   expect(a.maze.walls.filter((w) => w.order === 1)).toHaveLength(1);
   expect(m.maze.walls.filter((w) => w.order === 1)).toHaveLength(5);
-  expect(readFileSync(new URL("../leaf-preview.js", import.meta.url), "utf8")).toContain("LEAF_SHAPES[params.leaf_shape] ?? MAPLE");   // the inset reads the table, so a pick of 'beech' is the beech's blade
+  expect(readFileSync(new URL("../editor/leaf-preview.js", import.meta.url), "utf8")).toContain("LEAF_SHAPES[params.leaf_shape] ?? MAPLE");   // the inset reads the table, so a pick of 'beech' is the beech's blade
 });
 
 // The inset's own wiring, in bun: the source grep above only proves the table is read, so a preview that kept the text and drew the maple anyway would pass it.
 // A stub DOM is enough to run draw() (tree.test.js's rig): the canvas keeps its dataset, the clock is the test's.
 async function heldLeaf(params, hier) {
-  const { makeLeafPreview } = await import("../leaf-preview.js");
+  const { makeLeafPreview } = await import("../editor/leaf-preview.js");
   const calls = [];   // every call the inset makes on its 2d context, [name, ...args]: the bar and the words are drawn there and nowhere else
   const ctx = new Proxy({}, { get: (t, name) => (name in t ? t[name] : (...args) => { calls.push([name, ...args]); }), set: (t, name, v) => { t[name] = v; return true; } });
   const canvas = { style: {}, dataset: {}, width: 0, height: 0, clientWidth: 420, getContext: () => ctx, addEventListener() {}, after() {} };

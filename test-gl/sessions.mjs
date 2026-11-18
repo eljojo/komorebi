@@ -1,14 +1,15 @@
 // Focused sessions acceptance: editor surfaces/saves, and real WebGL endpoints. Not the pixel suite.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, stat, writeFile } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
 const root=resolve(import.meta.dirname,'..');
 let accountChecks=0;
 const server=createServer(async(req,res)=>{
-  const pathname=new URL(req.url,'http://local').pathname.replace(/^\/editor\//,'/');
+  const raw=new URL(req.url,'http://local').pathname;   // `/editor/` is also the folder of the editor's modules: a file that exists as written is served as written, and only otherwise does the mount come off
+  const pathname=raw.startsWith('/editor/')&&!(await stat(resolve(root,`.${raw}`)).then(s=>s.isFile(),()=>false))?raw.replace(/^\/editor\//,'/'):raw;
   if(pathname==='/api/health'){res.setHeader('content-type','application/json');res.end(JSON.stringify({ok:true,engine:'session-test'}));return;}
   if(pathname==='/api/me'){accountChecks++;res.writeHead(401,{'content-type':'application/json'}).end(JSON.stringify({error:'sign in'}));return;}
   if(pathname==='/__sessions'){res.setHeader('content-type','text/html');res.end('<canvas width="96" height="64" style="width:96px;height:64px"></canvas>');return;}

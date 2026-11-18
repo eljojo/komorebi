@@ -4,7 +4,7 @@
 // status line can show. No network, no DOM.
 // ============================================================================
 import { expect, test } from "bun:test";
-import { api } from "../arboretum-api.js";
+import { api } from "../editor/arboretum-api.js";
 
 const ORIGIN = "https://komorebi.eljojo.net";
 

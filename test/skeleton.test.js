@@ -14,9 +14,9 @@
 // ============================================================================
 import { expect, test } from "bun:test";
 import { DEFAULTS } from "../komorebi.js";
-import { makeGrove } from "../komorebi-grove.js";
-import * as math from "../komorebi-math.js";
-import * as grammarMod from "../komorebi-grammar.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
+import * as math from "../engine/komorebi-math.js";
+import * as grammarMod from "../engine/canopy/komorebi-grammar.js";
 import { PRESETS, TREE_SPECIES } from "../presets.js";
 
 // ---- a digest of a grove's skeleton: FNV-1a over the bytes of every number, record by record, keys in sorted order,

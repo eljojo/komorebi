@@ -624,9 +624,11 @@ export function chromiumIdentity(variantName) {
   return { playwright: JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version, browser: name, revision: row.revision, version: row.browserVersion };
 }
 
-// The engine's identity, independent of unrelated dirt (tests, docs, harness edits): the sha256 of every engine module the page can import.
+// The engine's identity, independent of unrelated dirt (tests, docs, harness edits): the sha256 of every engine module the page can import,
+// keyed by its path from the root (the modules sit under engine/; a commit from before that has none there).
 export function engineIdentity(dir) {
-  const files = readdirSync(dir).filter((f) => /^komorebi.*\.js$/.test(f) || f === 'presets.js').sort();
+  const inEngine = existsSync(join(dir, 'engine')) ? readdirSync(join(dir, 'engine'), { recursive: true }).filter((f) => f.endsWith('.js')).map((f) => `engine/${f}`) : [];
+  const files = [...readdirSync(dir).filter((f) => /^komorebi.*\.js$/.test(f) || f === 'presets.js'), ...inEngine].sort();
   const map = Object.fromEntries(files.map((f) => [f, sha256(readFileSync(join(dir, f)))]));
   return { engine_files: map, engine_sha256: sha256(files.map((f) => `${f}:${map[f]}`).join('\n')) };
 }

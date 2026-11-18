@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assemble, build, dropEditorFields } from "../embed-build.mjs";
-import { PARAMS } from "../komorebi-params.js";
+import { PARAMS } from "../engine/komorebi-params.js";
 import { PRESETS } from "../presets.js";
 
 const HOME = ["morning 2", "afternoon 5b", "morning 3"];   // the three-look set the homepage loads
@@ -84,17 +84,17 @@ test("a bundle retains the continuous viewpoint only when it carries both sky an
   expect(assemble({looks:[sky]}).cameras).toEqual(['sky']);
   const mixed=assemble({looks:[sky,'park 1']});
   expect(mixed.cameras).toContain('viewpoint');
-  expect(mixed.files['komorebi-transport.js']).toContain('uniform vec3 uViewEye;');
+  expect(mixed.files['engine/transport/komorebi-transport.js']).toContain('uniform vec3 uViewEye;');
   const flight=assemble({looks:[sky,'park 1'],features:'all'});
   expect(flight.cameras).toContain('rise');
-  expect(flight.files['komorebi-transport.js']).toContain('uRiseDepth');
+  expect(flight.files['engine/transport/komorebi-transport.js']).toContain('uRiseDepth');
 },120000);
 
 test('sky and floor bundles retain the shadow flight without seasonal tiers',()=>{
   const sky=Object.keys(PRESETS).find(n=>PRESETS[n].sky_view);
   const flight=assemble({looks:[sky,'park 1'],features:'none'});
   expect(flight.cameras).toContain('rise');
-  expect(flight.files['komorebi-transport.js']).toContain('uRiseDepth');
+  expect(flight.files['engine/transport/komorebi-transport.js']).toContain('uRiseDepth');
 });
 
 // The BUILD literal itself, read out of the minified text: the name, then its own `cut` array. A bare `"fill"` anywhere in the bundle proves

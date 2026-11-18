@@ -4,10 +4,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import * as lib from './video-lib.mjs';
-import * as engine from '../komorebi-params.js';
-import { makeTransitions } from '../komorebi-transitions.js';
-import { restTrans } from '../komorebi-routes.js';
-import { makeSceneFade } from '../komorebi-scene-fade.js';
+import * as engine from '../engine/komorebi-params.js';
+import { makeTransitions } from '../engine/transitions/komorebi-transitions.js';
+import { restTrans } from '../engine/transitions/komorebi-routes.js';
+import { makeSceneFade } from '../engine/transitions/komorebi-scene-fade.js';
 import { restorePoint } from './parallel.mjs';
 
 const FPS = 60, PRE = 1800;

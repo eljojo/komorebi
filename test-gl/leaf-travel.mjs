@@ -187,7 +187,7 @@ try{
   assert.deepEqual(faithful.contextLoss,{delta:0,error:0},'context loss during faithful travel did not land on the target');
   // At identical geometry, both moving shaders must cut the native blade, including its fractional outline blend.
   const outlines=await page.evaluate(async()=>{
-    const S=await import('/komorebi-shaders.js'),L=await import('/komorebi-leaf.js'),T=await import('/komorebi-leaf-travel.js');
+    const S=await import('/engine/transport/komorebi-shaders.js'),L=await import('/engine/leaf/komorebi-leaf.js'),T=await import('/engine/transitions/komorebi-leaf-travel.js');
     const c=document.createElement('canvas');c.width=c.height=256;document.body.append(c);
     const gl=c.getContext('webgl2',{preserveDrawingBuffer:true,antialias:false});gl.getExtension('EXT_color_buffer_float');
     const shader=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};

@@ -10,7 +10,7 @@
 // functions close over engine state. create() checks that pair itself, on construction.)
 import { test, expect } from "bun:test";
 import { CAMERAS, TRANSPORT_GROUPS, GROUP_UPLOAD_KEYS, TRANSPORT_CAMERAS, FEATURES, buildTransport } from "../komorebi.js";
-import { FS_FILL, GLSL_SKY_RAY, GLSL_LAYER_FIELD, GLSL_SUN_DIR_DECLS } from "../komorebi-shaders.js";
+import { FS_FILL, GLSL_SKY_RAY, GLSL_LAYER_FIELD, GLSL_SUN_DIR_DECLS } from "../engine/transport/komorebi-shaders.js";
 
 const ALL_GROUPS = Object.keys(TRANSPORT_GROUPS);
 const SPOKEN = new Set(Object.values(CAMERAS).flatMap((c) => c.groups));

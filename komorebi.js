@@ -53,8 +53,8 @@
 // FEATURES/featuresFor/cutWarnings are cameraFor's twin for the fall tiers (spec/contracts/gates-and-rungs.md, "What a bundle cuts"): which of the sky fill, the leaf's diffuse share, the
 // autumn pigment, the exposure pass, abscission and the litter carpet a look opens. The bundler cuts what no kept look opens, and the engine warns once
 // when a host opens one its bundle cut.
-export { create } from './komorebi-engine.js';
-export { FIDELITY_KEYS, PLAYBACK_KEYS, QUALITY_PROFILES, PRESENTATION_PROFILES, resolveSession, resolveParams, authoredLook } from './komorebi-session.js';
-export { PARAMS, DEFAULTS, LEGACY_KEYS, migrateLegacy, FEATURES, featuresFor, cutWarnings, MAX_LAYERS, MAX_SAMPLES, MAX_OCC, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS } from './komorebi-params.js';
-export { DEG } from './komorebi-math.js';
-export { TRANSPORT_CAMERAS, TRANSPORT_GROUPS, CAMERAS, GROUP_UPLOAD_KEYS, cameraFor, buildTransport } from './komorebi-transport.js';
+export { create } from './engine/komorebi-engine.js';
+export { FIDELITY_KEYS, PLAYBACK_KEYS, QUALITY_PROFILES, PRESENTATION_PROFILES, resolveSession, resolveParams, authoredLook } from './engine/komorebi-session.js';
+export { PARAMS, DEFAULTS, LEGACY_KEYS, migrateLegacy, FEATURES, featuresFor, cutWarnings, MAX_LAYERS, MAX_SAMPLES, MAX_OCC, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS } from './engine/komorebi-params.js';
+export { DEG } from './engine/komorebi-math.js';
+export { TRANSPORT_CAMERAS, TRANSPORT_GROUPS, CAMERAS, GROUP_UPLOAD_KEYS, cameraFor, buildTransport } from './engine/transport/komorebi-transport.js';

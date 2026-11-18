@@ -9,12 +9,12 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { CANOPY_KEYS, DEFAULTS, MORPH_KEYS, TOPO_KEYS } from "../komorebi.js";
-import * as math from "../komorebi-math.js";
-import * as seasonMod from "../komorebi-season.js";
-import { fillFrame, leafHue } from "../komorebi-fill.js";
-import { makeGrove } from "../komorebi-grove.js";
+import * as math from "../engine/komorebi-math.js";
+import * as seasonMod from "../engine/season/komorebi-season.js";
+import { fillFrame, leafHue } from "../engine/transport/komorebi-fill.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS } from "../presets.js";
-import * as L from "../komorebi-litter.js";
+import * as L from "../engine/season/komorebi-litter.js";
 
 const fall = (over) => ({ ...DEFAULTS, ...over });
 const sum = (a) => a.reduce((s, v) => s + v, 0);
@@ -412,7 +412,7 @@ test("a finite tree's carpet is clamped on its padded frame: what lands off it i
 // THE FLOOR READS IT, AND ONLY THE FLOOR (spec/model/season.md). One uniform group on one camera; everything else is the program it was.
 // ============================================================================
 import { CAMERAS, GROUP_UPLOAD_KEYS, TRANSPORT_CAMERAS, TRANSPORT_GROUPS, buildTransport } from "../komorebi.js";
-import { FS_LITTER, VS_LITTER } from "../komorebi-shaders.js";
+import { FS_LITTER, VS_LITTER } from "../engine/transport/komorebi-shaders.js";
 
 test("the floor's else is the old line: with the carpet unread the material is the one it has always been", () => {
   const floor = buildTransport("floor");
@@ -470,9 +470,9 @@ test("the carpet's bake: a stamp in a unit quad, premultiplied, sized and turned
 // THE BAKE'S WIRING: what the carpet is handed, when it is baked, and when it is not. A stub GL records the calls, and a real makeCast /
 // makeBake supply the very bulkOn, layerHeights and fill frame the engine uses — so this holds the wiring, not a restatement of it.
 // ============================================================================
-import { makeBake, makeFill } from "../komorebi-bake.js";
-import { makeCast } from "../komorebi-cast.js";
-import { MAX_LAYERS } from "../komorebi-params.js";
+import { makeBake, makeFill } from "../engine/transport/komorebi-bake.js";
+import { makeCast } from "../engine/transport/komorebi-cast.js";
+import { MAX_LAYERS } from "../engine/komorebi-params.js";
 
 function litterRig(over = {}, { list = fallen().litter, faithful = false } = {}) {
   const calls = [];
@@ -671,7 +671,7 @@ test("the uniforms the bake is handed are the frame it was baked over, and the t
 // harness runs the real thing (context loss recovers the carpet byte for byte); this holds the lines that make it so.
 import { readFileSync } from "node:fs";
 test("the engine frees the carpet on dispose and forgets it on a lost context, like the fill it is built beside", () => {
-  const src = readFileSync(new URL("../komorebi-engine.js", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../engine/komorebi-engine.js", import.meta.url), "utf8");
   const body = (head) => { const at = src.indexOf(head,src.indexOf('const eng =')); return src.slice(at, src.indexOf("\n    },\n", at)); };
   const dispose = body("dispose(){"), restored = src.slice(src.indexOf("function onContextRestored"), src.indexOf("canvas.addEventListener('webglcontextlost'"));
   expect(dispose).toContain("litter.tex");
@@ -680,7 +680,7 @@ test("the engine frees the carpet on dispose and forgets it on a lost context, l
   expect(restored).toContain("litterEntry = null");
   expect(restored).toContain("Object.assign(litter, newLitterState())");
   expect(src).toContain("makeLitter(hub)");                                                          // rebuilt by initGPU, so a restore gets a fresh 1×1 over the new context
-  const render = readFileSync(new URL("../komorebi-render.js", import.meta.url), "utf8");
+  const render = readFileSync(new URL("../engine/transport/komorebi-render.js", import.meta.url), "utf8");
   expect(render).toMatch(/^\s*hub\.refreshLitter\(\);/m);                                           // once per frame (a statement, not the words in a comment), before any target is bound (a re-bake binds its own)
   expect(render.search(/^\s*hub\.refreshLitter\(\);/m)).toBeLessThan(render.indexOf("gl.bindFramebuffer(gl.FRAMEBUFFER, glow ? glowFBO[0] : fbo);"));
 });
@@ -706,7 +706,7 @@ test("the Kubelka–Munk pair round-trips on a log grid, and its ends are exact 
 
 test("wetten is retired: the wet step is inside the law, and the law no longer reads leafHue", () => {
   expect("wetten" in L).toBe(false);
-  const src = readFileSync(new URL("../komorebi-litter.js", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../engine/season/komorebi-litter.js", import.meta.url), "utf8");
   expect(/import[^\n]*leafHue/.test(src)).toBe(false);
 });
 

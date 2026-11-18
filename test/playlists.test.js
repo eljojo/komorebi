@@ -4,7 +4,7 @@ import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted,
   uploadPlan, itemsAfter, itemTarget, playlists, plays, timing, starValue, starName, entryName,
   fromEntry, onlineId, placeChange, sameLook, lookState, playlistChips,
-  emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, saveNewPlan, isFolder, fromVersion, linkPlaylist, makePlayer, selectionAfter } from "../playlists.js";
+  emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, saveNewPlan, isFolder, fromVersion, linkPlaylist, makePlayer, selectionAfter } from "../editor/playlists.js";
 import * as builtins from "../presets.js";
 import { DEFAULTS, cameraFor } from "../komorebi.js";
 

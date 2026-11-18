@@ -10,14 +10,14 @@
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { CANOPY_KEYS, DEFAULTS, PARAMS, create, buildTransport } from "../komorebi.js";
-import * as paramsMod from "../komorebi-params.js";
-import * as groveMod from "../komorebi-grove.js";
-import { makeGrove } from "../komorebi-grove.js";
+import * as paramsMod from "../engine/komorebi-params.js";
+import * as groveMod from "../engine/canopy/komorebi-grove.js";
+import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS } from "../presets.js";
 import { macroParams } from "../macros.js";
-import { makeBake } from "../komorebi-bake.js";
-import { VS_BAKE, VS_FAITH, VS_FAITH_SEG, FS_FAITH_SEG } from "../komorebi-shaders.js";
-import { makeMotion } from "../komorebi-motion.js";
+import { makeBake } from "../engine/transport/komorebi-bake.js";
+import { VS_BAKE, VS_FAITH, VS_FAITH_SEG, FS_FAITH_SEG } from "../engine/transport/komorebi-shaders.js";
+import { makeMotion } from "../engine/motion/komorebi-motion.js";
 
 // ---- the rig: one stub GL per hub (a grove writes the engine-global faith.* of ITS hub, so the cached grove and the fresh
 // builds it is held to each get their own) ------------------------------------------------------------------------------
@@ -370,18 +370,18 @@ test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exact
   expect(SEASON.length).toBe(25);
   for (const k of SEASON) expect(CANOPY_KEYS, k).toContain(k);
   expect([...SEASON].sort()).toEqual(["anthocyanin", "leaf_green_span", "leaf_out_end", "leaf_out_span", "leaf_out_spread", "young_depth", "young_red", "drop_exposure", "drop_lag", "drop_span", "drop_start", "exposure_absolute", "leaf_drop", "phenology", "tannin", "trans_r", "trans_g", "trans_b", "tree_clock_spread", "tree_pigment_spread", "turn_exposure", "turn_spread", "turn_span", "turn_start", "wall_fraction"].sort());
-  const src = read("./komorebi-grove.js").split("  function refreshWood(){")[0];   // the live wood gate does not affect what buildGrove stores
+  const src = read("./engine/canopy/komorebi-grove.js").split("  function refreshWood(){")[0];   // the live wood gate does not affect what buildGrove stores
   const reads = new Set([...src.matchAll(/params\.([a-z_0-9]+)/g)].map((m) => m[1]).filter((k) => k in DEFAULTS));
   const season = new Set(SEASON), listed = new Set(groveMod.GROVE_READS);
   for (const k of reads) expect(season.has(k) || listed.has(k), `buildGrove reads params.${k}: it is neither in the season set nor in the key`).toBe(true);
   // the listed keys buildGrove does not name itself reach it through faithfulOn() — which the key also carries, as the boolean it is
   // ...or through the math it hands params to: drop_after_turn is a flip the key must carry (it moves every leaf's day and its mid-turn colour) and is read as P.drop_after_turn in komorebi-season.js
-  const mathSrc = read("./komorebi-season.js"), mathReads = new Set([...mathSrc.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
+  const mathSrc = read("./engine/season/komorebi-season.js"), mathReads = new Set([...mathSrc.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
   for (const k of listed) expect(reads.has(k) || ["faithful_canopy", "receiver"].includes(k) || mathReads.has(k), `${k} is in the key but buildGrove never reads it`).toBe(true);
   expect(listed.has("drop_after_turn"), "a flip of the flag invalidates the cache").toBe(true);
   for (const k of listed) { expect(k in DEFAULTS, k).toBe(true); expect(season.has(k), `${k} is a season key`).toBe(false); }
   // and what the math functions it hands params to read (leafTau, senescence, dropDay) is the season set, nothing else
-  const math = read("./komorebi-season.js");
+  const math = read("./engine/season/komorebi-season.js");
   const P = new Set([...math.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
   for (const k of P) expect(season.has(k) || listed.has(k), `komorebi-season.js reads P.${k}, a season-set key (or one the cache key carries)?`).toBe(true);
 });

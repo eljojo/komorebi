@@ -38,24 +38,56 @@ hashes) and a short `README.md` saying what A and B are, what was seen, and Jos�
 Each file's own header says what it does in full; this map says what it owns and what it must stay out of.
 `spec/implementation.md` is the crosswalk from the model to these modules, their tests and the harness.
 
-**The engine.** `komorebi.js` is its public door (`export { create, DEFAULTS, … }`), re-exported from the modules below;
-the whole renderer, no UI. No engine module may import an EDITOR-only file, and nothing in the built bundles names one.
+**The engine.** `komorebi.js` is its public door (`export { create, DEFAULTS, … }`), re-exported from the modules under `engine/`;
+the whole renderer, no UI. It stays at the root so its address never moves. No engine module may import an EDITOR-only file
+(anything under `editor/`, or `komorebi-editor-tools.js`), and nothing in the built bundles names one. Each folder is named for the
+model file whose mechanism it holds (`spec/model/`).
 
+`engine/` — the engine itself, and what every organ shares:
 - `komorebi-engine.js` — `create()`: GL plumbing, the shared-internals hub, rebuild coordinators, auto-quality, the frame loop.
+- `komorebi-params.js` — `PARAMS`, every parameter defined once (default, panel row, how it travels, what it means; its header sets
+  the fields out), and what is derived from it: `DEFAULTS`, the legacy-name migration, transition key classes. Also engine caps, and the feature
+  registry (`FEATURES`, `featuresFor`) that tells a bundle which fall tiers it may cut.
+- `komorebi-session.js` — pure session profiles and fidelity/playback/presentation resolution; no device storage or UI.
+- `komorebi-math.js` — what the organs share, and nothing of their laws: constants, interpolation, the two-circle overlap area, the deterministic RNG.
+- `komorebi-editor-tools.js` — EDITOR-only: debug overlays, the GPU timer queries `nix run .#cost` reads, the motion mirror.
+
+`engine/light/` — the source and the sky's light (`spec/model/source.md`, `light.md`):
+- `komorebi-source.js` — the source: the point-sun cloud (`makeSource`) and the eclipse moon, as pure functions.
+- `komorebi-light.js` — the sun and the air, pure: the 3-band atmosphere, the sun's direction, the cosine law each receiver takes the beam by, the air's loss, the exposure the frame is shown at.
+
+`engine/canopy/` — the tree and its grove (`spec/model/canopy.md`):
 - `komorebi-grove.js` — the grown canopy (`buildGrove`: `growGrove`, the arithmetic, then `uploadGrove`, the GPU and the shared state) and where one leaf
   hangs (`placeLeaf`, also the editor's tree preview's).
-- `komorebi-shoots.js` — leaves on this year's shoots and tilted by their light (`clusterLight`, `clusterShoots`, `shootLeaf`), pure; `placeLeaf` (the grove) asks it.
 - `komorebi-growth.js` — a tree grown year by year from buds, light deciding which grow (`growBuds`), pure; the grove calls it in place of the
   grammar when `growth_years` is above 0. A prototype.
-- `komorebi-bake.js` — the per-frame bakes: optical depth per layer, the faithful soft shadow, the sky fill.
-- `komorebi-fill.js` — the sky fill's CPU half, pure; the reference `fill.test.js` and the harness hold the shader to.
-- `komorebi-litter.js` — fallen leaves as a floor material: the pure laws and the once-per-regrow carpet bake.
+- `komorebi-grammar.js` — the tree's skeleton grown from a spec and a stream (`growSkeleton`) and the direction helpers it turns a child by; pure. The grove and `komorebi-growth.js` call it.
+- `komorebi-shoots.js` — leaves on this year's shoots and tilted by their light (`clusterLight`, `clusterShoots`, `shootLeaf`), pure; `placeLeaf` (the grove) asks it.
+
+`engine/leaf/` — the leaf (`spec/model/leaf.md`):
 - `komorebi-leaf.js` — the leaf: its outline, grown as a vein skeleton (`growLeaf`, `leafShape`, `leafVariant`), the leaf as material and side (`mixtureTau`, `ballisticK`, `leafSide`) and as a finite two-faced slab (`SLAB`, `slabLeaf`, `slabK`, `slabTable`, `SLAB_N`), and `bindLeafShape`, which hands a bake program an outline's texture; pure but for that one GL bind, with `GLSL_LEAF_Q` its shader half. Stays out of the season: when a leaf turns or falls is `komorebi-season.js`'s.
-- `komorebi-source.js` — the source: the point-sun cloud (`makeSource`) and the eclipse moon, as pure functions.
-- `komorebi-cast.js` — the cast's geometry every camera shares: `makeCast`'s layer shift and ellipse (`projMatrix`), the standing scene's bulk shift (`bulkShift`, `bulkOn`) and the layer heights, and the pure `routeHeights` and `leafShadowCorner`; the engine hangs its functions on the hub beside the source's.
-- `komorebi-motion.js` — the wind signal and the trunk/limb/twig springs.
+
+`engine/season/` — the season and what falls (`spec/model/season.md`):
+- `komorebi-season.js` — the season, pure: pigment through the autumn turn, the light that orders it, abscission, leaf-out, the per-leaf and per-tree draws, and the predicates the grove and the feature registry
+  ask of the same params (`senescing`, `lit`, `dropping`, `ordered`). Stays out of GL and of `komorebi-params.js`, which imports it.
+- `komorebi-litter.js` — fallen leaves as a floor material: the pure laws and the once-per-regrow carpet bake.
+
+`engine/motion/` — the wind and the springs (`spec/model/motion.md`):
 - `komorebi-air.js` — the air, pure: the broadband wind signal and its patterns (`fbm1`, `WIND_PATTERNS`, `windNoise`), the wind's force as a function of time, the air at a place, how deep into a crown it
   reaches; the motion, the travel routes' CPU leaves and the shaders' constants read it.
+- `komorebi-motion.js` — the wind signal and the trunk/limb/twig springs.
+
+`engine/transport/` — the cast, the bakes, the cameras and the frame (`spec/model/transport.md`, `fill.md`, `camera.md`, `sky-view.md`):
+- `komorebi-cast.js` — the cast's geometry every camera shares: `makeCast`'s layer shift and ellipse (`projMatrix`), the standing scene's bulk shift (`bulkShift`, `bulkOn`) and the layer heights, and the pure `routeHeights` and `leafShadowCorner`; the engine hangs its functions on the hub beside the source's.
+- `komorebi-bake.js` — the per-frame bakes: optical depth per layer, the faithful soft shadow, the sky fill.
+- `komorebi-fill.js` — the sky fill's CPU half, pure; the reference `fill.test.js` and the harness hold the shader to.
+- `komorebi-transport.js` — the camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.
+- `komorebi-shaders.js` — the bake and display shaders, the shared tone tail, the sky fill's bake.
+- `komorebi-render.js` — one frame onto a target.
+- `komorebi-camera.js` — the camera, pure: the floor's gauge as a real eye (`cameraPose`) and the edge of the frame as the shader computes it (`vignetteMask`).
+- `komorebi-tree-view.js` — the tree seen from the floor camera: the faithful cast's own leaves and wood, stood up, lit and laid over the floor; the projection the shader runs, pure. Behind `FEAT_TREE_VIEW`.
+
+`engine/transitions/` — the routes between looks (`spec/model/transitions.md`):
 - `komorebi-transitions.js` — the routes between looks: which one a pair takes (`transitionTo`, the one place that names a
   route) and the one lifecycle every long route runs through (start, tick, land, abort, context loss and restore, dispose),
   read off the route's entry, never its name. Each long route has its own module, which returns one entry:
@@ -64,27 +96,11 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-routes.js` — what a route is, pure: the entry's shape and policies, `restTrans` (every field of the transition
   state at rest), the cut stub, and the helpers more than one route uses (`turnBack`, `irisRoute`, `irisStep`). The route
   modules and `komorebi-transitions.js` import it, never the reverse.
-- `komorebi-render.js` — one frame onto a target.
-- `komorebi-tree-view.js` — the tree seen from the floor camera: the faithful cast's own leaves and wood, stood up, lit and laid over the floor; the projection the shader runs, pure. Behind `FEAT_TREE_VIEW`.
-- `komorebi-transport.js` — the camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.
-- `komorebi-shaders.js` — the bake and display shaders, the shared tone tail, the sky fill's bake.
-- `komorebi-params.js` — `PARAMS`, every parameter defined once (default, panel row, how it travels, what it means; its header sets
-  the fields out), and what is derived from it: `DEFAULTS`, the legacy-name migration, transition key classes. Also engine caps, and the feature
-  registry (`FEATURES`, `featuresFor`) that tells a bundle which fall tiers it may cut.
-- `komorebi-session.js` — pure session profiles and fidelity/playback/presentation resolution; no device storage or UI.
-- `komorebi-season.js` — the season, pure: pigment through the autumn turn, the light that orders it, abscission, leaf-out, the per-leaf and per-tree draws, and the predicates the grove and the feature registry
-  ask of the same params (`senescing`, `lit`, `dropping`, `ordered`). Stays out of GL and of `komorebi-params.js`, which imports it.
-- `komorebi-light.js` — the sun and the air, pure: the 3-band atmosphere, the sun's direction, the cosine law each receiver takes the beam by, the air's loss, the exposure the frame is shown at.
-- `komorebi-camera.js` — the camera, pure: the floor's gauge as a real eye (`cameraPose`) and the edge of the frame as the shader computes it (`vignetteMask`).
-- `komorebi-grammar.js` — the tree's skeleton grown from a spec and a stream (`growSkeleton`) and the direction helpers it turns a child by; pure. The grove and `komorebi-growth.js` call it.
-- `komorebi-math.js` — what the organs share, and nothing of their laws: constants, interpolation, the two-circle overlap area, the deterministic RNG.
-- `komorebi-editor-tools.js` — EDITOR-only: debug overlays, the GPU timer queries `nix run .#cost` reads, the motion mirror.
 
 **Looks.** `presets.js` — the built-in looks (`PRESETS`, in the order a person walks them; `EXPERIMENTAL`, which the editor hides behind its toggle; and `PRIORITY`, the dials each look leads with).
 `macros.js` — the control bus: one input drives an authored recipe lifted from the shipped looks.
 
-**The editor** (EDITOR-only; `spec/implementation.md`, "The editor and the player", says how it behaves).
-- `index.html` — the shell: the welcome, the three surfaces and their CSS. Must be served (`nix run .#dev`), not opened as a file.
+**The editor** (EDITOR-only; `spec/implementation.md`, "The editor and the player", says how it behaves). `index.html` — the shell: the welcome, the three surfaces and their CSS. Must be served (`nix run .#dev`), not opened as a file. Its modules are `editor/`:
 - `editor.js` — the body: modes, panels, dials, keys and pointer, the in-place about.
 - `editor-settings.js` — the shared Settings panel for the current device and showing; account controls are lent by `arboretum.js`.
 - `playlists.js` — the playlist model and every rule for lists, the mirror and saves; pure, given its `fetch` and timer.

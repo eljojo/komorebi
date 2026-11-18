@@ -5,18 +5,19 @@
 // the shader and contracts differently at 1. The pure table and the exactness at 0 are held here; the pixels are the harness's.
 import { test, expect } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
-import { GRANDFATHERED } from "../komorebi-params.js";
+import { GRANDFATHERED } from "../engine/komorebi-params.js";
 import { PARAMS, DEFAULTS, MORPH_KEYS, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, FEATURES, CAMERAS, TRANSPORT_CAMERAS, buildTransport, cameraFor } from "../komorebi.js";
-import * as lightMod from "../komorebi-light.js";
-import { DEG } from "../komorebi-math.js";
-import { atmosphere, beamExposure, sunDirection, sunIncidence } from "../komorebi-light.js";
-import { makeRender } from "../komorebi-render.js";
-import { FILL_SIG_LEN, makeFill } from "../komorebi-bake.js";
+import * as lightMod from "../engine/light/komorebi-light.js";
+import { DEG } from "../engine/komorebi-math.js";
+import { atmosphere, beamExposure, sunDirection, sunIncidence } from "../engine/light/komorebi-light.js";
+import { makeRender } from "../engine/transport/komorebi-render.js";
+import { FILL_SIG_LEN, makeFill } from "../engine/transport/komorebi-bake.js";
 import { PRESETS } from "../presets.js";
 
 // the defaults the laws were built against (both off): what these tests vary one law from
 const BASE = { ...DEFAULTS, ...GRANDFATHERED };
 const read = (f) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
+const ENGINE_SOURCES = [...readdirSync(new URL("../", import.meta.url)).filter((n) => /^komorebi.*\.js$/.test(n)), ...readdirSync(new URL("../engine/", import.meta.url), { recursive: true }).filter((n) => n.endsWith(".js")).map((n) => `engine/${n}`)];   // every module of the engine, as a path from the root
 const ELEVS = [-3, 0, 2, 4, 6, 7, 12, 13, 26, 36, 45, 55, 70, 84.5, 90];
 const AZS = [0, 62, 90, 140, 180, 254.1, 359];
 // A sun below every floor the engine clamps a sun to somewhere else: the editor's clock (4°), the throws' (6°), the transport's divisor floors. The factor is the surface's own, unclamped in
@@ -145,7 +146,7 @@ test("sun_cosine is read clamped to 0..1 at the upload: 2 lands the factors of 1
 });
 
 test("komorebi-render.js: sun colour is scaled on the CPU, with a separate surface colour for the moving viewpoint", () => {
-  const code = read("komorebi-render.js").split("\n").map((l) => l.replace(/\/\/.*$/, ""));
+  const code = read("engine/transport/komorebi-render.js").split("\n").map((l) => l.replace(/\/\/.*$/, ""));
   const sunLines = code.filter((l) => l.includes("atm.sun"));
   expect(sunLines.length, "one colour for the camera and one for the mixed view's floor rays").toBe(2);
   expect(sunLines.some(l=>l.includes("u.sun") && l.includes("f.sunIrr"))).toBe(true);
@@ -290,7 +291,7 @@ test("sun_cosine is read clamped to 0..1 at the fill's S too: 2 lands the S of 1
 const stripGlslComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 test("no GLSL literal names sun_cosine or sunIrr in code (a comment may name the knob): the law is a CPU scale of uSunColor", () => {
   const programs = TRANSPORT_CAMERAS.map((c) => [`assembled ${c}`, buildTransport(c)]);
-  for (const f of readdirSync(new URL("../", import.meta.url)).filter((n) => /^komorebi.*\.js$/.test(n))) {
+  for (const f of ENGINE_SOURCES) {
     const text = read(f);
     for (const m of text.matchAll(/^const ((?:VS|FS|GLSL)_[A-Z0-9_]*) = `/gm)) {
       const start = m.index + m[0].length;
@@ -307,7 +308,7 @@ test("no GLSL literal names sun_cosine or sunIrr in code (a comment may name the
 });
 
 test("the tent's per-panel comment no longer claims the floor and curtain absorb sin(elevation); it says beamF is relative to a horizontal panel and where the sin el arrives", () => {
-  const flat = read("komorebi-transport.js").replace(/\s*\n\s*\/\/\s*/g, " ");
+  const flat = read("engine/transport/komorebi-transport.js").replace(/\s*\n\s*\/\/\s*/g, " ");
   expect(/already absorb\s+sin\(elevation\)/i.test(flat), "the false premise").toBe(false);
   const at = flat.indexOf("PER-PANEL LIGHT");
   expect(at).toBeGreaterThan(0);
@@ -321,7 +322,7 @@ test("the tent's per-panel comment no longer claims the floor and curtain absorb
 // level, so it is anchored to the floor only above that). Three places say it (the table's own comment, the shader's, the spec's: receivers.md states the limits and measurements.md the numbers), and each has to name both limits and say tent 1 (55°) clears them.
 test("the tent claim names both of beamF's limits wherever it is made — the math table, the shader's PER-PANEL LIGHT comment and the spec — and no longer says 'at every elevation'", () => {
   const flat = (t) => t.replace(/\s*\n\s*(\/\/)?\s*/g, " ");
-  const math = read("komorebi-light.js"), transport = read("komorebi-transport.js"), receivers = read("spec/model/receivers.md"), measured = read("spec/evidence/measurements.md");
+  const math = read("engine/light/komorebi-light.js"), transport = read("engine/transport/komorebi-transport.js"), receivers = read("spec/model/receivers.md"), measured = read("spec/evidence/measurements.md");
   const mAt = math.indexOf("//   enclosure"), tAt = transport.indexOf("PER-PANEL LIGHT"), rAt = receivers.indexOf("**The crown anchors the normalisation.**"), eAt = measured.indexOf("- **Result, per-panel light:**");
   expect(mAt, "the table's enclosure row").toBeGreaterThan(0); expect(tAt, "the shader's comment").toBeGreaterThan(0);
   expect(rAt, "receivers.md's normalisation paragraph").toBeGreaterThan(0); expect(eAt, "measurements.md's per-panel result").toBeGreaterThan(0);
@@ -357,7 +358,7 @@ test("the spec's pipe tables render: every row has the header's cell count, so a
 });
 
 test("foldIncidence's comment says it is relative to the flat cloth and that the flat cloth's own sy arrives with uSunColor", () => {
-  const src = read("komorebi-transport.js");
+  const src = read("engine/transport/komorebi-transport.js");
   const head = src.slice(src.indexOf("// FOLD INCIDENCE (spec/model/receivers.md)"), src.indexOf("float foldIncidence("));
   expect(head.length).toBeGreaterThan(100);
   expect(/relative to the flat cloth/i.test(head.replace(/\s*\n\s*\/\/\s*/g, " "))).toBe(true);
@@ -366,7 +367,7 @@ test("foldIncidence's comment says it is relative to the flat cloth and that the
 
 // ---- the editor ------------------------------------------------------------------------------------------------------------------
 test("the editor offers it: a row right after the azimuth, in a group the surface cameras speak and the sky view does not, and a help text in the editor's voice", () => {
-  const src = read("editor.js");
+  const src = read("editor/editor.js");
   expect(PARAMS.sun_cosine.row, "the row").toEqual({ kind: "s", label: "cosine", min: 0, max: 1, step: 0.01, rebuild: "" });
   const layout = src.slice(src.indexOf("const PANEL_LAYOUT = ["), src.indexOf("\n];", src.indexOf("const PANEL_LAYOUT = [")));
   const at = (k) => layout.indexOf(`'${k}',`), row = at("sun_cosine"), az = at("sun_azimuth_deg");

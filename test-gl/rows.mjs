@@ -25,7 +25,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { chromium } from 'playwright';
-import { PARAMS, DEFAULTS } from '../komorebi-params.js';
+import { PARAMS, DEFAULTS } from '../engine/komorebi-params.js';
 import { PRESETS } from '../presets.js';
 import { assertHardwareRenderer, launchBrowser } from './video-lib.mjs';
 
