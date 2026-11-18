@@ -98,7 +98,7 @@ model file whose mechanism it holds (`spec/model/`).
   state at rest), the cut stub, and the helpers more than one route uses (`turnBack`, `irisRoute`, `irisStep`). The route
   modules and `komorebi-transitions.js` import it, never the reverse.
 
-**Looks.** `presets.js` — the built-in looks (`PRESETS`, in the order a person walks them; `EXPERIMENTAL`, which the editor hides behind its toggle; and `PRIORITY`, the dials each look leads with).
+**Looks.** `presets.js` — the built-in looks (`PRESETS`), the shipped playlists that are the editor's only way to them (`PLAYLISTS`: the story, in the order a person walks it, which plays itself while left alone, then `EXPERIMENTAL`'s looks), and `PRIORITY`, the dials each look leads with.
 `macros.js` — the control bus: one input drives an authored recipe lifted from the shipped looks.
 
 **The editor** (EDITOR-only; `spec/implementation.md`, "The editor and the player", says how it behaves). `index.html` — the shell: the welcome, the three surfaces and their CSS. Must be served (`nix run .#dev`), not opened as a file. Its modules are `editor/`:

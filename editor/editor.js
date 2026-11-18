@@ -1,8 +1,8 @@
 import { create, DEG, PARAMS, CAMERAS, cameraFor, FIDELITY_KEYS, resolveSession } from '../komorebi.js';
 import { mountSettings } from './editor-settings.js';
-import { EXPERIMENTAL, PRESETS, PRIORITY, TREE_SPECIES } from '../presets.js';
+import { PRIORITY, TREE_SPECIES } from '../presets.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
-import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf } from './playlists.js';
+import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf, STORY, idles } from './playlists.js';
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep } from '../macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { makeTreePane } from './tree-pane.js';
@@ -32,20 +32,20 @@ const fmt = (v) => Number.isInteger(v) ? String(v)
   : (+v).toFixed(2);
 
 // ---- presets: the editor only saves, loads and lists looks through arboretum.js (getPreset: built-ins + ★ looks) ----
-const DEFAULT_PRESET = 'afternoon 7';   // the editor's working default + fallback look (preset DATA lives in presets.js)
+const DEFAULT_PRESET = 'afternoon 7';   // the fallback look, when a list has nothing to land on (preset DATA lives in presets.js; where a visit lands is its PLAYLISTS)
 const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro, until "feel"
 
-// ---- editor settings (mode ladder + experimental filter), persisted beside the ★ store. The three modes are
+// ---- editor settings (mode ladder + the active playlist), persisted beside the ★ store. The three modes are
 // three DEPTHS of one control tree — min (the strip: 3 macros) ⊂ play (the sidebar: the macro bus) ⊂ adv (every
 // knob) — so "mode" is just which surface is showing. First run boots the MINIMALIST strip everywhere (the art
 // stands alone; ＋ climbs the ladder when you want more); the choice sticks thereafter. ----
 const SETTINGS_KEY = 'komorebi.editor';
 const settings = (() => {
-  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {}, sawTouchHint: false, workspace: false, wsPane: 'tree', remote: false };   // remote: this device takes the remote control (remote.js); playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name; wsPane: the workspace's right-hand pane, 'tree' | 'playlist'
+  const base = { mode: 'min', playlist: STORY, selected: {}, open: {}, sawTouchHint: false, workspace: false, wsPane: 'tree', remote: false };   // remote: this device takes the remote control (remote.js); playlist: 'ship:<key>' | 'local' | 'arb:<id>' (a first visit starts on the story); selected: the entry you were on, per playlist; open: the advanced panel's areas, by name; wsPane: the workspace's right-hand pane, 'tree' | 'playlist'
   let s = base;
   try { s = Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch { /* unreadable: the defaults */ }
-  if(typeof s.playlist !== 'string') s.playlist = 'local';
+  if(typeof s.playlist !== 'string') s.playlist = STORY;
   if(!s.selected || typeof s.selected !== 'object') s.selected = {};
   if(!s.open || typeof s.open !== 'object') s.open = {};
   return s;
@@ -626,12 +626,16 @@ function syncPlayPreset(){   // the stepper labels mirror the name, and the dial
   if(presetSel) for(const el of presetNameEls) el.textContent = entryName(stateNow(), getStored(), activeList(), presetSel.value);
   tryArrange();
 }
-// ▶/■ shows only while the active playlist carries dwell times (a cloud playlist); all looks has none. Playing
+// ▶/■ shows only while the active playlist carries dwell times (a shipped or cloud playlist); your looks have none. Playing
 // (playlists.js makePlayer) holds each look for its dwell and then steps to the next, which fades in over its own
 // crossfade; the dwell starts once that look has arrived (goTo), and the look play starts on has no fade in.
 const playBtns=[];
 const player=makePlayer({ timing:(value)=>timing(stateNow(), activeList(), value), advance:()=>stepPreset(1), onChange:()=>syncPlayButtons() });
-const stopPlay=()=>player.stop();                  // an edit of the look is yours to hear out: play never fights it
+// An edit of the look is yours to hear out: play never fights it. On an idle playlist (the story) it plays on, and the edit only starts
+// the look's hold over, so the story moves on once you have left it alone (presets.js PLAYLISTS).
+const stopPlay=()=>{ if(idles(activeList())) player.touch(); else player.stop(); };
+// Any touch of the person's counts on an idle playlist, not only an edit: a tap, a key, the wheel.
+for(const ev of ['pointerdown','keydown','wheel']) addEventListener(ev, ()=>{ if(idles(activeList())) player.touch(); }, { capture:true, passive:true });
 function playButton(){
   const b=document.createElement('button'); b.className='playstop';
   b.addEventListener('click',()=>{ if(player.playing) player.stop(); else player.start(presetSel.value); });
@@ -960,23 +964,9 @@ function buildPlayPanel(){
   psel.addEventListener('change',()=>loadEntry(psel.value));
   presetSelects.push(psel);
   pr.appendChild(psel); play.appendChild(pr);
-
-  const beta=document.createElement('div'); beta.className='ctl toggle';
-  const blab=document.createElement('label'); blab.textContent=`experimental looks (+${EXPERIMENTAL.length})`;   // says what it unlocks
-  const binp=document.createElement('input'); binp.type='checkbox'; binp.checked=settings.showBeta;
-  binp.addEventListener('change',()=>setShowBeta(binp.checked));
-  beta.append(blab,binp); play.appendChild(beta);
-  betaToggles.push(binp);
   refreshPresetSelect(presetSel.value);              // fill this surface's dropdown (it was born after the first refresh)
   holdToSee(play);
 }
-// one handler for every surface's experimental toggle, kept in step with each other
-function setShowBeta(on){
-  settings.showBeta=on; saveSettings();
-  for(const t of betaToggles) t.checked=on;
-  refreshPresetSelect(presetSel.value);
-}
-const betaToggles=[];
 
 // the minimalist strip. Two visibility models by pointer kind:
 //  • fine (desktop): PROXIMITY — the strip is there when the cursor is near its patch of screen and gone
@@ -996,7 +986,7 @@ function stripWake(){
 }
 function buildStrip(){
   if(!coarse) strip.classList.add('wide');            // desktop: one horizontal bar
-  const pr=presetRow();
+  const pr=presetRow(true);                           // ▶/■ beside the name, where a playlist plays
   const more=document.createElement('button'); more.className='more'; more.textContent='＋';
   more.title='more';
   more.addEventListener('click',()=>setMode('play'));
@@ -1014,7 +1004,8 @@ function buildStrip(){
     back.addEventListener('click',tryAsItWas);
     const up=document.createElement('button'); up.className='sm'; up.textContent='＋'; up.title='more';
     up.addEventListener('click',()=>setMode('play'));
-    tabs.append(back,up); strip.appendChild(tabs);
+    const playStop=playButton(); playStop.classList.add('sm');   // the preset row is not shown on touch, so ▶/■ rides the tabs
+    tabs.append(back,playStop,up); strip.appendChild(tabs);
     const pick=(name)=>{
       for(const d of tryDials) if(d.surface===touch) d.row.classList.toggle('out', d.name!==name);
       for(const b of tabs.children) b.classList.toggle('on', b.dataset.dial===name); };
@@ -1109,11 +1100,8 @@ function updateSunFromTime(){
 }
 
 // ---- presets UI: dropdown + save/delete + copy/paste JSON -------------------
-// What the dropdown shows and the arrows walk is the ACTIVE PLAYLIST's entries (playlists.js): all looks —
-// the built-ins, then the ★ looks, then (signed in) your arboretum presets with no ★ here yet, as ☁ rows only this
-// dropdown lists — or a cached arboretum playlist. The EXPERIMENTAL looks are hidden unless the
-// settings toggle shows them, but the one you're ON always stays listed (flipping the toggle mid-look must not
-// strand you).
+// What the dropdown shows and the arrows walk is the ACTIVE PLAYLIST's entries (playlists.js): a shipped playlist (presets.js
+// PLAYLISTS, the only way to the built-in looks), your ★ looks, or an arboretum playlist.
 let presetSel, playlistSel, playlistRow, plusBtn, deleteBtn;
 const playlistSelects=[];                          // every surface's playlist select and the row it hides with: the advanced panel's, the playful sidebar's
 function playlistSelect(){
@@ -1126,40 +1114,32 @@ function playlistSelect(){
 }
 const presetRows={};                               // where arboretum.js puts its controls: the save row and the copy/paste row
 let arb=null;                                      // arboretum.js's hooks, set at the end of the file; null only while the panel is being built
-const BUILTINS = { PRESETS, EXPERIMENTAL };
 const presetSelects=[];                            // every surface's preset dropdown; presetSel (the dev one) is the canonical value
-// A playlist that has left the cache falls back to all looks.
+// A playlist that is no longer offered falls back to the story.
 const stateNow = () => arb ? arb.view() : getState();   // arboretum's view of the state: signed in, your folders and uncategorized join it
+const listChoicesNow = () => (arb ? arb.lists(settings.playlist) : playlists(getState(), [], null, { stored:getStored(), active:settings.playlist }));
 function activeList(){
   const a=settings.playlist;
-  if(!arb) return a.startsWith('arb:') && getState().playlists[a.slice(4)] ? a : 'local';
-  const choices=arb.lists(a);
-  if(choices.some(l=>l.value===a)) return a;
-  // a list that is not offered (a folder that is gone; all looks once you are signed in, where the look you are on is a built-in) falls back
-  return arb.signedIn() ? (a==='local' ? 'builtins' : choices[0].value) : 'local';
+  return listChoicesNow().some(l=>l.value===a) ? a : STORY;   // a folder that is gone, your looks once there are none, a list of a build that had one
 }
-const listEntries = (keep) => entries(stateNow(), getStored(), BUILTINS, settings.showBeta, activeList(), keep, !!arb?.signedIn());
+const listEntries = () => entries(stateNow(), getStored(), activeList(), !!arb?.signedIn());
 const resolveEntry = (value) => resolve(stateNow(), getStored(), activeList(), value);
 // The entry you were last on in the active playlist, else its first.
 function resumeAt(){
   const was=settings.selected[activeList()];
-  const list=listEntries(was);
+  const list=listEntries();
   return list.some(e=>e.value===was) ? was : list[0]?.value;
 }
 // A visit opens where you left off: the look you were last on, in the list you were last in ("feel" fades into it from the
-// welcome's own look). A look that is gone lands on the editor's default in all looks and the built-ins, and on a playlist's first.
-function landing(){
-  const was=settings.selected[activeList()];
-  if(was!==undefined && listEntries(was).some(e=>e.value===was)) return was;
-  return ['local','builtins'].includes(activeList()) ? DEFAULT_PRESET : resumeAt();
-}
+// welcome's own look). A first visit, or a look that is gone, lands on the list's first: a first visit on the story's beginning.
+function landing(){ return resumeAt(); }
 let listedState=null, listedActive=null;
 function refreshPresetSelect(selected){
   const active=activeList(), state=stateNow();
   let keep=selected ?? presetSel.value;
   if(selected===undefined && listedState)
     keep=listedActive===active ? selectionAfter(listedState, state, active, keep, arb?.landings()) : '';
-  const list=listEntries(keep);
+  const list=listEntries();
   for(const sel of presetSelects){
     sel.innerHTML='';
     for(const e of list){ const o=document.createElement('option'); o.value=e.value; o.textContent=e.label; sel.appendChild(o); }
@@ -1175,7 +1155,7 @@ function refreshPresetSelect(selected){
 function syncPlaylistUI(){
   applySession();
   if(playlistSel){
-    const lists=arb ? arb.lists(settings.playlist) : playlists(getState());
+    const lists=listChoicesNow();
     const signedIn=!!arb?.signedIn();
     for(const {sel,row} of playlistSelects){
       sel.innerHTML='';
@@ -1190,7 +1170,7 @@ function syncPlaylistUI(){
   if(deleteBtn){
     const a=activeList(), cloud=a.startsWith('arb:');
     deleteBtn.textContent = cloud ? 'remove' : 'delete';   // in a folder of yours it takes the item out of the playlist
-    deleteBtn.hidden = a==='builtins' || (cloud && !arb?.canRemove());   // nothing is removed from the built-ins, from uncategorized, or from someone else's playlist (design §3.5)
+    deleteBtn.hidden = a.startsWith('ship:') || (cloud && !arb?.canRemove());   // nothing is removed from a shipped playlist, from uncategorized, or from someone else's playlist (design §3.5)
   }
   if(styleRow){
     const st=arb?.styleNow() ?? null;
@@ -1236,19 +1216,20 @@ function loadEntry(value){                          // the dropdown: an instant 
 }
 function setActive(list){
   if(list===activeList()) return;
-  settings.playlist=list; saveSettings(); stopPlay();
+  settings.playlist=list; saveSettings(); player.stop();
   const value=resumeAt();
-  if(value===undefined) refreshPresetSelect(''); else goTo(value);
+  if(value===undefined) refreshPresetSelect('');
+  else { goTo(value); if(idles(list)) player.start(value); }   // an idle playlist plays itself from the moment you are on it
 }
-// A ★ is written to all looks whatever playlist you were on; the list then shows it.
+// A ★ is written to your looks whatever playlist you were on; the list then shows it.
 function saveStar(name, p){
   const from=activeList();
   arb.writeStar(name, p);                            // before the selection moves: it is where this ★ came from
-  settings.playlist='local'; saveSettings();
+  settings.playlist='local'; saveSettings(); player.stop();
   refreshPresetSelect(starValue(name));
-  // the editor has moved to all looks, where the ★ is: say so, and why it is not in the playlist you were in
+  // the editor has moved to your looks, where the ★ is: say so, and why it is not in the playlist you were in
   const why = !from.startsWith('arb:') ? '' : arb.online() ? ' — sign in to arboretum to add looks to a playlist' : ' — playlists live in arboretum, where a look can be added to one';
-  const here=(arb.lists('local')).find(l=>l.value==='local')?.label ?? 'all looks';   // "all looks" signed out, "on this browser" signed in
+  const here=(arb.lists('local')).find(l=>l.value==='local')?.label ?? 'your looks';   // "your looks" signed out, "on this browser" signed in
   note(`kept as ★ ${name} in this browser, in ${here}${why}`);
 }
 let noteTimer=0;
@@ -1280,19 +1261,19 @@ function saveNewLook(n){
 // The save button and ⌘S / Ctrl+S: ask for a name, then keep the look.
 function promptSave(){
   const here=entryName(stateNow(), getStored(), activeList(), presetSel.value);
-  const fromBuiltin=['local','builtins'].includes(activeList()) && starName(getStored(), 'local', presetSel.value)===null;
+  const fromBuiltin=activeList().startsWith('ship:');
   const n=(prompt('Save preset as:', fromBuiltin ? '' : here)||'').trim(); if(!n) return;   // a ★ or a cloud item offers its own name; a built-in's is not yours to reuse
   saveLook(n, eng.captureLook());
 }
 // Arboretum has filed a look in a list (or queued it there): go to that list, on that look, without loading it — it is already on screen.
 function showCloud(list, match){
-  settings.playlist=list; saveSettings(); stopPlay();
+  settings.playlist=list; saveSettings(); player.stop();
   const items=stateNow().playlists[list.slice(4)]?.items ?? [];
   const at=items.findIndex(i=>match.seq!==undefined ? i.seq===match.seq : i.preset_id===match.id);
   refreshPresetSelect(at<0 ? '' : String(at));      // the look has left this list (it joined a folder): nothing selected
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
-let devBeta=null, styleRow=null, playlistPresentationRow=null, playlistPresentation=null, wsButton=null, renameBtn=null, looks=null, looksHome=null, lookNote=null;
+let styleRow=null, playlistPresentationRow=null, playlistPresentation=null, wsButton=null, renameBtn=null, looks=null, looksHome=null, lookNote=null;
 function buildPresetUI(){
   const modes=document.createElement('div'); modes.className='ctl modes';
   const back=document.createElement('button'); back.textContent='less';
@@ -1326,7 +1307,7 @@ function buildPresetUI(){
     if(activeList().startsWith('arb:')){ arb?.remove(); return; }     // taking a look out of an arboretum playlist is written to arboretum
     const n=starName(getStored(), 'local', presetSel.value);
     if(n===null){ alert("Built-in presets can't be deleted."); return; }
-    arb.deleteStar(n); goTo(DEFAULT_PRESET); });   // on to the default look, so what is shown is what is selected
+    arb.deleteStar(n); const next=resumeAt(); if(next===undefined) setActive(STORY); else goTo(next); });   // on to the list's first, or the story once no ★ is left, so what is shown is what is selected
   const r3=document.createElement('div'); r3.className='ctl'; r3.hidden=true;
   const rare=mkBtn('···',()=>{ r3.hidden=!r3.hidden; }); rare.title='delete, copy JSON, paste JSON';
   const save=mkBtn('save',promptSave); save.className='main';
@@ -1366,13 +1347,6 @@ function buildPresetUI(){
   styleRow.appendChild(slab);
   for(const st of ['morph','fade']){ const b=mkBtn(st,()=>{ if(arb?.styleNow()!==st) arb?.setStyle(st); }); b.dataset.style=st; styleRow.appendChild(b); }
   looks.appendChild(styleRow);
-
-  // the experimental toggle is built here and laid at the very bottom of the panel, under the transition row (where that row is built)
-  devBeta=document.createElement('div'); devBeta.className='ctl toggle devbeta';
-  const blab=document.createElement('label'); blab.textContent=`show experimental looks (+${EXPERIMENTAL.length})`;
-  const binp=document.createElement('input'); binp.type='checkbox'; binp.checked=settings.showBeta;
-  binp.addEventListener('change',()=>setShowBeta(binp.checked));
-  devBeta.append(blab,binp); betaToggles.push(binp);
   refreshPresetSelect(landing());
 }
 
@@ -1469,7 +1443,7 @@ function listModel(){
   const a=activeList(), cloud=a.startsWith('arb:') ? stateNow().playlists[a.slice(4)] : null, editable=!!arb?.canRemove();
   return {
     editable, current: presetSel.value, addable: editable ? arb.addable() : [],
-    rows: listEntries(presetSel.value).map(e=>{
+    rows: listEntries().map(e=>{
       const it=cloud?.items[Number(e.value)];
       if(!it) return { value:e.value, label:e.label };
       if(it.pending) return { value:e.value, label:e.label, pending:true };
@@ -1662,7 +1636,7 @@ function showLookName(){
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
 function stepPreset(dir){
-  const value=step(listEntries(presetSel.value), presetSel.value, dir);   // wraps at the ends
+  const value=step(listEntries(), presetSel.value, dir);   // wraps at the ends
   if(value!==undefined) goTo(value);
 }
 
@@ -1766,7 +1740,6 @@ syncMacroControls();
   inp.addEventListener('input',()=>{ transDur=parseFloat(inp.value); val.textContent=transDur.toFixed(1); });
   transSync=()=>{ inp.value=transDur; val.textContent=transDur.toFixed(1); };
   r.append(lab,inp,val); dev.appendChild(r);
-  dev.appendChild(devBeta);                        // the experimental toggle (buildPresetUI), under everything
 })();
 
 // ===========================================================================
@@ -1821,7 +1794,7 @@ function remoteState(){
   return {
     look:{ value:presetSel.value, name:tryLookName(), chip:lookChip && !lookChip.hidden ? lookChip.textContent : '' },
     say:[lookNote && !lookNote.hidden ? lookNote.textContent : '', arb?.statusText() ?? ''].filter(Boolean).join(' · '),
-    lists:(arb ? arb.lists(settings.playlist) : playlists(getState())).map(({ value, label })=>({ value, label })),
+    lists:listChoicesNow().map(({ value, label })=>({ value, label })),
     list:a, signedIn:!!arb?.signedIn(), mine:!!arb?.canRemove(),
     entries:m.rows, editable:m.editable, addable:m.addable, style:arb?.styleNow() ?? null,
     presentation:stateNow().playlists[a.slice(4)]?.presentation ?? '',
@@ -1833,7 +1806,7 @@ function remoteState(){
   };
 }
 function remoteRun(c){
-  const listed=(v)=>listEntries(presetSel.value).some((e)=>e.value===v);
+  const listed=(v)=>listEntries().some((e)=>e.value===v);
   switch(c.t){
     case 'dial': {                                  // as the dial's own input: at once, the season's and the regrows' one a frame, the release exact
       const d=TRY_SPECS[c.name];
@@ -1859,7 +1832,7 @@ function remoteRun(c){
     case 'button': PANEL[c.id][2](); return;
     case 'step': stepPreset(c.dir); return;
     case 'go': if(listed(c.value) && c.value!==presetSel.value) goTo(c.value); return;
-    case 'list': if(c.value!==activeList() && (arb ? arb.lists(settings.playlist) : playlists(getState())).some((l)=>l.value===c.value)){ if(arb) arb.activate(c.value); else setActive(c.value); } return;
+    case 'list': if(c.value!==activeList() && listChoicesNow().some((l)=>l.value===c.value)){ if(arb) arb.activate(c.value); else setActive(c.value); } return;
     case 'play': if(!plays(stateNow(), activeList())) return; if(c.on && !player.playing) player.start(presetSel.value); else if(!c.on) player.stop(); return;
     case 'trans': transDur=c.v; transSync(); return;
     case 'asItWas': tryAsItWas(); return;
@@ -1902,7 +1875,7 @@ remote = mountRemote({
     if(settings.workspace) setWorkspace(true);       // the workspace a reload left on
     if(coarse && !settings.sawTouchHint){ settings.sawTouchHint=true; saveSettings(); showHint(); }   // the touch legend, once ever
   }
-  // `opened` is what arboretum.js made of the link: { value } (a ★ in all looks) | { list, value, play } | { failed } | null (no link, or arboretum is off)
+  // `opened` is what arboretum.js made of the link: { value } (a ★ in your looks) | { list, value, play } | { failed } | null (no link, or arboretum is off)
   function land(opened){
     if(devKept){ applyParams(devKept.look); refreshPresetSelect(devKept.value); syncAllControls(); arrive(); return; }   // a live reload's kept look (dev-server.js), on the entry it was on
     let at, playOnce=false;
@@ -1914,7 +1887,7 @@ remote = mountRemote({
     }
     const target=at ?? landing();
     let settled=false;
-    const landed=()=>{ refreshPresetSelect(target); syncAllControls(); if(playOnce){ playOnce=false; player.start(target); } };   // the first look has no fade in: its dwell starts here
+    const landed=()=>{ refreshPresetSelect(target); syncAllControls(); if(playOnce || idles(activeList())){ playOnce=false; player.start(target); } };   // the first look has no fade in: its dwell starts here; an idle playlist (the story) plays itself
     if(link?.preset){ applyParams(resolveEntry(target) ?? getPreset(DEFAULT_PRESET)); landed(); arrive(); return; }
     eng.transitionTo(resolveEntry(target) ?? getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec/model/transitions.md)
       onEnd:()=>{ settled=true; endTween(); landed(); setTimeout(arrive,300); } });

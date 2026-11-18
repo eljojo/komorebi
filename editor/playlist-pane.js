@@ -6,7 +6,7 @@
 // item of the active list: a click on a name goes to that look the way the arrows do. On a playlist of yours each item also carries
 // how long it is held (dwell), how long it takes to arrive (crossfade), its route (morph or fade) and an × that takes it out, a drag
 // on its grip moves it, and a picker at the foot adds one of your looks without leaving the playlist; a list with no order of yours
-// to change (all looks, the built-ins, uncategorized, someone else's playlist) has no grip, no × and no picker. Every write goes
+// to change (your looks, a shipped playlist, uncategorized, someone else's playlist) has no grip, no × and no picker. Every write goes
 // through what the editor lends (`act`), which arboretum.js answers; the pane keeps no copy of the list and draws the model it is
 // handed on each `render`. A row being typed into is not redrawn under the hand: the pane waits for the input to let go.
 // ============================================================================

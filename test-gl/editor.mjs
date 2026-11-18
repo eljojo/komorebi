@@ -22,7 +22,10 @@ import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeGrove } from '../engine/canopy/komorebi-grove.js';
 import { DEFAULTS, migrateLegacy } from '../engine/komorebi-params.js';
-import { EXPERIMENTAL, PRESETS, PRIORITY } from '../presets.js';
+import { EXPERIMENTAL, PLAYLISTS, PRESETS, PRIORITY } from '../presets.js';
+// the shipped playlists as the playlist select lists them; the first, the story, is where a first visit lands
+const SHIPS = Object.entries(PLAYLISTS).map(([k, l]) => ({ value: `ship:${k}`, label: l.name })), SHIP_LABELS = SHIPS.map((l) => l.label).join();
+const STORY = SHIPS[0].value, STORY_LOOKS = Object.values(PLAYLISTS)[0].items.map((it) => (typeof it === 'string' ? it : it.look));
 // the dials a surface holds on a look: the look's PRIORITY first, then the surface's usual ones, up to its count (editor.js tryNames;
 // every look these checks visit can use each dial it names)
 const dialsOn = (look, usual, n = Infinity) => { const lead = PRIORITY[look] ?? []; return [...lead, ...usual.filter((d) => !lead.includes(d))].slice(0, n); };
@@ -161,6 +164,13 @@ try {
     await page.evaluate(() => !document.body.classList.contains('intro') && !document.getElementById('aboutView') && document.getElementById('gl') === window.__glBefore));
   check('and feel from about leaves the address at the index\'s own path, so a reload lands in the editor', new URL(page.url()).pathname === new URL(urlBefore).pathname, page.url());
   check('boot lands in zen everywhere', true);
+  const playIs = async (pg, want) => { for (let i = 0; i < 60; i++) { if ((await pg.$eval('.playstop', (b) => b.textContent)) === want) return true; await pg.waitForTimeout(250); } return false; };
+  const zenName = await page.$eval('#strip .preset .name', (e) => e.textContent);
+  check('feel lands on the first look of the story, and the story plays: ■ beside its name in the zen strip',
+    zenName === STORY_LOOKS[0] && (await playIs(page, '■')) && (await page.$eval('#strip .playstop', (b) => getComputedStyle(b).display !== 'none')), zenName);
+  await page.$eval('#strip .playstop', (b) => b.click());   // a quiet player for what follows: left alone, the story moves on
+  check('■ stops it', await playIs(page, '▶'));
+  const quiet = async (pg) => { await pg.evaluate(() => { const b = document.querySelector('.playstop'); if (b.textContent === '■') b.click(); }); };
   await page.$eval('#strip .preset .more', (b) => b.click());              // climb to playful for the macro checks
   await page.waitForSelector('#play:not(.hidden)', { timeout: 15000 });
   await page.waitForTimeout(800);   // let the slide-in transition land before pointer work
@@ -178,15 +188,14 @@ try {
     return row.querySelector('input').value;
   });
 
-  // preset filter: default hides every experimental look
-  const optCount = () => page.$eval('#dev select', (s) => [...s.options].filter((o) => !o.textContent.startsWith('★ ')).length);
-  const n0 = await optCount();
-  check('experimental looks hidden by default', n0 === Object.keys(PRESETS).length - EXPERIMENTAL.length, `built-ins listed: ${n0}`);
+  // a first visit is on the story, and the look list is its looks
+  const storyOpts = await page.$eval('#dev select', (s) => [...s.options].map((o) => o.value));
+  check('a first visit is on the story: the look list is its looks, in its order', JSON.stringify(storyOpts) === JSON.stringify(STORY_LOOKS), JSON.stringify(storyOpts));
 
-  // the playful sidebar's rows, top to bottom: the look's dials (its own lead, then the six usual ones), the caption, the actions, "more" (closed), then the playlist and look lists and the experimental toggle
+  // the playful sidebar's rows, top to bottom: the look's dials (its own lead, then the six usual ones), the caption, the actions, "more" (closed), then the playlist and look lists
   const playRows = await page.$eval('#play', (el) => [...el.children].slice(2).map((c) => c.classList.contains('try') ? c.querySelector('.name').textContent : c.classList.contains('cap') ? 'cap' : c.classList.contains('acts') ? `acts:${[...c.querySelectorAll('button')].map((b) => b.textContent).join('|')}` : c.tagName === 'DETAILS' ? 'more' : c.querySelector('select') ? 'select' : c.querySelector('label')?.textContent.replace(/ \(\+\d+\)$/, '')));
-  check('the playful sidebar runs the look\'s dials, the caption, the actions, more, the playlist and look lists and the experimental toggle (no headings)',
-    playRows.join() === [...dialsOn('afternoon 7', PLAY_USUAL), 'cap', 'acts:\u21ba as it was|\u2684 new leaves', 'more', 'select', 'select', 'experimental looks'].join() && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
+  check('the playful sidebar runs the look\'s dials, the caption, the actions, more, then the playlist and look lists (no headings)',
+    playRows.join() === [...dialsOn('afternoon 7', PLAY_USUAL), 'cap', 'acts:\u21ba as it was|\u2684 new leaves', 'more', 'select', 'select'].join() && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
   const moreRows = await page.$eval('#play details.more', (d) => [...d.children].slice(1).map((c) => c.classList.contains('pad') ? 'pad' : c.querySelector('label').textContent));
   check('"more" holds haze, sparkle, trees and the wind pad, and starts closed', moreRows.join() === 'haze,sparkle,trees,pad' && (await page.$eval('#play details.more', (d) => !d.open)), moreRows.join());
   await page.$eval('#play details.more', (d) => { d.open = true; });   // the pad and the macro sliders live inside it
@@ -266,31 +275,28 @@ try {
   check('the droop dial writes droop, and "as it was" puts the look\'s own back', Math.abs(droop1 - 0.4) < 1e-6 && droop2 === droop0 && droop0 === PRESETS['park 1, the scene'].droop, `droop ${droop0} -> ${droop1} -> ${droop2}`);
   await pickLook('afternoon 7');
 
-  // experimental toggle reveals every built-in look
-  await page.$eval('#play', (el) => {
-    const rows = [...el.querySelectorAll('.ctl.toggle')];
-    const row = rows.find((r) => r.querySelector('label')?.textContent.startsWith('experimental looks'));
-    row.querySelector('input').click();
-  });
-  const n1 = await optCount();
-  check('experimental toggle reveals all looks', n1 === Object.keys(PRESETS).length, `built-ins listed: ${n1}`);
-
-  // the playful dropdown jumps straight to a look and marks beta ones with a distinct glyph
-  const betaMarks = await page.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); return [...s.options].filter((o) => o.textContent.startsWith('\u25e6 ')).length; });
-  check('beta looks carry their own marker in the list', betaMarks === EXPERIMENTAL.length, `\u25e6 options: ${betaMarks}`);
-  await page.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); s.value = 'memories'; s.dispatchEvent(new Event('change', { bubbles: true })); });
-  const devSync = await page.$eval('#dev select', (s) => s.value);
-  check('playful dropdown jumps and the dev select follows', devSync === 'memories', `dev shows ${devSync}`);
+  // the looks still finding their feet are their own playlist, experiments, reached through the playful sidebar's playlist select
+  const playList = (v) => page.evaluate((val) => { const s = document.querySelector('#play .ctl.select select'); s.value = val; s.dispatchEvent(new Event('change', { bubbles: true })); }, v);
+  const listOpts = await page.$eval('#play .ctl.select select', (s) => [...s.options].map((o) => o.value));
+  check('the playlists offered are the shipped ones, the story first', JSON.stringify(listOpts) === JSON.stringify(SHIPS.map((l) => l.value)), JSON.stringify(listOpts));
+  await playList('ship:experiments');
+  const expLooks = await page.evaluate(() => [...[...document.querySelectorAll('#play select')].pop().options].map((o) => o.textContent));
+  check('experiments lists the experimental looks, by name alone', JSON.stringify(expLooks) === JSON.stringify(EXPERIMENTAL), JSON.stringify(expLooks));
 
   // gated macros grey out on a non-floor look and wake on a floor one
-  await page.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); s.value = 'canopy 1'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await pickLook('canopy 1');
   const gates = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('#play .ctl')];
     const state = (lbl) => { const r = rows.find((q) => (q.querySelector('label') ?? q.querySelector('.name'))?.textContent === lbl); return r.querySelector('input').disabled; };
     return { haze: state('haze'), cloudiness: state('cloudiness') };
   });
   check('haze gates off on the sky look, cloudiness stays live', gates.haze === true && gates.cloudiness === false, JSON.stringify(gates));
-  await page.evaluate(() => { const s = [...document.querySelectorAll('#play select')].pop(); s.value = 'memories'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await playList(STORY);
+  check('back on the story, it plays again', await playIs(page, '■'));
+  await quiet(page);
+  await pickLook('memories');
+  const devSync = await page.$eval('#dev select', (s) => s.value);
+  check('playful dropdown jumps and the dev select follows', devSync === 'memories', `dev shows ${devSync}`);
 
   // preset stepper advances and the name label follows
   const name0 = await page.$eval('#play .preset .name', (e) => e.textContent);
@@ -309,13 +315,13 @@ try {
   const headStruct = await page.$eval('#dev', (dev) => ({
     kids: [...dev.children].slice(0, 2).map((c) => c.className.split(' ')[0] || c.tagName),
     looks: [...dev.querySelector('.looks').children].slice(0, 4).map((c) => c.className.split(' ')[0] || c.tagName),
-    beta: !!dev.querySelector(':scope > .devbeta label')?.textContent.startsWith('show experimental looks'),
+    beta: !!dev.querySelector('.devbeta'),
     h2: [...dev.querySelectorAll(':scope > h2')].filter((h) => h.textContent === 'Presets').length,   // the Transition heading further down is not the presets'
     firstSelectInPick: dev.querySelector('select').parentElement.classList.contains('pick'),
     acts: [...dev.querySelectorAll('.lookacts button')].map((b) => b.textContent + (b.classList.contains('main') ? '*' : '')).join('|'),
   }));
-  check('advanced: no Presets heading, the look head, chip and actions row lead (in the box the workspace\'s playlist pane borrows), save as new beside save, the experimental toggle (show experimental looks) sits in the panel',
-    headStruct.h2 === 0 && headStruct.beta && headStruct.firstSelectInPick && headStruct.kids.join() === 'ctl,looks' && headStruct.looks.join() === 'lookhead,look-chip,look-note,ctl' && /^save\*\|save as new\|.*\|\u00b7\u00b7\u00b7$/.test(headStruct.acts), JSON.stringify(headStruct));
+  check('advanced: no Presets heading, the look head, chip and actions row lead (in the box the workspace\'s playlist pane borrows), save as new beside save, and no experimental toggle',
+    headStruct.h2 === 0 && !headStruct.beta && headStruct.firstSelectInPick && headStruct.kids.join() === 'ctl,looks' && headStruct.looks.join() === 'lookhead,look-chip,look-note,ctl' && /^save\*\|save as new\|.*\|\u00b7\u00b7\u00b7$/.test(headStruct.acts), JSON.stringify(headStruct));
   const headName = () => page.$eval('#dev', (dev) => ({ name: dev.querySelector('.lookhead .name').textContent, sel: dev.querySelector('select').selectedOptions[0].textContent, value: dev.querySelector('select').value }));
   const hn0 = await headName();
   check('the look head names the selected look', hn0.name === hn0.sel.replace(/^[\u2022\u25e6] /, '') || hn0.name === hn0.sel, JSON.stringify(hn0));
@@ -606,8 +612,8 @@ try {
       return m.left < r.right && r.left < m.right && m.top < r.bottom && r.top < m.bottom; });
   });
   check('zen + button clear of the stepper', !overlap);
-  const rowOrder = await page.$eval('#strip .preset', (r) => [...r.children].map((c) => c.classList.contains('name') ? 'name' : c.classList.contains('more') ? 'plus' : c.textContent).join(' '));
-  check('zen arrows sit together before the title', rowOrder === '\u2039 \u203a name plus', rowOrder);
+  const rowOrder = await page.$eval('#strip .preset', (r) => [...r.children].map((c) => c.classList.contains('name') ? 'name' : c.classList.contains('more') ? 'plus' : c.classList.contains('playstop') ? 'play' : c.textContent).join(' '));
+  check('zen arrows sit together before the title, then ▶/■ and +', rowOrder === '\u2039 \u203a name play plus', rowOrder);
 
   // desktop zen: one horizontal bar, shown by cursor proximity
   const wide = await page.$eval('#strip', (e) => e.classList.contains('wide') && getComputedStyle(e).display === 'flex');
@@ -863,7 +869,7 @@ try {
     below: !!document.querySelector('#dev .looks, #dev .lookhead, #dev .playlist-row') }));
   check('the playlist tab takes the look and playlist controls out of the panel below and holds them over the list: none left below, none copied',
     loosePane.inPane && !loosePane.below && (await page.$$('.lookhead')).length === 1, JSON.stringify(loosePane));
-  check('signed out it lists all looks, with no grip, no x, no picker (nothing here has an order of yours to change)',
+  check('signed out, on the story, it lists its looks, with no grip, no x, no picker (nothing here has an order of yours to change)',
     loosePane.rows > 3 && loosePane.grips === 0 && loosePane.xs === 0 && !loosePane.picker, JSON.stringify(loosePane));
   // CURSORS (index.html): over the surfaces' words an arrow, never the I-beam; a hand over what acts; the I-beam only in a typed field
   const cursors = await page.evaluate(() => {
@@ -909,10 +915,11 @@ try {
   }, v);
   const askSave = async (reply) => { dialogs.length = 0; dialogReply = reply; await devBtn('save'); dialogReply = null; return dialogs[0]; };
 
+  const devList = async (value) => { await page.evaluate((v) => { const s = document.querySelectorAll('#dev select')[1]; s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); }, value); await quiet(page); };
   const rowDisplay = await page.evaluate(() => getComputedStyle(document.querySelector('#dev .playlist-row')).display);
-  check('with one playlist there is no playlist row', rowDisplay === 'none', rowDisplay);
-  check('nor one in the playful sidebar', await page.evaluate(() => getComputedStyle(document.querySelector('#play .ctl.select')).display === 'none'));
-  check('and no \u25b6 anywhere', (await displayOf(page, '.playstop')).every((x) => x === 'none') && (await page.$$('#strip .playstop')).length === 0, (await displayOf(page, '.playstop')).join());
+  check('the shipped playlists are two, so the playlist row is there, on the story', rowDisplay !== 'none' && (await page.$eval('#dev .playlist-row select', (s) => s.value)) === STORY, rowDisplay);
+  check('and in the playful sidebar', await page.evaluate(() => getComputedStyle(document.querySelector('#play .ctl.select')).display !== 'none'));
+  check('and \u25b6 shows wherever a look is named, the zen strip too', (await displayOf(page, '.playstop')).every((x) => x !== 'none') && (await page.$$('#strip .playstop')).length === 1, (await displayOf(page, '.playstop')).join());
 
   // THE LOOK'S CHIP (every editor, arboretum or not): one muted line under the look select that says where the look lives
   const chipNow = () => page.$eval('#dev .look-chip', (e) => (e.hidden ? '' : e.textContent));
@@ -931,40 +938,40 @@ try {
   d = await askSave('k2 mine 2');
   check('another new name adds another ★', (await devOpts()).filter(([, t]) => t.startsWith('★ ')).length === 2 && d?.def === 'k2 mine');
 
-  // a ★ named like a built-in lists beside it, with a value of its own, and each loads its own look
+  // a ★ named like a built-in is kept in your looks with a value of its own, and each loads its own look
   d = await askSave('afternoon 7');
   const same = (await devOpts()).filter(([, t]) => t.endsWith(' afternoon 7'));
-  check('a ★ named like a built-in is listed beside it, as before, with a value of its own', same.length === 2 && same[0][1] === '• afternoon 7' && same[1][1] === '★ afternoon 7' && same[0][0] !== same[1][0], JSON.stringify(same));
+  check('a ★ named like a built-in is kept in your looks with a value of its own', same.length === 1 && same[0][1] === '★ afternoon 7' && same[0][0] === '★ afternoon 7', JSON.stringify(same));
   await devPick(same[0][0]);
-  check('the built-in loads the built-in', Math.abs(parseFloat(await cloudVal()) - PRESETS['afternoon 7'].cloud_thickness) < 1e-6, `cloud ${await cloudVal()}`);
-  await devPick(same[1][0]);
-  check('and the ★ loads the ★', Math.abs(parseFloat(await cloudVal()) - 0.12) < 1e-6, `cloud ${await cloudVal()}`);
+  check('the ★ loads the ★', Math.abs(parseFloat(await cloudVal()) - 0.12) < 1e-6, `cloud ${await cloudVal()}`);
   await page.waitForTimeout(300);
-  await page.$eval('#play .preset button:nth-child(1)', (b) => b.click());   // ‹ from the ★: the entry before it in the list, not the one before the built-in
-  check('stepping goes from the ★, not from the built-in of its name', (await page.$eval('#dev select', (s) => s.value)) === 'k2 mine 2');
+  await page.$eval('#play .preset button:nth-child(1)', (b) => b.click());   // ‹ from the ★: the ★ before it in your looks
+  check('stepping goes from the ★ to the ★ before it', (await page.$eval('#dev select', (s) => s.value)) === 'k2 mine 2');
   await page.waitForTimeout(400);
+  await devList(STORY);
+  await devPick('afternoon 7');
+  check('and in the story the built-in of that name loads the built-in', Math.abs(parseFloat(await cloudVal()) - PRESETS['afternoon 7'].cloud_thickness) < 1e-6, `cloud ${await cloudVal()}`);
+  check('a shipped playlist has no delete', await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent === 'delete').hidden));
 
-  // delete takes the ★ and leaves the built-in
-  await devPick(same[1][0]);
+  // delete takes the ★ alone
+  await devList('local');
+  await devPick('★ afternoon 7');
   dialogs.length = 0;
   await devBtn('delete');
-  const afterDel = await devOpts();
-  check('delete removes the ★ and leaves the built-in', afterDel.filter(([, t]) => t.endsWith(' afternoon 7')).map(([, t]) => t).join() === '• afternoon 7' && dialogs.length === 0, JSON.stringify(afterDel.filter(([, t]) => t.endsWith(' afternoon 7'))));
-  await devPick('memories');
-  dialogs.length = 0;
-  await devBtn('delete');
-  check('delete still refuses a built-in', dialogs[0]?.type === 'alert' && /Built-in/.test(dialogs[0].message), JSON.stringify(dialogs));
+  check('delete removes the ★', (await devOpts()).every(([, t]) => t !== '★ afternoon 7') && dialogs.length === 0, JSON.stringify(await devOpts()));
   for (const n of ['k2 mine', 'k2 mine 2']) { await devPick(n); await devBtn('delete'); }
-  check('and the ★ looks go the same way', (await devOpts()).every(([, t]) => !t.startsWith('★ ')));
+  check('and the ★ looks go the same way, and with none left the editor is back on the story', (await devOpts()).every(([, t]) => !t.startsWith('★ ')) && (await page.$eval('#dev .playlist-row select', (s) => s.value)) === STORY, JSON.stringify({ opts: await devOpts(), dialogs }));
+  await quiet(page);
   // ⌘S / Ctrl+S is the save button: the same prompt, the same ★, and the browser's own save-page stays out of it
   dialogs.length = 0; dialogReply = 'k2 keys';
   await page.keyboard.press('Control+s');
   dialogReply = null;
   await page.waitForTimeout(300);
   check('Ctrl+S prompts for a name and keeps a ★ under it', dialogs[0]?.type === 'prompt' && (await devOpts()).some(([v, t]) => v === 'k2 keys' && t === '★ k2 keys'), JSON.stringify(dialogs));
-  await devPick('k2 keys'); await devBtn('delete');
+  await devPick('k2 keys'); await devBtn('delete');   // the last ★: back on the story
+  await quiet(page);
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('komorebi.editor')));
-  check('the editor settings remember the playlist and the entry', stored.playlist === 'local' && typeof stored.selected?.local === 'string', JSON.stringify(stored));
+  check('the editor settings remember the playlist and the entry', stored.playlist === STORY && typeof stored.selected?.[STORY] === 'string', JSON.stringify(stored));
 
   // the tiers (arboretum.js): at /index.html (a fork, komorebi's own dev server) arboretum is local-only: its code is there to keep the ★ looks,
   // but it asks the network for nothing, and shows nothing of the session
@@ -1005,25 +1012,25 @@ try {
     const sel2 = () => page2.$eval('#dev select', (s) => ({ value: s.value, opts: [...s.options].map((o) => o.textContent) }));
     const first = await sel2();
     check('a cached cloud playlist lists its items by name and opens on the first', first.opts.join() === 'one,two' && first.value === '0', JSON.stringify(first));
-    check('with a second playlist the playlist row is there, on the active one', await page2.evaluate(() => {
+    check('with a second playlist the playlist row is there, on the active one', await page2.evaluate((ships) => {
       const s = document.querySelectorAll('#dev select')[1];
-      return getComputedStyle(s.closest('.ctl')).display !== 'none' && [...s.options].map((o) => o.textContent).join() === 'all looks,k2 list' && s.value === 'arb:7';
-    }));
+      return getComputedStyle(s.closest('.ctl')).display !== 'none' && [...s.options].map((o) => o.textContent).join() === `${ships},k2 list` && s.value === 'arb:7';
+    }, SHIP_LABELS));
     const vis = await page2.evaluate(() => Object.fromEntries(['play', 'dev', 'strip'].map((id) => [id, [...document.querySelectorAll(`#${id} .playstop`)].map((b) => getComputedStyle(b).display !== 'none')])));
-    check('the ▶ shows in play and advanced, and the zen strip has none', vis.play.length === 1 && vis.play[0] && vis.dev.length === 1 && vis.dev[0] && vis.strip.length === 0, JSON.stringify(vis));
+    check('the ▶ shows in play, advanced and the zen strip', [vis.play, vis.dev, vis.strip].every((v) => v.length === 1 && v[0]), JSON.stringify(vis));
     await page2.waitForTimeout(800);
     await page2.$eval('#play .preset button:nth-child(2)', (b) => b.click());
     check('› steps to the next item, by index', (await sel2()).value === '1' && (await page2.$eval('#play .preset .name', (e) => e.textContent)) === 'two');
     await page2.waitForTimeout(400);
-    check('the playful sidebar has its own playlist select, above the look list, on the active one', await page2.evaluate(() => {
+    check('the playful sidebar has its own playlist select, above the look list, on the active one', await page2.evaluate((ships) => {
       const rows = [...document.querySelectorAll('#play .ctl.select')], s = rows[0]?.querySelector('select');
-      return rows.length === 2 && getComputedStyle(rows[0]).display !== 'none' && [...s.options].map((o) => o.textContent).join() === 'all looks,k2 list' && s.value === 'arb:7';
-    }));
-    await page2.evaluate(() => { const s = document.querySelector('#play .ctl.select select'); s.value = 'local'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+      return rows.length === 2 && getComputedStyle(rows[0]).display !== 'none' && [...s.options].map((o) => o.textContent).join() === `${ships},k2 list` && s.value === 'arb:7';
+    }, SHIP_LABELS));
+    await page2.evaluate(() => { const s = document.querySelector('#play .ctl.select select'); s.value = 'ship:story'; s.dispatchEvent(new Event('change', { bubbles: true })); });
     const back = await sel2();
-    check('the playful select swaps the list: the advanced one follows', (await page2.evaluate(() => document.querySelectorAll('#dev select')[1].value)) === 'local');
-    check('swapping to all looks lists the built-ins again and the ▶ goes', back.opts.length > 3 && back.value === Object.keys(PRESETS)[0]
-      && (await displayOf(page2, '.playstop')).every((x) => x === 'none'), JSON.stringify({ n: back.opts.length, v: back.value }));
+    check('the playful select swaps the list: the advanced one follows', (await page2.evaluate(() => document.querySelectorAll('#dev select')[1].value)) === STORY);
+    check('swapping to the story lists its looks from the first, and it plays itself', back.opts.join() === STORY_LOOKS.join() && back.value === STORY_LOOKS[0]
+      && (await playIs(page2, '■')), JSON.stringify({ n: back.opts.length, v: back.value }));
     await ctx.close();
   }
 
@@ -1078,7 +1085,7 @@ try {
       const { ctx, pg, theirs } = await open6('#arboretum=31', (route) => route.abort('failed'));   // a browser that blocks the read (CORS), or a network that fails
       const said = await pg.waitForFunction(() => document.getElementById('hint').textContent === 'arboretum: arboretum unreachable' && !document.getElementById('hint').classList.contains('gone'), null, { timeout: 20000 }).then(() => true, () => false);
       await pg.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
-      check('a link the browser blocks is said quietly through the key-hint line, and the editor lands as usual', said && theirs.length === 1 && (await pg.$eval('#dev select', (s) => s.value)) === 'afternoon 7', `${said} ${theirs.join()}`);
+      check('a link the browser blocks is said quietly through the key-hint line, and the editor lands as usual, on the story\'s first look', said && theirs.length === 1 && (await pg.$eval('#dev select', (s) => s.value)) === STORY_LOOKS[0], `${said} ${theirs.join()} ${await pg.$eval('#dev select', (s) => s.value)}`);
       await ctx.close();
     }
   }
@@ -1221,11 +1228,13 @@ try {
     await openSettings4();
     await until(() => shown4('#sessionSettings .arb-cta'));
     check('in the playful sidebar and the zen strip, arboretum is asked nothing but /api/health (and /api/me once the advanced panel opens)', seen.every((c) => c.path === '/api/health' || c.path === '/api/me'), seen.map((c) => c.path).join());
-    check('signed out it is local only: all looks lists the two ★ looks, and there is no notice, no chips, no +, no folders',
-      (await opts4(1)).join() === 'all looks' && (await opts4(0)).includes('★ local one') && (await opts4(0)).includes('★ local two') && !(await moveBox4())
-      && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row')) && (await text4('#sessionSettings .arb-who')) === '' && (await text4('#sessionSettings .arb-cta')) === 'keep your looks in arboretum ↗');
+    check('signed out it is local only: the shipped playlists and your looks, which lists the two ★ looks, and there is no notice, no chips, no +, no folders',
+      (await opts4(1)).join() === `${SHIP_LABELS},your looks` && (await opts4(0)).join() === '★ local one,★ local two' && !(await moveBox4())
+      && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button[title="new playlist"]')) && (await text4('#sessionSettings .arb-who')) === '' && (await text4('#sessionSettings .arb-cta')) === 'keep your looks in arboretum ↗');
     await closeSettings4();
+    await goList4(SHIPS[0].label, STORY);
     check('the look has its chip: a built-in, unchanged', await chipIs4('built-in'), await chip4());
+    await goList4('your looks', 'local');
     await pick4(0, 'local one');
     check('and a ★ is "★ saved here"', await chipIs4('★ saved here'), await chip4());
     await slider4(0.21);
@@ -1244,8 +1253,8 @@ try {
     await focus4();
     await until(async () => (await text4('#sessionSettings .arb-who')) === 'arboretum · jo' && (await moveBox4()) !== null);
     check('signed in, Settings reads "arboretum · jo" and a notice offers to move the 2 ★ looks, private', (await text4('#sessionSettings .arb-who')) === 'arboretum · jo' && JSON.stringify(await moveBox4()) === JSON.stringify({ text: "move your 2 looks into arboretum? they'll be private", buttons: ['move', 'not now'] }), JSON.stringify(await moveBox4()));
-    check('the lists are uncategorized, your folders in arboretum\'s order, the built-ins, and on this browser (the ★ looks are not moved yet)', (await opts4(1)).join() === 'uncategorized,morning,evening,built-ins,on this browser', (await opts4(1)).join());
-    check('and no all looks, and no ☁ rows', !(await opts4(1)).includes('all looks') && (await opts4(0)).every((t) => !t.includes('☁')), (await opts4(0)).join());
+    check('the lists are uncategorized, your folders in arboretum\'s order, the shipped playlists, and on this browser (the ★ looks are not moved yet)', (await opts4(1)).join() === `uncategorized,morning,evening,${SHIP_LABELS},on this browser`, (await opts4(1)).join());
+    check('and no your looks, and no ☁ rows', !(await opts4(1)).includes('your looks') && (await opts4(0)).every((t) => !t.includes('☁')), (await opts4(0)).join());
     check('the mirror holds what is mine (dusk, dawn) and both playlists, fetched by version: each preset once', JSON.stringify((await mirror4()).order) === '[21,5]' && (await mirror4()).playlists.map((l) => l.id).join() === '8,7' && calls(/^GET \/api\/presets\/(21|5)$/).length === 2 && calls(/^GET \/api\/presets\/6$/).length === 0, JSON.stringify(await mirror4()).slice(0, 160));
     check('with a + beside the playlist select', await shown4('#dev .playlist-row button[title="new playlist"]'));
 
@@ -1284,8 +1293,8 @@ try {
     check('no request carried visibility', seen.every((c) => !/visibility/i.test(`${c.path} ${JSON.stringify(c.body ?? '')}`)));
 
     // every save goes to arboretum, private: a built-in becomes a new preset, parented on it, and lands in uncategorized
-    await goList4('built-ins', 'builtins');
-    check('built-ins is a list of the shipped looks alone, with no remove or delete', (await opts4(0)).every((t) => /^[•◦] /.test(t)) && !(await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => (b.textContent === 'delete' || b.textContent === 'remove') && !b.hidden))));
+    await goList4(SHIPS[0].label, STORY);
+    check('the story is its shipped looks alone, with no remove or delete', (await opts4(0)).join() === STORY_LOOKS.join() && !(await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => (b.textContent === 'delete' || b.textContent === 'remove') && !b.hidden))));
     await pick4(0, 'afternoon 7');
     check('a built-in selected: "built-in"', await chipIs4('built-in'), await chip4());
     await slider4(0.12);
@@ -1446,9 +1455,9 @@ try {
     await waitCall(/^PUT \/api\/playlists\/8\/items$/, pc0 + 1);
     check('the chips are in the pane: one adds the look on screen to that playlist', JSON.stringify(putAfter('/api/playlists/8/items').put.body.items.map((i) => i.preset_id)) === JSON.stringify([freshId])
       && await until(async () => (await pane4()).chips.includes('morning:true')), JSON.stringify(await pane4()));
-    await paneList4('builtins');
-    check('the pane\'s playlist select switches the list; the built-ins have no order of yours to change, so no grip, no ×, no picker',
-      await until(async () => { const p = await pane4(); return p.list === 'built-ins' && p.rows.length > 3 && p.grips === 0 && p.picker === null; }) && (await dev4(() => document.querySelectorAll('#plist .pl-remove').length)) === 0, JSON.stringify({ ...(await pane4()), rows: (await pane4()).rows.length }));
+    await paneList4(STORY);
+    check('the pane\'s playlist select switches the list; the story has no order of yours to change, so no grip, no ×, no picker',
+      await until(async () => { const p = await pane4(); return p.list === SHIPS[0].label && p.rows.length > 3 && p.grips === 0 && p.picker === null; }) && (await dev4(() => document.querySelectorAll('#plist .pl-remove').length)) === 0, JSON.stringify({ ...(await pane4()), rows: (await pane4()).rows.length }));
     await paneList4('arb:7');
     await page4.waitForTimeout(400);
     await dev4(() => [...document.querySelectorAll('#wsTabs button')].find((b) => b.textContent === 'tree').click());
@@ -1484,7 +1493,7 @@ try {
     await slider4(0.77);
     await save4(name0);
     check('an offline save of a preset of yours waits: the chip says ⇡ waiting to go up', await chipIs4('⇡ waiting to go up') && (await mirror4()).queue.length === 1, `${await chip4()} ${(await mirror4()).queue.length}`);
-    await goList4('built-ins', 'builtins');
+    await goList4(SHIPS[0].label, STORY);
     await pick4(0, 'memories');
     await slider4(0.05);
     await save4('k4 offline');
@@ -1507,7 +1516,7 @@ try {
     await focus4();
     await openSettings4();
     await until(() => shown4('#sessionSettings .arb-cta'));
-    check('a session that has ended brings the sign-in line back; the lists are all looks alone — the mirror is kept but not shown', (await opts4(1)).join() === 'all looks' && (await mirror4()).order.length > 2 && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button[title="new playlist"]')), `${(await opts4(1)).join()} ${(await mirror4()).order.length}`);
+    check('a session that has ended brings the sign-in line back; the lists are the shipped ones alone — the mirror is kept but not shown', (await opts4(1)).join() === SHIP_LABELS && (await mirror4()).order.length > 2 && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button[title="new playlist"]')), `${(await opts4(1)).join()} ${(await mirror4()).order.length}`);
     await closeSettings4();
     const idle2 = seen.length, posts2 = calls(POSTS).length;
     await pick4(0, 'afternoon 7');
@@ -1563,7 +1572,7 @@ try {
     await page5.waitForSelector('#play:not(.hidden)', { timeout: 60000 });
     const got = async () => { const end = Date.now() + 15000; while (Date.now() < end) { if (asked5.includes('/api/me')) return true; await page5.waitForTimeout(60); } return false; };
     check('with a cloud playlist active, /api/me is asked without the advanced panel', await got(), asked5.join());
-    await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'builtins'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+    await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'ship:story'; s.dispatchEvent(new Event('change', { bubbles: true })); });
     await page5.waitForTimeout(500);
     await page5.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'arb:7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
     await page5.waitForFunction(() => document.querySelector('#dev .look-chip')?.textContent === 'offline copy · 2023-11-14', null, { timeout: 15000 }).catch(() => {});
@@ -1603,7 +1612,7 @@ try {
     const until5 = (pg, fn, arg, ms = 60000) => pg.waitForFunction(fn, arg, { timeout: ms }).then(() => true, () => false);
     const landed = (pg, value) => until5(pg, (v) => document.querySelector('#dev select').value === v, value);
 
-    // #arboretum=<id>: saved into all looks, lands directly without "feel", the hash is cleared
+    // #arboretum=<id>: saved into your looks, lands directly without "feel", the hash is cleared
     {
       const dusk = { id: 12, owner: 'ana', name: 'k5 dusk', version: 2, params: PRESETS.memories };
       const { ctx, pg, seen } = await open5('#arboretum=12', healthy((u, json) => (u.pathname === '/api/presets/12' ? json(200, dusk) : json(401, { error: 'sign in' }))));
@@ -1616,7 +1625,7 @@ try {
         hash: location.hash,
         intro: document.body.classList.contains('intro'), welcome: getComputedStyle(document.getElementById('welcome')).display,
       }));
-      check('#arboretum=12: it asks for preset 12, and without "feel" the dev select reads the imported ★, saved in all looks', there && seen.includes('/api/presets/12') && a.label === '★ k5 dusk' && a.star && a.list === 'local' && !a.intro && a.welcome === 'none', JSON.stringify({ there, ...a }));
+      check('#arboretum=12: it asks for preset 12, and without "feel" the dev select reads the imported ★, saved in your looks', there && seen.includes('/api/presets/12') && a.label === '★ k5 dusk' && a.star && a.list === 'local' && !a.intro && a.welcome === 'none', JSON.stringify({ there, ...a }));
       check('it is a synced copy of #12 v2 by ana, and the hash is cleared', a.origin?.id === 12 && a.origin.version === 2 && a.origin.owner === 'ana' && a.origin.synced === true && a.hash === '', JSON.stringify(a));
       await ctx.close();
     }
@@ -1635,7 +1644,7 @@ try {
       check('and the pinned version lands as a ★ recorded as #12 v2 by the head\'s owner', there && rec?.id === 12 && rec.version === 2 && rec.owner === 'ana' && rec.synced === true, JSON.stringify({ there, rec }));
       await ctx.close();
     }
-    // a failed link: afternoon 7, and the reason through the hint
+    // a failed link: the story's first look, and the reason through the hint
     {
       const { ctx, pg } = await open5('#arboretum=99', healthy((_u, json) => json(404, { error: 'not found' })));
       const said = await until5(pg, () => document.getElementById('hint').textContent === 'arboretum: not found' && !document.getElementById('hint').classList.contains('gone'), null, 20000);   // it is up for ten seconds from the failed fetch
@@ -1644,7 +1653,7 @@ try {
       const keys = await pg.evaluate(() => document.getElementById('hint').textContent);
       check('and H brings the key hints back in its place', /change scene/.test(keys), keys);
       await pg.waitForSelector('#strip:not(.hidden)', { timeout: 60000 });
-      check('it lands on afternoon 7', (await devValue(pg)) === 'afternoon 7', await devValue(pg));
+      check('it lands on the story\'s first look', (await devValue(pg)) === STORY_LOOKS[0], await devValue(pg));
       await ctx.close();
     }
     // #arboretum-playlist=<id>&k=<token>: the playlist is active and plays
@@ -1665,7 +1674,7 @@ try {
       const second = await until5(pg, () => document.querySelector('#dev select').value === '1', null, 30000);
       check('play starts by itself: within the dwell the next item is on', second, await devValue(pg));
       const surfaces = await pg.evaluate(() => Object.fromEntries(['play', 'dev', 'strip'].map((id) => [id, [...document.querySelectorAll(`#${id} .playstop`)].map((b) => `${getComputedStyle(b).display !== 'none'}:${b.textContent}`)])));
-      check('while it plays the ■ is in the playful sidebar and the advanced panel, and the zen strip has none', surfaces.play.length === 1 && surfaces.play[0] === 'true:■' && surfaces.dev.length === 1 && surfaces.dev[0] === 'true:■' && surfaces.strip.length === 0, JSON.stringify(surfaces));
+      check('while it plays the ■ is in the playful sidebar, the advanced panel and the zen strip', [surfaces.play, surfaces.dev, surfaces.strip].every((v) => v.length === 1 && v[0] === 'true:■'), JSON.stringify(surfaces));
       // a cloudiness-dial edit stops it
       await pg.$eval('#play', (el) => {
         const inp = [...el.querySelectorAll('.ctl.try')].find((r) => r.querySelector('.name').textContent === 'cloudiness').querySelector('input');
@@ -1674,7 +1683,7 @@ try {
       const at = await devValue(pg);
       await pg.waitForTimeout(3800);
       const btns = await pg.evaluate(() => [...document.querySelectorAll('.playstop')].map((b) => b.textContent).join());
-      check('a cloudiness-dial edit stops play: the item stays, and the buttons read ▶', (await devValue(pg)) === at && btns === '▶,▶', `${at} -> ${await devValue(pg)} ${btns}`);
+      check('a cloudiness-dial edit stops play: the item stays, and the buttons read ▶', (await devValue(pg)) === at && btns === '▶,▶,▶', `${at} -> ${await devValue(pg)} ${btns}`);
       // ‹ steps back, and the dev select follows
       await pg.$eval('#play .preset button:nth-child(1)', (b) => b.click());
       const back = at === '1' ? '0' : '1';
@@ -1687,7 +1696,7 @@ try {
       await pg.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent === 'save').click());
       await until5(pg, () => document.querySelectorAll('#dev select')[1].value === 'local', null, 15000);
       const mine = await pg.evaluate(() => ({ list: document.querySelectorAll('#dev select')[1].value, value: document.querySelector('#dev select').value, star: 'k5 mine' in JSON.parse(localStorage.getItem('komorebi.presets') || '{}') }));
-      check('and save there makes a ★ in all looks and switches to it, writing nothing to arboretum', mine.list === 'local' && mine.value === 'k5 mine' && mine.star && methods.slice(before).every((m) => m === 'GET'), JSON.stringify({ mine, after: seen.slice(before) }));
+      check('and save there makes a ★ in your looks and switches to it, writing nothing to arboretum', mine.list === 'local' && mine.value === 'k5 mine' && mine.star && methods.slice(before).every((m) => m === 'GET'), JSON.stringify({ mine, after: seen.slice(before) }));
       // the token comes back with a re-fetch
       await pg.evaluate(() => { const s = document.querySelectorAll('#dev select')[1]; s.value = 'arb:7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
       await until5(pg, () => document.querySelector('#dev select').value !== 'k5 mine', null, 15000);
@@ -1725,6 +1734,8 @@ try {
     const legend = await pgT.evaluate(() => ({ gone: document.getElementById('hint').classList.contains('gone'), text: document.getElementById('hint').textContent, saw: JSON.parse(localStorage.getItem('komorebi.editor') || '{}').sawTouchHint }));
     check('on first arrival the touch legend is shown, and remembered', !legend.gone && legend.text === 'swipe · another place \u00a0·\u00a0 tap · the light' && legend.saw === true, JSON.stringify(legend));
     await pgT.waitForTimeout(1200);
+    for (let i = 0; i < 4 && !(await playIs(pgT, '■')); i++);   // the story starts once its first look has landed (slow under SwiftShader)...
+    await quiet(pgT);         // ...and would move on while the camera checks wait for that look
     // a touch gesture as real pointer events on #gl (synthetic pointers have no active id: the handler's setPointerCapture is guarded)
     const gesture = (from, to) => pgT.evaluate(([a, b]) => {
       const gl = document.getElementById('gl'), ev = (type, p) => gl.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: 7, isPrimary: true, bubbles: true, cancelable: true, clientX: p[0], clientY: p[1] }));
@@ -1752,7 +1763,8 @@ try {
     let landedCam = false;
     for (let i = 0; i < 150 && !(landedCam = await arrived()); i++) await pgT.waitForTimeout(400);
     check('the look has arrived before the fingers move the camera', landedCam, JSON.stringify({ look: camLook, view: await view() }));
-    const strip0 = await pgT.$eval('#strip', (e) => e.classList.contains('faded'));   // after the wait: a still strip fades on its own clock, which the fingers must not move
+    await pgT.waitForFunction(() => document.getElementById('strip').classList.contains('faded'), null, { timeout: 15000 }).catch(() => {});   // a still strip fades on its own clock (5 s)...
+    const strip0 = await pgT.$eval('#strip', (e) => e.classList.contains('faded'));   // ...which the fingers must not move
     const v0 = await view();
     await fingers([150, 350], [100, 350], [250, 350], [300, 350]);   // spread from 100 to 200 px about the same midpoint
     const v1 = await view();
@@ -1797,12 +1809,12 @@ try {
     const touchStrip = await pgT.$eval('#strip', (el) => ({
       one: el.classList.contains('one'), cap: !!el.querySelector(':scope > .cap'),
       dials: [...el.querySelectorAll('.ctl.try')].map((r) => r.querySelector('.name').textContent + (r.classList.contains('out') ? ':out' : ':in')).join(),
-      tabs: [...el.querySelectorAll('.tabs button')].map((b) => b.textContent).join(),
+      tabs: [...el.querySelectorAll('.tabs button')].map((b) => (b.classList.contains('playstop') ? 'play' : b.textContent)).join(),
       presetShown: getComputedStyle(el.querySelector('.preset')).display !== 'none',
     }));
     const touchLook = await look(), touchDials = dialsOn(touchLook, TOUCH_USUAL, 5);
-    check('the touch strip is one dial at a time: a caption, the look\'s five dials (its first out front), the tab row, no preset row',
-      touchStrip.one && touchStrip.cap && touchStrip.dials === touchDials.map((d, i) => `${d}:${i ? 'out' : 'in'}`).join() && touchStrip.tabs === [...touchDials.map((d) => (d === 'cloudiness' ? 'clouds' : d)), '\u21ba', '\uff0b'].join() && !touchStrip.presetShown, JSON.stringify({ touchLook, ...touchStrip }));
+    check('the touch strip is one dial at a time: a caption, the look\'s five dials (its first out front), the tab row (▶/■ in it), no preset row',
+      touchStrip.one && touchStrip.cap && touchStrip.dials === touchDials.map((d, i) => `${d}:${i ? 'out' : 'in'}`).join() && touchStrip.tabs === [...touchDials.map((d) => (d === 'cloudiness' ? 'clouds' : d)), '\u21ba', 'play', '\uff0b'].join() && !touchStrip.presetShown, JSON.stringify({ touchLook, ...touchStrip }));
     await pgT.evaluate(() => document.querySelectorAll('#strip .tabs button')[1].click());
     const afterTab = await pgT.$eval('#strip', (el) => [...el.querySelectorAll('.ctl.try')].filter((r) => !r.classList.contains('out')).map((r) => r.querySelector('.name').textContent).join());
     check('a tab shows its dial', afterTab === touchDials[1], afterTab);

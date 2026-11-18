@@ -9,9 +9,8 @@ import { DEFAULTS, FIDELITY_KEYS, PLAYBACK_KEYS } from "./komorebi.js";
 const LOOK_DEFAULTS = Object.fromEntries(Object.entries(DEFAULTS).filter(([key]) => !FIDELITY_KEYS.includes(key) && !PLAYBACK_KEYS.includes(key)));
 
 export const PRESETS = {
-  // The built-in looks. Definition order below IS the dropdown / ← → order — there is no separate
-  // order list to keep in sync. The editor boots into 'afternoon 7'; 'test 1'/'test 2' sit commented
-  // at the foot of this object. Any saved (★) look lives in local storage; DEFAULTS is the merge base.
+  // The built-in looks. The editor reaches them only through PLAYLISTS (below), which say the order they are walked in;
+  // 'test 1'/'test 2' sit commented at the foot of this object. Any saved (★) look lives in local storage; DEFAULTS is the merge base.
   // 'park 1, the scene' — WORKING NAME. park 1 with its tree seen (tree_view, 2026-11-16): the grove and its shadow from 12.3 m up, the far scene José called
   // "such a vibe sometimes" (zoom 20 m, tilt 55°, lens 30°). Everything else is park 1's.
   'park 1, the scene': Object.assign({}, LOOK_DEFAULTS, {
@@ -1282,17 +1281,33 @@ export const PRESETS = {
 };
 
 // ---- EXPERIMENTAL looks: shipped but still finding their feet (most say so in their own comments — "none of
-// this has been seen on a GPU", "every number is a starting point"). The editor hides them from the dropdown
-// and the ←/→ / swipe stepping unless its "experimental looks" toggle is on; the player, the pixel harness and
-// the tests all ignore this list and keep covering every look. UI curation, not engine data — which is why it
-// is a list beside PRESETS and never a key inside one (a look's params travel through JSON export / ★ saves,
-// and a visibility flag doesn't belong in them). ----
+// this has been seen on a GPU", "every number is a starting point"). The editor reaches them through their own playlist,
+// "experiments" (PLAYLISTS), never the story; the embed build leaves them out of the default bundle, and the player, the
+// pixel harness and the tests all keep covering every look. UI curation, not engine data — which is why it is a list
+// beside PRESETS and never a key inside one (a look's params travel through JSON export / ★ saves, and a visibility flag
+// doesn't belong in them). ----
 export const EXPERIMENTAL = ['park 1', 'acid dreams', 'eclipse', 'the yellow tree', 'canopy 1', 'canopy 2', 'canopy 3', 'canopy 4', 'curtain 1', 'curtain 2', 'tent 1', 'the void'];
+
+// ---- THE SHIPPED PLAYLISTS: the only way the editor reaches a look of PRESETS. Each names looks of PRESETS in the order
+// they play; an item is a look's name, or { look, dwell_s?, crossfade_s?, style? } to pace that one item, and what an item
+// does not say comes from ITEM_DEFAULTS. dwell_s is how long the item holds; crossfade_s how long the next look takes to
+// arrive; style 'morph' (the automatic route) or 'fade'. A playlist that is `idle` plays itself: it starts on arrival, any
+// touch of the person's (a dial, a key, a tap) starts its hold over instead of stopping it, and it moves on only once the
+// hold has passed untouched. The first playlist is where a first visit lands. ----
+export const ITEM_DEFAULTS = { dwell_s: 30, crossfade_s: 4, style: 'morph' };
+export const PLAYLISTS = {
+  story: { name: 'komorebi', idle: true, items: [
+    'park 1, the scene', 'park 1, under the trees', 'park 2', 'park fall', 'cherry blossom', 'montebello', 'montebello, rain',
+    'forest floor', 'afternoon 7', 'afternoon 6', 'afternoon 6b', 'afternoon 5', 'afternoon 5b', 'prism', 'afternoon 4',
+    'afternoon 4b', 'morning 1', 'morning 2', 'morning 3', 'morning 3b', 'memories',
+  ] },
+  experiments: { name: 'experiments', items: EXPERIMENTAL },
+};
 
 // ---- PRIORITY: the dials a look leads with, in order — the settings most worth playing with in that place. The zen strip
 // and the playful sidebar show these first and the usual dials after them; a name the look cannot use (its gate is shut)
 // is passed over, and a look not named here shows the usual dials alone. Each name is one of the editor's dials (editor.js
-// TRY_SPECS). Walked in PRESETS' order they reveal a little at a time: the tree's shape and the wind while the tree is seen,
+// TRY_SPECS). Walked in the story's order (PLAYLISTS) they reveal a little at a time: the tree's shape and the wind while the tree is seen,
 // the leaf's chemistry through its year, then the light itself as the floor goes abstract. UI curation like EXPERIMENTAL,
 // so a list beside PRESETS and never a key inside a look. ----
 export const PRIORITY = {

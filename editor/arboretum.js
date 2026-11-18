@@ -284,7 +284,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     out = !bound;
     buildControls(origin);
     render();
-    if (wantStart || host.advancedShown() || host.active() !== "local") start();
+    if (wantStart || host.advancedShown() || host.active().startsWith("arb:")) start();   // a shipped playlist and your looks ask arboretum nothing
     return origin;
   });
 
@@ -651,8 +651,8 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     settings: start,
     setPresentation,
     canRemove: () => signedIn() && isFolder(view(), host.active(), me),
-    // the style of the playlist item you are on, or null where there is no item of yours to keep one on (all looks, uncategorized,
-    // the built-ins, someone else's playlist): those always morph
+    // the style of the playlist item you are on, or null where there is no item of yours to keep one on (your looks, uncategorized,
+    // a shipped playlist, someone else's playlist): those always morph
     styleNow() {
       const active = host.active();
       if (!signedIn() || !isFolder(view(), active, me)) return null;

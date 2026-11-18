@@ -192,7 +192,7 @@ test("the editor keeps the selected preset across a mirror reorder, so saving up
   const body = source.slice(source.indexOf("function refreshPresetSelect("), source.indexOf("// the playlist select exists"));
   const refresh = new Function("presetSel", "presetSelects", "listEntries", "document", "settings", "activeList", "stateNow", "selectionAfter", "saveSettings", "syncPlayPreset", "syncPlaylistUI", "arb",
     `let listedState=null, listedActive=null; ${body}; return refreshPresetSelect;`)(
-    select, [select], () => model.entries(state, {}, { PRESETS: {}, EXPERIMENTAL: [] }, false, "arb:unc"), { createElement: () => ({}) },
+    select, [select], () => model.entries(state, {}, "arb:unc"), { createElement: () => ({}) },
     settings, () => "arb:unc", () => state, model.selectionAfter, () => {}, () => {}, () => {});
   refresh("0");
   state = model.viewState({ origin: {}, playlists: {} }, model.mirrorSync(m, [two, one], {}, [], [], 1), "alice");
@@ -281,7 +281,7 @@ test("a times change from the pane writes that item's dwell or crossfade alone; 
     return json({ id: 7, owner: "alice", items: [one, two] });
   }, { active: () => active, value: () => "0" });
   await s.a.setTimes(1, { dwell_s: 90 });
-  expect(writes).toEqual([]);                  // all looks is not a playlist of yours
+  expect(writes).toEqual([]);                  // your looks is not a playlist of yours
   active = "arb:7";
   await s.a.setTimes(1, { dwell_s: 90 });
   await s.a.setTimes(0, { crossfade_s: 0 });
@@ -348,7 +348,7 @@ test("the picker offers your looks (marking those already in) and the ★ not ye
   expect(writes.map((w) => w.at(-1).preset_id)).toEqual([2, 4]);
   expect(posts[0]).toMatchObject({ name: "mine", params: { exposure: 7 } });
   expect(getStored()).toEqual({});              // the ★ is a preset of yours now
-  active = "builtins";
+  active = "ship:story";
   expect(s.a.addable().length).toBeGreaterThan(0);
   await s.a.add("p:2");
   expect(writes.length).toBe(2);                // not a playlist of yours: nothing is written
@@ -489,7 +489,7 @@ test("a signed-in shared preset link remains selectable on this browser", async 
   const s = await session(async () => json({ id: 20, owner: "bob", version: 1, name: "shared", params: { exposure: 99 } }));
   const opened = await s.a.open(parseHash("#arboretum=20"));
   expect(s.a.lists("local").some((l) => l.value === "local")).toBe(true);
-  expect(model.entries(s.a.view(), getStored(), { PRESETS: {}, EXPERIMENTAL: [] }, false, "local", opened.value, true)).toEqual([{ value: "shared", label: "★ shared" }]);
+  expect(model.entries(s.a.view(), getStored(), "local", true)).toEqual([{ value: "shared", label: "★ shared" }]);
   expect(model.resolve(s.a.view(), getStored(), "local", opened.value)).toEqual({ exposure: 99 });
   expect(model.moveCandidates(s.a.view(), getStored())).toEqual([]);
 });
@@ -501,7 +501,7 @@ test("a pinned version of an owned preset remains selectable beside its newer mi
   const s = await session(async (url) => json(url.includes("/versions/") ? { preset_id: 20, n: 1, name: "old", params: { exposure: 11 } } : head));
   const opened = await s.a.open(parseHash("#arboretum=20@1"));
   expect(s.a.lists("local").some((l) => l.value === "local")).toBe(true);
-  expect(model.entries(s.a.view(), getStored(), { PRESETS: {}, EXPERIMENTAL: [] }, false, "local", opened.value, true).map((e) => e.value)).toContain(opened.value);
+  expect(model.entries(s.a.view(), getStored(), "local", true).map((e) => e.value)).toContain(opened.value);
   expect(model.resolve(s.a.view(), getStored(), "local", opened.value)).toEqual({ exposure: 11 });
 });
 
@@ -529,7 +529,7 @@ function welcomeGate(hash, opened) {
     applyParams: (p) => loaded.push(p), resolveEntry: (value) => ({ value }), getPreset: () => ({}), DEFAULT_PRESET: "default",
     settings: {}, saveSettings() {}, landing: () => "default", showHint: (s) => hints.push(s),
     endTween() {}, refreshPresetSelect() {}, syncAllControls() {}, slideInPanel() {}, stripWake() {}, player: { start() {} }, coarse: false,
-    parseHash, mount: () => ({ open: () => opened, ready: Promise.resolve(null) }), params: {}, presetRows: {}, sessionPanel: { account: {} }, activeList: () => "local",
+    parseHash, mount: () => ({ open: () => opened, ready: Promise.resolve(null) }), params: {}, presetRows: {}, sessionPanel: { account: {} }, activeList: () => "local", idles: () => false,
     presetSel: { value: "" }, resumeAt() {}, setActive() {}, showCloud() {}, saveStar() {}, dev: { classList: { contains: () => true } }, syncPlaylistUI() {},
   };
   const source = readFileSync("editor/editor.js", "utf8");

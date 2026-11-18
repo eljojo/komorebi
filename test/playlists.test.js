@@ -3,7 +3,7 @@ import { test, expect, beforeEach } from "bun:test";
 import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted,
   uploadPlan, itemsAfter, itemTarget, playlists, plays, timing, starValue, starName, entryName,
-  fromEntry, onlineId, placeChange, sameLook, lookState, playlistChips,
+  fromEntry, onlineId, STORY, idles, shipLists, placeChange, sameLook, lookState, playlistChips,
   emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, saveNewPlan, isFolder, fromVersion, linkPlaylist, makePlayer, selectionAfter } from "../editor/playlists.js";
 import * as builtins from "../presets.js";
 import { DEFAULTS, cameraFor } from "../komorebi.js";
@@ -112,56 +112,59 @@ test("parseHash is null for anything else", () => {
 
 // ---- the list a playlist shows and steps ------------------------------------------
 
-const fake = { PRESETS: { a: { exposure: 1 }, b: { exposure: 2 }, c: { exposure: 3 } }, EXPERIMENTAL: ["b"] };
 const cloud = (items) => ({ ...EMPTY, playlists: { 7: { id: 7, name: "mine", owner: "jo", items } } });
 const item = (name, params = {}) => ({ preset_id: 1, version: 1, owner: "jo", name, dwell_s: 30, crossfade_s: 5, params });
 
-test("entries of On this browser: the visible built-ins, then the ★ looks, marked as the dropdown marks them", () => {
+test("entries of your looks are the ★ looks alone; signed in, only those not yet in arboretum", () => {
   const stored = { x: {}, y: {} };
-  expect(entries(EMPTY, stored, fake, false, "local", "a")).toEqual([
-    { value: "a", label: "• a" }, { value: "c", label: "• c" }, { value: "x", label: "★ x" }, { value: "y", label: "★ y" }]);
-  expect(entries(EMPTY, {}, fake, true, "local", "a")).toEqual([
-    { value: "a", label: "• a" }, { value: "b", label: "◦ b" }, { value: "c", label: "• c" }]);
+  expect(entries(EMPTY, stored, "local")).toEqual([{ value: "x", label: "★ x" }, { value: "y", label: "★ y" }]);
+  const synced = { ...cloud([{ ...item("y"), preset_id: 5 }]), me: { username: "jo" }, origin: { y: { id: 5, version: 1, owner: "jo", synced: true } } };
+  expect(entries(synced, stored, "local", true).map((e) => e.label)).toEqual(["★ x"]);
+  expect(entries(EMPTY, {}, "local")).toEqual([]);
 });
 
-test("entries of On this browser keeps the experimental look you are on, even with the toggle off", () => {
-  expect(entries(EMPTY, {}, fake, false, "local", "b").map((e) => e.value)).toEqual(["a", "b", "c"]);
+test("entries of a shipped playlist are its looks in its order, each valued by its name", () => {
+  for (const [key, p] of Object.entries(builtins.PLAYLISTS)) {
+    const names = p.items.map((it) => (typeof it === "string" ? it : it.look));
+    expect(entries(EMPTY, { mine: {} }, `ship:${key}`)).toEqual(names.map((n) => ({ value: n, label: n })));
+  }
+  expect(entries(EMPTY, {}, "ship:nope")).toEqual([]);
 });
 
-test("entries of On this browser lists a ★ that shares a built-in's name beside it, as today", () => {
-  expect(entries(EMPTY, { a: {} }, fake, false, "local", "a").map((e) => e.label)).toEqual(["• a", "• c", "★ a"]);
+test("the shipped playlists name only looks that exist, each once per playlist, and the story leaves the experimental ones out", () => {
+  const names = (p) => p.items.map((it) => (typeof it === "string" ? it : it.look));
+  for (const p of Object.values(builtins.PLAYLISTS)) {
+    for (const n of names(p)) expect(Object.hasOwn(builtins.PRESETS, n)).toBe(true);
+    expect(new Set(names(p)).size).toBe(names(p).length);
+  }
+  expect(STORY).toBe(`ship:${Object.keys(builtins.PLAYLISTS)[0]}`);
+  const story = names(builtins.PLAYLISTS[STORY.slice(5)]);
+  for (const n of builtins.EXPERIMENTAL) expect(story).not.toContain(n);
+  const listed = new Set(Object.values(builtins.PLAYLISTS).flatMap(names));
+  expect(Object.keys(builtins.PRESETS).filter((n) => !listed.has(n))).toEqual([]);   // every look is reachable from some playlist
 });
 
 test("entries gives a ★ that shares a built-in's name a value of its own, so it can be told from the built-in", () => {
-  const list = entries(EMPTY, { a: {}, b: {}, x: {} }, fake, false, "local", "a");   // b is a hidden experimental built-in
-  expect(list.filter((e) => e.label.endsWith(" a")).map((e) => e.value)).toEqual(["a", "★ a"]);
-  expect(new Set(list.map((e) => e.value)).size).toBe(list.length);
-  expect(list.find((e) => e.label === "★ b").value).toBe("★ b");   // not tied to whether the built-in is listed
+  const list = entries(EMPTY, { "afternoon 7": {}, "curtain 1": {}, x: {} }, "local");
+  expect(list.find((e) => e.label === "★ afternoon 7").value).toBe("★ afternoon 7");
+  expect(list.find((e) => e.label === "★ curtain 1").value).toBe("★ curtain 1");   // not tied to which playlist lists the built-in
   expect(list.find((e) => e.label === "★ x").value).toBe("x");     // every other ★ keeps its name as its value
+  expect(entries(EMPTY, {}, STORY).map((e) => e.value)).toContain("afternoon 7");
 });
 
 test("entries keeps values unique even for a ★ named like another ★'s value", () => {
-  const list = entries(EMPTY, { a: {}, "★ a": {} }, fake, false, "local", "a");
+  const list = entries(EMPTY, { "afternoon 7": {}, "★ afternoon 7": {} }, "local");
   expect(new Set(list.map((e) => e.value)).size).toBe(list.length);
-});
-
-test("entries of On this browser is, for the shipped looks, exactly the list editor.js builds today", () => {
-  const { PRESETS, EXPERIMENTAL } = builtins;
-  for (const showBeta of [false, true])
-    for (const keep of ["afternoon 7", EXPERIMENTAL[0]]) {
-      const today = [...Object.keys(PRESETS).filter((n) => showBeta || !EXPERIMENTAL.includes(n) || n === keep), "mine"];
-      expect(entries(EMPTY, { mine: {} }, builtins, showBeta, "local", keep).map((e) => e.value)).toEqual(today);
-    }
 });
 
 test("entries of a cloud playlist are the item indexes, labelled with the item names (two may share a name)", () => {
   const s = cloud([item("one"), item("two"), item("one")]);
-  expect(entries(s, { x: {} }, fake, true, "arb:7", "0")).toEqual([
+  expect(entries(s, { x: {} }, "arb:7", true)).toEqual([
     { value: "0", label: "one" }, { value: "1", label: "two" }, { value: "2", label: "one" }]);
 });
 
 test("entries of a playlist that is not cached is empty", () => {
-  expect(entries(EMPTY, {}, fake, true, "arb:9", "0")).toEqual([]);
+  expect(entries(EMPTY, {}, "arb:9", true)).toEqual([]);
 });
 
 test("resolve of On this browser: a ★ by its value, a built-in by its name, else undefined", () => {
@@ -173,8 +176,9 @@ test("resolve of On this browser: a ★ by its value, a built-in by its name, el
 
 test("resolve tells a ★ that shares a built-in's name from the built-in, by their values", () => {
   const mine = { exposure: 9 };
-  const [builtin, star] = entries(EMPTY, { "afternoon 7": mine }, builtins, false, "local", "afternoon 7").filter((e) => e.label.endsWith("afternoon 7"));
-  expect(resolve(EMPTY, { "afternoon 7": mine }, "local", builtin.value)).toBe(builtins.PRESETS["afternoon 7"]);
+  const builtin = entries(EMPTY, { "afternoon 7": mine }, STORY).find((e) => e.label === "afternoon 7");
+  const star = entries(EMPTY, { "afternoon 7": mine }, "local").find((e) => e.label === "★ afternoon 7");
+  expect(resolve(EMPTY, { "afternoon 7": mine }, STORY, builtin.value)).toBe(builtins.PRESETS["afternoon 7"]);
   expect(resolve(EMPTY, { "afternoon 7": mine }, "local", star.value)).toEqual(mine);
 });
 
@@ -221,6 +225,7 @@ test("starName reads the ★ an On this browser value denotes: by name, by escap
   expect(starName(stored, "local", "★ afternoon 7")).toBe("afternoon 7");
   expect(starName(stored, "local", "★ ★ odd")).toBe("★ odd");
   expect(starName(stored, "local", "afternoon 7")).toBeNull();   // the built-in, though a ★ shares its name
+  expect(starName(stored, STORY, "mine")).toBeNull();
   expect(starName(stored, "local", "memories")).toBeNull();
   expect(starName(stored, "local", "gone")).toBeNull();
   expect(starName(stored, "arb:7", "mine")).toBeNull();
@@ -228,9 +233,8 @@ test("starName reads the ★ an On this browser value denotes: by name, by escap
 
 test("starName agrees with entries: every ★ entry's value reads back to its name", () => {
   const stored = { mine: {}, "afternoon 7": {}, "★ odd": {}, memories: {} };
-  const list = entries(EMPTY, stored, builtins, true, "local", "mine");
-  for (const e of list) if (e.label.startsWith("★ ")) expect(starName(stored, "local", e.value)).toBe(e.label.slice(2));
-  for (const e of list) if (!e.label.startsWith("★ ")) expect(starName(stored, "local", e.value)).toBeNull();
+  for (const e of entries(EMPTY, stored, "local")) expect(starName(stored, "local", e.value)).toBe(e.label.slice(2));
+  for (const e of entries(EMPTY, stored, STORY)) expect(starName(stored, STORY, e.value)).toBeNull();   // a shipped playlist holds no ★
 });
 
 test("entryName is the look's name: the ★'s, the built-in's, or the cloud item's", () => {
@@ -244,27 +248,30 @@ test("entryName is the look's name: the ★'s, the built-in's, or the cloud item
 
 // ---- the playlists a visitor can pick, and what playing needs --------------------------
 
-test("playlists lists On this browser first, then the cached arboretum playlists by their names", () => {
-  expect(playlists(EMPTY)).toEqual([{ value: "local", label: "all looks" }]);
+test("playlists lists the shipped ones first, your looks only while it holds a ★ (or you are in it), then the cached arboretum playlists", () => {
+  expect(shipLists()).toEqual(Object.entries(builtins.PLAYLISTS).map(([k, p]) => ({ value: `ship:${k}`, label: p.name })));
+  expect(playlists(EMPTY)).toEqual(shipLists());
+  expect(playlists(EMPTY, [], null, { stored: { x: {} } })).toEqual([...shipLists(), { value: "local", label: "your looks" }]);
+  expect(playlists(EMPTY, [], null, { active: "local" })).toEqual([...shipLists(), { value: "local", label: "your looks" }]);
   let s = cachePlaylist(EMPTY, apiList());
   s = cachePlaylist(s, apiList({ id: 8, name: "other" }));
-  expect(playlists(s)).toEqual([
-    { value: "local", label: "all looks" }, { value: "arb:7", label: "mine" }, { value: "arb:8", label: "other" }]);
+  expect(playlists(s)).toEqual([...shipLists(), { value: "arb:7", label: "mine" }, { value: "arb:8", label: "other" }]);
 });
 
 test("playlists lists yours as arboretum names them, then the cached ones that are not among them", () => {
   let s = cachePlaylist(EMPTY, apiList({ name: "old name" }));
   s = cachePlaylist(s, apiList({ id: 8, name: "someone's" }));
   expect(playlists(s, [{ id: 9, name: "new" }, { id: 7, name: "mine now" }])).toEqual([
-    { value: "local", label: "all looks" }, { value: "arb:9", label: "new" }, { value: "arb:7", label: "mine now" },
+    ...shipLists(), { value: "arb:9", label: "new" }, { value: "arb:7", label: "mine now" },
     { value: "arb:8", label: "someone's" }]);
-  expect(playlists(EMPTY, [{ id: 3, name: "fresh" }])).toEqual([
-    { value: "local", label: "all looks" }, { value: "arb:3", label: "fresh" }]);
+  expect(playlists(EMPTY, [{ id: 3, name: "fresh" }])).toEqual([...shipLists(), { value: "arb:3", label: "fresh" }]);
 });
 
-test("plays: only a cached cloud playlist with something in it carries dwell times", () => {
+test("plays: a cached cloud playlist with something in it, and a shipped playlist, carry dwell times", () => {
   const s = cloud([item("one")]);
   expect(plays(s, "arb:7")).toBe(true);
+  expect(plays(EMPTY, STORY)).toBe(true);
+  expect(plays(EMPTY, "ship:nope")).toBe(false);
   expect(plays(s, "local")).toBe(false);
   expect(plays(cloud([]), "arb:7")).toBe(false);
   expect(plays(s, "arb:9")).toBe(false);
@@ -275,6 +282,25 @@ test("timing is the dwell and crossfade of a cloud item; On this browser has non
   expect(timing(s, "arb:7", "0")).toEqual({ dwell_s: 12, crossfade_s: 3, style: "morph" });
   expect(timing(s, "arb:7", "4")).toBeNull();
   expect(timing(s, "local", "afternoon 7")).toBeNull();
+});
+
+test("timing of a shipped item is its own pace, else ITEM_DEFAULTS; a look the playlist does not hold has none", () => {
+  const d = builtins.ITEM_DEFAULTS;
+  const first = entries(EMPTY, {}, STORY)[0].value;
+  expect(timing(EMPTY, STORY, first)).toEqual({ dwell_s: d.dwell_s, crossfade_s: d.crossfade_s, style: "morph" });
+  expect(timing(EMPTY, STORY, "not a look")).toBeNull();
+  const saved = builtins.PLAYLISTS.story.items;
+  builtins.PLAYLISTS.story.items = [{ look: first, dwell_s: 7, style: "fade" }, ...saved.slice(1)];
+  try { expect(timing(EMPTY, STORY, first)).toEqual({ dwell_s: 7, crossfade_s: d.crossfade_s, style: "fade" }); }
+  finally { builtins.PLAYLISTS.story.items = saved; }
+});
+
+test("idles: only a shipped playlist marked idle plays itself through idleness", () => {
+  expect(idles(STORY)).toBe(builtins.PLAYLISTS[STORY.slice(5)].idle === true);
+  for (const [k, p] of Object.entries(builtins.PLAYLISTS)) expect(idles(`ship:${k}`)).toBe(p.idle === true);
+  expect(idles("local")).toBe(false);
+  expect(idles("arb:7")).toBe(false);
+  expect(idles("ship:nope")).toBe(false);
 });
 
 // ---- the built-in guard (design §3.8) -------------------------------------------------
@@ -754,9 +780,10 @@ test("playlists labels a cached playlist that is not yours with its owner, once 
   let s = cachePlaylist(EMPTY, apiList({ owner: "jo" }));
   s = cachePlaylist(s, apiList({ id: 8, name: "evening", owner: "ana" }));
   expect(playlists(s, [], "jo")).toEqual([
-    { value: "local", label: "all looks" }, { value: "arb:7", label: "mine" }, { value: "arb:8", label: "evening · ana" }]);
-  expect(playlists(s, [{ id: 7, name: "mine" }], "jo").map((l) => l.label)).toEqual(["all looks", "mine", "evening · ana"]);
-  expect(playlists(s).map((l) => l.label)).toEqual(["all looks", "mine", "evening"]);   // not signed in: names only, as before
+    ...shipLists(), { value: "arb:7", label: "mine" }, { value: "arb:8", label: "evening · ana" }]);
+  const ships = shipLists().map((l) => l.label);
+  expect(playlists(s, [{ id: 7, name: "mine" }], "jo").map((l) => l.label)).toEqual([...ships, "mine", "evening · ana"]);
+  expect(playlists(s).map((l) => l.label)).toEqual([...ships, "mine", "evening"]);   // not signed in: names only, as before
 });
 
 // ---- playing (design §3.6): the dwell starts when a look has arrived, the first look has no fade in ----------
@@ -838,6 +865,25 @@ test("starting twice does not run two dwells; a look with no times never waits",
   expect(log.advanced).toBe(0);
 });
 
+test("touch starts the running hold over, so an idle playlist moves on only once left alone; it does nothing between looks or stopped", () => {
+  const { p, c, log } = playerOn();
+  p.start("0");
+  c.advance(1500);
+  p.touch();                        // someone moved a dial at 1.5 s: the 2 s hold starts again
+  c.advance(1999);
+  expect(log.advanced).toBe(0);
+  c.advance(1);
+  expect(log.advanced).toBe(1);
+  p.leaving();                      // the next look is on its way: a touch now starts no hold
+  p.touch();
+  expect(c.pending()).toBe(0);
+  p.arrived("1");
+  p.stop();
+  p.touch();
+  expect(c.pending()).toBe(0);
+  expect(p.playing).toBe(false);
+});
+
 test("onChange says when playing starts or stops, and only then", () => {
   const { p, log } = playerOn();
   p.stop();
@@ -852,9 +898,8 @@ test("onChange says when playing starts or stops, and only then", () => {
 
 // ---- the shelf: one list of looks, one chip per look, pending uploads, and the playlists a look is in ---------------
 
-test("the local list is called all looks", () => {
-  expect(LOCAL_NAME).toBe("all looks");
-  expect(playlists(EMPTY)).toEqual([{ value: "local", label: "all looks" }]);
+test("the local list is called your looks", () => {
+  expect(LOCAL_NAME).toBe("your looks");
 });
 
 // ---- sameLook: the equality builtinTwin uses, for the chip's "edited" ----
@@ -1052,7 +1097,7 @@ test("a signed-in view excludes another account's mirror and waiting saves", () 
   const v = viewState(EMPTY, m, "bob");
   expect(v.playlists.unc.items).toEqual([]);
   expect(v.playlists[7]).toBeUndefined();
-  expect(listChoices(v, { me: "bob", stored: {}, mirror: m }).map((l) => l.value)).toEqual(["arb:unc", "builtins"]);
+  expect(listChoices(v, { me: "bob", stored: {}, mirror: m }).map((l) => l.value)).toEqual(["arb:unc", ...shipLists().map((l) => l.value)]);
 });
 
 test("viewState signed in adds your playlists and the uncategorized list, dated by the last refresh", () => {
@@ -1063,7 +1108,7 @@ test("viewState signed in adds your playlists and the uncategorized list, dated 
   expect(v.playlists.unc.items.map((i) => i.name)).toEqual(["e"]);
   expect(v.playlists[7].fetched_at).toBe(m.at);
   expect(plays(v, "arb:unc")).toBe(true);
-  expect(entries(v, {}, fake, false, "arb:unc", "0").map((e) => e.label)).toEqual(["e"]);
+  expect(entries(v, {}, "arb:unc").map((e) => e.label)).toEqual(["e"]);
 });
 
 test("a waiting update shows in the playlists that hold the preset, and a waiting new look in the folder it was saved into", () => {
@@ -1080,34 +1125,34 @@ test("a waiting update shows in the playlists that hold the preset, and a waitin
 
 const labels = (c) => c.map((l) => `${l.value}=${l.label}`);
 
-test("signed out: all looks, then the cached playlists as before — the mirror is never offered", () => {
+test("signed out: the shipped playlists, your looks, then the cached playlists as before — the mirror is never offered", () => {
   const m = mirrorOf([preset(5, "e")], [{ id: 7, name: "evening", ids: [5] }]);
   const state = { ...EMPTY, playlists: { 3: { id: 3, name: "linked", owner: "ana", items: [] } } };
-  expect(labels(listChoices(viewState(state, m, null), { me: null, stored: { x: {} }, mirror: m }))).toEqual(["local=all looks", "arb:3=linked"]);
+  expect(labels(listChoices(viewState(state, m, null), { me: null, stored: { x: {} }, mirror: m }))).toEqual([...labels(shipLists()), "local=your looks", "arb:3=linked"]);
 });
 
-test("signed in: uncategorized, your playlists, built-ins — and on this browser only while un-moved ★s exist", () => {
+test("signed in: uncategorized, your playlists, the shipped playlists — and on this browser only while un-moved ★s exist", () => {
   const m = mirrorOf([preset(5, "e"), preset(4, "d")], [{ id: 8, name: "morning", ids: [4] }, { id: 7, name: "evening", ids: [] }]);
   const v = viewState(EMPTY, m, "jo");
-  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:unc=uncategorized", "arb:8=morning", "arb:7=evening", "builtins=built-ins"]);
+  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:unc=uncategorized", "arb:8=morning", "arb:7=evening", ...labels(shipLists())]);
   expect(labels(listChoices(v, { me: "jo", stored: { x: {} }, mirror: m })).at(-1)).toBe("local=on this browser");
   const synced = { ...EMPTY, origin: { x: { id: 5, version: 1, owner: "jo", synced: true } } };
-  expect(labels(listChoices(viewState(synced, m, "jo"), { me: "jo", stored: { x: {} }, mirror: m })).at(-1)).toBe("builtins=built-ins");   // already in arboretum: not un-moved
+  expect(labels(listChoices(viewState(synced, m, "jo"), { me: "jo", stored: { x: {} }, mirror: m })).at(-1)).toBe(labels(shipLists()).at(-1));   // already in arboretum: not un-moved
 });
 
 test("uncategorized is hidden when it is empty and you have other folders — unless you are in it", () => {
   const m = mirrorOf([preset(4, "d")], [{ id: 8, name: "morning", ids: [4] }]);
   const v = viewState(EMPTY, m, "jo");
-  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:8=morning", "builtins=built-ins"]);
+  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:8=morning", ...labels(shipLists())]);
   expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m, active: "arb:unc" }))[0]).toBe("arb:unc=uncategorized");
   const none = mirrorOf([]);
-  expect(labels(listChoices(viewState(EMPTY, none, "jo"), { me: "jo", stored: {}, mirror: none }))).toEqual(["arb:unc=uncategorized", "builtins=built-ins"]);   // no folders at all: it always exists
+  expect(labels(listChoices(viewState(EMPTY, none, "jo"), { me: "jo", stored: {}, mirror: none }))).toEqual(["arb:unc=uncategorized", ...labels(shipLists())]);   // no folders at all: it always exists
 });
 
 test("signed in: a playlist cached from a link is listed after yours, with its owner", () => {
   const m = mirrorOf([preset(5, "e")], [{ id: 8, name: "morning", ids: [] }]);
   const state = { ...EMPTY, playlists: { 3: { id: 3, name: "linked", owner: "ana", items: [] } } };
-  expect(labels(listChoices(viewState(state, m, "jo"), { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:unc=uncategorized", "arb:8=morning", "arb:3=linked · ana", "builtins=built-ins"]);
+  expect(labels(listChoices(viewState(state, m, "jo"), { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:unc=uncategorized", "arb:8=morning", "arb:3=linked · ana", ...labels(shipLists())]);
 });
 
 test("isFolder: a playlist of yours that can be written to, not uncategorized, not someone else's", () => {
@@ -1117,22 +1162,14 @@ test("isFolder: a playlist of yours that can be written to, not uncategorized, n
   expect(isFolder(v, "arb:8", "jo")).toBe(true);
   expect(isFolder(v, "arb:unc", "jo")).toBe(false);
   expect(isFolder(v, "arb:3", "jo")).toBe(false);
-  expect(isFolder(v, "builtins", "jo")).toBe(false);
+  expect(isFolder(v, STORY, "jo")).toBe(false);
   expect(isFolder(v, "local", "jo")).toBe(false);
 });
 
 // ---- entries per list ----
 
-test("entries of built-ins are the built-ins alone; signed in, on this browser is the un-moved ★s alone; signed out, all looks are both", () => {
-  const stored = { x: {}, y: {} };
-  const state = { ...cloud([{ ...item("y"), preset_id: 5 }]), me: { username: "jo" }, origin: { y: { id: 5, version: 1, owner: "jo", synced: true } } };
-  expect(entries(state, stored, fake, false, "builtins", "a").map((e) => e.label)).toEqual(["• a", "• c"]);
-  expect(entries(state, stored, fake, false, "local", "a", true).map((e) => e.label)).toEqual(["★ x"]);
-  expect(entries(state, stored, fake, false, "local", "a").map((e) => e.label)).toEqual(["• a", "• c", "★ x", "★ y"]);
-});
-
-test("a built-ins value loads its built-in, even beside a ★ of the same name", () => {
-  expect(resolve(EMPTY, { "afternoon 7": { exposure: 9 } }, "builtins", "afternoon 7").exposure).toBe(builtins.PRESETS["afternoon 7"].exposure);
+test("a shipped playlist's value loads its built-in, even beside a ★ of the same name", () => {
+  expect(resolve(EMPTY, { "afternoon 7": { exposure: 9 } }, STORY, "afternoon 7").exposure).toBe(builtins.PRESETS["afternoon 7"].exposure);
 });
 
 // ---- the mirror, kept in step with arboretum ----
@@ -1227,7 +1264,7 @@ test("savePlan in a folder of yours is the playlist rules as they were: a new ve
 });
 
 test("savePlan outside a folder targets uncategorized: from a built-in a new preset parented on it", () => {
-  const p = savePlan(EMPTY, {}, "builtins", "afternoon 7", edited, "jo", COMMIT, cameraFor, "mine");
+  const p = savePlan(EMPTY, {}, STORY, "afternoon 7", edited, "jo", COMMIT, cameraFor, "mine");
   expect(p).toMatchObject({ kind: "preset", path: "/api/presets", target: "unc", body: { name: "mine", parent: "look:afternoon 7", komorebi_commit: COMMIT } });
   expect(p.body.params).toEqual(edited);
   expect(p.into).toBeUndefined();
@@ -1246,8 +1283,8 @@ test("savePlan from an uncategorized item of yours is a new version of it; from 
 test("savePlan from an un-moved ★ carries its parent; an unchanged built-in is refused; a pasted look with no origin is a plain new preset", () => {
   const state = { ...EMPTY, origin: { star: { parent: "look:afternoon 7" } } };
   expect(savePlan(state, { star: edited }, "local", "star", edited, "jo", null, cameraFor, "again").body.parent).toBe("look:afternoon 7");
-  expect(savePlan(EMPTY, {}, "builtins", "afternoon 7", afternoon, "jo", null, cameraFor, "same").refused).toMatch(/afternoon 7/);
-  const pasted = savePlan(EMPTY, {}, "builtins", "memories", { ...edited, seed: 5 }, "jo", null, cameraFor, "pasted");
+  expect(savePlan(EMPTY, {}, STORY, "afternoon 7", afternoon, "jo", null, cameraFor, "same").refused).toMatch(/afternoon 7/);
+  const pasted = savePlan(EMPTY, {}, STORY, "memories", { ...edited, seed: 5 }, "jo", null, cameraFor, "pasted");
   expect(pasted.kind).toBe("preset");
 });
 
@@ -1262,12 +1299,12 @@ test("saveNewPlan is always a new preset, parented on where it started: after th
   const loose = viewState(EMPTY, mirrorOf([preset(5, "e", { version: 3 })]), "jo");   // in no folder: uncategorized
   expect(saveNewPlan(loose, {}, "arb:unc", "0", edited, "jo", null, cameraFor, "x")).toMatchObject({ kind: "preset", target: "unc", body: { parent: "preset:5@3" } });
   expect(saveNewPlan(loose, {}, "arb:unc", "0", edited, "jo", null, cameraFor, "x").into).toBeUndefined();
-  expect(saveNewPlan(EMPTY, {}, "builtins", "afternoon 7", afternoon, "jo", null, cameraFor, "same").refused).toMatch(/afternoon 7/);
+  expect(saveNewPlan(EMPTY, {}, STORY, "afternoon 7", afternoon, "jo", null, cameraFor, "same").refused).toMatch(/afternoon 7/);
 });
 
 test("savePlan tags a look experimental when its camera is not the floor", () => {
   const curtain = { ...clone("curtain 1"), seed: clone("curtain 1").seed + 1 };
-  expect(savePlan(EMPTY, {}, "builtins", "curtain 1", curtain, "jo", null, cameraFor, "c").body.tags).toEqual(["experimental"]);
+  expect(savePlan(EMPTY, {}, STORY, "curtain 1", curtain, "jo", null, cameraFor, "c").body.tags).toEqual(["experimental"]);
 });
 
 // ---- the chip, for the mirror ----

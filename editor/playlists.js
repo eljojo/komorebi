@@ -1,5 +1,5 @@
 // ============================================================================
-// Komorebi editor — playlists. PURE: the model of "all looks" beside the arboretum playlists, and the rules that move a
+// Komorebi editor — playlists. PURE: the model of the shipped playlists and your ★ looks beside the arboretum playlists, and the rules that move a
 // look between them (editor-integration-design §3–§6). No DOM, no storage and no network beyond the `fetch` that `detect`
 // is handed: the state is passed in and handed back (arboretum.js keeps it in localStorage, and the ★ looks beside it).
 // ============================================================================
@@ -50,8 +50,17 @@ export function parseHash(hash) {
 }
 
 // ---- the list a playlist shows and steps (design §3.2, §3.4) ----------------------
-export const LOCAL_NAME = "all looks";
+export const LOCAL_NAME = "your looks";
 const cloudId = (active) => (active.startsWith("arb:") ? active.slice(4) : null);
+// The shipped playlists (presets.js PLAYLISTS), `ship:<key>`, the only lists that hold the built-in looks. A value in one is the
+// look's name, so a look appears in a shipped playlist at most once.
+const shipId = (active) => (active.startsWith("ship:") && Object.hasOwn(BUILTINS.PLAYLISTS, active.slice(5)) ? active.slice(5) : null);
+const shipItems = (active) => (shipId(active) === null ? [] : BUILTINS.PLAYLISTS[shipId(active)].items.map((it) => (typeof it === "string" ? { look: it } : it)));
+export const shipLists = () => Object.entries(BUILTINS.PLAYLISTS).map(([key, p]) => ({ value: `ship:${key}`, label: p.name }));
+// The first shipped playlist: where a first visit lands, and where a list that is gone falls back to.
+export const STORY = `ship:${Object.keys(BUILTINS.PLAYLISTS)[0]}`;
+// Whether a list plays itself and moves on only while nobody touches anything (presets.js PLAYLISTS `idle`).
+export const idles = (active) => shipId(active) !== null && BUILTINS.PLAYLISTS[shipId(active)].idle === true;
 const cloudItems = (state, active) => state.playlists[cloudId(active)]?.items ?? [];
 const cloudItem = (state, active, value) => value === "" || value === null || value === undefined ? undefined : cloudItems(state, active)[Number(value)];
 const isBuiltin = (PRESETS, name) => Object.hasOwn(PRESETS, name);
@@ -64,10 +73,10 @@ const browserNames = (state, stored) => Object.keys(stored).filter((n) => {
     !it.pending && it.preset_id === o.id && it.version === o.version));
 });
 
-// In all looks a value is the look's name — except for a ★ that shares a built-in's name, which takes the
-// value "★ <name>" so the two stay apart (one value would load the same look for both). A ★ whose name already
-// starts "★ " is escaped the same way, so no two values collide. The value never depends on whether the built-in is
-// listed, so the experimental toggle cannot move a ★'s value.
+// In your looks a value is the look's name — except for a ★ that shares a built-in's name, which takes the
+// value "★ <name>" so the two stay apart (a built-in's name is its value in a shipped playlist). A ★ whose name already
+// starts "★ " is escaped the same way, so no two values collide. The value never depends on which playlist lists the
+// built-in, so no change to PLAYLISTS can move a ★'s value.
 const starValueOf = (PRESETS, name) => (isBuiltin(PRESETS, name) || name.startsWith("★ ") ? `★ ${name}` : name);
 export const starValue = (name) => starValueOf(BUILTINS.PRESETS, name);
 
@@ -88,9 +97,9 @@ export function selectionAfter(before, after, active, value, landed = {}) {
   return matches[occurrence] === undefined ? "" : String(matches[occurrence]);
 }
 
-// The ★ an all-looks value denotes, or null when it is a built-in (or nothing).
+// The ★ a value of your looks denotes, or null when it is a built-in (or nothing).
 export function starName(stored, active, value) {
-  if (cloudId(active) !== null || typeof value !== "string") return null;
+  if (cloudId(active) !== null || shipId(active) !== null || typeof value !== "string") return null;
   if (value.startsWith("★ ")) {
     const name = value.slice(2);
     return Object.hasOwn(stored, name) && starValue(name) === value ? name : null;
@@ -104,45 +113,44 @@ export function entryName(state, stored, active, value) {
   return starName(stored, active, value) ?? value;
 }
 
-// The playlists a visitor can pick between: all looks, then yours as arboretum lists them (`mine`: summaries,
-// not cached until picked), then the cached ones that are not among them. Once you are signed in (`me`), a cached one
-// that is someone else's carries its owner's name.
-export function playlists(state, mine = [], me = null) {
+// The playlists a visitor can pick between: the shipped ones, your looks while it holds a ★ (or you are in it), then yours as
+// arboretum lists them (`mine`: summaries, not cached until picked), then the cached ones that are not among them. Once you
+// are signed in (`me`), a cached one that is someone else's carries its owner's name.
+export function playlists(state, mine = [], me = null, { stored = {}, active = null } = {}) {
   const listed = new Set(mine.map((p) => String(p.id)));
   const label = (p) => (me && p.owner !== me ? `${p.name} · ${p.owner}` : p.name);
-  return [{ value: "local", label: LOCAL_NAME },
+  return [...shipLists(), ...(Object.keys(stored).length || active === "local" ? [{ value: "local", label: LOCAL_NAME }] : []),
     ...mine.map((p) => ({ value: `arb:${p.id}`, label: p.name })),
     ...Object.values(state.playlists).filter((p) => !listed.has(String(p.id))).map((p) => ({ value: `arb:${p.id}`, label: label(p) }))];
 }
 
-// Whether the active playlist plays: only an arboretum playlist carries dwell times (design §3.6).
-export const plays = (state, active) => cloudItems(state, active).length > 0;
+// Whether the active playlist plays: an arboretum playlist and a shipped one carry dwell times (design §3.6); your looks have none.
+export const plays = (state, active) => cloudItems(state, active).length > 0 || shipItems(active).length > 0;
 
 // How an item's look arrives: 'fade' only when the item says so; absent or anything else is 'morph' (the engine's own route).
 export const styleOf = (it) => (it?.style === "fade" ? "fade" : "morph");
 // A stored/sent item carries `style` only when it is 'fade', so a server that does not know the key keeps accepting playlists.
 const styleKey = (it) => (styleOf(it) === "fade" ? { style: "fade" } : {});
 
-// The dwell, crossfade and style of a cloud entry; all looks has none.
+// The dwell, crossfade and style of a cloud or shipped entry (a shipped item's own, else presets.js ITEM_DEFAULTS); your looks have none.
 export function timing(state, active, value) {
+  if (shipId(active) !== null) {
+    const it = shipItems(active).find((i) => i.look === value), d = BUILTINS.ITEM_DEFAULTS;
+    return it ? { dwell_s: it.dwell_s ?? d.dwell_s, crossfade_s: it.crossfade_s ?? d.crossfade_s, style: styleOf(it.style ? it : d) } : null;
+  }
   const it = cloudId(active) === null ? undefined : cloudItem(state, active, value);
   return it ? { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, style: styleOf(it) } : null;
 }
 
-// The EXPERIMENTAL looks are hidden unless `showBeta` — but the one you are on (`keep`) always stays listed.
-// A value in a cloud playlist is an item index (two items may share a name). Three lists are local: all looks (signed out:
-// the built-ins, then the ★ looks), and signed in, built-ins (the shipped looks alone, read-only) and on this browser (the ★
-// looks not yet in arboretum — one that is already a synced preset is listed there as itself).
-export function entries(state, stored, builtins, showBeta, active, keep, signedIn = false) {
+// A value in a cloud playlist is an item index (two items may share a name); in a shipped playlist, the look's name, in the
+// playlist's order. Your looks are the ★ looks (signed in, "on this browser": the ★ looks not yet in arboretum — one that is
+// already a synced preset is listed there as itself).
+export function entries(state, stored, active, signedIn = false) {
   if (cloudId(active) !== null)
     return cloudItems(state, active).map((it, i) => ({ value: String(i), label: it.name }));
-  const { PRESETS, EXPERIMENTAL } = builtins;
-  const shipped = Object.keys(PRESETS)
-    .filter((n) => showBeta || !EXPERIMENTAL.includes(n) || n === keep)
-    .map((n) => ({ value: n, label: `${EXPERIMENTAL.includes(n) ? "◦" : "•"} ${n}` }));   // ◦ marks an experimental look
-  const stars = (signedIn ? browserNames(state, stored) : Object.keys(stored))
-    .map((n) => ({ value: starValueOf(PRESETS, n), label: `★ ${n}` }));
-  return active === "builtins" ? shipped : signedIn ? stars : [...shipped, ...stars];
+  if (shipId(active) !== null)
+    return shipItems(active).filter((it) => isBuiltin(BUILTINS.PRESETS, it.look)).map((it) => ({ value: it.look, label: it.look }));
+  return (signedIn ? browserNames(state, stored) : Object.keys(stored)).map((n) => ({ value: starValue(n), label: `★ ${n}` }));
 }
 
 // The params of an entry, through migrateLegacy so a look saved yesterday loads tomorrow.
@@ -257,7 +265,7 @@ export function onDeleted(state, name) {
 // ---- the smart upload (design §4.2) ------------------------------------------------------------
 // What an upload would do, decided from what is known about the look:
 //   { kind: 'version' | 'preset', path, body, label, into? } | { refused }
-// In all looks the params are the stored ★ snapshot (what you saved is what goes online); in a cloud
+// In your looks the params are the stored ★ snapshot (what you saved is what goes online); in a cloud
 // playlist they are the live look, because the cloud is that folder's store, and `into` names the place the
 // uploaded preset takes in it (`at` null: appended). `body.name` is the current look's name — the caller
 // replaces it with what the save prompt returns; "" when a cloud playlist has no item to take it from.
@@ -449,10 +457,11 @@ export function linkPlaylist(state, view, k) {
 // `arrived` when the look has landed — also when a look is put there by hand, which restarts the dwell. Timers are
 // injectable so the schedule can be tested without waiting.
 export function makePlayer({ timing, advance, onChange, setTimer = setTimeout, clearTimer = clearTimeout }) {
-  let on = false, timer = null;
+  let on = false, timer = null, at = null;   // at: the look whose hold is running; null while the next one is on its way
   const idle = () => { if (timer !== null) { clearTimer(timer); timer = null; } };
   const arrived = (value) => {
     idle();
+    at = value;
     const t = on ? timing(value) : null;
     if (t) timer = setTimer(() => { timer = null; if (on) advance(); }, t.dwell_s * 1000);
   };
@@ -460,8 +469,10 @@ export function makePlayer({ timing, advance, onChange, setTimer = setTimeout, c
     get playing() { return on; },
     start(value) { if (on) return; on = true; arrived(value); onChange?.(); },
     stop() { if (!on) return; on = false; idle(); onChange?.(); },
-    leaving: idle,
+    leaving() { idle(); at = null; },
     arrived,
+    // someone touched something while an idle playlist plays: the hold starts over, so it moves on only once left alone
+    touch() { if (on && at !== null) arrived(at); },
   };
 }
 
@@ -526,18 +537,18 @@ export function viewState(state, mirror, me) {
 // Whether `active` is a private playlist of yours, which an editor save can place a look in.
 export const isFolder = (view, active, me) => cloudId(active) !== null && cloudId(active) !== "unc" && !!me && view.playlists[cloudId(active)]?.owner === me && editorWritable(view.playlists[cloudId(active)]);
 
-// The lists the playlist select offers. Signed out: all looks, then the playlists cached from links, as ever. Signed in:
+// The lists the playlist select offers. Signed out: playlists() — the shipped ones, your looks, the ones cached from links. Signed in:
 // uncategorized (hidden when empty and you have other folders — unless you are in it), your folders, other cached
-// playlists, built-ins, and on this browser while ★ looks not yet in arboretum remain.
+// playlists, the shipped playlists, and on this browser while ★ looks not yet in arboretum remain.
 export function listChoices(view, { me, stored, mirror, active = null }) {
-  if (me === null) return playlists(view);
+  if (me === null) return playlists(view, [], null, { stored, active });
   const folders = mirror.playlists.filter((p) => p.owner === me);
   const mine = new Set(folders.map((l) => String(l.id)));
   const out = [];
   if (view.playlists.unc.items.length || !mine.size || active === "arb:unc") out.push({ value: "arb:unc", label: "uncategorized" });
   for (const l of folders) out.push({ value: `arb:${l.id}`, label: l.name });
   for (const p of Object.values(view.playlists)) if (p.id !== "unc" && !mine.has(String(p.id))) out.push({ value: `arb:${p.id}`, label: p.owner === me ? p.name : `${p.name} · ${p.owner}` });
-  out.push({ value: "builtins", label: "built-ins" });
+  out.push(...shipLists());
   if (browserNames(view, stored).length) out.push({ value: "local", label: "on this browser" });
   return out;
 }
