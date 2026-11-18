@@ -109,9 +109,15 @@ test("dropping the tagged lines of any subset of {fill, leafDiffuse, litter} lea
   }
 });
 
+const assembled = new Map();   // assembling a tree takes seconds and the same options give the same tree
+const assembledOnce = (opts) => {
+  const key = JSON.stringify(opts);
+  if (!assembled.has(key)) assembled.set(key, assemble(opts));
+  return assembled.get(key);
+};
 const treeIn = (opts) => {
   const dir = mkdtempSync(join(tmpdir(), "komorebi-feat-"));
-  writeTree(assemble(opts).files, dir);
+  writeTree(assembledOnce(opts).files, dir);
   return dir;
 };
 const UNIFORMS = {
@@ -211,7 +217,7 @@ const PROBES = {
 };
 
 async function treeOf(dir, mutate) {
-  const pre = assemble({ looks: ["park 1"], features: "all", strip: false });
+  const pre = assembledOnce({ looks: ["park 1"], features: "all", strip: false });
   const files = { ...pre.files };
   if (mutate) mutate(files);
   writeTree(files, dir);
@@ -229,7 +235,7 @@ test("a grove with the features its look does not open cut uploads the bytes the
         expect(n, "season.js declares ordered on one line").not.toBe(m);
         f["engine/season/komorebi-season.js"] = n;
       });
-      writeTree(assemble({ looks: ["park 1"], features: keep, strip: false }).files, dirCut);
+      writeTree(assembledOnce({ looks: ["park 1"], features: keep, strip: false }).files, dirCut);
       const whole = rig(makeGrove, params);
       const ref = rig(await grove(dirRef, `ref-${name}`), params);
       const cut = rig(await grove(dirCut, `cut-${name}`), params);
