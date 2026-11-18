@@ -6,6 +6,7 @@ import { registerMe } from './api/me';
 import { registerExport } from './api/export';
 import { registerPlaylists } from './api/playlists';
 import { registerPresets } from './api/presets';
+import { registerRemote } from './api/remote';
 import { registerTokens } from './api/tokens';
 import { registerPages } from './pages';
 import { type AppEnv, type Resolver, bearerToken, sessionCookie } from './auth';
@@ -47,6 +48,7 @@ export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) 
   // minted token are private. Static assets never reach the Worker, so this does not slow them.
   app.use('*', async (c, next) => {
     await next();
+    if (c.res.status === 101) return;   // the remote's socket (src/remote.ts): the room's answer, whose headers are not ours to change
     for (const [name, value] of Object.entries(HARDENING_HEADERS)) c.res.headers.set(name, value);
   });
 
@@ -99,9 +101,12 @@ export function createApp(resolvers: Resolver[] = [bearerToken, sessionCookie]) 
   registerExport(app);
   registerAuth(app);
   registerTokens(app);
+  registerRemote(app);
   registerPages(app);
 
   return app;
 }
+
+export { RemoteRoom } from './remote';
 
 export default createApp();

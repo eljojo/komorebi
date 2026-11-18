@@ -110,6 +110,9 @@ model file whose mechanism it holds (`spec/model/`).
 - `tree-pane.js` — the workspace's tree pane (`W`): the grove from the side or on the T inset's turntable, its own WebGL2 canvas; imported by `editor.js` alone.
 - `playlist-pane.js` — the workspace's playlist pane, the tree pane's other tab: while up, the home of the advanced panel's look and playlist controls (moved in by `editor.js`), over the active list's items; on a playlist of yours their times, routes, order and removal, and a picker that adds a look, written through what `editor.js` lends it; imported by `editor.js` alone.
 - `midi.js` — an AKAI MIDImix over Web MIDI (`M` shows its console): writes only through what the editor lends it, imported by `editor.js` alone.
+- `remote.js` — the remote control: a phone signed in as you drives this editor through arboretum (Settings turns it on); writes only
+  through what the editor lends it, checks each command against the board it sent, imported by `editor.js` alone. Its socket is opened
+  by `arboretum.js`.
 
 **The site.** `about.html` + `about.css` — the one source of the about text, which the welcome also opens in place.
 `breathe.js` — how a page is left (not loaded by `examples/`). `player.html` — viewer-only. `manifest.webmanifest` + `icons/` —

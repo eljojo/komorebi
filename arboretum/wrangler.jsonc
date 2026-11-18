@@ -24,6 +24,11 @@
 		"RP_ID": "komorebi.eljojo.net",
 		"ORIGIN": "https://komorebi.eljojo.net"
 	},
+	// The remote's rooms (src/remote.ts), one per person; SQLite-backed, though a room stores nothing.
+	"durable_objects": {
+		"bindings": [{ "name": "REMOTE", "class_name": "RemoteRoom" }]
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["RemoteRoom"] }],
 	"d1_databases": [
 		{
 			"binding": "DB",

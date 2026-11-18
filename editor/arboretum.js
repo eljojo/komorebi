@@ -134,6 +134,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   let offline = false;                        // the last call to arboretum could not reach it: lists show from the mirror
   let refusal = null;                         // arboretum's last refusal and the look it was for: { key, text }
   let wantStart = false;                      // the advanced panel was shown before detect answered
+  let site = null;                            // the origin detect named: where the remote's socket goes
   let movePrompt = false;                     // the "move your looks into arboretum?" notice is up
   let asked = false;                          // ...and it has been put up once this session
   const keyOf = (active, value) => `${active}|${value}`;
@@ -275,6 +276,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   // detect is the only thing mount asks the network, and only on the session hosts (it answers null without a request elsewhere)
   const ready = detect(loc, fetchImpl).catch(() => null).then((origin) => {
     if (!origin) return null;
+    site = origin;
     api = makeApi(origin, fetchImpl);
     on = true;
     const bound = bindWaitingOwner();
@@ -327,9 +329,10 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   }
 
   const askName = () => (prompt("New playlist name:") || "").trim();
-  async function create() {
+  // `name` is the remote's (remote.js), which asks on the phone; the editor's own + asks here
+  async function create(given) {
     if (!on) return;
-    const name = askName();
+    const name = given?.trim() || (given === undefined ? askName() : "");
     if (!name) return;
     try {
       const made = await api.createPlaylist({ name });
@@ -448,12 +451,12 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     } catch (e) { fail(e); host.sync(); }
   }
 
-  // Rename the playlist you are in, when it is yours.
-  async function rename() {
+  // Rename the playlist you are in, when it is yours. `given` is the remote's name for it (remote.js); without one, it is asked here.
+  async function rename(given) {
     const active = host.active();
     if (!signedIn() || !isFolder(view(), active, me)) return;
     const pid = Number(active.slice(4)), was = view().playlists[pid]?.name ?? "";
-    const name = (prompt("Rename playlist:", was) || "").trim();
+    const name = (given ?? prompt("Rename playlist:", was) ?? "").trim();
     if (!name || name === was) return;
     try {
       cacheView(await api.patchPlaylist(pid, { name }));
@@ -663,6 +666,17 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     addable,
     add,
     online: () => on,
+    // the remote's socket (remote.js) into your room on arboretum, as a screen: only signed in, where arboretum is served
+    remote(query) {
+      if (!signedIn()) return null;
+      const u = new URL("/api/remote", site);
+      u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+      for (const [k, v] of Object.entries(query)) u.searchParams.set(k, v);
+      return new WebSocket(u);
+    },
+    remotePage: () => (site ? `${site}/arboretum/remote` : null),
+    // the status line as it reads now ("" when it is quiet): the remote shows the phone what a save it asked for came to
+    statusText: () => (status && !status.hidden ? status.textContent : ""),
     landings: () => landings,
     // what the look's chip needs beyond the saved state: who you are, whether this is the copy kept here because arboretum could not
     // be reached, the last refusal for this look, and whether the copy is incomplete

@@ -152,3 +152,35 @@ section#owner-controls { margin-top: 3rem; border-top: 1px solid var(--line); }
 .look:hover, .look:focus-within { border-left-color: rgba(159, 184, 159, 0.6); }
 .look[aria-current] { border-left-color: rgba(240, 224, 168, 0.7); }
 .look[aria-current] .name { color: var(--sun); }
+
+/* The remote (/remote, public/js/remote.js): a phone in the hand, so every control is a thumb wide and the board fills the width. */
+#remote .r-screens button { width: 100%; text-align: left; }
+#remote .r-step { display: flex; align-items: center; gap: 0.5rem; }
+#remote .r-step .r-name { flex: 1; text-align: center; font: 300 clamp(20px, 5vw, 26px)/1.25 var(--display); color: var(--bright); }
+#remote .r-step button { min-width: 2.75rem; min-height: 2.75rem; padding: 0; font-size: 1.2em; }
+#remote .r-chip, #remote .r-say { text-align: center; margin: 0.25rem 0; min-height: 1.4em; }
+#remote .r-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.4rem; margin: 0.5rem 0 1rem; }
+#remote .r-tabs { display: flex; gap: 0.4rem; border-bottom: 1px solid var(--line); margin: 1rem 0 0.75rem; }
+#remote .r-tabs button { flex: 1; border-radius: 8px 8px 0 0; border-bottom: none; }
+#remote .r-tabs button[aria-selected="true"] { color: var(--sun-hot); background: rgba(240, 224, 168, 0.11); }
+#remote input[type="range"] { width: 100%; height: 2.25rem; margin: 0; accent-color: var(--sun); touch-action: pan-y; }
+#remote .r-dial { margin: 0.9rem 0; }
+#remote .r-dial.off, #remote .r-row.off { opacity: 0.4; }
+#remote .r-ends { display: flex; justify-content: space-between; color: var(--quiet); font-size: 0.85em; font-style: italic; }
+#remote .r-track { position: relative; }
+#remote .r-home { position: absolute; top: 0.2rem; bottom: 0.2rem; width: 2px; margin-left: -1px; background: rgba(232, 217, 168, 0.55); pointer-events: none; }
+#remote .r-label { color: var(--ink); }
+#remote .r-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0.1rem 0.6rem; margin: 0.6rem 0; }
+#remote .r-row > input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
+#remote .r-row > select { grid-column: 1 / -1; width: 100%; }
+#remote .r-row.r-toggle { grid-template-columns: 1fr auto; }
+#remote .r-val { color: var(--quiet); font-variant-numeric: tabular-nums; font-size: 0.9em; }
+#remote .r-area > summary { font-size: 1.05em; padding: 0.4rem 0; }
+#remote .r-group { margin-left: 0.75rem; }
+#remote .r-lists { display: flex; gap: 0.4rem; }
+#remote .r-lists select { flex: 1; }
+#remote .r-entry { border: none; background: none; padding: 0.3rem 0; text-align: left; width: 100%; }
+#remote li[aria-current] .r-entry { color: var(--sun-hot); }
+#remote .r-item { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.5rem; }
+#remote .r-item button { padding: 0.1rem 0.7rem; font-size: 0.9em; }
+#remote .r-time { margin: 0; font-size: 0.9em; color: var(--quiet); }

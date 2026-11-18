@@ -85,6 +85,8 @@ Arboretum stores it verbatim, keeps every version, and hands it back to the edit
   version carries `params_text`, its exact stored text, beside the parsed `params`.
 - `POST /api/tokens`, `GET /api/tokens` and `DELETE /api/tokens/:id` mint, list and revoke tokens. Browser
   only; a token gets 403.
+- `GET /api/remote` is the remote control's WebSocket, between an editor that is showing and the person's phone.
+  Browser only, from this site's own pages; a token gets 403. Not for agents.
 
 ## Limits
 

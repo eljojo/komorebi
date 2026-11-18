@@ -45,6 +45,14 @@ and homepage bundles as komorebi's `pages.yml` does, adds `commit.json`, and put
 arboretum.eljojo.net stays attached for now: its `/api` answers as before and every other path is a 301 to
 `https://komorebi.eljojo.net/arboretum` plus the path.
 
+## The remote
+
+`/arboretum/remote` is a phone's remote control for a komorebi editor that is showing elsewhere (komorebi's
+`editor/remote.js` has the wire). Each person has a room, a Durable Object (`RemoteRoom`, `src/remote.ts`) holding
+WebSockets with hibernation, reached through `GET /api/remote` (`src/api/remote.ts`): a session only, from the site's own
+Origin. The room relays and stores nothing. In dev mode the passkeys belong to `localhost`, so a phone on the network cannot
+sign in; try the remote from a second window at https://localhost:8787/arboretum/remote.
+
 ## Test
 
 ```sh

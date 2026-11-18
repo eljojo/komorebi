@@ -10,6 +10,7 @@ import { makePlaylistPane } from './playlist-pane.js';
 import { senescing } from '../engine/season/komorebi-season.js';
 import { LEAF_SHAPES } from '../engine/leaf/komorebi-leaf.js';
 import { mountMidi } from './midi.js';
+import { mountRemote } from './remote.js';
 // ============================================================================
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
@@ -40,7 +41,7 @@ const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro
 // stands alone; ＋ climbs the ladder when you want more); the choice sticks thereafter. ----
 const SETTINGS_KEY = 'komorebi.editor';
 const settings = (() => {
-  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {}, sawTouchHint: false, workspace: false, wsPane: 'tree' };   // playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name; wsPane: the workspace's right-hand pane, 'tree' | 'playlist'
+  const base = { mode: 'min', showBeta: false, playlist: 'local', selected: {}, open: {}, sawTouchHint: false, workspace: false, wsPane: 'tree', remote: false };   // remote: this device takes the remote control (remote.js); playlist: 'local' | 'arb:<id>'; selected: the entry you were on, per playlist; open: the advanced panel's areas, by name; wsPane: the workspace's right-hand pane, 'tree' | 'playlist'
   let s = base;
   try { s = Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch { /* unreadable: the defaults */ }
@@ -79,7 +80,10 @@ function applyParams(obj){ endTween(); tryFrameCancel(); eng.setParams(obj); syn
 let lookChip=null, chipTimer=0;
 function chipSoon(){ if(!chipTimer) chipTimer=setTimeout(()=>{ chipTimer=0; refreshChip(); }, 200); }
 let midi=null;                   // the MIDImix prototype (midi.js), mounted once everything it borrows exists
+let remote=null;                 // the remote control (remote.js), mounted once arboretum is
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
+const TRANS_MAX=6;
+let transSync=()=>{};            // the panel's fade row follows a change made elsewhere (the remote)
 
 // ===========================================================================
 // Dev panel
@@ -343,6 +347,25 @@ function rowOf(key){
   return r.kind==='s' ? ['s',key,r.label,r.min,r.max,r.step,r.rebuild] : r.kind==='t' ? ['t',key,r.label,r.rebuild] : [r.kind,key,r.label,r.choices,r.rebuild];
 }
 const PANEL = PANEL_LAYOUT.map((item)=>typeof item==='string' ? rowOf(item) : item);
+// Rows the panel does not build: the session's own, which Settings holds.
+const PANEL_SKIP = ['auto_quality','adaptive_motion','adaptive_idle_fps','edge_area'];
+// ONE ROW WRITTEN: the panel's slider, toggle and select land here, and so does the remote (remote.js). `v` is the row's own type:
+// a number for a slider and a 'sel', a boolean for a toggle, a string for a 'sels'.
+function panelWrite(item, v){
+  const [kind,key]=item, scope=kind==='s' ? item[6] : kind==='t' ? item[3] : item[4];
+  if(FIDELITY_KEYS.includes(key)){ stopPlay(); eng.setLookRequest(key,v,scope); syncAllControls(); chipSoon(); return; }
+  params[key]=v;
+  if(kind!=='t') maybeClearSpecies(key);
+  syncControl(key);
+  if(scope==='suntime') updateSunFromTime(); else applyScope(scope);
+}
+function panelInherit(key, scope){ stopPlay(); eng.setLookRequest(key,undefined,scope); syncAllControls(); chipSoon(); }   // "use session": the look gives up its own request
+function speciesWrite(name){                       // TREE_SPECIES: the chosen shape bundle over the current look (shape ⟂ scene), the label stamped, rebuilt
+  const b=TREE_SPECIES[name]; stopPlay();
+  if(b) applyParams(Object.assign({}, eng.captureLook(), b, { tree_species:name }));   // bundle over the live params, keep the scene
+  else params.tree_species='';
+  syncControl('tree_species');
+}
 
 // The areas open the way he left them (settings.open, by area name); until he has touched one, these three are open: the
 // passes he makes most (colour and density for the projector, the season). The rest start closed.
@@ -352,7 +375,7 @@ function buildPanel(){
   const group=(text,cls,parent)=>{ const d=document.createElement('details'); const s=document.createElement('summary');
     s.textContent=text; s.dataset.tipKey=text; s.className=cls; d.appendChild(s); parent.appendChild(d); return d; };
   for(const item of PANEL){
-    if(['auto_quality','adaptive_motion','adaptive_idle_fps','edge_area'].includes(item[1])) continue;
+    if(PANEL_SKIP.includes(item[1])) continue;
     if(item[0]==='hc'){                                        // an area: a collapsible section whose state is remembered
       const name=item[1], d=group(name,'sec',dev);
       d.open = settings.open[name] ?? OPEN_AREAS.has(name);
@@ -362,26 +385,25 @@ function buildPanel(){
     if(item[0]==='adv'){ container=group(item[1],'adv',area); continue; }   // a collapsible sub-group inside the current area (closed by default, not remembered)
     const row=document.createElement('div'); row.className='ctl';
     if(item[0]==='s'){
-      const [,key,label,min,max,step,scope]=item;
+      const [,key,label,min,max,step]=item;
       const lab=document.createElement('label'); lab.textContent=label;
       const inp=document.createElement('input'); inp.type='range'; inp.min=min; inp.max=max; inp.step=step; inp.value=params[key];
       const val=document.createElement('span'); val.className='val'; val.textContent=fmt(params[key]);
-      inp.addEventListener('input',()=>{ if(FIDELITY_KEYS.includes(key)){ stopPlay();eng.setLookRequest(key,parseFloat(inp.value),scope);syncAllControls();chipSoon();return; } params[key]=parseFloat(inp.value); val.textContent=fmt(params[key]); maybeClearSpecies(key);
-        if(scope==='suntime') updateSunFromTime(); else applyScope(scope); });
+      inp.addEventListener('input',()=>panelWrite(item, parseFloat(inp.value)));
       row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val,row}; row.dataset.tipKey=key;
     } else if(item[0]==='t'){
-      const [,key,label,scope]=item; row.classList.add('toggle');
+      const [,key,label]=item; row.classList.add('toggle');
       const lab=document.createElement('label'); lab.textContent=label;
       const inp=document.createElement('input'); inp.type='checkbox'; inp.checked=params[key];
-      inp.addEventListener('change',()=>{ params[key]=inp.checked; applyScope(scope); });
+      inp.addEventListener('change',()=>panelWrite(item, inp.checked));
       row.append(lab,inp); controlEls[key]={input:inp,row}; row.dataset.tipKey=key;
     } else if(item[0]==='sel' || item[0]==='sels'){    // 'sel' = integer value, 'sels' = string value (e.g. wind_pattern)
       const str=item[0]==='sels';
-      const [,key,label,opts,scope]=item; row.classList.add('select');
+      const [,key,label,opts]=item; row.classList.add('select');
       const lab=document.createElement('label'); lab.textContent=label;
       const sel=document.createElement('select');
       for(const [t,v] of opts){ const o=document.createElement('option'); o.value=v; o.textContent=t; if(v===params[key]) o.selected=true; sel.appendChild(o); }
-      sel.addEventListener('change',()=>{ if(FIDELITY_KEYS.includes(key)){stopPlay();eng.setLookRequest(key,parseInt(sel.value,10),scope);syncAllControls();chipSoon();return;} params[key]=str?sel.value:parseInt(sel.value,10); maybeClearSpecies(key); applyScope(scope); });
+      sel.addEventListener('change',()=>panelWrite(item, str?sel.value:parseInt(sel.value,10)));
       row.append(lab,sel); controlEls[key]={input:sel,row}; row.dataset.tipKey=key;
     } else if(item[0]==='species'){    // TREE_SPECIES: merge the chosen shape bundle OVER the current look (shape ⟂ scene), stamp the label, rebuild
       const [,label]=item; row.classList.add('select');
@@ -389,9 +411,7 @@ function buildPanel(){
       const sel=document.createElement('select');
       const o0=document.createElement('option'); o0.value=''; o0.textContent='— custom'; sel.appendChild(o0);
       for(const name of Object.keys(TREE_SPECIES)){ const o=document.createElement('option'); o.value=name; o.textContent=name; if(name===params.tree_species) o.selected=true; sel.appendChild(o); }
-      sel.addEventListener('change',()=>{ const b=TREE_SPECIES[sel.value]; stopPlay();
-        if(b) applyParams(Object.assign({}, eng.captureLook(), b, { tree_species:sel.value }));   // bundle over the live params, keep the scene
-        else params.tree_species=''; });
+      sel.addEventListener('change',()=>speciesWrite(sel.value));
       row.append(lab,sel); controlEls.tree_species={input:sel,row}; row.dataset.tipKey='tree_species';
     } else if(item[0]==='btn'){
       const [,label,fn]=item;
@@ -400,7 +420,7 @@ function buildPanel(){
     }
     if(FIDELITY_KEYS.includes(item[1])){
       const key=item[1],scope=item[0]==='s'?item[6]:item[4];
-      const inherit=mkBtn('use session',()=>{stopPlay();eng.setLookRequest(key,undefined,scope);syncAllControls();chipSoon();});
+      const inherit=mkBtn('use session',()=>panelInherit(key,scope));
       inherit.dataset.inherit=key;
       row.append(inherit);
     }
@@ -1249,6 +1269,9 @@ function saveLook(name, p){
 // else in uncategorized (arboretum.js); otherwise a new ★, which never quietly replaces one already here.
 function promptSaveNew(){
   const n=(prompt('Save as a new look, named:', '')||'').trim(); if(!n) return;
+  saveNewLook(n);
+}
+function saveNewLook(n){
   stopPlay();
   if(arb?.signedIn()){ arb.saveCloud(n, eng.captureLook(), { asNew:true }); return; }
   if(Object.hasOwn(getStored(), n) && !confirm(`A look named ${n} is already kept in this browser. Replace it?`)) return;
@@ -1728,6 +1751,7 @@ buildStrip();
 const sessionPanel=mountSettings({
   settings, engine:eng, rows:PANEL, save:()=>{saveSettings();applySession();syncAllControls();},
   account:()=>arb?.settings(),
+  remote:{ get:()=>settings.remote, set:(on)=>{ settings.remote=on; remote?.poke(); }, status:()=>remote?.status() ?? 'off' },
 });
 function settingsButton(){ const button=mkBtn('settings',()=>sessionPanel.open());button.dataset.openSettings='';return button; }
 syncMacroControls();
@@ -1737,9 +1761,10 @@ syncMacroControls();
   const h=document.createElement('h2'); h.textContent='Transition'; h.dataset.tipKey='fade'; dev.appendChild(h);
   const r=document.createElement('div'); r.className='ctl'; r.dataset.tipKey='fade';
   const lab=document.createElement('label'); lab.textContent='fade (s)';
-  const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=6; inp.step=0.1; inp.value=transDur;
+  const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=TRANS_MAX; inp.step=0.1; inp.value=transDur;
   const val=document.createElement('span'); val.className='val'; val.textContent=transDur.toFixed(1);
   inp.addEventListener('input',()=>{ transDur=parseFloat(inp.value); val.textContent=transDur.toFixed(1); });
+  transSync=()=>{ inp.value=transDur; val.textContent=transDur.toFixed(1); };
   r.append(lab,inp,val); dev.appendChild(r);
   dev.appendChild(devBeta);                        // the experimental toggle (buildPresetUI), under everything
 })();
@@ -1754,6 +1779,108 @@ midi = mountMidi({
   getTransDur: () => transDur, setTransDur: (v) => { transDur = v; },
   playing: () => player.playing,
   togglePlay: () => { if(!plays(stateNow(), activeList())) return; if(player.playing) player.stop(); else player.start(presetSel.value); },
+});
+
+// ---- the remote control (remote.js): a phone signed in as you drives this editor through what it lends here, and nothing else.
+// The board it is shown is the advanced panel's rows, the dials, the "more" macros, the look, the list and its items; what it sends
+// lands on the function the matching control here calls. A playlist write waits for the one before it, as the playlist pane's do. ----
+const REMOTE_MACROS = ['haze','prism','grove','wind_x','wind_y'];
+const REMOTE_DIALS = { usual:['focus','cloudiness','sun','season','density','time'], n:Infinity };   // the playful sidebar's, the look's own lead first
+let remoteListWrite = Promise.resolve();
+const listWrite = (fn) => { remoteListWrite = remoteListWrite.then(fn).catch((e)=>console.error(e)); };
+function remoteSchema(){
+  const panel=[];
+  PANEL.forEach((item, id)=>{
+    const [kind]=item;
+    if(PANEL_SKIP.includes(item[1])) return;
+    if(kind==='hc') panel.push({ kind:'area', name:item[1] });
+    else if(kind==='adv') panel.push({ kind:'group', name:item[1] });
+    else if(kind==='s') panel.push({ kind:'slider', key:item[1], label:item[2], min:item[3], max:item[4], step:item[5], fidelity:FIDELITY_KEYS.includes(item[1]) });
+    else if(kind==='t') panel.push({ kind:'toggle', key:item[1], label:item[2] });
+    else if(kind==='sel' || kind==='sels') panel.push({ kind:'select', key:item[1], label:item[2], options:item[3].map(([t,v])=>[t,String(v)]), fidelity:FIDELITY_KEYS.includes(item[1]) });
+    else if(kind==='species') panel.push({ kind:'select', key:'tree_species', label:item[1], options:[['— custom',''], ...Object.keys(TREE_SPECIES).map((n)=>[n,n])] });
+    else if(kind==='btn' && item[2].length===0) panel.push({ kind:'button', id, label:item[1] });   // a button that reads its own element (the drag mode) is the pointer's, not the phone's
+  });
+  return {
+    panel, transMax:TRANS_MAX,
+    dials:Object.fromEntries(Object.entries(TRY_SPECS).map(([n,d])=>[n,{ ends:d.ends, min:d.min, max:d.max, step:d.step, why:d.why ?? '' }])),
+    macros:Object.fromEntries(REMOTE_MACROS.map((k)=>[k,{ label:MACROS[k].label }])),
+  };
+}
+function remoteState(){
+  const a=activeList(), m=listModel(), cam=cameraFor(params), ready=tryHome!==null;
+  const dials=tryNames(REMOTE_DIALS);
+  for(const n in TRY_SPECS) if(!dials.includes(n)) dials.push(n);
+  const values={}, authored={};
+  for(const item of PANEL){
+    const key=item[0]==='species' ? 'tree_species' : item[1];
+    if(['hc','adv','btn'].includes(item[0]) || PANEL_SKIP.includes(key)) continue;
+    if(FIDELITY_KEYS.includes(key)){ authored[key]=eng.authored[key] ?? null; values[key]=eng.authored[key] ?? params[key]; }
+    else values[key]=key==='tree_species' ? params.tree_species ?? '' : params[key];
+  }
+  return {
+    look:{ value:presetSel.value, name:tryLookName(), chip:lookChip && !lookChip.hidden ? lookChip.textContent : '' },
+    say:[lookNote && !lookNote.hidden ? lookNote.textContent : '', arb?.statusText() ?? ''].filter(Boolean).join(' · '),
+    lists:(arb ? arb.lists(settings.playlist) : playlists(getState())).map(({ value, label })=>({ value, label })),
+    list:a, signedIn:!!arb?.signedIn(), mine:!!arb?.canRemove(),
+    entries:m.rows, editable:m.editable, addable:m.addable, style:arb?.styleNow() ?? null,
+    presentation:stateNow().playlists[a.slice(4)]?.presentation ?? '',
+    playing:player.playing, plays:plays(stateNow(), a), moving:eng.trans.active, trans:transDur,
+    dials:dials.map((n)=>{ const d=TRY_SPECS[n]; return [n, ready ? d.seat() : null, ready ? d.home() : null, ready && (d.usable?.() ?? true)]; }),
+    macros:Object.fromEntries(REMOTE_MACROS.map((k)=>[k,[bus.get(k), macroUsable(k, params)]])),
+    params:values, authored,
+    hidden:GATED_KEYS.filter((k)=>controlEls[k] && !rowLive(k, cam)),
+  };
+}
+function remoteRun(c){
+  const listed=(v)=>listEntries(presetSel.value).some((e)=>e.value===v);
+  switch(c.t){
+    case 'dial': {                                  // as the dial's own input: at once, the season's and the regrows' one a frame, the release exact
+      const d=TRY_SPECS[c.name];
+      if(tryHome===null || (d.usable && !d.usable())) return;
+      stopPlay(); chipSoon(); d.write(c.v);
+      if(c.end) d.commit?.();
+      trySeat(); return;
+    }
+    case 'macro': {                                 // as macroSlider: a live or tween macro follows the thumb, a regrow lands on release
+      const mc=MACROS[c.key];
+      if(!macroUsable(c.key, params)) return;
+      if(mc.live || mc.tween || c.end) bus.set(c.key, c.v);
+      if(mc.tween && c.end && tweenOff) bus.tick(1e9);
+      syncMacroControls(); return;
+    }
+    case 'param': {
+      const item=PANEL.find((r)=>r[0]!=='hc' && r[0]!=='adv' && (r[0]==='species' ? 'tree_species' : r[1])===c.key);
+      if(item[0]==='species') speciesWrite(c.v);
+      else panelWrite(item, item[0]==='sel' ? parseInt(c.v,10) : c.v);
+      return;
+    }
+    case 'inherit': { const item=PANEL.find((r)=>r[1]===c.key); panelInherit(c.key, item[0]==='s' ? item[6] : item[4]); return; }
+    case 'button': PANEL[c.id][2](); return;
+    case 'step': stepPreset(c.dir); return;
+    case 'go': if(listed(c.value) && c.value!==presetSel.value) goTo(c.value); return;
+    case 'list': if(c.value!==activeList() && (arb ? arb.lists(settings.playlist) : playlists(getState())).some((l)=>l.value===c.value)){ if(arb) arb.activate(c.value); else setActive(c.value); } return;
+    case 'play': if(!plays(stateNow(), activeList())) return; if(c.on && !player.playing) player.start(presetSel.value); else if(!c.on) player.stop(); return;
+    case 'trans': transDur=c.v; transSync(); return;
+    case 'asItWas': tryAsItWas(); return;
+    case 'reseed': reseed(); return;
+    case 'save': saveLook(c.name, eng.captureLook()); return;
+    case 'saveNew': saveNewLook(c.name); return;
+    case 'newList': listWrite(()=>arb?.create(c.name)); return;
+    case 'renameList': listWrite(()=>arb?.rename(c.name)); return;
+    case 'presentation': listWrite(async()=>{ await arb?.setPresentation(c.v || null); syncPlaylistUI(); }); return;
+    case 'times': listWrite(()=>arb?.setTimes(c.at, c.times)); return;
+    case 'style': listWrite(()=>arb?.setStyle(c.style, c.at)); return;
+    case 'move': listWrite(()=>arb?.move(c.at, c.to)); return;
+    case 'remove': listWrite(()=>arb?.remove(c.at)); return;
+    case 'add': listWrite(()=>arb?.add(c.pick)); return;
+  }
+}
+remote = mountRemote({
+  enabled: () => settings.remote, signedIn: () => !!arb?.signedIn(),   // arboretum is mounted further down; until then, signed out
+  connect: (query) => arb.remote(query), page: () => arb.remotePage(),
+  schema: remoteSchema, state: remoteState, run: remoteRun,
+  hint: (text) => showHint(text), changed: () => sessionPanel.refresh(),
 });
 // Welcome gate — the page opens on a faint 'memories' background (the north-star
 // look of spec/experience.md) under an intro overlay. "feel" un-dims the canvas and cloud-bloom

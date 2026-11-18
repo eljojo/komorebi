@@ -1,7 +1,7 @@
 // The device/showing panel. Its host owns preferences; look controls never write them.
 import { FIDELITY_KEYS, QUALITY_PROFILES } from '../engine/komorebi-session.js';
 
-export function mountSettings({ settings, engine, save, account, rows }) {
+export function mountSettings({ settings, engine, save, account, rows, remote }) {
   const panel=document.createElement('dialog');panel.className='session-panel';panel.id='sessionSettings';
   const title=document.createElement('h2');title.textContent='Settings';
   const close=document.createElement('button');close.textContent='done';close.onclick=()=>panel.close();
@@ -44,6 +44,10 @@ export function mountSettings({ settings, engine, save, account, rows }) {
   select('presentation','display',[['playlist','follow playlist'],['screen','screen / TV'],['projector','projector']],
     ()=>settings.session.presentation??'playlist',value=>{settings.session.presentation=value;});
   const note=document.createElement('p');note.textContent='Projector turns edge-area correction off, darkening the frame slightly. Pacing stays with the playlist.';panel.append(note);
+  // the remote control (remote.js): this device takes a phone's commands while it is on and signed in; the line under it says how it stands
+  heading('Remote control');
+  select('remote','phone',[['off','off'],['on','on']],()=>remote.get()?'on':'off',value=>remote.set(value==='on'));
+  const remoteNote=document.createElement('p');panel.append(remoteNote);
   heading('Arboretum');
   const accountRow=document.createElement('div');accountRow.textContent='Looks are kept in this browser. Online accounts are available where Arboretum is hosted.';panel.append(accountRow);
   function refreshStatus(){
@@ -51,6 +55,8 @@ export function mountSettings({ settings, engine, save, account, rows }) {
     const startup=s.automaticAdaptive ? s.startupFps===undefined ? ' · checking first 10 s' : ` · first 10 s: ${Math.round(s.startupFps)} fps` : '';
     const text=`${s.quality} · adaptive fps ${s.playback.adaptive_motion?'on':'off'} · idle ${s.playback.adaptive_idle_fps} fps · ${s.presentation}${startup}`;
     if(resolved.textContent!==text)resolved.textContent=text;
+    const remoteText=remote.status();
+    if(remoteNote.textContent!==remoteText)remoteNote.textContent=remoteText;
     panel.querySelector('[data-setting="adaptive_idle_fps"]').disabled=!s.playback.adaptive_motion;
   }
   function refreshAll(){for(const refresh of controls)refresh();refreshStatus();}
