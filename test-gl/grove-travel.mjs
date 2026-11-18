@@ -52,7 +52,8 @@ try{
   }
   open(A);e.transitionTo(B,{duration:1});pump(35);const middle=last.slice(),time=e.motion.time;window.__clock.pump(stamp);need(diff(middle,last)===0&&e.motion.time===time,'zero-time redraw moved the field');
   e.transitionTo(A,{duration:.25});window.__clock.pump(stamp);need(diff(middle,last)===0,'reversal changed the field');while(e.trans.active)pump();need(diff(nativeA,last)===0,'reversal did not restore native source');
-  open(A);const g=e.gl,live=new Map();
+  // The route's programs are the context's, linked on its first run and kept by the engine (komorebi-engine.js): run it there and back once before counting.
+  open(A);e.transitionTo(B,{duration:.25});while(e.trans.active)pump();e.transitionTo(A,{duration:.25});while(e.trans.active)pump();const g=e.gl,live=new Map();
   for(const type of ['Buffer','Texture','Program','Framebuffer','VertexArray']){
    const made=g[`create${type}`].bind(g),freed=g[`delete${type}`].bind(g),set=new Set();live.set(type,set);
    g[`create${type}`]=(...args)=>{const value=made(...args);set.add(value);return value;};g[`delete${type}`]=value=>{set.delete(value);return freed(value);};
