@@ -44,7 +44,7 @@ the whole renderer, no UI. It stays at the root so its address never moves. No e
 model file whose mechanism it holds (`spec/model/`).
 
 `engine/` — the engine itself, and what every organ shares:
-- `komorebi-engine.js` — `create()`: GL plumbing, the shared-internals hub, rebuild coordinators, auto-quality, the frame loop.
+- `komorebi-engine.js` — `create()`: GL plumbing, the shared-internals hub, rebuild coordinators and the grove's hand-overs (installGrove, adoptGrove, the travel source; made only of the grove's three primitives and `setViews`), auto-quality, the frame loop.
 - `komorebi-params.js` — `PARAMS`, every parameter defined once (default, panel row, how it travels, what it means; its header sets
   the fields out), and what is derived from it: `DEFAULTS`, the legacy-name migration, transition key classes. Also engine caps, and the feature
   registry (`FEATURES`, `featuresFor`) that tells a bundle which fall tiers it may cut.
@@ -57,7 +57,8 @@ model file whose mechanism it holds (`spec/model/`).
 - `komorebi-light.js` — the sun and the air, pure: the 3-band atmosphere, the sun's direction, the cosine law each receiver takes the beam by, the air's loss, the exposure the frame is shown at.
 
 `engine/canopy/` — the tree and its grove (`spec/model/canopy.md`):
-- `komorebi-grove.js` — the grown canopy (`buildGrove`: `growGrove`, the arithmetic, then `uploadGrove`, the GPU and the shared state) and where one leaf
+- `komorebi-grove.js` — the grown canopy (`buildGrove`: `growGrove`, the arithmetic, then `uploadGrove`, the GPU, a detached grove holding its own state, then the attach);
+  `attachGrove`, `detachGrove` and `freeGrove`, the only code that knows which fields are a grove's; and where one leaf
   hangs (`placeLeaf`, also the editor's tree preview's).
 - `komorebi-growth.js` — a tree grown year by year from buds, light deciding which grow (`growBuds`), pure; the grove calls it in place of the
   grammar when `growth_years` is above 0. A prototype.

@@ -20,8 +20,8 @@ import { makeBake } from "../engine/transport/komorebi-bake.js";
 import { VS_BAKE, VS_FAITH, VS_FAITH_SEG, FS_FAITH_SEG } from "../engine/transport/komorebi-shaders.js";
 import { makeMotion } from "../engine/motion/komorebi-motion.js";
 
-// ---- the rig: one stub GL per hub (a grove writes the engine-global faith.* of ITS hub, so the cached grove and the fresh
-// builds it is held to each get their own) ------------------------------------------------------------------------------
+// ---- the rig: one stub GL per hub (a built grove is attached to ITS hub, its state on that hub's faith.*, so the cached grove and the
+// fresh builds it is held to each get their own) ------------------------------------------------------------------------------
 function rig(params, faithful = false) {
   const gl = new Proxy({}, {
     get(t, name) {
@@ -241,8 +241,8 @@ test('density capacity: gates, structural keys, ownership and exhausted capacity
     expect(A.G.reseasonable(g), JSON.stringify(change)).toBe(false);
   }
   Object.assign(A.params, base);
-  A.faith.buf = {};
-  expect(A.G.reseasonable(g), 'a second grove owns the shared faithful buffer').toBe(false);
+  A.G.buildGrove(null, { densityCapacity: 1.65 });
+  expect(A.G.reseasonable(g), 'a second grove is attached to the hub').toBe(false);
   for (const change of [{ phenology: 0.8 }, { leaf_drop: 0.1 }, { leaf_variety: 0.5 }, { tree_clock_spread: 0.2 }]) {
     const B = rig({ ...base, ...change }, true), guarded = B.G.buildGrove(null, { densityCapacity: 1.65 });
     expect(guarded.season, 'outside the gate the option takes the ordinary build').toBeUndefined();
@@ -539,15 +539,13 @@ test("live canopy heights keep analytic wood aligned with the layer heights", ()
   expect(built(counts)).toBe(buffers);
 });
 
-test("wood off: a leaf crossfade never refreshes the shared incoming wood geometry", () => {
+test("wood off: the wood's numbers wait while no wood is cast, and are refreshed once it is", () => {
   const r = rig({ ...SMALL, branch_tau: 0 });
-  const outgoing = r.G.buildGrove(null);
-  r.hub.grove = outgoing;
-  r.params.branch_children = 2;
-  r.G.buildGrove(null);   // the incoming grove owns faith.* until it is installed
-  r.params.branch_children = 3;
+  r.hub.grove = r.G.buildGrove(null);
   r.params.canopy_base_height_m = 4;
   expect(r.G.refreshWood()).toBe(false);
+  r.params.branch_tau = 2;
+  expect(r.G.refreshWood()).toBe(true);
 });
 
 test("apply('season'): the first builds with the cache (a full path); a season-set-only change after it re-seasons — nothing is built", () => {
@@ -594,7 +592,7 @@ test("apply('season'): a param buildGrove reads besides the season set takes the
   }
 });
 
-test("apply('season'): while a transition is active the grove is rebuilt, not re-seasoned (the target grove shares the engine-global faith.*)", () => {
+test("apply('season'): while a transition is active the grove is rebuilt, not re-seasoned (the fast path is held to the build's bytes at rest and on a season-only morph alone)", () => {
   const { eng, counts } = engineRig({});
   eng.apply("season");
   eng.trans.active = true;

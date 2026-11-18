@@ -1,12 +1,13 @@
 // ============================================================================
 // THE GROVE'S BUILD, IN TWO HALVES (komorebi-grove.js). growGrove is the arithmetic: the skeleton, the leaves, the season, the wood's
-// tables, as plain data. uploadGrove hands that data to the GPU and to the engine's shared state (faith.*, occ.*, sky.*). buildGrove is
-// the two in a row, and is what every route calls. The halves exist so a grove can be grown ahead of the frame that shows it.
-// What must not slip: growing reaching the GPU or the shared state (a grove grown ahead would disturb the one on screen); the two
-// halves giving anything but the grove one build gives; the upload reading the live parameters, which may be another look's by then.
+// tables, as plain data. uploadGrove hands that data to the GPU as a detached grove holding its own state (g.own: faith, occ, sky); attaching
+// it moves that state onto a hub's shared objects. buildGrove is the two halves and the attach in a row. The halves exist so a grove can
+// be grown ahead of the frame that shows it. What must not slip: growing or uploading reaching the shared state (a grove grown ahead would
+// disturb the one on screen); the halves and the attach giving anything but the grove one build gives; the upload reading the live
+// parameters, which may be another look's by then.
 // ============================================================================
 import { test, expect } from "bun:test";
-import { makeGrove } from "../engine/canopy/komorebi-grove.js";
+import { makeGrove, attachGrove, attachedGrove } from "../engine/canopy/komorebi-grove.js";
 import { DEFAULTS } from "../engine/komorebi-params.js";
 import { PRESETS } from "../presets.js";
 
@@ -38,7 +39,7 @@ const snapshot = (R, g) => plain({
   occ: R.occ, sky: { ...R.sky, segVAO: undefined, segBuf: R.sky.segBuf?.data },
   grove: { key: g.key, reach: g.reach, wood: g.wood, scaleMax: g.scaleMax, litter: g.litter, shape: g.shape && [g.shape.rows, g.shape.data.length],
            leafW: g.hier.leafW, clusterData: g.hier.clusterData, clusterGeom: g.hier.clusterGeom, nLeaf: g.hier.nLeaf,
-           season: g.season && { key: g.season.key, n: g.season.n, rec: g.season.rec, pivot: g.season.pivot, seg: g.season.seg, own: g.season.faithBuf === R.faith.buf, density: g.season.density } },
+           season: g.season && { key: g.season.key, n: g.season.n, rec: g.season.rec, pivot: g.season.pivot, seg: g.season.seg, attached: attachedGrove(R.hub) === g, density: g.season.density } },
 });
 
 const small = { tree_count: 2, leaves_per_cluster: 5, branch_levels: 2, inner_leaves: 0.35 };
@@ -52,14 +53,16 @@ const CASES = [
 ];
 
 for (const [name, look, faithful, opts] of CASES) {
-  test(`growing touches neither the GPU nor the shared state, and the upload gives the grove one build gives: ${name}`, () => {
+  test(`growing touches neither the GPU nor the shared state, the upload not the shared state, and attached it is the grove one build gives: ${name}`, () => {
     const A = rig({ ...DEFAULTS, ...look }, faithful), want = snapshot(A, A.G.buildGrove(null, opts));
     const B = rig({ ...DEFAULTS, ...look }, faithful);
     const before = JSON.stringify(plain({ faith: B.faith, occ: B.occ, sky: B.sky }));
     const grown = B.G.growGrove(null, opts);
     expect(B.seen.calls, "no GL call while growing").toBe(0);
     expect(JSON.stringify(plain({ faith: B.faith, occ: B.occ, sky: B.sky })), "the shared state as it was").toBe(before);
-    expect(snapshot(B, B.G.uploadGrove(grown))).toEqual(want);
+    const up = B.G.uploadGrove(grown);
+    expect(JSON.stringify(plain({ faith: B.faith, occ: B.occ, sky: B.sky })), "the shared state as it was, after the upload").toBe(before);
+    expect(snapshot(B, attachGrove(B.hub, up))).toEqual(want);
   });
 }
 
@@ -69,6 +72,6 @@ test("the upload reads the grove it was handed, not the live parameters: another
     const B = rig({ ...DEFAULTS, ...look }, faithful), grown = B.G.growGrove(null, opts);
     Object.assign(B.params, { trunk_radius_m: 0.41, taper_delta: 1.3, layer_count: B.params.layer_count === 1 ? 3 : 1, sky_view: !B.params.sky_view, canopy_extent_m: 31, canopy_base_height_m: 7.5,
       canopy_thickness_m: 0.7, branch_children: 5, seed: 99, view_extent_m: 17, grove_reach_m: 9, standing_scene: !B.params.standing_scene, foliage_density: 2.5, phenology: 0.99 });
-    expect(snapshot(B, B.G.uploadGrove(grown)), name).toEqual(want);
+    expect(snapshot(B, attachGrove(B.hub, B.G.uploadGrove(grown))), name).toEqual(want);
   }
 });

@@ -7,7 +7,7 @@ import { makeCast } from './transport/komorebi-cast.js';
 import { makeMotion } from './motion/komorebi-motion.js';
 import { makeTransitions } from './transitions/komorebi-transitions.js';
 import { restTrans } from './transitions/komorebi-routes.js';
-import { makeGrove, seasonKey, densityEligible, densityCount, growAs } from './canopy/komorebi-grove.js';
+import { makeGrove, seasonKey, densityEligible, densityCount, growAs, attachGrove, detachGrove, attachedGrove, freeGrove as freeGroveGL } from './canopy/komorebi-grove.js';
 import { makeBake, makeFill, NO_FILL, FILL_SIG_LEN } from './transport/komorebi-bake.js';
 import { makeTreeView, NO_TREE_VIEW } from './transport/komorebi-tree-view.js';
 import { makeLitter, newLitterState, NO_LITTER } from './season/komorebi-litter.js';
@@ -207,7 +207,7 @@ function createEngine(canvas, opts, driven=false){
   // keeps a dead handle.
   let progBake, progFaith, progFaithPivot, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
   let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
-  let reseasonGrove, reseasonable, bake, bakeLayers, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
+  let reseasonGrove, reseasonable, growGrove, uploadGrove, bake, bakeLayers, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -424,7 +424,7 @@ function createEngine(canvas, opts, driven=false){
                          quadBuf, emptyVAO, bakeFBO, faithFBO, fillFBO, occTex });
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
     const groveSystem = makeGrove(hub);
-    ({ buildGrove, reseasonGrove, reseasonable } = groveSystem); Object.assign(hub,{buildGrove,reseasonGrove});
+    ({ buildGrove, growGrove, uploadGrove, reseasonGrove, reseasonable } = groveSystem); Object.assign(hub,{buildGrove,reseasonGrove});
     hub.refreshWood = groveSystem.refreshWood;
     ({ bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow });
     ({ bakeFill, refreshFill, fillWanted, fillLayerRes } = FEAT_FILL ? makeFill(hub) : NO_FILL); Object.assign(hub, { bakeFill, refreshFill, fillWanted, fillLayerRes });   // the fill reads the layers and the frame the bake just put on the hub
@@ -501,44 +501,40 @@ function createEngine(canvas, opts, driven=false){
 
   initGPU();   // programs, buffers, FBOs, occTex + the subsystems over them (makeGrove / makeBake / makeRender)
 
-  // ---- INSTALL a grove as the active one: free whatever it replaces, then re-point the engine's views at it.
+  // ---- INSTALL a grove as the active one: free whatever it replaces, attach it, then re-point the engine's views at it.
   // hier / layerVAO / clusterTex / clusterGeomTex stay plain engine variables on purpose — some fifty readers
   // across motion, the bake and the debug overlays mean the ACTIVE grove, and rewriting every one of them to
   // say so would be churn without a reader. What the grove VALUE buys is that a second one can exist at all.
-  function freeGrove(g){
-    if(!g) return;
-    g.layerVAO.forEach(L=>{ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
-    if(g.clusterTex) gl.deleteTexture(g.clusterTex);
-    if(g.clusterGeomTex) gl.deleteTexture(g.clusterGeomTex);
-    if(g.leafTex) gl.deleteTexture(g.leafTex);
+  // A grove's state and GL objects move only through attachGrove, detachGrove and freeGrove (komorebi-grove.js, ONE GROVE AT A TIME IS ATTACHED), and the
+  // views through setViews; installGrove is where the grove it replaces is freed.
+  function freeGrove(g){ if(g) freeGroveGL(gl, g); }
+  // The views of a host `h` onto grove `g`, or cleared (g null). hier is kept when cleared: a host whose grove was taken still carries its springs into its regrow.
+  function setViews(h, g){
+    h.grove = g; if(g) h.hier = g.hier;
+    h.layerVAO = g ? g.layerVAO : []; h.clusterTex = g ? g.clusterTex : null; h.clusterGeomTex = g ? g.clusterGeomTex : null;
   }
   function installGrove(g){
     if(hub.grove && hub.grove !== g) freeGrove(hub.grove);
-    hub.grove = g;
-    hub.hier = g.hier; hub.layerVAO = g.layerVAO; hub.clusterTex = g.clusterTex; hub.clusterGeomTex = g.clusterGeomTex;
+    if(g.host !== hub) attachGrove(hub, g);
+    setViews(hub, g);
     publishBend(g);   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
     if(params.wind_air > 0) publishAir(g);   // ...and the air, or the fresh texture's flutter reads still for a frame
   }
   function regenCanopy(){ installGrove(buildGrove(hub.hier)); }   // the old shape: grow one, make it the one
   // THE HANDOVER. A dissolve's outgoing scene is the look on screen, whose grove the host is about to replace: the scene takes it,
-  // with what the grove build put beside it (the faithful leaves and wood, the analytic wood's table, the sky view's binned wood),
-  // instead of growing the same grove again. The host forgets the GL handles, so its rebuild makes its own and frees none of these;
-  // everything else a build writes it writes afresh. sky.start and sky.count are filled in place, so they are copied.
-  const GROVE_FAITH = ['vao','buf','count','hMin','hMax','pminx','pmaxx','pminy','pmaxy','binH','pivot','pivotBuf','pivotOn','sideBuf','segRest','segCount','segArr','segVAO','segBuf'];
+  // with its state (the faithful leaves and wood, the analytic wood's table, the sky view's binned wood), instead of growing the same
+  // grove again. The host is left with no grove and its hier (setViews), so its rebuild frees nothing of this one.
   function adoptGrove(h){
-    for(const k of GROVE_FAITH) faith[k] = h.faith[k];
-    for(const k of ['rest','ht','count','want','hRef']) occ[k] = h.occ[k];
-    Object.assign(sky, { segVAO:h.sky.segVAO, segBuf:h.sky.segBuf, segRest:h.sky.segRest, segArr:h.sky.segArr, start:[...h.sky.start], count:[...h.sky.count] });
-    installGrove(h.grove);
-    Object.assign(h.faith, { vao:null, buf:null, pivotBuf:null, sideBuf:null, segVAO:null, segBuf:null });
-    Object.assign(h.sky, { segVAO:null, segBuf:null });
-    Object.assign(h, { grove:null, layerVAO:[], clusterTex:null, clusterGeomTex:null });   // hier stays: the host's regrow carries its springs from it
+    const g = h.grove;
+    detachGrove(h, g); setViews(h, null);
+    installGrove(g);
   }
   // Grow the grove the TARGET look describes, without becoming it (growAs: every key the build reads is the target's, MORPH ones
   // included, for the length of the build). No prevHier — the incoming springs start at rest, which is what a newly grown tree has
   // always done. Its leaf edge is recorded with it: the crossfade's bake cuts the incoming grove's leaves with its own look's edge.
+  // It stays detached until installGrove: the grove on screen keeps its state on the hub for the length of the crossfade.
   function buildTargetGrove(to){
-    const g = growAs(params, to, () => buildGrove(null));
+    const g = growAs(params, to, () => uploadGrove(growGrove(null)));
     g.edgeSoftness = to.edge_softness;
     return g;
   }
@@ -590,9 +586,11 @@ function createEngine(canvas, opts, driven=false){
   };
   function retainTravelSource(){
     // This route has no wood, fill, litter or glow. Keep its actual grove and cast; share only the stateless GL plumbing.
+    const g=hub.grove;
+    detachGrove(hub,g);
     const outgoing={...hub,params:{...params},perf:{...perf},trans:restTrans(),
       motion:Object.fromEntries(Object.entries(motion).map(([k,v])=>[k,k==='air'||k==='trunks'?structuredClone(v):Array.isArray(v)?[...v]:v])),   // the air's kept past and the trees' trunks are state: the outgoing scene advances its own
-      src:{...src},faith:{...faith},occ:{...occ},srcDbgBuf:null};
+      src:{...src},faith:{...faith},occ:{...occ},sky:{...sky},srcDbgBuf:null};   // the bake's records copied, the grove's state left out: it moves below
     outgoing.faithfulOn=()=>outgoing.params.faithful_canopy;
     outgoing.bakeRes=()=>outgoing.perf.bres;
     outgoing.effCloud=()=>clamp(outgoing.params.cloud_thickness,0,1);
@@ -603,20 +601,23 @@ function createEngine(canvas, opts, driven=false){
     outgoing.motionTick=outgoing.tick;   // the copied parent tick closes over the incoming scene
     Object.assign(outgoing,makeBake(outgoing));
     Object.assign(outgoing,makeRender(outgoing));
+    attachGrove(outgoing,g);
     const release=h=>{
       freeGrove(h.grove);
       for(const t of [...h.layerTex,...h.woodTex,h.faithTex,h.faithScratch])if(t)gl.deleteTexture(t);
-      for(const v of [h.faith.vao,h.faith.segVAO])if(v)gl.deleteVertexArray(v);
-      for(const b of [h.faith.buf,h.faith.segBuf,h.faith.pivotBuf,h.faith.sideBuf])if(b)gl.deleteBuffer(b);
     };
-    Object.assign(hub,{grove:null,layerVAO:[],clusterTex:null,clusterGeomTex:null,layerTex:[],woodTex:[],faithTex:null,faithScratch:null});
-    Object.assign(faith,{vao:null,buf:null,segVAO:null,segBuf:null});
+    const TEXTURES=['layerTex','woodTex','layerSize','layerSizes','woodSizes','faithTex','faithScratch'];   // the texture set, with the sizes sizeLayers keeps it at
+    setViews(hub,null);
+    Object.assign(hub,{layerTex:[],woodTex:[],faithTex:null,faithScratch:null});
     let owned=true;
     return {hub:outgoing,
       restore(){
         release(hub);
-        for(const k of ['grove','hier','layerVAO','clusterTex','clusterGeomTex','layerTex','woodTex','layerSize','faithTex','faithScratch'])hub[k]=outgoing[k];
-        Object.assign(faith,outgoing.faith);Object.assign(occ,outgoing.occ);perf.bres=outgoing.perf.bres;
+        detachGrove(outgoing,g);
+        Object.assign(faith,outgoing.faith);Object.assign(occ,outgoing.occ);Object.assign(sky,outgoing.sky);   // the bake's records that go with the faithTex put back
+        attachGrove(hub,g);setViews(hub,g);
+        for(const k of TEXTURES)hub[k]=outgoing[k];
+        perf.bres=outgoing.perf.bres;
         copyMotion(outgoing,hub);owned=false;
       },
       dispose(){if(owned){release(outgoing);owned=false;}}
@@ -723,7 +724,7 @@ function createEngine(canvas, opts, driven=false){
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
   // The season axis (spec/model/season.md "Re-seasoning"): a change to the season set alone is re-run over the grove's cached leaves; anything else the grove reads, or a grove the cache
   // does not describe, regrows (with the cache once the structure holds still, so the NEXT one is the fast one). Only a season-only grove morph may re-season during a
-  // transition: the other routes may share engine-global faith.* with an incoming grove. The carpet's signature keys on the grove's identity plus phenology and the litter keys, NOT the capacities, so an anthocyanin-only
+  // transition: the fast path is held to the build's bytes at rest and on that morph alone, and the other routes repurpose the grove they hold. The carpet's signature keys on the grove's identity plus phenology and the litter keys, NOT the capacities, so an anthocyanin-only
   // re-season would leave it stale: dropping the grove it was baked from makes the next refreshLitter bake it.
   // Returns the path it took, 'reseason' or 'build': the editor's cost gate must not fold a one-off cache build into its EMA.
   function reseason(){
@@ -850,19 +851,14 @@ function createEngine(canvas, opts, driven=false){
       ownerDocument?.removeEventListener('visibilitychange',onVisibilityChange);
       releasePrograms();                             // initGPU's, every camera this engine visited, the fill's and the litter's: deleted once no engine on the context holds them
       transportCache.clear(); fillEntry = null; bounceEntry = null; litterEntry = null;
+      freeGrove(hub.grove); freeGrove(hub.groveIn);   // the grove on screen and a crossfade's incoming one
       hub.layerTex.forEach(t => { gl.deleteTexture(t); });
       hub.woodTex.forEach(t => { gl.deleteTexture(t); });
-      [hub.clusterTex, hub.clusterGeomTex, hub.grove?.leafTex, occTex, hub.faithTex, hub.faithScratch, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
+      [occTex, hub.faithTex, hub.faithScratch, presentTex, litter.tex, ...fill.tex].forEach(t => { if(t) gl.deleteTexture(t); });
       if(fill.bounce){ gl.deleteFramebuffer(fill.bounce.fbo); [fill.bounce.G, fill.bounce.W, fill.bounce.B, fill.bounce.slab].forEach(t => { gl.deleteTexture(t); }); fill.bounce = null; }
       freeGlowTargets();                             // the diffusion tier's three 16F frames (no-op when the gate never opened)
       [bakeFBO, faithFBO, fillFBO, hub.presentFBO, ...glowFBO].forEach(f => { if(f) gl.deleteFramebuffer(f); });
       hub.disposeTree();                              // the tree view's targets and its leaf table
-      hub.layerVAO.forEach(L => { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); });
-      if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
-      if(faith.pivotBuf) gl.deleteBuffer(faith.pivotBuf);
-      if(faith.sideBuf) gl.deleteBuffer(faith.sideBuf);
-      if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
-      if(sky.segVAO){ gl.deleteVertexArray(sky.segVAO); gl.deleteBuffer(sky.segBuf); }
       if(litter.vao){ gl.deleteVertexArray(litter.vao); gl.deleteBuffer(litter.buf); }
       [emptyVAO, hub.srcDbgVAO, hub.vizVAO].forEach(v => { if(v) gl.deleteVertexArray(v); });
       [quadBuf, hub.srcDbgBuf, hub.vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });
@@ -977,10 +973,9 @@ function createEngine(canvas, opts, driven=false){
     contextPrograms(gl).clear(); held.clear();     // every program the context held died with it, whichever engine linked it
     fillEntry = null; bounceEntry = null; fill.tex = [null, null]; fill.res = 0; fill.ready = false; fill.bounce = null; fill.gb = 0;   // the sky fill's programs and textures died with the context; the first draw that wants it rebuilds them
     litterEntry = null; Object.assign(litter, newLitterState());                   // ...and so did the carpet's: initGPU() makes the fresh 1×1, and the first draw that has fallen leaves to show bakes it again
-    Object.assign(hub, { layerTex:[], woodTex:[], layerSize:0, layerVAO:[], faithTex:null, faithScratch:null, grove:null, groveIn:null, crossW:0,
-                         clusterTex:null, clusterGeomTex:null, presentFBO:null, presentW:0, presentH:0 });
-    faith.vao = faith.buf = faith.segVAO = faith.segBuf = faith.pivotBuf = faith.sideBuf = null;
-    sky.segVAO = sky.segBuf = null;
+    detachGrove(hub, attachedGrove(hub)); setViews(hub, null);   // the grove's handles go with it, unfreed
+    Object.assign(hub, { layerTex:[], woodTex:[], layerSize:0, faithTex:null, faithScratch:null, groveIn:null, crossW:0,
+                         presentFBO:null, presentW:0, presentH:0 });
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = restoreContext();

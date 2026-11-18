@@ -95,9 +95,9 @@ test("every faithful leaf uploads its side beside it, in record order, through t
     const R = rig({ ...DEFAULTS, ...PRESETS[name] }), g = R.G.growGrove(null, { keepSeason: true });
     expect(g.side.length * 18, name).toBe(g.faithArr.length);
     expect(g.season.side.length, name).toBe(g.season.n);
-    R.G.uploadGrove(g);
-    expect(R.faith.sideBuf.data.length, name).toBe(R.faith.count);
-    expect(Array.from(R.faith.sideBuf.data).every((s) => s === 1 || s === -1), name).toBe(true);
+    const F = R.G.uploadGrove(g).own.faith;   // a detached grove: its faithful state is its own
+    expect(F.sideBuf.data.length, name).toBe(F.count);
+    expect(Array.from(F.sideBuf.data).every((s) => s === 1 || s === -1), name).toBe(true);
   }
 });
 

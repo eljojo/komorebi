@@ -590,9 +590,10 @@ test("the program's uniforms are named alike in the bake, the faithful bake and 
   expect(engine).toContain("U.faith = faithLocs(progFaith)");
   for (const [key, name] of names) expect(faithful[key], `progFaith ${name}`).toEqual(["faithful", name]);
   for (const [key, name] of names) expect(engine.includes(`${key}:loc(prog,'${name}')`), `litter ${name}`).toBe(true);
-  const between = (a, b) => engine.slice(engine.indexOf(a), engine.indexOf(b, engine.indexOf(a)));
-  expect(between("function freeGrove", "function installGrove")).toContain("g.leafTex");                // a grove frees what it made
-  expect(between("dispose(){", "gl.getExtension('WEBGL_lose_context')")).toContain("hub.grove?.leafTex");   // ...and a disposed engine frees the active one's (a lost context forgets it with the grove: grove:null)
+  const grove = readFileSync(new URL("../engine/canopy/komorebi-grove.js", import.meta.url), "utf8");
+  const between = (src, a, b) => src.slice(src.indexOf(a), src.indexOf(b, src.indexOf(a)));
+  expect(between(grove, "export function freeGrove", "export function makeGrove")).toContain("g.leafTex");             // a grove frees what it made
+  expect(between(engine, "dispose(){", "gl.getExtension('WEBGL_lose_context')")).toContain("freeGrove(hub.grove)");   // ...and a disposed engine frees the active one (a lost context forgets it with the grove: detached, unfreed)
 });
 
 // ============================================================================

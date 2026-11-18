@@ -20,8 +20,8 @@
 //   pass, and otherwise built by the first re-season whose gate needs `u`; the rank is never written into (exposureBlend hands it back itself at exposure_absolute 0).
 //   GOTCHAS. A and B0 are kept as DOUBLES: the litter's `size` is read from the doubles in buildGrove, and a float32 copy differs in the last bits. A re-season writes
 //   into the EXISTING buffers (layerVAO[l].buf, faith.buf), so the VAO pointers stay valid; it never touches `gr`, the hier springs, clusterData, clusterTex or leafTex —
-//   which is also why there is no shallow-copy grove: installGrove would free the textures it shared. faith.* is engine-global (a second grove built for a transition
-//   writes it), so the engine re-seasons only with no transition or a season-only grove morph, and with faith.buf still this grove's. leafW is a NEW array each time: the tree preview keys on it.
+//   which is also why there is no shallow-copy grove: installGrove would free the textures it shared. The faithful count, pivot flag and bounds it writes are the grove's own
+//   state, written where that state is (ONE GROVE AT A TIME IS ATTACHED, below), and the engine re-seasons only the grove attached to it. leafW is a NEW array each time: the tree preview keys on it.
 //   MEASURED (bun, median of 7, fall at t 0.9): afternoon 7 73 ms a regrow, the void 201, montebello 15 — see the cost test in reseason.test.js for the re-season's.
 //   DENSITY CAPACITY. A fixed summer grove can keep a larger per-cluster prefix and reweight its active leaves. Its separate key excludes density, but its gate excludes pigment, drop and variety;
 //   opening those rebuilds the actual population before any exposure rank is needed. Ordinary builds and season records retain their original keys and arithmetic. The active count and cast bounds follow the prefix.
@@ -208,8 +208,43 @@ export function crownDepth(twigs, out){
     });
   }
 }
+// ---- ONE GROVE AT A TIME IS ATTACHED. A grove owns its state: besides its GL objects and its hierarchy, uploadGrove gives it `g.own`, the faithful leaves and
+// wood with their counts and bounds (faith), the analytic wood's table (occ) and the sky view's binned wood (sky). The bake, the render, the tree view and the
+// routes read that state through a hub's faith, occ and sky objects, which keep their identity for the hub's life (the factories destructure them, the engine's
+// handle hands them out). So a grove is ATTACHED to a hub-like target to be read: its state moves onto the target's three objects and lives only there (g.own
+// keeps the keys, each undefined) until it is DETACHED, when it moves back, with whatever changed while it was attached, and the target's fields are cleared, so
+// no stale handle can be read or freed through them. These, with freeGrove, are the only code that knows which fields are a grove's: the keys of g.own. The rest
+// of the three objects is the bake's: the cast frame and what the cast was baked with (faith.ox, oy, ext, k, n, edgeArea, branchTau), the per-sample scratch
+// (faith.gx, gy), the occluder's per-frame table (occ.segBuf) and sky.branchTau. A target holds one grove and a grove is attached to one target.
+const ATTACHED = new WeakMap();   // target -> the grove attached to it
+const PARTS = ['faith', 'occ', 'sky'];
+export const attachedGrove = (target) => ATTACHED.get(target) ?? null;
+export function attachGrove(target, g){
+  if(g.host === target) return g;
+  if(g.host || ATTACHED.has(target)) throw new Error('komorebi: a grove is attached to one hub at a time, and a hub holds one grove');
+  for(const p of PARTS){ const own = g.own[p], on = target[p]; for(const k in own){ on[k] = own[k]; own[k] = undefined; } }
+  g.host = target; ATTACHED.set(target, g);
+  return g;
+}
+export function detachGrove(target, g){
+  if(!g || g.host !== target) return g;
+  for(const p of PARTS){ const own = g.own[p], on = target[p]; for(const k in own){ own[k] = on[k]; on[k] = undefined; } }
+  g.host = null; ATTACHED.delete(target);
+  return g;
+}
+// Every GL object the grove owns, once: its layers, its cluster and leaf textures, its faithful leaves and wood, its sky wood. An attached grove is detached first.
+export function freeGrove(gl, g){
+  if(!g) return;
+  if(g.host) detachGrove(g.host, g);
+  for(const L of g.layerVAO){ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); }
+  for(const t of [g.clusterTex, g.clusterGeomTex, g.leafTex]) if(t) gl.deleteTexture(t);
+  const { faith: F, sky: S } = g.own;
+  for(const v of [F.vao, F.segVAO, S.segVAO]) if(v) gl.deleteVertexArray(v);
+  for(const b of [F.buf, F.pivotBuf, F.sideBuf, F.segBuf, S.segBuf]) if(b) gl.deleteBuffer(b);
+}
+
 export function makeGrove(hub){
-  const { gl, params, MAX_TEX, quadBuf, faithfulOn, occ, faith, sky } = hub;
+  const { gl, params, MAX_TEX, quadBuf, faithfulOn, occ, faith } = hub;
 
   // THE DRAWS, KEPT. A cluster's arrangement and wind streams are functions of (seed, cluster) alone, and the hang loop takes
   // them in one fixed order whatever the other knobs say, so the numbers cluster j's first n leaves draw are the same on every
@@ -243,14 +278,17 @@ export function makeGrove(hub){
   // ---- BUILD A GROVE (spec/model/canopy.md, spec/implementation.md). Pure in the sense that matters: it allocates and returns a grove, it does
   // not install one. That is what lets a transition hold TWO — the outgoing one still drawing while the incoming
   // one is grown — instead of the midpoint swap being the only way a topology change can happen.
-  // (occ and faith are still written straight to engine state below. They belong to the ACTIVE grove, and the
-  // crossfade's gate excludes both of their consumers — wood needs branch_tau > 0, faith needs faithfulOn() —
-  // so a second grove never needs its own copy of either. If that gate ever widens, they move in here too.)
   // THE BUILD IS TWO HALVES. growGrove is the arithmetic: it reads the params and makes plain data (the skeleton, every leaf, the season, the wood's tables), and
-  // touches neither the GPU nor the engine's shared state. uploadGrove hands that data to the GPU and to faith.*, occ.* and sky.*, reading nothing but what it was
-  // handed. buildGrove is the two in a row and is what every caller uses; the halves are apart so a grove can be grown ahead of the frame that shows it
-  // (grove-build.test.js holds both properties).
-  function buildGrove(prevHier, opts){ return uploadGrove(growGrove(prevHier, opts)); }
+  // touches neither the GPU nor the hub's shared state. uploadGrove hands that data to the GPU and returns a DETACHED grove that holds its own state, reading
+  // nothing but what it was handed and writing nothing of the hub's; the halves are apart so a grove can be grown ahead of the frame that shows it
+  // (grove-build.test.js holds both properties). buildGrove is the two in a row, attached to this hub: the grove attached before it is detached, not freed, because
+  // the engine's installGrove frees the grove it replaces, whole, in one place. A crossfade's incoming grove is grown and uploaded without attaching, and stays
+  // detached until the swap installs it.
+  function buildGrove(prevHier, opts){
+    const g = uploadGrove(growGrove(prevHier, opts));
+    detachGrove(hub, attachedGrove(hub));
+    return attachGrove(hub, g);
+  }
   function growGrove(prevHier, { keepSeason = false, densityCapacity = null } = {}){
     const cacheDensity = densityCapacity !== null && densityEligible(params);
     keepSeason ||= cacheDensity;
@@ -807,7 +845,7 @@ export function makeGrove(hub){
         if(s.bx<sx0)sx0=s.bx; if(s.bx>sx1)sx1=s.bx; if(s.by<sy0)sy0=s.by; if(s.by>sy1)sy1=s.by;
       }
       season = { key, rec: sRec, base: seasonBase, pivot: seasonPivot, side: seasonSide, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, nTree, E, tau, seg: [sx0, sx1, sy0, sy1],
-                 faithBuf: null, ex: sEx, rank: sRank, u: null, outL: null, outF: null };   // faithBuf: the upload's (the buffer this record is beside)
+                 ex: sEx, rank: sRank, u: null, outL: null, outF: null };
     }
     let density = null;
     if(cacheDensity){
@@ -821,8 +859,8 @@ export function makeGrove(hub){
              faith: { hMin: castMin, hMax: castMax, binH, rest: woodRest, box: [px0, px1, py0, py1] } };
   }
 
-  // The other half: the grown grove onto the GPU and into the shared state. It reads `G` and nothing else, so the live params may be another look's by now.
-  // The OUTGOING grove's own GL objects are freed by installGrove, not here; what is engine-global (the faithful leaves and wood, the sky view's wood) is replaced here.
+  // The other half: the grown grove onto the GPU, as a DETACHED grove holding its own state (g.own; see ONE GROVE AT A TIME IS ATTACHED). It reads `G` and
+  // nothing else, so the live params may be another look's by now, and it writes and frees nothing of any hub's.
   function uploadGrove(G){
     const { hier, shape, nClusterTotal } = G;
     // ---- one instanced VAO per depth layer from its accumulated leaves ----
@@ -845,11 +883,10 @@ export function makeGrove(hub){
       return { vao, count: arr.length/17, buf };
     };
     const layerVAO = G.layers.map(buildLayerVAO);   // this grove's own
-    faith.hMin = G.faith.hMin; faith.hMax = G.faith.hMax; faith.binH = G.faith.binH;
+    const faith = { hMin: G.faith.hMin, hMax: G.faith.hMax, binH: G.faith.binH };   // the grove's faithful state (g.own.faith), filled below
 
     // ---- FAITHFUL path (spec/model/canopy.md): one combined VAO of EVERY leaf, each carrying its continuous floor-height (attr 5),
     // for the per-sample geometry bake. Built always (cheap); only DRAWN when faithful_canopy is on. ----
-    if(faith.vao){ gl.deleteVertexArray(faith.vao); gl.deleteBuffer(faith.buf); }
     {
       const arr = G.faithArr;
       const buf = gl.createBuffer();
@@ -867,10 +904,8 @@ export function makeGrove(hub){
       gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,4,gl.FLOAT,false,S,48); gl.vertexAttribDivisor(4,1);
       gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,1,gl.FLOAT,false,S,64); gl.vertexAttribDivisor(5,1);
       gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6,1,gl.FLOAT,false,S,68); gl.vertexAttribDivisor(6,1);
-      if(faith.pivotBuf) gl.deleteBuffer(faith.pivotBuf);
       faith.pivotBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, faith.pivotBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.pivot), gl.STATIC_DRAW);
       gl.enableVertexAttribArray(8); gl.vertexAttribPointer(8,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(8,1);   // the pivot weight, one float a leaf
-      if(faith.sideBuf) gl.deleteBuffer(faith.sideBuf);
       faith.sideBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, faith.sideBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.side), gl.STATIC_DRAW);
       gl.enableVertexAttribArray(9); gl.vertexAttribPointer(9,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(9,1);   // the leaf's side, one float a leaf: read by the tree view alone
       faith.pivot = G.pivot;   // the survivors' weights, as uploaded
@@ -910,14 +945,12 @@ export function makeGrove(hub){
       return tx;
     })();
     // the woody occluder's table (growGrove)
-    occ.rest = G.occ.rest; occ.ht = G.occ.ht; occ.count = G.occ.count; occ.want = G.occ.want;
-    occ.hRef = G.occ.hRef;
+    const occ = { rest: G.occ.rest, ht: G.occ.ht, count: G.occ.count, want: G.occ.want, hRef: G.occ.hRef };
     // the FAITHFUL skeleton's capsules
     {
       const segRest = G.faith.rest;
       faith.segRest = segRest; faith.segCount = segRest.length;
       faith.segArr = new Float32Array(segRest.length*9);   // 9 floats/seg (last: marginal-tree coverage): iSeg(ax,ay,bx,by) + iSegH(ha,hb,ra,rb); positions refilled per bake with the sway
-      if(faith.segVAO){ gl.deleteVertexArray(faith.segVAO); gl.deleteBuffer(faith.segBuf); }
       const buf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
       gl.bufferData(gl.ARRAY_BUFFER, faith.segArr, gl.DYNAMIC_DRAW);
@@ -933,14 +966,10 @@ export function makeGrove(hub){
       gl.bindVertexArray(null);
       faith.segVAO=vao; faith.segBuf=buf;
     }
-    // the SKY VIEW's layer-stamped wood: sky.start and sky.count are filled in place (the engine's handover copies them)
+    // the SKY VIEW's layer-stamped wood: each layer's slice of it (start, count) and the segments (their element objects are faith.segRest's: refreshWood reaches both)
+    const sky = { segVAO: null, segBuf: null, segRest: G.sky.rest, segArr: new Float32Array(G.sky.rest.length*9), start: Array.from(G.sky.start), count: Array.from(G.sky.count) };
     {
-      const segRest = G.sky.rest;
-      sky.start.length = 0; sky.count.length = 0;
-      for(let l=0;l<G.sky.start.length;l++){ sky.start[l] = G.sky.start[l]; sky.count[l] = G.sky.count[l]; }
-      sky.segRest = segRest;
-      sky.segArr = new Float32Array(segRest.length*9);
-      if(sky.segVAO){ gl.deleteVertexArray(sky.segVAO); gl.deleteBuffer(sky.segBuf); sky.segVAO=null; sky.segBuf=null; }
+      const segRest = sky.segRest;
       if(segRest.length){
         sky.segBuf = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
@@ -958,9 +987,11 @@ export function makeGrove(hub){
     }
     faith.pminx=G.faith.box[0]; faith.pmaxx=G.faith.box[1]; faith.pminy=G.faith.box[2]; faith.pmaxy=G.faith.box[3];
     const grove = { hier, layerVAO, clusterTex, clusterGeomTex, leafTex, shape, litter: G.litter, reach: G.reach, key: G.key };   // key: the structure it was grown for (see THE KEY)
+    grove.own = { faith, occ, sky };   // its state, while it is detached
+    grove.host = null;                 // the hub it is attached to
     grove.wood = G.wood;
     if(G.vary) grove.scaleMax = G.scaleMax;   // the largest shift leaf_variety gave a leaf: the faithful cast frame's pad grows by it (komorebi-bake.js); absent at the gate
-    if(G.season){ grove.season = G.season; grove.season.faithBuf = faith.buf; }
+    if(G.season) grove.season = G.season;
     if(G.density){
       grove.season.density = G.density;
       reseasonGrove(grove, G.under);
@@ -968,8 +999,8 @@ export function makeGrove(hub){
     return grove;
   }
 
-  // Does this grove's cache still describe the params, and is the engine-global faith.* still its own? (see the header: THE KEY, GOTCHAS)
-  const reseasonable = (g) => !!g?.season && g.season.faithBuf === faith.buf && (g.season.density
+  // Is this grove the one attached to this hub, and does its cache still describe the params? (see the header: THE KEY)
+  const reseasonable = (g) => !!g?.season && attachedGrove(hub) === g && (g.season.density
     ? densityEligible(params) && g.season.density.key === densityKey(params, faithfulOn()) && densityCount(params) <= g.season.nLeaf
     : g.season.key === seasonKey(params, faithfulOn()));
 
@@ -980,6 +1011,7 @@ export function makeGrove(hub){
   // of the clock, the summer tint or the wall fraction does only each leaf's state now: s across its window, the mixture, the retention. Any other season key rebuilds
   // the schedule from the kept draws (no leaf is hashed again). The fallen are listed when the list is READ (g.litter is a getter): a floor with no carpet never asks.
   function reseasonGrove(g, P = params){
+    const F = (g.host ?? g.own).faith;   // the grove's faithful state, wherever it is now (a density build re-seasons its grove before anything attaches it)
     const S = g.season, n = S.n, rec = S.rec, nLeaf = S.density ? densityCount(P) : S.nLeaf, nLayer = S.nLayer, tau = S.tau, leafT = [0,0,0], leafRow = g.hier.leafRow;   // leafRow: the table of rows the build drew (leaf_variety), which the litter keeps; null at the gate
     const pcF = S.density ? Math.max(0, P.leaves_per_cluster*P.foliage_density) : 0, pcInt = Math.floor(pcF), frac = pcF-pcInt;
     let hMin = S.density?.hMin, hMax = S.density?.hMax;
@@ -1033,18 +1065,18 @@ export function makeGrove(hub){
       gl.bufferData(gl.ARRAY_BUFFER, outL[l].subarray(0, wL[l]), gl.DYNAMIC_DRAW);
       L.count = wL[l]/17;
     }
-    gl.bindBuffer(gl.ARRAY_BUFFER, S.faithBuf);
+    gl.bindBuffer(gl.ARRAY_BUFFER, F.buf);
     gl.bufferData(gl.ARRAY_BUFFER, outF.subarray(0, wF), gl.DYNAMIC_DRAW);
-    faith.count = wF/18;
-    gl.bindBuffer(gl.ARRAY_BUFFER, faith.pivotBuf);                                    // the survivors' pivot weights, beside them in the same order
+    F.count = wF/18;
+    gl.bindBuffer(gl.ARRAY_BUFFER, F.pivotBuf);                                    // the survivors' pivot weights, beside them in the same order
     gl.bufferData(gl.ARRAY_BUFFER, outP.subarray(0, wF/18), gl.DYNAMIC_DRAW);
-    faith.pivotOn = outP.subarray(0, wF/18).some((w) => w > 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, faith.sideBuf);                                     // ...and their sides
+    F.pivotOn = outP.subarray(0, wF/18).some((w) => w > 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, F.sideBuf);                                     // ...and their sides
     gl.bufferData(gl.ARRAY_BUFFER, outS.subarray(0, wF/18), gl.DYNAMIC_DRAW);
     if(lx0<px0)px0=lx0; if(lx1>px1)px1=lx1; if(ly0<py0)py0=ly0; if(ly1>py1)py1=ly1;
     if(px0>px1){ const h=P.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
-    faith.pminx=px0; faith.pmaxx=px1; faith.pminy=py0; faith.pmaxy=py1;
-    if(S.density){ faith.hMin=hMin; faith.hMax=hMax; g.hier.nLeaf=nLeaf; S.key=g.key=seasonKey(P, faithfulOn()); }
+    F.pminx=px0; F.pmaxx=px1; F.pminy=py0; F.pmaxy=py1;
+    if(S.density){ F.hMin=hMin; F.hMax=hMax; g.hier.nLeaf=nLeaf; S.key=g.key=seasonKey(P, faithfulOn()); }
     g.hier.leafW = leafW;
     if(!(FEAT_LITTER && fallen)){ setLitter(g, fallen && []); return; }   // no drop: the build's null; a bundle without the carpet: its empty list
     // THE FALLEN, LISTED WHEN READ: buildGrove's own objects, made from this step's numbers (the tint, the clock and the wall fraction are copied now; the schedule is the one
@@ -1123,7 +1155,7 @@ export function makeGrove(hub){
   // Radius and layer height are live look uniforms, but wood stores them in CPU geometry too.
   // Refresh those numbers from the grown skeleton; leaves and GPU allocations stay in place.
   function refreshWood(){
-    if(!(params.branch_tau>0)) return false;   // a leaf-only crossfade shares faith.* with its incoming grove
+    if(!(params.branch_tau>0)) return false;   // no wood is cast without branch_tau; the numbers are refreshed the first time it rises (they still differ then)
     const g = hub.grove, w = g?.wood;
     if(!w || (w.radius===params.trunk_radius_m && w.base===params.canopy_base_height_m && w.thickness===params.canopy_thickness_m)) return false;
     w.radius=params.trunk_radius_m; w.base=params.canopy_base_height_m; w.thickness=params.canopy_thickness_m;
