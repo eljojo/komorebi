@@ -276,11 +276,12 @@ export function sweepOrphans(files) {
   const swept = [];
   for (;;) {
     const bodies = [...files.values()].map(codeOnly).join('\n');
+    const counts = new Map();   // every whole identifier ([\w$]+ runs, so a name inside a longer one is not a use), counted once
+    for (const [id] of bodies.matchAll(/[\w$]+/g)) counts.set(id, (counts.get(id) || 0) + 1);
     const dead = new Set();
     for (const src of files.values()) {
       for (const m of src.matchAll(DECL)) {
-        const refs = (bodies.match(new RegExp(`(?<![\\w$])${m[1]}(?![\\w$])`, 'g')) || []).length;
-        if (refs <= 1) dead.add(m[1]);   // the one is its own declaration
+        if ((counts.get(m[1]) || 0) <= 1) dead.add(m[1]);   // the one is its own declaration
       }
     }
     if (!dead.size) return swept;
