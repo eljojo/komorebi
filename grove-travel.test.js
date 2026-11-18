@@ -85,6 +85,15 @@ test('a grove whose twig population exceeds the device texture width keeps its e
  expect(travel.begin(PRESETS['park 2'])).toBe(false);expect(scenes).toBe(0);
 });
 
+test('a grove journey whose carrier cannot be prepared releases the scenes it created and leaves the transition alone',()=>{
+ // The carrier scene here has no GPU, so preparing what it carries throws after both scenes exist.
+ const trans={...restTrans(),dur:1},hub={params:{...fall},trans,MAX_TEX:1<<20,grove:{litter:[{}]}};let created=0,disposed=0;
+ const travel=makeGroveTravel(hub,()=>{created++;return {hub:{grove:{litter:[{}]}},dispose:()=>disposed++};},()=>{});
+ expect(()=>travel.begin(PRESETS['park 2'])).toThrow();
+ expect(created).toBe(2);expect(disposed).toBe(created);expect(hub.trans).toEqual({...restTrans(),dur:1});
+ expect(travel.end()).toBeUndefined();
+});
+
 test('a carried leaf on older wood drops its twig\'s bend by its pivot weight, as the bake draws it',()=>{
  const leaves=Float32Array.from([1,0,.1,.05,0,0,1,0,1,1,1,0,0,0,0,0,2,1, 1,0,.1,.05,0,0,1,0,1,1,1,0,0,0,0,0,2,1]);
  const hub={hier:{clusterData:Float32Array.from([0,.5,0,1]),clusterGeom:new Float32Array(4)},motion:{u:0,time:0,sway:[0,0]},faith:{hMax:2},

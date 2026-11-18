@@ -205,8 +205,12 @@ export const makeGroveTravel=FEAT_LITTER?(hub,createScene,adoptScene)=>{
   const lookA=forward?from:{...to},lookB=forward?{...to}:from;
   const carrier=createScene({...lookA,leaf_drop:0,litter:0,auto_quality:false,adaptive_motion:false});
   const q=forward?0:1;
-  s={a,b,other,carrier,lookA,lookB,start:q,end:1-q,q,pending:null,
-   renderer:createGroveRenderer(carrier.hub,a,b,lookA,lookB,hub)};
+  // Both scenes exist before the renderer does: a renderer that cannot be prepared must not leak them, and the route
+  // never began, so the transition state is left as it was.
+  let renderer;
+  try{renderer=createGroveRenderer(carrier.hub,a,b,lookA,lookB,hub);}
+  catch(err){carrier.dispose();other.dispose();throw err;}
+  s={a,b,other,carrier,lookA,lookB,start:q,end:1-q,q,pending:null,renderer};
   return true;
  }
  function retargetGroveTravel(to,opts){
