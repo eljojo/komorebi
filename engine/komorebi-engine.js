@@ -591,7 +591,7 @@ function createEngine(canvas, opts, driven=false){
   function retainTravelSource(){
     // This route has no wood, fill, litter or glow. Keep its actual grove and cast; share only the stateless GL plumbing.
     const outgoing={...hub,params:{...params},perf:{...perf},trans:restTrans(),
-      motion:Object.fromEntries(Object.entries(motion).map(([k,v])=>[k,Array.isArray(v)?[...v]:k==='air'?structuredClone(v):v])),   // the air's kept past is state: the outgoing scene advances its own
+      motion:Object.fromEntries(Object.entries(motion).map(([k,v])=>[k,k==='air'||k==='trunks'?structuredClone(v):Array.isArray(v)?[...v]:v])),   // the air's kept past and the trees' trunks are state: the outgoing scene advances its own
       src:{...src},faith:{...faith},occ:{...occ},srcDbgBuf:null};
     outgoing.faithfulOn=()=>outgoing.params.faithful_canopy;
     outgoing.bakeRes=()=>outgoing.perf.bres;

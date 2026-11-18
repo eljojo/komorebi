@@ -3,6 +3,7 @@ import * as travel from '../engine/transitions/komorebi-leaf-travel.js';
 import { restTrans } from '../engine/transitions/komorebi-routes.js';
 import { smoothstep } from '../engine/komorebi-math.js';
 import { DEFAULTS, CANOPY_MORPH_MAX } from '../engine/komorebi-params.js';
+import { create } from '../komorebi.js';
 
 function grove(groups){
   const leaves=[],plan=[],twigs=[];
@@ -234,4 +235,46 @@ test('a layered leaf hung off its twig\'s height travels from its own layer, not
   const pairs=travel.pairLeaves(a,b),out=travel.moveLeaves(a,b,pairs,0,new Float32Array(pairs.length*12));
   const heights=pairs.map((p,n)=>[p[0],out[12*n+8]]).sort((p,q)=>p[0]-q[0]).map(p=>p[1]);
   expect(heights).toEqual([2,4]);   // canopy_base_height_m 2 + layer/(layer_count−1) · canopy_thickness_m 2
+});
+
+// ---- the outgoing scene's wind is its own ----
+// retainTravelSource gives the outgoing scene a motion of its own, so each scene ticks the wind it carries once a frame. A trunk
+// (every tree's but the first) or any state added to motion later that stays shared would be ticked by both: the engine's wind would
+// run ahead of an engine that never travelled. The whole engine on a stub GL, held to a control that stands still on the same clock.
+test('a leaf travel leaves the engine\'s wind where a standing engine has it: nothing in the outgoing scene\'s motion is shared',()=>{
+  const gl=new Proxy({},{get(_t,name){
+    if(typeof name!=='string')return undefined;
+    if(name==='FRAMEBUFFER_COMPLETE')return 0x8cd5;
+    if(name==='getParameter')return ()=>4096;
+    if(name==='getShaderParameter'||name==='getProgramParameter')return ()=>true;
+    if(name==='getExtension')return ()=>({loseContext(){}});
+    if(name==='checkFramebufferStatus')return ()=>0x8cd5;
+    return ()=>({});
+  }});
+  const savedWindow=globalThis.window,savedRaf=globalThis.requestAnimationFrame;
+  globalThis.window={devicePixelRatio:1};
+  try{
+    const small={faithful_canopy:true,standing_scene:false,tree_count:3,branch_levels:2,branch_children:2,limb_count:4,leaves_per_cluster:4,sample_count:4,
+      tex_resolution:64,bake_resolution:64,wind_strength:1,weather_variability:0,drift_auto:false,auto_quality:false,adaptive_motion:false};
+    const A={...DEFAULTS,...small},B={...A,faithful_canopy:false};
+    const run=travelling=>{
+      let next,now=1000;
+      globalThis.requestAnimationFrame=cb=>{next=cb;return 0;};
+      const canvas={getContext:()=>gl,addEventListener(){},removeEventListener(){},clientWidth:64,clientHeight:36,width:64,height:36};
+      const eng=create(canvas,{params:A});
+      const pump=()=>{const frame=next;now+=1000/60;frame(now);};
+      for(let f=0;f<30;f++)pump();
+      if(travelling){eng.transitionTo(B,{duration:10});expect(eng.trans.route?.name).toBe('leafTravel');}
+      const seen=[];
+      for(let f=0;f<20;f++){pump();seen.push(JSON.stringify(eng.motion));}
+      eng.dispose();
+      return seen;
+    };
+    const still=run(false),flying=run(true);
+    expect(JSON.parse(still[19]).trunks?.length,'the wind has trunks of the other trees to tick').toBe(3);
+    for(let f=0;f<flying.length;f++){
+      expect(JSON.parse(flying[f]).trunks,`frame ${f}: the engine's trunks tick once`).toEqual(JSON.parse(still[f]).trunks);
+      expect(flying[f],`frame ${f}: the engine's whole wind state ticks once`).toBe(still[f]);
+    }
+  }finally{globalThis.window=savedWindow;globalThis.requestAnimationFrame=savedRaf;}
 });
