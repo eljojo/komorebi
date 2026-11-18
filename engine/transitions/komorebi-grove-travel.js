@@ -5,7 +5,7 @@ import {flutterLevel, depthGate} from '../motion/komorebi-air.js';
 import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from '../komorebi-params.js';
 import {seasonCamera} from './komorebi-season-travel.js';
 import {litterLanding,litterAlbedo,litterAge} from '../season/komorebi-litter.js';
-import {VS_LEAF_TRAVEL,FS_LEAF_TRAVEL,VS_FAITH_SEG,FS_FAITH_SEG} from '../transport/komorebi-shaders.js';
+import {VS_LEAF_TRAVEL,FS_LEAF_TRAVEL} from '../transport/komorebi-shaders.js';
 import {leafLayerOf} from '../canopy/komorebi-grove.js';
 
 const FEAT_DROP = true;
@@ -106,9 +106,11 @@ function createGroveRenderer(h,a,b,from,to,host){
  }
  if(paths.filter(p=>p.primary).length!==B.data.length/18||new Set(paths.filter(p=>p.primary).map(p=>p.ib)).size!==B.data.length/18)throw Error('Destination leaves must each occur exactly once');
  const n=paths.length,data=new Float32Array(n*12),segments=new Float32Array(woodPairs.length*9),woodA=new Float32Array(a.hub.faith.segRest.length*9),woodB=new Float32Array(b.hub.faith.segRest.length*9);
- const leafProg=h.program(VS_LEAF_TRAVEL,FS_LEAF_TRAVEL),woodProg=h.program(VS_FAITH_SEG,FS_FAITH_SEG);
+ // The leaf travel's program and the engine's own wood program, taken through the HOST engine: a program the carrier took would die with it. Every uniform either reads is
+ // uploaded before each draw here (the wood's uClothY is read only under uCurtainBake, which this floor route sets to 0).
+ const leafProg=host.sharedProgram(VS_LEAF_TRAVEL,FS_LEAF_TRAVEL),woodProg=host.progFaithSeg,WU=host.U.faithSeg;
  const lu=Object.fromEntries(['Origin','Extent','G','Box','LeafA','LeafB','ShapeA','ShapeB','Weight','Edge','BeamK','EdgeArea'].map(k=>[k,gl.getUniformLocation(leafProg,`u${k}`)]));
- const wu=Object.fromEntries(['FaithOrigin','FaithExtent','G','CurtainBake','ClothY','SegSway','WoodTau','SegTau'].map(k=>[k,gl.getUniformLocation(woodProg,`u${k}`)]));
+ const wu={FaithOrigin:WU.origin,FaithExtent:WU.extent,G:WU.g,CurtainBake:WU.curtainBake,SegSway:WU.segSway,WoodTau:WU.woodTau,SegTau:WU.segTau};
  function buffer(array,stride,attributes){const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,array,gl.DYNAMIC_DRAW);const vao=gl.createVertexArray();gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,h.quadBuf);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ARRAY_BUFFER,buf);for(const [loc,size,off]of attributes){gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,size,gl.FLOAT,false,stride,off);gl.vertexAttribDivisor(loc,1);}gl.bindVertexArray(null);return {buf,vao};}
  const leaves=buffer(data,48,[[1,4,0],[2,4,16],[3,4,32]]),woodBuf=buffer(segments,36,[[1,4,0],[2,4,16],[3,1,32]]);
  const textures=[null,null],fbos=[gl.createFramebuffer(),gl.createFramebuffer()];let res=0;
@@ -186,7 +188,7 @@ function createGroveRenderer(h,a,b,from,to,host){
   try{h.drawFrameInto(null,h.canvas.width,h.canvas.height);}finally{h.faithTex=nativeFaithTex;}
  }
  return {step,draw,dispose(){
-  h.trans.castHeld=false;gl.deleteProgram(leafProg);gl.deleteProgram(woodProg);for(const q of[leaves,woodBuf]){gl.deleteBuffer(q.buf);gl.deleteVertexArray(q.vao);}for(const t of textures)if(t)gl.deleteTexture(t);for(const f of fbos)gl.deleteFramebuffer(f);
+  h.trans.castHeld=false;for(const q of[leaves,woodBuf]){gl.deleteBuffer(q.buf);gl.deleteVertexArray(q.vao);}for(const t of textures)if(t)gl.deleteTexture(t);for(const f of fbos)gl.deleteFramebuffer(f);
  }};
 }
 

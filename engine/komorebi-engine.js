@@ -176,9 +176,9 @@ function createEngine(canvas, opts, driven=false){
     if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail(`Link: ${gl.getProgramInfoLog(p)}`);
     return p;
   }
-  // The engine's own programs come from the context's table (above), and so do the programs of the routes that run on every
-  // switch (the dissolve's mix, the season travel's cast), which a route used to link at its start and delete at its end. The
-  // other routes' programs stay hub.program's and are deleted by the route. `held` maps each entry this engine took to its key,
+  // The engine's own programs come from the context's table (above), and so do every route's (the dissolve's mix, the season travel's
+  // cast, the leaf, grove and litter travels'), which a route used to link at its start and delete at its end: a route takes them through
+  // the HOST engine, since a borrowed scene's hold dies with the scene, and deletes none. `held` maps each entry this engine took to its key,
   // one hold per program however often it is asked for, for releasePrograms to give back.
   const held = new Map();
   function shared(vs,fs){
@@ -338,7 +338,7 @@ function createEngine(canvas, opts, driven=false){
     // stable plumbing (never reassigned)
     gl, canvas, fail, MAX_TEX, params, perf, motion, trans, src, occ, faith, sky, fill, litter, U,
     // (the GL handles — programs, buffers, FBOs, occTex, extTimer — and the subsystems over them are set by initGPU())
-    effCloud, bakeBaseline, bakeRes, faithfulSamples, faithfulOn, transportFor, transportCamera, fillFor, bounceFor, litterFor, warnCut, program, sharedProgram: shared, faithLocs,
+    effCloud, bakeBaseline, bakeRes, faithfulSamples, faithfulOn, transportFor, transportCamera, fillFor, bounceFor, litterFor, warnCut, sharedProgram: shared, faithLocs,
     // shared mutable state (was create()-closure lets)
     layerTex: [],           // MAX_LAYERS textures (active sized, inactive 1x1)
     woodTex: [],            // SKY VIEW (spec/model/sky-view.md): the layer-stamped fine wood, an R16F per layer beside layerTex — layer size when sky_view is on, 1×1 otherwise (the faithTex idiom)

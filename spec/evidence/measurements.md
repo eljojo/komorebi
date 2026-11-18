@@ -888,6 +888,24 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **What it established:** a morph frame no longer allocates. Its wall time is **unmeasured**: the machine was not quiet.
 - **Date:** 2026-11-18.
 
+### A route's programs, the second time
+
+- **What was measured:** the route programs linked when a route that has already run there and back runs again, before and after every route took its programs from the context's table through the host engine; every frame of the routes compared byte for byte.
+- **On:** `gl-ledger.test.js`'s ledger GL; the frames on an M4 (Chromium on Metal), 480×270, a pumped clock at 60 fps, `auto_quality` and `adaptive_motion` off, wind off and on.
+- **Result:**
+
+  | route, run a second time | programs linked, before | after |
+  |---|---|---|
+  | leaf travel | 1 | 0 |
+  | leaf travel, patch by patch | 4 | 0 |
+  | grove travel | 2 | 0 |
+  | the litter rise | 2 | 0 |
+  | the scene dissolve, season travel | 0 | 0 |
+
+  Every frame of 40 travel pairs (grove travel and the litter flights both ways, leaf travel and its fallbacks; 4920 frames, wind off and on) is byte-identical between the two.
+- **What it established:** no route links a program after its first run; grove travel's wood pass needs no program of its own.
+- **Date:** 2026-11-18.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).

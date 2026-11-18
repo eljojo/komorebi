@@ -99,7 +99,7 @@ test('travel checks the actual patch correspondence before allocating moving-cas
     }});
     const source={params:{...params},faith:{count:n,buf:a.leaves,hMax:2},hier:a.hier,motion:a.motion,grove:{shape:null},motionActive:()=>false};
     const hub={gl,params,trans:restTrans(),regenSource(){},faith:{count:n,buf:b.leaves,hMax:2},hier:b.hier,motion:b.motion,grove:{shape:null},
-      src:{count:1,flat:[0,0,1]},projMatrix:()=>[1,0,0,1],program:()=>{programs++;return {};}};
+      src:{count:1,flat:[0,0,1]},projMatrix:()=>[1,0,0,1],sharedProgram:()=>{programs++;return {};}};
     const route=travel.makeLeafTravel(hub,()=>({hub:source,restore:()=>{restored++;},dispose:()=>{disposed++;}}));
     route.begin(to);Object.assign(params,to);
     const result=route.step(0,0,0);

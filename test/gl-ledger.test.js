@@ -12,12 +12,13 @@ import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { create, DEFAULTS } from "../komorebi.js";
 import { PRESETS } from "../presets.js";
+import * as SH from "../engine/transport/komorebi-shaders.js";
 
 const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture", Framebuffer: "framebuffer", Renderbuffer: "renderbuffer", Program: "program", Shader: "shader", Query: "query" };
 
 function makeLedger() {
   let seq = 0, lost = false;
-  const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {};
+  const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {}, linked = [];
   const at = { array: null, vao: null, fb: null, prog: null, rb: null, unit: "TEXTURE0", units: {} };
   const label = (o) => `${o.kind} #${o.id}`;
   const fault = (m) => { if (!faults.includes(m)) faults.push(m); };   // each fault once, however many frames repeat it
@@ -62,8 +63,9 @@ function makeLedger() {
     renderbufferStorageMultisample: () => use(at.rb, "written"),
     framebufferRenderbuffer: (_t, _a, _rt, r) => { use(at.fb, "written"); use(r, "attached"); },
     useProgram: (p) => { use(p, "used"); at.prog = p; },
-    attachShader: (p, s) => { use(p, "linked"); use(s, "attached"); }, linkProgram: (p) => use(p, "linked"),
-    shaderSource: (s) => use(s, "compiled"), compileShader: (s) => use(s, "compiled"),
+    attachShader: (p, s) => { use(p, "linked"); use(s, "attached"); if (p) p.shaders = [...(p.shaders ?? []), s]; },
+    linkProgram: (p) => { use(p, "linked"); linked.push(p.shaders?.map((s) => s.src) ?? []); },
+    shaderSource: (s, src) => { use(s, "compiled"); if (s) s.src = src; }, compileShader: (s) => use(s, "compiled"),
     getUniformLocation: (p) => { use(p, "asked"); return {}; },
     drawArrays: draw, drawArraysInstanced: draw,
     clear: () => use(at.fb, "cleared"), blitFramebuffer: () => use(at.fb, "blitted"), readPixels: () => use(at.fb, "read back"),
@@ -86,6 +88,7 @@ function makeLedger() {
     restore() { lost = false; },
     alive: () => [...live],
     made: () => ({ ...made }),   // every object created so far, by kind
+    linked: () => [...linked],   // every program linked so far, as its [vertex, fragment] sources
     // what is left alive, by kind; shaders aside: the engine links each into its program and lets the program hold it
     leaks: () => { const n = {}; for (const o of live) if (o.kind !== "shader") n[o.kind] = (n[o.kind] ?? 0) + 1; return n; },
   };
@@ -212,5 +215,20 @@ for (const [name, look] of [["faithful, with wood", { ...FAITHFUL, branch_tau: 2
     expect(R.eng.grove(), "the grove regrew").not.toBe(g);
     expect(made(R), "buffers, vertex arrays and textures made over five morph frames").toEqual(before);
     R.land();
+  });
+}
+
+// A route's programs are the context's, taken through the host engine (komorebi-engine.js, THE CONTEXT'S PROGRAMS): once a route has run there and back, running it
+// again links none of them. (A borrowed scene's own transport program can still be linked again: the scene was the last to hold it.)
+const ROUTE_PROGRAMS = [[SH.VS_FULL, SH.FS_SCENE_MIX], [SH.VS_SEASON_TRAVEL, SH.FS_FAITH], [SH.VS_LEAF_TRAVEL, SH.FS_LEAF_TRAVEL], [SH.VS_LEAF_TRAVEL_PATCH, SH.FS_LEAF_TRAVEL_PATCH],
+  [SH.VS_LEAF_TRAVEL_PATCH, SH.FS_LEAF_PROGRESS], [SH.VS_FULL, SH.FS_PROGRESS_BLUR], [SH.VS_FULL, SH.FS_PATCH_MIX], [SH.VS_FAITH_SEG, SH.FS_FAITH_SEG], [SH.VS_RISE_SKY, SH.FS_RISE_SKY], [SH.VS_RISE, SH.FS_RISE]];
+const routeLinks = (list) => list.filter(([vs, fs]) => ROUTE_PROGRAMS.some(([v, f]) => v === vs && f === fs)).length;
+for (const [name, from, to, opts, label = name] of [...ROUTES.filter(([name]) => name !== "crossfade"), ["leafTravel", FAITHFUL, FADE, {}, "leafTravel, patch by patch"]]) {
+  scenario(`the ${label} run a second time links none of its programs`, from, (R) => {
+    start(R, to, name, opts); R.land();
+    R.eng.transitionTo(from, { duration: 1, ...opts }); R.land();
+    const before = R.L.linked().length;
+    start(R, to, name, opts); R.land();
+    expect(routeLinks(R.L.linked().slice(before)), "route programs linked by the second run").toBe(0);
   });
 }

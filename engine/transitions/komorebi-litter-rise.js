@@ -151,7 +151,7 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  moveLeaves(A,B,pairs,0,starts);
  const ba=A.shape?.box??[0,0,1,1],bb=B.shape?.box??[0,0,1,1],lo=[0,1].map(i=>Math.min(ba[i]-ba[i+2],bb[i]-bb[i+2])),hi=[0,1].map(i=>Math.max(ba[i]+ba[i+2],bb[i]+bb[i+2]));
  const box=[(lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(hi[0]-lo[0])/2,(hi[1]-lo[1])/2];
- const skyProgram=h.program(VS_RISE_SKY,FS_RISE_SKY),leafProgram=h.program(VS_RISE,FS_RISE);
+ const skyProgram=hub.sharedProgram(VS_RISE_SKY,FS_RISE_SKY),leafProgram=hub.sharedProgram(VS_RISE,FS_RISE);   // the host's, for the context's life: a program the source scene took would die with it
  const locs=(p,names)=>Object.fromEntries(names.map(k=>[k,g.getUniformLocation(p,`u${k}`)]));
  const su=locs(skyProgram,['Origin','Extent','Box','LeafA','LeafB','ShapeA','ShapeB','Edge','Band','Heights','Eye']);
  const lu=locs(leafProgram,['Eye','Basis','Fov','Aspect','Box','LeafA','LeafB','ShapeA','ShapeB','Faith','FillT','FillS','FaithOrigin','FaithExtent','FillOrigin','FillExtent','FillShare','Sun','Ambient','Edge']);
@@ -251,7 +251,7 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  function draw(){a.draw(null,canvas.width,canvas.height);}
  return {step,draw,dispose(){
   h.trans.riseField=null;a.dispose();
-  [skyProgram,leafProgram].forEach(p=>{g.deleteProgram(p);});[buf,matBuf,flightBuf].forEach(b=>{g.deleteBuffer(b);});g.deleteVertexArray(vao);
+  [buf,matBuf,flightBuf].forEach(b=>{g.deleteBuffer(b);});g.deleteVertexArray(vao);
   [...layers,...eyeTex].forEach(t=>{g.deleteTexture(t);});g.deleteFramebuffer(layerFbo);g.deleteFramebuffer(eyeFbo);
  }};
 }

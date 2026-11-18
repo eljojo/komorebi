@@ -212,7 +212,7 @@ export function makeLeafTravel(hub,createScene){
     // Local surpluses can require more carriers than either endpoint. Check the actual correspondence before allocating its cast.
     if(s.pairs.length>CANOPY_MORPH_MAX)return false;
     s.data=new Float32Array(s.pairs.length*s.stride);
-    s.prog=s.patch?hub.program(VS_LEAF_TRAVEL_PATCH,FS_LEAF_TRAVEL_PATCH):hub.program(VS_LEAF_TRAVEL,FS_LEAF_TRAVEL);
+    s.prog=s.patch?hub.sharedProgram(VS_LEAF_TRAVEL_PATCH,FS_LEAF_TRAVEL_PATCH):hub.sharedProgram(VS_LEAF_TRAVEL,FS_LEAF_TRAVEL);   // the engine's for the context's life, as the dissolve's mix is
     s.u=Object.fromEntries(['Origin','Extent','G','Box','LeafA','LeafB','ShapeA','ShapeB','Weight','Edge','BeamK','EdgeArea'].map(k=>[k,gl.getUniformLocation(s.prog,`u${k}`)]));
     s.buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,s.buf);gl.bufferData(gl.ARRAY_BUFFER,s.data,gl.DYNAMIC_DRAW);
     s.vao=gl.createVertexArray();gl.bindVertexArray(s.vao);
@@ -232,9 +232,9 @@ export function makeLeafTravel(hub,createScene){
     for(let i=0;i<n;i++)for(let c=0;c<2;c++)xy[2*i+c]=lerp(p0[12*i+c]-s.g[c]*p0[12*i+8],p1[12*i+c]-s.g[c]*p1[12*i+8],.5);
     s.trip=patchField(xy,PATCH_M);s.wi=new Float32Array(n);s.edge=[s.lookA.edge_softness,s.lookB.edge_softness];
     const locs=(prog,names)=>Object.fromEntries(names.map(k=>[k,gl.getUniformLocation(prog,`u${k}`)]));
-    s.progressProg=hub.program(VS_LEAF_TRAVEL_PATCH,FS_LEAF_PROGRESS);s.progressU=locs(s.progressProg,['Origin','Extent','G','Box']);
-    s.blurProg=hub.program(VS_FULL,FS_PROGRESS_BLUR);s.blurU=locs(s.blurProg,['Tex','Dir','Sigma']);
-    s.mixProg=hub.program(VS_FULL,FS_PATCH_MIX);s.mixU=locs(s.mixProg,['A','B','P']);
+    s.progressProg=hub.sharedProgram(VS_LEAF_TRAVEL_PATCH,FS_LEAF_PROGRESS);s.progressU=locs(s.progressProg,['Origin','Extent','G','Box']);
+    s.blurProg=hub.sharedProgram(VS_FULL,FS_PROGRESS_BLUR);s.blurU=locs(s.blurProg,['Tex','Dir','Sigma']);
+    s.mixProg=hub.sharedProgram(VS_FULL,FS_PATCH_MIX);s.mixU=locs(s.mixProg,['A','B','P']);
     s.ptex=[];s.pfbo=[];s.pics=[null,null,null];
     for(let i=0;i<2;i++){
       const t=gl.createTexture(),fb=gl.createFramebuffer();
@@ -383,12 +383,10 @@ export function makeLeafTravel(hub,createScene){
     if(!s)return;
     const pending=s.pending;
     s.from.dispose();
-    if(s.prog)gl.deleteProgram(s.prog);
     if(s.vao)gl.deleteVertexArray(s.vao);if(s.buf)gl.deleteBuffer(s.buf);
     s.textures?.forEach(t=>{gl.deleteTexture(t);});s.fbos?.forEach(f=>{gl.deleteFramebuffer(f);});
     s.ptex?.forEach(t=>{gl.deleteTexture(t);});s.pfbo?.forEach(f=>{gl.deleteFramebuffer(f);});
     s.pics?.forEach(p=>{if(p){gl.deleteTexture(p.tex);gl.deleteFramebuffer(p.fbo);}});
-    for(const p of [s.progressProg,s.blurProg,s.mixProg])if(p)gl.deleteProgram(p);
     s=null;trans.travelField=null;trans.travelTone=null;
     return pending;
   }
