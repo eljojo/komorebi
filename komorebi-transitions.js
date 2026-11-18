@@ -116,9 +116,9 @@ export function makeTransitions(hub){
       trans.viewEye=[...viewFrom.eye]; trans.viewElevation=viewFrom.elevation; trans.viewSkyWeight=viewFrom.skyWeight;
     }
     hub.warnCut(to);   // a tier this build cut that the target opens stays off, and is said so (once per engine)
-    const from = {};
-    for(const k of MORPH_KEYS)  from[k] = params[k];       // continuous look — always morphs live
-    for(const k of CANOPY_KEYS) from[k] = params[k];       // continuous canopy — morphs live IF the topology matches
+    // The look on screen as the route starts, whole (as the carried routes keep it): the morph reads its continuous and canopy keys, and the
+    // exposure blend the receiver its camera is chosen by (cameraFor reads sky_view and receiver, which are mode keys).
+    const from = {...params};
     const windowOn=params.window_w_m>0 && params.window_h_m>0, windowTo=to.window_w_m>0 && to.window_h_m>0;
     const windowFrom=trans.active && trans.windowFade ? trans.windowOpacity : Number(windowOn);
     trans.windowFade=windowFrom!==Number(windowTo);

@@ -12,7 +12,9 @@ import { PRESETS as AUTHORED_PRESETS } from "./presets.js";
 const PRESETS=Object.fromEntries(Object.entries(AUTHORED_PRESETS).map(([name,look])=>[name,{...DEFAULTS,...look}]));
 import { makeSource } from "./komorebi-source.js";
 import { makeCast } from "./komorebi-cast.js";
-import { DEG, clamp, lerp } from "./komorebi-math.js";
+import { DEG, clamp, lerp, smoothstep } from "./komorebi-math.js";
+import { beamExposure } from "./komorebi-light.js";
+import { cameraFor } from "./komorebi.js";
 import { restTrans, turnBack } from "./komorebi-routes.js";
 import { makeSceneFade } from "./komorebi-scene-fade.js";
 import { makeLeafTravel } from "./komorebi-leaf-travel.js";
@@ -1421,3 +1423,42 @@ test("a route whose step gives up lands as a scene fade to the same target, keep
   expect(arrived).toBe(1);
   expect(r.params.seed).toBe(to.seed);
 });
+
+// The live morph's exposure follows the receivers the two looks stand on: between two looks of one camera the dapples travel straight from one
+// end's level to the other's (beamExposure, with that camera's incidence), between two cameras it is the plain lerp. The camera is read off the look
+// on screen when the route starts, whatever the route holds back.
+const midRoute = (from, to) => {
+  const r = transitionRig(from);
+  r.transitionTo(to, { duration: 4 / 15 });
+  expect(r.hub.trans.route, JSON.stringify([cameraFor(from), cameraFor(to)])).toBeNull();   // the live morph, not a long route
+  while (r.hub.trans.t < 0.5) r.tickTransition(1 / 60);   // a camera change runs a longer clock; the midpoint is on t
+  const e = smoothstep(0, 1, r.hub.trans.t);
+  expect(e).toBeGreaterThanOrEqual(0.5);
+  return { r, a: { ...DEFAULTS, ...from }, b: { ...DEFAULTS, ...to }, e };
+};
+const LAW = { sun_cosine: 1, sun_extinction: 1 };
+const CAMERA_LOOKS = {
+  cloth: { receiver: 1 }, enclosure: { receiver: 2 }, sky: { sky_view: true, view_pitch_deg: 80 }, floor: {},
+};
+for (const cam of ["cloth", "enclosure", "floor"]) {
+  test(`${cam} to ${cam}: the exposure at the route's midpoint is beamExposure's, not the plain lerp of the morph`, () => {
+    const from = { ...CAMERA_LOOKS[cam], ...LAW, faithful_canopy: false, standing_scene: false, sun_elevation_deg: 13, sun_azimuth_deg: 62, exposure: 1.27 };
+    const to = { ...from, sun_elevation_deg: 40, sun_azimuth_deg: 130, exposure: 3.5 };
+    const { r, a, b, e } = midRoute(from, to);
+    const law = beamExposure(cam, a, b, e, r.params), plain = lerp(a.exposure, b.exposure, e);
+    expect(cameraFor(r.params)).toBe(cam);
+    expect(Math.abs(law - plain), "the two differ here, so the test can tell them apart").toBeGreaterThan(0.01);
+    expect(r.params.exposure).toBe(law);
+  });
+}
+
+for (const [cam, other] of [["cloth", "floor"], ["enclosure", "floor"], ["sky", "floor"], ["floor", "cloth"], ["cloth", "enclosure"]]) {
+  test(`${cam} to ${other}: the cameras differ, so the exposure is the plain lerp and the beam blend is not applied`, () => {
+    const from = { ...CAMERA_LOOKS[cam], ...LAW, faithful_canopy: false, standing_scene: false, sun_elevation_deg: 13, sun_azimuth_deg: 62, exposure: 1.27 };
+    const to = { ...CAMERA_LOOKS[other], ...LAW, faithful_canopy: false, standing_scene: false, sun_elevation_deg: 40, sun_azimuth_deg: 130, exposure: 3.5 };
+    const { r, a, b, e } = midRoute(from, to);
+    const plain = lerp(a.exposure, b.exposure, e);
+    expect(Math.abs(beamExposure("floor", a, b, e, r.params) - plain), "a floor blend would differ here").toBeGreaterThan(0.01);
+    expect(r.params.exposure).toBe(plain);
+  });
+}
