@@ -53,8 +53,10 @@ try {
     const results={};
 
     // ---- the settled eclipse, as authored, against the engine before this change ----
+    // That engine hangs leaves only by the old placement: eclipse is held to it with leaves off their shoots and untilted by their light
+    // (shoot_leaves and tilt_light 0, the old placement to the bit), which the look took on later and the moon does not touch.
     {
-      const p={...PRESETS.eclipse,...still};
+      const p={...PRESETS.eclipse,...still,shoot_leaves:0,tilt_light:0};
       const now=fresh(p);
       make=(await import('/base/komorebi.js')).create;const before=fresh(p);make=create;
       results.settledEclipse={max:max(now,before),mean:+mean(now,before).toFixed(4)};
