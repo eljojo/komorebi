@@ -3,7 +3,7 @@
 // tests hold the shader and the registry to the same sentence. Run: `bun test vignette.test.js`.
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, TRANSPORT_GROUPS, buildTransport } from "./komorebi.js";
-import { irisRoute, irisStep } from "./komorebi-math.js";
+import { irisRoute, irisStep } from "./komorebi-routes.js";
 import { vignetteMask } from "./komorebi-camera.js";
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };

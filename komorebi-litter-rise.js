@@ -1,6 +1,7 @@
 // Litter or shadow footprints become the overhead grove through one leaf field.
 // Flight is an authored transition path, with live destination wind and a deterministic detour around the eye.
-import { lerp, lerpAngle, smoothstep, DEG, TAU, irisRoute, irisStep } from './komorebi-math.js';
+import { lerp, lerpAngle, smoothstep, DEG, TAU } from './komorebi-math.js';
+import { cutRoute, irisRoute, irisStep } from './komorebi-routes.js';
 import { cameraPose } from './komorebi-camera.js';
 import { leafClock } from './komorebi-season.js';
 import { atmosphere } from './komorebi-light.js';
@@ -255,7 +256,7 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  }};
 }
 
-const NO_LITTER_RISE={endLitterRise(){}};
+const NO_LITTER_RISE=cutRoute('litterRise');
 export const makeLitterRise=FEAT_SKY_FLIGHT ? (hub,createSource)=>{
  let s=null;
  function beginLitterRise(to,footprints=false,reverse=false){
@@ -282,5 +283,8 @@ export const makeLitterRise=FEAT_SKY_FLIGHT ? (hub,createSource)=>{
   if(s.renderer)s.renderer.dispose();else s.source.dispose();
   s=null;hub.trans.shadowRise=false;hub.trans.litterFall=false;hub.trans.shadowFall=false;return pending;
  }
- return {beginLitterRise,stepLitterRise,drawLitterRise,retargetLitterRise,finishLitterRise,endLitterRise};
+ // The route's entry (komorebi-routes.js): the landed look's source and cast are made again, and the frame's adaptive clock
+ // resumes from the landing.
+ return {name:'litterRise',begin:beginLitterRise,retarget:retargetLitterRise,step:stepLitterRise,draw:drawLitterRise,finish:finishLitterRise,end:endLitterRise,
+  swaps:true,landing:['regenSource','bake','resumeAdaptive']};
 }:()=>NO_LITTER_RISE;

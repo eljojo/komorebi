@@ -6,6 +6,7 @@ import { makeSource } from './komorebi-source.js';
 import { makeCast } from './komorebi-cast.js';
 import { makeMotion } from './komorebi-motion.js';
 import { makeTransitions } from './komorebi-transitions.js';
+import { restTrans } from './komorebi-routes.js';
 import { makeGrove, seasonKey, densityEligible, densityCount, growAs } from './komorebi-grove.js';
 import { makeBake, makeFill, NO_FILL, FILL_SIG_LEN } from './komorebi-bake.js';
 import { makeTreeView, NO_TREE_VIEW } from './komorebi-tree-view.js';
@@ -135,7 +136,7 @@ function createEngine(canvas, opts, driven=false){
   const motion = { time:0, u:0, v:0, uLat:0, vLat:0, env:0, driveEnv:0, sway:[0,0], windX:1, windY:0, weatherS:1 };
   // Transition — cloud-bloom crossfade between looks (spec/model/transitions.md). t walks 0->1 over dur: the continuous
   // params morph, the grove swaps once at the bloom peak, and `bloom` is a transient overcast that hides it.
-  const trans = { active:false, t:0, dur:1.5, durScale:1, bloomMax:1, crossfade:false, from:null, to:null, swapped:false, structDiff:false, canopyMorph:false, bloom:0, onEnd:null };
+  const trans = restTrans();   // every field at rest (komorebi-routes.js)
   const effCloud = () => clamp(lerp(params.cloud_thickness, 1, trans.bloom), 0, 1);  // cloud, swollen toward overcast mid-transition
   const bakeBaseline = () => (params.bake_resolution > 0 ? params.bake_resolution|0 : params.tex_resolution|0);  // TUNE spec/implementation.md: decoupled bake size; 0 follows tex_resolution.
   // Live bake / layer-texture size. Pure function of quality + params: when auto_quality is engaged it trims the
@@ -568,7 +569,7 @@ function createEngine(canvas, opts, driven=false){
 
   // the engine-resident coordinators the transition route drives (hoisted function declarations)
   Object.assign(hub, { freeGrove, installGrove, regenCanopy, reseason, reweight, buildTargetGrove, rebuildAll, sizeLayers, resetPerf, applyQuality, allocLayers, makeLayerTexture });
-  const { transitionTo, tickTransition } = makeTransitions(hub);
+  const { transitionTo, tickTransition, abortTransition, loseContext, restoreContext, endRoutes } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
   function copyMotion(from,to){
     for(const k in from.motion)to.motion[k]=k==='air'||k==='trunks'?structuredClone(from.motion[k]):Array.isArray(from.motion[k])?[...from.motion[k]]:from.motion[k];   // the air's kept past and the trees' trunks are state: each scene advances its own
@@ -587,11 +588,9 @@ function createEngine(canvas, opts, driven=false){
     scene.hub.bake();
     return scene;
   };
-  const sceneFade = makeSceneFade(hub, createScene);
-  Object.assign(hub, sceneFade);
   function retainTravelSource(){
     // This route has no wood, fill, litter or glow. Keep its actual grove and cast; share only the stateless GL plumbing.
-    const outgoing={...hub,params:{...params},perf:{...perf},trans:{active:false,bloom:0},
+    const outgoing={...hub,params:{...params},perf:{...perf},trans:restTrans(),
       motion:Object.fromEntries(Object.entries(motion).map(([k,v])=>[k,Array.isArray(v)?[...v]:k==='air'?structuredClone(v):v])),   // the air's kept past is state: the outgoing scene advances its own
       src:{...src},faith:{...faith},occ:{...occ},srcDbgBuf:null};
     outgoing.faithfulOn=()=>outgoing.params.faithful_canopy;
@@ -623,25 +622,29 @@ function createEngine(canvas, opts, driven=false){
       dispose(){if(owned){release(outgoing);owned=false;}}
     };
   }
-  Object.assign(hub,makeLeafTravel(hub,retainTravelSource));
-  Object.assign(hub,makeSeasonTravel(hub));
-  Object.assign(hub,makeGroveTravel(hub,createScene,(scene,look)=>{
-    const phase=params.drift_phase;
-    for(const k in DEFAULTS)params[k]=look[k];
-    if(scene.hub===hub){if(params.drift_auto)params.drift_phase=phase;}
-    else{rebuildAll();copyMotion(scene.hub,hub);}
-    resetPerf();bake();
-  }));
-  Object.assign(hub,makeLitterRise(hub,(look)=>{
-    const source=createScene(look);
-    source.hub.perf.auto=perf.auto;source.hub.perf.quality=perf.quality;
-    source.hub.applyQuality();source.hub.regenSource();source.hub.bake();
-    if(look)source.restore=()=>{
+  // The long routes between looks (komorebi-routes.js), each given the scenes it borrows; in the order a lost context or a disposal ends them.
+  hub.routes={
+    sceneFade:makeSceneFade(hub,createScene),
+    leafTravel:makeLeafTravel(hub,retainTravelSource),
+    seasonTravel:makeSeasonTravel(hub),
+    litterRise:makeLitterRise(hub,(look)=>{
+      const source=createScene(look);
+      source.hub.perf.auto=perf.auto;source.hub.perf.quality=perf.quality;
+      source.hub.applyQuality();source.hub.regenSource();source.hub.bake();
+      if(look)source.restore=()=>{
+        for(const k in DEFAULTS)params[k]=look[k];
+        rebuildAll();copyMotion(source.hub,hub);resetPerf();
+      };
+      return source;
+    }),
+    groveTravel:makeGroveTravel(hub,createScene,(scene,look)=>{
+      const phase=params.drift_phase;
       for(const k in DEFAULTS)params[k]=look[k];
-      rebuildAll();copyMotion(source.hub,hub);resetPerf();
-    };
-    return source;
-  }));
+      if(scene.hub===hub){if(params.drift_auto)params.drift_phase=phase;}
+      else{rebuildAll();copyMotion(scene.hub,hub);}
+      resetPerf();bake();
+    }),
+  };
 
   // ---- auto-quality: hold ~60 fps by ratcheting render resolution then samples down; grudging to
   // climb back (each forced drop doubles the wait). Drives perf.*, never the user's art. ----
@@ -777,20 +780,10 @@ function createEngine(canvas, opts, driven=false){
     // look, and mid-CROSSFADE the incoming grove would keep baking against layer state rebuildAll is about
     // to replace (the observed crash: bake reading a dangling grove's VAOs). Abort it cleanly first —
     // transitionTo already does this for its own interruptions; a hard param swap deserves the same.
-    // The bloom goes too: effCloud and regenSource read it whether or not a transition runs, so a mid-route value would
-    // swell the new look's cloud and halo (softer dapples, a wrong source) until the next transitionTo reset it. It is the
-    // only trans field read while inactive; the rest are rewritten by transitionTo before anything reads them. Zeroed here,
-    // ahead of the `lost` return, because onContextRestored zeroes it only for a transition still active.
-    if(trans.active){
-      if(trans.sceneFade){ hub.endSceneFade(); trans.sceneFade=false; }
-      if(trans.leafTravel){hub.endLeafTravel();trans.leafTravel=false;}
-      if(trans.seasonTravel){hub.endSeasonTravel();trans.seasonTravel=false;}
-      if(trans.litterRise){hub.endLitterRise();trans.litterRise=false;}
-      if(trans.groveTravel){hub.endGroveTravel();trans.groveTravel=false;}
-      trans.active=false; trans.onEnd=null; trans.swapped=false; trans.bloom=0; trans.shadowOpacity=1; trans.waiting=null; trans.moon=null; trans.layerRoute=null;
-      if(hub.groveIn){ freeGrove(hub.groveIn); hub.groveIn=null; }
-      hub.crossW=0;
-    }
+    // The whole transition state returns to rest with it (abortTransition), the bloom included: effCloud and regenSource read
+    // it whether or not a transition runs, so a mid-route value would swell the new look's cloud and halo (softer dapples, a
+    // wrong source). Done here, ahead of the `lost` return, because onContextRestored lands only a transition still active.
+    abortTransition();
     if(lost){ const m = Object.assign(params, DEFAULTS, migrateLegacy(obj)); warnCut(m); return; }   // no GPU to rebuild on: the live params are what onContextRestored() rebuilds from
     const merged = Object.assign({}, DEFAULTS, migrateLegacy(obj));   // legacy names -> current; missing keys -> defaults (forward-compat)
     warnCut(merged);
@@ -851,11 +844,7 @@ function createEngine(canvas, opts, driven=false){
     // picker, created per-comparison) leaves zero GPU residue when closed. A disposed engine must not be reused.
     dispose(){
       alive = false; loop++;
-      hub.endSceneFade();
-      hub.endLeafTravel();
-      hub.endSeasonTravel();
-      hub.endLitterRise();
-      hub.endGroveTravel();
+      endRoutes();
       canvas.removeEventListener('webglcontextlost', onContextLost);
       canvas.removeEventListener('webglcontextrestored', onContextRestored);
       ownerDocument?.removeEventListener('visibilitychange',onVisibilityChange);
@@ -960,15 +949,11 @@ function createEngine(canvas, opts, driven=false){
     const dt = dtms/1000;
     let landed = null;                               // the route's onEnd, when it lands this frame
     if(trans.active){                                // a running transition owns the re-source/re-bake each frame
-      if(!trans.groveTravel&&motionActive()) tick(dt); // a grove journey advances both native wind states itself
-      if(trans.sceneFade && motionActive()) bake();
+      if(!trans.route?.ownsWind&&motionActive()) tick(dt); // a route that owns the wind (the grove journey's two native states) advances it itself
+      if(trans.route?.hostBakes && motionActive()) bake();
       landed = tickTransition(dt);
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
-    if(trans.groveTravel)hub.timed('transport',hub.drawGroveTravel);
-    else if(trans.litterRise)hub.timed('transport',hub.drawLitterRise);
-    else if(trans.seasonTravel)hub.timed('transport',hub.drawSeasonTravel);
-    else if(trans.leafTravel)hub.timed('transport',hub.drawLeafTravel);
-    else if(trans.sceneFade) hub.timed('transport',hub.drawSceneFade);
+    if(trans.route) hub.timed('transport',trans.route.draw);
     else if(params.show_layer && !faithfulOn()) drawLayerBlit(); else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
     schedule();
     if(landed) landed();                             // after schedule(), like onFrame: a throwing host callback must not end the animation
@@ -983,16 +968,7 @@ function createEngine(canvas, opts, driven=false){
     if(!alive) return;
     e.preventDefault();
     lost = true; loop++;                               // stop the loop; setParams/apply only touch params until the restore
-    hub.endSceneFade();
-    const pending=hub.endLeafTravel();
-    if(pending){trans.to=pending.to;trans.onEnd=pending.opts?.onEnd??null;}
-    const seasonPending=hub.endSeasonTravel();
-    if(seasonPending){trans.to=seasonPending.to;trans.onEnd=seasonPending.opts?.onEnd??null;}
-    const risePending=hub.endLitterRise();
-    if(risePending){trans.to=risePending.to;trans.onEnd=risePending.opts?.onEnd??null;}
-    const grovePending=hub.endGroveTravel();
-    if(grovePending){trans.to=grovePending.to;trans.onEnd=grovePending.opts?.onEnd??null;}
-    if(trans.waiting){trans.to=trans.waiting.to;trans.onEnd=trans.waiting.opts?.onEnd??null;trans.waiting=null;}
+    loseContext();
   }
   function onContextRestored(){
     if(!alive) return;
@@ -1007,8 +983,7 @@ function createEngine(canvas, opts, driven=false){
     sky.segVAO = sky.segBuf = null;
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
-    const cb = trans.active ? trans.onEnd : null;
-    if(trans.active){ trans.active=false; trans.sceneFade=false; trans.leafTravel=false; trans.seasonTravel=false; trans.litterRise=false; trans.groveTravel=false; trans.bloom=0; trans.shadowOpacity=1; trans.swapped=false; trans.onEnd=null; trans.moon=null; trans.layerRoute=null; for(const k in DEFAULTS) params[k] = trans.to[k]; hub.arrived(trans.to); }
+    const cb = restoreContext();
     playbackNow();settleSession();rebuildAll(); resetPerf();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)

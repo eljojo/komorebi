@@ -1,5 +1,7 @@
 import {test,expect} from 'bun:test';
 import {makeTransitions} from './komorebi-transitions.js';
+import {restTrans} from './komorebi-routes.js';
+import {makeSceneFade} from './komorebi-scene-fade.js';
 import {PRESETS} from './presets.js';
 import {DEFAULTS} from './komorebi-params.js';
 import fixture from './test-gl/fixtures/fall-look-up.json';
@@ -10,19 +12,19 @@ const fall={...fixture.from,edge_area:PRESETS['park 2'].edge_area??false,inner_l
 
 function rig(from){
  const noop=()=>{},events=[];
- const hub={params:{...from},trans:{dur:1},layerVAO:[{count:1000}],grove:{litter:[{}]},
+ const hub={params:{...from},trans:{...restTrans(),dur:1},layerVAO:[{count:1000}],grove:{litter:[{}]},
   faithfulOn:()=>true,warnCut:noop,regenSource:noop,resetPerf:noop,bake:noop,motionActive:()=>false,
-  beginSceneFade:()=>events.push('fade'),rebuildAll:()=>events.push('rebuild'),
-  beginGroveTravel:()=>{events.push('prepare');return true;},stepGroveTravel:(dt,t)=>events.push(['step',dt,t]),
-  finishGroveTravel:()=>{events.push('land');},endGroveTravel:()=>events.push('free'),resumeAdaptive:()=>events.push('resume')};
+  rebuildAll:()=>events.push('rebuild'),resumeAdaptive:()=>events.push('resume')};
+ hub.routes={sceneFade:Object.assign(makeSceneFade(hub),{begin:()=>events.push('fade')}),
+  groveTravel:Object.assign(makeGroveTravel(hub),{begin:()=>{events.push('prepare');return true;},step:(dt,t)=>events.push(['step',dt,t]),
+   finish:()=>{events.push('land');},end:()=>events.push('free')})};
  return {hub,events,...makeTransitions(hub)};
 }
 
 test('fall memoriez ↔ park 2 carries both rooted groves instead of dissolving completed scenes',()=>{
  for(const [from,to]of[[fall,PRESETS['park 2']],[PRESETS['park 2'],fall]]){
   const r=rig(from);r.transitionTo(to,{duration:3});
-  expect(r.hub.trans.groveTravel).toBe(true);
-  expect(r.hub.trans.sceneFade).toBe(false);expect(r.hub.trans.seasonTravel).toBe(false);
+  expect(r.hub.trans.route?.name).toBe('groveTravel');
   expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);
   expect(r.events).toEqual(['prepare']);expect(r.hub.params).toEqual(from);
  }
@@ -65,12 +67,12 @@ test('a grove journey lands before handing its callback back to the frame loop',
  let callback;for(let i=0;i<121;i++)callback=r.tickTransition(1/60)||callback;
  expect(r.events.filter(x=>x==='land')).toHaveLength(1);expect(r.events.filter(x=>x==='free')).toHaveLength(1);
  expect(r.events).toContain('resume');expect(r.events).not.toContain('fade');
- expect(r.hub.trans.active).toBe(false);expect(r.hub.trans.groveTravel).toBe(false);
+ expect(r.hub.trans.active).toBe(false);expect(r.hub.trans.route).toBe(null);
  expect(arrived).toBe(0);expect(typeof callback).toBe('function');callback();expect(arrived).toBe(1);
 });
 
 test('retargeting an active grove journey retains its carried geometry',()=>{
- const r=rig(fall),calls=[];r.hub.retargetGroveTravel=(to,opts)=>calls.push({to,opts});
+ const r=rig(fall),calls=[];r.hub.routes.groveTravel.retarget=(to,opts)=>calls.push({to,opts});
  r.transitionTo(PRESETS['park 2']);r.tickTransition(.02);r.transitionTo(fall,{duration:2});
  expect(calls).toHaveLength(1);expect(calls[0].to).toEqual({...DEFAULTS,...fall});   // the target as the engine resolves it: every key, the saved look's own over the defaults
  expect(r.events.filter(x=>x==='prepare')).toHaveLength(1);expect(r.events).not.toContain('rebuild');
@@ -80,7 +82,7 @@ test('retargeting an active grove journey retains its carried geometry',()=>{
 test('a grove whose twig population exceeds the device texture width keeps its existing route',()=>{
  const hub={params:fixture.from,MAX_TEX:128};let scenes=0;
  const travel=makeGroveTravel(hub,()=>{scenes++;throw Error('unsupported scene prepared');},()=>{});
- expect(travel.beginGroveTravel(PRESETS['park 2'])).toBe(false);expect(scenes).toBe(0);
+ expect(travel.begin(PRESETS['park 2'])).toBe(false);expect(scenes).toBe(0);
 });
 
 test('a carried leaf on older wood drops its twig\'s bend by its pivot weight, as the bake draws it',()=>{

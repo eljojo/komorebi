@@ -1,4 +1,5 @@
-import { TAU, lerp, lerpAngle, smoothstep, turnBack, irisRoute, irisStep } from './komorebi-math.js';
+import { TAU, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { cutRoute, irisRoute, irisStep, turnBack } from './komorebi-routes.js';
 import { leafClock } from './komorebi-season.js';
 import {flutterLevel, depthGate} from './komorebi-air.js';
 import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from './komorebi-params.js';
@@ -115,7 +116,7 @@ function createGroveRenderer(h,a,b,from,to,host){
  const boxes=[h.grove.shape?.box??[0,0,1,1],b.hub.grove.shape?.box??[0,0,1,1]],x0=Math.min(...boxes.map(q=>q[0]-q[2])),x1=Math.max(...boxes.map(q=>q[0]+q[2])),y0=Math.min(...boxes.map(q=>q[1]-q[3])),y1=Math.max(...boxes.map(q=>q[1]+q[3])),box=[(x0+x1)/2,(y0+y1)/2,(x1-x0)/2,(y1-y0)/2];
  const ap=new Float64Array(6),bp=new Float64Array(6),p0=new Float64Array(5),p1=new Float64Array(5),q0=new Float64Array(5),q1=new Float64Array(5);
  const layerData=Array.from({length:3},()=>new Float32Array(n*17)),layerCount=new Uint32Array(3),nativeFaithTex=h.faithTex,originalFillHeights=h.faith.binH.slice();
- const field={tex:textures[0],ox:0,oy:0,ext:1,weight:0};h.trans.active=true;h.trans.seasonTravel=true;h.trans.travelField=field;
+ const field={tex:textures[0],ox:0,oy:0,ext:1,weight:0};h.trans.active=true;h.trans.castHeld=true;h.trans.travelField=field;
  h.motion.u=0;h.motion.sway=[0,0];h.hier.clusterData.fill(0);for(let j=0;j<h.hier.nClusterTotal;j++)h.hier.clusterData[j*4+3]=1;
  gl.bindTexture(gl.TEXTURE_2D,h.clusterTex);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,h.hier.nClusterTotal,1,gl.RGBA,gl.FLOAT,h.hier.clusterData);
  h.motion.trunks=null;if(h.hier.nTree>1){h.hier.treeDelta.fill(0);h.hier.swayData.fill(0);gl.texSubImage2D(gl.TEXTURE_2D,0,0,2,h.hier.nClusterTotal,1,gl.RGBA,gl.FLOAT,h.hier.swayData);}   // every tree's trunk at rest with tree 0's
@@ -185,12 +186,12 @@ function createGroveRenderer(h,a,b,from,to,host){
   try{h.drawFrameInto(null,h.canvas.width,h.canvas.height);}finally{h.faithTex=nativeFaithTex;}
  }
  return {step,draw,dispose(){
-  gl.deleteProgram(leafProg);gl.deleteProgram(woodProg);for(const q of[leaves,woodBuf]){gl.deleteBuffer(q.buf);gl.deleteVertexArray(q.vao);}for(const t of textures)if(t)gl.deleteTexture(t);for(const f of fbos)gl.deleteFramebuffer(f);
+  h.trans.castHeld=false;gl.deleteProgram(leafProg);gl.deleteProgram(woodProg);for(const q of[leaves,woodBuf]){gl.deleteBuffer(q.buf);gl.deleteVertexArray(q.vao);}for(const t of textures)if(t)gl.deleteTexture(t);for(const f of fbos)gl.deleteFramebuffer(f);
  }};
 }
 
 
-const NO_GROVE_TRAVEL={endGroveTravel(){}};
+const NO_GROVE_TRAVEL=cutRoute('groveTravel');
 export const makeGroveTravel=FEAT_LITTER?(hub,createScene,adoptScene)=>{
  if(!FEAT_DROP)return NO_GROVE_TRAVEL;
  let s=null;
@@ -221,5 +222,8 @@ export const makeGroveTravel=FEAT_LITTER?(hub,createScene,adoptScene)=>{
  function drawGroveTravel(){s.renderer.draw();}
  function finishGroveTravel(){adoptScene(s.end===0?s.a:s.b,hub.trans.to);return s.pending;}
  function endGroveTravel(){if(!s)return;const pending=s.pending;s.renderer.dispose();s.carrier.dispose();s.other.dispose();s=null;return pending;}
- return {beginGroveTravel,retargetGroveTravel,stepGroveTravel,drawGroveTravel,finishGroveTravel,endGroveTravel};
+ // The route's entry (komorebi-routes.js): it advances both ends' wind itself, its finish installs the end it lands on
+ // (adoptScene), and the frame's adaptive clock resumes from the landing.
+ return {name:'groveTravel',begin:beginGroveTravel,retarget:retargetGroveTravel,step:stepGroveTravel,draw:drawGroveTravel,finish:finishGroveTravel,end:endGroveTravel,
+  ownsWind:true,swaps:true,landing:['resumeAdaptive']};
 }:()=>NO_GROVE_TRAVEL;

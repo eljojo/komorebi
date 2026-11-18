@@ -1,5 +1,6 @@
 import {test,expect} from 'bun:test';
 import * as rise from './komorebi-litter-rise.js';
+import {restTrans} from './komorebi-routes.js';
 import fixture from './test-gl/fixtures/purple-look-up.json';
 
 test('the approved purple eye → look up pair lifts its shadow footprints',()=>{
@@ -38,12 +39,12 @@ test('look up → purple eye lowers the canopy into its shadow footprints',()=>{
 
 test('a floor with no leaves to cast declines the descent and releases the prepared scene',()=>{
  let released=0;
- const hub={params:{...fixture.to},trans:{}};
+ const hub={params:{...fixture.to},trans:restTrans()};
  const source={hub:{params:{...fixture.from},faith:{count:0},grove:{}},dispose:()=>released++};
  const flight=rise.makeLitterRise(hub,()=>source);
- expect(flight.beginLitterRise(fixture.from,true,true)).toBe(false);
+ expect(flight.begin(fixture.from,true,true)).toBe(false);
  expect(released).toBe(1);
- expect(flight.endLitterRise()).toBeUndefined();
+ expect(flight.end()).toBeUndefined();
  const cast={hub:{params:{...fixture.from},faith:{count:4},grove:{}},dispose:()=>released++};
- expect(rise.makeLitterRise(hub,()=>cast).beginLitterRise(fixture.from,true,true)).toBe(true);
+ expect(rise.makeLitterRise(hub,()=>cast).begin(fixture.from,true,true)).toBe(true);
 });

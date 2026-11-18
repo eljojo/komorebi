@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import * as sessions from './komorebi-session.js';
 import { DEFAULTS } from './komorebi-params.js';
 import { makeTransitions } from './komorebi-transitions.js';
+import { restTrans } from './komorebi-routes.js';
 import { keptFeatures } from './embed-build.mjs';
 import { PRESETS } from './presets.js';
 
@@ -10,7 +11,7 @@ test('session FPS policy survives old look loads, transitions and a preference r
   const session = sessions.resolveSession(saved);
   const a = sessions.resolveParams({ ...DEFAULTS, adaptive_motion: true }, session);
   expect(a.adaptive_motion).toBe(false);
-  const hub = { params: a, trans: {}, layerVAO: [], faithfulOn: () => false, motionActive: () => false,
+  const hub = { params: a, trans: restTrans(), layerVAO: [], faithfulOn: () => false, motionActive: () => false,
     warnCut() {}, regenSource() {}, resetPerf() {}, bake() {}, regenCanopy() {} };
   const t = makeTransitions(hub);
   t.transitionTo(sessions.resolveParams({ ...DEFAULTS, exposure: 2, adaptive_motion: true }, session), { duration: 0.1 });

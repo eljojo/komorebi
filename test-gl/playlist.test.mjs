@@ -6,6 +6,8 @@ import { createServer } from 'node:http';
 import * as lib from './video-lib.mjs';
 import * as engine from '../komorebi-params.js';
 import { makeTransitions } from '../komorebi-transitions.js';
+import { restTrans } from '../komorebi-routes.js';
+import { makeSceneFade } from '../komorebi-scene-fade.js';
 import { restorePoint } from './parallel.mjs';
 
 const FPS = 60, PRE = 1800;
@@ -46,9 +48,10 @@ test('playlistSchedule: a zero crossfade is a cut that still lands (the margin c
 for (const [style, change, scale] of [['fade', { foliage_density: 1.5 }, 2], ['fade', { exposure: 2 }, 1], ['morph', { foliage_density: 1.5 }, 1]]) {
   test(`playlistSchedule: ${style} ${Object.keys(change)[0]} checkpoints match the engine clock and resume during the passage`, () => {
     const a = { ...engine.DEFAULTS }, b = { ...a, ...change }, noop = () => {};
-    const hub = { params: { ...a }, trans: { dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
+    const hub = { params: { ...a }, trans: { ...restTrans(), dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
       faithfulOn: () => false, warnCut: noop, regenSource: noop, resetPerf: noop, bake: noop, regenCanopy: noop,
-      rebuildAll: noop, motionActive: () => false, beginSceneFade: noop, stepSceneFade: noop, endSceneFade: noop };
+      rebuildAll: noop, motionActive: () => false };
+    hub.routes = { sceneFade: Object.assign(makeSceneFade(hub), { begin: noop, step: noop, end: noop }) };
     const router = makeTransitions(hub), items = [{ params: a, dwell_s: 1, crossfade_s: 1 }, { params: b, dwell_s: 1, crossfade_s: 1, style }];
     const schedule = lib.playlistSchedule({ items, fps: FPS, preroll: 0, frames: 600, engine });
     const event = schedule[0];

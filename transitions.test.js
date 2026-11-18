@@ -12,7 +12,13 @@ import { PRESETS as AUTHORED_PRESETS } from "./presets.js";
 const PRESETS=Object.fromEntries(Object.entries(AUTHORED_PRESETS).map(([name,look])=>[name,{...DEFAULTS,...look}]));
 import { makeSource } from "./komorebi-source.js";
 import { makeCast } from "./komorebi-cast.js";
-import { DEG, clamp, lerp, turnBack } from "./komorebi-math.js";
+import { DEG, clamp, lerp } from "./komorebi-math.js";
+import { restTrans, turnBack } from "./komorebi-routes.js";
+import { makeSceneFade } from "./komorebi-scene-fade.js";
+import { makeLeafTravel } from "./komorebi-leaf-travel.js";
+import { makeSeasonTravel } from "./komorebi-season-travel.js";
+import { makeLitterRise } from "./komorebi-litter-rise.js";
+import { makeGroveTravel } from "./komorebi-grove-travel.js";
 import riseFixture from './test-gl/fixtures/fall-look-up.json';
 import shadowFixture from './test-gl/fixtures/purple-look-up.json';
 import descentFixture from './test-gl/fixtures/look-up-fall.json';
@@ -67,7 +73,7 @@ test("a landing route's onEnd is handed back by tickTransition, not called", () 
   const hub = {
     params: { ...DEFAULTS }, faithfulOn: () => false, motionActive: () => false, crossW: 0, groveIn: null,
     regenSource: noop, resetPerf: noop, bake: noop, regenCanopy: noop, installGrove: noop,
-    trans: { active: true, t: 0.99, dur: 1, durScale: 1, bloomMax: 1, crossfade: false, from: { ...DEFAULTS }, to: { ...DEFAULTS, exposure: 2 },
+    trans: { ...restTrans(), active: true, t: 0.99, dur: 1, durScale: 1, bloomMax: 1, crossfade: false, from: { ...DEFAULTS }, to: { ...DEFAULTS, exposure: 2 },
              swapped: true, structDiff: false, canopyMorph: false, bloom: 0, onEnd: () => { fired++; } },
   };
   const { tickTransition } = makeTransitions(hub);
@@ -82,11 +88,16 @@ test("a landing route's onEnd is handed back by tickTransition, not called", () 
   expect(tickTransition(1), "nothing to hand back once landed").toBeFalsy();
 });
 
+// The five long routes over a rig's hub: each module's own entry (its name and policy) with nothing prepared. A test replaces
+// what it drives (begin, step, finish, end, retarget); one it does not expect throws at its begin, which has no scene to make.
+const routesOver = hub => ({ sceneFade: makeSceneFade(hub), leafTravel: makeLeafTravel(hub), seasonTravel: makeSeasonTravel(hub),
+  litterRise: makeLitterRise(hub), groveTravel: makeGroveTravel(hub) });
+
 function transitionRig(from) {
   const noop = () => {};
   const params = { ...DEFAULTS, ...from }, swaps = [], bakes = [];   // as the engine holds a look: every key, the saved look's own over the defaults
   const hub = {
-    params, trans: { dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
+    params, trans: { ...restTrans(), dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
     faithfulOn: () => params.faithful_canopy && (params.receiver | 0) !== 2 && !params.sky_view,
     warnCut: noop, regenSource: noop, resetPerf: noop, bake: () => bakes.push({ ...params }), regenCanopy: noop,
     // A rebuild given a look grows the grove from that look's values for every key the grove reads (the engine's rebuildAll),
@@ -96,6 +107,7 @@ function transitionRig(from) {
     // A grove too big to morph between looks of one branching is grown beside the shown one for the crossfade.
     buildTargetGrove: () => ({}), installGrove: noop, freeGrove: noop, sizeLayers: noop,
   };
+  hub.routes = routesOver(hub);
   return { ...makeTransitions(hub), hub, params, swaps, bakes };
 }
 
@@ -105,14 +117,14 @@ for(const waiting of ['none','travel','fade']){
     const to={...from,seed:from.seed+1},next={...from,seed:from.seed+2},r=transitionRig(from);
     let arrived=0,nextArrived=0,started=0,ended=0;
     let pending=waiting==='travel'?{to:next,opts:{duration:.1,onEnd:()=>nextArrived++}}:null;
-    Object.assign(r.hub,{transitionTo:r.transitionTo,beginLeafTravel(){},
-      stepLeafTravel(){Object.assign(r.params,from);return false;},finishLeafTravel:()=>{const p=pending;pending=null;return p;},endLeafTravel:()=>{ended++;},
-      beginSceneFade:()=>{started++;},stepSceneFade(){},endSceneFade(){}});
+    r.hub.transitionTo=r.transitionTo;
+    Object.assign(r.hub.routes.leafTravel,{begin(){},
+      step(){Object.assign(r.params,from);return false;},finish:()=>{const p=pending;pending=null;return p;},end:()=>{ended++;}});
+    Object.assign(r.hub.routes.sceneFade,{begin:()=>{started++;},step(){},end(){}});
     r.transitionTo(to,{duration:.4,onEnd:()=>arrived++});
     if(waiting==='fade')r.transitionTo(next,{style:'fade',duration:.1,onEnd:()=>nextArrived++});
     r.tickTransition(1/60);
-    expect(r.hub.trans.leafTravel).toBe(false);
-    expect(r.hub.trans.sceneFade).toBe(true);
+    expect(r.hub.trans.route?.name).toBe('sceneFade');
     expect(r.hub.trans.bloomMax).toBe(0);
     expect(r.hub.trans.dur).toBe(.4);
     expect(r.hub.trans.t).toBe(0);
@@ -227,9 +239,9 @@ test('morning 3b → eclipse with wood: the grove grown under the bloom is the t
 test('fall memories → look up lifts the actual litter without a midpoint swap',()=>{
   const r=transitionRig(riseFixture.from);let began=0,steps=0,ended=0,arrived=0;
   r.hub.grove={litter:[{}]};
-  Object.assign(r.hub,{beginLitterRise:()=>began++,stepLitterRise:()=>steps++,finishLitterRise:()=>null,endLitterRise:()=>ended++});
+  Object.assign(r.hub.routes.litterRise,{begin:()=>began++,step:()=>steps++,finish:()=>null,end:()=>ended++});
   r.transitionTo(riseFixture.to,{duration:1,onEnd:()=>arrived++});
-  expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);expect(began).toBe(1);
+  expect(r.hub.trans.route?.name).toBe('litterRise');expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);expect(began).toBe(1);
   expect(r.swaps).toHaveLength(1);
   let cb;for(let i=0;i<122&&r.hub.trans.active;i++)cb=r.tickTransition(1/60);
   expect(steps).toBeGreaterThan(100);expect(r.swaps).toHaveLength(1);expect(ended).toBe(1);
@@ -238,9 +250,9 @@ test('fall memories → look up lifts the actual litter without a midpoint swap'
 
 test('purple eye → look up carries its shadow footprints without a midpoint swap',()=>{
   const r=transitionRig(shadowFixture.from);let began,steps=0,ended=0,arrived=0;
-  Object.assign(r.hub,{beginLitterRise:(to,footprints)=>began={to,footprints},stepLitterRise:()=>steps++,finishLitterRise:()=>null,endLitterRise:()=>ended++});
+  Object.assign(r.hub.routes.litterRise,{begin:(to,footprints)=>began={to,footprints},step:()=>steps++,finish:()=>null,end:()=>ended++});
   r.transitionTo(shadowFixture.to,{duration:1,onEnd:()=>arrived++});
-  expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.shadowRise).toBe(true);
+  expect(r.hub.trans.route?.name).toBe('litterRise');expect(r.hub.trans.shadowRise).toBe(true);
   expect(began).toEqual({to:{...DEFAULTS,...shadowFixture.to},footprints:true});
   expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);
   expect(r.swaps).toHaveLength(1);
@@ -251,10 +263,10 @@ test('purple eye → look up carries its shadow footprints without a midpoint sw
 
 test('look up → fall memories keeps the live sky grove until the carpet landing',()=>{
   const r=transitionRig(descentFixture.from);let began,ended=0,arrived=0,steps=0;
-  Object.assign(r.hub,{beginLitterRise:(to,footprints,reverse)=>began={to,footprints,reverse},stepLitterRise:()=>steps++,
-    finishLitterRise:()=>{Object.assign(r.params,descentFixture.to);r.hub.rebuildAll();return null;},endLitterRise:()=>ended++});
+  Object.assign(r.hub.routes.litterRise,{begin:(to,footprints,reverse)=>began={to,footprints,reverse},step:()=>steps++,
+    finish:()=>{Object.assign(r.params,descentFixture.to);r.hub.rebuildAll();return null;},end:()=>ended++});
   r.transitionTo(descentFixture.to,{duration:1,onEnd:()=>arrived++});
-  expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.litterFall).toBe(true);
+  expect(r.hub.trans.route?.name).toBe('litterRise');expect(r.hub.trans.litterFall).toBe(true);
   expect(began).toEqual({to:{...DEFAULTS,...descentFixture.to},footprints:false,reverse:true});
   expect(r.params.sky_view).toBe(true);expect(r.swaps).toHaveLength(0);
   for(let i=0;i<100;i++){r.tickTransition(1/60);expect(r.params.sky_view).toBe(true);expect(r.swaps).toHaveLength(0);expect(r.hub.trans.bloom).toBe(0);}
@@ -265,18 +277,18 @@ test('look up → fall memories keeps the live sky grove until the carpet landin
 
 test('a floor with no dropped leaves keeps its existing transition when descent preparation declines',()=>{
   const r=transitionRig(descentFixture.from);let prepared=0;
-  r.hub.beginLitterRise=()=>{prepared++;return false;};
+  r.hub.routes.litterRise.begin=()=>{prepared++;return false;};
   r.transitionTo(descentFixture.to);
-  expect(prepared).toBe(1);expect(r.hub.trans.litterRise).not.toBe(true);expect(r.hub.trans.litterFall).not.toBe(true);
+  expect(prepared).toBe(1);expect(r.hub.trans.route?.name).not.toBe('litterRise');expect(r.hub.trans.litterFall).not.toBe(true);
   expect(r.hub.trans.structDiff).toBe(true);
 });
 
 test('look up → purple eye keeps the live sky grove until the footprints land',()=>{
   const r=transitionRig(shadowFixture.to);let began,ended=0,arrived=0,steps=0;
-  Object.assign(r.hub,{beginLitterRise:(to,footprints,reverse)=>began={to,footprints,reverse},stepLitterRise:()=>steps++,
-    finishLitterRise:()=>{Object.assign(r.params,shadowFixture.from);r.hub.rebuildAll();return null;},endLitterRise:()=>ended++});
+  Object.assign(r.hub.routes.litterRise,{begin:(to,footprints,reverse)=>began={to,footprints,reverse},step:()=>steps++,
+    finish:()=>{Object.assign(r.params,shadowFixture.from);r.hub.rebuildAll();return null;},end:()=>ended++});
   r.transitionTo(shadowFixture.from,{duration:1,onEnd:()=>arrived++});
-  expect(r.hub.trans.litterRise).toBe(true);expect(r.hub.trans.shadowFall).toBe(true);
+  expect(r.hub.trans.route?.name).toBe('litterRise');expect(r.hub.trans.shadowFall).toBe(true);
   expect(began).toEqual({to:{...DEFAULTS,...shadowFixture.from},footprints:true,reverse:true});
   expect(r.hub.trans.bloomMax).toBe(0);expect(r.hub.trans.durScale).toBe(2);
   for(let i=0;i<100;i++){r.tickTransition(1/60);expect(r.params.sky_view).toBe(true);expect(r.swaps).toHaveLength(0);expect(r.hub.trans.bloom).toBe(0);}
@@ -287,16 +299,16 @@ test('look up → purple eye keeps the live sky grove until the footprints land'
 
 test('a leafless floor keeps the existing transition when the footprint descent declines',()=>{
   const r=transitionRig(shadowFixture.to);let prepared=0;
-  r.hub.beginLitterRise=()=>{prepared++;return false;};
+  r.hub.routes.litterRise.begin=()=>{prepared++;return false;};
   r.transitionTo(shadowFixture.from);
-  expect(prepared).toBe(1);expect(r.hub.trans.litterRise).not.toBe(true);expect(r.hub.trans.shadowFall).not.toBe(true);
+  expect(prepared).toBe(1);expect(r.hub.trans.route?.name).not.toBe('litterRise');expect(r.hub.trans.shadowFall).not.toBe(true);
   expect(r.hub.trans.structDiff).toBe(true);
 });
 
 test('afternoon 4, 4b, 5, 5b and prism → afternoon 6b do not morph their leaves onto the older wood: a leaf flew 2.5 of its lengths a frame and gaps flickered, so the inner leaves cross as two groves',()=>{
   for(const n of ['afternoon 4','afternoon 4b','afternoon 5','afternoon 5b','prism']) for(const [from,to] of [[PRESETS[n],PRESETS['afternoon 6b']],[PRESETS['afternoon 6b'],PRESETS[n]]]){
     const r=transitionRig(from);
-    Object.assign(r.hub,{beginSceneFade:()=>{},endSceneFade:()=>{},stepSceneFade:()=>{}});
+    Object.assign(r.hub.routes.sceneFade,{begin:()=>{},end:()=>{},step:()=>{}});
     r.transitionTo(to,{duration:1});
     expect(r.hub.trans.canopyMorph,`${n}: no leaf-by-leaf morph across inner_leaves`).toBe(false);
     expect(r.hub.trans.crossfade,`${n}: the two groves crossfade`).toBe(true);
@@ -306,7 +318,7 @@ test('afternoon 4, 4b, 5, 5b and prism → afternoon 6b do not morph their leave
 test('morning 3b → morning 3 does not morph its leaves between their shoots and their old places: the two arrangements cross as two groves, so no leaf flies (the leaves flickered)',()=>{
   for(const [from,to] of [[PRESETS['morning 3b'],PRESETS['morning 3']],[PRESETS['morning 3'],PRESETS['morning 3b']]]){
     const r=transitionRig(from);
-    Object.assign(r.hub,{beginSceneFade:()=>{},endSceneFade:()=>{},stepSceneFade:()=>{}});
+    Object.assign(r.hub.routes.sceneFade,{begin:()=>{},end:()=>{},step:()=>{}});
     r.transitionTo(to,{duration:1});
     expect(r.hub.trans.canopyMorph,'no leaf-by-leaf morph across shoot_leaves').toBe(false);
     expect(r.hub.trans.crossfade||r.hub.trans.structDiff,'the two groves cross').toBe(true);
@@ -317,11 +329,11 @@ test('a pair that sees its tree keeps the cast: cherry blossom ↔ park 2 with t
   const tree={tree_view:true};
   for(const [from,to] of [[{...PRESETS['cherry blossom'],...tree},{...PRESETS['park 2'],...tree}],[{...PRESETS['park 2'],...tree},{...PRESETS['cherry blossom'],...tree}]]){
     const r=transitionRig(from);let began=0;
-    Object.assign(r.hub,{beginSeasonTravel:()=>began++,stepSeasonTravel:()=>{},finishSeasonTravel:()=>null,endSeasonTravel:()=>{},
-      beginGroveTravel:()=>{throw Error('unexpected beginGroveTravel');},beginLitterRise:()=>{throw Error('unexpected beginLitterRise');},
-      beginSceneFade:()=>{},endSceneFade:()=>{},stepSceneFade:()=>{}});
+    Object.assign(r.hub.routes.seasonTravel,{begin:()=>began++,step:()=>{},finish:()=>null,end:()=>{}});
+    r.hub.routes.groveTravel.begin=()=>{throw Error('unexpected beginGroveTravel');};r.hub.routes.litterRise.begin=()=>{throw Error('unexpected beginLitterRise');};
+    Object.assign(r.hub.routes.sceneFade,{begin:()=>{},end:()=>{},step:()=>{}});
     r.transitionTo(to,{duration:1});
-    expect(r.hub.trans.seasonTravel).toBe(false);expect(began).toBe(0);
+    expect(r.hub.trans.route?.name).not.toBe('seasonTravel');expect(began).toBe(0);
     let n=0;while(r.hub.trans.active&&n++<10000)r.tickTransition(1/60);
     for(const k in DEFAULTS)expect(r.params[k],k).toBe(k==='drift_phase'?r.params[k]:to[k]);
   }
@@ -330,8 +342,8 @@ test('a pair that sees its tree keeps the cast: cherry blossom ↔ park 2 with t
 test('under the trees ↔ park 2 keeps the grove and the shadow: the camera glides and the seen tree fades, with no bloom and no rebuild',()=>{
   for(const [from,to] of [[PRESETS['park 1, under the trees'],PRESETS['park 2']],[PRESETS['park 2'],PRESETS['park 1, under the trees']]]){
     const r=transitionRig(from),out=!!from.tree_view;
-    Object.assign(r.hub,{beginSceneFade:()=>{throw Error('unexpected scene fade');},beginSeasonTravel:()=>{throw Error('unexpected season travel');},
-      beginGroveTravel:()=>{throw Error('unexpected grove travel');},beginLitterRise:()=>{throw Error('unexpected litter rise');}});
+    r.hub.routes.sceneFade.begin=()=>{throw Error('unexpected scene fade');};r.hub.routes.seasonTravel.begin=()=>{throw Error('unexpected season travel');};
+    r.hub.routes.groveTravel.begin=()=>{throw Error('unexpected grove travel');};r.hub.routes.litterRise.begin=()=>{throw Error('unexpected litter rise');};
     r.transitionTo(to,{duration:1});
     expect(r.hub.trans.treeFade,'the tree fades').toBe(true);
     expect(r.hub.trans.structDiff,'nothing is rebuilt').toBe(false);
@@ -354,10 +366,10 @@ test('under the trees ↔ park 2 keeps the grove and the shadow: the camera glid
 test('cherry blossom ↔ park 2 follows one seasonal grove without a scene dissolve',()=>{
   for(const [from,to] of [[PRESETS['cherry blossom'],PRESETS['park 2']],[PRESETS['park 2'],PRESETS['cherry blossom']]]){
     const r=transitionRig(from);let began=0,steps=0,ended=0,arrived=0;
-    Object.assign(r.hub,{beginSeasonTravel:()=>began++,stepSeasonTravel:()=>steps++,finishSeasonTravel:()=>null,endSeasonTravel:()=>ended++,
-      beginSceneFade:()=>{},endSceneFade:()=>{},stepSceneFade:()=>{}});
+    Object.assign(r.hub.routes.seasonTravel,{begin:()=>began++,step:()=>steps++,finish:()=>null,end:()=>ended++});
+    Object.assign(r.hub.routes.sceneFade,{begin:()=>{},end:()=>{},step:()=>{}});
     r.transitionTo(to,{duration:1,onEnd:()=>arrived++});
-    expect(r.hub.trans.seasonTravel).toBe(true);expect(r.hub.trans.sceneFade).toBe(false);
+    expect(r.hub.trans.route?.name).toBe('seasonTravel');
     expect(r.hub.trans.bloomMax).toBe(0);expect(began).toBe(1);
     let cb;while(r.hub.trans.active)cb=r.tickTransition(1/60)||cb;
     expect(steps).toBeGreaterThan(0);expect(ended).toBe(1);
@@ -370,11 +382,10 @@ test('montebello ↔ park fall and rain ↔ cherry route to leaf travel instead 
   for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['montebello, rain'],PRESETS['cherry blossom']]]){
     for(const [from,to] of [[a,b],[b,a]]){
       const r=transitionRig(from);let began=0;
-      r.hub.beginSeasonTravel=()=>began++;
+      r.hub.routes.seasonTravel.begin=()=>began++;
       r.transitionTo(to);
-      expect(r.hub.trans.seasonTravel).toBe(true);
+      expect(r.hub.trans.route?.name).toBe('seasonTravel');
       expect(r.hub.trans.canopyMorph).toBe(false);
-      expect(r.hub.trans.sceneFade).toBe(false);
       expect(r.hub.trans.bloomMax).toBe(0);
       expect(r.hub.trans.durScale).toBe(2);
       expect(began).toBe(1);expect(r.swaps).toHaveLength(0);
@@ -434,9 +445,9 @@ test("a partial cloud or grove transition cannot become a shared-grove viewpoint
 test("a woodless overhead faithful↔layer switch moves leaves without clearing the floor or swapping at midpoint",()=>{
   const from={...DEFAULTS,standing_scene:false,faithful_canopy:true,branch_tau:0,canopy_fill:0,litter:0};
   const r=transitionRig(from);let started=0,steps=0,ended=0;
-  Object.assign(r.hub,{beginLeafTravel:()=>started++,stepLeafTravel:()=>steps++,finishLeafTravel:()=>null,endLeafTravel:()=>ended++});
+  Object.assign(r.hub.routes.leafTravel,{begin:()=>started++,step:()=>steps++,finish:()=>null,end:()=>ended++});
   r.transitionTo({...from,faithful_canopy:false,seed:123,layer_count:3,tone_map:2});
-  expect(r.hub.trans.leafTravel).toBe(true);
+  expect(r.hub.trans.route?.name).toBe('leafTravel');
   expect(r.hub.trans.backgroundFade).toBe(false);
   expect(r.hub.trans.bloomMax).toBe(0);
   expect(started).toBe(1);
@@ -452,8 +463,8 @@ test("leaf travel leaves other modes, empty groves, drop and oversized correspon
   const from={...DEFAULTS,faithful_canopy:true};
   for(const change of [{branch_tau:1},{canopy_fill:.5},{standing_scene:true},{sky_view:true},{receiver:1},
     {litter:1},{leaf_drop:1},{leaf_size_m:0},{foliage_density:0},{tree_count:1000}]){
-    const r=transitionRig(from);r.hub.beginLeafTravel=()=>{throw Error('unsupported leaf travel');};
-    r.transitionTo({...from,faithful_canopy:false,...change});expect(r.hub.trans.leafTravel,JSON.stringify(change)).toBe(false);
+    const r=transitionRig(from);r.hub.routes.leafTravel.begin=()=>{throw Error('unsupported leaf travel');};
+    r.transitionTo({...from,faithful_canopy:false,...change});expect(r.hub.trans.route?.name,JSON.stringify(change)).not.toBe('leafTravel');
   }
 });
 
@@ -535,9 +546,9 @@ const faithfulFrom = { ...DEFAULTS, faithful_canopy: true, layer_count: 3, folia
 test("leaf travel carries the ground's brightest channel straight between two hues, so a steep contrast keeps its midtones", () => {
   const green = { ground_r: 0.41, ground_g: 0.96, ground_b: 0.21 }, blue = { ground_r: 0.33, ground_g: 0.22, ground_b: 1 };
   const r = transitionRig({ ...faithfulFrom, ...green }), target = { ...faithfulFrom, ...faithfulPairs[0], ...blue };
-  Object.assign(r.hub, { beginLeafTravel() {}, stepLeafTravel() {}, finishLeafTravel: () => null, endLeafTravel() {} });
+  Object.assign(r.hub.routes.leafTravel, { begin() {}, step() {}, finish: () => null, end() {} });
   r.transitionTo(target, { duration: 1 });
-  expect(r.hub.trans.leafTravel).toBe(true);
+  expect(r.hub.trans.route?.name).toBe('leafTravel');
   let lowest = Infinity;
   while (r.hub.trans.active) {
     r.tickTransition(1 / 60);
@@ -553,11 +564,10 @@ test("two faithful overhead groves that differ structurally travel their leaves,
   for (const change of faithfulPairs) {
     const r = transitionRig(faithfulFrom), target = { ...faithfulFrom, ...change };
     let began = 0, steps = 0, ended = 0;
-    Object.assign(r.hub, { beginLeafTravel: () => began++, stepLeafTravel: () => steps++, finishLeafTravel: () => null, endLeafTravel: () => ended++,
-      beginSceneFade: () => { throw Error("unexpected scene dissolve"); } });
+    Object.assign(r.hub.routes.leafTravel, { begin: () => began++, step: () => steps++, finish: () => null, end: () => ended++ });
+    r.hub.routes.sceneFade.begin = () => { throw Error("unexpected scene dissolve"); };
     r.transitionTo(target, { duration: 1 });
-    expect(r.hub.trans.leafTravel).toBe(true);
-    expect(r.hub.trans.sceneFade).toBe(false);
+    expect(r.hub.trans.route?.name).toBe('leafTravel');
     expect(r.hub.trans.bloomMax).toBe(0);
     expect(r.hub.trans.durScale).toBe(2);
     expect(began).toBe(1);
@@ -572,19 +582,19 @@ test("leaves on older wood travel like any other: inner leaves at either end or 
   for (const [from, to] of [[{ inner_leaves: 0.5 }, { inner_leaves: 0.5 }], [{ inner_leaves: 0 }, { inner_leaves: 0.35 }], [{ inner_leaves: 0.35 }, { inner_leaves: 0 }]])
     for (const target of [{ ...faithfulFrom, ...faithfulPairs[1] }, layered]) {
       const r = transitionRig({ ...faithfulFrom, ...from });
-      Object.assign(r.hub, { beginLeafTravel() {}, stepLeafTravel() {}, finishLeafTravel: () => null, endLeafTravel() {},
-        beginSceneFade: () => { throw Error("unexpected scene dissolve"); } });
+      Object.assign(r.hub.routes.leafTravel, { begin() {}, step() {}, finish: () => null, end() {} });
+      r.hub.routes.sceneFade.begin = () => { throw Error("unexpected scene dissolve"); };
       r.transitionTo({ ...target, ...to });
-      expect(r.hub.trans.leafTravel, JSON.stringify([from, to, target.faithful_canopy])).toBe(true);
+      expect(r.hub.trans.route?.name, JSON.stringify([from, to, target.faithful_canopy])).toBe('leafTravel');
     }
 });
 
 test("faithful overhead pairs a gentler route joins keep it: live morph, grove morph, re-season", () => {
   for (const [change, route] of [[{ exposure: 2 }, null], [{ leaf_size_m: DEFAULTS.leaf_size_m * 1.2 }, "canopyMorph"], [{ phenology: 0.8 }, "seasonMorph"]]) {
     const r = transitionRig(faithfulFrom);
-    Object.assign(r.hub, { beginLeafTravel: () => { throw Error("unexpected leaf travel"); }, beginSceneFade: () => { throw Error("unexpected scene dissolve"); } });
+    r.hub.routes.leafTravel.begin = () => { throw Error("unexpected leaf travel"); }; r.hub.routes.sceneFade.begin = () => { throw Error("unexpected scene dissolve"); };
     r.transitionTo({ ...faithfulFrom, ...change });
-    expect(r.hub.trans.leafTravel, JSON.stringify(change)).toBe(false);
+    expect(r.hub.trans.route?.name, JSON.stringify(change)).not.toBe('leafTravel');
     if (route) expect(r.hub.trans[route], JSON.stringify(change)).toBe(true);
   }
 });
@@ -592,19 +602,19 @@ test("faithful overhead pairs a gentler route joins keep it: live morph, grove m
 test("a faithful structural pair leaf travel refuses still takes the scene dissolve", () => {
   for (const both of [{ branch_tau: 0.5 }, { standing_scene: true }, { litter: 1 }, { canopy_fill: 0.5 }]) {
     const r = transitionRig({ ...faithfulFrom, ...both });
-    r.hub.beginLeafTravel = () => { throw Error("unexpected leaf travel"); };
-    Object.assign(r.hub, { beginSceneFade: () => {}, stepSceneFade: () => {}, endSceneFade: () => {} });
+    r.hub.routes.leafTravel.begin = () => { throw Error("unexpected leaf travel"); };
+    Object.assign(r.hub.routes.sceneFade, { begin: () => {}, step: () => {}, end: () => {} });
     r.transitionTo({ ...faithfulFrom, ...both, ...faithfulPairs[1] });
-    expect(r.hub.trans.leafTravel, JSON.stringify(both)).toBe(false);
-    expect(r.hub.trans.sceneFade, JSON.stringify(both)).toBe(true);
+    expect(r.hub.trans.route?.name, JSON.stringify(both)).not.toBe('leafTravel');
+    expect(r.hub.trans.route?.name, JSON.stringify(both)).toBe('sceneFade');
   }
   for (const differ of [{ eclipse: !faithfulFrom.eclipse }, { edge_area: !faithfulFrom.edge_area }]) {
     const r = transitionRig(faithfulFrom);
-    r.hub.beginLeafTravel = () => { throw Error("unexpected leaf travel"); };
-    Object.assign(r.hub, { beginSceneFade: () => {}, stepSceneFade: () => {}, endSceneFade: () => {} });
+    r.hub.routes.leafTravel.begin = () => { throw Error("unexpected leaf travel"); };
+    Object.assign(r.hub.routes.sceneFade, { begin: () => {}, step: () => {}, end: () => {} });
     r.transitionTo({ ...faithfulFrom, ...faithfulPairs[1], ...differ });
-    expect(r.hub.trans.leafTravel, JSON.stringify(differ)).toBe(false);
-    expect(r.hub.trans.sceneFade, JSON.stringify(differ)).toBe(true);
+    expect(r.hub.trans.route?.name, JSON.stringify(differ)).not.toBe('leafTravel');
+    expect(r.hub.trans.route?.name, JSON.stringify(differ)).toBe('sceneFade');
     expect(r.hub.trans.moon, JSON.stringify(differ)).toBe(null);   // each scene keeps its own source: no moon crosses inside a dissolve
   }
 });
@@ -612,13 +622,12 @@ test("a faithful structural pair leaf travel refuses still takes the scene disso
 test("a faithful structural selection arriving during a scene dissolve continues the dissolve: two mixed pictures have no leaves to carry", () => {
   const r = transitionRig(faithfulFrom);
   let began = 0;
-  r.hub.beginLeafTravel = () => { throw Error("unexpected leaf travel"); };
-  Object.assign(r.hub, { beginSceneFade: () => began++, stepSceneFade: () => {}, endSceneFade: () => {} });
+  r.hub.routes.leafTravel.begin = () => { throw Error("unexpected leaf travel"); };
+  Object.assign(r.hub.routes.sceneFade, { begin: () => began++, step: () => {}, end: () => {} });
   r.transitionTo({ ...faithfulFrom, ...faithfulPairs[1], eclipse: true });
   for (let i = 0; i < 30; i++) r.tickTransition(1 / 60);
   r.transitionTo({ ...faithfulFrom, ...faithfulPairs[0], eclipse: true });
-  expect(r.hub.trans.sceneFade).toBe(true);
-  expect(r.hub.trans.leafTravel).toBe(false);
+  expect(r.hub.trans.route?.name).toBe('sceneFade');
   expect(began).toBe(2);
 });
 
@@ -627,11 +636,11 @@ test("faithful structural changes leaf travel refuses dissolve complete moving s
     const from = { ...faithfulFrom, branch_tau: 0.5 };
     const r = transitionRig(from), target = { ...from, ...change };
     let began = 0, steps = 0, ended = 0, callback = 0;
-    r.hub.beginSceneFade = () => { began++; expect(r.params).toEqual(from); };
-    r.hub.stepSceneFade = () => { steps++; };
-    r.hub.endSceneFade = () => { ended++; };
+    r.hub.routes.sceneFade.begin = () => { began++; expect(r.params).toEqual(from); };
+    r.hub.routes.sceneFade.step = () => { steps++; };
+    r.hub.routes.sceneFade.end = () => { ended++; };
     r.transitionTo(target, { duration: 1, onEnd: () => callback++ });
-    expect(r.hub.trans.sceneFade).toBe(true);
+    expect(r.hub.trans.route?.name).toBe('sceneFade');
     expect(began).toBe(1);
     expect(r.params).toEqual(target);
     expect(r.swaps).toHaveLength(1);
@@ -654,22 +663,22 @@ test("ordinary faithful look morphs and other receiver changes keep their existi
   const from = { ...DEFAULTS, faithful_canopy: true };
   for (const change of [{ exposure: 2 }, { receiver: 1 }]) {
     const r = transitionRig(from);
-    r.hub.beginSceneFade = () => { throw Error("unexpected scene dissolve"); };
+    r.hub.routes.sceneFade.begin = () => { throw Error("unexpected scene dissolve"); };
     r.transitionTo({ ...from, ...change });
-    expect(r.hub.trans.sceneFade).toBe(false);
+    expect(r.hub.trans.route?.name).not.toBe('sceneFade');
   }
 });
 
 test("a look-only edit interrupting a faithful scene dissolve starts another scene dissolve", () => {
   const r = transitionRig({ ...DEFAULTS, faithful_canopy: true, branch_tau: 0.5 });   // wood: leaf travel refuses the pair
   let began=0, ended=0;
-  r.hub.beginSceneFade=()=>began++;
-  r.hub.stepSceneFade=()=>{};
-  r.hub.endSceneFade=()=>ended++;
+  r.hub.routes.sceneFade.begin=()=>began++;
+  r.hub.routes.sceneFade.step=()=>{};
+  r.hub.routes.sceneFade.end=()=>ended++;
   r.transitionTo({ ...r.params, seed:1234567 });
   for(let i=0;i<30;i++) r.tickTransition(1/60);
   r.transitionTo({ ...r.params, exposure:2 });
-  expect(r.hub.trans.sceneFade).toBe(true);
+  expect(r.hub.trans.route?.name).toBe('sceneFade');
   expect(began).toBe(2);
   expect(ended).toBe(0);
 });
@@ -899,13 +908,13 @@ test('a selection inside the crossfade window waits for the window to close, kee
 
 test('a selection the faithful dissolve cannot take waits for its landing instead of dropping the outgoing scene', () => {
   const from = { ...DEFAULTS, faithful_canopy: true, branch_tau: 0.5 }, r = linked(from); let ends = 0;   // wood: leaf travel refuses the pair
-  Object.assign(r.hub, { beginSceneFade: () => {}, stepSceneFade: () => {}, endSceneFade: () => ends++ });
+  Object.assign(r.hub.routes.sceneFade, { begin: () => {}, step: () => {}, end: () => ends++ });
   r.transitionTo({ ...from, seed: 77 });
-  expect(r.hub.trans.sceneFade).toBe(true);
+  expect(r.hub.trans.route?.name).toBe('sceneFade');
   tickTo(r, 0.5);
   const layer = { ...DEFAULTS, standing_scene: true, exposure: 2 };   // not faithful: no dissolve can take it
   r.transitionTo(layer);
-  expect(ends).toBe(0); expect(r.hub.trans.sceneFade).toBe(true); expect(r.hub.trans.waiting.to.exposure).toBe(2);
+  expect(ends).toBe(0); expect(r.hub.trans.route?.name).toBe('sceneFade'); expect(r.hub.trans.waiting.to.exposure).toBe(2);
   let start = null;
   while (!start) start = r.tickTransition(1/60);
   expect(ends).toBe(1);
@@ -1204,19 +1213,19 @@ test("a same-branching grove within the morph budget still grove-morphs; wood or
   expect(wood.hub.trans.crossfade).toBe(false);
   expect(wood.hub.trans.bloomMax).toBeGreaterThan(0);
   const faithful = crossRig({ ...PRESETS["morning 3b"], faithful_canopy: true, branch_tau: 0.5 }, LEAVES["morning 3b"]);
-  faithful.hub.beginSceneFade = faithful.hub.stepSceneFade = faithful.hub.endSceneFade = () => {};
+  faithful.hub.routes.sceneFade.begin = faithful.hub.routes.sceneFade.step = faithful.hub.routes.sceneFade.end = () => {};
   faithful.transitionTo({ ...PRESETS["the void"], faithful_canopy: true, branch_tau: 0.5 });
   expect(faithful.hub.trans.crossfade).toBe(false);
-  expect(faithful.hub.trans.sceneFade).toBe(true);
+  expect(faithful.hub.trans.route?.name).toBe('sceneFade');
 });
 
 // style 'fade': a driver asks for the dissolve of two moving scenes, whatever the pair's modes or cameras.
 function fadeRig(from) {
   const r = crossRig(from, 1000), log = { began: 0, ended: 0, steps: 0 };
-  r.hub.beginSceneFade = () => { log.began++; expect(r.params).toEqual(from); };
-  r.hub.stepSceneFade = () => { log.steps++; };
-  r.hub.endSceneFade = () => { log.ended++; };
-  for (const k of ["beginGroveTravel", "beginLitterRise", "beginSeasonTravel", "beginLeafTravel"]) r.hub[k] = () => { throw Error(`unexpected ${k}`); };
+  r.hub.routes.sceneFade.begin = () => { log.began++; expect(r.params).toEqual(from); };
+  r.hub.routes.sceneFade.step = () => { log.steps++; };
+  r.hub.routes.sceneFade.end = () => { log.ended++; };
+  for (const k of ["groveTravel", "litterRise", "seasonTravel", "leafTravel"]) r.hub.routes[k].begin = () => { throw Error(`unexpected ${k}`); };
   return { ...r, log };
 }
 const fadePairs = {
@@ -1230,8 +1239,8 @@ for (const [name, [a, b]] of Object.entries(fadePairs)) for (const [from, to] of
     const r = fadeRig(from);
     let arrived = 0, cb;
     r.transitionTo(to, { duration: 1, style: "fade", onEnd: () => arrived++ });
-    expect(r.hub.trans.sceneFade).toBe(true);
-    expect(r.hub.trans.crossfade || r.hub.trans.backgroundFade || r.hub.trans.viewpoint || r.hub.trans.leafTravel || r.hub.trans.seasonTravel).toBe(false);
+    expect(r.hub.trans.route?.name).toBe('sceneFade');
+    expect(r.hub.trans.crossfade || r.hub.trans.backgroundFade || r.hub.trans.viewpoint).toBe(false);
     expect(r.hub.trans.bloomMax).toBe(0);
     expect(r.hub.trans.durScale).toBe(2);
     expect(r.hub.groveIn).toBe(null);
@@ -1247,9 +1256,9 @@ for (const [name, [a, b]] of Object.entries(fadePairs)) for (const [from, to] of
 
 test("style 'fade' on a pair that differs only in MORPH keys takes the plain live morph", () => {
   const r = fadeRig({ ...DEFAULTS });
-  r.hub.beginSceneFade = () => { throw Error("unexpected scene dissolve"); };
+  r.hub.routes.sceneFade.begin = () => { throw Error("unexpected scene dissolve"); };
   r.transitionTo({ ...DEFAULTS, exposure: 2, sun_elevation_deg: 30 }, { style: "fade" });
-  expect(r.hub.trans.sceneFade).toBe(false);
+  expect(r.hub.trans.route?.name).not.toBe('sceneFade');
   expect(r.hub.trans.structDiff).toBe(false);
 });
 
@@ -1257,7 +1266,7 @@ for (const change of [{ exposure: 2 }, { foliage_density: 1.5 }]) {
   test(`a fade requested during ${'exposure' in change ? 'a live' : 'a grove'} morph waits and keeps its style`, () => {
     const r = fadeRig({ ...DEFAULTS });
     r.hub.transitionTo = r.transitionTo;
-    r.hub.beginSceneFade = () => { r.log.began++; };
+    r.hub.routes.sceneFade.begin = () => { r.log.began++; };
     let cancelled = 0, arrived = 0;
     r.transitionTo({ ...DEFAULTS, ...change }, { duration: 0.1, onEnd: () => cancelled++ });
     r.tickTransition(1 / 60);
@@ -1277,14 +1286,11 @@ for (const route of ['leafTravel', 'seasonTravel', 'litterRise', 'groveTravel'])
   test(`a requested fade waits for ${route} and the latest later selection supersedes it`, () => {
     const r = fadeRig({ ...DEFAULTS });
     r.hub.transitionTo = r.transitionTo;
-    r.hub.beginSceneFade = () => { r.log.began++; };
+    r.hub.routes.sceneFade.begin = () => { r.log.began++; };
     r.transitionTo({ ...DEFAULTS, foliage_density: 1.5 }, { duration: 0.1 });
-    r.hub.trans[route] = true;
-    const name = route[0].toUpperCase() + route.slice(1);
-    r.hub[`step${name}`] = () => {};
-    r.hub[`finish${name}`] = () => { Object.assign(r.params, r.hub.trans.to); return null; };
-    r.hub[`end${name}`] = () => {};
-    r.hub[`retarget${name}`] = () => { throw Error('a requested fade must wait'); };
+    r.hub.trans.route = r.hub.routes[route];
+    Object.assign(r.hub.routes[route], { step: () => {}, finish: () => { Object.assign(r.params, r.hub.trans.to); return null; }, end: () => {},
+      retarget: () => { throw Error('a requested fade must wait'); } });
     let first = 0, latest = 0;
     r.transitionTo({ ...DEFAULTS, foliage_density: 1.8 }, { duration: 0.1, style: 'fade', onEnd: () => first++ });
     r.transitionTo({ ...DEFAULTS }, { duration: 0.1, style: 'fade', onEnd: () => latest++ });
@@ -1303,12 +1309,12 @@ test("absent or 'morph' style keeps the automatic routes for the same pairs", ()
     expect(cross.hub.trans.crossfade).toBe(true);
     const sky = crossRig(PRESETS.memories, 1000);
     sky.transitionTo({ ...PRESETS.memories, sky_view: true }, { style });
-    expect(sky.hub.trans.sceneFade || sky.hub.trans.crossfade).toBe(false);
+    expect((sky.hub.trans.route?.name === 'sceneFade') || sky.hub.trans.crossfade).toBe(false);
     expect(sky.hub.trans.bloomMax).toBeGreaterThan(0);
     const floor = crossRig(PRESETS["afternoon 7"], 1000);
     floor.transitionTo(PRESETS["park 1"], { style });
     expect(floor.hub.trans.backgroundFade).toBe(true);
-    expect(floor.hub.trans.sceneFade).toBe(false);
+    expect(floor.hub.trans.route?.name).not.toBe('sceneFade');
   }
 });
 
@@ -1318,7 +1324,7 @@ for (const [from, to] of [["park fall", "forest floor"], ["forest floor", "park 
   test(`${from} → ${to}: a carpeted floor-to-floor mode change dissolves two moving scenes`, () => {
     const r = fadeRig(PRESETS[from]);
     r.transitionTo(PRESETS[to], { duration: 1 });
-    expect(r.hub.trans.sceneFade).toBe(true);
+    expect(r.hub.trans.route?.name).toBe('sceneFade');
     expect(r.hub.trans.backgroundFade).toBe(false);
     expect(r.hub.trans.bloomMax).toBe(0);
     for (let n = 0; r.hub.trans.active && n < 200; n++) { r.tickTransition(1 / 60); expect(r.hub.trans.bloom).toBe(0); }
@@ -1329,10 +1335,89 @@ for (const [from, to] of [["park fall", "forest floor"], ["forest floor", "park 
 test("montebello ↔ park fall keeps season travel over the carpeted scene dissolve", () => {
   for (const [from, to] of [["montebello", "park fall"], ["park fall", "montebello"]]) {
     const r = fadeRig(PRESETS[from]); let began = 0;
-    r.hub.beginSeasonTravel = () => { began++; };
-    r.hub.beginSceneFade = () => { throw Error("unexpected scene dissolve"); };
+    r.hub.routes.seasonTravel.begin = () => { began++; };
+    r.hub.routes.sceneFade.begin = () => { throw Error("unexpected scene dissolve"); };
     r.transitionTo(PRESETS[to]);
-    expect(r.hub.trans.seasonTravel).toBe(true);
+    expect(r.hub.trans.route?.name).toBe('seasonTravel');
     expect(began).toBe(1);
   }
+});
+
+// THE REGISTRY (komorebi-routes.js): what the lifecycle holds for every long route, whichever it is.
+const groveFloor = { ...DEFAULTS, ...riseFixture.from, edge_area: PRESETS["park 2"].edge_area ?? false, inner_leaves: 0.35 };   // fall memoriez, as grove-travel.test.js holds it
+const runOut = (r) => { for (let n = 0; r.hub.trans.active && n < 1000; n++) r.tickTransition(1 / 60)?.(); };   // to landing, completions called
+const carriedGrove = (r, log) => Object.assign(r.hub.routes.groveTravel,
+  { begin: () => true, step() {}, finish: () => null, end: () => { log.ended++; return log.pending; }, retarget() {} });
+
+test("a route started from idle starts from rest: the window fade a landed route left is not read by the grove travel that follows", () => {
+  const r = transitionRig({ ...groveFloor, window_w_m: 1, window_h_m: 1 }), log = { ended: 0 };
+  r.transitionTo(groveFloor, { duration: 0.1 });
+  expect(r.hub.trans.windowFade).toBe(true);
+  runOut(r);
+  carriedGrove(r, log);
+  r.transitionTo(PRESETS["park 2"], { duration: 2 });
+  const t = r.hub.trans, rest = restTrans();
+  expect(t.route?.name).toBe("groveTravel");
+  expect(t.active && t.windowFade ? t.windowOpacity : 1, "the window opacity the render reads").toBe(1);
+  const own = ["from", "to", "t", "dur", "durScale", "active", "route", "structDiff", "bloomMax", "onEnd"];   // what the start itself writes
+  for (const k of Object.keys(rest)) if (!own.includes(k)) expect(t[k], k).toEqual(rest[k]);
+  expect(Object.keys(t).sort(), "no field outside the rest state").toEqual(Object.keys(rest).sort());
+});
+
+test("an abort ends the running route, frees a half-faded grove and leaves the state at rest", () => {
+  const r = transitionRig(groveFloor), log = { ended: 0 };
+  carriedGrove(r, log);
+  r.transitionTo(PRESETS["park 2"], { duration: 2, onEnd: () => { throw Error("an aborted route completes nothing"); } });
+  r.tickTransition(1 / 60); r.tickTransition(1 / 60);
+  let freed = 0; r.hub.groveIn = {}; r.hub.freeGrove = () => freed++; r.hub.crossW = 0.5;
+  r.abortTransition();
+  expect(log.ended).toBe(1);
+  expect([freed, r.hub.groveIn, r.hub.crossW]).toEqual([1, null, 0]);
+  expect(r.hub.trans).toEqual({ ...restTrans(), dur: 2 });
+});
+
+for (const waiting of [false, true]) {
+  test(`a lost context ends every route and keeps ${waiting ? "a waiting selection over the route's pending one" : "the route's pending selection"}; the restore lands on it at rest`, () => {
+    const r = transitionRig(groveFloor), log = { ended: 0 }, ends = {}, arrived = [];
+    let owedDone = 0, waitDone = 0;
+    const owed = { to: { ...DEFAULTS, ...PRESETS["park 2"], exposure: 3 }, opts: { onEnd: () => owedDone++ } }, later = { ...groveFloor, exposure: 2 };
+    log.pending = owed;
+    r.hub.arrived = to => arrived.push(to);
+    for (const [name, route] of Object.entries(r.hub.routes)) if (name !== "groveTravel") route.end = () => { ends[name] = (ends[name] ?? 0) + 1; };
+    carriedGrove(r, log);
+    r.transitionTo(PRESETS["park 2"], { duration: 2 });
+    r.tickTransition(1 / 60);
+    if (waiting) r.transitionTo(later, { style: "fade", onEnd: () => waitDone++ });
+    r.loseContext();
+    const want = waiting ? { ...DEFAULTS, ...later } : owed.to;
+    expect(r.hub.trans.route, "no route runs").toBe(null);
+    expect(r.hub.trans.active, "a landing is owed").toBe(true);
+    expect([log.ended, ends]).toEqual([1, { sceneFade: 1, leafTravel: 1, seasonTravel: 1, litterRise: 1 }]);
+    expect(r.hub.trans.to).toEqual(want);
+    const cb = r.restoreContext();
+    expect(r.hub.trans).toEqual({ ...restTrans(), dur: 2 });
+    expect(r.params).toEqual(want);
+    expect(arrived).toEqual([want]);
+    cb();
+    expect([owedDone, waitDone]).toEqual(waiting ? [0, 1] : [1, 0]);
+  });
+}
+
+test("a route whose step gives up lands as a scene fade to the same target, keeping the caller's clock and completion", () => {
+  const from = { ...DEFAULTS, faithful_canopy: true, branch_tau: 0, canopy_fill: 0, litter: 0, leaf_drop: 0, inner_leaves: 0 };
+  const to = { ...from, seed: from.seed + 1 }, r = transitionRig(from), log = { leaf: 0, fade: 0 };
+  r.hub.transitionTo = r.transitionTo;
+  Object.assign(r.hub.routes.leafTravel, { begin() {}, step() { Object.assign(r.params, from); return false; }, finish: () => null, end: () => { log.leaf++; } });
+  Object.assign(r.hub.routes.sceneFade, { begin: () => { log.fade++; }, step() {}, end() {} });
+  let arrived = 0;
+  r.transitionTo(to, { duration: 0.4, onEnd: () => arrived++ });
+  expect(r.hub.trans.route?.name).toBe("leafTravel");
+  const target = r.hub.trans.to;
+  r.tickTransition(1 / 60);
+  expect(r.hub.trans.route?.name).toBe("sceneFade");
+  expect([r.hub.trans.to, r.hub.trans.dur, r.hub.trans.t]).toEqual([target, 0.4, 0]);
+  expect(log).toEqual({ leaf: 1, fade: 1 });
+  runOut(r);
+  expect(arrived).toBe(1);
+  expect(r.params.seed).toBe(to.seed);
 });

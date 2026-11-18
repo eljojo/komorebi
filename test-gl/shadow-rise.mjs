@@ -36,7 +36,7 @@ try{
   };
   open(A);const nativeA=last.slice();open(B);const nativeB=last.slice();
   open(A);let arrived=0;e.transitionTo(B,{duration:1,onEnd:()=>arrived++});
-  need(e.trans.shadowRise&&e.trans.litterRise,'shadow pickup still falls back to a grove swap');
+  need(e.trans.shadowRise&&e.trans.route?.name==='litterRise','shadow pickup still falls back to a grove swap');
   window.__clock.pump(stamp);const source=diff(nativeA,last);need(source.max===0,'native source changed');
   const grove=e.grove?.().hier;let maxStep=0,previous=last.slice();
   // The outgoing hood blacks the frame's corners. It keeps its geometry and fades out over the flight, so by mid-route the corners are lit.

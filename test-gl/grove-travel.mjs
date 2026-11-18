@@ -34,21 +34,21 @@ try{
    open({...fixture.from,auto_quality:false,adaptive_motion:false});pump(119);let previous=null;
    const target={...fixture.to,auto_quality:false,adaptive_motion:false},enc=document.createElement('canvas');enc.width=W;enc.height=H;const ctx=enc.getContext('2d'),im=ctx.createImageData(W,H);
    window.__render=n=>{
-    if(n===60){e.transitionTo(target,{duration:4});need(e.trans.groveTravel,'authored pair did not select grove travel');}pump();
+    if(n===60){e.transitionTo(target,{duration:4});need(e.trans.route?.name==='groveTravel','authored pair did not select grove travel');}pump();
     const p=last;let luma=0,delta=0;for(let i=0;i<p.length;i+=4){luma+=.2126*p[i]+.7152*p[i+1]+.0722*p[i+2];if(previous)for(let k=0;k<3;k++)delta+=Math.abs(p[i+k]-previous[i+k]);}
     for(let y=0;y<H;y++)im.data.set(p.subarray((H-y-1)*W*4,(H-y)*W*4),y*W*4);ctx.putImageData(im,0,0);previous=p;
-    return {png:enc.toDataURL('image/png'),t:e.trans.t,luma:luma/(W*H),delta:delta/(W*H*3),groveTravel:!!e.trans.groveTravel,bloom:e.trans.bloom};
+    return {png:enc.toDataURL('image/png'),t:e.trans.t,luma:luma/(W*H),delta:delta/(W*H*3),groveTravel:e.trans.route?.name==='groveTravel',bloom:e.trans.bloom};
    };
    window.__dispose=()=>e.dispose();return results;
   }
   open(A);need(e.grove().litter.length>0,'reduced fixture needs actual carpet leaves');const nativeA=last.slice();open(B);const nativeB=last.slice();
   open(A);e.transitionTo({...B,phyllotaxis:A.phyllotaxis},{duration:.1});while(e.trans.active)pump();need(e.params.tree_count===B.tree_count,'same-grammar tree-count landing');
   for(const [from,to,first,final]of[[A,B,nativeA,nativeB],[B,A,nativeB,nativeA]]){
-   open(from);const original=e.grove();let ended=0;e.transitionTo(to,{duration:.25,onEnd:()=>ended++});need(e.trans.groveTravel,'wrong route');
+   open(from);const original=e.grove();let ended=0;e.transitionTo(to,{duration:.25,onEnd:()=>ended++});need(e.trans.route?.name==='groveTravel','wrong route');
    window.__clock.pump(stamp);const sourceDelta=diff(first,last);need(sourceDelta===0,`source changed ${sourceDelta}`);
-   let frames=0,before;while(e.trans.active&&frames++<40){before=last.slice();pump();if(e.trans.active){need(e.grove()===original,'native grove replaced before landing');need(!e.trans.sceneFade&&!e.trans.swapped&&e.trans.bloom===0,'scene fade or midpoint swap');}}
+   let frames=0,before;while(e.trans.active&&frames++<40){before=last.slice();pump();if(e.trans.active){need(e.grove()===original,'native grove replaced before landing');need(e.trans.route?.name!=='sceneFade'&&!e.trans.swapped&&e.trans.bloom===0,'scene fade or midpoint swap');}}
    const landingDelta=diff(before,last),nativeDelta=diff(final,last);need(nativeDelta===0,`native target changed ${nativeDelta}`);need(landingDelta<=1,`static landing jumped ${landingDelta}`);
-   need(ended===1&&!e.trans.groveTravel,'completion state');results.push({direction:from.litter?'floor to park':'park to floor',sourceDelta,landingDelta,nativeDelta});
+   need(ended===1&&e.trans.route?.name!=='groveTravel','completion state');results.push({direction:from.litter?'floor to park':'park to floor',sourceDelta,landingDelta,nativeDelta});
   }
   open(A);e.transitionTo(B,{duration:1});pump(35);const middle=last.slice(),time=e.motion.time;window.__clock.pump(stamp);need(diff(middle,last)===0&&e.motion.time===time,'zero-time redraw moved the field');
   e.transitionTo(A,{duration:.25});window.__clock.pump(stamp);need(diff(middle,last)===0,'reversal changed the field');while(e.trans.active)pump();need(diff(nativeA,last)===0,'reversal did not restore native source');
@@ -61,11 +61,11 @@ try{
   const leaked=Object.fromEntries([...live].map(([k,v])=>[k,v.size]));need(Object.values(leaked).every(n=>n===0),`temporary resource leak ${JSON.stringify(leaked)}`);
   open(A);e.transitionTo({...B,adaptive_motion:true},{duration:.1});while(e.trans.active)pump();pump();need(diff(nativeB,last)===0,'adaptive still landing');
   open(A);e.transitionTo(B,{duration:1});pump(30);c.style.width='360px';pump();need(c.width===360,'field resize');
-  open(A);e.transitionTo(B,{duration:1});pump(30);e.setParams(B);window.__clock.pump(stamp);need(diff(nativeB,last)===0&&!e.trans.groveTravel,'hard replacement');
+  open(A);e.transitionTo(B,{duration:1});pump(30);e.setParams(B);window.__clock.pump(stamp);need(diff(nativeB,last)===0&&e.trans.route?.name!=='groveTravel','hard replacement');
   const C={...B,exposure:B.exposure+.2};open(C);const nativeC=last.slice();open(A);let cancelled=0,queued=0;
   e.transitionTo(B,{duration:.25,onEnd:()=>cancelled++});pump(10);e.transitionTo({...B,seed:123},{duration:.1});e.transitionTo(C,{duration:.1,onEnd:()=>queued++});
   let frames=0;while(e.trans.active&&frames++<160)pump();need(queued===1&&cancelled===0&&diff(nativeC,last)===0,'latest queued target');
-  open({...A,phenology:0});e.transitionTo(B,{duration:.1});need(!e.trans.groveTravel,'empty carpet must decline preparation');
+  open({...A,phenology:0});e.transitionTo(B,{duration:.1});need(e.trans.route?.name!=='groveTravel','empty carpet must decline preparation');
   results.push({zeroTime:true,reversal:true,temporaryResourcesReleased:leaked,adaptiveStill:true,resize:true,hardReplacement:true,latestQueue:true,emptyCarpetFallback:true});
   const movingA={...A,wind_strength:1,drift_auto:true},movingB={...B,wind_strength:1,drift_auto:true};
   open(movingA);const start=e.motion.time;e.transitionTo(movingB,{duration:.25});while(e.trans.active)pump();

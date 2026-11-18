@@ -3,6 +3,8 @@ import { VS_FULL, FS_SCENE_MIX } from './komorebi-shaders.js';
 
 // Two complete looks, including tone mapping, share the engine's context and clock.
 // Only the outgoing scene is temporary: the incoming one remains the engine after landing.
+// The route's entry (komorebi-routes.js): the incoming look's canopy is the host's, baked under the route on a moving frame;
+// a selection made while it runs waits or takes another route, so it has no retarget, and nothing to do at landing but end.
 export function makeSceneFade(hub, createScene){
   const { gl, canvas } = hub;
   let scene=null, outgoing=null, incoming=null, prog=null, uniforms=null;
@@ -61,5 +63,6 @@ export function makeSceneFade(hub, createScene){
     free(outgoing); free(incoming); outgoing=incoming=null;
     prog=null; uniforms=null;   // asked again at the next dissolve: a context restored since has a new table
   }
-  return { beginSceneFade, stepSceneFade, drawSceneFade, endSceneFade };
+  return { name:'sceneFade', begin:beginSceneFade, step:stepSceneFade, draw:drawSceneFade, end:endSceneFade,
+    hostBakes:true, swaps:true, landing:[] };
 }

@@ -1,4 +1,5 @@
-import { clamp, lerp, lerpAngle, smoothstep, TAU, turnBack } from './komorebi-math.js';
+import { clamp, lerp, lerpAngle, smoothstep, TAU } from './komorebi-math.js';
+import { turnBack } from './komorebi-routes.js';
 import { ballisticK } from './komorebi-leaf.js';
 import { flutterLevel, depthGate } from './komorebi-air.js';
 import { CANOPY_MORPH_MAX, DEFAULTS, MORPH_KEYS } from './komorebi-params.js';
@@ -246,7 +247,8 @@ export function makeLeafTravel(hub,createScene){
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   }
-  function stepLeafTravel(dt,e,t){
+  function stepLeafTravel(dt,t,e){
+    hub.regenSource();   // the source this frame's morph left: the carriers' throw and the native share are cast from it
     if(!s.b&&init()===false){
       const from=s.from.hub;
       if(from.motionActive())from.motionTick(dt);
@@ -390,5 +392,8 @@ export function makeLeafTravel(hub,createScene){
     s=null;trans.travelField=null;trans.travelTone=null;
     return pending;
   }
-  return {beginLeafTravel,retargetLeafTravel,stepLeafTravel,drawLeafTravel,finishLeafTravel,endLeafTravel};
+  // The route's entry (komorebi-routes.js): the look's live keys morph under it, drift left to the wind; the ground's
+  // brightest channel goes straight between the ends' (one field of dapples in a colour between two looks).
+  return {name:'leafTravel',begin:beginLeafTravel,retarget:retargetLeafTravel,step:stepLeafTravel,draw:drawLeafTravel,finish:finishLeafTravel,end:endLeafTravel,
+    tweens:true,keepsDrift:true,groundPeak:true,landing:['regenSource','resetPerf','bake']};
 }

@@ -56,9 +56,14 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-motion.js` — the wind signal and the trunk/limb/twig springs.
 - `komorebi-air.js` — the air, pure: the broadband wind signal and its patterns (`fbm1`, `WIND_PATTERNS`, `windNoise`), the wind's force as a function of time, the air at a place, how deep into a crown it
   reaches; the motion, the travel routes' CPU leaves and the shaders' constants read it.
-- `komorebi-transitions.js` — the routes between looks, and which one a pair takes. Each long route has its own module:
+- `komorebi-transitions.js` — the routes between looks: which one a pair takes (`transitionTo`, the one place that names a
+  route) and the one lifecycle every long route runs through (start, tick, land, abort, context loss and restore, dispose),
+  read off the route's entry, never its name. Each long route has its own module, which returns one entry:
   `komorebi-scene-fade.js` (the dissolve), `komorebi-leaf-travel.js` (faithful↔layer and faithful↔faithful, patch by
   patch), `komorebi-season-travel.js`, `komorebi-grove-travel.js` and `komorebi-litter-rise.js` (floor↔sky).
+- `komorebi-routes.js` — what a route is, pure: the entry's shape and policies, `restTrans` (every field of the transition
+  state at rest), the cut stub, and the helpers more than one route uses (`turnBack`, `irisRoute`, `irisStep`). The route
+  modules and `komorebi-transitions.js` import it, never the reverse.
 - `komorebi-render.js` — one frame onto a target.
 - `komorebi-tree-view.js` — the tree seen from the floor camera: the faithful cast's own leaves and wood, stood up, lit and laid over the floor; the projection the shader runs, pure. Behind `FEAT_TREE_VIEW`.
 - `komorebi-transport.js` — the camera registry: GLSL snippets `buildTransport()` assembles into one program per camera.
@@ -72,7 +77,7 @@ the whole renderer, no UI. No engine module may import an EDITOR-only file, and 
 - `komorebi-light.js` — the sun and the air, pure: the 3-band atmosphere, the sun's direction, the cosine law each receiver takes the beam by, the air's loss, the exposure the frame is shown at.
 - `komorebi-camera.js` — the camera, pure: the floor's gauge as a real eye (`cameraPose`) and the edge of the frame as the shader computes it (`vignetteMask`).
 - `komorebi-grammar.js` — the tree's skeleton grown from a spec and a stream (`growSkeleton`) and the direction helpers it turns a child by; pure. The grove and `komorebi-growth.js` call it.
-- `komorebi-math.js` — what the organs share, and nothing of their laws: constants, interpolation, the two-circle overlap area, the deterministic RNG, and the helpers the routes between looks share (`turnBack`, `irisRoute`, `irisStep`).
+- `komorebi-math.js` — what the organs share, and nothing of their laws: constants, interpolation, the two-circle overlap area, the deterministic RNG.
 - `komorebi-editor-tools.js` — EDITOR-only: debug overlays, the GPU timer queries `nix run .#cost` reads, the motion mirror.
 
 **Looks.** `presets.js` — the built-in looks (`PRESETS`, in the order a person walks them; `EXPERIMENTAL`, which the editor hides behind its toggle; and `PRIORITY`, the dials each look leads with).

@@ -34,7 +34,7 @@ try{
   }
   open(A);const nativeA=last.slice();open(B);const nativeB=last.slice();
   open(A);let ended=0;const grove=e.grove().hier;e.transitionTo(B,{duration:1,onEnd:()=>ended++});
-  need(e.trans.shadowFall&&e.trans.litterRise,'descent still uses the scene swap');
+  need(e.trans.shadowFall&&e.trans.route?.name==='litterRise','descent still uses the scene swap');
   window.__clock.pump(stamp);const sourceDelta=diff(nativeA,last);need(sourceDelta===0,'native sky changed at preparation');
   let previous=last.slice(),maxStep=0;
   for(let i=0;i<120;i++){
@@ -43,7 +43,7 @@ try{
   }
   const before=last.slice();pump();const landingDelta=diff(before,last);
   need(landingDelta<=2,`landing jump ${landingDelta}`);need(diff(nativeB,last)===0,'settled floor differs from native');
-  need(ended===1&&!e.trans.shadowFall&&!e.trans.litterRise,'completion state');need(maxStep<40,`scene-sized step ${maxStep}`);
+  need(ended===1&&!e.trans.shadowFall&&e.trans.route?.name!=='litterRise','completion state');need(maxStep<40,`scene-sized step ${maxStep}`);
   results.push({sourceDelta,landingDelta,maxStep});
   open(A);e.transitionTo({...B,adaptive_motion:true},{duration:.1});while(e.trans.active)pump();pump();need(diff(nativeB,last)===0,'idle adaptive floor landing');
   open(A);e.transitionTo(B,{duration:1});pump(40);const still=last.slice();window.__clock.pump(stamp);need(diff(still,last)===0,'zero-time redraw moved the flight');

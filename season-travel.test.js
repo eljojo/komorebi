@@ -122,7 +122,7 @@ test('season travel with leaves on older wood: every cast is drawn, the flight b
       expect(eng.faith.pivotBuf.floats,'at rest: one weight a hanging leaf').toBe(eng.faith.count);
       const restOn=eng.faith.pivotOn;
       eng.transitionTo(to,{duration:1});
-      expect(eng.trans.seasonTravel,`${fromName} -> ${toName} is a season travel`).toBe(true);
+      expect(eng.trans.route?.name,`${fromName} -> ${toName} is a season travel`).toBe('seasonTravel');
       const S=eng.grove().season;let flown=0,rested=0;
       for(let f=0;f<400&&eng.trans.active;f++){
         log.draws.length=0;pump();

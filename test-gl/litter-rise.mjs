@@ -28,7 +28,7 @@ try{
   function open(p){e?.dispose();c?.remove();window.__clock.drain();window.__clock.set(0);stamp=0;c=document.createElement('canvas');document.body.appendChild(c);e=create(c,{params:p});
    e.onFrame=()=>{if(read){const g=e.gl;last=new Uint8Array(c.width*c.height*4);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,c.width,c.height,g.RGBA,g.UNSIGNED_BYTE,last);}const error=e.gl.getError();need(!error,`WebGL ${error}`);};pump();}
   open(A);const nativeA=last.slice();open(B);const nativeB=last.slice();
-  open(A);let ended=0;e.transitionTo(B,{duration:1,onEnd:()=>ended++});need(e.trans.litterRise,'wrong litter route');window.__clock.pump(stamp);
+  open(A);let ended=0;e.transitionTo(B,{duration:1,onEnd:()=>ended++});need(e.trans.route?.name==='litterRise','wrong litter route');window.__clock.pump(stamp);
   const sourceDelta=diff(nativeA,last);need(sourceDelta===0,`source changed ${sourceDelta}`);
   pump(120);const before=last.slice();need(e.trans.active,'expected last flying frame');e.setParams(B);window.__clock.pump(stamp);
   const landingDelta=diff(before,last);need(landingDelta<=2,`landing jump ${landingDelta}`);results.push({sourceDelta,landingDelta});
@@ -58,7 +58,7 @@ try{
     return {png:enc.toDataURL('image/png'),t:e.trans.t,frameMs,luma:luma/(W*H),delta:delta/(W*H*3)};};
    // Hold the displayed outgoing pose before the journey starts.
    window.__hold=()=>{window.__clock.pump(stamp);const g=e.gl;g.finish();};
-   window.__dispose=()=>e.dispose();results.push({setupMs,fullRoute:e.trans.litterRise});
+   window.__dispose=()=>e.dispose();results.push({setupMs,fullRoute:e.trans.route?.name==='litterRise'});
   }else{open(A);e.transitionTo(B,{duration:1});pump(35);e.transitionTo(C,{duration:1});window.__loss={e,stamp,step,ext:e.gl.getExtension('WEBGL_lose_context'),nativeC};}
   return results;
  },{fixture,W,H,render});

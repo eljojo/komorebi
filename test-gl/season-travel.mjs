@@ -85,7 +85,7 @@ void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0
         open(from);const first=last.slice(),floorA=new Set(e.grove().litter.map(id));
         open(to);const final=last.slice(),floorB=new Set(e.grove().litter.map(id));
         need(from.inner_leaves>0&&to.inner_leaves>0,'the shipped pair must hang leaves on older wood, or the pivot weights go unchecked');
-        open(from);e.transitionTo(to,{duration:1});need(e.trans.seasonTravel,`${fromName} -> ${toName} used an ordinary grove morph`);
+        open(from);e.transitionTo(to,{duration:1});need(e.trans.route?.name==='seasonTravel',`${fromName} -> ${toName} used an ordinary grove morph`);
         window.__clock.pump(stamp);const sourceDelta=diff(first,last);need(sourceDelta<=1,`two-carpet source changed: ${sourceDelta}`);
         const S=e.grove().season,aa=cameraPose(from).eye,bb=cameraPose(to).eye;let previous=journey(),shared=0,moving=0;
         for(let i=0;i<S.n;i++){const k=`${S.rec[i*11+6]}/${S.rec[i*11+7]}`;if(floorA.has(k)&&floorB.has(k))shared++;if(floorA.has(k)!==floorB.has(k))moving++;}
@@ -126,7 +126,7 @@ void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0
     need(!e.trans.active,'spring test must land');const afterSpring=e.motion.time;pump(1);edge(e.motion.time>afterSpring,'landing froze the residual branch springs');results.push({springsContinuous:e.motion.time>afterSpring});
     need(!edgeFailures.length,edgeFailures.join('; '));
     for(const [from,to,start,end] of [[A,B,nativeA,nativeB],[B,A,nativeB,nativeA]]){
-      open(from);let ended=0;e.transitionTo(to,{duration:1,onEnd:()=>ended++});need(e.trans.seasonTravel,'wrong seasonal route');
+      open(from);let ended=0;e.transitionTo(to,{duration:1,onEnd:()=>ended++});need(e.trans.route?.name==='seasonTravel','wrong seasonal route');
       window.__clock.pump(stamp);const sourceDelta=diff(start,last);need(sourceDelta===0,`source changed: ${sourceDelta}`);
       let frames=0;while(e.trans.active&&frames++<130)pump(1);
       const endDelta=diff(end,last);need(endDelta===0,`native target changed: ${endDelta}`);need(ended===1,'callback count');

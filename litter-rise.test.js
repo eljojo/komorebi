@@ -2,6 +2,7 @@ import {test,expect} from 'bun:test';
 import fixture from './test-gl/fixtures/fall-look-up.json';
 import descent from './test-gl/fixtures/look-up-fall.json';
 import * as rise from './komorebi-litter-rise.js';
+import {restTrans} from './komorebi-routes.js';
 test('the authored fall memories → look up pair takes the litter rise route',()=>{
  expect(typeof rise.litterRiseEligible).toBe('function');
  expect(rise.litterRiseEligible(fixture.from,fixture.to)).toBe(true);
@@ -17,12 +18,12 @@ test('look up → fall memories accepts the original and latest floor parameters
 });
 test('a destination with no actual carpet declines descent and releases the prepared scene',()=>{
  let released=0;
- const hub={params:{...descent.from},trans:{}};
+ const hub={params:{...descent.from},trans:restTrans()};
  const source={hub:{params:{...descent.to},grove:{litter:[]}},dispose:()=>released++};
  const flight=rise.makeLitterRise(hub,()=>source);
- expect(flight.beginLitterRise(descent.to,false,true)).toBe(false);
+ expect(flight.begin(descent.to,false,true)).toBe(false);
  expect(released).toBe(1);
- expect(flight.endLitterRise()).toBeUndefined();
+ expect(flight.end()).toBeUndefined();
 });
 test('unsupported scenes, optics and over-budget groves retain the existing routes',()=>{
  expect(typeof rise.litterRiseEligible).toBe('function');

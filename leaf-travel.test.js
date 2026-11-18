@@ -1,5 +1,6 @@
 import { test, expect } from 'bun:test';
 import * as travel from './komorebi-leaf-travel.js';
+import { restTrans } from './komorebi-routes.js';
 import { smoothstep } from './komorebi-math.js';
 import { DEFAULTS, CANOPY_MORPH_MAX } from './komorebi-params.js';
 
@@ -96,22 +97,22 @@ test('travel checks the actual patch correspondence before allocating moving-cas
       return ()=>{};
     }});
     const source={params:{...params},faith:{count:n,buf:a.leaves,hMax:2},hier:a.hier,motion:a.motion,grove:{shape:null},motionActive:()=>false};
-    const hub={gl,params,trans:{},faith:{count:n,buf:b.leaves,hMax:2},hier:b.hier,motion:b.motion,grove:{shape:null},
+    const hub={gl,params,trans:restTrans(),regenSource(){},faith:{count:n,buf:b.leaves,hMax:2},hier:b.hier,motion:b.motion,grove:{shape:null},
       src:{count:1,flat:[0,0,1]},projMatrix:()=>[1,0,0,1],program:()=>{programs++;return {};}};
     const route=travel.makeLeafTravel(hub,()=>({hub:source,restore:()=>{restored++;},dispose:()=>{disposed++;}}));
-    route.beginLeafTravel(to);Object.assign(params,to);
-    const result=route.stepLeafTravel(0,0,0);
+    route.begin(to);Object.assign(params,to);
+    const result=route.step(0,0,0);
     if(excess){
       expect(result).toBe(false);
       expect(programs).toBe(0);
       expect(params).toEqual({...DEFAULTS,...a.params,seed:1});
-      route.finishLeafTravel();expect(restored).toBe(1);
+      route.finish();expect(restored).toBe(1);
     }else{
       expect(result).not.toBe(false);
       expect(programs).toBeGreaterThan(0);
-      route.finishLeafTravel();expect(restored).toBe(0);
+      route.finish();expect(restored).toBe(0);
     }
-    route.endLeafTravel();expect(disposed).toBe(1);
+    route.end();expect(disposed).toBe(1);
   }
 });
 

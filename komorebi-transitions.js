@@ -2,10 +2,13 @@
 // Scene transitions (spec/model/transitions.md) — the cloud-bloom crossfade between looks: MORPH
 // knobs tween live, STRUCTURAL ones snap under the bloom peak (dissolve), a
 // same-topology grove change morphs, and a mode flip takes the widest bloom.
-// transitionTo classifies the route; tickTransition drives it each frame.
+// transitionTo classifies the route; tickTransition drives it each frame. A long route is an entry in hub.routes
+// (komorebi-routes.js) and trans.route the one running: the chooser below is the one place that names a route, and the
+// lifecycle (start, tick, land, abort, context loss and restore, dispose) reads only the entry's policy.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { TAU, clamp, irisRoute, irisStep, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { TAU, clamp, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { irisRoute, irisStep, restTrans } from './komorebi-routes.js';
 import { beamExposure } from './komorebi-light.js';
 import { cameraPose } from './komorebi-camera.js';
 import { cameraFor } from './komorebi-transport.js';
@@ -37,6 +40,16 @@ export function makeTransitions(hub){
     const next=w ? () => hub.transitionTo(w.to,w.opts) : cb;
     return hub.arrived ? () => { hub.arrived(to); next?.(); } : next;
   };
+  // Every field back at rest (komorebi-routes.js), in place: the engine's handle holds this object. The caller's sticky duration stays.
+  const toRest = () => { Object.assign(trans, restTrans(), { dur: trans.dur }); };
+  // A route that carries its own leaves (the grove's regrouping, the litter's flights) starts from idle, once its begin has
+  // prepared it: from rest, with its whole state written at once. No bloom; the long clock.
+  function startCarried(route, to, opts, flavour){
+    hub.warnCut(to);
+    toRest();
+    Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
+      active:true,route,structDiff:true,bloomMax:0,onEnd:opts.onEnd??null},flavour);
+  }
 
   // ---- preset transitions (spec/model/transitions.md): morph the continuous look, dissolve the structural rebuild behind
   // a transient cloud-bloom. One entry point — the future MIDI/event layer drives this same method. ----
@@ -50,41 +63,36 @@ export function makeTransitions(hub){
     const styleFade = opts.style==='fade' && [...TOPO_KEYS,...MODE_KEYS,...CANOPY_KEYS].some(k => to[k]!==params[k]);
     trans.waiting = null;
     if(opts.style==='fade' && trans.active){ wait(to, opts); return; }   // a scene dissolve starts from rest; keep the requested style until the current route lands
-    if(trans.active&&trans.groveTravel){hub.retargetGroveTravel(to,opts);return;}
+    const routes = hub.routes;
+    if(trans.active&&trans.route?.name==='groveTravel'){trans.route.retarget(to,opts);return;}
     const castOwned = !seesTree(params) && !seesTree(to);   // a route that draws its own leaves may run
-    if(!styleFade&&!trans.active&&castOwned&&groveTravelEligible(params,to)&&hub.beginGroveTravel(to)!==false){
-      hub.warnCut(to);
-      Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
-        active:true,groveTravel:true,litterRise:false,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
-        structDiff:true,canopyMorph:false,crossfade:false,backgroundFade:false,bloom:0,bloomMax:0,iris:null,swapped:false,onEnd:opts.onEnd??null});
+    if(!styleFade&&!trans.active&&castOwned&&groveTravelEligible(params,to)&&routes.groveTravel.begin(to)!==false){
+      startCarried(routes.groveTravel,to,opts);
       return;
     }
-    if(trans.active&&trans.litterRise){hub.retargetLitterRise(to,opts);return;}
+    if(trans.active&&trans.route?.name==='litterRise'){trans.route.retarget(to,opts);return;}
     const shadowRise=!styleFade&&!trans.active&&castOwned&&shadowRiseEligible(params,to)&&hub.faith?.count!==0;
-    const litterFall=!styleFade&&!trans.active&&castOwned&&litterFallEligible(params,to)&&hub.beginLitterRise(to,false,true)!==false;
-    const shadowFall=!styleFade&&!trans.active&&castOwned&&shadowFallEligible(params,to)&&hub.beginLitterRise(to,true,true)!==false;
+    const litterFall=!styleFade&&!trans.active&&castOwned&&litterFallEligible(params,to)&&routes.litterRise.begin(to,false,true)!==false;
+    const shadowFall=!styleFade&&!trans.active&&castOwned&&shadowFallEligible(params,to)&&routes.litterRise.begin(to,true,true)!==false;
     if(!styleFade&&!trans.active&&castOwned&&(litterFall||shadowFall||shadowRise||hub.grove?.litter?.length&&litterRiseEligible(params,to))){
-      hub.warnCut(to);
-      Object.assign(trans,{from:{...params},to,t:0,dur:Math.max(1e-3,opts.duration??trans.dur),durScale:2,
-        active:true,litterRise:true,shadowRise,litterFall,shadowFall,sceneFade:false,seasonTravel:false,leafTravel:false,viewpoint:false,
-        structDiff:true,canopyMorph:false,crossfade:false,backgroundFade:false,bloom:0,bloomMax:0,iris:null,swapped:false,onEnd:opts.onEnd??null});
+      startCarried(routes.litterRise,to,opts,{shadowRise,litterFall,shadowFall});
       if(!litterFall&&!shadowFall){   // a descent keeps the live sky grove until its floor lands
-        hub.beginLitterRise(to,shadowRise);
+        routes.litterRise.begin(to,shadowRise);
         for(const k in DEFAULTS)params[k]=to[k];
         hub.rebuildAll();hub.resetPerf();
       }
       return;
     }
-    if(trans.active&&trans.seasonTravel){hub.retargetSeasonTravel(to,opts);return;}
+    if(trans.active&&trans.route?.name==='seasonTravel'){trans.route.retarget(to,opts);return;}
     // Two dissolving scenes and a crossfade inside its window are each a picture no other route can start from: the
     // outgoing scene or the half-faded grove would be dropped. Such a selection waits, as it does on a travel route.
     if(trans.active && (trans.crossfade && !trans.swapped && hub.crossW>0
-        || trans.sceneFade && (MODE_KEYS.some(k => to[k]!==params[k]) || !faithfulOn() || !to.faithful_canopy))){ wait(to, opts); return; }
+        || trans.route?.name==='sceneFade' && (MODE_KEYS.some(k => to[k]!==params[k]) || !faithfulOn() || !to.faithful_canopy))){ wait(to, opts); return; }
     const seasonTravel=!styleFade&&!trans.active&&castOwned&&seasonTravelEligible(params,to);
-    trans.seasonTravel=seasonTravel;
-    const retarget=trans.active&&trans.leafTravel;
-    const turnScale=retarget&&hub.retargetLeafTravel(to,opts);   // a reversal's clock, scaled to the distance it has left
+    const retarget=trans.active&&trans.route?.name==='leafTravel';
+    const turnScale=retarget&&trans.route.retarget(to,opts);   // a reversal's clock, scaled to the distance it has left
     if(retarget&&!turnScale)return;
+    if(!trans.active) toRest();   // a route started from idle starts from rest; an interrupted one reads what it shows, below
     const irisShown = trans.active && trans.iris ? trans.irisOpacity : null;   // an interrupted fade's opacity, read before anything changes
     const movingView=trans.active && trans.viewpoint;
     const viewpoint=!styleFade && !!((!trans.active || movingView) && (movingView || params.sky_view!==to.sky_view) && !params.faithful_canopy && !to.faithful_canopy
@@ -161,7 +169,6 @@ export function makeTransitions(hub){
       && params.leaf_drop===0&&to.leaf_drop===0&&params.leaf_size_m>0&&to.leaf_size_m>0
       && params.edge_area===to.edge_area&&params.eclipse===to.eclipse
       && leafCount>0&&leavesTo>0&&carrierCount<=CANOPY_MORPH_MAX);
-    trans.leafTravel=!!leafTravel;
     if(leafTravel){trans.backgroundFade=false;trans.settleCamera=false;}
     // a mode flip can't morph leaf-for-leaf (the bake path / faithTex size / crown sizing change), so it forces a
     // dissolve+rebuild just like a topology change — never a live grove morph (which only regrows, no realloc).
@@ -200,13 +207,14 @@ export function makeTransitions(hub){
     const carpet = p => p.litter>0 && p.leaf_drop>0;
     const carpetFade = !trans.active && trans.backgroundFade && !seasonTravel && !leafTravel && (carpet(params) || carpet(to));
     const sceneFade = styleFade || carpetFade
-      || !seasonTravel && !leafTravel && !moonShown && (trans.structDiff || !!trans.sceneFade) && !modeDiff && faithfulOn() && to.faithful_canopy;
+      || !seasonTravel && !leafTravel && !moonShown && (trans.structDiff || trans.route?.name==='sceneFade') && !modeDiff && faithfulOn() && to.faithful_canopy;
     // Each dissolving scene draws its own shadows, window and model from its own look: no shared fade of them applies.
     if(sceneFade){ trans.backgroundFade=false; trans.settleCamera=false; trans.windowFade=false; trans.splitFade=false; }
     if(sceneFade) trans.structDiff=true;   // an interruption still has two different visible scenes to dissolve
-    if(!sceneFade && trans.sceneFade) hub.endSceneFade();
-    if(sceneFade) hub.beginSceneFade();   // preserve the outgoing scene before params become the incoming look
-    trans.sceneFade = sceneFade;
+    const route = seasonTravel ? routes.seasonTravel : leafTravel ? routes.leafTravel : sceneFade ? routes.sceneFade : null;
+    if(trans.route && trans.route!==route) trans.route.end();   // the route interrupted, when another takes over
+    if(sceneFade) routes.sceneFade.begin();   // preserve the outgoing scene before params become the incoming look
+    trans.route = route;
     // THE SEEN TREE fades, never switches. A look that sees its tree and one that does not share the grove, the shadow and the floor, so the route
     // runs as it would between the two framings alone (the camera glides, the shadow stays on the ground) while the tree's opacity moves from one
     // end's to the other's. tree_view is held on until landing; an interrupted fade starts from the opacity it shows. Two dissolving scenes keep
@@ -257,11 +265,11 @@ export function makeTransitions(hub){
     trans.bloomFrom = trans.active ? trans.bloom : 0;   // an interrupted bloom eases out of the next route from where it is
     trans.t = 0; trans.swapped = false; trans.bloom = trans.bloomFrom; trans.active = true;
     trans.onEnd = opts.onEnd || null;
-    if(seasonTravel){trans.structDiff=true;trans.durScale=2;hub.beginSeasonTravel(to);}
+    if(seasonTravel){trans.structDiff=true;trans.durScale=2;routes.seasonTravel.begin(to);}
     if(leafTravel){
       trans.structDiff=true;trans.durScale=retarget?turnScale:2;
       if(!retarget){
-        hub.beginLeafTravel(to);
+        routes.leafTravel.begin(to);
         for(const k in DEFAULTS)params[k]=to[k];
         hub.rebuildAll();hub.resetPerf();
       }
@@ -290,24 +298,7 @@ export function makeTransitions(hub){
       m.x = lerp(m.from, m.to, e);
       m.soft = Math.max(m.from!==m.to ? Math.sin(Math.PI*t) : 0, m.softFrom*(1 - smoothstep(0, 0.5, t)));
     }
-    if(trans.groveTravel){
-      hub.stepGroveTravel(dt,t);
-      if(t<1)return null;
-      const pending=hub.finishGroveTravel();
-      trans.active=false;trans.groveTravel=false;trans.swapped=true;
-      hub.endGroveTravel();hub.resumeAdaptive?.();
-      const cb=trans.onEnd;trans.onEnd=null;
-      return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);
-    }
-    if(trans.litterRise){
-      hub.stepLitterRise(dt,t);
-      if(t<1)return null;
-      const pending=hub.finishLitterRise();
-      trans.active=false;trans.litterRise=false;trans.swapped=true;
-      hub.endLitterRise();hub.regenSource();hub.bake();hub.resumeAdaptive?.();
-      const cb=trans.onEnd;trans.onEnd=null;
-      return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);
-    }
+    const route = trans.route;
     if(trans.viewpoint){
       for(let i=0;i<3;i++) trans.viewEye[i]=lerp(trans.viewFrom.eye[i],trans.viewTo.eye[i],e);
       trans.viewElevation=lerp(trans.viewFrom.elevation,trans.viewTo.elevation,e);
@@ -318,14 +309,13 @@ export function makeTransitions(hub){
     trans.shadowOpacity = trans.backgroundFade
       ? (t<0.5 ? lerp(trans.shadowFrom, 0, smoothstep(0,0.5,t)) : smoothstep(0.5,1,t))
       : lerp(trans.shadowFrom ?? 1, 1, smoothstep(0, 0.5, t));
-    if(trans.sceneFade){
+    // A route the look does not morph under (the scene fade, the grove's and the litter's travels) steps in place of the morph.
+    // Started from rest, the grove's and the litter's carry no bloom and no shadow fade: carried is 0 and the shadow opacity 1.
+    if(route && !route.tweens){
       trans.bloom = carried;
-      hub.stepSceneFade(dt);
+      if(route.step(dt,t,e)===false) return giveUp(route);
       if(t<1) return null;
-      trans.active=false; trans.sceneFade=false; trans.swapped=true;
-      hub.endSceneFade();
-      const cb=trans.onEnd; trans.onEnd=null;
-      return queued(cb);
+      return land(route);
     }
     // 0 at the ends, deepest at the midpoint — where the swap fires. Both structural tiers stop short of full
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
@@ -333,7 +323,7 @@ export function makeTransitions(hub){
     trans.windowOpacity=lerp(trans.windowFrom, trans.windowTo, e);
     if(trans.treeFade) trans.treeOpacity=lerp(trans.treeFrom, trans.treeTo, trans.treeTo<trans.treeFrom ? smoothstep(0,0.5,t) : smoothstep(0.5,1,t));   // out over the first half, before the camera has swung far; in over the second
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
-      if((trans.viewpoint||trans.leafTravel||trans.seasonTravel) && k==='drift_phase' && params.drift_auto) continue;
+      if((trans.viewpoint||route?.keepsDrift) && k==='drift_phase' && params.drift_auto) continue;
       if(trans.windowFade && WINDOW_KEYS.has(k)){ params[k]=trans.windowShape[k]; continue; }
       if(trans.splitFade){
         const leaving=trans.from.leaf_diffuse>0;
@@ -352,7 +342,7 @@ export function makeTransitions(hub){
     // channel as bright as either end's, and a steep contrast then clamps every partial shadow to black, leaving round holes.
     // The hue still tweens; the ground's brightest channel moves straight from one end's to the other's.
     // Between two faithful groves (patch by patch) each picture is drawn with its own look's ground, so this blend is not shown there.
-    if(trans.leafTravel){
+    if(route?.groundPeak){
       const peak=p=>Math.max(p.ground_r,p.ground_g,p.ground_b), now=peak(params);
       if(now>0){ const s=lerp(peak(trans.from),peak(trans.to),e)/now; params.ground_r*=s; params.ground_g*=s; params.ground_b*=s; }
     }
@@ -364,36 +354,10 @@ export function makeTransitions(hub){
     // and the arrangement reorganizes instead of being replaced. The incoming grove is installed as the engine's
     // own once it carries the whole picture, which is also when the structural params can safely snap: nothing
     // reads them again until the next regrow.
-    if(trans.seasonTravel){
-      hub.stepSeasonTravel(dt,t);
-      if(t<1)return null;
-      const drift=params.drift_phase;
-      for(const k in DEFAULTS)params[k]=trans.to[k];
-      if(params.drift_auto)params.drift_phase=drift;
-      const pending=hub.finishSeasonTravel();
-      trans.active=false;trans.seasonTravel=false;hub.endSeasonTravel();
-      hub.regenSource();hub.resetPerf();hub.bake();
-      const cb=trans.onEnd;trans.onEnd=null;
-      return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);
-    }else if(trans.leafTravel){
-      hub.regenSource();
-      if(hub.stepLeafTravel(dt,e,t)===false){
-        const {to,dur,onEnd,waiting}=trans,pending=hub.finishLeafTravel();
-        hub.endLeafTravel();trans.active=false;trans.leafTravel=false;
-        transitionTo(to,{duration:dur,style:'fade',onEnd});
-        trans.waiting=waiting??pending;
-        if(trans.waiting)trans.onEnd=null;
-        return null;
-      }
-      if(t<1)return null;
-      const drift=params.drift_phase;
-      for(const k in DEFAULTS)params[k]=trans.to[k];
-      if(params.drift_auto)params.drift_phase=drift;
-      const pending=hub.finishLeafTravel();
-      trans.active=false;trans.leafTravel=false;trans.travelField=null;trans.travelTone=null;
-      hub.endLeafTravel();hub.regenSource();hub.resetPerf();hub.bake();
-      const cb=trans.onEnd;trans.onEnd=null;
-      return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);
+    if(route){   // a route the look morphs under (season and leaf travel) steps after the morph
+      if(route.step(dt,t,e)===false) return giveUp(route);
+      if(t<1) return null;
+      return land(route);
     }else if(trans.viewpoint){
       trans.swapped=t>=0.5;   // one grove remains in place through the horizon; its mode-specific state lands at the end
     } else if(trans.crossfade){
@@ -452,5 +416,65 @@ export function makeTransitions(hub){
     return wake;
   }
 
-  return { transitionTo, tickTransition };
+  // A long route lands: a route the look morphs under sets the live look to the target (keeping the wind's drift where it
+  // keeps it) before its finish installs the end it lands on; then it is ended, and what it owes the landed look is run.
+  // The state is not returned to rest: t, the swap, the bloom and the opacities stay what the last frame showed.
+  function land(route){
+    if(route.tweens){
+      const drift=params.drift_phase;
+      for(const k in DEFAULTS)params[k]=trans.to[k];
+      if(route.keepsDrift&&params.drift_auto)params.drift_phase=drift;
+    }
+    const pending=route.finish?.();
+    trans.active=false;trans.route=null;
+    if(route.swaps)trans.swapped=true;
+    route.end();
+    for(const k of route.landing)hub[k]?.();
+    const cb=trans.onEnd;trans.onEnd=null;
+    return queued(pending?()=>hub.transitionTo(pending.to,pending.opts):cb);   // a waiting selection still beats the route's pending one
+  }
+  // A route that gives up mid-flight (its step returned false, having put the look it left back in place) dissolves to the
+  // same target from rest, keeping the caller's completion unless a selection waits.
+  function giveUp(route){
+    const {to,dur,onEnd,waiting}=trans,pending=route.finish?.();
+    route.end();trans.active=false;trans.route=null;
+    transitionTo(to,{duration:dur,style:'fade',onEnd});
+    trans.waiting=waiting??pending;
+    if(trans.waiting)trans.onEnd=null;
+    return null;
+  }
+
+  // A hard swap of the look (setParams): the running route is ended, a half-faded incoming grove freed, and the state returns
+  // to rest, so nothing of the route outlives the swap.
+  function abortTransition(){
+    if(!trans.active) return;
+    trans.route?.end();
+    if(hub.groveIn){ hub.freeGrove(hub.groveIn); hub.groveIn = null; }
+    hub.crossW = 0;
+    toRest();
+  }
+  // The context is lost: every route is ended (its GL died with the context) and none runs. What is owed survives for the
+  // restore to land on: a route's pending selection, or a waiting one, with its completion.
+  function loseContext(){
+    for(const route of Object.values(hub.routes)){
+      const pending=route.end();
+      if(pending){trans.to=pending.to;trans.onEnd=pending.opts?.onEnd??null;}
+    }
+    if(trans.waiting){trans.to=trans.waiting.to;trans.onEnd=trans.waiting.opts?.onEnd??null;trans.waiting=null;}
+    trans.route=null;
+  }
+  // The context is back: a route that was running lands on its target rather than resuming half-faded. Returns the
+  // completion owed, for the caller to run once the engine has its loop again.
+  function restoreContext(){
+    if(!trans.active) return null;
+    const to=trans.to, cb=trans.onEnd;
+    toRest();
+    for(const k in DEFAULTS) params[k] = to[k];
+    hub.arrived(to);
+    return cb;
+  }
+  // The engine is disposed: every route releases what it holds.
+  function endRoutes(){ for(const route of Object.values(hub.routes)) route.end(); }
+
+  return { transitionTo, tickTransition, abortTransition, loseContext, restoreContext, endRoutes };
 }

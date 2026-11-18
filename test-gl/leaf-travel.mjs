@@ -40,7 +40,7 @@ try{
     open({...A,wind_strength:1});const windStart=e.motion.time;e.transitionTo({...B,wind_strength:1},{duration:1});pump(10);
     const windElapsed=e.motion.time-windStart;need(Math.abs(windElapsed-10*step/1000)<1e-9,`a frame advanced the parent wind more than once: ${windElapsed}`);results.push({windElapsed});
     for(const [from,to,start,end] of [[A,B,nativeA,nativeB],[B,A,nativeB,nativeA]]){
-      open(from);let ended=0;e.transitionTo(to,{duration:1,onEnd:()=>ended++});need(e.trans.leafTravel,'wrong transition route');
+      open(from);let ended=0;e.transitionTo(to,{duration:1,onEnd:()=>ended++});need(e.trans.route?.name==='leafTravel','wrong transition route');
       window.__clock.pump(stamp);const sourceDelta=diff(start,last);need(sourceDelta===0,`source endpoint changed: ${sourceDelta}`);
       let frames=0;while(e.trans.active&&frames++<130)pump(1);
       const endDelta=diff(end,last);need(endDelta===0,`target endpoint changed: ${endDelta}`);need(ended===1,'callback count');
@@ -136,7 +136,7 @@ try{
     function route(from,to,label){
       const target=fresh(to),source=fresh(from);open(from);let ended=0;
       e.transitionTo(to,{duration:1,onEnd:()=>ended++});
-      need(e.trans.leafTravel&&!e.trans.sceneFade&&e.trans.bloomMax===0&&e.trans.durScale===2,`${label}: not leaf travel`);
+      need(e.trans.route?.name==='leafTravel'&&e.trans.bloomMax===0&&e.trans.durScale===2,`${label}: not leaf travel`);
       window.__clock.pump(stamp);const start=diff(source,last);
       const steps=[],t=[];let prev=last.slice();
       while(e.trans.active){pump();need(e.trans.bloom===0,`${label}: bloom`);steps.push(mean(prev,last));t.push(e.trans.t);prev=last.slice();}
@@ -167,12 +167,12 @@ try{
     // Interruptions: reversal, a third faithful grove arriving in flight, a hard replacement, dispose.
     const n1=fresh(F1),n3=fresh(F3);
     for(const at of [45,110]){
-      open(F1);e.transitionTo(F2,{duration:1});pump(at);const shown=last.slice();e.transitionTo(F1,{duration:1});need(e.trans.leafTravel,'reversal left leaf travel');
+      open(F1);e.transitionTo(F2,{duration:1});pump(at);const shown=last.slice();e.transitionTo(F1,{duration:1});need(e.trans.route?.name==='leafTravel','reversal left leaf travel');
       window.__clock.pump(stamp);const jump=diff(shown,last);while(e.trans.active)pump();pump();
       out[`reverse at ${at}`]={jump,landed:diff(n1,last)};need(jump<=1&&diff(n1,last)===0,`reverse at ${at}: ${JSON.stringify(out[`reverse at ${at}`])}`);
     }
     {open(F1);let first=0,third=0;e.transitionTo(F2,{duration:1,onEnd:()=>first++});pump(35);e.transitionTo(F3,{duration:.5,onEnd:()=>third++});
-      need(e.trans.leafTravel,'a third selection broke the moving route');let n=0;while(e.trans.active&&n++<400)pump();pump();
+      need(e.trans.route?.name==='leafTravel','a third selection broke the moving route');let n=0;while(e.trans.active&&n++<400)pump();pump();
       out.third={first,third,landed:diff(n3,last)};need(first===0&&third===1&&diff(n3,last)===0,`third look: ${JSON.stringify(out.third)}`);}
     open(F1);e.transitionTo(F2,{duration:1});pump(35);e.setParams(F1);pump();out.setParams=diff(n1,last);need(out.setParams===0,'hard replacement');
     open(F1);e.transitionTo(F2,{duration:1});pump(35);e.dispose();e=null;c.remove();c=null;open(F1);out.dispose=diff(n1,last);need(out.dispose===0,'dispose');

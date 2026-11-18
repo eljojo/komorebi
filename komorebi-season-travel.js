@@ -1,4 +1,5 @@
-import { DEG, TAU, lerp, lerpAngle, smoothstep, turnBack } from './komorebi-math.js';
+import { DEG, TAU, lerp, lerpAngle, smoothstep } from './komorebi-math.js';
+import { cutRoute, restTrans, turnBack } from './komorebi-routes.js';
 import { beamExposure } from './komorebi-light.js';
 import { cameraPose } from './komorebi-camera.js';
 import { leafClock, springing } from './komorebi-season.js';
@@ -39,7 +40,7 @@ export const seasonTravelEligible=FEAT_LITTER ? (a,b)=>{
   return a.leaf_size_m>0&&leaves>0&&leaves<=CANOPY_MORPH_MAX;
 }:()=>false;
 
-const NO_SEASON_TRAVEL={endSeasonTravel(){}};
+const NO_SEASON_TRAVEL=cutRoute('seasonTravel');
 export const makeSeasonTravel=FEAT_LITTER ? hub=>{
   if(!FEAT_DROP)return NO_SEASON_TRAVEL;
   const {gl,params,trans,faith}=hub;
@@ -91,12 +92,12 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     const q=from.litter>0?0:1;
     s={a,b,S,paths,carpet,bothCarpets,data,journey,layerData,buf,start:q,end:1-q,q,side:q,pending:null,
       field:{tex:null,ox:0,oy:0,ext:1,weight:0},res:0,maxRes:Math.max(aParams.bake_resolution||aParams.tex_resolution,bParams.bake_resolution||bParams.tex_resolution),maxSamples:Math.max(aParams.sample_count,bParams.sample_count)};
-    const cast={...hub,params:{...params},perf:{auto:false},src:{},srcDbgBuf:null,trans:{bloom:0},seasonCast:true,faithTex:null,faithScratch:null,
+    const cast={...hub,params:{...params},perf:{auto:false},src:{},srcDbgBuf:null,trans:restTrans(),seasonCast:true,faithTex:null,faithScratch:null,
       faith:{...faith,pivotOn:false,gx:new Float32Array(faith.gx.length),gy:new Float32Array(faith.gy.length)},bakeRes:()=>s.res};   // pivotOn false: the flight reads no pivot weight, and the bake would take that specialization over this cast's own program
     cast.progFaith=hub.sharedProgram(VS_SEASON_TRAVEL,FS_FAITH);cast.U={...hub.U,faith:hub.faithLocs(cast.progFaith)};
     cast.effCloud=()=>cast.params.cloud_thickness;
     Object.assign(cast,makeSource(cast),makeCast(cast));Object.assign(cast,makeBake(cast));s.cast=cast;
-    trans.travelField=s.field;
+    trans.travelField=s.field;trans.castHeld=true;
   }
   function retargetSeasonTravel(to,opts){
     const same=p=>Object.keys(DEFAULTS).every(k=>k==='drift_phase'||k==='auto_quality'||k==='adaptive_motion'||p[k]===to[k]);
@@ -185,8 +186,10 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     const pending=s.pending;
     gl.deleteBuffer(s.buf);
     if(s.res){gl.deleteTexture(s.cast.faithTex);gl.deleteTexture(s.cast.faithScratch);}
-    s=null;trans.travelField=null;
+    s=null;trans.travelField=null;trans.castHeld=false;
     return pending;
   }
-  return {beginSeasonTravel,retargetSeasonTravel,stepSeasonTravel,drawSeasonTravel,finishSeasonTravel,endSeasonTravel};
+  // The route's entry (komorebi-routes.js): the look's live keys morph under it, drift left to the wind.
+  return {name:'seasonTravel',begin:beginSeasonTravel,retarget:retargetSeasonTravel,step:stepSeasonTravel,draw:drawSeasonTravel,finish:finishSeasonTravel,end:endSeasonTravel,
+    tweens:true,keepsDrift:true,landing:['regenSource','resetPerf','bake']};
 }:()=>NO_SEASON_TRAVEL;
