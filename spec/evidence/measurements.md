@@ -966,6 +966,7 @@ The four-in-one shader declared 246 vec4 rows of uniforms against WebGL2's guara
 
 - **What was measured:** the CPU cost of a grove change.
 - **On:** bun, median of 11, a fall frame at t 0.9, regrow against re-season, unless stated.
+- **Rerun:** `MEASURE_RESEASON=1 nix run .#test -- test/reseason.test.js` runs the two timing reports in `reseason.test.js` and prints their medians (about 7 s, stub GL); without the variable they are skipped.
 - **Result:**
 
   | look | fall regrow | re-season | summer regrow |

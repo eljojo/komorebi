@@ -6,6 +6,7 @@
 // it breaks is silent: a float32 where the litter wants the double, a cached rank that a blend wrote into, a key that missed a
 // param buildGrove reads (a stale grove that looks fine), a carpet whose signature never noticed the leaves changed colour.
 // (The drop.test.js stub-GL rig; the engine tests drive the real create() over the same stub.)
+// Two timing reports at the end print the regrow and re-season costs and assert nothing: they run with MEASURE_RESEASON=1 and are skipped otherwise.
 // ============================================================================
 import { test, expect } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -757,8 +758,11 @@ test("apply('season') over a sweep that moves the structure: no tick keeps a sea
 });
 
 // ---- the cost: reported, not asserted -------------------------------------------------------------------------------------------
+// MEASURE_RESEASON=1 runs the two timing reports below, which print medians and assert nothing (about 7 s); without it they are
+// reported as skipped: `MEASURE_RESEASON=1 nix run .#test -- test/reseason.test.js`.
+const reported = process.env.MEASURE_RESEASON ? test : test.skip;
 const med = (f, n = 7) => { const ts = []; for (let i = 0; i < n; i++) { const t0 = performance.now(); f(); ts.push(performance.now() - t0); } ts.sort((a, b) => a - b); return ts[n >> 1]; };
-test("cost (reported): the summer tint repro, regrow versus re-season, median of 21", () => {
+reported("cost (reported): the summer tint repro, regrow versus re-season, median of 21", () => {
   const params = { ...DEFAULTS, seed: 290626672, tree_count: 5, leaves_per_cluster: 39, foliage_density: 1.65, faithful_canopy: true, ...tintAt(0) };
   const R = rig(params, true);
   let step = 0;
@@ -774,7 +778,7 @@ test("cost (reported): the summer tint repro, regrow versus re-season, median of
   compare('timed tint', snapshot(R, g), snapshot(B, B.G.buildGrove(null)));
   console.log(`\ntint cost (bun ${Bun.version}, ${process.platform}/${process.arch}, stub GL, ${g.season.n} leaves): build ${build.toFixed(2)} | build+keep ${keep.toFixed(2)} | first re-season ${first.toFixed(2)} | warm re-season ${reseason.toFixed(2)} ms`);
 });
-test("cost (reported): a fall frame by regrow and by re-season at t 0.9, median of 7", () => {
+reported("cost (reported): a fall frame by regrow and by re-season at t 0.9, median of 7", () => {
   const rows = [];
   for (const [look, faithful, own] of [["afternoon 7", false, false], ["the void", false, false], ["montebello", true, true]]) {
     const params = { ...DEFAULTS, ...PRESETS[look], ...(own ? {} : macroParams("season", 0.9)), phenology: 0.9 };

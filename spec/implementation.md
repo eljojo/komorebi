@@ -474,6 +474,8 @@ Playlist `presentation` is an optional shipped identifier. Arboretum generates t
 
 `render-video.mjs --session-json <file>` selects a fixed session through the exported engine's own resolver, defaults quality to export, and refuses `--set` in the same invocation. `--ss` remains capture configuration. The run key and manifest freeze the requested settings, resolved profile definition, authored inputs and all effective endpoints. Scheduling, tiny preroll, serial and parallel capture receive the same concrete endpoints; both governors remain forced off. Legacy exports without a session file retain their override path. The render service accepts `session: {quality?, presentation?}` with optional top-level `ss`; legacy `quality` jobs keep their previous meaning and cannot be combined with session.
 
+`reseason.test.js` ends with two timing reports that assert nothing; they run only with `MEASURE_RESEASON=1` (`MEASURE_RESEASON=1 nix run .#test -- test/reseason.test.js`) and are reported as skipped otherwise.
+
 CPU policy/lifecycle tests are `sessions.test.js`, `sessions-engine.test.js` and `export-session.test.js`. `test-gl/sessions.mjs` checks editor persistence/save behavior and real WebGL native arrival; it is separate from the full pixel suite. Bundles retain the edge-law tier needed by default screen sessions unless an explicit feature override cuts it.
 
 ## The harness
