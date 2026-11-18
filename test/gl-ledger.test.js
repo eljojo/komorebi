@@ -8,11 +8,12 @@
 // interrupted and disposed, the scene fade, leaf travel landed and reversed, setParams in the middle of each long route, and a
 // context lost in the middle of one.
 // ============================================================================
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { readFileSync } from "node:fs";
 import { create, DEFAULTS } from "../komorebi.js";
 import { PRESETS } from "../presets.js";
 import * as SH from "../engine/transport/komorebi-shaders.js";
+import * as LEAF from "../engine/leaf/komorebi-leaf.js";
 
 const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture", Framebuffer: "framebuffer", Renderbuffer: "renderbuffer", Program: "program", Shader: "shader", Query: "query" };
 
@@ -269,4 +270,23 @@ scenario("with the governor stepped down, a setParams to another look sizes the 
   atRest.eng.setParams({ ...FAITHFUL, auto_quality: true, bake_resolution: 2048, seed: 77 });
   expect(R.L.made().texture - textures, "textures made, as many as a setParams from a governor at rest").toBe(atRest.L.made().texture - was);
   atRest.eng.dispose();
+});
+
+// A grove a scene grew for the look a route lands on is handed to the engine, not grown again (komorebi-engine.js): grove travel landing on its other end,
+// the litter descent landing on its floor, and the litter ascent's source, which takes the grove on screen as the dissolve's outgoing scene does.
+// Counted as groves grown, which ask for their leaf outline once each (komorebi-grove.js, growGrove).
+const grown = (body) => {
+  let n = 0;
+  const outline = LEAF.leafShape, spy = spyOn(LEAF, "leafShape").mockImplementation((...a) => { if (new Error().stack.includes("growGrove")) n++; return outline(...a); });
+  try { body(); } finally { spy.mockRestore(); }
+  return n;
+};
+scenario("a grove travel grows its other end and its carrier, and lands on the other end's grove", GROVE[0], (R) => {
+  expect(grown(() => { start(R, GROVE[1], "groveTravel"); R.land(); }), "groves grown").toBe(2);
+});
+scenario("a litter ascent grows only the target's grove", RISE[0], (R) => {
+  expect(grown(() => { start(R, RISE[1], "litterRise"); R.land(); }), "groves grown").toBe(1);
+});
+scenario("a litter descent grows only the floor's grove", RISE[1], (R) => {
+  expect(grown(() => { R.eng.transitionTo(RISE[0], { duration: 1 }); expect(R.eng.trans.litterFall || R.eng.trans.shadowFall, "a descent").toBe(true); R.land(); }), "groves grown").toBe(1);
 });

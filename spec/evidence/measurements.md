@@ -931,6 +931,22 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **What it established:** the first texture set and bake were replaced before anything was shown.
 - **Date:** 2026-11-18.
 
+### Groves handed over at a landing
+
+- **What was measured:** the groves grown over a whole route, before and after the engine took the grove of the scene it lands on, and the litter ascent's source took the engine's; every frame of those routes compared byte for byte.
+- **On:** `gl-ledger.test.js`'s ledger GL; the frames on an M4 (Chromium on Metal), 480×270, a pumped clock at 60 fps, `auto_quality` and `adaptive_motion` off, wind off and on.
+- **Result:**
+
+  | route | groves grown, before | after |
+  |---|---|---|
+  | grove travel to its other end | 3 | 2 |
+  | a litter ascent | 2 | 1 |
+  | a litter descent | 2 | 1 |
+
+  Every frame is byte-identical between the two: 40 travel pairs, 198 scene-dissolve pairs and 24 canopy-morph pairs, wind off and on.
+- **What it established:** the scene's grove is the grove the landing would grow, but for the springs, which the landing copies from the scene either way.
+- **Date:** 2026-11-18.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).

@@ -401,9 +401,14 @@ function createEngine(canvas, opts, driven=false){
 
     // ---- geometry / GPU buffers ----
     emptyVAO = gl.createVertexArray();           // required to issue attrib-less draws
-    quadBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+    // A driven scene draws its quads from its host's buffer: a grove's vertex arrays read the quad buffer of the engine that uploaded them, and a grove a
+    // scene grew is handed to its host at a landing, so that buffer must outlive the scene.
+    if(opts.host) quadBuf = opts.host.quadBuf;
+    else {
+      quadBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+    }
 
     bakeFBO = gl.createFramebuffer();
     fillFBO = gl.createFramebuffer();    // the sky fill's two-target pass (spec/model/fill.md): the textures are attached when the fill allocates them
@@ -625,12 +630,12 @@ function createEngine(canvas, opts, driven=false){
     leafTravel:makeLeafTravel(hub,retainTravelSource),
     seasonTravel:makeSeasonTravel(hub),
     litterRise:makeLitterRise(hub,(look)=>{
-      const source=createScene(look);
+      const source=createScene(look,!look);   // an ascent's source is the look on screen: it takes this engine's grove, which transitionTo regrows as the target right after
       source.hub.perf.auto=perf.auto;source.hub.perf.quality=perf.quality;
       source.hub.applyQuality();source.hub.regenSource();source.hub.bake();
       if(look)source.restore=()=>{
         for(const k in DEFAULTS)params[k]=look[k];
-        rebuild();copyMotion(source.hub,hub);resetPerf();   // the route's landing bakes
+        rebuildTextures();adoptGrove(source.hub);regenSource();copyMotion(source.hub,hub);resetPerf();   // the source grew the landed look's grove: it is handed over, not grown again; the route's landing bakes
       };
       return source;
     }),
@@ -638,7 +643,7 @@ function createEngine(canvas, opts, driven=false){
       const phase=params.drift_phase;
       for(const k in DEFAULTS)params[k]=look[k];
       if(scene.hub===hub){if(params.drift_auto)params.drift_phase=phase;}
-      else{rebuild();copyMotion(scene.hub,hub);}
+      else{rebuildTextures();adoptGrove(scene.hub);regenSource();copyMotion(scene.hub,hub);}   // the scene grew the landed look's grove: it is handed over, not grown again
       resetPerf();bake();
     }),
   };
@@ -865,7 +870,7 @@ function createEngine(canvas, opts, driven=false){
       hub.disposeTree();                              // the tree view's targets and its leaf table
       if(litter.vao){ gl.deleteVertexArray(litter.vao); gl.deleteBuffer(litter.buf); }
       [emptyVAO, hub.srcDbgVAO, hub.vizVAO].forEach(v => { if(v) gl.deleteVertexArray(v); });
-      [quadBuf, hub.srcDbgBuf, hub.vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });
+      [opts.host ? null : quadBuf, hub.srcDbgBuf, hub.vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });   // a scene's quad buffer is its host's
       if(EDITOR && !driven) hub.setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
       if(!driven) gl.getExtension('WEBGL_lose_context')?.loseContext();
     },
