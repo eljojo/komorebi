@@ -17,7 +17,7 @@ import * as SH from "../engine/transport/komorebi-shaders.js";
 const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture", Framebuffer: "framebuffer", Renderbuffer: "renderbuffer", Program: "program", Shader: "shader", Query: "query" };
 
 function makeLedger() {
-  let seq = 0, lost = false;
+  let seq = 0, lost = false, casts = 0;
   const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {}, linked = [];
   const at = { array: null, vao: null, fb: null, prog: null, rb: null, unit: "TEXTURE0", units: {} };
   const label = (o) => `${o.kind} #${o.id}`;
@@ -41,6 +41,7 @@ function makeLedger() {
   const bound = (t) => at.units[at.unit]?.[t];
   const attr = (i) => (at.vao.attrs[i] ??= {});
   const draw = () => {
+    if (at.vao?.attrs[9]?.on) casts++;   // the faithful leaves' vertex array, the only one with the side attribute: one draw a sample of a faithful cast
     use(at.prog, "drawn with"); use(at.vao, "drawn"); use(at.fb, "drawn into");
     if (at.vao) for (const [i, a] of Object.entries(at.vao.attrs)) if (a.on) use(a.buf, `read by a draw (attribute ${i})`);
   };
@@ -89,6 +90,7 @@ function makeLedger() {
     alive: () => [...live],
     made: () => ({ ...made }),   // every object created so far, by kind
     linked: () => [...linked],   // every program linked so far, as its [vertex, fragment] sources
+    casts: () => casts,          // every sample of a faithful cast drawn so far
     // what is left alive, by kind; shaders aside: the engine links each into its program and lets the program hold it
     leaks: () => { const n = {}; for (const o of live) if (o.kind !== "shader") n[o.kind] = (n[o.kind] ?? 0) + 1; return n; },
   };
@@ -232,3 +234,25 @@ for (const [name, from, to, opts, label = name] of [...ROUTES.filter(([name]) =>
     expect(routeLinks(R.L.linked().slice(before)), "route programs linked by the second run").toBe(0);
   });
 }
+
+// A bake that is overwritten before anything reads it is not made: a scene is baked once, with the motion it copies from its host; a landing that moves the
+// motion bakes after it, and a faithful morph's landing frame bakes the exact target alone. Counted in faithful casts, as samples drawn over the source's count.
+const bakes = (R, body) => { const c = R.L.casts(); body(); return (R.L.casts() - c)/R.eng.src.count; };
+const lastFrame = (R) => { let n = 0; while (R.eng.trans.active && n++ < 2000) { const c = R.L.casts(); R.pump(); if (!R.eng.trans.active) return (R.L.casts() - c)/R.eng.src.count; } throw new Error("the route never landed"); };
+scenario("a scene fade's start bakes the outgoing scene once, and the incoming look once", FAITHFUL, (R) => {
+  expect(bakes(R, () => start(R, FADE, "sceneFade", { style: "fade" }))).toBe(2);
+  R.land();
+});
+scenario("a faithful grove morph's landing frame bakes once", FAITHFUL, (R) => {
+  R.eng.transitionTo({ ...FAITHFUL, leaf_size_m: FAITHFUL.leaf_size_m*1.5 }, { duration: 1 });
+  expect(R.eng.trans.canopyMorph).toBe(true);
+  expect(lastFrame(R)).toBe(1);
+});
+scenario("the grove travel's landing frame bakes the landed look once", GROVE[0], (R) => { start(R, GROVE[1], "groveTravel"); expect(lastFrame(R)).toBe(1); });
+// The descent's last step still bakes its source scene (komorebi-litter-rise.js), which this frame then disposes: that is the route's own, and counted here.
+scenario("a litter descent's landing frame bakes the landed look once, beside the route's last step", RISE[1], (R) => {
+  R.eng.transitionTo(RISE[0], { duration: 1 });
+  expect(R.eng.trans.route?.name).toBe("litterRise");
+  expect(R.eng.trans.litterFall || R.eng.trans.shadowFall, "a descent").toBe(true);
+  expect(lastFrame(R)).toBe(2);
+});

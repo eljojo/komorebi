@@ -398,7 +398,8 @@ export function makeTransitions(hub){
       // These paths bake wood opacity into textures; a still-air fade must reach them too.
       const woodFade = trans.woodFade && (faithfulOn() || params.sky_view);
       // ...and every frame the crossfade window is open, because the coverage split itself is what changed.
-      if(trans.canopyMorph || hub.motionActive() || faithSunMorph || woodFade || (trans.crossfade && trans.active)) hub.bake();
+      // Not on the faithful landing frame: the landing below bakes the exact target, over this one, before anything reads it.
+      if(!(t>=1 && faithfulOn()) && (trans.canopyMorph || hub.motionActive() || faithSunMorph || woodFade || (trans.crossfade && trans.active))) hub.bake();
     }
     if(t>=1){                                              // land exactly on the target; clear the bloom
       const drift=params.drift_phase;

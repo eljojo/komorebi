@@ -906,6 +906,23 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **What it established:** no route links a program after its first run; grove travel's wood pass needs no program of its own.
 - **Date:** 2026-11-18.
 
+### Bakes nothing reads
+
+- **What was measured:** the faithful casts drawn, counted as whole bakes, at a scene's birth and on the landing frames that bake, before and after a scene was baked once with the motion it copies, a landing that copies motion stopped baking before it, and a faithful morph's last frame left its bake to the landing; every frame of those routes compared byte for byte.
+- **On:** `gl-ledger.test.js`'s ledger GL; the frames on an M4 (Chromium on Metal), 480×270, a pumped clock at 60 fps, `auto_quality` and `adaptive_motion` off, wind off and on.
+- **Result:**
+
+  | frame | bakes, before | after |
+  |---|---|---|
+  | a scene dissolve's first (the outgoing scene and the incoming look) | 3 | 2 |
+  | a faithful grove morph's landing | 2 | 1 |
+  | grove travel's landing | 2 | 1 |
+  | a litter descent's landing (with the route's own last step) | 3 | 2 |
+
+  Every frame is byte-identical between the two: 198 scene-dissolve pairs, 24 canopy-morph pairs and 40 travel pairs, wind off and on.
+- **What it established:** each removed bake was overwritten before anything read it.
+- **Date:** 2026-11-18.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).

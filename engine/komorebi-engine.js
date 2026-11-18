@@ -578,12 +578,8 @@ function createEngine(canvas, opts, driven=false){
     if(to.params.wind_air > 0) to.publishAir(to.grove);
   }
   // adopt: the scene is this engine's look as it stands, and takes its grove (see adoptGrove); this engine must regrow its own next.
-  const createScene=(look=params, adopt=false)=>{
-    const scene = createEngine(canvas, { params:{...look}, adopt:adopt?hub:null }, true);
-    copyMotion(hub,scene.hub);
-    scene.hub.bake();
-    return scene;
-  };
+  // host: the scene moves as this engine does from its first bake (copyMotion), so it is baked once.
+  const createScene=(look=params, adopt=false)=>createEngine(canvas, { params:{...look}, adopt:adopt?hub:null, host:hub }, true);
   function retainTravelSource(){
     // This route has no wood, fill, litter or glow. Keep its actual grove and cast; share only the stateless GL plumbing.
     const g=hub.grove;
@@ -634,7 +630,7 @@ function createEngine(canvas, opts, driven=false){
       source.hub.applyQuality();source.hub.regenSource();source.hub.bake();
       if(look)source.restore=()=>{
         for(const k in DEFAULTS)params[k]=look[k];
-        rebuildAll();copyMotion(source.hub,hub);resetPerf();
+        rebuild();copyMotion(source.hub,hub);resetPerf();   // the route's landing bakes
       };
       return source;
     }),
@@ -642,7 +638,7 @@ function createEngine(canvas, opts, driven=false){
       const phase=params.drift_phase;
       for(const k in DEFAULTS)params[k]=look[k];
       if(scene.hub===hub){if(params.drift_auto)params.drift_phase=phase;}
-      else{rebuildAll();copyMotion(scene.hub,hub);}
+      else{rebuild();copyMotion(scene.hub,hub);}
       resetPerf();bake();
     }),
   };
@@ -716,10 +712,12 @@ function createEngine(canvas, opts, driven=false){
   // Given a look, the grove is grown from that look's value of every key it reads and the live params are put straight back: a
   // route's hidden midpoint grows the grove it lands on while the MORPH keys the grove also reads (the view extent sizes a park
   // crown) are still tweening for the picture. Wood radius and heights stay live: the bake's refreshWood re-reads them.
-  function rebuildAll(look){
+  function rebuildAll(look){ rebuild(look); bake(); }
+  // ...and without its bake, for a caller whose next step moves the motion and bakes: a bake before that is never shown.
+  function rebuild(look){
     rebuildTextures();
     if(look) growAs(params, look, regenCanopy); else regenCanopy();
-    regenSource(); bake();
+    regenSource();
   }
   function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
   // The season axis (spec/model/season.md "Re-seasoning"): a change to the season set alone is re-run over the grove's cached leaves; anything else the grove reads, or a grove the cache
@@ -796,9 +794,11 @@ function createEngine(canvas, opts, driven=false){
   hub.motionTick = tick;   // default: this engine runs its own physics. EDITOR can swap it to mirror another instance.
 
   // ---- init + frame loop ----
-  if(opts.adopt){ rebuildTextures(); adoptGrove(opts.adopt); regenSource(); bake(); }   // rebuildAll, with the host's grove for the grown one
-  else rebuildAll();
-  resetPerf();
+  if(opts.host){   // a driven scene: its host's motion copied before the one bake, which a born engine's quality reset would precede
+    rebuildTextures(); if(opts.adopt) adoptGrove(opts.adopt); else regenCanopy(); regenSource();
+    resetPerf(); copyMotion(opts.host, hub); bake();
+  }
+  else { rebuildAll(); resetPerf(); }
   let last=performance.now(), fps=60, paused=false, alive=true, lost=false;
   // The journey bypasses the cached present frame; refresh it at the landing clock even in still air.
   hub.resumeAdaptive=()=>{adaptiveLastRender=last;adaptiveHot=true;adaptiveResume=true;};
