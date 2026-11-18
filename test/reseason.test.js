@@ -1,0 +1,797 @@
+// ============================================================================
+// Re-seasoning (spec/model/season.md, P2b): the season is a function of the grove, not a regrow. Everything a phenology change moves
+// (τ_j, including the authored summer tint, the retained weight, which leaves are compacted out, the litter list, leafW, the faithful AABB) is re-run over the
+// per-leaf record a grove built with `keepSeason` keeps, and it must land BIT FOR BIT where a fresh buildGrove at the same
+// params lands — the tween's landing tick is the resting state, and nothing regrows on release. Held loudly because every way
+// it breaks is silent: a float32 where the litter wants the double, a cached rank that a blend wrote into, a key that missed a
+// param buildGrove reads (a stale grove that looks fine), a carpet whose signature never noticed the leaves changed colour.
+// (The drop.test.js stub-GL rig; the engine tests drive the real create() over the same stub.)
+// ============================================================================
+import { test, expect } from "bun:test";
+import { readFileSync } from "node:fs";
+import { CANOPY_KEYS, DEFAULTS, PARAMS, create, buildTransport } from "../komorebi.js";
+import * as paramsMod from "../komorebi-params.js";
+import * as groveMod from "../komorebi-grove.js";
+import { makeGrove } from "../komorebi-grove.js";
+import { PRESETS } from "../presets.js";
+import { macroParams } from "../macros.js";
+import { makeBake } from "../komorebi-bake.js";
+import { VS_BAKE, VS_FAITH, VS_FAITH_SEG, FS_FAITH_SEG } from "../komorebi-shaders.js";
+import { makeMotion } from "../komorebi-motion.js";
+
+// ---- the rig: one stub GL per hub (a grove writes the engine-global faith.* of ITS hub, so the cached grove and the fresh
+// builds it is held to each get their own) ------------------------------------------------------------------------------
+function rig(params, faithful = false) {
+  const gl = new Proxy({}, {
+    get(t, name) {
+      if (name === "createBuffer") return () => ({ data: null });
+      if (name === "bindBuffer") return (_, b) => { t.cur = b; };
+      if (name === "bufferData") return (_, data) => { if (t.cur) t.cur.data = data; };
+      if (name === "bindVertexArray") return vao => { t.vao = vao; };
+      if (name === "vertexAttribPointer") return (attr, size, _type, _normalized, stride, offset) => { t.vao.attrs ??= {}; t.vao.attrs[attr] = { size, stride, offset }; };
+      return () => ({});
+    },
+  });
+  const faith = {}, hub = { gl, params, MAX_TEX: 16384, quadBuf: {}, faithfulOn: () => faithful, occ: {}, faith, sky: { start: [], count: [] } };
+  return { hub, faith, params, G: makeGrove(hub) };
+}
+const bitsOf = (a) => new Uint32Array(a.buffer.slice(a.byteOffset, a.byteOffset + a.byteLength));
+const firstDiff = (a, b) => {
+  if (a.length !== b.length) return `length ${a.length} vs ${b.length}`;
+  const x = bitsOf(a), y = bitsOf(b);
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return `first bit difference at ${i}`;
+  return null;
+};
+// what a grove put on the GPU, copied out (the re-season reuses its output arrays between ticks, so a snapshot must own its bytes)
+const snapshot = (R, g) => ({
+  layers: g.layerVAO.map((l) => Float32Array.from(l.buf.data)),
+  counts: g.layerVAO.map((l) => l.count),
+  faith: Float32Array.from(R.faith.buf.data),
+  faithCount: R.faith.count,
+  aabb: [R.faith.pminx, R.faith.pmaxx, R.faith.pminy, R.faith.pmaxy],
+  litter: g.litter == null ? null : JSON.parse(JSON.stringify(g.litter)),
+  leafW: g.hier.leafW == null ? null : Float32Array.from(g.hier.leafW),
+});
+function compare(label, got, want) {
+  expect(got.layers.length, `${label}: layers`).toBe(want.layers.length);
+  got.layers.forEach((a, l) => { expect(firstDiff(a, want.layers[l]), `${label}: layer ${l} buffer`).toBe(null); });
+  expect(got.counts, `${label}: layer counts`).toEqual(want.counts);
+  expect(firstDiff(got.faith, want.faith), `${label}: faithful buffer`).toBe(null);
+  expect(got.faithCount, `${label}: faithful count`).toBe(want.faithCount);
+  got.aabb.forEach((v, i) => { expect(Object.is(v, want.aabb[i]), `${label}: AABB ${i} ${v} vs ${want.aabb[i]}`).toBe(true); });
+  expect(JSON.stringify(got.litter), `${label}: litter list (sizes as doubles)`).toBe(JSON.stringify(want.litter));
+  if (want.leafW === null) expect(got.leafW, `${label}: leafW`).toBe(null);
+  else expect(firstDiff(got.leafW, want.leafW), `${label}: leafW`).toBe(null);
+}
+
+// a grove worth shading itself, small enough to be built a few dozen times: the afternoons' leaf and structure, 3 depth layers,
+// a marginal leaf (6 × 1.25 = 7.5 a twig) and a fall that turns, lights the ranking and lets go
+// inner_leaves 0: afternoon 7 as it shipped when these were written, every leaf at its twig tip (the rigs stub the tip-leaf program alone)
+const SMALL = { ...PRESETS["afternoon 7"], inner_leaves: 0, tree_count: 2, leaves_per_cluster: 6, foliage_density: 1.25, layer_count: 3,
+  leaf_drop: 1, turn_exposure: 1, anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2 };
+const PH = [0.5, 0.6, 0.65, 0.7, 0.742, 0.8, 0.9, 1.0];
+
+// every variant: build with keepSeason at the first phenology, re-season through the rest, and hold each stop to a fresh build
+function identity(name, over, { faithful = false, phs = PH, move = () => ({}) } = {}) {
+  test(`byte-identity vs a fresh buildGrove: ${name}`, () => {
+    const base = { ...SMALL, ...over };
+    const A = rig({ ...base, phenology: phs[0] }, faithful), B = rig({ ...base }, faithful);
+    const g = A.G.buildGrove(null, { keepSeason: true });
+    let sawLitter = false, sawPartial = false;
+    for (const p of phs) {
+      const step = { phenology: p, ...move(p) };
+      Object.assign(A.params, step);
+      A.G.reseasonGrove(g, A.params);
+      Object.assign(B.params, step);
+      const fresh = B.G.buildGrove(null);
+      const want = snapshot(B, fresh);
+      compare(`${name} @ ${p}`, snapshot(A, g), want);
+      if (want.litter?.length) sawLitter = true;
+      if (want.leafW?.some((w) => w > 0 && w < 1)) sawPartial = true;
+    }
+    if (base.leaf_drop > 0) { expect(sawLitter, "the variant must actually drop leaves, or it proves nothing").toBe(true); expect(sawPartial, "...and catch some mid-fade").toBe(true); }
+  });
+}
+
+identity("layer path, exposure_absolute 0 (the rank is u)", { exposure_absolute: 0 });
+identity("faithful path", { exposure_absolute: 0 }, { faithful: true });
+identity("maple outline (the cluster id carries the variant in its fraction)", { leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756 });
+identity("maple outline, faithful", { leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756 }, { faithful: true });
+identity("fractional density and tree count (a marginal leaf and a marginal tree)", { foliage_density: 1.3, tree_count: 2.4 });
+identity("fractional density and tree count, faithful", { foliage_density: 1.3, tree_count: 2.4 }, { faithful: true });
+identity("exposure_absolute 0.5 (the blend is a fresh array each tick)", { exposure_absolute: 0.5 });
+identity("exposure_absolute 1 (u is the raw exposure)", { exposure_absolute: 1 });
+identity("turn_exposure 0, drop_exposure 1 (the drop consumes the rank: the exposure field must be built)", { turn_exposure: 0, drop_exposure: 1 });
+identity("drop_exposure 0 (the hash alone: no exposure at all unless the turn asks)", { drop_exposure: 0, turn_exposure: 0 });
+identity("drop_exposure 0 with turn_exposure 1", { drop_exposure: 0 });
+identity("leaf_drop 0 (no litter, no leafW)", { leaf_drop: 0 });
+identity("leaf_drop 0.6 (a marcescent share)", { leaf_drop: 0.6 });
+identity("tannin and wall_fraction moving with the clock", { leaf_drop: 0 }, { move: (p) => ({ tannin: 0.2 + p * 0.3, wall_fraction: 0.6 * (1 - p) }) });
+// After the turn: the window each leaf turns in, and the day it lets go, are one law on this side of the cache. Extra stops put the branch in view: the first leaf lets go
+// at turn_start + L + lag (0.78 here), so 0.8 is mid-fade for the earliest and 0.85 for a good share. `identity` fails any variant whose stops never drop a leaf or never catch one mid-fade.
+const AFTER_PH = [0.5, 0.6, 0.7, 0.775, 0.8, 0.82, 0.85, 0.9, 0.95, 1.0];
+identity("drop after the turn", { drop_after_turn: 1 }, { phs: AFTER_PH });
+identity("drop after the turn, faithful", { drop_after_turn: 1 }, { faithful: true, phs: AFTER_PH });
+identity("drop after the turn, turn_exposure 0 (the leaf's own clock) with leaf_drop 0.6", { drop_after_turn: 1, turn_exposure: 0, leaf_drop: 0.6 }, { phs: AFTER_PH });
+identity("drop after the turn, drop_lag moving with the clock", { drop_after_turn: 1 }, { phs: AFTER_PH, move: (p) => ({ drop_lag: 0.02 + p * 0.08 }) });
+identity("turn_start, turn_span, turn_spread, drop_start, drop_span moving (the whole season set)", {}, { move: (p) => ({ turn_start: 0.55 + p * 0.05, turn_span: 0.3 + p * 0.1, turn_spread: 0.2 * p, drop_start: 0.6 + p * 0.05, drop_span: 0.25 + p * 0.05 }) });
+// One tree ahead of its neighbours (`tree_clock_spread`, `tree_pigment_spread`; tree.test.js holds the laws): the lead and the depth are tables of the tree count the record keeps, and the loop
+// reads each leaf's tree off its twig, so the re-season makes the build's own four calls (the two drop days, the turn and the tau) with the same dT and cT, bit for bit.
+identity("per-tree clock", { tree_clock_spread: 0.1, drop_after_turn: 1 }, { phs: AFTER_PH });
+identity("per-tree clock, faithful", { tree_clock_spread: 0.1, drop_after_turn: 1 }, { faithful: true, phs: AFTER_PH });
+identity("per-tree clock, the old drop clock (it shifts too)", { tree_clock_spread: 0.1 });
+identity("per-tree pigment", { tree_pigment_spread: 0.6 });
+identity("per-tree clock on a marginal tree (it draws its own lead)", { tree_count: 2.4, tree_clock_spread: 0.1 });
+identity("per-tree pigment on a marginal tree, faithful", { tree_count: 2.4, tree_pigment_spread: 0.6 }, { faithful: true });
+identity("both knobs moving with the clock", {}, { move: (p) => ({ tree_clock_spread: 0.15 * p, tree_pigment_spread: 0.9 * (1 - p) }) });
+identity("both knobs moving with the clock, after the turn", { drop_after_turn: 1 }, { phs: AFTER_PH, move: (p) => ({ tree_clock_spread: 0.15 * (1 - p), tree_pigment_spread: 0.9 * p }) });
+
+// Leaves on the older wood (`inner_leaves`, inner.test.js holds the laws): a canopy key the cache key carries, so the season never moves it, but a re-season keeps every leaf where the grove put it —
+// its place, its height and its layer, which the record kept — and so lands where a fresh build at the same params lands, on both paths, mid-fall, with the light ordering the leaves it hangs on the wood.
+identity("inner leaves 0.4 (a leaf's own height and layer are in the record)", { inner_leaves: 0.4 });
+identity("inner leaves 0.4, faithful", { inner_leaves: 0.4 }, { faithful: true });
+identity("inner leaves 0.4, marginal leaf and tree, after the turn, with the per-tree clock", { inner_leaves: 0.4, foliage_density: 1.3, tree_count: 2.4, drop_after_turn: 1, tree_clock_spread: 0.1 }, { phs: AFTER_PH });
+identity("inner leaves 0.4, maple outline, faithful", { inner_leaves: 0.4, leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756 }, { faithful: true });
+// Leaf variety (`leaf_variety`, variety.test.js holds the laws): each leaf's outline row and size shift come from the grove's own rank of light, on the summer set, BEFORE the season base is taken — so the record the re-season
+// reads carries the row in the cluster id and the shifted half-axes, the litter list carries the row it lies in, and a re-season lands bit for bit where a fresh build lands, on both paths, mid-fall, with the shifted
+// areas never fed back to the light (the record keeps the pre-shift area: the season's rank at any variety is the variety-0 rank).
+const VAR = { leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756, leaf_variety: 1 };
+identity("leaf variety 1, maple (the row rides the cluster id; the litter keeps it)", VAR);
+identity("leaf variety 1, maple, faithful", VAR, { faithful: true });
+identity("leaf variety 1, maple, inner leaves 0.4", { ...VAR, inner_leaves: 0.4 });
+identity("leaf variety 1, maple, marginal leaf and tree", { ...VAR, tree_count: 2.4, foliage_density: 1.3 });
+identity("leaf variety 1, maple, exposure_absolute 0.5", { ...VAR, exposure_absolute: 0.5 });
+identity("leaf variety 1, maple, unlit (the row needs the light whether or not the turn does)", { ...VAR, turn_exposure: 0, drop_exposure: 0, leaf_drop: 1 });
+// The UNLIT arm. SMALL turns by the light (turn_exposure 1), and a lit leaf's tau is overwritten by the exposure arm of the rewrite; every variant above therefore leaves the other arm — the one a grove with
+// turn_exposure 0 takes, `FEAT_PIGMENT && sen` — free to lose its lead or its depth with nothing failing. These turn by the leaf's own clock alone: with no drop (the hang loop's tau is the only
+// tau, and the re-season's sen-only arm must reproduce it for every leaf), with the hash-only old drop clock (the rewrite's non-lit arm, for the leaves that go), and after the turn.
+identity("unlit per-tree clock (the sen-only arm carries the lead)", { tree_clock_spread: 0.1, turn_exposure: 0, leaf_drop: 0 });
+identity("unlit per-tree pigment (the sen-only arm carries the depth)", { tree_pigment_spread: 0.6, anthocyanin: 0.8, turn_exposure: 0, leaf_drop: 0 });
+identity("unlit per-tree clock and pigment, the old drop clock on the hash alone", { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, turn_exposure: 0, drop_exposure: 0, leaf_drop: 1 });
+identity("unlit per-tree clock and pigment, the old drop clock on the hash alone, faithful", { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, turn_exposure: 0, drop_exposure: 0, leaf_drop: 1 }, { faithful: true });
+identity("unlit per-tree clock and pigment, after the turn", { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, turn_exposure: 0, drop_after_turn: 1, leaf_drop: 1 }, { phs: AFTER_PH });
+// A turn window shorter than the fade: after the turn the drop opens BEFORE the turn does (dropping is one ε ahead of the first fade), so a step can be dropping and not yet senescing,
+// where the build's drop day takes the leaf's own clock and the schedule's takes the light. Every retention there is 1, so the day is never read: held, not assumed.
+identity("a turn window shorter than the fade, after the turn (dropping before senescing)", { drop_after_turn: 1, turn_span: 0.004, turn_spread: 0, drop_lag: 0 }, { phs: [0.5, 0.596, 0.598, 0.6, 0.603, 0.608, 0.612, 0.62, 0.7] });
+
+// LEAF-OUT (the spring half; spring.test.js holds the laws): a leaf not yet out is compacted from the full-grown record, one growing is that record's half-axes times its length's
+// share, its tau the young leaf's; a re-season lands where a fresh build lands, from summer into the spring and back, starting in it, on both paths, with the shape moving.
+const SPRING_PH = [0.5, 0, 0.01, 0.03, 0.06, 0.09, 0.12, 0.15, 0.2, 0.24, 0.5];
+identity("leaf-out from summer into the spring and back", { leaf_drop: 0 }, { phs: SPRING_PH });
+identity("leaf-out, faithful", { leaf_drop: 0 }, { faithful: true, phs: SPRING_PH });
+identity("leaf-out starting in the spring (the build compacts and shrinks)", { leaf_drop: 0 }, { phs: [0.04, 0.08, 0, 0.13, 0.5, 0.07] });
+identity("leaf-out with a red flush, maple outline, inner leaves", { leaf_drop: 0, young_red: 0.4, leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.0756, inner_leaves: 0.4 }, { phs: SPRING_PH });
+identity("leaf-out with its shape moving", { leaf_drop: 0 }, { phs: SPRING_PH, move: (p) => ({ leaf_out_end: 0.1 + 0.1 * p, leaf_out_span: 0.05 + 0.08 * p, leaf_out_spread: 0.1 * (1 - p), leaf_green_span: 0.1 + 0.2 * p, young_depth: 0.2 + 0.6 * p }) });
+
+// ---- the tiers (spec/model/season.md "Re-seasoning"): a leaf's draws are the grove's, its schedule is the season knobs', its state now is phenology, the summer tint and the wall fraction --------
+test("a phenology, tint or wall_fraction step reuses each leaf's draws and schedule; a schedule knob rebuilds the schedule from the same draws; every step is a fresh build", () => {
+  const base = { ...SMALL, phenology: 0.6 };
+  const A = rig({ ...base });
+  const g = A.G.buildGrove(null, { keepSeason: true }), S = g.season;
+  const step = (change) => {
+    Object.assign(A.params, change); A.G.reseasonGrove(g, A.params);
+    const B = rig({ ...A.params }); compare(JSON.stringify(change), snapshot(A, g), snapshot(B, B.G.buildGrove(null)));
+  };
+  step({ phenology: 0.72 });
+  expect(S.sched, "a turning step keeps a schedule").toBeTruthy();
+  const draws = S.draws, builds = S.sched.builds;
+  for (const change of [{ phenology: 0.75 }, { phenology: 0.81 }, { trans_r: 0.094, trans_g: 0.402 }, { trans_b: 0.1 }, { wall_fraction: 0.45 }, { phenology: 0.93, wall_fraction: 0 }, { phenology: 0.66 }]) {
+    step(change);
+    expect(S.sched.builds, `${JSON.stringify(change)}: the schedule is reused`).toBe(builds);
+  }
+  let n = builds;
+  for (const change of [{ anthocyanin: 0.7 }, { tannin: 0.35 }, { turn_start: 0.58 }, { turn_spread: 0.1 }, { turn_exposure: 0.5 }, { exposure_absolute: 0.5 }, { tree_clock_spread: 0.1 }, { tree_pigment_spread: 0.6 },
+    { leaf_drop: 0.6 }, { drop_start: 0.72 }, { drop_span: 0.2 }, { drop_exposure: 0.3 }, { drop_lag: 0.04 }]) {
+    step(change);
+    expect(S.sched.builds, `${JSON.stringify(change)}: the schedule is rebuilt`).toBe(++n);
+    expect(S.draws, `${JSON.stringify(change)}: from the same draws (no leaf is hashed again)`).toBe(draws);
+  }
+});
+
+test("the fallen are listed when read: a re-season builds no litter object until asked, the list read is a fresh build's (once), and a route can still replace it", () => {
+  const A = rig({ ...SMALL, phenology: 0.6 });
+  const g = A.G.buildGrove(null, { keepSeason: true });
+  Object.assign(A.params, { phenology: 0.9 }); A.G.reseasonGrove(g, A.params);
+  expect(typeof Object.getOwnPropertyDescriptor(g, "litter").get, "not listed yet").toBe("function");
+  Object.assign(A.params, { phenology: 0.95 }); A.G.reseasonGrove(g, A.params);   // an unread list is replaced by the next step's, never built
+  const B = rig({ ...A.params }), fresh = B.G.buildGrove(null);
+  const list = g.litter;
+  expect(list.length).toBeGreaterThan(0);
+  expect(JSON.stringify(list), "the list read is the build's (sizes as doubles)").toBe(JSON.stringify(fresh.litter));
+  expect(g.litter, "read once").toBe(list);
+  const carpet = [list[0]];
+  g.litter = carpet;                                                                  // a route lays its own carpet (season, grove and litter travel do)
+  expect(g.litter).toBe(carpet);
+  Object.assign(A.params, { phenology: 0.6 }); A.G.reseasonGrove(g, A.params);   // nothing has fallen: the build's null
+  expect(g.litter).toBe(null);
+});
+
+const tintAt = p => ({ trans_r: 0.21 + (0.094 - 0.21)*p, trans_g: 0.356 + (0.402 - 0.356)*p, trans_b: 0.336 + (0.1 - 0.336)*p });
+test('density capacity: every active leaf and cast bound equals a fresh build, through thinning and return', () => {
+  for (const faithful of [false, true]) for (const inner_leaves of [0, 0.4]) for (const leaf_shape of ['ellipse', 'maple']) {
+    const A = rig({ ...DEFAULTS, ...SMALL, phenology: 0.5, leaf_drop: 0, leaf_variety: 0, tree_count: 2.4, inner_leaves, leaf_shape, foliage_density: 0.4 }, faithful);
+    const g = A.G.buildGrove(null, { densityCapacity: 1.65 }), S = g.season;
+    expect(S, 'capacity growth keeps the leaf record').toBeDefined();
+    expect(S.nLeaf).toBe(10); // SMALL has six leaves per unit density
+    const buffers = g.layerVAO.map(l => l.buf), twigAngles = g.hier.twigAngle;
+    for (const density of [0.4, 1.65, 1, 0, 1e-6, 1.000101/6, 1.000099/6, 1.65, 0.4]) {
+      Object.assign(A.params, { foliage_density: density, ...tintAt(density/2) });
+      expect(A.G.reseasonable(g)).toBe(true);
+      A.G.reseasonGrove(g);
+      const B = rig({ ...A.params }, faithful), fresh = B.G.buildGrove(null);
+      compare(`density ${density}`, snapshot(A, g), snapshot(B, fresh));
+      expect([A.faith.hMin, A.faith.hMax]).toEqual([B.faith.hMin, B.faith.hMax]);
+      expect(Array.from(A.faith.binH)).toEqual(Array.from(B.faith.binH));
+      expect(g.hier.nLeaf).toBe(fresh.hier.nLeaf);
+      expect(g.key).toBe(fresh.key);
+      expect(g.layerVAO.map(l => l.buf)).toEqual(buffers);
+      expect(g.hier.twigAngle).toBe(twigAngles);
+      expect(S.ex).toBe(null); expect(S.rank).toBe(null);
+    }
+  }
+});
+
+test('density capacity: gates, structural keys, ownership and exhausted capacity invalidate the record', () => {
+  const base = { ...DEFAULTS, ...SMALL, phenology: 0.5, leaf_drop: 0, foliage_density: 0.4 };
+  const A = rig({ ...base }, true), g = A.G.buildGrove(null, { densityCapacity: 1.65 });
+  expect(A.G.reseasonable(g)).toBe(true);
+  for (const change of [{ foliage_density: 1.8 }, { tree_count: 3 }, { leaf_size_m: 0.13 }, { view_extent_m: 7 }, { inner_leaves: 0.3 }, { canopy_base_height_m: 4 }, { phenology: 0.8 }, { leaf_drop: 0.1 }, { leaf_variety: 0.5 }, { tree_clock_spread: 0.2 }]) {
+    Object.assign(A.params, base, change);
+    expect(A.G.reseasonable(g), JSON.stringify(change)).toBe(false);
+  }
+  Object.assign(A.params, base);
+  A.faith.buf = {};
+  expect(A.G.reseasonable(g), 'a second grove owns the shared faithful buffer').toBe(false);
+  for (const change of [{ phenology: 0.8 }, { leaf_drop: 0.1 }, { leaf_variety: 0.5 }, { tree_clock_spread: 0.2 }]) {
+    const B = rig({ ...base, ...change }, true), guarded = B.G.buildGrove(null, { densityCapacity: 1.65 });
+    expect(guarded.season, 'outside the gate the option takes the ordinary build').toBeUndefined();
+  }
+});
+
+for (const faithful of [false, true]) {
+  identity(`summer tint, ${faithful ? 'faithful' : 'layer'}`, { leaf_drop: 0 }, { faithful, phs: [0, 0.1, 0.3, 0.5, 0], move: tintAt });
+  identity(`autumn tint and per-tree pigments, ${faithful ? 'faithful' : 'layer'}`, { tree_clock_spread: 0.1, tree_pigment_spread: 0.6, ...VAR }, { faithful, move: tintAt });
+}
+
+test("tint re-season reads current clamped transmission, retaining the cache, geometry and wind", () => {
+  const A = rig({ ...DEFAULTS, ...SMALL, leaf_drop: 0, phenology: 0.5 }, true);
+  const g = A.G.buildGrove(null, { keepSeason: true }), S = g.season, H = g.hier;
+  H.twigAngle.fill(0.2);
+  const before = snapshot(A, g), rec = Float64Array.from(S.rec);
+  for (const tint of [tintAt(1), { trans_r: 0, trans_g: 1, trans_b: 2 }, tintAt(0)]) {
+    Object.assign(A.params, tint);
+    expect(A.G.reseasonable(g), 'tint leaves the structural key valid').toBe(true);
+    A.G.reseasonGrove(g);
+    const B = rig({ ...A.params }, true);
+    compare('current tint', snapshot(A, g), snapshot(B, B.G.buildGrove(null)));
+    expect(g.season).toBe(S);
+    expect(g.hier).toBe(H);
+    expect(H.twigAngle.every(v => v === Math.fround(0.2))).toBe(true);
+    expect(firstDiff(S.rec, rec)).toBe(null);
+    expect(S.ex).toBe(null); expect(S.rank).toBe(null);
+    for (const [l, a] of snapshot(A, g).layers.entries()) for (let i = 0; i < a.length; i++) {
+      if (i % 17 < 8 || i % 17 > 10) expect(a[i]).toBe(before.layers[l][i]);
+    }
+  }
+});
+
+test("an anthocyanin-only change: the leaves recolour, none drops, and it is a fresh build's bytes", () => {
+  const base = { ...SMALL, leaf_drop: 0, phenology: 0.8 };
+  const A = rig(base), B = rig(base);
+  const g = A.G.buildGrove(null, { keepSeason: true });
+  const before = snapshot(A, g);
+  for (const anthocyanin of [0.9, 0.1, 0.4]) {
+    Object.assign(A.params, { anthocyanin }); Object.assign(B.params, { anthocyanin });
+    A.G.reseasonGrove(g, A.params);
+    const got = snapshot(A, g), want = snapshot(B, B.G.buildGrove(null));
+    compare(`anthocyanin ${anthocyanin}`, got, want);
+    expect(got.litter, "nothing dropped").toBe(null);
+    expect(got.counts).toEqual(before.counts);
+    if (anthocyanin !== 0.4) expect(firstDiff(got.layers[0], before.layers[0]), "the colour moved").not.toBe(null);
+  }
+});
+
+// ---- path independence: the cache is never mutated ---------------------------------------------------------------------
+test("path independence: p1 then p2 is p2 directly (and back to the first is the first)", () => {
+  const A = rig({ ...SMALL, phenology: 0.5 }), C = rig({ ...SMALL, phenology: 0.5 });
+  const g = A.G.buildGrove(null, { keepSeason: true }), h = C.G.buildGrove(null, { keepSeason: true });
+  Object.assign(A.params, { phenology: 0.8 }); A.G.reseasonGrove(g, A.params);
+  const at08 = snapshot(A, g);
+  Object.assign(A.params, { phenology: 0.95 }); A.G.reseasonGrove(g, A.params);
+  Object.assign(A.params, { phenology: 0.72, exposure_absolute: 0.5 }); A.G.reseasonGrove(g, A.params);
+  Object.assign(A.params, { phenology: 0.8, exposure_absolute: 0 }); A.G.reseasonGrove(g, A.params);
+  compare("0.8 by way of 0.95, 0.72 (blended)", snapshot(A, g), at08);
+  Object.assign(C.params, { phenology: 0.8 }); C.G.reseasonGrove(h, C.params);
+  compare("0.8 directly", snapshot(C, h), at08);
+});
+
+// ---- laziness ------------------------------------------------------------------------------------------------------------
+test("laziness: a summer build keeps no season cache unless asked; ex and rank wait for a gate that needs u", () => {
+  const S = rig({ ...SMALL, phenology: 0.5 });
+  expect(S.G.buildGrove(null).season, "no cache unless asked").toBeUndefined();
+  const A = rig({ ...SMALL, phenology: 0.5 });
+  const g = A.G.buildGrove(null, { keepSeason: true });
+  expect(g.season.ex).toBe(null);
+  expect(g.season.rank).toBe(null);
+  Object.assign(A.params, { phenology: 0.58 }); A.G.reseasonGrove(g, A.params);   // below turn_start and below drop_start − ε: no gate needs the light
+  expect(g.season.ex).toBe(null);
+  Object.assign(A.params, { phenology: 0.8 }); A.G.reseasonGrove(g, A.params);
+  expect(g.season.ex).not.toBe(null);
+  const rank = g.season.rank, copy = Float64Array.from(rank);
+  Object.assign(A.params, { phenology: 0.9, exposure_absolute: 0.5 }); A.G.reseasonGrove(g, A.params);
+  Object.assign(A.params, { phenology: 0.7, exposure_absolute: 1 }); A.G.reseasonGrove(g, A.params);
+  expect(g.season.rank, "the same object").toBe(rank);
+  expect(firstDiff(rank, copy), "never written into").toBe(null);
+  // the drop alone asks for the light, and only while drop_exposure > 0
+  const D = rig({ ...SMALL, phenology: 0.5, turn_exposure: 0, drop_exposure: 0 });
+  const d = D.G.buildGrove(null, { keepSeason: true });
+  Object.assign(D.params, { phenology: 0.9 }); D.G.reseasonGrove(d, D.params);
+  expect(d.season.ex, "drop_exposure 0 and turn_exposure 0: nothing asks for u").toBe(null);
+  Object.assign(D.params, { drop_exposure: 1 }); D.G.reseasonGrove(d, D.params);
+  expect(d.season.ex).not.toBe(null);
+});
+
+test("a fall build keeps the exposure field it ran, and it is the one the first re-season would have built", () => {
+  const F = rig({ ...SMALL, phenology: 0.8, exposure_absolute: 0.5 });
+  const f = F.G.buildGrove(null, { keepSeason: true });
+  expect(f.season.ex, "the build ran the pass: the record keeps it").not.toBe(null);
+  expect(f.season.rank).not.toBe(null);
+  const L = rig({ ...SMALL, phenology: 0.5, exposure_absolute: 0.5 });   // the same grove from a summer cache: its first fall re-season builds them
+  const l = L.G.buildGrove(null, { keepSeason: true });
+  Object.assign(L.params, { phenology: 0.8 }); L.G.reseasonGrove(l, L.params);
+  expect(firstDiff(f.season.ex, l.season.ex), "the field").toBe(null);
+  expect(firstDiff(f.season.rank, l.season.rank), "the keyed rank").toBe(null);
+  const rank = f.season.rank, copy = Float64Array.from(rank);
+  Object.assign(F.params, { phenology: 0.9, exposure_absolute: 0 }); F.G.reseasonGrove(f, F.params);
+  expect(f.season.rank, "reused, not rebuilt").toBe(rank);
+  expect(firstDiff(rank, copy), "never written into").toBe(null);
+});
+
+test("leaf variety: the build keeps the rank of light its rows were drawn by, a re-season reuses it (never writes into it) and never touches the table of rows", () => {
+  const A = rig({ ...SMALL, ...VAR, phenology: 0.5, exposure_absolute: 0 });   // a summer build: nothing asks for the light but the rows
+  const g = A.G.buildGrove(null, { keepSeason: true });
+  expect(g.season.ex, "the pass ran the field for the rows: the record keeps it").not.toBe(null);
+  expect(g.season.rank).not.toBe(null);
+  const rank = g.season.rank, copy = Float64Array.from(rank), rows = Uint8Array.from(g.hier.leafRow), ex = g.season.ex;
+  expect(rows.some((r) => r !== rows[0]), "the rows differ").toBe(true);
+  for (const step of [{ phenology: 0.8 }, { phenology: 0.9, exposure_absolute: 0.5 }, { phenology: 0.72, exposure_absolute: 1 }, { phenology: 0.8, exposure_absolute: 0 }]) {
+    Object.assign(A.params, step); A.G.reseasonGrove(g, A.params);
+    expect(g.season.rank, `${JSON.stringify(step)}: the same object`).toBe(rank);
+    expect(g.season.ex).toBe(ex);
+    expect(firstDiff(rank, copy), "never written into").toBe(null);
+    expect(Array.from(g.hier.leafRow), "the rows are the shape's, not the season's").toEqual(Array.from(rows));
+  }
+});
+
+// ---- the key ---------------------------------------------------------------------------------------------------------------
+const read = (f) => readFileSync(new URL(f, new URL("../", import.meta.url)), "utf8");
+test("the key: SEASON_KEYS is a subset of CANOPY_KEYS, and the key list is exactly what buildGrove reads besides the season set", () => {
+  const SEASON = paramsMod.SEASON_KEYS;
+  expect(SEASON.length).toBe(25);
+  for (const k of SEASON) expect(CANOPY_KEYS, k).toContain(k);
+  expect([...SEASON].sort()).toEqual(["anthocyanin", "leaf_green_span", "leaf_out_end", "leaf_out_span", "leaf_out_spread", "young_depth", "young_red", "drop_exposure", "drop_lag", "drop_span", "drop_start", "exposure_absolute", "leaf_drop", "phenology", "tannin", "trans_r", "trans_g", "trans_b", "tree_clock_spread", "tree_pigment_spread", "turn_exposure", "turn_spread", "turn_span", "turn_start", "wall_fraction"].sort());
+  const src = read("./komorebi-grove.js").split("  function refreshWood(){")[0];   // the live wood gate does not affect what buildGrove stores
+  const reads = new Set([...src.matchAll(/params\.([a-z_0-9]+)/g)].map((m) => m[1]).filter((k) => k in DEFAULTS));
+  const season = new Set(SEASON), listed = new Set(groveMod.GROVE_READS);
+  for (const k of reads) expect(season.has(k) || listed.has(k), `buildGrove reads params.${k}: it is neither in the season set nor in the key`).toBe(true);
+  // the listed keys buildGrove does not name itself reach it through faithfulOn() — which the key also carries, as the boolean it is
+  // ...or through the math it hands params to: drop_after_turn is a flip the key must carry (it moves every leaf's day and its mid-turn colour) and is read as P.drop_after_turn in komorebi-season.js
+  const mathSrc = read("./komorebi-season.js"), mathReads = new Set([...mathSrc.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
+  for (const k of listed) expect(reads.has(k) || ["faithful_canopy", "receiver"].includes(k) || mathReads.has(k), `${k} is in the key but buildGrove never reads it`).toBe(true);
+  expect(listed.has("drop_after_turn"), "a flip of the flag invalidates the cache").toBe(true);
+  for (const k of listed) { expect(k in DEFAULTS, k).toBe(true); expect(season.has(k), `${k} is a season key`).toBe(false); }
+  // and what the math functions it hands params to read (leafTau, senescence, dropDay) is the season set, nothing else
+  const math = read("./komorebi-season.js");
+  const P = new Set([...math.matchAll(/\bP\.([a-z_0-9]+)/g)].map((m) => m[1]));
+  for (const k of P) expect(season.has(k) || listed.has(k), `komorebi-season.js reads P.${k}, a season-set key (or one the cache key carries)?`).toBe(true);
+});
+
+// ---- the engine: apply('season') decides fast or full -------------------------------------------------------------------
+function engineRig(over) {
+  const counts = { createBuffer: 0, createVertexArray: 0, bufferData: 0, draws: 0 };
+  globalThis.requestAnimationFrame = () => 0;
+  const gl = new Proxy({}, {
+    get(t, name) {
+      if (typeof name !== "string") return undefined;
+      if (name === "getParameter") return () => 4096;
+      if (name === "getShaderParameter" || name === "getProgramParameter") return () => true;
+      if (name === "getExtension") return () => ({ loseContext() {} });
+      if (name === "FRAMEBUFFER_COMPLETE") return 0x8cd5;
+      if (name === "checkFramebufferStatus") return () => 0x8cd5;
+      if (name === "createBuffer") return () => { counts.createBuffer++; return { data: null }; };
+      if (name === "createVertexArray") return () => { counts.createVertexArray++; return {}; };
+      if (name === "bindBuffer") return (_, b) => { t.cur = b; };
+      if (name === "bufferData") return (_, d) => { counts.bufferData++; if (t.cur) t.cur.data = d; };
+      if (name === "drawArraysInstanced" || name === "drawArrays") return () => { counts.draws++; };
+      return () => ({});
+    },
+  });
+  const canvas = { getContext: () => gl, addEventListener() {}, removeEventListener() {}, clientWidth: 100, clientHeight: 100, width: 100, height: 100 };
+  const eng = create(canvas, { params: { ...SMALL, phenology: 0.8, ...over } });
+  eng.setPaused(true);
+  return { eng, counts };
+}
+const built = (counts) => counts.createBuffer + counts.createVertexArray;
+
+// GLSL constructors fill columns: evaluate the shader's own coefficients instead of assuming its rotation sign.
+function shaderTurn(source, cosine, sine, x, y, angle) {
+  const args = source.match(new RegExp(`mat2\\((${cosine},[^)]+)\\)`))[1].split(",");
+  const values = { [cosine]: Math.cos(angle), [sine]: Math.sin(angle) };
+  const m = args.map(s => (s.startsWith("-") ? -1 : 1) * values[s.replace(/^-/, "")]);
+  return [m[0] * x + m[2] * y, m[1] * x + m[3] * y];
+}
+
+test("leaf and wood rotations agree at every terminal tip, through twig then limb bends", () => {
+  const R = rig({ ...DEFAULTS, ...SMALL, sway_pitch: 0, branch_tau: 2 }, true), g = R.G.buildGrove(null), H = g.hier;
+  H.limbAngle.fill(0.2); H.twigAngle.fill(-0.15);
+  Object.assign(R.hub, { grove: g, hier: H, clusterTex: g.clusterTex, clusterGeomTex: g.clusterGeomTex,
+    motion: { u: 0, time: 0, sway: [0, 0] }, src: { count: 1, flat: new Float32Array([0, 0, 1]) }, U: { faith: {}, faithSeg: {}, facc: {} },
+    bakeRes: () => 256, projMatrix: () => [1, 0, 0, 1], bulkShift: () => [0, 0] });
+  R.faith.gx = new Float32Array(1); R.faith.gy = new Float32Array(1);
+  makeBake(R.hub).bakeFaithful();
+  const stride = R.faith.segArr.length / R.faith.segRest.length;
+  let checked = 0;
+  for (const [i, s] of R.faith.segRest.entries()) {
+    if (s.clump < 0) continue;
+    const t = H.twigs[s.clump];
+    const twig = shaderTurn(VS_FAITH, "ct", "st", s.bx - t.bx, s.by - t.by, H.twigAngle[s.clump]);
+    const limb = shaderTurn(VS_FAITH, "cl", "sl", twig[0] + t.bx - s.px, twig[1] + t.by - s.py, H.limbAngle[s.limb]);
+    expect(Math.hypot(limb[0] + s.px - R.faith.segArr[stride * i + 2], limb[1] + s.py - R.faith.segArr[stride * i + 3])).toBeLessThan(1e-5);
+    checked++;
+  }
+  expect(checked).toBeGreaterThan(100);
+});
+
+test("both leaf shaders turn downwind under positive torque and carry the footprint with the branch", () => {
+  for (const source of [VS_BAKE, VS_FAITH]) {
+    const [x, y] = shaderTurn(source, "cl", "sl", 1, 0, 0.2);
+    expect(x).toBeCloseTo(Math.cos(0.2), 14);
+    expect(y, "an arm along +x under a +y wind has positive torque and must move toward +y").toBeGreaterThan(0);
+    const expression = source.match(/float ang\s*=\s*([^;]+);/)[1];
+    const angleOf = (thL, thT) => Function("angle", "thL", "thT", "swing", `return ${expression}`)(0.7, thL, thT, 0);
+    expect(angleOf(0, 0), "preserve the still leaf's angle").toBe(0.7);
+    const a = angleOf(0.2, -0.15), rest = [Math.cos(0.7), -Math.sin(0.7)];
+    const expected = [Math.cos(0.05) * rest[0] - Math.sin(0.05) * rest[1], Math.sin(0.05) * rest[0] + Math.cos(0.05) * rest[1]];
+    expect(Math.cos(a)).toBeCloseTo(expected[0], 14);
+    expect(-Math.sin(a)).toBeCloseTo(expected[1], 14);
+  }
+});
+
+function windRig(over) {
+  const R = rig({ ...DEFAULTS, ...SMALL, ...over }, true), g = R.G.buildGrove(null);
+  const motion = { time: 0, u: 0, v: 0, uLat: 0, vLat: 0, env: 0, driveEnv: 0, sway: [0, 0], windX: 1, windY: 0, weatherS: 1 };
+  Object.assign(R.hub, { grove: g, hier: g.hier, motion });
+  return { ...R, g, motion, ...makeMotion(R.hub) };
+}
+
+test("leaf drift alone does not force branch springs in still air", () => {
+  const r = windRig({ wind_strength: 0, drift_auto: true, drift_amount: 0.02 });
+  for (let i = 0; i < 600; i++) r.tick(1 / 60);
+  expect(Math.max(...r.g.hier.twigAngle.map(Math.abs), ...r.g.hier.limbAngle.map(Math.abs))).toBe(0);
+  expect(r.params.drift_phase).not.toBe(DEFAULTS.drift_phase);
+});
+
+test("branch springs settle after wind is switched off", () => {
+  const r = windRig({ wind_strength: 1.61, drift_auto: false });
+  for (let i = 0; i < 600; i++) r.tick(1 / 60);
+  expect(r.g.hier.maxV).toBeGreaterThan(0.01);
+  r.params.wind_strength = 0;
+  for (let i = 0; i < 7200 && r.motionActive(); i++) r.tick(1 / 60);
+  expect(r.motionActive()).toBe(false);
+});
+
+for (const mode of ['faithful', 'analytic', 'sky']) {
+  test(`a marginal tree carries its fade through the ${mode} wood path`, () => {
+    const R = rig({ ...DEFAULTS, ...PRESETS['park 1'], inner_leaves: 0, tree_count: 2.001, sky_view: mode === 'sky', sway_pitch: 0 }, mode === 'faithful');
+    const g = R.G.buildGrove(null), H = g.hier, F = R.faith;
+    for (const [i, sg] of H.segments.entries()) expect(F.segRest[i].cov, 'the geometry keeps its tree coverage').toBe(sg.cov);
+    const main = H.segments.filter(s => s.level <= 1).slice(0, R.hub.occ.count);
+    main.forEach((s, i) => { expect(R.hub.occ.ht[4 * i + 3]).toBeCloseTo(s.cov, 7); });
+    expect(F.segRest.some(s => s.cov < 0.002)).toBe(true);
+    expect(F.segVAO.attrs[3]).toEqual({ size: 1, stride: 36, offset: 32 });
+    if (mode === 'sky') expect(R.hub.sky.segVAO.attrs[3]).toEqual({ size: 1, stride: 36, offset: 32 });
+    Object.assign(R.hub, { grove: g, hier: H, clusterTex: g.clusterTex, clusterGeomTex: g.clusterGeomTex,
+      motion: { u: 0, time: 0, sway: [0, 0] }, src: { count: 1, flat: new Float32Array([0, 0, 1]) }, U: { bake: {}, faith: {}, faithSeg: {}, facc: {} },
+      bakeRes: () => 256, projMatrix: () => [1, 0, 0, 1], bulkShift: () => [0, 0], refreshWood: R.G.refreshWood,
+      layerTex: [{}, {}, {}, {}], woodTex: [{}, {}, {}, {}], layerHeights: () => [2, 2.5, 3, 3.6], fillWanted: () => false });
+    F.gx = new Float32Array(1); F.gy = new Float32Array(1);
+    makeBake(R.hub).bake();
+    const geometry = mode === 'sky' ? R.hub.sky : F;
+    if (mode !== 'analytic') {
+      expect(geometry.segArr.length).toBe(geometry.segRest.length * 9);
+      geometry.segRest.forEach((s, i) => { expect(geometry.segArr[9 * i + 8]).toBeCloseTo(s.cov, 7); });
+    }
+    if (mode === 'sky') {
+      const l = R.params.layer_count - 1;
+      expect(geometry.segVAO.attrs[3].offset).toBe(geometry.start[l] * 36 + 32);
+    }
+  });
+}
+
+test("the faithful stamp and both analytic wood readers consume the marginal tree fade", () => {
+  expect(VS_FAITH_SEG).toContain('vWoodFade = iWoodFade;');
+  expect(FS_FAITH_SEG).toContain('uWoodTau*cov*vWoodFade');
+  for (const cam of ['floor', 'sky']) expect(buildTransport(cam)).toMatch(/exp\(-uOccTau[^;]*H\.w/);
+});
+
+test("live wood radius reaches the faithful and analytic geometry without rebuilding the grove", () => {
+  const { eng, counts } = engineRig({ faithful_canopy: true, branch_tau: 2 });
+  const buffers = built(counts);
+  for (const radius of [0.001, 0.24, 0.02]) {
+    eng.params.trunk_radius_m = radius;
+    eng.apply("bake");
+    const fresh = engineRig({ faithful_canopy: true, branch_tau: 2, trunk_radius_m: radius }).eng;
+    expect(eng.faith.segRest.map((s) => [s.ra, s.rb])).toEqual(fresh.faith.segRest.map((s) => [s.ra, s.rb]));
+    expect(Array.from(eng.occ.ht)).toEqual(Array.from(fresh.occ.ht));
+    expect(built(counts), "only wood data changes; leaf buffers are retained").toBe(buffers);
+  }
+});
+
+test("live canopy heights keep analytic wood aligned with the layer heights", () => {
+  const { eng, counts } = engineRig({ branch_tau: 2 });
+  const buffers = built(counts);
+  Object.assign(eng.params, { canopy_base_height_m: 4, canopy_thickness_m: 1.3 });
+  eng.apply("bake");
+  const fresh = engineRig({ branch_tau: 2, canopy_base_height_m: 4, canopy_thickness_m: 1.3 }).eng;
+  expect(Array.from(eng.occ.ht)).toEqual(Array.from(fresh.occ.ht));
+  expect(eng.occ.hRef).toBe(fresh.occ.hRef);
+  expect(built(counts)).toBe(buffers);
+});
+
+test("wood off: a leaf crossfade never refreshes the shared incoming wood geometry", () => {
+  const r = rig({ ...SMALL, branch_tau: 0 });
+  const outgoing = r.G.buildGrove(null);
+  r.hub.grove = outgoing;
+  r.params.branch_children = 2;
+  r.G.buildGrove(null);   // the incoming grove owns faith.* until it is installed
+  r.params.branch_children = 3;
+  r.params.canopy_base_height_m = 4;
+  expect(r.G.refreshWood()).toBe(false);
+});
+
+test("apply('season'): the first builds with the cache (a full path); a season-set-only change after it re-seasons — nothing is built", () => {
+  const { eng, counts } = engineRig({});
+  let b = built(counts);
+  expect(eng.apply("season"), "no cache yet: a full build says so").toBe("build");
+  expect(built(counts), "no cache yet: one full build").toBeGreaterThan(b);
+  for (const change of [{ phenology: 0.85 }, { phenology: 0.9, anthocyanin: 0.7 }, { leaf_drop: 0.5, drop_start: 0.72, turn_start: 0.58 }, { exposure_absolute: 0.5 }, { tree_clock_spread: 0.1 }, { tree_pigment_spread: 0.6 }, { trans_r: 0.094 }, { trans_g: 0.402 }, { trans_b: 0.1 }]) {
+    b = built(counts);
+    Object.assign(eng.params, change);
+    expect(eng.apply("season"), `${JSON.stringify(change)}: the cache was used`).toBe("reseason");
+    expect(built(counts), `${JSON.stringify(change)}: the fast path builds no buffer`).toBe(b);
+  }
+});
+
+test("apply('season') leaves the bake to the frame when the frame will bake (running, the canopy moving, no transition), and bakes itself otherwise", () => {
+  const { eng, counts } = engineRig({ wind_strength: 1 });
+  eng.apply("season");                                   // the cache
+  let d = counts.draws;
+  eng.params.phenology = 0.82;
+  expect(eng.apply("season")).toBe("reseason");
+  expect(counts.draws, "paused: no frame comes, so the apply bakes").toBeGreaterThan(d);
+  eng.setPaused(false);                                  // the rig's requestAnimationFrame never calls back: no frame runs in this test
+  d = counts.draws;
+  eng.params.phenology = 0.84;
+  expect(eng.apply("season")).toBe("reseason");
+  expect(counts.draws, "running with the wind moving: the next frame bakes before it draws").toBe(d);
+  Object.assign(eng.params, { wind_strength: 0, drift_auto: false, phenology: 0.86 });
+  expect(eng.apply("season")).toBe("reseason");
+  expect(counts.draws, "running, the canopy still: no frame will bake, so the apply does").toBeGreaterThan(d);
+  eng.setPaused(true);
+});
+
+test("apply('season'): a param buildGrove reads besides the season set takes the full path", () => {
+  const cases = [{ view_extent_m: 5.1 }, { seed: 4242 }, { faithful_canopy: true }, { foliage_density: 1.4 }, { leaf_shape: "maple" }, { leaf_shape: "maple", leaf_variety: 1 }, { leaf_variety: 0.5 }, { canopy_base_height_m: 2.4 },
+    { canopy_thickness_m: 1.1 }, { trunk_radius_m: 0.21 }, { tree_count: 3 }, { drop_after_turn: 1 }, { limb_count: 5 }, { leaf_size_m: 0.13 }, { sky_view: true }, { inner_leaves: 0.3 }];
+  for (const change of cases) {
+    const { eng, counts } = engineRig({});
+    eng.apply("season");                                   // the cache
+    const b = built(counts);
+    Object.assign(eng.params, change);
+    expect(eng.apply("season"), `${JSON.stringify(change)} must regrow`).toBe("build");
+    expect(built(counts), `${JSON.stringify(change)} must regrow`).toBeGreaterThan(b);
+  }
+});
+
+test("apply('season'): while a transition is active the grove is rebuilt, not re-seasoned (the target grove shares the engine-global faith.*)", () => {
+  const { eng, counts } = engineRig({});
+  eng.apply("season");
+  eng.trans.active = true;
+  const b = built(counts);
+  Object.assign(eng.params, { phenology: 0.85 });
+  eng.apply("season");
+  expect(built(counts)).toBeGreaterThan(b);
+});
+
+test("a tint-only grove morph builds its lazy record once, then retains buffers and matches fresh builds at every frame", () => {
+  const savedWindow = globalThis.window, savedRaf = globalThis.requestAnimationFrame;
+  globalThis.window = { devicePixelRatio: 1 };
+  try {
+    for (const faithful_canopy of [true, false]) for (const wind_strength of [0, 1.2]) {
+      const { eng, counts } = engineRig({ faithful_canopy, leaf_drop: 0, phenology: 0.5, sway_pitch: 0.3, wind_strength, drift_auto: false, auto_quality: false, adaptive_motion: false });
+      const target = { ...eng.params, ...tintAt(1), exposure: 1.5, sun_azimuth_deg: 140, ground_r: 0.4, sway_pitch: 0.9 };
+      eng.transitionTo(target, { duration: 0.1 });
+      let next, now = performance.now(), frames = 0, cached;
+      const initial = built(counts);
+      globalThis.requestAnimationFrame = cb => { next = cb; return 0; };
+      eng.setPaused(false);
+      while (eng.trans.active && frames++ < 20) {
+        const frame = next; now += 1000/60; frame(now);
+        const B = rig({ ...eng.params }, faithful_canopy);
+        const fresh = B.G.buildGrove(eng.grove().hier);
+        makeMotion(B.hub).publishBend(fresh);
+        compare(`tint morph frame ${frames}`, snapshot(eng, eng.grove()), snapshot(B, fresh));
+        expect(firstDiff(eng.grove().hier.clusterData, fresh.hier.clusterData), 'live pitch uses the morphed params, as a regrow does').toBe(null);
+        expect(eng.grove().hier.maxV > 2e-4, 'match the activity state of the replaced hierarchy').toBe(fresh.hier.maxV > 2e-4);
+        if (frames === 1) {
+          expect(built(counts)).toBeGreaterThan(initial);
+          expect(eng.grove().season, 'the first tint frame keeps a lazy record').toBeDefined();
+          cached = { grove: eng.grove(), buffers: built(counts) };
+        } else {
+          expect(eng.grove()).toBe(cached.grove);
+          expect(built(counts), 'no new buffers after the first tick').toBe(cached.buffers);
+        }
+      }
+      expect(eng.trans.active).toBe(false);
+      expect(eng.params).toEqual(target);
+      eng.setPaused(true);
+    }
+  } finally { globalThis.window = savedWindow; globalThis.requestAnimationFrame = savedRaf; }
+});
+
+// A row asks for the scope the editor runs when its slider moves. A season key that asked for 'canopy' would regrow the grove on every tick of a drag,
+// for the picture a re-season gives. Each key is moved the way the slider moves it, on a grove that already keeps its record.
+test("every season key's editor row requests the season scope, and a move of it re-seasons the grove on screen", () => {
+  const MOVE = { trans_r: 0.094, trans_g: 0.402, trans_b: 0.1, phenology: 0.86, turn_start: 0.58, turn_span: 0.24, turn_spread: 0.1, anthocyanin: 0.7, tannin: 0.35,
+    wall_fraction: 0.45, turn_exposure: 0.5, exposure_absolute: 0.5, tree_clock_spread: 0.1, tree_pigment_spread: 0.6, leaf_drop: 0.6, drop_start: 0.72, drop_span: 0.2,
+    drop_exposure: 0.3, drop_lag: 0.04, leaf_out_end: 0.2, leaf_out_span: 0.12, leaf_out_spread: 0.08, leaf_green_span: 0.2, young_depth: 0.5, young_red: 0.3 };
+  expect(Object.keys(MOVE).sort(), "a move for every season key").toEqual([...paramsMod.SEASON_KEYS].sort());
+  for (const key of paramsMod.SEASON_KEYS) expect(PARAMS[key].row.rebuild, key).toBe('season');
+  for (const drop_after_turn of [0, 1]) {   // drop_start is read on the first clock, drop_lag on the second
+    const { eng, counts } = engineRig({ drop_after_turn });
+    expect(eng.apply('season'), "the first apply builds the record").toBe('build');
+    const last = built(counts);
+    for (const key of paramsMod.SEASON_KEYS) {
+      expect(eng.params[key], `${key}: the move changes it`).not.toBe(MOVE[key]);
+      eng.params[key] = MOVE[key];
+      expect(eng.apply(PARAMS[key].row.rebuild), key).toBe('reseason');
+      expect(built(counts), `${key}: no buffer is made`).toBe(last);
+      const B = rig({ ...eng.params });
+      compare(`${key}, drop_after_turn ${drop_after_turn}`, snapshot(eng, eng.grove()), snapshot(B, B.G.buildGrove(null)));
+    }
+    eng.dispose();
+  }
+});
+
+test("density editor scope: capacity grows once, smaller edits reuse it, and autumn rebuilds", () => {
+  expect(PARAMS.foliage_density.row.rebuild).toBe('density');
+  const { eng, counts } = engineRig({ phenology: 0.5, leaf_drop: 0, foliage_density: 0.4, faithful_canopy: true });
+  let last = built(counts);
+  for (const [density, path] of [[1.65, 'build'], [0.4, 'reseason'], [1.4, 'reseason'], [2, 'build'], [0, 'reseason'], [0.4, 'reseason']]) {
+    eng.params.foliage_density = density;
+    eng.grove().hier.maxV = 0.2;
+    expect(eng.apply('density')).toBe(path);
+    expect(eng.grove().hier.maxV, 'retain the replaced editor regrow’s activity hint').toBe(0);
+    expect(built(counts) > last).toBe(path === 'build'); last = built(counts);
+    const B = rig({ ...eng.params }, true);
+    compare(`editor ${density}`, snapshot(eng, eng.grove()), snapshot(B, B.G.buildGrove(null)));
+  }
+  Object.assign(eng.params, { phenology: 0.8, turn_exposure: 1, leaf_drop: 1 });
+  expect(eng.apply('season')).toBe('build');
+  const B = rig({ ...eng.params }, true);
+  compare('autumn after density cache', snapshot(eng, eng.grove()), snapshot(B, B.G.buildGrove(null)));
+  eng.dispose();
+});
+
+test('density morph: one peak-capacity build, reversal and interruption retain exact native frames', () => {
+  const savedWindow = globalThis.window, savedRaf = globalThis.requestAnimationFrame;
+  globalThis.window = { devicePixelRatio: 1 };
+  try {
+    for (const mode of ['layer', 'faithful', 'sky']) {
+      const faithful = mode === 'faithful';
+      const { eng, counts } = engineRig({ faithful_canopy: faithful, sky_view: mode === 'sky', phenology: 0.5, leaf_drop: 0, leaf_variety: 0, foliage_density: 0.4,
+        wind_strength: 1.2, sway_pitch: 0.3, drift_auto: false, auto_quality: false, adaptive_motion: false, canopy_fill: 0.7, leaf_diffuse: 0.4 });
+      let next, now = performance.now();
+      globalThis.requestAnimationFrame = cb => { next = cb; return 0; };
+      eng.setPaused(false);
+      for (const [density, steps, rebuild] of [[1.65, 3, true], [0.1, 3, false], [2.2, 3, true], [0.4, 30, false]]) {
+        const before = built(counts), old = eng.grove();
+        const target = { ...eng.params, foliage_density: density, ...tintAt(density/3), sway_pitch: 0.9, sun_azimuth_deg: 140, exposure: 1.5 };
+        eng.transitionTo(target, { duration: 0.2 });
+        expect(eng.trans.densityMorph).toBe(true);
+        let cached;
+        for (let i = 0; i < steps && eng.trans.active; i++) {
+          const frame = next; now += 1000/60; frame(now);
+          const g = eng.grove(), B = rig({ ...eng.params }, faithful), fresh = B.G.buildGrove(g.hier);
+          makeMotion(B.hub).publishBend(fresh);
+          compare(`${mode} density ${density}, frame ${i}`, snapshot(eng, g), snapshot(B, fresh));
+          expect([eng.faith.hMin, eng.faith.hMax]).toEqual([B.faith.hMin, B.faith.hMax]);
+          expect(firstDiff(g.hier.clusterData, fresh.hier.clusterData)).toBe(null);
+          expect(g.hier.maxV > 2e-4).toBe(fresh.hier.maxV > 2e-4);
+          if (i === 0) {
+            expect(built(counts) > before).toBe(rebuild);
+            expect(g === old).toBe(!rebuild);
+            cached = { g, buffers: built(counts) };
+          } else { expect(g).toBe(cached.g); expect(built(counts)).toBe(cached.buffers); }
+        }
+      }
+      expect(eng.trans.active).toBe(false);
+      expect(eng.params.foliage_density).toBe(0.4);
+      eng.dispose();
+    }
+  } finally { globalThis.window = savedWindow; globalThis.requestAnimationFrame = savedRaf; }
+});
+
+test("apply('season'): the carpet's grove is dropped, so the next refreshLitter bakes (its signature keys on the grove, not the capacities)", () => {
+  const { eng } = engineRig({});
+  eng.apply("season");
+  eng.litter.grove = "sentinel";
+  Object.assign(eng.params, { anthocyanin: 0.9 });          // an anthocyanin-only re-season: phenology and the litter keys unmoved
+  eng.apply("season");
+  expect(eng.litter.grove).toBe(null);
+});
+
+// ---- the record is kept only when the structure has stopped moving ----------------------------------------------------------
+// A season apply that has to build (no cache, or a stale one) used to keep the per-leaf record every time. On the season slider's spring half every tick moves structure, so every
+// tick built a record (~5 ms, ~7 MB on afternoon 7) that the next tick threw away. It is kept now when the structure being built is the one the grove on screen was grown for.
+test("apply('season') over a sweep that moves the structure: no tick keeps a season record; the first with the structure settled keeps one and the apply after it is fast; every frame is a fresh build's", () => {
+  const { eng } = engineRig({});
+  const fresh = (label) => { const B = rig({ ...eng.params }); compare(label, snapshot(eng, eng.grove()), snapshot(B, B.G.buildGrove(null))); };
+  for (const foliage_density of [1.1, 1.2, 1.3, 1.4, 1.5]) {
+    Object.assign(eng.params, { foliage_density, phenology: 0.8 });
+    expect(eng.apply("season"), `density ${foliage_density}`).toBe("build");
+    expect(eng.grove().season, `density ${foliage_density}: the structure moved, so the next tick would throw the record away`).toBeUndefined();
+    fresh(`density ${foliage_density}`);
+  }
+  Object.assign(eng.params, { phenology: 0.85 });
+  expect(eng.apply("season"), "the structure is the one just built: this regrow keeps the record").toBe("build");
+  expect(eng.grove().season, "...and it is there").toBeDefined();
+  fresh("settled, with the record");
+  Object.assign(eng.params, { phenology: 0.9, anthocyanin: 0.7 });
+  expect(eng.apply("season"), "the apply after it takes the fast path").toBe("reseason");
+  fresh("re-seasoned");
+  Object.assign(eng.params, { foliage_density: 1.6 });
+  expect(eng.apply("season"), "the structure moves again").toBe("build");
+  expect(eng.grove().season, "...and the record is not kept").toBeUndefined();
+  fresh("moving again");
+});
+
+// ---- the cost: reported, not asserted -------------------------------------------------------------------------------------------
+const med = (f, n = 7) => { const ts = []; for (let i = 0; i < n; i++) { const t0 = performance.now(); f(); ts.push(performance.now() - t0); } ts.sort((a, b) => a - b); return ts[n >> 1]; };
+test("cost (reported): the summer tint repro, regrow versus re-season, median of 21", () => {
+  const params = { ...DEFAULTS, seed: 290626672, tree_count: 5, leaves_per_cluster: 39, foliage_density: 1.65, faithful_canopy: true, ...tintAt(0) };
+  const R = rig(params, true);
+  let step = 0;
+  const tint = () => Object.assign(params, tintAt((step++ % 21)/20));
+  for (let i = 0; i < 5; i++) R.G.buildGrove(null);
+  const build = med(() => { tint(); R.G.buildGrove(null); }, 21);
+  const keep = med(() => R.G.buildGrove(null, { keepSeason: true }), 21);
+  const g = R.G.buildGrove(null, { keepSeason: true });
+  const first = med(() => R.G.reseasonGrove(g), 1);
+  for (let i = 0; i < 30; i++) { tint(); R.G.reseasonGrove(g); }
+  const reseason = med(() => { tint(); R.G.reseasonGrove(g); }, 21);
+  const B = rig({ ...params }, true);
+  compare('timed tint', snapshot(R, g), snapshot(B, B.G.buildGrove(null)));
+  console.log(`\ntint cost (bun ${Bun.version}, ${process.platform}/${process.arch}, stub GL, ${g.season.n} leaves): build ${build.toFixed(2)} | build+keep ${keep.toFixed(2)} | first re-season ${first.toFixed(2)} | warm re-season ${reseason.toFixed(2)} ms`);
+});
+test("cost (reported): a fall frame by regrow and by re-season at t 0.9, median of 7", () => {
+  const rows = [];
+  for (const [look, faithful, own] of [["afternoon 7", false, false], ["the void", false, false], ["montebello", true, true]]) {
+    const params = { ...DEFAULTS, ...PRESETS[look], ...(own ? {} : macroParams("season", 0.9)), phenology: 0.9 };
+    const R = rig(params, faithful);
+    R.G.buildGrove(null); R.G.buildGrove(null, { keepSeason: true });   // warm
+    const tBuild = med(() => R.G.buildGrove(null));
+    const tKeep = med(() => R.G.buildGrove(null, { keepSeason: true }));
+    const g = R.G.buildGrove(null, { keepSeason: true });
+    const t0 = performance.now();
+    R.G.reseasonGrove(g, R.params);
+    const tFirst = performance.now() - t0;                 // the first one: a fall build kept the exposure field, so it no longer pays it
+    const tRe = med(() => R.G.reseasonGrove(g, R.params));
+    Object.assign(R.params, { phenology: 0.5 });
+    const tSummer = med(() => R.G.buildGrove(null));
+    Object.assign(R.params, { phenology: 0.9 });
+    rows.push(`${look.padEnd(12)} summer build ${tSummer.toFixed(1).padStart(6)} | fall build ${tBuild.toFixed(1).padStart(6)} | fall build+keep ${tKeep.toFixed(1).padStart(6)} | re-season first ${tFirst.toFixed(1).padStart(6)} then ${tRe.toFixed(1).padStart(6)} ms`);
+  }
+  console.log(`\nre-season cost (bun, ms):\n  ${rows.join("\n  ")}`);
+  expect(rows.length).toBe(3);
+}, 120000);

@@ -33,7 +33,7 @@ jobs:
       # The cheap gates: no browser, seconds each. A red one stops the publish. The Chromium suites
       # (pixels, editor, embed-check) stay local — they need Playwright's own browser, outside nix.
       - name: Unit tests
-        run: nix develop -c bun test *.test.js
+        run: nix develop -c bun test test/*.test.js
       - name: Lint
         run: nix run .#lint
       - name: Shaders

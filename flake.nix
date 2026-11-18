@@ -200,7 +200,7 @@
           test = pkgs.writeShellApplication {
             name = "test";
             runtimeInputs = [ pkgs.bun ];
-            text = ''exec bun test ./*.test.js "$@"'';
+            text = ''exec bun test ./test/*.test.js "$@"'';
           };
           # `nix run .#arboretum-test [-- vitest args]` — arboretum's typecheck, then its tests in the Workers runtime; each
           # generates the engine from this tree first. First run: cd arboretum && nix develop -c npm ci.

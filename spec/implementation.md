@@ -112,7 +112,7 @@ The routes and what each promises are [`model/transitions.md`](model/transitions
 
 ## The crosswalk
 
-One table per model file. *Module* names the file that owns the mechanism (see the map). *Named* lists the function or constant the old spec names. *Unit* lists the bun tests (`*.test.js` at the repository root). *Harness* lists the pixel-harness suites and flags and the `test-gl/*.mjs` route drivers. "Not recorded" means the old spec does not say. Test files whose contents the old spec never describes are listed by name only.
+One table per model file. *Module* names the file that owns the mechanism (see the map). *Named* lists the function or constant the old spec names. *Unit* lists the bun tests (`*.test.js` in `test/`). *Harness* lists the pixel-harness suites and flags and the `test-gl/*.mjs` route drivers. "Not recorded" means the old spec does not say. Test files whose contents the old spec never describes are listed by name only.
 
 ### Source — [`model/source.md`](model/source.md)
 
