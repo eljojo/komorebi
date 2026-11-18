@@ -346,7 +346,11 @@ export function makeTransitions(hub){
       const peak=p=>Math.max(p.ground_r,p.ground_g,p.ground_b), now=peak(params);
       if(now>0){ const s=lerp(peak(trans.from),peak(trans.to),e)/now; params.ground_r*=s; params.ground_g*=s; params.ground_b*=s; }
     }
-    { const cam=cameraFor(trans.from); if(cam===cameraFor(trans.to)) params.exposure=beamExposure(cam,trans.from,trans.to,e,params); }
+    // The exposure blends in the target's camera's law when the route lands on the floor or both ends stand on one camera; any other route is the
+    // morph's plain tween. On the half of a route the floor camera draws, the dapples' level is exposure times the beam's factor, and the blend keeps
+    // that product on a straight line between the two ends where a plain tween of both overshoots. The half drawn by the camera the route left is
+    // blended in the same law, which is a stand-in.
+    { const cam=cameraFor(trans.to); if(cam==='floor' || cam===cameraFor(trans.from)) params.exposure=beamExposure(cam,trans.from,trans.to,e,params); }
     if(trans.canopyMorph) for(const k of CANOPY_KEYS) params[k] = lerp(trans.from[k], trans.to[k], e);  // deform the SAME grove
     if(trans.canopyMorph && trans.reach) params.grove_reach_m = e>=1 ? trans.reach[1] : lerp(trans.reach[0], trans.reach[1], e);   // ...along the reach each end grows for: named while it moves (the landing writes the target's own value, which grows the same grove)
     let rebuilt = false, wake = null;

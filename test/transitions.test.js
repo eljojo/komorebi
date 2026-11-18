@@ -1425,8 +1425,8 @@ test("a route whose step gives up lands as a scene fade to the same target, keep
 });
 
 // The live morph's exposure follows the receivers the two looks stand on: between two looks of one camera the dapples travel straight from one
-// end's level to the other's (beamExposure, with that camera's incidence), between two cameras it is the plain lerp. The camera is read off the look
-// on screen when the route starts, whatever the route holds back.
+// end's level to the other's (beamExposure, with that camera's incidence), between two cameras it is the plain lerp unless the route lands on the floor, where it is the floor's blend.
+// The camera is read off the look on screen when the route starts, whatever the route holds back.
 const midRoute = (from, to) => {
   const r = transitionRig(from);
   r.transitionTo(to, { duration: 4 / 15 });
@@ -1452,13 +1452,25 @@ for (const cam of ["cloth", "enclosure", "floor"]) {
   });
 }
 
-for (const [cam, other] of [["cloth", "floor"], ["enclosure", "floor"], ["sky", "floor"], ["floor", "cloth"], ["cloth", "enclosure"]]) {
-  test(`${cam} to ${other}: the cameras differ, so the exposure is the plain lerp and the beam blend is not applied`, () => {
+// A route that lands on the floor blends in the floor's law whatever camera it left; any other change of camera is the plain lerp.
+for (const [cam, other] of [["cloth", "floor"], ["enclosure", "floor"], ["sky", "floor"]]) {
+  test(`${cam} to ${other}: the route lands on the floor, so the exposure is the floor's beam blend, not the plain lerp`, () => {
+    const from = { ...CAMERA_LOOKS[cam], ...LAW, faithful_canopy: false, standing_scene: false, sun_elevation_deg: 13, sun_azimuth_deg: 62, exposure: 1.27 };
+    const to = { ...CAMERA_LOOKS[other], ...LAW, faithful_canopy: false, standing_scene: false, sun_elevation_deg: 40, sun_azimuth_deg: 130, exposure: 3.5 };
+    const { r, a, b, e } = midRoute(from, to);
+    const floor = beamExposure("floor", a, b, e, r.params), plain = lerp(a.exposure, b.exposure, e);
+    expect(Math.abs(floor - plain), "the two differ here, so the test can tell them apart").toBeGreaterThan(0.01);
+    expect(r.params.exposure).toBe(floor);
+  });
+}
+
+for (const [cam, other] of [["floor", "cloth"], ["floor", "sky"], ["cloth", "enclosure"], ["sky", "cloth"]]) {
+  test(`${cam} to ${other}: the route does not land on the floor and the cameras differ, so the exposure is the plain lerp`, () => {
     const from = { ...CAMERA_LOOKS[cam], ...LAW, faithful_canopy: false, standing_scene: false, sun_elevation_deg: 13, sun_azimuth_deg: 62, exposure: 1.27 };
     const to = { ...CAMERA_LOOKS[other], ...LAW, faithful_canopy: false, standing_scene: false, sun_elevation_deg: 40, sun_azimuth_deg: 130, exposure: 3.5 };
     const { r, a, b, e } = midRoute(from, to);
     const plain = lerp(a.exposure, b.exposure, e);
-    expect(Math.abs(beamExposure("floor", a, b, e, r.params) - plain), "a floor blend would differ here").toBeGreaterThan(0.01);
+    expect(Math.abs(beamExposure(other, a, b, e, r.params) - plain) + Math.abs(beamExposure(cam, a, b, e, r.params) - plain), "a blend in either end's law would differ here").toBeGreaterThan(0.01);
     expect(r.params.exposure).toBe(plain);
   });
 }
