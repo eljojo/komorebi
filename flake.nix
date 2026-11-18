@@ -196,11 +196,20 @@
               npx wrangler deploy
             '';
           };
-          # `nix run .#test [-- bun test args]` — the engine's unit tests, as pages.yml runs them (no browser, seconds).
+          # `nix run .#test [-- bun test args]` — the engine's unit tests, as pages.yml runs them (no browser, about 40 s for the
+          # suite). With no path or name pattern among the arguments it runs every `test/*.test.js` (flags such as `--bail` pass
+          # through); with one or more, only those: `nix run .#test -- test/air.test.js`.
           test = pkgs.writeShellApplication {
             name = "test";
             runtimeInputs = [ pkgs.bun ];
-            text = ''exec bun test ./test/*.test.js "$@"'';
+            text = ''
+              named=0
+              for a in "$@"; do
+                case "$a" in -*) ;; *) named=1 ;; esac
+              done
+              if [ "$named" = 1 ]; then exec bun test "$@"; fi
+              exec bun test ./test/*.test.js "$@"
+            '';
           };
           # `nix run .#arboretum-test [-- vitest args]` — arboretum's typecheck, then its tests in the Workers runtime; each
           # generates the engine from this tree first. First run: cd arboretum && nix develop -c npm ci.

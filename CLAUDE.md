@@ -125,7 +125,7 @@ the deploy on a push to `main`, which writes `commit.json`.
   and returns its frame (dev only; the header lists the routes). Before looking at or driving an open editor from outside the
   browser, read `dev-server.js`'s header: what the bridge can do is listed there, and only there.
 
-**`test/`** — the unit tests, one `*.test.js` per mechanism, run from the repository root: `nix run .#test` (bun, no browser, seconds).
+**`test/`** — the unit tests, one `*.test.js` per mechanism, run from the repository root: `nix run .#test` (bun, no browser, about 40 s); `nix run .#test -- test/air.test.js` runs only the files named.
 A test that reads a source file as text names it relative to the root.
 
 **`test-gl/`** — real renders in headless Chromium (first run: `cd test-gl && npm install && npx playwright install chromium`).
