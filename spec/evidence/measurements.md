@@ -923,6 +923,14 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **What it established:** each removed bake was overwritten before anything read it.
 - **Date:** 2026-11-18.
 
+### A new look under a stepped-down governor
+
+- **What was measured:** the texture sets and bakes of a `setParams` while auto-quality has stepped below the knee, before and after the governor's state was put at rest ahead of the rebuild; every frame after the switch compared byte for byte.
+- **On:** `gl-ledger.test.js`'s ledger GL, a faithful look at a 2048 bake stepped below the knee; the frames on an M4 (Chromium on Metal), 480×270, `auto_quality` on, 30 pairs of shipped looks, the governor first driven down by a clock at 20 fps and then 40 frames at 60 fps, wind off and on, and the same pairs from a governor at rest.
+- **Result:** the switch made 20 textures and 2 bakes before, 10 textures and 1 bake after, as a switch from a governor at rest does. Every frame is byte-identical between the two (1200 frames each way, wind off and on, with the governor stepped down and at rest); the clock drove 5 of the 30 pairs' governors down, 4 of them below the knee.
+- **What it established:** the first texture set and bake were replaced before anything was shown.
+- **Date:** 2026-11-18.
+
 ### The midpoint grove against the look loaded fresh
 
 - **What was measured:** the landed frame of a route that regrows its grove at the midpoint, against the target loaded fresh (max and mean |difference| over RGB, 0–255).

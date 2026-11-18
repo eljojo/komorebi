@@ -103,7 +103,7 @@ function engine(look) {
   globalThis.requestAnimationFrame = (cb) => { next = cb; return 0; };
   const canvas = { getContext: () => L.gl, addEventListener(n, f) { on[n] = f; }, removeEventListener(n, f) { if (on[n] === f) delete on[n]; }, clientWidth: 64, clientHeight: 36, width: 64, height: 36 };
   const eng = create(canvas, { params: look });
-  const pump = (n = 1) => { for (let i = 0; i < n; i++) { const f = next; next = null; now += 1000 / 60; f?.(now); } };
+  const pump = (n = 1, dt = 1000 / 60) => { for (let i = 0; i < n; i++) { const f = next; next = null; now += dt; f?.(now); } };
   const land = (max = 2000) => { for (let i = 0; i < max && eng.trans.active; i++) pump(); expect(eng.trans.active, "the route lands").toBe(false); pump(2); };
   return { eng, L, pump, land,
     lose() { L.lose(); on.webglcontextlost({ preventDefault() {} }); },
@@ -255,4 +255,18 @@ scenario("a litter descent's landing frame bakes the landed look once, beside th
   expect(R.eng.trans.route?.name).toBe("litterRise");
   expect(R.eng.trans.litterFall || R.eng.trans.shadowFall, "a descent").toBe(true);
   expect(lastFrame(R)).toBe(2);
+});
+
+// A new look starts the governor at rest: its state is reset before the rebuild, so the textures are sized and the cast baked once, at full quality,
+// rather than at the stepped-down quality and again when the reset steps it back up.
+scenario("with the governor stepped down, a setParams to another look sizes the textures once and bakes once", { ...FAITHFUL, auto_quality: true, bake_resolution: 2048 }, (R) => {
+  for (let i = 0; i < 400 && R.eng.perf.quality >= 0.5; i++) R.pump(1, 50);
+  expect(R.eng.perf.quality, "the governor stepped down past the knee").toBeLessThan(0.5);
+  const textures = R.L.made().texture;
+  expect(bakes(R, () => R.eng.setParams({ ...FAITHFUL, auto_quality: true, bake_resolution: 2048, seed: 77 })), "bakes").toBe(1);
+  expect(R.eng.perf.quality, "at rest").toBe(1);
+  const atRest = engine({ ...FAITHFUL, auto_quality: true, bake_resolution: 2048 }), was = atRest.L.made().texture;
+  atRest.eng.setParams({ ...FAITHFUL, auto_quality: true, bake_resolution: 2048, seed: 77 });
+  expect(R.L.made().texture - textures, "textures made, as many as a setParams from a governor at rest").toBe(atRest.L.made().texture - was);
+  atRest.eng.dispose();
 });

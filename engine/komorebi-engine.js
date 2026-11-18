@@ -120,7 +120,7 @@ function createEngine(canvas, opts, driven=false){
     const changed=[...FIDELITY_KEYS,'edge_area'].some(key=>params[key]!==next[key]);
     for(const key of [...FIDELITY_KEYS,'edge_area',...PLAYBACK_KEYS]) params[key]=next[key];
     warnCut(params);
-    if(!lost && changed){rebuildAll();resetPerf();}
+    if(!lost && changed)rebuildRested();
   }
   // A tier the host opens that this build cut stays off, and is said so once per engine: at the three doors params come through (here, setParams, transitionTo).
   const warned = new Set();
@@ -719,7 +719,12 @@ function createEngine(canvas, opts, driven=false){
     if(look) growAs(params, look, regenCanopy); else regenCanopy();
     regenSource();
   }
-  function resetPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; applyQuality(); }
+  function resetPerf(){ restPerf(); applyQuality(); }
+  // The governor's state at rest, without acting on it: a caller about to rebuild sets it first, so the rebuild sizes the textures and bakes at the quality
+  // the reset lands on, and the applyQuality after it finds the textures already that size (only the sample count, which the rebuild's cloud was cut at, is left to it).
+  function restPerf(){ perf.auto=!!params.auto_quality; perf.quality=1; perf.acc=0; perf.lowCount=0; perf.hiCount=0; perf.upWait=20; }
+  // A whole new look, at the governor's rest: one texture set and one bake, with the cloud cut at the rested sample count before that bake.
+  function rebuildRested(){ restPerf(); rebuild(); applyQuality(); bake(); }
   // The season axis (spec/model/season.md "Re-seasoning"): a change to the season set alone is re-run over the grove's cached leaves; anything else the grove reads, or a grove the cache
   // does not describe, regrows (with the cache once the structure holds still, so the NEXT one is the fast one). Only a season-only grove morph may re-season during a
   // transition: the fast path is held to the build's bytes at rest and on that morph alone, and the other routes repurpose the grove they hold. The carpet's signature keys on the grove's identity plus phenology and the litter keys, NOT the capacities, so an anthocyanin-only
@@ -787,8 +792,7 @@ function createEngine(canvas, opts, driven=false){
     const merged = Object.assign({}, DEFAULTS, migrateLegacy(obj));   // legacy names -> current; missing keys -> defaults (forward-compat)
     warnCut(merged);
     for(const k in DEFAULTS) params[k] = merged[k];
-    rebuildAll();
-    resetPerf();                                       // a preset may carry auto-quality
+    rebuildRested();                                   // a preset may carry auto-quality
   }
 
   hub.motionTick = tick;   // default: this engine runs its own physics. EDITOR can swap it to mirror another instance.
@@ -979,7 +983,7 @@ function createEngine(canvas, opts, driven=false){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = restoreContext();
-    playbackNow();settleSession();rebuildAll(); resetPerf();
+    playbackNow();settleSession();rebuildRested();
     adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)
     if(cb) cb();                                       // after the restart: a throwing onEnd must not leave a restored engine with no loop
