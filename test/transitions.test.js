@@ -1242,7 +1242,7 @@ test("the grove grown for a route is grown from the target's value of every key 
   expect(typeof GROVE.growAs).toBe("function");
   const params = { ...PRESETS["morning 3b"] }, look = PRESETS.eclipse, seen = {};
   GROVE.growAs(params, look, () => Object.assign(seen, params));
-  for (const k of [...GROVE.GROVE_READS, "trans_r", "phenology", "edge_softness"]) expect(seen[k], k).toBe(look[k]);
+  for (const k of [...GROVE.GROVE_READS, "trans_r", "phenology"]) expect(seen[k], k).toBe(look[k]);
   expect(params).toEqual(PRESETS["morning 3b"]);
 });
 

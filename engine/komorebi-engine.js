@@ -960,7 +960,7 @@ function createEngine(canvas, opts, driven=false){
       landed = tickTransition(dt);
     } else if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }   // advance (or mirror a source) + re-bake only when moving
     if(trans.route) hub.timed('transport',trans.route.draw);
-    else if(params.show_layer && !faithfulOn()) drawLayerBlit(); else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
+    else if(params.show_layer && !faithfulOn()){ refreshFaith(); drawLayerBlit(); } else hub.timed('transport', drawTransport);   // show_layer is a no-op in faithful mode (the layer textures aren't baked)
     schedule();
     if(landed) landed();                             // after schedule(), like onFrame: a throwing host callback must not end the animation
     if(eng.onFrame) eng.onFrame(dtms);               // editor draws HUD + source inset here

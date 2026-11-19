@@ -27,6 +27,8 @@ export const FILL_SIG_LEN = 23;
 
 export function makeBake(hub){
   const { gl, params, motion, src, faith, sky, U, bakeFBO, faithFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
+  let layerEdge, layerDrift, layerPhase;
+  const layerPhaseNow = () => params.drift_amount === 0 ? 0 : params.drift_phase;
 
   // ---- one bake: the cast the camera reads, then (if the shade is lit through the canopy) the fill ----------------
   function bake(){
@@ -42,6 +44,9 @@ export function makeBake(hub){
   // sway_height_gain lever, or the faithful path's own (coherent sway grows with the real height / hMax — the
   // rule VS_FAITH gives the leaves, spec/model/motion.md), which the sky fill's low-res layers follow so the two stay registered.
   function bakeLayers(res, H, faithfulSway){
+    layerEdge = params.edge_softness;
+    layerDrift = params.drift_amount;
+    layerPhase = layerPhaseNow();
     if(params.sky_view) sky.branchTau=params.branch_tau;
     const E = params.canopy_extent_m;
     gl.useProgram(progBake);
@@ -388,8 +393,12 @@ export function makeBake(hub){
   // The numeric snapshot also checks the source shape, sun, cloth plane and leaf-bake uniforms: still air does not make those inputs static.
   function refreshFaith(){
     const woodChanged=hub.refreshWood();
-    if(params.sky_view && (woodChanged || sky.branchTau!==params.branch_tau)) bakeLayers(bakeRes(), hub.layerHeights(), false);
-    if(faithfulOn() && (woodChanged || faith.branchTau!==params.branch_tau || faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count || faith.edgeArea !== edgeAreaOn(params) || !faithfulInputsMatch(false))) bakeFaithful();
+    if(faithfulOn()){
+      if(woodChanged || faith.branchTau!==params.branch_tau || faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count || faith.edgeArea !== edgeAreaOn(params) || !faithfulInputsMatch(false)) bakeFaithful();
+    }else if(hub.trans.riseField?.weight!==1 && (
+      params.edge_softness!==layerEdge || params.drift_amount!==layerDrift || layerPhaseNow()!==layerPhase
+      || params.sky_view && (woodChanged || sky.branchTau!==params.branch_tau)
+    )) bake();   // The lighting through the old layers must follow the new cast as well.
   }
 
   return { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow };

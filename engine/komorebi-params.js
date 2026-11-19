@@ -209,7 +209,7 @@ const PARAMS = {
     means: "<b>How tilted the leaves sit at rest.</b> A tilted leaf is seen more edge-on, so it blocks less — this thins the canopy and gives the wind something to foreshorten." },
   edge_softness: { default: 0.25,
     row: { kind: 's', label: 'edge', min: 0.01, max: 1, step: 0.01, rebuild: 'bake' },   // the bakes cut the rim; the grove's build never reads it
-    travels: 'canopy',
+    travels: 'morph',
     means: "<b>How fuzzy each leaf's own edge is.</b> Small = crisp, detailed leaves; large = softer blobs. (It's honest blur from a leaf only half-covering a pixel.)" },
   // per-channel transmittance (green passes)
   trans_r: { default: 0.04,

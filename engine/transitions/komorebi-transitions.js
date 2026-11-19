@@ -296,6 +296,8 @@ export function makeTransitions(hub){
 
   // The keys a route holds until landing rather than snapping at its swap: the raised layer count, the eclipse while the moon moves, and the seen tree while it fades.
   const held = k => k==='layer_count' && !!trans.layerRoute || k==='eclipse' && !!trans.moon || k==='tree_view' && !!trans.treeFade;
+  // A structural handoff gives each grove its own edge, including while both share the layer bake.
+  const swaps = k => (k==='edge_softness' || !MORPH_SET.has(k)) && !held(k);
 
   function tickTransition(dt){
     if(!trans.active) return;
@@ -349,6 +351,7 @@ export function makeTransitions(hub){
     if(trans.treeFade) trans.treeOpacity=lerp(trans.treeFrom, trans.treeTo, trans.treeTo<trans.treeFrom
       ? (trans.backgroundFade ? fall : smoothstep(0,0.5,t)) : (trans.backgroundFade ? (t<0.5 ? 0 : rise) : smoothstep(0.5,1,t)));
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
+      if(k==='edge_softness' && trans.structDiff) continue;
       if((trans.viewpoint||route?.keepsDrift) && k==='drift_phase' && params.drift_auto) continue;
       if(trans.windowFade && WINDOW_KEYS.has(k)){ params[k]=trans.windowShape[k]; continue; }
       if(trans.splitFade){
@@ -396,14 +399,14 @@ export function makeTransitions(hub){
       hub.crossW = smoothstep(0, 1, hub.crossW);                   // ease it, so the fade has no corners at either end
       if(!trans.swapped && hub.crossW >= 1){
         trans.swapped = true;
-        for(const k in DEFAULTS) if(!MORPH_SET.has(k) && !held(k)) params[k] = trans.to[k];
+        for(const k in DEFAULTS) if(swaps(k)) params[k] = trans.to[k];
         hub.installGrove(hub.groveIn); hub.groveIn = null; hub.crossW = 0;   // it IS the grove now; nothing is faded any more
         if(trans.waiting) wake = queued(null);                        // a selection made inside the window starts from here
       }
     } else if(!trans.swapped && t>=0.5){                   // swap the grove once, hidden under the bloom peak
       trans.swapped = true;
       if(trans.structDiff){
-        for(const k in DEFAULTS) if(!MORPH_SET.has(k) && !held(k)) params[k] = trans.to[k];
+        for(const k in DEFAULTS) if(swaps(k)) params[k] = trans.to[k];
         hub.rebuildAll(trans.to); rebuilt = true;            // regrow grove + textures + source + bake, all at once; the grove is the target's own
       }
     }

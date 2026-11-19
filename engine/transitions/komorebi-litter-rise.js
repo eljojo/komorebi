@@ -87,6 +87,7 @@ const SHADOW_LIFT_END = .10;
 const NATIVE_SKY_START = .9;
 const NATIVE_SKY_END = .995;
 const RISE_KEYS=new Set([...CANOPY_KEYS,...TOPO_KEYS,...SEASON_KEYS,
+  'edge_softness',
   'view_extent_m','view_pitch_deg','view_yaw_deg','view_fov_deg','view_center_x','view_center_y',
   'sky_view','faithful_canopy','standing_scene','sun_elevation_deg','sun_azimuth_deg','sky_turbidity','core_angular_radius_deg',
   'canopy_fill','canopy_base_height_m','canopy_thickness_m','branch_tau','trunk_radius_m','far_smear','litter','litter_age','litter_drift_m','leaf_wetness','drift_phase',

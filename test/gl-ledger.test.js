@@ -18,7 +18,7 @@ import * as LEAF from "../engine/leaf/komorebi-leaf.js";
 const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture", Framebuffer: "framebuffer", Renderbuffer: "renderbuffer", Program: "program", Shader: "shader", Query: "query" };
 
 function makeLedger() {
-  let seq = 0, lost = false, casts = 0;
+  let seq = 0, lost = false, casts = 0, layerDraws = 0;
   const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {}, linked = [];
   const at = { array: null, vao: null, fb: null, prog: null, rb: null, unit: "TEXTURE0", units: {} };
   const label = (o) => `${o.kind} #${o.id}`;
@@ -43,6 +43,7 @@ function makeLedger() {
   const attr = (i) => (at.vao.attrs[i] ??= {});
   const draw = () => {
     if (at.vao?.attrs[9]?.on) casts++;   // the faithful leaves' vertex array, the only one with the side attribute: one draw a sample of a faithful cast
+    if (at.prog?.shaders?.[0]?.src === SH.VS_BAKE) layerDraws++;
     use(at.prog, "drawn with"); use(at.vao, "drawn"); use(at.fb, "drawn into");
     if (at.vao) for (const [i, a] of Object.entries(at.vao.attrs)) if (a.on) use(a.buf, `read by a draw (attribute ${i})`);
   };
@@ -92,6 +93,7 @@ function makeLedger() {
     made: () => ({ ...made }),   // every object created so far, by kind
     linked: () => [...linked],   // every program linked so far, as its [vertex, fragment] sources
     casts: () => casts,          // every sample of a faithful cast drawn so far
+    layerDraws: () => layerDraws,
     // what is left alive, by kind; shaders aside: the engine links each into its program and lets the program hold it
     leaks: () => { const n = {}; for (const o of live) if (o.kind !== "shader") n[o.kind] = (n[o.kind] ?? 0) + 1; return n; },
   };
@@ -155,7 +157,15 @@ scenario("a re-season", FALL, (R) => {
 scenario("a density re-weight", { ...FALL, phenology: 0.5, leaf_drop: 0, foliage_density: 0.4 }, (R) => {
   for (const [density, path] of [[1.4, "build"], [0.6, "reseason"], [2, "build"]]) { R.eng.params.foliage_density = density; expect(R.eng.apply("density")).toBe(path); R.pump(); }
 });
-scenario("a crossfade to its landing", LAYERED, (R) => { start(R, OTHER, "crossfade"); R.land(); });
+scenario("a crossfade keeps the outgoing edge until the incoming grove takes over", LAYERED, (R) => {
+  const to = { ...OTHER, edge_softness: 0.8 };
+  start(R, to, "crossfade");
+  R.pump(30);
+  expect(R.eng.trans.swapped).toBe(false);
+  expect(R.eng.params.edge_softness).toBe(LAYERED.edge_softness);
+  R.land();
+  expect(R.eng.params.edge_softness).toBe(to.edge_softness);
+});
 scenario("a crossfade aborted by setParams", LAYERED, (R) => { start(R, OTHER, "crossfade"); R.pump(5); R.eng.setParams(FAITHFUL); R.pump(3); });
 scenario("a crossfade interrupted by another, before its window", LAYERED, (R) => { start(R, OTHER, "crossfade"); R.pump(5); start(R, { ...OTHER, seed: 78 }, "crossfade"); R.land(); });
 scenario("dispose in the middle of a crossfade", LAYERED, (R) => { start(R, OTHER, "crossfade"); R.pump(40); expect(R.eng.trans.active, "still in the window").toBe(true); });
@@ -244,6 +254,24 @@ scenario("a scene fade's start bakes the outgoing scene once, and the incoming l
   expect(bakes(R, () => start(R, FADE, "sceneFade", { style: "fade" }))).toBe(2);
   R.land();
 });
+const MANUAL_DRIFT = { ...LAYERED, wind_strength: 0, drift_amount: 0.3, drift_phase: 0 };
+for (const [key, value] of [["drift_phase", 2.2], ["drift_amount", 0.08], ["edge_softness", 0.8]]) {
+  scenario(`a still layer morph of ${key} refreshes the cast on the same grove`, MANUAL_DRIFT, (R) => {
+    const grove = R.eng.grove();
+    const before = R.L.layerDraws();
+    R.eng.transitionTo({ ...MANUAL_DRIFT, [key]: value }, { duration: 1 });
+    R.pump(10);
+    expect(R.L.layerDraws() - before).toBe(10 * MANUAL_DRIFT.layer_count);
+    expect(R.eng.grove() === grove).toBe(true);
+    expect(R.eng.trans.canopyMorph).toBe(false);
+    R.land();
+    expect(R.eng.params[key]).toBe(value);
+    expect(R.eng.grove() === grove).toBe(true);
+    const settled = R.L.layerDraws();
+    R.pump();
+    expect(R.L.layerDraws()).toBe(settled);
+  });
+}
 scenario("a faithful grove morph's landing frame bakes once", FAITHFUL, (R) => {
   R.eng.transitionTo({ ...FAITHFUL, leaf_size_m: FAITHFUL.leaf_size_m*1.5 }, { duration: 1 });
   expect(R.eng.trans.canopyMorph).toBe(true);
