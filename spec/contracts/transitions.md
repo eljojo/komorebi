@@ -13,7 +13,7 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 | **Joins** | Any pair differing only in MORPH keys (sun, exposure, cloud, wind, grade, layer heights, camera) and runtime flags. |
 | **Gate** | No CANOPY, TOPO or MODE difference. |
 | **Duration** | *D*, ease-in-out. |
-| **Promises** | No bloom. Angles take the short way. Wood present at one end only fades out over the first half or in over the second, zero at the midpoint; the woodless end never casts the other's skeleton. A faithful cast re-casts every frame its sun or inputs move, even in still air. Runtime flags settle at the end and never trigger a heavier route. Between two looks on one receiver, the dapples move straight from one end's level to the other's whatever the cosine law does; only the shade and the sky follow exposure. |
+| **Promises** | No bloom. Angles take the short way. Between two standing scenes on the floor receiver, asked to glide, the eye moves on a straight line between the two looks' eyes while the head turns, tilts and changes lens, never orbiting the looked-at point; each end is its look's camera exactly. Wood present at one end only fades out over the first half or in over the second, zero at the midpoint; the woodless end never casts the other's skeleton. A faithful cast re-casts every frame its sun or inputs move, even in still air. Runtime flags settle at the end and never trigger a heavier route. Between two looks on one receiver, the dapples move straight from one end's level to the other's whatever the cosine law does; only the shade and the sky follow exposure. |
 
 ## Gate crossings (within any morph)
 

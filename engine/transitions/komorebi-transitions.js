@@ -7,7 +7,7 @@
 // lifecycle (start, tick, land, abort, context loss and restore, dispose) reads only the entry's policy.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { TAU, clamp, lerp, lerpAngle, smoothstep } from '../komorebi-math.js';
+import { DEG, TAU, clamp, lerp, lerpAngle, smoothstep } from '../komorebi-math.js';
 import { irisRoute, irisStep, restTrans } from './komorebi-routes.js';
 import { beamExposure } from '../light/komorebi-light.js';
 import { cameraPose } from '../transport/komorebi-camera.js';
@@ -25,6 +25,24 @@ const WINDOW_KEYS = new Set(['window_w_m','window_h_m','window_cx_m','window_cy_
 const VIEW_KEYS = new Set([...CAMERA_KEYS,'sky_view','drift_phase','auto_quality','adaptive_motion','adaptive_idle_fps','show_source','show_layer','show_layer_index']);
 const hemisphere = p => (p.sky_view ? p.view_pitch_deg : 90-p.view_pitch_deg) > p.view_fov_deg/2;
 const proxyGlow = (p) => p.sky_view ? p.sky_scatter : (p.receiver|0)===0 && p.canopy_fill>0 ? p.fill_scatter : 0;
+
+// THE GLIDE: a live morph between two standing looks moves the eye, not the floor camera's gauges. Tweened gauge by gauge, a turn of the yaw swings the eye
+// round the point it looks at, an orbit about the middle of the grove. Asked for it (opts.camera 'glide'), the eye goes on a straight line from one look's
+// eye to the other's while the head turns the shortest way as it moves; the camera is rebuilt from the eye and the gaze as the floor camera's pose reads it
+// (cameraPose), and is the look's own at both ends.
+const CAMERA_LOOK = (p) => ({ view_extent_m: p.view_extent_m, view_pitch_deg: p.view_pitch_deg, view_yaw_deg: p.view_yaw_deg, view_fov_deg: p.view_fov_deg, view_center_x: p.view_center_x, view_center_y: p.view_center_y });
+function standCamera(eye, yaw, pitch, fov){
+  const h = eye[2], offset = h*Math.tan(pitch*DEG);
+  return { view_extent_m: 2*Math.tan(fov*DEG/2)*h/Math.cos(pitch*DEG)**2, view_pitch_deg: pitch, view_yaw_deg: yaw, view_fov_deg: fov,
+    view_center_x: eye[0] + offset*Math.sin(yaw*DEG), view_center_y: eye[1] + offset*Math.cos(yaw*DEG) };
+}
+export function glideCamera(a, b, t){
+  if(t <= 0) return CAMERA_LOOK(a);
+  if(t >= 1) return CAMERA_LOOK(b);
+  const A = cameraPose(a).eye, B = cameraPose(b).eye, e = smoothstep(0, 1, t);
+  return standCamera(A.map((x, i) => lerp(x, B[i], e)), lerpAngle(a.view_yaw_deg, b.view_yaw_deg, e, 360),
+    lerp(a.view_pitch_deg, b.view_pitch_deg, e), lerp(a.view_fov_deg, b.view_fov_deg, e));
+}
 
 export function makeTransitions(hub){
   const { params, trans, faithfulOn } = hub;
@@ -215,6 +233,8 @@ export function makeTransitions(hub){
     if(sceneFade){ trans.backgroundFade=false; trans.settleCamera=false; trans.windowFade=false; trans.splitFade=false; }
     if(sceneFade) trans.structDiff=true;   // an interruption still has two different visible scenes to dissolve
     const route = seasonTravel ? routes.seasonTravel : leafTravel ? routes.leafTravel : sceneFade ? routes.sceneFade : null;
+    trans.glide = !route && !viewpoint && opts.camera === 'glide' && params.standing_scene && to.standing_scene && !params.sky_view && !to.sky_view
+      && (params.receiver|0)===0 && (to.receiver|0)===0 && !trans.backgroundFade;   // THE GLIDE, above
     if(trans.route && trans.route!==route) trans.route.end();   // the route interrupted, when another takes over
     if(sceneFade) routes.sceneFade.begin();   // preserve the outgoing scene before params become the incoming look
     trans.route = route;
@@ -352,6 +372,7 @@ export function makeTransitions(hub){
       if(trans.settleCamera && t>=0.5 && CAMERA_KEYS.has(k)){ params[k] = b; continue; }
       const w = k==='branch_tau' && trans.woodFade ? smoothstep(a>0 ? 0 : 0.5, a>0 ? 0.5 : 1, t) : e;
       params[k] = ANGLE_SET.has(k) ? lerpAngle(a,b,w, k==='drift_phase'?TAU:360) : lerp(a,b,w); }
+    if(trans.glide) Object.assign(params, glideCamera(trans.from, trans.to, t));
     if(trans.iris) trans.irisOpacity = irisStep(trans.iris, e, params);
     // Same receiver at both ends: the dapples travel straight from one end's level to the other's (beamExposure).
     // Leaf travel shows one field of dapples in a colour between the two looks. A per-channel tween between two hues has no

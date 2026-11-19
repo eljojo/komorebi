@@ -89,6 +89,9 @@ let homeLook=null, homeStale=true;   // the saved look it measures changes from 
 let midi=null;                   // the MIDImix prototype (midi.js), mounted once everything it borrows exists
 let remote=null;                 // the remote control (remote.js), mounted once arboretum is
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
+// How a standing camera moves between two looks (komorebi-transitions.js, THE GLIDE): the eye moving with the head turning, or ?walk=orbit in the
+// page's address for the gauges tweened, the orbit about the middle, to compare.
+const cameraWalk=new URLSearchParams(location.search).get('walk')==='orbit' ? 'orbit' : 'glide';
 let transSet=null;               // the list the fade was set by hand on: there it overrides the list's own crossfade, until another list is chosen
 const TRANS_MAX=6;
 let transSync=()=>{};            // the panel's fade row follows a change made elsewhere (the remote)
@@ -1474,7 +1477,7 @@ function goTo(value){
   endTween();
   tryFrameCancel();
   player.leaving();
-  eng.transitionTo(resolveEntry(value), { duration: t && transSet===null ? t.crossfade_s : transDur, style: t ? t.style : 'morph',
+  eng.transitionTo(resolveEntry(value), { duration: t && transSet===null ? t.crossfade_s : transDur, style: t ? t.style : 'morph', camera: cameraWalk,
     onEnd:()=>{ endTween(); refreshPresetSelect(value); syncAllControls(); player.arrived(value); } });   // morph from the current live look to the target
   refreshPresetSelect(value);                                               // reflect target in the dropdown = next step's origin
 }

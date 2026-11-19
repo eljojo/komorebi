@@ -72,6 +72,7 @@ export function restTrans(){
     windowFade: false, windowFrom: 1, windowTo: 1, windowOpacity: 1, windowShape: null,
     // The seen tree fading in or out.
     treeFade: false, treeFrom: 1, treeTo: 1, treeOpacity: 1,
+    glide: false,      // a standing camera's live morph moving the eye, not the gauges (komorebi-transitions.js, THE GLIDE)
     // The hood across its gate (irisRoute).
     iris: null, irisOpacity: 1,
     // The moon across the eclipse gate, and the layer heights between two layer counts.
