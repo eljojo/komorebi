@@ -123,7 +123,7 @@ const treeIn = (opts) => {
 const UNIFORMS = {
   fill: ["uCanopyFill", "uFillT", "uFillS", "uFillOrigin", "uFillExtent"],
   litter: ["uLitterOn", "uLitter", "uLitterOrigin", "uLitterExtent"],
-  leafDiffuse: ["uBeamK", "uEdgeArea"],
+  leafDiffuse: ["uBeamK", "uEdgeArea", "uLayerEdgeMix"],
 };
 
 test("a program assembled with a feature cut names no uniform of that feature's group — on every camera", async () => {

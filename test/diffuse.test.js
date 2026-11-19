@@ -478,12 +478,12 @@ test("every cast camera taps the BEAM through the texel's mixture, and a shut ga
     const src = buildTransport(cam);
     expect(src.includes("uniform float uBeamK;"), `${cam} declares uBeamK`).toBe(true);
     expect(src.includes("texelMix(d.rgb, d.a, uBeamK, T, Tb);"), `${cam} tap reads the mixture`).toBe(true);
-    expect(/texelMix\(d\.rgb, d\.a, uBeamK, T, Tb\);\s*return Tb;/.test(code(src)), `${cam} tap returns the ballistic share`).toBe(true);
+    expect(code(src).includes("return uBeamK > 0.0 || uLayerEdgeMix >= 1.0 ? Tb :"), `${cam} tap returns the ballistic share with diffuse light`).toBe(true);
     expect(code(src).includes("exp(-(d.rgb + uBeamK*d.a))"), `${cam}: the slab form is gone`).toBe(false);
     // the else of the uniform branch is the line the engine has always run
-    expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{[^}]*\}\s*else\s*\{\s*return exp\(-layerDepth\(t,world\)\.rgb\);/.test(code(src)), `${cam} tap else`).toBe(true);
+    expect(/if\(uBeamK > 0\.0 \|\| uLayerEdgeMix > 0\.0\)\{[^}]*\}\s*else\s*\{\s*return exp\(-layerDepth\(t,world\)\.rgb\);/.test(code(src)), `${cam} tap else`).toBe(true);
     // ...and diffraction's per-channel taps ride the same mixture, at each channel's own dispersed position
-    expect(/if\(uBeamK > 0\.0 \|\| uEdgeArea != 0\)\{[^}]*texelMix\(qR\.rgb, qR\.a, uBeamK[^}]*texelMix\(qG\.rgb, qG\.a, uBeamK[^}]*texelMix\(qB\.rgb, qB\.a, uBeamK[^}]*\}\s*else\s*\{\s*float aR = layerDepth\(t, world \+ H\*g\*cs\.r\)\.r;/.test(code(src)), `${cam} tapCA`).toBe(true);
+    expect(/if\(uBeamK > 0\.0 \|\| uLayerEdgeMix > 0\.0\)\{[^}]*texelMix\(qR\.rgb, qR\.a, uBeamK[^}]*texelMix\(qG\.rgb, qG\.a, uBeamK[^}]*texelMix\(qB\.rgb, qB\.a, uBeamK[^}]*\}\s*else\s*\{\s*float aR = layerDepth\(t, world \+ H\*g\*cs\.r\)\.r;/.test(code(src)), `${cam} tapCA`).toBe(true);
     expect(src.includes("return exp(-vec3(aR,aG,aB));"), `${cam} tapCA else`).toBe(true);
   }
 });
@@ -612,7 +612,7 @@ test("the curtain reads S at the vertical plane's view factor, 0.5 — the tent'
 });
 
 test("registry: the beam's k is a declared, uploaded uniform of the beam group — and the fill bake carries its own", () => {
-  expect(Object.keys(TRANSPORT_GROUPS.beam.locs)).toEqual(["beamK", "edgeArea"]);
+  expect(Object.keys(TRANSPORT_GROUPS.beam.locs)).toEqual(["beamK", "edgeMix"]);
   expect(GROUP_UPLOAD_KEYS).toContain("beam");
   for (const cam of ["floor", "cloth", "enclosure"]) expect(CAMERAS[cam].groups, cam).toContain("beam");
   expect(code(FS_FILL).includes("uniform float uFillBeamK;")).toBe(true);
@@ -690,12 +690,14 @@ test("edge_area at k = 0: the fill's skylight is never darker than the slab's, a
   expect(brighter).toBeGreaterThan(100);   // not vacuous: the mixture really does lighten the soft edges
 });
 
-test("edge_area: the four widened conditions are `|| uEdgeArea != 0` and each else is the literal old read, in the cast taps, the faithful stamp and the shared ray", () => {
+test("edge_area: the cast taps blend the readings in a shared-layer morph, and keep the native slab at zero", () => {
   for (const cam of ["floor", "cloth", "enclosure"]) {
     const src = code(buildTransport(cam));
     expect(src.includes("return exp(-layerDepth(t,world).rgb);"), `${cam} tap else`).toBe(true);
     expect(src.includes("return exp(-vec3(aR,aG,aB));"), `${cam} tapCA else`).toBe(true);
-    expect(src.split("uBeamK > 0.0 || uEdgeArea != 0").length - 1, `${cam}: tap and tapCA, nothing else`).toBe(2);
+    expect(src.split("uBeamK > 0.0 || uLayerEdgeMix > 0.0").length - 1, `${cam}: tap and tapCA, nothing else`).toBe(2);
+    expect(src.includes("mix(exp(-d.rgb), Tb, uLayerEdgeMix)")).toBe(true);
+    expect(src.includes("mix(exp(-vec3(qR.r,qG.g,qB.b)), beam, uLayerEdgeMix)")).toBe(true);
   }
   expect(code(GLSL_SKY_RAY).split("uEdgeArea").length - 1, "the shared ray reads it in tapSky only: the mixture, and the proxy's leaf hue").toBe(2);
   const ray = code(GLSL_SKY_RAY);
@@ -705,17 +707,20 @@ test("edge_area: the four widened conditions are `|| uEdgeArea != 0` and each el
   expect(/if\(beamK > 0\.0\)\{\s*Lsc \+= thr\*\(tL0 - tbL0\)/.test(ray), "the emission keeps keying on beamK").toBe(true);
 });
 
-test("edge_area: `uniform int uEdgeArea;` is declared by the faithful stamp, the fill and every built camera that reads it; the shared snippets declare nothing", () => {
+test("edge_area: the native sky, faithful stamp and fill take a switch, and the cast taps take a blend weight", () => {
   const decl = "uniform int uEdgeArea;";
+  const blend = "uniform float uLayerEdgeMix;";
   expect(FS_FAITH.includes(decl)).toBe(true);
   expect(FS_FILL.includes(decl)).toBe(true);
-  for (const cam of ["floor", "cloth", "enclosure", "sky"]) expect(buildTransport(cam).split(decl).length - 1, `${cam} declares it once`).toBe(1);
+  expect(buildTransport("sky").split(decl).length - 1).toBe(1);
+  for (const cam of ["floor", "cloth", "enclosure"]) expect(buildTransport(cam).split(blend).length - 1, `${cam} declares it once`).toBe(1);
   expect(GLSL_SKY_RAY.includes("uniform int uEdgeArea")).toBe(false);          // the shared ray reads it by name: the program declares it (registry.test.js holds both to that)
   expect(SH.GLSL_TEXEL_MIX.includes("uEdgeArea")).toBe(false);                 // the snippet reads no uniform
   expect(Object.keys(TRANSPORT_GROUPS.sky.locs)).toContain("edgeArea");
-  expect(TRANSPORT_GROUPS.beam.locs.edgeArea).toBe("uEdgeArea");
+  expect(TRANSPORT_GROUPS.beam.locs.edgeMix).toBe("uLayerEdgeMix");
   expect(TRANSPORT_GROUPS.sky.locs.edgeArea).toBe("uEdgeArea");
-  expect(TRANSPORT_GROUPS.beam.decls.includes(decl)).toBe(true);               // beside uBeamK, in the group a bundle without the leaf's diffuse share drops
+  expect(TRANSPORT_GROUPS.sky.locs.edgeMix).toBe("uLayerEdgeMix");
+  for (const cam of ["viewpoint", "rise"]) expect(buildTransport(cam).split(blend).length - 1, `${cam} casts a floor shadow too`).toBe(1);
 });
 
 test("edge_area: refreshFaith re-casts when it flips and flips back — the cast has the edge law baked in — and for nothing else", () => {

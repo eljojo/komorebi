@@ -230,10 +230,16 @@ export function makeRender(hub){
       gl.uniform1f(u.occPenumbra, (params.core_angular_radius_deg*DEG)/Math.sin(el)*(1.0+3.0*params.cloud_thickness));
     },
     // THE BEAM's neutral depth (spec/model/leaf.md): k = −ln(1−leaf_diffuse), the share of a leaf's transmitted light that is diffuse and so is no
-    // longer in the beam; edge_area (spec/model/leaf.md) rides beside it as a 0/1, the same texel read as a mixture at k = 0. Every cast camera reads it at the tap (the layer path), and the receivers that read S gate on it too.
+    // longer in the beam. At k = 0, edge_area chooses the layer tap's reading. The shared-layer morph blends those readings
+    // while it blends coverage, so installing the incoming grove does not change every rim at once.
     // On the faithful path the tap is not where k lives — the cast has it baked in (bake.js) — but the receivers' gate is.
     // Its own group (the taps that read it are functions only): a bundle that cut the leaf's diffuse share drops the uniform and keeps the taps.
-    beam: (u) => { gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0); gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0); },
+    beam: (u) => {
+      gl.uniform1f(u.beamK, FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);
+      const t = hub.trans;
+      const edgeMix = t.active && t.crossfade && !t.swapped ? lerp(+t.from.edge_area, +t.to.edge_area, hub.crossW) : Number(params.edge_area);
+      gl.uniform1f(u.edgeMix, FEAT_LEAF_DIFFUSE ? edgeMix : 0);
+    },
     ca: (u) => {
       // edge diffraction (spec/model/light.md): per-channel λ-proportional spread of the transport shift. Green (555nm) is the
       // reference; red(620) spreads more, blue(470) less. 0 -> (1,1,1), the byte-identical single-tap path.
@@ -394,7 +400,9 @@ export function makeRender(hub){
     sky: (u) => {
       gl.uniform1f(u.skyScatter, clamp(params.sky_scatter, 0, 1));
       gl.uniform1i(u.woodOn, params.sky_view && hub.sky.woodOn ? 1 : 0);
-      gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);          // at k = 0 the sky ray reads each texel as its mixture (spec/model/leaf.md)
+      const edgeArea = FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0;
+      gl.uniform1i(u.edgeArea, edgeArea);                // at k = 0 the sky ray reads each texel as its mixture (spec/model/leaf.md)
+      gl.uniform1f(u.edgeMix, edgeArea);                // the floor seen by the viewpoint and flight reads the same native edge law
       gl.uniform1f(u.beamK, hub.trans.riseField?.shadow ? 0 : FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
       const base=hub.trans.riseField?10:8;   // the rising litter still speaks the floor's carpet on unit 8
       for(let i=0;i<MAX_LAYERS;i++){ gl.activeTexture(gl.TEXTURE0+base+i); gl.bindTexture(gl.TEXTURE_2D, hub.woodTex[i]); gl.uniform1i(u.woods[i], base+i); }

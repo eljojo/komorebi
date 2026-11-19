@@ -4,6 +4,7 @@
 // no engine state. The route modules and komorebi-transitions.js import this one, never the reverse.
 // ============================================================================
 import { clamp, lerp, smoothstep } from '../komorebi-math.js';
+import { CROSS_HALF_W } from '../komorebi-params.js';
 
 // A ROUTE ENTRY. Each long route's module returns one object, built over the engine's hub; the engine keeps them as
 // hub.routes, by name, and trans.route is the one running (null when none is). Nothing but the entry and the chooser
@@ -59,7 +60,7 @@ export function restTrans(){
     bloomMax: 1,       // this tier's depth (BLOOM_MAX)
     bloomFrom: 0,      // an interrupted route's bloom, eased out of the next
     // The crossfade window between two groves.
-    crossfade: false,
+    crossfade: false, crossHalfW: CROSS_HALF_W,
     // The canopy morph: one grove deformed, re-seasoned or re-weighted, along the reach each end grows for.
     canopyMorph: false, seasonMorph: false, densityMorph: false, reach: null,
     // The fade through the lit ground: the shadows' opacity, and the camera set at its invisible midpoint.

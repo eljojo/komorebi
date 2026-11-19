@@ -41,15 +41,18 @@ uniform float uViewYaw;          // camera orbit about vertical (rad); rotates t
 // the beam passes the gap whole and a leaf at e^(-τ̄ - k) of it, where k = −ln(1−leaf_diffuse) is neutral depth per leaf and τ̄ the
 // leaf's own depth, so an edge texel no longer reads as a thin dark leaf and every ballistic shadow loses its halo. k tweens, so the
 // gate is a uniform branch whose else is the read the engine has always made. At k = 0 the same text is the same mixture (Tb is T there) when edge_area is on,
-// so the gate is `uBeamK > 0.0 || uEdgeArea != 0`: the depth-averaged edge is the default for byte-identity, and the look is José's. ----
+// so the gate is `uBeamK > 0.0 || uLayerEdgeMix > 0.0`. A shared-layer morph can blend the two readings at k = 0. ----
 // THE FEATURE TAGS. A line whose comment ends with the tag marker (an at-sign and the word feature) and the names of features is dropped from a bundle that cut any feature it
 // names (embed-build.mjs, tagged(); the features are FEATURES in komorebi-params.js): the lines of a branch that only an open feature takes, down to the else that makes the
 // old read the whole body. A tag names every feature whose absence makes the line unreachable (a line inside the litter branch that reads the fill names both). In the raw
 // modules a tag is a GLSL comment and nothing else; features.test.js holds that dropping any subset leaves every literal as balanced as it was. (No backticks in a comment
 // in this file: the bundler finds the shader literals by pairing them.)
 // The beam's k is a group of its own, so that the taps below can stay when the uniform goes: they are functions, and without the uniform they are the old reads.
+const GLSL_T_LAYER_EDGE = `
+uniform float uLayerEdgeMix;   // edge_area (spec/model/leaf.md): 0 = slab, 1 = area mixture. Only the shared-layer morph reads in between. @feature leafDiffuse
+`;
 const GLSL_T_BEAM = `uniform float uBeamK;      // k = −ln(1−leaf_diffuse): the neutral depth a leaf's diffuse share takes out of its BEAM, per leaf. 0 = the old leaf, byte-identical
-uniform int uEdgeArea;   // edge_area (spec/model/leaf.md): 1 = the taps read a texel as its mixture at k = 0 too (inert above it: the split already does). 0 = the slab, byte-identical`;
+${GLSL_T_LAYER_EDGE}`;
 const GLSL_T_TAP = `${GLSL_TEXEL_MIX}   // @feature leafDiffuse
 vec4 layerDepth(highp sampler2D t, vec2 world){
   vec2 uv=(world-uCanopyOrigin)/uCanopyExtent;
@@ -58,11 +61,11 @@ vec4 layerDepth(highp sampler2D t, vec2 world){
   return texture(t,uv);
 }
 vec3 tap(highp sampler2D t, vec2 world){
-  if(uBeamK > 0.0 || uEdgeArea != 0){   // @feature leafDiffuse
+  if(uBeamK > 0.0 || uLayerEdgeMix > 0.0){   // @feature leafDiffuse
     vec4 d = layerDepth(t,world);   // @feature leafDiffuse
     vec3 T, Tb;   // @feature leafDiffuse
     texelMix(d.rgb, d.a, uBeamK, T, Tb);   // the texel's mixture: what is left of the beam, the gap passing it whole @feature leafDiffuse
-    return Tb;   // @feature leafDiffuse
+    return uBeamK > 0.0 || uLayerEdgeMix >= 1.0 ? Tb : mix(exp(-d.rgb), Tb, uLayerEdgeMix);   // @feature leafDiffuse
   } else {   // @feature leafDiffuse
     return exp(-layerDepth(t,world).rgb);   // optical depth -> transmittance
   }   // @feature leafDiffuse
@@ -108,7 +111,7 @@ const GLSL_T_CA_DECLS = `uniform vec3  uChroma;            // per-channel diffra
 // green=1). The colour fringe lands at every leaf/dapple edge and rides the same H*g shift, so it grows with
 // canopy height and the low-sun ellipse for free. Three single-channel taps; only taken when diffraction is on.
 vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
-  if(uBeamK > 0.0 || uEdgeArea != 0){   // the beam's mixture rides each channel's own dispersed read (spec/model/leaf.md) @feature leafDiffuse
+  if(uBeamK > 0.0 || uLayerEdgeMix > 0.0){   // the beam's mixture rides each channel's own dispersed read (spec/model/leaf.md) @feature leafDiffuse
     vec4 qR = layerDepth(t, world + H*g*cs.r);   // @feature leafDiffuse
     vec4 qG = layerDepth(t, world + H*g*cs.g);   // @feature leafDiffuse
     vec4 qB = layerDepth(t, world + H*g*cs.b);   // @feature leafDiffuse
@@ -116,7 +119,8 @@ vec3 tapCA(highp sampler2D t, vec2 world, vec2 g, float H, vec3 cs){
     texelMix(qR.rgb, qR.a, uBeamK, T, bR);   // @feature leafDiffuse
     texelMix(qG.rgb, qG.a, uBeamK, T, bG);   // @feature leafDiffuse
     texelMix(qB.rgb, qB.a, uBeamK, T, bB);   // @feature leafDiffuse
-    return vec3(bR.r, bG.g, bB.b);   // @feature leafDiffuse
+    vec3 beam = vec3(bR.r, bG.g, bB.b);   // @feature leafDiffuse
+    return uBeamK > 0.0 || uLayerEdgeMix >= 1.0 ? beam : mix(exp(-vec3(qR.r,qG.g,qB.b)), beam, uLayerEdgeMix);   // @feature leafDiffuse
   } else {   // @feature leafDiffuse
     float aR = layerDepth(t, world + H*g*cs.r).r;
     float aG = layerDepth(t, world + H*g*cs.g).g;
@@ -1074,7 +1078,7 @@ uniform vec2 uRiseStep;`, locs: {riseDepth:'uRiseDepth',riseEmission:'uRiseEmiss
 uniform float uViewElevation;
 uniform float uViewSkyWeight;
 uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevation', skyWeight:'uViewSkyWeight', surfaceSun:'uSurfaceSunColor'} },
-  skyTap:    { decls: GLSL_T_TAP.replace(GLSL_TEXEL_MIX, '') },   // the shared sky ray already declares texelMix
+  skyTap:    { decls: GLSL_T_LAYER_EDGE + GLSL_T_TAP.replace(GLSL_TEXEL_MIX, '') },   // the shared sky ray already declares texelMix
   head:      { decls: GLSL_T_HEAD,            locs: { aspect:'uAspect', viewCenter:'uViewCenter', origin:'uCanopyOrigin', extent:'uCanopyExtent',
                                                       sun:'uSunColor', ambient:'uAmbient', heights:'uLayerHeight[0]', layerCount:'uLayerCount',
                                                       layers:['uLayer[0]','uLayer[1]','uLayer[2]','uLayer[3]'] } },
@@ -1082,7 +1086,7 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
   occ:       { decls: GLSL_T_OCC_DECLS,       locs: { occTex:'uOccTex', occCount:'uOccCount', occTau:'uOccTau', occSway:'uOccSway', occHRef:'uOccHRef' } },
   transport: { decls: GLSL_T_TRANSPORT_DECLS, locs: { samples:'uSamples[0]', count:'uSampleCount', proj:'uProj', bulkShift:'uBulkShift', canopyOpen:'uCanopyOpen' } },
   woodCast:  { decls: GLSL_T_WOOD_CAST_DECLS, locs: { occPenumbra:'uOccPenumbra' } },
-  beam:      { decls: GLSL_T_BEAM,            locs: { beamK:'uBeamK', edgeArea:'uEdgeArea' } },
+  beam:      { decls: GLSL_T_BEAM,            locs: { beamK:'uBeamK', edgeMix:'uLayerEdgeMix' } },
   tap:       { decls: GLSL_T_TAP },
   ca:        { decls: GLSL_T_CA_DECLS,        locs: { chroma:'uChroma' } },
   faith:     { decls: GLSL_T_FAITH_DECLS,     locs: { faithful:'uFaithful', faithTex:'uFaithTex', faithOrigin:'uFaithOrigin', faithExtent:'uFaithExtent' } },
@@ -1102,7 +1106,7 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
                                                       tentFade:'uTentFade', tentSeam:'uTentSeam', tentMesh:'uTentMesh' } },
   fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillReturn:'uFillReturn', fillT:'uFillT', fillS:'uFillS', fillOrigin:'uFillOrigin', fillExtent:'uFillExtent' } },
   litter:    { decls: GLSL_T_LITTER_DECLS,    locs: { litterOn:'uLitterOn', litter:'uLitter', litterOrigin:'uLitterOrigin', litterExtent:'uLitterExtent' } },
-  sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', woodOn:'uWoodOn', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
+  sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', edgeMix:'uLayerEdgeMix', woodOn:'uWoodOn', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
                                                       exposure:'uExposure', contrast:'uContrast', tone:'uToneMap', travelTone:'uTravelTone',
                                                       vignette:'uVignette', vignetteShape:'uVignetteShape', irisOpacity:'uIrisOpacity' } },

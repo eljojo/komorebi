@@ -38,9 +38,9 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 | | |
 |---|---|
 | **Joins** | A topology change between two layer groves, layer counts included: `morning 1 ↔ memories`, `morning 3b → eclipse`, `eclipse → acid dreams`; a same-branching grove over budget: `morning 3b ↔ the void`. |
-| **Gate** | A TOPO difference, or a CANOPY difference over budget, and no MODE difference; not admitted as a grove morph; neither end faithful; no wood at either end; same texture size and bake size (one set of layer textures). Two floor looks at rest take the scene dissolve if either end has litter and leaf drop above zero. |
+| **Gate** | A TOPO difference, or a CANOPY difference over budget, and no MODE difference; not admitted as a grove morph; neither end faithful; no wood at either end; the same resolved layer-bake size (one set of layer textures). Two floor looks at rest take the scene dissolve if either end has litter and leaf drop above zero. |
 | **Duration** | 2*D*. |
-| **Promises** | No bloom: cloud thickness follows its ordinary interpolation and never overshoots either end. Both groves are baked at complementary coverage across a window around the midpoint; no leaf jumps. The incoming grove is the target's own, cut with its own leaf edge. Across layer counts the route runs at the larger count, the heights move from each end's own, and the count drops only at landing. Native endpoints. Interruption inside the double-bake window is safe; an interruption outside it starts from the shown heights, moon and grove. |
+| **Promises** | No bloom: cloud thickness follows its ordinary interpolation and never overshoots either end. Both groves are baked at complementary coverage across a window around the midpoint; no leaf jumps. An overhead floor with a large change in sun elevation and diffraction uses the wider window of the [model](../model/transitions.md#shared-layer-crossfade). Each grove keeps its own edge softness. Where the layer cast's edge law differs, transmittance blends with coverage. Across layer counts the route runs at the larger count, the heights move from each end's own, and the count drops only at landing. Native endpoints. Interruption inside the double-bake window is safe; an interruption outside it starts from the shown heights, moon and grove. |
 
 ## Cloud dissolve
 

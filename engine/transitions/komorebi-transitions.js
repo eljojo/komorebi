@@ -12,7 +12,7 @@ import { irisRoute, irisStep, restTrans } from './komorebi-routes.js';
 import { beamExposure } from '../light/komorebi-light.js';
 import { cameraBetween, cameraPose } from '../transport/komorebi-camera.js';
 import { cameraFor } from '../transport/komorebi-transport.js';
-import { ANGLE_SET, BLOOM_MAX, LIT_GROUND_DIP, LIT_GROUND_HOLD, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy } from '../komorebi-params.js';
+import { ANGLE_SET, BLOOM_MAX, LIT_GROUND_DIP, LIT_GROUND_HOLD, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy, layerBakeSize } from '../komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';
 import {litterRiseEligible,litterFallEligible,shadowRiseEligible,shadowFallEligible} from './komorebi-litter-rise.js';
 import {groveTravelEligible} from './komorebi-grove-travel.js';
@@ -201,10 +201,10 @@ export function makeTransitions(hub){
     //  • no WOOD at either end — the analytic occluder is one segment table, and this v1 crossfades LEAVES only.
     //    (The table is a texture since the packet before last and can hold two sets, so the wood crossfade is a
     //    real next step rather than a wish; until it exists, branch_tau > 0 keeps the honest cut.)
-    //  • the two groves must share one set of layer textures, so the knobs that SIZE those textures have to match. Layer counts may
+    //  • the two groves must share one set of layer textures, so their actual bake sizes have to match. Layer counts may
     //    differ: the route bakes and casts the larger count, each grove in its own bins (trans.layerRoute, below).
     // Anything outside the gate takes the paths it already took.
-    const layersShared = to.tex_resolution===params.tex_resolution && to.bake_resolution===params.bake_resolution;
+    const layersShared = layerBakeSize(to)===layerBakeSize(params);
     const canCrossfade = !styleFade && (topoDiff || canopyDiff) && !modeDiff && !morphGrove
                  && !faithfulOn() && !to.faithful_canopy
                  && !(params.branch_tau > 0) && !(to.branch_tau > 0)
@@ -242,6 +242,10 @@ export function makeTransitions(hub){
     trans.irisOpacity = trans.iris ? trans.iris.from : 1;
     const tier = modeDiff ? 'mode' : crossOK ? 'cross' : 'dissolve';
     trans.crossfade = crossOK;
+    // When low-angle colour fringes and a large change in sun height arrive together, give the shadows more time to turn over.
+    const broadWindow = crossOK && floorPair && !params.standing_scene && !to.standing_scene
+      && Math.abs(to.sun_elevation_deg-params.sun_elevation_deg)>=45 && Math.abs(to.chromatic_aberration-params.chromatic_aberration)>=4;
+    trans.crossHalfW = broadWindow ? 0.4 : CROSS_HALF_W;
     trans.bloomMax = trans.backgroundFade || viewpoint || leafTravel || seasonTravel ? 0 : BLOOM_MAX[tier];
     trans.durScale = trans.structDiff ? DUR_SCALE[tier] : 1;
     if(hub.groveIn){ hub.freeGrove(hub.groveIn); hub.groveIn = null; }   // a transition interrupting a transition drops the half-faded grove
@@ -395,8 +399,8 @@ export function makeTransitions(hub){
     }else if(trans.viewpoint){
       trans.swapped=t>=0.5;   // one grove remains in place through the horizon; its mode-specific state lands at the end
     } else if(trans.crossfade){
-      hub.crossW = clamp((t - (0.5 - CROSS_HALF_W)) / (2*CROSS_HALF_W), 0, 1);
-      hub.crossW = smoothstep(0, 1, hub.crossW);                   // ease it, so the fade has no corners at either end
+      const halfW=trans.crossHalfW;
+      hub.crossW = smoothstep(0.5-halfW, 0.5+halfW, t);           // ease it, so the fade has no corners at either end
       if(!trans.swapped && hub.crossW >= 1){
         trans.swapped = true;
         for(const k in DEFAULTS) if(swaps(k)) params[k] = trans.to[k];

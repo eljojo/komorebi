@@ -1,5 +1,5 @@
 import { clamp, lerp } from './komorebi-math.js';
-import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, DEFAULTS, migrateLegacy, cutWarnings } from './komorebi-params.js';
+import { MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_OCC, DEFAULTS, migrateLegacy, cutWarnings, layerBakeSize } from './komorebi-params.js';
 import { VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, FS_FAITH, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ } from './transport/komorebi-shaders.js';
 import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './transport/komorebi-transport.js';
 import { makeSource } from './light/komorebi-source.js';
@@ -138,7 +138,7 @@ function createEngine(canvas, opts, driven=false){
   // params morph, the grove swaps once at the bloom peak, and `bloom` is a transient overcast that hides it.
   const trans = restTrans();   // every field at rest (komorebi-routes.js)
   const effCloud = () => clamp(lerp(params.cloud_thickness, 1, trans.bloom), 0, 1);  // cloud, swollen toward overcast mid-transition
-  const bakeBaseline = () => (params.bake_resolution > 0 ? params.bake_resolution|0 : params.tex_resolution|0);  // TUNE spec/implementation.md: decoupled bake size; 0 follows tex_resolution.
+  const bakeBaseline = () => layerBakeSize(params);  // TUNE spec/implementation.md: decoupled bake size; 0 follows tex_resolution.
   // Live bake / layer-texture size. Pure function of quality + params: when auto_quality is engaged it trims the
   // bake below the knee (q<0.5) alongside samples, snapped to 256 so the textures only reallocate at a level
   // boundary — not on every fps nudge. rebuildTextures/bake both read this (transport samples by UV → smaller = softer).

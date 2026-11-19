@@ -217,7 +217,7 @@ for(const [from,to] of [['morning 1','memories'],['memories','morning 1']]){
 }
 
 test('topology swaps outside the shared layer bake retain their cloud cover',()=>{
-  for(const to of [{...PRESETS.memories,seed:123,branch_tau:1},{...PRESETS.memories,sky_view:true}]){
+  for(const to of [{...PRESETS.memories,seed:123,branch_tau:1},{...PRESETS.memories,sky_view:true},{...PRESETS.memories,bake_resolution:1536}]){
     const r=transitionRig(PRESETS.memories);r.transitionTo(to);
     expect(r.hub.trans.crossfade).toBe(false);
     for(let i=0;i<60;i++)r.tickTransition(1/60);
@@ -914,7 +914,7 @@ const linked = from => { const r = transitionRig(from); r.hub.transitionTo = r.t
 
 test('an interrupted cloud dissolve carries its bloom into the next route and eases it out', () => {
   const from = { ...DEFAULTS }, r = transitionRig(from);
-  r.transitionTo({ ...from, layer_count: 3, tex_resolution: from.tex_resolution/2 });   // a texture size the two groves cannot share: a dissolve
+  r.transitionTo({ ...from, layer_count: 3, bake_resolution: from.bake_resolution/2 });   // a texture size the two groves cannot share: a dissolve
   expect(r.hub.trans.bloomMax).toBeGreaterThan(0);
   tickTo(r, 0.45);
   const shown = r.hub.trans.bloom;
@@ -1126,7 +1126,7 @@ test("equal layer counts keep today's heights through a crossfade", () => {
 
 test("the crossfade still refuses what the two groves cannot share", () => {
   const A = PRESETS["morning 3b"];
-  for (const over of [{ tex_resolution: A.tex_resolution/2 }, { bake_resolution: A.bake_resolution/2 }, { branch_tau: 0.5 }]) {
+  for (const over of [{ tex_resolution: A.tex_resolution, bake_resolution: 0 }, { bake_resolution: A.bake_resolution/2 }, { branch_tau: 0.5 }]) {
     const r = sourceRig(A); r.transitionTo({ ...PRESETS.eclipse, ...over });
     expect(r.hub.trans.crossfade, JSON.stringify(over)).toBe(false);
     expect(r.hub.trans.bloomMax).toBeGreaterThan(0);

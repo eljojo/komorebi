@@ -18,7 +18,7 @@ import * as LEAF from "../engine/leaf/komorebi-leaf.js";
 const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture", Framebuffer: "framebuffer", Renderbuffer: "renderbuffer", Program: "program", Shader: "shader", Query: "query" };
 
 function makeLedger() {
-  let seq = 0, lost = false, casts = 0, layerDraws = 0;
+  let seq = 0, lost = false, casts = 0, layerDraws = 0, layerEdgeMix;
   const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {}, linked = [];
   const at = { array: null, vao: null, fb: null, prog: null, rb: null, unit: "TEXTURE0", units: {} };
   const label = (o) => `${o.kind} #${o.id}`;
@@ -69,7 +69,8 @@ function makeLedger() {
     attachShader: (p, s) => { use(p, "linked"); use(s, "attached"); if (p) p.shaders = [...(p.shaders ?? []), s]; },
     linkProgram: (p) => { use(p, "linked"); linked.push(p.shaders?.map((s) => s.src) ?? []); },
     shaderSource: (s, src) => { use(s, "compiled"); if (s) s.src = src; }, compileShader: (s) => use(s, "compiled"),
-    getUniformLocation: (p) => { use(p, "asked"); return {}; },
+    getUniformLocation: (p, name) => { use(p, "asked"); return { name }; },
+    uniform1f: (loc, value) => { if (loc?.name === "uLayerEdgeMix") layerEdgeMix = value; },
     drawArrays: draw, drawArraysInstanced: draw,
     clear: () => use(at.fb, "cleared"), blitFramebuffer: () => use(at.fb, "blitted"), readPixels: () => use(at.fb, "read back"),
     beginQuery: (_t, q) => use(q, "begun"), getQueryParameter: (q) => { use(q, "read"); return 0; },
@@ -94,18 +95,19 @@ function makeLedger() {
     linked: () => [...linked],   // every program linked so far, as its [vertex, fragment] sources
     casts: () => casts,          // every sample of a faithful cast drawn so far
     layerDraws: () => layerDraws,
+    layerEdgeMix: () => layerEdgeMix,
     // what is left alive, by kind; shaders aside: the engine links each into its program and lets the program hold it
     leaks: () => { const n = {}; for (const o of live) if (o.kind !== "shader") n[o.kind] = (n[o.kind] ?? 0) + 1; return n; },
   };
 }
 
 // The engine over a ledger, on a pumped clock. `lose` and `restore` fire the canvas's own context events.
-function engine(look) {
+function engine(look, options = {}) {
   const L = makeLedger(), on = {};
   let next = null, now = 1000;
   globalThis.requestAnimationFrame = (cb) => { next = cb; return 0; };
   const canvas = { getContext: () => L.gl, addEventListener(n, f) { on[n] = f; }, removeEventListener(n, f) { if (on[n] === f) delete on[n]; }, clientWidth: 64, clientHeight: 36, width: 64, height: 36 };
-  const eng = create(canvas, { params: look });
+  const eng = create(canvas, { params: look, ...options });
   const pump = (n = 1, dt = 1000 / 60) => { for (let i = 0; i < n; i++) { const f = next; next = null; now += dt; f?.(now); } };
   const land = (max = 2000) => { for (let i = 0; i < max && eng.trans.active; i++) pump(); expect(eng.trans.active, "the route lands").toBe(false); pump(2); };
   return { eng, L, pump, land,
@@ -166,6 +168,34 @@ scenario("a crossfade keeps the outgoing edge until the incoming grove takes ove
   R.land();
   expect(R.eng.params.edge_softness).toBe(to.edge_softness);
 });
+for (const balanced of [false, true]) {
+  test(`bluuey → shrooms spreads the shadow morph in ${balanced ? "Balanced" : "raw"} playback`, () => withWindow(() => {
+    const session = balanced ? { quality: "balanced", playback: { auto_quality: false, adaptive_motion: false } } : undefined;
+    const R = engine({ ...PRESETS.bluuey, auto_quality: false, adaptive_motion: false }, { session });
+    R.pump(3);
+    start(R, PRESETS.shrooms, "crossfade");
+    expect(R.eng.trans.bloomMax).toBe(0);
+    expect(R.L.layerEdgeMix()).toBe(1);
+    const advanceTo = (progress) => { while (R.eng.trans.active && R.eng.trans.t < progress) R.pump(); };
+    advanceTo(0.2);
+    const drawCount = R.L.layerDraws();
+    R.pump();
+    expect(R.L.layerDraws() - drawCount).toBe(2 * PRESETS.shrooms.layer_count);
+    expect(R.L.layerEdgeMix()).toBeCloseTo(balanced ? 1 : 0.95, 1);
+    advanceTo(0.5);
+    expect(R.L.layerEdgeMix()).toBeCloseTo(balanced ? 1 : 0.5, 1);
+    advanceTo(0.8);
+    expect(R.eng.trans.swapped).toBe(false);
+    advanceTo(0.92);
+    expect(R.eng.trans.swapped).toBe(true);
+    R.land();
+    expect(R.L.layerEdgeMix()).toBe(balanced ? 1 : 0);
+    expect(R.eng.params.chromatic_aberration).toBe(PRESETS.shrooms.chromatic_aberration);
+    start(R, PRESETS["look up"], "litterRise");
+    expect(R.eng.trans.shadowRise).toBe(true);
+    closes(R, "bluuey to shrooms");
+  }));
+}
 scenario("a crossfade aborted by setParams", LAYERED, (R) => { start(R, OTHER, "crossfade"); R.pump(5); R.eng.setParams(FAITHFUL); R.pump(3); });
 scenario("a crossfade interrupted by another, before its window", LAYERED, (R) => { start(R, OTHER, "crossfade"); R.pump(5); start(R, { ...OTHER, seed: 78 }, "crossfade"); R.land(); });
 scenario("dispose in the middle of a crossfade", LAYERED, (R) => { start(R, OTHER, "crossfade"); R.pump(40); expect(R.eng.trans.active, "still in the window").toBe(true); });

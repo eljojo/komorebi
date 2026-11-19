@@ -699,7 +699,7 @@ const PARAMS = {
     means: "<b>A leaf is frosted glass, not stained glass.</b> The light a leaf passes is almost all <i>diffuse</i> — scattered inside the leaf and sent on in every direction — not a sharp coloured picture of the leaf. This is how much: 0 = the old leaf, which paints its colour as a crisp copy of itself inside its own shadow (and overlapping leaves of opposite colours go mud-dark); ~0.95 is a real leaf. Up, the sun-images keep only what travels straight through, so a leaf a few metres up throws a <i>dark</i> shadow, and the rest lands in the shade in the leaf's own colour, spread over the floor under it. It needs <i>canopy fill</i> to land anywhere — with that shut the diffuse light just leaves the sun-images — and it switches <i>leaf scatter</i> off. The curtain and the tent take it too. Looking up, it is the difference between a window and a lantern: with it up the sun's disk no longer shows through a leaf (only through a gap), and each leaf instead glows with the light it took out of your line of sight, in its own colour — it needs no canopy fill, and it switches <i>foliage glow</i> off." },
   edge_area: { default: true,   // on by default; a look from before it was keeps false (GRANDFATHERED, below). the texel read as a mixture at d = 0 too (spec/model/leaf.md): the depth-averaged soft edge is Jensen-dark, and this reads it as part leaf, part sky. A boolean, because a 0..1 blend of two readings of one texel is a transmittance no texel has. INERT above leaf_diffuse 0: the split is already area-correct
     row: { kind: 't', label: 'edge area', rebuild: '' },   // spec/model/leaf.md: the texel read as a mixture at leaf diffuse 0 too (above it every texel already is). A live uniform plus the two signatures (the faithful cast, the fill), so nothing rebuilds
-    travels: 'topo',   // a flip moves every soft edge at once; snap it under the bloom.
+    travels: 'topo',   // a flip moves every soft edge at once; the shared-layer cast fades the two readings.
     means: "<b>Where a leaf's edge is part leaf, part sky.</b> The bake averages a leaf's depth over a soft edge and reads the average as one thin dark leaf, which darkens every edge a little too much. On, the edge is read as it really is — part leaf, part open sky. Rims brighten a touch and the warm fringe cools; it is subtle everywhere. Only while <i>leaf diffuse</i> is 0: above it every edge is already read this way." },
   fill_directions: { default: 16,   // TUNE: the K cosine-weighted rays the fill integrates (stratified in cos²θ, no noise)
     row: { kind: 's', label: 'fill rays', min: 4, max: 64, step: 1, rebuild: '' },   // the sky fill's two TUNE knobs (spec/model/fill.md): read live at the next bake, no rebuild
@@ -968,6 +968,7 @@ const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back t
 // arrangement, which is spec/model/motion.md's own grammar covering the change.
 // The shared bake supplies continuity itself; a bloom would send the source through an unnecessary wider halo.
 const CROSS_HALF_W = 0.25;   // the window's half-width in t: [0.25, 0.75], centred where the cut used to be
+const layerBakeSize = p => p.bake_resolution > 0 ? p.bake_resolution|0 : p.tex_resolution|0;   // a zero bake request follows the texture request
 const BLOOM_MAX = { mode: 0.35, dissolve: 0.55, cross: 0.0 };   // the bloom's peak depth by tier — the mode flip's measured in the packet before this one
 const DUR_SCALE = { mode: 2.0,  dissolve: 2.0, cross: 2.0 };    // ...and how much longer than the caller's duration each tier takes to get there
 // The fade through the lit ground meets on bare floor, which at a look's own exposure (set for a floor mostly in shade) is blown to
@@ -1055,4 +1056,4 @@ function cutWarnings(P, build, warned){
   return out;
 }
 
-export { LIT_GROUND_DIP, LIT_GROUND_HOLD, PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, GRANDFATHERED, LEGACY_KEYS, migrateLegacy };
+export { LIT_GROUND_DIP, LIT_GROUND_HOLD, PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, GRANDFATHERED, LEGACY_KEYS, migrateLegacy, layerBakeSize };
