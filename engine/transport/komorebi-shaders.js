@@ -1,6 +1,7 @@
 import { MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX } from '../komorebi-params.js';
 import { LEAF_VARIANTS, SLAB_N } from '../leaf/komorebi-leaf.js';
 import { DEPTH_L0, DEPTH_W } from '../motion/komorebi-air.js';
+import { TREE_GAIN, TREE_POWER } from './komorebi-camera.js';
 
 // ===========================================================================
 // Shaders
@@ -821,8 +822,11 @@ void treeLight(vec3 P, out vec3 Tsun, out float Tsky){
 }`;
 
 // The Look's per-pixel finish, the floor's GLSL_T_POST in the same order (komorebi-transport.js): the dusk shift keyed by this point's own sun visibility,
-// the haze by its distance from the looked-at point as the floor's, the iris mask, the tail.
-const GLSL_TREE_FINISH = `uniform float uTwilight;
+// the haze by its distance from the looked-at point as the floor's, the iris mask, the tail. The tail's curve is the tree's own (spec model/camera.md, the
+// tree's curve; treeCurve in komorebi-camera.js is this arithmetic on the CPU): AgX with its contrast look, mixed over the frame's by tree_tone, so at 0
+// the tree is finished exactly as the floor is.
+const GLSL_TREE_FINISH = `uniform float uTreeTone;
+uniform float uTwilight;
 uniform float uMesopic;
 uniform vec3  uHazeColor;
 uniform float uHalfExtent;
@@ -832,6 +836,19 @@ uniform float uVignetteShape;
 uniform float uIrisOpacity;
 uniform vec2  uTarget;               // the target's size in pixels, for the iris's frame position
 ${GLSL_TONE_TAIL}
+const mat3 AGX_IN = mat3(0.842479062253094, 0.0423282422610123, 0.0423756549057051, 0.0784335999999992, 0.878468636469772, 0.0784336, 0.0792237451477643, 0.0791661274605434, 0.879142973793104);
+const mat3 AGX_OUT = mat3(1.19687900512017, -0.0528968517574562, -0.0529716355144438, -0.0980208811401368, 1.15190312990417, -0.0980434501171241, -0.0990297440797205, -0.0989611768448433, 1.15107367264116);
+vec3 treeTail(vec3 col){
+  vec3 frame = toneTail(col);
+  if(uTreeTone <= 0.0) return frame;
+  vec3 x = AGX_IN*max(col*uExposure*${TREE_GAIN}, vec3(1e-10));
+  x = (clamp(log2(x), -12.47393, 4.026069) + 12.47393)/16.5;
+  vec3 x2 = x*x, x4 = x2*x2;
+  x = pow(max(15.5*x4*x2 - 40.14*x4*x + 31.96*x4 - 6.868*x2*x + 0.4298*x2 + 0.1191*x - 0.00232, vec3(0.0)), vec3(${TREE_POWER}));
+  x = pow(clamp(AGX_OUT*x, 0.0, 1.0), vec3(2.2));
+  x = clamp((x - 0.5)*uContrast + 0.5, 0.0, 1.0);   // the Look's contrast and gamma, as the frame's tail takes them
+  return mix(frame, pow(x, vec3(1.0/2.2)), uTreeTone);
+}
 vec3 treeFinish(vec3 col, vec3 Tsun, vec3 P){
   const vec3 ROD_BLUE = vec3(0.92, 1.0, 1.30);
   const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
@@ -843,7 +860,7 @@ vec3 treeFinish(vec3 col, vec3 Tsun, vec3 P){
     float d = pow(pow(q.x, uVignetteShape) + pow(q.y, uVignetteShape), 1.0/uVignetteShape);
     col *= 1.0 - uIrisOpacity*smoothstep(1.0 - uVignette, 1.0, d);
   }
-  return toneTail(col);
+  return treeTail(col);
 }`;
 
 // A LEAF, SEEN. Two faces of one finite leaf (a Kubelka–Munk slab, komorebi-tree-view.js): its top and its underside reflect, and it passes what the

@@ -163,3 +163,28 @@ test("the shader casts each corner from its own height only under tilt_shadow, a
   expect(VS_FAITH).toContain("recvPt = world - uG * hc;");
   expect(DEF.tilt_shadow).toBe(1); expect(GF.tilt_shadow).toBe(0); expect(PR.tilt_shadow.travels).toBe("morph");
 });
+
+// ---- THE TREE'S CURVE (tree_tone): the seen tree is shown through AgX with contrast, so a bright, saturated leaf rolls toward white instead of
+// toward pure yellow-green; the gain holds a sunlit leaf of park 1, from above at the luminance the frame's ACES fit gave it ----
+import { TREE_GAIN, TREE_POWER, treeCurve } from "../engine/transport/komorebi-camera.js";
+
+const acesFit = (x) => Math.min(1, Math.max(0, (x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14)));
+const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+const sat = (c) => (Math.max(...c) - Math.min(...c)) / Math.max(...c);
+
+test("the tree's curve shows a sunlit leaf at the frame curve's luminance, and rolls a bright leaf toward white where the frame's pushes it to yellow", () => {
+  const sunlit = [0.12, 0.49, 0.0], backlit = [0.84, 1.09, 0.0];   // park 1, from above: the slab's top lit at 26° and the leaf seen through, exposed
+  expect(lum(treeCurve(sunlit))).toBeCloseTo(lum(sunlit.map(acesFit)), 2);
+  expect(sat(treeCurve(backlit).map((c) => c ** (1 / 2.2)))).toBeLessThan(0.6);
+  expect(sat(backlit.map(acesFit).map((c) => c ** (1 / 2.2)))).toBeGreaterThan(0.8);
+  for (const c of [[0, 0, 0], [0.01, 0.02, 0.03], [100, 100, 100]]) for (const v of treeCurve(c)) { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); }
+});
+
+test("the shader runs the curve's own constants, at tree_tone 0 it is the frame's tail to the bit, and it ships on, kept off for looks from before", () => {
+  for (const src of [FS_TREE, FS_TREE_WOOD]) {
+    expect(src).toContain("if(uTreeTone <= 0.0) return frame;");
+    expect(src).toContain(`vec3(${TREE_POWER})`);
+    expect(src).toContain(`uExposure*${TREE_GAIN}`);
+  }
+  expect(DEF.tree_tone).toBe(1); expect(GF.tree_tone).toBe(0); expect(PR.tree_tone.travels).toBe("morph");
+});

@@ -5,7 +5,7 @@
 // perspective. A leaf is lit as a receiver, by the sun through the leaves above it and by the sky above it, read from the low-res layer set the sky fill
 // bakes on the faithful path; it is one finite two-faced leaf that passes the look's own transmittance (the slab, komorebi-leaf.js). The pass draws into its own
 // multisampled colour and depth, its leaves' outlines turned into sample coverage, and is laid over the frame: every step the floor takes after its light
-// (the dusk shift, the haze, the iris, the Look's tail) is per pixel, so the tree takes the same steps in its own shader.
+// (the dusk shift, the haze, the iris, the Look's tail) is per pixel, so the tree takes the same steps in its own shader, the tail's curve its own (tree_tone).
 // Pure exports first (the projection the shader runs), then the GL factory, which the engine holds behind FEAT_TREE_VIEW.
 // ============================================================================
 import { DEG, clamp, smoothstep } from '../komorebi-math.js';
@@ -79,7 +79,7 @@ export function makeTreeView(hub){
       sunDir: L(prog, 'uSunDir'), ambient: L(prog, 'uAmbient'), eye: L(prog, 'uEye'),
       twilight: L(prog, 'uTwilight'), mesopic: L(prog, 'uMesopic'), haze: L(prog, 'uHazeColor'), halfExtent: L(prog, 'uHalfExtent'), centerF: L(prog, 'uViewCenterF'),
       vignette: L(prog, 'uVignette'), vignetteShape: L(prog, 'uVignetteShape'), irisOpacity: L(prog, 'uIrisOpacity'), target: L(prog, 'uTarget'),
-      exposure: L(prog, 'uExposure'), contrast: L(prog, 'uContrast'), tone: L(prog, 'uToneMap'), travelTone: L(prog, 'uTravelTone'),
+      exposure: L(prog, 'uExposure'), contrast: L(prog, 'uContrast'), tone: L(prog, 'uToneMap'), travelTone: L(prog, 'uTravelTone'), treeTone: L(prog, 'uTreeTone'),
     });
     UL = { ...common(progLeaf), ...hub.faithLocs(progLeaf), slab: L(progLeaf, 'uSlab'), f0: L(progLeaf, 'uF0') };
     UW = { ...common(progWood), eyeW: L(progWood, 'uEyeW'), bark: L(progWood, 'uBark') };
@@ -168,6 +168,7 @@ export function makeTreeView(hub){
     gl.uniform1f(u.twilight, smoothstep(30, 4, params.sun_elevation_deg)); gl.uniform1f(u.mesopic, params.mesopic_strength);
     gl.uniform1f(u.exposure, shownExposure(params)); gl.uniform1f(u.contrast, params.contrast); gl.uniform1i(u.tone, params.tone_map);
     gl.uniform3fv(u.travelTone, trans.travelTone ?? [0, 0, 0]);
+    gl.uniform1f(u.treeTone, clamp(params.tree_tone, 0, 1));
   }
 
   // Draw the tree over the frame already in `fbo` (w × h).

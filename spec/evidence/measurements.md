@@ -90,6 +90,14 @@ No measurement of the floor camera's framing or the Look's tail is recorded. The
 - **What it established:** the tree view is registered with the cast by construction and costs about one more draw of the leaves; leaves need a side.
 - **Date:** 2026-11-16.
 
+### The tree's curve
+
+- **What was measured:** how saturated the seen tree is against its shadow, and what AgX in place of the ACES fit does to the tree and to the floor.
+- **On:** `park 1, from above` and `park 1, under the trees`, Chrome on Metal (Apple M1 Pro), 683×1000, wind off; the tree masked as the pixels that change with `tree_view` off (`archive/reviews/2026-11-19-tree-tone/`). The artist's screenshot of `park 1, from above` in wind, for the first row.
+- **Result:** on the screenshot, leaf pixels at median saturation 0.82 (p10 0.58, p90 0.89), shadow pixels 0.25 (p90 0.41); 6.5 % of the leaves near pure yellow. Rendered, the ACES fit gave the tree from above 0.80 and under the trees 0.73, with 36 % of the backlit crown near pure yellow. AgX with its contrast look (power 1.35), its gain matched to a sunlit leaf: 0.68 and 0.49, near-yellow 1.8 % and 7.0 %, the tree's median brightness 0.66 → 0.67, its darkest tenth 0.26 → 0.33; the floor not moved. Gain matched to the lit floor instead: the darkest tenth 0.42, the crown paler. The same curve on the whole frame moved the floor by a mean |Δ| of 10.5 and 18.7 of 255, every pixel from above, its saturation 0.25 → 0.18. As built, at `tree_tone` 0 both looks render byte for byte as before; at 1 they render within 1 of 255 of the sheet's frames.
+- **What it established:** the lime and the yellow come from the per-channel curve meeting a leaf with no blue, not from the leaf's colour; a curve that rolls toward white takes them off without touching the floor.
+- **Date:** 2026-11-19.
+
 ### Bark
 
 - **What was measured:** not measured here; read off Juola, Hovi & Rautiainen (2022), *Ecology and Evolution* 12, e8718, Fig. 3a: the mean stem-bark reflectance of 20 trees per species in the field, 415–925 nm.

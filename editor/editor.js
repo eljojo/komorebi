@@ -273,6 +273,7 @@ const PANEL_LAYOUT = [
   'glow_bleed',
   'glow_bleed_m',
   ['adv','bark'],
+  'tree_tone',
   'bark_r',
   'bark_g',
   'bark_b',
@@ -491,7 +492,7 @@ function buildPanel(){
 const CAM_GROUP = {   // knob -> the transport uniform group that carries it to the shader
   view_pitch_deg:'rayView', view_yaw_deg:'rayView', view_fov_deg:'rayView',   // the curtain is seen head-on: no ray camera, so no tilt/orbit/lens
   far_smear:'floor', park_throw:'floor', ground_r:'floor', ground_g:'floor', ground_b:'floor',    // an albedo needs a floor to reflect off
-  tree_view:'floor', bark_r:'floor', bark_g:'floor', bark_b:'floor',   // the tree is seen from the floor camera alone
+  tree_view:'floor', tree_tone:'floor', bark_r:'floor', bark_g:'floor', bark_b:'floor',   // the tree is seen from the floor camera alone
   cloth_distance_m:'cloth',
   fabric_tt:'fabric', fabric_tint_r:'fabric', fabric_tint_g:'fabric', fabric_tint_b:'fabric',
   fold_depth:'fabric', fabric_nap:'fabric', fold_scale:'fabric', fold_coarsen:'fabric', fold_warp:'fabric',
@@ -521,6 +522,7 @@ const splitOn = () => params.leaf_diffuse > 0;                               // 
 const LOCAL_GATE = {   // knob -> what else has to be true inside a camera that does carry it
   tilt_shadow: faithLive,                                 // the faithful cast's own: the layer bake stamps plan footprints
   tree_view: (cam) => params.standing_scene && faithLive(cam),   // a tree standing in the scene, cast faithfully: the overhead park's canopy is endless and above the frame
+  tree_tone: (cam) => params.tree_view && params.standing_scene && faithLive(cam),
   bark_r: (cam) => params.tree_view && params.standing_scene && faithLive(cam), bark_g: (cam) => params.tree_view && params.standing_scene && faithLive(cam), bark_b: (cam) => params.tree_view && params.standing_scene && faithLive(cam),
   edge_area: () => !splitOn(),                            // above leaf diffuse 0 every texel is already a mixture (spec/model/leaf.md): the knob has nothing left to change
   receiver: () => !params.sky_view,                       // looking up overrides the receiver outright — there is no surface to pick

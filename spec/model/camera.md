@@ -34,7 +34,7 @@ On a standing scene cast faithfully, `tree_view` lets the floor camera see the t
 
 **Law. The leaf and its shadow are one placement.** Each leaf is stood back up from the corner its footprint is stamped at, by the same vertex code in the same frame, so the stood-up leaf projects straight down onto exactly the footprint the cast throws. The wood is the cast's swayed skeleton, each segment a cylinder turned to the eye. Gusts move the leaves and their shadows together by construction.
 
-A leaf and a piece of bark are **receivers of the beam** ([`transport.md`](transport.md#the-receiver-relative-read)): each names a plan point and a height, and the sun reaching it is read through the leaves above it along the beam, the sky through the leaf area above it. What a leaf then does with that light is [`leaf.md`](leaf.md#a-leaf-seen). Everything the floor does after its light (the dusk shift, the haze, the iris, the Look's tail) is per pixel, so a tree pixel takes the same steps the floor pixel beside it takes.
+A leaf and a piece of bark are **receivers of the beam** ([`transport.md`](transport.md#the-receiver-relative-read)): each names a plan point and a height, and the sun reaching it is read through the leaves above it along the beam, the sky through the leaf area above it. What a leaf then does with that light is [`leaf.md`](leaf.md#a-leaf-seen). Everything the floor does after its light (the dusk shift, the haze, the iris, the Look's tail) is per pixel, so a tree pixel takes the same steps the floor pixel beside it takes, save one: the tail's curve is the tree's own ([the tree's curve](#the-trees-curve)).
 
 The overhead park has no tree to see: its canopy is endless and above the frame. The tree view is opened per look, and off it is the floor as it was. Between a look that sees its tree and one that does not, the tree fades and nothing else changes on its account: it is not a scene mode, since nothing the grove, the cast or the floor holds reads it ([`../contracts/transitions.md`](../contracts/transitions.md#gate-crossings-within-any-morph)).
 
@@ -75,9 +75,19 @@ Each pixel's radiance, in linear HDR, passes through this order and no other:
 5. **Contrast**: a scale about middle grey, `(c − 0.5) · contrast + 0.5`, clipped.
 6. **Gamma**: 2.2, to the display.
 
-**One tail.** The tail is one definition shared by every path that draws a picture, so two paths can never become two Looks.
+**One tail.** The tail is one definition shared by every path that draws a picture, so two paths can never become two Looks. The seen tree is the one exception, and only in its curve ([below](#the-trees-curve)).
 
 **Contrast is the look's, not the cloud's.** The contrast sag under cloud is the source's own convolution ([`source.md`](source.md)); the `contrast` knob is an independent grade on top of it.
+
+### The tree's curve
+
+**Authored.** The seen tree ([above](#the-tree-seen-from-the-floor-camera)) is shown through a tone curve of its own: AgX with its contrast look, in place of the frame's. Exposure, contrast and gamma are the Look's, as the floor takes them.
+
+The frame's ACES fit works on each channel apart. A leaf that passes almost no blue, as the park's does, climbs its shoulder in red and green alone, so a sunlit leaf lands on lime and one seen through toward the sun on pure yellow. On the floor the leaf's colour arrives only diluted, multiplied into the ground, so the shadow never shows it; on the tree it is shown straight. Seen from above, `park 1, from above`'s leaves sat at a median saturation of 0.80 against its shadow's 0.25, and under the trees a third of the backlit crown was near pure yellow. AgX rolls a bright colour toward white and keeps its hue: the greens lose their acid and the backlit leaves glow pale gold.
+
+Its gain is set so a sunlit leaf of `park 1, from above` shows as bright as the frame's curve showed it, so the crown keeps its brightness and its darks. Matched on the lit floor instead, the curve lifted the crown's darks and it read paler, not deeper. Given to the whole frame, the same curve greyed and lifted the shadow. The artist chose the tree alone, at the leaf's brightness (2026-11-19, `archive/reviews/2026-11-19-tree-tone`; [`../evidence/measurements.md`](../evidence/measurements.md#the-trees-curve)).
+
+`tree_tone` mixes the tree's curve over the frame's: 1, the default, is the tree's; 0 is the frame's, the tree finished exactly as the floor is. A look from before it keeps 0. It tweens. It does not darken the inside of the crown: a crown seen from above still shows mostly its sunlit tops over sunlit ground.
 
 ### Where the tail sits when a blur pass exists
 
@@ -109,6 +119,7 @@ Turning the iris on or off in a transition never installs or removes the whole m
 - **Authored: the distance haze**, a sky-hued fade with an authored onset, not a model of aerosol along the view ray.
 - **Approximation: the mesopic shift before the diffusion**, the inverse of the physical order, negligible because the two barely overlap.
 - **Authored: the tone curve and contrast.** The curve is a display choice, not a model of the eye's adaptation. Exposure follows the cloud (`cloud_exposure`: × (1 + cloud), each look re-sat at its own cloud), as an eye opens up under a passing cloud; contrast does not, and whether it should grey toward flat in real overcast is **Open**.
+- **Authored: the tree's curve**, AgX on the seen tree alone, its gain matched to a sunlit leaf of one look ([above](#the-trees-curve)). Absent: `tree_tone` 0 or `tree_view` 0.
 - **Authored: the iris**, a presentation device, keystoned on a tilted floor by design.
 - **Law, held: no camera-height control and no focal plane.** The height is derived from the framing ([above](#the-floor-camera)); a focal plane has no effect the model could show ([`source.md`](source.md)).
 - **The tree view's light** (Approximation). A leaf's sun is read along the beam's central direction through the low-res layer set the sky fill bakes, each layer standing for a slab a layer thick and shading the leaf by as much of the slab as lies above it: none at the leaf's own height, so a leaf never shades itself, all of it a layer above, so the light changes continuously up the crown; its sky goes as e^(−½·leaf area above), the season's spherical leaf. A penumbra the size of one leaf is not resolved. Absent: `tree_view` 0.

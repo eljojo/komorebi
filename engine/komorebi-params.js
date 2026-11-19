@@ -431,6 +431,10 @@ const PARAMS = {
     row: { kind: 't', label: 'see the tree', rebuild: '' },   // nothing the grove grows reads it: the pass keeps its own targets and the low-res layer set it lights by, allocated when first drawn
     travels: 'none',   // the tree fades in or out over the route (komorebi-transitions.js, treeFade): the grove, the shadow and the camera go as they would without it
     means: "<b>See the tree itself, not only its shadow.</b> On a standing scene with the faithful tree, the tilted floor camera shows the leaves and wood the shadow is cast from, where they really hang, lit by the sun that reaches them and the sky above them. Each leaf keeps the look's own colour: its top and underside reflect, and seen from the shaded side it glows with what it lets through. Zoom, tilt and lens decide where you stand: tight and tilted up you are under the tree, wide and steep you see the whole grove from above." },
+  tree_tone: { default: 1,   // on by default (a look from before it was keeps 0: GRANDFATHERED, below); the seen tree's own tone curve (spec/model/camera.md, the tree's curve; komorebi-camera.js treeCurve): 0..1, mixed over the frame's. 1 = AgX with its contrast look, a sunlit leaf shown as bright as the frame's curve showed it; 0 = the frame's curve, the tree finished as the floor is, to the bit
+    row: { kind: 's', label: 'tree curve', min: 0, max: 1, step: 0.01, rebuild: '' },   // a live uniform of the tree's finish; nothing rebuilds
+    travels: 'morph',
+    means: "<b>The tree's own film.</b> The floor's tone curve squeezes each colour on its own, so a bright leaf that passes almost no blue climbs to pure yellow-green: lime from above, acid yellow against the sky. At 1 the tree is shown through a curve that rolls bright colour toward white and keeps its hue, so a sunlit leaf keeps its brightness and the backlit ones glow pale gold. 0 = the tree takes the floor's curve. The floor is never touched." },
   bark_r: { default: 0.154,   // Norway maple stem bark (Juola, Hovi & Rautiainen 2022, Fig. 3a, 20 trees), taken to linear sRGB under D65
     row: { kind: 's', label: 'bark R', min: 0, max: 1, step: 0.005, rebuild: '' },
     travels: 'morph',   // the wood's reflectance in the tree view: a live uniform
@@ -995,7 +999,9 @@ const DEFAULTS = Object.fromEntries(Object.entries(PARAMS).filter(([, d]) => !('
 // Then the trees apart, together: sway_spread (0 → 1), gust_width_m (0 → 4), wind_shelter (0 → 1) and gust_carry (0 → 1), each tree at its own pace, in
 // gusts 4 m wide, sheltered by the crowns upwind, the gusts carried at the wind's speed. They move only a look with wind; every built-in with wind takes
 // them. A look kept elsewhere from before, with wind, takes them too: its trees fall out of step and the ones in another's lee lean less.
-const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, shoot_leaves: 0, tilt_light: 0, ground_bounce: 0, tilt_shadow: 0, leaf_out_end: 0, sway_spread: 0, gust_width_m: 0, wind_shelter: 0, gust_carry: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
+// Then tree_tone (0 → 1), the seen tree shown through its own curve. It reads only where the tree is seen (tree_view); every built-in that sees its tree takes
+// it. A look kept elsewhere from before, seeing its tree, takes it too: its leaves go from lime and yellow to softer greens and pale gold.
+const GRANDFATHERED = { sun_cosine: 0, sun_extinction: 0, edge_area: false, inner_leaves: 0, shoot_leaves: 0, tilt_light: 0, ground_bounce: 0, tilt_shadow: 0, leaf_out_end: 0, sway_spread: 0, gust_width_m: 0, wind_shelter: 0, gust_carry: 0, tree_tone: 0, exposure: 1.3, ambient_skylight: 0.5 };   // their values before
 
 // ---- legacy parameter names (spec/implementation.md). A ★ look saved to local storage, or a JSON exported from any
 // earlier build, is data the engine does not get to re-author — so a renamed knob has to keep loading
