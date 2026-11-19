@@ -57,6 +57,9 @@ const cloudId = (active) => (active.startsWith("arb:") ? active.slice(4) : null)
 const shipId = (active) => (active.startsWith("ship:") && Object.hasOwn(BUILTINS.PLAYLISTS, active.slice(5)) ? active.slice(5) : null);
 const shipItems = (active) => (shipId(active) === null ? [] : BUILTINS.PLAYLISTS[shipId(active)].items.map((it) => (typeof it === "string" ? { look: it } : it)));
 export const shipLists = () => Object.entries(BUILTINS.PLAYLISTS).map(([key, p]) => ({ value: `ship:${key}`, label: p.name }));
+// Every list of the stories, in one order: the shipped playlists, park story first, then the person's own (`yours`, in the order
+// they come), and the last shipped playlist, the experiments, last of all. A step by hand walks them in this order too (walk).
+const inOrder = (yours) => { const ship = shipLists(); return [...ship.slice(0, -1), ...yours, ship[ship.length - 1]]; };
 // The first shipped playlist: where a first visit lands, and where a list that is gone falls back to.
 export const STORY = `ship:${Object.keys(BUILTINS.PLAYLISTS)[0]}`;
 const cloudItems = (state, active) => state.playlists[cloudId(active)]?.items ?? [];
@@ -117,9 +120,9 @@ export function entryName(state, stored, active, value) {
 export function playlists(state, mine = [], me = null, { stored = {}, active = null } = {}) {
   const listed = new Set(mine.map((p) => String(p.id)));
   const label = (p) => (me && p.owner !== me ? `${p.name} · ${p.owner}` : p.name);
-  return [...shipLists(), ...(Object.keys(stored).length || active === "local" ? [{ value: "local", label: LOCAL_NAME }] : []),
+  return inOrder([...(Object.keys(stored).length || active === "local" ? [{ value: "local", label: LOCAL_NAME }] : []),
     ...mine.map((p) => ({ value: `arb:${p.id}`, label: p.name })),
-    ...Object.values(state.playlists).filter((p) => !listed.has(String(p.id))).map((p) => ({ value: `arb:${p.id}`, label: label(p) }))];
+    ...Object.values(state.playlists).filter((p) => !listed.has(String(p.id))).map((p) => ({ value: `arb:${p.id}`, label: label(p) }))]);
 }
 
 // Whether the active playlist plays: an arboretum playlist and a shipped one carry dwell times (design §3.6); your looks have none.
@@ -166,8 +169,7 @@ export function step(list, value, dir) {
   return list[(at + dir + list.length) % list.length].value;
 }
 
-// The order a step by hand walks the lists in: the shipped playlists in presets.js's order, park story first, then every other list
-// the dropdown holds (`lists`, its choices) in the dropdown's order, and the last shipped playlist, the experiments, last of all.
+// The order a step by hand walks the lists in: the stories' own (inOrder), whatever order `lists`, the dropdown's choices, come in.
 export function walk(lists) {
   const ship = shipLists().map((l) => l.value), last = ship[ship.length - 1];
   return [...ship.slice(0, -1), ...lists.map((l) => l.value).filter((v) => !ship.includes(v)), last];
@@ -573,9 +575,8 @@ export function listChoices(view, { me, stored, mirror, active = null }) {
   if (view.playlists.unc.items.length || !mine.size || active === "arb:unc") out.push({ value: "arb:unc", label: "uncategorized" });
   for (const l of folders) out.push({ value: `arb:${l.id}`, label: l.name });
   for (const p of Object.values(view.playlists)) if (p.id !== "unc" && !mine.has(String(p.id))) out.push({ value: `arb:${p.id}`, label: p.owner === me ? p.name : `${p.name} · ${p.owner}` });
-  out.push(...shipLists());
   if (browserNames(view, stored).length) out.push({ value: "local", label: "on this browser" });
-  return out;
+  return inOrder(out);
 }
 
 // ---- keeping the mirror in step with arboretum ----

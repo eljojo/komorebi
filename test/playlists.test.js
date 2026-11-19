@@ -279,23 +279,23 @@ test("entryName is the look's name: the ★'s, the built-in's, or the cloud item
 
 // ---- the playlists a visitor can pick, and what playing needs --------------------------
 
-test("playlists lists the shipped ones first, your looks only while it holds a ★ (or you are in it), then the cached arboretum playlists", () => {
+test("playlists lists the shipped ones first, your looks only while it holds a ★ (or you are in it), then the cached arboretum playlists, the experiments last", () => {
   expect(shipLists()).toEqual(Object.entries(builtins.PLAYLISTS).map(([k, p]) => ({ value: `ship:${k}`, label: p.name })));
   expect(playlists(EMPTY)).toEqual(shipLists());
-  expect(playlists(EMPTY, [], null, { stored: { x: {} } })).toEqual([...shipLists(), { value: "local", label: "your looks" }]);
-  expect(playlists(EMPTY, [], null, { active: "local" })).toEqual([...shipLists(), { value: "local", label: "your looks" }]);
+  expect(playlists(EMPTY, [], null, { stored: { x: {} } })).toEqual([...shipLists().slice(0, -1), { value: "local", label: "your looks" }, shipLists().at(-1)]);
+  expect(playlists(EMPTY, [], null, { active: "local" })).toEqual([...shipLists().slice(0, -1), { value: "local", label: "your looks" }, shipLists().at(-1)]);
   let s = cachePlaylist(EMPTY, apiList());
   s = cachePlaylist(s, apiList({ id: 8, name: "other" }));
-  expect(playlists(s)).toEqual([...shipLists(), { value: "arb:7", label: "mine" }, { value: "arb:8", label: "other" }]);
+  expect(playlists(s)).toEqual([...shipLists().slice(0, -1), { value: "arb:7", label: "mine" }, { value: "arb:8", label: "other" }, shipLists().at(-1)]);
 });
 
 test("playlists lists yours as arboretum names them, then the cached ones that are not among them", () => {
   let s = cachePlaylist(EMPTY, apiList({ name: "old name" }));
   s = cachePlaylist(s, apiList({ id: 8, name: "someone's" }));
   expect(playlists(s, [{ id: 9, name: "new" }, { id: 7, name: "mine now" }])).toEqual([
-    ...shipLists(), { value: "arb:9", label: "new" }, { value: "arb:7", label: "mine now" },
-    { value: "arb:8", label: "someone's" }]);
-  expect(playlists(EMPTY, [{ id: 3, name: "fresh" }])).toEqual([...shipLists(), { value: "arb:3", label: "fresh" }]);
+    ...shipLists().slice(0, -1), { value: "arb:9", label: "new" }, { value: "arb:7", label: "mine now" },
+    { value: "arb:8", label: "someone's" }, shipLists().at(-1)]);
+  expect(playlists(EMPTY, [{ id: 3, name: "fresh" }])).toEqual([...shipLists().slice(0, -1), { value: "arb:3", label: "fresh" }, shipLists().at(-1)]);
 });
 
 test("plays: a cached cloud playlist with something in it, and a shipped playlist, carry dwell times", () => {
@@ -807,10 +807,10 @@ test("playlists labels a cached playlist that is not yours with its owner, once 
   let s = cachePlaylist(EMPTY, apiList({ owner: "jo" }));
   s = cachePlaylist(s, apiList({ id: 8, name: "evening", owner: "ana" }));
   expect(playlists(s, [], "jo")).toEqual([
-    ...shipLists(), { value: "arb:7", label: "mine" }, { value: "arb:8", label: "evening · ana" }]);
+    ...shipLists().slice(0, -1), { value: "arb:7", label: "mine" }, { value: "arb:8", label: "evening · ana" }, shipLists().at(-1)]);
   const ships = shipLists().map((l) => l.label);
-  expect(playlists(s, [{ id: 7, name: "mine" }], "jo").map((l) => l.label)).toEqual([...ships, "mine", "evening · ana"]);
-  expect(playlists(s).map((l) => l.label)).toEqual([...ships, "mine", "evening"]);   // not signed in: names only, as before
+  expect(playlists(s, [{ id: 7, name: "mine" }], "jo").map((l) => l.label)).toEqual([...ships.slice(0, -1), "mine", "evening · ana", ships.at(-1)]);
+  expect(playlists(s).map((l) => l.label)).toEqual([...ships.slice(0, -1), "mine", "evening", ships.at(-1)]);   // not signed in: names only, as before
 });
 
 // ---- playing (design §3.6): the dwell starts when a look has arrived, the first look has no fade in ----------
@@ -1128,7 +1128,7 @@ test("a signed-in view excludes another account's mirror and waiting saves", () 
   const v = viewState(EMPTY, m, "bob");
   expect(v.playlists.unc.items).toEqual([]);
   expect(v.playlists[7]).toBeUndefined();
-  expect(listChoices(v, { me: "bob", stored: {}, mirror: m }).map((l) => l.value)).toEqual(["arb:unc", ...shipLists().map((l) => l.value)]);
+  expect(listChoices(v, { me: "bob", stored: {}, mirror: m }).map((l) => l.value)).toEqual([...shipLists().slice(0, -1).map((l) => l.value), "arb:unc", shipLists().at(-1).value]);
 });
 
 test("viewState signed in adds your playlists and the uncategorized list, dated by the last refresh", () => {
@@ -1159,31 +1159,31 @@ const labels = (c) => c.map((l) => `${l.value}=${l.label}`);
 test("signed out: the shipped playlists, your looks, then the cached playlists as before — the mirror is never offered", () => {
   const m = mirrorOf([preset(5, "e")], [{ id: 7, name: "evening", ids: [5] }]);
   const state = { ...EMPTY, playlists: { 3: { id: 3, name: "linked", owner: "ana", items: [] } } };
-  expect(labels(listChoices(viewState(state, m, null), { me: null, stored: { x: {} }, mirror: m }))).toEqual([...labels(shipLists()), "local=your looks", "arb:3=linked"]);
+  expect(labels(listChoices(viewState(state, m, null), { me: null, stored: { x: {} }, mirror: m }))).toEqual([...labels(shipLists()).slice(0, -1), "local=your looks", "arb:3=linked", labels(shipLists()).at(-1)]);
 });
 
 test("signed in: uncategorized, your playlists, the shipped playlists — and on this browser only while un-moved ★s exist", () => {
   const m = mirrorOf([preset(5, "e"), preset(4, "d")], [{ id: 8, name: "morning", ids: [4] }, { id: 7, name: "evening", ids: [] }]);
   const v = viewState(EMPTY, m, "jo");
-  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:unc=uncategorized", "arb:8=morning", "arb:7=evening", ...labels(shipLists())]);
-  expect(labels(listChoices(v, { me: "jo", stored: { x: {} }, mirror: m })).at(-1)).toBe("local=on this browser");
+  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual([...labels(shipLists()).slice(0, -1), "arb:unc=uncategorized", "arb:8=morning", "arb:7=evening", labels(shipLists()).at(-1)]);
+  expect(labels(listChoices(v, { me: "jo", stored: { x: {} }, mirror: m })).at(-2)).toBe("local=on this browser");   // the last of yours, before the experiments
   const synced = { ...EMPTY, origin: { x: { id: 5, version: 1, owner: "jo", synced: true } } };
-  expect(labels(listChoices(viewState(synced, m, "jo"), { me: "jo", stored: { x: {} }, mirror: m })).at(-1)).toBe(labels(shipLists()).at(-1));   // already in arboretum: not un-moved
+  expect(labels(listChoices(viewState(synced, m, "jo"), { me: "jo", stored: { x: {} }, mirror: m }))).not.toContain("local=on this browser");   // already in arboretum: not un-moved
 });
 
 test("uncategorized is hidden when it is empty and you have other folders — unless you are in it", () => {
   const m = mirrorOf([preset(4, "d")], [{ id: 8, name: "morning", ids: [4] }]);
   const v = viewState(EMPTY, m, "jo");
-  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:8=morning", ...labels(shipLists())]);
-  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m, active: "arb:unc" }))[0]).toBe("arb:unc=uncategorized");
+  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m }))).toEqual([...labels(shipLists()).slice(0, -1), "arb:8=morning", labels(shipLists()).at(-1)]);
+  expect(labels(listChoices(v, { me: "jo", stored: {}, mirror: m, active: "arb:unc" }))[shipLists().length - 1]).toBe("arb:unc=uncategorized");
   const none = mirrorOf([]);
-  expect(labels(listChoices(viewState(EMPTY, none, "jo"), { me: "jo", stored: {}, mirror: none }))).toEqual(["arb:unc=uncategorized", ...labels(shipLists())]);   // no folders at all: it always exists
+  expect(labels(listChoices(viewState(EMPTY, none, "jo"), { me: "jo", stored: {}, mirror: none }))).toEqual([...labels(shipLists()).slice(0, -1), "arb:unc=uncategorized", labels(shipLists()).at(-1)]);   // no folders at all: it always exists
 });
 
 test("signed in: a playlist cached from a link is listed after yours, with its owner", () => {
   const m = mirrorOf([preset(5, "e")], [{ id: 8, name: "morning", ids: [] }]);
   const state = { ...EMPTY, playlists: { 3: { id: 3, name: "linked", owner: "ana", items: [] } } };
-  expect(labels(listChoices(viewState(state, m, "jo"), { me: "jo", stored: {}, mirror: m }))).toEqual(["arb:unc=uncategorized", "arb:8=morning", "arb:3=linked · ana", ...labels(shipLists())]);
+  expect(labels(listChoices(viewState(state, m, "jo"), { me: "jo", stored: {}, mirror: m }))).toEqual([...labels(shipLists()).slice(0, -1), "arb:unc=uncategorized", "arb:8=morning", "arb:3=linked · ana", labels(shipLists()).at(-1)]);
 });
 
 test("isFolder: a playlist of yours that can be written to, not uncategorized, not someone else's", () => {

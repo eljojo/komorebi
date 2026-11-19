@@ -25,6 +25,8 @@ import { DEFAULTS, migrateLegacy } from '../engine/komorebi-params.js';
 import { EXPERIMENTAL, PLAYLISTS, PRESETS, PRIORITY } from '../presets.js';
 // the shipped playlists as the playlist select lists them; the first, the story, is where a first visit lands
 const SHIPS = Object.entries(PLAYLISTS).map(([k, l]) => ({ value: `ship:${k}`, label: l.name })), SHIP_LABELS = SHIPS.map((l) => l.label).join();
+// the stories with a person's own lists among them: the shipped ones first, theirs, and the experiments last (playlists.js inOrder)
+const withLists = (...yours) => [...SHIPS.slice(0, -1).map((l) => l.label), ...yours, SHIPS.at(-1).label].join();
 const STORY = SHIPS[0].value, STORY_LOOKS = Object.values(PLAYLISTS)[0].items.map((it) => (typeof it === 'string' ? it : it.look));
 // the dials a surface holds on a look: the look's PRIORITY first, then the surface's usual ones, up to its count (editor.js tryNames;
 // every look these checks visit can use each dial it names)
@@ -1223,7 +1225,7 @@ try {
     const sel2 = () => page2.$eval('#dev select', (s) => ({ value: s.value, opts: [...s.options].map((o) => o.textContent) }));
     const first = await sel2();
     check('a cached cloud playlist lists its items by name and opens on the first', first.opts.join() === 'one,two' && first.value === '0', JSON.stringify(first));
-    check('the stories list every playlist, on the active one', (await LISTS.opts(page2)).join() === `${SHIP_LABELS},k2 list` && (await LISTS.value(page2)) === 'arb:7');
+    check('the stories list every playlist, on the active one', (await LISTS.opts(page2)).join() === withLists('k2 list') && (await LISTS.value(page2)) === 'arb:7');
     const vis = await page2.evaluate(() => Object.fromEntries(['play', 'dev', 'strip'].map((id) => [id, [...document.querySelectorAll(`#${id} .playstop`)].map((b) => getComputedStyle(b).display !== 'none')])));
     check('the ▶ shows in the sidebar and the advanced rows, not in zen', [vis.play, vis.dev].every((v) => v.length === 1 && v[0]) && vis.strip.length === 0, JSON.stringify(vis));
     await page2.waitForTimeout(800);
@@ -1234,7 +1236,7 @@ try {
     await page2.$eval('#play .preset .name', (b) => b.click());
     const stories = await page2.evaluate(() => { const d = document.querySelector('dialog.stories');
       return { open: d.open, stories: [...d.querySelectorAll('.story')].map((b) => b.textContent + (b.classList.contains('on') ? '*' : '')).join(), looks: [...d.querySelectorAll('.story-looks button')].map((b) => b.textContent + (b.classList.contains('on') ? '*' : '')).join() }; });
-    check('the sidebar\'s title opens the stories: every list, the one you are in lit and open on its looks', stories.open && stories.stories === `${SHIP_LABELS},k2 list*` && stories.looks === 'one,two*', JSON.stringify(stories));
+    check('the sidebar\'s title opens the stories: every list, the one you are in lit and open on its looks', stories.open && stories.stories === withLists('k2 list*') && stories.looks === 'one,two*', JSON.stringify(stories));
     const box = await page2.$eval('dialog.stories h2', (h) => { const r = h.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
     await page2.mouse.click(box.x, box.y);              // inside, on its heading
     const inside = await page2.$eval('dialog.stories', (d) => d.open);
@@ -1440,7 +1442,7 @@ try {
     await until(() => shown4('#sessionSettings .arb-cta'));
     check('in the playful sidebar and the zen strip, arboretum is asked nothing but /api/health (and /api/me once the advanced panel opens)', seen.every((c) => c.path === '/api/health' || c.path === '/api/me'), seen.map((c) => c.path).join());
     check('signed out it is local only: the shipped playlists and your looks, which lists the two ★ looks, and there is no notice, no chips, no +, no folders',
-      (await opts4(1)).join() === `${SHIP_LABELS},your looks` && (await opts4(0)).join() === '★ local one,★ local two' && !(await moveBox4())
+      (await opts4(1)).join() === withLists('your looks') && (await opts4(0)).join() === '★ local one,★ local two' && !(await moveBox4())
       && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button[title="new playlist"]')) && (await text4('#sessionSettings .arb-who')) === '' && (await text4('#sessionSettings .arb-cta')) === 'keep your looks in arboretum ↗');
     await closeSettings4();
     await goList4(SHIPS[0].label, STORY);
@@ -1464,7 +1466,7 @@ try {
     await focus4();
     await until(async () => (await text4('#sessionSettings .arb-who')) === 'arboretum · jo' && (await moveBox4()) !== null);
     check('signed in, Settings reads "arboretum · jo" and a notice offers to move the 2 ★ looks, private', (await text4('#sessionSettings .arb-who')) === 'arboretum · jo' && JSON.stringify(await moveBox4()) === JSON.stringify({ text: "move your 2 looks into arboretum? they'll be private", buttons: ['move', 'not now'] }), JSON.stringify(await moveBox4()));
-    check('the lists are uncategorized, your folders in arboretum\'s order, the shipped playlists, and on this browser (the ★ looks are not moved yet)', (await opts4(1)).join() === `uncategorized,morning,evening,${SHIP_LABELS},on this browser`, (await opts4(1)).join());
+    check('the lists are the shipped playlists, then uncategorized, your folders in arboretum\'s order and on this browser (the ★ looks are not moved yet), the experiments last', (await opts4(1)).join() === withLists('uncategorized', 'morning', 'evening', 'on this browser'), (await opts4(1)).join());
     check('and no your looks, and no ☁ rows', !(await opts4(1)).includes('your looks') && (await opts4(0)).every((t) => !t.includes('☁')), (await opts4(0)).join());
     check('the mirror holds what is mine (dusk, dawn) and both playlists, fetched by version: each preset once', JSON.stringify((await mirror4()).order) === '[21,5]' && (await mirror4()).playlists.map((l) => l.id).join() === '8,7' && calls(/^GET \/api\/presets\/(21|5)$/).length === 2 && calls(/^GET \/api\/presets\/6$/).length === 0, JSON.stringify(await mirror4()).slice(0, 160));
     check('with a + in the look box, for a new playlist', await shown4('#dev .playlist-row button[title="new playlist"]'));
