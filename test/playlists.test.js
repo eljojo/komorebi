@@ -809,6 +809,21 @@ test("the look play starts on is simply there: it holds its dwell with no crossf
   expect(log.advanced).toBe(1);
 });
 
+test("started now (▶), play steps to the next look at once, and that look holds its dwell once it has arrived", () => {
+  const { p, c, log } = playerOn();
+  p.start("0", { now: true });
+  expect(p.playing).toBe(true);
+  expect(log.advanced).toBe(1);     // no wait on the look ▶ was pressed on
+  expect(log.changed).toBe(1);
+  p.leaving();
+  expect(c.pending()).toBe(0);
+  p.arrived("1");
+  c.advance(2999);
+  expect(log.advanced).toBe(1);
+  c.advance(1);
+  expect(log.advanced).toBe(2);
+});
+
 test("a look's dwell starts when it has arrived, not before: nothing is pending while it fades in", () => {
   const { p, c, log } = playerOn();
   p.start("0");

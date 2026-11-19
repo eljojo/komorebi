@@ -784,14 +784,15 @@ function depthControl(){
 function syncDepth(){ for(const d of depthEls) for(const b of d.children) b.classList.toggle('on', b.dataset.depth===depthNow()); }
 // ▶/■ shows only while the active playlist carries dwell times (a shipped or cloud playlist); your looks have none. Playing
 // (playlists.js makePlayer) holds each look for its dwell and then steps to the next, which fades in over its own
-// crossfade; the dwell starts once that look has arrived (goTo), and the look play starts on has no fade in.
+// crossfade; the dwell starts once that look has arrived (goTo). ▶ steps to the next look at once: pressing it never waits out the
+// look it was pressed on.
 const playBtns=[];
 const player=makePlayer({ timing:(value)=>timing(stateNow(), activeList(), value), advance:()=>stepPreset(1), onChange:()=>syncPlayButtons() });
 // An edit of the look is yours to hear out: play never fights it, it stops.
 const stopPlay=()=>player.stop();
 function playButton(){
   const b=document.createElement('button'); b.className='playstop ico';
-  b.addEventListener('click',()=>{ if(player.playing) player.stop(); else player.start(presetSel.value); });
+  b.addEventListener('click',()=>{ if(player.playing) player.stop(); else player.start(presetSel.value, { now:true }); });
   playBtns.push(b);
   return b;
 }
@@ -2066,7 +2067,7 @@ midi = mountMidi({
   transActive: () => eng.trans.active,
   getTransDur: () => transDur, setTransDur: (v) => { transDur = v; },
   playing: () => player.playing,
-  togglePlay: () => { if(!plays(stateNow(), activeList())) return; if(player.playing) player.stop(); else player.start(presetSel.value); },
+  togglePlay: () => { if(!plays(stateNow(), activeList())) return; if(player.playing) player.stop(); else player.start(presetSel.value, { now:true }); },
 });
 
 // ---- the remote control (remote.js): a phone signed in as you drives this editor through what it lends here, and nothing else.
@@ -2148,7 +2149,7 @@ function remoteRun(c){
     case 'step': stepPreset(c.dir); return;
     case 'go': if(listed(c.value) && c.value!==presetSel.value) goTo(c.value); return;
     case 'list': if(c.value!==activeList() && listChoicesNow().some((l)=>l.value===c.value)){ if(arb) arb.activate(c.value); else setActive(c.value); } return;
-    case 'play': if(!plays(stateNow(), activeList())) return; if(c.on && !player.playing) player.start(presetSel.value); else if(!c.on) player.stop(); return;
+    case 'play': if(!plays(stateNow(), activeList())) return; if(c.on && !player.playing) player.start(presetSel.value, { now:true }); else if(!c.on) player.stop(); return;
     case 'trans': transDur=c.v; transSync(); return;
     case 'asItWas': tryAsItWas(); return;
     case 'reseed': reseed(); return;

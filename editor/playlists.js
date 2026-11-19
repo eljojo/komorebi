@@ -456,7 +456,8 @@ export function linkPlaylist(state, view, k) {
 // ---- playing (design §3.6) ----------------------------------------------------------------------------------------
 // A cloud playlist plays: each look is held for its `dwell_s`, then the next arrives over its own `crossfade_s`, by its own `style` ('morph' or 'fade'; `timing` hands both to the editor's step).
 // The dwell starts when a look has finished fading in, so a long crossfade never eats the time a look is meant to be
-// seen (José's call; arboretum's own player does the same). The look play starts on is simply there: no fade in.
+// seen (José's call; arboretum's own player does the same). Started `now` (▶), play steps to the next look at once; otherwise
+// (a link that opens playing) the look play starts on is simply there, no fade in, and holds its dwell.
 // The editor owns the engine: `advance` is its step to the next look; it calls `leaving` as that step begins and
 // `arrived` when the look has landed — also when a look is put there by hand, which restarts the dwell. Timers are
 // injectable so the schedule can be tested without waiting.
@@ -470,7 +471,7 @@ export function makePlayer({ timing, advance, onChange, setTimer = setTimeout, c
   };
   return {
     get playing() { return on; },
-    start(value) { if (on) return; on = true; arrived(value); onChange?.(); },
+    start(value, { now = false } = {}) { if (on) return; on = true; onChange?.(); if (now) advance(); else arrived(value); },
     stop() { if (!on) return; on = false; idle(); onChange?.(); },
     leaving: idle,
     arrived,
