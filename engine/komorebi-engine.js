@@ -632,8 +632,11 @@ function createEngine(canvas, opts, driven=false){
     seasonTravel:makeSeasonTravel(hub),
     litterRise:makeLitterRise(hub,(look)=>{
       const source=createScene(look,!look);   // an ascent's source is the look on screen: it takes this engine's grove, which transitionTo regrows as the target right after
-      source.hub.perf.auto=perf.auto;source.hub.perf.quality=perf.quality;
-      source.hub.applyQuality();source.hub.regenSource();source.hub.bake();
+      const sourcePerf=source.hub.perf;
+      if(sourcePerf.auto!==perf.auto || sourcePerf.quality!==perf.quality){
+        sourcePerf.auto=perf.auto;sourcePerf.quality=perf.quality;
+        source.hub.applyQuality();source.hub.regenSource();source.hub.bake();
+      }
       if(look)source.restore=()=>{
         for(const k in DEFAULTS)params[k]=look[k];
         rebuildTextures();adoptGrove(source.hub);regenSource();copyMotion(source.hub,hub);resetPerf();   // the source grew the landed look's grove: it is handed over, not grown again; the route's landing bakes

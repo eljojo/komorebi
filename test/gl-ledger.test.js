@@ -254,6 +254,13 @@ scenario("a scene fade's start bakes the outgoing scene once, and the incoming l
   expect(bakes(R, () => start(R, FADE, "sceneFade", { style: "fade" }))).toBe(2);
   R.land();
 });
+scenario("a layered shadow rise bakes each endpoint once at the host's quality", { ...PRESETS.shrooms, ...tune }, (R) => {
+  const before = R.L.layerDraws();
+  start(R, { ...PRESETS["look up"], ...tune }, "litterRise");
+  expect(R.eng.trans.shadowRise).toBe(true);
+  expect(R.L.layerDraws() - before).toBe(6);
+  R.land();
+});
 const MANUAL_DRIFT = { ...LAYERED, wind_strength: 0, drift_amount: 0.3, drift_phase: 0 };
 for (const [key, value] of [["drift_phase", 2.2], ["drift_amount", 0.08], ["edge_softness", 0.8]]) {
   scenario(`a still layer morph of ${key} refreshes the cast on the same grove`, MANUAL_DRIFT, (R) => {
