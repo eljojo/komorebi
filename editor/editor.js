@@ -2,7 +2,7 @@ import { create, DEG, PARAMS, DEFAULTS, CAMERAS, cameraFor, FIDELITY_KEYS, resol
 import { mountSettings } from './editor-settings.js';
 import { PRIORITY, TREE_SPECIES } from '../presets.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
-import { entries, resolve, stepOn, starValue, starName, entryName, lookState, lookChanges, LOOK_KEYS, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf, STORY } from './playlists.js';
+import { entries, resolve, step, stepOn, starValue, starName, entryName, lookState, lookChanges, LOOK_KEYS, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf, STORY } from './playlists.js';
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep } from '../macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { makeTreePane } from './tree-pane.js';
@@ -791,7 +791,7 @@ function syncDepth(){ for(const d of depthEls) for(const b of d.children) b.clas
 // crossfade; the dwell starts once that look has arrived (goTo). ▶ steps to the next look at once: pressing it never waits out the
 // look it was pressed on.
 const playBtns=[];
-const player=makePlayer({ timing:(value)=>timing(stateNow(), activeList(), value), advance:()=>stepPreset(1), onChange:()=>syncPlayButtons() });
+const player=makePlayer({ timing:(value)=>timing(stateNow(), activeList(), value), advance:playStep, onChange:()=>syncPlayButtons() });
 // An edit of the look is yours to hear out: play never fights it, it stops.
 const stopPlay=()=>player.stop();
 function playButton(){
@@ -1976,9 +1976,14 @@ function showLookName(){
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
 function stepPreset(dir){
-  const next=stepOn(stateNow(), getStored(), activeList(), presetSel.value, dir, !!arb?.signedIn());   // wraps at the ends, or goes on to the list a shipped one names
-  if(next.active!==activeList()){ settings.playlist=next.active; saveSettings(); }   // on into the next list: playing, it keeps playing
-  if(next.value!==undefined) goTo(next.value);
+  const next=stepOn(stateNow(), getStored(), activeList(), presetSel.value, dir, !!arb?.signedIn(), listChoicesNow());   // past a list's end, on into the next list of the walk
+  if(next.active!==activeList()){ settings.playlist=next.active; saveSettings(); }   // playing, it keeps playing, round the list it stepped into
+  if(next.value!==undefined && next.value!==presetSel.value) goTo(next.value);   // at either end of the walk the look stays
+}
+// Play's step: the active list's next look, round to its first after its last; play never leaves its list
+function playStep(){
+  const value=step(listEntries(), presetSel.value, 1);
+  if(value!==undefined) goTo(value);
 }
 
 // T = toggle the 3D tree-grove preview inset (independent of the dev panel)

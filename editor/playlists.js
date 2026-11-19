@@ -166,16 +166,26 @@ export function step(list, value, dir) {
   return list[(at + dir + list.length) % list.length].value;
 }
 
-// The step the arrows take: the next or previous entry of the active list, wrapping; but forward past the last look of a shipped
-// list that names the one that follows it (presets.js PLAYLISTS `next`), on to that list's first look.
-export function stepOn(state, stored, active, value, dir, signedIn = false) {
-  const list = entries(state, stored, active, signedIn);
-  const after = dir > 0 && shipId(active) !== null ? BUILTINS.PLAYLISTS[shipId(active)].next : undefined;
-  if (after !== undefined && Object.hasOwn(BUILTINS.PLAYLISTS, after) && list.length && list[list.length - 1].value === value) {
-    const next = `ship:${after}`;
-    return { active: next, value: entries(state, stored, next, signedIn)[0]?.value };
+// The order a step by hand walks the lists in: the shipped playlists in presets.js's order, park story first, then every other list
+// the dropdown holds (`lists`, its choices) in the dropdown's order, and the last shipped playlist, the experiments, last of all.
+export function walk(lists) {
+  const ship = shipLists().map((l) => l.value), last = ship[ship.length - 1];
+  return [...ship.slice(0, -1), ...lists.map((l) => l.value).filter((v) => !ship.includes(v)), last];
+}
+
+// The step a hand takes (the arrows, the swipe, ‹ ›, the remote's and the MIDImix's): the next or previous entry of the active
+// list; past its last look, on to the first look of the next list of `walk(lists)` that has one, and back past its first look to
+// the last look of the one before. The walk has two ends that hold: back from park story's first look and on from the
+// experiments' last stay where they are. A list that is not in the walk wraps. Play never comes here: it loops its own list (step).
+export function stepOn(state, stored, active, value, dir, signedIn = false, lists = []) {
+  const list = entries(state, stored, active, signedIn), order = walk(lists), at = order.indexOf(active);
+  const i = Math.max(0, list.findIndex((e) => e.value === value)) + dir;
+  if (at < 0 || (i >= 0 && i < list.length)) return { active, value: step(list, value, dir) };
+  for (let j = at + dir; j >= 0 && j < order.length; j += dir) {
+    const there = entries(state, stored, order[j], signedIn);
+    if (there.length) return { active: order[j], value: there[dir > 0 ? 0 : there.length - 1].value };
   }
-  return { active, value: step(list, value, dir) };
+  return { active, value: list.length ? list[i < 0 ? 0 : list.length - 1].value : undefined };
 }
 
 // ---- the built-in guard (design §3.8) ----------------------------------------------

@@ -3,7 +3,7 @@ import { test, expect, beforeEach } from "bun:test";
 import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted,
   uploadPlan, itemsAfter, itemTarget, playlists, plays, timing, starValue, starName, entryName,
-  fromEntry, onlineId, STORY, shipLists, stepOn, placeChange, sameLook, lookChanges, lookState, playlistChips,
+  fromEntry, onlineId, STORY, shipLists, stepOn, walk, placeChange, sameLook, lookChanges, lookState, playlistChips,
   emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, saveNewPlan, isFolder, fromVersion, linkPlaylist, makePlayer, selectionAfter } from "../editor/playlists.js";
 import * as builtins from "../presets.js";
 import { DEFAULTS, cameraFor } from "../komorebi.js";
@@ -205,16 +205,35 @@ test("step goes to the next or previous value and wraps at the ends", () => {
   expect(step(e, "b", -1)).toBe("a");
 });
 
-test("stepOn: past the last look of a list that names its next, a step goes on to that list's first look; otherwise it wraps", () => {
-  const story = builtins.PLAYLISTS.story, shadows = builtins.PLAYLISTS.shadows;
-  const last = (l) => { const it = l.items[l.items.length - 1]; return typeof it === "string" ? it : it.look; };
-  const first = (l) => { const it = l.items[0]; return typeof it === "string" ? it : it.look; };
-  expect(story.next).toBe("shadows");
-  expect(stepOn(EMPTY, {}, STORY, last(story), 1)).toEqual({ active: "ship:shadows", value: first(shadows) });
-  expect(stepOn(EMPTY, {}, STORY, first(story), 1)).toEqual({ active: STORY, value: story.items[1] });
-  expect(stepOn(EMPTY, {}, STORY, first(story), -1)).toEqual({ active: STORY, value: last(story) });   // back from the first still wraps
-  expect(stepOn(EMPTY, {}, "ship:shadows", last(shadows), 1)).toEqual({ active: "ship:shadows", value: first(shadows) });   // shadows names none: it wraps
-  expect(stepOn(EMPTY, { x: {}, y: {} }, "local", "y", 1)).toEqual({ active: "local", value: "x" });   // your looks wrap
+test("walk: park story first, the shipped lists in their order, then the person's own in the dropdown's, the experiments last", () => {
+  const state = cloud([{ name: "one", params: {} }]), stored = { x: {} };
+  const ship = Object.keys(builtins.PLAYLISTS).map((k) => `ship:${k}`);
+  expect(ship[0]).toBe(STORY);
+  expect(ship.slice(0, 2)).toEqual(["ship:story", "ship:shadows"]);
+  expect(ship.at(-1)).toBe("ship:experiments");
+  expect(walk(playlists(state, [], null, { stored }))).toEqual([...ship.slice(0, -1), "local", "arb:7", "ship:experiments"]);
+  expect(walk(shipLists())).toEqual(ship);
+});
+
+test("stepOn: by hand, past a list's end on into the next list of the walk and back into the one before; the walk's two ends hold", () => {
+  const state = cloud([{ name: "one", params: {} }, { name: "two", params: {} }]), stored = { x: {}, y: {} };
+  const lists = playlists(state, [], null, { stored });
+  const looks = (k) => builtins.PLAYLISTS[k].items.map((it) => (typeof it === "string" ? it : it.look));
+  const on = (active, value, dir) => stepOn(state, stored, active, value, dir, false, lists);
+  const [story, shadows, rainbow, experiments] = ["story", "shadows", "rainbow", "experiments"].map(looks);
+  expect(on(STORY, story[0], 1)).toEqual({ active: STORY, value: story[1] });
+  expect(on(STORY, story.at(-1), 1)).toEqual({ active: "ship:shadows", value: shadows[0] });
+  expect(on("ship:shadows", shadows[0], -1)).toEqual({ active: STORY, value: story.at(-1) });
+  expect(on("ship:shadows", shadows.at(-1), 1)).toEqual({ active: "ship:rainbow", value: rainbow[0] });
+  expect(on("ship:rainbow", rainbow.at(-1), 1)).toEqual({ active: "local", value: "x" });   // then the person's own, in the dropdown's order
+  expect(on("local", "y", 1)).toEqual({ active: "arb:7", value: "0" });
+  expect(on("arb:7", "1", 1)).toEqual({ active: "ship:experiments", value: experiments[0] });   // the experiments last
+  expect(on("ship:experiments", experiments[0], -1)).toEqual({ active: "arb:7", value: "1" });
+  expect(on(STORY, story[0], -1)).toEqual({ active: STORY, value: story[0] });   // back from park story's first look: it stays
+  expect(on("ship:experiments", experiments.at(-1), 1)).toEqual({ active: "ship:experiments", value: experiments.at(-1) });   // on from the last: it stays
+  // a list with nothing in it is passed over
+  const bare = playlists(EMPTY, [], null, { stored: {} });
+  expect(stepOn(EMPTY, {}, "ship:rainbow", rainbow.at(-1), 1, false, bare)).toEqual({ active: "ship:experiments", value: experiments[0] });
 });
 
 test("step from a value that is not listed starts from the first entry; an empty list has no step", () => {
