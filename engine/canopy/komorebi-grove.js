@@ -63,6 +63,10 @@ export function growAs(params, look, build){
   for(const k of GROWN_KEYS){ saved[k] = params[k]; params[k] = look[k]; }
   try { return build(); } finally { for(const k of GROWN_KEYS) params[k] = saved[k]; }
 }
+// The span of ground the trees are spaced across, as the build fills it: the look's reach (its view's extent where it names none), at least
+// 0.5 m and capped inside the bake. Past the cap a reach moves nothing, so two looks whose reaches differ there grow the same grove, and a
+// route asks this, not the reach, whether the grove changes.
+export const groveFill = (params) => Math.min(params.canopy_extent_m*0.46, Math.max(0.5, params.grove_reach_m > 0 ? params.grove_reach_m : params.view_extent_m));
 export const seasonKey = (params, faithful) => `${GROVE_READS.map(k => params[k]).join('|')}|${faithful ? 1 : 0}`;
 // Density can reuse a prefix only without population-dependent pigment, drop or outline work. It remains a structural key for ordinary re-seasoning.
 export const densityEligible = P => !senescing(P) && !(FEAT_SPRING && springing(P)) && P.leaf_drop === 0 && P.leaf_variety === 0;
@@ -355,7 +359,7 @@ export function makeGrove(hub){
     // look's reach; a look that names none (0) takes the view's extent as it stands at this build, so its grove fills the frame it loads in.
     // The grove keeps what it was grown for (grove.reach): the engine names it for the look once the view has moved (holdReach).
     const reach = params.grove_reach_m > 0 ? params.grove_reach_m : params.view_extent_m;
-    const Rfill = Math.min(E*0.46, Math.max(0.5, reach));
+    const Rfill = groveFill(params);
     // crown radius. PARK model: tied to the view so crowns fill the frame. STANDING scene (spec/model/transport.md): a natural,
     // fixed fraction of the bake extent instead — so a single tree's crown fits the texture (the view-tied size
     // overflows and clips it) and the tree reads as a discrete object, not a frame-filling canopy.

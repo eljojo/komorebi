@@ -16,7 +16,7 @@ import { ANGLE_SET, BLOOM_MAX, LIT_GROUND_DIP, LIT_GROUND_HOLD, CANOPY_KEYS, CAN
 import {seasonTravelEligible} from './komorebi-season-travel.js';
 import {litterRiseEligible,litterFallEligible,shadowRiseEligible,shadowFallEligible} from './komorebi-litter-rise.js';
 import {groveTravelEligible} from './komorebi-grove-travel.js';
-import {densityEligible, densityKey, densityCount} from '../canopy/komorebi-grove.js';
+import {densityEligible, densityKey, densityCount, groveFill} from '../canopy/komorebi-grove.js';
 import {moonX} from '../light/komorebi-source.js';
 import {routeHeights} from '../transport/komorebi-cast.js';
 
@@ -88,7 +88,9 @@ export function makeTransitions(hub){
     // outgoing scene or the half-faded grove would be dropped. Such a selection waits, as it does on a travel route.
     if(trans.active && (trans.crossfade && !trans.swapped && hub.crossW>0
         || trans.route?.name==='sceneFade' && (MODE_KEYS.some(k => to[k]!==params[k]) || !faithfulOn() || !to.faithful_canopy))){ wait(to, opts); return; }
-    const seasonTravel=!styleFade&&!trans.active&&castOwned&&seasonTravelEligible(params,to);
+    // A seen tree at one end only rides the season travel and fades across it, drawn from the cast's records on their twigs (komorebi-tree-view.js):
+    // out over the first half, in over the second, never held through.
+    const seasonTravel=!styleFade&&!trans.active&&(castOwned||seesTree(params)!==seesTree(to))&&seasonTravelEligible(params,to);
     const retarget=trans.active&&trans.route?.name==='leafTravel';
     const turnScale=retarget&&trans.route.retarget(to,opts);   // a reversal's clock, scaled to the distance it has left
     if(retarget&&!turnScale)return;
@@ -139,11 +141,12 @@ export function makeTransitions(hub){
     // casts the other look's skeleton (an overhead trunk becomes a dot with radial limbs).
     trans.woodFade = modeDiff && ((params.branch_tau > 0) !== (to.branch_tau > 0));
     // THE REACH (grove_reach_m) is not tweened by name: 0 stands for the view, so a look and its zoomed copy are one grove under two values. Where either
-    // end names one, the route goes by the reach each end GROWS for: equal, and only the camera moves; different, and the grove is regrown along it like a
-    // canopy key (tickTransition). Two looks that both follow their view are left as they were: a regrow in flight reads the tweening view.
+    // end names one, the route goes by the span each end's trees are GROWN across (groveFill, the reach capped inside the bake): equal, and only the camera
+    // moves, however far apart the two reaches are past the cap; different, and the grove is regrown along the reach like a canopy key (tickTransition).
+    // Two looks that both follow their view are left as they were: a regrow in flight reads the tweening view.
     const reachOf = p => p.grove_reach_m > 0 ? p.grove_reach_m : p.view_extent_m;
     trans.reach = params.grove_reach_m > 0 || to.grove_reach_m > 0 ? [reachOf(params), reachOf(to)] : null;
-    const canopyDiff = CANOPY_KEYS.some(k => to[k]!==params[k]) || !!trans.reach && trans.reach[0]!==trans.reach[1];   // branch/leaf knobs differ, or the reach they grow for
+    const canopyDiff = CANOPY_KEYS.some(k => to[k]!==params[k]) || !!trans.reach && groveFill(params)!==groveFill(to);   // branch/leaf knobs differ, or the span they grow across
     const leafCount  = hub.layerVAO.reduce((s,L)=>s+L.count, 0);       // current grove size
     const leavesFrom=hub.hier?.nLeaf??Math.ceil(params.leaves_per_cluster*params.foliage_density),leavesTo=Math.ceil(to.leaves_per_cluster*to.foliage_density);
     const targetClusters=Math.ceil(Math.max(1,to.tree_count))*to.limb_count*Math.max(1,to.branch_children)**Math.max(0,to.branch_levels-1);

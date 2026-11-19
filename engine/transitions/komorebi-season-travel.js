@@ -8,6 +8,7 @@ import {litterAlbedo,litterAge,litterLanding} from '../season/komorebi-litter.js
 import {makeBake} from '../transport/komorebi-bake.js';
 import {makeSource} from '../light/komorebi-source.js';
 import {makeCast} from '../transport/komorebi-cast.js';
+import {groveFill} from '../canopy/komorebi-grove.js';
 import {VS_SEASON_TRAVEL,FS_FAITH} from '../transport/komorebi-shaders.js';
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
@@ -16,6 +17,8 @@ const LOOK_KEYS=['canopy_fill','leaf_diffuse','leaf_wetness','ground_r','ground_
 // Re-season can recolour a leaf, but the flight route still requires the same authored summer tint.
 const SEASON_ROUTE_KEYS=new Set([...SEASON_KEYS.filter(k=>!['trans_r','trans_g','trans_b'].includes(k)),...CAMERA_KEYS,'drop_after_turn','litter','litter_age','litter_drift_m',
   ...LOOK_KEYS,'sample_count','bake_resolution','drift_phase','auto_quality','adaptive_motion','adaptive_idle_fps','show_source','show_layer','show_layer_index','tree_species']);
+
+const GROVE_SPAN_KEYS=new Set(['grove_reach_m','tree_view']);   // what may differ across the flight besides the route's own keys (seasonTravelEligible)
 
 export const flightProgress=(season,identity)=>smoothstep(0,1,(season-(.04+.26*identity))/.65);
 
@@ -35,7 +38,9 @@ export const seasonTravelEligible=FEAT_LITTER ? (a,b)=>{
   if(springing(a)||springing(b))return false;   // the flight carries every leaf at its grown size at both ends; a leaf still coming out is neither, so a spring pair takes another route
   const fallenA=a.litter>0&&a.leaf_drop>0,fallenB=b.litter>0&&b.leaf_drop>0;
   const supported=fallenA&&(fallenB||b.litter===0&&b.leaf_drop===0)||fallenB&&a.litter===0&&a.leaf_drop===0;
-  if(!supported||Object.keys(DEFAULTS).some(k=>!SEASON_ROUTE_KEYS.has(k)&&a[k]!==b[k]))return false;
+  // One grove carries the whole flight: the reach may differ where the trees are grown across the same span (groveFill), and the seen tree
+  // fades across the route (komorebi-transitions.js, treeFade) while its leaves turn and fall.
+  if(!supported||groveFill(a)!==groveFill(b)||Object.keys(DEFAULTS).some(k=>!SEASON_ROUTE_KEYS.has(k)&&!GROVE_SPAN_KEYS.has(k)&&a[k]!==b[k]))return false;
   const leaves=Math.ceil(Math.max(1,a.tree_count))*a.limb_count*Math.max(1,a.branch_children)**Math.max(0,a.branch_levels-1)*Math.ceil(a.leaves_per_cluster*a.foliage_density);
   return a.leaf_size_m>0&&leaves>0&&leaves<=CANOPY_MORPH_MAX;
 }:()=>false;

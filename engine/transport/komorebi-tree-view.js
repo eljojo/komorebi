@@ -62,8 +62,10 @@ export function makeTreeView(hub){
 
   // Wanted: the look opens it, its tree stands in the scene and is cast faithfully, the floor camera is the one drawing, and no route owns the cast this frame
   // (the season's, the leaves' and the litter's travels draw their own leaves, and the viewpoint route moves the camera: the tree comes and goes under the fade).
+  // The one exception is a tree fading across the season travel: it is drawn from the cast's records on their twigs, turning with them, while it fades.
+  const fadingOverSeason = () => trans.treeFade && trans.route?.name === 'seasonTravel';
   const wanted = () => !!params.tree_view && !!params.standing_scene && faithfulOn() && cameraFor(params) === 'floor' && faith.count > 0 && !!faith.sideBuf
-    && !(trans.active && (trans.castHeld || trans.travelField || trans.riseField || trans.viewpoint));
+    && !(trans.active && (trans.castHeld || trans.travelField || trans.riseField || trans.viewpoint) && !fadingOverSeason());
 
   function compile(){
     if(progLeaf) return;

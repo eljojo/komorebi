@@ -384,6 +384,40 @@ test('cherry blossom ↔ park 2 follows one seasonal grove without a scene disso
   }
 });
 
+test('park1 inside2 ↔ park fall turns one grove through the season while the seen tree fades, the reach past the bake\'s cap moving nothing',()=>{
+  const inside=PRESETS['park1 inside2'],fall=PRESETS['park fall'];
+  expect(inside.grove_reach_m).not.toBe(fall.grove_reach_m);   // two reaches as written, one span grown (groveFill)
+  for(const [from,to] of [[inside,fall],[fall,inside]]){
+    const r=transitionRig(from);let began=0;
+    Object.assign(r.hub.routes.seasonTravel,{begin:()=>began++,step:()=>{},finish:()=>null,end:()=>{}});
+    r.transitionTo(to,{duration:1});
+    expect(r.hub.trans.route?.name,'the season travel, not a dissolve').toBe('seasonTravel');
+    expect(began).toBe(1);
+    expect(r.hub.trans.treeFade,'the seen tree fades').toBe(true);
+    const shown=[];
+    while(r.hub.trans.active){ shown.push(r.hub.trans.treeOpacity); r.tickTransition(1/60); }
+    expect(shown[0]).toBe(from.tree_view?1:0);
+    expect(shown.some(o=>o>0&&o<1),'through every opacity, not a switch').toBe(true);
+    for(let i=1;i<shown.length;i++) expect(from.tree_view?shown[i]<=shown[i-1]:shown[i]>=shown[i-1],`step ${i}`).toBe(true);
+    expect(r.swaps,'no grove rebuilt').toHaveLength(0);
+    for(const k in DEFAULTS)expect(r.params[k],k).toBe(k==='drift_phase'?r.params[k]:to[k]);
+  }
+});
+
+test('the park story\'s standing looks move only the camera between them: their reaches differ past the bake\'s cap, which grows one grove',()=>{
+  const story=['park 1, the scene','park 1, under the trees','park1 inside2'];
+  for(const a of story)for(const b of story){
+    if(a===b)continue;
+    const r=transitionRig(PRESETS[a]);
+    r.transitionTo(PRESETS[b],{duration:1});
+    expect(r.hub.trans.canopyMorph,`${a} → ${b}: no regrow`).toBe(false);
+    expect(r.hub.trans.structDiff,`${a} → ${b}: no rebuild`).toBe(false);
+    expect(r.hub.trans.route,`${a} → ${b}: no long route`).toBeNull();
+    while(r.hub.trans.active) r.tickTransition(1/60);
+    expect(r.swaps,`${a} → ${b}: no grove rebuilt`).toHaveLength(0);
+  }
+});
+
 test('montebello ↔ park fall and rain ↔ cherry route to leaf travel instead of an ordinary grove morph',()=>{
   for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['montebello, rain'],PRESETS['cherry blossom']]]){
     for(const [from,to] of [[a,b],[b,a]]){
