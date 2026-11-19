@@ -34,19 +34,19 @@ const NEW_LOOKS = {
   "cherry blossom": { base: SHEET_MONTEBELLO, over: { anthocyanin: 0.8, tannin: 0, wall_fraction: 0, leaf_wetness: 0, ground_r: 0.33, ground_g: 0.21, ground_b: 0.12, tree_pigment_spread: 0.6, litter_age: 0.3 } },
 };
 
-test("of the four new looks (P5-P8) only the yellow tree is experimental, out of the walk since 2026-11-17", () => {
-  for (const n of Object.keys(NEW_LOOKS)) expect(EXPERIMENTAL.includes(n), `${n}: he likes it more than the tweaks`).toBe(n === "the yellow tree");
+test("of the four new looks (P5-P8) only the yellow tree and cherry blossom are experimental, out of the walk since 2026-11-17 and 2026-11-19", () => {
+  for (const n of Object.keys(NEW_LOOKS)) expect(EXPERIMENTAL.includes(n), `${n}: he likes it more than the tweaks`).toBe(n === "the yellow tree" || n === "cherry blossom");
 });
 
-// The list a person walks first is a story, park story: the tree seen and then only its shadow, its year from blossom to the rain day, to
+// The list a person walks first is a story, park story: the tree seen and then only its shadow, its year from the turn to the rain day, to
 // the forest floor, where it goes on into the next playlist. The floor going abstract, through the afternoons and mornings to the founding
 // afternoon, is the second playlist, shadows. The experimental looks are in neither: they are a playlist of their own, the third.
 const looksOf = (list) => list.items.map((it) => (typeof it === "string" ? it : it.look));
 test("park story, then shadows, then experiments, each in its order", () => {
   expect(Object.values(PLAYLISTS).map((l) => l.name)).toEqual(["park story", "shadows", "experiments"]);
   expect(looksOf(PLAYLISTS.story)).toEqual([
-    "park 1, the scene", "park 1, under the trees", "park1 inside2",
-    "park fall", "cherry blossom", "montebello", "montebello, rain",
+    "park 1, from above", "park 1, the scene", "park 1, under the trees", "park1 inside2",
+    "park fall", "montebello", "montebello, rain",
     "forest floor",
   ]);
   expect(looksOf(PLAYLISTS.shadows)).toEqual([
