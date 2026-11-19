@@ -243,6 +243,77 @@ float cov=1.0-smoothstep(1.0-uEdge,1.0,mix(qa,qb,uWeight));frag=vec4(vec3(exp(-c
   });
   assert.ok(outlines.every(r=>r.max<=1),`moving outline differs from native: ${JSON.stringify(outlines.filter(r=>r.max>1))}`);
   console.log('PASS native outline blends',outlines.length,'comparisons, max',Math.max(...outlines.map(r=>r.max)));
+  // The carriers move on the GPU (VS_LEAF_CARRY): each end's leaf at its own wind, read from its cluster textures, then carried, once per
+  // carrier a frame by transform feedback. What that pass writes is held to the CPU's moveLeaves and movePatchLeaves, the reference, float by
+  // float: a faithful end with leaves on older wood and a layered end, every input moved() reads set, faithful and layered either way round.
+  const carriers=await page.evaluate(async()=>{
+    const S=await import('/engine/transport/komorebi-shaders.js'),T=await import('/engine/transitions/komorebi-leaf-travel.js');
+    const gl=document.createElement('canvas').getContext('webgl2');
+    const shader=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
+    function program(v,f,outs){const p=gl.createProgram();gl.attachShader(p,shader(gl.VERTEX_SHADER,v));gl.attachShader(p,shader(gl.FRAGMENT_SHADER,f));
+      gl.transformFeedbackVaryings(p,outs,gl.INTERLEAVED_ATTRIBS);gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));return p;}
+    function windy(seed,faithful,n){
+      let s=seed;const r=()=>{s=(s*16807)%2147483647;return s/2147483647;};
+      const leaves=[],twigs=[],G=new Float32Array(4*n),D=new Float32Array(4*n),Sw=new Float32Array(4*n),air=new Float32Array(4*n);
+      for(let j=0;j<n;j++){
+        G.set([r()*3-1.5,r()*3-1.5,r()*.6-.3,r()*.6-.3],4*j);D.set([r()-.5,r()-.5,faithful?r()*.3:r()*6,faithful?.6+.4*r():1],4*j);
+        Sw.set([r()*.2-.1,r()*.2-.1,r()*.4-.2,0],4*j);air.set([r(),r(),0,0],4*j);twigs.push({layer:j%3,z:2+j%3});
+        for(let k=0;k<20+3*j;k++)leaves.push(G[4*j]+r()-.5,G[4*j+1]+r()-.5,.03+.05*r(),.02+.03*r(),r()*6,r()-.5,r(),r()*6,.5+r(),1+r(),2*r(),j+(k%4)/32,r()*.3,r()*.3,r()*6,r()*6,faithful?1+r()*4:2+r()*3,.5+.5*r());
+      }
+      const count=leaves.length/18;
+      return {leaves:new Float32Array(leaves),pivot:faithful?Float32Array.from({length:count},()=>r()<.3?r():0):null,
+        hier:{nClusterTotal:n,clusterPlan:new Float32Array(2*n),twigs,layerBand:[2,1.5,3],clusterGeom:G,clusterData:D,swayData:Sw,airData:air},
+        params:{faithful_canopy:faithful,leaf_swing:1.35,flutter_freq:1.4,wind_air:.5,wind_depth:.7,drift_amount:.145,drift_phase:r()*6,stem_length:.18,
+          sway_height_gain:.75,canopy_base_height_m:2,canopy_thickness_m:2.6,layer_count:3},
+        motion:{u:r()-.5,time:100*r(),sway:[r()*.3,r()*.3]},hMax:5,shape:null};
+    }
+    const data=(w,h,src)=>{const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,w,h,0,gl.RGBA,gl.FLOAT,src);for(const k of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,k,gl.NEAREST);return t;};
+    const progs={single:program(S.VS_LEAF_CARRY,S.FS_LEAF_CARRY,S.LEAF_CARRY_OUT),patch:program(S.VS_LEAF_CARRY_PATCH,S.FS_LEAF_CARRY,S.LEAF_CARRY_PATCH_OUT)};
+    const results=[];
+    for(const [fa,fb,seed] of [[true,false,7],[false,true,11],[true,true,13]]){
+      const a=windy(seed,fa,6),b=windy(seed+22,fb,5);
+      for(const q of [a,b]){const H=q.hier,n=H.nClusterTotal;q.grove={clusterTex:data(n,3,Float32Array.from([...H.clusterData,...H.airData,...H.swayData])),clusterGeomTex:data(n,1,H.clusterGeom)};}
+      const pairs=T.pairLeaves(a,b),n=pairs.length,trip=Float32Array.from({length:n},(_,i)=>(i*7919%n)/n),edges=[.1,.4];
+      const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+      const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,T.carrierRecords(a,b,pairs,trip),gl.STATIC_DRAW);
+      for(let i=0;i<T.CARRY_STRIDE/4;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,4,gl.FLOAT,false,4*T.CARRY_STRIDE,i*16);}
+      gl.bindBuffer(gl.ARRAY_BUFFER,null);
+      for(const cast of ['single','patch'])for(const w of [0,.3,.5,.85,1]){
+        const prog=progs[cast],stride=cast==='patch'?16:12,loc=k=>gl.getUniformLocation(prog,`u${k}`);
+        gl.useProgram(prog);gl.uniform1f(loc('W'),w);gl.uniform2f(loc('Edges'),...edges);gl.uniform1f(loc('TripD'),T.TRIP_D);
+        for(const [k,q,unit] of [['A',a,2],['B',b,4]]){
+          const p=q.params,m=q.motion;
+          gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,q.grove.clusterTex);gl.uniform1i(loc(`Cluster${k}`),unit);
+          gl.activeTexture(gl.TEXTURE0+unit+1);gl.bindTexture(gl.TEXTURE_2D,q.grove.clusterGeomTex);gl.uniform1i(loc(`Geom${k}`),unit+1);
+          gl.uniform4f(loc(`Wind${k}`),m.u,m.sway[0],m.sway[1],m.time);gl.uniform4f(loc(`Flutter${k}`),p.leaf_swing,p.flutter_freq,p.wind_air,p.wind_depth);
+          gl.uniform4f(loc(`Drift${k}`),p.drift_phase,p.drift_amount,p.stem_length,p.sway_height_gain);gl.uniform4f(loc(`Height${k}`),p.faithful_canopy?1:0,p.canopy_base_height_m,p.canopy_thickness_m,q.hMax);
+        }
+        const out=gl.createBuffer();gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER,out);gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER,4*stride*n,gl.STREAM_READ);
+        const tf=gl.createTransformFeedback();gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,tf);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,out);
+        gl.enable(gl.RASTERIZER_DISCARD);gl.beginTransformFeedback(gl.POINTS);gl.drawArrays(gl.POINTS,0,n);gl.endTransformFeedback();gl.disable(gl.RASTERIZER_DISCARD);
+        gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,null);gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,null);
+        const got=new Float32Array(stride*n);gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER,out);gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER,0,got);
+        if(gl.getError())throw Error('carrier probe WebGL error');
+        const wi=Float32Array.from(trip,p=>cast==='patch'?T.tripClock(p,w):w),ref=T.movePatchLeaves(a,b,pairs,wi,edges,new Float32Array(16*n));
+        // the pass writes moveLeaves' twelve floats, and patch by patch movePatchLeaves' four more
+        const slots=[['centre x',0],['centre y',1],['half long',2],['half short',3],['depth r',5],['depth g',6],['depth b',7],['height',8],['fade',9],['row A',10],['row B',11],
+          ...(cast==='patch'?[['trip',12],['edge',13],['spare',14],['spare',15]]:[])],worst={};
+        for(let i=0;i<n;i++){
+          for(const [k,r] of slots)worst[k]=Math.max(worst[k]??0,Math.abs(got[stride*i+r]-ref[16*i+r]));
+          const d=Math.abs(got[stride*i+4]-ref[16*i+4])%(2*Math.PI);worst.angle=Math.max(worst.angle??0,Math.min(d,2*Math.PI-d));
+        }
+        results.push({ends:`${fa?'faithful':'layered'} → ${fb?'faithful':'layered'}`,cast,w,n,worst});
+      }
+    }
+    return results;
+  });
+  // On Metal the two agree to a few tenths of a micrometre. SwiftShader's sine at the flutter's phase (a wind clock of up to 100 s) moves a leaf
+  // by up to half a millimetre, so the centres are held to a millimetre.
+  const LIMIT={'centre x':1e-3,'centre y':1e-3,'half long':1e-4,'half short':1e-4,angle:1e-3,height:1e-4,fade:1e-6,trip:1e-6,edge:1e-6,spare:0,'depth r':1e-5,'depth g':1e-5,'depth b':1e-5,'row A':0,'row B':0};
+  const over=carriers.flatMap(r=>Object.entries(r.worst).filter(([k,v])=>!(v<=LIMIT[k])).map(([k,v])=>({...r,worst:undefined,slot:k,v})));
+  console.log('carriers',JSON.stringify(carriers.map(r=>({...r,worst:Object.fromEntries(Object.entries(r.worst).map(([k,v])=>[k,+v.toExponential(1)]))}))));
+  assert.deepEqual(over,[],`the GPU carriers differ from moveLeaves: ${JSON.stringify(over)}`);
+  console.log('PASS GPU carriers',carriers.length,'comparisons,',carriers.reduce((s,r)=>s+r.n,0),'carriers');
   assert.deepEqual(errors,[]);
   for(const r of results)console.log('PASS',JSON.stringify(r));console.log('PASS context recovery',JSON.stringify(recovery));console.log('PASS hood');console.log('PASS faithful travel');
 }finally{await browser.close();}

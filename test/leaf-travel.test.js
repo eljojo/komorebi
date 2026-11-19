@@ -278,3 +278,63 @@ test('a leaf travel leaves the engine\'s wind where a standing engine has it: no
     }
   }finally{globalThis.window=savedWindow;globalThis.requestAnimationFrame=savedRaf;}
 });
+
+// ---- the carriers move on the GPU; the CPU keeps their records and the moving cast's frame ----
+// A grove with every input moved() reads set: clumps turned by their limb and twig, trees swaying apart, the air, a crown depth, drift,
+// leaves on older wood (faithful) or on layers off their twig's height (layered).
+function windy(seed,faithful,n=7){
+  let s=seed;const r=()=>{s=(s*16807)%2147483647;return s/2147483647;};
+  const leaves=[],twigs=[],G=new Float32Array(4*n),D=new Float32Array(4*n),S=new Float32Array(4*n),air=new Float32Array(4*n);
+  for(let j=0;j<n;j++){
+    G.set([r()*4-2,r()*4-2,r()*.6-.3,r()*.6-.3],4*j);D.set([r()-.5,r()-.5,faithful?r()*.3:r()*6,faithful?.6+.4*r():1],4*j);
+    S.set([r()*.2-.1,r()*.2-.1,r()*.4-.2,0],4*j);air.set([r(),r(),0,0],4*j);twigs.push({layer:j%3,z:2+j%3});
+    for(let k=0;k<4+j;k++)leaves.push(G[4*j]+r()-.5,G[4*j+1]+r()-.5,.03+.05*r(),.02+.03*r(),r()*6,r()-.5,r(),r()*6,1,2,3,j+(k%4)/32,r()*.3,r()*.3,r()*6,r()*6,faithful?1+r()*4:2+r()*3,r());
+  }
+  const count=leaves.length/18;
+  return {leaves:new Float32Array(leaves),pivot:faithful?Float32Array.from({length:count},()=>r()<.3?r():0):null,
+    hier:{nClusterTotal:n,clusterPlan:new Float32Array(2*n),twigs,layerBand:[2,1.5,3],clusterGeom:G,clusterData:D,swayData:S,airData:air},
+    params:{faithful_canopy:faithful,leaf_swing:1.35,flutter_freq:1.4,wind_air:.5,wind_depth:.7,drift_amount:.145,drift_phase:r()*6,stem_length:.18,
+      sway_height_gain:.75,canopy_base_height_m:2,canopy_thickness_m:2.6,layer_count:3},
+    motion:{u:r()-.5,time:100*r(),sway:[r()*.3,r()*.3]},hMax:5,shape:null};
+}
+// The frame is the carriers' own box at their progress, less only the drift, which it bounds by its largest orbit: every carrier
+// moveLeaves or movePatchLeaves places lies inside, and each side of the frame lies within that orbit of a carrier.
+test('the moving cast\'s frame holds every carrier the reference places, and is their box but for the drift\'s orbit',()=>{
+  for(const [fa,fb] of [[false,true],[true,false],[true,true],[false,false]])for(let seed=1;seed<12;seed++){
+    const a=windy(seed,fa),b=windy(seed+50,fb),pairs=travel.pairLeaves(a,b),n=pairs.length,out=new Float32Array(16*n);
+    const pa=travel.framePrep(a),pb=travel.framePrep(b),ka=pairs.map(p=>p[0]/18),kb=pairs.map(p=>p[1]/18);
+    const trip=Float32Array.from(pairs,(_,k)=>((k*37)%n)/n),wi=new Float32Array(n);
+    const e=Math.max(...[a,b].map(q=>{let r=0;for(let i=0;i<q.leaves.length;i+=18)r=Math.max(r,Math.hypot(q.leaves[i+12],q.leaves[i+13]));return q.params.drift_amount*r;}));
+    for(let k=0;k<3;k++){
+      for(const q of [a,b]){const p=q.hier.clusterData;for(let i=0;i<p.length;i+=4){p[i]+=.3*Math.sin(seed+k+i);p[i+1]-=.2*Math.cos(seed*k+i);}q.motion.u+=.1;q.motion.time+=.7;q.motion.sway[0]-=.05;q.params.drift_phase+=.9;}
+      travel.framePoints(a,pa);travel.framePoints(b,pb);
+      for(const W of [0,.3,.5,1])for(const patch of [false,true]){
+        for(let c=0;c<n;c++)wi[c]=patch?travel.tripClock(trip[c],W):W;
+        const box=travel.carrierBox(a,b,pa,pb,ka,kb,c=>wi[c],new Float64Array(6)),S=patch?16:12;
+        if(patch)travel.movePatchLeaves(a,b,pairs,wi,[0,0],out);else travel.moveLeaves(a,b,pairs,W,out);
+        const lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity],eps=1e-5;
+        for(let c=0;c<n;c++)[out[S*c],out[S*c+1],out[S*c+8]].forEach((v,x)=>{lo[x]=Math.min(lo[x],v);hi[x]=Math.max(hi[x],v);});
+        expect(lo[0]).toBeGreaterThanOrEqual(box[0]-eps);expect(hi[0]).toBeLessThanOrEqual(box[2]+eps);
+        expect(lo[1]).toBeGreaterThanOrEqual(box[1]-eps);expect(hi[1]).toBeLessThanOrEqual(box[3]+eps);
+        expect(lo[2]).toBeCloseTo(box[4],4);expect(hi[2]).toBeCloseTo(box[5],4);
+        expect(lo[0]-box[0]).toBeLessThanOrEqual(2*e+eps);expect(box[2]-hi[0]).toBeLessThanOrEqual(2*e+eps);
+        expect(lo[1]-box[1]).toBeLessThanOrEqual(2*e+eps);expect(box[3]-hi[1]).toBeLessThanOrEqual(2*e+eps);
+      }
+    }
+  }
+});
+
+test('a carrier\'s record is each end\'s leaf as the shader reads it: its record, a layered end\'s layer fraction, fade, pivot and outline row',()=>{
+  const a=windy(3,true),b=windy(9,false),pairs=travel.pairLeaves(a,b),trip=Float32Array.from(pairs,(_,i)=>i/pairs.length);
+  const rec=travel.carrierRecords(a,b,pairs,trip),ref=travel.moveLeaves(a,b,pairs,0,new Float32Array(12*pairs.length));
+  expect(rec.length).toBe(travel.CARRY_STRIDE*pairs.length);
+  for(let n=0;n<pairs.length;n++){
+    const [ia,ib,la,lb]=pairs[n],o=travel.CARRY_STRIDE*n;
+    for(let k=0;k<16;k++){expect(rec[o+k]).toBe(a.leaves[ia+k]);expect(rec[o+20+k]).toBe(b.leaves[ib+k]);}
+    expect(rec[o+16]).toBe(a.leaves[ia+16]);expect(rec[o+18]).toBe(a.pivot[ia/18]);expect(rec[o+38]).toBe(0);
+    expect(2+rec[o+36]*2.6).toBeCloseTo(travel.moveLeaves(a,b,[pairs[n]],1,new Float32Array(12))[8],5);   // the layer's height, as moved() places it
+    expect([rec[o+17],rec[o+37]]).toEqual([a.leaves[ia+17],b.leaves[ib+17]]);
+    expect([rec[o+19],rec[o+39]]).toEqual([ref[12*n+10],ref[12*n+11]]);
+    expect([rec[o+40],rec[o+41],rec[o+42]]).toEqual([la?1:0,lb?1:0,trip[n]]);
+  }
+});

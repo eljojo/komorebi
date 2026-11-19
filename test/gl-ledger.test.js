@@ -224,7 +224,7 @@ for (const [name, look] of [["faithful, with wood", { ...FAITHFUL, branch_tau: 2
 // A route's programs are the context's, taken through the host engine (komorebi-engine.js, THE CONTEXT'S PROGRAMS): once a route has run there and back, running it
 // again links none of them. (A borrowed scene's own transport program can still be linked again: the scene was the last to hold it.)
 const ROUTE_PROGRAMS = [[SH.VS_FULL, SH.FS_SCENE_MIX], [SH.VS_SEASON_TRAVEL, SH.FS_FAITH], [SH.VS_LEAF_TRAVEL, SH.FS_LEAF_TRAVEL], [SH.VS_LEAF_TRAVEL_PATCH, SH.FS_LEAF_TRAVEL_PATCH],
-  [SH.VS_LEAF_TRAVEL_PATCH, SH.FS_LEAF_PROGRESS], [SH.VS_FULL, SH.FS_PROGRESS_BLUR], [SH.VS_FULL, SH.FS_PATCH_MIX], [SH.VS_FAITH_SEG, SH.FS_FAITH_SEG], [SH.VS_RISE_SKY, SH.FS_RISE_SKY], [SH.VS_RISE, SH.FS_RISE]];
+  [SH.VS_LEAF_TRAVEL_PATCH, SH.FS_LEAF_PROGRESS], [SH.VS_LEAF_CARRY, SH.FS_LEAF_CARRY], [SH.VS_LEAF_CARRY_PATCH, SH.FS_LEAF_CARRY], [SH.VS_FULL, SH.FS_PROGRESS_BLUR], [SH.VS_FULL, SH.FS_PATCH_MIX], [SH.VS_FAITH_SEG, SH.FS_FAITH_SEG], [SH.VS_RISE_SKY, SH.FS_RISE_SKY], [SH.VS_RISE, SH.FS_RISE]];
 const routeLinks = (list) => list.filter(([vs, fs]) => ROUTE_PROGRAMS.some(([v, f]) => v === vs && f === fs)).length;
 for (const [name, from, to, opts, label = name] of [...ROUTES.filter(([name]) => name !== "crossfade"), ["leafTravel", FAITHFUL, FADE, {}, "leafTravel, patch by patch"]]) {
   scenario(`the ${label} run a second time links none of its programs`, from, (R) => {

@@ -388,6 +388,7 @@ void main(){
 // The transition carries evaluated wind positions, rather than assigning the new grove's joint ids to old leaves.
 // PATCH_TRIP (two faithful groves, patch by patch): each carrier brings its own outline mix and edge (iD.xy) in place of
 // the route-wide uWeight and uEdge. A separate specialization keeps the single-progress shader's text as it was.
+// The stamp of carriers already moved: grove travel's, which it moves on the CPU, and leaf travel's, which VS_LEAF_CARRY (below) moves.
 const GLSL_LEAF_TRAVEL_VERTEX = `precision highp float;
 layout(location=0) in vec2 aCorner;
 layout(location=1) in vec4 iA;
@@ -418,6 +419,93 @@ ${GLSL_LEAF_TRAVEL_VERTEX}`;
 const VS_LEAF_TRAVEL_PATCH = `#version 300 es
 #define PATCH_TRIP
 ${GLSL_LEAF_TRAVEL_VERTEX}`;
+// LEAF TRAVEL'S CARRIERS, MOVED HERE (komorebi-leaf-travel.js): moved() and carry() of that module, the reference this is held to, run once
+// per carrier a frame by transform feedback, with nothing drawn. Each end's leaf record is static for the route (five vec4: the faithful
+// record's 18 floats, its height slot holding a layered end's layer fraction, then fade, pivot weight and outline row); each end's joints,
+// air and trees come from its own grove's cluster textures, which its wind publishes every frame; the rest of its motion and look is four
+// uniforms. The outputs are the floats moveLeaves writes (oA, oB, oC) and, PATCH_TRIP, the two movePatchLeaves adds (oD), which the stamp
+// above (GLSL_LEAF_TRAVEL_VERTEX) draws from for every sun sample. PATCH_TRIP: each carrier's progress is its own trip's clock (tripClock).
+const GLSL_LEAF_CARRY_VERTEX = `precision highp float;
+layout(location=0) in vec4 iA0;
+layout(location=1) in vec4 iA1;
+layout(location=2) in vec4 iA2;
+layout(location=3) in vec4 iA3;
+layout(location=4) in vec4 iA4;
+layout(location=5) in vec4 iB0;
+layout(location=6) in vec4 iB1;
+layout(location=7) in vec4 iB2;
+layout(location=8) in vec4 iB3;
+layout(location=9) in vec4 iB4;
+layout(location=10) in vec4 iPair;   // live at A, live at B, the carrier's place in the patch field, spare
+uniform float uW;                    // the route's progress; PATCH_TRIP: W, the progress inside the moving cast's full-weight middle
+uniform vec2 uEdges;                 // PATCH_TRIP: each end's edge softness
+uniform float uTripD;                // PATCH_TRIP: the share of the middle one carrier's trip takes (TRIP_D)
+uniform highp sampler2D uClusterA,uGeomA,uClusterB,uGeomB;
+// per end: (u, sway.xy, time), (leaf_swing, flutter_freq, wind_air, wind_depth), (drift_phase, drift_amount, stem_length, sway_height_gain),
+// (faithful, canopy_base_height_m, canopy_thickness_m, hMax)
+uniform vec4 uWindA,uFlutterA,uDriftA,uHeightA,uWindB,uFlutterB,uDriftB,uHeightB;
+out vec4 oA;   // centre.xy, half sizes
+out vec4 oB;   // angle, optical depth
+out vec4 oC;   // height, fade, outline rows
+#ifdef PATCH_TRIP
+out vec4 oD;   // own progress, edge
+#endif
+// One end's leaf at its own wind: plan centre, half sizes, angle, height (moved()).
+void moved(vec4 r0,vec4 r1,vec4 r2,vec4 r3,vec4 r4,highp sampler2D clusterTex,highp sampler2D geomTex,vec4 wind,vec4 flutter,vec4 drift,vec4 height,
+           out vec2 pos,out vec2 size,out float ang,out float z){
+  int j=int(r2.w+0.5);
+  vec4 G=texelFetch(geomTex,ivec2(j,0),0),D=texelFetch(clusterTex,ivec2(j,0),0),air=texelFetch(clusterTex,ivec2(j,1),0),S=texelFetch(clusterTex,ivec2(j,2),0);
+  bool faithful=height.x>0.5;
+  float L=D.x,T=faithful?D.y*(1.0-r4.z):D.y;
+  vec2 t=G.xy,P=G.zw;
+  if(!faithful){
+    vec2 d=t-P;float r=max(length(d),0.001),sa=D.z*0.6,cs=cos(sa),sn=sin(sa),len=min(drift.z,r*0.9);
+    t-=len*vec2(cs*d.x+sn*d.y,-sn*d.x+cs*d.y)/r;
+  }
+  float ct=cos(T),st=sin(T),cl=cos(L),sl=sin(L);
+  vec2 d=r0.xy-t,x=t+vec2(ct*d.x-st*d.y,st*d.x+ct*d.y);
+  float u=wind.x+S.z;
+  float wm=flutter.z>0.0?abs(u)*(1.0-flutter.z)+air.x*flutter.z:abs(u);
+  float sw=flutter.x*r1.z*(0.5*u+wm*sin(wind.w*flutter.y*6.2831853+r1.w));
+  if(flutter.w>0.0){float dg=clamp((wm/(flutter.w*${DEPTH_L0})-air.y)/${DEPTH_W}+1.0,0.0,1.0);sw*=dg*dg*(3.0-2.0*dg);}
+  z=faithful?D.z+r4.x*D.w:height.y+r4.x*height.z;
+  float gain=faithful?z/max(height.w,0.001):1.0+drift.w*(z/height.y-1.0);
+  float ph=drift.x+r3.w,co=cos(r3.z),so=sin(r3.z);
+  vec2 o=vec2(r3.x*cos(ph),r3.y*sin(ph)),xp=x-P;
+  pos=P+vec2(cl*xp.x-sl*xp.y,sl*xp.x+cl*xp.y)+(wind.yz+S.xy)*gain+drift.y*vec2(co*o.x+so*o.y,-so*o.x+co*o.y);
+  size=vec2(r0.z,r0.w*max(0.05,abs(cos(r1.y+sw))));
+  ang=r1.x-L-T+0.2*sw;
+}
+void main(){
+  vec2 pa,pb,sa,sb;float aa,ab,za,zb;
+  moved(iA0,iA1,iA2,iA3,iA4,uClusterA,uGeomA,uWindA,uFlutterA,uDriftA,uHeightA,pa,sa,aa,za);
+  moved(iB0,iB1,iB2,iB3,iB4,uClusterB,uGeomB,uWindB,uFlutterB,uDriftB,uHeightB,pb,sb,ab,zb);
+#ifdef PATCH_TRIP
+  float p=iPair.z,w=smoothstep(p*(1.0-uTripD),p*(1.0-uTripD)+uTripD,uW);
+  oD=vec4(w,mix(uEdges.x,uEdges.y,w),0.0,0.0);
+#else
+  float w=uW;
+#endif
+  // carry(): area linearly, aspect logarithmically, the angle the short way round
+  float area=mix(iPair.x>0.5?sa.x*sa.y:0.0,iPair.y>0.5?sb.x*sb.y:0.0,w);
+  float aspect=exp(mix(log(sa.x/sa.y),log(sb.x/sb.y),w));
+  oA=vec4(mix(pa,pb,w),sqrt(area*aspect),sqrt(area/aspect));
+  oB=vec4(aa+(mod(ab-aa+3.14159265359,6.28318530718)-3.14159265359)*w,mix(iA2.xyz,iB2.xyz,w));
+  oC=vec4(mix(za,zb,w),mix(iA4.y,iB4.y,w),iA4.w,iB4.w);
+  gl_Position=vec4(0.0,0.0,0.0,1.0);
+}`;
+const VS_LEAF_CARRY = `#version 300 es
+${GLSL_LEAF_CARRY_VERTEX}`;
+const VS_LEAF_CARRY_PATCH = `#version 300 es
+#define PATCH_TRIP
+${GLSL_LEAF_CARRY_VERTEX}`;
+// The carriers' pass draws nothing (RASTERIZER_DISCARD); a program still needs a fragment stage to link.
+const FS_LEAF_CARRY = `#version 300 es
+precision highp float;
+out vec4 frag;
+void main(){ frag=vec4(0.0); }`;
+// What the carriers' pass writes, in the order the stamp reads it (interleaved).
+const LEAF_CARRY_OUT = ['oA','oB','oC'], LEAF_CARRY_PATCH_OUT = ['oA','oB','oC','oD'];
 const GLSL_LEAF_TRAVEL_FRAGMENT = `precision highp float;
 in vec2 vLocal;
 in vec3 vTau;
@@ -1454,4 +1542,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, VS_LEAF_CARRY, VS_LEAF_CARRY_PATCH, FS_LEAF_CARRY, LEAF_CARRY_OUT, LEAF_CARRY_PATCH_OUT, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };

@@ -168,10 +168,11 @@ function createEngine(canvas, opts, driven=false){
     if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) fail(`Shader: ${gl.getShaderInfoLog(s)}\n${src}`);
     return s;
   }
-  function program(vs,fs){
+  function program(vs,fs,feedback){
     const p=gl.createProgram();
     gl.attachShader(p,compile(gl.VERTEX_SHADER,vs));
     gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
+    if(feedback) gl.transformFeedbackVaryings(p,feedback,gl.INTERLEAVED_ATTRIBS);   // the outputs a transform-feedback pass writes, named before the link
     gl.linkProgram(p);
     if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail(`Link: ${gl.getProgramInfoLog(p)}`);
     return p;
@@ -181,12 +182,12 @@ function createEngine(canvas, opts, driven=false){
   // the HOST engine, since a borrowed scene's hold dies with the scene, and deletes none. `held` maps each entry this engine took to its key,
   // one hold per program however often it is asked for, for releasePrograms to give back.
   const held = new Map();
-  function shared(vs,fs){
+  function shared(vs,fs,feedback){   // feedback: a pass's outputs, which belong to its vertex shader, so the two sources stay the key
     const table = contextPrograms(gl);
     let byFs = table.get(vs);
     if(!byFs){ byFs = new Map(); table.set(vs, byFs); }
     let e = byFs.get(fs);
-    if(!e){ e = { prog: program(vs,fs), users: 0 }; byFs.set(fs, e); }
+    if(!e){ e = { prog: program(vs,fs,feedback), users: 0 }; byFs.set(fs, e); }
     if(!held.has(e)){ e.users++; held.set(e, [vs, fs]); }
     return e.prog;
   }

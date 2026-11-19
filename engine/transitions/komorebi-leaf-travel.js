@@ -4,7 +4,8 @@ import { ballisticK } from '../leaf/komorebi-leaf.js';
 import { flutterLevel, depthGate } from '../motion/komorebi-air.js';
 import { CANOPY_MORPH_MAX, DEFAULTS, MORPH_KEYS } from '../komorebi-params.js';
 import { leafLayerOf } from '../canopy/komorebi-grove.js';
-import { VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_FULL } from '../transport/komorebi-shaders.js';
+import { VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_FULL,
+  VS_LEAF_CARRY, VS_LEAF_CARRY_PATCH, FS_LEAF_CARRY, LEAF_CARRY_OUT, LEAF_CARRY_PATCH_OUT } from '../transport/komorebi-shaders.js';
 const FEAT_LEAF_DIFFUSE = true;
 
 // BETWEEN TWO FAITHFUL GROVES THE TRAVEL GOES PATCH BY PATCH (authored, not physics). A carrier's place in a
@@ -170,6 +171,77 @@ function carry(a,b,pair,w,out,o){
   out[o+10]=travelRow(a,ia);out[o+11]=travelRow(b,ib);
 }
 
+// THE CARRIERS ON THE GPU. moveLeaves and movePatchLeaves above are the reference; VS_LEAF_CARRY runs the same laws once per carrier a
+// frame, writing what they write into the buffer the stamp draws from, so the route keeps on the CPU only what does not move: each end's
+// leaf as five vec4 (its faithful record, the height slot holding a layered end's layer fraction, then its fade, pivot weight and outline
+// row) and the pair's (live at A, live at B, place in the patch field, 0).
+export const CARRY_STRIDE=44;
+function carryEnd(q,i,out,o){
+  const d=q.leaves,p=q.params;
+  for(let k=0;k<16;k++)out[o+k]=d[i+k];
+  out[o+16]=p.faithful_canopy ? d[i+16] : leafLayerOf(q.hier,Math.round(d[i+11]),d[i+16])/Math.max(1,p.layer_count-1);
+  out[o+17]=d[i+17];out[o+18]=p.faithful_canopy&&q.pivot ? q.pivot[i/18] : 0;out[o+19]=travelRow(q,i);
+}
+export function carrierRecords(a,b,pairs,trip,out=new Float32Array(pairs.length*CARRY_STRIDE)){
+  for(let n=0;n<pairs.length;n++){
+    const [ia,ib,la,lb]=pairs[n],o=CARRY_STRIDE*n;
+    carryEnd(a,ia,out,o);carryEnd(b,ib,out,o+20);
+    out[o+40]=la?1:0;out[o+41]=lb?1:0;out[o+42]=trip?trip[n]:0;out[o+43]=0;
+  }
+  return out;
+}
+// THE MOVING CAST'S FRAME. The carriers are moved on the GPU, but the map they are cast into is framed on the CPU, before the pass. A
+// carrier's plan point needs no flutter (it turns and foreshortens a leaf about its centre, moving no centre), so each end's leaves are
+// placed as moved() places them less their drift: one turn per clump (its twig's and its limb's, about their joints), a leaf on older
+// wood's own smaller twig turn, its tree's sway at its height. The drift is bounded instead, by its largest orbit; the carriers are then
+// lerped at their progress and boxed. No trig per leaf but the leaves on older wood, so a frame of the busiest route costs a fraction of
+// a millisecond where moving the carriers cost several.
+export function framePrep(q){
+  const d=q.leaves,n=d.length/18,p=q.params,faithful=p.faithful_canopy,hgt=new Float32Array(n),piv=new Float32Array(n);
+  let reach=0,size=0;
+  for(let k=0,i=0;k<n;k++,i+=18){
+    hgt[k]=faithful ? d[i+16] : leafLayerOf(q.hier,Math.round(d[i+11]),d[i+16])/Math.max(1,p.layer_count-1);
+    piv[k]=faithful&&q.pivot ? q.pivot[k] : 0;
+    reach=Math.max(reach,Math.hypot(d[i+12],d[i+13]));size=Math.max(size,d[i+2],d[i+3]);
+  }
+  return {hgt,piv,reach,size,pos:new Float32Array(3*n),clump:new Float64Array(12*q.hier.nClusterTotal)};
+}
+// Every leaf of one end at its wind now, less its drift: plan point and height into pre.pos (x, y, z a leaf).
+export function framePoints(q,pre){
+  const d=q.leaves,p=q.params,m=q.motion,H=q.hier,G=H.clusterGeom,D=H.clusterData,S=H.swayData,C=pre.clump,faithful=p.faithful_canopy;
+  for(let j=0;j<H.nClusterTotal;j++){
+    const o=4*j,c=12*j,L=D[o],T=D[o+1],px=G[o+2],py=G[o+3];
+    let tx=G[o],ty=G[o+1];
+    if(!faithful){
+      const dx=tx-px,dy=ty-py,r=Math.max(Math.hypot(dx,dy),.001),sa=D[o+2]*.6,cs=Math.cos(sa),sn=Math.sin(sa),len=Math.min(p.stem_length,r*.9);
+      tx-=len*(cs*dx+sn*dy)/r;ty-=len*(-sn*dx+cs*dy)/r;
+    }
+    C[c]=tx;C[c+1]=ty;C[c+2]=px;C[c+3]=py;C[c+4]=Math.cos(L);C[c+5]=Math.sin(L);C[c+6]=Math.cos(T);C[c+7]=Math.sin(T);C[c+8]=T;
+    C[c+9]=m.sway[0]+(S?S[o]:0);C[c+10]=m.sway[1]+(S?S[o+1]:0);
+  }
+  const P=pre.pos;
+  for(let k=0,i=0;i<d.length;k++,i+=18){
+    const j=Math.round(d[i+11]),o=4*j,c=12*j,pk=pre.piv[k];
+    const ct=pk>0?Math.cos(C[c+8]*(1-pk)):C[c+6],st=pk>0?Math.sin(C[c+8]*(1-pk)):C[c+7],cl=C[c+4],sl=C[c+5],tx=C[c],ty=C[c+1],px=C[c+2],py=C[c+3];
+    const dx=d[i]-tx,dy=d[i+1]-ty,xx=tx+ct*dx-st*dy-px,yy=ty+st*dx+ct*dy-py;
+    const z=faithful ? D[o+2]+pre.hgt[k]*D[o+3] : p.canopy_base_height_m+pre.hgt[k]*p.canopy_thickness_m;
+    const gain=faithful ? z/Math.max(q.hMax,.001) : 1+p.sway_height_gain*(z/p.canopy_base_height_m-1);
+    P[3*k]=px+cl*xx-sl*yy+C[c+9]*gain;P[3*k+1]=py+sl*xx+cl*yy+C[c+10]*gain;P[3*k+2]=z;
+  }
+}
+// The carriers' box at their progress (w, or each its own: wi(n)): [x0, y0, x1, y1, lowest, highest], widened by the larger end's drift.
+export function carrierBox(a,b,pa,pb,ka,kb,wi,out){
+  const A=pa.pos,B=pb.pos;
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity,h0=Infinity,h1=-Infinity;
+  for(let n=0;n<ka.length;n++){
+    const w=wi(n),ia=3*ka[n],ib=3*kb[n],x=A[ia]+(B[ib]-A[ia])*w,y=A[ia+1]+(B[ib+1]-A[ia+1])*w,z=A[ia+2]+(B[ib+2]-A[ia+2])*w;
+    if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;if(z<h0)h0=z;if(z>h1)h1=z;
+  }
+  const e=Math.max(Math.abs(a.params.drift_amount)*pa.reach,Math.abs(b.params.drift_amount)*pb.reach);
+  out[0]=x0-e;out[1]=y0-e;out[2]=x1+e;out[3]=y1+e;out[4]=h0;out[5]=h1;
+  return out;
+}
+
 export function makeLeafTravel(hub,createScene){
   const {gl,params,trans}=hub;
   let s=null;
@@ -179,7 +251,7 @@ export function makeLeafTravel(hub,createScene){
     // The pivot weights as the bake reads them, beside the leaves in the same order; null where no leaf has one, which keeps the old arithmetic.
     let pivot=null;
     if(h.faith.pivotOn){pivot=new Float32Array(h.faith.count);gl.bindBuffer(gl.ARRAY_BUFFER,h.faith.pivotBuf);gl.getBufferSubData(gl.ARRAY_BUFFER,0,pivot);}
-    return {leaves,pivot,hier:h.hier,params:h.params,motion:h.motion,hMax:h.faith.hMax,shape:h.grove.shape,texture:h.grove.leafTex};
+    return {leaves,pivot,hier:h.hier,params:h.params,motion:h.motion,hMax:h.faith.hMax,shape:h.grove.shape,texture:h.grove.leafTex,grove:h.grove};   // grove: its cluster textures, which its wind publishes
   };
   function beginLeafTravel(to){
     const from=createScene();
@@ -206,31 +278,63 @@ export function makeLeafTravel(hub,createScene){
     return [gx,gy];
   }
   function init(){
-    s.b=read(hub);s.stride=s.patch?STRIDE_PATCH:12;
+    s.b=read(hub);
     if(s.patch){s.g=meanThrow(hub.projMatrix());s.pairs=patchPairs(s.a,s.b,s.g,PATCH_M/2);}
     else s.pairs=pairLeaves(s.a,s.b);
     // Local surpluses can require more carriers than either endpoint. Check the actual correspondence before allocating its cast.
     if(s.pairs.length>CANOPY_MORPH_MAX)return false;
-    s.data=new Float32Array(s.pairs.length*s.stride);
+    if(s.patch)initPatch();
+    s.prep=[framePrep(s.a),framePrep(s.b)];s.frame=new Float64Array(6);
+    s.ka=Int32Array.from(s.pairs,p=>p[0]/18);s.kb=Int32Array.from(s.pairs,p=>p[1]/18);
+    s.pad=Math.max(.1,3*Math.max(s.prep[0].size,s.prep[1].size));   // three of the largest leaf's half sizes: the quad, its outline's box and a margin
+    s.stride=s.patch?STRIDE_PATCH:12;
+    // the carriers' pass: their records in, the stamp's floats out, into the buffer the stamp's vertex array reads
+    s.carry=s.patch?hub.sharedProgram(VS_LEAF_CARRY_PATCH,FS_LEAF_CARRY,LEAF_CARRY_PATCH_OUT):hub.sharedProgram(VS_LEAF_CARRY,FS_LEAF_CARRY,LEAF_CARRY_OUT);
+    s.cu=Object.fromEntries(CARRY_U.map(k=>[k,gl.getUniformLocation(s.carry,`u${k}`)]));
+    s.rec=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,s.rec);gl.bufferData(gl.ARRAY_BUFFER,carrierRecords(s.a,s.b,s.pairs,s.trip),gl.STATIC_DRAW);
+    s.recVao=gl.createVertexArray();gl.bindVertexArray(s.recVao);
+    for(let i=0;i<CARRY_STRIDE/4;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,4,gl.FLOAT,false,4*CARRY_STRIDE,i*16);}
+    s.feedback=gl.createTransformFeedback();
     s.prog=s.patch?hub.sharedProgram(VS_LEAF_TRAVEL_PATCH,FS_LEAF_TRAVEL_PATCH):hub.sharedProgram(VS_LEAF_TRAVEL,FS_LEAF_TRAVEL);   // the engine's for the context's life, as the dissolve's mix is
     s.u=Object.fromEntries(['Origin','Extent','G','Box','LeafA','LeafB','ShapeA','ShapeB','Weight','Edge','BeamK','EdgeArea'].map(k=>[k,gl.getUniformLocation(s.prog,`u${k}`)]));
-    s.buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,s.buf);gl.bufferData(gl.ARRAY_BUFFER,s.data,gl.DYNAMIC_DRAW);
+    s.buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,s.buf);gl.bufferData(gl.ARRAY_BUFFER,4*s.stride*s.pairs.length,gl.DYNAMIC_COPY);
     s.vao=gl.createVertexArray();gl.bindVertexArray(s.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER,hub.quadBuf);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
     gl.bindBuffer(gl.ARRAY_BUFFER,s.buf);
     for(let i=1;i<=s.stride/4;i++){gl.enableVertexAttribArray(i);gl.vertexAttribPointer(i,4,gl.FLOAT,false,4*s.stride,(i-1)*16);gl.vertexAttribDivisor(i,1);}
+    gl.bindVertexArray(null);
     s.textures=[gl.createTexture(),gl.createTexture()];s.fbos=[gl.createFramebuffer(),gl.createFramebuffer()];s.res=0;
     const boxes=[s.a.shape?.box??[0,0,1,1],s.b.shape?.box??[0,0,1,1]];
     const x0=Math.min(...boxes.map(b=>b[0]-b[2])),x1=Math.max(...boxes.map(b=>b[0]+b[2]));
     const y0=Math.min(...boxes.map(b=>b[1]-b[3])),y1=Math.max(...boxes.map(b=>b[1]+b[3]));
     s.box=[(x0+x1)/2,(y0+y1)/2,(x1-x0)/2,(y1-y0)/2];
-    if(s.patch)initPatch();
+  }
+  // The uniforms the carriers' pass reads.
+  const CARRY_U=['W','Edges','TripD','ClusterA','GeomA','ClusterB','GeomB','WindA','FlutterA','DriftA','HeightA','WindB','FlutterB','DriftB','HeightB'];
+  // Once a frame, every carrier at both ends' wind now and carried to the progress (W, patch by patch), into the stamp's buffer.
+  function carryPass(W){
+    const u=s.cu;
+    gl.useProgram(s.carry);gl.bindVertexArray(s.recVao);
+    gl.uniform1f(u.W,W);gl.uniform2f(u.Edges,s.lookA.edge_softness,s.lookB.edge_softness);gl.uniform1f(u.TripD,TRIP_D);
+    for(const [k,q,unit] of [['A',s.a,0],['B',s.b,2]]){
+      const p=q.params,m=q.motion;
+      gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,q.grove.clusterTex);gl.uniform1i(u[`Cluster${k}`],unit);
+      gl.activeTexture(gl.TEXTURE0+unit+1);gl.bindTexture(gl.TEXTURE_2D,q.grove.clusterGeomTex);gl.uniform1i(u[`Geom${k}`],unit+1);
+      gl.uniform4f(u[`Wind${k}`],m.u,m.sway[0],m.sway[1],m.time);
+      gl.uniform4f(u[`Flutter${k}`],p.leaf_swing,p.flutter_freq,p.wind_air,p.wind_depth);
+      gl.uniform4f(u[`Drift${k}`],p.drift_phase,p.drift_amount,p.stem_length,p.sway_height_gain);
+      gl.uniform4f(u[`Height${k}`],p.faithful_canopy?1:0,p.canopy_base_height_m,p.canopy_thickness_m,q.hMax);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER,null);   // WebGL refuses feedback into a buffer still bound to another target
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,s.feedback);gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,s.buf);
+    gl.enable(gl.RASTERIZER_DISCARD);gl.beginTransformFeedback(gl.POINTS);gl.drawArrays(gl.POINTS,0,s.pairs.length);gl.endTransformFeedback();gl.disable(gl.RASTERIZER_DISCARD);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER,0,null);gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK,null);   // the buffer is the stamp's attribute next: it may not stay bound for feedback
   }
   function initPatch(){
     // A carrier's place in the patch field is read where its shadow falls, midway along its trip.
     const n=s.pairs.length,p0=moveLeaves(s.a,s.b,s.pairs,0,new Float32Array(n*12)),p1=moveLeaves(s.a,s.b,s.pairs,1,new Float32Array(n*12)),xy=new Float64Array(2*n);
     for(let i=0;i<n;i++)for(let c=0;c<2;c++)xy[2*i+c]=lerp(p0[12*i+c]-s.g[c]*p0[12*i+8],p1[12*i+c]-s.g[c]*p1[12*i+8],.5);
-    s.trip=patchField(xy,PATCH_M);s.wi=new Float32Array(n);s.edge=[s.lookA.edge_softness,s.lookB.edge_softness];
+    s.trip=patchField(xy,PATCH_M);
     const locs=(prog,names)=>Object.fromEntries(names.map(k=>[k,gl.getUniformLocation(prog,`u${k}`)]));
     s.progressProg=hub.sharedProgram(VS_LEAF_TRAVEL_PATCH,FS_LEAF_PROGRESS);s.progressU=locs(s.progressProg,['Origin','Extent','G','Box']);
     s.blurProg=hub.sharedProgram(VS_FULL,FS_PROGRESS_BLUR);s.blurU=locs(s.blurProg,['Tex','Dir','Sigma']);
@@ -268,10 +372,9 @@ export function makeLeafTravel(hub,createScene){
     const W=tripW(w);
     if(s.patch){s.colour=smoothstep(0,1,W);f.progressGlobal=s.colour;f.progressTex=null;}
     if(f.weight===0)return;
-    if(s.patch)for(let n=0;n<s.pairs.length;n++)s.wi[n]=tripClock(s.trip[n],W);
-    const data=s.patch?movePatchLeaves(s.a,s.b,s.pairs,s.wi,s.edge,s.data):moveLeaves(s.a,s.b,s.pairs,w,s.data);
-    let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity,h0=Infinity,h1=-Infinity,pad=.1;
-    for(let i=0;i<data.length;i+=s.stride){x0=Math.min(x0,data[i]);x1=Math.max(x1,data[i]);y0=Math.min(y0,data[i+1]);y1=Math.max(y1,data[i+1]);h0=Math.min(h0,data[i+8]);h1=Math.max(h1,data[i+8]);pad=Math.max(pad,Math.max(data[i+2],data[i+3])*3);}
+    framePoints(s.a,s.prep[0]);framePoints(s.b,s.prep[1]);
+    const box=carrierBox(s.a,s.b,s.prep[0],s.prep[1],s.ka,s.kb,s.patch?n=>tripClock(s.trip[n],W):()=>w,s.frame);
+    let [x0,y0,x1,y1]=box;const h0=box[4],h1=box[5],pad=s.pad;
     const proj=hub.projMatrix();
     let gx0=Infinity,gy0=Infinity,gx1=-Infinity,gy1=-Infinity;
     for(let i=0;i<hub.src.count;i++){
@@ -293,7 +396,7 @@ export function makeLeafTravel(hub,createScene){
       }
       s.res=res;
     }
-    f.tex=s.textures[0];gl.bindBuffer(gl.ARRAY_BUFFER,s.buf);gl.bufferSubData(gl.ARRAY_BUFFER,0,data);
+    f.tex=s.textures[0];carryPass(s.patch?W:w);
     gl.viewport(0,0,res,res);gl.bindFramebuffer(gl.FRAMEBUFFER,s.fbos[0]);gl.disable(gl.BLEND);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
     const u=s.u;
     for(let i=0;i<hub.src.count;i++){
@@ -384,6 +487,7 @@ export function makeLeafTravel(hub,createScene){
     const pending=s.pending;
     s.from.dispose();
     if(s.vao)gl.deleteVertexArray(s.vao);if(s.buf)gl.deleteBuffer(s.buf);
+    if(s.recVao)gl.deleteVertexArray(s.recVao);if(s.rec)gl.deleteBuffer(s.rec);if(s.feedback)gl.deleteTransformFeedback(s.feedback);
     s.textures?.forEach(t=>{gl.deleteTexture(t);});s.fbos?.forEach(f=>{gl.deleteFramebuffer(f);});
     s.ptex?.forEach(t=>{gl.deleteTexture(t);});s.pfbo?.forEach(f=>{gl.deleteFramebuffer(f);});
     s.pics?.forEach(p=>{if(p){gl.deleteTexture(p.tex);gl.deleteFramebuffer(p.fbo);}});
