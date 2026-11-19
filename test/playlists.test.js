@@ -296,15 +296,19 @@ test("timing is the dwell and crossfade of a cloud item; On this browser has non
   expect(timing(s, "local", "afternoon 7")).toBeNull();
 });
 
-test("timing of a shipped item is its own pace, else ITEM_DEFAULTS; a look the playlist does not hold has none", () => {
-  const d = builtins.ITEM_DEFAULTS;
+test("timing of a shipped item is its own pace, else its playlist's crossfade, else ITEM_DEFAULTS; a look the playlist does not hold has none", () => {
+  const d = builtins.ITEM_DEFAULTS, list = builtins.PLAYLISTS.story;
   const first = entries(EMPTY, {}, STORY)[0].value;
-  expect(timing(EMPTY, STORY, first)).toEqual({ dwell_s: d.dwell_s, crossfade_s: d.crossfade_s, style: "morph" });
+  expect(timing(EMPTY, STORY, first)).toEqual({ dwell_s: d.dwell_s, crossfade_s: list.crossfade_s, style: "morph" });
   expect(timing(EMPTY, STORY, "not a look")).toBeNull();
-  const saved = builtins.PLAYLISTS.story.items;
-  builtins.PLAYLISTS.story.items = [{ look: first, dwell_s: 7, style: "fade" }, ...saved.slice(1)];
-  try { expect(timing(EMPTY, STORY, first)).toEqual({ dwell_s: 7, crossfade_s: d.crossfade_s, style: "fade" }); }
-  finally { builtins.PLAYLISTS.story.items = saved; }
+  const saved = list.items, pace = list.crossfade_s;
+  list.items = [{ look: first, dwell_s: 7, style: "fade" }, { look: saved[1], crossfade_s: 9 }, ...saved.slice(2)];
+  try {
+    expect(timing(EMPTY, STORY, first)).toEqual({ dwell_s: 7, crossfade_s: list.crossfade_s, style: "fade" });
+    expect(timing(EMPTY, STORY, saved[1]).crossfade_s).toBe(9);
+    delete list.crossfade_s;
+    expect(timing(EMPTY, STORY, first).crossfade_s).toBe(d.crossfade_s);
+  } finally { list.items = saved; list.crossfade_s = pace; }
 });
 
 // ---- the built-in guard (design §3.8) -------------------------------------------------

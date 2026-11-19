@@ -130,11 +130,12 @@ export const styleOf = (it) => (it?.style === "fade" ? "fade" : "morph");
 // A stored/sent item carries `style` only when it is 'fade', so a server that does not know the key keeps accepting playlists.
 const styleKey = (it) => (styleOf(it) === "fade" ? { style: "fade" } : {});
 
-// The dwell, crossfade and style of a cloud or shipped entry (a shipped item's own, else presets.js ITEM_DEFAULTS); your looks have none.
+// The dwell, crossfade and style of a cloud or shipped entry (a shipped item's own, else its playlist's crossfade, else presets.js
+// ITEM_DEFAULTS); your looks have none.
 export function timing(state, active, value) {
   if (shipId(active) !== null) {
-    const it = shipItems(active).find((i) => i.look === value), d = BUILTINS.ITEM_DEFAULTS;
-    return it ? { dwell_s: it.dwell_s ?? d.dwell_s, crossfade_s: it.crossfade_s ?? d.crossfade_s, style: styleOf(it.style ? it : d) } : null;
+    const it = shipItems(active).find((i) => i.look === value), d = BUILTINS.ITEM_DEFAULTS, list = BUILTINS.PLAYLISTS[shipId(active)];
+    return it ? { dwell_s: it.dwell_s ?? d.dwell_s, crossfade_s: it.crossfade_s ?? list.crossfade_s ?? d.crossfade_s, style: styleOf(it.style ? it : d) } : null;
   }
   const it = cloudId(active) === null ? undefined : cloudItem(state, active, value);
   return it ? { dwell_s: it.dwell_s, crossfade_s: it.crossfade_s, style: styleOf(it) } : null;

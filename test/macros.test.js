@@ -26,7 +26,7 @@ function seasonDialRig() {
   const env = { params, eng, macroUsable: () => true, maybeClearSpecies: noop, syncControl: noop,
     applyScope: () => writes.push(params.phenology), applySession:noop, endTween: noop, chipSoon: noop, stopPlay: noop,
     syncAllControls: () => dial.tryCapture(), timing: () => null, stateNow: noop, activeList: noop,
-    resolveEntry: (p) => p, transDur: 1, player: { leaving: noop, arrived: noop }, refreshPresetSelect: noop };
+    resolveEntry: (p) => p, transDur: 1, transSet: null, transSync: noop, cameraWalk: 'glide', player: { leaving: noop, arrived: noop }, refreshPresetSelect: noop };
   const body = source.slice(source.indexOf('const TRY_FALL ='), source.indexOf('// The time dial moves'));
   const load = source.match(/^function applyParams\(obj\).*$/m)[0];
   const go = source.slice(source.indexOf('function goTo('), source.indexOf('function loadEntry('));

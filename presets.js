@@ -2226,13 +2226,14 @@ export const EXPERIMENTAL = ['park 1', 'acid dreams', 'eclipse', 'the yellow tre
 // ---- THE SHIPPED PLAYLISTS: the only way the editor reaches a look of PRESETS. Each names looks of PRESETS in the order
 // they play; an item is a look's name, or { look, dwell_s?, crossfade_s?, style? } to pace that one item, and what an item
 // does not say comes from ITEM_DEFAULTS. dwell_s is how long the item holds; crossfade_s how long the next look takes to
-// arrive; style 'morph' (the automatic route) or 'fade'. `next` names the playlist a step past the last look goes on to (its
+// arrive; style 'morph' (the automatic route) or 'fade'. A playlist's own `crossfade_s` paces every item of it that names none.
+// `next` names the playlist a step past the last look goes on to (its
 // first look), where a list without one wraps. A playlist plays only when ▶ starts it. The first playlist is where
 // a first visit lands. ----
 export const ITEM_DEFAULTS = { dwell_s: 30, crossfade_s: 4, style: 'morph' };
 export const PLAYLISTS = {
-  story: { name: 'park story', next: 'shadows', items: [
-    'park 1, from above', 'park 1, the scene', 'park 1, under the trees', 'park1 inside2', 'park fall', 'montebello', 'montebello, rain',
+  story: { name: 'park story', next: 'shadows', crossfade_s: 2, items: [
+    'park 1, from above', 'park 1, the scene', 'park 1, under the trees', { look: 'park1 inside2', crossfade_s: 3.5 }, 'park fall', 'montebello', 'montebello, rain',
     'forest floor',
   ] },
   shadows: { name: 'shadows', items: [

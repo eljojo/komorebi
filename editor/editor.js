@@ -89,6 +89,7 @@ let homeLook=null, homeStale=true;   // the saved look it measures changes from 
 let midi=null;                   // the MIDImix prototype (midi.js), mounted once everything it borrows exists
 let remote=null;                 // the remote control (remote.js), mounted once arboretum is
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
+let transSet=null;               // the list the fade was set by hand on: there it overrides the list's own crossfade, until another list is chosen
 const TRANS_MAX=6;
 let transSync=()=>{};            // the panel's fade row follows a change made elsewhere (the remote)
 
@@ -1134,7 +1135,7 @@ function advHost(){
     asItWas: lookAsItWas,
     stories: openStories,
     icon,
-    fade: { max:TRANS_MAX, get:()=>transDur, set:(v)=>{ transDur=v; transSync(); } },
+    fade: { max:TRANS_MAX, get:()=>transDur, set:(v)=>{ setFade(v); transSync(); } },
     area: { get:()=>settings.advArea, set:(name)=>{ settings.advArea=name; saveSettings(); } },
   };
 }
@@ -1467,10 +1468,13 @@ function refreshChip(){
 function goTo(value){
   applySession();
   const t=timing(stateNow(), activeList(), value);
+  // The fade set by hand holds on the list it was set on; elsewhere a list's own crossfade is used, and the fade shows it.
+  if(transSet!==activeList()) transSet=null;
+  if(t && transSet===null && transDur!==t.crossfade_s){ transDur=t.crossfade_s; transSync(); }
   endTween();
   tryFrameCancel();
   player.leaving();
-  eng.transitionTo(resolveEntry(value), { duration: t ? t.crossfade_s : transDur, style: t ? t.style : 'morph',
+  eng.transitionTo(resolveEntry(value), { duration: t && transSet===null ? t.crossfade_s : transDur, style: t ? t.style : 'morph',
     onEnd:()=>{ endTween(); refreshPresetSelect(value); syncAllControls(); player.arrived(value); } });   // morph from the current live look to the target
   refreshPresetSelect(value);                                               // reflect target in the dropdown = next step's origin
 }
@@ -2047,6 +2051,8 @@ function settingsButton(){ const button=iconBtn('gear-six','settings',()=>sessio
 syncMacroControls();
 
 // ---- transition fade: its own row at the very bottom of the panel ----
+// Set by hand (the row, the advanced depth's, the MIDImix, the remote), the fade overrides the active list's crossfade.
+function setFade(v){ transDur=v; transSet=activeList(); }
 (()=> {
   const h=document.createElement('h2'); h.textContent='Transition'; h.dataset.tipKey='fade'; dev.appendChild(h);
   const r=document.createElement('div'); r.className='ctl setting'; r.dataset.tipKey='fade';
@@ -2054,7 +2060,7 @@ syncMacroControls();
   const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=TRANS_MAX; inp.step=0.1; inp.value=transDur;
   const track=document.createElement('span'); track.className='track'; track.append(inp);
   const val=document.createElement('span'); val.className='val'; val.textContent=transDur.toFixed(1);
-  inp.addEventListener('input',()=>{ transDur=parseFloat(inp.value); val.textContent=transDur.toFixed(1); adv?.syncFade(); });
+  inp.addEventListener('input',()=>{ setFade(parseFloat(inp.value)); val.textContent=transDur.toFixed(1); adv?.syncFade(); });
   transSync=()=>{ inp.value=transDur; val.textContent=transDur.toFixed(1); adv?.syncFade(); };   // the advanced depth's fade row follows too
   r.append(lab,track,val); dev.appendChild(r);
 })();
@@ -2066,7 +2072,7 @@ midi = mountMidi({
   tryReady: () => tryHome !== null,
   syncUI: () => syncMacroControls(),                           // the sliders and dials follow the hand (syncMacroControls seats the dials too)
   transActive: () => eng.trans.active,
-  getTransDur: () => transDur, setTransDur: (v) => { transDur = v; },
+  getTransDur: () => transDur, setTransDur: (v) => setFade(v),
   playing: () => player.playing,
   togglePlay: () => { if(!plays(stateNow(), activeList())) return; if(player.playing) player.stop(); else player.start(presetSel.value, { now:true }); },
 });
@@ -2151,7 +2157,7 @@ function remoteRun(c){
     case 'go': if(listed(c.value) && c.value!==presetSel.value) goTo(c.value); return;
     case 'list': if(c.value!==activeList() && listChoicesNow().some((l)=>l.value===c.value)){ if(arb) arb.activate(c.value); else setActive(c.value); } return;
     case 'play': if(!plays(stateNow(), activeList())) return; if(c.on && !player.playing) player.start(presetSel.value, { now:true }); else if(!c.on) player.stop(); return;
-    case 'trans': transDur=c.v; transSync(); return;
+    case 'trans': setFade(c.v); transSync(); return;
     case 'asItWas': tryAsItWas(); return;
     case 'reseed': reseed(); return;
     case 'save': saveLook(c.name, eng.captureLook()); return;
