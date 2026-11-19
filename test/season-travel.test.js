@@ -43,10 +43,10 @@ test('season travel requires a shared standing grove with a carpet at one end an
 });
 
 test('fall looks with litter at both ends travel through their shared standing grove',()=>{
-  for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['montebello, rain'],PRESETS['cherry blossom']]]){
+  for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['montebello, rain'],PRESETS['park fall']]]){
     expect(travel.seasonTravelEligible(a,b)).toBe(true);
     expect(travel.seasonTravelEligible(b,a)).toBe(true);
-    for(const change of [{seed:1},{leaf_shape:'maple'},{branch_tau:0},{sun_azimuth_deg:120},{tone_map:0},{wind_strength:2},{trans_r:.1},{trans_g:.1},{trans_b:.1}]){
+    for(const change of [{seed:1},{leaf_shape:'beech'},{branch_tau:0},{sun_azimuth_deg:120},{tone_map:0},{wind_strength:2},{trans_r:.1},{trans_g:.1},{trans_b:.1}]){
       expect(travel.seasonTravelEligible(a,{...b,...change}),JSON.stringify(change)).toBe(false);
     }
   }

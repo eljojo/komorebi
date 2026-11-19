@@ -25,7 +25,7 @@ Intent is the artist's words, his choices on review sheets and the notes written
 
 ## Gates no shipped look opens
 
-The authored look data opens neither `vignette` (the projector's iris), an outline (`leaf_shape` other than the ellipse) nor `leaf_variety`.
+The authored look data opens neither `vignette` (the projector's iris) nor `leaf_variety`. An outline (`leaf_shape` other than the ellipse) only park story's looks open: their leaves are the maple's since 2026-11-19 (the artist's choice, the leaf alone, every other knob as it was); every other look keeps the ellipse.
 
 **Open.** For each of these, the look's off state is the older behaviour. Under [`preservation.md` §4](preservation.md#4-a-retained-older-behaviour-needs-a-named-purpose) an older behaviour kept on a shipped look needs a named purpose, and none is recorded per look. The iris is a presentation device for the projector and belongs to a showing, not to a look. Leaf variety changes nothing visible on any shipped look at canopy height (the 2026-11-15 sheet, below), and the artist left it off.
 

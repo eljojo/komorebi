@@ -32,12 +32,13 @@ test("montebello and montebello, rain share one camera, the artist's; P4 was not
 // built on it do not carry.
 // It carries the camera the sheet showed (the trunk feet in the frame), and no reach.
 const SHEET_MONTEBELLO = { ...PRESETS.montebello, sun_extinction: 0, exposure: 5.566, tree_pigment_spread: 0, tree_clock_spread: 0, cloud_exposure: 0,
-  view_extent_m: 13.489433156286438, view_pitch_deg: 61.39999999999994, view_fov_deg: 60, view_yaw_deg: 208.5, view_center_x: -0.7, view_center_y: -3, grove_reach_m: 0 };
+  view_extent_m: 13.489433156286438, view_pitch_deg: 61.39999999999994, view_fov_deg: 60, view_yaw_deg: 208.5, view_center_x: -0.7, view_center_y: -3, grove_reach_m: 0,
+  leaf_shape: "ellipse" };   // and its leaves were the ellipse: park story's are maple since 2026-11-19
 
 const NEW_LOOKS = {
-  "forest floor": { base: PRESETS["afternoon 7"], over: { phenology: 0.8, turn_exposure: 1, anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, leaf_drop: 1, drop_after_turn: 1, drop_lag: 0, litter: 1, leaf_wetness: 0.5, tree_clock_spread: 0.05, tree_pigment_spread: 0.6 } },
+  "forest floor": { base: PRESETS["afternoon 7"], over: { phenology: 0.8, turn_exposure: 1, anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, leaf_drop: 1, drop_after_turn: 1, drop_lag: 0, litter: 1, leaf_wetness: 0.5, tree_clock_spread: 0.05, tree_pigment_spread: 0.6, leaf_shape: "maple" } },
   "the yellow tree": { base: SHEET_MONTEBELLO, over: { anthocyanin: 0.2, tannin: 0.35, leaf_drop: 0.5, leaf_diffuse: 0, tree_pigment_spread: 0.3, view_center_x: -1.75, view_center_y: -4.93 } },
-  "montebello, rain": { base: SHEET_MONTEBELLO, over: { leaf_wetness: 0.75, ground_r: 0.132, ground_g: 0.084, ground_b: 0.048, cloud_thickness: 0.55, halo_angular_radius_deg: 8, sky_turbidity: 0.2, drop_lag: 0, ...cameraOf(PRESETS.montebello), grove_reach_m: 13.489433156286438 } },
+  "montebello, rain": { base: SHEET_MONTEBELLO, over: { leaf_wetness: 0.75, ground_r: 0.132, ground_g: 0.084, ground_b: 0.048, cloud_thickness: 0.55, halo_angular_radius_deg: 8, sky_turbidity: 0.2, drop_lag: 0, ...cameraOf(PRESETS.montebello), grove_reach_m: 13.489433156286438, leaf_shape: "maple" } },
   "cherry blossom": { base: SHEET_MONTEBELLO, over: { anthocyanin: 0.8, tannin: 0, wall_fraction: 0, leaf_wetness: 0, ground_r: 0.33, ground_g: 0.21, ground_b: 0.12, tree_pigment_spread: 0.6, litter_age: 0.3 } },
 };
 
@@ -72,9 +73,10 @@ for (const [name, { base, over }] of Object.entries(NEW_LOOKS)) {
   });
 }
 
-test("no new look names the beech outline: 'the yellow tree' uses montebello's leaves (the sheet called it 'the beech'; leaf_shape 'beech' is brief 07's)", () => {
-  for (const n of Object.keys(NEW_LOOKS)) expect(PRESETS[n].leaf_shape, n).toBe(DEFAULTS.leaf_shape);
-  expect(PRESETS["the yellow tree"].leaf_shape).toBe(PRESETS.montebello.leaf_shape);
+test("no new look names the beech outline: 'the yellow tree' uses the sheet's leaves (the sheet called it 'the beech'; leaf_shape 'beech' is brief 07's), park story's are maple", () => {
+  const story = new Set(looksOf(PLAYLISTS.story));
+  for (const n of Object.keys(NEW_LOOKS)) expect(PRESETS[n].leaf_shape, n).toBe(story.has(n) ? "maple" : SHEET_MONTEBELLO.leaf_shape);
+  for (const n of story) expect(PRESETS[n].leaf_shape, n).toBe("maple");
   expect(PRESETS["the beech"], "the working name moved: it would read as the leaf shape").toBeUndefined();
 });
 

@@ -346,7 +346,8 @@ test('a pair that sees its tree keeps the cast: cherry blossom ↔ park 2 with t
 });
 
 test('under the trees ↔ park 2 keeps the grove and the shadow: the camera glides and the seen tree fades, with no bloom and no rebuild',()=>{
-  for(const [from,to] of [[PRESETS['park 1, under the trees'],PRESETS['park 2']],[PRESETS['park 2'],PRESETS['park 1, under the trees']]]){
+  const park2={...PRESETS['park 2'],leaf_shape:'maple'};   // park story's leaves are maple since 2026-11-19, park 2's (an experiment) the ellipse still: the pair as one grove
+  for(const [from,to] of [[PRESETS['park 1, under the trees'],park2],[park2,PRESETS['park 1, under the trees']]]){
     const r=transitionRig(from),out=!!from.tree_view;
     r.hub.routes.sceneFade.begin=()=>{throw Error('unexpected scene fade');};r.hub.routes.seasonTravel.begin=()=>{throw Error('unexpected season travel');};
     r.hub.routes.groveTravel.begin=()=>{throw Error('unexpected grove travel');};r.hub.routes.litterRise.begin=()=>{throw Error('unexpected litter rise');};
@@ -417,8 +418,8 @@ test('the park story\'s standing looks move only the camera between them: their 
   }
 });
 
-test('montebello ↔ park fall and rain ↔ cherry route to leaf travel instead of an ordinary grove morph',()=>{
-  for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['montebello, rain'],PRESETS['cherry blossom']]]){
+test('montebello ↔ park fall and rain ↔ park fall route to leaf travel instead of an ordinary grove morph',()=>{
+  for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['montebello, rain'],PRESETS['park fall']]]){
     for(const [from,to] of [[a,b],[b,a]]){
       const r=transitionRig(from);let began=0;
       r.hub.routes.seasonTravel.begin=()=>began++;
