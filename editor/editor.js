@@ -744,7 +744,7 @@ function openStories(){
   const active=activeList();
   for(const l of listChoicesNow()){
     const here=l.value===active;
-    const b=mkBtn(l.label,()=>{ if(here) return; storiesEl.close(); if(arb) arb.activate(l.value); else setActive(l.value); });
+    const b=mkBtn(l.label,()=>{ if(here) return; storiesEl.close(); if(arb) arb.activate(l.value, { first:true }); else setActive(l.value, { first:true }); });   // a story picked here opens at its beginning
     b.className=`story${here?' on':''}`; b.dataset.list=l.value;
     storiesEl.appendChild(b);
     if(!here) continue;
@@ -1487,10 +1487,11 @@ function loadEntry(value){                          // the dropdown: an instant 
   refreshPresetSelect(value);
   player.arrived(value);                            // an instant load has arrived at once
 }
-function setActive(list){
+// `first`: open the list at its first look, not where you were last in it
+function setActive(list, { first=false }={}){
   if(list===activeList()) return;
   settings.playlist=list; saveSettings(); player.stop();
-  const value=resumeAt();
+  const value=first ? listEntries()[0]?.value : resumeAt();
   if(value===undefined) refreshPresetSelect('');
   else goTo(value);
 }

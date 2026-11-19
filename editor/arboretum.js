@@ -308,8 +308,8 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   const fetchList = (id) => api.playlist(id, { k: getState().playlists[id]?.k ?? undefined });
 
   // Activating a playlist fetches it fresh; when arboretum cannot be reached the copy kept here plays on, and the look's chip says so.
-  async function activate(list) {
-    if (!on || !/^arb:\d+$/.test(list)) { host.activate(list); return; }
+  async function activate(list, opts) {
+    if (!on || !/^arb:\d+$/.test(list)) { host.activate(list, opts); return; }
     const id = list.slice(4);
     try {
       cacheView(await fetchList(id));
@@ -319,7 +319,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
       else if (networkDown(e)) offline = true;
       if (!view().playlists[id]) { if (e.status !== 401) say(e.error); host.sync(); return; }
     }
-    host.activate(list);
+    host.activate(list, opts);
   }
 
   const askName = async () => ((await askText("New playlist name:", "", { ok: "make" })) || "").trim();   // ask.js: the page's own question, which leaves a fullscreen page fullscreen
