@@ -9,132 +9,207 @@
 <link rel="manifest" href="manifest.webmanifest?v=2">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=2">
 <style>
-  :root { color-scheme: dark; }
-  .session-panel { position:fixed; max-height:85vh; width:min(360px,85vw); overflow:auto; background:#10180f; color:#cfe0cf; border:1px solid #243; border-radius:8px; font:12px/1.5 ui-monospace,Menlo,monospace; }
-  .session-panel::backdrop { background:rgba(0,0,0,.5); }
-  .session-panel h2 { margin:0 0 8px; }.session-panel h3 { color:#9fb89f; margin-bottom:6px; }
-  .session-panel .ctl span { flex:1; }.session-panel .ctl select { flex:1; }
-  .session-panel button { background:#182518; color:#cfe0cf; border:1px solid #354; padding:4px 10px; cursor:pointer; }
+  /* ---- THE FACE: one palette and one type for every surface a person meets (the sidebar, the strip, Settings, the questions, the
+     stories, the tips, the workspace): warm light on dark glass, in the welcome's serif, numbers in the mono. Every colour below is one
+     of these. ---- */
+  :root { color-scheme: dark;
+    --serif: "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --mono: ui-monospace,Menlo,Consolas,monospace;
+    --ink: #e9ecdf;                     /* text */
+    --soft: #aab5a2;                    /* a label, a quiet button */
+    --faint: #7c8776;                   /* a hint, a count, a chevron */
+    --warm: #f1e7cf;                    /* the light: a look's name, what is lit */
+    --on-warm: #14170f;                 /* text on the light */
+    --mark: #e7b86a;                    /* differs from the saved look */
+    --edge: rgba(241,231,207,.18);      /* a control's outline */
+    --line: rgba(241,231,207,.12);      /* a divider */
+    --wash: rgba(241,231,207,.08);      /* under the pointer; a field */
+    --lit: rgba(241,231,207,.14);       /* the one you are on, among others */
+    --glass: rgba(14,17,13,.76);        /* a surface over the picture */
+    --glass-hi: rgba(14,17,13,.94);     /* a surface to read: a question, a pinned bar */
+    --clear: .45s ease;                 /* a held slider's surface fading away from the picture, and back */
+    --pill: 16px; }
+  /* its parts, at no specificity (:where), so a surface's own layout rules win without a fight. A lit button (.on) is the light. */
+  :where(#play,#strip,#dev,#plist,#wsTabs,#midi,.session-panel,dialog.ask,dialog.stories) { font:14px/1.3 var(--serif); color:var(--ink); }
+  :where(#play,#strip,#dev,#plist,#wsTabs,#midi,.session-panel,dialog.ask,dialog.stories) :is(button,select) { font:italic 13px var(--serif); color:var(--soft); background:none;
+    border:1px solid var(--edge); border-radius:var(--pill); padding:4px 12px; }
+  :where(#play,#strip,#dev,#plist,#wsTabs,#midi,.session-panel,dialog.ask,dialog.stories) button:hover:not(:disabled):not(.on) { color:var(--warm); background:var(--wash); }
+  :where(#play,#strip,#dev,#plist,#wsTabs,#midi,.session-panel,dialog.ask,dialog.stories) button.on { color:var(--on-warm); background:var(--warm); border-color:var(--warm); }
+  :where(#play,#strip,#dev,#plist,#wsTabs,#midi,.session-panel,dialog.ask,dialog.stories) select { color:var(--ink); background:var(--wash); }
+  :where(#play,#strip,#dev,#plist,#wsTabs,#midi,.session-panel,dialog.ask,dialog.stories) option { background:var(--on-warm); }
+  :where(#play,#strip,#dev,#plist,#wsTabs,#midi,.session-panel,dialog.ask,dialog.stories) input[type=range] { accent-color:var(--warm); }
+  :where(#play,#strip,#dev,#plist,#wsTabs,#midi,.session-panel,dialog.ask,dialog.stories) label { color:var(--soft); font-style:italic; }
+  :where(dialog.ask,dialog.stories,.session-panel) { box-sizing:border-box; padding:16px 18px 18px; background:var(--glass-hi); border:1px solid var(--edge); border-radius:16px;
+    box-shadow:0 2px 6px rgba(0,0,0,.35), 0 22px 70px 4px rgba(0,0,0,.6); }   /* a window's shadow: tight under it, wide and deep around */
+  :where(dialog.ask,dialog.stories,.session-panel)::backdrop { background:rgba(4,6,4,.45); backdrop-filter:blur(3px); }
+  /* Settings (editor-settings.js) */
+  .session-panel { position:fixed; max-height:85vh; width:min(380px, calc(100vw - 32px)); overflow:auto; }
+  .session-panel h2 { display:inline-block; margin:0 0 4px; font:italic 400 22px var(--serif); color:var(--warm); }
+  .session-panel h2 + button { float:right; }
+  .session-panel h3 { margin:18px 0 6px; font:italic 400 15px var(--serif); color:var(--warm); }
+  .session-panel .ctl { margin:6px 0; }
+  .session-panel .ctl span { flex:1; color:var(--soft); font-style:italic; }
+  .session-panel .ctl select { flex:1; }
+  .session-panel :is(p, div:not(.ctl)) { margin:6px 0; font-size:13px; color:var(--faint); }
+  .session-panel summary { margin:6px 0; color:var(--soft); font-style:italic; cursor:pointer; }
+  /* arboretum's lines (arboretum.js), wherever they hang: the workspace's look box, or Settings */
+  .arb-inrow, .arb-move { flex-wrap:wrap; }
+  .arb-chips { display:contents; }
+  :is(.arb-status, .arb-move-text, .arb-who) { font-size:12px; color:var(--soft); word-break:break-word; }
+  .arb-status { margin:2px 0 6px; }
+  .arb-move-text { flex:1 1 100%; }
+  .arb-in[aria-pressed=true] { color:var(--on-warm); background:var(--warm); border-color:var(--warm); }
   html,body { margin:0; height:100%; background:#0a0d0a; overflow:hidden; }
-  #gl { display:block; width:100vw; height:100vh; cursor:crosshair; touch-action:none;   /* none: let swipe gestures through, no scroll/pull-to-refresh */
+  #gl { display:block; width:100vw; height:100vh; cursor:move; touch-action:none;   /* none: let swipe gestures through, no scroll/pull-to-refresh */
         -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }   /* and no iOS text-selection callout on a held finger */
-  #hud {                                              /* bottom-right, above #hint — clear of the left dev panel */
-    position:fixed; right:10px; bottom:38px; text-align:right; font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;
-    color:#9fb89f; background:rgba(0,0,0,.35); padding:6px 8px; border-radius:6px;
-    pointer-events:none; white-space:pre;
-  }
   #hint {
-    position:fixed; right:10px; bottom:10px; font:11px ui-monospace,monospace;
-    color:#6b7d6b; background:rgba(0,0,0,.3); padding:4px 7px; border-radius:6px; pointer-events:none;
+    position:fixed; right:10px; bottom:10px; font:italic 12px var(--serif); color:var(--soft); background:rgba(0,0,0,.3);
+    padding:4px 8px; border-radius:8px; pointer-events:none;
   }
-  #dev {
-    position:fixed; top:0; left:0; height:100vh; width:280px; box-sizing:border-box;
-    overflow-y:auto; padding:8px 10px 40px; background:rgba(8,12,8,.82);
-    backdrop-filter:blur(6px); border-right:1px solid #1c2a1c;
-    font:11px/1.3 ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
-  }
+  #hint b { font:normal 11px var(--mono); color:var(--warm); }
+  #dev { position:fixed; top:0; left:0; height:100vh; width:280px; box-sizing:border-box; overflow-y:auto; padding:8px 10px 40px; font-size:12.5px; }
   #dev.hidden { display:none; }
   /* THE WORKSPACE (editor.js, setWorkspace): the picture a viewer at the top left with nothing over it, the tree pane
      (tree-pane.js) beside it, and the advanced panel docked in the band below, its rows flowing in columns across the screen
      and scrolling sideways. */
   #tree { display:none; }
-  body.workspace { background:#070a07; }
+  body.workspace { background:#0e110d; }
   body.workspace #gl { position:fixed; left:0; top:0; width:62vw; height:62vh; }
   body.workspace #tree { display:block; position:fixed; top:0; right:0; width:38vw; height:62vh;
-    border-left:1px solid #1c2a1c; box-sizing:border-box; cursor:pointer; }
-  body.workspace #dev { top:62vh; left:0; width:100vw; height:38vh; padding:8px 12px; background:#080c08; backdrop-filter:none;
-    border-right:none; border-top:1px solid #1c2a1c; overflow-x:auto; overflow-y:hidden;
-    column-width:250px; column-gap:22px; column-fill:auto; column-rule:1px solid #142014; }
+    border-left:1px solid var(--line); box-sizing:border-box; cursor:pointer; }
+  body.workspace #dev { top:62vh; left:0; width:100vw; height:38vh; padding:8px 18px; background:#0e110d;
+    border-top:1px solid var(--line); overflow-x:auto; overflow-y:hidden;
+    column-width:260px; column-gap:30px; column-fill:auto; column-rule:1px solid rgba(241,231,207,.06); }
   body.workspace #dev .ctl, body.workspace #dev summary, body.workspace #dev h2 { break-inside:avoid; }
   body.workspace #dev.offscreen { transform: translateY(100%); }
   body.workspace #hint { bottom:auto; top:8px; right:auto; left:8px; }   /* over the viewer's top left, clear of the panel and the counter */
   /* the right-hand pane's two tabs, tree and playlist (editor.js setWsPane); the playlist pane (playlist-pane.js) stands where the tree does */
   #wsTabs, #plist { display:none; }
   body.workspace #wsTabs { display:flex; gap:4px; position:fixed; top:6px; right:8px; z-index:5; }
-  #wsTabs button { background:rgba(8,12,8,.7); color:#9fb89f; border:1px solid #2c452c; border-radius:10px; padding:2px 10px; cursor:pointer;
-    font:10px ui-monospace,Menlo,monospace; }
-  #wsTabs button.on { color:#f1e7cf; border-color:rgba(241,231,207,.45); background:rgba(241,231,207,.1); }
+  #wsTabs button { padding:2px 12px; font-size:12px; }
+  #wsTabs button:not(.on) { background:var(--glass); }   /* over the sky; the lit one is the light, as every lit button is */
   body.workspace.ws-playlist #tree { display:none; }
   body.workspace.ws-playlist #plist { display:flex; flex-direction:column; overflow-y:auto; position:fixed; top:0; right:0; width:38vw; height:62vh; box-sizing:border-box;
-    padding:34px 10px 8px; border-left:1px solid #1c2a1c; background:#080c08; color:#cfe0cf; font:11px/1.3 ui-monospace,Menlo,Consolas,monospace; }
+    padding:34px 12px 8px; border-left:1px solid var(--line); background:#0e110d; font-size:13px; }
   #plist .pl-slot .looks { display:flex; flex-direction:column; padding:0 4px 8px; }
   #plist .pl-slot .playlist-row { order:-2; } #plist .pl-slot .presentation-row { order:-1; }   /* in the pane the playlist leads, then the look */
   #plist .pl-slot .lookhead { margin-top:2px; }
-  #plist :is(.pl-remove) { flex:0 0 22px; background:none; color:#6f8a6f; border:1px solid transparent; border-radius:4px; padding:0; font:13px/1 ui-monospace,Menlo,monospace; }
-  #plist .pl-remove:hover:not(:disabled) { color:#e8a0a0; border-color:#4a2c2c; }
+  #plist .pl-remove { flex:0 0 22px; padding:0; border-color:transparent; font:13px/1 var(--serif); color:var(--faint); }
+  #plist .pl-remove:hover:not(:disabled) { color:#e8a0a0; border-color:rgba(232,160,160,.35); background:none; }
   #plist .pl-remove:disabled { visibility:hidden; }
-  #plist .pl-add { margin:8px 4px 0; background:#10180f; color:#cfe0cf; border:1px solid #243; border-radius:4px; padding:3px 4px; font:inherit; }
+  #plist .pl-add { margin:8px 4px 0; }
   #plist .pl-add[hidden] { display:none; }
-  #plist .pl-head { display:flex; align-items:baseline; gap:10px; padding:0 4px 6px; border-bottom:1px solid #142014; }
-  #plist .pl-count { color:#6f8a6f; flex:1; }
-  #plist .pl-cols { display:grid; grid-template-columns:62px 62px 52px; gap:6px; color:#6f8a6f; text-align:center; }
+  #plist .pl-head { display:flex; align-items:baseline; gap:10px; padding:0 4px 6px; border-bottom:1px solid var(--line); }
+  #plist .pl-count { flex:1; color:var(--faint); font-style:italic; }
+  #plist .pl-cols { display:grid; grid-template-columns:62px 62px 52px; gap:6px; color:var(--faint); font-style:italic; font-size:12px; text-align:center; }
   #plist.editable .pl-cols { margin-right:28px; }   /* clear of the × column */
   #plist .pl-list { list-style:none; margin:0; padding:0; }   /* the whole pane scrolls: the looks box over the list may be tall */
   #plist .pl-row { display:flex; align-items:center; gap:6px; padding:3px 4px; border-top:2px solid transparent; border-bottom:2px solid transparent; }
-  #plist .pl-row.on { background:rgba(241,231,207,.08); }
-  #plist .pl-row.on .pl-name { color:#f1e7cf; }
+  #plist .pl-row.on { background:var(--wash); }
+  #plist .pl-row.on .pl-name { color:var(--warm); }
   #plist .pl-row.pending { opacity:.55; }
   #plist .pl-row.dragging { opacity:.4; }
-  #plist .pl-row.drop-before { border-top-color:#7fae7f; }
-  #plist .pl-row.drop-after { border-bottom-color:#7fae7f; }
-  #plist .pl-grip { flex:0 0 14px; color:#6f8a6f; text-align:center; }
+  #plist .pl-row.drop-before { border-top-color:var(--warm); }
+  #plist .pl-row.drop-after { border-bottom-color:var(--warm); }
+  #plist .pl-grip { flex:0 0 14px; color:var(--faint); text-align:center; }
   #plist .pl-grip[draggable=true] { cursor:grab; }
   #plist .pl-grip[draggable=true]:active { cursor:grabbing; }
-  #plist .pl-n { flex:0 0 22px; color:#5a7a5a; text-align:right; }
-  #plist .pl-name { flex:1; min-width:0; text-align:left; background:none; border:none; color:#cfe0cf; font:inherit; padding:2px 0; cursor:pointer;
+  #plist .pl-n { flex:0 0 22px; color:var(--faint); font:11px var(--mono); text-align:right; }
+  #plist .pl-name { flex:1; min-width:0; padding:2px 0; border:none; border-radius:0; background:none; text-align:left; font:inherit; color:var(--ink);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #plist .pl-name:hover { color:#f1e7cf; text-decoration:underline; }
-  #plist input[type=number] { flex:0 0 62px; width:62px; box-sizing:border-box; background:#10180f; color:#e8d9a8; border:1px solid #243; border-radius:3px; padding:2px 4px; font:inherit; text-align:right; }
-  #plist input[type=number]:disabled { color:#9fb89f; border-color:transparent; background:none; }
-  #plist .pl-style { flex:0 0 52px; background:#1a2a1a; color:#cfe0cf; border:1px solid #2c452c; border-radius:4px; padding:2px 0; font:inherit; cursor:pointer; }
-  #plist .pl-style:disabled { background:none; border-color:transparent; color:#9fb89f; cursor:default; }
+  #plist .pl-name:hover { color:var(--warm); background:none; }
+  #plist input[type=number] { flex:0 0 62px; width:62px; box-sizing:border-box; padding:2px 6px; border-radius:8px; background:var(--wash);
+    border:1px solid var(--edge); color:var(--ink); font:11px var(--mono); text-align:right; }
+  #plist input[type=number]:disabled { color:var(--soft); border-color:transparent; background:none; }
+  #plist .pl-style { flex:0 0 52px; padding:2px 0; font-size:12px; }
+  #plist .pl-style:disabled { border-color:transparent; color:var(--soft); cursor:default; }
   #plist.busy { cursor:progress; }
   #plist.busy .pl-list { opacity:.7; pointer-events:none; }
   #wsStat { display:none; }
   body.workspace #wsStat { display:block; position:fixed; right:calc(38vw + 8px); top:8px; pointer-events:none; padding:2px 6px; border-radius:4px;
-    font:10px ui-monospace,Menlo,monospace; color:rgba(225,235,225,.75); background:rgba(0,0,0,.28); }   /* the frame rate and resolution, quiet, in the viewer's top right, on any picture */
+    font:11px var(--mono); color:var(--ink); background:var(--glass); }   /* the frame rate and resolution, quiet, in the viewer's top right, on any picture */
   /* the MIDI console (M, midi.js) docks at the right end of the band, the panel taking the rest; its caption rides the viewer */
+  /* the MIDI console (midi.js): its caption rides the picture in the look-name's face; the console lists the desk's strips */
+  #midiCap { position:fixed; bottom:28px; left:50%; transform:translateX(-50%); z-index:9; text-align:center; pointer-events:none;
+    font:italic 400 15px var(--serif); color:var(--warm); text-shadow:0 1px 12px rgba(0,0,0,.6); opacity:0; transition:opacity .6s ease; }
+  #midiCap.on { opacity:.9; }
+  #midiCap .bar, #midi .bar { position:relative; height:2px; background:rgba(241,231,207,.2); margin-top:6px; }
+  #midiCap .bar { width:180px; margin:8px auto 0; }
+  :is(#midiCap,#midi) .bar i { position:absolute; top:-2px; width:2px; height:6px; background:var(--warm); transform:translateX(-1px); }
+  :is(#midiCap,#midi) .bar b { position:absolute; top:-3px; width:1px; height:8px; background:rgba(241,231,207,.45); }
+  #midi { position:fixed; inset:auto 16px 16px auto; z-index:20; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); overflow:auto;
+    background:var(--glass-hi); font-size:12.5px; padding:12px 14px; border:1px solid var(--edge); border-radius:12px; }
+  #midi[hidden] { display:none; }
+  #midi .grid { display:grid; grid-template-columns:repeat(9, 92px); gap:10px; margin:10px 0; }
+  #midi .strip h4 { margin:0 0 4px; font:italic 400 14px var(--serif); color:var(--warm); }
+  #midi .strip h4 .n { margin-right:5px; font:11px var(--mono); color:var(--faint); }
+  #midi .row { margin-bottom:6px; } #midi .row.off { opacity:.35; } #midi .row.none { opacity:.15; }
+  #midi button { margin-right:4px; padding:1px 8px; font-size:12px; }
+  #midi .head { display:flex; gap:16px; align-items:baseline; }
+  #midi pre { margin:0 0 0 auto; font:11px var(--mono); color:var(--soft); white-space:pre; }
   body.workspace #midi { inset:62vh 0 0 auto; width:min(820px, 55vw); max-width:none; max-height:none; height:38vh; box-sizing:border-box;
-    border-radius:0; border-top:1px solid #1c2a1c; border-left:1px solid #1c2a1c; background:#0e0c08; z-index:auto; }
+    border-radius:0; border-top:1px solid var(--line); border-left:1px solid var(--line); background:#0e110d; z-index:auto; }
   body.workspace #midi .grid { grid-template-columns:repeat(9, minmax(64px, 1fr)); gap:8px; }
   body.workspace:has(#midi:not([hidden])) #dev { width:calc(100vw - min(820px, 55vw)); }
   body.workspace #midiCap { bottom:auto; top:calc(62vh - 70px); left:31vw; }
   body.workspace #play, body.workspace #strip { display:none !important; }
-  #dev h2 { font-size:11px; margin:14px 0 4px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
-  #dev h2:first-child { margin-top:2px; }
+  /* ---- THE DOCKED PANEL (the workspace's band): areas that open and close on their own (an option-click does them all), shelves
+     folded inside them, one line per row. An area's ▸ hangs in the gutter and a shelf's box reaches into it, so an area's name, a
+     shelf's and the rows under them all start on one edge. ---- */
   #dev details { margin:0; }
-  #dev summary { list-style:none; cursor:pointer; }
+  #dev summary { position:relative; list-style:none; cursor:pointer; }
   #dev summary::-webkit-details-marker { display:none; }
-  #dev summary::before { content:'▸ '; color:#5a7a5a; }
-  #dev details[open] > summary::before { content:'▾ '; }
-  #dev summary.sec { font-size:11px; margin:14px 0 4px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
-  #dev summary.adv { font-size:11px; margin:8px 0 3px; color:#6f8a6f; }
+  #dev summary::before { content:'▸'; position:absolute; left:-11px; top:.2em; font-size:10px; font-style:normal; color:var(--faint); }
+  #dev details[open] > summary::before { content:'▾'; }
+  #dev summary[data-changed]::after { content:'● ' attr(data-changed); margin-left:6px; font-size:10px; font-style:normal; color:var(--mark); }
+  #dev :is(summary.sec, h2) { margin:12px 0 4px; font:italic 400 15px var(--serif); color:var(--warm); }
+  #dev h2:first-child { margin-top:2px; }
+  #dev details > details { margin:6px -8px 2px; padding:0 7px; border:1px solid var(--line); border-radius:8px; background:rgba(241,231,207,.02); }
+  #dev summary.adv { padding:4px 0; font:italic 12.5px var(--serif); color:var(--soft); }
+  #dev summary.adv::before, #dev details[open] > summary.adv::before { content:none; }   /* a shelf's box says it folds: no ▸ */
+  #dev .machine { margin:18px 0 0; font-style:italic; font-size:12px; color:var(--faint); letter-spacing:.04em; }
+  #dev .ws-head { flex-wrap:wrap; gap:6px; margin:6px 0 4px; }
+  #dev .ws-count { flex:1; font-style:italic; color:var(--soft); }
+  #dev .ws-head button { padding:2px 10px; font-size:12px; }
+  #dev .ws-head [hidden] { display:none; }
+  #dev .dot { color:var(--mark); font-size:10px; font-style:normal; }
+  /* a row: its name, its track with a tick where the saved look has it, its value, and ↺ while it differs */
+  #dev .ctl.setting { display:grid; grid-template-columns:96px minmax(0,1fr) 42px 14px; align-items:center; column-gap:6px; min-height:22px; margin:0; }
+  #dev .ctl.setting > label { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:help; }   /* a click says what it does */
+  #dev .ctl.setting.changed > label { color:var(--ink); }
+  #dev .ctl.setting .track { position:relative; display:block; min-width:0; }
+  #dev .ctl.setting input[type=range] { display:block; width:100%; height:16px; margin:0; }
+  #dev .ctl.setting .home { position:absolute; top:50%; width:2px; height:9px; margin:-4px 0 0 -1px; background:var(--warm); opacity:.5; pointer-events:none; }
+  #dev .ctl.setting .home[hidden] { display:none; }
+  #dev .ctl.setting .val { font:11px var(--mono); color:var(--soft); text-align:right; white-space:nowrap; }
+  #dev .ctl.setting.changed .val { color:var(--mark); }
+  #dev .ctl.setting .rs { grid-column:4; padding:0; border:none; background:none; font-size:12px; font-style:normal; color:var(--faint); }
+  #dev .ctl.setting .rs:hover { color:var(--warm); background:none; }
+  #dev .ctl.setting .rs[hidden] { display:none; }
+  #dev .ctl.setting.toggle input { justify-self:start; margin:0; accent-color:var(--warm); }
+  #dev .ctl.setting.select select { grid-column:2 / 4; min-width:0; padding:1px 8px; font-size:12px; }
+  #dev .ctl.setting [data-inherit] { grid-column:2 / 4; justify-self:start; padding:0 8px; font-size:11px; }
+  #dev .ctl.setting.btn { display:block; margin:6px 0; }
+  #dev .ctl.setting.btn button { display:inline-flex; align-items:center; gap:6px; padding:2px 10px; font-size:12px; }
   /* the look as the advanced panel's heading: ‹ name ›, the name being the dropdown (the select lies over it, unseen) */
   .looks .lookhead { display:flex; align-items:center; gap:8px; margin:10px 0 2px; }
-  .looks .lookhead button { flex:0 0 auto; background:none; color:#aab5a2; border:1px solid rgba(241,231,207,.18); border-radius:16px; padding:3px 12px; font-size:15px; cursor:pointer; }
+  .looks .lookhead button { flex:0 0 auto; background:none; color:var(--soft); border:1px solid var(--edge); border-radius:var(--pill); padding:3px 12px; font-size:15px; cursor:pointer; }
   .looks .lookhead .pick { position:relative; flex:1; min-width:0; text-align:center; }
-  .looks .lookhead .name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f1e7cf;
-    font:italic 400 18px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
-  .looks .lookhead .name::after { content:' ▾'; font-size:11px; font-style:normal; color:#6f7a6b; }
+  .looks .lookhead .name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--warm);
+    font:italic 400 18px var(--serif); }
+  .looks .lookhead .name::after { content:' ▾'; font-size:11px; font-style:normal; color:var(--faint); }
   .looks .lookhead select { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
-  .looks .look-note { font-size:11px; color:#e8d9a8; margin:-4px 0 8px; text-align:center; word-break:break-word; -webkit-user-select:text; user-select:text; }   /* where a save went */
-  .looks .look-chip { font-size:11px; color:#9fb89f; margin:0 0 8px; text-align:center; word-break:break-word; }
-  .looks .lookacts button.main { flex:1; background:rgba(241,231,207,.1); color:#f1e7cf; border-color:rgba(241,231,207,.35); padding:5px 8px; }
-  #dev .modes button { background:none; color:#aab5a2; border:1px solid rgba(241,231,207,.18); border-radius:16px; padding:4px 12px; cursor:pointer;
-    font:italic 13px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }   /* the same "less" as the playful sidebar's */
-  #dev .modes button:hover { color:#f1e7cf; background:rgba(241,231,207,.08); }
-  .looks .stylerow button.on { background:rgba(241,231,207,.14); color:#f1e7cf; border-color:rgba(241,231,207,.45); }   /* which of morph / fade this playlist item has */
+  .looks .look-note { font-size:12px; color:var(--warm); margin:-4px 0 8px; text-align:center; word-break:break-word; -webkit-user-select:text; user-select:text; }   /* where a save went */
+  .looks .look-chip { font-size:12px; color:var(--soft); margin:0 0 8px; text-align:center; word-break:break-word; }
+  .looks .stylerow button.on { background:var(--lit); color:var(--warm); border-color:rgba(241,231,207,.45); }   /* which of morph / fade this playlist item has */
   .ctl { display:flex; align-items:center; gap:6px; margin:3px 0; }
   /* an INERT row (one this look's camera never reads) hides itself; .ctl's display:flex would otherwise
      out-rank the UA's [hidden] rule, and an empty section takes its heading with it */
   #dev .ctl[hidden], #dev h2[hidden], #dev details[hidden], .looks .ctl[hidden] { display:none; }
-  .ctl label { flex:0 0 96px; color:#9fb89f; }
-  .ctl input[type=range] { flex:1; min-width:0; height:14px; accent-color:#c99; }
-  .ctl .val { flex:0 0 46px; text-align:right; color:#e8d9a8; }
-  .ctl.toggle label, .ctl.select label { flex:0 0 96px; }
-  .ctl select { flex:1; background:#10180f; color:#cfe0cf; border:1px solid #243; }
-  .ctl button { background:#1a2a1a; color:#cfe0cf; border:1px solid #2c452c; border-radius:4px; padding:3px 8px; cursor:pointer; }
-  .ctl button:hover { background:#243c24; }
+  .ctl label, .ctl.toggle label, .ctl.select label { flex:0 0 96px; }
+  .ctl input[type=range] { flex:1; min-width:0; }
+  .ctl .val { flex:0 0 46px; text-align:right; }
+  .ctl select { flex:1; }
   /* CURSORS. The editor's surfaces are controls, not text: an arrow over their words, a hand over what acts, the I-beam only in a
      field that takes typing, and a drag across them selects nothing. Arboretum's status line stays selectable: it is a message to copy. */
   :is(#dev,#play,#strip,#plist,#wsTabs,.session-panel,#midi,#welcome) { cursor:default; -webkit-user-select:none; user-select:none; }
@@ -145,124 +220,93 @@
   .err { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
          color:#e88; font:14px ui-monospace,monospace; text-align:center; padding:40px; }
 
-  /* ---- PLAYFUL editor (the default mode): the same sidebar language as #dev, fewer and larger controls ---- */
-  #play {
-    position:fixed; top:0; left:0; height:100vh; width:264px; box-sizing:border-box;
-    overflow-y:auto; padding:12px 14px 40px; background:rgba(8,12,8,.78);
-    backdrop-filter:blur(6px); border-right:1px solid #1c2a1c;
-    font:12px ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
-    transition: transform .6s cubic-bezier(.22,.61,.36,1), background-color .2s, border-color .2s;
-  }
+  /* ---- THE SIDEBAR (#play): simple or advanced, beside the picture ---- */
+  #play { position:fixed; top:0; left:0; height:100vh; width:264px; box-sizing:border-box; overflow-y:auto; padding:12px 14px 40px;
+    background:var(--glass); backdrop-filter:blur(6px); border-right:1px solid var(--line);
+    transition: transform .6s cubic-bezier(.22,.61,.36,1), opacity .18s ease, background-color var(--clear), border-color var(--clear), backdrop-filter var(--clear); }   /* opacity: it steps aside from the cursor (sideFade) */
   #play.hidden { display:none; }
   #play.offscreen { transform:translateX(-100%); }
-  #play h2 { font-size:11px; margin:16px 0 6px; color:#7fae7f; text-transform:uppercase; letter-spacing:.08em; }
+  #play h2 { margin:16px 0 6px; font:italic 400 13px var(--serif); color:var(--soft); }
   #play .ctl { margin:8px 0; }
   #play .ctl label { flex:0 0 64px; }
-  #play input[type=range] { height:22px; }        /* finger-sized */
+  #play input[type=range] { height:26px; }        /* finger-sized */
   #play .ctl.off { opacity:.35; }
-  #play .ctl[hidden] { display:none; }   /* the playlist row, until there is a second list to swap to */
   #play .ctl.off input { pointer-events:none; }
-  #play .modes { display:flex; gap:6px; margin-bottom:4px; }
-  #play .modes button, #strip button { background:rgba(26,42,26,.7); color:#9fb89f; border:1px solid #2c452c;
-    border-radius:12px; padding:4px 12px; cursor:pointer; font:11px ui-monospace,monospace; }
-  #play .modes button:hover { color:#e8d9a8; background:#243c24; }
+  #play .ctl[hidden] { display:none; }   /* the playlist row, until there is a second list to swap to */
   #play .preset { display:flex; align-items:center; gap:8px; margin:6px 0 2px; }
-  #play .preset .name { flex:1; text-align:left; color:#e8d9a8; font-size:13px; overflow:hidden;
-    text-overflow:ellipsis; white-space:nowrap; }
-  #play .preset button { flex:0 0 auto; font-size:14px; padding:4px 12px; }
-  /* the try-out dials: end words above, a tick at the look's own value on the track; in the playful sidebar and the zen strip */
-  :is(#play,#strip) .try .ends { display:flex; justify-content:space-between; font-style:italic; font-size:10px; color:#6f8a6f; }
-  :is(#play,#strip) .try .name { color:#9fb89f; }
-  :is(#play,#strip) .try .track { position:relative; }
-  :is(#play,#strip) .try .track input { display:block; width:100%; }
-  :is(#play,#strip) .try .tick { position:absolute; top:50%; width:2px; height:8px; margin:-4px 0 0 -1px; background:#e8d9a8; pointer-events:none; }
-  #play .ctl.try { display:block; }
-  #strip .ctl.try { display:grid; grid-template-columns:auto 1fr; align-items:center; column-gap:8px; }   /* name and end words share a line, so the strip stays one slim row */
-  #strip .ctl.try .track { grid-column:1 / -1; }
-  :is(#play,#strip) .try.off input { pointer-events:none; }
-  #play .tryreset { background:rgba(26,42,26,.7); color:#9fb89f; border:1px solid #2c452c; border-radius:6px; padding:4px 10px; cursor:pointer; }
+  #play .acts { display:flex; gap:8px; justify-content:space-between; }
+  #play details.more { margin:14px 0 10px; }
+  #play details.more summary { color:var(--soft); font-style:italic; list-style:none; cursor:pointer; }
+  #play details.more summary::before { content:'▸ '; } #play details.more[open] summary::before { content:'▾ '; }
   /* the wind pad: x = gust character, y = strength */
-  #play .pad { position:relative; height:120px; margin:6px 0; border-radius:8px;
-    background:linear-gradient(to top, rgba(28,42,28,.7), rgba(16,24,15,.7)); border:1px solid #243;
+  #play .pad { position:relative; height:120px; margin:6px 0; border-radius:12px; background:var(--wash); border:1px solid var(--line);
     cursor:crosshair; touch-action:none; }
   #play .pad .dot { position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%;
-    background:#e8d9a8; box-shadow:0 0 10px rgba(232,217,168,.5); pointer-events:none; }
-  #play .pad .padlab { position:absolute; right:6px; bottom:4px; color:#5a7a5a; font-size:10px; pointer-events:none; }
+    background:var(--warm); box-shadow:0 0 10px rgba(241,231,207,.5); pointer-events:none; }
+  #play .pad .padlab { position:absolute; right:8px; bottom:5px; color:var(--faint); font-size:11px; font-style:italic; pointer-events:none; }
 
-  /* ---- MINIMALIST editor: one translucent strip along the bottom, auto-fading ---- */
+  /* ---- THE STRIP (#strip): the dials over the picture; one bar along the bottom (.wide), or one dial at a time over a row of words (.one) ---- */
   #strip {
     position:fixed; left:50%; bottom:14px; transform:translateX(-50%); z-index:8;
     width:min(520px, calc(100vw - 24px)); box-sizing:border-box; padding:10px 14px;
-    background:rgba(8,12,8,.55); backdrop-filter:blur(8px);
-    border:1px solid rgba(28,42,28,.8); border-radius:14px;
-    font:12px ui-monospace,Menlo,Consolas,monospace; color:#cfe0cf;
-    transition: opacity .3s ease, transform .6s cubic-bezier(.22,.61,.36,1), background-color .2s, border-color .2s;   /* appears quickly... */
+    background:var(--glass); backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:20px;
+    transition: opacity .3s ease, transform .6s cubic-bezier(.22,.61,.36,1), background-color var(--clear), border-color var(--clear), backdrop-filter var(--clear);   /* appears quickly... */
   }
-  /* touch: a finger on a slider clears the rest of the panel so the picture shows (children keep their place; only the held row stays) */
-  /* the playful sidebar and the dials speak in the welcome's face and warm light, not the terminal's */
-  #play { font:14px/1.3 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; color:#e9ecdf; background:rgba(14,17,13,.76); border-right:1px solid rgba(241,231,207,.14); }
-  #play .ctl label { color:#aab5a2; font-style:italic; }
-  #play input[type=range] { accent-color:#f1e7cf; height:26px; }
-  #play .modes button, #play .preset button, #play .ctl button, #play .tryreset { background:none; color:#aab5a2; border:1px solid rgba(241,231,207,.18);
-    border-radius:16px; padding:4px 12px; cursor:pointer; font:italic 13px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
-  #play .modes button:hover, #play .ctl button:hover { color:#f1e7cf; background:rgba(241,231,207,.08); }
-  #play .preset .name { color:#f1e7cf; font-style:italic; font-size:16px; }
-  #play .ctl.try { display:grid; grid-template-columns:1fr auto 1fr; align-items:baseline; margin:12px 0 4px; }
-  #play .try .ends { display:contents; font-size:12.5px; color:#aab5a2; }
-  #play .try .ends span:first-child { grid-column:1; grid-row:1; }
-  #play .try .ends span:last-child { grid-column:3; grid-row:1; text-align:right; }
-  #play .try .name { grid-column:2; grid-row:1; color:#e9ecdf; font-size:14px; }
-  #play .try .track { grid-column:1 / -1; }
-  :is(#play,#strip) .try .tick { background:#f1e7cf; opacity:.75; }
-  #play .acts { display:flex; gap:8px; justify-content:space-between; }
-  #play details.more { margin:14px 0 10px; }
-  #play details.more summary { cursor:pointer; color:#aab5a2; font-style:italic; list-style:none; }
-  #play details.more summary::before { content:'▸ '; } #play details.more[open] summary::before { content:'▾ '; }
-  #play select { font:inherit; }
+  #strip.offscreen { transform:translate(-50%, 200%); }
+  #strip.faded { opacity:0; pointer-events:none; transition: opacity .9s ease, transform .6s cubic-bezier(.22,.61,.36,1); }   /* ...retires gently */
+  #strip .preset { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  #strip .preset button { flex:0 0 auto; padding:3px 11px; font-size:14px; }
+  #strip .preset .up { margin-left:10px; padding:3px 9px; font-size:15px; }
+  #strip .ctl { margin:5px 0; }
+  #strip.wide { width:min(880px, calc(100vw - 24px)); display:flex; align-items:center; gap:18px; padding:10px 18px; }
+  #strip.hidden { display:none; }   /* AFTER .wide in the cascade — equal specificity, and hidden must always win */
+  #strip.wide .preset { flex:0 0 auto; margin:0; gap:6px; }
+  #strip.wide .preset .name { max-width:150px; }
+  #strip.wide .ctl { flex:1 1 0; margin:0; min-width:0; }
+  #strip.wide .cap, #strip.wide .tabs { display:none; }   /* the one-dial layout's, kept while the bar is up: a narrower window brings them back */
+  #strip.one { padding:10px 12px 9px; }
+  #strip.one .preset, #strip.one .ctl.out, #strip.one .try .name { display:none; }
+  #strip.one .ctl { margin:0 0 6px; }
+  #strip.one .try .ends { font-size:13px; }
+  #strip.one input[type=range] { height:32px; }
+  #strip.one .cap { position:absolute; left:0; right:0; bottom:100%; margin-bottom:8px; min-height:0; font-size:15px; }   /* above the card, so the card is only the dial and the words */
+  #strip.one .tabs { display:flex; gap:5px; }
+  #strip.one .tabs button { flex:1 1 0; min-width:0; padding:7px 0; font-size:14px; }
+  #strip.one .tabs button.sm { flex:0 0 34px; font-style:normal; }
+  #strip.one .tabs button.ico { font-size:17px; }
+
+  /* ---- what the sidebar and the strip share ---- */
+  /* the look's name between ‹ ›: a tap opens the stories */
+  :is(#play,#strip) .preset .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left;
+    color:var(--warm); font-style:italic; font-size:16px; cursor:pointer; }
+  #play .preset .name { font-size:20px; }            /* the sidebar's, with no arrows: the look's name as the advanced depth's title has it */
+  /* the try-out dials: end words either side of the name, over the track, a tick at the look's own value */
+  :is(#play,#strip) .ctl.try { display:grid; grid-template-columns:1fr auto 1fr; align-items:baseline; column-gap:10px; }
+  #play .ctl.try { margin:12px 0 4px; }
+  :is(#play,#strip) .try .ends { display:contents; font-style:italic; font-size:12.5px; color:var(--soft); }
+  :is(#play,#strip) .try .ends span:first-child { grid-column:1; grid-row:1; }
+  :is(#play,#strip) .try .ends span:last-child { grid-column:3; grid-row:1; text-align:right; }
+  :is(#play,#strip) .try .name { grid-column:2; grid-row:1; color:var(--ink); font-size:14px; font-style:normal; }
+  :is(#play,#strip) .try .track { grid-column:1 / -1; position:relative; }
+  :is(#play,#strip) .try .track input { display:block; width:100%; }
+  :is(#play,#strip) .try .tick { position:absolute; top:50%; width:2px; height:8px; margin:-4px 0 0 -1px; background:var(--warm); opacity:.75; pointer-events:none; }
+  :is(#play,#strip) .try.off input { pointer-events:none; }
   /* the one sentence a moving dial says: it holds its line so nothing shifts when it speaks */
   :is(#play,#strip) .cap { min-height:2.5em; display:flex; align-items:center; justify-content:center; text-align:center; font-style:italic; font-size:13px;
-    line-height:1.25; color:#f1e7cf; text-shadow:0 1px 10px rgba(0,0,0,.7); opacity:0; transition:opacity .5s ease; pointer-events:none; }
+    line-height:1.25; color:var(--warm); text-shadow:0 1px 10px rgba(0,0,0,.7); opacity:0; transition:opacity .5s ease; pointer-events:none; }
   :is(#play,#strip) .cap.on { opacity:1; }
-  #strip.wide .cap { display:none; }
-  #strip.one .cap { position:absolute; left:0; right:0; bottom:100%; margin-bottom:8px; min-height:0; font-size:15px; }   /* above the card, so the card is only the dial and the words */
-  #play > *, #strip > * { transition: opacity .2s; }
+  /* a held slider (a finger, or a mouse moving it) fades the rest of the panel away so the picture shows, and back on release
+     (children keep their place; only the held row stays) */
+  :where(#play,#strip,#dev) * { transition: opacity var(--clear); }   /* zero specificity: a control's own transition still wins */
   :is(#play,#strip,#dev).holding { background:transparent; border-color:transparent; backdrop-filter:none; }
   /* everything goes but the held row, what is inside it, what contains it, and the caption line */
   :is(#play,#strip,#dev).holding *:not(.held):not(.held *):not(:has(.held)):not(.cap) { opacity:0; }
-  #strip.offscreen { transform:translate(-50%, 200%); }
-  #strip.faded { opacity:0; pointer-events:none; transition: opacity .9s ease, transform .6s cubic-bezier(.22,.61,.36,1); }   /* ...retires gently */
-  /* desktop (fine pointer): one horizontal bar, shown by cursor PROXIMITY rather than a timer */
-  #strip.wide { width:min(880px, calc(100vw - 24px)); display:flex; align-items:center; gap:16px; padding:10px 16px; }
-  #strip.hidden { display:none; }   /* AFTER .wide in the cascade — equal specificity, and hidden must always win */
-  #strip.wide .preset { flex:0 0 auto; margin:0; gap:6px; }
-  #strip.wide .preset .name { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #strip.wide .ctl { flex:1 1 0; margin:0; min-width:0; }
-  #strip.wide .ctl label { flex:0 0 auto; }
-  #strip .preset { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-  #strip .preset .name { flex:1; text-align:left; color:#e8d9a8; font-size:13px; }
-  #strip .ctl { display:flex; align-items:center; gap:8px; margin:5px 0; }
-  #strip .ctl label { flex:0 0 56px; color:#9fb89f; }
-  #strip .ctl input[type=range] { flex:1; min-width:0; height:20px; accent-color:#c99; }
-  #strip .preset .more { flex:0 0 auto; margin-left:10px; padding:2px 9px; color:#7fae7f; }   /* rides the preset row, clear of ‹ › */
-  /* touch: one dial at a time above a row of words (the welcome's face, not the terminal's) */
-  #strip.one { padding:10px 12px 9px; border-radius:20px; font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
-  #strip.one .preset, #strip.one .ctl.out, #strip.one .ctl label, #strip.one .try .name { display:none; }
-  #strip.one .ctl { margin:0 0 6px; }
-  #strip.one .ctl.try:not(.out) { display:block; }
-  #strip.one .try .ends { font-size:13px; color:#aab5a2; }
-  #strip.one input[type=range] { height:32px; accent-color:#f1e7cf; }
-  #strip.one .tabs { display:flex; gap:5px; }
-  #strip.one .tabs button { flex:1 1 0; min-width:0; padding:7px 0; border-radius:16px; background:none; color:#aab5a2;
-    border:1px solid rgba(241,231,207,.16); font:italic 14px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; }
-  #strip.one .tabs button.on { color:#14170f; background:#f1e7cf; border-color:#f1e7cf; }
-  #strip.one .tabs button.sm { flex:0 0 34px; font-style:normal; }
   #tip {
     position:fixed; max-width:300px; z-index:10; pointer-events:none; display:none;
-    font:11px/1.55 ui-monospace,Menlo,Consolas,monospace; color:#dfe9df;
-    background:rgba(10,16,10,.97); border:1px solid #2c452c; border-radius:6px;
-    padding:8px 10px; box-shadow:0 8px 28px rgba(0,0,0,.55);
+    font:13px/1.45 var(--serif); color:var(--ink); background:var(--glass-hi); border:1px solid var(--edge); border-radius:12px;
+    padding:9px 12px; box-shadow:0 8px 28px rgba(0,0,0,.55);
   }
-  #tip b { color:#cbe6a8; font-weight:600; }
+  #tip b { color:var(--warm); font-weight:normal; font-style:italic; }
 
   /* ---- welcome gate: a faint 'memories' background under an intro overlay ---- */
   #gl { transition: opacity 1.6s ease; }
@@ -278,14 +322,14 @@
   #welcome .w { max-width: 560px; display: flex; flex-direction: column; align-items: center; gap: 22px;
     animation: welcome-in 1.4s ease both; }
   @keyframes welcome-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-  #welcome h1 { margin: 0; font: 300 clamp(42px, 9vw, 78px)/1 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  #welcome h1 { margin: 0; font: 300 clamp(42px, 9vw, 78px)/1 var(--serif);
     letter-spacing: .03em; color: #f2f6ee; text-shadow: 0 2px 30px rgba(0,0,0,.5); }
   #welcome h1 .jp { display: block; margin-top: .38em; font-size: .3em; letter-spacing: .5em;
     color: #9fb89f; font-weight: 400; text-indent: .5em; }   /* indent balances the trailing letter-space */
   #welcome p { margin: 0; max-width: 30em; color: #cedcc5; text-shadow: 0 1px 16px rgba(0,0,0,.55);
     font: 400 clamp(15px,2.2vw,19px)/1.65 ui-serif,Georgia,"Times New Roman",serif; }
-  #welcome .feel { margin-top: 8px; cursor: pointer; color: #f1e7cf;            /* warm sunlight, not terminal green */
-    font: italic 400 clamp(19px,2.7vw,23px)/1 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  #welcome .feel { margin-top: 8px; cursor: pointer; color: var(--warm);            /* warm sunlight, not terminal green */
+    font: italic 400 clamp(19px,2.7vw,23px)/1 var(--serif);
     letter-spacing: .015em; padding: 10px 32px; border-radius: 40px;
     background: rgba(240,224,168,.05); border: 1px solid rgba(232,217,168,.30);
     box-shadow: 0 0 0 rgba(240,224,168,0);
@@ -295,9 +339,9 @@
   #welcome .feel:active { transform: translateY(0); }
   /* two plain links beneath "feel": quiet, so "feel" stays the one primary action */
   #welcome .more { display: flex; gap: .7em; align-items: baseline; margin-top: -4px;
-    font: italic 400 clamp(15px,2vw,16px)/1 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; letter-spacing: .015em; }
+    font: italic 400 clamp(15px,2vw,16px)/1 var(--serif); letter-spacing: .015em; }
   #welcome .more a { color: #9fb89f; text-decoration: none; transition: color .45s ease; }
-  #welcome .more a:hover, #welcome .more a:focus-visible { color: #f1e7cf; }
+  #welcome .more a:hover, #welcome .more a:focus-visible { color: var(--warm); }
   #welcome .more a[hidden] { display: none; }
   #welcome .more #arbLink::after { content: "·"; margin-left: .7em; color: #9fb89f; }   /* the dot goes with the link it follows, so it hides with it */
   /* "about", in place: about.html's column (styled by about.css, fetched by editor.js) laid over the same canvas. It breathes in and
@@ -313,9 +357,129 @@
   #hint.gone { opacity: 0; pointer-events: none; }
   /* the name of the look a touch swipe landed on, across the top (the welcome's own face) */
   #lookName { position:fixed; top:22px; left:50%; transform:translateX(-50%); z-index:9; max-width:calc(100vw - 32px); text-align:center;
-    font: italic 400 17px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; color:#f1e7cf; text-shadow:0 1px 12px rgba(0,0,0,.6);
+    font:italic 400 17px var(--serif); color:var(--warm); text-shadow:0 1px 12px rgba(0,0,0,.6);
     opacity:0; transition:opacity .6s ease; pointer-events:none; }
   #lookName.show { opacity:1; }
+
+  /* ---- the stories (editor.js) ---- */
+  #lookName small { display:block; margin-top:3px; font-size:12px; color:var(--soft); }
+  #lookName.show, body:has(#strip.one:not(.faded):not(.hidden):not(.offscreen)) #lookName { opacity:1; pointer-events:auto; cursor:pointer; }   /* on touch the name stays while the zen strip is awake, and a tap on it opens the stories */
+  .storyline { display:block; width:100%; margin:8px 0 0; padding:0; background:none; border:none; text-align:left; cursor:pointer;
+    font:italic 12px var(--serif); color:var(--faint); letter-spacing:.02em; }
+  .looks .storyline { text-align:center; margin-top:10px; }
+  .storyline:hover { color:var(--warm); }
+  /* ICONS (icons.js): a glyph at the size of its button's text, in its colour */
+  .icon { width:1.15em; height:1.15em; display:block; flex:none; }
+  button.ico { display:inline-flex; align-items:center; justify-content:center; line-height:1; }
+  button.ico[hidden] { display:none; }   /* an author display would otherwise out-rank the UA's [hidden] (▶ hides where a list does not play) */
+  :is(#play,#dev) .modes { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+  :is(#play,#dev) .modes [data-open-settings] { margin-left:auto; }
+  :is(#play,#dev) .modes button.ico { padding:5px 9px; font-size:15px; }
+  /* the sidebar's depth: simple · advanced · workspace, the one you are on lit */
+  :is(#play,#dev) .depth { display:inline-flex; border:1px solid var(--edge); border-radius:var(--pill); overflow:hidden; }
+  #play .modes { gap:4px; justify-content:space-between; }   /* ✕, the depths, ▶ and the cog spread evenly across the sidebar, none squeezed */
+  #play .modes [data-open-settings] { margin-left:0; }
+  #play .modes > *, #play .modes .depth button { flex:none; }
+  #play .modes button.ico, #play .modes .depth button { padding:5px 8px; }
+  :is(#play,#dev) .depth button { margin:0; border:none; border-radius:0; background:none; color:var(--soft); padding:5px 10px; font-size:15px; cursor:pointer; }
+  :is(#play,#dev) .depth button.on { background:var(--lit); color:var(--warm); }
+  /* ---- a question asked in the page (ask.js): over a fullscreen picture, where prompt() would leave fullscreen ---- */
+  dialog.ask { width:min(380px, calc(100vw - 32px)); padding:16px 18px 14px; font-size:15px; line-height:1.35; }
+  dialog.ask .q { margin:0 0 12px; font-style:italic; color:var(--warm); }
+  dialog.ask :is(input,textarea) { display:block; width:100%; box-sizing:border-box; padding:8px 12px; border-radius:10px; background:var(--wash);
+    border:1px solid var(--edge); color:var(--ink); font:16px var(--serif); }   /* 16px: iOS zooms into a smaller field */
+  dialog.ask textarea { height:12em; font:12px var(--mono); resize:vertical; }
+  dialog.ask :is(input,textarea):focus { outline:none; border-color:rgba(241,231,207,.5); }
+  dialog.ask .acts { display:flex; flex-direction:row-reverse; gap:8px; margin-top:14px; }   /* the confirming button is first in the form (Enter picks it) and drawn last */
+  dialog.ask button { padding:5px 14px; font-size:14px; cursor:pointer; }
+  /* ---- the advanced depth (advanced.js): the look's name, the areas under it, and a bar pinned at the foot while something differs ---- */
+  #play.deep { width:min(340px, 100vw); flex-direction:column; padding-bottom:0; }
+  #play.deep:not(.hidden) { display:flex; }   /* a column, so the foot can pin to the bottom; hidden still wins */
+  #play.deep .simple, #play.deep > .preset, #play:not(.deep) .adv { display:none; }
+  #play .adv { flex:1; display:flex; flex-direction:column; }
+  #play .adv .adv-title { display:flex; align-items:center; gap:8px; margin:14px 0 6px; }
+  #play .adv button.adv-look { flex:1; min-width:0; display:flex; align-items:center; gap:4px; padding:2px 0; border:none; border-radius:0; background:none;
+    text-align:left; font-size:20px; color:var(--warm); }
+  #play .adv .adv-look .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #play .adv .adv-look .icon { display:none; }
+  #play .adv.in-page button.adv-look { font-size:14px; color:var(--soft); }
+  #play .adv.in-page .adv-look .icon { display:block; }
+  #play .adv button.adv-look:hover { background:none; color:var(--warm); }
+  #play .adv button.adv-find { flex:0 0 auto; padding:6px; border:none; font-size:17px; }
+  #play .adv button.adv-find.open { background:var(--lit); color:var(--warm); }
+  #play .adv .find { display:block; width:100%; box-sizing:border-box; margin:2px 0 6px; padding:8px 12px; border-radius:18px;
+    background:var(--wash); border:1px solid var(--line); color:var(--ink); font:italic 16px var(--serif); }
+  #play .adv .find:focus { outline:none; border-color:rgba(241,231,207,.4); }
+  #play .adv .find[hidden] { display:none; }
+  #play .adv .adv-body { flex:1; padding-bottom:32px; }
+  #play .adv .adv-foot { position:sticky; bottom:0; z-index:1; display:flex; align-items:center; gap:8px; margin:0 -14px;
+    padding:10px 14px calc(10px + env(safe-area-inset-bottom)); background:var(--glass-hi); border-top:1px solid var(--edge); }
+  #play .adv .adv-foot[hidden] { display:none; }
+  #play .adv .adv-count { flex:1; font-style:italic; font-size:13px; color:var(--soft); }
+  #play .adv .dot { color:var(--mark); font-size:11px; font-style:normal; }
+  #play .adv .areas { display:flex; flex-direction:column; }
+  #play .adv button.area { display:flex; align-items:center; gap:8px; width:100%; margin:0; padding:12px 2px; border:none; border-bottom:1px solid var(--line);
+    border-radius:0; text-align:left; font-size:16px; color:var(--ink); }
+  #play .adv button.area .nm { flex:1; }
+  #play .adv button.area.quiet { font-size:14.5px; color:var(--soft); }
+  #play .adv button.area .v { color:var(--faint); font-size:13px; }
+  #play .adv button.area .go { color:var(--faint); }
+  #play .adv .machine { margin:22px 2px 2px; font-style:italic; font-size:12px; color:var(--faint); letter-spacing:.04em; }
+  #play .adv .area-name { margin:6px 0 4px; font:italic 400 21px var(--serif); color:var(--warm); }
+  #play .adv .area-name.sub { margin-top:22px; font-size:17px; }
+  #play .adv button.found-area { display:block; margin:16px 0 0; padding:0; border:none; font-size:12px; color:var(--faint); }
+  #play .adv .none { margin:14px 2px; font-style:italic; color:var(--faint); }
+  /* a row: its name (a tap, or a hover, says what it does), a dot and ↺ while it differs from the saved look, its value, then the control */
+  #play .adv .arow { padding:9px 0 7px; border-bottom:1px solid rgba(241,231,207,.07); }
+  #play .adv .arow[hidden] { display:none; }
+  #play .adv .arow .top { display:flex; align-items:center; gap:6px; min-height:28px; }
+  #play .adv .arow .nm { flex:1; min-width:0; padding:2px 0; border:none; border-radius:0; background:none; text-align:left; font-size:14.5px; color:var(--ink); }
+  #play .adv .arow .nm:disabled { cursor:default; }
+  #play .adv .arow span.nm { font-style:italic; }   /* with a mouse the name is plain text, its meaning the hover tip */
+  #play .adv .arow .dot { visibility:hidden; }
+  #play .adv .arow.changed .dot { visibility:visible; }
+  #play .adv .arow .val { font:12px var(--mono); color:var(--soft); }
+  #play .adv .arow.changed .val { color:var(--mark); }
+  #play .adv .arow .rs { padding:1px 8px; font-size:14px; font-style:normal; }
+  #play .means { grid-column:1/-1; flex-basis:100%; margin:4px 0 6px; font-size:13px; line-height:1.4; color:var(--soft); }   /* what a row does (advanced, and the simple depth on touch) */
+  #play .means b { color:var(--ink); font-weight:normal; font-style:italic; }
+  #play .ctl:has(> .means) { flex-wrap:wrap; }
+  #play .teach { cursor:pointer; }
+  #play .teach.open { color:var(--warm); }
+  #play .adv .track { position:relative; }
+  #play .adv .track input { display:block; width:100%; margin:4px 0 0; height:32px; }   /* a finger's height */
+  #play .adv .track .home { position:absolute; top:50%; width:2px; height:12px; margin:-4px 0 0 -1px; background:var(--warm); opacity:.6; pointer-events:none; }
+  #play .adv .track .home[hidden] { display:none; }
+  #play .adv button.pill { position:relative; width:44px; height:26px; padding:0; border-radius:13px; background:var(--wash); }
+  #play .adv .pill::after { content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:var(--soft); transition:left .15s; }
+  #play .adv button.pill.on { background:rgba(241,231,207,.3); border-color:rgba(241,231,207,.5); }
+  #play .adv .pill.on::after { left:21px; background:var(--warm); }
+  #play .adv .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+  #play .adv .chip { padding:5px 11px; font-size:13.5px; }
+  #play .adv .arow-btn { display:inline-flex; align-items:center; gap:6px; margin:10px 6px 4px 0; }
+  /* a shelf: the low-level settings and the computed ones, folded under the ones you reach for */
+  /* the box reaches out into the sidebar's gutter, so a shelf's words start where the rows above them do; the box says it folds, with no ▸ */
+  #play .adv details.shelf { margin:14px -12px 0; border:1px solid var(--line); border-radius:12px; padding:0 11px; background:rgba(241,231,207,.025); }
+  #play .adv details.shelf summary { position:relative; display:flex; align-items:baseline; gap:8px; padding:10px 0; cursor:pointer; list-style:none; font-style:italic; color:var(--soft); }
+  #play .adv details.shelf summary::-webkit-details-marker { display:none; }
+  #play .adv details.shelf summary .nm { flex:1; }
+  #play .adv details.shelf[hidden] { display:none; }
+  #play .adv details.shelf .arow:last-child { border-bottom:none; }
+  dialog.stories { width:min(420px, calc(100vw - 32px)); max-height:min(80vh, 640px); overflow-y:auto; font-size:15px; line-height:1.35;
+    cursor:default; -webkit-user-select:none; user-select:none; }
+  dialog.stories h2 { display:inline-block; margin:0 0 10px; font:italic 400 22px var(--serif); color:var(--warm); }
+  dialog.stories button { cursor:pointer; }
+  dialog.stories .done { float:right; padding:3px 12px; }
+  dialog.stories .story { display:block; width:100%; margin:6px 0 0; padding:10px 12px; text-align:left; background:rgba(241,231,207,.04);
+    color:var(--ink); border:1px solid var(--line); border-radius:12px; font-size:17px; }
+  dialog.stories .story:hover { border-color:rgba(241,231,207,.4); }
+  dialog.stories .story.on { background:var(--lit); border-color:rgba(241,231,207,.45); color:#fff8e6; cursor:default; }
+  dialog.stories .offline { margin:12px 0 0; color:var(--faint); font:italic 12px var(--serif); }
+  dialog.stories .story-looks { margin:4px 0 8px; padding:0 0 0 30px; color:var(--faint); font-size:12px; }
+  dialog.stories .story-looks button { display:block; width:100%; padding:5px 4px; text-align:left; border:none; border-radius:0; color:#cfd6c6; font-size:14px; font-style:normal; }
+  dialog.stories .story-looks button:hover { color:var(--warm); background:none; }
+  dialog.stories .story-looks button.on { color:var(--warm); background:none; font-style:italic; }
+  dialog.stories .story-looks button.on::after { content:'  · here'; color:var(--faint); font-size:12px; }
 </style>
 </head>
 <body class="intro">
@@ -323,7 +487,6 @@
 <div id="dev" class="hidden"></div>
 <div id="play" class="hidden"></div>
 <div id="strip" class="hidden"></div>
-<div id="hud"></div>
 <div id="wsStat"></div>
 <div id="wsTabs"></div>
 <div id="plist"></div>

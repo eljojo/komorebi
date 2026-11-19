@@ -98,19 +98,22 @@ model file whose mechanism it holds (`spec/model/`).
   state at rest), the cut stub, and the helpers more than one route uses (`turnBack`, `irisRoute`, `irisStep`). The route
   modules and `komorebi-transitions.js` import it, never the reverse.
 
-**Looks.** `presets.js` — the built-in looks (`PRESETS`), the shipped playlists that are the editor's only way to them (`PLAYLISTS`: the story, in the order a person walks it, which plays itself while left alone, then `EXPERIMENTAL`'s looks), and `PRIORITY`, the dials each look leads with.
+**Looks.** `presets.js` — the built-in looks (`PRESETS`), the shipped playlists that are the editor's only way to them (`PLAYLISTS`: the story, in the order a person walks it, then `EXPERIMENTAL`'s looks), and `PRIORITY`, the dials each look leads with.
 `macros.js` — the control bus: one input drives an authored recipe lifted from the shipped looks.
 
-**The editor** (EDITOR-only; `spec/implementation.md`, "The editor and the player", says how it behaves). `index.html` — the shell: the welcome, the three surfaces and their CSS. Must be served (`nix run .#dev`), not opened as a file. Its modules are `editor/`:
+**The editor** (EDITOR-only; `spec/implementation.md`, "The editor and the player", says how it behaves). `index.html` — the shell: the welcome, the three surfaces and their CSS, whose face (the palette and the type every surface a person meets wears) is set once, as tokens on `:root`; a surface's own rules lay it out and draw their colours from it. Must be served (`nix run .#dev`), not opened as a file. Its modules are `editor/`:
 - `editor.js` — the body: modes, panels, dials, keys and pointer, the in-place about.
+- `advanced.js` — the sidebar's advanced depth: the look's name, then every setting of the panel's layout area by area (the machine last), with find, shelves, and a foot bar while anything differs from the saved look; reads and writes only through what `editor.js` lends it, imported by `editor.js` alone.
+- `ask.js` — the questions the editor asks (a name, a yes or no, a word to read) as dialogs of the page's own, never the browser's `prompt()`.
+- `icons.js` — the Phosphor icons the editor's buttons wear (MIT), their paths inlined.
 - `editor-settings.js` — the shared Settings panel for the current device and showing; account controls are lent by `arboretum.js`.
 - `playlists.js` — the playlist model and every rule for lists, the mirror and saves; pure, given its `fetch` and timer.
 - `arboretum.js` — where looks are kept, in tiers (local, read, session; its header sets them out); the only file that
   touches storage or arboretum. `arboretum-api.js` is its wire, imported by it alone.
 - `leaf-maze.js` (pure) and `leaf-preview.js` — the held leaf (`L`); `leaf-preview.js` is imported by `editor.js` alone.
 - `tree-pane.js` — the workspace's tree pane (`W`): the grove from the side or on the T inset's turntable, its own WebGL2 canvas; imported by `editor.js` alone.
-- `playlist-pane.js` — the workspace's playlist pane, the tree pane's other tab: while up, the home of the advanced panel's look and playlist controls (moved in by `editor.js`), over the active list's items; on a playlist of yours their times, routes, order and removal, and a picker that adds a look, written through what `editor.js` lends it; imported by `editor.js` alone.
-- `midi.js` — an AKAI MIDImix over Web MIDI (`M` shows its console): writes only through what the editor lends it, imported by `editor.js` alone.
+- `playlist-pane.js` — the workspace's playlist pane, the tree pane's other tab: while up, the home of the docked panel's look and playlist controls (moved in by `editor.js`), over the active list's items; on a playlist of yours their times, routes, order and removal, and a picker that adds a look, written through what `editor.js` lends it; imported by `editor.js` alone.
+- `midi.js` — an AKAI MIDImix over Web MIDI (`M` shows its console, styled in `index.html`): writes only through what the editor lends it, imported by `editor.js` alone.
 - `remote.js` — the remote control: a phone signed in as you drives this editor through arboretum (Settings turns it on); writes only
   through what the editor lends it, checks each command against the board it sent, imported by `editor.js` alone. Its socket is opened
   by `arboretum.js`.

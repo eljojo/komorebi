@@ -184,7 +184,6 @@ export const PRESETS = {
   "drift_phase": 1.2240983189735037,
   "drift_auto": true,
   "drift_speed": 0.02,
-  "show_source": true,
   "show_layer": false,
   "show_layer_index": 0,
   "time_of_day": 9,
@@ -763,7 +762,6 @@ export const PRESETS = {
   "drift_phase": 0.12165903281940274,
   "drift_auto": true,
   "drift_speed": 0.04,
-  "show_source": true,
   "show_layer": false,
   "show_layer_index": 0,
   "time_of_day": 9,
@@ -1292,12 +1290,11 @@ export const EXPERIMENTAL = ['park 1', 'acid dreams', 'eclipse', 'the yellow tre
 // ---- THE SHIPPED PLAYLISTS: the only way the editor reaches a look of PRESETS. Each names looks of PRESETS in the order
 // they play; an item is a look's name, or { look, dwell_s?, crossfade_s?, style? } to pace that one item, and what an item
 // does not say comes from ITEM_DEFAULTS. dwell_s is how long the item holds; crossfade_s how long the next look takes to
-// arrive; style 'morph' (the automatic route) or 'fade'. A playlist that is `idle` plays itself: it starts on arrival, any
-// touch of the person's (a dial, a key, a tap) starts its hold over instead of stopping it, and it moves on only once the
-// hold has passed untouched. The first playlist is where a first visit lands. ----
+// arrive; style 'morph' (the automatic route) or 'fade'. A playlist plays only when ▶ starts it. The first playlist is where
+// a first visit lands. ----
 export const ITEM_DEFAULTS = { dwell_s: 30, crossfade_s: 4, style: 'morph' };
 export const PLAYLISTS = {
-  story: { name: 'komorebi', idle: true, items: [
+  story: { name: 'komorebi', items: [
     'park 1, the scene', 'park 1, under the trees', 'park 2', 'park fall', 'cherry blossom', 'montebello', 'montebello, rain',
     'forest floor', 'afternoon 7', 'afternoon 6', 'afternoon 6b', 'afternoon 5', 'afternoon 5b', 'prism', 'afternoon 4',
     'afternoon 4b', 'morning 1', 'morning 2', 'morning 3', 'morning 3b', 'memories',

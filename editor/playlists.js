@@ -59,8 +59,6 @@ const shipItems = (active) => (shipId(active) === null ? [] : BUILTINS.PLAYLISTS
 export const shipLists = () => Object.entries(BUILTINS.PLAYLISTS).map(([key, p]) => ({ value: `ship:${key}`, label: p.name }));
 // The first shipped playlist: where a first visit lands, and where a list that is gone falls back to.
 export const STORY = `ship:${Object.keys(BUILTINS.PLAYLISTS)[0]}`;
-// Whether a list plays itself and moves on only while nobody touches anything (presets.js PLAYLISTS `idle`).
-export const idles = (active) => shipId(active) !== null && BUILTINS.PLAYLISTS[shipId(active)].idle === true;
 const cloudItems = (state, active) => state.playlists[cloudId(active)]?.items ?? [];
 const cloudItem = (state, active, value) => value === "" || value === null || value === undefined ? undefined : cloudItems(state, active)[Number(value)];
 const isBuiltin = (PRESETS, name) => Object.hasOwn(PRESETS, name);
@@ -171,7 +169,7 @@ export function step(list, value, dir) {
 // The debug overlays do not change the art, so flipping one must not make a built-in "modified". drift_phase is an
 // animated state (the engine moves it with drift_auto), so it would mark every look edited.
 const NOT_THE_LOOK = new Set(["show_source", "show_layer", "show_layer_index", "drift_phase", "edge_area", ...PLAYBACK_KEYS]);
-const LOOK_KEYS = Object.keys(DEFAULTS).filter((k) => !NOT_THE_LOOK.has(k));
+export const LOOK_KEYS = Object.keys(DEFAULTS).filter((k) => !NOT_THE_LOOK.has(k));
 const close = (a, b) => a === b || (typeof a === "number" && typeof b === "number" && Math.abs(a - b) <= 1e-6);   // absolute: a seed is a large integer, a slider step is never under 0.001
 
 // Whether two param sets are the same look: equal on every DEFAULTS key but the ones above, numbers within a tolerance.
@@ -179,6 +177,12 @@ const close = (a, b) => a === b || (typeof a === "number" && typeof b === "numbe
 export function sameLook(a, b) {
   const A = migrateLegacy(a), B = migrateLegacy(b);
   return LOOK_KEYS.every((k) => FIDELITY_KEYS.includes(k) ? close(A[k], B[k]) : close(A[k] ?? DEFAULTS[k], B[k] ?? DEFAULTS[k]));
+}
+
+// The keys on which the look on screen differs from a saved one, by the rule sameLook holds a whole look to.
+export function lookChanges(live, saved) {
+  const A = migrateLegacy(live), B = migrateLegacy(saved);
+  return new Set(LOOK_KEYS.filter((k) => FIDELITY_KEYS.includes(k) ? !close(A[k], B[k]) : !close(A[k] ?? DEFAULTS[k], B[k] ?? DEFAULTS[k])));
 }
 
 // The name of the built-in that `params` still is, or null.
@@ -457,11 +461,10 @@ export function linkPlaylist(state, view, k) {
 // `arrived` when the look has landed — also when a look is put there by hand, which restarts the dwell. Timers are
 // injectable so the schedule can be tested without waiting.
 export function makePlayer({ timing, advance, onChange, setTimer = setTimeout, clearTimer = clearTimeout }) {
-  let on = false, timer = null, at = null;   // at: the look whose hold is running; null while the next one is on its way
+  let on = false, timer = null;
   const idle = () => { if (timer !== null) { clearTimer(timer); timer = null; } };
   const arrived = (value) => {
     idle();
-    at = value;
     const t = on ? timing(value) : null;
     if (t) timer = setTimer(() => { timer = null; if (on) advance(); }, t.dwell_s * 1000);
   };
@@ -469,10 +472,8 @@ export function makePlayer({ timing, advance, onChange, setTimer = setTimeout, c
     get playing() { return on; },
     start(value) { if (on) return; on = true; arrived(value); onChange?.(); },
     stop() { if (!on) return; on = false; idle(); onChange?.(); },
-    leaving() { idle(); at = null; },
+    leaving: idle,
     arrived,
-    // someone touched something while an idle playlist plays: the hold starts over, so it moves on only once left alone
-    touch() { if (on && at !== null) arrived(at); },
   };
 }
 

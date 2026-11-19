@@ -1,8 +1,8 @@
-import { create, DEG, PARAMS, CAMERAS, cameraFor, FIDELITY_KEYS, resolveSession } from '../komorebi.js';
+import { create, DEG, PARAMS, DEFAULTS, CAMERAS, cameraFor, FIDELITY_KEYS, resolveSession } from '../komorebi.js';
 import { mountSettings } from './editor-settings.js';
 import { PRIORITY, TREE_SPECIES } from '../presets.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
-import { entries, resolve, step, starValue, starName, entryName, lookState, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf, STORY, idles } from './playlists.js';
+import { entries, resolve, step, starValue, starName, entryName, lookState, lookChanges, LOOK_KEYS, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf, STORY } from './playlists.js';
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep } from '../macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { makeTreePane } from './tree-pane.js';
@@ -11,10 +11,13 @@ import { senescing } from '../engine/season/komorebi-season.js';
 import { LEAF_SHAPES } from '../engine/leaf/komorebi-leaf.js';
 import { mountMidi } from './midi.js';
 import { mountRemote } from './remote.js';
+import { icon } from './icons.js';
+import { makeAdvanced } from './advanced.js';
+import { askText, askYes, tell } from './ask.js';
 // ============================================================================
 // Komorebi editor (editor.js, loaded by index.html) — the authoring shell around the shared engine
 // (komorebi.js). The engine renders; this file is the MODE LADDER's three surfaces — the minimalist strip,
-// the playful macro sidebar, and the advanced dev panel (three depths of one control tree) — plus the HUD,
+// the playful macro sidebar, and the advanced dev panel (three depths of one control tree) — plus the
 // insets, preset management, sun-drag input and scene-transition stepping. Pure
 // sub-concerns are split into siblings: arboretum.js (where every preset is kept: the ★ looks in localStorage, and arboretum online where the browser allows), playlists.js (the lists the dropdown shows and the arrows step), playlist-pane.js (the workspace's list of them), macros.js (the control-bus
 // macro mappings the upper rungs drive). The
@@ -25,7 +28,6 @@ const canvas = document.getElementById('gl');
 const dev = document.getElementById('dev');
 const play = document.getElementById('play');
 const strip = document.getElementById('strip');
-const hud = document.getElementById('hud');
 const clamp = (x,a,b) => Math.min(b, Math.max(a, x));
 const fmt = (v) => Number.isInteger(v) ? String(v)
   : Math.abs(v)>=100 ? String(Math.round(v))   // big non-integers (azimuth / wind dir, step 1°) round to whole, not a 17-digit float
@@ -35,17 +37,20 @@ const fmt = (v) => Number.isInteger(v) ? String(v)
 const DEFAULT_PRESET = 'afternoon 7';   // the fallback look, when a list has nothing to land on (preset DATA lives in presets.js; where a visit lands is its PLAYLISTS)
 const WELCOME_PRESET = 'afternoon 6';   // the look shown faint behind the intro, until "feel"
 
-// ---- editor settings (mode ladder + the active playlist), persisted beside the ★ store. The three modes are
-// three DEPTHS of one control tree — min (the strip: 3 macros) ⊂ play (the sidebar: the macro bus) ⊂ adv (every
-// knob) — so "mode" is just which surface is showing. First run boots the MINIMALIST strip everywhere (the art
-// stands alone; ＋ climbs the ladder when you want more); the choice sticks thereafter. ----
+// ---- editor settings (mode ladder + the active playlist), persisted beside the ★ store. Two modes, two surfaces: min (the zen
+// strip: a few dials) and play (the sidebar). The sidebar has DEPTHS: simple (the dials and the macro bus), advanced (every setting,
+// area by area: advanced.js) and the workspace (desktop only: every knob docked in a band under the picture). First run boots the zen
+// strip everywhere (the art stands alone; the sliders icon opens the sidebar when you want more); the choice sticks thereafter. ----
 const SETTINGS_KEY = 'komorebi.editor';
 const settings = (() => {
-  const base = { mode: 'min', playlist: STORY, selected: {}, open: {}, sawTouchHint: false, workspace: false, wsPane: 'tree', remote: false };   // remote: this device takes the remote control (remote.js); playlist: 'ship:<key>' | 'local' | 'arb:<id>' (a first visit starts on the story); selected: the entry you were on, per playlist; open: the advanced panel's areas, by name; wsPane: the workspace's right-hand pane, 'tree' | 'playlist'
+  const base = { mode: 'min', depth: 'simple', playlist: STORY, selected: {}, open: {}, sawTouchHint: false, workspace: false, wsPane: 'tree', remote: false, advArea: null };   // remote: this device takes the remote control (remote.js); playlist: 'ship:<key>' | 'local' | 'arb:<id>' (a first visit starts on the story); selected: the entry you were on, per playlist; open: the docked panel's areas, by name; advArea: the area the advanced depth has open, or null for its index; wsPane: the workspace's right-hand pane, 'tree' | 'playlist'
   let s = base;
   try { s = Object.assign(base, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); }
   catch { /* unreadable: the defaults */ }
   if(typeof s.playlist !== 'string') s.playlist = STORY;
+  if(s.mode === 'adv' || s.workspace) s.mode = 'play';   // the advanced panel was a mode of its own: the sidebar is where it went
+  if(s.mode !== 'min' && s.mode !== 'play') s.mode = 'min';
+  if(s.depth !== 'adv') s.depth = 'simple';
   if(!s.selected || typeof s.selected !== 'object') s.selected = {};
   if(!s.open || typeof s.open !== 'object') s.open = {};
   return s;
@@ -79,6 +84,8 @@ function applyParams(obj){ endTween(); tryFrameCancel(); eng.setParams(obj); syn
 // looked at again after each edit: at most every 200 ms, the last edit always read.
 let lookChip=null, chipTimer=0;
 function chipSoon(){ if(!chipTimer) chipTimer=setTimeout(()=>{ chipTimer=0; refreshChip(); }, 200); }
+let adv=null;                    // the sidebar's advanced depth (advanced.js), made with the sidebar
+let homeLook=null, homeStale=true;   // the saved look it measures changes from (savedLook), read again after a load or a save
 let midi=null;                   // the MIDImix prototype (midi.js), mounted once everything it borrows exists
 let remote=null;                 // the remote control (remote.js), mounted once arboretum is
 let transDur=1.5;                // scene-transition seconds (editor-only — a performance setting, not stored in a look)
@@ -118,7 +125,8 @@ function frameShadow(){
   applyScope('');
 }
 
-// THE PANEL'S LAYOUT: its areas ('hc'), the groups inside them ('adv'), the buttons, and each parameter's row by name, in order. The row
+// THE PANEL'S LAYOUT: its areas ('hc'), the shelves inside them ('adv': the low-level settings, and those another setting computes, folded
+// away under the ones you reach for, which lead each area), the buttons, and each parameter's row by name, in order. The row
 // itself (kind, label, range or choices, rebuild scope) and its hover text are the parameter's, in PARAMS (komorebi-params.js); rowOf below
 // turns a name into the row the builders take. The rebuild scopes: 'source' rebuilds the light; 'canopy' rebuilds+rebakes leaves;
 // 'season' re-seasons cached leaves; 'density' reweights a fixed summer grove, or regrows outside its gate;
@@ -126,82 +134,92 @@ function frameShadow(){
 const PANEL_LAYOUT = [
   ['hc','Sun'],
   'time_of_day',
+  'cloud_thickness',
+  'core_angular_radius_deg',
+  'eclipse',
+  'eclipse_amount',
+  ['adv','the sun’s path'],
   'latitude',
   'sun_elevation_deg',
   'sun_azimuth_deg',
   'sun_cosine',
   'sun_extinction',
-  'cloud_thickness',
+  ['adv','the sun’s disc'],
   'core_weight_fraction',
-  'core_angular_radius_deg',
   'halo_angular_radius_deg',
-  'eclipse',
-  'eclipse_amount',
 
   ['hc','Colour & light'],
-  'tone_map',
   'exposure',
   'contrast',
   'ambient_skylight',
   'canopy_fill',
   'leaf_diffuse',
+  'chromatic_aberration',
+  'vignette',
+  ['adv','tone and the frame'],
+  'tone_map',
+  'vignette_shape',
+  'mesopic_strength',
+  'sky_turbidity',
+  ['adv','light in the shade'],
   'edge_area',
   'fill_scatter',
   'ground_bounce',
-  'sky_turbidity',
-  'mesopic_strength',
-  'chromatic_aberration',
+  ['adv','light through a leaf'],
   'trans_r',
   'trans_g',
   'trans_b',
+  ['adv','the ground'],
   'ground_r',
   'ground_g',
   'ground_b',
-  'vignette',
-  'vignette_shape',
 
   ['hc','Density'],
   'foliage_density',
   'tree_count',
-  'grove_reach_m',
   'leaves_per_cluster',
+  'canopy_extent_m',
+  ['btn','new leaves', reseed, 'dice-five'],
+  ['adv','how the leaves gather'],
+  'grove_reach_m',
   'inner_leaves',
   'cluster_spread_m',
   'shoot_leaves',
   'tilt_light',
   'tilt_shadow',
-  'canopy_extent_m',
   'canopy_thickness_m',
-  ['btn','reseed', reseed],
 
   ['hc','Season'],
   'phenology',
+  'anthocyanin',
+  'tannin',
+  'leaf_drop',
+  'litter',
+  'leaf_wetness',
+  ['adv','spring'],
   'leaf_out_end',
   'leaf_out_span',
   'leaf_out_spread',
   'leaf_green_span',
   'young_depth',
   'young_red',
+  ['adv','the turn'],
   'turn_start',
   'turn_span',
   'turn_spread',
   'tree_clock_spread',
   'tree_pigment_spread',
-  'anthocyanin',
-  'tannin',
   'wall_fraction',
   'turn_exposure',
   'exposure_absolute',
-  'leaf_drop',
+  ['adv','the fall'],
   'drop_exposure',
   'drop_start',
   'drop_span',
   'drop_lag',
   'drop_after_turn',
-  'litter',
   'litter_age',
   'litter_drift_m',
-  'leaf_wetness',
 
   ['hc','Leaves'],
   'leaf_shape',
@@ -213,54 +231,63 @@ const PANEL_LAYOUT = [
 
   ['hc','Tree shape'],
   ['species','species'],
+  'growth_years',
+  'droop',
+  'crown_aspect',
+  'faithful_canopy',
+  ['adv','branching'],
   'branch_children',
   'branch_angle_deg',
   'branch_length_ratio',
   'branch_pitch_deg',
   'leader_strength',
-  'growth_years',
-  'droop',
   'taper_delta',
-  'crown_aspect',
   'phyllotaxis',
   'branch_levels',
+  ['adv','trunk and wood'],
   'branch_tau',
   'canopy_base_height_m',
   'trunk_radius_m',
-  'faithful_canopy',
 
   ['hc','Scene'],
   'sky_view',
   'standing_scene',
   'tree_view',
-  'bark_r',
-  'bark_g',
-  'bark_b',
   'view_extent_m',
   'view_pitch_deg',
   'view_yaw_deg',
+  ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
+  ['btn','frame shadow', ()=>frameShadow()],   // one-time camera framing onto the cast shadow (the off-frame-tree / shadow-only composition, spec/model/camera.md) — a starting point to nudge, NOT an auto-track
+  ['adv','camera'],
   'view_center_x',
   'view_center_y',
   'view_fov_deg',
   'far_smear',
   'park_throw',
+  ['adv','glow'],
   'sky_scatter',
   'glow_bleed',
   'glow_bleed_m',
-  ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
-  ['btn','frame shadow', ()=>frameShadow()],   // one-time camera framing onto the cast shadow (the off-frame-tree / shadow-only composition, spec/model/camera.md) — a starting point to nudge, NOT an auto-track
+  ['adv','bark'],
+  'bark_r',
+  'bark_g',
+  'bark_b',
 
   ['hc','Wind'],
   'wind_pattern',
   'wind_strength',
   'wind_gustiness',
-  'gust_frequency',
   'wind_direction_deg',
   'weather_variability',
+  ['adv','gusts and weather'],
+  'gust_frequency',
   'weather_speed',
-  ['adv','spring mechanics'],
   'gust_attack',
   'gust_decay',
+  'gust_width_m',
+  'gust_carry',
+  'wind_shelter',
+  ['adv','spring mechanics'],
   'sway_stiffness',
   'sway_ceiling',
   'damping_ratio',
@@ -276,9 +303,6 @@ const PANEL_LAYOUT = [
   'wind_air',
   'wind_depth',
   'sway_spread',
-  'gust_width_m',
-  'wind_shelter',
-  'gust_carry',
   ['adv','leaf drift'],
   'drift_amount',
   'drift_phase',
@@ -304,6 +328,7 @@ const PANEL_LAYOUT = [
 
   ['hc','Lab'],
   'receiver',
+  ['adv','cloth'],
   'fabric_tt',
   'fabric_tint_r',
   'fabric_tint_g',
@@ -316,6 +341,7 @@ const PANEL_LAYOUT = [
   'fold_warp',
   'velvet_sheen',
   'fabric_scatter',
+  ['adv','window'],
   'mullion_tau',
   'mullion_pitch_m',
   'mullion_bar_m',
@@ -325,6 +351,7 @@ const PANEL_LAYOUT = [
   'window_cx_m',
   'window_cy_m',
   'window_wall',
+  ['adv','tent'],
   'tent_ridge_h_m',
   'tent_half_w_m',
   'tent_crown_w_m',
@@ -367,30 +394,42 @@ function speciesWrite(name){                       // TREE_SPECIES: the chosen s
   syncControl('tree_species');
 }
 
+const MACHINE_FIRST='Quality requests';   // the renderer's own areas start here, set apart as the machine (advanced.js does the same)
 // The areas open the way he left them (settings.open, by area name); until he has touched one, these three are open: the
 // passes he makes most (colour and density for the projector, the season). The rest start closed.
 const OPEN_AREAS = new Set(['Colour & light', 'Density', 'Season']);
 function buildPanel(){
   let area = dev, container = dev;                            // rows append to `container`; an 'hc' area, or an 'adv' group inside one, redirects them into a <details>
   const group=(text,cls,parent)=>{ const d=document.createElement('details'); const s=document.createElement('summary');
-    s.textContent=text; s.dataset.tipKey=text; s.className=cls; d.appendChild(s); parent.appendChild(d); return d; };
+    s.textContent=text; s.dataset.tipKey=text; s.className=cls; d.appendChild(s); parent.appendChild(d);
+    s.addEventListener('click',(e)=>{                          // option-click: every area (or every shelf of this area) opens or closes with this one
+      if(!e.altKey) return;
+      e.preventDefault();
+      const open=!d.open, peers=cls==='sec' ? dev.querySelectorAll(':scope > details') : parent.querySelectorAll(':scope > details');
+      for(const p of peers) p.open=open;
+    });
+    return d; };
   for(const item of PANEL){
     if(PANEL_SKIP.includes(item[1])) continue;
     if(item[0]==='hc'){                                        // an area: a collapsible section whose state is remembered
+      if(item[1]===MACHINE_FIRST){ const m=document.createElement('div'); m.className='machine'; m.textContent='the machine'; dev.appendChild(m); }
       const name=item[1], d=group(name,'sec',dev);
       d.open = settings.open[name] ?? OPEN_AREAS.has(name);
       d.addEventListener('toggle',()=>{ if(settings.open[name]!==d.open){ settings.open[name]=d.open; saveSettings(); } });
       area=container=d; continue;
     }
     if(item[0]==='adv'){ container=group(item[1],'adv',area); continue; }   // a collapsible sub-group inside the current area (closed by default, not remembered)
-    const row=document.createElement('div'); row.className='ctl';
+    const row=document.createElement('div'); row.className='ctl setting';
     if(item[0]==='s'){
       const [,key,label,min,max,step]=item;
       const lab=document.createElement('label'); lab.textContent=label;
       const inp=document.createElement('input'); inp.type='range'; inp.min=min; inp.max=max; inp.step=step; inp.value=params[key];
+      const track=document.createElement('span'); track.className='track';
+      const home=document.createElement('i'); home.className='home'; home.hidden=true;   // where the saved look has it (markPanel)
+      track.append(inp,home);
       const val=document.createElement('span'); val.className='val'; val.textContent=fmt(params[key]);
       inp.addEventListener('input',()=>panelWrite(item, parseFloat(inp.value)));
-      row.append(lab,inp,val); controlEls[key]={input:inp,valEl:val,row}; row.dataset.tipKey=key;
+      row.append(lab,track,val); controlEls[key]={input:inp,valEl:val,row,home,min,max}; row.dataset.tipKey=key;
     } else if(item[0]==='t'){
       const [,key,label]=item; row.classList.add('toggle');
       const lab=document.createElement('label'); lab.textContent=label;
@@ -414,9 +453,14 @@ function buildPanel(){
       sel.addEventListener('change',()=>speciesWrite(sel.value));
       row.append(lab,sel); controlEls.tree_species={input:sel,row}; row.dataset.tipKey='tree_species';
     } else if(item[0]==='btn'){
-      const [,label,fn]=item;
-      const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn);
-      row.appendChild(b); row.dataset.tipKey=label;
+      const [,label,fn,glyph]=item;
+      const b=document.createElement('button'); if(glyph) b.append(icon(glyph)); b.append(label); b.addEventListener('click',fn);
+      row.classList.add('btn'); row.appendChild(b); row.dataset.tipKey=label;
+    }
+    const key=item[0]==='species' ? null : item[0]==='btn' ? null : item[1];
+    if(key){                                                   // ↺ while the row differs from the saved look (markPanel)
+      const rs=mkBtn('↺',()=>lookReset(key)); rs.className='rs'; rs.hidden=true; rs.title='back to the saved look';
+      row.append(rs); controlEls[key].rs=rs;
     }
     if(FIDELITY_KEYS.includes(item[1])){
       const key=item[1],scope=item[0]==='s'?item[6]:item[4];
@@ -537,9 +581,36 @@ function refreshGates(){
     if(!el.hidden) any = true;
   }
   if(head) head.hidden = !any;
+  adv?.gates();
 }
 
-function syncControl(key){ const c=controlEls[key]; if(!c)return;
+// THE DOCKED PANEL'S MARKS: a row that differs from the saved look shows ↺ and its value marked, an area and a shelf count theirs
+// (data-changed, which the CSS draws, so a heading's text stays its name), the head line counts them all and offers undo all and
+// save, and each track ticks where the saved look has it. Laid at most once a frame, and only while the workspace is up.
+let markSoon=0, wsHead=null;   // wsHead(n): the head line's own update, once buildPresetUI has laid it
+function markPanel(){
+  if(markSoon || dev.classList.contains('hidden')) return;
+  markSoon=requestAnimationFrame(()=>{
+    markSoon=0;
+    const changed=lookChanged();
+    for(const [k,c] of Object.entries(controlEls)){
+      const on=changed.has(k);
+      c.row.classList.toggle('changed', on);
+      if(c.rs) c.rs.hidden=!on;
+      if(c.home){
+        const h=lookHome(k);
+        c.home.hidden=typeof h!=='number';
+        if(typeof h==='number') c.home.style.left=`${clamp((h-c.min)/(c.max-c.min),0,1)*100}%`;
+      }
+    }
+    for(const d of dev.querySelectorAll('details')){
+      const n=d.querySelectorAll('.ctl.changed').length, s=d.querySelector(':scope > summary');
+      if(n) s.dataset.changed=String(n); else delete s.dataset.changed;
+    }
+    wsHead?.(changed.size);
+  });
+}
+function syncControl(key){ adv?.sync(key); markPanel(); const c=controlEls[key]; if(!c)return;
   if(FIDELITY_KEYS.includes(key)){
     const request=eng.authored[key];
     c.input.value=request??params[key];
@@ -551,7 +622,7 @@ function syncControl(key){ const c=controlEls[key]; if(!c)return;
   }
   if(c.input.type==='checkbox') c.input.checked=!!params[key]; else c.input.value=params[key];
   if(c.valEl) c.valEl.textContent=fmt(params[key]); }
-function syncAllControls(){ for(const k in controlEls) syncControl(k); tryCapture(); syncMacroControls(); midi?.look(); }   // every load of a look lands here: the try-out's home is the look's own values
+function syncAllControls(){ homeStale=true; for(const k in controlEls) syncControl(k); adv?.syncAll(); tryCapture(); syncMacroControls(); midi?.look(); }   // every load of a look lands here: the try-out's home is the look's own values
 
 // ===========================================================================
 // The playful + minimalist surfaces (the mode ladder's upper rungs) and the
@@ -609,42 +680,124 @@ function macroSlider(busKey, label){
   macroEls[busKey].push(inp);
   return row;
 }
-function presetRow(withPlay){
+function presetRow(arrows){                         // the sidebar's is the name alone, its title: the keys and a swipe step the look
   const row=document.createElement('div'); row.className='preset';
-  const prev=document.createElement('button'); prev.textContent='‹';
-  const next=document.createElement('button'); next.textContent='›';
   const name=document.createElement('span'); name.className='name';
-  prev.addEventListener('click', ()=>stepPreset(-1));
-  next.addEventListener('click', ()=>stepPreset(1));
-  row.append(prev,next,name);   // both arrows together, title after — the buttons stay put however long the name runs
-  if(withPlay) row.appendChild(playButton());
+  if(arrows){
+    const prev=document.createElement('button'); prev.textContent='‹';
+    const next=document.createElement('button'); next.textContent='›';
+    prev.addEventListener('click', ()=>stepPreset(-1));
+    next.addEventListener('click', ()=>stepPreset(1));
+    row.append(prev,next);   // both arrows together, title after — the buttons stay put however long the name runs
+  }
+  row.append(name);
+  name.addEventListener('click', openStories);       // the look's name opens the stories
   presetNameEls.push(name);
   return row;
 }
 const presetNameEls=[];
 function syncPlayPreset(){   // the stepper labels mirror the name, and the dials follow the look it names
   if(presetSel) for(const el of presetNameEls) el.textContent = entryName(stateNow(), getStored(), activeList(), presetSel.value);
+  if(presetSel) syncStoryLines();
   tryArrange();
 }
+
+// ---- THE STORIES: a list is a story you are in. The look's name opens every story, the one you are in open on its looks, so a later
+// look is one tap away; the story line (the look box's, and under the zen name) names the story and your place in it, and opens them
+// too. They are the one place a list is picked. A <dialog> in the top layer, so it stays inside a fullscreen page. ----
+const storyEls=[];
+const storiesEl=document.createElement('dialog'); storiesEl.className='stories'; document.body.appendChild(storiesEl);
+// EVERY MODAL (the stories, Settings, a question) closes on a click outside it, a question's as its cancel. Outside is off the dialog's
+// box, where its backdrop is (the backdrop's clicks land on the dialog itself), and the press began there too, so a drag that starts
+// in a field and is let go past the edge closes nothing.
+const offDialog=(e)=>{ const d=e.target; if(!(d instanceof HTMLDialogElement) || !d.open) return null;
+  const r=d.getBoundingClientRect(); return e.clientX<r.left || e.clientX>r.right || e.clientY<r.top || e.clientY>r.bottom ? d : null; };
+let pressedOff=null;
+document.addEventListener('pointerdown',(e)=>{ pressedOff=offDialog(e); }, true);
+document.addEventListener('click',(e)=>{ const d=offDialog(e); if(d && d===pressedOff) d.close(); pressedOff=null; }, true);
+const storyName = (list=activeList()) => listChoicesNow().find(l=>l.value===list)?.label ?? '';
+function storyPlace(){
+  const list=listEntries(), i=list.findIndex(e=>e.value===presetSel.value);
+  return i<0 ? '' : `${i+1} of ${list.length}`;
+}
+function storyText(){ const at=storyPlace(); return at ? `${storyName()} · ${at}` : storyName(); }
+function storyLine(){
+  const b=document.createElement('button'); b.className='storyline'; b.title='the stories';
+  b.addEventListener('click', openStories);
+  storyEls.push(b);
+  return b;
+}
+function syncStoryLines(){
+  const text=storyText();
+  for(const el of storyEls) el.textContent=text;
+  if(coarse) fillLookName();
+}
+function openStories(){
+  storiesEl.innerHTML='';
+  const h=document.createElement('h2'); h.textContent='stories';
+  const done=mkBtn('done',()=>storiesEl.close()); done.className='done';
+  storiesEl.append(h, done);
+  const active=activeList();
+  for(const l of listChoicesNow()){
+    const here=l.value===active;
+    const b=mkBtn(l.label,()=>{ if(here) return; storiesEl.close(); if(arb) arb.activate(l.value); else setActive(l.value); });
+    b.className=`story${here?' on':''}`; b.dataset.list=l.value;
+    storiesEl.appendChild(b);
+    if(!here) continue;
+    const ol=document.createElement('ol'); ol.className='story-looks';
+    for(const e of listEntries()){
+      const li=document.createElement('li');
+      const lb=mkBtn(e.label,()=>{ storiesEl.close(); if(e.value!==presetSel.value) goTo(e.value); });
+      if(e.value===presetSel.value) lb.className='on';
+      li.appendChild(lb); ol.appendChild(li);
+    }
+    storiesEl.appendChild(ol);
+  }
+  if(arb?.info().offline){ const p=document.createElement('p'); p.className='offline'; p.textContent='offline: these are the copies kept here'; storiesEl.appendChild(p); }   // arboretum could not be reached
+  storiesEl.showModal();
+  storiesEl.querySelector('.story-looks .on')?.scrollIntoView({ block:'center' });
+}
+// An icon button: the glyph (icons.js), named for whoever cannot see it (title, aria-label).
+function iconBtn(name, label, fn){
+  const b=mkBtn('',fn); b.classList.add('ico'); b.append(icon(name)); b.title=label; b.setAttribute('aria-label',label);
+  return b;
+}
+// THE SIDEBAR'S DEPTH: simple, advanced, or the workspace (a desktop's: a phone has no room beside the picture), one icon each,
+// the one you are on lit. Every surface that shows it shows the same state.
+const DEPTHS=[['simple','leaf','simple'],['adv','faders','advanced'],['ws','layout','workspace']];
+const depthEls=[];
+const depthNow = () => (settings.workspace ? 'ws' : settings.depth);
+function depthControl(){
+  const d=document.createElement('div'); d.className='depth';
+  for(const [depth,glyph,label] of DEPTHS){
+    if(depth==='ws' && coarse) continue;
+    const b=iconBtn(glyph,label,()=>{
+      if(depth==='ws'){ setWorkspace(true); return; }
+      settings.depth=depth; saveSettings();
+      if(settings.workspace) setWorkspace(false); else placeDev();
+    });
+    b.dataset.depth=depth; d.appendChild(b);
+  }
+  depthEls.push(d); syncDepth();
+  return d;
+}
+function syncDepth(){ for(const d of depthEls) for(const b of d.children) b.classList.toggle('on', b.dataset.depth===depthNow()); }
 // ▶/■ shows only while the active playlist carries dwell times (a shipped or cloud playlist); your looks have none. Playing
 // (playlists.js makePlayer) holds each look for its dwell and then steps to the next, which fades in over its own
 // crossfade; the dwell starts once that look has arrived (goTo), and the look play starts on has no fade in.
 const playBtns=[];
 const player=makePlayer({ timing:(value)=>timing(stateNow(), activeList(), value), advance:()=>stepPreset(1), onChange:()=>syncPlayButtons() });
-// An edit of the look is yours to hear out: play never fights it. On an idle playlist (the story) it plays on, and the edit only starts
-// the look's hold over, so the story moves on once you have left it alone (presets.js PLAYLISTS).
-const stopPlay=()=>{ if(idles(activeList())) player.touch(); else player.stop(); };
-// Any touch of the person's counts on an idle playlist, not only an edit: a tap, a key, the wheel.
-for(const ev of ['pointerdown','keydown','wheel']) addEventListener(ev, ()=>{ if(idles(activeList())) player.touch(); }, { capture:true, passive:true });
+// An edit of the look is yours to hear out: play never fights it, it stops.
+const stopPlay=()=>player.stop();
 function playButton(){
-  const b=document.createElement('button'); b.className='playstop';
+  const b=document.createElement('button'); b.className='playstop ico';
   b.addEventListener('click',()=>{ if(player.playing) player.stop(); else player.start(presetSel.value); });
   playBtns.push(b);
   return b;
 }
 function syncPlayButtons(){
   const on=plays(stateNow(), activeList()), p=player.playing;
-  for(const b of playBtns){ b.hidden=!on; b.textContent=p?'■':'▶'; b.title=p?'stop':'play'; }
+  for(const b of playBtns){ b.hidden=!on; b.title=p?'stop':'play'; b.setAttribute('aria-label',b.title); b.replaceChildren(icon(p?'stop':'play')); }
 }
 function syncMacroControls(){
   trySeat();
@@ -755,28 +908,35 @@ function tryFocusWrite(v){
   tryWrite(dict, 'source');
 }
 const TRY_SPECS = {
-  focus: { ends:['crisp','soft'], min:0, max:1, step:0.005,          // the focus macro itself (the sun's core and its share of the light), with a home and a way back
+  focus: { ends:['crisp','soft'], min:0, max:1, step:0.005,
+    means:"<b>How sharp the sun is.</b> A small, bright sun draws every dapple crisp; a wide, hazy one melts them soft.",          // the focus macro itself (the sun's core and its share of the light), with a home and a way back
     seat:() => bus.get('focus'), home:() => macroValue('focus', tryHome),
     write:tryFocusWrite },
   cloudiness: { tab:'clouds', ends:['clear','overcast'], min:0, max:0.6, step:0.005,
+    means:"<b>Cloud over the sun.</b> Thin cloud softens the dapples; overcast spreads the light until the shade is even.",
     seat:() => clamp(params.cloud_thickness, 0, 0.6), home:() => tryFrac(tryHome.cloud_thickness, 0, 0.6),
     write:(v) => tryWrite({ cloud_thickness:v }, 'source') },
   density: { ends:['sparse','full'], min:0.6, max:1.4, step:0.01,
+    means:"<b>How full the leaves are</b>, around this look's own canopy: fewer leaves let more of the sun through.",
     seat:() => tryHome.foliage_density ? params.foliage_density / tryHome.foliage_density : 1, home:() => 0.5,
     write:(m) => tryWrite({ foliage_density:tryHome.foliage_density * m }, 'density') },
   sun: { ends:['←','→'], min:-90, max:90, step:1,
+    means:"<b>Where the light comes from.</b> Turns the sun round the sky, up to a quarter turn either way, and the dapples lean with it.",
     seat:() => tryAz, home:() => 0.5,
     write:(d) => { tryAz = d; trySunWrite(); } },
   time: { ends:['earlier','later'], min:-2, max:2, step:0.05,
+    means:"<b>The hour.</b> Up to two hours earlier or later along the sun's own path: the light climbs or sinks, and the dapples gather or stretch.",
     seat:() => tryTime, home:() => 0.5,
     write:(d) => { tryTime = d; trySunWrite(); } },
   season: { ends:['green','fallen'], min:0.6, max:0.95, step:0.005,
+    means:"<b>The year's turn.</b> From summer's green through autumn's colour to the leaves letting go.",
     seat:() => clamp(params.phenology, 0.6, 0.95), home:() => tryFrac(tryHome.phenology, 0.6, 0.95),
     usable:() => macroUsable('season', params), why:'this place is seen from below: its season is its own',
     write:(v) => tryFrameMove(() => trySeasonDict(v), 'season'),   // at once, one a frame (tryFrameMove)
     commit:() => tryFrameTick(true) },              // on release, exactly where the thumb is
   // the air's haze, the macro's own recipe (afternoon 4 → 4b), with the look's own air kept at home as the focus dial keeps its light
   haze: { ends:['clear','hazy'], min:0, max:1, step:0.005,
+    means:"<b>The air between you and the light.</b> Clear, or a soft haze that lifts the shade and dulls the sun.",
     seat:() => macroValue('haze', params), home:() => macroValue('haze', tryHome),
     usable:() => macroUsable('haze', params), why:'this place keeps its own air',
     write:(v) => { const dict = macroParams('haze', v);
@@ -805,7 +965,7 @@ const TRY_PARAM = {
 for(const [name, p] of Object.entries(TRY_PARAM)){
   TRY_SCOPE[p.key] = p.scope;
   const frame = p.scope === 'canopy' || p.scope === 'season';
-  TRY_SPECS[name] = { ends:p.ends, min:p.min, max:p.max, step:p.step, why:p.why ?? 'this place cannot use it',
+  TRY_SPECS[name] = { ends:p.ends, min:p.min, max:p.max, step:p.step, why:p.why ?? 'this place cannot use it', param:p.key,
     seat:() => clamp(params[p.key], p.min, p.max), home:() => tryFrac(tryHome[p.key], p.min, p.max),
     usable:() => rowLive(p.key, cameraFor(params)),
     write: frame ? (v) => tryFrameMove(() => ({ [p.key]:v }), p.scope) : (v) => tryWrite({ [p.key]:v }, p.scope),
@@ -834,6 +994,16 @@ const TRY_SAYS = {
   sparkle: [[.05,'clean edges'],[.5,'colour at the edges of the light'],[2,'every dapple split into red and blue']],
   eclipse: [[.3,'the moon takes a bite of the sun'],[.7,'every dapple becomes the same crescent'],[2,'a thin crescent, everywhere at once']],
 };
+// WHAT A CONTROL OF THE SIMPLE DEPTH DOES, as the advanced depth teaches its rows: with a mouse a hover tip (tipsOn reads row._means),
+// on touch a tap on its name shows the words under it, and another tap folds them.
+function teach(row, nameEl, text){
+  if(!text) return;
+  if(!coarse){ row.dataset.tipKey ||= 'means'; row._means=text; return; }
+  const m=document.createElement('div'); m.className='means'; m.hidden=true; m.innerHTML=text;
+  nameEl.classList.add('teach');
+  nameEl.addEventListener('click',()=>{ m.hidden=!m.hidden; nameEl.classList.toggle('open', !m.hidden); });
+  row.append(m);
+}
 function tryCap(container){ const c=document.createElement('div'); c.className='cap'; container.appendChild(c); container._cap=c; }
 function trySay(container, text){
   const c=container._cap; if(!c) return;
@@ -856,6 +1026,7 @@ function tryDial(name, container, before = null){
     for(const o of tryDials) if(o !== d && o.name === name) o.inp.value = inp.value; });   // the same dial on the other surface follows
   if(d.commit) inp.addEventListener('change',()=>d.commit());
   track.append(inp,tick); row.append(nm,ends,track);
+  if(container.closest('#play')) teach(row, nm, d.means ?? PARAMS[d.param]?.means);   // the sidebar's dials say what they do (a setting's own dial, the registry's words); the strip's stay bare
   Object.assign(d, { inp, tick, row }); tryDials.push(d); container.insertBefore(row, before);
   return d;
 }
@@ -893,50 +1064,115 @@ function tryArrange(){
   if(tryHome) trySeat();
 }
 function trySurface(s){ trySurfaces.push(s); tryLaid = null; tryArrange(); }
-// Touch: a finger on a slider clears the rest of its panel so the picture shows. The row under the finger stays; the panel's
-// own backdrop goes too (CSS, .holding / .held). The strip's fade timer already waits out a hold (stripDragging).
-function holdToSee(panel){
-  if(!coarse) return;
+// A held slider clears the rest of its panel so the picture shows: a finger at once, a mouse once the slider moves under the moving held
+// button (a click on the track jumps the value without a move and leaves the panel be; arrow keys never clear it). The row being moved stays; the panel's own backdrop goes
+// too (CSS, .holding / .held), and a hover tip with it. The strip's fade timer already waits out a hold (stripDragging). `touchOnly`:
+// the docked panel, which in the workspace stands beside the picture, not over it.
+function holdToSee(panel, touchOnly=false){
+  if(touchOnly && !coarse) return;
+  let pressed=null, moved=false;
+  const hold=(inp)=>{ panel.classList.add('holding'); inp.closest('.ctl, .arow')?.classList.add('held'); tip.style.display='none'; };   // a dial's row, or an advanced row (advanced.js)
   panel.addEventListener('pointerdown',(e)=>{
     const inp = e.target.closest?.('input[type=range]');
     if(!inp) return;
-    panel.classList.add('holding'); inp.closest('.ctl')?.classList.add('held');
+    if(e.pointerType==='touch' || coarse) hold(inp); else { pressed=inp; moved=false; }
   });
-  const release = ()=>{ panel.classList.remove('holding'); for(const r of panel.querySelectorAll('.held')) r.classList.remove('held'); };
+  window.addEventListener('pointermove',()=>{ if(pressed) moved=true; });
+  panel.addEventListener('input',(e)=>{ if(pressed && moved && e.target===pressed) hold(pressed); });
+  const release = ()=>{ pressed=null; moved=false; panel.classList.remove('holding'); for(const r of panel.querySelectorAll('.held')) r.classList.remove('held'); };
   window.addEventListener('pointerup',release);
   window.addEventListener('pointercancel',release);
 }
-function modeButton(mode, label){
-  const b=document.createElement('button'); b.textContent=label;
-  b.addEventListener('click', ()=>setMode(mode));
-  return b;
+// What the advanced depth reads and writes: the panel's own rows and writers, the look on screen against the saved one.
+function savedLook(){                              // the saved look the stepper names, or null where none is selected
+  if(homeStale){ homeLook=presetSel?.value ? resolveEntry(presetSel.value) ?? null : null; homeStale=false; }
+  return homeLook;
+}
+const lookKeys=new Set(LOOK_KEYS);
+const panelItem=new Map(PANEL.filter((i)=>typeof i[1]==='string' && i[0]!=='hc' && i[0]!=='adv').map((i)=>[i[0]==='species' ? 'tree_species' : i[1], i]));
+function lookHome(key){                            // the saved look's value of a row, or undefined where there is none to show
+  const h=savedLook();
+  if(!h) return undefined;
+  if(FIDELITY_KEYS.includes(key)) return h[key];                         // undefined: the saved look leaves it to the session
+  return lookKeys.has(key) ? h[key] ?? DEFAULTS[key] : undefined;
+}
+function lookChanged(){                            // the keys that differ from the saved look; a look fading in is not "edited"
+  const h=savedLook(); if(!h || eng.trans.active) return new Set();
+  const live={ ...params }, a=eng.authored;         // the authored look catches up with a write only on the next frame: the params are now, the quality requests the look's own
+  for(const k of FIDELITY_KEYS) live[k]=a[k];
+  return lookChanges(live, h);
+}
+function lookReset(key){                           // one row back to the saved look (a quality request to the session's, when the look makes none)
+  const item=panelItem.get(key), h=lookHome(key);
+  if(!item) return;
+  if(h!==undefined) panelWrite(item, h);
+  else if(FIDELITY_KEYS.includes(key)) panelInherit(key, item[0]==='s' ? item[6] : item[4]);
+}
+function lookAsItWas(){ const h=savedLook(); if(h){ stopPlay(); applyParams(h); } }   // every setting back to the saved look
+function advHost(){
+  const authoredOf=(key)=>FIDELITY_KEYS.includes(key) ? eng.authored[key] : params[key];
+  return {
+    layout: PANEL.filter((i)=>!PANEL_SKIP.includes(i[1])),
+    label: (key)=>PARAMS[key]?.row?.label ?? key,
+    means: (key)=>PARAMS[key]?.means ?? '',
+    hover: !coarse,
+    value: (key)=>authoredOf(key) ?? params[key],
+    text: (key)=>{
+      const v=authoredOf(key);
+      if(v===undefined && FIDELITY_KEYS.includes(key)) return `session · ${fmt(params[key])}`;   // a quality request the look leaves to the session
+      return typeof v==='number' ? fmt(v) : String(v ?? '');
+    },
+    home: lookHome,
+    changed: lookChanged,
+    look: lookKeys,
+    write: panelWrite,
+    reset: lookReset,
+    live: (key)=>rowLive(key, cameraFor(params)),
+    species: { names:Object.keys(TREE_SPECIES), value:()=>params.tree_species, write:speciesWrite },
+    save: ()=>promptSave(),
+    asItWas: lookAsItWas,
+    stories: openStories,
+    icon,
+    fade: { max:TRANS_MAX, get:()=>transDur, set:(v)=>{ transDur=v; transSync(); } },
+    area: { get:()=>settings.advArea, set:(name)=>{ settings.advArea=name; saveSettings(); } },
+  };
 }
 function buildPlayPanel(){
   const modes=document.createElement('div'); modes.className='modes';
-  modes.append(modeButton('min','less'), modeButton('adv','everything'), settingsButton());
+  modes.append(iconBtn('x','fewer controls',()=>setMode('min')), depthControl(), playButton(), settingsButton());   // ▶ at both depths
   play.appendChild(modes);
-  play.appendChild(presetRow(true));
+  play.appendChild(presetRow(false));                // its title opens the stories: no story line over it
 
-  tryCap(play);
-  trySurface({ el:play, at:() => play._cap, usual:['focus','cloudiness','sun','season','density','time'], n:Infinity });
+  // the simple depth's body: the dials, the macro bus and the wind pad; the advanced depth's page stands in its place (placeDev)
+  const simple=document.createElement('div'); simple.className='simple';
+  play.appendChild(simple);
+  adv=makeAdvanced(advHost());
+  presetNameEls.push(adv.name);                      // the advanced title line names the look, as the stepper does
+  play.appendChild(adv.el);
+  if(!coarse){ tipsOn(adv.el, play); tipsOn(simple, play); }   // with a mouse a row says what it does on hover, at both depths; touch taps its name
+
+  tryCap(simple);
+  trySurface({ el:simple, at:() => simple._cap, usual:['focus','cloudiness','sun','season','density','time'], n:Infinity });
   tryCapture();
   const acts=document.createElement('div'); acts.className='ctl acts';
   const rb=document.createElement('button'); rb.className='tryreset'; rb.textContent='↺ as it was';
   rb.addEventListener('click',tryAsItWas);
   const db=document.createElement('button'); db.textContent='⚄ new leaves';
   db.addEventListener('click',reseed);
-  acts.append(rb,db); play.appendChild(acts);
+  rb.dataset.tipKey='as it was'; db.dataset.tipKey='new leaves';   // with a mouse, as the docked panel's buttons do
+  acts.append(rb,db); simple.appendChild(acts);
 
   // "more": the controls that are a second idea each, one tap further
   const more=document.createElement('details'); more.className='more';
   const sum=document.createElement('summary'); sum.textContent='more'; more.appendChild(sum);
-  more.appendChild(macroSlider('haze'));
-  more.appendChild(macroSlider('prism','sparkle'));
-  more.appendChild(macroSlider('grove','trees'));
+  for(const [key,label,means] of [['haze',undefined,TRY_SPECS.haze.means],['prism','sparkle',PARAMS.chromatic_aberration?.means],['grove','trees',PARAMS.tree_count?.means]]){
+    const r=macroSlider(key,label); teach(r, r.querySelector('label'), means); more.appendChild(r);
+  }
   padEl=document.createElement('div'); padEl.className='pad';
   padDot=document.createElement('div'); padDot.className='dot';
   const padlab=document.createElement('span'); padlab.className='padlab'; padlab.textContent='wind · calm ⌁ squally · still ↑ strong';
   padEl.append(padDot,padlab);
+  if(!coarse){ padEl.dataset.tipKey='wind pad'; }                // on touch the pad is all target: its label says it
   const padWrite=(e)=>{
     const r=padEl.getBoundingClientRect();
     const x=clamp((e.clientX-r.left)/r.width,0,1), y=clamp(1-(e.clientY-r.top)/r.height,0,1);
@@ -949,22 +1185,9 @@ function buildPlayPanel(){
   padEl.addEventListener('pointerup',()=>{ padDown=false; });
   padEl.addEventListener('pointercancel',()=>{ padDown=false; });
   more.appendChild(padEl);
-  play.appendChild(more);
+  simple.appendChild(more);
 
-  // which list the stepper walks, directly above that list; shown where the advanced panel's is (a second list to swap to, or signed in)
-  const plr=document.createElement('div'); plr.className='ctl select'; plr.hidden=true;
-  const plsel=playlistSelect();
-  playlistSelects.push({ sel:plsel, row:plr });
-  plr.appendChild(plsel); play.appendChild(plr);
-
-  // the full list, down here by the toggle that grows it — the stepper above flicks, this jumps
-  // (◦ marks an experimental look)
-  const pr=document.createElement('div'); pr.className='ctl select';
-  const psel=document.createElement('select');
-  psel.addEventListener('change',()=>loadEntry(psel.value));
-  presetSelects.push(psel);
-  pr.appendChild(psel); play.appendChild(pr);
-  refreshPresetSelect(presetSel.value);              // fill this surface's dropdown (it was born after the first refresh)
+  refreshPresetSelect(presetSel.value);              // name the look on this surface too (it was born after the first refresh)
   holdToSee(play);
 }
 
@@ -984,43 +1207,53 @@ function stripWake(){
     stripFadeTimer=setTimeout(()=>{ if(stripDragging) stripWake(); else strip.classList.add('faded'); }, 5000);   // a finger held on a slider keeps it
   } else stripHoldUntil=performance.now()+STRIP_HOLD_MS;
 }
-function buildStrip(){
-  if(!coarse) strip.classList.add('wide');            // desktop: one horizontal bar
-  const pr=presetRow(true);                           // ▶/■ beside the name, where a playlist plays
-  const more=document.createElement('button'); more.className='more'; more.textContent='＋';
-  more.title='more';
-  more.addEventListener('click',()=>setMode('play'));
-  pr.appendChild(more);                               // rides the preset row's end, clear of the ‹ › stepper
-  strip.appendChild(pr);
-  if(coarse){
-    // touch: ONE dial at a time, so the picture keeps the screen. A row of words along the bottom picks which dial is out;
-    // ↺ is "as it was" and ＋ the playful sidebar. The preset row stays in the DOM (the name's source) but is not shown:
-    // a swipe changes the look and its name passes across the top.
-    // Which five follow the look (tryArrange): its own lead first, and out front.
-    strip.classList.add('one');
-    tryCap(strip);
-    const tabs=document.createElement('div'); tabs.className='tabs';
-    const back=document.createElement('button'); back.className='sm'; back.textContent='↺'; back.title='as it was';
-    back.addEventListener('click',tryAsItWas);
-    const up=document.createElement('button'); up.className='sm'; up.textContent='＋'; up.title='more';
-    up.addEventListener('click',()=>setMode('play'));
-    const playStop=playButton(); playStop.classList.add('sm');   // the preset row is not shown on touch, so ▶/■ rides the tabs
-    tabs.append(back,playStop,up); strip.appendChild(tabs);
-    const pick=(name)=>{
-      for(const d of tryDials) if(d.surface===touch) d.row.classList.toggle('out', d.name!==name);
-      for(const b of tabs.children) b.classList.toggle('on', b.dataset.dial===name); };
-    const touch={ el:strip, at:() => tabs, usual:['focus','cloudiness','sun','season','time'], n:5, after:(names)=>{
-      for(const b of [...tabs.children]) if(b.dataset.dial) b.remove();
-      for(const n of names){
-        const b=document.createElement('button'); b.textContent=TRY_SPECS[n].tab ?? n; b.dataset.dial=n;
-        b.addEventListener('click',()=>pick(n)); tabs.insertBefore(b, back);
-      }
-      pick(names[0]);
-    } };
-    trySurface(touch);
-  } else {
-    trySurface({ el:strip, at:() => null, usual:['focus','cloudiness','time'], n:3 });
+// THE STRIP'S TWO LAYOUTS. One dial at a time, over a row of words that picks which (a touch screen's, and any window too narrow for
+// the bar: under STRIP_NARROW_PX), or the bar (a mouse, a window wide enough for its three dials beside the look). The layout follows
+// the window as it is resized; how the strip comes and goes (proximity with a mouse, the tap clock on touch) follows the pointer.
+const STRIP_NARROW_PX=760;
+let stripOne=null, stripBar=null, stripTouch=null;
+function layStrip(){
+  const one = coarse || innerWidth < STRIP_NARROW_PX;
+  if(one===stripOne) return;
+  stripOne=one;
+  strip.classList.toggle('one', one); strip.classList.toggle('wide', !one);
+  const off = one ? stripBar : stripTouch, on = one ? stripTouch : stripBar;
+  const at = trySurfaces.indexOf(off);
+  if(at>=0){
+    trySurfaces.splice(at,1);
+    for(const d of tryDials.filter((o) => o.surface===off)){ d.row.remove(); tryDials.splice(tryDials.indexOf(d), 1); }
   }
+  trySurface(on);
+  trySeat();
+}
+function buildStrip(){
+  const pr=presetRow(true);                           // the strip keeps ‹ ›; no ▶/■ in zen: playing is the sidebar's
+  const up=iconBtn('sliders-horizontal','more controls',()=>setMode('play')); up.classList.add('up'); pr.appendChild(up);   // the bar's way up rides the preset row's end, clear of the ‹ › stepper
+  strip.appendChild(pr);
+  // one dial at a time, so the picture keeps the screen. A row of words along the bottom picks which dial is out;
+  // ↺ is "as it was" and the sliders icon the sidebar. The preset row stays in the DOM (the name's source) but is not shown:
+  // a swipe changes the look and its name passes across the top.
+  // Which five follow the look (tryArrange): its own lead first, and out front.
+  tryCap(strip);
+  const tabs=document.createElement('div'); tabs.className='tabs';
+  const back=document.createElement('button'); back.className='sm'; back.textContent='↺'; back.title='as it was';
+  back.addEventListener('click',tryAsItWas);
+  const up2=iconBtn('sliders-horizontal','more controls',()=>setMode('play')); up2.classList.add('sm');
+  tabs.append(back,up2); strip.appendChild(tabs);
+  const pick=(name)=>{
+    for(const d of tryDials) if(d.surface===stripTouch) d.row.classList.toggle('out', d.name!==name);
+    for(const b of tabs.children) b.classList.toggle('on', b.dataset.dial===name); };
+  stripTouch={ el:strip, at:() => tabs, usual:['focus','cloudiness','sun','season','time'], n:5, after:(names)=>{
+    for(const b of [...tabs.children]) if(b.dataset.dial) b.remove();
+    for(const n of names){
+      const b=document.createElement('button'); b.textContent=TRY_SPECS[n].tab ?? n; b.dataset.dial=n;
+      b.addEventListener('click',()=>pick(n)); tabs.insertBefore(b, back);
+    }
+    pick(names[0]);
+  } };
+  stripBar={ el:strip, at:() => null, usual:['focus','cloudiness','time'], n:3 };
+  layStrip();
+  if(!coarse) window.addEventListener('resize', layStrip);
   trySeat();
   holdToSee(strip);
   strip.addEventListener('pointerdown',()=>{ stripDragging=true; stripWake(); });
@@ -1066,26 +1299,73 @@ const TIPS = {
   'Scene':"<b>Where you stand and what you look at.</b> The camera (zoom, tilt, orbit, pan, lens), looking up, the standing tree, and the glow and haze that come with a view.",
   'Wind':"<b>The breeze.</b> The coherent wind that moves the whole canopy together, with the springs it moves through and the faint leaf drift folded away beneath it.",
   'Lab':"<b>Curtain, tent and window experiments.</b> The receiver, the cloth it is made of, the window and the tent — kept apart from the floor looks.",
+  // the shelves: what each area folds away under the settings you reach for first
+  'the sun’s path':"<b>The sun by angle, and what its height does.</b> Latitude, elevation and azimuth (time of day writes these), how the beam leans onto the floor, and how much the air takes from a low sun.",
+  'the sun’s disc':"<b>The sun's own shape.</b> How much of its light is in the bright core, and how wide the halo around it reaches.",
+  'tone and the frame':"<b>How the picture is developed.</b> The tone curve, the shape of the edge fade, the eye's dusk shift and the haze in the air.",
+  'light in the shade':"<b>The light that is not the beam.</b> What the canopy scatters into the shade, and what bounces back up off the ground.",
+  'light through a leaf':"<b>The colour a leaf lets through</b>, channel by channel.",
+  'the ground':"<b>The colour of what the light lands on</b>, channel by channel.",
+  'how the leaves gather':"<b>How leaves sit in the crown.</b> How far the grove reaches, how many leaves fill the inside, how they bunch on their shoots, and how they tilt to the light.",
+  'spring':"<b>Leaf-out.</b> When the leaves come, how long it takes, how unevenly, and how red and pale the young ones are.",
+  'the turn':"<b>Autumn's colour.</b> When leaves start to turn, over how long, how unevenly from tree to tree, and in what order the light sets.",
+  'the fall':"<b>Letting go.</b> When leaves drop, in what order, how long after turning, and how the fallen ones age and drift on the floor.",
+  'branching':"<b>How the tree forks.</b> Children per branch, their angle, length and pitch, the leader, the taper, the spiral and how many levels deep.",
+  'trunk and wood':"<b>The wood's own shadow.</b> How dark the branches are, how high the crown starts and how thick the trunk is.",
+  'camera':"<b>The camera, finely.</b> Pan, lens, the smear of the far floor and the park's throw.",
+  'glow':"<b>The light around the light.</b> The sky's scatter and the bloom that bleeds out of bright patches.",
+  'bark':"<b>The colour of the standing tree's bark</b>, channel by channel.",
+  'gusts and weather':"<b>The shape of a gust.</b> How often they come, how fast the weather turns, how a gust rises and fades, how wide it is and how far it carries.",
+  'cloth':"<b>What the curtain is made of.</b> Its weave, tint, folds, nap and sheen.",
+  'window':"<b>The window the light comes through.</b> Its bars and their depth, the opening's size and place.",
+  'tent':"<b>The tent's shape.</b> Ridge, shoulders, ends and seams, and where you stand inside it.",
   'spring mechanics':"<b>How the branches feel in the wind — tuned once.</b> The gust envelope, spring stiffness / ceiling / damping / backlash, and the per-level limb &amp; twig flex. Per scene you really only change strength and direction above.",
   'leaf drift':"<b>The faint, fidgety wind from all sides at once.</b> Each leaf jiggles on its own, so gaps reshuffle — merging and splitting like light on the floor of a pool — instead of sliding. (A preview of the second kind of wind.)",
   'Tune':"<b>Performance vs. quality — set once for the machine, not the look.</b> Sample count, texture &amp; bake resolution, depth layers, the auto-60fps governor, and the adaptive-fps idle saver. Two opt-in optimizations live here (bake res, adaptive fps) that trade a little fidelity for speed.",
   'Debug':"<b>Tools for peeking under the hood.</b> These don't change the art.",
   'Presets':"<b>Saved looks.</b> Built-in ones are marked •, your own ★ (saved in this browser). Copy/paste JSON to share a look with someone. Step between them live with the <b>← →</b> arrow keys.",
   'fade':"<b>How long a scene change takes.</b> Stepping presets with ← → cross-dissolves over this many seconds: the look morphs while a soft cloud drifts over to hide the trees and branches regrowing behind it. 0 = instant cut.",
-  reseed:"<b>Roll a new random tree layout.</b> Same kind of grove, freshly grown — a different arrangement of trees, branches and leaves.",
+  'as it was':"<b>Back to the look.</b> Every dial here returns to where the look has it.",
+  'wind pad':"<b>The breeze.</b> Up for a stronger wind, across for gusts, from calm to squally.",
+  'new leaves':"<b>Roll a new random tree layout.</b> Same kind of grove, freshly grown — a different arrangement of trees, branches and leaves.",
 };
 const tip = document.getElementById('tip');
-function showTip(html, el){
+function showTip(html, el, panel){
   tip.innerHTML = html; tip.style.display = 'block';
   const r = el.getBoundingClientRect();
-  tip.style.left = `${dev.getBoundingClientRect().right + 8}px`;
+  tip.style.left = `${panel.getBoundingClientRect().right + 8}px`;   // beside the panel, clear of its rows
   tip.style.top  = `${Math.min(Math.max(8, r.top), window.innerHeight - tip.offsetHeight - 8)}px`;
 }
-dev.addEventListener('mouseover', e=>{ const el=e.target.closest('[data-tip-key]'); if(!el) return;
-  const t=TIPS[el.dataset.tipKey] ?? PARAMS[el.dataset.tipKey]?.means; if(t) showTip(t, el); });   // a parameter's meaning is the registry's; the areas', the buttons' and the rest are TIPS'
-dev.addEventListener('mouseout', e=>{ const el=e.target.closest('[data-tip-key]'), to=e.relatedTarget;
-  if(el && (!to || !el.contains(to))) tip.style.display='none'; });
-dev.addEventListener('scroll', ()=>{ tip.style.display='none'; });
+// A panel's hover tips: anything in it carrying data-tip-key says what it is, beside the panel, while the pointer is on it.
+function tipsOn(panel, scroller = panel){
+  panel.addEventListener('mouseover', e=>{ const el=e.target.closest('[data-tip-key]'); if(!el) return;
+    const t=el._means ?? TIPS[el.dataset.tipKey] ?? PARAMS[el.dataset.tipKey]?.means; if(t) showTip(t, el, scroller); });   // a parameter's meaning is the registry's; the areas', the buttons' and the rest are TIPS'; a simple control's its own (teach)
+  panel.addEventListener('mouseout', e=>{ const el=e.target.closest('[data-tip-key]'), to=e.relatedTarget;
+    if(el && (!to || !el.contains(to))) tip.style.display='none'; });
+  scroller.addEventListener('scroll', ()=>{ tip.style.display='none'; });
+}
+// THE DOCKED PANEL'S HELP, on a click: a band of rows under the pointer would pop a tip at every move, and the band is the screen's
+// width, so there is no room beside it. A click on a setting's name says what it does, just over it; another click anywhere, Escape
+// or a scroll puts it away. A click on an area's or a shelf's heading only folds it.
+let tipFor=null;
+function hideTip(){ tip.style.display='none'; tipFor=null; }
+function tipOver(html, el){
+  tip.innerHTML=html; tip.style.display='block';
+  const r=el.getBoundingClientRect(), h=tip.offsetHeight, w=tip.offsetWidth;
+  tip.style.left=`${Math.min(Math.max(8, r.left), innerWidth - w - 8)}px`;
+  tip.style.top=`${r.top - h - 6 >= 8 ? r.top - h - 6 : Math.min(r.bottom + 6, innerHeight - h - 8)}px`;
+}
+const TITLE='.ctl.setting > label';
+dev.addEventListener('click', (e)=>{
+  const title=e.target.closest(TITLE), el=title?.closest('[data-tip-key]');
+  if(!el) return;
+  const t=TIPS[el.dataset.tipKey] ?? PARAMS[el.dataset.tipKey]?.means;
+  if(!t || tipFor===el){ hideTip(); return; }
+  tipOver(t, title); tipFor=el;
+});
+document.addEventListener('pointerdown', (e)=>{ if(tipFor && !e.target.closest?.(TITLE)) hideTip(); }, true);
+document.addEventListener('keydown', (e)=>{ if(tipFor && e.key==='Escape') hideTip(); });
+dev.addEventListener('scroll', hideTip);
 
 // ---- time of day: an alternative to the raw sun angle. Works out the sun's elevation & azimuth for a
 // SPRING day (equinox, so declination ≈ 0) at the chosen latitude, and writes them to the sun knobs. --
@@ -1102,16 +1382,7 @@ function updateSunFromTime(){
 // ---- presets UI: dropdown + save/delete + copy/paste JSON -------------------
 // What the dropdown shows and the arrows walk is the ACTIVE PLAYLIST's entries (playlists.js): a shipped playlist (presets.js
 // PLAYLISTS, the only way to the built-in looks), your ★ looks, or an arboretum playlist.
-let presetSel, playlistSel, playlistRow, plusBtn, deleteBtn;
-const playlistSelects=[];                          // every surface's playlist select and the row it hides with: the advanced panel's, the playful sidebar's
-function playlistSelect(){
-  const sel=document.createElement('select');
-  sel.addEventListener('change',()=>{
-    const v=sel.value;
-    if(arb) arb.activate(v); else setActive(v);
-  });
-  return sel;
-}
+let presetSel, playlistRow, plusBtn, deleteBtn;
 const presetRows={};                               // where arboretum.js puts its controls: the save row and the copy/paste row
 let arb=null;                                      // arboretum.js's hooks, set at the end of the file; null only while the panel is being built
 const presetSelects=[];                            // every surface's preset dropdown; presetSel (the dev one) is the canonical value
@@ -1150,22 +1421,15 @@ function refreshPresetSelect(selected){
   syncPlayPreset();                                             // the stepper labels mirror the name
   syncPlaylistUI();
 }
-// the playlist select exists once there is a second playlist to swap to — or at once, with a `+` beside it, when arboretum is
-// mounted and you are signed in; until then no row, and no ▶
+// a list is picked from the stories; the docked panel's playlist row holds + (signed in to arboretum) and ✎ (a playlist of yours),
+// there only while one is
 function syncPlaylistUI(){
   applySession();
-  if(playlistSel){
-    const lists=listChoicesNow();
+  if(playlistRow){
     const signedIn=!!arb?.signedIn();
-    for(const {sel,row} of playlistSelects){
-      sel.innerHTML='';
-      for(const l of lists){ const o=document.createElement('option'); o.value=l.value; o.textContent=l.label; sel.appendChild(o); }
-      if(arb?.info().offline){ const o=document.createElement('option'); o.value='~offline'; o.textContent='offline'; o.disabled=true; sel.appendChild(o); }   // arboretum could not be reached: these lists are the copy kept here
-      sel.value=activeList();
-      row.hidden = !signedIn && lists.length<2;
-    }
     plusBtn.hidden = !signedIn;
     renameBtn.hidden = !arb?.canRemove();
+    playlistRow.hidden = plusBtn.hidden && renameBtn.hidden;
   }
   if(deleteBtn){
     const a=activeList(), cloud=a.startsWith('arb:');
@@ -1194,6 +1458,7 @@ function refreshChip(){
   const i=arb?.info() ?? {};
   const c=lookState(stateNow(), getStored(), activeList(), presetSel.value, eng.trans.active ? null : eng.authored, i.me ?? null, i);
   lookChip.textContent=c.text; lookChip.title=c.title; lookChip.hidden=c.text==='';
+  homeStale=true; adv?.counts();
 }
 // Select an entry and ease to it: the arrows, the swipe, and a playlist swap. A cloud entry brings its own crossfade.
 // While playing, a look's dwell starts when it has arrived (onEnd), and nothing waits while it fades in; a step by hand
@@ -1219,7 +1484,7 @@ function setActive(list){
   settings.playlist=list; saveSettings(); player.stop();
   const value=resumeAt();
   if(value===undefined) refreshPresetSelect('');
-  else { goTo(value); if(idles(list)) player.start(value); }   // an idle playlist plays itself from the moment you are on it
+  else goTo(value);
 }
 // A ★ is written to your looks whatever playlist you were on; the list then shows it.
 function saveStar(name, p){
@@ -1246,24 +1511,22 @@ function saveLook(name, p){
   if(arb?.signedIn()){ arb.saveCloud(name, p); return; }   // signed in, every save goes to arboretum (private) and none is kept here
   saveStar(name, p);
 }
-// Save as new: always a new look, asked a name of its own. Signed in, a new preset placed after this item in a playlist of yours,
-// else in uncategorized (arboretum.js); otherwise a new ★, which never quietly replaces one already here.
-function promptSaveNew(){
-  const n=(prompt('Save as a new look, named:', '')||'').trim(); if(!n) return;
-  saveNewLook(n);
-}
-function saveNewLook(n){
+// Save as new (the remote's): always a new look, under a name of its own. Signed in, a new preset placed after this item in a
+// playlist of yours, else in uncategorized (arboretum.js); otherwise a new ★, which never quietly replaces one already here.
+async function saveNewLook(n){
   stopPlay();
-  if(arb?.signedIn()){ arb.saveCloud(n, eng.captureLook(), { asNew:true }); return; }
-  if(Object.hasOwn(getStored(), n) && !confirm(`A look named ${n} is already kept in this browser. Replace it?`)) return;
-  saveStar(n, eng.captureLook());
+  const p=eng.captureLook();                          // the look as it was asked to be kept, whatever moves while the question is up
+  if(arb?.signedIn()){ arb.saveCloud(n, p, { asNew:true }); return; }
+  if(Object.hasOwn(getStored(), n) && !(await askYes(`A look named ${n} is already kept in this browser. Replace it?`, { yes:'replace' }))) return;
+  saveStar(n, p);
 }
 // The save button and ⌘S / Ctrl+S: ask for a name, then keep the look.
-function promptSave(){
+// The question is the page's own (ask.js): the browser's prompt() over a fullscreen picture takes Safari out of fullscreen.
+async function promptSave(){
   const here=entryName(stateNow(), getStored(), activeList(), presetSel.value);
-  const fromBuiltin=activeList().startsWith('ship:');
-  const n=(prompt('Save preset as:', fromBuiltin ? '' : here)||'').trim(); if(!n) return;   // a ★ or a cloud item offers its own name; a built-in's is not yours to reuse
-  saveLook(n, eng.captureLook());
+  const p=eng.captureLook();                          // the look on screen when save was pressed
+  const n=((await askText('Save preset as:', here, { ok:'save' }))||'').trim(); if(!n) return;   // offers the look's own name, a built-in's too (kept as yours under it, the built-in untouched): another name is typed over it
+  saveLook(n, p);
 }
 // Arboretum has filed a look in a list (or queued it there): go to that list, on that look, without loading it — it is already on screen.
 function showCloud(list, match){
@@ -1273,14 +1536,36 @@ function showCloud(list, match){
   refreshPresetSelect(at<0 ? '' : String(at));      // the look has left this list (it joined a folder): nothing selected
 }
 function mkBtn(label,fn){ const b=document.createElement('button'); b.textContent=label; b.addEventListener('click',fn); return b; }
-let styleRow=null, playlistPresentationRow=null, playlistPresentation=null, wsButton=null, renameBtn=null, looks=null, looksHome=null, lookNote=null;
+let styleRow=null, playlistPresentationRow=null, playlistPresentation=null, renameBtn=null, looks=null, looksHome=null, lookNote=null;
 function buildPresetUI(){
   const modes=document.createElement('div'); modes.className='ctl modes';
-  const back=document.createElement('button'); back.textContent='less';
-  back.addEventListener('click',()=>setMode('play'));
-  modes.append(back,settingsButton());
-  if(!coarse){ wsButton=mkBtn('workspace',()=>setWorkspace(!settings.workspace)); modes.append(wsButton); }   // the workspace is a desktop's: a phone has no room beside the picture
-  dev.appendChild(modes);
+  const r3=document.createElement('div'); r3.className='ctl tools'; r3.hidden=true;   // the rare ones (delete, the JSON pair), folded behind ···, opening under it
+  const rare=mkBtn('···',()=>{ r3.hidden=!r3.hidden; }); rare.className='rare'; rare.title='delete, copy JSON, paste JSON';
+  modes.append(depthControl(),playButton(),rare,settingsButton());      // the docked panel's own row, in the workspace: the depths, ▶ and ···, the cog
+  dev.append(modes,r3);
+  // THE HEAD LINE: how many settings differ from the saved look, with undo all and save, while any does (the advanced depth's foot,
+  // here at the top, the band being short and wide); and every area opened or closed at once
+  {
+  const head=document.createElement('div'); head.className='ctl ws-head';
+  const count=document.createElement('span'); count.className='ws-count';
+  const undo=mkBtn('undo all',lookAsItWas); undo.title='every setting back to the saved look';
+  const save=mkBtn('save',promptSave); save.className='on'; save.title='keep the look: a new version of it when it is yours, else a new look (⌘S)';
+  const areas=()=>[...dev.querySelectorAll(':scope > details')];
+  const allLabel=()=>{                                // written only when it changes: wsHead runs every frame a look drifts, and a text node
+    const t=areas().some((d)=>d.open) ? 'close all' : 'open all';   // replaced under a pressed pointer loses the click in Safari and Firefox
+    if(all.textContent!==t) all.textContent=t;
+  };
+  const all=mkBtn('close all',()=>{ const open=!areas().some((d)=>d.open); for(const d of areas()) d.open=open; allLabel(); });   // the label now: the toggles land a task later
+  all.className='ws-all'; all.title='open or close every area (an option-click on any one does the same)';
+  dev.addEventListener('toggle', allLabel, true);     // a <details> toggle does not bubble: caught on the way down
+  head.append(count,undo,save,all); dev.appendChild(head);
+  wsHead=(n)=>{
+    for(const e of [count,undo,save]) e.hidden=!n;
+    const dot=document.createElement('span'); dot.className='dot'; dot.textContent='●';
+    count.replaceChildren(dot, ` ${n} ${n===1 ? 'change' : 'changes'}`);
+    allLabel();
+  };
+  }
   // THE LOOKS: every look and playlist control, in one box, which the workspace's playlist pane takes while it is up (setWsPane) so
   // that none is left below and none is a copy; it comes back here, to its own place, when the pane goes.
   looks=document.createElement('div'); looks.className='looks';
@@ -1295,44 +1580,34 @@ function buildPresetUI(){
   presetSel=document.createElement('select');
   presetSel.addEventListener('change',()=>loadEntry(presetSel.value));
   presetSelects.push(presetSel);
-  pick.append(name,presetSel); head.append(prev,pick,next); looks.appendChild(head);
+  pick.append(name,presetSel); head.append(prev,pick,next); looks.append(storyLine(), head);
   lookChip=document.createElement('div'); lookChip.className='look-chip';   // directly under the look's name, in every editor
   looks.appendChild(lookChip);
   lookNote=document.createElement('div'); lookNote.className='look-note'; lookNote.hidden=true;   // the editor's own word on where a save went, when arboretum's status line is not there to say it
   looks.appendChild(lookNote);
 
-  // one main action; the rare ones (delete, the JSON pair) fold behind ···
-  const r2=document.createElement('div'); r2.className='ctl lookacts';
+  presetRows.save=lookNote;                          // arboretum's rows go under the look (▶ and ··· are the top row's; save is the head line's, ⌘S anywhere)
   deleteBtn=mkBtn('delete',()=>{
     if(activeList().startsWith('arb:')){ arb?.remove(); return; }     // taking a look out of an arboretum playlist is written to arboretum
     const n=starName(getStored(), 'local', presetSel.value);
-    if(n===null){ alert("Built-in presets can't be deleted."); return; }
+    if(n===null){ tell("Built-in presets can't be deleted."); return; }
     arb.deleteStar(n); const next=resumeAt(); if(next===undefined) setActive(STORY); else goTo(next); });   // on to the list's first, or the story once no ★ is left, so what is shown is what is selected
-  const r3=document.createElement('div'); r3.className='ctl'; r3.hidden=true;
-  const rare=mkBtn('···',()=>{ r3.hidden=!r3.hidden; }); rare.title='delete, copy JSON, paste JSON';
-  const save=mkBtn('save',promptSave); save.className='main';
-  save.title='keep the look: a new version of it when it is yours, else a new look (⌘S)';
-  const saveNew=mkBtn('save as new',promptSaveNew); saveNew.title='keep it as a new look, beside this one when this is a playlist of yours';
-  r2.append(save, saveNew, playButton(), rare);
-  looks.appendChild(r2);
-  presetRows.save=r2;
   r3.append(
     deleteBtn,
     mkBtn('copy JSON',()=>{ const txt=JSON.stringify(eng.captureLook(),null,2);
-      if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).catch(()=>prompt('Copy JSON:',txt));
-      else prompt('Copy JSON:',txt); }),
-    mkBtn('paste JSON',()=>{ const txt=prompt('Paste preset JSON:'); if(!txt) return;
-      try{ const o=JSON.parse(txt); stopPlay(); applyParams(o.params||o); refreshPresetSelect(); }catch(_e){ alert('Invalid JSON'); } }));
-  looks.appendChild(r3);
-  presetRows.tools=r3;
+      const show=()=>askText('Copy JSON:', txt, { long:true, ok:'done', cancel:null });
+      if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).catch(show);
+      else show(); }),
+    mkBtn('paste JSON',async ()=>{ const txt=await askText('Paste preset JSON:', '', { long:true, ok:'load' }); if(!txt) return;
+      try{ const o=JSON.parse(txt); stopPlay(); applyParams(o.params||o); refreshPresetSelect(); }catch(_e){ tell('Invalid JSON'); } }));
+  presetRows.tools=document.createComment('tools'); looks.appendChild(presetRows.tools);   // where arboretum's move prompt and sign-in line go
 
   // the playlist row comes after the look select in the DOM: the first select in #dev stays the look's
-  playlistRow=document.createElement('div'); playlistRow.className='ctl select playlist-row'; playlistRow.hidden=true;
-  playlistSel=playlistSelect();
-  playlistSelects.push({ sel:playlistSel, row:playlistRow });
+  // the active playlist is picked from the stories (the story line over the look's name); this row keeps what is done to one
+  playlistRow=document.createElement('div'); playlistRow.className='ctl playlist-row'; playlistRow.hidden=true;
   plusBtn=mkBtn('+',()=>arb?.create()); plusBtn.title='new playlist'; plusBtn.hidden=true;   // signed in to arboretum only
   renameBtn=mkBtn('✎',()=>arb?.rename()); renameBtn.title='rename this playlist'; renameBtn.hidden=true;   // a playlist of yours only
-  playlistRow.append(playlistSel, renameBtn, plusBtn); looks.appendChild(playlistRow);
+  playlistRow.append(renameBtn, plusBtn); looks.appendChild(playlistRow);
   playlistPresentationRow=document.createElement('div');playlistPresentationRow.className='ctl select presentation-row';
   const presentationLabel=document.createElement('label');presentationLabel.textContent='playlist display';
   playlistPresentation=document.createElement('select');
@@ -1355,10 +1630,11 @@ function buildPresetUI(){
 // arrives hidden (the art stands alone) and a tap on the canvas toggles it (the zen strip fades and wakes instead,
 // as with D). The slide uses the #dev.offscreen transform transition.
 const coarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);   // touch / phone
-holdToSee(dev);                                    // the advanced panel clears for a held slider too
+holdToSee(dev, true);                              // the docked panel clears for a held finger; with a mouse it is the workspace's, beside the picture
 const hint = document.getElementById('hint');
-// the mode ladder's three surfaces; everything below drives whichever one the mode says is active
-const MODE_ELS = { adv: dev, play, min: strip };
+// the mode ladder's two surfaces; everything below drives whichever one the mode says is active. The advanced rows (#dev) are
+// not a surface of their own: placeDev puts them in the sidebar or the workspace's band.
+const MODE_ELS = { play, min: strip };
 function panelEl(){ return MODE_ELS[settings.mode] || play; }
 let panelTimer=0;
 function slideInPanel(){
@@ -1371,7 +1647,7 @@ function slideInPanel(){
   void el.offsetWidth;                             // ...reflow so the next change animates...
   el.classList.remove('offscreen');               // ...and slide it in
   if(el===strip) stripWake();                     // the strip starts its fade clock the moment it arrives
-  if(el===dev) arb?.advanced();                   // arboretum first asks who is signed in when the advanced panel is first shown
+  if(el===play) sideArrived();                    // and the sidebar waits for the cursor before it steps aside
 }
 // the key hints stay HIDDEN unless summoned — the canvas is the point, not the legend. H (mapped to
 // nothing else) shows them for ten seconds.
@@ -1404,17 +1680,50 @@ function toggleControls(){
 // step the ladder: hide whatever is up, swap the mode, slide the new surface in
 function setMode(mode){
   if(!(mode in MODE_ELS) || mode === settings.mode) return;
-  if(settings.workspace) setWorkspace(false);       // the workspace is the advanced surface's: another rung leaves it
+  if(settings.workspace) setWorkspace(false);       // the workspace is the sidebar's: the zen strip leaves it
   padDown=false;                                   // a drag can't outlive the surface it started on
   const from = panelEl();
   clearTimeout(panelTimer);
   from.classList.add('hidden'); from.classList.remove('offscreen');
   settings.mode = mode; saveSettings();
-  syncMacroControls(); syncPlayPreset();
+  syncMacroControls(); syncPlayPreset(); placeDev();
   slideInPanel();
 }
+// The docked rows (#dev) are shown only in the workspace's band.
+// The sidebar shows the depth it was left on: the advanced one lays its page (advanced.js) in place of the dials.
+function placeDev(){
+  const shown = document.body.classList.contains('workspace');   // a workspace a reload left on waits for the arrival (setWorkspace)
+  dev.classList.remove('offscreen');
+  dev.classList.toggle('hidden', !shown);
+  const deep = settings.depth==='adv';
+  play.classList.toggle('deep', deep);
+  adv?.show(deep);
+  markPanel();
+  if(shown || deep) arb?.advanced();              // arboretum first asks who is signed in when every setting is first shown
+  syncDepth();
+}
+const devUp = () => !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');
+const deepUp = () => play.classList.contains('deep') && !play.classList.contains('hidden') && !play.classList.contains('offscreen');   // the sidebar at its advanced depth
+// THE SIDEBAR STEPS ASIDE (a mouse only; touch has no cursor to read): at either depth it fades as the cursor moves away from its
+// edge, to nothing SIDE_FADE_PX out, and comes back as it nears, whole once the cursor is over it, so the picture behind it is a
+// flick of the wrist away. A drag begun on the sidebar keeps it whole until the button is let go, wherever the cursor strays.
+// It arrives whole and stays so (sideArmed false) until the cursor first goes over it: brought up from zen, by D or by a click on
+// the picture, the cursor is out on the picture, and fading at once would take back what was just asked for.
+const SIDE_FADE_PX=160;
+let sideDrag=false, sideArmed=false;
+function sideFade(x){
+  if(coarse || play.classList.contains('hidden')) return;
+  const d = x===null ? Infinity : x - play.getBoundingClientRect().right;   // null: the cursor has left the window
+  if(d<=0) sideArmed=true;
+  play.style.opacity = !sideArmed || sideDrag || d<=0 ? '' : String(clamp(1 - d/SIDE_FADE_PX, 0, 1));
+}
+function sideArrived(){ sideArmed=false; play.style.opacity=''; }   // slideInPanel: whole until the cursor has been over it
+play.addEventListener('pointerdown',(e)=>{ if(e.pointerType!=='touch') sideDrag=true; });
+window.addEventListener('pointerup',(e)=>{ if(sideDrag){ sideDrag=false; sideFade(e.clientX); } });
+window.addEventListener('pointermove',(e)=>{ if(e.pointerType!=='touch') sideFade(e.clientX); });
+document.documentElement.addEventListener('mouseleave',()=>sideFade(null));
 
-// THE WORKSPACE (W, or the panel's button; desktop only): the picture becomes a viewer with nothing over it, the tree pane
+// THE WORKSPACE (W, or the sidebar's workspace icon; desktop only): the picture becomes a viewer with nothing over it, the tree pane
 // (tree-pane.js) stands beside it, and the advanced panel docks in the band below, opening its Tree shape area. The layout is index.html's (body.workspace); the engine sizes its backing store from the canvas's box every frame,
 // so a smaller box is all the viewer needs. Leaving puts everything back. It sticks across reloads like the mode.
 let treePane=null;
@@ -1470,16 +1779,15 @@ for(const [which,label] of [['tree','tree'],['playlist','playlist']]){
 }
 function setWorkspace(on){
   if(coarse || document.body.classList.contains('intro')) return;
-  if(on && settings.mode!=='adv') setMode('adv');
+  if(on && settings.mode!=='play') setMode('play');
   settings.workspace=on; saveSettings();
   document.body.classList.toggle('workspace', on);
+  placeDev();
   if(on){
-    if(dev.classList.contains('hidden')) slideInPanel();
     const shape=[...dev.querySelectorAll('summary.sec')].find(h=>h.textContent==='Tree shape')?.parentElement;   // an area is a <details> under its summary.sec heading
     if(shape) shape.open=true;
-  }
+  } else { slideInPanel(); sideArrived(); }       // back to the sidebar, at the depth it was left on, whole until the cursor has been over it
   setWsPane(settings.wsPane==='playlist' ? 'playlist' : 'tree');   // the pane it was left on; shows the tree pane, or not, with it
-  if(wsButton) wsButton.textContent = on ? 'leave workspace' : 'workspace';
 }
 
 // Canvas pointer input. A MOUSE drags the sun (azimuth from x, elevation from y). A finger can't do that
@@ -1538,6 +1846,19 @@ function pinchMove(){
   stopPlay(); chipSoon();
   for(const key of ['view_extent_m','view_yaw_deg','view_center_x','view_center_y']) syncControl(key);
 }
+// A CLICK ON THE PICTURE, with a mouse, brings the editor back wherever it has gone: the zen strip wakes on the press itself, and
+// the sidebar, slid away or faded from the cursor (sideFade), comes back at either depth, whole, and stays so until the cursor has been over it.
+// With the sidebar whole, a click is D and sends it away, at either depth, as a tap does on touch. It is a click only while the pointer stays within CLICK_SLOP of where it went down (past that it is a drag, and the camera
+// moves from there), and it waits out CLICK_WAIT so a double-click is fullscreen alone, never the editor shown or sent on the way.
+const CLICK_SLOP=4, CLICK_WAIT=260;
+let clickAt=null, clickSoon=0;
+function pictureClick(){
+  if(coarse || settings.workspace || document.body.classList.contains('intro')) return;
+  if(settings.mode==='min') return;               // zen: the press has woken the strip already (stripWake, on the picture's pointerdown)
+  if(play.classList.contains('hidden')){ slideInPanel(); return; }
+  if(play.style.opacity!==''){ sideArrived(); return; }
+  toggleControls();                               // whole: it goes, as D, and the next click brings it back
+}
 // Safari's own pinch would zoom the page: the picture takes the gesture whole
 canvas.addEventListener('gesturestart',e=>e.preventDefault());
 canvas.addEventListener('pointerdown',e=>{
@@ -1549,7 +1870,7 @@ canvas.addEventListener('pointerdown',e=>{
     if(touches.size===1){ swipe={ sx:e.clientX, sy:e.clientY, axis:null }; multi=false; }
     else { swipe=null; multi=true; pinch=pinchFrame(); }
   }
-  else dragging=true;
+  else { dragging=true; clickAt = e.button===0 ? { x:e.clientX, y:e.clientY } : null; }
   px=e.clientX; py=e.clientY;
   try{ canvas.setPointerCapture(e.pointerId); }catch{ /* synthetic pointers (tests) have no active id — the gesture state above is already set */ } });
 // a finger off: with two still down the pinch goes on from them, with one left it rests until that one lifts too
@@ -1567,8 +1888,9 @@ canvas.addEventListener('pointerup',e=>{
     else toggleControls();                                     // a clean tap
     swipe=null;
   }
-  dragging=false; });
-canvas.addEventListener('pointercancel',e=>{ liftFinger(e.pointerId); swipe=null; dragging=false; });
+  if(clickAt){ clearTimeout(clickSoon); clickSoon=setTimeout(pictureClick, CLICK_WAIT); }   // a clean click, unless a second makes it a double
+  clickAt=null; dragging=false; });
+canvas.addEventListener('pointercancel',e=>{ liftFinger(e.pointerId); swipe=null; dragging=false; clickAt=null; });
 canvas.addEventListener('pointermove',e=>{
   if(touches.has(e.pointerId)){
     touches.set(e.pointerId,{ x:e.clientX, y:e.clientY });
@@ -1581,6 +1903,8 @@ canvas.addEventListener('pointermove',e=>{
     return;                                                    // the step is committed on release
   }
   if(!dragging) return;
+  if(clickAt && Math.hypot(e.clientX-clickAt.x, e.clientY-clickAt.y) < CLICK_SLOP) return;   // still a click: the camera has not moved yet
+  clickAt=null;
   stopPlay(); chipSoon();
   if(dragSun){                                                   // novelty mode: drag positions the sun (as before)
     params.sun_azimuth_deg = (params.sun_azimuth_deg + (e.clientX-px)*0.3 + 360)%360;
@@ -1612,7 +1936,7 @@ function toggleFullscreen(){
   if(fsEl){ (document.exitFullscreen||document.webkitExitFullscreen).call(document); }
   else { const p=(el.requestFullscreen||el.webkitRequestFullscreen).call(el); if(p?.catch) p.catch(()=>{}); }
 }
-canvas.addEventListener('dblclick', ()=>{ if(!coarse && !document.body.classList.contains('intro')) toggleFullscreen(); });
+canvas.addEventListener('dblclick', ()=>{ clearTimeout(clickSoon); if(!coarse && !document.body.classList.contains('intro')) toggleFullscreen(); });
 // a pointer resting on the picture hides after a few seconds (#gl.still) and comes back the moment it moves; over a panel it never hides
 const STILL_MS = 3000;
 let stillTimer = 0;
@@ -1626,9 +1950,17 @@ if(coarse)
 // the name of the look a swipe landed on passes across the top (touch has no preset row in sight)
 const lookNameEl = document.getElementById('lookName');
 let lookNameTimer=0;
+// the story rides under the name, and a tap on either opens the stories; while the zen strip is awake the name stays (index.html)
+function fillLookName(){
+  if(!lookNameEl) return;
+  const look=document.createElement('span'); look.textContent=entryName(stateNow(), getStored(), activeList(), presetSel.value);
+  const story=document.createElement('small'); story.textContent=storyText();
+  lookNameEl.replaceChildren(look, story);
+}
+lookNameEl?.addEventListener('click', openStories);
 function showLookName(){
   if(!coarse || !lookNameEl) return;
-  lookNameEl.textContent = entryName(stateNow(), getStored(), activeList(), presetSel.value);
+  fillLookName();
   lookNameEl.classList.add('show');
   clearTimeout(lookNameTimer); lookNameTimer=setTimeout(()=>lookNameEl.classList.remove('show'), 2500);
 }
@@ -1645,6 +1977,8 @@ let showTree=false;
 // L = toggle the held-leaf inset (leaf-preview.js); [ / ] step to the next leaf while it is up. Built on the first L and never before.
 let showLeaf=false, leaf=null;
 window.addEventListener('keydown',e=>{
+  if(document.querySelector('dialog[open]')) return;   // a dialog (the stories, a question) takes the keys while it is open; Escape closes it
+  if(e.target instanceof HTMLInputElement && e.target.type==='search') return;   // a letter typed into the advanced depth's find field is the search's
   const k=e.key;
   if(k==='d'||k==='D'){
     if(settings.workspace){ showHint('the panel is docked in the workspace: W leaves it'); return; }
@@ -1682,38 +2016,17 @@ window.addEventListener('pointermove',e=>{ const r=canvas.getBoundingClientRect(
   treePointer={ x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height }; });
 document.addEventListener('mouseleave',()=>{ treePointer=null; });
 
-// ---- per-frame overlays: reflect the engine's drift phase, draw the source
-// inset (when the panel is open), and update the HUD. ------------------------
+// ---- per-frame overlays: reflect the engine's drift phase, and draw the source inset (when the panel is open). ----
 eng.onFrame = ()=> {
   sessionPanel.refresh();
   tickTween(); tryFrameTick(); midi?.frame();
   if(params.drift_auto) syncControl('drift_phase');
   refreshGates();               // a transition, a macro or a preset can flip a mode as readily as the row itself; the signature check makes the miss cheap
-  const devUp = !dev.classList.contains('hidden') && !dev.classList.contains('offscreen');   // a sliding-out panel counts as gone
-  if(params.show_source && devUp && !settings.workspace) eng.drawSourceInset();   // the sun's inset is the floating panel's, not the workspace's
+  const up = devUp() || deepUp();                                                           // every setting on show; a sliding-out panel counts as gone
+  if(params.show_source && up && !settings.workspace) eng.drawSourceInset();   // the sun's inset is the advanced depth's, not the workspace's
   if(showTree) eng.drawTreeInset(treePointer, treePinned);
   if(showLeaf) leaf.draw();
   if(settings.workspace){ treePane?.draw(); wsStatTick(); }
-  // HUD: debug info, shown only while the dev panel is open.
-  const devOpen = devUp;
-  hud.style.display = (devOpen && !settings.workspace) ? '' : 'none';   // the workspace has its own quiet counter instead
-  if(!devOpen) return;
-  const m=eng.motion;
-  // perf is a WARNING line, absent when nominal: fps only once it slips below 60 (<55), and AUTO res only
-  // while it's compensating below full — so you always know when auto-quality is buying speed with resolution.
-  const lowFps = eng.fps>0 && eng.fps<55, downRes = perf.resScale<0.999;
-  const perfLine = (lowFps||downRes)
-    ? `${lowFps?`${eng.fps.toFixed(0)} fps`:''}${lowFps&&downRes?'   ':''}${downRes?`res ${perf.resScale.toFixed(2)}×`:''}\n`
-    : '';
-  // blur h·θ — the spec/model/source.md softness scale (canopy height × the sun's angular size); a derived number, kept.
-  const blur=(params.canopy_base_height_m*params.core_angular_radius_deg*DEG*100).toFixed(1);
-  // wind score — one LIVE number that breathes with the gusts (driveEnv folds in base strength × the weather
-  // spell × the broadband gust force), plus a slow character word. Subsumes the old str/gust/weather/sway.
-  // The word reads off EFFECTIVE strength (base × weather) — the only wind axis that varies across looks
-  // (pattern & gustiness are fixed in every preset), so it discriminates and drifts calm↔strong over a day.
-  const windNow=Math.max(0,m.driveEnv), eff=params.wind_strength*m.weatherS;
-  const windWord = eff<0.12 ? 'calm' : eff<0.6 ? 'light' : eff<1.2 ? 'breezy' : eff<2.0 ? 'windy' : 'strong';
-  hud.textContent = `${perfLine}blur h·θ ≈ ${blur} cm    wind ≈ ${windNow.toFixed(1)}  ${windWord}`;
 };
 
 // ---- boot the panel UI (the engine is already running) ----
@@ -1722,24 +2035,26 @@ buildPanel();
 refreshGates();
 buildPlayPanel();
 buildStrip();
+placeDev();                                        // the advanced rows where the depth a reload left on puts them
 const sessionPanel=mountSettings({
   settings, engine:eng, rows:PANEL, save:()=>{saveSettings();applySession();syncAllControls();},
   account:()=>arb?.settings(),
   remote:{ get:()=>settings.remote, set:(on)=>{ settings.remote=on; remote?.poke(); }, status:()=>remote?.status() ?? 'off' },
 });
-function settingsButton(){ const button=mkBtn('settings',()=>sessionPanel.open());button.dataset.openSettings='';return button; }
+function settingsButton(){ const button=iconBtn('gear-six','settings',()=>sessionPanel.open());button.dataset.openSettings='';return button; }
 syncMacroControls();
 
 // ---- transition fade: its own row at the very bottom of the panel ----
 (()=> {
   const h=document.createElement('h2'); h.textContent='Transition'; h.dataset.tipKey='fade'; dev.appendChild(h);
-  const r=document.createElement('div'); r.className='ctl'; r.dataset.tipKey='fade';
+  const r=document.createElement('div'); r.className='ctl setting'; r.dataset.tipKey='fade';
   const lab=document.createElement('label'); lab.textContent='fade (s)';
   const inp=document.createElement('input'); inp.type='range'; inp.min=0; inp.max=TRANS_MAX; inp.step=0.1; inp.value=transDur;
+  const track=document.createElement('span'); track.className='track'; track.append(inp);
   const val=document.createElement('span'); val.className='val'; val.textContent=transDur.toFixed(1);
-  inp.addEventListener('input',()=>{ transDur=parseFloat(inp.value); val.textContent=transDur.toFixed(1); });
-  transSync=()=>{ inp.value=transDur; val.textContent=transDur.toFixed(1); };
-  r.append(lab,inp,val); dev.appendChild(r);
+  inp.addEventListener('input',()=>{ transDur=parseFloat(inp.value); val.textContent=transDur.toFixed(1); adv?.syncFade(); });
+  transSync=()=>{ inp.value=transDur; val.textContent=transDur.toFixed(1); adv?.syncFade(); };   // the advanced depth's fade row follows too
+  r.append(lab,track,val); dev.appendChild(r);
 })();
 
 // ===========================================================================
@@ -1887,7 +2202,7 @@ remote = mountRemote({
     }
     const target=at ?? landing();
     let settled=false;
-    const landed=()=>{ refreshPresetSelect(target); syncAllControls(); if(playOnce || idles(activeList())){ playOnce=false; player.start(target); } };   // the first look has no fade in: its dwell starts here; an idle playlist (the story) plays itself
+    const landed=()=>{ refreshPresetSelect(target); syncAllControls(); if(playOnce){ playOnce=false; player.start(target); } };   // the first look has no fade in: its dwell starts here
     if(link?.preset){ applyParams(resolveEntry(target) ?? getPreset(DEFAULT_PRESET)); landed(); arrive(); return; }
     eng.transitionTo(resolveEntry(target) ?? getPreset(DEFAULT_PRESET), { duration:4,           // memories → editor default (spec/model/transitions.md)
       onEnd:()=>{ settled=true; endTween(); landed(); setTimeout(arrive,300); } });

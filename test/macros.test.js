@@ -30,7 +30,7 @@ function seasonDialRig() {
   const body = source.slice(source.indexOf('const TRY_FALL ='), source.indexOf('// The time dial moves'));
   const load = source.match(/^function applyParams\(obj\).*$/m)[0];
   const go = source.slice(source.indexOf('function goTo('), source.indexOf('function loadEntry('));
-  const reset = source.slice(source.indexOf('function tryAsItWas('), source.indexOf('// Touch: a finger'));
+  const reset = source.slice(source.indexOf('function tryAsItWas('), source.indexOf('function holdToSee('));
   dial = new Function('env', `with(env){ ${body}\n${load}\n${go}\n${reset}\nreturn {tryCapture,seasonMove:(v) => tryFrameMove(() => trySeasonDict(v), 'season'),tryFrameTick,applyParams,goTo,tryAsItWas}; }`)(env);
   dial.tryCapture();
   return { ...dial, params, writes, eng, land() { Object.assign(params, pending.p); eng.trans.active = false; pending.opts.onEnd(); dial.tryFrameTick(); } };

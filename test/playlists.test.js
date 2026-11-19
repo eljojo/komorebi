@@ -3,7 +3,7 @@ import { test, expect, beforeEach } from "bun:test";
 import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted,
   uploadPlan, itemsAfter, itemTarget, playlists, plays, timing, starValue, starName, entryName,
-  fromEntry, onlineId, STORY, idles, shipLists, placeChange, sameLook, lookState, playlistChips,
+  fromEntry, onlineId, STORY, shipLists, placeChange, sameLook, lookChanges, lookState, playlistChips,
   emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, saveNewPlan, isFolder, fromVersion, linkPlaylist, makePlayer, selectionAfter } from "../editor/playlists.js";
 import * as builtins from "../presets.js";
 import { DEFAULTS, cameraFor } from "../komorebi.js";
@@ -293,14 +293,6 @@ test("timing of a shipped item is its own pace, else ITEM_DEFAULTS; a look the p
   builtins.PLAYLISTS.story.items = [{ look: first, dwell_s: 7, style: "fade" }, ...saved.slice(1)];
   try { expect(timing(EMPTY, STORY, first)).toEqual({ dwell_s: 7, crossfade_s: d.crossfade_s, style: "fade" }); }
   finally { builtins.PLAYLISTS.story.items = saved; }
-});
-
-test("idles: only a shipped playlist marked idle plays itself through idleness", () => {
-  expect(idles(STORY)).toBe(builtins.PLAYLISTS[STORY.slice(5)].idle === true);
-  for (const [k, p] of Object.entries(builtins.PLAYLISTS)) expect(idles(`ship:${k}`)).toBe(p.idle === true);
-  expect(idles("local")).toBe(false);
-  expect(idles("arb:7")).toBe(false);
-  expect(idles("ship:nope")).toBe(false);
 });
 
 // ---- the built-in guard (design §3.8) -------------------------------------------------
@@ -865,25 +857,6 @@ test("starting twice does not run two dwells; a look with no times never waits",
   expect(log.advanced).toBe(0);
 });
 
-test("touch starts the running hold over, so an idle playlist moves on only once left alone; it does nothing between looks or stopped", () => {
-  const { p, c, log } = playerOn();
-  p.start("0");
-  c.advance(1500);
-  p.touch();                        // someone moved a dial at 1.5 s: the 2 s hold starts again
-  c.advance(1999);
-  expect(log.advanced).toBe(0);
-  c.advance(1);
-  expect(log.advanced).toBe(1);
-  p.leaving();                      // the next look is on its way: a touch now starts no hold
-  p.touch();
-  expect(c.pending()).toBe(0);
-  p.arrived("1");
-  p.stop();
-  p.touch();
-  expect(c.pending()).toBe(0);
-  expect(p.playing).toBe(false);
-});
-
 test("onChange says when playing starts or stops, and only then", () => {
   const { p, log } = playerOn();
   p.stop();
@@ -913,6 +886,14 @@ test("sameLook compares every DEFAULTS key, ignoring the overlays and drift_phas
   expect(sameLook(a, { ...a, exposure: a.exposure + 0.01 })).toBe(false);
   expect(sameLook(a, { ...a, tree_species: "oak" })).toBe(false);
   expect(sameLook(a, { ...a, time_of_day: 3, latitude: 10 })).toBe(true);   // the editor's helpers are not in DEFAULTS
+});
+
+test("lookChanges names the keys sameLook would find differ, and no others", () => {
+  const a = clone("afternoon 7");
+  expect([...lookChanges(a, { ...a })]).toEqual([]);
+  expect([...lookChanges({ ...a, exposure: a.exposure + 0.01, drift_phase: 3, show_source: true }, a)]).toEqual(["exposure"]);
+  expect([...lookChanges({ ...a, exposure: a.exposure + 1e-9, time_of_day: 3 }, a)]).toEqual([]);
+  expect([...lookChanges({ ...a, sample_count: 64 }, { ...a, sample_count: undefined })]).toEqual(["sample_count"]);   // a quality request against a look that leaves it to the session
 });
 
 test("builtinTwin ignores drift_phase too", () => {

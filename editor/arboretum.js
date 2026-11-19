@@ -17,6 +17,7 @@
 // here ever names `visibility`.
 // ============================================================================
 import { api as makeApi } from "./arboretum-api.js";
+import { askText } from "./ask.js";
 import { cameraFor, migrateLegacy } from "../komorebi.js";
 import { PRESETS } from "../presets.js";
 import { ARBORETUM, cachePlaylist, dequeue, detect, editorWritable, emptyMirror, enqueue, entryName, fromEntry, fromVersion, isFolder, itemsAfter, itemTarget, linkPlaylist, listChoices,
@@ -146,25 +147,19 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
   function buildControls(origin) {
     document.body.dataset.arboretum = origin;
     inRow = make("div", "ctl arb-inrow");
-    inRow.style.flexWrap = "wrap";
     chips = make("span", "arb-chips");
-    chips.style.cssText = "display:contents";
     inRow.append(make("label", "", "in:"), chips);
     status = make("div", "arb-status");
-    status.style.cssText = "font-size:11px;color:#9fb89f;margin:2px 0 6px;word-break:break-word";
     host.rows.save.after(inRow, status);
 
     moveBox = make("div", "ctl arb-move");
-    moveBox.style.flexWrap = "wrap";
     moveText = make("span", "arb-move-text");
-    moveText.style.cssText = "font-size:11px;color:#9fb89f;flex:1 1 100%";
     moveYes = make("button", "arb-move-yes");
     moveNo = make("button", "arb-move-no", "not now");
     moveBox.append(moveText, moveYes, moveNo);
     line = make("div", "ctl arb-signin");
     cta = make("button", "arb-cta", "keep your looks in arboretum ↗");
     who = make("span", "arb-who");
-    who.style.cssText = "font-size:11px;color:#9fb89f";
     line.append(cta, who);
     host.rows.tools.after(moveBox);
     if(host.rows.account){ host.rows.account.textContent='';host.rows.account.append(line); }
@@ -195,7 +190,6 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     chips.replaceChildren(...playlistChips(view(), getStored(), host.active(), host.value(), mine).map((c) => {
       const b = make("button", "arb-in", c.name);
       b.setAttribute("aria-pressed", String(c.lit));
-      if (c.lit) b.style.cssText = "background:#2c4a2c;border-color:#7fae7f;color:#e8d9a8";
       b.addEventListener("click", () => toggle(c.id, c.lit));
       return b;
     }));
@@ -328,11 +322,11 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     host.activate(list);
   }
 
-  const askName = () => (prompt("New playlist name:") || "").trim();
+  const askName = async () => ((await askText("New playlist name:", "", { ok: "make" })) || "").trim();   // ask.js: the page's own question, which leaves a fullscreen page fullscreen
   // `name` is the remote's (remote.js), which asks on the phone; the editor's own + asks here
   async function create(given) {
     if (!on) return;
-    const name = given?.trim() || (given === undefined ? askName() : "");
+    const name = given?.trim() || (given === undefined ? await askName() : "");
     if (!name) return;
     try {
       const made = await api.createPlaylist({ name });
@@ -456,7 +450,7 @@ export function mount(host, { loc = globalThis.location, fetchImpl = globalThis.
     const active = host.active();
     if (!signedIn() || !isFolder(view(), active, me)) return;
     const pid = Number(active.slice(4)), was = view().playlists[pid]?.name ?? "";
-    const name = (given ?? prompt("Rename playlist:", was) ?? "").trim();
+    const name = (given ?? await askText("Rename playlist:", was, { ok: "rename" }) ?? "").trim();
     if (!name || name === was) return;
     try {
       cacheView(await api.patchPlaylist(pid, { name }));

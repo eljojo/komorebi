@@ -213,29 +213,7 @@ export function mountMidi(host) {
   let last = performance.now(), ledAt = 0;
   const leds = new Map();      // note -> on, what the desk was last told
 
-  // ---- the caption: which control moved and where it sits against home, in the look-name's face ----
-  const css = document.createElement('style');
-  css.textContent = `
-  #midiCap { position:fixed; bottom:28px; left:50%; transform:translateX(-50%); z-index:9; text-align:center; pointer-events:none;
-    font: italic 400 15px "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif; color:#f1e7cf; text-shadow:0 1px 12px rgba(0,0,0,.6);
-    opacity:0; transition:opacity .6s ease; }
-  #midiCap.on { opacity:.9; }
-  #midiCap .bar, #midi .bar { position:relative; height:2px; background:rgba(241,231,207,.2); margin-top:6px; }
-  #midiCap .bar { width:180px; margin:8px auto 0; }
-  :is(#midiCap,#midi) .bar i { position:absolute; top:-2px; width:2px; height:6px; background:#f1e7cf; transform:translateX(-1px); }
-  :is(#midiCap,#midi) .bar b { position:absolute; top:-3px; width:1px; height:8px; background:rgba(241,231,207,.45); }
-  #midi { position:fixed; inset:auto 16px 16px auto; z-index:20; max-width:calc(100vw - 32px); max-height:calc(100vh - 32px); overflow:auto;
-    background:rgba(16,14,10,.88); color:#e9e1cc; font:12px/1.35 ui-monospace,Menlo,monospace; padding:12px 14px; border-radius:6px; }
-  #midi[hidden] { display:none; }
-  #midi .grid { display:grid; grid-template-columns:repeat(9, 92px); gap:10px; margin:10px 0; }
-  #midi .strip h4 { margin:0 0 4px; font-weight:600; color:#f1e7cf; }
-  #midi .strip h4 .n { opacity:.45; font-weight:400; margin-right:5px; }
-  #midi .row { margin-bottom:6px; } #midi .row.off { opacity:.35; } #midi .row.none { opacity:.15; }
-  #midi button { font:inherit; background:none; color:inherit; border:1px solid rgba(233,225,204,.35); border-radius:3px; padding:2px 8px; margin-right:4px; cursor:pointer; }
-  #midi button.on { background:#e9e1cc; color:#111; }
-  #midi .head { display:flex; gap:16px; align-items:baseline; }
-  #midi pre { margin:0 0 0 auto; opacity:.7; white-space:pre; }`;
-  document.head.appendChild(css);
+  // ---- the caption: which control moved and where it sits against home (index.html styles it and the console) ----
   const cap = document.createElement('div'); cap.id = 'midiCap'; document.body.appendChild(cap);
   let capTimer = 0;
   const barHtml = (u, home) => `<div class="bar">${home == null ? '' : `<b style="left:${home * 100}%"></b>`}<i style="left:${u * 100}%"></i></div>`;

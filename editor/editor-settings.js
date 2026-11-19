@@ -6,7 +6,7 @@ export function mountSettings({ settings, engine, save, account, rows, remote })
   const title=document.createElement('h2');title.textContent='Settings';
   const close=document.createElement('button');close.textContent='done';close.onclick=()=>panel.close();
   panel.append(title,close);
-  const controls=[];
+  const controls=[], follows=[];   // follows: [option, () => what the profile gives now], its text kept as "follow profile (that)"
   function heading(text,parent=panel){const h=document.createElement('h3');h.textContent=text;parent.append(h);}
   function select(key,label,options,get,set,parent=panel){
     const row=document.createElement('label');row.className='ctl select';
@@ -14,6 +14,11 @@ export function mountSettings({ settings, engine, save, account, rows, remote })
     const input=document.createElement('select');input.dataset.setting=key;
     for(const [value,label] of options){const o=document.createElement('option');o.value=value;o.textContent=label;input.append(o);}
     const refresh=()=>{input.value=String(get());};controls.push(refresh);
+    const own=input.querySelector('option[value="profile"]');
+    if(own) follows.push([own,()=>{                    // the session's value while this follows the profile, named as its own option names it
+      const v=key in engine.session.playback ? engine.session.playback[key] : engine.session.ceilings[key];
+      return typeof v==='boolean' ? (v?'on':'off') : options.find(([o])=>o===String(v))?.[1] ?? String(v);
+    }]);
     input.onchange=()=>{set(input.value);save();refreshAll();};
     row.append(text,input);parent.append(row);
   }
@@ -55,6 +60,9 @@ export function mountSettings({ settings, engine, save, account, rows, remote })
     const startup=s.automaticAdaptive ? s.startupFps===undefined ? ' · checking first 10 s' : ` · first 10 s: ${Math.round(s.startupFps)} fps` : '';
     const text=`${s.quality} · adaptive fps ${s.playback.adaptive_motion?'on':'off'} · idle ${s.playback.adaptive_idle_fps} fps · ${s.presentation}${startup}`;
     if(resolved.textContent!==text)resolved.textContent=text;
+    for(const [o,now] of follows){ const t=`follow profile (${now()})`; if(o.textContent!==t)o.textContent=t; }
+    const auto=panel.querySelector('[data-setting="quality"] option[value="auto"]'), at=`automatic (${s.quality})`;   // the profile automatic picked here
+    if(auto.textContent!==at)auto.textContent=at;
     const remoteText=remote.status();
     if(remoteNote.textContent!==remoteText)remoteNote.textContent=remoteText;
     panel.querySelector('[data-setting="adaptive_idle_fps"]').disabled=!s.playback.adaptive_motion;

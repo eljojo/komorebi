@@ -189,7 +189,7 @@ test("the editor keeps the selected preset across a mirror reorder, so saving up
   const select = { value: "", appendChild() {} };
   const settings = { selected: {} };
   const source = readFileSync("editor/editor.js", "utf8");
-  const body = source.slice(source.indexOf("function refreshPresetSelect("), source.indexOf("// the playlist select exists"));
+  const body = source.slice(source.indexOf("function refreshPresetSelect("), source.indexOf("function syncPlaylistUI("));
   const refresh = new Function("presetSel", "presetSelects", "listEntries", "document", "settings", "activeList", "stateNow", "selectionAfter", "saveSettings", "syncPlayPreset", "syncPlaylistUI", "arb",
     `let listedState=null, listedActive=null; ${body}; return refreshPresetSelect;`)(
     select, [select], () => model.entries(state, {}, "arb:unc"), { createElement: () => ({}) },
@@ -359,17 +359,15 @@ test("rename sends the playlist's new name alone, and only for a playlist of you
   setMirror(folderMirror([playlistItem(1)]));
   let active = "local";
   const patches = [];
-  globalThis.prompt = () => "dusk";
   const s = await session(async (_url, init) => {
     if (init.method === "PATCH") { patches.push(JSON.parse(init.body)); return json({ id: 7, owner: "alice", name: "dusk", items: [playlistItem(1)] }); }
     return json({ id: 7, owner: "alice", items: [] });
   }, { active: () => active, value: () => "0" });
-  await s.a.rename();
+  await s.a.rename("dusk");
   active = "arb:7";
-  await s.a.rename();
+  await s.a.rename("dusk");
   expect(patches).toEqual([{ name: "dusk" }]);
   expect(s.a.view().playlists[7].name).toBe("dusk");
-  delete globalThis.prompt;
 });
 
 test("a fork replaces its original playlist item after a concurrent reorder", async () => {

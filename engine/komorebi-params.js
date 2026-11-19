@@ -887,7 +887,7 @@ const PARAMS = {
     row: { kind: 'sel', label: 'idle fps', choices: [['24',24],['30',30],['48',48]], rebuild: '' },
     travels: 'none',
     means: "<b>The reduced rate 'adaptive fps' falls to</b> in low-motion frames. Lower saves more but steps the slow shimmer more visibly." },
-  show_source: { default: true,
+  show_source: { default: false,
     row: { kind: 't', label: 'show source', rebuild: '' },
     travels: 'none',
     means: "<b>Show a little map of the sun</b> you're sampling (centre + glow) in the corner. Watch it change as you move CLOUD or eclipse." },

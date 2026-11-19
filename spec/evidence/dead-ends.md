@@ -1211,7 +1211,7 @@ Materials ride the camera until a real look wants a pair that does not exist; in
 
 ### Editor echoes
 
-The HUD once printed fps, tap counts and slider echoes every frame; it now carries only what is live and computed. The tree preview walked a gaussian stream of its own; it now places leaves with the grove's own function. The canvas drag that moved the sun became a toggle; the default orbits the camera.
+The HUD once printed fps, tap counts and slider echoes every frame; it was cut to what is live and computed (the dapples' softness `blur h·θ` and a wind score), and then removed: the frame rate is the workspace's counter. The tree preview walked a gaussian stream of its own; it now places leaves with the grove's own function. The canvas drag that moved the sun became a toggle; the default orbits the camera.
 
 ## principles
 
