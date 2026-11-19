@@ -274,6 +274,31 @@ scenario("the sky only sizes its wood maps while fine wood is visible", { ...PRE
   expect(sizes()).toEqual([[1, 1], [1, 1], [1, 1], [1, 1]]);
 });
 const MANUAL_DRIFT = { ...LAYERED, wind_strength: 0, drift_amount: 0.3, drift_phase: 0 };
+for (const hz of [60, 120]) {
+  for (const fps of [24, 30, 48]) {
+    test(`idle ${fps} fps on a ${hz} Hz display carries its fractional cadence`, () => withWindow(() => {
+      const R = engine({ ...MANUAL_DRIFT, adaptive_motion: true, adaptive_idle_fps: fps, drift_auto: true });
+      const step = Math.floor(1000 / hz * 2**20) / 2**20;
+      R.pump(hz, step);
+      const before = R.L.layerDraws();
+      R.pump(2 * hz, step);
+      expect((R.L.layerDraws() - before) / MANUAL_DRIFT.layer_count).toBe(2 * fps);
+      closes(R, "adaptive cadence");
+    }));
+  }
+}
+test("idle motion advances through intentionally skipped frames, with long display stalls capped", () => withWindow(() => {
+  const R = engine({ ...MANUAL_DRIFT, adaptive_motion: true, adaptive_idle_fps: 10, drift_auto: true });
+  const step = Math.floor(1000 / 60 * 2**20) / 2**20;
+  R.pump(61, step);
+  const before = R.eng.motion.time;
+  R.pump(120, step);
+  expect(R.eng.motion.time - before).toBeCloseTo(2, 5);
+  const stalled = R.eng.motion.time;
+  R.pump(1, 2000);
+  expect(R.eng.motion.time - stalled).toBeCloseTo(1 / 15, 5);
+  closes(R, "adaptive clock");
+}));
 for (const [key, value] of [["drift_phase", 2.2], ["drift_amount", 0.08], ["edge_softness", 0.8]]) {
   scenario(`a still layer morph of ${key} refreshes the cast on the same grove`, MANUAL_DRIFT, (R) => {
     const grove = R.eng.grove();

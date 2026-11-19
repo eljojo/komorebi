@@ -8,6 +8,8 @@ import { DEG, TAU, clamp } from '../komorebi-math.js';
 import { windNoise } from './komorebi-air.js';
 import { weatherAt, leanForce, crossForce, gustEdge, advanceAir, airForce, airLevel, airDelay, airAcross, carrySpeed, shelter, makeAirTrack } from './komorebi-air.js';
 
+export const MAX_MOTION_STEP = 1/15;
+
 export function makeMotion(hub){
   const { gl, params, motion, faithfulOn } = hub;
   if(motion && !motion.air) motion.air = makeAirTrack();   // the air's kept past, which belongs to the weather like the clocks, not to a grove
@@ -162,7 +164,7 @@ export function makeMotion(hub){
   }
 
   function tick(dt){
-    dt = clamp(dt, 0, 1/15);                                  // guard tab-switch spikes
+    dt = clamp(dt, 0, MAX_MOTION_STEP);                         // guard tab-switch spikes
     const t = motion.time;
     // ---- weather (minutes, spec/model/motion.md): slow deterministic drift of overall STRENGTH and DIRECTION. At
     // weather_variability 0 it is identity (weatherS=1, no veer), so presets are untouched. Driven by low-

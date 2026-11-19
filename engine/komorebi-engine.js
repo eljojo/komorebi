@@ -4,7 +4,7 @@ import { VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, FS_FAITH, FS_FACC, VS_FAITH
 import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './transport/komorebi-transport.js';
 import { makeSource } from './light/komorebi-source.js';
 import { makeCast } from './transport/komorebi-cast.js';
-import { makeMotion } from './motion/komorebi-motion.js';
+import { makeMotion, MAX_MOTION_STEP } from './motion/komorebi-motion.js';
 import { makeTransitions } from './transitions/komorebi-transitions.js';
 import { restTrans } from './transitions/komorebi-routes.js';
 import { makeGrove, seasonKey, densityEligible, densityCount, growAs, attachGrove, detachGrove, attachedGrove, freeGrove as freeGroveGL } from './canopy/komorebi-grove.js';
@@ -303,7 +303,7 @@ function createEngine(canvas, opts, driven=false){
   } : null;
   // adaptive frame-rate (TUNE spec/implementation.md): offscreen present target + cadence state. presentFBO/presentTex are canvas-sized
   // and allocated lazily on first use (so a look that never enables adaptive_motion pays nothing).
-  let presentTex=null, adaptiveLastRender=0, adaptiveHot=true, adaptiveResume=false;
+  let presentTex=null, adaptiveDeadline=null, adaptiveElapsed=0, adaptiveRate=0, adaptiveHot=true;
   const ADAPT_HI=0.05, ADAPT_LO=0.02;   // hysteresis on the motion magnitude: above HI render every frame, below LO drop to idle_fps
   // lateral diffusion (spec/model/receivers.md): [0] = transport's LINEAR-HDR frame (the sharp one), [1]/[2] = the separable blur's
   // ping/pong. RGBA16F at the render size, one FBO each (attached once at allocation, so no per-frame re-attach),
@@ -820,13 +820,13 @@ function createEngine(canvas, opts, driven=false){
   else { rebuildAll(); resetPerf(); }
   let last=performance.now(), fps=60, paused=false, alive=true, lost=false;
   // The journey bypasses the cached present frame; refresh it at the landing clock even in still air.
-  hub.resumeAdaptive=()=>{adaptiveLastRender=last;adaptiveHot=true;adaptiveResume=true;};
+  hub.resumeAdaptive=()=>{adaptiveDeadline=null;adaptiveElapsed=0;adaptiveHot=true;};
   // THE LOOP. `loop` is a generation: every start/stop bumps it, so a callback already queued with rAF by an
   // older loop is dropped when it fires — pause+resume, or a loss+restore inside one frame, can never leave two
   // loops running.
   let loop = 0;
   const schedule = () => { const id = loop; requestAnimationFrame(now => { if(id === loop) frame(now); }); };
-  const startLoop = () => { loop++; last = performance.now(); schedule(); };
+  const startLoop = () => { loop++; last = performance.now(); hub.resumeAdaptive(); schedule(); };
   const eng = { canvas, gl, params, perf, motion, src, trans, occ, fps:60, apply, setParams, onFrame:opts.onFrame||null,
     get authored(){ return session ? { ...authored } : { ...params }; },
     get session(){ return session; },
@@ -924,12 +924,20 @@ function createEngine(canvas, opts, driven=false){
                     hub.hier ? hub.hier.maxV*0.5 : 0);
   }
   function adaptiveDue(now){
-    if(adaptiveResume){adaptiveResume=false;return true;}
+    const rate = Math.max(1, params.adaptive_idle_fps), period = 1000/rate;
     const m = motionMagnitude();
     if(adaptiveHot){ if(m < ADAPT_LO) adaptiveHot=false; }
     else if(m > ADAPT_HI) adaptiveHot=true;
-    if(adaptiveHot) return true;                                       // moving -> every frame (no judder on real wind)
-    return (now - adaptiveLastRender) >= 1000/Math.max(1, params.adaptive_idle_fps);   // low -> idle cadence
+    if(adaptiveHot || adaptiveDeadline===null || adaptiveRate!==rate){
+      adaptiveRate=rate;
+      adaptiveDeadline=now+period;
+      return true;
+    }
+    // A display frame may land a fraction late. Keep that time against the next deadline, and skip missed deadlines after a stall.
+    const late = now-adaptiveDeadline+0.001;   // one microsecond of tolerance at a nominal display tick
+    if(late<0) return false;
+    adaptiveDeadline += (1+Math.floor(late/period))*period;
+    return true;
   }
   function frame(now){
     if(!alive || paused || lost) return;             // dispose() halts permanently; setPaused(true) / a lost context halt until resumed
@@ -945,15 +953,20 @@ function createEngine(canvas, opts, driven=false){
     // adaptive frame-rate (opt-in): only off-transition, non-debug. While motion is low, render the heavy passes
     // at adaptive_idle_fps into presentTex and re-present it the rest of the time; off -> the unchanged path below.
     if(params.adaptive_motion && !trans.active && !params.show_layer){
+      adaptiveElapsed += clamp(dtms/1000, 0, MAX_MOTION_STEP);
       if(!adaptiveDue(now)){                          // skip: re-present the last rendered frame (byte-identical), no bake/transport
         presentFrame();
         schedule();                                   // BEFORE onFrame: a throwing host callback must not end the animation (its error still surfaces)
         if(eng.onFrame) eng.onFrame(dtms);
         return;
       }
-      const dt = clamp((now - adaptiveLastRender)/1000, 0, 1/15);   // elapsed since last HEAVY render (skipped frames fold in)
-      adaptiveLastRender = now;
-      if(motionActive()){ hub.motionTick(dt); hub.timed('bake', bake); }
+      if(motionActive()){
+        // Each display interval is already capped for stalls. Integrate the accumulated time in steps the springs can take.
+        while(adaptiveElapsed>MAX_MOTION_STEP){hub.motionTick(MAX_MOTION_STEP);adaptiveElapsed-=MAX_MOTION_STEP;}
+        hub.motionTick(adaptiveElapsed);
+        hub.timed('bake', bake);
+      }
+      adaptiveElapsed=0;
       ensureFrameTarget();
       hub.timed('transport', drawTransportPresent);       // heavy transport (+ the diffusion passes, if the gate is open) -> offscreen
       presentFrame();                                 // offscreen -> screen
@@ -961,6 +974,7 @@ function createEngine(canvas, opts, driven=false){
       if(eng.onFrame) eng.onFrame(dtms);
       return;
     }
+    if(adaptiveDeadline!==null) hub.resumeAdaptive();
     const dt = dtms/1000;
     let landed = null;                               // the route's onEnd, when it lands this frame
     if(trans.active){                                // a running transition owns the re-source/re-bake each frame
@@ -999,7 +1013,6 @@ function createEngine(canvas, opts, driven=false){
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = restoreContext();
     playbackNow();settleSession();rebuildRested();
-    adaptiveLastRender = 0; adaptiveHot = true;        // the offscreen present frame is empty: the first frame must render heavy
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)
     if(cb) cb();                                       // after the restart: a throwing onEnd must not leave a restored engine with no loop
   }
