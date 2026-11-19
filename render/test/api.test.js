@@ -58,8 +58,10 @@ const rig = (over = {}) => {
 };
 
 test('API accepts and displays every pipeline, including the effective master default on older jobs', async () => {
-  const { call, submit, store } = rig();
-  const old = submit();
+  const { call, store } = rig();
+  // A job stored before gpu was the default has no pipeline in its spec.
+  const legacy = validateSpec(SPEC); delete legacy.pipeline;
+  const old = store.create(legacy);
   assert.equal('pipeline' in store.get(old.id).spec, false);
   assert.equal((await call('GET', `/jobs/${old.id}`)).json.pipeline, 'master');
   // A Linux host refuses browser at submit (spec.test.js); these are the pipelines this host accepts.

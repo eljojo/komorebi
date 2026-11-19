@@ -134,11 +134,12 @@ export function validateSpec(raw, { maxSeconds = DEFAULT_MAX_SECONDS, platform =
     else if (typeof raw.master === 'boolean') spec.master = raw.master;
     else errors.push('master must be true or false');
 
-    // Omitted pipeline stays omitted in stored specs, preserving older jobs and their exporter run keys.
-    if (raw.pipeline !== undefined) {
-      if (PIPELINES.includes(raw.pipeline)) spec.pipeline = raw.pipeline;
-      else errors.push('pipeline must be master, gpu, gpu-main10 or browser');
-    }
+    // A new job is stored with its pipeline named: gpu when omitted, or master when it asks to keep the lossless master (only
+    // master has one). A stored spec without a pipeline is from before gpu was the default and still means master (view.js,
+    // exporter.js), so older jobs resume with their exporter run keys unchanged.
+    if (raw.pipeline === undefined) spec.pipeline = spec.master === true ? 'master' : 'gpu';
+    else if (PIPELINES.includes(raw.pipeline)) spec.pipeline = raw.pipeline;
+    else errors.push('pipeline must be master, gpu, gpu-main10 or browser');
     // Parallel rendering: N Chromium sessions on one job's segments (the exporter's --jobs / --block-segments). Omitted stays omitted: older specs and their run keys are unchanged.
     if (raw.jobs !== undefined) {
       if (Number.isInteger(raw.jobs) && raw.jobs >= 1 && raw.jobs <= MAX_JOBS) spec.jobs = raw.jobs;

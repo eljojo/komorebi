@@ -107,7 +107,7 @@ Existing `quality` jobs retain their overriding behavior and `quality.ss`. A job
 | `fps` | `30` or `60` (default 60). |
 | `master` | `false` (default): the lossless segments are deleted once the delivery is verified. `true` keeps them. |
 | `quality` | `"authored"` (default: the look as saved), `"max"`, or an object (below). |
-| `pipeline` | `"master"` (default), `"gpu"`, `"gpu-main10"` or `"browser"`; capture and encoding, independent of quality. |
+| `pipeline` | `"gpu"` (default; `"master"` when `master` is true), `"master"`, `"gpu-main10"` or `"browser"`; capture and encoding, independent of quality. Jobs stored before gpu was the default keep master. |
 | `jobs`, `block_segments` | Parallel rendering of one job: `jobs` 1 to 8 Chromium sessions at once on the job's 10-second segments (default 1), `block_segments` 1 to 64 consecutive segments per browser session (needs `jobs` above 1). Output is identical to a serial render; the exporter verifies each segment's end state and stops with a message to render with `jobs` 1 if it ever is not. |
 | `delivery` | optional, one of `{ "vt_bitrate": "60M" }` (k, K or M) or `{ "vt_quality": 0..100 }`; browser requires omitted or empty delivery. |
 
@@ -158,8 +158,8 @@ the MP4 encoder; it does not set the render resolution or lower scene quality.
 
 | Pipeline | Use it for | Capture and encoding |
 | --- | --- | --- |
-| `master` | Lossless archives, studies, and re-encoding deliveries later | Existing lossless RGB segment masters, then an eight-bit HEVC MP4. Default; master retention remains off unless requested. |
-| `gpu` | Everyday production MP4s | Resize on the GPU when supersampling, read back output-sized RGB, encode eight-bit HEVC using VideoToolbox on Mac or VA-API on AMD Linux. Extremely close to the old output in the measured Mac comparison. |
+| `master` | Lossless archives, studies, and re-encoding deliveries later | Existing lossless RGB segment masters, then an eight-bit HEVC MP4. Master retention remains off unless requested. |
+| `gpu` | Everyday production MP4s; the default | Resize on the GPU when supersampling, read back output-sized RGB, encode eight-bit HEVC using VideoToolbox on Mac or VA-API on AMD Linux. Extremely close to the old output in the measured Mac comparison. |
 | `gpu-main10` | Highest measured production fidelity, especially faint colours | Same GPU capture, direct ten-bit YUV conversion and hardware HEVC Main10. Source RGB is still eight-bit; this is SDR, not HDR. |
 | `browser` | Short scene-planning tests and fastest turnaround | GPU capture into VideoFrame, direct browser HEVC encoding at fixed QP1, then MP4 muxing. Small measured fidelity loss compared with the old output. |
 

@@ -204,7 +204,7 @@ test('a job runs to done: folder, argv, progress, and the delivery from the mani
   assert.deepEqual(argv.slice(argv.indexOf('--arboretum'), argv.indexOf('--arboretum') + 2), ['--arboretum', '3']);
   assert.equal(argv[argv.indexOf('--commit') + 1], SHA);
   assert.equal(argv[argv.indexOf('--out') + 1], done.folder);
-  assert.ok(argv.includes('--discard-master'));
+  assert.equal(argv[argv.indexOf('--pipeline') + 1], 'gpu');
   assert.equal(done.last_line, 'done');
 });
 

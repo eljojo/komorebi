@@ -14,7 +14,7 @@ test('inherited object properties are not size aliases', () => {
 
 test('a preset job gets its defaults and a canonical size', () => {
   assert.deepEqual(ok({ preset: '3', size: '1080p', seconds: 300 }), {
-    preset: '3', size: '1920x1080', seconds: 300, fps: 60, master: false, quality: 'authored',
+    preset: '3', size: '1920x1080', seconds: 300, fps: 60, master: false, pipeline: 'gpu', quality: 'authored',
   });
   assert.equal(ok({ preset: '3', size: '4k', seconds: 10 }).size, '3840x2160');
   assert.equal(ok({ preset: '3', size: '1280x720', seconds: 10 }).size, '1280x720');
@@ -82,7 +82,7 @@ test('shipped playlists: ship:<key> or a list of them, always stored as the list
 });
 
 test('a playlist job: <id>[:share] and nothing else, video only, with a folder and a redaction of its own', () => {
-  assert.deepEqual(ok({ playlist: '3', size: '1080p', seconds: 120 }), { playlist: '3', size: '1920x1080', seconds: 120, fps: 60, master: false, quality: 'authored' });
+  assert.deepEqual(ok({ playlist: '3', size: '1080p', seconds: 120 }), { playlist: '3', size: '1920x1080', seconds: 120, fps: 60, master: false, pipeline: 'gpu', quality: 'authored' });
   for (const p of ['3', '12:tok-en_9']) assert.equal(ok({ playlist: p, size: '1080p', seconds: 5 }).playlist, p);
   for (const p of ['0', 'x', '3@2', '3@2:tok', '', 3, '3 4']) bad({ playlist: p, size: '1080p', seconds: 5 }, /playlist/);
   bad({ playlist: '3', format: 'png', size: '512x512' }, /playlist is a video option/);
@@ -201,9 +201,10 @@ test('jobs and block_segments: parallel rendering, whole numbers in the exporter
   bad({ preset: '3', format: 'png', size: '512x512', block_segments: 2 }, /block_segments is a video option/);
 });
 
-test('pipeline is optional for older specs and accepts the four export mechanisms independently of quality', () => {
+test('pipeline defaults to gpu (master when the master is kept) and accepts the four export mechanisms independently of quality', () => {
   const base = { preset: '3', size: '1080p', seconds: 5 };
-  assert.equal('pipeline' in ok(base), false);
+  assert.equal(ok(base).pipeline, 'gpu');
+  assert.equal(ok({ ...base, master: true }).pipeline, 'master');
   for (const pipeline of ['master', 'gpu', 'gpu-main10', 'browser']) {
     for (const quality of ['authored', 'max', { ss: 1 }, { ss: 2 }]) {
       assert.equal(ok({ ...base, pipeline, quality }).pipeline, pipeline);
@@ -233,7 +234,7 @@ test('Linux refuses the browser pipeline and VideoToolbox controls at submit, wi
   assert.deepEqual(fields({ ...base, pipeline: 'browser' }), ['pipeline']);
   assert.deepEqual(fields({ ...base, pipeline: 'gpu', delivery: { vt_quality: 100 } }), ['delivery.vt_quality']);
   assert.deepEqual(fields({ ...base, delivery: { vt_bitrate: '80M' } }), ['delivery.vt_bitrate']);
-  for (const pipeline of [undefined, 'master', 'gpu', 'gpu-main10']) assert.equal(linux({ ...base, pipeline, delivery: {} }).pipeline, pipeline);
+  for (const pipeline of [undefined, 'master', 'gpu', 'gpu-main10']) assert.equal(linux({ ...base, pipeline, delivery: {} }).pipeline, pipeline ?? 'gpu');
   assert.equal(linux({ preset: '3', size: '1080p', format: 'png' }).format, 'png');
 });
 
