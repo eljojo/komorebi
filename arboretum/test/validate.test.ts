@@ -204,11 +204,11 @@ describe('validateParams: the editor\'s ranges, with leeway', () => {
   });
 
   it('accepts the four shipped looks that go past the editor\'s sliders, unchanged', () => {
-    expect(looks.montebello.view_yaw_deg).toBe(208.5);
+    expect(looks['cherry blossom'].view_yaw_deg).toBe(208.5);
     expect(looks['canopy 2'].foliage_density).toBe(3.4);
     expect(looks['curtain 2'].fold_warp).toBe(0.34);
     expect(looks['acid dreams'].branch_length_ratio).toBe(1);
-    for (const name of ['montebello', 'canopy 2', 'curtain 2', 'acid dreams'] as const) {
+    for (const name of ['cherry blossom', 'canopy 2', 'curtain 2', 'acid dreams'] as const) {
       expect(validateParams(looks[name]), name).toEqual({ ok: true });
     }
   });
