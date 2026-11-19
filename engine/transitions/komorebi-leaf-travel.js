@@ -194,17 +194,17 @@ export function carrierRecords(a,b,pairs,trip,out=new Float32Array(pairs.length*
 // carrier's plan point needs no flutter (it turns and foreshortens a leaf about its centre, moving no centre), so each end's leaves are
 // placed as moved() places them less their drift: one turn per clump (its twig's and its limb's, about their joints), a leaf on older
 // wood's own smaller twig turn, its tree's sway at its height. The drift is bounded instead, by its largest orbit; the carriers are then
-// lerped at their progress and boxed. No trig per leaf but the leaves on older wood, so a frame of the busiest route costs a fraction of
-// a millisecond where moving the carriers cost several.
+// lerped at their progress and boxed. No trig per leaf but the leaves on older wood, so a frame of the busiest route costs under a
+// millisecond where moving the carriers cost several. The frame's pad is bounded once a route (carrierSize).
 export function framePrep(q){
   const d=q.leaves,n=d.length/18,p=q.params,faithful=p.faithful_canopy,hgt=new Float32Array(n),piv=new Float32Array(n);
-  let reach=0,size=0;
+  let reach=0;
   for(let k=0,i=0;k<n;k++,i+=18){
     hgt[k]=faithful ? d[i+16] : leafLayerOf(q.hier,Math.round(d[i+11]),d[i+16])/Math.max(1,p.layer_count-1);
     piv[k]=faithful&&q.pivot ? q.pivot[k] : 0;
-    reach=Math.max(reach,Math.hypot(d[i+12],d[i+13]));size=Math.max(size,d[i+2],d[i+3]);
+    reach=Math.max(reach,Math.hypot(d[i+12],d[i+13]));
   }
-  return {hgt,piv,reach,size,pos:new Float32Array(3*n),clump:new Float64Array(12*q.hier.nClusterTotal)};
+  return {hgt,piv,reach,pos:new Float32Array(3*n),clump:new Float64Array(12*q.hier.nClusterTotal)};
 }
 // Every leaf of one end at its wind now, less its drift: plan point and height into pre.pos (x, y, z a leaf).
 export function framePoints(q,pre){
@@ -240,6 +240,23 @@ export function carrierBox(a,b,pa,pb,ka,kb,wi,out){
   const e=Math.max(Math.abs(a.params.drift_amount)*pa.reach,Math.abs(b.params.drift_amount)*pb.reach);
   out[0]=x0-e;out[1]=y0-e;out[2]=x1+e;out[3]=y1+e;out[4]=h0;out[5]=h1;
   return out;
+}
+// The largest half size any carrier takes on its trip, at any flutter. Flutter foreshortens a leaf to between .05 and 1 of its height
+// (moved()), and a carrier between a foreshortened end and an open one is longer than either (its area lerps, its aspect in log). Its
+// longer side squared, at a progress, is area times e^|log aspect|, and at either end peaks with that end's height at one of its limits:
+// below the aspect's turn it is c·f^w + c'·f^(w-1), whose only turn is a least, and above it it grows with f. So each of the four corners
+// is taken, along the trip at both ends and where it turns.
+const FORESHORTEN=[1,.05];
+export function carrierSize(a,b,pairs){
+  const da=a.leaves,db=b.leaves;let size=0;
+  const at=(Aa,Ab,La,Lb,w)=>{const s=(Aa+(Ab-Aa)*w)*Math.exp(Math.abs(La+(Lb-La)*w));if(s>size)size=s;};
+  for(const [ia,ib,la,lb] of pairs)for(const fa of FORESHORTEN)for(const fb of FORESHORTEN){
+    const Aa=la?da[ia+2]*da[ia+3]*fa:0,Ab=lb?db[ib+2]*db[ib+3]*fb:0,La=Math.log(da[ia+2]/(da[ia+3]*fa)),Lb=Math.log(db[ib+2]/(db[ib+3]*fb));
+    at(Aa,Ab,La,Lb,0);at(Aa,Ab,La,Lb,1);
+    const dA=Ab-Aa,k=Lb-La;
+    if(dA!==0&&k!==0)for(const g of [k,-k]){const w=(-dA/g-Aa)/dA;if(w>0&&w<1)at(Aa,Ab,La,Lb,w);}   // (Aa+dA·w)·e^(g·w) turns here
+  }
+  return Math.sqrt(size);
 }
 
 export function makeLeafTravel(hub,createScene){
@@ -286,7 +303,7 @@ export function makeLeafTravel(hub,createScene){
     if(s.patch)initPatch();
     s.prep=[framePrep(s.a),framePrep(s.b)];s.frame=new Float64Array(6);
     s.ka=Int32Array.from(s.pairs,p=>p[0]/18);s.kb=Int32Array.from(s.pairs,p=>p[1]/18);
-    s.pad=Math.max(.1,3*Math.max(s.prep[0].size,s.prep[1].size));   // three of the largest leaf's half sizes: the quad, its outline's box and a margin
+    s.pad=Math.max(.1,3*carrierSize(s.a,s.b,s.pairs));   // three of the largest carrier's half sizes: the quad, its outline's box and a margin
     s.stride=s.patch?STRIDE_PATCH:12;
     // the carriers' pass: their records in, the stamp's floats out, into the buffer the stamp's vertex array reads
     s.carry=s.patch?hub.sharedProgram(VS_LEAF_CARRY_PATCH,FS_LEAF_CARRY,LEAF_CARRY_PATCH_OUT):hub.sharedProgram(VS_LEAF_CARRY,FS_LEAF_CARRY,LEAF_CARRY_OUT);

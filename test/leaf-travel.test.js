@@ -301,7 +301,9 @@ function windy(seed,faithful,n=7){
 // moveLeaves or movePatchLeaves places lies inside, and each side of the frame lies within that orbit of a carrier.
 test('the moving cast\'s frame holds every carrier the reference places, and is their box but for the drift\'s orbit',()=>{
   for(const [fa,fb] of [[false,true],[true,false],[true,true],[false,false]])for(let seed=1;seed<12;seed++){
-    const a=windy(seed,fa),b=windy(seed+50,fb),pairs=travel.pairLeaves(a,b),n=pairs.length,out=new Float32Array(16*n);
+    const a=windy(seed,fa),b=windy(seed+50,fb,5);   // fewer leaves at B: some carriers fade out
+    for(let i=0;i<b.leaves.length;i+=54)[b.leaves[i+2],b.leaves[i+3]]=[b.leaves[i+3],b.leaves[i+2]];   // and some leaves longer than wide
+    const pairs=travel.pairLeaves(a,b),n=pairs.length,out=new Float32Array(16*n);
     const pa=travel.framePrep(a),pb=travel.framePrep(b),ka=pairs.map(p=>p[0]/18),kb=pairs.map(p=>p[1]/18);
     const trip=Float32Array.from(pairs,(_,k)=>((k*37)%n)/n),wi=new Float32Array(n);
     const e=Math.max(...[a,b].map(q=>{let r=0;for(let i=0;i<q.leaves.length;i+=18)r=Math.max(r,Math.hypot(q.leaves[i+12],q.leaves[i+13]));return q.params.drift_amount*r;}));
@@ -321,6 +323,31 @@ test('the moving cast\'s frame holds every carrier the reference places, and is 
         expect(lo[1]-box[1]).toBeLessThanOrEqual(2*e+eps);expect(box[3]-hi[1]).toBeLessThanOrEqual(2*e+eps);
       }
     }
+  }
+});
+
+// The frame's pad is the largest carrier at any flutter: a carrier between a foreshortened end and an open one is larger than either
+// end's leaf. No carrier the reference places, at any progress and wind, is larger; and the bound is the corners' own largest, found
+// by sweeping the trip finely, so it is no looser than the foreshortening's limits make it.
+test('the frame\'s pad holds the largest carrier at any flutter, and no more',()=>{
+  for(const [fa,fb] of [[false,true],[true,false],[true,true],[false,false]])for(let seed=1;seed<12;seed++){
+    const a=windy(seed,fa),b=windy(seed+50,fb,5);
+    for(let i=0;i<b.leaves.length;i+=54)[b.leaves[i+2],b.leaves[i+3]]=[b.leaves[i+3],b.leaves[i+2]];
+    for(const q of [a,b])q.params.leaf_swing=6;   // flutter that reaches the foreshortening's floor
+    const pairs=travel.pairLeaves(a,b),n=pairs.length,out=new Float32Array(12*n),bound=travel.carrierSize(a,b,pairs);
+    let seen=0;
+    for(let k=0;k<40;k++){
+      for(const q of [a,b]){q.motion.time+=.37;q.motion.u=Math.sin(seed+k);}
+      for(let W=0;W<=1;W+=.05){travel.moveLeaves(a,b,pairs,W,out);for(let c=0;c<n;c++)seen=Math.max(seen,out[12*c+2],out[12*c+3]);}
+    }
+    expect(seen).toBeLessThanOrEqual(bound*(1+1e-6));
+    let sweep=0;
+    for(const [ia,ib,la,lb] of pairs)for(const ha of [1,.05])for(const hb of [1,.05])for(let W=0;W<=1;W+=1/2000){
+      const A=la?a.leaves[ia+2]*a.leaves[ia+3]*ha:0,B=lb?b.leaves[ib+2]*b.leaves[ib+3]*hb:0;
+      const L=Math.log(a.leaves[ia+2]/(a.leaves[ia+3]*ha))*(1-W)+Math.log(b.leaves[ib+2]/(b.leaves[ib+3]*hb))*W;
+      sweep=Math.max(sweep,Math.sqrt((A*(1-W)+B*W)*Math.exp(Math.abs(L))));
+    }
+    expect(bound).toBeGreaterThanOrEqual(sweep*(1-1e-9));expect(bound).toBeLessThanOrEqual(sweep*(1+1e-5));
   }
 });
 
