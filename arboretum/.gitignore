@@ -10,4 +10,5 @@
 # What scripts/engine.mjs generates from the komorebi beside arboretum, before tests, typecheck and the dev mode.
 /src/generated/
 /test/fixtures/looks.json
+/test/fixtures/lineage.json
 /public/engine/

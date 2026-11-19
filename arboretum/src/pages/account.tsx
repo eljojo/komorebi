@@ -5,7 +5,7 @@ import { Layout, WEBAUTHN_BROWSER, viewerOf } from './layout';
 import { BASE } from '../config';
 
 // A person's pages: a signed-out visitor, or anyone who is not a person in a browser, is sent to sign in.
-async function signedIn(c: Ctx) {
+export async function signedIn(c: Ctx) {
   const viewer = await viewerOf(c);
   return viewer?.kind === 'session' ? viewer : null;
 }

@@ -184,3 +184,56 @@ section#owner-controls { margin-top: 3rem; border-top: 1px solid var(--line); }
 #remote .r-item { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.5rem; }
 #remote .r-item button { padding: 0.1rem 0.7rem; font-size: 0.9em; }
 #remote .r-time { margin: 0; font-size: 0.9em; color: var(--quiet); }
+
+/* The lineage (/lineage, public/js/lineage.js): a family tree needs the room, so its section leaves the column for the
+   window's width, the tree scrolling on the left and the look picked explained on the right (below, when narrow).
+   Who made a look is its colour: warm for komorebi's own, green for yours, a cool blue for a token's (made-*, never
+   .look, which is the garden's). */
+#lineage { --made-look: #f1d99a; --made-you: #9fd49a; --made-bot: #8fb6e0; position: relative; left: 50%; width: calc(100vw - 2.5rem); transform: translateX(-50%); margin-top: 1.5rem; }
+.lineage-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 1.1rem; padding: 0.4rem 0; border-bottom: 1px solid var(--line); font-size: 0.85em; color: var(--quiet); }
+.lineage-bar label.inline { margin: 0; }
+.lineage-bar .grow { flex: 1; }
+.lineage-bar .key::before { content: ""; display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; margin-right: 0.4em; background: var(--made, var(--quiet)); }
+.lineage-bar .key.made-look { --made: var(--made-look); }
+.lineage-bar .key.made-you { --made: var(--made-you); }
+.lineage-bar .key.made-bot { --made: var(--made-bot); }
+.lineage-bar .key.said::before, .lineage-bar .key.worked::before { width: 1.6em; height: 0; border-radius: 0; border-top: 1.5px solid var(--ink); background: none; vertical-align: middle; }
+.lineage-bar .key.worked::before { border-top-style: dashed; }
+.lineage-grid { display: grid; grid-template-columns: minmax(0, 1fr) 24rem; height: 78vh; border-bottom: 1px solid var(--line); }
+@media (max-width: 62rem) { .lineage-grid { grid-template-columns: minmax(0, 1fr); height: auto; } .lineage-tree { max-height: 70vh; } }
+.lineage-tree { overflow: auto; }
+.lineage-tree svg { display: block; }
+.lineage-tree text { font-family: var(--text); font-size: 13.5px; fill: var(--ink); }
+.lineage-tree .aside { font-size: 11px; fill: var(--quiet); }
+/* a halo of the ground behind every label, so a line passing behind it breaks around the words */
+.lineage-tree text { paint-order: stroke; stroke: var(--ground); stroke-width: 4px; stroke-linejoin: round; }
+.lineage-tree .unsure { fill: #e0a98f; }
+.lineage-tree .link { stroke: var(--made); }
+.lineage-tree .link.also { stroke: var(--sun); stroke-width: 1; stroke-dasharray: 1 4; opacity: 0.55; }
+.look-node, .lineage-tree .link { --made: var(--quiet); }
+.look-node.made-look, .lineage-tree .link.made-look { --made: var(--made-look); }
+.look-node.made-you, .lineage-tree .link.made-you { --made: var(--made-you); }
+.look-node.made-bot, .lineage-tree .link.made-bot { --made: var(--made-bot); }
+.look-node { cursor: pointer; outline: none; }
+.look-node circle { fill: var(--ground); stroke: var(--made); stroke-width: 1.8; }
+.look-node.made-look circle, .look-node.made-root circle { fill: var(--made); }
+.look-node.made-look .name, .look-node.made-root .name { font-family: var(--display); font-style: italic; fill: var(--bright); }
+.look-node:hover .name, .look-node:focus-visible .name, .look-node[aria-current] .name { fill: var(--sun); }
+.look-node[aria-current] circle { stroke: var(--sun-hot); stroke-width: 2.6; }
+.lineage-detail { overflow: auto; padding: 0.25rem 0 2rem 1.25rem; border-left: 1px solid var(--line); font-size: 0.92em; }
+@media (max-width: 62rem) { .lineage-detail { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; } }
+.lineage-detail h2 { margin-top: 0.75rem; font-style: normal; color: var(--bright); font-size: 1.3em; }
+.lineage-detail h3 { font: italic 400 0.95em var(--display); color: var(--quiet); margin: 1.2rem 0 0.3rem; }
+.lineage-detail .meta { margin: 0.1rem 0; }
+.lineage-detail .why { border-left: 2px solid var(--line); padding-left: 0.7rem; }
+.lineage-detail .said { white-space: pre-wrap; color: var(--quiet); font-size: 0.92em; }
+.lineage-detail ul.plain li { padding: 0.2rem 0; }
+.lineage-detail ul.plain li .meta { display: inline; margin-left: 0.4em; }
+.linkish { border: 0; border-radius: 0; background: none; padding: 0; font: inherit; letter-spacing: normal; color: var(--quiet); text-align: left; text-decoration: underline; text-decoration-color: rgba(159, 184, 159, 0.4); text-underline-offset: 0.2em; cursor: pointer; }
+.linkish:hover, .linkish:focus-visible { color: var(--sun); background: none; box-shadow: none; }
+table.changes { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+table.changes td { padding: 0.15rem 0.4rem 0.15rem 0; vertical-align: top; border-bottom: 1px solid rgba(159, 184, 159, 0.09); }
+table.changes td small { display: block; color: var(--quiet); font: 0.85em ui-monospace, Menlo, monospace; }
+table.changes td.v { font-family: ui-monospace, Menlo, monospace; color: var(--quiet); white-space: nowrap; }
+table.changes td.v b { color: var(--bright); font-weight: 400; }
+table.changes .bar { display: block; height: 3px; margin-top: 3px; border-radius: 2px; background: var(--made-look); opacity: 0.7; }

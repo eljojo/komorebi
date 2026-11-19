@@ -6,7 +6,9 @@
 //   src/generated/builtins.ts     DEFAULTS' values and every shipped look as the module holds it, so a look that is an
 //                                 unchanged built-in can be recognised and refused (builtinTwin in validate.ts)
 //   test/fixtures/looks.json      every shipped look, the validator's golden fixtures
-//   public/engine/*               the browser bundle (every camera, every feature tier), named by its content, + engine.json
+//   test/fixtures/lineage.json    the built-in looks as the lineage page reads them, for its tests
+//   public/engine/*               the browser bundle (every camera, every feature tier) and the lineage page's built-in looks,
+//                                 each named by its content, + engine.json naming both
 // Everything is built into a temporary place first and only put where it is read once every step has succeeded
 // (scripts/stage.mjs), so a failed run leaves the last good outputs exactly as they were.
 import { createHash } from 'node:crypto';
@@ -28,7 +30,7 @@ const komorebi = (file) => import(pathToFileURL(join(KOMOREBI, file)).href);
 const tmp = mkdtempSync(join(tmpdir(), 'arboretum-engine-'));
 try {
   const { DEFAULTS, LEGACY_KEYS, PARAMS } = await komorebi('engine/komorebi-params.js');
-  const { PRESETS, EXPERIMENTAL } = await komorebi('presets.js');
+  const { PRESETS, EXPERIMENTAL, PLAYLISTS } = await komorebi('presets.js');
   const { PRESENTATION_PROFILES, FIDELITY_KEYS, PLAYBACK_KEYS } = await komorebi('engine/komorebi-session.js');
   // Every look name keeps every camera, and `all` keeps every fall tier. Built into tmp, so komorebi's dist/ is left alone.
   const { build } = await komorebi('embed-build.mjs');
@@ -118,22 +120,66 @@ try {
 
   writeFileSync(join(stage, 'looks.json'), JSON.stringify(PRESETS, null, 2) + '\n');
 
+  // What the lineage page (public/js/lineage-infer.js) knows of the built-in looks: each one's params, the comment written
+  // directly above it in presets.js (which often names the look it was made from), and when git first saw its name as a
+  // key, in presets.js or in komorebi.js where the looks lived before; plus the tables two looks are compared by.
+  const presetsLines = readFileSync(join(KOMOREBI, 'presets.js'), 'utf8').split('\n');
+  const escaped = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const commentAbove = (name) => {
+    const key = new RegExp(`^\\s*(['"])${escaped(name)}\\1\\s*:`);
+    const lines = [];
+    for (let i = presetsLines.findIndex((l) => key.test(l)) - 1; i >= 0 && /^\s*\/\//.test(presetsLines[i]); i--) {
+      lines.unshift(presetsLines[i].replace(/^\s*\/\/\s?/, ''));
+    }
+    return lines.join('\n');
+  };
+  const firstSeen = (name) => {
+    const dates = ["'", '"'].map((q) => {
+      // A checkout without history (a shallow clone) dates nothing; the page then orders those looks by name alone.
+      try {
+        const out = execFileSync('git', ['-C', KOMOREBI, 'log', '--reverse', '--format=%aI', `-S${q}${name}${q}:`, '--', 'presets.js', 'komorebi.js'], { encoding: 'utf8' });
+        return Date.parse(out.split('\n').find(Boolean) ?? '');
+      } catch {
+        return NaN;
+      }
+    }).filter((d) => !Number.isNaN(d));
+    return dates.length ? Math.min(...dates) : null;
+  };
+  // The name the editor's panel gives a parameter, toggles included.
+  const labels = Object.fromEntries(Object.entries(PARAMS).filter(([, d]) => d.row?.label).map(([k, d]) => [k, d.row.label]));
+  const lineage = JSON.stringify({
+    defaults: DEFAULTS,
+    ranges: Object.fromEntries([...ranges.values()].map((r) => [r.key, { min: r.min, max: r.max }])),
+    angleKeys,
+    legacyKeys: LEGACY_KEYS,
+    skipKeys: [...FIDELITY_KEYS, ...PLAYBACK_KEYS],
+    labels,
+    looks: Object.entries(PRESETS).map(([name, params], order) => ({
+      name, order, params, comment: commentAbove(name), date: firstSeen(name), experimental: EXPERIMENTAL.includes(name),
+      playlists: Object.values(PLAYLISTS).filter((l) => l.items.includes(name)).map((l) => l.name),
+    })),
+  });
+  const lineageFile = `lineage-${createHash('sha256').update(lineage).digest('hex').slice(0, 10)}.json`;
+  writeFileSync(join(stage, lineageFile), lineage);
+
   const bundle = join(tmp, 'komorebi.min.js');
   build({ looks: Object.keys(PRESETS), features: 'all', out: bundle, quiet: true });
   // Named by its content, so a browser holding an older engine never keeps it past a change.
   const file = `komorebi-${createHash('sha256').update(readFileSync(bundle)).digest('hex').slice(0, 10)}.min.js`;
-  writeFileSync(join(stage, 'engine.json'), JSON.stringify({ commit, file }, null, 2) + '\n');
+  writeFileSync(join(stage, 'engine.json'), JSON.stringify({ commit, file, lineage: lineageFile }, null, 2) + '\n');
 
-  // Last of all, in this order: the bundle lands before the engine.json that names it, and older bundles go once both have.
+  // Last of all, in this order: the bundle and the lineage land before the engine.json that names them, and older ones go once all have.
   const outDir = join(ROOT, 'public', 'engine');
-  const older = readdirSyncOr(outDir).filter((f) => /^komorebi-.*\.min\.js$/.test(f)).map((f) => join(outDir, f));
+  const older = readdirSyncOr(outDir).filter((f) => /^komorebi-.*\.min\.js$|^lineage-.*\.json$/.test(f)).map((f) => join(outDir, f));
   install(
     [
       { from: bundle, to: join(outDir, file) },
+      { from: join(stage, lineageFile), to: join(outDir, lineageFile) },
       { from: join(stage, 'engine.json'), to: join(outDir, 'engine.json') },
       { from: join(stage, 'engine.ts'), to: join(ROOT, 'src', 'generated', 'engine.ts') },
       { from: join(stage, 'builtins.ts'), to: join(ROOT, 'src', 'generated', 'builtins.ts') },
       { from: join(stage, 'looks.json'), to: join(ROOT, 'test', 'fixtures', 'looks.json') },
+      { from: join(stage, lineageFile), to: join(ROOT, 'test', 'fixtures', 'lineage.json') },
     ],
     older,
   );

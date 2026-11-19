@@ -53,6 +53,17 @@ WebSockets with hibernation, reached through `GET /api/remote` (`src/api/remote.
 Origin. The room relays and stores nothing. In dev mode the passkeys belong to `localhost`, so a phone on the network cannot
 sign in; try the remote from a second window at https://localhost:8787/arboretum/remote.
 
+## The lineage
+
+`/arboretum/lineage` is a person's presets and komorebi's built-in looks as one family tree: each look beside the one it
+came from, and, for the one picked, why it hangs there and which parameters changed. The page (`src/pages/lineage.tsx`)
+is only the frame. `public/js/lineage.js` draws the tree in the browser from the person's own `GET /api/export` and the
+built-in looks file `scripts/engine.mjs` writes (`public/engine/lineage-*.json`, named in `engine.json`: each look's
+params, the comment above it in `presets.js`, and when git first saw its name). `public/js/lineage-infer.js` decides the
+parents, pure: what arboretum or komorebi says first (a version's `parent`, a built-in carrying a preset's name, a
+comment naming another look), and where nothing says, the nearest older look by parameters, marked with how sure that is.
+A parent is always older than its child, so the tree has no cycle.
+
 ## Test
 
 ```sh
