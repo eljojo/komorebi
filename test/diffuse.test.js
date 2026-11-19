@@ -562,7 +562,7 @@ test("ONE texelMix text: the sky ray, the fill, the cast tap and the faithful st
 
 test("the sky camera passes the beam's k to the shared ray from its OWN group; the fill passes its own, and reads no wood", () => {
   const sky = buildTransport("sky");
-  expect(sky.includes("skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0 || uBeamK > 0.0, true, true, uBeamK, T, Tsrc, Lsc);")).toBe(true);
+  expect(sky.includes("skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0 || uBeamK > 0.0, true, uWoodOn, uBeamK, T, Tsrc, Lsc);")).toBe(true);
   expect(sky.includes("uniform float uBeamK;")).toBe(true);
   expect(CAMERAS.sky.groups).not.toContain("tap");                           // the cast cameras' tap is not part of a camera that casts nothing
   expect(Object.keys(TRANSPORT_GROUPS.sky.locs)).toContain("beamK");

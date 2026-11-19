@@ -610,7 +610,7 @@ test("the fill's sun path is an argument of the shared ray, never read off the s
   expect(FS_FILL.includes("uniform vec2  uFillG;")).toBe(true);
   expect(code(FS_FILL).includes("uSunDir")).toBe(false);               // the fill pass has no real sun to walk
   expect(FS_FILL.includes("skyRay(x + s*uLayerHeight[0], x + s*uLayerHeight[1], x + s*uLayerHeight[2], x + s*uLayerHeight[3], uFillG, scatter, uFillOpen, false, uFillBeamK, T, Tb, Lsc);")).toBe(true);
-  expect(buildTransport("sky").includes("skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0 || uBeamK > 0.0, true, true, uBeamK, T, Tsrc, Lsc);")).toBe(true);   // the sky has no beam: it keeps the sun it looks at
+  expect(buildTransport("sky").includes("skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0 || uBeamK > 0.0, true, uWoodOn, uBeamK, T, Tsrc, Lsc);")).toBe(true);   // the sky has no beam: it keeps the sun it looks at
 });
 
 test("every fill READ is over the fill's own frame, not the canopy's: the floor, the cloth and the tent", () => {

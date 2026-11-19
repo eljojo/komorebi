@@ -81,7 +81,7 @@ function renderRig(over = {}) {
     src: { flat: new Float32Array(48), count: 16, beam: new Float32Array(0), coreR: 0, haloR: 0, Lcore: 0, Lhalo: 0, moonD: 0, moonR: 0 },
     progBlit: {}, progGlowBlur: {}, progGlowMix: {}, faithfulOn: () => false, transportFor: () => ({ prog: {}, U }), transportCamera: () => cameraFor(params),
     fail(m) { throw new Error(m); }, refreshFaith() {}, refreshFill() {}, refreshLitter() {}, layerHeights: () => [2, 3, 4, 5], layerTex: [{}, {}, {}, {}],
-    woodTex: [{}, {}, {}, {}], faithTex: {}, projMatrix: () => new Float32Array(4), bulkShift: () => [0, 0], bulkOn: () => !!(params.standing_scene || params.receiver), fill: { ready: false }, litter: { ready: false, tex: {} },
+    sky: { woodOn: false }, woodTex: [{}, {}, {}, {}], faithTex: {}, projMatrix: () => new Float32Array(4), bulkShift: () => [0, 0], bulkOn: () => !!(params.standing_scene || params.receiver), fill: { ready: false }, litter: { ready: false, tex: {} },
   };
   const r = makeRender(hub);
   return {

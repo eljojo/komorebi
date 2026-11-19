@@ -497,7 +497,7 @@ for (const mode of ['faithful', 'analytic', 'sky']) {
     Object.assign(R.hub, { grove: g, hier: H, clusterTex: g.clusterTex, clusterGeomTex: g.clusterGeomTex,
       motion: { u: 0, time: 0, sway: [0, 0] }, src: { count: 1, flat: new Float32Array([0, 0, 1]) }, U: { bake: {}, faith: {}, faithSeg: {}, facc: {} },
       bakeRes: () => 256, projMatrix: () => [1, 0, 0, 1], bulkShift: () => [0, 0], refreshWood: R.G.refreshWood,
-      layerTex: [{}, {}, {}, {}], woodTex: [{}, {}, {}, {}], layerHeights: () => [2, 2.5, 3, 3.6], fillWanted: () => false });
+      layerTex: [{}, {}, {}, {}], woodTex: [{}, {}, {}, {}], sizeWoodLayers() {}, layerHeights: () => [2, 2.5, 3, 3.6], fillWanted: () => false });
     F.gx = new Float32Array(1); F.gy = new Float32Array(1);
     makeBake(R.hub).bake();
     const geometry = mode === 'sky' ? R.hub.sky : F;
