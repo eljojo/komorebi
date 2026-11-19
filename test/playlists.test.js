@@ -3,7 +3,7 @@ import { test, expect, beforeEach } from "bun:test";
 import { LOCAL_NAME, detect, parseHash, entries, resolve, step, builtinTwin,
   cachePlaylist, dropPlaylist, savePreset, onSaved, onDeleted,
   uploadPlan, itemsAfter, itemTarget, playlists, plays, timing, starValue, starName, entryName,
-  fromEntry, onlineId, STORY, shipLists, placeChange, sameLook, lookChanges, lookState, playlistChips,
+  fromEntry, onlineId, STORY, shipLists, stepOn, placeChange, sameLook, lookChanges, lookState, playlistChips,
   emptyMirror, mirrorDiff, mirrorSync, mirrorPut, mirrorPlaylist, enqueue, dequeue, viewState, uncategorized, listChoices, moveCandidates, movePlan, savePlan, saveNewPlan, isFolder, fromVersion, linkPlaylist, makePlayer, selectionAfter } from "../editor/playlists.js";
 import * as builtins from "../presets.js";
 import { DEFAULTS, cameraFor } from "../komorebi.js";
@@ -149,7 +149,7 @@ test("entries gives a ★ that shares a built-in's name a value of its own, so i
   expect(list.find((e) => e.label === "★ afternoon 7").value).toBe("★ afternoon 7");
   expect(list.find((e) => e.label === "★ curtain 1").value).toBe("★ curtain 1");   // not tied to which playlist lists the built-in
   expect(list.find((e) => e.label === "★ x").value).toBe("x");     // every other ★ keeps its name as its value
-  expect(entries(EMPTY, {}, STORY).map((e) => e.value)).toContain("afternoon 7");
+  expect(entries(EMPTY, {}, "ship:shadows").map((e) => e.value)).toContain("afternoon 7");
 });
 
 test("entries keeps values unique even for a ★ named like another ★'s value", () => {
@@ -176,9 +176,9 @@ test("resolve of On this browser: a ★ by its value, a built-in by its name, el
 
 test("resolve tells a ★ that shares a built-in's name from the built-in, by their values", () => {
   const mine = { exposure: 9 };
-  const builtin = entries(EMPTY, { "afternoon 7": mine }, STORY).find((e) => e.label === "afternoon 7");
+  const builtin = entries(EMPTY, { "afternoon 7": mine }, "ship:shadows").find((e) => e.label === "afternoon 7");
   const star = entries(EMPTY, { "afternoon 7": mine }, "local").find((e) => e.label === "★ afternoon 7");
-  expect(resolve(EMPTY, { "afternoon 7": mine }, STORY, builtin.value)).toBe(builtins.PRESETS["afternoon 7"]);
+  expect(resolve(EMPTY, { "afternoon 7": mine }, "ship:shadows", builtin.value)).toBe(builtins.PRESETS["afternoon 7"]);
   expect(resolve(EMPTY, { "afternoon 7": mine }, "local", star.value)).toEqual(mine);
 });
 
@@ -203,6 +203,18 @@ test("step goes to the next or previous value and wraps at the ends", () => {
   expect(step(e, "c", 1)).toBe("a");
   expect(step(e, "a", -1)).toBe("c");
   expect(step(e, "b", -1)).toBe("a");
+});
+
+test("stepOn: past the last look of a list that names its next, a step goes on to that list's first look; otherwise it wraps", () => {
+  const story = builtins.PLAYLISTS.story, shadows = builtins.PLAYLISTS.shadows;
+  const last = (l) => { const it = l.items[l.items.length - 1]; return typeof it === "string" ? it : it.look; };
+  const first = (l) => { const it = l.items[0]; return typeof it === "string" ? it : it.look; };
+  expect(story.next).toBe("shadows");
+  expect(stepOn(EMPTY, {}, STORY, last(story), 1)).toEqual({ active: "ship:shadows", value: first(shadows) });
+  expect(stepOn(EMPTY, {}, STORY, first(story), 1)).toEqual({ active: STORY, value: story.items[1] });
+  expect(stepOn(EMPTY, {}, STORY, first(story), -1)).toEqual({ active: STORY, value: last(story) });   // back from the first still wraps
+  expect(stepOn(EMPTY, {}, "ship:shadows", last(shadows), 1)).toEqual({ active: "ship:shadows", value: first(shadows) });   // shadows names none: it wraps
+  expect(stepOn(EMPTY, { x: {}, y: {} }, "local", "y", 1)).toEqual({ active: "local", value: "x" });   // your looks wrap
 });
 
 test("step from a value that is not listed starts from the first entry; an empty list has no step", () => {

@@ -205,7 +205,7 @@ try {
   check('the sliders icon climbs to the playful sidebar', await page.$eval('#strip', (e) => getComputedStyle(e).display === 'none'));
   // settle: a hard preset re-apply aborts the (long, SwiftShader-stretched) welcome crossfade via setParams,
   // so everything after runs on a quiet engine
-  await page.evaluate(() => { const s = document.querySelector('#dev select'); /* the look's select: the docked panel's first */ s.value = 'afternoon 7'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.evaluate(() => { const s = document.querySelector('#dev select'); /* the look's select: the docked panel's first */ s.value = 'forest floor'; s.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(1200);
   check('key hints hidden by default', await page.$eval('#hint', (h) => h.classList.contains('gone')));
 
@@ -226,7 +226,7 @@ try {
   // the simple body's rows, top to bottom: the look's dials (its own lead, then the six usual ones), the caption, the actions, "more" (closed)
   const playRows = await page.$eval('#play .simple', (el) => [...el.children].map((c) => c.classList.contains('try') ? c.querySelector('.name').textContent : c.classList.contains('cap') ? 'cap' : c.classList.contains('acts') ? `acts:${[...c.querySelectorAll('button')].map((b) => b.textContent).join('|')}` : c.tagName === 'DETAILS' ? 'more' : c.querySelector('select') ? 'select' : c.querySelector('label')?.textContent.replace(/ \(\+\d+\)$/, '')));
   check('the playful sidebar runs the look\'s dials, the caption, the actions, more (no headings, no lists)',
-    playRows.join() === [...dialsOn('afternoon 7', PLAY_USUAL), 'cap', 'acts:\u21ba as it was|\u2684 new leaves', 'more'].join() && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
+    playRows.join() === [...dialsOn('forest floor', PLAY_USUAL), 'cap', 'acts:\u21ba as it was|\u2684 new leaves', 'more'].join() && (await page.$$eval('#play h2', (h) => h.length)) === 0, playRows.join());
   const moreRows = await page.$eval('#play details.more', (d) => [...d.children].slice(1).map((c) => c.classList.contains('pad') ? 'pad' : c.querySelector('label').textContent));
   check('"more" holds haze, sparkle, trees and the wind pad, and starts closed', moreRows.join() === 'haze,sparkle,trees,pad' && (await page.$eval('#play details.more', (d) => !d.open)), moreRows.join());
   await page.$eval('#play details.more', (d) => { d.open = true; });   // the pad and the macro sliders live inside it
@@ -304,7 +304,7 @@ try {
   await page.$eval('#play .tryreset', (b) => b.click());
   const droop2 = await devVal('droop');
   check('the droop dial writes droop, and "as it was" puts the look\'s own back', Math.abs(droop1 - 0.4) < 1e-6 && droop2 === droop0 && droop0 === PRESETS['park 1, the scene'].droop, `droop ${droop0} -> ${droop1} -> ${droop2}`);
-  await pickLook('afternoon 7');
+  await pickLook('forest floor');
 
   // the looks still finding their feet are their own playlist, experiments, reached through the stories
   const listOpts = await LISTS.opts(page);
@@ -324,9 +324,9 @@ try {
   await LISTS.pick(page, STORY);
   check('back on the story, it does not play by itself', await playIs(page, '▶'));
   await quiet(page);
-  await pickLook('memories');
+  await pickLook('montebello');
   const sideName = await page.$eval('#play .preset .name', (e) => e.textContent);
-  check('a look picked elsewhere is the one the sidebar names', sideName === 'memories', `sidebar shows ${sideName}`);
+  check('a look picked elsewhere is the one the sidebar names', sideName === 'montebello', `sidebar shows ${sideName}`);
 
   // preset stepper advances and the name label follows
   const name0 = await page.$eval('#play .preset .name', (e) => e.textContent);
@@ -709,7 +709,7 @@ try {
   // A LIVE TRANSITION OWNS THE MORPH KEYS: the stepper above started one (SwiftShader stretches it), and every frame of it
   // writes params.canopy_fill back to the look's own value. The pigment rows never noticed — their knobs are canopy keys,
   // morphed only on a grove morph — so settle first, the way the top of this file does: a hard preset apply aborts it.
-  await page.$eval('#dev select', (sel) => { sel.value = 'afternoon 7'; sel.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.$eval('#dev select', (sel) => { sel.value = 'forest floor'; sel.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(1500);
   const FILL_ROWS = ['leaf scatter', 'fill rays', 'fill res'];
   const fillShown = async () => (await Promise.all(FILL_ROWS.map(rowShown)));
@@ -1137,12 +1137,12 @@ try {
   // THE LOOK'S CHIP (every editor, arboretum or not): one muted line under the look select that says where the look lives
   const chipNow = () => page.$eval('#dev .look-chip', (e) => (e.hidden ? '' : e.textContent));
   const chipIs = async (want) => poll(async () => (await chipNow()) === want);
-  await devPick('afternoon 7');
+  await devPick('forest floor');
   check('a built-in, unchanged, reads "built-in"', await chipIs('built-in'), await chipNow());
   await setCloudSlider(0.12);
   check('and an edit prefixes "● edited · "', await chipIs('● edited · built-in'), await chipNow());
   let d = await askSave('k2 mine');
-  check('save on a built-in offers the built-in\'s name, to keep or type over', d?.type === 'prompt' && d.def === 'afternoon 7', JSON.stringify(d));
+  check('save on a built-in offers the built-in\'s name, to keep or type over', d?.type === 'prompt' && d.def === 'forest floor', JSON.stringify(d));
   check('a new name adds a ★ and selects it', (await devOpts()).some(([v, t]) => v === 'k2 mine' && t === '★ k2 mine') && (await page.$eval('#dev select', (s) => s.value)) === 'k2 mine');
   check('a saved ★ with no arboretum reads "★ saved here", and the save cleared the edit', await chipIs('★ saved here'), await chipNow());
   d = await askSave(null);
@@ -1152,9 +1152,9 @@ try {
   check('another new name adds another ★', (await devOpts()).filter(([, t]) => t.startsWith('★ ')).length === 2 && d?.def === 'k2 mine');
 
   // a ★ named like a built-in is kept in your looks with a value of its own, and each loads its own look
-  d = await askSave('afternoon 7');
-  const same = (await devOpts()).filter(([, t]) => t.endsWith(' afternoon 7'));
-  check('a ★ named like a built-in is kept in your looks with a value of its own', same.length === 1 && same[0][1] === '★ afternoon 7' && same[0][0] === '★ afternoon 7', JSON.stringify(same));
+  d = await askSave('forest floor');
+  const same = (await devOpts()).filter(([, t]) => t.endsWith(' forest floor'));
+  check('a ★ named like a built-in is kept in your looks with a value of its own', same.length === 1 && same[0][1] === '★ forest floor' && same[0][0] === '★ forest floor', JSON.stringify(same));
   await devPick(same[0][0]);
   check('the ★ loads the ★', Math.abs(parseFloat(await cloudVal()) - 0.12) < 1e-6, `cloud ${await cloudVal()}`);
   await page.waitForTimeout(300);
@@ -1162,15 +1162,15 @@ try {
   check('stepping goes from the ★ to the ★ before it', (await page.$eval('#dev select', (s) => s.value)) === 'k2 mine 2');
   await page.waitForTimeout(400);
   await devList(STORY);
-  await devPick('afternoon 7');
-  check('and in the story the built-in of that name loads the built-in', Math.abs(parseFloat(await cloudVal()) - PRESETS['afternoon 7'].cloud_thickness) < 1e-6, `cloud ${await cloudVal()}`);
+  await devPick('forest floor');
+  check('and in the story the built-in of that name loads the built-in', Math.abs(parseFloat(await cloudVal()) - PRESETS['forest floor'].cloud_thickness) < 1e-6, `cloud ${await cloudVal()}`);
   check('a shipped playlist has no delete', await page.evaluate(() => [...document.querySelectorAll('#dev .ctl button')].find((b) => b.textContent === 'delete').hidden));
 
   // delete takes the ★ alone
   await devList('local');
-  await devPick('★ afternoon 7');
+  await devPick('★ forest floor');
   const delAsked = await askedBy(page, null, () => devBtn('delete'));
-  check('delete removes the ★, asking nothing', (await devOpts()).every(([, t]) => t !== '★ afternoon 7') && delAsked.length === 0, JSON.stringify({ opts: await devOpts(), delAsked }));
+  check('delete removes the ★, asking nothing', (await devOpts()).every(([, t]) => t !== '★ forest floor') && delAsked.length === 0, JSON.stringify({ opts: await devOpts(), delAsked }));
   for (const n of ['k2 mine', 'k2 mine 2']) { await devPick(n); await devBtn('delete'); }
   check('and the ★ looks go the same way, and with none left the editor is back on the story', (await devOpts()).every(([, t]) => !t.startsWith('★ ')) && (await LISTS.value(page)) === STORY, JSON.stringify(await devOpts()));
   await quiet(page);
@@ -1241,7 +1241,7 @@ try {
     await page2.mouse.click(5, 5);                      // outside, on the backdrop
     check('a click inside a modal keeps it, and one outside closes it', inside && !(await page2.$eval('dialog.stories', (d) => d.open)), JSON.stringify({ inside }));
     await page2.$eval('#play .preset .name', (b) => b.click());   // open again for the pick below
-    await page2.evaluate(() => [...document.querySelectorAll('dialog.stories .story')].find((b) => b.textContent === 'komorebi').click());
+    await page2.evaluate((label) => [...document.querySelectorAll('dialog.stories .story')].find((b) => b.textContent === label).click(), SHIPS[0].label);
     const back = await sel2();
     check('a story chosen there is entered, and the dialog closes', !(await page2.$eval('dialog.stories', (d) => d.open)) && (await LISTS.value(page2)) === STORY);
     check('entering the story lists its looks from the first, and it does not play by itself', back.opts.join() === STORY_LOOKS.join() && back.value === STORY_LOOKS[0]
@@ -1506,7 +1506,7 @@ try {
     // every save goes to arboretum, private: a built-in becomes a new preset, parented on it, and lands in uncategorized
     await goList4(SHIPS[0].label, STORY);
     check('the story is its shipped looks alone, with no remove or delete', (await opts4(0)).join() === STORY_LOOKS.join() && !(await dev4(() => [...document.querySelectorAll('#dev .ctl button')].some((b) => (b.textContent === 'delete' || b.textContent === 'remove') && !b.hidden))));
-    await pick4(0, 'afternoon 7');
+    await pick4(0, 'forest floor');
     check('a built-in selected: "built-in"', await chipIs4('built-in'), await chip4());
     await slider4(0.12);
     check('an edit prefixes "● edited · "', await chipIs4('● edited · built-in'), await chip4());
@@ -1514,7 +1514,7 @@ try {
     const preB = await save4('k4 fresh');
     await waitCall(POSTS, p1 + 1);
     const fresh = lastCall(POSTS)?.body ?? {};
-    check('save on a built-in offers its name and POSTs a new preset with parent look:<built-in> (no komorebi_commit here)', preB === 'afternoon 7' && fresh.name === 'k4 fresh' && fresh.parent === 'look:afternoon 7' && !('komorebi_commit' in fresh) && near(fresh.params?.cloud_thickness, 0.12), JSON.stringify({ ...fresh, params: '…' }));
+    check('save on a built-in offers its name and POSTs a new preset with parent look:<built-in> (no komorebi_commit here)', preB === 'forest floor' && fresh.name === 'k4 fresh' && fresh.parent === 'look:forest floor' && !('komorebi_commit' in fresh) && near(fresh.params?.cloud_thickness, 0.12), JSON.stringify({ ...fresh, params: '…' }));
     const freshId = server.nextPreset - 1;
     await until(async () => (await value4(1)) === 'arb:unc' && (await selectedText4(0)) === 'k4 fresh');
     check('the editor goes to uncategorized, on the new look, and no ★ was written here', (await value4(1)) === 'arb:unc' && (await selectedText4(0)) === 'k4 fresh' && (await stars4()).length === 0, `${await value4(1)} ${await selectedText4(0)}`);
@@ -1696,7 +1696,7 @@ try {
     await save4(name0);
     check('an offline save of a preset of yours waits: the chip says ⇡ waiting to go up', await chipIs4('⇡ waiting to go up') && (await mirror4()).queue.length === 1, `${await chip4()} ${(await mirror4()).queue.length}`);
     await goList4(SHIPS[0].label, STORY);
-    await pick4(0, 'memories');
+    await pick4(0, 'montebello');
     await slider4(0.05);
     await save4('k4 offline');
     await goList4('uncategorized', 'arb:unc');
@@ -1721,7 +1721,7 @@ try {
     check('a session that has ended brings the sign-in line back; the lists are the shipped ones alone — the mirror is kept but not shown', (await opts4(1)).join() === SHIP_LABELS && (await mirror4()).order.length > 2 && !(await shown4('#dev .arb-inrow')) && !(await shown4('#dev .playlist-row button[title="new playlist"]')), `${(await opts4(1)).join()} ${(await mirror4()).order.length}`);
     await closeSettings4();
     const idle2 = seen.length, posts2 = calls(POSTS).length;
-    await pick4(0, 'afternoon 7');
+    await pick4(0, 'forest floor');
     await slider4(0.66);
     await save4('local again');
     await page4.waitForTimeout(300);

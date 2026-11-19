@@ -165,6 +165,18 @@ export function step(list, value, dir) {
   return list[(at + dir + list.length) % list.length].value;
 }
 
+// The step the arrows take: the next or previous entry of the active list, wrapping; but forward past the last look of a shipped
+// list that names the one that follows it (presets.js PLAYLISTS `next`), on to that list's first look.
+export function stepOn(state, stored, active, value, dir, signedIn = false) {
+  const list = entries(state, stored, active, signedIn);
+  const after = dir > 0 && shipId(active) !== null ? BUILTINS.PLAYLISTS[shipId(active)].next : undefined;
+  if (after !== undefined && Object.hasOwn(BUILTINS.PLAYLISTS, after) && list.length && list[list.length - 1].value === value) {
+    const next = `ship:${after}`;
+    return { active: next, value: entries(state, stored, next, signedIn)[0]?.value };
+  }
+  return { active, value: step(list, value, dir) };
+}
+
 // ---- the built-in guard (design §3.8) ----------------------------------------------
 // The debug overlays do not change the art, so flipping one must not make a built-in "modified". drift_phase is an
 // animated state (the engine moves it with drift_auto), so it would mark every look edited.

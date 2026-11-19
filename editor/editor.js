@@ -2,7 +2,7 @@ import { create, DEG, PARAMS, DEFAULTS, CAMERAS, cameraFor, FIDELITY_KEYS, resol
 import { mountSettings } from './editor-settings.js';
 import { PRIORITY, TREE_SPECIES } from '../presets.js';
 import { mount, getStored, getPreset, getState } from './arboretum.js';
-import { entries, resolve, step, starValue, starName, entryName, lookState, lookChanges, LOOK_KEYS, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf, STORY } from './playlists.js';
+import { entries, resolve, stepOn, starValue, starName, entryName, lookState, lookChanges, LOOK_KEYS, playlists, plays, timing, parseHash, makePlayer, selectionAfter, styleOf, STORY } from './playlists.js';
 import { MACROS, createBus, macroParams, macroUsable, macroValue, tweenGateStep } from '../macros.js';
 import { makeLeafPreview } from './leaf-preview.js';
 import { makeTreePane } from './tree-pane.js';
@@ -1969,8 +1969,9 @@ function showLookName(){
 // selection (presetSel.value) is the single source of truth for the stepping origin — save/delete/paste/
 // change all keep it current — so the arrows always step from the look the dropdown shows. ----
 function stepPreset(dir){
-  const value=step(listEntries(), presetSel.value, dir);   // wraps at the ends
-  if(value!==undefined) goTo(value);
+  const next=stepOn(stateNow(), getStored(), activeList(), presetSel.value, dir, !!arb?.signedIn());   // wraps at the ends, or goes on to the list a shipped one names
+  if(next.active!==activeList()){ settings.playlist=next.active; saveSettings(); }   // on into the next list: playing, it keeps playing
+  if(next.value!==undefined) goTo(next.value);
 }
 
 // T = toggle the 3D tree-grove preview inset (independent of the dev panel)

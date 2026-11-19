@@ -76,7 +76,7 @@ test("the general player keeps every tier: montebello ships and opens the six fa
 
 test("the sweep: the sky view's strings are in no floor-only bundle, cut or not (each carries an interpolation a minifier will not drop)", () => {
   for (const r of [whole, home]) for (const m of ["uSkyScatter", "uSrcAngR", "raySegDist", "uViewEye", "uRiseDepth"]) expect(text(r).includes(m), m).toBe(false);
-  expect(text(player).includes("uSkyScatter")).toBe(false);                    // the shipped looks are all floor looks too
+  expect(text(player).includes("uSkyScatter")).toBe(true);                     // "look up", in shadows, is a sky view: the player carries the sky camera for it
 });
 
 test("a bundle retains the continuous viewpoint only when it carries both sky and floor", () => {

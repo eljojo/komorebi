@@ -38,14 +38,20 @@ test("of the four new looks (P5-P8) only the yellow tree is experimental, out of
   for (const n of Object.keys(NEW_LOOKS)) expect(EXPERIMENTAL.includes(n), `${n}: he likes it more than the tweaks`).toBe(n === "the yellow tree");
 });
 
-// The list a person walks is a story: the tree seen and then only its shadow, its year from blossom to the rain day, the floor going abstract
-// through the afternoons and mornings to the founding afternoon. The experimental looks are not in it: they are a playlist of their own.
-test("the story runs in its order", () => {
-  expect(PLAYLISTS.story.items.map((it) => (typeof it === "string" ? it : it.look))).toEqual([
-    "park 1, the scene", "park 1, under the trees", "park 2",
+// The list a person walks first is a story, park story: the tree seen and then only its shadow, its year from blossom to the rain day, to
+// the forest floor, where it goes on into the next playlist. The floor going abstract, through the afternoons and mornings to the founding
+// afternoon, is the second playlist, shadows. The experimental looks are in neither: they are a playlist of their own, the third.
+const looksOf = (list) => list.items.map((it) => (typeof it === "string" ? it : it.look));
+test("park story, then shadows, then experiments, each in its order", () => {
+  expect(Object.values(PLAYLISTS).map((l) => l.name)).toEqual(["park story", "shadows", "experiments"]);
+  expect(looksOf(PLAYLISTS.story)).toEqual([
+    "park 1, the scene", "park 1, under the trees", "park1 inside2",
     "park fall", "cherry blossom", "montebello", "montebello, rain",
-    "forest floor", "afternoon 7", "afternoon 6", "afternoon 6b", "afternoon 5", "afternoon 5b", "prism", "afternoon 4", "afternoon 4b",
-    "morning 1", "morning 2", "morning 3", "morning 3b", "memories",
+    "forest floor",
+  ]);
+  expect(looksOf(PLAYLISTS.shadows)).toEqual([
+    "afternoon 7", "afternoon 6", "afternoon 6b", "afternoon 5", "afternoon 5b", "prism", "afternoon 4", "afternoon 4b",
+    "morning 1", "morning 2", "morning 3", "morning 3b", "memories", "bluuey", "shrooms", "look up",
   ]);
 });
 
