@@ -45,16 +45,24 @@ test('playlistSchedule: a zero crossfade is a cut that still lands (the margin c
   assert.equal(ev[0].land - ev[0].start, lib.LAND_MARGIN);
 });
 
-for (const [style, change, scale] of [['fade', { foliage_density: 1.5 }, 2], ['fade', { exposure: 2 }, 1], ['morph', { foliage_density: 1.5 }, 1]]) {
+for (const [style, change, scale] of [['fade', { foliage_density: 1.5 }, 2], ['fade', { exposure: 2 }, 1], ['morph', { foliage_density: 1.5 }, 1], ['morph', { seed: 7 }, 2]]) {
   test(`playlistSchedule: ${style} ${Object.keys(change)[0]} checkpoints match the engine clock and resume during the passage`, () => {
     const a = { ...engine.DEFAULTS }, b = { ...a, ...change }, noop = () => {};
-    const hub = { params: { ...a }, trans: { ...restTrans(), dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
-      faithfulOn: () => false, warnCut: noop, regenSource: noop, resetPerf: noop, bake: noop, regenCanopy: noop,
-      rebuildAll: noop, motionActive: () => false };
-    hub.routes = { sceneFade: Object.assign(makeSceneFade(hub), { begin: noop, step: noop, end: noop }) };
-    const router = makeTransitions(hub), items = [{ params: a, dwell_s: 1, crossfade_s: 1 }, { params: b, dwell_s: 1, crossfade_s: 1, style }];
-    const schedule = lib.playlistSchedule({ items, fps: FPS, preroll: 0, frames: 600, engine });
-    const event = schedule[0];
+    // an engine at rest on `a` (the router over a stub hub): one asked for the route, as video.html routeClocks asks the exported engine, and one that plays the timeline
+    const rig = () => {
+      const hub = { params: { ...a }, trans: { ...restTrans(), dur: 1 }, layerVAO: [{ count: 1000 }], groveIn: null,
+        faithfulOn: () => false, warnCut: noop, regenSource: noop, resetPerf: noop, bake: noop, regenCanopy: noop,
+        rebuildAll: noop, motionActive: () => false, buildTargetGrove: () => null, freeGrove: noop, sizeLayers: noop, installGrove: noop };
+      hub.routes = { sceneFade: Object.assign(makeSceneFade(hub), { begin: noop, step: noop, end: noop }) };
+      return { hub, router: makeTransitions(hub) };
+    };
+    const items = [{ params: a, dwell_s: 1, crossfade_s: 1 }, { params: b, dwell_s: 1, crossfade_s: 1, style }];
+    const probe = rig();
+    probe.router.transitionTo(b, { duration: 1, style });
+    const routes = [undefined, { route: 'asked', structural: probe.hub.trans.structDiff, scale: probe.hub.trans.durScale }];
+    const schedule = lib.playlistSchedule({ items, fps: FPS, preroll: 0, frames: 600, routes });
+    const event = schedule[0], { hub, router } = rig();
+    assert.equal(event.scale, scale, 'the schedule carries the clock the engine set');
     router.transitionTo(b, { duration: event.duration_s, style: event.style });
     for (let pump = event.start; pump <= event.land; pump++) router.tickTransition(lib.stepMsFor(FPS) / 1000);
     assert.equal(hub.trans.active, false, 'a landing checkpoint must contain a settled engine');
@@ -65,6 +73,30 @@ for (const [style, change, scale] of [['fade', { foliage_density: 1.5 }, 2], ['f
     assert.equal(schedule[1].start, event.land + 60 + 1, 'the dwell follows the actual landing');
   });
 }
+
+test('playlistSchedule: each fade runs on the clock of the route into its item, and records it; without routes every fade is on the caller\'s clock', () => {
+  const it = [{ dwell_s: 1, crossfade_s: 2 }, { dwell_s: 1, crossfade_s: 2 }, { dwell_s: 1, crossfade_s: 2 }];
+  const routes = [{ route: 'sceneFade', structural: true, scale: 2 }, { route: 'morph', structural: false, scale: 1 }, { route: 'groveTravel', structural: true, scale: 2 }];
+  const ev = lib.playlistSchedule({ items: it, fps: FPS, preroll: PRE, frames: 60 * 30, routes });
+  for (const e of ev) {
+    assert.equal(e.land - e.start, Math.round(2 * routes[e.stop].scale * FPS) + lib.LAND_MARGIN, `fade into item ${e.stop}`);
+    assert.equal(e.route, routes[e.stop].route);
+  }
+  assert.ok(ev.some((e) => e.stop === 0), 'the loop back to the first look is a fade too');
+  const plain = lib.playlistSchedule({ items: it, fps: FPS, preroll: PRE, frames: 60 * 30 });
+  for (const e of plain) { assert.equal(e.land - e.start, 2 * FPS + lib.LAND_MARGIN); assert.equal(e.route, undefined); }
+});
+
+test('the exporter lays the timeline out from the engine\'s own routes, asked with the call the render makes, and keeps structural fades to --jobs 1 (wiring, read from the source: the browser half cannot run here)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('./render-video.mjs', import.meta.url), 'utf8'), page = readFileSync(new URL('./video.html', import.meta.url), 'utf8');
+  assert.match(src, /from: STOP_PARAMS\[\(j \+ n - 1\) % n\], to: STOP_PARAMS\[j\]/, 'fades[j] is the fade INTO item j, the loop\'s last one included');
+  assert.match(src, /window\.__v\.routeClocks\(/);
+  assert.match(src, /playlistSchedule\(\{ items: PLAYLIST\.items, fps: FPS, preroll: PREROLL, frames: N, routes: ROUTES \}\)/);
+  assert.match(src, /structural\.length && JOBS > 1/);
+  assert.doesNotMatch(src, /Keep a playlist's looks on one grove/);
+  assert.match(page, /v\.routeClocks = [\s\S]*?startEvent\(\{ params: to, duration, style \}, eng\)/, 'the probe starts the fade exactly as the render does');
+});
 
 test('checkPlaylistTimes: arboretum\'s limits, and a whole number of frames', () => {
   lib.checkPlaylistTimes(items(2), FPS);

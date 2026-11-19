@@ -26,6 +26,7 @@
     cheapPreroll(params, frames, step, T0, { snapshotAt, events, snapAt })   the integrator state after `frames` pumps on a tiny engine (CPU state is GPU-independent); the options also hand back the state at given pumps and walk a playlist's fades (--jobs)
     open({ params, rw, rh, step, T0, at, state })   one engine at render size rw x rh, clock at pump `at`, optional restored state
     run({ from, to, sink, batch, timing, events, snapAt })   pump frames from+1..to, read each back; optionally POST batches to `sink`. A playlist passes `events` (transitions started before given pumps) and `snapAt` (landings to hand the state back at)
+    routeClocks({ fades, step, T0 })   for each { from, to, duration, style }: the route the engine takes from rest on `from` to `to`, and its clock's scale (a 64x36 engine at the looks' own sizes)
     runCanvas({ from, to, beforeFrame, onFrame })   the probe's direct encoder captures the canvas inside the same frame callback
     snapshot() / close()
 -->
@@ -178,8 +179,26 @@ function forceGovernorsOff(params) {
 // transitionTo reads the same virtual clock as everything else, so a fade is a function of the pump index and nothing else.
 const evMap = (events) => new Map((events || []).map((e) => [e.start, e]));
 const startEvent = (e, eng = S.eng) => eng.transitionTo(forceGovernorsOff({ ...e.params }), { duration: e.duration, style: e.style });
+// THE ROUTE CLOCKS. A fade lasts its duration times the route's own scale, and which route a pair takes (a live morph, a grove morph, a travel, a dissolve) is the engine's to decide
+// from the two looks, their groves and their sizes. So the driver asks it before laying out the timeline: for each fade an engine at rest on the outgoing look, at that look's own
+// sizes on a 64x36 canvas, is handed the incoming one through startEvent, and the clock the route set is read back before it draws a frame.
+v.routeClocks = ({ fades, step, T0 }) => fades.map(({ from, to, duration, style }) => {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'stage'; canvas.style.width = '64px'; canvas.style.height = '36px';
+  canvas.width = 64; canvas.height = 36;
+  document.body.appendChild(canvas);
+  clock.drain();
+  clock.set(T0);
+  const eng = create(canvas, { params: forceGovernorsOff({ ...from }) });
+  clock.pump(T0 + step);
+  startEvent({ params: to, duration, style }, eng);
+  const t = eng.trans;
+  const out = t.active ? { route: t.route?.name ?? (t.structDiff ? 'dissolve' : 'morph'), structural: !!t.structDiff, scale: t.durScale } : { route: 'snap', structural: false, scale: 1 };
+  eng.setPaused(true); eng.dispose(); canvas.remove(); clock.drain();
+  return out;
+});
 const landing = (n, eng = S.eng) => {
-  if (eng.trans.active) throw new Error(`pump ${n}: the fade is still running where it should have landed. A fade between looks that differ in structure (seed, branching, resolutions, scene mode) takes the cloud-dissolve route on twice the clock, or a grove too big to morph falls back to it: keep a playlist's looks to one grove`);
+  if (eng.trans.active) throw new Error(`pump ${n}: the fade is still running where it should have landed. The timeline was laid out from the route an engine at rest on the outgoing look took (routeClocks); this fade took longer than that route's clock.`);
   return { n, snapshot: snapshotOf(eng) };
 };
 

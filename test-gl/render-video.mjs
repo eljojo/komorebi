@@ -16,8 +16,9 @@
 //   --playlist-json <f>    instead of ONE look, a PLAYLIST: the engine walks its looks with transitionTo, the way arboretum plays one (dwell, then a fade over the NEXT look's own crossfade, looping).
 //   --arboretum-playlist <id>[:<share_token>]   the same, the list and every item's params fetched from arboretum (ARBORETUM_TOKEN as above; an item the token cannot read refuses the run).
 //                          <f> is [{ name?, params, dwell_s?, crossfade_s?, style? }] (defaults 30 s, 5 s and 'morph'; style is 'morph' or 'fade', how that look arrives). --seconds is the length of the video; the playlist repeats to fill it, and the last fade may be cut.
-//                          The looks must share one grove (seed, branching, resolutions, scene mode); other pairs are refused before the render. A requested scene fade takes twice crossfade_s;
-//                          a fade between looks differing only in live parameters remains a morph on the ordinary clock. Dwell and checkpoints follow the actual landing.
+//                          Each fade takes the route the engine picks for its two looks. Before the render the exported engine is asked, once per fade, which route that is and how long
+//                          its clock runs (video.html routeClocks): a structural route (a travel, a grove rebuild, a dissolve; a requested scene fade between groves) takes twice
+//                          crossfade_s, a morph its crossfade. Dwell and checkpoints follow the actual landing. A playlist with structural fades renders with --jobs 1 only.
 //                          A fade in flight is not restorable state, so a playlist's checkpoints are taken where each fade LANDS (ckpt/): a resume restores the last landing before the segment and replays
 //                          the frames in between unrecorded (at most one look's dwell and fade). No --encode-only. The playlist is in the run key (each item's params by hash), look.json is the
 //                          first look and playlist.json the whole list.
@@ -289,21 +290,27 @@ if(SESSION_FILE && exp){
     STOP_PARAMS=SESSION_RECORD.effective;finalParams=STOP_PARAMS[0];
   }catch(e){die(`--session-json: ${e.message}`);}
 }
-// Playlist support keeps the same grove topology and mode. Check the exported engine's own key lists before anything renders.
-let playlistEngine;
+// THE ROUTES. How long each fade runs is the engine's to decide (video.html routeClocks): a structural route (a travel, a rebuild, a dissolve) runs on twice the crossfade. It is asked
+// once per fade of the loop, on the exported engine at the looks' own sizes, in a short browser session of its own before anything is written; the timeline is laid out from the answers.
+let ROUTES = [];
 if (PLAYLIST && exp) {
+  const n = STOP_PARAMS.length;
+  const fades = PLAYLIST.items.map((it, j) => ({ from: STOP_PARAMS[(j + n - 1) % n], to: STOP_PARAMS[j], duration: it.crossfade_s, style: it.style }));   // fades[j]: the one INTO item j
+  const srv = await startServer({ engineRoot: exp.dir });
+  const b = await launchBrowser(chromium, CHROME);
+  const closeProbe = async () => { await b.browser.close().catch(() => {}); srv.server.close(); };
+  killers.push(() => { b.browser.close().catch(() => {}); srv.server.close(); });
   try {
-    playlistEngine = await import(pathToFileURL(join(exp.dir, 'engine/komorebi-params.js')).href);
-    const { TOPO_KEYS, MODE_KEYS, DEFAULTS } = playlistEngine;
-    const structural = [...TOPO_KEYS, ...MODE_KEYS];
-    for (let i = 0; i < STOP_PARAMS.length; i++) {
-      const a = { ...DEFAULTS, ...STOP_PARAMS[i] }, j = (i + 1) % STOP_PARAMS.length, b = { ...DEFAULTS, ...STOP_PARAMS[j] };
-      const differ = structural.filter((k) => !isDeepStrictEqual(a[k], b[k]));
-      if (differ.length) { console.error(`render-video: playlist item ${i + 1} (${PLAYLIST.items[i].name}) -> item ${j + 1} (${PLAYLIST.items[j].name}) changes ${differ.join(', ')}: that is a structural change (a dissolve under a cloud), not a morph. Keep a playlist's looks on one grove.`); process.exit(3); }
-    }
-  } catch (e) { if (e.code === 'ERR_MODULE_NOT_FOUND') warn(`could not check the playlist's looks for structural changes (${String(e.message).split('\n')[0]}); a fade that does not land will fail the render instead`); else throw e; }
+    const page = await openPage(b.browser, srv.port);
+    ROUTES = await page.evaluate(([f, s, T]) => window.__v.routeClocks({ fades: f, step: s, T0: T }), [fades, STEP, T0_MS]);
+  } finally { await closeProbe(); }
+  const structural = ROUTES.map((r, j) => ({ ...r, j })).filter((r) => r.structural);
+  // stdout only: nothing is written in --out before the run-key check (the timeline in playlist.json and the manifest records each fade's route)
+  if (structural.length) console.log(`render-video: playlist: ${structural.length} of ${n} fades are structural (${structural.map((r) => `${PLAYLIST.items[(r.j + n - 1) % n].name} -> ${PLAYLIST.items[r.j].name}: ${r.route}`).join('; ')}); each runs on ${[...new Set(structural.map((r) => r.scale))].join('/')}x its crossfade`);
+  // The --jobs tiny pass integrates at its own three sizes (parallel.mjs TINY_QUALITY), so where the sizes or the structure differ it would not take the route the full-size engine takes.
+  if (structural.length && JOBS > 1) { console.error(`render-video: --jobs ${JOBS}: this playlist has structural fades, which the tiny pass cannot follow; render it with --jobs 1`); process.exit(3); }
 }
-const SCHEDULE = PLAYLIST ? playlistSchedule({ items: PLAYLIST.items.map((it, i) => ({ ...it, params: STOP_PARAMS[i] })), fps: FPS, preroll: PREROLL, frames: N, engine: playlistEngine }) : [];
+const SCHEDULE = PLAYLIST ? playlistSchedule({ items: PLAYLIST.items, fps: FPS, preroll: PREROLL, frames: N, routes: ROUTES }) : [];
 const PL_EVENTS = SCHEDULE.map((e) => ({ start: e.start, duration: e.duration_s, style: e.style, params: STOP_PARAMS[e.stop] }));
 const EXPORTER = exporterIdentity();
 const FFMPEG_VERSION = ffmpegVersion();   // this invocation's ffmpeg; in the run key, so a run is not resumed under another one

@@ -530,19 +530,18 @@ export function checkPlaylistTimes(items, fps) {
 // (wrapping, so it loops) is faded in over ITS OWN crossfade, and its dwell is counted from the moment it has landed: arboretum's own playing rule (spec/model/transitions.md). `start` is the pump the
 // transitionTo is called before; `land` the pump after which the fade must be over (LAND_MARGIN pumps after the nominal end: the dyadic clock runs 3.8e-8 slow, so a 6 s fade is
 // 359.99999 frames of simulated time and lands one pump late). The landing is where a checkpoint can be taken: a fade in flight is not restorable state.
+// `routes[j]` is the route the engine takes INTO item j (video.html routeClocks, asked of the exported engine): its `scale` stretches the crossfade as the engine's own clock does
+// (a structural route runs on DUR_SCALE's longer clock). Without it every fade is on the caller's clock.
 export const LAND_MARGIN = 3;
-export function playlistSchedule({ items, fps, preroll, frames, engine }) {
+export function playlistSchedule({ items, fps, preroll, frames, routes = [] }) {
   const end = preroll + frames, events = [];
   if (items.length < 2) return events;
-  // The exported engine owns the key classes and clock; overrides and legacy names must be resolved as that engine will read them.
-  const looks = engine ? items.map((it) => ({ ...engine.DEFAULTS, ...engine.migrateLegacy(it.params) })) : null;
   let cursor = preroll + Math.round(items[0].dwell_s * fps);
   for (let k = 1; cursor < end; k++) {
-    const stop = k % items.length, it = items[stop];
-    const previous = (stop + items.length - 1) % items.length;
-    const scale = it.style === 'fade' && looks && engine.CANOPY_KEYS.some((key) => looks[previous][key] !== looks[stop][key]) ? engine.DUR_SCALE.dissolve : 1;
+    const stop = k % items.length, it = items[stop], route = routes[stop];
+    const scale = route?.scale ?? 1;
     const start = cursor + 1, land = start + Math.round(it.crossfade_s * scale * fps) + LAND_MARGIN;
-    events.push({ k, stop, start, land, duration_s: it.crossfade_s, style: it.style === 'fade' ? 'fade' : 'morph' });
+    events.push({ k, stop, start, land, duration_s: it.crossfade_s, style: it.style === 'fade' ? 'fade' : 'morph', ...(route ? { route: route.route, scale } : {}) });
     cursor = land + Math.round(it.dwell_s * fps);
   }
   return events;
