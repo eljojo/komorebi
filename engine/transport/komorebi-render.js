@@ -213,8 +213,8 @@ export function makeRender(hub){
       gl.uniform1f(u.occHRef, Math.max(occ.hRef, 1e-3));          // height-scale ref → trunk foot planted, crown sways
     },
     transport: (u) => {
-      gl.uniform3fv(u.samples, src.flat.subarray(0, src.count*3));
-      gl.uniform1i(u.count, src.count);
+      if(src.beam.length) gl.uniform3fv(u.samples, src.beam);
+      gl.uniform1i(u.count, src.beam.length/3);
       gl.uniformMatrix2fv(u.proj, false, hub.projMatrix());
       // standing-scene bulk shadow offset (spec/model/transport.md): cast the shadow to the SIDE by cot(elev) per unit height (the
       // park model omits this — fine for an infinite canopy, wrong for a standing tree). Applied to EVERY occluder

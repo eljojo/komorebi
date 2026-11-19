@@ -126,7 +126,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 | Eclipse as a source property | not recorded | not recorded | not recorded | the eclipse look in smoke and determinism |
 | Seen disk radiance (sky view) | `komorebi-source.js`, `komorebi-transport.js` | `SKY_SUN_GAIN` | not recorded | `--sky` |
 
-*Representation.* How the sample list reaches the shader is not recorded. Regenerating identical samples does not trigger a faithful re-cast; changed offsets or weights do (see [Signatures](#the-signatures-that-decide-a-re-bake)). The shared cast geometry (bulk shift, ellipse projection, layer heights) is `komorebi-cast.js`'s, not the source's; it is listed under transport.
+*Representation.* The source packs the nonzero-weight rays in order for the layer shader's sample loop. The faithful cast and source inset retain the full cloud, including the offsets of rays cut by the moon. Regenerating identical samples does not trigger a faithful re-cast; changed offsets or weights do (see [Signatures](#the-signatures-that-decide-a-re-bake)). The shared cast geometry (bulk shift, ellipse projection, layer heights) is `komorebi-cast.js`'s, not the source's; it is listed under transport.
 
 ### Light — [`model/light.md`](model/light.md)
 

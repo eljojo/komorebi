@@ -1044,6 +1044,16 @@ const native = (p) => { const r = sourceRig(p); r.hub.regenSource(); return { sr
 const look = (p) => Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, p[k]]));   // the params a look has, whatever else an object carries
 const settle = (r) => { let frames = 0, cb; while (r.hub.trans.active && frames++ < 400) cb = r.tickTransition(1/60) || cb; return cb; };
 
+test("layer transport packs the contributing rays without moving or renormalizing the full source", () => {
+  const { flat, count, beam } = native(PRESETS.eclipse).src;
+  expect(count).toBe(48);
+  expect(beam).toHaveLength(33);
+  expect(Array.from(beam)).toEqual(Array.from(flat).filter((_, i) => flat[i-i%3+2] !== 0));
+  expect(native({ ...PRESETS.eclipse, eclipse_amount: 1.3 }).src.beam).toHaveLength(0);
+  const clear = native(PRESETS["morning 3b"]).src;
+  expect(clear.beam).toEqual(clear.flat);
+});
+
 for (const [a, b] of [["morning 3b", "eclipse"], ["eclipse", "acid dreams"]]) {
   test(`${a} → ${b}: the shared-layer crossfade across layer counts, with no bloom`, () => {
     const A = PRESETS[a], B = PRESETS[b], r = sourceRig(A);

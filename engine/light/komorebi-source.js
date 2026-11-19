@@ -66,9 +66,20 @@ export function makeSource(hub){
     src.Lcore = SKY_SUN_GAIN * Wcore / aCore;                          // the uncovered surface is as bright as ever; the eclipse removes area, not radiance
     src.Lhalo = SKY_SUN_GAIN * Whalo / aHalo;
     const flat=new Float32Array(pts.length*3);
-    let mr=1e-9, mw=1e-9;
+    let mr=1e-9, mw=1e-9, beamCount=0;
     pts.forEach((p,i)=>{ flat[i*3]=p[0]; flat[i*3+1]=p[1]; flat[i*3+2]=p[2];
+      if(flat[i*3+2]!==0) beamCount++;
       mr=Math.max(mr,Math.hypot(p[0],p[1])); mw=Math.max(mw,p[2]); });
+    // Layer transport only integrates contributing rays. Faithful cast bounds and the source inset use the full cloud.
+    src.beam=flat;
+    if(beamCount!==pts.length){
+      const beam=new Float32Array(beamCount*3);
+      for(let i=0, j=0; i<flat.length; i+=3){
+        if(flat[i+2]===0) continue;
+        beam[j++]=flat[i]; beam[j++]=flat[i+1]; beam[j++]=flat[i+2];
+      }
+      src.beam=beam;
+    }
     src.flat=flat; src.count=pts.length; src.maxR=mr; src.maxW=mw; src.haloR=haloR;
     if(EDITOR && hub.srcDbgBuf){   // driven transition scenes have no editor overlays
       gl.bindBuffer(gl.ARRAY_BUFFER, hub.srcDbgBuf);
