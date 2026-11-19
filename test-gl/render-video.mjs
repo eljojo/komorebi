@@ -13,7 +13,8 @@
 //                          host (a mirror; the tests' mock); with ARBORETUM_TOKEN set it must be https (http only to localhost / 127.0.0.1), else the call is refused before any request.
 //                          The run key pins arboretum { id, version, params_sha256 }, which is what decides the frames. The manifest adds the preset as last fetched (name, page_url,
 //                          komorebi_commit: a rename or a commit stamp on the same version moves no frame, so a resume refreshes them) and how (api_base, requested, head_resolved, ..).
-//   --playlist-json <f>    instead of ONE look, a PLAYLIST: the engine walks its looks with transitionTo, the way arboretum plays one (dwell, then a fade over the NEXT look's own crossfade, looping).
+//   --playlist-json <f>    instead of ONE look, a PLAYLIST: the engine walks its looks with transitionTo, the way arboretum plays one (dwell, then a fade over the NEXT look's own crossfade, looping),
+//                          a standing camera gliding between two standing looks as it does in the editor.
 //   --arboretum-playlist <id>[:<share_token>]   the same, the list and every item's params fetched from arboretum (ARBORETUM_TOKEN as above; an item the token cannot read refuses the run).
 //                          <f> is [{ name?, params, dwell_s?, crossfade_s?, style? }] (defaults 30 s, 5 s and 'morph'; style is 'morph' or 'fade', how that look arrives). --seconds is the length of the video; the playlist repeats to fill it, and the last fade may be cut.
 //                          Each fade takes the route the engine picks for its two looks. Before the render the exported engine is asked, once per fade, which route that is and how long

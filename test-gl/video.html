@@ -178,7 +178,8 @@ function forceGovernorsOff(params) {
 // pumps whose state is to be handed back (`snapAt`: the landings, where a fade is over and the engine is at rest on its look; a fade in flight is not restorable state).
 // transitionTo reads the same virtual clock as everything else, so a fade is a function of the pump index and nothing else.
 const evMap = (events) => new Map((events || []).map((e) => [e.start, e]));
-const startEvent = (e, eng = S.eng) => eng.transitionTo(forceGovernorsOff({ ...e.params }), { duration: e.duration, style: e.style });
+// camera 'glide': between two standing looks the eye moves as the editor moves it (komorebi-transitions.js, THE GLIDE), not by the gauges one by one
+const startEvent = (e, eng = S.eng) => eng.transitionTo(forceGovernorsOff({ ...e.params }), { duration: e.duration, style: e.style, camera: 'glide' });
 // THE ROUTE CLOCKS. A fade lasts its duration times the route's own scale, and which route a pair takes (a live morph, a grove morph, a travel, a dissolve) is the engine's to decide
 // from the two looks, their groves and their sizes. So the driver asks it before laying out the timeline: for each fade an engine at rest on the outgoing look, at that look's own
 // sizes on a 64x36 canvas, is handed the incoming one through startEvent, and the clock the route set is read back before it draws a frame.

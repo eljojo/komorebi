@@ -96,6 +96,7 @@ test('the exporter lays the timeline out from the engine\'s own routes, asked wi
   assert.match(src, /structural\.length && JOBS > 1/);
   assert.doesNotMatch(src, /Keep a playlist's looks on one grove/);
   assert.match(page, /v\.routeClocks = [\s\S]*?startEvent\(\{ params: to, duration, style \}, eng\)/, 'the probe starts the fade exactly as the render does');
+  assert.match(page, /const startEvent = .*transitionTo\(forceGovernorsOff\(\{ \.\.\.e\.params \}\), \{ duration: e\.duration, style: e\.style, camera: 'glide' \}\)/, 'a fade walks the camera as the editor does');
 });
 
 test('checkPlaylistTimes: arboretum\'s limits, and a whole number of frames', () => {
