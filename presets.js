@@ -11,7 +11,7 @@ const LOOK_DEFAULTS = Object.fromEntries(Object.entries(DEFAULTS).filter(([key])
 export const PRESETS = {
   // The built-in looks. The editor reaches them only through PLAYLISTS (below), which say the order they are walked in;
   // 'test 1'/'test 2' sit commented at the foot of this object. Any saved (★) look lives in local storage; DEFAULTS is the merge base.
-  // 'park 1, from above' — WORKING NAME. José's look (2026-11-19), the story's opening: park 1, the scene seen straight down (tilt 0°, turned 179°,
+  // 'park 1, from above' — WORKING NAME. José's look (2026-11-19), the story's way into its year (after park1 inside2, before park fall): park 1, the scene seen straight down (tilt 0°, turned 179°,
   // zoom 12.8 m), the two crowns over their own shadows. As he made it in the editor.
   'park 1, from above': Object.assign({}, LOOK_DEFAULTS, {
   "core_angular_radius_deg": 0.56,
@@ -2233,7 +2233,7 @@ export const EXPERIMENTAL = ['park 1', 'acid dreams', 'eclipse', 'the yellow tre
 export const ITEM_DEFAULTS = { dwell_s: 30, crossfade_s: 4, style: 'morph' };
 export const PLAYLISTS = {
   story: { name: 'park story', next: 'shadows', crossfade_s: 2, items: [
-    'park 1, from above', 'park 1, the scene', 'park 1, under the trees', { look: 'park1 inside2', crossfade_s: 3.5 }, 'park fall', 'montebello', 'montebello, rain',
+    'park 1, the scene', 'park 1, under the trees', { look: 'park1 inside2', crossfade_s: 3.5 }, 'park 1, from above', 'park fall', 'montebello', 'montebello, rain',
     'forest floor',
   ] },
   shadows: { name: 'shadows', items: [

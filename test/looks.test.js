@@ -45,7 +45,7 @@ const looksOf = (list) => list.items.map((it) => (typeof it === "string" ? it : 
 test("park story, then shadows, then experiments, each in its order", () => {
   expect(Object.values(PLAYLISTS).map((l) => l.name)).toEqual(["park story", "shadows", "experiments"]);
   expect(looksOf(PLAYLISTS.story)).toEqual([
-    "park 1, from above", "park 1, the scene", "park 1, under the trees", "park1 inside2",
+    "park 1, the scene", "park 1, under the trees", "park1 inside2", "park 1, from above",
     "park fall", "montebello", "montebello, rain",
     "forest floor",
   ]);
