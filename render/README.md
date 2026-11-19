@@ -221,7 +221,7 @@ absolute path to a token read once at startup; the environment token takes prece
 
 `komorebi-render serve` runs the API and worker in one process. [llms.txt](llms.txt) documents every spec field, route,
 response and polling rule; it is also served at `/llms.txt`. Routes are `POST /jobs`, `GET /jobs`, `GET /jobs/:id`,
-`DELETE /jobs/:id` and `GET /health`; `GET /` is a read-only jobs page for a browser. Poll no faster than every 10 seconds. There is no auth yet; use the LAN or tailnet.
+`DELETE /jobs/:id` and `GET /health`; `GET /` is a read-only jobs page for a browser. It shows all active jobs and the latest 50 finished jobs, with older jobs available in pages. Poll no faster than every 10 seconds. There is no auth yet; use the LAN or tailnet.
 
 ## Deploying on the mini
 

@@ -157,6 +157,35 @@ test('a body that is not JSON is 400; JSON that is not an object is a 422 about 
   assert.equal((await call('POST', '/jobs')).status, 400);   // no body at all
 });
 
+test('the dashboard gets all active jobs and pages past jobs by id', async () => {
+  const { call, store, submit } = rig();
+  const running = submit();
+  store.start(running.id, { folder: '/running' });
+  const queued = submit();
+  const past = Array.from({ length: 5 }, () => submit());
+  for (const job of past) store.requestCancel(job.id);
+  const ids = (result) => result.json.jobs.map((j) => j.id);
+
+  const recent = await call('GET', '/jobs?past_limit=2');
+  assert.equal(recent.status, 200);
+  assert.deepEqual(ids(recent), [past[4].id, past[3].id, queued.id, running.id]);
+  assert.equal(recent.json.next_before, past[3].id);
+
+  const newJob = submit();
+  store.requestCancel(newJob.id);
+  const older = await call('GET', `/jobs?past_limit=2&before=${recent.json.next_before}`);
+  assert.deepEqual(ids(older), [past[2].id, past[1].id]);
+  assert.equal(older.json.next_before, past[1].id);
+  const last = await call('GET', `/jobs?past_limit=2&before=${older.json.next_before}`);
+  assert.deepEqual(ids(last), [past[0].id]);
+  assert.equal(last.json.next_before, null);
+  assert.deepEqual(ids(await call('GET', '/jobs')), [newJob.id, ...past.map((j) => j.id).reverse(), queued.id, running.id]);
+  for (const path of ['/jobs?past_limit=0', '/jobs?past_limit=101', '/jobs?past_limit=1.5', '/jobs?past_limit=2&before=0', '/jobs?before=1']) {
+    assert.equal((await call('GET', path)).status, 400, path);
+  }
+  store.close();
+});
+
 test('GET /jobs lists newest first with state, progress, eta_s, size, seconds, quality and the name', async () => {
   const { call, submit, store } = rig();
   submit({ preset: '3@2', quality: 'max' });

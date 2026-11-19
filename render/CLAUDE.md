@@ -19,7 +19,7 @@ session profiles, quality rows and shipped playlists from the tree above it (`..
 - **`src/worker.js`** — `createWorker`: takes a job, checks the output root, prepares once, spawns the exporter in its own process group, polls progress and cancel, ends the job, recovers at start.
 - **`src/view.js`** — `jobView`: a job as the CLI and API show it (redacted spec, effective pipeline, progress, ETA).
 - **`src/api.js`** — `createApi`: the seven routes in `ROUTES`, a directly testable handler and the thin node:http listener; summaries, details, refusals and token scrubbing.
-- **`src/ui.html`** — the read-only jobs page `GET /` serves: running, queued and past jobs, a job's detail on click, from `/health`, `/jobs` and `/jobs/:id` every 10 s.
+- **`src/ui.html`** — the read-only jobs page `GET /` serves: polls health, active jobs and the 50 newest past jobs every 10 s. Older pages and job details load on request.
 - **`src/serve.js`** — starts the API before one worker, shares their bounded output-root check, closes both on shutdown and closes the API if the worker fails so launchd can restart them together.
 - **`llms.txt`** — the API contract for agents, served as text/plain; `test/llms.test.js` checks routes, fields, values, examples and etiquette against the code.
 - **`nix/darwin-module.nix`** — `services.komorebi-render`: a caffeinated launchd user agent, runtime token-file path, logs, and state-directory creation before launchd loads it.

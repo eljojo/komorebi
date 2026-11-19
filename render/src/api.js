@@ -46,9 +46,18 @@ function post({ store, config }, _params, { body }) {
   return json(201, { id: job.id, state: job.state, folder: config.out ? join(config.out, job.folder_name) : null });
 }
 
-function list({ store, config, now }) {
+function list({ store, config, now }, _params, { query }) {
   const at = now();
-  return json(200, { jobs: store.list().map((j) => summary(j, at, config.token)) });
+  const view = (j) => summary(j, at, config.token);
+  const limitText = query.get('past_limit'), beforeText = query.get('before');
+  if (limitText === null && beforeText === null) return json(200, { jobs: store.list().map(view) });
+
+  const positiveInt = (text) => /^[1-9]\d*$/.test(text) && Number.isSafeInteger(Number(text));
+  const limit = Number(limitText);
+  if (!positiveInt(limitText) || limit > 100) return json(400, { error: 'past_limit must be an integer from 1 to 100' });
+  if (beforeText !== null && !positiveInt(beforeText)) return json(400, { error: 'before must be a positive job id' });
+  const { jobs, nextBefore } = store.listPage({ limit, before: beforeText === null ? null : Number(beforeText) });
+  return json(200, { jobs: jobs.map(view), next_before: nextBefore });
 }
 
 async function detail({ store, config, now, outputAccess }, { id }) {
@@ -129,12 +138,12 @@ export function createApi({ store, config, pin, checkOut, outputAccess = createO
 
   async function handle({ method, url, body }) {
     try {
-      const path = new URL(url, 'http://localhost').pathname;
+      const { pathname: path, searchParams: query } = new URL(url, 'http://localhost');
       const hits = ROUTES.map((r) => ({ r, params: match(r.path, path) })).filter((h) => h.params);
       if (!hits.length) return json(404, { error: `no such route: ${path}` });
       const hit = hits.find((h) => h.r.method === method);
       if (!hit) return json(405, { error: `${method} is not allowed on ${path}` }, { allow: hits.map((h) => h.r.method).sort().join(', ') });
-      return await hit.r.run(ctx, hit.params, { body });
+      return await hit.r.run(ctx, hit.params, { body, query });
     } catch (e) {
       log(`komorebi-render: ${e.message}`);
       return json(500, { error: 'internal error' });

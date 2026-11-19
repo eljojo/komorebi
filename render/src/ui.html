@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- The jobs page served at GET /: what is running, what is queued, what has finished. Read-only; it reads the same JSON
-     routes a bot does (/health, /jobs, /jobs/:id), every 10 s as llms.txt asks, and builds the DOM with textContent so a
+     routes a bot does (/health, /jobs, /jobs/:id), polls active and recent jobs every 10 s, and builds the DOM with textContent so a
      look's name is never markup. -->
 <html lang="en">
 <head>
@@ -36,9 +36,15 @@
   <h2>Running</h2><div id="running"></div>
   <h2>Queued</h2><div id="queued"></div>
   <h2>Past</h2><div id="past"></div>
+  <button id="recent" type="button" hidden>Recent jobs</button>
+  <button id="older" type="button" hidden>Older jobs</button>
+  <div id="history-status" role="status"></div>
 </main>
 <script>
 const open = new Set();   // ids whose detail is shown, kept across refreshes
+const olderButton = document.getElementById('older'), recentButton = document.getElementById('recent');
+const historyStatus = document.getElementById('history-status');
+let recent = null, viewingOlder = false, nextBefore = null;
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const dur = (s) => { if (s == null) return null; s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, r = s % 60; return h ? `${h}h ${m}m` : m ? `${m}m ${r}s` : `${r}s`; };
@@ -86,13 +92,47 @@ function fill(id, jobs, none) {
   host.replaceChildren(...(jobs.length ? jobs.map(card) : [el('div', 'empty', none)]));
 }
 
+async function jobsPage(before = null) {
+  const response = await fetch(`jobs?past_limit=50${before === null ? '' : `&before=${before}`}`);
+  if (!response.ok) throw new Error(`jobs request returned ${response.status}`);
+  return response.json();
+}
+
+function showPast(page) {
+  fill('past', page.jobs.filter((j) => j.state !== 'running' && j.state !== 'queued'), 'no finished jobs');
+  nextBefore = page.next_before;
+  olderButton.hidden = nextBefore === null;
+  recentButton.hidden = !viewingOlder;
+}
+
+recentButton.onclick = () => {
+  viewingOlder = false;
+  historyStatus.textContent = '';
+  showPast(recent);
+};
+olderButton.onclick = async () => {
+  olderButton.disabled = recentButton.disabled = true;
+  historyStatus.textContent = '';
+  try {
+    const page = await jobsPage(nextBefore);
+    viewingOlder = true;
+    showPast(page);
+  } catch (e) {
+    historyStatus.textContent = `Could not load older jobs: ${e.message}`;
+  } finally {
+    olderButton.disabled = recentButton.disabled = false;
+  }
+};
+
 async function refresh() {
   try {
-    const [h, { jobs }] = await Promise.all([fetch('health').then((r) => r.json()), fetch('jobs').then((r) => r.json())]);
+    const [h, page] = await Promise.all([fetch('health').then((r) => r.json()), jobsPage()]);
+    recent = page;
+    const { jobs } = page;
     document.getElementById('health').textContent = `worker ${h.worker} · nas ${h.nas} · komorebi ${h.pin.slice(0, 7)} · updated ${new Date().toLocaleTimeString()}`;
     fill('running', jobs.filter((j) => j.state === 'running'), 'nothing running');
     fill('queued', jobs.filter((j) => j.state === 'queued').reverse(), 'nothing queued');   // oldest first: the order they will run
-    fill('past', jobs.filter((j) => !['running', 'queued'].includes(j.state)), 'no finished jobs');
+    if (!viewingOlder) showPast(recent);
   } catch (e) {
     document.getElementById('health').textContent = `cannot reach the server: ${e.message}`;
   }

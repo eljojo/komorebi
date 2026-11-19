@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   cancel_requested INTEGER NOT NULL DEFAULT 0,
   blocked TEXT,
   attempts INTEGER NOT NULL DEFAULT 0
-);`;
+);
+CREATE INDEX IF NOT EXISTS jobs_by_state ON jobs (state, id);`;
 
 const hydrate = (row) => (row ? {
   ...row,
@@ -70,6 +71,20 @@ export function openStore(path, { now = () => new Date().toISOString() } = {}) {
     list({ state } = {}) {
       const rows = state ? db.prepare('SELECT * FROM jobs WHERE state = ? ORDER BY id DESC').all(state) : db.prepare('SELECT * FROM jobs ORDER BY id DESC').all();
       return rows.map(hydrate);
+    },
+
+    listPage({ limit, before }) {
+      // One read snapshot keeps a job finishing during the poll from appearing in both groups or neither.
+      const rows = db.prepare(`WITH past AS (
+        SELECT * FROM jobs WHERE id <= ? AND state NOT IN ('queued', 'running') ORDER BY id DESC LIMIT ?
+      )
+      SELECT * FROM past
+      UNION ALL
+      SELECT * FROM jobs WHERE ? AND state IN ('queued', 'running')
+      ORDER BY id DESC`).all(before === null ? Number.MAX_SAFE_INTEGER : before - 1, limit + 1, before === null ? 1 : 0);
+      const past = rows.filter((row) => row.state !== 'queued' && row.state !== 'running');
+      const extra = past[limit];
+      return { jobs: rows.filter((row) => row !== extra).map(hydrate), nextBefore: extra ? past[limit - 1].id : null };
     },
 
     nextQueued: () => hydrate(db.prepare("SELECT * FROM jobs WHERE state = 'queued' ORDER BY id LIMIT 1").get()),
