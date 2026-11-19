@@ -384,10 +384,10 @@ test('cherry blossom ↔ park 2 follows one seasonal grove without a scene disso
   }
 });
 
-test('park1 inside2 ↔ park fall turns one grove through the season while the seen tree fades, the reach past the bake\'s cap moving nothing',()=>{
-  const inside=PRESETS['park1 inside2'],fall=PRESETS['park fall'];
-  expect(inside.grove_reach_m).not.toBe(fall.grove_reach_m);   // two reaches as written, one span grown (groveFill)
-  for(const [from,to] of [[inside,fall],[fall,inside]]){
+test('park 1, from above ↔ park fall turns one grove through the season while the seen tree fades, the reach past the bake\'s cap moving nothing',()=>{
+  const above=PRESETS['park 1, from above'],fall=PRESETS['park fall'];
+  expect(above.grove_reach_m).not.toBe(fall.grove_reach_m);   // two reaches as written, one span grown (groveFill)
+  for(const [from,to] of [[above,fall],[fall,above]]){
     const r=transitionRig(from);let began=0;
     Object.assign(r.hub.routes.seasonTravel,{begin:()=>began++,step:()=>{},finish:()=>null,end:()=>{}});
     r.transitionTo(to,{duration:1});
@@ -405,7 +405,7 @@ test('park1 inside2 ↔ park fall turns one grove through the season while the s
 });
 
 test('the park story\'s standing looks move only the camera between them: their reaches differ past the bake\'s cap, which grows one grove',()=>{
-  const story=['park 1, the scene','park 1, under the trees','park1 inside2'];
+  const story=['park 1, the scene','park 1, under the trees','park 1, from above'];   // park1 inside2 arms the carpet, a topo key, so it is crossfaded to
   for(const a of story)for(const b of story){
     if(a===b)continue;
     const r=transitionRig(PRESETS[a]);

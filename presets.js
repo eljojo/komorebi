@@ -316,7 +316,7 @@ export const PRESETS = {
   "drop_exposure": 1,
   "drop_lag": 0.09,
   "drop_after_turn": 0,
-  "litter": 0,
+  "litter": 1,   // the carpet armed (2026-11-19, the artist): nothing has fallen at phenology 0.5, so it shows once leaves drop
   "litter_age": 0.15,
   "litter_drift_m": 0.4,
   "leaf_wetness": 0,
@@ -2233,7 +2233,7 @@ export const EXPERIMENTAL = ['park 1', 'acid dreams', 'eclipse', 'the yellow tre
 export const ITEM_DEFAULTS = { dwell_s: 30, crossfade_s: 4, style: 'morph' };
 export const PLAYLISTS = {
   story: { name: 'park story', next: 'shadows', crossfade_s: 2, items: [
-    'park 1, the scene', 'park 1, under the trees', { look: 'park1 inside2', crossfade_s: 3.5 }, 'park 1, from above', 'park fall', 'montebello', 'montebello, rain',
+    'park 1, the scene', 'park 1, under the trees', 'park1 inside2', 'park 1, from above', 'park fall', 'montebello', 'montebello, rain',
     'forest floor',
   ] },
   shadows: { name: 'shadows', items: [
