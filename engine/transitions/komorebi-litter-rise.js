@@ -7,7 +7,7 @@ import { leafClock } from '../season/komorebi-season.js';
 import { atmosphere } from '../light/komorebi-light.js';
 import { ballisticK } from '../leaf/komorebi-leaf.js';
 import {CANOPY_KEYS,TOPO_KEYS,SEASON_KEYS,DEFAULTS,CANOPY_MORPH_MAX} from '../komorebi-params.js';
-import {pairLeaves,moveLeaves} from './komorebi-leaf-travel.js';
+import {pairLeaves,moveLeafEndpoint} from './komorebi-leaf-travel.js';
 import {VS_RISE,FS_RISE,VS_RISE_SKY,FS_RISE_SKY} from '../transport/komorebi-shaders.js';
 import {litterLanding,litterAlbedo,litterAge} from '../season/komorebi-litter.js';
 import {leafVariant} from '../leaf/komorebi-leaf.js';
@@ -20,16 +20,19 @@ export function riseBasis(q){
  const c=Math.cos(q.elevation),s=Math.sin(q.elevation),cy=Math.cos(q.yaw*DEG),sy=Math.sin(q.yaw*DEG);
  return [cy,-sy,0,-sy*s,-cy*s,c,sy*c,cy*c,s];
 }
-export function riseLeaf(a,b,t,identity){
+export function riseLeaf(a,b,t,identity,out={position:[0,0,0]}){
  const f=smoothstep(.04+.1*identity,.78+.1*identity,t),rise=f*(2-f),curl=.22*Math.sin(Math.PI*f),phi=identity*6.28318530718+2*f;
- const position=f===0?[...a]:f===1?[...b]:[lerp(a[0],b[0],f)+curl*Math.cos(phi),lerp(a[1],b[1],f)+curl*Math.sin(phi),lerp(a[2],b[2],rise)];
+ const p=out.position;
+ if(f===0||f===1){const end=f===0?a:b;p[0]=end[0];p[1]=end[1];p[2]=end[2];}
+ else{p[0]=lerp(a[0],b[0],f)+curl*Math.cos(phi);p[1]=lerp(a[1],b[1],f)+curl*Math.sin(phi);p[2]=lerp(a[2],b[2],rise);}
  const air=smoothstep(0,.1,f);
- return {position,flight:f,air,floor:1-air,translucent:smoothstep(.015,.15,f)};
+ out.flight=f;out.air=air;out.floor=1-air;out.translucent=smoothstep(.015,.15,f);return out;
 }
-export function riseBypass(p,plan,t){
+export function riseBypass(p,plan,t,out=[0,0,0]){
  if(!plan)return p;
  const w=t<plan.at?smoothstep(plan.start,plan.at,t):1-smoothstep(plan.at,plan.end,t);
- return p.map((v,i)=>v+plan.axis[i]*plan.amount*w);
+ for(let i=0;i<3;i++)out[i]=p[i]+plan.axis[i]*plan.amount*w;
+ return out;
 }
 // Many carriers share a carpet identity. Cache its flight samples and the camera once per journey,
 // then solve clearance in scalar coordinates; the approved path and clearance thresholds stay the same.
@@ -80,6 +83,9 @@ const FEAT_LITTER = true;
 const FEAT_DROP = true;
 const FEAT_LEAF_DIFFUSE = true;
 const FEAT_SKY_FLIGHT = true;
+const SHADOW_LIFT_END = .10;
+const NATIVE_SKY_START = .9;
+const NATIVE_SKY_END = .995;
 const RISE_KEYS=new Set([...CANOPY_KEYS,...TOPO_KEYS,...SEASON_KEYS,
   'view_extent_m','view_pitch_deg','view_yaw_deg','view_fov_deg','view_center_x','view_center_y',
   'sky_view','faithful_canopy','standing_scene','sun_elevation_deg','sun_azimuth_deg','sky_turbidity','core_angular_radius_deg',
@@ -104,11 +110,16 @@ export const litterFallEligible=(a,b)=>litterRiseEligible(b,a);
 // Shadow footprints have no carpet or standing-tree throw. The eye renderer currently lands on three sky planes.
 export const shadowRiseEligible=FEAT_SKY_FLIGHT ? (a,b)=>{
  const count=p=>Math.ceil(Math.max(1,p.tree_count))*p.limb_count*Math.max(1,p.branch_children)**Math.max(0,p.branch_levels-1);
- return !a.sky_view&&b.sky_view&&a.faithful_canopy&&!b.faithful_canopy&&!a.standing_scene&&b.standing_scene
+ const faithful=a.faithful_canopy&&a.inner_leaves===0&&b.inner_leaves===0
+  &&a.leaf_diffuse>=0&&a.leaf_diffuse<1&&a.sun_cosine===0&&b.sun_cosine===0&&!a.edge_area&&!b.edge_area;
+ const layered=!a.faithful_canopy&&a.layer_count===3&&a.leaf_diffuse===0&&a.park_throw===0;
+ if(!(faithful||layered))return false;
+ const handoff=layered?riseCamera(a,b,SHADOW_LIFT_END):null;
+ return !a.sky_view&&b.sky_view&&!b.faithful_canopy&&!a.standing_scene&&b.standing_scene
   &&a.receiver===0&&b.receiver===0&&a.branch_tau===0&&b.branch_tau===0
   &&a.canopy_fill===0&&b.canopy_fill===0&&a.litter===0&&b.litter===0&&a.leaf_drop===0&&b.leaf_drop===0
-  &&a.inner_leaves===0&&b.inner_leaves===0&&a.leaf_diffuse>=0&&a.leaf_diffuse<1&&b.leaf_diffuse===0
-  &&a.sun_cosine===0&&b.sun_cosine===0&&a.eclipse===b.eclipse&&!a.edge_area&&!b.edge_area
+  &&b.leaf_diffuse===0&&a.eclipse===b.eclipse
+  &&(!handoff||handoff.elevation<=-.5*handoff.fov*DEG)
   &&b.layer_count===3&&a.leaf_size_m>0&&b.leaf_size_m>0&&Math.max(a.leaf_size_m,b.leaf_size_m)<=.2
   &&a.tree_count>0&&b.tree_count>0&&a.foliage_density>0&&b.foliage_density>0&&a.leaves_per_cluster>0&&b.leaves_per_cluster>0
   &&90-a.view_pitch_deg>a.view_fov_deg/2&&b.view_pitch_deg>b.view_fov_deg/2
@@ -119,6 +130,7 @@ export const shadowFallEligible=(a,b)=>shadowRiseEligible(b,a);
 
 function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  const a=source,b={hub},canvas=hub.canvas,h=a.hub,g=hub.gl;
+ const layeredFloor=footprints&&!from.faithful_canopy;
  const read=h=>{
   const leaves=new Float32Array(h.faith.count*18);
   g.bindBuffer(g.ARRAY_BUFFER,h.faith.buf);g.getBufferSubData(g.ARRAY_BUFFER,0,leaves);
@@ -148,7 +160,7 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  }
  const B=read(b.hub);
  const pairs=pairLeaves(A,B),starts=new Float32Array(pairs.length*12),ends=starts.slice(),data=starts.slice(),material=new Float32Array(pairs.length*4),flights=material.slice();
- moveLeaves(A,B,pairs,0,starts);
+ moveLeafEndpoint(A,pairs,0,starts);
  const ba=A.shape?.box??[0,0,1,1],bb=B.shape?.box??[0,0,1,1],lo=[0,1].map(i=>Math.min(ba[i]-ba[i+2],bb[i]-bb[i+2])),hi=[0,1].map(i=>Math.max(ba[i]+ba[i+2],bb[i]+bb[i+2]));
  const box=[(lo[0]+hi[0])/2,(lo[1]+hi[1])/2,(hi[0]-lo[0])/2,(hi[1]-lo[1])/2];
  const skyProgram=hub.sharedProgram(VS_RISE_SKY,FS_RISE_SKY),leafProgram=hub.sharedProgram(VS_RISE,FS_RISE);   // the host's, for the context's life: a program the source scene took would die with it
@@ -177,9 +189,10 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  let bypasses=null,planner=null,planEnds=null,planned=0;
  // The footprints carry both looks' hoods: across the gate the hooded end's geometry is held and its opacity fades on the flight's weight.
  const iris=footprints?irisRoute(from,to):null;
+ const ground=[0,0,0],overhead=[0,0,0],flight={position:[0,0,0]};
  function carriers(t){
-  if(footprints)moveLeaves(A,B,pairs,0,starts);
-  moveLeaves(A,B,pairs,1,ends);
+  if(footprints)moveLeafEndpoint(A,pairs,0,starts);
+  moveLeafEndpoint(B,pairs,1,ends);
   if(t>0&&!bypasses){
    bypasses=new Array(pairs.length);planner=risePlanner(from,to);planEnds=ends.slice();
   }
@@ -198,8 +211,10 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
    h.grove.litter=litter;h.litter.grove=null;
   }
   for(let i=0;i<pairs.length;i++){
-   const o=i*12,m=i*4,source=pairs[i][0]/18,id=ids[source],q=riseLeaf([starts[o],starts[o+1],0],[ends[o],ends[o+1],ends[o+8]],t,id),w=q.flight;
-   const position=riseBypass(q.position,bypasses?.[i],t);data[o]=position[0];data[o+1]=position[1];data[o+8]=position[2];
+   const o=i*12,m=i*4,source=pairs[i][0]/18,id=ids[source];
+   ground[0]=starts[o];ground[1]=starts[o+1];overhead[0]=ends[o];overhead[1]=ends[o+1];overhead[2]=ends[o+8];
+   const q=riseLeaf(ground,overhead,t,id,flight),w=q.flight,position=riseBypass(q.position,bypasses?.[i],t,q.position);
+   data[o]=position[0];data[o+1]=position[1];data[o+8]=position[2];
    const area=lerp(starts[o+2]*starts[o+3],ends[o+2]*ends[o+3],w);
    const a0=starts[o+2]>0?starts[o+2]/starts[o+3]:ends[o+2]/ends[o+3],a1=ends[o+2]>0?ends[o+2]/ends[o+3]:a0;
    const aspect=Math.exp(lerp(Math.log(a0),Math.log(a1),w));data[o+2]=Math.sqrt(area*aspect);data[o+3]=Math.sqrt(area/aspect);
@@ -208,7 +223,7 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
    data[o+9]=lerp(starts[o+9],ends[o+9],w);data[o+10]=starts[o+10];data[o+11]=ends[o+11];
    if(footprints){material[m]=material[m+1]=material[m+2]=0;material[m+3]=1;}
    else{material.set(reflectance.subarray(source*3,source*3+3),m);material[m+3]=q.translucent;}
-   flights[m]=footprints?smoothstep(0,.10,t):q.air;flights[m+1]=Math.sin(Math.PI*w)*.75*Math.sin(id*TAU+6*w);flights[m+2]=w;
+   flights[m]=footprints?smoothstep(0,SHADOW_LIFT_END,t):q.air;flights[m+1]=Math.sin(Math.PI*w)*.75*Math.sin(id*TAU+6*w);flights[m+2]=w;
   }
   for(const [buffer,array]of[[buf,data],[matBuf,material],[flightBuf,flights]]){g.bindBuffer(g.ARRAY_BUFFER,buffer);g.bufferSubData(g.ARRAY_BUFFER,0,array);}
  }
@@ -231,19 +246,31 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
 
  function step(t,dt){
   const q=riseCamera(from,to,t),p=h.params;
+  const lift=footprints?smoothstep(0,SHADOW_LIFT_END,t):0;
+  const native=smoothstep(NATIVE_SKY_START,NATIVE_SKY_END,t);
   if(footprints){
    for(const k of ['core_weight_fraction','halo_angular_radius_deg','cloud_thickness','exposure','contrast','ambient_skylight','sky_turbidity','mesopic_strength','chromatic_aberration','vignette','vignette_shape','ground_r','ground_g','ground_b','sky_scatter','glow_bleed','glow_bleed_m'])p[k]=lerp(from[k],to[k],q.weight);
    h.trans.travelTone=[0,0,0];h.trans.travelTone[from.tone_map]+=1-q.weight;h.trans.travelTone[to.tone_map]+=q.weight;
   }
+  if(layeredFloor){
+   for(const k of ['sun_cosine','sun_extinction','cloud_exposure'])p[k]=lerp(from[k],to[k],q.weight);
+   // The atlas switches when the proxy glow is zero. The native edge law enters with that atlas.
+   p.edge_area=lift<1?from.edge_area:t>=NATIVE_SKY_START&&to.edge_area;
+   p.sky_scatter*=t<NATIVE_SKY_START?1-smoothstep(.85,NATIVE_SKY_START,t):native;
+  }
   for(const k of ['view_extent_m','view_center_x','view_center_y','view_pitch_deg','sun_elevation_deg','sun_azimuth_deg','sky_turbidity','core_angular_radius_deg'])p[k]=lerp(from[k],to[k],q.weight);
   p.view_fov_deg=q.fov;p.view_yaw_deg=q.yaw;
   if(dt>0&&h.motionActive())h.tick(dt);
-  h.regenSource();carriers(t);h.bake();hub.bake();
+  h.regenSource();carriers(t);
+  if(!layeredFloor||lift<1)h.bake();
+  if(!layeredFloor||t>=NATIVE_SKY_START)hub.bake();
   if(t>0){
    ensureEye();bakeEye(q);
-   // The native target atlas takes over only after the moving carriers arrive.
-   const atlas=t>=.9?{textures:hub.layerTex,heights:hub.layerHeights(),extent:to.canopy_extent_m}:bakeSky(q);
-   h.trans.riseField={depth:eyeTex[0],emission:eyeTex[1],shadow:footprints,weight:footprints?smoothstep(0,.10,t):0,native:smoothstep(.9,.995,t),step:[.5/fieldW,.5/fieldH],atlas};
+   // The layered floor owns the atlas until the handoff finishes. The sky enters the frame after that.
+   const down=layeredFloor&&q.elevation<=-.5*q.fov*DEG;
+   const atlas=down?{textures:h.layerTex,heights:h.layerHeights(),extent:from.canopy_extent_m}
+    :t>=NATIVE_SKY_START?{textures:hub.layerTex,heights:hub.layerHeights(),extent:to.canopy_extent_m}:bakeSky(q);
+   h.trans.riseField={depth:eyeTex[0],emission:eyeTex[1],shadow:footprints,weight:lift,native,step:[.5/fieldW,.5/fieldH],atlas};
    Object.assign(h.trans,{active:true,viewpoint:true,t,viewEye:q.eye,viewElevation:q.elevation,viewSkyWeight:q.skyWeight,iris});
    if(iris)h.trans.irisOpacity=irisStep(iris,q.weight,p);
   }else{h.trans.active=false;h.trans.riseField=null;}

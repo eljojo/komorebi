@@ -954,11 +954,13 @@ ${GLSL_T_VIEWPOINT_FLOOR}
     fog=max(fog,horizon);`;
 
 
-const GLSL_T_RISE_FLOOR = `      if(uFaithful!=0){acc=tapFaith(world);}else{
+const GLSL_T_RISE_FLOOR = `      if(uShadowLift>=1.0){acc=vec3(1.0);}else{
+      if(uFaithful!=0){acc=tapFaith(world);}else{
 ${GLSL_T_LAYERS}
 ${GLSL_T_WOOD_CAST}
       }
       if(uShadowLift>0.0)acc=pow(max(acc,vec3(1e-6)),vec3(1.0-uShadowLift));
+      }
       vec3 floorCol;
 ${GLSL_T_FLOOR_MATERIAL.replace(/\bcol\b/g,'floorCol').replace(/uSunColor/g,'uSurfaceSunColor')}
       skyRad=floorCol;`;

@@ -1,12 +1,25 @@
 import {test,expect} from 'bun:test';
 import * as rise from '../engine/transitions/komorebi-litter-rise.js';
 import {restTrans} from '../engine/transitions/komorebi-routes.js';
+import {DEFAULTS} from '../engine/komorebi-params.js';
+import {resolveParams,resolveSession} from '../engine/komorebi-session.js';
+import {PRESETS} from '../presets.js';
 import fixture from '../test-gl/fixtures/purple-look-up.json';
 
 test('the approved purple eye → look up pair lifts its shadow footprints',()=>{
  expect(typeof rise.shadowRiseEligible).toBe('function');
  expect(rise.shadowRiseEligible(fixture.from,fixture.to)).toBe(true);
  expect(rise.shadowRiseEligible(fixture.to,fixture.from)).toBe(false);
+});
+
+test('shrooms hands its layered floor cast to the leaves before the camera sees the sky',()=>{
+ const from={...DEFAULTS,...PRESETS.shrooms},to={...DEFAULTS,...PRESETS['look up']};
+ expect(rise.shadowRiseEligible(from,to)).toBe(true);
+ expect(rise.shadowFallEligible(to,from)).toBe(true);
+ expect(rise.shadowRiseEligible({...from,view_pitch_deg:64.9},to)).toBe(false);
+ const screen=resolveSession({quality:'balanced'});
+ expect(rise.shadowRiseEligible(resolveParams(PRESETS.shrooms,screen),resolveParams(PRESETS['look up'],screen))).toBe(true);
+ expect(rise.shadowRiseEligible({...from,park_throw:.1},to)).toBe(false);
 });
 
 test('shadow pickup excludes surfaces and material laws the approved journey cannot carry',()=>{

@@ -143,6 +143,16 @@ export function moveLeaves(a,b,pairs,w,out){
   for(let n=0;n<pairs.length;n++)carry(a,b,pairs[n],w,out,12*n);
   return out;
 }
+// The rise needs both endpoint poses separately. A surplus carrier keeps its partner's pose at zero area.
+export function moveLeafEndpoint(q,pairs,side,out){
+  for(let n=0;n<pairs.length;n++){
+    const pair=pairs[n],i=pair[side],live=pair[side+2],o=n*12;
+    moved(q,i,aa);
+    out[o]=aa[0];out[o+1]=aa[1];out[o+2]=live?aa[2]:0;out[o+3]=live?aa[3]:0;
+    out[o+4]=aa[4];out[o+5]=q.leaves[i+8];out[o+6]=q.leaves[i+9];out[o+7]=q.leaves[i+10];
+    out[o+8]=aa[5];out[o+9]=q.leaves[i+17];out[o+10+side]=travelRow(q,i);
+  }
+}
 // Patch by patch every carrier is at its own progress wi[n], under the same laws as moveLeaves; slots 12 and 13 carry
 // the outline mix and the edge softness at that progress, which the patch shader reads per carrier.
 const STRIDE_PATCH=16;
