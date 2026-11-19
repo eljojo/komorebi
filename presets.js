@@ -197,7 +197,7 @@ export const PRESETS = {
   "bake_resolution": 768,
   }),
   // 'park 1, the scene' — WORKING NAME. park 1 with its tree seen (tree_view, 2026-11-16): the grove and its shadow from 12.3 m up, the far scene José called
-  // "such a vibe sometimes" (zoom 20 m, tilt 55°, lens 30°); zoomed out to 31 m and turned 32° on 2026-11-19, the grove kept at the
+  // "such a vibe sometimes" (zoom 20 m, tilt 55°, lens 30°); zoomed out to 40 m and turned 31° on 2026-11-19, the grove kept at the
   // 20 m reach it was grown at. Everything else is park 1's.
   'park 1, the scene': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
@@ -208,8 +208,8 @@ export const PRESETS = {
     "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
     "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
     "seed": 290626672, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
-    "grove_reach_m": 20, "view_extent_m": 31.046743129614175, "view_pitch_deg": 55, "view_fov_deg": 30, "view_yaw_deg": 32.319090196548245,
-    "view_center_x": -1.0122861044471632, "view_center_y": -1.7757743941221755, "standing_scene": true, "faithful_canopy": true, "tree_view": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "grove_reach_m": 20, "view_extent_m": 40, "view_pitch_deg": 55, "view_fov_deg": 30, "view_yaw_deg": 30.902627694560124,
+    "view_center_x": -1.82134239769411, "view_center_y": -2.822706256207649, "standing_scene": true, "faithful_canopy": true, "tree_view": true, "trunk_radius_m": 0.12, "far_smear": 0,
     "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
     "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
