@@ -616,7 +616,8 @@ function markPanel(){
     wsHead?.(changed.size);
   });
 }
-function syncControl(key){ adv?.sync(key); markPanel(); const c=controlEls[key]; if(!c)return;
+function syncControl(key){ adv?.sync(key); markPanel(); syncDockedControl(key); }
+function syncDockedControl(key){ const c=controlEls[key]; if(!c)return;
   if(FIDELITY_KEYS.includes(key)){
     const request=eng.authored[key];
     c.input.value=request??params[key];
@@ -1465,7 +1466,7 @@ function refreshChip(){
   const i=arb?.info() ?? {};
   const c=lookState(stateNow(), getStored(), activeList(), presetSel.value, eng.trans.active ? null : eng.authored, i.me ?? null, i);
   lookChip.textContent=c.text; lookChip.title=c.title; lookChip.hidden=c.text==='';
-  homeStale=true; adv?.counts();
+  homeStale=true; adv?.counts(); markPanel();
 }
 // Select an entry and ease to it: the arrows, the swipe, and a playlist swap. A cloud entry brings its own crossfade.
 // While playing, a look's dwell starts when it has arrived (onEnd), and nothing waits while it fades in; a step by hand
@@ -2037,10 +2038,13 @@ document.addEventListener('mouseleave',()=>{ treePointer=null; });
 eng.onFrame = ()=> {
   sessionPanel.refresh();
   tickTween(); tryFrameTick(); midi?.frame();
-  if(params.drift_auto) syncControl('drift_phase');
+  const docked = devUp(), deep = deepUp();
+  if(params.drift_auto){
+    if(docked) syncDockedControl('drift_phase');
+    if(deep) adv?.sync('drift_phase');
+  }
   refreshGates();               // a transition, a macro or a preset can flip a mode as readily as the row itself; the signature check makes the miss cheap
-  const up = devUp() || deepUp();                                                           // every setting on show; a sliding-out panel counts as gone
-  if(params.show_source && up && !settings.workspace) eng.drawSourceInset();   // the sun's inset is the advanced depth's, not the workspace's
+  if(params.show_source && (docked || deep) && !settings.workspace) eng.drawSourceInset();   // the sun's inset is the advanced depth's, not the workspace's
   if(showTree) eng.drawTreeInset(treePointer, treePinned);
   if(showLeaf) leaf.draw();
   if(settings.workspace){ treePane?.draw(); wsStatTick(); }
