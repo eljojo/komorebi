@@ -222,7 +222,8 @@ export const redactSpec = (spec) => ({ ...spec, ...(spec.preset ? { preset: spec
 // Hides the arboretum token and the preset's share token in text that may carry them (the exporter's output, a log line).
 export function scrubSecrets(text, spec, token) {
   let t = String(text);
-  const shares = [spec.preset?.split(':')[1], typeof spec.playlist === 'string' ? spec.playlist.split(':')[1] : undefined];
+  // "ship:<key>" names a shipped playlist: what follows its colon is no share token
+  const shares = [spec.preset?.split(':')[1], typeof spec.playlist === 'string' && !spec.playlist.startsWith('ship:') ? spec.playlist.split(':')[1] : undefined];
   for (const secret of [token, ...shares]) if (secret) t = t.split(secret).join('***');
   return t;
 }

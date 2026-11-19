@@ -127,6 +127,19 @@ test('a refused spec is 422 with the first error and its field, and every error 
   assert.match(q.json.error, /one of 1024, 2048, 4096/);
 });
 
+test('a refused shipped playlist is named in the 422, where an arboretum share token is still hidden', async () => {
+  const { call } = rig();
+  const ship = await call('POST', '/jobs', { playlist: 'ship:nope', size: '1080p', seconds: 5 });
+  assert.equal(ship.status, 422);
+  assert.match(ship.json.error, /^playlist "ship:nope" is not a shipped playlist/);
+  const share = await call('POST', '/jobs', { playlist: '3:s3cr3t', size: '8k', seconds: 5 });
+  assert.equal(share.status, 422);
+  assert.ok(!share.text.includes('s3cr3t'));
+  const bad = await call('POST', '/jobs', { playlist: '0:s3cr3t', size: '1080p', seconds: 5 });
+  assert.equal(bad.status, 422);
+  assert.ok(!bad.text.includes('s3cr3t'), bad.text);
+});
+
 test('seconds is held to the configured maximum', async () => {
   const { call } = rig({ env: { KOMOREBI_RENDER_MAX_SECONDS: '60' } });
   assert.equal((await call('POST', '/jobs', { ...SPEC, seconds: 61 })).json.field, 'seconds');
