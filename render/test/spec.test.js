@@ -61,7 +61,7 @@ test('an inline playlist is refused when it cannot be played: fewer than two loo
   t(7, /playlist must look like/);
 });
 
-test('shipped playlists: ship:<key> or a list of them, always stored as the list, checked against the pin, video only', () => {
+test('shipped playlists: ship:<key> or a list of them, always stored as the list, checked against the engine, video only', () => {
   const shipped = { story: 'park story', shadows: 'shadows' };
   const v = (playlist, extra = {}) => validateSpec({ playlist, size: '1080p', seconds: 60, ...extra }, { platform: 'darwin', shipped });
   const refused = (playlist, re, extra) => assert.throws(() => v(playlist, extra), (e) => e instanceof SpecError && re.test(e.message) && e.fields[0] === 'playlist');
@@ -75,8 +75,8 @@ test('shipped playlists: ship:<key> or a list of them, always stored as the list
   const s = v(['ship:story', 'ship:shadows']);
   assert.deepEqual(redactSpec(s), s);
   assert.equal(shippedName(s.playlist, shipped), 'park story, shadows');
-  assert.equal(shippedName(['ship:gone'], shipped), 'gone');   // a key a later pin dropped still names its old job
-  // the folder takes the pin's names
+  assert.equal(shippedName(['ship:gone'], shipped), 'gone');   // a key a later engine dropped still names its old job
+  // the folder takes the engine's names
   const pinned = Object.keys(SHIPPED_PLAYLISTS).slice(0, 2).map((k) => `ship:${k}`);
   assert.equal(folderName({ id: 7, createdAt: '2026-11-19T00:00:00Z', spec: { ...s, playlist: pinned } }), `2026-11-19-7-${slugify(shippedName(pinned))}`);
 });

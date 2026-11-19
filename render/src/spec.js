@@ -1,5 +1,5 @@
 // A job's spec: validated once, at the door, into the canonical shape everything downstream reads.
-import { readFileSync } from 'node:fs';
+import { PLAYLISTS } from '../../presets.js';
 import { checkQuality, SESSION_PROFILES } from './quality.js';
 
 export const DEFAULT_MAX_SECONDS = 6 * 3600;   // KOMOREBI_RENDER_MAX_SECONDS overrides: the config passes it in
@@ -24,8 +24,8 @@ function fieldOf(message) {
 }
 const PRESET = /^([1-9]\d*)(?:@([1-9]\d*))?(?::(\S+))?$/;   // the exporter's own --arboretum grammar
 const PLAYLIST = /^([1-9]\d*)(?::(\S+))?$/;   // and its --arboretum-playlist: a playlist has no versions
-// The pinned engine's shipped playlists (presets.js PLAYLISTS, key -> name), as scripts/pin.mjs records them. A pin from before them has none.
-export const SHIPPED_PLAYLISTS = JSON.parse(readFileSync(new URL('../komorebi.json', import.meta.url), 'utf8')).playlists ?? {};
+// The engine's shipped playlists (presets.js PLAYLISTS beside it), key -> name.
+export const SHIPPED_PLAYLISTS = Object.fromEntries(Object.entries(PLAYLISTS).map(([key, p]) => [key, p.name]));
 const SHIP = /^ship:(.+)$/;   // the editor's own name for one: ship:<key>
 const PLAYLIST_FIELDS = ['name', 'items', 'presentation'], ITEM_FIELDS = ['name', 'params', 'dwell_s', 'crossfade_s'];
 const MAX_PLAYLIST_ITEMS = 500;   // arboretum's own limit
@@ -39,7 +39,7 @@ function checkInlinePlaylist(p, errors) {
   const before = errors.length, out = {};
   if(p.presentation!=null){
     if(SESSION_PROFILES.presentation.includes(p.presentation))out.presentation=p.presentation;
-    else errors.push('playlist.presentation must be supported by the pinned engine');
+    else errors.push('playlist.presentation must be supported by the engine');
   }
   for (const k of Object.keys(p)) if (!PLAYLIST_FIELDS.includes(k)) errors.push(`playlist.${k} is not a playlist field; allowed: ${PLAYLIST_FIELDS.join(', ')}`);
   if (p.name !== undefined) {
@@ -74,7 +74,7 @@ function parseSize(s, image = false) {
 function checkShipped(p, shipped, errors) {
   const list = typeof p === 'string' ? [p] : p;
   if (!list.length) { errors.push('playlist must name at least one shipped playlist'); return null; }
-  const keys = Object.keys(shipped).map((k) => `ship:${k}`).join(', ') || 'none in the pinned engine';
+  const keys = Object.keys(shipped).map((k) => `ship:${k}`).join(', ') || 'none in the engine';
   const bad = list.filter((v) => typeof v !== 'string' || !SHIP.test(v) || !Object.hasOwn(shipped, SHIP.exec(v)[1]));
   if (bad.length) { errors.push(`playlist ${bad.map((v) => JSON.stringify(v)).join(', ')} is not a shipped playlist; shipped: ${keys}`); return null; }
   return [...list];
@@ -184,9 +184,9 @@ export function validateSpec(raw, { maxSeconds = DEFAULT_MAX_SECONDS, platform =
     else{
       const s=raw.session,out={};
       for(const k of Object.keys(s))if(!['quality','presentation'].includes(k))errors.push(`session.${k} is not a session field`);
-      if(!SESSION_PROFILES.quality.length)errors.push('session is unsupported by the pinned engine');
+      if(!SESSION_PROFILES.quality.length)errors.push('session is unsupported by the engine');
       for(const k of ['quality','presentation'])if(s[k]!==undefined){
-        if(SESSION_PROFILES[k].includes(s[k]))out[k]=s[k];else errors.push(`session.${k} must be supported by the pinned engine`);
+        if(SESSION_PROFILES[k].includes(s[k]))out[k]=s[k];else errors.push(`session.${k} must be supported by the engine`);
       }
       spec.session=out;
     }

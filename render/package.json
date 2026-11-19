@@ -6,7 +6,6 @@
   "type": "module",
   "engines": { "node": ">=22.13" },
   "scripts": {
-    "test": "node --disable-warning=ExperimentalWarning --test",
-    "pin": "node scripts/pin.mjs"
+    "test": "node --disable-warning=ExperimentalWarning --test"
   }
 }

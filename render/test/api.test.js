@@ -284,7 +284,7 @@ test('DELETE on a finished job is 409, on an unknown one 404', async () => {
   assert.equal((await call('DELETE', '/jobs/77')).status, 404);
 });
 
-test('GET /health: idle, busy, blocked; the share is ok or missing; the pin is the commit', async () => {
+test('GET /health: idle, busy, blocked; the share is ok or missing; the pin is the commit it renders', async () => {
   const { call, submit, store, nas } = rig();
   let h = (await call('GET', '/health')).json;
   assert.deepEqual(h, { ok: true, pin: SHA, worker: 'idle', nas: 'ok' });

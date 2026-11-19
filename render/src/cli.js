@@ -1,6 +1,6 @@
 // komorebi-render submit|list|status|cancel|prepare|worker|serve. Output is JSON (list: one line per job) so agents and curl-minded humans read it alike.
 import { readFileSync, mkdirSync } from 'node:fs';
-import { loadConfig, loadPin } from './config.js';
+import { loadConfig, loadEngine } from './config.js';
 import { openStore, StoreError } from './store.js';
 import { validateSpec, SpecError } from './spec.js';
 import { jobView } from './view.js';
@@ -13,7 +13,7 @@ const USAGE = `usage: komorebi-render <command>
   list [state]           one line per job, newest first
   status <id>            the job: progress, ETA, result or error
   cancel <id>            queued: cancelled now; running: the worker stops the exporter (the folder is kept)
-  prepare                make the pinned engine ready (mirror, worktree, npm ci, chromium); idempotent
+  prepare                make the engine ready (mirror, worktree, npm ci, chromium); idempotent
   worker                 run queued jobs, one at a time
   serve                  the HTTP API and the worker in one process (the deployed mode)
 environment: KOMOREBI_RENDER_STATE, KOMOREBI_RENDER_OUT, KOMOREBI_RENDER_MAX_SECONDS, KOMOREBI_RENDER_ALLOW_LOCAL,
@@ -53,19 +53,19 @@ export async function main(argv, env = process.env, io = { out: (s) => console.l
         return 0;
       }
       case 'prepare': {
-        const r = await prepare({ config, pin: loadPin() });
+        const r = await prepare({ config, pin: loadEngine() });
         io.out(JSON.stringify({ commit: r.commit, script: r.script }));
         return 0;
       }
       case 'worker': {
-        const pin = loadPin();
+        const pin = loadEngine();
         const worker = createWorker({ store: open(), config, prepare: ({ signal }) => prepare({ config, pin, signal }) });
         for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => worker.stop());
         await worker.run();
         return 0;
       }
       case 'serve': {
-        const pin = loadPin();
+        const pin = loadEngine();
         const svc = await serve({ store: open(), config, pin, prepare: ({ signal }) => prepare({ config, pin, signal }) });
         for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => svc.stop());
         await svc.finished;

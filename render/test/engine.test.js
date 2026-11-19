@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/config.js';
-import { prepare, resolveCommit, defaultRun, shippedPlaylist } from '../src/engine.js';
+import { prepare, defaultRun, shippedPlaylist } from '../src/engine.js';
 import { shippedFixture } from '../fixtures/shipped.mjs';
 
 test('engine subprocesses let timers run before the command completes', async () => {
@@ -35,7 +35,7 @@ const setup = () => {
 };
 
 // A scripted git / npm: records every call and plays the side effects the real ones have on disk.
-// `missing` is how many `cat-file` probes of the pinned commit fail before the commit "arrives".
+// `missing` is how many `cat-file` probes of the commit fail before the commit "arrives".
 const fakeRunner = (config, { missing = 0, npmStatus = 0 } = {}) => {
   const calls = [];
   let probes = 0;
@@ -57,7 +57,7 @@ const fakeRunner = (config, { missing = 0, npmStatus = 0 } = {}) => {
   return { run, calls };
 };
 
-test('a fresh state dir: mirror clone, pinned worktree, npm ci, chromium into the state dir', async () => {
+test('a fresh state dir: mirror clone, worktree, npm ci, chromium into the state dir', async () => {
   const { config } = setup();
   const { run, calls } = fakeRunner(config);
   const r = await prepare({ config, pin, run });
@@ -101,7 +101,7 @@ test('prepare is idempotent: a second call runs nothing', async () => {
   assert.deepEqual(second.calls, []);
 });
 
-test('the mirror is fetched only when it lacks the pinned commit', async () => {
+test('the mirror is fetched only when it lacks the commit', async () => {
   const { config } = setup();
   const have = fakeRunner(config);
   await prepare({ config, pin, run: have.run });
@@ -127,18 +127,6 @@ test('a failed npm ci throws and leaves no marker, so the next prepare retries',
   assert.ok(!retry.calls.some((c) => c.args.includes('clone')));   // the mirror it already has
 });
 
-test('resolveCommit expands a ref against the mirror and refuses what is not a commit', async () => {
-  const { config } = setup();
-  mkdirSync(config.mirror, { recursive: true });
-  writeFileSync(join(config.mirror, 'HEAD'), '');
-  const run = (cmd, args) => (args.includes('rev-parse') ? { status: 0, stdout: `${SHA}\n`, stderr: '' } : { status: 0, stdout: '', stderr: '' });
-  assert.equal(await resolveCommit({ config, pin, run, ref: 'a6b6fa2' }), SHA);
-  const none = () => ({ status: 128, stdout: '', stderr: 'unknown revision' });
-  await assert.rejects(() => resolveCommit({ config, pin, run: none, ref: 'nope' }), /nope/);
-  await assert.rejects(() => resolveCommit({ config, pin, run, ref: '--upload-pack=x' }), /ref/);
-  assert.ok(existsSync(config.mirror));
-});
-
 test('shipped playlists become one playlist: looks as shipped, paced by the item, then its list, then ITEM_DEFAULTS', async () => {
   const dir = shippedFixture();
   assert.deepEqual(await shippedPlaylist(dir, ['ship:story', 'ship:shadows']), { name: 'park story, shadows', items: [
@@ -147,6 +135,6 @@ test('shipped playlists become one playlist: looks as shipped, paced by the item
     { name: 'c', params: { exposure: 3 }, dwell_s: 30, crossfade_s: 4, style: 'fade' },
     { name: 'a', params: { exposure: 1 }, dwell_s: 30, crossfade_s: 4, style: 'morph' },
   ] });
-  await assert.rejects(shippedPlaylist(dir, ['ship:story', 'ship:rainbow']), /ship:rainbow is not a shipped playlist of the pinned engine/);
+  await assert.rejects(shippedPlaylist(dir, ['ship:story', 'ship:rainbow']), /ship:rainbow is not a shipped playlist of the engine/);
   await assert.rejects(shippedPlaylist(dir, ['ship:broken']), /broken names "gone", which presets.js does not ship/);
 });

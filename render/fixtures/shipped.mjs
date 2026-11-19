@@ -1,4 +1,4 @@
-// A pinned worktree's presets.js for the shipped-playlist tests (engine, worker): no komorebi checkout needed.
+// A prepared worktree's presets.js for the shipped-playlist tests (engine, worker): no komorebi checkout needed.
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

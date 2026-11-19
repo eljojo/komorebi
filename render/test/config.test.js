@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
-import { loadConfig, loadPin } from '../src/config.js';
+import { loadConfig, loadEngine, KOMOREBI_REPO } from '../src/config.js';
 import { exporterArgs } from '../src/exporter.js';
 
 test('relative paths keep the worker and exporter on the same output root', () => {
@@ -70,4 +71,21 @@ test('ARBORETUM_TOKEN in the environment wins over the file', () => {
 test('a token file that is missing or empty stops startup, naming the path and never the contents', () => {
   assert.throws(() => loadConfig({ KOMOREBI_RENDER_ARBORETUM_TOKEN_FILE: '/nonexistent/kr-token' }, '/h'), /KOMOREBI_RENDER_ARBORETUM_TOKEN_FILE.*\/nonexistent\/kr-token/);
   assert.throws(() => loadConfig({ KOMOREBI_RENDER_ARBORETUM_TOKEN_FILE: tokenFile(' \n') }, '/h'), /is empty/);
+});
+
+const SHA = 'a6b6fa25a98d47fa8ae312b4bfae4c9fde99f849';
+test('the engine is the commit the package was built from: its `commit` file, else the checkout\'s HEAD, else none', () => {
+  const built = mkdtempSync(join(tmpdir(), 'kr-built-'));
+  writeFileSync(join(built, 'commit'), `${SHA}\n`);
+  assert.deepEqual(loadEngine(built), { repo: KOMOREBI_REPO, commit: SHA });
+
+  const checkout = mkdtempSync(join(tmpdir(), 'kr-checkout-'));
+  const git = (...args) => execFileSync('git', ['-C', checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim();
+  git('init', '-q');
+  git('commit', '-q', '--allow-empty', '-m', 'x');
+  assert.equal(loadEngine(checkout).commit, git('rev-parse', 'HEAD'));
+
+  assert.throws(() => loadEngine(mkdtempSync(join(tmpdir(), 'kr-none-'))), /has no commit/);
+  writeFileSync(join(built, 'commit'), 'abc\n');
+  assert.throws(() => loadEngine(built), /full 40-hex sha/);
 });

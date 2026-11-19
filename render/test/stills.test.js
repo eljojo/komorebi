@@ -37,7 +37,7 @@ test('explicit MP4 preserves the existing canonical video shape and timing valid
   assert.throws(() => validateSpec({ preset: '3', size: '1080p', format: 'mp4' }), /seconds/);
 });
 
-test('PNG delegates one frame to the pinned exporter and extracts RGB from the master, with no MP4', () => {
+test('PNG delegates one frame to the exporter and extracts RGB from the master, with no MP4', () => {
   const args = exporterArgs({ script: FAKE, commit: SHA, folder: '/out', spec: IMAGE });
   const value = flag => args[args.indexOf(flag) + 1];
   assert.equal(args[0], FAKE);

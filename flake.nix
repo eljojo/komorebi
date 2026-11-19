@@ -16,11 +16,16 @@
         LIBVA_DRIVERS_PATH = "${pkgs.mesa}/lib/dri";
         LIBVA_DRIVER_NAME = "radeonsi";
       };
-      # Only what komorebi-render and its tests need: a stray file in the checkout must not change the package's hash.
+      # Only what komorebi-render and its tests need: render/ and the engine it reads its sessions, quality rows and shipped
+      # playlists from. A stray file in the checkout must not change the package's hash.
       renderSource = pkgs: pkgs.lib.fileset.toSource {
-        root = ./render;
-        fileset = pkgs.lib.fileset.unions (map (p: ./render + p) [ "/src" "/scripts" "/test" "/fixtures" "/komorebi.json" "/package.json" "/llms.txt" "/README.md" ]);
+        root = ./.;
+        fileset = pkgs.lib.fileset.unions ([ ./engine ./komorebi.js ./presets.js ]
+          ++ map (p: ./render + p) [ "/src" "/test" "/fixtures" "/package.json" "/llms.txt" "/README.md" ]);
       };
+      # The komorebi commit komorebi-render renders: the one it is built from. A tree with uncommitted changes has none, and its
+      # package refuses to prepare or serve (render/src/config.js, loadEngine).
+      renderCommit = self.rev or null;
     in {
       # `nix develop` — bun (dev server + bundler) + biome (lint) on PATH; node and git for arboretum, whose wrangler
       # and vitest come from arboretum/package.json; node, ffmpeg and git are komorebi-render's whole toolchain. On Linux
@@ -47,10 +52,12 @@
           dontBuild = true;
           installPhase = ''
             runHook preInstall
-            mkdir -p $out/lib/komorebi-render $out/bin
-            cp -r src scripts komorebi.json package.json llms.txt $out/lib/komorebi-render/
+            mkdir -p $out/lib/komorebi-render/render $out/bin
+            cp -r engine komorebi.js presets.js $out/lib/komorebi-render/
+            cp -r render/src render/package.json render/llms.txt $out/lib/komorebi-render/render/
+            ${pkgs.lib.optionalString (renderCommit != null) "echo ${renderCommit} > $out/lib/komorebi-render/render/commit"}
             makeWrapper ${pkgs.nodejs_22}/bin/node $out/bin/komorebi-render \
-              --add-flags "--disable-warning=ExperimentalWarning $out/lib/komorebi-render/src/cli.js" \
+              --add-flags "--disable-warning=ExperimentalWarning $out/lib/komorebi-render/render/src/cli.js" \
               ${pkgs.lib.concatStringsSep " " (pkgs.lib.mapAttrsToList (name: value: "--set-default ${name} ${pkgs.lib.escapeShellArg value}") (linuxEnvironment pkgs))} \
               --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.nodejs_22 pkgs.ffmpeg pkgs.git ]}
             runHook postInstall
@@ -63,7 +70,7 @@
       checks = forAll (pkgs: let render = self.packages.${pkgs.stdenv.hostPlatform.system}.komorebi-render; in {
         render-darwin-module = import ./render/nix/module-test.nix { inherit pkgs self; lib = pkgs.lib; };
         render-package = pkgs.runCommand "komorebi-render-package" {} ''
-          cmp ${./render/llms.txt} ${render}/lib/komorebi-render/llms.txt
+          cmp ${./render/llms.txt} ${render}/lib/komorebi-render/render/llms.txt
           ${render}/bin/komorebi-render
           echo "package: llms.txt installed and CLI wrapper runs"
           touch $out
@@ -71,16 +78,16 @@
         render-tests = pkgs.runCommand "komorebi-render-tests" { nativeBuildInputs = [ pkgs.nodejs_22 pkgs.git pkgs.ffmpeg ]; } ''
           cp -r ${renderSource pkgs} work
           chmod -R u+w work
-          cd work
+          cd work/render
           export HOME=$TMPDIR
           node --disable-warning=ExperimentalWarning --test
           touch $out
         '';
         # Linux runs the engine's npm Playwright against Nix's Chromium; they work only at the same version.
-        render-playwright = let pinned = (pkgs.lib.importJSON ./render/komorebi.json).playwright; in
-          if pkgs.playwright-driver.version == pinned
+        render-playwright = let engine = (pkgs.lib.importJSON ./test-gl/package.json).dependencies.playwright; in
+          if pkgs.playwright-driver.version == engine
           then pkgs.runCommand "komorebi-render-playwright" {} "touch $out"
-          else throw "nixpkgs playwright-driver ${pkgs.playwright-driver.version} does not match the pinned engine's Playwright ${pinned} (render/komorebi.json); move nixpkgs or the pin so they agree";
+          else throw "nixpkgs playwright-driver ${pkgs.playwright-driver.version} does not match test-gl's Playwright ${engine} (test-gl/package.json); move nixpkgs or test-gl so they agree";
       } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
         render-nixos-module = import ./render/nix/nixos-module-test.nix { inherit pkgs self; lib = pkgs.lib; };
       });
@@ -304,20 +311,9 @@
               exec node --disable-warning=ExperimentalWarning --test "$@"
             '';
           };
-          # `nix run .#render-pin [-- <sha|ref>]` — render/scripts/pin.mjs. It runs the checkout's own script, not the store's
-          # copy: the script rewrites the komorebi.json beside it, which in the store is read-only.
-          render-pin = pkgs.writeShellApplication {
-            name = "render-pin";
-            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
-            text = ''
-              cd "$(git rev-parse --show-toplevel)/render"
-              exec node scripts/pin.mjs "$@"
-            '';
-          };
         in {
           test = { type = "app"; program = "${test}/bin/test"; };
           render-test = { type = "app"; program = "${render-test}/bin/render-test"; };
-          render-pin = { type = "app"; program = "${render-pin}/bin/render-pin"; };
           komorebi-render = { type = "app"; program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.komorebi-render}/bin/komorebi-render"; };
           arboretum-test = { type = "app"; program = "${arboretum-test}/bin/arboretum-test"; };
           arboretum-dev = { type = "app"; program = "${arboretum-dev}/bin/arboretum-dev"; };

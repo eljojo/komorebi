@@ -1,18 +1,17 @@
 // The quality knobs a job may set, and what they cost. Only the exporter's own QUALITY_KEYS (render-video.mjs) may ever
 // be passed as --set: they keep the look "as authored" in its manifest. Any other key would change the look, so nothing
 // here can name one.
-import { readFileSync } from 'node:fs';
-const pin=JSON.parse(readFileSync(new URL('../komorebi.json',import.meta.url),'utf8'));
-export const SESSION_PROFILES=pin.sessions ?? {quality:[],presentation:[]};
+import { QUALITY_PROFILES, PRESENTATION_PROFILES } from '../../engine/komorebi-session.js';
+import { PARAMS } from '../../engine/komorebi-params.js';
+// The engine's session profiles, from the komorebi beside it.
+export const SESSION_PROFILES = { quality: Object.keys(QUALITY_PROFILES), presentation: Object.keys(PRESENTATION_PROFILES) };
 export const QUALITY_KEYS = ['tex_resolution', 'bake_resolution', 'sample_count'];
-// The editor's own rows for the three engine keys, from komorebi's parameter registry (PARAMS in komorebi-params.js): the pin
-// (scripts/pin.mjs) copies them into komorebi.json with qualityRows. A pin older than the registry carries none, and these are
-// the rows komorebi had then.
+// The editor's own rows for the three engine keys, from komorebi's parameter registry (PARAMS in komorebi-params.js).
 export function qualityRows(PARAMS) {
   const values = (k) => PARAMS[k].row.choices.map(([, v]) => v);
   return { tex_resolution: values('tex_resolution'), bake_resolution: values('bake_resolution'), sample_count: [PARAMS.sample_count.row.min, PARAMS.sample_count.row.max] };
 }
-const ROWS = pin.quality ?? { tex_resolution: [1024, 2048, 4096], bake_resolution: [0, 768, 1024, 1536, 2048], sample_count: [16, 48] };
+const ROWS = qualityRows(PARAMS);
 const CHOICES = {
   tex_resolution: ROWS.tex_resolution,
   bake_resolution: ROWS.bake_resolution,   // 0 follows tex_resolution

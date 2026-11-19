@@ -1,5 +1,5 @@
-// The pinned komorebi engine: a bare mirror of the repo, a git worktree of the pinned commit, its test-gl deps and
-// Chromium. A worktree (not `git archive`) because render-video.mjs runs `git -C <its own repo> archive <sha>` for --commit:
+// The komorebi engine at the commit komorebi-render was built from (config.js, loadEngine): a bare mirror of the repo, a git
+// worktree of that commit, its test-gl deps and Chromium. A worktree (not `git archive`) because render-video.mjs runs `git -C <its own repo> archive <sha>` for --commit:
 // it must live inside a git repo that knows the commit, and a worktree's .git file leads to the mirror's object store.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -72,14 +72,14 @@ export async function prepare({ config, pin, run = defaultRun, signal }) {
   return result;
 }
 
-// Shipped playlists (["ship:story", "ship:shadows"]) as one playlist the exporter's --playlist-json reads, from the pinned
+// Shipped playlists (["ship:story", "ship:shadows"]) as one playlist the exporter's --playlist-json reads, from the prepared
 // worktree's presets.js: each look's params as shipped, paced as the editor paces them (the item's own times, else its
 // playlist's crossfade_s, else ITEM_DEFAULTS). The lists play one after another and the whole loops; a list's `next` is not followed.
 export async function shippedPlaylist(dir, list) {
   const { PRESETS, PLAYLISTS, ITEM_DEFAULTS } = await import(pathToFileURL(join(dir, 'presets.js')).href);
   const lists = list.map((v) => {
     const p = PLAYLISTS?.[v.slice(5)];
-    if (!p) throw new Error(`${v} is not a shipped playlist of the pinned engine`);
+    if (!p) throw new Error(`${v} is not a shipped playlist of the engine`);
     return p;
   });
   const items = lists.flatMap((p) => p.items.map((it) => (typeof it === 'string' ? { look: it } : it)).map((it) => {
@@ -88,20 +88,4 @@ export async function shippedPlaylist(dir, list) {
       crossfade_s: it.crossfade_s ?? p.crossfade_s ?? ITEM_DEFAULTS.crossfade_s, style: it.style ?? ITEM_DEFAULTS.style };
   }));
   return { name: lists.map((p) => p.name).join(', '), items };
-}
-
-// A ref (sha, prefix, branch, "HEAD") to a full commit sha in the mirror, for scripts/pin.mjs. A branch is fetched first; a sha
-// is fetched for only when the mirror does not have it yet.
-export async function resolveCommit({ config, pin, run = defaultRun, ref = 'HEAD', signal }) {
-  if (typeof ref !== 'string' || ref === '' || ref.startsWith('-')) throw new Error(`ref ${JSON.stringify(ref)} is not a commit name`);
-  const env = await ensureMirror({ config, pin, run, signal });
-  const parse = () => run('git', ['-C', config.mirror, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { env, signal });
-  const fetch = () => run('git', ['-C', config.mirror, 'fetch', '--prune', 'origin'], { env, signal });
-  let fetched = null;
-  if (!/^[0-9a-f]{7,40}$/i.test(ref)) fetched = await fetch();
-  let r = await parse();
-  if (r.status !== 0 && !fetched) { fetched = await fetch(); r = await parse(); }
-  const sha = String(r.stdout || '').trim();
-  if (r.status !== 0 || !/^[0-9a-f]{40}$/.test(sha)) throw new Error(`cannot resolve ${JSON.stringify(ref)} to a commit in ${pin.repo}${fetched?.status ? ` (fetch: ${tail(fetched)})` : ''}`);
-  return sha;
 }

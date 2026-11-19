@@ -3,29 +3,33 @@
 A render server for [komorebi](https://github.com/eljojo/komorebi): send a look and a size for a PNG still, or add a length
 for a video. Outputs are rendered on the host's GPU and written to the NAS.
 
-It does not render anything itself. It runs komorebi's own video exporter (`test-gl/render-video.mjs`) from a **pinned
-komorebi commit** (`komorebi.json`), so there is one definition of a render. What it adds is a queue, a worker, progress,
+It does not render anything itself. It runs komorebi's own video exporter (`test-gl/render-video.mjs`) from the
+**komorebi commit it is built from**: it lives in komorebi's repository, under `render/`, and ships with it, so there is one
+definition of a render and nothing to pin. What it adds is a queue, a worker, progress,
 resume after a crash, and the guard that keeps gigabytes off the Mac's own disk.
 
 - One look (an arboretum preset, or look params) or one playlist (arboretum's, inline, or komorebi's shipped ones) per job, rendered as a single continuous video with the engine's own transitions between looks. One job at a time.
 - Output goes to `$KOMOREBI_RENDER_OUT`, which must be a mounted network share (on the mini, `/Volumes/home/komorebi/jobs`).
 - Masters (the lossless segments) are off by default: they are deleted once the delivery is verified.
 - Hours-long jobs are normal: the maximum is 6 h by default (`KOMOREBI_RENDER_MAX_SECONDS`).
-- Plain Node 22 ES modules, no dependencies (`node:sqlite`, `node:child_process`). Packaged as a nix flake.
+- Plain Node 22 ES modules, no dependencies (`node:sqlite`, `node:child_process`). Packaged by komorebi's nix flake.
 
 ## Run it in dev
 
 ```sh
-nix develop            # node 22, ffmpeg, git
-node --test            # the tests: no GPU, no network
+nix run .#render-test  # the tests: no GPU, no network (from the repository root)
+nix develop            # node 22, ffmpeg, git; then, in render/:
 KOMOREBI_RENDER_OUT=/tmp/out KOMOREBI_RENDER_ALLOW_LOCAL=1 node src/cli.js worker
 ```
 
-`nix run . -- <command>` runs the packaged `bin/komorebi-render`. A flake in a git repo only sees tracked files: `git add`
-before `nix flake check` / `nix develop`, or use `path:$PWD`.
+`nix run .#komorebi-render -- <command>` runs the packaged `bin/komorebi-render`. A flake in a git repo only sees tracked files:
+`git add` before `nix flake check` / `nix develop`, or use `path:$PWD`. The package writes the commit it was built from beside
+its source; built from a tree with uncommitted changes it has none, and `prepare`, `worker` and `serve` refuse to start. Run
+from the checkout, it renders the checkout's HEAD. Either way the commit must be pushed: the engine is prepared from a mirror
+of the public repository.
 
 The first job (or `komorebi-render prepare`) sets up the engine under the state dir: a bare mirror of komorebi, a worktree of the
-pinned commit, `npm ci` in its `test-gl/`, and Chromium for Playwright. That needs the network once.
+commit, `npm ci` in its `test-gl/`, and Chromium for Playwright. That needs the network once.
 
 ## Linux with an AMD GPU
 
@@ -40,17 +44,17 @@ Hardware initialization or encoding failures fail the job; there is no CPU encod
 
 `PLAYWRIGHT_BROWSERS_PATH` selects externally managed browsers. `prepare` still installs the engine's npm dependencies,
 but skips browser installation when this variable is set; the Linux package sets it to the Nix browser package.
-The browser package must match the engine's pinned Playwright version. `VK_DRIVER_FILES` and `LIBGL_DRIVERS_PATH` select
+The browser package must match the engine's Playwright version (`test-gl/package.json`; the flake checks it). `VK_DRIVER_FILES` and `LIBGL_DRIVERS_PATH` select
 the Mesa graphics drivers; `LIBVA_DRIVERS_PATH` and `LIBVA_DRIVER_NAME=radeonsi` select the AMD video driver.
 The package supplies these defaults, which existing environment values can override.
 
 The queue, output-mount guard and resume behavior are shared with the Mac. For an isolated local test, explicitly set
 `KOMOREBI_RENDER_ALLOW_LOCAL=1` and put both state and output under the test directory.
 
-Import `nixosModules.default` to configure `services.komorebi-render` on NixOS:
+Import komorebi's `nixosModules.komorebi-render` to configure `services.komorebi-render` on NixOS:
 
 ```nix
-imports = [ inputs.komorebi-render.nixosModules.default ];
+imports = [ inputs.komorebi.nixosModules.komorebi-render ];
 services.komorebi-render = {
   enable = true;
   user = "jojo";
@@ -72,7 +76,7 @@ komorebi-render submit <spec.json|->   validate and queue a job; prints it
 komorebi-render list [state]           one line per job, newest first
 komorebi-render status <id>            progress, ETA, result or error
 komorebi-render cancel <id>            queued: cancelled now; running: the exporter is stopped, the folder is kept
-komorebi-render prepare                make the pinned engine ready; idempotent
+komorebi-render prepare                make the engine ready; idempotent
 komorebi-render worker                 run queued jobs
 komorebi-render serve                  run the HTTP API and one worker together
 ```
@@ -81,7 +85,7 @@ komorebi-render serve                  run the HTTP API and one worker together
 
 ## The job spec
 
-New session-aware jobs use `"session": { "quality": "export", "presentation": "projector" }` and optional top-level `"ss": 2` (1 by default). Quality is a shipped ceiling: looks may request less, never more. Omitted session quality selects export; omitted presentation follows the playlist, then screen/TV. Profile identifiers come from the pinned engine. Both FPS governors stay off, and the exporter freezes authored inputs, resolved definitions and effective endpoints for resume and parallel capture.
+New session-aware jobs use `"session": { "quality": "export", "presentation": "projector" }` and optional top-level `"ss": 2` (1 by default). Quality is a shipped ceiling: looks may request less, never more. Omitted session quality selects export; omitted presentation follows the playlist, then screen/TV. Profile identifiers come from the engine. Both FPS governors stay off, and the exporter freezes authored inputs, resolved definitions and effective endpoints for resume and parallel capture.
 
 `session` accepts only `quality` and `presentation`. Current quality identifiers are compact, balanced, high and export; presentation is screen or projector. Inline playlists accept optional `presentation` with the same identifiers. Device profiles are provisional and do not promise a rendering rate.
 
@@ -95,7 +99,7 @@ Existing `quality` jobs retain their overriding behavior and `quality.ss`. A job
 | field | |
 |---|---|
 | `format` | `"mp4"` (default) or `"png"`. PNG renders one lossless RGB frame; omit the video-only seconds, fps, master, pipeline and delivery fields. |
-| `playlist` | `"<arboretum playlist id>[:share]"`, or an object `{ name?, items: [{ params, dwell_s?, crossfade_s? }] }` carried in the job (try a playlist before publishing it; nothing touches arboretum), or `"ship:<key>"` / a list of them (`["ship:story", "ship:shadows"]`): komorebi's shipped playlists from `presets.js` at the pin, played in order as one looping list. Exactly one of `preset`, `look` or `playlist`. The exporter walks the playlist's looks with `transitionTo` (dwell, then a fade over the next look's own crossfade, looping to fill `seconds`); a fade between looks of different structure takes the engine's travel, rebuild or dissolve on twice the crossfade, and such a playlist renders with `jobs` 1 only. Needs a komorebi pin that has the exporter's `--arboretum-playlist`. Video only. |
+| `playlist` | `"<arboretum playlist id>[:share]"`, or an object `{ name?, items: [{ params, dwell_s?, crossfade_s? }] }` carried in the job (try a playlist before publishing it; nothing touches arboretum), or `"ship:<key>"` / a list of them (`["ship:story", "ship:shadows"]`): komorebi's shipped playlists from the engine's `presets.js`, played in order as one looping list. Exactly one of `preset`, `look` or `playlist`. The exporter walks the playlist's looks with `transitionTo` (dwell, then a fade over the next look's own crossfade, looping to fill `seconds`); a fade between looks of different structure takes the engine's travel, rebuild or dissolve on twice the crossfade, and such a playlist renders with `jobs` 1 only. Video only. |
 | `preset` | `"<arboretum id>[@version][:share]"`. Exactly one of `preset`, `look` or `playlist`. Without `@version` the head is pinned at the first run. A private preset needs `ARBORETUM_TOKEN` in the worker's environment; `:share` opens an unlisted one. |
 | `look` | `{ "name"?: string, "params": {…} }`: the look's params, as the editor saves them. |
 | `size` | `"1080p"`, `"4k"` or `"WxH"` (64x64 to 7680x4320; video requires even dimensions). |
@@ -104,7 +108,7 @@ Existing `quality` jobs retain their overriding behavior and `quality.ss`. A job
 | `master` | `false` (default): the lossless segments are deleted once the delivery is verified. `true` keeps them. |
 | `quality` | `"authored"` (default: the look as saved), `"max"`, or an object (below). |
 | `pipeline` | `"master"` (default), `"gpu"`, `"gpu-main10"` or `"browser"`; capture and encoding, independent of quality. |
-| `jobs`, `block_segments` | Parallel rendering of one job: `jobs` 1 to 8 Chromium sessions at once on the job's 10-second segments (default 1), `block_segments` 1 to 64 consecutive segments per browser session (needs `jobs` above 1). Output is identical to a serial render; the exporter verifies each segment's end state and stops with a message to render with `jobs` 1 if it ever is not. Needs a komorebi pin whose exporter has `--jobs`. |
+| `jobs`, `block_segments` | Parallel rendering of one job: `jobs` 1 to 8 Chromium sessions at once on the job's 10-second segments (default 1), `block_segments` 1 to 64 consecutive segments per browser session (needs `jobs` above 1). Output is identical to a serial render; the exporter verifies each segment's end state and stops with a message to render with `jobs` 1 if it ever is not. |
 | `delivery` | optional, one of `{ "vt_bitrate": "60M" }` (k, K or M) or `{ "vt_quality": 0..100 }`; browser requires omitted or empty delivery. |
 
 **Quality.** `"max"` is `tex_resolution` 4096, `bake_resolution` 0 (follows tex, so a 4096 bake) and `sample_count` 48; at 1080p
@@ -193,7 +197,7 @@ the existing quality-based estimates and applies no speculative pipeline speed m
 
 | | |
 |---|---|
-| `$KOMOREBI_RENDER_STATE` (default `~/.local/state/komorebi-render`) | `jobs.sqlite`, `komorebi.git` (mirror), `engine/<sha>/` (the pinned worktree), `browsers/` (Playwright's Chromium) |
+| `$KOMOREBI_RENDER_STATE` (default `~/.local/state/komorebi-render`) | `jobs.sqlite`, `komorebi.git` (mirror), `engine/<sha>/` (the engine's worktree), `browsers/` (Playwright's Chromium) |
 | `$KOMOREBI_RENDER_OUT/<yyyy-mm-dd>-<id>-<slug>/` | one folder per job: `delivery.mp4` or `delivery.png`, `manifest.json`, `run.log`, `seg/` (kept as the master only with `master: true` on video), `look-input.json` for a `look` job |
 
 Before taking a job the worker checks that the output root exists, is writable and is on `smbfs`, `nfs` or `afpfs` (read from `mount`).
@@ -224,13 +228,13 @@ response and polling rule; it is also served at `/llms.txt`. Routes are `POST /j
 Add the input to dotfiles' `flake.nix`:
 
 ```nix
-inputs.komorebi-render.url = "github:eljojo/komorebi-render";
+inputs.komorebi.url = "github:eljojo/komorebi";
 ```
 
 In `mkMac`'s modules list, import the module and enable it under the same host guard as `nix/r2d2-mount.nix`:
 
 ```nix
-inputs.komorebi-render.darwinModules.default
+inputs.komorebi.darwinModules.komorebi-render
 ({ lib, hostName, ... }: lib.mkIf (hostName == "jojo-m4-mini") {
   services.komorebi-render = {
     enable = true;
@@ -254,7 +258,7 @@ defaults, overrides, environment, arguments and log-directory setup without buil
 After applying dotfiles on the mini, prepare the engine once using the package from the same dotfiles lock:
 
 ```sh
-nix run --inputs-from ~/code/dotfiles komorebi-render -- prepare
+nix run --inputs-from ~/.dotfiles komorebi#komorebi-render -- prepare
 ```
 
 Chromium is installed by Playwright under stateDir (nixpkgs has no Chromium on darwin). The first queued job also prepares
@@ -264,7 +268,3 @@ the engine if needed. Reach the API at `http://<mini's tailnet name or IP>:8077`
 curl -sS http://jojo-m4-mini:8077/health
 curl -sS http://jojo-m4-mini:8077/llms.txt
 ```
-
-## Pinning komorebi
-
-`nix run .#pin [-- <sha|ref>]` (from the checkout; `scripts/pin.mjs`) resolves against the mirror and rewrites `komorebi.json`. Commit the result; the next `prepare` builds the new engine beside the old.

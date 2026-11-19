@@ -1,6 +1,7 @@
 // Everything the environment decides, read once. The ARBORETUM_TOKEN (or the file it is read from) lives here and is handed to the exporter alone:
 // never print a config.
 import { homedir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,8 +46,18 @@ function readTokenFile(file) {
   return token;
 }
 
-export function loadPin(file = fileURLToPath(new URL('../komorebi.json', import.meta.url))) {
-  const pin = JSON.parse(readFileSync(file, 'utf8'));
-  if (!/^[0-9a-f]{40}$/.test(pin.commit)) throw new Error(`${file}: commit must be a full 40-hex sha`);
-  return pin;
+// The engine komorebi-render runs: the exporter of the komorebi it ships in, at that tree's commit. The package writes the
+// commit it was built from into `commit` beside src/; a checkout asks its own git. The prepared worktree comes from a mirror
+// of the public repository, so the commit must have been pushed there. A build from uncommitted changes has no commit to render.
+export const KOMOREBI_REPO = 'https://github.com/eljojo/komorebi';
+export function loadEngine(dir = fileURLToPath(new URL('..', import.meta.url))) {
+  let commit;
+  try { commit = readFileSync(join(dir, 'commit'), 'utf8').trim(); } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+    try { commit = execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch {
+      throw new Error(`${dir} has no commit: komorebi-render renders the komorebi commit it was built from, and this one was built from uncommitted changes`);
+    }
+  }
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`${dir}: the engine's commit must be a full 40-hex sha, got ${JSON.stringify(commit)}`);
+  return { repo: KOMOREBI_REPO, commit };
 }

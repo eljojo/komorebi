@@ -236,7 +236,7 @@ test('an inline playlist gets written beside the output and passed by file', asy
   assert.deepEqual(JSON.parse(readFileSync(join(f, 'playlist-input.json'), 'utf8')), playlist);
 });
 
-test('shipped playlists are resolved from the pinned worktree, written beside the output and passed by file', async () => {
+test('shipped playlists are resolved from the prepared worktree, written beside the output and passed by file', async () => {
   const dir = shippedFixture();
   const { store, worker, lines } = rig({ prepare: async () => ({ script: FAKE, commit: SHA, dir }) });
   const j = store.create(validateSpec({ playlist: ['ship:story', 'ship:shadows'], size: '1080p', seconds: 30 }, { shipped: { story: 'park story', shadows: 'shadows' } }));
@@ -250,12 +250,12 @@ test('shipped playlists are resolved from the pinned worktree, written beside th
   assert.ok(lines.some((l) => l.includes('shipped playlist park story, shadows (4 looks)')), lines.join('\n'));
 });
 
-test('a shipped playlist the pinned engine no longer has keeps the job waiting, with no output written', async () => {
+test('a shipped playlist the engine no longer has keeps the job waiting, with no output written', async () => {
   const dir = shippedFixture();
   const { store, worker, out } = rig({ prepare: async () => ({ script: FAKE, commit: SHA, dir }) });
   const j = store.create(validateSpec({ playlist: 'ship:rainbow', size: '1080p', seconds: 30 }, { shipped: { rainbow: 'rainbow' } }));
   assert.equal((await worker.runOnce()).outcome, 'blocked');
-  assert.match(store.get(j.id).blocked, /^shipped playlist: ship:rainbow is not a shipped playlist of the pinned engine/);
+  assert.match(store.get(j.id).blocked, /^shipped playlist: ship:rainbow is not a shipped playlist of the engine/);
   assert.equal(existsSync(join(out, j.folder_name)), false);
 });
 
