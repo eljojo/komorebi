@@ -1,4 +1,4 @@
-// node scripts/pin.mjs [sha|ref]   Pin komorebi.json to a commit, resolved against the mirror (cloned or fetched on the way).
+// nix run .#pin [-- <sha|ref>], or node scripts/pin.mjs [sha|ref]   Pin komorebi.json to a commit, resolved against the mirror (cloned or fetched on the way).
 // No argument pins the tip of the default branch. Writes the full sha: the exporter runs from exactly that commit.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';

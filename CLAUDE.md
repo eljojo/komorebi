@@ -6,7 +6,7 @@ before you change how it is called.
 
 ## Files
 
-- **`flake.nix`** — devShell (node 22, ffmpeg, git), `packages.default` (bin/komorebi-render and llms.txt, PATH prefixed so `caffeinate` stays reachable), `apps`, `checks.tests`, `checks.darwin-module`, `checks.playwright` (nixpkgs' Playwright equals the pin's), `darwinModules.default`.
+- **`flake.nix`** — devShell (node 22, ffmpeg, git), `packages.default` (bin/komorebi-render and llms.txt, PATH prefixed so `caffeinate` stays reachable), `apps` (`default`, and `pin`, which runs the checkout's `scripts/pin.mjs`), `checks.tests`, `checks.darwin-module`, `checks.playwright` (nixpkgs' Playwright equals the pin's), `darwinModules.default`.
 - **`komorebi.json`** — the pinned komorebi commit (full sha), its repo URL, its `test-gl` Playwright version, its session profiles, quality rows and shipped playlists (key → name). Bumped by `scripts/pin.mjs`.
 - **`src/cli.js`** — the commands: submit, list, status, cancel, prepare, worker, serve. Thin: it calls the modules below.
 - **`src/config.js`** — `loadConfig(env)`: every path and limit the environment decides, ARBORETUM_TOKEN (or its runtime token file), `maxSeconds`, `host`, `port`. `loadPin()` reads `komorebi.json`.

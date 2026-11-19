@@ -267,4 +267,4 @@ curl -sS http://jojo-m4-mini:8077/llms.txt
 
 ## Pinning komorebi
 
-`node scripts/pin.mjs [sha|ref]` resolves against the mirror and rewrites `komorebi.json`. Commit the result; the next `prepare` builds the new engine beside the old.
+`nix run .#pin [-- <sha|ref>]` (from the checkout; `scripts/pin.mjs`) resolves against the mirror and rewrites `komorebi.json`. Commit the result; the next `prepare` builds the new engine beside the old.

@@ -56,6 +56,22 @@
 
       apps = forAll (pkgs: {
         default = { type = "app"; program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/komorebi-render"; };
+        # `nix run .#pin [-- <sha|ref>]` — scripts/pin.mjs. It runs the checkout's own script, not the store's copy: the script
+        # rewrites the komorebi.json beside it, which in the store is read-only.
+        pin = {
+          type = "app";
+          program = pkgs.lib.getExe (pkgs.writeShellApplication {
+            name = "komorebi-render-pin";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
+            text = ''
+              if [ ! -f scripts/pin.mjs ] || [ ! -f komorebi.json ]; then
+                echo "nix run .#pin: run it from the komorebi-render checkout (no scripts/pin.mjs here)" >&2
+                exit 1
+              fi
+              exec node scripts/pin.mjs "$@"
+            '';
+          });
+        };
       });
 
       # The tests are pure: a fake exporter stands in for render-video, there is no network and no GPU.
