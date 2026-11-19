@@ -15,9 +15,14 @@ test("park fall: drop_lag 0.05, under the default 0.09", () => {
   expect(PRESETS["park fall"].leaf_drop).toBe(1);
 });
 
-test("montebello keeps its camera: P3 without the drift (k1) left no carpet in frame and was not picked, P4 was not a pick", () => {
+// montebello and its rain day stand where park fall stands (the artist, 2026-11-19), so the story's year keeps one camera; the grove is the one
+// montebello's own view grew.
+const CAMERA = ["view_extent_m", "view_pitch_deg", "view_fov_deg", "view_yaw_deg", "view_center_x", "view_center_y"];
+const cameraOf = (p) => Object.fromEntries(CAMERA.map((k) => [k, p[k]]));
+test("montebello and montebello, rain take park fall's camera; P4 was not a pick", () => {
   const m = PRESETS.montebello;
-  expect([m.view_center_x, m.view_center_y], "his k1 was not among 'i like k3,k4,k6,k8'").toEqual([-0.7, -3]);
+  for (const n of ["montebello", "montebello, rain"]) expect(cameraOf(PRESETS[n]), n).toEqual(cameraOf(PRESETS["park fall"]));
+  expect(m.grove_reach_m, "the reach its old view grew").toBe(13.489433156286438);
   expect(m.ambient_skylight, "P4: 'not sure i see the difference'").toBe(0.97);
   expect(m.drop_lag, "montebello keeps the default lag: drop_lag 0 is park fall's").toBe(DEFAULTS.drop_lag);
 });
@@ -25,12 +30,14 @@ test("montebello keeps its camera: P3 without the drift (k1) left no carpet in f
 // P6, P7 and P8 are montebello with their proposal's overrides; the yellow tree also takes the camera with the feet behind the eye, his k8 over k5 on the picks sheet.
 // montebello as these looks were picked from it: before it took the air's loss, its per-tree colour and the cloud coupling, which the three looks
 // built on it do not carry.
-const SHEET_MONTEBELLO = { ...PRESETS.montebello, sun_extinction: 0, exposure: 5.566, tree_pigment_spread: 0, tree_clock_spread: 0, cloud_exposure: 0 };
+// It carries the camera the sheet showed (the trunk feet in the frame), and no reach.
+const SHEET_MONTEBELLO = { ...PRESETS.montebello, sun_extinction: 0, exposure: 5.566, tree_pigment_spread: 0, tree_clock_spread: 0, cloud_exposure: 0,
+  view_extent_m: 13.489433156286438, view_pitch_deg: 61.39999999999994, view_fov_deg: 60, view_yaw_deg: 208.5, view_center_x: -0.7, view_center_y: -3, grove_reach_m: 0 };
 
 const NEW_LOOKS = {
   "forest floor": { base: PRESETS["afternoon 7"], over: { phenology: 0.8, turn_exposure: 1, anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, leaf_drop: 1, drop_after_turn: 1, drop_lag: 0, litter: 1, leaf_wetness: 0.5, tree_clock_spread: 0.05, tree_pigment_spread: 0.6 } },
   "the yellow tree": { base: SHEET_MONTEBELLO, over: { anthocyanin: 0.2, tannin: 0.35, leaf_drop: 0.5, leaf_diffuse: 0, tree_pigment_spread: 0.3, view_center_x: -1.75, view_center_y: -4.93 } },
-  "montebello, rain": { base: SHEET_MONTEBELLO, over: { leaf_wetness: 0.75, ground_r: 0.132, ground_g: 0.084, ground_b: 0.048, cloud_thickness: 0.55, halo_angular_radius_deg: 8, sky_turbidity: 0.2, drop_lag: 0 } },
+  "montebello, rain": { base: SHEET_MONTEBELLO, over: { leaf_wetness: 0.75, ground_r: 0.132, ground_g: 0.084, ground_b: 0.048, cloud_thickness: 0.55, halo_angular_radius_deg: 8, sky_turbidity: 0.2, drop_lag: 0, ...cameraOf(PRESETS["park fall"]), grove_reach_m: 13.489433156286438 } },
   "cherry blossom": { base: SHEET_MONTEBELLO, over: { anthocyanin: 0.8, tannin: 0, wall_fraction: 0, leaf_wetness: 0, ground_r: 0.33, ground_g: 0.21, ground_b: 0.12, tree_pigment_spread: 0.6, litter_age: 0.3 } },
 };
 
