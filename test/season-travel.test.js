@@ -19,7 +19,7 @@ test('seasonal leaf journeys are monotone, staggered and settle at their own end
   expect(travel.flightProgress(.35,.1)).not.toBe(travel.flightProgress(.35,.9));
 });
 
-test('the standing camera travels through eye space and takes the short yaw arc',()=>{
+test('the standing camera lands on both looks\' cameras and takes the short yaw arc',()=>{
   expect(typeof travel.seasonCamera).toBe('function');
   const a=PRESETS['cherry blossom'],b=PRESETS['park 2'];
   const at=w=>travel.seasonCamera(a,b,w);
@@ -27,8 +27,6 @@ test('the standing camera travels through eye space and takes the short yaw arc'
     expect(at(0)[k]).toBe(a[k]);expect(at(1)[k]).toBe(b[k]);
   }
   expect(at(.5).view_yaw_deg).toBeCloseTo(202.8802734375,8);
-  const height=p=>p.view_extent_m*Math.cos(p.view_pitch_deg*Math.PI/180)**2/(2*Math.tan(p.view_fov_deg*Math.PI/360));
-  expect(height(at(.5))).toBeCloseTo((height(a)+height(b))/2,10);
 });
 
 test('season travel requires a shared standing grove with a carpet at one end and a full canopy at the other',()=>{
@@ -51,18 +49,29 @@ test('fall looks with litter at both ends travel through their shared standing g
   }
 });
 
-test('montebello ↔ park fall moves directly between camera eyes without an outward-and-back detour',()=>{
-  for(const [a,b] of [[PRESETS.montebello,PRESETS['park fall']],[PRESETS['park fall'],PRESETS.montebello]]){
-    const aa=cameraPose(a).eye,bb=cameraPose(b).eye;let previous=aa;
-    for(let i=0;i<=600;i++){
-      const w=i/600,eye=cameraPose({...a,...travel.seasonCamera(a,b,w)}).eye;
-      for(let k=0;k<3;k++){
-        expect(eye[k]).toBeCloseTo(aa[k]+(bb[k]-aa[k])*w,10);
-        expect((eye[k]-previous[k])*(bb[k]-aa[k])).toBeGreaterThanOrEqual(-1e-12);
-      }
-      previous=eye;
+// The move (cameraBetween): two looks that face the same way keep their aim, a floor point going straight from one look's to the other's, while the eye
+// comes in to it or draws back, never out and back; the scene to under the trees, and from above into park fall, once left the trees for the floor in
+// front of them. Two that face apart walk the eye straight across the ground while the head turns.
+const aimOf=c=>[c.view_center_x,c.view_center_y],distOf=c=>{const e=cameraPose(c).eye;return Math.hypot(e[0]-c.view_center_x,e[1]-c.view_center_y,e[2]);};
+test('a standing camera facing the same way keeps its aim on a straight line, its eye coming in or drawing back without a detour',()=>{
+  const pairs=[[PRESETS.montebello,PRESETS['park fall']],[PRESETS['park 1, from above'],PRESETS['park fall']],[PRESETS['park 1, the scene'],PRESETS['park 1, under the trees']],[PRESETS['park1 inside2'],PRESETS['park 1, from above']]];
+  for(const [x,y] of pairs)for(const [a,b] of [[x,y],[y,x]]){
+    const A=aimOf(a),B=aimOf(b),dA=distOf(a),dB=distOf(b);let previous=dA;
+    for(let i=1;i<600;i++){
+      const w=i/600,c={...a,...travel.seasonCamera(a,b,w)};
+      for(let k=0;k<2;k++)expect(aimOf(c)[k]).toBeCloseTo(A[k]+(B[k]-A[k])*w,10);
+      const d=distOf(c);expect((d-previous)*(dB-dA)).toBeGreaterThanOrEqual(-1e-9);previous=d;
     }
-    expect(Math.abs(travel.seasonCamera(a,b,.999).view_yaw_deg-a.view_yaw_deg)).toBeLessThan(10.31);
+    expect(Math.abs((travel.seasonCamera(a,b,.999).view_yaw_deg-b.view_yaw_deg+540)%360-180)).toBeLessThan(.2);   // the short way: a thousandth of the route from its end is within a thousandth of half a turn
+  }
+});
+
+test('a standing camera facing apart walks its eye straight across the ground while the head turns',()=>{
+  const a=PRESETS['park 1, under the trees'],b=PRESETS['park1 inside2'],A=cameraPose(a).eye,B=cameraPose(b).eye;
+  for(let i=1;i<100;i++){
+    const w=i/100,e=cameraPose({...a,...travel.seasonCamera(a,b,w)}).eye;
+    for(let k=0;k<2;k++)expect(e[k]).toBeCloseTo(A[k]+(B[k]-A[k])*w,9);
+    expect(e[2]).toBeCloseTo(A[2]*(B[2]/A[2])**w,9);
   }
 });
 

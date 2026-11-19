@@ -7,10 +7,10 @@
 // lifecycle (start, tick, land, abort, context loss and restore, dispose) reads only the entry's policy.
 // A factory over the engine's shared internals (hub).
 // ============================================================================
-import { DEG, TAU, clamp, lerp, lerpAngle, smoothstep } from '../komorebi-math.js';
+import { TAU, clamp, lerp, lerpAngle, smoothstep } from '../komorebi-math.js';
 import { irisRoute, irisStep, restTrans } from './komorebi-routes.js';
 import { beamExposure } from '../light/komorebi-light.js';
-import { cameraPose } from '../transport/komorebi-camera.js';
+import { cameraBetween, cameraPose } from '../transport/komorebi-camera.js';
 import { cameraFor } from '../transport/komorebi-transport.js';
 import { ANGLE_SET, BLOOM_MAX, LIT_GROUND_DIP, LIT_GROUND_HOLD, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy } from '../komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';
@@ -26,23 +26,10 @@ const VIEW_KEYS = new Set([...CAMERA_KEYS,'sky_view','drift_phase','auto_quality
 const hemisphere = p => (p.sky_view ? p.view_pitch_deg : 90-p.view_pitch_deg) > p.view_fov_deg/2;
 const proxyGlow = (p) => p.sky_view ? p.sky_scatter : (p.receiver|0)===0 && p.canopy_fill>0 ? p.fill_scatter : 0;
 
-// THE GLIDE: a live morph between two standing looks moves the eye, not the floor camera's gauges. Tweened gauge by gauge, a turn of the yaw swings the eye
-// round the point it looks at, an orbit about the middle of the grove. Asked for it (opts.camera 'glide'), the eye goes on a straight line from one look's
-// eye to the other's while the head turns the shortest way as it moves; the camera is rebuilt from the eye and the gaze as the floor camera's pose reads it
-// (cameraPose), and is the look's own at both ends.
+// THE GLIDE: a live morph between two standing looks moves the camera as a person would (cameraBetween), not the floor camera's gauges one by one,
+// when the driver asks for it (opts.camera 'glide'). Each end is the look's own camera.
 const CAMERA_LOOK = (p) => ({ view_extent_m: p.view_extent_m, view_pitch_deg: p.view_pitch_deg, view_yaw_deg: p.view_yaw_deg, view_fov_deg: p.view_fov_deg, view_center_x: p.view_center_x, view_center_y: p.view_center_y });
-function standCamera(eye, yaw, pitch, fov){
-  const h = eye[2], offset = h*Math.tan(pitch*DEG);
-  return { view_extent_m: 2*Math.tan(fov*DEG/2)*h/Math.cos(pitch*DEG)**2, view_pitch_deg: pitch, view_yaw_deg: yaw, view_fov_deg: fov,
-    view_center_x: eye[0] + offset*Math.sin(yaw*DEG), view_center_y: eye[1] + offset*Math.cos(yaw*DEG) };
-}
-export function glideCamera(a, b, t){
-  if(t <= 0) return CAMERA_LOOK(a);
-  if(t >= 1) return CAMERA_LOOK(b);
-  const A = cameraPose(a).eye, B = cameraPose(b).eye, e = smoothstep(0, 1, t);
-  return standCamera(A.map((x, i) => lerp(x, B[i], e)), lerpAngle(a.view_yaw_deg, b.view_yaw_deg, e, 360),
-    lerp(a.view_pitch_deg, b.view_pitch_deg, e), lerp(a.view_fov_deg, b.view_fov_deg, e));
-}
+export const glideCamera = (a, b, t) => t <= 0 ? CAMERA_LOOK(a) : t >= 1 ? CAMERA_LOOK(b) : cameraBetween(a, b, smoothstep(0, 1, t));
 
 export function makeTransitions(hub){
   const { params, trans, faithfulOn } = hub;

@@ -1,7 +1,7 @@
-import { DEG, TAU, lerp, lerpAngle, smoothstep } from '../komorebi-math.js';
+import { TAU, lerp, lerpAngle, smoothstep } from '../komorebi-math.js';
 import { cutRoute, restTrans, turnBack } from './komorebi-routes.js';
 import { beamExposure } from '../light/komorebi-light.js';
-import { cameraPose } from '../transport/komorebi-camera.js';
+import { cameraBetween } from '../transport/komorebi-camera.js';
 import { leafClock, springing } from '../season/komorebi-season.js';
 import {CANOPY_MORPH_MAX, DEFAULTS, SEASON_KEYS} from '../komorebi-params.js';
 import {litterAlbedo,litterAge,litterLanding} from '../season/komorebi-litter.js';
@@ -22,14 +22,10 @@ const GROVE_SPAN_KEYS=new Set(['grove_reach_m','tree_view']);   // what may diff
 
 export const flightProgress=(season,identity)=>smoothstep(0,1,(season-(.04+.26*identity))/.65);
 
-// Interpolate a real eye rather than the floor camera's coupled extent, tilt and recenter gauges.
+// The camera moves as the live morph's glide does (cameraBetween), its ends the looks' own.
 export function seasonCamera(a,b,w){
   if(w===0||w===1)return Object.fromEntries(CAMERA_KEYS.map(k=>[k,(w===0?a:b)[k]]));
-  const aa=cameraPose(a).eye,bb=cameraPose(b).eye,eye=aa.map((x,i)=>lerp(x,bb[i],w));
-  const yaw=lerpAngle(a.view_yaw_deg,b.view_yaw_deg,w,360),pitch=lerp(a.view_pitch_deg,b.view_pitch_deg,w),fov=lerp(a.view_fov_deg,b.view_fov_deg,w);
-  const offset=eye[2]*Math.tan(pitch*DEG);
-  return {view_extent_m:2*Math.tan(fov*DEG/2)*eye[2]/Math.cos(pitch*DEG)**2,view_pitch_deg:pitch,view_yaw_deg:yaw,view_fov_deg:fov,
-    view_center_x:eye[0]+offset*Math.sin(yaw*DEG),view_center_y:eye[1]+offset*Math.cos(yaw*DEG)};
+  return cameraBetween(a,b,w);
 }
 
 export const seasonTravelEligible=FEAT_LITTER ? (a,b)=>{
