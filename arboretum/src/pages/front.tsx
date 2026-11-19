@@ -206,6 +206,12 @@ export function registerFrontPages(app: Hono<AppEnv>) {
           <p class="quiet">none yet</p>
         )}
         <h2>looks</h2>
+        {/* The lineage draws the viewer's own looks, so it is offered only on their own page, to them in a browser. */}
+        {viewer?.kind === 'session' && viewer.userId === user.id ? (
+          <p class="meta">
+            <a href={`${BASE}/lineage`}>lineage</a>: where each of them came from
+          </p>
+        ) : null}
         {looks.length ? <Looks rows={looks} /> : <p class="quiet">none yet</p>}
         {archived.length ? (
           <>

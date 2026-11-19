@@ -135,6 +135,16 @@ describe('/arboretum/lineage', () => {
     }
   });
 
+  it('is linked from a person’s own page, and only there and only for them', async () => {
+    const user = await makeUser('lineage');
+    const someoneElse = await makeUser('other');
+    const link = 'href="/arboretum/lineage"';
+    expect((await asSession(user, 'GET', `/arboretum/u/${user.username}`)).text).toContain(link);
+    expect((await asSession(someoneElse, 'GET', `/arboretum/u/${user.username}`)).text).not.toContain(link);
+    expect((await call('GET', `/arboretum/u/${user.username}`)).text).not.toContain(link);
+    expect((await call('GET', `/arboretum/u/${user.username}`, { token: await makeToken(user) })).text).not.toContain(link);
+  });
+
   it('frames the tree for a person, naming the built-ins file this engine wrote and the export it reads', async () => {
     const user = await makeUser('lineage');
     const r = await asSession(user, 'GET', '/arboretum/lineage');
