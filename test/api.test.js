@@ -311,6 +311,18 @@ test('GET /llms.txt is the repo\'s llms.txt, as text/plain', async () => {
   assert.equal(r.text, readFileSync(new URL('../llms.txt', import.meta.url), 'utf8'));
 });
 
+test('GET / is the jobs page, as text/html, reading only routes the API registers', async () => {
+  const { call } = rig();
+  const r = await call('GET', '/');
+  assert.equal(r.status, 200);
+  assert.match(r.headers['content-type'], /^text\/html/);
+  assert.equal(r.text, readFileSync(new URL('../src/ui.html', import.meta.url), 'utf8'));
+  // Relative fetches, so the page works behind any prefix; each must name a GET route.
+  const fetched = [...r.text.matchAll(/fetch\(`?'?([a-z]+)/g)].map((m) => `GET /${m[1]}`);
+  assert.deepEqual([...new Set(fetched)].sort(), ['GET /health', 'GET /jobs']);
+  assert.equal((await call('POST', '/')).status, 405);
+});
+
 test('the share token appears in no response: not when queued, listed, detailed, in the log tail, in an error, or in a refusal', async () => {
   const token = 'sh4reT0kenXYZ';
   const arb = 'arb-t0ken-123';
@@ -336,7 +348,7 @@ test('the share token appears in no response: not when queued, listed, detailed,
 });
 
 test('every registered route is in ROUTES with its method and pattern', () => {
-  assert.deepEqual(ROUTES.map((r) => `${r.method} ${r.path}`), ['POST /jobs', 'GET /jobs', 'GET /jobs/:id', 'DELETE /jobs/:id', 'GET /health', 'GET /llms.txt']);
+  assert.deepEqual(ROUTES.map((r) => `${r.method} ${r.path}`), ['POST /jobs', 'GET /jobs', 'GET /jobs/:id', 'DELETE /jobs/:id', 'GET /health', 'GET /llms.txt', 'GET /']);
 });
 
 test('blocked reasons and refusals scrub credentials even when an invalid field repeats a share token', async () => {

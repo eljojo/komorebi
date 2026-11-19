@@ -18,7 +18,8 @@ before you change how it is called.
 - **`src/engine.js`** — `prepare` (mirror, pinned worktree, `npm ci`, Chromium unless supplied by `PLAYWRIGHT_BROWSERS_PATH`) and `resolveCommit`, over an injectable runner. `shippedPlaylist` turns shipped playlist keys into the one playlist `--playlist-json` reads, from the worktree's `presets.js`. The worktree is what makes the exporter's `--commit` (`git -C <its repo> archive`) work.
 - **`src/worker.js`** — `createWorker`: takes a job, checks the output root, prepares once, spawns the exporter in its own process group, polls progress and cancel, ends the job, recovers at start.
 - **`src/view.js`** — `jobView`: a job as the CLI and API show it (redacted spec, effective pipeline, progress, ETA).
-- **`src/api.js`** — `createApi`: the six routes in `ROUTES`, a directly testable handler and the thin node:http listener; summaries, details, refusals and token scrubbing.
+- **`src/api.js`** — `createApi`: the seven routes in `ROUTES`, a directly testable handler and the thin node:http listener; summaries, details, refusals and token scrubbing.
+- **`src/ui.html`** — the read-only jobs page `GET /` serves: running, queued and past jobs, a job's detail on click, from `/health`, `/jobs` and `/jobs/:id` every 10 s.
 - **`src/serve.js`** — starts the API before one worker, shares their bounded output-root check, closes both on shutdown and closes the API if the worker fails so launchd can restart them together.
 - **`llms.txt`** — the API contract for agents, served as text/plain; `test/llms.test.js` checks routes, fields, values, examples and etiquette against the code.
 - **`nix/darwin-module.nix`** — `services.komorebi-render`: a caffeinated launchd user agent, runtime token-file path, logs, and state-directory creation before launchd loads it.

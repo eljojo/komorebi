@@ -13,9 +13,11 @@ import { createOutputAccess, createOutputRootCheck } from './netmount.js';
 
 const MAX_BODY = 1024 * 1024;   // a look's params are tens of KB
 const LLMS = new URL('../llms.txt', import.meta.url);
+const UI = new URL('./ui.html', import.meta.url);
 
 const json = (status, body, headers = {}) => ({ status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers }, body: `${JSON.stringify(body, null, 2)}\n` });
 const text = (status, body) => ({ status, headers: { 'content-type': 'text/plain; charset=utf-8' }, body });
+const html = (status, body) => ({ status, headers: { 'content-type': 'text/html; charset=utf-8' }, body });
 
 // The name a job goes by: its playlist or preset (version kept, share token never) or its look's name.
 const nameOf = (spec) => (spec.playlist ? (typeof spec.playlist === 'string' ? `playlist ${spec.playlist.replace(/:.+$/, '')}` : Array.isArray(spec.playlist) ? shippedName(spec.playlist) : spec.playlist.name ?? 'playlist') : spec.preset ? `preset ${spec.preset.replace(/:.+$/, '')}` : spec.look.name ?? 'look');
@@ -93,6 +95,11 @@ function llms({ llmsFile }) {
   return text(200, readFileSync(llmsFile, 'utf8'));
 }
 
+// The jobs page for a person: static, it reads the routes above from the browser.
+function ui() {
+  return html(200, readFileSync(UI, 'utf8'));
+}
+
 export const ROUTES = [
   { method: 'POST', path: '/jobs', run: post },
   { method: 'GET', path: '/jobs', run: list },
@@ -100,6 +107,7 @@ export const ROUTES = [
   { method: 'DELETE', path: '/jobs/:id', run: cancel },
   { method: 'GET', path: '/health', run: health },
   { method: 'GET', path: '/llms.txt', run: llms },
+  { method: 'GET', path: '/', run: ui },
 ];
 
 // -> params, or null. :id is a positive whole number; anything else is a path that names no job.

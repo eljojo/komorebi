@@ -199,6 +199,9 @@ curl -sS "$base/llms.txt"
 ```
 The response starts with `# komorebi-render API`.
 
+GET / — 200, text/html; a read-only jobs page for people (running, queued, past, a job's detail on click). It reads the
+routes above every 10 seconds; agents should use them directly.
+
 ## Polling, refusals and outputs
 
 Poll GET /jobs/:id no faster than every 10 seconds. States are `queued`, `running`, `done`, `failed` and `cancelled`.
