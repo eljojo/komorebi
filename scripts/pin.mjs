@@ -23,13 +23,18 @@ const stage=mkdtempSync(join(tmpdir(),'komorebi-render-profiles-'));
 try{
   const archive=execFileSync('git',['-C',config.mirror,'archive',sha],{maxBuffer:1<<30});
   execFileSync('tar',['-x','-C',stage],{input:archive});
-  if(existsSync(join(stage,'komorebi-session.js'))){
-    const {QUALITY_PROFILES,PRESENTATION_PROFILES}=await import(pathToFileURL(join(stage,'komorebi-session.js')).href);
+  // komorebi moved its engine modules into engine/; an older commit has them at the root
+  const engineFile=(f)=>existsSync(join(stage,'engine',f))?join(stage,'engine',f):join(stage,f);
+  if(existsSync(engineFile('komorebi-session.js'))){
+    const {QUALITY_PROFILES,PRESENTATION_PROFILES}=await import(pathToFileURL(engineFile('komorebi-session.js')).href);
     next.sessions={quality:Object.keys(QUALITY_PROFILES),presentation:Object.keys(PRESENTATION_PROFILES)};
   }else delete next.sessions;
   // the quality keys' rows, from the engine's parameter registry (src/quality.js, qualityRows); an engine from before it has none
-  const {PARAMS}=await import(pathToFileURL(join(stage,'komorebi-params.js')).href);
+  const {PARAMS}=await import(pathToFileURL(engineFile('komorebi-params.js')).href);
   if(PARAMS) next.quality=qualityRows(PARAMS); else delete next.quality;
+  // the shipped playlists' keys and names (presets.js PLAYLISTS), so a spec naming one is checked at the door; the worker reads their looks from the worktree
+  const {PLAYLISTS}=await import(pathToFileURL(join(stage,'presets.js')).href);
+  if(PLAYLISTS) next.playlists=Object.fromEntries(Object.entries(PLAYLISTS).map(([key,p])=>[key,p.name])); else delete next.playlists;
 }finally{rmSync(stage,{recursive:true,force:true});}
 writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
 console.log(sha === pin.commit ? `already pinned to ${sha}` : `pinned ${pin.commit.slice(0, 12)} -> ${sha}`);

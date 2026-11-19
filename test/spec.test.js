@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateSpec, SpecError, folderName, slugify, redactSpec, scrubSecrets, SPEC_KEYS, DELIVERY_KEYS, DEFAULT_MAX_SECONDS } from '../src/spec.js';
+import { validateSpec, SpecError, folderName, slugify, redactSpec, scrubSecrets, shippedName, SHIPPED_PLAYLISTS, SPEC_KEYS, DELIVERY_KEYS, DEFAULT_MAX_SECONDS } from '../src/spec.js';
 
 // The Mac's rules; the Linux refusals have their own test.
 const ok = (raw) => validateSpec(raw, { platform: 'darwin' });
@@ -59,6 +59,26 @@ test('an inline playlist is refused when it cannot be played: fewer than two loo
   ok({ playlist: { items: [{ params: {}, dwell_s: 1.5 }, { params: {} }] }, size: '1080p', seconds: 30, fps: 30 });   // 45 frames at 30 fps
   t({ items: two }, /playlist is a video option/, { format: 'png', size: '512x512', seconds: undefined });
   t(7, /playlist must look like/);
+});
+
+test('shipped playlists: ship:<key> or a list of them, always stored as the list, checked against the pin, video only', () => {
+  const shipped = { story: 'park story', shadows: 'shadows' };
+  const v = (playlist, extra = {}) => validateSpec({ playlist, size: '1080p', seconds: 60, ...extra }, { platform: 'darwin', shipped });
+  const refused = (playlist, re, extra) => assert.throws(() => v(playlist, extra), (e) => e instanceof SpecError && re.test(e.message) && e.fields[0] === 'playlist');
+  assert.deepEqual(v('ship:story').playlist, ['ship:story']);
+  assert.deepEqual(v(['ship:story', 'ship:shadows', 'ship:story']).playlist, ['ship:story', 'ship:shadows', 'ship:story']);
+  refused('ship:rainbow', /"ship:rainbow" is not a shipped playlist; shipped: ship:story, ship:shadows/);
+  refused(['ship:story', 'story', 3], /"story", 3 is not a shipped playlist/);
+  refused(['ship:toString'], /is not a shipped playlist/);
+  refused([], /at least one shipped playlist/);
+  refused('ship:story', /playlist is a video option/, { format: 'png', size: '512x512', seconds: undefined });
+  const s = v(['ship:story', 'ship:shadows']);
+  assert.deepEqual(redactSpec(s), s);
+  assert.equal(shippedName(s.playlist, shipped), 'park story, shadows');
+  assert.equal(shippedName(['ship:gone'], shipped), 'gone');   // a key a later pin dropped still names its old job
+  // the folder takes the pin's names
+  const pinned = Object.keys(SHIPPED_PLAYLISTS).slice(0, 2).map((k) => `ship:${k}`);
+  assert.equal(folderName({ id: 7, createdAt: '2026-11-19T00:00:00Z', spec: { ...s, playlist: pinned } }), `2026-11-19-7-${slugify(shippedName(pinned))}`);
 });
 
 test('a playlist job: <id>[:share] and nothing else, video only, with a folder and a redaction of its own', () => {

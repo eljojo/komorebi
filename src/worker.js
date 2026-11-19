@@ -6,8 +6,8 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { LOOK_FILE, PLAYLIST_FILE, SESSION_FILE, exporterArgs, exporterCommand, finalizeImage, progress, readResult, tailLines } from './exporter.js';
 import { createOutputAccess, createOutputRootCheck } from './netmount.js';
-import { childEnv } from './engine.js';
-import { scrubSecrets } from './spec.js';
+import { childEnv, shippedPlaylist as defaultShipped } from './engine.js';
+import { scrubSecrets, shippedName } from './spec.js';
 
 const defaultIsOurs = (pid) => {
   const r = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
@@ -18,7 +18,7 @@ export function createWorker({
   store, config, log = console.log, prepare, checkOut, outputAccess = createOutputAccess(),
   spawn = nodeSpawn, kill = process.kill.bind(process), isOurs = defaultIsOurs,
   node = process.execPath, caffeinate = process.platform === 'darwin' && existsSync('/usr/bin/caffeinate'),
-  pollMs = 5000, progressMs = 3000, graceMs = 30000, extraEnv = {},
+  pollMs = 5000, progressMs = 3000, graceMs = 30000, extraEnv = {}, shippedPlaylist = defaultShipped,
 }) {
   const check = checkOut ?? createOutputRootCheck(config.out, { allowLocal: config.allowLocal });
   const sleepers = new Set();
@@ -57,6 +57,10 @@ export function createWorker({
     if (stopping) return null;
 
     const { id, spec } = job;
+    let shipped;
+    if (Array.isArray(spec.playlist)) {
+      try { shipped = await shippedPlaylist(engine.dir, spec.playlist); } catch (e) { return block(job, `shipped playlist: ${e.message}`); }
+    }
     const seconds = spec.format === 'png' ? 1 / 60 : spec.seconds;
     const folder = join(config.out, job.folder_name);
     let base, runSpec = spec;
@@ -69,7 +73,7 @@ export function createWorker({
         await mkdir(folder, { recursive: true });
         signal.throwIfAborted();
         if (spec.look) await writeFile(join(folder, LOOK_FILE), JSON.stringify({ ...(spec.look.name ? { name: spec.look.name } : {}), params: spec.look.params }), { signal });
-        if (spec.playlist && typeof spec.playlist === 'object') await writeFile(join(folder, PLAYLIST_FILE), JSON.stringify(spec.playlist), { signal });
+        if (spec.playlist && typeof spec.playlist === 'object') await writeFile(join(folder, PLAYLIST_FILE), JSON.stringify(shipped ?? spec.playlist), { signal });
         if(spec.session)await writeFile(join(folder,SESSION_FILE),JSON.stringify(spec.session),{signal});
         const preset = /^(\d+)(:.*)?$/.exec(spec.preset ?? '');
         if (preset) {
@@ -118,7 +122,7 @@ export function createWorker({
       });
       child.on('close', (code, signal) => { clear(); resolve({ code, signal }); });
       if (child.pid) store.setPid(id, child.pid);
-      log(`job ${id} started: ${spec.playlist ? (typeof spec.playlist === 'string' ? `playlist ${spec.playlist.replace(/:.+$/, '')}` : `inline playlist (${spec.playlist.items.length} looks)`) : spec.preset ? `preset ${spec.preset.replace(/:.+$/, '')}` : 'look'} ${spec.size} ${spec.format === 'png' ? 'PNG' : `${spec.seconds}s @${spec.fps}`} (${job.quality.name} quality)`);
+      log(`job ${id} started: ${spec.playlist ? (typeof spec.playlist === 'string' ? `playlist ${spec.playlist.replace(/:.+$/, '')}` : shipped ? `shipped playlist ${shippedName(spec.playlist)} (${shipped.items.length} looks)` : `inline playlist (${spec.playlist.items.length} looks)`) : spec.preset ? `preset ${spec.preset.replace(/:.+$/, '')}` : 'look'} ${spec.size} ${spec.format === 'png' ? 'PNG' : `${spec.seconds}s @${spec.fps}`} (${job.quality.name} quality)`);
       const tick = () => {
         if (closed) return;
         if (!killed && store.get(id).cancel_requested) requestTermination();

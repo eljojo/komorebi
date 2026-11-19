@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ROUTES } from '../src/api.js';
-import { SPEC_KEYS, DELIVERY_KEYS, DEFAULT_MAX_SECONDS, validateSpec } from '../src/spec.js';
+import { SPEC_KEYS, DELIVERY_KEYS, DEFAULT_MAX_SECONDS, SHIPPED_PLAYLISTS, validateSpec } from '../src/spec.js';
 import { QUALITY_FIELDS, QUALITY_CHOICES } from '../src/quality.js';
 import { loadConfig } from '../src/config.js';
 
@@ -51,4 +51,9 @@ test('both guides describe all four pipelines, independent supersampling and del
   }
   const examples = [...doc.matchAll(/```json spec\n([\s\S]*?)```/g)].map(m => JSON.parse(m[1]));
   for (const pipeline of ['master', 'gpu', 'gpu-main10', 'browser']) assert.ok(examples.some(e => e.pipeline === pipeline), `example for ${pipeline}`);
+});
+
+test('the shipped playlists llms.txt names are the pin\'s, each with its name', () => {
+  const named = [...doc.matchAll(/`ship:(\w+)` ([^,(]+?)(?=[,)])/g)].map((m) => [m[1], m[2].trim()]);
+  assert.deepEqual(Object.fromEntries(named), SHIPPED_PLAYLISTS);
 });

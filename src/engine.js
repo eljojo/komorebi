@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const execute = promisify(execFile);
 export async function defaultRun(cmd, args, { cwd, env, signal } = {}) {
@@ -69,6 +70,24 @@ export async function prepare({ config, pin, run = defaultRun, signal }) {
   }
   writeFileSync(marker, `${sha}\n`);
   return result;
+}
+
+// Shipped playlists (["ship:story", "ship:shadows"]) as one playlist the exporter's --playlist-json reads, from the pinned
+// worktree's presets.js: each look's params as shipped, paced as the editor paces them (the item's own times, else its
+// playlist's crossfade_s, else ITEM_DEFAULTS). The lists play one after another and the whole loops; a list's `next` is not followed.
+export async function shippedPlaylist(dir, list) {
+  const { PRESETS, PLAYLISTS, ITEM_DEFAULTS } = await import(pathToFileURL(join(dir, 'presets.js')).href);
+  const lists = list.map((v) => {
+    const p = PLAYLISTS?.[v.slice(5)];
+    if (!p) throw new Error(`${v} is not a shipped playlist of the pinned engine`);
+    return p;
+  });
+  const items = lists.flatMap((p) => p.items.map((it) => (typeof it === 'string' ? { look: it } : it)).map((it) => {
+    if (!Object.hasOwn(PRESETS, it.look)) throw new Error(`${p.name} names ${JSON.stringify(it.look)}, which presets.js does not ship`);
+    return { name: it.look, params: PRESETS[it.look], dwell_s: it.dwell_s ?? ITEM_DEFAULTS.dwell_s,
+      crossfade_s: it.crossfade_s ?? p.crossfade_s ?? ITEM_DEFAULTS.crossfade_s, style: it.style ?? ITEM_DEFAULTS.style };
+  }));
+  return { name: lists.map((p) => p.name).join(', '), items };
 }
 
 // A ref (sha, prefix, branch, "HEAD") to a full commit sha in the mirror, for scripts/pin.mjs. A branch is fetched first; a sha

@@ -1,6 +1,6 @@
 {
   "repo": "https://github.com/eljojo/komorebi",
-  "commit": "3dd70120a7e30b0f60449f391bf2214aeeb6aeca",
+  "commit": "d419ed78ec74f566f824ee7941b10bc0b68c5ac4",
   "playwright": "1.63.0",
   "sessions": {
     "quality": [
@@ -13,5 +13,28 @@
       "screen",
       "projector"
     ]
+  },
+  "quality": {
+    "tex_resolution": [
+      1024,
+      2048,
+      4096
+    ],
+    "bake_resolution": [
+      0,
+      768,
+      1024,
+      1536,
+      2048
+    ],
+    "sample_count": [
+      16,
+      48
+    ]
+  },
+  "playlists": {
+    "story": "park story",
+    "shadows": "shadows",
+    "experiments": "experiments"
   }
 }

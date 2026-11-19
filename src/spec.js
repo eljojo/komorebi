@@ -1,4 +1,5 @@
 // A job's spec: validated once, at the door, into the canonical shape everything downstream reads.
+import { readFileSync } from 'node:fs';
 import { checkQuality, SESSION_PROFILES } from './quality.js';
 
 export const DEFAULT_MAX_SECONDS = 6 * 3600;   // KOMOREBI_RENDER_MAX_SECONDS overrides: the config passes it in
@@ -23,6 +24,9 @@ function fieldOf(message) {
 }
 const PRESET = /^([1-9]\d*)(?:@([1-9]\d*))?(?::(\S+))?$/;   // the exporter's own --arboretum grammar
 const PLAYLIST = /^([1-9]\d*)(?::(\S+))?$/;   // and its --arboretum-playlist: a playlist has no versions
+// The pinned engine's shipped playlists (presets.js PLAYLISTS, key -> name), as scripts/pin.mjs records them. A pin from before them has none.
+export const SHIPPED_PLAYLISTS = JSON.parse(readFileSync(new URL('../komorebi.json', import.meta.url), 'utf8')).playlists ?? {};
+const SHIP = /^ship:(.+)$/;   // the editor's own name for one: ship:<key>
 const PLAYLIST_FIELDS = ['name', 'items', 'presentation'], ITEM_FIELDS = ['name', 'params', 'dwell_s', 'crossfade_s'];
 const MAX_PLAYLIST_ITEMS = 500;   // arboretum's own limit
 const BITRATE = /^[1-9]\d*(\.\d+)?[kKM]$/;   // ffmpeg reads a lowercase m as milli
@@ -66,7 +70,17 @@ function parseSize(s, image = false) {
   return `${w}x${h}`;
 }
 
-export function validateSpec(raw, { maxSeconds = DEFAULT_MAX_SECONDS, platform = process.platform } = {}) {
+// "ship:<key>" or a list of them, played one after another and looping as one list: the canonical shape is always the list.
+function checkShipped(p, shipped, errors) {
+  const list = typeof p === 'string' ? [p] : p;
+  if (!list.length) { errors.push('playlist must name at least one shipped playlist'); return null; }
+  const keys = Object.keys(shipped).map((k) => `ship:${k}`).join(', ') || 'none in the pinned engine';
+  const bad = list.filter((v) => typeof v !== 'string' || !SHIP.test(v) || !Object.hasOwn(shipped, SHIP.exec(v)[1]));
+  if (bad.length) { errors.push(`playlist ${bad.map((v) => JSON.stringify(v)).join(', ')} is not a shipped playlist; shipped: ${keys}`); return null; }
+  return [...list];
+}
+
+export function validateSpec(raw, { maxSeconds = DEFAULT_MAX_SECONDS, platform = process.platform, shipped = SHIPPED_PLAYLISTS } = {}) {
   if (!isObject(raw)) throw new SpecError(['spec must be a JSON object']);
   const errors = [];
   for (const k of Object.keys(raw)) if (!KEYS.includes(k)) errors.push(`unknown key "${k}"`);
@@ -80,8 +94,9 @@ export function validateSpec(raw, { maxSeconds = DEFAULT_MAX_SECONDS, platform =
   if (hasPlaylist) {
     if (image) errors.push('playlist is a video option: a PNG is one frame of one look');
     else if (typeof raw.playlist === 'string' && PLAYLIST.test(raw.playlist)) spec.playlist = raw.playlist;
+    else if ((typeof raw.playlist === 'string' && raw.playlist.startsWith('ship:')) || Array.isArray(raw.playlist)) { const p = checkShipped(raw.playlist, shipped, errors); if (p) spec.playlist = p; }
     else if (isObject(raw.playlist)) { const p = checkInlinePlaylist(raw.playlist, errors); if (p) spec.playlist = p; }
-    else errors.push('playlist must look like "<id>[:share]" (e.g. "3" or "3:token") or be an object { name?, items: [{ params, dwell_s?, crossfade_s? }] }');
+    else errors.push('playlist must look like "<id>[:share]" (e.g. "3" or "3:token"), "ship:<key>" or a list of them (e.g. ["ship:story", "ship:shadows"]), or be an object { name?, items: [{ params, dwell_s?, crossfade_s? }] }');
   }
   if (hasPreset) {
     if (typeof raw.preset === 'string' && PRESET.test(raw.preset)) spec.preset = raw.preset;
@@ -109,7 +124,7 @@ export function validateSpec(raw, { maxSeconds = DEFAULT_MAX_SECONDS, platform =
     else errors.push('fps must be 30 or 60');
 
     // the exporter schedules in whole frames: refuse here, not an hour into the queue
-    if (spec.playlist && typeof spec.playlist === 'object') {
+    if (isObject(spec.playlist)) {
       spec.playlist.items.forEach((it, i) => {
         for (const k of ['dwell_s', 'crossfade_s']) if (it[k] !== undefined && Math.abs(it[k] * spec.fps - Math.round(it[k] * spec.fps)) > 1e-9) errors.push(`playlist.items[${i}].${k} x ${spec.fps} fps must be a whole number of frames`);
       });
@@ -192,9 +207,12 @@ export function slugify(s) {
   return slug || 'look';
 }
 
+// The name shipped playlists go by: their names, in order ("park story, shadows").
+export const shippedName = (list, shipped = SHIPPED_PLAYLISTS) => list.map((v) => shipped[v.slice(5)] ?? v.slice(5)).join(', ');
+
 // <yyyy-mm-dd>-<id>-<slug>. Only the preset's (or playlist's) id is slugged: the version and the share token stay out of a folder name.
 export function folderName({ id, createdAt, spec }) {
-  const slug = typeof spec.playlist === 'string' ? `playlist-${spec.playlist.split(':')[0]}` : spec.playlist ? slugify(spec.playlist.name ?? 'playlist') : spec.preset ? `preset-${spec.preset.split(/[@:]/)[0]}` : slugify(spec.look.name ?? 'look');
+  const slug = typeof spec.playlist === 'string' ? `playlist-${spec.playlist.split(':')[0]}` : Array.isArray(spec.playlist) ? slugify(shippedName(spec.playlist)) : spec.playlist ? slugify(spec.playlist.name ?? 'playlist') : spec.preset ? `preset-${spec.preset.split(/[@:]/)[0]}` : slugify(spec.look.name ?? 'look');
   return `${createdAt.slice(0, 10)}-${id}-${slug}`;
 }
 

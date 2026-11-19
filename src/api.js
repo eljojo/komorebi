@@ -6,7 +6,7 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { StoreError } from './store.js';
-import { SpecError, scrubSecrets, validateSpec } from './spec.js';
+import { SpecError, scrubSecrets, shippedName, validateSpec } from './spec.js';
 import { jobView } from './view.js';
 import { readManifest, tailLines } from './exporter.js';
 import { createOutputAccess, createOutputRootCheck } from './netmount.js';
@@ -18,7 +18,7 @@ const json = (status, body, headers = {}) => ({ status, headers: { 'content-type
 const text = (status, body) => ({ status, headers: { 'content-type': 'text/plain; charset=utf-8' }, body });
 
 // The name a job goes by: its playlist or preset (version kept, share token never) or its look's name.
-const nameOf = (spec) => (spec.playlist ? (typeof spec.playlist === 'string' ? `playlist ${spec.playlist.replace(/:.+$/, '')}` : spec.playlist.name ?? 'playlist') : spec.preset ? `preset ${spec.preset.replace(/:.+$/, '')}` : spec.look.name ?? 'look');
+const nameOf = (spec) => (spec.playlist ? (typeof spec.playlist === 'string' ? `playlist ${spec.playlist.replace(/:.+$/, '')}` : Array.isArray(spec.playlist) ? shippedName(spec.playlist) : spec.playlist.name ?? 'playlist') : spec.preset ? `preset ${spec.preset.replace(/:.+$/, '')}` : spec.look.name ?? 'look');
 
 function summary(job, now, token) {
   const v = jobView(job, now);

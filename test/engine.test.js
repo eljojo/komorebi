@@ -4,7 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/config.js';
-import { prepare, resolveCommit, defaultRun } from '../src/engine.js';
+import { prepare, resolveCommit, defaultRun, shippedPlaylist } from '../src/engine.js';
+import { shippedFixture } from '../fixtures/shipped.mjs';
 
 test('engine subprocesses let timers run before the command completes', async () => {
   let ticked = false;
@@ -136,4 +137,16 @@ test('resolveCommit expands a ref against the mirror and refuses what is not a c
   await assert.rejects(() => resolveCommit({ config, pin, run: none, ref: 'nope' }), /nope/);
   await assert.rejects(() => resolveCommit({ config, pin, run, ref: '--upload-pack=x' }), /ref/);
   assert.ok(existsSync(config.mirror));
+});
+
+test('shipped playlists become one playlist: looks as shipped, paced by the item, then its list, then ITEM_DEFAULTS', async () => {
+  const dir = shippedFixture();
+  assert.deepEqual(await shippedPlaylist(dir, ['ship:story', 'ship:shadows']), { name: 'park story, shadows', items: [
+    { name: 'a', params: { exposure: 1 }, dwell_s: 30, crossfade_s: 2, style: 'morph' },
+    { name: 'b', params: { exposure: 2 }, dwell_s: 10, crossfade_s: 3.5, style: 'morph' },
+    { name: 'c', params: { exposure: 3 }, dwell_s: 30, crossfade_s: 4, style: 'fade' },
+    { name: 'a', params: { exposure: 1 }, dwell_s: 30, crossfade_s: 4, style: 'morph' },
+  ] });
+  await assert.rejects(shippedPlaylist(dir, ['ship:story', 'ship:rainbow']), /ship:rainbow is not a shipped playlist of the pinned engine/);
+  await assert.rejects(shippedPlaylist(dir, ['ship:broken']), /broken names "gone", which presets.js does not ship/);
 });
