@@ -78,7 +78,7 @@ export const PRESETS = {
   "drop_exposure": 1,
   "drop_lag": 0.09,
   "drop_after_turn": 0,
-  "litter": 0,
+  "litter": 1,   // the carpet armed, as park1 inside2's (2026-11-19, the artist), so the camera alone moves between them
   "litter_age": 0.15,
   "litter_drift_m": 0.4,
   "leaf_wetness": 0,

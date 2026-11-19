@@ -32,8 +32,9 @@ export const seasonTravelEligible=FEAT_LITTER ? (a,b)=>{
   if(!FEAT_DROP)return false;
   if(!a.faithful_canopy||!b.faithful_canopy||!a.standing_scene||!b.standing_scene||a.sky_view||b.sky_view||a.receiver!==0||b.receiver!==0||a.leaf_variety!==0||b.leaf_variety!==0)return false;
   if(springing(a)||springing(b))return false;   // the flight carries every leaf at its grown size at both ends; a leaf still coming out is neither, so a spring pair takes another route
+  // A floor is bare where no leaf lets go, its carpet armed or not (an armed carpet with nothing dropping is empty, and the route takes it as one).
   const fallenA=a.litter>0&&a.leaf_drop>0,fallenB=b.litter>0&&b.leaf_drop>0;
-  const supported=fallenA&&(fallenB||b.litter===0&&b.leaf_drop===0)||fallenB&&a.litter===0&&a.leaf_drop===0;
+  const supported=fallenA&&(fallenB||b.leaf_drop===0)||fallenB&&a.leaf_drop===0;
   // One grove carries the whole flight: the reach may differ where the trees are grown across the same span (groveFill), and the seen tree
   // fades across the route (komorebi-transitions.js, treeFade) while its leaves turn and fall.
   if(!supported||groveFill(a)!==groveFill(b)||Object.keys(DEFAULTS).some(k=>!SEASON_ROUTE_KEYS.has(k)&&!GROVE_SPAN_KEYS.has(k)&&a[k]!==b[k]))return false;

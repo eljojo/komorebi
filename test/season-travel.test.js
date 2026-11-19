@@ -34,9 +34,12 @@ test('season travel requires a shared standing grove with a carpet at one end an
   const a=PRESETS['cherry blossom'],b=PRESETS['park 2'];
   expect(travel.seasonTravelEligible(a,b)).toBe(true);expect(travel.seasonTravelEligible(b,a)).toBe(true);
   for(const change of [{seed:1},{branch_angle_deg:20},{leaf_variety:.9},{standing_scene:false},{faithful_canopy:false},
-    {sky_view:true},{receiver:1},{sun_elevation_deg:45},{tone_map:0},{foliage_density:100},{leaf_drop:.2},{litter:1},{trans_r:.1},{trans_g:.1},{trans_b:.1},{phenology:.05,leaf_out_end:.14}]){   // a leafing-out end: the flight carries grown leaves only
+    {sky_view:true},{receiver:1},{sun_elevation_deg:45},{tone_map:0},{foliage_density:100},{leaf_drop:.2},{trans_r:.1},{trans_g:.1},{trans_b:.1},{phenology:.05,leaf_out_end:.14}]){   // a leafing-out end: the flight carries grown leaves only
     expect(travel.seasonTravelEligible(a,{...b,...change}),JSON.stringify(change)).toBe(false);
   }
+  // The carpet armed where no leaf lets go is a bare floor: park 1, from above arms it so the camera alone moves to park1 inside2.
+  expect(travel.seasonTravelEligible(a,{...b,litter:1})).toBe(true);expect(travel.seasonTravelEligible({...b,litter:1},a)).toBe(true);
+  expect(travel.seasonTravelEligible(a,{...b,litter:1,leaf_drop:.2,litter_age:b.litter_age})).toBe(true);
 });
 
 test('fall looks with litter at both ends travel through their shared standing grove',()=>{
@@ -118,7 +121,7 @@ test('season travel with leaves on older wood: every cast is drawn, the flight b
   globalThis.window={devicePixelRatio:1};
   try{
     const still={wind_strength:0,weather_variability:0,drift_auto:false,auto_quality:false,adaptive_motion:false};
-    for(const [fromName,toName] of [['park fall','montebello'],['montebello','park fall']]){
+    for(const [fromName,toName] of [['park fall','montebello'],['montebello','park fall'],['park 1, from above','park fall'],['park fall','park 1, from above']]){   // the last two: a carpet armed where nothing falls
       const from={...PRESETS[fromName],...still},to={...PRESETS[toName],...still};
       expect(from.inner_leaves,`${fromName} hangs leaves on older wood`).toBeGreaterThan(0);
       const {gl,log}=checkedGL();let next,now=performance.now();

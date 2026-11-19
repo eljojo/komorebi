@@ -405,9 +405,8 @@ test('park 1, from above ↔ park fall turns one grove through the season while 
 });
 
 test('the park story\'s standing looks move only the camera between them: their reaches differ past the bake\'s cap, which grows one grove',()=>{
-  const story=['park 1, the scene','park 1, under the trees','park 1, from above'];   // park1 inside2 arms the carpet, a topo key, so it is crossfaded to
-  for(const a of story)for(const b of story){
-    if(a===b)continue;
+  // park1 inside2 and park 1, from above arm the carpet, a topo key, so under the trees dissolves into inside2; each pair either side moves only its camera.
+  for(const [x,y] of [['park 1, the scene','park 1, under the trees'],['park1 inside2','park 1, from above']])for(const [a,b] of [[x,y],[y,x]]){
     const r=transitionRig(PRESETS[a]);
     r.transitionTo(PRESETS[b],{duration:1});
     expect(r.hub.trans.canopyMorph,`${a} → ${b}: no regrow`).toBe(false);
