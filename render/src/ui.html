@@ -1,0 +1,104 @@
+<!doctype html>
+<!-- The jobs page served at GET /: what is running, what is queued, what has finished. Read-only; it reads the same JSON
+     routes a bot does (/health, /jobs, /jobs/:id), every 10 s as llms.txt asks, and builds the DOM with textContent so a
+     look's name is never markup. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>komorebi-render</title>
+<style>
+  :root { --bg: #fafaf7; --fg: #1d1d1b; --dim: #6b6b66; --line: #e2e2dc; --bar: #4f7a3a; --bad: #b3261e; --card: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #151514; --fg: #e8e8e3; --dim: #9a9a93; --line: #2c2c2a; --bar: #8fbf6f; --bad: #f2b8b5; --card: #1c1c1b; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 28px 0 8px; }
+  #health { color: var(--dim); font-size: 13px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .empty { color: var(--dim); }
+  .job { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+  .row { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; }
+  .name { font-weight: 600; }
+  .meta { color: var(--dim); font-size: 13px; }
+  .state-failed { color: var(--bad); }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--bar); }
+  .detail { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; overflow-x: auto; }
+  .detail pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1>komorebi-render</h1>
+  <div id="health">…</div>
+  <h2>Running</h2><div id="running"></div>
+  <h2>Queued</h2><div id="queued"></div>
+  <h2>Past</h2><div id="past"></div>
+</main>
+<script>
+const open = new Set();   // ids whose detail is shown, kept across refreshes
+
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const dur = (s) => { if (s == null) return null; s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, r = s % 60; return h ? `${h}h ${m}m` : m ? `${m}m ${r}s` : `${r}s`; };
+const when = (iso) => iso ? new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
+
+function meta(j) {
+  const q = j.quality?.name ?? '';
+  const parts = [`#${j.id}`, j.size, j.format === 'png' ? 'png' : `${dur(j.seconds)} @ ${j.fps}fps`, j.pipeline, q && `quality ${q}${j.quality.ss > 1 ? ` ss${j.quality.ss}` : ''}`];
+  if (j.state === 'running') parts.push(`${j.progress.done}/${j.progress.total} segments`, j.eta_s != null && `${dur(j.eta_s)} left (${j.eta_basis})`);
+  else if (j.state === 'queued') parts.push(`queued ${when(j.created_at)}`, j.blocked && `blocked: ${j.blocked}`);
+  else parts.push(j.state, when(j.finished_at), j.started_at && j.finished_at && `took ${dur((Date.parse(j.finished_at) - Date.parse(j.started_at)) / 1000)}`);
+  return parts.filter(Boolean).join(' · ');
+}
+
+async function detail(j, box) {
+  const d = await (await fetch(`jobs/${j.id}`)).json();
+  box.replaceChildren();
+  const line = (label, value) => { if (value == null || value === '') return; const p = el('div', 'mono'); p.append(el('span', 'meta', `${label} `), value); box.append(p); };
+  line('folder', d.folder);
+  if (d.delivery) line('delivery', `${d.delivery.path} (${d.delivery.size_mib} MiB${d.delivery.mbit_s ? `, ${d.delivery.mbit_s} Mbit/s` : ''})`);
+  line('error', d.error);
+  line('spec', JSON.stringify(d.spec));
+  if (d.log_tail.length) box.append(el('pre', 'mono', d.log_tail.join('\n')));
+}
+
+function card(j) {
+  const c = el('div', 'job');
+  const top = el('div', 'row');
+  top.append(el('span', 'name', j.name), el('span', `meta state-${j.state}`, meta(j)));
+  c.append(top);
+  if (j.state === 'running') { const b = el('div', 'bar'), f = el('div'); f.style.width = `${(j.progress.fraction * 100).toFixed(1)}%`; b.append(f); c.append(b); }
+  const box = el('div', 'detail');
+  box.hidden = !open.has(j.id);
+  c.append(box);
+  if (open.has(j.id)) detail(j, box).catch(() => {});
+  c.onclick = (e) => {
+    if (e.target.closest('.detail')) return;   // let the detail's text be selected
+    if (open.has(j.id)) { open.delete(j.id); box.hidden = true; } else { open.add(j.id); box.hidden = false; detail(j, box).catch(() => {}); }
+  };
+  return c;
+}
+
+function fill(id, jobs, none) {
+  const host = document.getElementById(id);
+  host.replaceChildren(...(jobs.length ? jobs.map(card) : [el('div', 'empty', none)]));
+}
+
+async function refresh() {
+  try {
+    const [h, { jobs }] = await Promise.all([fetch('health').then((r) => r.json()), fetch('jobs').then((r) => r.json())]);
+    document.getElementById('health').textContent = `worker ${h.worker} · nas ${h.nas} · komorebi ${h.pin.slice(0, 7)} · updated ${new Date().toLocaleTimeString()}`;
+    fill('running', jobs.filter((j) => j.state === 'running'), 'nothing running');
+    fill('queued', jobs.filter((j) => j.state === 'queued').reverse(), 'nothing queued');   // oldest first: the order they will run
+    fill('past', jobs.filter((j) => !['running', 'queued'].includes(j.state)), 'no finished jobs');
+  } catch (e) {
+    document.getElementById('health').textContent = `cannot reach the server: ${e.message}`;
+  }
+}
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

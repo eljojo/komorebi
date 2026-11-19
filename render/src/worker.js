@@ -1,0 +1,204 @@
+// The loop that runs jobs, one at a time. The exporter is a child process; the database is the only channel to it
+// (progress out, cancel in), so a CLI or API in another process drives the same worker.
+import { spawn as nodeSpawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { LOOK_FILE, PLAYLIST_FILE, SESSION_FILE, exporterArgs, exporterCommand, finalizeImage, progress, readResult, tailLines } from './exporter.js';
+import { createOutputAccess, createOutputRootCheck } from './netmount.js';
+import { childEnv, shippedPlaylist as defaultShipped } from './engine.js';
+import { scrubSecrets, shippedName } from './spec.js';
+
+const defaultIsOurs = (pid) => {
+  const r = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' });
+  return r.status === 0 && /render-video\.mjs/.test(r.stdout);   // a reused pid is not ours
+};
+
+export function createWorker({
+  store, config, log = console.log, prepare, checkOut, outputAccess = createOutputAccess(),
+  spawn = nodeSpawn, kill = process.kill.bind(process), isOurs = defaultIsOurs,
+  node = process.execPath, caffeinate = process.platform === 'darwin' && existsSync('/usr/bin/caffeinate'),
+  pollMs = 5000, progressMs = 3000, graceMs = 30000, extraEnv = {}, shippedPlaylist = defaultShipped,
+}) {
+  const check = checkOut ?? createOutputRootCheck(config.out, { allowLocal: config.allowLocal });
+  const sleepers = new Set();
+  const sleep = (ms) => new Promise((resolve) => { const t = setTimeout(done, ms); function done() { clearTimeout(t); sleepers.delete(done); resolve(); } sleepers.add(done); });
+  let stopping = false, preparing = null, current = null;
+  const preparation = new AbortController();
+
+  // The token may sit in the exporter's output; it must not reach the database or a log line.
+  const scrub = (text, spec) => scrubSecrets(text, spec, config.token);
+
+  const ensurePrepared = () => {
+    if (!preparing) preparing = Promise.resolve().then(() => prepare({ signal: preparation.signal })).catch((e) => { preparing = null; throw e; });
+    return preparing;
+  };
+
+  const block = (job, reason) => {
+    if (job.blocked !== reason) log(`job ${job.id} waits: ${reason}`);
+    store.block(job.id, reason);
+    return { job, outcome: 'blocked' };
+  };
+
+  // The exporter runs under caffeinate in its own process group: SIGTERM to the group reaches caffeinate and node together.
+  const terminate = (child, signal = 'SIGTERM') => {
+    try { kill(-child.pid, signal); } catch { try { child.kill(signal); } catch { /* already gone */ } }
+  };
+
+  async function runOnce() {
+    if (stopping) return null;
+    const job = store.nextQueued();
+    if (!job) return null;
+    const ok = await check();
+    if (stopping) return null;
+    if (!ok.ok) return block(job, `output root: ${ok.reason}`);
+    let engine;
+    try { engine = await ensurePrepared(); } catch (e) { return block(job, `engine not ready: ${scrub(e.message, job.spec)}`); }
+    if (stopping) return null;
+
+    const { id, spec } = job;
+    let shipped;
+    if (Array.isArray(spec.playlist)) {
+      try { shipped = await shippedPlaylist(engine.dir, spec.playlist); } catch (e) { return block(job, `shipped playlist: ${e.message}`); }
+    }
+    const seconds = spec.format === 'png' ? 1 / 60 : spec.seconds;
+    const folder = join(config.out, job.folder_name);
+    let base, runSpec = spec;
+    try {
+      base = await outputAccess(`setup:${folder}`, async (signal) => {
+        const ready = await check();
+        if (!ready.ok) throw new Error(ready.reason);
+        if (stopping) return 0;
+        signal.throwIfAborted();
+        await mkdir(folder, { recursive: true });
+        signal.throwIfAborted();
+        if (spec.look) await writeFile(join(folder, LOOK_FILE), JSON.stringify({ ...(spec.look.name ? { name: spec.look.name } : {}), params: spec.look.params }), { signal });
+        if (spec.playlist && typeof spec.playlist === 'object') await writeFile(join(folder, PLAYLIST_FILE), JSON.stringify(shipped ?? spec.playlist), { signal });
+        if(spec.session)await writeFile(join(folder,SESSION_FILE),JSON.stringify(spec.session),{signal});
+        const preset = /^(\d+)(:.*)?$/.exec(spec.preset ?? '');
+        if (preset) {
+          let key;
+          try { key = JSON.parse(await readFile(join(folder, 'run-key.json'), 'utf8')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+          if (key) {
+            const pinned = key.body?.arboretum;
+            if (String(pinned?.id) !== preset[1] || !Number.isInteger(pinned.version) || pinned.version < 1) throw new Error('run-key.json does not name this preset and a valid version');
+            runSpec = { ...spec, preset: `${preset[1]}@${pinned.version}${preset[2] ?? ''}` };
+          }
+        }
+        return (await progress(folder, seconds)).done;   // segments already on disk: a resume continues after them
+      });
+    } catch (e) { return block(job, `output root: ${scrub(e.message, spec)}`); }
+    if (stopping) return null;
+    if (!store.start(id, { folder, base })) return { job, outcome: 'skipped' };
+
+    const { cmd, args } = exporterCommand({ node, args: exporterArgs({ script: engine.script, commit: engine.commit, folder, spec: runSpec }), caffeinate });
+    const env = { ...childEnv(config), ...(config.token ? { ARBORETUM_TOKEN: config.token } : {}), ...extraEnv };
+    let stderr = '';
+    const exit = await new Promise((resolve, reject) => {
+      let child, killed = false, escalation, deadline;
+      try { child = spawn(cmd, args, { cwd: dirname(engine.script), env, detached: true, stdio: ['ignore', 'ignore', 'pipe'] }); } catch (e) { resolve({ error: e }); return; }
+      const requestTermination = () => {
+        if (killed || closed) return;
+        killed = true;
+        terminate(child);
+        if (closed) return;
+        escalation = setTimeout(() => {
+          terminate(child, 'SIGKILL');
+          if (!closed) deadline = setTimeout(() => {
+            clear();
+            child.unref?.(); child.stderr.destroy?.();
+            reject(new Error(`exporter ${child.pid} is still running after SIGKILL`));
+          }, graceMs);
+        }, graceMs);
+      };
+      let closed = false, polling = false;
+      const clear = () => { closed = true; clearInterval(timer); clearTimeout(escalation); clearTimeout(deadline); };
+      const timer = setInterval(() => tick(), progressMs);
+      current = { child, terminate: requestTermination };
+      child.stderr.on('data', (d) => { stderr = (stderr + d).slice(-4096); });
+      child.on('error', (error) => {
+        if (child.pid) { requestTermination(); return; }
+        clear(); resolve({ error });
+      });
+      child.on('close', (code, signal) => { clear(); resolve({ code, signal }); });
+      if (child.pid) store.setPid(id, child.pid);
+      log(`job ${id} started: ${spec.playlist ? (typeof spec.playlist === 'string' ? `playlist ${spec.playlist.replace(/:.+$/, '')}` : shipped ? `shipped playlist ${shippedName(spec.playlist)} (${shipped.items.length} looks)` : `inline playlist (${spec.playlist.items.length} looks)`) : spec.preset ? `preset ${spec.preset.replace(/:.+$/, '')}` : 'look'} ${spec.size} ${spec.format === 'png' ? 'PNG' : `${spec.seconds}s @${spec.fps}`} (${job.quality.name} quality)`);
+      const tick = () => {
+        if (closed) return;
+        if (!killed && store.get(id).cancel_requested) requestTermination();
+        if (polling) return;
+        polling = true;
+        outputAccess(`progress:${folder}`, () => progress(folder, seconds)).then(p => {
+          if (!closed) store.progress(id, { done: p.done, total: p.total, line: p.lastLine === null ? null : scrub(p.lastLine, spec) });
+        }).catch(() => {}).finally(() => { polling = false; });
+      };
+      if (stopping) current.terminate();   // stop() came in between the queue and the spawn
+    });
+    current = null;
+
+    try {
+      const p = await outputAccess(`progress:${folder}`, () => progress(folder, seconds));
+      store.progress(id, { done: p.done, total: p.total, line: p.lastLine === null ? null : scrub(p.lastLine, spec) });
+    } catch { /* keep the last database progress if the share is unavailable */ }
+    const now = store.get(id);
+    if (now.cancel_requested) { store.cancelled(id); log(`job ${id} cancelled`); return { job, outcome: 'cancelled' }; }
+    if (stopping) { store.release(id); log(`job ${id} put back in the queue; the exporter resumes it`); return { job, outcome: 'released' }; }
+    if (!exit.error && exit.code === 0) {
+      try {
+        const result = await outputAccess(`result:${folder}`, signal => spec.format === 'png' ? finalizeImage(folder, spec, signal) : readResult(folder));
+        const latest = store.get(id);
+        if (latest.cancel_requested) { store.cancelled(id); return { job, outcome: 'cancelled' }; }
+        if (stopping) { store.release(id); return { job, outcome: 'released' }; }
+        store.finish(id, result); log(`job ${id} done`); return { job, outcome: 'done' };
+      } catch (e) { exit.error = e; }
+    }
+    const why = exit.error ? exit.error.message : exit.signal ? `killed by ${exit.signal}` : `exit code ${exit.code}`;
+    const detail = await outputAccess(`log:${folder}`, () => tailLines(join(folder, 'run.log'))).catch(() => '') || stderr.trim();
+    if (store.get(id).cancel_requested) { store.cancelled(id); return { job, outcome: 'cancelled' }; }
+    if (stopping) { store.release(id); return { job, outcome: 'released' }; }
+    store.fail(id, scrub(`${why}${detail ? `\n${detail}` : ''}`, spec));
+    log(`job ${id} failed: ${scrub(why, spec)}`);
+    return { job, outcome: 'failed' };
+  }
+
+  // Start-up: what was running is queued again (the exporter resumes it); an exporter that outlived the last worker is stopped first,
+  // or two would write one folder.
+  async function recover() {
+    const rows = store.list({ state: 'running' }).sort((a, b) => a.id - b.id);
+    for (const j of rows) {
+      if (!j.pid || !isOurs(j.pid)) continue;
+      try { kill(-j.pid, 'SIGTERM'); } catch { /* gone between the check and the kill */ }
+      const wait = async () => {
+        const until = Date.now() + graceMs;
+        while (isOurs(j.pid) && Date.now() < until) await sleep(Math.min(100, Math.max(1, until - Date.now())));
+      };
+      await wait();
+      if (isOurs(j.pid)) {
+        try { kill(-j.pid, 'SIGKILL'); } catch { /* confirm whether the exporter is gone below */ }
+        await wait();
+      }
+      if (isOurs(j.pid)) throw new Error(`exporter ${j.pid} is still running after SIGKILL`);
+      log(`job ${j.id}: stopped an exporter left running (pid ${j.pid})`);
+    }
+    store.requeueRunning();
+    if (rows.length) log(`requeued ${rows.length} job(s) left running: ${rows.map((j) => j.id).join(', ')}`);
+    return rows;
+  }
+
+  async function run() {
+    await recover();
+    while (!stopping) {
+      const r = await runOnce();
+      if (!stopping && (!r || r.outcome === 'blocked')) await sleep(pollMs);
+    }
+  }
+
+  async function stop() {
+    stopping = true;
+    preparation.abort();
+    for (const wake of [...sleepers]) wake();
+    if (current) current.terminate();
+  }
+
+  return { runOnce, recover, run, stop };
+}

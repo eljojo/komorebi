@@ -1,0 +1,229 @@
+// A job's spec: validated once, at the door, into the canonical shape everything downstream reads.
+import { readFileSync } from 'node:fs';
+import { checkQuality, SESSION_PROFILES } from './quality.js';
+
+export const DEFAULT_MAX_SECONDS = 6 * 3600;   // KOMOREBI_RENDER_MAX_SECONDS overrides: the config passes it in
+// `fields[i]` is the field `errors[i]` is about (null for the whole spec): the API answers 422 with it.
+export class SpecError extends Error {
+  constructor(errors) { super(errors.join('; ')); this.name = 'SpecError'; this.errors = errors; this.fields = errors.map(fieldOf); }
+}
+
+export const SPEC_KEYS = ['preset', 'look', 'playlist', 'size', 'seconds', 'fps', 'master', 'delivery', 'quality', 'session', 'ss', 'pipeline', 'jobs', 'block_segments', 'format'];
+export const PIPELINES = ['master', 'gpu', 'gpu-main10', 'browser'];
+export const DELIVERY_KEYS = ['vt_bitrate', 'vt_quality'];
+export const MAX_JOBS = 8, MAX_BLOCK_SEGMENTS = 64;   // the exporter's own --jobs and --block-segments ranges
+const KEYS = SPEC_KEYS;
+
+// Every message starts with the field it is about ("seconds must be…", "quality.ss must be…") except two.
+function fieldOf(message) {
+  const unknown = /^unknown key "(.*)"$/.exec(message);
+  if (unknown) return unknown[1];
+  if (message.startsWith('exactly one of preset, look or playlist')) return 'preset';
+  const m = /^((?:look|delivery|quality|session)\.\w+|\w+)/.exec(message);
+  return m && (KEYS.includes(m[1].split('.')[0])) ? m[1] : null;
+}
+const PRESET = /^([1-9]\d*)(?:@([1-9]\d*))?(?::(\S+))?$/;   // the exporter's own --arboretum grammar
+const PLAYLIST = /^([1-9]\d*)(?::(\S+))?$/;   // and its --arboretum-playlist: a playlist has no versions
+// The pinned engine's shipped playlists (presets.js PLAYLISTS, key -> name), as scripts/pin.mjs records them. A pin from before them has none.
+export const SHIPPED_PLAYLISTS = JSON.parse(readFileSync(new URL('../komorebi.json', import.meta.url), 'utf8')).playlists ?? {};
+const SHIP = /^ship:(.+)$/;   // the editor's own name for one: ship:<key>
+const PLAYLIST_FIELDS = ['name', 'items', 'presentation'], ITEM_FIELDS = ['name', 'params', 'dwell_s', 'crossfade_s'];
+const MAX_PLAYLIST_ITEMS = 500;   // arboretum's own limit
+const BITRATE = /^[1-9]\d*(\.\d+)?[kKM]$/;   // ffmpeg reads a lowercase m as milli
+const SIZES = { '1080p': '1920x1080', '4k': '3840x2160' };
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// A playlist carried in the job instead of read from arboretum: [{ params, dwell_s?, crossfade_s? }], played as arboretum plays one. Omitted times stay omitted (the exporter's
+// defaults are arboretum's: 30 s and 5 s). Returns the normalised object, or null with the errors pushed.
+function checkInlinePlaylist(p, errors) {
+  const before = errors.length, out = {};
+  if(p.presentation!=null){
+    if(SESSION_PROFILES.presentation.includes(p.presentation))out.presentation=p.presentation;
+    else errors.push('playlist.presentation must be supported by the pinned engine');
+  }
+  for (const k of Object.keys(p)) if (!PLAYLIST_FIELDS.includes(k)) errors.push(`playlist.${k} is not a playlist field; allowed: ${PLAYLIST_FIELDS.join(', ')}`);
+  if (p.name !== undefined) {
+    if (typeof p.name === 'string' && p.name.length >= 1 && p.name.length <= 80) out.name = p.name;
+    else errors.push('playlist.name must be a string of 1 to 80 characters');
+  }
+  if (!Array.isArray(p.items) || p.items.length < 2 || p.items.length > MAX_PLAYLIST_ITEMS) { errors.push(`playlist.items must be a list of 2 to ${MAX_PLAYLIST_ITEMS} looks`); return null; }
+  out.items = p.items.map((it, i) => {
+    const at = `playlist.items[${i}]`;
+    if (!isObject(it)) { errors.push(`${at} must be an object`); return null; }
+    const item = {};
+    for (const k of Object.keys(it)) if (!ITEM_FIELDS.includes(k)) errors.push(`${at}.${k} is not a playlist item field; allowed: ${ITEM_FIELDS.join(', ')}`);
+    if (!isObject(it.params)) errors.push(`${at}.params must be an object`); else item.params = it.params;
+    if (it.name !== undefined) { if (typeof it.name === 'string') item.name = it.name; else errors.push(`${at}.name must be a string`); }
+    if (it.dwell_s !== undefined) { if (Number.isFinite(it.dwell_s) && it.dwell_s >= 1 && it.dwell_s <= 3600) item.dwell_s = it.dwell_s; else errors.push(`${at}.dwell_s must be a number from 1 to 3600`); }
+    if (it.crossfade_s !== undefined) { if (Number.isFinite(it.crossfade_s) && it.crossfade_s >= 0 && it.crossfade_s <= 120) item.crossfade_s = it.crossfade_s; else errors.push(`${at}.crossfade_s must be a number from 0 to 120`); }
+    return item;
+  });
+  return errors.length === before ? out : null;
+}
+
+function parseSize(s, image = false) {
+  if (typeof s === 'string' && Object.hasOwn(SIZES, s)) return SIZES[s];
+  const m = typeof s === 'string' ? /^(\d{2,4})x(\d{2,4})$/.exec(s) : null;
+  if (!m) return null;
+  const [w, h] = [Number(m[1]), Number(m[2])];
+  if (w < 64 || h < 64 || w > 7680 || h > 4320 || (!image && (w % 2 || h % 2))) return null;
+  return `${w}x${h}`;
+}
+
+// "ship:<key>" or a list of them, played one after another and looping as one list: the canonical shape is always the list.
+function checkShipped(p, shipped, errors) {
+  const list = typeof p === 'string' ? [p] : p;
+  if (!list.length) { errors.push('playlist must name at least one shipped playlist'); return null; }
+  const keys = Object.keys(shipped).map((k) => `ship:${k}`).join(', ') || 'none in the pinned engine';
+  const bad = list.filter((v) => typeof v !== 'string' || !SHIP.test(v) || !Object.hasOwn(shipped, SHIP.exec(v)[1]));
+  if (bad.length) { errors.push(`playlist ${bad.map((v) => JSON.stringify(v)).join(', ')} is not a shipped playlist; shipped: ${keys}`); return null; }
+  return [...list];
+}
+
+export function validateSpec(raw, { maxSeconds = DEFAULT_MAX_SECONDS, platform = process.platform, shipped = SHIPPED_PLAYLISTS } = {}) {
+  if (!isObject(raw)) throw new SpecError(['spec must be a JSON object']);
+  const errors = [];
+  for (const k of Object.keys(raw)) if (!KEYS.includes(k)) errors.push(`unknown key "${k}"`);
+  const spec = {};
+  const image = raw.format === 'png';
+  if (raw.format !== undefined && !['png', 'mp4'].includes(raw.format)) errors.push('format must be png or mp4');
+  if (image) spec.format = 'png';
+
+  const hasPreset = raw.preset !== undefined, hasLook = raw.look !== undefined, hasPlaylist = raw.playlist !== undefined;
+  if (Number(hasPreset) + Number(hasLook) + Number(hasPlaylist) !== 1) errors.push('exactly one of preset, look or playlist is required');
+  if (hasPlaylist) {
+    if (image) errors.push('playlist is a video option: a PNG is one frame of one look');
+    else if (typeof raw.playlist === 'string' && PLAYLIST.test(raw.playlist)) spec.playlist = raw.playlist;
+    else if ((typeof raw.playlist === 'string' && raw.playlist.startsWith('ship:')) || Array.isArray(raw.playlist)) { const p = checkShipped(raw.playlist, shipped, errors); if (p) spec.playlist = p; }
+    else if (isObject(raw.playlist)) { const p = checkInlinePlaylist(raw.playlist, errors); if (p) spec.playlist = p; }
+    else errors.push('playlist must look like "<id>[:share]" (e.g. "3" or "3:token"), "ship:<key>" or a list of them (e.g. ["ship:story", "ship:shadows"]), or be an object { name?, items: [{ params, dwell_s?, crossfade_s? }] }');
+  }
+  if (hasPreset) {
+    if (typeof raw.preset === 'string' && PRESET.test(raw.preset)) spec.preset = raw.preset;
+    else errors.push('preset must look like "<id>[@version][:share]", e.g. "3", "3@2" or "3:token"');
+  }
+  if (hasLook) {
+    if (!isObject(raw.look) || !isObject(raw.look.params)) errors.push('look.params must be an object');
+    else if (raw.look.name !== undefined && typeof raw.look.name !== 'string') errors.push('look.name must be a string');
+    else spec.look = raw.look.name === undefined ? { params: raw.look.params } : { name: raw.look.name, params: raw.look.params };
+  }
+
+  const size = parseSize(raw.size, image);
+  if (size) spec.size = size; else errors.push(`size must be "1080p", "4k" or ${image ? 'a' : 'an even'} "WxH" between 64x64 and 7680x4320`);
+
+  if (image) {
+    for (const k of ['seconds', 'fps', 'master', 'delivery', 'pipeline', 'jobs', 'block_segments']) {
+      if (raw[k] !== undefined) errors.push(`${k} is a video option; omit it for PNG`);
+    }
+  } else {
+    if (Number.isInteger(raw.seconds) && raw.seconds >= 1 && raw.seconds <= maxSeconds) spec.seconds = raw.seconds;
+    else errors.push(`seconds must be a whole number from 1 to at most ${maxSeconds}`);
+
+    if (raw.fps === undefined) spec.fps = 60;
+    else if (raw.fps === 30 || raw.fps === 60) spec.fps = raw.fps;
+    else errors.push('fps must be 30 or 60');
+
+    // the exporter schedules in whole frames: refuse here, not an hour into the queue
+    if (isObject(spec.playlist)) {
+      spec.playlist.items.forEach((it, i) => {
+        for (const k of ['dwell_s', 'crossfade_s']) if (it[k] !== undefined && Math.abs(it[k] * spec.fps - Math.round(it[k] * spec.fps)) > 1e-9) errors.push(`playlist.items[${i}].${k} x ${spec.fps} fps must be a whole number of frames`);
+      });
+    }
+
+    if (raw.master === undefined) spec.master = false;
+    else if (typeof raw.master === 'boolean') spec.master = raw.master;
+    else errors.push('master must be true or false');
+
+    // Omitted pipeline stays omitted in stored specs, preserving older jobs and their exporter run keys.
+    if (raw.pipeline !== undefined) {
+      if (PIPELINES.includes(raw.pipeline)) spec.pipeline = raw.pipeline;
+      else errors.push('pipeline must be master, gpu, gpu-main10 or browser');
+    }
+    // Parallel rendering: N Chromium sessions on one job's segments (the exporter's --jobs / --block-segments). Omitted stays omitted: older specs and their run keys are unchanged.
+    if (raw.jobs !== undefined) {
+      if (Number.isInteger(raw.jobs) && raw.jobs >= 1 && raw.jobs <= MAX_JOBS) spec.jobs = raw.jobs;
+      else errors.push(`jobs must be a whole number from 1 to ${MAX_JOBS}`);
+    }
+    if (raw.block_segments !== undefined) {
+      if (!(Number.isInteger(raw.block_segments) && raw.block_segments >= 1 && raw.block_segments <= MAX_BLOCK_SEGMENTS)) errors.push(`block_segments must be a whole number from 1 to ${MAX_BLOCK_SEGMENTS}`);
+      else if (!(raw.jobs > 1)) errors.push('block_segments only applies when jobs is above 1');
+      else spec.block_segments = raw.block_segments;
+    }
+    if (spec.pipeline && spec.pipeline !== 'master' && spec.master === true) errors.push('master must be false for a direct pipeline; only master retains lossless segments');
+
+    if (raw.delivery !== undefined) {
+      if (!isObject(raw.delivery)) errors.push('delivery must be an object');
+      else {
+        const d = raw.delivery, out = {};
+        if (spec.pipeline === 'browser' && Object.keys(d).length) errors.push('delivery must be omitted or empty for browser; it uses fixed HEVC QP1');
+        for (const k of Object.keys(d)) if (!DELIVERY_KEYS.includes(k)) errors.push(`delivery.${k} is not a delivery option; allowed: vt_bitrate, vt_quality`);
+        if (d.vt_bitrate !== undefined && d.vt_quality !== undefined) errors.push('delivery takes vt_bitrate or vt_quality, not both');
+        else {
+          if (d.vt_bitrate !== undefined) {
+            if (typeof d.vt_bitrate === 'string' && BITRATE.test(d.vt_bitrate)) out.vt_bitrate = d.vt_bitrate;
+            else errors.push('delivery.vt_bitrate must look like "60M" or "8000k" (k, K or M; never a lowercase m)');
+          }
+          if (d.vt_quality !== undefined) {
+            if (Number.isInteger(d.vt_quality) && d.vt_quality >= 0 && d.vt_quality <= 100) out.vt_quality = d.vt_quality;
+            else errors.push('delivery.vt_quality must be a whole number from 0 to 100');
+          }
+        }
+        if (Object.keys(out).length) spec.delivery = out;
+      }
+    }
+    // Linux encodes with VA-API: the exporter refuses these only after the job has started.
+    if (platform === 'linux') {
+      if (spec.pipeline === 'browser') errors.push('pipeline browser is Mac-only; on Linux use master, gpu or gpu-main10');
+      for (const k of Object.keys(spec.delivery ?? {})) errors.push(`delivery.${k} is Mac-only (VideoToolbox); omit delivery on Linux`);
+    }
+  }
+
+  if(raw.session!==undefined){
+    if(raw.quality!==undefined)errors.push('session and quality cannot be combined');
+    if(!isObject(raw.session))errors.push('session must be an object');
+    else{
+      const s=raw.session,out={};
+      for(const k of Object.keys(s))if(!['quality','presentation'].includes(k))errors.push(`session.${k} is not a session field`);
+      if(!SESSION_PROFILES.quality.length)errors.push('session is unsupported by the pinned engine');
+      for(const k of ['quality','presentation'])if(s[k]!==undefined){
+        if(SESSION_PROFILES[k].includes(s[k]))out[k]=s[k];else errors.push(`session.${k} must be supported by the pinned engine`);
+      }
+      spec.session=out;
+    }
+    if(raw.ss!==undefined){if([1,2].includes(raw.ss))spec.ss=raw.ss;else errors.push('ss must be 1 or 2');}
+  }else{
+    if(raw.ss!==undefined)errors.push('ss requires session; legacy jobs use quality.ss');
+    const q = checkQuality(raw.quality);
+    errors.push(...q.errors);
+    if (!q.errors.length) spec.quality = q.value;
+  }
+
+  if (errors.length) throw new SpecError(errors);
+  return spec;
+}
+
+export function slugify(s) {
+  const slug = String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/, '');
+  return slug || 'look';
+}
+
+// The name shipped playlists go by: their names, in order ("park story, shadows").
+export const shippedName = (list, shipped = SHIPPED_PLAYLISTS) => list.map((v) => shipped[v.slice(5)] ?? v.slice(5)).join(', ');
+
+// <yyyy-mm-dd>-<id>-<slug>. Only the preset's (or playlist's) id is slugged: the version and the share token stay out of a folder name.
+export function folderName({ id, createdAt, spec }) {
+  const slug = typeof spec.playlist === 'string' ? `playlist-${spec.playlist.split(':')[0]}` : Array.isArray(spec.playlist) ? slugify(shippedName(spec.playlist)) : spec.playlist ? slugify(spec.playlist.name ?? 'playlist') : spec.preset ? `preset-${spec.preset.split(/[@:]/)[0]}` : slugify(spec.look.name ?? 'look');
+  return `${createdAt.slice(0, 10)}-${id}-${slug}`;
+}
+
+// The share token is a credential: it is stored (the exporter needs it to resume) but never shown.
+export const redactSpec = (spec) => ({ ...spec, ...(spec.preset ? { preset: spec.preset.replace(/:.+$/, ':…') } : {}), ...(typeof spec.playlist === 'string' ? { playlist: spec.playlist.replace(/:.+$/, ':…') } : {}) });
+
+// Hides the arboretum token and the preset's share token in text that may carry them (the exporter's output, a log line).
+export function scrubSecrets(text, spec, token) {
+  let t = String(text);
+  // "ship:<key>" names a shipped playlist: what follows its colon is no share token
+  const shares = [spec.preset?.split(':')[1], typeof spec.playlist === 'string' && !spec.playlist.startsWith('ship:') ? spec.playlist.split(':')[1] : undefined];
+  for (const secret of [token, ...shares]) if (secret) t = t.split(secret).join('***');
+  return t;
+}
