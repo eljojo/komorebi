@@ -35,7 +35,7 @@ assert disabled.system.activationScripts == {};
 assert cfg.stateDir == "/Users/jojo/.local/state/komorebi-render";
 assert cfg.host == "0.0.0.0" && cfg.port == 8077 && cfg.maxSeconds == 21600;
 assert cfg.arboretumTokenFile == null;
-assert agent.serviceConfig.ProgramArguments == [ "/usr/bin/caffeinate" "-i" "${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/komorebi-render" "serve" ];
+assert agent.serviceConfig.ProgramArguments == [ "/usr/bin/caffeinate" "-i" "${self.packages.${pkgs.stdenv.hostPlatform.system}.komorebi-render}/bin/komorebi-render" "serve" ];
 assert agent.serviceConfig.KeepAlive && agent.serviceConfig.RunAtLoad;
 assert agent.serviceConfig.StandardOutPath == "${cfg.stateDir}/stdout.log";
 assert agent.serviceConfig.StandardErrorPath == "${cfg.stateDir}/stderr.log";

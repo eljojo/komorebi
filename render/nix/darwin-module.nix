@@ -7,7 +7,7 @@ in {
     enable = mkEnableOption "the komorebi render API and worker in the logged-in user's session";
     package = mkOption {
       type = types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+      default = self.packages.${pkgs.stdenv.hostPlatform.system}.komorebi-render;
       description = "The komorebi-render package.";
     };
     host = mkOption { type = types.str; default = "0.0.0.0"; description = "The HTTP listen address."; };

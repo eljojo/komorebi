@@ -28,7 +28,7 @@ let
 in
 assert !(disabled.systemd.services ? komorebi-render);
 assert !(disabled.users.users ? komorebi-render);
-assert unit.serviceConfig.ExecStart == "${self.packages.${pkgs.stdenv.hostPlatform.system}.default}/bin/komorebi-render serve";
+assert unit.serviceConfig.ExecStart == "${self.packages.${pkgs.stdenv.hostPlatform.system}.komorebi-render}/bin/komorebi-render serve";
 assert unit.serviceConfig.User == "komorebi-render";
 assert unit.serviceConfig.SupplementaryGroups == [ "render" ];
 assert unit.serviceConfig.Restart == "on-failure";

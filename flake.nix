@@ -1,5 +1,5 @@
 {
-  description = "Komorebi — WebGL2 komorebi engine: bun dev server + lint + bundle helpers; arboretum, the Worker that keeps looks";
+  description = "Komorebi — WebGL2 komorebi engine: bun dev server + lint + bundle helpers; arboretum, the Worker that keeps looks; komorebi-render, the server that runs its video exporter";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -7,20 +7,88 @@
     let
       systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      # Linux renders with Nix's patched Chromium (driven by test-gl's npm Playwright, so the two must be the same version,
+      # see checks.render-playwright), on Mesa's Vulkan and its VA-API encoder for AMD GPUs.
+      linuxEnvironment = pkgs: pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers-chromium}";
+        VK_DRIVER_FILES = "${pkgs.mesa}/share/vulkan/icd.d/radeon_icd.${pkgs.stdenv.hostPlatform.parsed.cpu.name}.json";
+        LIBGL_DRIVERS_PATH = "${pkgs.mesa}/lib/dri";
+        LIBVA_DRIVERS_PATH = "${pkgs.mesa}/lib/dri";
+        LIBVA_DRIVER_NAME = "radeonsi";
+      };
+      # Only what komorebi-render and its tests need: a stray file in the checkout must not change the package's hash.
+      renderSource = pkgs: pkgs.lib.fileset.toSource {
+        root = ./render;
+        fileset = pkgs.lib.fileset.unions (map (p: ./render + p) [ "/src" "/scripts" "/test" "/fixtures" "/komorebi.json" "/package.json" "/llms.txt" "/README.md" ]);
+      };
     in {
       # `nix develop` — bun (dev server + bundler) + biome (lint) on PATH; node and git for arboretum, whose wrangler
-      # and vitest come from arboretum/package.json.
+      # and vitest come from arboretum/package.json; node, ffmpeg and git are komorebi-render's whole toolchain. On Linux
+      # it also carries the render environment above, for the exporter and test-gl/vaapi-gpu.test.mjs.
       devShells = forAll (pkgs: {
-        default = pkgs.mkShell {
+        default = pkgs.mkShell ({
           # python3 + a bare-`python` alias: node-gyp native builds (headless-gl's vendored ANGLE
           # shells out to plain `python`) need both on PATH — nixpkgs ships only `python3`.
           packages = [ pkgs.bun pkgs.biome pkgs.python3 pkgs.nodejs_22 pkgs.ffmpeg pkgs.git
             (pkgs.writeShellScriptBin "python" ''exec ${pkgs.python3}/bin/python3 "$@"'') ];
           shellHook = ''
-            echo "komorebi dev shell — dev: nix run .#dev | lint: nix run .#lint | bundle: nix run .#build | arboretum: nix run .#arboretum-dev"
+            echo "komorebi dev shell — dev: nix run .#dev | lint: nix run .#lint | bundle: nix run .#build | arboretum: nix run .#arboretum-dev | render: nix run .#render-test"
           '';
+        } // linuxEnvironment pkgs);
+      });
+
+      # komorebi-render's bin/komorebi-render. PATH is prefixed, not replaced: caffeinate lives in /usr/bin and must stay reachable.
+      packages = forAll (pkgs: {
+        komorebi-render = pkgs.stdenvNoCC.mkDerivation {
+          pname = "komorebi-render";
+          version = "0.1.0";
+          src = renderSource pkgs;
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          dontBuild = true;
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/lib/komorebi-render $out/bin
+            cp -r src scripts komorebi.json package.json llms.txt $out/lib/komorebi-render/
+            makeWrapper ${pkgs.nodejs_22}/bin/node $out/bin/komorebi-render \
+              --add-flags "--disable-warning=ExperimentalWarning $out/lib/komorebi-render/src/cli.js" \
+              ${pkgs.lib.concatStringsSep " " (pkgs.lib.mapAttrsToList (name: value: "--set-default ${name} ${pkgs.lib.escapeShellArg value}") (linuxEnvironment pkgs))} \
+              --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.nodejs_22 pkgs.ffmpeg pkgs.git ]}
+            runHook postInstall
+          '';
+          meta.mainProgram = "komorebi-render";
         };
       });
+
+      # komorebi-render's tests are pure: a fake exporter stands in for render-video, there is no network and no GPU.
+      checks = forAll (pkgs: let render = self.packages.${pkgs.stdenv.hostPlatform.system}.komorebi-render; in {
+        render-darwin-module = import ./render/nix/module-test.nix { inherit pkgs self; lib = pkgs.lib; };
+        render-package = pkgs.runCommand "komorebi-render-package" {} ''
+          cmp ${./render/llms.txt} ${render}/lib/komorebi-render/llms.txt
+          ${render}/bin/komorebi-render
+          echo "package: llms.txt installed and CLI wrapper runs"
+          touch $out
+        '';
+        render-tests = pkgs.runCommand "komorebi-render-tests" { nativeBuildInputs = [ pkgs.nodejs_22 pkgs.git pkgs.ffmpeg ]; } ''
+          cp -r ${renderSource pkgs} work
+          chmod -R u+w work
+          cd work
+          export HOME=$TMPDIR
+          node --disable-warning=ExperimentalWarning --test
+          touch $out
+        '';
+        # Linux runs the engine's npm Playwright against Nix's Chromium; they work only at the same version.
+        render-playwright = let pinned = (pkgs.lib.importJSON ./render/komorebi.json).playwright; in
+          if pkgs.playwright-driver.version == pinned
+          then pkgs.runCommand "komorebi-render-playwright" {} "touch $out"
+          else throw "nixpkgs playwright-driver ${pkgs.playwright-driver.version} does not match the pinned engine's Playwright ${pinned} (render/komorebi.json); move nixpkgs or the pin so they agree";
+      } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+        render-nixos-module = import ./render/nix/nixos-module-test.nix { inherit pkgs self; lib = pkgs.lib; };
+      });
+
+      # komorebi-render as a service. On the Mac the logged-in session owns the GPU and keychain, so the module runs the API and
+      # worker together as a user agent; on NixOS, under systemd.
+      darwinModules.komorebi-render = import ./render/nix/darwin-module.nix self;
+      nixosModules.komorebi-render = import ./render/nix/nixos-module.nix self;
 
       apps = forAll (pkgs:
         let
@@ -227,8 +295,30 @@
               exec npm test -- "$@"
             '';
           };
+          # `nix run .#render-test [-- node --test args]` — komorebi-render's tests (node:test; no GPU, no network), from render/.
+          render-test = pkgs.writeShellApplication {
+            name = "render-test";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git pkgs.ffmpeg ];
+            text = ''
+              cd "$(git rev-parse --show-toplevel)/render"
+              exec node --disable-warning=ExperimentalWarning --test "$@"
+            '';
+          };
+          # `nix run .#render-pin [-- <sha|ref>]` — render/scripts/pin.mjs. It runs the checkout's own script, not the store's
+          # copy: the script rewrites the komorebi.json beside it, which in the store is read-only.
+          render-pin = pkgs.writeShellApplication {
+            name = "render-pin";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
+            text = ''
+              cd "$(git rev-parse --show-toplevel)/render"
+              exec node scripts/pin.mjs "$@"
+            '';
+          };
         in {
           test = { type = "app"; program = "${test}/bin/test"; };
+          render-test = { type = "app"; program = "${render-test}/bin/render-test"; };
+          render-pin = { type = "app"; program = "${render-pin}/bin/render-pin"; };
+          komorebi-render = { type = "app"; program = "${self.packages.${pkgs.stdenv.hostPlatform.system}.komorebi-render}/bin/komorebi-render"; };
           arboretum-test = { type = "app"; program = "${arboretum-test}/bin/arboretum-test"; };
           arboretum-dev = { type = "app"; program = "${arboretum-dev}/bin/arboretum-dev"; };
           arboretum-deploy = { type = "app"; program = "${arboretum-deploy}/bin/arboretum-deploy"; };
