@@ -1400,6 +1400,20 @@ for (const [from, to] of [["park fall", "forest floor"], ["forest floor", "park 
   });
 }
 
+for (const [from, to] of [["forest floor", "afternoon 7"], ["afternoon 7", "forest floor"]]) {
+  test(`${from} → ${to}: the litter carpet dissolves with the canopy`, () => {
+    const r = fadeRig(PRESETS[from]);
+    r.transitionTo(PRESETS[to], { duration: 1, style: 'morph' });
+    expect(r.hub.trans.route?.name).toBe('sceneFade');
+    expect(r.hub.trans.crossfade).toBe(false);
+    expect(r.hub.groveIn).toBe(null);
+    expect(r.hub.trans.durScale).toBe(2);
+    for (let n = 0; r.hub.trans.active && n < 200; n++) r.tickTransition(1 / 60);
+    expect(r.log.ended).toBe(1);
+    expect(r.params).toEqual(PRESETS[to]);
+  });
+}
+
 test("montebello ↔ park fall keeps season travel over the carpeted scene dissolve", () => {
   for (const [from, to] of [["montebello", "park fall"], ["park fall", "montebello"]]) {
     const r = fadeRig(PRESETS[from]); let began = 0;

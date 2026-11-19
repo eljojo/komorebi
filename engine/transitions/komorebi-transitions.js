@@ -138,7 +138,8 @@ export function makeTransitions(hub){
     const modeDiff   = MODE_KEYS.some(k => to[k]!==params[k]);     // a scene-MODE flag flips (faithful_canopy/standing_scene/receiver): needs a rebuild, NOT a snap-with-stale-state
     const shadowFrom = trans.active ? (trans.shadowOpacity ?? 1) : 1;   // whatever route is interrupted, from the shown opacity
     // Floor-to-floor mode changes meet on the lit ground, so the grove swap carries no shadow discontinuity.
-    trans.backgroundFade = !viewpoint && modeDiff && !params.sky_view && !to.sky_view && (params.receiver|0)===0 && (to.receiver|0)===0;
+    const floorPair = !params.sky_view && !to.sky_view && (params.receiver|0)===0 && (to.receiver|0)===0;
+    trans.backgroundFade = !viewpoint && modeDiff && floorPair;
     trans.settleCamera = trans.backgroundFade && params.standing_scene && !to.standing_scene;
     trans.shadowFrom = shadowFrom;
     trans.shadowOpacity = shadowFrom;
@@ -204,18 +205,20 @@ export function makeTransitions(hub){
     //    differ: the route bakes and casts the larger count, each grove in its own bins (trans.layerRoute, below).
     // Anything outside the gate takes the paths it already took.
     const layersShared = to.tex_resolution===params.tex_resolution && to.bake_resolution===params.bake_resolution;
-    const crossOK = !styleFade && (topoDiff || canopyDiff) && !modeDiff && !morphGrove
+    const canCrossfade = !styleFade && (topoDiff || canopyDiff) && !modeDiff && !morphGrove
                  && !faithfulOn() && !to.faithful_canopy
                  && !(params.branch_tau > 0) && !(to.branch_tau > 0)
                  && layersShared;
     // A moon in flight is not a scene the dissolve of finished pictures can hold (its outgoing scene would show the moon at rest), so it
     // takes the cloud dissolve and the moon carries on.
-    // A floor-to-floor mode change over a litter carpet cannot meet on the lit ground: the carpet is still there at the midpoint, so the
-    // grove swap (and a standing camera's snap overhead) would show as a cut. It dissolves two moving scenes instead.
+    // The lit-ground fade and the shared-layer crossfade blend shadows but leave one floor material on screen.
+    // Dissolve the two scenes when a carpet would make the grove handoff visible.
     const carpet = p => p.litter>0 && p.leaf_drop>0;
-    const carpetFade = !trans.active && trans.backgroundFade && !seasonTravel && !leafTravel && (carpet(params) || carpet(to));
+    const carpetFade = !trans.active && floorPair && (trans.backgroundFade || canCrossfade)
+      && !seasonTravel && !leafTravel && (carpet(params) || carpet(to));
     const sceneFade = styleFade || carpetFade
       || !seasonTravel && !leafTravel && !moonShown && (trans.structDiff || trans.route?.name==='sceneFade') && !modeDiff && faithfulOn() && to.faithful_canopy;
+    const crossOK = canCrossfade && !sceneFade;
     // Each dissolving scene draws its own shadows, window and model from its own look: no shared fade of them applies.
     if(sceneFade){ trans.backgroundFade=false; trans.settleCamera=false; trans.windowFade=false; trans.splitFade=false; }
     if(sceneFade) trans.structDiff=true;   // an interruption still has two different visible scenes to dissolve

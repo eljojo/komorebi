@@ -38,7 +38,7 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 | | |
 |---|---|
 | **Joins** | A topology change between two layer groves, layer counts included: `morning 1 ↔ memories`, `morning 3b → eclipse`, `eclipse → acid dreams`; a same-branching grove over budget: `morning 3b ↔ the void`. |
-| **Gate** | A TOPO difference, or a CANOPY difference over budget, and no MODE difference; not admitted as a grove morph; neither end faithful; no wood at either end; same texture size and bake size (one set of layer textures). |
+| **Gate** | A TOPO difference, or a CANOPY difference over budget, and no MODE difference; not admitted as a grove morph; neither end faithful; no wood at either end; same texture size and bake size (one set of layer textures). Two floor looks at rest take the scene dissolve if either end has litter and leaf drop above zero. |
 | **Duration** | 2*D*. |
 | **Promises** | No bloom: cloud thickness follows its ordinary interpolation and never overshoots either end. Both groves are baked at complementary coverage across a window around the midpoint; no leaf jumps. The incoming grove is the target's own, cut with its own leaf edge. Across layer counts the route runs at the larger count, the heights move from each end's own, and the count drops only at landing. Native endpoints. Interruption inside the double-bake window is safe; an interruption outside it starts from the shown heights, moon and grove. |
 
@@ -64,8 +64,8 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 
 | | |
 |---|---|
-| **Joins** | Faithful structural changes no travel route takes: `park 1` to itself with a new seed, density and tone; `curtain 1` to itself with a new seed and outline. Carpeted floor-to-floor mode changes: `park fall ↔ forest floor`, `forest floor ↔ the yellow tree`. Any pair a driver asks to fade that differs in more than MORPH keys and runtime flags. |
-| **Gate** | Either: both ends faithful, same scene modes, a structural rebuild needed; or the fade through the lit ground's gate with a litter carpet at either end, from rest. In both, no travel route (season travel, grove regrouping, leaf travel) admits the pair. Or: a fade asked for, from rest, and a CANOPY, TOPO or MODE difference; no travel route, morph, crossfade or bloom is considered. |
+| **Joins** | Faithful structural changes no travel route takes: `park 1` to itself with a new seed, density and tone; `curtain 1` to itself with a new seed and outline. Carpeted floor-to-floor changes: `park fall ↔ forest floor`, `forest floor ↔ the yellow tree`, `forest floor ↔ afternoon 7`. Any pair a driver asks to fade that differs in more than MORPH keys and runtime flags. |
+| **Gate** | Either: both ends faithful, same scene modes, a structural rebuild needed; or two floor looks at rest that meet the other gates of the lit-ground fade or the shared-layer crossfade and have a litter carpet at either end. In both, no travel route (season travel, grove regrouping, leaf travel) admits the pair. Or: a fade asked for, from rest, and a CANOPY, TOPO or MODE difference; no travel route, morph, crossfade or bloom is considered. |
 | **Duration** | 2*D*, mixed on a full-duration smoothstep. |
 | **Promises** | No bloom. Two complete moving scenes, one clock, mixed in linear light, each with its own tone map and mask. The incoming scene continues without rebuild or reset. A fade requested during a transition waits for it to finish; a later selection replaces the waiting request. When an automatic route interrupts a dissolve, it starts from the displayed mixture and releases the older scene. |
 
