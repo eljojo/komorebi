@@ -1,6 +1,6 @@
 {
   "repo": "https://github.com/eljojo/komorebi",
-  "commit": "d419ed78ec74f566f824ee7941b10bc0b68c5ac4",
+  "commit": "bd1cadf9db307d602f18680eea8552adb238c16c",
   "playwright": "1.63.0",
   "sessions": {
     "quality": [
@@ -35,6 +35,7 @@
   "playlists": {
     "story": "park story",
     "shadows": "shadows",
+    "rainbow": "rainbow",
     "experiments": "experiments"
   }
 }
