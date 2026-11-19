@@ -182,7 +182,9 @@ const SHIPPED_EXPOSURE = {   // each look's exposure before either law, as shown
   "acid dreams": 1.635, "park 1": 2.44, "park 1, under the trees": 2.44, "park 1, the scene": 2.44, "park 1, from above": 2.44, montebello: 2.44, "park fall": 2.44, "the yellow tree": 2.44, "montebello, rain": 2.44, "cherry blossom": 2.44,
   "curtain 2": 1.5, "tent 1": 1.35, "curtain 1": 1.4, "afternoon 4": 2.44, "afternoon 5": 2.44, "afternoon 6": 2.44, "afternoon 6b": 2.44, "afternoon 7": 2.44,
   "forest floor": 2.44, "afternoon 4b": 1.29, eclipse: 2.1, "morning 2": 2.44, "the void": 2.44, "afternoon 5b": 2.44, prism: 2.44, "park 2": 2.44,
-  "morning 1": 2.44, "morning 3": 2.44, "morning 3b": 2.44, memories: 3.01, bluuey: 2.3911, shrooms: 2.44, "look up": 2.7962, "park1 inside2": 2.44, "canopy 1": 1.3, "canopy 2": 1.35, "canopy 3": 1.35, "canopy 4": 1.3,
+  "morning 1": 2.44, "morning 3": 2.44, "morning 3b": 2.44, memories: 3.01, bluuey: 2.3911, shrooms: 2.44, "look up": 2.7962, "park1 inside2": 2.44,
+  projector: 0.98, "purple eye": 1.13, "projector red": 1.32, "rainbow orange": 0.797, "projector cherry green": 0.63, "projector green (first night)": 0.67,
+  "rainbow green 2": 0.577, "rainbow spring green": 0.523, "rainbow cyan": 0.479, "rainbow azure": 0.771, "rainbow ultraviolet": 0.958, "projector cherry": 0.63, "rainbow magenta": 1.149, "canopy 1": 1.3, "canopy 2": 1.35, "canopy 3": 1.35, "canopy 4": 1.3,
 };
 test("sun_cosine and sun_extinction: every look carries both but park 2 and montebello's season family keep theirs, its exposure re-sat over each (the curtains hold theirs over the air's loss)", () => {
   for (const [name, look] of Object.entries(PRESETS)) {

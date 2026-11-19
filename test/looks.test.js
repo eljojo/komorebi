@@ -50,8 +50,8 @@ test("of the four new looks (P5-P8) only the yellow tree and cherry blossom are 
 // the forest floor, where it goes on into the next playlist. The floor going abstract, through the afternoons and mornings to the founding
 // afternoon, is the second playlist, shadows. The experimental looks are in neither: they are a playlist of their own, the third.
 const looksOf = (list) => list.items.map((it) => (typeof it === "string" ? it : it.look));
-test("park story, then shadows, then experiments, each in its order", () => {
-  expect(Object.values(PLAYLISTS).map((l) => l.name)).toEqual(["park story", "shadows", "experiments"]);
+test("park story, then shadows, rainbow and experiments, each in its order", () => {
+  expect(Object.values(PLAYLISTS).map((l) => l.name)).toEqual(["park story", "shadows", "rainbow", "experiments"]);
   expect(looksOf(PLAYLISTS.story)).toEqual([
     "park 1, the scene", "park 1, under the trees", "park1 inside2", "park 1, from above",
     "park fall", "montebello", "montebello, rain",
@@ -59,8 +59,13 @@ test("park story, then shadows, then experiments, each in its order", () => {
   ]);
   expect(looksOf(PLAYLISTS.shadows)).toEqual([
     "afternoon 7", "afternoon 6", "afternoon 6b", "afternoon 5", "afternoon 5b", "prism", "afternoon 4", "afternoon 4b",
-    "morning 1", "morning 2", "morning 3", "morning 3b", "memories", "bluuey", "shrooms", "look up",
+    "morning 1", "morning 2", "morning 3", "morning 3b", "memories", "bluuey", "shrooms", "look up", "projector", "purple eye",
   ]);
+  expect(looksOf(PLAYLISTS.rainbow)).toEqual([
+    "projector red", "rainbow orange", "projector cherry green", "projector green (first night)", "rainbow green 2", "rainbow spring green",
+    "rainbow cyan", "rainbow azure", "rainbow ultraviolet", "projector cherry", "rainbow magenta",
+  ]);
+  for (const it of PLAYLISTS.rainbow.items) expect([it.dwell_s, it.crossfade_s], `${it.look}: held 1 s, arriving over 6 s`).toEqual([1, 6]);
 });
 
 for (const [name, { base, over }] of Object.entries(NEW_LOOKS)) {

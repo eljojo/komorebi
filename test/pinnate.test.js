@@ -110,7 +110,7 @@ test("the beech is a species of the table: pinnate, number 3, a constant — and
   // the numbers ARE the contract: another value regrows every beech there is
   expect({ ...BEECH }).toEqual({ species: 3, grammar: "pinnate", origin: 0.45, lenJitter: 0.06, W: 0.30, aBase: 0.55, cApex: 1.25, nMin: 9, nMax: 13, s0: 0.06, s1: 0.94, posJitter: 0.2, angle: 45, angleJitter: 4, tooth: 0.02, toothHalf: 0.05 });
   expect(DEFAULTS.leaf_shape, "the default is the ellipse").toBe("ellipse");
-  expect(Object.keys(PRESETS).filter((n) => PRESETS[n].leaf_shape === "beech"), "no look asks for it yet: José picks from the sheet").toEqual([]);
+  expect(Object.keys(PRESETS).filter((n) => PRESETS[n].leaf_shape === "beech"), "purple eye alone asks for it").toEqual(["purple eye"]);
 });
 
 test("profile dispatches on the grammar: a palmate spec grows growLeaf's skeleton and a pinnate one growPinnate's — bladeOf keeps whichever it grew, and names it", () => {
