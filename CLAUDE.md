@@ -162,3 +162,12 @@ at the root, arboretum's pages under `/arboretum`, the API at `/api`. It is its 
 pinned to an engine: `arboretum/scripts/engine.mjs` generates its validator tables and engine bundle from this tree,
 gitignored, before its tests, typecheck and dev mode, and `nix run .#arboretum-deploy` deploys HEAD. The engine's tools
 (bun test, biome, `nix run .#dev`, the Pages site) leave `arboretum/` alone; the engine never imports from it.
+
+## komorebi-render
+
+**`render/`** is the render server: a queue of jobs (stills and videos) in front of `test-gl/render-video.mjs`, an HTTP API
+and a worker, deployed as a launchd agent or a systemd service (`darwinModules.komorebi-render`, `nixosModules.komorebi-render`).
+It is its own project, plain node 22 with its own `node:test` suite (`nix run .#render-test`), and its `CLAUDE.md` is its map.
+It renders the commit it was built from, and reads the engine's session profiles, quality rows and shipped playlists from
+this tree (`engine/`, `presets.js`), so a change to those is a change to what it accepts. The engine never imports from it;
+bun test and the Pages site leave it alone.

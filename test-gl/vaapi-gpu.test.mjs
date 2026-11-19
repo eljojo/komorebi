@@ -1,4 +1,4 @@
-// Linux AMD GPU checks, separate from the CPU suite. Run under komorebi-render's Nix shell.
+// Linux AMD GPU checks, separate from the CPU suite. Run under the flake's Linux devShell (`nix develop`).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
