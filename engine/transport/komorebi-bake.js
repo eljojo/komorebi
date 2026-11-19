@@ -102,36 +102,37 @@ export function makeBake(hub){
     // The SKY VIEW adds back the FINE wood only (spec/model/sky-view.md): it is read along the eye's ray rather than cast, it is short
     // enough to sit inside one band, and it carries the same per-layer sway the leaves in that band get — so the
     // leaves have visible twigs to hang on instead of floating in clouds around bare limb tips. It goes in the layer's OWN wood texture
-    // (R16F, woodTex[l], cleared to 0 every bake: a layer with no twigs, or a branch_tau tweened to 0, reads as no wood), beside the
+    // (R16F, woodTex[l], cleared to 0 while fine wood is visible), beside the
     // layer it is registered with, so the layer's rgb stays the foliage's depth and its alpha the leaves' coverage.
     if(params.sky_view){
-      const woodOn = params.branch_tau > 0 && sky.segRest.length > 0;
-      if(woodOn){
-        fillSwayedSegs(sky.segRest, sky.segArr, 0, 0, null);   // the coherent translation arrives per LAYER below, exactly as the leaves take it:
-        // tree 0's by the uniform, and what a segment's own tree adds to it here, by its layer's lever, as VS_BAKE adds it to that tree's leaves
-        const hr = hub.hier;
-        if(hr?.nTree > 1) for(let l=0;l<params.layer_count;l++){
-          const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
-          for(let k=sky.start[l]|0, e=k+(sky.count[l]|0); k<e; k++){
-            const t = 4*sky.segRest[k].tree, dx = hr.treeDelta[t]*f, dy = hr.treeDelta[t+1]*f, o = 9*k;
-            sky.segArr[o] += dx; sky.segArr[o+1] += dy; sky.segArr[o+2] += dx; sky.segArr[o+3] += dy;
-          }
+      sky.woodOn = params.branch_tau > 0 && sky.segRest.length > 0;
+      hub.sizeWoodLayers(sky.woodOn ? params.layer_count : 0);
+    }
+    if(params.sky_view && sky.woodOn){
+      fillSwayedSegs(sky.segRest, sky.segArr, 0, 0, null);   // the coherent translation arrives per LAYER below, exactly as the leaves take it:
+      // tree 0's by the uniform, and what a segment's own tree adds to it here, by its layer's lever, as VS_BAKE adds it to that tree's leaves
+      const hr = hub.hier;
+      if(hr?.nTree > 1) for(let l=0;l<params.layer_count;l++){
+        const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
+        for(let k=sky.start[l]|0, e=k+(sky.count[l]|0); k<e; k++){
+          const t = 4*sky.segRest[k].tree, dx = hr.treeDelta[t]*f, dy = hr.treeDelta[t+1]*f, o = 9*k;
+          sky.segArr[o] += dx; sky.segArr[o+1] += dy; sky.segArr[o+2] += dx; sky.segArr[o+3] += dy;
         }
-        gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 0, sky.segArr);
-        gl.useProgram(progFaithSeg);
-        gl.uniform2f(U.faithSeg.origin, -E/2, -E/2);
-        gl.uniform2f(U.faithSeg.extent, E, E);          // the CANOPY plan frame, the leaves' own — no sun projection here
-        gl.uniform2f(U.faithSeg.g, 0.0, 0.0);           // g is where a shadow FALLS; nothing here is a shadow
-        gl.uniform1i(U.faithSeg.curtainBake, 0);
-        gl.uniform1f(U.faithSeg.woodTau, params.branch_tau);
-        gl.uniform1i(U.faithSeg.segTau, 1);             // layer textures accumulate OPTICAL DEPTH additively
-        gl.bindVertexArray(sky.segVAO);
       }
+      gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, sky.segArr);
+      gl.useProgram(progFaithSeg);
+      gl.uniform2f(U.faithSeg.origin, -E/2, -E/2);
+      gl.uniform2f(U.faithSeg.extent, E, E);          // the CANOPY plan frame, the leaves' own — no sun projection here
+      gl.uniform2f(U.faithSeg.g, 0.0, 0.0);           // g is where a shadow FALLS; nothing here is a shadow
+      gl.uniform1i(U.faithSeg.curtainBake, 0);
+      gl.uniform1f(U.faithSeg.woodTau, params.branch_tau);
+      gl.uniform1i(U.faithSeg.segTau, 1);             // layer textures accumulate OPTICAL DEPTH additively
+      gl.bindVertexArray(sky.segVAO);
       for(let l=0;l<params.layer_count;l++){
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.woodTex[l], 0);
         gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
-        if(!woodOn || !sky.count[l]) continue;
+        if(!sky.count[l]) continue;
         const f = 1.0 + params.sway_height_gain*(H[l]/base - 1.0);
         gl.uniform2f(U.faithSeg.segSway, motion.sway[0]*f, motion.sway[1]*f);
         gl.bindBuffer(gl.ARRAY_BUFFER, sky.segBuf);   // draw this layer's slice: no baseInstance in WebGL2, so the attribute origin moves instead

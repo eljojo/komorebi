@@ -261,6 +261,18 @@ scenario("a layered shadow rise bakes each endpoint once at the host's quality",
   expect(R.L.layerDraws() - before).toBe(6);
   R.land();
 });
+scenario("the sky only sizes its wood maps while fine wood is visible", { ...PRESETS["look up"], ...tune, wind_strength: 0 }, (R) => {
+  const sizes = () => R.eng.woods().map((tex) => tex.size);
+  expect(sizes()).toEqual([[1, 1], [1, 1], [1, 1], [1, 1]]);
+  R.eng.params.branch_tau = 2;
+  R.eng.apply("");
+  R.pump();
+  expect(sizes()).toEqual([[64, 64], [64, 64], [64, 64], [1, 1]]);
+  R.eng.params.branch_tau = 0;
+  R.eng.apply("");
+  R.pump();
+  expect(sizes()).toEqual([[1, 1], [1, 1], [1, 1], [1, 1]]);
+});
 const MANUAL_DRIFT = { ...LAYERED, wind_strength: 0, drift_amount: 0.3, drift_phase: 0 };
 for (const [key, value] of [["drift_phase", 2.2], ["drift_amount", 0.08], ["edge_softness", 0.8]]) {
   scenario(`a still layer morph of ${key} refreshes the cast on the same grove`, MANUAL_DRIFT, (R) => {

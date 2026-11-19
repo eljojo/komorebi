@@ -393,6 +393,7 @@ export function makeRender(hub){
     // wood table; the fill and faith units are not spoken here). No other camera declares them — there is no seen source anywhere else.
     sky: (u) => {
       gl.uniform1f(u.skyScatter, clamp(params.sky_scatter, 0, 1));
+      gl.uniform1i(u.woodOn, params.sky_view && hub.sky.woodOn ? 1 : 0);
       gl.uniform1i(u.edgeArea, FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);          // at k = 0 the sky ray reads each texel as its mixture (spec/model/leaf.md)
       gl.uniform1f(u.beamK, hub.trans.riseField?.shadow ? 0 : FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0);   // above 0 the disk is the beam only, the glow is the leaf's, and sky_scatter is retired
       const base=hub.trans.riseField?10:8;   // the rising litter still speaks the floor's carpet on unit 8

@@ -321,7 +321,7 @@ function createEngine(canvas, opts, driven=false){
   // SKY VIEW's share of that skeleton (spec/model/sky-view.md): the FINE wood (level > 1) the analytic occluder never carries, sorted
   // into the leaves' own depth layers so a twig and the leaves hanging on it stamp into the SAME texture. Built
   // only when the look-up camera is on; empty otherwise, and the layer bake then draws nothing extra.
-  const sky = { segVAO:null, segBuf:null, segRest:[], segArr:null, start:[], count:[] };
+  const sky = { segVAO:null, segBuf:null, segRest:[], segArr:null, start:[], count:[], woodOn:false };
   // THE SKY FILL's state (spec/model/fill.md): Tsky and S over the fill's frame, allocated lazily when canopy_fill opens and freed when
   // it shuts. `ready` = the textures hold a bake of what `sig` records, so the receiver may believe them.
   const fill = { tex:[null,null], res:0, ready:false, sig:new Float64Array(FILL_SIG_LEN), K:0, rays:null, ox:0, oy:0, ext:1, bounce:null, gb:0 };   // sig: what the bake was made of, sized by komorebi-bake.js's FILL_SIG_LEN, which fillSig is held to — a slot written past a Float64Array's end is silently dropped, and the fill then re-bakes every frame. ox/oy/ext: the plan square the textures cover (the box, or the padded frame of a finite tree), which every receiver reads them by
@@ -465,7 +465,7 @@ function createEngine(canvas, opts, driven=false){
     return t;
   }
   // the active layers at `size`, the rest 1×1 (an inactive layer is never read). The one place layer textures are made — and the
-  // wood's beside them: the sky view's layers carry a wood texture at their own size, every other camera's are 1×1 and unread.
+  // wood's beside them: a sky bake with fine wood grows its own maps to match; otherwise the 1×1 textures keep the samplers complete.
   function allocLayers(size){
     hub.layerTex.forEach(t=>{ gl.deleteTexture(t); });
     hub.woodTex.forEach(t=>{ gl.deleteTexture(t); });
@@ -473,9 +473,10 @@ function createEngine(canvas, opts, driven=false){
     hub.woodTex = [];
     hub.layerSize = size;
     hub.layerSizes = []; hub.woodSizes = [];
+    sky.woodOn = false;
     for(let i=0;i<MAX_LAYERS;i++){
       hub.layerSizes.push(i < params.layer_count ? size : 1);
-      hub.woodSizes.push(params.sky_view && i < params.layer_count ? size : 1);
+      hub.woodSizes.push(1);
       hub.layerTex.push(makeLayerTexture(hub.layerSizes[i]));
       hub.woodTex.push(makeWoodTexture(hub.woodSizes[i]));
     }
@@ -484,9 +485,14 @@ function createEngine(canvas, opts, driven=false){
   // count at its start without touching the layers on screen (a new texture is empty, so it passes the light whole) and lowers it at landing.
   function sizeLayers(n){
     for(let i=0;i<MAX_LAYERS;i++){
-      const size = i < n ? hub.layerSize : 1, wood = params.sky_view && i < n ? hub.layerSize : 1;
+      const size = i < n ? hub.layerSize : 1;
       if(hub.layerSizes[i] !== size){ gl.deleteTexture(hub.layerTex[i]); hub.layerTex[i] = makeLayerTexture(size); hub.layerSizes[i] = size; }
-      if(hub.woodSizes[i] !== wood){ gl.deleteTexture(hub.woodTex[i]); hub.woodTex[i] = makeWoodTexture(wood); hub.woodSizes[i] = wood; }
+    }
+  }
+  function sizeWoodLayers(n){
+    for(let i=0;i<MAX_LAYERS;i++){
+      const size = i < n ? hub.layerSize : 1;
+      if(hub.woodSizes[i] !== size){ gl.deleteTexture(hub.woodTex[i]); hub.woodTex[i] = makeWoodTexture(size); hub.woodSizes[i] = size; }
     }
   }
   function rebuildTextures(){
@@ -570,7 +576,7 @@ function createEngine(canvas, opts, driven=false){
   Object.assign(hub, { tickHierarchy, publishBend, publishAir, uploadAir, motionActive, tick });
 
   // the engine-resident coordinators the transition route drives (hoisted function declarations)
-  Object.assign(hub, { freeGrove, installGrove, regenCanopy, reseason, reweight, buildTargetGrove, rebuildAll, sizeLayers, resetPerf, applyQuality, allocLayers, makeLayerTexture });
+  Object.assign(hub, { freeGrove, installGrove, regenCanopy, reseason, reweight, buildTargetGrove, rebuildAll, sizeLayers, sizeWoodLayers, resetPerf, applyQuality, allocLayers, makeLayerTexture });
   const { transitionTo, tickTransition, abortTransition, loseContext, restoreContext, endRoutes } = makeTransitions(hub);
   Object.assign(hub, { transitionTo, tickTransition });
   function copyMotion(from,to){
