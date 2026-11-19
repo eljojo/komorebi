@@ -653,8 +653,8 @@ export const PRESETS = {
     "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (spec/model/season.md)
     "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.5, "drop_after_turn": 1,                         // the sunlit leaves have let go AFTER turning and lie damp on the floor (spec/model/season.md); José: "yes turn it on for both"
     "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (spec/model/leaf.md, spec/model/fill.md)
-    "grove_reach_m": 13.489433156286438, "view_extent_m": 27.300390533759558, "view_pitch_deg": 64.69882812500065, "view_fov_deg": 60, "view_yaw_deg": -158.6112497170298,   // park fall's camera since 2026-11-19 (the artist), the grove kept at the reach its old view grew
-    "view_center_x": -1.2723131986183382, "view_center_y": -2.758635828228722, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "grove_reach_m": 13.489433156286438, "view_extent_m": 15.490402951510198, "view_pitch_deg": 44.598828125000686, "view_fov_deg": 60, "view_yaw_deg": -156.41528055324432,   // the artist's camera (2026-11-19, set on the device: zoom 15.5 m, tilt 44.6°, turned -156.4°), the grove kept at the reach its old view grew
+    "view_center_x": -0.5394705917682268, "view_center_y": -0.2020796336077202, "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
     "exposure": 5.473846153846154, "sun_cosine": 1, "sun_extinction": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law and the air's loss, exposure re-sat to 2.44/(sin 26° × 0.782)
     "ground_r": 0.198, "ground_g": 0.126, "ground_b": 0.072,   // park 1's warm Mount-Royal dirt ×0.6 (real soil is 0.1–0.2), so the carpet reads against it
     "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
@@ -671,7 +671,7 @@ export const PRESETS = {
   // set: "we could have a few variations to showcase various weather styles" (2026-10-08), and wet is the choice that has won every time it was offered (w6, w8, c13, c15, a6, m2). His memory gives the
   // cause: "one day after rain many leaves fell on the ground" — drop_lag 0 (the same lag as park fall's), so every leaf that has finished turning lets go at once. The rest: the leaves soaked to 0.75
   // (w4), wet soil at ×0.4 (c9's dirt), the weather macro's own overcast stop (cloud_thickness 0.55, halo 8, from canopy 4), and morning 2's humid haze (sky_turbidity 0.2). The exposure stays montebello's
-  // 2.44, although the haze macro lowers it under haze. Everything else is montebello's, the camera park fall's as montebello's is (2026-11-19).
+  // 2.44, although the haze macro lowers it under haze. Everything else is montebello's, the camera included (since 2026-11-19, the artist's).
   'montebello, rain': Object.assign({}, LOOK_DEFAULTS, {
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.55, "eclipse": false, "eclipse_amount": 0.42,
@@ -684,8 +684,8 @@ export const PRESETS = {
     "phenology": 0.9, "turn_exposure": 1, "anthocyanin": 0.4, "tannin": 0.2, "wall_fraction": 0.2,   // the season, and who turns first (spec/model/season.md)
     "leaf_drop": 1, "litter": 1, "leaf_wetness": 0.75, "drop_after_turn": 1,                        // the leaves have let go AFTER turning and lie soaked on the floor (spec/model/season.md); wetness 0.75 is his w4
     "leaf_diffuse": 0.5, "canopy_fill": 1,                                                          // the blend of glass; the shade lit through the leaves (spec/model/leaf.md, spec/model/fill.md)
-    "grove_reach_m": 13.489433156286438, "view_extent_m": 27.300390533759558, "view_pitch_deg": 64.69882812500065, "view_fov_deg": 60, "view_yaw_deg": -158.6112497170298,
-    "view_center_x": -1.2723131986183382, "view_center_y": -2.758635828228722,   // park fall's camera, as montebello's since 2026-11-19 (the artist; the sheet showed montebello's own, the trunk feet in the frame)
+    "grove_reach_m": 13.489433156286438, "view_extent_m": 15.490402951510198, "view_pitch_deg": 44.598828125000686, "view_fov_deg": 60, "view_yaw_deg": -156.41528055324432,
+    "view_center_x": -0.5394705917682268, "view_center_y": -0.2020796336077202,   // montebello's camera since 2026-11-19 (the artist; the sheet showed the trunk feet in the frame)
     "standing_scene": true, "faithful_canopy": true, "trunk_radius_m": 0.12, "far_smear": 0,
     "exposure": 3.5909677419354837, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.2, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, exposure re-sat to 2.44/sin 26°
     "ground_r": 0.132, "ground_g": 0.084, "ground_b": 0.048,   // park 1's warm Mount-Royal dirt ×0.4, wet soil (his c9, dirt ×0.4)
