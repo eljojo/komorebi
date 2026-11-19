@@ -12,7 +12,7 @@ import { irisRoute, irisStep, restTrans } from './komorebi-routes.js';
 import { beamExposure } from '../light/komorebi-light.js';
 import { cameraPose } from '../transport/komorebi-camera.js';
 import { cameraFor } from '../transport/komorebi-transport.js';
-import { ANGLE_SET, BLOOM_MAX, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy } from '../komorebi-params.js';
+import { ANGLE_SET, BLOOM_MAX, LIT_GROUND_DIP, LIT_GROUND_HOLD, CANOPY_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, DEFAULTS, DUR_SCALE, MODE_KEYS, MORPH_KEYS, MORPH_SET, SEASON_KEYS, TOPO_KEYS, migrateLegacy } from '../komorebi-params.js';
 import {seasonTravelEligible} from './komorebi-season-travel.js';
 import {litterRiseEligible,litterFallEligible,shadowRiseEligible,shadowFallEligible} from './komorebi-litter-rise.js';
 import {groveTravelEligible} from './komorebi-grove-travel.js';
@@ -306,9 +306,19 @@ export function makeTransitions(hub){
     }
     // Carried from an interrupted route: its bloom eases out and its shadow opacity back to full over the first half.
     const carried = (trans.bloomFrom ?? 0)*(1 - smoothstep(0, 0.5, t));
+    // The lit-ground fade passes through zero rather than resting there: the outgoing shadows hold and then fall steeply into the
+    // midpoint, the incoming ones rise as steeply from it, so the bare floor, the swap's cover, is on screen for a breath and not for
+    // the seconds a gentler curve spends with too little of either scene to see (LIT_GROUND_DIP is the power of each half's curve).
+    const u = clamp((t - 0.5)/0.5, 0, 1), down = clamp(t/0.5, 0, 1);
+    const fall = down**LIT_GROUND_DIP, rise = 1 - (1 - u)**LIT_GROUND_DIP;
     trans.shadowOpacity = trans.backgroundFade
-      ? (t<0.5 ? lerp(trans.shadowFrom, 0, smoothstep(0,0.5,t)) : smoothstep(0.5,1,t))
+      ? (t<0.5 ? lerp(trans.shadowFrom, 0, fall) : rise)
       : lerp(trans.shadowFrom ?? 1, 1, smoothstep(0, 0.5, t));
+    // The exposure answers the light the fade lets onto the floor, as the reciprocal of the irradiance mix of a shade that passes
+    // LIT_GROUND_HOLD of the beam: a ratio of two lines in the opacity, so the floor shown moves one way between an end and the
+    // midpoint, never brighter than both (a straight lerp let the first half overshoot the bare floor). 1 wherever the shadows are
+    // whole, and an interrupted fade's carried with its opacity.
+    trans.exposureHold = 1/(1 + (1/LIT_GROUND_HOLD - 1)*(1 - trans.shadowOpacity));
     // A route the look does not morph under (the scene fade, the grove's and the litter's travels) steps in place of the morph.
     // Started from rest, the grove's and the litter's carry no bloom and no shadow fade: carried is 0 and the shadow opacity 1.
     if(route && !route.tweens){
@@ -321,7 +331,10 @@ export function makeTransitions(hub){
     // overcast (BLOOM_MAX): past their own depth the bloom stops dissolving anything and only blows the frame out.
     trans.bloom = Math.max(trans.structDiff ? Math.sin(Math.PI*t) * trans.bloomMax : 0, carried);
     trans.windowOpacity=lerp(trans.windowFrom, trans.windowTo, e);
-    if(trans.treeFade) trans.treeOpacity=lerp(trans.treeFrom, trans.treeTo, trans.treeTo<trans.treeFrom ? smoothstep(0,0.5,t) : smoothstep(0.5,1,t));   // out over the first half, before the camera has swung far; in over the second
+    // The seen tree goes out over the first half, before the camera has swung far, and comes in over the second; through the lit
+    // ground it goes and comes with its shadow, on the same steep curve.
+    if(trans.treeFade) trans.treeOpacity=lerp(trans.treeFrom, trans.treeTo, trans.treeTo<trans.treeFrom
+      ? (trans.backgroundFade ? fall : smoothstep(0,0.5,t)) : (trans.backgroundFade ? (t<0.5 ? 0 : rise) : smoothstep(0.5,1,t)));
     for(const k of MORPH_KEYS){ const a=trans.from[k], b=trans.to[k];
       if((trans.viewpoint||route?.keepsDrift) && k==='drift_phase' && params.drift_auto) continue;
       if(trans.windowFade && WINDOW_KEYS.has(k)){ params[k]=trans.windowShape[k]; continue; }

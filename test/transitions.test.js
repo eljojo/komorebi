@@ -4,7 +4,11 @@
 // with no error; these tests turn that into a loud `bun test` failure. Run: `bun test transitions.test.js`.
 import { test, expect } from "bun:test";
 import { DEFAULTS, MORPH_KEYS, CANOPY_KEYS, TOPO_KEYS, MODE_KEYS } from "../komorebi.js";
-import { CANOPY_MORPH_MAX } from "../engine/komorebi-params.js";
+import { CANOPY_MORPH_MAX, LIT_GROUND_DIP, LIT_GROUND_HOLD } from "../engine/komorebi-params.js";
+// The lit ground's exposure for a shadow opacity: the reciprocal of the light it lets onto the floor.
+const held = (opacity) => 1 / (1 + (1 / LIT_GROUND_HOLD - 1) * (1 - opacity));
+// The lit ground's shadow opacity at t from rest: a steep fall into the midpoint, a steep rise out of it.
+const litShadow = (t) => (t < 0.5 ? 1 - (t / 0.5) ** LIT_GROUND_DIP : 1 - (1 - (t - 0.5) / 0.5) ** LIT_GROUND_DIP);
 import { makeTransitions } from "../engine/transitions/komorebi-transitions.js";
 import { GROVE_READS } from "../engine/canopy/komorebi-grove.js";
 import { PRESETS as AUTHORED_PRESETS } from "../presets.js";
@@ -757,10 +761,14 @@ for (const [from, to] of [["afternoon 7", "park 1"], ["park 1", "afternoon 7"]])
     const r = transitionRig(PRESETS[from]);
     r.transitionTo(PRESETS[to]);
     expect(r.hub.trans.shadowOpacity).toBe(1);
-    for (const [t, opacity] of [[0.25, 0.5], [0.5, 0], [0.75, 0.5], [1, 1]]) {
+    // held and then steep into the swap, steep out of it: through zero without resting there, the bare floor on screen for a breath
+    expect(litShadow(0.25), "the shadows still nearly whole a quarter in").toBeGreaterThan(0.98);
+    expect(litShadow(0.45) + litShadow(0.55), "less than half of either side's shadows within a twentieth of the swap").toBeLessThan(1);
+    for (const [t, opacity] of [0.25, 0.45, 0.5, 0.55, 0.75, 1].map((t) => [t, litShadow(t)])) {
       r.hub.trans.t = t;
       r.tickTransition(0);
-      expect(r.hub.trans.shadowOpacity, `shadow opacity at t=${t}`).toBe(opacity);
+      expect(r.hub.trans.shadowOpacity, `shadow opacity at t=${t}`).toBeCloseTo(opacity, 12);
+      expect(r.hub.trans.exposureHold, `the exposure held down with the shadows gone, at t=${t}`).toBeCloseTo(held(opacity), 12);
       expect(r.hub.trans.bloom, "the floor fade does not add a cloud flash").toBe(0);
     }
     expect(r.hub.trans.active).toBe(false);
@@ -768,13 +776,25 @@ for (const [from, to] of [["afternoon 7", "park 1"], ["park 1", "afternoon 7"]])
   });
 }
 
+test("afternoon 6 → park 1, the scene: the seen tree comes in with its shadow, not after it", () => {
+  const r = transitionRig(PRESETS["afternoon 6"]);
+  r.transitionTo(PRESETS["park 1, the scene"]);
+  expect(r.hub.trans.backgroundFade, "through the lit ground").toBe(true);
+  expect(r.hub.trans.treeFade, "the tree fades in").toBe(true);
+  for (const t of [0.25, 0.45, 0.5, 0.55, 0.6, 0.75]) {
+    r.hub.trans.t = t;
+    r.tickTransition(0);
+    expect(r.hub.trans.treeOpacity, `tree at t=${t}`).toBeCloseTo(t < 0.5 ? 0 : r.hub.trans.shadowOpacity, 12);
+  }
+});
+
 test("interrupting a floor fade preserves its visible shadow opacity", () => {
   const r = transitionRig(PRESETS["afternoon 7"]);
   r.transitionTo(PRESETS["park 1"]);
   r.hub.trans.t = 0.75;
   r.tickTransition(0);
   const opacity = r.hub.trans.shadowOpacity;
-  expect(opacity).toBe(0.5);
+  expect(opacity).toBeCloseTo(litShadow(0.75), 12);
   r.transitionTo(PRESETS["afternoon 7"]);
   expect(r.hub.trans.shadowOpacity).toBe(opacity);
   r.tickTransition(1 / 60);
@@ -877,15 +897,17 @@ test('an interrupted lit-ground fade carries its shadow opacity into a route tha
   const from = { ...DEFAULTS }, r = transitionRig(from);
   r.transitionTo({ ...from, standing_scene: true });
   expect(r.hub.trans.backgroundFade).toBe(true);
-  tickTo(r, 0.4);
+  tickTo(r, 0.49);
   const shown = r.hub.trans.shadowOpacity;
   expect(shown).toBeLessThan(0.2);
   r.transitionTo(from);
   expect(r.hub.trans.backgroundFade).toBe(false);
   r.tickTransition(1/60);
   expect(Math.abs(r.hub.trans.shadowOpacity - shown)).toBeLessThan(0.02);
+  expect(Math.abs(r.hub.trans.exposureHold - held(shown)), "the held exposure comes back with the shadows, never in one frame").toBeLessThan(0.02);
   tickTo(r, 0.5);
   expect(r.hub.trans.shadowOpacity).toBe(1);
+  expect(r.hub.trans.exposureHold).toBe(1);
 });
 
 test('a selection inside the crossfade window waits for the window to close, keeping the half-faded grove', () => {

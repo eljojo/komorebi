@@ -966,6 +966,11 @@ const CANOPY_MORPH_MAX = 80000;   // above this many leaf instances, fall back t
 const CROSS_HALF_W = 0.25;   // the window's half-width in t: [0.25, 0.75], centred where the cut used to be
 const BLOOM_MAX = { mode: 0.35, dissolve: 0.55, cross: 0.0 };   // the bloom's peak depth by tier — the mode flip's measured in the packet before this one
 const DUR_SCALE = { mode: 2.0,  dissolve: 2.0, cross: 2.0 };    // ...and how much longer than the caller's duration each tier takes to get there
+// The fade through the lit ground meets on bare floor, which at a look's own exposure (set for a floor mostly in shade) is blown to
+// white: the frame's exposure is held down to this much at the midpoint, and is whole again wherever the shadows are.
+const LIT_GROUND_HOLD = 0.35;
+// ...and each half of that fade runs on this power of its clock, so the shadows leave and arrive steeply around the midpoint.
+const LIT_GROUND_DIP = 6;
 
 // ---- default parameters. The editor edits a live copy; presets merge over this
 // so old/partial JSON stays forward-compatible as new knobs are added. ----------
@@ -1044,4 +1049,4 @@ function cutWarnings(P, build, warned){
   return out;
 }
 
-export { PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, GRANDFATHERED, LEGACY_KEYS, migrateLegacy };
+export { LIT_GROUND_DIP, LIT_GROUND_HOLD, PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, GRANDFATHERED, LEGACY_KEYS, migrateLegacy };

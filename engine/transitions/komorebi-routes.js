@@ -63,7 +63,7 @@ export function restTrans(){
     // The canopy morph: one grove deformed, re-seasoned or re-weighted, along the reach each end grows for.
     canopyMorph: false, seasonMorph: false, densityMorph: false, reach: null,
     // The fade through the lit ground: the shadows' opacity, and the camera set at its invisible midpoint.
-    backgroundFade: false, settleCamera: false, shadowFrom: 1, shadowOpacity: 1,
+    backgroundFade: false, settleCamera: false, shadowFrom: 1, shadowOpacity: 1, exposureHold: 1,
     // The wood meeting zero at a mode swap, and leaf_diffuse's proxy split meeting zero light.
     woodFade: false, splitFade: false,
     // The viewpoint: the eye moving through the horizon.

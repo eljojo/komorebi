@@ -58,7 +58,7 @@ The checks that hold each route are listed in [`../implementation.md`](../implem
 | **Joins** | Floor-to-floor mode changes over bare ground: `afternoon 7 ↔ park 1`. |
 | **Gate** | A MODE difference; neither end a sky view; floor receiver at both ends; no litter carpet (litter and leaf drop both above zero) at either end; no travel route admits the pair. |
 | **Duration** | 2*D*.|
-| **Promises** | No bloom, no second scene. Shadows ease out to the midpoint and back in, in linear irradiance before material and tone map. Wind continues. Standing → overhead sets the final camera at the invisible midpoint. Interruption starts from the current shadow opacity. |
+| **Promises** | No bloom, no second scene. Shadows hold, then fall steeply to nothing at the midpoint and rise as steeply back in, a seen tree with them, in linear irradiance before material and tone map; the exposure is held down as the reciprocal of the light that lets onto the floor, to 0.35 at the midpoint, and is whole again on landing; no frame is white. Wind continues. Standing → overhead sets the final camera at the invisible midpoint. Interruption starts from the current shadow opacity. |
 
 ## Scene dissolve
 

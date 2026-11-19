@@ -117,7 +117,7 @@ export function makeRender(hub){
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, glowTex[0]); gl.uniform1i(U.glowMix.sharp, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, glowTex[2]); gl.uniform1i(U.glowMix.blur, 1);
     gl.uniform1f(U.glowMix.diffuse, clamp(params.glow_bleed, 0, 1)*(hub.trans.active && hub.trans.viewpoint ? hub.trans.viewSkyWeight : 1));
-    gl.uniform1f(U.glowMix.exposure, shownExposure(params));
+    gl.uniform1f(U.glowMix.exposure, shownExposure(params)*(hub.trans.active ? hub.trans.exposureHold ?? 1 : 1));   // held down over the lit ground's bare floor
     gl.uniform1f(U.glowMix.contrast, params.contrast);
     gl.uniform1i(U.glowMix.tone, params.tone_map);
     gl.uniform3fv(U.glowMix.travelTone,hub.trans.travelTone??[0,0,0]);
@@ -412,7 +412,7 @@ export function makeRender(hub){
       // low-sun band that warms the beam; it hard-gates off (and costs nothing) for a daytime sun.
       gl.uniform1f(u.twilight, smoothstep(30, 4, params.sun_elevation_deg));
       gl.uniform1f(u.mesopic, params.mesopic_strength);
-      gl.uniform1f(u.exposure, shownExposure(params));   // cloud_exposure: a thicker cloud opens the exposure up
+      gl.uniform1f(u.exposure, shownExposure(params)*(hub.trans.active ? hub.trans.exposureHold ?? 1 : 1));   // cloud_exposure: a thicker cloud opens the exposure up; held down over the lit ground's bare floor
       gl.uniform1f(u.contrast, params.contrast);
       gl.uniform1i(u.tone, params.tone_map);
       gl.uniform3fv(u.travelTone,hub.trans.travelTone??[0,0,0]);
