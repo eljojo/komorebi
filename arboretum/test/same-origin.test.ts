@@ -35,14 +35,14 @@ describe('changing content that is already visible', () => {
     expect(items.status).toBe(200);
   });
 
-  it.each(['public', 'unlisted'] as const)('still refuses a token on %s content', async (visibility) => {
+  it.each(['public', 'unlisted'] as const)('lets a token add a version to %s content, and still refuses it the playlist', async (visibility) => {
     const user = await makeUser();
     const token = await makeToken(user);
     const preset = await makePreset(user, token, { visibility });
     const list = await makePlaylist(token, { visibility });
     const version = await call('POST', `/api/presets/${preset.id}/versions`, { token, json: { params: { tree_count: 9 } } });
     const items = await call('PUT', `/api/playlists/${list.id}/items`, { token, json: { revision: 0, items: [] } });
-    expect(version.status).toBe(403);
+    expect(version.status).toBe(201);
     expect(items.status).toBe(403);
   });
 });

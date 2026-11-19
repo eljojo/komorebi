@@ -105,25 +105,11 @@ describe('S3: removing a passkey while an enrollment is being verified', () => {
   });
 });
 
-// S2: a token may change only what is private, and that has to hold when the change is committed, not only when
-// the row was first read. Here the owner publishes in between.
+// S2: a token may change only a private playlist, and that has to hold when the change is committed, not only when
+// the row was first read. Here the owner publishes in between. A preset takes a token's version whatever its visibility.
 describe('S2: a token write that loses a race with the owner publishing', () => {
   const asToken = (when: RegExp, then: () => Promise<unknown>, method: string, path: string, token: string, json: unknown) =>
     racing(when, then)(request(method, path, { token, json })).then(reply);
-
-  it('appends no version to a preset that became public after the read', async () => {
-    const owner = await makeUser();
-    const token = await makeToken(owner);
-    const preset = await makePreset(owner, token);
-
-    const r = await asToken(/from "presets"/, async () => {
-      expect((await asSession(owner, 'PATCH', `/api/presets/${preset.id}`, { json: { visibility: 'public' } })).status).toBe(200);
-    }, 'POST', `/api/presets/${preset.id}/versions`, token, { params: { tree_count: 9 } });
-
-    expect(r.status, r.text).toBe(403);
-    expect(await db.select().from(presetVersions).where(eq(presetVersions.presetId, preset.id))).toHaveLength(1);
-    expect((await asSession(owner, 'GET', `/api/presets/${preset.id}`)).json.version).toBe(1);
-  });
 
   it('still lets a session append to a preset published in between', async () => {
     const owner = await makeUser();

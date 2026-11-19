@@ -316,9 +316,8 @@ describe('/arboretum/p/:id/history', () => {
   it('lists the versions newest first, with how each arrived', async () => {
     const o = await owner();
     const p = await makePreset(o.user, o.token, { name: 'first name' });
-    // A token may only add to a private look, so the look is published afterwards.
-    await call('POST', `/api/presets/${p.id}/versions`, { token: await makeToken(o.user, { label: 'studio laptop claude' }), json: { name: 'second name' } });
     await asSession(o.user, 'PATCH', `/api/presets/${p.id}`, { json: { visibility: 'public' } });
+    await call('POST', `/api/presets/${p.id}/versions`, { token: await makeToken(o.user, { label: 'studio laptop claude' }), json: { name: 'second name' } });
     const r = await get(`/arboretum/p/${p.id}/history`);
     expect(r.status).toBe(200);
     expect(r.text.indexOf('second name')).toBeGreaterThan(-1);

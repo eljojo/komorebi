@@ -144,8 +144,6 @@ async function checkedParent(c: Ctx, db: Db, actor: Actor, parent: unknown): Pro
   return parent;
 }
 
-const visibleRefusal = new ApiError(403, 'changing a visible preset needs a person in a browser; tokens can only add versions to private presets');
-
 const DAY_MS = 24 * 3600 * 1000;
 
 // The quotas are conditions of the insert itself (a statement is atomic, a check made before it is not), so a
@@ -156,19 +154,11 @@ const UNDER_VERSION_QUOTA =
   '(select count(*) from preset_versions v join presets p on p.id = v.preset_id where p.owner_id = ? and v.created_at > ?) < ?'; // owner, cutoff, limit
 const VERSION_COLUMNS = 'preset_id, n, name, description, tags, params, komorebi_commit, parent, via, created_at';
 
-// A token's right to change a preset is a condition of the insert (spec §3.3): the owner may have published it
-// since it was read. A session needs no such condition.
-const PRIVATE_OR_PERSON = "(? = 0 or (select visibility from presets where id = ?) = 'private')"; // 1 for a token else 0, preset id
-
 const versionQuotaBinds = (ownerId: number, now: number) => [ownerId, now - DAY_MS, LIMITS.versionsPerDay];
 const versionValues = (f: VersionFields, via: string, now: number) => [f.name, f.description, JSON.stringify(f.tags), f.params, f.komorebiCommit, f.parent, via, now];
 
 // Which limit refused the insert: only the message depends on this, so it need not be atomic.
-async function quotaRefusal(db: Db, ownerId: number, presetsToo: boolean, tokenOnPreset?: number): Promise<ApiError> {
-  if (tokenOnPreset !== undefined) {
-    const [{ visibility }] = await db.select({ visibility: presets.visibility }).from(presets).where(eq(presets.id, tokenOnPreset));
-    if (visibility !== 'private') return visibleRefusal;
-  }
+async function quotaRefusal(db: Db, ownerId: number, presetsToo: boolean): Promise<ApiError> {
   if (presetsToo) {
     const [{ owned }] = await db.select({ owned: count() }).from(presets).where(eq(presets.ownerId, ownerId));
     if (owned >= LIMITS.presets) return new ApiError(429, `at most ${LIMITS.presets} presets per user`, { limit: 'presets' });
@@ -248,9 +238,8 @@ export function registerPresets(app: Hono<AppEnv>) {
   secured(app, 'POST', '/api/presets/:id/versions', 'write', async (c, actor) => {
     const db = connect(c.env.DB);
     const row = await ownedPreset(c, actor);
-    // Anyone sees a public or unlisted look at once, so changing one is a person's act (spec §3.3).
-    const restricted = actor.kind === 'token';
-    if (restricted && row.preset.visibility !== 'private') throw visibleRefusal;
+    // A write token adds versions to any look its person owns, whatever its visibility: a version changes what the look
+    // is, never who may see it, and publishing stays a person's act (PATCH, below).
     const { body, text } = await readJsonBody(c);
     if ('visibility' in body) throw new ApiError(400, 'visibility is not part of a version; change it with PATCH /api/presets/:id');
 
@@ -269,13 +258,13 @@ export function registerPresets(app: Hono<AppEnv>) {
           `insert into preset_versions (${VERSION_COLUMNS})
            select p.id, (select coalesce(max(n), 0) + 1 from preset_versions where preset_id = ?), ${fieldsSql}
            from presets p join preset_versions h on h.id = p.head_version_id
-           where p.id = ? and ${UNDER_VERSION_QUOTA} and ${PRIVATE_OR_PERSON} returning id`,
+           where p.id = ? and ${UNDER_VERSION_QUOTA} returning id`,
         )
-        .bind(id, ...fieldsBinds, id, ...versionQuotaBinds(actor.userId, now), restricted ? 1 : 0, id),
+        .bind(id, ...fieldsBinds, id, ...versionQuotaBinds(actor.userId, now)),
       d1.prepare('update presets set head_version_id = last_insert_rowid(), updated_at = ? where id = ? and changes() > 0').bind(now, id),
     ]);
     const appended = append.results;
-    if (!appended.length) throw await quotaRefusal(db, actor.userId, false, restricted ? id : undefined);
+    if (!appended.length) throw await quotaRefusal(db, actor.userId, false);
     return c.json(presetView((await loadPreset(db, id))!, actor), 201);
   });
 

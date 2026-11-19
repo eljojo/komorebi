@@ -846,20 +846,21 @@ describe('a fresh share link each time it goes unlisted', () => {
   });
 });
 
-describe('a token cannot change what is visible (spec §3.3)', () => {
-  it.each(['public', 'unlisted'] as const)('is refused a new version on a %s preset, with 403, and nothing is appended', async (visibility) => {
+describe('a write token changes every look its person owns', () => {
+  it.each(['private', 'public', 'unlisted'] as const)('appends a new version to a %s preset, and its visibility stays', async (visibility) => {
     const o = await owner();
     const p = await makePreset(o.user, o.token, { visibility });
-    const r = await call('POST', `/api/presets/${p.id}/versions`, { token: o.token, json: { name: 'sneaky' } });
-    expect(r.status).toBe(403);
-    expect(r.json.error).toMatch(/browser/);
-    expect((await get(`/api/presets/${p.id}/versions`, o.token)).json.versions).toHaveLength(1);
+    const r = await call('POST', `/api/presets/${p.id}/versions`, { token: o.token, json: { name: 'retouched' } });
+    expect(r.status).toBe(201);
+    expect(r.json.name).toBe('retouched');
+    expect(r.json.visibility).toBe(visibility);
+    expect((await get(`/api/presets/${p.id}/versions`, o.token)).json.versions).toHaveLength(2);
   });
 
-  it('may append versions to a private preset', async () => {
+  it('appends to an archived preset of its own', async () => {
     const o = await owner();
-    const p = await makePreset(o.user, o.token);
-    expect((await call('POST', `/api/presets/${p.id}/versions`, { token: o.token, json: { name: 'quiet' } })).status).toBe(201);
+    const p = await makePreset(o.user, o.token, { visibility: 'public', archived: true });
+    expect((await call('POST', `/api/presets/${p.id}/versions`, { token: o.token, json: { name: 'shelved, retouched' } })).status).toBe(201);
   });
 
   it.each(['public', 'unlisted'] as const)('lets a person in a browser append to a %s preset', async (visibility) => {
