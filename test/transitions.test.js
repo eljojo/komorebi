@@ -1044,6 +1044,16 @@ const native = (p) => { const r = sourceRig(p); r.hub.regenSource(); return { sr
 const look = (p) => Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, p[k]]));   // the params a look has, whatever else an object carries
 const settle = (r) => { let frames = 0, cb; while (r.hub.trans.active && frames++ < 400) cb = r.tickTransition(1/60) || cb; return cb; };
 
+test("a three-sample source keeps the halo's share through full cloud", () => {
+  for (const cloud_thickness of [0.3, 1]) {
+    const p = { ...DEFAULTS, sample_count: 3, cloud_thickness, core_weight_fraction: 0.88, eclipse: false };
+    const w = weights(native(p).src);
+    expect(w).toHaveLength(3);
+    expect(w.reduce((sum, weight) => sum + weight, 0)).toBeCloseTo(1, 6);
+    expect(w[2]).toBeCloseTo(1 - p.core_weight_fraction * (1 - cloud_thickness), 6);
+  }
+});
+
 test("layer transport packs the contributing rays without moving or renormalizing the full source", () => {
   const { flat, count, beam } = native(PRESETS.eclipse).src;
   expect(count).toBe(48);

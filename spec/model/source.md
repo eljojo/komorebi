@@ -55,7 +55,7 @@ The source is **not "a light"**. It is a **cloud of weighted point-suns**: a lis
 - a tight, heavy **core**, the half-degree sun, carrying most of the energy;
 - a sparse, wide, low-weight **halo**, the cloud's aureole, an annulus around the core.
 
-**The pattern is a Vogel (sunflower) spiral**: successive points turn by the golden angle and step outward by the square root of their index, so each population covers its disk or annulus evenly by area, with no clumping and no banding. Half the samples (at least three) form the core disk; the rest form the halo annulus from the core's edge outward, its spiral started at a fixed angular offset from the core's. Each sample in a population carries an equal share of that population's weight.
+**The pattern is a Vogel (sunflower) spiral**: successive points turn by the golden angle and step outward by the square root of their index, so each population covers its disk or annulus evenly by area, with no clumping and no banding. Half the samples (at least three) form the core disk; the rest form the halo annulus from the core's edge outward, its spiral started at a fixed angular offset from the core's. At the three-sample minimum, two samples form the core and one carries the halo's weight. Each sample in a population carries an equal share of that population's weight.
 
 **The cloud knob moves energy and spreads the halo.** With cloud thickness `t` from 0 to 1:
 

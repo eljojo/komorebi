@@ -20,8 +20,8 @@ export function makeSource(hub){
     const haloR = lerp(coreR*2.0, haloDeg*DEG, t);
     const Wcore = params.core_weight_fraction*(1.0-t);     // energy drains core->halo with cloud
     const Whalo = 1.0 - Wcore;
-    const nCore = Math.max(3, Math.round(N*0.5));
-    const nHalo = Math.max(0, N - nCore);
+    const nCore = Math.min(N - 1, Math.max(3, Math.round(N*0.5)));
+    const nHalo = N - nCore;
     const golden = Math.PI*(3 - Math.sqrt(5));
     const pts = [];
     for(let i=0;i<nCore;i++){
@@ -32,7 +32,7 @@ export function makeSource(hub){
       const f=(i+0.5)/nHalo;
       const r=Math.sqrt(coreR*coreR + f*(haloR*haloR-coreR*coreR));  // area-uniform annulus
       const a=i*golden+0.5;
-      pts.push([r*Math.cos(a), r*Math.sin(a), nHalo>0?Whalo/nHalo:0]);
+      pts.push([r*Math.cos(a), r*Math.sin(a), Whalo/nHalo]);
     }
     // eclipse: occlude a moon-disk over the sun -> remaining samples form a crescent
     const moonR = params.eclipse ? coreR*1.0 : 0;
