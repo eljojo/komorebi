@@ -162,15 +162,24 @@ export function growBuds(spec, rng, out){
     for(const b of B) b.v = 0;
     split(G.alpha*Qroot, 0, rootKids, rootBuds);
     for(let m = 0; m < M.length; m++) if(M[m].alive) split(vIn[m], M[m].ord, M[m].kids, M[m].buds);
-    // 4. growth. A year that would pass the cap is grown whole, every shoot shortened by one factor (but none below one
-    // internode), and is the last: cut off partway, the buds grown first (the oldest, low in the crown) would have their
-    // shoots and the rest none, and the leaves, which hang on the last year's shoots, would be missing from the top.
+    // 4. growth. Spread the final year's budget across the whole crown. Reserve one internode per viable bud if it fits,
+    // then apportion the rest by cumulative demand so rounding neither exceeds the cap nor cuts the crown off partway.
     const grow = B.length;
-    let planned = 0; for(let bi = 0; bi < grow; bi++){ const b = B[bi]; if(b.alive && b.v >= 1) planned += Math.min(G.maxShoot, Math.floor(b.v)); }
-    const budget = M.length + planned > G.cap ? Math.max(0, G.cap - M.length)/planned : 1;
+    let planned = 0, viable = 0;
+    for(let bi = 0; bi < grow; bi++){ const b = B[bi]; if(b.alive && b.v >= 1){ planned += Math.min(G.maxShoot, Math.floor(b.v)); viable++; } }
+    const room = G.cap - M.length, limited = planned > room;
+    const base = room >= viable ? 1 : 0, capacity = room - base*viable, demand = planned - base*viable;
+    let demandSoFar = 0, assigned = 0;
     for(let bi = 0; bi < grow; bi++){
       const b = B[bi]; if(!b.alive || b.v < 1) continue;
-      const n = Math.max(1, Math.round(Math.min(G.maxShoot, Math.floor(b.v))*budget));
+      let n = Math.min(G.maxShoot, Math.floor(b.v));
+      if(limited){
+        demandSoFar += n - base;
+        const throughBud = Math.floor(demandSoFar*capacity/demand);
+        n = base + throughBud - assigned;
+        assigned = throughBud;
+        if(n === 0) continue;
+      }
       b.alive = false;
       let prev = b.m, d = b.d, phi = b.phi, splitHere = false;
       const metas = [], lean = b.lean;   // lean: a stem of the trunk's split, the direction it is held to

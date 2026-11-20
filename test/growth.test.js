@@ -5,7 +5,7 @@
 // grammar itself, which every other test of the grove holds.
 // ============================================================================
 import { test, expect } from "bun:test";
-import { growBuds } from "../engine/canopy/komorebi-growth.js";
+import { GROWTH, growBuds } from "../engine/canopy/komorebi-growth.js";
 import { makeGrove } from "../engine/canopy/komorebi-grove.js";
 import { DEFAULTS, TOPO_KEYS } from "../komorebi.js";
 import { mulberry32 } from "../engine/komorebi-math.js";
@@ -34,6 +34,13 @@ test("the same seed and knobs grow the same tree, to the bit", () => {
   const a = grow(), b = grow();
   expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   expect(JSON.stringify(grow({}, 8))).not.toBe(JSON.stringify(a));
+});
+
+test("the last growth year fits the metamer budget across the whole crown", () => {
+  const out = { seg: [], tw: [] };
+  const { M } = growBuds({ years: 20, lambda: 0.55, angle: 0.7, pitch: 0.2, phyllo: 0, droop: 0, kids: 6, bearing: 12 }, mulberry32(123), out);
+  expect(M.length).toBe(GROWTH.cap);
+  expect(out.tw).toHaveLength(12);
 });
 
 test("its records are the grammar's: every twig has a base and a heading, every segment an order and its twig, every path starts at its tip", () => {

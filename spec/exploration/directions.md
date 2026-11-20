@@ -236,6 +236,8 @@ José, looking down at one tree with a bare middle: *"this tree is weird as fuck
 
 What the grown tree already has right: the pipe model's taper, gravitropic droop compounding toward the tips, the phyllotaxis types, and apical control as the axis between species (`leader_strength`), though only on the trunk.
 
+The prototype limits each tree to 60,000 internodes. If a year's growth would exceed that limit, the remaining internodes are apportioned across the crown by the buds' planned growth. Each viable bud keeps at least one if the budget allows.
+
 **Why it is more komorebi.** The canopy's first law is that gaps are leftovers of a structure, never drawn. A structure that grows the way a tree grows leaves the gaps a tree leaves: openings where branches died back, density where light was, a top that shades its own interior. It is the piece's causal habit applied to the tree itself, and it gives the place direction a grove whose trees differ for reasons.
 
 **Acceptance criteria.**
