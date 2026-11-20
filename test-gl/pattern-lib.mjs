@@ -501,3 +501,173 @@ export function lag1(s) {
 	}
 	return den > 0 ? num / den : NaN;
 }
+
+// ---- impermanence: the pattern scrambled by the wind and settling back (not in Zhang; measured the same way on
+// a recording and on a render). Frames are small luminance arrays of one size, at fs frames a second.
+function unit(f) {
+	let m = 0;
+	for (const v of f) m += v;
+	m /= f.length;
+	const u = new Float64Array(f.length);
+	let s = 0;
+	for (let i = 0; i < f.length; i++) {
+		u[i] = f[i] - m;
+		s += u[i] * u[i];
+	}
+	s = Math.sqrt(s);
+	if (s > 0) for (let i = 0; i < f.length; i++) u[i] /= s;
+	return u;
+}
+const dot = (a, b) => {
+	let s = 0;
+	for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+	return s;
+};
+
+// how fast the pattern forgets itself: the mean correlation of frame t with frame t+lag, for each lag (in frames);
+// tau is the seconds it takes to fall to 1/e (ln r interpolated linearly between lags), null if it never does;
+// plateau is the correlation at the longest lag: what of the arrangement outlasts the wind
+export function decorrelation(frames, fs, lags) {
+	const u = frames.map(unit),
+		curve = [];
+	for (const lag of lags) {
+		if (lag >= u.length) break;
+		let s = 0,
+			c = 0;
+		for (let t = 0; t + lag < u.length; t++) {
+			s += dot(u[t], u[t + lag]);
+			c++;
+		}
+		curve.push({ lag, seconds: lag / fs, r: s / c });
+	}
+	let tau = null,
+		prev = { lag: 0, r: 1 };
+	for (const p of curve) {
+		if (p.r <= 1 / Math.E) {
+			const a = Math.log(Math.max(prev.r, 1e-9)),
+				b = Math.log(Math.max(p.r, 1e-9));
+			tau = (prev.lag + ((-1 - a) / (b - a)) * (p.lag - prev.lag)) / fs;
+			break;
+		}
+		prev = p;
+	}
+	return {
+		curve,
+		tau,
+		plateau: curve.length ? curve[curve.length - 1].r : null,
+	};
+}
+
+// how far each frame strays from the clip's resting arrangement (its mean frame) and how it comes back:
+// s(t) = 1 − corr(frame t, rest). An episode is a run above halfway from the median to the 90th percentile (runs
+// closer than mergeGap seconds joined); returnSeconds is the median episode's length, the time to settle back
+export function scramble(frames, fs, { mergeGap = 1, settle = 1 } = {}) {
+	const n = frames[0].length,
+		rest = new Float64Array(n);
+	for (const f of frames) for (let i = 0; i < n; i++) rest[i] += f[i];
+	const ru = unit(rest),
+		s = frames.map((f) => 1 - dot(unit(f), ru));
+	const sorted = [...s].sort((p, q) => p - q),
+		q = (p) =>
+			sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))],
+		med = q(0.5),
+		p90 = q(0.9),
+		thr = (med + p90) / 2;
+	const runs = [];
+	for (let t = 0; t < s.length; t++)
+		if (s[t] > thr) {
+			const last = runs[runs.length - 1];
+			if (last && t - last[1] <= mergeGap * fs) last[1] = t + 1;
+			else runs.push([t, t + 1]);
+		}
+	const lens = runs.map(([a, b]) => (b - a) / fs).sort((p, q2) => p - q2);
+	// the same shape after the wind: the frame settled after an episode against the one before it (both `settle`
+	// seconds clear of it). High is the shadow coming back as itself, though the shape is random
+	const pad = Math.round(fs * settle),
+		same = runs
+			.filter(([a, b]) => a - pad >= 0 && b - 1 + pad < frames.length)
+			.map(([a, b]) => dot(unit(frames[a - pad]), unit(frames[b - 1 + pad])));
+	return {
+		sameShapeAfter: same.length
+			? same.reduce((x, v) => x + v, 0) / same.length
+			: null,
+		series: s,
+		mean: s.reduce((a, v) => a + v, 0) / s.length,
+		median: med,
+		p90,
+		episodes: runs.length,
+		perMinute: runs.length / (s.length / fs / 60),
+		returnSeconds: lens.length ? lens[lens.length >> 1] : null,
+	};
+}
+
+// each dapple followed through time: patches of consecutive frames matched greedily nearest first within maxDist.
+// A track's lifetime is its frames / fs; a track touching the first or last frame is censored (its life is longer
+// than seen) and left out of the lifetimes. A return is a birth within returnDist of where a track died at most
+// returnWithin seconds before: the dapple that went out and lit again in its place
+export function trackPatches(
+	seq,
+	fs,
+	{ maxDist = 3, returnDist = 4, returnWithin = 2 } = {},
+) {
+	const tracks = [];
+	let active = [];
+	for (let t = 0; t < seq.length; t++) {
+		const pts = seq[t],
+			pairs = [];
+		for (let i = 0; i < active.length; i++)
+			for (let j = 0; j < pts.length; j++) {
+				const d = Math.hypot(active[i].x - pts[j].x, active[i].y - pts[j].y);
+				if (d <= maxDist) pairs.push([d, i, j]);
+			}
+		pairs.sort((a, b) => a[0] - b[0]);
+		const usedA = new Set(),
+			usedP = new Set(),
+			next = [];
+		for (const [, i, j] of pairs) {
+			if (usedA.has(i) || usedP.has(j)) continue;
+			usedA.add(i);
+			usedP.add(j);
+			Object.assign(active[i], { x: pts[j].x, y: pts[j].y, end: t });
+			next.push(active[i]);
+		}
+		for (let j = 0; j < pts.length; j++)
+			if (!usedP.has(j)) {
+				const tr = {
+					start: t,
+					end: t,
+					x: pts[j].x,
+					y: pts[j].y,
+					bx: pts[j].x,
+					by: pts[j].y,
+				};
+				tracks.push(tr);
+				next.push(tr);
+			}
+		active = next;
+	}
+	const last = seq.length - 1,
+		complete = tracks.filter((tr) => tr.start > 0 && tr.end < last),
+		bornLater = tracks.filter((tr) => tr.start > 0);
+	let returns = 0;
+	for (const b of bornLater)
+		if (
+			tracks.some(
+				(d) =>
+					d !== b &&
+					d.end < b.start &&
+					(b.start - d.end) / fs <= returnWithin &&
+					Math.hypot(d.x - b.bx, d.y - b.by) <= returnDist,
+			)
+		)
+			returns++;
+	const lifetimes = complete.map((tr) => (tr.end - tr.start + 1) / fs);
+	return {
+		tracks: tracks.length,
+		censored: tracks.length - complete.length,
+		lifetimes,
+		birthsPerSecond: bornLater.length / (seq.length / fs),
+		returns,
+		returnShare: bornLater.length ? returns / bornLater.length : null,
+	};
+}

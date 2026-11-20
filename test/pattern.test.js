@@ -4,6 +4,7 @@
 // speed; noise of spectral slope α gives back α; an alternating series has negative lag-1 correlation.
 import { expect, test } from "bun:test";
 import {
+	decorrelation,
 	fft,
 	findPatches,
 	flowSummary,
@@ -13,8 +14,10 @@ import {
 	mrd,
 	nni,
 	rng,
+	scramble,
 	spectralBeta,
 	temporalAlpha,
+	trackPatches,
 } from "../test-gl/pattern-lib.mjs";
 
 const W = 400,
@@ -216,4 +219,83 @@ test("rhythm: smooth series near +1, alternating near -1", () => {
 	const alt = Array.from({ length: 200 }, (_, t) => (t % 2 ? 1 : -1));
 	expect(lag1(smooth)).toBeGreaterThan(0.95);
 	expect(lag1(alt)).toBeLessThan(-0.95);
+});
+
+// impermanence: how fast the whole pattern forgets itself, and how long each dapple lives
+test("decorrelation: a frozen pattern never forgets; an AR(1) pattern forgets as ρ^k, its 1/e time -1/ln ρ steps", () => {
+	const r = rng(21),
+		n = 32 * 32,
+		noise = () => Float32Array.from({ length: n }, () => r() - 0.5);
+	const still = Array.from({ length: 40 }, () => noise()).map(
+		(_, __, a) => a[0],
+	);
+	const s = decorrelation(still, 4, [1, 4, 16]);
+	expect(s.curve.every((c) => Math.abs(c.r - 1) < 1e-9)).toBe(true);
+	expect(s.tau).toBeNull();
+	const rho = 0.8,
+		ar = [noise()];
+	for (let t = 1; t < 4000; t++) {
+		const e = noise(),
+			f = new Float32Array(n);
+		for (let i = 0; i < n; i++)
+			f[i] = rho * ar[t - 1][i] + Math.sqrt(1 - rho * rho) * e[i];
+		ar.push(f);
+	}
+	const d = decorrelation(ar, 4, [1, 2, 4, 8]);
+	for (const c of d.curve) expect(c.r).toBeCloseTo(rho ** c.lag, 1);
+	expect(d.tau).toBeCloseTo(-1 / Math.log(rho) / 4, 1); // in seconds at 4 frames a second
+});
+
+test("tracks: lifetimes, births and deaths, and a dapple coming back where it was", () => {
+	// frame lists at 2 Hz: A lives frames 0..9 (whole clip, censored); B is born at 2, dies after 5 (4 frames);
+	// C lives 1..2, is gone at 3..4, comes back at 5 in the same place and lives to 6
+	const A = { x: 10, y: 10 },
+		B = { x: 50, y: 20 },
+		C = { x: 80, y: 60 };
+	const seq = Array.from({ length: 10 }, (_, t) => {
+		const f = [A];
+		if (t >= 2 && t <= 5) f.push(B);
+		if ((t >= 1 && t <= 2) || (t >= 5 && t <= 6))
+			f.push({ ...C, x: C.x + (t % 2) });
+		return f;
+	});
+	const tr = trackPatches(seq, 2, {
+		maxDist: 3,
+		returnDist: 4,
+		returnWithin: 2,
+	});
+	expect(tr.tracks).toBe(4);
+	expect(tr.censored).toBe(1);
+	expect(tr.lifetimes.sort((p, q) => p - q)).toEqual([1, 1, 2]); // seconds: C twice (2 frames each), B (4 frames)
+	expect(tr.returns).toBe(1);
+	expect(tr.returnShare).toBeCloseTo(1 / 3, 9); // of the complete tracks' births, one is a return
+});
+
+test("return: a pattern scrambled by gusts and settling back is measured by how far and how long it strays from rest", () => {
+	const r = rng(33),
+		n = 24 * 24,
+		rest = Float32Array.from({ length: n }, () => r() - 0.5);
+	// 4 fps, 120 s: calm, with three gusts of 5 s that scramble the frame half way, then settle back at once
+	const frames = [];
+	for (let t = 0; t < 480; t++) {
+		const gust = [40, 200, 360].some((g) => t >= g && t < g + 20) ? 0.7 : 0.05;
+		frames.push(
+			Float32Array.from(rest, (v) => (1 - gust) * v + gust * (r() - 0.5)),
+		);
+	}
+	const s = scramble(frames, 4);
+	expect(s.episodes).toBe(3);
+	expect(s.perMinute).toBeCloseTo(1.5, 6);
+	expect(s.returnSeconds).toBeCloseTo(5, 0);
+	expect(s.p90).toBeGreaterThan(s.mean);
+	expect(s.sameShapeAfter).toBeGreaterThan(0.99); // settles back into the very shape it left
+	// a pattern that does not come back: after each gust it settles into a new arrangement
+	const drift = [];
+	let cur = rest;
+	for (let t = 0; t < 480; t++) {
+		const gusting = [40, 200, 360].some((g) => t >= g && t < g + 20);
+		if (gusting) cur = Float32Array.from({ length: n }, () => r() - 0.5);
+		drift.push(Float32Array.from(cur, (v) => v + 0.02 * (r() - 0.5)));
+	}
+	expect(scramble(drift, 4).sameShapeAfter).toBeLessThan(0.2);
 });

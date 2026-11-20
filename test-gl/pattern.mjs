@@ -10,10 +10,13 @@
 //   --sigma, --k, --min-sep, --bg, --min-contrast   the patch detector (pattern-lib findPatches), in --short pixels
 //                      and luminance (defaults 2, 0.5, 6, 4, 0.02)
 //   --tiles <n>        α is also measured on an n×n grid of tiles and their median reported (default 4)
+//   --imp-hz <hz>      frames a second for the impermanence measures (default 4): the decorrelation curve and the
+//                      scramble/return on --imp-width px frames (default 80), and each patch tracked through time
 // Luminance is the decoded grey (ffmpeg `gray`, gamma-encoded as stored): what the eye sees on the screen, as in Zhang.
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import {
+	decorrelation,
 	findPatches,
 	flowSummary,
 	gaussBlur,
@@ -22,8 +25,10 @@ import {
 	moransI,
 	mrd,
 	nni,
+	scramble,
 	spectralBeta,
 	temporalAlpha,
+	trackPatches,
 } from "./pattern-lib.mjs";
 
 function parse(argv) {
@@ -42,6 +47,8 @@ function parse(argv) {
 		bg: 4,
 		minContrast: 0.02,
 		tiles: 4,
+		impHz: 4,
+		impWidth: 80,
 		out: null,
 	};
 	for (let i = 0; i < argv.length; i++) {
@@ -60,6 +67,8 @@ function parse(argv) {
 		else if (a === "--bg") o.bg = +v();
 		else if (a === "--min-contrast") o.minContrast = +v();
 		else if (a === "--tiles") o.tiles = +v();
+		else if (a === "--imp-hz") o.impHz = +v();
+		else if (a === "--imp-width") o.impWidth = +v();
 		else if (a === "--out") o.out = v();
 		else if (a === "--help" || a === "-h") {
 			console.log(readHelp());
@@ -193,11 +202,14 @@ async function measure(input, o) {
 	const ff = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "inherit"] });
 	const frameBytes = w * h,
 		flowEvery = Math.max(1, Math.round(fps / o.flowHz)),
-		patchEvery = Math.max(1, Math.round(fps / o.patchHz));
+		patchEvery = Math.max(1, Math.round(fps / o.patchHz)),
+		impEvery = Math.max(1, Math.round(fps / o.impHz));
 	const mean = [],
 		tiles = Array.from({ length: o.tiles * o.tiles }, () => []),
 		flows = [],
-		spatial = { nni: [], mrd: [], moran: [], beta: [], patches: [] };
+		spatial = { nni: [], mrd: [], moran: [], beta: [], patches: [] },
+		impFrames = [],
+		impPatches = [];
 	let buf = Buffer.alloc(0),
 		idx = 0,
 		prevFlow = null;
@@ -231,14 +243,24 @@ async function measure(input, o) {
 					tiles[ty * o.tiles + tx].push(a / c);
 				}
 			const frame = { w, h, data };
-			if (idx % patchEvery === 0) {
-				const p = findPatches(frame, {
+			const patchesNow = () =>
+				findPatches(frame, {
 					sigma: o.sigma,
 					k: o.k,
 					minSep: o.minSep,
 					bg: o.bg,
 					minContrast: o.minContrast,
 				});
+			let p = null;
+			if (idx % impEvery === 0) {
+				impFrames.push(
+					gaussBlur(downsample(frame, Math.min(o.impWidth, w)), 1).data,
+				);
+				p = patchesNow();
+				impPatches.push(p);
+			}
+			if (idx % patchEvery === 0) {
+				p ??= patchesNow();
 				spatial.patches.push(p.length);
 				spatial.nni.push(nni(p, w, h));
 				spatial.mrd.push(mrd(p, w, h));
@@ -262,6 +284,17 @@ async function measure(input, o) {
 	const fh = flows[0]?.h ?? 0,
 		diag = Math.hypot(fw, fh);
 	const tileAlpha = tiles.map((s) => temporalAlpha(s, fps));
+	const impFs = fps / impEvery,
+		lags = [1, 2, 4, 8, 16, 32, 64, 128, 256].filter(
+			(l) => l < impFrames.length / 2,
+		),
+		dec = decorrelation(impFrames, impFs, lags),
+		scr = scramble(impFrames, impFs),
+		tr = trackPatches(impPatches, impFs, {
+			maxDist: o.minSep / 2,
+			returnDist: o.minSep / 2,
+			returnWithin: 2,
+		});
 	return {
 		input,
 		fps,
@@ -282,6 +315,8 @@ async function measure(input, o) {
 			bg: o.bg,
 			minContrast: o.minContrast,
 			tiles: o.tiles,
+			impHz: impFs,
+			impWidth: Math.min(o.impWidth, w),
 		},
 		spatial: {
 			nni: stat(spatial.nni),
@@ -301,6 +336,30 @@ async function measure(input, o) {
 			flowPairs: flows.length,
 			brightness: stat(mean),
 		},
+		// the pattern scrambled by the wind and settling back: not in Zhang
+		impermanence: {
+			decorrelation: dec.curve,
+			tau: dec.tau,
+			plateau: dec.plateau,
+			scramble: {
+				mean: scr.mean,
+				median: scr.median,
+				p90: scr.p90,
+				episodes: scr.episodes,
+				perMinute: scr.perMinute,
+				returnSeconds: scr.returnSeconds,
+				sameShapeAfter: scr.sameShapeAfter,
+			},
+			tracks: {
+				tracks: tr.tracks,
+				censored: tr.censored,
+				lifetime: stat(tr.lifetimes),
+				lifetimeMedian: median(tr.lifetimes),
+				birthsPerSecond: tr.birthsPerSecond,
+				returns: tr.returns,
+				returnShare: tr.returnShare,
+			},
+		},
 	};
 }
 
@@ -310,7 +369,7 @@ for (const input of o.inputs) {
 	const r = await measure(input, o);
 	results.push(r);
 	console.error(
-		`${input}: NNI ${r.spatial.nni.mean?.toFixed(3)}  MRD ${r.spatial.mrd.mean?.toFixed(3)}  I ${r.spatial.moransI.mean?.toFixed(3)}  β ${r.spatial.beta.mean?.toFixed(2)}  α ${r.temporal.alpha?.toFixed(2)} (tiles ${r.temporal.alphaTilesMedian?.toFixed(2)})  Dθ ${r.temporal.directionConsistency?.toFixed(2)}  ρ1 ${r.temporal.rhythm?.toFixed(2)}  speed ${r.temporal.speed?.toFixed(4)}`,
+		`${input}: NNI ${r.spatial.nni.mean?.toFixed(3)}  MRD ${r.spatial.mrd.mean?.toFixed(3)}  I ${r.spatial.moransI.mean?.toFixed(3)}  β ${r.spatial.beta.mean?.toFixed(2)}  α ${r.temporal.alpha?.toFixed(2)} (tiles ${r.temporal.alphaTilesMedian?.toFixed(2)})  Dθ ${r.temporal.directionConsistency?.toFixed(2)}  ρ1 ${r.temporal.rhythm?.toFixed(2)}  speed ${r.temporal.speed?.toFixed(4)}  τ ${r.impermanence.tau?.toFixed(2)} s  plateau ${r.impermanence.plateau?.toFixed(2)}  scramble ${r.impermanence.scramble.mean.toFixed(3)} (${r.impermanence.scramble.perMinute.toFixed(1)}/min, back in ${r.impermanence.scramble.returnSeconds?.toFixed(1)} s, same ${r.impermanence.scramble.sameShapeAfter?.toFixed(2)})  life ${r.impermanence.tracks.lifetimeMedian?.toFixed(2)} s  returns ${r.impermanence.tracks.returnShare?.toFixed(2)}`,
 	);
 }
 const json = JSON.stringify(
