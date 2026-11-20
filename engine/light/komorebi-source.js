@@ -3,13 +3,22 @@
 // point-suns, and the eclipse moon that crosses it. A factory over the engine's shared internals (hub).
 // The cast geometry every camera shares (the bulk shift, the ellipse, the layer heights) is komorebi-cast.js.
 // ============================================================================
-import { DEG, clamp, lerp } from '../komorebi-math.js';
+import { DEG, GOLDEN, clamp, lerp } from '../komorebi-math.js';
 import { MAX_SAMPLES, MIN_FIDELITY, SKY_SUN_GAIN } from '../komorebi-params.js';
 
 const EDITOR = (typeof KOMOREBI_EDITOR !== "undefined") ? KOMOREBI_EDITOR : true;
 
 export function makeSource(hub){
   const { gl, params, perf, trans, src, effCloud } = hub;
+  let lastCoreWeight, lastMoonSoft, insetBuffer, insetSamples;
+
+  function uploadInset(){
+    if(EDITOR && hub.srcDbgBuf && (insetBuffer !== hub.srcDbgBuf || insetSamples !== src.flat)){
+      insetBuffer = hub.srcDbgBuf; insetSamples = src.flat;
+      gl.bindBuffer(gl.ARRAY_BUFFER, insetBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, insetSamples, gl.DYNAMIC_DRAW);
+    }
+  }
 
   // ---- source: Vogel-spiral cloud of weighted point-suns ---------------------
   function regenSource(){
@@ -22,18 +31,6 @@ export function makeSource(hub){
     const Whalo = 1.0 - Wcore;
     const nCore = N === 1 ? 1 : Math.min(N - 1, Math.max(3, Math.round(N*0.5)));
     const nHalo = N - nCore;
-    const golden = Math.PI*(3 - Math.sqrt(5));
-    const pts = [];
-    for(let i=0;i<nCore;i++){
-      const r = N === 1 ? 0 : coreR*Math.sqrt((i+0.5)/nCore), a=i*golden;
-      pts.push([r*Math.cos(a), r*Math.sin(a), N === 1 ? 1 : Wcore/nCore]);
-    }
-    for(let i=0;i<nHalo;i++){
-      const f=(i+0.5)/nHalo;
-      const r=Math.sqrt(coreR*coreR + f*(haloR*haloR-coreR*coreR));  // area-uniform annulus
-      const a=i*golden+0.5;
-      pts.push([r*Math.cos(a), r*Math.sin(a), Whalo/nHalo]);
-    }
     // eclipse: occlude a moon-disk over the sun -> remaining samples form a crescent
     const moonR = params.eclipse ? coreR*1.0 : 0;
     let moonD = params.eclipse ? coreR*(1.3-params.eclipse_amount) : 0;
@@ -47,10 +44,29 @@ export function makeSource(hub){
       src.moonClear = moonClear(coreR, haloR, dCore, dHalo);
       moonD = coreR*moonDistance(moon.x, moon.amount, src.moonClear);
     }
+    const soft = moon?.soft ?? 0;
+    if(N===src.count && coreR===src.coreR && haloR===src.haloR && Wcore===lastCoreWeight &&
+       moonD===src.moonD && moonR===src.moonR && soft===lastMoonSoft){
+      uploadInset();   // context restoration can replace the buffer while keeping the same source
+      return;
+    }
+    lastCoreWeight = Wcore; lastMoonSoft = soft;
+
+    const pts = [];
+    for(let i=0;i<nCore;i++){
+      const r = N === 1 ? 0 : coreR*Math.sqrt((i+0.5)/nCore), a=i*GOLDEN;
+      pts.push([r*Math.cos(a), r*Math.sin(a), N === 1 ? 1 : Wcore/nCore]);
+    }
+    for(let i=0;i<nHalo;i++){
+      const f=(i+0.5)/nHalo;
+      const r=Math.sqrt(coreR*coreR + f*(haloR*haloR-coreR*coreR));  // area-uniform annulus
+      const a=i*GOLDEN+0.5;
+      pts.push([r*Math.cos(a), r*Math.sin(a), Whalo/nHalo]);
+    }
     let blockedWeight = 0;
     if(params.eclipse){
       pts.forEach((p, i) => {
-        const remaining = moonCover(Math.hypot(p[0]-moonD, p[1]), moonR, moon ? moon.soft*(i < nCore ? dCore : dHalo) : 0);
+        const remaining = moonCover(Math.hypot(p[0]-moonD, p[1]), moonR, soft*(i < nCore ? dCore : dHalo));
         blockedWeight += p[2]*(1 - remaining);
         p[2] *= remaining;
       });
@@ -86,11 +102,8 @@ export function makeSource(hub){
       }
       src.beam=beam;
     }
-    src.flat=flat; src.count=pts.length; src.maxR=mr; src.maxW=mw; src.haloR=haloR;
-    if(EDITOR && hub.srcDbgBuf){   // driven transition scenes have no editor overlays
-      gl.bindBuffer(gl.ARRAY_BUFFER, hub.srcDbgBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, flat, gl.DYNAMIC_DRAW);
-    }
+    src.flat=flat; src.count=pts.length; src.maxR=mr; src.maxW=mw;
+    uploadInset();
   }
 
   return { regenSource };

@@ -128,7 +128,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 | Eclipse as a source property | not recorded | not recorded | not recorded | the eclipse look in smoke and determinism |
 | Seen disk radiance (sky view) | `komorebi-source.js`, `komorebi-transport.js` | `SKY_SUN_GAIN` | not recorded | `--sky` |
 
-*Representation.* The source packs the nonzero-weight rays in order for the layer shader's sample loop. The faithful cast and source inset retain the full cloud, including the offsets of rays cut by the moon. Regenerating identical samples does not trigger a faithful re-cast; changed offsets or weights do (see [Signatures](#the-signatures-that-decide-a-re-bake)). The shared cast geometry (bulk shift, ellipse projection, layer heights) is `komorebi-cast.js`'s, not the source's; it is listed under transport.
+*Representation.* The source packs the nonzero-weight rays in order for the layer shader's sample loop. The faithful cast and source inset retain the full cloud, including the offsets of rays cut by the moon. The sampler reuses the cloud while its size, angular radii, weights and moon geometry remain the same. The editor uploads it when the samples or the inset buffer change. Changed offsets or weights trigger a faithful re-cast (see [Signatures](#the-signatures-that-decide-a-re-bake)). The shared cast geometry (bulk shift, ellipse projection, layer heights) is listed under transport.
 
 ### Light — [`model/light.md`](model/light.md)
 
@@ -367,7 +367,7 @@ One table per model file. *Module* names the file that owns the mechanism (see t
 
 Several passes do not run on a schedule. Each frame they compare a numeric snapshot of their inputs and re-run only when it has moved. Each signature carries exactly the inputs that change a bake's output without some other bake running. A missing entry freezes a picture while its knob tweens. A spurious entry re-bakes every frame.
 
-**The fill's signature** (`fillSig`, length `FILL_SIG_LEN` = 23, exported, and the engine sizes its array from it). It re-runs the fill alone when the sky or the sun moves and no bake does. Its slots, in order (`komorebi-bake.js`):
+**The fill's signature** (`fillSig`, length `FILL_SIG_LEN` = 24, exported, and the engine sizes its array from it). It re-runs the fill alone when the sky or the sun moves and no bake does. Its slots, in order (`komorebi-bake.js`):
 
 0. the sun's elevation, 1. its azimuth, 2. the turbidity (the sun's colour and the sky's);
 3. the leaf albedo the fill pass reads (`fill_scatter`, on a floor camera), 4. the ray count, 5. the fill texture's resolution;
@@ -378,7 +378,8 @@ Several passes do not run on a schedule. Each frame they compare a numeric snaps
 14. the receiver's cosine (`sun_cosine`) and 15. the air's loss (`sun_extinction`): live scales of the sun colour that `S` reads;
 16. the park's shear (`park_throw`, 0 on a finite scene): it moves the beam's path the fill bakes along;
 17. `ground_bounce`, the share of `B` the fill pass adds to `S`;
-18–20. the ground's albedo, 21. `ambient_skylight`, 22. the carpet's bake count (a new carpet per regrow): what the ground's light is made of. Each is 0 (the carpet −1) while `ground_bounce` is 0.
+18–20. the ground's albedo, 21. `ambient_skylight`, 22. the carpet's bake count (a new carpet per regrow): what the ground's light is made of. Each is 0 (the carpet −1) while `ground_bounce` is 0;
+23. the share of sunlight that survives the eclipse.
 
 The skylight's level is otherwise not in it: `ambient_skylight` scales the fill where a receiver reads it, not where it is made; only the ground's light, which reads the open sky, is made of it.
 
