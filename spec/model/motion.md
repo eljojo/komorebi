@@ -75,7 +75,7 @@ Limb and twig springs share the trunk's damping and take their stiffness from th
 
 **A leaf inherits twig swing ∘ limb swing ∘ trunk translation**, in that order: the twig turns about its base, then twig and leaves together turn about the limb's joint, then the tree drifts. **Its own orientation rotates with the branch**, by the limb bend plus the twig bend, so its footprint presents differently as the branch turns. Leaves and wood take the same joint rotation, so foliage cannot part from its wood under wind.
 
-Each bend **breathes with the gust and rests at zero wind**. Beside the torque-driven bend (below), each limb and twig takes a small independent forcing, a slow noise sampled at its own position, so neighbours differ. That forcing is scaled by the effective wind strength (strength times the weather), clamped to at most 1, so it eases to nothing in calm and the springs settle when the wind is off, even while the leaf-drift clock keeps running.
+Each bend **breathes with the gust and rests at zero wind**. Beside the torque-driven bend (below), each limb and twig takes a small independent forcing, two slow tones (about 0.14 and 0.22 Hz) whose phase runs across the grove with its position, so neighbours differ. The tones are the same under every wind pattern. **Provisional:** `branch_noise` blends in the pattern's own broadband signal in their place; it is a prototype, off by default, and measured to leave the floor's tempo where it was ([`../evidence/measurements.md`](../evidence/measurements.md#the-branches-on-the-patterns-signal)). That forcing is scaled by the effective wind strength (strength times the weather), clamped to at most 1, so it eases to nothing in calm and the springs settle when the wind is off, even while the leaf-drift clock keeps running.
 
 ## The stem joint
 
@@ -163,6 +163,8 @@ The spectral slope, the number of octaves, the mean-lean fraction, the crosswind
 | **lazy** | a very slow faint stir, the companion of the glisten |
 
 Every pattern reads the same shared controls (strength, gustiness, rate, direction, weather) and shapes them differently inside, including a waveshaper that spikes peaks and deepens lulls for clustered, intermittent gusts. A look names its pattern; the name is the whole surface, so a pattern can later become a generator of its own without any look changing.
+
+**On the floor, a pattern's character is not its tempo.** The broadband signal drives the trunk alone. What sets how fast the floor's brightness moves is the leaves' rock, sized by the trunk's sway `|u|` and by `leaf_swing`, with the branches' tones a lesser share. So a pattern reaches the floor's tempo through its mean lean, which holds `|u|` up and keeps the leaves rocking, and not through its spectral slope `H`. The names in the table describe the wind's own shape. On the floor they run the other way: lazy and steady, whose lean is the highest, give the fastest brightness, and squally the slowest ([`../evidence/measurements.md`](../evidence/measurements.md#what-sets-the-floors-brightness-tempo)).
 
 ### Weather
 
@@ -252,6 +254,7 @@ The bands coexist and sum, and the coherent band is itself broadband, a fractal 
 - **Approximation: the incoherent band is a periodic orbit and a one-frequency flutter, not a wind.** The drift phase reproduces the reorganisation's grammar and its exact return, and does not respond to gusts; its rate is constant. The flutter does follow the wind's strength, and under `wind_air` the air's eddies from place to place, but on orientation only, at one rate.
 - **Approximation: adaptive frame rate excludes slow drift.** While the canopy is nearly still (a deep lull, or a look whose only motion is slow drift) the heavy bake and transport run at a reduced idle cadence and the frames between re-present the last one; full rate returns the instant the springs move. The signal that decides it is the springs' sway and velocity, not the drift phase, so the slow shimmer of a drift-only look **visibly steps** at the idle cadence. That is a known cost to the glisten, paid for a large power saving; its session policy (`adaptive_motion`) is explicit or selected from startup cadence in Automatic mode. Off restores rendering every frame ([sessions](../contracts/sessions.md#rendering)). See [`../exploration/directions.md`](../exploration/directions.md).
 - **Idle cadence carries time across display frames.** Rounding a bake up to the next display frame leaves the following deadline on the original cadence. On each bake, the springs and drift advance by the elapsed display time in bounded steps, with the same cap on any individual display stall as full-rate motion.
+- **Approximation: the wind's spectrum stops at the trunk.** The leaves flutter on one tone and the limbs and twigs on two, so the pattern's `H` never reaches the floor (*Patterns*, above). Absent state: none; every look pays it.
 - **Open:** how the two wind bands are finally authored: noise type, spatial correlation length, temporal spectra.
 - **Open:** the shape of the stiffening and the damping ratio that make the backlash read right.
 

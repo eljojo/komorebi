@@ -26,6 +26,12 @@ It is an arbiter beside the physics. The piece never startles, never performs, n
 
 Calm can hold contrast. A stronger gust followed by a long settling, or a brief opening that admits an unusually clear sun-image, can deepen the repose around it, so long as the event belongs to the scene and follows from the same causes as the quiet. What calm forbids is performance: a cadence of effects, a programmed sweep, anything that makes the viewer wait for the next thing.
 
+## The shape that comes back
+
+Komorebi was first noticed in a moment of return. The wind scrambled the shadow on the ground, and then it arranged back into the same shape it had before. It was a random shape, and yet it was recognisably the same one, as it had been before the wind blew it away.
+
+That is the piece's heart. The organised world chaotically scrambles as the wind blows, and then peacefully goes back into its proper arrangement, the way nature wants it to be. Watched for a long time, the patterns mutate, disappear and reappear: a quiet lesson in impermanence and in the constant change of nature. The piece is made to be watched that way, as contemplation. It recreates the feeling of sitting under a tree, feeling the shadows, the inner calm, and it is meant to bring that calm into people's lives.
+
 ## The other places
 
 The afternoon widened into other rooms, each a north star of its own.
@@ -55,6 +61,8 @@ In autumn the dusk law inverts: the sun-images stay white-gold and it is the **s
 Many of these afternoons happened in and around Montréal, Montebello, Plaisance and Ottawa: a park on the mountain, a backyard, a tent under maples, a fall by the river. The piece is deeply grateful to Canadian nature, which gave it the light it tries to carry.
 
 ## What all of it asks for
+
+**Real komorebi.** The piece exists to recreate komorebi as it is in life: the light on the ground under real trees. The trees, the leaves and the wind are the means to that end, never the end. Where the pattern on the floor can be measured beside footage of the real thing, the numbers are a witness for this ([`evidence/measurements.md`](evidence/measurements.md#the-floor-pattern)); the experience still judges.
 
 A place. The larger-scale composition of a scene, what surrounds the viewer and what is implied beyond the frame, matters as much as the detail inside any leaf. Looking away and back should find somewhere recognisable, its light and motion still moving. The question every piece of work is finally judged by: **does this become somewhere I recognise and want to remain?**
 

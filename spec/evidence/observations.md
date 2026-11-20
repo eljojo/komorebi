@@ -56,6 +56,12 @@ The trees were watched through a fall (2026-10).
 - **The leaf held to the sun:** "it looks like a maze… cells with white walls in between… like lizard skin. the colour i dig too, the darkening of it."
 - **The forest's glass** (2026-10-07, from the bot's log, uncommitted source): "in reality, the feel i get from the forest changes depending on how thin/thick the canopy is and how bright the day is, too. some types of sunlight seem to cause more of one effect than the other, and i guess if the leaves are wet or not i wonder if it influences too."
 
+### The shape that came back
+
+How komorebi was first noticed: "i noticed komorebi for the first time when the shadow scrambled and then it arranged back into the same shape it had before , it was a random shape, but i could tell it was the same shape before the wind blew it away." And what it has become to watch: "i spend a lot of time watching komorebi evolve and it's always so wonderful seeing the patterns mutate, disappear and reappear, reminds me of impermanence and the constance change in nature." In one line: "komorebi it's all about the pattern disappearing and reappearing." What he tells people: "komorebi recreates the feeling you get when sitting under a tree, feeling the shadows, the inner calm. the organized world chaotically scrambles as the wind blows, and then peacefully goes back into its proper arrangement, the way nature wants it to be."
+
+Date: said 2026-11-20; the first noticing is not dated. Carried by [`../experience.md`](../experience.md#the-shape-that-comes-back).
+
 ## Reference photographs
 
 All of these live in `archive/references/`, which is git-ignored and must stay so. File names are given where the record names them.

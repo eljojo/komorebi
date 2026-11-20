@@ -38,6 +38,8 @@ These are the words the other documents use without stopping to explain. Each en
 
 **bole.** The bare trunk below the first limbs, which runs down to the ground. See *cluster, twig, limb, trunk, bole*.
 
+**brightness tempo (α).** How fast the floor's overall brightness moves: the slope of the power spectrum of the frame-mean brightness, higher being slower. Real komorebi's runs about 1.7–3.9; a slower tempo reads calmer. On the floor it is set by how far the leaves rock and by the wind's lean, not by the wind's character. [`evidence/measurements.md`](evidence/measurements.md#the-floor-pattern)
+
 **bulk shift.** The ground displacement per unit height, `cot(elevation)` away from the sun, added to every sample's throw when the canopy is a finite object. It is why a standing tree's shadow is one connected thing: trunk streak, then branches, then dappled crown. In an endless overhead park it is zero. [`model/transport.md`](model/transport.md)
 
 ## C
@@ -55,6 +57,8 @@ These are the words the other documents use without stopping to explain. Each en
 **clear leaf.** The leaf with no pigment, PROSPECT-D's bleached structure: the zero the season's pigments are measured from, and the tissue the seen leaf is made of under `leaf_neutral`. [`model/leaf.md`](model/leaf.md#the-leaf-as-tissue)
 
 **cluster.** See *cluster, twig, limb, trunk, bole*.
+
+**clustering (NNI).** How the floor's light patches are spread: the mean distance from each patch to its nearest neighbour against what random placement would give (Clark and Evans' nearest-neighbour index). Below 1 the patches gather, 1 is random, above 1 they spread evenly; real komorebi reads about 1.05–1.34. `foliage_density` is its knob. [`evidence/measurements.md`](evidence/measurements.md#the-floor-pattern)
 
 **cluster, twig, limb, trunk, bole.** The grown hierarchy, from the ground up. The trunk (with its bole below the limbs) bears a few limbs; limbs fork into sub-branches; terminal twigs carry clusters, the clumps of leaves. Wind turns each level about its own joint. [`model/canopy.md`](model/canopy.md), [`model/motion.md`](model/motion.md)
 
@@ -205,6 +209,8 @@ These are the words the other documents use without stopping to explain. Each en
 ## S
 
 **salt, stream.** Each family of random-looking numbers (growth, arrangement, wind identity, pigment clock, drop day, inner leaves, tree draws, genotype) is a stream seeded by the look's seed mixed with its own salt and keyed by an address. A draw from one stream moves nothing in another. [`contracts/determinism.md`](contracts/determinism.md)
+
+**scramble, same shape.** A gust pulls the floor's pattern away from its resting arrangement (a scramble) and it settles back. *Same shape* compares the settled pattern with the pattern before the gust: 1 is the same shape come back. The return is the moment komorebi was first noticed by ([`experience.md`](experience.md#the-shape-that-comes-back)). [`evidence/measurements.md`](evidence/measurements.md#the-floor-pattern)
 
 **season set.** The keys that change a leaf's colour, retention and place and nothing structural: the tint, phenology, the turn's start, span and spread, the pigment capacities and the drop clocks. A change confined to them re-seasons. [`model/season.md`](model/season.md)
 

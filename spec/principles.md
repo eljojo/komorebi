@@ -38,7 +38,7 @@ It is not an end that justifies the means. The piece has taken losses by treatin
 
 ## 9. Gaps and clumps are emergent, never authored
 
-Because gaps change when leaves move, a gap cannot be the thing that is drawn. The canopy is grown; clumping is its topology; multi-scale gaps are the skeleton's self-similarity; the gap-size distribution is a tuning target, never a generator. The same rule at the leaf: a maple's lobes are the negative space between its veins.
+Because gaps change when leaves move, a gap cannot be the thing that is drawn. The canopy is grown; clumping is its topology; multi-scale gaps are the skeleton's self-similarity; the gap-size distribution is a tuning target, never a generator. So are the pattern's statistics measured beside footage of real komorebi, how its patches cluster and how fast its brightness moves ([`evidence/measurements.md`](evidence/measurements.md#the-floor-pattern)): a knob is tuned toward them, and nothing places a patch to meet them. The same rule at the leaf: a maple's lobes are the negative space between its veins.
 
 ## 10. One engine, many surfaces
 

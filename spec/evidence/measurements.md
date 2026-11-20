@@ -209,6 +209,14 @@ No measurement of the floor camera's framing or the Look's tail is recorded. The
 - **What it established:** the frame must follow the leaves; such a look leans a hair less at a given height, since the sway scales by height over `hMax`.
 - **Date:** not recorded.
 
+### Foliage density sets the clustering
+
+- **What was measured:** the floor pattern's clustering (NNI), brightness tempo (α) and the rest of [the floor pattern](#the-floor-pattern)'s statistics, one canopy knob at a time: `foliage_density`, `branch_levels` 1–4, `layer_count` 1–4, `shoot_leaves` 0, 0.5, 1.
+- **On:** `park 1` and `park fall` through the dapple window (below), 30 s each; `projector`, `morning 3` and `afternoon 7` as authored, 60 s each. Everything else as the look has it. Conditions as in [the floor pattern](#the-floor-pattern).
+- **Result:** foliage density 0.5 → 1 → 1.55 → 2.5 → 4 takes NNI 1.13 → 1.10 → 1.05 → 0.96 → 0.82 on `park 1`, 1.11 → 0.79 on `park fall`; on `projector` (authored 1.39) 0.5 → 1 → 1.39 → 2.5 → 4 gives NNI 1.31 → 1.27 → 1.18 → 0.98 → 0.74 while α stays 2.86–3.17. On the parks α rises with density (`park 1` 1.07 → 1.72). `branch_levels` regrows a different tree at each value: NNI jumps (0.93, 0.86, 1.05, 0.79 on `park 1`) rather than sliding. `layer_count` changes nothing on the parks, which use the faithful cast. `shoot_leaves` 0.5 and 1 give the same numbers on the parks.
+- **What it established:** foliage density is the clustering knob, monotone on every look tried; on `projector` it moves clustering with the tempo nearly still, so clustering and tempo can be tuned apart. `branch_levels` is not a dial.
+- **Date:** 2026-11-20. The study: `archive/studies/2026-11-21-pattern-measures/` (renders, numbers and a page).
+
 ## leaf
 
 ### Leaf-out
@@ -760,6 +768,30 @@ The lantern's rim, the same error as the floor's halo, is under [leaf](#leaf).
 
 From the literature, not measured here: a Kolmogorov −5/3 spectrum in the gust range gives a per-octave gain `2^(−H)` with `H` = 1/3; turbulence intensity σ/U is about 0.1 in calm, 0.2 in open country, higher under a canopy; a gust's rise is sharper than its decay by about 1.35×, validated in the field.
 
+### The fractal sum's own spectrum
+
+- **What was measured:** the power spectrum of the broadband signal (`fbm1`) and of the trunk's force, per pattern, an hour of each sampled at 24 Hz, fitted by a slope fitter that reads synthetic slopes of 1, 1.68, 2.5 and 4 exactly.
+- **On:** the five patterns as shipped, in bun.
+- **Result:** the sum falls as f^−(2H+1) within 0.17 for every pattern, but only between about 0.4 of its lowest octave's frequency and 0.4 of its highest (0.05–0.83 Hz for gusty, 0.05–0.21 Hz for lazy): each value-noise octave is flat below about 0.4 of its frequency, notched at its lattice frequency and falls about f^−6 above. The gust edges' one-pole steepens the force's slope by about 1.1–1.5.
+- **What it established:** `H` shapes the force as [`../model/motion.md`](../model/motion.md#broadband-forcing) says, inside that band.
+- **Date:** 2026-11-20 (`archive/studies/2026-11-21-pattern-measures/wind-spectra.mjs`).
+
+### What sets the floor's brightness tempo
+
+- **What was measured:** the floor's brightness tempo α (the slope of the frame-mean brightness spectrum; higher is slower) as the wind changes, one field at a time.
+- **On:** `park 1` through the dapple window, 120 s each; conditions as in [the floor pattern](#the-floor-pattern). The pattern's fields were varied by editing `WIND_PATTERNS.gusty` in the working tree for each render.
+- **Result:** gusty with `H` 0.12, 0.34, 0.6, 0.88: α 1.97, 1.97, 1.97, 2.00. Burst 0, 0.35, 0.7: α 1.94, 1.97, 2.04. Lean 0.22, 0.35, 0.62: α 2.28, 1.97, 1.45. The named patterns, `park 1` / `park fall`: lazy 1.33 / 1.12, steady 1.43 / 1.21, gusty 1.97 / 1.71, choppy 2.08 / 1.87, squally 2.30 / 2.12; `projector` as authored (gusty) 3.20, under steady 2.46. Under steady on `park 1` (authored `leaf_swing` 1.35, `flutter_freq` 1.4: α 1.43): `leaf_swing` 0 → 3.72, 0.675 → 2.00; `flutter_freq` 0.7 → 1.40, 0.35 → 2.17; `twig_flex` 0 → 1.55; `limb_flex` 0 → 1.72.
+- **What it established:** the leaves' rock, its size more than its rate, sets the floor's tempo; the lean reaches it through `|u|`, and `H` does not reach it at all ([`../model/motion.md`](../model/motion.md#patterns)).
+- **Date:** 2026-11-20.
+
+### The branches on the pattern's signal
+
+- **What was measured:** the floor's tempo with `branch_noise` 1, the limbs' and twigs' two tones replaced by the pattern's own broadband signal of matched size; and, in bun, that signal's own slope at a twig.
+- **On:** `park 1` and `park fall` through the dapple window, each pattern, 120 s, rendered from the branch's prototype commit `e40fb3a`.
+- **Result:** at a twig the signal follows `H` (slope over 0.094–4 Hz: lazy 4.16, steady 2.90, gusty 1.83, squally 1.68, choppy 1.31; the tones put all their power below 0.25 Hz). On the floor α moves by at most 0.06 on every pattern of both looks (`park 1`: lazy 1.33 → 1.35, steady 1.43 → 1.39, gusty 1.97 → 1.91, choppy 2.08 → 2.05, squally 2.30 → 2.29).
+- **What it established:** the branches are not where the floor's tempo lives.
+- **Date:** 2026-11-20.
+
 ### Inner leaves in wind
 
 The slip of an inner leaf from its limb is under [canopy](#canopy).
@@ -1082,6 +1114,34 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 ### A seasonal yaw
 
 `montebello`'s 208.5° to `park fall`'s −161.797° is a 10.30° turn by the shortest arc (arithmetic).
+
+## the floor pattern
+
+The pattern on the floor read as a dappled-light video, by `nix run .#pattern` ([`../implementation.md`](../implementation.md#other-proofs)): Zhang and Andersen's statistics of real komorebi (clustering of the light patches, NNI, below 1 clustered and above 1 dispersed; brightness unevenness between neighbours, Moran's I; brightness tempo α), and how the pattern scrambles in the wind and comes back (*same shape* is the settled frame after a scramble against the frame before it, 1 being the same shape). Renders unless said otherwise: 1280×720 at 24 fps after the exporter's 30 s pre-roll, the GPU pipeline in headless Chromium on Apple M4 (Metal), commit `30fd40e`. `park 1` and `park fall` are wide scene views whose dapples fill about a tenth of the frame, so their wind and knob numbers are taken through a **dapple window**: the same look with the camera straight down over 2.5 m of ground, panned onto the grove's shadow (centre −1.1, −3.9; yaw 0). α depends on the clip's length: compare it between clips of one length.
+
+### Real komorebi
+
+- **What was measured:** the pattern statistics of José's floor clips.
+- **On:** three phone clips seen from above, handheld, stabilised with ffmpeg's `deshake` and cropped to the steady ground: IMG_1212 (pavement, 82 s), IMG_0901 (dirt, 23 s), IMG_1023 (deck, 8 s), in `archive/references/videos/`.
+- **Result:** NNI 1.16, 1.32, 1.07; Moran's I 0.080, 0.059, 0.153; α 2.45, 3.85, 1.67 (the 8 s clip's low-confidence); same shape 0.37, 0.61 (none on the 8 s clip); a watched patch lives 8.3, 2.0 and 0.65 s.
+- **What it established:** the detector reads real footage inside the band the papers report for real komorebi (NNI 1.05–1.34), so it sees roughly what a person marks. The camera's drift and the moving sun lower *same shape* on real footage; how much is not separated.
+- **Date:** 2026-11-20.
+
+### The looks as authored
+
+- **What was measured:** the pattern statistics of every built-in floor look as the look has it.
+- **On:** 39 floor looks, 60 s each.
+- **Result:** α 1.42–4.16, median 3.03 (slowest `shrooms` 4.16, `prism` 3.98, `afternoon 5b` 3.92; fastest `montebello` 1.42, `purple eye` 1.48, `montebello, rain` 1.89). NNI median 1.08; the scene views read 0.31–0.68 because their patches gather in the one shadow the frame holds. *Same shape* 0.83–1.00, median 0.98.
+- **What it established:** every look comes back to the same shape after a gust, more exactly than the real clips; the drift phase's exact return ([`../model/motion.md`](../model/motion.md#the-drift-phase)) and the springs' rest are its cause.
+- **Date:** 2026-11-20.
+
+### The projected looks
+
+- **What was measured:** the statistics of `projector`, `morning 3` and `afternoon 7`, the looks that, projected, cast komorebi in a real room.
+- **On:** as authored, 60 s each.
+- **Result:** NNI 1.18, 1.35, 1.33; Moran's I 0.151, 0.176, 0.214; α 2.94, 3.31, 3.37; *same shape* 0.95, 0.99, 0.97; a watched patch lives 3.7, 3.2 and 3.0 s.
+- **What it established:** of the looks measured, these sit nearest the real clips: dispersed patches inside the real band (`morning 3` at its edge), a tempo inside the real range, patches living seconds. Their brightness is more clustered than the real clips'. A recording of the projection itself has not been measured.
+- **Date:** 2026-11-20.
 
 ## harness
 

@@ -74,7 +74,7 @@ model file whose mechanism it holds (`spec/model/`).
 - `komorebi-litter.js` — fallen leaves as a floor material: the pure laws and the once-per-regrow carpet bake.
 
 `engine/motion/` — the wind and the springs (`spec/model/motion.md`):
-- `komorebi-air.js` — the air, pure: the broadband wind signal and its patterns (`fbm1`, `WIND_PATTERNS`, `windNoise`), the wind's force as a function of time, the air at a place, how deep into a crown it
+- `komorebi-air.js` — the air, pure: the broadband wind signal and its patterns (`fbm1`, `WIND_PATTERNS`, `windNoise`, and `branchNoise`, the `branch_noise` prototype), the wind's force as a function of time, the air at a place, how deep into a crown it
   reaches; the motion, the travel routes' CPU leaves and the shaders' constants read it.
 - `komorebi-motion.js` — the wind signal and the trunk/limb/twig springs.
 
@@ -144,6 +144,9 @@ A test that reads a source file as text names it relative to the root.
   born with the value, and each cheaper scope tried in its place; its header says what a finding means. About a quarter of an hour for all of them.
 - `editor.mjs` — the editor smoke, `nix run .#editor`: the DOM effects the pixel suites cannot see.
 - `embed.mjs` — the bundle against the raw modules, byte for byte. `review.mjs` — review sheets from a clean export of a commit.
+- `pattern.mjs` + `pattern-lib.mjs` — `nix run .#pattern -- <video>...`: a dappled-light video (a render or a phone clip) read as
+  JSON, its light patches' statistics and how the pattern scrambles and comes back; the pure measures are
+  `pattern-lib.mjs`'s, tested by `test/pattern.test.js`.
 - `render-video.mjs` — the video exporter, `nix run .#video -- …` (`--help` lists everything), with its siblings
   `video-lib.mjs`, `video.html`, `pipeline.mjs`, `parallel.mjs` (`--jobs`), `compare-runs.mjs`, `webcodecs.mjs`,
   `gpu-probe.mjs` and `study.mjs`. Each test file's header says how to run it.

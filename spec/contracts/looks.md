@@ -19,6 +19,7 @@ Intent is the artist's words, his choices on review sheets and the notes written
 - **The welcome:** `afternoon 6`, shown faint behind the welcome screen and behind the about page.
 - **The season macro's stops:** spring → summer → fall runs `memories` → `morning 1` → `afternoon 4` → the last green day (no look) → `montebello`. Its fall pigment capacities are `montebello`'s.
 - **The homepage embed:** `morning 2` → `afternoon 5b` → `morning 3`, cycled with transitions.
+- **Komorebi in a room:** `projector`, `morning 3` and `afternoon 7`. Projected, they cast komorebi in a real room: "those are the ones that when using a projector, it creates komorebi in real life by casting those shadows" (José, 2026-11-20). Measured, they sit nearest the real clips of every look ([`../evidence/measurements.md`](../evidence/measurements.md#the-projected-looks)). The piece collects looks like these, and goes on looking for more ([`../experience.md`](../experience.md#what-all-of-it-asks-for)).
 - **The look that opens every fall tier:** `montebello` (also `montebello, rain` and `cherry blossom`). It is why the general player carries all six, which the artist accepted.
 
 **Machine tuning.** Standard sample/texture requests and inherited fidelity defaults are omitted from built-ins. Exceptional sample requests and explicitly chosen bake sizes remain, including the sky looks whose silhouettes need their recorded bake resolution. Layer counts and all scene parameters remain authored. Old saved local looks and remote versions are not rewritten.
@@ -137,7 +138,7 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 
 ### afternoon 7
 - **Camera and mode:** floor, layered.
-- **For:** the editor's default look, played under the session's FPS policy. What it is for beyond that is not recorded.
+- **For:** the editor's default look, played under the session's FPS policy, and one of the three looks that cast komorebi in a room (*Komorebi in a room*, above).
 - **Authored departures:** the warm Mount-Royal dirt floor.
 - **Gates:** none beyond the defaults.
 
@@ -167,7 +168,7 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 
 ### morning 3
 - **Camera and mode:** floor, layered.
-- **For:** recorded only as a crisp, clear-sky low sun with tight pinhole sun-images. One of the homepage embed's three.
+- **For:** a crisp, clear-sky low sun with tight pinhole sun-images. One of the homepage embed's three, and one of the three looks that cast komorebi in a room (*Komorebi in a room*, above).
 - **Authored departures:** none recorded.
 - **Gates:** none.
 
@@ -195,6 +196,12 @@ Every shipped look carries `cloud_exposure` 1, with its exposure re-sat to expos
 - **For:** not recorded.
 - **Authored departures:** not recorded. It is authored with a fractional tree count (one tree and a partly faded-in second), the palm species, strong diffraction and a violet-grey floor; whether each is intent is not recorded.
 - **Gates:** `chromatic_aberration` (3.6, between `prism` and `morning 3b`).
+
+### projector
+- **Camera and mode:** floor, layered.
+- **For:** José's look, kept as he made it: one of the three looks that cast komorebi in a room (*Komorebi in a room*, above).
+- **Authored departures:** not recorded.
+- **Gates:** `eclipse` (`eclipse_amount` 0.42: a moon covers part of the sun, so the sun-images are bitten).
 
 ## The floor, standing
 
