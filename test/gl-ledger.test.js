@@ -18,7 +18,7 @@ import * as LEAF from "../engine/leaf/komorebi-leaf.js";
 const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture", Framebuffer: "framebuffer", Renderbuffer: "renderbuffer", Program: "program", Shader: "shader", Query: "query" };
 
 function makeLedger() {
-  let seq = 0, lost = false, casts = 0, layerDraws = 0, layerEdgeMix;
+  let seq = 0, lost = false, casts = 0, layerDraws = 0, treeWoodDraws = 0, layerEdgeMix;
   const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {}, linked = [];
   const at = { array: null, vao: null, fb: null, prog: null, rb: null, unit: "TEXTURE0", units: {} };
   const label = (o) => `${o.kind} #${o.id}`;
@@ -44,6 +44,7 @@ function makeLedger() {
   const draw = () => {
     if (at.vao?.attrs[9]?.on) casts++;   // the faithful leaves' vertex array, the only one with the side attribute: one draw a sample of a faithful cast
     if (at.prog?.shaders?.[0]?.src === SH.VS_BAKE) layerDraws++;
+    if (at.prog?.shaders?.[0]?.src === SH.VS_TREE_WOOD) treeWoodDraws++;
     use(at.prog, "drawn with"); use(at.vao, "drawn"); use(at.fb, "drawn into");
     if (at.vao) for (const [i, a] of Object.entries(at.vao.attrs)) if (a.on) use(a.buf, `read by a draw (attribute ${i})`);
   };
@@ -95,6 +96,7 @@ function makeLedger() {
     linked: () => [...linked],   // every program linked so far, as its [vertex, fragment] sources
     casts: () => casts,          // every sample of a faithful cast drawn so far
     layerDraws: () => layerDraws,
+    treeWoodDraws: () => treeWoodDraws,
     layerEdgeMix: () => layerEdgeMix,
     // what is left alive, by kind; shaders aside: the engine links each into its program and lets the program hold it
     leaks: () => { const n = {}; for (const o of live) if (o.kind !== "shader") n[o.kind] = (n[o.kind] ?? 0) + 1; return n; },
@@ -318,6 +320,15 @@ scenario("the sky only sizes its wood maps while fine wood is visible", { ...PRE
   expect(sizes()).toEqual([[1, 1], [1, 1], [1, 1], [1, 1]]);
 });
 const MANUAL_DRIFT = { ...LAYERED, wind_strength: 0, drift_amount: 0.3, drift_phase: 0 };
+const BARE_TREE = { ...FAITHFUL, standing_scene: true, tree_view: true, branch_tau: 2, wind_strength: 0,
+  leaf_drop: 1, drop_after_turn: false, drop_start: 0.1, drop_span: 0.2, phenology: 1 };
+scenario("a leafless standing tree still draws its wood", BARE_TREE, (R) => {
+  expect(R.eng.faith.count).toBe(0);
+  expect(R.eng.faith.segCount).toBeGreaterThan(0);
+  const before = R.L.treeWoodDraws();
+  R.pump();
+  expect(R.L.treeWoodDraws() - before).toBe(1);
+});
 scenario("faithful casts stamp only nonzero source samples", { ...FAITHFUL, wind_strength: 0, cloud_thickness: 1, sample_count: 32 }, (R) => {
   const before = R.L.casts();
   expect(R.eng.src.count).toBe(32);

@@ -75,7 +75,9 @@ export function makeTreeView(hub){
   // (the season's, the leaves' and the litter's travels draw their own leaves, and the viewpoint route moves the camera: the tree comes and goes under the fade).
   // The one exception is a tree fading across the season travel: it is drawn from the cast's records on their twigs, turning with them, while it fades.
   const fadingOverSeason = () => trans.treeFade && trans.route?.name === 'seasonTravel';
-  const wanted = () => !!params.tree_view && !!params.standing_scene && faithfulOn() && cameraFor(params) === 'floor' && faith.count > 0 && !!(faith.sideBuf || faith.rec)   // the record: a layered grove asked before the regrow that makes it faithful (rebuildTextures sizes the layers first)
+  const hasLeaves = () => faith.count > 0 && !!(faith.sideBuf || faith.rec);   // the record: a layered grove asked before the regrow that makes it faithful (rebuildTextures sizes the layers first)
+  const hasWood = () => params.branch_tau > 0 && faith.segCount > 0 && !!faith.segVAO;
+  const wanted = () => !!params.tree_view && !!params.standing_scene && faithfulOn() && cameraFor(params) === 'floor' && (hasLeaves() || hasWood())
     && !(trans.active && (trans.castHeld || trans.travelField || trans.riseField || trans.viewpoint) && !fadingOverSeason());
 
   const L = (prog, n) => gl.getUniformLocation(prog, n);
@@ -251,24 +253,26 @@ export function makeTreeView(hub){
     gl.clearColor(0, 0, 0, 0); gl.clearDepth(1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
     // the leaves: the cast's own records and vertex code, this frame's wind
-    const leaf = program('leaf', names), UL = leaf.u;
-    gl.useProgram(leaf.prog);
-    upload(UL, w, h);
-    if(crown) bindGrid(UL);
-    gl.uniform1f(UL.edge, params.edge_softness);
-    gl.uniform1f(UL.f0, 0.04);
-    gl.uniform1f(UL.morph, params.drift_phase); gl.uniform1f(UL.morphAmount, params.drift_amount);
-    gl.uniform1f(UL.windLevel, motion.u); gl.uniform1f(UL.air, Math.max(0, params.wind_air)); gl.uniform1f(UL.depth, Math.max(0, params.wind_depth || 0));
-    gl.uniform1f(UL.windTime, motion.time); gl.uniform1f(UL.leafSwing, params.leaf_swing); gl.uniform1f(UL.flutterFreq, params.flutter_freq);
-    gl.uniform2f(UL.sway, motion.sway[0], motion.sway[1]); gl.uniform1f(UL.hRef, Math.max(faith.hMax, 1e-3));
-    bindLeafShape(gl, UL, hub.grove);
-    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex); gl.uniform1i(UL.clusterTex, 4);
-    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(UL.clusterGeom, 5);
-    gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, params.leaf_neutral ? slabTexNeutral : slabTex); gl.uniform1i(UL.slab, 7);
-    gl.bindVertexArray(faith.vao);
-    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, faith.count);
+    if(hasLeaves() && faith.vao){
+      const leaf = program('leaf', names), UL = leaf.u;
+      gl.useProgram(leaf.prog);
+      upload(UL, w, h);
+      if(crown) bindGrid(UL);
+      gl.uniform1f(UL.edge, params.edge_softness);
+      gl.uniform1f(UL.f0, 0.04);
+      gl.uniform1f(UL.morph, params.drift_phase); gl.uniform1f(UL.morphAmount, params.drift_amount);
+      gl.uniform1f(UL.windLevel, motion.u); gl.uniform1f(UL.air, Math.max(0, params.wind_air)); gl.uniform1f(UL.depth, Math.max(0, params.wind_depth || 0));
+      gl.uniform1f(UL.windTime, motion.time); gl.uniform1f(UL.leafSwing, params.leaf_swing); gl.uniform1f(UL.flutterFreq, params.flutter_freq);
+      gl.uniform2f(UL.sway, motion.sway[0], motion.sway[1]); gl.uniform1f(UL.hRef, Math.max(faith.hMax, 1e-3));
+      bindLeafShape(gl, UL, hub.grove);
+      gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex); gl.uniform1i(UL.clusterTex, 4);
+      gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(UL.clusterGeom, 5);
+      gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, params.leaf_neutral ? slabTexNeutral : slabTex); gl.uniform1i(UL.slab, 7);
+      gl.bindVertexArray(faith.vao);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, faith.count);
+    }
     // the wood: the skeleton as the cast swayed it this frame
-    if(params.branch_tau > 0 && faith.segCount > 0 && faith.segVAO){
+    if(hasWood()){
       const feet = params.trunk_base ? hub.faith?.trunks : null, nFeet = feet ? Math.min(16, feet.length/3) : 0;   // trunk_base: the feet whose capsules flare
       const wood = program(nFeet ? 'woodFoot' : 'wood', names), U = wood.u;   // the foot's code lives in a program of its own (VS_TREE_WOOD_FOOT), so a tree without feet runs the wood shader it always ran
       gl.useProgram(wood.prog);
