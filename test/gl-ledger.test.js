@@ -211,6 +211,20 @@ scenario("after an aborted crossfade the grove still on screen re-seasons by the
   expect(R.eng.apply("season"), "the grove on screen is still the one its record describes").toBe("reseason");
 });
 scenario("a scene fade to its landing", FAITHFUL, (R) => { start(R, FADE, "sceneFade", { style: "fade" }); R.land(); });
+for (const [name, from, to] of [
+  ["a bud-grown source", { ...GROVE[0], growth_years: 3 }, GROVE[1]],
+  ["a different number of children per branch", { ...GROVE[0], branch_children: 3 }, { ...GROVE[1], branch_children: 3, phyllotaxis: "opposite" }],
+  ["a canopy still leafing out", GROVE[0], { ...GROVE[1], phenology: 0, leaf_out_end: 0.14 }],
+]) {
+  for (const [direction, a, b] of [["forward", from, to], ["reverse", to, from]]) {
+    scenario(`grove travel declines ${name} (${direction}) and the fade lands`, a, (R) => {
+      start(R, b, "sceneFade");
+      R.land();
+      expect(R.eng.params.seed).toBe(b.seed);
+      expect(R.eng.params.layer_count).toBe(b.layer_count);
+    });
+  }
+}
 scenario("a leaf travel to its landing", FAITHFUL, (R) => { start(R, LAYERED, "leafTravel"); R.land(); });
 scenario("a leaf travel reversed home, then a regrow", FAITHFUL, (R) => {
   start(R, LAYERED, "leafTravel"); R.pump(20); R.eng.transitionTo(FAITHFUL, { duration: 0.5 }); R.land();

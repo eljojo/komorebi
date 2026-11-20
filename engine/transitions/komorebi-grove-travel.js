@@ -1,6 +1,6 @@
 import { TAU, lerp, lerpAngle, smoothstep } from '../komorebi-math.js';
 import { cutRoute, irisRoute, irisStep, turnBack } from './komorebi-routes.js';
-import { leafClock } from '../season/komorebi-season.js';
+import { leafClock, springing } from '../season/komorebi-season.js';
 import {flutterLevel, depthGate} from '../motion/komorebi-air.js';
 import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from '../komorebi-params.js';
 import {seasonCamera} from './komorebi-season-travel.js';
@@ -13,18 +13,22 @@ const FEAT_LITTER = true;
 const FEAT_LEAF_DIFFUSE = true;
 export const groveFlightProgress=(t,identity)=>smoothstep(.03+.16*identity,1,t);
 
-// Correspondence uses one rooted grammar; a different seed or child count has no matching branch addresses.
+// The opposite grammar forces two children, irrespective of the authored branch count.
+const twigsPerTree=p=>p.limb_count*(p.phyllotaxis==='opposite'?2:Math.max(1,p.branch_children))**Math.max(0,p.branch_levels-1);
+// Correspondence uses the grammar's branch addresses and full-sized leaves at both ends.
 export const groveTravelEligible=FEAT_LITTER?(a,b)=>{
  if(!FEAT_DROP)return false;
  if(!a.faithful_canopy||!b.faithful_canopy||!a.standing_scene||!b.standing_scene||a.sky_view||b.sky_view||a.receiver!==0||b.receiver!==0)return false;
+ if(Math.round(a.growth_years)>0||Math.round(b.growth_years)>0||springing(a)||springing(b))return false;
  const floor=a.litter>0&&a.leaf_drop>0?a:b,canopy=floor===a?b:a;
  if(!(floor.litter>0&&floor.leaf_drop>0&&canopy.litter===0&&canopy.leaf_drop===0&&canopy.canopy_fill===0))return false;
  if(floor.layer_count!==3||canopy.layer_count!==4||floor.seed!==canopy.seed||floor.branch_levels!==canopy.branch_levels||floor.branch_children!==canopy.branch_children||floor.limb_count!==canopy.limb_count)return false;
+ if(twigsPerTree(floor)!==twigsPerTree(canopy))return false;
  if((floor.leader_strength>0)!==(canopy.leader_strength>0)||floor.tone_map!==canopy.tone_map||floor.eclipse!==canopy.eclipse||floor.edge_area!==canopy.edge_area)return false;
  for(const p of[a,b])if(p.leaf_variety!==0||p.leaf_diffuse!==0||p.sway_pitch!==0||p.sun_cosine!==0||p.leaf_size_m<=0||p.branch_tau<=0||!Number.isInteger(p.tree_count)||p.tree_count<1)return false;
  if(floor.tree_count>5||canopy.tree_count>2||floor.tree_count<canopy.tree_count)return false;
  const na=Math.ceil(floor.leaves_per_cluster*floor.foliage_density),nb=Math.ceil(canopy.leaves_per_cluster*canopy.foliage_density);
- const count=floor.tree_count*floor.limb_count*Math.max(1,floor.branch_children)**Math.max(0,floor.branch_levels-1)*na;
+ const count=floor.tree_count*twigsPerTree(floor)*na;
  return nb>0&&na>=nb&&count>0&&count<=CANOPY_MORPH_MAX;
 }:()=>false;
 
@@ -81,7 +85,7 @@ function createGroveRenderer(h,a,b,from,to,host){
  const gl=h.gl,ra=readFaith(gl,h.faith),rb=readFaith(gl,b.hub.faith),A={hub:a.hub,data:ra.leaves,pivot:ra.pivot},B={hub:b.hub,data:rb.leaves,pivot:rb.pivot},trees=matchGroveTrees(a.hub,b.hub);
  const ga=groups(a.hub),gb=groups(b.hub),woodPairs=[];
  for(let t=0;t<ga.length;t++)for(const [key,aa]of ga[t]){
-  const bb=gb[trees[t].target].get(key);if(!bb)throw Error(`Missing destination branch ${t}/${key}`);
+  const bb=gb[trees[t].target].get(key);if(!bb)return null;
   const cuts=[...new Set([...aa,...bb].flatMap(x=>[x.lo,x.hi]))].sort((x,y)=>x-y);
   for(let k=0;k<cuts.length-1;k++)woodPairs.push({aa,bb,lo:cuts[k],hi:cuts[k+1],primary:trees[t].primary});
  }
@@ -93,15 +97,17 @@ function createGroveRenderer(h,a,b,from,to,host){
  const perTreeCount=new Map();for(let j=0;j<h.hier.nClusterTotal;j++){const t=h.hier.twigs[j].tree,k=perTreeCount.get(t)??0;ordinal.set(j,k);perTreeCount.set(t,k+1);}
  for(let j=0;j<srcGroups.length;j++){
   const tree=h.hier.twigs[j].tree,map=trees[tree],target=byTree[map.target][ordinal.get(j)];
-  if(target===undefined)throw Error(`Missing target twig ${tree}/${ordinal.get(j)}`);
+  if(target===undefined)return null;
   const aa=srcGroups[j],bb=dstGroups[target];
+  if(aa.length&&!bb.length)return null;
   for(let k=0;k<aa.length;k++){
    const slot=Math.min(bb.length-1,Math.floor((k+.5)*bb.length/aa.length)),primary=map.primary&&k===Math.min(aa.length-1,Math.floor((slot+.5)*aa.length/bb.length));
    const l=sourceCarpet.get(`${j}/${k}`),floor=l?{...l,albedo:litterAlbedo(l.tau,litterAge(from,l.D),from.leaf_wetness),land:litterLanding(l,from),baseFade:l.fade}:null;
    paths.push({ia:aa[k],ib:bb[slot],primary,floor,clock:leafClock(from.seed,j,k),retained:a.hub.hier.leafW?.[j*h.hier.nLeaf+k]??1,layer:leafLayerOf(h.hier,j,A.data[aa[k]+16])});
   }
  }
- if(paths.filter(p=>p.primary).length!==B.data.length/18||new Set(paths.filter(p=>p.primary).map(p=>p.ib)).size!==B.data.length/18)throw Error('Destination leaves must each occur exactly once');
+ const primaryPaths=paths.filter(p=>p.primary);
+ if(primaryPaths.length!==B.data.length/18||new Set(primaryPaths.map(p=>p.ib)).size!==B.data.length/18)return null;
  const n=paths.length,data=new Float32Array(n*12),segments=new Float32Array(woodPairs.length*9),woodA=new Float32Array(a.hub.faith.segRest.length*9),woodB=new Float32Array(b.hub.faith.segRest.length*9);
  // The leaf travel's program and the engine's own wood program, taken through the HOST engine: a program the carrier took would die with it. Every uniform either reads is
  // uploaded before each draw here (the wood's uClothY is read only under uCurtainBake, which this floor route sets to 0).
@@ -197,7 +203,7 @@ export const makeGroveTravel=FEAT_LITTER?(hub,createScene,adoptScene)=>{
  function beginGroveTravel(to){
   const from={...hub.params},floor=from.litter>0?from:to;
   // A truncated twig table has no root/branch correspondence for the omitted trees.
-  if(floor.tree_count*floor.limb_count*Math.max(1,floor.branch_children)**Math.max(0,floor.branch_levels-1)>hub.MAX_TEX)return false;
+  if(floor.tree_count*twigsPerTree(floor)>hub.MAX_TEX)return false;
   const other=createScene(to),main={hub,draw:hub.drawFrameInto};
   const forward=from.litter>0,a=forward?main:other,b=forward?other:main;
   if(!a.hub.grove.litter?.length){other.dispose();return false;}
@@ -209,6 +215,7 @@ export const makeGroveTravel=FEAT_LITTER?(hub,createScene,adoptScene)=>{
   let renderer;
   try{renderer=createGroveRenderer(carrier.hub,a,b,lookA,lookB,hub);}
   catch(err){carrier.dispose();other.dispose();throw err;}
+  if(!renderer){carrier.dispose();other.dispose();return false;}
   s={a,b,other,carrier,lookA,lookB,start:q,end:1-q,q,pending:null,renderer};
   return true;
  }
