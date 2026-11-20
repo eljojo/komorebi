@@ -792,6 +792,14 @@ From the literature, not measured here: a Kolmogorov −5/3 spectrum in the gust
 - **What it established:** the branches are not where the floor's tempo lives.
 - **Date:** 2026-11-20.
 
+### Broadband leaf flutter
+
+- **What was measured:** the floor pattern with `flutter_broadband` 1, each leaf's flutter tone replaced by the pattern's own fractal sum at the tone's spread, against the tone (`flutter_broadband` 0); and how much each floor changes from one frame to the next (mean |Δ| of luma, 0–255, at 640 px).
+- **On:** `park 1` through the dapple window and `projector` as authored, each pattern, 120 s, rendered from the prototype's commit `4f4fb14`; the tone from the same looks at `30fd40e`. Conditions as in [the floor pattern](#the-floor-pattern).
+- **Result:** floor α, tone → broadband, `park 1`: lazy 1.33 → 2.96, steady 1.43 → 2.72, gusty 1.97 → 2.40, squally 2.30 → 2.61, choppy 2.08 → 2.24; `projector`: lazy 2.15 → 3.47, steady 2.46 → 3.57, gusty 3.20 → 3.67, squally 3.32 → 3.72, choppy 3.28 → 3.48. Frame-to-frame change, `park 1` 1.79–2.25 → 0.57–1.13, `projector` 1.13–1.33 → 0.61–1.01. NNI, Moran's I and MRD move by under 0.005 on both looks; Dθ stays 0.01–0.08. Frame-mean brightness sd is unchanged on `park 1` and about 25% higher on `projector`. With `flutter_broadband` 0 the frames are byte-identical to the engine before it (`park 1`, `projector`). Under steady on `park 1`, the tone turned down by `leaf_swing` to the broadband's frame-to-frame change gives α about 3.4, interpolated from the renders of [What sets the floor's brightness tempo](#what-sets-the-floors-brightness-tempo) and its tuning.
+- **What it established:** the pattern's character can reach the floor through the leaves. On `park 1` the floor's tempo then follows `H`, lazy slowest and choppy fastest, every pattern inside the range Zhang & Andersen's videos span (1.41–2.97). On `projector` every pattern slows to 3.5–3.7, above that range and inside the real clips' (1.67–3.85), and the patterns no longer differ. Much of the slowing is less frame-to-frame motion rather than the spectrum's shape; the order across patterns is the spectrum's ([`../model/motion.md`](../model/motion.md#translation-alone-is-not-wind)).
+- **Date:** 2026-11-20.
+
 ### Inner leaves in wind
 
 The slip of an inner leaf from its limb is under [canopy](#canopy).
