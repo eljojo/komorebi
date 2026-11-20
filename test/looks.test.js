@@ -48,10 +48,12 @@ test("of the four new looks (P5-P8) only the yellow tree and cherry blossom are 
 
 // The list a person walks first is a story, park story: the tree seen and then only its shadow, its year from the turn to the rain day, to
 // the forest floor, where it goes on into the next playlist. The floor going abstract, through the afternoons and mornings to the founding
-// afternoon, is the second playlist, shadows. The experimental looks are in neither: they are a playlist of their own, the third.
+// afternoon, is shadows. Between them, komorebi: the looks that, projected, cast komorebi in a room. The experimental looks are in
+// none of these: they are a playlist of their own, the last.
 const looksOf = (list) => list.items.map((it) => (typeof it === "string" ? it : it.look));
-test("park story, then shadows, rainbow and experiments, each in its order", () => {
-  expect(Object.values(PLAYLISTS).map((l) => l.name)).toEqual(["park story", "shadows", "rainbow", "experiments"]);
+test("park story, then komorebi, shadows, rainbow and experiments, each in its order", () => {
+  expect(Object.values(PLAYLISTS).map((l) => l.name)).toEqual(["park story", "komorebi", "shadows", "rainbow", "experiments"]);
+  expect(looksOf(PLAYLISTS.komorebi)).toEqual(["projector", "morning 3", "afternoon 7"]);
   expect(looksOf(PLAYLISTS.story)).toEqual([
     "park 1, the scene", "park 1, under the trees", "park1 inside2", "park 1, from above",
     "park fall", "montebello", "montebello, rain",

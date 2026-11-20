@@ -4048,6 +4048,9 @@ export const PLAYLISTS = {
     'park 1, the scene', 'park 1, under the trees', 'park1 inside2', 'park 1, from above', 'park fall', 'montebello', 'montebello, rain',
     'forest floor',
   ] },
+  // the looks that, projected, cast komorebi in a real room, and measure nearest to footage of real komorebi; the piece
+  // collects looks like these (spec/contracts/looks.md, "Komorebi in a room")
+  komorebi: { name: 'komorebi', items: ['projector', 'morning 3', 'afternoon 7'] },
   shadows: { name: 'shadows', items: [
     'afternoon 7', 'afternoon 6', 'afternoon 6b', 'afternoon 5', 'afternoon 5b', 'prism', 'afternoon 4', 'afternoon 4b',
     'morning 1', 'morning 2', 'morning 3', 'morning 3b', 'memories', 'bluuey', 'shrooms', 'look up', 'projector', 'purple eye',

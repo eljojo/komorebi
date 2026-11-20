@@ -209,7 +209,7 @@ test("walk: park story first, the shipped lists in their order, then the person'
   const state = cloud([{ name: "one", params: {} }]), stored = { x: {} };
   const ship = Object.keys(builtins.PLAYLISTS).map((k) => `ship:${k}`);
   expect(ship[0]).toBe(STORY);
-  expect(ship.slice(0, 2)).toEqual(["ship:story", "ship:shadows"]);
+  expect(ship.slice(0, 3)).toEqual(["ship:story", "ship:komorebi", "ship:shadows"]);
   expect(ship.at(-1)).toBe("ship:experiments");
   expect(walk(playlists(state, [], null, { stored }))).toEqual([...ship.slice(0, -1), "local", "arb:7", "ship:experiments"]);
   expect(walk(shipLists())).toEqual(ship);
@@ -220,10 +220,12 @@ test("stepOn: by hand, past a list's end on into the next list of the walk and b
   const lists = playlists(state, [], null, { stored });
   const looks = (k) => builtins.PLAYLISTS[k].items.map((it) => (typeof it === "string" ? it : it.look));
   const on = (active, value, dir) => stepOn(state, stored, active, value, dir, false, lists);
-  const [story, shadows, rainbow, experiments] = ["story", "shadows", "rainbow", "experiments"].map(looks);
+  const [story, komorebi, shadows, rainbow, experiments] = ["story", "komorebi", "shadows", "rainbow", "experiments"].map(looks);
   expect(on(STORY, story[0], 1)).toEqual({ active: STORY, value: story[1] });
-  expect(on(STORY, story.at(-1), 1)).toEqual({ active: "ship:shadows", value: shadows[0] });
-  expect(on("ship:shadows", shadows[0], -1)).toEqual({ active: STORY, value: story.at(-1) });
+  expect(on(STORY, story.at(-1), 1)).toEqual({ active: "ship:komorebi", value: komorebi[0] });
+  expect(on("ship:komorebi", komorebi[0], -1)).toEqual({ active: STORY, value: story.at(-1) });
+  expect(on("ship:komorebi", komorebi.at(-1), 1)).toEqual({ active: "ship:shadows", value: shadows[0] });
+  expect(on("ship:shadows", shadows[0], -1)).toEqual({ active: "ship:komorebi", value: komorebi.at(-1) });
   expect(on("ship:shadows", shadows.at(-1), 1)).toEqual({ active: "ship:rainbow", value: rainbow[0] });
   expect(on("ship:rainbow", rainbow.at(-1), 1)).toEqual({ active: "local", value: "x" });   // then the person's own, in the dropdown's order
   expect(on("local", "y", 1)).toEqual({ active: "arb:7", value: "0" });
