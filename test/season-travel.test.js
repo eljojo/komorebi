@@ -85,6 +85,20 @@ test('the gaze lifted past the tilt moves on the move\'s own clock, both ways th
   }
 });
 
+test('a standing camera glide uses the rendered tilt at either end of its path',()=>{
+  const a={...PRESETS['park 1, under the trees'],view_extent_m:4,view_fov_deg:50,view_pitch_deg:90,view_yaw_deg:0};
+  for(const yaw of [0,180]){
+    const b={...a,view_pitch_deg:70,view_yaw_deg:yaw},clamped={...a,view_pitch_deg:80};
+    for(const w of [.001,.15,.5,.999]){
+      for(const [from,to,clampedFrom,clampedTo] of [[a,b,clamped,b],[b,a,b,clamped]]){
+        const eye=cameraPose({...from,...travel.seasonCamera(from,to,w)}).eye;
+        const expected=cameraPose({...clampedFrom,...travel.seasonCamera(clampedFrom,clampedTo,w)}).eye;
+        for(let k=0;k<3;k++)expect(eye[k]).toBeCloseTo(expected[k],9);
+      }
+    }
+  }
+});
+
 // ---- the route on a GL that checks what a browser checks ----------------------------------------------------------------------------------
 // A stand-in GL that keeps each buffer's size, each vertex array's instanced attributes and each program's vertex source, and refuses an
 // instanced draw whose enabled attribute would be read past its buffer's end, as WebGL does (INVALID_OPERATION, and nothing is drawn).

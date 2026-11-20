@@ -25,6 +25,8 @@ The overhead and tilted looks see the floor through a **tilted perspective camer
 
 Pitch, orbit, pan and zoom together let a person walk around the structure to make sense of it.
 
+Standing-camera glides use each endpoint's rendered pitch, capped at 80°, when solving the path between the two eyes. A saved tilt above that limit has the same glide as the rendered tilt.
+
 ### Framing the off-frame tree
 
 In a standing scene the tree is grown at the world's origin and its shadow is thrown down-sun across the floor ([`transport.md`](transport.md)). **Framing that shadow is the camera's job.** A fixed pan looks at the patch of floor in front of the tree, so the tree's foot sits off the frame and only its cast lies in view; orbit and pan pivot on that floor patch, not on the trunk. As the sun moves, the shadow sweeps across the fixed view, and raised past overhead it retreats under the off-frame tree, leaving lit floor, which is correct. Physics moves the shadow; the camera is only where you stand.

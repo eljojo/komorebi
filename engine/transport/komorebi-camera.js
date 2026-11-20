@@ -8,12 +8,14 @@ import { DEG, clamp, lerp, lerpAngle, smoothstep } from '../komorebi-math.js';
 // The floor camera's gaze turned up past its tilt (view_look_up_deg, radians): the eye stays where the gauge puts it and only the gaze turns.
 // The floor ray, the tree's projection and the elevation below all add it to the pitch; 0 leaves each the expression it was.
 const lookUp = (p) => clamp(p.view_look_up_deg || 0, 0, 70)*DEG;
+const floorPitch = p => clamp(p.view_pitch_deg, 0, 80);
+const halfFovTangent = p => Math.max(Math.tan(0.5*clamp(p.view_fov_deg, 5, 140)*DEG), 1e-4);
 
 // The floor's gauge (height plus recenter) expressed as a real eye, in the sky camera's world frame.
 function cameraPose(p){
-  const pitch=clamp(p.view_pitch_deg,0,80)*DEG;
+  const pitch=floorPitch(p)*DEG;
   if(p.sky_view) return {eye:[p.view_center_x,p.view_center_y,0],elevation:pitch,skyWeight:1};
-  const k=Math.max(Math.tan(0.5*clamp(p.view_fov_deg,5,140)*DEG),1e-4);
+  const k=halfFovTangent(p);
   const h=p.view_extent_m*Math.cos(pitch)**2/Math.max(2*k,1e-4), offset=h*Math.tan(pitch), yaw=p.view_yaw_deg*DEG;
   return {eye:[p.view_center_x-offset*Math.sin(yaw),p.view_center_y-offset*Math.cos(yaw),h],elevation:pitch+lookUp(p)-Math.PI/2,skyWeight:0};
 }
@@ -28,18 +30,19 @@ function cameraPose(p){
 //   kept between two looks that face apart is passed over, and the camera swung round it is an orbit about the middle of the grove.
 // The distance to the aim (walking, the eye's height), the framing and the lens each change by the same ratio each moment, so a lens opening as the eye
 // comes in neither swells the frame nor holds it while the perspective warps. Yaw takes the short way.
-const across = (p) => { const s = Math.sin(p.view_pitch_deg*DEG); return [s*Math.sin(p.view_yaw_deg*DEG), s*Math.cos(p.view_yaw_deg*DEG)]; };
+const across = (p, pitch) => { const s = Math.sin(pitch*DEG); return [s*Math.sin(p.view_yaw_deg*DEG), s*Math.cos(p.view_yaw_deg*DEG)]; };
 const ratio = (a, b, w) => a*(b/a)**w;
 function cameraBetween(a, b, w){
-  const A = cameraPose(a).eye, B = cameraPose(b).eye, ga = across(a), gb = across(b);
-  const yaw = lerpAngle(a.view_yaw_deg, b.view_yaw_deg, w, 360), pitch = lerp(a.view_pitch_deg, b.view_pitch_deg, w), c = Math.cos(pitch*DEG);
+  const ap = floorPitch(a), bp = floorPitch(b);
+  const A = cameraPose(a).eye, B = cameraPose(b).eye, ga = across(a, ap), gb = across(b, bp);
+  const yaw = lerpAngle(a.view_yaw_deg, b.view_yaw_deg, w, 360), pitch = lerp(ap, bp, w), c = Math.cos(pitch*DEG);
   const up = lerp(a.view_look_up_deg || 0, b.view_look_up_deg || 0, w);   // the gaze lifts with the head's turn, on the move's own clock
   if(ga[0]*gb[0] + ga[1]*gb[1] >= 0){
-    const h = ratio(A[2]/Math.cos(a.view_pitch_deg*DEG), B[2]/Math.cos(b.view_pitch_deg*DEG), w)*c, extent = ratio(a.view_extent_m, b.view_extent_m, w);
+    const h = ratio(A[2]/Math.cos(ap*DEG), B[2]/Math.cos(bp*DEG), w)*c, extent = ratio(a.view_extent_m, b.view_extent_m, w);
     return { view_extent_m: extent, view_pitch_deg: pitch, view_yaw_deg: yaw, view_fov_deg: 2*Math.atan(extent*c*c/(2*h))/DEG,
       view_center_x: lerp(a.view_center_x, b.view_center_x, w), view_center_y: lerp(a.view_center_y, b.view_center_y, w), view_look_up_deg: up };
   }
-  const h = ratio(A[2], B[2], w), fov = 2*Math.atan(ratio(Math.tan(a.view_fov_deg*DEG/2), Math.tan(b.view_fov_deg*DEG/2), w))/DEG;
+  const h = ratio(A[2], B[2], w), fov = 2*Math.atan(ratio(halfFovTangent(a), halfFovTangent(b), w))/DEG;
   const offset = h*Math.tan(pitch*DEG);
   return { view_extent_m: 2*Math.tan(fov*DEG/2)*h/c**2, view_pitch_deg: pitch, view_yaw_deg: yaw, view_fov_deg: fov,
     view_center_x: lerp(A[0], B[0], w) + offset*Math.sin(yaw*DEG), view_center_y: lerp(A[1], B[1], w) + offset*Math.cos(yaw*DEG), view_look_up_deg: up };
