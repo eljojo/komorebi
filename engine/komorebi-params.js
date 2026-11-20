@@ -893,6 +893,10 @@ const PARAMS = {
     row: { kind: 's', label: 'flutter Hz', min: 0, max: 5, step: 0.05, rebuild: '' },
     travels: 'morph',
     means: "<b>How fast the leaves flutter.</b> The quick trembling on top of the slow sway — the glisten." },
+  flutter_broadband: { default: 0.0,   // PROTOTYPE: the leaves flutter on the wind pattern's own fractal sum (komorebi-air.js, leafFlutter) instead of one tone at flutter_freq; 0 = off, the tone exactly
+    row: { kind: 's', label: 'flutter air', min: 0, max: 1, step: 0.01, rebuild: '' },
+    travels: 'morph',   // a blend of two signals of time: continuous, so it eases in a transition
+    means: "<b>The leaves flutter with the wind's own character.</b> Off, every leaf trembles at one steady tempo, the flutter rate, whatever the wind is doing. On, each leaf trembles on the wind pattern's own mix of slow and quick: a lazy wind's leaves sway smooth and slow, a choppy wind's shiver. The leaves' trembling is what sets how fast the light on the ground moves, so this is how the wind's character reaches the floor." },
   wind_depth: { default: 0.0,   // a faint wind rocks only a crown's skin, a stronger one reaches the inner leaves, a strong one every leaf (komorebi-air.js, depthGate); 0 = off, every leaf rocks as before
     row: { kind: 's', label: 'depth', min: 0, max: 1.5, step: 0.01, rebuild: '' },
     travels: 'morph',   // how far into a crown the wind reaches (komorebi-air.js, depthGate): continuous too

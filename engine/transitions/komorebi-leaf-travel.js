@@ -1,7 +1,7 @@
 import { clamp, lerp, lerpAngle, smoothstep, TAU } from '../komorebi-math.js';
 import { turnBack } from './komorebi-routes.js';
 import { ballisticK } from '../leaf/komorebi-leaf.js';
-import { flutterLevel, depthGate } from '../motion/komorebi-air.js';
+import { flutterLevel, depthGate, leafFlutter, flutterH } from '../motion/komorebi-air.js';
 import { CANOPY_MORPH_MAX, DEFAULTS, MORPH_KEYS } from '../komorebi-params.js';
 import { leafLayerOf, readFaith } from '../canopy/komorebi-grove.js';
 import { VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_FULL,
@@ -90,7 +90,7 @@ function moved(q,i,out){
   }
   const dx=d[i]-tx,dy=d[i+1]-ty,xx=tx+ct*dx-st*dy,yy=ty+st*dx+ct*dy;
   const S=H.swayData,u=S?m.u+S[o+2]:m.u;   // its tree's trunk: tree 0's plus what its own adds (row 2, as the shaders read it)
-  const wm=flutterLevel(u,H.airData?.[o]||0,p.wind_air), sw=p.leaf_swing*d[i+6]*(.5*u+wm*Math.sin(m.time*p.flutter_freq*6.2831853+d[i+7]))*depthGate(wm,H.airData?.[o+1]||0,p.wind_depth);
+  const wm=flutterLevel(u,H.airData?.[o]||0,p.wind_air), sw=p.leaf_swing*d[i+6]*(.5*u+wm*leafFlutter(Math.sin(m.time*p.flutter_freq*6.2831853+d[i+7]),m.time,d[i+7],p.flutter_freq,p.flutter_broadband,flutterH(p)))*depthGate(wm,H.airData?.[o+1]||0,p.wind_depth);
   const z=p.faithful_canopy ? D[o+2]+d[i+16]*D[o+3] : p.canopy_base_height_m+leafLayerOf(H,j,d[i+16])/Math.max(1,p.layer_count-1)*p.canopy_thickness_m;
   const gain=p.faithful_canopy ? z/Math.max(q.hMax,.001) : 1+p.sway_height_gain*(z/p.canopy_base_height_m-1);
   const phase=p.drift_phase+d[i+15],ox=d[i+12]*Math.cos(phase),oy=d[i+13]*Math.sin(phase),co=Math.cos(d[i+14]),so=Math.sin(d[i+14]);
@@ -334,7 +334,7 @@ export function makeLeafTravel(hub,createScene){
     s.box=[(x0+x1)/2,(y0+y1)/2,(x1-x0)/2,(y1-y0)/2];
   }
   // The uniforms the carriers' pass reads.
-  const CARRY_U=['W','Edges','TripD','ClusterA','GeomA','ClusterB','GeomB','WindA','FlutterA','DriftA','HeightA','WindB','FlutterB','DriftB','HeightB'];
+  const CARRY_U=['W','Edges','TripD','ClusterA','GeomA','ClusterB','GeomB','WindA','FlutterA','DriftA','HeightA','WindB','FlutterB','DriftB','HeightB','BandA','BandB'];
   // Once a frame, every carrier at both ends' wind now and carried to the progress (W, patch by patch), into the stamp's buffer.
   function carryPass(W){
     const u=s.cu;
@@ -346,6 +346,7 @@ export function makeLeafTravel(hub,createScene){
       gl.activeTexture(gl.TEXTURE0+unit+1);gl.bindTexture(gl.TEXTURE_2D,q.grove.clusterGeomTex);gl.uniform1i(u[`Geom${k}`],unit+1);
       gl.uniform4f(u[`Wind${k}`],m.u,m.sway[0],m.sway[1],m.time);
       gl.uniform4f(u[`Flutter${k}`],p.leaf_swing,p.flutter_freq,p.wind_air,p.wind_depth);
+      gl.uniform2f(u[`Band${k}`],Math.max(0,p.flutter_broadband||0),flutterH(p));
       gl.uniform4f(u[`Drift${k}`],p.drift_phase,p.drift_amount,p.stem_length,p.sway_height_gain);
       gl.uniform4f(u[`Height${k}`],p.faithful_canopy?1:0,p.canopy_base_height_m,p.canopy_thickness_m,q.hMax);
     }

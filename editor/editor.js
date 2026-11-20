@@ -319,6 +319,7 @@ const PANEL_LAYOUT = [
   'stem_length',
   'leaf_swing',
   'flutter_freq',
+  'flutter_broadband',
   'wind_air',
   'branch_noise',
   'wind_depth',

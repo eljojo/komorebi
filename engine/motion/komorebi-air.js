@@ -75,6 +75,41 @@ function branchNoise(x, y, t, k, pat){
 }
 export { fbm1, WIND_PATTERNS, windNoise, branchNoise };
 
+// THE LEAF'S FLUTTER AS WIND (flutter_broadband). Each leaf rocks on one tone, sin(t·flutter_freq·2π + its phase): the
+// flutter's size follows the wind (|u|, or the air under wind_air) but its tempo is the same whatever the wind's
+// character, and the leaves' rock is what sets the floor's brightness tempo, so the pattern's H never reaches the floor
+// (spec/model/motion.md, Patterns). flutter_broadband blends the tone into the pattern's own fractal sum: fbm1 at the
+// pattern's gain 2^−H, FLUTTER_OCT octaves from FLUTTER_LOW of the flutter rate up (an eighth to four times it, so the
+// sum falls as f^−(2H+1) across the floor's band), scaled to the tone's spread (unit std × √½). Each leaf reads it at its
+// own time, its phase stretched over FLUTTER_SPAN seconds, so neighbours are unrelated stretches of one signal. Still a
+// pure function of time and the leaf's address (spec/contracts/determinism.md). `tone` is the caller's own sine, returned
+// as it is at band 0 so the off state is the old flutter to the bit. GLSL_FLUTTER is the shaders' twin: the same integer
+// hash (komorebi-math.js hash3) on uints, so the lattice matches the CPU's exactly and only float rounding differs.
+const FLUTTER_OCT = 6;
+const FLUTTER_LOW = 0.125;
+const FLUTTER_SPAN = 97.3;
+export function leafFlutter(tone, t, phase, f, band, H){
+  if(!(band > 0)) return tone;
+  const n = fbm1(t + phase*FLUTTER_SPAN, f*FLUTTER_LOW, FLUTTER_OCT, H)*Math.SQRT1_2;
+  return tone + (n - tone)*band;
+}
+// the H a look's flutter takes: its wind pattern's (gusty's for an unknown name, as the motion falls back)
+export const flutterH = (params) => (WIND_PATTERNS[params.wind_pattern] || WIND_PATTERNS.gusty).H;
+const GLSL_FLUTTER = `uint flHash(uint a, uint b, uint c){ uint h = a ^ 0x9E3779B1u; h = (h ^ b)*0x85EBCA6Bu; h = (h ^ c)*0xC2B2AE35u; return h ^ (h >> 15u); }
+float flNoise(float x){   // vnoise1 (komorebi-air.js)
+  float i = floor(x), f = x - i, w = f*f*(3.0 - 2.0*f); uint k = uint(int(i));
+  float a = float(flHash(k, 0x9E37u, 0x85EBu))/4294967296.0, b = float(flHash(k + 1u, 0x9E37u, 0x85EBu))/4294967296.0;
+  return (a + (b - a)*w)*2.0 - 1.0;
+}
+float leafFlutter(float tone, float t, float phase, float f, float band, float H){   // leafFlutter (komorebi-air.js)
+  if(!(band > 0.0)) return tone;
+  float g = exp2(-H), amp = 1.0, a2 = 0.0, s = 0.0, fr = f*${FLUTTER_LOW}, x = t + phase*${FLUTTER_SPAN};
+  for(int i = 0; i < ${FLUTTER_OCT}; i++){ s += amp*flNoise(x*fr + float(i)*19.7); a2 += amp*amp; amp *= g; fr *= 2.0; }
+  float n = s/(sqrt(a2)*${VNOISE_STD})*0.70710678;
+  return tone + (n - tone)*band;
+}`;
+export { GLSL_FLUTTER, FLUTTER_OCT, FLUTTER_LOW, FLUTTER_SPAN };
+
 export const AIR = {
   U: 3,          // m/s: how fast a gust is carried through the grove
   sigma: 0.8,    // the eddies' log-normal spread

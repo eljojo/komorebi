@@ -1,7 +1,7 @@
 import { TAU, lerp, lerpAngle, smoothstep } from '../komorebi-math.js';
 import { cutRoute, irisRoute, irisStep, turnBack } from './komorebi-routes.js';
 import { leafClock, springing } from '../season/komorebi-season.js';
-import {flutterLevel, depthGate} from '../motion/komorebi-air.js';
+import {flutterLevel, depthGate, leafFlutter, flutterH} from '../motion/komorebi-air.js';
 import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from '../komorebi-params.js';
 import {seasonCamera} from './komorebi-season-travel.js';
 import {litterLanding,litterAlbedo,litterAge} from '../season/komorebi-litter.js';
@@ -38,7 +38,7 @@ export function carriedLeaf(q,i,o){
  const L=D[k],T=q.pivot?D[k+1]*(1-q.pivot[i/18]):D[k+1],cl=Math.cos(L),sl=Math.sin(L),ct=Math.cos(T),st=Math.sin(T),px=G[k+2],py=G[k+3];
  const dx=d[i]-G[k],dy=d[i+1]-G[k+1],xx=G[k]+ct*dx-st*dy,yy=G[k+1]+st*dx+ct*dy;
  const S=H.swayData,u=S?m.u+S[k+2]:m.u,swx=S?m.sway[0]+S[k]:m.sway[0],swy=S?m.sway[1]+S[k+1]:m.sway[1];   // its tree's trunk (row 2, as the shaders read it)
- const wm=flutterLevel(u,H.airData?.[k]||0,p.wind_air),sw=p.leaf_swing*d[i+6]*(.5*u+wm*Math.sin(m.time*p.flutter_freq*TAU+d[i+7]))*depthGate(wm,H.airData?.[k+1]||0,p.wind_depth);
+ const wm=flutterLevel(u,H.airData?.[k]||0,p.wind_air),sw=p.leaf_swing*d[i+6]*(.5*u+wm*leafFlutter(Math.sin(m.time*p.flutter_freq*TAU+d[i+7]),m.time,d[i+7],p.flutter_freq,p.flutter_broadband,flutterH(p)))*depthGate(wm,H.airData?.[k+1]||0,p.wind_depth);
  const z=D[k+2]+d[i+16]*D[k+3],gain=z/Math.max(h.faith.hMax,.001),th=p.drift_phase+d[i+15];
  const ox=d[i+12]*Math.cos(th),oy=d[i+13]*Math.sin(th),co=Math.cos(d[i+14]),so=Math.sin(d[i+14]);
  o[0]=px+cl*(xx-px)-sl*(yy-py)+swx*gain+p.drift_amount*(co*ox+so*oy);

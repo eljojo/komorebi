@@ -1,6 +1,6 @@
 import { MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX } from '../komorebi-params.js';
 import { LEAF_VARIANTS, SLAB_N } from '../leaf/komorebi-leaf.js';
-import { DEPTH_L0, DEPTH_W } from '../motion/komorebi-air.js';
+import { DEPTH_L0, DEPTH_W, GLSL_FLUTTER } from '../motion/komorebi-air.js';
 import { TREE_GAIN, TREE_POWER } from './komorebi-camera.js';
 
 // ===========================================================================
@@ -70,6 +70,7 @@ uniform float uDepth;                 // wind_depth: 0 every leaf rocks, >0 only
 uniform float uWindTime;              // seconds, for leaf flutter
 uniform float uLeafSwing;             // master: how far leaves rock as wind blows
 uniform float uFlutterFreq;           // leaf flutter rate (Hz)
+uniform vec2  uFlutterBand;           // flutter_broadband, and its wind pattern's H: the flutter as the wind's own fractal sum (leafFlutter)
 uniform float uStemLen;               // twig stem length: pivot offset toward the limb (swing, not spin)
 // GROVE-WIDE COVERAGE (spec/model/transitions.md). The per-leaf 'cov' the CPU folds into iC.xyz is the fractional-leaf fade — a marginal
 // leaf or a marginal tree is faded in by SCALING ITS OPTICAL DEPTH, which the additive bake makes exact: at 0 the
@@ -83,6 +84,7 @@ out vec2 vLocal;
 out vec3 vTau;
 out float vFade;
 flat out float vVariant;
+${GLSL_FLUTTER}
 void main(){
   vec2 leafRest = iA.xy; float A = iA.z, B0 = iA.w;
   float angle = iB.x, restTilt = iB.y, swingGain = iB.z, swingPhase = iB.w;
@@ -90,7 +92,7 @@ void main(){
   vec3 trunk = texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 2), 0).xyz;   // this leaf's tree's trunk less tree 0's (komorebi-motion.js publishBend): 0 for tree 0, so one tree reads uSway and uWindLevel to the bit
   float uk = uWindLevel + trunk.z;                                          // its tree's signed sway u
   float wm = uAir > 0.0 ? abs(uk)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uk);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
-  float swing = uLeafSwing*swingGain*(0.5*uk + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
+  float swing = uLeafSwing*swingGain*(0.5*uk + wm*leafFlutter(sin(uWindTime*uFlutterFreq*6.2831853+swingPhase), uWindTime, swingPhase, uFlutterFreq, uFlutterBand.x, uFlutterBand.y));
   if(uDepth > 0.0){   // depthGate (komorebi-air.js): only as deep into the crown as the wind reaches, at this clump's depth (row 1 .y)
     float dg = clamp((wm/(uDepth*${DEPTH_L0}) - texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).y)/${DEPTH_W} + 1.0, 0.0, 1.0);
     swing *= dg*dg*(3.0 - 2.0*dg);
@@ -223,19 +225,21 @@ uniform float uDepth;
 uniform float uWindTime;
 uniform float uLeafSwing;
 uniform float uFlutterFreq;
+uniform vec2  uFlutterBand;           // (see VS_BAKE)
 uniform vec4  uShapeBox;              // the quad's box in the leaf's own frame (see VS_BAKE)
 uniform float uLeafIdFrac;            // the packing of the outline's row in the cluster id's fraction (see VS_BAKE)
 out vec2 vLocal;
 out vec3 vTau;
 out float vFade;
 flat out float vVariant;
+${GLSL_FLUTTER}
 void main(){
   vec2 leafRest = iA.xy; float A = iA.z, B0 = iA.w;
   float angle = iB.x, restTilt = iB.y, swingGain = iB.z, swingPhase = iB.w;
   vec3 trunk = texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 2), 0).xyz;   // this leaf's tree's trunk less tree 0's (komorebi-motion.js publishBend): 0 for tree 0, so one tree reads uSway and uWindLevel to the bit
   float uk = uWindLevel + trunk.z;                                          // its tree's signed sway u
   float wm = uAir > 0.0 ? abs(uk)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uk);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
-  float swing = uLeafSwing*swingGain*(0.5*uk + wm*sin(uWindTime*uFlutterFreq*6.2831853+swingPhase));
+  float swing = uLeafSwing*swingGain*(0.5*uk + wm*leafFlutter(sin(uWindTime*uFlutterFreq*6.2831853+swingPhase), uWindTime, swingPhase, uFlutterFreq, uFlutterBand.x, uFlutterBand.y));
   if(uDepth > 0.0){   // depthGate (komorebi-air.js): only as deep into the crown as the wind reaches, at this clump's depth (row 1 .y)
     float dg = clamp((wm/(uDepth*${DEPTH_L0}) - texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).y)/${DEPTH_W} + 1.0, 0.0, 1.0);
     swing *= dg*dg*(3.0 - 2.0*dg);
@@ -446,14 +450,16 @@ uniform highp sampler2D uClusterA,uGeomA,uClusterB,uGeomB;
 // per end: (u, sway.xy, time), (leaf_swing, flutter_freq, wind_air, wind_depth), (drift_phase, drift_amount, stem_length, sway_height_gain),
 // (faithful, canopy_base_height_m, canopy_thickness_m, hMax)
 uniform vec4 uWindA,uFlutterA,uDriftA,uHeightA,uWindB,uFlutterB,uDriftB,uHeightB;
+uniform vec2 uBandA,uBandB;   // per end: flutter_broadband and its wind pattern's H (leafFlutter)
 out vec4 oA;   // centre.xy, half sizes
 out vec4 oB;   // angle, optical depth
 out vec4 oC;   // height, fade, outline rows
 #ifdef PATCH_TRIP
 out vec4 oD;   // own progress, edge
 #endif
+${GLSL_FLUTTER}
 // One end's leaf at its own wind: plan centre, half sizes, angle, height (moved()).
-void moved(vec4 r0,vec4 r1,vec4 r2,vec4 r3,vec4 r4,highp sampler2D clusterTex,highp sampler2D geomTex,vec4 wind,vec4 flutter,vec4 drift,vec4 height,
+void moved(vec4 r0,vec4 r1,vec4 r2,vec4 r3,vec4 r4,highp sampler2D clusterTex,highp sampler2D geomTex,vec4 wind,vec4 flutter,vec2 band,vec4 drift,vec4 height,
            out vec2 pos,out vec2 size,out float ang,out float z){
   int j=int(r2.w+0.5);
   vec4 G=texelFetch(geomTex,ivec2(j,0),0),D=texelFetch(clusterTex,ivec2(j,0),0),air=texelFetch(clusterTex,ivec2(j,1),0),S=texelFetch(clusterTex,ivec2(j,2),0);
@@ -468,7 +474,7 @@ void moved(vec4 r0,vec4 r1,vec4 r2,vec4 r3,vec4 r4,highp sampler2D clusterTex,hi
   vec2 d=r0.xy-t,x=t+vec2(ct*d.x-st*d.y,st*d.x+ct*d.y);
   float u=wind.x+S.z;
   float wm=flutter.z>0.0?abs(u)*(1.0-flutter.z)+air.x*flutter.z:abs(u);
-  float sw=flutter.x*r1.z*(0.5*u+wm*sin(wind.w*flutter.y*6.2831853+r1.w));
+  float sw=flutter.x*r1.z*(0.5*u+wm*leafFlutter(sin(wind.w*flutter.y*6.2831853+r1.w),wind.w,r1.w,flutter.y,band.x,band.y));
   if(flutter.w>0.0){float dg=clamp((wm/(flutter.w*${DEPTH_L0})-air.y)/${DEPTH_W}+1.0,0.0,1.0);sw*=dg*dg*(3.0-2.0*dg);}
   z=faithful?D.z+r4.x*D.w:height.y+r4.x*height.z;
   float gain=faithful?z/max(height.w,0.001):1.0+drift.w*(z/height.y-1.0);
@@ -480,8 +486,8 @@ void moved(vec4 r0,vec4 r1,vec4 r2,vec4 r3,vec4 r4,highp sampler2D clusterTex,hi
 }
 void main(){
   vec2 pa,pb,sa,sb;float aa,ab,za,zb;
-  moved(iA0,iA1,iA2,iA3,iA4,uClusterA,uGeomA,uWindA,uFlutterA,uDriftA,uHeightA,pa,sa,aa,za);
-  moved(iB0,iB1,iB2,iB3,iB4,uClusterB,uGeomB,uWindB,uFlutterB,uDriftB,uHeightB,pb,sb,ab,zb);
+  moved(iA0,iA1,iA2,iA3,iA4,uClusterA,uGeomA,uWindA,uFlutterA,uBandA,uDriftA,uHeightA,pa,sa,aa,za);
+  moved(iB0,iB1,iB2,iB3,iB4,uClusterB,uGeomB,uWindB,uFlutterB,uBandB,uDriftB,uHeightB,pb,sb,ab,zb);
 #ifdef PATCH_TRIP
   float p=iPair.z,w=smoothstep(p*(1.0-uTripD),p*(1.0-uTripD)+uTripD,uW);
   oD=vec4(w,mix(uEdges.x,uEdges.y,w),0.0,0.0);

@@ -248,6 +248,7 @@ float cov=1.0-smoothstep(1.0-uEdge,1.0,mix(qa,qb,uWeight));frag=vec4(vec3(exp(-c
   // float: a faithful end with leaves on older wood and a layered end, every input moved() reads set, faithful and layered either way round.
   const carriers=await page.evaluate(async()=>{
     const S=await import('/engine/transport/komorebi-shaders.js'),T=await import('/engine/transitions/komorebi-leaf-travel.js');
+    const {flutterH}=await import('/engine/motion/komorebi-air.js');
     const gl=document.createElement('canvas').getContext('webgl2');
     const shader=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
     function program(v,f,outs){const p=gl.createProgram();gl.attachShader(p,shader(gl.VERTEX_SHADER,v));gl.attachShader(p,shader(gl.FRAGMENT_SHADER,f));
@@ -264,7 +265,9 @@ float cov=1.0-smoothstep(1.0-uEdge,1.0,mix(qa,qb,uWeight));frag=vec4(vec3(exp(-c
       return {leaves:new Float32Array(leaves),pivot:faithful?Float32Array.from({length:count},()=>r()<.3?r():0):null,
         hier:{nClusterTotal:n,clusterPlan:new Float32Array(2*n),twigs,layerBand:[2,1.5,3],clusterGeom:G,clusterData:D,swayData:Sw,airData:air},
         params:{faithful_canopy:faithful,leaf_swing:1.35,flutter_freq:1.4,wind_air:.5,wind_depth:.7,drift_amount:.145,drift_phase:r()*6,stem_length:.18,
-          sway_height_gain:.75,canopy_base_height_m:2,canopy_thickness_m:2.6,layer_count:3},
+          sway_height_gain:.75,canopy_base_height_m:2,canopy_thickness_m:2.6,layer_count:3,
+          // the broadband flutter off on some ends and on at two strengths on others, under the pattern furthest from a tone
+          flutter_broadband:[0,.6,.9][seed%3],wind_pattern:'choppy'},
         motion:{u:r()-.5,time:100*r(),sway:[r()*.3,r()*.3]},hMax:5,shape:null};
     }
     const data=(w,h,src)=>{const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,w,h,0,gl.RGBA,gl.FLOAT,src);for(const k of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,k,gl.NEAREST);return t;};
@@ -286,6 +289,7 @@ float cov=1.0-smoothstep(1.0-uEdge,1.0,mix(qa,qb,uWeight));frag=vec4(vec3(exp(-c
           gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,q.grove.clusterTex);gl.uniform1i(loc(`Cluster${k}`),unit);
           gl.activeTexture(gl.TEXTURE0+unit+1);gl.bindTexture(gl.TEXTURE_2D,q.grove.clusterGeomTex);gl.uniform1i(loc(`Geom${k}`),unit+1);
           gl.uniform4f(loc(`Wind${k}`),m.u,m.sway[0],m.sway[1],m.time);gl.uniform4f(loc(`Flutter${k}`),p.leaf_swing,p.flutter_freq,p.wind_air,p.wind_depth);
+          gl.uniform2f(loc(`Band${k}`),p.flutter_broadband,flutterH(p));
           gl.uniform4f(loc(`Drift${k}`),p.drift_phase,p.drift_amount,p.stem_length,p.sway_height_gain);gl.uniform4f(loc(`Height${k}`),p.faithful_canopy?1:0,p.canopy_base_height_m,p.canopy_thickness_m,q.hMax);
         }
         const out=gl.createBuffer();gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER,out);gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER,4*stride*n,gl.STREAM_READ);

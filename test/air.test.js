@@ -3,7 +3,8 @@
 // trunk with; a clump downwind feels the gust later by its distance over U; the eddies are a factor of mean 1. The wind's
 // reach: off, every leaf rocks; on, the skin always, the core only once the wind is strong enough, deeper as it rises.
 import { expect, test } from "bun:test";
-import { AIR, DEPTH, WIND_PATTERNS, advanceAir, airCurve, airDelay, airForce, airLevel, branchNoise, crossForce, curveForce, depthGate, eddy, flutterLevel, gustEdge, leanForce, makeAirTrack, shelter, weatherAt, windNoise } from "../engine/motion/komorebi-air.js";
+import { AIR, DEPTH, WIND_PATTERNS, advanceAir, airCurve, airDelay, airForce, airLevel, branchNoise, crossForce, curveForce, depthGate, eddy, flutterH, flutterLevel, gustEdge, leafFlutter, leanForce, makeAirTrack, shelter, weatherAt, windNoise } from "../engine/motion/komorebi-air.js";
+import { fft } from "../test-gl/pattern-lib.mjs";
 import { crownDepth } from "../engine/canopy/komorebi-grove.js";
 import { DEFAULTS } from "../engine/komorebi-params.js";
 
@@ -156,4 +157,53 @@ test("branch noise: windNoise's spread, the pattern's tempo", () => {
 	expect(pace(lazy)).toBeLessThan(pace(gusty));
 	expect(pace(gusty)).toBeLessThan(pace(choppy));
 	expect(pace(choppy) / pace(lazy)).toBeGreaterThan(1.5);
+});
+
+// the leaf's flutter as wind (flutter_broadband): off, the caller's tone to the bit; on, the tone's spread, a spectrum that
+// falls as f^-(2H+1) at the look's pattern's H over the floor's band, and each leaf an unrelated stretch of it
+test("flutter_broadband 0 is the tone, to the bit", () => {
+	for (const tone of [-1, -0.37, 0, 1e-9, 0.81]) for (const band of [0, undefined, -0.2]) expect(Object.is(leafFlutter(tone, 12.3, 1.7, 1.4, band, 0.34), tone)).toBe(true);
+	const half = leafFlutter(0.4, 12.3, 1.7, 1.4, 0.5, 0.34), full = leafFlutter(0.4, 12.3, 1.7, 1.4, 1, 0.34);
+	expect(half).toBeCloseTo((0.4 + full) / 2, 12);
+	expect(flutterH({ wind_pattern: "lazy" })).toBe(WIND_PATTERNS.lazy.H);
+	expect(flutterH({ wind_pattern: "nope" })).toBe(WIND_PATTERNS.gusty.H);
+});
+test("broadband flutter: the tone's spread, the pattern's slope, unrelated leaves", () => {
+	const fs = 24, n = fs * 1800, f = 1.4, L = 8192;
+	const sd = (a) => { const m = a.reduce((s, v) => s + v, 0) / a.length; return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length); };
+	// Welch PSD, then the slope of log power against log frequency over log-spaced bins in [lo, hi]
+	const slope = (x, lo, hi) => {
+		const psd = new Float64Array(L / 2 + 1), re = new Float64Array(L), im = new Float64Array(L);
+		for (let s = 0; s + L <= x.length; s += L / 2) {
+			for (let i = 0; i < L; i++) { re[i] = x[s + i] * (0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (L - 1))); im[i] = 0; }
+			fft(re, im);
+			for (let k = 0; k <= L / 2; k++) psd[k] += re[k] ** 2 + im[k] ** 2;
+		}
+		const nb = 12, sum = new Float64Array(nb), cnt = new Float64Array(nb), xs = [], ys = [];
+		for (let k = 1; k <= L / 2; k++) {
+			const fk = (k * fs) / L;
+			if (fk < lo || fk > hi) continue;
+			const b = Math.min(nb - 1, Math.floor((Math.log(fk / lo) / Math.log(hi / lo)) * nb));
+			sum[b] += psd[k]; cnt[b]++;
+		}
+		for (let b = 0; b < nb; b++) if (cnt[b]) { xs.push(Math.log(lo) + ((b + 0.5) / nb) * Math.log(hi / lo)); ys.push(Math.log(sum[b] / cnt[b])); }
+		const mx = xs.reduce((a, v) => a + v, 0) / xs.length, my = ys.reduce((a, v) => a + v, 0) / ys.length;
+		let num = 0, den = 0;
+		for (let i = 0; i < xs.length; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) ** 2; }
+		return -num / den;
+	};
+	const leaf = (phase, H) => Float64Array.from({ length: n }, (_, i) => leafFlutter(0, i / fs, phase, f, 1, H));
+	const slopes = {};
+	for (const [name, { H }] of Object.entries(WIND_PATTERNS)) {
+		const x = leaf(1.7, H);
+		expect(Math.abs(sd(x) * Math.SQRT2 - 1), `${name}: a sine's spread`).toBeLessThan(0.1);
+		slopes[name] = slope(x, 0.4 * f / 8, 0.4 * f * 4);
+		expect(Math.abs(slopes[name] - (2 * H + 1)), `${name}: slope ${slopes[name].toFixed(2)} against 2H+1 ${(2 * H + 1).toFixed(2)}`).toBeLessThan(0.35);
+	}
+	expect(slopes.lazy).toBeGreaterThan(slopes.gusty);
+	expect(slopes.gusty).toBeGreaterThan(slopes.choppy);
+	const a = leaf(1.0, 0.34), b = leaf(1.3, 0.34), ma = a.reduce((s, v) => s + v, 0) / n, mb = b.reduce((s, v) => s + v, 0) / n;
+	let c = 0;
+	for (let i = 0; i < n; i++) c += (a[i] - ma) * (b[i] - mb);
+	expect(Math.abs(c / n / (sd(a) * sd(b))), "two leaves a little apart in phase").toBeLessThan(0.15);
 });
