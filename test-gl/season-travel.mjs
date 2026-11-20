@@ -66,7 +66,7 @@ void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0
     const diff=(a,b)=>a.reduce((m,x,i)=>Math.max(m,Math.abs(x-b[i])),0);
     function pump(n){for(let i=0;i<n;i++){stamp+=step;window.__clock.pump(stamp);}}
     function open(p){e?.dispose();c?.remove();window.__clock.drain();window.__clock.set(0);stamp=0;c=document.createElement('canvas');document.body.appendChild(c);e=create(c,{params:p});e.onFrame=()=>{const g=e.gl;last=new Uint8Array(320*180*4);g.bindFramebuffer(g.FRAMEBUFFER,null);g.readPixels(0,0,320,180,g.RGBA,g.UNSIGNED_BYTE,last);const error=g.getError();need(!error,`WebGL ${error}`);};pump(1);}
-    const {cameraPose}=await import('/engine/transport/komorebi-camera.js'),{smoothstep}=await import('/engine/komorebi-math.js');
+    const {cameraPose}=await import('/engine/transport/komorebi-camera.js'),{smoothstep}=await import('/engine/komorebi-math.js'),{seasonCamera}=await import('/engine/transitions/komorebi-season-travel.js');
     const tune={tree_count:1,branch_levels:2,branch_children:2,limb_count:4,leaves_per_cluster:6,
       sample_count:5,tex_resolution:256,bake_resolution:128,fill_directions:4,fill_resolution:64,litter_resolution:256,
       wind_strength:0,drift_auto:false,auto_quality:false,adaptive_motion:false};
@@ -79,7 +79,7 @@ void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0
       need(weights===e.faith.count,`${weights} pivot weights for ${e.faith.count} travelling leaves`);
       g.bindBuffer(g.ARRAY_BUFFER,buf);g.getBufferSubData(g.ARRAY_BUFFER,0,data);return data;
     };
-    for(const [an,bn] of [['montebello','park fall'],['montebello, rain','cherry blossom']]){
+    for(const [an,bn] of [['montebello','park fall'],['montebello, rain','park fall']]){   // two carpets each way, the second wet; both ends share a leaf outline, which no season travel changes
       for(const [fromName,toName] of [[an,bn],[bn,an]]){
         const from={...PRESETS[fromName],...tune},to={...PRESETS[toName],...tune},id=l=>`${l.j}/${l.k}`;
         open(from);const first=last.slice(),floorA=new Set(e.grove().litter.map(id));
@@ -87,7 +87,7 @@ void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0
         need(from.inner_leaves>0&&to.inner_leaves>0,'the shipped pair must hang leaves on older wood, or the pivot weights go unchecked');
         open(from);e.transitionTo(to,{duration:1});need(e.trans.route?.name==='seasonTravel',`${fromName} -> ${toName} used an ordinary grove morph`);
         window.__clock.pump(stamp);const sourceDelta=diff(first,last);need(sourceDelta<=1,`two-carpet source changed: ${sourceDelta}`);
-        const S=e.grove().season,aa=cameraPose(from).eye,bb=cameraPose(to).eye;let previous=journey(),shared=0,moving=0;
+        const S=e.grove().season;let previous=journey(),shared=0,moving=0;
         for(let i=0;i<S.n;i++){const k=`${S.rec[i*11+6]}/${S.rec[i*11+7]}`;if(floorA.has(k)&&floorB.has(k))shared++;if(floorA.has(k)!==floorB.has(k))moving++;}
         need(shared>0&&moving>0,'the fixture needs grounded and travelling leaves');
         for(let frame=0;frame<120;frame++){
@@ -98,8 +98,9 @@ void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0
             if(a&&!b)need(v>=previous[i*4+3],'a rising leaf reversed');
             if(!a&&b)need(v<=previous[i*4+3],'a falling leaf reversed');
           }
-          const eye=cameraPose(e.params).eye,w=smoothstep(0,1,e.trans.t);
-          for(let k=0;k<3;k++)need(Math.abs(eye[k]-(aa[k]+(bb[k]-aa[k])*w))<1e-9,'the camera took an outward-and-back detour');
+          // the engine's camera is the move the unit suite holds to its aim with no detour (seasonCamera, cameraBetween), at the route's eased progress
+          const eye=cameraPose(e.params).eye,want=cameraPose({...from,...seasonCamera(from,to,smoothstep(0,1,e.trans.t))}).eye;
+          for(let k=0;k<3;k++)need(Math.abs(eye[k]-want[k])<1e-9,'the camera left the move between the two looks');
           previous=data;
         }
         const landingDelta=diff(final,last);need(landingDelta<=1,`two-carpet landing jumped: ${landingDelta}`);
