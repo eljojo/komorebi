@@ -43,6 +43,8 @@ A leaf and a piece of bark are **receivers of the beam** ([`transport.md`](trans
 
 The overhead park has no tree to see: its canopy is endless and above the frame. The tree view is opened per look, and off it is the floor as it was. Between a look that sees its tree and one that does not, the tree fades and nothing else changes on its account: it is not a scene mode, since nothing the grove, the cast or the floor holds reads it ([`../contracts/transitions.md`](../contracts/transitions.md#gate-crossings-within-any-morph)).
 
+The tree's colour, depth and resolve targets are released when the overlay closes. If the browser cannot allocate complete targets, the floor and its shadow keep drawing. Resizing or reopening the overlay retries the allocation.
+
 #### The wood, seen
 
 Each piece of the skeleton is drawn as a flat card through its axis, turned to face the eye, its normal rebuilt across it so it shades as a round stem; each card runs on past its ends by its radius so the joints close. Four things, each opened per look and each the old drawing when shut, make that card stand as wood.

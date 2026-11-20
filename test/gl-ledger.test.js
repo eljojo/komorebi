@@ -19,6 +19,7 @@ const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture
 
 function makeLedger() {
   let seq = 0, lost = false, casts = 0, layerDraws = 0, treeWoodDraws = 0, layerEdgeMix;
+  let checksUntilIncomplete = 0;
   const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {}, linked = [];
   const at = { array: null, vao: null, fb: null, prog: null, rb: null, unit: "TEXTURE0", units: {} };
   const label = (o) => `${o.kind} #${o.id}`;
@@ -76,7 +77,8 @@ function makeLedger() {
     clear: () => use(at.fb, "cleared"), blitFramebuffer: () => use(at.fb, "blitted"), readPixels: () => use(at.fb, "read back"),
     beginQuery: (_t, q) => use(q, "begun"), getQueryParameter: (q) => { use(q, "read"); return 0; },
     getParameter: () => 4096, getShaderParameter: () => true, getProgramParameter: () => true, getShaderInfoLog: () => "", getProgramInfoLog: () => "",
-    checkFramebufferStatus: () => "FRAMEBUFFER_COMPLETE", getError: () => 0,
+    checkFramebufferStatus: () => checksUntilIncomplete > 0 && --checksUntilIncomplete === 0 ? "FRAMEBUFFER_UNSUPPORTED" : "FRAMEBUFFER_COMPLETE",
+    getError: () => 0,
     getExtension: (n) => (n === "EXT_disjoint_timer_query_webgl2" ? null : { loseContext() {} }),
   };
   for (const [k, kind] of Object.entries(KINDS)) { fns[`create${k}`] = make(kind); fns[`delete${k}`] = remove; }
@@ -89,6 +91,7 @@ function makeLedger() {
   } });
   return {
     gl, faults,
+    failFramebufferCheck(n) { checksUntilIncomplete = n; },
     lose() { lost = true; for (const o of live) dead.add(o); live.clear(); Object.assign(at, { array: null, vao: null, fb: null, prog: null, rb: null, units: {} }); },
     restore() { lost = false; },
     alive: () => [...live],
@@ -328,6 +331,28 @@ scenario("a leafless standing tree still draws its wood", BARE_TREE, (R) => {
   const before = R.L.treeWoodDraws();
   R.pump();
   expect(R.L.treeWoodDraws() - before).toBe(1);
+});
+for (const [target, check] of [["multisampled", 1], ["resolve", 2]]) {
+  test(`an incomplete ${target} tree target leaves the floor running`, () => withWindow(() => {
+    const R = engine(BARE_TREE);
+    R.L.failFramebufferCheck(check);
+    let frames = 0;
+    R.eng.onFrame = () => frames++;
+    R.pump(3);
+    expect(frames).toBe(3);
+    expect(R.L.treeWoodDraws()).toBe(0);
+    expect(R.L.leaks().renderbuffer).toBeUndefined();
+    R.eng.canvas.clientWidth++;
+    R.pump();
+    expect(R.L.treeWoodDraws()).toBe(1);
+    closes(R, target);
+  }));
+}
+scenario("closing tree view releases its frame targets", BARE_TREE, (R) => {
+  expect(R.L.leaks().renderbuffer).toBe(3);
+  R.eng.params.tree_view = false;
+  R.pump();
+  expect(R.L.leaks().renderbuffer).toBeUndefined();
 });
 scenario("faithful casts stamp only nonzero source samples", { ...FAITHFUL, wind_strength: 0, cloud_thickness: 1, sample_count: 32 }, (R) => {
   const before = R.L.casts();

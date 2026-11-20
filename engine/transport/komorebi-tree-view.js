@@ -127,29 +127,43 @@ export function makeTreeView(hub){
 
   // The targets: four samples of colour, coverage and depth, resolved into two plain textures the composite reads.
   function targets(w, h){
-    if(msFBO && tw === w && th === h) return;
+    if(tw === w && th === h) return !!msFBO;
     free();
     const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES));
-    const rb = (fmt) => { const r = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, r); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, fmt, w, h); return r; };
+    const rb = (fmt) => { const r = gl.createRenderbuffer(); if(!r) return null;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, r); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, fmt, w, h); return r; };
     msCol = rb(gl.RGBA8); msCover = rb(gl.RGBA8); msDepth = rb(gl.DEPTH_COMPONENT24);
-    msFBO = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, msFBO);
+    msFBO = gl.createFramebuffer();
+    if(!msFBO || !msCol || !msCover || !msDepth) return abandonTargets(w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, msFBO);
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, msCol);
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.RENDERBUFFER, msCover);
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, msDepth);
-    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) hub.fail("the tree view's multisampled target is incomplete");
-    const tex = () => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return abandonTargets(w, h);
+    const tex = () => { const t = gl.createTexture(); if(!t) return null;
+      gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); return t; };
     rsCol = tex(); rsCover = tex();
-    rsFBO = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, rsFBO);
+    rsFBO = gl.createFramebuffer();
+    if(!rsFBO || !rsCol || !rsCover) return abandonTargets(w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, rsFBO);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rsCol, 0);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, rsCover, 0);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return abandonTargets(w, h);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     tw = w; th = h;
+    return true;
+  }
+  function abandonTargets(w, h){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    free();
+    tw = w; th = h;   // retry after resize or when the tree view is opened again
+    return false;
   }
   function free(){
+    for(const f of [msFBO, rsFBO]) if(f) gl.deleteFramebuffer(f);
     for(const r of [msCol, msCover, msDepth]) if(r) gl.deleteRenderbuffer(r);
     for(const t of [rsCol, rsCover]) if(t) gl.deleteTexture(t);
-    for(const f of [msFBO, rsFBO]) if(f) gl.deleteFramebuffer(f);
     msFBO = rsFBO = msCol = msCover = msDepth = rsCol = rsCover = null; tw = th = 0;
   }
 
@@ -243,8 +257,10 @@ export function makeTreeView(hub){
 
   // Draw the tree over the frame already in `fbo` (w × h).
   function draw(fbo, w, h){
-    if(!wanted() || trans.active && trans.treeFade && !(trans.treeOpacity > 0)) return;   // nothing to lay over at a fade's zero
-    compile(); targets(w, h); ensureLayers();
+    if(!wanted()){ if(tw) free(); return; }
+    if(trans.active && trans.treeFade && !(trans.treeOpacity > 0)) return;
+    if(!targets(w, h)) return;
+    compile(); ensureLayers();
     const names = treeNames(params), crown = names.includes('CROWN_FIELD');
     if(crown) bakeGrid(w, h);
     gl.bindFramebuffer(gl.FRAMEBUFFER, msFBO);
