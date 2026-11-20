@@ -49,7 +49,7 @@ model file whose mechanism it holds (`spec/model/`).
   the fields out), and what is derived from it: `DEFAULTS`, the legacy-name migration, transition key classes. Also engine caps, and the feature
   registry (`FEATURES`, `featuresFor`) that tells a bundle which fall tiers it may cut.
 - `komorebi-session.js` — pure session profiles and fidelity/playback/presentation resolution; no device storage or UI.
-- `komorebi-math.js` — what the organs share, and nothing of their laws: constants, interpolation, the two-circle overlap area, the deterministic RNG.
+- `komorebi-math.js` — shared constants, interpolation and the deterministic RNG.
 - `komorebi-editor-tools.js` — EDITOR-only: debug overlays, the GPU timer queries `nix run .#cost` reads, the motion mirror.
 
 `engine/light/` — the source and the sky's light (`spec/model/source.md`, `light.md`):

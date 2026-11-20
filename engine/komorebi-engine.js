@@ -225,7 +225,7 @@ function createEngine(canvas, opts, driven=false){
   // keeps a dead handle.
   let progBake, progFaith, progFaithPivot, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
   let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
-  let reseasonGrove, reseasonable, growGrove, uploadGrove, bake, refreshFaith, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
+  let reseasonGrove, reseasonable, growGrove, uploadGrove, bake, refreshFaith, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -455,8 +455,8 @@ function createEngine(canvas, opts, driven=false){
     Object.assign(hub, FEAT_FILL ? makeFill(hub) : NO_FILL);
     ({ refreshLitter } = FEAT_LITTER ? makeLitter(hub) : NO_LITTER); hub.refreshLitter = refreshLitter;
     Object.assign(hub, FEAT_TREE_VIEW ? makeTreeView(hub) : NO_TREE_VIEW);   // the tree seen from the floor camera: it reads the fill's low-res layers, or keeps them itself   // after the bake: the carpet is read over the fill's frame, and asks the bake module for it
-    ({ drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));
-    Object.assign(hub, { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit });
+    ({ drawFrameInto, drawTransport, drawTransportPresent, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));
+    Object.assign(hub, { drawFrameInto, drawTransport, drawTransportPresent, freeGlowTargets, drawLayerBlit });
     if(EDITOR) hub.initEditorGL?.();   // the debug overlays' buffers (absent on the very first call: makeEditorTools runs later and calls it itself)
   }
 

@@ -82,7 +82,7 @@ export function makeSource(hub){
     // raise cloud_thickness and the disk drains into the aureole by exactly the amount the dapples soften. Absolute
     // scale is authored — see SKY_SUN_GAIN.
     // The eclipse's seen source is the uncovered disc at its own radiance: the moon removes area, not brightness. The renormalised
-    // version divided Lcore/Lhalo by `live`, the analytic share left uncovered (circle-circle overlap via lensArea); `git show 8d75e3b:komorebi-source.js` has it.
+    // version divided Lcore/Lhalo by the uncovered share of the disks. `git show 8d75e3b:komorebi-source.js` has it.
     const aCore = Math.PI*coreR*coreR, aHalo = Math.max(Math.PI*(haloR*haloR - coreR*coreR), 1e-12);
     src.coreR = coreR; src.haloR = haloR; src.moonD = moonD; src.moonR = moonR;
     src.Lcore = SKY_SUN_GAIN * Wcore / aCore;                          // the uncovered surface is as bright as ever; the eclipse removes area, not radiance

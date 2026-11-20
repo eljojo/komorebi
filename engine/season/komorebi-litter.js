@@ -253,7 +253,7 @@ function makeLitter(hub){
   }
 
   allocTex(1);   // the 1×1 every engine holds: bound (and never read) while the gate is shut, and fresh after a context restore
-  return { litterWanted, refreshLitter, releaseLitter };
+  return { refreshLitter };
 }
 
 // What the engine holds in place of the carpet in a bundle that cut it (embed-build.mjs, FEATURES.litter): nothing to bake, nothing to release.

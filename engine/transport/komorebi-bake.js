@@ -480,7 +480,7 @@ export function makeBake(hub){
     )) bake();   // The lighting through the old layers must follow the new cast as well.
   }
 
-  return { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow, ensureLightingLayers };
+  return { bake, bakeFaithful, refreshFaith, fillFrameNow, ensureLightingLayers };
 }
 
 // ============================================================================

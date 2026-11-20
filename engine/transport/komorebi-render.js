@@ -482,5 +482,5 @@ export function makeRender(hub){
     gl.drawArrays(gl.TRIANGLES,0,3);
   }
 
-  return { drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO };
+  return { drawFrameInto, drawTransport, drawTransportPresent, freeGlowTargets, drawLayerBlit, glowFBO };
 }
