@@ -393,6 +393,8 @@ export function makeBake(hub){
     }
 
     for(let i=0;i<N;i++){
+      const weight = src.flat[3*i+2];
+      if(weight === 0) continue;
       // PASS 1: transmittance_i into scratch (clear to 1 = fully lit; each leaf MULTIPLIES it down by exp(-τ))
       gl.bindFramebuffer(gl.FRAMEBUFFER, faithFBO);   // faithScratch (attached once above)
       gl.disable(gl.BLEND); gl.clearColor(1,1,1,1); gl.clear(gl.COLOR_BUFFER_BIT);
@@ -412,7 +414,7 @@ export function makeBake(hub){
       gl.blendFunc(gl.ONE, gl.ONE);
       gl.useProgram(progFAcc);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hub.faithScratch); gl.uniform1i(U.facc.tex, 0);
-      gl.uniform1f(U.facc.weight, src.flat[3*i+2]);
+      gl.uniform1f(U.facc.weight, weight);
       gl.bindVertexArray(emptyVAO);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }

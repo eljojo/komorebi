@@ -170,13 +170,14 @@ function createGroveRenderer(h,a,b,from,to,host){
   gl.bindBuffer(gl.ARRAY_BUFFER,leaves.buf);gl.bufferSubData(gl.ARRAY_BUFFER,0,data);gl.bindBuffer(gl.ARRAY_BUFFER,woodBuf.buf);gl.bufferSubData(gl.ARRAY_BUFFER,0,segments);
   gl.viewport(0,0,res,res);gl.bindFramebuffer(gl.FRAMEBUFFER,fbos[0]);gl.disable(gl.BLEND);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
   for(let i=0;i<h.src.count;i++){
+   const weight=h.src.flat[i*3+2];if(weight===0)continue;
    const sx=h.src.flat[i*3],sy=h.src.flat[i*3+1],gx=proj[0]*sx+proj[2]*sy+bulk[0],gy=proj[1]*sx+proj[3]*sy+bulk[1];
    gl.bindFramebuffer(gl.FRAMEBUFFER,fbos[1]);gl.disable(gl.BLEND);gl.clearColor(1,1,1,1);gl.clear(gl.COLOR_BUFFER_BIT);gl.enable(gl.BLEND);gl.blendFunc(gl.ZERO,gl.SRC_COLOR);
    gl.useProgram(leafProg);gl.bindVertexArray(leaves.vao);gl.uniform2f(lu.Origin,field.ox,field.oy);gl.uniform2f(lu.Extent,field.ext,field.ext);gl.uniform2f(lu.G,gx,gy);gl.uniform4fv(lu.Box,box);gl.uniform1f(lu.Weight,w);gl.uniform1f(lu.Edge,lerp(from.edge_softness,to.edge_softness,w));gl.uniform1f(lu.BeamK,0);gl.uniform1i(lu.EdgeArea,FEAT_LEAF_DIFFUSE&&from.edge_area?1:0);
    for(const [unit,q,grove]of [[0,h,h.grove],[1,b.hub,b.hub.grove]]){gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,grove.leafTex??q.layerTex[3]);gl.uniform1i(unit===0?lu.LeafA:lu.LeafB,unit);gl.uniform1i(unit===0?lu.ShapeA:lu.ShapeB,grove.shape?1:0);}
    gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,n);
    gl.useProgram(woodProg);gl.bindVertexArray(woodBuf.vao);gl.uniform2f(wu.FaithOrigin,field.ox,field.oy);gl.uniform2f(wu.FaithExtent,field.ext,field.ext);gl.uniform2f(wu.G,gx,gy);gl.uniform2f(wu.SegSway,0,0);gl.uniform1i(wu.CurtainBake,0);gl.uniform1i(wu.SegTau,0);gl.uniform1f(wu.WoodTau,lerp(from.branch_tau,to.branch_tau,w));gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,woodPairs.length);
-   gl.bindFramebuffer(gl.FRAMEBUFFER,fbos[0]);gl.blendFunc(gl.ONE,gl.ONE);gl.useProgram(h.progFAcc);gl.bindVertexArray(h.emptyVAO);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,textures[1]);gl.uniform1i(h.U.facc.tex,0);gl.uniform1f(h.U.facc.weight,h.src.flat[i*3+2]);gl.drawArrays(gl.TRIANGLES,0,3);
+   gl.bindFramebuffer(gl.FRAMEBUFFER,fbos[0]);gl.blendFunc(gl.ONE,gl.ONE);gl.useProgram(h.progFAcc);gl.bindVertexArray(h.emptyVAO);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,textures[1]);gl.uniform1i(h.U.facc.tex,0);gl.uniform1f(h.U.facc.weight,weight);gl.drawArrays(gl.TRIANGLES,0,3);
   }
   gl.disable(gl.BLEND);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   for(let l=0;l<3;l++){gl.bindBuffer(gl.ARRAY_BUFFER,h.layerVAO[l].buf);gl.bufferData(gl.ARRAY_BUFFER,layerData[l].subarray(0,layerCount[l]*17),gl.DYNAMIC_DRAW);h.layerVAO[l].count=layerCount[l];h.faith.binH[l]=lerp(originalFillHeights[l],to.canopy_base_height_m+l/2*to.canopy_thickness_m,w);}

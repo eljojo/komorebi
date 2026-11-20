@@ -318,6 +318,13 @@ scenario("the sky only sizes its wood maps while fine wood is visible", { ...PRE
   expect(sizes()).toEqual([[1, 1], [1, 1], [1, 1], [1, 1]]);
 });
 const MANUAL_DRIFT = { ...LAYERED, wind_strength: 0, drift_amount: 0.3, drift_phase: 0 };
+scenario("faithful casts stamp only nonzero source samples", { ...FAITHFUL, wind_strength: 0, cloud_thickness: 1, sample_count: 32 }, (R) => {
+  const before = R.L.casts();
+  expect(R.eng.src.count).toBe(32);
+  expect(R.eng.src.beam.length / 3).toBe(16);
+  R.eng.apply("bake");
+  expect(R.L.casts() - before).toBe(16);
+});
 for (const [feature, tree_view, canopy_fill] of [["tree", true, 0], ["sky fill", false, 0.5], ["tree and sky fill", true, 0.5]]) {
   const look = { ...MANUAL_DRIFT, faithful_canopy: true, standing_scene: true, tree_view, canopy_fill, fill_resolution: 32 };
   scenario(`still faithful drift refreshes the ${feature} lighting layers once per frame`, look, (R) => {

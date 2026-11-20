@@ -424,6 +424,7 @@ export function makeLeafTravel(hub,createScene){
     gl.viewport(0,0,res,res);gl.bindFramebuffer(gl.FRAMEBUFFER,s.fbos[0]);gl.disable(gl.BLEND);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);
     const u=s.u;
     for(let i=0;i<hub.src.count;i++){
+      const weight=hub.src.flat[3*i+2];if(weight===0)continue;
       gl.bindFramebuffer(gl.FRAMEBUFFER,s.fbos[1]);gl.disable(gl.BLEND);gl.clearColor(1,1,1,1);gl.clear(gl.COLOR_BUFFER_BIT);
       gl.useProgram(s.prog);gl.bindVertexArray(s.vao);gl.enable(gl.BLEND);gl.blendFunc(gl.ZERO,gl.SRC_COLOR);
       gl.uniform2f(u.Origin,f.ox,f.oy);gl.uniform2f(u.Extent,f.ext,f.ext);gl.uniform4fv(u.Box,s.box);
@@ -436,7 +437,7 @@ export function makeLeafTravel(hub,createScene){
       }
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,s.pairs.length);
       gl.bindFramebuffer(gl.FRAMEBUFFER,s.fbos[0]);gl.blendFunc(gl.ONE,gl.ONE);gl.useProgram(hub.progFAcc);gl.bindVertexArray(hub.emptyVAO);
-      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,s.textures[1]);gl.uniform1i(hub.U.facc.tex,0);gl.uniform1f(hub.U.facc.weight,hub.src.flat[3*i+2]);gl.drawArrays(gl.TRIANGLES,0,3);
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,s.textures[1]);gl.uniform1i(hub.U.facc.tex,0);gl.uniform1f(hub.U.facc.weight,weight);gl.drawArrays(gl.TRIANGLES,0,3);
     }
     gl.disable(gl.BLEND);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
     if(s.patch&&s.colour>0&&s.colour<1)bakeProgress(proj);
