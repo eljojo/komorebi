@@ -142,6 +142,8 @@ whatever camera reads `S`; `T_sky` is the skylight and keeps its level. Why the 
 
 At `canopy_fill` 0 this is the floor without the fill; at 1 the shade is lit entirely through the canopy. `canopy_fill` is the share; 1 is physical.
 
+**The sky a trunk hides** (`trunk_base`). **Approximation.** A trunk standing on the floor hides part of the sky from the ground round it. Taken as a tall cylinder of radius r, seen from the ground at distance d it covers an azimuth of 2·asin(r/d) at every elevation, and so asin(r/d)/π of a uniform sky's light on a horizontal surface: half of it where the ground meets the bark. The floor's shade term (the ambient times the albedo, or the fill's share where the fill is open) loses that share, each trunk's taken in turn. The beam is untouched: the trunk's shadow is transport's. Absent: `trunk_base` off.
+
 **The cloth and the tent.** Both read the fill at the point's plan position, through the same `canopy_fill` share, and both read `S` too once the split is open, because with the beam going dark a receiver that took `T_sky` alone would lose every watt the leaves gave up:
 
 > `E = acc·sun·beamF + (ambient·T_sky·skyF + S·skyS)`
@@ -223,7 +225,7 @@ At `canopy_fill` 1 the shade **dims and takes the leaves' colour**: greener in s
 - **Approximation — a flat sky.** The sky is one radiance with no gradient, so `ambient = π·L_sky` exactly. Shared with [`sky-view.md`](sky-view.md).
 - **Approximation — K fixed rays.** They estimate the continuous hemisphere. The interleave spreads 16·K directions over each tile, and the receiver's four-tile read filters the leaf-scale residue; `fill_directions` trades the residue for cost.
 - **Approximation — single scatter, one ground bounce.** A leaf's emitted light passes the layers below on their true `t` and is not scattered again. The ground's light comes back once, off the undersides (`ground_bounce`); the crown's own leaf-to-leaf bounce and a second ground bounce are not built.
-- **Approximation — no wood in the hemisphere.** The woody occluder takes the beam only; a limb's share of the sky is thin. The sky view, which looks at the tree, reads the wood.
+- **Approximation — no wood in the hemisphere but the trunks' feet.** The woody occluder takes the beam only; a limb's share of the sky is thin. Under `trunk_base` the ground round each trunk loses the share of sky a tall cylinder would hide, taken from the whole shade term, the leaves' scattered sun and the ground's return included. The sky view, which looks at the tree, reads the wood.
 - **Approximation — the padded frame's tail.** On a finite tree, the light that travels beyond 3·`h_max` is given up: 10 % of a cosine-weighted leaf's light at the very edge of the box, a few percent of all of it.
 - **Approximation — the fill is baked at floor height.** A point high up the cloth reads the hemisphere of the floor point beneath it.
 - **Approximation — the cloth's hemisphere is half ground.** A vertical cloth sees half canopy and half ground; the ground's half is not built (the bounce reaches the cloth only off the undersides, through `S`), and the curtain's `skyS = 0.5` is the canopy half.

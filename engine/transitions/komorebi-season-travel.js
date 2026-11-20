@@ -12,7 +12,7 @@ import {groveFill} from '../canopy/komorebi-grove.js';
 import {VS_SEASON_TRAVEL,FS_FAITH} from '../transport/komorebi-shaders.js';
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
-const CAMERA_KEYS=['view_extent_m','view_pitch_deg','view_yaw_deg','view_fov_deg','view_center_x','view_center_y'];
+const CAMERA_KEYS=['view_extent_m','view_pitch_deg','view_yaw_deg','view_fov_deg','view_center_x','view_center_y','view_look_up_deg'];
 const LOOK_KEYS=['canopy_fill','leaf_diffuse','leaf_wetness','ground_r','ground_g','ground_b','cloud_thickness','halo_angular_radius_deg','sky_turbidity','sun_cosine','sun_extinction','exposure'];
 // Re-season can recolour a leaf, but the flight route still requires the same authored summer tint.
 const SEASON_ROUTE_KEYS=new Set([...SEASON_KEYS.filter(k=>!['trans_r','trans_g','trans_b'].includes(k)),...CAMERA_KEYS,'drop_after_turn','litter','litter_age','litter_drift_m',

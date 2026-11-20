@@ -78,6 +78,13 @@ test('a standing camera facing apart walks its eye straight across the ground wh
   }
 });
 
+test('the gaze lifted past the tilt moves on the move\'s own clock, both ways the camera moves, and lands on each look\'s own',()=>{
+  for(const [a,b] of [[PRESETS['park 1, the scene'],PRESETS['park 1, under the trees']],[PRESETS['park 1, under the trees'],PRESETS['park1 inside2']]]){
+    const x={...a,view_look_up_deg:0},y={...b,view_look_up_deg:39};
+    for(const w of [0,.25,.5,.75,1])expect(travel.seasonCamera(x,y,w).view_look_up_deg).toBeCloseTo(39*w,12);
+  }
+});
+
 // ---- the route on a GL that checks what a browser checks ----------------------------------------------------------------------------------
 // A stand-in GL that keeps each buffer's size, each vertex array's instanced attributes and each program's vertex source, and refuses an
 // instanced draw whose enabled attribute would be read past its buffer's end, as WebGL does (INVALID_OPERATION, and nothing is drawn).

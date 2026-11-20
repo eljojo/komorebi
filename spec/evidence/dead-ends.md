@@ -106,6 +106,38 @@ The headings are the model's subsystems, in the model's order, so a model file's
 
 **What replaced it.** A proxy that rides the existing transport: the geometric pinhole shift scaled per channel by `λ/λ_green`, so red is thrown wider than blue at every leaf edge. It couples dispersion to the geometric throw rather than to the gap width, which is its named limit, and it is off by default ([`../model/light.md`](../model/light.md)). It was the "second, smaller sanctioned approximation" that first broke the one-approximation rule ([principles](#principles)).
 
+### The seen sky scaled band by band
+
+**What was tried.** `view_sky`'s sky scaled channel by channel so its light on a horizontal surface matched the ambient's (2026-11-20).
+
+**What it looked like.** The ambient's hue was forced on the sky, and it went lavender.
+
+**What replaced it.** One factor for all three bands, set on luminance; the sky keeps its own hue ([`../model/light.md`](../model/light.md#the-sky-seen)).
+
+### A slab sky
+
+**What was tried.** The seen sky from a slab atmosphere (2026-11-20).
+
+**What it looked like.** A grey and yellow sky.
+
+**What replaced it.** Single scattering along the ray through an exponential, round-earth air.
+
+### The sun reddened by its full path at every height
+
+**What was tried.** Single scattering in which every point along the ray took the ground's whole path for the sun's light (2026-11-20).
+
+**What it looked like.** The whole sky went grey, and yellow at a sunset: under a 3° sun the zenith measured blue/red 0.33, against 2.35 now.
+
+**What replaced it.** The sun's light at each point through the air above that point only.
+
+### Single scattering alone
+
+**What was tried.** The seen sky with one order of scattering (2026-11-20).
+
+**What it looked like.** The horizon away from a low sun was darker than the sky above it: the haze scatters almost nothing backward and hides the air behind. Under a 12° sun at turbidity 0.05 the anti-solar horizon was 0.37 of the sky 10° above it.
+
+**What replaced it.** An even second order equal to the once-scattered sky's mean radiance, which lifts it to 0.75; the rest is open ([`../exploration/open.md`](../exploration/open.md#light)).
+
 ## camera
 
 ### A focal plane
@@ -143,6 +175,46 @@ The headings are the model's subsystems, in the model's order, so a model file's
 ### Crossing the iris gate
 
 The vignette iris that appeared whole in one frame is told under [transitions](#the-iris-installed-in-one-frame).
+
+### The root flare at 0.7 of the radius
+
+**What was tried.** The seen trunk widened into its roots by 0.7 of its radius at the ground (2026-11-20).
+
+**What it looked like.** The tree stood on a wide, straight-sided base: in the artist's words, "like elephant's foot or something".
+
+**What replaced it.** At most 0.18 of the radius, gone over 1.5 radii ([`../model/camera.md`](../model/camera.md#the-wood-seen)).
+
+### The flare as a stack of capsules
+
+**What was tried.** The root flare drawn as a stack of wider capsules at the trunk's foot (2026-11-20).
+
+**What it looked like.** Stepped.
+
+**What replaced it.** One smooth profile on the trunk's own first piece of wood.
+
+### A flare over 0.6 radii
+
+**What was tried.** The flare's swell gone within 0.6 of a radius up the trunk (2026-11-20).
+
+**What it looked like.** A lip round the foot.
+
+**What replaced it.** The swell over 1.5 radii.
+
+### The square run-on at a fork
+
+**What was tried.** A grown tree's forked stems drawn with the wood's square ends, run on past each joint (2026-11-20).
+
+**What it looked like.** The thick end stood out round the thinner stems like a sleeve.
+
+**What replaced it.** Round ends on a tree that forks ([`../model/camera.md`](../model/camera.md#the-wood-seen)).
+
+### Bark coordinates from a swinging reference
+
+**What was tried.** Bark's coordinates round and along each piece of wood from a reference that turned with the piece, and the distance along it as the world position read along the axis (2026-11-20).
+
+**What it looked like.** The bark broke at every joint, by the tree's distance from the origin times the bend, and the break showed only on the foot.
+
+**What replaced it.** A fixed reference for upright wood and the height over the axis's rise.
 
 ## canopy
 
@@ -339,6 +411,40 @@ The vignette iris that appeared whole in one frame is told under [transitions](#
 **What was found.** Each clump resets its arrangement and wind streams and a leaf consumes the same draws at any count, so with the structure fixed a density change moves only the active prefix and its marginal coverage; reweighting a cached larger prefix is exact. The same shortcut does **not** hold for `tree_count`: a count change re-spaces existing trunks and, outside a standing scene, rescales crowns, so marginal-tree coverage alone is insufficient.
 
 **What replaced it.** Density reweights a cached capacity inside a deliberately summer-only gate; tree count still regrows ([`../model/season.md`](../model/season.md)).
+
+### The zigzag on the held limbs
+
+**What was tried.** `sympodial`'s turn at every node on every axis of a grown tree, the trunk and the limbs held at their set angle included (2026-11-19).
+
+**What it looked like.** The held limbs turned into their own shade and the crown starved.
+
+**What replaced it.** The turn on the free orders past the held limbs only; the trunk and the scaffold limbs stay straight, as an old elm's do ([`../model/canopy.md`](../model/canopy.md#a-tree-grown-from-buds)).
+
+### The continuation's side bud taken away
+
+**What was tried.** Under `sympodial`, removing the top side bud that the continuing bud stands in for, as on a real sympodial shoot (2026-11-19).
+
+**What it looked like.** A shoot of one internode was left a single bud, and the crown starved to a pole.
+
+**Why.** One grown internode stands for several of a real shoot's nodes.
+
+**What replaced it.** The side bud is kept.
+
+### The finest shoots without their turn upward
+
+**What was tried.** Under `sympodial`, cutting the finest shoots' upward turn as well (2026-11-19).
+
+**What it looked like.** They hung under droop in strands below the crown and through the ground.
+
+**What replaced it.** They keep it.
+
+### The trunk's fork at the clear trunk's height, and higher
+
+**What was tried.** `trunk_split`'s fork at the clear trunk's 6 internodes (0.68 m on `dows lake`), and at 18 (2026-11-20).
+
+**What it looked like.** At 6 the stems stood in a sleeve at the knee; at 18 the tree was a pole under a high, thin crown.
+
+**What replaced it.** The fork at 10 internodes, its own height, with the trunk clear of branches below it: the vase of the artist's photograph of the elm at Dow's Lake ([`../model/canopy.md`](../model/canopy.md#a-tree-grown-from-buds)).
 
 ## leaf
 

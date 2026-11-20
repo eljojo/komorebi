@@ -92,4 +92,60 @@ function beamExposure(camera, a, b, w, now){
   return irr > 0 ? lerp(a.exposure*beamIrr(camera, a), b.exposure*beamIrr(camera, b), w)/irr : lerp(a.exposure, b.exposure, w);   // a sun at the horizon lights nothing to hold
 }
 
-export { atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure };
+// THE SKY SEEN (`view_sky`, spec/model/light.md): the radiance of the clear sky in a direction, from the same 3-band air as atmosphere(). Single scattering
+// along the view ray through an exponential atmosphere over a round earth (Rayleigh scale height SKY_HR, aerosol SKY_HA): at each of SKY_STEPS points the
+// sun's light arrives through the air above that point only (the sun's air mass at the ground, Kasten–Young as the beam, times what is left of each
+// air above it), is scattered toward the eye by the air (Rayleigh's phase) and the aerosol (Henyey–Greenstein, g = SKY_G), and is dimmed on its way
+// back along the ray. So the zenith is blue, scattered high where even a setting sun's light is still white, and the horizon pale where the long path
+// saturates, warm and bright toward a low sun. Ozone dims the sun's light by its whole column (it lies above the scattering air) and nothing on the
+// view path. A first version took the scattering at the ground for every ray, a sun reddened by its full path everywhere, and the whole sky went grey,
+// and yellow at a sunset.
+// Its scale is not authored: skyModel sets it so the whole sky lights a horizontal surface with the luminance of the ambient the engine's receivers take
+// (atmosphere().ambient, the irradiance a white floor shows in shade), and the shader shows it in the receivers' units (a surface's radiance is its
+// irradiance times its albedo, so a sky of uniform radiance L shows as πL). Scaled band by band, its hue was forced to the ambient's. The sun's own
+// disk is not drawn. MORE THAN ONCE: single scattering alone left the horizon away from a low sun darker than the sky above it (the haze there scatters
+// next to nothing backward and hides the air behind it), where a real horizon is bright with light scattered more than once; so each point also
+// scatters, evenly every way, the mean radiance of the single-scattered sky (iso), the light the air there gets from the sky around it. That lifts the
+// horizon, not all the way: away from a 12° sun at turbidity 0.05 it is 0.75 of the sky 10° above it (0.37 without), and in every azimuth the
+// brightest band sits about 5° up.
+// Approximation: two orders, the second isotropic and of one strength at every height; the sun's air mass the ground's at every height; ozone as one
+// column above the air.
+const SKY_G = 0.76, SKY_HR = 8, SKY_HA = 1.2, SKY_R = 6371, SKY_TOP = 60, SKY_STEPS = 16;   // km
+function skyShape(d, s, M){   // the unscaled radiance per band in unit direction d (z up) for unit sun s; M from skyModel
+  const z = Math.max(d[2], 0), mu = d[0]*s[0] + d[1]*s[1] + z*s[2];
+  const pR = 3/(16*Math.PI)*(1 + mu*mu), pA = (1 - SKY_G*SKY_G)/(4*Math.PI*Math.pow(1 + SKY_G*SKY_G - 2*SKY_G*mu, 1.5));
+  const tMax = Math.sqrt((SKY_R + SKY_TOP)**2 - SKY_R*SKY_R*(1 - z*z)) - SKY_R*z;
+  const L = [0, 0, 0], tv = [0, 0, 0];
+  let tPrev = 0;
+  for(let k = 0; k < SKY_STEPS; k++){
+    const u = (k + 0.5)/SKY_STEPS, t = tMax*u*u, dt = tMax*2*u/SKY_STEPS;
+    const h = Math.max(0, Math.sqrt(SKY_R*SKY_R + t*t + 2*SKY_R*t*z) - SKY_R), eR = Math.exp(-h/SKY_HR), eA = Math.exp(-h/SKY_HA);
+    for(let i = 0; i < 3; i++){
+      const sR = M.r[i]/SKY_HR*eR, sA = M.a[i]/SKY_HA*eA;
+      tv[i] += (sR + sA)*(t - tPrev);
+      L[i] += ((sR*pR + sA*pA)*Math.exp(-M.ms*(M.r[i]*eR + M.a[i]*eA + M.o[i])) + (sR + sA)*M.iso[i])*Math.exp(-tv[i])*dt;
+    }
+    tPrev = t;
+  }
+  return L;
+}
+// The air's per-band vertical optical depths for turbidity beta (r Rayleigh, a aerosol, o ozone), the sun's air mass ms at hDeg, iso (the second order:
+// the single-scattered sky's mean radiance, its irradiance on a horizontal surface over π), and `scale`: π times the ambient's luminance over the
+// luminance of the whole sky's irradiance on a horizontal surface. Both integrals over the upper hemisphere on a 16 × 32 grid.
+function skyIrradiance(s, M){
+  const E = [0, 0, 0], NE = 16, NA = 32;
+  for(let j = 0; j < NE; j++){ const e = (j + 0.5)/NE*Math.PI/2, ce = Math.cos(e), se = Math.sin(e), dw = (Math.PI/2/NE)*(2*Math.PI/NA)*ce;
+    for(let k = 0; k < NA; k++){ const az = (k + 0.5)/NA*2*Math.PI, L = skyShape([ce*Math.cos(az), ce*Math.sin(az), se], s, M);
+      for(let i = 0; i < 3; i++) E[i] += L[i]*se*dw; } }
+  return E;
+}
+function skyModel(hDeg, beta, s, ambient){
+  const M = { r: [...TAU_RAY], a: TAU_AER.map((t) => beta*t), o: [...TAU_OZ], ms: airMass(hDeg), iso: [0, 0, 0] };
+  M.iso = skyIrradiance(s, M).map((e) => e/Math.PI);
+  const E = skyIrradiance(s, M);
+  const Y = (v) => 0.2126*v[0] + 0.7152*v[1] + 0.0722*v[2], k = Math.PI*Y(ambient)/Math.max(Y(E), 1e-12);
+  M.scale = [k, k, k];
+  return M;
+}
+
+export { atmosphere, sunDirection, sunIncidence, beamExtinction, beamLoss, beamIrr, beamExposure, cloudGain, shownExposure, skyShape, skyModel, SKY_G, SKY_HR, SKY_HA, SKY_R, SKY_TOP, SKY_STEPS };

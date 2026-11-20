@@ -104,6 +104,20 @@ No measurement of the floor camera's framing or the Look's tail is recorded. The
 - **Result:** Norway maple 0.08 / 0.10 / 0.13 / 0.14 / 0.15 at 415 / 500 / 550 / 600 / 650 nm (read by eye, ±0.01), linear sRGB under D65 with the CIE 1931 observer **0.154 / 0.123 / 0.082**, the default `bark_r/g/b`; English oak 0.193 / 0.152 / 0.105. Visible bark spectra are close across the ten species measured; within one species the standard deviation is 0.01–0.06. No sugar maple and no beech were measured.
 - **Date:** 2026-11-16.
 
+### What the photographed trees cost
+
+- **What was measured:** whether `dows lake`, `glebe sunset` and `yellow ginkgo` draw near a frame's time in a browser, and what each of their new pieces costs.
+- **On:** Chrome on Metal (Apple M4), 1920×1080, `nix run .#cost`, three runs of 60 frames, the median frame; the shipped `park 1, under the trees` and `park 1, from above` beside them.
+- **Result:**
+  - As first built: `dows lake` 19 ms (94 120 wood capsules), `glebe sunset` 30 ms (175 419), `yellow ginkgo` 150 ms (845 k leaves); the shipped tree looks 8–10 ms (552 capsules).
+  - The wood under its own penumbra cast once: `dows lake` 17.1 ms, `glebe sunset` 23 ms. The twig haze made straight, half its capsules, and the swayed wood refilled once a frame for both casts: 13.9 and 15.5 ms.
+  - `yellow ginkgo` at its first density carried a leaf area index of 27.5, the shipped looks 2.4–3.5; at density 6, 2.9 and 84 480 leaves: 23 ms, of which the crown's own light gathered at every pixel took 7.6 ms. Gathered at each leaf's corners, 5.7 ms; on a half-metre grid once a frame, +0.1 ms, inside the run-to-run spread. The grid against the per-pixel gather on the look's still: mean |Δ| 0.058 of 255, at most 10, 0.12 % of pixels by more than 2.
+  - At density 8 without the crown's light, what each piece costs by taking it away: the tree view 4.5 ms, the source's 29 samples cut to 13 7.4 ms, `open_sky` 0.7 ms, `beam_march` nothing measurable; `thin_twigs` off costs 2.8 ms more.
+  - Now, the far tree fading into the seen sky as well: `dows lake` 13.1 ms, `glebe sunset` 15.9 ms, `yellow ginkgo` 21.3 ms; `park 1, under the trees` 9.8 ms, `park 1, from above` 10.0 ms.
+  - The twig haze on the leader's shoots entered the layer path's analytic wood as main limbs: a 10-year tree with `twig_haze` 2 asked 282 capsules of it where the same tree without the haze asks 279.
+- **What it established:** the three trees draw at 47–76 frames a second on this machine, the ginkgo's faithful cast of its leaves being most of what is left, and the quality governor lowers the samples where a machine is slower. A leaf area index far outside the measured range is a broken look, not a dense one.
+- **Date:** 2026-11-20.
+
 ## canopy
 
 ### Leaves on shoots and by light
@@ -348,6 +362,21 @@ The red oak is not star-shaped from any point of its midrib: 2–33 re-entrant r
 - **Result:** a junction median of 83.5°; T-junctions near right angles, cell rows along the veins. The wall-width multipliers (4 / 3 / 2 / 1.5 / 1 by vein order) are **Provisional**.
 - **What it established:** successive domain division gives the leaf's right-angled hierarchy where Voronoi would give 120° Y-junctions.
 - **Date:** 2026-10-08 (from the bot's log, uncommitted source).
+
+### The light inside a gold crown
+
+- **What was measured:** the seen leaf's reflectance and the crown's own light under `leaf_neutral` and `crown_light`, from the engine's JS and a transcription of its GLSL.
+- **On:** season.md's gold (transmittance 1.00 / 0.60 / 0.11) and `yellow ginkgo`'s leaves (the mean of 1000).
+- **Result:**
+  - The tissue's scattering per channel differs by at most 4.5 % (`SLAB_NEUTRAL`); the green fit's differs 19.9× between green and blue. The clear tissue leaf passes 0.513 / 0.503 / 0.508.
+  - The gold leaf's top face, read from the table at √T: the green fit reflects (0.124, 0.269, 0.003), OKLab hue 128°; the tissue (0.465, 0.297, 0.098), hue 81°; the gold's own transmitted hue is 84°.
+  - The tissue slab against PROSPECT-D's albedo curve: at a tissue T of 0.075 it reflects 0.110 (top) and 0.212 (underside) where the curve gives 0.047; at the clear leaf 0.465 where the curve gives 0.435.
+  - `yellow ginkgo`'s leaf as tissue: T (1.00, 0.598, 0.106) × clear gives ω (0.949, 0.548, 0.083), ωY 0.60. Its colour times the per-channel series 1/(1 − pω) moves its hue 13° toward red at p 0.5 and 30° at p 0.8; the grey series moves it 0°.
+  - Ten leaves deep, the per-channel two-stream decay against a grey κ at the luminance albedo, by luminance: 2.5–2.6× for ω (0.92, 0.77, 0.05), 11.5× for the ginkgo's tissue leaf.
+  - The beam on a solid texel (c 1, τ 3, d 0.95): the plane read passes 0.0025; the four quarter-covered taps of `beam_march` pass 0.32.
+  - Not reproduced here (the spectral port is not in the repository, and the figures are the code's own comments): PROSPECT-D R = 0.885·T − 0.019, rms 0.006 over green, gold, red and brown leaves, the bleached leaf at N 1.5; the spectral recollision series keeping a gold leaf's hue within 2–6° where per-channel powers swing it 12–35°; a gold leaf in its crown's light at 87° spectrally, 69° as an RGB product, 94° as its own colour under grey light.
+- **What it established:** the green fit turns a gold leaf lime; read as tissue it stays gold. Grey bounces at the luminance albedo, coloured by the lit leaf, keep its hue, and the decay with depth must be taken channel by channel. [`../model/leaf.md`](../model/leaf.md#the-leaf-as-tissue).
+- **Date:** 2026-11-20.
 
 ## season
 

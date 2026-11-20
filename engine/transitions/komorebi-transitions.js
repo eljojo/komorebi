@@ -20,15 +20,16 @@ import {densityEligible, densityKey, densityCount, groveFill} from '../canopy/ko
 import {moonX} from '../light/komorebi-source.js';
 import {routeHeights} from '../transport/komorebi-cast.js';
 
-const CAMERA_KEYS = new Set(['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y']);
+const GAUGE_KEYS = ['view_extent_m','view_pitch_deg','view_fov_deg','view_yaw_deg','view_center_x','view_center_y'];
+const CAMERA_KEYS = new Set([...GAUGE_KEYS,'view_look_up_deg']);   // the glide's: the gauge and the gaze lifted past it
 const WINDOW_KEYS = new Set(['window_w_m','window_h_m','window_cx_m','window_cy_m','window_wall']);
-const VIEW_KEYS = new Set([...CAMERA_KEYS,'sky_view','drift_phase','auto_quality','adaptive_motion','adaptive_idle_fps','show_source','show_layer','show_layer_index']);
-const hemisphere = p => (p.sky_view ? p.view_pitch_deg : 90-p.view_pitch_deg) > p.view_fov_deg/2;
+const VIEW_KEYS = new Set([...GAUGE_KEYS,'sky_view','drift_phase','auto_quality','adaptive_motion','adaptive_idle_fps','show_source','show_layer','show_layer_index']);
+const hemisphere = p => (p.sky_view ? p.view_pitch_deg : 90-p.view_pitch_deg-(p.view_look_up_deg||0)) > p.view_fov_deg/2;   // the floor camera's frame wholly below the horizon, its gaze raised by the look up
 const proxyGlow = (p) => p.sky_view ? p.sky_scatter : (p.receiver|0)===0 && p.canopy_fill>0 ? p.fill_scatter : 0;
 
 // THE GLIDE: a live morph between two standing looks moves the camera as a person would (cameraBetween), not the floor camera's gauges one by one,
 // when the driver asks for it (opts.camera 'glide'). Each end is the look's own camera.
-const CAMERA_LOOK = (p) => ({ view_extent_m: p.view_extent_m, view_pitch_deg: p.view_pitch_deg, view_yaw_deg: p.view_yaw_deg, view_fov_deg: p.view_fov_deg, view_center_x: p.view_center_x, view_center_y: p.view_center_y });
+const CAMERA_LOOK = (p) => ({ view_extent_m: p.view_extent_m, view_pitch_deg: p.view_pitch_deg, view_yaw_deg: p.view_yaw_deg, view_fov_deg: p.view_fov_deg, view_center_x: p.view_center_x, view_center_y: p.view_center_y, view_look_up_deg: p.view_look_up_deg || 0 });
 export const glideCamera = (a, b, t) => t <= 0 ? CAMERA_LOOK(a) : t >= 1 ? CAMERA_LOOK(b) : cameraBetween(a, b, smoothstep(0, 1, t));
 
 export function makeTransitions(hub){

@@ -1,5 +1,5 @@
 import { MAX_SAMPLES, MAX_OCC } from '../komorebi-params.js';
-import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_TEXEL_MIX, GLSL_GROUND_ALBEDO } from './komorebi-shaders.js';
+import { GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_SKY_SEEN, GLSL_TEXEL_MIX, GLSL_GROUND_ALBEDO } from './komorebi-shaders.js';
 
 // ============================================================================
 // THE TRANSPORT MASTER (spec/model/transport.md) — ONE source, FOUR straight-line programs.
@@ -155,6 +155,11 @@ uniform int   uLinearOut;         // 0 = end the Look here and write display-enc
 uniform float uVignette;          // the edge fade (spec/model/camera.md): the outer fraction of the frame's half-extent the light fades to black over. 0 = off, byte-identical
 uniform float uVignetteShape;     // its superellipse exponent, 2..8: 2 an ellipse touching all four edges, 8 a rounded rectangle. Inert at uVignette 0
 uniform float uIrisOpacity;       // transition only: the share of the mask's darkening drawn while a route crosses the gate. 1 is the authored mask
+#ifdef VIEW_SKY
+// view_sky: over the horizon the floor camera sees the sky (skyRadiance), and its far floor fades into the sky's horizon there. Its own variant of the
+// floor's program (buildTransport's sky), not a uniform: held off at run time, its lines still compiled the haze otherwise and moved a pixel of the frame
+vec3 gSkyDir = vec3(0.0, 0.0, -2.0);   // the ray's world direction, set by a camera that knows it (the floor); z < −1.5 = none, and the haze colour stands
+${GLSL_SKY_SEEN}#endif
 ${GLSL_TONE_TAIL}`;
 
 // ---- THE SKY FILL's receiver half (spec/model/fill.md): what the three surface cameras read. The bake (FS_FILL, run per bake by
@@ -180,6 +185,19 @@ const float FILL_LOD = 3.0;`;
 
 // ---- FLOOR camera (spec/model/camera.md) ----
 const GLSL_T_FLOOR_DECLS = `uniform float uViewExtent;
+uniform int   uTrunkCount;        // trunk_base: how many trunks' feet darken the floor's skylight (0 = none, the floor to the bit)
+uniform vec3  uTrunk[16];         // trunk_base: each foot's plan point and the trunk's radius there
+vec3 gAmbGround = vec3(0.0);      // the floor material's shade term (its ambient times its albedo, or the fill's amb with the fill open: the leaves' scattered sun and the ground's return with the sky), which the trunks' occlusion takes its share of
+// THE SKY A TRUNK HIDES (trunk_base): a tall trunk of radius r seen from the ground at distance d covers an azimuth of 2·asin(r/d) at every elevation,
+// and so asin(r/d)/π of the skylight on the ground there; half of it where the ground meets the bark. Each foot's share is taken in turn.
+float trunkSky(vec2 w){
+  float v = 1.0;
+  for(int i = 0; i < 16; i++){ if(i >= uTrunkCount) break;
+    float d = length(w - uTrunk[i].xy), r = uTrunk[i].z;
+    v *= 1.0 - asin(min(1.0, r/max(d, 1e-4)))/3.14159265; }
+  return v;
+}
+uniform float uLookUp;           // the gaze turned up past the tilt (rad, view_look_up_deg); the eye stays put. 0 = the tilt's own gaze
 uniform float uShadowOpacity;    // transition only: 0 is the lit floor, 1 is the canopy's full shadow
 uniform highp sampler2D uTravelCast;
 uniform vec2 uTravelOrigin;
@@ -202,9 +220,10 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec/model/camer
     // At uPitch=0 this reduces EXACTLY to the old orthographic map (vUv-0.5)*uViewExtent*[aspect,1] for any
     // fov (a flat plane seen straight-on is linear), so presets are untouched until tilted. ----
     float cp=cos(uPitch), sp=sin(uPitch);
+    float cg=cos(uPitch+uLookUp), sg=sin(uPitch+uLookUp);   // the GAZE: the tilt plus the look up (view_look_up_deg); the eye below keeps the tilt's
     float kf=max(tan(0.5*uFov), 1e-4);                 // image-plane half-extent (guard fov->0)
     float sxc=(vUv.x-0.5)*uAspect, tyc=(vUv.y-0.5);
-    vec3 d = vec3(2.0*kf*sxc, 2.0*kf*tyc*cp + sp, 2.0*kf*tyc*sp - cp);   // ray = fwd + 2k*(sx*right + ty*up)
+    vec3 d = vec3(2.0*kf*sxc, 2.0*kf*tyc*cg + sg, 2.0*kf*tyc*sg - cg);   // ray = fwd + 2k*(sx*right + ty*up)
     // camera height is degenerate for a flat floor (it only scales the view, which the uViewExtent hold
     // below cancels exactly), so it's fixed at 1 rather than exposed — eye height would have no effect.
     float scale = uViewExtent*cp*cp / max(2.0*kf, 1e-4);               // hold the on-axis vertical span = uViewExtent
@@ -220,7 +239,7 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec/model/camer
       world = vec2(scale*lam*d.x, scale*(lam*d.y - targetY));
       float halfExtent = 0.5*uViewExtent*max(length(vec2(uAspect,1.0)),1e-4);
       fog = smoothstep(1.15*halfExtent, 3.0*halfExtent, length(world));  // 0 across the whole frame at pitch 0
-      float Dref = cp + kf*sp;                                          // footprint of the nearest visible row
+      float Dref = max(cg + kf*sg, 1e-4);                               // footprint of the nearest visible row (the frame's bottom, looking up, may be over the horizon)
       float fore = clamp(pow(Dref/max(-d.z,1e-4), 1.5) - 1.0, 0.0, 4.0); // 0 at pitch 0 & frame bottom; up toward horizon
       extraThrow = uFarSmear * fore;                                     // extra throw -> wider, softer down-sun penumbra far off
     }
@@ -228,6 +247,9 @@ const GLSL_T_FLOOR_CAMERA = `    // ---- tilted pinhole camera (spec/model/camer
     // tilt/foreshortening axis stays put, the world spins under it). The sun-shift g stays in WORLD space below,
     // so shadows remain physically cast as the gaze turns. 0 → identity, byte-identical to the pre-yaw look.
     if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); world = mat2(cy,-sy,sy,cy)*world; }
+#ifdef VIEW_SKY
+    { vec2 dh = d.xy; if(uViewYaw != 0.0){ float cy=cos(uViewYaw), sy=sin(uViewYaw); dh = mat2(cy,-sy,sy,cy)*dh; } gSkyDir = normalize(vec3(dh, d.z)); }   // the ray in the world the floor and the sun share
+#endif
     world += uViewCenter;            // camera pan: shift the looked-at floor point (0 = unchanged)`;
 
 // THE SHADE IS LIT THROUGH THE CANOPY (spec/model/fill.md). The floor is lit by the sun's beam through the gaps (acc), by the skylight
@@ -256,15 +278,19 @@ const GLSL_T_FLOOR_MATERIAL = `    if(uShadowOpacity < 1.0) acc = mix(vec3(1.0),
         amb = ${GLSL_T_FLOOR_FILL_SHARE};   // @feature litter fill
       }   // @feature litter fill
       col = (acc*uSunColor + amb) * ground;   // @feature litter
+      gAmbGround = amb*ground;   // @feature litter
     } else {   // @feature litter
       if(uCanopyFill > 0.0){   // @feature fill
         vec2 fuv = (world-uFillOrigin)/uFillExtent;   // @feature fill
         vec3 amb = ${GLSL_T_FLOOR_FILL_SHARE};   // @feature fill
         col = (acc*uSunColor + amb) * uGround;   // @feature fill
+        gAmbGround = amb*uGround;   // @feature fill
       } else {   // @feature fill
         col = (acc*uSunColor + uAmbient) * uGround;          // OPAQUE FLOOR — literal old expression, byte-identical
+        gAmbGround = uAmbient*uGround;
       }   // @feature fill
-    }   // @feature litter`;
+    }   // @feature litter
+    if(uTrunkCount > 0) col -= (1.0 - trunkSky(world))*gAmbGround;   // trunk_base: the share of the shade term the trunks hide, all of it taken as sky`;
 
 // ---- CLOTH camera (spec/model/receivers.md): the curtain, seen head-on ----
 const GLSL_T_CLOTH_DECLS = `uniform float uViewExtent;
@@ -991,7 +1017,13 @@ const GLSL_T_POST = `  // ---- Purkinje / mesopic dusk shift (spec/model/light.m
   const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
   float rod = (1.0 - smoothstep(0.15, 0.6, dot(acc, LUMA))) * uTwilight * uMesopic;  // 1 deep shade, 0 dapples
   col = mix(col, dot(col, LUMA)*ROD_BLUE, rod*0.6);     // cap 0.6 so the deepest shade keeps a hint of green
+#ifdef VIEW_SKY
+  vec3 colNear = col;
+#endif
   col = mix(col, uHazeColor, fog);                       // far floor dissolves into atmospheric haze (spec/model/camera.md); fog==0 at pitch 0
+#ifdef VIEW_SKY
+  if(gSkyDir.z > -1.5) col = mix(colNear, skyRadiance(gSkyDir), fog);   // view_sky: into the sky instead, which over the horizon is what is seen
+#endif
   // ---- THE EDGE (spec/model/camera.md): the projector's soft iris — a mask on the LIGHT, before the tail, so the glow tier spreads
   // masked light and the fade dims as a real throw would. A presentation device, not physics: named, and 0 is off. ----
   if(uVignette > 0.0){
@@ -1091,7 +1123,7 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
   ca:        { decls: GLSL_T_CA_DECLS,        locs: { chroma:'uChroma' } },
   faith:     { decls: GLSL_T_FAITH_DECLS,     locs: { faithful:'uFaithful', faithTex:'uFaithTex', faithOrigin:'uFaithOrigin', faithExtent:'uFaithExtent' } },
   sunDir:    { decls: GLSL_T_SUN_DIR_DECLS,   locs: { sunDir:'uSunDir' } },
-  floor:     { decls: GLSL_T_FLOOR_DECLS,     locs: { viewExtent:'uViewExtent', farSmear:'uFarSmear', ground:'uGround', shadowOpacity:'uShadowOpacity',
+  floor:     { decls: GLSL_T_FLOOR_DECLS,     locs: { trunkCount:'uTrunkCount', trunks:'uTrunk[0]', viewExtent:'uViewExtent', lookUp:'uLookUp', farSmear:'uFarSmear', ground:'uGround', shadowOpacity:'uShadowOpacity',
                                                       travelCast:'uTravelCast',travelOrigin:'uTravelOrigin',travelExtent:'uTravelExtent',travelWeight:'uTravelWeight',
                                                       travelProgress:'uTravelProgress',progressOut:'uProgressOut',progressGlobal:'uProgressGlobal' } },
   cloth:     { decls: GLSL_T_CLOTH_DECLS,     locs: { viewExtent:'uViewExtent', clothY:'uClothY' } },
@@ -1109,7 +1141,8 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
   sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', edgeMix:'uLayerEdgeMix', woodOn:'uWoodOn', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
                                                       exposure:'uExposure', contrast:'uContrast', tone:'uToneMap', travelTone:'uTravelTone',
-                                                      vignette:'uVignette', vignetteShape:'uVignetteShape', irisOpacity:'uIrisOpacity' } },
+                                                      vignette:'uVignette', vignetteShape:'uVignetteShape', irisOpacity:'uIrisOpacity',
+                                                      skySunDir:'uSkySunDir', skyR:'uSkyR', skyA:'uSkyA', skyO:'uSkyO', skyIso:'uSkyIso', skyMs:'uSkyMs', skyScale:'uSkyScale' } },
 };
 
 // ---- THE SENTENCES. One entry per camera. `groups` is ORDERED and that order is the emitted declaration order —
@@ -1179,7 +1212,7 @@ const GROUP_UPLOAD_KEYS = ['rise','head','rayView','occ','transport','woodCast',
 // The assembler. Every conditional it used to carry is now a lookup: the decls are the entry's groups in order,
 // the body is the entry's own snippets, and the only branch left is the one real structural fork — whether this
 // camera casts along the sun's rays at all.
-function buildTransport(camera){
+function buildTransport(camera, sky = false){   // sky: the floor's view_sky variant (VIEW_SKY), the sky seen over the horizon
   const e = CAMERAS[camera];
   if(!e) throw new Error(`komorebi: unknown transport camera "${camera}"`);
   const p = e.groups.map(g => TRANSPORT_GROUPS[g].decls);
@@ -1195,7 +1228,8 @@ function buildTransport(camera){
   }
   if(camera==='floor')p.push('  if(uTravelWeight>0.0) acc=mix(acc,texture(uTravelCast,(world-uTravelOrigin)/uTravelExtent).rgb,uTravelWeight);');
   p.push(GLSL_T_COL_DECL, ...e.material, GLSL_T_POST, '}');
-  return p.join('\n');
+  const src = p.join('\n');
+  return sky && camera === 'floor' ? src.replace('#version 300 es\n', '#version 300 es\n#define VIEW_SKY\n') : src;
 }
 
 

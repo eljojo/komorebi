@@ -20,7 +20,7 @@ The floor is an opaque diffuse surface reflecting the landed light off an albedo
 
 `ground` is the floor albedo (`ground_r`, `ground_g`, `ground_b`), white by default, a warm dirt-brown on the looks that want their shade to read as earth so that only the hottest dapples burn back toward white. **Law** in form, **Authored** in value.
 
-What the floor reads beyond that line belongs elsewhere. Its beam takes the cosine of its incidence, `sin el`, under `sun_cosine` ([`light.md`](light.md)). Its `ambient` becomes the canopy-filtered sky plus the light the leaves scatter down when `canopy_fill` opens, and the ground's light returned by the undersides when `ground_bounce` opens too ([`fill.md`](fill.md)). Its albedo becomes a carpet of fallen leaves when `litter` opens ([`season.md`](season.md)); only the floor reads the litter. The floor is the reference every other receiver collapses to in its untilted, undyed case.
+What the floor reads beyond that line belongs elsewhere. Its beam takes the cosine of its incidence, `sin el`, under `sun_cosine` ([`light.md`](light.md)). Its `ambient` becomes the canopy-filtered sky plus the light the leaves scatter down when `canopy_fill` opens, and the ground's light returned by the undersides when `ground_bounce` opens too ([`fill.md`](fill.md)). Under `trunk_base` its ambient loses the share of sky the trunks hide ([`fill.md`](fill.md#the-receivers)). Its albedo becomes a carpet of fallen leaves when `litter` opens ([`season.md`](season.md)); only the floor reads the litter. The floor is the reference every other receiver collapses to in its untilted, undyed case.
 
 ## The curtain
 

@@ -67,6 +67,7 @@ for (const file of SOURCES) {
     const body = literalAt(text, m.index + m[0].length);
     if (body === null) { console.error(`unterminated template literal: ${m[1]} in ${file}`); process.exit(2); }
     const name = m[1];
+    if (body.includes("${afterVersion(")) continue;   // a variant written as its base with a name defined (komorebi-shaders.js afterVersion): derived below
     if (name.startsWith("GLSL_")) setSub(name, body, file);
     else shaders.push({ name, body, stage: name.startsWith("VS_") ? "vert" : "frag" });
   }
@@ -78,6 +79,18 @@ const literalCount = shaders.length;
 // source arrives with its interpolations already resolved, so it drops straight into the same loop below.
 const { TRANSPORT_CAMERAS, buildTransport } = await import(pathToFileURL(join(ROOT, "komorebi.js")).href);
 for (const cam of TRANSPORT_CAMERAS) shaders.push({ name: `FS_TRANSPORT_${cam}`, body: buildTransport(cam), stage: "frag" });
+shaders.push({ name: "FS_TRANSPORT_floor_sky", body: buildTransport("floor", true), stage: "frag" });   // view_sky's variant of the floor
+// trunk_base's wood program: the wood's literal with its feet defined in (komorebi-shaders.js VS_TREE_WOOD_FOOT, which derives it the same way)
+const woodLit = shaders.find((x) => x.name === "VS_TREE_WOOD");
+shaders.push({ ...woodLit, name: "VS_TREE_WOOD_FOOT", body: woodLit.body.replace("#version 300 es\n", "#version 300 es\n#define WOOD_FOOT\n") });
+// the leaf's and the wood's programs as the tree view makes them (komorebi-tree-view.js treeNames): FS_TREE and FS_TREE_WOOD with every set of the names a look
+// may ask for defined, crown_light's grid read and view_sky's sky (komorebi-shaders.js defineIn, the same derivation)
+for (const n of ["FS_TREE", "FS_TREE_WOOD"]) for (const names of [["CROWN_FIELD"], ["VIEW_SKY"], ["CROWN_FIELD", "VIEW_SKY"]]) {
+  const lit = shaders.find((x) => x.name === n);
+  shaders.push({ ...lit, name: `${n}+${names.join("+")}`, body: lit.body.replace("#version 300 es\n", `#version 300 es\n${names.map((d) => `#define ${d}\n`).join("")}`) });
+}
+// thin_twigs' cast of the wood under its own penumbra: the skeleton's two literals with SEG_FINE defined (komorebi-shaders.js VS/FS_FAITH_SEG_FINE)
+for (const n of ["VS_FAITH_SEG", "FS_FAITH_SEG"]) { const lit = shaders.find((x) => x.name === n); shaders.push({ ...lit, name: `${n}_FINE`, body: lit.body.replace("#version 300 es\n", "#version 300 es\n#define SEG_FINE\n") }); }
 
 // ---- resolve interpolations. Repeated passes because a snippet may itself interpolate; bounded so a cycle
 // reports instead of hanging.

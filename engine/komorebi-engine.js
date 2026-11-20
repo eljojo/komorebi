@@ -247,12 +247,13 @@ function createEngine(canvas, opts, driven=false){
     }
     return u;
   }
-  function transportFor(camera){
-    let e = transportCache.get(camera);
+  function transportFor(camera, sky = false){   // sky: view_sky's variant of the floor (buildTransport), compiled the first time it is asked for
+    const key = sky && camera === 'floor' ? 'floor+sky' : camera;
+    let e = transportCache.get(key);
     if(!e){
-      const prog = shared(VS_FULL, buildTransport(camera));
+      const prog = shared(VS_FULL, buildTransport(camera, sky));
       e = { prog, U: transportLocs(prog, camera) };
-      transportCache.set(camera, e);
+      transportCache.set(key, e);
     }
     return e;
   }

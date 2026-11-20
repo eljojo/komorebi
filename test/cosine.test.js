@@ -176,7 +176,7 @@ test("sun_cosine: on in DEFAULTS and off for a look from before it was, MORPH cl
 // 6-10 %) and montebello, rain (the air's loss lifted its sunflecks); park fall, the yellow tree and cherry blossom keep the air's loss
 // off because montebello's season family travels between its looks only while they share one skylight, which the held shade moves. park 1's four standing looks are park 1's light, so they keep it as park 1 does. The curtains carry the air's loss with exposure held, as they
 // were made; every other look re-sits its exposure over each law. The sky views take 1 from the cosine.
-const OLD_LAW = { "park 2": ["sun_cosine", "sun_extinction"], "park 1": ["sun_extinction"], "park 1, under the trees": ["sun_extinction"], "park 1, the scene": ["sun_extinction"], "park1 inside2": ["sun_extinction"], "park 1, from above": ["sun_extinction"], "montebello, rain": ["sun_extinction"], "park fall": ["sun_extinction"], "the yellow tree": ["sun_extinction"], "cherry blossom": ["sun_extinction"] };
+const OLD_LAW = { "park 2": ["sun_cosine", "sun_extinction"], "park 1": ["sun_extinction"], "park 1, under the trees": ["sun_extinction"], "dows lake": ["sun_extinction"], "glebe sunset": ["sun_extinction"], "yellow ginkgo": ["sun_extinction"], "park 1, the scene": ["sun_extinction"], "park1 inside2": ["sun_extinction"], "park 1, from above": ["sun_extinction"], "montebello, rain": ["sun_extinction"], "park fall": ["sun_extinction"], "the yellow tree": ["sun_extinction"], "cherry blossom": ["sun_extinction"] };
 const AIR_HELD = ["curtain 1", "curtain 2"];
 const SHIPPED_EXPOSURE = {   // each look's exposure before either law, as shown at its own cloud: the numerator of its re-sit
   "acid dreams": 1.635, "park 1": 2.44, "park 1, under the trees": 2.44, "park 1, the scene": 2.44, "park 1, from above": 2.44, montebello: 2.44, "park fall": 2.44, "the yellow tree": 2.44, "montebello, rain": 2.44, "cherry blossom": 2.44,
@@ -185,6 +185,7 @@ const SHIPPED_EXPOSURE = {   // each look's exposure before either law, as shown
   "morning 1": 2.44, "morning 3": 2.44, "morning 3b": 2.44, memories: 3.01, bluuey: 2.3911, shrooms: 2.44, "look up": 2.7962, "park1 inside2": 2.44,
   projector: 0.98, "purple eye": 1.13, "projector red": 1.32, "rainbow orange": 0.797, "projector cherry green": 0.63, "projector green (first night)": 0.67,
   "rainbow green 2": 0.577, "rainbow spring green": 0.523, "rainbow cyan": 0.479, "rainbow azure": 0.771, "rainbow ultraviolet": 0.958, "projector cherry": 0.63, "rainbow magenta": 1.149, "canopy 1": 1.3, "canopy 2": 1.35, "canopy 3": 1.35, "canopy 4": 1.3,
+  "dows lake": 1.157236, "glebe sunset": 0.194251, "yellow ginkgo": 0.151409,   // set on their own sheets against the photographs, not re-sat from park 1's
 };
 test("sun_cosine and sun_extinction: every look carries both but park 2 and montebello's season family keep theirs, its exposure re-sat over each (the curtains hold theirs over the air's loss)", () => {
   for (const [name, look] of Object.entries(PRESETS)) {

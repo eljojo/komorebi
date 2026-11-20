@@ -30,7 +30,7 @@ Per-channel Beer's law arrives for free. The tap exponentiates a per-channel opt
 
 **Law.** Outside the baked canopy box the read returns 1. Beyond the grove there is open sky, and an upward frame leaves that box within metres; the alternative is a clamped border texel smeared across the whole periphery.
 
-Below the horizon the frame hands off to the distance haze ([`camera.md`](camera.md)): one behaviour and one colour shared with the floor's over-horizon rays, rather than a second sky model for the bottom of the picture.
+Below the horizon the frame hands off to the distance haze ([`camera.md`](camera.md)): one behaviour and one colour shared with the floor's over-horizon rays, rather than a second sky model for the bottom of the picture. Under `view_sky` the floor's over-horizon rays see the seen sky instead ([`light.md`](light.md#the-sky-seen)); the sky view keeps the flat colour.
 
 ## Wood as silhouette
 
@@ -212,7 +212,7 @@ The tent's mesh panels ([`receivers.md`](receivers.md)) are windows onto precise
 
 ## Approximations and limits
 
-- **Approximation: the sky is a flat radiance.** One colour across the dome, with no horizon brightening and no sun-adjacent aerosol forward-scatter, so the aureole in frame is the *sampler's* halo and not the atmosphere's. A real gradient wants a sky model the engine does not have; faking one with a screen-space ramp would be painting.
+- **Approximation: the sky is a flat radiance.** One colour across the dome, with no horizon brightening and no sun-adjacent aerosol forward-scatter, so the aureole in frame is the *sampler's* halo and not the atmosphere's. The floor camera's seen sky is such a model ([`light.md`](light.md#the-sky-seen)); the sky view does not look into it yet. Faking one with a screen-space ramp would be painting.
 - **Approximation: single scatter.** A leaf's glow goes to the eye through the layers below on their true `t`; no leaf is lit by its neighbour's glow, nor by a bounce. A very dense crown is darker here than in life, where multiple scattering is most of what fills it.
 - **Approximation: the ballistic residue carries the leaf's hue.** `(1−d)·T` is still the leaf's colour, so at `d` near 1 a single leaf over the disk leaves a few percent of it, tinted; a stack of three puts it out.
 - **Authored: the gains.** The sun's and the sky's gains compress a contrast of about `10⁶` into what a tone curve carries, and the disk against the glow by many stops (above). The conservation laws are about the dimensionless leaf model, not about the frame's absolute levels.
@@ -230,7 +230,7 @@ The tent's mesh panels ([`receivers.md`](receivers.md)) are windows onto precise
 - **The tree as a shaded body**, looking up: lit bark, sun on a trunk's near flank, visible-surface shading. The floor camera has it ([`camera.md`](camera.md#the-tree-seen-from-the-floor-camera)): its lit leaf and bark are this view's to take. See [`../exploration/open.md`](../exploration/open.md).
 - **The eye's own glare for the leaked disk**, taking `srcSeen` out of the frame-wide veiling glare. See [`../exploration/open.md`](../exploration/open.md).
 - **Mesh panels as sky view**: the tent's upper panels running this transport. See [`../exploration/open.md`](../exploration/open.md).
-- **A sky model** with horizon brightening and aerosol forward-scatter, to replace the flat radiance. See [`../exploration/open.md`](../exploration/open.md).
+- **The seen sky, looking up**: the floor camera's sky model ([`light.md`](light.md#the-sky-seen)) in place of the flat radiance. See [`../exploration/open.md`](../exploration/open.md).
 
 ## Related
 

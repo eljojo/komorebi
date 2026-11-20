@@ -3968,6 +3968,63 @@ export const PRESETS = {
     "drift_amount": 0.145, "drift_phase": 3.0914450851278223, "drift_auto": true, "drift_speed": 0.08,
     }),
   */
+  // THE THREE TREES (2026-11-19/20): three of José's photographs, each recreated as one tree seen from where he stood, on park 1, under the trees' scene,
+  // with the photo's own lens (62.9° up the frame, the gaze turned 21.5° up past the tilt). WORKING NAMES, after the places.
+  // 'dows lake': the bare tree on the path by Dow's Lake, Ottawa, late afternoon in November. A grown tree (18 years from buds) with every leaf down
+  // and on the ground, its finest twigs added as haze (twig_haze 2: "i definitely preferred the haze 2 photos"), zigzagging as an elm's do (sympodial 1, his
+  // pick of the two zigzags), the trunk forking low into three stems that rise in a vase, standing in the ground on its root flare, its bark furrowed, under
+  // the clear sky the scene's sun and air make. The sun at −140° lights the trunk's right side, as in the photo; the crown stays dark against the sky.
+  'dows lake': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8, "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55, "tree_count": 1, "grove_reach_m": 39,
+    "branch_angle_deg": 36, "branch_length_ratio": 0.68, "branch_pitch_deg": 76, "branch_tau": 2.75, "leader_strength": 0.31, "growth_years": 18,
+    "droop": 0.3, "taper_delta": 2.48, "leaf_shape": "maple", "leaves_per_cluster": 20, "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_aspect": 1.75,
+    "max_tilt": 0.54, "edge_softness": 0.26, "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "phenology": 0.99, "leaf_drop": 1, "drop_after_turn": 1,
+    "litter": 1, "canopy_extent_m": 26.8, "seed": 1390791568, "sun_elevation_deg": 12, "sun_azimuth_deg": -140, "sun_extinction": 0, "view_extent_m": 64.92,
+    "view_pitch_deg": 80, "view_look_up_deg": 21.5, "view_fov_deg": 62.9, "view_yaw_deg": 150, "view_center_x": -1.463, "view_center_y": 2.534,
+    "standing_scene": true, "tree_view": true, "view_sky": true, "thin_twigs": true, "twig_haze": 2, "sympodial": 1, "trunk_base": true,
+    "trunk_split": 3, "bark_texture": 1, "trunk_radius_m": 0.2, "faithful_canopy": true, "far_smear": 0, "exposure": 4.281538461538461, "cloud_exposure": 1,
+    "contrast": 0.98, "ambient_skylight": 0.97, "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12, "wind_pattern": "squally", "wind_strength": 1.61,
+    "wind_direction_deg": 0, "gust_frequency": 0.13, "weather_variability": 0.24, "gust_decay": 1.3, "sway_stiffness": 1.2, "damping_ratio": 0.65,
+    "sway_height_gain": 0.75, "limb_count": 11, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "drift_amount": 0.145, "drift_phase": 3.28912362615405,
+    "drift_auto": true, "drift_speed": 0.02, "sample_count": 29, "bake_resolution": 768,
+  }),
+  // 'glebe sunset': a bare tree in the Glebe, Ottawa, seen against the sky as the sun goes down behind the street: a silhouette, the sun 2° up
+  // and nearly behind it, the horizon glowing warm. One trunk, its finest twigs as haze and zigzagging, as dows lake's.
+  'glebe sunset': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8, "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55, "tree_count": 1, "grove_reach_m": 39,
+    "branch_children": 4, "branch_angle_deg": 46, "branch_length_ratio": 0.68, "branch_pitch_deg": 59, "branch_tau": 2.75, "leader_strength": 0.1,
+    "growth_years": 16, "droop": 0.13, "taper_delta": 2.46, "leaf_shape": "maple", "leaves_per_cluster": 20, "cluster_spread_m": 0.28, "leaf_size_m": 0.15,
+    "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26, "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "phenology": 0.99,
+    "leaf_drop": 1, "drop_after_turn": 1, "litter": 1, "canopy_extent_m": 25.51, "seed": 554373868, "sun_elevation_deg": 2, "sun_azimuth_deg": 117.1,
+    "sun_extinction": 0, "view_extent_m": 64.92, "view_pitch_deg": 80, "view_look_up_deg": 21.5, "view_fov_deg": 62.9, "view_yaw_deg": 330,
+    "view_center_x": 7.963, "view_center_y": -13.792, "standing_scene": true, "tree_view": true, "view_sky": true, "thin_twigs": true, "twig_haze": 2,
+    "sympodial": 1, "trunk_base": true, "bark_texture": 1, "trunk_radius_m": 0.3, "faithful_canopy": true, "far_smear": 0, "exposure": 4.281538461538461,
+    "cloud_exposure": 1, "contrast": 0.98, "ambient_skylight": 0.97, "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12, "wind_pattern": "squally",
+    "wind_strength": 1.61, "wind_direction_deg": 0, "gust_frequency": 0.13, "weather_variability": 0.24, "gust_decay": 1.3, "sway_stiffness": 1.2,
+    "damping_ratio": 0.65, "sway_height_gain": 0.75, "limb_count": 11, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "drift_amount": 0.145,
+    "drift_phase": 3.28912362615405, "drift_auto": true, "drift_speed": 0.02, "sample_count": 29, "bake_resolution": 768,
+  }),
+  // 'yellow ginkgo': a ginkgo in full autumn gold, "it should be as yellow". The leaves on the shoots of the last five years, as a ginkgo bears them on
+  // its spurs (leaf_years), small and round-ended, dense; the leaf as tissue (leaf_neutral) lit by the crown's own scattered light (crown_light 0.8)
+  // and by the sky through the gaps around it (open_sky), the beam read through each slab's thickness (beam_march). The frame's curve, not the tree's own
+  // (tree_tone 0), at its own exposure.
+  'yellow ginkgo': Object.assign({}, LOOK_DEFAULTS, {
+    "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8, "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 6, "tree_count": 1, "grove_reach_m": 39,
+    "branch_children": 4, "branch_angle_deg": 73, "branch_length_ratio": 0.68, "branch_pitch_deg": 72, "branch_tau": 2.75, "leader_strength": 0.34,
+    "growth_years": 17, "leaf_years": 5, "droop": 0.1, "leaves_per_cluster": 80, "cluster_spread_m": 0.45, "inner_leaves": 0, "leaf_size_m": 0.07,
+    "leaf_aspect": 1.1, "max_tilt": 0.54, "edge_softness": 0.26, "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "phenology": 0.97,
+    "drop_after_turn": 1, "canopy_extent_m": 21.74, "seed": 1469042669, "sun_elevation_deg": 15, "sun_azimuth_deg": 60, "sun_extinction": 0,
+    "view_extent_m": 16.76, "view_pitch_deg": 70, "view_look_up_deg": 39, "view_fov_deg": 63, "view_yaw_deg": 150, "view_center_x": -5.402,
+    "view_center_y": 9.357, "standing_scene": true, "tree_view": true, "tree_tone": 0, "leaf_neutral": true, "crown_light": 0.8, "open_sky": true,
+    "beam_march": true, "thin_twigs": true, "trunk_radius_m": 0.3, "faithful_canopy": true, "far_smear": 0, "exposure": 0.45, "cloud_exposure": 1,
+    "ambient_skylight": 2.9, "leaf_diffuse": 0.95, "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12, "wind_pattern": "squally", "wind_strength": 1.61,
+    "wind_direction_deg": 0, "gust_frequency": 0.13, "weather_variability": 0.24, "gust_decay": 1.3, "sway_stiffness": 1.2, "damping_ratio": 0.65,
+    "sway_height_gain": 0.75, "limb_count": 11, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "drift_amount": 0.145, "drift_phase": 3.28912362615405,
+    "drift_auto": true, "drift_speed": 0.02, "sample_count": 29, "bake_resolution": 768,
+  }),
 };
 
 // ---- EXPERIMENTAL looks: shipped but still finding their feet (most say so in their own comments — "none of
@@ -3976,7 +4033,7 @@ export const PRESETS = {
 // pixel harness and the tests all keep covering every look. UI curation, not engine data — which is why it is a list
 // beside PRESETS and never a key inside one (a look's params travel through JSON export / ★ saves, and a visibility flag
 // doesn't belong in them). ----
-export const EXPERIMENTAL = ['park 1', 'acid dreams', 'eclipse', 'the yellow tree', 'canopy 1', 'canopy 2', 'canopy 3', 'canopy 4', 'curtain 1', 'curtain 2', 'tent 1', 'the void', 'park 2', 'cherry blossom'];
+export const EXPERIMENTAL = ['park 1', 'acid dreams', 'eclipse', 'the yellow tree', 'canopy 1', 'canopy 2', 'canopy 3', 'canopy 4', 'curtain 1', 'curtain 2', 'tent 1', 'the void', 'park 2', 'cherry blossom', 'dows lake', 'glebe sunset', 'yellow ginkgo'];
 
 // ---- THE SHIPPED PLAYLISTS: the only way the editor reaches a look of PRESETS. Each names looks of PRESETS in the order
 // they play; an item is a look's name, or { look, dwell_s?, crossfade_s?, style? } to pace that one item, and what an item

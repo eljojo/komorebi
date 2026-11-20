@@ -22,7 +22,7 @@ function grove(over) {
   const params = { ...DEFAULTS, faithful_canopy: true, leaves_per_cluster: 6, foliage_density: 1, ...over };
   const faith = {}, hub = { gl, params, MAX_TEX: 16384, quadBuf: {}, faithfulOn: () => true, occ: {}, faith, sky: { start: [], count: [] } };
   const g = makeGrove(hub).buildGrove(null);
-  return { g, leaves: Array.from((faith.rec?.leaves ?? faith.buf.data)) };
+  return { g, faith, occ: hub.occ, leaves: Array.from((faith.rec?.leaves ?? faith.buf.data)) };
 }
 
 test("off by default, and a topology key: a year more or less is another tree", () => {
@@ -116,4 +116,169 @@ test("the leaf budget: a grown tree hangs the grammar's leaves for the same knob
     const shoots = grown.g.hier.twigShoots.reduce((t, b) => t + b.length, 0);
     expect(shoots, "it grew more shoots than the grammar has twigs, and bundles them").toBeGreaterThan(twigs);
   }
+});
+
+// ---- the grown tree's forms (all opt-in): spur leaves, twig haze, sympodial and two-ranked shoots, the trunk's split, and the grove's thin twigs.
+// Each is the tree without it while off, to the record and to the draw from the tree's stream, and shows its own form while on.
+const counted = (over = {}, seed = 7) => {   // the tree, its metamers, and how many numbers it drew from its stream
+  const out = { seg: [], tw: [], path: [], shoots: [] }, r = mulberry32(seed); let draws = 0;
+  const { M } = growBuds({ ...spec, ...over }, () => { draws++; return r(); }, out);
+  return { out, M, draws };
+};
+const angle = (u, v) => Math.acos(Math.max(-1, Math.min(1, u[0]*v[0] + u[1]*v[1] + u[2]*v[2])));
+const FORMS = { leaf_years: 1, twig_haze: 0, sympodial: 0, trunk_split: 0, two_ranked: false, thin_twigs: false, trunk_base: false };
+
+test("every form is off by default, travels as topology, and off is the tree without it: the same records and the same draws", () => {
+  for (const [k, v] of Object.entries(FORMS)) { expect(DEFAULTS[k], k).toBe(v); expect(TOPO_KEYS, k).toContain(k); }
+  const bare = counted();
+  for (const off of [{ leafYears: 1 }, { leafYears: 0 }, { twigHaze: 0, hazeSeed: 5 }, { sympodial: 0 }, { trunkSplit: 0 }, { trunkSplit: 1 }, { twoRanked: false }]) {
+    const t = counted(off);
+    expect(JSON.stringify(t.out), JSON.stringify(off)).toBe(JSON.stringify(bare.out));
+    expect(t.draws, JSON.stringify(off)).toBe(bare.draws);
+  }
+  // and in the grove: a grown look with every form at its default is the look without the keys, leaf for leaf and capsule for capsule
+  const absent = Object.fromEntries(Object.keys(FORMS).map((k) => [k, undefined]));
+  const a = grove({ growth_years: 8, tree_count: 2 }), b = grove({ growth_years: 8, tree_count: 2, ...absent });
+  expect(a.leaves).toEqual(b.leaves);
+  expect(JSON.stringify(a.faith.segRest)).toBe(JSON.stringify(b.faith.segRest));
+});
+
+test("spur leaves: the clusters hang along the shoots of the last N years, the same clusters and leaves, the last year's shoots all still among them", () => {
+  const yearsOf = (t) => {   // the year each bearing shoot grew, by its tip (out.shoots holds the metamers' own points)
+    const byTip = new Map(t.M.map((n, i) => [n.b, i])), last = Math.max(...t.M.filter((n) => n.alive).map((n) => n.yr)), count = new Map();
+    for (const bundle of t.out.shoots) for (const s of bundle) { const yr = t.M[byTip.get(s[0])].yr; count.set(last - yr, (count.get(last - yr) || 0) + 1); }
+    return count;   // years before the last → shoots bearing
+  };
+  const off = counted({ bearing: 99 }), on = counted({ bearing: 99, leafYears: 3 });
+  const yOff = yearsOf(off), yOn = yearsOf(on);
+  console.log(`bearing shoots by years before the last: leaf_years 1 ${JSON.stringify([...yOff])}, leaf_years 3 ${JSON.stringify([...yOn])}`);
+  expect([...yOff.keys()]).toEqual([0]);
+  expect([...yOn.keys()].sort()).toEqual([0, 1, 2]);
+  expect(yOn.get(0), "the last year's shoots all bear, as before").toBe(yOff.get(0));
+  expect(on.out.tw.length, "as many clusters").toBe(off.out.tw.length);
+  expect(JSON.stringify(on.out.seg.map((s) => [s.a, s.b, s.level, s.f0])), "the wood is the same wood").toBe(JSON.stringify(off.out.seg.map((s) => [s.a, s.b, s.level, s.f0])));
+  // in the grove: the look's leaves, as many, hung elsewhere
+  const one = { tree_count: 1, growth_years: 10, inner_leaves: 0 };
+  const g1 = grove({ ...one, leaf_years: 1 }), g4 = grove({ ...one, leaf_years: 4 });
+  expect(g4.leaves.length).toBe(g1.leaves.length);
+  expect(g4.leaves).not.toEqual(g1.leaves);
+});
+
+test("twig haze: kids side twigs on each of the last year's shoots, that many orders deep, each finer than its stem, on a stream of its own", () => {
+  const off = counted(), n0 = off.out.seg.length, M = off.M;
+  const last = Math.max(...M.filter((n) => n.alive).map((n) => n.yr));
+  const first = new Map(); M.forEach((n, i) => { if (!first.has(n.shoot)) first.set(n.shoot, i); });
+  const newest = [...first.values()].filter((i) => M[i].alive && M[i].yr === last).length;
+  const added = { 1: 3, 2: 3 + 9, 3: 3 + 9 + 27 };   // kids = 3 a stem, an order deeper each step
+  for (const h of [1, 2, 3]) {
+    const on = counted({ twigHaze: h, hazeSeed: 11 });
+    expect(on.draws, "the tree's own stream is not drawn").toBe(off.draws);
+    for (const k of ["tw", "path", "shoots"]) expect(JSON.stringify(on.out[k]), k).toBe(JSON.stringify(off.out[k]));
+    expect(JSON.stringify(on.out.seg.slice(0, n0)), "the tree's wood comes first, untouched").toBe(JSON.stringify(off.out.seg));
+    const haze = on.out.seg.slice(n0);
+    expect(haze.length, `haze ${h}`).toBe(newest*added[h]);
+    for (const s of haze) expect(s.haze).toBe(true);
+    if (h === 2) {   // under sympodial shoots too, a haze twig is one straight capsule
+      const zs = counted({ sympodial: 1 }), zn = zs.out.seg.length, zon = counted({ sympodial: 1, twigHaze: h, hazeSeed: 11 });
+      const zl = Math.max(...zs.M.filter((n) => n.alive).map((n) => n.yr)), zf = new Map(); zs.M.forEach((n, i) => { if (!zf.has(n.shoot)) zf.set(n.shoot, i); });
+      expect(zon.out.seg.length - zn, "one capsule a haze twig under sympodial").toBe([...zf.values()].filter((i) => zs.M[i].alive && zs.M[i].yr === zl).length*added[h]);
+    }
+    const byOrder = new Map();
+    for (const s of haze) {
+      const j = s.level - M[s.m].ord, stem = M[s.m];
+      expect(j).toBeGreaterThanOrEqual(1); expect(j).toBeLessThanOrEqual(h);
+      expect(stem.yr, "only on the last year's shoots").toBe(last);
+      byOrder.set(j, (byOrder.get(j) || 0) + 1);
+    }
+    for (let j = 1; j <= h; j++) expect(byOrder.get(j), `order ${j}`).toBe(newest*3**j);
+  }
+  // finer each order: the pipe model's exponent (level + f) grows with the order, from the shoot's own
+  const on = counted({ twigHaze: 3, hazeSeed: 11 }), own = new Map(on.out.seg.slice(0, n0).map((s) => [s.m, s.level + s.f0]));
+  for (const s of on.out.seg.slice(n0)) expect(s.level + s.f0).toBeGreaterThan(own.get(s.m) + (s.level - M[s.m].ord) - 1e-9);
+  expect(JSON.stringify(counted({ twigHaze: 7, hazeSeed: 11 }).out), "at most three orders").toBe(JSON.stringify(on.out));
+});
+
+test("the twig haze is fine wood whatever the order of the shoot it rides: the analytic occluder, trunk and main limbs, holds the same wood with it as without", () => {
+  const one = { tree_count: 1, growth_years: 10, inner_leaves: 0, faithful_canopy: false };
+  const off = grove(one).occ, on = grove({ ...one, twig_haze: 2 }).occ;
+  expect(on.want).toBe(off.want);
+  expect(JSON.stringify(on.rest)).toBe(JSON.stringify(off.rest));
+});
+
+test("sympodial: the free orders turn at every node, the held limbs and the trunk do not, by the share asked", () => {
+  const turns = (t) => {   // the mean turn from one internode to the next within a shoot, held orders and free
+    const sum = { held: 0, free: 0 }, n = { held: 0, free: 0 };
+    for (const c of t.M) { if (!c.alive || c.par < 0) continue; const p = t.M[c.par]; if (p.shoot !== c.shoot) continue;
+      const k = c.ord > 2 ? "free" : "held"; sum[k] += angle(p.d, c.d); n[k]++; }
+    return { held: sum.held/n.held, free: sum.free/n.free };
+  };
+  const off = turns(counted()), half = turns(counted({ sympodial: 0.5 })), on = turns(counted({ sympodial: 1 }));
+  console.log(`mean turn at a node (rad): held ${off.held.toFixed(3)} → ${on.held.toFixed(3)}; free ${off.free.toFixed(3)} → ${half.free.toFixed(3)} → ${on.free.toFixed(3)}`);
+  expect(on.free - off.free).toBeGreaterThan(0.15);
+  expect(half.free).toBeGreaterThan(off.free); expect(half.free).toBeLessThan(on.free);
+  expect(Math.abs(on.held - off.held), "the held limbs stay straight").toBeLessThan(0.03);
+});
+
+test("two-ranked: one side bud a node, alternately either side of its shoot across the horizontal, in place of any phyllotaxis", () => {
+  const across = (d) => { const ref = Math.abs(d[2]) > 0.95 ? [1, 0, 0] : [0, 0, 1];
+    const u = [d[1]*ref[2] - d[2]*ref[1], d[2]*ref[0] - d[0]*ref[2], d[0]*ref[1] - d[1]*ref[0]], l = Math.hypot(...u); return u.map((x) => x/l); };
+  const sides = (M) => {   // each node's side shoot: which side of the shoot's horizontal across it leaves on; and the most a node carries
+    const side = new Map(), per = new Map();
+    for (const c of M) { if (!c.alive || c.par < 0) continue; const p = M[c.par]; if (c.ord !== p.ord + 1) continue;
+      per.set(c.par, (per.get(c.par) || 0) + 1);
+      if (!side.has(c.par)) { const u = across(p.d); side.set(c.par, Math.sign(c.d[0]*u[0] + c.d[1]*u[1] + c.d[2]*u[2])); } }
+    let n = 0, alt = 0;
+    M.forEach((c, i) => { if (c.alive && c.par >= 0 && M[c.par].shoot === c.shoot && side.has(i) && side.has(c.par)) { n++; if (side.get(i) !== side.get(c.par)) alt++; } });
+    return { alternate: alt/n, most: Math.max(...per.values()) };
+  };
+  const ranked = counted({ twoRanked: true });
+  for (const phyllo of [1, 2]) expect(JSON.stringify(counted({ phyllo, twoRanked: true }).out), `phyllotaxis ${phyllo}`).toBe(JSON.stringify(ranked.out));
+  const on = sides(ranked.M), spiral = sides(counted().M), opposite = sides(counted({ phyllo: 2 }).M);
+  console.log(`neighbouring nodes whose side shoots leave on opposite sides: two-ranked ${on.alternate.toFixed(2)}, spiral ${spiral.alternate.toFixed(2)}, opposite ${opposite.alternate.toFixed(2)}`);
+  expect(on.alternate).toBeGreaterThan(0.9);
+  expect(spiral.alternate).toBeLessThan(0.8); expect(opposite.alternate).toBeLessThan(0.8);
+  expect(on.most).toBe(1); expect(opposite.most).toBe(2);
+});
+
+test("the trunk's split: that many stems of the trunk's own order leave one node at the fork's height, at even azimuths, and nothing branches off the trunk below it", () => {
+  const trunkKids = (M, i) => M.filter((k) => k.alive && k.par === i && k.ord === 0);
+  const lowest = (M) => Math.min(...M.filter((n) => n.alive && n.ord === 1 && n.par >= 0 && M[n.par].ord === 0).map((n) => M[n.par].b[2]));
+  const off = counted().M;
+  expect(off.every((_n, i) => trunkKids(off, i).length <= 1), "one trunk").toBe(true);
+  expect(lowest(off), "the clear trunk alone lets limbs leave below the fork's height").toBeLessThan(10);
+  for (const stems of [2, 3, 4]) {
+    const M = counted({ trunkSplit: stems }).M;
+    const forks = M.map((_n, i) => i).filter((i) => trunkKids(M, i).length > 1);
+    expect(forks.length, `${stems} stems: one fork`).toBe(1);
+    const f = M[forks[0]], kids = trunkKids(M, forks[0]);
+    expect(kids.length).toBe(stems);
+    expect(f.a[2] < 10 && f.b[2] >= 10, "the first node at the fork's height").toBe(true);
+    expect(lowest(M), "nothing leaves the trunk below the fork").toBeGreaterThanOrEqual(10);
+    const az = kids.map((k) => Math.atan2(k.d[1], k.d[0])).sort((a, b) => a - b), even = 2*Math.PI/stems;
+    az.forEach((a, i) => { const gap = ((i + 1 < az.length ? az[i + 1] : az[0] + 2*Math.PI) - a); expect(gap).toBeGreaterThan(0.5*even); expect(gap).toBeLessThan(1.5*even); });
+    for (const k of kids) { const lean = Math.acos(k.d[2]); expect(lean).toBeGreaterThan(0.1); expect(lean).toBeLessThan(0.7); }
+  }
+  expect(JSON.stringify(counted({ trunkSplit: 9 }).out), "at most six").toBe(JSON.stringify(counted({ trunkSplit: 6 }).out));
+});
+
+test("thin twigs: the grown wood keeps its pipe-model width down to 2 mm where the floor held every twig at 8–12 mm; the trunk, the limbs and the leaves are untouched", () => {
+  const look = { tree_count: 1, growth_years: 10, trunk_radius_m: 0.04 };
+  const off = grove(look), on = grove({ ...look, thin_twigs: true });
+  expect(on.leaves).toEqual(off.leaves);
+  const A = off.faith.segRest, B = on.faith.segRest;
+  expect(B.length).toBe(A.length);
+  let thinner = 0, floor = 0;
+  A.forEach((a, i) => {
+    const b = B[i];
+    for (const k of ["ax", "ay", "bx", "by", "ha", "hb", "level", "clump"]) expect(b[k], k).toBe(a[k]);
+    expect(a.ra).toBeGreaterThanOrEqual(0.012); expect(a.rb).toBeGreaterThanOrEqual(0.008);
+    expect(b.ra).toBeGreaterThanOrEqual(0.002); expect(b.rb).toBeGreaterThanOrEqual(0.002);
+    expect(b.ra).toBeLessThanOrEqual(a.ra); expect(b.rb).toBeLessThanOrEqual(a.rb);
+    if (a.ra > 0.012) expect(b.ra, "wood above the old floor keeps its width").toBe(a.ra);
+    if (b.rb < 0.008) thinner++;
+    if (b.rb === 0.002) floor++;
+  });
+  console.log(`capsules thinner than the old 8 mm floor: ${thinner} of ${B.length}, ${floor} at 2 mm`);
+  expect(thinner).toBeGreaterThan(B.length/2);
+  expect(floor).toBeGreaterThan(0);
 });

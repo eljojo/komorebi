@@ -337,10 +337,24 @@ function slabK(T, s, delta = SLAB.delta, f0 = SLAB.f0){
   for(let i = 0; i < 60; i++){ const m = (lo + hi)/2; if(slabLeaf(m, s, delta)[2] > want) lo = m; else hi = m; }
   return (lo + hi)/2;
 }
+// THE LEAF AS TISSUE (`leaf_neutral`, spec/model/leaf.md). The green fit above puts a leaf's colour in its scattering (s twenty times smaller in blue
+// than in green), so a turned leaf, whose absorption has gone, reflects green: lime and olive where a gold leaf should be gold. In PROSPECT-D a leaf's
+// scattering is its structure, the same in every channel, and its reflectance follows its transmittance through one curve for all three channels and every
+// pigment state (R ≈ 0.885·T − 0.019, rms 0.006, over green, gold, red and brown leaves). SLAB_NEUTRAL is that structure: s fitted per channel so the clear
+// slab reflects what PROSPECT-D's bleached leaf (N 1.5, no pigment) reflects with its surface taken off. Its clear leaf passes about half the light, and
+// the look's leaf colour is read against it: a pigment's T is relative to the bleached leaf (komorebi-season.js), so the slab is asked T_clear·T.
+const SLAB_NEUTRAL = { s: [0.8697, 0.9091, 0.8891] };
+const slabClear = (c, neutral) => neutral ? (1 - SLAB.f0)*slabLeaf(0, SLAB_NEUTRAL.s[c])[2] : 1;   // what the clear leaf passes; 1 = the green fit's reading, T as asked
 // The table the shader reads: per channel (one row each), at √T = i/(n − 1), the top's reflectance, the underside's and the tissue's transmittance.
-function slabTable(n = SLAB_N){
+// `neutral`: the tissue slab, asked the clear leaf's share of T (the index stays the look's own T).
+function slabTable(n = SLAB_N, neutral = false){
   const out = new Float32Array(n*3*4);
   for(let c = 0; c < 3; c++) for(let i = 0; i < n; i++){
+    if(neutral){
+      const s = SLAB_NEUTRAL.s[c], m = slabLeaf(slabK((i/(n - 1))**2*slabClear(c, true), s), s), o = (c*n + i)*4;
+      out[o] = m[0]; out[o + 1] = m[1]; out[o + 2] = m[2]; out[o + 3] = 1;
+      continue;
+    }
     const T = (i/(n - 1))**2, m = slabLeaf(slabK(T, SLAB.s[c]), SLAB.s[c]), o = (c*n + i)*4;
     out[o] = m[0]; out[o + 1] = m[1]; out[o + 2] = m[2]; out[o + 3] = 1;
   }
@@ -360,4 +374,4 @@ function bindLeafShape(gl, u, g){
   gl.uniform1f(u.leafRows, g.shape?.idFrac ? g.shape.rows : 0);
 }
 
-export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, BEECH_LIGHT, SIZE_LIGHT, VARIETY_REAL, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape, leafSide, SIDE_SALT, mixtureTau, ballisticK, BEAM_K_MAX, SLAB, SLAB_N, slabLeaf, slabK, slabTable, bindLeafShape };
+export { LEAF_SAMPLES, LEAF_VARIANTS, LEAF_ID_FRAC, OUTLINE_SALT, VARIANT_SALT, FLIP_SALT, GENOTYPE_SALT, VARIETY_GENOTYPES, VARIETY_COLUMNS, VARIETY_ID_FRAC, VARIETY_JITTER, RHO_LIGHT, BEECH_LIGHT, SIZE_LIGHT, VARIETY_REAL, MAPLE, BEECH, LEAF_SHAPES, growLeaf, growPinnate, bladeOf, profile, outlineSeed, leafVariant, leafJitter, leafColumn, leafColumnF, rowSpec, rowBlade, leafFlip, leafShape, leafSide, SIDE_SALT, mixtureTau, ballisticK, BEAM_K_MAX, SLAB, SLAB_N, SLAB_NEUTRAL, slabClear, slabLeaf, slabK, slabTable, bindLeafShape };

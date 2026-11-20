@@ -5,10 +5,11 @@
 // A factory over the engine's shared internals (hub).
 // ============================================================================
 import { DEG, clamp, lerp, smoothstep } from '../komorebi-math.js';
-import { atmosphere, beamLoss, sunDirection, sunIncidence, shownExposure } from '../light/komorebi-light.js';
+import { atmosphere, beamLoss, sunDirection, sunIncidence, shownExposure, skyModel } from '../light/komorebi-light.js';
 import { ballisticK } from '../leaf/komorebi-leaf.js';
 import { MAX_LAYERS } from '../komorebi-params.js';
 import { CAMERAS, GROUP_UPLOAD_KEYS } from './komorebi-transport.js';
+import { lookUp } from './komorebi-camera.js';
 
 // The leaf's diffuse share (komorebi-params.js FEATURES.leafDiffuse), as a bundle cuts it: substituted by a literal at build time (embed-build.mjs). False means no look in the
 // bundle opens leaf_diffuse, so the beam's k is 0 at every read below and ballisticK is not carried.
@@ -25,6 +26,7 @@ export function makeRender(hub){
   // frame allocates nothing (no stale-cache risk: the sun-drag path mutates params without an apply(), which
   // a dirty-flag cache would miss; the recompute itself is sub-microsecond).
   const _atm = { sun:[0,0,0], ambient:[0,0,0] }, _sd = [0,0,0];
+  let _sky = null, _skyKey = '';   // view_sky: skyModel's air, kept while the sun, the air and the ambient hold
 
   // ---- render ----
   // ONE whole rendered frame into `fbo` at w×h — the only entry the frame loop uses, so
@@ -267,6 +269,8 @@ export function makeRender(hub){
       gl.uniform3f(u.sunDir, _sd[0], _sd[1], _sd[2]);
     },
     floor: (u, f) => {
+      const feet = params.trunk_base ? hub.faith?.trunks : null, nFeet = feet ? Math.min(16, feet.length/3) : 0;   // trunk_base: the trunks' feet the floor's skylight goes round
+      gl.uniform1i(u.trunkCount, nFeet); if(nFeet) gl.uniform3fv(u.trunks, new Float32Array(feet.slice(0, 3*nFeet)));
       const travel=hub.trans.travelField;
       gl.activeTexture(gl.TEXTURE9);gl.bindTexture(gl.TEXTURE_2D,travel?.tex??hub.layerTex[3]);gl.uniform1i(u.travelCast,9);
       gl.uniform1f(u.travelWeight,travel?.weight??0);gl.uniform2f(u.travelOrigin,travel?.ox??0,travel?.oy??0);gl.uniform1f(u.travelExtent,travel?.ext??1);
@@ -274,6 +278,7 @@ export function makeRender(hub){
       gl.uniform1i(u.progressOut,travel?.progressOut?1:0);gl.uniform1f(u.progressGlobal,travel?.progressGlobal??0);
       gl.uniform1f(u.shadowOpacity, f.shadowOpacity);
       gl.uniform1f(u.viewExtent, params.view_extent_m);
+      gl.uniform1f(u.lookUp, lookUp(params));                            // the gaze past the tilt (spec/model/camera.md); 0 = the tilt's own
       gl.uniform1f(u.farSmear, Math.max(0, params.far_smear));          // far-field dapple smear (spec/model/camera.md); 0 at pitch 0 regardless
       gl.uniform3f(u.ground, params.ground_r, params.ground_g, params.ground_b);   // dirt-floor albedo (spec/model/receivers.md)
     },
@@ -415,6 +420,13 @@ export function makeRender(hub){
       // consistent atmosphere (only visible once tilt blooms the fog; invisible at pitch 0).
       const a = f.atm.ambient, m = Math.max(a[0],a[1],a[2],1e-4), hb = 0.6;
       gl.uniform3f(u.haze, a[0]/m*hb, a[1]/m*hb, a[2]/m*hb);
+      if(params.view_sky){   // the sky seen (komorebi-light.js skyModel): its air and its scale, from this frame's sun, air and ambient
+        const sd = sunDirection([0, 0, 0], params.sun_elevation_deg, params.sun_azimuth_deg);
+        const key = `${params.sun_elevation_deg}|${params.sun_azimuth_deg}|${params.sky_turbidity}|${a[0]}|${a[1]}|${a[2]}`;
+        if(key !== _skyKey){ _skyKey = key; _sky = skyModel(params.sun_elevation_deg, params.sky_turbidity, sd, a); }
+        gl.uniform3fv(u.skySunDir, sd); gl.uniform3fv(u.skyR, _sky.r); gl.uniform3fv(u.skyA, _sky.a); gl.uniform3fv(u.skyO, _sky.o); gl.uniform3fv(u.skyIso, _sky.iso);
+        gl.uniform1f(u.skyMs, _sky.ms); gl.uniform3fv(u.skyScale, _sky.scale);
+      }
       gl.uniform1f(u.irisOpacity, hub.trans.active && hub.trans.iris ? hub.trans.irisOpacity : 1);
       gl.uniform1f(u.vignette, clamp(params.vignette, 0, 1)); gl.uniform1f(u.vignetteShape, clamp(params.vignette_shape, 2, 8));   // the shader divides by the shape, and past 1 the edge dims the centre: held to the documented ranges
       // Purkinje (spec/model/light.md): rods take over the dim shade as the sun lowers. The global weight rides the same
@@ -438,7 +450,7 @@ export function makeRender(hub){
     // THE CAMERA IS THE PROGRAM (spec/implementation.md), and the registry is what says so once. Which variant runs is a MODE
     // decision resolved here per draw; what it uploads is its entry's group list, walked in order. There is no
     // predicate chain left to keep in agreement with the shader's — the entry IS the agreement.
-    const cam = transportCamera(), variant = transportFor(cam), tp = variant.U;
+    const cam = transportCamera(), variant = transportFor(cam, !!params.view_sky), tp = variant.U;
     gl.useProgram(variant.prog);
     const f = {
       E: params.canopy_extent_m,

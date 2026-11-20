@@ -1,6 +1,6 @@
 # Light
 
-*The light's colour and how it lands: what the atmosphere does to the beam and the sky, the cosine by which the beam meets a surface, what the eye does to the shade at dusk, how autumn turns the dusk law over, and how the leaf edges split the spectrum.*
+*The light's colour and how it lands: what the atmosphere does to the beam and the sky, the sky the floor camera sees over the horizon, the cosine by which the beam meets a surface, what the eye does to the shade at dusk, how autumn turns the dusk law over, and how the leaf edges split the spectrum.*
 
 Everything here is computed in **linear HDR**, upstream of exposure and the tone curve ([`camera.md`](camera.md)). Light is a quantity until the very end of the picture, and only then a colour.
 
@@ -26,6 +26,17 @@ The atmosphere gives two colours: **the sun colour**, the beam's, and **the sky 
 **Approximation, named.** The atmosphere normalises the beam to its strongest channel, and the sky to its own: it sets the **hue** of each, and **exposure** carries brightness. The beam's broadband loss to the air, which is what really makes a low sun dim, is divided out unless a look puts it back ([The air's loss](#the-airs-loss)); the sky's own fall in brightness at dusk is divided out always. See [Approximations and limits](#approximations-and-limits).
 
 **`ambient_skylight`** scales the sky's level against the beam. It is an **authored** level, an irradiance onto a surface, and it does not fall with the sun.
+
+## The sky seen
+
+**Law, in an approximation, opened per look.** With `view_sky` on, the floor camera sees over the horizon the clear sky the scene's own sun and air make, and its far floor fades into that sky's horizon ([`camera.md`](camera.md#the-distance-haze)). Off, it sees the flat haze colour, as it always did. The sky is the same three-band air that reddens the beam and colours the skylight, read along each of the eye's rays:
+
+- **Once scattered, along the ray.** The ray climbs through air that thins with height, the molecules over a scale height of 8 km and the haze over 1.2 km, above a round earth, so a ray along the horizon crosses a long path, but a finite one. At each point on it the sun's light arrives through the air above that point only: the beam's own air mass (Kasten–Young) times what is left of each air over that height, so the high air sees a sun still white while the air near the ground sees it red. The molecules scatter that light toward the eye by Rayleigh's phase; the haze scatters it strongly forward, by a Henyey–Greenstein phase of asymmetry 0.76, so the sky beside the sun is bright. The light is dimmed again on its way back along the ray. Ozone lies above the scattering air: it dims the sun's light by its whole column, and nothing on the eye's path.
+- **Scattered again, evenly.** Each point also scatters, the same every way, the mean radiance of the once-scattered sky: the light the air there receives from the sky around it. Without it the horizon away from a low sun went dark, because the haze there scatters almost nothing backward and hides the air behind it, where a real horizon is bright with light scattered more than once.
+
+What it gives is a sky deep blue overhead, scattered high where even a setting sun is white; pale toward the horizon, where the long path takes every band alike; warm and bright toward a low sun, where the haze throws the reddened light forward; and lit, cooler, on the side away from it. The brightest band lies a few degrees above the horizon, and the horizon itself is a little dimmer, where the long path's loss overtakes what it gathers.
+
+**Its level is not authored.** One factor, the same in all three bands, sets it so that the whole sky lights a horizontal surface with the luminance of the ambient, the skylight every receiver takes. It is shown in the receivers' units, where a surface shows its irradiance times its albedo, so a sky of radiance L shows as πL: the sky's brightness, averaged as a floor gathers it, is the brightness of a white floor in open shade. The hue is the sky's own; only the luminance is tied. Scaled band by band, it took the ambient's hue and went lavender ([`../evidence/dead-ends.md#light`](../evidence/dead-ends.md#light)). Tied to the ambient, the seen sky does not dim at dusk on its own, as the ambient does not ([Hue, not level](#hue-not-level)): it follows `ambient_skylight`, `sky_turbidity` and the sun's height and azimuth. The sun's disk is not drawn in it, and it holds no cloud: `cloud_thickness` widens the source and leaves the seen sky clear.
 
 ## The cosine law of the receiver
 
@@ -98,7 +109,9 @@ It composes with everything else without being asked to. The split is a per-wave
 
 - **Approximation: three bands.** The spectrum is three wavelengths, not a continuum; the atmosphere, the leaves and the diffraction share them.
 - **Approximation: extinction divided out, where a look does not carry it.** The beam is normalised to its peak channel, so on a look at `sun_extinction` 0 its broadband loss to the air is not in the cosine law: the 12°:70° ratio is the law's ×4.5, not ×9.1. Exposure carries what level a look wants. [The air's loss](#the-airs-loss) puts it back.
-- **Approximation: the sky's dusk fall divided out.** The skylight is normalised the same way; the sky's own dimming at dusk is not in the model. Its level is `ambient_skylight`, authored.
+- **Approximation: the sky's dusk fall divided out.** The skylight is normalised the same way; the sky's own dimming at dusk is not in the model. Its level is `ambient_skylight`, authored. The seen sky's level is tied to it, so it does not dim either.
+- **Approximation: the seen sky's two orders.** The second scattering is even in every direction and of one strength at every height; the sun's air mass to any height is the ground's; ozone is one column above the air; the ground lights no air. Absent: `view_sky` off.
+- **Approximation: two skies matched in one number.** The sky the floor camera sees has a gradient and a hue of its own; the sky that lights every receiver is one flat radiance in the ambient's hue ([`fill.md`](fill.md)). They agree in the luminance they pour onto a horizontal surface and in nothing finer: the shade does not brighten toward a low sun's bright horizon, nor take the seen sky's hue.
 - **Approximation: the sky view's leaf glow takes no cosine yet.** By the same argument as on the floor, the light a lit leaf scatters toward the eye should take the leaf's `sin el` while the seen disk must not; both read the same sun colour inside one shared ray, and separating them is not yet done. The sky view gets `I = 1`.
 - **Approximation: mesopic reads `acc`.** It tracks the shade's darkness, not absolute luminance, and does not follow a floor dimmed by the cosine law.
 - **Approximation: the diffraction proxy** scales the geometric throw rather than integrating a gap-sized kernel (above).
@@ -108,6 +121,7 @@ It composes with everything else without being asked to. The split is a per-wave
 ## Not built
 
 - The leaf's cosine on the sky view's glow, with the seen disk exempt (see the approximation above); detail in [`../exploration/open.md`](../exploration/open.md).
+- The seen sky anywhere but over the floor camera's horizon: the shade lit by its gradient and hue, the sky view looking up into it rather than a flat radiance ([`sky-view.md`](sky-view.md)), and cloud in it; detail in [`../exploration/open.md`](../exploration/open.md).
 
 ## Related
 
@@ -115,7 +129,7 @@ It composes with everything else without being asked to. The split is a per-wave
 - [`transport.md`](transport.md): the ellipse, and the per-channel reads of diffraction.
 - [`fill.md`](fill.md): how the skylight and the leaves' scattered sun reach the shade, and why the scattered sun takes `sin el`.
 - [`receivers.md`](receivers.md): each surface's incidence, the tent's per-panel factor.
-- [`camera.md`](camera.md): exposure and the tone tail, downstream of all of this.
+- [`camera.md`](camera.md): exposure and the tone tail, downstream of all of this; the distance haze through which the far floor meets the seen sky.
 - [`season.md`](season.md): why the shade turns in autumn.
 - [`sky-view.md`](sky-view.md): the source seen; the mesopic hook along eye rays.
 - [`../evidence/measurements.md#light`](../evidence/measurements.md#light): the ride-photo test of the cosine law.

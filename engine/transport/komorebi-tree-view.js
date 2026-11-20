@@ -9,11 +9,11 @@
 // Pure exports first (the projection the shader runs), then the GL factory, which the engine holds behind FEAT_TREE_VIEW.
 // ============================================================================
 import { DEG, clamp, smoothstep } from '../komorebi-math.js';
-import { atmosphere, beamLoss, shownExposure, sunDirection } from '../light/komorebi-light.js';
-import { ballisticK, bindLeafShape, SLAB_N, slabTable } from '../leaf/komorebi-leaf.js';
-import { cameraPose } from './komorebi-camera.js';
+import { atmosphere, beamLoss, shownExposure, skyModel, sunDirection } from '../light/komorebi-light.js';
+import { ballisticK, bindLeafShape, SLAB_N, slabClear, slabTable } from '../leaf/komorebi-leaf.js';
+import { cameraPose, lookUp } from './komorebi-camera.js';
 import { MAX_LAYERS } from '../komorebi-params.js';
-import { VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_FULL } from './komorebi-shaders.js';
+import { VS_TREE, FS_TREE, VS_TREE_WOOD, VS_TREE_WOOD_FOOT, FS_TREE_WOOD, FS_CROWN_GRID, FS_TREE_COMPOSITE, VS_FULL, defineIn } from './komorebi-shaders.js';
 import { cameraFor } from './komorebi-transport.js';
 
 // ---- THE FLOOR CAMERA RUN FORWARDS: GLSL_TREE_CAMERA's treeClip, on the CPU, for the tests. Returns normalised device x, y and the depth along the gaze in
@@ -21,19 +21,21 @@ import { cameraFor } from './komorebi-transport.js';
 export function treeProject(p, aspect, P){
   const pitch = clamp(p.view_pitch_deg, 0, 80)*DEG, fov = clamp(p.view_fov_deg, 5, 140)*DEG, yaw = p.view_yaw_deg*DEG;
   const cp = Math.cos(pitch), sp = Math.sin(pitch), kf = Math.max(Math.tan(0.5*fov), 1e-4);
+  const cg = Math.cos(pitch + lookUp(p)), sg = Math.sin(pitch + lookUp(p));   // the gaze: the tilt plus the look up; the eye keeps the tilt's
   const scale = p.view_extent_m*cp*cp/Math.max(2*kf, 1e-4), targetY = sp/Math.max(cp, 1e-4);
   const cy = Math.cos(yaw), sy = Math.sin(yaw), dx = P[0] - p.view_center_x, dy = P[1] - p.view_center_y;
   const qx = cy*dx - sy*dy, qy = sy*dx + cy*dy;
   const v = [qx/scale, qy/scale + targetY, P[2]/scale - 1];
-  const depth = v[1]*sp - v[2]*cp, up = v[1]*cp + v[2]*sp;
+  const depth = v[1]*sg - v[2]*cg, up = v[1]*cg + v[2]*sg;
   return [v[0]/(kf*aspect)/depth, up/kf/depth, depth];
 }
 // The plan point the floor camera's ray through normalised device (x, y) meets the floor at: GLSL_T_FLOOR_CAMERA, for the same tests.
 export function floorRay(p, aspect, x, y){
   const pitch = clamp(p.view_pitch_deg, 0, 80)*DEG, fov = clamp(p.view_fov_deg, 5, 140)*DEG, yaw = p.view_yaw_deg*DEG;
   const cp = Math.cos(pitch), sp = Math.sin(pitch), kf = Math.max(Math.tan(0.5*fov), 1e-4);
+  const cg = Math.cos(pitch + lookUp(p)), sg = Math.sin(pitch + lookUp(p));
   const sxc = x/2*aspect, tyc = y/2;
-  const d = [2*kf*sxc, 2*kf*tyc*cp + sp, 2*kf*tyc*sp - cp];
+  const d = [2*kf*sxc, 2*kf*tyc*cg + sg, 2*kf*tyc*sg - cg];
   if(d[2] >= -1e-4) return null;
   const scale = p.view_extent_m*cp*cp/Math.max(2*kf, 1e-4), targetY = sp/Math.max(cp, 1e-4), lam = -1/d[2];
   let w = [scale*lam*d[0], scale*(lam*d[1] - targetY)];
@@ -45,7 +47,15 @@ export function floorRay(p, aspect, x, y){
 // The tree's programs, named only behind the flag: a bundle that cut the tier (embed-build.mjs) removes this branch as text, and with it the last reference to the
 // shaders, which its orphan sweep then deletes (a minifier will not drop a template that interpolates).
 const FEAT_TREE_VIEW = true;
-const treeShaders = FEAT_TREE_VIEW ? () => ({ leaf: [VS_TREE, FS_TREE], wood: [VS_TREE_WOOD, FS_TREE_WOOD], comp: [VS_FULL, FS_TREE_COMPOSITE] }) : null;
+const treeShaders = FEAT_TREE_VIEW ? () => ({ leaf: [VS_TREE, FS_TREE], wood: [VS_TREE_WOOD, FS_TREE_WOOD], woodFoot: [VS_TREE_WOOD_FOOT, FS_TREE_WOOD], grid: [VS_FULL, FS_CROWN_GRID], comp: [VS_FULL, FS_TREE_COMPOSITE] }) : null;
+// The names a leaf's or the wood's fragment stage is compiled with, each its own program so a tree without it runs the shaders it always ran: the crown's
+// own light read from its grid (crown_light), and the far tree fading into the seen sky (view_sky), as the floor beside it does.
+export const treeNames = (params) => [(params.crown_light || 0) > 0 ? 'CROWN_FIELD' : '', params.view_sky ? 'VIEW_SKY' : ''].filter(Boolean);
+
+// THE CROWN'S GRID (crown_light, spec/model/leaf.md): the crown's own light changes over a metre and not within a leaf, so it is gathered once a frame at the
+// centres of cells this size over the layers' box, from the floor to the highest leaf, and every leaf and the wood read it between the eight cells about them.
+const CROWN_CELL = 0.5;
+export const crownGridSize = (extent, top) => [clamp(Math.ceil(extent/CROWN_CELL), 8, 64), clamp(Math.ceil(Math.max(top, 1e-3)/CROWN_CELL), 2, 48)];
 
 // The low-res layer set the tree is lit by: the sky fill's own size (komorebi-bake.js fillLayerRes), so with both open they are one set.
 export const treeLayerRes = (params, bakeRes) => Math.min(clamp(params.fill_resolution|0, 32, 1024), bakeRes());
@@ -55,7 +65,9 @@ export const treeLayerRes = (params, bakeRes) => Math.min(clamp(params.fill_reso
 // ============================================================================
 export function makeTreeView(hub){
   const { gl, canvas, params, motion, faith, trans, emptyVAO, faithfulOn, bakeRes } = hub;
-  let progLeaf = null, progWood = null, progComp = null, UL = null, UW = null, UC = null, slabTex = null;
+  let progComp = null, progGrid = null, UC = null, UG = null, slabTex = null, slabTexNeutral = null, gridTex = null, gridFBO = null, gridN = [0, 0], _skyKey = '', _sky = null;
+  const progs = new Map();   // the leaf's and the wood's programs, by base and names (treeNames), made on first use
+  const gridBox = [0, 0, 0, 1, 1, 1];
   let msFBO = null, msCol = null, msCover = null, msDepth = null, rsFBO = null, rsCol = null, rsCover = null, tw = 0, th = 0;
   let layersBaked = false;
   const _atm = { sun: [0, 0, 0], ambient: [0, 0, 0] }, _sd = [0, 0, 0];
@@ -67,28 +79,49 @@ export function makeTreeView(hub){
   const wanted = () => !!params.tree_view && !!params.standing_scene && faithfulOn() && cameraFor(params) === 'floor' && faith.count > 0 && !!(faith.sideBuf || faith.rec)   // the record: a layered grove asked before the regrow that makes it faithful (rebuildTextures sizes the layers first)
     && !(trans.active && (trans.castHeld || trans.travelField || trans.riseField || trans.viewpoint) && !fadingOverSeason());
 
+  const L = (prog, n) => gl.getUniformLocation(prog, n);
+  const common = (prog) => ({
+    viewExtent: L(prog, 'uViewExtent'), pitch: L(prog, 'uPitch'), lookUp: L(prog, 'uLookUp'), fov: L(prog, 'uFov'), aspect: L(prog, 'uAspect'), yaw: L(prog, 'uViewYaw'), center: L(prog, 'uViewCenter'),
+    layers: Array.from({ length: MAX_LAYERS }, (_, i) => L(prog, `uLayer[${i}]`)), heights: L(prog, 'uLayerHeight[0]'), layerCount: L(prog, 'uLayerCount'), layerHalf: L(prog, 'uLayerHalf'),
+    layerOrigin: L(prog, 'uLayerOrigin'), layerExtent: L(prog, 'uLayerExtent'), sunG: L(prog, 'uSunG'), beamK: L(prog, 'uBeamK'), leafSun: L(prog, 'uLeafSun'), sunCosine: L(prog, 'uSunCosine'),
+    sunDir: L(prog, 'uSunDir'), ambient: L(prog, 'uAmbient'), eye: L(prog, 'uEye'), neutral: L(prog, 'uNeutral'), clearK: L(prog, 'uClearK'), crownP: L(prog, 'uCrownP'), openSky: L(prog, 'uOpenSky'), beamMarch: L(prog, 'uBeamMarch'),
+    twilight: L(prog, 'uTwilight'), mesopic: L(prog, 'uMesopic'), haze: L(prog, 'uHazeColor'), halfExtent: L(prog, 'uHalfExtent'), centerF: L(prog, 'uViewCenterF'),
+    vignette: L(prog, 'uVignette'), vignetteShape: L(prog, 'uVignetteShape'), irisOpacity: L(prog, 'uIrisOpacity'), target: L(prog, 'uTarget'),
+    exposure: L(prog, 'uExposure'), contrast: L(prog, 'uContrast'), tone: L(prog, 'uToneMap'), travelTone: L(prog, 'uTravelTone'), treeTone: L(prog, 'uTreeTone'),
+    crownGrid: L(prog, 'uCrownGrid'), crownOrigin: L(prog, 'uCrownOrigin'), crownSize: L(prog, 'uCrownSize'),
+    skySunDir: L(prog, 'uSkySunDir'), skyR: L(prog, 'uSkyR'), skyA: L(prog, 'uSkyA'), skyO: L(prog, 'uSkyO'), skyIso: L(prog, 'uSkyIso'), skyMs: L(prog, 'uSkyMs'), skyScale: L(prog, 'uSkyScale'),
+  });
+  const locs = {
+    leaf: (prog) => ({ ...common(prog), ...hub.faithLocs(prog), slab: L(prog, 'uSlab'), f0: L(prog, 'uF0') }),
+    wood: (prog) => ({ ...common(prog), eyeW: L(prog, 'uEyeW'), bark: L(prog, 'uBark'), woodPx: L(prog, 'uWoodPx'), groundClip: L(prog, 'uGroundClip'), footCount: L(prog, 'uFootCount'), foot: L(prog, 'uFoot[0]'), barkTex: L(prog, 'uBarkTex'), roundEnds: L(prog, 'uRoundEnds') }),
+  };
+  function program(kind, names){   // kind: leaf, wood or woodFoot
+    const key = `${kind}|${names.join(' ')}`;
+    let p = progs.get(key);
+    if(!p){
+      const [vs, fs] = treeShaders()[kind], prog = hub.sharedProgram(vs, defineIn(fs, names));
+      p = { prog, u: locs[kind === 'leaf' ? 'leaf' : 'wood'](prog) };
+      progs.set(key, p);
+    }
+    return p;
+  }
+
   function compile(){
-    if(progLeaf) return;
-    const P = hub.sharedProgram, L = (prog, n) => gl.getUniformLocation(prog, n);
-    const sh = treeShaders();
-    progLeaf = P(...sh.leaf); progWood = P(...sh.wood); progComp = P(...sh.comp);
-    const common = (prog) => ({
-      viewExtent: L(prog, 'uViewExtent'), pitch: L(prog, 'uPitch'), fov: L(prog, 'uFov'), aspect: L(prog, 'uAspect'), yaw: L(prog, 'uViewYaw'), center: L(prog, 'uViewCenter'),
-      layers: Array.from({ length: MAX_LAYERS }, (_, i) => L(prog, `uLayer[${i}]`)), heights: L(prog, 'uLayerHeight[0]'), layerCount: L(prog, 'uLayerCount'), layerHalf: L(prog, 'uLayerHalf'),
-      layerOrigin: L(prog, 'uLayerOrigin'), layerExtent: L(prog, 'uLayerExtent'), sunG: L(prog, 'uSunG'), beamK: L(prog, 'uBeamK'), leafSun: L(prog, 'uLeafSun'), sunCosine: L(prog, 'uSunCosine'),
-      sunDir: L(prog, 'uSunDir'), ambient: L(prog, 'uAmbient'), eye: L(prog, 'uEye'),
-      twilight: L(prog, 'uTwilight'), mesopic: L(prog, 'uMesopic'), haze: L(prog, 'uHazeColor'), halfExtent: L(prog, 'uHalfExtent'), centerF: L(prog, 'uViewCenterF'),
-      vignette: L(prog, 'uVignette'), vignetteShape: L(prog, 'uVignetteShape'), irisOpacity: L(prog, 'uIrisOpacity'), target: L(prog, 'uTarget'),
-      exposure: L(prog, 'uExposure'), contrast: L(prog, 'uContrast'), tone: L(prog, 'uToneMap'), travelTone: L(prog, 'uTravelTone'), treeTone: L(prog, 'uTreeTone'),
-    });
-    UL = { ...common(progLeaf), ...hub.faithLocs(progLeaf), slab: L(progLeaf, 'uSlab'), f0: L(progLeaf, 'uF0') };
-    UW = { ...common(progWood), eyeW: L(progWood, 'uEyeW'), bark: L(progWood, 'uBark') };
+    if(progComp) return;
+    const P = hub.sharedProgram, sh = treeShaders();
+    progComp = P(...sh.comp); progGrid = P(...sh.grid);
+    UG = { ...common(progGrid), crownN: L(progGrid, 'uCrownN'), slice: L(progGrid, 'uCrownSlice') };
     UC = { col: L(progComp, 'uTreeCol'), cover: L(progComp, 'uTreeCover'), opacity: L(progComp, 'uTreeOpacity') };
-    slabTex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, slabTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, SLAB_N, 3, 0, gl.RGBA, gl.FLOAT, slabTable(SLAB_N));
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // the leaf's two materials (leaf_neutral): the green fit and the tissue, both made once and chosen per draw
+    const table = (neutral) => {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, SLAB_N, 3, 0, gl.RGBA, gl.FLOAT, slabTable(SLAB_N, neutral));
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return t;
+    };
+    slabTex = table(false); slabTexNeutral = table(true);
   }
 
   // The targets: four samples of colour, coverage and depth, resolved into two plain textures the composite reads.
@@ -135,9 +168,39 @@ export function makeTreeView(hub){
     layersBaked = true;
   }
 
+  // The crown's grid, this frame's: a slice at a time, each pixel a cell, after the layers it reads are baked.
+  function bakeGrid(w, h){
+    const E = params.canopy_extent_m, top = Math.max(faith.hMax, 1e-3), [nx, nz] = crownGridSize(E, top);
+    if(!gridTex || gridN[0] !== nx || gridN[1] !== nz){
+      if(gridTex) gl.deleteTexture(gridTex);
+      gridTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_3D, gridTex);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA16F, nx, nx, nz, 0, gl.RGBA, gl.HALF_FLOAT, null);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      for(const a of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, a, gl.CLAMP_TO_EDGE);
+      if(!gridFBO) gridFBO = gl.createFramebuffer();
+      gridN = [nx, nz];
+    }
+    gridBox[0] = -E/2; gridBox[1] = -E/2; gridBox[2] = 0; gridBox[3] = E; gridBox[4] = E; gridBox[5] = top;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, gridFBO); gl.drawBuffers([gl.COLOR_ATTACHMENT0]); gl.viewport(0, 0, nx, nx);
+    gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST);
+    gl.useProgram(progGrid);
+    upload(UG, w, h);
+    gl.uniform3f(UG.crownOrigin, gridBox[0], gridBox[1], gridBox[2]); gl.uniform3f(UG.crownSize, gridBox[3], gridBox[4], gridBox[5]); gl.uniform3f(UG.crownN, nx, nx, nz);
+    gl.bindVertexArray(emptyVAO);
+    for(let z = 0; z < nz; z++){
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gridTex, 0, z);
+      gl.uniform1f(UG.slice, z);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+  }
+  function bindGrid(U){
+    gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_3D, gridTex); gl.uniform1i(U.crownGrid, 8);
+    gl.uniform3f(U.crownOrigin, gridBox[0], gridBox[1], gridBox[2]); gl.uniform3f(U.crownSize, gridBox[3], gridBox[4], gridBox[5]);
+  }
+
   function upload(u, w, h){
     const pitch = clamp(params.view_pitch_deg, 0, 80)*DEG, fov = clamp(params.view_fov_deg, 5, 140)*DEG, aspect = canvas.width/canvas.height;
-    gl.uniform1f(u.viewExtent, params.view_extent_m); gl.uniform1f(u.pitch, pitch); gl.uniform1f(u.fov, fov); gl.uniform1f(u.aspect, aspect);
+    gl.uniform1f(u.viewExtent, params.view_extent_m); gl.uniform1f(u.pitch, pitch); gl.uniform1f(u.lookUp, lookUp(params)); gl.uniform1f(u.fov, fov); gl.uniform1f(u.aspect, aspect);
     gl.uniform1f(u.yaw, params.view_yaw_deg*DEG); gl.uniform2f(u.center, params.view_center_x, params.view_center_y);
     const eye = cameraPose(params).eye; gl.uniform3f(u.eye, eye[0], eye[1], eye[2]);
     if(u.eyeW) gl.uniform3f(u.eyeW, eye[0], eye[1], eye[2]);
@@ -155,6 +218,13 @@ export function makeTreeView(hub){
     gl.uniform2f(u.layerOrigin, -E/2, -E/2); gl.uniform2f(u.layerExtent, E, E);
     const g = hub.bulkShift(); gl.uniform2f(u.sunG, g[0], g[1]);
     gl.uniform1f(u.beamK, ballisticK(params.leaf_diffuse));
+    // the leaf as tissue: the clear leaf's loss as a neutral depth per channel, which the beam pays at every leaf; the crown's own light, its recollision probability
+    const neutral = !!params.leaf_neutral;
+    gl.uniform1i(u.neutral, neutral ? 1 : 0);
+    gl.uniform3f(u.clearK, -Math.log(slabClear(0, neutral)), -Math.log(slabClear(1, neutral)), -Math.log(slabClear(2, neutral)));
+    gl.uniform1f(u.crownP, clamp(params.crown_light || 0, 0, 0.9));
+    gl.uniform1i(u.openSky, params.open_sky ? 1 : 0);
+    gl.uniform1i(u.beamMarch, params.beam_march ? 1 : 0);
     const atm = atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight), loss = beamLoss('floor', params);
     gl.uniform3f(u.leafSun, atm.sun[0]*loss, atm.sun[1]*loss, atm.sun[2]*loss); gl.uniform1f(u.sunCosine, clamp(params.sun_cosine, 0, 1));
     sunDirection(_sd, params.sun_elevation_deg, params.sun_azimuth_deg); gl.uniform3f(u.sunDir, _sd[0], _sd[1], _sd[2]);
@@ -162,6 +232,12 @@ export function makeTreeView(hub){
     // the floor's finish (komorebi-render.js's post group, the same values)
     const a = atm.ambient, m = Math.max(a[0], a[1], a[2], 1e-4), hb = 0.6;
     gl.uniform3f(u.haze, a[0]/m*hb, a[1]/m*hb, a[2]/m*hb);
+    if(params.view_sky && u.skySunDir){   // the sky seen, as the floor's post group sets it (komorebi-light.js skyModel)
+      const key = `${params.sun_elevation_deg}|${params.sun_azimuth_deg}|${params.sky_turbidity}|${a[0]}|${a[1]}|${a[2]}`;
+      if(key !== _skyKey){ _skyKey = key; _sky = skyModel(params.sun_elevation_deg, params.sky_turbidity, _sd, a); }
+      gl.uniform3fv(u.skySunDir, _sd); gl.uniform3fv(u.skyR, _sky.r); gl.uniform3fv(u.skyA, _sky.a); gl.uniform3fv(u.skyO, _sky.o); gl.uniform3fv(u.skyIso, _sky.iso);
+      gl.uniform1f(u.skyMs, _sky.ms); gl.uniform3fv(u.skyScale, _sky.scale);
+    }
     gl.uniform1f(u.halfExtent, 0.5*params.view_extent_m*Math.max(Math.hypot(aspect, 1), 1e-4)); gl.uniform2f(u.centerF, params.view_center_x, params.view_center_y);
     gl.uniform1f(u.irisOpacity, trans.active && trans.iris ? trans.irisOpacity : 1);
     gl.uniform1f(u.vignette, clamp(params.vignette, 0, 1)); gl.uniform1f(u.vignetteShape, clamp(params.vignette_shape, 2, 8)); gl.uniform2f(u.target, w, h);
@@ -175,14 +251,18 @@ export function makeTreeView(hub){
   function draw(fbo, w, h){
     if(!wanted() || trans.active && trans.treeFade && !(trans.treeOpacity > 0)) return;   // nothing to lay over at a fade's zero
     compile(); targets(w, h); ensureLayers();
+    const names = treeNames(params), crown = names.includes('CROWN_FIELD');
+    if(crown) bakeGrid(w, h);
     gl.bindFramebuffer(gl.FRAMEBUFFER, msFBO);
     gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     gl.viewport(0, 0, w, h);
     gl.clearColor(0, 0, 0, 0); gl.clearDepth(1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
     // the leaves: the cast's own records and vertex code, this frame's wind
-    gl.useProgram(progLeaf);
+    const leaf = program('leaf', names), UL = leaf.u;
+    gl.useProgram(leaf.prog);
     upload(UL, w, h);
+    if(crown) bindGrid(UL);
     gl.uniform1f(UL.edge, params.edge_softness);
     gl.uniform1f(UL.f0, 0.04);
     gl.uniform1f(UL.morph, params.drift_phase); gl.uniform1f(UL.morphAmount, params.drift_amount);
@@ -192,14 +272,22 @@ export function makeTreeView(hub){
     bindLeafShape(gl, UL, hub.grove);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex); gl.uniform1i(UL.clusterTex, 4);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(UL.clusterGeom, 5);
-    gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, slabTex); gl.uniform1i(UL.slab, 7);
+    gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, params.leaf_neutral ? slabTexNeutral : slabTex); gl.uniform1i(UL.slab, 7);
     gl.bindVertexArray(faith.vao);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, faith.count);
     // the wood: the skeleton as the cast swayed it this frame
     if(params.branch_tau > 0 && faith.segCount > 0 && faith.segVAO){
-      gl.useProgram(progWood);
-      upload(UW, w, h);
-      gl.uniform3f(UW.bark, params.bark_r, params.bark_g, params.bark_b);
+      const feet = params.trunk_base ? hub.faith?.trunks : null, nFeet = feet ? Math.min(16, feet.length/3) : 0;   // trunk_base: the feet whose capsules flare
+      const wood = program(nFeet ? 'woodFoot' : 'wood', names), U = wood.u;   // the foot's code lives in a program of its own (VS_TREE_WOOD_FOOT), so a tree without feet runs the wood shader it always ran
+      gl.useProgram(wood.prog);
+      upload(U, w, h);
+      if(crown) bindGrid(U);
+      gl.uniform3f(U.bark, params.bark_r, params.bark_g, params.bark_b);
+      gl.uniform1f(U.woodPx, params.thin_twigs ? 2*Math.tan(0.5*clamp(params.view_fov_deg, 5, 140)*DEG)/h : 0);
+      gl.uniform1i(U.groundClip, params.trunk_base ? 1 : 0);
+      gl.uniform1f(U.barkTex, clamp(params.bark_texture ?? 0, 0, 1));
+      gl.uniform1i(U.roundEnds, params.trunk_split >= 2 && params.growth_years > 0 ? 1 : 0);   // only a grown tree forks (komorebi-growth.js)
+      gl.uniform1i(U.footCount, nFeet); if(nFeet) gl.uniform3fv(U.foot, new Float32Array(feet.slice(0, 3*nFeet)));
       gl.bindVertexArray(faith.segVAO);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, faith.segCount);
     }
@@ -223,7 +311,11 @@ export function makeTreeView(hub){
     gl.disable(gl.BLEND);
   }
 
-  function dispose(){ free(); if(slabTex) gl.deleteTexture(slabTex); slabTex = null; progLeaf = progWood = progComp = null; }
+  function dispose(){
+    free(); for(const t of [slabTex, slabTexNeutral, gridTex]) if(t) gl.deleteTexture(t); if(gridFBO) gl.deleteFramebuffer(gridFBO);
+    slabTex = slabTexNeutral = gridTex = gridFBO = null; gridN = [0, 0];
+    progs.clear(); progGrid = progComp = null; _skyKey = '';
+  }
   return { treeWanted: wanted, drawTree: draw, bakeTreeLayers: bakeLayers, treeLayerRes: () => treeLayerRes(params, bakeRes), disposeTree: dispose };
 }
 // What the engine holds in a bundle that cut the tree view: a tree that is never wanted.

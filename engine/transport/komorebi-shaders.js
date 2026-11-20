@@ -162,17 +162,19 @@ void main(){
 // The depth is the distance along the gaze, near 2 % and far 200 eye heights. ----
 const GLSL_TREE_CAMERA = `uniform float uViewExtent;
 uniform float uPitch;
+uniform float uLookUp;               // the gaze turned up past the tilt (view_look_up_deg); the eye keeps the tilt's
 uniform float uFov;
 uniform float uAspect;
 uniform float uViewYaw;
 uniform vec2  uViewCenter;
 vec4 treeClip(vec3 P){
   float cp = cos(uPitch), sp = sin(uPitch), kf = max(tan(0.5*uFov), 1e-4);
+  float cg = cos(uPitch + uLookUp), sg = sin(uPitch + uLookUp);
   float scale = uViewExtent*cp*cp/max(2.0*kf, 1e-4), targetY = sp/max(cp, 1e-4);
   float cy = cos(uViewYaw), sy = sin(uViewYaw);
   vec2 q = mat2(cy, sy, -sy, cy)*(P.xy - uViewCenter);              // the floor's orbit, undone
   vec3 v = vec3(q.x/scale, q.y/scale + targetY, P.z/scale - 1.0);   // from the eye, in eye heights
-  float depth = v.y*sp - v.z*cp, up = v.y*cp + v.z*sp;              // along the gaze (0, sp, −cp), and up the image (0, cp, sp)
+  float depth = v.y*sg - v.z*cg, up = v.y*cg + v.z*sg;              // along the gaze (0, sg, −cg), and up the image (0, cg, sg)
   const float N = 0.02, F = 200.0;
   return vec4(v.x/(kf*uAspect), up/kf, (depth*(F + N) - 2.0*F*N)/(F - N), depth);
 }`;
@@ -731,6 +733,15 @@ uniform vec2 uSegSway;                // rigid plan sway added to both endpoints
                                       // twigs and the leaves hanging on them drift apart under wind (spec/model/sky-view.md).
 out float vAcross;
 flat out float vWoodFade;
+#ifdef SEG_FINE
+// WOOD UNDER ITS OWN PENUMBRA (thin_twigs; komorebi-bake.js draws these once, after the sample loop). A twig narrower than the blur of its shadow
+// casts, summed over the sun's samples, a soft stripe as wide as the sample cloud's spread at its height, taking the light its own width takes. So it is
+// drawn once, along the cloud's mean direction (uG), as a box that wide (the box with the cloud's variance across the twig: half-width √3·σ·h), at
+// least three quarters of a texel so it is never lost between pixel centres, and passing the share of the light its own width leaves (vFrac).
+uniform vec3  uGCov;     // the samples' covariance of g: xx, xy, yy
+uniform float uTexel;    // one cast texel, in metres
+out float vFrac;
+#endif
 void main(){
   float t = aCorner.x*0.5 + 0.5;                 // 0 at a, 1 at b
   // project BOTH endpoints to the receiver at their OWN heights FIRST, then build the capsule around that SHADOW spine.
@@ -749,16 +760,35 @@ void main(){
   vec2 dir = (dot(spine,spine) > 1e-8) ? normalize(spine) : vec2(1.0, 0.0);
   vec2 perp = vec2(-dir.y, dir.x);
   float r = mix(iSegH.z, iSegH.w, t);            // pipe-model taper along the segment (thinner toward the tip)
+#ifdef SEG_FINE
+  float h = mix(iSegH.x, iSegH.y, t);
+  float s2 = perp.x*perp.x*uGCov.x + 2.0*perp.x*perp.y*uGCov.y + perp.y*perp.y*uGCov.z;
+  float halfW = max(max(r, 1.7320508*h*sqrt(max(s2, 0.0))), 0.75*uTexel);
+  vFrac = r/halfW; r = halfW;
+#endif
   vec2 world = mix(Ap, Bp, t) + perp * (aCorner.y * r);
   gl_Position = vec4((world - uFaithOrigin)/uFaithExtent*2.0-1.0, 0.0, 1.0);
   vAcross = aCorner.y;
   vWoodFade = iWoodFade;
 }`;
+// thin_twigs' cast of the wood under its own penumbra: the skeleton's shaders with SEG_FINE defined (above), a program of its own, so the cast that never
+// opens it runs the shaders it always ran
+// A program's variant: its source with one name defined after the version line, written as a literal so a bundle that cuts the variant's tier drops it
+// and, with it, the last reference to its source (embed-build.mjs, the orphan sweep).
+const afterVersion = (src) => src.slice(src.indexOf('\n') + 1);
+// The same at run time, for a program made of a base and the names its look asks for (komorebi-tree-view.js): none, and it is the base itself.
+const defineIn = (src, names) => names.length ? `#version 300 es\n${names.map((n) => `#define ${n}\n`).join('')}${afterVersion(src)}` : src;
+const VS_FAITH_SEG_FINE = `#version 300 es
+#define SEG_FINE
+${afterVersion(VS_FAITH_SEG)}`;
 
 const FS_FAITH_SEG = `#version 300 es
 precision highp float;
 in float vAcross;
 flat in float vWoodFade;
+#ifdef SEG_FINE
+in float vFrac;
+#endif
 uniform float uWoodTau;
 uniform int uSegTau;   // 0 = TRANSMITTANCE, for the cast's multiplicative scratch. 1 = OPTICAL DEPTH, for the layer
                        // textures, which accumulate additively and exponentiate at the tap — the leaves' own convention
@@ -772,8 +802,15 @@ void main(){
   // coverage cannot meet it. (Additive blend, cleared to 0 per layer: a layer with no twigs reads as no wood.) Half float, because
   // the depth accumulates and must round as it did when it shared the layer texture's alpha: the bytes did not move.
   if(uSegTau != 0){ frag = vec4(uWoodTau*cov*vWoodFade, 0.0, 0.0, 0.0); return; }
+#ifdef SEG_FINE
+  frag = vec4(vec3(1.0 - vFrac*(1.0 - exp(-uWoodTau*cov*vWoodFade))), 1.0);   // the twig's own darkening, spread over its penumbra
+#else
   frag = vec4(vec3(exp(-uWoodTau*cov*vWoodFade)), 1.0);              // wood blocks every colour equally → dark, neutral
+#endif
 }`;
+const FS_FAITH_SEG_FINE = `#version 300 es
+#define SEG_FINE
+${afterVersion(FS_FAITH_SEG)}`;
 
 // THE LITTER CARPET (spec/model/season.md, komorebi-litter.js): the fallen leaves stamped onto the floor, once per regrow, into an RGBA8 texture over the fill's frame.
 // A stamp is one flat ellipse — the leaf's own half-axes, lying face up, so no foreshortening and no height: it casts nothing and is seen by
@@ -870,7 +907,8 @@ const VS_TREE = `#version 300 es
 ${GLSL_FAITH_VERTEX}`;
 
 // What lights a point of the tree: the sun along its beam, through the leaves above it, and the sky above it. The leaves are read from the low-res layer
-// set the sky fill bakes on the faithful path (komorebi-bake.js): a point at height z sees the layers above z + half a layer (its own layer would shade it),
+// set the sky fill bakes on the faithful path (komorebi-bake.js): a point at height z sees the layers above z + half a layer (its own layer would shade it; under beam_march, the part of
+// its own layer's slab above it, beamMarch),
 // each at the plan point the sun's path crosses it, p + (h − z)·g. The beam takes each texel as the floor's beam does, leaf and gap mixed (texelMix);
 // the sky goes as e^(−½·leaf area above), the season's spherical leaf. Outside the layers' box there are no leaves.
 const GLSL_TREE_LIGHT = `uniform highp sampler2D uLayer[${MAX_LAYERS}];
@@ -886,28 +924,192 @@ uniform float uSunCosine;
 uniform vec3  uSunDir;
 uniform vec3  uAmbient;
 uniform vec3  uEye;                  // the floor camera's eye (m)
+uniform int   uNeutral;              // leaf_neutral: the leaf as tissue (komorebi-leaf.js SLAB_NEUTRAL); 0 = the texel mixture as it was
+uniform vec3  uClearK;               // −ln of what the clear tissue leaf passes, per channel: the neutral depth each leaf adds to the beam when uNeutral is on
+uniform float uCrownP;               // crown_light: the recollision probability p; 0 = the crown's own light is not gathered
+uniform int   uOpenSky;              // open_sky: a leaf's sky through the gaps around it, not the column above it; 0 = the column, as it was
+uniform int   uBeamMarch;            // beam_march: the beam read across each slab's thickness above the leaf; 0 = at the layer's plane, as it was
 ${GLSL_TEXEL_MIX}
+// The texel as a mixture of tissue leaves (uNeutral): each leaf passes the clear leaf's share of its pigment's T, so the clear depth stacks with the
+// leaves as the pigment's does (c/a leaves deep). T is what the texel passes, Tb its ballistic share.
+void texelMixClear(vec3 tau, float c, float k, out vec3 T, out vec3 Tb){
+  if(c < 1e-4){ T = vec3(1.0); Tb = T; return; }
+  float a = min(c, 1.0);
+  vec3 tbar = tau/a + uClearK*(c/a);
+  T  = vec3(1.0 - a) + a*exp(-tbar);
+  Tb = vec3(1.0 - a) + a*exp(-tbar - k*c/a);
+}
+// A leaf's albedo ω = R + T, for the light it scatters into the crown, from what it passes: PROSPECT-D's one curve for every pigment state, R ≈ 0.885·T − 0.019.
+// One rule for every leaf the field meets, the lit leaf too; the slab's faces only say how the lit leaf shows it (spec/model/leaf.md).
+vec3 leafAlbedo(vec3 T){ return T + max(0.885*T - 0.019, 0.0); }
+// THE BOUNCES ARE GREY. A channel is a band, and a band's mean albedo raised to the n is not its albedo raised to the n averaged: a gold leaf keeps 0.89 of
+// 555–600 nm and little of 490–540, so bounce after bounce its light stays amber, where the green channel's mean (0.55–0.63) to the n sends it red. Taken
+// spectrally (PROSPECT-D) the recollision series keeps a gold leaf's hue within 2–6°, where per-channel powers swing it 12–35° toward red; a green leaf is
+// the same either way. A single product of two gold bands reddens as well (a gold leaf in its crown's light: 87° spectrally, 69° as an RGB product, 94°
+// as the leaf's own colour under grey light). So the field is grey: every scatter that feeds it, and its decay with depth, at the luminance albedo, and the
+// leaf it lights gives it the leaf's colour.
+float albedoY(vec3 w){ return dot(w, vec3(0.2126, 0.7152, 0.0722)); }
+// THE CROWN'S OWN LIGHT (crown_light, spec/model/leaf.md). Down the sun's path, the light the leaves above scattered rather than passed on as the beam: at each
+// layer the beam's intercepted share is scattered by the leaf's ω less what went on ballistically, half of it downward, and the light already scattered
+// crosses the layer by its gaps and, through the leaves, decays as the two-stream diffuse field does, e^−κ per leaf with κ = √((1−ω)(1−ω+2βω)), β = R/ω the
+// share a leaf sends back: light sent back up is met again and mostly returned. The layers are met in the order the light meets them, from the sun's side.
+// The source is grey (the bounces are grey, above), but it DECAYS BY CHANNEL: what survives many leaves is the band the leaf keeps, and a gold leaf keeps
+// 0.92 of red and 0.77 of green, so ten leaves deep a grey κ at its luminance albedo 0.75 leaves some 2.5 times too little light. The field is read as its
+// luminance (crownField), so the bands set how much of it arrives and the leaf it lights still gives it the colour.
+void crownTap(vec3 tau, float c, float k, vec3 Tbeam, inout vec3 dif, inout vec3 om){
+  if(c < 1e-4) return;
+  float a = min(c, 1.0), n = max(c/a, 1.0);                       // the texel's leaf area and how many leaves deep it stacks
+  vec3 t1 = exp(-tau/c - uClearK*float(uNeutral)), tb1 = t1*exp(-k);   // ONE leaf's T and its ballistic share (the stack's would read a clump as one black leaf)
+  vec3 w = leafAlbedo(t1);
+  float wY = albedoY(w);
+  vec3 beta = max(w - t1, 0.0)/max(w, vec3(1e-4));
+  vec3 kap = sqrt(max((1.0 - w)*(1.0 - w + 2.0*beta*w), 0.0));
+  // the beam is scattered in the stack's first leaf, and what it scatters downward crosses the n − 1 below
+  dif = dif*((1.0 - a) + a*exp(-kap*n)) + Tbeam*a*0.5*max(wY - albedoY(tb1), 0.0)*exp(-kap*(n - 1.0));
+  om = w;
+}
+// THE BEAM THROUGH A SLAB (beam_march, spec/model/leaf.md). A layer holds a slab's leaves flattened onto one plane, so read at the one point where the sun's
+// path meets that plane it misses the slab everywhere else the path crosses it. Under a low sun the path runs cot(elevation) metres across per metre up, 11 m
+// across a 3 m slab at 15°: most leaves' single point falls outside the crown and they stand in full sun, while a few, whose point lands in the crown's
+// core, take the whole flattened slab there and go black. Read instead at BEAM_TAPS heights spread through the part of the slab above the leaf, each taking
+// its share of the slab's leaves (they are spread through its thickness), the path gathers the crown it really crosses: the sunny side lit, the far side
+// in the crown's own shade.
+const int BEAM_TAPS = 4;
+void beamMarch(highp sampler2D L, float h, vec3 P, inout vec3 Tsun, inout vec3 dif, inout vec3 om){
+  float z0 = max(P.z, h - uLayerHalf), z1 = h + uLayerHalf;
+  if(z1 <= z0) return;
+  float w = (z1 - z0)/(2.0*uLayerHalf)/float(BEAM_TAPS);
+  for(int j = BEAM_TAPS - 1; j >= 0; j--){                         // from the sun's side in, the order the light meets them (crownTap)
+    float z = z0 + (z1 - z0)*(float(j) + 0.5)/float(BEAM_TAPS);
+    vec2 uv = (P.xy + (z - P.z)*uSunG - uLayerOrigin)/uLayerExtent;
+    if(any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) continue;
+    vec4 t = texture(L, uv); vec3 T, Tb;
+    if(uNeutral == 0) texelMix(t.rgb*w, t.a*w, uBeamK, T, Tb);
+    else texelMixClear(t.rgb*w, t.a*w, uBeamK, T, Tb);
+    if(uCrownP > 0.0) crownTap(t.rgb*w, t.a*w, uBeamK, Tsun, dif, om);
+    Tsun *= Tb;
+  }
+}
 // A layer stands for the leaves of a slab a layer thick about its height, so it shades a point by as much of it as lies above the point: none at the
 // point's own height (a leaf does not shade itself) rising to all of it a layer above. Continuous in height: a step here draws a line across the crown.
-void treeTap(highp sampler2D L, float h, vec3 P, inout vec3 Tsun, inout float lai){   // a sampler array takes only a constant index in GLSL ES 3.00: one call a layer
+void treeTap(highp sampler2D L, float h, vec3 P, inout vec3 Tsun, inout float lai, inout vec3 dif, inout vec3 om){   // a sampler array takes only a constant index in GLSL ES 3.00: one call a layer
+  if(uBeamMarch != 0) beamMarch(L, h, P, Tsun, dif, om);
   float f = clamp((h - P.z)/(2.0*uLayerHalf), 0.0, 1.0);
   if(f <= 0.0) return;
   vec2 uvS = (P.xy + (h - P.z)*uSunG - uLayerOrigin)/uLayerExtent, uvK = (P.xy - uLayerOrigin)/uLayerExtent;
-  if(all(greaterThanEqual(uvS, vec2(0.0))) && all(lessThanEqual(uvS, vec2(1.0)))){
+  if(uBeamMarch == 0 && all(greaterThanEqual(uvS, vec2(0.0))) && all(lessThanEqual(uvS, vec2(1.0)))){
     vec4 t = texture(L, uvS); vec3 T, Tb;
-    texelMix(t.rgb*f, t.a*f, uBeamK, T, Tb);
+    if(uNeutral == 0) texelMix(t.rgb*f, t.a*f, uBeamK, T, Tb);
+    else texelMixClear(t.rgb*f, t.a*f, uBeamK, T, Tb);
+    if(uCrownP > 0.0) crownTap(t.rgb*f, t.a*f, uBeamK, Tsun, dif, om);
     Tsun *= Tb;
   }
   if(all(greaterThanEqual(uvK, vec2(0.0))) && all(lessThanEqual(uvK, vec2(1.0)))) lai += f*texture(L, uvK).a;
 }
-void treeLight(vec3 P, out vec3 Tsun, out float Tsky){
-  Tsun = vec3(1.0); float lai = 0.0;
-  if(0 < uLayerCount) treeTap(uLayer[0], uLayerHeight[0], P, Tsun, lai);
-  if(1 < uLayerCount) treeTap(uLayer[1], uLayerHeight[1], P, Tsun, lai);
-  if(2 < uLayerCount) treeTap(uLayer[2], uLayerHeight[2], P, Tsun, lai);
-  if(3 < uLayerCount) treeTap(uLayer[3], uLayerHeight[3], P, Tsun, lai);   // one a layer, MAX_LAYERS of them (komorebi-params.js): tree-view.test.js holds the count to it
+// dif: the crown's scattered light reaching P down the sun's path (0 unless uCrownP > 0); om: the albedo of the nearest leaves above P.
+void treeLight(vec3 P, out vec3 Tsun, out float Tsky, out vec3 dif, out vec3 om){
+  Tsun = vec3(1.0); float lai = 0.0; dif = vec3(0.0); om = vec3(0.0);
+  if(uCrownP > 0.0){   // the crown's light is gathered in the order the light meets the layers, the top first (crownTap); without it the order the beam always took
+    if(3 < uLayerCount) treeTap(uLayer[3], uLayerHeight[3], P, Tsun, lai, dif, om);
+    if(2 < uLayerCount) treeTap(uLayer[2], uLayerHeight[2], P, Tsun, lai, dif, om);
+    if(1 < uLayerCount) treeTap(uLayer[1], uLayerHeight[1], P, Tsun, lai, dif, om);
+    if(0 < uLayerCount) treeTap(uLayer[0], uLayerHeight[0], P, Tsun, lai, dif, om);
+  } else {
+    if(0 < uLayerCount) treeTap(uLayer[0], uLayerHeight[0], P, Tsun, lai, dif, om);
+    if(1 < uLayerCount) treeTap(uLayer[1], uLayerHeight[1], P, Tsun, lai, dif, om);
+    if(2 < uLayerCount) treeTap(uLayer[2], uLayerHeight[2], P, Tsun, lai, dif, om);
+    if(3 < uLayerCount) treeTap(uLayer[3], uLayerHeight[3], P, Tsun, lai, dif, om);   // one a layer, MAX_LAYERS of them (komorebi-params.js): tree-view.test.js holds the count to it
+  }
   Tsky = exp(-0.5*lai);
-}`;
+}
+// THE SKY A LEAF SEES (open_sky, spec/model/leaf.md). The column straight above a leaf on the crown's flank holds the whole crown, so read alone it puts that
+// leaf in the dark although half its sky is open beside it. The open sky is gathered along nine paths through the layers above the leaf, each by the share
+// of the sky it stands for: a leaf's faces turn every way, so it takes the sky by solid angle, and the sky below 30° is half of it, 30–60° 37%, above 60°
+// 13%. The column stands for the top, four paths at 45° for the middle and four at 15° (between them in azimuth) for the low sky a flank leaf has open; a
+// slant path crosses its layers' leaves 1/sin(elevation) deep.
+const float SKY_COT_MID = 1.0, SKY_SLANT_MID = 1.41421356, SKY_COT_LOW = 3.73205081, SKY_SLANT_LOW = 3.86370331;
+void skyTap(highp sampler2D L, float h, vec3 P, vec2 step, inout float lai){
+  float f = clamp((h - P.z)/(2.0*uLayerHalf), 0.0, 1.0);
+  if(f <= 0.0) return;
+  vec2 uv = (P.xy + (h - P.z)*step - uLayerOrigin)/uLayerExtent;
+  if(all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0)))) lai += f*texture(L, uv).a;
+}
+float skyPath(vec3 P, vec2 step, float slant){
+  float lai = 0.0;
+  if(0 < uLayerCount) skyTap(uLayer[0], uLayerHeight[0], P, step, lai);
+  if(1 < uLayerCount) skyTap(uLayer[1], uLayerHeight[1], P, step, lai);
+  if(2 < uLayerCount) skyTap(uLayer[2], uLayerHeight[2], P, step, lai);
+  if(3 < uLayerCount) skyTap(uLayer[3], uLayerHeight[3], P, step, lai);
+  return exp(-0.5*slant*lai);
+}
+float treeSkyOpen(vec3 P, float Tzenith){
+  const float D = 0.70710678;
+  float mid = skyPath(P, SKY_COT_MID*vec2(1.0, 0.0), SKY_SLANT_MID) + skyPath(P, SKY_COT_MID*vec2(-1.0, 0.0), SKY_SLANT_MID)
+            + skyPath(P, SKY_COT_MID*vec2(0.0, 1.0), SKY_SLANT_MID) + skyPath(P, SKY_COT_MID*vec2(0.0, -1.0), SKY_SLANT_MID);
+  float low = skyPath(P, SKY_COT_LOW*vec2(D, D), SKY_SLANT_LOW) + skyPath(P, SKY_COT_LOW*vec2(-D, D), SKY_SLANT_LOW)
+            + skyPath(P, SKY_COT_LOW*vec2(D, -D), SKY_SLANT_LOW) + skyPath(P, SKY_COT_LOW*vec2(-D, -D), SKY_SLANT_LOW);
+  return 0.13*Tzenith + 0.37*0.25*mid + 0.5*0.25*low;
+}
+// The leaf's light with its sky read as open_sky says.
+void treeLightSky(vec3 P, out vec3 Tsun, out float Tsky, out vec3 dif, out vec3 om){
+  treeLight(P, Tsun, Tsky, dif, om);
+  if(uOpenSky != 0) Tsky = treeSkyOpen(P, Tsky);
+}
+// The crown's light field at a leaf of albedo w: what the leaves above scattered down to it and what its neighbours scatter of the beam and of the sky at
+// its own depth, each meeting it with probability p, then every further bounce kept by p·ω_Y (Hovi et al. 2020): F = p·(dif + ω_Y·(Tsun + E_sky·Tsky))/(1 − p·ω_Y),
+// E_sky the sky's light on a leaf over the beam's. The sky is a source as the sun is: a crown's flank away from the sun is lit by the skylight its leaves
+// catch and pass to one another, which takes their colour, far more than by the sky it sees directly. In units of the beam at normal incidence; each face takes half.
+// Scattered light does not stay where it was scattered: it spreads through the crown by about a photon's free path between leaves (CROWN_REACH, ~1 m at a
+// crown's leaf density of 1–2 m² m⁻³), so the field is gathered at P and at four points that far around it in plan, and a leaf in a clump's shadow is lit by
+// its sunlit neighbours.
+// It changes over that metre and not within a leaf, so it is gathered once a frame at the centres of a grid of half-metre cells over the layers' box
+// (FS_CROWN_GRID) and every leaf and the wood read it there, between the eight cells about them.
+const float CROWN_REACH = 1.0;
+void crownGather(vec3 P, out vec3 S, out float Dy, out float K){   // the beam (S), the scattered light (Dy, its luminance) and the sky (K) about P, summed
+  vec3 Ts, d, o, D = vec3(0.0); float k;
+  S = vec3(0.0); K = 0.0;
+  treeLight(P, Ts, k, d, o); S += Ts; D += d; K += k;
+  treeLight(P + vec3(CROWN_REACH, 0.0, 0.0), Ts, k, d, o); S += Ts; D += d; K += k;
+  treeLight(P - vec3(CROWN_REACH, 0.0, 0.0), Ts, k, d, o); S += Ts; D += d; K += k;
+  treeLight(P + vec3(0.0, CROWN_REACH, 0.0), Ts, k, d, o); S += Ts; D += d; K += k;
+  treeLight(P - vec3(0.0, CROWN_REACH, 0.0), Ts, k, d, o); S += Ts; D += d; K += k;
+  Dy = albedoY(D);
+}
+float crownSky(){ return albedoY(uAmbient)/max(albedoY(uLeafSun), 1e-6); }   // the sky's light on a leaf, in the beam's units
+vec3 crownLight(vec3 G, float Dy, vec3 w){   // G: the beam and the sky gathered, S + sky·K
+  float wY = albedoY(w);
+  return uCrownP*0.2*(vec3(Dy) + wY*G)/max(1.0 - uCrownP*wY, 0.05);   // the field arrives grey, by its luminance (crownTap)
+}
+#ifdef CROWN_FIELD
+uniform highp sampler3D uCrownGrid;  // (S + sky·K, Dy) at each cell's centre, this frame's (FS_CROWN_GRID)
+uniform vec3  uCrownOrigin;          // the grid's box (m): the layers' box in plan, the floor to the highest leaf
+uniform vec3  uCrownSize;
+vec3 crownField(vec3 P, vec3 w){ vec4 g = texture(uCrownGrid, (P - uCrownOrigin)/uCrownSize); return crownLight(g.rgb, g.a, w); }
+#endif`;
+
+// THE SKY SEEN (view_sky, spec/model/light.md): the sky's radiance along a ray, which the floor camera shows over its horizon and into which the far floor
+// and the far tree fade; its uniforms are set from komorebi-light.js skyModel by whoever draws with it (komorebi-render.js, komorebi-tree-view.js).
+const GLSL_SKY_SEEN = `uniform vec3  uSkySunDir, uSkyR, uSkyA, uSkyO, uSkyIso, uSkyScale;   // view_sky: the unit sun and skyModel's air and second order (komorebi-light.js), which this mirrors
+uniform float uSkyMs;             // view_sky: the sun's air mass at the ground
+// THE SKY SEEN (komorebi-light.js skyShape, which the sky test holds this to): single scattering along the ray through the exponential air, in the receivers' units
+const float SKY_G = 0.76, SKY_HR = 8.0, SKY_HA = 1.2, SKY_R = 6371.0, SKY_TOP = 60.0;
+const int SKY_STEPS = 16;
+vec3 skyRadiance(vec3 d){
+  float z = max(d.z, 0.0), mu = dot(vec3(d.xy, z), uSkySunDir);
+  float pR = 0.05968310*(1.0 + mu*mu), pA = 0.07957747*(1.0 - SKY_G*SKY_G)/pow(1.0 + SKY_G*SKY_G - 2.0*SKY_G*mu, 1.5);
+  float tMax = sqrt((SKY_R + SKY_TOP)*(SKY_R + SKY_TOP) - SKY_R*SKY_R*(1.0 - z*z)) - SKY_R*z, tPrev = 0.0;
+  vec3 L = vec3(0.0), tv = vec3(0.0);
+  for(int k = 0; k < SKY_STEPS; k++){
+    float u = (float(k) + 0.5)/float(SKY_STEPS), t = tMax*u*u, dt = tMax*2.0*u/float(SKY_STEPS);
+    float h = max(0.0, sqrt(SKY_R*SKY_R + t*t + 2.0*SKY_R*t*z) - SKY_R), eR = exp(-h/SKY_HR), eA = exp(-h/SKY_HA);
+    vec3 sR = uSkyR/SKY_HR*eR, sA = uSkyA/SKY_HA*eA;
+    tv += (sR + sA)*(t - tPrev);
+    L += ((sR*pR + sA*pA)*exp(-uSkyMs*(uSkyR*eR + uSkyA*eA + uSkyO)) + (sR + sA)*uSkyIso)*exp(-tv)*dt;
+    tPrev = t;
+  }
+  return uSkyScale*L;
+}
+`;
 
 // The Look's per-pixel finish, the floor's GLSL_T_POST in the same order (komorebi-transport.js): the dusk shift keyed by this point's own sun visibility,
 // the haze by its distance from the looked-at point as the floor's, the iris mask, the tail. The tail's curve is the tree's own (spec model/camera.md, the
@@ -923,6 +1125,8 @@ uniform float uVignette;
 uniform float uVignetteShape;
 uniform float uIrisOpacity;
 uniform vec2  uTarget;               // the target's size in pixels, for the iris's frame position
+#ifdef VIEW_SKY
+${GLSL_SKY_SEEN}#endif
 ${GLSL_TONE_TAIL}
 const mat3 AGX_IN = mat3(0.842479062253094, 0.0423282422610123, 0.0423756549057051, 0.0784335999999992, 0.878468636469772, 0.0784336, 0.0792237451477643, 0.0791661274605434, 0.879142973793104);
 const mat3 AGX_OUT = mat3(1.19687900512017, -0.0528968517574562, -0.0529716355144438, -0.0980208811401368, 1.15190312990417, -0.0980434501171241, -0.0990297440797205, -0.0989611768448433, 1.15107367264116);
@@ -942,7 +1146,12 @@ vec3 treeFinish(vec3 col, vec3 Tsun, vec3 P){
   const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
   float rod = (1.0 - smoothstep(0.15, 0.6, dot(Tsun, LUMA)))*uTwilight*uMesopic;
   col = mix(col, dot(col, LUMA)*ROD_BLUE, rod*0.6);
-  col = mix(col, uHazeColor, smoothstep(1.15*uHalfExtent, 3.0*uHalfExtent, length(P.xy - uViewCenterF)));
+  float fog = smoothstep(1.15*uHalfExtent, 3.0*uHalfExtent, length(P.xy - uViewCenterF));
+#ifdef VIEW_SKY
+  if(fog > 0.0) col = mix(col, skyRadiance(normalize(P - uEye)), fog);   // view_sky: into the sky's horizon along the ray from the eye, as the floor beside it
+#else
+  col = mix(col, uHazeColor, fog);
+#endif
   if(uVignette > 0.0){
     vec2 q = abs(gl_FragCoord.xy/uTarget*2.0 - 1.0);
     float d = pow(pow(q.x, uVignetteShape) + pow(q.y, uVignetteShape), 1.0/uVignetteShape);
@@ -989,22 +1198,34 @@ void main(){
   vec3 s = uSunDir, v = normalize(uEye - vWorld);
   float ns = dot(n, s), nv = dot(n, v);
   bool sunTop = ns > 0.0, seenTop = nv > 0.0, same = sunTop == seenTop;
-  vec3 Tsun; float Tsky; treeLight(vWorld, Tsun, Tsky);
+  vec3 Tsun, dif, om; float Tsky; treeLightSky(vWorld, Tsun, Tsky, dif, om);
   vec3 sunE = uLeafSun*mix(1.0, abs(ns), uSunCosine)*Tsun, skyE = uAmbient*Tsky;
   float up = 0.5 + 0.5*n.z, down = 0.5 - 0.5*n.z, skySeen = seenTop ? up : down, skyOther = seenTop ? down : up;
   float Fi = fresnel(abs(ns), 1.56), Fv = fresnel(abs(nv), 1.56);
-  vec3 col;
+  vec3 col, Rc = vec3(0.0), Tc = vec3(0.0);
   for(int c = 0; c < 3; c++){
     vec3 m = texture(uSlab, vec2((sqrt(clamp(T[c], 0.0, 1.0))*(${SLAB_N}.0 - 1.0) + 0.5)/${SLAB_N}.0, (float(c) + 0.5)/3.0)).rgb;   // the table is spaced in √T, a sample at each texel's centre
     float Rseen = seenTop ? m.r : m.g;
     col[c] = (1.0 - Fv)*((same ? (1.0 - Fi)*sunE[c]*Rseen : (1.0 - Fi)*sunE[c]*m.b) + (1.0 - uF0)*(skyE[c]*skySeen*Rseen + skyE[c]*skyOther*m.b));
+#ifdef CROWN_FIELD
+    Rc[c] = Rseen; Tc[c] = m.b;
+#endif
   }
+#ifdef CROWN_FIELD
+  {   // the crown's own light: an isotropic field whose bounces this leaf keeps by its albedo (leafAlbedo, as every leaf it meets), seen half on each face
+    vec3 w = leafAlbedo(T*exp(-uClearK*float(uNeutral)));
+    col += (1.0 - Fv)*(1.0 - uF0)*0.5*uLeafSun*crownField(vWorld, w)*(Rc + Tc);
+  }
+#endif
   frag = vec4(treeFinish(col, Tsun, vWorld), a);
   cover = vec4(1.0);
 }`;
 
 // THE WOOD, SEEN: the faithful skeleton's own swayed segments (the cast's, this frame), each a cylinder turned to face the eye, its normal rebuilt across it.
 // Lit like a leaf's face by the sun through the leaves above and the sky it sees; its colour is the bark's (bark_r/g/b).
+// THE ROOT FLARE (trunk_base), as both wood stages read it: the foot widens by FLARE_F of the trunk's radius, falling off over FLARE_H radii up: slight and
+// long, as an elm's in the open (at 0.7 it stood on a wide straight-sided base, an elephant's foot; over 0.6 radii it was a lip).
+const GLSL_FLARE = `const float FLARE_F = 0.18, FLARE_H = 1.5;`;
 const VS_TREE_WOOD = `#version 300 es
 precision highp float;
 layout(location=0) in vec2 aCorner;   // x along a→b, y across
@@ -1013,42 +1234,173 @@ layout(location=2) in vec4 iSegH;     // heights a, b; radii a, b
 layout(location=3) in float iWoodFade;
 ${GLSL_TREE_CAMERA}
 uniform vec3 uEyeW;
+uniform float uWoodPx;               // thin_twigs: the height a pixel spans per metre from the eye (2·tan(fov/2)/rows); 0 = the wood at its own width, as it was
+uniform int uFootCount;              // trunk_base: the trunks' feet (plan point, radius); 0 = none, the wood as it was
+uniform vec3 uFoot[16];
+${GLSL_FLARE}
 out vec3 vWorld;
 out vec3 vAcrossDir;
 out vec3 vToEye;
 out float vAcross;
+out float vWoodCov;
+out float vWoodRad;
+out float vAlong;                    // the distance along the axis from a (m), the card's run-on past either end included
+flat out float vLen;
+out float vFlareZ;                   // trunk_base: the height up a foot capsule's axis (−1 on every other capsule)
+flat out vec4 vFlare;                // trunk_base: a foot capsule's own radii at its ends, the trunk's radius r0 and its length; the card's half-width is the flare's
+flat out vec3 vWoodAx;               // bark_texture: the capsule's axis, which the bark's ridges run along
 flat out float vWoodFade;
+flat out uint vWoodId;
 void main(){
   vec3 A = vec3(iSeg.xy, iSegH.x), B = vec3(iSeg.zw, iSegH.y);
+  vWoodId = uint(gl_InstanceID);
   float t = aCorner.x*0.5 + 0.5, rad = mix(iSegH.z, iSegH.w, t);
+  vFlareZ = -1.0; vFlare = vec4(0.0);
+#ifdef WOOD_FOOT
+  // VS_TREE_WOOD_FOOT only: compiled into the program a tree without feet draws with, this loop moved its arithmetic and a pixel of its wood, though it
+  // never ran
+  for(int i = 0; i < 16; i++){ if(i >= uFootCount) break;   // a foot capsule: its base on a trunk's foot. Its card is the flare's full width all along, cut to the profile in the fragment
+    if(A.z < 0.05 && distance(A.xy, uFoot[i].xy) < 0.5*uFoot[i].z){ float L = distance(A, B);
+      vFlare = vec4(iSegH.z, iSegH.w, uFoot[i].z, L); rad = iSegH.z + FLARE_F*uFoot[i].z; vFlareZ = t*L + aCorner.x*rad; } }
+#endif
+  // A twig thinner than a pixel is drawn a pixel wide and as much of it as it covers (thin_twigs): drawn at its own width it would fall between the samples
+  // and break into dashes, and drawn wider at full strength it would darken the crown by its whole pixel.
+  vWoodCov = 1.0;
+  if(uWoodPx > 0.0){ float hp = 0.5*uWoodPx*length(uEyeW - mix(A, B, t)); if(rad < hp){ vWoodCov = rad/hp; rad = hp; } }
   vec3 axis = B - A; float len = max(length(axis), 1e-5); vec3 ax = axis/len;
+  vAlong = t*len + aCorner.x*rad; vLen = len;
   vec3 C = mix(A, B, t) + ax*aCorner.x*rad;                          // each end runs on by its radius, so joints close
   vec3 toEye = normalize(uEyeW - C), across = cross(ax, toEye);
   across = length(across) < 1e-5 ? vec3(1.0, 0.0, 0.0) : normalize(across);
   vec3 P = C + across*aCorner.y*rad;
+  vWoodRad = rad; vWoodAx = ax;
   vWorld = P; vAcrossDir = across; vToEye = normalize(cross(across, ax)); vAcross = aCorner.y; vWoodFade = iWoodFade;
   if(dot(vToEye, toEye) < 0.0) vToEye = -vToEye;
   gl_Position = treeClip(P);
 }`;
+// trunk_base with feet to flare
+const VS_TREE_WOOD_FOOT = `#version 300 es
+#define WOOD_FOOT
+${afterVersion(VS_TREE_WOOD)}`;
 const FS_TREE_WOOD = `#version 300 es
 precision highp float;
 in vec3 vWorld;
 in vec3 vAcrossDir;
 in vec3 vToEye;
 in float vAcross;
+in float vWoodCov;
+in float vWoodRad;
+in float vAlong;
+flat in float vLen;
+in float vFlareZ;
+flat in vec4 vFlare;
+flat in vec3 vWoodAx;
 flat in float vWoodFade;
+flat in uint vWoodId;
 uniform vec3 uBark;
+uniform int uGroundClip;   // trunk_base: 1 = no wood below the ground; 0 = the capsule whole, its foot run on below the ground and drawn over the floor, as it was
+uniform vec3 uEyeW;
+uniform int uRoundEnds;   // trunk_split: 1 = a capsule's ends are round; 0 = the card's run-on past each end is square, as it was
+${GLSL_FLARE}
+uniform float uBarkTex;   // bark_texture: how deep the bark's furrows are, 0..1; 0 = smooth bark of one colour, as it was
+// THE BARK (bark_texture): an elm's, an oak's, an ash's old bark is ridges running up the stem that part and meet again round long furrows. Laid on the round
+// in its own coordinates: round it by angle, BARK_RIDGES ridges whatever the branch's width (a thin limb's bark is as finely cut, for its size, as
+// the trunk's), so the pattern closes on itself; along it by the distance up the axis, a ridge BARK_LONG times as long as it is wide. Height 1 is a
+// ridge's crest, 0 a furrow's floor. The furrow is darker (it sees less of the sky and the sun) and the crest's flanks turn the round's normal, so a low
+// sun picks the ridges out. Under a pixel the ridges average out to the bark's own colour, and the pattern fades out before it can alias.
+const float BARK_RIDGES = 24.0, BARK_LONG = 8.0, BARK_PLATES = 8.0;
+float barkHash(vec2 p){ p = fract(p*vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y)*p.x); }
+float barkNoise(vec2 p, float period){   // value noise, periodic in x
+  vec2 i = floor(p), f = fract(p), w = f*f*(3.0 - 2.0*f);
+  float i0 = mod(i.x, period), i1 = mod(i.x + 1.0, period);
+  return mix(mix(barkHash(vec2(i0, i.y)), barkHash(vec2(i1, i.y)), w.x), mix(barkHash(vec2(i0, i.y + 1.0)), barkHash(vec2(i1, i.y + 1.0)), w.x), w.y);
+}
+float barkHeight(vec2 p){   // p: (ridges round, ridge lengths up)
+  float x = p.x + 1.5*(barkNoise(vec2(p.x*0.5, p.y*1.3) + 7.1, BARK_RIDGES*0.5) - 0.5);   // the ridges wander and interlace
+  float r = 1.0 - abs(2.0*barkNoise(vec2(x, p.y), BARK_RIDGES) - 1.0);
+  return 0.7*r + 0.3*(1.0 - abs(2.0*barkNoise(vec2(x*2.0 + 3.0, p.y*2.0 + 3.7), BARK_RIDGES*2.0) - 1.0));
+}
 ${GLSL_TREE_LIGHT}
 ${GLSL_TREE_FINISH}
 layout(location=0) out vec4 frag;
 layout(location=1) out vec4 cover;
 void main(){
-  float x = clamp(vAcross, -1.0, 1.0);
+  // UNDER ONE SAMPLE (thin_twigs): the target has four samples a pixel and alpha to coverage gives each fragment a whole number of them, so a twig covering
+  // less than an eighth of its pixel would vanish and a crown's haze of them with it. Such a fragment is kept at one sample's weight with the chance its
+  // coverage asks (4·cov), on a hash of the pixel and the twig: right on average over the haze, and still from frame to frame while the twig is.
+  // THE GROUND (trunk_base): the capsule is a card through its axis facing the eye, so its foot ended in a straight edge and ran on a radius below the
+  // ground over the floor. The bark this fragment stands for lies in front of the card by the round's depth there (r·√(1 − x²)), toward the eye; below
+  // the ground it is not seen. So a trunk meets the ground along the curve a cylinder does, lowest in front.
+  // THE ROOT FLARE (trunk_base): a foot capsule's card is as wide as the flare at the ground; what lies outside the flared profile is dropped and the
+  // rest read across the profile's own width, so the bark rounds over the flare as over the trunk. The profile is the capsule's own taper plus
+  // FLARE_F·r0·(exp(−z/h) − exp(−L/h)), h = FLARE_H·r0: smooth, and the trunk's own width again at the capsule's top, where the next capsule takes over.
+  float across = vAcross, rad = vWoodRad;
+  if(vFlareZ > -0.5){ float z = clamp(vFlareZ, 0.0, vFlare.w), h = FLARE_H*vFlare.z;
+    float r = mix(vFlare.x, vFlare.y, z/max(vFlare.w, 1e-4)) + FLARE_F*vFlare.z*max(exp(-z/h) - exp(-vFlare.w/h), 0.0);
+    across = vAcross*vWoodRad/r; rad = r;
+    if(abs(across) > 1.0) discard; }
+  // ROUND ENDS (trunk_split): a card runs on past each end by its radius so the next capsule's joint closes, and where a stem goes on in one of
+  // its own width that run-on is hidden. At a fork the trunk goes on in thinner stems, and its square run-on stood out round them, a sleeve; cut
+  // to the half sphere a capsule ends in, the trunk closes over the fork in a dome the stems leave from.
+  if(uRoundEnds != 0){ float e = max(-vAlong, vAlong - vLen), xa = clamp(across, -1.0, 1.0);
+    if(e > 0.0 && e*e > rad*rad*(1.0 - xa*xa)) discard; }
+  if(uGroundClip != 0){ float xa = clamp(across, -1.0, 1.0);
+    if((vWorld + normalize(uEyeW - vWorld)*rad*sqrt(1.0 - xa*xa)).z < 0.0) discard; }
+  float cov = vWoodCov;
+  if(cov < 0.25){
+    uvec3 q = uvec3(uvec2(gl_FragCoord.xy), vWoodId)*uvec3(1597334673u, 3812015801u, 2798796415u);
+    uint h = (q.x ^ q.y ^ q.z)*1597334673u;
+    if(float(h >> 8)*(1.0/16777216.0) >= 4.0*cov) discard;
+    cov = 0.25;
+  }
+  float x = clamp(across, -1.0, 1.0);
   vec3 n = normalize(vAcrossDir*x + vToEye*sqrt(1.0 - x*x));
-  vec3 Tsun; float Tsky; treeLight(vWorld, Tsun, Tsky);
-  vec3 col = (uLeafSun*mix(1.0, max(dot(n, uSunDir), 0.0), uSunCosine)*Tsun*(dot(n, uSunDir) > 0.0 ? 1.0 : 0.0) + uAmbient*Tsky*(0.5 + 0.5*n.z))*uBark;
-  frag = vec4(treeFinish(col, Tsun, vWorld), clamp(vWoodFade, 0.0, 1.0));
+  vec3 bark = uBark;
+  if(uBarkTex > 0.0){
+    // The pattern must run on across a joint, where one capsule hands the stem to the next at a slightly different axis. So the angle round is taken
+    // from a reference that does not swing with a small tilt (x for a stem nearer upright than 60°, up for the rest), the distance up as the height
+    // over the axis's own rise for those stems (two near-upright capsules nearly agree on it at their joint, differing by the height times the change
+    // in 1/cos of their tilt, where dot(world, axis) differed by the tree's whole distance from the origin times the tilt; a stem leaning more than 60°
+    // still breaks at a bent joint), and the scale by the stem's taper without the flare's swell.
+    bool upright = abs(vWoodAx.z) > 0.5;
+    vec3 e1 = normalize(cross(upright ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0), vWoodAx)), e2 = cross(vWoodAx, e1);
+    float th = atan(dot(n, e2), dot(n, e1)), up = upright ? vWorld.z/vWoodAx.z : dot(vWorld, vWoodAx);
+    float rt = vFlareZ > -0.5 ? mix(vFlare.x, vFlare.y, clamp(vFlareZ/max(vFlare.w, 1e-4), 0.0, 1.0)) : vWoodRad;
+    vec2 p = vec2(th/6.2831853*BARK_RIDGES, up/(BARK_LONG*6.2831853*max(rt, 1e-3)/BARK_RIDGES));
+    // the plates: a few broad dark streaks round the stem, each many ridges long, which still read where the ridges are under a pixel
+    vec2 q = vec2(p.x*BARK_PLATES/BARK_RIDGES, p.y*0.25);
+    float fq = uBarkTex*(1.0 - smoothstep(0.3, 0.7, max(fwidth(q.x), fwidth(q.y))));
+    if(fq > 0.0) bark *= mix(1.0, mix(0.5, 1.15, barkNoise(q + vec2(0.0, 0.5*barkNoise(q*vec2(1.0, 0.5) + 11.3, BARK_PLATES)), BARK_PLATES)), fq);
+    float fade = uBarkTex*(1.0 - smoothstep(0.3, 0.7, max(fwidth(p.x), fwidth(p.y))));
+    if(fade > 0.0){
+      float h = barkHeight(p), dh = barkHeight(p + vec2(0.05, 0.0)) - h;
+      bark *= mix(1.0, mix(0.22, 1.1, smoothstep(0.05, 0.55, h)), fade);   // the furrows narrow and dark between broad crests, as the eye reads old bark
+      n = normalize(n - cross(vWoodAx, n)*clamp(dh/0.05, -3.0, 3.0)*0.12*fade);   // a crest's flank turns the round's normal toward its side
+    }
+  }
+  vec3 Tsun, dif, om; float Tsky; treeLightSky(vWorld, Tsun, Tsky, dif, om);
+  vec3 col = (uLeafSun*mix(1.0, max(dot(n, uSunDir), 0.0), uSunCosine)*Tsun*(dot(n, uSunDir) > 0.0 ? 1.0 : 0.0) + uAmbient*Tsky*(0.5 + 0.5*n.z))*bark;
+#ifdef CROWN_FIELD
+  col += uLeafSun*0.5*crownField(vWorld, om)*bark;   // the crown's light on the wood inside it, by the albedo of the leaves above
+#endif
+  frag = vec4(treeFinish(col, Tsun, vWorld), clamp(vWoodFade, 0.0, 1.0)*cov);
   cover = vec4(1.0);
+}`;
+// THE CROWN'S GRID (crown_light): the field's sources gathered at one cell's centre, a slice of the grid at a time (komorebi-tree-view.js), each pixel a
+// cell. What it stores is all the field needs that does not depend on the leaf it lights: the beam and the sky about the point, S + sky·K, and the
+// scattered light's luminance, Dy (crownGather); the leaf's albedo is the reader's.
+const FS_CROWN_GRID = `#version 300 es
+precision highp float;
+${GLSL_TREE_LIGHT}
+uniform vec3  uCrownOrigin;
+uniform vec3  uCrownSize;
+uniform vec3  uCrownN;               // cells per axis
+uniform float uCrownSlice;           // this slice's index up the box
+layout(location=0) out vec4 frag;
+void main(){
+  vec3 P = uCrownOrigin + vec3(gl_FragCoord.xy, uCrownSlice + 0.5)/uCrownN*uCrownSize;
+  vec3 S; float Dy, K; crownGather(P, S, Dy, K);
+  frag = vec4(S + crownSky()*K, Dy);
 }`;
 // The tree's resolved target over the frame: its colour is already the Look's and already weighed by the samples it covers, and the second target says how
 // many it covers; so the frame keeps (1 − cover) of itself.
@@ -1542,4 +1894,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, FS_TREE_WOOD, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, VS_LEAF_CARRY, VS_LEAF_CARRY_PATCH, FS_LEAF_CARRY, LEAF_CARRY_OUT, LEAF_CARRY_PATCH_OUT, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_GROUND_ALBEDO, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, VS_TREE_WOOD_FOOT, FS_TREE_WOOD, FS_CROWN_GRID, defineIn, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, VS_LEAF_CARRY, VS_LEAF_CARRY_PATCH, FS_LEAF_CARRY, LEAF_CARRY_OUT, LEAF_CARRY_PATCH_OUT, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FAITH_SEG_FINE, FS_FAITH_SEG_FINE, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_SKY_SEEN, GLSL_GROUND_ALBEDO, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };

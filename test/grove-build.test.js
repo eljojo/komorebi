@@ -49,6 +49,7 @@ const CASES = [
   ["the same, keeping its season record", { ...PRESETS.montebello, ...small }, true, { keepSeason: true }],
   ["a maple outline with variety", { ...PRESETS["afternoon 7"], ...small, leaf_shape: "maple", leaf_aspect: 1, leaf_variety: 0.6 }, false, {}],
   ["the sky view, its fine wood binned by layer", { ...PRESETS["canopy 1"], ...small }, false, {}],
+  ["a grown tree forked low, standing in the ground on its feet", { ...PRESETS["afternoon 7"], ...small, growth_years: 6, trunk_split: 3, trunk_base: true, thin_twigs: true, twig_haze: 1 }, true, {}],
   ["a summer grove grown to a density capacity", { ...PRESETS["afternoon 7"], ...small, phenology: 0.5, leaf_drop: 0, leaf_variety: 0, foliage_density: 0.8 }, false, { densityCapacity: 1.6 }],
 ];
 
@@ -67,12 +68,32 @@ for (const [name, look, faithful, opts] of CASES) {
 }
 
 test("the upload reads the grove it was handed, not the live parameters: another look may be on them by then", () => {
-  for (const [name, look, faithful, opts] of CASES.slice(0, 5)) {   // (a density capacity re-seasons at once, on the parameters it was grown under)
+  for (const [name, look, faithful, opts] of CASES.filter((c) => !c[3].densityCapacity)) {   // (a density capacity re-seasons at once, on the parameters it was grown under)
     const A = rig({ ...DEFAULTS, ...look }, faithful), want = snapshot(A, A.G.buildGrove(null, opts));
     const B = rig({ ...DEFAULTS, ...look }, faithful), grown = B.G.growGrove(null, opts);
     Object.assign(B.params, { trunk_radius_m: 0.41, taper_delta: 1.3, layer_count: B.params.layer_count === 1 ? 3 : 1, sky_view: !B.params.sky_view, canopy_extent_m: 31, canopy_base_height_m: 7.5,
       canopy_thickness_m: 0.7, branch_children: 5, seed: 99, view_extent_m: 17, grove_reach_m: 9, standing_scene: !B.params.standing_scene, foliage_density: 2.5, phenology: 0.99 });
     expect(snapshot(B, attachGrove(B.hub, B.G.uploadGrove(grown))), name).toEqual(want);
+  }
+});
+
+test("the trunk's foot: one a tree, where its lowest trunk capsule starts, with the trunk's radius there; none while off, and the grove otherwise the same", () => {
+  for (const look of [{ tree_count: 3 }, { tree_count: 2.5, growth_years: 8, trunk_split: 3 }]) {
+    const grow = (over) => rig({ ...DEFAULTS, ...PRESETS["afternoon 7"], ...small, ...look, ...over }, true).G.growGrove(null);
+    const on = grow({ trunk_base: true }), off = grow({ trunk_base: false }), absent = grow({ trunk_base: undefined });
+    const grown = (G, trunks = G.faith.trunks) => JSON.stringify(plain({ ...G, key: undefined, faith: { ...G.faith, trunks } }));   // (the key names the params it was grown under)
+    expect(off.faith.trunks).toEqual([]);
+    expect(grown(absent)).toBe(grown(off));
+    expect(grown(on, []), "the wood and the leaves are not touched").toBe(grown(off));
+    const trees = [...new Set(on.faith.rest.filter((s) => s.level === 0).map((s) => s.tree))].sort();
+    expect(trees.length, "a tree each, the marginal one too").toBe(Math.ceil(look.tree_count));
+    expect(on.faith.trunks.length).toBe(3*trees.length);
+    for (let i = 0; i < trees.length; i++) {
+      const trunk = on.faith.rest.filter((s) => s.level === 0 && s.tree === trees[i]);
+      const foot = trunk.reduce((a, s) => (s.ha < a.ha ? s : a));
+      expect(on.faith.trunks.slice(3*i, 3*i + 3), `tree ${trees[i]}`).toEqual([foot.ax, foot.ay, foot.ra]);
+      expect(foot.ha, "on the ground").toBe(0);
+    }
   }
 });
 

@@ -13,12 +13,15 @@ The Look's place in the spine: the elliptical projection comes from transport, t
 The overhead and tilted looks see the floor through a **tilted perspective camera**: a pinhole that casts each pixel's ray onto the ground plane, then asks transport what landed at that ground point.
 
 - **Pitch** (`view_pitch_deg`) tilts the gaze from straight down. **At pitch 0 the camera reduces exactly to the original orthographic top-down map**, so tilt is opt-in per look. Tilting drops the near floor to the bottom of the frame, recedes the far floor, and dissolves it into haze toward the horizon.
-- **Zoom** (`view_extent_m`) is the on-axis ground span: the vertical span of floor the frame shows along its centre line, held fixed at any tilt. It frames and does nothing else: the grove is grown for its reach, not for the zoom ([`canopy.md`](canopy.md#the-grown-grove)).
+- **Look up** (`view_look_up_deg`, up to 70°) turns the gaze up past the tilt, as a person standing still lifts their eyes: the eye stays where zoom, tilt and lens put it, and only the direction it looks moves. The floor slides down out of the frame and, past the horizon, the frame holds what lies over it: the haze, or the sky ([`light.md`](light.md#the-sky-seen)). At 0 the gaze is the tilt's and the camera is the one it was.
+- **Zoom** (`view_extent_m`) is the on-axis ground span: the vertical span of floor the frame shows along its centre line, held fixed at any tilt. Looking up leaves it the span the tilt's own gaze would show, which is what places the eye. It frames and does nothing else: the grove is grown for its reach, not for the zoom ([`canopy.md`](canopy.md#the-grown-grove)).
 - **Lens** (`view_fov_deg`) is the vertical field of view, the strength of the perspective.
 - **Orbit** (`view_yaw_deg`) rotates the sampled floor about the frame's centre, a true orbit for a flat floor: the tilt axis stays put while the world turns under it. The rotation is applied to the ground point **before** transport's sun shift, so the shift stays in world space and the shadows remain physically cast as the gaze turns. 0 is no rotation.
 - **Pan** (`view_center_x`, `view_center_y`) slides the world point the screen centre looks at, added after the orbit. It walks the view across the floor: push the tree out of frame and watch only what it casts.
 
-**Law: the eye's height is derived, not a control.** The eye stands `H = view_extent·cos²pitch / (2·tan(fov/2))` above the floor, `H·tan(pitch)` back from the looked-at point along the gaze, turned by the orbit and moved by the pan. For a flat floor that height only rescales the view, which the zoom hold cancels exactly. Once the tree is seen ([below](#the-tree-seen-from-the-floor-camera)) it sets the perspective, and it is still not a control: zoom, pitch and lens decide it, so every framing is also a place to stand. `park 1`'s shipped framing stands the eye 2.7 m up; a wide lens tilted toward the horizon at a long zoom brings it to a person's 1.6 m, and a steep tilt at a narrow lens lifts it over the grove.
+**Law: the eye's height is derived, not a control.** The eye stands `H = view_extent·cos²pitch / (2·tan(fov/2))` above the floor, `H·tan(pitch)` back from the looked-at point along the tilt's gaze, turned by the orbit and moved by the pan. For a flat floor that height only rescales the view, which the zoom hold cancels exactly. Once the tree is seen ([below](#the-tree-seen-from-the-floor-camera)) it sets the perspective, and it is still not a control: zoom, pitch and lens decide it, so every framing is also a place to stand. `park 1`'s shipped framing stands the eye 2.7 m up; a wide lens tilted toward the horizon at a long zoom brings it to a person's 1.6 m, and a steep tilt at a narrow lens lifts it over the grove.
+
+**The reach.** The tilt goes to 80° from straight down, the look up 70° past it, and the zoom's slider to 60 m. From a person's eye, with the gaze lifted, that frames a whole tree as a photograph taken standing on the path does: the trunk at the bottom of the frame, the crown round, not stretched toward the top. `dows lake` and `glebe sunset` stand there, the eye 1.6 m up, an 80° tilt with the gaze lifted 21.5° more.
 
 Pitch, orbit, pan and zoom together let a person walk around the structure to make sense of it.
 
@@ -38,6 +41,18 @@ A leaf and a piece of bark are **receivers of the beam** ([`transport.md`](trans
 
 The overhead park has no tree to see: its canopy is endless and above the frame. The tree view is opened per look, and off it is the floor as it was. Between a look that sees its tree and one that does not, the tree fades and nothing else changes on its account: it is not a scene mode, since nothing the grove, the cast or the floor holds reads it ([`../contracts/transitions.md`](../contracts/transitions.md#gate-crossings-within-any-morph)).
 
+#### The wood, seen
+
+Each piece of the skeleton is drawn as a flat card through its axis, turned to face the eye, its normal rebuilt across it so it shades as a round stem; each card runs on past its ends by its radius so the joints close. Four things, each opened per look and each the old drawing when shut, make that card stand as wood.
+
+**Twigs finer than a pixel** (`thin_twigs`, Approximation). Drawn at its own width a twig falls between the samples and breaks into dashes; drawn a pixel wide at full strength it darkens the crown by its whole pixel. So a twig finer than a pixel is drawn a pixel wide and as strong as the share of the pixel it covers. A pixel holds four samples, and a twig covering less than a quarter of one would land on none of them: it is kept at one sample's weight with four times its coverage as the chance, by a hash of the pixel and the twig, right on average over a crown's haze of twigs and still from frame to frame while the twig is. The same knob grows the twigs at their own thin widths ([`canopy.md`](canopy.md)).
+
+**Where the trunk meets the ground** (`trunk_base`). The card's foot ended in a straight edge and ran on a radius below the ground, over the floor. Now nothing below the ground is drawn: the bark a point of the card stands for lies in front of the card by the round's depth there, toward the eye, and where that bark is below the ground it is not seen. So a trunk meets the ground along the curve a cylinder makes, lowest in front. **Authored:** its foot flares into its roots, slight and long, as an elm's in the open: at most 0.18 of the trunk's radius wider at the ground, falling off over 1.5 radii up and gone where the trunk's first piece of wood ends, so the trunk above takes over without a step. The bark rounds over the flare as over the trunk. A wider flare stood the trunk on an elephant's foot, a shorter one made a lip ([`../evidence/dead-ends.md#camera`](../evidence/dead-ends.md#camera)). The same knob darkens the ground round each trunk, by the share of the sky the trunk hides ([`fill.md`](fill.md)).
+
+**Round ends** (`trunk_split`, on a tree grown from buds whose trunk forks into two stems or more). Where a stem goes on in one of its own width, a card's run-on past its end is hidden in the next. At a fork the trunk goes on in thinner stems, and its square run-on stood out round them like a sleeve. With the ends cut to the half sphere a stem ends in, the trunk closes over the fork in a dome the stems leave from. The ends are round on every piece of wood of such a tree.
+
+**Bark** (`bark_texture`, Authored). Old bark, an elm's, an oak's, an ash's, is ridges running up the stem that part and meet again round long furrows. They are laid on the round in the stem's own terms: round it by angle, the same 24 ridges on every branch whatever its width, so a thin limb's bark is as finely cut for its size as the trunk's and the pattern closes on itself; up it by distance along the stem, each ridge eight times as long as it is wide. The furrows are darker, seeing less of the sky and the sun, and a crest's flanks turn the stem's normal, so a low sun picks the ridges out. Broad plates, eight round the stem and many ridges long, darken it in streaks that still read where the ridges are finer than a pixel. Each fades to the bark's own colour before it can alias, so far bark is smooth as the eye sees it. The pattern runs on across a joint: the angle round is taken from a direction a small bend does not swing, and for a stem nearer upright than 60° the distance up is its height over the stem's rise, so where a stem bends at a joint the pattern slips only by the joint's height times how much the bend shortens the rise, a small fraction of a ridge on a trunk. The flare's swell does not stretch it. `bark_texture` is the furrows' depth; its colour stays the measured bark's (`bark_r`, `bark_g`, `bark_b`).
+
 ### The far-field smear
 
 **Approximation.** Under a tilted gaze a pixel covers a growing patch of ground toward the horizon. Point-sampling that patch aliases the dapples and makes the far floor shimmer, which would be sampling noise impersonating the glisten. `far_smear` widens each pixel's soft-shadow throw by its own ground footprint, so far dapples melt into soft **down-sun** streaks and the shimmer is averaged out while the near floor stays crisp.
@@ -46,13 +61,15 @@ The footprint is exact for a flat floor. With `D = −ray.z` (the ray's downward
 
 > det(∂world/∂uv) = `view_extent² · cos⁴ pitch · aspect / D³`
 
-so the footprint's linear size goes as `1/D^1.5`. The smear grows with that footprint measured against the frame's nearest visible row (`D_ref = cos pitch + tan(fov/2) · sin pitch`), scaled by `far_smear`, and is added to every layer's throw height inside transport's own shift; so it is drawn along the sun's direction, as the shadows are. **At pitch 0 it is exactly zero**: a top-down view has a uniform footprint and no near-far gradient. The smear is a tilted-gaze phenomenon and strengthens with tilt.
+so the footprint's linear size goes as `1/D^1.5`; the pitch here is the tilt's, which places the eye, whatever the look up. The smear grows with that footprint measured against the frame's nearest visible row (`D_ref = cos γ + tan(fov/2) · sin γ`, γ the gaze: the tilt plus the look up; held above zero, since a gaze turned up can put the frame's bottom row at the horizon), scaled by `far_smear`, and is added to every layer's throw height inside transport's own shift; so it is drawn along the sun's direction, as the shadows are. **With the gaze straight down it is exactly zero**: a top-down view has a uniform footprint and no near-far gradient. The smear is a tilted-gaze phenomenon and strengthens with tilt.
 
 What it stands in for is integrating each pixel's whole ground footprint; it widens the throw along the sun's direction only, not across it.
 
 ### The distance haze
 
 **Authored.** The far floor dissolves into **atmospheric haze** before it reaches the horizon, and a ray at or above the horizon is all haze. The haze takes the **hue of the sky** at a steady brightness, so the far floor fades into the time of day's own atmosphere. It begins beyond the frame's own extent on the floor, so a top-down view never shows it. The sky view's frame hands off to the same haze below its horizon, and the transition between sky and floor meets on it: one behaviour and one colour for the bottom of every picture, rather than a second sky model.
+
+With `view_sky` on, the floor camera's haze is the sky itself: over the horizon each ray shows the clear sky's radiance in its own direction ([`light.md`](light.md#the-sky-seen)), and the far floor fades, by the same onset, into the sky's horizon in its own azimuth, warm toward a low sun and cool away from it. A look that turns its gaze up to a tree then stands it against a sky rather than a pale wall. A far tree fades the same way, into the sky's horizon along the ray from the eye to it: the tree and the floor it stands on go into one air.
 
 ## The same knobs on the other cameras
 
@@ -115,23 +132,27 @@ Turning the iris on or off in a transition never installs or removes the whole m
 
 ## Approximations and limits
 
-- **Approximation: the far-field smear** widens the throw along the sun's direction by a pixel's footprint; it stands in for integrating the footprint, and is absent at pitch 0 or `far_smear` 0.
-- **Authored: the distance haze**, a sky-hued fade with an authored onset, not a model of aerosol along the view ray.
+- **Approximation: the far-field smear** widens the throw along the sun's direction by a pixel's footprint; it stands in for integrating the footprint, and is absent with the gaze straight down or `far_smear` 0.
+- **Authored: the distance haze**, a sky-hued fade with an authored onset, not a model of aerosol along the view ray. Under `view_sky` it fades into the seen sky's horizon instead of a flat colour, by the same onset; the seen tree's haze stays the flat colour, so a far tree and the floor beside it fade toward different colours.
 - **Approximation: the mesopic shift before the diffusion**, the inverse of the physical order, negligible because the two barely overlap.
 - **Authored: the tone curve and contrast.** The curve is a display choice, not a model of the eye's adaptation. Exposure follows the cloud (`cloud_exposure`: × (1 + cloud), each look re-sat at its own cloud), as an eye opens up under a passing cloud; contrast does not, and whether it should grey toward flat in real overcast is **Open**.
 - **Authored: the tree's curve**, AgX on the seen tree alone, its gain matched to a sunlit leaf of one look ([above](#the-trees-curve)). Absent: `tree_tone` 0 or `tree_view` 0.
 - **Authored: the iris**, a presentation device, keystoned on a tilted floor by design.
 - **Law, held: no camera-height control and no focal plane.** The height is derived from the framing ([above](#the-floor-camera)); a focal plane has no effect the model could show ([`source.md`](source.md)).
 - **The tree view's light** (Approximation). A leaf's sun is read along the beam's central direction through the low-res layer set the sky fill bakes, each layer standing for a slab a layer thick and shading the leaf by as much of the slab as lies above it: none at the leaf's own height, so a leaf never shades itself, all of it a layer above, so the light changes continuously up the crown; its sky goes as e^(−½·leaf area above), the season's spherical leaf. A penumbra the size of one leaf is not resolved. Absent: `tree_view` 0.
+- **The wood as a card** (Approximation). Each stem is a flat card shaded as a round one, so its silhouette is a cylinder's only from the side; the ground clip, the flare and the round ends cut the card to the outline a solid would show, and nothing behind the card is hidden by the bark's depth in front of it. Absent: `tree_view` 0.
+- **Approximation: twigs under a pixel** are drawn by their coverage, and under a quarter of a pixel by a chance of being kept, which is right on average and grainy one twig at a time. Absent: `thin_twigs` off.
+- **Authored: the root flare**, its width and fall chosen by eye, carried by the trunk's first piece of wood alone, so a short first piece carries less of it. Absent: `trunk_base` off.
+- **Authored: the bark's pattern**, its ridges, plates and depth chosen by eye, not measured; its colour is the measured bark's. A stem leaning further than 60° from upright takes its distance up along its own axis from the world's origin, so at a bent joint its pattern breaks by its distance from that origin times the bend. Absent: `bark_texture` 0.
 
 ## Open
 
 - The tone curve, and whether and how exposure and contrast should couple to the source's width. Recorded in [`../exploration/open.md`](../exploration/open.md).
-- **The tree view's reach.** The floor camera tilts at most 80° from straight down and zooms to at most 40 m, so at a person's 1.6 m eye its frame reaches about 35° above the horizon: a small tree a few metres off stands in the frame whole, but its crown overhead is out of it. Whether the floor camera should look further up, or that view stays the sky view's, is the artist's ([`../exploration/open.md`](../exploration/open.md)).
 
 ## Related
 
-- [`light.md`](light.md): the atmosphere's colours, the cosine law that leaves exposure to the look, the Purkinje shift.
+- [`light.md`](light.md): the atmosphere's colours, the sky seen over the horizon, the cosine law that leaves exposure to the look, the Purkinje shift.
+- [`canopy.md`](canopy.md): the skeleton the seen wood is drawn from, its widths, its fork.
 - [`transport.md`](transport.md): the shift the far smear rides; the standing scene's bulk shift.
 - [`receivers.md`](receivers.md): the floor's albedo, the cloth and tent geometry, the lateral diffusion.
 - [`sky-view.md`](sky-view.md): the upward camera and its veiling glare.

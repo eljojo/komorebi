@@ -15,7 +15,7 @@
 //      control is λ and a well-lit branch draws more.
 //   4. GROWTH. A bud given v ≥ 1 grows a shoot of ⌊v⌋ internodes (at most maxShoot), each turned a little toward less shade
 //      and by its tropism (the trunk up; a side branch by the look's droop, its finer shoots' tips turning up). Each new node
-//      carries dormant side buds set by the phyllotaxis; the last carries the axis's terminal bud.
+//      carries dormant side buds set by the phyllotaxis (or two-ranked); the last carries the axis's terminal bud.
 // The leaves hang on the shoots grown in the last year, along each shoot's own wood (placeLeaf in komorebi-grove.js), not at
 // its tip; and the tree hangs as many as the grammar would for the same knobs (THE LEAF BUDGET, below), so a look keeps its
 // leaves when its trees are grown.
@@ -26,7 +26,7 @@
 // Pałubicki 2007), the extended Borchert–Honda resource split (Borchert & Honda 1984, Botanical Gazette 145), shedding by
 // light per internode (Takenaka 1994, Journal of Plant Research 107) and the turn toward light and by tropism (ξ, η).
 // ============================================================================
-import { GOLDEN, TAU } from '../komorebi-math.js';
+import { GOLDEN, TAU, mulberry32 } from '../komorebi-math.js';
 import { bendDown } from './komorebi-grammar.js';
 
 export const GROWTH = {
@@ -54,6 +54,11 @@ export const GROWTH = {
   height: 128,
 };
 
+const HAZE_MAX = 3, HAZE_RATIO = 0.5;   // twig_haze: the most orders it adds, and a side twig's length as a share of its stem's
+const ZIG = 0.35;   // sympodial: the turn at a node at sympodial 1, radians (an elm twig's zigzag is some 20°)
+const SPLIT_MAX = 6, SPLIT_LEAN = 0.45, SPLIT_HOLD = 0.6, SPLIT_UP = 0.3, SPLIT_AT = 10;   // trunk_split: the most stems; their lean off the vertical (radians, some 26°),
+                                                                           // how hard each is held to it, the share of the trunk's upward pull it keeps, and the fork's height
+                                                                           // (internodes: at the clear trunk's 6 the stems stood in a sleeve at the knee; at 18 the tree was a pole under a high, thin crown)
 const norm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]/l, v[1]/l, v[2]/l]; };
 // a direction turned off `d` by `theta`, at azimuth `phi` about it
 function turnOff(d, theta, phi){
@@ -68,17 +73,36 @@ function turnOff(d, theta, phi){
 // above the horizontal), phyllo (0 spiral, 1 whorled, 2 opposite), droop,
 // kids (the grammar's branch_children, which the wood's taper is expressed in), bearing (how many leaf clusters the tree hangs: the
 // grammar's twig count for the same knobs, so foliage_density and leaves_per_cluster mean the same leaves in both; absent = a cluster
-// a shoot) }
+// a shoot), leafYears (SPUR LEAVES below), twigHaze and hazeSeed (TWIG HAZE below), sympodial and twoRanked (SYMPODIAL GROWTH below) }
+// SYMPODIAL GROWTH (`sympodial`, spec.sympodial, 0..1): in an elm, a linden, a hornbeam, the tip of each year's shoot aborts and the highest side bud
+// carries the axis on, so an axis is a chain of one-year pieces, each leaving the last at an angle; and a twig kinks at every node, away from the bud
+// it bears. Here, on the free orders past the limbs held at their set angle (setOrders; the trunk and the scaffold limbs stay straight, as an old
+// elm's are, and kinked too they turned into their own shade and the crown starved): each internode after a shoot's first turns ZIG·sympodial off the last, away from
+// the bud at the node between them; the bud that carries the axis on is turned the same angle toward the last node's side bud, which it stands in
+// for; that side bud is kept, since one internode here stands for several of a real shoot's nodes, and taking it left a shoot of one internode a
+// single bud and starved the crown to a pole. The finest orders keep their turn upward (shootUp): cut with it, they hung under droop in strands below
+// the crown and through the ground. 0 (or unset) changes nothing.
+// TWO-RANKED BUDS (`two_ranked`, spec.twoRanked): one side bud a node, alternately on either side of the shoot in one plane, the plane the
+// shoot's horizontal across (turnOff's first axis), so the side shoots fan in flat sprays and the zigzag lies in them; in place of the phyllotaxis.
+// THE TRUNK'S SPLIT (`trunk_split`, spec.trunkSplit, 2..SPLIT_MAX stems): an elm, a zelkova, a honey locust in the open forks low into several upright
+// stems of one rank that fan into a vase. Here, the year the trunk's leader first reaches the fork's height (SPLIT_AT, the clear trunk's for such a tree: nothing branches off the trunk below its fork) it ends there, and in place
+// of its terminal bud it sets that many, each of the trunk's own order (so the resource splits evenly between them, as between co-dominant leaders),
+// leaning SPLIT_LEAN off the vertical at even azimuths about the trunk; a stem is held toward its lean (SPLIT_HOLD) with SPLIT_UP of the trunk's pull
+// upward, so it fans out and turns gently up. It draws from the tree's stream only at the split. 0 or 1 (or unset) is one trunk, the tree to the bit.
 // rng: this tree's own stream. Fills out.seg, out.tw and (when out.path is an array) out.path exactly as growSkeleton does, and
 // (when out.shoots is an array) each cluster's shoots, parallel to out.tw: every shoot's own wood, tip first, as a list of points;
 // in local units (one internode = 1), the tree standing at the origin. Returns { sector(m) } for the main limbs: see limbs().
 export function growBuds(spec, rng, out){
   const G = GROWTH, { years, lambda, angle, phyllo, droop } = spec, kids = Math.max(1.001, spec.kids);
+  const zig = spec.sympodial > 0 ? ZIG*Math.min(1, spec.sympodial) : 0, two = !!spec.twoRanked;
+  const stems = spec.trunkSplit >= 2 ? Math.min(SPLIT_MAX, Math.floor(spec.trunkSplit)) : 0;   // not `split`: the year's resource split is named that
+  const clear = stems ? SPLIT_AT : G.clear;
+  let splitDone = false;
   const M = [];   // metamers: { a, b, d, par, ord, yr, alive, kids, buds, shoot }
   const B = [];   // buds: { m (metamer at whose tip, −1 the ground), d, ord, phi, alive, q, v }
   const rootKids = [], rootBuds = [];
-  const div = phyllo === 2 ? Math.PI/2 : phyllo === 1 ? Math.PI/3 : GOLDEN;   // the turn from one node to the next
-  const perNode = phyllo === 2 ? 2 : phyllo === 1 ? 3 : 1;                       // side buds at a node
+  const div = two ? Math.PI : phyllo === 2 ? Math.PI/2 : phyllo === 1 ? Math.PI/3 : GOLDEN;   // the turn from one node to the next
+  const perNode = two ? 1 : phyllo === 2 ? 2 : phyllo === 1 ? 3 : 1;                       // side buds at a node
   const addBud = (m, d, ord, phi) => { const i = B.length; B.push({ m, d, ord, phi, alive: true, q: 0, v: 0 }); (m < 0 ? rootBuds : M[m].buds).push(i); return i; };
   addBud(-1, [0, 0, 1], 0, rng()*TAU);
 
@@ -120,8 +144,8 @@ export function growBuds(spec, rng, out){
     if(y >= 2) for(let m = 0; m < M.length; m++){ const n = M[m];
       if(n.alive && n.ord > 0 && (n.par < 0 || M[n.par].ord < n.ord) && n.yr <= y - 2 && Q[m]/N[m] < G.shed) kill(m); }
     // the clear trunk: side branches leaving the trunk below a fixed height are pruned, year by year
-    if(G.clear > 0){
-      for(let m = 0; m < M.length; m++){ const n = M[m]; if(!n.alive || n.ord !== 0 || n.b[2] >= G.clear) continue;
+    if(clear > 0){
+      for(let m = 0; m < M.length; m++){ const n = M[m]; if(!n.alive || n.ord !== 0 || n.b[2] >= clear) continue;
         for(const bi of n.buds) if(B[bi].ord > 0) B[bi].alive = false;
         for(const k of n.kids) if(M[k].ord > 0) kill(k); }
     }
@@ -148,8 +172,8 @@ export function growBuds(spec, rng, out){
       const b = B[bi]; if(!b.alive || b.v < 1) continue;
       const n = Math.max(1, Math.round(Math.min(G.maxShoot, Math.floor(b.v))*budget));
       b.alive = false;
-      let prev = b.m, d = b.d, phi = b.phi;
-      const metas = [];
+      let prev = b.m, d = b.d, phi = b.phi, splitHere = false;
+      const metas = [], lean = b.lean;   // lean: a stem of the trunk's split, the direction it is held to
       for(let s = 0; s < n; s++){
         const a = tipOf(prev);
         // toward less shade: the grid's gradient at the shoot's tip; the trunk also takes the sky's pull upward, a side
@@ -157,22 +181,30 @@ export function growBuds(spec, rng, out){
         const ci = Math.round(a[0]), cj = Math.round(a[1]), cz = Math.round(a[2]);
         const gx = shadeAt(ci + 1, cj, cz) - shadeAt(ci - 1, cj, cz), gy = shadeAt(ci, cj + 1, cz) - shadeAt(ci, cj - 1, cz), gz = shadeAt(ci, cj, cz + 1) - shadeAt(ci, cj, cz - 1);
         const opt = b.ord === 0 ? norm([-gx, -gy, -gz + 0.5]) : Math.hypot(gx, gy, gz) > 1e-6 ? norm([-gx, -gy, -gz]) : [0, 0, 0];
-        const trop = b.ord === 0 ? G.trunkUp : -droop*G.droopPull + (b.ord > G.setOrders ? G.shootUp : 0);
+        const trop = b.ord === 0 ? (lean ? G.trunkUp*SPLIT_UP : G.trunkUp) : -droop*G.droopPull + (b.ord > G.setOrders ? G.shootUp : 0);
+        if(zig > 0 && b.ord > G.setOrders && s > 0) d = turnOff(d, zig, phi + Math.PI);   // the kink at the node behind, away from its bud
         // a side branch's set angle (the gravitropic setpoint the axis above it holds it to): pulled toward the direction
         // at spec.pitch above the horizontal along its own heading, so it cannot curl up into a second trunk; the finer
         // orders are free, and fill the crown's volume
         let hx = 0, hy = 0, hz = 0;
         if(b.ord > 0 && b.ord <= G.setOrders && G.setpoint > 0){ const h = Math.hypot(d[0], d[1]) || 1, cp = Math.cos(spec.pitch), sp = Math.sin(spec.pitch);
           hx = G.setpoint*(cp*d[0]/h - d[0]); hy = G.setpoint*(cp*d[1]/h - d[1]); hz = G.setpoint*(sp - d[2]); }
+        else if(lean){ hx = SPLIT_HOLD*(lean[0] - d[0]); hy = SPLIT_HOLD*(lean[1] - d[1]); hz = SPLIT_HOLD*(lean[2] - d[2]); }
         d = norm([d[0] + G.xi*opt[0] + hx, d[1] + G.xi*opt[1] + hy, d[2] + G.xi*opt[2] + trop + hz]);
         const m = M.length;
         M.push({ a, b: [a[0] + d[0], a[1] + d[1], a[2] + d[2]], d, par: prev, ord: b.ord, yr: y, alive: true, kids: [], buds: [], shoot: shoots.length });
         (prev < 0 ? rootKids : M[prev].kids).push(m);
         phi += div + (rng() - 0.5)*0.3;
-        for(let k = 0; k < perNode; k++) addBud(m, turnOff(d, angle*(0.85 + 0.3*rng()), phi + k*TAU/perNode), b.ord + 1, rng()*TAU);
+        for(let k = 0; k < perNode; k++) addBud(m, turnOff(d, angle*(0.85 + 0.3*rng()), phi + k*TAU/perNode), b.ord + 1, two ? (rng() - 0.5)*0.3 : rng()*TAU);
         metas.push(m); prev = m;
+        if(stems && !splitDone && b.ord === 0 && !lean && M[m].b[2] >= clear){ splitDone = splitHere = true; break; }   // the leader ends here
       }
-      if(metas.length){ addBud(prev, d, b.ord, phi); shoots.push({ metas, yr: y, ord: b.ord }); }
+      if(splitHere){   // the stems, in its terminal bud's place
+        const az0 = rng()*TAU;
+        for(let k = 0; k < stems; k++){ const L = turnOff([0, 0, 1], SPLIT_LEAN*(0.85 + 0.3*rng()), az0 + (k + 0.4*(rng() - 0.5))*TAU/stems);
+          B[addBud(prev, L, 0, rng()*TAU)].lean = L; }
+        shoots.push({ metas, yr: y, ord: b.ord });
+      } else if(metas.length){ const t = addBud(prev, zig > 0 && b.ord > G.setOrders ? turnOff(d, zig, phi) : d, b.ord, phi); if(lean) B[t].lean = lean; shoots.push({ metas, yr: y, ord: b.ord }); }
     }
     // 5. WEIGHT. Every joint of a side branch bends a little more each year under the load it carries: the moment of
     // everything beyond it (its internodes, about their centre, at the horizontal distance of that centre from the joint)
@@ -207,9 +239,15 @@ export function growBuds(spec, rng, out){
   // out along all of them: every shoot leafs, and the tree hangs the grammar's leaves. Neighbours are runs of the shoots in the order
   // the wood is walked from the trunk out, each side branch whole before the next, cut into bundles of as near one size as can be.
   // A tree with fewer shoots than that bears one cluster a shoot. Nothing is drawn: the bundles are the tree's own structure.
-  const order = [], isNewest = new Set(newest), walk = [...rootKids].reverse();
+  // SPUR LEAVES (`leaf_years`, spec.leafYears): a tree that bears its leaves on short spur shoots along its older wood (ginkgo, apple, larch) leafs
+  // the shoots of its last N years, not only the last year's, so its leaves fill the crown along every branch instead of balling at the
+  // branch ends with empty crown between. The bundles and the leaf count are the same; each bundle's leaves are shared along more wood.
+  // 1 (or unset) is the last year's shoots alone, the set below exactly.
+  const leafYears = spec.leafYears > 1 ? Math.floor(spec.leafYears) : 1;
+  const bearsLeaves = leafYears > 1 ? new Set([...shoots.keys()].filter((i) => shoots[i].yr > last - leafYears && M[shoots[i].metas[0]].alive)) : null;
+  const order = [], isNewest = new Set(newest), isLeafy = bearsLeaves || isNewest, walk = [...rootKids].reverse();
   while(walk.length){ const m = walk.pop(), n = M[m]; if(!n.alive) continue;
-    if(isNewest.has(n.shoot) && shoots[n.shoot].metas[0] === m) order.push(n.shoot);   // a shoot, where the walk enters it
+    if(isLeafy.has(n.shoot) && shoots[n.shoot].metas[0] === m) order.push(n.shoot);   // a shoot, where the walk enters it
     for(let i = n.kids.length - 1; i >= 0; i--) walk.push(n.kids[i]); }
   const bundles = [], nb = spec.bearing > 0 ? Math.min(spec.bearing, order.length) : order.length;
   for(let c = 0; c < nb; c++) bundles.push(order.slice(Math.floor(c*order.length/nb), Math.floor((c + 1)*order.length/nb)));
@@ -232,6 +270,36 @@ export function growBuds(spec, rng, out){
     // taper^(level + f) with taper = kids^(−1/Δ), so level + f = log_kids(all twigs / twigs carried); `level` stays the axis order
     const f = Math.log(total/Math.max(1, T[m]))/Math.log(kids) - n.ord;
     out.seg.push({ a: n.a, b: n.b, level: n.ord, limb: -1, m, f0: f, f1: f, tw }); }
+  // TWIG HAZE (`twig_haze`, spec.twigHaze, on its own stream spec.hazeSeed): a bare crown's rim is a haze of more fine twigs than the bud model grows in
+  // the years and internodes it runs, so seen against the sky the rim reads emptier than the core, where a real crown blocks as much of the sky at its rim
+  // as within. Each of the last year's shoots carries `kids` side twigs a share of its own length, turned off it by the branch angle, and each of those
+  // the same again, twigHaze orders deep: each order a level and a pipe share finer, so the taper's exponent (level + share) climbs by two an order and a twig of
+  // order k is as fine as one carrying 1/kids^(2k) of a shoot: finer than the pipe model, which most of them meet only at the thinnest wood kept.
+  // Wood only, on the shoot's cluster (it sways with its leaves); the tree, its leaves and its stream are untouched. 0 (or unset) adds nothing.
+  const haze = spec.twigHaze > 0 ? Math.min(HAZE_MAX, Math.floor(spec.twigHaze)) : 0;
+  if(haze > 0){
+    const hr = mulberry32(spec.hazeSeed >>> 0), nKids = Math.max(1, Math.round(spec.kids));   // whole twigs: kids is held over 1 for the arithmetic, and at 1 the loop drew two
+    const sprout = (a, b, d, len, ord, f, k, tw, m) => {   // the side twigs of a stem a→b heading d, len long, of order ord and pipe share f
+      for(let c = 0; c < nKids; c++){
+        const u = 0.25 + 0.75*hr(), cl = len*HAZE_RATIO*(0.7 + 0.6*hr());
+        const p = [a[0] + (b[0] - a[0])*u, a[1] + (b[1] - a[1])*u, a[2] + (b[2] - a[2])*u];
+        const spread = angle*(0.8 + 0.4*hr()), az = two ? (c & 1)*Math.PI + (hr() - 0.5)*0.3 : TAU*hr();   // two-ranked: alternately either side, across the horizontal
+        // straight, under sympodial too: a haze twig is a small fraction of a pixel wide wherever a tree is framed whole, and its kink would move it by
+        // less than a pixel, at the price of a second capsule for every twig of the haze
+        const cd = turnOff(d, spread, az), q = [p[0] + cd[0]*cl, p[1] + cd[1]*cl, p[2] + cd[2]*cl];
+        out.seg.push({ a: p, b: q, level: ord + 1, limb: -1, m, f0: f + 1, f1: f + 1, tw, haze: true });   // haze: fine wood whatever its axis order, never a main limb
+        if(k + 1 < haze) sprout(p, q, cd, cl, ord + 1, f + 1, k + 1, tw, m);
+      }
+    };
+    for(const i of newest){
+      const s = shoots[i], ms = s.metas, tip = M[ms[ms.length - 1]], base = M[ms[0]];
+      const len = Math.hypot(tip.b[0] - base.a[0], tip.b[1] - base.a[1], tip.b[2] - base.a[2]);
+      if(!(len > 0)) continue;
+      const d = [(tip.b[0] - base.a[0])/len, (tip.b[1] - base.a[1])/len, (tip.b[2] - base.a[2])/len];
+      const f = Math.log(total/Math.max(1, T[ms[ms.length - 1]]))/Math.log(kids) - tip.ord;
+      sprout(base.a, tip.b, d, len, tip.ord, f, 0, twigOf.has(i) ? twigOf.get(i) : -1, ms[ms.length - 1]);
+    }
+  }
   for(const bundle of leafy){
     const s = shoots[bundle[0]];   // the bundle's first shoot stands for it: the cluster's tip, heading and joint
     const tip = M[s.metas[s.metas.length - 1]], base = M[s.metas[0]];

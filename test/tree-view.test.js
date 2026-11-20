@@ -20,7 +20,33 @@ const FRAMINGS = [
   { view_extent_m: 32.6, view_pitch_deg: 70, view_fov_deg: 100, view_yaw_deg: 0, view_center_x: 0, view_center_y: -2.6 },             // a 1.6 m eye
   { view_extent_m: 28.3, view_pitch_deg: 55, view_fov_deg: 30, view_yaw_deg: -40, view_center_x: 3, view_center_y: 1 },              // the scene from above
   { view_extent_m: 4, view_pitch_deg: 0, view_fov_deg: 50, view_yaw_deg: 0, view_center_x: 0, view_center_y: 0 },                    // straight down: the old map
+  { view_extent_m: 15.8, view_pitch_deg: 70, view_look_up_deg: 35, view_fov_deg: 60, view_yaw_deg: 150, view_center_x: -2, view_center_y: 3 },   // a 1.6 m eye looking up at a tree
+  { view_extent_m: 9, view_pitch_deg: 40, view_look_up_deg: 20, view_fov_deg: 45, view_yaw_deg: -20, view_center_x: 1, view_center_y: 0 },      // looking up from a steeper tilt
 ];
+
+test("looking up turns the gaze and not the eye: the eye is the tilt's, the frame's centre ray rises by the look up, and the horizon sits where the raised gaze puts it", () => {
+  for (const f of FRAMINGS.filter((f) => f.view_look_up_deg > 0)) {
+    const flat = { ...f, view_look_up_deg: 0 };
+    expect(cameraPose(f).eye).toEqual(cameraPose(flat).eye);
+    expect(cameraPose(f).elevation - cameraPose(flat).elevation).toBeCloseTo(f.view_look_up_deg * Math.PI / 180, 12);
+    const eye = cameraPose(f).eye, far = 1e4, gaze = (f.view_pitch_deg + f.view_look_up_deg - 90) * Math.PI / 180, yaw = f.view_yaw_deg * Math.PI / 180;
+    const P = [eye[0] + far * Math.cos(gaze) * Math.sin(yaw), eye[1] + far * Math.cos(gaze) * Math.cos(yaw), eye[2] + far * Math.sin(gaze)];
+    const [x, y] = treeProject(f, 1, P);
+    expect(x).toBeCloseTo(0, 9); expect(y).toBeCloseTo(0, 9);   // a point along the raised gaze is at the frame's centre
+    const horizonY = -Math.tan(gaze) / Math.tan(f.view_fov_deg * Math.PI / 360);   // a far point at eye height, in normalised device y
+    const [, hy] = treeProject(f, 1, [eye[0] + far * Math.sin(yaw), eye[1] + far * Math.cos(yaw), eye[2]]);
+    expect(hy).toBeCloseTo(horizonY, 3);
+  }
+});
+
+test("at a look up of 0 the camera is the tilt's, to the bit", () => {
+  for (const f of FRAMINGS.filter((f) => !f.view_look_up_deg)) {
+    const z = { ...f, view_look_up_deg: 0 };
+    for (const P of [[1, 2, 0], [-3, 5, 4.5], [0.2, -1, 9]]) expect(treeProject(z, 1.3, P)).toEqual(treeProject(f, 1.3, P));
+    expect(floorRay(z, 1.3, 0.2, -0.4)).toEqual(floorRay(f, 1.3, 0.2, -0.4));
+    expect(cameraPose(z)).toEqual(cameraPose(f));
+  }
+});
 
 test("a point on the floor projects onto the pixel whose floor ray lands on it, at any pitch, lens, zoom, orbit and pan", () => {
   for (const f of FRAMINGS) for (const aspect of [16 / 9, 1, 0.6]) {
@@ -113,10 +139,12 @@ test("the finite leaf passes the look's own transmittance, its underside reflect
   for (let c = 0; c < 3; c++) for (let i = 1; i < SLAB_N; i++) expect(t[(c * SLAB_N + i) * 4 + 2]).toBeGreaterThanOrEqual(t[(c * SLAB_N + i - 1) * 4 + 2]);
 });
 
-test("the tree's light reads every layer there can be, one constant index each", () => {
+test("the tree's light reads every layer there can be, one constant index each, in both its orders", () => {
   for (const src of [FS_TREE, FS_TREE_WOOD]) {
-    expect((src.match(/treeTap\(uLayer\[\d\]/g) || []).length).toBe(MAX_LAYERS);
-    for (let i = 0; i < MAX_LAYERS; i++) expect(src).toContain(`treeTap(uLayer[${i}], uLayerHeight[${i}]`);
+    // two orders: the crown's light gathers from the top layer down (the order the light meets them), the beam alone from the bottom up as it always did
+    const taps = [...src.matchAll(/treeTap\(uLayer\[(\d)\], uLayerHeight\[(\d)\]/g)].map((m) => { expect(m[1]).toBe(m[2]); return Number(m[1]); });
+    const all = Array.from({ length: MAX_LAYERS }, (_, i) => i);
+    expect(taps).toEqual([...all].reverse().concat(all));
   }
 });
 
@@ -187,4 +215,163 @@ test("the shader runs the curve's own constants, at tree_tone 0 it is the frame'
     expect(src).toContain(`uExposure*${TREE_GAIN}`);
   }
   expect(DEF.tree_tone).toBe(1); expect(GF.tree_tone).toBe(0); expect(PR.tree_tone.travels).toBe("morph");
+});
+
+// ---- THE WOOD, SEEN (spec/model/camera.md): twigs under a pixel drawn by their coverage (thin_twigs), the trunk's foot standing in the ground on its root
+// flare (trunk_base), round ends over a fork (trunk_split), and the bark's furrows (bark_texture). Each is shut by its own uniform, and the foot's arithmetic
+// is compiled only into the program a tree with feet draws with, so with every knob shut the wood is drawn as it was ----
+import { VS_TREE_WOOD, VS_TREE_WOOD_FOOT } from "../engine/transport/komorebi-shaders.js";
+
+const TREE_VIEW_SRC = readFileSync(new URL("../engine/transport/komorebi-tree-view.js", import.meta.url), "utf8");
+const glslNum = (src, name) => Number(new RegExp(`\\b${name} = ([0-9.]+)`).exec(src)?.[1]);
+// The text of the block a GLSL statement opens, from its head to its matching brace.
+const block = (src, head) => {
+  const at = src.indexOf(head);
+  if (at < 0) throw new Error(`no block ${head}`);
+  let depth = 0;
+  for (let i = at + head.length - 1; i < src.length; i++) { if (src[i] === "{") depth++; else if (src[i] === "}" && --depth === 0) return { from: at, to: i + 1, text: src.slice(at, i + 1) }; }
+  throw new Error(`unclosed ${head}`);
+};
+const mainOf = (src) => src.slice(src.indexOf("void main(){"));
+const glslFn = (args, expr) => new Function(...args, `const { max, min, exp, sqrt, abs } = Math; const mix = (a, b, t) => a + (b - a)*t; const clamp = (x, a, b) => Math.min(Math.max(x, a), b);\nreturn ${expr};`);
+
+test("the root flare's arithmetic is compiled only into the foot's program, and a tree without feet draws with the wood shader it always drew", () => {
+  expect(VS_TREE_WOOD).not.toContain("#define WOOD_FOOT");
+  expect(VS_TREE_WOOD_FOOT.startsWith("#version 300 es\n#define WOOD_FOOT\n")).toBe(true);
+  expect(VS_TREE_WOOD_FOOT.replace("#define WOOD_FOOT\n", "")).toBe(VS_TREE_WOOD);
+  // every statement that reads a foot sits inside #ifdef WOOD_FOOT; outside it every capsule is marked as no foot
+  let depth = 0, inFoot = 0, read = 0;
+  for (const line of VS_TREE_WOOD.split("\n")) {
+    const t = line.trim();
+    if (t.startsWith("#if")) { depth++; if (t === "#ifdef WOOD_FOOT") inFoot = depth; continue; }
+    if (t.startsWith("#endif")) { if (inFoot === depth) inFoot = 0; depth--; continue; }
+    if (/uFoot/.test(t) && !t.startsWith("uniform ")) { read++; expect(`${inFoot > 0}: ${t}`).toBe(`true: ${t}`); }
+  }
+  expect(read).toBeGreaterThan(0);
+  expect(VS_TREE_WOOD).toContain("vFlareZ = -1.0; vFlare = vec4(0.0);\n#ifdef WOOD_FOOT");
+  for (const line of ["woodFoot: [VS_TREE_WOOD_FOOT, FS_TREE_WOOD]", "const feet = params.trunk_base ? hub.faith?.trunks : null", "const wood = program(nFeet ? 'woodFoot' : 'wood', names), U = wood.u;"])
+    expect(`${TREE_VIEW_SRC.includes(line)}: ${line}`).toBe(`true: ${line}`);
+});
+
+test("each new branch of the wood's shaders is shut by its own uniform, each uniform is shut while its knob is, and every knob ships shut", () => {
+  const fs = mainOf(FS_TREE_WOOD), vs = mainOf(VS_TREE_WOOD);
+  const gates = ["if(vFlareZ > -0.5){", "if(uRoundEnds != 0){", "if(uGroundClip != 0){", "if(cov < 0.25){"].map((h) => block(fs, h));
+  const discards = [...fs.matchAll(/discard;/g)].map((m) => m.index);
+  expect(discards.length).toBe(4);
+  for (const at of discards) expect(gates.some((g) => at > g.from && at < g.to)).toBe(true);
+  // the bark touches the colour and the normal only inside its gate
+  const bark = block(fs, "if(uBarkTex > 0.0){");
+  for (const m of fs.matchAll(/bark \*=|n = normalize\(n - cross/g)) expect(m.index > bark.from && m.index < bark.to).toBe(true);
+  expect(bark.text).toContain("bark *= ");
+  // a twig is thinned to its coverage only under uWoodPx, so the one-sample keep (cov < 0.25) never runs at rest
+  expect(vs).toContain("vWoodCov = 1.0;\n  if(uWoodPx > 0.0){");
+  for (const m of vs.matchAll(/vWoodCov = rad\/hp/g)) { const g = block(vs, "if(uWoodPx > 0.0){"); expect(m.index > g.from && m.index < g.to).toBe(true); }
+  // the uploads: each gate's rest value while its knob is shut
+  for (const line of ["gl.uniform1f(U.woodPx, params.thin_twigs ? 2*Math.tan(0.5*clamp(params.view_fov_deg, 5, 140)*DEG)/h : 0);",
+    "gl.uniform1i(U.groundClip, params.trunk_base ? 1 : 0);", "gl.uniform1f(U.barkTex, clamp(params.bark_texture ?? 0, 0, 1));",
+    "gl.uniform1i(U.roundEnds, params.trunk_split >= 2 && params.growth_years > 0 ? 1 : 0);"]) expect(`${TREE_VIEW_SRC.includes(line)}: ${line}`).toBe(`true: ${line}`);
+  for (const [k, v] of [["thin_twigs", false], ["trunk_base", false], ["trunk_split", 0], ["bark_texture", 0], ["view_look_up_deg", 0], ["view_sky", false]]) expect(`${k}: ${DEF[k]}`).toBe(`${k}: ${v}`);
+});
+
+test("the root flare is slight and long, the trunk's own width again at the top of its first piece of wood, and never wider than the card it is cut from", () => {
+  const F = glslNum(FS_TREE_WOOD, "FLARE_F"), H = glslNum(FS_TREE_WOOD, "FLARE_H");
+  expect([F, H]).toEqual([0.18, 1.5]);
+  expect(glslNum(VS_TREE_WOOD_FOOT, "FLARE_F")).toBe(F); expect(glslNum(VS_TREE_WOOD_FOOT, "FLARE_H")).toBe(H);
+  // the fragment's profile, run as written: r(z) for a foot capsule of radii (x, y), trunk radius z, length w
+  const fs = mainOf(FS_TREE_WOOD);
+  const hExpr = /float z = clamp\(vFlareZ, 0\.0, vFlare\.w\), h = ([^;]+);/.exec(fs)[1], rExpr = /float r = ([^;]+);/.exec(fs)[1];
+  const profile = glslFn(["z", "vFlare", "FLARE_F", "FLARE_H"], `(() => { const h = ${hExpr}; return ${rExpr.replace(/1e-4/g, "1e-4")}; })()`);
+  // the card's half-width, from the vertex shader: the capsule's base radius plus the whole flare
+  expect(VS_TREE_WOOD_FOOT).toContain("vFlare = vec4(iSegH.z, iSegH.w, uFoot[i].z, L); rad = iSegH.z + FLARE_F*uFoot[i].z;");
+  for (const [x, y, r0, w] of [[0.3, 0.29, 0.3, 2], [0.3, 0.27, 0.3, 0.5], [0.2, 0.2, 0.2, 6], [0.45, 0.4, 0.45, 1.2]]) {
+    const v = { x, y, z: r0, w }, r = (z) => profile(z, v, F, H);
+    expect(r(w)).toBeCloseTo(y, 12);                                                             // the next piece of wood takes over without a step
+    expect(r(0)).toBeCloseTo(x + F * r0 * (1 - Math.exp(-w / (H * r0))), 12);
+    let last = Infinity;
+    for (let i = 0; i <= 200; i++) { const ri = r(w * i / 200); expect(ri).toBeLessThanOrEqual(x + F * r0 + 1e-12); expect(ri).toBeLessThanOrEqual(last + 1e-12); last = ri; }
+  }
+  // on a long first piece the foot is 0.18 of the radius wider at the ground and the swell falls to 1/e of that 1.5 radii up
+  const v = { x: 0.3, y: 0.3, z: 0.3, w: 20 };
+  expect(profile(0, v, F, H) - 0.3).toBeCloseTo(0.18 * 0.3, 6);
+  expect((profile(1.5 * 0.3, v, F, H) - 0.3) / (0.18 * 0.3)).toBeCloseTo(Math.exp(-1), 6);
+});
+
+test("round ends cut a card's run-on past each end to the half disc of the stem's radius, and nothing within its length", () => {
+  const fs = mainOf(FS_TREE_WOOD);
+  const eExpr = /float e = ([^,]+, [^,]+), xa = clamp\(across, -1\.0, 1\.0\);/.exec(fs)[1], cut = /if\((e > 0\.0 && e\*e > .*)\) discard;/.exec(fs)[1];
+  const discarded = glslFn(["vAlong", "vLen", "across", "rad"], `(() => { const e = ${eExpr}, xa = clamp(across, -1.0, 1.0); return ${cut}; })()`);
+  // the card runs on a radius past each end (the vertex shader's), so the half disc fits it exactly
+  expect(VS_TREE_WOOD).toContain("vAlong = t*len + aCorner.x*rad; vLen = len;");
+  expect(VS_TREE_WOOD).toContain("vec3 C = mix(A, B, t) + ax*aCorner.x*rad;");
+  for (const [len, rad] of [[1, 0.3], [0.4, 0.25], [3, 0.05]]) {
+    for (let i = 0; i <= 120; i++) for (let j = 0; j <= 40; j++) {
+      const along = -rad + (len + 2 * rad) * i / 120, across = -1 + 2 * j / 40;
+      const past = Math.max(-along, along - len), inside = past <= 0 || Math.hypot(past, across * rad) <= rad;
+      if (Math.abs(Math.hypot(Math.max(past, 0), across * rad) - rad) < 1e-9) continue;   // on the circle itself
+      expect(discarded(along, len, across, rad)).toBe(!inside);
+    }
+  }
+});
+
+test("a twig under a pixel is drawn a pixel wide at its coverage, and under a quarter kept at one sample's weight by a chance that keeps its average", () => {
+  const vs = mainOf(VS_TREE_WOOD), fs = mainOf(FS_TREE_WOOD);
+  // drawn width × strength = the twig's own width; uWoodPx is a pixel's height per metre from the eye, so hp is half a pixel there
+  expect(vs).toContain("float hp = 0.5*uWoodPx*length(uEyeW - mix(A, B, t)); if(rad < hp){ vWoodCov = rad/hp; rad = hp; }");
+  expect(fs).toContain("frag = vec4(treeFinish(col, Tsun, vWorld), clamp(vWoodFade, 0.0, 1.0)*cov);");
+  // the keep: chance k·cov at weight w, with k·w = 1 and w one of the four samples a pixel holds
+  const keep = /if\(float\(h >> 8\)\*\(1\.0\/16777216\.0\) >= ([0-9.]+)\*cov\) discard;\n\s*cov = ([0-9.]+);/.exec(fs);
+  expect(Number(keep[1]) * Number(keep[2])).toBe(1); expect(Number(keep[2])).toBe(0.25);
+  // the hash, run as the shader writes it: its multipliers read from the source
+  const m = /uvec3\(uvec2\(gl_FragCoord\.xy\), vWoodId\)\*uvec3\((\d+)u, (\d+)u, (\d+)u\);\n\s*uint h = \(q\.x \^ q\.y \^ q\.z\)\*(\d+)u;/.exec(fs).slice(1).map(Number);
+  const u = (x, y, id) => ((Math.imul(((Math.imul(x, m[0]) ^ Math.imul(y, m[1]) ^ Math.imul(id, m[2])) >>> 0), m[3]) >>> 0) >>> 8) / 16777216;
+  for (const cov of [0.02, 0.1, 0.2]) for (const id of [0, 7, 4093]) {
+    let kept = 0; const N = 160;
+    for (let x = 0; x < N; x++) for (let y = 0; y < N; y++) if (u(x + 300, y + 200, id) < Number(keep[1]) * cov) kept++;
+    expect(Math.abs(kept / (N * N) * Number(keep[2]) / cov - 1)).toBeLessThan(0.1);   // the haze's mean weight is its coverage
+  }
+});
+
+test("the trunk meets the ground along the curve a cylinder makes, lowest in front: the bark in front of the card, not the card, is clipped", () => {
+  const fs = mainOf(FS_TREE_WOOD);
+  expect(fs).toContain("if((vWorld + normalize(uEyeW - vWorld)*rad*sqrt(1.0 - xa*xa)).z < 0.0) discard; }");
+  // the lowest kept point of a vertical trunk's card, seen from an eye 1.6 m up and 8 m off, across its width
+  const eye = [0, -8, 1.6], rad = 0.3;
+  const lowest = (x) => {   // the card's height z where the bark in front of it meets the ground
+    const f = (z) => { const P = [x * rad, 0, z], d = [eye[0] - P[0], eye[1] - P[1], eye[2] - P[2]], n = Math.hypot(...d); return z + d[2] / n * rad * Math.sqrt(1 - x * x); };
+    let lo = -1, hi = 1; for (let i = 0; i < 80; i++) { const mid = (lo + hi) / 2; if (f(mid) < 0) lo = mid; else hi = mid; } return hi;
+  };
+  expect(lowest(0)).toBeLessThan(lowest(0.6)); expect(lowest(0.6)).toBeLessThan(lowest(0.95));
+  expect(lowest(1)).toBeCloseTo(0, 9);   // at the silhouette the bark is the card itself
+  expect(lowest(0)).toBeLessThan(-0.05);
+});
+
+test("the bark's pattern runs on across a bent joint of a near-upright stem, where reading its distance up along the axis broke it by ridges", () => {
+  const fs = mainOf(FS_TREE_WOOD);
+  expect(fs).toContain("bool upright = abs(vWoodAx.z) > 0.5;");
+  expect(fs).toContain("vec3 e1 = normalize(cross(upright ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0), vWoodAx)), e2 = cross(vWoodAx, e1);");
+  expect(fs).toContain("float th = atan(dot(n, e2), dot(n, e1)), up = upright ? vWorld.z/vWoodAx.z : dot(vWorld, vWoodAx);");
+  expect(fs).toContain("vec2 p = vec2(th/6.2831853*BARK_RIDGES, up/(BARK_LONG*6.2831853*max(rt, 1e-3)/BARK_RIDGES));");
+  const RIDGES = glslNum(FS_TREE_WOOD, "BARK_RIDGES"), LONG = glslNum(FS_TREE_WOOD, "BARK_LONG");
+  expect([RIDGES, LONG, glslNum(FS_TREE_WOOD, "BARK_PLATES")]).toEqual([24, 8, 8]);
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const norm = (a) => { const l = Math.hypot(...a); return a.map((v) => v / l); };
+  const coords = (P, n, ax, rt, alongAxis = false) => {   // the shader's (ridges round, ridge lengths up)
+    const upright = Math.abs(ax[2]) > 0.5, e1 = norm(cross(upright ? [1, 0, 0] : [0, 0, 1], ax)), e2 = cross(ax, e1);
+    const up = upright && !alongAxis ? P[2] / ax[2] : dot(P, ax);
+    return [Math.atan2(dot(n, e2), dot(n, e1)) / (2 * Math.PI) * RIDGES, up / (LONG * 2 * Math.PI * rt / RIDGES)];
+  };
+  // a trunk 10 m from the origin, 0.3 m round, bending 10° at a joint 3 m up, toward each of eight azimuths; the bark seen from each side
+  const rt = 0.3, J = [10, 0, 3], below = [0, 0, 1];
+  let broke = 0;
+  for (let a = 0; a < 8; a++) for (let s = 0; s < 6; s++) {
+    const az = a * Math.PI / 4, tilt = 10 * Math.PI / 180, above = [Math.sin(tilt) * Math.cos(az), Math.sin(tilt) * Math.sin(az), Math.cos(tilt)];
+    const side = [Math.cos(s * Math.PI / 3), Math.sin(s * Math.PI / 3), 0], n1 = side, n2 = norm(side.map((v, i) => v - dot(side, above) * above[i]));
+    const P = J.map((v, i) => v + rt * side[i]);
+    const c1 = coords(P, n1, below, rt), c2 = coords(P, n2, above, rt);
+    const dx = Math.abs(((c2[0] - c1[0]) % RIDGES + 1.5 * RIDGES) % RIDGES - RIDGES / 2);
+    expect(dx).toBeLessThan(0.05);                     // round the stem: a twentieth of a ridge
+    expect(Math.abs(c2[1] - c1[1])).toBeLessThan(0.1); // up it: a tenth of a ridge's length
+    broke = Math.max(broke, Math.abs(coords(P, n2, above, rt, true)[1] - coords(P, n1, below, rt, true)[1]));
+  }
+  expect(broke).toBeGreaterThan(2);   // along the axis from the origin, bent away from it: whole ridges
 });

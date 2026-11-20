@@ -15,6 +15,7 @@ import { SLAB, SLAB_N, ballisticK, bindLeafShape, slabTable } from '../leaf/komo
 import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES } from '../komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
+import { VS_FAITH_SEG_FINE, FS_FAITH_SEG_FINE } from './komorebi-shaders.js';
 
 // The tier this module owns besides the fill (which is its own factory below, so a bundle that cuts it cuts the factory): the leaf's diffuse share. The bundler substitutes
 // it by a literal (embed-build.mjs); false means no look in the bundle opens leaf_diffuse, and the beam's k is 0 wherever it is read.
@@ -159,38 +160,49 @@ export function makeBake(hub){
   // off it. `swx/swy` is the coherent whole-tree translation: the CAST wants it height-scaled and folded in here; the
   // SKY view's layer stamp wants the leaf bake's own per-layer factor instead and passes 0, taking it as a uniform. ----
   // swx, swy: tree 0's sway, which grows with height; T (the grove's treeDelta, or null) what each segment's own tree adds to it
-  function fillSwayedSegs(R, sa, swx, swy, T){
+  // The trig is taken once a frame per limb and per clump, not once per segment (a grown tree with twig haze has some hundred thousand segments on
+  // a few hundred clumps): the same functions of the same angles, so the numbers are the same.
+  let trigL = new Float64Array(0), trigC = new Float64Array(0);
+  function fillSwayedSegs(R, sa, swx, swy, T, slot = null){   // slot: where record k goes in the instance array (finePartition), else k
     const la = hub.hier ? hub.hier.limbAngle : null, ta = hub.hier ? hub.hier.twigAngle : null;
     const lat = hub.hier ? hub.hier.limbAttach : null;   // per-limb attach height: where the sway_pitch foreshorten is anchored (spec/model/motion.md)
     const lp = hub.hier ? hub.hier.limbPitch : null;     // per-limb pitch DOF: the angle the foreshorten is taken from (spec/model/motion.md)
     const hRef = Math.max(faith.hMax, 1e-3);
     const sp = Math.max(0, params.sway_pitch);   // 3-D lean (spec/model/motion.md): foreshorten the wood heights by the SAME factor the leaves use, so leaf-on-wood registration holds
-    for(let k=0;k<R.length;k++){
-      const s = R[k];
-      const th = (la && s.limb>=0 && s.limb<la.length) ? la[s.limb] : 0;
-      // MEDIUM band (spec/model/motion.md): terminal wood first swings about its OWN twig base by that clump's twig bend, before
-      // the limb rotation — the same pivot, angle and order VS_FAITH gives the leaves hanging on it, so they ride
-      // the twig instead of sliding off it. Interior wood (clump<0) is untouched. sway_pitch meets the band here
-      // and stays orthogonal: `fore` scales HEIGHTS off the limb bend, this is a plan-plane yaw. tf=0 → tt=0 → rest.
-      const tt = (ta && s.clump>=0) ? ta[s.clump] : 0;
-      let ax=s.ax, ay=s.ay, bx=s.bx, by=s.by;
-      if(tt!==0){
-        const ctw=Math.cos(tt), stw=Math.sin(tt), tbx=s.tbx, tby=s.tby;
-        const dax=ax-tbx, day=ay-tby, dbx=bx-tbx, dby=by-tby;
-        ax = tbx + ctw*dax - stw*day; ay = tby + stw*dax + ctw*day;
-        bx = tbx + ctw*dbx - stw*dby; by = tby + stw*dbx + ctw*dby;
-      }
-      const c=Math.cos(th), sn=Math.sin(th), px=s.px, py=s.py, o=k*9;
+    const nL = la ? la.length : 0, nC = ta ? ta.length : 0;
+    if(trigL.length < 4*nL) trigL = new Float64Array(4*nL);
+    if(trigC.length < 2*nC) trigC = new Float64Array(2*nC);
+    for(let i=0;i<nL;i++){
       // the SAME expression publishBend gives this limb's clumps, off the SAME pitch DOF — leaf-on-wood
-      // registration is only kept by the two staying literally in lockstep (spec/model/motion.md). The plan rotation above
-      // is the yaw DOF; this is the elevation one, and the two compose orthogonally.
-      const ph = (sp>0 && lp && s.limb>=0 && s.limb<lp.length) ? lp[s.limb] : 0;
-      const fore = sp>0 ? clamp(1 - sp*(1-Math.cos(ph)), 0.1, 1) : 1;
+      // registration is only kept by the two staying literally in lockstep (spec/model/motion.md). The plan rotation is
+      // the yaw DOF; this is the elevation one, and the two compose orthogonally.
       // ANCHOR the foreshorten at the limb's attach height (spec/model/motion.md): h' = at + (h−at)·fore, so at the join h' = at
       // exactly and the pitching limb cannot part from the trunk axis, which does not pitch. Same sign for a droop
       // tip hanging BELOW the attach — rotating a limb down about its joint moves every point toward the attach
       // plane. Trunk wood (limb<0) never pitches, and at=0 with fore=1 reproduces h' = h exactly (byte-identical).
-      const at = (sp>0 && lat && s.limb>=0 && s.limb<lat.length) ? lat[s.limb] : 0;
+      const ph = (sp>0 && lp && i<lp.length) ? lp[i] : 0;
+      trigL[4*i] = Math.cos(la[i]); trigL[4*i+1] = Math.sin(la[i]);
+      trigL[4*i+2] = sp>0 ? clamp(1 - sp*(1-Math.cos(ph)), 0.1, 1) : 1;
+      trigL[4*i+3] = (sp>0 && lat && i<lat.length) ? lat[i] : 0;
+    }
+    for(let j=0;j<nC;j++){ trigC[2*j] = Math.cos(ta[j]); trigC[2*j+1] = Math.sin(ta[j]); }
+    const fore0 = sp>0 ? clamp(1 - sp*(1-Math.cos(0)), 0.1, 1) : 1;   // wood on no limb: no pitch
+    for(let k=0;k<R.length;k++){
+      const s = R[k], li = s.limb, onLimb = li>=0 && li<nL;
+      // MEDIUM band (spec/model/motion.md): terminal wood first swings about its OWN twig base by that clump's twig bend, before
+      // the limb rotation — the same pivot, angle and order VS_FAITH gives the leaves hanging on it, so they ride
+      // the twig instead of sliding off it. Interior wood (clump<0) is untouched. sway_pitch meets the band here
+      // and stays orthogonal: `fore` scales HEIGHTS off the limb bend, this is a plan-plane yaw. tf=0 → tt=0 → rest.
+      const cj = s.clump, tt = (ta && cj>=0) ? ta[cj] : 0;
+      let ax=s.ax, ay=s.ay, bx=s.bx, by=s.by;
+      if(tt!==0){
+        const ctw = cj<nC ? trigC[2*cj] : Math.cos(tt), stw = cj<nC ? trigC[2*cj+1] : Math.sin(tt), tbx=s.tbx, tby=s.tby;
+        const dax=ax-tbx, day=ay-tby, dbx=bx-tbx, dby=by-tby;
+        ax = tbx + ctw*dax - stw*day; ay = tby + stw*dax + ctw*day;
+        bx = tbx + ctw*dbx - stw*dby; by = tby + stw*dbx + ctw*dby;
+      }
+      const c = onLimb ? trigL[4*li] : 1, sn = onLimb ? trigL[4*li+1] : 0, px=s.px, py=s.py, o=(slot ? slot[k] : k)*9;
+      const fore = onLimb ? trigL[4*li+2] : fore0, at = onLimb ? trigL[4*li+3] : 0;
       const ha = at + (s.ha-at)*fore, hb = at + (s.hb-at)*fore;
       const kA = ha/hRef, kB = hb/hRef;   // sway grows with height: 0 at the ground → the trunk base stays PLANTED, the crown sways; same fraction for a limb & the trunk at its height, so they stay joined
       const tx = T ? swx + T[4*s.tree] : swx, ty = T ? swy + T[4*s.tree+1] : swy;   // its own tree's sway, as VS_FAITH gives that tree's leaves
@@ -201,6 +213,30 @@ export function makeBake(hub){
       sa[o+4]=ha; sa[o+5]=hb; sa[o+6]=s.ra; sa[o+7]=s.rb; sa[o+8]=s.cov;
     }
   }
+
+  // THE WOOD UNDER ITS OWN PENUMBRA (thin_twigs, floor cast; spec/model/canopy.md). A twig narrower than the blur its shadow gets under an overhead sun
+  // (2r < h·SUN_DIAM, the narrowest that blur ever is) is cast once, as that blur (VS_FAITH_SEG_FINE), where every other piece of wood is cast once per
+  // sample: summed over the samples, such a twig is a stripe as wide as the cloud's spread at its height, darkened by the share of it the twig covers. The
+  // instance array puts the coarse wood first and the fine after it, each in record order, so the order holds from frame to frame (the tree view's
+  // one-sample keep hashes a twig's instance). Returns the coarse count, or null where nothing is fine-cast: the cast as it always was.
+  const SUN_DIAM = 0.0093;   // the sun's angular diameter, rad
+  // Kept until the records, a radius (refreshWood rewrites them in place) or the gate changes.
+  let slotBuf = null, partKey = null;
+  const partNow = { slot: null, coarse: 0 };
+  function finePartition(R){
+    if(!params.thin_twigs || params.receiver) return null;
+    const w = hub.grove?.wood;
+    if(partKey && partKey.R === R && partKey.radius === w?.radius && partKey.base === w?.base && partKey.thickness === w?.thickness) return partNow;
+    partKey = { R, radius: w?.radius, base: w?.base, thickness: w?.thickness };
+    if(!slotBuf || slotBuf.length < R.length) slotBuf = new Int32Array(R.length);
+    let nc = 0;
+    for(let k=0;k<R.length;k++){ const s = R[k]; if(!(2*Math.max(s.ra, s.rb) < Math.min(s.ha, s.hb)*SUN_DIAM)) nc++; }
+    let c = 0, f = nc;
+    for(let k=0;k<R.length;k++){ const s = R[k]; slotBuf[k] = 2*Math.max(s.ra, s.rb) < Math.min(s.ha, s.hb)*SUN_DIAM ? f++ : c++; }
+    partNow.slot = slotBuf; partNow.coarse = nc;
+    return partNow;
+  }
+  let progFine = null, UFine = null;   // made the first time a cast has fine wood; makeBake runs again on a restored context, which forgets them
 
   // Source offsets and weights matter even at an unchanged count. Snapshot the numeric inputs without per-frame strings or allocations.
   const faithKeys = ['sun_elevation_deg','sun_azimuth_deg','receiver','cloth_distance_m','drift_phase','drift_amount','leaf_swing','flutter_freq','edge_softness','tilt_shadow'];
@@ -328,8 +364,9 @@ export function makeBake(hub){
 
     // FAITHFUL skeleton (spec/model/canopy.md): refill the instance array with the live limb SWING + whole-tree drift, so the wood
     // sways WITH the leaves; then upload + set its statics once.
+    const part = woodOn ? finePartition(faith.segRest) : null, nCoarse = part ? part.coarse : faith.segCount;
     if(woodOn){
-      fillSwayedSegs(faith.segRest, faith.segArr, motion.sway[0], motion.sway[1], hub.hier?.nTree > 1 ? hub.hier.treeDelta : null);
+      fillSwayedSegs(faith.segRest, faith.segArr, motion.sway[0], motion.sway[1], hub.hier?.nTree > 1 ? hub.hier.treeDelta : null, part?.slot);
       gl.bindBuffer(gl.ARRAY_BUFFER, faith.segBuf);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, faith.segArr);
       gl.useProgram(progFaithSeg);
@@ -351,11 +388,11 @@ export function makeBake(hub){
       gl.uniform2f(UF.g, gx[i], gy[i]);
       gl.bindVertexArray(faith.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, faith.count);
-      if(woodOn){   // wood into the SAME scratch (still multiplicative) → leaves × wood = combined transmittance_i
+      if(woodOn && nCoarse > 0){   // wood into the SAME scratch (still multiplicative) → leaves × wood = combined transmittance_i
         gl.useProgram(progFaithSeg);
         gl.uniform2f(U.faithSeg.g, gx[i], gy[i]);
         gl.bindVertexArray(faith.segVAO);
-        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, faith.segCount);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nCoarse);
       }
       // PASS 2: acc += w_i · transmittance_i  (additive, fullscreen)
       gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);    // faithTex accumulator (attached once above)
@@ -365,6 +402,32 @@ export function makeBake(hub){
       gl.uniform1f(U.facc.weight, src.flat[3*i+2]);
       gl.bindVertexArray(emptyVAO);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    if(part && nCoarse < faith.segCount){   // the fine wood, once, onto the summed cast (Σ w_i·T_i times each fine twig's own darkening: the two are independent occluders)
+      if(!progFine){
+        progFine = hub.sharedProgram(VS_FAITH_SEG_FINE, FS_FAITH_SEG_FINE);
+        const L = (n) => gl.getUniformLocation(progFine, n);
+        UFine = { origin: L('uFaithOrigin'), extent: L('uFaithExtent'), g: L('uG'), woodTau: L('uWoodTau'), curtainBake: L('uCurtainBake'), segSway: L('uSegSway'), segTau: L('uSegTau'), gCov: L('uGCov'), texel: L('uTexel') };
+      }
+      let sw = 0, mx = 0, my = 0;
+      for(let i=0;i<N;i++){ const w = src.flat[3*i+2]; sw += w; mx += w*gx[i]; my += w*gy[i]; }
+      sw = Math.max(sw, 1e-12); mx /= sw; my /= sw;
+      let cxx = 0, cxy = 0, cyy = 0;
+      for(let i=0;i<N;i++){ const w = src.flat[3*i+2], dx = gx[i]-mx, dy = gy[i]-my; cxx += w*dx*dx; cxy += w*dx*dy; cyy += w*dy*dy; }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFBO);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ZERO, gl.SRC_COLOR);
+      gl.useProgram(progFine);
+      gl.uniform2f(UFine.origin, faith.ox, faith.oy); gl.uniform2f(UFine.extent, faith.ext, faith.ext);
+      gl.uniform2f(UFine.g, mx, my); gl.uniform3f(UFine.gCov, cxx/sw, cxy/sw, cyy/sw);
+      gl.uniform1f(UFine.texel, faith.ext/res);
+      gl.uniform1f(UFine.woodTau, params.branch_tau); gl.uniform1i(UFine.curtainBake, 0); gl.uniform2f(UFine.segSway, 0, 0); gl.uniform1i(UFine.segTau, 0);
+      // WebGL2 has no base instance: the fine range is reached by starting the instance attributes at it, then put back
+      const ptrs = (base) => { gl.bindBuffer(gl.ARRAY_BUFFER, faith.segBuf);
+        gl.vertexAttribPointer(1,4,gl.FLOAT,false,36,base); gl.vertexAttribPointer(2,4,gl.FLOAT,false,36,base+16); gl.vertexAttribPointer(3,1,gl.FLOAT,false,36,base+32); };
+      gl.bindVertexArray(faith.segVAO);
+      ptrs(nCoarse*36);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, faith.segCount - nCoarse);
+      ptrs(0);
     }
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);

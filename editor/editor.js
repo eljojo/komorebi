@@ -186,6 +186,7 @@ const PANEL_LAYOUT = [
   ['btn','new leaves', reseed, 'dice-five'],
   ['adv','how the leaves gather'],
   'grove_reach_m',
+  'leaf_years',
   'inner_leaves',
   'cluster_spread_m',
   'shoot_leaves',
@@ -259,6 +260,7 @@ const PANEL_LAYOUT = [
   'tree_view',
   'view_extent_m',
   'view_pitch_deg',
+  'view_look_up_deg',
   'view_yaw_deg',
   ['btn','drag: camera', (e)=>{ dragSun=!dragSun; e.target.textContent=`drag: ${dragSun?'sun':'camera'}`; }],
   ['btn','frame shadow', ()=>frameShadow()],   // one-time camera framing onto the cast shadow (the off-frame-tree / shadow-only composition, spec/model/camera.md) — a starting point to nudge, NOT an auto-track
@@ -274,6 +276,18 @@ const PANEL_LAYOUT = [
   'glow_bleed_m',
   ['adv','bark'],
   'tree_tone',
+  'leaf_neutral',
+  'crown_light',
+  'open_sky',
+  'view_sky',
+  'beam_march',
+  'thin_twigs',
+  'twig_haze',
+  'sympodial',
+  'two_ranked',
+  'trunk_split',
+  'trunk_base',
+  'bark_texture',
   'bark_r',
   'bark_g',
   'bark_b',
@@ -491,6 +505,7 @@ function buildPanel(){
 // ===========================================================================
 const CAM_GROUP = {   // knob -> the transport uniform group that carries it to the shader
   view_pitch_deg:'rayView', view_yaw_deg:'rayView', view_fov_deg:'rayView',   // the curtain is seen head-on: no ray camera, so no tilt/orbit/lens
+  view_look_up_deg:'floor',   // the floor camera's alone: the sky view's pitch is already its gaze
   far_smear:'floor', park_throw:'floor', ground_r:'floor', ground_g:'floor', ground_b:'floor',    // an albedo needs a floor to reflect off
   tree_view:'floor', tree_tone:'floor', bark_r:'floor', bark_g:'floor', bark_b:'floor',   // the tree is seen from the floor camera alone
   cloth_distance_m:'cloth',

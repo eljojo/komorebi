@@ -102,6 +102,7 @@ export const litterRiseEligible=FEAT_LITTER ? FEAT_DROP ? (a,b)=>{
     &&a.layer_count===3&&b.layer_count===3&&a.seed===b.seed
     &&a.leaf_size_m>0&&b.leaf_size_m>0&&Math.max(a.leaf_size_m,b.leaf_size_m)<=.2
     &&90-a.view_pitch_deg>a.view_fov_deg/2&&b.view_pitch_deg>b.view_fov_deg/2
+    &&!(a.view_look_up_deg>0)&&!(b.view_look_up_deg>0)   // the rise's own camera runs from the tilt's gaze
     &&b.canopy_base_height_m>cameraPose(a).eye[2]
     &&Math.max(count(a),count(b))*Math.max(Math.ceil(a.leaves_per_cluster*a.foliage_density),Math.ceil(b.leaves_per_cluster*b.foliage_density))<=CANOPY_MORPH_MAX
     &&Object.keys(DEFAULTS).every(k=>RISE_KEYS.has(k)||a[k]===b[k]);
@@ -125,6 +126,7 @@ export const shadowRiseEligible=FEAT_SKY_FLIGHT ? (a,b)=>{
   &&b.layer_count===3&&a.leaf_size_m>0&&b.leaf_size_m>0&&Math.max(a.leaf_size_m,b.leaf_size_m)<=.2
   &&a.tree_count>0&&b.tree_count>0&&a.foliage_density>0&&b.foliage_density>0&&a.leaves_per_cluster>0&&b.leaves_per_cluster>0
   &&90-a.view_pitch_deg>a.view_fov_deg/2&&b.view_pitch_deg>b.view_fov_deg/2
+  &&!(a.view_look_up_deg>0)   // the rise's own camera runs from the tilt's gaze
   &&Math.max(count(a),count(b))*Math.max(Math.ceil(a.leaves_per_cluster*a.foliage_density),Math.ceil(b.leaves_per_cluster*b.foliage_density))<=CANOPY_MORPH_MAX;
 }:()=>false;
 

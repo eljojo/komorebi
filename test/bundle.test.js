@@ -20,7 +20,7 @@ const MARKERS = {
   exposure: [".exposure_absolute"],
   drop: [".drop_span"],
   litter: ["uLitterMinHalf", ".litter_age", ".litter_drift_m"],
-  treeView: ["uTreeCover", "uSlab", ".bark_r"],
+  treeView: ["uTreeCover", "uSlab", ".bark_r", "uCrownGrid", "WOOD_FOOT"],
   spring: [".young_depth", ".young_red"],   // springTau alone reads them; the gate (`springing`) is a predicate every bundle keeps
 };
 let dir, whole, home, player;

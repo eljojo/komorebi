@@ -49,11 +49,11 @@ Transport is one account compiled four ways, one per **camera**: the floor, the 
 
 ## Where the approximations are
 
-Every stage above names its own in a closing section. The one every frame pays is the canopy's **depth discretisation** into a few layers, opted out of by the faithful cast when the tree's structure is the subject. The rest (a diffraction proxy, single scattering, a flat sky, a texel read as one leaf and a gap, a coarse hull with smooth shading) are local, bounded and absent when their knob is at rest. [`principles.md`](../principles.md) §5 is the policy; each file is the list.
+Every stage above names its own in a closing section. The one every frame pays is the canopy's **depth discretisation** into a few layers, opted out of by the faithful cast when the tree's structure is the subject. The rest (a diffraction proxy, single scattering, a flat sky for the light (the floor camera's seen sky aside), a texel read as one leaf and a gap, a coarse hull with smooth shading) are local, bounded and absent when their knob is at rest. [`principles.md`](../principles.md) §5 is the policy; each file is the list.
 
 ## What the model is not
 
-It is not a picture of a tree. Nothing is drawn: no bark is lit, no leaf is shaded, no sky has a gradient. Everything the eye receives is transmission, scattering and reflection of one source through one grove onto one surface, and where that is not yet true the file says **Not built**. The directions the artist wants next are in [`../exploration/directions.md`](../exploration/directions.md).
+It is not a picture of a tree. Nothing is drawn for its look: the sky that lights the scene has no gradient, and where the floor camera sees the tree and the sky, the seen sky is a model of the air and the bark's furrows and root flare are authored and named so ([`camera.md`](camera.md#the-wood-seen)). Everything the eye receives is transmission, scattering and reflection of one source through one grove onto one surface, and where that is not yet true the file says **Not built**. The directions the artist wants next are in [`../exploration/directions.md`](../exploration/directions.md).
 
 ## Related
 

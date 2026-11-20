@@ -12,6 +12,8 @@ These are the words the other documents use without stopping to explain. Each en
 
 **A_L.** The sunlight that reaches layer *L*, read ballistically along the sun's path from where a ray crosses that layer. The fill and the sky view both use it. See *T, T_b, thr, A_L*. [`model/fill.md`](model/fill.md)
 
+**albedo (of a leaf).** What a leaf sends on of the light it meets, reflected plus passed, ω = R + T. [`model/leaf.md`](model/leaf.md#the-crowns-own-light)
+
 **area light.** See *source*.
 
 **aspect law.** A grown outline takes the look's leaf *area* and never its aspect, so a maple at aspect 1.75 is a smaller maple and never a thin one. [`model/leaf.md`](model/leaf.md)
@@ -49,6 +51,8 @@ These are the words the other documents use without stopping to explain. Each en
 **carpet.** See *litter*.
 
 **cast.** The shadow a canopy throws, or the act of computing it. The *layer cast* uses a few depth layers; the *faithful cast* uses the real geometry. [`model/transport.md`](model/transport.md)
+
+**clear leaf.** The leaf with no pigment, PROSPECT-D's bleached structure: the zero the season's pigments are measured from, and the tissue the seen leaf is made of under `leaf_neutral`. [`model/leaf.md`](model/leaf.md#the-leaf-as-tissue)
 
 **cluster.** See *cluster, twig, limb, trunk, bole*.
 
@@ -148,6 +152,8 @@ These are the words the other documents use without stopping to explain. Each en
 
 **litter.** Fallen leaves as a floor material, the carpet: laid once per grove, a function of phenology and seed and never of the run, in the colour of a leaf seen by reflection (a Kubelka–Munk law, aged toward brown, darkened when wet). It does not accumulate and does not move. [`model/season.md`](model/season.md)
 
+**look up.** The floor camera's gaze turned past its tilt, the eye held where zoom, tilt and lens put it (`view_look_up_deg`). [`model/camera.md`](model/camera.md#the-floor-camera)
+
 **look, preset.** A look is a complete authored set of parameters: a place, a light, a mood. A preset is its saved form. Each shipped look's character and chosen departures from physics are recorded so an intent is told from a defect. [`contracts/looks.md`](contracts/looks.md)
 
 **the Look (capital L).** The tail every picture passes through, in this order and no other: perception and haze, the iris, exposure, tone curve, contrast, gamma. One definition shared by every path. [`model/camera.md`](model/camera.md)
@@ -184,11 +190,15 @@ These are the words the other documents use without stopping to explain. Each en
 
 **receiver.** The surface the light lands on: an opaque floor, a translucent pleated cloth, a tent of panels around the viewer. It takes the arriving irradiance and its own geometry and returns radiance toward the eye. Geometry feeds up into transport; material flows down from the landed light. [`model/receivers.md`](model/receivers.md)
 
+**recollision probability (p).** The chance that light leaving a leaf meets another before it escapes the crown; each bounce keeps p·ω. [`model/leaf.md`](model/leaf.md#the-crowns-own-light)
+
 **recvZ, receiver-relative read.** `z_p`, the height of the receiver point. Each layer is read shifted by `(h − z_p)·g`, so the same equation serves a floor (`z_p = 0`), a cloth (height up the plane) and a tent, with no receiver-specific code in transport. [`model/transport.md`](model/transport.md)
 
 **reach.** The span of ground a grove fills: its trees are spaced across it and an overhead park's crowns sized to it. A look names it or takes it from its view when the grove is grown; a zoom never changes it. [`model/canopy.md`](model/canopy.md#the-grown-grove)
 
 **re-season.** Replacing a grove's colour, retained weights and litter in place, in one pass over a stored record of its leaves, when only season keys differ. It does not regrow the grove. [`model/season.md`](model/season.md)
+
+**root flare.** The seen trunk's widening into its roots at the ground (`trunk_base`). [`model/camera.md`](model/camera.md#the-wood-seen)
 
 **rung.** A quality upgrade as a step on a ladder. It owes a gate whose off state is the look before it, a cheaper rung to degrade to, a cost-audit entry and a statement of who may cross it. A correction to how the model works is not a rung. [`contracts/gates-and-rungs.md`](contracts/gates-and-rungs.md)
 
@@ -197,6 +207,8 @@ These are the words the other documents use without stopping to explain. Each en
 **salt, stream.** Each family of random-looking numbers (growth, arrangement, wind identity, pigment clock, drop day, inner leaves, tree draws, genotype) is a stream seeded by the look's seed mixed with its own salt and keyed by an address. A draw from one stream moves nothing in another. [`contracts/determinism.md`](contracts/determinism.md)
 
 **season set.** The keys that change a leaf's colour, retention and place and nothing structural: the tint, phenology, the turn's start, span and spread, the pigment capacities and the drop clocks. A change confined to them re-seasons. [`model/season.md`](model/season.md)
+
+**seen sky.** The clear sky the floor camera sees over its horizon under `view_sky`; distinct from the flat sky that lights the receivers. [`model/light.md`](model/light.md#the-sky-seen)
 
 **senescence.** A leaf turning: chlorophyll dismantled, uncovering carotenoid yellow, anthocyanin made red. Every leaf runs its own clock, light orders them, and trees run ahead of their neighbours. [`model/season.md`](model/season.md)
 
@@ -212,11 +224,15 @@ These are the words the other documents use without stopping to explain. Each en
 
 **source.** The sun as modelled: a half-degree disk, smeared by cloud into an aureole, held as a fixed cloud of weighted point-suns. It is purely angular and knows nothing of the ground. Also called the area light. [`model/source.md`](model/source.md)
 
+**spur.** A short shoot on older wood that leafs year after year (ginkgo, apple, larch). The grown tree stands in for spurs by leafing the shoots of its last few years (`leaf_years`). [`model/canopy.md`](model/canopy.md#leaves-on-shoots)
+
 **standing scene.** A canopy treated as a finite object standing in the scene, so its whole shadow, trunk streak to crown dapples, is thrown across a lit floor. It turns on the bulk shift and makes the world outside the box open sky. [`model/transport.md`](model/transport.md)
 
 **stem joint.** The pivot at a twig's base, toward its parent. A twig turned about its own centroid shears the clump into a vortex; the pivot's location, not its amount, separates a branch in wind from a vortex. [`model/motion.md`](model/motion.md)
 
 **sun-image.** The picture of the sun that a small gap projects. The proof is the eclipse, where every dapple is a crescent. See *dapple*.
+
+**sympodial.** An axis carried on, year after year, by a side bud rather than its own tip, so a twig zigzags at its nodes: the elm's, the linden's. A habit of the tree grown from buds (`sympodial`). [`model/canopy.md`](model/canopy.md#a-tree-grown-from-buds)
 
 ## T
 
@@ -236,7 +252,11 @@ These are the words the other documents use without stopping to explain. Each en
 
 **twig.** See *cluster, twig, limb, trunk, bole*.
 
+**twig haze.** The finest orders of twigs at a bare crown's rim, added to the grown tree past what its buds grow (`twig_haze`). [`model/canopy.md`](model/canopy.md#a-tree-grown-from-buds)
+
 **twinkle.** Individual leaves flexing without changing the gap topology, in a dense canopy where every gap is backed by ten more leaves. The sparse early-spring canopy reorganises instead. See *incoherent band*. [`model/motion.md`](model/motion.md)
+
+**two-ranked.** Side buds one to a node, alternately left and right of the shoot in one plane, so side shoots fan in flat sprays: elm, beech, hornbeam, linden. [`model/canopy.md`](model/canopy.md#a-tree-grown-from-buds)
 
 ## V
 
