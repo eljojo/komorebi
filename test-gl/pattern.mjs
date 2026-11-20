@@ -7,7 +7,8 @@
 //   --flow-width <px>  width of the frames the optical flow runs on (default 160)
 //   --flow-hz <hz>     how many frame pairs per second the flow is computed for (default 12; each pair is consecutive frames)
 //   --patch-hz <hz>    how many frames per second get patch statistics and β (default 1)
-//   --sigma, --k, --min-sep   the patch detector (pattern-lib findPatches), in --short pixels (defaults 2, 0.5, 6)
+//   --sigma, --k, --min-sep, --bg, --min-contrast   the patch detector (pattern-lib findPatches), in --short pixels
+//                      and luminance (defaults 2, 0.5, 6, 4, 0.02)
 //   --tiles <n>        α is also measured on an n×n grid of tiles and their median reported (default 4)
 // Luminance is the decoded grey (ffmpeg `gray`, gamma-encoded as stored): what the eye sees on the screen, as in Zhang.
 import { spawn, spawnSync } from "node:child_process";
@@ -38,6 +39,8 @@ function parse(argv) {
 		sigma: 2,
 		k: 0.5,
 		minSep: 6,
+		bg: 4,
+		minContrast: 0.02,
 		tiles: 4,
 		out: null,
 	};
@@ -54,6 +57,8 @@ function parse(argv) {
 		else if (a === "--sigma") o.sigma = +v();
 		else if (a === "--k") o.k = +v();
 		else if (a === "--min-sep") o.minSep = +v();
+		else if (a === "--bg") o.bg = +v();
+		else if (a === "--min-contrast") o.minContrast = +v();
 		else if (a === "--tiles") o.tiles = +v();
 		else if (a === "--out") o.out = v();
 		else if (a === "--help" || a === "-h") {
@@ -68,7 +73,10 @@ function parse(argv) {
 
 function readHelp() {
 	const lines = readFileSync(new URL(import.meta.url), "utf8").split("\n");
-	const head = lines.slice(0, lines.findIndex((l) => !l.startsWith("//")));
+	const head = lines.slice(
+		0,
+		lines.findIndex((l) => !l.startsWith("//")),
+	);
 	return head.map((l) => l.replace(/^\/\/ ?/, "")).join("\n");
 }
 
@@ -228,6 +236,8 @@ async function measure(input, o) {
 					sigma: o.sigma,
 					k: o.k,
 					minSep: o.minSep,
+					bg: o.bg,
+					minContrast: o.minContrast,
 				});
 				spatial.patches.push(p.length);
 				spatial.nni.push(nni(p, w, h));
@@ -269,6 +279,8 @@ async function measure(input, o) {
 			sigma: o.sigma,
 			k: o.k,
 			minSep: o.minSep,
+			bg: o.bg,
+			minContrast: o.minContrast,
 			tiles: o.tiles,
 		},
 		spatial: {

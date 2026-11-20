@@ -86,6 +86,36 @@ test("patches: blobs are found where they were put", () => {
 		expect(p.some((q) => Math.hypot(q.x - cx, q.y - cy) < 1.5)).toBe(true);
 });
 
+test("patches: flat ground with encoder noise has none; dapples in a shadow are found, not the lit ground around it", () => {
+	const r = rng(9);
+	const flat = Float32Array.from(
+		{ length: W * H },
+		() => 0.8 + (r() - 0.5) * 0.01,
+	);
+	expect(findPatches({ w: W, h: H, data: flat }).length).toBe(0);
+	// a lit floor (0.8) with one shadow (0.2) in the middle holding three dapples
+	const img = Float32Array.from(
+		{ length: W * H },
+		() => 0.8 + (r() - 0.5) * 0.01,
+	);
+	const dapples = [
+		[170, 130],
+		[220, 160],
+		[190, 180],
+	];
+	for (let y = 0; y < H; y++)
+		for (let x = 0; x < W; x++) {
+			if (Math.hypot(x - 200, y - 150) < 60) img[y * W + x] = 0.2;
+			for (const [cx, cy] of dapples)
+				img[y * W + x] +=
+					0.5 * Math.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * 16));
+		}
+	const p = findPatches({ w: W, h: H, data: img });
+	expect(p.length).toBe(3);
+	for (const [cx, cy] of dapples)
+		expect(p.some((q) => Math.hypot(q.x - cx, q.y - cy) < 1.5)).toBe(true);
+});
+
 // a 2D field with amplitude spectrum f^-beta: every frequency filled, random phase, transformed back
 function field(n, beta, seed) {
 	const r = rng(seed),

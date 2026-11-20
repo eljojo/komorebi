@@ -5,7 +5,8 @@
 //
 // Spatial, on single frames (luminance in [0,1], row-major):
 //   findPatches  the light patches' centres. OURS, not Zhang's: Zhang marked centres by hand because blur defeated his
-//                detector; here they are local maxima of a Gaussian-blurred frame above mean + k·σ, thinned to minSep.
+//                detector; here they are blobs of a difference of Gaussians (σ, bg·σ) above max(k·its σ, minContrast)
+//                that pass SIFT's edge test, thinned to minSep: what stands out from its own surroundings, as an eye marks it.
 //                So the values compare across inputs measured with the same settings, not directly with Zhang's tables.
 //   nni          Clark–Evans nearest neighbour index: below 1 clustered, 1 random, above 1 dispersed. No edge correction.
 //   mrd          mean distance from the frame centre over the half diagonal (Zhang's eq. 4).
@@ -65,23 +66,54 @@ function meanSd(a) {
 	return [m, Math.sqrt(s / a.length)];
 }
 
-export function findPatches(img, { sigma = 2, k = 0.5, minSep = 6 } = {}) {
-	const { w, h, data } = gaussBlur(img, sigma);
-	const [m, sd] = meanSd(data);
-	const thr = m + k * sd,
+export function findPatches(
+	img,
+	{
+		sigma = 2,
+		k = 0.5,
+		minSep = 6,
+		bg = 4,
+		minContrast = 0.02,
+		edge = 10,
+	} = {},
+) {
+	// a patch is a bright blob against its own surroundings: the frame at the patch scale minus the frame at bg× that
+	// scale (a difference of Gaussians), so flat ground holds none, a dapple inside a shadow is found though it is darker
+	// than the lit floor, and the rim of a large lit area is a ridge, not a blob (SIFT's edge test on the DoG's Hessian)
+	const fine = gaussBlur(img, sigma),
+		coarse = gaussBlur(img, sigma * bg),
+		{ w, h } = fine,
+		data = new Float32Array(w * h);
+	for (let i = 0; i < w * h; i++) data[i] = fine.data[i] - coarse.data[i];
+	const [, sd] = meanSd(data);
+	const thr = Math.max(k * sd, minContrast),
+		edgeMax = (edge + 1) ** 2 / edge,
 		cand = [];
 	for (let y = 1; y < h - 1; y++)
 		for (let x = 1; x < w - 1; x++) {
-			const v = data[y * w + x];
+			const i = y * w + x,
+				v = data[i];
 			if (v <= thr) continue;
 			let peak = true;
 			for (let dy = -1; dy <= 1 && peak; dy++)
 				for (let dx = -1; dx <= 1; dx++)
-					if ((dx || dy) && data[(y + dy) * w + x + dx] > v) {
+					if ((dx || dy) && data[i + dy * w + dx] > v) {
 						peak = false;
 						break;
 					}
-			if (peak) cand.push({ x, y, v: img.data[y * w + x], b: v });
+			if (!peak) continue;
+			const dxx = data[i + 1] + data[i - 1] - 2 * v,
+				dyy = data[i + w] + data[i - w] - 2 * v,
+				dxy =
+					(data[i + w + 1] -
+						data[i + w - 1] -
+						data[i - w + 1] +
+						data[i - w - 1]) /
+					4,
+				det = dxx * dyy - dxy * dxy,
+				tr = dxx + dyy;
+			if (det <= 0 || (tr * tr) / det >= edgeMax) continue;
+			cand.push({ x, y, v: img.data[i], b: v });
 		}
 	cand.sort((p, q) => q.b - p.b);
 	const kept = [],
