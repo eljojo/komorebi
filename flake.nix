@@ -159,6 +159,16 @@
               exec node test-gl/cost.mjs "$@"
             '';
           };
+          # `nix run .#pattern -- <video>... [options]` — a dappled-light video's spatio-temporal features (patch
+          # clustering, spread, brightness autocorrelation, spatial and temporal spectral slopes, flow direction and
+          # rhythm), for a komorebi render and a phone recording alike. test-gl/pattern.mjs's header lists the options.
+          pattern = pkgs.writeShellApplication {
+            name = "pattern";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.ffmpeg ];
+            text = ''
+              exec node test-gl/pattern.mjs "$@"
+            '';
+          };
           # `nix run .#rows [-- key...]` — the advanced panel's rows, audited on the GPU: each row moved on a running
           # engine by the scope it asks for, held to a look born with the value, and every cheaper scope tried in its
           # place (test-gl/rows.mjs; its header says what a finding means). Chrome on Metal; same first-run setup as pixels.
@@ -321,6 +331,7 @@
           dev = { type = "app"; program = "${dev}/bin/dev"; };
           lint = { type = "app"; program = "${lint}/bin/lint"; };
           cost = { type = "app"; program = "${cost}/bin/cost"; };
+          pattern = { type = "app"; program = "${pattern}/bin/pattern"; };
           rows = { type = "app"; program = "${rows}/bin/rows"; };
           build = { type = "app"; program = "${build}/bin/build"; };
           pixels = { type = "app"; program = "${pixels}/bin/pixels"; };
