@@ -269,6 +269,20 @@ test("tracks: lifetimes, births and deaths, and a dapple coming back where it wa
 	expect(tr.lifetimes.sort((p, q) => p - q)).toEqual([1, 1, 2]); // seconds: C twice (2 frames each), B (4 frames)
 	expect(tr.returns).toBe(1);
 	expect(tr.returnShare).toBeCloseTo(1 / 3, 9); // of the complete tracks' births, one is a return
+	// lifetime as seen: a patch looked at at a random moment belongs to a long track more often than to a short one
+	expect(tr.seenLife).toBeCloseTo((1 + 1 + 4) / (1 + 1 + 2), 9);
+});
+
+test("tracks: a patch the detector misses for one frame is still one patch", () => {
+	const P = { x: 30, y: 30 };
+	const seq = Array.from({ length: 12 }, (_, t) =>
+		t >= 2 && t <= 9 && t !== 5 ? [P] : [],
+	);
+	expect(trackPatches(seq, 1, { maxGap: 0 }).tracks).toBe(2);
+	const one = trackPatches(seq, 1, { maxGap: 1 });
+	expect(one.tracks).toBe(1);
+	expect(one.lifetimes).toEqual([8]);
+	expect(one.returns).toBe(0);
 });
 
 test("return: a pattern scrambled by gusts and settling back is measured by how far and how long it strays from rest", () => {

@@ -608,7 +608,7 @@ export function scramble(frames, fs, { mergeGap = 1, settle = 1 } = {}) {
 export function trackPatches(
 	seq,
 	fs,
-	{ maxDist = 3, returnDist = 4, returnWithin = 2 } = {},
+	{ maxDist = 3, returnDist = 4, returnWithin = 2, maxGap = 1 } = {},
 ) {
 	const tracks = [];
 	let active = [];
@@ -631,6 +631,9 @@ export function trackPatches(
 			Object.assign(active[i], { x: pts[j].x, y: pts[j].y, end: t });
 			next.push(active[i]);
 		}
+		// a track the detector missed for up to maxGap frames is kept, so a patch flickering at the threshold is one patch
+		for (let i = 0; i < active.length; i++)
+			if (!usedA.has(i) && t - active[i].end <= maxGap) next.push(active[i]);
 		for (let j = 0; j < pts.length; j++)
 			if (!usedP.has(j)) {
 				const tr = {
@@ -662,7 +665,10 @@ export function trackPatches(
 		)
 			returns++;
 	const lifetimes = complete.map((tr) => (tr.end - tr.start + 1) / fs);
+	const sum = lifetimes.reduce((a, v) => a + v, 0);
 	return {
+		// the life of the patch you are looking at: a moment falls in a long track more often than in a short one
+		seenLife: sum ? lifetimes.reduce((a, v) => a + v * v, 0) / sum : null,
 		tracks: tracks.length,
 		censored: tracks.length - complete.length,
 		lifetimes,

@@ -355,6 +355,7 @@ async function measure(input, o) {
 				censored: tr.censored,
 				lifetime: stat(tr.lifetimes),
 				lifetimeMedian: median(tr.lifetimes),
+				seenLife: tr.seenLife,
 				birthsPerSecond: tr.birthsPerSecond,
 				returns: tr.returns,
 				returnShare: tr.returnShare,
@@ -369,7 +370,7 @@ for (const input of o.inputs) {
 	const r = await measure(input, o);
 	results.push(r);
 	console.error(
-		`${input}: NNI ${r.spatial.nni.mean?.toFixed(3)}  MRD ${r.spatial.mrd.mean?.toFixed(3)}  I ${r.spatial.moransI.mean?.toFixed(3)}  β ${r.spatial.beta.mean?.toFixed(2)}  α ${r.temporal.alpha?.toFixed(2)} (tiles ${r.temporal.alphaTilesMedian?.toFixed(2)})  Dθ ${r.temporal.directionConsistency?.toFixed(2)}  ρ1 ${r.temporal.rhythm?.toFixed(2)}  speed ${r.temporal.speed?.toFixed(4)}  τ ${r.impermanence.tau?.toFixed(2)} s  plateau ${r.impermanence.plateau?.toFixed(2)}  scramble ${r.impermanence.scramble.mean.toFixed(3)} (${r.impermanence.scramble.perMinute.toFixed(1)}/min, back in ${r.impermanence.scramble.returnSeconds?.toFixed(1)} s, same ${r.impermanence.scramble.sameShapeAfter?.toFixed(2)})  life ${r.impermanence.tracks.lifetimeMedian?.toFixed(2)} s  returns ${r.impermanence.tracks.returnShare?.toFixed(2)}`,
+		`${input}: NNI ${r.spatial.nni.mean?.toFixed(3)}  MRD ${r.spatial.mrd.mean?.toFixed(3)}  I ${r.spatial.moransI.mean?.toFixed(3)}  β ${r.spatial.beta.mean?.toFixed(2)}  α ${r.temporal.alpha?.toFixed(2)} (tiles ${r.temporal.alphaTilesMedian?.toFixed(2)})  Dθ ${r.temporal.directionConsistency?.toFixed(2)}  ρ1 ${r.temporal.rhythm?.toFixed(2)}  speed ${r.temporal.speed?.toFixed(4)}  τ ${r.impermanence.tau?.toFixed(2)} s  plateau ${r.impermanence.plateau?.toFixed(2)}  scramble ${r.impermanence.scramble.mean.toFixed(3)} (${r.impermanence.scramble.perMinute.toFixed(1)}/min, back in ${r.impermanence.scramble.returnSeconds?.toFixed(1)} s, same ${r.impermanence.scramble.sameShapeAfter?.toFixed(2)})  life ${r.impermanence.tracks.lifetimeMedian?.toFixed(2)} s (seen ${r.impermanence.tracks.seenLife?.toFixed(2)} s)  returns ${r.impermanence.tracks.returnShare?.toFixed(2)}`,
 	);
 }
 const json = JSON.stringify(
