@@ -164,18 +164,35 @@ function createEngine(canvas, opts, driven=false){
   const faithfulOn = () => params.faithful_canopy && (params.receiver|0) !== 2 && !params.sky_view;
 
   function compile(type, src){
-    const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
-    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) fail(`Shader: ${gl.getShaderInfoLog(s)}\n${src}`);
+    const s=gl.createShader(type);
+    if(!s) fail('Could not allocate a shader.');
+    gl.shaderSource(s,src); gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+      const message = gl.getShaderInfoLog(s);
+      gl.deleteShader(s);
+      fail(`Shader: ${message}\n${src}`);
+    }
     return s;
   }
   function program(vs,fs,feedback){
     const p=gl.createProgram();
-    gl.attachShader(p,compile(gl.VERTEX_SHADER,vs));
-    gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fs));
-    if(feedback) gl.transformFeedbackVaryings(p,feedback,gl.INTERLEAVED_ATTRIBS);   // the outputs a transform-feedback pass writes, named before the link
-    gl.linkProgram(p);
-    if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail(`Link: ${gl.getProgramInfoLog(p)}`);
-    return p;
+    if(!p) fail('Could not allocate a shader program.');
+    let vert, frag;
+    try {
+      vert=compile(gl.VERTEX_SHADER,vs); gl.attachShader(p,vert);
+      frag=compile(gl.FRAGMENT_SHADER,fs); gl.attachShader(p,frag);
+      if(feedback) gl.transformFeedbackVaryings(p,feedback,gl.INTERLEAVED_ATTRIBS);   // the outputs a transform-feedback pass writes, named before the link
+      gl.linkProgram(p);
+      if(!gl.getProgramParameter(p,gl.LINK_STATUS)) fail(`Link: ${gl.getProgramInfoLog(p)}`);
+      gl.detachShader(p,vert); gl.detachShader(p,frag);
+      return p;
+    } catch(error){
+      gl.deleteProgram(p);
+      throw error;
+    } finally {
+      if(vert) gl.deleteShader(vert);
+      if(frag) gl.deleteShader(frag);
+    }
   }
   // The engine's own programs come from the context's table (above), and so do every route's (the dissolve's mix, the season travel's
   // cast, the leaf, grove and litter travels'), which a route used to link at its start and delete at its end: a route takes them through
@@ -883,7 +900,10 @@ function createEngine(canvas, opts, driven=false){
       if(litter.vao){ gl.deleteVertexArray(litter.vao); gl.deleteBuffer(litter.buf); }
       [emptyVAO, hub.srcDbgVAO, hub.vizVAO].forEach(v => { if(v) gl.deleteVertexArray(v); });
       [opts.host ? null : quadBuf, hub.srcDbgBuf, hub.vizBuf].forEach(b => { if(b) gl.deleteBuffer(b); });   // a scene's quad buffer is its host's
-      if(EDITOR && !driven) hub.setMotionSource(null);              // drop any mirror-source ref so a disposed follower can't pin its source
+      if(EDITOR && !driven){
+        hub.disposeEditorGL();
+        hub.setMotionSource(null);   // drop any mirror-source ref so a disposed follower can't pin its source
+      }
       if(!driven) gl.getExtension('WEBGL_lose_context')?.loseContext();
     },
     ...(EDITOR ? { fill, litter, faith, layers: () => hub.layerTex, woods: () => hub.woodTex,   // the sky fill's state + the layers it reads (and the sky view's wood beside them), for the pixel harness's shader-vs-reference checks (test-gl/); stripped from the player build

@@ -212,6 +212,12 @@ export function makeEditorTools(hub){
     let instrumenting = false;
     const TIME_ELAPSED = 0x88BF, GPU_DISJOINT = 0x8FBB;   // EXT_disjoint_timer_query_webgl2 enums
     const tq = { bake:{q:[null,null], i:0}, transport:{q:[null,null], i:0} };
+    function releaseQueries(){
+      for(const pass of Object.values(tq)){
+        for(const q of pass.q) if(q) gl.deleteQuery(q);
+        pass.q.fill(null);
+      }
+    }
     hub.timed = (pass, draw) => {
       if(!instrumenting || !hub.extTimer){ draw(); return; }
       const r = tq[pass], cur = r.q[r.i&1];               // this slot's query, issued 2 frames ago (ready now)
@@ -221,10 +227,17 @@ export function makeEditorTools(hub){
         gl.deleteQuery(cur);
       }
       const q = gl.createQuery();
-      gl.beginQuery(TIME_ELAPSED, q); draw(); gl.endQuery(TIME_ELAPSED);
-      r.q[r.i&1] = q; r.i++;                               // self-advance: each pass flips its own ring per frame
+      gl.beginQuery(TIME_ELAPSED, q);
+      try { draw(); } finally {
+        gl.endQuery(TIME_ELAPSED);
+        r.q[r.i&1] = q; r.i++;                           // self-advance: each pass flips its own ring per frame
+      }
     };
-    hub.profiler = { hasTimer: !!hub.extTimer, bakeMs:0, transportMs:0, setInstrument(on){ instrumenting=!!on; } };   // read by test-gl/cost.mjs
+    hub.profiler = { hasTimer: !!hub.extTimer, bakeMs:0, transportMs:0, setInstrument(on){
+      instrumenting=!!on;
+      if(!instrumenting) releaseQueries();
+    } };   // read by test-gl/cost.mjs
+    hub.disposeEditorGL = releaseQueries;
 
   // ---- motion mirror: drive this engine's wind EXACTLY from another instance instead of its own
   // physics, so two engines animate in lockstep (the test tools that drive two). Sound only while the two share the

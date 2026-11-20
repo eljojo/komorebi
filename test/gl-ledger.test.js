@@ -17,9 +17,10 @@ import * as LEAF from "../engine/leaf/komorebi-leaf.js";
 
 const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture", Framebuffer: "framebuffer", Renderbuffer: "renderbuffer", Program: "program", Shader: "shader", Query: "query" };
 
-function makeLedger() {
+function makeLedger({ timer = false, failShader = 0, failLink = false } = {}) {
   let seq = 0, lost = false, casts = 0, layerDraws = 0, treeWoodDraws = 0, layerEdgeMix;
   let checksUntilIncomplete = 0;
+  let shaderChecks = 0;
   const sunByProgram = new Map();
   const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {}, linked = [];
   const at = { array: null, vao: null, fb: null, prog: null, rb: null, unit: "TEXTURE0", units: {} };
@@ -80,10 +81,10 @@ function makeLedger() {
     drawArrays: draw, drawArraysInstanced: draw,
     clear: () => use(at.fb, "cleared"), blitFramebuffer: () => use(at.fb, "blitted"), readPixels: () => use(at.fb, "read back"),
     beginQuery: (_t, q) => use(q, "begun"), getQueryParameter: (q) => { use(q, "read"); return 0; },
-    getParameter: () => 4096, getShaderParameter: () => true, getProgramParameter: () => true, getShaderInfoLog: () => "", getProgramInfoLog: () => "",
+    getParameter: () => 4096, getShaderParameter: () => ++shaderChecks !== failShader, getProgramParameter: () => !failLink, getShaderInfoLog: () => "", getProgramInfoLog: () => "",
     checkFramebufferStatus: () => checksUntilIncomplete > 0 && --checksUntilIncomplete === 0 ? "FRAMEBUFFER_UNSUPPORTED" : "FRAMEBUFFER_COMPLETE",
     getError: () => 0,
-    getExtension: (n) => (n === "EXT_disjoint_timer_query_webgl2" ? null : { loseContext() {} }),
+    getExtension: (n) => (n === "EXT_disjoint_timer_query_webgl2" && !timer ? null : { loseContext() {} }),
   };
   for (const [k, kind] of Object.entries(KINDS)) { fns[`create${k}`] = make(kind); fns[`delete${k}`] = remove; }
   const noop = () => undefined;
@@ -106,14 +107,13 @@ function makeLedger() {
     treeWoodDraws: () => treeWoodDraws,
     sunFor: (shader) => sunByProgram.get(shader),
     layerEdgeMix: () => layerEdgeMix,
-    // what is left alive, by kind; shaders aside: the engine links each into its program and lets the program hold it
-    leaks: () => { const n = {}; for (const o of live) if (o.kind !== "shader") n[o.kind] = (n[o.kind] ?? 0) + 1; return n; },
+    leaks: () => { const n = {}; for (const o of live) n[o.kind] = (n[o.kind] ?? 0) + 1; return n; },
   };
 }
 
 // The engine over a ledger, on a pumped clock. `lose` and `restore` fire the canvas's own context events.
-function engine(look, options = {}) {
-  const L = makeLedger(), on = {};
+function engine(look, options = {}, L = makeLedger()) {
+  const on = {};
   let next = null, now = 1000;
   globalThis.requestAnimationFrame = (cb) => { next = cb; return 0; };
   const canvas = { getContext: () => L.gl, addEventListener(n, f) { on[n] = f; }, removeEventListener(n, f) { if (on[n] === f) delete on[n]; }, clientWidth: 64, clientHeight: 36, width: 64, height: 36 };
@@ -160,6 +160,28 @@ function start(R, to, name, opts = {}) {
 const scenario = (name, from, steps) => test(name, () => withWindow(() => { const R = engine(from); R.pump(3); steps(R); closes(R, name); }));
 
 scenario("a plain regrow", FALL, (R) => { for (let i = 0; i < 3; i++) { R.eng.apply("canopy"); R.pump(); } });
+scenario("linked programs release the intermediate shader handles", FAITHFUL, (R) => {
+  expect(R.L.made().shader).toBeGreaterThan(0);
+  expect(R.L.alive().filter(object => object.kind === "shader")).toHaveLength(0);
+});
+for (const [stage, failure] of [["vertex shader", { failShader: 1 }], ["fragment shader", { failShader: 2 }], ["program link", { failLink: true }]]) {
+  test(`a failed ${stage} releases partial handles`, () => withWindow(() => {
+    const L = makeLedger(failure);
+    expect(() => engine(FAITHFUL, {}, L)).toThrow();
+    expect(L.alive()).toEqual([]);
+  }));
+}
+test("stopping profiling and disposing release pending timer queries", () => withWindow(() => {
+  const R = engine(FAITHFUL, {}, makeLedger({ timer: true }));
+  R.eng.profiler.setInstrument(true);
+  R.pump(3);
+  expect(R.L.leaks().query).toBeGreaterThan(0);
+  R.eng.profiler.setInstrument(false);
+  expect(R.L.leaks().query).toBeUndefined();
+  R.eng.profiler.setInstrument(true);
+  R.pump(3);
+  closes(R, "profiler queries");
+}));
 scenario("a re-season", FALL, (R) => {
   expect(R.eng.apply("season")).toBe("build");
   R.eng.params.phenology = 0.85;
