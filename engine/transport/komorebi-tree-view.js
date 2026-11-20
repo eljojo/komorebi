@@ -12,7 +12,7 @@ import { DEG, clamp, smoothstep } from '../komorebi-math.js';
 import { atmosphere, beamLoss, shownExposure, skyModel, sunDirection } from '../light/komorebi-light.js';
 import { ballisticK, bindLeafShape, SLAB_N, slabClear, slabTable } from '../leaf/komorebi-leaf.js';
 import { cameraPose, lookUp } from './komorebi-camera.js';
-import { MAX_LAYERS } from '../komorebi-params.js';
+import { MAX_LAYERS, MIN_FIDELITY } from '../komorebi-params.js';
 import { VS_TREE, FS_TREE, VS_TREE_WOOD, VS_TREE_WOOD_FOOT, FS_TREE_WOOD, FS_CROWN_GRID, FS_TREE_COMPOSITE, VS_FULL, defineIn } from './komorebi-shaders.js';
 import { cameraFor } from './komorebi-transport.js';
 
@@ -58,7 +58,7 @@ const CROWN_CELL = 0.5;
 export const crownGridSize = (extent, top) => [clamp(Math.ceil(extent/CROWN_CELL), 8, 64), clamp(Math.ceil(Math.max(top, 1e-3)/CROWN_CELL), 2, 48)];
 
 // The low-res layer set the tree is lit by: the sky fill's own size (komorebi-bake.js fillLayerRes), so with both open they are one set.
-export const treeLayerRes = (params, bakeRes) => Math.min(clamp(params.fill_resolution|0, 32, 1024), bakeRes());
+export const treeLayerRes = (params, bakeRes) => Math.min(clamp(params.fill_resolution|0, MIN_FIDELITY.fill_resolution, 1024), bakeRes());
 
 // ============================================================================
 // The GL half.

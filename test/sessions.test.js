@@ -34,6 +34,18 @@ test('six fidelity ceilings preserve omission and authored requests; layers rema
   expect(sessions.authoredLook({ exposure: 1, adaptive_motion: false })).toEqual({ exposure: 1 });
 });
 
+test('session fidelity ceilings are whole values the renderer can honour', () => {
+  for (const [key, value] of [['sample_count', 0], ['sample_count', 4.7], ['tex_resolution', 0.5],
+    ['fill_directions', 0.5], ['fill_resolution', 31], ['litter_resolution', 63]]) {
+    expect(() => sessions.resolveSession({ ceilings: { [key]: value } })).toThrow(`Invalid session ceiling: ${key}`);
+  }
+  const ceilings = { sample_count: 2, fill_resolution: 32, litter_resolution: 64 };
+  const session = sessions.resolveSession({ ceilings });
+  const authored = { sample_count: 1.6, fill_resolution: 8, litter_resolution: 7, tex_resolution: 63.7, bake_resolution: 0 };
+  expect(sessions.resolveParams(authored, session)).toMatchObject({ ...ceilings, tex_resolution: 63, bake_resolution: 63 });
+  expect(sessions.authoredLook(authored)).toEqual(authored);
+});
+
 test('presentation follows the playlist unless explicitly overridden, independent of FPS', () => {
   expect(sessions.resolveSession({}, { presentation: 'projector' }).presentation).toBe('projector');
   const s = sessions.resolveSession({ presentation: 'screen', playback: { adaptive_motion: false } }, { presentation: 'projector' });

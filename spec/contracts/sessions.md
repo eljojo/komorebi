@@ -8,6 +8,8 @@ A look owns artistic appearance. A playlist owns dwell, crossfade and morph/fade
 
 **Law.** A session supplies fidelity ceilings. A look can omit a fidelity request and inherit, or request less than the ceiling; it cannot demand more. The live governor may spend less again to keep motion smooth. A request is not a guaranteed minimum, and independent ceilings do not bound the total cost of a scene or a transition.
 
+Ceilings are whole numbers at or above the render passes' minimum supported values. Existing authored requests retain their original values and resolve to whole render values within those limits. A one-sample source carries the full uneclipsed weight on the central ray.
+
 **Layer count is authored structure.** It changes the look and remains outside session ceilings, automatic profile selection and the runtime governor. Tone mapping remains the look's grade. The six inheritable fidelity controls and the shipped profile values live in the [implementation account](../implementation.md#session-settings).
 
 **Law.** Frame-rate policy belongs to the session. Loading a look, playing a playlist, reversing or queueing a transition, and restoring a lost context cannot replace an explicit local choice. In particular, turning adaptive FPS off stays off. Automatic selection preserves explicit overrides. These settings do not travel with a newly saved look.

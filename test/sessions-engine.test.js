@@ -124,6 +124,7 @@ test('the live governor never raises an authored sample request below its usual 
     e.setParams({...look,faithful_canopy,sample_count:1});
     expect(e.params.sample_count).toBe(1);
     expect(e.perf.sampleCount).toBeLessThanOrEqual(1);
+    expect(Array.from(e.src.beam)).toEqual([0,0,1]);
   }
   e.dispose();
 });

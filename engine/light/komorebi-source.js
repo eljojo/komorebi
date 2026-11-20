@@ -4,7 +4,7 @@
 // The cast geometry every camera shares (the bulk shift, the ellipse, the layer heights) is komorebi-cast.js.
 // ============================================================================
 import { DEG, clamp, lerp } from '../komorebi-math.js';
-import { MAX_SAMPLES, SKY_SUN_GAIN } from '../komorebi-params.js';
+import { MAX_SAMPLES, MIN_FIDELITY, SKY_SUN_GAIN } from '../komorebi-params.js';
 
 const EDITOR = (typeof KOMOREBI_EDITOR !== "undefined") ? KOMOREBI_EDITOR : true;
 
@@ -13,20 +13,20 @@ export function makeSource(hub){
 
   // ---- source: Vogel-spiral cloud of weighted point-suns ---------------------
   function regenSource(){
-    const N = clamp(Math.round(perf.auto ? perf.sampleCount : params.sample_count), 3, MAX_SAMPLES);
+    const N = clamp(Math.round(perf.auto ? perf.sampleCount : params.sample_count), MIN_FIDELITY.sample_count, MAX_SAMPLES);
     const coreR = params.core_angular_radius_deg*DEG;
     const t = effCloud();                                  // cloud_thickness, pushed to overcast during a transition
     const haloDeg = lerp(params.halo_angular_radius_deg, 30, trans.bloom);  // the bloom also fattens the halo to wash out the grove swap
     const haloR = lerp(coreR*2.0, haloDeg*DEG, t);
     const Wcore = params.core_weight_fraction*(1.0-t);     // energy drains core->halo with cloud
     const Whalo = 1.0 - Wcore;
-    const nCore = Math.min(N - 1, Math.max(3, Math.round(N*0.5)));
+    const nCore = N === 1 ? 1 : Math.min(N - 1, Math.max(3, Math.round(N*0.5)));
     const nHalo = N - nCore;
     const golden = Math.PI*(3 - Math.sqrt(5));
     const pts = [];
     for(let i=0;i<nCore;i++){
-      const r = coreR*Math.sqrt((i+0.5)/nCore), a=i*golden;
-      pts.push([r*Math.cos(a), r*Math.sin(a), Wcore/nCore]);
+      const r = N === 1 ? 0 : coreR*Math.sqrt((i+0.5)/nCore), a=i*golden;
+      pts.push([r*Math.cos(a), r*Math.sin(a), N === 1 ? 1 : Wcore/nCore]);
     }
     for(let i=0;i<nHalo;i++){
       const f=(i+0.5)/nHalo;

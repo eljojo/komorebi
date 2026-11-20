@@ -1,5 +1,5 @@
 // Session policy is independent of storage, UI and the rendering context.
-import { DEFAULTS, migrateLegacy } from './komorebi-params.js';
+import { DEFAULTS, MIN_FIDELITY, migrateLegacy } from './komorebi-params.js';
 
 export const FIDELITY_KEYS = Object.freeze(['sample_count', 'tex_resolution', 'bake_resolution', 'fill_directions', 'fill_resolution', 'litter_resolution']);
 export const PLAYBACK_KEYS = Object.freeze(['auto_quality', 'adaptive_motion', 'adaptive_idle_fps']);
@@ -24,10 +24,13 @@ export function resolveSession(settings = {}, environment = {}) {
   const ceilings = { ...QUALITY_PROFILES[quality] };
   for (const key of FIDELITY_KEYS) if (Object.hasOwn(settings.ceilings ?? {}, key)) {
     const value = settings.ceilings[key];
-    if (!Number.isFinite(value) || value <= 0 || value > QUALITY_PROFILES.export[key]) throw new Error(`Invalid session ceiling: ${key}`);
+    if (!Number.isInteger(value) || value < MIN_FIDELITY[key] || value > QUALITY_PROFILES.export[key]) throw new Error(`Invalid session ceiling: ${key}`);
     ceilings[key] = value;
   }
-  if(Number.isFinite(environment.maxTextureSize)) for(const key of ['tex_resolution','bake_resolution','fill_resolution','litter_resolution']) ceilings[key]=Math.min(ceilings[key],environment.maxTextureSize);
+  if(Number.isFinite(environment.maxTextureSize)) for(const key of ['tex_resolution','bake_resolution','fill_resolution','litter_resolution']){
+    ceilings[key]=Math.min(ceilings[key],Math.floor(environment.maxTextureSize));
+    if(ceilings[key]<MIN_FIDELITY[key]) throw new Error(`Device texture limit is too small for ${key}`);
+  }
   const playback = { auto_quality: true, adaptive_motion: automaticQuality ? false : phone, adaptive_idle_fps: 30 };
   for (const key of PLAYBACK_KEYS) if (Object.hasOwn(settings.playback ?? {}, key)) {
     const value = settings.playback[key];
@@ -57,7 +60,9 @@ export function resolveParams(look, session) {
   for (const key of FIDELITY_KEYS) {
     const request = Object.hasOwn(authored,key) ? authored[key] : session.ceilings[key];
     if(!Number.isFinite(request) || request<0 || request===0 && key!=='bake_resolution')throw new Error(`Invalid look fidelity request: ${key}`);
-    result[key] = Math.min(key === 'bake_resolution' && request === 0 ? result.tex_resolution : request, session.ceilings[key]);
+    const units = key === 'sample_count' ? Math.round(request) : Math.floor(request);
+    const effective = key === 'bake_resolution' && request === 0 ? result.tex_resolution : Math.max(MIN_FIDELITY[key], units);
+    result[key] = Math.min(effective, session.ceilings[key]);
   }
   return Object.assign(result, session.playback, PRESENTATION_PROFILES[session.presentation]);
 }

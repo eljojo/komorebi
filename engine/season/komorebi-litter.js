@@ -10,6 +10,7 @@
 // (VS_LITTER/FS_LITTER) and the floor's read (GLSL_T_FLOOR_MATERIAL) are the authority on the pixels.
 // ============================================================================
 import { DEG, TAU, clamp, hash3, makeGauss, mulberry32, smoothstep } from '../komorebi-math.js';
+import { MIN_FIDELITY } from '../komorebi-params.js';
 import { CAMERAS, cameraFor } from '../transport/komorebi-transport.js';
 import { bindLeafShape, leafShape, leafVariant } from '../leaf/komorebi-leaf.js';
 
@@ -163,7 +164,7 @@ function makeLitter(hub){
   const sig = new Float64Array(litter.sig.length), lands = newLitterCache();   // the landings, kept per grove and season wind: a re-season re-bakes the carpet on every step of the clock
   // only the floor reflects, so only the floor has a carpet to read; the cloth transmits and the sky view has no surface (the registry says so)
   const litterWanted = () => params.litter > 0 && CAMERAS[cameraFor(params)].groups.includes('litter');
-  const litterRes = () => clamp(params.litter_resolution|0, 64, Math.min(4096, hub.MAX_TEX || 4096));
+  const litterRes = () => clamp(params.litter_resolution|0, MIN_FIDELITY.litter_resolution, Math.min(4096, hub.MAX_TEX || 4096));
 
   function allocTex(res){
     if(litter.tex) gl.deleteTexture(litter.tex);

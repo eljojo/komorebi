@@ -7,6 +7,7 @@
 import { senescing, dropping, ordered, springing } from './season/komorebi-season.js';
 
 const MAX_SAMPLES = 48;
+export const MIN_FIDELITY = Object.freeze({ sample_count: 1, tex_resolution: 1, bake_resolution: 1, fill_directions: 1, fill_resolution: 32, litter_resolution: 64 });
 const BAKE_MIN = 768;   // floor auto_quality trims bake_resolution to below the knee (spec/implementation.md)
 const MAX_LAYERS = 4;
 const MAX_FILL_DIRS = 64;   // the sky fill's ray cap (spec/model/fill.md): fill_directions is clamped to it, and it sizes the fill shader's uniform array

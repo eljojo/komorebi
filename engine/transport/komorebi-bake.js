@@ -12,7 +12,7 @@
 import { clamp, lerp } from '../komorebi-math.js';
 import { atmosphere, beamLoss, sunIncidence } from '../light/komorebi-light.js';
 import { SLAB, SLAB_N, ballisticK, bindLeafShape, slabTable } from '../leaf/komorebi-leaf.js';
-import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES } from '../komorebi-params.js';
+import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES, MIN_FIDELITY } from '../komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
 import { VS_FAITH_SEG_FINE, FS_FAITH_SEG_FINE } from './komorebi-shaders.js';
@@ -502,8 +502,8 @@ export function makeFill(hub){
   // ============================================================================
   // Does this look need the fill? The registry answers: a camera that does not speak the fill group cannot read it.
   const fillWanted = () => params.canopy_fill > 0 && CAMERAS[cameraFor(params)].groups.includes('fill');
-  const fillK = () => clamp(params.fill_directions|0, 1, MAX_FILL_DIRS);
-  const fillRes = () => clamp(params.fill_resolution|0, 32, 1024);
+  const fillK = () => clamp(params.fill_directions|0, MIN_FIDELITY.fill_directions, MAX_FILL_DIRS);
+  const fillRes = () => clamp(params.fill_resolution|0, MIN_FIDELITY.fill_resolution, 1024);
   // The faithful path's layers are 1×1 (it taps one pre-integrated texture), so with the fill open it keeps a LOW-RES
   // set alive for the fill to read. Depth layers are the right tool for a DIFFUSE quantity — the opt-out from the
   // layer cheat is about sharp structure — so this does not reopen it. Sized by the fill, capped by the bake size.
