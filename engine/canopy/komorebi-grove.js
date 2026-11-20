@@ -97,6 +97,15 @@ const INNER_GLIDE = 0.05;        // the smoothstep's width in `inner_leaves`: a 
 // A height's layer over a grove's band [zMin, dz, nLayer] (hier.layerBand): higher foliage, higher layer. The hang loop bins twigs and leaves by it, and leaf travel a layered leaf.
 export const layerOfHeight = (z, [zMin, dz, nLayer]) => nLayer>1 ? clamp(Math.round((z-zMin)/dz*(nLayer-1)), 0, nLayer-1) : 0;
 // The layer leaf j's leaf at height z hangs in, as the hang loop binned it: one at its twig's height (to the float a leaf record keeps) is on its twig's layer, one on the wood on its own height's.
+// A grove's faithful leaves (18 floats each) and, where any leaf has one, their pivot weights, as the bake reads them, in fresh arrays a route may write:
+// a layered grove's from its CPU record, a faithful one's read back from its buffers.
+export function readFaith(gl, F){
+  const leaves = new Float32Array(F.count*18), pivot = F.pivotOn ? new Float32Array(F.count) : null;
+  if(F.rec){ leaves.set(F.rec.leaves.subarray(0, leaves.length)); if(pivot) pivot.set(F.rec.pivot.subarray(0, pivot.length)); return { leaves, pivot }; }
+  gl.bindBuffer(gl.ARRAY_BUFFER, F.buf); gl.getBufferSubData(gl.ARRAY_BUFFER, 0, leaves);
+  if(pivot){ gl.bindBuffer(gl.ARRAY_BUFFER, F.pivotBuf); gl.getBufferSubData(gl.ARRAY_BUFFER, 0, pivot); }
+  return { leaves, pivot };
+}
 export const leafLayerOf = (hier, j, z) => { const t = hier.twigs[j]; return hier.layerBand && z !== Math.fround(t.z) ? layerOfHeight(z, hier.layerBand) : t.layer; };
 // The outward plan heading (older end -> nearer the tip) of segment i of a path of n segments into `e`, or of the nearest segment that has one: a vertical step has no direction in plan. False when none does.
 function woodHeading(path, i, n, e){
@@ -860,7 +869,7 @@ export function makeGrove(hub){
       const tipMin = hMin<=hMax ? hMin : 0;
       density = { key: densityKey(params, faithful), hMin: tipMin, hMax: hMax>hMin ? hMax : tipMin+1 };
     }
-    return { hier, layers, faithArr, pivot: pivotData, side: sideData, clusterRows, nClusterTotal, shape, litter, reach, key, wood, vary, scaleMax, season, density,
+    return { hier, layers, faithArr, pivot: pivotData, side: sideData, faithful, clusterRows, nClusterTotal, shape, litter, reach, key, wood, vary, scaleMax, season, density,
              under: cacheDensity ? { ...params } : null,   // the params a density capacity re-seasons under at the upload: the ones it was grown under
              occ: occOut, sky: { start: skyStart, count: skyCount, rest: skyRest },
              faith: { hMin: castMin, hMax: castMax, binH, rest: woodRest, box: [px0, px1, py0, py1] } };
@@ -904,41 +913,22 @@ export function makeGrove(hub){
     const faith = { hMin: G.faith.hMin, hMax: G.faith.hMax, binH: G.faith.binH };   // the grove's faithful state (g.own.faith), filled below
 
     // ---- FAITHFUL path (spec/model/canopy.md): one combined VAO of EVERY leaf, each carrying its continuous floor-height (attr 5),
-    // for the per-sample geometry bake. Built always (cheap); only DRAWN when faithful_canopy is on. ----
-    if(was?.faith.vao){
-      const F = was.faith, arr = G.faithArr;
-      gl.bindBuffer(gl.ARRAY_BUFFER, F.buf); gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
-      gl.bindBuffer(gl.ARRAY_BUFFER, F.pivotBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.pivot), gl.STATIC_DRAW);
-      gl.bindBuffer(gl.ARRAY_BUFFER, F.sideBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.side), gl.STATIC_DRAW);
-      faith.vao = F.vao; faith.buf = F.buf; faith.pivotBuf = F.pivotBuf; faith.sideBuf = F.sideBuf; faith.count = arr.length/18;
-      faith.pivot = G.pivot; faith.pivotOn = G.pivot.some((w) => w > 0);
+    // for the per-sample geometry bake. On the GPU only for a grove grown faithful (G.faithful, the key's own bit); a layered grove keeps the same
+    // leaves as a CPU record (faith.rec), which the routes read and faithGL uploads should a cast ever draw them. ----
+    faith.pivot = G.pivot;   // the survivors' weights, as uploaded
+    faith.pivotOn = G.pivot.some((w) => w > 0);   // the bake's specialization: VS_FAITH_PIVOT only where a leaf has one
+    faith.count = G.faithArr.length/18;
+    faith.vao = faith.buf = faith.pivotBuf = faith.sideBuf = faith.rec = null;   // every key the grove owns, so attach and detach move them all
+    const rec = { leaves: G.faithArr, pivot: new Float32Array(G.pivot), side: new Float32Array(G.side) };
+    if(G.faithful && was?.faith.vao){
+      const F = was.faith;
+      gl.bindBuffer(gl.ARRAY_BUFFER, F.buf); gl.bufferData(gl.ARRAY_BUFFER, rec.leaves, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, F.pivotBuf); gl.bufferData(gl.ARRAY_BUFFER, rec.pivot, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, F.sideBuf); gl.bufferData(gl.ARRAY_BUFFER, rec.side, gl.STATIC_DRAW);
+      faith.vao = F.vao; faith.buf = F.buf; faith.pivotBuf = F.pivotBuf; faith.sideBuf = F.sideBuf;
       F.vao = F.buf = F.pivotBuf = F.sideBuf = null;
-    } else {
-      const arr = G.faithArr;
-      const buf = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      gl.bufferData(gl.ARRAY_BUFFER, arr, gl.STATIC_DRAW);
-      const vao = gl.createVertexArray();
-      gl.bindVertexArray(vao);
-      gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
-      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      const S=72;   // 18 floats/leaf: the 16 bake floats + the continuous height + the fade
-      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
-      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
-      gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
-      gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,4,gl.FLOAT,false,S,48); gl.vertexAttribDivisor(4,1);
-      gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,1,gl.FLOAT,false,S,64); gl.vertexAttribDivisor(5,1);
-      gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6,1,gl.FLOAT,false,S,68); gl.vertexAttribDivisor(6,1);
-      faith.pivotBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, faith.pivotBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.pivot), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(8); gl.vertexAttribPointer(8,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(8,1);   // the pivot weight, one float a leaf
-      faith.sideBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, faith.sideBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(G.side), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(9); gl.vertexAttribPointer(9,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(9,1);   // the leaf's side, one float a leaf: read by the tree view alone
-      faith.pivot = G.pivot;   // the survivors' weights, as uploaded
-      faith.pivotOn = G.pivot.some((w) => w > 0);   // the bake's specialization: VS_FAITH_PIVOT only where a leaf has one
-      gl.bindVertexArray(null);
-      faith.vao=vao; faith.buf=buf; faith.count=arr.length/18;
-    }
+    } else if(G.faithful) makeFaithGL(faith, rec, gl.STATIC_DRAW);
+    else faith.rec = rec;
 
     // (the woody shadow is now the CONTINUOUS-height analytic occluder built below, spec/model/canopy.md — the old layer-stamped
     // branch quads were retired because layer quantization shattered continuous lines at a low sun.)
@@ -1065,6 +1055,37 @@ export function makeGrove(hub){
     Object.assign(g.own.faith, was.faith); Object.assign(g.own.sky, was.sky);
   }
 
+  // The faithful leaves onto the GPU from a record (leaves, pivot weights, sides): the buffers and their vertex array, made on F.
+  function makeFaithGL(F, rec, usage){
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, rec.leaves, usage);
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    const S=72;   // 18 floats/leaf: the 16 bake floats + the continuous height + the fade
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,4,gl.FLOAT,false,S,0);  gl.vertexAttribDivisor(1,1);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,S,16); gl.vertexAttribDivisor(2,1);
+    gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3,4,gl.FLOAT,false,S,32); gl.vertexAttribDivisor(3,1);
+    gl.enableVertexAttribArray(4); gl.vertexAttribPointer(4,4,gl.FLOAT,false,S,48); gl.vertexAttribDivisor(4,1);
+    gl.enableVertexAttribArray(5); gl.vertexAttribPointer(5,1,gl.FLOAT,false,S,64); gl.vertexAttribDivisor(5,1);
+    gl.enableVertexAttribArray(6); gl.vertexAttribPointer(6,1,gl.FLOAT,false,S,68); gl.vertexAttribDivisor(6,1);
+    F.pivotBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, F.pivotBuf); gl.bufferData(gl.ARRAY_BUFFER, rec.pivot, usage);
+    gl.enableVertexAttribArray(8); gl.vertexAttribPointer(8,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(8,1);   // the pivot weight, one float a leaf
+    F.sideBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, F.sideBuf); gl.bufferData(gl.ARRAY_BUFFER, rec.side, usage);
+    gl.enableVertexAttribArray(9); gl.vertexAttribPointer(9,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(9,1);   // the leaf's side, one float a leaf: read by the tree view alone
+    gl.bindVertexArray(null);
+    F.vao = vao; F.buf = buf;
+  }
+  // A layered grove's faithful leaves on the GPU, should a cast ever ask to draw them (the bake asks before it casts; every faithful cast today is of a grove
+  // grown faithful): its record uploaded and let go, so the buffers are the leaves from then on, as a faithful grove's are. True when there is a faithful VAO to draw.
+  function faithGL(F){
+    if(!F.vao && F.rec){ makeFaithGL(F, F.rec, gl.DYNAMIC_DRAW); F.rec = null; }
+    return !!F.vao;
+  }
+
   // Is this grove the one attached to this hub, and does its cache still describe the params? (see the header: THE KEY)
   const reseasonable = (g) => !!g?.season && attachedGrove(hub) === g && (g.season.density
     ? densityEligible(params) && g.season.density.key === densityKey(params, faithfulOn()) && densityCount(params) <= g.season.nLeaf
@@ -1131,14 +1152,16 @@ export function makeGrove(hub){
       gl.bufferData(gl.ARRAY_BUFFER, outL[l].subarray(0, wL[l]), gl.DYNAMIC_DRAW);
       L.count = wL[l]/17;
     }
-    gl.bindBuffer(gl.ARRAY_BUFFER, F.buf);
-    gl.bufferData(gl.ARRAY_BUFFER, outF.subarray(0, wF), gl.DYNAMIC_DRAW);
     F.count = wF/18;
-    gl.bindBuffer(gl.ARRAY_BUFFER, F.pivotBuf);                                    // the survivors' pivot weights, beside them in the same order
-    gl.bufferData(gl.ARRAY_BUFFER, outP.subarray(0, wF/18), gl.DYNAMIC_DRAW);
     F.pivotOn = outP.subarray(0, wF/18).some((w) => w > 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, F.sideBuf);                                     // ...and their sides
-    gl.bufferData(gl.ARRAY_BUFFER, outS.subarray(0, wF/18), gl.DYNAMIC_DRAW);
+    if(F.buf){
+      gl.bindBuffer(gl.ARRAY_BUFFER, F.buf);
+      gl.bufferData(gl.ARRAY_BUFFER, outF.subarray(0, wF), gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, F.pivotBuf);                                    // the survivors' pivot weights, beside them in the same order
+      gl.bufferData(gl.ARRAY_BUFFER, outP.subarray(0, wF/18), gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, F.sideBuf);                                     // ...and their sides
+      gl.bufferData(gl.ARRAY_BUFFER, outS.subarray(0, wF/18), gl.DYNAMIC_DRAW);
+    } else F.rec = { leaves: outF.subarray(0, wF), pivot: outP.subarray(0, wF/18), side: outS.subarray(0, wF/18) };   // a layered grove's record: views of the re-season's own arrays, which the next re-season rewrites and re-points
     if(lx0<px0)px0=lx0; if(lx1>px1)px1=lx1; if(ly0<py0)py0=ly0; if(ly1>py1)py1=ly1;
     if(px0>px1){ const h=P.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
     F.pminx=px0; F.pmaxx=px1; F.pminy=py0; F.pmaxy=py1;
@@ -1241,5 +1264,5 @@ export function makeGrove(hub){
     return true;
   }
 
-  return { buildGrove, growGrove, uploadGrove, reseasonGrove, reseasonable, refreshWood };
+  return { buildGrove, growGrove, uploadGrove, reseasonGrove, reseasonable, refreshWood, faithGL };
 }

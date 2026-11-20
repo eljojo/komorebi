@@ -242,7 +242,7 @@ function growWith(over, faithful = false, { keep = false, drop = [] } = {}) {
   for (const k of drop) delete params[k];
   const faith = {}, hub = { gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => faithful, occ: {}, faith, sky: { start: [], count: [] } };
   const g = makeGrove(hub).buildGrove(null, { keepSeason: keep });
-  return { params, g, faith, litter: g.litter, layers: g.layerVAO.map((l) => Float32Array.from(l.buf.data)), faithLeaves: Float32Array.from(faith.buf.data), leafW: g.hier.leafW };
+  return { params, g, faith, litter: g.litter, layers: g.layerVAO.map((l) => Float32Array.from(l.buf.data)), faithLeaves: Float32Array.from((faith.rec?.leaves ?? faith.buf.data)), leafW: g.hier.leafW };
 }
 const memo = new Map();
 const grow = (over, faithful = false, opts = {}) => {   // the dense groves cost a moment: build each once

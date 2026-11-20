@@ -3,7 +3,7 @@ import { turnBack } from './komorebi-routes.js';
 import { ballisticK } from '../leaf/komorebi-leaf.js';
 import { flutterLevel, depthGate } from '../motion/komorebi-air.js';
 import { CANOPY_MORPH_MAX, DEFAULTS, MORPH_KEYS } from '../komorebi-params.js';
-import { leafLayerOf } from '../canopy/komorebi-grove.js';
+import { leafLayerOf, readFaith } from '../canopy/komorebi-grove.js';
 import { VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_FULL,
   VS_LEAF_CARRY, VS_LEAF_CARRY_PATCH, FS_LEAF_CARRY, LEAF_CARRY_OUT, LEAF_CARRY_PATCH_OUT } from '../transport/komorebi-shaders.js';
 const FEAT_LEAF_DIFFUSE = true;
@@ -273,11 +273,8 @@ export function makeLeafTravel(hub,createScene){
   const {gl,params,trans}=hub;
   let s=null;
   const read=h=>{
-    const leaves=new Float32Array(h.faith.count*18);
-    gl.bindBuffer(gl.ARRAY_BUFFER,h.faith.buf);gl.getBufferSubData(gl.ARRAY_BUFFER,0,leaves);
     // The pivot weights as the bake reads them, beside the leaves in the same order; null where no leaf has one, which keeps the old arithmetic.
-    let pivot=null;
-    if(h.faith.pivotOn){pivot=new Float32Array(h.faith.count);gl.bindBuffer(gl.ARRAY_BUFFER,h.faith.pivotBuf);gl.getBufferSubData(gl.ARRAY_BUFFER,0,pivot);}
+    const {leaves,pivot}=readFaith(gl,h.faith);
     return {leaves,pivot,hier:h.hier,params:h.params,motion:h.motion,hMax:h.faith.hMax,shape:h.grove.shape,texture:h.grove.leafTex,grove:h.grove};   // grove: its cluster textures, which its wind publishes
   };
   function beginLeafTravel(to){

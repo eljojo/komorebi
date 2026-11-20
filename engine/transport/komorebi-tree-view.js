@@ -64,7 +64,7 @@ export function makeTreeView(hub){
   // (the season's, the leaves' and the litter's travels draw their own leaves, and the viewpoint route moves the camera: the tree comes and goes under the fade).
   // The one exception is a tree fading across the season travel: it is drawn from the cast's records on their twigs, turning with them, while it fades.
   const fadingOverSeason = () => trans.treeFade && trans.route?.name === 'seasonTravel';
-  const wanted = () => !!params.tree_view && !!params.standing_scene && faithfulOn() && cameraFor(params) === 'floor' && faith.count > 0 && !!faith.sideBuf
+  const wanted = () => !!params.tree_view && !!params.standing_scene && faithfulOn() && cameraFor(params) === 'floor' && faith.count > 0 && !!(faith.sideBuf || faith.rec)   // the record: a layered grove asked before the regrow that makes it faithful (rebuildTextures sizes the layers first)
     && !(trans.active && (trans.castHeld || trans.travelField || trans.riseField || trans.viewpoint) && !fadingOverSeason());
 
   function compile(){

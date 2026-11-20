@@ -6,7 +6,7 @@ import {MORPH_KEYS,ANGLE_SET,DEFAULTS,CANOPY_MORPH_MAX} from '../komorebi-params
 import {seasonCamera} from './komorebi-season-travel.js';
 import {litterLanding,litterAlbedo,litterAge} from '../season/komorebi-litter.js';
 import {VS_LEAF_TRAVEL,FS_LEAF_TRAVEL} from '../transport/komorebi-shaders.js';
-import {leafLayerOf} from '../canopy/komorebi-grove.js';
+import {leafLayerOf,readFaith} from '../canopy/komorebi-grove.js';
 
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
@@ -28,9 +28,6 @@ export const groveTravelEligible=FEAT_LITTER?(a,b)=>{
  return nb>0&&na>=nb&&count>0&&count<=CANOPY_MORPH_MAX;
 }:()=>false;
 
-const read=h=>{const d=new Float32Array(h.faith.count*18);h.gl.bindBuffer(h.gl.ARRAY_BUFFER,h.faith.buf);h.gl.getBufferSubData(h.gl.ARRAY_BUFFER,0,d);return d;};
-// The pivot weights beside the leaves, as the bake reads them; null where no leaf has one (inner_leaves 0), which keeps the old arithmetic.
-const readPivot=h=>{if(!h.faith.pivotOn)return null;const w=new Float32Array(h.faith.count);h.gl.bindBuffer(h.gl.ARRAY_BUFFER,h.faith.pivotBuf);h.gl.getBufferSubData(h.gl.ARRAY_BUFFER,0,w);return w;};
 // Where a carried leaf is at its end, as the bake draws it there: a leaf hung on older wood drops its twig's bend by its pivot weight (VS_FAITH's PIVOT).
 export function carriedLeaf(q,i,o){
  const d=q.data,h=q.hub,H=h.hier,j=Math.round(d[i+11]),k=j*4,D=H.clusterData,G=H.clusterGeom,m=h.motion,p=h.params;
@@ -81,7 +78,7 @@ function segmentPoint(data,parts,t,out){
 }
 
 function createGroveRenderer(h,a,b,from,to,host){
- const gl=h.gl,A={hub:a.hub,data:read(h),pivot:readPivot(h)},B={hub:b.hub,data:read(b.hub),pivot:readPivot(b.hub)},trees=matchGroveTrees(a.hub,b.hub);
+ const gl=h.gl,ra=readFaith(gl,h.faith),rb=readFaith(gl,b.hub.faith),A={hub:a.hub,data:ra.leaves,pivot:ra.pivot},B={hub:b.hub,data:rb.leaves,pivot:rb.pivot},trees=matchGroveTrees(a.hub,b.hub);
  const ga=groups(a.hub),gb=groups(b.hub),woodPairs=[];
  for(let t=0;t<ga.length;t++)for(const [key,aa]of ga[t]){
   const bb=gb[trees[t].target].get(key);if(!bb)throw Error(`Missing destination branch ${t}/${key}`);

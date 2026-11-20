@@ -431,7 +431,7 @@ function createEngine(canvas, opts, driven=false){
     // the subsystems that destructure those handles at their top are rebuilt over the fresh ones (they hold no other state)
     const groveSystem = makeGrove(hub);
     ({ buildGrove, growGrove, uploadGrove, reseasonGrove, reseasonable } = groveSystem); Object.assign(hub,{buildGrove,reseasonGrove});
-    hub.refreshWood = groveSystem.refreshWood;
+    hub.refreshWood = groveSystem.refreshWood; hub.faithGL = groveSystem.faithGL;
     ({ bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow });
     ({ bakeFill, refreshFill, fillWanted, fillLayerRes } = FEAT_FILL ? makeFill(hub) : NO_FILL); Object.assign(hub, { bakeFill, refreshFill, fillWanted, fillLayerRes });   // the fill reads the layers and the frame the bake just put on the hub
     ({ refreshLitter } = FEAT_LITTER ? makeLitter(hub) : NO_LITTER); hub.refreshLitter = refreshLitter;

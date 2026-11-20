@@ -547,7 +547,7 @@ function groveRig(over) {
   const faith = {}, hub = { gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => false, occ: {}, faith, sky: { start: [], count: [] } };
   const g = makeGrove(hub).buildGrove(null);
   const on = (tx, name) => calls.filter((c) => c.tex === tx && c.name === name).map((c) => c.a);
-  return { params, g, on, layers: g.layerVAO.map((l) => Array.from(l.buf.data)), faithLeaves: Array.from(faith.buf.data) };
+  return { params, g, on, layers: g.layerVAO.map((l) => Array.from(l.buf.data)), faithLeaves: Array.from((faith.rec?.leaves ?? faith.buf.data)) };
 }
 const LOOK = { ...PRESETS["afternoon 7"], leaf_aspect: 1, leaf_size_m: 0.0756, seed: 4242 };
 

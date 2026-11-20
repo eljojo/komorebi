@@ -334,7 +334,7 @@ function rig(over, { faithful = false, keep = false } = {}) {
   const faith = {}, hub = { gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => faithful, occ: {}, faith, sky: { start: [], count: [] } };
   const G_ = makeGrove(hub), g = G_.buildGrove(null, keep ? { keepSeason: true } : undefined);
   const on = (tx, name) => calls.filter((c) => c.tex === tx && c.name === name).map((c) => c.a);
-  return { params, g, on, G: G_, hub, faith, layers: g.layerVAO.map((l) => l.buf.data), faithLeaves: faith.buf.data, litter: g.litter };
+  return { params, g, on, G: G_, hub, faith, layers: g.layerVAO.map((l) => l.buf.data), faithLeaves: (faith.rec?.leaves ?? faith.buf.data), litter: g.litter };
 }
 const MAPLE_LOOK = { ...PRESETS["afternoon 7"], leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.103, seed: 4242 };
 const sameBits = (a, b, label, skip = [], stride = 17) => {   // a layer's record is 17 floats, the faithful buffer's 18

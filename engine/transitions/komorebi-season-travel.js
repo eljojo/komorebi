@@ -48,7 +48,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
   const {gl,params,trans,faith}=hub;
   let s=null;
   const bounds=['pminx','pmaxx','pminy','pmaxy'];
-  // What the re-season just uploaded to faith.buf, from its own CPU copy: reading the buffer back would wait for the GPU to finish the frame before.
+  // What the re-season just wrote (to faith.buf, or a layered grove's record), from its own CPU copy: reading the buffer back would wait for the GPU to finish the frame before.
   const read=()=>hub.grove.season.outF.slice(0,faith.count*18);
   function snapshot(p){
     hub.reseasonGrove(hub.grove,{...p,leaf_drop:0});

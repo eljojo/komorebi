@@ -174,7 +174,7 @@ function growWith(over, faithful = false) {
   const params = fall({ tree_count: 2, leaves_per_cluster: 5, foliage_density: 1.5, layer_count: 2, ...over });
   const faith = {}, hub = { gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => faithful, occ: {}, faith, sky: { start: [], count: [] } };
   const g = makeGrove(hub).buildGrove(null);
-  return { params, g, layers: g.layerVAO.map((l) => Array.from(l.buf.data)), faithLeaves: Array.from(faith.buf.data) };
+  return { params, g, layers: g.layerVAO.map((l) => Array.from(l.buf.data)), faithLeaves: Array.from((faith.rec?.leaves ?? faith.buf.data)) };
 }
 // faithful record: [x,y,A,B0, angle,tilt,swingGain,swingPhase, tau.rgb,cluster, orbit×4, z, fade] = 18 floats
 const STRIDE = 18;

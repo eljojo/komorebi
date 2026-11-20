@@ -368,7 +368,7 @@ function groveRig(over, faithful = false) {
   const faith = {}, hub = { gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => faithful, occ: {}, faith, sky: { start: [], count: [] } };
   const g = makeGrove(hub).buildGrove(null);
   const on = (tx, name) => calls.filter((c) => c.tex === tx && c.name === name).map((c) => c.a);
-  return { params, g, on, layers: g.layerVAO.map((l) => l.buf.data), faithLeaves: faith.buf.data, litter: g.litter };
+  return { params, g, on, layers: g.layerVAO.map((l) => l.buf.data), faithLeaves: (faith.rec?.leaves ?? faith.buf.data), litter: g.litter };
 }
 // inner_leaves 0: afternoon 7 as it shipped when this was measured, every leaf at its twig tip
 const MAPLE_LOOK = { ...PRESETS["afternoon 7"], inner_leaves: 0, leaf_shape: "maple", leaf_aspect: 1, leaf_size_m: 0.103, seed: 4242 };

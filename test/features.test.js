@@ -170,7 +170,7 @@ function rig(makeG, params, tint, densityCapacity = null) {
   const faith = {}, hub = { gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => false, occ: {}, faith, sky: { start: [], count: [] } };
   const G = makeG(hub), g = G.buildGrove(null, { keepSeason: !!tint, densityCapacity });
   if (tint) { Object.assign(params, tint); G.reseasonGrove(g); }
-  return { layers: g.layerVAO.map((l) => Array.from(l.buf.data)), faith: Array.from(faith.buf.data), leafW: g.hier.leafW ? Array.from(g.hier.leafW) : null };
+  return { layers: g.layerVAO.map((l) => Array.from(l.buf.data)), faith: Array.from((faith.rec?.leaves ?? faith.buf.data)), leafW: g.hier.leafW ? Array.from(g.hier.leafW) : null };
 }
 const small = { tree_count: 2, leaves_per_cluster: 5, foliage_density: 1.5, layer_count: 2, seed: 7 };
 

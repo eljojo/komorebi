@@ -47,7 +47,7 @@ const firstDiff = (a, b) => {
 const snapshot = (R, g) => ({
   layers: g.layerVAO.map((l) => Float32Array.from(l.buf.data)),
   counts: g.layerVAO.map((l) => l.count),
-  faith: Float32Array.from(R.faith.buf.data),
+  faith: Float32Array.from((R.faith.rec?.leaves ?? R.faith.buf.data)),
   faithCount: R.faith.count,
   aabb: [R.faith.pminx, R.faith.pmaxx, R.faith.pminy, R.faith.pmaxy],
   litter: g.litter == null ? null : JSON.parse(JSON.stringify(g.litter)),

@@ -22,7 +22,7 @@ function grove(over) {
   const params = { ...DEFAULTS, faithful_canopy: true, leaves_per_cluster: 6, foliage_density: 1, ...over };
   const faith = {}, hub = { gl, params, MAX_TEX: 16384, quadBuf: {}, faithfulOn: () => true, occ: {}, faith, sky: { start: [], count: [] } };
   const g = makeGrove(hub).buildGrove(null);
-  return { g, leaves: Array.from(faith.buf.data) };
+  return { g, leaves: Array.from((faith.rec?.leaves ?? faith.buf.data)) };
 }
 
 test("off by default, and a topology key: a year more or less is another tree", () => {

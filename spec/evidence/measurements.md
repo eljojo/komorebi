@@ -896,6 +896,24 @@ The slip of an inner leaf from its limb is under [canopy](#canopy).
 - **What it established:** a morph frame no longer allocates. What that is worth in wall time is in "The five changes in wall time", below: inside the spread on most rows.
 - **Date:** 2026-11-18.
 
+### A layered grove's faithful leaves
+
+- **What was measured:** the bytes a layered look hands the GPU's buffers when its grove is built and on each re-season step, before and after a layered grove kept its faithful leaves as a CPU record and uploaded them only when a cast draws them.
+- **On:** a stand-in GL that counts the bytes `bufferData` is given (no driver, so no wall time), groves built with their season record, a re-season step of phenology ±0.1.
+- **Result:**
+
+  | look | leaves | regrow, before (MB) | after | re-season step, before (MB) | after |
+  |---|---|---|---|---|---|
+  | the void | 102 960 | 15.32 | 7.08 | 15.24 | 7.00 |
+  | canopy 2 | 88 128 | 13.09 | 6.04 | 13.04 | 5.99 |
+  | shrooms | 33 660 | 5.01 | 2.31 | 4.98 | 2.29 |
+  | morning 3 | 32 175 | 4.79 | 2.21 | 4.76 | 2.19 |
+  | afternoon 7 | 29 700 | 4.42 | 2.05 | 4.40 | 2.02 |
+
+  The GPU holds 80 bytes a leaf less (8.2 MB on the void). A grove with a season record holds nothing more on the CPU, since its record is a view of the re-season's own arrays; one without holds its faithful arrays where the GPU held them, the same 80 bytes a leaf. The JS time of the build and the re-season is unchanged inside the spread. A route leaving a layered look (leaf travel, grove travel, the litter rise) reads those leaves from the record instead of waiting for the GPU's copy (7.4 MB on the void). Faithful looks upload and read back as before.
+- **Not measured here:** the driver's time for the bytes no longer sent, and the wait no longer taken on a route's first frame. Both need a browser.
+- **Date:** 2026-11-20.
+
 ### A route's programs, the second time
 
 - **What was measured:** the route programs linked when a route that has already run there and back runs again, before and after every route took its programs from the context's table through the host engine; every frame of the routes compared byte for byte.

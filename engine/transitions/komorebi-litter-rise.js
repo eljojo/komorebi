@@ -11,6 +11,7 @@ import {pairLeaves,moveLeafEndpoint} from './komorebi-leaf-travel.js';
 import {VS_RISE,FS_RISE,VS_RISE_SKY,FS_RISE_SKY} from '../transport/komorebi-shaders.js';
 import {litterLanding,litterAlbedo,litterAge} from '../season/komorebi-litter.js';
 import {leafVariant} from '../leaf/komorebi-leaf.js';
+import {readFaith} from '../canopy/komorebi-grove.js';
 export function riseCamera(a,b,t){
  const w=smoothstep(.06,.95,t),gaze=smoothstep(.07,.68,t),A=cameraPose(a),B=cameraPose(b);
  return {eye:A.eye.map((v,i)=>w===1?B.eye[i]:lerp(v,B.eye[i],w)),elevation:gaze===1?B.elevation:lerp(A.elevation,B.elevation,gaze),
@@ -133,8 +134,7 @@ function makeRiseRenderer(hub,source,from,to,footprints=false,descending=false){
  const a=source,b={hub},canvas=hub.canvas,h=a.hub,g=hub.gl;
  const layeredFloor=footprints&&!from.faithful_canopy;
  const read=h=>{
-  const leaves=new Float32Array(h.faith.count*18);
-  g.bindBuffer(g.ARRAY_BUFFER,h.faith.buf);g.getBufferSubData(g.ARRAY_BUFFER,0,leaves);
+  const {leaves}=readFaith(g,h.faith);
   return {leaves,hier:h.hier,params:h.params,motion:h.motion,hMax:h.faith.hMax,shape:h.grove.shape,texture:h.grove.leafTex};
  };
  let A,ids,litter,fades,reflectance;

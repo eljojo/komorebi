@@ -38,7 +38,7 @@ function growWith(over, faithful = false, { keep = false, drop = [], maxTex = 16
   for (const k of drop) delete params[k];
   const faith = {}, hub = { gl, params, MAX_TEX: maxTex, quadBuf: {}, faithfulOn: () => faithful, occ: {}, faith, sky: { start: [], count: [] } };
   const g = GROVE.makeGrove(hub).buildGrove(null, { keepSeason: keep });
-  return { params, g, faith, litter: g.litter, layers: g.layerVAO.map((l) => Float32Array.from(l.buf.data)), faithLeaves: Float32Array.from(faith.buf.data), leafW: g.hier.leafW, rec: g.season ? g.season.rec : null, season: g.season };
+  return { params, g, faith, litter: g.litter, layers: g.layerVAO.map((l) => Float32Array.from(l.buf.data)), faithLeaves: Float32Array.from((faith.rec?.leaves ?? faith.buf.data)), leafW: g.hier.leafW, rec: g.season ? g.season.rec : null, season: g.season };
 }
 const memo = new Map();
 const grow = (over, faithful = false, opts = {}) => {   // the dense groves cost a moment: build each once
@@ -474,7 +474,7 @@ function reseasoned(build, to, faithful) {   // a grove built at one season and 
   const maker = GROVE.makeGrove({ gl, params, MAX_TEX: 16384, quadBuf: {}, faithfulOn: () => faithful, occ: {}, faith, sky: { start: [], count: [] } });
   const g = maker.buildGrove(null, { keepSeason: true });
   maker.reseasonGrove(g, P1);
-  return { params: P1, g, litter: g.litter, layers: g.layerVAO.map((l) => Float32Array.from(l.buf.data)), faithLeaves: Float32Array.from(faith.buf.data), leafW: g.hier.leafW, season: g.season };
+  return { params: P1, g, litter: g.litter, layers: g.layerVAO.map((l) => Float32Array.from(l.buf.data)), faithLeaves: Float32Array.from((faith.rec?.leaves ?? faith.buf.data)), leafW: g.hier.leafW, season: g.season };
 }
 function innerByHand(snap, label) {
   const P = snap.params, S = snap.season, rec = S.rec, { twigs, nLeaf } = snap.g.hier, nTree = Math.ceil(P.tree_count);
@@ -693,7 +693,7 @@ function previewLeaves(over, faithful, live = {}) {   // `live`: params set AFTE
   const segs = g.hier.segments;
   let R = 1e-3, maxZ = 1e-3;
   for (const s of segs) { R = Math.max(R, Math.hypot(s.a[0], s.a[1]), Math.hypot(s.b[0], s.b[1])); maxZ = Math.max(maxZ, s.a[2], s.b[2]); }
-  return { pts: calls[0], fit: 0.72 / Math.max(R, maxZ), F: Float32Array.from(faith.buf.data), g };
+  return { pts: calls[0], fit: 0.72 / Math.max(R, maxZ), F: Float32Array.from((faith.rec?.leaves ?? faith.buf.data)), g };
 }
 test("the preview and the cast share one placement: at 0.5 the preview draws one point per kept leaf, at the faithful buffer's x, y and z — and at 0 too, now that it walks the grove's draw order", () => {
   for (const inner of [0, 0.5]) for (const [name, cfg, faithful] of [["park 1", PARK, true], ["small, marginal tree, layer", small({ tree_count: 2.4 }), false]]) {
@@ -868,7 +868,7 @@ test("the pivot weights ride beside the faithful leaves: one a leaf, compacted w
   for (const [label, over] of [["off", { inner_leaves: 0 }], ["on", { inner_leaves: 0.45 }], ["on, half fallen", { inner_leaves: 0.45, leaf_drop: 1, phenology: 0.85, anthocyanin: 0.4, tannin: 0.2 }]]) {
     const r = growWith(small(over), true);
     expect(r.faith.pivot.length, `${label}: one weight a leaf`).toBe(r.faithLeaves.length / 18);
-    expect(Array.from(r.faith.pivotBuf.data ?? []).length, `${label}: the uploaded buffer is the same list`).toBe(r.faith.pivot.length);
+    expect(Array.from((r.faith.rec?.pivot ?? r.faith.pivotBuf.data) ?? []).length, `${label}: the uploaded buffer is the same list`).toBe(r.faith.pivot.length);
     if (over.inner_leaves === 0) expect(r.faith.pivot.every((w) => w === 0), `${label}: all 0`).toBe(true);
     else expect(r.faith.pivot.filter((w) => w > 0).length, `${label}: leaves on older wood`).toBeGreaterThan(20);
     if (over.leaf_drop) expect(r.litter.length, `${label}: leaves have gone (not vacuous)`).toBeGreaterThan(20);
@@ -883,6 +883,6 @@ test("the pivot weights survive a re-season: the grove re-seasoned in place to h
   maker.reseasonGrove(g, { ...DEFAULTS, ...to });
   const fresh = growWith(to, true);
   expect(fresh.litter.length, "leaves have gone (not vacuous)").toBeGreaterThan(20);
-  expect(faith.buf.data.length / 18 === faith.pivotBuf.data.length, "one weight a leaf after the re-season").toBe(true);
-  expect(Array.from(faith.pivotBuf.data), "the re-season's weights are the fresh build's").toEqual(Array.from(Float32Array.from(fresh.faith.pivot)));
+  expect((faith.rec?.leaves ?? faith.buf.data).length / 18 === (faith.rec?.pivot ?? faith.pivotBuf.data).length, "one weight a leaf after the re-season").toBe(true);
+  expect(Array.from((faith.rec?.pivot ?? faith.pivotBuf.data)), "the re-season's weights are the fresh build's").toEqual(Array.from(Float32Array.from(fresh.faith.pivot)));
 });

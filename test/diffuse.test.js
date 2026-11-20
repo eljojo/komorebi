@@ -442,7 +442,7 @@ test("the grove hands the bake each leaf's fade (iFade) — the very factor it f
   const params = { ...DEFAULTS, tree_count: 1.5, leaves_per_cluster: 5, foliage_density: 1.5, layer_count: 2 };   // 7.5 leaves a twig, 1.5 trees: fades 1, ½ (marginal leaf), ½ (marginal tree), ¼ (both)
   const faith = {}, hub = { gl, params, MAX_TEX: 4096, quadBuf: {}, faithfulOn: () => true, occ: {}, faith, sky: { start: [], count: [] } };
   const g = makeGrove(hub).buildGrove(null);
-  const layers = g.layerVAO.map((l) => Array.from(l.buf.data)), leaves = Array.from(faith.buf.data);
+  const layers = g.layerVAO.map((l) => Array.from(l.buf.data)), leaves = Array.from((faith.rec?.leaves ?? faith.buf.data));
   const tau = [params.trans_r, params.trans_g, params.trans_b].map((v) => -Math.log(Math.min(Math.max(v, 1e-4), 0.999)));   // the grove's own clamp
   expect(g.layerVAO.every((l) => l.count === l.buf.data.length / 17), "17 floats a leaf on the layer path").toBe(true);
   expect(faith.count).toBe(leaves.length / 18);                              // 18 on the faithful one: the height, then the fade
@@ -506,7 +506,7 @@ function castRig(over = {}) {
   const gl = new Proxy({}, { get: (_t, name) => (/^[A-Z][A-Z0-9_]+$/.test(name) ? name : () => { if (name === "bindFramebuffer") casts++; return {}; }) });
   const params = { ...DEFAULTS, ...over };
   const src = { count: 29, flat: new Float32Array(87) }, faith = { vao: null, k: 0, n: 0 };
-  const bake = makeBake({ gl, params, motion: {}, src, faith, sky: {}, U: {}, fill: {}, refreshWood: () => false, bakeRes: () => 256, faithfulOn: () => true });
+  const bake = makeBake({ gl, params, motion: {}, src, faith, sky: {}, U: {}, fill: {}, refreshWood: () => false, faithGL: () => false, bakeRes: () => 256, faithfulOn: () => true });
   return { bake, params, src, faith, casts: () => casts };
 }
 
