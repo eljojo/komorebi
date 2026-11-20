@@ -5,7 +5,7 @@
 // reads (publishBend). A factory over the engine's shared internals (hub).
 // ============================================================================
 import { DEG, TAU, clamp } from '../komorebi-math.js';
-import { windNoise } from './komorebi-air.js';
+import { windNoise, branchNoise, WIND_PATTERNS } from './komorebi-air.js';
 import { weatherAt, leanForce, crossForce, gustEdge, advanceAir, airForce, airLevel, airDelay, airAcross, carrySpeed, shelter, makeAirTrack } from './komorebi-air.js';
 
 export const MAX_MOTION_STEP = 1/15;
@@ -37,6 +37,9 @@ export function makeMotion(hub){
     if(!hier) return;
     const t = motion.time;
     const wind = clamp(params.wind_strength*motion.weatherS, 0, 1);
+    // the branch noise: windNoise's two tones, or with branch_noise the wind pattern's own broadband signal (komorebi-air.js)
+    const bn = clamp(params.branch_noise || 0, 0, 1), pat = WIND_PATTERNS[params.wind_pattern] || WIND_PATTERNS.gusty;
+    const noise = bn > 0 ? (x, y, tt, k) => (1 - bn)*windNoise(x, y, tt, k) + bn*branchNoise(x, y, tt, k, pat) : windNoise;
     // each limb and twig takes its own tree's trunk: its coherent gust sense u (signed, stiffened/backlashed) and its gust
     // intensity, which scales the branch noise (branch noise needs wind too; the springs can relax while leaf drift keeps ticking)
     const dz = params.damping_ratio;
@@ -55,7 +58,7 @@ export function makeMotion(hub){
       const dx=hier.limbDir[2*i], dy=hier.limbDir[2*i+1];
       const torque = dx*wy - dy*wx;            // cross(limbDir,wind): tip swings downwind, sign by side —
                                                // so a uniform gust LEANS the whole canopy, never spins it
-      const n = windNoise(hier.limbPlan[2*i], hier.limbPlan[2*i+1], t, 0.4);
+      const n = noise(hier.limbPlan[2*i], hier.limbPlan[2*i+1], t, 0.4);
       const target = lf*(u*torque + 0.6*eb*n);
       for(let s=0;s<steps;s++){ const a = kL*(target - hier.limbAngle[i]) - cL*hier.limbVel[i];
         hier.limbVel[i]+=a*h; hier.limbAngle[i]+=hier.limbVel[i]*h; }
@@ -85,7 +88,7 @@ export function makeMotion(hub){
       const cxj=hier.clusterPlan[2*j], cyj=hier.clusterPlan[2*j+1];
       const rx=cxj-hier.clusterGeom[4*j+2], ry=cyj-hier.clusterGeom[4*j+3], cl=Math.hypot(rx,ry)||1e-3;  // offset from THIS tree's trunk
       const tq=(rx*wy - ry*wx)/cl;             // downwind torque about the twig's own tree trunk (same lean sense as the limb)
-      const n = windNoise(cxj, cyj, t+hier.clusterPhase[j], 1.5);
+      const n = noise(cxj, cyj, t+hier.clusterPhase[j], 1.5);
       const target = tf*(0.4*u*tq + eb*n);
       for(let s=0;s<steps;s++){ const a = kT*(target - hier.twigAngle[j]) - cT*hier.twigVel[j];
         hier.twigVel[j]+=a*h; hier.twigAngle[j]+=hier.twigVel[j]*h; }

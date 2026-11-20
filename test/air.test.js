@@ -3,7 +3,7 @@
 // trunk with; a clump downwind feels the gust later by its distance over U; the eddies are a factor of mean 1. The wind's
 // reach: off, every leaf rocks; on, the skin always, the core only once the wind is strong enough, deeper as it rises.
 import { expect, test } from "bun:test";
-import { AIR, DEPTH, advanceAir, airCurve, airDelay, airForce, airLevel, crossForce, curveForce, depthGate, eddy, flutterLevel, gustEdge, leanForce, makeAirTrack, shelter, weatherAt } from "../engine/motion/komorebi-air.js";
+import { AIR, DEPTH, WIND_PATTERNS, advanceAir, airCurve, airDelay, airForce, airLevel, branchNoise, crossForce, curveForce, depthGate, eddy, flutterLevel, gustEdge, leanForce, makeAirTrack, shelter, weatherAt, windNoise } from "../engine/motion/komorebi-air.js";
 import { crownDepth } from "../engine/canopy/komorebi-grove.js";
 import { DEFAULTS } from "../engine/komorebi-params.js";
 
@@ -140,4 +140,20 @@ test("shelter: the most upwind tree stands in the open; one in a crown's wake ke
   expect([...shelter(pos, crown, 4, 1, 0, 0, S)]).toEqual([1, 1, 1, 1]);   // off: everyone in the open
   shelter(pos, crown, 4, -1, 0, 1, S);
   expect(S[2], "the wind turned: the far tree is upwind now").toBe(1);
+});
+
+// the branch noise as wind (branch_noise): the same spread as windNoise's two tones, a tempo set by the pattern. How fast a
+// signal changes is read as the spread of its step over a quarter second against its own spread: a lazy wind's branches
+// move slowly, a choppy one's quickly, and the tones' tempo is the same for every pattern
+test("branch noise: windNoise's spread, the pattern's tempo", () => {
+	const fs = 24, n = fs * 1200, x = 1.3, y = -0.7, k = 1.5;
+	const sd = (a) => { const m = a.reduce((s, v) => s + v, 0) / a.length; return Math.sqrt(a.reduce((s, v) => s + (v - m) ** 2, 0) / a.length); };
+	const pace = (a) => sd(a.slice(6).map((v, i) => v - a[i])) / sd(a);
+	const tones = Array.from({ length: n }, (_, i) => windNoise(x, y, i / fs, k));
+	const of = (p) => Array.from({ length: n }, (_, i) => branchNoise(x, y, i / fs, k, WIND_PATTERNS[p]));
+	const lazy = of("lazy"), gusty = of("gusty"), choppy = of("choppy");
+	for (const b of [lazy, gusty, choppy]) expect(Math.abs(sd(b) / sd(tones) - 1)).toBeLessThan(0.08);
+	expect(pace(lazy)).toBeLessThan(pace(gusty));
+	expect(pace(gusty)).toBeLessThan(pace(choppy));
+	expect(pace(choppy) / pace(lazy)).toBeGreaterThan(1.5);
 });

@@ -901,6 +901,10 @@ const PARAMS = {
     row: { kind: 's', label: 'air', min: 0, max: 1, step: 0.01, rebuild: '' },
     travels: 'morph',   // the leaves flutter in the air where they hang (komorebi-air.js): continuous, so it eases in a transition
     means: "<b>The leaves flutter in the air where they hang.</b> Off, every leaf trembles with the trunk's sway, so the whole canopy stills at once each time it swings back through rest. On, a gust is carried through the grove at a walking pace, downwind leaves feeling it after upwind ones, and small eddies make neighbours tremble differently. The air keeps moving while a branch recoils." },
+  branch_noise: { default: 0.0,   // PROTOTYPE: the limbs' and twigs' noise as the wind pattern's own broadband signal (komorebi-air.js, branchNoise) instead of windNoise's two fixed tones; 0 = off, the motion exactly as before
+    row: { kind: 's', label: 'branch air', min: 0, max: 1, step: 0.01, rebuild: '' },
+    travels: 'morph',   // a blend of two signals of time: continuous, so it eases in a transition
+    means: "<b>The branches tremble with the wind's own character.</b> Off, every limb and twig trembles at the same two steady tempos whatever the wind is doing. On, they take the wind pattern's own mix of slow and quick: a lazy wind rocks them slowly and smoothly, a choppy one makes them nervous. The size of the movement stays the same; its tempo follows the wind." },
   sway_spread: { default: 1,   // on by default (a look from before it was keeps 0: GRANDFATHERED, below); each tree's springs at its own pace (komorebi-grove.js treePace, komorebi-motion.js paceOf): size^-1/2 and ±10 % of its own; 0 = off, every tree at the look's stiffness
     row: { kind: 's', label: 'tree pace', min: 0, max: 1, step: 0.01, rebuild: '' },
     travels: 'morph',

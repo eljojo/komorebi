@@ -60,7 +60,20 @@ const WIND_PATTERNS = {
 function windNoise(x, y, t, k){
   return 0.7*(Math.sin(x*k + t*0.9) + 0.5*Math.sin(y*k*1.3 - t*1.4 + 1.7));
 }
-export { fbm1, WIND_PATTERNS, windNoise };
+// THE BRANCH NOISE AS WIND (branch_noise; a prototype). windNoise is two tones in time, 0.9 and 1.4 rad/s, the same for
+// every pattern: the limbs and twigs tremble at one tempo whatever the wind's character, and the floor's brightness
+// tempo does not follow H. branchNoise keeps windNoise's shape (the two terms, their weights, their phase across the
+// grove, carried the same way) and makes each tone the pattern's own fractal sum instead: unit-std fbm1 scaled to a
+// sine's spread, its lowest octave BN_BASE times the tone's frequency, so its flat low end reaches up to the tone (each
+// value-noise octave is flat below about 0.4 of its frequency) and above it the spectrum falls as f^-(2H+1) over the
+// pattern's octaves: a lazy wind slow and smooth, a choppy one nervous. Same spread as windNoise, a different tempo.
+const BN_BASE = 2.5;
+function branchNoise(x, y, t, k, pat){
+  const s = Math.SQRT1_2, w1 = 0.9, w2 = 1.4;
+  return 0.7*(s*fbm1(t + x*k/w1, BN_BASE*w1/(2*Math.PI), pat.octaves, pat.H)
+            + 0.5*s*fbm1(-t + (y*k*1.3 + 1.7)/w2 + 53.3, BN_BASE*w2/(2*Math.PI), pat.octaves, pat.H));
+}
+export { fbm1, WIND_PATTERNS, windNoise, branchNoise };
 
 export const AIR = {
   U: 3,          // m/s: how fast a gust is carried through the grove

@@ -320,6 +320,7 @@ const PANEL_LAYOUT = [
   'leaf_swing',
   'flutter_freq',
   'wind_air',
+  'branch_noise',
   'wind_depth',
   'sway_spread',
   ['adv','leaf drift'],
