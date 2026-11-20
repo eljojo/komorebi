@@ -233,7 +233,8 @@ export function makeTreeView(hub){
     gl.uniform1f(u.crownP, clamp(params.crown_light || 0, 0, 0.9));
     gl.uniform1i(u.openSky, params.open_sky ? 1 : 0);
     gl.uniform1i(u.beamMarch, params.beam_march ? 1 : 0);
-    const atm = atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight), loss = beamLoss('floor', params);
+    const atm = atmosphere(_atm, params.sun_elevation_deg, params.sky_turbidity, params.ambient_skylight);
+    const loss = beamLoss('floor', params)*(hub.src.beamShare ?? 1);
     gl.uniform3f(u.leafSun, atm.sun[0]*loss, atm.sun[1]*loss, atm.sun[2]*loss); gl.uniform1f(u.sunCosine, clamp(params.sun_cosine, 0, 1));
     sunDirection(_sd, params.sun_elevation_deg, params.sun_azimuth_deg); gl.uniform3f(u.sunDir, _sd[0], _sd[1], _sd[2]);
     gl.uniform3f(u.ambient, atm.ambient[0], atm.ambient[1], atm.ambient[2]);

@@ -764,6 +764,7 @@ ${GLSL_WOOD_FIELD}
 uniform vec2  uSrcAngR;           // the SEEN source's angular radii (core, halo) — the very two the sampler draws its offsets from
 uniform vec2  uSrcAngL;           // its radiance in each region (core, halo). CPU-derived from the sampler's own post-cloud weight split, so the sun you look at and the dapples it throws cannot drift apart
 uniform vec2  uSrcMoon;           // eclipse: the moon disk's (centre offset, radius) in the sampler's own source plane; .y = 0 = no eclipse
+uniform float uSunShare;          // the share of sunlight that survives the eclipse and reaches the leaves
 // SKY VIEW's two constants (spec/model/sky-view.md). SKY_AA is one angular soft edge, standing in for both a pixel's own angular
 // footprint (≈3 px on an 85° frame ~1000 tall) and the penumbra a silhouette really has against the sun's disk.
 // SKY_SKY_GAIN converts uAmbient — an authored IRRADIANCE, what the sky delivers ONTO a surface — into the RADIANCE
@@ -836,6 +837,7 @@ const GLSL_T_SKY_READ = `    if(dir.z <= 1e-3){
       // disk's: a leaf kills it (spec/model/canopy.md), so the sun burns through the gaps and never through a leaf.
       vec3 T, Tsrc, Lsc;
       skyRay(pL0, pL1, pL2, pL3, uSunDir.xy / max(uSunDir.z, 0.05), uSkyScatter > 0.0 || uBeamK > 0.0, true, uWoodOn, uBeamK, T, Tsrc, Lsc);   // the sun it looks at is the sun that lights what it sees: it has no beam to share one with
+      Lsc *= uSunShare;
       if(uBeamK <= 0.0 && uSkyScatter > 0.0) Lsc *= uSkyScatter;   // the retired proxy, exactly as fill_scatter is on the floor: above leaf_diffuse 0 the measured glow replaces it, and it is the same light counted once
       // WOOD AS SILHOUETTE. The same segments the floor casts shadows with (spec/model/canopy.md), read as GEOMETRY this time: no
       // uBulkShift term anywhere here, because that vector is where the wood's shadow FALLS and we are looking at the
@@ -1138,7 +1140,7 @@ uniform vec3 uSurfaceSunColor;`, locs: {eye:'uViewEye', elevation:'uViewElevatio
                                                       tentFade:'uTentFade', tentSeam:'uTentSeam', tentMesh:'uTentMesh' } },
   fill:      { decls: GLSL_T_FILL_DECLS,      locs: { canopyFill:'uCanopyFill', fillReturn:'uFillReturn', fillT:'uFillT', fillS:'uFillS', fillOrigin:'uFillOrigin', fillExtent:'uFillExtent' } },
   litter:    { decls: GLSL_T_LITTER_DECLS,    locs: { litterOn:'uLitterOn', litter:'uLitter', litterOrigin:'uLitterOrigin', litterExtent:'uLitterExtent' } },
-  sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', edgeMix:'uLayerEdgeMix', woodOn:'uWoodOn', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon' } },
+  sky:       { decls: GLSL_T_SKY_DECLS,       locs: { skyScatter:'uSkyScatter', beamK:'uBeamK', edgeArea:'uEdgeArea', edgeMix:'uLayerEdgeMix', woodOn:'uWoodOn', woods:['uWood[0]','uWood[1]','uWood[2]','uWood[3]'], srcAngR:'uSrcAngR', srcAngL:'uSrcAngL', srcMoon:'uSrcMoon', sunShare:'uSunShare' } },
   post:      { decls: GLSL_T_POST_DECLS,      locs: { haze:'uHazeColor', twilight:'uTwilight', mesopic:'uMesopic', linearOut:'uLinearOut',
                                                       exposure:'uExposure', contrast:'uContrast', tone:'uToneMap', travelTone:'uTravelTone',
                                                       vignette:'uVignette', vignetteShape:'uVignetteShape', irisOpacity:'uIrisOpacity',

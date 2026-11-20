@@ -20,6 +20,7 @@ const KINDS = { Buffer: "buffer", VertexArray: "vertex array", Texture: "texture
 function makeLedger() {
   let seq = 0, lost = false, casts = 0, layerDraws = 0, treeWoodDraws = 0, layerEdgeMix;
   let checksUntilIncomplete = 0;
+  const sunByProgram = new Map();
   const live = new Set(), deleted = new Set(), dead = new Set(), faults = [], made = {}, linked = [];
   const at = { array: null, vao: null, fb: null, prog: null, rb: null, unit: "TEXTURE0", units: {} };
   const label = (o) => `${o.kind} #${o.id}`;
@@ -73,6 +74,9 @@ function makeLedger() {
     shaderSource: (s, src) => { use(s, "compiled"); if (s) s.src = src; }, compileShader: (s) => use(s, "compiled"),
     getUniformLocation: (p, name) => { use(p, "asked"); return { name }; },
     uniform1f: (loc, value) => { if (loc?.name === "uLayerEdgeMix") layerEdgeMix = value; },
+    uniform3f: (loc, ...values) => {
+      if (loc?.name === "uLeafSun" || loc?.name === "uSunColor") sunByProgram.set(at.prog?.shaders?.[1]?.src, values);
+    },
     drawArrays: draw, drawArraysInstanced: draw,
     clear: () => use(at.fb, "cleared"), blitFramebuffer: () => use(at.fb, "blitted"), readPixels: () => use(at.fb, "read back"),
     beginQuery: (_t, q) => use(q, "begun"), getQueryParameter: (q) => { use(q, "read"); return 0; },
@@ -100,6 +104,7 @@ function makeLedger() {
     casts: () => casts,          // every sample of a faithful cast drawn so far
     layerDraws: () => layerDraws,
     treeWoodDraws: () => treeWoodDraws,
+    sunFor: (shader) => sunByProgram.get(shader),
     layerEdgeMix: () => layerEdgeMix,
     // what is left alive, by kind; shaders aside: the engine links each into its program and lets the program hold it
     leaks: () => { const n = {}; for (const o of live) if (o.kind !== "shader") n[o.kind] = (n[o.kind] ?? 0) + 1; return n; },
@@ -353,6 +358,21 @@ scenario("closing tree view releases its frame targets", BARE_TREE, (R) => {
   R.eng.params.tree_view = false;
   R.pump();
   expect(R.L.leaks().renderbuffer).toBeUndefined();
+});
+scenario("the eclipse dims the tree and its sunlight-driven fill in still air", { ...BARE_TREE, leaf_drop: 0, eclipse: false,
+  cloud_thickness: 0, sample_count: 32, canopy_fill: 1, fill_resolution: 32, ground_bounce: 1 }, (R) => {
+  const shaders = [SH.FS_TREE, SH.FS_TREE_WOOD, SH.FS_FILL, SH.FS_FILL_GROUND];
+  const lit = shaders.map(shader => R.L.sunFor(shader));
+  R.eng.params.eclipse = true;
+  R.eng.params.eclipse_amount = 0.95;
+  R.eng.apply("source");
+  R.pump();
+  const share = R.eng.src.beam.reduce((sum, x, i) => sum + (i % 3 === 2 ? x : 0), 0);
+  expect(share).toBeGreaterThan(0);
+  expect(share).toBeLessThan(0.5);
+  for (const [i, shader] of shaders.entries()) {
+    for (const [c, channel] of R.L.sunFor(shader).entries()) expect(channel).toBeCloseTo(lit[i][c] * share, 6);
+  }
 });
 scenario("faithful casts stamp only nonzero source samples", { ...FAITHFUL, wind_strength: 0, cloud_thickness: 1, sample_count: 32 }, (R) => {
   const before = R.L.casts();

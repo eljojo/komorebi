@@ -24,7 +24,7 @@ const FEAT_LEAF_DIFFUSE = true;
 const edgeAreaOn = (params) => (FEAT_LEAF_DIFFUSE && params.edge_area ? 1 : 0);
 // How many slots the fill's signature has (fillSig, below). The engine sizes its `fill.sig` from this: a write past a Float64Array's end is dropped silently, and
 // the fill then re-bakes every frame, so the length is one number in one place.
-export const FILL_SIG_LEN = 23;
+export const FILL_SIG_LEN = 24;
 
 export function makeBake(hub){
   const { gl, params, motion, src, faith, sky, U, bakeFBO, faithFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
@@ -513,6 +513,7 @@ export function makeFill(hub){
   const fillAlbedo = () => CAMERAS[cameraFor(params)].groups.includes('floor') ? clamp(params.fill_scatter, 0, 1) : 0;
   const _atm = { sun:[0,0,0], ambient:[0,0,0] }, FILL_TURNS = fillTurns();   // the 16 slot rotations never change
   const _sig = new Float64Array(FILL_SIG_LEN);
+  const beamShare = () => hub.src?.beamShare ?? 1;
 
 
   // Everything the fill depends on besides the layers themselves (which rebake it eagerly, from bake()). The sun can
@@ -537,6 +538,7 @@ export function makeFill(hub){
     o[18]=gb > 0 ? params.ground_r : 0; o[19]=gb > 0 ? params.ground_g : 0; o[20]=gb > 0 ? params.ground_b : 0;
     o[21]=gb > 0 ? params.ambient_skylight : 0;
     o[22]=gb > 0 && hub.litter.ready ? hub.litter.passes : -1;
+    o[23]=beamShare();
   }
   // ---- THE GROUND, RETURNED BY THE UNDERSIDES (spec model/fill.md; the law in komorebi-fill.js, the passes in komorebi-shaders.js). With
   // ground_bounce up the bake runs three passes before the fill's own: G, the ground's light (half the fill's resolution); W, what each layer's
@@ -678,7 +680,7 @@ export function makeFill(hub){
     if(fill.K !== K){ fill.rays = fillRays(K); fill.K = K; }   // cached: the plain set is a function of K alone (each texel rotates it itself)
     // The leaves are near-horizontal (max_tilt), so the sunlight they take is the floor's cosine whatever surface reads S: the beam the leaves remove (scaled at transport) and the S they send down
     // (scaled here) then stay one split of one energy. T_sky is the skylight and keeps its level. GLSL_SKY_RAY is untouched — its input is scaled — so fill.test.js's reference still applies.
-    const sunIrr = lerp(1, sunIncidence('floor', params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1))*beamLoss('floor', params);   // held to 0..1 like the upload that scales the beam (komorebi-render.js), or the two halves of the split would disagree past 1
+    const sunIrr = lerp(1, sunIncidence('floor', params.sun_elevation_deg, params.sun_azimuth_deg), clamp(params.sun_cosine, 0, 1))*beamLoss('floor', params)*beamShare();
     const gb = bounceOn();
     if(gb > 0){   // the ground returned by the undersides, baked first: the fill pass adds it to S. The ground is lit by the same sun the leaves are (the floor's cosine)
       if(!fill.bounce || fill.bounce.res !== res) allocBounce(res);

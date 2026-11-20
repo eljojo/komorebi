@@ -47,13 +47,19 @@ export function makeSource(hub){
       src.moonClear = moonClear(coreR, haloR, dCore, dHalo);
       moonD = coreR*moonDistance(moon.x, moon.amount, src.moonClear);
     }
+    let blockedWeight = 0;
     if(params.eclipse){
-      pts.forEach((p, i) => { p[2] *= moonCover(Math.hypot(p[0]-moonD, p[1]), moonR, moon ? moon.soft*(i < nCore ? dCore : dHalo) : 0); });
+      pts.forEach((p, i) => {
+        const remaining = moonCover(Math.hypot(p[0]-moonD, p[1]), moonR, moon ? moon.soft*(i < nCore ? dCore : dHalo) : 0);
+        blockedWeight += p[2]*(1 - remaining);
+        p[2] *= remaining;
+      });
       // No renormalisation: the floor dims by the share the moon covers, as a real eclipse does, and each crescent stays as bright per area as the
       // clear sun's disc. To bring back the old look, the crescents at the clear sun's total, renormalise here:
       //   let s=0; for(const p of pts) s+=p[2]; if(s>0) for(const p of pts) p[2]/=s;
       // and divide the seen source's Lcore/Lhalo below by the analytic uncovered share again (see there).
     }
+    src.beamShare = clamp(1 - blockedWeight, 0, 1);
     // THE SEEN SOURCE (spec/model/sky-view.md, sky view): the same distribution these samples approximate, expressed as RADIANCE — the
     // core disk and the halo annulus, each carrying its post-cloud weight over its own solid angle. Derived HERE, from
     // the very numbers the sampler just used, so the sun you look at and the dapples it throws cannot drift apart:

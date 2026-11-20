@@ -76,9 +76,11 @@ Clear, almost everything is in the core and the halo is a thin ring around the d
 
 ## The eclipse
 
-The eclipse is a **property of the source**, not a trick of the ground. Turned on (`eclipse`), a moon disk the size of the sun's core is laid over the source, offset from its centre by an amount `eclipse_amount` sets (more is a deeper bite). Every point-sun inside the moon loses its weight; what remains is a crescent, and the remaining weights are renormalised to sum to one. Transport needs to know nothing: every pinhole in the canopy images the crescent, and every dapple on the ground becomes one. It is the proof of [the second section](#the-dapples-are-images-of-the-sun), run as a look (`eclipse`, with a tiny crisp source and no cloud, so the crescents stay sharp).
+The eclipse is a **property of the source**. Turned on (`eclipse`), a moon disk the size of the sun's core is laid over the source, offset from its centre by an amount `eclipse_amount` sets (more is a deeper bite). Every point-sun inside the moon loses its weight. Every pinhole in the canopy images the remaining crescent, so each dapple on the ground becomes one. The `eclipse` look uses a tiny crisp source and no cloud to keep those crescents sharp.
 
 **Law.** A real eclipse dims the light by the share of the disk the moon covers, and each crescent stays as bright per area as the clear sun's disc: every point of it still sees uncovered sun. The sampler drops the covered samples and keeps the rest at their own weight, and the seen source keeps its radiance over the uncovered disc. Until 2026-11-10 the sampler renormalised, so the crescents kept the clear sun's total and the dimming was left to exposure; the lines that did it are in the comment at the sampler (`komorebi-source.js`), to bring it back as a look's choice.
+
+The visible tree, the sun-driven sky fill and ground bounce, and the foliage glow in the sky view use the surviving share of the sampler's weight. The ambient term retains its authored level.
 
 A transition never switches the eclipse. Between an eclipsed look and an uneclipsed one the moon moves, from the authored bite to clear of the whole source or back, and while it moves each sample's weight fades across one sample spacing at the limb instead of dropping at once. At rest the rule above holds exactly. The account is [`transitions.md`](transitions.md#crossing-a-gate).
 

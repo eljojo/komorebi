@@ -239,7 +239,7 @@ test("fillSig notices sun_cosine (slot 14), sun_extinction (slot 15) and park_th
   r.f.refreshFill();
   expect(r.fill.ready).toBe(true);
   expect(r.fill.sig.length, "the signature array has room for the slot").toBe(FILL_SIG_LEN);
-  expect(FILL_SIG_LEN, "slots 17-22 are the ground bounce's (fill.test.js), so the array holds 23").toBe(23);
+  expect(FILL_SIG_LEN, "slots 17-22 are the ground bounce's, then slot 23 holds the remaining sunlight").toBe(24);
   expect(r.fill.sig[14], "sun_cosine 0").toBe(0);
   const base = r.draws();
   r.f.refreshFill();

@@ -414,6 +414,7 @@ export function makeRender(hub){
       gl.uniform2f(u.srcAngR, src.coreR, src.haloR);
       gl.uniform2f(u.srcAngL, src.Lcore, src.Lhalo);
       gl.uniform2f(u.srcMoon, src.moonD, src.moonR);
+      gl.uniform1f(u.sunShare, src.beamShare ?? 1);
     },
     post: (u, f) => {
       // distance haze: the sky/ambient HUE at a steady brightness, so the far floor fades into a time-of-day-
