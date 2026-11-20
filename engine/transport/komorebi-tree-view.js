@@ -282,7 +282,7 @@ export function makeTreeView(hub){
       gl.uniform1f(UL.morph, params.drift_phase); gl.uniform1f(UL.morphAmount, params.drift_amount);
       gl.uniform1f(UL.windLevel, motion.u); gl.uniform1f(UL.air, Math.max(0, params.wind_air)); gl.uniform1f(UL.depth, Math.max(0, params.wind_depth || 0));
       gl.uniform1f(UL.windTime, motion.time); gl.uniform1f(UL.leafSwing, params.leaf_swing); gl.uniform1f(UL.flutterFreq, params.flutter_freq);
-      gl.uniform2f(UL.flutterBand, Math.max(0, params.flutter_broadband || 0), flutterH(params));
+      gl.uniform4f(UL.flutterBand, Math.max(0, params.flutter_broadband || 0), flutterH(params), Math.min(1, Math.max(0, params.flutter_gust || 0)), motion.flick || 0);
       gl.uniform2f(UL.sway, motion.sway[0], motion.sway[1]); gl.uniform1f(UL.hRef, Math.max(faith.hMax, 1e-3));
       bindLeafShape(gl, UL, hub.grove);
       gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex); gl.uniform1i(UL.clusterTex, 4);

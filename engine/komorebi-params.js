@@ -897,6 +897,10 @@ const PARAMS = {
     row: { kind: 's', label: 'flutter air', min: 0, max: 1, step: 0.01, rebuild: '' },
     travels: 'morph',   // a blend of two signals of time: continuous, so it eases in a transition
     means: "<b>The leaves flutter with the wind's own character.</b> Off, every leaf trembles at one steady tempo, the flutter rate, whatever the wind is doing. On, each leaf trembles on the wind pattern's own mix of slow and quick: a lazy wind's leaves sway smooth and slow, a choppy wind's shiver. The leaves' trembling is what sets how fast the light on the ground moves, so this is how the wind's character reaches the floor." },
+  flutter_gust: { default: 0.0,   // PROTOTYPE: the flutter's size follows the gust's edges, how far the wind's drive stands from its slow mean (komorebi-air.js, flutterGust), instead of the sway |u|; 0 = off, |u| exactly
+    row: { kind: 's', label: 'flutter on gusts', min: 0, max: 1, step: 0.01, rebuild: '' },
+    travels: 'morph',   // a blend of two levels: continuous, so it eases in a transition
+    means: "<b>The leaves flicker as the wind changes.</b> Off, the leaves flicker as hard as the wind blows, for as long as it blows, even in a steady push. On, they flicker as a gust comes up, before the branches move, and keep flickering as it dies away and the branches settle; in a steady wind they hold still and only flag." },
   wind_depth: { default: 0.0,   // a faint wind rocks only a crown's skin, a stronger one reaches the inner leaves, a strong one every leaf (komorebi-air.js, depthGate); 0 = off, every leaf rocks as before
     row: { kind: 's', label: 'depth', min: 0, max: 1.5, step: 0.01, rebuild: '' },
     travels: 'morph',   // how far into a crown the wind reaches (komorebi-air.js, depthGate): continuous too

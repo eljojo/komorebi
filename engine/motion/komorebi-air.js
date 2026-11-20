@@ -107,8 +107,25 @@ float leafFlutter(float tone, float t, float phase, float f, float band, float H
   for(int i = 0; i < ${FLUTTER_OCT}; i++){ s += amp*flNoise(x*fr + float(i)*19.7); a2 += amp*amp; amp *= g; fr *= 2.0; }
   float n = s/(sqrt(a2)*${VNOISE_STD})*0.70710678;
   return tone + (n - tone)*band;
+}
+float flutterGust(float wm, float flick, float k){   // flutterGust (komorebi-air.js)
+  return k > 0.0 ? wm + (flick - wm)*k : wm;
 }`;
 export { GLSL_FLUTTER, FLUTTER_OCT, FLUTTER_LOW, FLUTTER_SPAN };
+
+// THE LEAVES FLICKER ON THE GUST'S EDGES (flutter_gust). The flutter's size follows the trunk's sway |u|, so in a steady push
+// the leaves flicker at full size for as long as it blows, and the leaves and the branches always move in one proportion. A
+// leaf answers the air at once and to far less of it than a branch: it wakes as a gust rises, before the branches lean, and
+// keeps flickering as the gust dies and the branches settle; in a steady push a broad leaf flags and holds. The flick is
+// that: how far the trunk's drive (its gust-edged force, driveEnv) stands from its own slow mean, a one-pole of
+// FLICK.tau seconds, times FLICK.gain (about the mean |u| on the shipped looks under gusty), capped at FLICK.cap. It is
+// the motion's state, ticked beside the trunk's spring; each tree has its own, and the shaders read tree 0's as a uniform
+// and the rest as what they add to it (the cluster texture's row 2, .w). flutter_gust blends the flutter's size from |u|
+// toward it; at 0 the size is |u| (or the air) exactly. The quasi-static flagging (0.5·u) is left as it is.
+export const FLICK = { tau: 2.5, gain: 4, cap: 1.5 };
+export function flickMeanStep(mean, drive, dt){ return mean + (drive - mean)*(1 - Math.exp(-dt/FLICK.tau)); }
+export function flickLevel(drive, mean){ return Math.min(FLICK.cap, FLICK.gain*Math.abs(drive - mean)); }
+export function flutterGust(wm, flick, k){ return k > 0 ? wm + (flick - wm)*k : wm; }
 
 export const AIR = {
   U: 3,          // m/s: how fast a gust is carried through the grove

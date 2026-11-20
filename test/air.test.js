@@ -3,7 +3,7 @@
 // trunk with; a clump downwind feels the gust later by its distance over U; the eddies are a factor of mean 1. The wind's
 // reach: off, every leaf rocks; on, the skin always, the core only once the wind is strong enough, deeper as it rises.
 import { expect, test } from "bun:test";
-import { AIR, DEPTH, WIND_PATTERNS, advanceAir, airCurve, airDelay, airForce, airLevel, branchNoise, crossForce, curveForce, depthGate, eddy, flutterH, flutterLevel, gustEdge, leafFlutter, leanForce, makeAirTrack, shelter, weatherAt, windNoise } from "../engine/motion/komorebi-air.js";
+import { AIR, DEPTH, FLICK, WIND_PATTERNS, advanceAir, airCurve, airDelay, airForce, airLevel, branchNoise, crossForce, curveForce, depthGate, eddy, flickLevel, flickMeanStep, flutterGust, flutterH, flutterLevel, gustEdge, leafFlutter, leanForce, makeAirTrack, shelter, weatherAt, windNoise } from "../engine/motion/komorebi-air.js";
 import { fft } from "../test-gl/pattern-lib.mjs";
 import { crownDepth } from "../engine/canopy/komorebi-grove.js";
 import { DEFAULTS } from "../engine/komorebi-params.js";
@@ -206,4 +206,28 @@ test("broadband flutter: the tone's spread, the pattern's slope, unrelated leave
 	let c = 0;
 	for (let i = 0; i < n; i++) c += (a[i] - ma) * (b[i] - mb);
 	expect(Math.abs(c / n / (sd(a) * sd(b))), "two leaves a little apart in phase").toBeLessThan(0.15);
+});
+test("flutter_gust 0 is the flutter's size as it was, to the bit", () => {
+	for (const wm of [0, 1e-9, 0.37, 1.2]) for (const k of [0, undefined, -0.3]) expect(Object.is(flutterGust(wm, 0.9, k), wm)).toBe(true);
+	expect(flutterGust(0.4, 1.0, 1)).toBe(1.0);
+	expect(flutterGust(0.4, 1.0, 0.5)).toBeCloseTo(0.7, 12);
+});
+test("the flick: high as a gust rises and as it dies, quiet in a steady push and in calm", () => {
+	// a drive that rests at 0.6, rises over 2 s to 1.2, holds 20 s, falls over 2 s back to 0.6 and holds, at 60 Hz
+	const dt = 1 / 60, drive = (t) => (t < 20 ? 0.6 : t < 22 ? 0.6 + 0.3 * (t - 20) : t < 42 ? 1.2 : t < 44 ? 1.2 - 0.3 * (t - 42) : 0.6);
+	let mean = drive(0);
+	const at = {};
+	for (let i = 0; i <= 70 * 60; i++) {
+		const t = i * dt, d = drive(t);
+		mean = flickMeanStep(mean, d, dt);
+		for (const s of [19, 22, 40, 44, 69]) if (Math.abs(t - s) < dt / 2) at[s] = flickLevel(d, mean);
+	}
+	expect(at[19]).toBe(0);                                   // a steady push: the leaves only flag
+	expect(at[22]).toBeGreaterThan(0.25 * FLICK.gain);       // the gust coming up
+	expect(at[40]).toBeLessThan(0.01 * FLICK.gain);          // the gust held: the branches lean, the leaves settle
+	expect(at[44]).toBeGreaterThan(0.25 * FLICK.gain);       // the gust dying away
+	expect(at[69]).toBeLessThan(1e-3);                        // after it, quiet again
+	// it never goes past the cap, however hard the step
+	let m = 0;
+	for (let i = 0; i < 600; i++) { m = flickMeanStep(m, 10, dt); expect(flickLevel(10, m)).toBeLessThanOrEqual(FLICK.cap); }
 });

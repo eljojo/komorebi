@@ -258,7 +258,7 @@ float cov=1.0-smoothstep(1.0-uEdge,1.0,mix(qa,qb,uWeight));frag=vec4(vec3(exp(-c
       const leaves=[],twigs=[],G=new Float32Array(4*n),D=new Float32Array(4*n),Sw=new Float32Array(4*n),air=new Float32Array(4*n);
       for(let j=0;j<n;j++){
         G.set([r()*3-1.5,r()*3-1.5,r()*.6-.3,r()*.6-.3],4*j);D.set([r()-.5,r()-.5,faithful?r()*.3:r()*6,faithful?.6+.4*r():1],4*j);
-        Sw.set([r()*.2-.1,r()*.2-.1,r()*.4-.2,0],4*j);air.set([r(),r(),0,0],4*j);twigs.push({layer:j%3,z:2+j%3});
+        Sw.set([r()*.2-.1,r()*.2-.1,r()*.4-.2,r()*.4-.2],4*j);air.set([r(),r(),0,0],4*j);twigs.push({layer:j%3,z:2+j%3});
         for(let k=0;k<20+3*j;k++)leaves.push(G[4*j]+r()-.5,G[4*j+1]+r()-.5,.03+.05*r(),.02+.03*r(),r()*6,r()-.5,r(),r()*6,.5+r(),1+r(),2*r(),j+(k%4)/32,r()*.3,r()*.3,r()*6,r()*6,faithful?1+r()*4:2+r()*3,.5+.5*r());
       }
       const count=leaves.length/18;
@@ -266,9 +266,10 @@ float cov=1.0-smoothstep(1.0-uEdge,1.0,mix(qa,qb,uWeight));frag=vec4(vec3(exp(-c
         hier:{nClusterTotal:n,clusterPlan:new Float32Array(2*n),twigs,layerBand:[2,1.5,3],clusterGeom:G,clusterData:D,swayData:Sw,airData:air},
         params:{faithful_canopy:faithful,leaf_swing:1.35,flutter_freq:1.4,wind_air:.5,wind_depth:.7,drift_amount:.145,drift_phase:r()*6,stem_length:.18,
           sway_height_gain:.75,canopy_base_height_m:2,canopy_thickness_m:2.6,layer_count:3,
-          // the broadband flutter off on some ends and on at two strengths on others, under the pattern furthest from a tone
-          flutter_broadband:[0,.6,.9][seed%3],wind_pattern:'choppy'},
-        motion:{u:r()-.5,time:100*r(),sway:[r()*.3,r()*.3]},hMax:5,shape:null};
+          // the broadband flutter off on some ends and on at two strengths on others, under the pattern furthest from a tone;
+          // the flutter on the gust's edges likewise, each tree's flick its own (row 2, .w)
+          flutter_broadband:[0,.6,.9][seed%3],wind_pattern:'choppy',flutter_gust:[0,.5,1][(seed>>1)%3]},
+        motion:{u:r()-.5,time:100*r(),sway:[r()*.3,r()*.3],flick:r()*.8},hMax:5,shape:null};
     }
     const data=(w,h,src)=>{const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,w,h,0,gl.RGBA,gl.FLOAT,src);for(const k of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,k,gl.NEAREST);return t;};
     const progs={single:program(S.VS_LEAF_CARRY,S.FS_LEAF_CARRY,S.LEAF_CARRY_OUT),patch:program(S.VS_LEAF_CARRY_PATCH,S.FS_LEAF_CARRY,S.LEAF_CARRY_PATCH_OUT)};
@@ -289,7 +290,7 @@ float cov=1.0-smoothstep(1.0-uEdge,1.0,mix(qa,qb,uWeight));frag=vec4(vec3(exp(-c
           gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,q.grove.clusterTex);gl.uniform1i(loc(`Cluster${k}`),unit);
           gl.activeTexture(gl.TEXTURE0+unit+1);gl.bindTexture(gl.TEXTURE_2D,q.grove.clusterGeomTex);gl.uniform1i(loc(`Geom${k}`),unit+1);
           gl.uniform4f(loc(`Wind${k}`),m.u,m.sway[0],m.sway[1],m.time);gl.uniform4f(loc(`Flutter${k}`),p.leaf_swing,p.flutter_freq,p.wind_air,p.wind_depth);
-          gl.uniform2f(loc(`Band${k}`),p.flutter_broadband,flutterH(p));
+          gl.uniform4f(loc(`Band${k}`),p.flutter_broadband,flutterH(p),p.flutter_gust,m.flick);
           gl.uniform4f(loc(`Drift${k}`),p.drift_phase,p.drift_amount,p.stem_length,p.sway_height_gain);gl.uniform4f(loc(`Height${k}`),p.faithful_canopy?1:0,p.canopy_base_height_m,p.canopy_thickness_m,q.hMax);
         }
         const out=gl.createBuffer();gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER,out);gl.bufferData(gl.TRANSFORM_FEEDBACK_BUFFER,4*stride*n,gl.STREAM_READ);

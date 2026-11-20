@@ -5,7 +5,7 @@
 // reads (publishBend). A factory over the engine's shared internals (hub).
 // ============================================================================
 import { DEG, TAU, clamp } from '../komorebi-math.js';
-import { windNoise, branchNoise, WIND_PATTERNS } from './komorebi-air.js';
+import { windNoise, branchNoise, WIND_PATTERNS, flickMeanStep, flickLevel } from './komorebi-air.js';
 import { weatherAt, leanForce, crossForce, gustEdge, advanceAir, airForce, airLevel, airDelay, airAcross, carrySpeed, shelter, makeAirTrack } from './komorebi-air.js';
 
 export const MAX_MOTION_STEP = 1/15;
@@ -134,10 +134,11 @@ export function makeMotion(hub){
       const T = hier.treeDelta, S = hier.swayData;
       for(let k=0;k<hier.nTree;k++){
         const tr = k ? motion?.trunks?.[k] : null;   // none for tree 0, nor for a tree the motion has not ticked yet: it is tree 0's
-        if(!tr){ T[4*k] = 0; T[4*k+1] = 0; T[4*k+2] = 0; continue; }
+        if(!tr){ T[4*k] = 0; T[4*k+1] = 0; T[4*k+2] = 0; T[4*k+3] = 0; continue; }
         T[4*k] = tr.sway[0] - motion.sway[0]; T[4*k+1] = tr.sway[1] - motion.sway[1]; T[4*k+2] = tr.u - motion.u;
+        T[4*k+3] = (tr.flick || 0) - (motion.flick || 0);   // .w: its flick less tree 0's (flutter_gust, komorebi-air.js)
       }
-      for(let j=0;j<hier.nClusterTotal;j++){ const k = 4*hier.clusterTree[j]; S[4*j] = T[k]; S[4*j+1] = T[k+1]; S[4*j+2] = T[k+2]; }
+      for(let j=0;j<hier.nClusterTotal;j++){ const k = 4*hier.clusterTree[j]; S[4*j] = T[k]; S[4*j+1] = T[k+1]; S[4*j+2] = T[k+2]; S[4*j+3] = T[k+3]; }
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 2, hier.nClusterTotal, 1, gl.RGBA, gl.FLOAT, S);
     }
   }
@@ -163,7 +164,8 @@ export function makeMotion(hub){
         || Math.abs(motion.u)>1e-3 || Math.abs(motion.v)>1e-3   // keep simulating until settled
         || Math.abs(motion.uLat)>1e-3 || Math.abs(motion.vLat)>1e-3
         || (motion.trunks || []).some(s => s && (Math.abs(s.u)>1e-3 || Math.abs(s.v)>1e-3 || Math.abs(s.uLat)>1e-3 || Math.abs(s.vLat)>1e-3))
-        || (hub.hier && hub.hier.maxV>2e-4);
+        || (hub.hier && hub.hier.maxV>2e-4)
+        || (params.flutter_gust>0 && (motion.flick||0)>1e-3);   // the leaves still flicker as the last gust dies (flutter_gust)
   }
 
   function tick(dt){
@@ -200,6 +202,8 @@ export function makeMotion(hub){
       // gust-edge asymmetry: rise sharper than decay (validated). Reuses gust_attack/gust_decay as the slew (LONGITUDINAL only).
       s.driveEnv = gustEdge(s.driveEnv, rawL, dt, params);
       const driveL = s.driveEnv;
+      // the flick: how far the drive stands from its own slow mean (komorebi-air.js, flutterGust), the leaves' flutter under flutter_gust
+      s.flickMean = flickMeanStep(s.flickMean ?? driveL, driveL, dt); s.flick = flickLevel(driveL, s.flickMean);
       for(let i=0;i<steps;i++){
         s.v = spring(s.u, s.v, driveL, wk);     s.u    += s.v*h;
         s.vLat = spring(s.uLat, s.vLat, driveT, wk); s.uLat += s.vLat*h;
@@ -227,7 +231,7 @@ export function makeMotion(hub){
       trunks.length = nTree; trunks[0] = null;
       for(let k=1;k<nTree;k++){
         const g = gOf(k), P = g.treePos, x = P[2*k], y = P[2*k+1];
-        if(!trunks[k]) trunks[k] = { driveEnv: motion.driveEnv, u: motion.u, v: motion.v, uLat: motion.uLat, vLat: motion.vLat, env: motion.env };
+        if(!trunks[k]) trunks[k] = { driveEnv: motion.driveEnv, u: motion.u, v: motion.v, uLat: motion.uLat, vLat: motion.vLat, env: motion.env, flickMean: motion.flickMean, flick: motion.flick };
         const s = trunks[k], lane = airAcross(x, y, cx, cy), S = sheltered ? shelterS[k] : 1;
         const tau = t - airDelay(x, y, cx, cy, U), ws = weatherAt(params, tau).weatherS;
         trunk(s, leanForce(params, tau, ws, lane, S), crossForce(params, tau, ws, lane, S), w*paceOf(g, k));
