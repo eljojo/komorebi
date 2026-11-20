@@ -208,7 +208,7 @@ function createEngine(canvas, opts, driven=false){
   // keeps a dead handle.
   let progBake, progFaith, progFaithPivot, progFaithSeg, progFAcc, progBlit, progPresent, progGlowBlur, progGlowMix, progPoints, progViz;
   let emptyVAO, quadBuf, bakeFBO, faithFBO, fillFBO, occTex;
-  let reseasonGrove, reseasonable, growGrove, uploadGrove, bake, bakeLayers, bakeFaithful, bakeFill, refreshFaith, refreshFill, fillWanted, fillLayerRes, fillFrameNow, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
+  let reseasonGrove, reseasonable, growGrove, uploadGrove, bake, refreshFaith, refreshLitter, buildGrove, drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO;   // the GL-owning subsystems, rebuilt with the handles they close over
 
   const U = {};
   function loc(prog, name){ return gl.getUniformLocation(prog, name); }
@@ -433,8 +433,9 @@ function createEngine(canvas, opts, driven=false){
     const groveSystem = makeGrove(hub);
     ({ buildGrove, growGrove, uploadGrove, reseasonGrove, reseasonable } = groveSystem); Object.assign(hub,{buildGrove,reseasonGrove});
     hub.refreshWood = groveSystem.refreshWood; hub.faithGL = groveSystem.faithGL;
-    ({ bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow } = makeBake(hub)); Object.assign(hub, { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow });
-    ({ bakeFill, refreshFill, fillWanted, fillLayerRes } = FEAT_FILL ? makeFill(hub) : NO_FILL); Object.assign(hub, { bakeFill, refreshFill, fillWanted, fillLayerRes });   // the fill reads the layers and the frame the bake just put on the hub
+    const bakeSystem = makeBake(hub);
+    ({ bake, refreshFaith } = bakeSystem); Object.assign(hub, bakeSystem);
+    Object.assign(hub, FEAT_FILL ? makeFill(hub) : NO_FILL);
     ({ refreshLitter } = FEAT_LITTER ? makeLitter(hub) : NO_LITTER); hub.refreshLitter = refreshLitter;
     Object.assign(hub, FEAT_TREE_VIEW ? makeTreeView(hub) : NO_TREE_VIEW);   // the tree seen from the floor camera: it reads the fill's low-res layers, or keeps them itself   // after the bake: the carpet is read over the fill's frame, and asks the bake module for it
     ({ drawFrameInto, drawTransport, drawTransportPresent, drawDiffusion, freeGlowTargets, drawLayerBlit, glowFBO } = makeRender(hub));

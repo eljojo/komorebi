@@ -536,7 +536,7 @@ function bakeRig(over) {
     bakeRes: () => 256, faithfulOn: () => false, layerTex: Array.from({ length: MAX_LAYERS }, (_, i) => ({ layer: i })), makeLayerTexture: () => ({}), fail: (m) => { throw new Error(m); },
     fillFor: () => ({ prog: {}, U }), bulkShift, bulkOn, layerHeights };
   const bake = makeBake(hub);
-  Object.assign(hub, { bakeLayers: bake.bakeLayers, fillFrameNow: bake.fillFrameNow });   // what the engine puts on the hub for the fill to reach
+  Object.assign(hub, bake);   // what the engine puts on the hub for the fill to reach
   makeFill(hub).bakeFill(false);
   const draw = calls.findIndex((c) => c[0] === "drawArrays");
   const uni = (name) => calls.filter((c) => c[0].startsWith("uniform") && c[1] === name).map((c) => c.slice(2));

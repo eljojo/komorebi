@@ -204,7 +204,7 @@ The fill is a function of the layers, the sun's colour and its path through them
 
 ## The faithful path
 
-The faithful cast taps one pre-integrated shadow, not depth layers ([`canopy.md`](canopy.md)). With the fill open it keeps a **low-resolution layer set** alive for the fill alone, sized by `fill_resolution`, with the layers at the heights their twigs really grew to (the mean grown height of each depth bin, not the park band the faithful cast ignores) and the faithful sway rule, in which sway grows with height. This does not reopen the faithful opt-out: depth layers are the right tool for a *diffuse* quantity, and the opt-out is about sharp structure.
+The faithful cast taps one pre-integrated shadow, not depth layers ([`canopy.md`](canopy.md)). Fill and tree view share a **low-resolution layer set**, sized by `fill_resolution`, with the layers at the heights their twigs really grew to and the faithful sway rule, in which sway grows with height. A change to the leaf stamps, such as a manual drift morph in still air, refreshes this set even when the ordinary frame bake is idle. Depth layers serve the diffuse light while the faithful cast resolves sharp shadows.
 
 ## The retired proxy
 

@@ -29,7 +29,20 @@ export const FILL_SIG_LEN = 23;
 export function makeBake(hub){
   const { gl, params, motion, src, faith, sky, U, bakeFBO, faithFBO, emptyVAO, progBake, progFaith, progFaithSeg, progFAcc, bakeRes, faithfulOn } = hub;
   let layerEdge, layerDrift, layerPhase;
+  let lightingTextures, lightingVAOs, lightingTime;
   const layerPhaseNow = () => params.drift_amount === 0 ? 0 : params.drift_phase;
+  const layerParamsMatch = () => params.edge_softness===layerEdge && params.drift_amount===layerDrift && layerPhaseNow()===layerPhase;
+
+  // The faithful cast and its low-resolution lighting layers can be refreshed independently. Fill and tree view share these layers.
+  function ensureLightingLayers(res, force = false){
+    if(!force && hub.layerSize===res && hub.layerTex===lightingTextures && hub.layerVAO===lightingVAOs && motion.time===lightingTime && layerParamsMatch()) return false;
+    if(hub.layerSize!==res) hub.allocLayers(res);
+    bakeLayers(res, faith.binH, true);
+    lightingTextures = hub.layerTex;
+    lightingVAOs = hub.layerVAO;
+    lightingTime = motion.time;
+    return true;
+  }
 
   // ---- one bake: the cast the camera reads, then (if the shade is lit through the canopy) the fill ----------------
   function bake(){
@@ -460,12 +473,12 @@ export function makeBake(hub){
     if(faithfulOn()){
       if(woodChanged || faith.branchTau!==params.branch_tau || faith.k !== (FEAT_LEAF_DIFFUSE ? ballisticK(params.leaf_diffuse) : 0) || faith.n !== src.count || faith.edgeArea !== edgeAreaOn(params) || !faithfulInputsMatch(false)) bakeFaithful();
     }else if(hub.trans.riseField?.weight!==1 && (
-      params.edge_softness!==layerEdge || params.drift_amount!==layerDrift || layerPhaseNow()!==layerPhase
+      !layerParamsMatch()
       || params.sky_view && (woodChanged || sky.branchTau!==params.branch_tau)
     )) bake();   // The lighting through the old layers must follow the new cast as well.
   }
 
-  return { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow };
+  return { bake, bakeLayers, bakeFaithful, refreshFaith, fillFrameNow, ensureLightingLayers };
 }
 
 // ============================================================================
@@ -641,9 +654,7 @@ export function makeFill(hub){
     if(!fill.tex[0] || fill.res !== res) allocFill(res);
     let H;
     if(faithful){
-      const lres = fillLayerRes();
-      if(hub.layerSize !== lres){ hub.allocLayers(lres); layersToo = true; }   // the fill was opened on a running faithful look: its layers do not exist yet
-      if(layersToo) hub.bakeLayers(lres, faith.binH, true);
+      hub.ensureLightingLayers(fillLayerRes(), layersToo);
       H = faith.binH.subarray(0, MAX_LAYERS);   // where the faithful tree's twigs REALLY grew, not the park band
     } else H = hub.layerHeights();
     // THE FRAME this pass covers, and what the layer textures do outside their box. Both follow one flag: a finite tree (bulkOn) is
@@ -717,13 +728,14 @@ export function makeFill(hub){
     for(const t of fill.tex) if(t) gl.deleteTexture(t);
     fill.tex = [null, null]; fill.res = 0; fill.ready = false;
     releaseBounce();
-    if(faithfulOn() && hub.layerSize > 1) hub.allocLayers(1);   // the faithful layers go back to the 1×1 they are without the fill
+    if(faithfulOn() && hub.layerSize > 1 && !hub.treeWanted?.()) hub.allocLayers(1);
   }
 
   // Once per frame, before transport draws: the fill is current, or it is not wanted and holds nothing.
   function refreshFill(){
     if(!fillWanted()){ if(fill.tex[0]) releaseFill(); return; }
-    if(fillStale()) bakeFill(false);
+    const layersChanged = faithfulOn() && hub.ensureLightingLayers(fillLayerRes());
+    if(layersChanged || fillStale()) bakeFill(false);
   }
 
   return { bakeFill, refreshFill, fillWanted, fillLayerRes };

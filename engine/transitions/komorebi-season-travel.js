@@ -167,6 +167,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
       Object.assign(f,{tex:cast.faithTex,ox:cast.faith.ox,oy:cast.faith.oy,ext:cast.faith.ext});
     }
     if(hub.fillWanted())hub.bakeFill(true);
+    else hub.bakeTreeLayers?.();
   }
   function drawSeasonTravel(){
     if(s.field.weight<1){

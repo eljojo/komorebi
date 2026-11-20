@@ -69,7 +69,6 @@ export function makeTreeView(hub){
   const progs = new Map();   // the leaf's and the wood's programs, by base and names (treeNames), made on first use
   const gridBox = [0, 0, 0, 1, 1, 1];
   let msFBO = null, msCol = null, msCover = null, msDepth = null, rsFBO = null, rsCol = null, rsCover = null, tw = 0, th = 0;
-  let layersBaked = false;
   const _atm = { sun: [0, 0, 0], ambient: [0, 0, 0] }, _sd = [0, 0, 0];
 
   // Wanted: the look opens it, its tree stands in the scene and is cast faithfully, the floor camera is the one drawing, and no route owns the cast this frame
@@ -152,20 +151,13 @@ export function makeTreeView(hub){
     msFBO = rsFBO = msCol = msCover = msDepth = rsCol = rsCover = null; tw = th = 0;
   }
 
-  // The low-res layer set the tree is lit by. With the sky fill open it is the fill's own (bakeFill bakes it with every bake); without, the tree keeps it: allocated
-  // at the fill's size, baked by every bake (bakeLayers below, from komorebi-bake.js's bake) and once more when it was just made.
+  // Fill refreshes the shared layers before transport when it is open.
   function ensureLayers(){
-    if(hub.fillWanted()) return;
-    const res = treeLayerRes(params, bakeRes);
-    if(hub.layerSize !== res){ hub.allocLayers(res); layersBaked = false; }
-    if(!layersBaked) bakeLayers();
+    if(!hub.fillWanted()) hub.ensureLightingLayers(treeLayerRes(params, bakeRes));
   }
   function bakeLayers(){
     if(hub.fillWanted() || !wanted()) return;
-    const res = treeLayerRes(params, bakeRes);
-    if(hub.layerSize !== res) hub.allocLayers(res);
-    hub.bakeLayers(res, faith.binH, true);
-    layersBaked = true;
+    hub.ensureLightingLayers(treeLayerRes(params, bakeRes), true);
   }
 
   // The crown's grid, this frame's: a slice at a time, each pixel a cell, after the layers it reads are baked.

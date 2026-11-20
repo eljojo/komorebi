@@ -489,7 +489,7 @@ function litterRig(over = {}, { list = fallen().litter, faithful = false } = {})
     fillFor: () => ({ prog: {}, U }), litterFor: () => ({ prog: { prog: "litter" }, U: { origin: "uLitterOrigin", extent: "uLitterExtent", minHalf: "uLitterMinHalf" } }), bulkShift, bulkOn, layerHeights,
     grove: { litter: list } };
   const bake0 = makeBake(hub);
-  Object.assign(hub, { bakeLayers: bake0.bakeLayers, fillFrameNow: bake0.fillFrameNow });
+  Object.assign(hub, bake0);
   const bake = { ...bake0, ...makeFill(hub) };   // the bake and the fill are two factories now; the rig holds both as one
   const lit = L.makeLitter(hub);
   const count = (name) => calls.filter((c) => c[0] === name).length;

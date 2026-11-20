@@ -318,6 +318,20 @@ scenario("the sky only sizes its wood maps while fine wood is visible", { ...PRE
   expect(sizes()).toEqual([[1, 1], [1, 1], [1, 1], [1, 1]]);
 });
 const MANUAL_DRIFT = { ...LAYERED, wind_strength: 0, drift_amount: 0.3, drift_phase: 0 };
+for (const [feature, tree_view, canopy_fill] of [["tree", true, 0], ["sky fill", false, 0.5], ["tree and sky fill", true, 0.5]]) {
+  const look = { ...MANUAL_DRIFT, faithful_canopy: true, standing_scene: true, tree_view, canopy_fill, fill_resolution: 32 };
+  scenario(`still faithful drift refreshes the ${feature} lighting layers once per frame`, look, (R) => {
+    const grove = R.eng.grove(), before = R.L.layerDraws();
+    R.eng.transitionTo({ ...look, drift_phase: 2.2 }, { duration: 1 });
+    R.pump(10);
+    expect(R.eng.grove()).toBe(grove);
+    expect(R.L.layerDraws() - before).toBe(10 * look.layer_count);
+    R.land();
+    const settled = R.L.layerDraws();
+    R.pump();
+    expect(R.L.layerDraws()).toBe(settled);
+  });
+}
 for (const hz of [60, 120]) {
   for (const fps of [24, 30, 48]) {
     test(`idle ${fps} fps on a ${hz} Hz display carries its fractional cadence`, () => withWindow(() => {
