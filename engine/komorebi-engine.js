@@ -1003,7 +1003,6 @@ function createEngine(canvas, opts, driven=false){
   }
   function onContextRestored(){
     if(!alive) return;
-    lost = false;
     transportCache.clear(); presentTex = null;         // dead handles: forgotten, never deleted
     contextPrograms(gl).clear(); held.clear();     // every program the context held died with it, whichever engine linked it
     fillEntry = null; bounceEntry = null; fill.tex = [null, null]; fill.res = 0; fill.ready = false; fill.bounce = null; fill.gb = 0;   // the sky fill's programs and textures died with the context; the first draw that wants it rebuilds them
@@ -1014,7 +1013,9 @@ function createEngine(canvas, opts, driven=false){
     initGPU();
     // a transition's crossfade grove died with the context: land the route on its target rather than resume half-faded
     const cb = restoreContext();
-    playbackNow();settleSession();rebuildRested();
+    playbackNow();settleSession();
+    lost = false;  // settle the target's session before rebuilding its GL resources
+    rebuildRested();
     if(!paused) startLoop();                           // exactly one loop; a paused engine waits for setPaused(false)
     if(cb) cb();                                       // after the restart: a throwing onEnd must not leave a restored engine with no loop
   }

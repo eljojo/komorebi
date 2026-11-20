@@ -30,6 +30,8 @@ Omission means inheritance; null is not an opinion. A bake request of zero means
 
 Runtime choices take effect during playback. Structural session changes wait for a transition to settle; the latest pending choice wins. Every subsequent selection resolves under that choice, including one already queued. Native and temporary scenes use the same resolved endpoints.
 
+If context restoration lands an interrupted transition, it resolves the landed look's pending session before rebuilding the scene.
+
 Session preferences stay on the device. Arboretum stores a playlist's optional presentation identifier, not device quality, credentials or account-wide setups. Concurrent presentation writes use the playlist revision. An export records authored inputs, the resolved profile definition and every effective endpoint in its run identity. Unknown profile identifiers are refused rather than silently choosing a different destination.
 
 ## Related

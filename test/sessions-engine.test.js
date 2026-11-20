@@ -52,6 +52,22 @@ test('settings during a transition wait for arrival; authored request survives t
   e.dispose();
 });
 
+test('recovery applies a pending session before rebuilding the landed look once',()=>{
+  const playback={auto_quality:false,adaptive_motion:false};
+  const {e,look,events,calls}=engine({quality:'high',playback});
+  const target={...look,sample_count:8,exposure:2};
+  let completions=0;
+  e.transitionTo(target,{duration:1,onEnd:()=>completions++});
+  e.setSession({quality:'compact',ceilings:{sample_count:4},playback});
+  events.webglcontextlost({preventDefault(){}});
+  const before=calls.drawArraysInstanced;
+  events.webglcontextrestored();
+  expect(e.params.sample_count).toBe(4);
+  expect(calls.drawArraysInstanced-before).toBe(look.layer_count);
+  expect(completions).toBe(1);
+  e.dispose();
+});
+
 test('a fidelity request with a row scope applies in place; without one it swaps the whole look',()=>{
   const {e,calls}=engine();
   const textures=()=>calls.createTexture??0,before=textures();
