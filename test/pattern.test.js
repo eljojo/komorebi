@@ -3,10 +3,15 @@
 // random points have NNI 1, a square lattice 2, a tight cluster far below 1; a translation has one direction and a known
 // speed; noise of spectral slope α gives back α; an alternating series has negative lag-1 correlation.
 import { expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	decorrelation,
 	fft,
 	findPatches,
+	flowPairSummary,
 	flowSummary,
 	hornSchunck,
 	lag1,
@@ -22,6 +27,58 @@ import {
 
 const W = 400,
 	H = 300;
+
+test.skipIf(spawnSync("ffmpeg", ["-version"]).status !== 0)(
+	"the pattern CLI measures the filtered clock and every consecutive pair at stride one",
+	() => {
+		const dir = mkdtempSync(join(tmpdir(), "komorebi-pattern-"));
+		try {
+			const clip = join(dir, "motion.y4m");
+			const encoded = spawnSync(
+				"ffmpeg",
+				[
+					"-v",
+					"error",
+					"-f",
+					"lavfi",
+					"-i",
+					"testsrc2=size=48x32:rate=60",
+					"-t",
+					"2",
+					"-f",
+					"yuv4mpegpipe",
+					clip,
+				],
+				{ encoding: "utf8" },
+			);
+			expect(encoded.status, encoded.stderr).toBe(0);
+			const measured = spawnSync(
+				process.execPath,
+				[
+					"test-gl/pattern.mjs",
+					clip,
+					"--vf",
+					"fps=5",
+					"--flow-hz",
+					"100",
+					"--short",
+					"32",
+					"--flow-width",
+					"24",
+				],
+				{ encoding: "utf8" },
+			);
+			expect(measured.status, measured.stderr).toBe(0);
+			const json = JSON.parse(measured.stdout);
+			expect([json.fps, json.frames, json.seconds]).toEqual([5, 10, 2]);
+			expect(json.settings.flowHz).toBe(5);
+			expect(json.temporal.flowPairs).toBe(9);
+			expect(json.temporal.speed).toBeGreaterThan(0);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	},
+);
 
 test("NNI: random points about 1, a lattice 2, a cluster well below 1", () => {
 	const r = rng(7);
@@ -211,7 +268,9 @@ test("flow: a pattern sliding right reads rightward at its speed; direction cons
 	expect(su / c).toBeCloseTo(sx, 1);
 	expect(Math.abs(sv / c)).toBeLessThan(0.05);
 	const frames = [0, 1, 2, 3, 4].map(() => ({ u, v, w: n, h: n }));
-	expect(flowSummary(frames).directionConsistency).toBeCloseTo(1, 6);
+	expect(
+		flowSummary(frames.map(flowPairSummary)).directionConsistency,
+	).toBeCloseTo(1, 6);
 });
 
 test("rhythm: smooth series near +1, alternating near -1", () => {
@@ -219,6 +278,32 @@ test("rhythm: smooth series near +1, alternating near -1", () => {
 	const alt = Array.from({ length: 200 }, (_, t) => (t % 2 ? 1 : -1));
 	expect(lag1(smooth)).toBeGreaterThan(0.95);
 	expect(lag1(alt)).toBeLessThan(-0.95);
+});
+
+test("flow: a still pair has zero speed and no direction", () => {
+	const flat = { u: new Float32Array(4), v: new Float32Array(4) };
+	const still = flowPairSummary(flat);
+	const rest = flowSummary([still]);
+	expect(rest.meanSpeed).toBe(0);
+	expect(rest.directionConsistency).toBeNull();
+	const moving = { u: Float32Array.of(1, 1, 1, 1), v: flat.v };
+	expect(
+		flowSummary([still, flowPairSummary(moving)]).directionConsistency,
+	).toBeCloseTo(1, 12);
+});
+
+test("a flat clip has no spatial correlation or scramble to measure", () => {
+	const frames = Array.from({ length: 24 }, () =>
+		Float32Array.of(0.5, 0.5, 0.5, 0.5),
+	);
+	expect(decorrelation(frames, 4, [1, 4, 8])).toEqual({
+		curve: [],
+		tau: null,
+		plateau: null,
+	});
+	const result = scramble(frames, 4);
+	expect(result.mean).toBeNull();
+	expect(result.episodes).toBeNull();
 });
 
 // impermanence: how fast the whole pattern forgets itself, and how long each dapple lives

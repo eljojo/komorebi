@@ -448,42 +448,43 @@ export function hornSchunck(a, b, { alpha = 1, iters = 80 } = {}) {
 	return { u, v, w, h };
 }
 
-// Per interval: mean speed and the dominant direction (the mode of a 36-bin, speed-weighted histogram of flow angles).
-// Over the sequence: mean speed, direction consistency R = |mean of e^{iθ_t}| (1 − Zhang's circular variance), the
-// movement series.
-export function flowSummary(flows) {
-	const movement = [],
-		thetas = [];
-	for (const { u, v } of flows) {
-		const hist = new Float64Array(36);
-		let s = 0;
-		for (let i = 0; i < u.length; i++) {
-			const m = Math.hypot(u[i], v[i]);
-			s += m;
-			if (m > 0)
-				hist[
-					Math.min(
-						35,
-						Math.floor(
-							((Math.atan2(v[i], u[i]) + Math.PI) / (2 * Math.PI)) * 36,
-						),
-					)
-				] += m;
-		}
-		movement.push(s / u.length);
-		let best = 0;
-		for (let b = 1; b < 36; b++) if (hist[b] > hist[best]) best = b;
-		thetas.push(-Math.PI + (best + 0.5) * ((2 * Math.PI) / 36));
+// Reduce a pair before discarding its vector field. A still pair adds zero speed and has no direction.
+export function flowPairSummary({ u, v }) {
+	const hist = new Float64Array(36);
+	let s = 0;
+	for (let i = 0; i < u.length; i++) {
+		const m = Math.hypot(u[i], v[i]);
+		s += m;
+		if (m > 0)
+			hist[
+				Math.min(
+					35,
+					Math.floor(((Math.atan2(v[i], u[i]) + Math.PI) / (2 * Math.PI)) * 36),
+				)
+			] += m;
 	}
+	let best = 0;
+	for (let b = 1; b < 36; b++) if (hist[b] > hist[best]) best = b;
+	return {
+		speed: s / u.length,
+		theta: s > 0 ? -Math.PI + (best + 0.5) * ((2 * Math.PI) / 36) : null,
+	};
+}
+
+// Direction consistency R = |mean of e^{iθ_t}| (1 − Zhang's circular variance).
+export function flowSummary(pairs) {
+	const movement = pairs.map((p) => p.speed);
+	const thetas = pairs.map((p) => p.theta).filter((theta) => theta !== null);
 	let c = 0,
 		sn = 0;
 	for (const t of thetas) {
 		c += Math.cos(t);
 		sn += Math.sin(t);
 	}
-	const R = thetas.length ? Math.hypot(c, sn) / thetas.length : NaN;
-	const meanSpeed =
-		movement.reduce((a, b) => a + b, 0) / Math.max(1, movement.length);
+	const R = thetas.length ? Math.hypot(c, sn) / thetas.length : null;
+	const meanSpeed = movement.length
+		? movement.reduce((a, b) => a + b, 0) / movement.length
+		: null;
 	return { meanSpeed, directionConsistency: R, movement, thetas };
 }
 
@@ -506,16 +507,17 @@ export function lag1(s) {
 // a recording and on a render). Frames are small luminance arrays of one size, at fs frames a second.
 function unit(f) {
 	let m = 0;
-	for (const v of f) m += v;
+	for (const v of f) m += v - f[0];
 	m /= f.length;
 	const u = new Float64Array(f.length);
 	let s = 0;
 	for (let i = 0; i < f.length; i++) {
-		u[i] = f[i] - m;
+		u[i] = f[i] - f[0] - m;
 		s += u[i] * u[i];
 	}
+	if (!(s > 0)) return null;
 	s = Math.sqrt(s);
-	if (s > 0) for (let i = 0; i < f.length; i++) u[i] /= s;
+	for (let i = 0; i < f.length; i++) u[i] /= s;
 	return u;
 }
 const dot = (a, b) => {
@@ -535,10 +537,11 @@ export function decorrelation(frames, fs, lags) {
 		let s = 0,
 			c = 0;
 		for (let t = 0; t + lag < u.length; t++) {
+			if (!u[t] || !u[t + lag]) continue;
 			s += dot(u[t], u[t + lag]);
 			c++;
 		}
-		curve.push({ lag, seconds: lag / fs, r: s / c });
+		if (c) curve.push({ lag, seconds: lag / fs, r: s / c });
 	}
 	let tau = null,
 		prev = { lag: 0, r: 1 };
@@ -562,20 +565,33 @@ export function decorrelation(frames, fs, lags) {
 // s(t) = 1 − corr(frame t, rest). An episode is a run above halfway from the median to the 90th percentile (runs
 // closer than mergeGap seconds joined); returnSeconds is the median episode's length, the time to settle back
 export function scramble(frames, fs, { mergeGap = 1, settle = 1 } = {}) {
-	const n = frames[0].length,
+	const n = frames[0]?.length ?? 0,
 		rest = new Float64Array(n);
 	for (const f of frames) for (let i = 0; i < n; i++) rest[i] += f[i];
 	const ru = unit(rest),
-		s = frames.map((f) => 1 - dot(unit(f), ru));
-	const sorted = [...s].sort((p, q) => p - q),
-		q = (p) =>
+		units = frames.map(unit),
+		s = units.map((u) => (u && ru ? 1 - dot(u, ru) : null));
+	const sorted = s.filter(Number.isFinite).sort((p, q) => p - q);
+	if (!sorted.length) {
+		return {
+			series: s,
+			mean: null,
+			median: null,
+			p90: null,
+			episodes: null,
+			perMinute: null,
+			returnSeconds: null,
+			sameShapeAfter: null,
+		};
+	}
+	const q = (p) =>
 			sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))],
 		med = q(0.5),
 		p90 = q(0.9),
 		thr = (med + p90) / 2;
 	const runs = [];
 	for (let t = 0; t < s.length; t++)
-		if (s[t] > thr) {
+		if (s[t] !== null && s[t] > thr) {
 			const last = runs[runs.length - 1];
 			if (last && t - last[1] <= mergeGap * fs) last[1] = t + 1;
 			else runs.push([t, t + 1]);
@@ -585,14 +601,14 @@ export function scramble(frames, fs, { mergeGap = 1, settle = 1 } = {}) {
 	// seconds clear of it). High is the shadow coming back as itself, though the shape is random
 	const pad = Math.round(fs * settle),
 		same = runs
-			.filter(([a, b]) => a - pad >= 0 && b - 1 + pad < frames.length)
-			.map(([a, b]) => dot(unit(frames[a - pad]), unit(frames[b - 1 + pad])));
+			.filter(([a, b]) => units[a - pad] && units[b - 1 + pad])
+			.map(([a, b]) => dot(units[a - pad], units[b - 1 + pad]));
 	return {
 		sameShapeAfter: same.length
 			? same.reduce((x, v) => x + v, 0) / same.length
 			: null,
 		series: s,
-		mean: s.reduce((a, v) => a + v, 0) / s.length,
+		mean: sorted.reduce((a, v) => a + v, 0) / sorted.length,
 		median: med,
 		p90,
 		episodes: runs.length,

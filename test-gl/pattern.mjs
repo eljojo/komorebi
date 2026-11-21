@@ -13,11 +13,13 @@
 //   --imp-hz <hz>      frames a second for the impermanence measures (default 4): the decorrelation curve and the
 //                      scramble/return on --imp-width px frames (default 80), and each patch tracked through time
 // Luminance is the decoded grey (ffmpeg `gray`, gamma-encoded as stored): what the eye sees on the screen, as in Zhang.
-import { spawn, spawnSync } from "node:child_process";
+// Sampling uses the filtered output's constant frame rate.
+import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import {
 	decorrelation,
 	findPatches,
+	flowPairSummary,
 	flowSummary,
 	gaussBlur,
 	hornSchunck,
@@ -89,55 +91,42 @@ function readHelp() {
 	return head.map((l) => l.replace(/^\/\/ ?/, "")).join("\n");
 }
 
-// The input's frame rate, and the filter chain: the caller's --vf, then scaled to --short on its short side, then grey.
-function probe(input, o) {
-	const r = spawnSync("ffprobe", [
-		"-v",
-		"error",
-		"-select_streams",
-		"v:0",
-		"-show_entries",
-		"stream=r_frame_rate",
-		"-of",
-		"csv=p=0",
-		input,
-	]);
-	const [n, d] = r.stdout.toString().trim().split("/").map(Number);
-	const fps = d ? n / d : n;
-	const vf = [
-		o.vf,
-		`scale='if(lt(iw,ih),${o.short},-2)':'if(lt(iw,ih),-2,${o.short})'`,
-		"format=gray",
-	]
-		.filter(Boolean)
-		.join(",");
-	return { fps, vf };
-}
-
-// Width and height of the filtered frames, read off one frame decoded as PGM.
-function size(input, vf, o) {
-	const r = spawnSync(
-		"ffmpeg",
-		[
-			"-v",
-			"error",
-			...(o.ss != null ? ["-ss", String(o.ss)] : []),
-			"-i",
-			input,
-			"-frames:v",
-			"1",
-			"-vf",
-			vf,
-			"-f",
-			"image2pipe",
-			"-vcodec",
-			"pgm",
-			"-",
-		],
-		{ maxBuffer: 1 << 26 },
-	);
-	const head = r.stdout.subarray(0, 64).toString("latin1").split(/\s+/);
-	return { w: +head[1], h: +head[2] };
+// YUV4MPEG carries dimensions and the clock of the filtered frames in the same stream as their grey bytes.
+async function* grayFrames(stream) {
+	let buf = Buffer.alloc(0),
+		frameBytes = 0;
+	for await (const chunk of stream) {
+		buf = Buffer.concat([buf, chunk]);
+		if (!frameBytes) {
+			const end = buf.indexOf(10);
+			if (end < 0) continue;
+			const header = buf.subarray(0, end).toString("ascii");
+			const w = Number(header.match(/ W(\d+) /)?.[1]);
+			const h = Number(header.match(/ H(\d+) /)?.[1]);
+			const [, n, d] = header.match(/ F(\d+):(\d+) /) ?? [];
+			const fps = Number(n) / Number(d);
+			if (
+				!header.startsWith("YUV4MPEG2 ") ||
+				!/ Cmono(?: |$)/.test(header) ||
+				!(w > 0 && h > 0 && fps > 0 && Number.isFinite(fps))
+			) {
+				throw new Error(`Invalid grey video header: ${header}`);
+			}
+			frameBytes = w * h;
+			buf = buf.subarray(end + 1);
+			yield { w, h, fps };
+		}
+		while (buf.length > frameBytes) {
+			const end = buf.indexOf(10);
+			if (end < 0 || buf.length < end + 1 + frameBytes) break;
+			const marker = buf.subarray(0, end).toString("ascii");
+			if (marker !== "FRAME" && !marker.startsWith("FRAME "))
+				throw new Error("Invalid video frame header");
+			yield buf.subarray(end + 1, end + 1 + frameBytes);
+			buf = buf.subarray(end + 1 + frameBytes);
+		}
+	}
+	if (buf.length) throw new Error("Truncated grey video stream");
 }
 
 function downsample({ w, h, data }, W) {
@@ -182,107 +171,124 @@ const median = (a) => {
 };
 
 async function measure(input, o) {
-	const { fps, vf } = probe(input, o);
-	const { w, h } = size(input, vf, o);
+	const vf = [
+		o.vf,
+		`scale='if(lt(iw,ih),${o.short},-2)':'if(lt(iw,ih),-2,${o.short})'`,
+		"format=gray",
+	]
+		.filter(Boolean)
+		.join(",");
 	const args = [
 		"-v",
 		"error",
 		...(o.ss != null ? ["-ss", String(o.ss)] : []),
 		"-i",
 		input,
+		"-map",
+		"0:v:0",
 		...(o.t != null ? ["-t", String(o.t)] : []),
 		"-vf",
 		vf,
+		"-fps_mode",
+		"cfr",
 		"-f",
-		"rawvideo",
-		"-pix_fmt",
-		"gray",
+		"yuv4mpegpipe",
 		"-",
 	];
 	const ff = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "inherit"] });
+	const closed = new Promise((resolve) => {
+		ff.once("close", resolve);
+		ff.once("error", resolve);
+	});
+	const frames = grayFrames(ff.stdout);
+	const { value: header } = await frames.next();
+	if (!header) {
+		const code = await closed;
+		if (code instanceof Error) throw code;
+		throw new Error(`No video frames from ffmpeg (exit ${code}) on ${input}`);
+	}
+	const { w, h, fps } = header;
 	const frameBytes = w * h,
 		flowEvery = Math.max(1, Math.round(fps / o.flowHz)),
 		patchEvery = Math.max(1, Math.round(fps / o.patchHz)),
 		impEvery = Math.max(1, Math.round(fps / o.impHz));
 	const mean = [],
 		tiles = Array.from({ length: o.tiles * o.tiles }, () => []),
-		flows = [],
+		flowPairs = [],
 		spatial = { nni: [], mrd: [], moran: [], beta: [], patches: [] },
 		impFrames = [],
 		impPatches = [];
-	let buf = Buffer.alloc(0),
-		idx = 0,
+	let idx = 0,
+		fh = 0,
 		prevFlow = null;
 	const fw = Math.min(o.flowWidth, w);
-	for await (const chunk of ff.stdout) {
-		buf = Buffer.concat([buf, chunk]);
-		while (buf.length >= frameBytes) {
-			const raw = buf.subarray(0, frameBytes);
-			buf = buf.subarray(frameBytes);
-			const data = new Float32Array(frameBytes);
-			let s = 0;
-			for (let i = 0; i < frameBytes; i++) s += data[i] = raw[i] / 255;
-			mean.push(s / frameBytes);
-			for (let ty = 0; ty < o.tiles; ty++)
-				for (let tx = 0; tx < o.tiles; tx++) {
-					let a = 0,
-						c = 0;
+	for await (const raw of frames) {
+		const data = new Float32Array(frameBytes);
+		let s = 0;
+		for (let i = 0; i < frameBytes; i++) s += data[i] = raw[i] / 255;
+		mean.push(s / frameBytes);
+		for (let ty = 0; ty < o.tiles; ty++)
+			for (let tx = 0; tx < o.tiles; tx++) {
+				let a = 0,
+					c = 0;
+				for (
+					let y = Math.floor((ty * h) / o.tiles);
+					y < Math.floor(((ty + 1) * h) / o.tiles);
+					y++
+				)
 					for (
-						let y = Math.floor((ty * h) / o.tiles);
-						y < Math.floor(((ty + 1) * h) / o.tiles);
-						y++
-					)
-						for (
-							let x = Math.floor((tx * w) / o.tiles);
-							x < Math.floor(((tx + 1) * w) / o.tiles);
-							x++
-						) {
-							a += data[y * w + x];
-							c++;
-						}
-					tiles[ty * o.tiles + tx].push(a / c);
-				}
-			const frame = { w, h, data };
-			const patchesNow = () =>
-				findPatches(frame, {
-					sigma: o.sigma,
-					k: o.k,
-					minSep: o.minSep,
-					bg: o.bg,
-					minContrast: o.minContrast,
-				});
-			let p = null;
-			if (idx % impEvery === 0) {
-				impFrames.push(
-					gaussBlur(downsample(frame, Math.min(o.impWidth, w)), 1).data,
-				);
-				p = patchesNow();
-				impPatches.push(p);
+						let x = Math.floor((tx * w) / o.tiles);
+						x < Math.floor(((tx + 1) * w) / o.tiles);
+						x++
+					) {
+						a += data[y * w + x];
+						c++;
+					}
+				tiles[ty * o.tiles + tx].push(a / c);
 			}
-			if (idx % patchEvery === 0) {
-				p ??= patchesNow();
-				spatial.patches.push(p.length);
-				spatial.nni.push(nni(p, w, h));
-				spatial.mrd.push(mrd(p, w, h));
-				spatial.moran.push(moransI(p, w, h));
-				spatial.beta.push(spectralBeta(frame));
-			}
-			// flow on consecutive frames (idx-1, idx) whenever idx-1 is on the flow grid
-			const small =
-				idx % flowEvery === 0 || idx % flowEvery === 1
-					? gaussBlur(downsample(frame, fw), 1)
-					: null;
-			if (idx % flowEvery === 1 && prevFlow)
-				flows.push(hornSchunck(prevFlow, small, { alpha: 1, iters: 60 }));
-			prevFlow = idx % flowEvery === 0 ? small : null;
-			idx++;
+		const frame = { w, h, data };
+		const patchesNow = () =>
+			findPatches(frame, {
+				sigma: o.sigma,
+				k: o.k,
+				minSep: o.minSep,
+				bg: o.bg,
+				minContrast: o.minContrast,
+			});
+		let p = null;
+		if (idx % impEvery === 0) {
+			impFrames.push(
+				gaussBlur(downsample(frame, Math.min(o.impWidth, w)), 1).data,
+			);
+			p = patchesNow();
+			impPatches.push(p);
 		}
+		if (idx % patchEvery === 0) {
+			p ??= patchesNow();
+			spatial.patches.push(p.length);
+			spatial.nni.push(nni(p, w, h));
+			spatial.mrd.push(mrd(p, w, h));
+			spatial.moran.push(moransI(p, w, h));
+			spatial.beta.push(spectralBeta(frame));
+		}
+		// flow on consecutive frames (idx-1, idx) whenever idx-1 is on the flow grid
+		const startsPair = idx % flowEvery === 0;
+		const small =
+			startsPair || prevFlow ? gaussBlur(downsample(frame, fw), 1) : null;
+		if (prevFlow) {
+			flowPairs.push(
+				flowPairSummary(hornSchunck(prevFlow, small, { alpha: 1, iters: 60 })),
+			);
+			fh = small.h;
+		}
+		prevFlow = startsPair ? small : null;
+		idx++;
 	}
-	const code = await new Promise((r) => ff.on("close", r));
+	const code = await closed;
+	if (code instanceof Error) throw code;
 	if (code !== 0) throw new Error(`ffmpeg exited ${code} on ${input}`);
-	const fl = flowSummary(flows);
-	const fh = flows[0]?.h ?? 0,
-		diag = Math.hypot(fw, fh);
+	if (!idx) throw new Error(`No video frames from ffmpeg on ${input}`);
+	const fl = flowSummary(flowPairs);
 	const tileAlpha = tiles.map((s) => temporalAlpha(s, fps));
 	const impFs = fps / impEvery,
 		lags = [1, 2, 4, 8, 16, 32, 64, 128, 256].filter(
@@ -307,8 +313,8 @@ async function measure(input, o) {
 			t: o.t,
 			short: o.short,
 			flowWidth: fw,
-			flowHz: o.flowHz,
-			patchHz: o.patchHz,
+			flowHz: fps / flowEvery,
+			patchHz: fps / patchEvery,
 			sigma: o.sigma,
 			k: o.k,
 			minSep: o.minSep,
@@ -330,10 +336,13 @@ async function measure(input, o) {
 			alphaTilesMedian: median(tileAlpha),
 			alphaTiles: tileAlpha,
 			// speed in frame diagonals per second; direction consistency 1 = one steady direction, 0 = every way
-			speed: diag ? (fl.meanSpeed * fps) / diag : null,
+			speed:
+				fl.meanSpeed === null
+					? null
+					: (fl.meanSpeed * fps) / Math.hypot(fw, fh),
 			directionConsistency: fl.directionConsistency,
 			rhythm: lag1(fl.movement),
-			flowPairs: flows.length,
+			flowPairs: flowPairs.length,
 			brightness: stat(mean),
 		},
 		// the pattern scrambled by the wind and settling back: not in Zhang
@@ -370,7 +379,7 @@ for (const input of o.inputs) {
 	const r = await measure(input, o);
 	results.push(r);
 	console.error(
-		`${input}: NNI ${r.spatial.nni.mean?.toFixed(3)}  MRD ${r.spatial.mrd.mean?.toFixed(3)}  I ${r.spatial.moransI.mean?.toFixed(3)}  β ${r.spatial.beta.mean?.toFixed(2)}  α ${r.temporal.alpha?.toFixed(2)} (tiles ${r.temporal.alphaTilesMedian?.toFixed(2)})  Dθ ${r.temporal.directionConsistency?.toFixed(2)}  ρ1 ${r.temporal.rhythm?.toFixed(2)}  speed ${r.temporal.speed?.toFixed(4)}  τ ${r.impermanence.tau?.toFixed(2)} s  plateau ${r.impermanence.plateau?.toFixed(2)}  scramble ${r.impermanence.scramble.mean.toFixed(3)} (${r.impermanence.scramble.perMinute.toFixed(1)}/min, back in ${r.impermanence.scramble.returnSeconds?.toFixed(1)} s, same ${r.impermanence.scramble.sameShapeAfter?.toFixed(2)})  life ${r.impermanence.tracks.lifetimeMedian?.toFixed(2)} s (seen ${r.impermanence.tracks.seenLife?.toFixed(2)} s)  returns ${r.impermanence.tracks.returnShare?.toFixed(2)}`,
+		`${input}: NNI ${r.spatial.nni.mean?.toFixed(3)}  MRD ${r.spatial.mrd.mean?.toFixed(3)}  I ${r.spatial.moransI.mean?.toFixed(3)}  β ${r.spatial.beta.mean?.toFixed(2)}  α ${r.temporal.alpha?.toFixed(2)} (tiles ${r.temporal.alphaTilesMedian?.toFixed(2)})  Dθ ${r.temporal.directionConsistency?.toFixed(2)}  ρ1 ${r.temporal.rhythm?.toFixed(2)}  speed ${r.temporal.speed?.toFixed(4)}  τ ${r.impermanence.tau?.toFixed(2)} s  plateau ${r.impermanence.plateau?.toFixed(2)}  scramble ${r.impermanence.scramble.mean?.toFixed(3)} (${r.impermanence.scramble.perMinute?.toFixed(1)}/min, back in ${r.impermanence.scramble.returnSeconds?.toFixed(1)} s, same ${r.impermanence.scramble.sameShapeAfter?.toFixed(2)})  life ${r.impermanence.tracks.lifetimeMedian?.toFixed(2)} s (seen ${r.impermanence.tracks.seenLife?.toFixed(2)} s)  returns ${r.impermanence.tracks.returnShare?.toFixed(2)}`,
 	);
 }
 const json = JSON.stringify(

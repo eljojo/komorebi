@@ -559,6 +559,8 @@ Most take `--render` to capture the authored pair. What each route promises is i
 | **Shader validation** | `node glslcheck.mjs` | GLSL literals and variants compile under `glslangValidator`, including transport and tree fragments from the assembled player and embeds |
 | **Video exporter** (`render-video.mjs` and its siblings) | `nix run .#video -- …`; tests via `node --test test-gl/video.test.mjs` and the other test files beside it, each naming its run command in its header | its own tests: downscale, frame pairing, run key and refusals, playlist timeline, parallel claims; GPU checks are separate files; see the map |
 
+Pattern measures use the constant frame rate of the filtered output. JSON records the effective sampling rates and uses `null` when a measurement is undefined, including direction with no motion and spatial correlation with no contrast.
+
 Playlist videos use the same transition timing as the editor. A checkpoint is saved after the new look arrives; if a render resumes partway through a fade, it replays from the last settled look.
 
 ### Running and what stays untracked
