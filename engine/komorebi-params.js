@@ -192,6 +192,14 @@ const PARAMS = {
     row: { kind: 'sel', label: 'shoots', choices: [['off', 0], ['on', 1]], rebuild: 'canopy' },
     travels: 'topo',   // a different arrangement of the same leaves: a leaf would fly a limb's length in a morph (it flickered), so the groves cross instead
     means: "<b>Leaves on shoots, the way a twig carries them.</b> This year's shoots leave last year's twig at its nodes, and each carries a few leaves, one a node, or in pairs on a tree whose branches pair. A shoot in shade stays short, its leaves bunched; one in sun grows long and rises. The blades point along the branch. So a crown gathers into clumps with sky between, rather than a haze of leaves around every twig tip. Off = the old scatter around each twig. It moves leaves, it adds none." },
+  shoots_on_twig: { default: 0,   // PROTOTYPE: each lateral shoot leaves the twig's own grown wood (komorebi-shoots.js, alongTwig) instead of a point straight back from the tip at the tip's height, which a curved or drooped twig left in the air. Leaves on shoots only. 0 = the placement to the bit. A canopy key (it moves leaves)
+    row: { kind: 'sel', label: 'on twig', choices: [['off', 0], ['on', 1]], rebuild: 'canopy' },
+    travels: 'topo',   // as shoot_leaves: a lateral's base can move a twig's length, so the groves cross
+    means: "<b>Side shoots grow from the twig.</b> This year's side shoots were placed by stepping straight back from the twig's tip, level with it, so on a twig that curves or droops they started in the air beside it. On, each starts on the twig's own wood, as far back along it as before, and its leaves come with it. Only with leaves on shoots." },
+  shoot_length: { default: 1,   // PROTOTYPE: how long this year's shoots grow, a factor on every internode (komorebi-shoots.js). Internodes are in blade lengths, so a look with large blades grows long shoots; this shortens them. Leaves on shoots only. 1 = the placement to the bit. A canopy key (it moves leaves)
+    row: { kind: 's', label: 'shoot length', min: 0.2, max: 1.5, step: 0.01, rebuild: 'canopy' },
+    travels: 'topo',   // it moves every leaf on a shoot along it: as inner_leaves, a morph would fly them, so the groves cross
+    means: "<b>How long this year's shoots grow.</b> A shoot's internodes are set in blade lengths, so a tree with large leaves grows long shoots with its leaves spread far apart along them. Lower draws them in, the leaves closer together and nearer their twig. 1 = the botanical lengths." },
   leaf_stalks: { default: 0,   // PROTOTYPE: this year's shoots and each leaf's petiole drawn as wood (komorebi-grove.js, THE SHOOTS AND STALKS AS WOOD), so a leaf on a shoot hangs off its twig; faithful path, leaves on shoots only. 0 = the twigs' wood alone, to the bit
     row: { kind: 'sel', label: 'stalks', choices: [['off', 0], ['on', 1]], rebuild: 'canopy' },
     travels: 'topo',   // wood that is there or not: the groves cross

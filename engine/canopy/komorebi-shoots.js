@@ -16,6 +16,9 @@
 // 11 mm and on, by a smoothstep of its own threshold against the share of long laterals, 40 % at 0.138 of open light to 85 % in the open (Lemoine).
 // A long shoot in light rises toward upright (Dupré's second flush). Each blade sits off its node on its petiole, fanned forward along the shoot, so the
 // blades point along the branch (Planchais Fig. 4B). Lengths are in the look's blade lengths, botanical: a beech blade is 50 mm.
+// PROTOTYPES: shoot_length scales every internode (1 = the botanical lengths above, which on a large blade make long shoots); shoots_on_twig puts
+// each lateral's base on the twig's own grown wood, at its arc back from the tip (held at the twig's base), instead of straight back from the tip at
+// the tip's height, where a curved or drooped twig left it in the air. Both at their defaults: the placement to the bit.
 //
 // CONTINUITY. A leaf's shoot and node are fixed by (seed, j, k) alone, never by the light, so a density step adds leaves at the end of the last shoot
 // and moves no one; the light moves only continuous things (the internode, the rise, the tilt). Turning the shoots on or off is not a morph: a leaf's
@@ -94,6 +97,21 @@ export function clusterShoots(seed, j, nLeaf, opposite){
   return { shoot, leaf };
 }
 
+// The point `back` along the twig's own wood from its tip (path: the twig's wood back to the trunk, tip first; the twig's grown base is the joint at
+// (t.bx, t.by)), held at that base: where a lateral leaves the twig (shoots_on_twig).
+const _onTwig = [0, 0, 0];
+function alongTwig(path, t, back, o){
+  const n = path.length/3 - 1; let m = 0; while(m < n && !(path[3*m] === t.bx && path[3*m+1] === t.by)) m++;
+  let rem = back;
+  for(let i = 0; i < m; i++){
+    const L = Math.hypot(path[3*i+3]-path[3*i], path[3*i+4]-path[3*i+1], path[3*i+5]-path[3*i+2]);
+    if(rem <= L){ const f = L > 0 ? rem/L : 0; for(let c = 0; c < 3; c++) o[c] = path[3*i+c] + (path[3*i+3+c]-path[3*i+c])*f; return o; }
+    rem -= L;
+  }
+  for(let c = 0; c < 3; c++) o[c] = path[3*m+c];
+  return o;
+}
+
 // Where leaf k of cluster j hangs on its shoot: o[0..2] its place, o[3] its pivot weight (as placeLeaf's), o[4] its blade's heading in the record's
 // clockwise basis (the blade's apex points away from its node), o[5] how much of it hangs there: 1 while the shoots are on.
 // o[6..8] its node, o[9..11] its shoot's base (where the shoot leaves its twig, or the older wood it hangs back on), o[12] that share of the
@@ -106,15 +124,16 @@ export function shootLeaf(cs, j, k, t, e, P, lt, origin, o, path = null, pathLen
   let hx = t.dx || 0, hy = t.dy || 0; const hl = Math.hypot(hx, hy); if(hl > 1e-6){ hx /= hl; hy /= hl; } else { hx = 1; hy = 0; }
   const type = smoothstep(sh.h - SHOOT.glide, sh.h + SHOOT.glide, longShare(e));   // 0 short .. 1 long
   const ell = clamp((e - 0.05)/0.95, 0, 1);
-  const iota = L0*(SHOOT.shortInternode + (SHOOT.longMax - SHOOT.shortInternode)*type);
-  let ox = t.x, oy = t.y, dxp = hx, dyp = hy;
+  const iota = L0*(SHOOT.shortInternode + (SHOOT.longMax - SHOOT.shortInternode)*type)*(P.shoot_length ?? 1);
+  let ox = t.x, oy = t.y, oz = t.z, dxp = hx, dyp = hy;
   if(s > 0){   // laterals back along the twig, alternately side to side; a decussate pair in the vertical plane reads narrower from above
     const pos = opposite ? ((s + 1) >> 1) : s, back = pos*SHOOT.parentInternode*L0;
-    ox -= hx*back; oy -= hy*back;
+    if(P.shoots_on_twig > 0 && path && path.length >= 6){ alongTwig(path, t, back, _onTwig); ox = _onTwig[0]; oy = _onTwig[1]; oz = _onTwig[2]; }
+    else { ox -= hx*back; oy -= hy*back; }
     const ang = (opposite && (pos & 1) === 0 ? 0.5 : 1)*((s & 1) ? 1 : -1)*(P.branch_angle_deg*DEG);
     const c = Math.cos(ang), sn = Math.sin(ang); dxp = hx*c - hy*sn; dyp = hx*sn + hy*c;
   }
-  let oz = t.z; o[3] = 0; o[12] = 0;
+  o[3] = 0; o[12] = 0;
   if(P.inner_leaves > 0 && path && path.length >= 6){   // an inner shoot: the whole shoot back on the older wood
     const r = mulberry32(hash3((P.seed>>>0)^SHOOT_LEAF_SALT, j, 0x10000 + s)), h = r(), u = r();
     const w = smoothstep(h, h + 0.05, P.inner_leaves);

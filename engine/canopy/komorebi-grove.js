@@ -59,7 +59,7 @@ import { LEAF_SHAPES, LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, V
 export const GROVE_READS = [
   'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
   'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','grove_reach_m','growth_years','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_stalks','leaf_variety','leaf_years','leaves_per_cluster',
-  'limb_count','max_tilt','phyllotaxis','receiver','seed','shoot_leaves','sky_view','standing_scene','sympodial','taper_delta','thin_twigs','tilt_light','tree_count','trunk_base','trunk_radius_m','trunk_split','twig_haze','two_ranked','view_extent_m',
+  'limb_count','max_tilt','phyllotaxis','receiver','seed','shoot_leaves','shoot_length','shoots_on_twig','sky_view','standing_scene','sympodial','taper_delta','thin_twigs','tilt_light','tree_count','trunk_base','trunk_radius_m','trunk_split','twig_haze','two_ranked','view_extent_m',
 ];
 // Grow a grove as `look` would, on the live params: every key the build reads (the grove's own, the season set within the canopy keys,
 // the topology) is the look's for the length of `build` and is put straight back after, so nothing else in the frame notices. A route
@@ -366,7 +366,7 @@ export function makeGrove(hub){
     const twigs = [];        // terminal nodes: {x,y,z, limb, tx,ty} — plan x,y, height z, global limb, tree trunk
     // `inner_leaves` (placeLeaf): the path each twig grew along, collected only while the knob is up — a PARALLEL structure to twigs (hier.twigPath, hier.twigPathLen), never a key of a twig record, which the skeleton pin digests whole.
     // A flat run of doubles per twig, tip first, through the very sc() that scales the twig and the segments; its 3-D arc.
-    const wantPath = params.inner_leaves > 0, twigPath = [], twigPathLen = [];
+    const wantPath = params.inner_leaves > 0 || (params.shoots_on_twig > 0 && params.shoot_leaves > 0), twigPath = [], twigPathLen = [];   // shoots_on_twig: the laterals' bases ride the same path
     // a grown tree's cluster is a bundle of shoots, each carrying its share of the leaves along its own wood (shootPlace): per twig, each shoot's wood, tip first, through sc()
     const twigShoots = Math.round(params.growth_years) > 0 ? [] : null;
     const limbDir  = new Float32Array(nLimb*2);         // plan unit direction (drives wind torque)

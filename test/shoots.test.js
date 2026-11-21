@@ -8,7 +8,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { DEFAULTS, PARAMS } from "../engine/komorebi-params.js";
 import { PRESETS } from "../presets.js";
 import { SHOOT, SHOOT_LEAF_SALT, clusterShoots, lightTilt, longShare, shootLeaf, tiltMeanDeg } from "../engine/canopy/komorebi-shoots.js";
-import { makeGrove } from "../engine/canopy/komorebi-grove.js";
+import { makeGrove, placeLeaf } from "../engine/canopy/komorebi-grove.js";
 const ENGINE_SOURCES = [...readdirSync(new URL("../", import.meta.url)).filter((n) => /^komorebi.*\.js$/.test(n)), ...readdirSync(new URL("../engine/", import.meta.url), { recursive: true }).filter((n) => n.endsWith(".js")).map((n) => `engine/${n}`)];   // every module of the engine, as a path from the root
 
 function grow(over) {
@@ -127,4 +127,56 @@ test("leaf_stalks: off, the wood is the twigs' alone; on, the same leaves, each 
   for (const sh of shoots) expect(Math.min(...off.hier.segments.map((sg) => dist(sh.a, sg))), "a shoot off the wood").toBeLessThan(1e-9);
   // and a look whose leaves are not on shoots draws nothing more
   expect(grow({ leaf_stalks: 1, shoot_leaves: 0 }).hier.segments.length).toBe(grow({ leaf_stalks: 0, shoot_leaves: 0 }).hier.segments.length);
+});
+
+test("shoots_on_twig: on, every lateral leaves its twig's own wood, where straight back from the tip left some in the air", () => {
+  const P = { ...DEFAULTS, ...PRESETS["park 1"], inner_leaves: 0 }, { hier } = grow({ inner_leaves: 0, shoots_on_twig: 1 });
+  expect(hier.twigPath, "the knob collects the twigs' paths").not.toBe(null);
+  const dist = (p, a, b) => {   // a point's 3-D distance to a segment
+    const e = [0, 1, 2].map((c) => b[c] - a[c]), ll = e.reduce((s, v) => s + v * v, 0);
+    const f = ll > 0 ? Math.max(0, Math.min(1, [0, 1, 2].reduce((s, c) => s + (p[c] - a[c]) * e[c], 0) / ll)) : 0;
+    return Math.hypot(...[0, 1, 2].map((c) => a[c] + e[c] * f - p[c]));
+  };
+  const offTwig = (j, p) => {   // to the twig's own wood: the path from its tip back to its grown base
+    const path = hier.twigPath[j], t = hier.twigs[j], n = path.length / 3 - 1;
+    let m = 0;
+    while (m < n && !(path[3 * m] === t.bx && path[3 * m + 1] === t.by)) m++;
+    let best = Math.hypot(p[0] - path[0], p[1] - path[1], p[2] - path[2]);
+    for (let i = 0; i < m; i++) best = Math.min(best, dist(p, path.slice(3 * i, 3 * i + 3), path.slice(3 * i + 3, 3 * i + 6)));
+    return best;
+  };
+  const out = new Array(13).fill(0);
+  let laterals = 0, worstOn = 0, worstOff = 0;
+  for (let j = 0; j < hier.twigs.length; j++) {
+    const cs = hier.leafShoots[j];
+    if (!cs) continue;
+    for (let k = 0; k < cs.leaf.length; k++) {
+      if (cs.leaf[k].s === 0) continue;
+      laterals++;
+      placeLeaf(hier, j, 0, 0, k, { ...P, shoots_on_twig: 1 }, true, out);
+      worstOn = Math.max(worstOn, offTwig(j, out.slice(9, 12)));
+      placeLeaf(hier, j, 0, 0, k, { ...P, shoots_on_twig: 0 }, true, out);
+      worstOff = Math.max(worstOff, offTwig(j, out.slice(9, 12)));
+    }
+  }
+  expect(laterals).toBeGreaterThan(1000);
+  expect(worstOn, "a lateral's base off its twig").toBeLessThan(1e-9);
+  expect(worstOff, "straight back from the tip, some were in the air").toBeGreaterThan(0.05);
+});
+
+test("shoot_length scales every node's distance from its shoot's base, and moves no base", () => {
+  const P = { ...DEFAULTS, ...PRESETS["park 1"] }, { hier } = grow({}), a = new Array(13).fill(0), b = new Array(13).fill(0);
+  let n = 0;
+  for (let j = 0; j < hier.twigs.length; j++) {
+    const cs = hier.leafShoots[j];
+    if (!cs) continue;
+    for (let k = 0; k < cs.leaf.length; k++, n++) {
+      placeLeaf(hier, j, 0, 0, k, P, true, a);
+      placeLeaf(hier, j, 0, 0, k, { ...P, shoot_length: 0.4 }, true, b);
+      for (let c = 9; c < 12; c++) expect(b[c]).toBe(a[c]);
+      const la = Math.hypot(a[6] - a[9], a[7] - a[10], a[8] - a[11]), lb = Math.hypot(b[6] - b[9], b[7] - b[10], b[8] - b[11]);
+      expect(Math.abs(lb - 0.4 * la)).toBeLessThan(1e-9);
+    }
+  }
+  expect(n).toBeGreaterThan(1000);
 });

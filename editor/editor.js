@@ -190,6 +190,8 @@ const PANEL_LAYOUT = [
   'inner_leaves',
   'cluster_spread_m',
   'shoot_leaves',
+  'shoots_on_twig',
+  'shoot_length',
   'leaf_stalks',
   'tilt_light',
   'tilt_shadow',
