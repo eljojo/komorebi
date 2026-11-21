@@ -159,7 +159,8 @@ uniform float uIrisOpacity;       // transition only: the share of the mask's da
 // view_sky: over the horizon the floor camera sees the sky (skyRadiance), and its far floor fades into the sky's horizon there. Its own variant of the
 // floor's program (buildTransport's sky), not a uniform: held off at run time, its lines still compiled the haze otherwise and moved a pixel of the frame
 vec3 gSkyDir = vec3(0.0, 0.0, -2.0);   // the ray's world direction, set by a camera that knows it (the floor); z < −1.5 = none, and the haze colour stands
-${GLSL_SKY_SEEN}#endif
+${GLSL_SKY_SEEN}
+#endif
 ${GLSL_TONE_TAIL}`;
 
 // ---- THE SKY FILL's receiver half (spec/model/fill.md): what the three surface cameras read. The bake (FS_FILL, run per bake by

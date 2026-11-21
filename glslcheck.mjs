@@ -25,6 +25,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { assemble, writeTree } from "./embed-build.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 // The engine's source modules, scanned as text for shader literals and the numeric-constant substitution
@@ -92,6 +93,24 @@ for (const n of ["FS_TREE", "FS_TREE_WOOD"]) for (const names of [["CROWN_FIELD"
 // thin_twigs' cast of the wood under its own penumbra: the skeleton's two literals with SEG_FINE defined (komorebi-shaders.js VS/FS_FAITH_SEG_FINE)
 for (const n of ["VS_FAITH_SEG", "FS_FAITH_SEG"]) { const lit = shaders.find((x) => x.name === n); shaders.push({ ...lit, name: `${n}_FINE`, body: lit.body.replace("#version 300 es\n", "#version 300 es\n#define SEG_FINE\n") }); }
 
+// Compile the sources after bundling strips comments and prunes camera and feature code.
+const outDir = mkdtempSync(join(tmpdir(), "komorebi-glsl-"));
+const bundledAt = shaders.length;
+for (const [name, looks] of [["player", undefined], ["homepage", ["morning 2", "afternoon 5b", "morning 3"]], ["tree", ["dows lake"]]]) {
+  const { files, cameras } = assemble({ looks }), dir = join(outDir, name);
+  writeTree(files, dir);
+  const transport = await import(pathToFileURL(join(dir, "engine/transport/komorebi-transport.js")).href);
+  const tree = await import(pathToFileURL(join(dir, "engine/transport/komorebi-shaders.js")).href);
+  const add = (variant, body) => shaders.push({ name: `bundle_${name}_${variant}`, body, stage: "frag" });
+  for (const cam of cameras) add(cam, transport.buildTransport(cam));
+  if (cameras.includes("floor")) add("floor_sky", transport.buildTransport("floor", true));
+  for (const n of ["FS_TREE", "FS_TREE_WOOD"]) if (tree[n]) {
+    for (const defines of [[], ["CROWN_FIELD"], ["VIEW_SKY"], ["CROWN_FIELD", "VIEW_SKY"]]) {
+      add([n, ...defines].join("+"), tree.defineIn(tree[n], defines));
+    }
+  }
+}
+
 // ---- resolve interpolations. Repeated passes because a snippet may itself interpolate; bounded so a cycle
 // reports instead of hanging.
 function resolve(src) {
@@ -116,7 +135,6 @@ if (!onPath) {
   }
 }
 
-const outDir = mkdtempSync(join(tmpdir(), "komorebi-glsl-"));
 const pad = Math.max(...shaders.map((s) => s.name.length));
 let failed = 0;
 for (const s of shaders) {
@@ -138,5 +156,5 @@ for (const s of shaders) {
     failed++;
   }
 }
-console.log(`\n${shaders.length - failed}/${shaders.length} shaders compiled   (${literalCount} literals + ${shaders.length - literalCount} transport variants; assembled sources: ${outDir})`);
+console.log(`\n${shaders.length - failed}/${shaders.length} shaders compiled   (${literalCount} literals + ${bundledAt - literalCount} raw variants + ${shaders.length - bundledAt} bundled variants; assembled sources: ${outDir})`);
 process.exit(failed ? 1 : 0);

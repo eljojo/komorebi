@@ -1114,8 +1114,7 @@ vec3 skyRadiance(vec3 d){
     tPrev = t;
   }
   return uSkyScale*L;
-}
-`;
+}`;
 
 // The Look's per-pixel finish, the floor's GLSL_T_POST in the same order (komorebi-transport.js): the dusk shift keyed by this point's own sun visibility,
 // the haze by its distance from the looked-at point as the floor's, the iris mask, the tail. The tail's curve is the tree's own (spec model/camera.md, the
@@ -1132,7 +1131,8 @@ uniform float uVignetteShape;
 uniform float uIrisOpacity;
 uniform vec2  uTarget;               // the target's size in pixels, for the iris's frame position
 #ifdef VIEW_SKY
-${GLSL_SKY_SEEN}#endif
+${GLSL_SKY_SEEN}
+#endif
 ${GLSL_TONE_TAIL}
 const mat3 AGX_IN = mat3(0.842479062253094, 0.0423282422610123, 0.0423756549057051, 0.0784335999999992, 0.878468636469772, 0.0784336, 0.0792237451477643, 0.0791661274605434, 0.879142973793104);
 const mat3 AGX_OUT = mat3(1.19687900512017, -0.0528968517574562, -0.0529716355144438, -0.0980208811401368, 1.15190312990417, -0.0980434501171241, -0.0990297440797205, -0.0989611768448433, 1.15107367264116);
