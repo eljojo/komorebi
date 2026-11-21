@@ -233,6 +233,14 @@
             runtimeInputs = [ pkgs.nodejs_22 pkgs.imagemagick pkgs.git pkgs.gnutar ];
             text = ''exec node test-gl/review.mjs "$@"'';
           };
+          # `nix run .#adopt -- survey|render key=value… | apply <folder> | record` — turning a default on: which built-in looks it
+          # moves, each rendered as it is and as it would ship (Chrome on Metal) into a review folder with a pick per look, and the
+          # picks written into komorebi-params.js and presets.js (test-gl/adopt.mjs's header). render: same first-run setup as pixels.
+          adopt = pkgs.writeShellApplication {
+            name = "adopt";
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
+            text = ''exec node test-gl/adopt.mjs "$@"'';
+          };
           # `nix run .#video -- --arboretum <id> --commit <sha> --out test-gl/out/video/<name> --seconds 300` — the headless
           # video exporter: one look (an arboretum preset, or --look-json <file>) stepped frame by frame on the Mac's GPU
           # (Chromium on Metal) into a lossless segment set and an HEVC delivery for a projector; `-- --help` lists every option.
@@ -339,6 +347,7 @@
           editor = { type = "app"; program = "${editor}/bin/editor"; };
           embed = { type = "app"; program = "${embed}/bin/embed"; };
           review = { type = "app"; program = "${review}/bin/review"; };
+          adopt = { type = "app"; program = "${adopt}/bin/adopt"; };
           video = { type = "app"; program = "${video}/bin/video"; };
           embed-check = { type = "app"; program = "${embed-check}/bin/embed-check"; };
           default = self.apps.${pkgs.system}.dev;
