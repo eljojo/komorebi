@@ -1,13 +1,16 @@
 // ============================================================================
-// embed.mjs — the EMBED bundle's proof: dist/komorebi.embed.min.js must render the looks it was built for
+// embed.mjs — the EMBED bundle's proof: the one-page bundle, built from the working tree, must render the looks it was built for
 // EXACTLY as the raw engine does. embed-build.mjs cuts presets, cameras, uniform groups and GLSL comments
 // out of a copy of the source tree; every one of those cuts is supposed to be unreachable for these looks,
 // and "unreachable" is a claim about pixels. So this loads BOTH engines into ONE page — same browser, same
 // GL stack, same context settings, frozen motion — and compares the frames byte for byte.
 //
 //   cd test-gl && node embed.mjs                    (or: nix run .#embed-check [-- <option>...])
-//   --bundle <file.js>    which bundle to check. Default: dist/komorebi.embed.min.js.
-//   <look>...             check only these looks. Default: every look the bundle carries.
+//   <look>...             build the bundle for these looks and check them. Default: the looks dist/komorebi.embed.min.js
+//                         carries (the last `nix run .#embed`). The bundle is built afresh into a temp file and dist/ is left
+//                         as it is: a bundle on disk can predate the source, and a check of it would prove an older build.
+//   --features a,b|all|none  build with that set of fall tiers, as `nix run .#embed` takes it.
+//   --bundle <file.js>    check this bundle as it is instead of building one (a deploy); <look>... then checks only those.
 //   --over <json>         merge these params over every look, in BOTH engines — for the tiers no shipped look opens
 //                         (e.g. --over '{"canopy_fill":1,"fill_scatter":0.3}': the sky fill's code ships in the bundle
 //                         and stays off at runtime, so its minified copy is only exercised by asking for it).
@@ -19,12 +22,14 @@
 // PRESETS captured before the next overwrites the global. Motion is frozen exactly as harness.html freezes
 // it (wind, weather, drift, auto-quality), which is what makes a byte comparison meaningful at all.
 // ============================================================================
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { basename, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from '../embed-build.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const require = createRequire(join(ROOT, 'test-gl', 'package.json'));
@@ -33,9 +38,13 @@ const { chromium } = require('playwright');
 const argv = process.argv.slice(2);
 const arg = (name, fallback) => { const i = argv.indexOf(name); return i >= 0 ? argv.splice(i, 2)[1] : fallback; };
 const against = arg('--against', null);
-const bundle = arg('--bundle', '/dist/komorebi.embed.min.js').replace(/^\.?\/?/, '/');
+const given = arg('--bundle', null)?.replace(/^\.?\/?/, '/');
+const tiers = arg('--features', null);
+const features = tiers == null || tiers === 'all' || tiers === 'none' ? tiers ?? undefined : tiers.split(',').map((x) => x.trim()).filter(Boolean);
+const LAST = '/dist/komorebi.embed.min.js';
+const work = given ? null : mkdtempSync(join(tmpdir(), 'komorebi-embed-check-')), built = work && join(work, 'komorebi.embed.min.js');
 const over = JSON.parse(arg('--over', '{}'));
-const named = argv;                                // no names: check every look the bundle carries
+const named = argv;                                // no names: every look the bundle carries (built: the last one built into dist/)
 const OVER = JSON.stringify(over);
 const FRAME = 30;                                  // deep enough that the bake, the grove and the first draw have all happened
 
@@ -46,6 +55,10 @@ function serve() {
     if (path === '/against.js' && against) {        // the comparison bundle, wherever it lives
       res.writeHead(200, { 'content-type': 'text/javascript' });
       return createReadStream(resolve(against)).pipe(res);
+    }
+    if (path === '/built.js' && built) {            // this run's build of the working tree, outside the repo
+      res.writeHead(200, { 'content-type': 'text/javascript' });
+      return createReadStream(built).pipe(res);
     }
     if (path === '/') {                             // the check page itself — held in memory, never written into the repo
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -175,8 +188,18 @@ let failed = 0, looks = named;
 try {
   await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__ready);
+  let bundle = given;
+  if (!given) {
+    if (!looks.length) {
+      if (!existsSync(join(ROOT, LAST))) throw new Error(`no looks named and no ${LAST.slice(1)} to read them from: nix run .#embed-check -- '<look>'...`);
+      looks = await page.evaluate((u) => window.__load('last', u), LAST);
+    }
+    const r = build({ looks, features, out: built, quiet: true });
+    console.log(`built from the working tree: ${r.looks.join(', ')}   (cut ${r.cut.join(', ') || 'nothing'}; ${r.raw} raw)`);
+    bundle = '/built.js';
+  }
   const inBundle = await page.evaluate((u) => window.__load('embed', u), bundle);
-  console.log(`${basename(bundle)} carries ${inBundle.length} look(s): ${inBundle.join(', ')}${OVER === '{}' ? '' : `   (over ${OVER})`}`);
+  console.log(`${given ? basename(given) : 'the build'} carries ${inBundle.length} look(s): ${inBundle.join(', ')}${OVER === '{}' ? '' : `   (over ${OVER})`}`);
   if (!looks.length) looks = inBundle;
   if (against) {
     const inOld = await page.evaluate(() => window.__load('against', '/against.js'));
@@ -217,4 +240,5 @@ if (warnings.length) { console.log('PAGE WARNINGS:'); for (const w of warnings) 
 console.log(`\n${looks.length} look(s), ${failed ? `${failed} FAILED` : 'all byte-identical to the raw engine'}${errors.length ? `, ${errors.length} page errors` : ''}`);
 await browser.close();
 server.close();
+if (work) rmSync(work, { recursive: true, force: true });
 process.exit(failed || errors.length ? 1 : 0);

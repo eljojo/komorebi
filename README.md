@@ -116,8 +116,9 @@ If your page uses two or three looks, `nix run .#embed -- '<look>'...` builds a 
 cameras they use, and the fall tiers they open: the sky fill, the leaf's diffuse share, the autumn pigment, the exposure
 pass, leaf drop and the litter carpet. A tier none of the looks opens is left out. The three homepage looks
 (`'morning 2' 'afternoon 5b' 'morning 3'`) come to 84 kB, or 28 kB gzipped, against 36 kB before the fall tiers could be
-cut; the player bundle keeps every tier, because `montebello` ships and opens all six. `nix run .#embed-check` renders
-each look through the bundle and through the raw modules, and requires the frames to be identical.
+cut; the player bundle keeps every tier, because `montebello` ships and opens all six. `nix run .#embed-check` builds the
+same bundle afresh from the source, renders each look through it and through the raw modules, and requires the frames to be
+identical.
 
 If you then switch a page's params to something the bundle was not built for (open `canopy_fill` on a bundle that left
 the fill out, say), the tier stays off and the engine logs one `console.warn` per tier:
@@ -187,7 +188,7 @@ node glslcheck.mjs # offline shader validation — compiles every GLSL literal i
 nix run .#pixels   # the pixel harness — render every look + pixel suites (first run: cd test-gl && npm install && npx playwright install chromium)
 nix run .#editor   # the editor smoke — mode ladder + macro bus driven in headless Chromium (same first-run setup)
 nix run .#embed -- 'morning 2' 'afternoon 5b' 'morning 3'   # a one-page bundle: only those looks, only the cameras they use
-nix run .#embed-check                                       # ...and check it renders them byte-identically
+nix run .#embed-check                                       # ...and check a fresh build of it renders them byte-identically
 nix run .#arboretum-dev     # arboretum (arboretum/) and this checkout on https://localhost:8787 (first run: cd arboretum && nix develop -c npm ci)
 nix run .#arboretum-test    # arboretum's typecheck and tests
 nix run .#arboretum-deploy  # deploy komorebi.eljojo.net (the Worker and the site) from HEAD

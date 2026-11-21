@@ -192,13 +192,14 @@
             runtimeInputs = [ pkgs.bun pkgs.gzip pkgs.nodejs_22 ];
             text = ''exec node embed-build.mjs "$@"'';
           };
-          # `nix run .#embed-check -- '<look>'...` — the embed bundle's proof: every kept look rendered
-          # through dist/komorebi.embed.min.js AND through the raw ES modules, in one page, compared byte
-          # for byte. `--against <bundle.js>` also diffs an older deploy and writes a contact sheet.
+          # `nix run .#embed-check -- '<look>'...` — the embed bundle's proof: the bundle for those looks (none: the
+          # looks dist/komorebi.embed.min.js carries) built afresh from the working tree, each look rendered through
+          # it AND through the raw ES modules, in one page, compared byte for byte. `--bundle <file.js>` checks a
+          # bundle as it is; `--against <bundle.js>` also diffs an older deploy and writes a contact sheet.
           # Same first-run setup as pixels: cd test-gl && npm install && npx playwright install chromium.
           embed-check = pkgs.writeShellApplication {
             name = "embed-check";
-            runtimeInputs = [ pkgs.nodejs_22 ];
+            runtimeInputs = [ pkgs.bun pkgs.gzip pkgs.nodejs_22 ];
             text = ''
               cd test-gl
               if [ ! -d node_modules ]; then
