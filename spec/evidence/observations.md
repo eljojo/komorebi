@@ -62,6 +62,12 @@ How komorebi was first noticed: "i noticed komorebi for the first time when the 
 
 Date: said 2026-11-20; the first noticing is not dated. Carried by [`../experience.md`](../experience.md#the-shape-that-comes-back).
 
+### Leaves on the gust's edges
+
+Watching a render of `park 1` under the lazy wind, its leaves fluttering on one tone: "the top left lazy tone was always like too shimmery, in my mind that's what it feels like whenever a breeze is catching up, or at the end of a strong gust, as it's winding down, it can't move the branches anymore but the leaves still flicker, but in our videos the top left (which i think it's how it's currently is?) it's always flickering, so it starts to feel unnatural after a while." Of the three clips beside it (lazy with the flutter on the wind's own broadband signal, and choppy under either flutter): "the other quadrants felt much better".
+
+Date: said 2026-11-20. Carried by [`../model/motion.md`](../model/motion.md#translation-alone-is-not-wind) (`flutter_gust`, provisional).
+
 ## Reference photographs
 
 All of these live in `archive/references/`, which is git-ignored and must stay so. File names are given where the record names them.

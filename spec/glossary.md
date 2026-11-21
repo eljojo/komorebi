@@ -62,6 +62,8 @@ These are the words the other documents use without stopping to explain. Each en
 
 **cluster, twig, limb, trunk, bole.** The grown hierarchy, from the ground up. The trunk (with its bole below the limbs) bears a few limbs; limbs fork into sub-branches; terminal twigs carry clusters, the clumps of leaves. Wind turns each level about its own joint. [`model/canopy.md`](model/canopy.md), [`model/motion.md`](model/motion.md)
 
+**comes and goes.** How much the floor's motion swells and settles over minutes: the spread, against the mean, of how much the floor changes from frame to frame averaged over each second. Near 0 a floor that shimmers the same all the time; real footage measures 0.35 and above. [`evidence/measurements.md`](evidence/measurements.md#leaves-on-the-gusts-edges)
+
 **coherent band.** The slow, smooth, directional part of the wind that loads the trunk and major limbs, so the whole canopy shifts together and the gap pattern translates intact. It breathes, stiffens against a ceiling, and recoils. [`model/motion.md`](model/motion.md)
 
 **core.** The tight, heavy population of the sampler: the sun's half-degree disk, carrying most of the energy in clear sky. Cloud drains it into the halo. [`model/source.md`](model/source.md)
