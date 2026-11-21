@@ -192,6 +192,10 @@ const PARAMS = {
     row: { kind: 'sel', label: 'shoots', choices: [['off', 0], ['on', 1]], rebuild: 'canopy' },
     travels: 'topo',   // a different arrangement of the same leaves: a leaf would fly a limb's length in a morph (it flickered), so the groves cross instead
     means: "<b>Leaves on shoots, the way a twig carries them.</b> This year's shoots leave last year's twig at its nodes, and each carries a few leaves, one a node, or in pairs on a tree whose branches pair. A shoot in shade stays short, its leaves bunched; one in sun grows long and rises. The blades point along the branch. So a crown gathers into clumps with sky between, rather than a haze of leaves around every twig tip. Off = the old scatter around each twig. It moves leaves, it adds none." },
+  leaf_stalks: { default: 0,   // PROTOTYPE: this year's shoots and each leaf's petiole drawn as wood (komorebi-grove.js, THE SHOOTS AND STALKS AS WOOD), so a leaf on a shoot hangs off its twig; faithful path, leaves on shoots only. 0 = the twigs' wood alone, to the bit
+    row: { kind: 'sel', label: 'stalks', choices: [['off', 0], ['on', 1]], rebuild: 'canopy' },
+    travels: 'topo',   // wood that is there or not: the groves cross
+    means: "<b>The leaves hang off their twigs.</b> On a tree whose leaves grow on this year's shoots, each shoot leaves its twig and each leaf sits on its own stalk, but neither was drawn, so the leaves floated beside the wood. On, the shoots and the stalks are drawn as thin wood, and every leaf hangs from the twig it grows on. Only on the faithful canopy with leaves on shoots." },
   tilt_light: { default: 1,   // on by default (a look from before it was keeps 0: GRANDFATHERED, below); leaves lie by their light (komorebi-shoots.js, spec/model/leaf.md "What one leaf stamps"): 0..1, from the look's own tilt (max_tilt) toward Planchais & Sinoquet's beech, 22° in shade to 34° in the open, from the same tilt draw. At 1 max_tilt is not read. 0 = the old tilt to the bit. A canopy key (it moves a leaf's footprint)
     row: { kind: 's', label: 'tilt by light', min: 0, max: 1, step: 0.01, rebuild: 'canopy' },
     travels: 'canopy',

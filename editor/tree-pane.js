@@ -39,7 +39,7 @@ export function paneScene(leaves, segs, look){
   // the wood: a disc at the pipe model's width every 0.7 of it, and never sparser than a 400th of the crown's radius
   const tap = Math.pow(Math.max(1.001, look.branch_children), -1/Math.max(1, look.taper_delta));
   for(const s of segs){
-    const r = look.trunk_radius_m*Math.pow(tap, s.level + (s.f0 || 0));
+    const r = s.r ?? look.trunk_radius_m*Math.pow(tap, s.level + (s.f0 || 0));   // a shoot or a stalk (leaf_stalks) has its own
     const L = Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1], s.b[2] - s.a[2]), k = Math.max(1, Math.ceil(L/Math.max(0.7*r, R/400)));
     for(let q=0;q<=k;q++){ const t = q/k; out.push(s.a[0] + (s.b[0] - s.a[0])*t, s.a[1] + (s.b[1] - s.a[1])*t, s.a[2] + (s.b[2] - s.a[2])*t, r, 0); }
   }

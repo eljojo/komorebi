@@ -58,7 +58,7 @@ import { LEAF_SHAPES, LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, V
 // as the boolean it is). Held against a grep of this file in reseason.test.js.
 export const GROVE_READS = [
   'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
-  'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','grove_reach_m','growth_years','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_variety','leaf_years','leaves_per_cluster',
+  'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','grove_reach_m','growth_years','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_stalks','leaf_variety','leaf_years','leaves_per_cluster',
   'limb_count','max_tilt','phyllotaxis','receiver','seed','shoot_leaves','sky_view','standing_scene','sympodial','taper_delta','thin_twigs','tilt_light','tree_count','trunk_base','trunk_radius_m','trunk_split','twig_haze','two_ranked','view_extent_m',
 ];
 // Grow a grove as `look` would, on the live params: every key the build reads (the grove's own, the season set within the canopy keys,
@@ -126,6 +126,9 @@ function woodHeading(path, i, n, e){
   return false;
 }
 const _heading = [0,0];
+// the level a shoot or a stalk drawn as wood (leaf_stalks) carries: past every grown order, so the analytic occluder (level ≤ 1) never takes it and the
+// sky view bins it by its clump; its radius is its own (sg.r), never the pipe model's
+const LEVEL_SHOOT = 99;
 // A GROWN SHOOT'S LEAVES (growth_years > 0). A grown tree's cluster is a bundle of neighbouring shoots (komorebi-growth.js, THE LEAF
 // BUDGET), and hier.twigShoots[j] holds each one's own wood, tip first. Leaf k of cluster j hangs on shoot k mod the bundle's size, so
 // every shoot carries its share, at a uniform arc distance along that shoot's wood, off it by a stalk across the wood's 3-D
@@ -157,7 +160,7 @@ const _shoot = [0,0,0];
 // LEAVES ON SHOOTS (komorebi-shoots.js, shoot_leaves): with the grove's shoots in hand (hier.leafShoots, hier.leafLight; null at shoot_leaves 0), leaf k
 // hangs at its node on its shoot instead of where the twig hug and the inner leaves put it, and out[4] is its blade's heading, out[5] how much of it hangs
 // there (1: the shoots are a switch). `lt` is the leaf's length (the grove's per-leaf size; the editor's preview hands the same). At 0 nothing below the old placement runs.
-const _shootLeaf = [0,0,0,0,0,0];
+const _shootLeaf = [0,0,0,0,0,0,0,0,0,0,0,0,0];
 export function placeLeaf(hier, j, g1, g2, k, params, faithful, out, lt = params.leaf_size_m){
   placeLeafOnWood(hier, j, g1, g2, k, params, faithful, out);
   out[5] = 0;
@@ -168,6 +171,7 @@ export function placeLeaf(hier, j, g1, g2, k, params, faithful, out, lt = params
   const w = _shootLeaf[5];
   for(let c = 0; c < 4; c++) out[c] += (_shootLeaf[c] - out[c])*w;
   out[4] = _shootLeaf[4]; out[5] = w;
+  if(out.length > 6) for(let c = 6; c < 13; c++) out[c] = _shootLeaf[c];   // its node and its shoot's base, for a caller that draws them (leaf_stalks)
   return out;
 }
 function placeLeafOnWood(hier, j, g1, g2, k, params, faithful, out){
@@ -594,7 +598,7 @@ export function makeGrove(hub){
     const sRec = keepSeason ? new Float64Array(nClusterTotal*nLeaf*SREC) : null;   // the re-season's per-leaf record (see the header): doubles, because the litter wants the doubles
     let sEx = null, sRank = null;   // the exposure field and keyed rank, when this build ran the pass: the record keeps them, so the first re-season does not pay it again
     let sAt = 0;
-    const pos = [0,0,0,0,0,0];   // placeLeaf's scratch: one leaf's x, y, z, its pivot weight, and on a shoot its blade's heading and its share
+    const pos = [0,0,0,0,0,0,0,0,0,0,0,0,0];   // placeLeaf's scratch: one leaf's x, y, z, its pivot weight, on a shoot its blade's heading and its share, then its node, its shoot's base and that shoot's share on the older wood
     let sideData = new Float64Array(nAll);   // FAITHFUL: each leaf's side (leafSide), in record order, compacted with pivotData
     let pivotData = new Float64Array(nAll);   // FAITHFUL: each leaf's pivot weight (placeLeaf's out[3]), in record order, before the fade (let: abscission compacts it with faithData)
     let zLow = Infinity, zHigh = -Infinity;   // the lowest and the highest height any leaf hangs at (past faith.hMin / faith.hMax only when inner_leaves hangs one on wood beyond every twig tip)
@@ -605,6 +609,11 @@ export function makeGrove(hub){
     const tiltOn = params.tilt_light > 0, shootsOn = params.shoot_leaves > 0 && !(params.growth_years > 0);   // a tree grown year by year hangs its leaves on its own grown shoots
     hier.leafLight = tiltOn || shootsOn ? clusterLight(twigs, params) : null;
     hier.leafShoots = shootsOn ? Array.from({ length: nClusterTotal }, (_, j) => clusterShoots(params.seed, j, nLeaf, params.phyllotaxis === 'opposite')) : null;
+    // THE SHOOTS AND STALKS AS WOOD (leaf_stalks): a leaf on a shoot hangs at its node, off the twig by its shoot and off its node by its petiole, and neither
+    // was drawn, so the leaves floated beside the wood they grow from. With leaf_stalks on (faithful, leaves on shoots) each leaf's stalk and each shoot are
+    // recorded here as the leaves hang and become wood below. Off, nothing is recorded and the wood is the twigs' alone, to the bit.
+    const stalksOn = faithful && shootsOn && params.leaf_stalks > 0, stalkRec = stalksOn ? [] : null, shootRec = stalksOn ? new Map() : null;
+    const stalkSpec = LEAF_SHAPES[params.leaf_shape], stalkOrigin = stalkSpec ? (stalkSpec.origin ?? 0) : 0.5;   // as placeLeaf reads it: where the stamp sits along the blade
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const dT = tShift ? tShift[t.tree] : undefined, cT = tGain ? tGain[t.tree] : undefined;   // this cluster's tree's lead and depth
@@ -639,6 +648,14 @@ export function makeGrove(hub){
         let angle = D[b+4]*Math.PI;
         if(shape && leafFlip(params.seed, j, k)) angle += Math.PI;   // an outline is not the same leaf a half turn on: half of them take the other half-plane (komorebi-leaf.js)
         if(pos[5] > 0) angle = lerpAngle(angle, pos[4] + (D[b+4] - 0.5)*SHOOT.azJitter, pos[5], 2*Math.PI);   // on a shoot the blade points away from its node, the leaf's own draw a jitter about it
+        if(stalksOn && pos[5] > 0){
+          const sl = hier.leafShoots[j].leaf[k];
+          // the stalk: from the node to the blade's base, which is the stamp's place less its reach along the blade as drawn (the record's clockwise angle)
+          stalkRec.push({ q, j, cov, node: [pos[6], pos[7], pos[8]], x, y, ux: Math.cos(angle), uy: -Math.sin(angle), reach: size*stalkOrigin, A, old: pos[3] });
+          const key = j*65536 + sl.s, sh = shootRec.get(key);   // the shoot: from its base to its farthest node
+          if(!sh) shootRec.set(key, { j, base: [pos[9], pos[10], pos[11]], onOld: pos[12], far: sl.node, tip: [pos[6], pos[7], pos[8]], old: pos[3] });
+          else if(sl.node > sh.far){ sh.far = sl.node; sh.tip = [pos[6], pos[7], pos[8]]; }
+        }
         const ax = 0.4+0.6*D[b+5], ay = 0.4+0.6*D[b+6];    // incoherent orbit
         const orient = D[b+7]*TAU2, phase = D[b+8]*TAU2;
         const swingGain = 0.6+0.8*D[b+9], swingPhase = D[b+10]*TAU2;
@@ -712,6 +729,7 @@ export function makeGrove(hub){
       }
       hier.leafRow = leafRow; hier.leafVariety = params.leaf_variety;
     }
+    if(stalksOn) for(const st of stalkRec){ const g = faithData[st.q*18 + 2]/st.A; st.g = Number.isFinite(g) ? g : 1; }   // leaf_variety rescaled the blade after it hung (its base moves with it); read before abscission compacts faithData
     const seasonBase = keepSeason ? layerData.map(a => Float32Array.from(a)) : null;   // the UNCOMPACTED layer records, before the rewrite below touches a tau
     const seasonPivot = keepSeason ? Float32Array.from(pivotData) : null;              // ...and the pivot weights, in the same record order (one push site)
     const seasonSide = keepSeason ? Float32Array.from(sideData) : null;                // ...and the sides
@@ -780,6 +798,37 @@ export function makeGrove(hub){
     const faithArr = new Float32Array(faithData);               // 18 floats a leaf, every leaf
     // dynamic: row 0 the bend angles (publishBend), row 1 the air at each clump (publishAir), row 2 its tree's trunk less tree 0's (publishBend) — a NEW texture per grove (the old one is freed at install)
     const clusterRows = new Float32Array(Math.max(1,nClusterTotal)*12); clusterRows.set(hier.clusterData); clusterRows.set(hier.airData, Math.max(1,nClusterTotal)*4); clusterRows.set(hier.swayData, Math.max(1,nClusterTotal)*8);
+    if(stalksOn){
+      // each shoot leaves drawn wood at the point of it nearest the shoot's base: its twig's path back to the trunk where the grove kept one (inner_leaves),
+      // its twig's own segments otherwise. The base is laid out along the twig's plan heading at the tip's height, which a sloped or drooped twig is not, and
+      // a shoot that inner_leaves hangs part way back sits between its twig and the older wood, on neither.
+      // The wood turns with its twig, as its leaves do (bakeFaithful's refill, clump j), unless it hangs on the older wood, which turns with the limb.
+      const own = new Map();
+      for(const sg of segments) if(sg.clump >= 0){ const l = own.get(sg.clump); if(l) l.push(sg.a, sg.b); else own.set(sg.clump, [sg.a, sg.b]); }
+      const near = (p, a, b, best) => {
+        const ex = b[0] - a[0], ey = b[1] - a[1], ez = b[2] - a[2], ll = ex*ex + ey*ey + ez*ez;
+        const f = ll > 0 ? clamp(((p[0] - a[0])*ex + (p[1] - a[1])*ey + (p[2] - a[2])*ez)/ll, 0, 1) : 0;
+        const q = [a[0] + ex*f, a[1] + ey*f, a[2] + ez*f], d = (q[0] - p[0])**2 + (q[1] - p[1])**2 + (q[2] - p[2])**2;
+        return d < best.d ? { d, q } : best;
+      };
+      const onWood = (j, p) => {
+        let best = { d: Infinity, q: p };
+        const path = hier.twigPath ? hier.twigPath[j] : null;
+        if(path && path.length >= 6) for(let i = 0; i + 5 < path.length; i += 3) best = near(p, [path[i], path[i+1], path[i+2]], [path[i+3], path[i+4], path[i+5]], best);
+        else { const l = own.get(j) || []; for(let i = 0; i + 1 < l.length; i += 2) best = near(p, l[i], l[i+1], best); }
+        return best.q;
+      };
+      const L0 = params.leaf_size_m, rShoot = SHOOT.shootRadius*L0, rStalk = SHOOT.stalkRadius*L0;
+      const wood = (a, b, j, r, cov, old) => {
+        const t = twigs[j];
+        segments.push({ a, b, level: LEVEL_SHOOT, cov, tree: t.tree, limb: t.limb, px: t.tx, py: t.ty, f0: 0, f1: 1, clump: old >= 0.5 ? -1 : j, r });
+      };
+      for(const sh of shootRec.values()) wood(onWood(sh.j, sh.base), sh.tip, sh.j, rShoot, twigs[sh.j].tcov, sh.old);
+      for(const st of stalkRec){
+        const reach = st.reach*st.g;
+        wood(st.node, [st.x - st.ux*reach, st.y - st.uy*reach, st.node[2]], st.j, rStalk, st.cov, st.old);
+      }
+    }
     // ---- woody occluder (spec/model/canopy.md): trunk + MAIN LIMBS (level<=1) as CONTINUOUS-height analytic segments. Map
     // each grown z to a floor height with the SAME crown mapping the leaves bin by (zMin->canopy_base,
     // zMax->base+thickness), and the bole linearly to 0 — so a limb's base lands at the trunk's height and the
@@ -817,8 +866,8 @@ export function makeGrove(hub){
         // level→level+1 step rather than each repeating the whole step (the old sawtooth). Straight branches: f0=0,f1=1 → unchanged.
         // thin_twigs: a twig keeps its pipe-model width down to TWIG_MIN_M, and the tree view draws what falls under a pixel by its coverage; off, the floor
         // below keeps every twig 8–12 mm thick so it shows at all
-        const ra = Math.max(thin ? TWIG_MIN_M : 0.012, params.trunk_radius_m*Math.pow(tf, sg.level + (sg.f0||0)));     // thick at the base of the segment (min keeps twigs visible)
-        const rb = Math.max(thin ? TWIG_MIN_M : 0.008, params.trunk_radius_m*Math.pow(tf, sg.level + (sg.f1!=null?sg.f1:1)));  // thinner toward the tip — continuous with the next sub-segment
+        const ra = sg.r ?? Math.max(thin ? TWIG_MIN_M : 0.012, params.trunk_radius_m*Math.pow(tf, sg.level + (sg.f0||0)));     // thick at the base of the segment (min keeps twigs visible); a shoot or a stalk (leaf_stalks) its own
+        const rb = sg.r ?? Math.max(thin ? TWIG_MIN_M : 0.008, params.trunk_radius_m*Math.pow(tf, sg.level + (sg.f1!=null?sg.f1:1)));  // thinner toward the tip — continuous with the next sub-segment
         // segment→clump linkage: a TERMINAL (twig-order) segment names the clump hanging off it, and carries that
         // twig's real grown base — the pivot its leaves use in VS_FAITH — so the refill can swing wood and leaves
         // as one. -1 = trunk/limb/interior wood (no clump), and also any twig past the MAX_TEX cluster cap, which
@@ -1266,6 +1315,7 @@ export function makeGrove(hub){
     const thin = !!params.thin_twigs;   // the floors the grove grew with (thin_twigs, growGrove): refreshed at the old ones, every twig went back to 8–12 mm
     for(let k=0;k<g.hier.segments.length;k++){
       const sg=g.hier.segments[k], s=faith.segRest[k];
+      if(sg.r != null) continue;   // a shoot or a stalk (leaf_stalks): sized by the leaf, not the trunk, and never a main limb
       s.ra=Math.max(thin ? TWIG_MIN_M : 0.012, w.radius*Math.pow(w.taper, sg.level+(sg.f0||0)));
       s.rb=Math.max(thin ? TWIG_MIN_M : 0.008, w.radius*Math.pow(w.taper, sg.level+(sg.f1!=null?sg.f1:1)));
       if(analyticWood(sg) && i<occ.count){

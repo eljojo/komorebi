@@ -98,3 +98,33 @@ test("the shoots' salt is its own", () => {
   expect(all.filter((v) => v === SHOOT_LEAF_SALT)).toHaveLength(1);
   expect(SHOOT.longShare[0][1]).toBe(0.4);
 });
+
+test("leaf_stalks: off, the wood is the twigs' alone; on, the same leaves, each hung from its node by a stalk to its blade's base, and each shoot leaving its twig's own wood", () => {
+  const off = grow({ leaf_stalks: 0 }), on = grow({ leaf_stalks: 1 }), P = { ...DEFAULTS, ...PRESETS["park 1"] };
+  expect(off.hier.segments.some((s) => s.r != null)).toBe(false);
+  expect(JSON.stringify(on.hier.segments.slice(0, off.hier.segments.length))).toBe(JSON.stringify(off.hier.segments));
+  const a = on.faithArr, b = off.faithArr;
+  expect(a.length).toBe(b.length);
+  for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) throw new Error(`leaf float ${i} moved`);   // the leaves are where they hung
+  const L0 = P.leaf_size_m, extra = on.hier.segments.slice(off.hier.segments.length);
+  const n = a.length / 18, shoots = extra.slice(0, extra.length - n), stalks = extra.slice(extra.length - n);   // the shoots first, then a stalk per leaf
+  expect(shoots.length).toBeGreaterThan(0);   // every leaf is on a shoot here, and each has its stalk
+  for (const s of shoots) expect(s.r).toBe(SHOOT.shootRadius * L0);
+  for (const s of stalks) expect(s.r).toBe(SHOOT.stalkRadius * L0);
+  const origin = on.shape ? 0.45 : 0.5, full = on.shape ? Math.sqrt(P.leaf_aspect) : 1;   // where the stamp sits along the blade, and the blade's length over 2A
+  for (let i = 0; i < n; i++) {
+    const s = stalks[i], x = a[18 * i], y = a[18 * i + 1], A = a[18 * i + 2], ang = a[18 * i + 4], z = a[18 * i + 16], reach = 2 * A * full * origin;
+    expect(Math.hypot(s.b[0] - (x - Math.cos(ang) * reach), s.b[1] - (y + Math.sin(ang) * reach))).toBeLessThan(1e-6);   // the stalk ends at the blade's base
+    expect(Math.abs(s.a[2] - z)).toBeLessThan(1e-6); expect(s.b[2]).toBe(s.a[2]);   // a leaf sits at its node's height
+    expect(Math.hypot(s.a[0] - s.b[0], s.a[1] - s.b[1])).toBeLessThan(SHOOT.petiole[1] * L0 + 2 * reach);
+  }
+  const dist = (p, sg) => {   // a point's 3-D distance to a segment
+    const e = [0, 1, 2].map((c) => sg.b[c] - sg.a[c]), ll = e.reduce((s, v) => s + v * v, 0);
+    const f = ll > 0 ? Math.max(0, Math.min(1, [0, 1, 2].reduce((s, c) => s + (p[c] - sg.a[c]) * e[c], 0) / ll)) : 0;
+    return Math.hypot(...[0, 1, 2].map((c) => sg.a[c] + e[c] * f - p[c]));
+  };
+  // every shoot leaves drawn wood: its twig, or the older wood inner_leaves hangs it back on (and the share it hangs part way back, between the two)
+  for (const sh of shoots) expect(Math.min(...off.hier.segments.map((sg) => dist(sh.a, sg))), "a shoot off the wood").toBeLessThan(1e-9);
+  // and a look whose leaves are not on shoots draws nothing more
+  expect(grow({ leaf_stalks: 1, shoot_leaves: 0 }).hier.segments.length).toBe(grow({ leaf_stalks: 0, shoot_leaves: 0 }).hier.segments.length);
+});

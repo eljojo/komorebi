@@ -43,6 +43,8 @@ export const SHOOT = {
   petiole: [0.15, 0.7],     // petiole over blade length: alternate (beech, short) / opposite (maple, long)
   fan: [100, 25],           // degrees a blade turns off its shoot's axis, at its first node / its last
   azJitter: 0.6,            // radians: the leaf's own angle draw spreads its blade this much about the fan's direction
+  shootRadius: 0.01,        // this year's shoot as wood (leaf_stalks), in blade lengths: about 0.5 mm on a 50 mm beech blade; at 0.02 it read as a twig
+  stalkRadius: 0.01,        // the petiole as wood (leaf_stalks), in blade lengths: about 0.5 mm
 };
 const lerpTab = (tab, x) => { if(x <= tab[0][0]) return tab[0][1]; for(let i = 1; i < tab.length; i++) if(x <= tab[i][0]){ const [a, fa] = tab[i-1], [b, fb] = tab[i]; return fa + (fb - fa)*(x - a)/(b - a); } return tab[tab.length-1][1]; };
 export const longShare = (e) => lerpTab(SHOOT.longShare, e);
@@ -94,6 +96,8 @@ export function clusterShoots(seed, j, nLeaf, opposite){
 
 // Where leaf k of cluster j hangs on its shoot: o[0..2] its place, o[3] its pivot weight (as placeLeaf's), o[4] its blade's heading in the record's
 // clockwise basis (the blade's apex points away from its node), o[5] how much of it hangs there: 1 while the shoots are on.
+// o[6..8] its node, o[9..11] its shoot's base (where the shoot leaves its twig, or the older wood it hangs back on), o[12] that share of the
+// shoot on the older wood (0 on its twig): what leaf_stalks draws as the shoot's wood and the leaf's stalk.
 // t: the twig; e: the cluster's light; lt: the leaf's own length; origin: where along the blade its stamp is placed from (0.5 the ellipse's middle,
 // the outline's own origin); path, pathLen: the twig's wood back to the trunk (inner shoots).
 export function shootLeaf(cs, j, k, t, e, P, lt, origin, o, path = null, pathLen = 0){
@@ -110,7 +114,7 @@ export function shootLeaf(cs, j, k, t, e, P, lt, origin, o, path = null, pathLen
     const ang = (opposite && (pos & 1) === 0 ? 0.5 : 1)*((s & 1) ? 1 : -1)*(P.branch_angle_deg*DEG);
     const c = Math.cos(ang), sn = Math.sin(ang); dxp = hx*c - hy*sn; dyp = hx*sn + hy*c;
   }
-  let oz = t.z; o[3] = 0;
+  let oz = t.z; o[3] = 0; o[12] = 0;
   if(P.inner_leaves > 0 && path && path.length >= 6){   // an inner shoot: the whole shoot back on the older wood
     const r = mulberry32(hash3((P.seed>>>0)^SHOOT_LEAF_SALT, j, 0x10000 + s)), h = r(), u = r();
     const w = smoothstep(h, h + 0.05, P.inner_leaves);
@@ -121,7 +125,7 @@ export function shootLeaf(cs, j, k, t, e, P, lt, origin, o, path = null, pathLen
       const qx = path[3*i] + (path[3*i+3]-path[3*i])*f, qy = path[3*i+1] + (path[3*i+4]-path[3*i+1])*f, qz = path[3*i+2] + (path[3*i+5]-path[3*i+2])*f;
       ox += (qx - ox)*w; oy += (qy - oy)*w; oz += (qz - oz)*w;
       let m = 0; while(m < n && !(path[3*m] === t.bx && path[3*m+1] === t.by)) m++;
-      o[3] = i >= m ? w : 0;
+      o[3] = i >= m ? w : 0; o[12] = w;
     }
   }
   const up = SHOOT.rise*type*ell*Math.PI/2, run = Math.cos(up), climb = Math.sin(up);
@@ -134,5 +138,6 @@ export function shootLeaf(cs, j, k, t, e, P, lt, origin, o, path = null, pathLen
   o[0] = nx + bx*reach; o[1] = ny + by*reach; o[2] = nz;
   o[4] = -Math.atan2(by, bx);
   o[5] = P.shoot_leaves > 0 ? 1 : 0;
+  o[6] = nx; o[7] = ny; o[8] = nz; o[9] = ox; o[10] = oy; o[11] = oz;
   return o;
 }
