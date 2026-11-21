@@ -744,6 +744,89 @@ export const PRESETS = {
     // the beam dimmed by the air's loss: exposure re-sat over it and the skylight brought down by as much, so the sunflecks and the shade stay where they were
     // leaves inside the crown, density ×0.917 so as much floor stays in sun
   }),
+  // 'if i had you' — José's look (2026-11-19), park story's ending (after forest floor): park 1, the scene in full red, the grove
+  // grown to cast a heart on the floor (seed 37573, leaves denser and drooping a little more, chosen on 2026-11-21 over 200,000 seeds and
+  // the settings that move the shadow). The camera is park 1, the scene's.
+  'if i had you': Object.assign({}, LOOK_DEFAULTS, {
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 2.05,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.27, "clusters_per_layer": 60, "leaves_per_cluster": 27,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_shape": "maple", "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
+    "seed": 37573, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.99, "young_red": 0.3, "anthocyanin": 1.41,   // the turn in full: deep red, the new growth red
+    "grove_reach_m": 20, "view_extent_m": 40, "view_pitch_deg": 55, "view_fov_deg": 30, "view_yaw_deg": 30.902627694560124,
+    "view_center_x": -1.82134239769411, "view_center_y": -2.822706256207649, "standing_scene": true, "faithful_canopy": true, "tree_view": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, the exposure as made
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 0.8515849856407709, "drift_auto": true, "drift_speed": 0.02,
+    // park 1 is faithful_canopy (the heaviest path) — without the governor a weak device has no recovery; matches every sibling look
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
+    "sun_extinction": 0,
+    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js), like its season family: the season travel needs one skylight across it
+  }),
+  // 'if i had you2' — the same, the camera lowered to 25° and turned square onto the heart its shadow draws (José's outline, 2026-11-21).
+  'if i had you2': Object.assign({}, LOOK_DEFAULTS, {
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 2.05,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.27, "clusters_per_layer": 60, "leaves_per_cluster": 27,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_shape": "maple", "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
+    "seed": 37573, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.99, "young_red": 0.3, "anthocyanin": 1.41,   // the turn in full: deep red, the new growth red
+    "grove_reach_m": 20, "view_extent_m": 40, "view_pitch_deg": 25.27304687499992, "view_fov_deg": 30, "view_yaw_deg": -0.4321379304392394,
+    "view_center_x": -1.82134239769411, "view_center_y": -2.822706256207649, "standing_scene": true, "faithful_canopy": true, "tree_view": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, the exposure as made
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 1.297944985640786, "drift_auto": true, "drift_speed": 0.02,
+    // park 1 is faithful_canopy (the heaviest path) — without the governor a weak device has no recovery; matches every sibling look
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
+    "sun_extinction": 0,
+    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js), like its season family: the season travel needs one skylight across it
+  }),
+  // 'if i had you3' — the same, the camera down among the trunks (zoom 29.6 m, tilt 67°), the heart seen wide across the floor.
+  'if i had you3': Object.assign({}, LOOK_DEFAULTS, {
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
+    "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
+    "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
+    "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 2.05,
+    "tree_count": 2, "branch_levels": 3, "branch_children": 3, "branch_angle_deg": 41,
+    "branch_length_ratio": 0.68, "branch_pitch_deg": 20, "branch_tau": 2.75, "leader_strength": 0.15, "droop": -0.27, "clusters_per_layer": 60, "leaves_per_cluster": 27,
+    "cluster_spread_m": 0.28, "leaf_size_m": 0.15, "leaf_shape": "maple", "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26,
+    "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "canopy_extent_m": 6.5, "bake_resolution": 768,
+    "seed": 37573, "sun_elevation_deg": 26, "sun_azimuth_deg": 90,
+    "phenology": 0.99, "young_red": 0.3, "anthocyanin": 1.41,   // the turn in full: deep red, the new growth red
+    "grove_reach_m": 20, "view_extent_m": 29.588313054185594, "view_pitch_deg": 67.00898437499995, "view_fov_deg": 30, "view_yaw_deg": 3.901455819562443,
+    "view_center_x": -0.9801106930624371, "view_center_y": -0.8352519179489996, "standing_scene": true, "faithful_canopy": true, "tree_view": true, "trunk_radius_m": 0.12, "far_smear": 0,
+    "exposure": 4.281538461538461, "sun_cosine": 1, "contrast": 0.98, "ambient_skylight": 0.97, "sky_turbidity": 0.05, "mesopic_strength": 0.6, "chromatic_aberration": 0, "tone_map": 2,   // the receiver's cosine law, the exposure as made
+    "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12,   // warm Mount-Royal dirt floor
+    "wind_pattern": "squally", "wind_strength": 1.61, "wind_gustiness": 0.25, "wind_direction_deg": 0, "gust_frequency": 0.13,
+    "weather_variability": 0.24, "weather_speed": 1, "gust_attack": 1.2, "gust_decay": 1.3,
+    "sway_stiffness": 1.2, "sway_ceiling": 0.4, "damping_ratio": 0.65, "backlash_gain": 1, "sway_height_gain": 0.75,
+    "limb_count": 11, "limb_flex": 0.25, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "flutter_freq": 1.4,
+    "drift_amount": 0.145, "drift_phase": 2.21102498564082, "drift_auto": true, "drift_speed": 0.02,
+    // park 1 is faithful_canopy (the heaviest path) — without the governor a weak device has no recovery; matches every sibling look
+    "cloud_exposure": 1,   // exposure re-sat by its own cloud (0.3): it shows at 5.566 there, and a thicker cloud opens it up
+    "sun_extinction": 0,
+    // kept as made, from before sun_extinction was on by default (GRANDFATHERED in komorebi-params.js), like its season family: the season travel needs one skylight across it
+  }),
   'afternoon 7': Object.assign({}, LOOK_DEFAULTS, {
     "shoot_leaves": 0, "tilt_light": 0,   // kept as made: the afternoons keep the old scatter and tilt (GRANDFATHERED in komorebi-params.js; the artist, 2026-11-16)
     "sample_count": 48, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
@@ -4061,7 +4144,7 @@ export const ITEM_DEFAULTS = { dwell_s: 30, crossfade_s: 4, style: 'morph' };
 export const PLAYLISTS = {
   story: { name: 'park story', crossfade_s: 2, items: [
     'park 1, the scene', 'park 1, under the trees', 'park1 inside2', 'park 1, from above', 'park fall', 'montebello', 'montebello, rain',
-    'forest floor',
+    'forest floor', 'if i had you', 'if i had you2', 'if i had you3',
   ] },
   // the looks that, projected, cast komorebi in a real room, and measure nearest to footage of real komorebi; the piece
   // collects looks like these (spec/contracts/looks.md, "Komorebi in a room")
