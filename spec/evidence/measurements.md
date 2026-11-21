@@ -808,6 +808,14 @@ From the literature, not measured here: a Kolmogorov −5/3 spectrum in the gust
 - **What it established:** the shipped flutter makes a floor that moves the same amount every second, less varied than any real clip; sizing the flutter by the gust's edges makes it come and go inside the real clips' range at about the same overall motion, as José saw real leaves do ([observations](observations.md#leaves-on-the-gusts-edges)). The broadband flutter slows the floor without making it come and go. α, a slope over the whole clip, does not see the difference: under the gust edges it falls on the gustier patterns toward the low end of Zhang & Andersen's range.
 - **Date:** 2026-11-20.
 
+### Leaves in a window of the air
+
+- **What was measured:** the floor with `flutter_onset` on (spread 0.5, window 2.4, fade 0.5), each leaf fluttering only once the air where it hangs passes its own threshold, against the tone and the gust's edges; the measures of [Leaves on the gust's edges](#leaves-on-the-gusts-edges), and the window's change from the tone (mean |A−B| of luma over the clip, the share of pixels more than 8 apart).
+- **On:** `park 1` through the dapple window at onset 0.9 (its air passes it about 27% of the time) and `projector` as authored at 0.6 (about 28%), every pattern, 120 s, from the prototype's commit `806ec87`; under lazy also `park 1` at 0.6 and `projector` at 0.4. Conditions as in [the floor pattern](#the-floor-pattern).
+- **Result:** comes and goes, `park 1`: tone 0.09–0.25, gust edges 0.44–0.56, window 0.21–0.33 (lazy 0.21; at 0.6, 0.14); `projector`: tone 0.31–0.38, gust edges 0.40–0.51, window 0.31–0.41 (lazy 0.31; at 0.4, 0.25). Frame-to-frame change, `park 1`: tone 1.79–2.24, window 1.06–1.28; `projector`: tone 1.13–1.33, window 1.08–1.39. Floor α, tone → window, `park 1`: lazy 1.33 → 1.46, steady 1.43 → 1.67, gusty 1.97 → 2.17, squally 2.30 → 2.52, choppy 2.08 → 2.34; `projector`: lazy 2.15 → 1.53, steady 2.46 → 1.70, gusty 3.20 → 2.35, squally 3.32 → 2.65, choppy 3.28 → 2.44. Window against tone: `park 1` |A−B| 3.1–3.7, 8.6–11.9% of pixels; `projector` 1.8–3.0, 4.4–10.2%. NNI, Moran's I and MRD stay within 0.01 of the tone. With `flutter_onset` 0 the frames are byte-identical to the engine before it (`park 1`, `projector`).
+- **What it established:** the window calms the floor, roughly halving its frame-to-frame change on `park 1`, but leaves it coming and going less than the gust's edges and below the real clips; on `projector` it adds nothing to how much the motion comes and goes. Seen, single leaves crossing their own thresholds switch on one at a time ([observations](observations.md#single-leaves-switching-on)).
+- **Date:** 2026-11-20.
+
 ### Inner leaves in wind
 
 The slip of an inner leaf from its limb is under [canopy](#canopy).

@@ -68,6 +68,18 @@ Watching a render of `park 1` under the lazy wind, its leaves fluttering on one 
 
 Date: said 2026-11-20. Carried by [`../model/motion.md`](../model/motion.md#translation-alone-is-not-wind) (`flutter_gust`, provisional).
 
+### The flutter's peak
+
+Comparing the lazy wind's four flutters on `park 1` (the tone, the broadband flutter, the gust's edges, both): "i definitely prefer the bottom left [the gust's edges] than the bottom right or the top left, BUT, i still wanna keep the "essence" of the top left whenever the wind is at its peak, i'm not sure if that makes sense, the top left is not necessarily bad, it should just not be the norm but the exception. i wonder if something is missing..." On reading that a leaf's flutter starts past a critical wind and hardly grows after it (Tadrist et al. 2018): "exactly this is what i'm talking about, there's almost like a ballmer's peak of fluttering, past that or before, it's not gonna make the right effect".
+
+Date: said 2026-11-20. Carried by [`../model/motion.md`](../model/motion.md#translation-alone-is-not-wind) (`flutter_onset`, provisional).
+
+### Single leaves switching on
+
+Comparing the lazy wind's flutters on `park 1` and on `projector` (the tone, the gust's edges, and the flutter in a window of the air at two onsets), José preferred the gust's edges on both: "the lower ones [the window] had this weird thing where like individual leaves would flicker every now and then, it'd be completely distracting."
+
+Date: said 2026-11-20. Carried by [`../model/motion.md`](../model/motion.md#translation-alone-is-not-wind) (`flutter_onset`, provisional).
+
 ## Reference photographs
 
 All of these live in `archive/references/`, which is git-ignored and must stay so. File names are given where the record names them.
