@@ -111,15 +111,16 @@ export function groveGroups(presets, looks, PARAMS) {
 export const flipTravels = (flip, PARAMS) => Object.keys(flip).filter((k) => GROVE_WAYS.includes(PARAMS[k].travels));
 
 // What each moved look ships as, from the decisions: `picks` maps a look to a column letter ('a' as it is, 'b' the flip, 'c'… a
-// variant), `rest` is the column every moved look the picks leave out takes. A look the still frame shows unmoved needs no pick: it takes
-// the flip (its params move, its frame does not). A visibly moved look with no pick and no `rest` is an error, never a guess.
+// variant), `rest` is the column every moved look the picks leave out takes. A look the still frame shows unmoved keeps the old value,
+// named on purpose (the artist: "i only want the setting for the presets where it makes a difference, for the other ones it should be
+// turned off on purpose"); a pick can still give it the flip. A visibly moved look with no pick and no `rest` is an error, never a guess.
 export function resolvePicks(decisions, looks, columns) {
   const letters = columns.map((c) => c.letter), out = {}, problems = [];
   const picks = decisions.picks ?? {}, rest = decisions.rest ?? null;
   for (const look of Object.keys(picks)) if (!looks.some((l) => l.look === look)) problems.push(`${look}: picked, but the flip does not move it`);
   if (rest !== null && !letters.includes(rest)) problems.push(`rest: '${rest}' is not a column (${letters.join(', ')})`);
   for (const l of looks) {
-    const p = picks[l.look] ?? (l.visible ? rest : 'b');
+    const p = picks[l.look] ?? (l.visible ? rest : 'a');
     if (p === null) problems.push(`${l.look}: moves visibly and has no pick (pick it, or set rest)`);
     else if (!letters.includes(p)) problems.push(`${l.look}: '${p}' is not a column (${letters.join(', ')})`);
     else out[l.look] = p;

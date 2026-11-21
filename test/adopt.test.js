@@ -66,8 +66,9 @@ describe("which looks move", () => {
 describe("the picks", () => {
   const columns = [{ letter: "a" }, { letter: "b" }, { letter: "c" }];
   const looks = [{ look: "x", visible: true }, { look: "y", visible: true }, { look: "q", visible: false }];
-  test("a picked look takes its pick, the rest `rest`, an unseen change b", () => {
-    expect(resolvePicks({ picks: { x: "a" }, rest: "c" }, looks, columns)).toEqual({ picks: { x: "a", y: "c", q: "b" }, problems: [] });
+  test("a picked look takes its pick, the rest `rest`; a look the change does not visibly move keeps the old value, unless picked", () => {
+    expect(resolvePicks({ picks: { x: "a" }, rest: "c" }, looks, columns)).toEqual({ picks: { x: "a", y: "c", q: "a" }, problems: [] });
+    expect(resolvePicks({ picks: { q: "b" }, rest: "b" }, looks, columns).picks.q).toBe("b");
   });
   test("no rest and no pick is an error, never a guess; so is a look or column that is not there", () => {
     expect(resolvePicks({ picks: { x: "a" } }, looks, columns).problems).toEqual(["y: moves visibly and has no pick (pick it, or set rest)"]);

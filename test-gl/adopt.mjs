@@ -40,7 +40,7 @@
 //
 // DECISIONS. decisions.json is { picks: { "<look>": "a"|"b"|"c"… }, rest: "b"|null, why: { "<look>": "the artist's words" },
 // motion?: "why the motion need not be measured", transitions?: "why the routes that change kind are fine" }: a look the picks leave out
-// takes `rest`; a look whose frame did not move takes b.
+// takes `rest`; a look whose frame did not move keeps the old value, named in it on purpose.
 //
 // APPLY refuses while a question is open (adopt-lib.mjs questionsOf), when the tree's looks are no longer the ones rendered, and when the
 // picks would set apart two looks that share a grove on a key a route reads (--allow-split says that is meant). Then it writes the new
@@ -422,7 +422,7 @@ function readme(m) {
     `|---|---|${cols.map(() => '---|---').join('|')}|---|`,
     ...shown.map((r) => `| ${r.rank} | ${r.look} | ${r.cells.slice(1).map((c) => (c.same ? '— | —' : `${c.mean.toFixed(1)} | ${(c.moved * 100).toFixed(1)} %`)).join(' | ')} | \`${r.sheet}\` |`), '',
   ];
-  if (quiet.length) out.push(`No visible change in the still (they take the new default): ${quiet.join(', ')}.`, '');
+  if (quiet.length) out.push(`No visible change in the still (they keep the old value, named on purpose): ${quiet.join(', ')}.`, '');
   if (m.still.length) out.push(`Not moved (they name the key): ${m.still.join(', ')}.`, '');
   if (m.groups.length) out.push(`Share a grove, and ${m.routed.join(', ')} travels with it: ${m.groups.map((g) => g.join(' · ')).join('; ')}.`, '');
   out.push('**Seen.** (to write)', '', "## José's pick", '', '(pending; then decisions.json beside this file, and `nix run .#adopt -- apply <this folder>`)', '');
@@ -550,7 +550,7 @@ for (const l of D.looks) {
   w.addEventListener('input', (e) => { if (e.target.value.trim()) why[l.look] = e.target.value.trim(); else delete why[l.look]; update(); });
   root.appendChild(box);
 }
-document.getElementById('quiet').textContent = (D.quiet.length ? 'No visible change in the still (they take the new default): ' + D.quiet.join(', ') + '. ' : '') + (D.still.length ? 'Not moved (they name the key): ' + D.still.join(', ') + '.' : '');
+document.getElementById('quiet').textContent = (D.quiet.length ? 'No visible change in the still (they keep the old value, named on purpose): ' + D.quiet.join(', ') + '. ' : '') + (D.still.length ? 'Not moved (they name the key): ' + D.still.join(', ') + '.' : '');
 const mw = document.getElementById('motionWhy'), tw = document.getElementById('transitionsWhy');
 mw.value = D.motionWhy; tw.value = D.transitionsWhy;
 for (const el of [rest, mw, tw]) el.addEventListener('input', update);
@@ -599,7 +599,9 @@ function apply(f, allowSplit) {
   params = addGrandfathered(params, m.from);
   for (const l of m.looks) {
     const p = picks[l.look], said = why[l.look] ? `; ${why[l.look]}` : '';
-    if (p === 'a') presets = pinLook(presets, l.look, pick(s.before.presets[l.look], l.keys), `kept as made, from before ${keysPhrase(keys)} on by default (GRANDFATHERED in komorebi-params.js)${said}`);
+    if (p === 'a') presets = pinLook(presets, l.look, pick(s.before.presets[l.look], l.keys), l.visible
+      ? `kept as made, from before ${keysPhrase(keys)} on by default (GRANDFATHERED in komorebi-params.js)${said}`
+      : `off on purpose: ${keys.join(', ')} changes nothing visible here (GRANDFATHERED in komorebi-params.js)${said}`);
     else if (p !== 'b') {
       const cell = cellOf(m, l.look, p), v = m.variants.find((x) => x.letter === p);
       const values = Object.fromEntries(Object.entries(cell.over).filter(([k]) => !keys.includes(k)));
