@@ -43,6 +43,7 @@ const trunkFeet = (rest) => { const foot = new Map(), out = [];
   for(const s of foot.values()) out.push(s.ax, s.ay, s.ra);
   return out; };
 const TWIG_MIN_M = 0.002;   // thin_twigs: the thinnest wood kept, a 4 mm twig
+const analyticWood = (segment) => segment.level <= 1 && !segment.haze;
 const FEAT_PIGMENT = true;
 const FEAT_SPRING = true;
 const FEAT_EXPOSURE = true;
@@ -790,7 +791,7 @@ export function makeGrove(hub){
       const rest=[], segH=[];
       let want=0;                                      // what the grove ASKED for, before the cap — see occ.want below
       for(const sg of segments){
-        if(sg.level>1 || sg.haze) continue;            // trunk + main limbs only; fine sub-branches carried by the leaf dapples, and so is the twig haze, whatever the order of the shoot it rides
+        if(!analyticWood(sg)) continue;               // trunk + main limbs only; fine sub-branches carried by the leaf dapples, and so is the twig haze, whatever the order of the shoot it rides
         want++;
         if(rest.length >= MAX_OCC) continue;           // table full: keep counting rather than break, so the shortfall is a number instead of nothing
         const r = Math.max(0.01, params.trunk_radius_m*Math.pow(tf, sg.level));
@@ -1267,7 +1268,7 @@ export function makeGrove(hub){
       const sg=g.hier.segments[k], s=faith.segRest[k];
       s.ra=Math.max(thin ? TWIG_MIN_M : 0.012, w.radius*Math.pow(w.taper, sg.level+(sg.f0||0)));
       s.rb=Math.max(thin ? TWIG_MIN_M : 0.008, w.radius*Math.pow(w.taper, sg.level+(sg.f1!=null?sg.f1:1)));
-      if(sg.level<=1 && i<occ.count){
+      if(analyticWood(sg) && i<occ.count){
         const ha=floorH(sg.a[2]), hb=floorH(sg.b[2]), o=4*i++;
         occ.ht[o]=ha; occ.ht[o+1]=hb; occ.ht[o+2]=Math.max(0.01, w.radius*Math.pow(w.taper, sg.level));
         hRef=Math.max(hRef,ha,hb);

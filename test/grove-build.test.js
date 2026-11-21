@@ -43,6 +43,16 @@ const snapshot = (R, g) => plain({
 });
 
 const small = { tree_count: 2, leaves_per_cluster: 5, branch_levels: 2, inner_leaves: 0.35 };
+
+test("a live trunk radius edit keeps the analytic wood aligned in a grove with twig haze", () => {
+  const R = rig({ ...DEFAULTS, tree_count: 2, standing_scene: true, branch_tau: 2, growth_years: 2, twig_haze: 2 }, false);
+  R.hub.grove = R.G.buildGrove();
+  expect(R.hub.grove.hier.segments.some((s) => s.haze && s.level === 1)).toBe(true);
+  R.params.trunk_radius_m *= 1.5;
+  expect(R.G.refreshWood()).toBe(true);
+  expect(R.occ.ht).toEqual(R.G.growGrove().occ.ht);
+});
+
 const CASES = [
   ["the layer cast on the floor", { ...PRESETS["afternoon 7"], ...small }, false, {}],
   ["a faithful standing tree with its wood, in the fall", { ...PRESETS.montebello, ...small }, true, {}],
