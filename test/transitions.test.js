@@ -346,7 +346,7 @@ test('a pair that sees its tree keeps the cast: cherry blossom ↔ park 2 with t
 });
 
 test('under the trees ↔ park 2 keeps the grove and the shadow: the camera glides and the seen tree fades, with no bloom and no rebuild',()=>{
-  const park2={...PRESETS['park 2'],leaf_shape:'maple'};   // park story's leaves are maple since 2026-11-19, park 2's (an experiment) the ellipse still: the pair as one grove
+  const park2={...PRESETS['park 2'],leaf_shape:'maple',trunk_base:true};   // park story's leaves are maple since 2026-11-19 and its trunks stand in the ground since 2026-11-21, park 2's (an experiment) not: the pair as one grove
   for(const [from,to] of [[PRESETS['park 1, under the trees'],park2],[park2,PRESETS['park 1, under the trees']]]){
     const r=transitionRig(from),out=!!from.tree_view;
     r.hub.routes.sceneFade.begin=()=>{throw Error('unexpected scene fade');};r.hub.routes.seasonTravel.begin=()=>{throw Error('unexpected season travel');};
