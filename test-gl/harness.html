@@ -1161,7 +1161,7 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
     // trans.* is read AFTER the frame drew, so each row is the state that frame was rendered with — which is
     // what makes "the swap landed on the frame where bloom was X" a claim about the picture and not about the clock.
     out.push({ id, t: eng.trans.t, bloom: eng.trans.bloom, swapped: eng.trans.swapped,
-               active: eng.trans.active, luma: s.luma, variance: s.variance, churn: churn(prev, bytes) });
+               active: eng.trans.active, luma: s.luma, variance: s.variance, churn: churn(prev, bytes), ms: performance.now() });
     prev = bytes;
     if (!eng.trans.active) {
       if (endedAt < 0) endedAt = out.length;

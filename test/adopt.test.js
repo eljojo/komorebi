@@ -7,7 +7,7 @@ import { DEFAULTS, GRANDFATHERED, PARAMS } from "../engine/komorebi-params.js";
 import { FIDELITY_KEYS, PLAYBACK_KEYS } from "../engine/komorebi-session.js";
 import { PLAYLISTS, PRESETS } from "../presets.js";
 import {
-  addGrandfathered, checkRecord, cropWindows, findLook, fpsDrop, frameDelta, routeFloor, routeMoves, routeUnsteady, groveGroups, lookOrder, namedKeys, paramsKey, parseFlip, parseVariant, pinLook, playlistPairs,
+  addGrandfathered, captureRate, checkRecord, cropWindows, findLook, fpsDrop, frameDelta, routeFloor, routeMoves, routeUnsteady, groveGroups, lookOrder, namedKeys, paramsKey, parseFlip, parseVariant, pinLook, playlistPairs,
   questionsOf, resolvePicks, resolveVariant, setDefault, setInLook, splitGroups, survey,
 } from "../test-gl/adopt-lib.mjs";
 
@@ -231,6 +231,11 @@ describe("what the page shows", () => {
     for (const [a, b] of [[w[0], w[1]]]) expect(Math.abs(a.x - b.x) >= 0.3 || Math.abs(a.y - b.y) >= 0.3).toBe(true);
     expect(w[1].share).toBeCloseTo(8 / 18, 9);
     expect(cropWindows(new Float64Array(G * G), G, 3, 3)).toEqual([]);
+  });
+  test("a route's video plays at the rate its frames were captured, so it lasts as long as the route did", () => {
+    expect(captureRate([{ ms: 1000 }, { ms: 1010 }, { ms: 1020 }, { ms: 1030 }])).toBeCloseTo(100, 9);   // 3 steps in 30 ms
+    expect(captureRate([{ ms: 0 }, { ms: 0 }])).toBe(60);                                             // no time passed: the page's own rate
+    expect(captureRate([{ ms: 5 }])).toBe(60);
   });
   test("a frame's change is the mean |Δ| over its channels, 0–255", () => {
     expect(frameDelta(Uint8Array.from([0, 0, 0, 10, 10, 10]), Uint8Array.from([3, 0, 0, 10, 10, 13]))).toBe(1);

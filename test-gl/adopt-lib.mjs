@@ -378,3 +378,10 @@ export function frameDelta(a, b) {
   for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]);
   return t / a.length;
 }
+
+// The frames a route was captured at a second, from their page clock stamps (`ms`): its video is encoded at this rate so it plays as
+// long as the route ran. The harness's frames come as fast as the GPU draws them (no vsync), well above 60 a second.
+export function captureRate(frames) {
+  const span = frames.length > 1 ? frames.at(-1).ms - frames[0].ms : 0;
+  return span > 0 ? ((frames.length - 1) * 1000) / span : 60;
+}

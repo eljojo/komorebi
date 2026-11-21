@@ -66,7 +66,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { extname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  addGrandfathered, checkRecord, cropWindows, FPS_CAP, frameDelta, FPS_LIMIT, flipTravels, fpsDrop, groveGroups, keysPhrase, lookOrder, paramsKey, parseFlip, parseVariant, pick,
+  addGrandfathered, captureRate, checkRecord, cropWindows, FPS_CAP, frameDelta, FPS_LIMIT, flipTravels, fpsDrop, groveGroups, keysPhrase, lookOrder, paramsKey, parseFlip, parseVariant, pick,
   pinLook, playlistPairs, questionsOf, ROUTE_MEASURES, recordText, resolvePicks, resolveVariant, routeFloor, routeMoves, routeUnsteady, setDefault, setInLook, splitGroups, survey,
 } from './adopt-lib.mjs';
 
@@ -84,8 +84,11 @@ const CLIP = { seconds: 60, size: '640x360' };
 const CROP = { grid: 40, win: 8, n: 3, scale: 2 };
 // the per-frame change under a video is read at this size (ffmpeg's area scale), which averages the codec's own noise away
 const SERIES_SIZE = [320, 180];
-// a route is rendered at this size (CSS px; the harness's own is 320×180), and its strip shows STRIP of its frames, evenly spaced
-const ROUTE_SIZE = [640, 360], STRIP = 16;
+// a route is rendered at this size (CSS px; the harness's own is 320×180), and its strip shows STRIP of its frames, evenly spaced. It is
+// captured until it lands: the page draws as fast as the GPU can (no vsync), 100–170 frames a second, so a structural route's twice-long
+// clock takes 300–550 frames, and __transition's own cap of 200 stopped most of them before their midpoint swap, which then showed up
+// on only the runs that happened to be slow. ROUTE_CAP only guards against a route that never lands.
+const ROUTE_SIZE = [640, 360], STRIP = 16, ROUTE_CAP = 4000;
 // the measures the motion table leads with (pattern-lib.mjs's header says what each is)
 const MEASURES = [
   ['NNI', (r) => r.spatial.nni.mean], ["Moran's I", (r) => r.spatial.moransI.mean], ['β', (r) => r.spatial.beta.mean],
@@ -246,9 +249,9 @@ async function openHarness(viewport) {
 }
 
 // ---- videos: frames into one, and two read side by side, frame by frame ----
-// The frames a capture ids, as PNGs from the page, into an H.264 file at 60 frames a second (a route runs on the page's frame clock).
-async function encodeFrames(page, ids, file) {
-  const p = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', '60', '-c:v', 'png', '-i', '-', '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+// The frames a capture ids, as PNGs from the page, into an H.264 file at the rate they were captured (captureRate).
+async function encodeFrames(page, ids, file, fps) {
+  const p = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'png', '-i', '-', '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
     '-c:v', 'libx264', '-crf', '12', '-preset', 'fast', '-pix_fmt', 'yuv420p', file], { stdio: ['pipe', 'ignore', 'inherit'] });
   const done = new Promise((ok, no) => p.on('close', (c) => (c === 0 ? ok() : no(new Error(`ffmpeg exited ${c} writing ${file}`)))));
   for (const id of ids) {
@@ -477,8 +480,9 @@ async function transitions(f) {
     for (const [i, [from, to]] of pairs.entries()) {
       const row = { from, to };
       for (const [side, over] of [['a', [{}, {}]], ['a2', [{}, {}]], ['b', [overOf(from), overOf(to)]]]) {
-        const r = await page.evaluate(([x, y, o]) => window.__transition(x, y, o), [from, to, { freeze: true, over, size: ROUTE_SIZE }]);
+        const r = await page.evaluate(([x, y, o]) => window.__transition(x, y, o), [from, to, { freeze: true, over, size: ROUTE_SIZE, cap: ROUTE_CAP }]);
         const fr = r.frames;
+        if (fr.at(-1).active) throw new Error(`${from} → ${to} (${side}): the route had not landed after ${fr.length} frames`);
         let maxDL = 0, churnN = 0;
         for (let k = 1; k < fr.length; k++) { maxDL = Math.max(maxDL, Math.abs(fr[k].luma - fr[k - 1].luma)); churnN = Math.max(churnN, fr[k].churn / Math.max(1, Math.sqrt(fr[k].variance))); }
         const ids = fr.map((x) => x.id), nn = String(i + 1).padStart(2, '0');
@@ -487,7 +491,7 @@ async function transitions(f) {
           const strip = `transitions/${nn}-${side}.png`, video = `transitions/${nn}-${side}.mp4`;
           const some = Array.from({ length: Math.min(STRIP, ids.length) }, (_, k) => ids[Math.round((k * (ids.length - 1)) / Math.max(1, STRIP - 1))]);   // the video holds every frame
           writeFileSync(join(dir, strip), Buffer.from((await page.evaluate(([x, c]) => window.__strip(x, c), [some, 8])).split(',')[1], 'base64'));
-          await encodeFrames(page, ids, join(dir, video));
+          await encodeFrames(page, ids, join(dir, video), captureRate(fr));
           Object.assign(row[side], { strip, video });
         }
         await page.evaluate((x) => window.__free(x), ids);
