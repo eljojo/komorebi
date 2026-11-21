@@ -330,9 +330,10 @@ function junctions(rest) {   // every piece of a cluster's wood against the piec
   return out;
 }
 
-test("twig joints: off by default, and off, the grove is the one grown before it, with no joint, no run and no buffer", () => {
+test("twig joints: off by default, and off, the grove is the one grown before it, with no joint, no run and no buffer; the two grown looks ship it on", () => {
   expect(DEFAULTS.twig_joints).toBe(false);
-  const off = shipped("yellow ginkgo"), on = shipped("yellow ginkgo", { twig_joints: true });
+  expect(PRESETS["glebe sunset"].twig_joints && PRESETS["yellow ginkgo"].twig_joints).toBe(true);
+  const off = shipped("yellow ginkgo", { twig_joints: false }), on = shipped("yellow ginkgo", { twig_joints: true });
   expect(off.faith.runOn).toBe(false);
   expect(off.faith.runBuf ?? null).toBe(null);
   expect(off.faith.runTex ?? null).toBe(null);
@@ -347,7 +348,7 @@ test("twig joints: off by default, and off, the grove is the one grown before it
 
 test("twig joints: every junction of a grown cluster's wood stays closed as the clusters bend, where turned whole about the twig's base they came apart", () => {
   for (const name of ["glebe sunset", "yellow ginkgo"]) {
-    const off = junctions(shipped(name).faith.segRest), on = junctions(shipped(name, { twig_joints: true }).faith.segRest);
+    const off = junctions(shipped(name, { twig_joints: false }).faith.segRest), on = junctions(shipped(name, { twig_joints: true }).faith.segRest);
     console.log(`${name}: ${on.n} junctions, ${on.cross} off another cluster's wood; open off ${off.open} (widest ${(off.max*100).toFixed(1)} cm), on ${on.open}`);
     expect(off.open, "the fault is there to fix").toBeGreaterThan(off.n/50);
     expect(on.n).toBe(off.n);

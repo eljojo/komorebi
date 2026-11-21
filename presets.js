@@ -3990,7 +3990,7 @@ export const PRESETS = {
     "drift_auto": true, "drift_speed": 0.02, "sample_count": 29, "bake_resolution": 768,
   }),
   // 'glebe sunset': a bare tree in the Glebe, Ottawa, seen against the sky as the sun goes down behind the street: a silhouette, the sun 2° up
-  // and nearly behind it, the horizon glowing warm. One trunk, its finest twigs as haze and zigzagging, as dows lake's.
+  // and nearly behind it, the horizon glowing warm. One trunk, its finest twigs as haze and zigzagging, as dows lake's, each run of its clusters' wood turned about its own joint (twig_joints).
   'glebe sunset': Object.assign({}, LOOK_DEFAULTS, {
     "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8, "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55, "tree_count": 1, "grove_reach_m": 39,
@@ -3999,7 +3999,7 @@ export const PRESETS = {
     "leaf_aspect": 1.75, "max_tilt": 0.54, "edge_softness": 0.26, "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "phenology": 0.99,
     "leaf_drop": 1, "drop_after_turn": 1, "litter": 1, "canopy_extent_m": 25.51, "seed": 554373868, "sun_elevation_deg": 2, "sun_azimuth_deg": 117.1,
     "sun_extinction": 0, "view_extent_m": 64.92, "view_pitch_deg": 80, "view_look_up_deg": 21.5, "view_fov_deg": 62.9, "view_yaw_deg": 330,
-    "view_center_x": 7.963, "view_center_y": -13.792, "standing_scene": true, "tree_view": true, "view_sky": true, "thin_twigs": true, "twig_haze": 2,
+    "view_center_x": 7.963, "view_center_y": -13.792, "standing_scene": true, "tree_view": true, "view_sky": true, "thin_twigs": true, "twig_haze": 2, "twig_joints": true,
     "sympodial": 1, "trunk_base": true, "bark_texture": 1, "trunk_radius_m": 0.3, "faithful_canopy": true, "far_smear": 0, "exposure": 4.281538461538461,
     "cloud_exposure": 1, "contrast": 0.98, "ambient_skylight": 0.97, "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12, "wind_pattern": "squally",
     "wind_strength": 1.61, "wind_direction_deg": 0, "gust_frequency": 0.13, "weather_variability": 0.24, "gust_decay": 1.3, "sway_stiffness": 1.2,
@@ -4009,7 +4009,7 @@ export const PRESETS = {
   // 'yellow ginkgo': a ginkgo in full autumn gold, "it should be as yellow". The leaves on the shoots of the last five years, as a ginkgo bears them on
   // its spurs (leaf_years), small and round-ended, dense; the leaf as tissue (leaf_neutral) lit by the crown's own scattered light (crown_light 0.8)
   // and by the sky through the gaps around it (open_sky), the beam read through each slab's thickness (beam_march). The frame's curve, not the tree's own
-  // (tree_tone 0), at its own exposure.
+  // (tree_tone 0), at its own exposure. Its spurs' wood turned about their own joints (twig_joints), so the spurs stay on the spurs they grow from.
   'yellow ginkgo': Object.assign({}, LOOK_DEFAULTS, {
     "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8, "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 6, "tree_count": 1, "grove_reach_m": 39,
@@ -4019,7 +4019,7 @@ export const PRESETS = {
     "drop_after_turn": 1, "canopy_extent_m": 21.74, "seed": 1469042669, "sun_elevation_deg": 15, "sun_azimuth_deg": 60, "sun_extinction": 0,
     "view_extent_m": 16.76, "view_pitch_deg": 70, "view_look_up_deg": 39, "view_fov_deg": 63, "view_yaw_deg": 150, "view_center_x": -5.402,
     "view_center_y": 9.357, "standing_scene": true, "tree_view": true, "tree_tone": 0, "leaf_neutral": true, "crown_light": 0.8, "open_sky": true,
-    "beam_march": true, "thin_twigs": true, "trunk_radius_m": 0.3, "faithful_canopy": true, "far_smear": 0, "exposure": 0.45, "cloud_exposure": 1,
+    "beam_march": true, "thin_twigs": true, "twig_joints": true, "trunk_radius_m": 0.3, "faithful_canopy": true, "far_smear": 0, "exposure": 0.45, "cloud_exposure": 1,
     "ambient_skylight": 2.9, "leaf_diffuse": 0.95, "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12, "wind_pattern": "squally", "wind_strength": 1.61,
     "wind_direction_deg": 0, "gust_frequency": 0.13, "weather_variability": 0.24, "gust_decay": 1.3, "sway_stiffness": 1.2, "damping_ratio": 0.65,
     "sway_height_gain": 0.75, "limb_count": 11, "twig_flex": 0.18, "stem_length": 0.18, "leaf_swing": 1.35, "drift_amount": 0.145, "drift_phase": 3.28912362615405,
