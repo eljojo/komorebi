@@ -3974,6 +3974,7 @@ export const PRESETS = {
   // and on the ground, its finest twigs added as haze (twig_haze 2: "i definitely preferred the haze 2 photos"), zigzagging as an elm's do (sympodial 1, his
   // pick of the two zigzags), the trunk forking low into three stems that rise in a vase, standing in the ground on its root flare, its bark furrowed, under
   // the clear sky the scene's sun and air make. The sun at −140° lights the trunk's right side, as in the photo; the crown stays dark against the sky.
+  // Each run of its clusters' wood turned about its own joint (twig_joints), so its twigs stay on their branches in the wind.
   'dows lake': Object.assign({}, LOOK_DEFAULTS, {
     "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8, "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55, "tree_count": 1, "grove_reach_m": 39,
@@ -3982,7 +3983,7 @@ export const PRESETS = {
     "max_tilt": 0.54, "edge_softness": 0.26, "trans_r": 0.26, "trans_g": 0.356, "trans_b": 0.001, "phenology": 0.99, "leaf_drop": 1, "drop_after_turn": 1,
     "litter": 1, "canopy_extent_m": 26.8, "seed": 1390791568, "sun_elevation_deg": 12, "sun_azimuth_deg": -140, "sun_extinction": 0, "view_extent_m": 64.92,
     "view_pitch_deg": 80, "view_look_up_deg": 21.5, "view_fov_deg": 62.9, "view_yaw_deg": 150, "view_center_x": -1.463, "view_center_y": 2.534,
-    "standing_scene": true, "tree_view": true, "view_sky": true, "thin_twigs": true, "twig_haze": 2, "sympodial": 1, "trunk_base": true,
+    "standing_scene": true, "tree_view": true, "view_sky": true, "thin_twigs": true, "twig_haze": 2, "twig_joints": true, "sympodial": 1, "trunk_base": true,
     "trunk_split": 3, "bark_texture": 1, "trunk_radius_m": 0.2, "faithful_canopy": true, "far_smear": 0, "exposure": 4.281538461538461, "cloud_exposure": 1,
     "contrast": 0.98, "ambient_skylight": 0.97, "ground_r": 0.33, "ground_g": 0.21, "ground_b": 0.12, "wind_pattern": "squally", "wind_strength": 1.61,
     "wind_direction_deg": 0, "gust_frequency": 0.13, "weather_variability": 0.24, "gust_decay": 1.3, "sway_stiffness": 1.2, "damping_ratio": 0.65,

@@ -330,9 +330,9 @@ function junctions(rest) {   // every piece of a cluster's wood against the piec
   return out;
 }
 
-test("twig joints: off by default, and off, the grove is the one grown before it, with no joint, no run and no buffer; the two grown looks ship it on", () => {
+test("twig joints: off by default, and off, the grove is the one grown before it, with no joint, no run and no buffer; every grown look ships it on", () => {
   expect(DEFAULTS.twig_joints).toBe(false);
-  expect(PRESETS["glebe sunset"].twig_joints && PRESETS["yellow ginkgo"].twig_joints).toBe(true);
+  for (const [name, look] of Object.entries(PRESETS)) if (look.growth_years > 0) expect(look.twig_joints, `${name}, grown from buds`).toBe(true);
   const off = shipped("yellow ginkgo", { twig_joints: false }), on = shipped("yellow ginkgo", { twig_joints: true });
   expect(off.faith.runOn).toBe(false);
   expect(off.faith.runBuf ?? null).toBe(null);
