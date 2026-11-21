@@ -250,19 +250,19 @@ export function fpsDrop(aMs, bMs, aSpread) {
   return { a, b, drop, floor, slow: drop > FPS_LIMIT, unsure: Math.abs(drop - FPS_LIMIT) < floor };
 }
 
-// A route's measures, and their noise floor: each route's a is run twice (a and a2), and the floor of a measure is the largest share by
-// which the two runs of one route differ, pooled over every route (a route runs on the wall clock, so the frames it is sampled at shift
-// from run to run). A route reads differently when b lies further from the mean of its two a runs than that share of it. Null when no
-// route was run twice.
+// A route's measures, and their noise floor: each route's a is run twice (a and a2), and the floor of a measure is the most the two
+// runs of one route differ, pooled over every route (a route runs on the wall clock, so the frames it is sampled at shift from run to
+// run). It is in the measure's own units, not a share: most routes' steps are near nothing (a grove crossfade's largest step in
+// brightness is a tenth of one level of 255), where a share is all noise and nothing shows. A route reads differently when b lies
+// further from the mean of its two a runs than the floor. Null when no route was run twice.
 export const ROUTE_MEASURES = ['maxDL', 'churnN'];
-const share = (x, y) => (Math.max(Math.abs(x), Math.abs(y)) > 0 ? Math.abs(x - y) / Math.max(Math.abs(x), Math.abs(y)) : 0);
 export function routeFloor(pairs) {
   const twice = pairs.filter((p) => p.a2);
   if (!twice.length) return null;
-  return Object.fromEntries(ROUTE_MEASURES.map((k) => [k, Math.max(...twice.map((p) => share(p.a[k], p.a2[k])))]));
+  return Object.fromEntries(ROUTE_MEASURES.map((k) => [k, Math.max(...twice.map((p) => Math.abs(p.a[k] - p.a2[k])))]));
 }
 export function routeMoves(pair, floor) {
-  return ROUTE_MEASURES.filter((k) => share((pair.a[k] + pair.a2[k]) / 2, pair.b[k]) > floor[k]);
+  return ROUTE_MEASURES.filter((k) => Math.abs(pair.b[k] - (pair.a[k] + pair.a2[k]) / 2) > floor[k]);
 }
 
 // Every route the shipped playlists walk between two built-ins, each once, the last item back to the first (a playlist loops).
@@ -329,8 +329,7 @@ export function questionsOf(state, picks, dir) {
     const changed = transitions ? transitions.pairs.filter((p) => p.a.kind !== p.b.kind) : [];
     const reads = floor ? transitions.pairs.filter((p) => p.a.kind === p.b.kind && routeMoves(p, floor).length) : [];
     const ok = typeof decisions?.transitions === 'string' && decisions.transitions.trim();
-    const pct = (x) => `${(100 * x).toFixed(0)}%`;
-    const floorSaid = floor ? `the noise floor, A run twice: ${ROUTE_MEASURES.map((k) => `${k} ${pct(floor[k])}`).join(', ')}` : '';
+        const floorSaid = floor ? `the noise floor, the most a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${floor[k].toFixed(3)}`).join(', ')}` : '';
     const found = [changed.length ? `${changed.length} route${changed.length > 1 ? 's' : ''} change kind: ${changed.map((p) => `${p.from} → ${p.to} (${p.a.kind} → ${p.b.kind})`).join(', ')}` : '',
       reads.length ? `${reads.length} route${reads.length > 1 ? 's' : ''} read differently beyond ${floorSaid}: ${reads.map((p) => `${p.from} → ${p.to} (${routeMoves(p, floor).map((k) => `${k} ${p.a[k].toFixed(2)} → ${p.b[k].toFixed(2)}`).join(', ')})`).join(', ')}` : ''].filter(Boolean).join('. ');
     q.push({ key: 'transitions', title: 'Transitions', open: !transitions || stale || !floor || (found.length > 0 && !ok),

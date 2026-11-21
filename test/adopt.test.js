@@ -146,11 +146,11 @@ describe("the four questions", () => {
     expect(fpsDrop(20, 21, [19.9, 20.1]).unsure).toBe(false);                      // 1 fps lost, A's runs 0.5 fps apart
     expect(fpsDrop(16, 17, [15.9, 16.1]).floor).toBe(0);                           // both runs above what is shown
   });
-  test("transitions' noise floor is pooled over the routes: the largest share by which A's two runs of one route differ", () => {
-    const pairs = [{ a: { maxDL: 2, churnN: 0.1 }, a2: { maxDL: 2.5, churnN: 0.1 } }, { a: { maxDL: 1, churnN: 0.2 }, a2: { maxDL: 1, churnN: 0.21 } }];
+  test("transitions' noise floor is pooled over the routes: the most A's two runs of one route differ, in the measure's own units", () => {
+    const pairs = [{ a: { maxDL: 2, churnN: 0.1 }, a2: { maxDL: 2.5, churnN: 0.1 } }, { a: { maxDL: 0.01, churnN: 0.2 }, a2: { maxDL: 0.03, churnN: 0.21 } }];
     const floor = routeFloor(pairs);
-    expect(floor.maxDL).toBeCloseTo(0.2, 9);
-    expect(floor.churnN).toBeCloseTo(0.01 / 0.21, 9);
+    expect(floor.maxDL).toBeCloseTo(0.5, 9);                                        // not 0.03 → 0.01's two thirds: near nothing, nothing shows
+    expect(floor.churnN).toBeCloseTo(0.01, 9);
     expect(routeMoves({ a: { maxDL: 2, churnN: 0.1 }, a2: { maxDL: 2.5, churnN: 0.1 }, b: { maxDL: 2.6, churnN: 0.1 } }, floor)).toEqual([]);
     expect(routeMoves({ a: { maxDL: 2, churnN: 0.1 }, a2: { maxDL: 2.5, churnN: 0.1 }, b: { maxDL: 4, churnN: 0.2 } }, floor)).toEqual(["maxDL", "churnN"]);
     expect(routeMoves({ a: { maxDL: 0, churnN: 0 }, a2: { maxDL: 0, churnN: 0 }, b: { maxDL: 0, churnN: 0 } }, floor)).toEqual([]);

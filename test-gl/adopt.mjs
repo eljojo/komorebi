@@ -43,8 +43,8 @@
 // NOISE FLOORS. A measure means something only beside what it does when nothing changed. Cost: cost.mjs runs A three times, and
 // how far those runs lie apart in fps is the look's floor; a drop nearer the 10 fps limit than that could land on either side, so the
 // question stays open on it until it is measured again (--again) with nothing else on the GPU. Transitions: each route's a runs twice;
-// a route runs on the wall clock, so its frames fall at other moments each run, and the largest share by which a route's two a runs
-// differ, over every route, is the floor that b must clear to read differently (adopt-lib.mjs fpsDrop, routeFloor).
+// a route runs on the wall clock, so its frames fall at other moments each run, and the most a route's two a runs differ, over every
+// route, is the floor that b must clear to read differently (adopt-lib.mjs fpsDrop, routeFloor).
 //
 // DECISIONS. decisions.json is { picks: { "<look>": "a"|"b"|"c"… }, rest: "b"|null, why: { "<look>": "the artist's words" },
 // motion?: "why the motion need not be measured", transitions?: "why the routes that change kind or read differently are fine" }: a look the picks leave out
@@ -203,7 +203,7 @@ function tables(state, picks) {
   }
   if (transitions) {
     const floor = routeFloor(transitions.pairs);
-    const floorSaid = floor ? `noise floor, the largest share by which a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${(100 * floor[k]).toFixed(0)}%`).join(', ')}` : 'no noise floor: a run once';
+    const floorSaid = floor ? `noise floor, the most a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${floor[k].toFixed(3)}`).join(', ')}` : 'no noise floor: a run once';
     out.push(`Transitions (${transitions.pairs.length} routes, motion frozen; ${picks ? 'at the picks' : 'every moved look at b'}; ${floorSaid}):`, '', '| route | kind a → b | max ΔL a (a again) → b | churn/σ a (a again) → b | reads differently | strips |', '|---|---|---|---|---|---|');
     const again = (p, k, n) => (p.a2 ? ` (${p.a2[k].toFixed(n)})` : '');
     for (const p of transitions.pairs) out.push(`| ${p.from} → ${p.to} | ${p.a.kind === p.b.kind ? p.a.kind : `**${p.a.kind} → ${p.b.kind}**`} | ${p.a.maxDL.toFixed(2)}${again(p, 'maxDL', 2)} → ${p.b.maxDL.toFixed(2)} | ${p.a.churnN.toFixed(3)}${again(p, 'churnN', 3)} → ${p.b.churnN.toFixed(3)} | ${floor && p.a2 ? routeMoves(p, floor).map((k) => `**${k}**`).join(', ') : ''} | \`${p.a.strip}\` \`${p.b.strip}\` |`);
@@ -510,7 +510,7 @@ function indexHtml(state, picks, qs) {
   const floor = transitions ? routeFloor(transitions.pairs) : null;
   const moves = (p) => (floor && p.a2 ? routeMoves(p, floor) : []);
   const again = (p, k, n) => (p.a2 ? ` (again ${p.a2[k].toFixed(n)})` : '');
-  const transHtml = transitions ? `<h2>Transitions</h2><p>${transitions.pairs.length} routes, motion frozen, ${transitions.picks ? 'at the picks' : 'every moved look at b'}: a as it is, b as it would ship. ${floor ? `Noise floor, the largest share by which a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${(100 * floor[k]).toFixed(0)}%`).join(', ')}; a route past it reads differently.` : 'No noise floor: a was run once.'}</p>${transitions.pairs.map((p) => `<div class="route${p.a.kind !== p.b.kind || moves(p).length ? ' changed' : ''}"><h3>${esc(p.from)} → ${esc(p.to)}: ${p.a.kind === p.b.kind ? esc(p.a.kind) : `${esc(p.a.kind)} → ${esc(p.b.kind)}`}${moves(p).length ? `, reads differently (${moves(p).join(', ')})` : ''}</h3><p>largest step in brightness ${p.a.maxDL.toFixed(2)}${again(p, 'maxDL', 2)} → ${p.b.maxDL.toFixed(2)} · churn/σ ${p.a.churnN.toFixed(3)}${again(p, 'churnN', 3)} → ${p.b.churnN.toFixed(3)}</p><div class="strips"><a href="${p.a.strip}"><img loading="lazy" src="${p.a.strip}"></a><a href="${p.b.strip}"><img loading="lazy" src="${p.b.strip}"></a></div></div>`).join('')}` : '';
+  const transHtml = transitions ? `<h2>Transitions</h2><p>${transitions.pairs.length} routes, motion frozen, ${transitions.picks ? 'at the picks' : 'every moved look at b'}: a as it is, b as it would ship. ${floor ? `Noise floor, the most a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${floor[k].toFixed(3)}`).join(', ')}; a route past it reads differently.` : 'No noise floor: a was run once.'}</p>${transitions.pairs.map((p) => `<div class="route${p.a.kind !== p.b.kind || moves(p).length ? ' changed' : ''}"><h3>${esc(p.from)} → ${esc(p.to)}: ${p.a.kind === p.b.kind ? esc(p.a.kind) : `${esc(p.a.kind)} → ${esc(p.b.kind)}`}${moves(p).length ? `, reads differently (${moves(p).join(', ')})` : ''}</h3><p>largest step in brightness ${p.a.maxDL.toFixed(2)}${again(p, 'maxDL', 2)} → ${p.b.maxDL.toFixed(2)} · churn/σ ${p.a.churnN.toFixed(3)}${again(p, 'churnN', 3)} → ${p.b.churnN.toFixed(3)}</p><div class="strips"><a href="${p.a.strip}"><img loading="lazy" src="${p.a.strip}"></a><a href="${p.b.strip}"><img loading="lazy" src="${p.b.strip}"></a></div></div>`).join('')}` : '';
   return `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(Object.keys(m.flip).join(', '))} on by default</title>
@@ -684,7 +684,7 @@ try {
     const variants = take('--variant').map(parseVariant), size = (take('--size')[0] ?? '640x360').split('x').map(Number), dir = take('--dir')[0];
     if (size.length !== 2 || !size.every((n) => Number.isInteger(n) && n > 0)) throw new Error('--size WxH');
     await render(flipFrom(args), variants, size, dir);
-  } else if (cmd === 'cost') { const f = folder(); cost(f, args); }
+  } else if (cmd === 'cost') { const f = folder(); cost(f, flag('--again') ? args : []); }
   else if (cmd === 'motion') { const f = folder(); motion(f, args); }
   else if (cmd === 'transitions') await transitions(folder());
   else if (cmd === 'status') report(folder());
