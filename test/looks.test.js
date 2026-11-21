@@ -33,12 +33,12 @@ test("montebello and montebello, rain share one camera, the artist's; P4 was not
 // It carries the camera the sheet showed (the trunk feet in the frame), and no reach.
 const SHEET_MONTEBELLO = { ...PRESETS.montebello, sun_extinction: 0, exposure: 5.566, tree_pigment_spread: 0, tree_clock_spread: 0, cloud_exposure: 0,
   view_extent_m: 13.489433156286438, view_pitch_deg: 61.39999999999994, view_fov_deg: 60, view_yaw_deg: 208.5, view_center_x: -0.7, view_center_y: -3, grove_reach_m: 0,
-  leaf_shape: "ellipse", trunk_base: false };   // and its leaves were the ellipse: park story's are maple since 2026-11-19; its trunks stand in the ground since 2026-11-21
+  leaf_shape: "ellipse", trunk_base: false, bark_texture: 0 };   // and its leaves were the ellipse: park story's are maple since 2026-11-19; its trunks stand in the ground on furrowed bark since 2026-11-21
 
 const NEW_LOOKS = {
   "forest floor": { base: PRESETS["afternoon 7"], over: { phenology: 0.8, turn_exposure: 1, anthocyanin: 0.4, tannin: 0.2, wall_fraction: 0.2, leaf_drop: 1, drop_after_turn: 1, drop_lag: 0, litter: 1, leaf_wetness: 0.5, tree_clock_spread: 0.05, tree_pigment_spread: 0.6, leaf_shape: "maple" } },
   "the yellow tree": { base: SHEET_MONTEBELLO, over: { anthocyanin: 0.2, tannin: 0.35, leaf_drop: 0.5, leaf_diffuse: 0, tree_pigment_spread: 0.3, view_center_x: -1.75, view_center_y: -4.93 } },
-  "montebello, rain": { base: SHEET_MONTEBELLO, over: { leaf_wetness: 0.75, ground_r: 0.132, ground_g: 0.084, ground_b: 0.048, cloud_thickness: 0.55, halo_angular_radius_deg: 8, sky_turbidity: 0.2, drop_lag: 0, ...cameraOf(PRESETS.montebello), grove_reach_m: 13.489433156286438, leaf_shape: "maple", trunk_base: true } },
+  "montebello, rain": { base: SHEET_MONTEBELLO, over: { leaf_wetness: 0.75, ground_r: 0.132, ground_g: 0.084, ground_b: 0.048, cloud_thickness: 0.55, halo_angular_radius_deg: 8, sky_turbidity: 0.2, drop_lag: 0, ...cameraOf(PRESETS.montebello), grove_reach_m: 13.489433156286438, leaf_shape: "maple", trunk_base: true, bark_texture: 0.45 } },
   "cherry blossom": { base: SHEET_MONTEBELLO, over: { anthocyanin: 0.8, tannin: 0, wall_fraction: 0, leaf_wetness: 0, ground_r: 0.33, ground_g: 0.21, ground_b: 0.12, tree_pigment_spread: 0.6, litter_age: 0.3 } },
 };
 

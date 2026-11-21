@@ -14,8 +14,8 @@ export const PRESETS = {
   // 'park 1, from above' — WORKING NAME. José's look (2026-11-19), the story's way into its year (after park1 inside2, before park fall): park 1, the scene seen straight down (tilt 0°, turned 179°,
   // zoom 12.8 m), the two crowns over their own shadows. As he made it in the editor.
   'park 1, from above': Object.assign({}, LOOK_DEFAULTS, {
-    // the trunk's foot in the ground (2026-11-21: the artist's choice for park story)
-    "trunk_base": true,
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
   "core_angular_radius_deg": 0.56,
   "halo_angular_radius_deg": 4.8,
   "core_weight_fraction": 0.88,
@@ -202,8 +202,8 @@ export const PRESETS = {
   // "such a vibe sometimes" (zoom 20 m, tilt 55°, lens 30°); zoomed out to 40 m and turned 31° on 2026-11-19, the grove kept at the
   // 20 m reach it was grown at. Everything else is park 1's.
   'park 1, the scene': Object.assign({}, LOOK_DEFAULTS, {
-    // the trunk's foot in the ground (2026-11-21: the artist's choice for park story)
-    "trunk_base": true,
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
@@ -230,8 +230,8 @@ export const PRESETS = {
   // 4.5 m from the trunks, looking into the sun; the eye's height is the framing's (zoom 39 m, tilt 70°, lens 110°); zoomed in to 15.3 m,
   // tilted to 59.4° and turned 12.7° on 2026-11-19, the grove kept at the 39 m reach it was grown at. Everything else is park 1's.
   'park 1, under the trees': Object.assign({}, LOOK_DEFAULTS, {
-    // the trunk's foot in the ground (2026-11-21: the artist's choice for park story)
-    "trunk_base": true,
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
@@ -258,8 +258,8 @@ export const PRESETS = {
   // trees with the camera turned round (yaw -176°, zoom 33 m, tilt 71.5°, lens 110°). As he made it in the editor, the camera retouched
   // on 2026-11-19.
   'park1 inside2': Object.assign({}, LOOK_DEFAULTS, {
-    // the trunk's foot in the ground (2026-11-21: the artist's choice for park story)
-    "trunk_base": true,
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
   "core_angular_radius_deg": 0.56,
   "halo_angular_radius_deg": 4.8,
   "core_weight_fraction": 0.88,
@@ -574,8 +574,8 @@ export const PRESETS = {
     // kept as made, from before sun_cosine, sun_extinction were on by default (GRANDFATHERED in komorebi-params.js)
   }),
   'park fall': Object.assign({}, LOOK_DEFAULTS, {   // José's mid-turn look on montebello's grove (2026-10-08): the crown still turning, the sunlit leaves already down and damp (every leaf falls by drop_start + drop_span = 1.0; at 0.79 those with exposure u ≥ 0.7 have), the park seen wide from the far side
-    // the trunk's foot in the ground (2026-11-21: the artist's choice for park story)
-    "trunk_base": true,
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
@@ -652,8 +652,8 @@ export const PRESETS = {
   // review sheets): real soil reflects 0.1–0.2, and on park 1's dirt a montebello leaf matched it in chroma and sat at 1.1× its
   // luminance, so the carpet vanished into the ground.
   'montebello': Object.assign({}, LOOK_DEFAULTS, {
-    // the trunk's foot in the ground (2026-11-21: the artist's choice for park story)
-    "trunk_base": true,
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 4.8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.3, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
@@ -685,8 +685,8 @@ export const PRESETS = {
   // (w4), wet soil at ×0.4 (c9's dirt), the weather macro's own overcast stop (cloud_thickness 0.55, halo 8, from canopy 4), and morning 2's humid haze (sky_turbidity 0.2). The exposure stays montebello's
   // 2.44, although the haze macro lowers it under haze. Everything else is montebello's, the camera included (since 2026-11-19, the artist's).
   'montebello, rain': Object.assign({}, LOOK_DEFAULTS, {
-    // the trunk's foot in the ground (2026-11-21: the artist's choice for park story)
-    "trunk_base": true,
+    // the trunk's foot in the ground and its bark's furrows (2026-11-21: the artist's choice for park story)
+    "trunk_base": true, "bark_texture": 0.45,
     "sample_count": 29, "core_angular_radius_deg": 0.56, "halo_angular_radius_deg": 8,
     "core_weight_fraction": 0.88, "cloud_thickness": 0.55, "eclipse": false, "eclipse_amount": 0.42,
     "layer_count": 4, "canopy_base_height_m": 2, "canopy_thickness_m": 1.6, "foliage_density": 1.55,
