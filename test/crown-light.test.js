@@ -119,7 +119,7 @@ test("the crown's tap is the shader's: one leaf's albedo from what it passes, th
 
 test("one albedo: the lit leaf keeps the field's bounces by the rule every leaf it meets scatters by, from the same T, its clear tissue's share folded in", () => {
   expect(FS_TREE).toContain("    vec3 w = leafAlbedo(T*exp(-uClearK*float(uNeutral)));");
-  expect(FS_TREE).toContain("    col += (1.0 - Fv)*(1.0 - uF0)*0.5*uLeafSun*crownField(vWorld, w)*(Rc + Tc);");
+  expect(FS_TREE).toContain("    col += (1.0 - Fv)*(1.0 - uF0)*0.5*crownField(vWorld, w)*(Rc + Tc);");
   expect(FS_TREE).not.toContain("slabAlbedo");
 });
 
@@ -164,7 +164,7 @@ test("the crown's scattered light starts grey: a sunlit texel scatters no colour
 });
 
 test("the bounces are grey: the field's series runs at the luminance albedo, so a gold leaf keeps its hue, where per-channel bounces turn it toward red", () => {
-  for (const src of TREE) expect(src).toContain("  return uCrownP*0.2*(vec3(Dy) + wY*G)/max(1.0 - uCrownP*wY, 0.05);   // the field arrives grey, by its luminance (crownTap)");
+  for (const src of TREE) expect(src).toContain("  return uCrownP*0.2*(uLeafSun*Dy + wY*G)/max(1.0 - uCrownP*wY, 0.05);");
   const w = GOLD.map((t, c) => albedo(t * slabClear(c, true))), hue = oklabHue(w);   // the tissue gold leaf of yellow ginkgo
   for (const p of [0.5, 0.8]) {
     const grey = w.map((x) => x / (1 - p * lumY(w))), per = w.map((x) => x / (1 - p * x));
@@ -184,7 +184,7 @@ test("off, nothing gathers: the field starts at 0, every tap is behind p > 0, th
     expect(withoutCrown(src)).not.toContain("uCrownGrid");
   }
   expect(FS_TREE).toContain("#ifdef CROWN_FIELD\n    Rc[c] = Rseen; Tc[c] = m.b;\n#endif");
-  expect(FS_TREE_WOOD).toContain("#ifdef CROWN_FIELD\n  col += uLeafSun*0.5*crownField(vWorld, om)*bark;");
+  expect(FS_TREE_WOOD).toContain("#ifdef CROWN_FIELD\n  col += 0.5*crownField(vWorld, om)*bark;");
 });
 
 test("on, the field is gathered once a frame on a grid and the leaves and the wood read it there: their own programs, the same gather and the same law", () => {
@@ -195,7 +195,7 @@ test("on, the field is gathered once a frame on a grid and the leaves and the wo
   expect(FS_CROWN_GRID).not.toContain("#define CROWN_FIELD");
   expect(FS_CROWN_GRID).toContain("  vec3 P = uCrownOrigin + vec3(gl_FragCoord.xy, uCrownSlice + 0.5)/uCrownN*uCrownSize;");
   expect(FS_CROWN_GRID).toContain("  vec3 S; float Dy, K; crownGather(P, S, Dy, K);");
-  expect(FS_CROWN_GRID).toContain("  frag = vec4(S + crownSky()*K, Dy);");
+  expect(FS_CROWN_GRID).toContain("  vec3 sky = uSunHue*(albedoY(uAmbient)/max(albedoY(uSunHue), 1e-6));");
   // a cell is gathered at its centre and read back there: the bake's point and the reader's coordinate are one cell's texel centre
   for (const [extent, top] of [[21.74, 14], [60, 30], [3, 0.2]]) {
     const [nxy, nz] = crownGridSize(extent, top), size = [extent, extent, top], N = [nxy, nxy, nz];
@@ -211,6 +211,20 @@ test("the grid's cells are no wider than the field changes over: half a metre up
   expect(crownGridSize(60, 30)).toEqual([64, 48]);                     // the caps: 0.94 m by 0.63 m
   expect(crownGridSize(1, 0.1)).toEqual([8, 2]);
   for (let e = 1; e <= 32; e += 0.37) expect(e / crownGridSize(e, 10)[0]).toBeLessThanOrEqual(0.5 + 1e-12);
+});
+
+test("the crown grid preserves sky irradiance at totality and the existing source mix in full sun", () => {
+  expect(FS_CROWN_GRID).toContain("frag = vec4(uLeafSun*S + sky*K, Dy);");
+  const hue = [1, 0.8, 0.4], ambient = [0.03, 0.04, 0.08], K = 5, S = [1.2, 2.1, 3.4];
+  const sky = hue.map((v) => v*lumY(ambient)/lumY(hue));
+  for (const share of [1, 0.25, 0]) {
+    const sun = hue.map((v) => v*share);
+    const rgb = sun.map((v, i) => v*S[i] + sky[i]*K);
+    expect(rgb.every((v) => v > 0 && v < 65504)).toBe(true);
+    if (share > 0) {
+      for (const [i, v] of rgb.entries()) expect(v).toBeCloseTo(sun[i]*(S[i] + lumY(ambient)/lumY(sun)*K), 12);
+    } else expect(lumY(rgb)).toBeCloseTo(lumY(ambient)*K, 12);
+  }
 });
 
 // ---- THE SKY A LEAF SEES (open_sky) ----

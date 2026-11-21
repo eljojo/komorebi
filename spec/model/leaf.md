@@ -274,6 +274,8 @@ A leaf's albedo, for the light it scatters into the crown, is read from what it 
 
 **The bounces are grey; the decay is by channel.** A channel is a band, and a band's mean albedo raised to a power is not the band's albedo raised to that power, averaged. Inside the green channel a gold leaf keeps nearly all of the yellow-orange and little of the blue-green, so bounce after bounce its light stays amber, while the green channel's mean albedo, raised bounce by bounce, sends it red. So every scatter that feeds the field, and the series, runs at the leaf's luminance albedo, and the leaf it lights gives it its colour. The decay with depth goes the other way: what survives many leaves is the band the leaf keeps, and a grey decay several leaves deep leaves several times too little light. So the field decays channel by channel and arrives as its luminance: the bands decide how much of it arrives, the lit leaf what colour it is. The comparison with the spectral series is evidence ([`../evidence/measurements.md#leaf`](../evidence/measurements.md#leaf)).
 
+The scattered skylight keeps its own luminance and takes the sun's colour before attenuation. It still lights the crown when an eclipse cuts the beam to zero.
+
 **Authored**, in its strength: `p` is a look's choice, one number for the whole crown, where in a real one it rises toward the core. **Provisional:** the metre the field spreads by, a free path at one leaf density, not measured in these crowns.
 
 ## The held leaf

@@ -112,7 +112,7 @@ export function makeTreeView(hub){
     if(progComp) return;
     const P = hub.sharedProgram, sh = treeShaders();
     progComp = P(...sh.comp); progGrid = P(...sh.grid);
-    UG = { ...common(progGrid), crownN: L(progGrid, 'uCrownN'), slice: L(progGrid, 'uCrownSlice') };
+    UG = { ...common(progGrid), crownN: L(progGrid, 'uCrownN'), slice: L(progGrid, 'uCrownSlice'), sunHue: L(progGrid, 'uSunHue') };
     UC = { col: L(progComp, 'uTreeCol'), cover: L(progComp, 'uTreeCover'), opacity: L(progComp, 'uTreeOpacity') };
     // the leaf's two materials (leaf_neutral): the green fit and the tissue, both made once and chosen per draw
     const table = (neutral) => {
@@ -194,6 +194,7 @@ export function makeTreeView(hub){
     gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST);
     gl.useProgram(progGrid);
     upload(UG, w, h);
+    gl.uniform3fv(UG.sunHue, _atm.sun);
     gl.uniform3f(UG.crownOrigin, gridBox[0], gridBox[1], gridBox[2]); gl.uniform3f(UG.crownSize, gridBox[3], gridBox[4], gridBox[5]); gl.uniform3f(UG.crownN, nx, nx, nz);
     gl.bindVertexArray(emptyVAO);
     for(let z = 0; z < nz; z++){

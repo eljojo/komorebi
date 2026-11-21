@@ -1062,9 +1062,9 @@ void treeLightSky(vec3 P, out vec3 Tsun, out float Tsky, out vec3 dif, out vec3 
   if(uOpenSky != 0) Tsky = treeSkyOpen(P, Tsky);
 }
 // The crown's light field at a leaf of albedo w: what the leaves above scattered down to it and what its neighbours scatter of the beam and of the sky at
-// its own depth, each meeting it with probability p, then every further bounce kept by p·ω_Y (Hovi et al. 2020): F = p·(dif + ω_Y·(Tsun + E_sky·Tsky))/(1 − p·ω_Y),
-// E_sky the sky's light on a leaf over the beam's. The sky is a source as the sun is: a crown's flank away from the sun is lit by the skylight its leaves
-// catch and pass to one another, which takes their colour, far more than by the sky it sees directly. In units of the beam at normal incidence; each face takes half.
+// its own depth, each meeting it with probability p, then every further bounce kept by p·ω_Y (Hovi et al. 2020): F = p·(E_sun·dif + ω_Y·(E_sun·Tsun + E_sky·Tsky))/(1 − p·ω_Y).
+// E_sun and E_sky are the incident beam and sky irradiance. The sky is a source as the sun is: a crown's flank away from the sun is lit by the skylight its
+// leaves catch and pass to one another, which takes their colour, far more than by the sky it sees directly. Each face takes half.
 // Scattered light does not stay where it was scattered: it spreads through the crown by about a photon's free path between leaves (CROWN_REACH, ~1 m at a
 // crown's leaf density of 1–2 m² m⁻³), so the field is gathered at P and at four points that far around it in plan, and a leaf in a clump's shadow is lit by
 // its sunlit neighbours.
@@ -1081,13 +1081,12 @@ void crownGather(vec3 P, out vec3 S, out float Dy, out float K){   // the beam (
   treeLight(P - vec3(0.0, CROWN_REACH, 0.0), Ts, k, d, o); S += Ts; D += d; K += k;
   Dy = albedoY(D);
 }
-float crownSky(){ return albedoY(uAmbient)/max(albedoY(uLeafSun), 1e-6); }   // the sky's light on a leaf, in the beam's units
-vec3 crownLight(vec3 G, float Dy, vec3 w){   // G: the beam and the sky gathered, S + sky·K
+vec3 crownLight(vec3 G, float Dy, vec3 w){   // G: gathered beam and sky irradiance; Dy: the scattered fraction of the beam
   float wY = albedoY(w);
-  return uCrownP*0.2*(vec3(Dy) + wY*G)/max(1.0 - uCrownP*wY, 0.05);   // the field arrives grey, by its luminance (crownTap)
+  return uCrownP*0.2*(uLeafSun*Dy + wY*G)/max(1.0 - uCrownP*wY, 0.05);
 }
 #ifdef CROWN_FIELD
-uniform highp sampler3D uCrownGrid;  // (S + sky·K, Dy) at each cell's centre, this frame's (FS_CROWN_GRID)
+uniform highp sampler3D uCrownGrid;  // (beam and sky irradiance, scattered fraction of the beam) at each cell's centre
 uniform vec3  uCrownOrigin;          // the grid's box (m): the layers' box in plan, the floor to the highest leaf
 uniform vec3  uCrownSize;
 vec3 crownField(vec3 P, vec3 w){ vec4 g = texture(uCrownGrid, (P - uCrownOrigin)/uCrownSize); return crownLight(g.rgb, g.a, w); }
@@ -1220,7 +1219,7 @@ void main(){
 #ifdef CROWN_FIELD
   {   // the crown's own light: an isotropic field whose bounces this leaf keeps by its albedo (leafAlbedo, as every leaf it meets), seen half on each face
     vec3 w = leafAlbedo(T*exp(-uClearK*float(uNeutral)));
-    col += (1.0 - Fv)*(1.0 - uF0)*0.5*uLeafSun*crownField(vWorld, w)*(Rc + Tc);
+    col += (1.0 - Fv)*(1.0 - uF0)*0.5*crownField(vWorld, w)*(Rc + Tc);
   }
 #endif
   frag = vec4(treeFinish(col, Tsun, vWorld), a);
@@ -1387,14 +1386,14 @@ void main(){
   vec3 Tsun, dif, om; float Tsky; treeLightSky(vWorld, Tsun, Tsky, dif, om);
   vec3 col = (uLeafSun*mix(1.0, max(dot(n, uSunDir), 0.0), uSunCosine)*Tsun*(dot(n, uSunDir) > 0.0 ? 1.0 : 0.0) + uAmbient*Tsky*(0.5 + 0.5*n.z))*bark;
 #ifdef CROWN_FIELD
-  col += uLeafSun*0.5*crownField(vWorld, om)*bark;   // the crown's light on the wood inside it, by the albedo of the leaves above
+  col += 0.5*crownField(vWorld, om)*bark;   // the crown's light on the wood inside it, by the albedo of the leaves above
 #endif
   frag = vec4(treeFinish(col, Tsun, vWorld), clamp(vWoodFade, 0.0, 1.0)*cov);
   cover = vec4(1.0);
 }`;
 // THE CROWN'S GRID (crown_light): the field's sources gathered at one cell's centre, a slice of the grid at a time (komorebi-tree-view.js), each pixel a
-// cell. What it stores is all the field needs that does not depend on the leaf it lights: the beam and the sky about the point, S + sky·K, and the
-// scattered light's luminance, Dy (crownGather); the leaf's albedo is the reader's.
+// cell. RGB stores the beam and sky irradiance about the point; alpha stores the scattered fraction of the beam (Dy). The sky keeps its luminance and
+// takes the sun's hue before attenuation, so even when an eclipse cuts the beam to zero the grid holds a finite, lit sky contribution.
 const FS_CROWN_GRID = `#version 300 es
 precision highp float;
 ${GLSL_TREE_LIGHT}
@@ -1402,11 +1401,13 @@ uniform vec3  uCrownOrigin;
 uniform vec3  uCrownSize;
 uniform vec3  uCrownN;               // cells per axis
 uniform float uCrownSlice;           // this slice's index up the box
+uniform vec3 uSunHue;                // the sun's colour before attenuation
 layout(location=0) out vec4 frag;
 void main(){
   vec3 P = uCrownOrigin + vec3(gl_FragCoord.xy, uCrownSlice + 0.5)/uCrownN*uCrownSize;
   vec3 S; float Dy, K; crownGather(P, S, Dy, K);
-  frag = vec4(S + crownSky()*K, Dy);
+  vec3 sky = uSunHue*(albedoY(uAmbient)/max(albedoY(uSunHue), 1e-6));
+  frag = vec4(uLeafSun*S + sky*K, Dy);
 }`;
 // The tree's resolved target over the frame: its colour is already the Look's and already weighed by the samples it covers, and the second target says how
 // many it covers; so the frame keeps (1 − cover) of itself.
