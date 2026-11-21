@@ -3,43 +3,59 @@
 // was made with (spec/contracts/preservation.md §3–4; GRANDFATHERED in engine/komorebi-params.js). Built-in looks only: a look kept in
 // arboretum, a local save or an embed is not touched or measured here.
 //
+// An upgrade answers four questions before it ships, each a stage that writes its answer into the review folder:
+//   the look         render       each moved look as it is (a) and as it would ship (b, c… per variant), on the GPU, measured
+//   realtime cost    cost         each moved look's frame at a and at each other column (test-gl/cost.mjs): no pick may lose more than 10 fps
+//   motion           motion       a minute of video of a and of the pick (render-video.mjs), read by the komorebi pattern measures (pattern.mjs)
+//   transitions      transitions  every route the shipped playlists walk with a moved look at either end, as it is and as picked: the route's kind,
+//                                 its largest step in brightness, its churn, and a strip of frames
+// Every stage prints which questions are still open and the command that answers each; README.md and index.html say the same.
+//
 //   nix run .#adopt -- survey key=value [key=value …]      which built-ins the new default moves, and which share a grove (seconds)
 //   nix run .#adopt -- render key=value … [--variant 'name:key=*0.82,…'] [--size 640x360] [--dir <folder>]
-//                                                          every moved look as it is (a) and as it would ship (b, and c… per variant),
-//                                                          rendered and measured, into archive/reviews/<date>-adopt-<keys>/
+//                                                          into archive/reviews/<date>-adopt-<keys>/ (about a second a look a column)
+//   nix run .#adopt -- cost <folder>                       about half a minute a look a column
+//   nix run .#adopt -- motion <folder> [look …]            the three looks the flip moves most when none is named; minutes a look
+//   nix run .#adopt -- transitions <folder>                seconds a route; at decisions.json's picks when there is one, else every look at b
+//   nix run .#adopt -- status <folder>                     the questions, and what answers each
 //   nix run .#adopt -- apply <folder> [--allow-split]      the folder's decisions.json written into the sources, and checked
 //   nix run .#adopt -- record                              test/defaults.json brought up to parameters added or removed
 //
 // HOW A LOOK IS FOUND TO MOVE. presets.js is evaluated twice, in two node processes, once over DEFAULTS as they are and once with the flip
 // written into them (the `__world` mode below): a look moves when its params differ. Nothing about how presets.js is written is assumed.
+// Every stage after render holds the tree to the looks the render saw, and refuses when they changed.
 //
 // RENDER. The pixel harness's page (harness.html: __run, __diff, __png; the motion frozen) on Chrome on the Metal GPU, as rows.mjs does,
 // from the working tree: A and B differ by exactly the params the flip moves. Each look is rendered at a, again at a (two engines born
 // alike must agree, or nothing measured means anything), then at b and each variant, all at FRAME ticks, faithful looks re-baked. For each
 // column against a: mean |Δ| over the frame (0–255, the mean of the three channels) and the share of pixels any channel of which moves by
 // more than 8. A column within TOL of a everywhere is "no visible change" and is never shown as a choice. The motion is frozen, so a key
-// that only moves things (the wind's) shows nothing here: judge it on video (nix run .#video).
+// that only moves things (the wind's) shows nothing here: the motion stage is where it shows.
 //
 // THE FOLDER. sheets/ (looks most changed first, six to a sheet: a, b, c…, where b moves (Δ ×16), and a zoom of a and b where the
-// change is small), frames/<id>.png at full size, where an id is the look's rank and its column (3b), index.html (the choices, a pick per
-// look, and the decisions.json it makes), manifest.json (the flip, the params, the commit, source hashes, every frame's hash), README.md
-// to fill in, and src/ (this script and its lib, as they ran).
+// change is small), frames/<id>.png at full size, where an id is the look's rank and its column (3b), index.html (the four questions, a
+// pick per look and the decisions.json it makes), manifest.json (the flip, the params, the commit, source hashes, every frame's hash),
+// cost.json, motion.json + motion/, transitions.json + transitions/, README.md (its questions block is rewritten by each stage; the rest
+// is written once, to be filled in), and src/ (this script and its lib, as the render ran).
 //
-// APPLY. decisions.json is { picks: { "<look>": "a"|"b"|"c"… }, rest: "b"|null, why: { "<look>": "the artist's words" } }: a look the
-// picks leave out takes `rest`; a look whose frame did not move takes b. It refuses when the tree's looks are no longer the ones the
-// render saw, and when the picks would set apart two looks that share a grove on a key a route reads (--allow-split says that is meant).
-// Then it writes the new defaults and GRANDFATHERED (komorebi-params.js), pins the kept looks' old values and the variants' values
-// (presets.js), and rewrites test/defaults.json; evaluates presets.js again and holds every look to what it was shown as; and lists what
-// is left to write by hand. It commits nothing.
+// DECISIONS. decisions.json is { picks: { "<look>": "a"|"b"|"c"… }, rest: "b"|null, why: { "<look>": "the artist's words" },
+// motion?: "why the motion need not be measured", transitions?: "why the routes that change kind are fine" }: a look the picks leave out
+// takes `rest`; a look whose frame did not move takes b.
+//
+// APPLY refuses while a question is open (adopt-lib.mjs questionsOf), when the tree's looks are no longer the ones rendered, and when the
+// picks would set apart two looks that share a grove on a key a route reads (--allow-split says that is meant). Then it writes the new
+// defaults and GRANDFATHERED (komorebi-params.js), pins the kept looks' old values and the variants' values (presets.js), and rewrites
+// test/defaults.json; evaluates presets.js again and holds every look to what it was shown as; and lists what is left to write by hand.
+// It commits nothing.
 // ============================================================================
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  addGrandfathered, checkRecord, flipTravels, groveGroups, keysPhrase, lookOrder, paramsKey, parseFlip, parseVariant, pick, pinLook,
-  recordText, resolvePicks, resolveVariant, setDefault, setInLook, splitGroups, survey,
+  addGrandfathered, checkRecord, FPS_CAP, FPS_LIMIT, flipTravels, fpsDrop, groveGroups, keysPhrase, lookOrder, paramsKey, parseFlip, parseVariant, pick,
+  pinLook, playlistPairs, questionsOf, recordText, resolvePicks, resolveVariant, setDefault, setInLook, splitGroups, survey,
 } from './adopt-lib.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -48,10 +64,24 @@ const SOURCES = ['engine/komorebi-params.js', 'presets.js', 'test-gl/adopt.mjs',
 const VARIANT = 'chromium+angle-metal+enable-gpu', TOL = 2, FRAME = 36, MOVE = 8, PER_SHEET = 6, TILE = [400, 225];
 const HELD = { adaptive_motion: false };   // with no frame-rate limit a still scene's frames come faster than its idle rate (rows.mjs)
 const FREEZE = ['wind_strength', 'weather_variability', 'drift_auto', 'auto_quality'];   // harness.html's: a flip of one cannot be rendered there
+// the motion stage's clip: long enough for the pattern measures' slow terms (the scramble and its return), small enough to render in a minute or two;
+// pattern.mjs reads frames at a short side of 360 whatever it is given
+const CLIP = { seconds: 60, size: '640x360' };
+// the measures the motion table leads with (pattern-lib.mjs's header says what each is)
+const MEASURES = [
+  ['NNI', (r) => r.spatial.nni.mean], ["Moran's I", (r) => r.spatial.moransI.mean], ['β', (r) => r.spatial.beta.mean],
+  ['α', (r) => r.temporal.alpha], ['speed', (r) => r.temporal.speed], ['direction', (r) => r.temporal.directionConsistency], ['rhythm', (r) => r.temporal.rhythm],
+  ['τ (s)', (r) => r.impermanence.tau], ['scramble', (r) => r.impermanence.scramble.mean], ['scrambles/min', (r) => r.impermanence.scramble.perMinute],
+  ['back in (s)', (r) => r.impermanence.scramble.returnSeconds], ['patch life (s)', (r) => r.impermanence.tracks.lifetimeMedian],
+];
 
 const sh = (cmd, args) => execFileSync(cmd, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 256 << 20 });
 const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const readJson = (f) => (existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : null);
+const writeJson = (f, d) => writeFileSync(f, `${JSON.stringify(d, null, 1)}\n`);
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const needBrowser = () => { if (!existsSync(join(ROOT, 'test-gl/node_modules'))) throw new Error('first run: cd test-gl && npm install && npx playwright install chromium'); };
 
 // ---- the two worlds ----
 if (process.argv[2] === '__world') {
@@ -100,40 +130,114 @@ function printSurvey(flip, s) {
   }
 }
 
-// ---- render ----
+// ---- the folder ----
+// The render's manifest, what each later stage wrote, and the picks; the tree held to the looks the render saw.
+function loadFolder(dirArg) {
+  const dir = resolve(dirArg);
+  const m = readJson(join(dir, 'manifest.json'));
+  if (!m) throw new Error(`${dir}: no manifest.json; render first`);
+  const flip = flipFrom(Object.entries(m.flip).map(([k, v]) => `${k}=${JSON.stringify(v)}`));
+  const s = surveyOf(flip);
+  const drift = [];
+  const now = new Map(s.moved.map((x) => [x.look, x]));
+  for (const l of m.looks) {
+    if (!now.has(l.look)) drift.push(`${l.look}: the flip no longer moves it`);
+    else if (paramsKey({ ...s.before.defaults, ...s.before.presets[l.look] }) !== l.before) drift.push(`${l.look}: its params changed since the render`);
+  }
+  for (const x of s.moved) if (!m.looks.some((l) => l.look === x.look)) drift.push(`${x.look}: moved now, not rendered`);
+  if (drift.length) throw new Error(`the looks are not the ones rendered; render again:\n  ${drift.join('\n  ')}`);
+  const decisions = readJson(join(dir, 'decisions.json'));
+  let picks = null;
+  if (decisions) {
+    const r = resolvePicks(decisions, m.looks, m.columns);
+    if (r.problems.length) throw new Error(`decisions.json:\n  ${r.problems.join('\n  ')}`);
+    picks = r.picks;
+  }
+  const state = { m, decisions, cost: readJson(join(dir, 'cost.json')), motion: readJson(join(dir, 'motion.json')), transitions: readJson(join(dir, 'transitions.json')) };
+  return { dir, flip, s, state, picks };
+}
+const cellOf = (m, look, letter) => m.looks.find((l) => l.look === look).cells.find((c) => c.letter === letter);
+const atPick = (picks, look) => (picks ? picks[look] : 'b');
+const shownDir = (dir) => (relative(ROOT, dir).startsWith('..') ? dir : relative(ROOT, dir));
+
+// The questions, said everywhere at once: on the terminal, in README.md's questions block, and at the top of index.html.
+function report(f) {
+  const { dir, state, picks } = f;
+  const qs = questionsOf(state, picks, shownDir(dir));
+  console.log('\nthe four questions:');
+  for (const q of qs) console.log(`  ${q.open ? '[ ]' : '[x]'} ${q.title}: ${q.say}`);
+  const block = ['<!-- adopt:questions (rewritten by each stage) -->', '## The four questions', '',
+    ...qs.map((q) => `- ${q.open ? '[ ]' : '[x]'} **${q.title}.** ${q.say}`), '', ...tables(state, picks), '<!-- /adopt:questions -->'].join('\n');
+  const rpath = join(dir, 'README.md');
+  const readme = existsSync(rpath) ? readFileSync(rpath, 'utf8') : '';
+  const re = /<!-- adopt:questions[\s\S]*?<!-- \/adopt:questions -->/;
+  writeFileSync(rpath, re.test(readme) ? readme.replace(re, block) : readme.replace(/\*\*Seen\.\*\*/, `${block}\n\n**Seen.**`));
+  writeFileSync(join(dir, 'index.html'), indexHtml(state, picks, qs));
+  return qs;
+}
+
+// The measured answers, as markdown tables (README) — index.html draws the same data.
+function tables(state, picks) {
+  const out = [];
+  const { cost, motion, transitions } = state;
+  if (cost) {
+    out.push(`Cost (${cost.renderer}, ${cost.size.join('×')}; frames a second as seen, capped at ${FPS_CAP}):`, '', '| look | column | a fps | b fps | frame ms a → b | |', '|---|---|---|---|---|---|');
+    for (const [look, cols] of Object.entries(cost.looks)) for (const [c, r] of Object.entries(cols)) out.push(`| ${look} | ${c} | ${r.a.toFixed(1)} | ${r.b.toFixed(1)} | ${r.aMs.toFixed(2)} → ${r.bMs.toFixed(2)} | ${r.slow ? `**${r.drop.toFixed(1)} fps slower**` : ''} |`);
+    out.push('');
+  }
+  if (motion) {
+    out.push(`Motion (${CLIP.seconds} s at ${CLIP.size}, pattern.mjs; B − A):`, '', `| look | pick | ${MEASURES.map(([n]) => n).join(' | ')} |`, `|---|---|${MEASURES.map(() => '---').join('|')}|`);
+    for (const [look, r] of Object.entries(motion.looks)) out.push(`| ${look} | ${r.pick} | ${MEASURES.map(([n]) => fmtDelta(r.a[n], r.b[n])).join(' | ')} |`);
+    out.push('');
+  }
+  if (transitions) {
+    out.push(`Transitions (${transitions.pairs.length} routes, motion frozen; ${picks ? 'at the picks' : 'every moved look at b'}):`, '', '| route | kind a → b | max ΔL a → b | churn/σ a → b | strips |', '|---|---|---|---|---|');
+    for (const p of transitions.pairs) out.push(`| ${p.from} → ${p.to} | ${p.a.kind === p.b.kind ? p.a.kind : `**${p.a.kind} → ${p.b.kind}**`} | ${p.a.maxDL.toFixed(2)} → ${p.b.maxDL.toFixed(2)} | ${p.a.churnN.toFixed(3)} → ${p.b.churnN.toFixed(3)} | \`${p.a.strip}\` \`${p.b.strip}\` |`);
+    out.push('');
+  }
+  return out;
+}
+const fmtDelta = (a, b) => (a == null || b == null ? '–' : `${(b - a >= 0 ? '+' : '')}${(b - a).toFixed(Math.abs(a) < 10 ? 3 : 1)}`);
+
+// ---- the harness page on the GPU, for render and transitions ----
+async function openHarness(viewport) {
+  needBrowser();
+  const { chromium } = await import('playwright');
+  const { assertHardwareRenderer, launchBrowser } = await import('./video-lib.mjs');
+  const TYPES = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.json': 'application/json' };
+  const { browser } = await launchBrowser(chromium, VARIANT, ['--disable-gpu-vsync', '--disable-frame-rate-limit']);
+  const page = await browser.newPage({ viewport, deviceScaleFactor: 1 });
+  page.setDefaultTimeout(600000);
+  await page.route('http://adopt.test/**', async (route) => {
+    const path = decodeURIComponent(new URL(route.request().url()).pathname);
+    try { await route.fulfill({ contentType: TYPES[extname(path)] ?? 'application/octet-stream', body: readFileSync(resolve(ROOT, `.${path}`)) }); }
+    catch { await route.fulfill({ status: 404, body: '' }); }
+  });
+  await page.goto('http://adopt.test/test-gl/harness.html');
+  await page.waitForFunction(() => typeof window.__run === 'function');
+  const renderer = (await page.evaluate(() => window.__glinfo())).renderer;
+  assertHardwareRenderer(renderer, VARIANT);
+  return { browser, page, renderer };
+}
+
+// ---- render: the look ----
 async function render(flip, variants, size, dirArg) {
-  for (const k of Object.keys(flip)) if (FREEZE.includes(k)) throw new Error(`${k}: the harness freezes it for every frame, so a still cannot show it`);
+  for (const k of Object.keys(flip)) if (FREEZE.includes(k)) throw new Error(`${k}: the harness freezes it for every frame, so a still cannot show it; it is a question for the motion stage alone`);
   const s = surveyOf(flip);
   printSurvey(flip, s);
   if (!s.moved.length) { console.log('\nnothing moves: nothing to render'); return; }
-  if (!existsSync(join(ROOT, 'test-gl/node_modules'))) throw new Error('first run: cd test-gl && npm install && npx playwright install chromium');
+  needBrowser();
   const dir = resolve(dirArg ?? join(ROOT, 'archive/reviews', `${today()}-adopt-${Object.keys(flip).join('-')}`));
   if (existsSync(join(dir, 'manifest.json'))) throw new Error(`${dir} already holds a render: one folder, one question (--dir for another)`);
   mkdirSync(join(dir, 'frames'), { recursive: true }); mkdirSync(join(dir, 'sheets'), { recursive: true }); mkdirSync(join(dir, 'src'), { recursive: true });
   const columns = [{ letter: 'a', name: 'as it is', over: () => ({}) }, { letter: 'b', name: `${Object.entries(flip).map(([k, v]) => `${k} ${v}`).join(', ')}`, over: (m) => m.over }];
   for (const [i, v] of variants.entries()) columns.push({ letter: String.fromCharCode(99 + i), name: `b + ${v.name}`, variant: v, over: (m) => ({ ...m.over, ...resolveVariant(v, s.after.presets[m.look]) }) });
 
-  const { chromium } = await import('playwright');
-  const { assertHardwareRenderer, launchBrowser } = await import('./video-lib.mjs');
-  const TYPES = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.html': 'text/html', '.json': 'application/json' };
-  const { browser } = await launchBrowser(chromium, VARIANT, ['--disable-gpu-vsync', '--disable-frame-rate-limit']);
+  const { browser, page, renderer } = await openHarness({ width: Math.max(size[0], 640), height: Math.max(size[1], 360) });
   const rows = [];
-  let renderer;
   try {
-    const page = await browser.newPage({ viewport: { width: Math.max(size[0], 640), height: Math.max(size[1], 360) }, deviceScaleFactor: 1 });
-    page.setDefaultTimeout(600000);
-    await page.route('http://adopt.test/**', async (route) => {
-      const path = decodeURIComponent(new URL(route.request().url()).pathname);
-      try { await route.fulfill({ contentType: TYPES[extname(path)] ?? 'application/octet-stream', body: readFileSync(resolve(ROOT, `.${path}`)) }); }
-      catch { await route.fulfill({ status: 404, body: '' }); }
-    });
-    await page.goto('http://adopt.test/test-gl/harness.html');
-    await page.waitForFunction(() => typeof window.__run === 'function');
-    renderer = (await page.evaluate(() => window.__glinfo())).renderer;
-    assertHardwareRenderer(renderer, VARIANT);
     console.log(`\nrenderer: ${renderer}   ${size.join('×')}   ${s.moved.length} looks × ${columns.length} columns`);
     await page.evaluate(PAGE_HELPERS);
-
     for (const m of s.moved) {
       const opts = { size, ...(s.before.presets[m.look].faithful_canopy === true ? { rebake: true } : {}) };
       const born = (over) => page.evaluate(([p, o, f, q]) => window.__run(p, o, [f], q).then((r) => r.captures[0]), [m.look, { ...HELD, ...over }, FRAME, opts]);
@@ -178,7 +282,7 @@ async function render(flip, variants, size, dirArg) {
     cells: r.cells.map((c) => ({ letter: c.letter, id: c.id ?? null, file: c.file ?? null, over: c.over, harness_hash: c.hash, sha256: c.sha256 ?? null,
       ...(c.letter === 'a' ? {} : { mean: c.mean, moved: c.moved, max: c.max, same: c.same }) })) });
   const manifest = {
-    folder: relative(ROOT, dir).startsWith('..') ? dir : relative(ROOT, dir),
+    folder: shownDir(dir),
     question: `Turn ${keysPhrase(Object.keys(flip)).replace(/ (was|were)$/, '')} on by default: which built-in looks take it, and which keep what they were made with?`,
     flip, from: s.from, variants: variants.map((v) => ({ letter: columns.find((c) => c.variant === v).letter, ...v })),
     columns: columns.map((c) => ({ letter: c.letter, name: c.name })),
@@ -189,11 +293,140 @@ async function render(flip, variants, size, dirArg) {
     sources: Object.fromEntries(SOURCES.map((f) => [f, sha256(join(ROOT, f))])),
     looks: rows.map(strip),
   };
-  writeFileSync(join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 1)}\n`);
-  writeFileSync(join(dir, 'index.html'), indexHtml(manifest, rows));
-  writeFileSync(join(dir, 'README.md'), readme(manifest, rows));
+  writeJson(join(dir, 'manifest.json'), manifest);
+  writeFileSync(join(dir, 'README.md'), readme(manifest));
   const quiet = rows.filter((r) => !r.visible).map((r) => r.look);
   console.log(`\n${rows.filter((r) => r.visible).length} looks move visibly${quiet.length ? `; no visible change on ${quiet.join(', ')}` : ''}\n${join(dir, 'index.html')}`);
+  report({ dir, state: { m: manifest, decisions: null, cost: null, motion: null, transitions: null }, picks: null });
+}
+
+// ---- cost: what each column costs a frame, on this machine's GPU (test-gl/cost.mjs, its defaults: 1920×1080, three runs of 200 frames
+// alternating A and B). Looks handed the same params on top are measured in one call. ----
+function cost(f) {
+  needBrowser();
+  const { dir, state, picks } = f, m = state.m;
+  mkdirSync(join(dir, 'cost'), { recursive: true });
+  const groups = new Map();   // the params on top, as JSON → [look, letter][]
+  for (const l of m.looks) {
+    const letters = picks ? (picks[l.look] === 'a' ? [] : [picks[l.look]]) : m.columns.slice(1).map((c) => c.letter);
+    for (const c of letters) {
+      if (state.cost?.looks[l.look]?.[c]) continue;   // measured already: a pick changed, not the look
+      const key = JSON.stringify(cellOf(m, l.look, c).over);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push([l.look, c]);
+    }
+  }
+  const out = state.cost ?? { looks: {} };
+  let n = 0;
+  for (const [key, members] of groups) {
+    const over = JSON.parse(key), file = join(dir, 'cost', `${String(++n).padStart(2, '0')}.json`);
+    const looks = [...new Set(members.map(([look]) => look))];
+    console.log(`\ncost: ${looks.length} look${looks.length > 1 ? 's' : ''} with ${JSON.stringify(over)}`);
+    const r = spawnSync(process.execPath, [join(ROOT, 'test-gl/cost.mjs'), ...looks, '--vs', ...Object.entries(over).map(([k, v]) => `${k}=${JSON.stringify(v)}`), '--out', file], { cwd: ROOT, stdio: 'inherit' });
+    if (r.status !== 0) throw new Error(`cost.mjs failed (${r.status}); what it measured before is in ${shownDir(join(dir, 'cost'))}`);
+    const rec = JSON.parse(readFileSync(file, 'utf8'));
+    Object.assign(out, { renderer: rec.renderer, size: rec.size, runs: rec.runs, frames: rec.frames, commit: rec.commit });
+    for (const x of rec.records) {
+      const aMs = x.A.summary.wallMs.median, bMs = x.B.summary.wallMs.median;
+      for (const [look, c] of members.filter(([l]) => l === x.look)) {
+        out.looks[look] ??= {};
+        out.looks[look][c] = { aMs, bMs, aSpread: x.A.summary.wallMs.spread, bSpread: x.B.summary.wallMs.spread, buildA: x.A.summary.buildMs.median, buildB: x.B.summary.buildMs.median, ...fpsDrop(aMs, bMs), file: relative(dir, file) };
+      }
+    }
+    writeJson(join(dir, 'cost.json'), out);   // after each call, so a long run interrupted keeps what it measured
+  }
+  if (!groups.size) console.log('every look and column is measured already');
+  state.cost = out;
+  return report(f);
+}
+
+// ---- motion: a minute of video of a and of the pick, read by the pattern measures ----
+function motion(f, named) {
+  needBrowser();
+  const { dir, state, picks } = f, m = state.m;
+  const ranked = m.looks.filter((l) => l.visible).sort((x, y) => x.rank - y.rank).map((l) => l.look);
+  const looks = named.length ? named : ranked.slice(0, 3);
+  if (!looks.length) throw new Error('no look moves visibly in a still, so none is the obvious one to film: name the looks (a key that only moves things shows only here)');
+  for (const look of looks) if (!m.looks.some((l) => l.look === look)) throw new Error(`${look}: the flip does not move it`);
+  mkdirSync(join(dir, 'motion'), { recursive: true });
+  const out = state.motion ?? { clip: CLIP, looks: {} };
+  const before = f.s.before.presets;
+  for (const look of looks) {
+    const p = atPick(picks, look);
+    if (p === 'a') { console.log(`${look}: kept as it is, nothing to compare`); continue; }
+    const r = { pick: p, a: null, b: null };
+    for (const [side, over] of [['a', {}], ['b', cellOf(m, look, p).over]]) {
+      const name = `${slug(look)}-${side === 'a' ? 'a' : p}`, vdir = join(dir, 'motion', name), lookFile = join(dir, 'motion', `${name}.json`);
+      writeJson(lookFile, { name: look, params: { ...before[look], ...over } });
+      if (!existsSync(join(vdir, 'delivery.mp4'))) {
+        console.log(`\nmotion: ${look} ${side === 'a' ? 'a' : p}, ${CLIP.seconds} s`);
+        const v = spawnSync(process.execPath, [join(ROOT, 'test-gl/render-video.mjs'), '--look-json', lookFile, '--tree', '--out', vdir, '--seconds', String(CLIP.seconds), '--size', CLIP.size], { cwd: ROOT, stdio: 'inherit' });
+        if (v.status !== 0) throw new Error(`render-video.mjs failed (${v.status}) on ${look}`);
+      }
+      const pj = join(vdir, 'pattern.json');
+      if (!existsSync(pj)) {
+        const pr = spawnSync(process.execPath, [join(ROOT, 'test-gl/pattern.mjs'), join(vdir, 'delivery.mp4'), '--out', pj], { cwd: ROOT, stdio: ['ignore', 'ignore', 'inherit'] });
+        if (pr.status !== 0) throw new Error(`pattern.mjs failed (${pr.status}) on ${look}`);
+      }
+      const res = JSON.parse(readFileSync(pj, 'utf8'));
+      r[side] = Object.fromEntries(MEASURES.map(([n, get]) => [n, get(res) ?? null]));
+      r[`${side}Video`] = relative(dir, join(vdir, 'delivery.mp4'));
+    }
+    out.looks[look] = r;
+    writeJson(join(dir, 'motion.json'), out);
+  }
+  state.motion = out;
+  return report(f);
+}
+
+// ---- transitions: every route the shipped playlists walk with a moved look at an end, as it is and as picked ----
+async function transitions(f) {
+  const { dir, state, picks } = f, m = state.m;
+  const moved = new Set(m.looks.map((l) => l.look));
+  const overOf = (look) => (moved.has(look) ? cellOf(m, look, atPick(picks, look)).over : {});
+  const pairs = playlistPairs(f.s.before.playlists, f.s.before.presets).filter(([a, b]) => Object.keys(overOf(a)).length || Object.keys(overOf(b)).length);
+  if (!pairs.length) { console.log('no shipped route has a look that changes at either end'); }
+  mkdirSync(join(dir, 'transitions'), { recursive: true });
+  const { browser, page, renderer } = await openHarness({ width: 640, height: 360 });
+  const out = { renderer, picks: picks ?? null, pairs: [] };
+  try {
+    for (const [i, [from, to]] of pairs.entries()) {
+      const row = { from, to };
+      for (const [side, over] of [['a', [{}, {}]], ['b', [overOf(from), overOf(to)]]]) {
+        const r = await page.evaluate(([x, y, o]) => window.__transition(x, y, o), [from, to, { freeze: true, over }]);
+        const fr = r.frames;
+        let maxDL = 0, churnN = 0;
+        for (let k = 1; k < fr.length; k++) { maxDL = Math.max(maxDL, Math.abs(fr[k].luma - fr[k - 1].luma)); churnN = Math.max(churnN, fr[k].churn / Math.max(1, Math.sqrt(fr[k].variance))); }
+        const strip = `transitions/${String(i + 1).padStart(2, '0')}-${side}.png`;
+        writeFileSync(join(dir, strip), Buffer.from((await page.evaluate(([ids, c]) => window.__strip(ids, c), [fr.map((x) => x.id), 8])).split(',')[1], 'base64'));
+        row[side] = { kind: r.info.kind, maxDL, churnN, frames: fr.length, strip };
+      }
+      out.pairs.push(row);
+      console.log(`  ${`${from} → ${to}`.padEnd(54)} ${row.a.kind === row.b.kind ? row.a.kind : `${row.a.kind} → ${row.b.kind}  CHANGES KIND`}   ΔL ${row.a.maxDL.toFixed(2)} → ${row.b.maxDL.toFixed(2)}   churn/σ ${row.a.churnN.toFixed(3)} → ${row.b.churnN.toFixed(3)}`);
+    }
+  } finally { await browser.close(); }
+  writeJson(join(dir, 'transitions.json'), out);
+  state.transitions = out;
+  return report(f);
+}
+
+function readme(m) {
+  const shown = m.looks.filter((r) => r.visible).sort((x, y) => x.rank - y.rank);
+  const quiet = m.looks.filter((r) => !r.visible).map((r) => r.look);
+  const cols = m.columns.slice(1);
+  const out = [
+    `# ${Object.keys(m.flip).join(', ')} on by default (${today()})`, '',
+    `${Object.entries(m.flip).map(([k, v]) => `\`${k}\` ${JSON.stringify(m.from[k])} → ${JSON.stringify(v)}`).join(', ')}. A is each built-in look today, ${cols.map((c) => `${c.letter.toUpperCase()} ${c.name}`).join(', ')}. ${m.how_rendered.tree}; ${m.how_rendered.renderer}, ${m.how_rendered.size.join('×')}, motion frozen.`, '',
+    `Most changed first (mean |A−B| of 255, share of pixels moving by more than ${MOVE}):`, '',
+    `| id | look | ${cols.map((c) => `${c.letter} mean | ${c.letter} pixels`).join(' | ')} | sheet |`,
+    `|---|---|${cols.map(() => '---|---').join('|')}|---|`,
+    ...shown.map((r) => `| ${r.rank} | ${r.look} | ${r.cells.slice(1).map((c) => (c.same ? '— | —' : `${c.mean.toFixed(1)} | ${(c.moved * 100).toFixed(1)} %`)).join(' | ')} | \`${r.sheet}\` |`), '',
+  ];
+  if (quiet.length) out.push(`No visible change in the still (they take the new default): ${quiet.join(', ')}.`, '');
+  if (m.still.length) out.push(`Not moved (they name the key): ${m.still.join(', ')}.`, '');
+  if (m.groups.length) out.push(`Share a grove, and ${m.routed.join(', ')} travels with it: ${m.groups.map((g) => g.join(' · ')).join('; ')}.`, '');
+  out.push('**Seen.** (to write)', '', "## José's pick", '', '(pending; then decisions.json beside this file, and `nix run .#adopt -- apply <this folder>`)', '');
+  return out.join('\n');
 }
 
 // In the page: measure a capture against another, and lay sheets out. Strings, so the node side never needs a PNG decoder.
@@ -241,90 +474,101 @@ const PAGE_HELPERS = `(() => {
   };
 })()`;
 
-function readme(m, rows) {
-  const shown = rows.filter((r) => r.visible).sort((x, y) => x.rank - y.rank);
-  const quiet = rows.filter((r) => !r.visible).map((r) => r.look);
-  const cols = m.columns.slice(1);
-  const out = [
-    `# ${Object.keys(m.flip).join(', ')} on by default (${today()})`, '',
-    `${Object.entries(m.flip).map(([k, v]) => `\`${k}\` ${JSON.stringify(m.from[k])} → ${JSON.stringify(v)}`).join(', ')}. A is each built-in look today, ${m.columns.slice(1).map((c) => `${c.letter.toUpperCase()} ${c.name}`).join(', ')}. ${m.how_rendered.tree}; ${m.how_rendered.renderer}, ${m.how_rendered.size.join('×')}, motion frozen.`, '',
-    `Most changed first (mean |A−B| of 255, share of pixels moving by more than ${MOVE}):`, '',
-    `| id | look | ${cols.map((c) => `${c.letter} mean | ${c.letter} pixels`).join(' | ')} | sheet |`,
-    `|---|---|${cols.map(() => '---|---').join('|')}|---|`,
-    ...shown.map((r) => `| ${r.rank} | ${r.look} | ${r.cells.slice(1).map((c) => (c.same ? '— | —' : `${c.mean.toFixed(1)} | ${(c.moved * 100).toFixed(1)} %`)).join(' | ')} | \`${r.sheet}\` |`), '',
-  ];
-  if (quiet.length) out.push(`No visible change in the still (they take the new default): ${quiet.join(', ')}.`, '');
-  if (m.still.length) out.push(`Not moved (they name the key): ${m.still.join(', ')}.`, '');
-  if (m.groups.length) out.push(`Share a grove, and ${m.routed.join(', ')} travels with it: ${m.groups.map((g) => g.join(' · ')).join('; ')}.`, '');
-  out.push('**Seen.** (to write)', '', "## José's pick", '', '(pending; then decisions.json beside this file, and `nix run .#adopt -- apply <this folder>`)', '');
-  return out.join('\n');
-}
-
-// The page the artist picks on: the looks most changed first, a pick per look, and the decisions.json the picks make.
-function indexHtml(m, rows) {
-  const shown = rows.filter((r) => r.visible).sort((x, y) => x.rank - y.rank)
-    .map((r) => ({ rank: r.rank, look: r.look, sheet: r.sheet, cells: r.cells.map((c) => ({ letter: c.letter, id: c.id, file: c.file, mean: c.mean ?? 0, moved: c.moved ?? 0, same: c.same ?? false })) }));
-  const data = { flip: m.flip, from: m.from, columns: m.columns, groups: m.groups, routed: m.routed, quiet: rows.filter((r) => !r.visible).map((r) => r.look), still: m.still, looks: shown };
+// The page the artist picks on: the four questions first, then the looks most changed first with a pick per look (and what each column
+// costs a frame), the decisions.json the picks make, and the routes and the motion as measured.
+function indexHtml(state, picks, qs) {
+  const { m, cost, motion, transitions } = state;
+  const shown = m.looks.filter((r) => r.visible).sort((x, y) => x.rank - y.rank)
+    .map((r) => ({ rank: r.rank, look: r.look, cells: r.cells.map((c) => ({ letter: c.letter, id: c.id, file: c.file, mean: c.mean ?? 0, moved: c.moved ?? 0, same: c.same ?? false, cost: cost?.looks[r.look]?.[c.letter] ?? null })) }));
+  const data = { flip: m.flip, from: m.from, columns: m.columns, groups: m.groups, routed: m.routed, quiet: m.looks.filter((r) => !r.visible).map((r) => r.look), still: m.still, looks: shown,
+    picks: picks ?? {}, why: state.decisions?.why ?? {}, rest: state.decisions?.rest ?? 'b', motionWhy: state.decisions?.motion ?? '', transitionsWhy: state.decisions?.transitions ?? '',
+    fpsLimit: FPS_LIMIT, fpsCap: FPS_CAP };
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const qHtml = qs.map((q) => `<li class="${q.open ? 'open' : 'done'}"><b>${esc(q.title)}.</b> ${esc(q.say)}</li>`).join('');
+  const motionHtml = motion ? `<h2>Motion</h2><p>${CLIP.seconds} s at ${CLIP.size} of a and of the pick, read by pattern.mjs; B − A.</p><div class="scroll"><table><tr><th>look</th><th>pick</th>${MEASURES.map(([n]) => `<th>${esc(n)}</th>`).join('')}<th>videos</th></tr>${Object.entries(motion.looks).map(([look, r]) => `<tr><td>${esc(look)}</td><td>${r.pick}</td>${MEASURES.map(([n]) => `<td>${fmtDelta(r.a[n], r.b[n])}</td>`).join('')}<td><a href="${r.aVideo}">a</a> <a href="${r.bVideo}">${r.pick}</a></td></tr>`).join('')}</table></div>` : '';
+  const transHtml = transitions ? `<h2>Transitions</h2><p>${transitions.pairs.length} routes, motion frozen, ${transitions.picks ? 'at the picks' : 'every moved look at b'}: a as it is, b as it would ship.</p>${transitions.pairs.map((p) => `<div class="route${p.a.kind !== p.b.kind ? ' changed' : ''}"><h3>${esc(p.from)} → ${esc(p.to)}: ${p.a.kind === p.b.kind ? esc(p.a.kind) : `${esc(p.a.kind)} → ${esc(p.b.kind)}`}</h3><p>largest step in brightness ${p.a.maxDL.toFixed(2)} → ${p.b.maxDL.toFixed(2)} · churn/σ ${p.a.churnN.toFixed(3)} → ${p.b.churnN.toFixed(3)}</p><div class="strips"><a href="${p.a.strip}"><img loading="lazy" src="${p.a.strip}"></a><a href="${p.b.strip}"><img loading="lazy" src="${p.b.strip}"></a></div></div>`).join('')}` : '';
   return `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${Object.keys(m.flip).join(', ')} on by default</title>
+<title>${esc(Object.keys(m.flip).join(', '))} on by default</title>
 <style>
-:root { --bg: #161616; --fg: #e8e8e8; --dim: #9a9a9a; --line: #333; --warn: #ffb454; --pick: #7fd88f; }
+:root { --bg: #161616; --fg: #e8e8e8; --dim: #9a9a9a; --line: #333; --warn: #ffb454; --pick: #7fd88f; --bad: #ff6b6b; }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 -apple-system, system-ui, sans-serif; }
-h1 { font-size: 18px; margin: 0 0 4px; } p { color: var(--dim); margin: 4px 0 12px; }
-.look { border-top: 1px solid var(--line); padding: 10px 0; }
+h1 { font-size: 18px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 24px 0 6px; } h3 { font-size: 14px; margin: 0 0 4px; } p { color: var(--dim); margin: 4px 0 12px; }
+ul.q { padding-left: 18px; } ul.q li { margin: 4px 0; } ul.q li.open::marker { content: '☐  '; color: var(--warn); } ul.q li.done::marker { content: '☑  '; color: var(--pick); }
+.look, .route { border-top: 1px solid var(--line); padding: 10px 0; }
 .look h2 { font-size: 15px; margin: 0 0 6px; }
-.cells { display: flex; gap: 8px; flex-wrap: wrap; }
+.cells, .strips { display: flex; gap: 8px; flex-wrap: wrap; }
 .cell { width: 320px; max-width: 100%; }
-.cell img { width: 100%; display: block; cursor: zoom-in; }
-.cell label { display: flex; gap: 6px; align-items: center; margin-top: 4px; cursor: pointer; }
+.cell img, .strips img { width: 100%; display: block; }
+.strips a { width: 480px; max-width: 100%; }
+.cell label { display: flex; gap: 6px; align-items: center; margin-top: 4px; cursor: pointer; flex-wrap: wrap; }
 .cell.on img { outline: 3px solid var(--pick); }
-.why { width: 100%; max-width: 660px; margin-top: 6px; background: #222; color: var(--fg); border: 1px solid var(--line); padding: 4px; }
+.slow { color: var(--bad); font-weight: 600; } .route.changed h3 { color: var(--warn); }
+.why, .wide { width: 100%; max-width: 660px; margin-top: 6px; background: #222; color: var(--fg); border: 1px solid var(--line); padding: 4px; }
 #warn { color: var(--warn); white-space: pre-wrap; }
-textarea#out { width: 100%; height: 140px; background: #222; color: var(--fg); border: 1px solid var(--line); font: 12px ui-monospace, monospace; }
+textarea#out { width: 100%; height: 160px; background: #222; color: var(--fg); border: 1px solid var(--line); font: 12px ui-monospace, monospace; }
 .bar { position: sticky; top: 0; background: var(--bg); padding: 8px 0; z-index: 1; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 button, select { background: #2a2a2a; color: var(--fg); border: 1px solid var(--line); padding: 4px 10px; }
+.scroll { overflow-x: auto; } table { border-collapse: collapse; font-size: 12px; } td, th { border: 1px solid var(--line); padding: 3px 6px; text-align: right; } td:first-child, th:first-child { text-align: left; }
 </style>
-<h1>${Object.entries(m.flip).map(([k, v]) => `${k} ${JSON.stringify(m.from[k])} → ${JSON.stringify(v)}`).join(', ')}</h1>
-<p>${m.columns.map((c) => `<b>${c.letter}</b> ${c.name}`).join(' · ')}. Most changed first. Pick per look; a look you leave unpicked takes the default below.</p>
+<h1>${esc(Object.entries(m.flip).map(([k, v]) => `${k} ${JSON.stringify(m.from[k])} → ${JSON.stringify(v)}`).join(', '))}</h1>
+<p>${m.columns.map((c) => `<b>${c.letter}</b> ${esc(c.name)}`).join(' · ')}. Most changed first.</p>
+<h2>The four questions</h2><ul class="q">${qHtml}</ul>
+<p>As of the last stage run; picking here changes decisions.json, and the next stage reads it.</p>
 <div class="bar">unpicked looks take <select id="rest"></select> <button id="save">save decisions.json</button> <span id="warn"></span></div>
 <div id="looks"></div>
 <p id="quiet"></p>
-<h2 style="font-size:15px">decisions.json</h2>
+<h2>Motion and routes, in words</h2>
+<p>Only where a question asks for them: why the motion need not be filmed, and why routes that change kind are fine.</p>
+<input id="motionWhy" class="wide" placeholder="motion: why it need not be measured (optional)">
+<input id="transitionsWhy" class="wide" placeholder="transitions: why the routes that change kind are fine (optional)">
+${motionHtml}
+${transHtml}
+<h2>decisions.json</h2>
 <textarea id="out" readonly></textarea>
 <script>
-const D = ${JSON.stringify(data)};
-const picks = {}, why = {};
+const D = ${JSON.stringify(data).replace(/</g, '\\u003c')};
+const picks = { ...D.picks }, why = { ...D.why };
 const rest = document.getElementById('rest');
 for (const c of [{ letter: '', name: 'no default: pick every look' }, ...D.columns]) rest.add(new Option(c.letter ? c.letter + ' — ' + c.name : c.name, c.letter));
-rest.value = 'b';
+rest.value = D.rest || '';
 const root = document.getElementById('looks');
+const text = (s) => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
 for (const l of D.looks) {
   const box = document.createElement('div'); box.className = 'look';
-  box.innerHTML = '<h2>' + l.rank + '. ' + l.look + '</h2><div class="cells"></div><input class="why" placeholder="why (optional, kept beside the pin)">';
+  box.innerHTML = '<h2>' + l.rank + '. ' + text(l.look) + '</h2><div class="cells"></div><input class="why" placeholder="why (optional, kept beside the pin)">';
   const cells = box.querySelector('.cells');
   for (const c of l.cells) {
     const d = document.createElement('div'); d.className = 'cell'; d.dataset.letter = c.letter;
     const stat = c.letter === 'a' ? 'as it is' : c.same ? 'no visible change' : 'mean ' + c.mean.toFixed(2) + ' · ' + (c.moved * 100).toFixed(1) + ' % of pixels';
-    d.innerHTML = '<a href="' + c.file + '" target="_blank"><img loading="lazy" src="' + c.file + '"></a><label><input type="radio" name="p' + l.rank + '" value="' + c.letter + '"> <b>' + c.id + '</b> ' + stat + '</label>';
+    const fps = c.cost ? ' <span class="' + (c.cost.slow ? 'slow' : '') + '">' + c.cost.a.toFixed(0) + ' → ' + c.cost.b.toFixed(0) + ' fps</span>' : '';
+    d.innerHTML = '<a href="' + c.file + '" target="_blank"><img loading="lazy" src="' + c.file + '"></a><label><input type="radio" name="p' + l.rank + '" value="' + c.letter + '"' + (picks[l.look] === c.letter ? ' checked' : '') + '> <b>' + c.id + '</b> ' + stat + fps + '</label>';
     cells.appendChild(d);
   }
+  const w = box.querySelector('.why'); w.value = why[l.look] ?? '';
   box.addEventListener('change', (e) => { if (e.target.type === 'radio') { picks[l.look] = e.target.value; update(); } });
-  box.querySelector('.why').addEventListener('input', (e) => { if (e.target.value.trim()) why[l.look] = e.target.value.trim(); else delete why[l.look]; update(); });
+  w.addEventListener('input', (e) => { if (e.target.value.trim()) why[l.look] = e.target.value.trim(); else delete why[l.look]; update(); });
   root.appendChild(box);
 }
 document.getElementById('quiet').textContent = (D.quiet.length ? 'No visible change in the still (they take the new default): ' + D.quiet.join(', ') + '. ' : '') + (D.still.length ? 'Not moved (they name the key): ' + D.still.join(', ') + '.' : '');
-rest.addEventListener('change', update);
+const mw = document.getElementById('motionWhy'), tw = document.getElementById('transitionsWhy');
+mw.value = D.motionWhy; tw.value = D.transitionsWhy;
+for (const el of [rest, mw, tw]) el.addEventListener('input', update);
 function chosen(look) { return picks[look] ?? (rest.value || null); }
 function update() {
-  for (const box of root.children) { const l = D.looks[[...root.children].indexOf(box)]; for (const d of box.querySelectorAll('.cell')) d.classList.toggle('on', d.dataset.letter === chosen(l.look)); }
+  D.looks.forEach((l, i) => { for (const d of root.children[i].querySelectorAll('.cell')) d.classList.toggle('on', d.dataset.letter === chosen(l.look)); });
   const warn = [];
   const missing = D.looks.filter((l) => !chosen(l.look));
   if (missing.length) warn.push(missing.length + ' looks have no pick');
+  const slow = D.looks.filter((l) => l.cells.find((c) => c.letter === chosen(l.look))?.cost?.slow);
+  if (slow.length) warn.push('more than ' + D.fpsLimit + ' fps slower as picked: ' + slow.map((l) => l.look).join(', '));
   // looks that share a grove travel without a dissolve only while they agree on the flip
-  for (const g of D.groups) { const ps = new Set(g.map((look) => { const p = chosen(look) ?? 'b'; return p === 'a' ? 'a' : 'b+'; })); if (ps.size > 1) warn.push('one grove, split: ' + g.map((look) => look + ' ' + (chosen(look) ?? 'b')).join(' · ')); }
+  for (const g of D.groups) { const ps = new Set(g.map((look) => (chosen(look) ?? 'b') === 'a' ? 'a' : 'b+')); if (ps.size > 1) warn.push('one grove, split: ' + g.map((look) => look + ' ' + (chosen(look) ?? 'b')).join(' · ')); }
   document.getElementById('warn').textContent = warn.join('\\n');
-  document.getElementById('out').value = JSON.stringify({ picks, rest: rest.value || null, why }, null, 1);
+  const out = { picks, rest: rest.value || null, why };
+  if (mw.value.trim()) out.motion = mw.value.trim();
+  if (tw.value.trim()) out.transitions = tw.value.trim();
+  document.getElementById('out').value = JSON.stringify(out, null, 1);
 }
 document.getElementById('save').addEventListener('click', () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([document.getElementById('out').value + '\\n'], { type: 'application/json' }));
@@ -336,30 +580,15 @@ update();
 }
 
 // ---- apply ----
-function apply(dirArg, allowSplit) {
-  const dir = resolve(dirArg);
-  const m = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
-  const decisions = JSON.parse(readFileSync(join(dir, 'decisions.json'), 'utf8'));
-  const flip = flipFrom(Object.entries(m.flip).map(([k, v]) => `${k}=${JSON.stringify(v)}`));
-  const s = surveyOf(flip);
-  // the tree must hold the looks the render showed, or the picks are about other pictures
-  const drift = [];
-  const now = new Map(s.moved.map((x) => [x.look, x]));
-  for (const l of m.looks) {
-    if (!now.has(l.look)) drift.push(`${l.look}: the flip no longer moves it`);
-    else if (paramsKey({ ...s.before.defaults, ...s.before.presets[l.look] }) !== l.before) drift.push(`${l.look}: its params changed since the render`);
-  }
-  for (const x of s.moved) if (!m.looks.some((l) => l.look === x.look)) drift.push(`${x.look}: moved now, not rendered`);
-  if (drift.length) throw new Error(`the looks are not the ones rendered; render again:\n  ${drift.join('\n  ')}`);
-
-  const { picks, problems } = resolvePicks(decisions, m.looks, m.columns);
-  if (problems.length) throw new Error(`decisions.json:\n  ${problems.join('\n  ')}`);
+function apply(f, allowSplit) {
+  const { dir, flip, s, state, picks } = f, m = state.m;
+  if (!picks) throw new Error('no decisions.json: pick in index.html first');
+  const open = questionsOf(state, picks, shownDir(dir)).filter((q) => q.open);
+  if (open.length) throw new Error(`open questions:\n  ${open.map((q) => `${q.title}: ${q.say}`).join('\n  ')}`);
+  const decisions = state.decisions;
   // what each look must be once the sources are written: a as it is, b the after world, c… b with the variant's values as rendered
   const expected = {};
-  for (const l of m.looks) {
-    const cell = l.cells.find((c) => c.letter === picks[l.look]);
-    expected[l.look] = picks[l.look] === 'a' ? s.before.presets[l.look] : { ...s.before.presets[l.look], ...cell.over };
-  }
+  for (const l of m.looks) expected[l.look] = picks[l.look] === 'a' ? s.before.presets[l.look] : { ...s.before.presets[l.look], ...cellOf(m, l.look, picks[l.look]).over };
   const split = splitGroups(m.groups, picks, m.routed, expected);
   if (split.length && !allowSplit) throw new Error(`these share a grove today and would not (--allow-split if that is meant):\n  ${split.map((g) => g.join(' · ')).join('\n  ')}`);
 
@@ -372,7 +601,7 @@ function apply(dirArg, allowSplit) {
     const p = picks[l.look], said = why[l.look] ? `; ${why[l.look]}` : '';
     if (p === 'a') presets = pinLook(presets, l.look, pick(s.before.presets[l.look], l.keys), `kept as made, from before ${keysPhrase(keys)} on by default (GRANDFATHERED in komorebi-params.js)${said}`);
     else if (p !== 'b') {
-      const cell = l.cells.find((c) => c.letter === p), v = m.variants.find((x) => x.letter === p);
+      const cell = cellOf(m, l.look, p), v = m.variants.find((x) => x.letter === p);
       const values = Object.fromEntries(Object.entries(cell.over).filter(([k]) => !keys.includes(k)));
       presets = setInLook(presets, l.look, values, `took ${keys.join(', ')} with ${v.name}: ${Object.entries(values).map(([k, x]) => `${k} ${x}`).join(', ')}${said}`);
     }
@@ -384,7 +613,7 @@ function apply(dirArg, allowSplit) {
   const fresh = world();
   const wrong = [];
   for (const look of Object.keys(s.before.presets)) {
-    const want = expected[look] ?? s.after.presets[look];   // a look the flip does not move is what it was
+    const want = expected[look] ?? s.before.presets[look];   // a look the flip does not move is what it was
     const got = fresh.presets[look];
     if (paramsKey(got) !== paramsKey(want)) wrong.push(`${look}: ${Object.keys(want).filter((k) => JSON.stringify(want[k]) !== JSON.stringify(got[k])).join(', ')}`);
   }
@@ -419,6 +648,7 @@ function record() {
 const args = process.argv.slice(2);
 const take = (name) => { const out = []; for (let i = args.indexOf(name); i >= 0; i = args.indexOf(name)) out.push(args.splice(i, 2)[1]); return out; };
 const flag = (name) => { const i = args.indexOf(name); if (i >= 0) args.splice(i, 1); return i >= 0; };
+const folder = () => { if (!args.length) throw new Error('name the review folder'); return loadFolder(args.shift()); };
 try {
   const cmd = args.shift();
   if (cmd === 'survey') { const flip = flipFrom(args); printSurvey(flip, surveyOf(flip)); }
@@ -426,11 +656,12 @@ try {
     const variants = take('--variant').map(parseVariant), size = (take('--size')[0] ?? '640x360').split('x').map(Number), dir = take('--dir')[0];
     if (size.length !== 2 || !size.every((n) => Number.isInteger(n) && n > 0)) throw new Error('--size WxH');
     await render(flipFrom(args), variants, size, dir);
-  } else if (cmd === 'apply') {
-    const allow = flag('--allow-split');
-    if (args.length !== 1) throw new Error('apply <folder> [--allow-split]');
-    apply(args[0], allow);
-  } else if (cmd === 'record') record();
-  else throw new Error('usage: adopt survey|render key=value… | apply <folder> | record   (test-gl/adopt.mjs header)');
+  } else if (cmd === 'cost') cost(folder());
+  else if (cmd === 'motion') { const f = folder(); motion(f, args); }
+  else if (cmd === 'transitions') await transitions(folder());
+  else if (cmd === 'status') report(folder());
+  else if (cmd === 'apply') { const allow = flag('--allow-split'); apply(folder(), allow); }
+  else if (cmd === 'record') record();
+  else throw new Error('usage: adopt survey|render key=value… | cost|motion|transitions|status|apply <folder> | record   (test-gl/adopt.mjs header)');
 } catch (e) { console.error(e.message); process.exit(1); }
 process.exit(0);

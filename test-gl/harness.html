@@ -1104,12 +1104,16 @@ function churn(prev, bytes) {
   return acc / px;
 }
 
+// opts.over = [fromOver, toOver]: each end with these on top (adopt.mjs runs a route as it is and as it would ship); opts.freeze: the motion frozen at
+// both ends, so two runs of one route differ only by what they were handed. info.kind is the route transitionTo chose, read as it starts.
 window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) => {
   const o = Object.assign({ duration: 1.5, warm: 12, tail: 6, cap: 200 }, opts || {});
-  const A = PRESETS[fromName], B = PRESETS[toName];
+  const [overFrom, overTo] = o.over ?? [{}, {}];
+  const A = PRESETS[fromName] && { ...PRESETS[fromName], ...overFrom }, B = PRESETS[toName] && { ...PRESETS[toName], ...overTo };
   if (!A) return reject(new Error(`unknown preset '${fromName}'`));
   if (!B) return reject(new Error(`unknown preset '${toName}'`));
-  const NO_AUTO = { auto_quality: false };
+  const NO_AUTO = { auto_quality: false, ...(o.freeze ? FREEZE : {}) };
+  let kind = null;
   const canvas = document.createElement('canvas');
   canvas.className = 'stage';
   canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
@@ -1122,7 +1126,7 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
     if (done) return;
     done = true;
     clearTimeout(timer);
-    const info = eng ? { structDiff: eng.trans.structDiff, canopyMorph: eng.trans.canopyMorph } : null;
+    const info = eng ? { structDiff: eng.trans.structDiff, canopyMorph: eng.trans.canopyMorph, kind } : null;
     try { eng?.setPaused(true); eng?.dispose(); } catch { /* a disposed/failed engine has nothing to stop */ }
     canvas.remove();
     if (err) reject(err); else resolve({ frames: out, info, ms: Math.round(performance.now() - t0) });
@@ -1140,6 +1144,9 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
       if (ticks < o.warm) return;
       started = true;
       eng.transitionTo(Object.assign({}, B, NO_AUTO), { duration: o.duration });
+      const t = eng.trans;
+      kind = t.route?.name ?? (t.viewpoint ? 'viewpoint' : t.crossfade ? 'grove crossfade' : t.backgroundFade ? 'background fade'
+        : t.structDiff ? 'dissolve' : t.seasonMorph ? 'season morph' : t.densityMorph ? 'density morph' : t.canopyMorph ? 'grove morph' : 'live morph');
       return;                                        // the transition's first tick is the next frame
     }
     const w = canvas.width, h = canvas.height;

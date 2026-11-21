@@ -232,3 +232,80 @@ export const recordText = (defaults) => `${JSON.stringify(defaults, null, 2)}\n`
 
 // How a flip reads in a comment: "sway_spread, gust_width_m were".
 export const keysPhrase = (keys) => `${keys.join(', ')} ${keys.length > 1 ? 'were' : 'was'}`;
+
+// ---- the four questions an upgrade answers before it ships: what it costs a frame, what it looks like, what it does to the motion, and
+// what it does to the routes between looks. Each stage of adopt.mjs answers one into the review folder; questionsOf says which are still
+// open, and apply refuses while any is.
+
+// The engine holds about 60 frames a second (auto_quality's target), so a frame rate is read as a viewer sees it: capped at 60. An upgrade
+// may cost a look at most FPS_LIMIT of it (the artist: "it can't be more than 10fps slower on my m4").
+export const FPS_CAP = 60, FPS_LIMIT = 10;
+export const shownFps = (ms) => Math.min(FPS_CAP, 1000 / ms);
+export function fpsDrop(aMs, bMs) {
+  const a = shownFps(aMs), b = shownFps(bMs);
+  return { a, b, drop: a - b, slow: a - b > FPS_LIMIT };
+}
+
+// Every route the shipped playlists walk between two built-ins, each once, the last item back to the first (a playlist loops).
+export function playlistPairs(playlists, presets) {
+  const out = [], seen = new Set();
+  for (const pl of Object.values(playlists)) {
+    const items = pl.items.map((it) => (typeof it === 'string' ? it : it.look)).filter((l) => l in presets);
+    for (let i = 0; i < items.length && items.length > 1; i++) {
+      const pair = [items[i], items[(i + 1) % items.length]];
+      if (pair[0] === pair[1]) continue;
+      const key = JSON.stringify(pair);
+      if (!seen.has(key)) { seen.add(key); out.push(pair); }
+    }
+  }
+  return out;
+}
+
+// What each question still asks, from what the folder holds. `picks` are decisions.json's resolved (null before there is one: the stages
+// then measure every moved look at b). state = { m (the manifest), decisions, cost, transitions, motion }.
+export function questionsOf(state, picks, dir) {
+  const { m, decisions, cost, transitions, motion } = state;
+  const at = (look) => (picks ? picks[look] : 'b');
+  const run = (stage, more = '') => `nix run .#adopt -- ${stage} ${dir}${more}`;
+  const q = [];
+
+  // 1. cost
+  {
+    const want = m.looks.filter((l) => at(l.look) !== 'a').flatMap((l) => (picks ? [at(l.look)] : m.columns.slice(1).map((c) => c.letter)).map((c) => [l.look, c]));
+    const missing = cost ? want.filter(([look, c]) => !cost.looks[look]?.[c]) : want;
+    const slow = cost ? want.filter(([look, c]) => cost.looks[look]?.[c]?.slow) : [];
+    const said = (look, c) => { const r = cost.looks[look][c]; return `${look} ${c} (${r.a.toFixed(0)} → ${r.b.toFixed(0)} fps)`; };
+    q.push({ key: 'cost', title: 'Realtime cost', open: !cost || missing.length > 0 || (picks !== null && slow.length > 0),
+      say: !cost ? `not measured: ${run('cost')}`
+        : missing.length ? `not measured for ${missing.map(([l, c]) => `${l} ${c}`).join(', ')}: ${run('cost')}`
+        : slow.length ? `more than ${FPS_LIMIT} fps slower: ${slow.map(([l, c]) => said(l, c)).join(', ')}${picks ? '. Pick a for these, or make them cheaper' : ''}`
+        : `no look picked loses more than ${FPS_LIMIT} fps (of ${FPS_CAP})` });
+  }
+  // 2. the look
+  q.push({ key: 'look', title: 'The look (A/B)', open: !decisions,
+    say: decisions ? 'picked (decisions.json)' : 'not picked: open index.html, pick per look, save decisions.json beside it' });
+  // 3. motion
+  {
+    const measured = motion ? Object.keys(motion.looks) : [];
+    const stale = motion && picks ? measured.filter((look) => motion.looks[look].pick !== at(look) && at(look) !== 'a') : [];
+    const waived = typeof decisions?.motion === 'string' && decisions.motion.trim();
+    q.push({ key: 'motion', title: 'Motion and the komorebi measures', open: !(measured.length && !stale.length) && !waived,
+      say: waived ? `not measured: ${decisions.motion}`
+        : stale.length ? `measured at another pick for ${stale.join(', ')}: ${run('motion', ` ${stale.map((l) => JSON.stringify(l)).join(' ')}`)}`
+        : measured.length ? `measured on ${measured.join(', ')} (motion.json)`
+        : `not measured: ${run('motion', ' [look …]')}, or say why it need not be in decisions.json's "motion"` });
+  }
+  // 4. transitions
+  {
+    const ranAt = transitions?.picks ?? null;
+    const stale = transitions && JSON.stringify(ranAt) !== JSON.stringify(picks ?? null);
+    const changed = transitions ? transitions.pairs.filter((p) => p.a.kind !== p.b.kind) : [];
+    const ok = typeof decisions?.transitions === 'string' && decisions.transitions.trim();
+    q.push({ key: 'transitions', title: 'Transitions', open: !transitions || stale || (changed.length > 0 && !ok),
+      say: !transitions ? `not run: ${run('transitions')}`
+        : stale ? `run at other picks than decisions.json's: ${run('transitions')}`
+        : changed.length ? `${changed.length} route${changed.length > 1 ? 's' : ''} change kind: ${changed.map((p) => `${p.from} → ${p.to} (${p.a.kind} → ${p.b.kind})`).join(', ')}${ok ? `. ${decisions.transitions}` : `. Say why that is fine in decisions.json's "transitions", or pick differently`}`
+        : `${transitions.pairs.length} routes keep their kind (transitions.json has each one's numbers and strips)` });
+  }
+  return q;
+}

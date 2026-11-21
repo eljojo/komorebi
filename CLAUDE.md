@@ -144,10 +144,11 @@ A test that reads a source file as text names it relative to the root.
   born with the value, and each cheaper scope tried in its place; its header says what a finding means. About a quarter of an hour for all of them.
 - `editor.mjs` — the editor smoke, `nix run .#editor`: the DOM effects the pixel suites cannot see.
 - `embed.mjs` — the bundle against the raw modules, byte for byte. `review.mjs` — review sheets from a clean export of a commit.
-- `adopt.mjs` + `adopt-lib.mjs` — `nix run .#adopt -- survey|render key=value… | apply <folder> | record`: turning a default on. Which built-in
-  looks it moves, each rendered as it is and as it would ship into `archive/reviews/<date>-adopt-<keys>/` with a pick per look, then the picks
-  written as the new default, `GRANDFATHERED` and the kept looks' pins; `record` keeps `test/defaults.json`, which `test/adopt.test.js` holds
-  `DEFAULTS` to, so no default changes unreviewed. Built-in looks only. The pure parts are `adopt-lib.mjs`'s.
+- `adopt.mjs` + `adopt-lib.mjs` — `nix run .#adopt -- …`: turning a default on, built-in looks only. `survey`, then `render` (the look, A/B,
+  into `archive/reviews/<date>-adopt-<keys>/` with a pick per look), `cost` (no pick may lose more than 10 fps), `motion` (video + the pattern
+  measures), `transitions` (the playlists' routes as they are and as picked), `status`; `apply` refuses while any of those questions is open,
+  then writes the new default, `GRANDFATHERED` and the kept looks' pins. `record` keeps `test/defaults.json`, which `test/adopt.test.js` holds
+  `DEFAULTS` to, so no default changes unreviewed. The pure parts are `adopt-lib.mjs`'s.
 - `pattern.mjs` + `pattern-lib.mjs` — `nix run .#pattern -- <video>...`: a dappled-light video (a render or a phone clip) read as
   JSON, its light patches' statistics and how the pattern scrambles and comes back; the pure measures are
   `pattern-lib.mjs`'s, tested by `test/pattern.test.js`.

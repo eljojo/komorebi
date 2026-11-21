@@ -233,12 +233,13 @@
             runtimeInputs = [ pkgs.nodejs_22 pkgs.imagemagick pkgs.git pkgs.gnutar ];
             text = ''exec node test-gl/review.mjs "$@"'';
           };
-          # `nix run .#adopt -- survey|render key=value… | apply <folder> | record` — turning a default on: which built-in looks it
-          # moves, each rendered as it is and as it would ship (Chrome on Metal) into a review folder with a pick per look, and the
-          # picks written into komorebi-params.js and presets.js (test-gl/adopt.mjs's header). render: same first-run setup as pixels.
+          # `nix run .#adopt -- survey|render key=value… | cost|motion|transitions|status|apply <folder> | record` — turning a default
+          # on: which built-in looks it moves, and the four questions an upgrade answers (the look, its cost a frame, the motion, the
+          # routes between looks) into one review folder with a pick per look; then the picks written into komorebi-params.js and
+          # presets.js (test-gl/adopt.mjs's header). Its GPU stages: same first-run setup as pixels; motion uses ffmpeg, as video does.
           adopt = pkgs.writeShellApplication {
             name = "adopt";
-            runtimeInputs = [ pkgs.nodejs_22 pkgs.git ];
+            runtimeInputs = [ pkgs.nodejs_22 pkgs.git pkgs.ffmpeg pkgs.gnutar ];
             text = ''exec node test-gl/adopt.mjs "$@"'';
           };
           # `nix run .#video -- --arboretum <id> --commit <sha> --out test-gl/out/video/<name> --seconds 300` — the headless
