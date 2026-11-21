@@ -7,7 +7,7 @@ import { DEFAULTS, GRANDFATHERED, PARAMS } from "../engine/komorebi-params.js";
 import { FIDELITY_KEYS, PLAYBACK_KEYS } from "../engine/komorebi-session.js";
 import { PLAYLISTS, PRESETS } from "../presets.js";
 import {
-  addGrandfathered, checkRecord, findLook, fpsDrop, groveGroups, lookOrder, namedKeys, paramsKey, parseFlip, parseVariant, pinLook, playlistPairs,
+  addGrandfathered, checkRecord, findLook, fpsDrop, routeFloor, routeMoves, groveGroups, lookOrder, namedKeys, paramsKey, parseFlip, parseVariant, pinLook, playlistPairs,
   questionsOf, resolvePicks, resolveVariant, setDefault, setInLook, splitGroups, survey,
 } from "../test-gl/adopt-lib.mjs";
 
@@ -134,10 +134,27 @@ describe("editing komorebi-params.js", () => {
 
 describe("the four questions", () => {
   test("a frame rate is read as seen, capped at 60, and a pick may lose at most 10 of it", () => {
-    expect(fpsDrop(4, 8)).toEqual({ a: 60, b: 60, drop: 0, slow: false });          // 250 → 125 fps: both above what is shown
+    expect(fpsDrop(4, 8)).toEqual({ a: 60, b: 60, drop: 0, floor: 0, slow: false, unsure: false });   // 250 → 125 fps: both above what is shown
     expect(fpsDrop(16, 20).slow).toBe(false);                                       // 60 → 50
     expect(fpsDrop(16, 21)).toMatchObject({ a: 60, slow: true });                   // 60 → 47.6
     expect(fpsDrop(25, 40).drop).toBeCloseTo(15, 9);                                // 40 → 25
+  });
+  test("cost's noise floor is how far A's own runs lie apart, in fps as seen; a verdict nearer the limit than that is unsure", () => {
+    const r = fpsDrop(20, 25, [19, 26]);                                            // A ran 52.6 to 38.5 fps
+    expect(r.floor).toBeCloseTo(1000 / 19 - 1000 / 26, 9);
+    expect(r).toMatchObject({ drop: 10, slow: false, unsure: true });
+    expect(fpsDrop(20, 21, [19.9, 20.1]).unsure).toBe(false);                      // 1 fps lost, A's runs 0.5 fps apart
+    expect(fpsDrop(16, 17, [15.9, 16.1]).floor).toBe(0);                           // both runs above what is shown
+  });
+  test("transitions' noise floor is pooled over the routes: the largest share by which A's two runs of one route differ", () => {
+    const pairs = [{ a: { maxDL: 2, churnN: 0.1 }, a2: { maxDL: 2.5, churnN: 0.1 } }, { a: { maxDL: 1, churnN: 0.2 }, a2: { maxDL: 1, churnN: 0.21 } }];
+    const floor = routeFloor(pairs);
+    expect(floor.maxDL).toBeCloseTo(0.2, 9);
+    expect(floor.churnN).toBeCloseTo(0.01 / 0.21, 9);
+    expect(routeMoves({ a: { maxDL: 2, churnN: 0.1 }, a2: { maxDL: 2.5, churnN: 0.1 }, b: { maxDL: 2.6, churnN: 0.1 } }, floor)).toEqual([]);
+    expect(routeMoves({ a: { maxDL: 2, churnN: 0.1 }, a2: { maxDL: 2.5, churnN: 0.1 }, b: { maxDL: 4, churnN: 0.2 } }, floor)).toEqual(["maxDL", "churnN"]);
+    expect(routeMoves({ a: { maxDL: 0, churnN: 0 }, a2: { maxDL: 0, churnN: 0 }, b: { maxDL: 0, churnN: 0 } }, floor)).toEqual([]);
+    expect(routeFloor([{ a: { maxDL: 2, churnN: 0.1 } }])).toBeNull();            // run once: no floor
   });
   test("the routes the playlists walk: each once, the last back to the first, only between built-ins", () => {
     const presets = { a: {}, b: {}, c: {} };
@@ -163,6 +180,10 @@ describe("the four questions", () => {
     const picks = { x: "b", y: "b" }, decisions = { picks };
     expect(open({ decisions, cost: { looks: { x: { b: fast }, y: { b: slow } } } }, picks).cost).toBe(true);
     expect(open({ decisions, cost: { looks: { x: { b: fast }, y: { b: slow } } } }, { x: "b", y: "a" }).cost).toBe(false);
+    const noisy = { aMs: 20, bMs: 25, aSpread: [19, 26] };                            // 10 fps lost, A's runs 14 fps apart
+    expect(open({ decisions, cost: { looks: { x: { b: fast }, y: { b: noisy } } } }, picks).cost).toBe(true);
+    const qs = questionsOf({ m, decisions, cost: { looks: { x: { b: fast }, y: { b: noisy } } }, motion: null, transitions: null }, picks, "F");
+    expect(qs.find((q) => q.key === "cost").say).toContain("nix run .#adopt -- cost F --again y");
   });
   test("motion: measured at the pick, or waived in words", () => {
     const picks = { x: "b", y: "b" };
@@ -172,8 +193,14 @@ describe("the four questions", () => {
     expect(open({ decisions: { picks, motion: "  " } }, picks).motion).toBe(true);
   });
   test("transitions: run at the picks, and a route that changes kind is answered in words or by another pick", () => {
-    const picks = { x: "b", y: "b" }, same = { pairs: [{ from: "x", to: "y", a: { kind: "live morph" }, b: { kind: "live morph" } }] };
-    const changed = { pairs: [{ from: "x", to: "y", a: { kind: "live morph" }, b: { kind: "dissolve" } }] };
+    const run = (kind, maxDL) => ({ kind, maxDL, churnN: 0.1 });
+    const picks = { x: "b", y: "b" }, same = { pairs: [{ from: "x", to: "y", a: run("live morph", 2), a2: run("live morph", 2.2), b: run("live morph", 2.1) }] };
+    const changed = { pairs: [{ from: "x", to: "y", a: run("live morph", 2), a2: run("live morph", 2.2), b: run("dissolve", 2.1) }] };
+    const reads = { pairs: [{ from: "x", to: "y", a: run("live morph", 2), a2: run("live morph", 2.2), b: run("live morph", 3) }] };
+    const once = { pairs: [{ from: "x", to: "y", a: run("live morph", 2), b: run("live morph", 2) }] };
+    expect(open({ decisions: { picks }, transitions: { picks, ...reads } }, picks).transitions).toBe(true);    // beyond the noise floor
+    expect(open({ decisions: { picks, transitions: "the brighter step is the new light" }, transitions: { picks, ...reads } }, picks).transitions).toBe(false);
+    expect(open({ decisions: { picks }, transitions: { picks, ...once } }, picks).transitions).toBe(true);     // A run once: no floor
     expect(open({ decisions: { picks }, transitions: { picks, ...same } }, picks).transitions).toBe(false);
     expect(open({ decisions: { picks }, transitions: { picks: null, ...same } }, picks).transitions).toBe(true);   // run before the picks
     expect(open({ decisions: { picks }, transitions: { picks, ...changed } }, picks).transitions).toBe(true);

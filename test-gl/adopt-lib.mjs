@@ -242,9 +242,27 @@ export const keysPhrase = (keys) => `${keys.join(', ')} ${keys.length > 1 ? 'wer
 // may cost a look at most FPS_LIMIT of it (the artist: "it can't be more than 10fps slower on my m4").
 export const FPS_CAP = 60, FPS_LIMIT = 10;
 export const shownFps = (ms) => Math.min(FPS_CAP, 1000 / ms);
-export function fpsDrop(aMs, bMs) {
-  const a = shownFps(aMs), b = shownFps(bMs);
-  return { a, b, drop: a - b, slow: a - b > FPS_LIMIT };
+// The noise floor is how far A's own runs lie apart (aSpread, cost.mjs's smallest to largest run median, in ms), in fps as seen: the
+// same look measured again moves by that much, so a drop nearer the limit than the floor could fall on either side of it, and is unsure.
+export function fpsDrop(aMs, bMs, aSpread) {
+  const a = shownFps(aMs), b = shownFps(bMs), drop = a - b;
+  const floor = aSpread ? shownFps(aSpread[0]) - shownFps(aSpread[1]) : 0;
+  return { a, b, drop, floor, slow: drop > FPS_LIMIT, unsure: Math.abs(drop - FPS_LIMIT) < floor };
+}
+
+// A route's measures, and their noise floor: each route's a is run twice (a and a2), and the floor of a measure is the largest share by
+// which the two runs of one route differ, pooled over every route (a route runs on the wall clock, so the frames it is sampled at shift
+// from run to run). A route reads differently when b lies further from the mean of its two a runs than that share of it. Null when no
+// route was run twice.
+export const ROUTE_MEASURES = ['maxDL', 'churnN'];
+const share = (x, y) => (Math.max(Math.abs(x), Math.abs(y)) > 0 ? Math.abs(x - y) / Math.max(Math.abs(x), Math.abs(y)) : 0);
+export function routeFloor(pairs) {
+  const twice = pairs.filter((p) => p.a2);
+  if (!twice.length) return null;
+  return Object.fromEntries(ROUTE_MEASURES.map((k) => [k, Math.max(...twice.map((p) => share(p.a[k], p.a2[k])))]));
+}
+export function routeMoves(pair, floor) {
+  return ROUTE_MEASURES.filter((k) => share((pair.a[k] + pair.a2[k]) / 2, pair.b[k]) > floor[k]);
 }
 
 // Every route the shipped playlists walk between two built-ins, each once, the last item back to the first (a playlist loops).
@@ -274,13 +292,20 @@ export function questionsOf(state, picks, dir) {
   {
     const want = m.looks.filter((l) => at(l.look) !== 'a').flatMap((l) => (picks ? [at(l.look)] : m.columns.slice(1).map((c) => c.letter)).map((c) => [l.look, c]));
     const missing = cost ? want.filter(([look, c]) => !cost.looks[look]?.[c]) : want;
-    const slow = cost ? want.filter(([look, c]) => cost.looks[look]?.[c]?.slow) : [];
-    const said = (look, c) => { const r = cost.looks[look][c]; return `${look} ${c} (${r.a.toFixed(0)} → ${r.b.toFixed(0)} fps)`; };
-    q.push({ key: 'cost', title: 'Realtime cost', open: !cost || missing.length > 0 || (picks !== null && slow.length > 0),
+    const v = (look, c) => { const r = cost.looks[look][c]; return fpsDrop(r.aMs, r.bMs, r.aSpread); };
+    const measured = cost ? want.filter(([look, c]) => cost.looks[look]?.[c]) : [];
+    const unsure = measured.filter(([look, c]) => v(look, c).unsure);
+    const slow = measured.filter(([look, c]) => v(look, c).slow && !v(look, c).unsure);
+    const said = (look, c) => { const r = v(look, c); return `${look} ${c} (${r.a.toFixed(0)} → ${r.b.toFixed(0)} fps)`; };
+    const noisy = (look, c) => { const r = v(look, c); return `${look} ${c} (${r.a.toFixed(0)} → ${r.b.toFixed(0)} fps, A's runs ${r.floor.toFixed(1)} fps apart)`; };
+    const floor = measured.length ? Math.max(...measured.map(([look, c]) => v(look, c).floor)) : 0;
+    const again = [...new Set(unsure.map(([look]) => look))].map((l) => (/^[\w-]+$/.test(l) ? l : JSON.stringify(l))).join(' ');
+    const sayUnsure = unsure.length ? `inside the noise, the limit nearer than A's own runs lie apart: ${unsure.map(([l, c]) => noisy(l, c)).join(', ')}. Measure them again with nothing else on the GPU: ${run('cost', ` --again ${again}`)}` : '';
+    q.push({ key: 'cost', title: 'Realtime cost', open: !cost || missing.length > 0 || (picks !== null && (slow.length > 0 || unsure.length > 0)),
       say: !cost ? `not measured: ${run('cost')}`
         : missing.length ? `not measured for ${missing.map(([l, c]) => `${l} ${c}`).join(', ')}: ${run('cost')}`
-        : slow.length ? `more than ${FPS_LIMIT} fps slower: ${slow.map(([l, c]) => said(l, c)).join(', ')}${picks ? '. Pick a for these, or make them cheaper' : ''}`
-        : `no look picked loses more than ${FPS_LIMIT} fps (of ${FPS_CAP})` });
+        : slow.length || unsure.length ? [slow.length ? `more than ${FPS_LIMIT} fps slower: ${slow.map(([l, c]) => said(l, c)).join(', ')}${picks ? '. Pick a for these, or make them cheaper' : ''}` : '', sayUnsure].filter(Boolean).join('. ')
+        : `no look picked loses more than ${FPS_LIMIT} fps (of ${FPS_CAP}); the noise floor, A's runs at most ${floor.toFixed(1)} fps apart, leaves every verdict clear` });
   }
   // 2. the look
   q.push({ key: 'look', title: 'The look (A/B)', open: !decisions,
@@ -300,13 +325,20 @@ export function questionsOf(state, picks, dir) {
   {
     const ranAt = transitions?.picks ?? null;
     const stale = transitions && JSON.stringify(ranAt) !== JSON.stringify(picks ?? null);
+    const floor = transitions ? routeFloor(transitions.pairs) : null;
     const changed = transitions ? transitions.pairs.filter((p) => p.a.kind !== p.b.kind) : [];
+    const reads = floor ? transitions.pairs.filter((p) => p.a.kind === p.b.kind && routeMoves(p, floor).length) : [];
     const ok = typeof decisions?.transitions === 'string' && decisions.transitions.trim();
-    q.push({ key: 'transitions', title: 'Transitions', open: !transitions || stale || (changed.length > 0 && !ok),
+    const pct = (x) => `${(100 * x).toFixed(0)}%`;
+    const floorSaid = floor ? `the noise floor, A run twice: ${ROUTE_MEASURES.map((k) => `${k} ${pct(floor[k])}`).join(', ')}` : '';
+    const found = [changed.length ? `${changed.length} route${changed.length > 1 ? 's' : ''} change kind: ${changed.map((p) => `${p.from} → ${p.to} (${p.a.kind} → ${p.b.kind})`).join(', ')}` : '',
+      reads.length ? `${reads.length} route${reads.length > 1 ? 's' : ''} read differently beyond ${floorSaid}: ${reads.map((p) => `${p.from} → ${p.to} (${routeMoves(p, floor).map((k) => `${k} ${p.a[k].toFixed(2)} → ${p.b[k].toFixed(2)}`).join(', ')})`).join(', ')}` : ''].filter(Boolean).join('. ');
+    q.push({ key: 'transitions', title: 'Transitions', open: !transitions || stale || !floor || (found.length > 0 && !ok),
       say: !transitions ? `not run: ${run('transitions')}`
         : stale ? `run at other picks than decisions.json's: ${run('transitions')}`
-        : changed.length ? `${changed.length} route${changed.length > 1 ? 's' : ''} change kind: ${changed.map((p) => `${p.from} → ${p.to} (${p.a.kind} → ${p.b.kind})`).join(', ')}${ok ? `. ${decisions.transitions}` : `. Say why that is fine in decisions.json's "transitions", or pick differently`}`
-        : `${transitions.pairs.length} routes keep their kind (transitions.json has each one's numbers and strips)` });
+        : !floor ? `no noise floor (each route's a was run once): ${run('transitions')}`
+        : found ? `${found}${ok ? `. ${decisions.transitions}` : `. Look at the strips; say why that is fine in decisions.json's "transitions", or pick differently`}`
+        : `${transitions.pairs.length} routes keep their kind and read alike, within ${floorSaid} (transitions.json has each one's numbers and strips)` });
   }
   return q;
 }

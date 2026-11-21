@@ -5,18 +5,20 @@
 //
 // An upgrade answers four questions before it ships, each a stage that writes its answer into the review folder:
 //   the look         render       each moved look as it is (a) and as it would ship (b, c… per variant), on the GPU, measured
-//   realtime cost    cost         each moved look's frame at a and at each other column (test-gl/cost.mjs): no pick may lose more than 10 fps
+//   realtime cost    cost         each moved look's frame at a and at each other column (test-gl/cost.mjs): no pick may lose more than 10 fps,
+//                                 and a verdict nearer that limit than A's own runs lie apart (the noise floor) is measured again
 //   motion           motion       a minute of video of a and of the pick (render-video.mjs), read by the komorebi pattern measures (pattern.mjs)
 //   transitions      transitions  every route the shipped playlists walk with a moved look at either end, as it is and as picked: the route's kind,
-//                                 its largest step in brightness, its churn, and a strip of frames
+//                                 its largest step in brightness, its churn, and a strip of frames; a run twice, for the noise floor
 // Every stage prints which questions are still open and the command that answers each; README.md and index.html say the same.
 //
 //   nix run .#adopt -- survey key=value [key=value …]      which built-ins the new default moves, and which share a grove (seconds)
 //   nix run .#adopt -- render key=value … [--variant 'name:key=*0.82,…'] [--size 640x360] [--dir <folder>]
 //                                                          into archive/reviews/<date>-adopt-<keys>/ (about a second a look a column)
-//   nix run .#adopt -- cost <folder>                       about half a minute a look a column
+//   nix run .#adopt -- cost <folder> [--again look …]      about half a minute a look a column; --again measures those looks afresh
 //   nix run .#adopt -- motion <folder> [look …]            the three looks the flip moves most when none is named; minutes a look
-//   nix run .#adopt -- transitions <folder>                seconds a route; at decisions.json's picks when there is one, else every look at b
+//   nix run .#adopt -- transitions <folder>                seconds a route, three runs of it; at decisions.json's picks when there is one, else
+//                                                          every look at b
 //   nix run .#adopt -- status <folder>                     the questions, and what answers each
 //   nix run .#adopt -- apply <folder> [--allow-split]      the folder's decisions.json written into the sources, and checked
 //   nix run .#adopt -- record                              test/defaults.json brought up to parameters added or removed
@@ -38,8 +40,14 @@
 // cost.json, motion.json + motion/, transitions.json + transitions/, README.md (its questions block is rewritten by each stage; the rest
 // is written once, to be filled in), and src/ (this script and its lib, as the render ran).
 //
+// NOISE FLOORS. A measure means something only beside what it does when nothing changed. Cost: cost.mjs runs A three times, and
+// how far those runs lie apart in fps is the look's floor; a drop nearer the 10 fps limit than that could land on either side, so the
+// question stays open on it until it is measured again (--again) with nothing else on the GPU. Transitions: each route's a runs twice;
+// a route runs on the wall clock, so its frames fall at other moments each run, and the largest share by which a route's two a runs
+// differ, over every route, is the floor that b must clear to read differently (adopt-lib.mjs fpsDrop, routeFloor).
+//
 // DECISIONS. decisions.json is { picks: { "<look>": "a"|"b"|"c"… }, rest: "b"|null, why: { "<look>": "the artist's words" },
-// motion?: "why the motion need not be measured", transitions?: "why the routes that change kind are fine" }: a look the picks leave out
+// motion?: "why the motion need not be measured", transitions?: "why the routes that change kind or read differently are fine" }: a look the picks leave out
 // takes `rest`; a look whose frame did not move keeps the old value, named in it on purpose.
 //
 // APPLY refuses while a question is open (adopt-lib.mjs questionsOf), when the tree's looks are no longer the ones rendered, and when the
@@ -55,7 +63,7 @@ import { extname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   addGrandfathered, checkRecord, FPS_CAP, FPS_LIMIT, flipTravels, fpsDrop, groveGroups, keysPhrase, lookOrder, paramsKey, parseFlip, parseVariant, pick,
-  pinLook, playlistPairs, questionsOf, recordText, resolvePicks, resolveVariant, setDefault, setInLook, splitGroups, survey,
+  pinLook, playlistPairs, questionsOf, ROUTE_MEASURES, recordText, resolvePicks, resolveVariant, routeFloor, routeMoves, setDefault, setInLook, splitGroups, survey,
 } from './adopt-lib.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -181,8 +189,11 @@ function tables(state, picks) {
   const out = [];
   const { cost, motion, transitions } = state;
   if (cost) {
-    out.push(`Cost (${cost.renderer}, ${cost.size.join('×')}; frames a second as seen, capped at ${FPS_CAP}):`, '', '| look | column | a fps | b fps | frame ms a → b | |', '|---|---|---|---|---|---|');
-    for (const [look, cols] of Object.entries(cost.looks)) for (const [c, r] of Object.entries(cols)) out.push(`| ${look} | ${c} | ${r.a.toFixed(1)} | ${r.b.toFixed(1)} | ${r.aMs.toFixed(2)} → ${r.bMs.toFixed(2)} | ${r.slow ? `**${r.drop.toFixed(1)} fps slower**` : ''} |`);
+    out.push(`Cost (${cost.renderer}, ${cost.size.join('×')}; frames a second as seen, capped at ${FPS_CAP}):`, '', '| look | column | a fps | b fps | frame ms a → b | noise floor (how far the A runs lie apart) | |', '|---|---|---|---|---|---|---|');
+    for (const [look, cols] of Object.entries(cost.looks)) for (const [c, r] of Object.entries(cols)) {
+      const v = fpsDrop(r.aMs, r.bMs, r.aSpread);
+      out.push(`| ${look} | ${c} | ${v.a.toFixed(1)} | ${v.b.toFixed(1)} | ${r.aMs.toFixed(2)} → ${r.bMs.toFixed(2)} | ${v.floor.toFixed(1)} fps | ${v.unsure ? '**inside the noise: measure again**' : v.slow ? `**${v.drop.toFixed(1)} fps slower**` : ''} |`);
+    }
     out.push('');
   }
   if (motion) {
@@ -191,8 +202,11 @@ function tables(state, picks) {
     out.push('');
   }
   if (transitions) {
-    out.push(`Transitions (${transitions.pairs.length} routes, motion frozen; ${picks ? 'at the picks' : 'every moved look at b'}):`, '', '| route | kind a → b | max ΔL a → b | churn/σ a → b | strips |', '|---|---|---|---|---|');
-    for (const p of transitions.pairs) out.push(`| ${p.from} → ${p.to} | ${p.a.kind === p.b.kind ? p.a.kind : `**${p.a.kind} → ${p.b.kind}**`} | ${p.a.maxDL.toFixed(2)} → ${p.b.maxDL.toFixed(2)} | ${p.a.churnN.toFixed(3)} → ${p.b.churnN.toFixed(3)} | \`${p.a.strip}\` \`${p.b.strip}\` |`);
+    const floor = routeFloor(transitions.pairs);
+    const floorSaid = floor ? `noise floor, the largest share by which a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${(100 * floor[k]).toFixed(0)}%`).join(', ')}` : 'no noise floor: a run once';
+    out.push(`Transitions (${transitions.pairs.length} routes, motion frozen; ${picks ? 'at the picks' : 'every moved look at b'}; ${floorSaid}):`, '', '| route | kind a → b | max ΔL a (a again) → b | churn/σ a (a again) → b | reads differently | strips |', '|---|---|---|---|---|---|');
+    const again = (p, k, n) => (p.a2 ? ` (${p.a2[k].toFixed(n)})` : '');
+    for (const p of transitions.pairs) out.push(`| ${p.from} → ${p.to} | ${p.a.kind === p.b.kind ? p.a.kind : `**${p.a.kind} → ${p.b.kind}**`} | ${p.a.maxDL.toFixed(2)}${again(p, 'maxDL', 2)} → ${p.b.maxDL.toFixed(2)} | ${p.a.churnN.toFixed(3)}${again(p, 'churnN', 3)} → ${p.b.churnN.toFixed(3)} | ${floor && p.a2 ? routeMoves(p, floor).map((k) => `**${k}**`).join(', ') : ''} | \`${p.a.strip}\` \`${p.b.strip}\` |`);
     out.push('');
   }
   return out;
@@ -302,9 +316,13 @@ async function render(flip, variants, size, dirArg) {
 
 // ---- cost: what each column costs a frame, on this machine's GPU (test-gl/cost.mjs, its defaults: 1920×1080, three runs of 200 frames
 // alternating A and B). Looks handed the same params on top are measured in one call. ----
-function cost(f) {
+function cost(f, again) {
   needBrowser();
   const { dir, state, picks } = f, m = state.m;
+  for (const look of again) {
+    if (!m.looks.some((l) => l.look === look)) throw new Error(`${look}: the flip does not move it`);
+    if (state.cost) delete state.cost.looks[look];   // measured afresh, not averaged with the noisy run
+  }
   mkdirSync(join(dir, 'cost'), { recursive: true });
   const groups = new Map();   // the params on top, as JSON → [look, letter][]
   for (const l of m.looks) {
@@ -330,7 +348,7 @@ function cost(f) {
       const aMs = x.A.summary.wallMs.median, bMs = x.B.summary.wallMs.median;
       for (const [look, c] of members.filter(([l]) => l === x.look)) {
         out.looks[look] ??= {};
-        out.looks[look][c] = { aMs, bMs, aSpread: x.A.summary.wallMs.spread, bSpread: x.B.summary.wallMs.spread, buildA: x.A.summary.buildMs.median, buildB: x.B.summary.buildMs.median, ...fpsDrop(aMs, bMs), file: relative(dir, file) };
+        out.looks[look][c] = { aMs, bMs, aSpread: x.A.summary.wallMs.spread, bSpread: x.B.summary.wallMs.spread, buildA: x.A.summary.buildMs.median, buildB: x.B.summary.buildMs.median, ...fpsDrop(aMs, bMs, x.A.summary.wallMs.spread), file: relative(dir, file) };
       }
     }
     writeJson(join(dir, 'cost.json'), out);   // after each call, so a long run interrupted keeps what it measured
@@ -392,17 +410,19 @@ async function transitions(f) {
   try {
     for (const [i, [from, to]] of pairs.entries()) {
       const row = { from, to };
-      for (const [side, over] of [['a', [{}, {}]], ['b', [overOf(from), overOf(to)]]]) {
+      for (const [side, over] of [['a', [{}, {}]], ['a2', [{}, {}]], ['b', [overOf(from), overOf(to)]]]) {
         const r = await page.evaluate(([x, y, o]) => window.__transition(x, y, o), [from, to, { freeze: true, over }]);
         const fr = r.frames;
         let maxDL = 0, churnN = 0;
         for (let k = 1; k < fr.length; k++) { maxDL = Math.max(maxDL, Math.abs(fr[k].luma - fr[k - 1].luma)); churnN = Math.max(churnN, fr[k].churn / Math.max(1, Math.sqrt(fr[k].variance))); }
+        row[side] = { kind: r.info.kind, maxDL, churnN, frames: fr.length };
+        if (side === 'a2') continue;   // the floor's run: its numbers only
         const strip = `transitions/${String(i + 1).padStart(2, '0')}-${side}.png`;
         writeFileSync(join(dir, strip), Buffer.from((await page.evaluate(([ids, c]) => window.__strip(ids, c), [fr.map((x) => x.id), 8])).split(',')[1], 'base64'));
-        row[side] = { kind: r.info.kind, maxDL, churnN, frames: fr.length, strip };
+        row[side].strip = strip;
       }
       out.pairs.push(row);
-      console.log(`  ${`${from} → ${to}`.padEnd(54)} ${row.a.kind === row.b.kind ? row.a.kind : `${row.a.kind} → ${row.b.kind}  CHANGES KIND`}   ΔL ${row.a.maxDL.toFixed(2)} → ${row.b.maxDL.toFixed(2)}   churn/σ ${row.a.churnN.toFixed(3)} → ${row.b.churnN.toFixed(3)}`);
+      console.log(`  ${`${from} → ${to}`.padEnd(54)} ${row.a.kind === row.b.kind ? row.a.kind : `${row.a.kind} → ${row.b.kind}  CHANGES KIND`}   ΔL ${row.a.maxDL.toFixed(2)} (${row.a2.maxDL.toFixed(2)}) → ${row.b.maxDL.toFixed(2)}   churn/σ ${row.a.churnN.toFixed(3)} (${row.a2.churnN.toFixed(3)}) → ${row.b.churnN.toFixed(3)}`);
     }
   } finally { await browser.close(); }
   writeJson(join(dir, 'transitions.json'), out);
@@ -478,15 +498,19 @@ const PAGE_HELPERS = `(() => {
 // costs a frame), the decisions.json the picks make, and the routes and the motion as measured.
 function indexHtml(state, picks, qs) {
   const { m, cost, motion, transitions } = state;
+  const costOf = (look, c) => { const r = cost?.looks[look]?.[c]; return r ? { ...r, ...fpsDrop(r.aMs, r.bMs, r.aSpread) } : null; };
   const shown = m.looks.filter((r) => r.visible).sort((x, y) => x.rank - y.rank)
-    .map((r) => ({ rank: r.rank, look: r.look, cells: r.cells.map((c) => ({ letter: c.letter, id: c.id, file: c.file, mean: c.mean ?? 0, moved: c.moved ?? 0, same: c.same ?? false, cost: cost?.looks[r.look]?.[c.letter] ?? null })) }));
+    .map((r) => ({ rank: r.rank, look: r.look, cells: r.cells.map((c) => ({ letter: c.letter, id: c.id, file: c.file, mean: c.mean ?? 0, moved: c.moved ?? 0, same: c.same ?? false, cost: costOf(r.look, c.letter) })) }));
   const data = { flip: m.flip, from: m.from, columns: m.columns, groups: m.groups, routed: m.routed, quiet: m.looks.filter((r) => !r.visible).map((r) => r.look), still: m.still, looks: shown,
     picks: picks ?? {}, why: state.decisions?.why ?? {}, rest: state.decisions?.rest ?? 'b', motionWhy: state.decisions?.motion ?? '', transitionsWhy: state.decisions?.transitions ?? '',
     fpsLimit: FPS_LIMIT, fpsCap: FPS_CAP };
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const qHtml = qs.map((q) => `<li class="${q.open ? 'open' : 'done'}"><b>${esc(q.title)}.</b> ${esc(q.say)}</li>`).join('');
   const motionHtml = motion ? `<h2>Motion</h2><p>${CLIP.seconds} s at ${CLIP.size} of a and of the pick, read by pattern.mjs; B − A.</p><div class="scroll"><table><tr><th>look</th><th>pick</th>${MEASURES.map(([n]) => `<th>${esc(n)}</th>`).join('')}<th>videos</th></tr>${Object.entries(motion.looks).map(([look, r]) => `<tr><td>${esc(look)}</td><td>${r.pick}</td>${MEASURES.map(([n]) => `<td>${fmtDelta(r.a[n], r.b[n])}</td>`).join('')}<td><a href="${r.aVideo}">a</a> <a href="${r.bVideo}">${r.pick}</a></td></tr>`).join('')}</table></div>` : '';
-  const transHtml = transitions ? `<h2>Transitions</h2><p>${transitions.pairs.length} routes, motion frozen, ${transitions.picks ? 'at the picks' : 'every moved look at b'}: a as it is, b as it would ship.</p>${transitions.pairs.map((p) => `<div class="route${p.a.kind !== p.b.kind ? ' changed' : ''}"><h3>${esc(p.from)} → ${esc(p.to)}: ${p.a.kind === p.b.kind ? esc(p.a.kind) : `${esc(p.a.kind)} → ${esc(p.b.kind)}`}</h3><p>largest step in brightness ${p.a.maxDL.toFixed(2)} → ${p.b.maxDL.toFixed(2)} · churn/σ ${p.a.churnN.toFixed(3)} → ${p.b.churnN.toFixed(3)}</p><div class="strips"><a href="${p.a.strip}"><img loading="lazy" src="${p.a.strip}"></a><a href="${p.b.strip}"><img loading="lazy" src="${p.b.strip}"></a></div></div>`).join('')}` : '';
+  const floor = transitions ? routeFloor(transitions.pairs) : null;
+  const moves = (p) => (floor && p.a2 ? routeMoves(p, floor) : []);
+  const again = (p, k, n) => (p.a2 ? ` (again ${p.a2[k].toFixed(n)})` : '');
+  const transHtml = transitions ? `<h2>Transitions</h2><p>${transitions.pairs.length} routes, motion frozen, ${transitions.picks ? 'at the picks' : 'every moved look at b'}: a as it is, b as it would ship. ${floor ? `Noise floor, the largest share by which a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${(100 * floor[k]).toFixed(0)}%`).join(', ')}; a route past it reads differently.` : 'No noise floor: a was run once.'}</p>${transitions.pairs.map((p) => `<div class="route${p.a.kind !== p.b.kind || moves(p).length ? ' changed' : ''}"><h3>${esc(p.from)} → ${esc(p.to)}: ${p.a.kind === p.b.kind ? esc(p.a.kind) : `${esc(p.a.kind)} → ${esc(p.b.kind)}`}${moves(p).length ? `, reads differently (${moves(p).join(', ')})` : ''}</h3><p>largest step in brightness ${p.a.maxDL.toFixed(2)}${again(p, 'maxDL', 2)} → ${p.b.maxDL.toFixed(2)} · churn/σ ${p.a.churnN.toFixed(3)}${again(p, 'churnN', 3)} → ${p.b.churnN.toFixed(3)}</p><div class="strips"><a href="${p.a.strip}"><img loading="lazy" src="${p.a.strip}"></a><a href="${p.b.strip}"><img loading="lazy" src="${p.b.strip}"></a></div></div>`).join('')}` : '';
   return `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(Object.keys(m.flip).join(', '))} on by default</title>
@@ -521,7 +545,7 @@ button, select { background: #2a2a2a; color: var(--fg); border: 1px solid var(--
 <h2>Motion and routes, in words</h2>
 <p>Only where a question asks for them: why the motion need not be filmed, and why routes that change kind are fine.</p>
 <input id="motionWhy" class="wide" placeholder="motion: why it need not be measured (optional)">
-<input id="transitionsWhy" class="wide" placeholder="transitions: why the routes that change kind are fine (optional)">
+<input id="transitionsWhy" class="wide" placeholder="transitions: why the routes that change kind or read differently are fine (optional)">
 ${motionHtml}
 ${transHtml}
 <h2>decisions.json</h2>
@@ -541,7 +565,7 @@ for (const l of D.looks) {
   for (const c of l.cells) {
     const d = document.createElement('div'); d.className = 'cell'; d.dataset.letter = c.letter;
     const stat = c.letter === 'a' ? 'as it is' : c.same ? 'no visible change' : 'mean ' + c.mean.toFixed(2) + ' · ' + (c.moved * 100).toFixed(1) + ' % of pixels';
-    const fps = c.cost ? ' <span class="' + (c.cost.slow ? 'slow' : '') + '">' + c.cost.a.toFixed(0) + ' → ' + c.cost.b.toFixed(0) + ' fps</span>' : '';
+    const fps = c.cost ? ' <span class="' + (c.cost.slow || c.cost.unsure ? 'slow' : '') + '" title="noise floor: the A runs lie ' + c.cost.floor.toFixed(1) + ' fps apart">' + c.cost.a.toFixed(0) + ' → ' + c.cost.b.toFixed(0) + ' fps' + (c.cost.unsure ? ', inside the noise' : '') + '</span>' : '';
     d.innerHTML = '<a href="' + c.file + '" target="_blank"><img loading="lazy" src="' + c.file + '"></a><label><input type="radio" name="p' + l.rank + '" value="' + c.letter + '"' + (picks[l.look] === c.letter ? ' checked' : '') + '> <b>' + c.id + '</b> ' + stat + fps + '</label>';
     cells.appendChild(d);
   }
@@ -560,7 +584,9 @@ function update() {
   const warn = [];
   const missing = D.looks.filter((l) => !chosen(l.look));
   if (missing.length) warn.push(missing.length + ' looks have no pick');
-  const slow = D.looks.filter((l) => l.cells.find((c) => c.letter === chosen(l.look))?.cost?.slow);
+  const slow = D.looks.filter((l) => { const c = l.cells.find((x) => x.letter === chosen(l.look))?.cost; return c?.slow && !c.unsure; });
+  const unsure = D.looks.filter((l) => l.cells.find((c) => c.letter === chosen(l.look))?.cost?.unsure);
+  if (unsure.length) warn.push('inside the noise floor as picked, to measure again: ' + unsure.map((l) => l.look).join(', '));
   if (slow.length) warn.push('more than ' + D.fpsLimit + ' fps slower as picked: ' + slow.map((l) => l.look).join(', '));
   // looks that share a grove travel without a dissolve only while they agree on the flip
   for (const g of D.groups) { const ps = new Set(g.map((look) => (chosen(look) ?? 'b') === 'a' ? 'a' : 'b+')); if (ps.size > 1) warn.push('one grove, split: ' + g.map((look) => look + ' ' + (chosen(look) ?? 'b')).join(' · ')); }
@@ -658,7 +684,7 @@ try {
     const variants = take('--variant').map(parseVariant), size = (take('--size')[0] ?? '640x360').split('x').map(Number), dir = take('--dir')[0];
     if (size.length !== 2 || !size.every((n) => Number.isInteger(n) && n > 0)) throw new Error('--size WxH');
     await render(flipFrom(args), variants, size, dir);
-  } else if (cmd === 'cost') cost(folder());
+  } else if (cmd === 'cost') { const f = folder(); cost(f, args); }
   else if (cmd === 'motion') { const f = folder(); motion(f, args); }
   else if (cmd === 'transitions') await transitions(folder());
   else if (cmd === 'status') report(folder());
