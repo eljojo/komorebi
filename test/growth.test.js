@@ -169,6 +169,10 @@ test("spur leaves: the clusters hang along the shoots of the last N years, the s
   const g1 = grove({ ...one, leaf_years: 1 }), g4 = grove({ ...one, leaf_years: 4 });
   expect(g4.leaves.length).toBe(g1.leaves.length);
   expect(g4.leaves).not.toEqual(g1.leaves);
+  const young = { ...one, growth_years: 5, branch_levels: 4, limb_count: 10, branch_children: 3 };
+  const y1 = grove({ ...young, leaf_years: 1 }), y5 = grove({ ...young, leaf_years: 5 });
+  expect(y5.leaves.length).toBe(y1.leaves.length);
+  expect(y5.leaves).not.toEqual(y1.leaves);
 });
 
 test("twig haze: kids side twigs on each of the last year's shoots, that many orders deep, each finer than its stem, on a stream of its own", () => {

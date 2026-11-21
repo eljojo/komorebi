@@ -258,7 +258,7 @@ export function growBuds(spec, rng, out){
   while(walk.length){ const m = walk.pop(), n = M[m]; if(!n.alive) continue;
     if(isLeafy.has(n.shoot) && shoots[n.shoot].metas[0] === m) order.push(n.shoot);   // a shoot, where the walk enters it
     for(let i = n.kids.length - 1; i >= 0; i--) walk.push(n.kids[i]); }
-  const bundles = [], nb = spec.bearing > 0 ? Math.min(spec.bearing, order.length) : order.length;
+  const bundles = [], nb = spec.bearing > 0 ? Math.min(spec.bearing, newest.length) : newest.length;
   for(let c = 0; c < nb; c++) bundles.push(order.slice(Math.floor(c*order.length/nb), Math.floor((c + 1)*order.length/nb)));
   const leafy = [], twigOf = new Map(), newestSet = isNewest;   // shoot index → the cluster its bundle is
   bundles.forEach((b, c) => { for(const i of b) twigOf.set(i, c); leafy.push(b); });
