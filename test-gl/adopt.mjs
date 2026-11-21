@@ -13,7 +13,7 @@
 // Every stage prints which questions are still open and the command that answers each; README.md and index.html say the same.
 //
 //   nix run .#adopt -- survey key=value [key=value …]      which built-ins the new default moves, and which share a grove (seconds)
-//   nix run .#adopt -- render key=value … [--variant 'name:key=*0.82,…'] [--size 640x360] [--dir <folder>]
+//   nix run .#adopt -- render key=value … [--variant 'name:key=*0.82,…'] [--size 1920x1080] [--dir <folder>]
 //                                                          into archive/reviews/<date>-adopt-<keys>/ (about a second a look a column)
 //   nix run .#adopt -- cost <folder> [--again look …]      about half a minute a look a column; --again measures those looks afresh
 //   nix run .#adopt -- motion <folder> [look …]            the three looks the flip moves most when none is named; minutes a look
@@ -36,15 +36,18 @@
 //
 // THE FOLDER. sheets/ (looks most changed first, six to a sheet: a, b, c…, where b moves (Δ ×16), and a zoom of a and b where the
 // change is small), frames/<id>.png at full size, where an id is the look's rank and its column (3b), index.html (the four questions, a
-// pick per look and the decisions.json it makes), manifest.json (the flip, the params, the commit, source hashes, every frame's hash),
-// cost.json, motion.json + motion/, transitions.json + transitions/, README.md (its questions block is rewritten by each stage; the rest
+// pick per look and the decisions.json it makes; each look a against its column split at the pointer, whole and up close where it changes
+// most; each filmed look and each route as two videos played together, split or side by side, over a plot of what changes frame by
+// frame), manifest.json (the flip, the params, the commit, source hashes, every frame's hash, the crops), cost.json, motion.json + motion/
+// (the videos, their pattern reads and per-frame series), transitions.json + transitions/ (each route's videos, strips and series), README.md (its questions block is rewritten by each stage; the rest
 // is written once, to be filled in), and src/ (this script and its lib, as the render ran).
 //
 // NOISE FLOORS. A measure means something only beside what it does when nothing changed. Cost: cost.mjs runs A three times, and
 // how far those runs lie apart in fps is the look's floor; a drop nearer the 10 fps limit than that could land on either side, so the
 // question stays open on it until it is measured again (--again) with nothing else on the GPU. Transitions: each route's a runs twice;
-// a route runs on the wall clock, so its frames fall at other moments each run, and the most a route's two a runs differ, over every
-// route, is the floor that b must clear to read differently (adopt-lib.mjs fpsDrop, routeFloor).
+// a route runs on the wall clock, so its frames fall at other moments each run, and how far a route's two a runs differ, at the 90th
+// percentile over the routes, is the floor; b reads differently outside its route's two a runs widened by it, and a route whose own two
+// runs differ beyond it is named unsteady (adopt-lib.mjs fpsDrop, routeFloor).
 //
 // DECISIONS. decisions.json is { picks: { "<look>": "a"|"b"|"c"… }, rest: "b"|null, why: { "<look>": "the artist's words" },
 // motion?: "why the motion need not be measured", transitions?: "why the routes that change kind or read differently are fine" }: a look the picks leave out
@@ -56,14 +59,15 @@
 // test/defaults.json; evaluates presets.js again and holds every look to what it was shown as; and lists what is left to write by hand.
 // It commits nothing.
 // ============================================================================
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  addGrandfathered, checkRecord, FPS_CAP, FPS_LIMIT, flipTravels, fpsDrop, groveGroups, keysPhrase, lookOrder, paramsKey, parseFlip, parseVariant, pick,
-  pinLook, playlistPairs, questionsOf, ROUTE_MEASURES, recordText, resolvePicks, resolveVariant, routeFloor, routeMoves, setDefault, setInLook, splitGroups, survey,
+  addGrandfathered, checkRecord, cropWindows, FPS_CAP, frameDelta, FPS_LIMIT, flipTravels, fpsDrop, groveGroups, keysPhrase, lookOrder, paramsKey, parseFlip, parseVariant, pick,
+  pinLook, playlistPairs, questionsOf, ROUTE_MEASURES, recordText, resolvePicks, resolveVariant, routeFloor, routeMoves, routeUnsteady, setDefault, setInLook, splitGroups, survey,
 } from './adopt-lib.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -75,6 +79,13 @@ const FREEZE = ['wind_strength', 'weather_variability', 'drift_auto', 'auto_qual
 // the motion stage's clip: long enough for the pattern measures' slow terms (the scramble and its return), small enough to render in a minute or two;
 // pattern.mjs reads frames at a short side of 360 whatever it is given
 const CLIP = { seconds: 60, size: '640x360' };
+// where a still is shown up close: CROP.n windows, each CROP.win of a CROP.grid-cell side (a fifth of the frame: 384×216 of 1080p), shown at
+// twice their own pixels
+const CROP = { grid: 40, win: 8, n: 3, scale: 2 };
+// the per-frame change under a video is read at this size (ffmpeg's area scale), which averages the codec's own noise away
+const SERIES_SIZE = [320, 180];
+// a route is rendered at this size (CSS px; the harness's own is 320×180), and its strip shows STRIP of its frames, evenly spaced
+const ROUTE_SIZE = [640, 360], STRIP = 16;
 // the measures the motion table leads with (pattern-lib.mjs's header says what each is)
 const MEASURES = [
   ['NNI', (r) => r.spatial.nni.mean], ["Moran's I", (r) => r.spatial.moransI.mean], ['β', (r) => r.spatial.beta.mean],
@@ -180,7 +191,7 @@ function report(f) {
   const readme = existsSync(rpath) ? readFileSync(rpath, 'utf8') : '';
   const re = /<!-- adopt:questions[\s\S]*?<!-- \/adopt:questions -->/;
   writeFileSync(rpath, re.test(readme) ? readme.replace(re, block) : readme.replace(/\*\*Seen\.\*\*/, `${block}\n\n**Seen.**`));
-  writeFileSync(join(dir, 'index.html'), indexHtml(state, picks, qs));
+  writeFileSync(join(dir, 'index.html'), indexHtml(state, picks, qs, dir));
   return qs;
 }
 
@@ -203,7 +214,7 @@ function tables(state, picks) {
   }
   if (transitions) {
     const floor = routeFloor(transitions.pairs);
-    const floorSaid = floor ? `noise floor, the most a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${floor[k].toFixed(3)}`).join(', ')}` : 'no noise floor: a run once';
+    const floorSaid = floor ? `noise floor, how far a route's two a runs differ (90th percentile): ${ROUTE_MEASURES.map((k) => `${k} ${floor[k].toFixed(3)}`).join(', ')}` : 'no noise floor: a run once';
     out.push(`Transitions (${transitions.pairs.length} routes, motion frozen; ${picks ? 'at the picks' : 'every moved look at b'}; ${floorSaid}):`, '', '| route | kind a → b | max ΔL a (a again) → b | churn/σ a (a again) → b | reads differently | strips |', '|---|---|---|---|---|---|');
     const again = (p, k, n) => (p.a2 ? ` (${p.a2[k].toFixed(n)})` : '');
     for (const p of transitions.pairs) out.push(`| ${p.from} → ${p.to} | ${p.a.kind === p.b.kind ? p.a.kind : `**${p.a.kind} → ${p.b.kind}**`} | ${p.a.maxDL.toFixed(2)}${again(p, 'maxDL', 2)} → ${p.b.maxDL.toFixed(2)} | ${p.a.churnN.toFixed(3)}${again(p, 'churnN', 3)} → ${p.b.churnN.toFixed(3)} | ${floor && p.a2 ? routeMoves(p, floor).map((k) => `**${k}**`).join(', ') : ''} | \`${p.a.strip}\` \`${p.b.strip}\` |`);
@@ -232,6 +243,54 @@ async function openHarness(viewport) {
   const renderer = (await page.evaluate(() => window.__glinfo())).renderer;
   assertHardwareRenderer(renderer, VARIANT);
   return { browser, page, renderer };
+}
+
+// ---- videos: frames into one, and two read side by side, frame by frame ----
+// The frames a capture ids, as PNGs from the page, into an H.264 file at 60 frames a second (a route runs on the page's frame clock).
+async function encodeFrames(page, ids, file) {
+  const p = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', '60', '-c:v', 'png', '-i', '-', '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+    '-c:v', 'libx264', '-crf', '12', '-preset', 'fast', '-pix_fmt', 'yuv420p', file], { stdio: ['pipe', 'ignore', 'inherit'] });
+  const done = new Promise((ok, no) => p.on('close', (c) => (c === 0 ? ok() : no(new Error(`ffmpeg exited ${c} writing ${file}`)))));
+  for (const id of ids) {
+    const png = await page.evaluate((i) => window.__png(i), id);
+    if (!p.stdin.write(Buffer.from(png.split(',')[1], 'base64'))) await once(p.stdin, 'drain');
+  }
+  p.stdin.end();
+  await done;
+}
+async function* rawFrames(file) {
+  const [w, h] = SERIES_SIZE, size = w * h * 3;
+  const p = spawn('ffmpeg', ['-v', 'error', '-i', file, '-vf', `scale=${w}:${h}:flags=area`, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let err = '', whole = false;
+  p.stderr.on('data', (d) => { err += d; });
+  const closed = new Promise((ok) => p.on('close', ok));
+  try {
+    let buf = Buffer.alloc(0);
+    for await (const chunk of p.stdout) {
+      buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
+      while (buf.length >= size) { yield buf.subarray(0, size); buf = buf.subarray(size); }
+    }
+    whole = true;
+  } finally { if (!whole) p.kill(); }   // stopped at the shorter video's end: its complaint about the closed pipe is not an error
+  const code = await closed;
+  if (code !== 0) throw new Error(`ffmpeg exited ${code} reading ${file}: ${err.trim()}`);
+}
+const videoFps = (file) => { const [n, d] = sh('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=avg_frame_rate', '-of', 'csv=p=0', file]).trim().split('/').map(Number); return d ? n / d : n; };
+// What the page plots under a pair of videos, per frame: how much a changed from its frame before, how much b did, and how far apart a and
+// b are at that frame (frameDelta, 0–255). The shorter video sets the length.
+async function frameSeries(fileA, fileB) {
+  const A = rawFrames(fileA), B = rawFrames(fileB), out = { fps: videoFps(fileA), size: SERIES_SIZE, a: [], b: [], ab: [] };
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+  let pa = null, pb = null;
+  try {
+    for (;;) {
+      const [x, y] = await Promise.all([A.next(), B.next()]);
+      if (x.done || y.done) break;
+      out.a.push(pa ? r3(frameDelta(pa, x.value)) : 0); out.b.push(pb ? r3(frameDelta(pb, y.value)) : 0); out.ab.push(r3(frameDelta(x.value, y.value)));
+      pa = x.value; pb = y.value;
+    }
+  } finally { await A.return(); await B.return(); }
+  return out;
 }
 
 // ---- render: the look ----
@@ -294,7 +353,7 @@ async function render(flip, variants, size, dirArg) {
   for (const f of ['test-gl/adopt.mjs', 'test-gl/adopt-lib.mjs']) copyFileSync(join(ROOT, f), join(dir, 'src', f.split('/').pop()));
   const strip = (r) => ({ look: r.look, rank: r.rank ?? null, sheet: r.sheet ?? null, visible: r.visible, keys: r.keys, before: r.before,
     cells: r.cells.map((c) => ({ letter: c.letter, id: c.id ?? null, file: c.file ?? null, over: c.over, harness_hash: c.hash, sha256: c.sha256 ?? null,
-      ...(c.letter === 'a' ? {} : { mean: c.mean, moved: c.moved, max: c.max, same: c.same }) })) });
+      ...(c.letter === 'a' ? {} : { mean: c.mean, moved: c.moved, max: c.max, same: c.same, crops: c.crops }) })) });
   const manifest = {
     folder: shownDir(dir),
     question: `Turn ${keysPhrase(Object.keys(flip)).replace(/ (was|were)$/, '')} on by default: which built-in looks take it, and which keep what they were made with?`,
@@ -359,7 +418,7 @@ function cost(f, again) {
 }
 
 // ---- motion: a minute of video of a and of the pick, read by the pattern measures ----
-function motion(f, named) {
+async function motion(f, named) {
   needBrowser();
   const { dir, state, picks } = f, m = state.m;
   const ranked = m.looks.filter((l) => l.visible).sort((x, y) => x.rank - y.rank).map((l) => l.look);
@@ -389,7 +448,14 @@ function motion(f, named) {
       const res = JSON.parse(readFileSync(pj, 'utf8'));
       r[side] = Object.fromEntries(MEASURES.map(([n, get]) => [n, get(res) ?? null]));
       r[`${side}Video`] = relative(dir, join(vdir, 'delivery.mp4'));
+      // the delivery is HEVC, which not every browser plays: the page plays an H.264 copy
+      const copy = join(vdir, 'compare.mp4');
+      if (!existsSync(copy)) sh('ffmpeg', ['-v', 'error', '-y', '-i', join(vdir, 'delivery.mp4'), '-c:v', 'libx264', '-crf', '14', '-preset', 'fast', '-pix_fmt', 'yuv420p', copy]);
+      r[`${side}Compare`] = relative(dir, copy);
     }
+    const series = join(dir, 'motion', `${slug(look)}-${p}-series.json`);
+    if (!existsSync(series)) writeJson(series, await frameSeries(join(dir, r.aVideo), join(dir, r.bVideo)));
+    r.series = relative(dir, series);
     out.looks[look] = r;
     writeJson(join(dir, 'motion.json'), out);
   }
@@ -405,22 +471,29 @@ async function transitions(f) {
   const pairs = playlistPairs(f.s.before.playlists, f.s.before.presets).filter(([a, b]) => Object.keys(overOf(a)).length || Object.keys(overOf(b)).length);
   if (!pairs.length) { console.log('no shipped route has a look that changes at either end'); }
   mkdirSync(join(dir, 'transitions'), { recursive: true });
-  const { browser, page, renderer } = await openHarness({ width: 640, height: 360 });
-  const out = { renderer, picks: picks ?? null, pairs: [] };
+  const { browser, page, renderer } = await openHarness({ width: ROUTE_SIZE[0], height: ROUTE_SIZE[1] });
+  const out = { renderer, picks: picks ?? null, size: ROUTE_SIZE, pairs: [] };
   try {
     for (const [i, [from, to]] of pairs.entries()) {
       const row = { from, to };
       for (const [side, over] of [['a', [{}, {}]], ['a2', [{}, {}]], ['b', [overOf(from), overOf(to)]]]) {
-        const r = await page.evaluate(([x, y, o]) => window.__transition(x, y, o), [from, to, { freeze: true, over }]);
+        const r = await page.evaluate(([x, y, o]) => window.__transition(x, y, o), [from, to, { freeze: true, over, size: ROUTE_SIZE }]);
         const fr = r.frames;
         let maxDL = 0, churnN = 0;
         for (let k = 1; k < fr.length; k++) { maxDL = Math.max(maxDL, Math.abs(fr[k].luma - fr[k - 1].luma)); churnN = Math.max(churnN, fr[k].churn / Math.max(1, Math.sqrt(fr[k].variance))); }
+        const ids = fr.map((x) => x.id), nn = String(i + 1).padStart(2, '0');
         row[side] = { kind: r.info.kind, maxDL, churnN, frames: fr.length };
-        if (side === 'a2') continue;   // the floor's run: its numbers only
-        const strip = `transitions/${String(i + 1).padStart(2, '0')}-${side}.png`;
-        writeFileSync(join(dir, strip), Buffer.from((await page.evaluate(([ids, c]) => window.__strip(ids, c), [fr.map((x) => x.id), 8])).split(',')[1], 'base64'));
-        row[side].strip = strip;
+        if (side !== 'a2') {   // the floor's run keeps its numbers only
+          const strip = `transitions/${nn}-${side}.png`, video = `transitions/${nn}-${side}.mp4`;
+          const some = Array.from({ length: Math.min(STRIP, ids.length) }, (_, k) => ids[Math.round((k * (ids.length - 1)) / Math.max(1, STRIP - 1))]);   // the video holds every frame
+          writeFileSync(join(dir, strip), Buffer.from((await page.evaluate(([x, c]) => window.__strip(x, c), [some, 8])).split(',')[1], 'base64'));
+          await encodeFrames(page, ids, join(dir, video));
+          Object.assign(row[side], { strip, video });
+        }
+        await page.evaluate((x) => window.__free(x), ids);
       }
+      row.series = `transitions/${String(i + 1).padStart(2, '0')}-series.json`;
+      writeJson(join(dir, row.series), await frameSeries(join(dir, row.a.video), join(dir, row.b.video)));
       out.pairs.push(row);
       console.log(`  ${`${from} → ${to}`.padEnd(54)} ${row.a.kind === row.b.kind ? row.a.kind : `${row.a.kind} → ${row.b.kind}  CHANGES KIND`}   ΔL ${row.a.maxDL.toFixed(2)} (${row.a2.maxDL.toFixed(2)}) → ${row.b.maxDL.toFixed(2)}   churn/σ ${row.a.churnN.toFixed(3)} (${row.a2.churnN.toFixed(3)}) → ${row.b.churnN.toFixed(3)}`);
     }
@@ -451,23 +524,23 @@ function readme(m) {
 
 // In the page: measure a capture against another, and lay sheets out. Strings, so the node side never needs a PNG decoder.
 const PAGE_HELPERS = `(() => {
-  const TOL = ${TOL}, MOVE = ${MOVE};
+  const TOL = ${TOL}, MOVE = ${MOVE}, CROP = ${JSON.stringify(CROP)};
+  ${cropWindows.toString()}
   async function pixels(url){ const img = new Image(); img.src = url; await img.decode(); const c = new OffscreenCanvas(img.width, img.height);
     const x = c.getContext('2d'); x.drawImage(img, 0, 0); return { w: img.width, h: img.height, d: x.getImageData(0, 0, img.width, img.height).data, img }; }
   window.__adoptMeasure = async (aId, bId) => {
     const exact = window.__diff(aId, bId), png = window.__png(bId);
     if (exact.equal) return { png, mean: 0, moved: 0, max: 0, same: true, diff: null, zoom: null };
     const A = await pixels(window.__png(aId)), B = await pixels(png), n = A.w * A.h;
-    let sum = 0, moved = 0; const cell = new Float64Array(16 * 16);
+    const G = CROP.grid; let sum = 0, moved = 0; const cell = new Float64Array(G * G);
     for (let p = 0; p < n; p++) { const i = p * 4; let t = 0, m = 0;
       for (let k = 0; k < 3; k++) { const d = Math.abs(A.d[i + k] - B.d[i + k]); t += d; if (d > m) m = d; }
       sum += t / 3; if (m > MOVE) moved++;
-      cell[Math.floor((Math.floor(p / A.w) / A.h) * 16) * 16 + Math.floor(((p % A.w) / A.w) * 16)] += t; }
+      cell[Math.floor((Math.floor(p / A.w) / A.h) * G) * G + Math.floor(((p % A.w) / A.w) * G)] += t; }
     const mean = sum / n;
-    // where a change is small it is shown zoomed: the quarter-size window (4×4 of the 16×16 cells) that moves most
-    let best = -1, bx = 0, by = 0;
-    for (let y = 0; y <= 12; y++) for (let x = 0; x <= 12; x++) { let s = 0; for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) s += cell[(y + j) * 16 + x + i]; if (s > best) { best = s; bx = x; by = y; } }
-    return { png, mean, moved: moved / n, max: exact.maxDelta, same: exact.maxDelta <= TOL, diff: exact.png, zoom: mean < 2 ? [bx / 16, by / 16, 0.25, 0.25] : null };
+    const crops = cropWindows(cell, G, CROP.win, CROP.n);
+    // the sheet shows the densest crop zoomed where the change is small
+    return { png, mean, moved: moved / n, max: exact.maxDelta, same: exact.maxDelta <= TOL, diff: exact.png, crops, zoom: mean < 2 && crops.length ? [crops[0].x, crops[0].y, crops[0].w, crops[0].h] : null };
   };
   window.__adoptSheet = async (rows, title, [tw, th]) => {
     const lab = 22, pad = 6, head = 30;
@@ -494,23 +567,136 @@ const PAGE_HELPERS = `(() => {
   };
 })()`;
 
+// The page's two comparers, handed to index.html as source and never run here. Each shows a and b at once: side by side, or as one
+// frame split where the pointer is, a to the left of the split and b to the right, the split following the pointer (the artist: "split in
+// half and move with the cursor").
+function pageComparers() {
+  const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
+  const tag = (x, text, X, Y, right) => {
+    x.font = '600 13px system-ui, sans-serif'; const w = x.measureText(text).width + 10;
+    x.fillStyle = 'rgba(0,0,0,0.6)'; x.fillRect(right ? X - w : X, Y, w, 20); x.fillStyle = '#fff'; x.fillText(text, (right ? X - w : X) + 5, Y + 14);
+  };
+  // one frame of a and b, split at f (0–1 of the width): a left of it, b right
+  const split = (x, A, B, src, W, H, f, labels) => {
+    const [sx, sy, sw, sh] = src;
+    x.drawImage(A, sx, sy, sw, sh, 0, 0, W, H);
+    x.save(); x.beginPath(); x.rect(f * W, 0, W - f * W, H); x.clip(); x.drawImage(B, sx, sy, sw, sh, 0, 0, W, H); x.restore();
+    x.fillStyle = '#fff'; x.fillRect(Math.round(f * W) - 1, 0, 2, H);
+    tag(x, labels[0], 6, 6, false); tag(x, labels[1], W - 6, 6, true);
+  };
+  const follow = (k, set) => {
+    const at = (e) => { const r = k.getBoundingClientRect(); set(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))); };
+    k.addEventListener('pointermove', at); k.addEventListener('pointerdown', at);
+  };
+
+  // A still, whole or a crop ({ x, y, w, h }, fractions of the frame) at `scale` times its own pixels, unsmoothed, so a twig's pixels stay
+  // pixels; without a crop the frame fits the box.
+  window.stillCompare = async (box, srcA, srcB, crop, scale, labels) => {
+    const [A, B] = await Promise.all([loadImg(srcA), loadImg(srcB)]);
+    const c = crop ?? { x: 0, y: 0, w: 1, h: 1 }, src = [c.x * A.width, c.y * A.height, c.w * A.width, c.h * A.height];
+    const k = document.createElement('canvas'), s = crop ? scale : 1;
+    k.width = Math.round(src[2] * s); k.height = Math.round(src[3] * s); k.className = crop ? 'wipe crop' : 'wipe';
+    if (crop) k.style.width = `${k.width}px`;
+    const x = k.getContext('2d'); x.imageSmoothingEnabled = !crop;
+    let f = 0.5;
+    const draw = () => split(x, A, B, src, k.width, k.height, f, labels);
+    follow(k, (v) => { f = v; draw(); });
+    draw(); box.appendChild(k);
+  };
+
+  // Two videos played together, side by side or split; under them, what changes frame by frame (series: { fps, a, b, ab }), with the
+  // moment shown marked; a click on the plot goes there.
+  window.videoCompare = (box, srcA, srcB, labels, series) => {
+    box.innerHTML = '<div class="vbar"><button class="play">play</button><input class="scrub" type="range" min="0" max="1000" value="0"><span class="time">0.00 s</span>'
+      + '<select class="speed"><option value="1">1×</option><option value="0.5">½×</option><option value="0.25">¼×</option><option value="0.1">⅒×</option></select>'
+      + '<select class="mode"><option value="split">split at the pointer</option><option value="side">side by side</option></select></div><canvas class="vstage"></canvas><canvas class="plot"></canvas><div class="legend"></div>';
+    const [play, scrub, time, speed, mode] = ['.play', '.scrub', '.time', '.speed', '.mode'].map((q) => box.querySelector(q));
+    const k = box.querySelector('.vstage'), x = k.getContext('2d'), P = box.querySelector('.plot'), px = P.getContext('2d');
+    const V = [srcA, srcB].map((src) => { const v = document.createElement('video'); v.src = src; v.muted = true; v.playsInline = true; v.preload = 'auto'; return v; });
+    const [A, B] = V;
+    let f = 0.5, w = 0, h = 0, dur = 0, raf = 0;
+    const GAP = 8;
+    const size = () => {
+      const side = mode.value === 'side';
+      k.width = side ? 2 * w + GAP : w; k.height = h; k.style.maxWidth = side ? `${2 * w + GAP}px` : `${w * 1.5}px`;
+      P.width = 1200; P.height = 130;
+    };
+    const draw = () => {
+      if (!w) return;
+      if (mode.value === 'side') {
+        x.fillStyle = '#000'; x.fillRect(0, 0, k.width, k.height);
+        x.drawImage(A, 0, 0, w, h); x.drawImage(B, w + GAP, 0, w, h);
+        tag(x, labels[0], 6, 6, false); tag(x, labels[1], k.width - 6, 6, true);
+      } else split(x, A, B, [0, 0, w, h], w, h, f, labels);
+      const t = A.currentTime;
+      time.textContent = `${t.toFixed(2)} s · frame ${Math.round(t * (series?.fps ?? 60))}`;
+      scrub.value = dur ? Math.round((t / dur) * 1000) : 0;
+      plot(t);
+    };
+    // the plot: drawn once, then the moment shown laid over it
+    let base = null, top = 0;
+    const plot = (t) => {
+      if (!series) return;
+      if (!base) {
+        base = document.createElement('canvas'); base.width = P.width; base.height = P.height;
+        const b = base.getContext('2d'), n = series.a.length;
+        top = Math.max(0.5, ...series.a, ...series.b, ...series.ab) * 1.08;
+        b.fillStyle = '#1b1b1b'; b.fillRect(0, 0, base.width, base.height);
+        b.fillStyle = '#888'; b.font = '11px system-ui, sans-serif'; b.fillText(`${top.toFixed(2)} of 255`, 4, 12); b.fillText('0', 4, base.height - 4);
+        for (const [key, colour] of [['ab', '#ffb454'], ['a', '#8ab4f8'], ['b', '#7fd88f']]) {
+          b.strokeStyle = colour; b.lineWidth = 1.2; b.beginPath();
+          series[key].forEach((v, i) => { const X = (i / Math.max(1, n - 1)) * base.width, Y = base.height - (v / top) * (base.height - 16); if (i) b.lineTo(X, Y); else b.moveTo(X, Y); });
+          b.stroke();
+        }
+      }
+      px.drawImage(base, 0, 0);
+      const X = dur ? (t / dur) * P.width : 0;
+      px.fillStyle = '#fff'; px.fillRect(Math.round(X) - 1, 0, 2, P.height);
+    };
+    const seek = (t) => { for (const v of V) v.currentTime = Math.min(dur, Math.max(0, t)); };
+    const tick = () => {
+      if (Math.abs(B.currentTime - A.currentTime) > 1 / 30) B.currentTime = A.currentTime;   // b follows a
+      draw();
+      if (!A.paused) raf = requestAnimationFrame(tick);
+    };
+    play.onclick = () => {
+      if (A.paused) { if (A.ended) seek(0); Promise.all(V.map((v) => v.play())).then(() => { play.textContent = 'pause'; tick(); }); }
+      else { for (const v of V) v.pause(); play.textContent = 'play'; cancelAnimationFrame(raf); draw(); }
+    };
+    A.addEventListener('ended', () => { B.pause(); play.textContent = 'play'; draw(); });
+    for (const v of V) v.addEventListener('seeked', () => { if (A.paused) draw(); });
+    scrub.oninput = () => seek((scrub.value / 1000) * dur);
+    speed.onchange = () => { for (const v of V) v.playbackRate = Number(speed.value); };
+    mode.onchange = () => { size(); draw(); };
+    follow(k, (v) => { f = v; if (A.paused) draw(); });
+    P.addEventListener('pointerdown', (e) => { const r = P.getBoundingClientRect(); seek(((e.clientX - r.left) / r.width) * dur); });
+    const ready = (v) => (v.readyState >= 2 ? null : new Promise((ok) => v.addEventListener('loadeddata', ok, { once: true })));
+    Promise.all(V.map(ready)).then(() => { w = A.videoWidth; h = A.videoHeight; dur = Math.min(A.duration, B.duration); size(); draw(); });
+    box.querySelector('.legend').innerHTML = series
+      ? `<span style="color:#8ab4f8">${labels[0]}</span>, <span style="color:#7fd88f">${labels[1]}</span>: how much each changes from its frame before · <span style="color:#ffb454">${labels[0]} vs ${labels[1]}</span>: how far apart they are at that frame (mean |Δ|, 0–255, read at ${series.size.join('×')})`
+      : '';
+  };
+}
+
 // The page the artist picks on: the four questions first, then the looks most changed first with a pick per look (and what each column
 // costs a frame), the decisions.json the picks make, and the routes and the motion as measured.
-function indexHtml(state, picks, qs) {
+function indexHtml(state, picks, qs, dir) {
   const { m, cost, motion, transitions } = state;
+  const videos = [], seriesOf = (path) => (path && existsSync(join(dir, path)) ? readJson(join(dir, path)) : null);
+  const vc = (a, b, labels, series) => `<div class="vc" data-v="${videos.push({ a, b, labels, series: seriesOf(series) }) - 1}"></div>`;
   const costOf = (look, c) => { const r = cost?.looks[look]?.[c]; return r ? { ...r, ...fpsDrop(r.aMs, r.bMs, r.aSpread) } : null; };
   const shown = m.looks.filter((r) => r.visible).sort((x, y) => x.rank - y.rank)
-    .map((r) => ({ rank: r.rank, look: r.look, cells: r.cells.map((c) => ({ letter: c.letter, id: c.id, file: c.file, mean: c.mean ?? 0, moved: c.moved ?? 0, same: c.same ?? false, cost: costOf(r.look, c.letter) })) }));
+    .map((r) => ({ rank: r.rank, look: r.look, cells: r.cells.map((c) => ({ letter: c.letter, id: c.id, file: c.file, mean: c.mean ?? 0, moved: c.moved ?? 0, same: c.same ?? false, crops: c.crops ?? [], cost: costOf(r.look, c.letter) })) }));
   const data = { flip: m.flip, from: m.from, columns: m.columns, groups: m.groups, routed: m.routed, quiet: m.looks.filter((r) => !r.visible).map((r) => r.look), still: m.still, looks: shown,
     picks: picks ?? {}, why: state.decisions?.why ?? {}, rest: state.decisions?.rest ?? 'b', motionWhy: state.decisions?.motion ?? '', transitionsWhy: state.decisions?.transitions ?? '',
-    fpsLimit: FPS_LIMIT, fpsCap: FPS_CAP };
+    fpsLimit: FPS_LIMIT, fpsCap: FPS_CAP, cropScale: CROP.scale, videos };
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const qHtml = qs.map((q) => `<li class="${q.open ? 'open' : 'done'}"><b>${esc(q.title)}.</b> ${esc(q.say)}</li>`).join('');
-  const motionHtml = motion ? `<h2>Motion</h2><p>${CLIP.seconds} s at ${CLIP.size} of a and of the pick, read by pattern.mjs; B − A.</p><div class="scroll"><table><tr><th>look</th><th>pick</th>${MEASURES.map(([n]) => `<th>${esc(n)}</th>`).join('')}<th>videos</th></tr>${Object.entries(motion.looks).map(([look, r]) => `<tr><td>${esc(look)}</td><td>${r.pick}</td>${MEASURES.map(([n]) => `<td>${fmtDelta(r.a[n], r.b[n])}</td>`).join('')}<td><a href="${r.aVideo}">a</a> <a href="${r.bVideo}">${r.pick}</a></td></tr>`).join('')}</table></div>` : '';
+  const motionHtml = motion ? `<h2>Motion</h2><p>${CLIP.seconds} s at ${CLIP.size} of a and of the pick, read by pattern.mjs; B − A.</p><div class="scroll"><table><tr><th>look</th><th>pick</th>${MEASURES.map(([n]) => `<th>${esc(n)}</th>`).join('')}</tr>${Object.entries(motion.looks).map(([look, r]) => `<tr><td>${esc(look)}</td><td>${r.pick}</td>${MEASURES.map(([n]) => `<td>${fmtDelta(r.a[n], r.b[n])}</td>`).join('')}</tr>`).join('')}</table></div>${Object.entries(motion.looks).map(([look, r]) => `<div class="route"><h3>${esc(look)}: a and ${r.pick}</h3>${vc(r.aCompare ?? r.aVideo, r.bCompare ?? r.bVideo, ['a', r.pick], r.series)}</div>`).join('')}` : '';
   const floor = transitions ? routeFloor(transitions.pairs) : null;
   const moves = (p) => (floor && p.a2 ? routeMoves(p, floor) : []);
   const again = (p, k, n) => (p.a2 ? ` (again ${p.a2[k].toFixed(n)})` : '');
-  const transHtml = transitions ? `<h2>Transitions</h2><p>${transitions.pairs.length} routes, motion frozen, ${transitions.picks ? 'at the picks' : 'every moved look at b'}: a as it is, b as it would ship. ${floor ? `Noise floor, the most a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${floor[k].toFixed(3)}`).join(', ')}; a route past it reads differently.` : 'No noise floor: a was run once.'}</p>${transitions.pairs.map((p) => `<div class="route${p.a.kind !== p.b.kind || moves(p).length ? ' changed' : ''}"><h3>${esc(p.from)} → ${esc(p.to)}: ${p.a.kind === p.b.kind ? esc(p.a.kind) : `${esc(p.a.kind)} → ${esc(p.b.kind)}`}${moves(p).length ? `, reads differently (${moves(p).join(', ')})` : ''}</h3><p>largest step in brightness ${p.a.maxDL.toFixed(2)}${again(p, 'maxDL', 2)} → ${p.b.maxDL.toFixed(2)} · churn/σ ${p.a.churnN.toFixed(3)}${again(p, 'churnN', 3)} → ${p.b.churnN.toFixed(3)}</p><div class="strips"><a href="${p.a.strip}"><img loading="lazy" src="${p.a.strip}"></a><a href="${p.b.strip}"><img loading="lazy" src="${p.b.strip}"></a></div></div>`).join('')}` : '';
+  const transHtml = transitions ? `<h2>Transitions</h2><p>${transitions.pairs.length} routes, motion frozen, ${transitions.picks ? 'at the picks' : 'every moved look at b'}: a as it is, b as it would ship. ${floor ? `Noise floor, how far a route's two a runs differ (90th percentile): ${ROUTE_MEASURES.map((k) => `${k} ${floor[k].toFixed(3)}`).join(', ')}; a route past it reads differently.` : 'No noise floor: a was run once.'}</p>${transitions.pairs.map((p) => `<div class="route${p.a.kind !== p.b.kind || moves(p).length ? ' changed' : ''}"><h3>${esc(p.from)} → ${esc(p.to)}: ${p.a.kind === p.b.kind ? esc(p.a.kind) : `${esc(p.a.kind)} → ${esc(p.b.kind)}`}${moves(p).length ? `, reads differently (${moves(p).join(', ')})` : ''}${floor && p.a2 && routeUnsteady(p, floor).length ? ', unsteady as it is' : ''}</h3><p>largest step in brightness ${p.a.maxDL.toFixed(2)}${again(p, 'maxDL', 2)} → ${p.b.maxDL.toFixed(2)} · churn/σ ${p.a.churnN.toFixed(3)}${again(p, 'churnN', 3)} → ${p.b.churnN.toFixed(3)}</p>${p.a.video ? vc(p.a.video, p.b.video, ['a', 'b'], p.series) : ''}<details${p.a.video ? '' : ' open'}><summary>frames</summary><div class="strips"><a href="${p.a.strip}"><img loading="lazy" src="${p.a.strip}"></a><a href="${p.b.strip}"><img loading="lazy" src="${p.b.strip}"></a></div></details></div>`).join('')}` : '';
   return `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(Object.keys(m.flip).join(', '))} on by default</title>
@@ -533,6 +719,12 @@ ul.q { padding-left: 18px; } ul.q li { margin: 4px 0; } ul.q li.open::marker { c
 textarea#out { width: 100%; height: 160px; background: #222; color: var(--fg); border: 1px solid var(--line); font: 12px ui-monospace, monospace; }
 .bar { position: sticky; top: 0; background: var(--bg); padding: 8px 0; z-index: 1; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 button, select { background: #2a2a2a; color: var(--fg); border: 1px solid var(--line); padding: 4px 10px; }
+.compare { margin-top: 8px; } .compare .hint { margin: 2px 0 6px; } .crops { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+canvas.wipe { display: block; max-width: 100%; cursor: col-resize; touch-action: none; } canvas.wipe:not(.crop) { width: 100%; max-width: 1280px; } canvas.crop { image-rendering: pixelated; }
+.crops figure { margin: 0; max-width: 100%; } .crops figcaption { color: var(--dim); font-size: 12px; margin-top: 2px; }
+.vc { margin: 6px 0; } .vbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; } .vbar .scrub { flex: 1; min-width: 160px; }
+canvas.vstage { display: block; width: 100%; cursor: col-resize; touch-action: none; background: #000; } canvas.plot { display: block; width: 100%; max-width: 1280px; height: 130px; margin-top: 4px; cursor: pointer; }
+.legend { color: var(--dim); font-size: 12px; margin-top: 2px; } details summary { color: var(--dim); cursor: pointer; margin: 4px 0; }
 .scroll { overflow-x: auto; } table { border-collapse: collapse; font-size: 12px; } td, th { border: 1px solid var(--line); padding: 3px 6px; text-align: right; } td:first-child, th:first-child { text-align: left; }
 </style>
 <h1>${esc(Object.entries(m.flip).map(([k, v]) => `${k} ${JSON.stringify(m.from[k])} → ${JSON.stringify(v)}`).join(', '))}</h1>
@@ -551,16 +743,37 @@ ${transHtml}
 <h2>decisions.json</h2>
 <textarea id="out" readonly></textarea>
 <script>
+(${pageComparers.toString()})();
 const D = ${JSON.stringify(data).replace(/</g, '\\u003c')};
 const picks = { ...D.picks }, why = { ...D.why };
 const rest = document.getElementById('rest');
 for (const c of [{ letter: '', name: 'no default: pick every look' }, ...D.columns]) rest.add(new Option(c.letter ? c.letter + ' — ' + c.name : c.name, c.letter));
 rest.value = D.rest || '';
 const root = document.getElementById('looks');
+// built when near the screen: a look's frames are full size, a route's videos are many
+function lazy(el, build) { new IntersectionObserver((es, o) => { if (es.some((e) => e.isIntersecting)) { o.disconnect(); build(el); } }, { rootMargin: '600px' }).observe(el); }
+// a against a moved column, whole, then up close where it changes most
+function compareLook(el, l) {
+  const moved = l.cells.filter((c) => c.letter !== 'a' && !c.same);
+  if (!moved.length) return;
+  const a = l.cells[0];
+  el.innerHTML = '<p class="hint">' + (moved.length > 1 ? 'a against <select class="col"></select>, ' : 'a against ' + moved[0].id + ', ') + 'split at the pointer: a to its left, the other to its right. Below, at ' + D.cropScale + '× their own pixels, the places it changes most.</p><div class="full"></div><div class="crops"></div>';
+  const sel = el.querySelector('.col');
+  const show = (c) => {
+    const full = el.querySelector('.full'), crops = el.querySelector('.crops'); full.innerHTML = ''; crops.innerHTML = '';
+    window.stillCompare(full, a.file, c.file, null, 1, [a.id, c.id]);
+    c.crops.forEach((k, i) => {
+      const fig = document.createElement('figure'); crops.appendChild(fig);
+      window.stillCompare(fig, a.file, c.file, k, D.cropScale, [a.id, c.id]).then(() => { const cap = document.createElement('figcaption'); cap.textContent = 'up close ' + (i + 1) + ': ' + Math.round(k.share * 100) + '% of the change'; fig.appendChild(cap); });
+    });
+  };
+  if (sel) { for (const c of moved) sel.add(new Option(c.id, c.letter)); sel.onchange = () => show(moved.find((c) => c.letter === sel.value)); }
+  show(moved[0]);
+}
 const text = (s) => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; };
 for (const l of D.looks) {
   const box = document.createElement('div'); box.className = 'look';
-  box.innerHTML = '<h2>' + l.rank + '. ' + text(l.look) + '</h2><div class="cells"></div><input class="why" placeholder="why (optional, kept beside the pin)">';
+  box.innerHTML = '<h2>' + l.rank + '. ' + text(l.look) + '</h2><div class="cells"></div><div class="compare"></div><input class="why" placeholder="why (optional, kept beside the pin)">';
   const cells = box.querySelector('.cells');
   for (const c of l.cells) {
     const d = document.createElement('div'); d.className = 'cell'; d.dataset.letter = c.letter;
@@ -569,6 +782,7 @@ for (const l of D.looks) {
     d.innerHTML = '<a href="' + c.file + '" target="_blank"><img loading="lazy" src="' + c.file + '"></a><label><input type="radio" name="p' + l.rank + '" value="' + c.letter + '"' + (picks[l.look] === c.letter ? ' checked' : '') + '> <b>' + c.id + '</b> ' + stat + fps + '</label>';
     cells.appendChild(d);
   }
+  lazy(box.querySelector('.compare'), (el) => compareLook(el, l));
   const w = box.querySelector('.why'); w.value = why[l.look] ?? '';
   box.addEventListener('change', (e) => { if (e.target.type === 'radio') { picks[l.look] = e.target.value; update(); } });
   w.addEventListener('input', (e) => { if (e.target.value.trim()) why[l.look] = e.target.value.trim(); else delete why[l.look]; update(); });
@@ -600,6 +814,7 @@ document.getElementById('save').addEventListener('click', () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([document.getElementById('out').value + '\\n'], { type: 'application/json' }));
   a.download = 'decisions.json'; a.click();
 });
+for (const el of document.querySelectorAll('.vc')) lazy(el, (e) => { const v = D.videos[Number(e.dataset.v)]; window.videoCompare(e, v.a, v.b, v.labels, v.series); });
 update();
 </script>
 `;
@@ -681,11 +896,11 @@ try {
   const cmd = args.shift();
   if (cmd === 'survey') { const flip = flipFrom(args); printSurvey(flip, surveyOf(flip)); }
   else if (cmd === 'render') {
-    const variants = take('--variant').map(parseVariant), size = (take('--size')[0] ?? '640x360').split('x').map(Number), dir = take('--dir')[0];
+    const variants = take('--variant').map(parseVariant), size = (take('--size')[0] ?? '1920x1080').split('x').map(Number), dir = take('--dir')[0];
     if (size.length !== 2 || !size.every((n) => Number.isInteger(n) && n > 0)) throw new Error('--size WxH');
     await render(flipFrom(args), variants, size, dir);
   } else if (cmd === 'cost') { const f = folder(); cost(f, flag('--again') ? args : []); }
-  else if (cmd === 'motion') { const f = folder(); motion(f, args); }
+  else if (cmd === 'motion') { const f = folder(); await motion(f, args); }
   else if (cmd === 'transitions') await transitions(folder());
   else if (cmd === 'status') report(folder());
   else if (cmd === 'apply') { const allow = flag('--allow-split'); apply(folder(), allow); }

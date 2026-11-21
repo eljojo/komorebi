@@ -250,19 +250,25 @@ export function fpsDrop(aMs, bMs, aSpread) {
   return { a, b, drop, floor, slow: drop > FPS_LIMIT, unsure: Math.abs(drop - FPS_LIMIT) < floor };
 }
 
-// A route's measures, and their noise floor: each route's a is run twice (a and a2), and the floor of a measure is the most the two
-// runs of one route differ, pooled over every route (a route runs on the wall clock, so the frames it is sampled at shift from run to
-// run). It is in the measure's own units, not a share: most routes' steps are near nothing (a grove crossfade's largest step in
-// brightness is a tenth of one level of 255), where a share is all noise and nothing shows. A route reads differently when b lies
-// further from the mean of its two a runs than the floor. Null when no route was run twice.
+// A route's measures, and their noise floor: each route's a is run twice (a and a2), and the floor of a measure is how far the two runs
+// of one route differ, at the 90th percentile over the routes (a route runs on the wall clock, so the frames it is sampled at shift from
+// run to run). Not the largest: a route that pops in one of its own runs (a dissolve that cuts on one run and fades on the other) is not
+// noise, and would hide every other route's change; it is named unsteady instead. The floor is in the measure's own units, not a share:
+// most routes' steps are near nothing (a grove crossfade's largest step in brightness is a tenth of one level of 255), where a share is
+// all noise and nothing shows. A route reads differently when b lies outside what its two a runs span, widened by the floor. Null when
+// no route was run twice.
 export const ROUTE_MEASURES = ['maxDL', 'churnN'];
 export function routeFloor(pairs) {
   const twice = pairs.filter((p) => p.a2);
   if (!twice.length) return null;
-  return Object.fromEntries(ROUTE_MEASURES.map((k) => [k, Math.max(...twice.map((p) => Math.abs(p.a[k] - p.a2[k])))]));
+  const q90 = (xs) => { const s = [...xs].sort((x, y) => x - y); return s[Math.ceil(0.9 * s.length) - 1]; };
+  return Object.fromEntries(ROUTE_MEASURES.map((k) => [k, q90(twice.map((p) => Math.abs(p.a[k] - p.a2[k])))]));
+}
+export function routeUnsteady(pair, floor) {
+  return ROUTE_MEASURES.filter((k) => Math.abs(pair.a[k] - pair.a2[k]) > floor[k]);
 }
 export function routeMoves(pair, floor) {
-  return ROUTE_MEASURES.filter((k) => Math.abs(pair.b[k] - (pair.a[k] + pair.a2[k]) / 2) > floor[k]);
+  return ROUTE_MEASURES.filter((k) => pair.b[k] < Math.min(pair.a[k], pair.a2[k]) - floor[k] || pair.b[k] > Math.max(pair.a[k], pair.a2[k]) + floor[k]);
 }
 
 // Every route the shipped playlists walk between two built-ins, each once, the last item back to the first (a playlist loops).
@@ -328,16 +334,47 @@ export function questionsOf(state, picks, dir) {
     const floor = transitions ? routeFloor(transitions.pairs) : null;
     const changed = transitions ? transitions.pairs.filter((p) => p.a.kind !== p.b.kind) : [];
     const reads = floor ? transitions.pairs.filter((p) => p.a.kind === p.b.kind && routeMoves(p, floor).length) : [];
+    const unsteady = floor ? transitions.pairs.filter((p) => p.a2 && routeUnsteady(p, floor).length) : [];
+    const unsteadySaid = unsteady.length ? `. Unsteady as they are, their two unchanged runs differing beyond the floor (a pop on one run?): ${unsteady.map((p) => `${p.from} → ${p.to} (${routeUnsteady(p, floor).map((k) => `${k} ${p.a[k].toFixed(2)} and ${p.a2[k].toFixed(2)}`).join(', ')})`).join(', ')}` : '';
     const ok = typeof decisions?.transitions === 'string' && decisions.transitions.trim();
-        const floorSaid = floor ? `the noise floor, the most a route's two a runs differ: ${ROUTE_MEASURES.map((k) => `${k} ${floor[k].toFixed(3)}`).join(', ')}` : '';
+        const floorSaid = floor ? `the noise floor, how far a route's two a runs differ (90th percentile): ${ROUTE_MEASURES.map((k) => `${k} ${floor[k].toFixed(3)}`).join(', ')}` : '';
     const found = [changed.length ? `${changed.length} route${changed.length > 1 ? 's' : ''} change kind: ${changed.map((p) => `${p.from} → ${p.to} (${p.a.kind} → ${p.b.kind})`).join(', ')}` : '',
       reads.length ? `${reads.length} route${reads.length > 1 ? 's' : ''} read differently beyond ${floorSaid}: ${reads.map((p) => `${p.from} → ${p.to} (${routeMoves(p, floor).map((k) => `${k} ${p.a[k].toFixed(2)} → ${p.b[k].toFixed(2)}`).join(', ')})`).join(', ')}` : ''].filter(Boolean).join('. ');
     q.push({ key: 'transitions', title: 'Transitions', open: !transitions || stale || !floor || (found.length > 0 && !ok),
       say: !transitions ? `not run: ${run('transitions')}`
         : stale ? `run at other picks than decisions.json's: ${run('transitions')}`
         : !floor ? `no noise floor (each route's a was run once): ${run('transitions')}`
-        : found ? `${found}${ok ? `. ${decisions.transitions}` : `. Look at the strips; say why that is fine in decisions.json's "transitions", or pick differently`}`
-        : `${transitions.pairs.length} routes keep their kind and read alike, within ${floorSaid} (transitions.json has each one's numbers and strips)` });
+        : found ? `${found}${ok ? `. ${decisions.transitions}` : `. Watch them in index.html; say why that is fine in decisions.json's "transitions", or pick differently`}${unsteadySaid}`
+        : `${transitions.pairs.length} routes keep their kind and read alike, within ${floorSaid} (transitions.json has each one's numbers and strips)${unsteadySaid}` });
   }
   return q;
+}
+
+// Where a still is shown up close: the n windows of win×win cells, on a G×G grid of how much each cell changes, that change most, the
+// most first, none overlapping one taken before (a twig's change is a few pixels wide: the whole frame at a screen's width hides it).
+// Each is { x, y, w, h } as fractions of the frame and its share of the whole change; a window where nothing changes is not taken.
+// Self-contained: adopt.mjs hands its source to the harness page, which measures the frames.
+export function cropWindows(cell, G, win, n) {
+  const sum = new Float64Array((G + 1) * (G + 1));   // summed-area table
+  for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) sum[(y + 1) * (G + 1) + x + 1] = cell[y * G + x] + sum[y * (G + 1) + x + 1] + sum[(y + 1) * (G + 1) + x] - sum[y * (G + 1) + x];
+  const total = sum[G * (G + 1) + G], at = (x, y) => sum[(y + win) * (G + 1) + x + win] - sum[y * (G + 1) + x + win] - sum[(y + win) * (G + 1) + x] + sum[y * (G + 1) + x];
+  const out = [];
+  while (out.length < n) {
+    let best = 0, bx = -1, by = -1;
+    for (let y = 0; y <= G - win; y++) for (let x = 0; x <= G - win; x++) {
+      if (out.some((o) => Math.abs(o.cx - x) < win && Math.abs(o.cy - y) < win)) continue;
+      const s = at(x, y);
+      if (s > best) { best = s; bx = x; by = y; }
+    }
+    if (bx < 0) break;
+    out.push({ cx: bx, cy: by, s: best });
+  }
+  return out.map((o) => ({ x: o.cx / G, y: o.cy / G, w: win / G, h: win / G, share: o.s / total }));
+}
+
+// How much one frame differs from another: the mean |Δ| over every channel, 0–255 (rgb24 frames, so over the three colours).
+export function frameDelta(a, b) {
+  let t = 0;
+  for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]);
+  return t / a.length;
 }

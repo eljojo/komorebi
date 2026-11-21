@@ -98,6 +98,8 @@ function stats(bytes) {
   return { mean, luma: luma / px, variance: sumSq / n - mean * mean, blackFrac: black / px, whiteFrac: white / px, opaque };
 }
 
+// Captures are kept until freed: a caller that takes many (adopt's transition videos, a few hundred frames a route) frees them as it goes.
+window.__free = (ids) => { for (const id of ids) caps.delete(id); };
 window.__png = (id) => {
   const cap = caps.get(id);
   if (!cap) throw new Error(`no capture ${id}`);
@@ -1116,7 +1118,7 @@ window.__transition = (fromName, toName, opts) => new Promise((resolve, reject) 
   let kind = null;
   const canvas = document.createElement('canvas');
   canvas.className = 'stage';
-  canvas.style.width = `${W}px`; canvas.style.height = `${H}px`;
+  canvas.style.width = `${o.size ? o.size[0] : W}px`; canvas.style.height = `${o.size ? o.size[1] : H}px`;   // o.size as __run's: [w, h] in CSS px
   document.body.appendChild(canvas);
 
   const t0 = performance.now();
