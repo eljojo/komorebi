@@ -71,6 +71,7 @@ uniform float uWindTime;              // seconds, for leaf flutter
 uniform float uLeafSwing;             // master: how far leaves rock as wind blows
 uniform float uFlutterFreq;           // leaf flutter rate (Hz)
 uniform vec4  uFlutterBand;           // flutter_broadband and its wind pattern's H: the flutter as the wind's own fractal sum (leafFlutter); flutter_gust and tree 0's flick: its size on the gust's edges (flutterGust)
+uniform vec4  uFlutterOnset;          // flutter_onset, _spread, _window, _fade: the flutter in a window of the air at each clump (flutterWindow); onset 0 = off
 uniform float uStemLen;               // twig stem length: pivot offset toward the limb (swing, not spin)
 // GROVE-WIDE COVERAGE (spec/model/transitions.md). The per-leaf 'cov' the CPU folds into iC.xyz is the fractional-leaf fade — a marginal
 // leaf or a marginal tree is faded in by SCALING ITS OPTICAL DEPTH, which the additive bake makes exact: at 0 the
@@ -92,6 +93,7 @@ void main(){
   vec4 trunk = texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 2), 0);       // this leaf's tree's trunk less tree 0's (komorebi-motion.js publishBend): 0 for tree 0, so one tree reads uSway and uWindLevel to the bit; .w its flick less tree 0's
   float uk = uWindLevel + trunk.z;                                          // its tree's signed sway u
   float wm = uAir > 0.0 ? abs(uk)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uk);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
+  wm = flutterWindow(wm, texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x, swingPhase, uFlutterOnset);   // flutter_onset: its size in a window of the air where it hangs
   wm = flutterGust(wm, uFlutterBand.w + trunk.w, uFlutterBand.z);            // flutter_gust: its size on the gust's edges
   float swing = uLeafSwing*swingGain*(0.5*uk + wm*leafFlutter(sin(uWindTime*uFlutterFreq*6.2831853+swingPhase), uWindTime, swingPhase, uFlutterFreq, uFlutterBand.x, uFlutterBand.y));
   if(uDepth > 0.0){   // depthGate (komorebi-air.js): only as deep into the crown as the wind reaches, at this clump's depth (row 1 .y)
@@ -227,6 +229,7 @@ uniform float uWindTime;
 uniform float uLeafSwing;
 uniform float uFlutterFreq;
 uniform vec4  uFlutterBand;           // (see VS_BAKE)
+uniform vec4  uFlutterOnset;          // (see VS_BAKE)
 uniform vec4  uShapeBox;              // the quad's box in the leaf's own frame (see VS_BAKE)
 uniform float uLeafIdFrac;            // the packing of the outline's row in the cluster id's fraction (see VS_BAKE)
 out vec2 vLocal;
@@ -240,6 +243,7 @@ void main(){
   vec4 trunk = texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 2), 0);       // this leaf's tree's trunk less tree 0's (komorebi-motion.js publishBend): 0 for tree 0, so one tree reads uSway and uWindLevel to the bit; .w its flick less tree 0's
   float uk = uWindLevel + trunk.z;                                          // its tree's signed sway u
   float wm = uAir > 0.0 ? abs(uk)*(1.0 - uAir) + texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x*uAir : abs(uk);   // flutterLevel (komorebi-air.js): the air where this leaf hangs, under wind_air
+  wm = flutterWindow(wm, texelFetch(uClusterTex, ivec2(int(iC.w + 0.5), 1), 0).x, swingPhase, uFlutterOnset);   // flutter_onset: its size in a window of the air where it hangs
   wm = flutterGust(wm, uFlutterBand.w + trunk.w, uFlutterBand.z);            // flutter_gust: its size on the gust's edges
   float swing = uLeafSwing*swingGain*(0.5*uk + wm*leafFlutter(sin(uWindTime*uFlutterFreq*6.2831853+swingPhase), uWindTime, swingPhase, uFlutterFreq, uFlutterBand.x, uFlutterBand.y));
   if(uDepth > 0.0){   // depthGate (komorebi-air.js): only as deep into the crown as the wind reaches, at this clump's depth (row 1 .y)
@@ -453,6 +457,7 @@ uniform highp sampler2D uClusterA,uGeomA,uClusterB,uGeomB;
 // (faithful, canopy_base_height_m, canopy_thickness_m, hMax)
 uniform vec4 uWindA,uFlutterA,uDriftA,uHeightA,uWindB,uFlutterB,uDriftB,uHeightB;
 uniform vec4 uBandA,uBandB;   // per end: flutter_broadband and its wind pattern's H (leafFlutter), flutter_gust and tree 0's flick (flutterGust)
+uniform vec4 uOnsetA,uOnsetB; // per end: flutter_onset, _spread, _window, _fade (flutterWindow)
 out vec4 oA;   // centre.xy, half sizes
 out vec4 oB;   // angle, optical depth
 out vec4 oC;   // height, fade, outline rows
@@ -461,7 +466,7 @@ out vec4 oD;   // own progress, edge
 #endif
 ${GLSL_FLUTTER}
 // One end's leaf at its own wind: plan centre, half sizes, angle, height (moved()).
-void moved(vec4 r0,vec4 r1,vec4 r2,vec4 r3,vec4 r4,highp sampler2D clusterTex,highp sampler2D geomTex,vec4 wind,vec4 flutter,vec4 band,vec4 drift,vec4 height,
+void moved(vec4 r0,vec4 r1,vec4 r2,vec4 r3,vec4 r4,highp sampler2D clusterTex,highp sampler2D geomTex,vec4 wind,vec4 flutter,vec4 band,vec4 onset,vec4 drift,vec4 height,
            out vec2 pos,out vec2 size,out float ang,out float z){
   int j=int(r2.w+0.5);
   vec4 G=texelFetch(geomTex,ivec2(j,0),0),D=texelFetch(clusterTex,ivec2(j,0),0),air=texelFetch(clusterTex,ivec2(j,1),0),S=texelFetch(clusterTex,ivec2(j,2),0);
@@ -476,6 +481,7 @@ void moved(vec4 r0,vec4 r1,vec4 r2,vec4 r3,vec4 r4,highp sampler2D clusterTex,hi
   vec2 d=r0.xy-t,x=t+vec2(ct*d.x-st*d.y,st*d.x+ct*d.y);
   float u=wind.x+S.z;
   float wm=flutter.z>0.0?abs(u)*(1.0-flutter.z)+air.x*flutter.z:abs(u);
+  wm=flutterWindow(wm,air.x,r1.w,onset);
   wm=flutterGust(wm,band.w+S.w,band.z);
   float sw=flutter.x*r1.z*(0.5*u+wm*leafFlutter(sin(wind.w*flutter.y*6.2831853+r1.w),wind.w,r1.w,flutter.y,band.x,band.y));
   if(flutter.w>0.0){float dg=clamp((wm/(flutter.w*${DEPTH_L0})-air.y)/${DEPTH_W}+1.0,0.0,1.0);sw*=dg*dg*(3.0-2.0*dg);}
@@ -489,8 +495,8 @@ void moved(vec4 r0,vec4 r1,vec4 r2,vec4 r3,vec4 r4,highp sampler2D clusterTex,hi
 }
 void main(){
   vec2 pa,pb,sa,sb;float aa,ab,za,zb;
-  moved(iA0,iA1,iA2,iA3,iA4,uClusterA,uGeomA,uWindA,uFlutterA,uBandA,uDriftA,uHeightA,pa,sa,aa,za);
-  moved(iB0,iB1,iB2,iB3,iB4,uClusterB,uGeomB,uWindB,uFlutterB,uBandB,uDriftB,uHeightB,pb,sb,ab,zb);
+  moved(iA0,iA1,iA2,iA3,iA4,uClusterA,uGeomA,uWindA,uFlutterA,uBandA,uOnsetA,uDriftA,uHeightA,pa,sa,aa,za);
+  moved(iB0,iB1,iB2,iB3,iB4,uClusterB,uGeomB,uWindB,uFlutterB,uBandB,uOnsetB,uDriftB,uHeightB,pb,sb,ab,zb);
 #ifdef PATCH_TRIP
   float p=iPair.z,w=smoothstep(p*(1.0-uTripD),p*(1.0-uTripD)+uTripD,uW);
   oD=vec4(w,mix(uEdges.x,uEdges.y,w),0.0,0.0);

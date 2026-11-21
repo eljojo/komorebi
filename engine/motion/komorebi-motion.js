@@ -5,7 +5,7 @@
 // reads (publishBend). A factory over the engine's shared internals (hub).
 // ============================================================================
 import { DEG, TAU, clamp } from '../komorebi-math.js';
-import { windNoise, branchNoise, WIND_PATTERNS, flickMeanStep, flickLevel } from './komorebi-air.js';
+import { windNoise, branchNoise, WIND_PATTERNS, flickMeanStep, flickLevel, airRead } from './komorebi-air.js';
 import { weatherAt, leanForce, crossForce, gustEdge, advanceAir, airForce, airLevel, airDelay, airAcross, carrySpeed, shelter, makeAirTrack } from './komorebi-air.js';
 
 export const MAX_MOTION_STEP = 1/15;
@@ -248,7 +248,7 @@ export function makeMotion(hub){
     motion.time += dt;
     // the air: G kept on its grid always (cheap, and turning wind_air on then finds a past); run ahead and read at each
     // clump only while wind_air is up, so a look without it pays nothing and draws exactly as before
-    const air = params.wind_air > 0;
+    const air = airRead(params);
     advanceAir(motion.air, params, motion.time, sheltered ? motion.airEnv : motion.driveEnv, air);
     if(air){ publishAir(hub.grove); if(hub.groveIn) publishAir(hub.groveIn); }
     // incoherent band: advance the drift phase (periodic in 2π). The editor reflects it in its slider.

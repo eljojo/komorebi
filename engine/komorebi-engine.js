@@ -5,6 +5,7 @@ import { TRANSPORT_GROUPS, CAMERAS, cameraFor, buildTransport } from './transpor
 import { makeSource } from './light/komorebi-source.js';
 import { makeCast } from './transport/komorebi-cast.js';
 import { makeMotion, MAX_MOTION_STEP } from './motion/komorebi-motion.js';
+import { airRead } from './motion/komorebi-air.js';
 import { makeTransitions } from './transitions/komorebi-transitions.js';
 import { restTrans } from './transitions/komorebi-routes.js';
 import { makeGrove, seasonKey, densityEligible, densityCount, growAs, attachGrove, detachGrove, attachedGrove, freeGrove as freeGroveGL } from './canopy/komorebi-grove.js';
@@ -233,7 +234,7 @@ function createEngine(canvas, opts, driven=false){
     return { origin:loc(prog,'uFaithOrigin'), extent:loc(prog,'uFaithExtent'), g:loc(prog,'uG'), edge:loc(prog,'uEdge'),
       seasonCast:loc(prog,'uSeasonCast'),curtainBake:loc(prog,'uCurtainBake'),clothY:loc(prog,'uClothY'),
       morph:loc(prog,'uMorph'),morphAmount:loc(prog,'uMorphAmount'),sway:loc(prog,'uSway'),hRef:loc(prog,'uHRef'),
-      windLevel:loc(prog,'uWindLevel'),air:loc(prog,'uAir'),depth:loc(prog,'uDepth'),windTime:loc(prog,'uWindTime'),leafSwing:loc(prog,'uLeafSwing'),flutterFreq:loc(prog,'uFlutterFreq'),flutterBand:loc(prog,'uFlutterBand'),tiltShadow:loc(prog,'uTiltShadow'),
+      windLevel:loc(prog,'uWindLevel'),air:loc(prog,'uAir'),depth:loc(prog,'uDepth'),windTime:loc(prog,'uWindTime'),leafSwing:loc(prog,'uLeafSwing'),flutterFreq:loc(prog,'uFlutterFreq'),flutterBand:loc(prog,'uFlutterBand'),flutterOnset:loc(prog,'uFlutterOnset'),tiltShadow:loc(prog,'uTiltShadow'),
       clusterTex:loc(prog,'uClusterTex'),clusterGeom:loc(prog,'uClusterGeom'),beamK:loc(prog,'uBeamK'),edgeArea:loc(prog,'uEdgeArea'),
       leafTex:loc(prog,'uLeafTex'),leafShape:loc(prog,'uLeafShape'),shapeBox:loc(prog,'uShapeBox'),leafIdFrac:loc(prog,'uLeafIdFrac'),leafRows:loc(prog,'uLeafRows')};
   }
@@ -399,7 +400,7 @@ function createEngine(canvas, opts, driven=false){
     U.bake = { origin:loc(progBake,'uCanopyOrigin'), extent:loc(progBake,'uCanopyExtent'), edge:loc(progBake,'uEdge'),
                morph:loc(progBake,'uMorph'), morphAmount:loc(progBake,'uMorphAmount'), sway:loc(progBake,'uSway'), swayGain:loc(progBake,'uSwayGain'),
                windLevel:loc(progBake,'uWindLevel'), air:loc(progBake,'uAir'), depth:loc(progBake,'uDepth'), windTime:loc(progBake,'uWindTime'),
-               leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), flutterBand:loc(progBake,'uFlutterBand'), stemLen:loc(progBake,'uStemLen'),
+               leafSwing:loc(progBake,'uLeafSwing'), flutterFreq:loc(progBake,'uFlutterFreq'), flutterBand:loc(progBake,'uFlutterBand'), flutterOnset:loc(progBake,'uFlutterOnset'), stemLen:loc(progBake,'uStemLen'),
                clusterTex:loc(progBake,'uClusterTex'), clusterGeom:loc(progBake,'uClusterGeom'),
                coverage:loc(progBake,'uCoverage'),
                leafTex:loc(progBake,'uLeafTex'), leafShape:loc(progBake,'uLeafShape'), shapeBox:loc(progBake,'uShapeBox'), leafIdFrac:loc(progBake,'uLeafIdFrac'), leafRows:loc(progBake,'uLeafRows') };   // the leaf's outline (komorebi-leaf.js): its texture, the gate, the quad's box and the table's packing — bound per grove
@@ -549,7 +550,7 @@ function createEngine(canvas, opts, driven=false){
     if(g.host !== hub) attachGrove(hub, g);
     setViews(hub, g);
     publishBend(g);   // push the (preserved or rest) bend into the fresh texture, so a bake right after a regrow isn't a frame snapped to rest
-    if(params.wind_air > 0) publishAir(g);   // ...and the air, or the fresh texture's flutter reads still for a frame
+    if(airRead(params)) publishAir(g);   // ...and the air, or the fresh texture's flutter reads still for a frame
   }
   function regenCanopy(){ installGrove(buildGrove(hub.hier)); }   // the old shape: grow one, make it the one
   // THE HANDOVER. A dissolve's outgoing scene is the look on screen, whose grove the host is about to replace: the scene takes it,
@@ -606,7 +607,7 @@ function createEngine(canvas, opts, driven=false){
     }
     if(to.params.drift_auto)to.params.drift_phase=from.params.drift_phase;
     to.publishBend(to.grove);
-    if(to.params.wind_air > 0) to.publishAir(to.grove);
+    if(airRead(to.params)) to.publishAir(to.grove);
   }
   // adopt: the scene is this engine's look as it stands, and takes its grove (see adoptGrove); this engine must regrow its own next.
   // host: the scene moves as this engine does from its first bake (copyMotion), so it is baked once.

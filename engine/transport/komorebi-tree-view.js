@@ -12,7 +12,7 @@ import { DEG, clamp, smoothstep } from '../komorebi-math.js';
 import { atmosphere, beamLoss, shownExposure, skyModel, sunDirection } from '../light/komorebi-light.js';
 import { ballisticK, bindLeafShape, SLAB_N, slabClear, slabTable } from '../leaf/komorebi-leaf.js';
 import { cameraPose, lookUp } from './komorebi-camera.js';
-import { flutterH } from '../motion/komorebi-air.js';
+import { flutterH, onsetOf } from '../motion/komorebi-air.js';
 import { MAX_LAYERS, MIN_FIDELITY } from '../komorebi-params.js';
 import { VS_TREE, FS_TREE, VS_TREE_WOOD, VS_TREE_WOOD_FOOT, FS_TREE_WOOD, FS_CROWN_GRID, FS_TREE_COMPOSITE, VS_FULL, defineIn } from './komorebi-shaders.js';
 import { cameraFor } from './komorebi-transport.js';
@@ -283,6 +283,7 @@ export function makeTreeView(hub){
       gl.uniform1f(UL.windLevel, motion.u); gl.uniform1f(UL.air, Math.max(0, params.wind_air)); gl.uniform1f(UL.depth, Math.max(0, params.wind_depth || 0));
       gl.uniform1f(UL.windTime, motion.time); gl.uniform1f(UL.leafSwing, params.leaf_swing); gl.uniform1f(UL.flutterFreq, params.flutter_freq);
       gl.uniform4f(UL.flutterBand, Math.max(0, params.flutter_broadband || 0), flutterH(params), Math.min(1, Math.max(0, params.flutter_gust || 0)), motion.flick || 0);
+      gl.uniform4fv(UL.flutterOnset, onsetOf(params));
       gl.uniform2f(UL.sway, motion.sway[0], motion.sway[1]); gl.uniform1f(UL.hRef, Math.max(faith.hMax, 1e-3));
       bindLeafShape(gl, UL, hub.grove);
       gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex); gl.uniform1i(UL.clusterTex, 4);

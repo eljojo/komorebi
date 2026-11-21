@@ -901,6 +901,22 @@ const PARAMS = {
     row: { kind: 's', label: 'flutter on gusts', min: 0, max: 1, step: 0.01, rebuild: '' },
     travels: 'morph',   // a blend of two levels: continuous, so it eases in a transition
     means: "<b>The leaves flicker as the wind changes.</b> Off, the leaves flicker as hard as the wind blows, for as long as it blows, even in a steady push. On, they flicker as a gust comes up, before the branches move, and keep flickering as it dies away and the branches settle; in a steady wind they hold still and only flag." },
+  flutter_onset: { default: 0.0,   // PROTOTYPE: the air at a clump past which its leaves flutter, in the air's own units (komorebi-air.js, flutterWindow); 0 = off, the flutter sized as before
+    row: { kind: 's', label: 'flutter onset', min: 0, max: 3, step: 0.01, rebuild: '' },
+    travels: 'morph',   // a threshold on a continuous signal: it eases in a transition
+    means: "<b>How much wind it takes to set the leaves fluttering.</b> Off, the leaves flutter as hard as the branches sway, all the time. On, a leaf only lies with the wind until the air around it passes this speed; then it flutters at its full size, and more wind hardly adds to it. Low, the leaves shimmer in any breeze; high, only the strongest gusts set them off, so the shimmer comes and goes with the wind." },
+  flutter_spread: { default: 0.5,   // PROTOTYPE: how far apart the leaves' own thresholds sit, each between the onset and onset·(1 + spread) by its phase (flutterWindow)
+    row: { kind: 's', label: 'flutter spread', min: 0, max: 2, step: 0.01, rebuild: '' },
+    travels: 'morph',
+    means: "<b>How gradually the crown wakes.</b> Each leaf faces the wind its own way, so each starts fluttering at its own speed. Low, the whole crown starts together; high, a few leaves start in a light breeze and more join as it grows. Only with the flutter onset on." },
+  flutter_window: { default: 2.4,   // PROTOTYPE: the air, as a multiple of the onset, past which the crown reconfigures and the flutter fades (flutterWindow; 2.4 is Tadrist et al. 2018's cherry)
+    row: { kind: 's', label: 'flutter window', min: 1, max: 6, step: 0.01, rebuild: '' },
+    travels: 'morph',
+    means: "<b>Where the flutter is at its best.</b> Past this much wind, as a multiple of the onset, the leaves bend, bunch and cone in the wind and their flutter dies down. Narrow, the shimmer lives only in a band of the wind; wide, it holds through strong gusts. Only with the flutter onset on." },
+  flutter_fade: { default: 0.5,   // PROTOTYPE: how much of the flutter the reconfigured crown loses (flutterWindow); 0 holds it at full in any wind
+    row: { kind: 's', label: 'flutter fade', min: 0, max: 1, step: 0.01, rebuild: '' },
+    travels: 'morph',
+    means: "<b>How still the leaves go in strong wind.</b> At 0 they keep fluttering however hard it blows, like stiff oak leaves; at 1 they go still as they cone, like maple or tulip leaves. Only with the flutter onset on." },
   wind_depth: { default: 0.0,   // a faint wind rocks only a crown's skin, a stronger one reaches the inner leaves, a strong one every leaf (komorebi-air.js, depthGate); 0 = off, every leaf rocks as before
     row: { kind: 's', label: 'depth', min: 0, max: 1.5, step: 0.01, rebuild: '' },
     travels: 'morph',   // how far into a crown the wind reaches (komorebi-air.js, depthGate): continuous too

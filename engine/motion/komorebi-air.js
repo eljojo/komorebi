@@ -93,6 +93,32 @@ export function leafFlutter(tone, t, phase, f, band, H){
   const n = fbm1(t + phase*FLUTTER_SPAN, f*FLUTTER_LOW, FLUTTER_OCT, H)*Math.SQRT1_2;
   return tone + (n - tone)*band;
 }
+// THE LEAVES FLUTTER IN A WINDOW OF THE AIR (flutter_onset; a prototype). A leaf's flutter is torsional galloping, a
+// self-excited instability (Tadrist et al. 2018): below a critical air speed the leaf only flags; past it the flutter rises
+// to its limit cycle within about 30% (ONSET_RISE) and then hardly grows with the wind. The critical speed depends on how
+// the leaf faces the wind, not on its size, so the leaves of one crown wake one after another: each leaf's own threshold
+// is the onset times 1 + spread·h, h its phase over 2π (uniform per leaf, and continuous, so the shaders and the CPU agree
+// at every leaf). Past `window` times the onset the crown reconfigures (the leaves bend, overlap and clump, Cauchy number
+// 1) and the flutter falls by `fade` over the next ONSET_FALL of the air. Saturated, a leaf flutters at ONSET_FULL, about
+// the trunk's sway |u| at the shipped looks' strongest, so a gust's peak looks as the always-on flutter did. The air is
+// the clump's own (airLevel: the gust carried to it, times its eddy); the trunk's sway, which lags the air and is
+// compressed near its ceiling, no longer sizes the flutter. At onset 0 the flutter's size is what it was, to the bit.
+// The branches are left as they are (their sway still grows with the drive, not as U^(11/6)).
+// Approximation: a smoothstep onset and fall, not the galloping's amplitude law; the constants are Provisional.
+const ONSET_RISE = 1.3;
+const ONSET_FALL = 1.8;
+const ONSET_FULL = 0.7;
+export const ONSET = { rise: ONSET_RISE, fall: ONSET_FALL, full: ONSET_FULL };
+const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a)/(b - a))); return t*t*(3 - 2*t); };
+export function flutterWindow(wm, air, phase, onset, spread, win, fade){
+  if(!(onset > 0)) return wm;
+  const c = onset*(1 + spread*phase*0.15915494), r = onset*win;
+  return ONSET_FULL*smooth(c, c*ONSET_RISE, air)*(1 - fade*smooth(r, r*ONSET_FALL, air));
+}
+// the window's four, as the shaders take them (a vec4), from a look's params; onset 0 is off
+export const onsetOf = (p) => [Math.max(0, p.flutter_onset || 0), Math.max(0, p.flutter_spread ?? 0.5), Math.max(1, p.flutter_window ?? 2.4), clamp(p.flutter_fade ?? 0.5, 0, 1)];
+// whether the motion must publish the air at each clump: wind_air reads it, and so does the flutter's window
+export const airRead = (p) => p.wind_air > 0 || p.flutter_onset > 0;
 // the H a look's flutter takes: its wind pattern's (gusty's for an unknown name, as the motion falls back)
 export const flutterH = (params) => (WIND_PATTERNS[params.wind_pattern] || WIND_PATTERNS.gusty).H;
 const GLSL_FLUTTER = `uint flHash(uint a, uint b, uint c){ uint h = a ^ 0x9E3779B1u; h = (h ^ b)*0x85EBCA6Bu; h = (h ^ c)*0xC2B2AE35u; return h ^ (h >> 15u); }
@@ -110,6 +136,11 @@ float leafFlutter(float tone, float t, float phase, float f, float band, float H
 }
 float flutterGust(float wm, float flick, float k){   // flutterGust (komorebi-air.js)
   return k > 0.0 ? wm + (flick - wm)*k : wm;
+}
+float flutterWindow(float wm, float air, float phase, vec4 w){   // flutterWindow (komorebi-air.js); w = (onset, spread, window, fade)
+  if(!(w.x > 0.0)) return wm;
+  float c = w.x*(1.0 + w.y*phase*0.15915494), r = w.x*w.z;
+  return ${ONSET_FULL}*smoothstep(c, c*${ONSET_RISE}, air)*(1.0 - w.w*smoothstep(r, r*${ONSET_FALL}, air));
 }`;
 export { GLSL_FLUTTER, FLUTTER_OCT, FLUTTER_LOW, FLUTTER_SPAN };
 

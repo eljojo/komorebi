@@ -11,7 +11,7 @@
 // ============================================================================
 import { clamp, lerp } from '../komorebi-math.js';
 import { atmosphere, beamLoss, sunIncidence } from '../light/komorebi-light.js';
-import { flutterH } from '../motion/komorebi-air.js';
+import { flutterH, onsetOf } from '../motion/komorebi-air.js';
 import { SLAB, SLAB_N, ballisticK, bindLeafShape, slabTable } from '../leaf/komorebi-leaf.js';
 import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES, MIN_FIDELITY } from '../komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
@@ -76,6 +76,7 @@ export function makeBake(hub){
     gl.uniform1f(U.bake.leafSwing, params.leaf_swing);
     gl.uniform1f(U.bake.flutterFreq, params.flutter_freq);
     gl.uniform4f(U.bake.flutterBand, Math.max(0, params.flutter_broadband || 0), flutterH(params), clamp(params.flutter_gust || 0, 0, 1), motion.flick || 0);
+    gl.uniform4fv(U.bake.flutterOnset, onsetOf(params));
     gl.uniform1f(U.bake.stemLen, params.stem_length);
     // WHICH GROVES ARE IN THIS BAKE. Normally one, at full coverage. During a crossfade (spec/model/transitions.md) two, at
     // complementary coverage into the SAME layer texture — which the additive optical-depth bake makes exact:
@@ -254,7 +255,7 @@ export function makeBake(hub){
   let progFine = null, UFine = null;   // made the first time a cast has fine wood; makeBake runs again on a restored context, which forgets them
 
   // Source offsets and weights matter even at an unchanged count. Snapshot the numeric inputs without per-frame strings or allocations.
-  const faithKeys = ['sun_elevation_deg','sun_azimuth_deg','receiver','cloth_distance_m','drift_phase','drift_amount','leaf_swing','flutter_freq','flutter_broadband','flutter_gust','edge_softness','tilt_shadow'];
+  const faithKeys = ['sun_elevation_deg','sun_azimuth_deg','receiver','cloth_distance_m','drift_phase','drift_amount','leaf_swing','flutter_freq','flutter_broadband','flutter_gust','flutter_onset','flutter_spread','flutter_window','flutter_fade','edge_softness','tilt_shadow'];
   const faithInputs = new Float64Array(faithKeys.length+1), faithSource = new Float32Array(MAX_SAMPLES*3);
   let faithReady = false;
   function faithfulInputsMatch(record){
@@ -371,6 +372,7 @@ export function makeBake(hub){
     gl.uniform1f(UF.leafSwing, params.leaf_swing);
     gl.uniform1f(UF.flutterFreq, params.flutter_freq);
     gl.uniform4f(UF.flutterBand, Math.max(0, params.flutter_broadband || 0), flutterH(params), clamp(params.flutter_gust || 0, 0, 1), motion.flick || 0);
+    gl.uniform4fv(UF.flutterOnset, onsetOf(params));
     gl.uniform1f(UF.tiltShadow, clamp(params.tilt_shadow, 0, 1));   // each corner thrown from its own height along the sun (0: the plan footprint)
     gl.uniform2f(UF.sway, motion.sway[0], motion.sway[1]);
     gl.uniform1f(UF.hRef, Math.max(faith.hMax, 1e-3));   // height-scale the coherent sway → base anchored, crown sways (matches the wood)

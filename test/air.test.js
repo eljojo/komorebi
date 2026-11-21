@@ -3,7 +3,7 @@
 // trunk with; a clump downwind feels the gust later by its distance over U; the eddies are a factor of mean 1. The wind's
 // reach: off, every leaf rocks; on, the skin always, the core only once the wind is strong enough, deeper as it rises.
 import { expect, test } from "bun:test";
-import { AIR, DEPTH, FLICK, WIND_PATTERNS, advanceAir, airCurve, airDelay, airForce, airLevel, branchNoise, crossForce, curveForce, depthGate, eddy, flickLevel, flickMeanStep, flutterGust, flutterH, flutterLevel, gustEdge, leafFlutter, leanForce, makeAirTrack, shelter, weatherAt, windNoise } from "../engine/motion/komorebi-air.js";
+import { AIR, DEPTH, FLICK, WIND_PATTERNS, advanceAir, airCurve, airDelay, airForce, airLevel, branchNoise, crossForce, curveForce, depthGate, eddy, flickLevel, flickMeanStep, flutterGust, flutterH, flutterLevel, flutterWindow, ONSET, onsetOf, airRead, gustEdge, leafFlutter, leanForce, makeAirTrack, shelter, weatherAt, windNoise } from "../engine/motion/komorebi-air.js";
 import { fft } from "../test-gl/pattern-lib.mjs";
 import { crownDepth } from "../engine/canopy/komorebi-grove.js";
 import { DEFAULTS } from "../engine/komorebi-params.js";
@@ -230,4 +230,29 @@ test("the flick: high as a gust rises and as it dies, quiet in a steady push and
 	// it never goes past the cap, however hard the step
 	let m = 0;
 	for (let i = 0; i < 600; i++) { m = flickMeanStep(m, 10, dt); expect(flickLevel(10, m)).toBeLessThanOrEqual(FLICK.cap); }
+});
+test("flutter_onset 0 is the flutter's size as it was, to the bit", () => {
+	for (const wm of [0, 1e-9, 0.37, 1.2]) for (const on of [0, -1, undefined, NaN]) expect(Object.is(flutterWindow(wm, 2.3, 1.1, on, 0.5, 2.4, 0.5), wm)).toBe(true);
+	expect(onsetOf({})[0]).toBe(0);
+	expect(airRead({ wind_air: 0, flutter_onset: 0 })).toBe(false);
+	expect(airRead({ wind_air: 0, flutter_onset: 0.4 })).toBe(true);
+});
+test("the flutter's window: still below the leaf's threshold, full soon past it, flat, then fading as the crown reconfigures", () => {
+	const on = 0.8, win = 2.4;
+	// phase 0: the leaf whose threshold is the onset itself; the trunk's sway (0.33) no longer sizes it
+	const w = (air, fade = 0.5, spread = 0.5, ph = 0) => flutterWindow(0.33, air, ph, on, spread, win, fade);
+	expect(w(0)).toBe(0);
+	expect(w(on * 0.99)).toBe(0);                                                 // below it the leaf only flags
+	expect(w(on * ONSET.rise)).toBeCloseTo(ONSET.full, 12);                       // its limit cycle within the rise
+	expect(w(on * win * 0.99)).toBeCloseTo(ONSET.full, 12);                       // and more wind hardly adds to it
+	expect(w(on * win * ONSET.fall * 1.01)).toBeCloseTo(ONSET.full * 0.5, 12);    // reconfigured: fade 0.5 of it gone
+	expect(w(on * win * ONSET.fall * 1.01, 0)).toBeCloseTo(ONSET.full, 12);       // fade 0: it flutters in any wind
+	expect(w(on * win * ONSET.fall * 1.01, 1)).toBe(0);                           // fade 1: still in the strongest
+	let last = 0;   // rising toward the window's edge, it never falls back
+	for (let a = 0; a <= on * win; a += 0.01) { const v = w(a); expect(v).toBeGreaterThanOrEqual(last - 1e-12); last = v; }
+	// each leaf its own threshold: the last (phase near 2π) wakes at onset·(1 + spread), so the crown wakes over that span
+	const lastLeaf = 2 * Math.PI - 1e-9;
+	expect(w(on * 1.4, 0.5, 0.5, lastLeaf)).toBe(0);
+	expect(w(on * 1.5 * ONSET.rise, 0.5, 0.5, lastLeaf)).toBeCloseTo(ONSET.full, 6);
+	expect(w(on * 1.4, 0.5, 0, lastLeaf)).toBeCloseTo(ONSET.full, 12);            // spread 0: every leaf at once
 });
