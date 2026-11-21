@@ -1967,7 +1967,11 @@ try {
     // sliders mid-way. Wait until the sliders show the look's own camera, which they do once it has landed.
     const arrived = async () => { const v = await view(); return Math.abs(v['tilt °'] - PRESETS[camLook].view_pitch_deg) < 0.5 && Math.abs(v['view (m)'] - PRESETS[camLook].view_extent_m) < 0.05; };
     let landedCam = false;
-    for (let i = 0; i < 150 && !(landedCam = await arrived()); i++) await pgT.waitForTimeout(400);
+    for (let i = 0; i < 150; i++) {
+      landedCam = await arrived();
+      if (landedCam) break;
+      await pgT.waitForTimeout(400);
+    }
     check('the look has arrived before the fingers move the camera', landedCam, JSON.stringify({ look: camLook, view: await view() }));
     await pgT.waitForFunction(() => document.getElementById('strip').classList.contains('faded'), null, { timeout: 15000 }).catch(() => {});   // a still strip fades on its own clock (5 s)...
     const strip0 = await pgT.$eval('#strip', (e) => e.classList.contains('faded'));   // ...which the fingers must not move
