@@ -1,4 +1,4 @@
-import { MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX } from '../komorebi-params.js';
+import { MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX, RUN_DEPTH } from '../komorebi-params.js';
 import { LEAF_VARIANTS, SLAB_N } from '../leaf/komorebi-leaf.js';
 import { DEPTH_L0, DEPTH_W, GLSL_FLUTTER } from '../motion/komorebi-air.js';
 import { TREE_GAIN, TREE_POWER } from './komorebi-camera.js';
@@ -200,6 +200,10 @@ layout(location=6) in float iFade;
 #ifdef PIVOT
 layout(location=8) in float iPivotDrop;   // the share of its twig's bend a leaf on older wood drops (inner_leaves; komorebi-grove.js placeLeaf)
 #endif    // the fade the CPU folded into iC.xyz: the ballistic depth k·fade has to ride it (spec/model/leaf.md)
+#ifdef RUN_PIVOT
+layout(location=10) in vec3 iRun;         // where this leaf's run of wood leaves the rest of the tree, the point its twig turns it about, and the run it grows off (-1: none) (twig_joints; komorebi-grove.js runJoints)
+uniform highp sampler2D uRunTex;          // the runs, a texel each: (cluster, joint.xy, outer run)
+#endif
 #ifdef SEASON_TRAVEL
 layout(location=7) in vec4 iJourney;  // floor landing.xy, clockwise angle, height fraction
 uniform highp int uSeasonCast;
@@ -259,6 +263,9 @@ void main(){
   vec4 geom = texelFetch(uClusterGeom, ivec2(cid,0), 0);
   vec4 bend = texelFetch(uClusterTex,  ivec2(cid,0), 0);   // .x limb bend, .y twig bend, .zw the sway_pitch height affine (see hEff)
   vec2 TB = geom.xy, BL = geom.zw;                         // TB = this twig's REAL grown base (faithful packs it where the layer path packs the tip)
+#ifdef RUN_PIVOT
+  TB = iRun.xy;                                            // a grown cluster leaves the tree at many points: the leaf turns about its own run's, as that run's wood does
+#endif
   float thL = bend.x, thT = bend.y;
 #ifdef PIVOT
   thT *= 1.0 - iPivotDrop;                                 // a leaf on older wood drops its twig's bend by its pivot weight, so it follows the wood it hangs on
@@ -280,6 +287,17 @@ void main(){
   // mat2 fills columns: positive joint bends turn counterclockwise, as the CPU wood and wind torque do.
   float ct=cos(thT), st=sin(thT);
   vec2 p = TB + mat2(ct,st,-st,ct)*(leafRest - TB);      // twig swings the clump about its own grown base
+#ifdef RUN_PIVOT
+  // ...and a run that grows off another cluster's wood is carried by that run's turn, then its outer's, inner first: the wood's own order (fillSwayedSegs)
+  int rw = textureSize(uRunTex, 0).x, ro = int(floor(iRun.z + 0.5));
+  for(int d = 0; d < ${RUN_DEPTH} && ro >= 0; d++){
+    vec4 run = texelFetch(uRunTex, ivec2(ro % rw, ro / rw), 0);
+    float tu = texelFetch(uClusterTex, ivec2(int(run.x + 0.5), 0), 0).y, cu = cos(tu), su = sin(tu);
+    p = run.yz + mat2(cu,su,-su,cu)*(p - run.yz);
+    thT += tu;
+    ro = int(floor(run.w + 0.5));
+  }
+#endif
   float cl=cos(thL), sl=sin(thL);
   vec2 base = BL + mat2(cl,sl,-sl,cl)*(p - BL);          // the limb then swings that twig joint AND its clump about the trunk
   // The leaf outline uses a clockwise rest-angle basis, so joint bends subtract from that angle.
@@ -354,6 +372,15 @@ ${GLSL_FAITH_VERTEX}`;
 // moved (3 pixels of park 1 on Metal), so the weight is its own specialization. A cleanup candidate (José would rather have the simpler code: fold it into VS_FAITH
 // and accept the three pixels; spec/exploration/open.md, harness).
 const VS_FAITH_PIVOT = `#version 300 es
+#define PIVOT
+${GLSL_FAITH_VERTEX}`;
+// A grove whose clusters' runs turn about their own joints (twig_joints) bakes with each leaf's run pivot, on its own and with the pivot weight; made on first
+// use (komorebi-bake.js), so every other grove compiles and draws what it always did.
+const VS_FAITH_RUN = `#version 300 es
+#define RUN_PIVOT
+${GLSL_FAITH_VERTEX}`;
+const VS_FAITH_RUN_PIVOT = `#version 300 es
+#define RUN_PIVOT
 #define PIVOT
 ${GLSL_FAITH_VERTEX}`;
 // A separate specialization keeps the native shader's arithmetic and compiler decisions intact.
@@ -1910,4 +1937,4 @@ void main(){
 }`;
 
 
-export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, VS_TREE_WOOD_FOOT, FS_TREE_WOOD, FS_CROWN_GRID, defineIn, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, VS_LEAF_CARRY, VS_LEAF_CARRY_PATCH, FS_LEAF_CARRY, LEAF_CARRY_OUT, LEAF_CARRY_PATCH_OUT, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FAITH_SEG_FINE, FS_FAITH_SEG_FINE, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_SKY_SEEN, GLSL_GROUND_ALBEDO, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };
+export { GLSL_TEXEL_MIX, GLSL_LEAF_Q, VS_TREE, FS_TREE, VS_TREE_WOOD, VS_TREE_WOOD_FOOT, FS_TREE_WOOD, FS_CROWN_GRID, defineIn, FS_TREE_COMPOSITE, VS_BAKE, FS_BAKE, VS_FAITH, VS_FAITH_PIVOT, VS_FAITH_RUN, VS_FAITH_RUN_PIVOT, VS_SEASON_TRAVEL, FS_FAITH, VS_LEAF_TRAVEL, FS_LEAF_TRAVEL, VS_LEAF_TRAVEL_PATCH, VS_LEAF_CARRY, VS_LEAF_CARRY_PATCH, FS_LEAF_CARRY, LEAF_CARRY_OUT, LEAF_CARRY_PATCH_OUT, FS_LEAF_TRAVEL_PATCH, FS_LEAF_PROGRESS, FS_PROGRESS_BLUR, FS_PATCH_MIX, VS_RISE, FS_RISE, VS_RISE_SKY, FS_RISE_SKY, FS_FACC, VS_FAITH_SEG, FS_FAITH_SEG, VS_FAITH_SEG_FINE, FS_FAITH_SEG_FINE, VS_LITTER, FS_LITTER, VS_FULL, GLSL_TONE_TAIL, GLSL_LAYER_FIELD, GLSL_WOOD_FIELD, GLSL_SUN_DIR_DECLS, GLSL_SKY_RAY, GLSL_SKY_SEEN, GLSL_GROUND_ALBEDO, FS_FILL, FS_FILL_GROUND, FS_FILL_UP, FS_FILL_BOUNCE, FS_BLIT, FS_PRESENT, FS_SCENE_MIX, FS_GLOW_BLUR, FS_GLOW_MIX, VS_POINTS, FS_POINTS, VS_VIZ, FS_VIZ };

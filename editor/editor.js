@@ -286,6 +286,7 @@ const PANEL_LAYOUT = [
   'beam_march',
   'thin_twigs',
   'twig_haze',
+  'twig_joints',
   'sympodial',
   'two_ranked',
   'trunk_split',

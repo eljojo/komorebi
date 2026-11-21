@@ -101,7 +101,7 @@ export function makeTreeView(hub){
     const key = `${kind}|${names.join(' ')}`;
     let p = progs.get(key);
     if(!p){
-      const [vs, fs] = treeShaders()[kind], prog = hub.sharedProgram(vs, defineIn(fs, names));
+      const [vs, fs] = treeShaders()[kind], prog = hub.sharedProgram(names.includes('RUN_PIVOT') ? defineIn(vs, ['RUN_PIVOT']) : vs, defineIn(fs, names));   // RUN_PIVOT is the leaf's vertex stage's (twig_joints)
       p = { prog, u: locs[kind === 'leaf' ? 'leaf' : 'wood'](prog) };
       progs.set(key, p);
     }
@@ -273,7 +273,7 @@ export function makeTreeView(hub){
     gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.enable(gl.SAMPLE_ALPHA_TO_COVERAGE);
     // the leaves: the cast's own records and vertex code, this frame's wind
     if(hasLeaves() && faith.vao){
-      const leaf = program('leaf', names), UL = leaf.u;
+      const leaf = program('leaf', faith.runOn ? [...names, 'RUN_PIVOT'] : names), UL = leaf.u;   // twig_joints: each leaf turns about its own run's joint, as the bake's do
       gl.useProgram(leaf.prog);
       upload(UL, w, h);
       if(crown) bindGrid(UL);
@@ -286,6 +286,7 @@ export function makeTreeView(hub){
       gl.uniform4fv(UL.flutterOnset, onsetOf(params));
       gl.uniform2f(UL.sway, motion.sway[0], motion.sway[1]); gl.uniform1f(UL.hRef, Math.max(faith.hMax, 1e-3));
       bindLeafShape(gl, UL, hub.grove);
+      if(faith.runOn){ gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, faith.runTex); gl.uniform1i(UL.runTex, 9); }   // twig_joints: the runs
       gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex); gl.uniform1i(UL.clusterTex, 4);
       gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(UL.clusterGeom, 5);
       gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, params.leaf_neutral ? slabTexNeutral : slabTex); gl.uniform1i(UL.slab, 7);

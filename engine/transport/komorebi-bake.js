@@ -16,7 +16,7 @@ import { SLAB, SLAB_N, ballisticK, bindLeafShape, slabTable } from '../leaf/komo
 import { MAX_FILL_DIRS, MAX_LAYERS, MAX_SAMPLES, MIN_FIDELITY } from '../komorebi-params.js';
 import { fillFrame, fillRays, fillTurns } from './komorebi-fill.js';
 import { CAMERAS, cameraFor } from './komorebi-transport.js';
-import { VS_FAITH_SEG_FINE, FS_FAITH_SEG_FINE } from './komorebi-shaders.js';
+import { VS_FAITH_SEG_FINE, FS_FAITH_SEG_FINE, VS_FAITH_RUN, VS_FAITH_RUN_PIVOT, FS_FAITH } from './komorebi-shaders.js';
 
 // The tier this module owns besides the fill (which is its own factory below, so a bundle that cuts it cuts the factory): the leaf's diffuse share. The bundler substitutes
 // it by a literal (embed-build.mjs); false means no look in the bundle opens leaf_diffuse, and the beam's k is 0 wherever it is read.
@@ -217,6 +217,15 @@ export function makeBake(hub){
         ax = tbx + ctw*dax - stw*day; ay = tby + stw*dax + ctw*day;
         bx = tbx + ctw*dbx - stw*dby; by = tby + stw*dbx + ctw*dby;
       }
+      const up = s.up;   // twig_joints: a run that grows off another cluster's wood is carried by that run's turn, and its outer's (komorebi-grove.js runChain), inner first
+      if(up && ta) for(let u=0;u<up.length;u+=3){
+        const uc = up[u], ut = ta[uc];
+        if(ut===0) continue;
+        const cu = uc<nC ? trigC[2*uc] : Math.cos(ut), su = uc<nC ? trigC[2*uc+1] : Math.sin(ut), jx = up[u+1], jy = up[u+2];
+        const dax=ax-jx, day=ay-jy, dbx=bx-jx, dby=by-jy;
+        ax = jx + cu*dax - su*day; ay = jy + su*dax + cu*day;
+        bx = jx + cu*dbx - su*dby; by = jy + su*dbx + cu*dby;
+      }
       const c = onLimb ? trigL[4*li] : 1, sn = onLimb ? trigL[4*li+1] : 0, px=s.px, py=s.py, o=(slot ? slot[k] : k)*9;
       const fore = onLimb ? trigL[4*li+2] : fore0, at = onLimb ? trigL[4*li+3] : 0;
       const ha = at + (s.ha-at)*fore, hb = at + (s.hb-at)*fore;
@@ -253,6 +262,12 @@ export function makeBake(hub){
     return partNow;
   }
   let progFine = null, UFine = null;   // made the first time a cast has fine wood; makeBake runs again on a restored context, which forgets them
+  const runProgs = [null, null];   // twig_joints: the leaf bake with each leaf's run pivot, without and with the pivot weight; made the first time a grove has them, forgotten as progFine is
+  const runProg = (pivot) => {
+    const i = pivot ? 1 : 0;
+    if(!runProgs[i]){ const prog = hub.sharedProgram(pivot ? VS_FAITH_RUN_PIVOT : VS_FAITH_RUN, FS_FAITH); runProgs[i] = { prog, U: hub.faithLocs(prog) }; }
+    return runProgs[i];
+  };
 
   // Source offsets and weights matter even at an unchanged count. Snapshot the numeric inputs without per-frame strings or allocations.
   const faithKeys = ['sun_elevation_deg','sun_azimuth_deg','receiver','cloth_distance_m','drift_phase','drift_amount','leaf_swing','flutter_freq','flutter_broadband','flutter_gust','flutter_onset','flutter_spread','flutter_window','flutter_fade','edge_softness','tilt_shadow'];
@@ -354,7 +369,8 @@ export function makeBake(hub){
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, hub.faithScratch, 0);
 
     // static faith-VS uniforms (wind / flutter — match the preview & the layer bake); only uG changes per sample
-    const pFaith = faith.pivotOn ? hub.progFaithPivot : progFaith, UF = faith.pivotOn ? U.faithPivot : U.faith;   // leaves on older wood: the pivot weight's specialization
+    const run = faith.runOn ? runProg(faith.pivotOn) : null;   // twig_joints: each leaf turns about its own run's joint
+    const pFaith = run ? run.prog : faith.pivotOn ? hub.progFaithPivot : progFaith, UF = run ? run.U : faith.pivotOn ? U.faithPivot : U.faith;   // leaves on older wood: the pivot weight's specialization
     gl.useProgram(pFaith);
     gl.uniform1i(UF.seasonCast,hub.seasonCast?1:0);
     gl.uniform2f(UF.origin, faith.ox, faith.oy);
@@ -377,6 +393,7 @@ export function makeBake(hub){
     gl.uniform2f(UF.sway, motion.sway[0], motion.sway[1]);
     gl.uniform1f(UF.hRef, Math.max(faith.hMax, 1e-3));   // height-scale the coherent sway → base anchored, crown sways (matches the wood)
     bindLeafShape(gl, UF, hub.grove);   // the active grove's outline (unit 6), first, so the unit left active is the cluster geometry's (see bakeLayers)
+    if(run){ gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, faith.runTex); gl.uniform1i(UF.runTex, 9); }   // twig_joints: the runs, before the cluster textures for the same reason
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, hub.clusterTex);     gl.uniform1i(UF.clusterTex, 4);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, hub.clusterGeomTex); gl.uniform1i(UF.clusterGeom, 5);
 

@@ -49,7 +49,7 @@ const FEAT_SPRING = true;
 const FEAT_EXPOSURE = true;
 const FEAT_DROP = true;
 const FEAT_LITTER = true;
-import { MAX_LAYERS, MAX_OCC, TOPO_KEYS, CANOPY_KEYS, SEASON_KEYS } from '../komorebi-params.js';
+import { MAX_LAYERS, MAX_OCC, RUN_DEPTH, TOPO_KEYS, CANOPY_KEYS, SEASON_KEYS } from '../komorebi-params.js';
 import { growBuds, limbs as budLimbs } from './komorebi-growth.js';
 import { SHOOT, clusterLight, clusterShoots, lightTilt, shootLeaf } from './komorebi-shoots.js';
 import { LEAF_SHAPES, LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, VARIETY_REAL, VARIETY_GENOTYPES, VARIETY_ID_FRAC, leafColumn, leafColumnF, leafFlip, leafJitter, leafShape, leafVariant } from '../leaf/komorebi-leaf.js';
@@ -59,7 +59,7 @@ import { LEAF_SHAPES, LEAF_ID_FRAC, LEAF_SAMPLES, SIZE_LIGHT, VARIETY_COLUMNS, V
 export const GROVE_READS = [
   'branch_angle_deg','branch_children','branch_length_ratio','branch_levels','branch_pitch_deg','canopy_base_height_m','canopy_extent_m','canopy_thickness_m',
   'cluster_spread_m','crown_aspect','drop_after_turn','droop','faithful_canopy','foliage_density','grove_reach_m','growth_years','inner_leaves','layer_count','leader_strength','leaf_aspect','leaf_shape','leaf_size_m','leaf_stalks','leaf_variety','leaf_years','leaves_per_cluster',
-  'limb_count','max_tilt','phyllotaxis','receiver','seed','shoot_leaves','shoot_length','shoots_on_twig','sky_view','standing_scene','sympodial','taper_delta','thin_twigs','tilt_light','tree_count','trunk_base','trunk_radius_m','trunk_split','twig_haze','two_ranked','view_extent_m',
+  'limb_count','max_tilt','phyllotaxis','receiver','seed','shoot_leaves','shoot_length','shoots_on_twig','sky_view','standing_scene','sympodial','taper_delta','thin_twigs','tilt_light','tree_count','trunk_base','trunk_radius_m','trunk_split','twig_haze','twig_joints','two_ranked','view_extent_m',
 ];
 // Grow a grove as `look` would, on the live params: every key the build reads (the grove's own, the season set within the canopy keys,
 // the topology) is the look's for the length of `build` and is put straight back after, so nothing else in the frame notices. A route
@@ -137,6 +137,57 @@ const LEVEL_SHOOT = 99;
 // The (d, azimuth, stalk) draws are a hash of (seed, j, k) on a salt of their own, like inner_leaves'.
 export const SHOOT_SALT = 0x78DDE6E4;   // 4·0x9E3779B9 mod 2^32: the golden gamma's next multiple after the inner leaves' salt, in no other stream
 export const TREE_PACE_SALT = 0xF1BBCDC8;   // 8·0x9E3779B9 mod 2^32: the golden gamma's first multiple no stream holds (5· is the leaf's side, 6· the shoots' own, 7· the leaves' emergence): a tree's own pace (sway_spread)
+// THE RUNS' JOINTS (twig_joints). The wind turns a cluster's wood and leaves about one point, its twig's base (clusterGeom, fillSwayedSegs). A grammar twig leaves the
+// tree there and nowhere else, but a grown cluster is a bundle of shoots, with the fine twigs on them, and leaves the rest of the tree at many points: turned about
+// one, the rest slid off their branches. Here each piece of a cluster's wood finds its parent, the piece its start lies on (at that piece's end or along it, never at
+// its start, which is a sibling's fork). A parent in the same cluster passes its run on; any other wood makes the piece the first of a run, and its start the joint
+// the run turns about. Where that other wood is another cluster's (a spur leafing off an older spur, leaf_years), the run is that one's run's OUTER: turned about its
+// own joint by its own cluster's bend, it is then carried by its outer run's turn, and that one's outer's, as far as RUN_DEPTH, so it stays on the wood it grows from.
+// segments: the grove's wood ({a, b, clump}); nTwig: the clusters that bear leaves (a clump past it is no cluster's). Returns each piece's run (-1 for wood in no
+// cluster) and the runs, RUN_W floats each: its cluster, its joint's x and y, its outer run (-1: it leaves wood no cluster turns). Pure.
+export const RUN_W = 4;   // a run's floats: the shader's texel
+export function runJoints(segments, nTwig){
+  const n = segments.length, C = 0.25, EPS = 1e-6, grid = new Map();
+  const cell = (x, y) => `${Math.floor(x/C)},${Math.floor(y/C)}`;
+  for(let i=0;i<n;i++){   // each piece in every plan cell its box touches
+    const s = segments[i], x0 = Math.floor(Math.min(s.a[0], s.b[0])/C), x1 = Math.floor(Math.max(s.a[0], s.b[0])/C), y0 = Math.floor(Math.min(s.a[1], s.b[1])/C), y1 = Math.floor(Math.max(s.a[1], s.b[1])/C);
+    for(let x=x0;x<=x1;x++) for(let y=y0;y<=y1;y++){ const k = `${x},${y}`; const l = grid.get(k); if(l) l.push(i); else grid.set(k, [i]); }
+  }
+  const inCluster = (s) => s.clump >= 0 && s.clump < nTwig;
+  const parent = new Int32Array(n).fill(-1), other = new Int32Array(n).fill(-1);   // the piece of the same cluster it starts on; else another cluster's it starts on; else -1
+  for(let i=0;i<n;i++){
+    const s = segments[i];
+    if(!inCluster(s)) continue;
+    const p = s.a, cand = grid.get(cell(p[0], p[1])) || [];
+    for(const j of cand){
+      if(j === i) continue;
+      const q = segments[j], ex = q.b[0]-q.a[0], ey = q.b[1]-q.a[1], ez = q.b[2]-q.a[2], ll = ex*ex + ey*ey + ez*ez;
+      if(!(ll > 0)) continue;
+      const f = Math.max(0, Math.min(1, ((p[0]-q.a[0])*ex + (p[1]-q.a[1])*ey + (p[2]-q.a[2])*ez)/ll));
+      if(!(f > EPS) || Math.hypot(q.a[0] + ex*f - p[0], q.a[1] + ey*f - p[1], q.a[2] + ez*f - p[2]) > EPS) continue;
+      if(q.clump === s.clump){ parent[i] = j; break; }
+      if(other[i] < 0 && inCluster(q)) other[i] = j;
+    }
+  }
+  const run = new Int32Array(n).fill(-1), first = [], stack = [];
+  for(let i=0;i<n;i++){   // a piece's run is its first piece's, walked up the parents (iteratively: a run can be hundreds of pieces long)
+    if(!inCluster(segments[i]) || run[i] >= 0) continue;
+    let k = i;
+    while(parent[k] >= 0 && run[k] < 0){ stack.push(k); k = parent[k]; if(stack.length > n) break; }   // (a cycle cannot happen in a tree; the bound keeps a malformed one finite)
+    if(run[k] < 0){ run[k] = first.length; first.push(k); }
+    while(stack.length) run[stack.pop()] = run[k];
+  }
+  const table = new Float64Array(RUN_W*first.length);
+  first.forEach((k, r) => { const s = segments[k], o = other[k];
+    table[RUN_W*r] = s.clump; table[RUN_W*r+1] = s.a[0]; table[RUN_W*r+2] = s.a[1]; table[RUN_W*r+3] = parent[k] < 0 && o >= 0 ? run[o] : -1; });
+  return { run, table, count: first.length };
+}
+// The outer turns of run r, inner first, as (cluster, joint x, joint y) triples: what carries a run that leaves another cluster's wood (runJoints). null for none.
+export function runChain(table, r){
+  const up = [];
+  for(let d=0, o=table[RUN_W*r+3]; d<RUN_DEPTH && o>=0; d++, o=table[RUN_W*o+3]) up.push(table[RUN_W*o], table[RUN_W*o+1], table[RUN_W*o+2]);
+  return up.length ? up : null;
+}
 function shootPlace(bundle, params, j, k, o){
   const path = bundle[k % bundle.length], m = path.length/3 - 1;   // segments 0..m-1: the shoot's own wood
   if(m < 1) return false;
@@ -261,10 +312,10 @@ export function freeGrove(gl, g){
   if(!g) return;
   if(g.host) detachGrove(g.host, g);
   for(const L of g.layerVAO){ gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); }
-  for(const t of [g.clusterTex, g.clusterGeomTex, g.leafTex]) if(t) gl.deleteTexture(t);
+  for(const t of [g.clusterTex, g.clusterGeomTex, g.leafTex, g.own.faith.runTex]) if(t) gl.deleteTexture(t);
   const { faith: F, sky: S } = g.own;
   for(const v of [F.vao, F.segVAO, S.segVAO]) if(v) gl.deleteVertexArray(v);
-  for(const b of [F.buf, F.pivotBuf, F.sideBuf, F.segBuf, S.segBuf]) if(b) gl.deleteBuffer(b);
+  for(const b of [F.buf, F.pivotBuf, F.sideBuf, F.runBuf, F.segBuf, S.segBuf]) if(b) gl.deleteBuffer(b);
 }
 
 export function makeGrove(hub){
@@ -614,6 +665,22 @@ export function makeGrove(hub){
     // recorded here as the leaves hang and become wood below. Off, nothing is recorded and the wood is the twigs' alone, to the bit.
     const stalksOn = faithful && shootsOn && params.leaf_stalks > 0, stalkRec = stalksOn ? [] : null, shootRec = stalksOn ? new Map() : null;
     const stalkSpec = LEAF_SHAPES[params.leaf_shape], stalkOrigin = stalkSpec ? (stalkSpec.origin ?? 0) : 0.5;   // as placeLeaf reads it: where the stamp sits along the blade
+    // THE RUNS' JOINTS (twig_joints, runJoints): on a grown tree, each run of a cluster's wood turns about its own joint, then with the runs it grows off, and each
+    // leaf with its shoot's run. Off, or on the grammar's trees, none is found, and the wood and the leaves turn about the twig's base, to the bit.
+    const runOn = faithful && params.twig_joints > 0 && !!hier.twigShoots;
+    const runs = runOn ? runJoints(segments, twigs.length) : null;
+    hier.runs = runs; hier.shootRun = null;
+    let runData = runOn ? new Float64Array(3*nAll) : null;   // FAITHFUL, twig_joints: each leaf's joint (x, y) and its run's outer run, in record order, compacted with sideData
+    if(runOn){
+      const at = new Map();   // a cluster's piece of wood by its start, to find each shoot's first piece (its polyline's last two points), through the same sc()
+      for(let i=0;i<segments.length;i++){ const sg = segments[i]; if(sg.clump < 0 || sg.clump >= twigs.length) continue;
+        const key = `${sg.a[0]},${sg.a[1]},${sg.a[2]}`, l = at.get(key); if(l) l.push(i); else at.set(key, [i]); }
+      hier.shootRun = hier.twigShoots.map((bundle, j) => Int32Array.from(bundle, (path) => {   // each shoot's run, -1 for a shoot with no wood of its own
+        const m = path.length/3 - 1, l = m >= 1 ? at.get(`${path[3*m]},${path[3*m+1]},${path[3*m+2]}`) : null;
+        const i = l ? l.find((c) => segments[c].clump === j && segments[c].b[0] === path[3*m-3] && segments[c].b[1] === path[3*m-2] && segments[c].b[2] === path[3*m-1]) : undefined;
+        return i !== undefined ? runs.run[i] : -1;
+      }));
+    }
     for(let j=0;j<nClusterTotal;j++){
       const t = twigs[j];
       const dT = tShift ? tShift[t.tree] : undefined, cT = tGain ? tGain[t.tree] : undefined;   // this cluster's tree's lead and depth
@@ -635,6 +702,10 @@ export function makeGrove(hub){
         const b = k*DRAW, g1 = D[b], g2 = D[b+1];
         const size = params.leaf_size_m*(0.6+0.8*D[b+2]);
         placeLeaf(hier, j, g1, g2, k, params, faithful, pos, size); pivotData[q] = pos[3]; sideData[q] = leafSide(params.seed, j, k);
+        if(runData){   // the run of the shoot shootPlace hangs it on; on none, its twig's base, as before
+          const sr = hier.shootRun[j], r = sr.length ? sr[k % sr.length] : -1;
+          runData[3*q] = r >= 0 ? runs.table[RUN_W*r+1] : t.bx; runData[3*q+1] = r >= 0 ? runs.table[RUN_W*r+2] : t.by; runData[3*q+2] = r >= 0 ? runs.table[RUN_W*r+3] : -1;
+        }
         const x = pos[0], y = pos[1], z = pos[2];
         if(z < zLow) zLow = z;
         if(z > zHigh) zHigh = z;
@@ -733,6 +804,7 @@ export function makeGrove(hub){
     const seasonBase = keepSeason ? layerData.map(a => Float32Array.from(a)) : null;   // the UNCOMPACTED layer records, before the rewrite below touches a tau
     const seasonPivot = keepSeason ? Float32Array.from(pivotData) : null;              // ...and the pivot weights, in the same record order (one push site)
     const seasonSide = keepSeason ? Float32Array.from(sideData) : null;                // ...and the sides
+    const seasonRun = keepSeason && runData ? Float32Array.from(runData) : null;       // ...and the joints (twig_joints)
     let litter = null, leafW = null;
     if(rec?.length){
       const n = rec.length/REC;
@@ -779,17 +851,18 @@ export function makeGrove(hub){
       if(gone){
         const per = new Int32Array(nLayer);
         for(let i=0;i<n;i++) if(alive[i]) per[rec[REC*i+7]]++;
-        const keepL = Array.from(per, (c) => new Float64Array(c*17)), keepF = new Float64Array((n-gone)*18), keepP = new Float64Array(n-gone), keepS = new Float64Array(n-gone);
+        const keepL = Array.from(per, (c) => new Float64Array(c*17)), keepF = new Float64Array((n-gone)*18), keepP = new Float64Array(n-gone), keepS = new Float64Array(n-gone), keepR = runData ? new Float64Array(3*(n-gone)) : null;
         const atL = new Int32Array(nLayer);
         for(let i=0, s=0;i<n;i++){
           if(!alive[i]) continue;
           const o = REC*i, l = rec[o+7], li = rec[o+8] - 8, fi = rec[o+9] - 8;
           keepL[l].set(layerData[l].subarray(li, li+17), atL[l]); atL[l] += 17;
           keepF.set(faithData.subarray(fi, fi+18), s*18);
+          if(keepR) for(let c=0;c<3;c++) keepR[3*s+c] = runData[fi/6+c];
           keepS[s] = sideData[fi/18]; keepP[s++] = pivotData[fi/18];
         }
         for(let l=0;l<nLayer;l++) layerData[l] = keepL[l];
-        faithData = keepF; pivotData = keepP; sideData = keepS;
+        faithData = keepF; pivotData = keepP; sideData = keepS; if(keepR) runData = keepR;
       }
     }
 
@@ -861,7 +934,7 @@ export function makeGrove(hub){
     {
       const tf = Math.pow(Math.max(1.001, kids), -1/clamp(params.taper_delta,1,4));   // pipe-model taper
       const thin = !!params.thin_twigs;
-      for(const sg of segments){
+      for(let si=0;si<segments.length;si++){ const sg = segments[si];
         // taper by FRACTIONAL level (sg.f0/f1) so a drooping branch's sub-segments thin smoothly across the one
         // level→level+1 step rather than each repeating the whole step (the old sawtooth). Straight branches: f0=0,f1=1 → unchanged.
         // thin_twigs: a twig keeps its pipe-model width down to TWIG_MIN_M, and the tree view draws what falls under a pixel by its coverage; off, the floor
@@ -876,6 +949,8 @@ export function makeGrove(hub){
         woodRest.push({ ax:sg.a[0], ay:sg.a[1], bx:sg.b[0], by:sg.b[1], ha:sg.a[2], hb:sg.b[2], ra, rb, limb:sg.limb, px:sg.px, py:sg.py, tree:sg.tree,
                         cov:sg.cov, clump:cj, tbx:(cj>=0?twigs[cj].bx:0), tby:(cj>=0?twigs[cj].by:0),
                         level:sg.level, mz:0.5*(sg.a[2]+sg.b[2]) });   // REAL grown heights (cast == preview); level + midpoint height pick the SKY view's layer bin below
+        const r = runs && cj >= 0 && si < runs.run.length ? runs.run[si] : -1;
+        if(r >= 0){ const w = woodRest[woodRest.length - 1]; w.tbx = runs.table[RUN_W*r+1]; w.tby = runs.table[RUN_W*r+2]; w.up = runChain(runs.table, r); }   // twig_joints: its run's joint, and the outer runs that carry it (fillSwayedSegs)
       }
     }
     // trunk_base: each tree's foot (its lowest trunk capsule's base) and the trunk's radius there, for the floor, which darkens its skylight by the sky the
@@ -922,7 +997,7 @@ export function makeGrove(hub){
         if(s.ax<sx0)sx0=s.ax; if(s.ax>sx1)sx1=s.ax; if(s.ay<sy0)sy0=s.ay; if(s.ay>sy1)sy1=s.ay;
         if(s.bx<sx0)sx0=s.bx; if(s.bx>sx1)sx1=s.bx; if(s.by<sy0)sy0=s.by; if(s.by>sy1)sy1=s.by;
       }
-      season = { key, rec: sRec, base: seasonBase, pivot: seasonPivot, side: seasonSide, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, nTree, E, tau, seg: [sx0, sx1, sy0, sy1],
+      season = { key, rec: sRec, base: seasonBase, pivot: seasonPivot, side: seasonSide, run: seasonRun, n: nClusterTotal*nLeaf, nLeaf, nLayer, nCluster: nClusterTotal, nTree, E, tau, seg: [sx0, sx1, sy0, sy1],
                  ex: sEx, rank: sRank, u: null, outL: null, outF: null };
     }
     let density = null;
@@ -931,7 +1006,7 @@ export function makeGrove(hub){
       const tipMin = hMin<=hMax ? hMin : 0;
       density = { key: densityKey(params, faithful), hMin: tipMin, hMax: hMax>hMin ? hMax : tipMin+1 };
     }
-    return { hier, layers, faithArr, pivot: pivotData, side: sideData, faithful, clusterRows, nClusterTotal, shape, litter, reach, key, wood, vary, scaleMax, season, density,
+    return { hier, layers, faithArr, pivot: pivotData, side: sideData, run: runData, runTable: runs ? new Float32Array(runs.table) : null, faithful, clusterRows, nClusterTotal, shape, litter, reach, key, wood, vary, scaleMax, season, density,
              under: cacheDensity ? { ...params } : null,   // the params a density capacity re-seasons under at the upload: the ones it was grown under
              occ: occOut, sky: { start: skyStart, count: skyCount, rest: skyRest },
              faith: { hMin: castMin, hMax: castMax, binH, rest: woodRest, box: [px0, px1, py0, py1], trunks } };
@@ -980,15 +1055,24 @@ export function makeGrove(hub){
     faith.pivot = G.pivot;   // the survivors' weights, as uploaded
     faith.pivotOn = G.pivot.some((w) => w > 0);   // the bake's specialization: VS_FAITH_PIVOT only where a leaf has one
     faith.count = G.faithArr.length/18;
-    faith.vao = faith.buf = faith.pivotBuf = faith.sideBuf = faith.rec = null;   // every key the grove owns, so attach and detach move them all
-    const rec = { leaves: G.faithArr, pivot: new Float32Array(G.pivot), side: new Float32Array(G.side) };
+    faith.runOn = !!G.run;   // twig_joints: the bake's and the tree view's specialization, each leaf turned about its own run's joint
+    faith.vao = faith.buf = faith.pivotBuf = faith.sideBuf = faith.runBuf = faith.runTex = faith.rec = null;   // every key the grove owns, so attach and detach move them all
+    if(G.runTable && G.faithful){   // twig_joints: the runs (RUN_W floats, one texel each), rows of MAX_TEX, which a leaf's chain of outer turns reads
+      const nR = Math.max(1, G.runTable.length/RUN_W), wR = Math.min(nR, MAX_TEX), hR = Math.ceil(nR/wR), data = new Float32Array(wR*hR*RUN_W);
+      data.set(G.runTable);
+      faith.runTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, faith.runTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, wR, hR, 0, gl.RGBA, gl.FLOAT, data);
+      for(const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    }
+    const rec = { leaves: G.faithArr, pivot: new Float32Array(G.pivot), side: new Float32Array(G.side), run: G.run ? new Float32Array(G.run) : null };
     if(G.faithful && was?.faith.vao){
       const F = was.faith;
       gl.bindBuffer(gl.ARRAY_BUFFER, F.buf); gl.bufferData(gl.ARRAY_BUFFER, rec.leaves, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, F.pivotBuf); gl.bufferData(gl.ARRAY_BUFFER, rec.pivot, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, F.sideBuf); gl.bufferData(gl.ARRAY_BUFFER, rec.side, gl.STATIC_DRAW);
-      faith.vao = F.vao; faith.buf = F.buf; faith.pivotBuf = F.pivotBuf; faith.sideBuf = F.sideBuf;
-      F.vao = F.buf = F.pivotBuf = F.sideBuf = null;
+      setRunGL(F, rec.run, gl.STATIC_DRAW);
+      faith.vao = F.vao; faith.buf = F.buf; faith.pivotBuf = F.pivotBuf; faith.sideBuf = F.sideBuf; faith.runBuf = F.runBuf;
+      F.vao = F.buf = F.pivotBuf = F.sideBuf = F.runBuf = null;
     } else if(G.faithful) makeFaithGL(faith, rec, gl.STATIC_DRAW);
     else faith.rec = rec;
 
@@ -1105,10 +1189,10 @@ export function makeGrove(hub){
   function takeGL(g){
     const F = g.own.faith, S = g.own.sky;
     const was = { layers: [...g.layerVAO], clusterTex: g.clusterTex, clusterGeomTex: g.clusterGeomTex, leafTex: g.leafTex, shape: g.shape, nCluster: g.nCluster,
-                  faith: { vao: F.vao, buf: F.buf, pivotBuf: F.pivotBuf, sideBuf: F.sideBuf, segVAO: F.segVAO, segBuf: F.segBuf },
+                  faith: { vao: F.vao, buf: F.buf, pivotBuf: F.pivotBuf, sideBuf: F.sideBuf, runBuf: F.runBuf, segVAO: F.segVAO, segBuf: F.segBuf },
                   sky: { segVAO: S.segVAO, segBuf: S.segBuf } };
     g.layerVAO = []; g.clusterTex = g.clusterGeomTex = g.leafTex = null;
-    F.vao = F.buf = F.pivotBuf = F.sideBuf = F.segVAO = F.segBuf = null; S.segVAO = S.segBuf = null;
+    F.vao = F.buf = F.pivotBuf = F.sideBuf = F.runBuf = F.segVAO = F.segBuf = null; S.segVAO = S.segBuf = null;
     return was;
   }
   function giveBack(g, was){
@@ -1140,6 +1224,19 @@ export function makeGrove(hub){
     gl.enableVertexAttribArray(9); gl.vertexAttribPointer(9,1,gl.FLOAT,false,4,0); gl.vertexAttribDivisor(9,1);   // the leaf's side, one float a leaf: read by the tree view alone
     gl.bindVertexArray(null);
     F.vao = vao; F.buf = buf;
+    setRunGL(F, rec.run, usage);
+  }
+  // twig_joints: each leaf's joint (x, y) and outer run at location 10 of F's vertex array, uploaded where there are joints and let go where there are none, so a grove
+  // without them makes no buffer and binds nothing new
+  function setRunGL(F, run, usage){
+    if(!run){
+      if(F.runBuf){ gl.bindVertexArray(F.vao); gl.disableVertexAttribArray(10); gl.bindVertexArray(null); gl.deleteBuffer(F.runBuf); F.runBuf = null; }
+      return;
+    }
+    const fresh = !F.runBuf;
+    if(fresh) F.runBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, F.runBuf); gl.bufferData(gl.ARRAY_BUFFER, run, usage);
+    if(fresh){ gl.bindVertexArray(F.vao); gl.enableVertexAttribArray(10); gl.vertexAttribPointer(10,3,gl.FLOAT,false,12,0); gl.vertexAttribDivisor(10,1); gl.bindVertexArray(null); }
   }
   // A layered grove's faithful leaves on the GPU, should a cast ever ask to draw them (the bake asks before it casts; every faithful cast today is of a grove
   // grown faithful): its record uploaded and let go, so the buffers are the leaves from then on, as a faithful grove's are. True when there is a faithful VAO to draw.
@@ -1177,8 +1274,8 @@ export function makeGrove(hub){
     // turn_exposure > 0, so given senescing the arm is a property of the schedule's keys, and the schedule is built for it.
     const turning = (FEAT_PIGMENT || FEAT_EXPOSURE) && sen && ((FEAT_EXPOSURE && P.turn_exposure > 0) || FEAT_PIGMENT);
     const sc = (FEAT_PIGMENT || FEAT_EXPOSURE || FEAT_DROP) && n > 0 && (turning || FEAT_DROP && track) ? scheduleOf(g, P) : null, at = sc?.at;
-    if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); S.outP = new Float32Array(n); S.outS = new Float32Array(n); }
-    const outL = S.outL, outF = S.outF, outP = S.outP, outS = S.outS, wL = new Int32Array(nLayer);
+    if(!S.outL){ S.outL = S.base.map(a => new Float32Array(a.length)); S.outF = new Float32Array(n*18); S.outP = new Float32Array(n); S.outS = new Float32Array(n); S.outR = S.run ? new Float32Array(3*n) : null; }
+    const outL = S.outL, outF = S.outF, outP = S.outP, outS = S.outS, outR = S.outR, wL = new Int32Array(nLayer);
     const fallen = FEAT_DROP && track ? [] : null, leafW = FEAT_DROP && track ? new Float32Array(S.nCluster*nLeaf).fill(1) : null;
     let wF = 0, px0 = S.seg[0], px1 = S.seg[1], py0 = S.seg[2], py1 = S.seg[3];
     let lx0 = 1e18, ly0 = 1e18, lx1 = -1e18, ly1 = -1e18;   // the survivors' plan extent (doubles, like buildGrove's own scan of faithData)
@@ -1203,6 +1300,7 @@ export function makeGrove(hub){
       for(let c=0;c<3;c++){ const v = lt[c]*cf; dl[wl+8+c] = v; outF[wF+8+c] = v; }
       for(let q=11;q<16;q++){ const v = bl[li+q]; dl[wl+q] = v; outF[wF+q] = v; }
       dl[wl+16] = cf; outF[wF+16] = rec[o+2]; outF[wF+17] = cf; outP[wF/18] = S.pivot[i]; outS[wF/18] = S.side[i];
+      if(outR) for(let c=0;c<3;c++) outR[wF/6+c] = S.run[3*i+c];
       wL[l] = wl + 17; wF += 18;
       const x = rec[o], y = rec[o+1];
       if(x<lx0)lx0=x; if(x>lx1)lx1=x; if(y<ly0)ly0=y; if(y>ly1)ly1=y;
@@ -1223,7 +1321,8 @@ export function makeGrove(hub){
       gl.bufferData(gl.ARRAY_BUFFER, outP.subarray(0, wF/18), gl.DYNAMIC_DRAW);
       gl.bindBuffer(gl.ARRAY_BUFFER, F.sideBuf);                                     // ...and their sides
       gl.bufferData(gl.ARRAY_BUFFER, outS.subarray(0, wF/18), gl.DYNAMIC_DRAW);
-    } else F.rec = { leaves: outF.subarray(0, wF), pivot: outP.subarray(0, wF/18), side: outS.subarray(0, wF/18) };   // a layered grove's record: views of the re-season's own arrays, which the next re-season rewrites and re-points
+      if(outR && F.runBuf){ gl.bindBuffer(gl.ARRAY_BUFFER, F.runBuf); gl.bufferData(gl.ARRAY_BUFFER, outR.subarray(0, wF/6), gl.DYNAMIC_DRAW); }   // ...and their joints
+    } else F.rec = { leaves: outF.subarray(0, wF), pivot: outP.subarray(0, wF/18), side: outS.subarray(0, wF/18), run: outR ? outR.subarray(0, wF/6) : null };   // a layered grove's record: views of the re-season's own arrays, which the next re-season rewrites and re-points
     if(lx0<px0)px0=lx0; if(lx1>px1)px1=lx1; if(ly0<py0)py0=ly0; if(ly1>py1)py1=ly1;
     if(px0>px1){ const h=P.canopy_extent_m/2; px0=-h;py0=-h;px1=h;py1=h; }   // empty grove fallback
     F.pminx=px0; F.pmaxx=px1; F.pminy=py0; F.pmaxy=py1;

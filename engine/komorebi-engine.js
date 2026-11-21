@@ -236,7 +236,7 @@ function createEngine(canvas, opts, driven=false){
       morph:loc(prog,'uMorph'),morphAmount:loc(prog,'uMorphAmount'),sway:loc(prog,'uSway'),hRef:loc(prog,'uHRef'),
       windLevel:loc(prog,'uWindLevel'),air:loc(prog,'uAir'),depth:loc(prog,'uDepth'),windTime:loc(prog,'uWindTime'),leafSwing:loc(prog,'uLeafSwing'),flutterFreq:loc(prog,'uFlutterFreq'),flutterBand:loc(prog,'uFlutterBand'),flutterOnset:loc(prog,'uFlutterOnset'),tiltShadow:loc(prog,'uTiltShadow'),
       clusterTex:loc(prog,'uClusterTex'),clusterGeom:loc(prog,'uClusterGeom'),beamK:loc(prog,'uBeamK'),edgeArea:loc(prog,'uEdgeArea'),
-      leafTex:loc(prog,'uLeafTex'),leafShape:loc(prog,'uLeafShape'),shapeBox:loc(prog,'uShapeBox'),leafIdFrac:loc(prog,'uLeafIdFrac'),leafRows:loc(prog,'uLeafRows')};
+      leafTex:loc(prog,'uLeafTex'),leafShape:loc(prog,'uLeafShape'),shapeBox:loc(prog,'uShapeBox'),leafIdFrac:loc(prog,'uLeafIdFrac'),leafRows:loc(prog,'uLeafRows'),runTex:loc(prog,'uRunTex')};
   }
   // ---- THE TRANSPORT PROGRAM CACHE (spec/model/transport.md). One program per camera, built by buildTransport, compiled on
   // FIRST USE and then kept for the engine's life. The four authored cameras move on a MODE

@@ -19,6 +19,9 @@ const BOUNCE_BOX = 4;        // the ground bounce's underside pass averages each
 // so it never reads the table, and canopy 1–4 use at most 64: raising the cap to 256 repainted no shipped look (byte-identical
 // frames at 64 and 256). Raising it further could still repaint a grove that outgrows it: a look decision.
 const MAX_OCC = 256;
+// twig_joints (komorebi-grove.js runJoints): the outer turns a run of a grown cluster's wood takes, at most, the wood's and the leaf shader's loop alike.
+// The deepest chain measured on a shipped grown look is 3 (a ginkgo's spurs, leaf_years 5).
+const RUN_DEPTH = 8;
 // SKY VIEW (spec/model/sky-view.md): the authored radiance scale for the SEEN source. The physical contrast between a sun disk and a
 // blue sky is ~10^6, which neither an ACES tail nor a 13-tap glare kernel can carry — so what ships is a compressed
 // stand-in, and this is the compression, stated once. It multiplies the sampler's own angular density (weight over
@@ -484,6 +487,10 @@ const PARAMS = {
     row: { kind: 's', label: 'twig haze', min: 0, max: 3, step: 1, rebuild: 'canopy' },
     travels: 'topo',   // other wood
     means: "<b>The fine twigs at the edge of a bare crown.</b> A tree grown from buds stops short of its finest twigs, so seen against the sky its outer crown looks emptier than its middle, where a real winter tree is a soft haze of twigs right out to its edge. Each step adds another order of side twigs on the youngest shoots, each finer than the last. Best with thin twigs on. Only for trees grown from buds." },
+  twig_joints: { default: false,   // a grown tree's cluster turned piece by piece (komorebi-grove.js THE RUNS' JOINTS; spec/model/motion.md): each run of its wood, and the leaves on it, about the joint where that run leaves the rest of the tree. false = the whole cluster about its twig's base, to the bit. Read only when growth_years is above 0, in a faithful canopy. A canopy key (it moves the wood the cast throws)
+    row: { kind: 't', label: 'twig joints', rebuild: 'canopy' },
+    travels: 'topo',   // another tree's motion
+    means: "<b>Twigs that stay on their branches in the wind.</b> A tree grown from buds bundles many small shoots into each sprig of leaves, and off, the wind swings each bundle as one piece about a single point, so its shoots slide off the branches they grow from and wave apart from them. On, each shoot turns about the place it grows from, so the twigs stay joined to their branches and move with them. Only for trees grown from buds." },
   sympodial: { default: 0,   // a grown tree's axes built sympodially (komorebi-growth.js SYMPODIAL GROWTH; spec/model/canopy.md): each year's shoot tip aborts and the highest side bud carries the axis on, and each internode turns off the last at its node, away from the bud it bears; on the free orders past the held limbs, which stay straight. 0 = every axis carried on by its terminal bud, straight between nodes, the tree to the bit. Read only when growth_years is above 0. A canopy key (it moves the wood and the leaves)
     row: { kind: 's', label: 'zigzag twigs', min: 0, max: 1, step: 0.05, rebuild: 'canopy' },
     travels: 'topo',   // another tree
@@ -1153,4 +1160,4 @@ function cutWarnings(P, build, warned){
   return out;
 }
 
-export { LIT_GROUND_DIP, LIT_GROUND_HOLD, PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX, MAX_OCC, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, GRANDFATHERED, LEGACY_KEYS, migrateLegacy, layerBakeSize };
+export { LIT_GROUND_DIP, LIT_GROUND_HOLD, PARAMS, FEATURES, featuresFor, cutWarnings, MAX_SAMPLES, BAKE_MIN, MAX_LAYERS, MAX_FILL_DIRS, BOUNCE_BOX, MAX_OCC, RUN_DEPTH, SKY_SUN_GAIN, MORPH_KEYS, MORPH_SET, ANGLE_SET, CANOPY_KEYS, SEASON_KEYS, TOPO_KEYS, MODE_KEYS, CANOPY_MORPH_MAX, CROSS_HALF_W, BLOOM_MAX, DUR_SCALE, DEFAULTS, GRANDFATHERED, LEGACY_KEYS, migrateLegacy, layerBakeSize };

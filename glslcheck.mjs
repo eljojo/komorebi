@@ -90,6 +90,8 @@ for (const n of ["FS_TREE", "FS_TREE_WOOD"]) for (const names of [["CROWN_FIELD"
   const lit = shaders.find((x) => x.name === n);
   shaders.push({ ...lit, name: `${n}+${names.join("+")}`, body: lit.body.replace("#version 300 es\n", `#version 300 es\n${names.map((d) => `#define ${d}\n`).join("")}`) });
 }
+// twig_joints' leaf in the tree view: VS_TREE with RUN_PIVOT defined (komorebi-tree-view.js program, the same derivation)
+{ const lit = shaders.find((x) => x.name === "VS_TREE"); shaders.push({ ...lit, name: "VS_TREE+RUN_PIVOT", body: lit.body.replace("#version 300 es\n", "#version 300 es\n#define RUN_PIVOT\n") }); }
 // thin_twigs' cast of the wood under its own penumbra: the skeleton's two literals with SEG_FINE defined (komorebi-shaders.js VS/FS_FAITH_SEG_FINE)
 for (const n of ["VS_FAITH_SEG", "FS_FAITH_SEG"]) { const lit = shaders.find((x) => x.name === n); shaders.push({ ...lit, name: `${n}_FINE`, body: lit.body.replace("#version 300 es\n", "#version 300 es\n#define SEG_FINE\n") }); }
 

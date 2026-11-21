@@ -6,8 +6,9 @@
 // ============================================================================
 import { test, expect } from "bun:test";
 import { GROWTH, growBuds } from "../engine/canopy/komorebi-growth.js";
-import { makeGrove } from "../engine/canopy/komorebi-grove.js";
+import { makeGrove, runChain, RUN_W } from "../engine/canopy/komorebi-grove.js";
 import { DEFAULTS, TOPO_KEYS } from "../komorebi.js";
+import { PRESETS } from "../presets.js";
 import { mulberry32 } from "../engine/komorebi-math.js";
 
 const spec = { years: 12, lambda: 0.52, angle: Math.PI/4, pitch: Math.PI/7, phyllo: 0, droop: -0.2, kids: 3 };
@@ -292,4 +293,89 @@ test("thin twigs: the grown wood keeps its pipe-model width down to 2 mm where t
   console.log(`capsules thinner than the old 8 mm floor: ${thinner} of ${B.length}, ${floor} at 2 mm`);
   expect(thinner).toBeGreaterThan(B.length/2);
   expect(floor).toBeGreaterThan(0);
+});
+
+// TWIG JOINTS (twig_joints; komorebi-grove.js runJoints). A grown cluster leaves the rest of the tree at many points, and turned whole about its twig's base its
+// wood slid off the branches it grows from. Every junction of a cluster's wood, its two pieces turned as fillSwayedSegs turns them: about the piece's joint by its
+// cluster's bend, then by each outer run's, each cluster bent by an angle of its own. The two shipped looks grown from buds: a bare elm (its clusters leave older
+// wood only) and a ginkgo, whose spurs of five years leaf off one another, three clusters deep.
+const shipped = (name, over) => {
+  const gl = new Proxy({}, { get(t, n) { return n === "createBuffer" ? () => ({ data: null }) : n === "bindBuffer" ? (_, b) => { t.cur = b; } : n === "bufferData" ? (_, d) => { if (t.cur) t.cur.data = d; } : () => ({}); } });
+  const params = { ...DEFAULTS, ...PRESETS[name], ...over }, faith = {};
+  const g = makeGrove({ gl, params, MAX_TEX: 16384, quadBuf: {}, faithfulOn: () => true, occ: {}, faith, sky: { start: [], count: [] } }).buildGrove(null);
+  return { g, faith, params };
+};
+const bendOf = (c) => 0.05 + 0.1*((c*2654435761 >>> 0)/4294967296);   // a cluster's own bend, rad
+const turnAbout = (t, jx, jy, p) => { const c = Math.cos(t), s = Math.sin(t), dx = p[0] - jx, dy = p[1] - jy; return [jx + c*dx - s*dy, jy + s*dx + c*dy]; };
+const turned = (s, p) => { let q = turnAbout(bendOf(s.clump), s.tbx, s.tby, p); if (s.up) for (let u = 0; u < s.up.length; u += 3) q = turnAbout(bendOf(s.up[u]), s.up[u + 1], s.up[u + 2], q); return q; };
+function junctions(rest) {   // every piece of a cluster's wood against the piece its start lies on: how far apart the two land
+  const C = 0.25, grid = new Map(), cell = (x, y) => `${Math.floor(x/C)},${Math.floor(y/C)}`;
+  rest.forEach((s, i) => { for (let x = Math.floor(Math.min(s.ax, s.bx)/C); x <= Math.floor(Math.max(s.ax, s.bx)/C); x++) for (let y = Math.floor(Math.min(s.ay, s.by)/C); y <= Math.floor(Math.max(s.ay, s.by)/C); y++) { const k = `${x},${y}`; (grid.get(k) ?? grid.set(k, []).get(k)).push(i); } });
+  const out = { n: 0, open: 0, cross: 0, max: 0 };
+  rest.forEach((s, i) => {
+    if (s.clump < 0) return;
+    for (const j of grid.get(cell(s.ax, s.ay)) ?? []) {
+      const q = rest[j], e = [q.bx - q.ax, q.by - q.ay, q.hb - q.ha], ll = e[0]**2 + e[1]**2 + e[2]**2;
+      if (j === i || !(ll > 0)) continue;
+      const f = Math.max(0, Math.min(1, ((s.ax - q.ax)*e[0] + (s.ay - q.ay)*e[1] + (s.ha - q.ha)*e[2])/ll));
+      if (!(f > 1e-6) || Math.hypot(q.ax + e[0]*f - s.ax, q.ay + e[1]*f - s.ay, q.ha + e[2]*f - s.ha) > 1e-6) continue;
+      const turn = (p) => q.clump >= 0 ? turned(q, p) : p, qa = turn([q.ax, q.ay]), qb = turn([q.bx, q.by]), m = turned(s, [s.ax, s.ay]);
+      const gap = Math.hypot(m[0] - qa[0] - (qb[0] - qa[0])*f, m[1] - qa[1] - (qb[1] - qa[1])*f);
+      out.n++; if (q.clump >= 0 && q.clump !== s.clump) out.cross++;
+      if (gap > 1e-6) out.open++;
+      out.max = Math.max(out.max, gap);
+      return;
+    }
+  });
+  return out;
+}
+
+test("twig joints: off by default, and off, the grove is the one grown before it, with no joint, no run and no buffer", () => {
+  expect(DEFAULTS.twig_joints).toBe(false);
+  const off = shipped("yellow ginkgo"), on = shipped("yellow ginkgo", { twig_joints: true });
+  expect(off.faith.runOn).toBe(false);
+  expect(off.faith.runBuf ?? null).toBe(null);
+  expect(off.faith.runTex ?? null).toBe(null);
+  expect(off.g.hier.runs).toBe(null);
+  expect(off.faith.segRest.some((s) => s.up)).toBe(false);
+  off.faith.segRest.forEach((s) => { if (s.clump >= 0) { expect(s.tbx).toBe(off.g.hier.twigs[s.clump].bx); expect(s.tby).toBe(off.g.hier.twigs[s.clump].by); } });
+  expect(Array.from(on.faith.buf.data), "the leaves hang where they did").toEqual(Array.from(off.faith.buf.data));
+  const wood = (g) => g.faith.segRest.map((s) => [s.ax, s.ay, s.bx, s.by, s.ha, s.hb, s.ra, s.rb, s.clump]);
+  expect(wood(on), "the wood at rest is the same wood").toEqual(wood(off));
+  expect(shipped("park 1", { twig_joints: true }).faith.runOn, "a grammar tree leaves the tree at its twig's base alone: nothing to do").toBe(false);
+});
+
+test("twig joints: every junction of a grown cluster's wood stays closed as the clusters bend, where turned whole about the twig's base they came apart", () => {
+  for (const name of ["glebe sunset", "yellow ginkgo"]) {
+    const off = junctions(shipped(name).faith.segRest), on = junctions(shipped(name, { twig_joints: true }).faith.segRest);
+    console.log(`${name}: ${on.n} junctions, ${on.cross} off another cluster's wood; open off ${off.open} (widest ${(off.max*100).toFixed(1)} cm), on ${on.open}`);
+    expect(off.open, "the fault is there to fix").toBeGreaterThan(off.n/50);
+    expect(on.n).toBe(off.n);
+    expect(on.open).toBe(0);
+  }
+});
+
+test("twig joints: each leaf turns with the run of wood it hangs beside, by the same joint and the same chain of outer turns", () => {
+  const { g, faith, params } = shipped("yellow ginkgo", { twig_joints: true }), T = g.hier.runs.table, L = faith.buf.data, R = faith.runBuf.data, n = L.length/18;
+  expect(faith.runOn).toBe(true);
+  expect(R.length).toBe(3*n);
+  expect(faith.runTex).toBeTruthy();
+  const byCluster = new Map();
+  faith.segRest.forEach((s) => { if (s.clump >= 0) (byCluster.get(s.clump) ?? byCluster.set(s.clump, []).get(s.clump)).push(s); });
+  const reach = params.cluster_spread_m*0.7 + 1e-4;   // a leaf hangs off its shoot's wood by at most this (shootPlace), in float32
+  const key = (a) => JSON.stringify(a ? Array.from(a, Math.fround) : null);
+  let carried = 0;
+  for (let i = 0; i < n; i++) {
+    const j = Math.round(L[18*i + 11]), x = L[18*i], y = L[18*i + 1], o = R[3*i + 2];   // the cluster as the shader reads it: int(iC.w + 0.5)
+    const chain = o >= 0 ? [T[RUN_W*o], T[RUN_W*o + 1], T[RUN_W*o + 2], ...(runChain(T, o) ?? [])] : null;   // the leaf's outer run, then that run's own outer turns
+    if (o >= 0) carried++;
+    const beside = (byCluster.get(j) ?? []).some((s) => {
+      if (Math.fround(s.tbx) !== R[3*i] || Math.fround(s.tby) !== R[3*i + 1] || key(s.up) !== key(chain)) return false;
+      const ex = s.bx - s.ax, ey = s.by - s.ay, ll = ex*ex + ey*ey, f = ll > 0 ? Math.max(0, Math.min(1, ((x - s.ax)*ex + (y - s.ay)*ey)/ll)) : 0;
+      return Math.hypot(s.ax + ex*f - x, s.ay + ey*f - y) <= reach;
+    });
+    if (!beside) expect(beside, `leaf ${i} of cluster ${j}`).toBe(true);
+  }
+  console.log(`yellow ginkgo: ${n} leaves, ${carried} of them on runs another cluster's turn carries`);
+  expect(carried).toBeGreaterThan(n/4);
 });

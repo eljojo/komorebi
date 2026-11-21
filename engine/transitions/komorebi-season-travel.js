@@ -86,6 +86,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     // and a draw that reads an instanced attribute past its buffer's end is refused, so no leaf would be cast. The record's own weights, in its order.
     gl.bindBuffer(gl.ARRAY_BUFFER,faith.pivotBuf);gl.bufferData(gl.ARRAY_BUFFER,S.pivot,gl.DYNAMIC_DRAW);
     if(faith.sideBuf&&S.side){gl.bindBuffer(gl.ARRAY_BUFFER,faith.sideBuf);gl.bufferData(gl.ARRAY_BUFFER,S.side,gl.DYNAMIC_DRAW);}   // ...and so do the sides (the tree view's), for the same reason
+    if(faith.runBuf&&S.run){gl.bindBuffer(gl.ARRAY_BUFFER,faith.runBuf);gl.bufferData(gl.ARRAY_BUFFER,S.run,gl.DYNAMIC_DRAW);}   // ...and the joints (twig_joints)
     for(let l=0;l<layerData.length;l++){
       gl.bindBuffer(gl.ARRAY_BUFFER,hub.layerVAO[l].buf);gl.bufferData(gl.ARRAY_BUFFER,layerData[l],gl.DYNAMIC_DRAW);hub.layerVAO[l].count=layerData[l].length/17;
     }
@@ -95,7 +96,7 @@ export const makeSeasonTravel=FEAT_LITTER ? hub=>{
     s={a,b,S,paths,carpet,bothCarpets,data,journey,layerData,buf,start:q,end:1-q,q,side:q,pending:null,
       field:{tex:null,ox:0,oy:0,ext:1,weight:0},res:0,maxRes:Math.max(aParams.bake_resolution||aParams.tex_resolution,bParams.bake_resolution||bParams.tex_resolution),maxSamples:Math.max(aParams.sample_count,bParams.sample_count)};
     const cast={...hub,params:{...params},perf:{auto:false},src:{},srcDbgBuf:null,trans:restTrans(),seasonCast:true,faithTex:null,faithScratch:null,
-      faith:{...faith,pivotOn:false,gx:new Float32Array(faith.gx.length),gy:new Float32Array(faith.gy.length)},bakeRes:()=>s.res};   // pivotOn false: the flight reads no pivot weight, and the bake would take that specialization over this cast's own program
+      faith:{...faith,pivotOn:false,runOn:false,gx:new Float32Array(faith.gx.length),gy:new Float32Array(faith.gy.length)},bakeRes:()=>s.res};   // pivotOn and runOn false: the flight reads no pivot weight and no joint (it turns every leaf about its twig's base), and the bake would take either specialization over this cast's own program
     cast.progFaith=hub.sharedProgram(VS_SEASON_TRAVEL,FS_FAITH);cast.U={...hub.U,faith:hub.faithLocs(cast.progFaith)};
     cast.effCloud=()=>cast.params.cloud_thickness;
     Object.assign(cast,makeSource(cast),makeCast(cast));Object.assign(cast,makeBake(cast));s.cast=cast;
